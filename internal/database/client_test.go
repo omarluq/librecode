@@ -1,4 +1,4 @@
-package ksql_test
+package database_test
 
 import (
 	"context"
@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/ksql"
+	"github.com/omarluq/librecode/internal/database"
 )
 
-func TestClient_Info(t *testing.T) {
+func TestKSQLClient_Info(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -25,20 +25,20 @@ func TestClient_Info(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	client := ksql.NewClient(server.URL, time.Second)
+	client := database.NewKSQLClient(server.URL, time.Second)
 	body, err := client.Info(context.Background())
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"ok":true}`, string(body))
 }
 
-func TestClient_Execute(t *testing.T) {
+func TestKSQLClient_Execute(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodPost, request.Method)
 		assert.Equal(t, "/ksql", request.URL.Path)
 
-		var payload ksql.Request
+		var payload database.KSQLRequestEntity
 		require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		assert.Equal(t, "SHOW STREAMS;", payload.KSQL)
 		assert.Empty(t, payload.StreamsProperties)
@@ -48,7 +48,7 @@ func TestClient_Execute(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	client := ksql.NewClient(server.URL, time.Second)
+	client := database.NewKSQLClient(server.URL, time.Second)
 	body, err := client.Execute(context.Background(), "SHOW STREAMS;")
 	require.NoError(t, err)
 	assert.JSONEq(t, `[]`, string(body))

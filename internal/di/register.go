@@ -8,7 +8,7 @@ func RegisterServices(injector do.Injector) {
 	do.Provide(injector, NewLoggerService)
 	do.Provide(injector, NewDatabaseService)
 	do.Provide(injector, NewCacheService)
-	do.Provide(injector, NewPluginService)
+	do.Provide(injector, NewExtensionService)
 	do.Provide(injector, NewKSQLService)
-	do.Provide(injector, NewAgentService)
+	do.Provide(injector, NewAssistantService)
 }

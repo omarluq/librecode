@@ -8,34 +8,35 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/omarluq/librecode/internal/di"
-	"github.com/omarluq/librecode/internal/plugin"
+	"github.com/omarluq/librecode/internal/extension"
 )
 
-func newPluginCmd() *cobra.Command {
+func newExtensionCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "plugin",
-		Short: "Manage Lua plugins",
+		Use:   "extension",
+		Short: "Manage workflow extensions",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
 	}
 
-	cmd.AddCommand(newPluginListCmd())
-	cmd.AddCommand(newPluginRunCmd())
+	cmd.AddCommand(newExtensionListCmd())
+	cmd.AddCommand(newExtensionRunCmd())
 
 	return cmd
 }
 
-func newPluginListCmd() *cobra.Command {
+func newExtensionListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List loaded Lua plugins, commands, and tools",
+		Short: "List loaded workflow extensions, commands, and tools",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withContainer(cmd.Context(), func(container *di.Container) error {
-				manager := di.MustInvoke[*di.PluginService](container).Manager
-				for _, loadedPlugin := range manager.Plugins() {
-					if err := printPlugin(cmd, loadedPlugin); err != nil {
+				manager := di.MustInvoke[*di.ExtensionService](container).Manager
+				extensions := manager.Extensions()
+				for index := range extensions {
+					if err := printExtension(cmd, &extensions[index]); err != nil {
 						return err
 					}
 				}
@@ -46,14 +47,14 @@ func newPluginListCmd() *cobra.Command {
 	}
 }
 
-func newPluginRunCmd() *cobra.Command {
+func newExtensionRunCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "run <command> [args...]",
-		Short: "Run a Lua plugin command",
+		Short: "Run a workflow extension command",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withContainer(cmd.Context(), func(container *di.Container) error {
-				manager := di.MustInvoke[*di.PluginService](container).Manager
+				manager := di.MustInvoke[*di.ExtensionService](container).Manager
 				result, err := manager.ExecuteCommand(cmd.Context(), args[0], strings.Join(args[1:], " "))
 				if err != nil {
 					return err
@@ -65,17 +66,17 @@ func newPluginRunCmd() *cobra.Command {
 	}
 }
 
-func printPlugin(cmd *cobra.Command, loadedPlugin plugin.LoadedPlugin) error {
+func printExtension(cmd *cobra.Command, loadedExtension *extension.LoadedExtension) error {
 	_, err := fmt.Fprintf(
 		cmd.OutOrStdout(),
 		"%s\t%s\tcommands=%s\ttools=%s\n",
-		loadedPlugin.Name,
-		loadedPlugin.Path,
-		strings.Join(loadedPlugin.Commands, ","),
-		strings.Join(loadedPlugin.Tools, ","),
+		loadedExtension.Name,
+		loadedExtension.Path,
+		strings.Join(loadedExtension.Commands, ","),
+		strings.Join(loadedExtension.Tools, ","),
 	)
 	if err != nil {
-		return oops.Wrapf(err, "write plugin")
+		return oops.Wrapf(err, "write extension")
 	}
 
 	return nil

@@ -1,4 +1,4 @@
-package agent_test
+package assistant_test
 
 import (
 	"context"
@@ -10,12 +10,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	sqlite "modernc.org/sqlite"
+	_ "modernc.org/sqlite"
 
-	"github.com/omarluq/librecode/internal/agent"
+	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/config"
-	"github.com/omarluq/librecode/internal/plugin"
-	"github.com/omarluq/librecode/internal/session"
+	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/extension"
 )
 
 func TestRuntime_PromptPersistsConversation(t *testing.T) {
@@ -23,7 +23,7 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 
 	runtime, store := newTestRuntime(t)
 
-	response, err := runtime.Prompt(context.Background(), agent.PromptRequest{
+	response, err := runtime.Prompt(context.Background(), assistant.PromptRequest{
 		SessionID: "",
 		CWD:       "/work",
 		Text:      "hello",
@@ -38,15 +38,15 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	entries, err := store.Entries(context.Background(), response.SessionID)
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
-	assert.Equal(t, session.RoleUser, entries[0].Message.Role)
-	assert.Equal(t, session.RoleAssistant, entries[1].Message.Role)
+	assert.Equal(t, database.RoleUser, entries[0].Message.Role)
+	assert.Equal(t, database.RoleAssistant, entries[1].Message.Role)
 }
 
 func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	t.Parallel()
 
 	runtime, _ := newTestRuntime(t)
-	request := agent.PromptRequest{SessionID: "", CWD: "/work", Text: "cache me", Name: ""}
+	request := assistant.PromptRequest{SessionID: "", CWD: "/work", Text: "cache me", Name: ""}
 
 	firstResponse, err := runtime.Prompt(context.Background(), request)
 	require.NoError(t, err)
@@ -58,24 +58,30 @@ func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	assert.Equal(t, firstResponse.Text, secondResponse.Text)
 }
 
-func newTestRuntime(t *testing.T) (*agent.Runtime, *session.Store) {
+func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionStore) {
 	t.Helper()
 
-	database, err := sql.Open(sqliteDriver(), ":memory:")
+	connection, err := sql.Open(sqliteDriver(), ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		require.NoError(t, database.Close())
+		require.NoError(t, connection.Close())
 	})
-	database.SetMaxOpenConns(1)
-	require.NoError(t, session.Migrate(context.Background(), database))
+	connection.SetMaxOpenConns(1)
+	require.NoError(t, database.Migrate(context.Background(), connection))
 
-	store := session.NewStore(database)
-	manager := plugin.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	store := database.NewSessionStore(connection)
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Shutdown)
-	cache := agent.NewResponseCache(true, 32, time.Minute)
+	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 
-	return agent.NewRuntime(testConfig(), store, manager, cache, slog.New(slog.NewTextHandler(io.Discard, nil))), store
+	return assistant.NewRuntime(
+		testConfig(),
+		store,
+		manager,
+		cache,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	), store
 }
 
 func testConfig() *config.Config {
@@ -92,11 +98,11 @@ func testConfig() *config.Config {
 			MaxIdleConns:    1,
 			ConnMaxLifetime: time.Minute,
 		},
-		Plugins: config.PluginsConfig{
+		Extensions: config.ExtensionsConfig{
 			Enabled: true,
 			Paths:   []string{},
 		},
-		Agent: config.AgentConfig{
+		Assistant: config.AssistantConfig{
 			Provider:      "local",
 			Model:         "librecode-go",
 			ThinkingLevel: "off",
@@ -114,8 +120,5 @@ func testConfig() *config.Config {
 }
 
 func sqliteDriver() string {
-	var driverError *sqlite.Error
-	_ = driverError
-
 	return "sqlite"
 }

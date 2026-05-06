@@ -1,5 +1,4 @@
-// Package ksql integrates with ksqlDB through Confluent's REST API.
-package ksql
+package database
 
 import (
 	"bytes"
@@ -12,43 +11,37 @@ import (
 	"time"
 )
 
-// ConfluentProjectURL documents the upstream ksqlDB project this adapter targets.
-const ConfluentProjectURL = "https://github.com/confluentinc/ksql"
+// KSQLProjectURL documents the upstream ksqlDB project this adapter targets.
+const KSQLProjectURL = "https://github.com/confluentinc/ksql"
 
-// Client is a small ksqlDB REST client.
-type Client struct {
-	endpoint   string
+// KSQLClient is a small ksqlDB REST client.
+type KSQLClient struct {
 	httpClient *http.Client
+	endpoint   string
 }
 
-// Request is a ksqlDB statement request.
-type Request struct {
-	KSQL              string            `json:"ksql"`
-	StreamsProperties map[string]string `json:"streamsProperties"`
-}
-
-// NewClient creates a ksqlDB REST client. Empty endpoints create a disabled client.
-func NewClient(endpoint string, timeout time.Duration) *Client {
-	return &Client{
-		endpoint: strings.TrimRight(endpoint, "/"),
+// NewKSQLClient creates a ksqlDB REST client. Empty endpoints create a disabled client.
+func NewKSQLClient(endpoint string, timeout time.Duration) *KSQLClient {
+	return &KSQLClient{
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
+		endpoint: strings.TrimRight(endpoint, "/"),
 	}
 }
 
-// Enabled reports whether an endpoint is configured.
-func (client *Client) Enabled() bool {
+// Enabled reports whether a ksqlDB endpoint is configured.
+func (client *KSQLClient) Enabled() bool {
 	return client.endpoint != ""
 }
 
-// Info calls the ksqlDB /info endpoint.
-func (client *Client) Info(ctx context.Context) ([]byte, error) {
+// Info calls the ksqlDB information endpoint.
+func (client *KSQLClient) Info(ctx context.Context) ([]byte, error) {
 	if !client.Enabled() {
 		return nil, fmt.Errorf("ksql: endpoint is not configured")
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.endpoint+"/info", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.endpoint+"/info", http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("ksql: create info request: %w", err)
 	}
@@ -56,15 +49,15 @@ func (client *Client) Info(ctx context.Context) ([]byte, error) {
 	return client.do(request)
 }
 
-// Execute posts a statement to /ksql.
-func (client *Client) Execute(ctx context.Context, statement string) ([]byte, error) {
+// Execute posts a ksqlDB statement to the REST API.
+func (client *KSQLClient) Execute(ctx context.Context, statement string) ([]byte, error) {
 	if !client.Enabled() {
 		return nil, fmt.Errorf("ksql: endpoint is not configured")
 	}
 
-	payload := Request{
-		KSQL:              statement,
+	payload := KSQLRequestEntity{
 		StreamsProperties: map[string]string{},
+		KSQL:              statement,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -80,14 +73,18 @@ func (client *Client) Execute(ctx context.Context, statement string) ([]byte, er
 	return client.do(request)
 }
 
-func (client *Client) do(request *http.Request) ([]byte, error) {
+func (client *KSQLClient) do(request *http.Request) (body []byte, err error) {
 	response, err := client.httpClient.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("ksql: request failed: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		if closeErr := response.Body.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("ksql: close response body: %w", closeErr)
+		}
+	}()
 
-	body, err := io.ReadAll(response.Body)
+	body, err = io.ReadAll(response.Body)
 	if err != nil {
 		return nil, fmt.Errorf("ksql: read response: %w", err)
 	}

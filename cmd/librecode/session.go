@@ -7,15 +7,15 @@ import (
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
-	"github.com/omarluq/librecode/internal/agent"
+	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/di"
-	"github.com/omarluq/librecode/internal/session"
 )
 
 func newSessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "session",
-		Short: "Manage SQLite-backed sessions",
+		Short: "Manage conversation sessions",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -38,7 +38,7 @@ func newSessionNewCmd() *cobra.Command {
 
 			return withContainer(cmd.Context(), func(container *di.Container) error {
 				store := di.MustInvoke[*di.DatabaseService](container).Store
-				cwd, err := agent.DefaultCWD("")
+				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
 					return err
 				}
@@ -62,7 +62,7 @@ func newSessionListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withContainer(cmd.Context(), func(container *di.Container) error {
 				store := di.MustInvoke[*di.DatabaseService](container).Store
-				cwd, err := agent.DefaultCWD("")
+				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
 					return err
 				}
@@ -72,8 +72,8 @@ func newSessionListCmd() *cobra.Command {
 					return err
 				}
 
-				for _, listedSession := range sessions {
-					if err := printSessionSummary(cmd, listedSession); err != nil {
+				for index := range sessions {
+					if err := printSessionSummary(cmd, &sessions[index]); err != nil {
 						return err
 					}
 				}
@@ -97,8 +97,8 @@ func newSessionShowCmd() *cobra.Command {
 					return err
 				}
 
-				for _, entry := range entries {
-					if err := printSessionEntry(cmd, entry); err != nil {
+				for index := range entries {
+					if err := printSessionEntry(cmd, &entries[index]); err != nil {
 						return err
 					}
 				}
@@ -109,7 +109,7 @@ func newSessionShowCmd() *cobra.Command {
 	}
 }
 
-func printSessionSummary(cmd *cobra.Command, listedSession session.Session) error {
+func printSessionSummary(cmd *cobra.Command, listedSession *database.SessionEntity) error {
 	name := listedSession.Name
 	if name == "" {
 		name = "(unnamed)"
@@ -129,7 +129,7 @@ func printSessionSummary(cmd *cobra.Command, listedSession session.Session) erro
 	return nil
 }
 
-func printSessionEntry(cmd *cobra.Command, entry session.Entry) error {
+func printSessionEntry(cmd *cobra.Command, entry *database.EntryEntity) error {
 	line := fmt.Sprintf("%s\t%s\t%s", entry.ID, entry.Type, entry.Message.Content)
 	if entry.Summary != "" {
 		line = fmt.Sprintf("%s\t%s\t%s", entry.ID, entry.Type, entry.Summary)

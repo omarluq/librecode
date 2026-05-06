@@ -3,20 +3,20 @@ package di
 import (
 	"github.com/samber/do/v2"
 
-	"github.com/omarluq/librecode/internal/agent"
+	"github.com/omarluq/librecode/internal/assistant"
 )
 
-// CacheService owns process-local hot caches.
+// CacheService owns process-local response caches.
 type CacheService struct {
-	Responses *agent.ResponseCache
+	Responses *assistant.ResponseCache
 }
 
-// NewCacheService creates samber/hot caches from config.
+// NewCacheService creates response caches from config.
 func NewCacheService(injector do.Injector) (*CacheService, error) {
 	cfg := do.MustInvoke[*ConfigService](injector).Get()
 
 	return &CacheService{
-		Responses: agent.NewResponseCache(cfg.Cache.Enabled, cfg.Cache.Capacity, cfg.Cache.TTL),
+		Responses: assistant.NewResponseCache(cfg.Cache.Enabled, cfg.Cache.Capacity, cfg.Cache.TTL),
 	}, nil
 }
 

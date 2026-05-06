@@ -1,13 +1,18 @@
 package main
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+
+	"github.com/omarluq/librecode/internal/vinfo"
+)
 
 var cfgFile string
 
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "librecode",
-		Short:         "librecode is a command line tool",
+		Short:         "librecode is a local assistant for coding work",
+		Version:       vinfo.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -20,7 +25,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newConfigCmd())
 	cmd.AddCommand(newKSQLCmd())
 	cmd.AddCommand(newMigrateCmd())
-	cmd.AddCommand(newPluginCmd())
+	cmd.AddCommand(newExtensionCmd())
 	cmd.AddCommand(newPromptCmd())
 	cmd.AddCommand(newSessionCmd())
 	cmd.AddCommand(newVersionCmd())
