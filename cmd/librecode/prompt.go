@@ -34,10 +34,11 @@ func newPromptCmd() *cobra.Command {
 				}
 
 				response, err := runtime.Prompt(cmd.Context(), assistant.PromptRequest{
-					SessionID: sessionID,
-					CWD:       cwd,
-					Text:      message,
-					Name:      sessionName,
+					ParentEntryID: nil,
+					SessionID:     sessionID,
+					CWD:           cwd,
+					Text:          message,
+					Name:          sessionName,
 				})
 				if err != nil {
 					return err

@@ -26,10 +26,11 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	runtime, repository := newTestRuntime(t)
 
 	response, err := runtime.Prompt(context.Background(), assistant.PromptRequest{
-		SessionID: "",
-		CWD:       "/work",
-		Text:      "hello",
-		Name:      "test",
+		ParentEntryID: nil,
+		SessionID:     "",
+		CWD:           "/work",
+		Text:          "hello",
+		Name:          "test",
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, response.SessionID)
@@ -48,7 +49,7 @@ func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	t.Parallel()
 
 	runtime, _ := newTestRuntime(t)
-	request := assistant.PromptRequest{SessionID: "", CWD: "/work", Text: "cache me", Name: ""}
+	request := assistant.PromptRequest{ParentEntryID: nil, SessionID: "", CWD: "/work", Text: "cache me", Name: ""}
 
 	firstResponse, err := runtime.Prompt(context.Background(), request)
 	require.NoError(t, err)
@@ -67,10 +68,11 @@ func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 	cwd := t.TempDir()
 
 	response, err := runtime.Prompt(context.Background(), assistant.PromptRequest{
-		SessionID: "",
-		CWD:       cwd,
-		Text:      `/tool write {"path":"note.txt","content":"hello"}`,
-		Name:      "",
+		ParentEntryID: nil,
+		SessionID:     "",
+		CWD:           cwd,
+		Text:          `/tool write {"path":"note.txt","content":"hello"}`,
+		Name:          "",
 	})
 	require.NoError(t, err)
 	assert.Contains(t, response.Text, "Successfully wrote")

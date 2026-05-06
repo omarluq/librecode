@@ -1,33 +1,73 @@
-// Package terminal implements an interactive chat interface.
+// Package terminal implements a Pi-style interactive terminal UI.
 package terminal
 
 import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
-	"github.com/gdamore/tcell/v2"
+	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/config"
+	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
+)
+
+const (
+	defaultEditorRows = 6
+	doubleEscapeDelay = 500 * time.Millisecond
+)
+
+type appMode string
+
+const (
+	modeChat  appMode = "chat"
+	modePanel appMode = "panel"
 )
 
 type chatMessage struct {
-	role    string
-	content string
+	CreatedAt time.Time
+	Role      database.Role
+	Content   string
+}
+
+// RunOptions configures the terminal app.
+type RunOptions struct {
+	Runtime   *assistant.Runtime `json:"-"`
+	Models    *model.Registry    `json:"-"`
+	Config    *config.Config     `json:"-"`
+	CWD       string             `json:"cwd"`
+	SessionID string             `json:"session_id"`
 }
 
 // App is the terminal chat UI.
 type App struct {
-	screen    tcell.Screen
-	runtime   *assistant.Runtime
-	cwd       string
-	sessionID string
-	messages  []chatMessage
-	input     []rune
+	lastEscape        time.Time
+	screen            tcell.Screen
+	runtime           *assistant.Runtime
+	models            *model.Registry
+	cfg               *config.Config
+	editor            *editor
+	keys              *keybindings
+	panel             *selectionPanel
+	pendingParentID   *string
+	theme             terminalTheme
+	selectedPanelKind panelKind
+	cwd               string
+	sessionID         string
+	statusMessage     string
+	mode              appMode
+	queuedMessages    []string
+	messages          []chatMessage
+	toolsExpanded     bool
+	hideThinking      bool
+	working           bool
 }
 
 // Run starts an interactive tcell chat loop.
-func Run(ctx context.Context, runtime *assistant.Runtime, cwd, sessionID string) error {
+func Run(ctx context.Context, options RunOptions) error {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return fmt.Errorf("tui: create screen: %w", err)
@@ -37,30 +77,57 @@ func Run(ctx context.Context, runtime *assistant.Runtime, cwd, sessionID string)
 	}
 	defer screen.Fini()
 
-	app := &App{
-		screen:    screen,
-		runtime:   runtime,
-		cwd:       cwd,
-		sessionID: sessionID,
-		messages:  []chatMessage{{role: "system", content: "librecode-go chat. Enter /quit to exit."}},
-		input:     []rune{},
+	app := newApp(screen, options)
+	if err := app.loadInitialMessages(ctx); err != nil {
+		app.addSystemMessage(err.Error())
 	}
 	app.loop(ctx)
 
 	return nil
 }
 
+func newApp(screen tcell.Screen, options RunOptions) *App {
+	appTheme := themeByName("dark")
+	if options.Config != nil && options.Config.App.Env == "test" {
+		appTheme = darkTheme()
+	}
+	app := &App{
+		screen:            screen,
+		runtime:           options.Runtime,
+		models:            options.Models,
+		cfg:               options.Config,
+		editor:            newEditor(),
+		keys:              newDefaultKeybindings(),
+		theme:             appTheme,
+		mode:              modeChat,
+		panel:             nil,
+		cwd:               options.CWD,
+		sessionID:         options.SessionID,
+		pendingParentID:   nil,
+		messages:          []chatMessage{},
+		queuedMessages:    []string{},
+		toolsExpanded:     false,
+		hideThinking:      false,
+		lastEscape:        time.Time{},
+		working:           false,
+		statusMessage:     "",
+		selectedPanelKind: "",
+	}
+	app.addSystemMessage("librecode • Pi-style TUI. Type /hotkeys for shortcuts or /quit to exit.")
+
+	return app
+}
+
 func (app *App) loop(ctx context.Context) {
 	for {
 		app.draw()
-		event := app.screen.PollEvent()
+		event := <-app.screen.EventQ()
 		if event == nil {
 			return
 		}
-
 		shouldQuit, err := app.handleEvent(ctx, event)
 		if err != nil {
-			app.messages = append(app.messages, chatMessage{role: "error", content: err.Error()})
+			app.addMessage(database.RoleCustom, err.Error())
 		}
 		if shouldQuit {
 			return
@@ -68,119 +135,85 @@ func (app *App) loop(ctx context.Context) {
 	}
 }
 
-func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error) {
-	switch typedEvent := event.(type) {
-	case *tcell.EventResize:
-		app.screen.Sync()
-		return false, nil
-	case *tcell.EventKey:
-		return app.handleKey(ctx, typedEvent)
-	default:
-		return false, nil
+func (app *App) loadInitialMessages(ctx context.Context) error {
+	if app.sessionID == "" || app.runtime == nil {
+		return nil
 	}
-}
-
-func (app *App) handleKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
-	key := event.Key()
-	if key == tcell.KeyCtrlC || key == tcell.KeyEscape {
-		return true, nil
-	}
-	if key == tcell.KeyEnter {
-		return app.submit(ctx)
-	}
-	if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
-		if len(app.input) > 0 {
-			app.input = app.input[:len(app.input)-1]
-		}
-		return false, nil
-	}
-	if key == tcell.KeyRune {
-		app.input = append(app.input, event.Rune())
-		return false, nil
-	}
-
-	return false, nil
-}
-
-func (app *App) submit(ctx context.Context) (bool, error) {
-	text := strings.TrimSpace(string(app.input))
-	app.input = []rune{}
-	if text == "" {
-		return false, nil
-	}
-	if text == "/quit" {
-		return true, nil
-	}
-
-	app.messages = append(app.messages, chatMessage{role: "user", content: text})
-	response, err := app.runtime.Prompt(ctx, assistant.PromptRequest{
-		SessionID: app.sessionID,
-		CWD:       app.cwd,
-		Text:      text,
-		Name:      "",
-	})
+	messages, err := app.runtime.SessionRepository().Messages(ctx, app.sessionID)
 	if err != nil {
-		return false, err
+		return err
 	}
-	app.sessionID = response.SessionID
-	app.messages = append(app.messages, chatMessage{role: "assistant", content: response.Text})
+	for index := range messages {
+		message := &messages[index]
+		app.messages = append(app.messages, chatMessage{
+			CreatedAt: message.CreatedAt,
+			Role:      message.Role,
+			Content:   message.Content,
+		})
+	}
 
-	return false, nil
+	return nil
 }
 
-func (app *App) draw() {
-	app.screen.Clear()
-	width, height := app.screen.Size()
-	headerStyle := tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorGreen)
-	mutedStyle := tcell.StyleDefault.Foreground(tcell.ColorGray)
-	userStyle := tcell.StyleDefault.Foreground(tcell.ColorLightCyan)
-	assistantStyle := tcell.StyleDefault.Foreground(tcell.ColorLightGreen)
-
-	writeLine(app.screen, 0, 0, width, " librecode-go ", headerStyle)
-	row := 2
-	for _, message := range visibleMessages(app.messages, height-5) {
-		style := styleForRole(message.role, userStyle, assistantStyle, mutedStyle)
-		for _, line := range strings.Split(message.content, "\n") {
-			if row >= height-2 {
-				break
-			}
-			writeLine(app.screen, 0, row, width, message.role+": "+line, style)
-			row++
-		}
-	}
-
-	prompt := "> " + string(app.input)
-	writeLine(app.screen, 0, height-1, width, prompt, tcell.StyleDefault)
-	app.screen.ShowCursor(len([]rune(prompt)), height-1)
-	app.screen.Show()
+func (app *App) addSystemMessage(content string) {
+	app.addMessage(database.RoleCustom, content)
 }
 
-func visibleMessages(messages []chatMessage, maxRows int) []chatMessage {
-	if maxRows < 1 || len(messages) <= maxRows {
-		return messages
-	}
-
-	return messages[len(messages)-maxRows:]
+func (app *App) addMessage(role database.Role, content string) {
+	app.messages = append(app.messages, chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content})
 }
 
-func styleForRole(role string, userStyle, assistantStyle, mutedStyle tcell.Style) tcell.Style {
-	switch role {
-	case "user":
-		return userStyle
-	case "assistant":
-		return assistantStyle
-	default:
-		return mutedStyle
-	}
+func (app *App) setStatus(message string) {
+	app.statusMessage = message
 }
 
-func writeLine(screen tcell.Screen, column, row, width int, text string, style tcell.Style) {
-	line := []rune(text)
-	if len(line) > width {
-		line = line[:width]
+func (app *App) currentThinkingLevel() string {
+	if app.cfg == nil || app.cfg.Assistant.ThinkingLevel == "" {
+		return string(model.ThinkingOff)
 	}
 
-	for index, value := range line {
-		screen.SetContent(column+index, row, value, nil, style)
+	return app.cfg.Assistant.ThinkingLevel
+}
+
+func (app *App) currentProvider() string {
+	if app.cfg == nil {
+		return "local"
 	}
+
+	return app.cfg.Assistant.Provider
+}
+
+func (app *App) currentModel() string {
+	if app.cfg == nil {
+		return "librecode-go"
+	}
+
+	return app.cfg.Assistant.Model
+}
+
+func (app *App) setModel(provider, modelID string) {
+	if app.cfg != nil {
+		app.cfg.Assistant.Provider = provider
+		app.cfg.Assistant.Model = modelID
+	}
+	app.addSystemMessage("model selected: " + provider + "/" + modelID)
+}
+
+func (app *App) setThinkingLevel(level string) {
+	if app.cfg != nil {
+		app.cfg.Assistant.ThinkingLevel = level
+	}
+	app.setStatus("thinking: " + level)
+}
+
+func modelLabel(provider, modelID string) string {
+	if provider == "" {
+		return modelID
+	}
+
+	return provider + "/" + modelID
+}
+
+func trimCommandPrefix(text string) string {
+	return strings.TrimSpace(strings.TrimPrefix(text, "/"))
 }

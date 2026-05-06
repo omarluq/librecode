@@ -33,10 +33,11 @@ type Runtime struct {
 
 // PromptRequest contains one user prompt invocation.
 type PromptRequest struct {
-	SessionID string `json:"session_id"`
-	CWD       string `json:"cwd"`
-	Text      string `json:"text"`
-	Name      string `json:"name"`
+	ParentEntryID *string `json:"parent_entry_id,omitempty"`
+	SessionID     string  `json:"session_id"`
+	CWD           string  `json:"cwd"`
+	Text          string  `json:"text"`
+	Name          string  `json:"name"`
 }
 
 // PromptResponse describes persisted prompt output.
@@ -74,7 +75,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		return nil, err
 	}
 
-	leaf, _, err := runtime.sessions.LeafEntry(ctx, activeSession.ID)
+	parentID, err := runtime.promptParentID(ctx, activeSession.ID, request.ParentEntryID)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +87,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		Provider:  "",
 		Model:     "",
 	}
-	userEntry, err := runtime.sessions.AppendMessage(ctx, activeSession.ID, parentIDFromEntry(leaf), &userMessage)
+	userEntry, err := runtime.sessions.AppendMessage(ctx, activeSession.ID, parentID, &userMessage)
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
 	}
@@ -172,6 +173,27 @@ func (runtime *Runtime) resolveSession(ctx context.Context, request PromptReques
 	}
 
 	return runtime.sessions.CreateSession(ctx, request.CWD, "", "")
+}
+
+func (runtime *Runtime) promptParentID(ctx context.Context, sessionID string, explicitParent *string) (*string, error) {
+	if explicitParent != nil {
+		return explicitPromptParentID(explicitParent), nil
+	}
+
+	leaf, _, err := runtime.sessions.LeafEntry(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parentIDFromEntry(leaf), nil
+}
+
+func explicitPromptParentID(explicitParent *string) *string {
+	if *explicitParent == "" {
+		return nil
+	}
+
+	return explicitParent
 }
 
 func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt string) (

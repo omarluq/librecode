@@ -18,12 +18,20 @@ func newChatCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withContainer(cmd.Context(), func(container *di.Container) error {
 				runtime := di.MustInvoke[*di.AssistantService](container).Runtime
+				modelRegistry := di.MustInvoke[*di.ModelService](container).Registry
+				cfg := di.MustInvoke[*di.ConfigService](container).Get()
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
 					return err
 				}
 
-				return terminal.Run(cmd.Context(), runtime, cwd, sessionID)
+				return terminal.Run(cmd.Context(), terminal.RunOptions{
+					Runtime:   runtime,
+					Models:    modelRegistry,
+					Config:    cfg,
+					CWD:       cwd,
+					SessionID: sessionID,
+				})
 			})
 		},
 	}
