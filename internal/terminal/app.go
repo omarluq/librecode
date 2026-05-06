@@ -147,7 +147,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		statusMessage:     "",
 		selectedPanelKind: "",
 	}
-	app.addSystemMessage("librecode • librecode-style TUI. Type /hotkeys for shortcuts or /quit to exit.")
+	app.addWelcomeMessage()
 
 	return app
 }

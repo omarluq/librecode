@@ -186,6 +186,10 @@ func (app *App) renderThinkingMessage(width int, message chatMessage) []styledLi
 }
 
 func (app *App) renderCustomMessage(width int, content string) []styledLine {
+	if isWelcomeMessage(content) {
+		return app.renderWelcomeMessage(width, content)
+	}
+
 	return boxedLines(width, "system", content, app.theme.background(colorCustomMessageBg))
 }
 
