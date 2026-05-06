@@ -105,7 +105,7 @@ func (app *App) welcomeBodyStyle(index int, line string) tcell.Style {
 			Foreground(app.theme.colors[colorBorderAccent]).
 			Bold(true)
 	}
-	if strings.HasPrefix(line, "Type /") || strings.HasPrefix(line, "Press Ctrl+D") {
+	if strings.HasPrefix(line, "Type /") || strings.HasPrefix(line, "Press Ctrl+C") {
 		return app.theme.background(colorCustomMessageBg).Foreground(app.theme.colors[colorAccent]).Bold(true)
 	}
 	if strings.HasPrefix(line, "version") || strings.HasPrefix(line, "workspace") {
@@ -126,7 +126,6 @@ func welcomeBodyLines(cwd string) []string {
 		"Type /hotkeys for shortcuts",
 		"Type /quit to exit",
 		"Press Ctrl+C anytime to exit",
-		"Press Ctrl+D on an empty prompt to exit",
 	)
 
 	return lines

@@ -45,18 +45,26 @@ func (app *App) toolBlockStyle(event *parsedToolEvent) tcell.Style {
 func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []styledLine {
 	label := fmt.Sprintf("  %s  %s expand", toolTitle(event), app.keys.hint(actionToolsExpand))
 
-	return []styledLine{{Style: style.Bold(true), Text: padRight(label, width)}}
+	return []styledLine{
+		{Style: tcell.StyleDefault, Text: ""},
+		{Style: style.Bold(true), Text: padRight(label, width)},
+		{Style: tcell.StyleDefault, Text: ""},
+	}
 }
 
 func (app *App) renderExpandedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []styledLine {
-	lines := make([]styledLine, 0, 8)
+	lines := make([]styledLine, 0, 10)
 	lines = append(lines,
+		styledLine{Style: tcell.StyleDefault, Text: ""},
 		styledLine{Style: style.Bold(true), Text: boxTop(width, toolTitle(event))},
 	)
 	lines = append(lines, app.toolArgumentLines(width, event, style)...)
 	lines = append(lines, app.toolDiffLines(width, event, style)...)
 	lines = append(lines, app.toolOutputLines(width, event, style)...)
-	lines = append(lines, styledLine{Style: style.Bold(true), Text: boxBottom(width)})
+	lines = append(lines,
+		styledLine{Style: style.Bold(true), Text: boxBottom(width)},
+		styledLine{Style: tcell.StyleDefault, Text: ""},
+	)
 
 	return lines
 }

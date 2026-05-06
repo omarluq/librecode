@@ -35,7 +35,6 @@ const (
 	actionSelectConfirm              actionID = "tui.select.confirm"
 	actionSelectCancel               actionID = "tui.select.cancel"
 	actionInterrupt                  actionID = "app.interrupt"
-	actionExit                       actionID = "app.exit"
 	actionForceExit                  actionID = "app.exit.force"
 	actionThinkingCycle              actionID = "app.thinking.cycle"
 	actionModelCycleForward          actionID = "app.model.cycleForward"
@@ -93,7 +92,7 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionCursorLineStart:            binding("Move to line start", "home", "ctrl+a"),
 		actionCursorLineEnd:              binding("Move to line end", "end", "ctrl+e"),
 		actionDeleteCharBackward:         binding("Delete character backward", "backspace"),
-		actionDeleteCharForward:          binding("Delete character forward", "delete", "ctrl+d"),
+		actionDeleteCharForward:          binding("Delete character forward", "delete"),
 		actionDeleteWordBackward:         binding("Delete word backward", "ctrl+w", "alt+backspace"),
 		actionDeleteWordForward:          binding("Delete word forward", "alt+d", "alt+delete"),
 		actionDeleteToLineStart:          binding("Delete to line start", "ctrl+u"),
@@ -108,7 +107,6 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionSelectConfirm:              binding("Confirm selection", "enter"),
 		actionSelectCancel:               binding("Cancel selection", "escape"),
 		actionInterrupt:                  binding("Cancel or abort", "escape"),
-		actionExit:                       binding("Exit when editor is empty", "ctrl+d"),
 		actionForceExit:                  binding("Exit librecode", "ctrl+c"),
 		actionThinkingCycle:              binding("Cycle thinking level", "shift+tab"),
 		actionModelCycleForward:          binding("Cycle to next model", "ctrl+p"),
@@ -126,7 +124,7 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionSessionTogglePath:          binding("Toggle session path display", "ctrl+p"),
 		actionSessionToggleSort:          binding("Toggle session sort mode", "ctrl+s"),
 		actionSessionRename:              binding("Rename session", "ctrl+r"),
-		actionSessionDelete:              binding("Delete session", "ctrl+d"),
+		actionSessionDelete:              binding("Delete session", "delete"),
 		actionSessionDeleteNoninvasive:   binding("Delete session when query is empty", "ctrl+backspace"),
 		actionTreeFoldOrUp:               binding("Fold tree branch or move up", "ctrl+left", "alt+left"),
 		actionTreeUnfoldOrDown:           binding("Unfold tree branch or move down", "ctrl+right", "alt+right"),

@@ -34,11 +34,11 @@ func (app *App) handleKey(ctx context.Context, event *tcell.EventKey) (bool, err
 	if app.mode == modePanel && app.panel != nil {
 		return app.handlePanelKey(ctx, event)
 	}
-	if app.handleGlobalShortcut(ctx, event) {
+	if app.handleTranscriptScroll(event) {
 		return false, nil
 	}
-	if app.keys.matches(event, actionExit) && app.editor.empty() {
-		return true, nil
+	if app.handleGlobalShortcut(ctx, event) {
+		return false, nil
 	}
 	if app.keys.matches(event, actionInputSubmit) {
 		return app.submit(ctx)
@@ -177,6 +177,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 		Name:          "",
 	}
 	app.pendingParentID = nil
+	app.scrollOffset = 0
 	app.addMessage(database.RoleUser, text)
 	app.working = true
 	app.workFrame = 0
@@ -206,6 +207,7 @@ func (app *App) applyPromptResponse(response *assistant.PromptResponse) {
 	if response == nil {
 		return
 	}
+	app.scrollOffset = 0
 	app.sessionID = response.SessionID
 	for _, thinking := range response.Thinking {
 		app.addMessage(database.RoleThinking, thinking)

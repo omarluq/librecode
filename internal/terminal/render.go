@@ -50,6 +50,7 @@ func (app *App) drawMessages(width, height, row int) int {
 	}
 	availableRows := max(1, height-row-footerReserve())
 	lines := app.messageLines(width, availableRows)
+	row += max(0, availableRows-len(lines))
 	for _, line := range lines {
 		writeLine(app.screen, row, width, line.Text, line.Style)
 		row++
@@ -71,7 +72,7 @@ func (app *App) messageLines(width, maxRows int) []styledLine {
 		lines = append(lines, styledLine{Style: app.theme.style(colorWarning), Text: queueText})
 	}
 
-	return safeSlice(lines, maxRows)
+	return app.visibleMessageLines(lines, maxRows)
 }
 
 func (app *App) renderMessage(width int, message chatMessage) []styledLine {
@@ -96,21 +97,29 @@ func (app *App) renderMessage(width int, message chatMessage) []styledLine {
 func (app *App) renderUserMessage(width int, content string) []styledLine {
 	innerWidth := max(1, width-4)
 	wrapped := wrapText(content, innerWidth)
-	lines := make([]styledLine, 0, len(wrapped)+1)
-	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
+	lines := make([]styledLine, 0, len(wrapped)+4)
+	lines = append(lines,
+		styledLine{Style: app.theme.style(colorDim), Text: ""},
+		styledLine{Style: app.theme.background(colorUserMessageBg), Text: padRight("", width)},
+	)
 	for _, line := range wrapped {
 		text := "  " + padRight(line, innerWidth) + "  "
 		lines = append(lines, styledLine{Style: app.theme.background(colorUserMessageBg), Text: text})
 	}
+	lines = append(lines,
+		styledLine{Style: app.theme.background(colorUserMessageBg), Text: padRight("", width)},
+		styledLine{Style: app.theme.style(colorDim), Text: ""},
+	)
 
 	return lines
 }
 
 func (app *App) renderAssistantMessage(width int, content string) []styledLine {
 	markdownLines := app.renderMarkdown(strings.TrimSpace(content), width)
-	lines := make([]styledLine, 0, len(markdownLines)+1)
+	lines := make([]styledLine, 0, len(markdownLines)+2)
 	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
 	lines = append(lines, markdownLines...)
+	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
 
 	return lines
 }
@@ -121,7 +130,11 @@ func (app *App) renderToolMessage(width int, message chatMessage) []styledLine {
 
 func (app *App) renderThinkingMessage(width int, message chatMessage) []styledLine {
 	if app.hideThinking {
-		return []styledLine{{Style: app.theme.style(colorThinkingText).Italic(true), Text: " thinking…"}}
+		return []styledLine{
+			{Style: tcell.StyleDefault, Text: ""},
+			{Style: app.theme.style(colorThinkingText).Italic(true), Text: " thinking…"},
+			{Style: tcell.StyleDefault, Text: ""},
+		}
 	}
 
 	style := app.theme.style(colorThinkingText).Italic(true)
@@ -129,7 +142,10 @@ func (app *App) renderThinkingMessage(width int, message chatMessage) []styledLi
 	for _, line := range app.renderMarkdown(strings.TrimSpace(message.Content), max(1, width-4)) {
 		lines = append(lines, styledLine{Style: style, Text: boxedBodyLine(width, line.Text)})
 	}
-	lines = append(lines, styledLine{Style: style.Bold(true), Text: boxBottom(width)})
+	lines = append(lines,
+		styledLine{Style: style.Bold(true), Text: boxBottom(width)},
+		styledLine{Style: app.theme.style(colorDim), Text: ""},
+	)
 
 	return lines
 }
@@ -149,14 +165,19 @@ func (app *App) renderSummaryMessage(width int, message chatMessage) []styledLin
 func boxedLines(width int, label, content string, style tcell.Style) []styledLine {
 	innerWidth := max(1, width-4)
 	wrapped := wrapText(content, innerWidth)
-	lines := make([]styledLine, 0, len(wrapped)+2)
+	lines := make([]styledLine, 0, len(wrapped)+5)
 	lines = append(lines,
-		styledLine{Style: style, Text: ""},
+		styledLine{Style: tcell.StyleDefault, Text: ""},
+		styledLine{Style: style, Text: padRight("", width)},
 		styledLine{Style: style.Bold(true), Text: padRight("  ["+label+"]", width)},
 	)
 	for _, line := range wrapped {
 		lines = append(lines, styledLine{Style: style, Text: "  " + padRight(line, innerWidth) + "  "})
 	}
+	lines = append(lines,
+		styledLine{Style: style, Text: padRight("", width)},
+		styledLine{Style: tcell.StyleDefault, Text: ""},
+	)
 
 	return lines
 }

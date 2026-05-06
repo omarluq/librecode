@@ -77,6 +77,7 @@ type App struct {
 	hideThinking      bool
 	working           bool
 	workFrame         int
+	scrollOffset      int
 }
 
 // Run starts an interactive tcell chat loop.
@@ -144,6 +145,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		lastEscape:        time.Time{},
 		working:           false,
 		workFrame:         0,
+		scrollOffset:      0,
 		statusMessage:     "",
 		selectedPanelKind: "",
 	}
