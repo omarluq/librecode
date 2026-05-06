@@ -103,6 +103,7 @@ func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionStore) {
 		store,
 		manager,
 		cache,
+		nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	), store
 }
