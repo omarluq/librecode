@@ -7,6 +7,8 @@ func RegisterServices(injector do.Injector) {
 	do.Provide(injector, NewConfigService)
 	do.Provide(injector, NewLoggerService)
 	do.Provide(injector, NewEventService)
+	do.Provide(injector, NewAuthService)
+	do.Provide(injector, NewModelService)
 	do.Provide(injector, NewDatabaseService)
 	do.Provide(injector, NewCacheService)
 	do.Provide(injector, NewExtensionService)
