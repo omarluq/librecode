@@ -19,7 +19,9 @@ func (app *App) draw() {
 	}
 
 	row := 0
-	row = app.drawHeader(width, row)
+	if !app.showWelcomeOnly() {
+		row = app.drawHeader(width, row)
+	}
 	if app.mode == modePanel && app.panel != nil {
 		row = app.drawPanel(width, height, row)
 	} else {
