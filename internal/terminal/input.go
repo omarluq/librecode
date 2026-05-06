@@ -216,8 +216,8 @@ func (app *App) applyPromptResponse(response *assistant.PromptResponse) {
 	for _, thinking := range response.Thinking {
 		app.addMessage(database.RoleThinking, thinking)
 	}
-	for _, event := range response.ToolEvents {
-		app.addMessage(database.RoleToolResult, formatToolEventForUI(event))
+	for index := range response.ToolEvents {
+		app.addMessage(database.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
 	}
 	app.addMessage(database.RoleAssistant, response.Text)
 }

@@ -71,6 +71,7 @@ type CompletionResult struct {
 type ToolEvent struct {
 	Name          string `json:"name"`
 	ArgumentsJSON string `json:"arguments_json"`
+	DetailsJSON   string `json:"details_json,omitempty"`
 	Result        string `json:"result"`
 	Error         string `json:"error,omitempty"`
 }
@@ -340,9 +341,11 @@ func executeToolCalls(ctx context.Context, cwd string, calls []toolCall) ([]any,
 	for _, call := range calls {
 		result, err := registry.Execute(ctx, call.Name, call.Arguments)
 		resultText := result.Text()
+		detailsJSON := encodeToolDetails(result.Details)
 		event := ToolEvent{
 			Name:          call.Name,
 			ArgumentsJSON: call.ArgumentsJSON,
+			DetailsJSON:   detailsJSON,
 			Result:        resultText,
 			Error:         "",
 		}
@@ -358,11 +361,35 @@ func executeToolCalls(ctx context.Context, cwd string, calls []toolCall) ([]any,
 		outputs = append(outputs, map[string]any{
 			jsonTypeKey:   functionCallOutputType,
 			jsonCallIDKey: call.ID,
-			jsonOutputKey: resultText,
+			jsonOutputKey: toolOutputText(resultText, detailsJSON),
 		})
 	}
 
 	return outputs, events
+}
+
+func encodeToolDetails(details map[string]any) string {
+	if len(details) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(details)
+	if err != nil {
+		return ""
+	}
+
+	return string(encoded)
+}
+
+func toolOutputText(resultText, detailsJSON string) string {
+	if strings.TrimSpace(detailsJSON) == "" {
+		return resultText
+	}
+	trimmedResult := strings.TrimSpace(resultText)
+	if trimmedResult == "" {
+		return "details:\n" + detailsJSON
+	}
+
+	return trimmedResult + "\ndetails:\n" + detailsJSON
 }
 
 func (client *HTTPCompletionClient) postJSON(

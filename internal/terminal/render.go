@@ -158,33 +158,31 @@ func (app *App) renderUserMessage(width int, content string) []styledLine {
 }
 
 func (app *App) renderAssistantMessage(width int, content string) []styledLine {
-	innerWidth := max(1, width-2)
-	wrapped := wrapText(content, innerWidth)
-	lines := make([]styledLine, 0, len(wrapped)+1)
+	markdownLines := app.renderMarkdown(strings.TrimSpace(content), width)
+	lines := make([]styledLine, 0, len(markdownLines)+1)
 	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
-	for _, line := range wrapped {
-		lines = append(lines, styledLine{Style: app.theme.style(colorText), Text: " " + line})
-	}
+	lines = append(lines, markdownLines...)
 
 	return lines
 }
 
 func (app *App) renderToolMessage(width int, message chatMessage) []styledLine {
-	label := toolBlockLabel(message.Content, string(message.Role))
-	if !app.toolsExpanded {
-		text := label + " " + app.keys.hint(actionToolsExpand) + " expand"
-		return []styledLine{{Style: app.theme.background(colorToolSuccessBg), Text: padRight(text, width)}}
-	}
-
-	return boxedLines(width, label, message.Content, app.theme.background(colorToolSuccessBg))
+	return app.renderToolBlock(width, message)
 }
 
 func (app *App) renderThinkingMessage(width int, message chatMessage) []styledLine {
 	if app.hideThinking {
-		return nil
+		return []styledLine{{Style: app.theme.style(colorThinkingText).Italic(true), Text: " thinking…"}}
 	}
 
-	return boxedLines(width, "thinking", message.Content, app.theme.style(colorMuted))
+	style := app.theme.style(colorThinkingText).Italic(true)
+	lines := []styledLine{{Style: style.Bold(true), Text: boxTop(width, "thinking")}}
+	for _, line := range app.renderMarkdown(strings.TrimSpace(message.Content), max(1, width-4)) {
+		lines = append(lines, styledLine{Style: style, Text: boxedBodyLine(width, line.Text)})
+	}
+	lines = append(lines, styledLine{Style: style.Bold(true), Text: boxBottom(width)})
+
+	return lines
 }
 
 func (app *App) renderCustomMessage(width int, content string) []styledLine {
@@ -220,8 +218,9 @@ func (app *App) drawEditorAndFooter(width, height, _ int) {
 		writeLine(app.screen, startRow+index, width, line.Text, line.Style)
 	}
 	editorStart := startRow + len(autocompleteLines)
+	borderStyle := app.theme.style(app.editorBorderColor())
 	for index, line := range editorRender.Lines {
-		writeLine(app.screen, editorStart+index, width, line.Text, line.Style)
+		writeEditorLine(app.screen, editorStart+index, width, line, index, len(editorRender.Lines), borderStyle)
 	}
 	footerStart := height - len(footerLines)
 	for index, line := range footerLines {
@@ -279,6 +278,36 @@ func writeLine(screen tcell.Screen, row, width int, text string, style tcell.Sty
 		value := ' '
 		if index < len(line) {
 			value = line[index]
+		}
+		screen.SetContent(index, row, value, nil, style)
+	}
+}
+
+func writeEditorLine(
+	screen tcell.Screen,
+	row int,
+	width int,
+	line styledLine,
+	lineIndex int,
+	lineCount int,
+	borderStyle tcell.Style,
+) {
+	if lineIndex == 0 || lineIndex == lineCount-1 {
+		writeLine(screen, row, width, line.Text, line.Style)
+		return
+	}
+	if row < 0 {
+		return
+	}
+	bodyRunes := []rune(truncateText(line.Text, width))
+	for index := 0; index < width; index++ {
+		value := ' '
+		if index < len(bodyRunes) {
+			value = bodyRunes[index]
+		}
+		style := line.Style
+		if index < 2 || index >= max(0, width-2) {
+			style = borderStyle
 		}
 		screen.SetContent(index, row, value, nil, style)
 	}

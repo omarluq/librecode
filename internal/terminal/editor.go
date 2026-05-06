@@ -144,8 +144,8 @@ func (input *editor) render(width, maxRows int, theme terminalTheme, border colo
 	bodyStyle := theme.style(colorText)
 	lines = append(lines, styledLine{Style: borderStyle, Text: editorTopBorder(width)})
 	for _, bodyLine := range visibleLines {
-		text := "│ " + padRight(bodyLine, innerWidth) + " │"
-		lines = append(lines, styledLine{Style: bodyStyle, Text: text})
+		bodyText := padRight(bodyLine, innerWidth)
+		lines = append(lines, styledLine{Style: bodyStyle, Text: "│ " + bodyText + " │"})
 	}
 	lines = append(lines, styledLine{Style: borderStyle, Text: editorBottomBorder(width)})
 

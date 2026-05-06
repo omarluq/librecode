@@ -200,7 +200,7 @@ func (runtime *Runtime) appendAssistantSideEffects(
 		message := database.MessageEntity{
 			Timestamp: time.Now().UTC(),
 			Role:      database.RoleToolResult,
-			Content:   formatToolEvent(event),
+			Content:   formatToolEvent(&event),
 			Provider:  runtime.cfg.Assistant.Provider,
 			Model:     runtime.cfg.Assistant.Model,
 		}
@@ -214,13 +214,16 @@ func (runtime *Runtime) appendAssistantSideEffects(
 	return parentID, nil
 }
 
-func formatToolEvent(toolEvent ToolEvent) string {
+func formatToolEvent(toolEvent *ToolEvent) string {
 	parts := []string{fmt.Sprintf("tool: %s", toolEvent.Name)}
 	if strings.TrimSpace(toolEvent.ArgumentsJSON) != "" {
 		parts = append(parts, "arguments:", toolEvent.ArgumentsJSON)
 	}
 	if toolEvent.Error != "" {
 		parts = append(parts, "error:", toolEvent.Error)
+	}
+	if strings.TrimSpace(toolEvent.DetailsJSON) != "" {
+		parts = append(parts, "details:", toolEvent.DetailsJSON)
 	}
 	if strings.TrimSpace(toolEvent.Result) != "" {
 		parts = append(parts, "output:", toolEvent.Result)

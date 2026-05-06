@@ -18,6 +18,10 @@ const (
 	colorMuted           colorToken = "muted"
 	colorDim             colorToken = "dim"
 	colorText            colorToken = "text"
+	colorCodeBg          colorToken = "codeBg"
+	colorCodeText        colorToken = "codeText"
+	colorDiffAdd         colorToken = "diffAdd"
+	colorDiffDelete      colorToken = "diffDelete"
 	colorThinkingText    colorToken = "thinkingText"
 	colorSelectedBg      colorToken = "selectedBg"
 	colorUserMessageBg   colorToken = "userMessageBg"
@@ -50,6 +54,10 @@ var piThemeColors = []themeColor{
 	{token: colorMuted, dark: hexColor(0x808080), light: hexColor(0x666666)},
 	{token: colorDim, dark: hexColor(0x666666), light: hexColor(0x999999)},
 	{token: colorText, dark: cellcolor.Default, light: cellcolor.Black},
+	{token: colorCodeBg, dark: hexColor(0x1f2330), light: hexColor(0xf6f8fa)},
+	{token: colorCodeText, dark: hexColor(0xd7d7d7), light: hexColor(0x24292f)},
+	{token: colorDiffAdd, dark: hexColor(0xb5bd68), light: hexColor(0x22863a)},
+	{token: colorDiffDelete, dark: hexColor(0xcc6666), light: hexColor(0xcb2431)},
 	{token: colorThinkingText, dark: hexColor(0x808080), light: hexColor(0x666666)},
 	{token: colorSelectedBg, dark: hexColor(0x3a3a4a), light: hexColor(0xe8f0fe)},
 	{token: colorUserMessageBg, dark: hexColor(0x343541), light: hexColor(0xf3f4f6)},

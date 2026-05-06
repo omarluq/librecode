@@ -35,7 +35,7 @@ func slashSuggestions() []slashSuggestion {
 		{Name: "session", Description: "show current session details"},
 		{Name: "settings", Description: "open settings"},
 		{Name: "share", Description: "share current session"},
-		{Name: "tool", Description: "run a built-in tool with JSON arguments"},
+		{Name: toolSectionTool, Description: "run a built-in tool with JSON arguments"},
 		{Name: "tree", Description: "open session tree"},
 	}
 }
@@ -105,7 +105,7 @@ func (app *App) workingIndicator() string {
 	return frame + " working…"
 }
 
-func formatToolEventForUI(event assistant.ToolEvent) string {
+func formatToolEventForUI(event *assistant.ToolEvent) string {
 	parts := []string{fmt.Sprintf("tool: %s", event.Name)}
 	if strings.TrimSpace(event.ArgumentsJSON) != "" {
 		parts = append(parts, "arguments:", event.ArgumentsJSON)
@@ -113,23 +113,12 @@ func formatToolEventForUI(event assistant.ToolEvent) string {
 	if event.Error != "" {
 		parts = append(parts, "error:", event.Error)
 	}
+	if strings.TrimSpace(event.DetailsJSON) != "" {
+		parts = append(parts, "details:", event.DetailsJSON)
+	}
 	if strings.TrimSpace(event.Result) != "" {
 		parts = append(parts, "output:", event.Result)
 	}
 
 	return strings.Join(parts, "\n")
-}
-
-func toolBlockLabel(content, fallback string) string {
-	for _, line := range strings.Split(content, "\n") {
-		name, value, ok := strings.Cut(line, ":")
-		if ok && strings.TrimSpace(name) == "tool" {
-			trimmed := strings.TrimSpace(value)
-			if trimmed != "" {
-				return "tool " + trimmed
-			}
-		}
-	}
-
-	return fallback
 }
