@@ -14,9 +14,10 @@ import (
 
 // ReadInput contains arguments for the read tool.
 type ReadInput struct {
-	Offset *int   `json:"offset,omitempty"`
-	Limit  *int   `json:"limit,omitempty"`
-	Path   string `json:"path"`
+	Offset       *int   `json:"offset,omitempty"`
+	Limit        *int   `json:"limit,omitempty"`
+	Path         string `json:"path"`
+	AllowIgnored bool   `json:"allowIgnored,omitempty"`
 }
 
 // ReadTool reads text and image files from disk.
@@ -38,6 +39,7 @@ func (readTool *ReadTool) Definition() Definition {
 		PromptSnippet: "Read file contents",
 		PromptGuidelines: []string{
 			"Use read to examine files instead of cat or sed.",
+			"Avoid reading ignored files unless the user explicitly needs their contents.",
 		},
 		ReadOnly: true,
 	}
@@ -64,6 +66,9 @@ func (readTool *ReadTool) Read(ctx context.Context, input ReadInput) (Result, er
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return emptyToolResult(), ctxErr
+	}
+	if ignored, reason := ignoredReadPath(absolutePath, readTool.cwd); ignored && !input.AllowIgnored {
+		return ignoredReadResult(input.Path, reason), nil
 	}
 
 	//nolint:gosec // The read tool intentionally reads user-selected workspace paths.
@@ -104,11 +109,24 @@ func validateReadInput(input ReadInput) error {
 func readDescription() string {
 	return fmt.Sprintf(
 		"Read the contents of a file. Supports text files and images (jpg, png, gif, webp). "+
+			"Respects workspace .gitignore/default ignored paths unless allowIgnored is true. "+
 			"For text files, output is truncated to %d lines or %s (whichever is hit first). "+
 			"Use offset/limit for large files.",
 		DefaultMaxLines,
 		FormatSize(DefaultMaxBytes),
 	)
+}
+
+func ignoredReadResult(filePath, reason string) Result {
+	message := fmt.Sprintf(
+		"Refusing to read ignored path %q (%s). "+
+			"Ignored paths are skipped by default; retry with allowIgnored=true "+
+			"only when this content is explicitly needed.",
+		filePath,
+		strings.TrimSpace(reason),
+	)
+
+	return TextResult(message, map[string]any{"ignored": true, "reason": reason})
 }
 
 func imageReadResult(mimeType string, data []byte) Result {

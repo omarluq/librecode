@@ -477,6 +477,7 @@ func defaultSystemPrompt(cwd string) string {
 		"Use built-in tools (ls, find, grep, read, bash, edit, write) " +
 			"to inspect or change workspace files when needed.",
 		"Do not claim you cannot access files; inspect them with tools instead.",
+		"Respect .gitignore and default ignored paths; avoid ignored files unless explicitly needed.",
 		"Use the fewest tool calls needed; once you have enough evidence, stop using tools and answer.",
 	}, "\n")
 }

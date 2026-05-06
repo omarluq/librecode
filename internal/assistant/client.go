@@ -621,6 +621,9 @@ func readToolSchema() map[string]any {
 			jsonPathKey:  stringSchema("Path to the file to read, relative to the current workspace or absolute."),
 			"offset":     integerSchema("Optional 1-indexed line number to start reading from."),
 			jsonLimitKey: integerSchema("Optional maximum number of lines to return."),
+			"allowIgnored": booleanSchema(
+				"Set true only when an ignored file is explicitly needed despite .gitignore/default ignores.",
+			),
 		},
 		jsonRequiredKey: []string{jsonPathKey},
 	}
