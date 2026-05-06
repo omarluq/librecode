@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -56,6 +58,27 @@ func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, secondResponse.Cached)
 	assert.Equal(t, firstResponse.Text, secondResponse.Text)
+}
+
+func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
+	t.Parallel()
+
+	runtime, _ := newTestRuntime(t)
+	cwd := t.TempDir()
+
+	response, err := runtime.Prompt(context.Background(), assistant.PromptRequest{
+		SessionID: "",
+		CWD:       cwd,
+		Text:      `/tool write {"path":"note.txt","content":"hello"}`,
+		Name:      "",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, response.Text, "Successfully wrote")
+
+	//nolint:gosec // Test reads from t.TempDir-controlled path.
+	content, err := os.ReadFile(filepath.Join(cwd, "note.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(content))
 }
 
 func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionStore) {

@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 const slashPrefix = "/"
@@ -90,7 +92,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		return nil, oops.In("assistant").Code("before_agent_start").Wrapf(emitErr, "emit before_agent_start")
 	}
 
-	responseText, cached, err := runtime.respond(ctx, activeSession.ID, request.Text)
+	responseText, cached, err := runtime.respond(ctx, activeSession.ID, request.CWD, request.Text)
 	if err != nil {
 		return nil, err
 	}
@@ -158,13 +160,13 @@ func (runtime *Runtime) resolveSession(ctx context.Context, request PromptReques
 	return runtime.store.CreateSession(ctx, request.CWD, "", "")
 }
 
-func (runtime *Runtime) respond(ctx context.Context, sessionID, prompt string) (
+func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt string) (
 	response string,
 	cached bool,
 	err error,
 ) {
 	if strings.HasPrefix(prompt, slashPrefix) {
-		slashResponse, slashErr := runtime.respondToSlashCommand(ctx, prompt)
+		slashResponse, slashErr := runtime.respondToSlashCommand(ctx, cwd, prompt)
 		return slashResponse, false, slashErr
 	}
 
@@ -183,10 +185,14 @@ func (runtime *Runtime) respond(ctx context.Context, sessionID, prompt string) (
 	return response, false, nil
 }
 
-func (runtime *Runtime) respondToSlashCommand(ctx context.Context, prompt string) (string, error) {
+func (runtime *Runtime) respondToSlashCommand(ctx context.Context, cwd, prompt string) (string, error) {
 	commandName, commandArgs := splitSlashCommand(prompt)
 	if commandName == "" {
 		return "", fmt.Errorf("assistant: empty slash command")
+	}
+
+	if commandName == "tool" {
+		return runtime.respondToToolCommand(ctx, cwd, commandArgs)
 	}
 
 	response, err := runtime.extensions.ExecuteCommand(ctx, commandName, commandArgs)
@@ -201,9 +207,32 @@ func (runtime *Runtime) respondToSlashCommand(ctx context.Context, prompt string
 	return response, nil
 }
 
+func (runtime *Runtime) respondToToolCommand(ctx context.Context, cwd, args string) (string, error) {
+	toolName, payload, found := strings.Cut(strings.TrimSpace(args), " ")
+	if toolName == "" {
+		return "", fmt.Errorf("assistant: tool command requires a tool name")
+	}
+	if !found || strings.TrimSpace(payload) == "" {
+		payload = "{}"
+	}
+
+	registry := tool.NewRegistry(cwd)
+	result, err := registry.ExecuteJSON(ctx, toolName, []byte(payload))
+	if err != nil {
+		return "", oops.
+			In("assistant").
+			Code("builtin_tool").
+			With("tool", toolName).
+			Wrapf(err, "execute built-in tool")
+	}
+
+	return result.Text(), nil
+}
+
 func (runtime *Runtime) localResponse(prompt string) string {
 	commands := runtime.extensions.Commands()
-	tools := runtime.extensions.Tools()
+	extensionTools := runtime.extensions.Tools()
+	builtInTools := tool.AllDefinitions()
 	modelLine := fmt.Sprintf(
 		"provider=%s model=%s thinking=%s",
 		runtime.cfg.Assistant.Provider,
@@ -214,14 +243,22 @@ func (runtime *Runtime) localResponse(prompt string) string {
 		"librecode-go local runtime is wired and ready.",
 		modelLine,
 		fmt.Sprintf("prompt=%q", prompt),
-		fmt.Sprintf("extension_commands=%d extension_tools=%d", len(commands), len(tools)),
+		fmt.Sprintf(
+			"extension_commands=%d extension_tools=%d built_in_tools=%d",
+			len(commands),
+			len(extensionTools),
+			len(builtInTools),
+		),
 	}
 
 	if len(commands) > 0 {
 		parts = append(parts, "commands="+joinCommandNames(commands))
 	}
-	if len(tools) > 0 {
-		parts = append(parts, "tools="+joinToolNames(tools))
+	if len(extensionTools) > 0 {
+		parts = append(parts, "extension_tools="+joinExtensionToolNames(extensionTools))
+	}
+	if len(builtInTools) > 0 {
+		parts = append(parts, "built_in_tools="+joinBuiltInToolNames(builtInTools))
 	}
 
 	return strings.Join(parts, "\n")
@@ -257,19 +294,25 @@ func splitSlashCommand(prompt string) (name, args string) {
 }
 
 func joinCommandNames(commands []extension.Command) string {
-	names := make([]string, 0, len(commands))
-	for _, command := range commands {
-		names = append(names, command.Name)
-	}
+	names := lo.Map(commands, func(command extension.Command, _ int) string {
+		return command.Name
+	})
 
 	return strings.Join(names, ",")
 }
 
-func joinToolNames(tools []extension.Tool) string {
-	names := make([]string, 0, len(tools))
-	for _, tool := range tools {
-		names = append(names, tool.Name)
-	}
+func joinExtensionToolNames(tools []extension.Tool) string {
+	names := lo.Map(tools, func(tool extension.Tool, _ int) string {
+		return tool.Name
+	})
+
+	return strings.Join(names, ",")
+}
+
+func joinBuiltInToolNames(definitions []tool.Definition) string {
+	names := lo.Map(definitions, func(definition tool.Definition, _ int) string {
+		return string(definition.Name)
+	})
 
 	return strings.Join(names, ",")
 }

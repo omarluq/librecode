@@ -33,8 +33,12 @@ mise exec -- task ci             # Full CI pipeline
 ```
 cmd/librecode/          # CLI entrypoint (main.go, root.go, config.go, version.go)
 internal/
+  assistant/      # Prompt orchestration and built-in /tool slash command
   config/         # Viper config loader (config.go, loader.go)
-  di/             # samber/do DI container (container.go, register.go, config_service.go, logger_service.go)
+  database/       # SQLite sessions, migrations, and ksqlDB REST client
+  di/             # samber/do DI container and services
+  extension/      # Lua workflow extensions
+  tool/           # Pi-style built-in tools: read, bash, edit, write, grep, find, ls
   vinfo/          # Build version info (version.go)
 ```
 
@@ -80,7 +84,7 @@ cfg := do.MustInvoke[*ConfigService](injector)
 
 - Follow existing patterns in `internal/di/` and `cmd/librecode/`
 - Use `oops.In("domain").Code("code").Wrapf(err, "msg")` for error wrapping
-- Use `lo.Map`, `lo.SliceToMap`, `lo.MaxBy` for collections
+- Use `lo.Map`, `lo.FilterMap`, `lo.SliceToMap`, `lo.Values`, `lo.MaxBy` for collections
 - Use `mo.Option`, `mo.Result` for monadic error handling
 - Never ignore errors — `errcheck` with `check-blank: true` is enabled
 - No test exclusions — all code must pass all 50+ linters

@@ -28,6 +28,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newExtensionCmd())
 	cmd.AddCommand(newPromptCmd())
 	cmd.AddCommand(newSessionCmd())
+	cmd.AddCommand(newToolCmd())
 	cmd.AddCommand(newVersionCmd())
 
 	return cmd
