@@ -14,13 +14,12 @@ database:
   max_idle_conns: 1
   conn_max_lifetime: 30m
 
-plugins:
+extensions:
   enabled: true
   paths:
-    - .librecode/plugins
-    - .pi/plugins
+    - .librecode/extensions
 
-agent:
+assistant:
   provider: local
   model: librecode-go
   thinking_level: off

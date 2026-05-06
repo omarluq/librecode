@@ -3,7 +3,7 @@
 ## Project Overview
 
 This is a Go project template with a full development toolchain:
-- **CLI Framework**: Fang v2 + Cobra for command-line interfaces
+- **CLI Framework**: Cobra for command-line interfaces
 - **Config**: Viper with YAML/env/defaults support
 - **DI**: samber/do v2 for dependency injection
 - **Libraries**: samber/lo, samber/mo, samber/oops

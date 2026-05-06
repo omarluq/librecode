@@ -8,13 +8,13 @@ import (
 	"github.com/omarluq/librecode/internal/di"
 )
 
-func withContainer(ctx context.Context, fn func(*di.Container) error) error {
+func withContainer(ctx context.Context, handler func(*di.Container) error) error {
 	container, err := di.NewContainer(cfgFile)
 	if err != nil {
 		return err
 	}
 
-	runErr := fn(container)
+	runErr := handler(container)
 	shutdownReport := container.ShutdownWithContext(ctx)
 	if !shutdownReport.Succeed && shutdownReport.Error() != "" {
 		shutdownErr := fmt.Errorf("%w", shutdownReport)

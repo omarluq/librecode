@@ -5,14 +5,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/di"
-	"github.com/omarluq/librecode/internal/ksql"
 )
 
 func newKSQLCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ksql",
-		Short: "Interact with ksqlDB through the Confluent REST API",
+		Short: "Inspect the configured ksqlDB backend",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -33,7 +33,7 @@ func newKSQLInfoCmd() *cobra.Command {
 			return withContainer(cmd.Context(), func(container *di.Container) error {
 				client := di.MustInvoke[*di.KSQLService](container).Client
 				if !client.Enabled() {
-					return printLine(cmd.OutOrStdout(), "ksql endpoint not configured (%s)", ksql.ConfluentProjectURL)
+					return printLine(cmd.OutOrStdout(), "ksql endpoint not configured (%s)", database.KSQLProjectURL)
 				}
 
 				body, err := client.Info(cmd.Context())

@@ -7,10 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	"charm.land/fang/v2"
-
-	"github.com/omarluq/librecode/internal/vinfo"
 )
 
 func main() {
@@ -21,8 +17,16 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := fang.Execute(ctx, newRootCmd(), fang.WithVersion(vinfo.String())); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
+	cmd := newRootCmd()
+	cmd.SetContext(ctx)
+	cmd.SetIn(os.Stdin)
+	cmd.SetOut(os.Stdout)
+	cmd.SetErr(os.Stderr)
+
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		if _, writeErr := fmt.Fprintln(os.Stderr, err); writeErr != nil {
+			return 1
+		}
 
 		return 1
 	}

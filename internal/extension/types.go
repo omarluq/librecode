@@ -1,5 +1,5 @@
-// Package plugin loads and executes Lua plugins.
-package plugin
+// Package extension loads and executes user workflow extensions.
+package extension
 
 import "context"
 
@@ -7,36 +7,36 @@ import "context"
 type Command struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Plugin      string `json:"plugin"`
+	Extension   string `json:"extension"`
 }
 
 // Tool describes a Lua-provided tool callable by the runtime.
 type Tool struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Plugin      string `json:"plugin"`
+	Extension   string `json:"extension"`
 }
 
 // ToolResult is returned from Lua tool handlers.
 type ToolResult struct {
-	Content string         `json:"content"`
 	Details map[string]any `json:"details"`
+	Content string         `json:"content"`
 }
 
-// LoadedPlugin contains metadata for a loaded Lua source file.
-type LoadedPlugin struct {
+// LoadedExtension contains metadata for a loaded Lua source file.
+type LoadedExtension struct {
 	Name     string   `json:"name"`
 	Path     string   `json:"path"`
 	Commands []string `json:"commands"`
 	Tools    []string `json:"tools"`
 }
 
-// CommandRunner executes a named plugin command.
+// CommandRunner executes a named extension command.
 type CommandRunner interface {
-	ExecuteCommand(ctx context.Context, name string, args string) (string, error)
+	ExecuteCommand(ctx context.Context, name, args string) (string, error)
 }
 
-// EventEmitter emits plugin lifecycle events.
+// EventEmitter emits extension lifecycle events.
 type EventEmitter interface {
 	Emit(ctx context.Context, eventName string, payload map[string]any) error
 }

@@ -8,7 +8,7 @@ import (
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
 
-	"github.com/omarluq/librecode/internal/agent"
+	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/di"
 )
 
@@ -18,7 +18,7 @@ func newPromptCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "prompt [message]",
-		Short: "Send a prompt through the local Go agent runtime",
+		Short: "Send a prompt through the local assistant runtime",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			message, err := promptMessage(cmd, args)
@@ -27,13 +27,13 @@ func newPromptCmd() *cobra.Command {
 			}
 
 			return withContainer(cmd.Context(), func(container *di.Container) error {
-				runtime := di.MustInvoke[*di.AgentService](container).Runtime
-				cwd, err := agent.DefaultCWD("")
+				runtime := di.MustInvoke[*di.AssistantService](container).Runtime
+				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
 					return err
 				}
 
-				response, err := runtime.Prompt(cmd.Context(), agent.PromptRequest{
+				response, err := runtime.Prompt(cmd.Context(), assistant.PromptRequest{
 					SessionID: sessionID,
 					CWD:       cwd,
 					Text:      message,

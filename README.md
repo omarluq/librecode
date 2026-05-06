@@ -16,7 +16,7 @@
 
 | Category       | Tool                                                                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| **CLI**        | [Cobra](https://github.com/spf13/cobra) + [Fang v2](https://charm.land/fang) (styled help, manpages, completions)      |
+| **CLI**        | [Cobra](https://github.com/spf13/cobra) (simple command tree, explicit I/O and errors)                                 |
 | **Config**     | [Viper](https://github.com/spf13/viper) (YAML + env vars + defaults)                                                   |
 | **DI**         | [samber/do v2](https://github.com/samber/do) (lazy dependency injection)                                               |
 | **Functional** | [samber/lo](https://github.com/samber/lo) (map, filter, reduce)                                                        |
@@ -63,19 +63,23 @@ task ci               # Verify everything works
 .
 ├── .agents/skills/       # AI coding skills (cc-skills-golang, symlinked per harness)
 ├── cmd/librecode/            # CLI entrypoint and commands
-│   ├── main.go           #   fang.Execute with signal handling
+│   ├── main.go           #   Cobra execution with signal handling
 │   ├── root.go           #   Root cobra command
 │   ├── config.go         #   config show/validate commands
 │   └── version.go        #   version command
 ├── internal/
+│   ├── assistant/        # Prompt orchestration and response cache
 │   ├── config/           # Viper config loading + validation
 │   │   ├── config.go     #   Config struct + Validate()
 │   │   └── loader.go     #   Load() returns mo.Result[*Config]
+│   ├── database/         # Session entities/store, migrations, ksqlDB REST client
 │   ├── di/               # samber/do dependency injection
 │   │   ├── container.go  #   Root container with oops errors
 │   │   ├── register.go   #   Service registration
 │   │   ├── config_service.go
 │   │   └── logger_service.go  # zerolog + slog bridge
+│   ├── extension/        # Lua workflow extensions
+│   ├── terminal/         # Interactive terminal chat UI
 │   └── vinfo/            # Build version metadata (ldflags)
 ├── .github/workflows/
 │   ├── ci.yml            # Lint + test + cross-platform build
@@ -108,14 +112,14 @@ task clean        # Remove all artifacts and caches
 
 ## Opinions & How Things Work
 
-### CLI: Fang v2 + Cobra
+### CLI: Cobra
 
-The CLI uses [Cobra](https://github.com/spf13/cobra) for command structure and [Fang v2](https://charm.land/fang) as a wrapper that adds styled help pages, automatic `--version` flag, manpage generation via a hidden `man` subcommand, and shell completions out of the box.
+The CLI uses [Cobra](https://github.com/spf13/cobra) directly for an explicit, small command tree without a wrapper layer.
 
 Entry point (`cmd/librecode/main.go`):
 
 - Sets up signal handling (`SIGINT`, `SIGTERM`)
-- Calls `fang.Execute()` which wraps the root Cobra command
+- Executes the root Cobra command with explicit stdin/stdout/stderr wiring
 - Returns exit code 1 on error, 0 on success
 
 ### Configuration: Viper + mo.Result

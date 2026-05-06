@@ -1,5 +1,5 @@
-// Package tui implements a minimal tcell chat interface.
-package tui
+// Package terminal implements an interactive chat interface.
+package terminal
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"github.com/omarluq/librecode/internal/agent"
+	"github.com/omarluq/librecode/internal/assistant"
 )
 
 type chatMessage struct {
@@ -19,7 +19,7 @@ type chatMessage struct {
 // App is the terminal chat UI.
 type App struct {
 	screen    tcell.Screen
-	runtime   *agent.Runtime
+	runtime   *assistant.Runtime
 	cwd       string
 	sessionID string
 	messages  []chatMessage
@@ -27,7 +27,7 @@ type App struct {
 }
 
 // Run starts an interactive tcell chat loop.
-func Run(ctx context.Context, runtime *agent.Runtime, cwd string, sessionID string) error {
+func Run(ctx context.Context, runtime *assistant.Runtime, cwd, sessionID string) error {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return fmt.Errorf("tui: create screen: %w", err)
@@ -45,16 +45,17 @@ func Run(ctx context.Context, runtime *agent.Runtime, cwd string, sessionID stri
 		messages:  []chatMessage{{role: "system", content: "librecode-go chat. Enter /quit to exit."}},
 		input:     []rune{},
 	}
+	app.loop(ctx)
 
-	return app.loop(ctx)
+	return nil
 }
 
-func (app *App) loop(ctx context.Context) error {
+func (app *App) loop(ctx context.Context) {
 	for {
 		app.draw()
 		event := app.screen.PollEvent()
 		if event == nil {
-			return nil
+			return
 		}
 
 		shouldQuit, err := app.handleEvent(ctx, event)
@@ -62,7 +63,7 @@ func (app *App) loop(ctx context.Context) error {
 			app.messages = append(app.messages, chatMessage{role: "error", content: err.Error()})
 		}
 		if shouldQuit {
-			return nil
+			return
 		}
 	}
 }
@@ -80,22 +81,25 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 }
 
 func (app *App) handleKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
-	switch event.Key() {
-	case tcell.KeyCtrlC, tcell.KeyEscape:
+	key := event.Key()
+	if key == tcell.KeyCtrlC || key == tcell.KeyEscape {
 		return true, nil
-	case tcell.KeyEnter:
+	}
+	if key == tcell.KeyEnter {
 		return app.submit(ctx)
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
+	}
+	if key == tcell.KeyBackspace || key == tcell.KeyBackspace2 {
 		if len(app.input) > 0 {
 			app.input = app.input[:len(app.input)-1]
 		}
 		return false, nil
-	case tcell.KeyRune:
+	}
+	if key == tcell.KeyRune {
 		app.input = append(app.input, event.Rune())
 		return false, nil
-	default:
-		return false, nil
 	}
+
+	return false, nil
 }
 
 func (app *App) submit(ctx context.Context) (bool, error) {
@@ -109,7 +113,7 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 	}
 
 	app.messages = append(app.messages, chatMessage{role: "user", content: text})
-	response, err := app.runtime.Prompt(ctx, agent.PromptRequest{
+	response, err := app.runtime.Prompt(ctx, assistant.PromptRequest{
 		SessionID: app.sessionID,
 		CWD:       app.cwd,
 		Text:      text,
@@ -159,7 +163,7 @@ func visibleMessages(messages []chatMessage, maxRows int) []chatMessage {
 	return messages[len(messages)-maxRows:]
 }
 
-func styleForRole(role string, userStyle tcell.Style, assistantStyle tcell.Style, mutedStyle tcell.Style) tcell.Style {
+func styleForRole(role string, userStyle, assistantStyle, mutedStyle tcell.Style) tcell.Style {
 	switch role {
 	case "user":
 		return userStyle
@@ -170,7 +174,7 @@ func styleForRole(role string, userStyle tcell.Style, assistantStyle tcell.Style
 	}
 }
 
-func writeLine(screen tcell.Screen, column int, row int, width int, text string, style tcell.Style) {
+func writeLine(screen tcell.Screen, column, row, width int, text string, style tcell.Style) {
 	line := []rune(text)
 	if len(line) > width {
 		line = line[:width]

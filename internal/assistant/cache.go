@@ -1,4 +1,4 @@
-package agent
+package assistant
 
 import (
 	"time"
@@ -8,11 +8,11 @@ import (
 
 // ResponseCache stores deterministic local prompt responses for fast replay.
 type ResponseCache struct {
-	enabled bool
 	cache   *hot.HotCache[string, string]
+	enabled bool
 }
 
-// NewResponseCache creates a TTL cache backed by samber/hot.
+// NewResponseCache creates a TTL response cache.
 func NewResponseCache(enabled bool, capacity int, ttl time.Duration) *ResponseCache {
 	cache := hot.NewHotCache[string, string](hot.WTinyLFU, capacity).
 		WithTTL(ttl).
@@ -20,13 +20,13 @@ func NewResponseCache(enabled bool, capacity int, ttl time.Duration) *ResponseCa
 		Build()
 
 	return &ResponseCache{
-		enabled: enabled,
 		cache:   cache,
+		enabled: enabled,
 	}
 }
 
 // Get returns a cached response when caching is enabled and the key exists.
-func (cache *ResponseCache) Get(key string) (string, bool, error) {
+func (cache *ResponseCache) Get(key string) (value string, found bool, err error) {
 	if !cache.enabled {
 		return "", false, nil
 	}
@@ -35,7 +35,7 @@ func (cache *ResponseCache) Get(key string) (string, bool, error) {
 }
 
 // Set stores a response when caching is enabled.
-func (cache *ResponseCache) Set(key string, value string) {
+func (cache *ResponseCache) Set(key, value string) {
 	if cache.enabled {
 		cache.cache.Set(key, value)
 	}

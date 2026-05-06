@@ -1,4 +1,4 @@
-package session_test
+package database_test
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	sqlite "modernc.org/sqlite"
+	_ "modernc.org/sqlite"
 
-	"github.com/omarluq/librecode/internal/session"
+	"github.com/omarluq/librecode/internal/database"
 )
 
 func TestStore_AppendsMessagesInSessionTree(t *testing.T) {
@@ -22,22 +22,24 @@ func TestStore_AppendsMessagesInSessionTree(t *testing.T) {
 	createdSession, err := store.CreateSession(ctx, "/work", "port", "")
 	require.NoError(t, err)
 
-	firstEntry, err := store.AppendMessage(ctx, createdSession.ID, nil, session.Message{
-		Role:      session.RoleUser,
+	firstMessage := database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleUser,
 		Content:   "hello",
 		Provider:  "",
 		Model:     "",
-		Timestamp: time.Now().UTC(),
-	})
+	}
+	firstEntry, err := store.AppendMessage(ctx, createdSession.ID, nil, &firstMessage)
 	require.NoError(t, err)
 
-	secondEntry, err := store.AppendMessage(ctx, createdSession.ID, &firstEntry.ID, session.Message{
-		Role:      session.RoleAssistant,
+	secondMessage := database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleAssistant,
 		Content:   "hi",
 		Provider:  "local",
 		Model:     "librecode-go",
-		Timestamp: time.Now().UTC(),
-	})
+	}
+	secondEntry, err := store.AppendMessage(ctx, createdSession.ID, &firstEntry.ID, &secondMessage)
 	require.NoError(t, err)
 
 	latestSession, found, err := store.LatestSession(ctx, "/work")
@@ -58,24 +60,21 @@ func TestStore_AppendsMessagesInSessionTree(t *testing.T) {
 	assert.Equal(t, firstEntry.ID, *entries[1].ParentID)
 }
 
-func newTestStore(t *testing.T) *session.Store {
+func newTestStore(t *testing.T) *database.SessionStore {
 	t.Helper()
 
-	database, err := sql.Open(sqliteDriver(), ":memory:")
+	connection, err := sql.Open(sqliteDriver(), ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		require.NoError(t, database.Close())
+		require.NoError(t, connection.Close())
 	})
-	database.SetMaxOpenConns(1)
+	connection.SetMaxOpenConns(1)
 
-	require.NoError(t, session.Migrate(context.Background(), database))
+	require.NoError(t, database.Migrate(context.Background(), connection))
 
-	return session.NewStore(database)
+	return database.NewSessionStore(connection)
 }
 
 func sqliteDriver() string {
-	var driverError *sqlite.Error
-	_ = driverError
-
 	return "sqlite"
 }

@@ -3,9 +3,9 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/omarluq/librecode/internal/agent"
+	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/di"
-	"github.com/omarluq/librecode/internal/tui"
+	"github.com/omarluq/librecode/internal/terminal"
 )
 
 func newChatCmd() *cobra.Command {
@@ -13,17 +13,17 @@ func newChatCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "chat",
-		Short: "Open the tcell interactive chat UI",
+		Short: "Open the interactive chat UI",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withContainer(cmd.Context(), func(container *di.Container) error {
-				runtime := di.MustInvoke[*di.AgentService](container).Runtime
-				cwd, err := agent.DefaultCWD("")
+				runtime := di.MustInvoke[*di.AssistantService](container).Runtime
+				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
 					return err
 				}
 
-				return tui.Run(cmd.Context(), runtime, cwd, sessionID)
+				return terminal.Run(cmd.Context(), runtime, cwd, sessionID)
 			})
 		},
 	}

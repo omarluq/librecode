@@ -1,4 +1,4 @@
-package session
+package database
 
 import (
 	"context"
@@ -17,16 +17,21 @@ var migrationsFS embed.FS
 func Migrate(ctx context.Context, database *sql.DB) error {
 	migrationRoot, err := fs.Sub(migrationsFS, "migrations")
 	if err != nil {
-		return fmt.Errorf("session: prepare migrations: %w", err)
+		return fmt.Errorf("database: prepare migrations: %w", err)
 	}
 
-	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrationRoot, goose.WithDisableGlobalRegistry(true))
+	provider, err := goose.NewProvider(
+		goose.DialectSQLite3,
+		database,
+		migrationRoot,
+		goose.WithDisableGlobalRegistry(true),
+	)
 	if err != nil {
-		return fmt.Errorf("session: create migration provider: %w", err)
+		return fmt.Errorf("database: create migration provider: %w", err)
 	}
 
 	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("session: apply migrations: %w", err)
+		return fmt.Errorf("database: apply migrations: %w", err)
 	}
 
 	return nil
