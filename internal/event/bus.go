@@ -1,4 +1,4 @@
-// Package event provides a small Pi-style in-process event bus.
+// Package event provides a small Pi-style in-process event bus backed by samber/ro.
 package event
 
 import (
@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/samber/oops"
+	"github.com/samber/ro"
 )
 
 // Handler processes one event payload for a channel.
@@ -16,83 +17,96 @@ type Handler func(ctx context.Context, data any) error
 // Unsubscribe removes a previously registered handler.
 type Unsubscribe func()
 
+// Envelope is the value emitted through the reactive event stream.
+type Envelope struct {
+	Data    any    `json:"data"`
+	Channel string `json:"channel"`
+}
+
 // Bus publishes payloads to handlers registered by channel.
 type Bus struct {
 	logger        *slog.Logger
-	subscriptions map[string][]subscription
-	lock          sync.RWMutex
+	subject       ro.Subject[Envelope]
+	subscriptions map[uint64]ro.Subscription
+	lock          sync.Mutex
 	nextID        uint64
-}
-
-type subscription struct {
-	handler Handler
-	id      uint64
 }
 
 // NewBus creates an event bus. A nil logger discards handler failures.
 func NewBus(logger *slog.Logger) *Bus {
 	return &Bus{
 		logger:        logger,
-		subscriptions: map[string][]subscription{},
-		lock:          sync.RWMutex{},
+		subject:       ro.NewPublishSubject[Envelope](),
+		subscriptions: map[uint64]ro.Subscription{},
+		lock:          sync.Mutex{},
 		nextID:        0,
 	}
 }
 
-// Emit delivers data to the current handlers for channel.
+// Emit delivers data to the current reactive subject for channel.
 func (bus *Bus) Emit(ctx context.Context, channel string, data any) {
-	handlers := bus.handlers(channel)
-	for _, handler := range handlers {
-		if err := ctx.Err(); err != nil {
-			bus.logHandlerError(channel, err)
-			return
-		}
-		if err := handler(ctx, data); err != nil {
-			bus.logHandlerError(channel, err)
-		}
-	}
+	bus.lock.Lock()
+	subject := bus.subject
+	bus.lock.Unlock()
+
+	subject.NextWithContext(ctx, Envelope{Data: data, Channel: channel})
 }
 
 // On registers a handler and returns an unsubscribe function.
 func (bus *Bus) On(channel string, handler Handler) Unsubscribe {
 	bus.lock.Lock()
 	bus.nextID++
-	id := bus.nextID
-	bus.subscriptions[channel] = append(bus.subscriptions[channel], subscription{handler: handler, id: id})
+	subscriptionID := bus.nextID
+	subject := bus.subject
+	subscription := subject.Subscribe(bus.observer(channel, handler))
+	bus.subscriptions[subscriptionID] = subscription
 	bus.lock.Unlock()
 
 	return func() {
-		bus.unsubscribe(channel, id)
+		bus.unsubscribe(subscriptionID)
 	}
 }
 
-// Clear removes all registered handlers.
+// Clear removes all registered handlers and rotates the hot subject.
 func (bus *Bus) Clear() {
 	bus.lock.Lock()
 	defer bus.lock.Unlock()
 
-	bus.subscriptions = map[string][]subscription{}
-}
-
-func (bus *Bus) handlers(channel string) []Handler {
-	bus.lock.RLock()
-	defer bus.lock.RUnlock()
-
-	return lo.Map(bus.subscriptions[channel], func(subscription subscription, _ int) Handler {
-		return subscription.handler
+	lo.ForEach(lo.Values(bus.subscriptions), func(subscription ro.Subscription, _ int) {
+		subscription.Unsubscribe()
 	})
+	bus.subscriptions = map[uint64]ro.Subscription{}
+	bus.subject.Complete()
+	bus.subject = ro.NewPublishSubject[Envelope]()
 }
 
-func (bus *Bus) unsubscribe(channel string, id uint64) {
+func (bus *Bus) observer(channel string, handler Handler) ro.Observer[Envelope] {
+	return ro.NewObserverWithContext(
+		func(ctx context.Context, envelope Envelope) {
+			if envelope.Channel != channel {
+				return
+			}
+			if err := handler(ctx, envelope.Data); err != nil {
+				bus.logHandlerError(envelope.Channel, err)
+			}
+		},
+		func(_ context.Context, err error) {
+			bus.logHandlerError(channel, err)
+		},
+		func(context.Context) {},
+	)
+}
+
+func (bus *Bus) unsubscribe(subscriptionID uint64) {
 	bus.lock.Lock()
 	defer bus.lock.Unlock()
 
-	bus.subscriptions[channel] = lo.Reject(bus.subscriptions[channel], func(subscription subscription, _ int) bool {
-		return subscription.id == id
-	})
-	if len(bus.subscriptions[channel]) == 0 {
-		delete(bus.subscriptions, channel)
+	subscription, ok := bus.subscriptions[subscriptionID]
+	if !ok {
+		return
 	}
+	subscription.Unsubscribe()
+	delete(bus.subscriptions, subscriptionID)
 }
 
 func (bus *Bus) logHandlerError(channel string, err error) {

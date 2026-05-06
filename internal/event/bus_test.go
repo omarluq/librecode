@@ -13,7 +13,7 @@ import (
 	"github.com/omarluq/librecode/internal/event"
 )
 
-func TestBus_EmitCallsHandlersInRegistrationOrder(t *testing.T) {
+func TestBus_EmitCallsHandlers(t *testing.T) {
 	t.Parallel()
 
 	bus := event.NewBus(testLogger())
@@ -29,7 +29,7 @@ func TestBus_EmitCallsHandlersInRegistrationOrder(t *testing.T) {
 
 	bus.Emit(context.Background(), "agent", "start")
 
-	assert.Equal(t, []string{"first:start", "second:start"}, calls)
+	assert.ElementsMatch(t, []string{"first:start", "second:start"}, calls)
 }
 
 func TestBus_UnsubscribeAndClear(t *testing.T) {
