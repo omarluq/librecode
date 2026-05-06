@@ -49,11 +49,11 @@ func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, styl
 		{Style: tcell.StyleDefault, Text: ""},
 		{Style: style.Bold(true), Text: padRight(label, width)},
 	}
-	preview, truncated := tailIndentedLines(width, toolEventOutput(event), style, maxCollapsedToolOutputLines)
-	if truncated {
+	preview, hiddenLines := tailIndentedLines(width, toolEventOutput(event), style, maxCollapsedToolOutputLines)
+	if hiddenLines > 0 {
 		lines = append(lines, styledLine{
 			Style: style.Foreground(app.theme.colors[colorMuted]),
-			Text:  padRight("  … earlier output hidden; "+app.keys.hint(actionToolsExpand)+" expand", width),
+			Text:  padRight(app.hiddenToolLinesText(hiddenLines), width),
 		})
 	}
 	lines = append(lines, preview...)
@@ -136,13 +136,24 @@ func indentedLines(width int, content string, style tcell.Style) []styledLine {
 	return lines
 }
 
-func tailIndentedLines(width int, content string, style tcell.Style, limit int) ([]styledLine, bool) {
+func tailIndentedLines(width int, content string, style tcell.Style, limit int) (tail []styledLine, hidden int) {
 	lines := indentedLines(width, content, style)
 	if limit <= 0 || len(lines) <= limit {
-		return lines, false
+		return lines, 0
+	}
+	hiddenLines := len(lines) - limit
+
+	return lines[hiddenLines:], hiddenLines
+}
+
+func (app *App) hiddenToolLinesText(hiddenLines int) string {
+	unit := "lines"
+	if hiddenLines == 1 {
+		unit = "line"
 	}
 
-	return lines[len(lines)-limit:], true
+	return "  … " + intText(hiddenLines) + " earlier output " + unit + " hidden; " +
+		app.keys.hint(actionToolsExpand) + " expand"
 }
 
 func toolEventOutput(event *parsedToolEvent) string {
