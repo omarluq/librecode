@@ -14,6 +14,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -26,6 +27,7 @@ type Runtime struct {
 	store      *database.SessionStore
 	extensions *extension.Manager
 	cache      *ResponseCache
+	events     *event.Bus
 	logger     *slog.Logger
 }
 
@@ -52,6 +54,7 @@ func NewRuntime(
 	store *database.SessionStore,
 	extensions *extension.Manager,
 	cache *ResponseCache,
+	events *event.Bus,
 	logger *slog.Logger,
 ) *Runtime {
 	return &Runtime{
@@ -59,6 +62,7 @@ func NewRuntime(
 		store:      store,
 		extensions: extensions,
 		cache:      cache,
+		events:     events,
 		logger:     logger,
 	}
 }
@@ -87,6 +91,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		return nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
 	}
 
+	runtime.emit(ctx, "before_agent_start", map[string]any{"prompt": request.Text})
 	emitErr := runtime.extensions.Emit(ctx, "before_agent_start", map[string]any{"prompt": request.Text})
 	if emitErr != nil {
 		return nil, oops.In("assistant").Code("before_agent_start").Wrapf(emitErr, "emit before_agent_start")
@@ -109,6 +114,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		return nil, oops.In("assistant").Code("append_assistant").Wrapf(err, "append assistant message")
 	}
 
+	runtime.emit(ctx, "agent_end", map[string]any{"response": responseText})
 	emitErr = runtime.extensions.Emit(ctx, "agent_end", map[string]any{"response": responseText})
 	if emitErr != nil {
 		return nil, oops.In("assistant").Code("assistant_end").Wrapf(emitErr, "emit assistant end")
@@ -126,6 +132,14 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 // SessionStore returns the underlying session store for command and UI layers.
 func (runtime *Runtime) SessionStore() *database.SessionStore {
 	return runtime.store
+}
+
+func (runtime *Runtime) emit(ctx context.Context, channel string, data any) {
+	if runtime.events == nil {
+		return
+	}
+
+	runtime.events.Emit(ctx, channel, data)
 }
 
 func (runtime *Runtime) resolveSession(ctx context.Context, request PromptRequest) (*database.SessionEntity, error) {

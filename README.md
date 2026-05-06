@@ -78,6 +78,7 @@ task ci               # Verify everything works
 │   │   ├── register.go   #   Service registration
 │   │   ├── config_service.go
 │   │   └── logger_service.go  # zerolog + slog bridge
+│   ├── event/            # Pi-style in-process event bus
 │   ├── extension/        # Lua workflow extensions
 │   ├── terminal/         # Interactive terminal chat UI
 │   ├── tool/             # Pi-style built-in coding tools (read/bash/edit/write/grep/find/ls)

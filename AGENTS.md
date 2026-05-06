@@ -37,6 +37,7 @@ internal/
   config/         # Viper config loader (config.go, loader.go)
   database/       # SQLite sessions, migrations, and ksqlDB REST client
   di/             # samber/do DI container and services
+  event/          # Pi-style in-process event bus
   extension/      # Lua workflow extensions
   tool/           # Pi-style built-in tools: read, bash, edit, write, grep, find, ls
   vinfo/          # Build version info (version.go)
