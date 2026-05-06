@@ -18,6 +18,10 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 		app.screen.Sync()
 		return false, nil
 	case *tcell.EventKey:
+		if app.keys.matches(typedEvent, actionForceExit) {
+			return true, nil
+		}
+
 		return app.handleKey(ctx, typedEvent)
 	case *tcell.EventInterrupt:
 		return app.handleInterrupt(ctx, typedEvent)
@@ -65,7 +69,6 @@ func (app *App) handleGlobalShortcut(ctx context.Context, event *tcell.EventKey)
 
 func (app *App) globalShortcuts(ctx context.Context) []shortcutHandler {
 	return []shortcutHandler{
-		{action: actionClear, handler: app.handleClear},
 		{action: actionInterrupt, handler: func() { app.handleEscape(ctx) }},
 		{action: actionModelSelect, handler: app.openModelPanel},
 		{action: actionThinkingCycle, handler: app.cycleThinking},
@@ -131,15 +134,6 @@ func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) (bool
 	}
 
 	return false, nil
-}
-
-func (app *App) handleClear() {
-	if app.editor.empty() {
-		app.setStatus("press Ctrl+D to exit")
-		return
-	}
-	app.editor.clear()
-	app.setStatus("editor cleared")
 }
 
 func (app *App) handleEscape(ctx context.Context) {

@@ -35,8 +35,8 @@ const (
 	actionSelectConfirm              actionID = "tui.select.confirm"
 	actionSelectCancel               actionID = "tui.select.cancel"
 	actionInterrupt                  actionID = "app.interrupt"
-	actionClear                      actionID = "app.clear"
 	actionExit                       actionID = "app.exit"
+	actionForceExit                  actionID = "app.exit.force"
 	actionThinkingCycle              actionID = "app.thinking.cycle"
 	actionModelCycleForward          actionID = "app.model.cycleForward"
 	actionModelCycleBackward         actionID = "app.model.cycleBackward"
@@ -106,10 +106,10 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionSelectPageUp:               binding("Page selection up", "pageUp"),
 		actionSelectPageDown:             binding("Page selection down", "pageDown"),
 		actionSelectConfirm:              binding("Confirm selection", "enter"),
-		actionSelectCancel:               binding("Cancel selection", "escape", "ctrl+c"),
+		actionSelectCancel:               binding("Cancel selection", "escape"),
 		actionInterrupt:                  binding("Cancel or abort", "escape"),
-		actionClear:                      binding("Clear editor", "ctrl+c"),
 		actionExit:                       binding("Exit when editor is empty", "ctrl+d"),
+		actionForceExit:                  binding("Exit librecode", "ctrl+c"),
 		actionThinkingCycle:              binding("Cycle thinking level", "shift+tab"),
 		actionModelCycleForward:          binding("Cycle to next model", "ctrl+p"),
 		actionModelCycleBackward:         binding("Cycle to previous model", "shift+ctrl+p"),

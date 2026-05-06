@@ -25,13 +25,17 @@ func (app *App) addWelcomeMessage() {
 
 func (app *App) renderWelcomeMessage(width int, content string) []styledLine {
 	bodyLines := welcomeLinesFromContent(content)
-	style := app.theme.background(colorCustomMessageBg)
-	lines := make([]styledLine, 0, len(bodyLines)+2)
+	lines := make([]styledLine, 0, len(bodyLines)+3)
 	lines = append(lines, styledLine{Style: app.welcomeBorderStyle(), Text: boxTop(width, "welcome")})
-	for _, line := range bodyLines {
-		lines = append(lines, styledLine{Style: style, Text: boxedBodyLine(width, line)})
+	for index, line := range bodyLines {
+		lineStyle := app.welcomeBodyStyle(index, line)
+		lines = append(lines, styledLine{Style: lineStyle, Text: boxedBodyLine(width, line)})
 	}
-	lines = append(lines, styledLine{Style: app.welcomeBorderStyle(), Text: boxBottom(width)})
+	lines = append(
+		lines,
+		styledLine{Style: app.welcomeBorderStyle(), Text: boxBottom(width)},
+		styledLine{Style: app.theme.style(colorDim), Text: ""},
+	)
 
 	return lines
 }
@@ -73,11 +77,7 @@ func (app *App) writeWelcomeBodyLine(row, width, lineIndex int, content string) 
 		if index < len(padded) {
 			value = padded[index]
 		}
-		style := bodyStyle
-		if lineIndex < len(welcomeArt) && value != ' ' {
-			style = app.welcomeArtStyle(index, innerWidth)
-		}
-		app.screen.SetContent(index+2, row, value, nil, style)
+		app.screen.SetContent(index+2, row, value, nil, bodyStyle)
 	}
 	app.screen.SetContent(width-2, row, ' ', nil, borderStyle)
 	app.screen.SetContent(width-1, row, '│', nil, borderStyle)
@@ -101,7 +101,9 @@ func (app *App) welcomeBorderStyle() tcell.Style {
 
 func (app *App) welcomeBodyStyle(index int, line string) tcell.Style {
 	if index < len(welcomeArt) {
-		return app.theme.background(colorCustomMessageBg).Foreground(app.theme.colors[colorAccent]).Bold(true)
+		return app.theme.background(colorCustomMessageBg).
+			Foreground(app.theme.colors[colorBorderAccent]).
+			Bold(true)
 	}
 	if strings.HasPrefix(line, "Type /") || strings.HasPrefix(line, "Press Ctrl+D") {
 		return app.theme.background(colorCustomMessageBg).Foreground(app.theme.colors[colorAccent]).Bold(true)
@@ -113,32 +115,8 @@ func (app *App) welcomeBodyStyle(index int, line string) tcell.Style {
 	return app.theme.background(colorCustomMessageBg)
 }
 
-func (app *App) welcomeArtStyle(column, width int) tcell.Style {
-	return app.theme.background(colorCustomMessageBg).
-		Foreground(welcomeGradientColor(column, width)).
-		Bold(true)
-}
-
-func welcomeGradientColor(column, width int) tcell.Color {
-	palette := []tcell.Color{
-		hexColor(0x00d7ff),
-		hexColor(0x5f87ff),
-		hexColor(0x8a7dff),
-		hexColor(0xff5fd7),
-		hexColor(0xff875f),
-		hexColor(0xffd75f),
-		hexColor(0xb5bd68),
-	}
-	if width <= 1 {
-		return palette[0]
-	}
-	index := max(0, column) * (len(palette) - 1) / max(1, width-1)
-
-	return palette[min(index, len(palette)-1)]
-}
-
 func welcomeBodyLines(cwd string) []string {
-	lines := make([]string, 0, len(welcomeArt)+7)
+	lines := make([]string, 0, len(welcomeArt)+8)
 	lines = append(lines, welcomeArt...)
 	lines = append(lines,
 		"",
@@ -147,6 +125,7 @@ func welcomeBodyLines(cwd string) []string {
 		"",
 		"Type /hotkeys for shortcuts",
 		"Type /quit to exit",
+		"Press Ctrl+C anytime to exit",
 		"Press Ctrl+D on an empty prompt to exit",
 	)
 
