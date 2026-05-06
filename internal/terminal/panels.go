@@ -47,7 +47,7 @@ func (app *App) openSessionPanel(ctx context.Context) {
 		app.addSystemMessage(err.Error())
 		return
 	}
-	panel := newSelectionPanel(panelSessions, "Resume Session", "current working directory", items, true)
+	panel := newSelectionPanel(panelSessions, "Resume Session", app.sessionPanelSubtitle(), items, true)
 	app.openPanel(panel)
 }
 
@@ -255,13 +255,21 @@ func (app *App) sessionItems(ctx context.Context) ([]panelItem, error) {
 		return nil, err
 	}
 	items := make([]panelItem, 0, len(sessions))
-	for _, session := range sessions {
-		title := session.Name
-		if title == "" {
-			title = session.ID
+	filteredSessions := app.filteredSessionEntities(sessions)
+	for index := range filteredSessions {
+		session := &filteredSessions[index]
+		title := sessionTitle(session)
+		description := ""
+		if app.sessionShowPath {
+			description = session.CWD
 		}
 		meta := session.UpdatedAt.Format("2006-01-02 15:04")
-		items = append(items, panelItem{Value: session.ID, Title: title, Description: session.CWD, Meta: meta})
+		items = append(items, panelItem{
+			Value:       session.ID,
+			Title:       title,
+			Description: description,
+			Meta:        meta,
+		})
 	}
 
 	return items, nil

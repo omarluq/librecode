@@ -83,10 +83,32 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 	assert.Equal(t, "librecode", message.Model)
 }
 
-func TestSessionRepository_SupportsPiStyleTreeMetadata(t *testing.T) {
+func TestSessionRepository_DeleteSessionRemovesSessionRows(t *testing.T) {
 	t.Parallel()
 
-	fixture := newPiMetadataFixture(t)
+	repository := newTestSessionRepository(t)
+	ctx := context.Background()
+	createdSession, err := repository.CreateSession(ctx, "/work", "delete-me", "")
+	require.NoError(t, err)
+	entry := appendTestMessage(ctx, t, repository, createdSession.ID, nil, database.RoleUser, "hello")
+
+	require.NoError(t, repository.DeleteSession(ctx, createdSession.ID))
+
+	_, found, err := repository.GetSession(ctx, createdSession.ID)
+	require.NoError(t, err)
+	assert.False(t, found)
+	_, found, err = repository.Entry(ctx, createdSession.ID, entry.ID)
+	require.NoError(t, err)
+	assert.False(t, found)
+	_, found, err = repository.MessageForEntry(ctx, createdSession.ID, entry.ID)
+	require.NoError(t, err)
+	assert.False(t, found)
+}
+
+func TestSessionRepository_SupportsLibrecodeStyleTreeMetadata(t *testing.T) {
+	t.Parallel()
+
+	fixture := newMetadataFixture(t)
 
 	foundLabel, found, err := fixture.repository.Label(fixture.ctx, fixture.sessionID, fixture.userEntry.ID)
 	require.NoError(t, err)
@@ -138,7 +160,7 @@ func TestSessionRepository_SupportsPiStyleTreeMetadata(t *testing.T) {
 	assert.Equal(t, "named session", updatedSession.Name)
 }
 
-type piMetadataFixture struct {
+type metadataFixture struct {
 	ctx                context.Context
 	repository         *database.SessionRepository
 	userEntry          *database.EntryEntity
@@ -149,7 +171,7 @@ type piMetadataFixture struct {
 	label              string
 }
 
-func newPiMetadataFixture(t *testing.T) piMetadataFixture {
+func newMetadataFixture(t *testing.T) metadataFixture {
 	t.Helper()
 
 	repository := newTestSessionRepository(t)
@@ -207,7 +229,7 @@ func newPiMetadataFixture(t *testing.T) piMetadataFixture {
 	)
 	require.NoError(t, err)
 
-	return piMetadataFixture{
+	return metadataFixture{
 		ctx:                ctx,
 		repository:         repository,
 		userEntry:          userEntry,

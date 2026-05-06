@@ -66,6 +66,9 @@ type App struct {
 	queuedMessages    []string
 	messages          []chatMessage
 	scopedOrder       []string
+	sessionSortRecent bool
+	sessionNamedOnly  bool
+	sessionShowPath   bool
 	toolsExpanded     bool
 	hideThinking      bool
 	working           bool
@@ -126,6 +129,9 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		queuedMessages:    []string{},
 		scopedOrder:       []string{},
 		scopedEnabled:     map[string]bool{},
+		sessionSortRecent: true,
+		sessionNamedOnly:  false,
+		sessionShowPath:   false,
 		toolsExpanded:     false,
 		hideThinking:      false,
 		lastEscape:        time.Time{},

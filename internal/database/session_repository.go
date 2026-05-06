@@ -116,14 +116,54 @@ ORDER BY updated_at DESC`
 		return nil, oops.In("database").Code("list_sessions").Wrapf(err, "query sessions")
 	}
 
-	return collectRows(rows, scanSession, &rowErrorInfo{
+	return collectRows(rows, scanSession, sessionRowsErrorInfo())
+}
+
+// DeleteSession removes a session and its entry/message rows.
+func (repository *SessionRepository) DeleteSession(ctx context.Context, sessionID string) error {
+	transaction, err := repository.connection.BeginTx(ctx, nil)
+	if err != nil {
+		return oops.In("database").Code("begin_delete_session").Wrapf(err, "begin delete session")
+	}
+	if err := deleteSessionRows(ctx, transaction, sessionID); err != nil {
+		rollbackErr := transaction.Rollback()
+		if rollbackErr != nil {
+			return oops.In("database").Code("delete_session_rollback").Wrapf(rollbackErr, "rollback delete session")
+		}
+
+		return err
+	}
+	if err := transaction.Commit(); err != nil {
+		return oops.In("database").Code("commit_delete_session").Wrapf(err, "commit delete session")
+	}
+
+	return nil
+}
+
+func deleteSessionRows(ctx context.Context, transaction *sql.Tx, sessionID string) error {
+	statements := []string{
+		`DELETE FROM session_messages WHERE session_id = ?`,
+		`DELETE FROM session_entries WHERE session_id = ?`,
+		`DELETE FROM sessions WHERE id = ?`,
+	}
+	for _, statement := range statements {
+		if _, err := transaction.ExecContext(ctx, statement, sessionID); err != nil {
+			return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
+		}
+	}
+
+	return nil
+}
+
+func sessionRowsErrorInfo() *rowErrorInfo {
+	return &rowErrorInfo{
 		scanCode:  "scan_session",
 		scanMsg:   "scan session",
 		iterCode:  "iterate_sessions",
 		iterMsg:   "iterate sessions",
 		closeCode: "close_sessions",
 		closeMsg:  "close session rows",
-	})
+	}
 }
 
 func scanSession(scanner rowScanner) (*SessionEntity, error) {
