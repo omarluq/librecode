@@ -50,7 +50,6 @@ func (app *App) drawMessages(width, height, row int) int {
 	}
 	availableRows := max(1, height-row-footerReserve())
 	lines := app.messageLines(width, availableRows)
-	row += max(0, availableRows-len(lines))
 	for _, line := range lines {
 		writeLine(app.screen, row, width, line.Text, line.Style)
 		row++
