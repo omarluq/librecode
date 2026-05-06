@@ -1,0 +1,35 @@
+pre-commit:
+  parallel: true
+  commands:
+    golangci-lint:
+      glob: '*.go'
+      run: golangci-lint run --fix
+      stage_fixed: true
+
+    go-test-short:
+      run: task test-short
+
+  skip:
+    - merge
+    - rebase
+
+pre-push:
+  commands:
+    go-test:
+      run: task test
+
+    go-build:
+      run: task build
+
+commit-msg:
+  commands:
+    conventional-commit:
+      run: |
+        msg=$(cat {1})
+        if ! printf '%s' "$msg" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|chore|ci|build)(\(.+\))?: .{1,}$'; then
+          echo 'ERROR: Commit message must follow Conventional Commits format:'
+          echo '  type(scope?): subject'
+          echo
+          echo 'Valid types: feat, fix, docs, style, refactor, perf, test, chore, ci, build'
+          exit 1
+        fi

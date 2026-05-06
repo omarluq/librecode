@@ -1,0 +1,154 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false
+
+output:
+  show-stats: true
+
+linters:
+  enable:
+    # Core
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+    # Quality
+    - revive
+    - gosec
+    - bodyclose
+    - dupl
+    - goconst
+    - gocritic
+    - gocyclo
+    - godot
+    - errname
+    - errorlint
+    - exhaustive
+    - funlen
+    - gocognit
+    - goprintffuncname
+    - lll
+    - misspell
+    - nakedret
+    - nilerr
+    - noctx
+    - nolintlint
+    - prealloc
+    - predeclared
+    - thelper
+    - unconvert
+    - unparam
+    - whitespace
+    - testpackage
+    - paralleltest
+    - tparallel
+    - wastedassign
+    - nilnil
+    - exhaustruct
+    - varnamelen
+    - forbidigo
+    - cyclop
+
+  exclusions:
+    rules:
+      - linters: [all]
+        path: ".*\\.pb\\.go$"
+      - linters: [all]
+        path: ".*_generated\\.go$"
+      - linters: [lll]
+        source: "^//go:generate "
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    govet:
+      enable-all: true
+
+    gocyclo:
+      min-complexity: 10
+
+    gocognit:
+      min-complexity: 15
+
+    funlen:
+      lines: 80
+      statements: 50
+
+    dupl:
+      threshold: 100
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    lll:
+      line-length: 120
+      tab-width: 4
+
+    misspell:
+      locale: US
+
+    nakedret:
+      max-func-lines: 30
+
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: true
+
+    revive:
+      confidence: 0.8
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    gosec:
+      config:
+        global:
+          nosec: true
+          audit: true
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+
+    exhaustruct:
+      include:
+        - ^github\.com/omarluq/librecode/.*

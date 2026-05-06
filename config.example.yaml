@@ -1,0 +1,7 @@
+app:
+  name: librecode
+  env: development
+
+logging:
+  level: info
+  format: pretty
