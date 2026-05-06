@@ -218,6 +218,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.pendingParentID = nil
 	app.scrollOffset = 0
 	app.streamingText = ""
+	app.streamingThinkingText = ""
 	app.streamedToolEvents = 0
 	app.activePrompt = &activePromptState{
 		Cancel:           cancel,
@@ -267,6 +268,8 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 		return
 	}
 	app.working = false
+	app.streamingText = ""
+	app.streamingThinkingText = ""
 	if response == nil {
 		app.activePrompt = nil
 		app.processQueuedPrompt(ctx)
@@ -279,7 +282,6 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	for index := app.streamedToolEvents; index < len(response.ToolEvents); index++ {
 		app.addMessage(database.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
 	}
-	app.streamingText = ""
 	app.streamedToolEvents = 0
 	app.addMessage(database.RoleAssistant, response.Text)
 	app.activePrompt = nil
@@ -297,6 +299,7 @@ func (app *App) cancelActivePrompt(ctx context.Context) {
 	if app.activePrompt == nil {
 		app.working = false
 		app.streamingText = ""
+		app.streamingThinkingText = ""
 		app.streamedToolEvents = 0
 		app.setStatus("no active response to cancel")
 		return
@@ -319,6 +322,7 @@ func (app *App) revertActivePromptUI(activePrompt *activePromptState) {
 	app.pendingParentID = cloneStringPtr(activePrompt.ParentEntryID)
 	app.queuedMessages = []string{}
 	app.streamingText = ""
+	app.streamingThinkingText = ""
 	app.streamedToolEvents = 0
 	app.working = false
 	app.scrollOffset = 0

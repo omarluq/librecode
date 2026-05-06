@@ -67,6 +67,9 @@ func (app *App) messageLines(width, maxRows int) []styledLine {
 	for _, message := range app.messages {
 		lines = append(lines, app.renderMessage(width, message)...)
 	}
+	if app.streamingThinkingText != "" {
+		lines = append(lines, app.renderStreamingThinkingMessage(width, app.streamingThinkingText)...)
+	}
 	if app.streamingText != "" {
 		lines = append(lines, app.renderStreamingMessage(width, app.streamingText)...)
 	}
@@ -147,7 +150,7 @@ func (app *App) renderAssistantMessage(width int, content string) []styledLine {
 
 func (app *App) renderStreamingMessage(width int, content string) []styledLine {
 	wrapped := wrapText(strings.TrimSpace(content), width)
-	style := app.theme.style(colorDim).Italic(true)
+	style := app.theme.style(colorText)
 	lines := make([]styledLine, 0, len(wrapped)+2)
 	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
 	for _, line := range wrapped {
@@ -156,6 +159,10 @@ func (app *App) renderStreamingMessage(width int, content string) []styledLine {
 	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
 
 	return lines
+}
+
+func (app *App) renderStreamingThinkingMessage(width int, content string) []styledLine {
+	return app.renderThinkingMessage(width, chatMessage{Role: database.RoleThinking, Content: content})
 }
 
 func (app *App) renderToolMessage(width int, message chatMessage) []styledLine {

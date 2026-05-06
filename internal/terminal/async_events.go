@@ -13,15 +13,16 @@ import (
 type asyncEventKind string
 
 const (
-	asyncEventAuthURL          asyncEventKind = "auth_url"
-	asyncEventAuthDone         asyncEventKind = "auth_done"
-	asyncEventAuthError        asyncEventKind = "auth_error"
-	asyncEventPromptDone       asyncEventKind = "prompt_done"
-	asyncEventPromptUserEntry  asyncEventKind = "prompt_user_entry"
-	asyncEventPromptDelta      asyncEventKind = "prompt_delta"
-	asyncEventPromptToolStart  asyncEventKind = "prompt_tool_start"
-	asyncEventPromptToolResult asyncEventKind = "prompt_tool_result"
-	asyncEventPromptError      asyncEventKind = "prompt_error"
+	asyncEventAuthURL             asyncEventKind = "auth_url"
+	asyncEventAuthDone            asyncEventKind = "auth_done"
+	asyncEventAuthError           asyncEventKind = "auth_error"
+	asyncEventPromptDone          asyncEventKind = "prompt_done"
+	asyncEventPromptUserEntry     asyncEventKind = "prompt_user_entry"
+	asyncEventPromptDelta         asyncEventKind = "prompt_delta"
+	asyncEventPromptThinkingDelta asyncEventKind = "prompt_thinking_delta"
+	asyncEventPromptToolStart     asyncEventKind = "prompt_tool_start"
+	asyncEventPromptToolResult    asyncEventKind = "prompt_tool_result"
+	asyncEventPromptError         asyncEventKind = "prompt_error"
 )
 
 type asyncEvent struct {
@@ -54,6 +55,15 @@ func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(a
 				Response:  nil,
 				ToolEvent: nil,
 				Kind:      asyncEventPromptDelta,
+				Provider:  "",
+				Text:      event.Text,
+				PromptID:  promptID,
+			})
+		case assistant.StreamEventThinkingDelta:
+			app.postAsyncEvent(ctx, asyncEvent{
+				Response:  nil,
+				ToolEvent: nil,
+				Kind:      asyncEventPromptThinkingDelta,
 				Provider:  "",
 				Text:      event.Text,
 				PromptID:  promptID,
@@ -127,6 +137,7 @@ func (app *App) handleAuthAsyncEvent(payload asyncEvent) bool {
 	case asyncEventPromptDone,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
+		asyncEventPromptThinkingDelta,
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
 		asyncEventPromptError:
@@ -163,6 +174,7 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 	case asyncEventPromptDone,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
+		asyncEventPromptThinkingDelta,
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
 		asyncEventPromptError:
@@ -187,7 +199,7 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload asyncEve
 		return true
 	case asyncEventAuthURL, asyncEventAuthDone, asyncEventAuthError:
 		return true
-	case asyncEventPromptDelta, asyncEventPromptToolStart, asyncEventPromptToolResult:
+	case asyncEventPromptDelta, asyncEventPromptThinkingDelta, asyncEventPromptToolStart, asyncEventPromptToolResult:
 		return false
 	}
 
@@ -201,7 +213,8 @@ func (app *App) handlePromptStreamEvent(payload asyncEvent) {
 	switch payload.Kind {
 	case asyncEventPromptDelta:
 		app.streamingText += payload.Text
-		app.setStatus("streaming response")
+	case asyncEventPromptThinkingDelta:
+		app.streamingThinkingText += payload.Text
 	case asyncEventPromptToolStart:
 		app.setStatus("running tool: " + payload.Text)
 	case asyncEventPromptToolResult:
@@ -240,6 +253,7 @@ func (app *App) applyPromptError(message string, promptID uint64) {
 	}
 	app.working = false
 	app.streamingText = ""
+	app.streamingThinkingText = ""
 	app.streamedToolEvents = 0
 	if app.activePrompt != nil && app.activePrompt.Canceled {
 		app.activePrompt = nil

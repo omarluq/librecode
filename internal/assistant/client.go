@@ -771,6 +771,9 @@ func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(Stream
 	if response, ok := event["response"].(map[string]any); ok {
 		accumulator.finalResponse = response
 	}
+	if text, delta := thinkingTextFromSSEEvent(event); delta && text != "" {
+		emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Kind: StreamEventThinkingDelta, Text: text})
+	}
 	if text, delta := textFromSSEEvent(event); delta && text != "" {
 		accumulator.parts = append(accumulator.parts, text)
 		emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Kind: StreamEventTextDelta, Text: text})
@@ -925,6 +928,18 @@ func outputItemsFromResponse(output any) []any {
 	return cloned
 }
 
+func thinkingTextFromSSEEvent(event map[string]any) (text string, delta bool) {
+	eventType := ""
+	if value, ok := event[jsonTypeKey].(string); ok {
+		eventType = value
+	}
+	if !isThinkingDeltaEvent(eventType) {
+		return "", false
+	}
+
+	return deltaTextFromSSEEvent(event)
+}
+
 func textFromSSEEvent(event map[string]any) (text string, delta bool) {
 	eventType := ""
 	if value, ok := event[jsonTypeKey].(string); ok {
@@ -933,6 +948,11 @@ func textFromSSEEvent(event map[string]any) (text string, delta bool) {
 	if !isTextDeltaEvent(eventType) {
 		return "", false
 	}
+
+	return deltaTextFromSSEEvent(event)
+}
+
+func deltaTextFromSSEEvent(event map[string]any) (text string, delta bool) {
 	if deltaText, ok := event["delta"].(string); ok {
 		return deltaText, true
 	}
@@ -944,9 +964,17 @@ func textFromSSEEvent(event map[string]any) (text string, delta bool) {
 }
 
 func isTextDeltaEvent(eventType string) bool {
+	if isThinkingDeltaEvent(eventType) {
+		return false
+	}
+
 	return strings.Contains(eventType, "output_text.delta") ||
 		strings.Contains(eventType, "text.delta") ||
 		strings.Contains(eventType, "content_part.delta")
+}
+
+func isThinkingDeltaEvent(eventType string) bool {
+	return strings.Contains(eventType, "reasoning") && strings.Contains(eventType, "text.delta")
 }
 
 func toolCallsFromOutput(output []any) []toolCall {

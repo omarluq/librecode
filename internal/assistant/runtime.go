@@ -56,6 +56,8 @@ type StreamEventKind string
 const (
 	// StreamEventTextDelta carries assistant text as it arrives.
 	StreamEventTextDelta StreamEventKind = "text_delta"
+	// StreamEventThinkingDelta carries model thinking/reasoning text as it arrives.
+	StreamEventThinkingDelta StreamEventKind = "thinking_delta"
 	// StreamEventToolStart announces a tool call before execution.
 	StreamEventToolStart StreamEventKind = "tool_start"
 	// StreamEventToolResult carries the completed tool call result.
