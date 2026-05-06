@@ -10,10 +10,11 @@ import (
 type panelKind string
 
 const (
-	panelModel    panelKind = "model"
-	panelSettings panelKind = "settings"
-	panelSessions panelKind = "sessions"
-	panelTree     panelKind = "tree"
+	panelModel        panelKind = "model"
+	panelScopedModels panelKind = "scoped_models"
+	panelSettings     panelKind = "settings"
+	panelSessions     panelKind = "sessions"
+	panelTree         panelKind = "tree"
 )
 
 type panelItem struct {
@@ -102,11 +103,27 @@ func (panel *selectionPanel) handleKey(event *tcell.EventKey, bindings *keybindi
 }
 
 func (panel *selectionPanel) selectedAction() panelAction {
-	if len(panel.filtered) == 0 {
-		return panelAction{Type: panelActionNone, Value: ""}
+	if value, ok := panel.selectedValue(); ok {
+		return panelAction{Type: panelActionSelect, Value: value}
 	}
 
-	return panelAction{Type: panelActionSelect, Value: panel.filtered[panel.selected].Value}
+	return panelAction{Type: panelActionNone, Value: ""}
+}
+
+func (panel *selectionPanel) selectedValue() (string, bool) {
+	if len(panel.filtered) == 0 {
+		return "", false
+	}
+
+	return panel.filtered[panel.selected].Value, true
+}
+
+func (panel *selectionPanel) selectedItem() (panelItem, bool) {
+	if len(panel.filtered) == 0 {
+		return panelItem{Value: "", Title: "", Description: "", Meta: ""}, false
+	}
+
+	return panel.filtered[panel.selected], true
 }
 
 func (panel *selectionPanel) moveSelection(delta int) {

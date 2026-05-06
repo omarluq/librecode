@@ -109,6 +109,9 @@ func (app *App) editorActions() []shortcutHandler {
 }
 
 func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
+	if app.selectedPanelKind == panelScopedModels && app.handleScopedModelKey(event) {
+		return false, nil
+	}
 	action := app.panel.handleKey(event, app.keys)
 	switch action.Type {
 	case panelActionCancel:

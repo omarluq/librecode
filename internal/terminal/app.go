@@ -55,15 +55,17 @@ type App struct {
 	keys              *keybindings
 	panel             *selectionPanel
 	pendingParentID   *string
+	scopedEnabled     map[string]bool
 	theme             terminalTheme
-	resources         core.ResourceSnapshot
-	selectedPanelKind panelKind
+	mode              appMode
 	cwd               string
 	sessionID         string
 	statusMessage     string
-	mode              appMode
+	selectedPanelKind panelKind
+	resources         core.ResourceSnapshot
 	queuedMessages    []string
 	messages          []chatMessage
+	scopedOrder       []string
 	toolsExpanded     bool
 	hideThinking      bool
 	working           bool
@@ -122,6 +124,8 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		pendingParentID:   nil,
 		messages:          []chatMessage{},
 		queuedMessages:    []string{},
+		scopedOrder:       []string{},
+		scopedEnabled:     map[string]bool{},
 		toolsExpanded:     false,
 		hideThinking:      false,
 		lastEscape:        time.Time{},

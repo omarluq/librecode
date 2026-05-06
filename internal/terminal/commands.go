@@ -26,6 +26,8 @@ func (app *App) openCommandPanel(ctx context.Context, command string) bool {
 		app.openHotkeysPanel()
 	case "model":
 		app.openModelPanel()
+	case "scoped-models":
+		app.openScopedModelsPanel()
 	case "settings":
 		app.openSettingsPanel()
 	case "resume":

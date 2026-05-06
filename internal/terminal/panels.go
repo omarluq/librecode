@@ -20,6 +20,16 @@ func (app *App) openModelPanel() {
 	app.openPanel(newSelectionPanel(panelModel, "Select Model", "type to filter; Enter selects", items, true))
 }
 
+func (app *App) openScopedModelsPanel() {
+	app.openPanel(newSelectionPanel(
+		panelScopedModels,
+		"Scoped Models",
+		"Enter toggles; Ctrl+S saves; Ctrl+A all; Ctrl+X clear; Ctrl+P provider",
+		app.scopedModelItems(),
+		true,
+	))
+}
+
 func (app *App) openSettingsPanel() {
 	panel := newSelectionPanel(
 		panelSettings,
@@ -92,6 +102,8 @@ func (app *App) applyPanelSelection(ctx context.Context, value string) error {
 	case panelModel:
 		app.applyModelSelection(value)
 		app.closePanel()
+	case panelScopedModels:
+		app.toggleScopedModel(value)
 	case panelSettings:
 		app.applySettingSelection(value)
 	case panelSessions:
@@ -162,6 +174,55 @@ func ensureCurrentModel(models []model.Model, provider, modelID string) []model.
 	}
 
 	return append(models, current)
+}
+
+func (app *App) scopedModelItems() []panelItem {
+	models := app.orderedAvailableModels()
+	items := make([]panelItem, 0, len(models))
+	for index := range models {
+		knownModel := &models[index]
+		value := modelLabel(knownModel.Provider, knownModel.ID)
+		check := "☐"
+		if app.scopedEnabled[value] {
+			check = "☑"
+		}
+		items = append(items, panelItem{
+			Value:       value,
+			Title:       check + " " + knownModel.ID,
+			Description: knownModel.Name,
+			Meta:        "[" + knownModel.Provider + "]",
+		})
+	}
+
+	return items
+}
+
+func (app *App) orderedAvailableModels() []model.Model {
+	models := app.availableModels()
+	if len(app.scopedOrder) == 0 {
+		return models
+	}
+	byValue := make(map[string]model.Model, len(models))
+	for index := range models {
+		byValue[modelLabel(models[index].Provider, models[index].ID)] = models[index]
+	}
+	ordered := make([]model.Model, 0, len(models))
+	seen := map[string]bool{}
+	for _, value := range app.scopedOrder {
+		knownModel, ok := byValue[value]
+		if ok {
+			ordered = append(ordered, knownModel)
+			seen[value] = true
+		}
+	}
+	for index := range models {
+		value := modelLabel(models[index].Provider, models[index].ID)
+		if !seen[value] {
+			ordered = append(ordered, models[index])
+		}
+	}
+
+	return ordered
 }
 
 func (app *App) settingsItems() []panelItem {
@@ -265,6 +326,36 @@ func (app *App) applyModelSelection(value string) {
 	app.setModel(provider, modelID)
 }
 
+func (app *App) toggleScopedModel(value string) {
+	app.ensureScopedOrder()
+	app.scopedEnabled[value] = !app.scopedEnabled[value]
+	app.refreshScopedModelsPanel()
+}
+
+func (app *App) ensureScopedOrder() {
+	if len(app.scopedOrder) > 0 {
+		return
+	}
+	models := app.availableModels()
+	app.scopedOrder = make([]string, 0, len(models))
+	for index := range models {
+		app.scopedOrder = append(app.scopedOrder, modelLabel(models[index].Provider, models[index].ID))
+	}
+}
+
+func (app *App) refreshScopedModelsPanel() {
+	if app.selectedPanelKind != panelScopedModels {
+		return
+	}
+	app.panel = newSelectionPanel(
+		panelScopedModels,
+		"Scoped Models",
+		"Enter toggles; Ctrl+S saves; Ctrl+A all; Ctrl+X clear; Ctrl+P provider",
+		app.scopedModelItems(),
+		true,
+	)
+}
+
 func (app *App) applySettingSelection(value string) {
 	switch value {
 	case "theme":
@@ -343,20 +434,33 @@ func (app *App) toggleTheme() {
 }
 
 func (app *App) cycleModel(delta int) {
-	models := app.availableModels()
-	if len(models) == 0 {
+	modelValues := app.cycleModelValues()
+	if len(modelValues) == 0 {
 		app.setStatus("no models available")
 		return
 	}
 	current := modelLabel(app.currentProvider(), app.currentModel())
 	selectedIndex := 0
-	for index := range models {
-		knownModel := &models[index]
-		if modelLabel(knownModel.Provider, knownModel.ID) == current {
+	for index, value := range modelValues {
+		if value == current {
 			selectedIndex = index
 			break
 		}
 	}
-	nextIndex := (selectedIndex + delta + len(models)) % len(models)
-	app.setModel(models[nextIndex].Provider, models[nextIndex].ID)
+	nextIndex := (selectedIndex + delta + len(modelValues)) % len(modelValues)
+	app.applyModelSelection(modelValues[nextIndex])
+}
+
+func (app *App) cycleModelValues() []string {
+	modelValues := app.scopedCycleModels()
+	if len(modelValues) > 0 {
+		return modelValues
+	}
+	models := app.availableModels()
+	modelValues = make([]string, 0, len(models))
+	for index := range models {
+		modelValues = append(modelValues, modelLabel(models[index].Provider, models[index].ID))
+	}
+
+	return modelValues
 }
