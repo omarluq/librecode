@@ -136,23 +136,25 @@ func (app *App) renderToolMessage(width int, message chatMessage) []styledLine {
 }
 
 func (app *App) renderThinkingMessage(width int, message chatMessage) []styledLine {
+	style := app.theme.style(colorThinkingText).Italic(true)
 	if app.hideThinking {
 		return []styledLine{
 			{Style: tcell.StyleDefault, Text: ""},
-			{Style: app.theme.style(colorThinkingText).Italic(true), Text: " thinking…"},
+			{Style: style, Text: "thinking…"},
 			{Style: tcell.StyleDefault, Text: ""},
 		}
 	}
 
-	style := app.theme.style(colorThinkingText).Italic(true)
-	lines := []styledLine{{Style: style.Bold(true), Text: boxTop(width, "thinking")}}
-	for _, line := range app.renderMarkdown(strings.TrimSpace(message.Content), max(1, width-4)) {
-		lines = append(lines, styledLine{Style: style, Text: boxedBodyLine(width, line.Text)})
-	}
+	markdownLines := app.renderMarkdown(strings.TrimSpace(message.Content), width)
+	lines := make([]styledLine, 0, len(markdownLines)+3)
 	lines = append(lines,
-		styledLine{Style: style.Bold(true), Text: boxBottom(width)},
-		styledLine{Style: app.theme.style(colorDim), Text: ""},
+		styledLine{Style: tcell.StyleDefault, Text: ""},
+		styledLine{Style: style.Bold(true), Text: settingThinking},
 	)
+	for _, line := range markdownLines {
+		lines = append(lines, styledLine{Style: style, Text: line.Text})
+	}
+	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
 
 	return lines
 }

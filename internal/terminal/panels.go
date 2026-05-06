@@ -9,6 +9,8 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
+const settingThinking = "thinking"
+
 func (app *App) closePanel() {
 	app.mode = modeChat
 	app.panel = nil
@@ -231,9 +233,9 @@ func (app *App) settingsItems() []panelItem {
 	return []panelItem{
 		{Value: "theme", Title: "Theme", Description: "dark/light visual palette", Meta: app.theme.name},
 		{
-			Value:       "thinking",
+			Value:       settingThinking,
 			Title:       "Thinking level",
-			Description: "reasoning border color",
+			Description: "model reasoning effort",
 			Meta:        app.currentThinkingLevel(),
 		},
 		{
@@ -371,7 +373,7 @@ func (app *App) applySettingSelection(value string) {
 	switch value {
 	case "theme":
 		app.toggleTheme()
-	case "thinking":
+	case settingThinking:
 		app.cycleThinking()
 	case "hide-thinking":
 		app.hideThinking = !app.hideThinking

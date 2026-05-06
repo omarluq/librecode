@@ -25,17 +25,12 @@ func (app *App) addWelcomeMessage() {
 
 func (app *App) renderWelcomeMessage(width int, content string) []styledLine {
 	bodyLines := welcomeLinesFromContent(content)
-	lines := make([]styledLine, 0, len(bodyLines)+3)
-	lines = append(lines, styledLine{Style: app.welcomeBorderStyle(), Text: boxTop(width, "welcome")})
+	lines := make([]styledLine, 0, len(bodyLines)+1)
 	for index, line := range bodyLines {
 		lineStyle := app.welcomeBodyStyle(index, line)
-		lines = append(lines, styledLine{Style: lineStyle, Text: boxedBodyLine(width, line)})
+		lines = append(lines, styledLine{Style: lineStyle, Text: padRight(line, width)})
 	}
-	lines = append(
-		lines,
-		styledLine{Style: app.welcomeBorderStyle(), Text: boxBottom(width)},
-		styledLine{Style: app.theme.style(colorDim), Text: ""},
-	)
+	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
 
 	return lines
 }
@@ -43,44 +38,19 @@ func (app *App) renderWelcomeMessage(width int, content string) []styledLine {
 func (app *App) drawWelcomeOnly(width, height, row int) int {
 	bodyLines := welcomeBodyLines(app.cwd)
 	availableRows := max(1, height-row-footerReserve())
-	maxBodyRows := max(0, availableRows-2)
-	if len(bodyLines) > maxBodyRows {
-		bodyLines = bodyLines[:maxBodyRows]
+	if len(bodyLines) > availableRows {
+		bodyLines = bodyLines[:availableRows]
 	}
-	app.writeWelcomeBorder(row, width, boxTop(width, "welcome"))
-	row++
 	for index, line := range bodyLines {
-		app.writeWelcomeBodyLine(row, width, index, line)
+		app.writeWelcomeLine(row, width, index, line)
 		row++
 	}
-	app.writeWelcomeBorder(row, width, boxBottom(width))
 
 	return row + 1
 }
 
-func (app *App) writeWelcomeBorder(row, width int, text string) {
-	writeLine(app.frame, row, width, text, app.welcomeBorderStyle())
-}
-
-func (app *App) writeWelcomeBodyLine(row, width, lineIndex int, content string) {
-	if row < 0 {
-		return
-	}
-	borderStyle := app.welcomeBorderStyle()
-	bodyStyle := app.welcomeBodyStyle(lineIndex, content)
-	innerWidth := max(1, width-4)
-	padded := []rune(padRight(content, innerWidth))
-	app.frame.SetContent(0, row, '│', nil, borderStyle)
-	app.frame.SetContent(1, row, ' ', nil, borderStyle)
-	for index := 0; index < innerWidth; index++ {
-		value := ' '
-		if index < len(padded) {
-			value = padded[index]
-		}
-		app.frame.SetContent(index+2, row, value, nil, bodyStyle)
-	}
-	app.frame.SetContent(width-2, row, ' ', nil, borderStyle)
-	app.frame.SetContent(width-1, row, '│', nil, borderStyle)
+func (app *App) writeWelcomeLine(row, width, lineIndex int, content string) {
+	writeLine(app.frame, row, width, padRight(content, width), app.welcomeBodyStyle(lineIndex, content))
 }
 
 func (app *App) showWelcomeOnly() bool {
@@ -91,12 +61,6 @@ func (app *App) showWelcomeOnly() bool {
 
 func isWelcomeMessage(content string) bool {
 	return strings.HasPrefix(content, welcomeMessagePrefix)
-}
-
-func (app *App) welcomeBorderStyle() tcell.Style {
-	return app.theme.background(colorCustomMessageBg).
-		Foreground(app.theme.colors[colorBorderMuted]).
-		Bold(true)
 }
 
 func (app *App) welcomeBodyStyle(index int, line string) tcell.Style {

@@ -123,7 +123,6 @@ func (app *App) handlePromptAsyncEvent(payload asyncEvent) {
 		app.applyPromptResponse(payload.Response)
 	case asyncEventPromptDelta:
 		app.streamingText += payload.Text
-		app.scrollOffset = 0
 		app.setStatus("streaming response")
 	case asyncEventPromptToolStart:
 		app.setStatus("running tool: " + payload.Text)
@@ -145,5 +144,4 @@ func (app *App) applyStreamedToolEvent(event *assistant.ToolEvent) {
 	}
 	app.addMessage(database.RoleToolResult, formatToolEventForUI(event))
 	app.streamedToolEvents++
-	app.scrollOffset = 0
 }

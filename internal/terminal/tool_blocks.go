@@ -54,17 +54,15 @@ func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, styl
 
 func (app *App) renderExpandedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []styledLine {
 	lines := make([]styledLine, 0, 10)
+	label := fmt.Sprintf("%s  %s collapse", toolTitle(event), app.keys.hint(actionToolsExpand))
 	lines = append(lines,
 		styledLine{Style: tcell.StyleDefault, Text: ""},
-		styledLine{Style: style.Bold(true), Text: boxTop(width, toolTitle(event))},
+		styledLine{Style: style.Bold(true), Text: padRight(label, width)},
 	)
 	lines = append(lines, app.toolArgumentLines(width, event, style)...)
 	lines = append(lines, app.toolDiffLines(width, event, style)...)
 	lines = append(lines, app.toolOutputLines(width, event, style)...)
-	lines = append(lines,
-		styledLine{Style: style.Bold(true), Text: boxBottom(width)},
-		styledLine{Style: tcell.StyleDefault, Text: ""},
-	)
+	lines = append(lines, styledLine{Style: tcell.StyleDefault, Text: ""})
 
 	return lines
 }
@@ -75,7 +73,7 @@ func (app *App) toolArgumentLines(width int, event *parsedToolEvent, style tcell
 		return nil
 	}
 
-	return boxedSectionLines(width, "args", arguments, style)
+	return plainSectionLines(width, "args", arguments, style)
 }
 
 func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Style) []styledLine {
@@ -83,13 +81,13 @@ func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Sty
 	if diff == "" {
 		return nil
 	}
-	innerWidth := max(1, width-4)
+	innerWidth := max(1, width-2)
 	baseStyle := app.theme.background(colorCodeBg).Foreground(app.theme.colors[colorCodeText])
 	content := diffStyledLines(diff, app.theme, baseStyle)
-	lines := []styledLine{{Style: style.Bold(true), Text: boxedSectionHeader(width, "diff")}}
+	lines := []styledLine{{Style: style.Bold(true), Text: padRight("diff:", width)}}
 	for _, line := range content {
 		for _, wrapped := range wrapText(line.Text, innerWidth) {
-			lines = append(lines, styledLine{Style: line.Style, Text: boxedBodyLine(width, wrapped)})
+			lines = append(lines, styledLine{Style: line.Style, Text: padRight("  "+wrapped, width)})
 		}
 	}
 
@@ -105,29 +103,19 @@ func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.S
 		return nil
 	}
 
-	return boxedSectionLines(width, "output", output, style)
+	return plainSectionLines(width, "output", output, style)
 }
 
-func boxedSectionLines(width int, label, content string, style tcell.Style) []styledLine {
-	innerWidth := max(1, width-4)
-	lines := []styledLine{{Style: style.Bold(true), Text: boxedSectionHeader(width, label)}}
+func plainSectionLines(width int, label, content string, style tcell.Style) []styledLine {
+	innerWidth := max(1, width-2)
+	lines := []styledLine{{Style: style.Bold(true), Text: padRight(label+":", width)}}
 	for _, line := range strings.Split(content, "\n") {
 		for _, wrapped := range wrapText(line, innerWidth) {
-			lines = append(lines, styledLine{Style: style, Text: boxedBodyLine(width, wrapped)})
+			lines = append(lines, styledLine{Style: style, Text: padRight("  "+wrapped, width)})
 		}
 	}
 
 	return lines
-}
-
-func boxedSectionHeader(width int, label string) string {
-	return boxedBodyLine(width, "· "+label)
-}
-
-func boxedBodyLine(width int, text string) string {
-	innerWidth := max(1, width-4)
-
-	return "│ " + padRight(text, innerWidth) + " │"
 }
 
 func parseToolEventContent(content, fallback string) parsedToolEvent {

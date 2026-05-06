@@ -41,12 +41,14 @@ const (
 	jsonToolParamsKey       = "parameters"
 	jsonCallIDKey           = "call_id"
 	jsonOutputKey           = "output"
+	jsonToolChoiceKey       = "tool_choice"
+	jsonUserRole            = "user"
 	functionToolType        = "function"
 	functionCallOutputType  = "function_call_output"
 	reasoningEffortKey      = "effort"
 	thinkingOff             = "off"
 	reasoningSummaryAuto    = "auto"
-	maxToolIterations       = 6
+	maxToolIterations       = 8
 )
 
 // CompletionRequest describes one model completion request.
@@ -267,18 +269,24 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		input = append(input, outputs...)
 	}
 
-	return nil, oops.In("assistant").Code("tool_loop_limit").Errorf("tool call loop limit reached")
+	return client.finalResponseWithoutTools(ctx, request, endpoint, headers, input, stream, result)
 }
 
 func responsesPayload(request *CompletionRequest, input []any, stream bool) map[string]any {
+	payload := responsesBasePayload(request, input, stream)
+	payload["tools"] = responseTools()
+	payload[jsonToolChoiceKey] = "auto"
+	payload["parallel_tool_calls"] = true
+
+	return payload
+}
+
+func responsesBasePayload(request *CompletionRequest, input []any, stream bool) map[string]any {
 	payload := map[string]any{
-		jsonModelKey:          request.Model.ID,
-		"store":               false,
-		"stream":              stream,
-		"input":               input,
-		"tools":               responseTools(),
-		"tool_choice":         "auto",
-		"parallel_tool_calls": true,
+		jsonModelKey: request.Model.ID,
+		"store":      false,
+		"stream":     stream,
+		"input":      input,
 	}
 	if request.SystemPrompt != "" {
 		payload["instructions"] = request.SystemPrompt
@@ -298,6 +306,37 @@ func responsesPayload(request *CompletionRequest, input []any, stream bool) map[
 	}
 
 	return payload
+}
+
+func (client *HTTPCompletionClient) finalResponseWithoutTools(
+	ctx context.Context,
+	request *CompletionRequest,
+	endpoint string,
+	headers map[string]string,
+	input []any,
+	stream bool,
+	partial *CompletionResult,
+) (*CompletionResult, error) {
+	input = append(input, map[string]any{
+		jsonRoleKey:    jsonUserRole,
+		jsonContentKey: "Tool budget reached. Use the tool results above and answer without more tool calls.",
+	})
+	payload := responsesBasePayload(request, input, stream)
+	providerResult, err := client.requestResponses(ctx, endpoint, headers, payload, stream, request.OnEvent)
+	if err != nil {
+		return nil, err
+	}
+	partial.Thinking = append(partial.Thinking, providerResult.Thinking...)
+	if strings.TrimSpace(providerResult.Text) == "" {
+		return nil, oops.
+			In("assistant").
+			Code("tool_loop_limit").
+			With("iterations", maxToolIterations).
+			Errorf("model kept requesting tools and did not produce a final answer")
+	}
+	partial.Text = strings.TrimSpace(providerResult.Text)
+
+	return partial, nil
 }
 
 func (client *HTTPCompletionClient) requestResponses(
@@ -695,7 +734,7 @@ func booleanSchema(description string) map[string]any {
 func openAIRole(role database.Role) (string, bool) {
 	switch role {
 	case database.RoleUser:
-		return "user", true
+		return jsonUserRole, true
 	case database.RoleAssistant:
 		return "assistant", true
 	case database.RoleToolResult,
@@ -713,7 +752,7 @@ func openAIRole(role database.Role) (string, bool) {
 func anthropicRole(role database.Role) (string, bool) {
 	switch role {
 	case database.RoleUser:
-		return "user", true
+		return jsonUserRole, true
 	case database.RoleAssistant:
 		return "assistant", true
 	case database.RoleToolResult,

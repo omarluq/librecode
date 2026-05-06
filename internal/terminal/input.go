@@ -25,6 +25,9 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 		}
 
 		return app.handleKey(ctx, typedEvent)
+	case *tcell.EventMouse:
+		app.handleMouse(typedEvent)
+		return false, nil
 	case *tcell.EventInterrupt:
 		return app.handleInterrupt(ctx, typedEvent)
 	default:
@@ -228,7 +231,6 @@ func (app *App) applyPromptResponse(response *assistant.PromptResponse) {
 	if response == nil {
 		return
 	}
-	app.scrollOffset = 0
 	app.sessionID = response.SessionID
 	for _, thinking := range response.Thinking {
 		app.addMessage(database.RoleThinking, thinking)

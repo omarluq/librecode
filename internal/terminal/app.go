@@ -97,6 +97,7 @@ func Run(ctx context.Context, options *RunOptions) error {
 	if err := screen.Init(); err != nil {
 		return fmt.Errorf("tui: init screen: %w", err)
 	}
+	screen.EnableMouse(tcell.MouseButtonEvents)
 	defer screen.Fini()
 
 	app := newApp(screen, options)
