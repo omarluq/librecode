@@ -128,7 +128,7 @@ func newOpenAICodexFlow() (*openAICodexFlow, error) {
 	query.Set("state", state)
 	query.Set("id_token_add_organizations", "true")
 	query.Set("codex_cli_simplified_flow", "true")
-	query.Set("originator", "librecode")
+	query.Set("originator", "pi")
 	authURL.RawQuery = query.Encode()
 
 	return &openAICodexFlow{Verifier: verifier, State: state, URL: authURL.String()}, nil

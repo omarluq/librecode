@@ -72,6 +72,7 @@ type App struct {
 	sessionSortRecent bool
 	sessionNamedOnly  bool
 	sessionShowPath   bool
+	authWorking       bool
 	toolsExpanded     bool
 	hideThinking      bool
 	working           bool
@@ -136,6 +137,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		sessionSortRecent: true,
 		sessionNamedOnly:  false,
 		sessionShowPath:   false,
+		authWorking:       false,
 		toolsExpanded:     false,
 		hideThinking:      false,
 		lastEscape:        time.Time{},

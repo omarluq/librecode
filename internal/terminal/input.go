@@ -19,6 +19,8 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 		return false, nil
 	case *tcell.EventKey:
 		return app.handleKey(ctx, typedEvent)
+	case *tcell.EventInterrupt:
+		return app.handleInterrupt(ctx, typedEvent)
 	default:
 		return false, nil
 	}

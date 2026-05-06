@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/database"
@@ -189,28 +190,43 @@ func (app *App) loginOpenAICodex(ctx context.Context) error {
 	if app.auth == nil {
 		return fmt.Errorf("auth storage is unavailable")
 	}
+	if app.authWorking {
+		app.setStatus("auth login is already running")
+		return nil
+	}
+	app.authWorking = true
 	app.addSystemMessage("starting ChatGPT Plus/Pro OAuth login…")
-	app.draw()
-	credential, err := auth.LoginOpenAICodex(ctx, func(info auth.OAuthAuthInfo) {
-		app.addMessage(database.RoleCustom, info.Instructions+"\n"+info.URL)
-		app.draw()
-		app.openURL(info.URL)
-	})
-	if err != nil {
-		return err
-	}
-	if err := app.auth.Set(ctx, openAICodexProviderID, credential); err != nil {
-		return err
-	}
-	app.refreshModels()
-	app.setModel(openAICodexProviderID, model.DefaultModelPerProvider[openAICodexProviderID])
-	app.addSystemMessage("logged in to " + providerDisplayName(openAICodexProviderID))
+	authStorage := app.auth
+	go func() {
+		loginCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		defer cancel()
+		credential, err := auth.LoginOpenAICodex(loginCtx, func(info auth.OAuthAuthInfo) {
+			app.postAsyncEvent(asyncEvent{
+				Kind:     asyncEventAuthURL,
+				Provider: openAICodexProviderID,
+				Text:     info.Instructions + "\n" + info.URL,
+			})
+		})
+		if err != nil {
+			app.postAsyncEvent(asyncEvent{
+				Kind:     asyncEventAuthError,
+				Provider: openAICodexProviderID,
+				Text:     "login failed: " + err.Error(),
+			})
+			return
+		}
+		if err := authStorage.Set(loginCtx, openAICodexProviderID, credential); err != nil {
+			app.postAsyncEvent(asyncEvent{
+				Kind:     asyncEventAuthError,
+				Provider: openAICodexProviderID,
+				Text:     "save login failed: " + err.Error(),
+			})
+			return
+		}
+		app.postAsyncEvent(asyncEvent{Kind: asyncEventAuthDone, Provider: openAICodexProviderID, Text: ""})
+	}()
 
 	return nil
-}
-
-func (app *App) openURL(_ string) {
-	app.setStatus("open the login URL in your browser")
 }
 
 func (app *App) refreshModels() {
