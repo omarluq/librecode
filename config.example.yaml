@@ -21,7 +21,7 @@ extensions:
 
 assistant:
   provider: local
-  model: librecode-go
+  model: librecode
   thinking_level: off
 
 cache:

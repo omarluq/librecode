@@ -44,7 +44,7 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 		Role:      database.RoleAssistant,
 		Content:   "hi",
 		Provider:  "local",
-		Model:     "librecode-go",
+		Model:     "librecode",
 	}
 	secondEntry, err := repository.AppendMessage(ctx, createdSession.ID, &firstEntry.ID, &secondMessage)
 	require.NoError(t, err)
@@ -80,7 +80,7 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "local", message.Provider)
-	assert.Equal(t, "librecode-go", message.Model)
+	assert.Equal(t, "librecode", message.Model)
 }
 
 func TestSessionRepository_SupportsPiStyleTreeMetadata(t *testing.T) {

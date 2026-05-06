@@ -20,13 +20,13 @@ type SlashCommandInfo struct {
 	Source      SlashCommandSource `json:"source"`
 }
 
-// BuiltinSlashCommand describes a built-in Pi slash command.
+// BuiltinSlashCommand describes a built-in librecode slash command.
 type BuiltinSlashCommand struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// BuiltinSlashCommands mirrors Pi's built-in command catalog.
+// BuiltinSlashCommands mirrors librecode's built-in command catalog.
 var BuiltinSlashCommands = []BuiltinSlashCommand{
 	{Name: "settings", Description: "Open settings menu"},
 	{Name: "model", Description: "Select model (opens selector UI)"},

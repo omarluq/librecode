@@ -2,7 +2,7 @@ package database
 
 import "context"
 
-// DocumentSource adapts runtime_documents to packages that read Pi JSON documents.
+// DocumentSource adapts runtime_documents to packages that read JSON documents.
 type DocumentSource struct {
 	documents *DocumentRepository
 	namespace string

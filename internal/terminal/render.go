@@ -38,6 +38,19 @@ func (app *App) drawHeader(width, row int) int {
 	title := " librecode "
 	writeLine(app.screen, row, width, padRight(title, width), app.theme.background(colorToolPendingBg).Bold(true))
 	row++
+	for _, line := range app.headerLines() {
+		writeLine(app.screen, row, width, line.Text, line.Style)
+		row++
+	}
+	if app.statusMessage != "" {
+		writeLine(app.screen, row, width, app.statusMessage, app.theme.style(colorAccent))
+		row++
+	}
+
+	return row + 1
+}
+
+func (app *App) headerLines() []styledLine {
 	shortcuts := []string{
 		"/hotkeys",
 		app.keys.hint(actionModelSelect) + " model",
@@ -46,14 +59,32 @@ func (app *App) drawHeader(width, row int) int {
 		"/settings",
 		"/tree",
 	}
-	writeLine(app.screen, row, width, strings.Join(shortcuts, " • "), app.theme.style(colorDim))
-	row++
-	if app.statusMessage != "" {
-		writeLine(app.screen, row, width, app.statusMessage, app.theme.style(colorAccent))
-		row++
+	lines := []styledLine{{Style: app.theme.style(colorDim), Text: strings.Join(shortcuts, " • ")}}
+	resources := app.resourceSummary()
+	if resources != "" {
+		lines = append(lines, styledLine{Style: app.theme.style(colorMuted), Text: resources})
 	}
 
-	return row + 1
+	return lines
+}
+
+func (app *App) resourceSummary() string {
+	parts := []string{}
+	if len(app.resources.ContextFiles) > 0 {
+		parts = append(parts, "context "+intText(len(app.resources.ContextFiles)))
+	}
+	if len(app.resources.Prompts) > 0 {
+		parts = append(parts, "prompts "+intText(len(app.resources.Prompts)))
+	}
+	if len(app.resources.Skills) > 0 {
+		parts = append(parts, "skills "+intText(len(app.resources.Skills)))
+	}
+	warnings := len(app.resources.PromptDiagnostics) + len(app.resources.SkillDiagnostics)
+	if warnings > 0 {
+		parts = append(parts, "warnings "+intText(warnings))
+	}
+
+	return strings.Join(parts, " • ")
 }
 
 func (app *App) drawPanel(width, height, row int) int {

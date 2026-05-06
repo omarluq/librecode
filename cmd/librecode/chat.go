@@ -25,7 +25,10 @@ func newChatCmd() *cobra.Command {
 					return err
 				}
 
-				return terminal.Run(cmd.Context(), terminal.RunOptions{
+				resources := loadTerminalResources(cmd.Context(), cwd)
+
+				return terminal.Run(cmd.Context(), &terminal.RunOptions{
+					Resources: &resources,
 					Runtime:   runtime,
 					Models:    modelRegistry,
 					Config:    cfg,

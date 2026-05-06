@@ -60,7 +60,7 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("extensions.enabled", true)
 	viperInstance.SetDefault("extensions.paths", []string{".librecode/extensions"})
 	viperInstance.SetDefault("assistant.provider", "local")
-	viperInstance.SetDefault("assistant.model", "librecode-go")
+	viperInstance.SetDefault("assistant.model", "librecode")
 	viperInstance.SetDefault("assistant.thinking_level", "off")
 	viperInstance.SetDefault("cache.enabled", true)
 	viperInstance.SetDefault("cache.capacity", 512)

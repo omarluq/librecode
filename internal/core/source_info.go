@@ -1,4 +1,4 @@
-// Package core contains Pi-compatible assistant core data structures.
+// Package core contains librecode-compatible assistant core data structures.
 package core
 
 // SourceScope identifies whether a resource came from user, project, or temporary config.
@@ -40,7 +40,7 @@ type SourceInfoOptions struct {
 	Source  string       `json:"source"`
 }
 
-// NewSourceInfo creates SourceInfo with Pi-compatible defaults.
+// NewSourceInfo creates SourceInfo with librecode-compatible defaults.
 func NewSourceInfo(path string, options SourceInfoOptions) SourceInfo {
 	scope := options.Scope
 	if scope == "" {

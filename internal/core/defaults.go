@@ -1,7 +1,7 @@
 package core
 
 const (
-	// DefaultThinkingLevel matches Pi's default model reasoning level.
+	// DefaultThinkingLevel matches librecode's default model reasoning level.
 	DefaultThinkingLevel = "medium"
 	// ConfigDirName is the project-local configuration directory.
 	ConfigDirName = ".librecode"

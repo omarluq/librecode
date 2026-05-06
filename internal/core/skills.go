@@ -61,7 +61,7 @@ func LoadSkills(cwd, agentDir string, skillPaths []string, includeDefaults bool)
 	return result
 }
 
-// FormatSkillsForPrompt formats skills in Pi's XML prompt block.
+// FormatSkillsForPrompt formats skills in librecode's XML prompt block.
 func FormatSkillsForPrompt(skills []Skill) string {
 	visibleSkills := lo.Filter(skills, func(skill Skill, _ int) bool {
 		return !skill.DisableModelInvocation

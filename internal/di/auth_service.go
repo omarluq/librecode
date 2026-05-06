@@ -18,7 +18,7 @@ type AuthService struct {
 	Storage *auth.Storage
 }
 
-// NewAuthService wires Pi-style auth.json credential storage.
+// NewAuthService wires librecode-style auth.json credential storage.
 func NewAuthService(_ do.Injector) (*AuthService, error) {
 	authPath, err := userConfigPath("auth.json")
 	if err != nil {

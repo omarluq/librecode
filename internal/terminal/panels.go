@@ -60,14 +60,14 @@ func (app *App) openHotkeysPanel() {
 			Meta:        row.Action,
 		})
 	}
-	app.openPanel(newSelectionPanel(panelSettings, "Hotkeys", "Pi-compatible default keybindings", items, true))
+	app.openPanel(newSelectionPanel(panelSettings, "Hotkeys", "librecode default keybindings", items, true))
 }
 
 func (app *App) openChangelogPanel() {
 	items := []panelItem{
 		{
 			Value:       "tui",
-			Title:       "Pi TUI parity",
+			Title:       "TUI parity",
 			Description: "Theme, keybindings, panels, footer, and session tree",
 			Meta:        "now",
 		},

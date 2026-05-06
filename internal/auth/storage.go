@@ -63,7 +63,7 @@ type Backend interface {
 	WithLock(ctx context.Context, callback func(current []byte) (LockResult, error)) error
 }
 
-// Storage provides Pi-style credential lookup with stored, runtime, env, and fallback sources.
+// Storage provides librecode-style credential lookup with stored, runtime, env, and fallback sources.
 type Storage struct {
 	backend          Backend
 	loadError        error

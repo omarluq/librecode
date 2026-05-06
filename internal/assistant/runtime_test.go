@@ -36,7 +36,7 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	assert.NotEmpty(t, response.SessionID)
 	assert.NotEmpty(t, response.UserEntryID)
 	assert.NotEmpty(t, response.AssistantEntryID)
-	assert.Contains(t, response.Text, "librecode-go local runtime")
+	assert.Contains(t, response.Text, "librecode local runtime")
 
 	entries, err := repository.Entries(context.Background(), response.SessionID)
 	require.NoError(t, err)
@@ -130,7 +130,7 @@ func testConfig() *config.Config {
 		},
 		Assistant: config.AssistantConfig{
 			Provider:      "local",
-			Model:         "librecode-go",
+			Model:         "librecode",
 			ThinkingLevel: "off",
 		},
 		Cache: config.CacheConfig{

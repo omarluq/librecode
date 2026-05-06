@@ -49,7 +49,7 @@ type ResourceSnapshot struct {
 	Prompts            []PromptTemplate     `json:"prompts"`
 }
 
-// ResourceLoader exposes Pi-style reloadable prompt, skill, and context resources.
+// ResourceLoader exposes librecode-style reloadable prompt, skill, and context resources.
 type ResourceLoader interface {
 	Reload(ctx context.Context) error
 	ExtendResources(ctx context.Context, paths ResourceExtensionPaths) error
@@ -61,7 +61,7 @@ type ResourceLoader interface {
 	AppendSystemPrompt() []string
 }
 
-// DefaultResourceLoader loads local Pi-compatible resources from user, project, and explicit paths.
+// DefaultResourceLoader loads local librecode-compatible resources from user, project, and explicit paths.
 type DefaultResourceLoader struct {
 	promptSourceInfos             map[string]SourceInfo
 	skillSourceInfos              map[string]SourceInfo
@@ -78,7 +78,7 @@ type DefaultResourceLoader struct {
 	noSkills                      bool
 }
 
-// NewDefaultResourceLoader creates a resource loader with Pi-compatible defaults.
+// NewDefaultResourceLoader creates a resource loader with librecode-compatible defaults.
 func NewDefaultResourceLoader(options *ResourceLoaderOptions) *DefaultResourceLoader {
 	resolvedOptions := resourceLoaderOptions(options)
 

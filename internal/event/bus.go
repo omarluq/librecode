@@ -1,4 +1,4 @@
-// Package event provides a small Pi-style in-process event bus backed by samber/ro.
+// Package event provides a small librecode-style in-process event bus backed by samber/ro.
 package event
 
 import (

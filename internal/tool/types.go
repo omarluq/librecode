@@ -1,4 +1,4 @@
-// Package tool provides Pi-style built-in coding tools for local agent turns.
+// Package tool provides librecode-style built-in coding tools for local agent turns.
 package tool
 
 import (

@@ -9,7 +9,7 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-// ToolService exposes Pi-style built-in coding tools for the process working directory.
+// ToolService exposes librecode-style built-in coding tools for the process working directory.
 type ToolService struct {
 	Registry *tool.Registry
 }

@@ -119,7 +119,7 @@ type SessionContextEntity struct {
 	Messages      []MessageEntity `json:"messages"`
 }
 
-// DocumentEntity stores Pi file-backed runtime documents in SQLite.
+// DocumentEntity stores JSON-backed runtime documents in SQLite.
 type DocumentEntity struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Namespace string    `json:"namespace"`

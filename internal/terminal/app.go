@@ -1,4 +1,4 @@
-// Package terminal implements a Pi-style interactive terminal UI.
+// Package terminal implements a librecode-style interactive terminal UI.
 package terminal
 
 import (
@@ -11,6 +11,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/config"
+	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -35,11 +36,12 @@ type chatMessage struct {
 
 // RunOptions configures the terminal app.
 type RunOptions struct {
-	Runtime   *assistant.Runtime `json:"-"`
-	Models    *model.Registry    `json:"-"`
-	Config    *config.Config     `json:"-"`
-	CWD       string             `json:"cwd"`
-	SessionID string             `json:"session_id"`
+	Resources *core.ResourceSnapshot `json:"resources"`
+	Runtime   *assistant.Runtime     `json:"-"`
+	Models    *model.Registry        `json:"-"`
+	Config    *config.Config         `json:"-"`
+	CWD       string                 `json:"cwd"`
+	SessionID string                 `json:"session_id"`
 }
 
 // App is the terminal chat UI.
@@ -54,6 +56,7 @@ type App struct {
 	panel             *selectionPanel
 	pendingParentID   *string
 	theme             terminalTheme
+	resources         core.ResourceSnapshot
 	selectedPanelKind panelKind
 	cwd               string
 	sessionID         string
@@ -67,7 +70,7 @@ type App struct {
 }
 
 // Run starts an interactive tcell chat loop.
-func Run(ctx context.Context, options RunOptions) error {
+func Run(ctx context.Context, options *RunOptions) error {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return fmt.Errorf("tui: create screen: %w", err)
@@ -86,10 +89,22 @@ func Run(ctx context.Context, options RunOptions) error {
 	return nil
 }
 
-func newApp(screen tcell.Screen, options RunOptions) *App {
+func newApp(screen tcell.Screen, options *RunOptions) *App {
 	appTheme := themeByName("dark")
 	if options.Config != nil && options.Config.App.Env == "test" {
 		appTheme = darkTheme()
+	}
+	resources := core.ResourceSnapshot{
+		SkillDiagnostics:   nil,
+		PromptDiagnostics:  nil,
+		AppendSystemPrompt: nil,
+		ContextFiles:       nil,
+		SystemPrompt:       "",
+		Skills:             nil,
+		Prompts:            nil,
+	}
+	if options.Resources != nil {
+		resources = *options.Resources
 	}
 	app := &App{
 		screen:            screen,
@@ -99,6 +114,7 @@ func newApp(screen tcell.Screen, options RunOptions) *App {
 		editor:            newEditor(),
 		keys:              newDefaultKeybindings(),
 		theme:             appTheme,
+		resources:         resources,
 		mode:              modeChat,
 		panel:             nil,
 		cwd:               options.CWD,
@@ -113,7 +129,7 @@ func newApp(screen tcell.Screen, options RunOptions) *App {
 		statusMessage:     "",
 		selectedPanelKind: "",
 	}
-	app.addSystemMessage("librecode • Pi-style TUI. Type /hotkeys for shortcuts or /quit to exit.")
+	app.addSystemMessage("librecode • librecode-style TUI. Type /hotkeys for shortcuts or /quit to exit.")
 
 	return app
 }
@@ -185,7 +201,7 @@ func (app *App) currentProvider() string {
 
 func (app *App) currentModel() string {
 	if app.cfg == nil {
-		return "librecode-go"
+		return "librecode"
 	}
 
 	return app.cfg.Assistant.Model

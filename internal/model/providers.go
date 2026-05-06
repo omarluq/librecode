@@ -22,7 +22,7 @@ type providerModelPair struct {
 // ProviderDisplayNames maps built-in provider IDs to user-facing names.
 var ProviderDisplayNames = providerDisplayNameMap()
 
-// DefaultModelPerProvider maps known provider IDs to Pi's default model IDs.
+// DefaultModelPerProvider maps known provider IDs to librecode's default model IDs.
 var DefaultModelPerProvider = defaultModelMap()
 
 // BuiltInModels returns a deterministic built-in model catalog.

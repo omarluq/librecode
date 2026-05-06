@@ -9,7 +9,7 @@ import (
 	"github.com/samber/oops"
 )
 
-// DocumentRepository persists Pi runtime documents that upstream persists as JSON files.
+// DocumentRepository persists runtime documents that upstream persists as JSON files.
 type DocumentRepository struct {
 	connection *sql.DB
 	now        func() time.Time

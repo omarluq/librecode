@@ -276,7 +276,7 @@ func (runtime *Runtime) localResponse(prompt string) string {
 		runtime.cfg.Assistant.ThinkingLevel,
 	)
 	parts := []string{
-		"librecode-go local runtime is wired and ready.",
+		"librecode local runtime is wired and ready.",
 		modelLine,
 		fmt.Sprintf("prompt=%q", prompt),
 		fmt.Sprintf(

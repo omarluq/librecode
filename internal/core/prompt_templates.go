@@ -67,7 +67,7 @@ func ParseCommandArgs(argsString string) []string {
 	return appendCurrentArg(args, &current)
 }
 
-// SubstituteArgs replaces Pi/Claude-style argument placeholders in prompt content.
+// SubstituteArgs replaces positional/Claude-style argument placeholders in prompt content.
 func SubstituteArgs(content string, args []string) string {
 	result := substitutePositionalArgs(content, args)
 	result = substituteSlicedArgs(result, args)

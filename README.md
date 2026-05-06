@@ -78,10 +78,10 @@ task ci               # Verify everything works
 │   │   ├── register.go   #   Service registration
 │   │   ├── config_service.go
 │   │   └── logger_service.go  # zerolog + slog bridge
-│   ├── event/            # Pi-style in-process event bus
+│   ├── event/            # librecode-style in-process event bus
 │   ├── extension/        # Lua workflow extensions
 │   ├── terminal/         # Interactive terminal chat UI
-│   ├── tool/             # Pi-style built-in coding tools (read/bash/edit/write/grep/find/ls)
+│   ├── tool/             # librecode-style built-in coding tools (read/bash/edit/write/grep/find/ls)
 │   └── vinfo/            # Build version metadata (ldflags)
 ├── .github/workflows/
 │   ├── ci.yml            # Lint + test + cross-platform build
@@ -143,7 +143,7 @@ librecode config validate   # Check config is valid
 
 ### Agent Runtime: sessions, extensions, and tools
 
-The local assistant runtime persists SQLite session trees, loads Lua workflow extensions, and exposes Pi-style built-in coding tools:
+The local assistant runtime persists SQLite session trees, loads Lua workflow extensions, and exposes librecode-style built-in coding tools:
 
 ```bash
 librecode prompt "hello"                               # append a prompt to the current cwd session

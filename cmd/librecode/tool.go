@@ -15,7 +15,7 @@ import (
 func newToolCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tool",
-		Short: "Run Pi-style built-in coding tools",
+		Short: "Run librecode-style built-in coding tools",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
