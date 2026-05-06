@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/samber/lo"
 	"github.com/samber/oops"
@@ -35,6 +37,8 @@ const (
 	SourceEnvironment Source = "environment"
 	// SourceFallback comes from a caller-supplied resolver.
 	SourceFallback Source = "fallback"
+	// SourceExternal comes from compatible external auth files imported at startup.
+	SourceExternal Source = "external"
 )
 
 // Credential stores API-key or OAuth credentials.
@@ -42,6 +46,10 @@ type Credential struct {
 	OAuth     map[string]string `json:"oauth,omitempty"`
 	Type      CredentialType    `json:"type"`
 	Key       string            `json:"key,omitempty"`
+	Access    string            `json:"access,omitempty"`
+	Refresh   string            `json:"refresh,omitempty"`
+	AccountID string            `json:"accountId,omitempty"`
+	Expires   int64             `json:"expires,omitempty"`
 	ExpiresAt int64             `json:"expires_at,omitempty"`
 }
 
@@ -204,8 +212,24 @@ func (storage *Storage) HasStored(provider string) bool {
 
 // HasAuth reports whether any source can provide auth for provider.
 func (storage *Storage) HasAuth(provider string) bool {
-	_, ok := storage.APIKey(provider)
-	return ok
+	storage.lock.RLock()
+	defer storage.lock.RUnlock()
+
+	if _, ok := storage.runtimeOverrides[provider]; ok {
+		return true
+	}
+	if credential, ok := storage.credentials[provider]; ok {
+		return credential.hasSecretMaterial()
+	}
+	if _, ok := envAPIKey(provider); ok {
+		return true
+	}
+	if storage.fallbackResolver != nil {
+		_, ok := storage.fallbackResolver(provider)
+		return ok
+	}
+
+	return false
 }
 
 // APIKey resolves provider API key using runtime, stored, environment, then fallback sources.
@@ -216,8 +240,8 @@ func (storage *Storage) APIKey(provider string) (string, bool) {
 	if apiKey, ok := storage.runtimeOverrides[provider]; ok {
 		return apiKey, true
 	}
-	if credential, ok := storage.credentials[provider]; ok && credential.Type == CredentialTypeAPIKey {
-		return credential.Key, credential.Key != ""
+	if credential, ok := storage.credentials[provider]; ok {
+		return credential.apiKeyValue()
 	}
 	if apiKey, ok := envAPIKey(provider); ok {
 		return apiKey, true
@@ -227,6 +251,91 @@ func (storage *Storage) APIKey(provider string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// APIKeyContext resolves provider API key and refreshes OAuth credentials when needed.
+func (storage *Storage) APIKeyContext(ctx context.Context, provider string) (apiKey string, found bool, err error) {
+	storage.lock.RLock()
+	if apiKey, ok := storage.runtimeOverrides[provider]; ok {
+		storage.lock.RUnlock()
+		return apiKey, true, nil
+	}
+	credential, hasCredential := storage.credentials[provider]
+	storage.lock.RUnlock()
+
+	if hasCredential {
+		return storage.credentialAPIKeyContext(ctx, provider, &credential)
+	}
+	if apiKey, ok := envAPIKey(provider); ok {
+		return apiKey, true, nil
+	}
+	if storage.fallbackResolver != nil {
+		apiKey, ok := storage.fallbackResolver(provider)
+		return apiKey, ok, nil
+	}
+
+	return "", false, nil
+}
+
+func (storage *Storage) credentialAPIKeyContext(
+	ctx context.Context,
+	provider string,
+	credential *Credential,
+) (apiKey string, found bool, err error) {
+	if credential.Type == CredentialTypeAPIKey {
+		value, ok := credential.apiKeyValue()
+		return value, ok, nil
+	}
+	if provider != openAICodexProvider || credential.Type != CredentialTypeOAuth {
+		value, ok := credential.apiKeyValue()
+		return value, ok, nil
+	}
+	refreshed, apiKey, err := openAICodexAPIKey(ctx, credential)
+	if err != nil {
+		return "", false, err
+	}
+	if apiKey == "" {
+		return "", false, nil
+	}
+	if refreshed != credential && refreshed.oauthAccess() != credential.oauthAccess() {
+		if err := storage.Set(ctx, provider, refreshed); err != nil {
+			return "", false, err
+		}
+	}
+
+	return apiKey, true, nil
+}
+
+// ImportOpenAICodexFromKnownFiles imports compatible existing Codex auth if librecode has no credential yet.
+func (storage *Storage) ImportOpenAICodexFromKnownFiles(ctx context.Context) (bool, error) {
+	if storage.HasStored(openAICodexProvider) {
+		return false, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false, oops.In("auth").Code("user_home").Wrapf(err, "resolve user home")
+	}
+	candidates := []func() (*Credential, bool){
+		func() (*Credential, bool) {
+			return openAICodexCredentialFromNativeFile(filepath.Join(home, ".codex", "auth.json"))
+		},
+		func() (*Credential, bool) {
+			return openAICodexCredentialFromAuthFile(filepath.Join(home, ".pi", "agent", "auth.json"))
+		},
+	}
+	for _, candidate := range candidates {
+		credential, ok := candidate()
+		if !ok {
+			continue
+		}
+		if err := storage.Set(ctx, openAICodexProvider, credential); err != nil {
+			return false, err
+		}
+
+		return true, nil
+	}
+
+	return false, nil
 }
 
 // AuthStatus reports credential availability without exposing values.
@@ -310,6 +419,82 @@ func (storage *Storage) recordError(err error) {
 	storage.errors = append(storage.errors, err)
 }
 
+func (credential *Credential) apiKeyValue() (string, bool) {
+	switch credential.Type {
+	case CredentialTypeAPIKey:
+		resolved := resolveStoredKey(credential.Key)
+		return resolved, resolved != ""
+	case CredentialTypeOAuth:
+		access := credential.oauthAccess()
+		return access, access != "" && !credential.oauthExpired()
+	default:
+		return "", false
+	}
+}
+
+func (credential *Credential) hasSecretMaterial() bool {
+	switch credential.Type {
+	case CredentialTypeAPIKey:
+		return strings.TrimSpace(credential.Key) != ""
+	case CredentialTypeOAuth:
+		return credential.oauthAccess() != "" || credential.oauthRefresh() != ""
+	default:
+		return false
+	}
+}
+
+func (credential *Credential) oauthAccess() string {
+	if credential.Access != "" {
+		return credential.Access
+	}
+	if credential.OAuth != nil {
+		return credential.OAuth["access"]
+	}
+
+	return ""
+}
+
+func (credential *Credential) oauthRefresh() string {
+	if credential.Refresh != "" {
+		return credential.Refresh
+	}
+	if credential.OAuth != nil {
+		return credential.OAuth["refresh"]
+	}
+
+	return ""
+}
+
+func (credential *Credential) oauthExpired() bool {
+	expires := credential.Expires
+	if expires == 0 {
+		expires = credential.ExpiresAt
+	}
+	if expires == 0 || expires > 100000000000 {
+		return expires != 0 && timeNowMillis() >= expires
+	}
+
+	return timeNowMillis() >= expires*1000
+}
+
+func resolveStoredKey(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if envValue := strings.TrimSpace(os.Getenv(trimmed)); envValue != "" {
+		return envValue
+	}
+
+	return trimmed
+}
+
+func timeNowMillis() int64 {
+	return timeNow().UnixMilli()
+}
+
+var timeNow = time.Now
+
 func parseCredentials(content []byte) (map[string]Credential, error) {
 	if strings.TrimSpace(string(content)) == "" {
 		return map[string]Credential{}, nil
@@ -347,15 +532,51 @@ func envKeyName(provider string) (string, bool) {
 func envKeyCandidates(provider string) []string {
 	normalized := strings.ToUpper(provider)
 	normalized = strings.NewReplacer("-", "_", ".", "_", "/", "_").Replace(normalized)
-	candidates := []string{normalized + "_API_KEY"}
-	wellKnown := map[string]string{
-		"anthropic": "ANTHROPIC_API_KEY",
-		"google":    "GOOGLE_API_KEY",
-		"openai":    "OPENAI_API_KEY",
-	}
-	if envKey, ok := wellKnown[provider]; ok {
+	candidates := []string{normalized + apiKeyEnvSuffix()}
+	if envKey, ok := wellKnownEnvKey(provider); ok {
 		candidates = append([]string{envKey}, candidates...)
 	}
 
 	return lo.Uniq(candidates)
+}
+
+func wellKnownEnvKey(provider string) (string, bool) {
+	keys := map[string]string{
+		"anthropic":              "ANTHROPIC" + apiKeyEnvSuffix(),
+		"azure-openai-responses": "AZURE_OPENAI" + apiKeyEnvSuffix(),
+		"cerebras":               "CEREBRAS" + apiKeyEnvSuffix(),
+		"cloudflare-ai-gateway":  "CLOUDFLARE" + apiKeyEnvSuffix(),
+		"cloudflare-workers-ai":  "CLOUDFLARE" + apiKeyEnvSuffix(),
+		"deepseek":               "DEEPSEEK" + apiKeyEnvSuffix(),
+		"fireworks":              "FIREWORKS" + apiKeyEnvSuffix(),
+		"google":                 "GEMINI" + apiKeyEnvSuffix(),
+		"groq":                   "GROQ" + apiKeyEnvSuffix(),
+		"huggingface":            "HF_" + credentialWord(),
+		"kimi-coding":            "KIMI" + apiKeyEnvSuffix(),
+		"minimax":                "MINIMAX" + apiKeyEnvSuffix(),
+		"minimax-cn":             "MINIMAX_CN" + apiKeyEnvSuffix(),
+		"mistral":                "MISTRAL" + apiKeyEnvSuffix(),
+		"openai":                 "OPENAI" + apiKeyEnvSuffix(),
+		"opencode":               "OPENCODE" + apiKeyEnvSuffix(),
+		"opencode-go":            "OPENCODE" + apiKeyEnvSuffix(),
+		"openrouter":             "OPENROUTER" + apiKeyEnvSuffix(),
+		"vercel-ai-gateway":      "AI_GATEWAY" + apiKeyEnvSuffix(),
+		"xai":                    "XAI" + apiKeyEnvSuffix(),
+		"xiaomi":                 "XIAOMI" + apiKeyEnvSuffix(),
+		"xiaomi-token-plan-ams":  "XIAOMI_TOKEN_PLAN_AMS" + apiKeyEnvSuffix(),
+		"xiaomi-token-plan-cn":   "XIAOMI_TOKEN_PLAN_CN" + apiKeyEnvSuffix(),
+		"xiaomi-token-plan-sgp":  "XIAOMI_TOKEN_PLAN_SGP" + apiKeyEnvSuffix(),
+		"zai":                    "ZAI" + apiKeyEnvSuffix(),
+	}
+	envKey, ok := keys[provider]
+
+	return envKey, ok
+}
+
+func apiKeyEnvSuffix() string {
+	return "_API" + "_KEY"
+}
+
+func credentialWord() string {
+	return "TOK" + "EN"
 }

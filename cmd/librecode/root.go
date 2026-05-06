@@ -11,12 +11,12 @@ var cfgFile string
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "librecode",
-		Short:         "librecode is a local assistant for coding work",
+		Short:         "librecode is an AI assistant for coding work",
 		Version:       vinfo.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
+			return runChat(cmd, "")
 		},
 	}
 

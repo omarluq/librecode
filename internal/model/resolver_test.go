@@ -31,6 +31,19 @@ func TestParseModelPatternHandlesThinkingSuffixes(t *testing.T) {
 	assert.Contains(t, parsed.Warning, "Invalid thinking level")
 }
 
+func testAuthCredential() auth.Credential {
+	return auth.Credential{
+		OAuth:     nil,
+		Type:      auth.CredentialTypeAPIKey,
+		Key:       "stored-key",
+		Access:    "",
+		Refresh:   "",
+		AccountID: "",
+		Expires:   0,
+		ExpiresAt: 0,
+	}
+}
+
 func TestResolveCLIModelInfersProviderAndRejectsUnknownProvider(t *testing.T) {
 	t.Parallel()
 
@@ -65,7 +78,7 @@ func TestResolveModelScopeSupportsGlobsAndDeduplicates(t *testing.T) {
 	t.Parallel()
 
 	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
-		"openai": {OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: "stored-key", ExpiresAt: 0},
+		"openai": testAuthCredential(),
 	})
 	require.NoError(t, err)
 	registry := model.NewRegistry(&model.RegistryOptions{

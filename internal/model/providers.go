@@ -3,10 +3,24 @@ package model
 import "slices"
 
 const (
-	credentialWord = "tok" + "en"
-	gpt54          = "gpt-5.4"
-	kimiK26        = "kimi-k2.6"
-	mimoV25Pro     = "mimo-v2.5-pro"
+	providerAnthropic            = "anthropic"
+	providerAzureOpenAIResponses = "azure-openai-responses"
+	providerCerebras             = "cerebras"
+	providerDeepSeek             = "deepseek"
+	providerGroq                 = "groq"
+	providerMistral              = "mistral"
+	providerMoonshotAI           = "moonshotai"
+	providerMoonshotAICN         = "moonshotai-cn"
+	providerOpenAI               = "openai"
+	providerOpenAICodex          = "openai-codex"
+	providerOpenRouter           = "openrouter"
+	providerVercelAIGateway      = "vercel-ai-gateway"
+	providerXAI                  = "xai"
+	providerZAI                  = "zai"
+	credentialWord               = "tok" + "en"
+	gpt54                        = "gpt-5.4"
+	kimiK26                      = "kimi-k2.6"
+	mimoV25Pro                   = "mimo-v2.5-pro"
 )
 
 type providerDisplayPair struct {
@@ -35,58 +49,158 @@ func BuiltInModels() []Model {
 
 	models := make([]Model, 0, len(providers))
 	for _, provider := range providers {
-		modelID := DefaultModelPerProvider[provider]
-		models = append(models, Model{
-			ThinkingLevelMap: nil,
-			Headers:          nil,
-			Compat:           nil,
-			Provider:         provider,
-			ID:               modelID,
-			Name:             modelID,
-			API:              "",
-			BaseURL:          "",
-			Input:            []InputMode{InputText},
-			Cost:             Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
-			ContextWindow:    0,
-			MaxTokens:        0,
-			Reasoning:        false,
-		})
+		models = append(models, builtInDefaultModel(provider, DefaultModelPerProvider[provider]))
 	}
 
 	return models
 }
 
+func builtInDefaultModel(provider, modelID string) Model {
+	metadata := defaultProviderMetadata()[provider]
+	return Model{
+		ThinkingLevelMap: metadata.ThinkingLevelMap,
+		Headers:          metadata.Headers,
+		Compat:           metadata.Compat,
+		Provider:         provider,
+		ID:               modelID,
+		Name:             modelID,
+		API:              metadata.API,
+		BaseURL:          metadata.BaseURL,
+		Input:            []InputMode{InputText},
+		Cost:             Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
+		ContextWindow:    metadata.ContextWindow,
+		MaxTokens:        metadata.MaxTokens,
+		Reasoning:        metadata.Reasoning,
+	}
+}
+
+type providerMetadata struct {
+	ThinkingLevelMap map[ThinkingLevel]*string
+	Headers          map[string]string
+	Compat           map[string]any
+	API              string
+	BaseURL          string
+	ContextWindow    int
+	MaxTokens        int
+	Reasoning        bool
+}
+
+func defaultProviderMetadata() map[string]providerMetadata {
+	return map[string]providerMetadata{
+		providerAnthropic:            anthropicMetadata(),
+		providerAzureOpenAIResponses: azureOpenAIMetadata(),
+		providerCerebras:             openAICompatibleMetadata("https://api.cerebras.ai/v1", true),
+		providerDeepSeek:             openAICompatibleMetadata("https://api.deepseek.com", true),
+		providerGroq:                 openAICompatibleMetadata("https://api.groq.com/openai/v1", false),
+		providerMistral:              openAICompatibleMetadata("https://api.mistral.ai/v1", false),
+		providerMoonshotAI:           openAICompatibleMetadata("https://api.moonshot.ai/v1", false),
+		providerMoonshotAICN:         openAICompatibleMetadata("https://api.moonshot.cn/v1", false),
+		providerOpenAI:               openAIResponsesMetadata(),
+		providerOpenAICodex:          openAICodexMetadata(),
+		providerOpenRouter:           openAICompatibleMetadata("https://openrouter.ai/api/v1", false),
+		providerVercelAIGateway:      openAICompatibleMetadata("https://ai-gateway.vercel.sh/v1", true),
+		providerXAI:                  openAICompatibleMetadata("https://api.x.ai/v1", true),
+		providerZAI:                  openAICompatibleMetadata("https://api.z.ai/api/coding/paas/v4", true),
+	}
+}
+
+func openAICompatibleMetadata(baseURL string, reasoning bool) providerMetadata {
+	return providerMetadata{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		API:              "openai-completions",
+		BaseURL:          baseURL,
+		ContextWindow:    0,
+		MaxTokens:        0,
+		Reasoning:        reasoning,
+	}
+}
+
+func openAIResponsesMetadata() providerMetadata {
+	return providerMetadata{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		API:              "openai-responses",
+		BaseURL:          "https://api.openai.com/v1",
+		ContextWindow:    0,
+		MaxTokens:        0,
+		Reasoning:        true,
+	}
+}
+
+func openAICodexMetadata() providerMetadata {
+	return providerMetadata{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		API:              "openai-codex-responses",
+		BaseURL:          "https://chatgpt.com/backend-api",
+		ContextWindow:    272000,
+		MaxTokens:        128000,
+		Reasoning:        true,
+	}
+}
+
+func anthropicMetadata() providerMetadata {
+	return providerMetadata{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		API:              "anthropic-messages",
+		BaseURL:          "https://api.anthropic.com",
+		ContextWindow:    200000,
+		MaxTokens:        32000,
+		Reasoning:        true,
+	}
+}
+
+func azureOpenAIMetadata() providerMetadata {
+	return providerMetadata{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		API:              "openai-responses",
+		BaseURL:          "",
+		ContextWindow:    0,
+		MaxTokens:        0,
+		Reasoning:        true,
+	}
+}
+
 func providerDisplayNameMap() map[string]string {
 	pairs := []providerDisplayPair{
 		{Provider: "amazon-bedrock", Display: "Amazon Bedrock"},
-		{Provider: "anthropic", Display: "Anthropic"},
-		{Provider: "azure-openai-responses", Display: "Azure OpenAI Responses"},
-		{Provider: "cerebras", Display: "Cerebras"},
+		{Provider: providerAnthropic, Display: "Anthropic"},
+		{Provider: providerAzureOpenAIResponses, Display: "Azure OpenAI Responses"},
+		{Provider: providerCerebras, Display: "Cerebras"},
 		{Provider: "cloudflare-ai-gateway", Display: "Cloudflare AI Gateway"},
 		{Provider: "cloudflare-workers-ai", Display: "Cloudflare Workers AI"},
-		{Provider: "deepseek", Display: "DeepSeek"},
+		{Provider: providerDeepSeek, Display: "DeepSeek"},
 		{Provider: "fireworks", Display: "Fireworks"},
 		{Provider: "google", Display: "Google Gemini"},
 		{Provider: "google-vertex", Display: "Google Vertex AI"},
-		{Provider: "groq", Display: "Groq"},
+		{Provider: providerGroq, Display: "Groq"},
 		{Provider: "huggingface", Display: "Hugging Face"},
 		{Provider: "kimi-coding", Display: "Kimi For Coding"},
 		{Provider: "minimax", Display: "MiniMax"},
 		{Provider: "minimax-cn", Display: "MiniMax (China)"},
-		{Provider: "mistral", Display: "Mistral"},
-		{Provider: "moonshotai", Display: "Moonshot AI"},
-		{Provider: "moonshotai-cn", Display: "Moonshot AI (China)"},
+		{Provider: providerMistral, Display: "Mistral"},
+		{Provider: providerMoonshotAI, Display: "Moonshot AI"},
+		{Provider: providerMoonshotAICN, Display: "Moonshot AI (China)"},
 		{Provider: "opencode", Display: "OpenCode Zen"},
 		{Provider: "opencode-go", Display: "OpenCode Go"},
-		{Provider: "openai", Display: "OpenAI"},
-		{Provider: "openrouter", Display: "OpenRouter"},
-		{Provider: "vercel-ai-gateway", Display: "Vercel AI Gateway"},
-		{Provider: "xai", Display: "xAI"},
+		{Provider: providerOpenAI, Display: "OpenAI"},
+		{Provider: providerOpenAICodex, Display: "ChatGPT Plus/Pro (Codex)"},
+		{Provider: providerOpenRouter, Display: "OpenRouter"},
+		{Provider: providerVercelAIGateway, Display: "Vercel AI Gateway"},
+		{Provider: providerXAI, Display: "xAI"},
 		{Provider: "xiaomi", Display: "Xiaomi MiMo"},
 		{Provider: xiaomiPlanProvider("ams"), Display: xiaomiPlanDisplay("Amsterdam")},
 		{Provider: xiaomiPlanProvider("cn"), Display: xiaomiPlanDisplay("China")},
 		{Provider: xiaomiPlanProvider("sgp"), Display: xiaomiPlanDisplay("Singapore")},
-		{Provider: "zai", Display: "ZAI"},
+		{Provider: providerZAI, Display: "ZAI"},
 	}
 
 	return displayPairsToMap(pairs)
@@ -95,36 +209,36 @@ func providerDisplayNameMap() map[string]string {
 func defaultModelMap() map[string]string {
 	pairs := []providerModelPair{
 		{Provider: "amazon-bedrock", ModelID: "us.anthropic.claude-opus-4-6-v1"},
-		{Provider: "anthropic", ModelID: "claude-opus-4-7"},
-		{Provider: "azure-openai-responses", ModelID: gpt54},
-		{Provider: "cerebras", ModelID: "zai-glm-4.7"},
+		{Provider: providerAnthropic, ModelID: "claude-opus-4-7"},
+		{Provider: providerAzureOpenAIResponses, ModelID: gpt54},
+		{Provider: providerCerebras, ModelID: "zai-glm-4.7"},
 		{Provider: "cloudflare-ai-gateway", ModelID: "workers-ai/@cf/moonshotai/kimi-k2.6"},
 		{Provider: "cloudflare-workers-ai", ModelID: "@cf/moonshotai/kimi-k2.6"},
-		{Provider: "deepseek", ModelID: "deepseek-v4-pro"},
+		{Provider: providerDeepSeek, ModelID: "deepseek-v4-pro"},
 		{Provider: "fireworks", ModelID: "accounts/fireworks/models/kimi-k2p6"},
 		{Provider: "github-copilot", ModelID: gpt54},
 		{Provider: "google", ModelID: "gemini-3.1-pro-preview"},
 		{Provider: "google-vertex", ModelID: "gemini-3.1-pro-preview"},
-		{Provider: "groq", ModelID: "openai/gpt-oss-120b"},
+		{Provider: providerGroq, ModelID: "openai/gpt-oss-120b"},
 		{Provider: "huggingface", ModelID: "moonshotai/Kimi-K2.6"},
 		{Provider: "kimi-coding", ModelID: "kimi-for-coding"},
 		{Provider: "minimax", ModelID: "MiniMax-M2.7"},
 		{Provider: "minimax-cn", ModelID: "MiniMax-M2.7"},
-		{Provider: "mistral", ModelID: "devstral-medium-latest"},
-		{Provider: "moonshotai", ModelID: kimiK26},
-		{Provider: "moonshotai-cn", ModelID: kimiK26},
+		{Provider: providerMistral, ModelID: "devstral-medium-latest"},
+		{Provider: providerMoonshotAI, ModelID: kimiK26},
+		{Provider: providerMoonshotAICN, ModelID: kimiK26},
 		{Provider: "opencode", ModelID: kimiK26},
 		{Provider: "opencode-go", ModelID: kimiK26},
-		{Provider: "openai", ModelID: gpt54},
-		{Provider: "openai-codex", ModelID: "gpt-5.5"},
-		{Provider: "openrouter", ModelID: "moonshotai/kimi-k2.6"},
-		{Provider: "vercel-ai-gateway", ModelID: "zai/glm-5.1"},
-		{Provider: "xai", ModelID: "grok-4.20-0309-reasoning"},
+		{Provider: providerOpenAI, ModelID: gpt54},
+		{Provider: providerOpenAICodex, ModelID: "gpt-5.5"},
+		{Provider: providerOpenRouter, ModelID: "moonshotai/kimi-k2.6"},
+		{Provider: providerVercelAIGateway, ModelID: "zai/glm-5.1"},
+		{Provider: providerXAI, ModelID: "grok-4.20-0309-reasoning"},
 		{Provider: "xiaomi", ModelID: mimoV25Pro},
 		{Provider: xiaomiPlanProvider("ams"), ModelID: mimoV25Pro},
 		{Provider: xiaomiPlanProvider("cn"), ModelID: mimoV25Pro},
 		{Provider: xiaomiPlanProvider("sgp"), ModelID: mimoV25Pro},
-		{Provider: "zai", ModelID: "glm-5.1"},
+		{Provider: providerZAI, ModelID: "glm-5.1"},
 	}
 
 	return modelPairsToMap(pairs)

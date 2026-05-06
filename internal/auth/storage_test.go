@@ -19,7 +19,7 @@ func TestStorageResolvesAuthSourcesWithoutExposingSecrets(t *testing.T) {
 
 	ctx := context.Background()
 	storage, err := auth.NewInMemoryStorage(ctx, map[string]auth.Credential{
-		"openai": {OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: testStoredKey, ExpiresAt: 0},
+		"openai": testAPIKeyCredential(),
 	})
 	require.NoError(t, err)
 
@@ -46,6 +46,19 @@ func TestStorageResolvesAuthSourcesWithoutExposingSecrets(t *testing.T) {
 	)
 }
 
+func testAPIKeyCredential() auth.Credential {
+	return auth.Credential{
+		OAuth:     nil,
+		Type:      auth.CredentialTypeAPIKey,
+		Key:       testStoredKey,
+		Access:    "",
+		Refresh:   "",
+		AccountID: "",
+		Expires:   0,
+		ExpiresAt: 0,
+	}
+}
+
 func TestStoragePersistsFileCredentials(t *testing.T) {
 	t.Parallel()
 
@@ -54,7 +67,7 @@ func TestStoragePersistsFileCredentials(t *testing.T) {
 	storage, err := auth.NewStorage(ctx, auth.NewFileBackend(authPath))
 	require.NoError(t, err)
 
-	credential := auth.Credential{OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: testStoredKey, ExpiresAt: 0}
+	credential := testAPIKeyCredential()
 	require.NoError(t, storage.Set(ctx, "openai", &credential))
 	assert.Equal(t, []string{"openai"}, storage.List())
 
@@ -81,7 +94,7 @@ func TestStoragePersistsMemoryCredentials(t *testing.T) {
 	storage, err := auth.NewStorage(ctx, backend)
 	require.NoError(t, err)
 
-	credential := auth.Credential{OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: testStoredKey, ExpiresAt: 0}
+	credential := testAPIKeyCredential()
 	require.NoError(t, storage.Set(ctx, "openai", &credential))
 
 	reloaded, err := auth.NewStorage(ctx, backend)

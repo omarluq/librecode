@@ -99,6 +99,8 @@ func (app *App) openPanel(panel *selectionPanel) {
 
 func (app *App) applyPanelSelection(ctx context.Context, value string) error {
 	switch app.selectedPanelKind {
+	case panelAuthLogin, panelAuthLogout:
+		return app.applyAuthSelection(ctx, value)
 	case panelModel:
 		app.applyModelSelection(value)
 		app.closePanel()

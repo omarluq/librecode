@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -189,6 +190,34 @@ func (registry *Registry) RequestAuth(provider string) RequestAuth {
 	}
 	if apiKey == "" && config.AuthHeader {
 		return RequestAuth{Headers: cloneStringMap(config.Headers), APIKey: "", Error: "missing API key", OK: false}
+	}
+
+	return RequestAuth{Headers: cloneStringMap(config.Headers), APIKey: apiKey, Error: "", OK: true}
+}
+
+// RequestAuthContext returns auth and headers, refreshing OAuth credentials when needed.
+func (registry *Registry) RequestAuthContext(ctx context.Context, provider string) RequestAuth {
+	registry.lock.RLock()
+	config := registry.providerConfigs[provider]
+	registry.lock.RUnlock()
+
+	apiKey := config.APIKey
+	if registry.auth != nil {
+		resolvedAPIKey, ok, err := registry.auth.APIKeyContext(ctx, provider)
+		if err != nil {
+			return RequestAuth{Headers: cloneStringMap(config.Headers), APIKey: "", Error: err.Error(), OK: false}
+		}
+		if ok {
+			apiKey = resolvedAPIKey
+		}
+	}
+	if apiKey == "" {
+		return RequestAuth{
+			Headers: cloneStringMap(config.Headers),
+			APIKey:  "",
+			Error:   "missing API key for provider " + provider,
+			OK:      false,
+		}
 	}
 
 	return RequestAuth{Headers: cloneStringMap(config.Headers), APIKey: apiKey, Error: "", OK: true}

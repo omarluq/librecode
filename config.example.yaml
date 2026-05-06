@@ -20,8 +20,8 @@ extensions:
     - .librecode/extensions
 
 assistant:
-  provider: local
-  model: librecode
+  provider: openai-codex
+  model: gpt-5.5
   thinking_level: off
 
 cache:

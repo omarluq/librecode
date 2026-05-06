@@ -9,25 +9,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samber/lo"
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
 const slashPrefix = "/"
 
-// Runtime coordinates local prompt handling and durable sessions.
+// Runtime coordinates prompt handling and durable sessions.
 type Runtime struct {
 	cfg        *config.Config
 	sessions   *database.SessionRepository
 	extensions *extension.Manager
 	cache      *ResponseCache
 	events     *event.Bus
+	models     *model.Registry
+	client     CompletionClient
 	logger     *slog.Logger
 }
 
@@ -56,19 +58,26 @@ func NewRuntime(
 	extensions *extension.Manager,
 	cache *ResponseCache,
 	events *event.Bus,
+	models *model.Registry,
+	client CompletionClient,
 	logger *slog.Logger,
 ) *Runtime {
+	if client == nil {
+		client = NewHTTPCompletionClient()
+	}
 	return &Runtime{
 		cfg:        cfg,
 		sessions:   sessions,
 		extensions: extensions,
 		cache:      cache,
 		events:     events,
+		models:     models,
+		client:     client,
 		logger:     logger,
 	}
 }
 
-// Prompt appends a user prompt and a local assistant response to the selected session.
+// Prompt appends a user prompt and an assistant response to the selected session.
 func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*PromptResponse, error) {
 	activeSession, err := runtime.resolveSession(ctx, request)
 	if err != nil {
@@ -133,6 +142,11 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 // SessionRepository returns the underlying session repository for command and UI layers.
 func (runtime *Runtime) SessionRepository() *database.SessionRepository {
 	return runtime.sessions
+}
+
+// ModelRegistry returns the model registry used by the runtime.
+func (runtime *Runtime) ModelRegistry() *model.Registry {
+	return runtime.models
 }
 
 func (runtime *Runtime) emit(ctx context.Context, channel string, data any) {
@@ -215,7 +229,10 @@ func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt stri
 		return cachedResponse, true, nil
 	}
 
-	response = runtime.localResponse(prompt)
+	response, err = runtime.modelResponse(ctx, sessionID)
+	if err != nil {
+		return "", false, err
+	}
 	runtime.cache.Set(cacheKey, response)
 
 	return response, false, nil
@@ -265,39 +282,85 @@ func (runtime *Runtime) respondToToolCommand(ctx context.Context, cwd, args stri
 	return result.Text(), nil
 }
 
-func (runtime *Runtime) localResponse(prompt string) string {
-	commands := runtime.extensions.Commands()
-	extensionTools := runtime.extensions.Tools()
-	builtInTools := tool.AllDefinitions()
-	modelLine := fmt.Sprintf(
-		"provider=%s model=%s thinking=%s",
-		runtime.cfg.Assistant.Provider,
-		runtime.cfg.Assistant.Model,
-		runtime.cfg.Assistant.ThinkingLevel,
-	)
-	parts := []string{
-		"librecode local runtime is wired and ready.",
-		modelLine,
-		fmt.Sprintf("prompt=%q", prompt),
-		fmt.Sprintf(
-			"extension_commands=%d extension_tools=%d built_in_tools=%d",
-			len(commands),
-			len(extensionTools),
-			len(builtInTools),
-		),
+func (runtime *Runtime) modelResponse(ctx context.Context, sessionID string) (string, error) {
+	if runtime.models == nil {
+		return "", oops.In("assistant").Code("models_unavailable").Errorf("model registry is not configured")
+	}
+	selectedModel, err := runtime.selectedModel()
+	if err != nil {
+		return "", err
+	}
+	auth := runtime.models.RequestAuthContext(ctx, selectedModel.Provider)
+	if !auth.OK {
+		return "", oops.In("assistant").
+			Code("auth_missing").
+			With("provider", selectedModel.Provider).
+			Wrapf(fmt.Errorf("%s", auth.Error), "resolve model auth")
+	}
+	sessionMessages, err := runtime.sessions.Messages(ctx, sessionID)
+	if err != nil {
+		return "", oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
 	}
 
-	if len(commands) > 0 {
-		parts = append(parts, "commands="+joinCommandNames(commands))
+	return runtime.client.Complete(ctx, &CompletionRequest{
+		Model:         selectedModel,
+		Auth:          auth,
+		Messages:      messageEntities(sessionMessages),
+		SessionID:     sessionID,
+		SystemPrompt:  defaultSystemPrompt(),
+		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,
+	})
+}
+
+func (runtime *Runtime) selectedModel() (model.Model, error) {
+	provider := runtime.cfg.Assistant.Provider
+	modelID := runtime.cfg.Assistant.Model
+	models := runtime.models.All()
+	for index := range models {
+		candidate := &models[index]
+		if candidate.Provider == provider && candidate.ID == modelID {
+			return *candidate, nil
+		}
 	}
-	if len(extensionTools) > 0 {
-		parts = append(parts, "extension_tools="+joinExtensionToolNames(extensionTools))
-	}
-	if len(builtInTools) > 0 {
-		parts = append(parts, "built_in_tools="+joinBuiltInToolNames(builtInTools))
+	if provider == "" || modelID == "" {
+		return model.Model{}, oops.In("assistant").Code("model_missing").Errorf("select a model with /model or /login")
 	}
 
-	return strings.Join(parts, "\n")
+	return model.Model{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		Provider:         provider,
+		ID:               modelID,
+		Name:             modelID,
+		API:              "openai-completions",
+		BaseURL:          "",
+		Input:            []model.InputMode{model.InputText},
+		Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
+		ContextWindow:    0,
+		MaxTokens:        0,
+		Reasoning:        false,
+	}, nil
+}
+
+func messageEntities(messages []database.SessionMessageEntity) []database.MessageEntity {
+	converted := make([]database.MessageEntity, 0, len(messages))
+	for index := range messages {
+		message := &messages[index]
+		converted = append(converted, database.MessageEntity{
+			Timestamp: message.CreatedAt,
+			Role:      message.Role,
+			Content:   message.Content,
+			Provider:  message.Provider,
+			Model:     message.Model,
+		})
+	}
+
+	return converted
+}
+
+func defaultSystemPrompt() string {
+	return "You are librecode, an AI coding assistant. Be concise, helpful, and accurate."
 }
 
 func (runtime *Runtime) cacheKey(sessionID, prompt string) string {
@@ -327,30 +390,6 @@ func splitSlashCommand(prompt string) (name, args string) {
 	}
 
 	return commandName, strings.TrimSpace(commandArgs)
-}
-
-func joinCommandNames(commands []extension.Command) string {
-	names := lo.Map(commands, func(command extension.Command, _ int) string {
-		return command.Name
-	})
-
-	return strings.Join(names, ",")
-}
-
-func joinExtensionToolNames(tools []extension.Tool) string {
-	names := lo.Map(tools, func(tool extension.Tool, _ int) string {
-		return tool.Name
-	})
-
-	return strings.Join(names, ",")
-}
-
-func joinBuiltInToolNames(definitions []tool.Definition) string {
-	names := lo.Map(definitions, func(definition tool.Definition, _ int) string {
-		return string(definition.Name)
-	})
-
-	return strings.Join(names, ",")
 }
 
 // DefaultCWD returns an absolute working directory for prompt requests.

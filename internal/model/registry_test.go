@@ -63,7 +63,7 @@ func TestRegistryAvailableUsesAuthStorage(t *testing.T) {
 	t.Parallel()
 
 	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
-		"auth-provider": {OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: "stored-key", ExpiresAt: 0},
+		"auth-provider": testCredential(),
 	})
 	require.NoError(t, err)
 	registry := model.NewRegistry(&model.RegistryOptions{
@@ -79,6 +79,19 @@ func TestRegistryAvailableUsesAuthStorage(t *testing.T) {
 	available := registry.Available()
 	require.Len(t, available, 1)
 	assert.Equal(t, "auth-provider", available[0].Provider)
+}
+
+func testCredential() auth.Credential {
+	return auth.Credential{
+		OAuth:     nil,
+		Type:      auth.CredentialTypeAPIKey,
+		Key:       "stored-key",
+		Access:    "",
+		Refresh:   "",
+		AccountID: "",
+		Expires:   0,
+		ExpiresAt: 0,
+	}
 }
 
 func writeModelFile(t *testing.T, path, content string) {

@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
@@ -39,6 +40,7 @@ type RunOptions struct {
 	Resources *core.ResourceSnapshot `json:"resources"`
 	Runtime   *assistant.Runtime     `json:"-"`
 	Models    *model.Registry        `json:"-"`
+	Auth      *auth.Storage          `json:"-"`
 	Config    *config.Config         `json:"-"`
 	CWD       string                 `json:"cwd"`
 	SessionID string                 `json:"session_id"`
@@ -50,6 +52,7 @@ type App struct {
 	screen            tcell.Screen
 	runtime           *assistant.Runtime
 	models            *model.Registry
+	auth              *auth.Storage
 	cfg               *config.Config
 	editor            *editor
 	keys              *keybindings
@@ -115,6 +118,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		screen:            screen,
 		runtime:           options.Runtime,
 		models:            options.Models,
+		auth:              options.Auth,
 		cfg:               options.Config,
 		editor:            newEditor(),
 		keys:              newDefaultKeybindings(),

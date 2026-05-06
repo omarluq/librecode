@@ -10,12 +10,13 @@ import (
 	main "github.com/omarluq/librecode/cmd/librecode"
 )
 
-func TestRootCmd_ShowsHelp(t *testing.T) {
+func TestRootCmd_HelpFlagShowsHelp(t *testing.T) {
 	t.Parallel()
 
 	cmd := main.NewRootCmdForTest()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--help"})
 
 	err := cmd.Execute()
 	require.NoError(t, err)

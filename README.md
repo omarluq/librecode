@@ -143,7 +143,7 @@ librecode config validate   # Check config is valid
 
 ### Agent Runtime: sessions, extensions, and tools
 
-The local assistant runtime persists SQLite session trees, loads Lua workflow extensions, and exposes librecode-style built-in coding tools:
+The assistant runtime persists SQLite session trees, loads Lua workflow extensions, and exposes librecode-style built-in coding tools:
 
 ```bash
 librecode prompt "hello"                               # append a prompt to the current cwd session

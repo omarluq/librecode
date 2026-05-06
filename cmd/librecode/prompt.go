@@ -18,7 +18,7 @@ func newPromptCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "prompt [message]",
-		Short: "Send a prompt through the local assistant runtime",
+		Short: "Send a prompt through the assistant runtime",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			message, err := promptMessage(cmd, args)

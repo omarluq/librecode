@@ -15,9 +15,16 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/model"
+)
+
+const (
+	testRuntimeProvider = "test-provider"
+	testRuntimeModel    = "test-model"
 )
 
 func TestRuntime_PromptPersistsConversation(t *testing.T) {
@@ -36,7 +43,7 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	assert.NotEmpty(t, response.SessionID)
 	assert.NotEmpty(t, response.UserEntryID)
 	assert.NotEmpty(t, response.AssistantEntryID)
-	assert.Contains(t, response.Text, "librecode local runtime")
+	assert.Contains(t, response.Text, "test assistant response")
 
 	entries, err := repository.Entries(context.Background(), response.SessionID)
 	require.NoError(t, err)
@@ -106,8 +113,61 @@ func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionReposito
 		manager,
 		cache,
 		nil,
+		testRegistry(t),
+		testCompletionClient{},
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	), repository
+}
+
+type testCompletionClient struct{}
+
+func (testCompletionClient) Complete(_ context.Context, request *assistant.CompletionRequest) (string, error) {
+	return "test assistant response for " + request.Messages[len(request.Messages)-1].Content, nil
+}
+
+func testRegistry(t *testing.T) *model.Registry {
+	t.Helper()
+
+	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+		testRuntimeProvider: testProviderCredential(),
+	})
+	require.NoError(t, err)
+
+	return model.NewRegistry(&model.RegistryOptions{
+		ConfigSource: nil,
+		Auth:         storage,
+		ModelsPath:   "",
+		BuiltIns: []model.Model{
+			{
+				ThinkingLevelMap: nil,
+				Headers:          nil,
+				Compat:           nil,
+				Provider:         testRuntimeProvider,
+				ID:               testRuntimeModel,
+				Name:             testRuntimeModel,
+				API:              "openai-completions",
+				BaseURL:          "https://example.invalid/v1",
+				Input:            []model.InputMode{model.InputText},
+				Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
+				ContextWindow:    0,
+				MaxTokens:        0,
+				Reasoning:        false,
+			},
+		},
+	})
+}
+
+func testProviderCredential() auth.Credential {
+	return auth.Credential{
+		OAuth:     nil,
+		Type:      auth.CredentialTypeAPIKey,
+		Key:       "test-key",
+		Access:    "",
+		Refresh:   "",
+		AccountID: "",
+		Expires:   0,
+		ExpiresAt: 0,
+	}
 }
 
 func testConfig() *config.Config {
@@ -129,8 +189,8 @@ func testConfig() *config.Config {
 			Paths:   []string{},
 		},
 		Assistant: config.AssistantConfig{
-			Provider:      "local",
-			Model:         "librecode",
+			Provider:      testRuntimeProvider,
+			Model:         testRuntimeModel,
 			ThinkingLevel: "off",
 		},
 		Cache: config.CacheConfig{

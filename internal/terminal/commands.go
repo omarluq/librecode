@@ -10,51 +10,75 @@ import (
 
 func (app *App) submitCommand(ctx context.Context, text string) (bool, error) {
 	command, args, _ := strings.Cut(trimCommandPrefix(text), " ")
+	trimmedArgs := strings.TrimSpace(args)
 	if command == "quit" || command == "exit" {
 		return true, nil
 	}
-	if app.openCommandPanel(ctx, command) {
+	if trimmedArgs == "" && app.openCommandPanel(ctx, command) {
 		return false, nil
 	}
 
-	return app.runSessionCommand(ctx, command, strings.TrimSpace(args), text)
+	return app.runSessionCommand(ctx, command, trimmedArgs, text)
 }
 
 func (app *App) openCommandPanel(ctx context.Context, command string) bool {
-	switch command {
-	case "hotkeys":
-		app.openHotkeysPanel()
-	case "model":
-		app.openModelPanel()
-	case "scoped-models":
-		app.openScopedModelsPanel()
-	case "settings":
-		app.openSettingsPanel()
-	case "resume":
-		app.openSessionPanel(ctx)
-	case "tree":
-		app.openTreePanel(ctx)
-	case "changelog":
-		app.openChangelogPanel()
-	default:
+	handlers := map[string]func(){
+		"changelog":     app.openChangelogPanel,
+		"hotkeys":       app.openHotkeysPanel,
+		"login":         app.openLoginPanel,
+		"logout":        app.openLogoutPanel,
+		"model":         app.openModelPanel,
+		"scoped-models": app.openScopedModelsPanel,
+		"settings":      app.openSettingsPanel,
+		"resume":        func() { app.openSessionPanel(ctx) },
+		"tree":          func() { app.openTreePanel(ctx) },
+	}
+	handler, ok := handlers[command]
+	if !ok {
 		return false
 	}
+	handler()
 
 	return true
 }
 
 func (app *App) runSessionCommand(ctx context.Context, command, args, original string) (bool, error) {
-	switch command {
-	case "new":
-		return false, app.newSession(ctx, args)
-	case "name":
-		return false, app.renameSession(ctx, args)
-	case "session":
-		app.showSessionInfo(ctx)
-		return false, nil
-	default:
-		return false, app.sendPrompt(ctx, original)
+	if handler, ok := app.sessionCommandHandlers(ctx, args)[command]; ok {
+		return false, handler()
 	}
+	if handler, ok := app.sessionCommandNotifications(ctx, command); ok {
+		handler()
+		return false, nil
+	}
+
+	return false, app.sendPrompt(ctx, original)
+}
+
+func (app *App) sessionCommandHandlers(ctx context.Context, args string) map[string]func() error {
+	return map[string]func() error{
+		"clone":  func() error { return app.cloneSession(ctx, args) },
+		"copy":   func() error { return app.copyLastAssistantMessage(ctx) },
+		"fork":   func() error { return app.newSession(ctx, args) },
+		"login":  func() error { return app.loginCommand(ctx, args) },
+		"logout": func() error { return app.logoutCommand(ctx, args) },
+		"name":   func() error { return app.renameSession(ctx, args) },
+		"new":    func() error { return app.newSession(ctx, args) },
+		"reload": func() error { return app.reloadRuntime(ctx) },
+	}
+}
+
+func (app *App) sessionCommandNotifications(ctx context.Context, command string) (func(), bool) {
+	handlers := map[string]func(){
+		"auth":    app.showAuthInfo,
+		"compact": func() { app.addSystemMessage("manual compaction is not implemented yet") },
+		"export":  func() { app.addSystemMessage("/" + command + " is not implemented yet") },
+		"import":  func() { app.addSystemMessage("/" + command + " is not implemented yet") },
+		"session": func() { app.showSessionInfo(ctx) },
+		"share":   func() { app.addSystemMessage("/" + command + " is not implemented yet") },
+	}
+	handler, ok := handlers[command]
+
+	return handler, ok
 }
 
 func (app *App) newSession(ctx context.Context, name string) error {
