@@ -123,6 +123,21 @@ func configEntries(cfg *config.Config) []configEntry {
 		{key: "app.env", value: cfg.App.Env},
 		{key: "logging.level", value: cfg.Logging.Level},
 		{key: "logging.format", value: cfg.Logging.Format},
+		{key: "database.path", value: cfg.Database.Path},
+		{key: "database.apply_migrations", value: fmt.Sprint(cfg.Database.ApplyMigrations)},
+		{key: "database.max_open_conns", value: fmt.Sprint(cfg.Database.MaxOpenConns)},
+		{key: "database.max_idle_conns", value: fmt.Sprint(cfg.Database.MaxIdleConns)},
+		{key: "database.conn_max_lifetime", value: cfg.Database.ConnMaxLifetime.String()},
+		{key: "plugins.enabled", value: fmt.Sprint(cfg.Plugins.Enabled)},
+		{key: "plugins.paths", value: strings.Join(cfg.Plugins.Paths, ",")},
+		{key: "agent.provider", value: cfg.Agent.Provider},
+		{key: "agent.model", value: cfg.Agent.Model},
+		{key: "agent.thinking_level", value: cfg.Agent.ThinkingLevel},
+		{key: "cache.enabled", value: fmt.Sprint(cfg.Cache.Enabled)},
+		{key: "cache.capacity", value: fmt.Sprint(cfg.Cache.Capacity)},
+		{key: "cache.ttl", value: cfg.Cache.TTL.String()},
+		{key: "ksql.endpoint", value: cfg.KSQL.Endpoint},
+		{key: "ksql.timeout", value: cfg.KSQL.Timeout.String()},
 	}
 }
 

@@ -5,3 +5,31 @@ app:
 logging:
   level: info
   format: pretty
+
+database:
+  # Empty path resolves to ~/.local/state/librecode/sessions.db
+  path: ""
+  apply_migrations: true
+  max_open_conns: 1
+  max_idle_conns: 1
+  conn_max_lifetime: 30m
+
+plugins:
+  enabled: true
+  paths:
+    - .librecode/plugins
+    - .pi/plugins
+
+agent:
+  provider: local
+  model: librecode-go
+  thinking_level: off
+
+cache:
+  enabled: true
+  capacity: 512
+  ttl: 10m
+
+ksql:
+  endpoint: ""
+  timeout: 10s
