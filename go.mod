@@ -3,6 +3,7 @@ module github.com/omarluq/librecode
 go 1.26.1
 
 require (
+	github.com/Oudwins/zog v0.22.2
 	github.com/gdamore/tcell/v2 v2.13.9
 	github.com/google/uuid v1.6.0
 	github.com/pressly/goose/v3 v3.27.1

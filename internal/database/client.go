@@ -59,6 +59,9 @@ func (client *KSQLClient) Execute(ctx context.Context, statement string) ([]byte
 		StreamsProperties: map[string]string{},
 		KSQL:              statement,
 	}
+	if err := validateKSQLRequestEntity(&payload); err != nil {
+		return nil, fmt.Errorf("ksql: validate request: %w", err)
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("ksql: encode request: %w", err)

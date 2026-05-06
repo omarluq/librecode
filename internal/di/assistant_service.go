@@ -23,7 +23,7 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 	return &AssistantService{
 		Runtime: assistant.NewRuntime(
 			cfg,
-			databaseService.Store,
+			databaseService.Sessions,
 			extensionService.Manager,
 			cache.Responses,
 			events.Bus,

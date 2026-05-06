@@ -38,9 +38,10 @@ func TestRegistryLoadsCustomModelsAndProviderOverrides(t *testing.T) {
 	}, "\n"))
 
 	registry := model.NewRegistry(&model.RegistryOptions{
-		Auth:       nil,
-		ModelsPath: modelsPath,
-		BuiltIns:   []model.Model{testModel("openai", "gpt-5.4", "GPT")},
+		ConfigSource: nil,
+		Auth:         nil,
+		ModelsPath:   modelsPath,
+		BuiltIns:     []model.Model{testModel("openai", "gpt-5.4", "GPT")},
 	})
 	require.NoError(t, registry.Error())
 
@@ -66,8 +67,9 @@ func TestRegistryAvailableUsesAuthStorage(t *testing.T) {
 	})
 	require.NoError(t, err)
 	registry := model.NewRegistry(&model.RegistryOptions{
-		Auth:       storage,
-		ModelsPath: "",
+		ConfigSource: nil,
+		Auth:         storage,
+		ModelsPath:   "",
 		BuiltIns: []model.Model{
 			testModel("auth-provider", "claude", "Claude"),
 			testModel("noauth-provider", "gpt", "GPT"),

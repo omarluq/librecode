@@ -46,9 +46,22 @@ const (
 	RoleCompactionSummary Role = "compactionSummary"
 )
 
-// MessageEntity is the durable representation of an assistant message.
+// MessageEntity is the context-facing representation of an assistant message.
 type MessageEntity struct {
 	Timestamp time.Time `json:"timestamp"`
+	Role      Role      `json:"role"`
+	Content   string    `json:"content"`
+	Provider  string    `json:"provider,omitempty"`
+	Model     string    `json:"model,omitempty"`
+}
+
+// SessionMessageEntity is the normalized durable message related to a session and entry.
+type SessionMessageEntity struct {
+	CreatedAt time.Time `json:"created_at"`
+	ID        string    `json:"id"`
+	SessionID string    `json:"session_id"`
+	EntryID   string    `json:"entry_id"`
+	Sender    string    `json:"sender"`
 	Role      Role      `json:"role"`
 	Content   string    `json:"content"`
 	Provider  string    `json:"provider,omitempty"`
@@ -104,6 +117,14 @@ type SessionContextEntity struct {
 	Model         string          `json:"model,omitempty"`
 	ThinkingLevel string          `json:"thinking_level,omitempty"`
 	Messages      []MessageEntity `json:"messages"`
+}
+
+// DocumentEntity stores Pi file-backed runtime documents in SQLite.
+type DocumentEntity struct {
+	UpdatedAt time.Time `json:"updated_at"`
+	Namespace string    `json:"namespace"`
+	Key       string    `json:"key"`
+	ValueJSON string    `json:"value_json"`
 }
 
 // KSQLRequestEntity is the JSON body posted to the ksqlDB REST API.

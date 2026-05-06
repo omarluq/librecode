@@ -37,13 +37,13 @@ func newSessionNewCmd() *cobra.Command {
 			name := strings.TrimSpace(strings.Join(args, " "))
 
 			return withContainer(cmd.Context(), func(container *di.Container) error {
-				store := di.MustInvoke[*di.DatabaseService](container).Store
+				repository := di.MustInvoke[*di.DatabaseService](container).Sessions
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
 					return err
 				}
 
-				createdSession, err := store.CreateSession(cmd.Context(), cwd, name, "")
+				createdSession, err := repository.CreateSession(cmd.Context(), cwd, name, "")
 				if err != nil {
 					return err
 				}
@@ -61,13 +61,13 @@ func newSessionListCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withContainer(cmd.Context(), func(container *di.Container) error {
-				store := di.MustInvoke[*di.DatabaseService](container).Store
+				repository := di.MustInvoke[*di.DatabaseService](container).Sessions
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
 					return err
 				}
 
-				sessions, err := store.ListSessions(cmd.Context(), cwd)
+				sessions, err := repository.ListSessions(cmd.Context(), cwd)
 				if err != nil {
 					return err
 				}
@@ -91,8 +91,8 @@ func newSessionShowCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withContainer(cmd.Context(), func(container *di.Container) error {
-				store := di.MustInvoke[*di.DatabaseService](container).Store
-				entries, err := store.Entries(cmd.Context(), args[0])
+				repository := di.MustInvoke[*di.DatabaseService](container).Sessions
+				entries, err := repository.Entries(cmd.Context(), args[0])
 				if err != nil {
 					return err
 				}

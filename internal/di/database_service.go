@@ -20,9 +20,9 @@ const sqliteDriverName = "sqlite"
 
 // DatabaseService owns the session database connection and schema lifecycle.
 type DatabaseService struct {
-	DB    *sql.DB
-	Store *database.SessionStore
-	path  string
+	DB       *sql.DB
+	Sessions *database.SessionRepository
+	path     string
 }
 
 // NewDatabaseService opens the session database and applies embedded migrations.
@@ -66,9 +66,9 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 	}
 
 	return &DatabaseService{
-		DB:    connection,
-		Store: database.NewSessionStore(connection),
-		path:  databasePath,
+		DB:       connection,
+		Sessions: database.NewSessionRepository(connection),
+		path:     databasePath,
 	}, nil
 }
 

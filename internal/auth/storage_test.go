@@ -12,18 +12,20 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 )
 
+const testStoredKey = "stored-key"
+
 func TestStorageResolvesAuthSourcesWithoutExposingSecrets(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 	storage, err := auth.NewInMemoryStorage(ctx, map[string]auth.Credential{
-		"openai": {OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: "stored-key", ExpiresAt: 0},
+		"openai": {OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: testStoredKey, ExpiresAt: 0},
 	})
 	require.NoError(t, err)
 
 	apiKey, found := storage.APIKey("openai")
 	require.True(t, found)
-	assert.Equal(t, "stored-key", apiKey)
+	assert.Equal(t, testStoredKey, apiKey)
 	assert.Equal(t, auth.Status{Source: auth.SourceStored, Label: "", Configured: true}, storage.AuthStatus("openai"))
 
 	storage.SetRuntimeAPIKey("openai", "runtime-key")
@@ -52,7 +54,7 @@ func TestStoragePersistsFileCredentials(t *testing.T) {
 	storage, err := auth.NewStorage(ctx, auth.NewFileBackend(authPath))
 	require.NoError(t, err)
 
-	credential := auth.Credential{OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: "stored-key", ExpiresAt: 0}
+	credential := auth.Credential{OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: testStoredKey, ExpiresAt: 0}
 	require.NoError(t, storage.Set(ctx, "openai", &credential))
 	assert.Equal(t, []string{"openai"}, storage.List())
 
@@ -60,7 +62,7 @@ func TestStoragePersistsFileCredentials(t *testing.T) {
 	require.NoError(t, err)
 	apiKey, found := reloaded.APIKey("openai")
 	require.True(t, found)
-	assert.Equal(t, "stored-key", apiKey)
+	assert.Equal(t, testStoredKey, apiKey)
 
 	info, err := os.Stat(authPath)
 	require.NoError(t, err)
@@ -68,4 +70,23 @@ func TestStoragePersistsFileCredentials(t *testing.T) {
 
 	require.NoError(t, reloaded.Remove(ctx, "openai"))
 	assert.False(t, reloaded.HasStored("openai"))
+}
+
+func TestStoragePersistsMemoryCredentials(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	backend, err := auth.NewMemoryBackend(map[string]auth.Credential{})
+	require.NoError(t, err)
+	storage, err := auth.NewStorage(ctx, backend)
+	require.NoError(t, err)
+
+	credential := auth.Credential{OAuth: nil, Type: auth.CredentialTypeAPIKey, Key: testStoredKey, ExpiresAt: 0}
+	require.NoError(t, storage.Set(ctx, "openai", &credential))
+
+	reloaded, err := auth.NewStorage(ctx, backend)
+	require.NoError(t, err)
+	apiKey, found := reloaded.APIKey("openai")
+	require.True(t, found)
+	assert.Equal(t, testStoredKey, apiKey)
 }

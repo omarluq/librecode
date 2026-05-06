@@ -35,8 +35,9 @@ func TestResolveCLIModelInfersProviderAndRejectsUnknownProvider(t *testing.T) {
 	t.Parallel()
 
 	registry := model.NewRegistry(&model.RegistryOptions{
-		Auth:       nil,
-		ModelsPath: "",
+		ConfigSource: nil,
+		Auth:         nil,
+		ModelsPath:   "",
 		BuiltIns: []model.Model{
 			testModel("openai", "gpt-5.4", "GPT"),
 			testModel("zai", "glm-5.1", "GLM"),
@@ -68,8 +69,9 @@ func TestResolveModelScopeSupportsGlobsAndDeduplicates(t *testing.T) {
 	})
 	require.NoError(t, err)
 	registry := model.NewRegistry(&model.RegistryOptions{
-		Auth:       storage,
-		ModelsPath: "",
+		ConfigSource: nil,
+		Auth:         storage,
+		ModelsPath:   "",
 		BuiltIns: []model.Model{
 			testModel("openai", "gpt-5.4", "GPT"),
 			testModel("openai", "gpt-5.4-20250101", "GPT dated"),

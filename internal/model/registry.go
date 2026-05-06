@@ -14,16 +14,23 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 )
 
+// ConfigSource reads model registry configuration from database-backed runtime documents.
+type ConfigSource interface {
+	Read() (content []byte, found bool, err error)
+}
+
 // RegistryOptions configures a model registry.
 type RegistryOptions struct {
-	Auth       *auth.Storage `json:"-"`
-	ModelsPath string        `json:"models_path"`
-	BuiltIns   []Model       `json:"built_ins"`
+	ConfigSource ConfigSource  `json:"-"`
+	Auth         *auth.Storage `json:"-"`
+	ModelsPath   string        `json:"models_path"`
+	BuiltIns     []Model       `json:"built_ins"`
 }
 
 // Registry loads built-in and custom models and resolves provider request auth.
 type Registry struct {
 	loadError       error
+	configSource    ConfigSource
 	auth            *auth.Storage
 	providerConfigs map[string]providerRequestConfig
 	modelsPath      string
@@ -105,6 +112,7 @@ type providerPatch struct {
 func NewRegistry(options *RegistryOptions) *Registry {
 	resolvedOptions := registryOptions(options)
 	registry := &Registry{
+		configSource:    resolvedOptions.ConfigSource,
 		auth:            resolvedOptions.Auth,
 		providerConfigs: map[string]providerRequestConfig{},
 		modelsPath:      resolvedOptions.ModelsPath,
@@ -197,10 +205,18 @@ func registryOptions(options *RegistryOptions) *RegistryOptions {
 		return options
 	}
 
-	return &RegistryOptions{Auth: nil, ModelsPath: "", BuiltIns: BuiltInModels()}
+	return &RegistryOptions{ConfigSource: nil, Auth: nil, ModelsPath: "", BuiltIns: BuiltInModels()}
 }
 
 func (registry *Registry) loadCustomModels() customModelsResult {
+	if registry.configSource != nil {
+		content, found, err := registry.configSource.Read()
+		if err != nil || !found {
+			return emptyCustomModelsResult(err)
+		}
+
+		return parseCustomModels(content, "database:models")
+	}
 	if registry.modelsPath == "" {
 		return emptyCustomModelsResult(nil)
 	}

@@ -24,7 +24,7 @@ const slashPrefix = "/"
 // Runtime coordinates local prompt handling and durable sessions.
 type Runtime struct {
 	cfg        *config.Config
-	store      *database.SessionStore
+	sessions   *database.SessionRepository
 	extensions *extension.Manager
 	cache      *ResponseCache
 	events     *event.Bus
@@ -51,7 +51,7 @@ type PromptResponse struct {
 // NewRuntime creates an assistant runtime.
 func NewRuntime(
 	cfg *config.Config,
-	store *database.SessionStore,
+	sessions *database.SessionRepository,
 	extensions *extension.Manager,
 	cache *ResponseCache,
 	events *event.Bus,
@@ -59,7 +59,7 @@ func NewRuntime(
 ) *Runtime {
 	return &Runtime{
 		cfg:        cfg,
-		store:      store,
+		sessions:   sessions,
 		extensions: extensions,
 		cache:      cache,
 		events:     events,
@@ -74,7 +74,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		return nil, err
 	}
 
-	leaf, _, err := runtime.store.LeafEntry(ctx, activeSession.ID)
+	leaf, _, err := runtime.sessions.LeafEntry(ctx, activeSession.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		Provider:  "",
 		Model:     "",
 	}
-	userEntry, err := runtime.store.AppendMessage(ctx, activeSession.ID, parentIDFromEntry(leaf), &userMessage)
+	userEntry, err := runtime.sessions.AppendMessage(ctx, activeSession.ID, parentIDFromEntry(leaf), &userMessage)
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
 	}
@@ -109,7 +109,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		Provider:  runtime.cfg.Assistant.Provider,
 		Model:     runtime.cfg.Assistant.Model,
 	}
-	assistantEntry, err := runtime.store.AppendMessage(ctx, activeSession.ID, &userEntry.ID, &assistantMessage)
+	assistantEntry, err := runtime.sessions.AppendMessage(ctx, activeSession.ID, &userEntry.ID, &assistantMessage)
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_assistant").Wrapf(err, "append assistant message")
 	}
@@ -129,9 +129,9 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 	}, nil
 }
 
-// SessionStore returns the underlying session store for command and UI layers.
-func (runtime *Runtime) SessionStore() *database.SessionStore {
-	return runtime.store
+// SessionRepository returns the underlying session repository for command and UI layers.
+func (runtime *Runtime) SessionRepository() *database.SessionRepository {
+	return runtime.sessions
 }
 
 func (runtime *Runtime) emit(ctx context.Context, channel string, data any) {
@@ -144,7 +144,7 @@ func (runtime *Runtime) emit(ctx context.Context, channel string, data any) {
 
 func (runtime *Runtime) resolveSession(ctx context.Context, request PromptRequest) (*database.SessionEntity, error) {
 	if request.SessionID != "" {
-		loadedSession, found, err := runtime.store.GetSession(ctx, request.SessionID)
+		loadedSession, found, err := runtime.sessions.GetSession(ctx, request.SessionID)
 		if err != nil {
 			return nil, err
 		}
@@ -160,10 +160,10 @@ func (runtime *Runtime) resolveSession(ctx context.Context, request PromptReques
 	}
 
 	if request.Name != "" {
-		return runtime.store.CreateSession(ctx, request.CWD, request.Name, "")
+		return runtime.sessions.CreateSession(ctx, request.CWD, request.Name, "")
 	}
 
-	latestSession, found, err := runtime.store.LatestSession(ctx, request.CWD)
+	latestSession, found, err := runtime.sessions.LatestSession(ctx, request.CWD)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +171,7 @@ func (runtime *Runtime) resolveSession(ctx context.Context, request PromptReques
 		return latestSession, nil
 	}
 
-	return runtime.store.CreateSession(ctx, request.CWD, "", "")
+	return runtime.sessions.CreateSession(ctx, request.CWD, "", "")
 }
 
 func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt string) (

@@ -23,7 +23,7 @@ import (
 func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	t.Parallel()
 
-	runtime, store := newTestRuntime(t)
+	runtime, repository := newTestRuntime(t)
 
 	response, err := runtime.Prompt(context.Background(), assistant.PromptRequest{
 		SessionID: "",
@@ -37,7 +37,7 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	assert.NotEmpty(t, response.AssistantEntryID)
 	assert.Contains(t, response.Text, "librecode-go local runtime")
 
-	entries, err := store.Entries(context.Background(), response.SessionID)
+	entries, err := repository.Entries(context.Background(), response.SessionID)
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 	assert.Equal(t, database.RoleUser, entries[0].Message.Role)
@@ -81,7 +81,7 @@ func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 	assert.Equal(t, "hello", string(content))
 }
 
-func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionStore) {
+func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
 
 	connection, err := sql.Open(sqliteDriver(), ":memory:")
@@ -92,7 +92,7 @@ func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionStore) {
 	connection.SetMaxOpenConns(1)
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
-	store := database.NewSessionStore(connection)
+	repository := database.NewSessionRepository(connection)
 	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Shutdown)
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
@@ -100,12 +100,12 @@ func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionStore) {
 
 	return assistant.NewRuntime(
 		testConfig(),
-		store,
+		repository,
 		manager,
 		cache,
 		nil,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	), store
+	), repository
 }
 
 func testConfig() *config.Config {
