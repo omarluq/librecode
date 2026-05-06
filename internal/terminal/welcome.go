@@ -41,7 +41,7 @@ func (app *App) renderWelcomeMessage(width int, content string) []styledLine {
 
 func (app *App) drawWelcomeOnly(width, height, row int) int {
 	bodyLines := welcomeBodyLines(app.cwd)
-	availableRows := max(1, height-row-footerReserve())
+	availableRows := max(1, height-row-app.composerReserve(width, height))
 	marginRows := min(welcomeTopMarginRows, max(0, availableRows-1))
 	row += marginRows
 	availableRows -= marginRows

@@ -39,7 +39,7 @@ func (app *App) drawTiny(width, height int) {
 }
 
 func (app *App) drawPanel(width, height, row int) int {
-	availableHeight := max(1, height-row-footerReserve())
+	availableHeight := max(1, height-row-app.composerReserve(width, height))
 	lines := app.panel.render(width, availableHeight, app.theme, app.keys)
 	for _, line := range lines {
 		app.writeStyledLine(row, width, line)
@@ -53,7 +53,7 @@ func (app *App) drawMessages(width, height, row int) int {
 	if app.showWelcomeOnly() {
 		return app.drawWelcomeOnly(width, height, row)
 	}
-	availableRows := max(1, height-row-footerReserve())
+	availableRows := max(1, height-row-app.composerReserve(width, height))
 	lines := app.messageLines(width, availableRows)
 	for _, line := range lines {
 		app.writeStyledLine(row, width, line)
@@ -69,7 +69,7 @@ func (app *App) messageLines(width, maxRows int) []styledLine {
 		lines = append(lines, app.renderMessage(width, message)...)
 	}
 	if app.streamingText != "" {
-		lines = append(lines, app.renderAssistantMessage(width, app.streamingText)...)
+		lines = append(lines, app.renderStreamingMessage(width, app.streamingText)...)
 	}
 	if app.working {
 		lines = append(lines, styledLine{Style: app.theme.style(colorAccent), Text: app.workingIndicator()})
@@ -131,12 +131,25 @@ func (app *App) renderAssistantMessage(width int, content string) []styledLine {
 	return lines
 }
 
+func (app *App) renderStreamingMessage(width int, content string) []styledLine {
+	wrapped := wrapText(strings.TrimSpace(content), width)
+	style := app.theme.style(colorDim).Italic(true)
+	lines := make([]styledLine, 0, len(wrapped)+2)
+	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
+	for _, line := range wrapped {
+		lines = append(lines, styledLine{Style: style, Text: line})
+	}
+	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
+
+	return lines
+}
+
 func (app *App) renderToolMessage(width int, message chatMessage) []styledLine {
 	return app.renderToolBlock(width, message)
 }
 
 func (app *App) renderThinkingMessage(width int, message chatMessage) []styledLine {
-	style := app.theme.style(colorThinkingText).Italic(true)
+	style := app.theme.style(colorDim).Italic(true)
 	if app.hideThinking {
 		return []styledLine{
 			{Style: tcell.StyleDefault, Text: ""},
@@ -192,24 +205,53 @@ func boxedLines(width int, label, content string, style tcell.Style) []styledLin
 }
 
 func (app *App) drawEditorAndFooter(width, height, _ int) {
+	layout := app.composerLayout(width, height)
+	for index, line := range layout.autocompleteLines {
+		writeLine(app.frame, layout.startRow+index, width, line.Text, line.Style)
+	}
+	borderStyle := app.theme.style(app.editorBorderColor())
+	for index, line := range layout.editor.Lines {
+		writeEditorLine(app.frame, layout.editorStart+index, width, line, index, len(layout.editor.Lines), borderStyle)
+	}
+	for index, line := range layout.footerLines {
+		writeLine(app.frame, layout.footerStart+index, width, line.Text, line.Style)
+	}
+	app.screen.ShowCursor(layout.editor.CursorCol, layout.editorStart+layout.editor.CursorRow)
+}
+
+func (app *App) composerReserve(width, height int) int {
+	return app.composerLayout(width, height).reserve
+}
+
+type composerLayout struct {
+	footerLines       []styledLine
+	autocompleteLines []styledLine
+	editor            editorRender
+	startRow          int
+	editorStart       int
+	footerStart       int
+	reserve           int
+}
+
+func (app *App) composerLayout(width, height int) composerLayout {
 	footerLines := app.footerLines(width)
 	autocompleteLines := app.autocompleteLines(width)
 	editorRows := min(defaultEditorRows, max(3, height-len(footerLines)-len(autocompleteLines)-2))
-	editorRender := app.editor.render(width, editorRows-2, app.theme, app.editorBorderColor())
-	startRow := max(0, height-len(footerLines)-len(autocompleteLines)-len(editorRender.Lines))
-	for index, line := range autocompleteLines {
-		writeLine(app.frame, startRow+index, width, line.Text, line.Style)
-	}
+	editor := app.editor.render(width, editorRows-2, app.theme, app.editorBorderColor())
+	reserve := len(footerLines) + len(autocompleteLines) + len(editor.Lines)
+	startRow := max(0, height-reserve)
 	editorStart := startRow + len(autocompleteLines)
-	borderStyle := app.theme.style(app.editorBorderColor())
-	for index, line := range editorRender.Lines {
-		writeEditorLine(app.frame, editorStart+index, width, line, index, len(editorRender.Lines), borderStyle)
-	}
 	footerStart := height - len(footerLines)
-	for index, line := range footerLines {
-		writeLine(app.frame, footerStart+index, width, line.Text, line.Style)
+
+	return composerLayout{
+		editor:            editor,
+		footerLines:       footerLines,
+		autocompleteLines: autocompleteLines,
+		startRow:          startRow,
+		editorStart:       editorStart,
+		footerStart:       footerStart,
+		reserve:           reserve,
 	}
-	app.screen.ShowCursor(editorRender.CursorCol, editorStart+editorRender.CursorRow)
 }
 
 func (app *App) editorBorderColor() colorToken {
@@ -249,10 +291,6 @@ func (app *App) footerLines(width int) []styledLine {
 		{Style: app.theme.style(colorDim), Text: truncateText(pathLine, width)},
 		{Style: app.theme.style(colorDim), Text: truncateText(statusLine, width)},
 	}
-}
-
-func footerReserve() int {
-	return defaultEditorRows + 3
 }
 
 func (app *App) writeStyledLine(row, width int, line styledLine) {

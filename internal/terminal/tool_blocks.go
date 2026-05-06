@@ -49,14 +49,14 @@ func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, styl
 		{Style: tcell.StyleDefault, Text: ""},
 		{Style: style.Bold(true), Text: padRight(label, width)},
 	}
-	preview, truncated := limitedIndentedLines(width, toolEventOutput(event), style, maxCollapsedToolOutputLines)
-	lines = append(lines, preview...)
+	preview, truncated := tailIndentedLines(width, toolEventOutput(event), style, maxCollapsedToolOutputLines)
 	if truncated {
 		lines = append(lines, styledLine{
 			Style: style.Foreground(app.theme.colors[colorMuted]),
-			Text:  padRight("  … "+app.keys.hint(actionToolsExpand)+" expand", width),
+			Text:  padRight("  … earlier output hidden; "+app.keys.hint(actionToolsExpand)+" expand", width),
 		})
 	}
+	lines = append(lines, preview...)
 	lines = append(lines, styledLine{Style: tcell.StyleDefault, Text: ""})
 
 	return lines
@@ -114,29 +114,35 @@ func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.S
 }
 
 func plainSectionLines(width int, label, content string, style tcell.Style) []styledLine {
-	contentLines, _ := limitedIndentedLines(width, content, style, 0)
+	contentLines := indentedLines(width, content, style)
 	lines := make([]styledLine, 0, len(contentLines)+1)
 	lines = append(lines, styledLine{Style: style.Bold(true), Text: padRight(label+":", width)})
 
 	return append(lines, contentLines...)
 }
 
-func limitedIndentedLines(width int, content string, style tcell.Style, limit int) ([]styledLine, bool) {
+func indentedLines(width int, content string, style tcell.Style) []styledLine {
 	if strings.TrimSpace(content) == "" {
-		return nil, false
+		return nil
 	}
 	innerWidth := max(1, width-2)
 	lines := []styledLine{}
 	for _, line := range strings.Split(content, "\n") {
 		for _, wrapped := range wrapText(line, innerWidth) {
-			if limit > 0 && len(lines) >= limit {
-				return lines, true
-			}
 			lines = append(lines, styledLine{Style: style, Text: padRight("  "+wrapped, width)})
 		}
 	}
 
-	return lines, false
+	return lines
+}
+
+func tailIndentedLines(width int, content string, style tcell.Style, limit int) ([]styledLine, bool) {
+	lines := indentedLines(width, content, style)
+	if limit <= 0 || len(lines) <= limit {
+		return lines, false
+	}
+
+	return lines[len(lines)-limit:], true
 }
 
 func toolEventOutput(event *parsedToolEvent) string {
