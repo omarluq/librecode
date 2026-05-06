@@ -35,11 +35,31 @@ type Runtime struct {
 
 // PromptRequest contains one user prompt invocation.
 type PromptRequest struct {
-	ParentEntryID *string `json:"parent_entry_id,omitempty"`
-	SessionID     string  `json:"session_id"`
-	CWD           string  `json:"cwd"`
-	Text          string  `json:"text"`
-	Name          string  `json:"name"`
+	OnEvent       func(StreamEvent) `json:"-"`
+	ParentEntryID *string           `json:"parent_entry_id,omitempty"`
+	SessionID     string            `json:"session_id"`
+	CWD           string            `json:"cwd"`
+	Text          string            `json:"text"`
+	Name          string            `json:"name"`
+}
+
+// StreamEventKind identifies incremental assistant activity.
+type StreamEventKind string
+
+const (
+	// StreamEventTextDelta carries assistant text as it arrives.
+	StreamEventTextDelta StreamEventKind = "text_delta"
+	// StreamEventToolStart announces a tool call before execution.
+	StreamEventToolStart StreamEventKind = "tool_start"
+	// StreamEventToolResult carries the completed tool call result.
+	StreamEventToolResult StreamEventKind = "tool_result"
+)
+
+// StreamEvent is emitted during prompt execution before final persistence.
+type StreamEvent struct {
+	ToolEvent *ToolEvent      `json:"tool_event,omitempty"`
+	Kind      StreamEventKind `json:"kind"`
+	Text      string          `json:"text,omitempty"`
 }
 
 // PromptResponse describes persisted prompt output.
@@ -86,7 +106,10 @@ func NewRuntime(
 }
 
 // Prompt appends a user prompt and an assistant response to the selected session.
-func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*PromptResponse, error) {
+func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (*PromptResponse, error) {
+	if request == nil {
+		return nil, oops.In("assistant").Code("nil_prompt_request").Errorf("prompt request is nil")
+	}
 	activeSession, err := runtime.resolveSession(ctx, request)
 	if err != nil {
 		return nil, err
@@ -115,7 +138,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		return nil, oops.In("assistant").Code("before_agent_start").Wrapf(emitErr, "emit before_agent_start")
 	}
 
-	bundle, cached, err := runtime.respond(ctx, activeSession.ID, request.CWD, request.Text)
+	bundle, cached, err := runtime.respond(ctx, activeSession.ID, request.CWD, request.Text, request.OnEvent)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +255,7 @@ func formatToolEvent(toolEvent *ToolEvent) string {
 	return strings.Join(parts, "\n")
 }
 
-func (runtime *Runtime) resolveSession(ctx context.Context, request PromptRequest) (*database.SessionEntity, error) {
+func (runtime *Runtime) resolveSession(ctx context.Context, request *PromptRequest) (*database.SessionEntity, error) {
 	if request.SessionID != "" {
 		loadedSession, found, err := runtime.sessions.GetSession(ctx, request.SessionID)
 		if err != nil {
@@ -285,7 +308,7 @@ func explicitPromptParentID(explicitParent *string) *string {
 	return explicitParent
 }
 
-func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt string) (
+func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt string, onEvent func(StreamEvent)) (
 	bundle *responseBundle,
 	cached bool,
 	err error,
@@ -304,7 +327,7 @@ func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt stri
 		return &responseBundle{Text: cachedResponse, Thinking: nil, ToolEvents: nil}, true, nil
 	}
 
-	bundle, err = runtime.modelResponse(ctx, sessionID, cwd)
+	bundle, err = runtime.modelResponse(ctx, sessionID, cwd, onEvent)
 	if err != nil {
 		return nil, false, err
 	}
@@ -357,7 +380,12 @@ func (runtime *Runtime) respondToToolCommand(ctx context.Context, cwd, args stri
 	return result.Text(), nil
 }
 
-func (runtime *Runtime) modelResponse(ctx context.Context, sessionID, cwd string) (*responseBundle, error) {
+func (runtime *Runtime) modelResponse(
+	ctx context.Context,
+	sessionID string,
+	cwd string,
+	onEvent func(StreamEvent),
+) (*responseBundle, error) {
 	if runtime.models == nil {
 		return nil, oops.In("assistant").Code("models_unavailable").Errorf("model registry is not configured")
 	}
@@ -385,6 +413,7 @@ func (runtime *Runtime) modelResponse(ctx context.Context, sessionID, cwd string
 		SystemPrompt:  defaultSystemPrompt(cwd),
 		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,
 		CWD:           cwd,
+		OnEvent:       onEvent,
 	})
 	if err != nil {
 		return nil, err

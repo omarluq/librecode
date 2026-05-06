@@ -15,6 +15,8 @@ import (
 func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error) {
 	switch typedEvent := event.(type) {
 	case *tcell.EventResize:
+		app.renderer.reset()
+		app.screen.Clear()
 		app.screen.Sync()
 		return false, nil
 	case *tcell.EventKey:
@@ -183,7 +185,8 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 		app.setStatus("already working; wait for the current response")
 		return
 	}
-	request := assistant.PromptRequest{
+	request := &assistant.PromptRequest{
+		OnEvent:       app.promptStreamHandler(ctx),
 		ParentEntryID: app.pendingParentID,
 		SessionID:     app.sessionID,
 		CWD:           app.cwd,
@@ -192,6 +195,8 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	}
 	app.pendingParentID = nil
 	app.scrollOffset = 0
+	app.streamingText = ""
+	app.streamedToolEvents = 0
 	app.addMessage(database.RoleUser, text)
 	app.working = true
 	app.workFrame = 0
@@ -200,18 +205,20 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 		response, err := app.runtime.Prompt(ctx, request)
 		if err != nil {
 			app.postAsyncEvent(ctx, asyncEvent{
-				Response: nil,
-				Kind:     asyncEventPromptError,
-				Provider: "",
-				Text:     err.Error(),
+				Response:  nil,
+				ToolEvent: nil,
+				Kind:      asyncEventPromptError,
+				Provider:  "",
+				Text:      err.Error(),
 			})
 			return
 		}
 		app.postAsyncEvent(ctx, asyncEvent{
-			Response: response,
-			Kind:     asyncEventPromptDone,
-			Provider: "",
-			Text:     "",
+			Response:  response,
+			ToolEvent: nil,
+			Kind:      asyncEventPromptDone,
+			Provider:  "",
+			Text:      "",
 		})
 	}()
 }
@@ -226,9 +233,11 @@ func (app *App) applyPromptResponse(response *assistant.PromptResponse) {
 	for _, thinking := range response.Thinking {
 		app.addMessage(database.RoleThinking, thinking)
 	}
-	for index := range response.ToolEvents {
+	for index := app.streamedToolEvents; index < len(response.ToolEvents); index++ {
 		app.addMessage(database.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
 	}
+	app.streamingText = ""
+	app.streamedToolEvents = 0
 	app.addMessage(database.RoleAssistant, response.Text)
 	app.persistSessionSettings()
 }

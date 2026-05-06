@@ -25,6 +25,7 @@ import (
 const (
 	testRuntimeProvider = "test-provider"
 	testRuntimeModel    = "test-model"
+	testRuntimeCWD      = "/work"
 )
 
 func TestRuntime_PromptPersistsConversation(t *testing.T) {
@@ -32,10 +33,11 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 
 	runtime, repository := newTestRuntime(t)
 
-	response, err := runtime.Prompt(context.Background(), assistant.PromptRequest{
+	response, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
+		OnEvent:       nil,
 		ParentEntryID: nil,
 		SessionID:     "",
-		CWD:           "/work",
+		CWD:           testRuntimeCWD,
 		Text:          "hello",
 		Name:          "test",
 	})
@@ -56,7 +58,14 @@ func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	t.Parallel()
 
 	runtime, _ := newTestRuntime(t)
-	request := assistant.PromptRequest{ParentEntryID: nil, SessionID: "", CWD: "/work", Text: "cache me", Name: ""}
+	request := &assistant.PromptRequest{
+		OnEvent:       nil,
+		ParentEntryID: nil,
+		SessionID:     "",
+		CWD:           testRuntimeCWD,
+		Text:          "cache me",
+		Name:          "",
+	}
 
 	firstResponse, err := runtime.Prompt(context.Background(), request)
 	require.NoError(t, err)
@@ -68,13 +77,36 @@ func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	assert.Equal(t, firstResponse.Text, secondResponse.Text)
 }
 
+func TestRuntime_PromptEmitsStreamEvents(t *testing.T) {
+	t.Parallel()
+
+	runtime, _ := newTestRuntime(t)
+	events := []assistant.StreamEvent{}
+
+	_, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
+		OnEvent: func(event assistant.StreamEvent) {
+			events = append(events, event)
+		},
+		ParentEntryID: nil,
+		SessionID:     "",
+		CWD:           testRuntimeCWD,
+		Text:          "stream me",
+		Name:          "",
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, events)
+	assert.Equal(t, assistant.StreamEventTextDelta, events[0].Kind)
+	assert.Contains(t, events[0].Text, "stream me")
+}
+
 func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 	t.Parallel()
 
 	runtime, _ := newTestRuntime(t)
 	cwd := t.TempDir()
 
-	response, err := runtime.Prompt(context.Background(), assistant.PromptRequest{
+	response, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
+		OnEvent:       nil,
 		ParentEntryID: nil,
 		SessionID:     "",
 		CWD:           cwd,
@@ -125,6 +157,14 @@ func (testCompletionClient) Complete(
 	_ context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
+	if request.OnEvent != nil {
+		request.OnEvent(assistant.StreamEvent{
+			ToolEvent: nil,
+			Kind:      assistant.StreamEventTextDelta,
+			Text:      "test assistant response for " + request.Messages[len(request.Messages)-1].Content,
+		})
+	}
+
 	return &assistant.CompletionResult{
 		Text:       "test assistant response for " + request.Messages[len(request.Messages)-1].Content,
 		Thinking:   nil,

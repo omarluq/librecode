@@ -51,6 +51,7 @@ const (
 
 // CompletionRequest describes one model completion request.
 type CompletionRequest struct {
+	OnEvent       func(StreamEvent)        `json:"-"`
 	SessionID     string                   `json:"session_id"`
 	SystemPrompt  string                   `json:"system_prompt"`
 	ThinkingLevel string                   `json:"thinking_level"`
@@ -248,7 +249,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	result := &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil}
 	for iteration := 0; iteration < maxToolIterations; iteration++ {
 		payload := responsesPayload(request, input, stream)
-		providerResult, err := client.requestResponses(ctx, endpoint, headers, payload, stream)
+		providerResult, err := client.requestResponses(ctx, endpoint, headers, payload, stream, request.OnEvent)
 		if err != nil {
 			return nil, err
 		}
@@ -261,7 +262,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			return result, nil
 		}
 		input = append(input, providerResult.OutputItems...)
-		outputs, events := executeToolCalls(ctx, request.CWD, providerResult.ToolCalls)
+		outputs, events := executeToolCalls(ctx, request.CWD, providerResult.ToolCalls, request.OnEvent)
 		result.ToolEvents = append(result.ToolEvents, events...)
 		input = append(input, outputs...)
 	}
@@ -305,6 +306,7 @@ func (client *HTTPCompletionClient) requestResponses(
 	headers map[string]string,
 	payload map[string]any,
 	stream bool,
+	onEvent func(StreamEvent),
 ) (*providerResult, error) {
 	httpRequest, err := jsonRequest(ctx, endpoint, headers, payload)
 	if err != nil {
@@ -324,7 +326,7 @@ func (client *HTTPCompletionClient) requestResponses(
 		return nil, providerStatusError("responses_status", response.StatusCode, content)
 	}
 	if stream {
-		return parseSSEResult(response.Body)
+		return parseSSEResult(response.Body, onEvent)
 	}
 	content, err := io.ReadAll(response.Body)
 	if err != nil {
@@ -334,11 +336,17 @@ func (client *HTTPCompletionClient) requestResponses(
 	return parseOpenAIResponseResult(content)
 }
 
-func executeToolCalls(ctx context.Context, cwd string, calls []toolCall) ([]any, []ToolEvent) {
+func executeToolCalls(
+	ctx context.Context,
+	cwd string,
+	calls []toolCall,
+	onEvent func(StreamEvent),
+) ([]any, []ToolEvent) {
 	registry := tool.NewRegistry(cwd)
 	outputs := make([]any, 0, len(calls))
 	events := make([]ToolEvent, 0, len(calls))
 	for _, call := range calls {
+		emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Kind: StreamEventToolStart, Text: call.Name})
 		result, err := registry.Execute(ctx, call.Name, call.Arguments)
 		resultText := result.Text()
 		detailsJSON := encodeToolDetails(result.Details)
@@ -358,6 +366,7 @@ func executeToolCalls(ctx context.Context, cwd string, calls []toolCall) ([]any,
 		}
 		event.Result = resultText
 		events = append(events, event)
+		emitStreamEvent(onEvent, StreamEvent{ToolEvent: &event, Kind: StreamEventToolResult, Text: ""})
 		outputs = append(outputs, map[string]any{
 			jsonTypeKey:   functionCallOutputType,
 			jsonCallIDKey: call.ID,
@@ -366,6 +375,12 @@ func executeToolCalls(ctx context.Context, cwd string, calls []toolCall) ([]any,
 	}
 
 	return outputs, events
+}
+
+func emitStreamEvent(onEvent func(StreamEvent), event StreamEvent) {
+	if onEvent != nil {
+		onEvent(event)
+	}
 }
 
 func encodeToolDetails(details map[string]any) string {
@@ -744,12 +759,13 @@ func newSSEAccumulator() *sseAccumulator {
 	}
 }
 
-func (accumulator *sseAccumulator) add(event map[string]any) {
+func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(StreamEvent)) {
 	if response, ok := event["response"].(map[string]any); ok {
 		accumulator.finalResponse = response
 	}
 	if text, delta := textFromSSEEvent(event); delta && text != "" {
 		accumulator.parts = append(accumulator.parts, text)
+		emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Kind: StreamEventTextDelta, Text: text})
 	}
 	if item, ok := event["item"].(map[string]any); ok {
 		accumulator.addItem(item)
@@ -796,10 +812,10 @@ func upsertSSEItem(items []any, item map[string]any) []any {
 	return append(items, item)
 }
 
-func parseSSEResult(reader io.Reader) (*providerResult, error) {
+func parseSSEResult(reader io.Reader, onEvent func(StreamEvent)) (*providerResult, error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	accumulator, err := scanSSEResponse(scanner)
+	accumulator, err := scanSSEResponse(scanner, onEvent)
 	if err != nil {
 		return nil, err
 	}
@@ -822,12 +838,12 @@ func parseSSEResult(reader io.Reader) (*providerResult, error) {
 	return &providerResult{Text: fallbackText, OutputItems: nil, Thinking: nil, ToolCalls: nil}, nil
 }
 
-func scanSSEResponse(scanner *bufio.Scanner) (accumulator *sseAccumulator, err error) {
+func scanSSEResponse(scanner *bufio.Scanner, onEvent func(StreamEvent)) (accumulator *sseAccumulator, err error) {
 	accumulator = newSSEAccumulator()
 	for scanner.Scan() {
 		event, ok := eventFromSSELine(scanner.Text())
 		if ok {
-			accumulator.add(event)
+			accumulator.add(event, onEvent)
 		}
 	}
 	if err := scanner.Err(); err != nil {

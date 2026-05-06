@@ -33,7 +33,8 @@ func newPromptCmd() *cobra.Command {
 					return err
 				}
 
-				response, err := runtime.Prompt(cmd.Context(), assistant.PromptRequest{
+				response, err := runtime.Prompt(cmd.Context(), &assistant.PromptRequest{
+					OnEvent:       nil,
 					ParentEntryID: nil,
 					SessionID:     sessionID,
 					CWD:           cwd,

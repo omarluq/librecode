@@ -59,7 +59,7 @@ func (app *App) drawWelcomeOnly(width, height, row int) int {
 }
 
 func (app *App) writeWelcomeBorder(row, width int, text string) {
-	writeLine(app.screen, row, width, text, app.welcomeBorderStyle())
+	writeLine(app.frame, row, width, text, app.welcomeBorderStyle())
 }
 
 func (app *App) writeWelcomeBodyLine(row, width, lineIndex int, content string) {
@@ -70,17 +70,17 @@ func (app *App) writeWelcomeBodyLine(row, width, lineIndex int, content string) 
 	bodyStyle := app.welcomeBodyStyle(lineIndex, content)
 	innerWidth := max(1, width-4)
 	padded := []rune(padRight(content, innerWidth))
-	app.screen.SetContent(0, row, '│', nil, borderStyle)
-	app.screen.SetContent(1, row, ' ', nil, borderStyle)
+	app.frame.SetContent(0, row, '│', nil, borderStyle)
+	app.frame.SetContent(1, row, ' ', nil, borderStyle)
 	for index := 0; index < innerWidth; index++ {
 		value := ' '
 		if index < len(padded) {
 			value = padded[index]
 		}
-		app.screen.SetContent(index+2, row, value, nil, bodyStyle)
+		app.frame.SetContent(index+2, row, value, nil, bodyStyle)
 	}
-	app.screen.SetContent(width-2, row, ' ', nil, borderStyle)
-	app.screen.SetContent(width-1, row, '│', nil, borderStyle)
+	app.frame.SetContent(width-2, row, ' ', nil, borderStyle)
+	app.frame.SetContent(width-1, row, '│', nil, borderStyle)
 }
 
 func (app *App) showWelcomeOnly() bool {

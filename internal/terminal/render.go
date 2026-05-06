@@ -10,11 +10,11 @@ import (
 )
 
 func (app *App) draw() {
-	app.screen.Clear()
 	width, height := app.screen.Size()
+	app.frame = newCellBuffer(width, height, tcell.StyleDefault)
 	if width < 20 || height < 8 {
 		app.drawTiny(width, height)
-		app.screen.Show()
+		app.flushFrame()
 		return
 	}
 
@@ -25,19 +25,24 @@ func (app *App) draw() {
 		row = app.drawMessages(width, height, row)
 	}
 	app.drawEditorAndFooter(width, height, row)
+	app.flushFrame()
+}
+
+func (app *App) flushFrame() {
+	app.renderer.flush(app.frame)
 	app.screen.Show()
 }
 
 func (app *App) drawTiny(width, height int) {
 	message := truncateText("librecode: terminal too small", width)
-	writeLine(app.screen, max(0, height/2), width, message, app.theme.style(colorWarning))
+	writeLine(app.frame, max(0, height/2), width, message, app.theme.style(colorWarning))
 }
 
 func (app *App) drawPanel(width, height, row int) int {
 	availableHeight := max(1, height-row-footerReserve())
 	lines := app.panel.render(width, availableHeight, app.theme, app.keys)
 	for _, line := range lines {
-		writeLine(app.screen, row, width, line.Text, line.Style)
+		app.writeStyledLine(row, width, line)
 		row++
 	}
 
@@ -51,7 +56,7 @@ func (app *App) drawMessages(width, height, row int) int {
 	availableRows := max(1, height-row-footerReserve())
 	lines := app.messageLines(width, availableRows)
 	for _, line := range lines {
-		writeLine(app.screen, row, width, line.Text, line.Style)
+		app.writeStyledLine(row, width, line)
 		row++
 	}
 
@@ -62,6 +67,9 @@ func (app *App) messageLines(width, maxRows int) []styledLine {
 	lines := []styledLine{}
 	for _, message := range app.messages {
 		lines = append(lines, app.renderMessage(width, message)...)
+	}
+	if app.streamingText != "" {
+		lines = append(lines, app.renderAssistantMessage(width, app.streamingText)...)
 	}
 	if app.working {
 		lines = append(lines, styledLine{Style: app.theme.style(colorAccent), Text: app.workingIndicator()})
@@ -188,16 +196,16 @@ func (app *App) drawEditorAndFooter(width, height, _ int) {
 	editorRender := app.editor.render(width, editorRows-2, app.theme, app.editorBorderColor())
 	startRow := max(0, height-len(footerLines)-len(autocompleteLines)-len(editorRender.Lines))
 	for index, line := range autocompleteLines {
-		writeLine(app.screen, startRow+index, width, line.Text, line.Style)
+		writeLine(app.frame, startRow+index, width, line.Text, line.Style)
 	}
 	editorStart := startRow + len(autocompleteLines)
 	borderStyle := app.theme.style(app.editorBorderColor())
 	for index, line := range editorRender.Lines {
-		writeEditorLine(app.screen, editorStart+index, width, line, index, len(editorRender.Lines), borderStyle)
+		writeEditorLine(app.frame, editorStart+index, width, line, index, len(editorRender.Lines), borderStyle)
 	}
 	footerStart := height - len(footerLines)
 	for index, line := range footerLines {
-		writeLine(app.screen, footerStart+index, width, line.Text, line.Style)
+		writeLine(app.frame, footerStart+index, width, line.Text, line.Style)
 	}
 	app.screen.ShowCursor(editorRender.CursorCol, editorStart+editorRender.CursorRow)
 }
@@ -245,7 +253,11 @@ func footerReserve() int {
 	return defaultEditorRows + 3
 }
 
-func writeLine(screen tcell.Screen, row, width int, text string, style tcell.Style) {
+func (app *App) writeStyledLine(row, width int, line styledLine) {
+	writeLineWithVerticalBorders(app.frame, row, width, line.Text, line.Style, app.theme.colors[colorBorderMuted])
+}
+
+func writeLine(screen cellTarget, row, width int, text string, style tcell.Style) {
 	if row < 0 {
 		return
 	}
@@ -259,8 +271,37 @@ func writeLine(screen tcell.Screen, row, width int, text string, style tcell.Sty
 	}
 }
 
+func writeLineWithVerticalBorders(
+	screen cellTarget,
+	row int,
+	width int,
+	text string,
+	style tcell.Style,
+	borderColor tcell.Color,
+) {
+	if row < 0 {
+		return
+	}
+	line := []rune(truncateText(text, width))
+	for index := 0; index < width; index++ {
+		value := ' '
+		if index < len(line) {
+			value = line[index]
+		}
+		cellStyle := style
+		if isVerticalBorderCell(value, index, width) {
+			cellStyle = style.Foreground(borderColor)
+		}
+		screen.SetContent(index, row, value, nil, cellStyle)
+	}
+}
+
+func isVerticalBorderCell(value rune, index, width int) bool {
+	return value == '│' && (index == 0 || index == width-1)
+}
+
 func writeEditorLine(
-	screen tcell.Screen,
+	screen cellTarget,
 	row int,
 	width int,
 	line styledLine,
