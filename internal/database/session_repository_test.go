@@ -105,6 +105,38 @@ func TestSessionRepository_DeleteSessionRemovesSessionRows(t *testing.T) {
 	assert.False(t, found)
 }
 
+func TestSessionRepository_DeleteEntryBranchRemovesDescendants(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	createdSession, err := repository.CreateSession(ctx, "/work", "", "")
+	require.NoError(t, err)
+	rootEntry := appendTestMessage(ctx, t, repository, createdSession.ID, nil, database.RoleUser, "root")
+	branchEntry := appendTestMessage(ctx, t, repository, createdSession.ID, &rootEntry.ID, database.RoleUser, "branch")
+	childEntry := appendTestMessage(
+		ctx,
+		t,
+		repository,
+		createdSession.ID,
+		&branchEntry.ID,
+		database.RoleAssistant,
+		"child",
+	)
+
+	require.NoError(t, repository.DeleteEntryBranch(ctx, createdSession.ID, branchEntry.ID))
+
+	_, found, err := repository.Entry(ctx, createdSession.ID, rootEntry.ID)
+	require.NoError(t, err)
+	assert.True(t, found)
+	_, found, err = repository.Entry(ctx, createdSession.ID, branchEntry.ID)
+	require.NoError(t, err)
+	assert.False(t, found)
+	_, found, err = repository.MessageForEntry(ctx, createdSession.ID, childEntry.ID)
+	require.NoError(t, err)
+	assert.False(t, found)
+}
+
 func TestSessionRepository_SupportsLibrecodeStyleTreeMetadata(t *testing.T) {
 	t.Parallel()
 

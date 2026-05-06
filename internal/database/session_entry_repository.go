@@ -78,6 +78,88 @@ WHERE session_id = ? AND id = ?`, entrySelectColumns)
 	return entry, true, nil
 }
 
+// DeleteEntryBranch removes an entry and all descendants from one session.
+func (repository *SessionRepository) DeleteEntryBranch(ctx context.Context, sessionID, entryID string) error {
+	transaction, err := repository.connection.BeginTx(ctx, nil)
+	if err != nil {
+		return oops.In("database").Code("begin_delete_entry_branch").Wrapf(err, "begin delete entry branch")
+	}
+	if err := repository.deleteEntryBranchTx(ctx, transaction, sessionID, entryID); err != nil {
+		rollbackErr := transaction.Rollback()
+		if rollbackErr != nil {
+			return oops.
+				In("database").
+				Code("delete_entry_branch_rollback").
+				Wrapf(rollbackErr, "rollback delete entry branch")
+		}
+
+		return err
+	}
+	if err := transaction.Commit(); err != nil {
+		return oops.In("database").Code("commit_delete_entry_branch").Wrapf(err, "commit delete entry branch")
+	}
+
+	return nil
+}
+
+func (repository *SessionRepository) deleteEntryBranchTx(
+	ctx context.Context,
+	transaction *sql.Tx,
+	sessionID string,
+	entryID string,
+) error {
+	if _, err := transaction.ExecContext(
+		ctx,
+		deleteEntryBranchMessages,
+		sessionID,
+		entryID,
+		sessionID,
+		sessionID,
+	); err != nil {
+		return oops.In("database").Code("delete_branch_messages").Wrapf(err, "delete branch messages")
+	}
+	if _, err := transaction.ExecContext(
+		ctx,
+		deleteEntryBranchEntries,
+		sessionID,
+		entryID,
+		sessionID,
+		sessionID,
+	); err != nil {
+		return oops.In("database").Code("delete_branch_entries").Wrapf(err, "delete branch entries")
+	}
+	const touchSession = `UPDATE sessions SET updated_at = ? WHERE id = ?`
+	if _, err := transaction.ExecContext(ctx, touchSession, formatTime(repository.now().UTC()), sessionID); err != nil {
+		return oops.In("database").Code("touch_after_delete_branch").Wrapf(err, "touch session after delete branch")
+	}
+
+	return nil
+}
+
+const deleteEntryBranchMessages = `
+WITH RECURSIVE subtree(id) AS (
+    SELECT id FROM session_entries WHERE session_id = ? AND id = ?
+    UNION ALL
+    SELECT child.id
+    FROM session_entries child
+    JOIN subtree parent ON child.parent_id = parent.id
+    WHERE child.session_id = ?
+)
+DELETE FROM session_messages
+WHERE session_id = ? AND entry_id IN (SELECT id FROM subtree)`
+
+const deleteEntryBranchEntries = `
+WITH RECURSIVE subtree(id) AS (
+    SELECT id FROM session_entries WHERE session_id = ? AND id = ?
+    UNION ALL
+    SELECT child.id
+    FROM session_entries child
+    JOIN subtree parent ON child.parent_id = parent.id
+    WHERE child.session_id = ?
+)
+DELETE FROM session_entries
+WHERE session_id = ? AND id IN (SELECT id FROM subtree)`
+
 // Children returns direct child entries for a parent id.
 func (repository *SessionRepository) Children(
 	ctx context.Context,

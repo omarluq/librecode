@@ -35,6 +35,7 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 
 	response, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
 		OnEvent:       nil,
+		OnUserEntry:   nil,
 		ParentEntryID: nil,
 		SessionID:     "",
 		CWD:           testRuntimeCWD,
@@ -54,12 +55,35 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	assert.Equal(t, database.RoleAssistant, entries[1].Message.Role)
 }
 
+func TestRuntime_PromptNotifiesUserEntry(t *testing.T) {
+	t.Parallel()
+
+	runtime, _ := newTestRuntime(t)
+	userEntryEvent := assistant.PromptUserEntryEvent{SessionID: "", EntryID: ""}
+
+	response, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
+		OnEvent: nil,
+		OnUserEntry: func(event assistant.PromptUserEntryEvent) {
+			userEntryEvent = event
+		},
+		ParentEntryID: nil,
+		SessionID:     "",
+		CWD:           testRuntimeCWD,
+		Text:          "notify me",
+		Name:          "",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, response.SessionID, userEntryEvent.SessionID)
+	assert.Equal(t, response.UserEntryID, userEntryEvent.EntryID)
+}
+
 func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	t.Parallel()
 
 	runtime, _ := newTestRuntime(t)
 	request := &assistant.PromptRequest{
 		OnEvent:       nil,
+		OnUserEntry:   nil,
 		ParentEntryID: nil,
 		SessionID:     "",
 		CWD:           testRuntimeCWD,
@@ -87,6 +111,7 @@ func TestRuntime_PromptEmitsStreamEvents(t *testing.T) {
 		OnEvent: func(event assistant.StreamEvent) {
 			events = append(events, event)
 		},
+		OnUserEntry:   nil,
 		ParentEntryID: nil,
 		SessionID:     "",
 		CWD:           testRuntimeCWD,
@@ -107,6 +132,7 @@ func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 
 	response, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
 		OnEvent:       nil,
+		OnUserEntry:   nil,
 		ParentEntryID: nil,
 		SessionID:     "",
 		CWD:           cwd,

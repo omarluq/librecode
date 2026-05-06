@@ -36,6 +36,17 @@ type chatMessage struct {
 	Content   string
 }
 
+type activePromptState struct {
+	Cancel           context.CancelFunc
+	ParentEntryID    *string
+	SessionID        string
+	UserEntryID      string
+	Prompt           string
+	ID               uint64
+	BaselineMessages int
+	Canceled         bool
+}
+
 // RunOptions configures the terminal app.
 type RunOptions struct {
 	Resources *core.ResourceSnapshot       `json:"resources"`
@@ -64,6 +75,8 @@ type App struct {
 	keys               *keybindings
 	panel              *selectionPanel
 	pendingParentID    *string
+	activePrompt       *activePromptState
+	canceledPrompts    map[uint64]*activePromptState
 	scopedEnabled      map[string]bool
 	theme              terminalTheme
 	mode               appMode
@@ -86,6 +99,7 @@ type App struct {
 	workFrame          int
 	scrollOffset       int
 	streamedToolEvents int
+	promptSequence     uint64
 }
 
 // Run starts an interactive tcell chat loop.
@@ -150,6 +164,8 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		cwd:                options.CWD,
 		sessionID:          options.SessionID,
 		pendingParentID:    nil,
+		activePrompt:       nil,
+		canceledPrompts:    map[uint64]*activePromptState{},
 		messages:           []chatMessage{},
 		queuedMessages:     []string{},
 		scopedOrder:        []string{},
@@ -166,6 +182,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		workFrame:          0,
 		scrollOffset:       0,
 		streamedToolEvents: 0,
+		promptSequence:     0,
 		statusMessage:      "",
 		selectedPanelKind:  "",
 		streamingText:      "",

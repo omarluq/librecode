@@ -17,6 +17,7 @@ const (
 	asyncEventAuthDone         asyncEventKind = "auth_done"
 	asyncEventAuthError        asyncEventKind = "auth_error"
 	asyncEventPromptDone       asyncEventKind = "prompt_done"
+	asyncEventPromptUserEntry  asyncEventKind = "prompt_user_entry"
 	asyncEventPromptDelta      asyncEventKind = "prompt_delta"
 	asyncEventPromptToolStart  asyncEventKind = "prompt_tool_start"
 	asyncEventPromptToolResult asyncEventKind = "prompt_tool_result"
@@ -29,9 +30,23 @@ type asyncEvent struct {
 	Kind      asyncEventKind
 	Provider  string
 	Text      string
+	PromptID  uint64
 }
 
-func (app *App) promptStreamHandler(ctx context.Context) func(assistant.StreamEvent) {
+func (app *App) promptUserEntryHandler(ctx context.Context, promptID uint64) func(assistant.PromptUserEntryEvent) {
+	return func(event assistant.PromptUserEntryEvent) {
+		app.postAsyncEvent(ctx, asyncEvent{
+			Response:  nil,
+			ToolEvent: nil,
+			Kind:      asyncEventPromptUserEntry,
+			Provider:  event.SessionID,
+			Text:      event.EntryID,
+			PromptID:  promptID,
+		})
+	}
+}
+
+func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(assistant.StreamEvent) {
 	return func(event assistant.StreamEvent) {
 		switch event.Kind {
 		case assistant.StreamEventTextDelta:
@@ -41,6 +56,7 @@ func (app *App) promptStreamHandler(ctx context.Context) func(assistant.StreamEv
 				Kind:      asyncEventPromptDelta,
 				Provider:  "",
 				Text:      event.Text,
+				PromptID:  promptID,
 			})
 		case assistant.StreamEventToolStart:
 			app.postAsyncEvent(ctx, asyncEvent{
@@ -49,6 +65,7 @@ func (app *App) promptStreamHandler(ctx context.Context) func(assistant.StreamEv
 				Kind:      asyncEventPromptToolStart,
 				Provider:  "",
 				Text:      event.Text,
+				PromptID:  promptID,
 			})
 		case assistant.StreamEventToolResult:
 			app.postAsyncEvent(ctx, asyncEvent{
@@ -57,6 +74,7 @@ func (app *App) promptStreamHandler(ctx context.Context) func(assistant.StreamEv
 				Kind:      asyncEventPromptToolResult,
 				Provider:  "",
 				Text:      "",
+				PromptID:  promptID,
 			})
 		}
 	}
@@ -107,6 +125,7 @@ func (app *App) handleAuthAsyncEvent(payload asyncEvent) bool {
 		app.addSystemMessage(payload.Text)
 		return true
 	case asyncEventPromptDone,
+		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
@@ -118,9 +137,68 @@ func (app *App) handleAuthAsyncEvent(payload asyncEvent) bool {
 }
 
 func (app *App) handlePromptAsyncEvent(ctx context.Context, payload asyncEvent) {
+	if app.ignorePromptEvent(payload) {
+		return
+	}
+	if app.handlePromptLifecycleEvent(ctx, payload) {
+		return
+	}
+	app.handlePromptStreamEvent(payload)
+}
+
+func (app *App) ignorePromptEvent(payload asyncEvent) bool {
+	if !isPromptAsyncEvent(payload.Kind) {
+		return false
+	}
+	if app.activePrompt != nil && app.activePrompt.ID == payload.PromptID {
+		return false
+	}
+	_, waitingForCleanup := app.canceledPrompts[payload.PromptID]
+
+	return !waitingForCleanup
+}
+
+func isPromptAsyncEvent(kind asyncEventKind) bool {
+	switch kind {
+	case asyncEventPromptDone,
+		asyncEventPromptUserEntry,
+		asyncEventPromptDelta,
+		asyncEventPromptToolStart,
+		asyncEventPromptToolResult,
+		asyncEventPromptError:
+		return true
+	case asyncEventAuthURL, asyncEventAuthDone, asyncEventAuthError:
+		return false
+	}
+
+	return false
+}
+
+func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload asyncEvent) bool {
 	switch payload.Kind {
 	case asyncEventPromptDone:
-		app.applyPromptResponse(ctx, payload.Response)
+		app.applyPromptResponse(ctx, payload.Response, payload.PromptID)
+		return true
+	case asyncEventPromptUserEntry:
+		app.applyPromptUserEntry(ctx, payload.Provider, payload.Text, payload.PromptID)
+		return true
+	case asyncEventPromptError:
+		app.applyPromptError(payload.Text, payload.PromptID)
+		return true
+	case asyncEventAuthURL, asyncEventAuthDone, asyncEventAuthError:
+		return true
+	case asyncEventPromptDelta, asyncEventPromptToolStart, asyncEventPromptToolResult:
+		return false
+	}
+
+	return false
+}
+
+func (app *App) handlePromptStreamEvent(payload asyncEvent) {
+	if app.activePrompt != nil && app.activePrompt.Canceled {
+		return
+	}
+	switch payload.Kind {
 	case asyncEventPromptDelta:
 		app.streamingText += payload.Text
 		app.setStatus("streaming response")
@@ -128,14 +206,60 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload asyncEvent) 
 		app.setStatus("running tool: " + payload.Text)
 	case asyncEventPromptToolResult:
 		app.applyStreamedToolEvent(payload.ToolEvent)
-	case asyncEventPromptError:
-		app.working = false
-		app.streamingText = ""
-		app.streamedToolEvents = 0
-		app.addMessage(database.RoleCustom, payload.Text)
-	case asyncEventAuthURL, asyncEventAuthDone, asyncEventAuthError:
+	case asyncEventPromptDone,
+		asyncEventPromptUserEntry,
+		asyncEventPromptError,
+		asyncEventAuthURL,
+		asyncEventAuthDone,
+		asyncEventAuthError:
 		return
 	}
+}
+
+func (app *App) applyPromptUserEntry(ctx context.Context, sessionID, entryID string, promptID uint64) {
+	if canceledPrompt, ok := app.canceledPrompts[promptID]; ok {
+		canceledPrompt.SessionID = sessionID
+		canceledPrompt.UserEntryID = entryID
+		app.deleteCanceledPromptBranch(ctx, canceledPrompt)
+		return
+	}
+	if app.activePrompt == nil || app.activePrompt.ID != promptID {
+		return
+	}
+	app.activePrompt.SessionID = sessionID
+	app.activePrompt.UserEntryID = entryID
+	if app.activePrompt.Canceled {
+		app.deleteCanceledPromptBranch(ctx, app.activePrompt)
+	}
+}
+
+func (app *App) applyPromptError(message string, promptID uint64) {
+	if app.consumeCanceledPrompt(promptID) {
+		app.setStatus("response canceled; conversation reverted")
+		return
+	}
+	app.working = false
+	app.streamingText = ""
+	app.streamedToolEvents = 0
+	if app.activePrompt != nil && app.activePrompt.Canceled {
+		app.activePrompt = nil
+		app.setStatus("response canceled; conversation reverted")
+		return
+	}
+	app.activePrompt = nil
+	app.addMessage(database.RoleCustom, message)
+}
+
+func (app *App) consumeCanceledPrompt(promptID uint64) bool {
+	if _, ok := app.canceledPrompts[promptID]; !ok {
+		return false
+	}
+	delete(app.canceledPrompts, promptID)
+	if app.activePrompt != nil && app.activePrompt.ID == promptID {
+		app.activePrompt = nil
+	}
+
+	return true
 }
 
 func (app *App) applyStreamedToolEvent(event *assistant.ToolEvent) {

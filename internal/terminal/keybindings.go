@@ -106,7 +106,7 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionSelectPageDown:             binding("Page selection down", "pageDown"),
 		actionSelectConfirm:              binding("Confirm selection", "enter"),
 		actionSelectCancel:               binding("Cancel selection", "escape"),
-		actionInterrupt:                  binding("Cancel or abort", "escape"),
+		actionInterrupt:                  binding("Clear/cancel; press twice while working to stop response", "escape"),
 		actionForceExit:                  binding("Press twice to exit librecode", "ctrl+c"),
 		actionThinkingCycle:              binding("Cycle thinking level", "shift+tab"),
 		actionModelCycleForward:          binding("Cycle to next model", "ctrl+p"),

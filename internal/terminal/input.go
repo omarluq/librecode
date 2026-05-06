@@ -156,6 +156,16 @@ func (app *App) handleForceExit() bool {
 }
 
 func (app *App) handleEscape(ctx context.Context) {
+	if app.working {
+		if time.Since(app.lastEscape) <= doubleEscapeDelay {
+			app.cancelActivePrompt(ctx)
+			app.lastEscape = time.Time{}
+			return
+		}
+		app.lastEscape = time.Now()
+		app.setStatus("escape again to cancel response")
+		return
+	}
 	if !app.editor.empty() {
 		app.editor.clear()
 		app.setStatus("editor cleared")
@@ -193,9 +203,13 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 		app.queueFollowUpText(text)
 		return
 	}
+	promptCtx, cancel := context.WithCancel(ctx)
+	parentEntryID := cloneStringPtr(app.pendingParentID)
+	promptID := app.nextPromptID()
 	request := &assistant.PromptRequest{
-		OnEvent:       app.promptStreamHandler(ctx),
-		ParentEntryID: app.pendingParentID,
+		OnEvent:       app.promptStreamHandler(promptCtx, promptID),
+		OnUserEntry:   app.promptUserEntryHandler(promptCtx, promptID),
+		ParentEntryID: parentEntryID,
 		SessionID:     app.sessionID,
 		CWD:           app.cwd,
 		Text:          text,
@@ -205,12 +219,23 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.scrollOffset = 0
 	app.streamingText = ""
 	app.streamedToolEvents = 0
+	app.activePrompt = &activePromptState{
+		Cancel:           cancel,
+		ParentEntryID:    cloneStringPtr(parentEntryID),
+		ID:               promptID,
+		SessionID:        app.sessionID,
+		UserEntryID:      "",
+		Prompt:           text,
+		BaselineMessages: len(app.messages),
+		Canceled:         false,
+	}
 	app.addMessage(database.RoleUser, text)
 	app.working = true
 	app.workFrame = 0
 	app.draw()
 	go func() {
-		response, err := app.runtime.Prompt(ctx, request)
+		defer cancel()
+		response, err := app.runtime.Prompt(promptCtx, request)
 		if err != nil {
 			app.postAsyncEvent(ctx, asyncEvent{
 				Response:  nil,
@@ -218,6 +243,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 				Kind:      asyncEventPromptError,
 				Provider:  "",
 				Text:      err.Error(),
+				PromptID:  promptID,
 			})
 			return
 		}
@@ -227,13 +253,22 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 			Kind:      asyncEventPromptDone,
 			Provider:  "",
 			Text:      "",
+			PromptID:  promptID,
 		})
 	}()
 }
 
-func (app *App) applyPromptResponse(ctx context.Context, response *assistant.PromptResponse) {
+func (app *App) applyPromptResponse(ctx context.Context, response *assistant.PromptResponse, promptID uint64) {
+	if app.consumeCanceledPrompt(promptID) {
+		return
+	}
+	if app.activePrompt != nil && app.activePrompt.Canceled {
+		app.activePrompt = nil
+		return
+	}
 	app.working = false
 	if response == nil {
+		app.activePrompt = nil
 		app.processQueuedPrompt(ctx)
 		return
 	}
@@ -247,8 +282,75 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	app.streamingText = ""
 	app.streamedToolEvents = 0
 	app.addMessage(database.RoleAssistant, response.Text)
+	app.activePrompt = nil
 	app.persistSessionSettings()
 	app.processQueuedPrompt(ctx)
+}
+
+func (app *App) nextPromptID() uint64 {
+	app.promptSequence++
+
+	return app.promptSequence
+}
+
+func (app *App) cancelActivePrompt(ctx context.Context) {
+	if app.activePrompt == nil {
+		app.working = false
+		app.streamingText = ""
+		app.streamedToolEvents = 0
+		app.setStatus("no active response to cancel")
+		return
+	}
+
+	activePrompt := app.activePrompt
+	activePrompt.Canceled = true
+	app.canceledPrompts[activePrompt.ID] = activePrompt
+	activePrompt.Cancel()
+	app.revertActivePromptUI(activePrompt)
+	if app.deleteCanceledPromptBranch(ctx, activePrompt) {
+		app.setStatus("response canceled; conversation reverted")
+	}
+}
+
+func (app *App) revertActivePromptUI(activePrompt *activePromptState) {
+	if activePrompt.BaselineMessages >= 0 && activePrompt.BaselineMessages <= len(app.messages) {
+		app.messages = app.messages[:activePrompt.BaselineMessages]
+	}
+	app.pendingParentID = cloneStringPtr(activePrompt.ParentEntryID)
+	app.queuedMessages = []string{}
+	app.streamingText = ""
+	app.streamedToolEvents = 0
+	app.working = false
+	app.scrollOffset = 0
+	if app.editor.empty() {
+		app.editor.setText(activePrompt.Prompt)
+	}
+}
+
+func (app *App) deleteCanceledPromptBranch(ctx context.Context, activePrompt *activePromptState) bool {
+	if activePrompt.SessionID == "" || activePrompt.UserEntryID == "" {
+		return true
+	}
+	err := app.runtime.SessionRepository().DeleteEntryBranch(
+		ctx,
+		activePrompt.SessionID,
+		activePrompt.UserEntryID,
+	)
+	if err != nil {
+		app.setStatus("canceled response; failed to revert persisted branch: " + err.Error())
+		return false
+	}
+	delete(app.canceledPrompts, activePrompt.ID)
+
+	return true
+}
+
+func cloneStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func (app *App) toggleToolsExpanded() {

@@ -35,12 +35,19 @@ type Runtime struct {
 
 // PromptRequest contains one user prompt invocation.
 type PromptRequest struct {
-	OnEvent       func(StreamEvent) `json:"-"`
-	ParentEntryID *string           `json:"parent_entry_id,omitempty"`
-	SessionID     string            `json:"session_id"`
-	CWD           string            `json:"cwd"`
-	Text          string            `json:"text"`
-	Name          string            `json:"name"`
+	OnEvent       func(StreamEvent)          `json:"-"`
+	OnUserEntry   func(PromptUserEntryEvent) `json:"-"`
+	ParentEntryID *string                    `json:"parent_entry_id,omitempty"`
+	SessionID     string                     `json:"session_id"`
+	CWD           string                     `json:"cwd"`
+	Text          string                     `json:"text"`
+	Name          string                     `json:"name"`
+}
+
+// PromptUserEntryEvent identifies the persisted user entry for an active prompt.
+type PromptUserEntryEvent struct {
+	SessionID string `json:"session_id"`
+	EntryID   string `json:"entry_id"`
 }
 
 // StreamEventKind identifies incremental assistant activity.
@@ -131,6 +138,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (*Pr
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
 	}
+	runtime.notifyPromptUserEntry(request, activeSession.ID, userEntry.ID)
 
 	runtime.emit(ctx, "before_agent_start", map[string]any{"prompt": request.Text})
 	emitErr := runtime.extensions.Emit(ctx, "before_agent_start", map[string]any{"prompt": request.Text})
@@ -285,6 +293,13 @@ func (runtime *Runtime) resolveSession(ctx context.Context, request *PromptReque
 	}
 
 	return runtime.sessions.CreateSession(ctx, request.CWD, "", "")
+}
+
+func (runtime *Runtime) notifyPromptUserEntry(request *PromptRequest, sessionID, entryID string) {
+	if request.OnUserEntry == nil {
+		return
+	}
+	request.OnUserEntry(PromptUserEntryEvent{SessionID: sessionID, EntryID: entryID})
 }
 
 func (runtime *Runtime) promptParentID(ctx context.Context, sessionID string, explicitParent *string) (*string, error) {
