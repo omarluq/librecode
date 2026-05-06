@@ -56,7 +56,7 @@ func newSessionNewCmd() *cobra.Command {
 
 func newSessionListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
+		Use:   listUse,
 		Short: "List sessions for the current working directory",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

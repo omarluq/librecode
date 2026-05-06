@@ -80,6 +80,7 @@ task ci               # Verify everything works
 │   │   └── logger_service.go  # zerolog + slog bridge
 │   ├── extension/        # Lua workflow extensions
 │   ├── terminal/         # Interactive terminal chat UI
+│   ├── tool/             # Pi-style built-in coding tools (read/bash/edit/write/grep/find/ls)
 │   └── vinfo/            # Build version metadata (ldflags)
 ├── .github/workflows/
 │   ├── ci.yml            # Lint + test + cross-platform build
@@ -138,6 +139,19 @@ The loader returns `mo.Result[*Config]` for monadic error handling. Config is va
 librecode config show       # Display all resolved config values
 librecode config validate   # Check config is valid
 ```
+
+### Agent Runtime: sessions, extensions, and tools
+
+The local assistant runtime persists SQLite session trees, loads Lua workflow extensions, and exposes Pi-style built-in coding tools:
+
+```bash
+librecode prompt "hello"                               # append a prompt to the current cwd session
+librecode prompt '/tool read {"path":"README.md"}'    # run a built-in tool through the prompt path
+librecode tool list                                    # list read/bash/edit/write/grep/find/ls
+librecode tool run read '{"path":"README.md"}'        # run a built-in tool directly
+```
+
+Built-in tools live in `internal/tool` and use the project libraries heavily (`lo` for collection transforms and `oops` for structured tool errors).
 
 ### Dependency Injection: samber/do v2
 

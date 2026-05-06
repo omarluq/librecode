@@ -28,7 +28,7 @@ func newExtensionCmd() *cobra.Command {
 
 func newExtensionListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
+		Use:   listUse,
 		Short: "List loaded workflow extensions, commands, and tools",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
