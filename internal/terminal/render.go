@@ -67,11 +67,17 @@ func (app *App) messageLines(width, maxRows int) []styledLine {
 	for _, message := range app.messages {
 		lines = append(lines, app.renderMessage(width, message)...)
 	}
-	if app.streamingThinkingText != "" {
-		lines = append(lines, app.renderStreamingThinkingMessage(width, app.streamingThinkingText)...)
-	}
-	if app.streamingText != "" {
-		lines = append(lines, app.renderStreamingMessage(width, app.streamingText)...)
+	if len(app.streamingBlocks) > 0 {
+		for _, message := range app.streamingBlocks {
+			lines = append(lines, app.renderStreamingBlockMessage(width, message)...)
+		}
+	} else {
+		if app.streamingThinkingText != "" {
+			lines = append(lines, app.renderStreamingThinkingMessage(width, app.streamingThinkingText)...)
+		}
+		if app.streamingText != "" {
+			lines = append(lines, app.renderStreamingMessage(width, app.streamingText)...)
+		}
 	}
 	if app.working {
 		lines = append(lines, styledLine{Style: app.theme.style(colorAccent), Text: app.workingIndicator()})
@@ -163,6 +169,19 @@ func (app *App) renderStreamingMessage(width int, content string) []styledLine {
 
 func (app *App) renderStreamingThinkingMessage(width int, content string) []styledLine {
 	return app.renderThinkingMessage(width, chatMessage{Role: database.RoleThinking, Content: content})
+}
+
+func (app *App) renderStreamingBlockMessage(width int, message chatMessage) []styledLine {
+	switch message.Role {
+	case database.RoleAssistant:
+		return app.renderStreamingMessage(width, message.Content)
+	case database.RoleThinking:
+		return app.renderStreamingThinkingMessage(width, message.Content)
+	case database.RoleToolResult, database.RoleBashExecution:
+		return app.renderToolMessage(width, message)
+	}
+
+	return app.renderMessage(width, message)
 }
 
 func (app *App) renderToolMessage(width int, message chatMessage) []styledLine {

@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 
@@ -213,8 +214,10 @@ func (app *App) handlePromptStreamEvent(payload asyncEvent) {
 	switch payload.Kind {
 	case asyncEventPromptDelta:
 		app.streamingText += payload.Text
+		app.appendStreamingBlock(database.RoleAssistant, payload.Text)
 	case asyncEventPromptThinkingDelta:
 		app.streamingThinkingText += payload.Text
+		app.appendStreamingBlock(database.RoleThinking, payload.Text)
 	case asyncEventPromptToolStart:
 		app.setStatus("running tool: " + payload.Text)
 	case asyncEventPromptToolResult:
@@ -254,6 +257,7 @@ func (app *App) applyPromptError(message string, promptID uint64) {
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""
+	app.streamingBlocks = nil
 	app.streamedToolEvents = 0
 	if app.activePrompt != nil && app.activePrompt.Canceled {
 		app.activePrompt = nil
@@ -280,6 +284,38 @@ func (app *App) applyStreamedToolEvent(event *assistant.ToolEvent) {
 	if event == nil {
 		return
 	}
-	app.addMessage(database.RoleToolResult, formatToolEventForUI(event))
+	app.appendStreamingBlock(database.RoleToolResult, formatToolEventForUI(event))
 	app.streamedToolEvents++
+}
+
+func (app *App) appendStreamingBlock(role database.Role, content string) {
+	if content == "" {
+		return
+	}
+	lastIndex := len(app.streamingBlocks) - 1
+	if lastIndex >= 0 && canMergeStreamingBlock(role) && app.streamingBlocks[lastIndex].Role == role {
+		app.streamingBlocks[lastIndex].Content += content
+		return
+	}
+	app.streamingBlocks = append(app.streamingBlocks, chatMessage{
+		CreatedAt: time.Now().UTC(),
+		Role:      role,
+		Content:   content,
+	})
+}
+
+func canMergeStreamingBlock(role database.Role) bool {
+	switch role {
+	case database.RoleAssistant, database.RoleThinking:
+		return true
+	case database.RoleUser,
+		database.RoleToolResult,
+		database.RoleBashExecution,
+		database.RoleCustom,
+		database.RoleBranchSummary,
+		database.RoleCompactionSummary:
+		return false
+	}
+
+	return false
 }

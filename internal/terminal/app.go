@@ -86,6 +86,7 @@ type App struct {
 	selectedPanelKind     panelKind
 	streamingText         string
 	streamingThinkingText string
+	streamingBlocks       []chatMessage
 	resources             core.ResourceSnapshot
 	queuedMessages        []string
 	messages              []chatMessage
@@ -188,6 +189,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		selectedPanelKind:     "",
 		streamingText:         "",
 		streamingThinkingText: "",
+		streamingBlocks:       []chatMessage{},
 	}
 	app.addWelcomeMessage()
 

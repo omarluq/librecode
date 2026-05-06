@@ -219,6 +219,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.scrollOffset = 0
 	app.streamingText = ""
 	app.streamingThinkingText = ""
+	app.streamingBlocks = nil
 	app.streamedToolEvents = 0
 	app.activePrompt = &activePromptState{
 		Cancel:           cancel,
@@ -267,26 +268,63 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 		app.activePrompt = nil
 		return
 	}
+	streamingBlocks := append([]chatMessage(nil), app.streamingBlocks...)
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""
+	app.streamingBlocks = nil
 	if response == nil {
 		app.activePrompt = nil
 		app.processQueuedPrompt(ctx)
 		return
 	}
 	app.sessionID = response.SessionID
-	for _, thinking := range response.Thinking {
-		app.addMessage(database.RoleThinking, thinking)
-	}
-	for index := app.streamedToolEvents; index < len(response.ToolEvents); index++ {
-		app.addMessage(database.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
-	}
+	app.applyPromptResponseSideEffects(response, streamingBlocks)
 	app.streamedToolEvents = 0
 	app.addMessage(database.RoleAssistant, response.Text)
 	app.activePrompt = nil
 	app.persistSessionSettings()
 	app.processQueuedPrompt(ctx)
+}
+
+func (app *App) applyPromptResponseSideEffects(response *assistant.PromptResponse, streamingBlocks []chatMessage) {
+	if len(streamingBlocks) == 0 {
+		for _, thinking := range response.Thinking {
+			app.addMessage(database.RoleThinking, thinking)
+		}
+		for index := app.streamedToolEvents; index < len(response.ToolEvents); index++ {
+			app.addMessage(database.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
+		}
+		return
+	}
+
+	streamedThinkingBlocks := 0
+	streamedToolBlocks := 0
+	for _, block := range streamingBlocks {
+		switch block.Role {
+		case database.RoleThinking:
+			if strings.TrimSpace(block.Content) == "" {
+				continue
+			}
+			app.addMessage(database.RoleThinking, block.Content)
+			streamedThinkingBlocks++
+		case database.RoleToolResult, database.RoleBashExecution:
+			app.addMessage(block.Role, block.Content)
+			streamedToolBlocks++
+		case database.RoleAssistant,
+			database.RoleUser,
+			database.RoleCustom,
+			database.RoleBranchSummary,
+			database.RoleCompactionSummary:
+			continue
+		}
+	}
+	for index := streamedThinkingBlocks; index < len(response.Thinking); index++ {
+		app.addMessage(database.RoleThinking, response.Thinking[index])
+	}
+	for index := streamedToolBlocks; index < len(response.ToolEvents); index++ {
+		app.addMessage(database.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
+	}
 }
 
 func (app *App) nextPromptID() uint64 {
@@ -300,6 +338,7 @@ func (app *App) cancelActivePrompt(ctx context.Context) {
 		app.working = false
 		app.streamingText = ""
 		app.streamingThinkingText = ""
+		app.streamingBlocks = nil
 		app.streamedToolEvents = 0
 		app.setStatus("no active response to cancel")
 		return
@@ -323,6 +362,7 @@ func (app *App) revertActivePromptUI(activePrompt *activePromptState) {
 	app.queuedMessages = []string{}
 	app.streamingText = ""
 	app.streamingThinkingText = ""
+	app.streamingBlocks = nil
 	app.streamedToolEvents = 0
 	app.working = false
 	app.scrollOffset = 0
