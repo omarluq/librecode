@@ -101,6 +101,9 @@ func (app *App) drawPanel(width, height, row int) int {
 }
 
 func (app *App) drawMessages(width, height, row int) int {
+	if app.showWelcomeOnly() {
+		return app.drawWelcomeOnly(width, height, row)
+	}
 	availableRows := max(1, height-row-footerReserve())
 	lines := app.messageLines(width, availableRows)
 	for _, line := range lines {
