@@ -178,6 +178,11 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 	if strings.HasPrefix(text, "/") {
 		return app.submitCommand(ctx, text)
 	}
+	if app.working {
+		app.queueFollowUpText(text)
+		app.draw()
+		return false, nil
+	}
 
 	app.sendPrompt(ctx, text)
 	return false, nil
@@ -185,7 +190,7 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 
 func (app *App) sendPrompt(ctx context.Context, text string) {
 	if app.working {
-		app.setStatus("already working; wait for the current response")
+		app.queueFollowUpText(text)
 		return
 	}
 	request := &assistant.PromptRequest{
@@ -226,9 +231,10 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	}()
 }
 
-func (app *App) applyPromptResponse(response *assistant.PromptResponse) {
+func (app *App) applyPromptResponse(ctx context.Context, response *assistant.PromptResponse) {
 	app.working = false
 	if response == nil {
+		app.processQueuedPrompt(ctx)
 		return
 	}
 	app.sessionID = response.SessionID
@@ -242,6 +248,7 @@ func (app *App) applyPromptResponse(response *assistant.PromptResponse) {
 	app.streamedToolEvents = 0
 	app.addMessage(database.RoleAssistant, response.Text)
 	app.persistSessionSettings()
+	app.processQueuedPrompt(ctx)
 }
 
 func (app *App) toggleToolsExpanded() {
@@ -262,8 +269,22 @@ func (app *App) queueFollowUp() {
 		app.setStatus("no follow-up text to queue")
 		return
 	}
+	app.queueFollowUpText(text)
+}
+
+func (app *App) queueFollowUpText(text string) {
 	app.queuedMessages = append(app.queuedMessages, text)
-	app.setStatus("queued follow-up")
+	app.setStatus("queued follow-up: " + truncateText(text, 48))
+}
+
+func (app *App) processQueuedPrompt(ctx context.Context) {
+	if app.working || len(app.queuedMessages) == 0 {
+		return
+	}
+	text := app.queuedMessages[0]
+	app.queuedMessages = app.queuedMessages[1:]
+	app.setStatus("sending queued follow-up")
+	app.sendPrompt(ctx, text)
 }
 
 func (app *App) dequeueFollowUp() {

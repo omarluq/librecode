@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -75,8 +74,7 @@ func (app *App) messageLines(width, maxRows int) []styledLine {
 		lines = append(lines, styledLine{Style: app.theme.style(colorAccent), Text: app.workingIndicator()})
 	}
 	if len(app.queuedMessages) > 0 {
-		queueText := fmt.Sprintf("queued follow-ups: %d", len(app.queuedMessages))
-		lines = append(lines, styledLine{Style: app.theme.style(colorWarning), Text: queueText})
+		lines = append(lines, app.renderQueuedMessages(width)...)
 	}
 
 	return app.visibleMessageLines(lines, maxRows)
@@ -117,6 +115,22 @@ func (app *App) renderUserMessage(width int, content string) []styledLine {
 		styledLine{Style: app.theme.background(colorUserMessageBg), Text: padRight("", width)},
 		styledLine{Style: app.theme.style(colorDim), Text: ""},
 	)
+
+	return lines
+}
+
+func (app *App) renderQueuedMessages(width int) []styledLine {
+	style := app.theme.background(colorUserMessageBg).Foreground(app.theme.colors[colorMuted])
+	innerWidth := max(1, width-4)
+	lines := []styledLine{{Style: app.theme.style(colorDim), Text: ""}}
+	for index, message := range app.queuedMessages {
+		header := "queued follow-up " + intText(index+1)
+		lines = append(lines, styledLine{Style: style.Bold(true), Text: "  " + padRight(header, innerWidth) + "  "})
+		for _, line := range wrapText(message, innerWidth) {
+			lines = append(lines, styledLine{Style: style, Text: "  " + padRight(line, innerWidth) + "  "})
+		}
+	}
+	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
 
 	return lines
 }

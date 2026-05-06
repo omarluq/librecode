@@ -75,7 +75,7 @@ func (app *App) postAsyncEvent(ctx context.Context, event asyncEvent) {
 	}
 }
 
-func (app *App) handleInterrupt(_ context.Context, event *tcell.EventInterrupt) (bool, error) {
+func (app *App) handleInterrupt(ctx context.Context, event *tcell.EventInterrupt) (bool, error) {
 	payload, ok := event.Data().(asyncEvent)
 	if !ok {
 		return false, nil
@@ -83,7 +83,7 @@ func (app *App) handleInterrupt(_ context.Context, event *tcell.EventInterrupt) 
 	if app.handleAuthAsyncEvent(payload) {
 		return false, nil
 	}
-	app.handlePromptAsyncEvent(payload)
+	app.handlePromptAsyncEvent(ctx, payload)
 
 	return false, nil
 }
@@ -117,10 +117,10 @@ func (app *App) handleAuthAsyncEvent(payload asyncEvent) bool {
 	return false
 }
 
-func (app *App) handlePromptAsyncEvent(payload asyncEvent) {
+func (app *App) handlePromptAsyncEvent(ctx context.Context, payload asyncEvent) {
 	switch payload.Kind {
 	case asyncEventPromptDone:
-		app.applyPromptResponse(payload.Response)
+		app.applyPromptResponse(ctx, payload.Response)
 	case asyncEventPromptDelta:
 		app.streamingText += payload.Text
 		app.setStatus("streaming response")
