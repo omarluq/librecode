@@ -48,7 +48,6 @@ const (
 	reasoningEffortKey      = "effort"
 	thinkingOff             = "off"
 	reasoningSummaryAuto    = "auto"
-	maxToolIterations       = 8
 )
 
 // CompletionRequest describes one model completion request.
@@ -249,7 +248,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	stream bool,
 ) (*CompletionResult, error) {
 	result := &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil}
-	for iteration := 0; iteration < maxToolIterations; iteration++ {
+	for {
 		payload := responsesPayload(request, input, stream)
 		providerResult, err := client.requestResponses(ctx, endpoint, headers, payload, stream, request.OnEvent)
 		if err != nil {
@@ -268,8 +267,6 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		result.ToolEvents = append(result.ToolEvents, events...)
 		input = append(input, outputs...)
 	}
-
-	return client.finalResponseWithoutTools(ctx, request, endpoint, headers, input, stream, result)
 }
 
 func responsesPayload(request *CompletionRequest, input []any, stream bool) map[string]any {
@@ -306,37 +303,6 @@ func responsesBasePayload(request *CompletionRequest, input []any, stream bool) 
 	}
 
 	return payload
-}
-
-func (client *HTTPCompletionClient) finalResponseWithoutTools(
-	ctx context.Context,
-	request *CompletionRequest,
-	endpoint string,
-	headers map[string]string,
-	input []any,
-	stream bool,
-	partial *CompletionResult,
-) (*CompletionResult, error) {
-	input = append(input, map[string]any{
-		jsonRoleKey:    jsonUserRole,
-		jsonContentKey: "Tool budget reached. Use the tool results above and answer without more tool calls.",
-	})
-	payload := responsesBasePayload(request, input, stream)
-	providerResult, err := client.requestResponses(ctx, endpoint, headers, payload, stream, request.OnEvent)
-	if err != nil {
-		return nil, err
-	}
-	partial.Thinking = append(partial.Thinking, providerResult.Thinking...)
-	if strings.TrimSpace(providerResult.Text) == "" {
-		return nil, oops.
-			In("assistant").
-			Code("tool_loop_limit").
-			With("iterations", maxToolIterations).
-			Errorf("model kept requesting tools and did not produce a final answer")
-	}
-	partial.Text = strings.TrimSpace(providerResult.Text)
-
-	return partial, nil
 }
 
 func (client *HTTPCompletionClient) requestResponses(
