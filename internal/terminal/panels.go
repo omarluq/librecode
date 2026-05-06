@@ -339,6 +339,7 @@ func (app *App) applyModelSelection(value string) {
 func (app *App) toggleScopedModel(value string) {
 	app.ensureScopedOrder()
 	app.scopedEnabled[value] = !app.scopedEnabled[value]
+	app.persistSessionSettings()
 	app.refreshScopedModelsPanel()
 }
 
@@ -374,8 +375,10 @@ func (app *App) applySettingSelection(value string) {
 		app.cycleThinking()
 	case "hide-thinking":
 		app.hideThinking = !app.hideThinking
+		app.persistSessionSettings()
 	case "tools-expanded":
 		app.toolsExpanded = !app.toolsExpanded
+		app.persistSessionSettings()
 	}
 	app.panel = newSelectionPanel(
 		panelSettings,
@@ -390,6 +393,9 @@ func (app *App) applySessionSelection(ctx context.Context, value string) error {
 	app.sessionID = value
 	app.pendingParentID = nil
 	app.messages = []chatMessage{}
+	if err := app.loadSessionSettings(ctx); err != nil {
+		return err
+	}
 	app.addSystemMessage("resumed session: " + value)
 	if err := app.loadInitialMessages(ctx); err != nil {
 		return err
@@ -438,9 +444,11 @@ func emptyParentID(parentID *string) *string {
 func (app *App) toggleTheme() {
 	if app.theme.name == "dark" {
 		app.theme = lightTheme()
+		app.persistSessionSettings()
 		return
 	}
 	app.theme = darkTheme()
+	app.persistSessionSettings()
 }
 
 func (app *App) cycleModel(delta int) {

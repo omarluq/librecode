@@ -26,6 +26,7 @@ func (app *App) handleScopedModelKey(event *tcell.EventKey) bool {
 }
 
 func (app *App) saveScopedModels() {
+	app.persistSessionSettings()
 	app.setStatus("scoped model cycle saved for this session")
 	app.closePanel()
 }
@@ -35,6 +36,7 @@ func (app *App) enableFilteredScopedModels() {
 	for _, item := range app.panel.filtered {
 		app.scopedEnabled[item.Value] = true
 	}
+	app.persistSessionSettings()
 	app.refreshScopedModelsPanel()
 }
 
@@ -42,6 +44,7 @@ func (app *App) clearFilteredScopedModels() {
 	for _, item := range app.panel.filtered {
 		delete(app.scopedEnabled, item.Value)
 	}
+	app.persistSessionSettings()
 	app.refreshScopedModelsPanel()
 }
 
@@ -64,6 +67,7 @@ func (app *App) toggleSelectedProviderModels() {
 			app.scopedEnabled[modelItem.Value] = !allEnabled
 		}
 	}
+	app.persistSessionSettings()
 	app.refreshScopedModelsPanel()
 }
 
@@ -82,6 +86,7 @@ func (app *App) reorderSelectedScopedModel(delta int) {
 		return
 	}
 	app.scopedOrder[index], app.scopedOrder[nextIndex] = app.scopedOrder[nextIndex], app.scopedOrder[index]
+	app.persistSessionSettings()
 	app.refreshScopedModelsPanel()
 }
 

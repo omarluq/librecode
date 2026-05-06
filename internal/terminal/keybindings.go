@@ -107,7 +107,7 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionSelectConfirm:              binding("Confirm selection", "enter"),
 		actionSelectCancel:               binding("Cancel selection", "escape"),
 		actionInterrupt:                  binding("Cancel or abort", "escape"),
-		actionForceExit:                  binding("Exit librecode", "ctrl+c"),
+		actionForceExit:                  binding("Press twice to exit librecode", "ctrl+c"),
 		actionThinkingCycle:              binding("Cycle thinking level", "shift+tab"),
 		actionModelCycleForward:          binding("Cycle to next model", "ctrl+p"),
 		actionModelCycleBackward:         binding("Cycle to previous model", "shift+ctrl+p"),

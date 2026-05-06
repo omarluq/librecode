@@ -15,10 +15,9 @@ type ModelService struct {
 // NewModelService wires librecode-style model registry loading.
 func NewModelService(injector do.Injector) (*ModelService, error) {
 	databaseService := do.MustInvoke[*DatabaseService](injector)
-	documentRepository := database.NewDocumentRepository(databaseService.DB)
 	authStorage := do.MustInvoke[*AuthService](injector).Storage
 	registry := model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: database.NewDocumentSource(documentRepository, "model", "models"),
+		ConfigSource: database.NewDocumentSource(databaseService.Documents, "model", "models"),
 		Auth:         authStorage,
 		ModelsPath:   "",
 		BuiltIns:     nil,

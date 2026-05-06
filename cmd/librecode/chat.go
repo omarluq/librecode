@@ -27,6 +27,7 @@ func newChatCmd() *cobra.Command {
 
 func runChat(cmd *cobra.Command, sessionID string) error {
 	return withContainer(cmd.Context(), func(container *di.Container) error {
+		databaseService := di.MustInvoke[*di.DatabaseService](container)
 		runtime := di.MustInvoke[*di.AssistantService](container).Runtime
 		modelRegistry := di.MustInvoke[*di.ModelService](container).Registry
 		authStorage := di.MustInvoke[*di.AuthService](container).Storage
@@ -41,6 +42,7 @@ func runChat(cmd *cobra.Command, sessionID string) error {
 		return terminal.Run(cmd.Context(), &terminal.RunOptions{
 			Resources: &resources,
 			Runtime:   runtime,
+			Settings:  databaseService.Documents,
 			Models:    modelRegistry,
 			Auth:      authStorage,
 			Config:    cfg,

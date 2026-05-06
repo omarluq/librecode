@@ -19,7 +19,7 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 		return false, nil
 	case *tcell.EventKey:
 		if app.keys.matches(typedEvent, actionForceExit) {
-			return true, nil
+			return app.handleForceExit(), nil
 		}
 
 		return app.handleKey(ctx, typedEvent)
@@ -117,6 +117,10 @@ func (app *App) editorActions() []shortcutHandler {
 }
 
 func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
+	if event.Key() == tcell.KeyEscape {
+		app.closePanel()
+		return false, nil
+	}
 	if app.selectedPanelKind == panelSessions && app.handleSessionPanelKey(ctx, event) {
 		return false, nil
 	}
@@ -134,6 +138,16 @@ func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) (bool
 	}
 
 	return false, nil
+}
+
+func (app *App) handleForceExit() bool {
+	if time.Since(app.lastControlC) <= doubleControlCDelay {
+		return true
+	}
+	app.lastControlC = time.Now()
+	app.setStatus("press Ctrl+C again to exit")
+
+	return false
 }
 
 func (app *App) handleEscape(ctx context.Context) {
@@ -216,15 +230,18 @@ func (app *App) applyPromptResponse(response *assistant.PromptResponse) {
 		app.addMessage(database.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
 	}
 	app.addMessage(database.RoleAssistant, response.Text)
+	app.persistSessionSettings()
 }
 
 func (app *App) toggleToolsExpanded() {
 	app.toolsExpanded = !app.toolsExpanded
+	app.persistSessionSettings()
 	app.setStatus("tool output expanded: " + boolText(app.toolsExpanded))
 }
 
 func (app *App) toggleThinkingHidden() {
 	app.hideThinking = !app.hideThinking
+	app.persistSessionSettings()
 	app.setStatus("thinking hidden: " + boolText(app.hideThinking))
 }
 

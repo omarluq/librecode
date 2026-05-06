@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	defaultEditorRows = 6
-	doubleEscapeDelay = 500 * time.Millisecond
+	defaultEditorRows   = 6
+	doubleEscapeDelay   = 500 * time.Millisecond
+	doubleControlCDelay = 2 * time.Second
 )
 
 type appMode string
@@ -37,20 +38,23 @@ type chatMessage struct {
 
 // RunOptions configures the terminal app.
 type RunOptions struct {
-	Resources *core.ResourceSnapshot `json:"resources"`
-	Runtime   *assistant.Runtime     `json:"-"`
-	Models    *model.Registry        `json:"-"`
-	Auth      *auth.Storage          `json:"-"`
-	Config    *config.Config         `json:"-"`
-	CWD       string                 `json:"cwd"`
-	SessionID string                 `json:"session_id"`
+	Resources *core.ResourceSnapshot       `json:"resources"`
+	Runtime   *assistant.Runtime           `json:"-"`
+	Settings  *database.DocumentRepository `json:"-"`
+	Models    *model.Registry              `json:"-"`
+	Auth      *auth.Storage                `json:"-"`
+	Config    *config.Config               `json:"-"`
+	CWD       string                       `json:"cwd"`
+	SessionID string                       `json:"session_id"`
 }
 
 // App is the terminal chat UI.
 type App struct {
 	lastEscape        time.Time
+	lastControlC      time.Time
 	screen            tcell.Screen
 	runtime           *assistant.Runtime
+	settings          *database.DocumentRepository
 	models            *model.Registry
 	auth              *auth.Storage
 	cfg               *config.Config
@@ -95,6 +99,12 @@ func Run(ctx context.Context, options *RunOptions) error {
 	if err := app.loadInitialMessages(ctx); err != nil {
 		app.addSystemMessage(err.Error())
 	}
+	if err := app.loadSessionSettings(ctx); err != nil {
+		app.addSystemMessage(err.Error())
+	}
+	if err := app.loadLatestSessionSettings(ctx); err != nil {
+		app.addSystemMessage(err.Error())
+	}
 	app.loop(ctx)
 
 	return nil
@@ -120,6 +130,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 	app := &App{
 		screen:            screen,
 		runtime:           options.Runtime,
+		settings:          options.Settings,
 		models:            options.Models,
 		auth:              options.Auth,
 		cfg:               options.Config,
@@ -143,6 +154,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		toolsExpanded:     false,
 		hideThinking:      false,
 		lastEscape:        time.Time{},
+		lastControlC:      time.Time{},
 		working:           false,
 		workFrame:         0,
 		scrollOffset:      0,
@@ -242,6 +254,7 @@ func (app *App) setModel(provider, modelID string) {
 		app.cfg.Assistant.Provider = provider
 		app.cfg.Assistant.Model = modelID
 	}
+	app.persistSessionSettings()
 	app.addSystemMessage("model selected: " + provider + "/" + modelID)
 }
 
@@ -249,6 +262,7 @@ func (app *App) setThinkingLevel(level string) {
 	if app.cfg != nil {
 		app.cfg.Assistant.ThinkingLevel = level
 	}
+	app.persistSessionSettings()
 	app.setStatus("thinking: " + level)
 }
 

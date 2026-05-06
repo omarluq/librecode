@@ -96,6 +96,7 @@ func (app *App) newSession(ctx context.Context, name string) error {
 	app.sessionID = createdSession.ID
 	app.pendingParentID = nil
 	app.messages = []chatMessage{}
+	app.persistSessionSettings()
 	app.addSystemMessage("new session: " + createdSession.ID)
 
 	return nil

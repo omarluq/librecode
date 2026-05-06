@@ -125,7 +125,7 @@ func welcomeBodyLines(cwd string) []string {
 		"",
 		"Type /hotkeys for shortcuts",
 		"Type /quit to exit",
-		"Press Ctrl+C anytime to exit",
+		"Press Ctrl+C twice to exit",
 	)
 
 	return lines
