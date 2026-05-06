@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/samber/mo"
 	"github.com/spf13/viper"
@@ -51,4 +52,19 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("app.env", "development")
 	viperInstance.SetDefault("logging.level", "info")
 	viperInstance.SetDefault("logging.format", "pretty")
+	viperInstance.SetDefault("database.path", "")
+	viperInstance.SetDefault("database.apply_migrations", true)
+	viperInstance.SetDefault("database.max_open_conns", 1)
+	viperInstance.SetDefault("database.max_idle_conns", 1)
+	viperInstance.SetDefault("database.conn_max_lifetime", 30*time.Minute)
+	viperInstance.SetDefault("plugins.enabled", true)
+	viperInstance.SetDefault("plugins.paths", []string{".librecode/plugins", ".pi/plugins"})
+	viperInstance.SetDefault("agent.provider", "local")
+	viperInstance.SetDefault("agent.model", "librecode-go")
+	viperInstance.SetDefault("agent.thinking_level", "off")
+	viperInstance.SetDefault("cache.enabled", true)
+	viperInstance.SetDefault("cache.capacity", 512)
+	viperInstance.SetDefault("cache.ttl", 10*time.Minute)
+	viperInstance.SetDefault("ksql.endpoint", "")
+	viperInstance.SetDefault("ksql.timeout", 10*time.Second)
 }
