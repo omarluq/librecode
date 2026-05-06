@@ -43,6 +43,9 @@ func (app *App) handleKey(ctx context.Context, event *tcell.EventKey) (bool, err
 		app.editor.insertRune('\n')
 		return false, nil
 	}
+	if app.keys.matches(event, actionInputTab) && app.acceptAutocomplete() {
+		return false, nil
+	}
 	app.handleEditorKey(event)
 
 	return false, nil
@@ -163,29 +166,60 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 		return app.submitCommand(ctx, text)
 	}
 
-	return false, app.sendPrompt(ctx, text)
+	app.sendPrompt(ctx, text)
+	return false, nil
 }
 
-func (app *App) sendPrompt(ctx context.Context, text string) error {
-	app.addMessage(database.RoleUser, text)
-	app.working = true
-	app.draw()
-	response, err := app.runtime.Prompt(ctx, assistant.PromptRequest{
+func (app *App) sendPrompt(ctx context.Context, text string) {
+	if app.working {
+		app.setStatus("already working; wait for the current response")
+		return
+	}
+	request := assistant.PromptRequest{
 		ParentEntryID: app.pendingParentID,
 		SessionID:     app.sessionID,
 		CWD:           app.cwd,
 		Text:          text,
 		Name:          "",
-	})
-	app.working = false
+	}
 	app.pendingParentID = nil
-	if err != nil {
-		return err
+	app.addMessage(database.RoleUser, text)
+	app.working = true
+	app.workFrame = 0
+	app.draw()
+	go func() {
+		response, err := app.runtime.Prompt(ctx, request)
+		if err != nil {
+			app.postAsyncEvent(ctx, asyncEvent{
+				Response: nil,
+				Kind:     asyncEventPromptError,
+				Provider: "",
+				Text:     err.Error(),
+			})
+			return
+		}
+		app.postAsyncEvent(ctx, asyncEvent{
+			Response: response,
+			Kind:     asyncEventPromptDone,
+			Provider: "",
+			Text:     "",
+		})
+	}()
+}
+
+func (app *App) applyPromptResponse(response *assistant.PromptResponse) {
+	app.working = false
+	if response == nil {
+		return
 	}
 	app.sessionID = response.SessionID
+	for _, thinking := range response.Thinking {
+		app.addMessage(database.RoleThinking, thinking)
+	}
+	for _, event := range response.ToolEvents {
+		app.addMessage(database.RoleToolResult, formatToolEventForUI(event))
+	}
 	app.addMessage(database.RoleAssistant, response.Text)
-
-	return nil
 }
 
 func (app *App) toggleToolsExpanded() {

@@ -36,6 +36,8 @@ const (
 	RoleAssistant Role = "assistant"
 	// RoleToolResult is output from a tool execution.
 	RoleToolResult Role = "toolResult"
+	// RoleThinking is model reasoning or thinking text.
+	RoleThinking Role = "thinking"
 	// RoleCustom is extension-provided context.
 	RoleCustom Role = "custom"
 	// RoleBashExecution is output from a user-run shell command.

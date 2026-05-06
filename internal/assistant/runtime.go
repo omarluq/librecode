@@ -44,11 +44,19 @@ type PromptRequest struct {
 
 // PromptResponse describes persisted prompt output.
 type PromptResponse struct {
-	SessionID        string `json:"session_id"`
-	UserEntryID      string `json:"user_entry_id"`
-	AssistantEntryID string `json:"assistant_entry_id"`
-	Text             string `json:"text"`
-	Cached           bool   `json:"cached"`
+	SessionID        string      `json:"session_id"`
+	UserEntryID      string      `json:"user_entry_id"`
+	AssistantEntryID string      `json:"assistant_entry_id"`
+	Text             string      `json:"text"`
+	Thinking         []string    `json:"thinking,omitempty"`
+	ToolEvents       []ToolEvent `json:"tool_events,omitempty"`
+	Cached           bool        `json:"cached"`
+}
+
+type responseBundle struct {
+	Text       string
+	Thinking   []string
+	ToolEvents []ToolEvent
 }
 
 // NewRuntime creates an assistant runtime.
@@ -107,25 +115,29 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		return nil, oops.In("assistant").Code("before_agent_start").Wrapf(emitErr, "emit before_agent_start")
 	}
 
-	responseText, cached, err := runtime.respond(ctx, activeSession.ID, request.CWD, request.Text)
+	bundle, cached, err := runtime.respond(ctx, activeSession.ID, request.CWD, request.Text)
 	if err != nil {
 		return nil, err
 	}
 
+	assistantParentID, err := runtime.appendAssistantSideEffects(ctx, activeSession.ID, userEntry.ID, bundle)
+	if err != nil {
+		return nil, err
+	}
 	assistantMessage := database.MessageEntity{
 		Timestamp: time.Now().UTC(),
 		Role:      database.RoleAssistant,
-		Content:   responseText,
+		Content:   bundle.Text,
 		Provider:  runtime.cfg.Assistant.Provider,
 		Model:     runtime.cfg.Assistant.Model,
 	}
-	assistantEntry, err := runtime.sessions.AppendMessage(ctx, activeSession.ID, &userEntry.ID, &assistantMessage)
+	assistantEntry, err := runtime.sessions.AppendMessage(ctx, activeSession.ID, assistantParentID, &assistantMessage)
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_assistant").Wrapf(err, "append assistant message")
 	}
 
-	runtime.emit(ctx, "agent_end", map[string]any{"response": responseText})
-	emitErr = runtime.extensions.Emit(ctx, "agent_end", map[string]any{"response": responseText})
+	runtime.emit(ctx, "agent_end", map[string]any{"response": bundle.Text})
+	emitErr = runtime.extensions.Emit(ctx, "agent_end", map[string]any{"response": bundle.Text})
 	if emitErr != nil {
 		return nil, oops.In("assistant").Code("assistant_end").Wrapf(emitErr, "emit assistant end")
 	}
@@ -134,7 +146,9 @@ func (runtime *Runtime) Prompt(ctx context.Context, request PromptRequest) (*Pro
 		SessionID:        activeSession.ID,
 		UserEntryID:      userEntry.ID,
 		AssistantEntryID: assistantEntry.ID,
-		Text:             responseText,
+		Text:             bundle.Text,
+		Thinking:         bundle.Thinking,
+		ToolEvents:       bundle.ToolEvents,
 		Cached:           cached,
 	}, nil
 }
@@ -155,6 +169,64 @@ func (runtime *Runtime) emit(ctx context.Context, channel string, data any) {
 	}
 
 	runtime.events.Emit(ctx, channel, data)
+}
+
+func (runtime *Runtime) appendAssistantSideEffects(
+	ctx context.Context,
+	sessionID string,
+	userEntryID string,
+	bundle *responseBundle,
+) (*string, error) {
+	parentID := &userEntryID
+	for _, thinking := range bundle.Thinking {
+		trimmed := strings.TrimSpace(thinking)
+		if trimmed == "" {
+			continue
+		}
+		message := database.MessageEntity{
+			Timestamp: time.Now().UTC(),
+			Role:      database.RoleThinking,
+			Content:   trimmed,
+			Provider:  runtime.cfg.Assistant.Provider,
+			Model:     runtime.cfg.Assistant.Model,
+		}
+		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
+		if err != nil {
+			return nil, oops.In("assistant").Code("append_thinking").Wrapf(err, "append thinking message")
+		}
+		parentID = &entry.ID
+	}
+	for _, event := range bundle.ToolEvents {
+		message := database.MessageEntity{
+			Timestamp: time.Now().UTC(),
+			Role:      database.RoleToolResult,
+			Content:   formatToolEvent(event),
+			Provider:  runtime.cfg.Assistant.Provider,
+			Model:     runtime.cfg.Assistant.Model,
+		}
+		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
+		if err != nil {
+			return nil, oops.In("assistant").Code("append_tool_result").Wrapf(err, "append tool result")
+		}
+		parentID = &entry.ID
+	}
+
+	return parentID, nil
+}
+
+func formatToolEvent(toolEvent ToolEvent) string {
+	parts := []string{fmt.Sprintf("tool: %s", toolEvent.Name)}
+	if strings.TrimSpace(toolEvent.ArgumentsJSON) != "" {
+		parts = append(parts, "arguments:", toolEvent.ArgumentsJSON)
+	}
+	if toolEvent.Error != "" {
+		parts = append(parts, "error:", toolEvent.Error)
+	}
+	if strings.TrimSpace(toolEvent.Result) != "" {
+		parts = append(parts, "output:", toolEvent.Result)
+	}
+
+	return strings.Join(parts, "\n")
 }
 
 func (runtime *Runtime) resolveSession(ctx context.Context, request PromptRequest) (*database.SessionEntity, error) {
@@ -211,31 +283,31 @@ func explicitPromptParentID(explicitParent *string) *string {
 }
 
 func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt string) (
-	response string,
+	bundle *responseBundle,
 	cached bool,
 	err error,
 ) {
 	if strings.HasPrefix(prompt, slashPrefix) {
 		slashResponse, slashErr := runtime.respondToSlashCommand(ctx, cwd, prompt)
-		return slashResponse, false, slashErr
+		return &responseBundle{Text: slashResponse, Thinking: nil, ToolEvents: nil}, false, slashErr
 	}
 
 	cacheKey := runtime.cacheKey(sessionID, prompt)
 	cachedResponse, found, err := runtime.cache.Get(cacheKey)
 	if err != nil {
-		return "", false, oops.In("assistant").Code("cache_get").Wrapf(err, "read response cache")
+		return nil, false, oops.In("assistant").Code("cache_get").Wrapf(err, "read response cache")
 	}
 	if found {
-		return cachedResponse, true, nil
+		return &responseBundle{Text: cachedResponse, Thinking: nil, ToolEvents: nil}, true, nil
 	}
 
-	response, err = runtime.modelResponse(ctx, sessionID)
+	bundle, err = runtime.modelResponse(ctx, sessionID, cwd)
 	if err != nil {
-		return "", false, err
+		return nil, false, err
 	}
-	runtime.cache.Set(cacheKey, response)
+	runtime.cache.Set(cacheKey, bundle.Text)
 
-	return response, false, nil
+	return bundle, false, nil
 }
 
 func (runtime *Runtime) respondToSlashCommand(ctx context.Context, cwd, prompt string) (string, error) {
@@ -282,34 +354,40 @@ func (runtime *Runtime) respondToToolCommand(ctx context.Context, cwd, args stri
 	return result.Text(), nil
 }
 
-func (runtime *Runtime) modelResponse(ctx context.Context, sessionID string) (string, error) {
+func (runtime *Runtime) modelResponse(ctx context.Context, sessionID, cwd string) (*responseBundle, error) {
 	if runtime.models == nil {
-		return "", oops.In("assistant").Code("models_unavailable").Errorf("model registry is not configured")
+		return nil, oops.In("assistant").Code("models_unavailable").Errorf("model registry is not configured")
 	}
 	selectedModel, err := runtime.selectedModel()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	auth := runtime.models.RequestAuthContext(ctx, selectedModel.Provider)
 	if !auth.OK {
-		return "", oops.In("assistant").
+		return nil, oops.In("assistant").
 			Code("auth_missing").
 			With("provider", selectedModel.Provider).
 			Wrapf(fmt.Errorf("%s", auth.Error), "resolve model auth")
 	}
 	sessionMessages, err := runtime.sessions.Messages(ctx, sessionID)
 	if err != nil {
-		return "", oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
+		return nil, oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
 	}
 
-	return runtime.client.Complete(ctx, &CompletionRequest{
+	result, err := runtime.client.Complete(ctx, &CompletionRequest{
 		Model:         selectedModel,
 		Auth:          auth,
 		Messages:      messageEntities(sessionMessages),
 		SessionID:     sessionID,
-		SystemPrompt:  defaultSystemPrompt(),
+		SystemPrompt:  defaultSystemPrompt(cwd),
 		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,
+		CWD:           cwd,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &responseBundle{Text: result.Text, Thinking: result.Thinking, ToolEvents: result.ToolEvents}, nil
 }
 
 func (runtime *Runtime) selectedModel() (model.Model, error) {
@@ -359,8 +437,15 @@ func messageEntities(messages []database.SessionMessageEntity) []database.Messag
 	return converted
 }
 
-func defaultSystemPrompt() string {
-	return "You are librecode, an AI coding assistant. Be concise, helpful, and accurate."
+func defaultSystemPrompt(cwd string) string {
+	return strings.Join([]string{
+		"You are librecode, an AI coding assistant. Be concise, helpful, and accurate.",
+		"You are running inside a local filesystem workspace.",
+		fmt.Sprintf("Current working directory: %s", cwd),
+		"Use built-in tools (ls, find, grep, read, bash, edit, write) " +
+			"to inspect or change workspace files when needed.",
+		"Do not claim you cannot access files; inspect them with tools instead.",
+	}, "\n")
 }
 
 func (runtime *Runtime) cacheKey(sessionID, prompt string) string {

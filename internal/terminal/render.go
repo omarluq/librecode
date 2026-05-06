@@ -115,7 +115,7 @@ func (app *App) messageLines(width, maxRows int) []styledLine {
 		lines = append(lines, app.renderMessage(width, message)...)
 	}
 	if app.working {
-		lines = append(lines, styledLine{Style: app.theme.style(colorAccent), Text: "⠋ working…"})
+		lines = append(lines, styledLine{Style: app.theme.style(colorAccent), Text: app.workingIndicator()})
 	}
 	if len(app.queuedMessages) > 0 {
 		queueText := fmt.Sprintf("queued follow-ups: %d", len(app.queuedMessages))
@@ -133,6 +133,8 @@ func (app *App) renderMessage(width int, message chatMessage) []styledLine {
 		return app.renderAssistantMessage(width, message.Content)
 	case database.RoleToolResult, database.RoleBashExecution:
 		return app.renderToolMessage(width, message)
+	case database.RoleThinking:
+		return app.renderThinkingMessage(width, message)
 	case database.RoleCustom:
 		return app.renderCustomMessage(width, message.Content)
 	case database.RoleBranchSummary, database.RoleCompactionSummary:
@@ -168,12 +170,21 @@ func (app *App) renderAssistantMessage(width int, content string) []styledLine {
 }
 
 func (app *App) renderToolMessage(width int, message chatMessage) []styledLine {
+	label := toolBlockLabel(message.Content, string(message.Role))
 	if !app.toolsExpanded {
-		label := string(message.Role) + " " + app.keys.hint(actionToolsExpand) + " expand"
-		return []styledLine{{Style: app.theme.background(colorToolSuccessBg), Text: padRight(label, width)}}
+		text := label + " " + app.keys.hint(actionToolsExpand) + " expand"
+		return []styledLine{{Style: app.theme.background(colorToolSuccessBg), Text: padRight(text, width)}}
 	}
 
-	return boxedLines(width, string(message.Role), message.Content, app.theme.background(colorToolSuccessBg))
+	return boxedLines(width, label, message.Content, app.theme.background(colorToolSuccessBg))
+}
+
+func (app *App) renderThinkingMessage(width int, message chatMessage) []styledLine {
+	if app.hideThinking {
+		return nil
+	}
+
+	return boxedLines(width, "thinking", message.Content, app.theme.style(colorMuted))
 }
 
 func (app *App) renderCustomMessage(width int, content string) []styledLine {
@@ -201,17 +212,22 @@ func boxedLines(width int, label, content string, style tcell.Style) []styledLin
 
 func (app *App) drawEditorAndFooter(width, height, _ int) {
 	footerLines := app.footerLines(width)
-	editorRows := min(defaultEditorRows, max(3, height-len(footerLines)-2))
+	autocompleteLines := app.autocompleteLines(width)
+	editorRows := min(defaultEditorRows, max(3, height-len(footerLines)-len(autocompleteLines)-2))
 	editorRender := app.editor.render(width, editorRows-2, app.theme, app.editorBorderColor())
-	startRow := max(0, height-len(footerLines)-len(editorRender.Lines))
-	for index, line := range editorRender.Lines {
+	startRow := max(0, height-len(footerLines)-len(autocompleteLines)-len(editorRender.Lines))
+	for index, line := range autocompleteLines {
 		writeLine(app.screen, startRow+index, width, line.Text, line.Style)
+	}
+	editorStart := startRow + len(autocompleteLines)
+	for index, line := range editorRender.Lines {
+		writeLine(app.screen, editorStart+index, width, line.Text, line.Style)
 	}
 	footerStart := height - len(footerLines)
 	for index, line := range footerLines {
 		writeLine(app.screen, footerStart+index, width, line.Text, line.Style)
 	}
-	app.screen.ShowCursor(editorRender.CursorCol, startRow+editorRender.CursorRow)
+	app.screen.ShowCursor(editorRender.CursorCol, editorStart+editorRender.CursorRow)
 }
 
 func (app *App) editorBorderColor() colorToken {

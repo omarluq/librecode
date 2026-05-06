@@ -8,6 +8,11 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
+const (
+	commandLogin  = "login"
+	commandLogout = "logout"
+)
+
 func (app *App) submitCommand(ctx context.Context, text string) (bool, error) {
 	command, args, _ := strings.Cut(trimCommandPrefix(text), " ")
 	trimmedArgs := strings.TrimSpace(args)
@@ -25,8 +30,8 @@ func (app *App) openCommandPanel(ctx context.Context, command string) bool {
 	handlers := map[string]func(){
 		"changelog":     app.openChangelogPanel,
 		"hotkeys":       app.openHotkeysPanel,
-		"login":         app.openLoginPanel,
-		"logout":        app.openLogoutPanel,
+		commandLogin:    app.openLoginPanel,
+		commandLogout:   app.openLogoutPanel,
 		"model":         app.openModelPanel,
 		"scoped-models": app.openScopedModelsPanel,
 		"settings":      app.openSettingsPanel,
@@ -51,19 +56,21 @@ func (app *App) runSessionCommand(ctx context.Context, command, args, original s
 		return false, nil
 	}
 
-	return false, app.sendPrompt(ctx, original)
+	app.sendPrompt(ctx, original)
+
+	return false, nil
 }
 
 func (app *App) sessionCommandHandlers(ctx context.Context, args string) map[string]func() error {
 	return map[string]func() error{
-		"clone":  func() error { return app.cloneSession(ctx, args) },
-		"copy":   func() error { return app.copyLastAssistantMessage(ctx) },
-		"fork":   func() error { return app.newSession(ctx, args) },
-		"login":  func() error { return app.loginCommand(ctx, args) },
-		"logout": func() error { return app.logoutCommand(ctx, args) },
-		"name":   func() error { return app.renameSession(ctx, args) },
-		"new":    func() error { return app.newSession(ctx, args) },
-		"reload": func() error { return app.reloadRuntime(ctx) },
+		"clone":       func() error { return app.cloneSession(ctx, args) },
+		"copy":        func() error { return app.copyLastAssistantMessage(ctx) },
+		"fork":        func() error { return app.newSession(ctx, args) },
+		commandLogin:  func() error { return app.loginCommand(ctx, args) },
+		commandLogout: func() error { return app.logoutCommand(ctx, args) },
+		"name":        func() error { return app.renameSession(ctx, args) },
+		"new":         func() error { return app.newSession(ctx, args) },
+		"reload":      func() error { return app.reloadRuntime(ctx) },
 	}
 }
 

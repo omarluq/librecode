@@ -121,8 +121,15 @@ func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionReposito
 
 type testCompletionClient struct{}
 
-func (testCompletionClient) Complete(_ context.Context, request *assistant.CompletionRequest) (string, error) {
-	return "test assistant response for " + request.Messages[len(request.Messages)-1].Content, nil
+func (testCompletionClient) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	return &assistant.CompletionResult{
+		Text:       "test assistant response for " + request.Messages[len(request.Messages)-1].Content,
+		Thinking:   nil,
+		ToolEvents: nil,
+	}, nil
 }
 
 func testRegistry(t *testing.T) *model.Registry {

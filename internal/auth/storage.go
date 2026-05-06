@@ -311,6 +311,16 @@ func (storage *Storage) ImportOpenAICodexFromKnownFiles(ctx context.Context) (bo
 	if storage.HasStored(openAICodexProvider) {
 		return false, nil
 	}
+
+	return storage.importOpenAICodexFromKnownFiles(ctx)
+}
+
+// SyncOpenAICodexFromKnownFiles refreshes librecode auth from compatible existing Codex auth.
+func (storage *Storage) SyncOpenAICodexFromKnownFiles(ctx context.Context) (bool, error) {
+	return storage.importOpenAICodexFromKnownFiles(ctx)
+}
+
+func (storage *Storage) importOpenAICodexFromKnownFiles(ctx context.Context) (bool, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return false, oops.In("auth").Code("user_home").Wrapf(err, "resolve user home")

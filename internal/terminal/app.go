@@ -76,6 +76,7 @@ type App struct {
 	toolsExpanded     bool
 	hideThinking      bool
 	working           bool
+	workFrame         int
 }
 
 // Run starts an interactive tcell chat loop.
@@ -142,6 +143,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		hideThinking:      false,
 		lastEscape:        time.Time{},
 		working:           false,
+		workFrame:         0,
 		statusMessage:     "",
 		selectedPanelKind: "",
 	}
@@ -151,18 +153,28 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 }
 
 func (app *App) loop(ctx context.Context) {
+	ticker := time.NewTicker(120 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		app.draw()
-		event := <-app.screen.EventQ()
-		if event == nil {
-			return
+		var tick <-chan time.Time
+		if app.working || app.authWorking {
+			tick = ticker.C
 		}
-		shouldQuit, err := app.handleEvent(ctx, event)
-		if err != nil {
-			app.addMessage(database.RoleCustom, err.Error())
-		}
-		if shouldQuit {
-			return
+		select {
+		case event := <-app.screen.EventQ():
+			if event == nil {
+				return
+			}
+			shouldQuit, err := app.handleEvent(ctx, event)
+			if err != nil {
+				app.addMessage(database.RoleCustom, err.Error())
+			}
+			if shouldQuit {
+				return
+			}
+		case <-tick:
+			app.workFrame++
 		}
 	}
 }
