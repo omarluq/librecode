@@ -8,7 +8,10 @@ import (
 	"github.com/omarluq/librecode/internal/vinfo"
 )
 
-const welcomeMessagePrefix = "__librecode_welcome__\n"
+const (
+	welcomeMessagePrefix = "__librecode_welcome__\n"
+	welcomeTopMarginRows = 1
+)
 
 var welcomeArt = []string{
 	" ██╗     ██╗██████╗ ██████╗ ███████╗ ██████╗ ██████╗ ██████╗ ███████╗",
@@ -25,7 +28,8 @@ func (app *App) addWelcomeMessage() {
 
 func (app *App) renderWelcomeMessage(width int, content string) []styledLine {
 	bodyLines := welcomeLinesFromContent(content)
-	lines := make([]styledLine, 0, len(bodyLines)+1)
+	lines := make([]styledLine, 0, len(bodyLines)+welcomeTopMarginRows+1)
+	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
 	for index, line := range bodyLines {
 		lineStyle := app.welcomeBodyStyle(index, line)
 		lines = append(lines, styledLine{Style: lineStyle, Text: padRight(line, width)})
@@ -38,6 +42,9 @@ func (app *App) renderWelcomeMessage(width int, content string) []styledLine {
 func (app *App) drawWelcomeOnly(width, height, row int) int {
 	bodyLines := welcomeBodyLines(app.cwd)
 	availableRows := max(1, height-row-footerReserve())
+	marginRows := min(welcomeTopMarginRows, max(0, availableRows-1))
+	row += marginRows
+	availableRows -= marginRows
 	if len(bodyLines) > availableRows {
 		bodyLines = bodyLines[:availableRows]
 	}

@@ -9,11 +9,12 @@ import (
 )
 
 const (
-	toolSectionTool      = "tool"
-	toolSectionArguments = "arguments"
-	toolSectionDetails   = "details"
-	toolSectionError     = "error"
-	toolSectionOutput    = "output"
+	maxCollapsedToolOutputLines = 5
+	toolSectionTool             = "tool"
+	toolSectionArguments        = "arguments"
+	toolSectionDetails          = "details"
+	toolSectionError            = "error"
+	toolSectionOutput           = "output"
 )
 
 type parsedToolEvent struct {
@@ -43,13 +44,22 @@ func (app *App) toolBlockStyle(event *parsedToolEvent) tcell.Style {
 }
 
 func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []styledLine {
-	label := fmt.Sprintf("  %s  %s expand", toolTitle(event), app.keys.hint(actionToolsExpand))
-
-	return []styledLine{
+	label := fmt.Sprintf("%s  %s expand", toolTitle(event), app.keys.hint(actionToolsExpand))
+	lines := []styledLine{
 		{Style: tcell.StyleDefault, Text: ""},
 		{Style: style.Bold(true), Text: padRight(label, width)},
-		{Style: tcell.StyleDefault, Text: ""},
 	}
+	preview, truncated := limitedIndentedLines(width, toolEventOutput(event), style, maxCollapsedToolOutputLines)
+	lines = append(lines, preview...)
+	if truncated {
+		lines = append(lines, styledLine{
+			Style: style.Foreground(app.theme.colors[colorMuted]),
+			Text:  padRight("  … "+app.keys.hint(actionToolsExpand)+" expand", width),
+		})
+	}
+	lines = append(lines, styledLine{Style: tcell.StyleDefault, Text: ""})
+
+	return lines
 }
 
 func (app *App) renderExpandedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []styledLine {
@@ -95,10 +105,7 @@ func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Sty
 }
 
 func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.Style) []styledLine {
-	output := strings.TrimSpace(event.Output)
-	if event.Error != "" {
-		output = strings.TrimSpace(event.Error + "\n" + output)
-	}
+	output := toolEventOutput(event)
 	if output == "" {
 		return nil
 	}
@@ -107,15 +114,38 @@ func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.S
 }
 
 func plainSectionLines(width int, label, content string, style tcell.Style) []styledLine {
+	contentLines, _ := limitedIndentedLines(width, content, style, 0)
+	lines := make([]styledLine, 0, len(contentLines)+1)
+	lines = append(lines, styledLine{Style: style.Bold(true), Text: padRight(label+":", width)})
+
+	return append(lines, contentLines...)
+}
+
+func limitedIndentedLines(width int, content string, style tcell.Style, limit int) ([]styledLine, bool) {
+	if strings.TrimSpace(content) == "" {
+		return nil, false
+	}
 	innerWidth := max(1, width-2)
-	lines := []styledLine{{Style: style.Bold(true), Text: padRight(label+":", width)}}
+	lines := []styledLine{}
 	for _, line := range strings.Split(content, "\n") {
 		for _, wrapped := range wrapText(line, innerWidth) {
+			if limit > 0 && len(lines) >= limit {
+				return lines, true
+			}
 			lines = append(lines, styledLine{Style: style, Text: padRight("  "+wrapped, width)})
 		}
 	}
 
-	return lines
+	return lines, false
+}
+
+func toolEventOutput(event *parsedToolEvent) string {
+	output := strings.TrimSpace(event.Output)
+	if event.Error != "" {
+		output = strings.TrimSpace(event.Error + "\n" + output)
+	}
+
+	return output
 }
 
 func parseToolEventContent(content, fallback string) parsedToolEvent {

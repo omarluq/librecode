@@ -2,13 +2,18 @@ package terminal
 
 import "github.com/gdamore/tcell/v3"
 
+const (
+	keyboardScrollRows = 5
+	mouseScrollRows    = 2
+)
+
 func (app *App) handleTranscriptScroll(event *tcell.EventKey) bool {
 	if app.keys.matches(event, actionSelectPageUp) {
-		app.scrollTranscript(app.transcriptScrollRows())
+		app.scrollTranscript(keyboardScrollRows)
 		return true
 	}
 	if app.keys.matches(event, actionSelectPageDown) {
-		app.scrollTranscript(-app.transcriptScrollRows())
+		app.scrollTranscript(-keyboardScrollRows)
 		return true
 	}
 
@@ -21,27 +26,23 @@ func (app *App) handleMouse(event *tcell.EventMouse) {
 	}
 	buttons := event.Buttons()
 	if buttons&tcell.WheelUp != 0 {
-		app.scrollTranscript(app.transcriptScrollRows())
+		app.scrollTranscript(mouseScrollRows)
 		return
 	}
 	if buttons&tcell.WheelDown != 0 {
-		app.scrollTranscript(-app.transcriptScrollRows())
+		app.scrollTranscript(-mouseScrollRows)
 	}
-}
-
-func (app *App) transcriptScrollRows() int {
-	_, height := app.screen.Size()
-
-	return max(3, (height-footerReserve())/2)
 }
 
 func (app *App) scrollTranscript(delta int) {
 	app.scrollOffset = max(0, app.scrollOffset+delta)
 	if app.scrollOffset == 0 {
 		app.setStatus("scroll: bottom")
+		app.draw()
 		return
 	}
 	app.setStatus("scroll: " + intText(app.scrollOffset) + " lines up")
+	app.draw()
 }
 
 func (app *App) visibleMessageLines(lines []styledLine, maxRows int) []styledLine {
