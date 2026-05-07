@@ -400,7 +400,7 @@ func (app *App) composerLayout(width, height int) composerLayout {
 	footerLines := app.footerLines(width)
 	autocompleteLines := app.autocompleteLines(width)
 	editorRows := min(defaultEditorRows, max(3, height-len(footerLines)-len(autocompleteLines)-2))
-	editor := app.editor.render(width, editorRows-2, app.theme, app.editorBorderColor())
+	editor := app.editor.render(width, editorRows-2, app.theme, app.editorBorderColor(), app.composerBorderLabel())
 	reserve := len(footerLines) + len(autocompleteLines) + len(editor.Lines)
 	startRow := max(0, height-reserve)
 	editorStart := startRow + len(autocompleteLines)
@@ -440,10 +440,6 @@ func (app *App) footerLines(width int) []styledLine {
 	if app.currentThinkingLevel() != "" {
 		modelText += " • " + app.currentThinkingLevel()
 	}
-	if label := app.composerFooterLabel(); label != "" {
-		modelText = label + " • " + modelText
-	}
-
 	return []styledLine{
 		{Style: app.theme.style(colorDim), Text: truncateText(pathLine, width)},
 		{Style: app.theme.style(colorDim), Text: truncateText(modelText, width)},

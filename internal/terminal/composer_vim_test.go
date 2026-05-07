@@ -82,14 +82,18 @@ func TestVimComposerLineDeletePasteAndUndo(t *testing.T) {
 	assertEditorText(t, app, "two\nthree")
 }
 
-func TestVimComposerFooterShowsMode(t *testing.T) {
+func TestVimComposerBorderShowsMode(t *testing.T) {
 	t.Parallel()
 
 	app := newVimTestApp(t)
 
+	layout := app.composerLayout(80, 24)
+	if len(layout.editor.Lines) == 0 || !strings.HasSuffix(layout.editor.Lines[0].Text, "insert──╮") {
+		t.Fatalf("editor border = %q, want vim mode at end", layout.editor.Lines[0].Text)
+	}
 	lines := app.footerLines(80)
-	if len(lines) < 2 || !containsText(lines[1].Text, vimInsertLabel) {
-		t.Fatalf("footer line = %q, want vim mode", lines[1].Text)
+	if len(lines) < 2 || containsText(lines[1].Text, vimInsertLabel) {
+		t.Fatalf("footer line = %q, want no vim mode", lines[1].Text)
 	}
 }
 

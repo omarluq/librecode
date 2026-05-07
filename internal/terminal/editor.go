@@ -134,7 +134,7 @@ func (input *editor) currentLineEnd() int {
 	return len(input.value)
 }
 
-func (input *editor) render(width, maxRows int, theme terminalTheme, border colorToken) editorRender {
+func (input *editor) render(width, maxRows int, theme terminalTheme, border colorToken, label string) editorRender {
 	innerWidth := max(1, width-4)
 	bodyLines := input.bodyLines(innerWidth)
 	cursorRow, cursorColumn := input.cursorPosition(innerWidth)
@@ -142,7 +142,7 @@ func (input *editor) render(width, maxRows int, theme terminalTheme, border colo
 	lines := make([]styledLine, 0, len(visibleLines)+2)
 	borderStyle := theme.style(border)
 	bodyStyle := theme.style(colorText)
-	lines = append(lines, styledLine{Style: borderStyle, Text: editorTopBorder(width)})
+	lines = append(lines, styledLine{Style: borderStyle, Text: editorTopBorder(width, label)})
 	for _, bodyLine := range visibleLines {
 		bodyText := padRight(bodyLine, innerWidth)
 		lines = append(lines, styledLine{Style: bodyStyle, Text: "│ " + bodyText + " │"})
@@ -190,8 +190,18 @@ func visibleEditorLines(lines []string, maxRows, cursorRow int) (visible []strin
 	return lines[start : start+maxRows], start
 }
 
-func editorTopBorder(width int) string {
-	return "╭" + strings.Repeat("─", max(1, width-2)) + "╮"
+func editorTopBorder(width int, label string) string {
+	innerWidth := max(1, width-2)
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "╭" + strings.Repeat("─", innerWidth) + "╮"
+	}
+
+	label = strings.ReplaceAll(label, "\n", " ")
+	suffix := truncateText(label+"──", innerWidth)
+	fillWidth := max(0, innerWidth-runeLen(suffix))
+
+	return "╭" + strings.Repeat("─", fillWidth) + suffix + "╮"
 }
 
 func editorBottomBorder(width int) string {

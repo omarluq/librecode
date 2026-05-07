@@ -198,7 +198,7 @@ func (panel *selectionPanel) render(width, height int, theme terminalTheme, bind
 	lines := make([]styledLine, 0, min(height, maxItems+8))
 	borderStyle := theme.style(colorBorder)
 	lines = append(lines,
-		styledLine{Style: borderStyle, Text: editorTopBorder(width)},
+		styledLine{Style: borderStyle, Text: editorTopBorder(width, "")},
 		styledLine{Style: theme.style(colorAccent).Bold(true), Text: panelRow(panel.title, contentWidth)},
 	)
 	if panel.subtitle != "" {

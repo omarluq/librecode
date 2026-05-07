@@ -99,12 +99,23 @@ func (app *App) applyComposerResult(result extension.ComposerResult) {
 	}
 }
 
-func (app *App) composerFooterLabel() string {
+func (app *App) composerBorderLabel() string {
 	if app.composer == nil {
 		return ""
 	}
 
-	return app.composer.label
+	return cleanComposerBorderLabel(app.composer.label)
+}
+
+func cleanComposerBorderLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return ""
+	}
+	label = strings.TrimPrefix(label, "vim:")
+	label = strings.ToLower(label)
+
+	return label
 }
 
 func composerKeyEvent(event *tcell.EventKey) (extension.ComposerKeyEvent, bool) {
