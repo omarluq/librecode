@@ -68,6 +68,29 @@ end)
 	}
 }
 
+func TestExtensionRuntimeBuffersPersistBetweenEvents(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.keymap.set("composer", "x", function()
+  local scratch = librecode.buf.get("scratch")
+  librecode.buf.set_text("scratch", scratch.text .. "x")
+  librecode.event.consume()
+end)
+`)
+
+	pressTerminalRune(t, app, "x")
+	pressTerminalRune(t, app, "x")
+
+	buffer, ok := app.extensionRuntimeBuffers["scratch"]
+	if !ok {
+		t.Fatal("scratch buffer should persist")
+	}
+	if got, want := buffer.Text, "xx"; got != want {
+		t.Fatalf("scratch buffer = %q, want %q", got, want)
+	}
+}
+
 func newExtensionRuntimeTestApp(t *testing.T, source string) *App {
 	t.Helper()
 

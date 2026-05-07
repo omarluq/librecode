@@ -54,6 +54,8 @@ librecode.register_composer_mode("vim", "Vim composer", {
 	assertComposerExecution(t, manager)
 }
 
+const testBufferComposer = "composer"
+
 func TestManager_HandleTerminalEventBuffersAndPriority(t *testing.T) {
 	t.Parallel()
 
@@ -82,9 +84,9 @@ end)
 
 	result, err := manager.HandleTerminalEvent(context.Background(), extension.TerminalEvent{
 		Buffers: map[string]extension.BufferState{
-			"composer": {
+			testBufferComposer: {
 				Metadata: map[string]any{},
-				Name:     "composer",
+				Name:     testBufferComposer,
 				Text:     "go",
 				Chars:    []string{"g", "o"},
 				Label:    "",
@@ -103,10 +105,73 @@ end)
 	require.NoError(t, err)
 
 	assert.True(t, result.Consumed)
-	assert.Equal(t, "go!", result.Buffers["composer"].Text)
-	assert.Equal(t, "lua:runtime", result.Buffers["composer"].Label)
+	assert.Equal(t, "go!", result.Buffers[testBufferComposer].Text)
+	assert.Equal(t, "lua:runtime", result.Buffers[testBufferComposer].Label)
 	require.Len(t, result.Appends, 1)
 	assert.Equal(t, extension.BufferAppend{Name: "transcript", Text: "saw go!", Role: "custom"}, result.Appends[0])
+}
+
+func TestManager_KeymapAutocmdAndBufferPrimitives(t *testing.T) {
+	t.Parallel()
+
+	extensionPath := filepath.Join(t.TempDir(), "runtime.lua")
+	source := `
+local lc = require("librecode")
+
+local first_namespace = lc.api.create_namespace("demo")
+local second_namespace = lc.api.nvim_create_namespace("demo")
+if first_namespace ~= second_namespace then
+  error("namespace IDs should be stable")
+end
+
+lc.autocmd.create("key", {
+  priority = 1,
+  callback = function()
+    lc.buf.create("scratch", { text = "a\nb\nc", cursor = 1 })
+    lc.buf.set_lines("scratch", 1, 2, { "B", "BB" })
+    lc.buf.append("scratch", "!")
+  end,
+})
+
+lc.keymap.set("composer", "<c-j>", function()
+  local composer = lc.buf.get("composer")
+  lc.buf.set("composer", { text = composer.text .. ":mapped", cursor = 99 })
+  lc.event.consume()
+end, { priority = 10, desc = "map ctrl-j" })
+`
+	require.NoError(t, writeTestFile(extensionPath, source))
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
+
+	result, err := manager.HandleTerminalEvent(context.Background(), extension.TerminalEvent{
+		Buffers: map[string]extension.BufferState{
+			testBufferComposer: {
+				Metadata: map[string]any{},
+				Name:     testBufferComposer,
+				Text:     "go",
+				Chars:    []string{"g", "o"},
+				Label:    "",
+				Cursor:   2,
+			},
+		},
+		Context: map[string]any{"mode": "chat"},
+		Name:    "key",
+		Key: extension.ComposerKeyEvent{
+			Key:  "ctrl+j",
+			Text: "",
+			Ctrl: true,
+			Alt:  false,
+		},
+	})
+	require.NoError(t, err)
+
+	assert.True(t, result.Consumed)
+	assert.Equal(t, "go:mapped", result.Buffers[testBufferComposer].Text)
+	assert.Equal(t, 99, result.Buffers[testBufferComposer].Cursor)
+	assert.Equal(t, "a\nB\nBB\nc!", result.Buffers["scratch"].Text)
+	assert.Equal(t, []string{"composer:ctrl+j"}, manager.Extensions()[0].Keymaps)
 }
 
 func TestDefaultLoadPathsPrependsOfficialExtensions(t *testing.T) {

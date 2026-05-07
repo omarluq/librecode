@@ -69,12 +69,13 @@ func newExtensionRunCmd() *cobra.Command {
 func printExtension(cmd *cobra.Command, loadedExtension *extension.LoadedExtension) error {
 	_, err := fmt.Fprintf(
 		cmd.OutOrStdout(),
-		"%s\t%s\tcommands=%s\ttools=%s\tcomposer=%s\n",
+		"%s\t%s\tcommands=%s\ttools=%s\tcomposer=%s\tkeymaps=%s\n",
 		loadedExtension.Name,
 		loadedExtension.Path,
 		strings.Join(loadedExtension.Commands, ","),
 		strings.Join(loadedExtension.Tools, ","),
 		strings.Join(loadedExtension.ComposerModes, ","),
+		strings.Join(loadedExtension.Keymaps, ","),
 	)
 	if err != nil {
 		return oops.Wrapf(err, "write extension")

@@ -30,6 +30,7 @@ type LoadedExtension struct {
 	Commands      []string `json:"commands"`
 	Tools         []string `json:"tools"`
 	ComposerModes []string `json:"composer_modes"`
+	Keymaps       []string `json:"keymaps"`
 }
 
 // BufferState describes an extension-visible mutable runtime buffer.
@@ -59,9 +60,10 @@ type TerminalEvent struct {
 
 // TerminalEventResult describes mutations produced by low-level extension handlers.
 type TerminalEventResult struct {
-	Buffers  map[string]BufferState `json:"buffers"`
-	Appends  []BufferAppend         `json:"appends"`
-	Consumed bool                   `json:"consumed"`
+	Buffers        map[string]BufferState `json:"buffers"`
+	Appends        []BufferAppend         `json:"appends"`
+	DeletedBuffers []string               `json:"deleted_buffers"`
+	Consumed       bool                   `json:"consumed"`
 }
 
 // ComposerMode describes an extension-provided terminal composer mode.

@@ -76,18 +76,22 @@ func (app *App) newExtensionEvent(name string, key extension.ComposerKeyEvent) e
 }
 
 func (app *App) extensionBuffers() map[string]extension.BufferState {
-	return map[string]extension.BufferState{
-		extensionBufferComposer: app.composerBufferState(),
-		extensionBufferStatus:   textBufferState(extensionBufferStatus, app.statusMessage),
-		extensionBufferTranscript: {
-			Metadata: map[string]any{"count": len(app.messages)},
-			Name:     extensionBufferTranscript,
-			Text:     "",
-			Chars:    []string{},
-			Label:    "",
-			Cursor:   0,
-		},
+	buffers := make(map[string]extension.BufferState, len(app.extensionRuntimeBuffers)+3)
+	for name, buffer := range app.extensionRuntimeBuffers {
+		buffers[name] = buffer
 	}
+	buffers[extensionBufferComposer] = app.composerBufferState()
+	buffers[extensionBufferStatus] = textBufferState(extensionBufferStatus, app.statusMessage)
+	buffers[extensionBufferTranscript] = extension.BufferState{
+		Metadata: map[string]any{"count": len(app.messages)},
+		Name:     extensionBufferTranscript,
+		Text:     "",
+		Chars:    []string{},
+		Label:    "",
+		Cursor:   0,
+	}
+
+	return buffers
 }
 
 func (app *App) composerBufferState() extension.BufferState {
@@ -127,16 +131,25 @@ func stringBufferChars(text string) []string {
 }
 
 func (app *App) extensionContext() map[string]any {
-	return map[string]any{
+	eventContext := map[string]any{
 		"mode":         string(app.mode),
 		"working":      app.working,
 		"auth_working": app.authWorking,
 		"cwd":          app.cwd,
 		"session_id":   app.sessionID,
 	}
+	if app.composer != nil {
+		eventContext["composer_mode"] = app.composer.mode
+		eventContext["composer_label"] = app.composer.label
+	}
+
+	return eventContext
 }
 
 func (app *App) applyExtensionEventResult(result extension.TerminalEventResult) {
+	for _, name := range result.DeletedBuffers {
+		app.applyExtensionBufferDelete(name)
+	}
 	for name, buffer := range result.Buffers {
 		app.applyExtensionBuffer(name, &buffer)
 	}
@@ -154,7 +167,20 @@ func (app *App) applyExtensionBuffer(name string, buffer *extension.BufferState)
 	case extensionBufferTranscript:
 		return
 	default:
-		return
+		app.extensionRuntimeBuffers[name] = *buffer
+	}
+}
+
+func (app *App) applyExtensionBufferDelete(name string) {
+	delete(app.extensionRuntimeBuffers, name)
+	switch name {
+	case extensionBufferComposer:
+		app.editor.clear()
+		app.resetPromptHistoryNavigation()
+	case extensionBufferStatus:
+		app.statusMessage = ""
+	case extensionBufferTranscript:
+		app.resetMessages()
 	}
 }
 
@@ -171,10 +197,22 @@ func (app *App) applyComposerBuffer(buffer *extension.BufferState) {
 }
 
 func (app *App) applyExtensionBufferAppend(bufferAppend extension.BufferAppend) {
-	if bufferAppend.Name != extensionBufferTranscript || strings.TrimSpace(bufferAppend.Text) == "" {
+	if bufferAppend.Name == extensionBufferTranscript {
+		if strings.TrimSpace(bufferAppend.Text) == "" {
+			return
+		}
+		app.addMessage(extensionAppendRole(bufferAppend.Role), bufferAppend.Text)
 		return
 	}
-	app.addMessage(extensionAppendRole(bufferAppend.Role), bufferAppend.Text)
+
+	buffer := app.extensionRuntimeBuffers[bufferAppend.Name]
+	if buffer.Name == "" {
+		buffer = textBufferState(bufferAppend.Name, "")
+	}
+	buffer.Text += bufferAppend.Text
+	buffer.Chars = stringBufferChars(buffer.Text)
+	buffer.Cursor = len([]rune(buffer.Text))
+	app.extensionRuntimeBuffers[bufferAppend.Name] = buffer
 }
 
 func extensionAppendRole(role string) database.Role {

@@ -7,7 +7,12 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-const luaFieldText = "text"
+const (
+	luaBufferComposer = "composer"
+	luaFieldCreate    = "create"
+	luaFieldKey       = "key"
+	luaFieldText      = "text"
+)
 
 func mapToLuaTable(state *lua.LState, values map[string]any) *lua.LTable {
 	table := state.NewTable()
@@ -210,7 +215,7 @@ func luaTableFunction(table *lua.LTable, key string) *lua.LFunction {
 
 func composerEventTable(state *lua.LState, event ComposerKeyEvent) *lua.LTable {
 	return mapToLuaTable(state, map[string]any{
-		"key":        event.Key,
+		luaFieldKey:  event.Key,
 		luaFieldText: event.Text,
 		"ctrl":       event.Ctrl,
 		"alt":        event.Alt,
@@ -230,7 +235,7 @@ func composerStateTable(state *lua.LState, composerState ComposerState) *lua.LTa
 func terminalEventTable(state *lua.LState, event TerminalEvent) *lua.LTable {
 	return mapToLuaTable(state, map[string]any{
 		"name":       event.Name,
-		"key":        event.Key.Key,
+		luaFieldKey:  event.Key.Key,
 		luaFieldText: event.Key.Text,
 		"ctrl":       event.Key.Ctrl,
 		"alt":        event.Key.Alt,

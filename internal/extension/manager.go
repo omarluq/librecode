@@ -21,6 +21,7 @@ type luaExtension struct {
 	commands      []string
 	tools         []string
 	composerModes []string
+	keymaps       []string
 	lock          sync.Mutex
 }
 
@@ -43,6 +44,16 @@ type luaHookHandler struct {
 	order     uint64
 }
 
+type luaKeymap struct {
+	extension   *luaExtension
+	function    *lua.LFunction
+	mode        string
+	lhs         string
+	description string
+	priority    int
+	order       uint64
+}
+
 type luaComposerMode struct {
 	extension  *luaExtension
 	function   *lua.LFunction
@@ -56,9 +67,12 @@ type Manager struct {
 	tools            map[string]luaTool
 	composerModes    map[string]luaComposerMode
 	handlers         map[string][]luaHookHandler
+	keymaps          []luaKeymap
+	namespaces       map[string]int
 	extensions       []*luaExtension
 	lock             sync.RWMutex
 	nextHandlerOrder uint64
+	nextNamespaceID  int
 }
 
 // NewManager creates an empty Lua extension manager.
@@ -69,9 +83,12 @@ func NewManager(logger *slog.Logger) *Manager {
 		tools:            map[string]luaTool{},
 		composerModes:    map[string]luaComposerMode{},
 		handlers:         map[string][]luaHookHandler{},
+		keymaps:          []luaKeymap{},
+		namespaces:       map[string]int{},
 		extensions:       []*luaExtension{},
 		lock:             sync.RWMutex{},
 		nextHandlerOrder: 0,
+		nextNamespaceID:  1,
 	}
 }
 
@@ -116,6 +133,7 @@ func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) erro
 		commands:      []string{},
 		tools:         []string{},
 		composerModes: []string{},
+		keymaps:       []string{},
 		lock:          sync.Mutex{},
 	}
 	openExtensionLibs(extensionRuntime.state)
@@ -147,6 +165,7 @@ func (manager *Manager) Extensions() []LoadedExtension {
 			Commands:      append([]string{}, extensionRuntime.commands...),
 			Tools:         append([]string{}, extensionRuntime.tools...),
 			ComposerModes: append([]string{}, extensionRuntime.composerModes...),
+			Keymaps:       append([]string{}, extensionRuntime.keymaps...),
 		})
 	}
 
@@ -283,6 +302,15 @@ func (manager *Manager) HandleComposerKey(
 // HandleTerminalEvent runs registered low-level terminal runtime handlers.
 func (manager *Manager) HandleTerminalEvent(ctx context.Context, event TerminalEvent) (TerminalEventResult, error) {
 	hostEvent := newLuaHostEvent(event)
+	if event.Name == luaFieldKey {
+		if err := manager.runKeymaps(ctx, hostEvent); err != nil {
+			return hostEvent.result(), err
+		}
+		if hostEvent.stopped {
+			return hostEvent.result(), nil
+		}
+	}
+
 	for _, handler := range manager.handlersFor(event.Name) {
 		if err := ctx.Err(); err != nil {
 			return hostEvent.result(), err
@@ -356,6 +384,10 @@ func (manager *Manager) Shutdown() {
 	manager.tools = map[string]luaTool{}
 	manager.composerModes = map[string]luaComposerMode{}
 	manager.handlers = map[string][]luaHookHandler{}
+	manager.keymaps = []luaKeymap{}
+	manager.namespaces = map[string]int{}
+	manager.nextHandlerOrder = 0
+	manager.nextNamespaceID = 1
 }
 
 func (manager *Manager) installAPI(extensionRuntime *luaExtension) {
@@ -367,8 +399,12 @@ func (manager *Manager) installAPI(extensionRuntime *luaExtension) {
 		"on":                     manager.luaOn(extensionRuntime),
 		"log":                    manager.luaLog(extensionRuntime),
 	})
+	extensionRuntime.state.SetField(apiTable, "api", manager.luaCoreAPI(extensionRuntime))
+	extensionRuntime.state.SetField(apiTable, "autocmd", manager.luaAutocmdAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "buf", manager.luaBufferAPI(extensionRuntime))
+	extensionRuntime.state.SetField(apiTable, "command", manager.luaCommandAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "event", manager.luaEventAPI(extensionRuntime))
+	extensionRuntime.state.SetField(apiTable, "keymap", manager.luaKeymapAPI(extensionRuntime))
 	extensionRuntime.state.SetGlobal("librecode", apiTable)
 	extensionRuntime.state.PreloadModule("librecode", func(state *lua.LState) int {
 		state.Push(apiTable)
@@ -435,16 +471,7 @@ func (manager *Manager) luaOn(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		eventName := state.CheckString(1)
 		priority, function := luaEventHandlerArgs(state)
-
-		manager.lock.Lock()
-		manager.nextHandlerOrder++
-		manager.handlers[eventName] = append(manager.handlers[eventName], luaHookHandler{
-			extension: extensionRuntime,
-			function:  function,
-			priority:  priority,
-			order:     manager.nextHandlerOrder,
-		})
-		manager.lock.Unlock()
+		manager.registerHandler(extensionRuntime, eventName, priority, function)
 
 		return 0
 	}

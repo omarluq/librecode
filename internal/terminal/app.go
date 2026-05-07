@@ -82,10 +82,10 @@ type App struct {
 	lastEscape                   time.Time
 	lastControlC                 time.Time
 	screen                       tcell.Screen
+	extensions                   extension.TerminalEventRunner
 	renderer                     *screenRenderer
 	frame                        *cellBuffer
 	runtime                      *assistant.Runtime
-	extensions                   extension.TerminalEventRunner
 	settings                     *database.DocumentRepository
 	models                       *model.Registry
 	auth                         *auth.Storage
@@ -98,6 +98,7 @@ type App struct {
 	activePrompt                 *activePromptState
 	canceledPrompts              map[uint64]*activePromptState
 	scopedEnabled                map[string]bool
+	extensionRuntimeBuffers      map[string]extension.BufferState
 	theme                        terminalTheme
 	selectedPanelKind            panelKind
 	sessionID                    string
@@ -106,6 +107,7 @@ type App struct {
 	streamingText                string
 	streamingThinkingText        string
 	cwd                          string
+	promptHistoryDraft           string
 	resources                    core.ResourceSnapshot
 	messageLineCache             []cachedRenderedMessage
 	streamingBlockLineCache      []cachedRenderedMessage
@@ -113,7 +115,6 @@ type App struct {
 	messages                     []chatMessage
 	streamingBlocks              []chatMessage
 	promptHistory                []string
-	promptHistoryDraft           string
 	scopedOrder                  []string
 	messageLineCacheState        messageLineCacheState
 	streamingBlockLineCacheState messageLineCacheState
@@ -226,6 +227,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		streamingBlocks:              []chatMessage{},
 		streamingBlockLineCache:      nil,
 		streamingBlockLineCacheState: emptyMessageLineCacheState(),
+		extensionRuntimeBuffers:      map[string]extension.BufferState{},
 	}
 	app.addWelcomeMessage()
 

@@ -609,7 +609,7 @@ librecode.register_composer_mode("vim", "Full Vim mode for the chat composer", {
   label = label(),
 })
 
-librecode.on("key", { priority = 100 }, function(event)
+librecode.keymap.set("composer", "*", function(event)
   local state = librecode.buf.get("composer")
   local outcome = on_key(event, state)
 
@@ -628,4 +628,4 @@ librecode.on("key", { priority = 100 }, function(event)
   if outcome.handled then
     librecode.event.consume()
   end
-end)
+end, { priority = 100, desc = "vim composer dispatcher" })
