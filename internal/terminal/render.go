@@ -400,7 +400,9 @@ func (app *App) composerLayout(width, height int) composerLayout {
 	footerLines := app.footerLines(width)
 	autocompleteLines := app.autocompleteLines(width)
 	editorRows := min(defaultEditorRows, max(3, height-len(footerLines)-len(autocompleteLines)-2))
-	editor := app.composerEditor().render(
+	editor := renderEditor(
+		[]rune(app.composerText()),
+		app.composerCursor(),
 		width,
 		editorRows-2,
 		app.theme,

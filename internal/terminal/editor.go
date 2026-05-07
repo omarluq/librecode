@@ -5,101 +5,120 @@ import (
 	"unicode"
 )
 
-type editor struct {
-	value  []rune
-	cursor int
-}
-
 type editorRender struct {
 	Lines     []styledLine
 	CursorCol int
 	CursorRow int
 }
 
-func newEditor() *editor {
-	return &editor{value: []rune{}, cursor: 0}
-}
-
-func (input *editor) text() string {
-	return string(input.value)
-}
-
-func (input *editor) insertRune(value rune) {
-	if value == 0 {
-		return
+func insertRuneAt(value []rune, cursor int, char rune) (next []rune, nextCursor int) {
+	if char == 0 {
+		return value, cursor
 	}
-	input.value = append(input.value[:input.cursor], append([]rune{value}, input.value[input.cursor:]...)...)
-	input.cursor++
+	cursor = clampComposerCursor(cursor, len(value))
+	next = append([]rune{}, value[:cursor]...)
+	next = append(next, char)
+	next = append(next, value[cursor:]...)
+
+	return next, cursor + 1
 }
 
-func (input *editor) moveLeft() {
-	if input.cursor > 0 {
-		input.cursor--
+func moveCursorLeft(value []rune, cursor int) int {
+	cursor = clampComposerCursor(cursor, len(value))
+	if cursor > 0 {
+		return cursor - 1
 	}
+
+	return cursor
 }
 
-func (input *editor) moveRight() {
-	if input.cursor < len(input.value) {
-		input.cursor++
+func moveCursorRight(value []rune, cursor int) int {
+	cursor = clampComposerCursor(cursor, len(value))
+	if cursor < len(value) {
+		return cursor + 1
 	}
+
+	return cursor
 }
 
-func (input *editor) moveLineStart() {
-	input.cursor = input.currentLineStart()
+func moveCursorLineStart(value []rune, cursor int) int {
+	return currentLineStart(value, cursor)
 }
 
-func (input *editor) moveLineEnd() {
-	input.cursor = input.currentLineEnd()
+func moveCursorLineEnd(value []rune, cursor int) int {
+	return currentLineEnd(value, cursor)
 }
 
-func (input *editor) moveWordLeft() {
-	input.cursor = wordLeft(input.value, input.cursor)
+func moveCursorWordLeft(value []rune, cursor int) int {
+	return wordLeft(value, cursor)
 }
 
-func (input *editor) moveWordRight() {
-	input.cursor = wordRight(input.value, input.cursor)
+func moveCursorWordRight(value []rune, cursor int) int {
+	return wordRight(value, cursor)
 }
 
-func (input *editor) backspace() {
-	if input.cursor == 0 {
-		return
+func backspaceAt(value []rune, cursor int) (next []rune, nextCursor int) {
+	cursor = clampComposerCursor(cursor, len(value))
+	if cursor == 0 {
+		return value, cursor
 	}
-	input.value = append(input.value[:input.cursor-1], input.value[input.cursor:]...)
-	input.cursor--
+	next = append([]rune{}, value[:cursor-1]...)
+	next = append(next, value[cursor:]...)
+
+	return next, cursor - 1
 }
 
-func (input *editor) deleteForward() {
-	if input.cursor >= len(input.value) {
-		return
+func deleteForwardAt(value []rune, cursor int) (next []rune, nextCursor int) {
+	cursor = clampComposerCursor(cursor, len(value))
+	if cursor >= len(value) {
+		return value, cursor
 	}
-	input.value = append(input.value[:input.cursor], input.value[input.cursor+1:]...)
+	next = append([]rune{}, value[:cursor]...)
+	next = append(next, value[cursor+1:]...)
+
+	return next, cursor
 }
 
-func (input *editor) deleteWordBackward() {
-	start := wordLeft(input.value, input.cursor)
-	input.value = append(input.value[:start], input.value[input.cursor:]...)
-	input.cursor = start
+func deleteWordBackwardAt(value []rune, cursor int) (next []rune, nextCursor int) {
+	cursor = clampComposerCursor(cursor, len(value))
+	start := wordLeft(value, cursor)
+	next = append([]rune{}, value[:start]...)
+	next = append(next, value[cursor:]...)
+
+	return next, start
 }
 
-func (input *editor) deleteWordForward() {
-	end := wordRight(input.value, input.cursor)
-	input.value = append(input.value[:input.cursor], input.value[end:]...)
+func deleteWordForwardAt(value []rune, cursor int) (next []rune, nextCursor int) {
+	cursor = clampComposerCursor(cursor, len(value))
+	end := wordRight(value, cursor)
+	next = append([]rune{}, value[:cursor]...)
+	next = append(next, value[end:]...)
+
+	return next, cursor
 }
 
-func (input *editor) deleteToLineStart() {
-	start := input.currentLineStart()
-	input.value = append(input.value[:start], input.value[input.cursor:]...)
-	input.cursor = start
+func deleteToLineStartAt(value []rune, cursor int) (next []rune, nextCursor int) {
+	cursor = clampComposerCursor(cursor, len(value))
+	start := currentLineStart(value, cursor)
+	next = append([]rune{}, value[:start]...)
+	next = append(next, value[cursor:]...)
+
+	return next, start
 }
 
-func (input *editor) deleteToLineEnd() {
-	end := input.currentLineEnd()
-	input.value = append(input.value[:input.cursor], input.value[end:]...)
+func deleteToLineEndAt(value []rune, cursor int) (next []rune, nextCursor int) {
+	cursor = clampComposerCursor(cursor, len(value))
+	end := currentLineEnd(value, cursor)
+	next = append([]rune{}, value[:cursor]...)
+	next = append(next, value[end:]...)
+
+	return next, cursor
 }
 
-func (input *editor) currentLineStart() int {
-	for index := input.cursor - 1; index >= 0; index-- {
-		if input.value[index] == '\n' {
+func currentLineStart(value []rune, cursor int) int {
+	cursor = clampComposerCursor(cursor, len(value))
+	for index := cursor - 1; index >= 0; index-- {
+		if value[index] == '\n' {
 			return index + 1
 		}
 	}
@@ -107,20 +126,29 @@ func (input *editor) currentLineStart() int {
 	return 0
 }
 
-func (input *editor) currentLineEnd() int {
-	for index := input.cursor; index < len(input.value); index++ {
-		if input.value[index] == '\n' {
+func currentLineEnd(value []rune, cursor int) int {
+	cursor = clampComposerCursor(cursor, len(value))
+	for index := cursor; index < len(value); index++ {
+		if value[index] == '\n' {
 			return index
 		}
 	}
 
-	return len(input.value)
+	return len(value)
 }
 
-func (input *editor) render(width, maxRows int, theme terminalTheme, border colorToken, label string) editorRender {
+func renderEditor(
+	value []rune,
+	cursor int,
+	width int,
+	maxRows int,
+	theme terminalTheme,
+	border colorToken,
+	label string,
+) editorRender {
 	innerWidth := max(1, width-4)
-	bodyLines := input.bodyLines(innerWidth)
-	cursorRow, cursorColumn := input.cursorPosition(innerWidth)
+	bodyLines := editorBodyLines(value, innerWidth)
+	cursorRow, cursorColumn := editorCursorPosition(value, cursor, innerWidth)
 	visibleLines, skippedRows := visibleEditorLines(bodyLines, maxRows, cursorRow)
 	lines := make([]styledLine, 0, len(visibleLines)+2)
 	borderStyle := theme.style(border)
@@ -139,16 +167,17 @@ func (input *editor) render(width, maxRows int, theme terminalTheme, border colo
 	}
 }
 
-func (input *editor) bodyLines(width int) []string {
-	if len(input.value) == 0 {
+func editorBodyLines(value []rune, width int) []string {
+	if len(value) == 0 {
 		return []string{""}
 	}
 
-	return wrapText(input.text(), width)
+	return wrapText(string(value), width)
 }
 
-func (input *editor) cursorPosition(width int) (row, column int) {
-	prefix := string(input.value[:input.cursor])
+func editorCursorPosition(value []rune, cursor, width int) (row, column int) {
+	cursor = clampComposerCursor(cursor, len(value))
+	prefix := string(value[:cursor])
 	lines := wrapText(prefix, width)
 	if len(lines) == 0 {
 		return 0, 0
@@ -192,7 +221,7 @@ func editorBottomBorder(width int) string {
 }
 
 func wordLeft(value []rune, cursor int) int {
-	index := max(0, cursor)
+	index := max(0, clampComposerCursor(cursor, len(value)))
 	for index > 0 && unicode.IsSpace(value[index-1]) {
 		index--
 	}

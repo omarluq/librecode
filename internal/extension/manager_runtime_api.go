@@ -10,9 +10,8 @@ import (
 )
 
 const (
-	keymapModeGlobal   = "global"
-	keymapModeComposer = "composer"
-	keymapWildcard     = "*"
+	keymapModeGlobal = "global"
+	keymapWildcard   = "*"
 )
 
 func (manager *Manager) luaCoreAPI(extensionRuntime *luaExtension) *lua.LTable {
@@ -271,8 +270,17 @@ func keymapEventModes(event *luaHostEvent) map[string]struct{} {
 	if mode, ok := event.context["mode"].(string); ok && mode != "" {
 		modes[normalizeKeymapMode(mode)] = struct{}{}
 	}
-	if _, ok := event.buffers[keymapModeComposer]; ok {
-		modes[keymapModeComposer] = struct{}{}
+	for _, buffer := range event.buffers {
+		bufferMode := normalizeKeymapMode(buffer.Name)
+		if bufferMode != "" {
+			modes[bufferMode] = struct{}{}
+		}
+	}
+	for _, window := range event.windows {
+		roleMode := normalizeKeymapMode(window.Role)
+		if roleMode != "" {
+			modes[roleMode] = struct{}{}
+		}
 	}
 
 	return modes

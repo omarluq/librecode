@@ -26,30 +26,88 @@ func (app *App) composerLabel() string {
 	return app.composerBuffer.Label
 }
 
-func (app *App) composerEditor() *editor {
-	input := newEditor()
-	input.value = []rune(app.composerBuffer.Text)
-	input.cursor = clampComposerCursor(app.composerBuffer.Cursor, len(input.value))
-
-	return input
+func (app *App) setComposerRunes(value []rune, cursor int) {
+	text := string(value)
+	app.composerBuffer.Text = text
+	app.composerBuffer.Chars = editorChars(value)
+	app.composerBuffer.Cursor = clampComposerCursor(cursor, len(value))
 }
 
-func (app *App) applyComposerEditor(input *editor) {
-	app.composerBuffer.Text = input.text()
-	app.composerBuffer.Chars = editorChars(input.value)
-	app.composerBuffer.Cursor = input.cursor
+func (app *App) updateComposer(mutator func([]rune, int) ([]rune, int)) {
+	value := []rune(app.composerBuffer.Text)
+	cursor := clampComposerCursor(app.composerBuffer.Cursor, len(value))
+	nextValue, nextCursor := mutator(value, cursor)
+	app.setComposerRunes(nextValue, nextCursor)
 }
 
-func (app *App) editComposer(mutator func(*editor)) {
-	input := app.composerEditor()
-	mutator(input)
-	app.applyComposerEditor(input)
+func (app *App) insertComposerRune(char rune) {
+	app.updateComposer(func(value []rune, cursor int) ([]rune, int) {
+		return insertRuneAt(value, cursor, char)
+	})
+}
+
+func (app *App) moveComposerLeft() {
+	app.updateComposer(func(value []rune, cursor int) ([]rune, int) {
+		return value, moveCursorLeft(value, cursor)
+	})
+}
+
+func (app *App) moveComposerRight() {
+	app.updateComposer(func(value []rune, cursor int) ([]rune, int) {
+		return value, moveCursorRight(value, cursor)
+	})
+}
+
+func (app *App) moveComposerWordLeft() {
+	app.updateComposer(func(value []rune, cursor int) ([]rune, int) {
+		return value, moveCursorWordLeft(value, cursor)
+	})
+}
+
+func (app *App) moveComposerWordRight() {
+	app.updateComposer(func(value []rune, cursor int) ([]rune, int) {
+		return value, moveCursorWordRight(value, cursor)
+	})
+}
+
+func (app *App) moveComposerLineStart() {
+	app.updateComposer(func(value []rune, cursor int) ([]rune, int) {
+		return value, moveCursorLineStart(value, cursor)
+	})
+}
+
+func (app *App) moveComposerLineEnd() {
+	app.updateComposer(func(value []rune, cursor int) ([]rune, int) {
+		return value, moveCursorLineEnd(value, cursor)
+	})
+}
+
+func (app *App) deleteComposerBackward() {
+	app.updateComposer(backspaceAt)
+}
+
+func (app *App) deleteComposerForward() {
+	app.updateComposer(deleteForwardAt)
+}
+
+func (app *App) deleteComposerWordBackward() {
+	app.updateComposer(deleteWordBackwardAt)
+}
+
+func (app *App) deleteComposerWordForward() {
+	app.updateComposer(deleteWordForwardAt)
+}
+
+func (app *App) deleteComposerToLineStart() {
+	app.updateComposer(deleteToLineStartAt)
+}
+
+func (app *App) deleteComposerToLineEnd() {
+	app.updateComposer(deleteToLineEndAt)
 }
 
 func (app *App) setComposerText(text string) {
-	app.composerBuffer.Text = text
-	app.composerBuffer.Chars = stringBufferChars(text)
-	app.composerBuffer.Cursor = len([]rune(text))
+	app.setComposerRunes([]rune(text), len([]rune(text)))
 }
 
 func (app *App) clearComposer() string {

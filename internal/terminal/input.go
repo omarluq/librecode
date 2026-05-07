@@ -69,9 +69,7 @@ func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool
 	}
 	if app.keys.matches(event, actionInputNewLine) {
 		app.resetPromptHistoryNavigation()
-		app.editComposer(func(input *editor) {
-			input.insertRune('\n')
-		})
+		app.insertComposerRune('\n')
 		return false, nil
 	}
 	if app.keys.matches(event, actionInputTab) && app.acceptAutocomplete() {
@@ -135,36 +133,29 @@ func (app *App) handleEditorKey(event *tcell.EventKey) {
 	}
 	if event.Key() == tcell.KeyRune {
 		app.resetPromptHistoryNavigation()
-		app.editComposer(func(input *editor) {
-			input.insertRune(eventRune(event))
-		})
+		app.insertComposerRune(eventRune(event))
 	}
 }
 
 func (app *App) editorActions() []shortcutHandler {
 	return []shortcutHandler{
-		app.composerShortcut(actionCursorLeft, (*editor).moveLeft),
-		app.composerShortcut(actionCursorRight, (*editor).moveRight),
-		app.composerShortcut(actionCursorWordLeft, (*editor).moveWordLeft),
-		app.composerShortcut(actionCursorWordRight, (*editor).moveWordRight),
-		app.composerShortcut(actionCursorLineStart, (*editor).moveLineStart),
-		app.composerShortcut(actionCursorLineEnd, (*editor).moveLineEnd),
-		app.composerShortcut(actionDeleteCharBackward, (*editor).backspace),
-		app.composerShortcut(actionDeleteCharForward, (*editor).deleteForward),
-		app.composerShortcut(actionDeleteWordBackward, (*editor).deleteWordBackward),
-		app.composerShortcut(actionDeleteWordForward, (*editor).deleteWordForward),
-		app.composerShortcut(actionDeleteToLineStart, (*editor).deleteToLineStart),
-		app.composerShortcut(actionDeleteToLineEnd, (*editor).deleteToLineEnd),
+		app.composerShortcut(actionCursorLeft, app.moveComposerLeft),
+		app.composerShortcut(actionCursorRight, app.moveComposerRight),
+		app.composerShortcut(actionCursorWordLeft, app.moveComposerWordLeft),
+		app.composerShortcut(actionCursorWordRight, app.moveComposerWordRight),
+		app.composerShortcut(actionCursorLineStart, app.moveComposerLineStart),
+		app.composerShortcut(actionCursorLineEnd, app.moveComposerLineEnd),
+		app.composerShortcut(actionDeleteCharBackward, app.deleteComposerBackward),
+		app.composerShortcut(actionDeleteCharForward, app.deleteComposerForward),
+		app.composerShortcut(actionDeleteWordBackward, app.deleteComposerWordBackward),
+		app.composerShortcut(actionDeleteWordForward, app.deleteComposerWordForward),
+		app.composerShortcut(actionDeleteToLineStart, app.deleteComposerToLineStart),
+		app.composerShortcut(actionDeleteToLineEnd, app.deleteComposerToLineEnd),
 	}
 }
 
-func (app *App) composerShortcut(action actionID, handler func(*editor)) shortcutHandler {
-	return shortcutHandler{
-		action: action,
-		handler: func() {
-			app.editComposer(handler)
-		},
-	}
+func (app *App) composerShortcut(action actionID, handler func()) shortcutHandler {
+	return shortcutHandler{action: action, handler: handler}
 }
 
 func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) error {
