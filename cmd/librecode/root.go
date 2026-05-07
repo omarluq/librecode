@@ -9,7 +9,7 @@ import (
 var cfgFile string
 
 func newRootCmd() *cobra.Command {
-	var resume bool
+	var resumeSession string
 
 	cmd := &cobra.Command{
 		Use:           "librecode",
@@ -17,12 +17,27 @@ func newRootCmd() *cobra.Command {
 		Version:       vinfo.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runChat(cmd, chatRunOptions{SessionID: "", Resume: resume})
+		Args:          cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if resumeSession != "" && len(args) > 0 {
+				resumeSession = args[0]
+			}
+			return runChat(cmd, chatRunOptions{
+				SessionID: "",
+				ResumeID:  resumeSession,
+				Resume:    resumeSession != "",
+			})
 		},
 	}
 
-	cmd.Flags().BoolVar(&resume, "resume", false, "resume the latest session for this working directory")
+	cmd.Flags().StringVarP(
+		&resumeSession,
+		"resume",
+		"r",
+		"",
+		"resume a session by id (defaults to latest when omitted)",
+	)
+	cmd.Flags().Lookup("resume").NoOptDefVal = latestSessionFlagValue
 	cmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file path")
 	cmd.AddCommand(newChatCmd())
 	cmd.AddCommand(newConfigCmd())

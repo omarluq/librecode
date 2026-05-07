@@ -44,6 +44,7 @@ const (
 	jsonToolChoiceKey       = "tool_choice"
 	jsonUserRole            = "user"
 	functionToolType        = "function"
+	functionCallType        = "function_call"
 	functionCallOutputType  = "function_call_output"
 	reasoningEffortKey      = "effort"
 	thinkingOff             = "off"
@@ -186,7 +187,7 @@ func (client *HTTPCompletionClient) completeOpenAICodex(
 	ctx context.Context,
 	request *CompletionRequest,
 ) (*CompletionResult, error) {
-	input := openAIResponseInput(request.Messages)
+	input := openAIResponseInput(compactResponseMessages(request.Messages))
 	endpoint := joinEndpoint(request.Model.BaseURL, "/codex/responses")
 
 	return client.completeResponsesLoop(ctx, request, endpoint, codexHeaders(request), input, true)
@@ -255,6 +256,9 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			return nil, err
 		}
 		result.Thinking = append(result.Thinking, providerResult.Thinking...)
+		if err := validateToolCalls(providerResult.ToolCalls); err != nil {
+			return nil, err
+		}
 		if len(providerResult.ToolCalls) == 0 {
 			if strings.TrimSpace(providerResult.Text) == "" {
 				return nil, oops.In("assistant").Code("responses_empty").Errorf("provider returned an empty response")
@@ -339,6 +343,25 @@ func (client *HTTPCompletionClient) requestResponses(
 	}
 
 	return parseOpenAIResponseResult(content)
+}
+
+func validateToolCalls(calls []toolCall) error {
+	for _, call := range calls {
+		if strings.TrimSpace(call.ID) == "" {
+			return oops.In("assistant").
+				Code("responses_tool_call_missing_id").
+				With("name", call.Name).
+				Errorf("provider response produced a tool call without call_id")
+		}
+		if strings.TrimSpace(call.Name) == "" {
+			return oops.In("assistant").
+				Code("responses_tool_call_missing_name").
+				With("call_id", call.ID).
+				Errorf("provider response produced a tool call without name")
+		}
+	}
+
+	return nil
 }
 
 func executeToolCalls(
@@ -523,6 +546,40 @@ func openAIResponseInput(messages []database.MessageEntity) []any {
 	}
 
 	return input
+}
+
+func compactResponseMessages(messages []database.MessageEntity) []database.MessageEntity {
+	compacted := make([]database.MessageEntity, 0, len(messages))
+	var pending []database.MessageEntity
+	for _, message := range messages {
+		if message.Role == database.RoleAssistant {
+			pending = append(pending, message)
+			continue
+		}
+		flushPendingAssistantMessages(&compacted, pending)
+		pending = nil
+		compacted = append(compacted, message)
+	}
+	flushPendingAssistantMessages(&compacted, pending)
+
+	return compacted
+}
+
+func flushPendingAssistantMessages(compacted *[]database.MessageEntity, pending []database.MessageEntity) {
+	if len(pending) == 0 {
+		return
+	}
+	merged := pending[len(pending)-1]
+	parts := make([]string, 0, len(pending))
+	for _, message := range pending {
+		if text := strings.TrimSpace(message.Content); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	merged.Content = strings.TrimSpace(strings.Join(parts, "\n\n"))
+	if merged.Content != "" {
+		*compacted = append(*compacted, merged)
+	}
 }
 
 func anthropicMessages(messages []database.MessageEntity) []map[string]string {
@@ -795,16 +852,33 @@ func (accumulator *sseAccumulator) addItem(item map[string]any) {
 }
 
 func (accumulator *sseAccumulator) addArguments(event map[string]any, arguments string) {
-	itemID := stringValue(event["item_id"])
+	itemID := sseItemID(event)
 	if itemID == "" {
 		return
 	}
 	item, ok := accumulator.itemByID[itemID]
 	if !ok {
-		return
+		item = map[string]any{
+			"id":        itemID,
+			jsonTypeKey: functionCallType,
+		}
+		accumulator.itemByID[itemID] = item
 	}
 	item["arguments"] = arguments
 	accumulator.items = upsertSSEItem(accumulator.items, item)
+}
+
+func sseItemID(event map[string]any) string {
+	for _, key := range []string{"item_id", "output_item_id", "id"} {
+		if value := stringValue(event[key]); value != "" {
+			return value
+		}
+	}
+	if item, ok := event["item"].(map[string]any); ok {
+		return stringValue(item["id"])
+	}
+
+	return ""
 }
 
 func upsertSSEItem(items []any, item map[string]any) []any {
@@ -981,7 +1055,7 @@ func toolCallsFromOutput(output []any) []toolCall {
 	calls := []toolCall{}
 	for _, item := range output {
 		object, ok := item.(map[string]any)
-		if !ok || stringValue(object[jsonTypeKey]) != "function_call" {
+		if !ok || stringValue(object[jsonTypeKey]) != functionCallType {
 			continue
 		}
 		argumentsJSON := stringValue(object["arguments"])

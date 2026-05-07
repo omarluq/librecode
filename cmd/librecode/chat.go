@@ -12,8 +12,11 @@ import (
 	"github.com/omarluq/librecode/internal/terminal"
 )
 
+const latestSessionFlagValue = "__latest__"
+
 type chatRunOptions struct {
 	SessionID string
+	ResumeID  string
 	Resume    bool
 }
 
@@ -23,14 +26,25 @@ func newChatCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "chat",
 		Short: "Open the interactive chat UI",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if options.ResumeID != "" && len(args) > 0 {
+				options.ResumeID = args[0]
+			}
+			options.Resume = options.ResumeID != ""
 			return runChat(cmd, options)
 		},
 	}
 
 	cmd.Flags().StringVar(&options.SessionID, "session", "", "session id to append to")
-	cmd.Flags().BoolVar(&options.Resume, "resume", false, "resume the latest session for this working directory")
+	cmd.Flags().StringVarP(
+		&options.ResumeID,
+		"resume",
+		"r",
+		"",
+		"resume a session by id (defaults to latest when omitted)",
+	)
+	cmd.Flags().Lookup("resume").NoOptDefVal = latestSessionFlagValue
 
 	return cmd
 }
@@ -99,6 +113,9 @@ func resolveChatSessionID(
 	}
 	if !options.Resume || runtime == nil {
 		return options.SessionID, nil
+	}
+	if options.ResumeID != "" && options.ResumeID != latestSessionFlagValue {
+		return options.ResumeID, nil
 	}
 
 	latestSession, found, err := runtime.SessionRepository().LatestSession(ctx, cwd)
