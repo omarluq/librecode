@@ -1,304 +1,271 @@
-![librecode banner](banner.png)
+# librecode
 
 <p align="center">
   <a href="https://pkg.go.dev/github.com/omarluq/librecode"><img src="https://img.shields.io/badge/reference-007d9c?style=flat&labelColor=24292e&logo=go&logoColor=white" alt="Go Reference"></a>
-  <a href="https://go.dev/"><img src="https://img.shields.io/badge/-%3E%3D1.26-00ADD8?style=flat&labelColor=24292e&logo=go&logoColor=white" alt="Go Version"></a>
-  <a href="https://goreportcard.com/report/github.com/omarluq/librecode"><img src="https://img.shields.io/badge/report-A%2B-00ADD8?style=flat&labelColor=24292e&logo=go&logoColor=white" alt="Go Report Card"></a>
-  <br/>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat&labelColor=24292e&logo=opensourceinitiative&logoColor=white" alt="License: MIT"></a>
-  <a href="https://github.com/omarluq/librecode/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/omarluq/librecode/ci.yml?style=flat&labelColor=24292e&label=Tests&logo=github&logoColor=white" alt="Tests"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-%3E%3D1.26-00ADD8?style=flat&labelColor=24292e&logo=go&logoColor=white" alt="Go Version"></a>
+  <a href="https://github.com/omarluq/librecode/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/omarluq/librecode/ci.yml?style=flat&labelColor=24292e&label=CI&logo=github&logoColor=white" alt="CI"></a>
   <a href="https://github.com/omarluq/librecode/releases"><img src="https://img.shields.io/github/v/release/omarluq/librecode?style=flat&labelColor=24292e&color=28a745&label=Version&logo=semver&logoColor=white" alt="Version"></a>
-  <a href="https://deepwiki.com/omarluq/librecode"><img src="https://img.shields.io/badge/DeepWiki-omarluq%2Fog--template-4c72c9?style=flat&labelColor=24292e&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACwAAAAyCAYAAAAnWDnqAAAAAXNSR0IArs4c6QAAA05JREFUaEPtmUtyEzEQhtWTQyQLHNak2AB7ZnyXZMEjXMGeK/AIi+QuHrMnbChYY7MIh8g01fJoopFb0uhhEqqcbWTp06/uv1saEDv4O3n3dV60RfP947Mm9/SQc0ICFQgzfc4CYZoTPAswgSJCCUJUnAAoRHOAUOcATwbmVLWdGoH//PB8mnKqScAhsD0kYP3j/Yt5LPQe2KvcXmGvRHcDnpxfL2zOYJ1mFwrryWTz0advv1Ut4CJgf5uhDuDj5eUcAUoahrdY/56ebRWeraTjMt/00Sh3UDtjgHtQNHwcRGOC98BJEAEymycmYcWwOprTgcB6VZ5JK5TAJ+fXGLBm3FDAmn6oPPjR4rKCAoJCal2eAiQp2x0vxTPB3ALO2CRkwmDy5WohzBDwSEFKRwPbknEggCPB/imwrycgxX2NzoMCHhPkDwqYMr9tRcP5qNrMZHkVnOjRMWwLCcr8ohBVb1OMjxLwGCvjTikrsBOiA6fNyCrm8V1rP93iVPpwaE+gO0SsWmPiXB+jikdf6SizrT5qKasx5j8ABbHpFTx+vFXp9EnYQmLx02h1QTTrl6eDqxLnGjporxl3NL3agEvXdT0WmEost648sQOYAeJS9Q7bfUVoMGnjo4AZdUMQku50McDcMWcBPvr0SzbTAFDfvJqwLzgxwATnCgnp4wDl6Aa+Ax283gghmj+vj7feE2KBBRMW3FzOpLOADl0Isb5587h/U4gGvkt5v60Z1VLG8BhYjbzRwyQZemwAd6cCR5/XFWLYZRIMpX39AR0tjaGGiGzLVyhse5C9RKC6ai42ppWPKiBagOvaYk8lO7DajerabOZP46Lby5wKjw1HCRx7p9sVMOWGzb/vA1hwiWc6jm3MvQDTogQkiqIhJV0nBQBTU+3okKCFDy9WwferkHjtxib7t3xIUQtHxnIwtx4mpg26/HfwVNVDb4oI9RHmx5WGelRVlrtiw43zboCLaxv46AZeB3IlTkwouebTr1y2NjSpHz68WNFjHvupy3q8TFn3Hos2IAk4Ju5dCo8B3wP7VPr/FGaKiG+T+v+TQqIrOqMTL1VdWV1DdmcbO8KXBz6esmYWYKPwDL5b5FA1a0hwapHiom0r/cKaoqr+27/XcrS5UwSMbQAAAABJRU5ErkJggg==&logoColor=white" alt="DeepWiki"></a>
-  <a href="https://github.com/omarluq/librecode"><img src="https://img.shields.io/badge/Made%20with-Love-ff69b4?style=flat&labelColor=24292e&logo=githubsponsors&logoColor=white" alt="Made with Love"></a>
+  <a href="LICENSE.txt"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat&labelColor=24292e&logo=opensourceinitiative&logoColor=white" alt="License: MIT"></a>
 </p>
 
-## What's Included
+**librecode** is a local-first AI coding assistant and programmable terminal runtime written in Go.
+It combines an interactive chat UI, persistent sessions, built-in coding tools, Agent Skills-compatible instructions, and trusted Lua extensions that can reach deep into the runtime.
 
-| Category       | Tool                                                                                                                   |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| **CLI**        | [Cobra](https://github.com/spf13/cobra) (simple command tree, explicit I/O and errors)                                 |
-| **Config**     | [Viper](https://github.com/spf13/viper) (YAML + env vars + defaults)                                                   |
-| **DI**         | [samber/do v2](https://github.com/samber/do) (lazy dependency injection)                                               |
-| **Functional** | [samber/lo](https://github.com/samber/lo) (map, filter, reduce)                                                        |
-| **Monads**     | [samber/mo](https://github.com/samber/mo) (Option, Result, Either)                                                     |
-| **Errors**     | [samber/oops](https://github.com/samber/oops) (structured errors with context)                                         |
-| **Logging**    | [zerolog](https://github.com/rs/zerolog) + [slog-zerolog](https://github.com/samber/slog-zerolog) bridge               |
-| **Testing**    | [testify](https://github.com/stretchr/testify) (assert + require)                                                      |
-| **Linting**    | [golangci-lint v2](https://golangci-lint.run/) (50+ linters, strict config)                                            |
-| **Tasks**      | [Task](https://taskfile.dev/) (build, test, lint, ci)                                                                  |
-| **Tools**      | [mise](https://mise.jdx.dev/) (Go, Task, golangci-lint, lefthook versions)                                             |
-| **Hooks**      | [Lefthook](https://github.com/evilmartians/lefthook) (pre-commit, pre-push, conventional commits)                      |
-| **Release**    | [GoReleaser v2](https://goreleaser.com/) (cross-compile, checksums, changelog)                                         |
-| **CI/CD**      | GitHub Actions (lint + test + build matrix + release)                                                                  |
-| **Deps**       | [Renovate](https://docs.renovatebot.com/) (automated dependency updates)                                               |
-| **AI Skills**  | [cc-skills-golang](https://github.com/samber/cc-skills-golang) (opinionated agentic coding skills in `.agents/`)       |
-| **Init**       | [huh](https://charm.land/huh/v2) + [lipgloss](https://charm.land/lipgloss) (interactive project setup via `task init`) |
+## Features
 
-## Quick Start
+- **Interactive terminal chat** with streaming answers, visible reasoning blocks, chronological tool activity, scrollback, prompt history, and optional Vim-style composer behavior.
+- **Fresh sessions by default**: `librecode` starts a new session; use `--resume` to reopen the latest session for the current working directory.
+- **Persistent SQLite session trees** stored per user, with session listing, showing, branching metadata, and context rebuilding.
+- **Built-in coding tools**: `read`, `write`, `edit`, `bash`, `grep`, `find`, and `ls` are available to the assistant and through the CLI.
+- **Agent Skills support** loaded from project and user skill directories, with deterministic priority and dedupe.
+- **Trusted Lua extensions** for commands, tools, hooks, keymaps, runtime buffers, and low-level terminal events.
+- **Provider/model registry** with OpenAI/Codex Responses, OpenAI-compatible chat completions, Anthropic Messages, and custom model/provider definitions.
+- **Configuration via YAML + env vars** with sane defaults and strict validation.
 
-### Use this template
+## Install
 
-Click **"Use this template"** on GitHub, then:
+### From source
 
 ```bash
-git clone git@github.com:yourname/yourproject.git
-cd yourproject
+git clone https://github.com/omarluq/librecode.git
+cd librecode
+mise install          # optional: install the pinned Go/Task/golangci-lint/lefthook versions
+task build            # writes ./bin/librecode
+./bin/librecode --help
 ```
 
-### Initialize your project
+If you do not use `mise`, install a Go toolchain matching `go.mod` and [Task](https://taskfile.dev/) yourself.
 
-Run the interactive init task to rename module, binary, and env prefix:
+### With `go install`
 
 ```bash
-mise install          # Install Go, Task, golangci-lint, lefthook
-task init             # Rename + deps + git hooks
-task ci               # Verify everything works
+go install github.com/omarluq/librecode/cmd/librecode@latest
 ```
 
-`task init` uses [huh](https://charm.land/huh/v2) to prompt for your module path, binary name, env prefix, and which AI coding assistant harnesses to enable (`.adal`, `.augment`, `.claude`, etc.). For each selected harness, it creates symlinks from `.<harness>/skills/` into `.agents/skills/`. After setup, it rewrites all files, renames `cmd/librecode/`, runs `go mod tidy`, downloads deps, installs git hooks, and cleans up after itself (removes `cmd/init/` and the init task from `Taskfile.yml`).
+## Quick start
 
-## Project Structure
-
-```
-.
-├── .agents/skills/       # AI coding skills (cc-skills-golang, symlinked per harness)
-├── cmd/librecode/            # CLI entrypoint and commands
-│   ├── main.go           #   Cobra execution with signal handling
-│   ├── root.go           #   Root cobra command
-│   ├── config.go         #   config show/validate commands
-│   └── version.go        #   version command
-├── internal/
-│   ├── assistant/        # Prompt orchestration and response cache
-│   ├── config/           # Viper config loading + validation
-│   │   ├── config.go     #   Config struct + Validate()
-│   │   └── loader.go     #   Load() returns mo.Result[*Config]
-│   ├── database/         # Session entities/store, migrations, ksqlDB REST client
-│   ├── di/               # samber/do dependency injection
-│   │   ├── container.go  #   Root container with oops errors
-│   │   ├── register.go   #   Service registration
-│   │   ├── config_service.go
-│   │   └── logger_service.go  # zerolog + slog bridge
-│   ├── event/            # librecode-style in-process event bus
-│   ├── extension/        # Lua workflow extensions
-│   ├── terminal/         # Interactive terminal chat UI
-│   ├── tool/             # librecode-style built-in coding tools (read/bash/edit/write/grep/find/ls)
-│   └── vinfo/            # Build version metadata (ldflags)
-├── .github/workflows/
-│   ├── ci.yml            # Lint + test + cross-platform build
-│   └── release.yml       # GoReleaser on tag push
-├── Taskfile.yml          # build, test, lint, fmt, ci, clean, init
-├── .golangci.yml         # 50+ linters, strict settings
-├── .goreleaser.yaml      # Cross-compile + changelog + archives
-├── .mise.toml            # Pinned tool versions
-├── lefthook.yml          # Pre-commit, pre-push, conventional commits
-└── config.example.yaml   # Example configuration
-```
-
-## Tasks
+Open a fresh interactive chat session:
 
 ```bash
-task              # List all tasks
-task init         # Rename + deps + hooks (first-time only)
-task build        # Build binary with ldflags
-task run          # Build and run
-task test         # Run tests with race detector
-task test-short   # Run short tests only
-task test-coverage # Tests + coverage HTML report
-task lint         # golangci-lint
-task fmt          # golangci-lint --fix
-task ci           # fmt + lint + test + build
-task deps         # Download dependencies
-task tidy         # go mod tidy
-task clean        # Remove all artifacts and caches
+librecode
 ```
 
-## Opinions & How Things Work
+Resume the latest session for the current working directory:
 
-### CLI: Cobra
+```bash
+librecode --resume
+# or
+librecode chat --resume
+```
 
-The CLI uses [Cobra](https://github.com/spf13/cobra) directly for an explicit, small command tree without a wrapper layer.
+Send a one-shot prompt:
 
-Entry point (`cmd/librecode/main.go`):
+```bash
+librecode prompt "summarize this repo"
+librecode prompt --resume "continue from the last session"
+```
 
-- Sets up signal handling (`SIGINT`, `SIGTERM`)
-- Executes the root Cobra command with explicit stdin/stdout/stderr wiring
-- Returns exit code 1 on error, 0 on success
+Run a built-in tool directly:
 
-### Configuration: Viper + mo.Result
+```bash
+librecode tool list
+librecode tool run read '{"path":"README.md"}'
+librecode tool run bash '{"command":"go test ./...","timeout":120}'
+```
 
-Configuration loads from multiple sources with this precedence:
+Manage sessions:
 
-1. `--config` CLI flag (explicit path)
-2. Environment variables prefixed with `LIBRECODE_` (e.g. `LIBRECODE_APP_NAME`, `LIBRECODE_LOGGING_LEVEL`)
-3. `config.yaml` in the current directory
+```bash
+librecode session new "docs pass"
+librecode session list
+librecode session show <session-id>
+```
+
+## Authentication and providers
+
+The default assistant config is:
+
+```yaml
+assistant:
+  provider: openai-codex
+  model: gpt-5.5
+  thinking_level: off
+```
+
+Credentials can come from:
+
+- provider-specific environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, or `ZAI_API_KEY`;
+- custom provider config stored in the runtime model document;
+- compatible existing Codex auth files imported from `~/.codex/auth.json` or `~/.pi/agent/auth.json`.
+
+Provider IDs are configured with `LIBRECODE_ASSISTANT_PROVIDER` or `assistant.provider`; model IDs use `LIBRECODE_ASSISTANT_MODEL` or `assistant.model`.
+
+## Configuration
+
+librecode resolves config in this order:
+
+1. `--config <path>`
+2. `LIBRECODE_*` environment variables
+3. `./config.yaml`
 4. `$HOME/.config/librecode/config.yaml`
-5. Built-in defaults (development mode, info logging, pretty format)
+5. built-in defaults
 
-The loader returns `mo.Result[*Config]` for monadic error handling. Config is validated after loading — invalid values produce clear error messages.
-
-```bash
-librecode config show       # Display all resolved config values
-librecode config validate   # Check config is valid
-```
-
-### Agent Runtime: sessions, extensions, and tools
-
-The assistant runtime persists SQLite session trees, loads Lua workflow extensions, and exposes librecode-style built-in coding tools:
+Useful commands:
 
 ```bash
-librecode prompt "hello"                               # append a prompt to the current cwd session
-librecode prompt '/tool read {"path":"README.md"}'    # run a built-in tool through the prompt path
-librecode tool list                                    # list read/bash/edit/write/grep/find/ls
-librecode tool run read '{"path":"README.md"}'        # run a built-in tool directly
+librecode config show
+librecode config validate
 ```
 
-Built-in tools live in `internal/tool` and use the project libraries heavily (`lo` for collection transforms and `oops` for structured tool errors).
+See [`config.example.yaml`](config.example.yaml) for all current config keys.
 
-### Dependency Injection: samber/do v2
+Default persistence paths:
 
-Services are registered lazily in `internal/di/register.go` and resolved on first use. The container pattern:
+- sessions database: `~/.local/state/librecode/sessions.db`
+- auth storage: `$XDG_CONFIG_HOME/librecode/auth.json` or `~/.config/librecode/auth.json`
 
-1. `NewContainer(configPath)` creates the root injector
-2. `RegisterServices()` registers all providers (config, logger, etc.)
-3. Services resolve dependencies via `do.MustInvoke[T](injector)` in their constructors
-4. `ShutdownWithContext()` tears down all services gracefully
+## Skills
 
-To add a new service: create it in `internal/yourpkg/`, register with `do.Provide(injector, NewYourService)` in `register.go`.
+Skills are Agent Skills-compatible directories or Markdown files with frontmatter. They are injected into the assistant prompt when their metadata is valid.
 
-### Error Handling: samber/oops
+Default skill roots, in priority order:
 
-Errors use `samber/oops` for structured context throughout the DI and config layers:
+1. `./.librecode/skills`
+2. `./.agents/skills`
+3. `~/.librecode/skills`
+4. `~/.agents/skills`
 
-```go
-return nil, oops.
-    In("config").           // domain
-    Code("invalid_config"). // machine-readable code
-    Wrapf(err, "load configuration")
+Duplicate skill names are deduped by priority, so project-local `.librecode` skills win over project `.agents` and user-global skills.
+
+A minimal skill looks like:
+
+```markdown
+---
+name: my-skill
+description: Use when working on my project-specific workflow.
+---
+
+Follow these project-specific instructions...
 ```
 
-This gives you stack traces, domain context, and error codes without losing the original error chain.
+## Extensions
 
-### Logging: zerolog + slog Bridge
+Extensions are trusted local Lua code. librecode follows the Unix philosophy here: extensions are powerful, low-level, and allowed to footgun if you ask them to.
 
-The logger service creates a `zerolog.Logger` and bridges it to Go's `slog` via `samber/slog-zerolog`. This means:
+Default extension roots:
 
-- Use `slog` in application code (stdlib, portable)
-- Get zerolog's performance and structured output under the hood
-- Pretty console output in development, JSON in production
-- Controlled via `logging.level` (debug/info/warn/error) and `logging.format` (pretty/json)
+1. `extensions/` — official bundled extensions
+2. paths from `extensions.paths` in config, defaulting to:
+   - `extensions`
+   - `.librecode/extensions`
 
-### Functional Utilities: samber/lo + samber/mo
+Current extension capabilities include:
 
-- **lo**: Generic slice/map operations — `lo.Map`, `lo.Filter`, `lo.SliceToMap`, `lo.MaxBy`, `lo.Uniq`, etc.
-- **mo**: Monadic types — `mo.Option[T]`, `mo.Result[T]`, `mo.Either[L, R]`. Config loading returns `mo.Result` for composable error handling.
+- registering commands and extension-backed tools;
+- listening to low-level runtime events;
+- intercepting key input with priorities;
+- reading and mutating runtime buffers such as `composer`, `status`, and `transcript`;
+- creating namespaces, autocmds, and keymaps through a Neovim-inspired Lua API.
 
-### Git Hooks: Lefthook
+The bundled [`extensions/vim-mode.lua`](extensions/vim-mode.lua) demonstrates composer control through the public Lua runtime API.
 
-Three hooks are installed via `lefthook install`:
+Inspect loaded extensions:
 
-**pre-commit** (runs in parallel):
+```bash
+librecode extension list
+librecode extension run <command> [args...]
+```
 
-- `golangci-lint run --fix` on staged `.go` files (auto-stages fixes)
-- `task test-short` for fast feedback
+## Built-in tools and trust boundaries
 
-**pre-push**:
+The built-in tools are intentionally powerful. `bash` can execute commands, and file tools can read or mutate paths you provide. This is a local coding assistant, not a sandbox.
 
-- `task test` (full test suite with race detector)
-- `task build` (ensures the binary compiles)
+Available tools:
 
-**commit-msg**:
+| Tool | Mutates files? | Purpose |
+| --- | --- | --- |
+| `read` | No | Read text/image files with truncation controls. |
+| `ls` | No | List directory entries. |
+| `find` | No | Search file paths by glob. |
+| `grep` | No | Search file contents. |
+| `write` | Yes | Overwrite/create files. |
+| `edit` | Yes | Exact text replacement with uniqueness checks. |
+| `bash` | Yes | Execute shell commands with timeout/output limits. |
 
-- Enforces [Conventional Commits](https://www.conventionalcommits.org/) format
-- Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`, `build`
-- Format: `type(scope?): subject`
-- Examples: `feat: add user auth`, `fix(config): handle missing file`, `chore: bump deps`
+Only run librecode in workspaces where you trust the model, tools, and extensions you enable.
 
-Hooks skip on merge and rebase to avoid friction.
+## CLI reference
 
-### Linting: golangci-lint v2
+```text
+librecode [--resume] [--config path]
+librecode chat [--resume | --session id]
+librecode prompt [--resume | --session id | --name name] [message]
+librecode session new [name]
+librecode session list
+librecode session show <session-id>
+librecode tool list
+librecode tool run <name> [json-args|-] [--cwd path]
+librecode extension list
+librecode extension run <command> [args...]
+librecode config show
+librecode config validate
+librecode migrate
+librecode version
+```
 
-The `.golangci.yml` enables 50+ linters with strict settings and **no exclusions on test files**:
+Use `librecode <command> --help` for exact flags and subcommands.
 
-| Setting                          | Value                 | Why                         |
-| -------------------------------- | --------------------- | --------------------------- |
-| `gocyclo.min-complexity`         | 10                    | Keep functions simple       |
-| `gocognit.min-complexity`        | 15                    | Enforce readability         |
-| `funlen.lines`                   | 80                    | Short functions             |
-| `funlen.statements`              | 50                    | Short functions             |
-| `lll.line-length`                | 120                   | Reasonable line width       |
-| `dupl.threshold`                 | 100                   | Catch copy-paste            |
-| `errcheck.check-type-assertions` | true                  | No unchecked type casts     |
-| `errcheck.check-blank`           | true                  | No `_ = err`                |
-| `exhaustruct`                    | project packages only | Catch missing struct fields |
+## Development
 
-Only protobuf (`.pb.go`) and generated (`_generated.go`) files are excluded.
+```bash
+task              # list tasks
+task build        # build ./bin/librecode
+task run          # build and run
+task test         # go test -race ./...
+task test-short   # short race-enabled tests
+task test-coverage # coverage.out + coverage.html
+task lint         # golangci-lint run
+task fmt          # golangci-lint run --fix
+task ci           # fmt + lint + test + build
+task tidy         # go mod tidy
+task clean        # remove build/test/cache artifacts
+```
 
-### Build: ldflags Version Injection
+Project-local caches are used for reproducible local runs and are gitignored:
 
-`task build` injects version metadata via `-ldflags`:
+- `.gocache/`
+- `.gomodcache/`
+- `.tmp/`
 
-- `Version` — from `git describe --tags --always --dirty`
-- `Commit` — from `git rev-parse --short HEAD`
-- `BuildDate` — UTC timestamp
+## Project layout
 
-The `internal/vinfo` package exposes `String()` which formats these for `--version` output. Falls back to `debug.ReadBuildInfo()` for `go install` builds.
+```text
+cmd/librecode/          CLI commands and process entrypoint
+extensions/             Official bundled Lua extensions
+internal/assistant/     Prompt orchestration, provider calls, tool loop, cache integration
+internal/auth/          Provider credential storage and Codex auth import/refresh
+internal/config/        Viper config defaults, loading, and validation
+internal/core/          Resources: system prompts, context files, skills, slash prompts
+internal/database/      SQLite repositories, migrations, ksqlDB client
+internal/di/            Service wiring with samber/do
+internal/extension/     Lua extension manager and runtime API bridge
+internal/model/         Provider/model registry and auth resolution
+internal/terminal/      Interactive terminal UI
+internal/tool/          Built-in coding tools
+internal/vinfo/         Version metadata injected at build time
+```
 
-### CI/CD: GitHub Actions
+## Release
 
-**CI** (`.github/workflows/ci.yml`):
-
-- Triggers on push/PR to main/master
-- Runs golangci-lint via official action
-- Runs tests with coverage (uploads to Codecov)
-- Cross-compiles build matrix: linux/darwin/windows × amd64/arm64
-- Uses `go-version-file: go.mod` (always matches local Go version)
-- Concurrency groups cancel superseded runs
-
-**Release** (`.github/workflows/release.yml`):
-
-- Triggers on `v*.*.*` tag push
-- Runs GoReleaser v2 to build, archive, generate changelog, and publish GitHub release
-
-### Release: GoReleaser v2
-
-`goreleaser` builds for linux/darwin/windows (amd64 + arm64), creates tar.gz archives (zip for Windows), generates SHA-256 checksums, and publishes a GitHub release with a conventional-commit-based changelog grouped by type (features, fixes, performance).
+Releases are built by GoReleaser from `v*.*.*` tags:
 
 ```bash
 git tag v0.1.0
-git push origin v0.1.0  # Triggers release workflow
+git push origin v0.1.0
 ```
 
-### Tool Versions: mise
-
-All tool versions are pinned in `.mise.toml`:
-
-- **Go** — pinned to specific patch version
-- **Task** — pinned
-- **golangci-lint** — pinned
-- **lefthook** — pinned
-
-Run `mise install` to get the exact versions. No global installs needed.
-
-### Local Caches
-
-Build caches are kept per-project (not in `$HOME`) for isolation:
-
-- `.gocache/` — Go build cache
-- `.gomodcache/` — Go module cache
-- `.tmp/` — golangci-lint cache, temp files
-
-All are gitignored. `task clean` removes everything.
-
-### Dependency Updates: Renovate
-
-Renovate is pre-configured with `config:recommended`. Once enabled on your GitHub repo, it will automatically open PRs for dependency updates in `go.mod`.
-
-### AI Coding Skills
-
-The `.agents/skills/` directory contains [cc-skills-golang](https://github.com/samber/cc-skills-golang) — a curated set of agentic coding skills for AI assistants working in Go codebases. These provide opinionated guidance for code generation, testing patterns, and project conventions.
-
-`.agents/skills/` is the single source of truth. At `task init`, you pick which AI coding assistants you use and the init tool creates `.<harness>/skills/` symlink directories pointing into `.agents/skills/`. Supported harnesses include `.adal`, `.augment`, `.claude`, `.codebuddy`, `.continue`, `.cortex`, `.crush`, `.factory`, `.goose`, `.iflow`, `.junie`, `.kilocode`, `.kiro`, `.kode`, `.openhands`, `.qoder`, `.qwen`, `.roo`, `.trae`, `.windsurf`, `.zencoder`, and more.
+The release workflow cross-compiles Linux, macOS, and Windows binaries, archives them, generates checksums, and publishes a GitHub release.
 
 ## License
 
-MIT
+MIT — see [`LICENSE.txt`](LICENSE.txt).
