@@ -17,6 +17,7 @@ database:
 extensions:
   enabled: true
   paths:
+    - extensions
     - .librecode/extensions
 
 assistant:

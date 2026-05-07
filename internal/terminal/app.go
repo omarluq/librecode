@@ -14,6 +14,7 @@ import (
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -63,14 +64,17 @@ type cachedRenderedMessage struct {
 
 // RunOptions configures the terminal app.
 type RunOptions struct {
-	Resources *core.ResourceSnapshot       `json:"resources"`
-	Runtime   *assistant.Runtime           `json:"-"`
-	Settings  *database.DocumentRepository `json:"-"`
-	Models    *model.Registry              `json:"-"`
-	Auth      *auth.Storage                `json:"-"`
-	Config    *config.Config               `json:"-"`
-	CWD       string                       `json:"cwd"`
-	SessionID string                       `json:"session_id"`
+	Composer      extension.ComposerRunner     `json:"-"`
+	Resources     *core.ResourceSnapshot       `json:"resources"`
+	Runtime       *assistant.Runtime           `json:"-"`
+	Settings      *database.DocumentRepository `json:"-"`
+	Models        *model.Registry              `json:"-"`
+	Auth          *auth.Storage                `json:"-"`
+	Config        *config.Config               `json:"-"`
+	CWD           string                       `json:"cwd"`
+	SessionID     string                       `json:"session_id"`
+	ComposerMode  string                       `json:"composer_mode"`
+	ComposerLabel string                       `json:"composer_label"`
 }
 
 // App is the terminal chat UI.
@@ -87,6 +91,7 @@ type App struct {
 	cfg                          *config.Config
 	editor                       *editor
 	keys                         *keybindings
+	composer                     *composer
 	panel                        *selectionPanel
 	pendingParentID              *string
 	activePrompt                 *activePromptState
@@ -106,12 +111,15 @@ type App struct {
 	queuedMessages               []string
 	messages                     []chatMessage
 	streamingBlocks              []chatMessage
+	promptHistory                []string
+	promptHistoryDraft           string
 	scopedOrder                  []string
 	messageLineCacheState        messageLineCacheState
 	streamingBlockLineCacheState messageLineCacheState
 	workFrame                    int
 	promptSequence               uint64
 	streamedToolEvents           int
+	promptHistoryIndex           int
 	scrollOffset                 int
 	sessionNamedOnly             bool
 	hideThinking                 bool
@@ -177,6 +185,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		cfg:                          options.Config,
 		editor:                       newEditor(),
 		keys:                         newDefaultKeybindings(),
+		composer:                     newComposer(options.ComposerMode, options.ComposerLabel, options.Composer),
 		theme:                        appTheme,
 		resources:                    resources,
 		mode:                         modeChat,
@@ -190,6 +199,8 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		messageLineCache:             nil,
 		messageLineCacheState:        emptyMessageLineCacheState(),
 		queuedMessages:               []string{},
+		promptHistory:                []string{},
+		promptHistoryDraft:           "",
 		scopedOrder:                  []string{},
 		scopedEnabled:                map[string]bool{},
 		sessionSortRecent:            true,
@@ -204,6 +215,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		workFrame:                    0,
 		scrollOffset:                 0,
 		streamedToolEvents:           0,
+		promptHistoryIndex:           0,
 		promptSequence:               0,
 		statusMessage:                "",
 		selectedPanelKind:            "",
@@ -347,6 +359,9 @@ func (app *App) loadInitialMessages(ctx context.Context) error {
 			Role:      message.Role,
 			Content:   message.Content,
 		})
+		if message.Role == database.RoleUser {
+			app.recordPromptHistory(message.Content)
+		}
 	}
 
 	return nil
@@ -383,6 +398,7 @@ func (app *App) appendMessage(message chatMessage) {
 func (app *App) resetMessages() {
 	app.messages = []chatMessage{}
 	app.messageLineCache = nil
+	app.resetPromptHistory()
 }
 
 func (app *App) truncateMessages(length int) {

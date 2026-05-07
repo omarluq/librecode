@@ -446,6 +446,9 @@ func (app *App) footerLines(width int) []styledLine {
 	if len(app.queuedMessages) > 0 {
 		statusLine = "queued " + intText(len(app.queuedMessages)) + " • " + statusLine
 	}
+	if label := app.composerFooterLabel(); label != "" {
+		statusLine = label + " • " + statusLine
+	}
 	if app.statusMessage != "" {
 		statusLine = app.statusMessage + " • " + statusLine
 	}

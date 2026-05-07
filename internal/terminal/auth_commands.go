@@ -124,6 +124,7 @@ func (app *App) loginCommand(ctx context.Context, args string) error {
 		return app.loginOpenAICodex(ctx)
 	}
 	if len(fields) < 2 {
+		app.resetPromptHistoryNavigation()
 		app.editor.setText("/login " + provider + " ")
 		app.setStatus("paste API key after provider and press Enter")
 		return nil

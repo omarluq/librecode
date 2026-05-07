@@ -39,16 +39,14 @@ func (app *App) handleKey(ctx context.Context, event *tcell.EventKey) (bool, err
 	if app.mode == modePanel && app.panel != nil {
 		return app.handlePanelKey(ctx, event)
 	}
-	if app.handleTranscriptScroll(event) {
-		return false, nil
-	}
-	if app.handleGlobalShortcut(ctx, event) {
-		return false, nil
+	if handled, err := app.handlePreEditorKey(ctx, event); handled || err != nil {
+		return false, err
 	}
 	if app.keys.matches(event, actionInputSubmit) {
 		return app.submit(ctx)
 	}
 	if app.keys.matches(event, actionInputNewLine) {
+		app.resetPromptHistoryNavigation()
 		app.editor.insertRune('\n')
 		return false, nil
 	}
@@ -56,6 +54,20 @@ func (app *App) handleKey(ctx context.Context, event *tcell.EventKey) (bool, err
 		return false, nil
 	}
 	app.handleEditorKey(event)
+
+	return false, nil
+}
+
+func (app *App) handlePreEditorKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
+	if app.handleTranscriptScroll(event) {
+		return true, nil
+	}
+	if handled, err := app.handleComposerKey(ctx, event); handled || err != nil {
+		return handled, err
+	}
+	if app.handleGlobalShortcut(ctx, event) || app.handlePromptHistoryKey(event) {
+		return true, nil
+	}
 
 	return false, nil
 }
@@ -95,11 +107,13 @@ func (app *App) handleEditorKey(event *tcell.EventKey) {
 	actions := app.editorActions()
 	for _, action := range actions {
 		if app.keys.matches(event, action.action) {
+			app.resetPromptHistoryNavigation()
 			action.handler()
 			return
 		}
 	}
 	if event.Key() == tcell.KeyRune {
+		app.resetPromptHistoryNavigation()
 		app.editor.insertRune(eventRune(event))
 	}
 }
@@ -168,6 +182,7 @@ func (app *App) handleEscape(ctx context.Context) {
 	}
 	if !app.editor.empty() {
 		app.editor.clear()
+		app.resetPromptHistoryNavigation()
 		app.setStatus("editor cleared")
 		return
 	}
@@ -185,6 +200,7 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 	if text == "" {
 		return false, nil
 	}
+	app.recordPromptHistory(text)
 	if strings.HasPrefix(text, "/") {
 		return app.submitCommand(ctx, text)
 	}
@@ -437,6 +453,7 @@ func (app *App) queueFollowUp() {
 		app.setStatus("no follow-up text to queue")
 		return
 	}
+	app.recordPromptHistory(text)
 	app.queueFollowUpText(text)
 }
 
@@ -461,6 +478,7 @@ func (app *App) dequeueFollowUp() {
 		return
 	}
 	lastIndex := len(app.queuedMessages) - 1
+	app.resetPromptHistoryNavigation()
 	app.editor.setText(app.queuedMessages[lastIndex])
 	app.queuedMessages = app.queuedMessages[:lastIndex]
 	app.setStatus("restored queued message")

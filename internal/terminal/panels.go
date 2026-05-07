@@ -425,11 +425,13 @@ func (app *App) applyTreeSelection(ctx context.Context, value string) error {
 func (app *App) prepareBranchFromEntry(entry *database.EntryEntity) {
 	if entry.Message.Role == database.RoleUser || entry.Message.Role == database.RoleCustom {
 		app.pendingParentID = emptyParentID(entry.ParentID)
+		app.resetPromptHistoryNavigation()
 		app.editor.setText(entry.Message.Content)
 		app.setStatus("editing selected message to create a branch")
 		return
 	}
 	app.pendingParentID = &entry.ID
+	app.resetPromptHistoryNavigation()
 	app.editor.setText("")
 	app.setStatus("continuing from " + entry.ID)
 }

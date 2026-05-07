@@ -72,6 +72,7 @@ func (app *App) acceptAutocomplete() bool {
 	if len(matches) == 0 {
 		return false
 	}
+	app.resetPromptHistoryNavigation()
 	app.editor.setText("/" + matches[0].Name + " ")
 	app.setStatus("completed /" + matches[0].Name)
 

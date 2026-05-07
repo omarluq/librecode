@@ -25,15 +25,62 @@ type ToolResult struct {
 
 // LoadedExtension contains metadata for a loaded Lua source file.
 type LoadedExtension struct {
-	Name     string   `json:"name"`
-	Path     string   `json:"path"`
-	Commands []string `json:"commands"`
-	Tools    []string `json:"tools"`
+	Name          string   `json:"name"`
+	Path          string   `json:"path"`
+	Commands      []string `json:"commands"`
+	Tools         []string `json:"tools"`
+	ComposerModes []string `json:"composer_modes"`
+}
+
+// ComposerMode describes an extension-provided terminal composer mode.
+type ComposerMode struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Extension   string `json:"extension"`
+	Label       string `json:"label"`
+	Default     bool   `json:"default"`
+}
+
+// ComposerKeyEvent describes a terminal key event passed to a composer extension.
+type ComposerKeyEvent struct {
+	Key  string `json:"key"`
+	Text string `json:"text"`
+	Ctrl bool   `json:"ctrl"`
+	Alt  bool   `json:"alt"`
+}
+
+// ComposerState describes the current chat composer editor state.
+type ComposerState struct {
+	Text        string   `json:"text"`
+	Chars       []string `json:"chars"`
+	Cursor      int      `json:"cursor"`
+	Working     bool     `json:"working"`
+	AuthWorking bool     `json:"auth_working"`
+}
+
+// ComposerResult describes mutations returned by a composer extension.
+type ComposerResult struct {
+	Text      string `json:"text"`
+	Label     string `json:"label"`
+	Cursor    int    `json:"cursor"`
+	Handled   bool   `json:"handled"`
+	HasText   bool   `json:"has_text"`
+	HasCursor bool   `json:"has_cursor"`
 }
 
 // CommandRunner executes a named extension command.
 type CommandRunner interface {
 	ExecuteCommand(ctx context.Context, name, args string) (string, error)
+}
+
+// ComposerRunner executes extension-provided composer modes.
+type ComposerRunner interface {
+	HandleComposerKey(
+		ctx context.Context,
+		mode string,
+		event ComposerKeyEvent,
+		state ComposerState,
+	) (ComposerResult, error)
 }
 
 // EventEmitter emits extension lifecycle events.

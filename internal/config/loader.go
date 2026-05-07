@@ -58,7 +58,7 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("database.max_idle_conns", 1)
 	viperInstance.SetDefault("database.conn_max_lifetime", 30*time.Minute)
 	viperInstance.SetDefault("extensions.enabled", true)
-	viperInstance.SetDefault("extensions.paths", []string{".librecode/extensions"})
+	viperInstance.SetDefault("extensions.paths", []string{"extensions", ".librecode/extensions"})
 	viperInstance.SetDefault("assistant.provider", "openai-codex")
 	viperInstance.SetDefault("assistant.model", "gpt-5.5")
 	viperInstance.SetDefault("assistant.thinking_level", "off")

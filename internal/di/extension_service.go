@@ -21,7 +21,8 @@ func NewExtensionService(injector do.Injector) (*ExtensionService, error) {
 	manager := extension.NewManager(logger)
 
 	if cfg.Extensions.Enabled {
-		if err := manager.LoadPaths(context.Background(), cfg.Extensions.Paths); err != nil {
+		paths := extension.DefaultLoadPaths(cfg.Extensions.Paths)
+		if err := manager.LoadPaths(context.Background(), paths); err != nil {
 			return nil, oops.In("extension").Code("load_extensions").Wrapf(err, "load lua extensions")
 		}
 	}
