@@ -151,48 +151,8 @@ func stringBufferChars(text string) []string {
 }
 
 func (app *App) extensionWindows() map[string]extension.WindowState {
-	layout := app.composerLayout(80, 24)
-	return map[string]extension.WindowState{
-		extensionBufferComposer: {
-			Metadata:  map[string]any{},
-			Name:      extensionBufferComposer,
-			Role:      extensionBufferComposer,
-			Buffer:    extensionBufferComposer,
-			X:         0,
-			Y:         layout.editorStart,
-			Width:     80,
-			Height:    len(layout.editor.Lines),
-			CursorRow: layout.editor.CursorRow,
-			CursorCol: layout.editor.CursorCol,
-			Visible:   true,
-		},
-		extensionBufferStatus: {
-			Metadata:  map[string]any{},
-			Name:      extensionBufferStatus,
-			Role:      extensionBufferStatus,
-			Buffer:    extensionBufferStatus,
-			X:         0,
-			Y:         layout.footerStart,
-			Width:     80,
-			Height:    len(layout.footerLines),
-			CursorRow: 0,
-			CursorCol: 0,
-			Visible:   true,
-		},
-		extensionBufferTranscript: {
-			Metadata:  map[string]any{"count": len(app.messages)},
-			Name:      extensionBufferTranscript,
-			Role:      extensionBufferTranscript,
-			Buffer:    extensionBufferTranscript,
-			X:         0,
-			Y:         0,
-			Width:     80,
-			Height:    0,
-			CursorRow: 0,
-			CursorCol: 0,
-			Visible:   true,
-		},
-	}
+	layout := app.currentRuntimeLayout()
+	return app.cloneRuntimeWindows(&layout)
 }
 
 func (app *App) extensionContext() map[string]any {
@@ -212,8 +172,14 @@ func (app *App) applyExtensionEventResult(ctx context.Context, result *extension
 	for _, name := range result.DeletedBuffers {
 		app.applyExtensionBufferDelete(name)
 	}
+	for _, name := range result.DeletedWindows {
+		app.applyRuntimeWindowDelete(name)
+	}
 	for name, buffer := range result.Buffers {
 		app.applyExtensionBuffer(name, &buffer)
+	}
+	for name, window := range result.Windows {
+		app.applyRuntimeWindow(name, &window)
 	}
 	for _, bufferAppend := range result.Appends {
 		app.applyExtensionBufferAppend(bufferAppend)
@@ -221,6 +187,7 @@ func (app *App) applyExtensionEventResult(ctx context.Context, result *extension
 	for _, action := range result.Actions {
 		app.applyExtensionAction(ctx, action)
 	}
+	app.applyUIWindowResult(result)
 }
 
 func (app *App) applyExtensionAction(ctx context.Context, action extension.ActionCall) {
@@ -256,6 +223,24 @@ func (app *App) applyExtensionBuffer(name string, buffer *extension.BufferState)
 		return
 	default:
 		app.extensionRuntimeBuffers[name] = *buffer
+	}
+}
+
+func (app *App) applyRuntimeWindow(name string, window *extension.WindowState) {
+	if window == nil {
+		return
+	}
+	if window.Name == "" {
+		window.Name = name
+	}
+	app.runtimeWindows[name] = *window
+}
+
+func (app *App) applyRuntimeWindowDelete(name string) {
+	delete(app.runtimeWindows, name)
+	delete(app.uiWindowOverrides, name)
+	if app.uiCursor != nil && app.uiCursor.Window == name {
+		app.uiCursor = nil
 	}
 }
 
@@ -298,6 +283,41 @@ func (app *App) applyExtensionBufferAppend(bufferAppend extension.BufferAppend) 
 	buffer.Chars = stringBufferChars(buffer.Text)
 	buffer.Cursor = len([]rune(buffer.Text))
 	app.extensionRuntimeBuffers[bufferAppend.Name] = buffer
+}
+
+func (app *App) applyUIWindowResult(result *extension.TerminalEventResult) {
+	for _, windowName := range result.ResetUIWindows {
+		app.resetUIWindowOverride(windowName)
+	}
+	for index := range result.UIDrawOps {
+		app.appendUIWindowDrawOp(&result.UIDrawOps[index])
+	}
+	if result.UICursor != nil {
+		cursor := *result.UICursor
+		app.uiCursor = &cursor
+	}
+}
+
+func (app *App) resetUIWindowOverride(name string) {
+	if name == "" {
+		return
+	}
+	override := app.uiWindowOverrides[name]
+	override.Reset = true
+	override.DrawOps = nil
+	app.uiWindowOverrides[name] = override
+	if app.uiCursor != nil && app.uiCursor.Window == name {
+		app.uiCursor = nil
+	}
+}
+
+func (app *App) appendUIWindowDrawOp(drawOp *extension.UIDrawOp) {
+	if drawOp == nil || drawOp.Window == "" {
+		return
+	}
+	override := app.uiWindowOverrides[drawOp.Window]
+	override.DrawOps = append(override.DrawOps, *drawOp)
+	app.uiWindowOverrides[drawOp.Window] = override
 }
 
 func extensionAppendRole(role string) database.Role {

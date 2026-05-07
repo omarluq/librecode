@@ -6,6 +6,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/extension"
 )
 
 func (app *App) draw() {
@@ -17,13 +18,17 @@ func (app *App) draw() {
 		return
 	}
 
-	row := 0
+	layout := app.currentRuntimeLayout()
 	if app.mode == modePanel && app.panel != nil {
-		row = app.drawPanel(width, height, row)
+		app.drawPanelWindow(&layout)
 	} else {
-		row = app.drawMessages(width, height, row)
+		app.drawTranscriptWindow(&layout)
 	}
-	app.drawEditorAndFooter(width, height, row)
+	app.drawAutocompleteWindow(&layout)
+	app.drawComposerWindow(&layout)
+	app.drawStatusWindow(&layout)
+	app.applyUIOverrides(&layout)
+	app.showRuntimeCursor(&layout)
 	app.flushFrame()
 }
 
@@ -37,29 +42,30 @@ func (app *App) drawTiny(width, height int) {
 	writeLine(app.frame, max(0, height/2), width, message, app.theme.style(colorWarning))
 }
 
-func (app *App) drawPanel(width, height, row int) int {
-	availableHeight := max(1, height-row-app.composerReserve(width, height))
-	lines := app.panel.render(width, availableHeight, app.theme, app.keys)
-	for _, line := range lines {
-		app.writeStyledLine(row, width, line)
-		row++
+func (app *App) drawTranscriptWindow(layout *runtimeLayout) {
+	window := layout.Transcript
+	if !window.Visible || window.Height <= 0 {
+		return
 	}
-
-	return row
+	if app.showWelcomeOnly() {
+		app.drawWelcomeOnly(window.Width, window.Height, window.Y)
+		return
+	}
+	lines := app.messageLines(window.Width, window.Height)
+	for index, line := range lines {
+		app.writeStyledLine(window.Y+index, window.Width, line)
+	}
 }
 
-func (app *App) drawMessages(width, height, row int) int {
-	if app.showWelcomeOnly() {
-		return app.drawWelcomeOnly(width, height, row)
+func (app *App) drawPanelWindow(layout *runtimeLayout) {
+	window := layout.Transcript
+	if !window.Visible || window.Height <= 0 {
+		return
 	}
-	availableRows := max(1, height-row-app.composerReserve(width, height))
-	lines := app.messageLines(width, availableRows)
-	for _, line := range lines {
-		app.writeStyledLine(row, width, line)
-		row++
+	lines := app.panel.render(window.Width, window.Height, app.theme, app.keys)
+	for index, line := range lines {
+		app.writeStyledLine(window.Y+index, window.Width, line)
 	}
-
-	return row
 }
 
 func (app *App) messageLines(width, maxRows int) []styledLine {
@@ -367,61 +373,148 @@ func boxedLines(width int, label, content string, style tcell.Style) []styledLin
 	return lines
 }
 
-func (app *App) drawEditorAndFooter(width, height, _ int) {
-	layout := app.composerLayout(width, height)
-	for index, line := range layout.autocompleteLines {
-		writeLine(app.frame, layout.startRow+index, width, line.Text, line.Style)
+func (app *App) drawAutocompleteWindow(layout *runtimeLayout) {
+	window := layout.Autocomplete
+	if !window.Visible || window.Height <= 0 {
+		return
 	}
-	borderStyle := app.theme.style(app.editorBorderColor())
-	for index, line := range layout.editor.Lines {
-		writeEditorLine(app.frame, layout.editorStart+index, width, line, index, len(layout.editor.Lines), borderStyle)
+	lines := app.autocompleteLines(window.Width)
+	for index, line := range lines {
+		writeLine(app.frame, window.Y+index, window.Width, line.Text, line.Style)
 	}
-	for index, line := range layout.footerLines {
-		writeLine(app.frame, layout.footerStart+index, width, line.Text, line.Style)
-	}
-	app.screen.ShowCursor(layout.editor.CursorCol, layout.editorStart+layout.editor.CursorRow)
 }
 
-func (app *App) composerReserve(width, height int) int {
-	return app.composerLayout(width, height).reserve
-}
-
-type composerLayout struct {
-	footerLines       []styledLine
-	autocompleteLines []styledLine
-	editor            editorRender
-	startRow          int
-	editorStart       int
-	footerStart       int
-	reserve           int
-}
-
-func (app *App) composerLayout(width, height int) composerLayout {
-	footerLines := app.footerLines(width)
-	autocompleteLines := app.autocompleteLines(width)
-	editorRows := min(defaultEditorRows, max(3, height-len(footerLines)-len(autocompleteLines)-2))
+func (app *App) drawComposerWindow(layout *runtimeLayout) {
+	window := layout.Composer
+	if !window.Visible || window.Height <= 0 {
+		return
+	}
+	bodyRows := max(1, window.Height-2)
 	editor := renderEditor(
 		[]rune(app.composerText()),
 		app.composerCursor(),
-		width,
-		editorRows-2,
+		window.Width,
+		bodyRows,
 		app.theme,
 		app.editorBorderColor(),
 		app.composerBorderLabel(),
 	)
-	reserve := len(footerLines) + len(autocompleteLines) + len(editor.Lines)
-	startRow := max(0, height-reserve)
-	editorStart := startRow + len(autocompleteLines)
-	footerStart := height - len(footerLines)
+	borderStyle := app.theme.style(app.editorBorderColor())
+	for index, line := range editor.Lines {
+		writeEditorLine(app.frame, window.Y+index, window.Width, line, index, len(editor.Lines), borderStyle)
+	}
+	window.CursorRow = editor.CursorRow
+	window.CursorCol = editor.CursorCol
+	app.runtimeWindows[window.Name] = window
+}
 
-	return composerLayout{
-		editor:            editor,
-		footerLines:       footerLines,
-		autocompleteLines: autocompleteLines,
-		startRow:          startRow,
-		editorStart:       editorStart,
-		footerStart:       footerStart,
-		reserve:           reserve,
+func (app *App) drawStatusWindow(layout *runtimeLayout) {
+	window := layout.Status
+	if !window.Visible || window.Height <= 0 {
+		return
+	}
+	lines := app.footerLines(window.Width)
+	for index, line := range lines {
+		writeLine(app.frame, window.Y+index, window.Width, line.Text, line.Style)
+	}
+}
+
+func (app *App) composerReserve(width, height int) int {
+	layout := app.defaultRuntimeLayout(width, height)
+	return height - layout.Transcript.Height
+}
+
+func (app *App) currentRuntimeLayout() runtimeLayout {
+	width, height := 80, 24
+	if app.screen != nil {
+		width, height = app.screen.Size()
+	}
+	layout := app.defaultRuntimeLayout(width, height)
+	return app.mergeRuntimeLayout(&layout)
+}
+
+func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
+	statusLines := app.footerLines(width)
+	autocompleteLines := app.autocompleteLines(width)
+	composerHeight := min(defaultEditorRows, max(3, height-len(statusLines)-len(autocompleteLines)-2))
+	composerHeight = max(3, composerHeight)
+	transcriptHeight := max(1, height-(len(statusLines)+len(autocompleteLines)+composerHeight))
+	autocompleteStart := transcriptHeight
+	composerStart := autocompleteStart + len(autocompleteLines)
+	statusStart := height - len(statusLines)
+
+	return runtimeLayout{
+		Width:  width,
+		Height: height,
+		Transcript: extension.WindowState{
+			Metadata:  map[string]any{"count": len(app.messages)},
+			Name:      extensionBufferTranscript,
+			Role:      extensionBufferTranscript,
+			Buffer:    extensionBufferTranscript,
+			X:         0,
+			Y:         0,
+			Width:     width,
+			Height:    transcriptHeight,
+			CursorRow: 0,
+			CursorCol: 0,
+			Visible:   true,
+		},
+		Autocomplete: extension.WindowState{
+			Metadata:  map[string]any{},
+			Name:      "autocomplete",
+			Role:      "autocomplete",
+			Buffer:    extensionBufferStatus,
+			X:         0,
+			Y:         autocompleteStart,
+			Width:     width,
+			Height:    len(autocompleteLines),
+			CursorRow: 0,
+			CursorCol: 0,
+			Visible:   len(autocompleteLines) > 0,
+		},
+		Composer: extension.WindowState{
+			Metadata:  map[string]any{},
+			Name:      extensionBufferComposer,
+			Role:      extensionBufferComposer,
+			Buffer:    extensionBufferComposer,
+			X:         0,
+			Y:         composerStart,
+			Width:     width,
+			Height:    composerHeight,
+			CursorRow: 0,
+			CursorCol: 0,
+			Visible:   true,
+		},
+		Status: extension.WindowState{
+			Metadata:  map[string]any{},
+			Name:      extensionBufferStatus,
+			Role:      extensionBufferStatus,
+			Buffer:    extensionBufferStatus,
+			X:         0,
+			Y:         statusStart,
+			Width:     width,
+			Height:    len(statusLines),
+			CursorRow: 0,
+			CursorCol: 0,
+			Visible:   true,
+		},
+	}
+}
+
+func (app *App) mergeRuntimeLayout(layout *runtimeLayout) runtimeLayout {
+	windows := app.cloneRuntimeWindows(layout)
+	transcript := windows[extensionBufferTranscript]
+	autocomplete := windows["autocomplete"]
+	composer := windows[extensionBufferComposer]
+	status := windows[extensionBufferStatus]
+
+	return runtimeLayout{
+		Width:        layout.Width,
+		Height:       layout.Height,
+		Transcript:   transcript,
+		Autocomplete: autocomplete,
+		Composer:     composer,
+		Status:       status,
 	}
 }
 
@@ -459,7 +552,11 @@ func (app *App) writeStyledLine(row, width int, line styledLine) {
 }
 
 func writeLine(screen cellTarget, row, width int, text string, style tcell.Style) {
-	if row < 0 {
+	writeTextAt(screen, 0, row, width, text, style)
+}
+
+func writeTextAt(screen cellTarget, column, row, width int, text string, style tcell.Style) {
+	if row < 0 || column < 0 || width <= 0 {
 		return
 	}
 	line := []rune(truncateText(text, width))
@@ -468,7 +565,7 @@ func writeLine(screen cellTarget, row, width int, text string, style tcell.Style
 		if index < len(line) {
 			value = line[index]
 		}
-		screen.SetContent(index, row, value, nil, style)
+		screen.SetContent(column+index, row, value, nil, style)
 	}
 }
 
@@ -529,4 +626,120 @@ func writeEditorLine(
 		}
 		screen.SetContent(index, row, value, nil, style)
 	}
+}
+
+func (app *App) cloneRuntimeWindows(layout *runtimeLayout) map[string]extension.WindowState {
+	windows := map[string]extension.WindowState{
+		layout.Transcript.Name:   layout.Transcript,
+		layout.Autocomplete.Name: layout.Autocomplete,
+		layout.Composer.Name:     layout.Composer,
+		layout.Status.Name:       layout.Status,
+	}
+	for name, window := range app.runtimeWindows {
+		windows[name] = window
+	}
+	for name, window := range windows {
+		if window.Name == "" {
+			window.Name = name
+		}
+		windows[name] = window
+	}
+
+	return windows
+}
+
+func (app *App) applyUIOverrides(layout *runtimeLayout) {
+	windows := app.cloneRuntimeWindows(layout)
+	for name, override := range app.uiWindowOverrides {
+		window, ok := windows[name]
+		if !ok || !window.Visible {
+			continue
+		}
+		if override.Reset {
+			clearWindow(app.frame, &window)
+		}
+		for index := range override.DrawOps {
+			drawOp := &override.DrawOps[index]
+			app.drawUIWindowText(&window, drawOp)
+		}
+	}
+}
+
+func (app *App) drawUIWindowText(window *extension.WindowState, drawOp *extension.UIDrawOp) {
+	style := app.uiStyle(drawOp.Style)
+	writeTextAt(
+		app.frame,
+		window.X+drawOp.Col,
+		window.Y+drawOp.Row,
+		window.Width-drawOp.Col,
+		drawOp.Text,
+		style,
+	)
+}
+
+func clearWindow(target cellTarget, window *extension.WindowState) {
+	style := tcell.StyleDefault
+	for row := 0; row < window.Height; row++ {
+		writeLine(target, window.Y+row, window.Width, "", style)
+	}
+}
+
+func (app *App) uiStyle(style extension.UIStyle) tcell.Style {
+	resolved := tcell.StyleDefault
+	if style.FG != "" {
+		resolved = resolved.Foreground(app.namedUIColor(style.FG))
+	}
+	if style.BG != "" {
+		resolved = resolved.Background(app.namedUIColor(style.BG))
+	}
+	if style.Bold {
+		resolved = resolved.Bold(true)
+	}
+	if style.Italic {
+		resolved = resolved.Italic(true)
+	}
+
+	return resolved
+}
+
+func (app *App) namedUIColor(name string) tcell.Color {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "accent":
+		return app.theme.colors[colorAccent]
+	case "border":
+		return app.theme.colors[colorBorder]
+	case "muted":
+		return app.theme.colors[colorMuted]
+	case "dim":
+		return app.theme.colors[colorDim]
+	case "text", "white", "default":
+		return app.theme.colors[colorText]
+	case "warning":
+		return app.theme.colors[colorWarning]
+	case "error":
+		return app.theme.colors[colorError]
+	case "success":
+		return app.theme.colors[colorSuccess]
+	default:
+		return tcell.ColorDefault
+	}
+}
+
+func (app *App) showRuntimeCursor(layout *runtimeLayout) {
+	if app.screen == nil {
+		return
+	}
+	windows := app.cloneRuntimeWindows(layout)
+	if app.uiCursor != nil {
+		if window, ok := windows[app.uiCursor.Window]; ok {
+			app.screen.ShowCursor(window.X+app.uiCursor.Col, window.Y+app.uiCursor.Row)
+			return
+		}
+	}
+	composer, ok := windows[extensionBufferComposer]
+	if !ok {
+		app.screen.HideCursor()
+		return
+	}
+	app.screen.ShowCursor(composer.X+composer.CursorCol, composer.Y+composer.CursorRow)
 }

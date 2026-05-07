@@ -87,9 +87,18 @@ func TestVimComposerBorderShowsMode(t *testing.T) {
 
 	app := newVimTestApp(t)
 
-	layout := app.composerLayout(80, 24)
-	if len(layout.editor.Lines) == 0 || !strings.HasSuffix(layout.editor.Lines[0].Text, "vim:INSERT──╮") {
-		t.Fatalf("editor border = %q, want vim mode at end", layout.editor.Lines[0].Text)
+	window := app.currentRuntimeLayout().Composer
+	editor := renderEditor(
+		[]rune(app.composerText()),
+		app.composerCursor(),
+		window.Width,
+		max(1, window.Height-2),
+		app.theme,
+		app.editorBorderColor(),
+		app.composerBorderLabel(),
+	)
+	if len(editor.Lines) == 0 || !strings.HasSuffix(editor.Lines[0].Text, "vim:INSERT──╮") {
+		t.Fatalf("editor border = %q, want vim mode at end", editor.Lines[0].Text)
 	}
 	lines := app.footerLines(80)
 	if len(lines) < 2 || containsText(lines[1].Text, vimInsertLabel) {

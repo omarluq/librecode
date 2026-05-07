@@ -12,6 +12,7 @@ const (
 	luaFieldCreate    = "create"
 	luaFieldKey       = "key"
 	luaFieldName      = "name"
+	luaFieldSet       = "set"
 	luaFieldText      = "text"
 )
 
@@ -302,6 +303,77 @@ func luaBufferAppend(value lua.LValue) BufferAppend {
 		Text: value.String(),
 		Role: "custom",
 	}
+}
+
+func luaWindowState(name string, value lua.LValue) WindowState {
+	if table, ok := value.(*lua.LTable); ok {
+		return WindowState{
+			Metadata:  luaDetails(table.RawGetString("metadata")),
+			Name:      luaTableString(table, "name", name),
+			Role:      luaTableString(table, "role", ""),
+			Buffer:    luaTableString(table, "buffer", ""),
+			X:         luaTableIntValue(table, "x"),
+			Y:         luaTableIntValue(table, "y"),
+			Width:     luaTableIntValue(table, "width"),
+			Height:    luaTableIntValue(table, "height"),
+			CursorRow: luaTableIntValue(table, "cursor_row"),
+			CursorCol: luaTableIntValue(table, "cursor_col"),
+			Visible:   luaTableBool(table, "visible"),
+		}
+	}
+
+	return WindowState{
+		Metadata:  map[string]any{},
+		Name:      name,
+		Role:      "",
+		Buffer:    value.String(),
+		X:         0,
+		Y:         0,
+		Width:     0,
+		Height:    0,
+		CursorRow: 0,
+		CursorCol: 0,
+		Visible:   true,
+	}
+}
+
+func luaUIDrawOp(value lua.LValue) *UIDrawOp {
+	if table, ok := value.(*lua.LTable); ok {
+		return &UIDrawOp{
+			Style: UIStyle{
+				FG:     luaTableString(table, "fg", ""),
+				BG:     luaTableString(table, "bg", ""),
+				Bold:   luaTableBool(table, "bold"),
+				Italic: luaTableBool(table, "italic"),
+			},
+			Window: luaTableString(table, "window", ""),
+			Text:   luaTableString(table, "text", ""),
+			Row:    luaTableIntValue(table, "row"),
+			Col:    luaTableIntValue(table, "col"),
+			Clear:  luaTableBool(table, "clear"),
+		}
+	}
+
+	return nil
+}
+
+func luaUICursor(value lua.LValue) *UICursor {
+	table, ok := value.(*lua.LTable)
+	if !ok {
+		return nil
+	}
+
+	return &UICursor{
+		Window: luaTableString(table, "window", ""),
+		Row:    luaTableIntValue(table, "row"),
+		Col:    luaTableIntValue(table, "col"),
+	}
+}
+
+func luaTableIntValue(table *lua.LTable, key string) int {
+	value, _ := luaTableInt(table, key, 0)
+
+	return value
 }
 
 func luaActionCall(value lua.LValue) ActionCall {

@@ -62,6 +62,20 @@ type cachedRenderedMessage struct {
 	Valid bool
 }
 
+type runtimeLayout struct {
+	Transcript   extension.WindowState
+	Autocomplete extension.WindowState
+	Composer     extension.WindowState
+	Status       extension.WindowState
+	Width        int
+	Height       int
+}
+
+type uiWindowOverride struct {
+	DrawOps []extension.UIDrawOp
+	Reset   bool
+}
+
 // RunOptions configures the terminal app.
 type RunOptions struct {
 	Extensions extension.TerminalEventRunner `json:"-"`
@@ -95,6 +109,9 @@ type App struct {
 	canceledPrompts              map[uint64]*activePromptState
 	scopedEnabled                map[string]bool
 	extensionRuntimeBuffers      map[string]extension.BufferState
+	runtimeWindows               map[string]extension.WindowState
+	uiWindowOverrides            map[string]uiWindowOverride
+	uiCursor                     *extension.UICursor
 	theme                        terminalTheme
 	selectedPanelKind            panelKind
 	sessionID                    string
@@ -227,6 +244,9 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		streamingBlockLineCache:      nil,
 		streamingBlockLineCacheState: emptyMessageLineCacheState(),
 		extensionRuntimeBuffers:      map[string]extension.BufferState{},
+		runtimeWindows:               map[string]extension.WindowState{},
+		uiWindowOverrides:            map[string]uiWindowOverride{},
+		uiCursor:                     nil,
 	}
 	app.addWelcomeMessage()
 

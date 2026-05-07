@@ -54,6 +54,31 @@ type ActionCall struct {
 	Name string `json:"name"`
 }
 
+// UIStyle describes minimal low-level styling for extension-driven draw operations.
+type UIStyle struct {
+	FG     string `json:"fg"`
+	BG     string `json:"bg"`
+	Bold   bool   `json:"bold"`
+	Italic bool   `json:"italic"`
+}
+
+// UIDrawOp describes one low-level window-relative drawing operation.
+type UIDrawOp struct {
+	Window string  `json:"window"`
+	Text   string  `json:"text"`
+	Style  UIStyle `json:"style"`
+	Row    int     `json:"row"`
+	Col    int     `json:"col"`
+	Clear  bool    `json:"clear"`
+}
+
+// UICursor requests a cursor position relative to a window.
+type UICursor struct {
+	Window string `json:"window"`
+	Row    int    `json:"row"`
+	Col    int    `json:"col"`
+}
+
 // WindowState describes an extension-visible window or viewport.
 type WindowState struct {
 	Metadata  map[string]any `json:"metadata"`
@@ -82,9 +107,13 @@ type TerminalEvent struct {
 type TerminalEventResult struct {
 	Buffers        map[string]BufferState `json:"buffers"`
 	Windows        map[string]WindowState `json:"windows"`
+	UICursor       *UICursor              `json:"ui_cursor,omitempty"`
 	Appends        []BufferAppend         `json:"appends"`
 	Actions        []ActionCall           `json:"actions"`
+	UIDrawOps      []UIDrawOp             `json:"ui_draw_ops"`
+	ResetUIWindows []string               `json:"reset_ui_windows"`
 	DeletedBuffers []string               `json:"deleted_buffers"`
+	DeletedWindows []string               `json:"deleted_windows"`
 	Consumed       bool                   `json:"consumed"`
 }
 
