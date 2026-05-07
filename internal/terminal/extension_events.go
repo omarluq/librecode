@@ -13,18 +13,34 @@ import (
 const (
 	extensionEventKey          = "key"
 	extensionEventPromptSubmit = "prompt_submit"
+	extensionEventStartup      = "startup"
 	extensionBufferComposer    = "composer"
 	extensionBufferStatus      = "status"
 	extensionBufferTranscript  = "transcript"
 )
 
-func terminalEventRunner(runner extension.ComposerRunner) extension.TerminalEventRunner {
-	terminalRunner, ok := runner.(extension.TerminalEventRunner)
-	if !ok {
+func (app *App) runStartupExtensions(ctx context.Context) error {
+	if app.extensions == nil {
 		return nil
 	}
 
-	return terminalRunner
+	event := app.newExtensionEvent(extensionEventStartup, extension.ComposerKeyEvent{
+		Key:   "",
+		Text:  "",
+		Ctrl:  false,
+		Alt:   false,
+		Shift: false,
+	})
+	result, err := app.extensions.HandleTerminalEvent(
+		ctx,
+		&event,
+	)
+	if err != nil {
+		return err
+	}
+	app.applyExtensionEventResult(ctx, &result)
+
+	return nil
 }
 
 func (app *App) handleExtensionKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
@@ -32,14 +48,15 @@ func (app *App) handleExtensionKey(ctx context.Context, event *tcell.EventKey) (
 		return false, nil
 	}
 
+	extEvent := app.newExtensionEvent(extensionEventKey, terminalKeyEvent(event))
 	result, err := app.extensions.HandleTerminalEvent(
 		ctx,
-		app.newExtensionEvent(extensionEventKey, terminalKeyEvent(event)),
+		&extEvent,
 	)
 	if err != nil {
 		return false, err
 	}
-	app.applyExtensionEventResult(result)
+	app.applyExtensionEventResult(ctx, &result)
 
 	return result.Consumed, nil
 }
@@ -49,19 +66,21 @@ func (app *App) applyPromptSubmitExtensions(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
+	event := app.newExtensionEvent(extensionEventPromptSubmit, extension.ComposerKeyEvent{
+		Key:   "enter",
+		Text:  "",
+		Ctrl:  false,
+		Alt:   false,
+		Shift: false,
+	})
 	result, err := app.extensions.HandleTerminalEvent(
 		ctx,
-		app.newExtensionEvent(extensionEventPromptSubmit, extension.ComposerKeyEvent{
-			Key:  "enter",
-			Text: "",
-			Ctrl: false,
-			Alt:  false,
-		}),
+		&event,
 	)
 	if err != nil {
 		return false, err
 	}
-	app.applyExtensionEventResult(result)
+	app.applyExtensionEventResult(ctx, &result)
 
 	return result.Consumed, nil
 }
@@ -69,6 +88,7 @@ func (app *App) applyPromptSubmitExtensions(ctx context.Context) (bool, error) {
 func (app *App) newExtensionEvent(name string, key extension.ComposerKeyEvent) extension.TerminalEvent {
 	return extension.TerminalEvent{
 		Buffers: app.extensionBuffers(),
+		Windows: app.extensionWindows(),
 		Context: app.extensionContext(),
 		Name:    name,
 		Key:     key,
@@ -95,19 +115,19 @@ func (app *App) extensionBuffers() map[string]extension.BufferState {
 }
 
 func (app *App) composerBufferState() extension.BufferState {
-	label := ""
-	if app.composer != nil {
-		label = app.composer.label
+	return cloneBufferState(&app.composerBuffer)
+}
+
+func cloneExtensionMetadata(values map[string]any) map[string]any {
+	if values == nil {
+		return map[string]any{}
+	}
+	cloned := make(map[string]any, len(values))
+	for key, value := range values {
+		cloned[key] = value
 	}
 
-	return extension.BufferState{
-		Metadata: map[string]any{},
-		Name:     extensionBufferComposer,
-		Text:     app.editor.text(),
-		Chars:    editorChars(app.editor.value),
-		Label:    label,
-		Cursor:   app.editor.cursor,
-	}
+	return cloned
 }
 
 func textBufferState(name, text string) extension.BufferState {
@@ -130,23 +150,65 @@ func stringBufferChars(text string) []string {
 	return chars
 }
 
+func (app *App) extensionWindows() map[string]extension.WindowState {
+	layout := app.composerLayout(80, 24)
+	return map[string]extension.WindowState{
+		extensionBufferComposer: {
+			Metadata:  map[string]any{},
+			Name:      extensionBufferComposer,
+			Role:      extensionBufferComposer,
+			Buffer:    extensionBufferComposer,
+			X:         0,
+			Y:         layout.editorStart,
+			Width:     80,
+			Height:    len(layout.editor.Lines),
+			CursorRow: layout.editor.CursorRow,
+			CursorCol: layout.editor.CursorCol,
+			Visible:   true,
+		},
+		extensionBufferStatus: {
+			Metadata:  map[string]any{},
+			Name:      extensionBufferStatus,
+			Role:      extensionBufferStatus,
+			Buffer:    extensionBufferStatus,
+			X:         0,
+			Y:         layout.footerStart,
+			Width:     80,
+			Height:    len(layout.footerLines),
+			CursorRow: 0,
+			CursorCol: 0,
+			Visible:   true,
+		},
+		extensionBufferTranscript: {
+			Metadata:  map[string]any{"count": len(app.messages)},
+			Name:      extensionBufferTranscript,
+			Role:      extensionBufferTranscript,
+			Buffer:    extensionBufferTranscript,
+			X:         0,
+			Y:         0,
+			Width:     80,
+			Height:    0,
+			CursorRow: 0,
+			CursorCol: 0,
+			Visible:   true,
+		},
+	}
+}
+
 func (app *App) extensionContext() map[string]any {
-	eventContext := map[string]any{
+	return map[string]any{
 		"mode":         string(app.mode),
 		"working":      app.working,
 		"auth_working": app.authWorking,
 		"cwd":          app.cwd,
 		"session_id":   app.sessionID,
 	}
-	if app.composer != nil {
-		eventContext["composer_mode"] = app.composer.mode
-		eventContext["composer_label"] = app.composer.label
-	}
-
-	return eventContext
 }
 
-func (app *App) applyExtensionEventResult(result extension.TerminalEventResult) {
+func (app *App) applyExtensionEventResult(ctx context.Context, result *extension.TerminalEventResult) {
+	if result == nil {
+		return
+	}
 	for _, name := range result.DeletedBuffers {
 		app.applyExtensionBufferDelete(name)
 	}
@@ -155,6 +217,32 @@ func (app *App) applyExtensionEventResult(result extension.TerminalEventResult) 
 	}
 	for _, bufferAppend := range result.Appends {
 		app.applyExtensionBufferAppend(bufferAppend)
+	}
+	for _, action := range result.Actions {
+		app.applyExtensionAction(ctx, action)
+	}
+}
+
+func (app *App) applyExtensionAction(ctx context.Context, action extension.ActionCall) {
+	handlers := map[string]func(){
+		"autocomplete.accept": func() { _ = app.acceptAutocomplete() },
+		"followup.dequeue":    app.dequeueFollowUp,
+		"followup.queue":      app.queueFollowUp,
+		"history.next":        func() { _ = app.showNextPrompt() },
+		"history.prev":        func() { _ = app.showPreviousPrompt() },
+		"interrupt":           func() { app.handleEscape(ctx) },
+		"prompt.cancel":       func() { app.cancelActivePrompt(ctx) },
+		"transcript.tree":     func() { app.openTreePanel(ctx) },
+	}
+	if handler, ok := handlers[action.Name]; ok {
+		handler()
+		return
+	}
+	if action.Name != "submit" {
+		return
+	}
+	if _, err := app.submit(ctx); err != nil {
+		app.addSystemMessage(err.Error())
 	}
 }
 
@@ -175,7 +263,7 @@ func (app *App) applyExtensionBufferDelete(name string) {
 	delete(app.extensionRuntimeBuffers, name)
 	switch name {
 	case extensionBufferComposer:
-		app.editor.clear()
+		app.setComposerBuffer(nil)
 		app.resetPromptHistoryNavigation()
 	case extensionBufferStatus:
 		app.statusMessage = ""
@@ -185,13 +273,10 @@ func (app *App) applyExtensionBufferDelete(name string) {
 }
 
 func (app *App) applyComposerBuffer(buffer *extension.BufferState) {
-	oldText := app.editor.text()
-	app.editor.setText(buffer.Text)
-	app.editor.cursor = min(max(0, buffer.Cursor), len(app.editor.value))
-	if app.composer != nil && buffer.Label != "" {
-		app.composer.label = buffer.Label
-	}
-	if buffer.Text != oldText {
+	oldText := app.composerText()
+	oldCursor := app.composerCursor()
+	app.setComposerBuffer(buffer)
+	if app.composerText() != oldText || app.composerCursor() != oldCursor {
 		app.resetPromptHistoryNavigation()
 	}
 }
@@ -248,9 +333,10 @@ func terminalKeyEvent(event *tcell.EventKey) extension.ComposerKeyEvent {
 	keyName = strings.ReplaceAll(keyName, " ", "-")
 
 	return extension.ComposerKeyEvent{
-		Key:  keyName,
-		Text: event.Str(),
-		Ctrl: event.Modifiers()&tcell.ModCtrl != 0,
-		Alt:  event.Modifiers()&tcell.ModAlt != 0,
+		Key:   keyName,
+		Text:  event.Str(),
+		Ctrl:  event.Modifiers()&tcell.ModCtrl != 0,
+		Alt:   event.Modifiers()&tcell.ModAlt != 0,
+		Shift: event.Modifiers()&tcell.ModShift != 0,
 	}
 }

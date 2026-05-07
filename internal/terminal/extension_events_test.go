@@ -22,7 +22,7 @@ func TestExtensionKeyCanMutateComposerAndConsumeDefault(t *testing.T) {
 	app := newExtensionRuntimeTestApp(t, `
 librecode.on("key", function(event)
   if event.key == "x" then
-    librecode.buf.set("composer", { text = "lua", cursor = 3, label = "lua:EDIT" })
+    librecode.buf.set("composer", { text = "lua", cursor = 1, label = "lua:EDIT" })
     librecode.event.consume()
   end
 end)
@@ -31,10 +31,10 @@ end)
 	pressTerminalRune(t, app, "x")
 
 	assertEditorText(t, app, "lua")
-	if got, want := app.editor.cursor, 3; got != want {
+	if got, want := app.composerCursor(), 1; got != want {
 		t.Fatalf("cursor = %d, want %d", got, want)
 	}
-	if got, want := app.composer.label, "lua:EDIT"; got != want {
+	if got, want := app.composerLabel(), "lua:EDIT"; got != want {
 		t.Fatalf("composer label = %s, want %s", got, want)
 	}
 }
@@ -50,7 +50,7 @@ librecode.on("prompt_submit", function()
   librecode.event.consume()
 end)
 `)
-	app.editor.setText("from extension")
+	app.setComposerText("from extension")
 
 	shouldQuit, err := app.submit(context.Background())
 	require.NoError(t, err)
@@ -91,6 +91,28 @@ end)
 	}
 }
 
+func TestExtensionActionHistoryPrevRestoresPrompt(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("key", function(event)
+  if event.key == "f1" then
+    librecode.action.run("history.prev")
+    librecode.event.consume()
+  end
+end)
+`)
+	app.recordPromptHistory("first")
+	app.recordPromptHistory("second")
+
+	shouldQuit, err := app.handleKey(context.Background(), tcell.NewEventKey(tcell.KeyF1, "", tcell.ModNone))
+	require.NoError(t, err)
+	if shouldQuit {
+		t.Fatal("handleKey should not quit")
+	}
+	assertEditorText(t, app, "second")
+}
+
 func newExtensionRuntimeTestApp(t *testing.T, source string) *App {
 	t.Helper()
 
@@ -101,8 +123,8 @@ func newExtensionRuntimeTestApp(t *testing.T, source string) *App {
 	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
 
 	app := newRenderTestApp(t)
-	app.composer = newComposer("lua", "lua:READY", manager)
-	app.extensions = terminalEventRunner(manager)
+	app.extensions = manager
+	require.NoError(t, app.runStartupExtensions(context.Background()))
 
 	return app
 }

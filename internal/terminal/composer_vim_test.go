@@ -24,7 +24,7 @@ func TestVimComposerStartsInInsertMode(t *testing.T) {
 	pressTerminalRune(t, app, "h")
 
 	assertEditorText(t, app, "h")
-	if got, want := app.composer.label, vimInsertLabel; got != want {
+	if got, want := app.composerLabel(), vimInsertLabel; got != want {
 		t.Fatalf("vim label = %s, want %s", got, want)
 	}
 }
@@ -33,14 +33,14 @@ func TestVimComposerNormalModeMotionsAndDelete(t *testing.T) {
 	t.Parallel()
 
 	app := newVimTestApp(t)
-	app.editor.setText("hello")
+	app.setComposerText("hello")
 
 	pressTerminalKey(t, app, tcell.KeyEscape, "")
 	pressTerminalRune(t, app, "h")
 	pressTerminalRune(t, app, "x")
 
 	assertEditorText(t, app, "helo")
-	if got, want := app.editor.cursor, 3; got != want {
+	if got, want := app.composerCursor(), 3; got != want {
 		t.Fatalf("cursor = %d, want %d", got, want)
 	}
 }
@@ -49,7 +49,7 @@ func TestVimComposerChangeWordReturnsToInsert(t *testing.T) {
 	t.Parallel()
 
 	app := newVimTestApp(t)
-	app.editor.setText("hello world")
+	app.setComposerText("hello world")
 	pressTerminalKey(t, app, tcell.KeyEscape, "")
 	pressTerminalRune(t, app, "0")
 	pressTerminalRune(t, app, "c")
@@ -58,7 +58,7 @@ func TestVimComposerChangeWordReturnsToInsert(t *testing.T) {
 	pressTerminalRune(t, app, "o")
 
 	assertEditorText(t, app, "yo world")
-	if got, want := app.composer.label, vimInsertLabel; got != want {
+	if got, want := app.composerLabel(), vimInsertLabel; got != want {
 		t.Fatalf("vim label = %s, want %s", got, want)
 	}
 }
@@ -67,7 +67,7 @@ func TestVimComposerLineDeletePasteAndUndo(t *testing.T) {
 	t.Parallel()
 
 	app := newVimTestApp(t)
-	app.editor.setText("one\ntwo\nthree")
+	app.setComposerText("one\ntwo\nthree")
 	pressTerminalKey(t, app, tcell.KeyEscape, "")
 	pressTerminalRune(t, app, "g")
 	pressTerminalRune(t, app, "g")
@@ -88,7 +88,7 @@ func TestVimComposerBorderShowsMode(t *testing.T) {
 	app := newVimTestApp(t)
 
 	layout := app.composerLayout(80, 24)
-	if len(layout.editor.Lines) == 0 || !strings.HasSuffix(layout.editor.Lines[0].Text, "insert──╮") {
+	if len(layout.editor.Lines) == 0 || !strings.HasSuffix(layout.editor.Lines[0].Text, "vim:INSERT──╮") {
 		t.Fatalf("editor border = %q, want vim mode at end", layout.editor.Lines[0].Text)
 	}
 	lines := app.footerLines(80)
@@ -97,14 +97,26 @@ func TestVimComposerBorderShowsMode(t *testing.T) {
 	}
 }
 
+func TestVimComposerInsertModeOwnsSubmitAndNewline(t *testing.T) {
+	t.Parallel()
+
+	app := newVimTestApp(t)
+	app.setComposerText("hello")
+
+	pressTerminalShiftEnter(t, app)
+	assertEditorText(t, app, "hello\n")
+	if app.composerLabel() != vimInsertLabel {
+		t.Fatalf("label = %q, want %q", app.composerLabel(), vimInsertLabel)
+	}
+}
+
 func newVimTestApp(t *testing.T) *App {
 	t.Helper()
 
 	manager := newVimExtensionManager(t)
-	mode := manager.ComposerModes()[0]
 	app := newRenderTestApp(t)
-	app.composer = newComposer(mode.Name, mode.Label, manager)
-	app.extensions = terminalEventRunner(manager)
+	app.extensions = manager
+	require.NoError(t, app.runStartupExtensions(context.Background()))
 
 	return app
 }
@@ -118,15 +130,9 @@ func newVimExtensionManager(t *testing.T) *extension.Manager {
 	extensionPath := filepath.Join("..", "..", "extensions", "vim-mode.lua")
 	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
 
-	modes := manager.ComposerModes()
-	require.Len(t, modes, 1)
-	require.Equal(t, extension.ComposerMode{
-		Name:        "vim",
-		Description: "Full Vim mode for the chat composer",
-		Extension:   "vim-mode",
-		Label:       vimInsertLabel,
-		Default:     true,
-	}, modes[0])
+	loaded := manager.Extensions()
+	require.Len(t, loaded, 1)
+	require.NotEmpty(t, loaded[0].Keymaps)
 
 	return manager
 }
@@ -135,6 +141,18 @@ func pressTerminalRune(t *testing.T, app *App, value string) {
 	t.Helper()
 
 	shouldQuit, err := app.handleKey(context.Background(), tcell.NewEventKey(tcell.KeyRune, value, tcell.ModNone))
+	if err != nil {
+		t.Fatalf("handleKey returned error: %v", err)
+	}
+	if shouldQuit {
+		t.Fatal("handleKey should not quit")
+	}
+}
+
+func pressTerminalShiftEnter(t *testing.T, app *App) {
+	t.Helper()
+
+	shouldQuit, err := app.handleKey(context.Background(), tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModShift))
 	if err != nil {
 		t.Fatalf("handleKey returned error: %v", err)
 	}

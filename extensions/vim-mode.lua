@@ -568,16 +568,143 @@ local function handle_normal_command(chars, cursor, key)
   return chars, cursor
 end
 
+local function action_result(name)
+  return {
+    handled = true,
+    action = name,
+  }
+end
+
+local function sync_state(state, chars, cursor)
+  if chars ~= nil then
+    state.chars = chars
+    state.text = join(chars)
+  end
+  if cursor ~= nil then
+    state.cursor = cursor
+  end
+  state.metadata = state.metadata or {}
+  state.metadata.mode = mode
+  state.label = label()
+  return state
+end
+
+local function insert_text(chars, cursor, text)
+  if text == nil or text == "" then
+    return chars, cursor
+  end
+  push_undo(chars, cursor)
+  local insert_at = clamp(cursor, 0, #chars)
+  table.insert(chars, insert_at + 1, text)
+  clear_redo()
+  return chars, insert_at + 1
+end
+
+local function delete_backward(chars, cursor)
+  if cursor <= 0 then
+    return chars, cursor
+  end
+  return delete_range(chars, cursor, cursor - 1, cursor)
+end
+
+local function delete_forward(chars, cursor)
+  if cursor >= #chars then
+    return chars, cursor
+  end
+  return delete_range(chars, cursor, cursor, cursor + 1)
+end
+
+local function has_multiline(chars)
+  for i = 1, #chars do
+    if chars[i] == "\n" then
+      return true
+    end
+  end
+  return false
+end
+
+local function handle_insert_key(event, chars, cursor)
+  if event.alt and event.key == "enter" then
+    return action_result("followup.queue")
+  end
+  if event.alt and event.key == "up" then
+    return action_result("followup.dequeue")
+  end
+  if event.key == "escape" then
+    if event.working or event.auth_working then
+      return action_result("interrupt")
+    end
+    cursor = enter_normal(chars, cursor)
+    return result(true, chars, cursor)
+  end
+  if event.shift and event.key == "enter" then
+    chars, cursor = insert_text(chars, cursor, "\n")
+    return result(true, chars, cursor)
+  end
+  if event.key == "enter" then
+    return action_result("submit")
+  end
+  if event.key == "tab" then
+    return action_result("autocomplete.accept")
+  end
+  if event.key == "up" then
+    if has_multiline(chars) then
+      return result(true, chars, move_raw_line(chars, cursor, -1))
+    end
+    return action_result("history.prev")
+  end
+  if event.key == "down" then
+    if has_multiline(chars) then
+      return result(true, chars, move_raw_line(chars, cursor, 1))
+    end
+    return action_result("history.next")
+  end
+  if event.key == "left" or event.key == "ctrl+b" then
+    return result(true, chars, clamp(cursor - 1, 0, #chars))
+  end
+  if event.key == "right" or event.key == "ctrl+f" then
+    return result(true, chars, clamp(cursor + 1, 0, #chars))
+  end
+  if event.key == "home" or event.key == "ctrl+a" then
+    return result(true, chars, current_line_start(chars, cursor))
+  end
+  if event.key == "end" or event.key == "ctrl+e" then
+    return result(true, chars, current_line_end(chars, cursor))
+  end
+  if event.key == "backspace" then
+    chars, cursor = delete_backward(chars, cursor)
+    return result(true, chars, cursor)
+  end
+  if event.key == "delete" then
+    chars, cursor = delete_forward(chars, cursor)
+    return result(true, chars, cursor)
+  end
+  if event.key == "ctrl+w" then
+    chars, cursor = delete_range(chars, cursor, word_left(chars, cursor), cursor)
+    return result(true, chars, cursor)
+  end
+  if event.key == "ctrl+u" then
+    chars, cursor = delete_range(chars, cursor, current_line_start(chars, cursor), cursor)
+    return result(true, chars, cursor)
+  end
+  if event.key == "ctrl+k" then
+    chars, cursor = delete_range(chars, cursor, cursor, current_line_end(chars, cursor))
+    return result(true, chars, cursor)
+  end
+  if event.text ~= "" and not event.ctrl and not event.alt then
+    chars, cursor = insert_text(chars, cursor, event.text)
+    return result(true, chars, cursor)
+  end
+
+  return { handled = false }
+end
+
 local function on_key(event, state)
   local chars = copy_chars(state.chars)
   local cursor = clamp(state.cursor, 0, #chars)
 
   if mode == "insert" then
-    if event.key ~= "escape" then
-      return { handled = false, label = label() }
-    end
-    cursor = enter_normal(chars, cursor)
-    return result(true, chars, cursor)
+    return handle_insert_key(event, chars, cursor)
   end
 
   if event.key == "enter" then
@@ -585,11 +712,17 @@ local function on_key(event, state)
       pending = ""
       return result(true, chars, cursor)
     end
-    return { handled = false, label = label() }
+    return action_result("submit")
   end
 
   if event.key == "escape" then
-    pending = ""
+    if pending ~= "" then
+      pending = ""
+      return result(true, chars, cursor)
+    end
+    if event.working or event.auth_working then
+      return action_result("interrupt")
+    end
     mode = "normal"
     cursor = clamp_normal_cursor(chars, cursor)
     return result(true, chars, cursor)
@@ -604,27 +737,45 @@ local function on_key(event, state)
   return result(true, chars, cursor)
 end
 
-librecode.register_composer_mode("vim", "Full Vim mode for the chat composer", {
-  default = true,
-  label = label(),
-})
+local function composer_window_name()
+  return librecode.win.find({ role = "composer" })
+end
+
+local function composer_window_buffer()
+  local win = composer_window_name()
+  if win == nil then
+    return "composer"
+  end
+  local buf = librecode.win.get_buf(win)
+  if buf == nil or buf == "" then
+    return "composer"
+  end
+  return buf
+end
+
+librecode.on("startup", function()
+  mode = "insert"
+  pending = ""
+  register = {}
+  undo = {}
+  redo = {}
+
+  local buffer_name = composer_window_buffer()
+  local state = librecode.buf.get(buffer_name)
+  librecode.buf.set(buffer_name, sync_state(state, state.chars, state.cursor))
+end)
 
 librecode.keymap.set("composer", "*", function(event)
-  local state = librecode.buf.get("composer")
+  local buffer_name = composer_window_buffer()
+  local state = librecode.buf.get(buffer_name)
   local outcome = on_key(event, state)
 
-  if outcome.chars ~= nil then
-    state.chars = outcome.chars
-    state.text = join(outcome.chars)
-  end
-  if outcome.cursor ~= nil then
-    state.cursor = outcome.cursor
-  end
-  if outcome.label ~= nil then
-    state.label = outcome.label
+  if outcome.action ~= nil and outcome.action ~= "" then
+    librecode.action.run(outcome.action)
   end
 
-  librecode.buf.set("composer", state)
+  state = sync_state(state, outcome.chars, outcome.cursor)
+  librecode.buf.set(buffer_name, state)
   if outcome.handled then
     librecode.event.consume()
   end

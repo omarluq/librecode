@@ -24,23 +24,6 @@ func (input *editor) text() string {
 	return string(input.value)
 }
 
-func (input *editor) empty() bool {
-	return len(input.value) == 0
-}
-
-func (input *editor) setText(text string) {
-	input.value = []rune(text)
-	input.cursor = len(input.value)
-}
-
-func (input *editor) clear() string {
-	text := input.text()
-	input.value = []rune{}
-	input.cursor = 0
-
-	return text
-}
-
 func (input *editor) insertRune(value rune) {
 	if value == 0 {
 		return

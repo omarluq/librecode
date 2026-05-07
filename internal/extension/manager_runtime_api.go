@@ -274,24 +274,8 @@ func keymapEventModes(event *luaHostEvent) map[string]struct{} {
 	if _, ok := event.buffers[keymapModeComposer]; ok {
 		modes[keymapModeComposer] = struct{}{}
 	}
-	addComposerModes(modes, event.context)
 
 	return modes
-}
-
-func addComposerModes(modes map[string]struct{}, eventContext map[string]any) {
-	composerMode, modeOK := eventContext["composer_mode"].(string)
-	if modeOK && composerMode != "" {
-		modes[normalizeKeymapMode(composerMode)] = struct{}{}
-		modes[normalizeKeymapMode(keymapModeComposer+"."+composerMode)] = struct{}{}
-	}
-	composerLabel, labelOK := eventContext["composer_label"].(string)
-	if !labelOK || composerLabel == "" {
-		return
-	}
-	labelMode := strings.NewReplacer(":", ".", " ", "_").Replace(composerLabel)
-	modes[normalizeKeymapMode(labelMode)] = struct{}{}
-	modes[normalizeKeymapMode(keymapModeComposer+"."+labelMode)] = struct{}{}
 }
 
 func luaAutocmdArgs(state *lua.LState) (priority int, function *lua.LFunction) {

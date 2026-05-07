@@ -73,14 +73,14 @@ func (app *App) acceptAutocomplete() bool {
 		return false
 	}
 	app.resetPromptHistoryNavigation()
-	app.editor.setText("/" + matches[0].Name + " ")
+	app.setComposerText("/" + matches[0].Name + " ")
 	app.setStatus("completed /" + matches[0].Name)
 
 	return true
 }
 
 func (app *App) autocompleteMatches() []slashSuggestion {
-	text := app.editor.text()
+	text := app.composerText()
 	if strings.Contains(text, "\n") {
 		return nil
 	}

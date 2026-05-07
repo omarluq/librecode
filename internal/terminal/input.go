@@ -56,8 +56,8 @@ func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) ke
 	if app.mode == modePanel && app.panel != nil {
 		return keyHandlingResult{err: app.handlePanelKey(ctx, event), shouldQuit: false, handled: true}
 	}
-	if handled, err := app.handlePreEditorKey(ctx, event); handled || err != nil {
-		return keyHandlingResult{err: err, shouldQuit: false, handled: handled}
+	if app.handlePreEditorKey(ctx, event) {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 	}
 
 	return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
@@ -69,7 +69,9 @@ func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool
 	}
 	if app.keys.matches(event, actionInputNewLine) {
 		app.resetPromptHistoryNavigation()
-		app.editor.insertRune('\n')
+		app.editComposer(func(input *editor) {
+			input.insertRune('\n')
+		})
 		return false, nil
 	}
 	if app.keys.matches(event, actionInputTab) && app.acceptAutocomplete() {
@@ -80,18 +82,15 @@ func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool
 	return false, nil
 }
 
-func (app *App) handlePreEditorKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
+func (app *App) handlePreEditorKey(ctx context.Context, event *tcell.EventKey) bool {
 	if app.handleTranscriptScroll(event) {
-		return true, nil
-	}
-	if handled, err := app.handleComposerKey(ctx, event); handled || err != nil {
-		return handled, err
+		return true
 	}
 	if app.handleGlobalShortcut(ctx, event) || app.handlePromptHistoryKey(event) {
-		return true, nil
+		return true
 	}
 
-	return false, nil
+	return false
 }
 
 func (app *App) handleGlobalShortcut(ctx context.Context, event *tcell.EventKey) bool {
@@ -136,24 +135,35 @@ func (app *App) handleEditorKey(event *tcell.EventKey) {
 	}
 	if event.Key() == tcell.KeyRune {
 		app.resetPromptHistoryNavigation()
-		app.editor.insertRune(eventRune(event))
+		app.editComposer(func(input *editor) {
+			input.insertRune(eventRune(event))
+		})
 	}
 }
 
 func (app *App) editorActions() []shortcutHandler {
 	return []shortcutHandler{
-		{action: actionCursorLeft, handler: app.editor.moveLeft},
-		{action: actionCursorRight, handler: app.editor.moveRight},
-		{action: actionCursorWordLeft, handler: app.editor.moveWordLeft},
-		{action: actionCursorWordRight, handler: app.editor.moveWordRight},
-		{action: actionCursorLineStart, handler: app.editor.moveLineStart},
-		{action: actionCursorLineEnd, handler: app.editor.moveLineEnd},
-		{action: actionDeleteCharBackward, handler: app.editor.backspace},
-		{action: actionDeleteCharForward, handler: app.editor.deleteForward},
-		{action: actionDeleteWordBackward, handler: app.editor.deleteWordBackward},
-		{action: actionDeleteWordForward, handler: app.editor.deleteWordForward},
-		{action: actionDeleteToLineStart, handler: app.editor.deleteToLineStart},
-		{action: actionDeleteToLineEnd, handler: app.editor.deleteToLineEnd},
+		app.composerShortcut(actionCursorLeft, (*editor).moveLeft),
+		app.composerShortcut(actionCursorRight, (*editor).moveRight),
+		app.composerShortcut(actionCursorWordLeft, (*editor).moveWordLeft),
+		app.composerShortcut(actionCursorWordRight, (*editor).moveWordRight),
+		app.composerShortcut(actionCursorLineStart, (*editor).moveLineStart),
+		app.composerShortcut(actionCursorLineEnd, (*editor).moveLineEnd),
+		app.composerShortcut(actionDeleteCharBackward, (*editor).backspace),
+		app.composerShortcut(actionDeleteCharForward, (*editor).deleteForward),
+		app.composerShortcut(actionDeleteWordBackward, (*editor).deleteWordBackward),
+		app.composerShortcut(actionDeleteWordForward, (*editor).deleteWordForward),
+		app.composerShortcut(actionDeleteToLineStart, (*editor).deleteToLineStart),
+		app.composerShortcut(actionDeleteToLineEnd, (*editor).deleteToLineEnd),
+	}
+}
+
+func (app *App) composerShortcut(action actionID, handler func(*editor)) shortcutHandler {
+	return shortcutHandler{
+		action: action,
+		handler: func() {
+			app.editComposer(handler)
+		},
 	}
 }
 
@@ -202,8 +212,8 @@ func (app *App) handleEscape(ctx context.Context) {
 		app.setStatus("escape again to cancel response")
 		return
 	}
-	if !app.editor.empty() {
-		app.editor.clear()
+	if !app.composerEmpty() {
+		app.clearComposer()
 		app.resetPromptHistoryNavigation()
 		app.setStatus("editor cleared")
 		return
@@ -218,7 +228,7 @@ func (app *App) handleEscape(ctx context.Context) {
 }
 
 func (app *App) submit(ctx context.Context) (bool, error) {
-	text := strings.TrimSpace(app.editor.text())
+	text := strings.TrimSpace(app.composerText())
 	if text == "" {
 		return false, nil
 	}
@@ -226,7 +236,7 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 	if consumed || err != nil {
 		return false, err
 	}
-	text = strings.TrimSpace(app.editor.clear())
+	text = strings.TrimSpace(app.clearComposer())
 	if text == "" {
 		return false, nil
 	}
@@ -434,8 +444,8 @@ func (app *App) revertActivePromptUI(activePrompt *activePromptState) {
 	app.streamedToolEvents = 0
 	app.working = false
 	app.scrollOffset = 0
-	if app.editor.empty() {
-		app.editor.setText(activePrompt.Prompt)
+	if app.composerEmpty() {
+		app.setComposerText(activePrompt.Prompt)
 	}
 }
 
@@ -478,7 +488,7 @@ func (app *App) toggleThinkingHidden() {
 }
 
 func (app *App) queueFollowUp() {
-	text := strings.TrimSpace(app.editor.clear())
+	text := strings.TrimSpace(app.clearComposer())
 	if text == "" {
 		app.setStatus("no follow-up text to queue")
 		return
@@ -509,7 +519,7 @@ func (app *App) dequeueFollowUp() {
 	}
 	lastIndex := len(app.queuedMessages) - 1
 	app.resetPromptHistoryNavigation()
-	app.editor.setText(app.queuedMessages[lastIndex])
+	app.setComposerText(app.queuedMessages[lastIndex])
 	app.queuedMessages = app.queuedMessages[:lastIndex]
 	app.setStatus("restored queued message")
 }

@@ -107,29 +107,6 @@ They may return either:
   - `content`
   - `details`
 
-## `librecode.register_composer_mode(name, description, opts)`
-
-Registers a composer mode handler.
-
-This exists today and is still supported, but the long-term direction is to express more behavior through general buffers, keymaps, and events.
-
-Example:
-
-```lua
-lc.register_composer_mode("example", "Example mode", {
-  label = "EXAMPLE",
-  default = false,
-  on_key = function(ev, state)
-    return {
-      handled = false,
-      text = state.text,
-      cursor = state.cursor,
-      label = "EXAMPLE",
-    }
-  end,
-})
-```
-
 ## `librecode.api`
 
 Neovim-inspired low-level helpers.
@@ -213,7 +190,8 @@ Current important modes include:
 
 - `global`
 - `composer`
-- composer-derived labels such as `composer.vim.normal`
+
+`composer` is still a compatibility mode selector today. The direction is to route keymaps through generic buffer/window state rather than permanent special-case modes.
 
 ### `librecode.keymap.del(mode, lhs)`
 
@@ -222,6 +200,55 @@ Removes matching keymaps previously registered by the same extension.
 ## `librecode.buf`
 
 Buffer APIs currently work only during active event handling. Calling them outside an event raises an error.
+
+## `librecode.win`
+
+Window APIs expose the currently visible runtime windows for the active event.
+
+### `librecode.win.list()`
+
+Returns visible window names.
+
+### `librecode.win.get(name)`
+
+Returns the named window table or `nil`.
+
+Fields currently include:
+
+- `name`
+- `role`
+- `buffer`
+- `x`
+- `y`
+- `width`
+- `height`
+- `cursor_row`
+- `cursor_col`
+- `visible`
+- `metadata`
+
+### `librecode.win.find(opts)`
+
+Finds the first matching window.
+
+Supported filters today:
+
+- `name`
+- `role`
+- `buffer`
+
+Example:
+
+```lua
+local win = librecode.win.find({ role = "composer" })
+local buf = librecode.win.get_buf(win)
+```
+
+### `librecode.win.get_buf(name)`
+
+Returns the buffer name displayed by the given window.
+
+This is the current path for extensions that want to discover the composer through the visible runtime model instead of assuming a hardcoded buffer name.
 
 ### `librecode.buf.list()`
 
@@ -262,6 +289,12 @@ Get or replace buffer text.
 
 Get or replace cursor position.
 
+### `librecode.buf.insert(name, position, text)`
+### `librecode.buf.delete_range(name, start, end)`
+### `librecode.buf.replace(name, start, end, replacement)`
+
+Rune-oriented editing helpers for low-level buffer mutation.
+
 ### `librecode.buf.get_lines(name, start, end)`
 ### `librecode.buf.set_lines(name, start, end, lines)`
 
@@ -292,6 +325,24 @@ For append tables, recognized fields include:
 - `text`
 - `role`
 
+## `librecode.action`
+
+Request host-side runtime actions from an extension.
+
+### `librecode.action.run(name)`
+
+Current built-ins include:
+
+- `submit`
+- `history.prev`
+- `history.next`
+- `autocomplete.accept`
+- `followup.queue`
+- `followup.dequeue`
+- `interrupt`
+- `prompt.cancel`
+- `transcript.tree`
+
 ## `librecode.event`
 
 These helpers only make sense during active event execution.
@@ -315,15 +366,17 @@ Handlers for terminal events receive a table like:
   text = "",
   ctrl = true,
   alt = false,
+  shift = false,
+  working = false,
+  auth_working = false,
   context = {
     mode = "chat",
     working = false,
     auth_working = false,
     cwd = "/path/to/project",
     session_id = "abc",
-    composer_mode = "vim",
-    composer_label = "vim:NORMAL",
   },
+  composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, metadata = {} },
   buffers = {
     composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, metadata = {} },
     status = { text = "", cursor = 0, chars = {}, metadata = {} },

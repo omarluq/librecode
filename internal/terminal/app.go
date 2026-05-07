@@ -64,17 +64,15 @@ type cachedRenderedMessage struct {
 
 // RunOptions configures the terminal app.
 type RunOptions struct {
-	Composer      extension.ComposerRunner     `json:"-"`
-	Resources     *core.ResourceSnapshot       `json:"resources"`
-	Runtime       *assistant.Runtime           `json:"-"`
-	Settings      *database.DocumentRepository `json:"-"`
-	Models        *model.Registry              `json:"-"`
-	Auth          *auth.Storage                `json:"-"`
-	Config        *config.Config               `json:"-"`
-	CWD           string                       `json:"cwd"`
-	SessionID     string                       `json:"session_id"`
-	ComposerMode  string                       `json:"composer_mode"`
-	ComposerLabel string                       `json:"composer_label"`
+	Extensions extension.TerminalEventRunner `json:"-"`
+	Resources  *core.ResourceSnapshot        `json:"resources"`
+	Runtime    *assistant.Runtime            `json:"-"`
+	Settings   *database.DocumentRepository  `json:"-"`
+	Models     *model.Registry               `json:"-"`
+	Auth       *auth.Storage                 `json:"-"`
+	Config     *config.Config                `json:"-"`
+	CWD        string                        `json:"cwd"`
+	SessionID  string                        `json:"session_id"`
 }
 
 // App is the terminal chat UI.
@@ -90,9 +88,7 @@ type App struct {
 	models                       *model.Registry
 	auth                         *auth.Storage
 	cfg                          *config.Config
-	editor                       *editor
 	keys                         *keybindings
-	composer                     *composer
 	panel                        *selectionPanel
 	pendingParentID              *string
 	activePrompt                 *activePromptState
@@ -108,6 +104,7 @@ type App struct {
 	streamingThinkingText        string
 	cwd                          string
 	promptHistoryDraft           string
+	composerBuffer               extension.BufferState
 	resources                    core.ResourceSnapshot
 	messageLineCache             []cachedRenderedMessage
 	streamingBlockLineCache      []cachedRenderedMessage
@@ -154,6 +151,9 @@ func Run(ctx context.Context, options *RunOptions) error {
 	if err := app.loadLatestSessionSettings(ctx); err != nil {
 		app.addSystemMessage(err.Error())
 	}
+	if err := app.runStartupExtensions(ctx); err != nil {
+		app.addSystemMessage(err.Error())
+	}
 	app.loop(ctx)
 
 	return nil
@@ -181,14 +181,12 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		renderer:                     newScreenRenderer(screen),
 		frame:                        nil,
 		runtime:                      options.Runtime,
-		extensions:                   terminalEventRunner(options.Composer),
+		extensions:                   options.Extensions,
 		settings:                     options.Settings,
 		models:                       options.Models,
 		auth:                         options.Auth,
 		cfg:                          options.Config,
-		editor:                       newEditor(),
 		keys:                         newDefaultKeybindings(),
-		composer:                     newComposer(options.ComposerMode, options.ComposerLabel, options.Composer),
 		theme:                        appTheme,
 		resources:                    resources,
 		mode:                         modeChat,
@@ -204,6 +202,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		queuedMessages:               []string{},
 		promptHistory:                []string{},
 		promptHistoryDraft:           "",
+		composerBuffer:               newComposerBuffer(),
 		scopedOrder:                  []string{},
 		scopedEnabled:                map[string]bool{},
 		sessionSortRecent:            true,

@@ -400,7 +400,13 @@ func (app *App) composerLayout(width, height int) composerLayout {
 	footerLines := app.footerLines(width)
 	autocompleteLines := app.autocompleteLines(width)
 	editorRows := min(defaultEditorRows, max(3, height-len(footerLines)-len(autocompleteLines)-2))
-	editor := app.editor.render(width, editorRows-2, app.theme, app.editorBorderColor(), app.composerBorderLabel())
+	editor := app.composerEditor().render(
+		width,
+		editorRows-2,
+		app.theme,
+		app.editorBorderColor(),
+		app.composerBorderLabel(),
+	)
 	reserve := len(footerLines) + len(autocompleteLines) + len(editor.Lines)
 	startRow := max(0, height-reserve)
 	editorStart := startRow + len(autocompleteLines)
@@ -418,7 +424,7 @@ func (app *App) composerLayout(width, height int) composerLayout {
 }
 
 func (app *App) editorBorderColor() colorToken {
-	if strings.HasPrefix(strings.TrimSpace(app.editor.text()), "!") {
+	if strings.HasPrefix(strings.TrimSpace(app.composerText()), "!") {
 		return colorBashMode
 	}
 	switch app.currentThinkingLevel() {

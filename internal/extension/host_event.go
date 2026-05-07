@@ -8,8 +8,10 @@ import (
 
 type luaHostEvent struct {
 	buffers        map[string]BufferState
+	windows        map[string]WindowState
 	context        map[string]any
 	appends        []BufferAppend
+	actions        []ActionCall
 	deletedBuffers []string
 	name           string
 	key            ComposerKeyEvent
@@ -17,13 +19,15 @@ type luaHostEvent struct {
 	stopped        bool
 }
 
-func newLuaHostEvent(event TerminalEvent) *luaHostEvent {
+func newLuaHostEvent(event *TerminalEvent) *luaHostEvent {
 	return &luaHostEvent{
 		name:           event.Name,
 		key:            event.Key,
 		buffers:        cloneBuffers(event.Buffers),
+		windows:        cloneWindows(event.Windows),
 		context:        cloneMap(event.Context),
 		appends:        []BufferAppend{},
+		actions:        []ActionCall{},
 		deletedBuffers: []string{},
 		consumed:       false,
 		stopped:        false,
@@ -33,15 +37,18 @@ func newLuaHostEvent(event TerminalEvent) *luaHostEvent {
 func (event *luaHostEvent) result() TerminalEventResult {
 	return TerminalEventResult{
 		Buffers:        cloneBuffers(event.buffers),
+		Windows:        cloneWindows(event.windows),
 		Appends:        append([]BufferAppend{}, event.appends...),
+		Actions:        append([]ActionCall{}, event.actions...),
 		DeletedBuffers: append([]string{}, event.deletedBuffers...),
 		Consumed:       event.consumed,
 	}
 }
 
-func (event *luaHostEvent) eventSnapshot() TerminalEvent {
-	return TerminalEvent{
+func (event *luaHostEvent) eventSnapshot() *TerminalEvent {
+	return &TerminalEvent{
 		Buffers: cloneBuffers(event.buffers),
+		Windows: cloneWindows(event.windows),
 		Context: cloneMap(event.context),
 		Name:    event.name,
 		Key:     event.key,
@@ -119,6 +126,13 @@ func (event *luaHostEvent) appendBuffer(bufferAppend BufferAppend) {
 	event.setBuffer(bufferAppend.Name, &buffer)
 }
 
+func (event *luaHostEvent) appendAction(action ActionCall) {
+	if action.Name == "" {
+		return
+	}
+	event.actions = append(event.actions, action)
+}
+
 func (event *luaHostEvent) applyLuaResult(value lua.LValue) {
 	table, ok := value.(*lua.LTable)
 	if !ok {
@@ -133,6 +147,7 @@ func (event *luaHostEvent) applyLuaResult(value lua.LValue) {
 	}
 	event.applyLuaResultBuffers(table.RawGetString("buffers"))
 	event.applyLuaResultAppends(table.RawGetString("appends"))
+	event.applyLuaResultActions(table.RawGetString("actions"))
 	event.applyLuaResultDeletes(table.RawGetString("deleted_buffers"))
 }
 
@@ -158,6 +173,16 @@ func (event *luaHostEvent) applyLuaResultAppends(value lua.LValue) {
 	}
 }
 
+func (event *luaHostEvent) applyLuaResultActions(value lua.LValue) {
+	table, ok := value.(*lua.LTable)
+	if !ok {
+		return
+	}
+	for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
+		event.appendAction(luaActionCall(table.RawGetInt(valueIndex)))
+	}
+}
+
 func (event *luaHostEvent) applyLuaResultDeletes(value lua.LValue) {
 	table, ok := value.(*lua.LTable)
 	if !ok {
@@ -177,6 +202,22 @@ func cloneBuffers(buffers map[string]BufferState) map[string]BufferState {
 		buffer.Chars = append([]string{}, buffer.Chars...)
 		buffer.Metadata = cloneMap(buffer.Metadata)
 		cloned[name] = buffer
+	}
+
+	return cloned
+}
+
+func cloneWindows(windows map[string]WindowState) map[string]WindowState {
+	if windows == nil {
+		return map[string]WindowState{}
+	}
+	cloned := make(map[string]WindowState, len(windows))
+	for name, window := range windows {
+		if window.Name == "" {
+			window.Name = name
+		}
+		window.Metadata = cloneMap(window.Metadata)
+		cloned[name] = window
 	}
 
 	return cloned

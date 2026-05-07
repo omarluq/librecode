@@ -200,17 +200,15 @@ func newRenderTestApp(t *testing.T) *App {
 	t.Helper()
 
 	app := newApp(nil, &RunOptions{
-		Resources:     nil,
-		Runtime:       nil,
-		Settings:      nil,
-		Models:        nil,
-		Auth:          nil,
-		Config:        nil,
-		CWD:           "",
-		SessionID:     "",
-		ComposerMode:  "",
-		ComposerLabel: "",
-		Composer:      nil,
+		Extensions: nil,
+		Resources:  nil,
+		Runtime:    nil,
+		Settings:   nil,
+		Models:     nil,
+		Auth:       nil,
+		Config:     nil,
+		CWD:        "",
+		SessionID:  "",
 	})
 	app.resetMessages()
 

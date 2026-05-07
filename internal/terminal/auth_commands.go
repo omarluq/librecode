@@ -125,7 +125,7 @@ func (app *App) loginCommand(ctx context.Context, args string) error {
 	}
 	if len(fields) < 2 {
 		app.resetPromptHistoryNavigation()
-		app.editor.setText("/login " + provider + " ")
+		app.setComposerText("/login " + provider + " ")
 		app.setStatus("paste API key after provider and press Enter")
 		return nil
 	}

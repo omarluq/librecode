@@ -14,30 +14,47 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 )
 
-func TestManager_LoadsLuaCommandsToolsAndComposerModes(t *testing.T) {
+const (
+	testBufferComposer = "composer"
+	testContextModeKey = "mode"
+	testEventKey       = "key"
+	testModeChat       = "chat"
+)
+
+func TestManager_LoadsLuaCommandsToolsAndKeymaps(t *testing.T) {
 	t.Parallel()
 
 	const helloExtension = "hello"
 	extensionPath := filepath.Join(t.TempDir(), helloExtension+".lua")
 	source := `
-librecode.register_command("hello", "Say hello", function(args)
+local lc = require("librecode")
+
+lc.register_command("hello", "Say hello", function(args)
   return "hello " .. args
 end)
 
-librecode.register_tool("echo", "Echo text", function(args)
+lc.register_tool("echo", "Echo text", function(args)
   return { content = args.text, details = { seen = true } }
 end)
 
-librecode.register_composer_mode("vim", "Vim composer", {
-  default = true,
-  label = "vim:INSERT",
-  on_key = function(event, state)
-    if event.key == "x" then
-      return { handled = true, text = state.text .. "!", cursor = state.cursor + 1, label = "vim:NORMAL" }
-    end
-    return { handled = false, label = "vim:INSERT" }
-  end,
-})
+lc.on("startup", function()
+  local composer = lc.buf.get("composer")
+  composer.label = "vim:INSERT"
+  composer.metadata = composer.metadata or {}
+  composer.metadata.mode = "vim"
+  lc.buf.set("composer", composer)
+end)
+
+lc.keymap.set("composer", "x", function(event)
+  local composer = lc.buf.get("composer")
+  lc.buf.set("composer", {
+    text = composer.text .. event.key,
+    cursor = composer.cursor + 1,
+    label = "vim:NORMAL",
+    metadata = { mode = "vim" },
+  })
+  lc.event.consume()
+end, { desc = "append x" })
 `
 	require.NoError(t, writeTestFile(extensionPath, source))
 
@@ -47,14 +64,11 @@ librecode.register_composer_mode("vim", "Vim composer", {
 
 	assertLoadedCommand(t, manager.Commands(), helloExtension)
 	assertLoadedTool(t, manager.Tools(), helloExtension)
-	assertLoadedComposerMode(t, manager.ComposerModes(), helloExtension)
 	assertLoadedExtension(t, manager.Extensions())
 	assertCommandExecution(t, manager)
 	assertToolExecution(t, manager)
-	assertComposerExecution(t, manager)
+	assertTerminalKeyExecution(t, manager)
 }
-
-const testBufferComposer = "composer"
 
 func TestManager_HandleTerminalEventBuffersAndPriority(t *testing.T) {
 	t.Parallel()
@@ -82,7 +96,7 @@ end)
 	t.Cleanup(manager.Shutdown)
 	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
 
-	result, err := manager.HandleTerminalEvent(context.Background(), extension.TerminalEvent{
+	event := extension.TerminalEvent{
 		Buffers: map[string]extension.BufferState{
 			testBufferComposer: {
 				Metadata: map[string]any{},
@@ -93,15 +107,18 @@ end)
 				Cursor:   2,
 			},
 		},
+		Windows: map[string]extension.WindowState{},
 		Context: map[string]any{},
-		Name:    "key",
+		Name:    testEventKey,
 		Key: extension.ComposerKeyEvent{
-			Key:  "!",
-			Text: "!",
-			Ctrl: false,
-			Alt:  false,
+			Key:   "!",
+			Text:  "!",
+			Ctrl:  false,
+			Alt:   false,
+			Shift: false,
 		},
-	})
+	}
+	result, err := manager.HandleTerminalEvent(context.Background(), &event)
 	require.NoError(t, err)
 
 	assert.True(t, result.Consumed)
@@ -145,7 +162,7 @@ end, { priority = 10, desc = "map ctrl-j" })
 	t.Cleanup(manager.Shutdown)
 	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
 
-	result, err := manager.HandleTerminalEvent(context.Background(), extension.TerminalEvent{
+	event := extension.TerminalEvent{
 		Buffers: map[string]extension.BufferState{
 			testBufferComposer: {
 				Metadata: map[string]any{},
@@ -156,15 +173,32 @@ end, { priority = 10, desc = "map ctrl-j" })
 				Cursor:   2,
 			},
 		},
-		Context: map[string]any{"mode": "chat"},
-		Name:    "key",
-		Key: extension.ComposerKeyEvent{
-			Key:  "ctrl+j",
-			Text: "",
-			Ctrl: true,
-			Alt:  false,
+		Windows: map[string]extension.WindowState{
+			testBufferComposer: {
+				Metadata:  map[string]any{},
+				Name:      testBufferComposer,
+				Role:      testBufferComposer,
+				Buffer:    testBufferComposer,
+				X:         0,
+				Y:         0,
+				Width:     80,
+				Height:    6,
+				CursorRow: 0,
+				CursorCol: 2,
+				Visible:   true,
+			},
 		},
-	})
+		Context: map[string]any{testContextModeKey: testModeChat},
+		Name:    testEventKey,
+		Key: extension.ComposerKeyEvent{
+			Key:   "ctrl+j",
+			Text:  "",
+			Ctrl:  true,
+			Alt:   false,
+			Shift: false,
+		},
+	}
+	result, err := manager.HandleTerminalEvent(context.Background(), &event)
 	require.NoError(t, err)
 
 	assert.True(t, result.Consumed)
@@ -172,6 +206,126 @@ end, { priority = 10, desc = "map ctrl-j" })
 	assert.Equal(t, 99, result.Buffers[testBufferComposer].Cursor)
 	assert.Equal(t, "a\nB\nBB\nc!", result.Buffers["scratch"].Text)
 	assert.Equal(t, []string{"composer:ctrl+j"}, manager.Extensions()[0].Keymaps)
+}
+
+func TestManager_WindowAPIExposesComposerWindow(t *testing.T) {
+	t.Parallel()
+
+	extensionPath := filepath.Join(t.TempDir(), "runtime.lua")
+	source := `
+local lc = require("librecode")
+
+lc.on("startup", function()
+  local win = lc.win.find({ role = "composer" })
+  if win == nil then
+    error("composer window should exist")
+  end
+  local composer_buf = lc.win.get_buf(win)
+  if composer_buf ~= "composer" then
+    error("unexpected composer buffer: " .. tostring(composer_buf))
+  end
+  local composer = lc.buf.get(composer_buf)
+  composer.label = "window-aware"
+  lc.buf.set(composer_buf, composer)
+end)
+`
+	require.NoError(t, writeTestFile(extensionPath, source))
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
+
+	event := extension.TerminalEvent{
+		Buffers: map[string]extension.BufferState{
+			testBufferComposer: {
+				Metadata: map[string]any{},
+				Name:     testBufferComposer,
+				Text:     "",
+				Chars:    []string{},
+				Label:    "",
+				Cursor:   0,
+			},
+		},
+		Windows: map[string]extension.WindowState{
+			testBufferComposer: {
+				Metadata:  map[string]any{},
+				Name:      testBufferComposer,
+				Role:      testBufferComposer,
+				Buffer:    testBufferComposer,
+				X:         0,
+				Y:         10,
+				Width:     80,
+				Height:    6,
+				CursorRow: 1,
+				CursorCol: 2,
+				Visible:   true,
+			},
+		},
+		Context: map[string]any{},
+		Name:    "startup",
+		Key: extension.ComposerKeyEvent{
+			Key:   "",
+			Text:  "",
+			Ctrl:  false,
+			Alt:   false,
+			Shift: false,
+		},
+	}
+	result, err := manager.HandleTerminalEvent(context.Background(), &event)
+	require.NoError(t, err)
+	assert.Equal(t, "window-aware", result.Buffers[testBufferComposer].Label)
+}
+
+func TestManager_BufferRangeEditingAndActions(t *testing.T) {
+	t.Parallel()
+
+	extensionPath := filepath.Join(t.TempDir(), "runtime.lua")
+	source := `
+local lc = require("librecode")
+
+lc.on("key", function()
+  lc.buf.insert("composer", 0, "A")
+  lc.buf.replace("composer", 1, 3, "BC")
+  lc.buf.delete_range("composer", 3, 4)
+  lc.action.run("history.prev")
+  lc.event.consume()
+end)
+`
+	require.NoError(t, writeTestFile(extensionPath, source))
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
+
+	event := extension.TerminalEvent{
+		Buffers: map[string]extension.BufferState{
+			testBufferComposer: {
+				Metadata: map[string]any{},
+				Name:     testBufferComposer,
+				Text:     "1234",
+				Chars:    []string{"1", "2", "3", "4"},
+				Label:    "",
+				Cursor:   4,
+			},
+		},
+		Windows: map[string]extension.WindowState{},
+		Context: map[string]any{testContextModeKey: testModeChat},
+		Name:    testEventKey,
+		Key: extension.ComposerKeyEvent{
+			Key:   "!",
+			Text:  "!",
+			Ctrl:  false,
+			Alt:   false,
+			Shift: false,
+		},
+	}
+	result, err := manager.HandleTerminalEvent(context.Background(), &event)
+	require.NoError(t, err)
+
+	assert.True(t, result.Consumed)
+	assert.Equal(t, "ABC4", result.Buffers[testBufferComposer].Text)
+	require.Len(t, result.Actions, 1)
+	assert.Equal(t, extension.ActionCall{Name: "history.prev"}, result.Actions[0])
 }
 
 func TestDefaultLoadPathsPrependsOfficialExtensions(t *testing.T) {
@@ -204,24 +358,11 @@ func assertLoadedTool(t *testing.T, tools []extension.Tool, extensionName string
 	}, tools[0])
 }
 
-func assertLoadedComposerMode(t *testing.T, modes []extension.ComposerMode, extensionName string) {
-	t.Helper()
-
-	require.Len(t, modes, 1)
-	assert.Equal(t, extension.ComposerMode{
-		Name:        "vim",
-		Description: "Vim composer",
-		Extension:   extensionName,
-		Label:       "vim:INSERT",
-		Default:     true,
-	}, modes[0])
-}
-
 func assertLoadedExtension(t *testing.T, loaded []extension.LoadedExtension) {
 	t.Helper()
 
 	require.Len(t, loaded, 1)
-	assert.Equal(t, []string{"vim"}, loaded[0].ComposerModes)
+	assert.Equal(t, []string{"composer:x"}, loaded[0].Keymaps)
 }
 
 func assertCommandExecution(t *testing.T, manager *extension.Manager) {
@@ -241,35 +382,58 @@ func assertToolExecution(t *testing.T, manager *extension.Manager) {
 	assert.Equal(t, true, toolResult.Details["seen"])
 }
 
-func assertComposerExecution(t *testing.T, manager *extension.Manager) {
+func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 	t.Helper()
 
-	result, err := manager.HandleComposerKey(
-		context.Background(),
-		"vim",
-		extension.ComposerKeyEvent{
-			Key:  "x",
-			Text: "x",
-			Ctrl: false,
-			Alt:  false,
+	startupEvent := extension.TerminalEvent{
+		Buffers: map[string]extension.BufferState{
+			testBufferComposer: {
+				Metadata: map[string]any{},
+				Name:     testBufferComposer,
+				Text:     "",
+				Chars:    []string{},
+				Label:    "",
+				Cursor:   0,
+			},
 		},
-		extension.ComposerState{
-			Text:        "ok",
-			Chars:       []string{"o", "k"},
-			Cursor:      2,
-			Working:     false,
-			AuthWorking: false,
+		Windows: map[string]extension.WindowState{},
+		Context: map[string]any{},
+		Name:    "startup",
+		Key: extension.ComposerKeyEvent{
+			Key:   "",
+			Text:  "",
+			Ctrl:  false,
+			Alt:   false,
+			Shift: false,
 		},
-	)
+	}
+	startup, err := manager.HandleTerminalEvent(context.Background(), &startupEvent)
 	require.NoError(t, err)
-	assert.Equal(t, extension.ComposerResult{
-		Text:      "ok!",
-		Label:     "vim:NORMAL",
-		Cursor:    3,
-		Handled:   true,
-		HasText:   true,
-		HasCursor: true,
-	}, result)
+	assert.Equal(t, "vim:INSERT", startup.Buffers[testBufferComposer].Label)
+	assert.Equal(t, "vim", startup.Buffers[testBufferComposer].Metadata[testContextModeKey])
+
+	resultEvent := extension.TerminalEvent{
+		Buffers: map[string]extension.BufferState{
+			testBufferComposer: startup.Buffers[testBufferComposer],
+		},
+		Windows: map[string]extension.WindowState{},
+		Context: map[string]any{testContextModeKey: testModeChat},
+		Name:    testEventKey,
+		Key: extension.ComposerKeyEvent{
+			Key:   "x",
+			Text:  "x",
+			Ctrl:  false,
+			Alt:   false,
+			Shift: false,
+		},
+	}
+	result, err := manager.HandleTerminalEvent(context.Background(), &resultEvent)
+	require.NoError(t, err)
+	assert.True(t, result.Consumed)
+	assert.Equal(t, "x", result.Buffers[testBufferComposer].Text)
+	assert.Equal(t, 1, result.Buffers[testBufferComposer].Cursor)
+	assert.Equal(t, "vim:NORMAL", result.Buffers[testBufferComposer].Label)
+	assert.Equal(t, "vim", result.Buffers[testBufferComposer].Metadata[testContextModeKey])
 }
 
 func writeTestFile(path, content string) error {

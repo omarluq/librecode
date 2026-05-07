@@ -14,15 +14,14 @@ import (
 )
 
 type luaExtension struct {
-	activeEvent   *luaHostEvent
-	state         *lua.LState
-	name          string
-	path          string
-	commands      []string
-	tools         []string
-	composerModes []string
-	keymaps       []string
-	lock          sync.Mutex
+	activeEvent *luaHostEvent
+	state       *lua.LState
+	name        string
+	path        string
+	commands    []string
+	tools       []string
+	keymaps     []string
+	lock        sync.Mutex
 }
 
 type luaCommand struct {
@@ -54,18 +53,11 @@ type luaKeymap struct {
 	order       uint64
 }
 
-type luaComposerMode struct {
-	extension  *luaExtension
-	function   *lua.LFunction
-	definition ComposerMode
-}
-
 // Manager owns Lua extension runtimes and registered commands/tools.
 type Manager struct {
 	logger           *slog.Logger
 	commands         map[string]luaCommand
 	tools            map[string]luaTool
-	composerModes    map[string]luaComposerMode
 	handlers         map[string][]luaHookHandler
 	keymaps          []luaKeymap
 	namespaces       map[string]int
@@ -81,7 +73,6 @@ func NewManager(logger *slog.Logger) *Manager {
 		logger:           logger,
 		commands:         map[string]luaCommand{},
 		tools:            map[string]luaTool{},
-		composerModes:    map[string]luaComposerMode{},
 		handlers:         map[string][]luaHookHandler{},
 		keymaps:          []luaKeymap{},
 		namespaces:       map[string]int{},
@@ -126,15 +117,14 @@ func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) erro
 	}
 
 	extensionRuntime := &luaExtension{
-		activeEvent:   nil,
-		state:         lua.NewState(lua.Options{SkipOpenLibs: true}),
-		name:          extensionName(absolutePath),
-		path:          absolutePath,
-		commands:      []string{},
-		tools:         []string{},
-		composerModes: []string{},
-		keymaps:       []string{},
-		lock:          sync.Mutex{},
+		activeEvent: nil,
+		state:       lua.NewState(lua.Options{SkipOpenLibs: true}),
+		name:        extensionName(absolutePath),
+		path:        absolutePath,
+		commands:    []string{},
+		tools:       []string{},
+		keymaps:     []string{},
+		lock:        sync.Mutex{},
 	}
 	openExtensionLibs(extensionRuntime.state)
 	manager.installAPI(extensionRuntime)
@@ -160,12 +150,11 @@ func (manager *Manager) Extensions() []LoadedExtension {
 	extensions := make([]LoadedExtension, 0, len(manager.extensions))
 	for _, extensionRuntime := range manager.extensions {
 		extensions = append(extensions, LoadedExtension{
-			Name:          extensionRuntime.name,
-			Path:          extensionRuntime.path,
-			Commands:      append([]string{}, extensionRuntime.commands...),
-			Tools:         append([]string{}, extensionRuntime.tools...),
-			ComposerModes: append([]string{}, extensionRuntime.composerModes...),
-			Keymaps:       append([]string{}, extensionRuntime.keymaps...),
+			Name:     extensionRuntime.name,
+			Path:     extensionRuntime.path,
+			Commands: append([]string{}, extensionRuntime.commands...),
+			Tools:    append([]string{}, extensionRuntime.tools...),
+			Keymaps:  append([]string{}, extensionRuntime.keymaps...),
 		})
 	}
 
@@ -202,22 +191,6 @@ func (manager *Manager) Tools() []Tool {
 	})
 
 	return tools
-}
-
-// ComposerModes returns registered terminal composer modes sorted by name.
-func (manager *Manager) ComposerModes() []ComposerMode {
-	manager.lock.RLock()
-	defer manager.lock.RUnlock()
-
-	modes := make([]ComposerMode, 0, len(manager.composerModes))
-	for _, mode := range manager.composerModes {
-		modes = append(modes, mode.definition)
-	}
-	sort.Slice(modes, func(leftIndex, rightIndex int) bool {
-		return modes[leftIndex].Name < modes[rightIndex].Name
-	})
-
-	return modes
 }
 
 // ExecuteCommand runs a registered Lua slash command.
@@ -264,43 +237,8 @@ func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[s
 	return luaToolResult(result), nil
 }
 
-// HandleComposerKey runs a registered Lua composer mode key handler.
-func (manager *Manager) HandleComposerKey(
-	ctx context.Context,
-	mode string,
-	event ComposerKeyEvent,
-	state ComposerState,
-) (ComposerResult, error) {
-	manager.lock.RLock()
-	composerMode, ok := manager.composerModes[mode]
-	manager.lock.RUnlock()
-	if !ok || composerMode.function == nil {
-		return emptyComposerResult(), nil
-	}
-
-	result, err := callLuaPrepared(
-		composerMode.extension,
-		nil,
-		composerMode.function,
-		func(luaState *lua.LState) []lua.LValue {
-			return []lua.LValue{
-				composerEventTable(luaState, event),
-				composerStateTable(luaState, state),
-			}
-		},
-	)
-	if err != nil {
-		return emptyComposerResult(), fmt.Errorf("extension: composer mode %q failed: %w", mode, err)
-	}
-	if err := ctx.Err(); err != nil {
-		return emptyComposerResult(), err
-	}
-
-	return luaComposerResult(result), nil
-}
-
 // HandleTerminalEvent runs registered low-level terminal runtime handlers.
-func (manager *Manager) HandleTerminalEvent(ctx context.Context, event TerminalEvent) (TerminalEventResult, error) {
+func (manager *Manager) HandleTerminalEvent(ctx context.Context, event *TerminalEvent) (TerminalEventResult, error) {
 	hostEvent := newLuaHostEvent(event)
 	if event.Name == luaFieldKey {
 		if err := manager.runKeymaps(ctx, hostEvent); err != nil {
@@ -382,7 +320,6 @@ func (manager *Manager) Shutdown() {
 	manager.extensions = []*luaExtension{}
 	manager.commands = map[string]luaCommand{}
 	manager.tools = map[string]luaTool{}
-	manager.composerModes = map[string]luaComposerMode{}
 	manager.handlers = map[string][]luaHookHandler{}
 	manager.keymaps = []luaKeymap{}
 	manager.namespaces = map[string]int{}
@@ -393,18 +330,19 @@ func (manager *Manager) Shutdown() {
 func (manager *Manager) installAPI(extensionRuntime *luaExtension) {
 	apiTable := extensionRuntime.state.NewTable()
 	extensionRuntime.state.SetFuncs(apiTable, map[string]lua.LGFunction{
-		"register_command":       manager.luaRegisterCommand(extensionRuntime),
-		"register_tool":          manager.luaRegisterTool(extensionRuntime),
-		"register_composer_mode": manager.luaRegisterComposerMode(extensionRuntime),
-		"on":                     manager.luaOn(extensionRuntime),
-		"log":                    manager.luaLog(extensionRuntime),
+		"register_command": manager.luaRegisterCommand(extensionRuntime),
+		"register_tool":    manager.luaRegisterTool(extensionRuntime),
+		"on":               manager.luaOn(extensionRuntime),
+		"log":              manager.luaLog(extensionRuntime),
 	})
 	extensionRuntime.state.SetField(apiTable, "api", manager.luaCoreAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "autocmd", manager.luaAutocmdAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "buf", manager.luaBufferAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "command", manager.luaCommandAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "event", manager.luaEventAPI(extensionRuntime))
+	extensionRuntime.state.SetField(apiTable, "action", manager.luaActionAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "keymap", manager.luaKeymapAPI(extensionRuntime))
+	extensionRuntime.state.SetField(apiTable, "win", manager.luaWindowAPI(extensionRuntime))
 	extensionRuntime.state.SetGlobal("librecode", apiTable)
 	extensionRuntime.state.PreloadModule("librecode", func(state *lua.LState) int {
 		state.Push(apiTable)
@@ -435,32 +373,6 @@ func (manager *Manager) luaRegisterTool(extensionRuntime *luaExtension) lua.LGFu
 		manager.lock.Lock()
 		manager.tools[name] = luaTool{extension: extensionRuntime, function: function, definition: definition}
 		extensionRuntime.tools = append(extensionRuntime.tools, name)
-		manager.lock.Unlock()
-
-		return 0
-	}
-}
-
-func (manager *Manager) luaRegisterComposerMode(extensionRuntime *luaExtension) lua.LGFunction {
-	return func(state *lua.LState) int {
-		name := state.CheckString(1)
-		description := state.OptString(2, "")
-		options := state.OptTable(3, state.NewTable())
-		definition := ComposerMode{
-			Name:        name,
-			Description: description,
-			Extension:   extensionRuntime.name,
-			Label:       luaTableString(options, "label", ""),
-			Default:     luaTableBool(options, "default"),
-		}
-
-		manager.lock.Lock()
-		manager.composerModes[name] = luaComposerMode{
-			extension:  extensionRuntime,
-			function:   luaTableFunction(options, "on_key"),
-			definition: definition,
-		}
-		extensionRuntime.composerModes = append(extensionRuntime.composerModes, name)
 		manager.lock.Unlock()
 
 		return 0

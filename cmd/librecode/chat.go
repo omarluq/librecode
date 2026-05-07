@@ -8,7 +8,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/di"
-	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/terminal"
 )
 
@@ -68,38 +67,18 @@ func runChat(cmd *cobra.Command, options chatRunOptions) error {
 
 		resources := loadTerminalResources(cmd.Context(), cwd)
 
-		composerMode := activeComposerMode(extensionManager.ComposerModes())
-
 		return terminal.Run(cmd.Context(), &terminal.RunOptions{
-			Resources:     &resources,
-			Runtime:       runtime,
-			Settings:      databaseService.Documents,
-			Models:        modelRegistry,
-			Auth:          authStorage,
-			Config:        cfg,
-			CWD:           cwd,
-			SessionID:     sessionID,
-			ComposerMode:  composerMode.Name,
-			ComposerLabel: composerMode.Label,
-			Composer:      extensionManager,
+			Extensions: extensionManager,
+			Resources:  &resources,
+			Runtime:    runtime,
+			Settings:   databaseService.Documents,
+			Models:     modelRegistry,
+			Auth:       authStorage,
+			Config:     cfg,
+			CWD:        cwd,
+			SessionID:  sessionID,
 		})
 	})
-}
-
-func activeComposerMode(modes []extension.ComposerMode) extension.ComposerMode {
-	for _, mode := range modes {
-		if mode.Default {
-			return mode
-		}
-	}
-
-	return extension.ComposerMode{
-		Name:        "",
-		Description: "",
-		Extension:   "",
-		Label:       "",
-		Default:     false,
-	}
 }
 
 func resolveChatSessionID(

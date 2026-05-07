@@ -80,7 +80,7 @@ The loader:
 - opens trusted standard libraries
 - installs the `librecode` Lua module/API table
 - executes the file
-- records registered commands, tools, keymaps, modes, and handlers
+- records registered commands, tools, keymaps, and handlers
 
 ## Runtime model
 
@@ -90,7 +90,6 @@ The manager owns shared registries for:
 
 - commands
 - tools
-- composer modes
 - event handlers
 - keymaps
 - namespaces
@@ -125,6 +124,8 @@ The terminal currently exposes these named buffers to extension handlers:
 - `status`
 - `transcript`
 - extension-created runtime buffers
+
+It also now exposes a small window model for the active event, including a `composer` window bound to the composer buffer. This is the first step toward making extensions discover and drive visible UI regions instead of relying only on buffer names.
 
 Important detail: these are not yet a complete unified buffer architecture for the entire application.
 
@@ -173,7 +174,7 @@ We need to move toward a world where more of the runtime is expressed as first-c
 
 Extensions cannot yet fully control layout or paint the screen.
 
-They can influence composer/status/transcript behavior, but they cannot truly reskin the application from first principles.
+They can now inspect visible windows and discover which buffer is presented in the composer window, but they still cannot truly reskin the application from first principles.
 
 ### 3. Event surface is too small
 

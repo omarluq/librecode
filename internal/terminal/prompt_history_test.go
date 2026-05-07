@@ -14,7 +14,7 @@ func TestPromptHistoryNavigatesPromptsAndRestoresDraft(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.recordPromptHistory("first prompt")
 	app.recordPromptHistory("second prompt")
-	app.editor.setText("draft prompt")
+	app.setComposerText("draft prompt")
 
 	pressTerminalKey(t, app, tcell.KeyUp, "")
 	assertEditorText(t, app, "second prompt")
@@ -49,7 +49,7 @@ func TestPromptHistoryRecordsSubmittedCommands(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.editor.setText(" /quit ")
+	app.setComposerText(" /quit ")
 
 	shouldQuit, err := app.submit(context.Background())
 	if err != nil {
@@ -78,7 +78,7 @@ func pressTerminalKey(t *testing.T, app *App, key tcell.Key, text string) {
 func assertEditorText(t *testing.T, app *App, want string) {
 	t.Helper()
 
-	if got := app.editor.text(); got != want {
+	if got := app.composerText(); got != want {
 		t.Fatalf("editor text = %q, want %q", got, want)
 	}
 }

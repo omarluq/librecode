@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"sort"
 	"strings"
 
 	lua "github.com/yuin/gopher-lua"
@@ -13,11 +14,15 @@ func (manager *Manager) luaBufferAPI(extensionRuntime *luaExtension) *lua.LTable
 		"append":       manager.luaBufferAppend(extensionRuntime),
 		luaFieldCreate: manager.luaBufferCreate(extensionRuntime),
 		"delete":       manager.luaBufferDelete(extensionRuntime),
+		"delete_range": manager.luaBufferDeleteRange(extensionRuntime),
+		"delete_text":  manager.luaBufferDeleteRange(extensionRuntime),
 		"get":          manager.luaBufferGet(extensionRuntime),
 		"get_cursor":   manager.luaBufferGetCursor(extensionRuntime),
 		"get_lines":    manager.luaBufferGetLines(extensionRuntime),
 		"get_text":     manager.luaBufferGetText(extensionRuntime),
+		"insert":       manager.luaBufferInsert(extensionRuntime),
 		"list":         manager.luaBufferList(extensionRuntime),
+		"replace":      manager.luaBufferReplace(extensionRuntime),
 		"set":          manager.luaBufferSet(extensionRuntime),
 		"set_cursor":   manager.luaBufferSetCursor(extensionRuntime),
 		"set_lines":    manager.luaBufferSetLines(extensionRuntime),
@@ -36,6 +41,98 @@ func (manager *Manager) luaEventAPI(extensionRuntime *luaExtension) *lua.LTable 
 	})
 
 	return apiTable
+}
+
+func (manager *Manager) luaActionAPI(extensionRuntime *luaExtension) *lua.LTable {
+	state := extensionRuntime.state
+	apiTable := state.NewTable()
+	state.SetFuncs(apiTable, map[string]lua.LGFunction{
+		"run": manager.luaActionRun(extensionRuntime),
+	})
+
+	return apiTable
+}
+
+func (manager *Manager) luaWindowAPI(extensionRuntime *luaExtension) *lua.LTable {
+	state := extensionRuntime.state
+	apiTable := state.NewTable()
+	state.SetFuncs(apiTable, map[string]lua.LGFunction{
+		"list":     manager.luaWindowList(extensionRuntime),
+		"get":      manager.luaWindowGet(extensionRuntime),
+		"find":     manager.luaWindowFind(extensionRuntime),
+		"get_buf":  manager.luaWindowGetBuffer(extensionRuntime),
+		"get_buffer": manager.luaWindowGetBuffer(extensionRuntime),
+	})
+
+	return apiTable
+}
+
+func (manager *Manager) luaWindowList(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		names := make([]string, 0, len(hostEvent.windows))
+		for name := range hostEvent.windows {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		state.Push(stringSliceToLuaTable(state, names))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaWindowGet(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		window, ok := hostEvent.windows[name]
+		if !ok {
+			state.Push(lua.LNil)
+			return 1
+		}
+		state.Push(mapToLuaTable(state, windowForLua(&window)))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaWindowFind(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		opts := state.CheckTable(1)
+		name := luaTableString(opts, "name", "")
+		role := luaTableString(opts, "role", "")
+		buffer := luaTableString(opts, "buffer", "")
+		for windowName, window := range checkActiveEvent(state, extensionRuntime).windows {
+			if name != "" && windowName != name {
+				continue
+			}
+			if role != "" && window.Role != role {
+				continue
+			}
+			if buffer != "" && window.Buffer != buffer {
+				continue
+			}
+			state.Push(lua.LString(windowName))
+			return 1
+		}
+		state.Push(lua.LNil)
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaWindowGetBuffer(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		window, ok := checkActiveEvent(state, extensionRuntime).windows[name]
+		if !ok {
+			state.Push(lua.LNil)
+			return 1
+		}
+		state.Push(lua.LString(window.Buffer))
+
+		return 1
+	}
 }
 
 func (manager *Manager) luaBufferList(extensionRuntime *luaExtension) lua.LGFunction {
@@ -139,6 +236,55 @@ func (manager *Manager) luaBufferSetText(extensionRuntime *luaExtension) lua.LGF
 	}
 }
 
+func (manager *Manager) luaBufferInsert(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		position := state.CheckInt(2)
+		text := state.CheckString(3)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		buffer := hostEvent.buffer(name)
+		buffer.Text = spliceBufferText(buffer.Text, position, position, text)
+		buffer.Chars = stringChars(buffer.Text)
+		buffer.Cursor = clampRuneIndex(position+len([]rune(text)), len([]rune(buffer.Text)))
+		hostEvent.setBuffer(name, &buffer)
+
+		return 0
+	}
+}
+
+func (manager *Manager) luaBufferDeleteRange(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		start := state.CheckInt(2)
+		end := state.CheckInt(3)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		buffer := hostEvent.buffer(name)
+		buffer.Text = spliceBufferText(buffer.Text, start, end, "")
+		buffer.Chars = stringChars(buffer.Text)
+		buffer.Cursor = clampRuneIndex(minInt(start, end), len([]rune(buffer.Text)))
+		hostEvent.setBuffer(name, &buffer)
+
+		return 0
+	}
+}
+
+func (manager *Manager) luaBufferReplace(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		start := state.CheckInt(2)
+		end := state.CheckInt(3)
+		replacement := state.CheckString(4)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		buffer := hostEvent.buffer(name)
+		buffer.Text = spliceBufferText(buffer.Text, start, end, replacement)
+		buffer.Chars = stringChars(buffer.Text)
+		buffer.Cursor = clampRuneIndex(minInt(start, end)+len([]rune(replacement)), len([]rune(buffer.Text)))
+		hostEvent.setBuffer(name, &buffer)
+
+		return 0
+	}
+}
+
 func (manager *Manager) luaBufferAppend(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
@@ -198,6 +344,15 @@ func (manager *Manager) luaEventStop(extensionRuntime *luaExtension) lua.LGFunct
 	}
 }
 
+func (manager *Manager) luaActionRun(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		checkActiveEvent(state, extensionRuntime).appendAction(ActionCall{Name: name})
+
+		return 0
+	}
+}
+
 func checkActiveEvent(state *lua.LState, extensionRuntime *luaExtension) *luaHostEvent {
 	if extensionRuntime.activeEvent == nil {
 		state.RaiseError("librecode runtime buffer API called outside an event")
@@ -245,6 +400,17 @@ func replaceBufferLines(text string, start, end int, replacement []string) strin
 	return strings.Join(nextLines, "\n")
 }
 
+func spliceBufferText(text string, start, end int, replacement string) string {
+	runes := []rune(text)
+	start, end = normalizeRuneRange(len(runes), start, end)
+	nextRunes := make([]rune, 0, len(runes)-(end-start)+len([]rune(replacement)))
+	nextRunes = append(nextRunes, runes[:start]...)
+	nextRunes = append(nextRunes, []rune(replacement)...)
+	nextRunes = append(nextRunes, runes[end:]...)
+
+	return string(nextRunes)
+}
+
 func normalizeLineRange(lineCount, start, end int) (normalizedStart, normalizedEnd int) {
 	normalizedStart = clampInt(start, 0, lineCount)
 	normalizedEnd = end
@@ -254,6 +420,27 @@ func normalizeLineRange(lineCount, start, end int) (normalizedStart, normalizedE
 	normalizedEnd = clampInt(normalizedEnd, normalizedStart, lineCount)
 
 	return normalizedStart, normalizedEnd
+}
+
+func normalizeRuneRange(runeCount, start, end int) (normalizedStart, normalizedEnd int) {
+	normalizedStart = clampRuneIndex(start, runeCount)
+	normalizedEnd = clampRuneIndex(end, runeCount)
+	if normalizedEnd < normalizedStart {
+		normalizedStart, normalizedEnd = normalizedEnd, normalizedStart
+	}
+
+	return normalizedStart, normalizedEnd
+}
+
+func clampRuneIndex(index, runeCount int) int {
+	if index < 0 {
+		return 0
+	}
+	if index > runeCount {
+		return runeCount
+	}
+
+	return index
 }
 
 func clampInt(value, low, high int) int {
