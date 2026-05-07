@@ -54,6 +54,61 @@ librecode.register_composer_mode("vim", "Vim composer", {
 	assertComposerExecution(t, manager)
 }
 
+func TestManager_HandleTerminalEventBuffersAndPriority(t *testing.T) {
+	t.Parallel()
+
+	extensionPath := filepath.Join(t.TempDir(), "runtime.lua")
+	source := `
+local lc = require("librecode")
+
+lc.on("key", { priority = 10 }, function(event)
+  local composer = lc.buf.get("composer")
+  lc.buf.set_text("composer", composer.text .. event.key)
+end)
+
+lc.on("key", { priority = 1 }, function()
+  local composer = lc.buf.get("composer")
+  composer.label = "lua:runtime"
+  lc.buf.set("composer", composer)
+  lc.buf.append("transcript", { role = "custom", text = "saw " .. composer.text })
+  lc.event.consume()
+end)
+`
+	require.NoError(t, writeTestFile(extensionPath, source))
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
+
+	result, err := manager.HandleTerminalEvent(context.Background(), extension.TerminalEvent{
+		Buffers: map[string]extension.BufferState{
+			"composer": {
+				Metadata: map[string]any{},
+				Name:     "composer",
+				Text:     "go",
+				Chars:    []string{"g", "o"},
+				Label:    "",
+				Cursor:   2,
+			},
+		},
+		Context: map[string]any{},
+		Name:    "key",
+		Key: extension.ComposerKeyEvent{
+			Key:  "!",
+			Text: "!",
+			Ctrl: false,
+			Alt:  false,
+		},
+	})
+	require.NoError(t, err)
+
+	assert.True(t, result.Consumed)
+	assert.Equal(t, "go!", result.Buffers["composer"].Text)
+	assert.Equal(t, "lua:runtime", result.Buffers["composer"].Label)
+	require.Len(t, result.Appends, 1)
+	assert.Equal(t, extension.BufferAppend{Name: "transcript", Text: "saw go!", Role: "custom"}, result.Appends[0])
+}
+
 func TestDefaultLoadPathsPrependsOfficialExtensions(t *testing.T) {
 	t.Parallel()
 

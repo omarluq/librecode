@@ -20,10 +20,6 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 		app.screen.Sync()
 		return false, nil
 	case *tcell.EventKey:
-		if app.keys.matches(typedEvent, actionForceExit) {
-			return app.handleForceExit(), nil
-		}
-
 		return app.handleKey(ctx, typedEvent)
 	case *tcell.EventMouse:
 		app.handleMouse(typedEvent)
@@ -36,12 +32,38 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 }
 
 func (app *App) handleKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
+	result := app.handlePriorityKey(ctx, event)
+	if result.handled || result.err != nil {
+		return result.shouldQuit, result.err
+	}
+
+	return app.handleInputKey(ctx, event)
+}
+
+type keyHandlingResult struct {
+	err        error
+	shouldQuit bool
+	handled    bool
+}
+
+func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) keyHandlingResult {
+	if handled, err := app.handleExtensionKey(ctx, event); handled || err != nil {
+		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
+	}
+	if app.keys.matches(event, actionForceExit) {
+		return keyHandlingResult{err: nil, shouldQuit: app.handleForceExit(), handled: true}
+	}
 	if app.mode == modePanel && app.panel != nil {
-		return app.handlePanelKey(ctx, event)
+		return keyHandlingResult{err: app.handlePanelKey(ctx, event), shouldQuit: false, handled: true}
 	}
 	if handled, err := app.handlePreEditorKey(ctx, event); handled || err != nil {
-		return false, err
+		return keyHandlingResult{err: err, shouldQuit: false, handled: handled}
 	}
+
+	return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
+}
+
+func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
 	if app.keys.matches(event, actionInputSubmit) {
 		return app.submit(ctx)
 	}
@@ -135,28 +157,28 @@ func (app *App) editorActions() []shortcutHandler {
 	}
 }
 
-func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
+func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) error {
 	if event.Key() == tcell.KeyEscape {
 		app.closePanel()
-		return false, nil
+		return nil
 	}
 	if app.selectedPanelKind == panelSessions && app.handleSessionPanelKey(ctx, event) {
-		return false, nil
+		return nil
 	}
 	if app.selectedPanelKind == panelScopedModels && app.handleScopedModelKey(event) {
-		return false, nil
+		return nil
 	}
 	action := app.panel.handleKey(event, app.keys)
 	switch action.Type {
 	case panelActionCancel:
 		app.closePanel()
 	case panelActionSelect:
-		return false, app.applyPanelSelection(ctx, action.Value)
+		return app.applyPanelSelection(ctx, action.Value)
 	case panelActionNone:
-		return false, nil
+		return nil
 	}
 
-	return false, nil
+	return nil
 }
 
 func (app *App) handleForceExit() bool {
@@ -196,7 +218,15 @@ func (app *App) handleEscape(ctx context.Context) {
 }
 
 func (app *App) submit(ctx context.Context) (bool, error) {
-	text := strings.TrimSpace(app.editor.clear())
+	text := strings.TrimSpace(app.editor.text())
+	if text == "" {
+		return false, nil
+	}
+	consumed, err := app.applyPromptSubmitExtensions(ctx)
+	if consumed || err != nil {
+		return false, err
+	}
+	text = strings.TrimSpace(app.editor.clear())
 	if text == "" {
 		return false, nil
 	}

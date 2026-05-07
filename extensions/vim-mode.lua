@@ -607,5 +607,25 @@ end
 librecode.register_composer_mode("vim", "Full Vim mode for the chat composer", {
   default = true,
   label = label(),
-  on_key = on_key,
 })
+
+librecode.on("key", { priority = 100 }, function(event)
+  local state = librecode.buf.get("composer")
+  local outcome = on_key(event, state)
+
+  if outcome.chars ~= nil then
+    state.chars = outcome.chars
+    state.text = join(outcome.chars)
+  end
+  if outcome.cursor ~= nil then
+    state.cursor = outcome.cursor
+  end
+  if outcome.label ~= nil then
+    state.label = outcome.label
+  end
+
+  librecode.buf.set("composer", state)
+  if outcome.handled then
+    librecode.event.consume()
+  end
+end)

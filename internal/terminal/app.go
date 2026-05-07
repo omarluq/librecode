@@ -85,6 +85,7 @@ type App struct {
 	renderer                     *screenRenderer
 	frame                        *cellBuffer
 	runtime                      *assistant.Runtime
+	extensions                   extension.TerminalEventRunner
 	settings                     *database.DocumentRepository
 	models                       *model.Registry
 	auth                         *auth.Storage
@@ -179,6 +180,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		renderer:                     newScreenRenderer(screen),
 		frame:                        nil,
 		runtime:                      options.Runtime,
+		extensions:                   terminalEventRunner(options.Composer),
 		settings:                     options.Settings,
 		models:                       options.Models,
 		auth:                         options.Auth,

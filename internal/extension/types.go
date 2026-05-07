@@ -32,6 +32,38 @@ type LoadedExtension struct {
 	ComposerModes []string `json:"composer_modes"`
 }
 
+// BufferState describes an extension-visible mutable runtime buffer.
+type BufferState struct {
+	Metadata map[string]any `json:"metadata"`
+	Name     string         `json:"name"`
+	Text     string         `json:"text"`
+	Label    string         `json:"label"`
+	Chars    []string       `json:"chars"`
+	Cursor   int            `json:"cursor"`
+}
+
+// BufferAppend records an append operation against a runtime buffer.
+type BufferAppend struct {
+	Name string `json:"name"`
+	Text string `json:"text"`
+	Role string `json:"role"`
+}
+
+// TerminalEvent describes a low-level terminal runtime event exposed to extensions.
+type TerminalEvent struct {
+	Buffers map[string]BufferState `json:"buffers"`
+	Context map[string]any         `json:"context"`
+	Name    string                 `json:"name"`
+	Key     ComposerKeyEvent       `json:"key"`
+}
+
+// TerminalEventResult describes mutations produced by low-level extension handlers.
+type TerminalEventResult struct {
+	Buffers  map[string]BufferState `json:"buffers"`
+	Appends  []BufferAppend         `json:"appends"`
+	Consumed bool                   `json:"consumed"`
+}
+
 // ComposerMode describes an extension-provided terminal composer mode.
 type ComposerMode struct {
 	Name        string `json:"name"`
@@ -81,6 +113,11 @@ type ComposerRunner interface {
 		event ComposerKeyEvent,
 		state ComposerState,
 	) (ComposerResult, error)
+}
+
+// TerminalEventRunner executes low-level terminal runtime event handlers.
+type TerminalEventRunner interface {
+	HandleTerminalEvent(ctx context.Context, event TerminalEvent) (TerminalEventResult, error)
 }
 
 // EventEmitter emits extension lifecycle events.

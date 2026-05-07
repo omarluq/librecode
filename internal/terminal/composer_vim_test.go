@@ -100,6 +100,7 @@ func newVimTestApp(t *testing.T) *App {
 	mode := manager.ComposerModes()[0]
 	app := newRenderTestApp(t)
 	app.composer = newComposer(mode.Name, mode.Label, manager)
+	app.extensions = terminalEventRunner(manager)
 
 	return app
 }
