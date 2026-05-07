@@ -63,3 +63,6 @@ Thumbs.db
 .windsurf/
 .zencoder/
 /skills/
+
+# Local planning scratch space
+.librecode/work/

@@ -266,7 +266,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			result.Text = strings.TrimSpace(providerResult.Text)
 			return result, nil
 		}
-		input = append(input, providerResult.OutputItems...)
+		input = append(input, statelessResponseOutputItems(providerResult.OutputItems)...)
 		outputs, events := executeToolCalls(ctx, request.CWD, providerResult.ToolCalls, request.OnEvent)
 		result.ToolEvents = append(result.ToolEvents, events...)
 		input = append(input, outputs...)
@@ -343,6 +343,25 @@ func (client *HTTPCompletionClient) requestResponses(
 	}
 
 	return parseOpenAIResponseResult(content)
+}
+
+func statelessResponseOutputItems(items []any) []any {
+	stateless := make([]any, 0, len(items))
+	for _, item := range items {
+		object, ok := item.(map[string]any)
+		if !ok || stringValue(object[jsonTypeKey]) != functionCallType {
+			continue
+		}
+		stateless = append(stateless, map[string]any{
+			jsonTypeKey:     functionCallType,
+			jsonCallIDKey:   stringValue(object[jsonCallIDKey]),
+			jsonToolNameKey: stringValue(object[jsonToolNameKey]),
+			"arguments":     stringValue(object["arguments"]),
+			"status":        "completed",
+		})
+	}
+
+	return stateless
 }
 
 func validateToolCalls(calls []toolCall) error {
@@ -538,7 +557,7 @@ func openAIChatMessages(request *CompletionRequest) []map[string]string {
 func openAIResponseInput(messages []database.MessageEntity) []any {
 	input := []any{}
 	for _, message := range messages {
-		role, ok := openAIRole(message.Role)
+		role, ok := openAIResponseInputRole(message.Role)
 		if !ok || message.Content == "" {
 			continue
 		}
@@ -546,6 +565,26 @@ func openAIResponseInput(messages []database.MessageEntity) []any {
 	}
 
 	return input
+}
+
+func openAIResponseInputRole(role database.Role) (string, bool) {
+	switch role {
+	case database.RoleUser:
+		return jsonUserRole, true
+	case database.RoleAssistant:
+		// With store=false, Responses continuation must not rely on provider-side
+		// assistant output item IDs. Replay assistant text as user-visible context.
+		return jsonUserRole, true
+	case database.RoleToolResult,
+		database.RoleThinking,
+		database.RoleCustom,
+		database.RoleBashExecution,
+		database.RoleBranchSummary,
+		database.RoleCompactionSummary:
+		return "", false
+	}
+
+	return "", false
 }
 
 func compactResponseMessages(messages []database.MessageEntity) []database.MessageEntity {
