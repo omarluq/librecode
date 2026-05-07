@@ -42,6 +42,7 @@ type PromptRequest struct {
 	CWD           string                     `json:"cwd"`
 	Text          string                     `json:"text"`
 	Name          string                     `json:"name"`
+	ResumeLatest  bool                       `json:"resume_latest,omitempty"`
 }
 
 // PromptUserEntryEvent identifies the persisted user entry for an active prompt.
@@ -267,6 +268,12 @@ func formatToolEvent(toolEvent *ToolEvent) string {
 
 func (runtime *Runtime) resolveSession(ctx context.Context, request *PromptRequest) (*database.SessionEntity, error) {
 	if request.SessionID != "" {
+		if request.ResumeLatest {
+			return nil, oops.
+				In("assistant").
+				Code("session_selection_conflict").
+				Errorf("resume latest cannot be used with an explicit session")
+		}
 		loadedSession, found, err := runtime.sessions.GetSession(ctx, request.SessionID)
 		if err != nil {
 			return nil, err
@@ -282,16 +289,24 @@ func (runtime *Runtime) resolveSession(ctx context.Context, request *PromptReque
 		return loadedSession, nil
 	}
 
-	if request.Name != "" {
-		return runtime.sessions.CreateSession(ctx, request.CWD, request.Name, "")
+	if request.ResumeLatest {
+		if request.Name != "" {
+			return nil, oops.
+				In("assistant").
+				Code("session_selection_conflict").
+				Errorf("resume latest cannot be used with a new session name")
+		}
+		latestSession, found, err := runtime.sessions.LatestSession(ctx, request.CWD)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			return latestSession, nil
+		}
 	}
 
-	latestSession, found, err := runtime.sessions.LatestSession(ctx, request.CWD)
-	if err != nil {
-		return nil, err
-	}
-	if found {
-		return latestSession, nil
+	if request.Name != "" {
+		return runtime.sessions.CreateSession(ctx, request.CWD, request.Name, "")
 	}
 
 	return runtime.sessions.CreateSession(ctx, request.CWD, "", "")

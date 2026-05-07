@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/omarluq/librecode/internal/assistant"
@@ -8,24 +11,30 @@ import (
 	"github.com/omarluq/librecode/internal/terminal"
 )
 
+type chatRunOptions struct {
+	SessionID string
+	Resume    bool
+}
+
 func newChatCmd() *cobra.Command {
-	var sessionID string
+	var options chatRunOptions
 
 	cmd := &cobra.Command{
 		Use:   "chat",
 		Short: "Open the interactive chat UI",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runChat(cmd, sessionID)
+			return runChat(cmd, options)
 		},
 	}
 
-	cmd.Flags().StringVar(&sessionID, "session", "", "session id to append to")
+	cmd.Flags().StringVar(&options.SessionID, "session", "", "session id to append to")
+	cmd.Flags().BoolVar(&options.Resume, "resume", false, "resume the latest session for this working directory")
 
 	return cmd
 }
 
-func runChat(cmd *cobra.Command, sessionID string) error {
+func runChat(cmd *cobra.Command, options chatRunOptions) error {
 	return withContainer(cmd.Context(), func(container *di.Container) error {
 		databaseService := di.MustInvoke[*di.DatabaseService](container)
 		runtime := di.MustInvoke[*di.AssistantService](container).Runtime
@@ -33,6 +42,10 @@ func runChat(cmd *cobra.Command, sessionID string) error {
 		authStorage := di.MustInvoke[*di.AuthService](container).Storage
 		cfg := di.MustInvoke[*di.ConfigService](container).Get()
 		cwd, err := assistant.DefaultCWD("")
+		if err != nil {
+			return err
+		}
+		sessionID, err := resolveChatSessionID(cmd.Context(), runtime, cwd, options)
 		if err != nil {
 			return err
 		}
@@ -50,4 +63,28 @@ func runChat(cmd *cobra.Command, sessionID string) error {
 			SessionID: sessionID,
 		})
 	})
+}
+
+func resolveChatSessionID(
+	ctx context.Context,
+	runtime *assistant.Runtime,
+	cwd string,
+	options chatRunOptions,
+) (string, error) {
+	if options.SessionID != "" && options.Resume {
+		return "", fmt.Errorf("--resume cannot be used with --session")
+	}
+	if !options.Resume || runtime == nil {
+		return options.SessionID, nil
+	}
+
+	latestSession, found, err := runtime.SessionRepository().LatestSession(ctx, cwd)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", nil
+	}
+
+	return latestSession.ID, nil
 }

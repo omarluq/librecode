@@ -15,12 +15,19 @@ import (
 func newPromptCmd() *cobra.Command {
 	var sessionID string
 	var sessionName string
+	var resume bool
 
 	cmd := &cobra.Command{
 		Use:   "prompt [message]",
 		Short: "Send a prompt through the assistant runtime",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if resume && sessionID != "" {
+				return fmt.Errorf("--resume cannot be used with --session")
+			}
+			if resume && sessionName != "" {
+				return fmt.Errorf("--resume cannot be used with --name")
+			}
 			message, err := promptMessage(cmd, args)
 			if err != nil {
 				return err
@@ -41,6 +48,7 @@ func newPromptCmd() *cobra.Command {
 					CWD:           cwd,
 					Text:          message,
 					Name:          sessionName,
+					ResumeLatest:  resume,
 				})
 				if err != nil {
 					return err
@@ -57,6 +65,7 @@ func newPromptCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&sessionID, "session", "", "session id to append to")
 	cmd.Flags().StringVar(&sessionName, "name", "", "create a named session")
+	cmd.Flags().BoolVar(&resume, "resume", false, "resume the latest session for this working directory")
 
 	return cmd
 }

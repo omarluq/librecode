@@ -63,30 +63,145 @@ func (app *App) drawMessages(width, height, row int) int {
 }
 
 func (app *App) messageLines(width, maxRows int) []styledLine {
-	lines := []styledLine{}
-	for _, message := range app.messages {
-		lines = append(lines, app.renderMessage(width, message)...)
+	return app.visibleMessageLineGroups(app.messageLineGroups(width), maxRows)
+}
+
+func (app *App) messageLineGroups(width int) [][]styledLine {
+	groups := make([][]styledLine, 0, len(app.messages)+len(app.streamingBlocks)+3)
+	for index := range app.messages {
+		groups = append(groups, app.cachedMessageLines(width, index))
 	}
 	if len(app.streamingBlocks) > 0 {
-		for _, message := range app.streamingBlocks {
-			lines = append(lines, app.renderStreamingBlockMessage(width, message)...)
+		for index := range app.streamingBlocks {
+			groups = append(groups, app.cachedStreamingBlockLines(width, index))
 		}
 	} else {
 		if app.streamingThinkingText != "" {
-			lines = append(lines, app.renderStreamingThinkingMessage(width, app.streamingThinkingText)...)
+			groups = append(groups, app.renderStreamingThinkingMessage(width, app.streamingThinkingText))
 		}
 		if app.streamingText != "" {
-			lines = append(lines, app.renderStreamingMessage(width, app.streamingText)...)
+			groups = append(groups, app.renderStreamingMessage(width, app.streamingText))
 		}
 	}
 	if app.working {
-		lines = append(lines, styledLine{Style: app.theme.style(colorAccent), Text: app.workingIndicator()})
+		groups = append(groups, []styledLine{{Style: app.theme.style(colorAccent), Text: app.workingIndicator()}})
 	}
 	if len(app.queuedMessages) > 0 {
-		lines = append(lines, app.renderQueuedMessages(width)...)
+		groups = append(groups, app.renderQueuedMessages(width))
 	}
 
-	return app.visibleMessageLines(lines, maxRows)
+	return groups
+}
+
+func (app *App) cachedMessageLines(width, index int) []styledLine {
+	app.ensureMessageLineCache(width)
+	if index < len(app.messageLineCache) && app.messageLineCache[index].Valid {
+		return app.messageLineCache[index].Lines
+	}
+	lines := app.renderMessage(width, app.messages[index])
+	if index >= len(app.messageLineCache) {
+		return lines
+	}
+	app.messageLineCache[index] = cachedRenderedMessage{Lines: lines, Valid: true}
+
+	return lines
+}
+
+func (app *App) ensureMessageLineCache(width int) {
+	state := messageLineCacheState{
+		ThemeName:     app.theme.name,
+		Width:         width,
+		HideThinking:  app.hideThinking,
+		ToolsExpanded: app.toolsExpanded,
+	}
+	if app.messageLineCacheState != state {
+		app.messageLineCache = nil
+		app.messageLineCacheState = state
+	}
+	if len(app.messageLineCache) > len(app.messages) {
+		app.messageLineCache = app.messageLineCache[:len(app.messages)]
+	}
+	for len(app.messageLineCache) < len(app.messages) {
+		app.messageLineCache = append(app.messageLineCache, cachedRenderedMessage{})
+	}
+}
+
+func (app *App) cachedStreamingBlockLines(width, index int) []styledLine {
+	app.ensureStreamingBlockLineCache(width)
+	if index < len(app.streamingBlockLineCache) && app.streamingBlockLineCache[index].Valid {
+		return app.streamingBlockLineCache[index].Lines
+	}
+	lines := app.renderStreamingBlockMessage(width, app.streamingBlocks[index])
+	if index >= len(app.streamingBlockLineCache) {
+		return lines
+	}
+	app.streamingBlockLineCache[index] = cachedRenderedMessage{Lines: lines, Valid: true}
+
+	return lines
+}
+
+func (app *App) ensureStreamingBlockLineCache(width int) {
+	state := messageLineCacheState{
+		ThemeName:     app.theme.name,
+		Width:         width,
+		HideThinking:  app.hideThinking,
+		ToolsExpanded: app.toolsExpanded,
+	}
+	if app.streamingBlockLineCacheState != state {
+		app.streamingBlockLineCache = nil
+		app.streamingBlockLineCacheState = state
+	}
+	if len(app.streamingBlockLineCache) > len(app.streamingBlocks) {
+		app.streamingBlockLineCache = app.streamingBlockLineCache[:len(app.streamingBlocks)]
+	}
+	for len(app.streamingBlockLineCache) < len(app.streamingBlocks) {
+		app.streamingBlockLineCache = append(app.streamingBlockLineCache, cachedRenderedMessage{})
+	}
+}
+
+func (app *App) visibleMessageLineGroups(groups [][]styledLine, maxRows int) []styledLine {
+	totalRows := 0
+	for _, group := range groups {
+		totalRows += len(group)
+	}
+	if maxRows < 0 || totalRows <= maxRows {
+		app.scrollOffset = 0
+		return flattenStyledLineGroups(groups, totalRows)
+	}
+	maxOffset := max(0, totalRows-maxRows)
+	app.scrollOffset = min(app.scrollOffset, maxOffset)
+	end := totalRows - app.scrollOffset
+	start := max(0, end-maxRows)
+
+	return sliceStyledLineGroups(groups, start, end)
+}
+
+func flattenStyledLineGroups(groups [][]styledLine, totalRows int) []styledLine {
+	lines := make([]styledLine, 0, totalRows)
+	for _, group := range groups {
+		lines = append(lines, group...)
+	}
+
+	return lines
+}
+
+func sliceStyledLineGroups(groups [][]styledLine, start, end int) []styledLine {
+	lines := make([]styledLine, 0, max(0, end-start))
+	offset := 0
+	for _, group := range groups {
+		nextOffset := offset + len(group)
+		if nextOffset > start && offset < end {
+			groupStart := max(0, start-offset)
+			groupEnd := min(len(group), end-offset)
+			lines = append(lines, group[groupStart:groupEnd]...)
+		}
+		offset = nextOffset
+		if offset >= end {
+			break
+		}
+	}
+
+	return lines
 }
 
 func (app *App) renderMessage(width int, message chatMessage) []styledLine {

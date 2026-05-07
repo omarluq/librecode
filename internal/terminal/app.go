@@ -18,9 +18,11 @@ import (
 )
 
 const (
-	defaultEditorRows   = 6
-	doubleEscapeDelay   = 500 * time.Millisecond
-	doubleControlCDelay = 2 * time.Second
+	defaultEditorRows      = 6
+	workFrameInterval      = 120 * time.Millisecond
+	streamingFrameInterval = 33 * time.Millisecond
+	doubleEscapeDelay      = 500 * time.Millisecond
+	doubleControlCDelay    = 2 * time.Second
 )
 
 type appMode string
@@ -47,6 +49,18 @@ type activePromptState struct {
 	Canceled         bool
 }
 
+type messageLineCacheState struct {
+	ThemeName     string
+	Width         int
+	HideThinking  bool
+	ToolsExpanded bool
+}
+
+type cachedRenderedMessage struct {
+	Lines []styledLine
+	Valid bool
+}
+
 // RunOptions configures the terminal app.
 type RunOptions struct {
 	Resources *core.ResourceSnapshot       `json:"resources"`
@@ -61,47 +75,51 @@ type RunOptions struct {
 
 // App is the terminal chat UI.
 type App struct {
-	lastEscape            time.Time
-	lastControlC          time.Time
-	screen                tcell.Screen
-	renderer              *screenRenderer
-	frame                 *cellBuffer
-	runtime               *assistant.Runtime
-	settings              *database.DocumentRepository
-	models                *model.Registry
-	auth                  *auth.Storage
-	cfg                   *config.Config
-	editor                *editor
-	keys                  *keybindings
-	panel                 *selectionPanel
-	pendingParentID       *string
-	activePrompt          *activePromptState
-	canceledPrompts       map[uint64]*activePromptState
-	scopedEnabled         map[string]bool
-	theme                 terminalTheme
-	mode                  appMode
-	cwd                   string
-	sessionID             string
-	statusMessage         string
-	selectedPanelKind     panelKind
-	streamingText         string
-	streamingThinkingText string
-	streamingBlocks       []chatMessage
-	resources             core.ResourceSnapshot
-	queuedMessages        []string
-	messages              []chatMessage
-	scopedOrder           []string
-	sessionSortRecent     bool
-	sessionNamedOnly      bool
-	sessionShowPath       bool
-	authWorking           bool
-	toolsExpanded         bool
-	hideThinking          bool
-	working               bool
-	workFrame             int
-	scrollOffset          int
-	streamedToolEvents    int
-	promptSequence        uint64
+	lastEscape                   time.Time
+	lastControlC                 time.Time
+	screen                       tcell.Screen
+	renderer                     *screenRenderer
+	frame                        *cellBuffer
+	runtime                      *assistant.Runtime
+	settings                     *database.DocumentRepository
+	models                       *model.Registry
+	auth                         *auth.Storage
+	cfg                          *config.Config
+	editor                       *editor
+	keys                         *keybindings
+	panel                        *selectionPanel
+	pendingParentID              *string
+	activePrompt                 *activePromptState
+	canceledPrompts              map[uint64]*activePromptState
+	scopedEnabled                map[string]bool
+	theme                        terminalTheme
+	mode                         appMode
+	cwd                          string
+	sessionID                    string
+	statusMessage                string
+	selectedPanelKind            panelKind
+	streamingText                string
+	streamingThinkingText        string
+	streamingBlocks              []chatMessage
+	streamingBlockLineCache      []cachedRenderedMessage
+	streamingBlockLineCacheState messageLineCacheState
+	resources                    core.ResourceSnapshot
+	queuedMessages               []string
+	messages                     []chatMessage
+	messageLineCache             []cachedRenderedMessage
+	messageLineCacheState        messageLineCacheState
+	scopedOrder                  []string
+	sessionSortRecent            bool
+	sessionNamedOnly             bool
+	sessionShowPath              bool
+	authWorking                  bool
+	toolsExpanded                bool
+	hideThinking                 bool
+	working                      bool
+	workFrame                    int
+	scrollOffset                 int
+	streamedToolEvents           int
+	promptSequence               uint64
 }
 
 // Run starts an interactive tcell chat loop.
@@ -149,47 +167,51 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		resources = *options.Resources
 	}
 	app := &App{
-		screen:                screen,
-		renderer:              newScreenRenderer(screen),
-		frame:                 nil,
-		runtime:               options.Runtime,
-		settings:              options.Settings,
-		models:                options.Models,
-		auth:                  options.Auth,
-		cfg:                   options.Config,
-		editor:                newEditor(),
-		keys:                  newDefaultKeybindings(),
-		theme:                 appTheme,
-		resources:             resources,
-		mode:                  modeChat,
-		panel:                 nil,
-		cwd:                   options.CWD,
-		sessionID:             options.SessionID,
-		pendingParentID:       nil,
-		activePrompt:          nil,
-		canceledPrompts:       map[uint64]*activePromptState{},
-		messages:              []chatMessage{},
-		queuedMessages:        []string{},
-		scopedOrder:           []string{},
-		scopedEnabled:         map[string]bool{},
-		sessionSortRecent:     true,
-		sessionNamedOnly:      false,
-		sessionShowPath:       false,
-		authWorking:           false,
-		toolsExpanded:         false,
-		hideThinking:          false,
-		lastEscape:            time.Time{},
-		lastControlC:          time.Time{},
-		working:               false,
-		workFrame:             0,
-		scrollOffset:          0,
-		streamedToolEvents:    0,
-		promptSequence:        0,
-		statusMessage:         "",
-		selectedPanelKind:     "",
-		streamingText:         "",
-		streamingThinkingText: "",
-		streamingBlocks:       []chatMessage{},
+		screen:                       screen,
+		renderer:                     newScreenRenderer(screen),
+		frame:                        nil,
+		runtime:                      options.Runtime,
+		settings:                     options.Settings,
+		models:                       options.Models,
+		auth:                         options.Auth,
+		cfg:                          options.Config,
+		editor:                       newEditor(),
+		keys:                         newDefaultKeybindings(),
+		theme:                        appTheme,
+		resources:                    resources,
+		mode:                         modeChat,
+		panel:                        nil,
+		cwd:                          options.CWD,
+		sessionID:                    options.SessionID,
+		pendingParentID:              nil,
+		activePrompt:                 nil,
+		canceledPrompts:              map[uint64]*activePromptState{},
+		messages:                     []chatMessage{},
+		messageLineCache:             nil,
+		messageLineCacheState:        messageLineCacheState{},
+		queuedMessages:               []string{},
+		scopedOrder:                  []string{},
+		scopedEnabled:                map[string]bool{},
+		sessionSortRecent:            true,
+		sessionNamedOnly:             false,
+		sessionShowPath:              false,
+		authWorking:                  false,
+		toolsExpanded:                false,
+		hideThinking:                 false,
+		lastEscape:                   time.Time{},
+		lastControlC:                 time.Time{},
+		working:                      false,
+		workFrame:                    0,
+		scrollOffset:                 0,
+		streamedToolEvents:           0,
+		promptSequence:               0,
+		statusMessage:                "",
+		selectedPanelKind:            "",
+		streamingText:                "",
+		streamingThinkingText:        "",
+		streamingBlocks:              []chatMessage{},
+		streamingBlockLineCache:      nil,
+		streamingBlockLineCacheState: messageLineCacheState{},
 	}
 	app.addWelcomeMessage()
 
@@ -197,13 +219,23 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 }
 
 func (app *App) loop(ctx context.Context) {
-	ticker := time.NewTicker(120 * time.Millisecond)
-	defer ticker.Stop()
+	workTicker := time.NewTicker(workFrameInterval)
+	defer workTicker.Stop()
+	frameTicker := time.NewTicker(streamingFrameInterval)
+	defer frameTicker.Stop()
+	dirty := true
 	for {
-		app.draw()
-		var tick <-chan time.Time
+		if dirty && !app.throttleDraws() {
+			app.draw()
+			dirty = false
+		}
+		var workTick <-chan time.Time
 		if app.working || app.authWorking {
-			tick = ticker.C
+			workTick = workTicker.C
+		}
+		var frameTick <-chan time.Time
+		if dirty && app.throttleDraws() {
+			frameTick = frameTicker.C
 		}
 		select {
 		case event := <-app.screen.EventQ():
@@ -217,10 +249,55 @@ func (app *App) loop(ctx context.Context) {
 			if shouldQuit {
 				return
 			}
-		case <-tick:
+			dirty = true
+			if app.shouldDrawImmediately(event) {
+				app.draw()
+				dirty = false
+			}
+		case <-workTick:
 			app.workFrame++
+			dirty = true
+		case <-frameTick:
+			app.draw()
+			dirty = false
 		}
 	}
+}
+
+func (app *App) throttleDraws() bool {
+	return app.working || app.authWorking
+}
+
+func (app *App) shouldDrawImmediately(event tcell.Event) bool {
+	interrupt, ok := event.(*tcell.EventInterrupt)
+	if !ok {
+		return true
+	}
+	payload, ok := interrupt.Data().(asyncEvent)
+	if !ok {
+		return true
+	}
+
+	return !isHighVolumePromptStreamEvent(payload.Kind)
+}
+
+func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
+	switch kind {
+	case asyncEventPromptDelta,
+		asyncEventPromptThinkingDelta,
+		asyncEventPromptToolStart,
+		asyncEventPromptToolResult:
+		return true
+	case asyncEventAuthURL,
+		asyncEventAuthDone,
+		asyncEventAuthError,
+		asyncEventPromptDone,
+		asyncEventPromptUserEntry,
+		asyncEventPromptError:
+		return false
+	}
+
+	return false
 }
 
 func (app *App) loadInitialMessages(ctx context.Context) error {
@@ -233,7 +310,7 @@ func (app *App) loadInitialMessages(ctx context.Context) error {
 	}
 	for index := range messages {
 		message := &messages[index]
-		app.messages = append(app.messages, chatMessage{
+		app.appendMessage(chatMessage{
 			CreatedAt: message.CreatedAt,
 			Role:      message.Role,
 			Content:   message.Content,
@@ -248,7 +325,28 @@ func (app *App) addSystemMessage(content string) {
 }
 
 func (app *App) addMessage(role database.Role, content string) {
-	app.messages = append(app.messages, chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content})
+	app.appendMessage(chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content})
+}
+
+func (app *App) appendMessage(message chatMessage) {
+	app.messages = append(app.messages, message)
+}
+
+func (app *App) resetMessages() {
+	app.messages = []chatMessage{}
+	app.messageLineCache = nil
+}
+
+func (app *App) truncateMessages(length int) {
+	app.messages = app.messages[:length]
+	if len(app.messageLineCache) > length {
+		app.messageLineCache = app.messageLineCache[:length]
+	}
+}
+
+func (app *App) resetStreamingBlocks() {
+	app.streamingBlocks = nil
+	app.streamingBlockLineCache = nil
 }
 
 func (app *App) setStatus(message string) {

@@ -53,7 +53,7 @@ func (app *App) deleteSelectedSession(ctx context.Context) {
 	}
 	if app.sessionID == value {
 		app.sessionID = ""
-		app.messages = []chatMessage{}
+		app.resetMessages()
 		app.addSystemMessage("deleted active session")
 	}
 	app.setStatus("deleted session " + value)

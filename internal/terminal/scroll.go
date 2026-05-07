@@ -38,22 +38,7 @@ func (app *App) scrollTranscript(delta int) {
 	app.scrollOffset = max(0, app.scrollOffset+delta)
 	if app.scrollOffset == 0 {
 		app.setStatus("scroll: bottom")
-		app.draw()
 		return
 	}
 	app.setStatus("scroll: " + intText(app.scrollOffset) + " lines up")
-	app.draw()
-}
-
-func (app *App) visibleMessageLines(lines []styledLine, maxRows int) []styledLine {
-	if maxRows < 0 || len(lines) <= maxRows {
-		app.scrollOffset = 0
-		return lines
-	}
-	maxOffset := max(0, len(lines)-maxRows)
-	app.scrollOffset = min(app.scrollOffset, maxOffset)
-	end := len(lines) - app.scrollOffset
-	start := max(0, end-maxRows)
-
-	return lines[start:end]
 }

@@ -77,6 +77,57 @@ func TestRuntime_PromptNotifiesUserEntry(t *testing.T) {
 	assert.Equal(t, response.UserEntryID, userEntryEvent.EntryID)
 }
 
+func TestRuntime_PromptStartsNewSessionByDefault(t *testing.T) {
+	t.Parallel()
+
+	runtime, repository := newTestRuntime(t)
+	ctx := context.Background()
+
+	firstResponse, err := runtime.Prompt(ctx, &assistant.PromptRequest{
+		SessionID: "",
+		CWD:       testRuntimeCWD,
+		Text:      "first session",
+	})
+	require.NoError(t, err)
+	secondResponse, err := runtime.Prompt(ctx, &assistant.PromptRequest{
+		SessionID: "",
+		CWD:       testRuntimeCWD,
+		Text:      "second session",
+	})
+	require.NoError(t, err)
+
+	assert.NotEqual(t, firstResponse.SessionID, secondResponse.SessionID)
+	sessions, err := repository.ListSessions(ctx, testRuntimeCWD)
+	require.NoError(t, err)
+	assert.Len(t, sessions, 2)
+}
+
+func TestRuntime_PromptResumesLatestSessionWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	runtime, repository := newTestRuntime(t)
+	ctx := context.Background()
+
+	firstResponse, err := runtime.Prompt(ctx, &assistant.PromptRequest{
+		SessionID: "",
+		CWD:       testRuntimeCWD,
+		Text:      "first session",
+	})
+	require.NoError(t, err)
+	secondResponse, err := runtime.Prompt(ctx, &assistant.PromptRequest{
+		SessionID:    "",
+		CWD:          testRuntimeCWD,
+		Text:         "resume session",
+		ResumeLatest: true,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, firstResponse.SessionID, secondResponse.SessionID)
+	entries, err := repository.Entries(ctx, firstResponse.SessionID)
+	require.NoError(t, err)
+	assert.Len(t, entries, 4)
+}
+
 func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	t.Parallel()
 

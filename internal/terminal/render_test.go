@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
+
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
 )
@@ -45,17 +47,85 @@ func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
 	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptThinkingDelta, Text: "thinking"})
 	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptDelta, Text: "answer"})
 
-	if app.streamingThinkingText != "thinking" {
-		t.Fatalf("streaming thinking text = %q, want %q", app.streamingThinkingText, "thinking")
-	}
-	if app.streamingText != "answer" {
-		t.Fatalf("streaming response text = %q, want %q", app.streamingText, "answer")
-	}
 	if got, want := streamingBlockRoles(app.streamingBlocks), []database.Role{database.RoleThinking, database.RoleAssistant}; !rolesEqual(got, want) {
 		t.Fatalf("streaming block roles = %v, want %v", got, want)
 	}
 	if app.statusMessage == "streaming response" {
 		t.Fatal("response deltas should not set the streaming response status")
+	}
+}
+
+func TestScrollTranscriptDoesNotDrawImmediately(t *testing.T) {
+	app := &App{}
+
+	app.scrollTranscript(3)
+
+	if app.scrollOffset != 3 {
+		t.Fatalf("scroll offset = %d, want 3", app.scrollOffset)
+	}
+	if app.statusMessage != "scroll: 3 lines up" {
+		t.Fatalf("status = %q", app.statusMessage)
+	}
+}
+
+func TestHighVolumeStreamEventsDoNotForceImmediateDraw(t *testing.T) {
+	app := &App{}
+	for _, kind := range []asyncEventKind{
+		asyncEventPromptDelta,
+		asyncEventPromptThinkingDelta,
+		asyncEventPromptToolStart,
+		asyncEventPromptToolResult,
+	} {
+		event := tcell.NewEventInterrupt(asyncEvent{Kind: kind})
+		if app.shouldDrawImmediately(event) {
+			t.Fatalf("%s should be frame-throttled", kind)
+		}
+	}
+}
+
+func TestPromptLifecycleEventsForceImmediateDraw(t *testing.T) {
+	app := &App{}
+	for _, kind := range []asyncEventKind{
+		asyncEventPromptDone,
+		asyncEventPromptError,
+		asyncEventAuthDone,
+	} {
+		event := tcell.NewEventInterrupt(asyncEvent{Kind: kind})
+		if !app.shouldDrawImmediately(event) {
+			t.Fatalf("%s should draw immediately", kind)
+		}
+	}
+}
+
+func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
+	app := &App{theme: darkTheme(), keys: newDefaultKeybindings()}
+	app.addMessage(database.RoleThinking, "cached thought")
+
+	visible := app.messageLines(80, 100)
+	if lineIndexContaining(visible, "cached thought") == -1 {
+		t.Fatalf("expected visible thinking content before hiding, got %v", lineTexts(visible))
+	}
+
+	app.hideThinking = true
+	hidden := app.messageLines(80, 100)
+	if lineIndexContaining(hidden, "cached thought") != -1 {
+		t.Fatalf("expected hidden thinking content after hiding, got %v", lineTexts(hidden))
+	}
+	if lineIndexContaining(hidden, "thinking…") == -1 {
+		t.Fatalf("expected thinking placeholder after hiding, got %v", lineTexts(hidden))
+	}
+}
+
+func TestStreamingBlockCacheInvalidatesOnMergedDelta(t *testing.T) {
+	app := &App{theme: darkTheme(), keys: newDefaultKeybindings()}
+
+	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptThinkingDelta, Text: "first"})
+	_ = app.messageLines(80, 100)
+	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptThinkingDelta, Text: " second"})
+
+	lines := app.messageLines(80, 100)
+	if lineIndexContaining(lines, "first second") == -1 {
+		t.Fatalf("expected merged thinking delta to invalidate cached streaming block, got %v", lineTexts(lines))
 	}
 }
 
@@ -137,4 +207,13 @@ func lineIndexContaining(lines []styledLine, text string) int {
 	}
 
 	return -1
+}
+
+func lineTexts(lines []styledLine) []string {
+	texts := make([]string, 0, len(lines))
+	for _, line := range lines {
+		texts = append(texts, line.Text)
+	}
+
+	return texts
 }

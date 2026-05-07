@@ -394,7 +394,7 @@ func (app *App) applySettingSelection(value string) {
 func (app *App) applySessionSelection(ctx context.Context, value string) error {
 	app.sessionID = value
 	app.pendingParentID = nil
-	app.messages = []chatMessage{}
+	app.resetMessages()
 	if err := app.loadSessionSettings(ctx); err != nil {
 		return err
 	}

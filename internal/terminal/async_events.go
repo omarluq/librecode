@@ -213,10 +213,8 @@ func (app *App) handlePromptStreamEvent(payload asyncEvent) {
 	}
 	switch payload.Kind {
 	case asyncEventPromptDelta:
-		app.streamingText += payload.Text
 		app.appendStreamingBlock(database.RoleAssistant, payload.Text)
 	case asyncEventPromptThinkingDelta:
-		app.streamingThinkingText += payload.Text
 		app.appendStreamingBlock(database.RoleThinking, payload.Text)
 	case asyncEventPromptToolStart:
 		app.setStatus("running tool: " + payload.Text)
@@ -257,7 +255,7 @@ func (app *App) applyPromptError(message string, promptID uint64) {
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""
-	app.streamingBlocks = nil
+	app.resetStreamingBlocks()
 	app.streamedToolEvents = 0
 	if app.activePrompt != nil && app.activePrompt.Canceled {
 		app.activePrompt = nil
@@ -295,6 +293,7 @@ func (app *App) appendStreamingBlock(role database.Role, content string) {
 	lastIndex := len(app.streamingBlocks) - 1
 	if lastIndex >= 0 && canMergeStreamingBlock(role) && app.streamingBlocks[lastIndex].Role == role {
 		app.streamingBlocks[lastIndex].Content += content
+		app.invalidateStreamingBlockCache(lastIndex)
 		return
 	}
 	app.streamingBlocks = append(app.streamingBlocks, chatMessage{
@@ -302,6 +301,15 @@ func (app *App) appendStreamingBlock(role database.Role, content string) {
 		Role:      role,
 		Content:   content,
 	})
+	if len(app.streamingBlockLineCache) > 0 {
+		app.streamingBlockLineCache = append(app.streamingBlockLineCache, cachedRenderedMessage{})
+	}
+}
+
+func (app *App) invalidateStreamingBlockCache(index int) {
+	if index >= 0 && index < len(app.streamingBlockLineCache) {
+		app.streamingBlockLineCache[index] = cachedRenderedMessage{}
+	}
 }
 
 func canMergeStreamingBlock(role database.Role) bool {

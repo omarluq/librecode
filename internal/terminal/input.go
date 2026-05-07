@@ -190,7 +190,6 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 	}
 	if app.working {
 		app.queueFollowUpText(text)
-		app.draw()
 		return false, nil
 	}
 
@@ -219,7 +218,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.scrollOffset = 0
 	app.streamingText = ""
 	app.streamingThinkingText = ""
-	app.streamingBlocks = nil
+	app.resetStreamingBlocks()
 	app.streamedToolEvents = 0
 	app.activePrompt = &activePromptState{
 		Cancel:           cancel,
@@ -234,7 +233,6 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.addMessage(database.RoleUser, text)
 	app.working = true
 	app.workFrame = 0
-	app.draw()
 	go func() {
 		defer cancel()
 		response, err := app.runtime.Prompt(promptCtx, request)
@@ -272,7 +270,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""
-	app.streamingBlocks = nil
+	app.resetStreamingBlocks()
 	if response == nil {
 		app.activePrompt = nil
 		app.processQueuedPrompt(ctx)
@@ -338,7 +336,7 @@ func (app *App) cancelActivePrompt(ctx context.Context) {
 		app.working = false
 		app.streamingText = ""
 		app.streamingThinkingText = ""
-		app.streamingBlocks = nil
+		app.resetStreamingBlocks()
 		app.streamedToolEvents = 0
 		app.setStatus("no active response to cancel")
 		return
@@ -356,13 +354,13 @@ func (app *App) cancelActivePrompt(ctx context.Context) {
 
 func (app *App) revertActivePromptUI(activePrompt *activePromptState) {
 	if activePrompt.BaselineMessages >= 0 && activePrompt.BaselineMessages <= len(app.messages) {
-		app.messages = app.messages[:activePrompt.BaselineMessages]
+		app.truncateMessages(activePrompt.BaselineMessages)
 	}
 	app.pendingParentID = cloneStringPtr(activePrompt.ParentEntryID)
 	app.queuedMessages = []string{}
 	app.streamingText = ""
 	app.streamingThinkingText = ""
-	app.streamingBlocks = nil
+	app.resetStreamingBlocks()
 	app.streamedToolEvents = 0
 	app.working = false
 	app.scrollOffset = 0
