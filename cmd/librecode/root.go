@@ -18,7 +18,7 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runChat(cmd, chatRunOptions{Resume: resume})
+			return runChat(cmd, chatRunOptions{SessionID: "", Resume: resume})
 		},
 	}
 

@@ -213,6 +213,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 		CWD:           app.cwd,
 		Text:          text,
 		Name:          "",
+		ResumeLatest:  false,
 	}
 	app.pendingParentID = nil
 	app.scrollOffset = 0
@@ -286,37 +287,60 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 }
 
 func (app *App) applyPromptResponseSideEffects(response *assistant.PromptResponse, streamingBlocks []chatMessage) {
-	if len(streamingBlocks) == 0 {
-		for _, thinking := range response.Thinking {
-			app.addMessage(database.RoleThinking, thinking)
-		}
-		for index := app.streamedToolEvents; index < len(response.ToolEvents); index++ {
-			app.addMessage(database.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
-		}
-		return
+	streamedThinkingBlocks := 0
+	streamedToolBlocks := app.streamedToolEvents
+	if len(streamingBlocks) > 0 {
+		streamedThinkingBlocks, streamedToolBlocks = app.applyStreamedSideEffectBlocks(streamingBlocks)
+	}
+	app.applyRemainingSideEffects(response, streamedThinkingBlocks, streamedToolBlocks)
+}
+
+func (app *App) applyStreamedSideEffectBlocks(
+	streamingBlocks []chatMessage,
+) (streamedThinkingBlocks, streamedToolBlocks int) {
+	streamedThinkingBlocks = 0
+	streamedToolBlocks = 0
+	for _, block := range streamingBlocks {
+		thinkingBlock, toolBlock := app.applyStreamedSideEffectBlock(block)
+		streamedThinkingBlocks += thinkingBlock
+		streamedToolBlocks += toolBlock
 	}
 
-	streamedThinkingBlocks := 0
-	streamedToolBlocks := 0
-	for _, block := range streamingBlocks {
-		switch block.Role {
-		case database.RoleThinking:
-			if strings.TrimSpace(block.Content) == "" {
-				continue
-			}
-			app.addMessage(database.RoleThinking, block.Content)
-			streamedThinkingBlocks++
-		case database.RoleToolResult, database.RoleBashExecution:
-			app.addMessage(block.Role, block.Content)
-			streamedToolBlocks++
-		case database.RoleAssistant,
-			database.RoleUser,
-			database.RoleCustom,
-			database.RoleBranchSummary,
-			database.RoleCompactionSummary:
-			continue
-		}
+	return streamedThinkingBlocks, streamedToolBlocks
+}
+
+func (app *App) applyStreamedSideEffectBlock(block chatMessage) (thinkingBlocks, toolBlocks int) {
+	switch block.Role {
+	case database.RoleThinking:
+		return app.applyStreamedThinkingBlock(block.Content), 0
+	case database.RoleToolResult, database.RoleBashExecution:
+		app.addMessage(block.Role, block.Content)
+		return 0, 1
+	case database.RoleAssistant,
+		database.RoleUser,
+		database.RoleCustom,
+		database.RoleBranchSummary,
+		database.RoleCompactionSummary:
+		return 0, 0
 	}
+
+	return 0, 0
+}
+
+func (app *App) applyStreamedThinkingBlock(content string) int {
+	if strings.TrimSpace(content) == "" {
+		return 0
+	}
+	app.addMessage(database.RoleThinking, content)
+
+	return 1
+}
+
+func (app *App) applyRemainingSideEffects(
+	response *assistant.PromptResponse,
+	streamedThinkingBlocks int,
+	streamedToolBlocks int,
+) {
 	for index := streamedThinkingBlocks; index < len(response.Thinking); index++ {
 		app.addMessage(database.RoleThinking, response.Thinking[index])
 	}

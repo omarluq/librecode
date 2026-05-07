@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,20 +29,25 @@ const (
 	testRuntimeCWD      = "/work"
 )
 
+func newRuntimePromptRequest(cwd, text, name string) *assistant.PromptRequest {
+	return &assistant.PromptRequest{
+		OnEvent:       nil,
+		OnUserEntry:   nil,
+		ParentEntryID: nil,
+		SessionID:     "",
+		CWD:           cwd,
+		Text:          text,
+		Name:          name,
+		ResumeLatest:  false,
+	}
+}
+
 func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	t.Parallel()
 
 	runtime, repository := newTestRuntime(t)
 
-	response, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
-		OnEvent:       nil,
-		OnUserEntry:   nil,
-		ParentEntryID: nil,
-		SessionID:     "",
-		CWD:           testRuntimeCWD,
-		Text:          "hello",
-		Name:          "test",
-	})
+	response, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(testRuntimeCWD, "hello", "test"))
 	require.NoError(t, err)
 	assert.NotEmpty(t, response.SessionID)
 	assert.NotEmpty(t, response.UserEntryID)
@@ -61,17 +67,11 @@ func TestRuntime_PromptNotifiesUserEntry(t *testing.T) {
 	runtime, _ := newTestRuntime(t)
 	userEntryEvent := assistant.PromptUserEntryEvent{SessionID: "", EntryID: ""}
 
-	response, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
-		OnEvent: nil,
-		OnUserEntry: func(event assistant.PromptUserEntryEvent) {
-			userEntryEvent = event
-		},
-		ParentEntryID: nil,
-		SessionID:     "",
-		CWD:           testRuntimeCWD,
-		Text:          "notify me",
-		Name:          "",
-	})
+	request := newRuntimePromptRequest(testRuntimeCWD, "notify me", "")
+	request.OnUserEntry = func(event assistant.PromptUserEntryEvent) {
+		userEntryEvent = event
+	}
+	response, err := runtime.Prompt(context.Background(), request)
 	require.NoError(t, err)
 	assert.Equal(t, response.SessionID, userEntryEvent.SessionID)
 	assert.Equal(t, response.UserEntryID, userEntryEvent.EntryID)
@@ -83,17 +83,9 @@ func TestRuntime_PromptStartsNewSessionByDefault(t *testing.T) {
 	runtime, repository := newTestRuntime(t)
 	ctx := context.Background()
 
-	firstResponse, err := runtime.Prompt(ctx, &assistant.PromptRequest{
-		SessionID: "",
-		CWD:       testRuntimeCWD,
-		Text:      "first session",
-	})
+	firstResponse, err := runtime.Prompt(ctx, newRuntimePromptRequest(testRuntimeCWD, "first session", ""))
 	require.NoError(t, err)
-	secondResponse, err := runtime.Prompt(ctx, &assistant.PromptRequest{
-		SessionID: "",
-		CWD:       testRuntimeCWD,
-		Text:      "second session",
-	})
+	secondResponse, err := runtime.Prompt(ctx, newRuntimePromptRequest(testRuntimeCWD, "second session", ""))
 	require.NoError(t, err)
 
 	assert.NotEqual(t, firstResponse.SessionID, secondResponse.SessionID)
@@ -108,18 +100,11 @@ func TestRuntime_PromptResumesLatestSessionWhenRequested(t *testing.T) {
 	runtime, repository := newTestRuntime(t)
 	ctx := context.Background()
 
-	firstResponse, err := runtime.Prompt(ctx, &assistant.PromptRequest{
-		SessionID: "",
-		CWD:       testRuntimeCWD,
-		Text:      "first session",
-	})
+	firstResponse, err := runtime.Prompt(ctx, newRuntimePromptRequest(testRuntimeCWD, "first session", ""))
 	require.NoError(t, err)
-	secondResponse, err := runtime.Prompt(ctx, &assistant.PromptRequest{
-		SessionID:    "",
-		CWD:          testRuntimeCWD,
-		Text:         "resume session",
-		ResumeLatest: true,
-	})
+	resumeRequest := newRuntimePromptRequest(testRuntimeCWD, "resume session", "")
+	resumeRequest.ResumeLatest = true
+	secondResponse, err := runtime.Prompt(ctx, resumeRequest)
 	require.NoError(t, err)
 
 	assert.Equal(t, firstResponse.SessionID, secondResponse.SessionID)
@@ -132,15 +117,7 @@ func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	t.Parallel()
 
 	runtime, _ := newTestRuntime(t)
-	request := &assistant.PromptRequest{
-		OnEvent:       nil,
-		OnUserEntry:   nil,
-		ParentEntryID: nil,
-		SessionID:     "",
-		CWD:           testRuntimeCWD,
-		Text:          "cache me",
-		Name:          "",
-	}
+	request := newRuntimePromptRequest(testRuntimeCWD, "cache me", "")
 
 	firstResponse, err := runtime.Prompt(context.Background(), request)
 	require.NoError(t, err)
@@ -158,17 +135,11 @@ func TestRuntime_PromptEmitsStreamEvents(t *testing.T) {
 	runtime, _ := newTestRuntime(t)
 	events := []assistant.StreamEvent{}
 
-	_, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
-		OnEvent: func(event assistant.StreamEvent) {
-			events = append(events, event)
-		},
-		OnUserEntry:   nil,
-		ParentEntryID: nil,
-		SessionID:     "",
-		CWD:           testRuntimeCWD,
-		Text:          "stream me",
-		Name:          "",
-	})
+	request := newRuntimePromptRequest(testRuntimeCWD, "stream me", "")
+	request.OnEvent = func(event assistant.StreamEvent) {
+		events = append(events, event)
+	}
+	_, err := runtime.Prompt(context.Background(), request)
 	require.NoError(t, err)
 	require.NotEmpty(t, events)
 	assert.Equal(t, assistant.StreamEventTextDelta, events[0].Kind)
@@ -181,15 +152,10 @@ func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 	runtime, _ := newTestRuntime(t)
 	cwd := t.TempDir()
 
-	response, err := runtime.Prompt(context.Background(), &assistant.PromptRequest{
-		OnEvent:       nil,
-		OnUserEntry:   nil,
-		ParentEntryID: nil,
-		SessionID:     "",
-		CWD:           cwd,
-		Text:          `/tool write {"path":"note.txt","content":"hello"}`,
-		Name:          "",
-	})
+	response, err := runtime.Prompt(
+		context.Background(),
+		newRuntimePromptRequest(cwd, `/tool write {"path":"note.txt","content":"hello"}`, ""),
+	)
 	require.NoError(t, err)
 	assert.Contains(t, response.Text, "Successfully wrote")
 
@@ -199,7 +165,38 @@ func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 	assert.Equal(t, "hello", string(content))
 }
 
+func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+	writeRuntimeTestFile(t, filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md"), strings.Join([]string{
+		"---",
+		"name: fix-bug",
+		"description: Fix bugs safely",
+		"---",
+		"Use tests first.",
+	}, "\n"))
+	client := &capturingCompletionClient{request: nil}
+	runtime, _ := newTestRuntimeWithClient(t, client)
+
+	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(cwd, "please fix a bug", ""))
+	require.NoError(t, err)
+	require.NotNil(t, client.request)
+	assert.Contains(t, client.request.SystemPrompt, "<available_skills>")
+	assert.Contains(t, client.request.SystemPrompt, "<name>fix-bug</name>")
+	assert.Contains(t, client.request.SystemPrompt, filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md"))
+}
+
 func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionRepository) {
+	t.Helper()
+
+	return newTestRuntimeWithClient(t, testCompletionClient{})
+}
+
+func newTestRuntimeWithClient(
+	t *testing.T,
+	client assistant.CompletionClient,
+) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
 
 	connection, err := sql.Open(sqliteDriver(), ":memory:")
@@ -223,9 +220,22 @@ func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionReposito
 		cache,
 		nil,
 		testRegistry(t),
-		testCompletionClient{},
+		client,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	), repository
+}
+
+type capturingCompletionClient struct {
+	request *assistant.CompletionRequest
+}
+
+func (client *capturingCompletionClient) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.request = request
+
+	return testCompletionClient{}.Complete(ctx, request)
 }
 
 type testCompletionClient struct{}
@@ -331,4 +341,11 @@ func testConfig() *config.Config {
 
 func sqliteDriver() string {
 	return "sqlite"
+}
+
+func writeRuntimeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 }

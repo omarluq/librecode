@@ -41,11 +41,11 @@ type skillFrontmatter struct {
 	DisableModelInvocation bool   `yaml:"disable-model-invocation"`
 }
 
-// LoadSkills loads skills from default and explicit paths.
-func LoadSkills(cwd, agentDir string, skillPaths []string, includeDefaults bool) LoadSkillsResult {
+// LoadSkills loads skills from the four supported default roots and explicit paths.
+func LoadSkills(cwd string, skillPaths []string, includeDefaults bool) LoadSkillsResult {
 	paths := []string{}
 	if includeDefaults {
-		paths = append(paths, filepath.Join(agentDir, skillDirName), filepath.Join(cwd, ConfigDirName, skillDirName))
+		paths = append(paths, defaultSkillPaths(cwd)...)
 	}
 	paths = append(paths, skillPaths...)
 
@@ -53,9 +53,53 @@ func LoadSkills(cwd, agentDir string, skillPaths []string, includeDefaults bool)
 	seenFiles := map[string]bool{}
 	skillsByName := map[string]Skill{}
 	for _, rawPath := range paths {
-		pathResult := loadSkillPath(rawPath, cwd, agentDir)
+		pathResult := loadSkillPath(rawPath, cwd)
 		result.Diagnostics = append(result.Diagnostics, pathResult.Diagnostics...)
 		mergeSkills(&result, skillsByName, seenFiles, pathResult.Skills)
+	}
+
+	return result
+}
+
+func defaultSkillPaths(cwd string) []string {
+	paths := append([]string{}, projectSkillPaths(cwd)...)
+	paths = append(paths, userSkillPaths()...)
+
+	return dedupeSkillPaths(paths)
+}
+
+func projectSkillPaths(cwd string) []string {
+	return []string{
+		filepath.Join(cwd, ConfigDirName, skillDirName),
+		filepath.Join(cwd, AgentsDirName, skillDirName),
+	}
+}
+
+func userSkillPaths() []string {
+	paths := []string{}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		paths = append(paths,
+			filepath.Join(home, ConfigDirName, skillDirName),
+			filepath.Join(home, AgentsDirName, skillDirName),
+		)
+	}
+
+	return dedupeSkillPaths(paths)
+}
+
+func dedupeSkillPaths(paths []string) []string {
+	result := make([]string, 0, len(paths))
+	seen := map[string]bool{}
+	for _, rawPath := range paths {
+		if strings.TrimSpace(rawPath) == "" {
+			continue
+		}
+		canonicalPath := canonicalizeResourcePath(rawPath)
+		if seen[canonicalPath] {
+			continue
+		}
+		seen[canonicalPath] = true
+		result = append(result, rawPath)
 	}
 
 	return result
@@ -93,17 +137,17 @@ func FormatSkillsForPrompt(skills []Skill) string {
 	return strings.Join(lines, "\n")
 }
 
-func loadSkillPath(rawPath, cwd, agentDir string) LoadSkillsResult {
+func loadSkillPath(rawPath, cwd string) LoadSkillsResult {
 	resolvedPath := resolveResourcePath(rawPath, cwd)
 	info, err := statResource(resolvedPath)
 	if err != nil {
 		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
 	}
 	if info.IsDir() {
-		return loadSkillsFromDir(resolvedPath, cwd, agentDir, true)
+		return loadSkillsFromDir(resolvedPath, cwd, true)
 	}
 	if info.Mode().IsRegular() && strings.HasSuffix(resolvedPath, ".md") {
-		skill, diagnostics := loadSkillFromFile(resolvedPath, cwd, agentDir)
+		skill, diagnostics := loadSkillFromFile(resolvedPath, cwd)
 		if skill == nil {
 			return LoadSkillsResult{Skills: []Skill{}, Diagnostics: diagnostics}
 		}
@@ -117,7 +161,7 @@ func loadSkillPath(rawPath, cwd, agentDir string) LoadSkillsResult {
 	}
 }
 
-func loadSkillsFromDir(dir, cwd, agentDir string, includeRootFiles bool) LoadSkillsResult {
+func loadSkillsFromDir(dir, cwd string, includeRootFiles bool) LoadSkillsResult {
 	entries, err := readResourceDir(dir)
 	if err != nil {
 		return LoadSkillsResult{
@@ -125,14 +169,14 @@ func loadSkillsFromDir(dir, cwd, agentDir string, includeRootFiles bool) LoadSki
 			Diagnostics: []ResourceDiagnostic{warningDiagnostic(err.Error(), dir)},
 		}
 	}
-	if skillResult, found := loadSkillRoot(entries, dir, cwd, agentDir); found {
+	if skillResult, found := loadSkillRoot(entries, dir, cwd); found {
 		return skillResult
 	}
 
-	return loadNestedSkills(entries, dir, cwd, agentDir, includeRootFiles)
+	return loadNestedSkills(entries, dir, cwd, includeRootFiles)
 }
 
-func loadSkillRoot(entries []os.DirEntry, dir, cwd, agentDir string) (LoadSkillsResult, bool) {
+func loadSkillRoot(entries []os.DirEntry, dir, cwd string) (LoadSkillsResult, bool) {
 	entry, found := lo.Find(entries, func(entry os.DirEntry) bool {
 		return entry.Name() == skillFileName && !entry.IsDir()
 	})
@@ -140,7 +184,7 @@ func loadSkillRoot(entries []os.DirEntry, dir, cwd, agentDir string) (LoadSkills
 		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}, false
 	}
 	skillPath := filepath.Join(dir, entry.Name())
-	skill, diagnostics := loadSkillFromFile(skillPath, cwd, agentDir)
+	skill, diagnostics := loadSkillFromFile(skillPath, cwd)
 	if skill == nil {
 		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: diagnostics}, true
 	}
@@ -148,7 +192,7 @@ func loadSkillRoot(entries []os.DirEntry, dir, cwd, agentDir string) (LoadSkills
 	return LoadSkillsResult{Skills: []Skill{*skill}, Diagnostics: diagnostics}, true
 }
 
-func loadNestedSkills(entries []os.DirEntry, dir, cwd, agentDir string, includeRootFiles bool) LoadSkillsResult {
+func loadNestedSkills(entries []os.DirEntry, dir, cwd string, includeRootFiles bool) LoadSkillsResult {
 	result := LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
 	for _, entry := range entries {
 		if shouldSkipSkillEntry(entry) {
@@ -156,13 +200,13 @@ func loadNestedSkills(entries []os.DirEntry, dir, cwd, agentDir string, includeR
 		}
 		entryPath := filepath.Join(dir, entry.Name())
 		if entry.IsDir() {
-			nested := loadSkillsFromDir(entryPath, cwd, agentDir, false)
+			nested := loadSkillsFromDir(entryPath, cwd, false)
 			result.Skills = append(result.Skills, nested.Skills...)
 			result.Diagnostics = append(result.Diagnostics, nested.Diagnostics...)
 			continue
 		}
 		if includeRootFiles && strings.HasSuffix(entry.Name(), ".md") {
-			skill, diagnostics := loadSkillFromFile(entryPath, cwd, agentDir)
+			skill, diagnostics := loadSkillFromFile(entryPath, cwd)
 			result.Diagnostics = append(result.Diagnostics, diagnostics...)
 			if skill != nil {
 				result.Skills = append(result.Skills, *skill)
@@ -173,7 +217,7 @@ func loadNestedSkills(entries []os.DirEntry, dir, cwd, agentDir string, includeR
 	return result
 }
 
-func loadSkillFromFile(filePath, cwd, agentDir string) (*Skill, []ResourceDiagnostic) {
+func loadSkillFromFile(filePath, cwd string) (*Skill, []ResourceDiagnostic) {
 	content, err := readResourceFile(filePath)
 	if err != nil {
 		return nil, []ResourceDiagnostic{warningDiagnostic(err.Error(), filePath)}
@@ -195,7 +239,7 @@ func loadSkillFromFile(filePath, cwd, agentDir string) (*Skill, []ResourceDiagno
 	}
 
 	return &Skill{
-		SourceInfo:             sourceInfoForSkill(filePath, cwd, agentDir),
+		SourceInfo:             sourceInfoForSkill(filePath, cwd),
 		Name:                   name,
 		Description:            frontmatter.Description,
 		FilePath:               filePath,
@@ -277,17 +321,24 @@ func shouldSkipSkillEntry(entry os.DirEntry) bool {
 	return strings.HasPrefix(entry.Name(), ".") || entry.Name() == "node_modules"
 }
 
-func sourceInfoForSkill(filePath, cwd, agentDir string) SourceInfo {
-	globalSkillsDir := filepath.Join(agentDir, skillDirName)
-	projectSkillsDir := filepath.Join(cwd, ConfigDirName, skillDirName)
+func sourceInfoForSkill(filePath, cwd string) SourceInfo {
 	scope := SourceScopeTemporary
 	baseDir := filepath.Dir(filePath)
-	if isUnderPath(filePath, globalSkillsDir) {
-		scope = SourceScopeUser
-		baseDir = globalSkillsDir
-	} else if isUnderPath(filePath, projectSkillsDir) {
-		scope = SourceScopeProject
-		baseDir = projectSkillsDir
+	for _, projectSkillsDir := range projectSkillPaths(cwd) {
+		if isUnderPath(filePath, projectSkillsDir) {
+			scope = SourceScopeProject
+			baseDir = projectSkillsDir
+			break
+		}
+	}
+	if scope == SourceScopeTemporary {
+		for _, userSkillsDir := range userSkillPaths() {
+			if isUnderPath(filePath, userSkillsDir) {
+				scope = SourceScopeUser
+				baseDir = userSkillsDir
+				break
+			}
+		}
 	}
 
 	return NewSourceInfo(filePath, SourceInfoOptions{

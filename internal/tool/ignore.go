@@ -18,7 +18,7 @@ var defaultReadIgnorePatterns = []string{
 	".gomodcache/",
 	".tmp/",
 	"bin/",
-	"skills/",
+	"/skills/",
 }
 
 type ignoreRule struct {
@@ -139,7 +139,10 @@ func (rule ignoreRule) matches(relativePath string) bool {
 	if rule.directoryOnly {
 		return rule.matchesDirectory(relativePath)
 	}
-	if rule.anchored || strings.Contains(rule.pattern, "/") {
+	if rule.anchored {
+		return matchAnchoredIgnoreGlob(rule.pattern, relativePath)
+	}
+	if strings.Contains(rule.pattern, "/") {
 		return matchIgnoreGlob(rule.pattern, relativePath)
 	}
 
@@ -148,7 +151,13 @@ func (rule ignoreRule) matches(relativePath string) bool {
 
 func (rule ignoreRule) matchesDirectory(relativePath string) bool {
 	for _, directory := range ancestorDirectories(relativePath) {
-		if rule.anchored || strings.Contains(rule.pattern, "/") {
+		if rule.anchored {
+			if matchAnchoredIgnoreGlob(rule.pattern, directory) {
+				return true
+			}
+			continue
+		}
+		if strings.Contains(rule.pattern, "/") {
 			if matchIgnoreGlob(rule.pattern, directory) {
 				return true
 			}
@@ -182,4 +191,13 @@ func matchIgnoreGlob(pattern, value string) bool {
 	}
 
 	return matcher(value)
+}
+
+func matchAnchoredIgnoreGlob(pattern, value string) bool {
+	if strings.Contains(pattern, "**") {
+		return matchIgnoreGlob(pattern, value)
+	}
+	matched, err := path.Match(pattern, value)
+
+	return err == nil && matched
 }

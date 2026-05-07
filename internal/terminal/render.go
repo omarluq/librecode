@@ -108,21 +108,34 @@ func (app *App) cachedMessageLines(width, index int) []styledLine {
 }
 
 func (app *App) ensureMessageLineCache(width int) {
-	state := messageLineCacheState{
+	app.ensureLineCache(width, len(app.messages), &app.messageLineCache, &app.messageLineCacheState)
+}
+
+func (app *App) ensureLineCache(
+	width int,
+	targetLength int,
+	cache *[]cachedRenderedMessage,
+	cacheState *messageLineCacheState,
+) {
+	state := app.currentLineCacheState(width)
+	if *cacheState != state {
+		*cache = nil
+		*cacheState = state
+	}
+	if len(*cache) > targetLength {
+		*cache = (*cache)[:targetLength]
+	}
+	for len(*cache) < targetLength {
+		*cache = append(*cache, emptyCachedRenderedMessage())
+	}
+}
+
+func (app *App) currentLineCacheState(width int) messageLineCacheState {
+	return messageLineCacheState{
 		ThemeName:     app.theme.name,
 		Width:         width,
 		HideThinking:  app.hideThinking,
 		ToolsExpanded: app.toolsExpanded,
-	}
-	if app.messageLineCacheState != state {
-		app.messageLineCache = nil
-		app.messageLineCacheState = state
-	}
-	if len(app.messageLineCache) > len(app.messages) {
-		app.messageLineCache = app.messageLineCache[:len(app.messages)]
-	}
-	for len(app.messageLineCache) < len(app.messages) {
-		app.messageLineCache = append(app.messageLineCache, cachedRenderedMessage{})
 	}
 }
 
@@ -141,22 +154,12 @@ func (app *App) cachedStreamingBlockLines(width, index int) []styledLine {
 }
 
 func (app *App) ensureStreamingBlockLineCache(width int) {
-	state := messageLineCacheState{
-		ThemeName:     app.theme.name,
-		Width:         width,
-		HideThinking:  app.hideThinking,
-		ToolsExpanded: app.toolsExpanded,
-	}
-	if app.streamingBlockLineCacheState != state {
-		app.streamingBlockLineCache = nil
-		app.streamingBlockLineCacheState = state
-	}
-	if len(app.streamingBlockLineCache) > len(app.streamingBlocks) {
-		app.streamingBlockLineCache = app.streamingBlockLineCache[:len(app.streamingBlocks)]
-	}
-	for len(app.streamingBlockLineCache) < len(app.streamingBlocks) {
-		app.streamingBlockLineCache = append(app.streamingBlockLineCache, cachedRenderedMessage{})
-	}
+	app.ensureLineCache(
+		width,
+		len(app.streamingBlocks),
+		&app.streamingBlockLineCache,
+		&app.streamingBlockLineCacheState,
+	)
 }
 
 func (app *App) visibleMessageLineGroups(groups [][]styledLine, maxRows int) []styledLine {
@@ -283,7 +286,7 @@ func (app *App) renderStreamingMessage(width int, content string) []styledLine {
 }
 
 func (app *App) renderStreamingThinkingMessage(width int, content string) []styledLine {
-	return app.renderThinkingMessage(width, chatMessage{Role: database.RoleThinking, Content: content})
+	return app.renderThinkingMessage(width, newChatMessage(database.RoleThinking, content))
 }
 
 func (app *App) renderStreamingBlockMessage(width int, message chatMessage) []styledLine {
@@ -294,6 +297,11 @@ func (app *App) renderStreamingBlockMessage(width int, message chatMessage) []st
 		return app.renderStreamingThinkingMessage(width, message.Content)
 	case database.RoleToolResult, database.RoleBashExecution:
 		return app.renderToolMessage(width, message)
+	case database.RoleUser,
+		database.RoleCustom,
+		database.RoleBranchSummary,
+		database.RoleCompactionSummary:
+		return app.renderMessage(width, message)
 	}
 
 	return app.renderMessage(width, message)

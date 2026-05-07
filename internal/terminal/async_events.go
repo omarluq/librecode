@@ -2,7 +2,6 @@ package terminal
 
 import (
 	"context"
-	"time"
 
 	"github.com/gdamore/tcell/v3"
 
@@ -216,10 +215,10 @@ func (app *App) handlePromptStreamEvent(payload asyncEvent) {
 		app.appendStreamingBlock(database.RoleAssistant, payload.Text)
 	case asyncEventPromptThinkingDelta:
 		app.appendStreamingBlock(database.RoleThinking, payload.Text)
-	case asyncEventPromptToolStart:
-		app.setStatus("running tool: " + payload.Text)
 	case asyncEventPromptToolResult:
 		app.applyStreamedToolEvent(payload.ToolEvent)
+	case asyncEventPromptToolStart:
+		return
 	case asyncEventPromptDone,
 		asyncEventPromptUserEntry,
 		asyncEventPromptError,
@@ -296,19 +295,15 @@ func (app *App) appendStreamingBlock(role database.Role, content string) {
 		app.invalidateStreamingBlockCache(lastIndex)
 		return
 	}
-	app.streamingBlocks = append(app.streamingBlocks, chatMessage{
-		CreatedAt: time.Now().UTC(),
-		Role:      role,
-		Content:   content,
-	})
+	app.streamingBlocks = append(app.streamingBlocks, newChatMessage(role, content))
 	if len(app.streamingBlockLineCache) > 0 {
-		app.streamingBlockLineCache = append(app.streamingBlockLineCache, cachedRenderedMessage{})
+		app.streamingBlockLineCache = append(app.streamingBlockLineCache, emptyCachedRenderedMessage())
 	}
 }
 
 func (app *App) invalidateStreamingBlockCache(index int) {
 	if index >= 0 && index < len(app.streamingBlockLineCache) {
-		app.streamingBlockLineCache[index] = cachedRenderedMessage{}
+		app.streamingBlockLineCache[index] = emptyCachedRenderedMessage()
 	}
 }
 

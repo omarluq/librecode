@@ -5,6 +5,8 @@ const (
 	DefaultThinkingLevel = "medium"
 	// ConfigDirName is the project-local configuration directory.
 	ConfigDirName = ".librecode"
-	// GlobalAgentDirName is the user-level configuration directory name.
+	// AgentsDirName is the OpenSkills/agent-compatible configuration directory.
+	AgentsDirName = ".agents"
+	// GlobalAgentDirName is the legacy XDG user-level configuration directory name.
 	GlobalAgentDirName = "librecode"
 )

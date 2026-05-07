@@ -93,33 +93,33 @@ type App struct {
 	canceledPrompts              map[uint64]*activePromptState
 	scopedEnabled                map[string]bool
 	theme                        terminalTheme
-	mode                         appMode
-	cwd                          string
+	selectedPanelKind            panelKind
 	sessionID                    string
 	statusMessage                string
-	selectedPanelKind            panelKind
+	mode                         appMode
 	streamingText                string
 	streamingThinkingText        string
-	streamingBlocks              []chatMessage
-	streamingBlockLineCache      []cachedRenderedMessage
-	streamingBlockLineCacheState messageLineCacheState
+	cwd                          string
 	resources                    core.ResourceSnapshot
+	messageLineCache             []cachedRenderedMessage
+	streamingBlockLineCache      []cachedRenderedMessage
 	queuedMessages               []string
 	messages                     []chatMessage
-	messageLineCache             []cachedRenderedMessage
-	messageLineCacheState        messageLineCacheState
+	streamingBlocks              []chatMessage
 	scopedOrder                  []string
-	sessionSortRecent            bool
+	messageLineCacheState        messageLineCacheState
+	streamingBlockLineCacheState messageLineCacheState
+	workFrame                    int
+	promptSequence               uint64
+	streamedToolEvents           int
+	scrollOffset                 int
 	sessionNamedOnly             bool
-	sessionShowPath              bool
-	authWorking                  bool
-	toolsExpanded                bool
 	hideThinking                 bool
 	working                      bool
-	workFrame                    int
-	scrollOffset                 int
-	streamedToolEvents           int
-	promptSequence               uint64
+	toolsExpanded                bool
+	authWorking                  bool
+	sessionShowPath              bool
+	sessionSortRecent            bool
 }
 
 // Run starts an interactive tcell chat loop.
@@ -188,7 +188,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		canceledPrompts:              map[uint64]*activePromptState{},
 		messages:                     []chatMessage{},
 		messageLineCache:             nil,
-		messageLineCacheState:        messageLineCacheState{},
+		messageLineCacheState:        emptyMessageLineCacheState(),
 		queuedMessages:               []string{},
 		scopedOrder:                  []string{},
 		scopedEnabled:                map[string]bool{},
@@ -211,7 +211,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		streamingThinkingText:        "",
 		streamingBlocks:              []chatMessage{},
 		streamingBlockLineCache:      nil,
-		streamingBlockLineCacheState: messageLineCacheState{},
+		streamingBlockLineCacheState: emptyMessageLineCacheState(),
 	}
 	app.addWelcomeMessage()
 
@@ -225,43 +225,75 @@ func (app *App) loop(ctx context.Context) {
 	defer frameTicker.Stop()
 	dirty := true
 	for {
-		if dirty && !app.throttleDraws() {
-			app.draw()
-			dirty = false
+		dirty = app.drawDirtyFrame(dirty)
+		shouldQuit, nextDirty := app.runLoopStep(ctx, workTicker, frameTicker, dirty)
+		if shouldQuit {
+			return
 		}
-		var workTick <-chan time.Time
-		if app.working || app.authWorking {
-			workTick = workTicker.C
-		}
-		var frameTick <-chan time.Time
-		if dirty && app.throttleDraws() {
-			frameTick = frameTicker.C
-		}
-		select {
-		case event := <-app.screen.EventQ():
-			if event == nil {
-				return
-			}
-			shouldQuit, err := app.handleEvent(ctx, event)
-			if err != nil {
-				app.addMessage(database.RoleCustom, err.Error())
-			}
-			if shouldQuit {
-				return
-			}
-			dirty = true
-			if app.shouldDrawImmediately(event) {
-				app.draw()
-				dirty = false
-			}
-		case <-workTick:
-			app.workFrame++
-			dirty = true
-		case <-frameTick:
-			app.draw()
-			dirty = false
-		}
+		dirty = nextDirty
 	}
+}
+
+func (app *App) drawDirtyFrame(dirty bool) bool {
+	if dirty && !app.throttleDraws() {
+		app.draw()
+		return false
+	}
+
+	return dirty
+}
+
+func (app *App) runLoopStep(
+	ctx context.Context,
+	workTicker *time.Ticker,
+	frameTicker *time.Ticker,
+	dirty bool,
+) (shouldQuit, nextDirty bool) {
+	select {
+	case event := <-app.screen.EventQ():
+		return app.handleLoopEvent(ctx, event)
+	case <-app.workTick(workTicker):
+		app.workFrame++
+		return false, true
+	case <-app.frameTick(frameTicker, dirty):
+		app.draw()
+		return false, false
+	}
+}
+
+func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQuit, dirty bool) {
+	if event == nil {
+		return true, false
+	}
+	shouldQuit, err := app.handleEvent(ctx, event)
+	if err != nil {
+		app.addMessage(database.RoleCustom, err.Error())
+	}
+	if shouldQuit {
+		return true, false
+	}
+	if app.shouldDrawImmediately(event) {
+		app.draw()
+		return false, false
+	}
+
+	return false, true
+}
+
+func (app *App) workTick(ticker *time.Ticker) <-chan time.Time {
+	if app.working || app.authWorking {
+		return ticker.C
+	}
+
+	return nil
+}
+
+func (app *App) frameTick(ticker *time.Ticker, dirty bool) <-chan time.Time {
+	if dirty && app.throttleDraws() {
+		return ticker.C
+	}
+
+	return nil
 }
 
 func (app *App) throttleDraws() bool {
@@ -325,7 +357,23 @@ func (app *App) addSystemMessage(content string) {
 }
 
 func (app *App) addMessage(role database.Role, content string) {
-	app.appendMessage(chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content})
+	app.appendMessage(newChatMessage(role, content))
+}
+
+func newChatMessage(role database.Role, content string) chatMessage {
+	return chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content}
+}
+
+func emptyMessageLineCacheState() messageLineCacheState {
+	var state messageLineCacheState
+
+	return state
+}
+
+func emptyCachedRenderedMessage() cachedRenderedMessage {
+	var message cachedRenderedMessage
+
+	return message
 }
 
 func (app *App) appendMessage(message chatMessage) {

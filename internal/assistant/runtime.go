@@ -12,6 +12,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/config"
+	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
@@ -502,7 +503,7 @@ func messageEntities(messages []database.SessionMessageEntity) []database.Messag
 }
 
 func defaultSystemPrompt(cwd string) string {
-	return strings.Join([]string{
+	prompt := strings.Join([]string{
 		"You are librecode, an AI coding assistant. Be concise, helpful, and accurate.",
 		"You are running inside a local filesystem workspace.",
 		fmt.Sprintf("Current working directory: %s", cwd),
@@ -512,6 +513,12 @@ func defaultSystemPrompt(cwd string) string {
 		"Respect .gitignore and default ignored paths; avoid ignored files unless explicitly needed.",
 		"Use the fewest tool calls needed; once you have enough evidence, stop using tools and answer.",
 	}, "\n")
+	skills := core.LoadSkills(cwd, nil, true).Skills
+	if len(skills) > 0 {
+		prompt += core.FormatSkillsForPrompt(skills)
+	}
+
+	return prompt
 }
 
 func (runtime *Runtime) cacheKey(sessionID, prompt string) string {

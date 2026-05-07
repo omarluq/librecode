@@ -230,7 +230,7 @@ func (loader *DefaultResourceLoader) loadSkillsSnapshot() ([]Skill, []ResourceDi
 	if loader.noSkills && len(loader.additionalSkillPaths) == 0 {
 		return []Skill{}, []ResourceDiagnostic{}
 	}
-	result := LoadSkills(loader.cwd, loader.agentDir, loader.additionalSkillPaths, !loader.noSkills)
+	result := LoadSkills(loader.cwd, loader.additionalSkillPaths, !loader.noSkills)
 	result.Skills = loader.applySkillSourceInfo(result.Skills)
 	result.Diagnostics = append(result.Diagnostics,
 		missingResourceDiagnostics(loader.cwd, loader.additionalSkillPaths, resourceTypeSkill)...,

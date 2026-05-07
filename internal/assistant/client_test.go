@@ -1,14 +1,19 @@
+//nolint:testpackage // These tests cover unexported SSE accumulator behavior.
 package assistant
 
 import "testing"
 
+const answerDelta = "answer"
+
 func TestSSEAccumulatorEmitsOutputTextDelta(t *testing.T) {
+	t.Parallel()
+
 	accumulator := newSSEAccumulator()
 	events := []StreamEvent{}
 
 	accumulator.add(map[string]any{
 		jsonTypeKey: "response.output_text.delta",
-		"delta":     "answer",
+		"delta":     answerDelta,
 	}, func(event StreamEvent) {
 		events = append(events, event)
 	})
@@ -19,15 +24,17 @@ func TestSSEAccumulatorEmitsOutputTextDelta(t *testing.T) {
 	if events[0].Kind != StreamEventTextDelta {
 		t.Fatalf("event kind = %q, want %q", events[0].Kind, StreamEventTextDelta)
 	}
-	if events[0].Text != "answer" {
-		t.Fatalf("event text = %q, want %q", events[0].Text, "answer")
+	if events[0].Text != answerDelta {
+		t.Fatalf("event text = %q, want %q", events[0].Text, answerDelta)
 	}
-	if got := len(accumulator.parts); got != 1 || accumulator.parts[0] != "answer" {
-		t.Fatalf("accumulator parts = %#v, want [answer]", accumulator.parts)
+	if got := len(accumulator.parts); got != 1 || accumulator.parts[0] != answerDelta {
+		t.Fatalf("accumulator parts = %#v, want [%s]", accumulator.parts, answerDelta)
 	}
 }
 
 func TestSSEAccumulatorEmitsReasoningDeltaSeparately(t *testing.T) {
+	t.Parallel()
+
 	accumulator := newSSEAccumulator()
 	events := []StreamEvent{}
 

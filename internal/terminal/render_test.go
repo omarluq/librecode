@@ -1,3 +1,4 @@
+//nolint:testpackage // These tests exercise unexported terminal rendering helpers.
 package terminal
 
 import (
@@ -11,7 +12,9 @@ import (
 )
 
 func TestRenderStreamingMessageUsesTextColor(t *testing.T) {
-	app := &App{theme: darkTheme()}
+	t.Parallel()
+
+	app := newRenderTestApp(t)
 
 	lines := app.renderStreamingMessage(80, "hello")
 	if len(lines) < 2 {
@@ -28,26 +31,34 @@ func TestRenderStreamingMessageUsesTextColor(t *testing.T) {
 }
 
 func TestRenderThinkingMessageKeepsDimColor(t *testing.T) {
-	app := &App{theme: darkTheme()}
+	t.Parallel()
 
-	lines := app.renderThinkingMessage(80, chatMessage{Content: "thinking details"})
+	app := newRenderTestApp(t)
+
+	lines := app.renderThinkingMessage(80, newChatMessage(database.RoleThinking, "thinking details"))
 	assertThinkingLineDim(t, app, lines)
 }
 
 func TestRenderStreamingThinkingMessageKeepsDimColor(t *testing.T) {
-	app := &App{theme: darkTheme()}
+	t.Parallel()
+
+	app := newRenderTestApp(t)
 
 	lines := app.renderStreamingThinkingMessage(80, "thinking details")
 	assertThinkingLineDim(t, app, lines)
 }
 
 func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
-	app := &App{}
+	t.Parallel()
 
-	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptThinkingDelta, Text: "thinking"})
-	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptDelta, Text: "answer"})
+	app := newRenderTestApp(t)
 
-	if got, want := streamingBlockRoles(app.streamingBlocks), []database.Role{database.RoleThinking, database.RoleAssistant}; !rolesEqual(got, want) {
+	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, "thinking"))
+	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptDelta, "answer"))
+
+	got := streamingBlockRoles(app.streamingBlocks)
+	want := []database.Role{database.RoleThinking, database.RoleAssistant}
+	if !rolesEqual(got, want) {
 		t.Fatalf("streaming block roles = %v, want %v", got, want)
 	}
 	if app.statusMessage == "streaming response" {
@@ -55,8 +66,23 @@ func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
 	}
 }
 
+func TestPromptToolStartDoesNotSetStatus(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.setStatus("ready")
+
+	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptToolStart, "bash"))
+
+	if app.statusMessage != "ready" {
+		t.Fatalf("status = %q, want ready", app.statusMessage)
+	}
+}
+
 func TestScrollTranscriptDoesNotDrawImmediately(t *testing.T) {
-	app := &App{}
+	t.Parallel()
+
+	app := newRenderTestApp(t)
 
 	app.scrollTranscript(3)
 
@@ -69,14 +95,16 @@ func TestScrollTranscriptDoesNotDrawImmediately(t *testing.T) {
 }
 
 func TestHighVolumeStreamEventsDoNotForceImmediateDraw(t *testing.T) {
-	app := &App{}
+	t.Parallel()
+
+	app := newRenderTestApp(t)
 	for _, kind := range []asyncEventKind{
 		asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
 	} {
-		event := tcell.NewEventInterrupt(asyncEvent{Kind: kind})
+		event := tcell.NewEventInterrupt(newTestAsyncEvent(kind, ""))
 		if app.shouldDrawImmediately(event) {
 			t.Fatalf("%s should be frame-throttled", kind)
 		}
@@ -84,13 +112,15 @@ func TestHighVolumeStreamEventsDoNotForceImmediateDraw(t *testing.T) {
 }
 
 func TestPromptLifecycleEventsForceImmediateDraw(t *testing.T) {
-	app := &App{}
+	t.Parallel()
+
+	app := newRenderTestApp(t)
 	for _, kind := range []asyncEventKind{
 		asyncEventPromptDone,
 		asyncEventPromptError,
 		asyncEventAuthDone,
 	} {
-		event := tcell.NewEventInterrupt(asyncEvent{Kind: kind})
+		event := tcell.NewEventInterrupt(newTestAsyncEvent(kind, ""))
 		if !app.shouldDrawImmediately(event) {
 			t.Fatalf("%s should draw immediately", kind)
 		}
@@ -98,7 +128,9 @@ func TestPromptLifecycleEventsForceImmediateDraw(t *testing.T) {
 }
 
 func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
-	app := &App{theme: darkTheme(), keys: newDefaultKeybindings()}
+	t.Parallel()
+
+	app := newRenderTestApp(t)
 	app.addMessage(database.RoleThinking, "cached thought")
 
 	visible := app.messageLines(80, 100)
@@ -117,11 +149,13 @@ func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
 }
 
 func TestStreamingBlockCacheInvalidatesOnMergedDelta(t *testing.T) {
-	app := &App{theme: darkTheme(), keys: newDefaultKeybindings()}
+	t.Parallel()
 
-	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptThinkingDelta, Text: "first"})
+	app := newRenderTestApp(t)
+
+	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, "first"))
 	_ = app.messageLines(80, 100)
-	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptThinkingDelta, Text: " second"})
+	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, " second"))
 
 	lines := app.messageLines(80, 100)
 	if lineIndexContaining(lines, "first second") == -1 {
@@ -130,23 +164,23 @@ func TestStreamingBlockCacheInvalidatesOnMergedDelta(t *testing.T) {
 }
 
 func TestStreamingBlocksRenderChronologically(t *testing.T) {
-	app := &App{theme: darkTheme(), keys: newDefaultKeybindings()}
+	t.Parallel()
 
-	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptThinkingDelta, Text: "first thought"})
-	app.handlePromptStreamEvent(asyncEvent{
-		Kind: asyncEventPromptToolResult,
-		ToolEvent: &assistant.ToolEvent{
-			Name:   "read",
-			Result: "tool output",
-		},
-	})
-	app.handlePromptStreamEvent(asyncEvent{Kind: asyncEventPromptThinkingDelta, Text: "second thought"})
+	app := newRenderTestApp(t)
 
-	if got, want := streamingBlockRoles(app.streamingBlocks), []database.Role{
+	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, "first thought"))
+	toolEvent := newTestAsyncEvent(asyncEventPromptToolResult, "")
+	toolEvent.ToolEvent = newTestToolEvent("read", "tool output")
+	app.handlePromptStreamEvent(toolEvent)
+	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, "second thought"))
+
+	got := streamingBlockRoles(app.streamingBlocks)
+	want := []database.Role{
 		database.RoleThinking,
 		database.RoleToolResult,
 		database.RoleThinking,
-	}; !rolesEqual(got, want) {
+	}
+	if !rolesEqual(got, want) {
 		t.Fatalf("streaming block roles = %v, want %v", got, want)
 	}
 
@@ -157,8 +191,47 @@ func TestStreamingBlocksRenderChronologically(t *testing.T) {
 	if first == -1 || tool == -1 || second == -1 {
 		t.Fatalf("expected rendered thinking/tool/thinking lines, got first=%d tool=%d second=%d", first, tool, second)
 	}
-	if !(first < tool && tool < second) {
+	if first >= tool || tool >= second {
 		t.Fatalf("streaming lines not chronological: first=%d tool=%d second=%d", first, tool, second)
+	}
+}
+
+func newRenderTestApp(t *testing.T) *App {
+	t.Helper()
+
+	app := newApp(nil, &RunOptions{
+		Resources: nil,
+		Runtime:   nil,
+		Settings:  nil,
+		Models:    nil,
+		Auth:      nil,
+		Config:    nil,
+		CWD:       "",
+		SessionID: "",
+	})
+	app.resetMessages()
+
+	return app
+}
+
+func newTestAsyncEvent(kind asyncEventKind, text string) asyncEvent {
+	return asyncEvent{
+		Response:  nil,
+		ToolEvent: nil,
+		Kind:      kind,
+		Provider:  "",
+		Text:      text,
+		PromptID:  0,
+	}
+}
+
+func newTestToolEvent(name, result string) *assistant.ToolEvent {
+	return &assistant.ToolEvent{
+		Name:          name,
+		ArgumentsJSON: "",
+		DetailsJSON:   "",
+		Result:        result,
+		Error:         "",
 	}
 }
 

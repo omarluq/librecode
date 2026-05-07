@@ -59,3 +59,19 @@ func TestReadToolAllowsExplicitIgnoredReads(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "SECRET=value", allowedResult.Text())
 }
+
+func TestReadToolAllowsAgentSkillFilesByDefault(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	skillPath := filepath.Join(workspace, ".agents", "skills", "fix-bug", "SKILL.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(skillPath), 0o700))
+	require.NoError(t, os.WriteFile(skillPath, []byte("skill body"), 0o600))
+
+	reader := tool.NewReadTool(workspace)
+	result, err := reader.Execute(context.Background(), map[string]any{
+		readTestPathKey: filepath.Join(".agents", "skills", "fix-bug", "SKILL.md"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "skill body", result.Text())
+}

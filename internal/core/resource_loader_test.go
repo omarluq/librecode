@@ -12,17 +12,21 @@ import (
 )
 
 func TestDefaultResourceLoaderReloadsPiResources(t *testing.T) {
-	t.Parallel()
-
 	cwd := newOutsideTempDir(t)
+	home := newOutsideTempDir(t)
 	agentDir := newOutsideTempDir(t)
+	t.Setenv("HOME", home)
 	projectDir := filepath.Join(cwd, "project")
 	workDir := filepath.Join(projectDir, "pkg", "app")
 
 	writeTestFile(t, filepath.Join(agentDir, "AGENTS.md"), "global context")
 	writeTestFile(t, filepath.Join(projectDir, "AGENTS.md"), "project context")
 	writeTestFile(t, filepath.Join(workDir, "CLAUDE.md"), "workdir context")
-	writeTestFile(t, filepath.Join(agentDir, "skills", "global-skill", "SKILL.md"), skillMarkdown("global-skill"))
+	writeTestFile(
+		t,
+		filepath.Join(home, core.ConfigDirName, "skills", "user-skill", "SKILL.md"),
+		skillMarkdown("user-skill"),
+	)
 	writeTestFile(t, filepath.Join(workDir, core.ConfigDirName, "prompts", "fix.md"), "Fix $1")
 	writeTestFile(t, filepath.Join(workDir, core.ConfigDirName, "SYSTEM.md"), "project system")
 	writeTestFile(t, filepath.Join(workDir, core.ConfigDirName, "APPEND_SYSTEM.md"), "append system")
@@ -49,7 +53,7 @@ func TestDefaultResourceLoaderReloadsPiResources(t *testing.T) {
 	assert.Equal(t, filepath.Join(workDir, "CLAUDE.md"), snapshot.ContextFiles[2].Path)
 
 	require.Len(t, snapshot.Skills, 1)
-	assert.Equal(t, "global-skill", snapshot.Skills[0].Name)
+	assert.Equal(t, "user-skill", snapshot.Skills[0].Name)
 	require.Len(t, snapshot.Prompts, 1)
 	assert.Equal(t, "fix", snapshot.Prompts[0].Name)
 	assert.Len(t, snapshot.SkillDiagnostics, 1)
@@ -57,10 +61,10 @@ func TestDefaultResourceLoaderReloadsPiResources(t *testing.T) {
 }
 
 func TestDefaultResourceLoaderExtendsResourcesWithSourceInfo(t *testing.T) {
-	t.Parallel()
-
 	cwd := newOutsideTempDir(t)
+	home := newOutsideTempDir(t)
 	agentDir := newOutsideTempDir(t)
+	t.Setenv("HOME", home)
 	extensionDir := filepath.Join(cwd, "extension")
 	skillPath := filepath.Join(extensionDir, "skills", "from-extension", "SKILL.md")
 	promptPath := filepath.Join(extensionDir, "prompts", "explain.md")
