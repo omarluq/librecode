@@ -436,26 +436,17 @@ func (app *App) footerLines(width int) []styledLine {
 	if app.sessionID != "" {
 		pathLine += " • " + app.sessionID
 	}
-	stats := "↑0 ↓0 R0 W0 0%/0"
 	modelText := modelLabel(app.currentProvider(), app.currentModel())
 	if app.currentThinkingLevel() != "" {
 		modelText += " • " + app.currentThinkingLevel()
 	}
-	padding := max(1, width-runeLen(stats)-runeLen(modelText))
-	statusLine := stats + strings.Repeat(" ", padding) + modelText
-	if len(app.queuedMessages) > 0 {
-		statusLine = "queued " + intText(len(app.queuedMessages)) + " • " + statusLine
-	}
 	if label := app.composerFooterLabel(); label != "" {
-		statusLine = label + " • " + statusLine
-	}
-	if app.statusMessage != "" {
-		statusLine = app.statusMessage + " • " + statusLine
+		modelText = label + " • " + modelText
 	}
 
 	return []styledLine{
 		{Style: app.theme.style(colorDim), Text: truncateText(pathLine, width)},
-		{Style: app.theme.style(colorDim), Text: truncateText(statusLine, width)},
+		{Style: app.theme.style(colorDim), Text: truncateText(modelText, width)},
 	}
 }
 

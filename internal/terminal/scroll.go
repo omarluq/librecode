@@ -36,9 +36,4 @@ func (app *App) handleMouse(event *tcell.EventMouse) {
 
 func (app *App) scrollTranscript(delta int) {
 	app.scrollOffset = max(0, app.scrollOffset+delta)
-	if app.scrollOffset == 0 {
-		app.setStatus("scroll: bottom")
-		return
-	}
-	app.setStatus("scroll: " + intText(app.scrollOffset) + " lines up")
 }

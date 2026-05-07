@@ -89,8 +89,8 @@ func TestScrollTranscriptDoesNotDrawImmediately(t *testing.T) {
 	if app.scrollOffset != 3 {
 		t.Fatalf("scroll offset = %d, want 3", app.scrollOffset)
 	}
-	if app.statusMessage != "scroll: 3 lines up" {
-		t.Fatalf("status = %q", app.statusMessage)
+	if app.statusMessage != "" {
+		t.Fatalf("status = %q, want empty", app.statusMessage)
 	}
 }
 
