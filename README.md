@@ -169,6 +169,12 @@ Current extension capabilities include:
 
 The bundled [`extensions/vim-mode.lua`](extensions/vim-mode.lua) demonstrates composer control through the public Lua runtime API.
 
+For architecture and API details, see:
+
+- [`docs/adr/0001-programmable-runtime.md`](docs/adr/0001-programmable-runtime.md)
+- [`docs/extension-runtime.md`](docs/extension-runtime.md)
+- [`docs/extension-api.md`](docs/extension-api.md)
+
 Inspect loaded extensions:
 
 ```bash
