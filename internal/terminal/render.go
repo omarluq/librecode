@@ -392,16 +392,7 @@ func (app *App) drawComposerWindow(layout *runtimeLayout) {
 	if !window.Visible || window.Height <= 0 {
 		return
 	}
-	bodyRows := max(1, window.Height-2)
-	editor := renderEditor(
-		[]rune(app.composerText()),
-		app.composerCursor(),
-		window.Width,
-		bodyRows,
-		app.theme,
-		app.editorBorderColor(),
-		app.composerBorderLabel(),
-	)
+	editor := app.renderComposerEditor(window.Width, max(1, window.Height-2))
 	borderStyle := app.theme.style(app.editorBorderColor())
 	for index, line := range editor.Lines {
 		writeEditorLine(app.frame, window.Y+index, window.Width, line, index, len(editor.Lines), borderStyle)
@@ -409,6 +400,18 @@ func (app *App) drawComposerWindow(layout *runtimeLayout) {
 	window.CursorRow = editor.CursorRow
 	window.CursorCol = editor.CursorCol
 	app.runtimeWindows[window.Name] = window
+}
+
+func (app *App) renderComposerEditor(width, bodyRows int) editorRender {
+	return renderEditor(
+		[]rune(app.composerText()),
+		app.composerCursor(),
+		width,
+		bodyRows,
+		app.theme,
+		app.editorBorderColor(),
+		app.composerBorderLabel(),
+	)
 }
 
 func (app *App) drawStatusWindow(layout *runtimeLayout) {
@@ -439,9 +442,15 @@ func (app *App) currentRuntimeLayout() runtimeLayout {
 func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 	statusLines := app.footerLines(width)
 	autocompleteLines := app.autocompleteLines(width)
-	composerHeight := min(defaultEditorRows, max(3, height-len(statusLines)-len(autocompleteLines)-2))
-	composerHeight = max(3, composerHeight)
-	transcriptHeight := max(1, height-(len(statusLines)+len(autocompleteLines)+composerHeight))
+	maxComposerHeight := min(defaultEditorRows, max(3, height-len(statusLines)-len(autocompleteLines)-2))
+	maxComposerHeight = max(3, maxComposerHeight)
+	composerHeight := len(app.renderComposerEditor(width, max(1, maxComposerHeight-2)).Lines)
+	reservedRows := len(statusLines) + len(autocompleteLines) + composerHeight
+	if reservedRows > height {
+		composerHeight = max(3, height-len(statusLines)-len(autocompleteLines))
+		reservedRows = len(statusLines) + len(autocompleteLines) + composerHeight
+	}
+	transcriptHeight := max(0, height-reservedRows)
 	autocompleteStart := transcriptHeight
 	composerStart := autocompleteStart + len(autocompleteLines)
 	statusStart := height - len(statusLines)

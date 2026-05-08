@@ -196,6 +196,34 @@ func TestStreamingBlocksRenderChronologically(t *testing.T) {
 	}
 }
 
+func TestDefaultLayoutComposerTouchesStatus(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		prompt string
+	}{
+		{name: "empty prompt", prompt: ""},
+		{name: "multiline prompt", prompt: "one\ntwo\nthree"},
+		{name: "wrapped prompt", prompt: strings.Repeat("wrapped ", 20)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			app.setComposerText(tt.prompt)
+
+			layout := app.defaultRuntimeLayout(80, 24)
+			composerBottom := layout.Composer.Y + layout.Composer.Height
+			if composerBottom != layout.Status.Y {
+				t.Fatalf("composer bottom = %d, status y = %d", composerBottom, layout.Status.Y)
+			}
+		})
+	}
+}
+
 func newRenderTestApp(t *testing.T) *App {
 	t.Helper()
 
