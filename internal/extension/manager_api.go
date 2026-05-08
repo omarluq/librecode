@@ -31,6 +31,16 @@ func (manager *Manager) luaBufferAPI(extensionRuntime *luaExtension) *lua.LTable
 	return apiTable
 }
 
+func (manager *Manager) luaTranscriptAPI(extensionRuntime *luaExtension) *lua.LTable {
+	state := extensionRuntime.state
+	apiTable := state.NewTable()
+	state.SetFuncs(apiTable, map[string]lua.LGFunction{
+		luaFieldGet: manager.luaTranscriptGet(extensionRuntime),
+	})
+
+	return apiTable
+}
+
 func (manager *Manager) luaEventAPI(extensionRuntime *luaExtension) *lua.LTable {
 	state := extensionRuntime.state
 	apiTable := state.NewTable()
@@ -93,6 +103,15 @@ func (manager *Manager) luaWindowAPI(extensionRuntime *luaExtension) *lua.LTable
 	})
 
 	return apiTable
+}
+
+func (manager *Manager) luaTranscriptGet(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		state.Push(mapToLuaTable(state, transcriptForLua(&hostEvent.transcript)))
+
+		return 1
+	}
 }
 
 func (manager *Manager) luaLayoutGet(extensionRuntime *luaExtension) lua.LGFunction {

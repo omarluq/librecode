@@ -49,6 +49,27 @@ type BufferAppend struct {
 	Role string `json:"role"`
 }
 
+// TranscriptBlock describes one structured transcript item exposed to extensions.
+type TranscriptBlock struct {
+	Metadata  map[string]any `json:"metadata"`
+	CreatedAt string         `json:"created_at"`
+	ID        string         `json:"id"`
+	Kind      string         `json:"kind"`
+	Role      string         `json:"role"`
+	Text      string         `json:"text"`
+	Index     int            `json:"index"`
+	Streaming bool           `json:"streaming"`
+}
+
+// TranscriptState describes a structured, windowed transcript snapshot.
+type TranscriptState struct {
+	Metadata map[string]any    `json:"metadata"`
+	Blocks   []TranscriptBlock `json:"blocks"`
+	Count    int               `json:"count"`
+	Start    int               `json:"start"`
+	Limit    int               `json:"limit"`
+}
+
 // ActionCall requests a host-side runtime action.
 type ActionCall struct {
 	Name string `json:"name"`
@@ -104,13 +125,14 @@ type WindowState struct {
 
 // TerminalEvent describes a low-level terminal runtime event exposed to extensions.
 type TerminalEvent struct {
-	Buffers map[string]BufferState `json:"buffers"`
-	Windows map[string]WindowState `json:"windows"`
-	Layout  LayoutState            `json:"layout"`
-	Context map[string]any         `json:"context"`
-	Data    map[string]any         `json:"data"`
-	Name    string                 `json:"name"`
-	Key     ComposerKeyEvent       `json:"key"`
+	Buffers    map[string]BufferState `json:"buffers"`
+	Windows    map[string]WindowState `json:"windows"`
+	Context    map[string]any         `json:"context"`
+	Data       map[string]any         `json:"data"`
+	Name       string                 `json:"name"`
+	Key        ComposerKeyEvent       `json:"key"`
+	Layout     LayoutState            `json:"layout"`
+	Transcript TranscriptState        `json:"transcript"`
 }
 
 // TerminalEventResult describes mutations produced by low-level extension handlers.

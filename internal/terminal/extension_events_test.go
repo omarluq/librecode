@@ -114,9 +114,32 @@ func TestExtensionEventsExposeTranscriptThinkingAndToolBuffers(t *testing.T) {
 	assertBufferCount(t, buffers, extensionBufferTranscript, 3)
 	assertBufferCount(t, buffers, extensionBufferThinking, 1)
 	assertBufferCount(t, buffers, extensionBufferTools, 1)
+	if got := buffers[extensionBufferTranscript].Metadata["snapshot_count"]; got != 4 {
+		t.Fatalf("snapshot count = %v, want 4", got)
+	}
 	if got := buffers[extensionBufferTranscript].Text; got != "" {
 		t.Fatalf("default transcript buffer text = %q, want empty projection", got)
 	}
+}
+
+func TestExtensionEventExposesStructuredTranscriptSnapshot(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.addMessage(database.RoleUser, "hello")
+	app.addMessage(database.RoleThinking, "because")
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
+
+	event := app.newExtensionEvent(extensionEventRender, emptyExtensionKeyEvent())
+	if got, want := event.Transcript.Count, 3; got != want {
+		t.Fatalf("transcript count = %d, want %d", got, want)
+	}
+	if got, want := len(event.Transcript.Blocks), 3; got != want {
+		t.Fatalf("transcript blocks = %d, want %d", got, want)
+	}
+	assertTranscriptBlock(t, &event.Transcript.Blocks[0], database.RoleUser, "hello", false)
+	assertTranscriptBlock(t, &event.Transcript.Blocks[1], database.RoleThinking, "because", false)
+	assertTranscriptBlock(t, &event.Transcript.Blocks[2], database.RoleAssistant, "answer", true)
 }
 
 func TestExtensionCanOverrideTranscriptBufferRendering(t *testing.T) {
@@ -276,6 +299,25 @@ func assertBufferCount(t *testing.T, buffers map[string]extension.BufferState, n
 	}
 	if got != want {
 		t.Fatalf("buffer %s count = %d, want %d", name, got, want)
+	}
+}
+
+func assertTranscriptBlock(
+	t *testing.T,
+	block *extension.TranscriptBlock,
+	role database.Role,
+	text string,
+	streaming bool,
+) {
+	t.Helper()
+	if got := block.Role; got != string(role) {
+		t.Fatalf("block role = %s, want %s", got, role)
+	}
+	if got := block.Text; got != text {
+		t.Fatalf("block text = %q, want %q", got, text)
+	}
+	if got := block.Streaming; got != streaming {
+		t.Fatalf("block streaming = %v, want %v", got, streaming)
 	}
 }
 

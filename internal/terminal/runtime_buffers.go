@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 
@@ -10,9 +11,12 @@ import (
 )
 
 const (
-	extensionBufferThinking = "thinking"
-	extensionBufferTools    = "tools"
-	extensionMetadataCount  = "count"
+	extensionBufferThinking        = "thinking"
+	extensionBufferTools           = "tools"
+	extensionMetadataCount         = "count"
+	extensionMetadataMessage       = "message"
+	maxTranscriptSnapshotBlocks    = 32
+	maxTranscriptSnapshotTextRunes = 4_000
 )
 
 func (app *App) reservedRuntimeBuffers() map[string]extension.BufferState {
@@ -30,7 +34,7 @@ func (app *App) statusBufferState() extension.BufferState {
 		return buffer
 	}
 	buffer := textBufferState(extensionBufferStatus, app.defaultStatusText())
-	buffer.Metadata = map[string]any{"message": app.statusMessage}
+	buffer.Metadata = map[string]any{extensionMetadataMessage: app.statusMessage}
 
 	return buffer
 }
@@ -39,12 +43,13 @@ func (app *App) transcriptBufferState() extension.BufferState {
 	if buffer, ok := app.runtimeBufferOverride(extensionBufferTranscript); ok {
 		return buffer
 	}
+	snapshot := app.transcriptState(maxTranscriptSnapshotBlocks)
 	buffer := textBufferState(extensionBufferTranscript, "")
-	buffer.Metadata = map[string]any{
-		extensionMetadataCount: len(app.messages),
-		"queued_count":         len(app.queuedMessages),
-		"streaming_count":      len(app.streamingBlocks),
-	}
+	buffer.Metadata = cloneExtensionMetadata(snapshot.Metadata)
+	buffer.Metadata[extensionMetadataCount] = len(app.messages)
+	buffer.Metadata["snapshot_count"] = snapshot.Count
+	buffer.Metadata["snapshot_start"] = snapshot.Start
+	buffer.Metadata["snapshot_limit"] = snapshot.Limit
 
 	return buffer
 }
@@ -75,6 +80,99 @@ func (app *App) toolsBufferState() extension.BufferState {
 	}
 
 	return buffer
+}
+
+func (app *App) transcriptState(limit int) extension.TranscriptState {
+	count := len(app.messages) + len(app.streamingBlocks)
+	limit = clampTranscriptLimit(limit, count)
+	start := max(0, count-limit)
+	blocks := make([]extension.TranscriptBlock, 0, limit)
+	for index := start; index < count; index++ {
+		blocks = append(blocks, app.transcriptBlock(index))
+	}
+
+	return extension.TranscriptState{
+		Metadata: map[string]any{
+			"message_count":   len(app.messages),
+			"queued_count":    len(app.queuedMessages),
+			"streaming_count": len(app.streamingBlocks),
+			"working":         app.working,
+		},
+		Blocks: blocks,
+		Count:  count,
+		Start:  start,
+		Limit:  limit,
+	}
+}
+
+func clampTranscriptLimit(limit, count int) int {
+	if count <= 0 {
+		return 0
+	}
+	if limit <= 0 || limit > maxTranscriptSnapshotBlocks {
+		limit = maxTranscriptSnapshotBlocks
+	}
+
+	return min(limit, count)
+}
+
+func (app *App) transcriptBlock(index int) extension.TranscriptBlock {
+	messageCount := len(app.messages)
+	if index < messageCount {
+		return app.messageTranscriptBlock(index, app.messages[index], false)
+	}
+	streamingIndex := index - messageCount
+
+	return app.messageTranscriptBlock(index, app.streamingBlocks[streamingIndex], true)
+}
+
+func (app *App) messageTranscriptBlock(
+	index int,
+	message chatMessage,
+	streaming bool,
+) extension.TranscriptBlock {
+	text, truncated := transcriptBlockText(message.Content)
+	metadata := map[string]any{}
+	if truncated {
+		metadata["truncated"] = true
+	}
+
+	return extension.TranscriptBlock{
+		Metadata:  metadata,
+		CreatedAt: message.CreatedAt.Format(time.RFC3339Nano),
+		ID:        transcriptBlockID(index, streaming),
+		Kind:      transcriptBlockKind(streaming),
+		Role:      string(message.Role),
+		Text:      text,
+		Index:     index,
+		Streaming: streaming,
+	}
+}
+
+func transcriptBlockText(text string) (string, bool) {
+	runes := []rune(text)
+	if len(runes) <= maxTranscriptSnapshotTextRunes {
+		return text, false
+	}
+
+	return string(runes[:maxTranscriptSnapshotTextRunes]), true
+}
+
+func transcriptBlockID(index int, streaming bool) string {
+	prefix := extensionMetadataMessage
+	if streaming {
+		prefix = "streaming"
+	}
+
+	return prefix + ":" + intText(index)
+}
+
+func transcriptBlockKind(streaming bool) string {
+	if streaming {
+		return "streaming"
+	}
+
+	return extensionMetadataMessage
 }
 
 func (app *App) countRuntimeMessages(matchesRole func(database.Role) bool) int {

@@ -179,7 +179,7 @@ The current system already proves a few important things:
 
 Core UI state is increasingly exposed as buffers, but much of it is still projected from Go-owned structures.
 
-Current stock runtime buffers include `composer`, `status`, `transcript`, `thinking`, and `tools`. The composer is canonical; the others are still projections or overrides layered over Go state. We need to move toward a world where more of the runtime is expressed as first-class named buffers and buffer-like objects.
+Current stock runtime buffers include `composer`, `status`, `transcript`, `thinking`, and `tools`. The composer is canonical; `transcript`, `thinking`, and `tools` now expose lightweight metadata buffers plus a bounded structured transcript snapshot on each terminal event. The stock transcript buffer is still primarily an override point for custom rendering, while `event.transcript` / `librecode.transcript.get()` is the read-side structured view. We need to move toward write-side structured message control next.
 
 ### 2. Render/layout is still host-first
 
@@ -244,7 +244,7 @@ Extensions should be able to observe and rewrite default behavior by interceptin
 The system should move beyond three special terminal buffers and support a richer model:
 
 - named runtime buffers
-- transcript/message buffers
+- write-side transcript/message blocks
 - scratch buffers
 - UI-owned buffers
 - metadata and annotations per buffer

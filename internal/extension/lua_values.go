@@ -12,6 +12,7 @@ const (
 	luaFieldCreate    = "create"
 	luaFieldGet       = "get"
 	luaFieldKey       = "key"
+	luaFieldMetadata  = "metadata"
 	luaFieldName      = "name"
 	luaFieldSet       = "set"
 	luaFieldText      = "text"
@@ -192,6 +193,7 @@ func terminalEventTable(state *lua.LState, event *TerminalEvent) *lua.LTable {
 		"buffers":      bufferMapForLua(event.Buffers),
 		"windows":      windowMapForLua(event.Windows),
 		"layout":       layoutForLua(&event.Layout),
+		"transcript":   transcriptForLua(&event.Transcript),
 		"composer":     bufferForLua(&composer),
 		"working":      luaContextBool(event.Context, "working"),
 		"auth_working": luaContextBool(event.Context, "auth_working"),
@@ -236,29 +238,57 @@ func layoutForLua(layout *LayoutState) map[string]any {
 
 func bufferForLua(buffer *BufferState) map[string]any {
 	return map[string]any{
-		luaFieldName: buffer.Name,
-		luaFieldText: buffer.Text,
-		"chars":      buffer.Chars,
-		"cursor":     buffer.Cursor,
-		"label":      buffer.Label,
-		"metadata":   buffer.Metadata,
+		luaFieldName:     buffer.Name,
+		luaFieldText:     buffer.Text,
+		"chars":          buffer.Chars,
+		"cursor":         buffer.Cursor,
+		"label":          buffer.Label,
+		luaFieldMetadata: buffer.Metadata,
 	}
 }
 
 func windowForLua(window *WindowState) map[string]any {
 	return map[string]any{
-		luaFieldName: window.Name,
-		"role":       window.Role,
-		"buffer":     window.Buffer,
-		"renderer":   window.Renderer,
-		"x":          window.X,
-		"y":          window.Y,
-		"width":      window.Width,
-		"height":     window.Height,
-		"cursor_row": window.CursorRow,
-		"cursor_col": window.CursorCol,
-		"visible":    window.Visible,
-		"metadata":   window.Metadata,
+		luaFieldName:     window.Name,
+		"role":           window.Role,
+		"buffer":         window.Buffer,
+		"renderer":       window.Renderer,
+		"x":              window.X,
+		"y":              window.Y,
+		"width":          window.Width,
+		"height":         window.Height,
+		"cursor_row":     window.CursorRow,
+		"cursor_col":     window.CursorCol,
+		"visible":        window.Visible,
+		luaFieldMetadata: window.Metadata,
+	}
+}
+
+func transcriptForLua(transcript *TranscriptState) map[string]any {
+	blocks := make([]any, 0, len(transcript.Blocks))
+	for index := range transcript.Blocks {
+		blocks = append(blocks, transcriptBlockForLua(&transcript.Blocks[index]))
+	}
+
+	return map[string]any{
+		luaFieldMetadata: transcript.Metadata,
+		"blocks":         blocks,
+		"count":          transcript.Count,
+		"start":          transcript.Start,
+		"limit":          transcript.Limit,
+	}
+}
+
+func transcriptBlockForLua(block *TranscriptBlock) map[string]any {
+	return map[string]any{
+		luaFieldMetadata: block.Metadata,
+		"created_at":     block.CreatedAt,
+		"id":             block.ID,
+		"kind":           block.Kind,
+		"role":           block.Role,
+		"text":           block.Text,
+		"index":          block.Index,
+		"streaming":      block.Streaming,
 	}
 }
 
@@ -274,7 +304,7 @@ func luaBufferState(name string, value lua.LValue) BufferState {
 		}
 
 		return BufferState{
-			Metadata: luaDetails(table.RawGetString("metadata")),
+			Metadata: luaDetails(table.RawGetString(luaFieldMetadata)),
 			Name:     luaTableString(table, "name", name),
 			Text:     text,
 			Chars:    stringChars(text),
@@ -326,7 +356,7 @@ func luaWindowState(name string, value lua.LValue) WindowState {
 		}
 
 		return WindowState{
-			Metadata:  luaDetails(table.RawGetString("metadata")),
+			Metadata:  luaDetails(table.RawGetString(luaFieldMetadata)),
 			Name:      luaTableString(table, "name", name),
 			Role:      luaTableString(table, "role", ""),
 			Buffer:    luaTableString(table, "buffer", ""),

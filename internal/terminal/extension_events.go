@@ -184,13 +184,14 @@ func (app *App) newExtensionEventWithLayoutAndData(
 ) extension.TerminalEvent {
 	windows := app.cloneRuntimeWindows(layout)
 	return extension.TerminalEvent{
-		Buffers: app.extensionBuffers(),
-		Windows: windows,
-		Layout:  extension.LayoutState{Windows: windows, Width: layout.Width, Height: layout.Height},
-		Context: app.extensionContext(),
-		Data:    cloneExtensionMetadata(data),
-		Name:    name,
-		Key:     key,
+		Buffers:    app.extensionBuffers(),
+		Windows:    windows,
+		Layout:     extension.LayoutState{Windows: windows, Width: layout.Width, Height: layout.Height},
+		Transcript: app.transcriptState(maxTranscriptSnapshotBlocks),
+		Context:    app.extensionContext(),
+		Data:       cloneExtensionMetadata(data),
+		Name:       name,
+		Key:        key,
 	}
 }
 

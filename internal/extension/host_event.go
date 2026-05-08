@@ -7,22 +7,23 @@ import (
 )
 
 type luaHostEvent struct {
-	buffers        map[string]BufferState
+	changedWindows map[string]struct{}
 	windows        map[string]WindowState
-	layout         LayoutState
+	buffers        map[string]BufferState
+	uiCursor       *UICursor
 	context        map[string]any
 	data           map[string]any
 	changedBuffers map[string]struct{}
-	changedWindows map[string]struct{}
+	name           string
+	key            ComposerKeyEvent
 	appends        []BufferAppend
 	actions        []ActionCall
 	uiDrawOps      []UIDrawOp
 	resetUIWindows []string
 	deletedBuffers []string
 	deletedWindows []string
-	uiCursor       *UICursor
-	name           string
-	key            ComposerKeyEvent
+	layout         LayoutState
+	transcript     TranscriptState
 	consumed       bool
 	stopped        bool
 	layoutChanged  bool
@@ -35,6 +36,7 @@ func newLuaHostEvent(event *TerminalEvent) *luaHostEvent {
 		buffers:        cloneBuffers(event.Buffers),
 		windows:        cloneWindows(event.Windows),
 		layout:         cloneLayout(event.Layout),
+		transcript:     cloneTranscript(event.Transcript),
 		context:        cloneMap(event.Context),
 		data:           cloneMap(event.Data),
 		changedBuffers: map[string]struct{}{},
@@ -70,13 +72,14 @@ func (event *luaHostEvent) result() TerminalEventResult {
 
 func (event *luaHostEvent) eventSnapshot() *TerminalEvent {
 	return &TerminalEvent{
-		Buffers: cloneBuffers(event.buffers),
-		Windows: cloneWindows(event.windows),
-		Layout:  cloneLayout(event.layout),
-		Context: cloneMap(event.context),
-		Data:    cloneMap(event.data),
-		Name:    event.name,
-		Key:     event.key,
+		Buffers:    cloneBuffers(event.buffers),
+		Windows:    cloneWindows(event.windows),
+		Layout:     cloneLayout(event.layout),
+		Transcript: cloneTranscript(event.transcript),
+		Context:    cloneMap(event.context),
+		Data:       cloneMap(event.data),
+		Name:       event.name,
+		Key:        event.key,
 	}
 }
 
@@ -480,6 +483,27 @@ func cloneLayoutPtr(layout *LayoutState) *LayoutState {
 	cloned := cloneLayout(*layout)
 
 	return &cloned
+}
+
+func cloneTranscript(transcript TranscriptState) TranscriptState {
+	blocks := make([]TranscriptBlock, len(transcript.Blocks))
+	for index := range transcript.Blocks {
+		blocks[index] = cloneTranscriptBlock(&transcript.Blocks[index])
+	}
+	return TranscriptState{
+		Metadata: cloneMap(transcript.Metadata),
+		Blocks:   blocks,
+		Count:    transcript.Count,
+		Start:    transcript.Start,
+		Limit:    transcript.Limit,
+	}
+}
+
+func cloneTranscriptBlock(block *TranscriptBlock) TranscriptBlock {
+	cloned := *block
+	cloned.Metadata = cloneMap(cloned.Metadata)
+
+	return cloned
 }
 
 func cloneUICursor(cursor *UICursor) *UICursor {

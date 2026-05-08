@@ -218,9 +218,7 @@ Notes:
 
 Removes matching keymaps previously registered by the same extension.
 
-## `librecode.buf`
-
-Buffer APIs currently work only during active event handling. Calling them outside an event raises an error.
+All mutable runtime APIs currently work only during active event handling. Calling them outside an event raises an error.
 
 ## `librecode.win`
 
@@ -404,6 +402,40 @@ For append tables, recognized fields include:
 - `text`
 - `role`
 
+## `librecode.transcript`
+
+### `librecode.transcript.get()`
+
+Returns the current structured transcript snapshot for the active event.
+
+The snapshot is read-only host state. It is intentionally windowed and bounded so render/stream events do not rebuild unbounded history on every frame. Use `count`, `start`, and `limit` to understand which slice was exposed.
+
+```lua
+local transcript = lc.transcript.get()
+for _, block in ipairs(transcript.blocks) do
+  lc.log(block.role .. ": " .. block.text)
+end
+```
+
+Fields:
+
+- `count`: total message + streaming block count
+- `start`: absolute index of `blocks[1]`
+- `limit`: maximum number of blocks in the snapshot
+- `metadata`: counts and runtime state such as `message_count`, `streaming_count`, `queued_count`, `working`
+- `blocks`: recent structured transcript blocks
+
+Block fields:
+
+- `id`
+- `kind` (`message` or `streaming`)
+- `role`
+- `text`
+- `index`
+- `created_at`
+- `streaming`
+- `metadata`
+
 ## `librecode.action`
 
 Request host-side runtime actions from an extension.
@@ -466,6 +498,16 @@ Handlers for terminal events receive a table like:
     thinking = { text = "", cursor = 0, chars = {}, metadata = { count = 1 } },
     tools = { text = "", cursor = 0, chars = {}, metadata = { count = 1 } },
   },
+  transcript = {
+    count = 12,
+    start = 0,
+    limit = 12,
+    metadata = { message_count = 10, streaming_count = 2, queued_count = 0, working = true },
+    blocks = {
+      { id = "message:0", kind = "message", role = "user", text = "hello", index = 0, streaming = false },
+      { id = "streaming:11", kind = "streaming", role = "assistant", text = "partial", index = 11, streaming = true },
+    },
+  },
 }
 ```
 
@@ -488,7 +530,7 @@ The API is still incomplete compared with the long-term target.
 Notably missing today:
 
 - jobs/timers/scheduling
-- structured transcript/message object control beyond the current `transcript`, `thinking`, and `tools` metadata/override buffers
+- write-side structured transcript/message object control beyond the current read-only transcript snapshot and buffer override path
 - highlights/extmarks/namespaced annotations
 - deeper assistant/model/tool runtime replacement hooks
 

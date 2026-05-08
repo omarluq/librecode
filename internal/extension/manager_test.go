@@ -69,11 +69,12 @@ func testTerminalEventWithComposerWindow(text, key string) extension.TerminalEve
 				Cursor:   len([]rune(text)),
 			},
 		},
-		Windows: map[string]extension.WindowState{testBufferComposer: window},
-		Layout:  testLayout(map[string]extension.WindowState{testBufferComposer: window}),
-		Context: map[string]any{testContextModeKey: testModeChat},
-		Data:    map[string]any{},
-		Name:    testEventKey,
+		Windows:    map[string]extension.WindowState{testBufferComposer: window},
+		Layout:     testLayout(map[string]extension.WindowState{testBufferComposer: window}),
+		Transcript: testTranscriptState(text),
+		Context:    map[string]any{testContextModeKey: testModeChat},
+		Data:       map[string]any{},
+		Name:       testEventKey,
 		Key: extension.ComposerKeyEvent{
 			Key:   key,
 			Text:  "",
@@ -91,6 +92,27 @@ func stringCharsForTest(text string) []string {
 	}
 
 	return chars
+}
+
+func testTranscriptState(text string) extension.TranscriptState {
+	return extension.TranscriptState{
+		Metadata: map[string]any{},
+		Blocks: []extension.TranscriptBlock{
+			{
+				Metadata:  map[string]any{},
+				CreatedAt: "",
+				ID:        "message:0",
+				Kind:      "message",
+				Role:      "user",
+				Text:      text,
+				Index:     0,
+				Streaming: false,
+			},
+		},
+		Count: 1,
+		Start: 0,
+		Limit: 1,
+	}
 }
 
 func TestManager_LoadsLuaCommandsToolsAndKeymaps(t *testing.T) {
@@ -179,11 +201,12 @@ end)
 				Cursor:   2,
 			},
 		},
-		Windows: map[string]extension.WindowState{},
-		Layout:  testLayout(map[string]extension.WindowState{}),
-		Context: map[string]any{},
-		Data:    map[string]any{},
-		Name:    testEventKey,
+		Windows:    map[string]extension.WindowState{},
+		Layout:     testLayout(map[string]extension.WindowState{}),
+		Transcript: testTranscriptState("go"),
+		Context:    map[string]any{},
+		Data:       map[string]any{},
+		Name:       testEventKey,
 		Key: extension.ComposerKeyEvent{
 			Key:   "!",
 			Text:  "!",
@@ -202,7 +225,7 @@ end)
 	assert.Equal(t, extension.BufferAppend{Name: "transcript", Text: "saw go!", Role: "custom"}, result.Appends[0])
 }
 
-func TestManager_KeymapAutocmdAndBufferPrimitives(t *testing.T) {
+func TestManager_KeymapAutocmdBufferAndTranscriptPrimitives(t *testing.T) {
 	t.Parallel()
 
 	manager := loadTestExtension(t, `
@@ -216,10 +239,12 @@ end
 
 lc.autocmd.create("key", {
   priority = 1,
-  callback = function()
+  callback = function(event)
     lc.buf.create("scratch", { text = "a\nb\nc", cursor = 1 })
     lc.buf.set_lines("scratch", 1, 2, { "B", "BB" })
     lc.buf.append("scratch", "!")
+    local transcript = lc.transcript.get()
+    lc.buf.append("scratch", ":" .. transcript.blocks[1].text .. ":" .. event.transcript.count)
   end,
 })
 
@@ -237,7 +262,7 @@ end, { priority = 10, desc = "map ctrl-j" })
 	assert.True(t, result.Consumed)
 	assert.Equal(t, "go:mapped", result.Buffers[testBufferComposer].Text)
 	assert.Equal(t, 99, result.Buffers[testBufferComposer].Cursor)
-	assert.Equal(t, "a\nB\nBB\nc!", result.Buffers["scratch"].Text)
+	assert.Equal(t, "a\nB\nBB\nc!:go:1", result.Buffers["scratch"].Text)
 	assert.Equal(t, []string{"buffer:composer:ctrl+j"}, manager.Extensions()[0].Keymaps)
 }
 
@@ -303,11 +328,12 @@ end)
 				Cursor:   4,
 			},
 		},
-		Windows: map[string]extension.WindowState{},
-		Layout:  testLayout(map[string]extension.WindowState{}),
-		Context: map[string]any{testContextModeKey: testModeChat},
-		Data:    map[string]any{},
-		Name:    testEventKey,
+		Windows:    map[string]extension.WindowState{},
+		Layout:     testLayout(map[string]extension.WindowState{}),
+		Transcript: testTranscriptState("1234"),
+		Context:    map[string]any{testContextModeKey: testModeChat},
+		Data:       map[string]any{},
+		Name:       testEventKey,
 		Key: extension.ComposerKeyEvent{
 			Key:   "!",
 			Text:  "!",
@@ -394,11 +420,12 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 				Cursor:   0,
 			},
 		},
-		Windows: map[string]extension.WindowState{testBufferComposer: composerWindow},
-		Layout:  testLayout(map[string]extension.WindowState{testBufferComposer: composerWindow}),
-		Context: map[string]any{},
-		Data:    map[string]any{},
-		Name:    "startup",
+		Windows:    map[string]extension.WindowState{testBufferComposer: composerWindow},
+		Layout:     testLayout(map[string]extension.WindowState{testBufferComposer: composerWindow}),
+		Transcript: testTranscriptState(""),
+		Context:    map[string]any{},
+		Data:       map[string]any{},
+		Name:       "startup",
 		Key: extension.ComposerKeyEvent{
 			Key:   "",
 			Text:  "",
@@ -416,11 +443,12 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 		Buffers: map[string]extension.BufferState{
 			testBufferComposer: startup.Buffers[testBufferComposer],
 		},
-		Windows: map[string]extension.WindowState{testBufferComposer: composerWindow},
-		Layout:  testLayout(map[string]extension.WindowState{testBufferComposer: composerWindow}),
-		Context: map[string]any{testContextModeKey: testModeChat},
-		Data:    map[string]any{},
-		Name:    testEventKey,
+		Windows:    map[string]extension.WindowState{testBufferComposer: composerWindow},
+		Layout:     testLayout(map[string]extension.WindowState{testBufferComposer: composerWindow}),
+		Transcript: testTranscriptState(startup.Buffers[testBufferComposer].Text),
+		Context:    map[string]any{testContextModeKey: testModeChat},
+		Data:       map[string]any{},
+		Name:       testEventKey,
 		Key: extension.ComposerKeyEvent{
 			Key:   "x",
 			Text:  "x",
