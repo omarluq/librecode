@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	testBufferComposer = "composer"
-	testContextModeKey = "mode"
-	testEventKey       = "key"
-	testModeChat       = "chat"
+	testBufferComposer  = "composer"
+	testContextModeKey  = "mode"
+	testEventKey        = "key"
+	testModeChat        = "chat"
+	testRendererDefault = "default"
 )
 
 func testLayout(windows map[string]extension.WindowState) extension.LayoutState {
@@ -44,6 +45,7 @@ func testComposerWindow() extension.WindowState {
 		Name:      testBufferComposer,
 		Role:      testBufferComposer,
 		Buffer:    testBufferComposer,
+		Renderer:  testRendererDefault,
 		X:         0,
 		Y:         0,
 		Width:     80,
@@ -240,8 +242,7 @@ end, { priority = 10, desc = "map ctrl-j" })
 func TestManager_WindowAPIExposesComposerWindow(t *testing.T) {
 	t.Parallel()
 
-	extensionPath := filepath.Join(t.TempDir(), "runtime.lua")
-	source := `
+	manager := loadTestExtension(t, `
 local lc = require("librecode")
 
 lc.on("startup", function()
@@ -257,64 +258,12 @@ lc.on("startup", function()
   composer.label = "window-aware"
   lc.buf.set(composer_buf, composer)
 end)
-`
-	require.NoError(t, writeTestFile(extensionPath, source))
+`)
 
-	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(manager.Shutdown)
-	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
-
-	event := extension.TerminalEvent{
-		Buffers: map[string]extension.BufferState{
-			testBufferComposer: {
-				Metadata: map[string]any{},
-				Name:     testBufferComposer,
-				Text:     "",
-				Chars:    []string{},
-				Label:    "",
-				Cursor:   0,
-			},
-		},
-		Windows: map[string]extension.WindowState{
-			testBufferComposer: {
-				Metadata:  map[string]any{},
-				Name:      testBufferComposer,
-				Role:      testBufferComposer,
-				Buffer:    testBufferComposer,
-				X:         0,
-				Y:         10,
-				Width:     80,
-				Height:    6,
-				CursorRow: 1,
-				CursorCol: 2,
-				Visible:   true,
-			},
-		},
-		Layout: testLayout(map[string]extension.WindowState{
-			testBufferComposer: {
-				Metadata:  map[string]any{},
-				Name:      testBufferComposer,
-				Role:      testBufferComposer,
-				Buffer:    testBufferComposer,
-				X:         0,
-				Y:         10,
-				Width:     80,
-				Height:    6,
-				CursorRow: 1,
-				CursorCol: 2,
-				Visible:   true,
-			},
-		}),
-		Context: map[string]any{},
-		Name:    "startup",
-		Key: extension.ComposerKeyEvent{
-			Key:   "",
-			Text:  "",
-			Ctrl:  false,
-			Alt:   false,
-			Shift: false,
-		},
-	}
+	event := testTerminalEventWithComposerWindow("", "")
+	event.Context = map[string]any{}
+	event.Name = "startup"
+	event.Key = extension.ComposerKeyEvent{Key: "", Text: "", Ctrl: false, Alt: false, Shift: false}
 	result, err := manager.HandleTerminalEvent(context.Background(), &event)
 	require.NoError(t, err)
 	assert.Equal(t, "window-aware", result.Buffers[testBufferComposer].Label)

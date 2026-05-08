@@ -10,6 +10,11 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 )
 
+const (
+	windowRendererDefault   = "default"
+	windowRendererExtension = "extension"
+)
+
 func (app *App) draw(ctx context.Context) {
 	width, height := app.screen.Size()
 	app.frame = newCellBuffer(width, height, tcell.StyleDefault)
@@ -47,7 +52,7 @@ func (app *App) drawTiny(width, height int) {
 
 func (app *App) drawTranscriptWindow(layout *runtimeLayout) {
 	window := layout.Transcript
-	if !window.Visible || window.Height <= 0 {
+	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
 	if app.showWelcomeOnly() {
@@ -62,7 +67,7 @@ func (app *App) drawTranscriptWindow(layout *runtimeLayout) {
 
 func (app *App) drawPanelWindow(layout *runtimeLayout) {
 	window := layout.Transcript
-	if !window.Visible || window.Height <= 0 {
+	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
 	lines := app.panel.render(window.Width, window.Height, app.theme, app.keys)
@@ -378,7 +383,7 @@ func boxedLines(width int, label, content string, style tcell.Style) []styledLin
 
 func (app *App) drawAutocompleteWindow(layout *runtimeLayout) {
 	window := layout.Autocomplete
-	if !window.Visible || window.Height <= 0 {
+	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
 	lines := app.autocompleteLines(window.Width)
@@ -389,7 +394,7 @@ func (app *App) drawAutocompleteWindow(layout *runtimeLayout) {
 
 func (app *App) drawComposerWindow(layout *runtimeLayout) {
 	window := layout.Composer
-	if !window.Visible || window.Height <= 0 {
+	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
 	editor := app.renderComposerEditor(window.Width, max(1, window.Height-2))
@@ -416,7 +421,7 @@ func (app *App) renderComposerEditor(width, bodyRows int) editorRender {
 
 func (app *App) drawStatusWindow(layout *runtimeLayout) {
 	window := layout.Status
-	if !window.Visible || window.Height <= 0 {
+	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
 	lines := app.footerLines(window.Width)
@@ -464,6 +469,7 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 			Name:      extensionBufferTranscript,
 			Role:      extensionBufferTranscript,
 			Buffer:    extensionBufferTranscript,
+			Renderer:  windowRendererDefault,
 			X:         0,
 			Y:         0,
 			Width:     width,
@@ -477,6 +483,7 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 			Name:      "autocomplete",
 			Role:      "autocomplete",
 			Buffer:    extensionBufferStatus,
+			Renderer:  windowRendererDefault,
 			X:         0,
 			Y:         autocompleteStart,
 			Width:     width,
@@ -490,6 +497,7 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 			Name:      extensionBufferComposer,
 			Role:      extensionBufferComposer,
 			Buffer:    extensionBufferComposer,
+			Renderer:  windowRendererDefault,
 			X:         0,
 			Y:         composerStart,
 			Width:     width,
@@ -503,6 +511,7 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 			Name:      extensionBufferStatus,
 			Role:      extensionBufferStatus,
 			Buffer:    extensionBufferStatus,
+			Renderer:  windowRendererDefault,
 			X:         0,
 			Y:         statusStart,
 			Width:     width,
@@ -530,6 +539,15 @@ func (app *App) mergeRuntimeLayout(layout *runtimeLayout) runtimeLayout {
 		Status:       status,
 		Windows:      windows,
 	}
+}
+
+func (app *App) extensionOwnsWindow(name string) bool {
+	window, ok := app.runtimeWindows[name]
+	if !ok {
+		return false
+	}
+
+	return strings.EqualFold(strings.TrimSpace(window.Renderer), windowRendererExtension)
 }
 
 func (app *App) editorBorderColor() colorToken {
@@ -652,10 +670,11 @@ func (app *App) cloneRuntimeWindows(layout *runtimeLayout) map[string]extension.
 		layout.Composer.Name:     layout.Composer,
 		layout.Status.Name:       layout.Status,
 	}
-	for name, window := range app.runtimeWindows {
-		windows[name] = window
+	for name := range app.runtimeWindows {
+		windows[name] = app.runtimeWindows[name]
 	}
-	for name, window := range windows {
+	for name := range windows {
+		window := windows[name]
 		if window.Name == "" {
 			window.Name = name
 		}
@@ -667,7 +686,8 @@ func (app *App) cloneRuntimeWindows(layout *runtimeLayout) map[string]extension.
 
 func cloneWindowStates(windows map[string]extension.WindowState) map[string]extension.WindowState {
 	cloned := make(map[string]extension.WindowState, len(windows))
-	for name, window := range windows {
+	for name := range windows {
+		window := windows[name]
 		if window.Name == "" {
 			window.Name = name
 		}

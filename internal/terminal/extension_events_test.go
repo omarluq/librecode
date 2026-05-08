@@ -122,6 +122,7 @@ librecode.on("render", function()
   local composer = layout.windows.composer
   composer.y = 1
   composer.height = 4
+  composer.renderer = "extension"
   layout.windows.composer = composer
   librecode.layout.set(layout)
   librecode.ui.clear_window("composer")
@@ -142,6 +143,9 @@ end)
 	}
 	if got, want := composer.Height, 4; got != want {
 		t.Fatalf("composer height = %d, want %d", got, want)
+	}
+	if got, want := composer.Renderer, "extension"; got != want {
+		t.Fatalf("composer renderer = %q, want %q", got, want)
 	}
 	override := app.uiWindowOverrides[extensionBufferComposer]
 	if !override.Reset {

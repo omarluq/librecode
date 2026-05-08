@@ -5,6 +5,23 @@ local undo = {}
 local redo = {}
 local undo_limit = 100
 
+local function utf8_chars(text)
+  local chars = {}
+  if text == nil or text == "" then
+    return chars
+  end
+  if utf8 ~= nil and utf8.codes ~= nil and utf8.char ~= nil then
+    for _, code in utf8.codes(text) do
+      chars[#chars + 1] = utf8.char(code)
+    end
+    return chars
+  end
+  for index = 1, #text do
+    chars[#chars + 1] = string.sub(text, index, index)
+  end
+  return chars
+end
+
 local function copy_chars(chars)
   local out = {}
   for i = 1, #chars do
@@ -595,9 +612,12 @@ local function insert_text(chars, cursor, text)
   end
   push_undo(chars, cursor)
   local insert_at = clamp(cursor, 0, #chars)
-  table.insert(chars, insert_at + 1, text)
+  local inserted = utf8_chars(text)
+  for index = #inserted, 1, -1 do
+    table.insert(chars, insert_at + 1, inserted[index])
+  end
   clear_redo()
-  return chars, insert_at + 1
+  return chars, insert_at + #inserted
 end
 
 local function delete_backward(chars, cursor)
@@ -753,6 +773,116 @@ local function composer_window_buffer()
   return buf
 end
 
+local function pad_right(text, width)
+  local missing = width - #text
+  if missing <= 0 then
+    return string.sub(text, 1, width)
+  end
+  return text .. string.rep(" ", missing)
+end
+
+local function split_render_lines(chars, inner_width, cursor)
+  local lines = {}
+  local current = ""
+  local cursor_row = 0
+  local cursor_col = 0
+  local row = 0
+  local col = 0
+  local saw_cursor = false
+
+  for index = 0, #chars - 1 do
+    if index == cursor then
+      cursor_row = row
+      cursor_col = col
+      saw_cursor = true
+    end
+
+    local char = chars[index + 1]
+    if char == "\n" then
+      lines[#lines + 1] = current
+      current = ""
+      row = row + 1
+      col = 0
+    else
+      if col >= inner_width then
+        lines[#lines + 1] = current
+        current = ""
+        row = row + 1
+        col = 0
+      end
+      current = current .. char
+      col = col + 1
+    end
+  end
+
+  if not saw_cursor then
+    cursor_row = row
+    cursor_col = col
+  end
+  lines[#lines + 1] = current
+  if #lines == 0 then
+    lines[1] = ""
+  end
+
+  return lines, cursor_row, cursor_col
+end
+
+local function top_border(width)
+  if width <= 1 then
+    return ""
+  end
+  local inner = math.max(1, width - 2)
+  local suffix = label() .. "──"
+  if #suffix > inner then
+    suffix = string.sub(suffix, 1, inner)
+  end
+  return "╭" .. string.rep("─", math.max(0, inner - #suffix)) .. suffix .. "╮"
+end
+
+local function bottom_border(width)
+  if width <= 1 then
+    return ""
+  end
+  return "╰" .. string.rep("─", math.max(1, width - 2)) .. "╯"
+end
+
+local function render_composer_window()
+  local win_name = composer_window_name()
+  if win_name == nil then
+    return
+  end
+  local win = librecode.win.get(win_name)
+  if win == nil or not win.visible or win.width <= 0 or win.height <= 0 then
+    return
+  end
+  local buffer_name = librecode.win.get_buf(win_name)
+  if buffer_name == nil or buffer_name == "" then
+    return
+  end
+  local state = librecode.buf.get(buffer_name)
+  local chars = copy_chars(state.chars)
+  local inner_width = math.max(1, win.width - 4)
+  local body_rows = math.max(1, win.height - 2)
+  local lines, cursor_row, cursor_col = split_render_lines(chars, inner_width, state.cursor)
+  local start = math.max(0, cursor_row - body_rows + 1)
+  if start + body_rows > #lines then
+    start = math.max(0, #lines - body_rows)
+  end
+
+  win.renderer = "extension"
+  librecode.win.set(win_name, win)
+  librecode.ui.clear_window(win_name)
+  librecode.ui.draw_text(win_name, 0, 0, top_border(win.width), { fg = "border" })
+  for row = 1, body_rows do
+    local line = lines[start + row] or ""
+    librecode.ui.draw_text(win_name, row, 0, "│ " .. pad_right(line, inner_width) .. " │", { fg = "text" })
+  end
+  if win.height >= 2 then
+    librecode.ui.draw_text(win_name, win.height - 1, 0, bottom_border(win.width), { fg = "border" })
+  end
+  librecode.ui.set_cursor(win_name, 1 + cursor_row - start, 2 + cursor_col)
+end
+
 librecode.on("startup", function()
   mode = "insert"
   pending = ""
@@ -763,6 +893,10 @@ librecode.on("startup", function()
   local buffer_name = composer_window_buffer()
   local state = librecode.buf.get(buffer_name)
   librecode.buf.set(buffer_name, sync_state(state, state.chars, state.cursor))
+end)
+
+librecode.on("render", function()
+  render_composer_window()
 end)
 
 librecode.keymap.set({ role = "composer" }, "*", function(event)

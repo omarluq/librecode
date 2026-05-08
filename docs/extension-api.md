@@ -233,6 +233,7 @@ Fields currently include:
 - `name`
 - `role`
 - `buffer`
+- `renderer`
 - `x`
 - `y`
 - `width`
@@ -241,6 +242,8 @@ Fields currently include:
 - `cursor_col`
 - `visible`
 - `metadata`
+
+`renderer = "default"` means the stock Go renderer may draw the window. `renderer = "extension"` means the extension owns the window until a later window/layout mutation changes it, so the stock renderer skips that window.
 
 ### `librecode.win.find(opts)`
 
@@ -266,11 +269,14 @@ Returns the buffer name displayed by the given window.
 This is the current path for extensions that want to discover the composer through the visible runtime model instead of assuming a hardcoded buffer name.
 
 ### `librecode.win.set_buf(name, buffer_name)`
+### `librecode.win.set_renderer(name, renderer)`
 ### `librecode.win.create(name[, value])`
 ### `librecode.win.set(name, value)`
 ### `librecode.win.delete(name)`
 
 Mutate the active window set. Window mutations are applied back to the terminal runtime after the event.
+
+Use `librecode.win.set_renderer(name, "extension")` or set `window.renderer = "extension"` before `win.set`/`layout.set` when an extension wants to fully own that window's drawing. Set it back to `"default"` to return drawing to the stock renderer.
 
 ## `librecode.layout`
 
@@ -308,6 +314,7 @@ Example:
 lc.on("render", function()
   local win = lc.win.find({ role = "composer" })
   if not win then return end
+  lc.win.set_renderer(win, "extension")
   lc.ui.clear_window(win)
   lc.ui.draw_text(win, 0, 0, "custom composer", { fg = "accent", bold = true })
   lc.ui.set_cursor(win, 1, 2)
@@ -469,7 +476,7 @@ The API is still incomplete compared with the long-term target.
 
 Notably missing today:
 
-- richer layout/window/render APIs
+- richer layout/window/render APIs beyond frame-local drawing and renderer ownership
 - jobs/timers/scheduling
 - richer transcript/message object control
 - highlights/extmarks/namespaced annotations

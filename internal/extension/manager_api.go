@@ -89,6 +89,7 @@ func (manager *Manager) luaWindowAPI(extensionRuntime *luaExtension) *lua.LTable
 		luaFieldSet:    manager.luaWindowSet(extensionRuntime),
 		"set_buf":      manager.luaWindowSetBuffer(extensionRuntime),
 		"set_buffer":   manager.luaWindowSetBuffer(extensionRuntime),
+		"set_renderer": manager.luaWindowSetRenderer(extensionRuntime),
 	})
 
 	return apiTable
@@ -134,6 +135,7 @@ func (manager *Manager) luaWindowCreate(extensionRuntime *luaExtension) lua.LGFu
 			Name:      name,
 			Role:      "",
 			Buffer:    "",
+			Renderer:  "",
 			X:         0,
 			Y:         0,
 			Width:     0,
@@ -191,7 +193,9 @@ func (manager *Manager) luaWindowFind(extensionRuntime *luaExtension) lua.LGFunc
 		name := luaTableString(opts, "name", "")
 		role := luaTableString(opts, "role", "")
 		buffer := luaTableString(opts, "buffer", "")
-		for windowName, window := range checkActiveEvent(state, extensionRuntime).windows {
+		windows := checkActiveEvent(state, extensionRuntime).windows
+		for windowName := range windows {
+			window := windows[windowName]
 			if name != "" && windowName != name {
 				continue
 			}
@@ -229,26 +233,46 @@ func (manager *Manager) luaWindowSetBuffer(extensionRuntime *luaExtension) lua.L
 		name := state.CheckString(1)
 		bufferName := state.CheckString(2)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
-		window, ok := hostEvent.window(name)
-		if !ok {
-			window = WindowState{
-				Metadata:  map[string]any{},
-				Name:      name,
-				Role:      "",
-				Buffer:    "",
-				X:         0,
-				Y:         0,
-				Width:     0,
-				Height:    0,
-				CursorRow: 0,
-				CursorCol: 0,
-				Visible:   true,
-			}
-		}
+		window := hostEventWindow(hostEvent, name)
 		window.Buffer = bufferName
 		hostEvent.setWindow(name, &window)
 
 		return 0
+	}
+}
+
+func (manager *Manager) luaWindowSetRenderer(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		renderer := state.CheckString(2)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		window := hostEventWindow(hostEvent, name)
+		window.Renderer = renderer
+		hostEvent.setWindow(name, &window)
+
+		return 0
+	}
+}
+
+func hostEventWindow(hostEvent *luaHostEvent, name string) WindowState {
+	window, ok := hostEvent.window(name)
+	if ok {
+		return window
+	}
+
+	return WindowState{
+		Metadata:  map[string]any{},
+		Name:      name,
+		Role:      "",
+		Buffer:    "",
+		Renderer:  "",
+		X:         0,
+		Y:         0,
+		Width:     0,
+		Height:    0,
+		CursorRow: 0,
+		CursorCol: 0,
+		Visible:   true,
 	}
 }
 

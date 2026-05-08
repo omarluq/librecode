@@ -156,6 +156,7 @@ func (event *luaHostEvent) window(name string) (WindowState, bool) {
 			Name:      "",
 			Role:      "",
 			Buffer:    "",
+			Renderer:  "",
 			X:         0,
 			Y:         0,
 			Width:     0,
@@ -421,7 +422,8 @@ func cloneWindows(windows map[string]WindowState) map[string]WindowState {
 		return map[string]WindowState{}
 	}
 	cloned := make(map[string]WindowState, len(windows))
-	for name, window := range windows {
+	for name := range windows {
+		window := windows[name]
 		cloned[name] = cloneWindow(&window, name)
 	}
 

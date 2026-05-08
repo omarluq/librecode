@@ -226,7 +226,8 @@ func (app *App) applyExtensionEventResult(ctx context.Context, result *extension
 	for name, buffer := range result.Buffers {
 		app.applyExtensionBuffer(name, &buffer)
 	}
-	for name, window := range result.Windows {
+	for name := range result.Windows {
+		window := result.Windows[name]
 		app.applyRuntimeWindow(name, &window)
 	}
 	if result.Layout != nil {
@@ -312,7 +313,8 @@ func (app *App) applyRuntimeLayout(layout *extension.LayoutState) {
 		Width:   layout.Width,
 		Height:  layout.Height,
 	}
-	for name, window := range layout.Windows {
+	for name := range layout.Windows {
+		window := layout.Windows[name]
 		if window.Name == "" {
 			window.Name = name
 		}
@@ -323,8 +325,8 @@ func (app *App) applyRuntimeLayout(layout *extension.LayoutState) {
 	}
 	app.runtimeLayout = &cloned
 	app.runtimeWindows = map[string]extension.WindowState{}
-	for name, window := range cloned.Windows {
-		app.runtimeWindows[name] = window
+	for name := range cloned.Windows {
+		app.runtimeWindows[name] = cloned.Windows[name]
 	}
 }
 

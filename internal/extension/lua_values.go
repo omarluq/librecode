@@ -217,7 +217,8 @@ func bufferMapForLua(buffers map[string]BufferState) map[string]any {
 
 func windowMapForLua(windows map[string]WindowState) map[string]any {
 	values := make(map[string]any, len(windows))
-	for name, window := range windows {
+	for name := range windows {
+		window := windows[name]
 		values[name] = windowForLua(&window)
 	}
 
@@ -248,6 +249,7 @@ func windowForLua(window *WindowState) map[string]any {
 		luaFieldName: window.Name,
 		"role":       window.Role,
 		"buffer":     window.Buffer,
+		"renderer":   window.Renderer,
 		"x":          window.X,
 		"y":          window.Y,
 		"width":      window.Width,
@@ -327,6 +329,7 @@ func luaWindowState(name string, value lua.LValue) WindowState {
 			Name:      luaTableString(table, "name", name),
 			Role:      luaTableString(table, "role", ""),
 			Buffer:    luaTableString(table, "buffer", ""),
+			Renderer:  luaTableString(table, "renderer", ""),
 			X:         luaTableIntValue(table, "x"),
 			Y:         luaTableIntValue(table, "y"),
 			Width:     luaTableIntValue(table, "width"),
@@ -342,6 +345,7 @@ func luaWindowState(name string, value lua.LValue) WindowState {
 		Name:      name,
 		Role:      "",
 		Buffer:    value.String(),
+		Renderer:  "",
 		X:         0,
 		Y:         0,
 		Width:     0,

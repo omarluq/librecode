@@ -287,7 +287,8 @@ func keymapEventTargets(event *luaHostEvent) map[string]struct{} {
 		addKeymapTarget(targets, keymapScopeBuffer, bufferName)
 		addKeymapTarget(targets, "", bufferName)
 	}
-	for name, window := range event.windows {
+	for name := range event.windows {
+		window := event.windows[name]
 		windowName := window.Name
 		if windowName == "" {
 			windowName = name

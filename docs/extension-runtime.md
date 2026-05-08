@@ -179,9 +179,9 @@ We need to move toward a world where more of the runtime is expressed as first-c
 
 ### 2. Render/layout is still host-first
 
-Extensions can mutate the active layout and enqueue low-level window-relative draw operations during render events.
+Extensions can mutate the active layout, enqueue low-level window-relative draw operations during render events, and mark a window with `renderer = "extension"` to take renderer ownership.
 
-The default Go renderer still owns the stock chat drawing order and built-in transcript/composer/status rendering. Extensions can override and augment visible regions, but the app has not yet been rebuilt fully on public layout/render primitives.
+When an extension owns a window, the stock Go renderer skips that window and only extension draw operations/cursor placement are applied. This is now enough for bundled extensions such as Vim mode to fully redraw the composer window. The default Go renderer still owns the stock chat drawing order and built-in transcript/status rendering, so the app has not yet been rebuilt fully on public layout/render primitives.
 
 ### 3. Event surface is too small
 
@@ -304,6 +304,7 @@ In progress:
 - layout get/set
 - window create/set/delete
 - low-level UI draw/cursor operations
+- per-window renderer ownership via `renderer = "extension"`
 
 Next: rebuild more of the stock UI against those same public primitives.
 

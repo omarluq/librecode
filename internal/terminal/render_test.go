@@ -196,6 +196,24 @@ func TestStreamingBlocksRenderChronologically(t *testing.T) {
 	}
 }
 
+func TestExtensionRendererSkipsDefaultComposerDraw(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.setComposerText("host text")
+	layout := app.defaultRuntimeLayout(40, 12)
+	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	window := layout.Composer
+	window.Renderer = "extension"
+	app.runtimeWindows[window.Name] = window
+
+	app.drawComposerWindow(&layout)
+
+	if got := frameText(app.frame); strings.Contains(got, "host text") {
+		t.Fatalf("extension-rendered composer should skip host draw, frame = %q", got)
+	}
+}
+
 func TestDefaultLayoutComposerTouchesStatus(t *testing.T) {
 	t.Parallel()
 
@@ -222,6 +240,21 @@ func TestDefaultLayoutComposerTouchesStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func frameText(frame *cellBuffer) string {
+	if frame == nil {
+		return ""
+	}
+	var builder strings.Builder
+	for row := range frame.height {
+		for column := range frame.width {
+			builder.WriteRune(frame.cell(column, row).Rune)
+		}
+		builder.WriteRune('\n')
+	}
+
+	return builder.String()
 }
 
 func newRenderTestApp(t *testing.T) *App {

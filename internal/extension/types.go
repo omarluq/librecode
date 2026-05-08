@@ -92,6 +92,7 @@ type WindowState struct {
 	Name      string         `json:"name"`
 	Role      string         `json:"role"`
 	Buffer    string         `json:"buffer"`
+	Renderer  string         `json:"renderer"`
 	X         int            `json:"x"`
 	Y         int            `json:"y"`
 	Width     int            `json:"width"`
