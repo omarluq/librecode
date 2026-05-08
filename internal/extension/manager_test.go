@@ -111,7 +111,7 @@ end)
 
 lc.on("startup", function()
   local composer = lc.buf.get("composer")
-  composer.label = "vim:INSERT"
+  composer.label = "insert"
   composer.metadata = composer.metadata or {}
   composer.metadata.mode = "vim"
   lc.buf.set("composer", composer)
@@ -122,7 +122,7 @@ lc.keymap.set({ role = "composer" }, "x", function(event)
   lc.buf.set("composer", {
     text = composer.text .. event.key,
     cursor = composer.cursor + 1,
-    label = "vim:NORMAL",
+    label = "normal",
     metadata = { mode = "vim" },
   })
   lc.event.consume()
@@ -409,7 +409,7 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 	}
 	startup, err := manager.HandleTerminalEvent(context.Background(), &startupEvent)
 	require.NoError(t, err)
-	assert.Equal(t, "vim:INSERT", startup.Buffers[testBufferComposer].Label)
+	assert.Equal(t, "insert", startup.Buffers[testBufferComposer].Label)
 	assert.Equal(t, "vim", startup.Buffers[testBufferComposer].Metadata[testContextModeKey])
 
 	resultEvent := extension.TerminalEvent{
@@ -434,7 +434,7 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 	assert.True(t, result.Consumed)
 	assert.Equal(t, "x", result.Buffers[testBufferComposer].Text)
 	assert.Equal(t, 1, result.Buffers[testBufferComposer].Cursor)
-	assert.Equal(t, "vim:NORMAL", result.Buffers[testBufferComposer].Label)
+	assert.Equal(t, "normal", result.Buffers[testBufferComposer].Label)
 	assert.Equal(t, "vim", result.Buffers[testBufferComposer].Metadata[testContextModeKey])
 }
 

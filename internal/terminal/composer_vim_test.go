@@ -15,7 +15,7 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 )
 
-const vimInsertLabel = "vim:INSERT"
+const vimInsertLabel = "insert"
 
 func TestVimComposerStartsInInsertMode(t *testing.T) {
 	t.Parallel()
@@ -151,7 +151,7 @@ func TestVimComposerInsertModeOwnsSubmitAndNewline(t *testing.T) {
 }
 
 func isExpectedVimBorderRune(value rune) bool {
-	return strings.ContainsRune("─vim:INSERT", value)
+	return strings.ContainsRune("─insert", value)
 }
 
 func newVimTestApp(t *testing.T) *App {

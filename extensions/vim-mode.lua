@@ -49,11 +49,10 @@ local function is_space(char)
 end
 
 local function label()
-  local text = "vim:" .. string.upper(mode)
   if pending ~= "" then
-    return text .. " " .. pending
+    return mode .. " " .. pending
   end
-  return text
+  return mode
 end
 
 local function result(handled, chars, cursor)
