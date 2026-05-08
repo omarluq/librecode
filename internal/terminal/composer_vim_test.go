@@ -82,27 +82,58 @@ func TestVimComposerLineDeletePasteAndUndo(t *testing.T) {
 	assertEditorText(t, app, "two\nthree")
 }
 
-func TestVimComposerBorderShowsMode(t *testing.T) {
+func TestVimComposerSelfRenderKeepsBorderStyle(t *testing.T) {
+	t.Parallel()
+
+	app, layout := renderVimComposerFrame(t, 40, 12)
+
+	leftBorder := app.frame.cell(layout.Composer.X, layout.Composer.Y+1)
+	body := app.frame.cell(layout.Composer.X+2, layout.Composer.Y+1)
+	rightBorder := app.frame.cell(layout.Composer.X+layout.Composer.Width-1, layout.Composer.Y+1)
+	if got, want := leftBorder.Style.GetForeground(), app.theme.colors[colorBorder]; got != want {
+		t.Fatalf("left border foreground = %v, want %v", got, want)
+	}
+	if got, want := body.Style.GetForeground(), app.theme.colors[colorText]; got != want {
+		t.Fatalf("body foreground = %v, want %v", got, want)
+	}
+	if got, want := rightBorder.Style.GetForeground(), app.theme.colors[colorBorder]; got != want {
+		t.Fatalf("right border foreground = %v, want %v", got, want)
+	}
+}
+
+func TestVimComposerSelfRenderTopBorderFillsWidth(t *testing.T) {
+	t.Parallel()
+
+	app, layout := renderVimComposerFrame(t, 40, 12)
+	borderRunes := make([]rune, layout.Composer.Width)
+	for column := range layout.Composer.Width {
+		borderRunes[column] = app.frame.cell(layout.Composer.X+column, layout.Composer.Y).Rune
+	}
+
+	border := string(borderRunes)
+	if got, want := runeLen(border), layout.Composer.Width; got != want {
+		t.Fatalf("border width = %d, want %d: %q", got, want, border)
+	}
+	require.Equal(t, '╭', borderRunes[0])
+	require.Equal(t, '╮', borderRunes[len(borderRunes)-1])
+	for index, value := range borderRunes[1 : len(borderRunes)-1] {
+		if !isExpectedVimBorderRune(value) {
+			t.Fatalf("unexpected top border rune at column %d: %q in %q", index+1, value, border)
+		}
+	}
+}
+
+func TestVimComposerBackspaceDeletesOneRune(t *testing.T) {
 	t.Parallel()
 
 	app := newVimTestApp(t)
+	app.setComposerText("abc")
 
-	window := app.currentRuntimeLayout().Composer
-	editor := renderEditor(
-		[]rune(app.composerText()),
-		app.composerCursor(),
-		window.Width,
-		max(1, window.Height-2),
-		app.theme,
-		app.editorBorderColor(),
-		app.composerBorderLabel(),
-	)
-	if len(editor.Lines) == 0 || !strings.HasSuffix(editor.Lines[0].Text, "vim:INSERT──╮") {
-		t.Fatalf("editor border = %q, want vim mode at end", editor.Lines[0].Text)
-	}
-	lines := app.footerLines(80)
-	if len(lines) < 2 || containsText(lines[1].Text, vimInsertLabel) {
-		t.Fatalf("footer line = %q, want no vim mode", lines[1].Text)
+	pressTerminalKey(t, app, tcell.KeyBackspace, "")
+
+	assertEditorText(t, app, "ab")
+	if got, want := app.composerCursor(), 2; got != want {
+		t.Fatalf("cursor = %d, want %d", got, want)
 	}
 }
 
@@ -119,6 +150,10 @@ func TestVimComposerInsertModeOwnsSubmitAndNewline(t *testing.T) {
 	}
 }
 
+func isExpectedVimBorderRune(value rune) bool {
+	return strings.ContainsRune("─vim:INSERT", value)
+}
+
 func newVimTestApp(t *testing.T) *App {
 	t.Helper()
 
@@ -128,6 +163,19 @@ func newVimTestApp(t *testing.T) *App {
 	require.NoError(t, app.runStartupExtensions(context.Background()))
 
 	return app
+}
+
+func renderVimComposerFrame(t *testing.T, width, height int) (*App, runtimeLayout) {
+	t.Helper()
+
+	app := newVimTestApp(t)
+	app.frame = newCellBuffer(width, height, tcell.StyleDefault)
+	layout := app.defaultRuntimeLayout(width, height)
+	app.runRenderExtensions(context.Background(), &layout)
+	layout = app.currentRuntimeLayout()
+	app.applyUIOverrides(&layout)
+
+	return app, layout
 }
 
 func newVimExtensionManager(t *testing.T) *extension.Manager {
@@ -168,8 +216,4 @@ func pressTerminalShiftEnter(t *testing.T, app *App) {
 	if shouldQuit {
 		t.Fatal("handleKey should not quit")
 	}
-}
-
-func containsText(text, needle string) bool {
-	return strings.Contains(text, needle)
 }

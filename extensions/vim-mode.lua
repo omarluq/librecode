@@ -16,8 +16,8 @@ local function utf8_chars(text)
     end
     return chars
   end
-  for index = 1, #text do
-    chars[#chars + 1] = string.sub(text, index, index)
+  for char in string.gmatch(text, "[%z\1-\127\194-\244][\128-\191]*") do
+    chars[#chars + 1] = char
   end
   return chars
 end
@@ -220,7 +220,11 @@ local function delete_range(chars, cursor, start_pos, end_pos)
 
   local next_cursor = 0
   if #next_chars > 0 then
-    next_cursor = clamp(start_pos, 0, #next_chars - 1)
+    if mode == "insert" then
+      next_cursor = clamp(start_pos, 0, #next_chars)
+    else
+      next_cursor = clamp(start_pos, 0, #next_chars - 1)
+    end
   end
   clear_redo()
 
@@ -773,12 +777,31 @@ local function composer_window_buffer()
   return buf
 end
 
-local function pad_right(text, width)
-  local missing = width - #text
-  if missing <= 0 then
-    return string.sub(text, 1, width)
+local function rune_count(text)
+  if text == nil or text == "" then
+    return 0
   end
-  return text .. string.rep(" ", missing)
+  return #utf8_chars(text)
+end
+
+local function rune_slice(text, width)
+  if width <= 0 then
+    return ""
+  end
+  local chars = utf8_chars(text)
+  local out = {}
+  for index = 1, math.min(width, #chars) do
+    out[index] = chars[index]
+  end
+  return table.concat(out, "")
+end
+
+local function pad_right(text, width)
+  local length = rune_count(text)
+  if length >= width then
+    return rune_slice(text, width)
+  end
+  return text .. string.rep(" ", width - length)
 end
 
 local function split_render_lines(chars, inner_width, cursor)
@@ -832,11 +855,8 @@ local function top_border(width)
     return ""
   end
   local inner = math.max(1, width - 2)
-  local suffix = label() .. "──"
-  if #suffix > inner then
-    suffix = string.sub(suffix, 1, inner)
-  end
-  return "╭" .. string.rep("─", math.max(0, inner - #suffix)) .. suffix .. "╮"
+  local suffix = rune_slice(label() .. "──", inner)
+  return "╭" .. string.rep("─", math.max(0, inner - rune_count(suffix))) .. suffix .. "╮"
 end
 
 local function bottom_border(width)
@@ -875,7 +895,9 @@ local function render_composer_window()
   librecode.ui.draw_text(win_name, 0, 0, top_border(win.width), { fg = "border" })
   for row = 1, body_rows do
     local line = lines[start + row] or ""
-    librecode.ui.draw_text(win_name, row, 0, "│ " .. pad_right(line, inner_width) .. " │", { fg = "text" })
+    librecode.ui.draw_text(win_name, row, 0, "│", { fg = "border" })
+    librecode.ui.draw_text(win_name, row, 1, " " .. pad_right(line, inner_width) .. " ", { fg = "text" })
+    librecode.ui.draw_text(win_name, row, win.width - 1, "│", { fg = "border" })
   end
   if win.height >= 2 then
     librecode.ui.draw_text(win_name, win.height - 1, 0, bottom_border(win.width), { fg = "border" })
