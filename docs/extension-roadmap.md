@@ -77,7 +77,7 @@ Build bundled Lua modules on top of primitives:
 
 - `librecode.chat`
 - `librecode.composer`
-- `librecode.statusline`
+- `librecode.statusline` (implemented and used by the bundled statusline extension)
 - `librecode.transcript`
 - `librecode.layout.default`
 
@@ -96,7 +96,7 @@ Goal: make the stock chat UI a bundled implementation instead of hardcoded Go po
 
 Move these behaviors into official extensions/modules incrementally:
 
-- default statusline text
+- default statusline text (first pass implemented in `extensions/statusline.lua`)
 - default composer rendering
 - prompt history UX
 - autocomplete rendering

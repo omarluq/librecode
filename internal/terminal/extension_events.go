@@ -86,10 +86,11 @@ func (app *App) handleExtensionKey(ctx context.Context, event *tcell.EventKey) (
 func (app *App) handleResizeExtensions(ctx context.Context) error {
 	layout := app.currentRuntimeLayout()
 
-	return app.emitExtensionRuntimeEvent(ctx, extensionEventResize, map[string]any{
-		extensionDataWidth:  layout.Width,
-		extensionDataHeight: layout.Height,
-	})
+	return app.emitExtensionRuntimeEvent(
+		ctx,
+		extensionEventResize,
+		app.extensionRuntimeData(layout.Width, layout.Height),
+	)
 }
 
 func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) {
@@ -100,7 +101,7 @@ func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) 
 	if app.extensions == nil {
 		return
 	}
-	data := map[string]any{extensionDataWidth: layout.Width, extensionDataHeight: layout.Height}
+	data := app.extensionRuntimeData(layout.Width, layout.Height)
 	event := app.newExtensionEventWithLayoutAndData(extensionEventRender, emptyExtensionKeyEvent(), layout, data)
 	result, err := app.extensions.HandleTerminalEvent(ctx, &event)
 	if err != nil {
@@ -112,6 +113,24 @@ func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) 
 
 func emptyExtensionKeyEvent() extension.ComposerKeyEvent {
 	return extension.ComposerKeyEvent{Key: "", Text: "", Ctrl: false, Alt: false, Shift: false}
+}
+
+func (app *App) extensionRuntimeData(width, height int) map[string]any {
+	modelText := modelLabel(app.currentProvider(), app.currentModel())
+
+	return map[string]any{
+		extensionDataWidth:      width,
+		extensionDataHeight:     height,
+		"model_label":           modelText,
+		"provider":              app.currentProvider(),
+		string(panelModel):      app.currentModel(),
+		"thinking_level":        app.currentThinkingLevel(),
+		"tools_expanded":        app.toolsExpanded,
+		"thinking_hidden":       app.hideThinking,
+		"queued_count":          len(app.queuedMessages),
+		"message_count":         len(app.messages),
+		"streaming_block_count": len(app.streamingBlocks),
+	}
 }
 
 func (app *App) emitExtensionRuntimeEvent(ctx context.Context, name string, data map[string]any) error {

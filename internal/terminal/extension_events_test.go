@@ -260,6 +260,45 @@ end)
 	}
 }
 
+func TestBundledStatuslineOwnsStatusWindow(t *testing.T) {
+	t.Parallel()
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	require.NoError(t, manager.LoadPaths(context.Background(), []string{filepath.Join("..", "..", "extensions")}))
+
+	app := newRenderTestApp(t)
+	app.extensions = manager
+	app.cwd = "/repo"
+	app.setStatus("ready")
+	app.frame = newCellBuffer(80, 24, tcell.StyleDefault)
+
+	layout := app.currentRuntimeLayout()
+	app.runRenderExtensions(context.Background(), &layout)
+	layout = app.currentRuntimeLayout()
+
+	status := app.runtimeWindows[extensionBufferStatus]
+	if got, want := status.Renderer, windowRendererExtension; got != want {
+		t.Fatalf("status renderer = %q, want %q", got, want)
+	}
+	if !app.extensionOwnsWindow(extensionBufferStatus) {
+		t.Fatal("status window should be extension-owned")
+	}
+	override := app.uiWindowOverrides[extensionBufferStatus]
+	if !override.Reset {
+		t.Fatal("statusline should clear the status window before drawing")
+	}
+	if len(override.DrawOps) < 3 {
+		t.Fatalf("statusline draw ops = %d, want at least 3", len(override.DrawOps))
+	}
+	if got, want := override.DrawOps[1].Text, "local/librecode • off"; got != want {
+		t.Fatalf("model status line = %q, want %q", got, want)
+	}
+	if got, want := override.DrawOps[2].Text, "ready"; got != want {
+		t.Fatalf("message status line = %q, want %q", got, want)
+	}
+}
+
 func TestExtensionModelAndToolLifecycleEvents(t *testing.T) {
 	t.Parallel()
 

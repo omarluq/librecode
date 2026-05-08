@@ -144,7 +144,7 @@ Important detail: these are not yet a complete unified buffer architecture for t
 Today:
 
 - `composer` is backed by the canonical composer buffer
-- `status` exposes the current two-line footer text and can be overridden as a runtime buffer
+- `status` exposes footer/status metadata and can be rendered by bundled Lua or overridden as a runtime buffer
 - `transcript` exposes message/streaming counts plus bounded recent blocks; overriding it lets extensions replace the stock transcript text render
 - `thinking` exposes thinking counts as metadata and can be overridden by extensions
 - `tools` exposes tool-result counts as metadata and can be overridden by extensions
@@ -199,7 +199,7 @@ Transcript read/write convenience should stay out of the Go host API. Use generi
 
 Extensions can mutate the active layout, enqueue low-level window-relative draw operations during render events, and mark a window with `renderer = "extension"` to take renderer ownership.
 
-When an extension owns a window, the stock Go renderer skips that window and only extension draw operations/cursor placement are applied. This is now enough for bundled extensions such as Vim mode to fully redraw the composer window. The default Go renderer still owns the stock chat drawing order and built-in transcript/status rendering, so the app has not yet been rebuilt fully on public layout/render primitives.
+When an extension owns a window, the stock Go renderer skips that window and only extension draw operations/cursor placement are applied. This is now enough for bundled extensions such as Vim mode to fully redraw the composer window, and the bundled statusline extension now owns the status window. The default Go renderer still owns the stock chat drawing order and built-in transcript rendering, so the app has not yet been rebuilt fully on public layout/render primitives.
 
 ### 3. Event surface still needs more lifecycle points
 

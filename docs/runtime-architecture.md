@@ -282,14 +282,14 @@ Move product convenience into bundled Lua modules:
 
 - `librecode.chat`
 - `librecode.composer`
-- `librecode.statusline`
+- `librecode.statusline` (implemented and now used by the bundled statusline extension)
 - `librecode.transcript` as a Lua helper module, not a Go host API
 
 These modules should compose primitives and be replaceable.
 
 ### Phase 3: default UI in Lua
 
-Move default layout/status/composer/transcript rendering into official Lua extensions under `extensions/`.
+Move default layout/status/composer/transcript rendering into official Lua extensions under `extensions/`. The statusline has started this migration through `extensions/statusline.lua`.
 
 Go keeps a minimal fallback UI for recovery/debugging, but the normal product path should use public APIs.
 
