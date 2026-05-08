@@ -55,6 +55,10 @@ func (app *App) drawTranscriptWindow(layout *runtimeLayout) {
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
+	if buffer, ok := app.runtimeBufferOverride(window.Buffer); ok {
+		app.drawRuntimeTextBuffer(&window, &buffer, app.theme.style(colorText))
+		return
+	}
 	if app.showWelcomeOnly() {
 		app.drawWelcomeOnly(window.Width, window.Height, window.Y)
 		return
@@ -425,7 +429,13 @@ func (app *App) drawStatusWindow(layout *runtimeLayout) {
 		return
 	}
 	lines := app.footerLines(window.Width)
+	if buffer, ok := app.runtimeBufferOverride(window.Buffer); ok {
+		lines = app.renderBufferTextLines(window.Width, buffer.Text, app.theme.style(colorDim))
+	}
 	for index, line := range lines {
+		if index >= window.Height {
+			return
+		}
 		writeLine(app.frame, window.Y+index, window.Width, line.Text, line.Style)
 	}
 }
@@ -465,7 +475,7 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 		Width:   width,
 		Height:  height,
 		Transcript: extension.WindowState{
-			Metadata:  map[string]any{"count": len(app.messages)},
+			Metadata:  map[string]any{extensionMetadataCount: len(app.messages)},
 			Name:      extensionBufferTranscript,
 			Role:      extensionBufferTranscript,
 			Buffer:    extensionBufferTranscript,
@@ -565,18 +575,13 @@ func (app *App) editorBorderColor() colorToken {
 }
 
 func (app *App) footerLines(width int) []styledLine {
-	pathLine := app.cwd
-	if app.sessionID != "" {
-		pathLine += " • " + app.sessionID
+	lineTexts := app.defaultStatusLineTexts()
+	lines := make([]styledLine, 0, len(lineTexts))
+	for _, lineText := range lineTexts {
+		lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: truncateText(lineText, width)})
 	}
-	modelText := modelLabel(app.currentProvider(), app.currentModel())
-	if app.currentThinkingLevel() != "" {
-		modelText += " • " + app.currentThinkingLevel()
-	}
-	return []styledLine{
-		{Style: app.theme.style(colorDim), Text: truncateText(pathLine, width)},
-		{Style: app.theme.style(colorDim), Text: truncateText(modelText, width)},
-	}
+
+	return lines
 }
 
 func (app *App) writeStyledLine(row, width int, line styledLine) {

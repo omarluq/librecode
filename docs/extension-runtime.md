@@ -127,6 +127,8 @@ The terminal currently exposes these named buffers to extension handlers:
 - `composer`
 - `status`
 - `transcript`
+- `thinking`
+- `tools`
 - extension-created runtime buffers
 
 It also exposes a window/layout model for active terminal events, including a `composer` window bound to the composer buffer. Extensions can now discover visible UI regions, mutate windows/layout, and enqueue low-level draw operations.
@@ -136,8 +138,10 @@ Important detail: these are not yet a complete unified buffer architecture for t
 Today:
 
 - `composer` is backed by the canonical composer buffer
-- `status` is backed by the footer/status string
-- `transcript` is mostly a façade for append/reset-style interactions
+- `status` exposes the current two-line footer text and can be overridden as a runtime buffer
+- `transcript` exposes message/streaming counts as metadata; overriding it lets extensions replace the stock transcript text render
+- `thinking` exposes thinking counts as metadata and can be overridden by extensions
+- `tools` exposes tool-result counts as metadata and can be overridden by extensions
 - custom buffers persist in `app.extensionRuntimeBuffers`
 
 This is a good start, but not the final architecture.
@@ -173,9 +177,9 @@ The current system already proves a few important things:
 
 ### 1. Buffers are not yet the universal internal model
 
-Core UI state is still primarily owned by Go structs, with extension buffers layered on top.
+Core UI state is increasingly exposed as buffers, but much of it is still projected from Go-owned structures.
 
-We need to move toward a world where more of the runtime is expressed as first-class named buffers and buffer-like objects.
+Current stock runtime buffers include `composer`, `status`, `transcript`, `thinking`, and `tools`. The composer is canonical; the others are still projections or overrides layered over Go state. We need to move toward a world where more of the runtime is expressed as first-class named buffers and buffer-like objects.
 
 ### 2. Render/layout is still host-first
 

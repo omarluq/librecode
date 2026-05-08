@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -88,6 +89,60 @@ end)
 	}
 	if got, want := buffer.Text, "xx"; got != want {
 		t.Fatalf("scratch buffer = %q, want %q", got, want)
+	}
+}
+
+func TestExtensionEventsExposeTranscriptThinkingAndToolBuffers(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.addMessage(database.RoleUser, "hello")
+	app.addMessage(database.RoleThinking, "because")
+	app.addMessage(database.RoleToolResult, "tool output")
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
+
+	buffers := app.extensionBuffers()
+	for _, name := range []string{
+		extensionBufferTranscript,
+		extensionBufferThinking,
+		extensionBufferTools,
+	} {
+		if _, ok := buffers[name]; !ok {
+			t.Fatalf("expected %s buffer", name)
+		}
+	}
+	assertBufferCount(t, buffers, extensionBufferTranscript, 3)
+	assertBufferCount(t, buffers, extensionBufferThinking, 1)
+	assertBufferCount(t, buffers, extensionBufferTools, 1)
+	if got := buffers[extensionBufferTranscript].Text; got != "" {
+		t.Fatalf("default transcript buffer text = %q, want empty projection", got)
+	}
+}
+
+func TestExtensionCanOverrideTranscriptBufferRendering(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.addMessage(database.RoleUser, "host transcript")
+	app.applyExtensionBuffer(extensionBufferTranscript, &extension.BufferState{
+		Metadata: map[string]any{},
+		Name:     extensionBufferTranscript,
+		Text:     "lua transcript",
+		Label:    "",
+		Chars:    []string{"l", "u", "a"},
+		Cursor:   14,
+	})
+	layout := app.defaultRuntimeLayout(40, 12)
+	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+
+	app.drawTranscriptWindow(&layout)
+
+	text := frameText(app.frame)
+	if !strings.Contains(text, "lua transcript") {
+		t.Fatalf("expected extension transcript buffer render, frame = %q", text)
+	}
+	if strings.Contains(text, "host transcript") {
+		t.Fatalf("host transcript should be hidden by buffer override, frame = %q", text)
 	}
 }
 
@@ -208,6 +263,19 @@ end)
 	want := "model:hello\nthinking:why\ntool_start:bash\ntool_end:bash:ok\n"
 	if got := buffer.Text; got != want {
 		t.Fatalf("events buffer = %q, want %q", got, want)
+	}
+}
+
+func assertBufferCount(t *testing.T, buffers map[string]extension.BufferState, name string, want int) {
+	t.Helper()
+
+	buffer := buffers[name]
+	got, ok := buffer.Metadata[extensionMetadataCount].(int)
+	if !ok {
+		t.Fatalf("buffer %s count metadata = %#v, want int", name, buffer.Metadata[extensionMetadataCount])
+	}
+	if got != want {
+		t.Fatalf("buffer %s count = %d, want %d", name, got, want)
 	}
 }
 

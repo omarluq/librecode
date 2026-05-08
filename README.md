@@ -164,7 +164,7 @@ Current extension capabilities include:
 - registering commands and extension-backed tools;
 - listening to low-level runtime events;
 - intercepting key input with priorities;
-- reading and mutating runtime buffers such as `composer`, `status`, and `transcript`;
+- reading and mutating runtime buffers such as `composer`, `status`, `transcript`, `thinking`, and `tools`;
 - creating namespaces, autocmds, and keymaps through a Neovim-inspired Lua API.
 
 The bundled [`extensions/vim-mode.lua`](extensions/vim-mode.lua) demonstrates composer control through the public Lua runtime API.

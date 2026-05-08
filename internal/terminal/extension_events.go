@@ -195,19 +195,13 @@ func (app *App) newExtensionEventWithLayoutAndData(
 }
 
 func (app *App) extensionBuffers() map[string]extension.BufferState {
-	buffers := make(map[string]extension.BufferState, len(app.extensionRuntimeBuffers)+3)
+	reservedBuffers := app.reservedRuntimeBuffers()
+	buffers := make(map[string]extension.BufferState, len(app.extensionRuntimeBuffers)+len(reservedBuffers))
 	for name, buffer := range app.extensionRuntimeBuffers {
-		buffers[name] = buffer
+		buffers[name] = cloneRuntimeBufferState(name, &buffer)
 	}
-	buffers[extensionBufferComposer] = app.composerBufferState()
-	buffers[extensionBufferStatus] = textBufferState(extensionBufferStatus, app.statusMessage)
-	buffers[extensionBufferTranscript] = extension.BufferState{
-		Metadata: map[string]any{"count": len(app.messages)},
-		Name:     extensionBufferTranscript,
-		Text:     "",
-		Chars:    []string{},
-		Label:    "",
-		Cursor:   0,
+	for name, buffer := range reservedBuffers {
+		buffers[name] = buffer
 	}
 
 	return buffers
@@ -283,7 +277,7 @@ func (app *App) applyExtensionEventResult(ctx context.Context, result *extension
 		if app.resultBufferAlreadyApplied(&bufferAppend, result.Buffers) {
 			continue
 		}
-		app.applyExtensionBufferAppend(bufferAppend)
+		app.applyExtensionBufferAppend(bufferAppend, result.Buffers)
 	}
 	for _, action := range result.Actions {
 		app.applyExtensionAction(ctx, action)
@@ -331,11 +325,12 @@ func (app *App) applyExtensionBuffer(name string, buffer *extension.BufferState)
 	case extensionBufferComposer:
 		app.applyComposerBuffer(buffer)
 	case extensionBufferStatus:
+		app.extensionRuntimeBuffers[name] = cloneRuntimeBufferState(name, buffer)
 		app.statusMessage = buffer.Text
-	case extensionBufferTranscript:
-		return
+	case extensionBufferTranscript, extensionBufferThinking, extensionBufferTools:
+		app.extensionRuntimeBuffers[name] = cloneRuntimeBufferState(name, buffer)
 	default:
-		app.extensionRuntimeBuffers[name] = *buffer
+		app.extensionRuntimeBuffers[name] = cloneRuntimeBufferState(name, buffer)
 	}
 }
 
@@ -419,8 +414,11 @@ func (app *App) applyComposerBuffer(buffer *extension.BufferState) {
 	}
 }
 
-func (app *App) applyExtensionBufferAppend(bufferAppend extension.BufferAppend) {
-	if bufferAppend.Name == extensionBufferTranscript {
+func (app *App) applyExtensionBufferAppend(
+	bufferAppend extension.BufferAppend,
+	resultBuffers map[string]extension.BufferState,
+) {
+	if app.shouldAppendTranscriptMessage(bufferAppend, resultBuffers) {
 		if strings.TrimSpace(bufferAppend.Text) == "" {
 			return
 		}
@@ -435,7 +433,22 @@ func (app *App) applyExtensionBufferAppend(bufferAppend extension.BufferAppend) 
 	buffer.Text += bufferAppend.Text
 	buffer.Chars = stringBufferChars(buffer.Text)
 	buffer.Cursor = len([]rune(buffer.Text))
-	app.extensionRuntimeBuffers[bufferAppend.Name] = buffer
+	app.extensionRuntimeBuffers[bufferAppend.Name] = cloneRuntimeBufferState(bufferAppend.Name, &buffer)
+}
+
+func (app *App) shouldAppendTranscriptMessage(
+	bufferAppend extension.BufferAppend,
+	resultBuffers map[string]extension.BufferState,
+) bool {
+	if bufferAppend.Name != extensionBufferTranscript {
+		return false
+	}
+	buffer, ok := resultBuffers[extensionBufferTranscript]
+	if !ok {
+		return !app.hasRuntimeBufferOverride(extensionBufferTranscript)
+	}
+
+	return strings.TrimSpace(buffer.Text) == strings.TrimSpace(bufferAppend.Text)
 }
 
 func (app *App) applyUIWindowResult(result *extension.TerminalEventResult) {

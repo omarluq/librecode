@@ -463,6 +463,8 @@ Handlers for terminal events receive a table like:
     composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, metadata = {} },
     status = { text = "", cursor = 0, chars = {}, metadata = {} },
     transcript = { text = "", cursor = 0, chars = {}, metadata = { count = 12 } },
+    thinking = { text = "", cursor = 0, chars = {}, metadata = { count = 1 } },
+    tools = { text = "", cursor = 0, chars = {}, metadata = { count = 1 } },
   },
 }
 ```
@@ -486,7 +488,7 @@ The API is still incomplete compared with the long-term target.
 Notably missing today:
 
 - jobs/timers/scheduling
-- richer transcript/message object control
+- structured transcript/message object control beyond the current `transcript`, `thinking`, and `tools` metadata/override buffers
 - highlights/extmarks/namespaced annotations
 - deeper assistant/model/tool runtime replacement hooks
 
