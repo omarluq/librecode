@@ -40,7 +40,7 @@ end)
 	}
 }
 
-func TestExtensionPromptSubmitCanAppendTranscriptAndConsumeDefault(t *testing.T) {
+func TestExtensionPromptSubmitCanConsumeDefault(t *testing.T) {
 	t.Parallel()
 
 	app := newExtensionRuntimeTestApp(t, `
@@ -60,12 +60,13 @@ end)
 	}
 
 	assertEditorText(t, app, "")
-	require.Len(t, app.messages, 1)
-	if got, want := app.messages[0].Role, database.RoleCustom; got != want {
-		t.Fatalf("message role = %s, want %s", got, want)
+	if got := len(app.messages); got != 0 {
+		t.Fatalf("host messages = %d, want 0", got)
 	}
-	if got, want := app.messages[0].Content, "handled: from extension"; got != want {
-		t.Fatalf("message = %q, want %q", got, want)
+	transcript := app.extensionRuntimeBuffers[extensionBufferTranscript]
+	require.Len(t, transcript.Blocks, 1)
+	if got, want := transcript.Blocks[0].Text, "handled: from extension"; got != want {
+		t.Fatalf("transcript block = %q, want %q", got, want)
 	}
 }
 
@@ -122,7 +123,7 @@ func TestExtensionEventsExposeTranscriptThinkingAndToolBuffers(t *testing.T) {
 	}
 }
 
-func TestExtensionEventExposesStructuredTranscriptSnapshot(t *testing.T) {
+func TestExtensionEventExposesStructuredTranscriptBuffer(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
@@ -131,15 +132,16 @@ func TestExtensionEventExposesStructuredTranscriptSnapshot(t *testing.T) {
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
 
 	event := app.newExtensionEvent(extensionEventRender, emptyExtensionKeyEvent())
-	if got, want := event.Transcript.Count, 3; got != want {
-		t.Fatalf("transcript count = %d, want %d", got, want)
+	transcript := event.Buffers[extensionBufferTranscript]
+	if got, want := transcript.Metadata["snapshot_count"], 3; got != want {
+		t.Fatalf("transcript count = %v, want %d", got, want)
 	}
-	if got, want := len(event.Transcript.Blocks), 3; got != want {
+	if got, want := len(transcript.Blocks), 3; got != want {
 		t.Fatalf("transcript blocks = %d, want %d", got, want)
 	}
-	assertTranscriptBlock(t, &event.Transcript.Blocks[0], database.RoleUser, "hello", false)
-	assertTranscriptBlock(t, &event.Transcript.Blocks[1], database.RoleThinking, "because", false)
-	assertTranscriptBlock(t, &event.Transcript.Blocks[2], database.RoleAssistant, "answer", true)
+	assertTranscriptBlock(t, &transcript.Blocks[0], database.RoleUser, "hello", false)
+	assertTranscriptBlock(t, &transcript.Blocks[1], database.RoleThinking, "because", false)
+	assertTranscriptBlock(t, &transcript.Blocks[2], database.RoleAssistant, "answer", true)
 }
 
 func TestExtensionCanOverrideTranscriptBufferRendering(t *testing.T) {
@@ -149,6 +151,7 @@ func TestExtensionCanOverrideTranscriptBufferRendering(t *testing.T) {
 	app.addMessage(database.RoleUser, "host transcript")
 	app.applyExtensionBuffer(extensionBufferTranscript, &extension.BufferState{
 		Metadata: map[string]any{},
+		Blocks:   []extension.BufferBlock{},
 		Name:     extensionBufferTranscript,
 		Text:     "lua transcript",
 		Label:    "",
@@ -304,7 +307,7 @@ func assertBufferCount(t *testing.T, buffers map[string]extension.BufferState, n
 
 func assertTranscriptBlock(
 	t *testing.T,
-	block *extension.TranscriptBlock,
+	block *extension.BufferBlock,
 	role database.Role,
 	text string,
 	streaming bool,
@@ -339,6 +342,44 @@ func newExtensionRuntimeTestApp(t *testing.T, source string) *App {
 
 func writeTerminalTestFile(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)
+}
+
+func TestExtensionTimerDeferRunsOnNextRuntimeEvent(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("startup", function()
+  librecode.timer.defer(0, function()
+    librecode.buf.append("events", "timer\n")
+  end)
+end)
+`)
+
+	require.NoError(t, app.emitExtensionRuntimeEvent(context.Background(), extensionEventTick, map[string]any{}))
+
+	buffer := app.extensionRuntimeBuffers["events"]
+	if got, want := buffer.Text, "timer\n"; got != want {
+		t.Fatalf("events buffer = %q, want %q", got, want)
+	}
+}
+
+func TestExtensionTimerStopCancelsDeferredTimer(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("startup", function()
+  local id = librecode.timer.defer(0, function()
+    librecode.buf.append("events", "timer\n")
+  end)
+  librecode.timer.stop(id)
+end)
+`)
+
+	require.NoError(t, app.emitExtensionRuntimeEvent(context.Background(), extensionEventTick, map[string]any{}))
+
+	if _, ok := app.extensionRuntimeBuffers["events"]; ok {
+		t.Fatal("stopped timer should not mutate events buffer")
+	}
 }
 
 func TestTerminalKeyEventFallsBackToTcellName(t *testing.T) {

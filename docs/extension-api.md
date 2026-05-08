@@ -9,7 +9,9 @@ It is intentionally practical and code-oriented. The API is still evolving as li
 See also:
 
 - `docs/adr/0001-programmable-runtime.md`
+- `docs/runtime-architecture.md`
 - `docs/extension-runtime.md`
+- `docs/extension-roadmap.md`
 
 ## Loading model
 
@@ -27,6 +29,26 @@ The official bundled `extensions/` root is deduped in front of configured paths.
 
 Each Lua file runs in its own Lua state.
 
+Lua helper modules can live under a `lua/` subdirectory inside any extension root, or next to a loaded extension file. The extension manager adds those roots to `package.path` and skips `lua/` helper directories when discovering top-level extension files.
+
+Example:
+
+```text
+extensions/
+  vim-mode.lua
+  lua/
+    librecode/
+      chat.lua
+```
+
+Then extensions can do:
+
+```lua
+local chat = require("librecode.chat")
+```
+
+Bundled helper modules are convenience wrappers over primitive APIs. They are not a separate Go host API family.
+
 ## Importing the API
 
 Extensions can either use the global `librecode` table or require the module explicitly:
@@ -34,6 +56,18 @@ Extensions can either use the global `librecode` table or require the module exp
 ```lua
 local lc = require("librecode")
 ```
+
+## Bundled helper modules
+
+The official extension distribution may include Lua helper modules under `extensions/lua/librecode/`. These modules are intentionally implemented in Lua on top of primitive APIs.
+
+Current helpers include:
+
+- `librecode.chat`
+- `librecode.composer`
+- `librecode.statusline`
+
+They are convenience layers, not kernel primitives. Prefer documenting reusable product behavior there instead of adding product-specific Go APIs.
 
 ## Top-level API
 
@@ -46,7 +80,11 @@ local lc = require("librecode")
 
 lc.on("prompt_submit", function(ev)
   lc.event.consume()
-  lc.buf.append("transcript", { text = "extension intercepted submit\n", role = "custom" })
+  lc.buf.append("transcript", {
+    kind = "message",
+    role = "custom",
+    text = "extension intercepted submit\n",
+  })
 end)
 ```
 
@@ -71,6 +109,7 @@ Current commonly emitted events include:
 - `tool_end`
 - `resize`
 - `render`
+- `tick`
 - `before_agent_start`
 - `agent_end`
 
@@ -383,7 +422,7 @@ Replace the full buffer state.
 
 ### `librecode.buf.append(name, value)`
 
-Append text to a buffer.
+Append text or one structured block to a buffer.
 
 Examples:
 
@@ -391,50 +430,39 @@ Examples:
 lc.buf.append("status", "working")
 
 lc.buf.append("transcript", {
+  kind = "message",
   text = "tool finished\n",
   role = "tool_result",
 })
 ```
 
-For append tables, recognized fields include:
+String values append to buffer text. Tables with block fields append to `buffer.blocks`.
 
-- `name`
-- `text`
-- `role`
+### `librecode.buf.clear(name)`
 
-## `librecode.transcript`
+Clear buffer text, blocks, and cursor.
 
-### `librecode.transcript.get()`
+### `librecode.buf.get_blocks(name[, start[, end]])`
+### `librecode.buf.set_blocks(name, start, end, blocks)`
+### `librecode.buf.delete_blocks(name, start, end)`
 
-Returns the current structured transcript snapshot for the active event.
+Structured block helpers. Blocks are generic and may be used for transcript items, tool output, annotations, or any extension-defined data.
 
-The snapshot is read-only host state. It is intentionally windowed and bounded so render/stream events do not rebuild unbounded history on every frame. Use `count`, `start`, and `limit` to understand which slice was exposed.
-
-```lua
-local transcript = lc.transcript.get()
-for _, block in ipairs(transcript.blocks) do
-  lc.log(block.role .. ": " .. block.text)
-end
-```
-
-Fields:
-
-- `count`: total message + streaming block count
-- `start`: absolute index of `blocks[1]`
-- `limit`: maximum number of blocks in the snapshot
-- `metadata`: counts and runtime state such as `message_count`, `streaming_count`, `queued_count`, `working`
-- `blocks`: recent structured transcript blocks
-
-Block fields:
+Recognized block fields include:
 
 - `id`
-- `kind` (`message` or `streaming`)
+- `kind`
 - `role`
 - `text`
 - `index`
 - `created_at`
 - `streaming`
 - `metadata`
+
+### `librecode.buf.get_var(name, key)`
+### `librecode.buf.set_var(name, key, value)`
+
+Read or write buffer metadata values.
 
 ## `librecode.action`
 
@@ -453,6 +481,22 @@ Current built-ins include:
 - `interrupt`
 - `prompt.cancel`
 - `transcript.tree`
+
+## `librecode.timer`
+
+Timer callbacks run at the start of the next terminal runtime event whose clock is past the scheduled time. They execute inside the same transaction model as event handlers, so they may use `buf`, `win`, `layout`, `ui`, and `action` APIs.
+
+### `librecode.timer.defer(ms, fn)`
+
+Schedules a one-shot callback and returns a timer ID.
+
+### `librecode.timer.interval(ms, fn)`
+
+Schedules a repeating callback and returns a timer ID.
+
+### `librecode.timer.stop(id)`
+
+Cancels a pending timer.
 
 ## `librecode.event`
 
@@ -492,21 +536,20 @@ Handlers for terminal events receive a table like:
   },
   composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, metadata = {} },
   buffers = {
-    composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, metadata = {} },
-    status = { text = "", cursor = 0, chars = {}, metadata = {} },
-    transcript = { text = "", cursor = 0, chars = {}, metadata = { count = 12 } },
-    thinking = { text = "", cursor = 0, chars = {}, metadata = { count = 1 } },
-    tools = { text = "", cursor = 0, chars = {}, metadata = { count = 1 } },
-  },
-  transcript = {
-    count = 12,
-    start = 0,
-    limit = 12,
-    metadata = { message_count = 10, streaming_count = 2, queued_count = 0, working = true },
-    blocks = {
-      { id = "message:0", kind = "message", role = "user", text = "hello", index = 0, streaming = false },
-      { id = "streaming:11", kind = "streaming", role = "assistant", text = "partial", index = 11, streaming = true },
+    composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, blocks = {}, metadata = {} },
+    status = { text = "", cursor = 0, chars = {}, blocks = {}, metadata = {} },
+    transcript = {
+      text = "",
+      cursor = 0,
+      chars = {},
+      metadata = { count = 12, snapshot_count = 12, snapshot_start = 0, snapshot_limit = 32 },
+      blocks = {
+        { id = "message:0", kind = "message", role = "user", text = "hello", index = 0, streaming = false },
+        { id = "streaming:11", kind = "streaming", role = "assistant", text = "partial", index = 11, streaming = true },
+      },
     },
+    thinking = { text = "", cursor = 0, chars = {}, blocks = {}, metadata = { count = 1 } },
+    tools = { text = "", cursor = 0, chars = {}, blocks = {}, metadata = { count = 1 } },
   },
 }
 ```
@@ -529,9 +572,9 @@ The API is still incomplete compared with the long-term target.
 
 Notably missing today:
 
-- jobs/timers/scheduling
-- write-side structured transcript/message object control beyond the current read-only transcript snapshot and buffer override path
+- job/process spawning primitives
+- richer Lua helper modules for chat/transcript/status convenience
 - highlights/extmarks/namespaced annotations
 - deeper assistant/model/tool runtime replacement hooks
 
-Those are expected future additions as the programmable runtime architecture expands.
+Future APIs should preserve the primitive-first boundary described in `docs/runtime-architecture.md`: add kernel primitives to Go, and build product convenience in Lua.

@@ -261,10 +261,13 @@ func (app *App) loop(ctx context.Context) {
 	defer workTicker.Stop()
 	frameTicker := time.NewTicker(streamingFrameInterval)
 	defer frameTicker.Stop()
+	extensionTimer := time.NewTimer(time.Hour)
+	stopTimer(extensionTimer)
+	defer extensionTimer.Stop()
 	dirty := true
 	for {
 		dirty = app.drawDirtyFrame(ctx, dirty)
-		shouldQuit, nextDirty := app.runLoopStep(ctx, workTicker, frameTicker, dirty)
+		shouldQuit, nextDirty := app.runLoopStep(ctx, workTicker, frameTicker, extensionTimer, dirty)
 		if shouldQuit {
 			return
 		}
@@ -285,6 +288,7 @@ func (app *App) runLoopStep(
 	ctx context.Context,
 	workTicker *time.Ticker,
 	frameTicker *time.Ticker,
+	extensionTimer *time.Timer,
 	dirty bool,
 ) (shouldQuit, nextDirty bool) {
 	select {
@@ -292,10 +296,15 @@ func (app *App) runLoopStep(
 		return app.handleLoopEvent(ctx, event)
 	case <-app.workTick(workTicker):
 		app.workFrame++
+		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
 		return false, true
 	case <-app.frameTick(frameTicker, dirty):
+		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
 		app.draw(ctx)
 		return false, false
+	case <-app.extensionTimerTick(extensionTimer):
+		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
+		return false, true
 	}
 }
 
@@ -332,6 +341,40 @@ func (app *App) frameTick(ticker *time.Ticker, dirty bool) <-chan time.Time {
 	}
 
 	return nil
+}
+
+func (app *App) extensionTimerTick(timer *time.Timer) <-chan time.Time {
+	if timer == nil {
+		return nil
+	}
+	scheduler, hasScheduler := app.extensions.(extension.TimerScheduler)
+	if !hasScheduler {
+		stopTimer(timer)
+		return nil
+	}
+	delay, hasTimer := scheduler.NextTimerDelay(time.Now())
+	if !hasTimer {
+		stopTimer(timer)
+		return nil
+	}
+	resetTimer(timer, delay)
+
+	return timer.C
+}
+
+func resetTimer(timer *time.Timer, delay time.Duration) {
+	stopTimer(timer)
+	timer.Reset(delay)
+}
+
+func stopTimer(timer *time.Timer) {
+	if timer.Stop() {
+		return
+	}
+	select {
+	case <-timer.C:
+	default:
+	}
 }
 
 func (app *App) throttleDraws() bool {

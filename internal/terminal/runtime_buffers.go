@@ -43,8 +43,9 @@ func (app *App) transcriptBufferState() extension.BufferState {
 	if buffer, ok := app.runtimeBufferOverride(extensionBufferTranscript); ok {
 		return buffer
 	}
-	snapshot := app.transcriptState(maxTranscriptSnapshotBlocks)
+	snapshot := app.transcriptBufferBlocks(maxTranscriptSnapshotBlocks)
 	buffer := textBufferState(extensionBufferTranscript, "")
+	buffer.Blocks = snapshot.Blocks
 	buffer.Metadata = cloneExtensionMetadata(snapshot.Metadata)
 	buffer.Metadata[extensionMetadataCount] = len(app.messages)
 	buffer.Metadata["snapshot_count"] = snapshot.Count
@@ -82,16 +83,24 @@ func (app *App) toolsBufferState() extension.BufferState {
 	return buffer
 }
 
-func (app *App) transcriptState(limit int) extension.TranscriptState {
+type transcriptBufferSnapshot struct {
+	Metadata map[string]any
+	Blocks   []extension.BufferBlock
+	Count    int
+	Start    int
+	Limit    int
+}
+
+func (app *App) transcriptBufferBlocks(limit int) transcriptBufferSnapshot {
 	count := len(app.messages) + len(app.streamingBlocks)
 	limit = clampTranscriptLimit(limit, count)
 	start := max(0, count-limit)
-	blocks := make([]extension.TranscriptBlock, 0, limit)
+	blocks := make([]extension.BufferBlock, 0, limit)
 	for index := start; index < count; index++ {
 		blocks = append(blocks, app.transcriptBlock(index))
 	}
 
-	return extension.TranscriptState{
+	return transcriptBufferSnapshot{
 		Metadata: map[string]any{
 			"message_count":   len(app.messages),
 			"queued_count":    len(app.queuedMessages),
@@ -116,7 +125,7 @@ func clampTranscriptLimit(limit, count int) int {
 	return min(limit, count)
 }
 
-func (app *App) transcriptBlock(index int) extension.TranscriptBlock {
+func (app *App) transcriptBlock(index int) extension.BufferBlock {
 	messageCount := len(app.messages)
 	if index < messageCount {
 		return app.messageTranscriptBlock(index, app.messages[index], false)
@@ -130,14 +139,14 @@ func (app *App) messageTranscriptBlock(
 	index int,
 	message chatMessage,
 	streaming bool,
-) extension.TranscriptBlock {
+) extension.BufferBlock {
 	text, truncated := transcriptBlockText(message.Content)
 	metadata := map[string]any{}
 	if truncated {
 		metadata["truncated"] = true
 	}
 
-	return extension.TranscriptBlock{
+	return extension.BufferBlock{
 		Metadata:  metadata,
 		CreatedAt: message.CreatedAt.Format(time.RFC3339Nano),
 		ID:        transcriptBlockID(index, streaming),
@@ -200,12 +209,6 @@ func (app *App) runtimeBufferOverride(name string) (extension.BufferState, bool)
 	}
 
 	return cloneRuntimeBufferState(name, &buffer), true
-}
-
-func (app *App) hasRuntimeBufferOverride(name string) bool {
-	_, ok := app.extensionRuntimeBuffers[name]
-
-	return ok
 }
 
 func cloneRuntimeBufferState(name string, buffer *extension.BufferState) extension.BufferState {

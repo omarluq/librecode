@@ -193,7 +193,6 @@ func terminalEventTable(state *lua.LState, event *TerminalEvent) *lua.LTable {
 		"buffers":      bufferMapForLua(event.Buffers),
 		"windows":      windowMapForLua(event.Windows),
 		"layout":       layoutForLua(&event.Layout),
-		"transcript":   transcriptForLua(&event.Transcript),
 		"composer":     bufferForLua(&composer),
 		"working":      luaContextBool(event.Context, "working"),
 		"auth_working": luaContextBool(event.Context, "auth_working"),
@@ -240,6 +239,7 @@ func bufferForLua(buffer *BufferState) map[string]any {
 	return map[string]any{
 		luaFieldName:     buffer.Name,
 		luaFieldText:     buffer.Text,
+		"blocks":         bufferBlocksForLua(buffer.Blocks),
 		"chars":          buffer.Chars,
 		"cursor":         buffer.Cursor,
 		"label":          buffer.Label,
@@ -264,22 +264,20 @@ func windowForLua(window *WindowState) map[string]any {
 	}
 }
 
-func transcriptForLua(transcript *TranscriptState) map[string]any {
-	blocks := make([]any, 0, len(transcript.Blocks))
-	for index := range transcript.Blocks {
-		blocks = append(blocks, transcriptBlockForLua(&transcript.Blocks[index]))
+func bufferBlocksForLua(blocks []BufferBlock) []any {
+	values := make([]any, 0, len(blocks))
+	for index := range blocks {
+		values = append(values, bufferBlockForLua(&blocks[index]))
 	}
 
-	return map[string]any{
-		luaFieldMetadata: transcript.Metadata,
-		"blocks":         blocks,
-		"count":          transcript.Count,
-		"start":          transcript.Start,
-		"limit":          transcript.Limit,
-	}
+	return values
 }
 
-func transcriptBlockForLua(block *TranscriptBlock) map[string]any {
+func bufferBlocksTable(state *lua.LState, blocks []BufferBlock) *lua.LTable {
+	return sliceToLuaTable(state, bufferBlocksForLua(blocks))
+}
+
+func bufferBlockForLua(block *BufferBlock) map[string]any {
 	return map[string]any{
 		luaFieldMetadata: block.Metadata,
 		"created_at":     block.CreatedAt,
@@ -305,6 +303,7 @@ func luaBufferState(name string, value lua.LValue) BufferState {
 
 		return BufferState{
 			Metadata: luaDetails(table.RawGetString(luaFieldMetadata)),
+			Blocks:   luaBufferBlocksFromValue(table.RawGetString("blocks")),
 			Name:     luaTableString(table, "name", name),
 			Text:     text,
 			Chars:    stringChars(text),
@@ -332,20 +331,44 @@ func luaBufferText(table *lua.LTable) (string, bool) {
 	return textValue.String(), true
 }
 
-func luaBufferAppend(value lua.LValue) BufferAppend {
-	if table, ok := value.(*lua.LTable); ok {
-		return BufferAppend{
-			Name: luaTableString(table, "name", ""),
-			Text: luaTableString(table, luaFieldText, ""),
-			Role: luaTableString(table, "role", "custom"),
+func luaBufferBlocks(table *lua.LTable) []BufferBlock {
+	blocks := make([]BufferBlock, 0, table.Len())
+	for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
+		if blockTable, ok := table.RawGetInt(valueIndex).(*lua.LTable); ok {
+			blocks = append(blocks, luaBufferBlock(blockTable, len(blocks)))
 		}
 	}
 
-	return BufferAppend{
-		Name: "",
-		Text: value.String(),
-		Role: "custom",
+	return blocks
+}
+
+func luaBufferBlocksFromValue(value lua.LValue) []BufferBlock {
+	if table, ok := value.(*lua.LTable); ok {
+		return luaBufferBlocks(table)
 	}
+
+	return []BufferBlock{}
+}
+
+func luaBufferBlock(table *lua.LTable, index int) BufferBlock {
+	return BufferBlock{
+		Metadata:  luaDetails(table.RawGetString(luaFieldMetadata)),
+		CreatedAt: luaTableString(table, "created_at", ""),
+		ID:        luaTableString(table, "id", ""),
+		Kind:      luaTableString(table, "kind", ""),
+		Role:      luaTableString(table, "role", ""),
+		Text:      luaTableString(table, luaFieldText, ""),
+		Index:     luaTableIntValueWithDefault(table, "index", index),
+		Streaming: luaTableBool(table, "streaming"),
+	}
+}
+
+func isBufferBlockTable(table *lua.LTable) bool {
+	return table.RawGetString("kind") != lua.LNil ||
+		table.RawGetString("role") != lua.LNil ||
+		table.RawGetString("id") != lua.LNil ||
+		table.RawGetString("created_at") != lua.LNil ||
+		table.RawGetString("streaming") != lua.LNil
 }
 
 func luaWindowState(name string, value lua.LValue) WindowState {
@@ -442,7 +465,11 @@ func luaLayoutState(value lua.LValue) *LayoutState {
 }
 
 func luaTableIntValue(table *lua.LTable, key string) int {
-	value, _ := luaTableInt(table, key, 0)
+	return luaTableIntValueWithDefault(table, key, 0)
+}
+
+func luaTableIntValueWithDefault(table *lua.LTable, key string, fallback int) int {
+	value, _ := luaTableInt(table, key, fallback)
 
 	return value
 }

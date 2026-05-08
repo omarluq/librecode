@@ -32,14 +32,18 @@ librecode will evolve toward a low-level extension architecture inspired by syst
 The extension system will prioritize small composable building blocks:
 
 - buffers
+- windows
+- layout
+- UI drawing
 - keymaps
 - commands
 - autocmd-like events
 - namespaces
 - runtime events
-- render/layout primitives
 - jobs/timers
-- assistant/runtime hooks
+- model/tool/session primitives
+
+Product-specific convenience should be built in Lua modules on top of those primitives. The Go host should avoid growing narrow APIs such as transcript/composer/thinking helpers unless they are clearly temporary compatibility surfaces.
 
 ## Consequences
 
@@ -80,5 +84,7 @@ The migration should happen incrementally.
 
 This ADR establishes the direction. The detailed shape of the runtime lives in:
 
+- `docs/runtime-architecture.md`
 - `docs/extension-runtime.md`
+- `docs/extension-roadmap.md`
 - `docs/extension-api.md`

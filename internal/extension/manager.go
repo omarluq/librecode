@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -53,6 +54,15 @@ type luaKeymap struct {
 	order       uint64
 }
 
+type luaTimer struct {
+	extension *luaExtension
+	function  *lua.LFunction
+	due       time.Time
+	interval  time.Duration
+	id        uint64
+	order     uint64
+}
+
 // Manager owns Lua extension runtimes and registered commands/tools.
 type Manager struct {
 	logger           *slog.Logger
@@ -61,9 +71,13 @@ type Manager struct {
 	handlers         map[string][]luaHookHandler
 	keymaps          []luaKeymap
 	namespaces       map[string]int
+	canceledTimers   map[uint64]struct{}
+	moduleRoots      []string
+	timers           []luaTimer
 	extensions       []*luaExtension
 	lock             sync.RWMutex
 	nextHandlerOrder uint64
+	nextTimerID      uint64
 	nextNamespaceID  int
 }
 
@@ -76,9 +90,13 @@ func NewManager(logger *slog.Logger) *Manager {
 		handlers:         map[string][]luaHookHandler{},
 		keymaps:          []luaKeymap{},
 		namespaces:       map[string]int{},
+		canceledTimers:   map[uint64]struct{}{},
+		moduleRoots:      []string{},
+		timers:           []luaTimer{},
 		extensions:       []*luaExtension{},
 		lock:             sync.RWMutex{},
 		nextHandlerOrder: 0,
+		nextTimerID:      1,
 		nextNamespaceID:  1,
 	}
 }
@@ -89,6 +107,7 @@ func (manager *Manager) LoadPaths(ctx context.Context, paths []string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		manager.addModuleRootsForPath(extensionPath)
 
 		files, err := discoverLuaFiles(extensionPath)
 		if err != nil {
@@ -116,6 +135,7 @@ func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) erro
 		return fmt.Errorf("extension: resolve path: %w", err)
 	}
 
+	manager.addModuleRootsForPath(absolutePath)
 	extensionRuntime := &luaExtension{
 		activeEvent: nil,
 		state:       lua.NewState(lua.Options{SkipOpenLibs: true}),
@@ -127,6 +147,7 @@ func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) erro
 		lock:        sync.Mutex{},
 	}
 	openExtensionLibs(extensionRuntime.state)
+	manager.configurePackagePath(extensionRuntime.state)
 	manager.installAPI(extensionRuntime)
 
 	if err := extensionRuntime.state.DoFile(absolutePath); err != nil {
@@ -240,6 +261,9 @@ func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[s
 // HandleTerminalEvent runs registered low-level terminal runtime handlers.
 func (manager *Manager) HandleTerminalEvent(ctx context.Context, event *TerminalEvent) (TerminalEventResult, error) {
 	hostEvent := newLuaHostEvent(event)
+	if err := manager.runDueTimers(ctx, hostEvent, time.Now()); err != nil {
+		return hostEvent.result(), err
+	}
 	if event.Name == luaFieldKey {
 		if err := manager.runKeymaps(ctx, hostEvent); err != nil {
 			return hostEvent.result(), err
@@ -323,7 +347,11 @@ func (manager *Manager) Shutdown() {
 	manager.handlers = map[string][]luaHookHandler{}
 	manager.keymaps = []luaKeymap{}
 	manager.namespaces = map[string]int{}
+	manager.canceledTimers = map[uint64]struct{}{}
+	manager.moduleRoots = []string{}
+	manager.timers = []luaTimer{}
 	manager.nextHandlerOrder = 0
+	manager.nextTimerID = 1
 	manager.nextNamespaceID = 1
 }
 
@@ -341,9 +369,9 @@ func (manager *Manager) installAPI(extensionRuntime *luaExtension) {
 	extensionRuntime.state.SetField(apiTable, "command", manager.luaCommandAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "event", manager.luaEventAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "action", manager.luaActionAPI(extensionRuntime))
+	extensionRuntime.state.SetField(apiTable, "timer", manager.luaTimerAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "keymap", manager.luaKeymapAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "layout", manager.luaLayoutAPI(extensionRuntime))
-	extensionRuntime.state.SetField(apiTable, "transcript", manager.luaTranscriptAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "ui", manager.luaUIAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "win", manager.luaWindowAPI(extensionRuntime))
 	extensionRuntime.state.SetGlobal("librecode", apiTable)
@@ -441,14 +469,18 @@ func callLuaPrepared(
 	}()
 
 	top := extensionRuntime.state.GetTop()
-	defer extensionRuntime.state.SetTop(top)
 
 	args := prepareArgs(extensionRuntime.state)
 	if err := extensionRuntime.state.CallByParam(lua.P{Fn: function, NRet: 1, Protect: true}, args...); err != nil {
+		extensionRuntime.state.SetTop(top)
 		return lua.LNil, err
 	}
 
-	return extensionRuntime.state.Get(-1), nil
+	result := extensionRuntime.state.Get(-1)
+	extensionRuntime.state.Pop(1)
+	extensionRuntime.state.SetTop(top)
+
+	return result, nil
 }
 
 func discoverLuaFiles(extensionPath string) ([]string, error) {
@@ -480,7 +512,13 @@ func walkLuaDir(root string) ([]string, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if dirEntry.IsDir() || !strings.HasSuffix(currentPath, ".lua") {
+		if dirEntry.IsDir() {
+			if currentPath != root && dirEntry.Name() == "lua" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(currentPath, ".lua") {
 			return nil
 		}
 		files = append(files, currentPath)
@@ -493,6 +531,63 @@ func walkLuaDir(root string) ([]string, error) {
 	sort.Strings(files)
 
 	return files, nil
+}
+
+func (manager *Manager) addModuleRootsForPath(extensionPath string) {
+	if strings.TrimSpace(extensionPath) == "" {
+		return
+	}
+	absolutePath, err := filepath.Abs(extensionPath)
+	if err != nil {
+		absolutePath = extensionPath
+	}
+	roots := moduleRootsForPath(absolutePath)
+
+	manager.lock.Lock()
+	defer manager.lock.Unlock()
+
+	seen := make(map[string]struct{}, len(manager.moduleRoots)+len(roots))
+	for _, root := range manager.moduleRoots {
+		seen[root] = struct{}{}
+	}
+	for _, root := range roots {
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		manager.moduleRoots = append(manager.moduleRoots, root)
+		seen[root] = struct{}{}
+	}
+}
+
+func moduleRootsForPath(extensionPath string) []string {
+	root := extensionPath
+	if info, err := os.Stat(extensionPath); err == nil && !info.IsDir() {
+		root = filepath.Dir(extensionPath)
+	}
+
+	return []string{filepath.Join(root, "lua"), root}
+}
+
+func (manager *Manager) configurePackagePath(state *lua.LState) {
+	packageTable, ok := state.GetGlobal("package").(*lua.LTable)
+	if !ok {
+		return
+	}
+	patterns := []string{packageTable.RawGetString("path").String()}
+	for _, root := range manager.moduleRootsSnapshot() {
+		patterns = append(patterns,
+			filepath.ToSlash(filepath.Join(root, "?.lua")),
+			filepath.ToSlash(filepath.Join(root, "?", "init.lua")),
+		)
+	}
+	packageTable.RawSetString("path", lua.LString(strings.Join(patterns, ";")))
+}
+
+func (manager *Manager) moduleRootsSnapshot() []string {
+	manager.lock.RLock()
+	defer manager.lock.RUnlock()
+
+	return append([]string{}, manager.moduleRoots...)
 }
 
 func openExtensionLibs(state *lua.LState) {

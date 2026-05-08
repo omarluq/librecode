@@ -2,6 +2,7 @@ package extension
 
 import (
 	"strings"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -10,32 +11,28 @@ func (manager *Manager) luaBufferAPI(extensionRuntime *luaExtension) *lua.LTable
 	state := extensionRuntime.state
 	apiTable := state.NewTable()
 	state.SetFuncs(apiTable, map[string]lua.LGFunction{
-		"append":       manager.luaBufferAppend(extensionRuntime),
-		luaFieldCreate: manager.luaBufferCreate(extensionRuntime),
-		"delete":       manager.luaBufferDelete(extensionRuntime),
-		"delete_range": manager.luaBufferDeleteRange(extensionRuntime),
-		"delete_text":  manager.luaBufferDeleteRange(extensionRuntime),
-		luaFieldGet:    manager.luaBufferGet(extensionRuntime),
-		"get_cursor":   manager.luaBufferGetCursor(extensionRuntime),
-		"get_lines":    manager.luaBufferGetLines(extensionRuntime),
-		"get_text":     manager.luaBufferGetText(extensionRuntime),
-		"insert":       manager.luaBufferInsert(extensionRuntime),
-		"list":         manager.luaBufferList(extensionRuntime),
-		"replace":      manager.luaBufferReplace(extensionRuntime),
-		luaFieldSet:    manager.luaBufferSet(extensionRuntime),
-		"set_cursor":   manager.luaBufferSetCursor(extensionRuntime),
-		"set_lines":    manager.luaBufferSetLines(extensionRuntime),
-		"set_text":     manager.luaBufferSetText(extensionRuntime),
-	})
-
-	return apiTable
-}
-
-func (manager *Manager) luaTranscriptAPI(extensionRuntime *luaExtension) *lua.LTable {
-	state := extensionRuntime.state
-	apiTable := state.NewTable()
-	state.SetFuncs(apiTable, map[string]lua.LGFunction{
-		luaFieldGet: manager.luaTranscriptGet(extensionRuntime),
+		"append":        manager.luaBufferAppend(extensionRuntime),
+		"clear":         manager.luaBufferClear(extensionRuntime),
+		luaFieldCreate:  manager.luaBufferCreate(extensionRuntime),
+		"delete":        manager.luaBufferDelete(extensionRuntime),
+		"delete_blocks": manager.luaBufferDeleteBlocks(extensionRuntime),
+		"delete_range":  manager.luaBufferDeleteRange(extensionRuntime),
+		"delete_text":   manager.luaBufferDeleteRange(extensionRuntime),
+		luaFieldGet:     manager.luaBufferGet(extensionRuntime),
+		"get_blocks":    manager.luaBufferGetBlocks(extensionRuntime),
+		"get_cursor":    manager.luaBufferGetCursor(extensionRuntime),
+		"get_lines":     manager.luaBufferGetLines(extensionRuntime),
+		"get_text":      manager.luaBufferGetText(extensionRuntime),
+		"get_var":       manager.luaBufferGetVar(extensionRuntime),
+		"insert":        manager.luaBufferInsert(extensionRuntime),
+		"list":          manager.luaBufferList(extensionRuntime),
+		"replace":       manager.luaBufferReplace(extensionRuntime),
+		luaFieldSet:     manager.luaBufferSet(extensionRuntime),
+		"set_blocks":    manager.luaBufferSetBlocks(extensionRuntime),
+		"set_cursor":    manager.luaBufferSetCursor(extensionRuntime),
+		"set_lines":     manager.luaBufferSetLines(extensionRuntime),
+		"set_text":      manager.luaBufferSetText(extensionRuntime),
+		"set_var":       manager.luaBufferSetVar(extensionRuntime),
 	})
 
 	return apiTable
@@ -57,6 +54,18 @@ func (manager *Manager) luaActionAPI(extensionRuntime *luaExtension) *lua.LTable
 	apiTable := state.NewTable()
 	state.SetFuncs(apiTable, map[string]lua.LGFunction{
 		"run": manager.luaActionRun(extensionRuntime),
+	})
+
+	return apiTable
+}
+
+func (manager *Manager) luaTimerAPI(extensionRuntime *luaExtension) *lua.LTable {
+	state := extensionRuntime.state
+	apiTable := state.NewTable()
+	state.SetFuncs(apiTable, map[string]lua.LGFunction{
+		"defer":    manager.luaTimerDefer(extensionRuntime),
+		"interval": manager.luaTimerInterval(extensionRuntime),
+		"stop":     manager.luaTimerStop(),
 	})
 
 	return apiTable
@@ -103,15 +112,6 @@ func (manager *Manager) luaWindowAPI(extensionRuntime *luaExtension) *lua.LTable
 	})
 
 	return apiTable
-}
-
-func (manager *Manager) luaTranscriptGet(extensionRuntime *luaExtension) lua.LGFunction {
-	return func(state *lua.LState) int {
-		hostEvent := checkActiveEvent(state, extensionRuntime)
-		state.Push(mapToLuaTable(state, transcriptForLua(&hostEvent.transcript)))
-
-		return 1
-	}
 }
 
 func (manager *Manager) luaLayoutGet(extensionRuntime *luaExtension) lua.LGFunction {
@@ -396,6 +396,21 @@ func (manager *Manager) luaBufferSetText(extensionRuntime *luaExtension) lua.LGF
 	}
 }
 
+func (manager *Manager) luaBufferClear(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		buffer := hostEvent.buffer(name)
+		buffer.Text = ""
+		buffer.Chars = []string{}
+		buffer.Blocks = []BufferBlock{}
+		buffer.Cursor = 0
+		hostEvent.setBuffer(name, &buffer)
+
+		return 0
+	}
+}
+
 func (manager *Manager) luaBufferInsert(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
@@ -450,7 +465,15 @@ func (manager *Manager) luaBufferAppend(extensionRuntime *luaExtension) lua.LGFu
 		name := state.CheckString(1)
 		value := state.CheckAny(2)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
-		hostEvent.appendBuffer(bufferAppendFromLua(name, value))
+		buffer := hostEvent.buffer(name)
+		if table, ok := value.(*lua.LTable); ok && isBufferBlockTable(table) {
+			buffer.Blocks = append(buffer.Blocks, luaBufferBlock(table, len(buffer.Blocks)))
+		} else {
+			buffer.Text += value.String()
+			buffer.Chars = stringChars(buffer.Text)
+			buffer.Cursor = len([]rune(buffer.Text))
+		}
+		hostEvent.setBuffer(name, &buffer)
 
 		return 0
 	}
@@ -486,6 +509,75 @@ func (manager *Manager) luaBufferSetLines(extensionRuntime *luaExtension) lua.LG
 	}
 }
 
+func (manager *Manager) luaBufferGetBlocks(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		start := state.OptInt(2, 0)
+		end := state.OptInt(3, -1)
+		buffer := checkActiveEvent(state, extensionRuntime).buffer(name)
+		state.Push(bufferBlocksTable(state, bufferBlockRange(buffer.Blocks, start, end)))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaBufferSetBlocks(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		start := state.CheckInt(2)
+		end := state.CheckInt(3)
+		replacement := luaBufferBlocks(state.CheckTable(4))
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		buffer := hostEvent.buffer(name)
+		buffer.Blocks = replaceBufferBlocks(buffer.Blocks, start, end, replacement)
+		hostEvent.setBuffer(name, &buffer)
+
+		return 0
+	}
+}
+
+func (manager *Manager) luaBufferDeleteBlocks(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		start := state.CheckInt(2)
+		end := state.CheckInt(3)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		buffer := hostEvent.buffer(name)
+		buffer.Blocks = replaceBufferBlocks(buffer.Blocks, start, end, []BufferBlock{})
+		hostEvent.setBuffer(name, &buffer)
+
+		return 0
+	}
+}
+
+func (manager *Manager) luaBufferGetVar(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		key := state.CheckString(2)
+		buffer := checkActiveEvent(state, extensionRuntime).buffer(name)
+		state.Push(goValueToLua(state, buffer.Metadata[key]))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaBufferSetVar(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		key := state.CheckString(2)
+		value := state.CheckAny(3)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		buffer := hostEvent.buffer(name)
+		if buffer.Metadata == nil {
+			buffer.Metadata = map[string]any{}
+		}
+		buffer.Metadata[key] = luaValueToGo(value)
+		hostEvent.setBuffer(name, &buffer)
+
+		return 0
+	}
+}
+
 func (manager *Manager) luaEventConsume(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		checkActiveEvent(state, extensionRuntime).consumed = true
@@ -511,6 +603,46 @@ func (manager *Manager) luaActionRun(extensionRuntime *luaExtension) lua.LGFunct
 
 		return 0
 	}
+}
+
+func (manager *Manager) luaTimerDefer(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		delay := luaDurationMillis(state.CheckNumber(1))
+		function := state.CheckFunction(2)
+		id := manager.registerTimer(extensionRuntime, delay, 0, function)
+		state.Push(lua.LNumber(id))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaTimerInterval(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		interval := luaDurationMillis(state.CheckNumber(1))
+		function := state.CheckFunction(2)
+		id := manager.registerTimer(extensionRuntime, interval, interval, function)
+		state.Push(lua.LNumber(id))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaTimerStop() lua.LGFunction {
+	return func(state *lua.LState) int {
+		id := uint64(state.CheckNumber(1))
+		manager.cancelTimer(id)
+
+		return 0
+	}
+}
+
+func luaDurationMillis(value lua.LNumber) time.Duration {
+	millis := float64(value)
+	if millis < 0 {
+		millis = 0
+	}
+
+	return time.Duration(millis * float64(time.Millisecond))
 }
 
 func (manager *Manager) luaUIClearWindow(extensionRuntime *luaExtension) lua.LGFunction {
@@ -579,23 +711,6 @@ func bufferStateTable(state *lua.LState, buffer *BufferState) *lua.LTable {
 	return mapToLuaTable(state, bufferForLua(buffer))
 }
 
-func bufferAppendFromLua(name string, value lua.LValue) BufferAppend {
-	if table, ok := value.(*lua.LTable); ok {
-		bufferAppend := luaBufferAppend(table)
-		if bufferAppend.Name == "" {
-			bufferAppend.Name = name
-		}
-
-		return bufferAppend
-	}
-
-	return BufferAppend{
-		Name: name,
-		Text: value.String(),
-		Role: "custom",
-	}
-}
-
 func bufferLineRange(text string, start, end int) []string {
 	lines := strings.Split(text, "\n")
 	start, end = normalizeLineRange(len(lines), start, end)
@@ -612,6 +727,29 @@ func replaceBufferLines(text string, start, end int, replacement []string) strin
 	nextLines = append(nextLines, lines[end:]...)
 
 	return strings.Join(nextLines, "\n")
+}
+
+func bufferBlockRange(blocks []BufferBlock, start, end int) []BufferBlock {
+	start, end = normalizeLineRange(len(blocks), start, end)
+	return cloneBufferBlocks(blocks[start:end])
+}
+
+func replaceBufferBlocks(
+	blocks []BufferBlock,
+	start int,
+	end int,
+	replacement []BufferBlock,
+) []BufferBlock {
+	start, end = normalizeLineRange(len(blocks), start, end)
+	nextBlocks := make([]BufferBlock, 0, len(blocks)-end+start+len(replacement))
+	nextBlocks = append(nextBlocks, blocks[:start]...)
+	nextBlocks = append(nextBlocks, replacement...)
+	nextBlocks = append(nextBlocks, blocks[end:]...)
+	for index := range nextBlocks {
+		nextBlocks[index].Index = index
+	}
+
+	return nextBlocks
 }
 
 func spliceBufferText(text string, start, end int, replacement string) string {

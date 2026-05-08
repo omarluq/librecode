@@ -6,7 +6,6 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 )
 
@@ -33,6 +32,7 @@ const (
 	extensionEventRender          = "render"
 	extensionEventResize          = "resize"
 	extensionEventStartup         = "startup"
+	extensionEventTick            = "tick"
 	extensionEventThinkingDelta   = "thinking_delta"
 	extensionEventToolEnd         = "tool_end"
 	extensionEventToolStart       = "tool_start"
@@ -184,14 +184,13 @@ func (app *App) newExtensionEventWithLayoutAndData(
 ) extension.TerminalEvent {
 	windows := app.cloneRuntimeWindows(layout)
 	return extension.TerminalEvent{
-		Buffers:    app.extensionBuffers(),
-		Windows:    windows,
-		Layout:     extension.LayoutState{Windows: windows, Width: layout.Width, Height: layout.Height},
-		Transcript: app.transcriptState(maxTranscriptSnapshotBlocks),
-		Context:    app.extensionContext(),
-		Data:       cloneExtensionMetadata(data),
-		Name:       name,
-		Key:        key,
+		Buffers: app.extensionBuffers(),
+		Windows: windows,
+		Layout:  extension.LayoutState{Windows: windows, Width: layout.Width, Height: layout.Height},
+		Context: app.extensionContext(),
+		Data:    cloneExtensionMetadata(data),
+		Name:    name,
+		Key:     key,
 	}
 }
 
@@ -227,6 +226,7 @@ func cloneExtensionMetadata(values map[string]any) map[string]any {
 func textBufferState(name, text string) extension.BufferState {
 	return extension.BufferState{
 		Metadata: map[string]any{},
+		Blocks:   []extension.BufferBlock{},
 		Name:     name,
 		Text:     text,
 		Chars:    stringBufferChars(text),
@@ -274,28 +274,10 @@ func (app *App) applyExtensionEventResult(ctx context.Context, result *extension
 	if result.Layout != nil {
 		app.applyRuntimeLayout(result.Layout)
 	}
-	for _, bufferAppend := range result.Appends {
-		if app.resultBufferAlreadyApplied(&bufferAppend, result.Buffers) {
-			continue
-		}
-		app.applyExtensionBufferAppend(bufferAppend, result.Buffers)
-	}
 	for _, action := range result.Actions {
 		app.applyExtensionAction(ctx, action)
 	}
 	app.applyUIWindowResult(result)
-}
-
-func (app *App) resultBufferAlreadyApplied(
-	bufferAppend *extension.BufferAppend,
-	buffers map[string]extension.BufferState,
-) bool {
-	if bufferAppend == nil || bufferAppend.Name == extensionBufferTranscript {
-		return false
-	}
-	_, ok := buffers[bufferAppend.Name]
-
-	return ok
 }
 
 func (app *App) applyExtensionAction(ctx context.Context, action extension.ActionCall) {
@@ -415,43 +397,6 @@ func (app *App) applyComposerBuffer(buffer *extension.BufferState) {
 	}
 }
 
-func (app *App) applyExtensionBufferAppend(
-	bufferAppend extension.BufferAppend,
-	resultBuffers map[string]extension.BufferState,
-) {
-	if app.shouldAppendTranscriptMessage(bufferAppend, resultBuffers) {
-		if strings.TrimSpace(bufferAppend.Text) == "" {
-			return
-		}
-		app.addMessage(extensionAppendRole(bufferAppend.Role), bufferAppend.Text)
-		return
-	}
-
-	buffer := app.extensionRuntimeBuffers[bufferAppend.Name]
-	if buffer.Name == "" {
-		buffer = textBufferState(bufferAppend.Name, "")
-	}
-	buffer.Text += bufferAppend.Text
-	buffer.Chars = stringBufferChars(buffer.Text)
-	buffer.Cursor = len([]rune(buffer.Text))
-	app.extensionRuntimeBuffers[bufferAppend.Name] = cloneRuntimeBufferState(bufferAppend.Name, &buffer)
-}
-
-func (app *App) shouldAppendTranscriptMessage(
-	bufferAppend extension.BufferAppend,
-	resultBuffers map[string]extension.BufferState,
-) bool {
-	if bufferAppend.Name != extensionBufferTranscript {
-		return false
-	}
-	buffer, ok := resultBuffers[extensionBufferTranscript]
-	if !ok {
-		return !app.hasRuntimeBufferOverride(extensionBufferTranscript)
-	}
-
-	return strings.TrimSpace(buffer.Text) == strings.TrimSpace(bufferAppend.Text)
-}
-
 func (app *App) applyUIWindowResult(result *extension.TerminalEventResult) {
 	for _, windowName := range result.ResetUIWindows {
 		app.resetUIWindowOverride(windowName)
@@ -485,29 +430,6 @@ func (app *App) appendUIWindowDrawOp(drawOp *extension.UIDrawOp) {
 	override := app.uiWindowOverrides[drawOp.Window]
 	override.DrawOps = append(override.DrawOps, *drawOp)
 	app.uiWindowOverrides[drawOp.Window] = override
-}
-
-func extensionAppendRole(role string) database.Role {
-	switch role {
-	case string(database.RoleUser):
-		return database.RoleUser
-	case string(database.RoleAssistant):
-		return database.RoleAssistant
-	case string(database.RoleThinking):
-		return database.RoleThinking
-	case string(database.RoleToolResult):
-		return database.RoleToolResult
-	case string(database.RoleBashExecution):
-		return database.RoleBashExecution
-	case string(database.RoleBranchSummary):
-		return database.RoleBranchSummary
-	case string(database.RoleCompactionSummary):
-		return database.RoleCompactionSummary
-	case string(database.RoleCustom), "system", "":
-		return database.RoleCustom
-	}
-
-	return database.RoleCustom
 }
 
 func terminalKeyEvent(event *tcell.EventKey) extension.ComposerKeyEvent {

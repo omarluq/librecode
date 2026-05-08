@@ -16,14 +16,12 @@ type luaHostEvent struct {
 	changedBuffers map[string]struct{}
 	name           string
 	key            ComposerKeyEvent
-	appends        []BufferAppend
 	actions        []ActionCall
 	uiDrawOps      []UIDrawOp
 	resetUIWindows []string
 	deletedBuffers []string
 	deletedWindows []string
 	layout         LayoutState
-	transcript     TranscriptState
 	consumed       bool
 	stopped        bool
 	layoutChanged  bool
@@ -36,12 +34,10 @@ func newLuaHostEvent(event *TerminalEvent) *luaHostEvent {
 		buffers:        cloneBuffers(event.Buffers),
 		windows:        cloneWindows(event.Windows),
 		layout:         cloneLayout(event.Layout),
-		transcript:     cloneTranscript(event.Transcript),
 		context:        cloneMap(event.Context),
 		data:           cloneMap(event.Data),
 		changedBuffers: map[string]struct{}{},
 		changedWindows: map[string]struct{}{},
-		appends:        []BufferAppend{},
 		actions:        []ActionCall{},
 		uiDrawOps:      []UIDrawOp{},
 		resetUIWindows: []string{},
@@ -59,7 +55,6 @@ func (event *luaHostEvent) result() TerminalEventResult {
 		Buffers:        cloneChangedBuffers(event.buffers, event.changedBuffers),
 		Windows:        cloneChangedWindows(event.windows, event.changedWindows),
 		Layout:         event.resultLayout(),
-		Appends:        append([]BufferAppend{}, event.appends...),
 		Actions:        append([]ActionCall{}, event.actions...),
 		UIDrawOps:      append([]UIDrawOp{}, event.uiDrawOps...),
 		ResetUIWindows: append([]string{}, event.resetUIWindows...),
@@ -72,14 +67,13 @@ func (event *luaHostEvent) result() TerminalEventResult {
 
 func (event *luaHostEvent) eventSnapshot() *TerminalEvent {
 	return &TerminalEvent{
-		Buffers:    cloneBuffers(event.buffers),
-		Windows:    cloneWindows(event.windows),
-		Layout:     cloneLayout(event.layout),
-		Transcript: cloneTranscript(event.transcript),
-		Context:    cloneMap(event.context),
-		Data:       cloneMap(event.data),
-		Name:       event.name,
-		Key:        event.key,
+		Buffers: cloneBuffers(event.buffers),
+		Windows: cloneWindows(event.windows),
+		Layout:  cloneLayout(event.layout),
+		Context: cloneMap(event.context),
+		Data:    cloneMap(event.data),
+		Name:    event.name,
+		Key:     event.key,
 	}
 }
 
@@ -109,6 +103,7 @@ func (event *luaHostEvent) setBuffer(name string, buffer *BufferState) {
 		buffer.Chars = stringChars(buffer.Text)
 	}
 	buffer.Metadata = cloneMap(buffer.Metadata)
+	buffer.Blocks = cloneBufferBlocks(buffer.Blocks)
 	event.buffers[name] = *buffer
 	event.changedBuffers[name] = struct{}{}
 	event.removeDeletedBuffer(name)
@@ -246,18 +241,6 @@ func (event *luaHostEvent) setUICursor(cursor *UICursor) {
 	event.uiCursor = cloneUICursor(cursor)
 }
 
-func (event *luaHostEvent) appendBuffer(bufferAppend BufferAppend) {
-	if bufferAppend.Name == "" {
-		return
-	}
-	event.appends = append(event.appends, bufferAppend)
-	buffer := event.buffer(bufferAppend.Name)
-	buffer.Text += bufferAppend.Text
-	buffer.Chars = stringChars(buffer.Text)
-	buffer.Cursor = len([]rune(buffer.Text))
-	event.setBuffer(bufferAppend.Name, &buffer)
-}
-
 func (event *luaHostEvent) appendAction(action ActionCall) {
 	if action.Name == "" {
 		return
@@ -280,7 +263,6 @@ func (event *luaHostEvent) applyLuaResult(value lua.LValue) {
 	event.applyLuaResultBuffers(table.RawGetString("buffers"))
 	event.applyLuaResultWindows(table.RawGetString("windows"))
 	event.applyLuaResultLayout(table.RawGetString("layout"))
-	event.applyLuaResultAppends(table.RawGetString("appends"))
 	event.applyLuaResultActions(table.RawGetString("actions"))
 	event.applyLuaResultDrawOps(table.RawGetString("ui_draw_ops"))
 	event.applyLuaResultResetUI(table.RawGetString("reset_ui_windows"))
@@ -319,16 +301,6 @@ func (event *luaHostEvent) applyLuaResultLayout(value lua.LValue) {
 		return
 	}
 	event.setLayout(layout)
-}
-
-func (event *luaHostEvent) applyLuaResultAppends(value lua.LValue) {
-	table, ok := value.(*lua.LTable)
-	if !ok {
-		return
-	}
-	for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
-		event.appendBuffer(luaBufferAppend(table.RawGetInt(valueIndex)))
-	}
 }
 
 func (event *luaHostEvent) applyLuaResultActions(value lua.LValue) {
@@ -418,6 +390,23 @@ func cloneBuffer(buffer *BufferState, name string) BufferState {
 		cloned.Name = name
 	}
 	cloned.Chars = append([]string{}, cloned.Chars...)
+	cloned.Blocks = cloneBufferBlocks(cloned.Blocks)
+	cloned.Metadata = cloneMap(cloned.Metadata)
+
+	return cloned
+}
+
+func cloneBufferBlocks(blocks []BufferBlock) []BufferBlock {
+	cloned := make([]BufferBlock, len(blocks))
+	for index := range blocks {
+		cloned[index] = cloneBufferBlock(&blocks[index])
+	}
+
+	return cloned
+}
+
+func cloneBufferBlock(block *BufferBlock) BufferBlock {
+	cloned := *block
 	cloned.Metadata = cloneMap(cloned.Metadata)
 
 	return cloned
@@ -485,27 +474,6 @@ func cloneLayoutPtr(layout *LayoutState) *LayoutState {
 	return &cloned
 }
 
-func cloneTranscript(transcript TranscriptState) TranscriptState {
-	blocks := make([]TranscriptBlock, len(transcript.Blocks))
-	for index := range transcript.Blocks {
-		blocks[index] = cloneTranscriptBlock(&transcript.Blocks[index])
-	}
-	return TranscriptState{
-		Metadata: cloneMap(transcript.Metadata),
-		Blocks:   blocks,
-		Count:    transcript.Count,
-		Start:    transcript.Start,
-		Limit:    transcript.Limit,
-	}
-}
-
-func cloneTranscriptBlock(block *TranscriptBlock) TranscriptBlock {
-	cloned := *block
-	cloned.Metadata = cloneMap(cloned.Metadata)
-
-	return cloned
-}
-
 func cloneUICursor(cursor *UICursor) *UICursor {
 	if cursor == nil {
 		return nil
@@ -530,6 +498,7 @@ func cloneMap(values map[string]any) map[string]any {
 func newBufferState(name, text string) BufferState {
 	return BufferState{
 		Metadata: map[string]any{},
+		Blocks:   []BufferBlock{},
 		Name:     name,
 		Text:     text,
 		Chars:    stringChars(text),

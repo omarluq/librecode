@@ -1,7 +1,10 @@
 // Package extension loads and executes user workflow extensions.
 package extension
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Command describes a Lua slash command.
 type Command struct {
@@ -35,6 +38,7 @@ type LoadedExtension struct {
 // BufferState describes an extension-visible mutable runtime buffer.
 type BufferState struct {
 	Metadata map[string]any `json:"metadata"`
+	Blocks   []BufferBlock  `json:"blocks"`
 	Name     string         `json:"name"`
 	Text     string         `json:"text"`
 	Label    string         `json:"label"`
@@ -42,15 +46,8 @@ type BufferState struct {
 	Cursor   int            `json:"cursor"`
 }
 
-// BufferAppend records an append operation against a runtime buffer.
-type BufferAppend struct {
-	Name string `json:"name"`
-	Text string `json:"text"`
-	Role string `json:"role"`
-}
-
-// TranscriptBlock describes one structured transcript item exposed to extensions.
-type TranscriptBlock struct {
+// BufferBlock describes one generic structured item inside a runtime buffer.
+type BufferBlock struct {
 	Metadata  map[string]any `json:"metadata"`
 	CreatedAt string         `json:"created_at"`
 	ID        string         `json:"id"`
@@ -59,15 +56,6 @@ type TranscriptBlock struct {
 	Text      string         `json:"text"`
 	Index     int            `json:"index"`
 	Streaming bool           `json:"streaming"`
-}
-
-// TranscriptState describes a structured, windowed transcript snapshot.
-type TranscriptState struct {
-	Metadata map[string]any    `json:"metadata"`
-	Blocks   []TranscriptBlock `json:"blocks"`
-	Count    int               `json:"count"`
-	Start    int               `json:"start"`
-	Limit    int               `json:"limit"`
 }
 
 // ActionCall requests a host-side runtime action.
@@ -125,14 +113,13 @@ type WindowState struct {
 
 // TerminalEvent describes a low-level terminal runtime event exposed to extensions.
 type TerminalEvent struct {
-	Buffers    map[string]BufferState `json:"buffers"`
-	Windows    map[string]WindowState `json:"windows"`
-	Context    map[string]any         `json:"context"`
-	Data       map[string]any         `json:"data"`
-	Name       string                 `json:"name"`
-	Key        ComposerKeyEvent       `json:"key"`
-	Layout     LayoutState            `json:"layout"`
-	Transcript TranscriptState        `json:"transcript"`
+	Buffers map[string]BufferState `json:"buffers"`
+	Windows map[string]WindowState `json:"windows"`
+	Context map[string]any         `json:"context"`
+	Data    map[string]any         `json:"data"`
+	Name    string                 `json:"name"`
+	Key     ComposerKeyEvent       `json:"key"`
+	Layout  LayoutState            `json:"layout"`
 }
 
 // TerminalEventResult describes mutations produced by low-level extension handlers.
@@ -141,7 +128,6 @@ type TerminalEventResult struct {
 	Windows        map[string]WindowState `json:"windows"`
 	Layout         *LayoutState           `json:"layout,omitempty"`
 	UICursor       *UICursor              `json:"ui_cursor,omitempty"`
-	Appends        []BufferAppend         `json:"appends"`
 	Actions        []ActionCall           `json:"actions"`
 	UIDrawOps      []UIDrawOp             `json:"ui_draw_ops"`
 	ResetUIWindows []string               `json:"reset_ui_windows"`
@@ -172,4 +158,9 @@ type TerminalEventRunner interface {
 // EventEmitter emits extension lifecycle events.
 type EventEmitter interface {
 	Emit(ctx context.Context, eventName string, payload map[string]any) error
+}
+
+// TimerScheduler reports when extension timers should wake the host loop.
+type TimerScheduler interface {
+	NextTimerDelay(now time.Time) (time.Duration, bool)
 }

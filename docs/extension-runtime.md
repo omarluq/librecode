@@ -22,6 +22,9 @@ We prefer general mechanisms over one-off feature hooks.
 Good examples:
 
 - buffers
+- windows
+- layout
+- UI drawing
 - events
 - keymaps
 - commands
@@ -30,6 +33,9 @@ Good examples:
 Less desirable long-term examples:
 
 - feature-specific hardcoded plugin points such as a dedicated Vim composer API
+- product-specific host APIs such as `transcript.append` or `thinking.show`
+
+The architectural rule is: if an API name is a product noun, it probably belongs in Lua as a helper module. If it is a primitive, it belongs in the Go runtime kernel.
 
 ### 2. Trusted local code
 
@@ -139,7 +145,7 @@ Today:
 
 - `composer` is backed by the canonical composer buffer
 - `status` exposes the current two-line footer text and can be overridden as a runtime buffer
-- `transcript` exposes message/streaming counts as metadata; overriding it lets extensions replace the stock transcript text render
+- `transcript` exposes message/streaming counts plus bounded recent blocks; overriding it lets extensions replace the stock transcript text render
 - `thinking` exposes thinking counts as metadata and can be overridden by extensions
 - `tools` exposes tool-result counts as metadata and can be overridden by extensions
 - custom buffers persist in `app.extensionRuntimeBuffers`
@@ -153,6 +159,12 @@ The terminal currently emits low-level extension events for:
 - `startup`
 - `key`
 - `prompt_submit`
+- `prompt_user_entry`
+- `prompt_done`
+- `model_delta`
+- `thinking_delta`
+- `tool_start`
+- `tool_end`
 - `resize`
 - `render`
 
@@ -161,7 +173,7 @@ The assistant runtime also emits named extension lifecycle events through `Manag
 - `before_agent_start`
 - `agent_end`
 
-This is still too small for the intended design.
+This is enough for UI/runtime observation, but not enough for full assistant-loop replacement.
 
 ## Current strengths
 
@@ -179,7 +191,9 @@ The current system already proves a few important things:
 
 Core UI state is increasingly exposed as buffers, but much of it is still projected from Go-owned structures.
 
-Current stock runtime buffers include `composer`, `status`, `transcript`, `thinking`, and `tools`. The composer is canonical; `transcript`, `thinking`, and `tools` now expose lightweight metadata buffers plus a bounded structured transcript snapshot on each terminal event. The stock transcript buffer is still primarily an override point for custom rendering, while `event.transcript` / `librecode.transcript.get()` is the read-side structured view. We need to move toward write-side structured message control next.
+Current stock runtime buffers include `composer`, `status`, `transcript`, `thinking`, and `tools`. The composer is canonical; `transcript`, `thinking`, and `tools` expose lightweight metadata buffers. The `transcript` buffer also exposes a bounded `blocks` snapshot for recent message/streaming data.
+
+Transcript read/write convenience should stay out of the Go host API. Use generic `buf` operations directly or implement product helpers as Lua modules on top.
 
 ### 2. Render/layout is still host-first
 
@@ -215,9 +229,9 @@ The next missing event families are deeper runtime replacement hooks:
 - message_append
 - transcript_render
 
-### 4. Jobs, timers, and scheduling are missing
+### 4. Jobs and scheduling are still incomplete
 
-A programmable runtime needs async primitives so extensions can do useful work without blocking the core loop.
+A programmable runtime needs async primitives so extensions can do useful work without blocking the core loop. Timer primitives now exist (`timer.defer`, `timer.interval`, `timer.stop`), but process/job spawning and a general scheduler are still missing.
 
 ### 5. The default assistant/runtime loop is still mostly owned by Go
 
@@ -279,6 +293,17 @@ The long-term system should allow extensions to:
 - control how tool activity is represented
 - drive non-chat workflows entirely
 
+## Go kernel vs Lua product layer
+
+The intended split is:
+
+- **Go kernel**: terminal I/O, event dispatch, Lua VM management, buffers, windows, layout, UI draw backend, keymaps, commands, jobs/timers, model/tool/session/config primitives, and invariant protection.
+- **Lua product layer**: chat UI, composer behavior, Vim mode, transcript rendering, statusline, prompt history UX, skills/context policy, assistant orchestration policy, reskins, and alternate applications.
+
+Official bundled behavior should increasingly be written against the same Lua API available to users.
+
+See `docs/runtime-architecture.md` for the full responsibility boundary and `docs/extension-roadmap.md` for the migration plan.
+
 ## Migration strategy
 
 This should be incremental, not a rewrite.
@@ -319,6 +344,10 @@ Next: rebuild more of the stock UI against those same public primitives.
 ### Phase 5: expose assistant/runtime replacement hooks
 
 Let extensions own more of the request/model/tool/session loop.
+
+### Phase 6: move product convenience into Lua modules
+
+In progress. Avoid expanding Go with product-specific APIs. Build convenience modules such as `librecode.chat`, `librecode.composer`, and `librecode.statusline` in Lua on top of primitives.
 
 ## Documentation and planning split
 
