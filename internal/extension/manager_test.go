@@ -339,6 +339,64 @@ end)
 	assert.Equal(t, extension.ActionCall{Name: "history.prev"}, result.Actions[0])
 }
 
+func TestManager_UIPrimitivesUseTerminalWidth(t *testing.T) {
+	t.Parallel()
+
+	manager := loadTestExtension(t, `
+local lc = require("librecode")
+
+lc.on("render", function()
+  lc.buf.set_text("metrics", table.concat({
+    tostring(lc.ui.measure("語")),
+    lc.ui.truncate("abc語", 4),
+    lc.ui.pad_right("語", 4),
+    table.concat(lc.ui.wrap("aa bb cc", 5), "|"),
+  }, "\n"))
+end)
+`)
+
+	event := testTerminalEventWithComposerWindow("", "")
+	event.Name = "render"
+	result, err := manager.HandleTerminalEvent(context.Background(), &event)
+	require.NoError(t, err)
+
+	metrics := result.Buffers["metrics"].Text
+	assert.Equal(t, "2\nabc…\n語  \naa|bb cc", metrics)
+}
+
+func TestManager_UIDrawLinesSpansAndBox(t *testing.T) {
+	t.Parallel()
+
+	manager := loadTestExtension(t, `
+local lc = require("librecode")
+
+lc.on("render", function()
+  lc.ui.draw_lines("composer", 1, 2, { "one", "two" }, { fg = "muted" })
+  lc.ui.draw_spans("composer", 3, 0, {
+    { text = "hot", fg = "accent", bold = true },
+    { text = " cold", fg = "dim" },
+  })
+  lc.ui.draw_box("composer", { fg = "border" })
+end)
+`)
+
+	event := testTerminalEventWithComposerWindow("", "")
+	event.Name = "render"
+	result, err := manager.HandleTerminalEvent(context.Background(), &event)
+	require.NoError(t, err)
+
+	require.Len(t, result.UIDrawOps, 4)
+	assert.Equal(t, extension.UIDrawKindText, result.UIDrawOps[0].Kind)
+	assert.Equal(t, "one", result.UIDrawOps[0].Text)
+	assert.Equal(t, 1, result.UIDrawOps[0].Row)
+	assert.Equal(t, extension.UIDrawKindText, result.UIDrawOps[1].Kind)
+	assert.Equal(t, extension.UIDrawKindSpans, result.UIDrawOps[2].Kind)
+	require.Len(t, result.UIDrawOps[2].Spans, 2)
+	assert.Equal(t, "hot", result.UIDrawOps[2].Spans[0].Text)
+	assert.True(t, result.UIDrawOps[2].Spans[0].Style.Bold)
+	assert.Equal(t, extension.UIDrawKindBox, result.UIDrawOps[3].Kind)
+}
+
 func TestDefaultLoadPathsPrependsOfficialExtensions(t *testing.T) {
 	t.Parallel()
 

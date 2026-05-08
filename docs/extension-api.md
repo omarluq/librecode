@@ -12,6 +12,7 @@ See also:
 - `docs/runtime-architecture.md`
 - `docs/extension-runtime.md`
 - `docs/extension-roadmap.md`
+- `docs/rendering-boundary.md`
 
 ## Loading model
 
@@ -347,9 +348,39 @@ Replaces the runtime layout with the provided table. This is intentionally low-l
 
 Low-level drawing APIs enqueue window-relative draw operations for the current frame/event.
 
+Current UI primitives are intentionally small. They are enough for simple windows like the bundled statusline and Vim composer, but not yet enough to faithfully reimplement complex hot renderers such as the transcript. See `docs/rendering-boundary.md` for the current rendering boundary.
+
+### `librecode.ui.measure(text)`
+
+Returns terminal display width in cells using the Go rendering backend's grapheme-aware width logic.
+
+### `librecode.ui.truncate(text, width)`
+
+Returns text truncated to fit `width` cells. Truncation is grapheme-aware and appends an ellipsis when possible.
+
+### `librecode.ui.pad_right(text, width)`
+
+Returns text padded/truncated to exactly `width` cells.
+
+### `librecode.ui.wrap(text, width)`
+
+Returns a list of wrapped lines using the same generic Go-backed wrapping logic used by stock renderers.
+
 ### `librecode.ui.clear_window(name)`
 ### `librecode.ui.draw_text(name, row, col, text[, style])`
+### `librecode.ui.draw_lines(name, row, col, lines[, style])`
+### `librecode.ui.draw_spans(name, row, col, spans)`
+### `librecode.ui.draw_box(name[, style])`
 ### `librecode.ui.set_cursor(name, row, col)`
+
+`draw_spans` accepts inline spans such as:
+
+```lua
+{
+  { text = "hot", fg = "accent", bold = true },
+  { text = " cold", fg = "dim" },
+}
+```
 
 Example:
 
@@ -359,10 +390,16 @@ lc.on("render", function()
   if not win then return end
   lc.win.set_renderer(win, "extension")
   lc.ui.clear_window(win)
-  lc.ui.draw_text(win, 0, 0, "custom composer", { fg = "accent", bold = true })
+  lc.ui.draw_box(win, { fg = "border" })
+  lc.ui.draw_spans(win, 1, 2, {
+    { text = "custom ", fg = "text" },
+    { text = "composer", fg = "accent", bold = true },
+  })
   lc.ui.set_cursor(win, 1, 2)
 end)
 ```
+
+Still-planned generic UI primitives include clipping helpers, theme/highlight resolution, viewport helpers, virtual-list helpers, and richer batched draw operations.
 
 ## `librecode.buf`
 

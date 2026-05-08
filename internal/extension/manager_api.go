@@ -76,8 +76,15 @@ func (manager *Manager) luaUIAPI(extensionRuntime *luaExtension) *lua.LTable {
 	apiTable := state.NewTable()
 	state.SetFuncs(apiTable, map[string]lua.LGFunction{
 		"clear_window": manager.luaUIClearWindow(extensionRuntime),
+		"draw_box":     manager.luaUIDrawBox(extensionRuntime),
+		"draw_lines":   manager.luaUIDrawLines(extensionRuntime),
+		"draw_spans":   manager.luaUIDrawSpans(extensionRuntime),
 		"draw_text":    manager.luaUIDrawText(extensionRuntime),
+		"measure":      manager.luaUIMeasure(),
+		"pad_right":    manager.luaUIPadRight(),
 		"set_cursor":   manager.luaUISetCursor(extensionRuntime),
+		"truncate":     manager.luaUITruncate(),
+		"wrap":         manager.luaUIWrap(),
 	})
 
 	return apiTable
@@ -654,35 +661,120 @@ func (manager *Manager) luaUIClearWindow(extensionRuntime *luaExtension) lua.LGF
 	}
 }
 
+func (manager *Manager) luaUIMeasure() lua.LGFunction {
+	return func(state *lua.LState) int {
+		state.Push(lua.LNumber(uiTextWidth(state.CheckString(1))))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaUITruncate() lua.LGFunction {
+	return func(state *lua.LState) int {
+		state.Push(lua.LString(uiTextTruncate(state.CheckString(1), state.CheckInt(2))))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaUIPadRight() lua.LGFunction {
+	return func(state *lua.LState) int {
+		state.Push(lua.LString(uiTextPadRight(state.CheckString(1), state.CheckInt(2))))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaUIWrap() lua.LGFunction {
+	return func(state *lua.LState) int {
+		state.Push(stringSliceToLuaTable(state, uiTextWrap(state.CheckString(1), state.CheckInt(2))))
+
+		return 1
+	}
+}
+
 func (manager *Manager) luaUIDrawText(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		windowName := state.CheckString(1)
 		row := state.CheckInt(2)
 		col := state.CheckInt(3)
 		text := state.CheckString(4)
-		styleTable := state.OptTable(5, nil)
-		drawOp := UIDrawOp{
-			Style: UIStyle{
-				FG:     "",
-				BG:     "",
-				Bold:   false,
-				Italic: false,
-			},
+		style := luaOptionalUIStyle(state, 5)
+		checkActiveEvent(state, extensionRuntime).appendUIDrawOp(&UIDrawOp{
+			Style:  style,
+			Spans:  []UISpan{},
 			Window: windowName,
+			Kind:   UIDrawKindText,
 			Text:   text,
 			Row:    row,
 			Col:    col,
 			Clear:  false,
+		})
+
+		return 0
+	}
+}
+
+func (manager *Manager) luaUIDrawLines(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		windowName := state.CheckString(1)
+		row := state.CheckInt(2)
+		col := state.CheckInt(3)
+		lines := luaStringSlice(state.CheckTable(4))
+		style := luaOptionalUIStyle(state, 5)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		for index, line := range lines {
+			hostEvent.appendUIDrawOp(&UIDrawOp{
+				Style:  style,
+				Spans:  []UISpan{},
+				Window: windowName,
+				Kind:   UIDrawKindText,
+				Text:   line,
+				Row:    row + index,
+				Col:    col,
+				Clear:  false,
+			})
 		}
-		if styleTable != nil {
-			drawOp.Style = UIStyle{
-				FG:     luaTableString(styleTable, "fg", ""),
-				BG:     luaTableString(styleTable, "bg", ""),
-				Bold:   luaTableBool(styleTable, "bold"),
-				Italic: luaTableBool(styleTable, "italic"),
-			}
-		}
-		checkActiveEvent(state, extensionRuntime).appendUIDrawOp(&drawOp)
+
+		return 0
+	}
+}
+
+func (manager *Manager) luaUIDrawSpans(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		windowName := state.CheckString(1)
+		row := state.CheckInt(2)
+		col := state.CheckInt(3)
+		spans := luaUISpans(state.CheckTable(4))
+		checkActiveEvent(state, extensionRuntime).appendUIDrawOp(&UIDrawOp{
+			Style:  UIStyle{FG: "", BG: "", Bold: false, Italic: false},
+			Spans:  spans,
+			Window: windowName,
+			Kind:   UIDrawKindSpans,
+			Text:   "",
+			Row:    row,
+			Col:    col,
+			Clear:  false,
+		})
+
+		return 0
+	}
+}
+
+func (manager *Manager) luaUIDrawBox(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		windowName := state.CheckString(1)
+		style := luaOptionalUIStyle(state, 2)
+		checkActiveEvent(state, extensionRuntime).appendUIDrawOp(&UIDrawOp{
+			Style:  style,
+			Spans:  []UISpan{},
+			Window: windowName,
+			Kind:   UIDrawKindBox,
+			Text:   "",
+			Row:    0,
+			Col:    0,
+			Clear:  false,
+		})
 
 		return 0
 	}
@@ -697,6 +789,39 @@ func (manager *Manager) luaUISetCursor(extensionRuntime *luaExtension) lua.LGFun
 
 		return 0
 	}
+}
+
+func luaOptionalUIStyle(state *lua.LState, index int) UIStyle {
+	value := state.Get(index)
+	table, ok := value.(*lua.LTable)
+	if !ok {
+		return UIStyle{FG: "", BG: "", Bold: false, Italic: false}
+	}
+
+	return luaUIStyle(table)
+}
+
+func luaUIStyle(table *lua.LTable) UIStyle {
+	return UIStyle{
+		FG:     luaTableString(table, "fg", ""),
+		BG:     luaTableString(table, "bg", ""),
+		Bold:   luaTableBool(table, "bold"),
+		Italic: luaTableBool(table, "italic"),
+	}
+}
+
+func luaUISpans(table *lua.LTable) []UISpan {
+	spans := make([]UISpan, 0, table.Len())
+	for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
+		if spanTable, ok := table.RawGetInt(valueIndex).(*lua.LTable); ok {
+			spans = append(spans, UISpan{
+				Text:  luaTableString(spanTable, luaFieldText, ""),
+				Style: luaUIStyle(spanTable),
+			})
+		}
+	}
+
+	return spans
 }
 
 func checkActiveEvent(state *lua.LState, extensionRuntime *luaExtension) *luaHostEvent {

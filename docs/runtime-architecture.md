@@ -11,6 +11,7 @@ Related docs:
 - [`docs/adr/0001-programmable-runtime.md`](adr/0001-programmable-runtime.md)
 - [`docs/extension-runtime.md`](extension-runtime.md)
 - [`docs/extension-api.md`](extension-api.md)
+- [`docs/rendering-boundary.md`](rendering-boundary.md)
 
 ## North star
 
@@ -22,7 +23,9 @@ A useful shorthand:
 
 > Go is the kernel. Lua is the product layer.
 
-The kernel provides sharp primitives. Bundled Lua composes those primitives into chat, Vim mode, transcript rendering, statuslines, prompt history, and eventually assistant orchestration.
+The kernel provides sharp primitives. Bundled Lua composes those primitives into chat, Vim mode, statuslines, prompt history, layout decisions, and eventually assistant orchestration.
+
+Important rendering nuance: Lua is the product/control layer, but Go remains the fast rendering backend. Complex hot renderers should move to Lua only after the Go kernel exposes the generic measuring, wrapping, clipping, batching, viewport, and highlight primitives needed to preserve visual parity and performance.
 
 ## Responsibility boundary
 
@@ -35,6 +38,8 @@ Go should own the pieces that require native integration, performance, persisten
 - extension loading and Lua VM management
 - event dispatch and transaction application
 - buffers, windows, layout, and low-level UI drawing backends
+- measuring, wrapping, clipping, style application, and draw batching
+- viewport and virtual-list primitives for large histories
 - keymap/command/autocmd registration and dispatch
 - jobs, timers, and scheduling primitives
 - model/provider clients as callable primitives
@@ -51,7 +56,7 @@ Lua should own the behavior that makes librecode feel like a particular applicat
 - default chat layout
 - composer behavior
 - Vim mode
-- transcript presentation
+- transcript presentation policy, once generic render primitives can preserve parity
 - statusline/footer content
 - prompt history UX
 - autocomplete presentation
@@ -124,7 +129,7 @@ These pieces are useful today but should not define the long-term architecture:
 
 | Area | Current value | Migration direction |
 | --- | --- | --- |
-| Go stock renderer | Provides a working default UI while primitives mature. | Rebuild default UI as bundled Lua modules over buffer/window/layout/ui APIs. |
+| Go stock renderer | Provides a working default UI and high-quality hot rendering while primitives mature. | Keep mature renderers until Lua can match parity through generic Go-backed UI primitives; move simple surfaces first. |
 | Bounded transcript `buffer.blocks` snapshot | Practical extension read-side access without unbounded projections. | Keep bounded and treat as generic structured buffer data, not a separate transcript host API. |
 | Runtime buffer names like `composer`, `transcript`, `status` | Useful default buffers and roles. | Treat them as conventional defaults, not privileged API concepts. |
 | `action.run("...")` | Simple bridge for host actions. | Move toward generic commands/events and lower-level primitives; keep only kernel actions in Go. |
@@ -163,14 +168,15 @@ This is enough to prove the model, but not enough to make the entire app replace
 
 The remaining architectural gaps are mostly about ownership:
 
-- default transcript/status/tool rendering is still mostly Go-owned
+- default transcript/tool rendering is still mostly Go-owned
 - transcript is not a true structured buffer yet; it is a bounded snapshot plus metadata buffer
 - layout is not fully canonical; Go still derives the default stock layout
 - the assistant prompt/model/tool loop is still primarily Go-owned
-- jobs, timers, and scheduling are missing
+- jobs/processes and a general scheduler are missing
 - extension renderers can draw, but there is no full highlight/extmark/namespace model yet
+- generic rendering primitives are still too small for transcript-quality parity
 - session/model/tool stores are not exposed as generic runtime primitives
-- the default chat UI has not been moved into bundled Lua modules
+- the default chat UI has only partially moved into bundled Lua modules
 
 ## Target runtime model
 
@@ -215,13 +221,18 @@ The long-term default chat layout should be regular layout state, not a hardcode
 
 `ui.*` is the low-level grid drawing layer for extensions that own a window renderer.
 
-Longer term this should gain:
+Go should back the hot/terminal-correct pieces of rendering. Lua should compose them.
 
-- highlights
+Current first-pass primitives include terminal-width measurement, truncation, padding, wrapping, drawing text/lines/spans, drawing boxes, clearing windows, and setting cursors.
+
+Longer term this should still gain:
+
+- highlights and theme token resolution
 - namespaces
 - extmarks/virtual text
-- clipping helpers
-- draw-lines and region operations
+- clipping helpers and region operations
+- richer batched draw operations
+- viewport and virtual-list helpers for large histories
 
 ### Events
 
@@ -287,11 +298,11 @@ Move product convenience into bundled Lua modules:
 
 These modules should compose primitives and be replaceable.
 
-### Phase 3: default UI in Lua
+### Phase 3: default UI in Lua, where primitives are ready
 
-Move default layout/status/composer/transcript rendering into official Lua extensions under `extensions/`. The statusline has started this migration through `extensions/statusline.lua`.
+Move default layout/status/composer behavior into official Lua extensions under `extensions/` where parity is achievable. The statusline has started this migration through `extensions/statusline.lua`; Vim owns composer behavior/rendering.
 
-Go keeps a minimal fallback UI for recovery/debugging, but the normal product path should use public APIs.
+Do not force-migrate complex hot renderers such as transcript rendering until generic Go-backed UI primitives are strong enough. Go keeps mature fallback/stock rendering for quality and performance while Lua control-plane primitives mature.
 
 ### Phase 4: runtime replacement hooks
 

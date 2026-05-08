@@ -7,40 +7,9 @@ local function stringify(value)
   return tostring(value)
 end
 
-local function display_width(text)
-  local ok, chars = pcall(function()
-    local count = 0
-    for _ in string.gmatch(text or "", "[%z\1-\127\194-\244][\128-\191]*") do
-      count = count + 1
-    end
-    return count
-  end)
-  if ok then
-    return chars
-  end
-  return #(text or "")
-end
-
 function M.truncate(text, width)
-  text = stringify(text)
-  width = width or 0
-  if width <= 0 then
-    return ""
-  end
-  if display_width(text) <= width then
-    return text
-  end
-
-  local out = {}
-  local count = 0
-  for char in string.gmatch(text, "[%z\1-\127\194-\244][\128-\191]*") do
-    if count >= width then
-      break
-    end
-    out[#out + 1] = char
-    count = count + 1
-  end
-  return table.concat(out, "")
+  local lc = require("librecode")
+  return lc.ui.truncate(stringify(text), width or 0)
 end
 
 function M.current_status(event)

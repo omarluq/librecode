@@ -9,7 +9,7 @@ The short version:
 - today, extensions can already register commands, tools, keymaps, namespaces, autocmd-like handlers, and runtime buffer mutations
 - tomorrow, those primitives should become the main architecture of the terminal/runtime itself
 
-This document is intentionally architecture-first. See `docs/extension-api.md` for the current user-facing Lua API.
+This document is intentionally architecture-first. See `docs/extension-api.md` for the current user-facing Lua API and `docs/rendering-boundary.md` for the control-plane/rendering-kernel split.
 
 ## Design goals
 
@@ -50,6 +50,8 @@ librecode follows a Unix-style trust model:
 ### 3. Default UI as just another implementation
 
 The bundled terminal chat UI should increasingly become a client of the extension/runtime primitives, not a privileged special case.
+
+Lua should own product decisions and composition. Go should keep the hot terminal rendering backend: measuring, wrapping, clipping, batching, viewporting, and style application.
 
 That means users should eventually be able to:
 
@@ -201,6 +203,8 @@ Extensions can mutate the active layout, enqueue low-level window-relative draw 
 
 When an extension owns a window, the stock Go renderer skips that window and only extension draw operations/cursor placement are applied. This is now enough for bundled extensions such as Vim mode to fully redraw the composer window, and the bundled statusline extension now owns the status window. The default Go renderer still owns the stock chat drawing order and built-in transcript rendering, so the app has not yet been rebuilt fully on public layout/render primitives.
 
+That is intentional for now. Transcript rendering is a hot, complex surface and should stay Go-owned until the runtime exposes generic rendering primitives strong enough for Lua to match visual parity and performance.
+
 ### 3. Event surface still needs more lifecycle points
 
 The runtime exposes the core terminal and streaming lifecycle now:
@@ -297,8 +301,10 @@ The long-term system should allow extensions to:
 
 The intended split is:
 
-- **Go kernel**: terminal I/O, event dispatch, Lua VM management, buffers, windows, layout, UI draw backend, keymaps, commands, jobs/timers, model/tool/session/config primitives, and invariant protection.
-- **Lua product layer**: chat UI, composer behavior, Vim mode, transcript rendering, statusline, prompt history UX, skills/context policy, assistant orchestration policy, reskins, and alternate applications.
+- **Go kernel**: terminal I/O, event dispatch, Lua VM management, buffers, windows, layout, UI draw backend, measuring, wrapping, clipping, batching, viewporting, keymaps, commands, jobs/timers, model/tool/session/config primitives, and invariant protection.
+- **Lua product layer**: chat UI policy, composer behavior, Vim mode, transcript presentation decisions, statusline, prompt history UX, skills/context policy, assistant orchestration policy, reskins, and alternate applications.
+
+Lua can own a window renderer, but complex renderers should use Go-backed generic primitives rather than ad hoc Lua string math in hot paths.
 
 Official bundled behavior should increasingly be written against the same Lua API available to users.
 

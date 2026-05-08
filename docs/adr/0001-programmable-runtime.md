@@ -35,6 +35,7 @@ The extension system will prioritize small composable building blocks:
 - windows
 - layout
 - UI drawing
+- Go-backed measurement/wrapping/clipping/batching primitives
 - keymaps
 - commands
 - autocmd-like events
@@ -44,6 +45,8 @@ The extension system will prioritize small composable building blocks:
 - model/tool/session primitives
 
 Product-specific convenience should be built in Lua modules on top of those primitives. The Go host should avoid growing narrow APIs such as transcript/composer/thinking helpers unless they are clearly temporary compatibility surfaces.
+
+Lua is the product/control layer, not necessarily the hot rendering engine. Complex renderers should use generic Go-backed rendering primitives and should stay in Go until Lua can match visual parity and performance through public primitives.
 
 ## Consequences
 
@@ -76,9 +79,10 @@ The migration should happen incrementally.
 1. Add low-level Lua primitives for events, buffers, keymaps, commands, and namespaces.
 2. Expand the event surface so the default terminal and assistant loops expose meaningful lifecycle hooks.
 3. Move more core terminal state onto the shared buffer/event model.
-4. Add render and layout primitives so extensions can replace the default UI.
-5. Add runtime hooks so extensions can override more of the assistant/model/tool flow.
-6. Gradually rebuild bundled behaviors on top of the public runtime API.
+4. Add render and layout primitives so extensions can replace simple UI surfaces.
+5. Strengthen generic rendering primitives before migrating complex hot surfaces such as transcript rendering.
+6. Add runtime hooks so extensions can override more of the assistant/model/tool flow.
+7. Gradually rebuild bundled behaviors on top of the public runtime API where parity is proven.
 
 ## Notes
 
@@ -88,3 +92,4 @@ This ADR establishes the direction. The detailed shape of the runtime lives in:
 - `docs/extension-runtime.md`
 - `docs/extension-roadmap.md`
 - `docs/extension-api.md`
+- `docs/rendering-boundary.md`

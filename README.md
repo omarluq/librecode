@@ -169,6 +169,8 @@ Current extension capabilities include:
 
 Bundled extensions such as [`extensions/vim-mode.lua`](extensions/vim-mode.lua) and [`extensions/statusline.lua`](extensions/statusline.lua) demonstrate how product UI behavior is implemented through the public Lua runtime API.
 
+Architecture note: Lua is the product/control layer, while Go remains the fast terminal rendering backend. Simple UI surfaces can be Lua-owned today; complex hot surfaces such as transcript rendering stay Go-owned until generic Go-backed rendering primitives can preserve visual parity and performance.
+
 For architecture, roadmap, and API details, see:
 
 - [`docs/adr/0001-programmable-runtime.md`](docs/adr/0001-programmable-runtime.md)
@@ -176,6 +178,7 @@ For architecture, roadmap, and API details, see:
 - [`docs/extension-runtime.md`](docs/extension-runtime.md)
 - [`docs/extension-roadmap.md`](docs/extension-roadmap.md)
 - [`docs/extension-api.md`](docs/extension-api.md)
+- [`docs/rendering-boundary.md`](docs/rendering-boundary.md)
 
 Inspect loaded extensions:
 

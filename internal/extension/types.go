@@ -63,6 +63,15 @@ type ActionCall struct {
 	Name string `json:"name"`
 }
 
+const (
+	// UIDrawKindBox draws a border around a window.
+	UIDrawKindBox = "box"
+	// UIDrawKindSpans draws multiple styled inline text spans.
+	UIDrawKindSpans = "spans"
+	// UIDrawKindText draws one styled text segment.
+	UIDrawKindText = "text"
+)
+
 // UIStyle describes minimal low-level styling for extension-driven draw operations.
 type UIStyle struct {
 	FG     string `json:"fg"`
@@ -71,14 +80,22 @@ type UIStyle struct {
 	Italic bool   `json:"italic"`
 }
 
+// UISpan describes one styled inline segment for extension-driven draw operations.
+type UISpan struct {
+	Text  string  `json:"text"`
+	Style UIStyle `json:"style"`
+}
+
 // UIDrawOp describes one low-level window-relative drawing operation.
 type UIDrawOp struct {
-	Window string  `json:"window"`
-	Text   string  `json:"text"`
-	Style  UIStyle `json:"style"`
-	Row    int     `json:"row"`
-	Col    int     `json:"col"`
-	Clear  bool    `json:"clear"`
+	Window string   `json:"window"`
+	Kind   string   `json:"kind"`
+	Text   string   `json:"text"`
+	Style  UIStyle  `json:"style"`
+	Spans  []UISpan `json:"spans"`
+	Row    int      `json:"row"`
+	Col    int      `json:"col"`
+	Clear  bool     `json:"clear"`
 }
 
 // UICursor requests a cursor position relative to a window.

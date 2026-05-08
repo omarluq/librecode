@@ -776,31 +776,16 @@ local function composer_window_buffer()
   return buf
 end
 
-local function rune_count(text)
-  if text == nil or text == "" then
-    return 0
-  end
-  return #utf8_chars(text)
+local function display_width(text)
+  return librecode.ui.measure(text or "")
 end
 
 local function rune_slice(text, width)
-  if width <= 0 then
-    return ""
-  end
-  local chars = utf8_chars(text)
-  local out = {}
-  for index = 1, math.min(width, #chars) do
-    out[index] = chars[index]
-  end
-  return table.concat(out, "")
+  return librecode.ui.truncate(text or "", width)
 end
 
 local function pad_right(text, width)
-  local length = rune_count(text)
-  if length >= width then
-    return rune_slice(text, width)
-  end
-  return text .. string.rep(" ", width - length)
+  return librecode.ui.pad_right(text or "", width)
 end
 
 local function split_render_lines(chars, inner_width, cursor)
@@ -826,14 +811,15 @@ local function split_render_lines(chars, inner_width, cursor)
       row = row + 1
       col = 0
     else
-      if col >= inner_width then
+      local char_width = display_width(char)
+      if col + char_width > inner_width then
         lines[#lines + 1] = current
         current = ""
         row = row + 1
         col = 0
       end
       current = current .. char
-      col = col + 1
+      col = col + char_width
     end
   end
 
@@ -855,7 +841,7 @@ local function top_border(width)
   end
   local inner = math.max(1, width - 2)
   local suffix = rune_slice(label() .. "──", inner)
-  return "╭" .. string.rep("─", math.max(0, inner - rune_count(suffix))) .. suffix .. "╮"
+  return "╭" .. string.rep("─", math.max(0, inner - display_width(suffix))) .. suffix .. "╮"
 end
 
 local function bottom_border(width)

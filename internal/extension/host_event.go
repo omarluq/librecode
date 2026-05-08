@@ -56,7 +56,7 @@ func (event *luaHostEvent) result() TerminalEventResult {
 		Windows:        cloneChangedWindows(event.windows, event.changedWindows),
 		Layout:         event.resultLayout(),
 		Actions:        append([]ActionCall{}, event.actions...),
-		UIDrawOps:      append([]UIDrawOp{}, event.uiDrawOps...),
+		UIDrawOps:      cloneUIDrawOps(event.uiDrawOps),
 		ResetUIWindows: append([]string{}, event.resetUIWindows...),
 		DeletedBuffers: append([]string{}, event.deletedBuffers...),
 		DeletedWindows: append([]string{}, event.deletedWindows...),
@@ -472,6 +472,16 @@ func cloneLayoutPtr(layout *LayoutState) *LayoutState {
 	cloned := cloneLayout(*layout)
 
 	return &cloned
+}
+
+func cloneUIDrawOps(drawOps []UIDrawOp) []UIDrawOp {
+	cloned := make([]UIDrawOp, len(drawOps))
+	for index := range drawOps {
+		cloned[index] = drawOps[index]
+		cloned[index].Spans = append([]UISpan{}, drawOps[index].Spans...)
+	}
+
+	return cloned
 }
 
 func cloneUICursor(cursor *UICursor) *UICursor {

@@ -26,6 +26,8 @@ The runtime currently has:
 
 This is a strong foundation, but Go still owns most stock chat rendering and assistant orchestration.
 
+Important boundary: Lua is the control/product layer; Go remains the fast terminal rendering backend. Complex hot renderers should migrate only after generic Go-backed rendering primitives can preserve parity and performance.
+
 ## Immediate cleanup
 
 ### 1. Do not add transcript-specific host writes
@@ -90,37 +92,52 @@ chat.append_message("assistant", "hello")
 
 Internally, this should use `buf`, `win`, `layout`, `ui`, `event`, and `action` primitives.
 
-## Phase 3: move default terminal UI into Lua
+## Phase 3: move default terminal UI into Lua where parity is ready
 
-Goal: make the stock chat UI a bundled implementation instead of hardcoded Go policy.
+Goal: make the stock chat UI a bundled implementation instead of hardcoded Go policy without degrading visual quality or render performance.
 
-Move these behaviors into official extensions/modules incrementally:
+Move simple/product-policy behaviors into official extensions/modules incrementally:
 
 - default statusline text (first pass implemented in `extensions/statusline.lua`)
-- default composer rendering
+- default composer behavior/rendering where extension-owned rendering already works
 - prompt history UX
-- autocomplete rendering
-- transcript rendering
-- thinking/tool block presentation
+- autocomplete presentation once generic UI primitives are sufficient
 - default layout construction
 
-Go may keep a minimal fallback renderer for recovery and tests, but the normal path should exercise public runtime APIs.
+Keep complex hot renderers in Go until primitives are ready:
+
+- transcript rendering
+- thinking/tool block presentation when coupled to transcript scrollback
+- large-history virtualized lists
+
+The failed transcript migration showed the boundary: Lua should decide what to show, but Go must provide terminal-correct measuring, wrapping, clipping, batching, viewport, and highlight primitives before Lua owns that renderer.
 
 ## Phase 4: render model improvements
 
-Goal: make extension rendering powerful enough for full reskins.
+Goal: make extension rendering powerful enough for full reskins while keeping hot terminal work in Go.
 
-Add:
+First-pass implemented:
 
+- `ui.measure`
+- `ui.truncate`
+- `ui.pad_right`
+- `ui.wrap`
 - `ui.draw_lines`
-- clipping helpers
-- named highlight groups
+- `ui.draw_spans`
+- `ui.draw_box`
+
+Still add:
+
+- clipping helpers and clipped draw operations
+- named highlight groups and theme token resolution
 - namespace-scoped highlights
 - extmarks/virtual text or equivalent annotations
 - window viewport/scroll APIs
+- virtual-list helpers for large block lists
+- batched draw operations
 - per-window renderer registration helpers
 
-Keep raw draw operations available. Higher-level rendering should be Lua-composable.
+Keep raw draw operations available. Higher-level rendering should be Lua-composable, but measuring/wrapping/caching should use Go-backed primitives.
 
 ## Phase 5: runtime lifecycle and scheduling
 
@@ -182,7 +199,10 @@ Avoid these directions:
 - special extension hooks for one bundled feature when generic events/keymaps/buffers can handle it
 - unbounded snapshots in hot render/stream paths
 - hidden state mutation outside event transactions
-- making the Go stock renderer more featureful instead of moving policy to Lua
+- rewriting complex mature Go renderers in Lua before primitive parity exists
+- making product policy live in the Go stock renderer instead of moving policy to Lua
+
+It is acceptable to improve Go's generic rendering primitives; it is not acceptable to add transcript-specific rendering APIs just to paper over missing primitives.
 
 ## Definition of done for the architecture
 
@@ -194,3 +214,4 @@ The architecture is in the target state when:
 4. Transcript, statusline, thinking, and tool presentation are buffers/windows/renderers, not special Go APIs.
 5. Extensions can replace the assistant loop using model/tool/session primitives.
 6. Render/stream performance stays bounded regardless of session history size.
+7. Complex Lua-owned renderers use Go-backed generic rendering primitives rather than ad hoc Lua string math.

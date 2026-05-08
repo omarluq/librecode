@@ -596,17 +596,7 @@ func writeLine(screen cellTarget, row, width int, text string, style tcell.Style
 }
 
 func writeTextAt(screen cellTarget, column, row, width int, text string, style tcell.Style) {
-	if row < 0 || column < 0 || width <= 0 {
-		return
-	}
-	line := []rune(truncateText(text, width))
-	for index := 0; index < width; index++ {
-		value := ' '
-		if index < len(line) {
-			value = line[index]
-		}
-		screen.SetContent(column+index, row, value, nil, style)
-	}
+	writeTextCells(screen, column, row, width, text, style)
 }
 
 func writeLineWithVerticalBorders(
@@ -617,25 +607,24 @@ func writeLineWithVerticalBorders(
 	style tcell.Style,
 	borderColor tcell.Color,
 ) {
-	if row < 0 {
+	if row < 0 || width <= 0 {
 		return
 	}
-	line := []rune(truncateText(text, width))
-	for index := 0; index < width; index++ {
-		value := ' '
-		if index < len(line) {
-			value = line[index]
+	used := 0
+	for _, segment := range terminalTextSegments(text) {
+		if used+segment.Width > width {
+			break
 		}
-		cellStyle := style
-		if isVerticalBorderCell(value, index, width) {
-			cellStyle = style.Foreground(borderColor)
+		segmentStyle := style
+		if segment.Text == "│" && (used == 0 || used == width-1) {
+			segmentStyle = style.Foreground(borderColor)
 		}
-		screen.SetContent(index, row, value, nil, cellStyle)
+		used += writeTextSegment(screen, used, row, width-used, segment, segmentStyle)
 	}
-}
-
-func isVerticalBorderCell(value rune, index, width int) bool {
-	return value == '│' && (index == 0 || index == width-1)
+	for used < width {
+		screen.SetContent(used, row, ' ', nil, style)
+		used++
+	}
 }
 
 func writeEditorLine(
@@ -654,18 +643,55 @@ func writeEditorLine(
 	if row < 0 {
 		return
 	}
-	bodyRunes := []rune(truncateText(line.Text, width))
-	for index := 0; index < width; index++ {
-		value := ' '
-		if index < len(bodyRunes) {
-			value = bodyRunes[index]
+	used := writeEditorLineText(screen, row, width, line, borderStyle)
+	writeEditorLinePadding(screen, row, width, used, line, borderStyle)
+}
+
+func writeEditorLineText(
+	screen cellTarget,
+	row int,
+	width int,
+	line styledLine,
+	borderStyle tcell.Style,
+) int {
+	used := 0
+	for _, segment := range terminalTextSegments(line.Text) {
+		if used+segment.Width > width {
+			break
 		}
-		style := line.Style
-		if index < 2 || index >= max(0, width-2) {
-			style = borderStyle
-		}
-		screen.SetContent(index, row, value, nil, style)
+		used += writeTextSegment(
+			screen,
+			used,
+			row,
+			width-used,
+			segment,
+			editorLineStyle(used, width, line, borderStyle),
+		)
 	}
+
+	return used
+}
+
+func writeEditorLinePadding(
+	screen cellTarget,
+	row int,
+	width int,
+	used int,
+	line styledLine,
+	borderStyle tcell.Style,
+) {
+	for used < width {
+		screen.SetContent(used, row, ' ', nil, editorLineStyle(used, width, line, borderStyle))
+		used++
+	}
+}
+
+func editorLineStyle(position, width int, line styledLine, borderStyle tcell.Style) tcell.Style {
+	if position < 2 || position >= max(0, width-2) {
+		return borderStyle
+	}
+
+	return line.Style
 }
 
 func (app *App) cloneRuntimeWindows(layout *runtimeLayout) map[string]extension.WindowState {
@@ -726,15 +752,63 @@ func (app *App) applyUIOverrides(layout *runtimeLayout) {
 }
 
 func (app *App) drawUIWindowText(window *extension.WindowState, drawOp *extension.UIDrawOp) {
-	style := app.uiStyle(drawOp.Style)
-	writeTextAt(
-		app.frame,
-		window.X+drawOp.Col,
-		window.Y+drawOp.Row,
-		window.Width-drawOp.Col,
-		drawOp.Text,
-		style,
-	)
+	switch strings.ToLower(strings.TrimSpace(drawOp.Kind)) {
+	case extension.UIDrawKindBox:
+		app.drawUIWindowBox(window, drawOp.Style)
+	case extension.UIDrawKindSpans:
+		app.drawUIWindowSpans(window, drawOp)
+	default:
+		style := app.uiStyle(drawOp.Style)
+		writeTextAt(
+			app.frame,
+			window.X+drawOp.Col,
+			window.Y+drawOp.Row,
+			window.Width-drawOp.Col,
+			drawOp.Text,
+			style,
+		)
+	}
+}
+
+func (app *App) drawUIWindowBox(window *extension.WindowState, style extension.UIStyle) {
+	if window.Width <= 0 || window.Height <= 0 {
+		return
+	}
+	resolved := app.uiStyle(style)
+	if window.Width == 1 {
+		for row := 0; row < window.Height; row++ {
+			writeTextAt(app.frame, window.X, window.Y+row, 1, "│", resolved)
+		}
+		return
+	}
+	top := "╭" + strings.Repeat("─", max(0, window.Width-2)) + "╮"
+	bottom := "╰" + strings.Repeat("─", max(0, window.Width-2)) + "╯"
+	writeTextAt(app.frame, window.X, window.Y, window.Width, top, resolved)
+	for row := 1; row < window.Height-1; row++ {
+		writeTextAt(app.frame, window.X, window.Y+row, 1, "│", resolved)
+		writeTextAt(app.frame, window.X+window.Width-1, window.Y+row, 1, "│", resolved)
+	}
+	if window.Height > 1 {
+		writeTextAt(app.frame, window.X, window.Y+window.Height-1, window.Width, bottom, resolved)
+	}
+}
+
+func (app *App) drawUIWindowSpans(window *extension.WindowState, drawOp *extension.UIDrawOp) {
+	column := drawOp.Col
+	for _, span := range drawOp.Spans {
+		if column >= window.Width {
+			return
+		}
+		text := terminalTextFit(span.Text, window.Width-column)
+		column += writeTextCellsNoFill(
+			app.frame,
+			window.X+column,
+			window.Y+drawOp.Row,
+			window.Width-column,
+			text,
+			app.uiStyle(span.Style),
+		)
+	}
 }
 
 func clearWindow(target cellTarget, window *extension.WindowState) {
@@ -772,7 +846,7 @@ func (app *App) namedUIColor(name string) tcell.Color {
 		return app.theme.colors[colorMuted]
 	case "dim":
 		return app.theme.colors[colorDim]
-	case "text", "white", "default":
+	case string(colorText), "white", "default":
 		return app.theme.colors[colorText]
 	case "warning":
 		return app.theme.colors[colorWarning]

@@ -284,7 +284,7 @@ func bufferBlockForLua(block *BufferBlock) map[string]any {
 		"id":             block.ID,
 		"kind":           block.Kind,
 		"role":           block.Role,
-		"text":           block.Text,
+		luaFieldText:     block.Text,
 		"index":          block.Index,
 		"streaming":      block.Streaming,
 	}
@@ -412,15 +412,17 @@ func luaWindowState(name string, value lua.LValue) WindowState {
 
 func luaUIDrawOp(value lua.LValue) *UIDrawOp {
 	if table, ok := value.(*lua.LTable); ok {
+		spans := []UISpan{}
+		if spansTable, ok := table.RawGetString("spans").(*lua.LTable); ok {
+			spans = luaUISpans(spansTable)
+		}
+
 		return &UIDrawOp{
-			Style: UIStyle{
-				FG:     luaTableString(table, "fg", ""),
-				BG:     luaTableString(table, "bg", ""),
-				Bold:   luaTableBool(table, "bold"),
-				Italic: luaTableBool(table, "italic"),
-			},
+			Style:  luaUIStyle(table),
+			Spans:  spans,
 			Window: luaTableString(table, "window", ""),
-			Text:   luaTableString(table, "text", ""),
+			Kind:   luaTableString(table, "kind", ""),
+			Text:   luaTableString(table, luaFieldText, ""),
 			Row:    luaTableIntValue(table, "row"),
 			Col:    luaTableIntValue(table, "col"),
 			Clear:  luaTableBool(table, "clear"),

@@ -10,6 +10,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/extension"
 )
 
 func TestRenderStreamingMessageUsesTextColor(t *testing.T) {
@@ -213,6 +214,83 @@ func TestExtensionRendererSkipsDefaultComposerDraw(t *testing.T) {
 
 	if got := frameText(app.frame); strings.Contains(got, "host text") {
 		t.Fatalf("extension-rendered composer should skip host draw, frame = %q", got)
+	}
+}
+
+func TestUIRenderDrawsSpansWithoutClearingLaterSpans(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	layout := app.defaultRuntimeLayout(40, 12)
+	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.uiWindowOverrides[extensionBufferComposer] = uiWindowOverride{
+		DrawOps: []extension.UIDrawOp{
+			{
+				Style: extension.UIStyle{FG: "", BG: "", Bold: false, Italic: false},
+				Spans: []extension.UISpan{
+					{Text: "hot", Style: extension.UIStyle{FG: "accent", BG: "", Bold: true, Italic: false}},
+					{Text: " cold", Style: extension.UIStyle{FG: "dim", BG: "", Bold: false, Italic: false}},
+				},
+				Window: extensionBufferComposer,
+				Kind:   extension.UIDrawKindSpans,
+				Text:   "",
+				Row:    1,
+				Col:    0,
+				Clear:  false,
+			},
+		},
+		Reset: true,
+	}
+
+	app.applyUIOverrides(&layout)
+
+	text := frameText(app.frame)
+	if !strings.Contains(text, "hot cold") {
+		t.Fatalf("expected span text, frame = %q", text)
+	}
+	first := app.frame.cell(layout.Composer.X, layout.Composer.Y+1)
+	second := app.frame.cell(layout.Composer.X+4, layout.Composer.Y+1)
+	if got, want := first.Style.GetForeground(), app.theme.colors[colorAccent]; got != want {
+		t.Fatalf("first span foreground = %v, want %v", got, want)
+	}
+	if got, want := second.Style.GetForeground(), app.theme.colors[colorDim]; got != want {
+		t.Fatalf("second span foreground = %v, want %v", got, want)
+	}
+}
+
+func TestUIRenderDrawsWideRunesByCellWidth(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	layout := app.defaultRuntimeLayout(40, 12)
+	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.uiWindowOverrides[extensionBufferComposer] = uiWindowOverride{
+		DrawOps: []extension.UIDrawOp{
+			{
+				Style:  extension.UIStyle{FG: "text", BG: "", Bold: false, Italic: false},
+				Spans:  []extension.UISpan{},
+				Window: extensionBufferComposer,
+				Kind:   extension.UIDrawKindText,
+				Text:   "語x",
+				Row:    1,
+				Col:    0,
+				Clear:  false,
+			},
+		},
+		Reset: true,
+	}
+
+	app.applyUIOverrides(&layout)
+
+	row := layout.Composer.Y + 1
+	if got, want := app.frame.cell(layout.Composer.X, row).Rune, '語'; got != want {
+		t.Fatalf("first cell = %q, want %q", got, want)
+	}
+	if got, want := app.frame.cell(layout.Composer.X+1, row).Rune, ' '; got != want {
+		t.Fatalf("wide continuation cell = %q, want space", got)
+	}
+	if got, want := app.frame.cell(layout.Composer.X+2, row).Rune, 'x'; got != want {
+		t.Fatalf("third cell = %q, want %q", got, want)
 	}
 }
 
