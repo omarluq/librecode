@@ -168,35 +168,47 @@ Also available as:
 
 ## `librecode.keymap`
 
-### `librecode.keymap.set(mode, lhs, fn, opts)`
+### `librecode.keymap.set(target, lhs, fn, opts)`
 
-Registers a keymap.
+Registers a keymap against a generic target.
 
-Example:
+Examples:
 
 ```lua
-lc.keymap.set("composer", "ctrl+j", function(ev)
+lc.keymap.set({ role = "composer" }, "ctrl+j", function(ev)
   lc.buf.set_text("status", "ctrl+j pressed")
   return true
-end, { priority = 100, desc = "example keymap" })
+end, { priority = 100, desc = "example role keymap" })
+
+lc.keymap.set({ buffer = "composer" }, "*", function(ev)
+  lc.log("composer key: " .. ev.key)
+end)
+
+lc.keymap.set("global", "ctrl+p", function()
+  lc.action.run("transcript.tree")
+  return true
+end)
 ```
+
+Supported target forms:
+
+- `"global"` for global keymaps
+- `{ buffer = "name" }` for buffer-scoped keymaps
+- `{ window = "name" }` for window-scoped keymaps
+- `{ role = "name" }` for role-scoped keymaps
+- `{ scope = "buffer" | "window" | "role", name = "name" }`
+- a list of any of the above
+
+String targets other than `"global"` are kept only as a legacy shorthand and match buffer/window role names. New extensions should prefer explicit target tables.
 
 Notes:
 
-- `mode` can be a string or list of strings
 - `lhs` is normalized internally (`<c-j>`, `ctrl-j`, and `ctrl+j` normalize together)
 - `"*"` or `"any"` matches any key
 - higher `priority` runs first
 - returning `true` marks the event consumed
 
-Current important modes include:
-
-- `global`
-- `composer`
-
-`composer` is still a compatibility mode selector today. The direction is to route keymaps through generic buffer/window state rather than permanent special-case modes.
-
-### `librecode.keymap.del(mode, lhs)`
+### `librecode.keymap.del(target, lhs)`
 
 Removes matching keymaps previously registered by the same extension.
 

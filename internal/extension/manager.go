@@ -46,7 +46,7 @@ type luaHookHandler struct {
 type luaKeymap struct {
 	extension   *luaExtension
 	function    *lua.LFunction
-	mode        string
+	target      keymapTarget
 	lhs         string
 	description string
 	priority    int

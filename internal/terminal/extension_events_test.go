@@ -72,7 +72,7 @@ func TestExtensionRuntimeBuffersPersistBetweenEvents(t *testing.T) {
 	t.Parallel()
 
 	app := newExtensionRuntimeTestApp(t, `
-librecode.keymap.set("composer", "x", function()
+librecode.keymap.set({ buffer = "composer" }, "x", function()
   local scratch = librecode.buf.get("scratch")
   librecode.buf.set_text("scratch", scratch.text .. "x")
   librecode.event.consume()

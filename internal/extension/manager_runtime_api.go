@@ -10,9 +10,17 @@ import (
 )
 
 const (
-	keymapModeGlobal = "global"
-	keymapWildcard   = "*"
+	keymapScopeBuffer = "buffer"
+	keymapScopeGlobal = "global"
+	keymapScopeRole   = "role"
+	keymapScopeWindow = "window"
+	keymapWildcard    = "*"
 )
+
+type keymapTarget struct {
+	Scope string
+	Name  string
+}
 
 func (manager *Manager) luaCoreAPI(extensionRuntime *luaExtension) *lua.LTable {
 	state := extensionRuntime.state
@@ -109,15 +117,15 @@ func (manager *Manager) luaCreateUserCommand(extensionRuntime *luaExtension) lua
 
 func (manager *Manager) luaKeymapSet(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
-		modes := luaKeymapModes(state.CheckAny(1))
+		targets := luaKeymapTargets(state.CheckAny(1))
 		lhs := normalizeKeySpec(state.CheckString(2))
 		function := state.CheckFunction(3)
 		options := state.OptTable(4, state.NewTable())
 		priority := int(lua.LVAsNumber(options.RawGetString("priority")))
 		description := luaTableString(options, "desc", luaTableString(options, "description", ""))
 
-		for _, mode := range modes {
-			manager.registerKeymap(extensionRuntime, mode, lhs, description, priority, function)
+		for _, target := range targets {
+			manager.registerKeymap(extensionRuntime, target, lhs, description, priority, function)
 		}
 
 		return 0
@@ -126,13 +134,14 @@ func (manager *Manager) luaKeymapSet(extensionRuntime *luaExtension) lua.LGFunct
 
 func (manager *Manager) luaKeymapDel(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
-		modes := luaKeymapModes(state.CheckAny(1))
+		targets := luaKeymapTargets(state.CheckAny(1))
 		lhs := normalizeKeySpec(state.CheckString(2))
-		modeSet := map[string]struct{}{}
-		labels := map[string]struct{}{}
-		for _, mode := range modes {
-			modeSet[mode] = struct{}{}
-			labels[mode+":"+lhs] = struct{}{}
+		targetSet := make(map[string]struct{}, len(targets))
+		labels := make(map[string]struct{}, len(targets))
+		for _, target := range targets {
+			key := target.key()
+			targetSet[key] = struct{}{}
+			labels[key+":"+lhs] = struct{}{}
 		}
 
 		manager.lock.Lock()
@@ -140,8 +149,8 @@ func (manager *Manager) luaKeymapDel(extensionRuntime *luaExtension) lua.LGFunct
 
 		keymaps := manager.keymaps[:0]
 		for _, keymap := range manager.keymaps {
-			_, sameMode := modeSet[keymap.mode]
-			if keymap.extension == extensionRuntime && sameMode && keymap.lhs == lhs {
+			_, sameTarget := targetSet[keymap.target.key()]
+			if keymap.extension == extensionRuntime && sameTarget && keymap.lhs == lhs {
 				continue
 			}
 			keymaps = append(keymaps, keymap)
@@ -184,25 +193,25 @@ func (manager *Manager) registerHandler(
 
 func (manager *Manager) registerKeymap(
 	extensionRuntime *luaExtension,
-	mode string,
+	target keymapTarget,
 	lhs string,
 	description string,
 	priority int,
 	function *lua.LFunction,
 ) {
-	mode = normalizeKeymapMode(mode)
+	target = normalizeKeymapTarget(target)
 	manager.lock.Lock()
 	manager.nextHandlerOrder++
 	manager.keymaps = append(manager.keymaps, luaKeymap{
 		extension:   extensionRuntime,
 		function:    function,
-		mode:        mode,
+		target:      target,
 		lhs:         lhs,
 		description: description,
 		priority:    priority,
 		order:       manager.nextHandlerOrder,
 	})
-	extensionRuntime.keymaps = append(extensionRuntime.keymaps, mode+":"+lhs)
+	extensionRuntime.keymaps = append(extensionRuntime.keymaps, target.key()+":"+lhs)
 	manager.lock.Unlock()
 }
 
@@ -221,7 +230,7 @@ func (manager *Manager) runKeymaps(ctx context.Context, event *luaHostEvent) err
 			},
 		)
 		if err != nil {
-			return fmt.Errorf("extension: keymap %s %q failed: %w", keymap.mode, keymap.lhs, err)
+			return fmt.Errorf("extension: keymap %s %q failed: %w", keymap.target.key(), keymap.lhs, err)
 		}
 		if result == lua.LTrue {
 			event.consumed = true
@@ -241,13 +250,13 @@ func (manager *Manager) keymapsFor(event *luaHostEvent) []luaKeymap {
 	manager.lock.RUnlock()
 
 	eventKey := normalizeKeySpec(event.key.Key)
-	eventModes := keymapEventModes(event)
+	eventTargets := keymapEventTargets(event)
 	matched := make([]luaKeymap, 0, len(keymaps))
 	for _, keymap := range keymaps {
 		if keymap.lhs != keymapWildcard && keymap.lhs != eventKey {
 			continue
 		}
-		if _, ok := eventModes[keymap.mode]; !ok {
+		if _, ok := eventTargets[keymap.target.key()]; !ok {
 			continue
 		}
 		matched = append(matched, keymap)
@@ -265,25 +274,38 @@ func (manager *Manager) keymapsFor(event *luaHostEvent) []luaKeymap {
 	return matched
 }
 
-func keymapEventModes(event *luaHostEvent) map[string]struct{} {
-	modes := map[string]struct{}{keymapModeGlobal: {}}
+func keymapEventTargets(event *luaHostEvent) map[string]struct{} {
+	targets := map[string]struct{}{globalKeymapTarget().key(): {}}
 	if mode, ok := event.context["mode"].(string); ok && mode != "" {
-		modes[normalizeKeymapMode(mode)] = struct{}{}
+		targets[legacyKeymapTarget(mode).key()] = struct{}{}
 	}
-	for _, buffer := range event.buffers {
-		bufferMode := normalizeKeymapMode(buffer.Name)
-		if bufferMode != "" {
-			modes[bufferMode] = struct{}{}
+	for name, buffer := range event.buffers {
+		bufferName := buffer.Name
+		if bufferName == "" {
+			bufferName = name
 		}
+		addKeymapTarget(targets, keymapScopeBuffer, bufferName)
+		addKeymapTarget(targets, "", bufferName)
 	}
-	for _, window := range event.windows {
-		roleMode := normalizeKeymapMode(window.Role)
-		if roleMode != "" {
-			modes[roleMode] = struct{}{}
+	for name, window := range event.windows {
+		windowName := window.Name
+		if windowName == "" {
+			windowName = name
 		}
+		addKeymapTarget(targets, keymapScopeWindow, windowName)
+		addKeymapTarget(targets, keymapScopeRole, window.Role)
+		addKeymapTarget(targets, "", window.Role)
 	}
 
-	return modes
+	return targets
+}
+
+func addKeymapTarget(targets map[string]struct{}, scope, name string) {
+	target := normalizeKeymapTarget(keymapTarget{Scope: scope, Name: name})
+	if target.Name == "" && target.Scope != keymapScopeGlobal {
+		return
+	}
+	targets[target.key()] = struct{}{}
 }
 
 func luaAutocmdArgs(state *lua.LState) (priority int, function *lua.LFunction) {
@@ -329,26 +351,90 @@ func luaEventNames(value lua.LValue) []string {
 	return []string{value.String()}
 }
 
-func luaKeymapModes(value lua.LValue) []string {
+func luaKeymapTargets(value lua.LValue) []keymapTarget {
 	if table, ok := value.(*lua.LTable); ok {
-		modes := luaStringSlice(table)
-		for index, mode := range modes {
-			modes[index] = normalizeKeymapMode(mode)
+		if target, isTarget := luaKeymapTarget(table); isTarget {
+			return []keymapTarget{target}
 		}
 
-		return modes
+		values := make([]keymapTarget, 0, table.Len())
+		for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
+			values = append(values, luaKeymapTargets(table.RawGetInt(valueIndex))...)
+		}
+
+		return values
 	}
 
-	return []string{normalizeKeymapMode(value.String())}
+	return []keymapTarget{legacyKeymapTarget(value.String())}
 }
 
-func normalizeKeymapMode(mode string) string {
-	mode = strings.TrimSpace(strings.ToLower(mode))
-	if mode == "" {
-		return keymapModeGlobal
+func luaKeymapTarget(table *lua.LTable) (keymapTarget, bool) {
+	scope := luaTableString(table, "scope", "")
+	if scope != "" {
+		return keymapTarget{Scope: scope, Name: luaTableString(table, "name", "")}, true
 	}
 
-	return mode
+	for _, field := range []string{keymapScopeBuffer, keymapScopeWindow, keymapScopeRole} {
+		name := luaTableString(table, field, "")
+		if name != "" {
+			return keymapTarget{Scope: field, Name: name}, true
+		}
+	}
+
+	if luaTableBool(table, keymapScopeGlobal) {
+		return globalKeymapTarget(), true
+	}
+
+	return keymapTarget{Scope: "", Name: ""}, false
+}
+
+func legacyKeymapTarget(mode string) keymapTarget {
+	mode = normalizeKeymapName(mode)
+	if mode == "" || mode == keymapScopeGlobal {
+		return globalKeymapTarget()
+	}
+
+	return keymapTarget{Scope: "", Name: mode}
+}
+
+func globalKeymapTarget() keymapTarget {
+	return keymapTarget{Scope: keymapScopeGlobal, Name: ""}
+}
+
+func normalizeKeymapTarget(target keymapTarget) keymapTarget {
+	target.Scope = normalizeKeymapScope(target.Scope)
+	target.Name = normalizeKeymapName(target.Name)
+	if target.Scope == keymapScopeGlobal || target.Name == keymapScopeGlobal {
+		return globalKeymapTarget()
+	}
+
+	return target
+}
+
+func normalizeKeymapScope(scope string) string {
+	scope = normalizeKeymapName(scope)
+	switch scope {
+	case "", keymapScopeBuffer, keymapScopeGlobal, keymapScopeRole, keymapScopeWindow:
+		return scope
+	default:
+		return scope
+	}
+}
+
+func normalizeKeymapName(name string) string {
+	return strings.TrimSpace(strings.ToLower(name))
+}
+
+func (target keymapTarget) key() string {
+	target = normalizeKeymapTarget(target)
+	if target.Scope == keymapScopeGlobal {
+		return keymapScopeGlobal
+	}
+	if target.Scope == "" {
+		return target.Name
+	}
+
+	return target.Scope + ":" + target.Name
 }
 
 func normalizeKeySpec(key string) string {

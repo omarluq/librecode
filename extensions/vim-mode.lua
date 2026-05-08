@@ -765,7 +765,7 @@ librecode.on("startup", function()
   librecode.buf.set(buffer_name, sync_state(state, state.chars, state.cursor))
 end)
 
-librecode.keymap.set("composer", "*", function(event)
+librecode.keymap.set({ role = "composer" }, "*", function(event)
   local buffer_name = composer_window_buffer()
   local state = librecode.buf.get(buffer_name)
   local outcome = on_key(event, state)
