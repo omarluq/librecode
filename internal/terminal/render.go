@@ -755,6 +755,8 @@ func (app *App) drawUIWindowText(window *extension.WindowState, drawOp *extensio
 	switch strings.ToLower(strings.TrimSpace(drawOp.Kind)) {
 	case extension.UIDrawKindBox:
 		app.drawUIWindowBox(window, drawOp.Style)
+	case extension.UIDrawKindClear:
+		app.drawUIWindowClear(window, drawOp)
 	case extension.UIDrawKindSpans:
 		app.drawUIWindowSpans(window, drawOp)
 	default:
@@ -765,6 +767,32 @@ func (app *App) drawUIWindowText(window *extension.WindowState, drawOp *extensio
 			window.Y+drawOp.Row,
 			window.Width-drawOp.Col,
 			drawOp.Text,
+			style,
+		)
+	}
+}
+
+func (app *App) drawUIWindowClear(window *extension.WindowState, drawOp *extension.UIDrawOp) {
+	startRow := min(max(drawOp.Row, 0), window.Height)
+	startCol := min(max(drawOp.Col, 0), window.Width)
+	height := drawOp.Height
+	if height <= 0 {
+		height = window.Height - startRow
+	}
+	width := drawOp.Width
+	if width <= 0 {
+		width = window.Width - startCol
+	}
+	endRow := min(max(startRow+height, startRow), window.Height)
+	endCol := min(max(startCol+width, startCol), window.Width)
+	style := app.uiStyle(drawOp.Style)
+	for row := startRow; row < endRow; row++ {
+		writeTextAt(
+			app.frame,
+			window.X+startCol,
+			window.Y+row,
+			endCol-startCol,
+			"",
 			style,
 		)
 	}
@@ -844,7 +872,7 @@ func (app *App) namedUIColor(name string) tcell.Color {
 		return app.theme.colors[colorBorder]
 	case "muted":
 		return app.theme.colors[colorMuted]
-	case "dim":
+	case string(colorDim):
 		return app.theme.colors[colorDim]
 	case string(colorText), "white", "default":
 		return app.theme.colors[colorText]

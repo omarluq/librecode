@@ -142,6 +142,18 @@ func uiTextWrapBreakIndex(segments []uiTextSegment, width int) int {
 	return limit
 }
 
+func uiTextViewport(lines []string, height, offset int) (visible []string, start, end, maxOffset int) {
+	if height <= 0 || len(lines) == 0 {
+		return []string{}, 0, 0, 0
+	}
+	maxOffset = max(0, len(lines)-height)
+	offset = clampInt(offset, 0, maxOffset)
+	end = len(lines) - offset
+	start = max(0, end-height)
+
+	return append([]string{}, lines[start:end]...), start, end, maxOffset
+}
+
 func uiTextTrimLeadingSpaces(segments []uiTextSegment) []uiTextSegment {
 	for len(segments) > 0 && (segments[0].Text == " " || segments[0].Text == "\t") {
 		segments = segments[1:]

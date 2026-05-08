@@ -66,6 +66,8 @@ type ActionCall struct {
 const (
 	// UIDrawKindBox draws a border around a window.
 	UIDrawKindBox = "box"
+	// UIDrawKindClear clears a window-relative rectangular region.
+	UIDrawKindClear = "clear"
 	// UIDrawKindSpans draws multiple styled inline text spans.
 	UIDrawKindSpans = "spans"
 	// UIDrawKindText draws one styled text segment.
@@ -95,6 +97,8 @@ type UIDrawOp struct {
 	Spans  []UISpan `json:"spans"`
 	Row    int      `json:"row"`
 	Col    int      `json:"col"`
+	Width  int      `json:"width"`
+	Height int      `json:"height"`
 	Clear  bool     `json:"clear"`
 }
 

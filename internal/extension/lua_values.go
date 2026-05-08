@@ -425,6 +425,8 @@ func luaUIDrawOp(value lua.LValue) *UIDrawOp {
 			Text:   luaTableString(table, luaFieldText, ""),
 			Row:    luaTableIntValue(table, "row"),
 			Col:    luaTableIntValue(table, "col"),
+			Width:  luaTableIntValue(table, "width"),
+			Height: luaTableIntValue(table, "height"),
 			Clear:  luaTableBool(table, "clear"),
 		}
 	}

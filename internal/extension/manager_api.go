@@ -75,6 +75,7 @@ func (manager *Manager) luaUIAPI(extensionRuntime *luaExtension) *lua.LTable {
 	state := extensionRuntime.state
 	apiTable := state.NewTable()
 	state.SetFuncs(apiTable, map[string]lua.LGFunction{
+		"clear_region": manager.luaUIClearRegion(extensionRuntime),
 		"clear_window": manager.luaUIClearWindow(extensionRuntime),
 		"draw_box":     manager.luaUIDrawBox(extensionRuntime),
 		"draw_lines":   manager.luaUIDrawLines(extensionRuntime),
@@ -84,6 +85,7 @@ func (manager *Manager) luaUIAPI(extensionRuntime *luaExtension) *lua.LTable {
 		"pad_right":    manager.luaUIPadRight(),
 		"set_cursor":   manager.luaUISetCursor(extensionRuntime),
 		"truncate":     manager.luaUITruncate(),
+		"viewport":     manager.luaUIViewport(),
 		"wrap":         manager.luaUIWrap(),
 	})
 
@@ -111,11 +113,13 @@ func (manager *Manager) luaWindowAPI(extensionRuntime *luaExtension) *lua.LTable
 		luaFieldGet:    manager.luaWindowGet(extensionRuntime),
 		"get_buf":      manager.luaWindowGetBuffer(extensionRuntime),
 		"get_buffer":   manager.luaWindowGetBuffer(extensionRuntime),
+		"get_var":      manager.luaWindowGetVar(extensionRuntime),
 		"list":         manager.luaWindowList(extensionRuntime),
 		luaFieldSet:    manager.luaWindowSet(extensionRuntime),
 		"set_buf":      manager.luaWindowSetBuffer(extensionRuntime),
 		"set_buffer":   manager.luaWindowSetBuffer(extensionRuntime),
 		"set_renderer": manager.luaWindowSetRenderer(extensionRuntime),
+		"set_var":      manager.luaWindowSetVar(extensionRuntime),
 	})
 
 	return apiTable
@@ -274,6 +278,38 @@ func (manager *Manager) luaWindowSetRenderer(extensionRuntime *luaExtension) lua
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		window := hostEventWindow(hostEvent, name)
 		window.Renderer = renderer
+		hostEvent.setWindow(name, &window)
+
+		return 0
+	}
+}
+
+func (manager *Manager) luaWindowGetVar(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		key := state.CheckString(2)
+		window, ok := checkActiveEvent(state, extensionRuntime).window(name)
+		if !ok {
+			state.Push(lua.LNil)
+			return 1
+		}
+		state.Push(goValueToLua(state, window.Metadata[key]))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaWindowSetVar(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		name := state.CheckString(1)
+		key := state.CheckString(2)
+		value := state.CheckAny(3)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		window := hostEventWindow(hostEvent, name)
+		if window.Metadata == nil {
+			window.Metadata = map[string]any{}
+		}
+		window.Metadata[key] = luaValueToGo(value)
 		hostEvent.setWindow(name, &window)
 
 		return 0
@@ -661,6 +697,31 @@ func (manager *Manager) luaUIClearWindow(extensionRuntime *luaExtension) lua.LGF
 	}
 }
 
+func (manager *Manager) luaUIClearRegion(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		windowName := state.CheckString(1)
+		row := state.CheckInt(2)
+		col := state.CheckInt(3)
+		height := state.CheckInt(4)
+		width := state.CheckInt(5)
+		style := luaOptionalUIStyle(state, 6)
+		checkActiveEvent(state, extensionRuntime).appendUIDrawOp(&UIDrawOp{
+			Style:  style,
+			Spans:  []UISpan{},
+			Window: windowName,
+			Kind:   UIDrawKindClear,
+			Text:   "",
+			Row:    row,
+			Col:    col,
+			Width:  width,
+			Height: height,
+			Clear:  true,
+		})
+
+		return 0
+	}
+}
+
 func (manager *Manager) luaUIMeasure() lua.LGFunction {
 	return func(state *lua.LState) int {
 		state.Push(lua.LNumber(uiTextWidth(state.CheckString(1))))
@@ -693,6 +754,25 @@ func (manager *Manager) luaUIWrap() lua.LGFunction {
 	}
 }
 
+func (manager *Manager) luaUIViewport() lua.LGFunction {
+	return func(state *lua.LState) int {
+		lines := luaStringSlice(state.CheckTable(1))
+		height := state.CheckInt(2)
+		offset := state.OptInt(3, 0)
+		visible, start, end, maxOffset := uiTextViewport(lines, height, offset)
+		state.Push(mapToLuaTable(state, map[string]any{
+			"lines":      visible,
+			"start":      start,
+			"end":        end,
+			"offset":     clampInt(offset, 0, maxOffset),
+			"max_offset": maxOffset,
+			"total":      len(lines),
+		}))
+
+		return 1
+	}
+}
+
 func (manager *Manager) luaUIDrawText(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		windowName := state.CheckString(1)
@@ -708,6 +788,8 @@ func (manager *Manager) luaUIDrawText(extensionRuntime *luaExtension) lua.LGFunc
 			Text:   text,
 			Row:    row,
 			Col:    col,
+			Width:  0,
+			Height: 0,
 			Clear:  false,
 		})
 
@@ -732,6 +814,8 @@ func (manager *Manager) luaUIDrawLines(extensionRuntime *luaExtension) lua.LGFun
 				Text:   line,
 				Row:    row + index,
 				Col:    col,
+				Width:  0,
+				Height: 0,
 				Clear:  false,
 			})
 		}
@@ -754,6 +838,8 @@ func (manager *Manager) luaUIDrawSpans(extensionRuntime *luaExtension) lua.LGFun
 			Text:   "",
 			Row:    row,
 			Col:    col,
+			Width:  0,
+			Height: 0,
 			Clear:  false,
 		})
 
@@ -773,6 +859,8 @@ func (manager *Manager) luaUIDrawBox(extensionRuntime *luaExtension) lua.LGFunct
 			Text:   "",
 			Row:    0,
 			Col:    0,
+			Width:  0,
+			Height: 0,
 			Clear:  false,
 		})
 

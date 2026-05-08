@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	cellcolor "github.com/gdamore/tcell/v3/color"
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
@@ -229,13 +230,15 @@ func TestUIRenderDrawsSpansWithoutClearingLaterSpans(t *testing.T) {
 				Style: extension.UIStyle{FG: "", BG: "", Bold: false, Italic: false},
 				Spans: []extension.UISpan{
 					{Text: "hot", Style: extension.UIStyle{FG: "accent", BG: "", Bold: true, Italic: false}},
-					{Text: " cold", Style: extension.UIStyle{FG: "dim", BG: "", Bold: false, Italic: false}},
+					{Text: " cold", Style: extension.UIStyle{FG: string(colorDim), BG: "", Bold: false, Italic: false}},
 				},
 				Window: extensionBufferComposer,
 				Kind:   extension.UIDrawKindSpans,
 				Text:   "",
 				Row:    1,
 				Col:    0,
+				Width:  0,
+				Height: 0,
 				Clear:  false,
 			},
 		},
@@ -274,6 +277,8 @@ func TestUIRenderDrawsWideRunesByCellWidth(t *testing.T) {
 				Text:   "語x",
 				Row:    1,
 				Col:    0,
+				Width:  0,
+				Height: 0,
 				Clear:  false,
 			},
 		},
@@ -291,6 +296,58 @@ func TestUIRenderDrawsWideRunesByCellWidth(t *testing.T) {
 	}
 	if got, want := app.frame.cell(layout.Composer.X+2, row).Rune, 'x'; got != want {
 		t.Fatalf("third cell = %q, want %q", got, want)
+	}
+}
+
+func TestUIRenderClearRegionClipsToWindow(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	layout := app.defaultRuntimeLayout(40, 12)
+	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	for row := 0; row < layout.Composer.Height; row++ {
+		writeTextAt(
+			app.frame,
+			layout.Composer.X,
+			layout.Composer.Y+row,
+			layout.Composer.Width,
+			strings.Repeat("x", layout.Composer.Width),
+			tcell.StyleDefault.Foreground(cellcolor.Red),
+		)
+	}
+	app.uiWindowOverrides[extensionBufferComposer] = uiWindowOverride{
+		DrawOps: []extension.UIDrawOp{
+			{
+				Style:  extension.UIStyle{FG: string(colorDim), BG: "", Bold: false, Italic: false},
+				Spans:  []extension.UISpan{},
+				Window: extensionBufferComposer,
+				Kind:   extension.UIDrawKindClear,
+				Text:   "",
+				Row:    1,
+				Col:    2,
+				Width:  4,
+				Height: 2,
+				Clear:  true,
+			},
+		},
+		Reset: false,
+	}
+
+	app.applyUIOverrides(&layout)
+
+	cleared := app.frame.cell(layout.Composer.X+2, layout.Composer.Y+1)
+	untouched := app.frame.cell(layout.Composer.X+1, layout.Composer.Y+1)
+	if got, want := cleared.Rune, ' '; got != want {
+		t.Fatalf("cleared cell = %q, want space", got)
+	}
+	if got, want := cleared.Style.GetForeground(), app.theme.colors[colorDim]; got != want {
+		t.Fatalf("cleared foreground = %v, want %v", got, want)
+	}
+	if got, want := untouched.Rune, 'x'; got != want {
+		t.Fatalf("untouched cell = %q, want x", got)
+	}
+	if got, want := untouched.Style.GetForeground(), cellcolor.Red; got != want {
+		t.Fatalf("untouched foreground = %v, want %v", got, want)
 	}
 }
 

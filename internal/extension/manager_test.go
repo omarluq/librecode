@@ -346,11 +346,14 @@ func TestManager_UIPrimitivesUseTerminalWidth(t *testing.T) {
 local lc = require("librecode")
 
 lc.on("render", function()
+  local viewport = lc.ui.viewport({ "one", "two", "three", "four" }, 2, 1)
   lc.buf.set_text("metrics", table.concat({
     tostring(lc.ui.measure("語")),
     lc.ui.truncate("abc語", 4),
     lc.ui.pad_right("語", 4),
     table.concat(lc.ui.wrap("aa bb cc", 5), "|"),
+    table.concat(viewport.lines, ","),
+    tostring(viewport.start) .. ":" .. tostring(viewport["end"]) .. ":" .. tostring(viewport.max_offset),
   }, "\n"))
 end)
 `)
@@ -361,10 +364,10 @@ end)
 	require.NoError(t, err)
 
 	metrics := result.Buffers["metrics"].Text
-	assert.Equal(t, "2\nabc…\n語  \naa|bb cc", metrics)
+	assert.Equal(t, "2\nabc…\n語  \naa|bb cc\ntwo,three\n1:3:2", metrics)
 }
 
-func TestManager_UIDrawLinesSpansAndBox(t *testing.T) {
+func TestManager_UIDrawLinesSpansRegionAndBox(t *testing.T) {
 	t.Parallel()
 
 	manager := loadTestExtension(t, `
@@ -376,6 +379,7 @@ lc.on("render", function()
     { text = "hot", fg = "accent", bold = true },
     { text = " cold", fg = "dim" },
   })
+  lc.ui.clear_region("composer", 4, 1, 2, 3, { bg = "muted" })
   lc.ui.draw_box("composer", { fg = "border" })
 end)
 `)
@@ -385,7 +389,7 @@ end)
 	result, err := manager.HandleTerminalEvent(context.Background(), &event)
 	require.NoError(t, err)
 
-	require.Len(t, result.UIDrawOps, 4)
+	require.Len(t, result.UIDrawOps, 5)
 	assert.Equal(t, extension.UIDrawKindText, result.UIDrawOps[0].Kind)
 	assert.Equal(t, "one", result.UIDrawOps[0].Text)
 	assert.Equal(t, 1, result.UIDrawOps[0].Row)
@@ -394,7 +398,12 @@ end)
 	require.Len(t, result.UIDrawOps[2].Spans, 2)
 	assert.Equal(t, "hot", result.UIDrawOps[2].Spans[0].Text)
 	assert.True(t, result.UIDrawOps[2].Spans[0].Style.Bold)
-	assert.Equal(t, extension.UIDrawKindBox, result.UIDrawOps[3].Kind)
+	assert.Equal(t, extension.UIDrawKindClear, result.UIDrawOps[3].Kind)
+	assert.Equal(t, 4, result.UIDrawOps[3].Row)
+	assert.Equal(t, 1, result.UIDrawOps[3].Col)
+	assert.Equal(t, 2, result.UIDrawOps[3].Height)
+	assert.Equal(t, 3, result.UIDrawOps[3].Width)
+	assert.Equal(t, extension.UIDrawKindBox, result.UIDrawOps[4].Kind)
 }
 
 func TestDefaultLoadPathsPrependsOfficialExtensions(t *testing.T) {

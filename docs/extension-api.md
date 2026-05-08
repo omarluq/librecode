@@ -314,6 +314,8 @@ This is the current path for extensions that want to discover the composer throu
 
 ### `librecode.win.set_buf(name, buffer_name)`
 ### `librecode.win.set_renderer(name, renderer)`
+### `librecode.win.get_var(name, key)`
+### `librecode.win.set_var(name, key, value)`
 ### `librecode.win.create(name[, value])`
 ### `librecode.win.set(name, value)`
 ### `librecode.win.delete(name)`
@@ -366,12 +368,25 @@ Returns text padded/truncated to exactly `width` cells.
 
 Returns a list of wrapped lines using the same generic Go-backed wrapping logic used by stock renderers.
 
+### `librecode.ui.viewport(lines, height[, offset])`
+
+Returns a bounded viewport table for a line list:
+
+- `lines` — visible line slice
+- `start` / `end` — zero-based half-open range in the original line list
+- `offset` — clamped bottom-relative scroll offset
+- `max_offset` — maximum valid offset
+- `total` — original line count
+
 ### `librecode.ui.clear_window(name)`
+### `librecode.ui.clear_region(name, row, col, height, width[, style])`
 ### `librecode.ui.draw_text(name, row, col, text[, style])`
 ### `librecode.ui.draw_lines(name, row, col, lines[, style])`
 ### `librecode.ui.draw_spans(name, row, col, spans)`
 ### `librecode.ui.draw_box(name[, style])`
 ### `librecode.ui.set_cursor(name, row, col)`
+
+Styles currently accept `fg`, `bg`, `bold`, and `italic`. Color names are theme tokens resolved by Go, including `text`, `accent`, `border`, `muted`, `dim`, `warning`, `error`, and `success`.
 
 `draw_spans` accepts inline spans such as:
 
@@ -399,7 +414,7 @@ lc.on("render", function()
 end)
 ```
 
-Still-planned generic UI primitives include clipping helpers, theme/highlight resolution, viewport helpers, virtual-list helpers, and richer batched draw operations.
+Still-planned generic UI primitives include richer clipping helpers, theme/highlight resolution, virtual-list helpers, and richer batched draw operations.
 
 ## `librecode.buf`
 

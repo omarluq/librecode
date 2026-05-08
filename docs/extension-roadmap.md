@@ -125,14 +125,15 @@ First-pass implemented:
 - `ui.draw_lines`
 - `ui.draw_spans`
 - `ui.draw_box`
+- `ui.clear_region`
+- `ui.viewport`
 
 Still add:
 
-- clipping helpers and clipped draw operations
 - named highlight groups and theme token resolution
 - namespace-scoped highlights
 - extmarks/virtual text or equivalent annotations
-- window viewport/scroll APIs
+- richer window viewport/scroll APIs
 - virtual-list helpers for large block lists
 - batched draw operations
 - per-window renderer registration helpers
