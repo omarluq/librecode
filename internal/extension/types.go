@@ -79,6 +79,13 @@ type UICursor struct {
 	Col    int    `json:"col"`
 }
 
+// LayoutState describes the extension-visible terminal layout.
+type LayoutState struct {
+	Windows map[string]WindowState `json:"windows"`
+	Width   int                    `json:"width"`
+	Height  int                    `json:"height"`
+}
+
 // WindowState describes an extension-visible window or viewport.
 type WindowState struct {
 	Metadata  map[string]any `json:"metadata"`
@@ -98,6 +105,7 @@ type WindowState struct {
 type TerminalEvent struct {
 	Buffers map[string]BufferState `json:"buffers"`
 	Windows map[string]WindowState `json:"windows"`
+	Layout  LayoutState            `json:"layout"`
 	Context map[string]any         `json:"context"`
 	Name    string                 `json:"name"`
 	Key     ComposerKeyEvent       `json:"key"`
@@ -107,6 +115,7 @@ type TerminalEvent struct {
 type TerminalEventResult struct {
 	Buffers        map[string]BufferState `json:"buffers"`
 	Windows        map[string]WindowState `json:"windows"`
+	Layout         *LayoutState           `json:"layout,omitempty"`
 	UICursor       *UICursor              `json:"ui_cursor,omitempty"`
 	Appends        []BufferAppend         `json:"appends"`
 	Actions        []ActionCall           `json:"actions"`

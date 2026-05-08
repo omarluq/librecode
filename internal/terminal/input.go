@@ -18,7 +18,7 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 		app.renderer.reset()
 		app.screen.Clear()
 		app.screen.Sync()
-		return false, nil
+		return false, app.handleResizeExtensions(ctx)
 	case *tcell.EventKey:
 		return app.handleKey(ctx, typedEvent)
 	case *tcell.EventMouse:

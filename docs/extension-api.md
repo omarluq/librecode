@@ -60,8 +60,11 @@ end)
 
 Current commonly emitted events include:
 
+- `startup`
 - `key`
 - `prompt_submit`
+- `resize`
+- `render`
 - `before_agent_start`
 - `agent_end`
 
@@ -203,7 +206,7 @@ Buffer APIs currently work only during active event handling. Calling them outsi
 
 ## `librecode.win`
 
-Window APIs expose the currently visible runtime windows for the active event.
+Window APIs expose and mutate the currently visible runtime windows for the active event.
 
 ### `librecode.win.list()`
 
@@ -249,6 +252,57 @@ local buf = librecode.win.get_buf(win)
 Returns the buffer name displayed by the given window.
 
 This is the current path for extensions that want to discover the composer through the visible runtime model instead of assuming a hardcoded buffer name.
+
+### `librecode.win.set_buf(name, buffer_name)`
+### `librecode.win.create(name[, value])`
+### `librecode.win.set(name, value)`
+### `librecode.win.delete(name)`
+
+Mutate the active window set. Window mutations are applied back to the terminal runtime after the event.
+
+## `librecode.layout`
+
+Layout APIs expose the current screen dimensions and window table.
+
+### `librecode.layout.get()`
+
+Returns a table:
+
+```lua
+{
+  width = 120,
+  height = 40,
+  windows = {
+    composer = { role = "composer", buffer = "composer", x = 0, y = 32, width = 120, height = 6 },
+  },
+}
+```
+
+### `librecode.layout.set(layout)`
+
+Replaces the runtime layout with the provided table. This is intentionally low-level: callers are responsible for non-overlap, bounds, and visibility.
+
+## `librecode.ui`
+
+Low-level drawing APIs enqueue window-relative draw operations for the current frame/event.
+
+### `librecode.ui.clear_window(name)`
+### `librecode.ui.draw_text(name, row, col, text[, style])`
+### `librecode.ui.set_cursor(name, row, col)`
+
+Example:
+
+```lua
+lc.on("render", function()
+  local win = lc.win.find({ role = "composer" })
+  if not win then return end
+  lc.ui.clear_window(win)
+  lc.ui.draw_text(win, 0, 0, "custom composer", { fg = "accent", bold = true })
+  lc.ui.set_cursor(win, 1, 2)
+end)
+```
+
+## `librecode.buf`
 
 ### `librecode.buf.list()`
 
@@ -403,7 +457,7 @@ The API is still incomplete compared with the long-term target.
 
 Notably missing today:
 
-- programmable layout/window/render APIs
+- richer layout/window/render APIs
 - jobs/timers/scheduling
 - richer transcript/message object control
 - highlights/extmarks/namespaced annotations

@@ -11,18 +11,18 @@ func (manager *Manager) luaBufferAPI(extensionRuntime *luaExtension) *lua.LTable
 	apiTable := state.NewTable()
 	state.SetFuncs(apiTable, map[string]lua.LGFunction{
 		"append":       manager.luaBufferAppend(extensionRuntime),
-		luaFieldCreate:  manager.luaBufferCreate(extensionRuntime),
+		luaFieldCreate: manager.luaBufferCreate(extensionRuntime),
 		"delete":       manager.luaBufferDelete(extensionRuntime),
 		"delete_range": manager.luaBufferDeleteRange(extensionRuntime),
 		"delete_text":  manager.luaBufferDeleteRange(extensionRuntime),
-		"get":          manager.luaBufferGet(extensionRuntime),
+		luaFieldGet:    manager.luaBufferGet(extensionRuntime),
 		"get_cursor":   manager.luaBufferGetCursor(extensionRuntime),
 		"get_lines":    manager.luaBufferGetLines(extensionRuntime),
 		"get_text":     manager.luaBufferGetText(extensionRuntime),
 		"insert":       manager.luaBufferInsert(extensionRuntime),
 		"list":         manager.luaBufferList(extensionRuntime),
 		"replace":      manager.luaBufferReplace(extensionRuntime),
-		luaFieldSet:     manager.luaBufferSet(extensionRuntime),
+		luaFieldSet:    manager.luaBufferSet(extensionRuntime),
 		"set_cursor":   manager.luaBufferSetCursor(extensionRuntime),
 		"set_lines":    manager.luaBufferSetLines(extensionRuntime),
 		"set_text":     manager.luaBufferSetText(extensionRuntime),
@@ -64,23 +64,56 @@ func (manager *Manager) luaUIAPI(extensionRuntime *luaExtension) *lua.LTable {
 	return apiTable
 }
 
+func (manager *Manager) luaLayoutAPI(extensionRuntime *luaExtension) *lua.LTable {
+	state := extensionRuntime.state
+	apiTable := state.NewTable()
+	state.SetFuncs(apiTable, map[string]lua.LGFunction{
+		luaFieldGet: manager.luaLayoutGet(extensionRuntime),
+		luaFieldSet: manager.luaLayoutSet(extensionRuntime),
+	})
+
+	return apiTable
+}
+
 func (manager *Manager) luaWindowAPI(extensionRuntime *luaExtension) *lua.LTable {
 	state := extensionRuntime.state
 	apiTable := state.NewTable()
 	state.SetFuncs(apiTable, map[string]lua.LGFunction{
-		"create":     manager.luaWindowCreate(extensionRuntime),
-		"delete":     manager.luaWindowDelete(extensionRuntime),
-		"find":       manager.luaWindowFind(extensionRuntime),
-		"get":        manager.luaWindowGet(extensionRuntime),
-		"get_buf":    manager.luaWindowGetBuffer(extensionRuntime),
-		"get_buffer": manager.luaWindowGetBuffer(extensionRuntime),
-		"list":       manager.luaWindowList(extensionRuntime),
-		luaFieldSet:   manager.luaWindowSet(extensionRuntime),
-		"set_buf":    manager.luaWindowSetBuffer(extensionRuntime),
-		"set_buffer": manager.luaWindowSetBuffer(extensionRuntime),
+		luaFieldCreate: manager.luaWindowCreate(extensionRuntime),
+		"delete":       manager.luaWindowDelete(extensionRuntime),
+		"find":         manager.luaWindowFind(extensionRuntime),
+		luaFieldGet:    manager.luaWindowGet(extensionRuntime),
+		"get_buf":      manager.luaWindowGetBuffer(extensionRuntime),
+		"get_buffer":   manager.luaWindowGetBuffer(extensionRuntime),
+		"list":         manager.luaWindowList(extensionRuntime),
+		luaFieldSet:    manager.luaWindowSet(extensionRuntime),
+		"set_buf":      manager.luaWindowSetBuffer(extensionRuntime),
+		"set_buffer":   manager.luaWindowSetBuffer(extensionRuntime),
 	})
 
 	return apiTable
+}
+
+func (manager *Manager) luaLayoutGet(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		state.Push(mapToLuaTable(state, layoutForLua(&hostEvent.layout)))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaLayoutSet(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		layout := luaLayoutState(state.CheckAny(1))
+		if layout == nil {
+			state.RaiseError("layout.set expects a layout table")
+			return 0
+		}
+		checkActiveEvent(state, extensionRuntime).setLayout(layout)
+
+		return 0
+	}
 }
 
 func (manager *Manager) luaWindowList(extensionRuntime *luaExtension) lua.LGFunction {

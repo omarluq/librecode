@@ -21,6 +21,75 @@ const (
 	testModeChat       = "chat"
 )
 
+func testLayout(windows map[string]extension.WindowState) extension.LayoutState {
+	return extension.LayoutState{Windows: windows, Width: 80, Height: 24}
+}
+
+func loadTestExtension(t *testing.T, source string) *extension.Manager {
+	t.Helper()
+
+	extensionPath := filepath.Join(t.TempDir(), "runtime.lua")
+	require.NoError(t, writeTestFile(extensionPath, source))
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
+
+	return manager
+}
+
+func testComposerWindow() extension.WindowState {
+	return extension.WindowState{
+		Metadata:  map[string]any{},
+		Name:      testBufferComposer,
+		Role:      testBufferComposer,
+		Buffer:    testBufferComposer,
+		X:         0,
+		Y:         0,
+		Width:     80,
+		Height:    6,
+		CursorRow: 0,
+		CursorCol: 2,
+		Visible:   true,
+	}
+}
+
+func testTerminalEventWithComposerWindow(text, key string) extension.TerminalEvent {
+	window := testComposerWindow()
+	return extension.TerminalEvent{
+		Buffers: map[string]extension.BufferState{
+			testBufferComposer: {
+				Metadata: map[string]any{},
+				Name:     testBufferComposer,
+				Text:     text,
+				Chars:    stringCharsForTest(text),
+				Label:    "",
+				Cursor:   len([]rune(text)),
+			},
+		},
+		Windows: map[string]extension.WindowState{testBufferComposer: window},
+		Layout:  testLayout(map[string]extension.WindowState{testBufferComposer: window}),
+		Context: map[string]any{testContextModeKey: testModeChat},
+		Name:    testEventKey,
+		Key: extension.ComposerKeyEvent{
+			Key:   key,
+			Text:  "",
+			Ctrl:  key == "ctrl+j",
+			Alt:   false,
+			Shift: false,
+		},
+	}
+}
+
+func stringCharsForTest(text string) []string {
+	chars := make([]string, 0, len([]rune(text)))
+	for _, char := range text {
+		chars = append(chars, string(char))
+	}
+
+	return chars
+}
+
 func TestManager_LoadsLuaCommandsToolsAndKeymaps(t *testing.T) {
 	t.Parallel()
 
@@ -108,6 +177,7 @@ end)
 			},
 		},
 		Windows: map[string]extension.WindowState{},
+		Layout:  testLayout(map[string]extension.WindowState{}),
 		Context: map[string]any{},
 		Name:    testEventKey,
 		Key: extension.ComposerKeyEvent{
@@ -131,8 +201,7 @@ end)
 func TestManager_KeymapAutocmdAndBufferPrimitives(t *testing.T) {
 	t.Parallel()
 
-	extensionPath := filepath.Join(t.TempDir(), "runtime.lua")
-	source := `
+	manager := loadTestExtension(t, `
 local lc = require("librecode")
 
 local first_namespace = lc.api.create_namespace("demo")
@@ -155,49 +224,9 @@ lc.keymap.set("composer", "<c-j>", function()
   lc.buf.set("composer", { text = composer.text .. ":mapped", cursor = 99 })
   lc.event.consume()
 end, { priority = 10, desc = "map ctrl-j" })
-`
-	require.NoError(t, writeTestFile(extensionPath, source))
+`)
 
-	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(manager.Shutdown)
-	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
-
-	event := extension.TerminalEvent{
-		Buffers: map[string]extension.BufferState{
-			testBufferComposer: {
-				Metadata: map[string]any{},
-				Name:     testBufferComposer,
-				Text:     "go",
-				Chars:    []string{"g", "o"},
-				Label:    "",
-				Cursor:   2,
-			},
-		},
-		Windows: map[string]extension.WindowState{
-			testBufferComposer: {
-				Metadata:  map[string]any{},
-				Name:      testBufferComposer,
-				Role:      testBufferComposer,
-				Buffer:    testBufferComposer,
-				X:         0,
-				Y:         0,
-				Width:     80,
-				Height:    6,
-				CursorRow: 0,
-				CursorCol: 2,
-				Visible:   true,
-			},
-		},
-		Context: map[string]any{testContextModeKey: testModeChat},
-		Name:    testEventKey,
-		Key: extension.ComposerKeyEvent{
-			Key:   "ctrl+j",
-			Text:  "",
-			Ctrl:  true,
-			Alt:   false,
-			Shift: false,
-		},
-	}
+	event := testTerminalEventWithComposerWindow("go", "ctrl+j")
 	result, err := manager.HandleTerminalEvent(context.Background(), &event)
 	require.NoError(t, err)
 
@@ -261,6 +290,21 @@ end)
 				Visible:   true,
 			},
 		},
+		Layout: testLayout(map[string]extension.WindowState{
+			testBufferComposer: {
+				Metadata:  map[string]any{},
+				Name:      testBufferComposer,
+				Role:      testBufferComposer,
+				Buffer:    testBufferComposer,
+				X:         0,
+				Y:         10,
+				Width:     80,
+				Height:    6,
+				CursorRow: 1,
+				CursorCol: 2,
+				Visible:   true,
+			},
+		}),
 		Context: map[string]any{},
 		Name:    "startup",
 		Key: extension.ComposerKeyEvent{
@@ -309,6 +353,7 @@ end)
 			},
 		},
 		Windows: map[string]extension.WindowState{},
+		Layout:  testLayout(map[string]extension.WindowState{}),
 		Context: map[string]any{testContextModeKey: testModeChat},
 		Name:    testEventKey,
 		Key: extension.ComposerKeyEvent{
@@ -397,6 +442,7 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 			},
 		},
 		Windows: map[string]extension.WindowState{},
+		Layout:  testLayout(map[string]extension.WindowState{}),
 		Context: map[string]any{},
 		Name:    "startup",
 		Key: extension.ComposerKeyEvent{
@@ -417,6 +463,7 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 			testBufferComposer: startup.Buffers[testBufferComposer],
 		},
 		Windows: map[string]extension.WindowState{},
+		Layout:  testLayout(map[string]extension.WindowState{}),
 		Context: map[string]any{testContextModeKey: testModeChat},
 		Name:    testEventKey,
 		Key: extension.ComposerKeyEvent{

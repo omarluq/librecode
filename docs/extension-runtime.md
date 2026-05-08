@@ -103,6 +103,8 @@ For terminal runtime events, Go creates a `TerminalEvent` with:
 - `key`
 - `context`
 - `buffers`
+- `windows`
+- `layout`
 
 That event is copied into a mutable host-side structure (`luaHostEvent`) before Lua handlers run.
 
@@ -111,6 +113,8 @@ Handlers can then:
 - mutate buffers
 - append to buffers
 - delete buffers
+- mutate windows/layout
+- enqueue low-level window-relative draw operations
 - mark the event consumed
 - stop later handlers
 
@@ -125,13 +129,13 @@ The terminal currently exposes these named buffers to extension handlers:
 - `transcript`
 - extension-created runtime buffers
 
-It also now exposes a small window model for the active event, including a `composer` window bound to the composer buffer. This is the first step toward making extensions discover and drive visible UI regions instead of relying only on buffer names.
+It also exposes a window/layout model for active terminal events, including a `composer` window bound to the composer buffer. Extensions can now discover visible UI regions, mutate windows/layout, and enqueue low-level draw operations.
 
 Important detail: these are not yet a complete unified buffer architecture for the entire application.
 
 Today:
 
-- `composer` is backed by the terminal editor state
+- `composer` is backed by the canonical composer buffer
 - `status` is backed by the footer/status string
 - `transcript` is mostly a façade for append/reset-style interactions
 - custom buffers persist in `app.extensionRuntimeBuffers`
@@ -142,8 +146,11 @@ This is a good start, but not the final architecture.
 
 The terminal currently emits low-level extension events for:
 
+- `startup`
 - `key`
 - `prompt_submit`
+- `resize`
+- `render`
 
 The assistant runtime also emits named extension lifecycle events through `Manager.Emit`, currently including:
 
@@ -170,11 +177,11 @@ Core UI state is still primarily owned by Go structs, with extension buffers lay
 
 We need to move toward a world where more of the runtime is expressed as first-class named buffers and buffer-like objects.
 
-### 2. Render/layout is not replaceable yet
+### 2. Render/layout is still host-first
 
-Extensions cannot yet fully control layout or paint the screen.
+Extensions can mutate the active layout and enqueue low-level window-relative draw operations during render events.
 
-They can now inspect visible windows and discover which buffer is presented in the composer window, but they still cannot truly reskin the application from first principles.
+The default Go renderer still owns the stock chat drawing order and built-in transcript/composer/status rendering. Extensions can override and augment visible regions, but the app has not yet been rebuilt fully on public layout/render primitives.
 
 ### 3. Event surface is too small
 
@@ -291,7 +298,14 @@ Move more terminal-visible state behind shared buffer-like abstractions.
 
 ### Phase 4: expose render/layout
 
-Add enough rendering primitives that the stock UI can be incrementally rebuilt using the public API.
+In progress:
+
+- render and resize events
+- layout get/set
+- window create/set/delete
+- low-level UI draw/cursor operations
+
+Next: rebuild more of the stock UI against those same public primitives.
 
 ### Phase 5: expose assistant/runtime replacement hooks
 

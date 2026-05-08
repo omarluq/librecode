@@ -9,7 +9,10 @@ import (
 type luaHostEvent struct {
 	buffers        map[string]BufferState
 	windows        map[string]WindowState
+	layout         LayoutState
 	context        map[string]any
+	changedBuffers map[string]struct{}
+	changedWindows map[string]struct{}
 	appends        []BufferAppend
 	actions        []ActionCall
 	uiDrawOps      []UIDrawOp
@@ -21,6 +24,7 @@ type luaHostEvent struct {
 	key            ComposerKeyEvent
 	consumed       bool
 	stopped        bool
+	layoutChanged  bool
 }
 
 func newLuaHostEvent(event *TerminalEvent) *luaHostEvent {
@@ -29,7 +33,10 @@ func newLuaHostEvent(event *TerminalEvent) *luaHostEvent {
 		key:            event.Key,
 		buffers:        cloneBuffers(event.Buffers),
 		windows:        cloneWindows(event.Windows),
+		layout:         cloneLayout(event.Layout),
 		context:        cloneMap(event.Context),
+		changedBuffers: map[string]struct{}{},
+		changedWindows: map[string]struct{}{},
 		appends:        []BufferAppend{},
 		actions:        []ActionCall{},
 		uiDrawOps:      []UIDrawOp{},
@@ -39,13 +46,15 @@ func newLuaHostEvent(event *TerminalEvent) *luaHostEvent {
 		uiCursor:       nil,
 		consumed:       false,
 		stopped:        false,
+		layoutChanged:  false,
 	}
 }
 
 func (event *luaHostEvent) result() TerminalEventResult {
 	return TerminalEventResult{
-		Buffers:        cloneBuffers(event.buffers),
-		Windows:        cloneWindows(event.windows),
+		Buffers:        cloneChangedBuffers(event.buffers, event.changedBuffers),
+		Windows:        cloneChangedWindows(event.windows, event.changedWindows),
+		Layout:         event.resultLayout(),
 		Appends:        append([]BufferAppend{}, event.appends...),
 		Actions:        append([]ActionCall{}, event.actions...),
 		UIDrawOps:      append([]UIDrawOp{}, event.uiDrawOps...),
@@ -61,6 +70,7 @@ func (event *luaHostEvent) eventSnapshot() *TerminalEvent {
 	return &TerminalEvent{
 		Buffers: cloneBuffers(event.buffers),
 		Windows: cloneWindows(event.windows),
+		Layout:  cloneLayout(event.layout),
 		Context: cloneMap(event.context),
 		Name:    event.name,
 		Key:     event.key,
@@ -94,11 +104,13 @@ func (event *luaHostEvent) setBuffer(name string, buffer *BufferState) {
 	}
 	buffer.Metadata = cloneMap(buffer.Metadata)
 	event.buffers[name] = *buffer
+	event.changedBuffers[name] = struct{}{}
 	event.removeDeletedBuffer(name)
 }
 
 func (event *luaHostEvent) deleteBuffer(name string) {
 	delete(event.buffers, name)
+	delete(event.changedBuffers, name)
 	for _, deletedBuffer := range event.deletedBuffers {
 		if deletedBuffer == name {
 			return
@@ -169,11 +181,24 @@ func (event *luaHostEvent) setWindow(name string, window *WindowState) {
 	}
 	window.Metadata = cloneMap(window.Metadata)
 	event.windows[name] = *window
+	event.layout.Windows[name] = *window
+	event.changedWindows[name] = struct{}{}
 	event.removeDeletedWindow(name)
+}
+
+func (event *luaHostEvent) setLayout(layout *LayoutState) {
+	if layout.Windows == nil {
+		layout.Windows = map[string]WindowState{}
+	}
+	event.layout = cloneLayout(*layout)
+	event.windows = cloneWindows(event.layout.Windows)
+	event.layoutChanged = true
 }
 
 func (event *luaHostEvent) deleteWindow(name string) {
 	delete(event.windows, name)
+	delete(event.layout.Windows, name)
+	delete(event.changedWindows, name)
 	for _, deletedWindow := range event.deletedWindows {
 		if deletedWindow == name {
 			return
@@ -247,6 +272,7 @@ func (event *luaHostEvent) applyLuaResult(value lua.LValue) {
 	}
 	event.applyLuaResultBuffers(table.RawGetString("buffers"))
 	event.applyLuaResultWindows(table.RawGetString("windows"))
+	event.applyLuaResultLayout(table.RawGetString("layout"))
 	event.applyLuaResultAppends(table.RawGetString("appends"))
 	event.applyLuaResultActions(table.RawGetString("actions"))
 	event.applyLuaResultDrawOps(table.RawGetString("ui_draw_ops"))
@@ -278,6 +304,14 @@ func (event *luaHostEvent) applyLuaResultWindows(value lua.LValue) {
 		window := luaWindowState(name, windowValue)
 		event.setWindow(name, &window)
 	})
+}
+
+func (event *luaHostEvent) applyLuaResultLayout(value lua.LValue) {
+	layout := luaLayoutState(value)
+	if layout == nil {
+		return
+	}
+	event.setLayout(layout)
 }
 
 func (event *luaHostEvent) applyLuaResultAppends(value lua.LValue) {
@@ -351,13 +385,33 @@ func (event *luaHostEvent) applyLuaResultDeletedWindows(value lua.LValue) {
 func cloneBuffers(buffers map[string]BufferState) map[string]BufferState {
 	cloned := make(map[string]BufferState, len(buffers))
 	for name, buffer := range buffers {
-		if buffer.Name == "" {
-			buffer.Name = name
-		}
-		buffer.Chars = append([]string{}, buffer.Chars...)
-		buffer.Metadata = cloneMap(buffer.Metadata)
-		cloned[name] = buffer
+		cloned[name] = cloneBuffer(&buffer, name)
 	}
+
+	return cloned
+}
+
+func cloneChangedBuffers(
+	buffers map[string]BufferState,
+	changed map[string]struct{},
+) map[string]BufferState {
+	cloned := make(map[string]BufferState, len(changed))
+	for name := range changed {
+		if buffer, ok := buffers[name]; ok {
+			cloned[name] = cloneBuffer(&buffer, name)
+		}
+	}
+
+	return cloned
+}
+
+func cloneBuffer(buffer *BufferState, name string) BufferState {
+	cloned := *buffer
+	if cloned.Name == "" {
+		cloned.Name = name
+	}
+	cloned.Chars = append([]string{}, cloned.Chars...)
+	cloned.Metadata = cloneMap(cloned.Metadata)
 
 	return cloned
 }
@@ -368,14 +422,59 @@ func cloneWindows(windows map[string]WindowState) map[string]WindowState {
 	}
 	cloned := make(map[string]WindowState, len(windows))
 	for name, window := range windows {
-		if window.Name == "" {
-			window.Name = name
-		}
-		window.Metadata = cloneMap(window.Metadata)
-		cloned[name] = window
+		cloned[name] = cloneWindow(&window, name)
 	}
 
 	return cloned
+}
+
+func cloneChangedWindows(
+	windows map[string]WindowState,
+	changed map[string]struct{},
+) map[string]WindowState {
+	cloned := make(map[string]WindowState, len(changed))
+	for name := range changed {
+		if window, ok := windows[name]; ok {
+			cloned[name] = cloneWindow(&window, name)
+		}
+	}
+
+	return cloned
+}
+
+func cloneWindow(window *WindowState, name string) WindowState {
+	cloned := *window
+	if cloned.Name == "" {
+		cloned.Name = name
+	}
+	cloned.Metadata = cloneMap(cloned.Metadata)
+
+	return cloned
+}
+
+func (event *luaHostEvent) resultLayout() *LayoutState {
+	if !event.layoutChanged {
+		return nil
+	}
+
+	return cloneLayoutPtr(&event.layout)
+}
+
+func cloneLayout(layout LayoutState) LayoutState {
+	return LayoutState{
+		Windows: cloneWindows(layout.Windows),
+		Width:   layout.Width,
+		Height:  layout.Height,
+	}
+}
+
+func cloneLayoutPtr(layout *LayoutState) *LayoutState {
+	if layout == nil {
+		return nil
+	}
+	cloned := cloneLayout(*layout)
+
+	return &cloned
 }
 
 func cloneUICursor(cursor *UICursor) *UICursor {

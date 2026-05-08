@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -9,7 +10,7 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 )
 
-func (app *App) draw() {
+func (app *App) draw(ctx context.Context) {
 	width, height := app.screen.Size()
 	app.frame = newCellBuffer(width, height, tcell.StyleDefault)
 	if width < 20 || height < 8 {
@@ -19,6 +20,8 @@ func (app *App) draw() {
 	}
 
 	layout := app.currentRuntimeLayout()
+	app.runRenderExtensions(ctx, &layout)
+	layout = app.currentRuntimeLayout()
 	if app.mode == modePanel && app.panel != nil {
 		app.drawPanelWindow(&layout)
 	} else {
@@ -444,8 +447,9 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 	statusStart := height - len(statusLines)
 
 	return runtimeLayout{
-		Width:  width,
-		Height: height,
+		Windows: nil,
+		Width:   width,
+		Height:  height,
 		Transcript: extension.WindowState{
 			Metadata:  map[string]any{"count": len(app.messages)},
 			Name:      extensionBufferTranscript,
@@ -515,6 +519,7 @@ func (app *App) mergeRuntimeLayout(layout *runtimeLayout) runtimeLayout {
 		Autocomplete: autocomplete,
 		Composer:     composer,
 		Status:       status,
+		Windows:      windows,
 	}
 }
 
@@ -629,6 +634,9 @@ func writeEditorLine(
 }
 
 func (app *App) cloneRuntimeWindows(layout *runtimeLayout) map[string]extension.WindowState {
+	if app.runtimeLayout != nil && len(app.runtimeLayout.Windows) > 0 {
+		return cloneWindowStates(app.runtimeLayout.Windows)
+	}
 	windows := map[string]extension.WindowState{
 		layout.Transcript.Name:   layout.Transcript,
 		layout.Autocomplete.Name: layout.Autocomplete,
@@ -646,6 +654,21 @@ func (app *App) cloneRuntimeWindows(layout *runtimeLayout) map[string]extension.
 	}
 
 	return windows
+}
+
+func cloneWindowStates(windows map[string]extension.WindowState) map[string]extension.WindowState {
+	cloned := make(map[string]extension.WindowState, len(windows))
+	for name, window := range windows {
+		if window.Name == "" {
+			window.Name = name
+		}
+		if window.Metadata == nil {
+			window.Metadata = map[string]any{}
+		}
+		cloned[name] = window
+	}
+
+	return cloned
 }
 
 func (app *App) applyUIOverrides(layout *runtimeLayout) {

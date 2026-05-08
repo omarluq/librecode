@@ -113,6 +113,68 @@ end)
 	assertEditorText(t, app, "second")
 }
 
+func TestExtensionRenderEventCanDrawAndSetLayout(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("render", function()
+  local layout = librecode.layout.get()
+  local composer = layout.windows.composer
+  composer.y = 1
+  composer.height = 4
+  layout.windows.composer = composer
+  librecode.layout.set(layout)
+  librecode.ui.clear_window("composer")
+  librecode.ui.draw_text("composer", 0, 0, "lua composer", { fg = "accent", bold = true })
+  librecode.ui.set_cursor("composer", 1, 2)
+end)
+`)
+	layout := app.currentRuntimeLayout()
+
+	app.runRenderExtensions(context.Background(), &layout)
+
+	if app.runtimeLayout == nil {
+		t.Fatal("render extension should set runtime layout")
+	}
+	composer := app.runtimeLayout.Windows[extensionBufferComposer]
+	if got, want := composer.Y, 1; got != want {
+		t.Fatalf("composer y = %d, want %d", got, want)
+	}
+	if got, want := composer.Height, 4; got != want {
+		t.Fatalf("composer height = %d, want %d", got, want)
+	}
+	override := app.uiWindowOverrides[extensionBufferComposer]
+	if !override.Reset {
+		t.Fatal("composer window should be cleared")
+	}
+	require.Len(t, override.DrawOps, 1)
+	if got, want := override.DrawOps[0].Text, "lua composer"; got != want {
+		t.Fatalf("draw text = %q, want %q", got, want)
+	}
+	if app.uiCursor == nil {
+		t.Fatal("render extension should set cursor")
+	}
+	if got, want := app.uiCursor.Row, 1; got != want {
+		t.Fatalf("cursor row = %d, want %d", got, want)
+	}
+}
+
+func TestExtensionResizeEventCanMutateStatus(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("resize", function()
+  librecode.buf.set_text("status", "resized")
+end)
+`)
+
+	require.NoError(t, app.handleResizeExtensions(context.Background()))
+
+	if got, want := app.statusMessage, "resized"; got != want {
+		t.Fatalf("status = %q, want %q", got, want)
+	}
+}
+
 func newExtensionRuntimeTestApp(t *testing.T, source string) *App {
 	t.Helper()
 

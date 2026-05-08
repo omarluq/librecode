@@ -13,6 +13,8 @@ import (
 const (
 	extensionEventKey          = "key"
 	extensionEventPromptSubmit = "prompt_submit"
+	extensionEventRender       = "render"
+	extensionEventResize       = "resize"
 	extensionEventStartup      = "startup"
 	extensionBufferComposer    = "composer"
 	extensionBufferStatus      = "status"
@@ -61,6 +63,46 @@ func (app *App) handleExtensionKey(ctx context.Context, event *tcell.EventKey) (
 	return result.Consumed, nil
 }
 
+func (app *App) handleResizeExtensions(ctx context.Context) error {
+	if app.extensions == nil {
+		return nil
+	}
+	event := app.newExtensionEvent(extensionEventResize, emptyExtensionKeyEvent())
+	result, err := app.extensions.HandleTerminalEvent(ctx, &event)
+	if err != nil {
+		return err
+	}
+	app.applyExtensionEventResult(ctx, &result)
+
+	return nil
+}
+
+func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) {
+	if layout == nil {
+		return
+	}
+	app.resetFrameUIOverrides()
+	if app.extensions == nil {
+		return
+	}
+	event := app.newExtensionEventWithLayout(extensionEventRender, emptyExtensionKeyEvent(), layout)
+	result, err := app.extensions.HandleTerminalEvent(ctx, &event)
+	if err != nil {
+		app.addSystemMessage(err.Error())
+		return
+	}
+	app.applyExtensionEventResult(ctx, &result)
+}
+
+func emptyExtensionKeyEvent() extension.ComposerKeyEvent {
+	return extension.ComposerKeyEvent{Key: "", Text: "", Ctrl: false, Alt: false, Shift: false}
+}
+
+func (app *App) resetFrameUIOverrides() {
+	app.uiWindowOverrides = map[string]uiWindowOverride{}
+	app.uiCursor = nil
+}
+
 func (app *App) applyPromptSubmitExtensions(ctx context.Context) (bool, error) {
 	if app.extensions == nil {
 		return false, nil
@@ -86,9 +128,20 @@ func (app *App) applyPromptSubmitExtensions(ctx context.Context) (bool, error) {
 }
 
 func (app *App) newExtensionEvent(name string, key extension.ComposerKeyEvent) extension.TerminalEvent {
+	layout := app.currentRuntimeLayout()
+	return app.newExtensionEventWithLayout(name, key, &layout)
+}
+
+func (app *App) newExtensionEventWithLayout(
+	name string,
+	key extension.ComposerKeyEvent,
+	layout *runtimeLayout,
+) extension.TerminalEvent {
+	windows := app.cloneRuntimeWindows(layout)
 	return extension.TerminalEvent{
 		Buffers: app.extensionBuffers(),
-		Windows: app.extensionWindows(),
+		Windows: windows,
+		Layout:  extension.LayoutState{Windows: windows, Width: layout.Width, Height: layout.Height},
 		Context: app.extensionContext(),
 		Name:    name,
 		Key:     key,
@@ -150,11 +203,6 @@ func stringBufferChars(text string) []string {
 	return chars
 }
 
-func (app *App) extensionWindows() map[string]extension.WindowState {
-	layout := app.currentRuntimeLayout()
-	return app.cloneRuntimeWindows(&layout)
-}
-
 func (app *App) extensionContext() map[string]any {
 	return map[string]any{
 		"mode":         string(app.mode),
@@ -181,13 +229,31 @@ func (app *App) applyExtensionEventResult(ctx context.Context, result *extension
 	for name, window := range result.Windows {
 		app.applyRuntimeWindow(name, &window)
 	}
+	if result.Layout != nil {
+		app.applyRuntimeLayout(result.Layout)
+	}
 	for _, bufferAppend := range result.Appends {
+		if app.resultBufferAlreadyApplied(&bufferAppend, result.Buffers) {
+			continue
+		}
 		app.applyExtensionBufferAppend(bufferAppend)
 	}
 	for _, action := range result.Actions {
 		app.applyExtensionAction(ctx, action)
 	}
 	app.applyUIWindowResult(result)
+}
+
+func (app *App) resultBufferAlreadyApplied(
+	bufferAppend *extension.BufferAppend,
+	buffers map[string]extension.BufferState,
+) bool {
+	if bufferAppend == nil || bufferAppend.Name == extensionBufferTranscript {
+		return false
+	}
+	_, ok := buffers[bufferAppend.Name]
+
+	return ok
 }
 
 func (app *App) applyExtensionAction(ctx context.Context, action extension.ActionCall) {
@@ -234,10 +300,49 @@ func (app *App) applyRuntimeWindow(name string, window *extension.WindowState) {
 		window.Name = name
 	}
 	app.runtimeWindows[name] = *window
+	app.ensureRuntimeLayoutWindow(name, window)
+}
+
+func (app *App) applyRuntimeLayout(layout *extension.LayoutState) {
+	if layout == nil {
+		return
+	}
+	cloned := extension.LayoutState{
+		Windows: map[string]extension.WindowState{},
+		Width:   layout.Width,
+		Height:  layout.Height,
+	}
+	for name, window := range layout.Windows {
+		if window.Name == "" {
+			window.Name = name
+		}
+		if window.Metadata == nil {
+			window.Metadata = map[string]any{}
+		}
+		cloned.Windows[name] = window
+	}
+	app.runtimeLayout = &cloned
+	app.runtimeWindows = map[string]extension.WindowState{}
+	for name, window := range cloned.Windows {
+		app.runtimeWindows[name] = window
+	}
+}
+
+func (app *App) ensureRuntimeLayoutWindow(name string, window *extension.WindowState) {
+	if app.runtimeLayout == nil || window == nil {
+		return
+	}
+	if app.runtimeLayout.Windows == nil {
+		app.runtimeLayout.Windows = map[string]extension.WindowState{}
+	}
+	app.runtimeLayout.Windows[name] = *window
 }
 
 func (app *App) applyRuntimeWindowDelete(name string) {
 	delete(app.runtimeWindows, name)
+	if app.runtimeLayout != nil {
+		delete(app.runtimeLayout.Windows, name)
+	}
 	delete(app.uiWindowOverrides, name)
 	if app.uiCursor != nil && app.uiCursor.Window == name {
 		app.uiCursor = nil

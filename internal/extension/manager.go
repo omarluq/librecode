@@ -342,6 +342,7 @@ func (manager *Manager) installAPI(extensionRuntime *luaExtension) {
 	extensionRuntime.state.SetField(apiTable, "event", manager.luaEventAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "action", manager.luaActionAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "keymap", manager.luaKeymapAPI(extensionRuntime))
+	extensionRuntime.state.SetField(apiTable, "layout", manager.luaLayoutAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "ui", manager.luaUIAPI(extensionRuntime))
 	extensionRuntime.state.SetField(apiTable, "win", manager.luaWindowAPI(extensionRuntime))
 	extensionRuntime.state.SetGlobal("librecode", apiTable)

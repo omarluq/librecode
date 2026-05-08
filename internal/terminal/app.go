@@ -63,6 +63,7 @@ type cachedRenderedMessage struct {
 }
 
 type runtimeLayout struct {
+	Windows      map[string]extension.WindowState
 	Transcript   extension.WindowState
 	Autocomplete extension.WindowState
 	Composer     extension.WindowState
@@ -110,6 +111,7 @@ type App struct {
 	scopedEnabled                map[string]bool
 	extensionRuntimeBuffers      map[string]extension.BufferState
 	runtimeWindows               map[string]extension.WindowState
+	runtimeLayout                *extension.LayoutState
 	uiWindowOverrides            map[string]uiWindowOverride
 	uiCursor                     *extension.UICursor
 	theme                        terminalTheme
@@ -245,6 +247,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		streamingBlockLineCacheState: emptyMessageLineCacheState(),
 		extensionRuntimeBuffers:      map[string]extension.BufferState{},
 		runtimeWindows:               map[string]extension.WindowState{},
+		runtimeLayout:                nil,
 		uiWindowOverrides:            map[string]uiWindowOverride{},
 		uiCursor:                     nil,
 	}
@@ -260,7 +263,7 @@ func (app *App) loop(ctx context.Context) {
 	defer frameTicker.Stop()
 	dirty := true
 	for {
-		dirty = app.drawDirtyFrame(dirty)
+		dirty = app.drawDirtyFrame(ctx, dirty)
 		shouldQuit, nextDirty := app.runLoopStep(ctx, workTicker, frameTicker, dirty)
 		if shouldQuit {
 			return
@@ -269,9 +272,9 @@ func (app *App) loop(ctx context.Context) {
 	}
 }
 
-func (app *App) drawDirtyFrame(dirty bool) bool {
+func (app *App) drawDirtyFrame(ctx context.Context, dirty bool) bool {
 	if dirty && !app.throttleDraws() {
-		app.draw()
+		app.draw(ctx)
 		return false
 	}
 
@@ -291,7 +294,7 @@ func (app *App) runLoopStep(
 		app.workFrame++
 		return false, true
 	case <-app.frameTick(frameTicker, dirty):
-		app.draw()
+		app.draw(ctx)
 		return false, false
 	}
 }
@@ -308,7 +311,7 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 		return true, false
 	}
 	if app.shouldDrawImmediately(event) {
-		app.draw()
+		app.draw(ctx)
 		return false, false
 	}
 
