@@ -108,6 +108,7 @@ type TerminalEvent struct {
 	Windows map[string]WindowState `json:"windows"`
 	Layout  LayoutState            `json:"layout"`
 	Context map[string]any         `json:"context"`
+	Data    map[string]any         `json:"data"`
 	Name    string                 `json:"name"`
 	Key     ComposerKeyEvent       `json:"key"`
 }

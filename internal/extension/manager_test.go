@@ -72,6 +72,7 @@ func testTerminalEventWithComposerWindow(text, key string) extension.TerminalEve
 		Windows: map[string]extension.WindowState{testBufferComposer: window},
 		Layout:  testLayout(map[string]extension.WindowState{testBufferComposer: window}),
 		Context: map[string]any{testContextModeKey: testModeChat},
+		Data:    map[string]any{},
 		Name:    testEventKey,
 		Key: extension.ComposerKeyEvent{
 			Key:   key,
@@ -181,6 +182,7 @@ end)
 		Windows: map[string]extension.WindowState{},
 		Layout:  testLayout(map[string]extension.WindowState{}),
 		Context: map[string]any{},
+		Data:    map[string]any{},
 		Name:    testEventKey,
 		Key: extension.ComposerKeyEvent{
 			Key:   "!",
@@ -304,6 +306,7 @@ end)
 		Windows: map[string]extension.WindowState{},
 		Layout:  testLayout(map[string]extension.WindowState{}),
 		Context: map[string]any{testContextModeKey: testModeChat},
+		Data:    map[string]any{},
 		Name:    testEventKey,
 		Key: extension.ComposerKeyEvent{
 			Key:   "!",
@@ -394,6 +397,7 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 		Windows: map[string]extension.WindowState{testBufferComposer: composerWindow},
 		Layout:  testLayout(map[string]extension.WindowState{testBufferComposer: composerWindow}),
 		Context: map[string]any{},
+		Data:    map[string]any{},
 		Name:    "startup",
 		Key: extension.ComposerKeyEvent{
 			Key:   "",
@@ -415,6 +419,7 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 		Windows: map[string]extension.WindowState{testBufferComposer: composerWindow},
 		Layout:  testLayout(map[string]extension.WindowState{testBufferComposer: composerWindow}),
 		Context: map[string]any{testContextModeKey: testModeChat},
+		Data:    map[string]any{},
 		Name:    testEventKey,
 		Key: extension.ComposerKeyEvent{
 			Key:   "x",

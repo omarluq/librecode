@@ -154,7 +154,7 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload asyncEvent) 
 	if app.handlePromptLifecycleEvent(ctx, payload) {
 		return
 	}
-	app.handlePromptStreamEvent(payload)
+	app.handlePromptStreamEvent(ctx, payload)
 }
 
 func (app *App) ignorePromptEvent(payload asyncEvent) bool {
@@ -189,9 +189,16 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload asyncEvent) bool {
 	switch payload.Kind {
 	case asyncEventPromptDone:
+		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventPromptDone, promptDoneExtensionData(payload.Response))
 		app.applyPromptResponse(ctx, payload.Response, payload.PromptID)
 		return true
 	case asyncEventPromptUserEntry:
+		data := map[string]any{
+			extensionDataSessionID: payload.Provider,
+			extensionDataEntryID:   payload.Text,
+			extensionDataPromptID:  payload.PromptID,
+		}
+		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventPromptUser, data)
 		app.applyPromptUserEntry(ctx, payload.Provider, payload.Text, payload.PromptID)
 		return true
 	case asyncEventPromptError:
@@ -206,18 +213,34 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload asyncEve
 	return false
 }
 
-func (app *App) handlePromptStreamEvent(payload asyncEvent) {
+func (app *App) handlePromptStreamEvent(ctx context.Context, payload asyncEvent) {
 	if app.activePrompt != nil && app.activePrompt.Canceled {
 		return
 	}
 	switch payload.Kind {
 	case asyncEventPromptDelta:
+		app.emitExtensionRuntimeEventOrMessage(
+			ctx,
+			extensionEventModelDelta,
+			map[string]any{extensionDataText: payload.Text},
+		)
 		app.appendStreamingBlock(database.RoleAssistant, payload.Text)
 	case asyncEventPromptThinkingDelta:
+		app.emitExtensionRuntimeEventOrMessage(
+			ctx,
+			extensionEventThinkingDelta,
+			map[string]any{extensionDataText: payload.Text},
+		)
 		app.appendStreamingBlock(database.RoleThinking, payload.Text)
 	case asyncEventPromptToolResult:
+		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventToolEnd, toolExtensionData(payload.ToolEvent))
 		app.applyStreamedToolEvent(payload.ToolEvent)
 	case asyncEventPromptToolStart:
+		app.emitExtensionRuntimeEventOrMessage(
+			ctx,
+			extensionEventToolStart,
+			map[string]any{extensionDataName: payload.Text},
+		)
 		return
 	case asyncEventPromptDone,
 		asyncEventPromptUserEntry,
@@ -226,6 +249,34 @@ func (app *App) handlePromptStreamEvent(payload asyncEvent) {
 		asyncEventAuthDone,
 		asyncEventAuthError:
 		return
+	}
+}
+
+func promptDoneExtensionData(response *assistant.PromptResponse) map[string]any {
+	if response == nil {
+		return map[string]any{}
+	}
+
+	return map[string]any{
+		extensionDataSessionID:        response.SessionID,
+		extensionDataUserEntryID:      response.UserEntryID,
+		extensionDataAssistantEntryID: response.AssistantEntryID,
+		extensionDataText:             response.Text,
+		extensionDataCached:           response.Cached,
+	}
+}
+
+func toolExtensionData(event *assistant.ToolEvent) map[string]any {
+	if event == nil {
+		return map[string]any{}
+	}
+
+	return map[string]any{
+		extensionDataName:         event.Name,
+		extensionDataToolArgsJSON: event.ArgumentsJSON,
+		extensionDataDetailsJSON:  event.DetailsJSON,
+		extensionDataResult:       event.Result,
+		extensionDataError:        event.Error,
 	}
 }
 

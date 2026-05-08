@@ -2,6 +2,7 @@
 package terminal
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -53,8 +54,8 @@ func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
 
 	app := newRenderTestApp(t)
 
-	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, "thinking"))
-	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptDelta, "answer"))
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptThinkingDelta, "thinking"))
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
 
 	got := streamingBlockRoles(app.streamingBlocks)
 	want := []database.Role{database.RoleThinking, database.RoleAssistant}
@@ -72,7 +73,7 @@ func TestPromptToolStartDoesNotSetStatus(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.setStatus("ready")
 
-	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptToolStart, "bash"))
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptToolStart, "bash"))
 
 	if app.statusMessage != "ready" {
 		t.Fatalf("status = %q, want ready", app.statusMessage)
@@ -153,9 +154,9 @@ func TestStreamingBlockCacheInvalidatesOnMergedDelta(t *testing.T) {
 
 	app := newRenderTestApp(t)
 
-	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, "first"))
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptThinkingDelta, "first"))
 	_ = app.messageLines(80, 100)
-	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, " second"))
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptThinkingDelta, " second"))
 
 	lines := app.messageLines(80, 100)
 	if lineIndexContaining(lines, "first second") == -1 {
@@ -168,11 +169,12 @@ func TestStreamingBlocksRenderChronologically(t *testing.T) {
 
 	app := newRenderTestApp(t)
 
-	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, "first thought"))
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptThinkingDelta, "first thought"))
 	toolEvent := newTestAsyncEvent(asyncEventPromptToolResult, "")
 	toolEvent.ToolEvent = newTestToolEvent("read", "tool output")
-	app.handlePromptStreamEvent(toolEvent)
-	app.handlePromptStreamEvent(newTestAsyncEvent(asyncEventPromptThinkingDelta, "second thought"))
+	app.handlePromptStreamEvent(context.Background(), toolEvent)
+	secondThought := newTestAsyncEvent(asyncEventPromptThinkingDelta, "second thought")
+	app.handlePromptStreamEvent(context.Background(), secondThought)
 
 	got := streamingBlockRoles(app.streamingBlocks)
 	want := []database.Role{

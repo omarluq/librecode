@@ -188,6 +188,7 @@ func terminalEventTable(state *lua.LState, event *TerminalEvent) *lua.LTable {
 		"alt":          event.Key.Alt,
 		"shift":        event.Key.Shift,
 		"context":      event.Context,
+		"data":         event.Data,
 		"buffers":      bufferMapForLua(event.Buffers),
 		"windows":      windowMapForLua(event.Windows),
 		"layout":       layoutForLua(&event.Layout),

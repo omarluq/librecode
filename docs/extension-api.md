@@ -63,6 +63,12 @@ Current commonly emitted events include:
 - `startup`
 - `key`
 - `prompt_submit`
+- `prompt_user_entry`
+- `prompt_done`
+- `model_delta`
+- `thinking_delta`
+- `tool_start`
+- `tool_end`
 - `resize`
 - `render`
 - `before_agent_start`
@@ -449,6 +455,9 @@ Handlers for terminal events receive a table like:
     cwd = "/path/to/project",
     session_id = "abc",
   },
+  data = {
+    text = "incremental event text",
+  },
   composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, metadata = {} },
   buffers = {
     composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, metadata = {} },
@@ -476,11 +485,9 @@ The API is still incomplete compared with the long-term target.
 
 Notably missing today:
 
-- richer layout/window/render APIs beyond frame-local drawing and renderer ownership
 - jobs/timers/scheduling
 - richer transcript/message object control
 - highlights/extmarks/namespaced annotations
-- broader assistant/model/tool lifecycle events
-- full runtime replacement hooks
+- deeper assistant/model/tool runtime replacement hooks
 
 Those are expected future additions as the programmable runtime architecture expands.

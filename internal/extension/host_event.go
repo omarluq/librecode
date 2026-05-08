@@ -11,6 +11,7 @@ type luaHostEvent struct {
 	windows        map[string]WindowState
 	layout         LayoutState
 	context        map[string]any
+	data           map[string]any
 	changedBuffers map[string]struct{}
 	changedWindows map[string]struct{}
 	appends        []BufferAppend
@@ -35,6 +36,7 @@ func newLuaHostEvent(event *TerminalEvent) *luaHostEvent {
 		windows:        cloneWindows(event.Windows),
 		layout:         cloneLayout(event.Layout),
 		context:        cloneMap(event.Context),
+		data:           cloneMap(event.Data),
 		changedBuffers: map[string]struct{}{},
 		changedWindows: map[string]struct{}{},
 		appends:        []BufferAppend{},
@@ -72,6 +74,7 @@ func (event *luaHostEvent) eventSnapshot() *TerminalEvent {
 		Windows: cloneWindows(event.windows),
 		Layout:  cloneLayout(event.layout),
 		Context: cloneMap(event.context),
+		Data:    cloneMap(event.data),
 		Name:    event.name,
 		Key:     event.key,
 	}

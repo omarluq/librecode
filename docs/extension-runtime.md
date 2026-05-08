@@ -183,27 +183,31 @@ Extensions can mutate the active layout, enqueue low-level window-relative draw 
 
 When an extension owns a window, the stock Go renderer skips that window and only extension draw operations/cursor placement are applied. This is now enough for bundled extensions such as Vim mode to fully redraw the composer window. The default Go renderer still owns the stock chat drawing order and built-in transcript/status rendering, so the app has not yet been rebuilt fully on public layout/render primitives.
 
-### 3. Event surface is too small
+### 3. Event surface still needs more lifecycle points
 
-The runtime needs more observable and interceptable lifecycle points.
-
-Examples:
+The runtime exposes the core terminal and streaming lifecycle now:
 
 - startup
-- shutdown
+- key
+- prompt_submit
+- prompt_user_entry
+- prompt_done
+- model_delta
+- thinking_delta
+- tool_start
+- tool_end
 - resize
 - render
+
+The next missing event families are deeper runtime replacement hooks:
+
+- shutdown
 - tick
 - session_load
 - session_save
 - prompt_prepare
-- prompt_submit
 - model_request
-- model_delta
-- thinking_delta
-- tool_start
 - tool_delta
-- tool_end
 - message_append
 - transcript_render
 

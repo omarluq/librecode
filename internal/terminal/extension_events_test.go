@@ -167,15 +167,47 @@ func TestExtensionResizeEventCanMutateStatus(t *testing.T) {
 	t.Parallel()
 
 	app := newExtensionRuntimeTestApp(t, `
-librecode.on("resize", function()
-  librecode.buf.set_text("status", "resized")
+librecode.on("resize", function(event)
+  librecode.buf.set_text("status", "resized " .. event.data.width .. "x" .. event.data.height)
 end)
 `)
 
 	require.NoError(t, app.handleResizeExtensions(context.Background()))
 
-	if got, want := app.statusMessage, "resized"; got != want {
+	if got, want := app.statusMessage, "resized 80x24"; got != want {
 		t.Fatalf("status = %q, want %q", got, want)
+	}
+}
+
+func TestExtensionModelAndToolLifecycleEvents(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("model_delta", function(event)
+  librecode.buf.append("events", "model:" .. event.data.text .. "\n")
+end)
+librecode.on("thinking_delta", function(event)
+  librecode.buf.append("events", "thinking:" .. event.data.text .. "\n")
+end)
+librecode.on("tool_start", function(event)
+  librecode.buf.append("events", "tool_start:" .. event.data.name .. "\n")
+end)
+librecode.on("tool_end", function(event)
+  librecode.buf.append("events", "tool_end:" .. event.data.name .. ":" .. event.data.result .. "\n")
+end)
+`)
+
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "hello"))
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptThinkingDelta, "why"))
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptToolStart, "bash"))
+	toolEvent := newTestAsyncEvent(asyncEventPromptToolResult, "")
+	toolEvent.ToolEvent = newTestToolEvent("bash", "ok")
+	app.handlePromptStreamEvent(context.Background(), toolEvent)
+
+	buffer := app.extensionRuntimeBuffers["events"]
+	want := "model:hello\nthinking:why\ntool_start:bash\ntool_end:bash:ok\n"
+	if got := buffer.Text; got != want {
+		t.Fatalf("events buffer = %q, want %q", got, want)
 	}
 }
 

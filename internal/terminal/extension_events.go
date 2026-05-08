@@ -11,14 +11,34 @@ import (
 )
 
 const (
-	extensionEventKey          = "key"
-	extensionEventPromptSubmit = "prompt_submit"
-	extensionEventRender       = "render"
-	extensionEventResize       = "resize"
-	extensionEventStartup      = "startup"
-	extensionBufferComposer    = "composer"
-	extensionBufferStatus      = "status"
-	extensionBufferTranscript  = "transcript"
+	extensionDataAssistantEntryID = "assistant_entry_id"
+	extensionDataCached           = "cached"
+	extensionDataDetailsJSON      = "details_json"
+	extensionDataEntryID          = "entry_id"
+	extensionDataError            = "error"
+	extensionDataHeight           = "height"
+	extensionDataName             = "name"
+	extensionDataPromptID         = "prompt_id"
+	extensionDataResult           = "result"
+	extensionDataSessionID        = "session_id"
+	extensionDataText             = "text"
+	extensionDataToolArgsJSON     = "arguments_json"
+	extensionDataUserEntryID      = "user_entry_id"
+	extensionDataWidth            = "width"
+	extensionEventKey             = "key"
+	extensionEventModelDelta      = "model_delta"
+	extensionEventPromptDone      = "prompt_done"
+	extensionEventPromptSubmit    = "prompt_submit"
+	extensionEventPromptUser      = "prompt_user_entry"
+	extensionEventRender          = "render"
+	extensionEventResize          = "resize"
+	extensionEventStartup         = "startup"
+	extensionEventThinkingDelta   = "thinking_delta"
+	extensionEventToolEnd         = "tool_end"
+	extensionEventToolStart       = "tool_start"
+	extensionBufferComposer       = "composer"
+	extensionBufferStatus         = "status"
+	extensionBufferTranscript     = "transcript"
 )
 
 func (app *App) runStartupExtensions(ctx context.Context) error {
@@ -64,17 +84,12 @@ func (app *App) handleExtensionKey(ctx context.Context, event *tcell.EventKey) (
 }
 
 func (app *App) handleResizeExtensions(ctx context.Context) error {
-	if app.extensions == nil {
-		return nil
-	}
-	event := app.newExtensionEvent(extensionEventResize, emptyExtensionKeyEvent())
-	result, err := app.extensions.HandleTerminalEvent(ctx, &event)
-	if err != nil {
-		return err
-	}
-	app.applyExtensionEventResult(ctx, &result)
+	layout := app.currentRuntimeLayout()
 
-	return nil
+	return app.emitExtensionRuntimeEvent(ctx, extensionEventResize, map[string]any{
+		extensionDataWidth:  layout.Width,
+		extensionDataHeight: layout.Height,
+	})
 }
 
 func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) {
@@ -85,7 +100,8 @@ func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) 
 	if app.extensions == nil {
 		return
 	}
-	event := app.newExtensionEventWithLayout(extensionEventRender, emptyExtensionKeyEvent(), layout)
+	data := map[string]any{extensionDataWidth: layout.Width, extensionDataHeight: layout.Height}
+	event := app.newExtensionEventWithLayoutAndData(extensionEventRender, emptyExtensionKeyEvent(), layout, data)
 	result, err := app.extensions.HandleTerminalEvent(ctx, &event)
 	if err != nil {
 		app.addSystemMessage(err.Error())
@@ -96,6 +112,26 @@ func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) 
 
 func emptyExtensionKeyEvent() extension.ComposerKeyEvent {
 	return extension.ComposerKeyEvent{Key: "", Text: "", Ctrl: false, Alt: false, Shift: false}
+}
+
+func (app *App) emitExtensionRuntimeEvent(ctx context.Context, name string, data map[string]any) error {
+	if app.extensions == nil {
+		return nil
+	}
+	event := app.newExtensionEventWithData(name, emptyExtensionKeyEvent(), data)
+	result, err := app.extensions.HandleTerminalEvent(ctx, &event)
+	if err != nil {
+		return err
+	}
+	app.applyExtensionEventResult(ctx, &result)
+
+	return nil
+}
+
+func (app *App) emitExtensionRuntimeEventOrMessage(ctx context.Context, name string, data map[string]any) {
+	if err := app.emitExtensionRuntimeEvent(ctx, name, data); err != nil {
+		app.addSystemMessage(err.Error())
+	}
 }
 
 func (app *App) resetFrameUIOverrides() {
@@ -128,14 +164,23 @@ func (app *App) applyPromptSubmitExtensions(ctx context.Context) (bool, error) {
 }
 
 func (app *App) newExtensionEvent(name string, key extension.ComposerKeyEvent) extension.TerminalEvent {
-	layout := app.currentRuntimeLayout()
-	return app.newExtensionEventWithLayout(name, key, &layout)
+	return app.newExtensionEventWithData(name, key, nil)
 }
 
-func (app *App) newExtensionEventWithLayout(
+func (app *App) newExtensionEventWithData(
+	name string,
+	key extension.ComposerKeyEvent,
+	data map[string]any,
+) extension.TerminalEvent {
+	layout := app.currentRuntimeLayout()
+	return app.newExtensionEventWithLayoutAndData(name, key, &layout, data)
+}
+
+func (app *App) newExtensionEventWithLayoutAndData(
 	name string,
 	key extension.ComposerKeyEvent,
 	layout *runtimeLayout,
+	data map[string]any,
 ) extension.TerminalEvent {
 	windows := app.cloneRuntimeWindows(layout)
 	return extension.TerminalEvent{
@@ -143,6 +188,7 @@ func (app *App) newExtensionEventWithLayout(
 		Windows: windows,
 		Layout:  extension.LayoutState{Windows: windows, Width: layout.Width, Height: layout.Height},
 		Context: app.extensionContext(),
+		Data:    cloneExtensionMetadata(data),
 		Name:    name,
 		Key:     key,
 	}
@@ -205,11 +251,11 @@ func stringBufferChars(text string) []string {
 
 func (app *App) extensionContext() map[string]any {
 	return map[string]any{
-		"mode":         string(app.mode),
-		"working":      app.working,
-		"auth_working": app.authWorking,
-		"cwd":          app.cwd,
-		"session_id":   app.sessionID,
+		"mode":                 string(app.mode),
+		"working":              app.working,
+		"auth_working":         app.authWorking,
+		"cwd":                  app.cwd,
+		extensionDataSessionID: app.sessionID,
 	}
 }
 
