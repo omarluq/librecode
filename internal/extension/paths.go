@@ -2,13 +2,11 @@ package extension
 
 import "strings"
 
-const officialExtensionsDir = "extensions"
-
-// DefaultLoadPaths returns official extension roots followed by configured user roots.
+// DefaultLoadPaths returns configured extension roots with whitespace trimmed and duplicates removed.
 func DefaultLoadPaths(configuredPaths []string) []string {
-	paths := make([]string, 0, len(configuredPaths)+1)
+	paths := make([]string, 0, len(configuredPaths))
 	seen := map[string]struct{}{}
-	for _, path := range append([]string{officialExtensionsDir}, configuredPaths...) {
+	for _, path := range configuredPaths {
 		trimmed := strings.TrimSpace(path)
 		if trimmed == "" {
 			continue

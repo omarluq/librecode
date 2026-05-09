@@ -4,7 +4,7 @@
 
 Accepted direction for the extension runtime.
 
-This document records the lesson from the first transcript-rendering migration attempt: Lua is the right control plane for librecode, but the Go runtime must remain the fast rendering backend and provide stronger generic rendering primitives before complex UI surfaces move to Lua.
+This document records the lesson from the first transcript-rendering migration attempt: Lua is useful as an optional control plane for librecode, but the Go runtime must remain the default UI implementation and fast rendering backend.
 
 Related docs:
 
@@ -15,9 +15,9 @@ Related docs:
 
 ## Decision
 
-librecode will keep Lua as the product/control layer and Go as the runtime/rendering kernel.
+librecode will keep Go as the product/runtime/rendering kernel and Lua as an optional extension layer.
 
-Lua should decide:
+Lua extensions may decide, when explicitly enabled:
 
 - which windows exist
 - which buffers are shown
@@ -34,17 +34,11 @@ Go should provide:
 - cached rendering for large histories
 - core invariants and bounded work in hot paths
 
-The goal is not to make Lua manually reimplement every pixel/string rule from the existing Go renderer. The goal is to let Lua compose high-level product behavior while Go exposes sharp, generic, efficient primitives.
+The goal is not to make Lua manually reimplement every pixel/string rule from the existing Go renderer. The goal is to let optional Lua extensions compose custom behavior while Go keeps the stock UI sharp and fast.
 
 ## Why this boundary exists
 
-Simple UI features migrated well:
-
-- Vim composer behavior is mostly Lua-owned.
-- Vim composer rendering works because the surface is small and local.
-- Statusline rendering works because it is a few short lines.
-
-The transcript migration did not meet the quality bar because transcript rendering is a hot and complex UI surface. It includes:
+Experiments showed that small UI overlays are feasible, but making Lua own default UI surfaces can degrade polish and performance. The transcript migration did not meet the quality bar because transcript rendering is a hot and complex UI surface. It includes:
 
 - wrapping and measuring text
 - spacing and grouping message blocks
@@ -59,9 +53,9 @@ The existing Go path already handles many of those concerns. Moving that logic w
 
 ## Current rule
 
-Do not move complex hot renderers to Lua just because a window can be extension-owned.
+Do not move default renderers to Lua just because a window can be extension-owned.
 
-A renderer is ready to migrate only when either:
+An optional Lua renderer is acceptable only when either:
 
 1. the Lua implementation can match the Go renderer's visual and interaction behavior with existing primitives, or
 2. missing generic primitives are added to the Go kernel first.
@@ -116,7 +110,7 @@ Specifically:
 
 ## Render parity checklist
 
-Before migrating a complex stock renderer to Lua, verify at least:
+Before enabling an optional Lua replacement for a complex stock renderer, verify at least:
 
 - visual spacing matches the Go renderer
 - borders and text colors do not bleed
@@ -158,16 +152,15 @@ Recommended remaining order:
 
 ## What still belongs in Lua now
 
-Lua is still the right place for:
+Lua is still the right place for optional customization:
 
-- Vim mode behavior and composer rendering
-- statusline content/rendering
+- keymaps and commands
+- hooks and prompt/context tweaks
 - simple panels and overlays
-- layout decisions
-- keymaps and prompt history UX
+- custom windows and opt-in render experiments
 - assistant policy hooks as primitives mature
-- convenience modules over `buf`, `win`, `layout`, `ui`, and `event`
+- project-specific helper modules over `buf`, `win`, `layout`, `ui`, and `event`
 
 The boundary is not "Go UI versus Lua UI". The boundary is:
 
-> Lua owns product policy and composition; Go owns hot, generic terminal primitives.
+> Go owns the default product and hot rendering; Lua is an optional customization layer.

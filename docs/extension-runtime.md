@@ -47,13 +47,13 @@ librecode follows a Unix-style trust model:
 - the runtime should not pretend to sandbox them
 - the runtime should still defend its own invariants: no deadlocks, corrupted state, or silent event-loop breakage
 
-### 3. Default UI as just another implementation
+### 3. Go-owned default UI with optional Lua customization
 
-The bundled terminal chat UI should increasingly become a client of the extension/runtime primitives, not a privileged special case.
+The terminal chat UI should remain polished and fast even when no Lua extensions are loaded. Lua is an optional customization layer, not a requirement for the core experience.
 
-Lua should own product decisions and composition. Go should keep the hot terminal rendering backend: measuring, wrapping, clipping, batching, viewporting, and style application.
+Go owns the default product UX and hot rendering backend: measuring, wrapping, clipping, batching, viewporting, style application, and mature transcript/composer/status rendering. Lua can still opt into overriding or augmenting these surfaces through public primitives.
 
-That means users should eventually be able to:
+That means users should be able to:
 
 - rewrite the composer experience
 - replace transcript rendering
@@ -68,17 +68,13 @@ That means users should eventually be able to:
 
 Extensions are loaded by `internal/extension.Manager`.
 
-Default roots today:
-
-1. `extensions/`
-2. configured `extensions.paths` entries
+Default roots today come from configured `extensions.paths` entries.
 
 Configured defaults currently come from `config/loader.go`:
 
-- `extensions`
 - `.librecode/extensions`
 
-The official bundled root is always deduped in front by `internal/extension.DefaultLoadPaths`.
+No bundled extension root is prepended automatically.
 
 The loader:
 
@@ -146,7 +142,7 @@ Important detail: these are not yet a complete unified buffer architecture for t
 Today:
 
 - `composer` is backed by the canonical composer buffer
-- `status` exposes footer/status metadata and can be rendered by bundled Lua or overridden as a runtime buffer
+- `status` exposes footer/status metadata and can be overlaid or overridden as a runtime buffer
 - `transcript` exposes message/streaming counts plus bounded recent blocks; overriding it lets extensions replace the stock transcript text render
 - `thinking` exposes thinking counts as metadata and can be overridden by extensions
 - `tools` exposes tool-result counts as metadata and can be overridden by extensions
@@ -181,7 +177,7 @@ This is enough for UI/runtime observation, but not enough for full assistant-loo
 
 The current system already proves a few important things:
 
-- extensions can own substantial UX behavior, such as the bundled Vim composer mode
+- extensions can own focused UX behavior, such as custom composer modes or small overlays
 - key handling can be intercepted and prioritized
 - buffer mutation can drive visible terminal behavior
 - one extension file can expose commands, tools, and event handlers together
@@ -201,9 +197,9 @@ Transcript read/write convenience should stay out of the Go host API. Use generi
 
 Extensions can mutate the active layout, enqueue low-level window-relative draw operations during render events, and mark a window with `renderer = "extension"` to take renderer ownership.
 
-When an extension owns a window, the stock Go renderer skips that window and only extension draw operations/cursor placement are applied. This is now enough for bundled extensions such as Vim mode to fully redraw the composer window, and the bundled statusline extension now owns the status window. The default Go renderer still owns the stock chat drawing order and built-in transcript rendering, so the app has not yet been rebuilt fully on public layout/render primitives.
+When an extension owns a window, the stock Go renderer skips that window and only extension draw operations/cursor placement are applied. This is useful for opt-in custom windows and focused experiments. The default Go renderer still owns the stock chat drawing order, composer, status, autocomplete, and transcript rendering.
 
-That is intentional for now. Transcript rendering is a hot, complex surface and should stay Go-owned until the runtime exposes generic rendering primitives strong enough for Lua to match visual parity and performance.
+That is intentional. Transcript rendering and the core chat UI are hot, complex surfaces and should stay Go-owned unless an opt-in extension can match visual parity and performance through generic primitives.
 
 ### 3. Event surface still needs more lifecycle points
 
@@ -297,16 +293,16 @@ The long-term system should allow extensions to:
 - control how tool activity is represented
 - drive non-chat workflows entirely
 
-## Go kernel vs Lua product layer
+## Go core vs Lua extension layer
 
 The intended split is:
 
 - **Go kernel**: terminal I/O, event dispatch, Lua VM management, buffers, windows, layout, UI draw backend, measuring, wrapping, clipping, batching, viewporting, keymaps, commands, jobs/timers, model/tool/session/config primitives, and invariant protection.
-- **Lua product layer**: chat UI policy, composer behavior, Vim mode, transcript presentation decisions, statusline, prompt history UX, skills/context policy, assistant orchestration policy, reskins, and alternate applications.
+- **Lua extension layer**: optional keymaps, commands, hooks, small overlays, custom windows, prompt/context tweaks, experimental composer modes, reskins, and alternate workflows.
 
 Lua can own a window renderer, but complex renderers should use Go-backed generic primitives rather than ad hoc Lua string math in hot paths.
 
-Official bundled behavior should increasingly be written against the same Lua API available to users.
+Optional Lua behavior should use the same public API available to users; the default Go UI should not depend on bundled Lua to feel complete.
 
 See `docs/runtime-architecture.md` for the full responsibility boundary and `docs/extension-roadmap.md` for the migration plan.
 
@@ -353,7 +349,7 @@ Let extensions own more of the request/model/tool/session loop.
 
 ### Phase 6: move product convenience into Lua modules
 
-In progress. Avoid expanding Go with product-specific APIs. Build convenience modules such as `librecode.chat`, `librecode.composer`, and `librecode.statusline` in Lua on top of primitives.
+Optional only. Avoid expanding Go with product-specific extension APIs. User or project helper modules can wrap primitives, but librecode no longer ships auto-loaded Lua product modules.
 
 ## Documentation and planning split
 

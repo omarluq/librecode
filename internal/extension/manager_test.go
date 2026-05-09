@@ -19,6 +19,7 @@ const (
 	testContextModeKey  = "mode"
 	testEventKey        = "key"
 	testModeChat        = "chat"
+	testUserExtension   = ".librecode/extensions"
 	testRendererDefault = "default"
 )
 
@@ -415,12 +416,17 @@ end)
 	assert.Equal(t, "warning", result.UIDrawOps[5].Style.FG)
 }
 
-func TestDefaultLoadPathsPrependsOfficialExtensions(t *testing.T) {
+func TestDefaultLoadPathsDedupesConfiguredExtensions(t *testing.T) {
 	t.Parallel()
 
-	paths := extension.DefaultLoadPaths([]string{".librecode/extensions", "extensions", " custom "})
+	paths := extension.DefaultLoadPaths([]string{
+		testUserExtension,
+		"extensions",
+		" custom ",
+		testUserExtension,
+	})
 
-	assert.Equal(t, []string{"extensions", ".librecode/extensions", "custom"}, paths)
+	assert.Equal(t, []string{testUserExtension, "extensions", "custom"}, paths)
 }
 
 func TestManager_LoadsLuaHelperModulesWithoutExecutingThem(t *testing.T) {

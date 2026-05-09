@@ -152,12 +152,11 @@ Follow these project-specific instructions...
 
 Extensions are trusted local Lua code. librecode follows the Unix philosophy here: extensions are powerful, low-level, and allowed to footgun if you ask them to.
 
-Default extension roots:
+Default extension roots come only from `extensions.paths` in config, defaulting to:
 
-1. `extensions/` — official bundled extensions
-2. paths from `extensions.paths` in config, defaulting to:
-   - `extensions`
-   - `.librecode/extensions`
+- `.librecode/extensions`
+
+librecode no longer ships auto-loaded Lua extensions. The default chat UI is Go-owned and extensions are optional customization.
 
 Current extension capabilities include:
 
@@ -167,9 +166,7 @@ Current extension capabilities include:
 - reading and mutating runtime buffers such as `composer`, `status`, `transcript`, `thinking`, and `tools`;
 - creating namespaces, autocmds, and keymaps through a Neovim-inspired Lua API.
 
-Bundled extensions such as [`extensions/vim-mode.lua`](extensions/vim-mode.lua) and [`extensions/statusline.lua`](extensions/statusline.lua) demonstrate how product UI behavior is implemented through the public Lua runtime API.
-
-Architecture note: Lua is the product/control layer, while Go remains the fast terminal rendering backend. Simple UI surfaces can be Lua-owned today; complex hot surfaces such as transcript rendering stay Go-owned until generic Go-backed rendering primitives can preserve visual parity and performance.
+Architecture note: Go owns the polished default chat experience and hot rendering paths. Lua remains a trusted optional extension layer for keymaps, commands, hooks, small overlays, and custom workflows.
 
 For architecture, roadmap, and API details, see:
 
@@ -252,7 +249,6 @@ Project-local caches are used for reproducible local runs and are gitignored:
 
 ```text
 cmd/librecode/          CLI commands and process entrypoint
-extensions/             Official bundled Lua extensions
 internal/assistant/     Prompt orchestration, provider calls, tool loop, cache integration
 internal/auth/          Provider credential storage and Codex auth import/refresh
 internal/config/        Viper config defaults, loading, and validation

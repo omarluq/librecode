@@ -16,39 +16,35 @@ See also:
 
 ## Loading model
 
-Extensions are trusted local Lua files loaded from:
-
-1. `extensions/`
-2. configured `extensions.paths`
+Extensions are trusted local Lua files loaded from configured `extensions.paths`.
 
 By default, configured extension paths are:
 
-- `extensions`
 - `.librecode/extensions`
 
-The official bundled `extensions/` root is deduped in front of configured paths.
+librecode does not auto-load a bundled `extensions/` directory. The stock chat UI is implemented in Go; Lua extensions are optional customization.
 
 Each Lua file runs in its own Lua state.
 
-Lua helper modules can live under a `lua/` subdirectory inside any extension root, or next to a loaded extension file. The extension manager adds those roots to `package.path` and skips `lua/` helper directories when discovering top-level extension files.
+Lua helper modules can live under a `lua/` subdirectory inside any configured extension root, or next to a loaded extension file. The extension manager adds those roots to `package.path` and skips `lua/` helper directories when discovering top-level extension files.
 
 Example:
 
 ```text
-extensions/
-  vim-mode.lua
+.librecode/extensions/
+  my-workflow.lua
   lua/
-    librecode/
-      chat.lua
+    my_workflow/
+      helpers.lua
 ```
 
 Then extensions can do:
 
 ```lua
-local chat = require("librecode.chat")
+local helpers = require("my_workflow.helpers")
 ```
 
-Bundled helper modules are convenience wrappers over primitive APIs. They are not a separate Go host API family.
+Helper modules are convenience wrappers over primitive APIs. They are not a separate Go host API family.
 
 ## Importing the API
 
@@ -57,18 +53,6 @@ Extensions can either use the global `librecode` table or require the module exp
 ```lua
 local lc = require("librecode")
 ```
-
-## Bundled helper modules
-
-The official extension distribution may include Lua helper modules under `extensions/lua/librecode/`. These modules are intentionally implemented in Lua on top of primitive APIs.
-
-Current helpers include:
-
-- `librecode.chat`
-- `librecode.composer`
-- `librecode.statusline`
-
-They are convenience layers, not kernel primitives. Prefer documenting reusable product behavior there instead of adding product-specific Go APIs.
 
 ## Top-level API
 
@@ -350,7 +334,7 @@ Replaces the runtime layout with the provided table. This is intentionally low-l
 
 Low-level drawing APIs enqueue window-relative draw operations for the current frame/event.
 
-Current UI primitives are intentionally small. They are enough for simple windows like the bundled statusline and Vim composer, but not yet enough to faithfully reimplement complex hot renderers such as the transcript. See `docs/rendering-boundary.md` for the current rendering boundary.
+Current UI primitives are intentionally small. They are enough for optional overlays and focused custom windows, but not yet enough to faithfully reimplement complex hot renderers such as the transcript. See `docs/rendering-boundary.md` for the current rendering boundary.
 
 ### `librecode.ui.measure(text)`
 
@@ -625,11 +609,20 @@ Handlers for terminal events receive a table like:
 }
 ```
 
-## Built-in example
+## Example extension shape
 
-The bundled `extensions/vim-mode.lua` shows how to build substantial behavior using the current API.
+A project extension can build substantial behavior using the current API:
 
-It demonstrates:
+```lua
+local lc = require("librecode")
+
+lc.keymap.set({ role = "composer" }, "<c-j>", function()
+  lc.action.run("submit")
+  lc.event.consume()
+end)
+```
+
+Useful patterns include:
 
 - event-driven state
 - keymaps
@@ -644,7 +637,7 @@ The API is still incomplete compared with the long-term target.
 Notably missing today:
 
 - job/process spawning primitives
-- richer Lua helper modules for chat/transcript/status convenience
+- optional Lua helper modules built on primitive APIs
 - highlights/extmarks/namespaced annotations
 - deeper assistant/model/tool runtime replacement hooks
 

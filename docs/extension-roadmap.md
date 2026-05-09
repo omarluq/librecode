@@ -4,7 +4,7 @@ This roadmap turns the programmable-runtime architecture into concrete engineeri
 
 The guiding principle is simple:
 
-> Add primitives to Go. Build product behavior in Lua.
+> Keep the default product polished in Go. Expose sharp Lua primitives for optional customization.
 
 ## Current checkpoint
 
@@ -21,12 +21,11 @@ The runtime currently has:
 - render and resize events
 - per-window renderer ownership
 - canonical composer buffer
-- Lua-owned Vim composer behavior and rendering
 - generic structured buffer blocks with bounded transcript block exposure
 
-This is a strong foundation, but Go still owns most stock chat rendering and assistant orchestration.
+This is a strong foundation. Go intentionally owns stock chat rendering and assistant orchestration by default.
 
-Important boundary: Lua is the control/product layer; Go remains the fast terminal rendering backend. Complex hot renderers should migrate only after generic Go-backed rendering primitives can preserve parity and performance.
+Important boundary: Lua is an optional control/customization layer; Go remains the product core and fast terminal rendering backend. Complex hot renderers should not migrate to Lua by default.
 
 ## Immediate cleanup
 
@@ -71,46 +70,37 @@ Design constraints:
 - block schema should be generic: `kind`, `text`, `metadata`, plus optional application fields like `role`
 - transcript should be one consumer of structured buffers, not its own host API family
 
-## Phase 2: Lua helper modules
+## Phase 2: optional Lua helper modules
 
 Goal: give users ergonomic APIs without bloating the Go kernel.
 
-Build bundled Lua modules on top of primitives:
-
-- `librecode.chat`
-- `librecode.composer`
-- `librecode.statusline` (implemented and used by the bundled statusline extension)
-- `librecode.transcript`
-- `librecode.layout.default`
+Helper modules may live under a configured extension root and wrap primitives for a project or workflow. librecode should not depend on auto-loaded bundled Lua helpers for the stock UX.
 
 Example direction:
 
 ```lua
-local chat = require("librecode.chat")
-chat.append_message("assistant", "hello")
+local chat = require("my_workflow.chat")
+chat.append_note("hello")
 ```
 
 Internally, this should use `buf`, `win`, `layout`, `ui`, `event`, and `action` primitives.
 
-## Phase 3: move default terminal UI into Lua where parity is ready
+## Phase 3: optional UI overrides where parity is ready
 
-Goal: make the stock chat UI a bundled implementation instead of hardcoded Go policy without degrading visual quality or render performance.
+Goal: let users customize the terminal UI without degrading the stock Go experience.
 
-Move simple/product-policy behaviors into official extensions/modules incrementally:
+Keep default UI surfaces in Go:
 
-- default statusline text (first pass implemented in `extensions/statusline.lua`)
-- default composer behavior/rendering where extension-owned rendering already works
+- status/footer
+- composer behavior/rendering
 - prompt history UX
-- autocomplete presentation once generic UI primitives are sufficient
+- autocomplete presentation
 - default layout construction
+- transcript/thinking/tool presentation
 
-Keep complex hot renderers in Go until primitives are ready:
+Allow opt-in Lua extensions to overlay or own windows when they can preserve parity and performance.
 
-- transcript rendering
-- thinking/tool block presentation when coupled to transcript scrollback
-- large-history virtualized lists
-
-The failed transcript migration showed the boundary: Lua should decide what to show, but Go must provide terminal-correct measuring, wrapping, clipping, batching, viewport, and highlight primitives before Lua owns that renderer.
+The failed transcript migration showed the boundary: Lua should not manually reimplement complex hot renderers before Go provides the right generic primitives.
 
 ## Phase 4: render model improvements
 
@@ -177,7 +167,7 @@ Expose primitive capabilities, not chat policies:
 - config read/write primitive
 - store/key-value primitive for extension state
 
-Then move assistant orchestration policy toward Lua.
+Keep default assistant orchestration in Go; allow extensions to override or wrap it explicitly.
 
 ## Phase 7: bare runtime mode
 
@@ -209,10 +199,10 @@ It is acceptable to improve Go's generic rendering primitives; it is not accepta
 
 The architecture is in the target state when:
 
-1. Go can start a bare runtime with buffers/windows/events but no chat UI.
-2. The default chat UI is implemented as bundled Lua over public APIs.
-3. Vim mode has no private host support and can own input/rendering through public primitives.
-4. Transcript, statusline, thinking, and tool presentation are buffers/windows/renderers, not special Go APIs.
-5. Extensions can replace the assistant loop using model/tool/session primitives.
+1. The default chat UI is fast and polished with extensions disabled.
+2. Extensions can customize buffers/windows/events through public primitives.
+3. Optional composer modes or render overrides need no private host support.
+4. Transcript, statusline, thinking, and tool presentation remain Go-owned by default but expose bounded data and opt-in override points.
+5. Extensions can wrap or replace assistant flow using model/tool/session primitives.
 6. Render/stream performance stays bounded regardless of session history size.
 7. Complex Lua-owned renderers use Go-backed generic rendering primitives rather than ad hoc Lua string math.

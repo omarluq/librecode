@@ -29,7 +29,7 @@ librecode.on("key", function(event)
 end)
 `)
 
-	pressTerminalRune(t, app, "x")
+	pressTerminalKey(t, app, tcell.KeyRune, "x")
 
 	assertEditorText(t, app, "lua")
 	if got, want := app.composerCursor(), 1; got != want {
@@ -81,8 +81,8 @@ librecode.keymap.set({ buffer = "composer" }, "x", function()
 end)
 `)
 
-	pressTerminalRune(t, app, "x")
-	pressTerminalRune(t, app, "x")
+	pressTerminalKey(t, app, tcell.KeyRune, "x")
+	pressTerminalKey(t, app, tcell.KeyRune, "x")
 
 	buffer, ok := app.extensionRuntimeBuffers["scratch"]
 	if !ok {
@@ -257,45 +257,6 @@ end)
 
 	if got, want := app.statusMessage, "resized 80x24"; got != want {
 		t.Fatalf("status = %q, want %q", got, want)
-	}
-}
-
-func TestBundledStatuslineOwnsStatusWindow(t *testing.T) {
-	t.Parallel()
-
-	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(manager.Shutdown)
-	require.NoError(t, manager.LoadPaths(context.Background(), []string{filepath.Join("..", "..", "extensions")}))
-
-	app := newRenderTestApp(t)
-	app.extensions = manager
-	app.cwd = "/repo"
-	app.setStatus("ready")
-	app.frame = newCellBuffer(80, 24, tcell.StyleDefault)
-
-	layout := app.currentRuntimeLayout()
-	app.runRenderExtensions(context.Background(), &layout)
-	layout = app.currentRuntimeLayout()
-
-	status := app.runtimeWindows[extensionBufferStatus]
-	if got, want := status.Renderer, windowRendererExtension; got != want {
-		t.Fatalf("status renderer = %q, want %q", got, want)
-	}
-	if !app.extensionOwnsWindow(extensionBufferStatus) {
-		t.Fatal("status window should be extension-owned")
-	}
-	override := app.uiWindowOverrides[extensionBufferStatus]
-	if !override.Reset {
-		t.Fatal("statusline should clear the status window before drawing")
-	}
-	if len(override.DrawOps) < 3 {
-		t.Fatalf("statusline draw ops = %d, want at least 3", len(override.DrawOps))
-	}
-	if got, want := override.DrawOps[1].Text, "local/librecode • off"; got != want {
-		t.Fatalf("model status line = %q, want %q", got, want)
-	}
-	if got, want := override.DrawOps[2].Text, "ready"; got != want {
-		t.Fatalf("message status line = %q, want %q", got, want)
 	}
 }
 
