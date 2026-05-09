@@ -864,29 +864,6 @@ func (app *App) uiStyle(style extension.UIStyle) tcell.Style {
 	return resolved
 }
 
-func (app *App) namedUIColor(name string) tcell.Color {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "accent":
-		return app.theme.colors[colorAccent]
-	case "border":
-		return app.theme.colors[colorBorder]
-	case "muted":
-		return app.theme.colors[colorMuted]
-	case string(colorDim):
-		return app.theme.colors[colorDim]
-	case string(colorText), "white", "default":
-		return app.theme.colors[colorText]
-	case "warning":
-		return app.theme.colors[colorWarning]
-	case "error":
-		return app.theme.colors[colorError]
-	case "success":
-		return app.theme.colors[colorSuccess]
-	default:
-		return tcell.ColorDefault
-	}
-}
-
 func (app *App) showRuntimeCursor(layout *runtimeLayout) {
 	if app.screen == nil {
 		return

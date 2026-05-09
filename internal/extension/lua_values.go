@@ -11,6 +11,7 @@ const (
 	luaBufferComposer = "composer"
 	luaFieldCreate    = "create"
 	luaFieldGet       = "get"
+	luaFieldHeight    = "height"
 	luaFieldKey       = "key"
 	luaFieldMetadata  = "metadata"
 	luaFieldName      = "name"
@@ -229,9 +230,9 @@ func windowMapForLua(windows map[string]WindowState) map[string]any {
 
 func layoutForLua(layout *LayoutState) map[string]any {
 	return map[string]any{
-		"windows": windowMapForLua(layout.Windows),
-		"width":   layout.Width,
-		"height":  layout.Height,
+		"windows":      windowMapForLua(layout.Windows),
+		"width":        layout.Width,
+		luaFieldHeight: layout.Height,
 	}
 }
 
@@ -256,7 +257,7 @@ func windowForLua(window *WindowState) map[string]any {
 		"x":              window.X,
 		"y":              window.Y,
 		"width":          window.Width,
-		"height":         window.Height,
+		luaFieldHeight:   window.Height,
 		"cursor_row":     window.CursorRow,
 		"cursor_col":     window.CursorCol,
 		"visible":        window.Visible,
@@ -387,7 +388,7 @@ func luaWindowState(name string, value lua.LValue) WindowState {
 			X:         luaTableIntValue(table, "x"),
 			Y:         luaTableIntValue(table, "y"),
 			Width:     luaTableIntValue(table, "width"),
-			Height:    luaTableIntValue(table, "height"),
+			Height:    luaTableIntValue(table, luaFieldHeight),
 			CursorRow: luaTableIntValue(table, "cursor_row"),
 			CursorCol: luaTableIntValue(table, "cursor_col"),
 			Visible:   visible,
@@ -426,7 +427,7 @@ func luaUIDrawOp(value lua.LValue) *UIDrawOp {
 			Row:    luaTableIntValue(table, "row"),
 			Col:    luaTableIntValue(table, "col"),
 			Width:  luaTableIntValue(table, "width"),
-			Height: luaTableIntValue(table, "height"),
+			Height: luaTableIntValue(table, luaFieldHeight),
 			Clear:  luaTableBool(table, "clear"),
 		}
 	}
@@ -464,7 +465,7 @@ func luaLayoutState(value lua.LValue) *LayoutState {
 	return &LayoutState{
 		Windows: windows,
 		Width:   luaTableIntValue(table, "width"),
-		Height:  luaTableIntValue(table, "height"),
+		Height:  luaTableIntValue(table, luaFieldHeight),
 	}
 }
 

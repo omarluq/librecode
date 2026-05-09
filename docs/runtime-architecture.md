@@ -223,16 +223,14 @@ The long-term default chat layout should be regular layout state, not a hardcode
 
 Go should back the hot/terminal-correct pieces of rendering. Lua should compose them.
 
-Current first-pass primitives include terminal-width measurement, truncation, padding, wrapping, drawing text/lines/spans, drawing boxes, clearing windows, and setting cursors.
+Current first-pass primitives include terminal-width measurement, truncation, padding, wrapping, drawing text/lines/spans/boxes, drawing batches, clearing windows/regions, setting cursors, theme-token discovery, viewports, and virtual-list helpers for large histories.
 
 Longer term this should still gain:
 
-- highlights and theme token resolution
-- namespaces
+- namespace-scoped highlights
 - extmarks/virtual text
-- clipping helpers and region operations
-- richer batched draw operations
-- viewport and virtual-list helpers for large histories
+- richer window viewport/scroll APIs
+- renderer registration helpers
 
 ### Events
 

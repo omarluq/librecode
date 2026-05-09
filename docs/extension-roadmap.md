@@ -127,15 +127,15 @@ First-pass implemented:
 - `ui.draw_box`
 - `ui.clear_region`
 - `ui.viewport`
+- `ui.virtual_list`
+- `ui.draw_batch`
+- `ui.theme_tokens`
 
 Still add:
 
-- named highlight groups and theme token resolution
 - namespace-scoped highlights
 - extmarks/virtual text or equivalent annotations
 - richer window viewport/scroll APIs
-- virtual-list helpers for large block lists
-- batched draw operations
 - per-window renderer registration helpers
 
 Keep raw draw operations available. Higher-level rendering should be Lua-composable, but measuring/wrapping/caching should use Go-backed primitives.

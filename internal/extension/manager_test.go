@@ -347,6 +347,8 @@ local lc = require("librecode")
 
 lc.on("render", function()
   local viewport = lc.ui.viewport({ "one", "two", "three", "four" }, 2, 1)
+  local list = lc.ui.virtual_list({ { height = 2 }, { height = 3 }, { height = 1 } }, 3, 1)
+  local tokens = lc.ui.theme_tokens()
   lc.buf.set_text("metrics", table.concat({
     tostring(lc.ui.measure("語")),
     lc.ui.truncate("abc語", 4),
@@ -354,6 +356,8 @@ lc.on("render", function()
     table.concat(lc.ui.wrap("aa bb cc", 5), "|"),
     table.concat(viewport.lines, ","),
     tostring(viewport.start) .. ":" .. tostring(viewport["end"]) .. ":" .. tostring(viewport.max_offset),
+    tostring(list.items[1].lua_index) .. ":" .. tostring(list.items[1].row_offset) .. ":" .. tostring(list.max_offset),
+    tokens[1] .. ":" .. tokens[#tokens],
   }, "\n"))
 end)
 `)
@@ -364,7 +368,7 @@ end)
 	require.NoError(t, err)
 
 	metrics := result.Buffers["metrics"].Text
-	assert.Equal(t, "2\nabc…\n語  \naa|bb cc\ntwo,three\n1:3:2", metrics)
+	assert.Equal(t, "2\nabc…\n語  \naa|bb cc\ntwo,three\n1:3:2\n2:0:3\naccent:warning", metrics)
 }
 
 func TestManager_UIDrawLinesSpansRegionAndBox(t *testing.T) {
@@ -381,6 +385,9 @@ lc.on("render", function()
   })
   lc.ui.clear_region("composer", 4, 1, 2, 3, { bg = "muted" })
   lc.ui.draw_box("composer", { fg = "border" })
+  lc.ui.draw_batch({
+    { window = "composer", kind = "text", row = 5, col = 0, text = "batched", fg = "warning" },
+  })
 end)
 `)
 
@@ -389,7 +396,7 @@ end)
 	result, err := manager.HandleTerminalEvent(context.Background(), &event)
 	require.NoError(t, err)
 
-	require.Len(t, result.UIDrawOps, 5)
+	require.Len(t, result.UIDrawOps, 6)
 	assert.Equal(t, extension.UIDrawKindText, result.UIDrawOps[0].Kind)
 	assert.Equal(t, "one", result.UIDrawOps[0].Text)
 	assert.Equal(t, 1, result.UIDrawOps[0].Row)
@@ -404,6 +411,8 @@ end)
 	assert.Equal(t, 2, result.UIDrawOps[3].Height)
 	assert.Equal(t, 3, result.UIDrawOps[3].Width)
 	assert.Equal(t, extension.UIDrawKindBox, result.UIDrawOps[4].Kind)
+	assert.Equal(t, "batched", result.UIDrawOps[5].Text)
+	assert.Equal(t, "warning", result.UIDrawOps[5].Style.FG)
 }
 
 func TestDefaultLoadPathsPrependsOfficialExtensions(t *testing.T) {

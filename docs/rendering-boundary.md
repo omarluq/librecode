@@ -145,12 +145,15 @@ Implemented first-pass Go-backed primitives:
 - `ui.draw_box`
 - `ui.clear_region`
 - `ui.viewport`
+- `ui.virtual_list`
+- `ui.draw_batch`
+- `ui.theme_tokens`
 
 Recommended remaining order:
 
-1. Add theme/highlight token resolution for stable colors across renderers.
-2. Add virtual-list helpers for bounded rendering of large block lists.
-3. Add richer batched draw operations if render events become chatty.
+1. Add namespace-scoped highlights/extmarks/virtual text.
+2. Add richer window scroll state helpers.
+3. Add renderer registration helpers for reusable renderer functions.
 4. Only then retry Lua-owned transcript rendering behind a feature flag or experimental extension.
 
 ## What still belongs in Lua now

@@ -378,15 +378,34 @@ Returns a bounded viewport table for a line list:
 - `max_offset` — maximum valid offset
 - `total` — original line count
 
+### `librecode.ui.virtual_list(items, height[, offset])`
+
+Returns a bounded viewport table for variable-height items. Each item may be either a number or a table with `height`.
+
+Returned fields:
+
+- `items` — visible item metadata with `index` (zero-based), `lua_index`, `row_offset`, and `height`
+- `start` / `end` — zero-based half-open item range
+- `offset` — clamped bottom-relative scroll offset in rows
+- `max_offset` — maximum valid row offset
+- `total` — original item count
+
+This is intended for large structured renderers so Lua can render only visible blocks while Go handles viewport math.
+
+### `librecode.ui.theme_tokens()`
+
+Returns supported theme token names for `fg`/`bg` style fields.
+
 ### `librecode.ui.clear_window(name)`
 ### `librecode.ui.clear_region(name, row, col, height, width[, style])`
 ### `librecode.ui.draw_text(name, row, col, text[, style])`
 ### `librecode.ui.draw_lines(name, row, col, lines[, style])`
 ### `librecode.ui.draw_spans(name, row, col, spans)`
 ### `librecode.ui.draw_box(name[, style])`
+### `librecode.ui.draw_batch(ops)`
 ### `librecode.ui.set_cursor(name, row, col)`
 
-Styles currently accept `fg`, `bg`, `bold`, and `italic`. Color names are theme tokens resolved by Go, including `text`, `accent`, `border`, `muted`, `dim`, `warning`, `error`, and `success`.
+Styles currently accept `fg`, `bg`, `bold`, and `italic`. Color names are theme tokens resolved by Go, including `text`, `accent`, `border`, `borderAccent`, `borderMuted`, `muted`, `dim`, `warning`, `error`, `success`, `selectedBg`, `userMessageBg`, `customMessageBg`, and tool/diff/code tokens.
 
 `draw_spans` accepts inline spans such as:
 
@@ -414,7 +433,7 @@ lc.on("render", function()
 end)
 ```
 
-Still-planned generic UI primitives include richer clipping helpers, theme/highlight resolution, virtual-list helpers, and richer batched draw operations.
+Still-planned generic UI primitives include namespace-scoped highlights/extmarks, richer window scroll state, and renderer registration helpers.
 
 ## `librecode.buf`
 

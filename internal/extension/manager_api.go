@@ -77,6 +77,7 @@ func (manager *Manager) luaUIAPI(extensionRuntime *luaExtension) *lua.LTable {
 	state.SetFuncs(apiTable, map[string]lua.LGFunction{
 		"clear_region": manager.luaUIClearRegion(extensionRuntime),
 		"clear_window": manager.luaUIClearWindow(extensionRuntime),
+		"draw_batch":   manager.luaUIDrawBatch(extensionRuntime),
 		"draw_box":     manager.luaUIDrawBox(extensionRuntime),
 		"draw_lines":   manager.luaUIDrawLines(extensionRuntime),
 		"draw_spans":   manager.luaUIDrawSpans(extensionRuntime),
@@ -84,8 +85,10 @@ func (manager *Manager) luaUIAPI(extensionRuntime *luaExtension) *lua.LTable {
 		"measure":      manager.luaUIMeasure(),
 		"pad_right":    manager.luaUIPadRight(),
 		"set_cursor":   manager.luaUISetCursor(extensionRuntime),
+		"theme_tokens": manager.luaUIThemeTokens(),
 		"truncate":     manager.luaUITruncate(),
 		"viewport":     manager.luaUIViewport(),
+		"virtual_list": manager.luaUIVirtualList(),
 		"wrap":         manager.luaUIWrap(),
 	})
 
@@ -773,6 +776,33 @@ func (manager *Manager) luaUIViewport() lua.LGFunction {
 	}
 }
 
+func (manager *Manager) luaUIVirtualList() lua.LGFunction {
+	return func(state *lua.LState) int {
+		items := state.CheckTable(1)
+		height := state.CheckInt(2)
+		offset := state.OptInt(3, 0)
+		result := uiVirtualList(luaVirtualListHeights(items), height, offset)
+		state.Push(mapToLuaTable(state, map[string]any{
+			"items":      uiVirtualListItemsForLua(result.Items),
+			"start":      result.Start,
+			"end":        result.End,
+			"offset":     result.Offset,
+			"max_offset": result.MaxOffset,
+			"total":      result.Total,
+		}))
+
+		return 1
+	}
+}
+
+func (manager *Manager) luaUIThemeTokens() lua.LGFunction {
+	return func(state *lua.LState) int {
+		state.Push(stringSliceToLuaTable(state, uiThemeTokens()))
+
+		return 1
+	}
+}
+
 func (manager *Manager) luaUIDrawText(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		windowName := state.CheckString(1)
@@ -792,6 +822,18 @@ func (manager *Manager) luaUIDrawText(extensionRuntime *luaExtension) lua.LGFunc
 			Height: 0,
 			Clear:  false,
 		})
+
+		return 0
+	}
+}
+
+func (manager *Manager) luaUIDrawBatch(extensionRuntime *luaExtension) lua.LGFunction {
+	return func(state *lua.LState) int {
+		operations := state.CheckTable(1)
+		hostEvent := checkActiveEvent(state, extensionRuntime)
+		for operationIndex := 1; operationIndex <= operations.Len(); operationIndex++ {
+			hostEvent.appendUIDrawOp(luaUIDrawOp(operations.RawGetInt(operationIndex)))
+		}
 
 		return 0
 	}
@@ -877,6 +919,26 @@ func (manager *Manager) luaUISetCursor(extensionRuntime *luaExtension) lua.LGFun
 
 		return 0
 	}
+}
+
+func luaVirtualListHeights(items *lua.LTable) []int {
+	heights := make([]int, 0, items.Len())
+	for index := 1; index <= items.Len(); index++ {
+		heights = append(heights, luaVirtualListItemHeight(items.RawGetInt(index)))
+	}
+
+	return heights
+}
+
+func luaVirtualListItemHeight(value lua.LValue) int {
+	if number, ok := value.(lua.LNumber); ok {
+		return positiveInt(int(number))
+	}
+	if table, ok := value.(*lua.LTable); ok {
+		return positiveInt(luaTableIntValueWithDefault(table, luaFieldHeight, 1))
+	}
+
+	return 1
 }
 
 func luaOptionalUIStyle(state *lua.LState, index int) UIStyle {
