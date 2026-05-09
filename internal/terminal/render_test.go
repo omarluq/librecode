@@ -379,6 +379,70 @@ func TestDefaultLayoutComposerTouchesStatus(t *testing.T) {
 	}
 }
 
+func TestComposerLayoutReflowsAfterPromptAndTerminalResize(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.setComposerText(strings.Repeat("wide ", 24))
+
+	wide := app.defaultRuntimeLayout(80, 24)
+	narrow := app.defaultRuntimeLayout(32, 24)
+	if narrow.Composer.Height <= wide.Composer.Height {
+		t.Fatalf(
+			"narrow composer height = %d, want greater than wide height %d",
+			narrow.Composer.Height,
+			wide.Composer.Height,
+		)
+	}
+	if narrow.Composer.Y+narrow.Composer.Height != narrow.Status.Y {
+		t.Fatalf(
+			"narrow composer bottom = %d, status y = %d",
+			narrow.Composer.Y+narrow.Composer.Height,
+			narrow.Status.Y,
+		)
+	}
+
+	app.setComposerText("")
+	empty := app.defaultRuntimeLayout(32, 24)
+	if empty.Composer.Height >= narrow.Composer.Height {
+		t.Fatalf(
+			"empty composer height = %d, want less than populated height %d",
+			empty.Composer.Height,
+			narrow.Composer.Height,
+		)
+	}
+	if empty.Composer.Y+empty.Composer.Height != empty.Status.Y {
+		t.Fatalf(
+			"empty composer bottom = %d, status y = %d",
+			empty.Composer.Y+empty.Composer.Height,
+			empty.Status.Y,
+		)
+	}
+}
+
+func TestDrawComposerDoesNotPersistDefaultWindowGeometry(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.setComposerText(strings.Repeat("wide ", 24))
+
+	wideLayout := app.defaultRuntimeLayout(80, 24)
+	app.frame = newCellBuffer(wideLayout.Width, wideLayout.Height, tcell.StyleDefault)
+	app.drawComposerWindow(&wideLayout)
+	if _, ok := app.runtimeWindows[extensionBufferComposer]; ok {
+		t.Fatal("default composer draw should not persist runtime window geometry")
+	}
+
+	narrowLayout := app.currentRuntimeLayoutForSize(32, 24)
+	if narrowLayout.Composer.Height <= wideLayout.Composer.Height {
+		t.Fatalf(
+			"narrow composer height = %d, want greater than wide height %d",
+			narrowLayout.Composer.Height,
+			wideLayout.Composer.Height,
+		)
+	}
+}
+
 func frameText(frame *cellBuffer) string {
 	if frame == nil {
 		return ""

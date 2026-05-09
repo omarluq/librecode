@@ -408,7 +408,10 @@ func (app *App) drawComposerWindow(layout *runtimeLayout) {
 	}
 	window.CursorRow = editor.CursorRow
 	window.CursorCol = editor.CursorCol
-	app.runtimeWindows[window.Name] = window
+	layout.Composer = window
+	if layout.Windows != nil {
+		layout.Windows[window.Name] = window
+	}
 }
 
 func (app *App) renderComposerEditor(width, bodyRows int) editorRender {
@@ -450,7 +453,13 @@ func (app *App) currentRuntimeLayout() runtimeLayout {
 	if app.screen != nil {
 		width, height = app.screen.Size()
 	}
+
+	return app.currentRuntimeLayoutForSize(width, height)
+}
+
+func (app *App) currentRuntimeLayoutForSize(width, height int) runtimeLayout {
 	layout := app.defaultRuntimeLayout(width, height)
+
 	return app.mergeRuntimeLayout(&layout)
 }
 
@@ -695,14 +704,16 @@ func editorLineStyle(position, width int, line styledLine, borderStyle tcell.Sty
 }
 
 func (app *App) cloneRuntimeWindows(layout *runtimeLayout) map[string]extension.WindowState {
-	if app.runtimeLayout != nil && len(app.runtimeLayout.Windows) > 0 {
-		return cloneWindowStates(app.runtimeLayout.Windows)
-	}
 	windows := map[string]extension.WindowState{
 		layout.Transcript.Name:   layout.Transcript,
 		layout.Autocomplete.Name: layout.Autocomplete,
 		layout.Composer.Name:     layout.Composer,
 		layout.Status.Name:       layout.Status,
+	}
+	if app.runtimeLayout != nil && len(app.runtimeLayout.Windows) > 0 {
+		for name := range app.runtimeLayout.Windows {
+			windows[name] = app.runtimeLayout.Windows[name]
+		}
 	}
 	for name := range app.runtimeWindows {
 		windows[name] = app.runtimeWindows[name]
@@ -716,22 +727,6 @@ func (app *App) cloneRuntimeWindows(layout *runtimeLayout) map[string]extension.
 	}
 
 	return windows
-}
-
-func cloneWindowStates(windows map[string]extension.WindowState) map[string]extension.WindowState {
-	cloned := make(map[string]extension.WindowState, len(windows))
-	for name := range windows {
-		window := windows[name]
-		if window.Name == "" {
-			window.Name = name
-		}
-		if window.Metadata == nil {
-			window.Metadata = map[string]any{}
-		}
-		cloned[name] = window
-	}
-
-	return cloned
 }
 
 func (app *App) applyUIOverrides(layout *runtimeLayout) {
@@ -868,7 +863,10 @@ func (app *App) showRuntimeCursor(layout *runtimeLayout) {
 	if app.screen == nil {
 		return
 	}
-	windows := app.cloneRuntimeWindows(layout)
+	windows := layout.Windows
+	if len(windows) == 0 {
+		windows = app.cloneRuntimeWindows(layout)
+	}
 	if app.uiCursor != nil {
 		if window, ok := windows[app.uiCursor.Window]; ok {
 			app.screen.ShowCursor(window.X+app.uiCursor.Col, window.Y+app.uiCursor.Row)
