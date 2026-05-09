@@ -490,7 +490,6 @@ func (app *App) queueFollowUp() {
 
 func (app *App) queueFollowUpText(text string) {
 	app.queuedMessages = append(app.queuedMessages, text)
-	app.setStatus("queued follow-up: " + truncateText(text, 48))
 }
 
 func (app *App) processQueuedPrompt(ctx context.Context) {
@@ -499,7 +498,6 @@ func (app *App) processQueuedPrompt(ctx context.Context) {
 	}
 	text := app.queuedMessages[0]
 	app.queuedMessages = app.queuedMessages[1:]
-	app.setStatus("sending queued follow-up")
 	app.sendPrompt(ctx, text)
 }
 

@@ -172,13 +172,13 @@ func editorBodyLines(value []rune, width int) []string {
 		return []string{""}
 	}
 
-	return wrapText(string(value), width)
+	return editorWrapText(string(value), width)
 }
 
 func editorCursorPosition(value []rune, cursor, width int) (row, column int) {
 	cursor = clampComposerCursor(cursor, len(value))
 	prefix := string(value[:cursor])
-	lines := wrapText(prefix, width)
+	lines := editorWrapText(prefix, width)
 	if len(lines) == 0 {
 		return 0, 0
 	}
@@ -187,7 +187,39 @@ func editorCursorPosition(value []rune, cursor, width int) (row, column int) {
 		return len(lines) - 1, 0
 	}
 
-	return len(lines) - 1, runeLen(lastLine)
+	return len(lines) - 1, terminalTextWidth(lastLine)
+}
+
+func editorWrapText(text string, width int) []string {
+	if width <= 0 {
+		return []string{""}
+	}
+	logicalLines := strings.Split(text, "\n")
+	lines := make([]string, 0, len(logicalLines))
+	for _, logicalLine := range logicalLines {
+		lines = append(lines, editorWrapLogicalLine(logicalLine, width)...)
+	}
+
+	return lines
+}
+
+func editorWrapLogicalLine(line string, width int) []string {
+	if line == "" {
+		return []string{""}
+	}
+
+	segments := terminalTextSegments(line)
+	lines := []string{}
+	for len(segments) > 0 {
+		breakIndex := terminalTextWrapBreakIndex(segments, width)
+		lines = append(lines, terminalTextJoinSegments(segments[:breakIndex]))
+		segments = segments[breakIndex:]
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "")
+	}
+
+	return lines
 }
 
 func visibleEditorLines(lines []string, maxRows, cursorRow int) (visible []string, skippedRows int) {
