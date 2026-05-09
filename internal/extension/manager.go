@@ -9,20 +9,23 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
 
 type luaExtension struct {
-	activeEvent *luaHostEvent
-	state       *lua.LState
-	name        string
-	path        string
-	commands    []string
-	tools       []string
-	keymaps     []string
-	lock        sync.Mutex
+	activeEvent   *luaHostEvent
+	state         *lua.LState
+	name          string
+	path          string
+	commands      []string
+	tools         []string
+	keymaps       []string
+	handlers      []string
+	lock          sync.Mutex
+	totalDuration atomic.Int64
 }
 
 type luaCommand struct {
@@ -137,23 +140,27 @@ func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) erro
 
 	manager.addModuleRootsForPath(absolutePath)
 	extensionRuntime := &luaExtension{
-		activeEvent: nil,
-		state:       lua.NewState(lua.Options{SkipOpenLibs: true}),
-		name:        extensionName(absolutePath),
-		path:        absolutePath,
-		commands:    []string{},
-		tools:       []string{},
-		keymaps:     []string{},
-		lock:        sync.Mutex{},
+		activeEvent:   nil,
+		state:         lua.NewState(lua.Options{SkipOpenLibs: true}),
+		name:          extensionName(absolutePath),
+		path:          absolutePath,
+		commands:      []string{},
+		tools:         []string{},
+		keymaps:       []string{},
+		handlers:      []string{},
+		lock:          sync.Mutex{},
+		totalDuration: atomic.Int64{},
 	}
 	openExtensionLibs(extensionRuntime.state)
 	manager.configurePackagePath(extensionRuntime.state)
 	manager.installAPI(extensionRuntime)
 
+	startedAt := time.Now()
 	if err := extensionRuntime.state.DoFile(absolutePath); err != nil {
 		extensionRuntime.state.Close()
 		return fmt.Errorf("extension: load %s: %w", absolutePath, err)
 	}
+	recordLuaCallDuration(extensionRuntime, startedAt)
 
 	manager.lock.Lock()
 	manager.extensions = append(manager.extensions, extensionRuntime)
@@ -171,11 +178,14 @@ func (manager *Manager) Extensions() []LoadedExtension {
 	extensions := make([]LoadedExtension, 0, len(manager.extensions))
 	for _, extensionRuntime := range manager.extensions {
 		extensions = append(extensions, LoadedExtension{
-			Name:     extensionRuntime.name,
-			Path:     extensionRuntime.path,
-			Commands: append([]string{}, extensionRuntime.commands...),
-			Tools:    append([]string{}, extensionRuntime.tools...),
-			Keymaps:  append([]string{}, extensionRuntime.keymaps...),
+			Name:          extensionRuntime.name,
+			Path:          extensionRuntime.path,
+			Commands:      append([]string{}, extensionRuntime.commands...),
+			Tools:         append([]string{}, extensionRuntime.tools...),
+			Keymaps:       append([]string{}, extensionRuntime.keymaps...),
+			Handlers:      append([]string{}, extensionRuntime.handlers...),
+			Timers:        manager.extensionTimerCount(extensionRuntime),
+			TotalDuration: time.Duration(extensionRuntime.totalDuration.Load()),
 		})
 	}
 
@@ -469,6 +479,8 @@ func callLuaPrepared(
 	}()
 
 	top := extensionRuntime.state.GetTop()
+	startedAt := time.Now()
+	defer recordLuaCallDuration(extensionRuntime, startedAt)
 
 	args := prepareArgs(extensionRuntime.state)
 	if err := extensionRuntime.state.CallByParam(lua.P{Fn: function, NRet: 1, Protect: true}, args...); err != nil {
@@ -481,6 +493,10 @@ func callLuaPrepared(
 	extensionRuntime.state.SetTop(top)
 
 	return result, nil
+}
+
+func recordLuaCallDuration(extensionRuntime *luaExtension, startedAt time.Time) {
+	extensionRuntime.totalDuration.Add(int64(time.Since(startedAt)))
 }
 
 func discoverLuaFiles(extensionPath string) ([]string, error) {

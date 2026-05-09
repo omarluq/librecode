@@ -188,6 +188,7 @@ func (manager *Manager) registerHandler(
 		priority:  priority,
 		order:     manager.nextHandlerOrder,
 	})
+	extensionRuntime.handlers = append(extensionRuntime.handlers, eventName)
 	manager.lock.Unlock()
 }
 

@@ -18,6 +18,7 @@ const (
 	testBufferComposer  = "composer"
 	testContextModeKey  = "mode"
 	testEventKey        = "key"
+	testEventStartup    = "startup"
 	testModeChat        = "chat"
 	testUserExtension   = ".librecode/extensions"
 	testRendererDefault = "default"
@@ -286,7 +287,7 @@ end)
 
 	event := testTerminalEventWithComposerWindow("", "")
 	event.Context = map[string]any{}
-	event.Name = "startup"
+	event.Name = testEventStartup
 	event.Key = extension.ComposerKeyEvent{Key: "", Text: "", Ctrl: false, Alt: false, Shift: false}
 	result, err := manager.HandleTerminalEvent(context.Background(), &event)
 	require.NoError(t, err)
@@ -482,7 +483,9 @@ func assertLoadedExtension(t *testing.T, loaded []extension.LoadedExtension) {
 	t.Helper()
 
 	require.Len(t, loaded, 1)
+	assert.Equal(t, []string{testEventStartup}, loaded[0].Handlers)
 	assert.Equal(t, []string{"role:composer:x"}, loaded[0].Keymaps)
+	assert.Positive(t, loaded[0].TotalDuration)
 }
 
 func assertCommandExecution(t *testing.T, manager *extension.Manager) {

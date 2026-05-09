@@ -9,7 +9,7 @@ import (
 )
 
 func withContainer(ctx context.Context, handler func(*di.Container) error) error {
-	container, err := di.NewContainer(cfgFile)
+	container, err := di.NewContainer(cfgFile, di.ConfigOverrides{DisableExtensions: disableExtensions})
 	if err != nil {
 		return err
 	}

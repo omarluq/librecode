@@ -54,6 +54,17 @@ func filterTimers(timers []luaTimer, keep func(luaTimer) bool) []luaTimer {
 	return filtered
 }
 
+func (manager *Manager) extensionTimerCount(extensionRuntime *luaExtension) int {
+	count := 0
+	for _, timer := range manager.timers {
+		if timer.extension == extensionRuntime {
+			count++
+		}
+	}
+
+	return count
+}
+
 // NextTimerDelay reports the duration until the next scheduled timer is due.
 func (manager *Manager) NextTimerDelay(now time.Time) (time.Duration, bool) {
 	manager.lock.RLock()

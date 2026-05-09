@@ -156,7 +156,7 @@ Default extension roots come only from `extensions.paths` in config, defaulting 
 
 - `.librecode/extensions`
 
-librecode no longer ships auto-loaded Lua extensions. The default chat UI is Go-owned and extensions are optional customization.
+librecode no longer ships auto-loaded Lua extensions. The default chat UI is Go-owned and extensions are optional customization. Use `--no-extensions` to disable configured extensions for a single run.
 
 Current extension capabilities include:
 
@@ -205,7 +205,7 @@ Only run librecode in workspaces where you trust the model, tools, and extension
 ## CLI reference
 
 ```text
-librecode [--resume] [--config path]
+librecode [--resume] [--config path] [--no-extensions]
 librecode chat [--resume | --session id]
 librecode prompt [--resume | --session id | --name name] [message]
 librecode session new [name]

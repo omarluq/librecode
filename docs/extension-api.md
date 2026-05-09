@@ -22,7 +22,7 @@ By default, configured extension paths are:
 
 - `.librecode/extensions`
 
-librecode does not auto-load a bundled `extensions/` directory. The stock chat UI is implemented in Go; Lua extensions are optional customization.
+librecode does not auto-load a bundled `extensions/` directory. The stock chat UI is implemented in Go; Lua extensions are optional customization. Use `--no-extensions` to skip configured extensions for one command.
 
 Each Lua file runs in its own Lua state.
 
@@ -97,6 +97,10 @@ Current commonly emitted events include:
 - `tick`
 - `before_agent_start`
 - `agent_end`
+
+## Diagnostics
+
+`librecode extension list` reports registered commands, tools, keymaps, handlers, active timers, and cumulative Lua execution duration per loaded extension. Use it with `--no-extensions` comparisons to isolate extension-induced UX or performance issues.
 
 ## `librecode.log(message)`
 

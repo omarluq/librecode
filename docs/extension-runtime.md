@@ -74,7 +74,7 @@ Configured defaults currently come from `config/loader.go`:
 
 - `.librecode/extensions`
 
-No bundled extension root is prepended automatically.
+No bundled extension root is prepended automatically. Passing `--no-extensions` disables configured Lua extensions for the current command without changing config.
 
 The loader:
 
@@ -174,6 +174,8 @@ The assistant runtime also emits named extension lifecycle events through `Manag
 This is enough for UI/runtime observation, but not enough for full assistant-loop replacement.
 
 ## Current strengths
+
+`librecode extension list` doubles as a lightweight diagnostics surface: it shows registered commands, tools, keymaps, handlers, active timers, and cumulative Lua execution duration per loaded file.
 
 The current system already proves a few important things:
 

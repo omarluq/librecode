@@ -28,11 +28,14 @@ type ToolResult struct {
 
 // LoadedExtension contains metadata for a loaded Lua source file.
 type LoadedExtension struct {
-	Name     string   `json:"name"`
-	Path     string   `json:"path"`
-	Commands []string `json:"commands"`
-	Tools    []string `json:"tools"`
-	Keymaps  []string `json:"keymaps"`
+	Name          string        `json:"name"`
+	Path          string        `json:"path"`
+	Commands      []string      `json:"commands"`
+	Tools         []string      `json:"tools"`
+	Keymaps       []string      `json:"keymaps"`
+	Handlers      []string      `json:"handlers"`
+	Timers        int           `json:"timers"`
+	TotalDuration time.Duration `json:"total_duration"`
 }
 
 // BufferState describes an extension-visible mutable runtime buffer.

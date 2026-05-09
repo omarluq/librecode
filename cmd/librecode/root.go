@@ -7,6 +7,7 @@ import (
 )
 
 var cfgFile string
+var disableExtensions bool
 
 func newRootCmd() *cobra.Command {
 	var resumeSession string
@@ -39,6 +40,7 @@ func newRootCmd() *cobra.Command {
 	)
 	cmd.Flags().Lookup("resume").NoOptDefVal = latestSessionFlagValue
 	cmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file path")
+	cmd.PersistentFlags().BoolVar(&disableExtensions, "no-extensions", false, "disable Lua extensions for this run")
 	cmd.AddCommand(newChatCmd())
 	cmd.AddCommand(newConfigCmd())
 	cmd.AddCommand(newKSQLCmd())

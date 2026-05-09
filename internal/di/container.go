@@ -14,9 +14,10 @@ type Container struct {
 }
 
 // NewContainer builds the root injector for the CLI runtime.
-func NewContainer(configPath string) (*Container, error) {
+func NewContainer(configPath string, overrides ConfigOverrides) (*Container, error) {
 	injector := do.New()
 	do.ProvideNamedValue(injector, ConfigPathKey, configPath)
+	do.ProvideNamedValue(injector, ConfigOverridesKey, overrides)
 	RegisterServices(injector)
 
 	if _, err := do.Invoke[*ConfigService](injector); err != nil {
