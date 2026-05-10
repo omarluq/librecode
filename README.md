@@ -209,6 +209,8 @@ librecode extension run <command> [args...]
 
 The built-in tools are intentionally powerful. `bash` can execute commands, and file tools can read or mutate paths you provide. This is a local coding assistant, not a sandbox.
 
+On Windows, the `bash` tool requires a real Bash shell rather than `cmd.exe`. librecode checks `LIBRECODE_BASH_PATH`, common Git Bash install paths, then `bash.exe` on `PATH`. Native Windows users should install Git Bash/MSYS2/Cygwin or run librecode from WSL.
+
 Available tools:
 
 | Tool | Mutates files? | Purpose |

@@ -11,6 +11,7 @@ Related docs:
 - [`docs/adr/0001-programmable-runtime.md`](adr/0001-programmable-runtime.md)
 - [`docs/extension-runtime.md`](extension-runtime.md)
 - [`docs/extension-api.md`](extension-api.md)
+- [`docs/extension-roadmap.md`](extension-roadmap.md)
 - [`docs/rendering-boundary.md`](rendering-boundary.md)
 
 ## North star
@@ -157,6 +158,22 @@ The current runtime can already support meaningful customization:
 - transcript/thinking/tools/status are exposed as lightweight buffers or metadata surfaces
 
 This is enough to prove the model, but not enough to make the entire app replaceable yet.
+
+## External architecture review direction
+
+Recent architecture review reinforced the same direction: keep the core product polished, then expose lifecycle customization around the agent loop.
+
+The most valuable ideas to adopt are:
+
+- lifecycle events across sessions, turns, context building, provider requests, and tool calls
+- tool middleware that can observe, modify, reject, or synthesize tool calls/results
+- extension tools that are model-visible through the same registry as built-ins
+- deterministic shell hooks for teams
+- skill-bundled MCP/toolboxes and richer AGENTS.md hierarchy
+- markdown subagents and a `Task` tool
+- a `/spec` planning mode with an optional separate planning model
+
+The lesson is not to move default UI into extensions. The lesson is to make agent behavior and workflow policy extensible while Go keeps the default UI fast and coherent.
 
 ## What still does not work
 

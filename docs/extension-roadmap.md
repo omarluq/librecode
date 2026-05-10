@@ -130,32 +130,64 @@ Still add:
 
 Keep raw draw operations available. Higher-level rendering should be Lua-composable, but measuring/wrapping/caching should use Go-backed primitives.
 
-## Phase 5: runtime lifecycle and scheduling
+## Phase 5: lifecycle events
 
-Goal: make Lua capable of owning long-running behavior without blocking the app.
+Goal: add structured agent lifecycle events without making the default UI extension-owned.
 
-Add events:
+Add structured lifecycle events:
 
-- `shutdown`
-- `tick`
+- `session_start`
 - `session_load`
 - `session_save`
+- `session_shutdown`
+- `resources_discover`
+- `input`
 - `prompt_prepare`
-- `model_request`
-- `tool_delta`
+- `before_agent_start`
+- `agent_start`
+- `turn_start`
+- `context`
+- `before_provider_request`
+- `after_provider_response`
+- `provider_error`
+- `tool_call`
+- `tool_result`
+- `tool_error`
 - `message_append`
-- `transcript_render`
+- `turn_end`
+- `agent_end`
+- `shutdown`
 
-Add primitives:
+Events should have structured payloads, bounded data, clear mutation contracts, and extension timing diagnostics.
 
-- `job.spawn`
-- `job.stop`
-- `timer.defer` (implemented)
-- `timer.interval` (implemented)
-- `timer.stop` (implemented)
-- `schedule(fn)`
+## Phase 6: tool middleware and extension tools
 
-## Phase 6: assistant/model/tool/session primitives
+Goal: let extensions and hooks influence tool execution through explicit middleware contracts.
+
+Tool middleware should support:
+
+- observe and continue
+- reject with a synthetic result
+- modify tool input
+- synthesize a result without executing the tool
+- redact or rewrite tool output before the model sees it
+
+Extension-registered tools should be wired into the same model-visible tool registry as built-ins. Skill-bundled tools should activate only when the skill activates.
+
+## Phase 7: hooks, skills, and subagents
+
+Goal: add pragmatic workflow building blocks for teams and project-specific automation.
+
+Add:
+
+- deterministic shell hooks for teams (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`)
+- skill-bundled MCP configuration through `mcp.json`
+- skill-bundled toolboxes/scripts for simpler custom tools
+- AGENTS.md hierarchy and subtree instruction loading
+- markdown-defined subagents exposed through a `Task` tool
+- `/spec` planning mode with optional separate planning model
+
+## Phase 8: assistant/model/tool/session primitives
 
 Goal: allow extensions to replace or deeply reshape the assistant loop.
 
@@ -166,10 +198,11 @@ Expose primitive capabilities, not chat policies:
 - session read/write primitive
 - config read/write primitive
 - store/key-value primitive for extension state
+- job/process spawning (`job.spawn`, `job.stop`) and `schedule(fn)`
 
 Keep default assistant orchestration in Go; allow extensions to override or wrap it explicitly.
 
-## Phase 7: bare runtime mode
+## Phase 9: bare runtime mode
 
 Goal: make librecode usable as a programmable terminal runtime without the stock chat app.
 
