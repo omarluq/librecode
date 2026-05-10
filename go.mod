@@ -4,6 +4,7 @@ go 1.26.1
 
 require (
 	github.com/Oudwins/zog v0.22.2
+	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/gdamore/tcell/v3 v3.3.0
 	github.com/google/uuid v1.6.0
 	github.com/pressly/goose/v3 v3.27.1
@@ -20,7 +21,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/yuin/goldmark v1.7.16
 	github.com/yuin/gopher-lua v1.1.2
-	golang.org/x/text v0.36.0
+	golang.org/x/text v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.50.0
 )
@@ -29,7 +30,6 @@ require (
 	github.com/DmitriyVTitov/size v1.5.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
