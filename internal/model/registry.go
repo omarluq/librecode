@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -493,9 +494,7 @@ func mergeStringMaps(left, right map[string]string) map[string]string {
 	if merged == nil {
 		merged = map[string]string{}
 	}
-	for key, value := range right {
-		merged[key] = value
-	}
+	maps.Copy(merged, right)
 
 	return merged
 }
@@ -508,9 +507,7 @@ func mergeAnyMaps(left, right map[string]any) map[string]any {
 	if merged == nil {
 		merged = map[string]any{}
 	}
-	for key, value := range right {
-		merged[key] = value
-	}
+	maps.Copy(merged, right)
 
 	return merged
 }

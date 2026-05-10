@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"maps"
 	"strings"
 	"time"
 
@@ -250,9 +251,7 @@ func (app *App) extensionBuffers() map[string]extension.BufferState {
 	for name, buffer := range app.extensionRuntimeBuffers {
 		buffers[name] = cloneRuntimeBufferState(name, &buffer)
 	}
-	for name, buffer := range reservedBuffers {
-		buffers[name] = buffer
-	}
+	maps.Copy(buffers, reservedBuffers)
 
 	return buffers
 }
@@ -266,9 +265,7 @@ func cloneExtensionMetadata(values map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	cloned := make(map[string]any, len(values))
-	for key, value := range values {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, values)
 
 	return cloned
 }

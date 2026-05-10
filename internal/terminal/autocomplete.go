@@ -55,7 +55,7 @@ func (app *App) autocompleteLines(width int) []styledLine {
 		Style: app.theme.background(colorCustomMessageBg).Bold(true),
 		Text:  padRight("  slash commands  tab to complete", width),
 	})
-	for index := 0; index < limit; index++ {
+	for index := range limit {
 		match := matches[index]
 		prefix := "  "
 		if index == 0 {

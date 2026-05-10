@@ -1,6 +1,8 @@
 package extension
 
 import (
+	"maps"
+	"slices"
 	"sort"
 
 	lua "github.com/yuin/gopher-lua"
@@ -112,10 +114,8 @@ func (event *luaHostEvent) setBuffer(name string, buffer *BufferState) {
 func (event *luaHostEvent) deleteBuffer(name string) {
 	delete(event.buffers, name)
 	delete(event.changedBuffers, name)
-	for _, deletedBuffer := range event.deletedBuffers {
-		if deletedBuffer == name {
-			return
-		}
+	if slices.Contains(event.deletedBuffers, name) {
+		return
 	}
 	event.deletedBuffers = append(event.deletedBuffers, name)
 }
@@ -201,10 +201,8 @@ func (event *luaHostEvent) deleteWindow(name string) {
 	delete(event.windows, name)
 	delete(event.layout.Windows, name)
 	delete(event.changedWindows, name)
-	for _, deletedWindow := range event.deletedWindows {
-		if deletedWindow == name {
-			return
-		}
+	if slices.Contains(event.deletedWindows, name) {
+		return
 	}
 	event.deletedWindows = append(event.deletedWindows, name)
 }
@@ -229,10 +227,8 @@ func (event *luaHostEvent) resetWindowUI(name string) {
 	if name == "" {
 		return
 	}
-	for _, windowName := range event.resetUIWindows {
-		if windowName == name {
-			return
-		}
+	if slices.Contains(event.resetUIWindows, name) {
+		return
 	}
 	event.resetUIWindows = append(event.resetUIWindows, name)
 }
@@ -498,9 +494,7 @@ func cloneMap(values map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	cloned := make(map[string]any, len(values))
-	for key, value := range values {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, values)
 
 	return cloned
 }

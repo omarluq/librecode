@@ -66,8 +66,8 @@ func restoreLineEndings(text, ending string) string {
 }
 
 func stripBOM(content string) (bom, text string) {
-	if strings.HasPrefix(content, "\uFEFF") {
-		return "\uFEFF", strings.TrimPrefix(content, "\uFEFF")
+	if after, ok := strings.CutPrefix(content, "\uFEFF"); ok {
+		return "\uFEFF", after
 	}
 
 	return "", content

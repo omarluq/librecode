@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strings"
@@ -113,9 +114,7 @@ func joinEndpoint(baseURL, suffix string) string {
 
 func cloneHeaders(headers map[string]string) map[string]string {
 	cloned := make(map[string]string, len(headers)+2)
-	for key, value := range headers {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, headers)
 
 	return cloned
 }

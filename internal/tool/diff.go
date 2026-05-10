@@ -37,7 +37,7 @@ func generateDiffString(oldContent, newContent string) EditDetails {
 
 func commonLinePrefix(leftLines, rightLines []string) int {
 	limit := min(len(leftLines), len(rightLines))
-	for lineIndex := 0; lineIndex < limit; lineIndex++ {
+	for lineIndex := range limit {
 		if leftLines[lineIndex] != rightLines[lineIndex] {
 			return lineIndex
 		}

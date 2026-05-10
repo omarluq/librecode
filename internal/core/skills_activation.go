@@ -191,7 +191,7 @@ func containsSkillPhrase(inputLower, phraseLower string) bool {
 func skillActivationPhrases(description string) []string {
 	phrases := []string{}
 	for _, sentence := range skillActivationSentencePattern.Split(description, -1) {
-		for _, clause := range strings.Split(sentence, ",") {
+		for clause := range strings.SplitSeq(sentence, ",") {
 			trimmed := strings.TrimSpace(clause)
 			if trimmed == "" {
 				continue

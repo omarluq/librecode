@@ -797,8 +797,8 @@ func splitSlashCommand(prompt string) (name, args string) {
 	if trimmedPrompt == "" {
 		return "", ""
 	}
-	if strings.HasPrefix(trimmedPrompt, "skill:") {
-		return "skill", strings.TrimPrefix(trimmedPrompt, "skill:")
+	if after, ok := strings.CutPrefix(trimmedPrompt, "skill:"); ok {
+		return "skill", after
 	}
 
 	commandName, commandArgs, found := strings.Cut(trimmedPrompt, " ")

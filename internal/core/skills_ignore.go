@@ -34,7 +34,7 @@ func readSkillIgnorePatterns(dir string) []string {
 		if err != nil {
 			continue
 		}
-		for _, line := range strings.Split(content, "\n") {
+		for line := range strings.SplitSeq(content, "\n") {
 			pattern := strings.TrimSpace(line)
 			if pattern == "" || strings.HasPrefix(pattern, "#") || strings.HasPrefix(pattern, "!") {
 				continue

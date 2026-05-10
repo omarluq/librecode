@@ -1,6 +1,8 @@
 // Package model resolves providers, model metadata, auth, and thinking levels.
 package model
 
+import "maps"
+
 // ThinkingLevel controls model reasoning depth.
 type ThinkingLevel string
 
@@ -119,9 +121,7 @@ func cloneStringMap(input map[string]string) map[string]string {
 		return nil
 	}
 	output := make(map[string]string, len(input))
-	for key, value := range input {
-		output[key] = value
-	}
+	maps.Copy(output, input)
 
 	return output
 }
@@ -131,9 +131,7 @@ func cloneAnyMap(input map[string]any) map[string]any {
 		return nil
 	}
 	output := make(map[string]any, len(input))
-	for key, value := range input {
-		output[key] = value
-	}
+	maps.Copy(output, input)
 
 	return output
 }

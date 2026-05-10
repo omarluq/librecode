@@ -127,7 +127,7 @@ func indentedLines(width int, content string, style tcell.Style) []styledLine {
 	}
 	innerWidth := max(1, width-2)
 	lines := []styledLine{}
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		for _, wrapped := range wrapTextPreserveWhitespace(line, innerWidth) {
 			lines = append(lines, styledLine{Style: style, Text: padRight("  "+wrapped, width)})
 		}
@@ -175,7 +175,7 @@ func parseToolEventContent(content, fallback string) parsedToolEvent {
 	}
 	current := ""
 	sections := map[string][]string{}
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		if name, value, ok := parseToolSectionHeader(line); ok {
 			if name == toolSectionTool {
 				event.Name = value
@@ -222,8 +222,8 @@ func toolTitle(event *parsedToolEvent) string {
 	if event.Error != "" {
 		return "✗ " + name
 	}
-	if strings.HasPrefix(name, "load skill: ") {
-		return "loaded skill " + strings.TrimSpace(strings.TrimPrefix(name, "load skill: "))
+	if after, ok := strings.CutPrefix(name, "load skill: "); ok {
+		return "loaded skill " + strings.TrimSpace(after)
 	}
 
 	return "✓ " + name

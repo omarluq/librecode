@@ -178,8 +178,8 @@ func (panel *selectionPanel) applyFilter() {
 
 func itemMatchesQuery(item panelItem, query string) bool {
 	haystack := strings.ToLower(strings.Join([]string{item.Title, item.Description, item.Meta, item.Value}, " "))
-	parts := strings.Fields(query)
-	for _, part := range parts {
+	parts := strings.FieldsSeq(query)
+	for part := range parts {
 		if !strings.Contains(haystack, part) {
 			return false
 		}

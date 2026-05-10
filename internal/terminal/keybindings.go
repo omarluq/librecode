@@ -1,7 +1,7 @@
 package terminal
 
 import (
-	"sort"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -174,9 +174,7 @@ func (bindings *keybindings) rows() []keyBindingRow {
 	for action := range bindings.definitions {
 		actions = append(actions, action)
 	}
-	sort.Slice(actions, func(leftIndex, rightIndex int) bool {
-		return actions[leftIndex] < actions[rightIndex]
-	})
+	slices.Sort(actions)
 	rows := make([]keyBindingRow, 0, len(actions))
 	for _, action := range actions {
 		definition := bindings.definitions[action]
