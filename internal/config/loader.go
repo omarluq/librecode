@@ -50,7 +50,7 @@ func Load(path string) mo.Result[*Config] {
 func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("app.name", "librecode")
 	viperInstance.SetDefault("app.env", "development")
-	viperInstance.SetDefault("app.working_loader.text", "off to commit shenanigans...")
+	viperInstance.SetDefault("app.working_loader.text", "Shenaniganing...")
 	viperInstance.SetDefault("logging.level", "info")
 	viperInstance.SetDefault("logging.format", "pretty")
 	viperInstance.SetDefault("database.path", "")

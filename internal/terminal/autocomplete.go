@@ -128,7 +128,7 @@ func (app *App) workingIndicator() string {
 
 func (app *App) workingLoaderText() string {
 	if app.cfg == nil || strings.TrimSpace(app.cfg.App.WorkingLoader.Text) == "" {
-		return "off to commit shenanigans..."
+		return "Shenaniganing..."
 	}
 
 	return app.cfg.App.WorkingLoader.Text

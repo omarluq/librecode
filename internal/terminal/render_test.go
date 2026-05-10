@@ -98,7 +98,7 @@ func TestRenderWorkingIndicatorHasMarginAndShimmer(t *testing.T) {
 	if !isWorkingIndicatorText(lines[1].Text) {
 		t.Fatal("working indicator line should opt into shimmer rendering")
 	}
-	if !strings.HasPrefix(lines[1].Text, "  ⠋ off to commit shenanigans") {
+	if !strings.HasPrefix(lines[1].Text, "  ⠋ Shenaniganing...") {
 		t.Fatalf("working indicator missing horizontal margin/text: %q", lines[1].Text)
 	}
 	assertWorkingShimmerMotion(t, lines[1].Text)
@@ -144,14 +144,14 @@ func TestWriteStyledLineOnlyShimmersMarkedLines(t *testing.T) {
 	row = 1
 	app.writeStyledLine(row, 20, styledLine{
 		Style: app.theme.style(colorText),
-		Text:  "  ⠋ off to commit shenanigans...",
+		Text:  "  ⠋ Shenaniganing...",
 	})
 	if got, want := app.frame.cell(2, row).Style.GetForeground(), workingShimmerBrightColor(); got != want {
 		t.Fatalf("spinner foreground = %v, want %v", got, want)
 	}
 	textStart := 4
 	got := app.frame.cell(textStart, row).Style.GetForeground()
-	want := workingShimmerColor(0, 0, len("off to commit shenanigans..."))
+	want := workingShimmerColor(0, 0, len("Shenaniganing..."))
 	if got != want {
 		t.Fatalf("shimmer text foreground = %v, want %v", got, want)
 	}

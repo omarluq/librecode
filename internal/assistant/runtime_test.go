@@ -428,7 +428,7 @@ func testConfig() *config.Config {
 			Name: "librecode",
 			Env:  "test",
 			WorkingLoader: config.LoaderUI{
-				Text: "off to commit shenanigans...",
+				Text: "Shenaniganing...",
 			},
 		},
 		Logging: config.LoggingConfig{

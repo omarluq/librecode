@@ -2,7 +2,7 @@ app:
   name: librecode
   env: development
   working_loader:
-    text: off to commit shenanigans...
+    text: Shenaniganing...
 
 logging:
   level: info
