@@ -12,6 +12,10 @@
 coverage.out
 coverage.html
 
+# Python artifacts
+__pycache__/
+*.py[cod]
+
 # Local caches (kept per-project for isolation)
 /.gocache/
 /.gomodcache/
