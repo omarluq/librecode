@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/samber/oops"
@@ -10,7 +9,10 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/di"
+	"github.com/omarluq/librecode/internal/limitio"
 )
+
+const promptStdinLimitBytes int64 = 1 << 20
 
 type promptRunOptions struct {
 	SessionID   string
@@ -102,7 +104,7 @@ func promptMessage(cmd *cobra.Command, args []string) (string, error) {
 		return message, nil
 	}
 
-	stdin, err := io.ReadAll(cmd.InOrStdin())
+	stdin, err := limitio.ReadAll(cmd.InOrStdin(), promptStdinLimitBytes, "prompt stdin")
 	if err != nil {
 		return "", oops.Wrapf(err, "read stdin")
 	}

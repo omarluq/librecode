@@ -5,14 +5,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/omarluq/librecode/internal/limitio"
 )
 
-// KSQLProjectURL documents the upstream ksqlDB project this adapter targets.
-const KSQLProjectURL = "https://github.com/confluentinc/ksql"
+const (
+	// KSQLProjectURL documents the upstream ksqlDB project this adapter targets.
+	KSQLProjectURL = "https://github.com/confluentinc/ksql"
+
+	ksqlResponseLimitBytes int64 = 8 << 20
+)
 
 // KSQLClient is a small ksqlDB REST client.
 type KSQLClient struct {
@@ -87,7 +92,7 @@ func (client *KSQLClient) do(request *http.Request) (body []byte, err error) {
 		}
 	}()
 
-	body, err = io.ReadAll(response.Body)
+	body, err = limitio.ReadAll(response.Body, ksqlResponseLimitBytes, "ksql response")
 	if err != nil {
 		return nil, fmt.Errorf("ksql: read response: %w", err)
 	}

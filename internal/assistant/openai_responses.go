@@ -3,7 +3,6 @@ package assistant
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"strings"
 
 	"github.com/samber/oops"
@@ -116,7 +115,7 @@ func (client *HTTPCompletionClient) requestResponses(
 	}
 	defer closeBody(response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		content, readErr := io.ReadAll(response.Body)
+		content, readErr := readProviderBody(response.Body)
 		if readErr != nil {
 			return nil, oops.In("assistant").Code("responses_error_read").Wrapf(readErr, "read provider error")
 		}
@@ -126,7 +125,7 @@ func (client *HTTPCompletionClient) requestResponses(
 	if stream {
 		return parseSSEResult(response.Body, onEvent)
 	}
-	content, err := io.ReadAll(response.Body)
+	content, err := readProviderBody(response.Body)
 	if err != nil {
 		return nil, oops.In("assistant").Code("responses_read").Wrapf(err, "read provider response")
 	}

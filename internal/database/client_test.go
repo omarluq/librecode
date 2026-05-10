@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,4 +53,20 @@ func TestKSQLClient_Execute(t *testing.T) {
 	body, err := client.Execute(context.Background(), "SHOW STREAMS;")
 	require.NoError(t, err)
 	assert.JSONEq(t, `[]`, string(body))
+}
+
+func TestKSQLClient_RejectsResponseAboveLimit(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, err := writer.Write([]byte(strings.Repeat("a", 8<<20+1)))
+		require.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+
+	client := database.NewKSQLClient(server.URL, time.Second)
+	body, err := client.Info(context.Background())
+	require.Error(t, err)
+	assert.Nil(t, body)
+	assert.Contains(t, err.Error(), "ksql response exceeds limit")
 }

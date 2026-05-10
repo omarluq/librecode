@@ -39,3 +39,9 @@ cache:
 ksql:
   endpoint: ""
   timeout: 10s
+
+# Built-in hard limits protect memory usage for untrusted input/remote bodies:
+# - prompt stdin: 1 MiB
+# - `librecode tool run ... -` JSON stdin: 1 MiB
+# - provider response/error bodies: 16 MiB
+# - ksqlDB response bodies: 8 MiB

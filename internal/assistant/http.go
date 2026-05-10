@@ -11,7 +11,11 @@ import (
 	"strings"
 
 	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/limitio"
 )
+
+const providerResponseLimitBytes int64 = 16 << 20
 
 func (client *HTTPCompletionClient) postJSON(
 	ctx context.Context,
@@ -28,7 +32,7 @@ func (client *HTTPCompletionClient) postJSON(
 		return nil, oops.In("assistant").Code("provider_http").Wrapf(err, "request provider response")
 	}
 	defer closeBody(response.Body)
-	content, err := io.ReadAll(response.Body)
+	content, err := readProviderBody(response.Body)
 	if err != nil {
 		return nil, oops.In("assistant").Code("provider_read").Wrapf(err, "read provider response")
 	}
@@ -37,6 +41,10 @@ func (client *HTTPCompletionClient) postJSON(
 	}
 
 	return content, nil
+}
+
+func readProviderBody(reader io.Reader) ([]byte, error) {
+	return limitio.ReadAll(reader, providerResponseLimitBytes, "provider response")
 }
 
 func closeBody(body io.Closer) {

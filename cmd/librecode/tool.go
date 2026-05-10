@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"path/filepath"
 	"strings"
 
@@ -9,8 +8,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/omarluq/librecode/internal/di"
+	"github.com/omarluq/librecode/internal/limitio"
 	builtintool "github.com/omarluq/librecode/internal/tool"
 )
+
+const toolJSONStdinLimitBytes int64 = 1 << 20
 
 func newToolCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -116,7 +118,7 @@ func toolPayload(cmd *cobra.Command, args []string) ([]byte, error) {
 		return []byte("{}"), nil
 	}
 	if len(args) == 1 && args[0] == "-" {
-		payload, err := io.ReadAll(cmd.InOrStdin())
+		payload, err := limitio.ReadAll(cmd.InOrStdin(), toolJSONStdinLimitBytes, "tool JSON stdin")
 		if err != nil {
 			return []byte{}, oops.Wrapf(err, "read tool args")
 		}

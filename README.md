@@ -124,6 +124,8 @@ librecode config validate
 
 See [`config.example.yaml`](config.example.yaml) for all current config keys. The in-progress loader text is configurable with `app.working_loader.text`.
 
+Built-in memory limits protect untrusted input and remote bodies: prompt stdin and tool JSON stdin are capped at 1 MiB, provider response/error bodies at 16 MiB, and ksqlDB response bodies at 8 MiB.
+
 Default persistence paths:
 
 - sessions database: `~/.local/state/librecode/sessions.db`
