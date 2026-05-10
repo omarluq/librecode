@@ -257,7 +257,7 @@ func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 	client := &capturingCompletionClient{request: nil}
 	runtime, _ := newTestRuntimeWithClient(t, client)
 
-	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(cwd, "please fix a bug", ""))
+	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(cwd, "please fix-bug", ""))
 	require.NoError(t, err)
 	require.NotNil(t, client.request)
 	assert.Contains(t, client.request.SystemPrompt, "<available_skills>")

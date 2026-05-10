@@ -584,7 +584,7 @@ type rankedSkill struct {
 
 func rankSkillsForPrompt(prompt string, skills []Skill) []Skill {
 	ranked := []rankedSkill{}
-	promptTokens := tokenSet(prompt)
+	promptTokens := normalizedTokenSet(prompt)
 	promptLower := strings.ToLower(prompt)
 	for index := range skills {
 		skill := skills[index]
@@ -592,7 +592,7 @@ func rankSkillsForPrompt(prompt string, skills []Skill) []Skill {
 			continue
 		}
 		score := skillActivationScore(promptLower, promptTokens, &skill)
-		if score < 3 {
+		if score == 0 {
 			continue
 		}
 		ranked = append(ranked, rankedSkill{skill: skill, score: score, order: index})
@@ -611,59 +611,175 @@ func rankSkillsForPrompt(prompt string, skills []Skill) []Skill {
 }
 
 func skillActivationScore(promptLower string, promptTokens map[string]bool, skill *Skill) int {
-	score := 0
 	nameLower := strings.ToLower(skill.Name)
-	if strings.Contains(promptLower, nameLower) {
-		score += 5
-	}
-	nameTokens := strings.Split(nameLower, "-")
-	nameTokenMatches := 0
-	for _, token := range nameTokens {
-		if len(token) < 4 {
-			continue
-		}
-		if promptTokens[token] {
-			nameTokenMatches++
-			score += 2
-		}
-	}
-	if nameTokenMatches == len(lo.Filter(nameTokens, func(token string, _ int) bool { return len(token) >= 4 })) {
-		score += 3
-	}
-	for token := range tokenSet(skill.Description) {
-		if isSkillStopWord(token) || len(token) < 5 {
-			continue
-		}
-		if promptTokens[token] {
-			score++
-		}
+	if score := skillNameActivationScore(promptLower, promptTokens, nameLower); score > 0 {
+		return score
 	}
 
-	return score
+	return skillDescriptionActivationScore(promptTokens, skill.Description)
 }
 
-func tokenSet(input string) map[string]bool {
+func skillNameActivationScore(promptLower string, promptTokens map[string]bool, nameLower string) int {
+	if containsSkillPhrase(promptLower, nameLower) {
+		return 100
+	}
+
+	nameTokens := normalizedTokens(nameLower)
+	if len(nameTokens) == 0 {
+		return 0
+	}
+	for _, token := range nameTokens {
+		if !promptTokens[token] {
+			return 0
+		}
+	}
+
+	return 80
+}
+
+func skillDescriptionActivationScore(promptTokens map[string]bool, description string) int {
+	bestScore := 0
+	for _, phrase := range skillActivationPhrases(description) {
+		phraseTokens := lo.Filter(normalizedTokens(phrase), func(token string, _ int) bool {
+			return !isSkillStopWord(token)
+		})
+		phraseTokens = lo.Uniq(phraseTokens)
+		if len(phraseTokens) == 0 {
+			continue
+		}
+
+		matches := 0
+		for _, token := range phraseTokens {
+			if promptTokens[token] {
+				matches++
+			}
+		}
+		if matches < 2 {
+			continue
+		}
+
+		score := 40 + matches
+		if score > bestScore {
+			bestScore = score
+		}
+	}
+
+	return bestScore
+}
+
+func containsSkillPhrase(inputLower, phraseLower string) bool {
+	phraseTokens := normalizedTokens(phraseLower)
+	if len(phraseTokens) == 0 {
+		return false
+	}
+
+	inputTokens := normalizedTokens(inputLower)
+	for index := 0; index+len(phraseTokens) <= len(inputTokens); index++ {
+		matched := true
+		for offset, phraseToken := range phraseTokens {
+			if inputTokens[index+offset] != phraseToken {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+
+	return false
+}
+
+func skillActivationPhrases(description string) []string {
+	phrases := []string{}
+	for _, sentence := range regexp.MustCompile(`[.;\n]+`).Split(description, -1) {
+		for _, clause := range strings.Split(sentence, ",") {
+			trimmed := strings.TrimSpace(clause)
+			if trimmed == "" {
+				continue
+			}
+			if isActivationPhrase(trimmed) {
+				phrases = append(phrases, trimmed)
+			}
+		}
+	}
+
+	return phrases
+}
+
+func isActivationPhrase(phrase string) bool {
+	phraseLower := strings.ToLower(phrase)
+	markers := []string{
+		"apply when", "also trigger", "also triggers", "trigger on", "triggers on",
+		"use for", "use this", "use when", "whenever", "when ",
+	}
+	for _, marker := range markers {
+		if strings.Contains(phraseLower, marker) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func normalizedTokenSet(input string) map[string]bool {
 	tokens := map[string]bool{}
-	fields := strings.FieldsFunc(strings.ToLower(input), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
-	for _, field := range fields {
-		if field != "" {
-			tokens[field] = true
+	for _, token := range normalizedTokens(input) {
+		if token != "" {
+			tokens[token] = true
 		}
 	}
 
 	return tokens
 }
 
+func normalizedTokens(input string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(input), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+
+	tokens := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field == "" {
+			continue
+		}
+		tokens = append(tokens, normalizeSkillToken(field))
+	}
+
+	return tokens
+}
+
+func normalizeSkillToken(token string) string {
+	switch token {
+	case "golang":
+		return "go"
+	case "writing":
+		return "write"
+	case "uses", "used", "using":
+		return "use"
+	}
+
+	for _, suffix := range []string{"ing", "ed", "es", "s"} {
+		if len(token) > len(suffix)+2 && strings.HasSuffix(token, suffix) {
+			return strings.TrimSuffix(token, suffix)
+		}
+	}
+
+	return token
+}
+
 func isSkillStopWord(token string) bool {
 	stopWords := map[string]bool{
-		"about": true, "after": true, "agent": true, "apply": true, "build": true,
+		"about": true, "after": true, "agent": true, "also": true, "and": true,
+		"any": true, "apply": true, "are": true, "build": true, "can": true,
 		"code": true, "coding": true, "cover": true, "covers": true, "debug": true,
-		"designed": true, "especially": true, "guide": true, "helps": true, "implement": true,
+		"designed": true, "especially": true, "for": true, "from": true, "guide": true,
+		"helps": true, "implement": true, "into": true, "not": true, "only": true,
 		"project": true, "provides": true, "review": true, "similar": true, "skill": true,
-		"tasks": true, "their": true, "these": true, "tools": true, "trigger": true,
-		"using": true, "whenever": true, "working": true, "write": true, "writing": true,
+		"task": true, "tasks": true, "that": true, "the": true, "their": true, "these": true,
+		"this": true, "tool": true, "tools": true, "trigger": true, "use": true,
+		"when": true, "whenever": true, "with": true, "work": true, "working": true,
+		"write": true, "you": true,
 	}
 
 	return stopWords[token]

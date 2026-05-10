@@ -143,12 +143,48 @@ func TestAutoActivateSkillsSelectsMatchingSkill(t *testing.T) {
 	}, "\n"))
 
 	result := core.LoadSkills(cwd, nil, true)
-	activated, diagnostics := core.AutoActivateSkills("please fix this bug safely", result.Skills)
+	activated, diagnostics := core.AutoActivateSkills("please use bug-fix safely", result.Skills)
 
 	require.Empty(t, diagnostics)
 	require.Len(t, activated, 1)
 	assert.Equal(t, "bug-fix", activated[0].Skill.Name)
 	assert.Contains(t, activated[0].Content, "Run tests")
+}
+
+func TestAutoActivateSkillsRequiresStrongIntent(t *testing.T) {
+	cwd := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "hud", "SKILL.md"), strings.Join([]string{
+		frontmatterDelimiter,
+		"name: hud",
+		"description: Show or configure the runtime HUD status display",
+		frontmatterDelimiter,
+		"HUD instructions.",
+	}, "\n"))
+	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "go-tests", "SKILL.md"), strings.Join([]string{
+		frontmatterDelimiter,
+		"name: go-tests",
+		"description: Use when writing Go tests or debugging flaky test failures",
+		frontmatterDelimiter,
+		"Testing instructions.",
+	}, "\n"))
+
+	result := core.LoadSkills(cwd, nil, true)
+
+	activated, diagnostics := core.AutoActivateSkills("hello", result.Skills)
+	require.Empty(t, diagnostics)
+	assert.Empty(t, activated)
+
+	activated, diagnostics = core.AutoActivateSkills("hud", result.Skills)
+	require.Empty(t, diagnostics)
+	require.Len(t, activated, 1)
+	assert.Equal(t, "hud", activated[0].Skill.Name)
+
+	activated, diagnostics = core.AutoActivateSkills("please write Go tests for this package", result.Skills)
+	require.Empty(t, diagnostics)
+	require.Len(t, activated, 1)
+	assert.Equal(t, "go-tests", activated[0].Skill.Name)
 }
 
 func TestLoadSkillsReportsValidationWarningsAndNameCollisions(t *testing.T) {
