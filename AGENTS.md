@@ -1,125 +1,90 @@
-# librecode - AI Agent Instructions
+# librecode - Agent Instructions
 
-## Project Overview
+## Project overview
 
-This is a Go project template with a full development toolchain:
-- **CLI Framework**: Cobra for command-line interfaces
-- **Config**: Viper with YAML/env/defaults support
-- **DI**: samber/do v2 for dependency injection
-- **Libraries**: samber/lo, samber/mo, samber/oops
-- **Logging**: zerolog with slog bridge (slog-zerolog)
-- **Testing**: stretchr/testify
-- **Tooling**: mise, Task, golangci-lint, lefthook, goreleaser
+librecode is a local-first AI coding assistant and programmable terminal runtime written in Go. The default product experience is Go-owned for performance and polish; Lua extensions are optional escape hatches for commands, keymaps, hooks, tools, and small overlays.
 
-## Development Workflow
+## Required validation
 
-### Build & Run
+After code changes, run all of:
+
 ```bash
-mise exec -- task build    # Build binary to ./bin/
-mise exec -- task run      # Build and run
-mise exec -- task dev      # Run with live reload (if .air.toml exists)
+mise exec -- go test ./...
+mise exec -- task build
+mise exec -- task ci
 ```
 
-### Testing & Quality
+Report the results before committing. Use `mise exec --` for Task/Go tooling in this repo.
+
+## Common commands
+
 ```bash
-mise exec -- task test           # Run tests with race detector
-mise exec -- task test-coverage  # Tests with HTML coverage report
-mise exec -- task lint           # golangci-lint (strict: 50+ linters)
-mise exec -- task fmt            # Auto-fix lint issues
-mise exec -- task ci             # Full CI pipeline
+mise exec -- task build          # build ./bin/librecode
+mise exec -- task run            # build and run
+mise exec -- task test           # tests with race detector
+mise exec -- task test-coverage  # coverage report
+mise exec -- task lint           # golangci-lint
+mise exec -- task fmt            # auto-fix lint issues
+mise exec -- task ci             # full CI pipeline
 ```
 
-### Project Structure
-```
-cmd/librecode/          # CLI entrypoint (main.go, root.go, config.go, version.go)
-internal/
-  assistant/      # Prompt orchestration and built-in /tool slash command
-  config/         # Viper config loader (config.go, loader.go)
-  database/       # SQLite sessions, migrations, and ksqlDB REST client
-  di/             # samber/do DI container and services
-  event/          # librecode-style in-process event bus
-  extension/      # Lua workflow extensions
-  tool/           # librecode-style built-in tools: read, bash, edit, write, grep, find, ls
-  vinfo/          # Build version info (version.go)
-```
+## Project structure
 
-## Key Patterns
-
-### Error Handling with samber/oops
-```go
-import "github.com/samber/oops"
-
-return nil, oops.
-    In("config").
-    Code("invalid_config").
-    Wrapf(err, "load configuration")
+```text
+cmd/librecode/        # Cobra CLI commands and entrypoint
+internal/assistant/   # assistant runtime, model retry, tool loop, slash commands
+internal/auth/        # provider auth and credential storage
+internal/config/      # YAML/env/default config loading and validation
+internal/core/        # resources, skills, system prompt helpers
+internal/database/    # SQLite sessions/migrations and ksqlDB client
+internal/di/          # samber/do dependency registration
+internal/event/       # in-process event bus
+internal/extension/   # trusted Lua extension host/runtime
+internal/model/       # model/provider registry
+internal/terminal/    # TUI rendering/input/session UX
+internal/tool/        # built-in tools: read, bash, edit, write, grep, find, ls
+internal/vinfo/       # build version info
 ```
 
-### Functional Patterns with samber/lo
-```go
-keys := lo.Map(entries, func(e configEntry, _ int) string { return e.key })
-maxLen := lo.MaxBy(keys, func(a, b string) bool { return len(a) > len(b) })
-lookup := lo.SliceToMap(entries, func(e configEntry) (string, string) {
-    return e.key, e.value
-})
-```
+## Architecture direction
 
-### Monads with samber/mo
-```go
-// Option pattern
-env := mo.EmptyableToOption(cfg.App.Env).OrElse("development")
+- Keep the default terminal UI, transcript rendering, composer, autocomplete, resize behavior, sessions, tools, and provider orchestration in Go.
+- Keep Lua extensions optional and trusted. They may customize behavior, but the default UX must remain fast and polished without extensions.
+- Prefer primitive extension APIs (`buf`, `win`, `layout`, `ui`, `keymap`, `timer`, lifecycle events) plus higher-level helpers in Lua/userland.
+- Avoid adding product-specific host APIs unless they are clearly needed by the Go core.
+- Skills follow the Agent Skills `SKILL.md` directory convention with project-local roots taking priority.
 
-// Result pattern (already used in config.Load())
-cfg, err := config.Load(path).Get()
-```
+Useful docs:
 
-### DI with samber/do
-```go
-import "github.com/samber/do/v2"
+- `docs/runtime-architecture.md`
+- `docs/extension-api.md`
+- `docs/extension-runtime.md`
+- `docs/extension-roadmap.md`
+- `docs/skills.md`
+- `docs/rendering-boundary.md`
 
-do.Provide(injector, NewConfigService)
-cfg := do.MustInvoke[*ConfigService](injector)
-```
+## Code style
 
-## Code Style
+- Follow existing package patterns and keep changes small/focused.
+- Use `oops.In("domain").Code("code").Wrapf(err, "message")` for contextual errors where the package already uses `samber/oops`.
+- Never ignore errors; `errcheck` with `check-blank: true` is enabled.
+- Handle `fmt.Fprintf`/`fmt.Fprintln` return values.
+- Keep the default render path hot and allocation-conscious; do not route default UI through Lua unless explicitly required and benchmarked.
+- Prefer table-driven tests for core behavior and regression tests for terminal rendering bugs.
 
-- Follow existing patterns in `internal/di/` and `cmd/librecode/`
-- Use `oops.In("domain").Code("code").Wrapf(err, "msg")` for error wrapping
-- Use `lo.Map`, `lo.FilterMap`, `lo.SliceToMap`, `lo.Values`, `lo.MaxBy` for collections
-- Use `mo.Option`, `mo.Result` for monadic error handling
-- Never ignore errors — `errcheck` with `check-blank: true` is enabled
-- No test exclusions — all code must pass all 50+ linters
-- Handle every `fmt.Fprintf`/`fmt.Fprintln` return value
+## When adding CLI commands
 
-## When Adding Commands
+1. Add a focused file under `cmd/librecode/`.
+2. Expose a `newXCmd()` constructor returning `*cobra.Command`.
+3. Register it from the appropriate parent command.
+4. Add tests for argument validation and user-visible behavior when practical.
 
-1. Create new file in `cmd/librecode/yourcmd.go`
-2. Export `newYourCmd()` function returning `*cobra.Command`
-3. Add to root command in `cmd/librecode/root.go`
-4. If config needed, use existing DI services or register new ones
+## When adding services
 
-## When Adding Services
+1. Create the service under the appropriate `internal/` package.
+2. Register dependencies in `internal/di/register.go` when the service is app-wide.
+3. Inject via `do.MustInvoke`/`do.Invoke` following existing patterns.
 
-1. Create service in `internal/yourservice/`
-2. Register in `internal/di/register.go`: `do.Provide(injector, NewYourService)`
-3. Inject where needed: `svc := do.MustInvoke[*YourService](injector)`
+## Windows notes
 
-## Renaming When Using Template
-
-Run `task init` for interactive rename, or manually:
-1. Replace `github.com/omarluq/librecode` with your module path
-2. Replace `librecode` binary name with your project name
-3. Update `LIBRECODE_` env prefix in `internal/config/loader.go`
-4. Rename `cmd/librecode/` to `cmd/yourproject/`
-
-## Files to Edit When Starting a Project
-
-1. `go.mod` - update module name
-2. `cmd/librecode/main.go` - import path
-3. `internal/vinfo/version.go` - import path in ldflags comment
-4. `Taskfile.yml` - binary name, MAIN_PACKAGE, ldflags paths
-5. `.golangci.yml` - exhaustruct include pattern
-6. `.goreleaser.yaml` - project_name, binary name, owner
-7. `.github/workflows/*.yml` - repo references
-8. `.mise.toml` - (optional, for mise pinning)
-9. `config.example.yaml` - (optional, example config)
+The public `bash` tool requires a Bash-compatible shell. On Windows, librecode should prefer configured/Git Bash/MSYS2/Cygwin/WSL Bash and should not silently fall back to `cmd.exe` for Bash semantics.
