@@ -258,8 +258,9 @@ task test         # go test -race ./...
 task test-short   # short race-enabled tests
 task test-coverage # coverage.out + coverage.html
 task lint         # golangci-lint run
-task fmt          # golangci-lint run --fix
-task ci           # fmt + lint + test + build
+task fmt          # auto-format and auto-fix lint issues
+task fmt-check    # check formatting without modifying files
+task ci           # fmt-check + lint + test + build, non-mutating
 task tidy         # go mod tidy
 task clean        # remove build/test/cache artifacts
 ```

@@ -85,7 +85,14 @@ tasks:
     desc: Format and fix with golangci-lint
     deps: [ensure-cache]
     cmds:
+      - golangci-lint fmt
       - golangci-lint run --fix
+
+  fmt-check:
+    desc: Check formatting without modifying files
+    deps: [ensure-cache]
+    cmds:
+      - golangci-lint fmt --diff
 
   deps:
     desc: Download dependencies
@@ -106,9 +113,9 @@ tasks:
 
 
   ci:
-    desc: Run CI checks
+    desc: Run CI checks without modifying files
     cmds:
-      - task: fmt
+      - task: fmt-check
       - task: lint
       - task: test
       - task: build

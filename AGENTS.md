@@ -24,8 +24,9 @@ mise exec -- task run            # build and run
 mise exec -- task test           # tests with race detector
 mise exec -- task test-coverage  # coverage report
 mise exec -- task lint           # golangci-lint
-mise exec -- task fmt            # auto-fix lint issues
-mise exec -- task ci             # full CI pipeline
+mise exec -- task fmt            # auto-format and auto-fix lint issues
+mise exec -- task fmt-check      # check formatting without modifying files
+mise exec -- task ci             # non-mutating full CI pipeline
 ```
 
 ## Project structure
