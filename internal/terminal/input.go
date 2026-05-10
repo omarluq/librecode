@@ -15,10 +15,7 @@ import (
 func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error) {
 	switch typedEvent := event.(type) {
 	case *tcell.EventResize:
-		app.renderer.reset()
-		app.screen.Clear()
-		app.screen.Sync()
-		return false, app.handleResizeExtensions(ctx)
+		return false, app.applyResizeEvent(ctx, typedEvent)
 	case *tcell.EventKey:
 		return app.handleKey(ctx, typedEvent)
 	case *tcell.EventMouse:
@@ -29,6 +26,12 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 	default:
 		return false, nil
 	}
+}
+
+func (app *App) applyResizeEvent(ctx context.Context, event *tcell.EventResize) error {
+	app.lastResize = event
+
+	return app.handleResizeExtensions(ctx)
 }
 
 func (app *App) handleKey(ctx context.Context, event *tcell.EventKey) (bool, error) {

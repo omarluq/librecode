@@ -15,8 +15,31 @@ const (
 	windowRendererExtension = "extension"
 )
 
+func (app *App) screenSize() (width, height int) {
+	if app.lastResize != nil {
+		return app.lastResize.Size()
+	}
+	if app.screen != nil {
+		return app.screen.Size()
+	}
+
+	return 80, 24
+}
+
+func (app *App) prepareScreenForFrame() {
+	if app.screen == nil || app.lastResize == nil {
+		return
+	}
+	targetWidth, targetHeight := app.lastResize.Size()
+	currentWidth, currentHeight := app.screen.Size()
+	if currentWidth != targetWidth || currentHeight != targetHeight {
+		app.screen.Show()
+	}
+}
+
 func (app *App) draw(ctx context.Context) {
-	width, height := app.screen.Size()
+	app.prepareScreenForFrame()
+	width, height := app.screenSize()
 	app.frame = newCellBuffer(width, height, tcell.StyleDefault)
 	if width < 20 || height < 8 {
 		app.drawTiny(width, height)
@@ -94,6 +117,7 @@ func (app *App) drawMessages(width, height, row int) int {
 		return app.drawWelcomeOnly(width, height, row)
 	}
 	availableRows := max(1, height-row-app.composerReserve(width, height))
+	app.lastMessageMaxRows = availableRows
 	lines := app.messageLines(width, availableRows)
 	for _, line := range lines {
 		app.writeStyledLine(row, width, line)
@@ -134,14 +158,26 @@ func (app *App) drawPanelWindow(layout *runtimeLayout) {
 }
 
 func (app *App) messageLines(width, maxRows int) []styledLine {
+	app.lastMessageMaxRows = maxRows
+
 	return app.visibleMessageLineGroups(app.messageLineGroups(width), maxRows)
 }
 
 func (app *App) messageLineGroups(width int) [][]styledLine {
-	groups := make([][]styledLine, 0, len(app.messages)+len(app.streamingBlocks)+3)
-	for index := range app.messages {
+	staticGroupCount := len(app.messages)
+	extraGroups := app.dynamicMessageLineGroups(width)
+	groups := make([][]styledLine, 0, staticGroupCount+len(extraGroups))
+	start, end := app.visibleStaticMessageRange(width, max(0, extraGroupsVisibleRows(extraGroups)))
+	for index := start; index < end; index++ {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
+	groups = append(groups, extraGroups...)
+
+	return groups
+}
+
+func (app *App) dynamicMessageLineGroups(width int) [][]styledLine {
+	groups := make([][]styledLine, 0, len(app.streamingBlocks)+3)
 	if len(app.streamingBlocks) > 0 {
 		for index := range app.streamingBlocks {
 			groups = append(groups, app.cachedStreamingBlockLines(width, index))
@@ -174,12 +210,16 @@ func (app *App) cachedMessageLines(width, index int) []styledLine {
 		return lines
 	}
 	app.messageLineCache[index] = cachedRenderedMessage{Lines: lines, Valid: true}
+	app.messageRowPrefixSums = nil
 
 	return lines
 }
 
 func (app *App) ensureMessageLineCache(width int) {
 	app.ensureLineCache(width, len(app.messages), &app.messageLineCache, &app.messageLineCacheState)
+	if len(app.messageRowPrefixSums) != len(app.messageLineCache)+1 {
+		app.messageRowPrefixSums = nil
+	}
 }
 
 func (app *App) ensureLineCache(
@@ -192,6 +232,7 @@ func (app *App) ensureLineCache(
 	if *cacheState != state {
 		*cache = nil
 		*cacheState = state
+		app.messageRowPrefixSums = nil
 	}
 	if len(*cache) > targetLength {
 		*cache = (*cache)[:targetLength]
@@ -208,6 +249,95 @@ func (app *App) currentLineCacheState(width int) messageLineCacheState {
 		HideThinking:  app.hideThinking,
 		ToolsExpanded: app.toolsExpanded,
 	}
+}
+
+func (app *App) visibleStaticMessageRange(width, reservedRows int) (start, end int) {
+	app.ensureMessageLineCache(width)
+	messageCount := len(app.messages)
+	if messageCount == 0 {
+		return 0, 0
+	}
+	maxRows := app.lastMessageMaxRows - reservedRows
+	if app.lastMessageMaxRows <= 0 {
+		maxRows = -1
+	}
+	if maxRows == 0 {
+		return messageCount, messageCount
+	}
+	if maxRows < 0 {
+		return 0, messageCount
+	}
+	if app.scrollOffset == 0 {
+		return app.tailStaticMessageRange(width, maxRows), messageCount
+	}
+	if app.messageRowPrefixSums == nil {
+		app.rebuildMessageRowPrefixSums(width)
+	}
+	totalRows := app.messageRowPrefixSums[messageCount]
+	if maxRows < 0 || totalRows <= maxRows {
+		app.scrollOffset = 0
+
+		return 0, messageCount
+	}
+	maxOffset := max(0, totalRows-maxRows)
+	app.scrollOffset = min(app.scrollOffset, maxOffset)
+	visibleEndRow := totalRows - app.scrollOffset
+	visibleStartRow := max(0, visibleEndRow-maxRows)
+	start = lowerBoundInts(app.messageRowPrefixSums, visibleStartRow+1) - 1
+	end = lowerBoundInts(app.messageRowPrefixSums, visibleEndRow)
+	start = min(max(0, start), messageCount)
+	end = min(max(start, end), messageCount)
+
+	return start, end
+}
+
+func (app *App) tailStaticMessageRange(width, maxRows int) int {
+	remainingRows := maxRows
+	for index := len(app.messages) - 1; index >= 0; index-- {
+		remainingRows -= len(app.cachedMessageLines(width, index))
+		if remainingRows <= 0 {
+			return index
+		}
+	}
+
+	return 0
+}
+
+func (app *App) rebuildMessageRowPrefixSums(width int) {
+	prefixSums := make([]int, len(app.messageLineCache)+1)
+	for index := range app.messageLineCache {
+		if !app.messageLineCache[index].Valid {
+			app.messageLineCache[index] = cachedRenderedMessage{
+				Lines: app.renderMessage(width, app.messages[index]),
+				Valid: true,
+			}
+		}
+		prefixSums[index+1] = prefixSums[index] + len(app.messageLineCache[index].Lines)
+	}
+	app.messageRowPrefixSums = prefixSums
+}
+
+func lowerBoundInts(values []int, target int) int {
+	low, high := 0, len(values)
+	for low < high {
+		mid := low + (high-low)/2
+		if values[mid] < target {
+			low = mid + 1
+		} else {
+			high = mid
+		}
+	}
+
+	return low
+}
+
+func extraGroupsVisibleRows(groups [][]styledLine) int {
+	total := 0
+	for _, group := range groups {
+		total += len(group)
+	}
+
+	return total
 }
 
 func (app *App) cachedStreamingBlockLines(width, index int) []styledLine {
@@ -553,10 +683,7 @@ func (app *App) composerLayout(width, height int) composerLayout {
 }
 
 func (app *App) currentRuntimeLayout() runtimeLayout {
-	width, height := 80, 24
-	if app.screen != nil {
-		width, height = app.screen.Size()
-	}
+	width, height := app.screenSize()
 
 	return app.currentRuntimeLayoutForSize(width, height)
 }

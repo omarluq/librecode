@@ -69,10 +69,6 @@ func newScreenRenderer(screen tcell.Screen) *screenRenderer {
 	return &screenRenderer{screen: screen, previous: nil}
 }
 
-func (renderer *screenRenderer) reset() {
-	renderer.previous = nil
-}
-
 func (renderer *screenRenderer) flush(frame *cellBuffer) {
 	if renderer == nil || renderer.screen == nil || frame == nil {
 		return

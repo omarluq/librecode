@@ -98,6 +98,7 @@ type App struct {
 	extensions                   extension.TerminalEventRunner
 	renderer                     *screenRenderer
 	frame                        *cellBuffer
+	lastResize                   *tcell.EventResize
 	runtime                      *assistant.Runtime
 	settings                     *database.DocumentRepository
 	models                       *model.Registry
@@ -127,6 +128,7 @@ type App struct {
 	resources                    core.ResourceSnapshot
 	messageLineCache             []cachedRenderedMessage
 	streamingBlockLineCache      []cachedRenderedMessage
+	messageRowPrefixSums         []int
 	queuedMessages               []string
 	messages                     []chatMessage
 	streamingBlocks              []chatMessage
@@ -135,6 +137,7 @@ type App struct {
 	messageLineCacheState        messageLineCacheState
 	streamingBlockLineCacheState messageLineCacheState
 	workFrame                    int
+	lastMessageMaxRows           int
 	promptSequence               uint64
 	streamedToolEvents           int
 	promptHistoryIndex           int
@@ -199,6 +202,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		screen:                       screen,
 		renderer:                     newScreenRenderer(screen),
 		frame:                        nil,
+		lastResize:                   nil,
 		runtime:                      options.Runtime,
 		extensions:                   options.Extensions,
 		settings:                     options.Settings,
@@ -217,6 +221,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		canceledPrompts:              map[uint64]*activePromptState{},
 		messages:                     []chatMessage{},
 		messageLineCache:             nil,
+		messageRowPrefixSums:         nil,
 		messageLineCacheState:        emptyMessageLineCacheState(),
 		queuedMessages:               []string{},
 		promptHistory:                []string{},
@@ -234,6 +239,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		lastControlC:                 time.Time{},
 		working:                      false,
 		workFrame:                    0,
+		lastMessageMaxRows:           0,
 		scrollOffset:                 0,
 		streamedToolEvents:           0,
 		promptHistoryIndex:           0,
@@ -319,12 +325,52 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 	if shouldQuit {
 		return true, false
 	}
+	if resize, ok := event.(*tcell.EventResize); ok {
+		return app.drawLatestResize(ctx, resize)
+	}
 	if app.shouldDrawImmediately(event) {
 		app.draw(ctx)
 		return false, false
 	}
 
 	return false, true
+}
+
+func (app *App) drawLatestResize(ctx context.Context, resize *tcell.EventResize) (shouldQuit, dirty bool) {
+	pending, hasPending := app.coalesceResizeEvents(ctx, resize)
+	if hasPending {
+		shouldQuit, _ = app.handleLoopEvent(ctx, pending)
+		if shouldQuit {
+			return true, false
+		}
+	}
+	app.draw(ctx)
+
+	return false, false
+}
+
+func (app *App) coalesceResizeEvents(
+	ctx context.Context,
+	resize *tcell.EventResize,
+) (pending tcell.Event, hasPending bool) {
+	latest := resize
+	for {
+		select {
+		case event := <-app.screen.EventQ():
+			nextResize, ok := event.(*tcell.EventResize)
+			if !ok {
+				app.lastResize = latest
+				return event, true
+			}
+			if err := app.applyResizeEvent(ctx, nextResize); err != nil {
+				app.addMessage(database.RoleCustom, err.Error())
+			}
+			latest = nextResize
+		default:
+			app.lastResize = latest
+			return nil, false
+		}
+	}
 }
 
 func (app *App) workTick(ticker *time.Ticker) <-chan time.Time {
