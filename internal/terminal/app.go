@@ -20,7 +20,7 @@ import (
 
 const (
 	defaultEditorRows      = 6
-	workFrameInterval      = 120 * time.Millisecond
+	workFrameInterval      = 130 * time.Millisecond
 	streamingFrameInterval = 33 * time.Millisecond
 	doubleEscapeDelay      = 500 * time.Millisecond
 	doubleControlCDelay    = 2 * time.Second
@@ -94,6 +94,7 @@ type RunOptions struct {
 type App struct {
 	lastEscape                   time.Time
 	lastControlC                 time.Time
+	workStartedAt                time.Time
 	screen                       tcell.Screen
 	extensions                   extension.TerminalEventRunner
 	renderer                     *screenRenderer
@@ -188,18 +189,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 	if options.Config != nil && options.Config.App.Env == "test" {
 		appTheme = darkTheme()
 	}
-	resources := core.ResourceSnapshot{
-		SkillDiagnostics:   nil,
-		PromptDiagnostics:  nil,
-		AppendSystemPrompt: nil,
-		ContextFiles:       nil,
-		SystemPrompt:       "",
-		Skills:             nil,
-		Prompts:            nil,
-	}
-	if options.Resources != nil {
-		resources = *options.Resources
-	}
+	resources := initialResourceSnapshot(options)
 	app := &App{
 		screen:                       screen,
 		renderer:                     newScreenRenderer(screen),
@@ -242,6 +232,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		lastEscape:                   time.Time{},
 		lastControlC:                 time.Time{},
 		working:                      false,
+		workStartedAt:                time.Time{},
 		workFrame:                    0,
 		lastMessageMaxRows:           0,
 		scrollOffset:                 0,
@@ -264,6 +255,23 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 	app.addWelcomeMessage()
 
 	return app
+}
+
+func initialResourceSnapshot(options *RunOptions) core.ResourceSnapshot {
+	resources := core.ResourceSnapshot{
+		SkillDiagnostics:   nil,
+		PromptDiagnostics:  nil,
+		AppendSystemPrompt: nil,
+		ContextFiles:       nil,
+		SystemPrompt:       "",
+		Skills:             nil,
+		Prompts:            nil,
+	}
+	if options.Resources != nil {
+		resources = *options.Resources
+	}
+
+	return resources
 }
 
 func (app *App) loop(ctx context.Context) {

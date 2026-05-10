@@ -424,7 +424,13 @@ func testProviderCredential() auth.Credential {
 
 func testConfig() *config.Config {
 	return &config.Config{
-		App: config.AppConfig{Name: "librecode", Env: "test"},
+		App: config.AppConfig{
+			Name: "librecode",
+			Env:  "test",
+			WorkingLoader: config.LoaderUI{
+				Text: "off to commit shenanigans...",
+			},
+		},
 		Logging: config.LoggingConfig{
 			Level:  "info",
 			Format: "pretty",

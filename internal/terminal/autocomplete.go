@@ -3,6 +3,9 @@ package terminal
 import (
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/assistant"
 )
@@ -120,7 +123,56 @@ func (app *App) workingIndicator() string {
 	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	frame := frames[app.workFrame%len(frames)]
 
-	return frame + " working…"
+	return frame + " " + app.workingLoaderText()
+}
+
+func (app *App) workingLoaderText() string {
+	if app.cfg == nil || strings.TrimSpace(app.cfg.App.WorkingLoader.Text) == "" {
+		return "off to commit shenanigans..."
+	}
+
+	return app.cfg.App.WorkingLoader.Text
+}
+
+func (app *App) workingIndicatorStyle() tcell.Style {
+	return tcell.StyleDefault.Foreground(workingShimmerBaseColor()).Bold(true)
+}
+
+func workingShimmerBaseColor() tcell.Color {
+	return hexColor(0x4f6f6a)
+}
+
+func workingShimmerBrightColor() tcell.Color {
+	return hexColor(0xc7fff6)
+}
+
+func (app *App) workingShimmerFrame() int {
+	if app.workStartedAt.IsZero() {
+		return app.workFrame
+	}
+
+	return int(time.Since(app.workStartedAt) / workFrameInterval)
+}
+
+func workingShimmerColor(frame, column, contentWidth int) tcell.Color {
+	if contentWidth <= 0 || column < 0 || column >= contentWidth {
+		return workingShimmerBaseColor()
+	}
+	position := frame % contentWidth
+	distance := column - position
+
+	switch distance {
+	case 0:
+		return workingShimmerBrightColor()
+	case 1:
+		return hexColor(0xa8d8d1)
+	case 2:
+		return hexColor(0x8abeb7)
+	case 3:
+		return hexColor(0x6f9f98)
+	default:
+		return workingShimmerBaseColor()
+	}
 }
 
 func formatToolEventForUI(event *assistant.ToolEvent) string {

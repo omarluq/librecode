@@ -19,8 +19,14 @@ type Config struct {
 
 // AppConfig contains application identity and environment settings.
 type AppConfig struct {
-	Name string `json:"name" mapstructure:"name" yaml:"name"`
-	Env  string `json:"env" mapstructure:"env" yaml:"env"`
+	Name          string   `json:"name" mapstructure:"name" yaml:"name"`
+	Env           string   `json:"env" mapstructure:"env" yaml:"env"`
+	WorkingLoader LoaderUI `json:"working_loader" mapstructure:"working_loader" yaml:"working_loader"`
+}
+
+// LoaderUI controls text shown while an assistant response is in progress.
+type LoaderUI struct {
+	Text string `json:"text" mapstructure:"text" yaml:"text"`
 }
 
 // LoggingConfig contains runtime logging settings.
@@ -119,6 +125,9 @@ func (config *Config) IsDev() bool {
 func (config *Config) validateApp() error {
 	if config.App.Name == "" {
 		return fmt.Errorf("config: app.name is required")
+	}
+	if config.App.WorkingLoader.Text == "" {
+		return fmt.Errorf("config: app.working_loader.text is required")
 	}
 
 	switch config.App.Env {

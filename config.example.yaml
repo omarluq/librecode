@@ -1,6 +1,8 @@
 app:
   name: librecode
   env: development
+  working_loader:
+    text: off to commit shenanigans...
 
 logging:
   level: info

@@ -122,7 +122,7 @@ librecode config show
 librecode config validate
 ```
 
-See [`config.example.yaml`](config.example.yaml) for all current config keys.
+See [`config.example.yaml`](config.example.yaml) for all current config keys. The in-progress loader text is configurable with `app.working_loader.text`.
 
 Default persistence paths:
 

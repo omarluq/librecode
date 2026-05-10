@@ -83,6 +83,80 @@ func TestFooterLinesIgnoreTransientStatus(t *testing.T) {
 	}
 }
 
+func TestRenderWorkingIndicatorHasMarginAndShimmer(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.workFrame = 0
+	lines := app.renderWorkingIndicator(40)
+	if len(lines) != 3 {
+		t.Fatalf("working indicator lines = %d, want 3", len(lines))
+	}
+	if lines[0].Text != "" || lines[2].Text != "" {
+		t.Fatalf("working indicator should have vertical margin, got %#v", lineTexts(lines))
+	}
+	if !isWorkingIndicatorText(lines[1].Text) {
+		t.Fatal("working indicator line should opt into shimmer rendering")
+	}
+	if !strings.HasPrefix(lines[1].Text, "  ⠋ off to commit shenanigans") {
+		t.Fatalf("working indicator missing horizontal margin/text: %q", lines[1].Text)
+	}
+	assertWorkingShimmerMotion(t, lines[1].Text)
+}
+
+func assertWorkingShimmerMotion(t *testing.T, indicatorText string) {
+	t.Helper()
+	bright := workingShimmerBrightColor()
+	base := workingShimmerBaseColor()
+	_, contentWidth := workingShimmerContentRange(indicatorText)
+	checks := []struct {
+		name   string
+		frame  int
+		column int
+		want   tcell.Color
+	}{
+		{name: "starts at left", frame: 0, column: 0, want: bright},
+		{name: "distant cell stays base", frame: 0, column: 6, want: base},
+		{name: "moves right", frame: 1, column: 1, want: bright},
+		{name: "loops immediately", frame: contentWidth, column: 0, want: bright},
+		{name: "reaches final cell", frame: contentWidth - 1, column: contentWidth - 1, want: bright},
+		{name: "does not wrap trail", frame: contentWidth - 1, column: 0, want: base},
+	}
+	for _, check := range checks {
+		if got := workingShimmerColor(check.frame, check.column, contentWidth); got != check.want {
+			t.Fatalf("%s: color = %v, want %v", check.name, got, check.want)
+		}
+	}
+}
+
+func TestWriteStyledLineOnlyShimmersMarkedLines(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.frame = newCellBuffer(20, 2, tcell.StyleDefault)
+	app.workFrame = 0
+	row := 0
+	app.writeStyledLine(row, 20, styledLine{Style: app.theme.style(colorText), Text: "assistant working… text"})
+	if got, want := app.frame.cell(0, row).Style.GetForeground(), app.theme.colors[colorText]; got != want {
+		t.Fatalf("plain line foreground = %v, want %v", got, want)
+	}
+
+	row = 1
+	app.writeStyledLine(row, 20, styledLine{
+		Style: app.theme.style(colorText),
+		Text:  "  ⠋ off to commit shenanigans...",
+	})
+	if got, want := app.frame.cell(2, row).Style.GetForeground(), workingShimmerBrightColor(); got != want {
+		t.Fatalf("spinner foreground = %v, want %v", got, want)
+	}
+	textStart := 4
+	got := app.frame.cell(textStart, row).Style.GetForeground()
+	want := workingShimmerColor(0, 0, len("off to commit shenanigans..."))
+	if got != want {
+		t.Fatalf("shimmer text foreground = %v, want %v", got, want)
+	}
+}
+
 func TestScrollTranscriptDoesNotDrawImmediately(t *testing.T) {
 	t.Parallel()
 

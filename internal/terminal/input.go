@@ -284,6 +284,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	}
 	app.addMessage(database.RoleUser, text)
 	app.working = true
+	app.workStartedAt = time.Now()
 	app.workFrame = 0
 	go func() {
 		defer cancel()
