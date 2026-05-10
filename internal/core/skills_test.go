@@ -84,6 +84,73 @@ func TestLoadSkillsDedupesByPriority(t *testing.T) {
 	}
 }
 
+func TestLoadSkillsParsesSpecFrontmatter(t *testing.T) {
+	cwd := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "spec-skill", "SKILL.md"), strings.Join([]string{
+		frontmatterDelimiter,
+		"name: spec-skill",
+		"description: Use for spec parsing",
+		"license: MIT",
+		"compatibility: Works with librecode",
+		"allowed-tools: Bash(git:*) Read",
+		"user-invocable: true",
+		"metadata:",
+		"  author: omar",
+		frontmatterDelimiter,
+		"Body.",
+	}, "\n"))
+
+	result := core.LoadSkills(cwd, nil, true)
+
+	require.Empty(t, result.Diagnostics)
+	require.Len(t, result.Skills, 1)
+	skill := result.Skills[0]
+	assert.Equal(t, "MIT", skill.License)
+	assert.Equal(t, "Works with librecode", skill.Compatibility)
+	assert.Equal(t, []string{"Bash(git:*)", "Read"}, skill.AllowedTools)
+	assert.True(t, skill.UserInvocable)
+	assert.Equal(t, "omar", skill.Metadata["author"])
+}
+
+func TestLoadSkillsHonorsIgnoreFiles(t *testing.T) {
+	cwd := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	skillsDir := filepath.Join(cwd, core.ConfigDirName, "skills")
+	writeTestFile(t, filepath.Join(skillsDir, ".ignore"), "ignored-skill\n")
+	writeTestFile(t, filepath.Join(skillsDir, "ignored-skill", "SKILL.md"), skillMarkdown("ignored-skill"))
+	writeTestFile(t, filepath.Join(skillsDir, "kept-skill", "SKILL.md"), skillMarkdown("kept-skill"))
+
+	result := core.LoadSkills(cwd, nil, true)
+
+	require.Empty(t, result.Diagnostics)
+	assert.Equal(t, []string{"kept-skill"}, skillNames(result.Skills))
+}
+
+func TestAutoActivateSkillsSelectsMatchingSkill(t *testing.T) {
+	cwd := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "bug-fix", "SKILL.md"), strings.Join([]string{
+		frontmatterDelimiter,
+		"name: bug-fix",
+		"description: Use when fixing bugs safely",
+		frontmatterDelimiter,
+		"Run tests before editing.",
+	}, "\n"))
+
+	result := core.LoadSkills(cwd, nil, true)
+	activated, diagnostics := core.AutoActivateSkills("please fix this bug safely", result.Skills)
+
+	require.Empty(t, diagnostics)
+	require.Len(t, activated, 1)
+	assert.Equal(t, "bug-fix", activated[0].Skill.Name)
+	assert.Contains(t, activated[0].Content, "Run tests")
+}
+
 func TestLoadSkillsReportsValidationWarningsAndNameCollisions(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()

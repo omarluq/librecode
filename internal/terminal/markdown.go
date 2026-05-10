@@ -74,20 +74,42 @@ func (renderer *markdownRenderer) renderBlock(node ast.Node, indent string) {
 }
 
 func (renderer *markdownRenderer) renderParagraph(node ast.Node, indent string, style tcell.Style) {
+	renderer.renderParagraphWithContinuation(node, indent, indent, style)
+}
+
+func (renderer *markdownRenderer) renderParagraphWithContinuation(
+	node ast.Node,
+	firstIndent string,
+	continuationIndent string,
+	style tcell.Style,
+) {
 	text := strings.TrimSpace(renderer.inlineText(node))
 	if text == "" {
 		return
 	}
-	renderer.appendWrapped(indent, text, style)
+	renderer.appendWrappedWithContinuation(firstIndent, continuationIndent, text, style)
 }
 
 func (renderer *markdownRenderer) renderHeading(node *ast.Heading, indent string) {
+	renderer.renderHeadingWithContinuation(node, indent, indent)
+}
+
+func (renderer *markdownRenderer) renderHeadingWithContinuation(
+	node *ast.Heading,
+	firstIndent string,
+	continuationIndent string,
+) {
 	text := strings.TrimSpace(renderer.inlineText(node))
 	if text == "" {
 		return
 	}
 	prefix := strings.Repeat("#", min(max(1, node.Level), 6)) + " "
-	renderer.appendWrapped(indent, prefix+text, renderer.theme.style(colorAccent).Bold(true))
+	renderer.appendWrappedWithContinuation(
+		firstIndent,
+		continuationIndent,
+		prefix+text,
+		renderer.theme.style(colorAccent).Bold(true),
+	)
 }
 
 func (renderer *markdownRenderer) renderCodeBlock(segments *goldtext.Segments, language string) {
@@ -130,7 +152,43 @@ func (renderer *markdownRenderer) renderListItem(item ast.Node, indent, marker s
 			currentIndent = indent + marker
 			first = false
 		}
+		if renderer.renderListItemFirstBlock(child, currentIndent, childIndent) {
+			continue
+		}
 		renderer.renderBlock(child, currentIndent)
+	}
+}
+
+func (renderer *markdownRenderer) renderListItemFirstBlock(
+	child ast.Node,
+	firstIndent string,
+	continuationIndent string,
+) bool {
+	if firstIndent == continuationIndent {
+		return false
+	}
+	switch typed := child.(type) {
+	case *ast.Paragraph:
+		renderer.renderParagraphWithContinuation(
+			typed,
+			firstIndent,
+			continuationIndent,
+			renderer.theme.style(colorText),
+		)
+		return true
+	case *ast.TextBlock:
+		renderer.renderParagraphWithContinuation(
+			typed,
+			firstIndent,
+			continuationIndent,
+			renderer.theme.style(colorText),
+		)
+		return true
+	case *ast.Heading:
+		renderer.renderHeadingWithContinuation(typed, firstIndent, continuationIndent)
+		return true
+	default:
+		return false
 	}
 }
 
@@ -186,9 +244,22 @@ func (renderer *markdownRenderer) writeInlineChildren(builder *strings.Builder, 
 }
 
 func (renderer *markdownRenderer) appendWrapped(indent, text string, style tcell.Style) {
-	availableWidth := max(1, renderer.width-runeLen(indent))
-	for _, line := range wrapText(text, availableWidth) {
-		renderer.lines = append(renderer.lines, styledLine{Style: style, Text: indent + line})
+	renderer.appendWrappedWithContinuation(indent, indent, text, style)
+}
+
+func (renderer *markdownRenderer) appendWrappedWithContinuation(
+	firstIndent string,
+	continuationIndent string,
+	text string,
+	style tcell.Style,
+) {
+	availableWidth := max(1, renderer.width-runeLen(firstIndent))
+	for index, line := range wrapText(text, availableWidth) {
+		lineIndent := firstIndent
+		if index > 0 {
+			lineIndent = continuationIndent
+		}
+		renderer.lines = append(renderer.lines, styledLine{Style: style, Text: lineIndent + line})
 	}
 }
 

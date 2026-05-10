@@ -378,7 +378,7 @@ func (runtime *Runtime) respond(
 		return &responseBundle{Text: cachedResponse, Thinking: nil, ToolEvents: nil}, true, nil
 	}
 
-	bundle, err = runtime.modelResponse(ctx, sessionID, cwd, onEvent, onRetry)
+	bundle, err = runtime.modelResponse(ctx, sessionID, cwd, prompt, onEvent, onRetry)
 	if err != nil {
 		return nil, false, err
 	}
@@ -393,6 +393,9 @@ func (runtime *Runtime) respondToSlashCommand(ctx context.Context, cwd, prompt s
 		return "", fmt.Errorf("assistant: empty slash command")
 	}
 
+	if commandName == "skill" {
+		return runtime.respondToSkillCommand(cwd, commandArgs)
+	}
 	if commandName == "tool" {
 		return runtime.respondToToolCommand(ctx, cwd, commandArgs)
 	}
@@ -407,6 +410,37 @@ func (runtime *Runtime) respondToSlashCommand(ctx context.Context, cwd, prompt s
 	}
 
 	return response, nil
+}
+
+func (runtime *Runtime) respondToSkillCommand(cwd, args string) (string, error) {
+	skills := core.LoadSkills(cwd, nil, true).Skills
+	name := strings.TrimSpace(args)
+	if name == "" {
+		if len(skills) == 0 {
+			return "No skills found.", nil
+		}
+		lines := []string{"Available skills:"}
+		for index := range skills {
+			lines = append(lines, fmt.Sprintf("- %s: %s", skills[index].Name, skills[index].Description))
+		}
+
+		return strings.Join(lines, "\n"), nil
+	}
+
+	for index := range skills {
+		skill := &skills[index]
+		if skill.Name != name {
+			continue
+		}
+		content, err := core.SkillContent(skill)
+		if err != nil {
+			return "", err
+		}
+
+		return content, nil
+	}
+
+	return "", fmt.Errorf("assistant: skill %q not found", name)
 }
 
 func (runtime *Runtime) respondToToolCommand(ctx context.Context, cwd, args string) (string, error) {
@@ -435,6 +469,7 @@ func (runtime *Runtime) modelResponse(
 	ctx context.Context,
 	sessionID string,
 	cwd string,
+	prompt string,
 	onEvent func(StreamEvent),
 	onRetry RetryEventHandler,
 ) (*responseBundle, error) {
@@ -457,12 +492,29 @@ func (runtime *Runtime) modelResponse(
 		return nil, oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
 	}
 
+	systemPrompt := defaultSystemPrompt(cwd)
+	activeSkills, skillDiagnostics := core.AutoActivateSkills(prompt, core.LoadSkills(cwd, nil, true).Skills)
+	if len(skillDiagnostics) > 0 {
+		runtime.logger.Debug("skill auto-activation diagnostics", slog.Int("count", len(skillDiagnostics)))
+	}
+	if len(activeSkills) > 0 {
+		systemPrompt += core.FormatActiveSkillsForPrompt(activeSkills)
+		runtime.emit(ctx, "skill_auto_activate", map[string]any{"skills": activeSkillEventPayload(activeSkills)})
+		if emitErr := runtime.extensions.Emit(
+			ctx,
+			"skill_auto_activate",
+			map[string]any{"skills": activeSkillEventPayload(activeSkills)},
+		); emitErr != nil {
+			return nil, oops.In("assistant").Code("skill_auto_activate").Wrapf(emitErr, "emit skill auto activation")
+		}
+	}
+
 	request := &CompletionRequest{
 		Model:         selectedModel,
 		Auth:          auth,
 		Messages:      messageEntities(sessionMessages),
 		SessionID:     sessionID,
-		SystemPrompt:  defaultSystemPrompt(cwd),
+		SystemPrompt:  systemPrompt,
 		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,
 		CWD:           cwd,
 		OnEvent:       onEvent,
@@ -567,6 +619,21 @@ func (runtime *Runtime) selectedModel() (model.Model, error) {
 		MaxTokens:        0,
 		Reasoning:        false,
 	}, nil
+}
+
+func activeSkillEventPayload(skills []core.ActivatedSkill) []map[string]any {
+	payload := make([]map[string]any, 0, len(skills))
+	for index := range skills {
+		skill := skills[index].Skill
+		payload = append(payload, map[string]any{
+			"name":        skill.Name,
+			"description": skill.Description,
+			"path":        skill.FilePath,
+			"truncated":   skills[index].Truncated,
+		})
+	}
+
+	return payload
 }
 
 func messageEntities(messages []database.SessionMessageEntity) []database.MessageEntity {

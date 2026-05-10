@@ -35,6 +35,7 @@ func slashSuggestions() []slashSuggestion {
 		{Name: "session", Description: "show current session details"},
 		{Name: "settings", Description: "open settings"},
 		{Name: "share", Description: "share current session"},
+		{Name: "skill", Description: "list or load an Agent Skill"},
 		{Name: toolSectionTool, Description: "run a built-in tool with JSON arguments"},
 		{Name: "tree", Description: "open session tree"},
 	}

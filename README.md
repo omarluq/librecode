@@ -131,7 +131,7 @@ Default persistence paths:
 
 ## Skills
 
-Skills are Agent Skills-compatible directories or Markdown files with frontmatter. They are injected into the assistant prompt when their metadata is valid.
+Skills are Agent Skills-compatible directories containing `SKILL.md`. Explicit Markdown paths are also accepted for compatibility. Skill metadata is always advertised to the model, and matching skills are auto-activated by loading their full `SKILL.md` into the request context.
 
 Default skill roots, in priority order:
 
@@ -140,7 +140,7 @@ Default skill roots, in priority order:
 3. `~/.librecode/skills`
 4. `~/.agents/skills`
 
-Duplicate skill names are deduped by priority, so project-local `.librecode` skills win over project `.agents` and user-global skills.
+Duplicate skill names are deduped by priority, so project-local `.librecode` skills win over project `.agents` and user-global skills. Discovery honors `.gitignore`, `.ignore`, and `.fdignore` files inside skill roots.
 
 A minimal skill looks like:
 
@@ -148,10 +148,25 @@ A minimal skill looks like:
 ---
 name: my-skill
 description: Use when working on my project-specific workflow.
+license: MIT
+compatibility: Works with librecode and Agent Skills-compatible agents.
+allowed-tools: Read Bash(git:*)
+metadata:
+  author: me
 ---
 
 Follow these project-specific instructions...
 ```
+
+Useful commands:
+
+```bash
+librecode skill list
+librecode skill show my-skill
+librecode skill validate
+```
+
+Inside chat, `/skill` lists discovered skills and `/skill my-skill` prints the skill file.
 
 ## Extensions
 
@@ -181,6 +196,7 @@ For architecture, roadmap, and API details, see:
 - [`docs/extension-roadmap.md`](docs/extension-roadmap.md)
 - [`docs/extension-api.md`](docs/extension-api.md)
 - [`docs/rendering-boundary.md`](docs/rendering-boundary.md)
+- [`docs/skills.md`](docs/skills.md)
 
 Inspect loaded extensions:
 

@@ -28,6 +28,7 @@ const (
 	testRuntimeProvider = "test-provider"
 	testRuntimeModel    = "test-model"
 	testRuntimeCWD      = "/work"
+	testSkillDelimiter  = "---"
 )
 
 func newRuntimePromptRequest(cwd, text, name string) *assistant.PromptRequest {
@@ -212,15 +213,34 @@ func TestRuntime_PromptDoesNotRetryNonTransientModelErrors(t *testing.T) {
 	assert.Equal(t, 1, client.attempts)
 }
 
+func TestRuntime_SlashSkillShowsContent(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+	writeRuntimeTestFile(t, filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md"), strings.Join([]string{
+		testSkillDelimiter,
+		"name: fix-bug",
+		"description: Fix bugs safely",
+		testSkillDelimiter,
+		"Use tests first.",
+	}, "\n"))
+	runtime, _ := newTestRuntime(t)
+
+	response, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(cwd, "/skill fix-bug", ""))
+
+	require.NoError(t, err)
+	assert.Contains(t, response.Text, "Use tests first.")
+}
+
 func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
 	writeRuntimeTestFile(t, filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md"), strings.Join([]string{
-		"---",
+		testSkillDelimiter,
 		"name: fix-bug",
 		"description: Fix bugs safely",
-		"---",
+		testSkillDelimiter,
 		"Use tests first.",
 	}, "\n"))
 	client := &capturingCompletionClient{request: nil}
@@ -232,6 +252,8 @@ func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 	assert.Contains(t, client.request.SystemPrompt, "<available_skills>")
 	assert.Contains(t, client.request.SystemPrompt, "<name>fix-bug</name>")
 	assert.Contains(t, client.request.SystemPrompt, filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md"))
+	assert.Contains(t, client.request.SystemPrompt, "<active_skills>")
+	assert.Contains(t, client.request.SystemPrompt, "Use tests first.")
 }
 
 func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionRepository) {
