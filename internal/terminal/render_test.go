@@ -247,6 +247,64 @@ func TestStreamingBlocksRenderChronologically(t *testing.T) {
 	}
 }
 
+func TestToolBlockPreservesFileContentIndentation(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	event := newTestToolEvent("read", "func main() {\n\tif ok {\n        fmt.Println(\"yes\")\n\t}\n}")
+	lines := app.renderToolMessage(80, newChatMessage(database.RoleToolResult, formatToolEventForUI(event)))
+	texts := lineTexts(lines)
+
+	if lineIndexContaining(lines, "  \tif ok {") == -1 {
+		t.Fatalf("expected tab-indented file line to be preserved, got %#v", texts)
+	}
+	if lineIndexContaining(lines, "          fmt.Println") == -1 {
+		t.Fatalf("expected space-indented file line to be preserved, got %#v", texts)
+	}
+	app.frame = newCellBuffer(80, len(lines), tcell.StyleDefault)
+	for row, line := range lines {
+		app.writeStyledLine(row, 80, line)
+	}
+	if !strings.Contains(frameText(app.frame), "      if ok {") {
+		t.Fatalf("expected rendered tab indentation to occupy cells, frame = %q", frameText(app.frame))
+	}
+}
+
+func TestToolBlockWrapPreservesContinuationIndentation(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.toolsExpanded = true
+	event := newTestToolEvent("read", "    "+strings.Repeat("word ", 20))
+	lines := app.renderToolMessage(24, newChatMessage(database.RoleToolResult, formatToolEventForUI(event)))
+	texts := lineTexts(lines)
+
+	if lineIndexContaining(lines, "      word") == -1 {
+		t.Fatalf("expected first wrapped file line to preserve indentation, got %#v", texts)
+	}
+	if lineIndexContaining(lines, "  word") == -1 {
+		t.Fatalf("expected continuation line to keep block indent, got %#v", texts)
+	}
+}
+
+func TestToolDiffPreservesIndentation(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.toolsExpanded = true
+	event := newTestToolEvent("edit", "ok")
+	event.DetailsJSON = `{"diff":"+1     indented\n+2 \t tabbed"}`
+	lines := app.renderToolMessage(80, newChatMessage(database.RoleToolResult, formatToolEventForUI(event)))
+	texts := lineTexts(lines)
+
+	if lineIndexContaining(lines, "+1     indented") == -1 {
+		t.Fatalf("expected space indentation in diff, got %#v", texts)
+	}
+	if lineIndexContaining(lines, "+2 \t tabbed") == -1 {
+		t.Fatalf("expected tab indentation in diff, got %#v", texts)
+	}
+}
+
 func TestExtensionRendererSkipsDefaultComposerDraw(t *testing.T) {
 	t.Parallel()
 

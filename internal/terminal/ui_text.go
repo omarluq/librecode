@@ -83,19 +83,27 @@ func terminalTextPadRight(text string, width int) string {
 }
 
 func terminalTextWrap(text string, width int) []string {
+	return terminalTextWrapWithMode(text, width, false)
+}
+
+func terminalTextWrapPreserveWhitespace(text string, width int) []string {
+	return terminalTextWrapWithMode(text, width, true)
+}
+
+func terminalTextWrapWithMode(text string, width int, preserveWhitespace bool) []string {
 	if width <= 0 {
 		return []string{""}
 	}
 	logicalLines := strings.Split(text, "\n")
 	lines := make([]string, 0, len(logicalLines))
 	for _, logicalLine := range logicalLines {
-		lines = append(lines, terminalTextWrapLogicalLine(logicalLine, width)...)
+		lines = append(lines, terminalTextWrapLogicalLineWithMode(logicalLine, width, preserveWhitespace)...)
 	}
 
 	return lines
 }
 
-func terminalTextWrapLogicalLine(line string, width int) []string {
+func terminalTextWrapLogicalLineWithMode(line string, width int, preserveWhitespace bool) []string {
 	if line == "" {
 		return []string{""}
 	}
@@ -104,8 +112,15 @@ func terminalTextWrapLogicalLine(line string, width int) []string {
 	lines := []string{}
 	for len(segments) > 0 {
 		breakIndex := terminalTextWrapBreakIndex(segments, width)
-		lines = append(lines, strings.TrimRight(terminalTextJoinSegments(segments[:breakIndex]), " "))
-		segments = terminalTextTrimLeadingSpaces(segments[breakIndex:])
+		wrapped := terminalTextJoinSegments(segments[:breakIndex])
+		if !preserveWhitespace {
+			wrapped = strings.TrimRight(wrapped, " ")
+		}
+		lines = append(lines, wrapped)
+		segments = segments[breakIndex:]
+		if !preserveWhitespace {
+			segments = terminalTextTrimLeadingSpaces(segments)
+		}
 	}
 	if len(lines) == 0 {
 		lines = append(lines, "")
@@ -198,7 +213,13 @@ func writeTextSegment(
 	segment terminalTextSegment,
 	style tcell.Style,
 ) int {
-	if width <= 0 || segment.Width <= 0 || segment.Width > width {
+	if width <= 0 || segment.Width > width {
+		return 0
+	}
+	if segment.Text == "\t" {
+		return writeTabSegment(screen, column, row, width, style)
+	}
+	if segment.Width <= 0 {
 		return 0
 	}
 	runes := []rune(segment.Text)
@@ -212,4 +233,15 @@ func writeTextSegment(
 	}
 
 	return segment.Width
+}
+
+func writeTabSegment(screen cellTarget, column, row, width int, style tcell.Style) int {
+	const tabWidth = 4
+
+	spaces := min(tabWidth, width)
+	for offset := range spaces {
+		screen.SetContent(column+offset, row, ' ', nil, style)
+	}
+
+	return spaces
 }

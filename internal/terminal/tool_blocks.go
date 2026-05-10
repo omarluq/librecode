@@ -96,7 +96,7 @@ func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Sty
 	content := diffStyledLines(diff, app.theme, baseStyle)
 	lines := []styledLine{{Style: style.Bold(true), Text: padRight("diff:", width)}}
 	for _, line := range content {
-		for _, wrapped := range wrapText(line.Text, innerWidth) {
+		for _, wrapped := range wrapTextPreserveWhitespace(line.Text, innerWidth) {
 			lines = append(lines, styledLine{Style: line.Style, Text: padRight("  "+wrapped, width)})
 		}
 	}
@@ -128,7 +128,7 @@ func indentedLines(width int, content string, style tcell.Style) []styledLine {
 	innerWidth := max(1, width-2)
 	lines := []styledLine{}
 	for _, line := range strings.Split(content, "\n") {
-		for _, wrapped := range wrapText(line, innerWidth) {
+		for _, wrapped := range wrapTextPreserveWhitespace(line, innerWidth) {
 			lines = append(lines, styledLine{Style: style, Text: padRight("  "+wrapped, width)})
 		}
 	}
@@ -157,9 +157,9 @@ func (app *App) hiddenToolLinesText(hiddenLines int) string {
 }
 
 func toolEventOutput(event *parsedToolEvent) string {
-	output := strings.TrimSpace(event.Output)
+	output := strings.Trim(event.Output, "\n")
 	if event.Error != "" {
-		output = strings.TrimSpace(event.Error + "\n" + output)
+		output = strings.Trim(event.Error+"\n"+output, "\n")
 	}
 
 	return output
@@ -194,8 +194,8 @@ func parseToolEventContent(content, fallback string) parsedToolEvent {
 	}
 	event.ArgumentsJSON = strings.TrimSpace(strings.Join(sections[toolSectionArguments], "\n"))
 	event.DetailsJSON = strings.TrimSpace(strings.Join(sections[toolSectionDetails], "\n"))
-	event.Error = strings.TrimSpace(strings.Join(sections[toolSectionError], "\n"))
-	event.Output = strings.TrimSpace(strings.Join(sections[toolSectionOutput], "\n"))
+	event.Error = strings.Trim(strings.Join(sections[toolSectionError], "\n"), "\n")
+	event.Output = strings.Trim(strings.Join(sections[toolSectionOutput], "\n"), "\n")
 
 	return event
 }

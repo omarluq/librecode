@@ -15,6 +15,10 @@ func wrapText(text string, width int) []string {
 	return terminalTextWrap(text, width)
 }
 
+func wrapTextPreserveWhitespace(text string, width int) []string {
+	return terminalTextWrapPreserveWhitespace(text, width)
+}
+
 func truncateText(text string, width int) string {
 	return terminalTextTruncate(text, width)
 }
