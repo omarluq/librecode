@@ -91,6 +91,14 @@ func ShouldRetryModelError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
+	if code, ok := providerErrorCode(err); ok {
+		if nonRetryableProviderCode(code) {
+			return false
+		}
+		if retryableProviderCode(code) {
+			return true
+		}
+	}
 	if status, ok := providerErrorStatus(err); ok {
 		return retryableStatus(status)
 	}
@@ -103,6 +111,20 @@ func ShouldRetryModelError(err error) bool {
 		return false
 	}
 	return retryableProviderMessage(message)
+}
+
+func providerErrorCode(err error) (string, bool) {
+	oopsErr, ok := oops.AsOops(err)
+	if !ok {
+		return "", false
+	}
+	codeValue, ok := oopsErr.Code().(string)
+	if !ok {
+		return "", false
+	}
+	code := strings.ToLower(strings.TrimSpace(codeValue))
+
+	return code, code != ""
 }
 
 func providerErrorStatus(err error) (int, bool) {
@@ -123,6 +145,36 @@ func providerErrorStatus(err error) (int, bool) {
 		return int(value), true
 	default:
 		return 0, false
+	}
+}
+
+func retryableProviderCode(code string) bool {
+	switch code {
+	case "openai_chat_empty",
+		"anthropic_empty",
+		"responses_empty",
+		"responses_http",
+		"provider_http",
+		"responses_read",
+		"provider_read",
+		"sse_read":
+		return true
+	default:
+		return false
+	}
+}
+
+func nonRetryableProviderCode(code string) bool {
+	switch code {
+	case "openai_chat_decode",
+		"anthropic_decode",
+		"openai_response_decode",
+		"provider_payload",
+		"provider_request",
+		"unsupported_provider_api":
+		return true
+	default:
+		return false
 	}
 }
 
