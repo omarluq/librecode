@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,9 +69,6 @@ func (bashTool *BashTool) Bash(ctx context.Context, input BashInput) (Result, er
 	defer cancel()
 
 	output, waitErr := runShellCommand(execCtx, workingDirectory, input.Command)
-	if copyErr := output.copyError(); copyErr != nil {
-		return emptyToolResult(), copyErr
-	}
 
 	return formatBashResult(execCtx, input, output.bytes(), waitErr)
 }
@@ -112,11 +108,10 @@ func contextWithOptionalTimeout(parent context.Context, timeout *float64) (conte
 
 type commandOutput struct {
 	buffer *synchronizedBuffer
-	errs   []error
 }
 
 func runShellCommand(ctx context.Context, cwd, command string) (*commandOutput, error) {
-	output := &commandOutput{buffer: &synchronizedBuffer{buffer: bytes.Buffer{}, lock: sync.Mutex{}}, errs: []error{}}
+	output := &commandOutput{buffer: &synchronizedBuffer{buffer: bytes.Buffer{}, lock: sync.Mutex{}}}
 	shellPath, shellArgs, err := shellConfig(command)
 	if err != nil {
 		return output, err
@@ -131,48 +126,14 @@ func runShellCommand(ctx context.Context, cwd, command string) (*commandOutput, 
 	}
 	cmd.WaitDelay = 2 * time.Second
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return output, err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return output, err
-	}
+	cmd.Stdout = output.buffer
+	cmd.Stderr = output.buffer
+
 	if err := cmd.Start(); err != nil {
 		return output, err
 	}
 
-	copyErrs := copyCommandOutput(output.buffer, stdout, stderr)
-	waitErr := cmd.Wait()
-	output.errs = copyErrs()
-
-	return output, waitErr
-}
-
-func copyCommandOutput(output io.Writer, stdout, stderr io.Reader) func() []error {
-	copyErrs := make(chan error, 2)
-	copyStream := func(reader io.Reader) {
-		_, err := io.Copy(output, reader)
-		if err != nil {
-			copyErrs <- err
-			return
-		}
-		copyErrs <- nil
-	}
-	go copyStream(stdout)
-	go copyStream(stderr)
-
-	return func() []error {
-		errs := make([]error, 0, 2)
-		for range 2 {
-			if err := <-copyErrs; err != nil {
-				errs = append(errs, err)
-			}
-		}
-
-		return errs
-	}
+	return output, cmd.Wait()
 }
 
 func formatBashResult(ctx context.Context, input BashInput, output []byte, waitErr error) (Result, error) {
@@ -294,10 +255,6 @@ func appendStatus(text, status string) string {
 
 func (output *commandOutput) bytes() []byte {
 	return output.buffer.bytes()
-}
-
-func (output *commandOutput) copyError() error {
-	return errors.Join(output.errs...)
 }
 
 func (buffer *synchronizedBuffer) Write(data []byte) (int, error) {
