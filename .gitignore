@@ -70,3 +70,6 @@ Thumbs.db
 
 # Local planning scratch space
 .librecode/work/
+
+# Firecrawl artifacts
+.firecrawl/

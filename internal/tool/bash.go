@@ -12,11 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 )
-
-const shellLoginArg = "-lc"
 
 // BashInput contains arguments for the bash tool.
 type BashInput struct {
@@ -119,21 +116,21 @@ type commandOutput struct {
 }
 
 func runShellCommand(ctx context.Context, cwd, command string) (*commandOutput, error) {
-	shellPath, shellArgs := shellConfig(command)
+	output := &commandOutput{buffer: &synchronizedBuffer{buffer: bytes.Buffer{}, lock: sync.Mutex{}}, errs: []error{}}
+	shellPath, shellArgs, err := shellConfig(command)
+	if err != nil {
+		return output, err
+	}
+
 	//nolint:gosec // The bash tool intentionally executes model/user-supplied shell commands.
 	cmd := exec.CommandContext(ctx, shellPath, shellArgs...)
 	cmd.Dir = cwd
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureShellCommand(cmd)
 	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-
-		return killProcessGroup(cmd.Process.Pid)
+		return terminateShellCommand(cmd)
 	}
 	cmd.WaitDelay = 2 * time.Second
 
-	output := &commandOutput{buffer: &synchronizedBuffer{buffer: bytes.Buffer{}, lock: sync.Mutex{}}, errs: []error{}}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return output, err
@@ -151,17 +148,6 @@ func runShellCommand(ctx context.Context, cwd, command string) (*commandOutput, 
 	output.errs = copyErrs()
 
 	return output, waitErr
-}
-
-func shellConfig(command string) (shellPath string, shellArgs []string) {
-	if shellPath := os.Getenv("SHELL"); shellPath != "" {
-		return shellPath, []string{shellLoginArg, command}
-	}
-	if _, err := os.Stat("/bin/bash"); err == nil {
-		return "/bin/bash", []string{shellLoginArg, command}
-	}
-
-	return "/bin/sh", []string{shellLoginArg, command}
 }
 
 func copyCommandOutput(output io.Writer, stdout, stderr io.Reader) func() []error {
@@ -187,18 +173,6 @@ func copyCommandOutput(output io.Writer, stdout, stderr io.Reader) func() []erro
 
 		return errs
 	}
-}
-
-func killProcessGroup(pid int) error {
-	if pid <= 0 {
-		return nil
-	}
-	err := syscall.Kill(-pid, syscall.SIGKILL)
-	if err != nil && !errors.Is(err, syscall.ESRCH) {
-		return err
-	}
-
-	return nil
 }
 
 func formatBashResult(ctx context.Context, input BashInput, output []byte, waitErr error) (Result, error) {
