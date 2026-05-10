@@ -464,7 +464,7 @@ func (runtime *Runtime) loadSkillWithReadTool(
 	limit *int,
 ) (string, ToolEvent, error) {
 	registry := tool.NewRegistry(cwd)
-	input := map[string]any{"path": skill.FilePath}
+	input := map[string]any{jsonPathKey: skill.FilePath}
 	if limit != nil {
 		input["limit"] = *limit
 	}
@@ -542,19 +542,29 @@ func (runtime *Runtime) modelResponse(
 	}
 
 	systemPrompt := defaultSystemPrompt(cwd)
-	activeSkills, skillDiagnostics := core.AutoActivateSkills(prompt, core.LoadSkills(cwd, nil, true).Skills)
-	if len(skillDiagnostics) > 0 {
-		runtime.logger.Debug("skill auto-activation diagnostics", slog.Int("count", len(skillDiagnostics)))
+	skillActivation := core.AutoActivateSkillsDetailed(prompt, core.LoadSkills(cwd, nil, true).Skills)
+	activeSkills := skillActivation.Activated
+	if len(skillActivation.Diagnostics) > 0 {
+		runtime.logger.Debug("skill auto-activation diagnostics", slog.Int("count", len(skillActivation.Diagnostics)))
+	}
+	for index := range skillActivation.Matches {
+		match := &skillActivation.Matches[index]
+		runtime.logger.Debug(
+			"skill auto-activated",
+			slog.String("skill", match.Skill.Name),
+			slog.String("reason", match.Reason),
+			slog.Int("score", match.Score),
+		)
 	}
 	runtime.emitActivatedSkillReads(ctx, cwd, activeSkills, onEvent)
 	if len(activeSkills) > 0 {
 		systemPrompt += core.FormatActiveSkillsForPrompt(activeSkills)
-		runtime.emit(ctx, "skill_auto_activate", map[string]any{"skills": activeSkillEventPayload(activeSkills)})
-		if emitErr := runtime.extensions.Emit(
-			ctx,
-			"skill_auto_activate",
-			map[string]any{"skills": activeSkillEventPayload(activeSkills)},
-		); emitErr != nil {
+		payload := map[string]any{
+			"skills":  activeSkillEventPayload(activeSkills),
+			"matches": activeSkillMatchPayload(skillActivation.Matches),
+		}
+		runtime.emit(ctx, "skill_auto_activate", payload)
+		if emitErr := runtime.extensions.Emit(ctx, "skill_auto_activate", payload); emitErr != nil {
 			return nil, oops.In("assistant").Code("skill_auto_activate").Wrapf(emitErr, "emit skill auto activation")
 		}
 	}
@@ -711,6 +721,21 @@ func activeSkillEventPayload(skills []core.ActivatedSkill) []map[string]any {
 			"description": skill.Description,
 			"path":        skill.FilePath,
 			"truncated":   skills[index].Truncated,
+		})
+	}
+
+	return payload
+}
+
+func activeSkillMatchPayload(matches []core.SkillActivationDiagnostic) []map[string]any {
+	payload := make([]map[string]any, 0, len(matches))
+	for index := range matches {
+		match := matches[index]
+		payload = append(payload, map[string]any{
+			"name":   match.Skill.Name,
+			"path":   match.Skill.FilePath,
+			"reason": match.Reason,
+			"score":  match.Score,
 		})
 	}
 
