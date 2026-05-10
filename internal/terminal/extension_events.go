@@ -31,6 +31,8 @@ const (
 	extensionEventPromptSubmit    = "prompt_submit"
 	extensionEventPromptUser      = "prompt_user_entry"
 	extensionEventRender          = "render"
+	extensionEventRetryEnd        = "retry_end"
+	extensionEventRetryStart      = "retry_start"
 	extensionEventResize          = "resize"
 	extensionEventStartup         = "startup"
 	extensionEventTick            = "tick"

@@ -88,6 +88,8 @@ Current commonly emitted events include:
 - `prompt_submit`
 - `prompt_user_entry`
 - `prompt_done`
+- `retry_start`
+- `retry_end`
 - `model_delta`
 - `thinking_delta`
 - `tool_start`

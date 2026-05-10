@@ -76,6 +76,7 @@ func runPromptWithContainer(
 
 	response, err := runtime.Prompt(cmd.Context(), &assistant.PromptRequest{
 		OnEvent:       nil,
+		OnRetry:       nil,
 		OnUserEntry:   nil,
 		ParentEntryID: nil,
 		SessionID:     options.SessionID,

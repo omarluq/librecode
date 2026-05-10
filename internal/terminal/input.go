@@ -257,6 +257,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	promptID := app.nextPromptID()
 	request := &assistant.PromptRequest{
 		OnEvent:       app.promptStreamHandler(promptCtx, promptID),
+		OnRetry:       app.promptRetryHandler(promptCtx, promptID),
 		OnUserEntry:   app.promptUserEntryHandler(promptCtx, promptID),
 		ParentEntryID: parentEntryID,
 		SessionID:     app.sessionID,

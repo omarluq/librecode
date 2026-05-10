@@ -486,6 +486,7 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 		asyncEventAuthError,
 		asyncEventPromptDone,
 		asyncEventPromptUserEntry,
+		asyncEventPromptRetry,
 		asyncEventPromptError:
 		return false
 	}

@@ -3,6 +3,7 @@ package assistant_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -32,6 +33,7 @@ const (
 func newRuntimePromptRequest(cwd, text, name string) *assistant.PromptRequest {
 	return &assistant.PromptRequest{
 		OnEvent:       nil,
+		OnRetry:       nil,
 		OnUserEntry:   nil,
 		ParentEntryID: nil,
 		SessionID:     "",
@@ -165,6 +167,51 @@ func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 	assert.Equal(t, "hello", string(content))
 }
 
+func TestRuntime_PromptRetriesTransientModelErrors(t *testing.T) {
+	t.Parallel()
+
+	client := &retryCompletionClient{
+		err:               nil,
+		response:          "recovered response",
+		attempts:          0,
+		failuresRemaining: 1,
+	}
+	runtime, _ := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "retry me", "")
+	retryEvents := []assistant.RetryEvent{}
+	request.OnRetry = func(event assistant.RetryEvent) {
+		retryEvents = append(retryEvents, event)
+	}
+
+	response, err := runtime.Prompt(context.Background(), request)
+
+	require.NoError(t, err)
+	assert.Equal(t, "recovered response for retry me", response.Text)
+	assert.Equal(t, 2, client.attempts)
+	require.Len(t, retryEvents, 2)
+	assert.Equal(t, assistant.RetryEventStart, retryEvents[0].Kind)
+	assert.Equal(t, 2, retryEvents[0].Attempt)
+	assert.Equal(t, assistant.RetryEventEnd, retryEvents[1].Kind)
+}
+
+func TestRuntime_PromptDoesNotRetryNonTransientModelErrors(t *testing.T) {
+	t.Parallel()
+
+	client := &retryCompletionClient{
+		err:               errors.New("maximum context length exceeded"),
+		response:          "should not be used",
+		attempts:          0,
+		failuresRemaining: 1,
+	}
+	runtime, _ := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "too much context", "")
+
+	_, err := runtime.Prompt(context.Background(), request)
+
+	require.Error(t, err)
+	assert.Equal(t, 1, client.attempts)
+}
+
 func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
@@ -229,6 +276,13 @@ type capturingCompletionClient struct {
 	request *assistant.CompletionRequest
 }
 
+type retryCompletionClient struct {
+	err               error
+	response          string
+	attempts          int
+	failuresRemaining int
+}
+
 func (client *capturingCompletionClient) Complete(
 	ctx context.Context,
 	request *assistant.CompletionRequest,
@@ -236,6 +290,27 @@ func (client *capturingCompletionClient) Complete(
 	client.request = request
 
 	return testCompletionClient{}.Complete(ctx, request)
+}
+
+func (client *retryCompletionClient) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.attempts++
+	if client.failuresRemaining > 0 {
+		client.failuresRemaining--
+		if client.err != nil {
+			return nil, client.err
+		}
+
+		return nil, errors.New("provider is temporarily unavailable")
+	}
+
+	return &assistant.CompletionResult{
+		Text:       client.response + " for " + request.Messages[len(request.Messages)-1].Content,
+		Thinking:   nil,
+		ToolEvents: nil,
+	}, nil
 }
 
 type testCompletionClient struct{}
@@ -323,6 +398,12 @@ func testConfig() *config.Config {
 			Paths:   []string{},
 		},
 		Assistant: config.AssistantConfig{
+			Retry: config.RetryConfig{
+				BaseDelay:   time.Millisecond,
+				MaxDelay:    time.Millisecond,
+				MaxAttempts: 3,
+				Enabled:     true,
+			},
 			Provider:      testRuntimeProvider,
 			Model:         testRuntimeModel,
 			ThinkingLevel: "off",

@@ -46,9 +46,36 @@ type ExtensionsConfig struct {
 
 // AssistantConfig controls the assistant runtime defaults.
 type AssistantConfig struct {
-	Provider      string `json:"provider" mapstructure:"provider" yaml:"provider"`
-	Model         string `json:"model" mapstructure:"model" yaml:"model"`
-	ThinkingLevel string `json:"thinking_level" mapstructure:"thinking_level" yaml:"thinking_level"`
+	Provider      string      `json:"provider" mapstructure:"provider" yaml:"provider"`
+	Model         string      `json:"model" mapstructure:"model" yaml:"model"`
+	ThinkingLevel string      `json:"thinking_level" mapstructure:"thinking_level" yaml:"thinking_level"`
+	Retry         RetryConfig `json:"retry" mapstructure:"retry" yaml:"retry"`
+}
+
+// RetryConfig controls transient model request retries.
+type RetryConfig struct {
+	BaseDelay   time.Duration `json:"base_delay" mapstructure:"base_delay" yaml:"base_delay"`
+	MaxDelay    time.Duration `json:"max_delay" mapstructure:"max_delay" yaml:"max_delay"`
+	MaxAttempts int           `json:"max_attempts" mapstructure:"max_attempts" yaml:"max_attempts"`
+	Enabled     bool          `json:"enabled" mapstructure:"enabled" yaml:"enabled"`
+}
+
+// Normalized returns retry settings with safe defaults for omitted values.
+func (retry RetryConfig) Normalized() RetryConfig {
+	if retry.MaxAttempts <= 0 {
+		retry.MaxAttempts = 3
+	}
+	if retry.BaseDelay <= 0 {
+		retry.BaseDelay = 2 * time.Second
+	}
+	if retry.MaxDelay <= 0 {
+		retry.MaxDelay = 30 * time.Second
+	}
+	if retry.MaxDelay < retry.BaseDelay {
+		retry.MaxDelay = retry.BaseDelay
+	}
+
+	return retry
 }
 
 // CacheConfig controls assistant response caching.
@@ -70,6 +97,7 @@ func (config *Config) Validate() error {
 		config.validateApp,
 		config.validateLogging,
 		config.validateDatabase,
+		config.validateAssistant,
 		config.validateCache,
 		config.validateKSQL,
 	}
@@ -126,6 +154,22 @@ func (config *Config) validateDatabase() error {
 	if config.Database.ConnMaxLifetime < 0 {
 		return fmt.Errorf("config: database.conn_max_lifetime cannot be negative")
 	}
+
+	return nil
+}
+
+func (config *Config) validateAssistant() error {
+	retry := config.Assistant.Retry.Normalized()
+	if config.Assistant.Retry.MaxAttempts < 0 {
+		return fmt.Errorf("config: assistant.retry.max_attempts cannot be negative")
+	}
+	if config.Assistant.Retry.BaseDelay < 0 {
+		return fmt.Errorf("config: assistant.retry.base_delay cannot be negative")
+	}
+	if config.Assistant.Retry.MaxDelay < 0 {
+		return fmt.Errorf("config: assistant.retry.max_delay cannot be negative")
+	}
+	config.Assistant.Retry = retry
 
 	return nil
 }

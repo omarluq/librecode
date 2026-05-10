@@ -37,6 +37,7 @@ type Runtime struct {
 // PromptRequest contains one user prompt invocation.
 type PromptRequest struct {
 	OnEvent       func(StreamEvent)          `json:"-"`
+	OnRetry       RetryEventHandler          `json:"-"`
 	OnUserEntry   func(PromptUserEntryEvent) `json:"-"`
 	ParentEntryID *string                    `json:"parent_entry_id,omitempty"`
 	SessionID     string                     `json:"session_id"`
@@ -54,6 +55,9 @@ type PromptUserEntryEvent struct {
 
 // StreamEventKind identifies incremental assistant activity.
 type StreamEventKind string
+
+// RetryEventHandler receives retry lifecycle events.
+type RetryEventHandler func(RetryEvent)
 
 const (
 	// StreamEventTextDelta carries assistant text as it arrives.
@@ -150,7 +154,14 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (*Pr
 		return nil, oops.In("assistant").Code("before_agent_start").Wrapf(emitErr, "emit before_agent_start")
 	}
 
-	bundle, cached, err := runtime.respond(ctx, activeSession.ID, request.CWD, request.Text, request.OnEvent)
+	bundle, cached, err := runtime.respond(
+		ctx,
+		activeSession.ID,
+		request.CWD,
+		request.Text,
+		request.OnEvent,
+		request.OnRetry,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +352,14 @@ func explicitPromptParentID(explicitParent *string) *string {
 	return explicitParent
 }
 
-func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt string, onEvent func(StreamEvent)) (
+func (runtime *Runtime) respond(
+	ctx context.Context,
+	sessionID string,
+	cwd string,
+	prompt string,
+	onEvent func(StreamEvent),
+	onRetry RetryEventHandler,
+) (
 	bundle *responseBundle,
 	cached bool,
 	err error,
@@ -360,7 +378,7 @@ func (runtime *Runtime) respond(ctx context.Context, sessionID, cwd, prompt stri
 		return &responseBundle{Text: cachedResponse, Thinking: nil, ToolEvents: nil}, true, nil
 	}
 
-	bundle, err = runtime.modelResponse(ctx, sessionID, cwd, onEvent)
+	bundle, err = runtime.modelResponse(ctx, sessionID, cwd, onEvent, onRetry)
 	if err != nil {
 		return nil, false, err
 	}
@@ -418,6 +436,7 @@ func (runtime *Runtime) modelResponse(
 	sessionID string,
 	cwd string,
 	onEvent func(StreamEvent),
+	onRetry RetryEventHandler,
 ) (*responseBundle, error) {
 	if runtime.models == nil {
 		return nil, oops.In("assistant").Code("models_unavailable").Errorf("model registry is not configured")
@@ -438,7 +457,7 @@ func (runtime *Runtime) modelResponse(
 		return nil, oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
 	}
 
-	result, err := runtime.client.Complete(ctx, &CompletionRequest{
+	request := &CompletionRequest{
 		Model:         selectedModel,
 		Auth:          auth,
 		Messages:      messageEntities(sessionMessages),
@@ -447,12 +466,76 @@ func (runtime *Runtime) modelResponse(
 		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,
 		CWD:           cwd,
 		OnEvent:       onEvent,
-	})
+	}
+	result, err := runtime.completeWithRetry(ctx, request, onRetry)
 	if err != nil {
 		return nil, err
 	}
 
 	return &responseBundle{Text: result.Text, Thinking: result.Thinking, ToolEvents: result.ToolEvents}, nil
+}
+
+func (runtime *Runtime) completeWithRetry(
+	ctx context.Context,
+	request *CompletionRequest,
+	onRetry RetryEventHandler,
+) (*CompletionResult, error) {
+	retry := retryConfig(runtime.cfg)
+	if !retry.Enabled || retry.MaxAttempts <= 1 {
+		return runtime.client.Complete(ctx, request)
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= retry.MaxAttempts; attempt++ {
+		result, err := runtime.client.Complete(ctx, request)
+		if err == nil {
+			if attempt > 1 {
+				runtime.emitRetryEvent(ctx, onRetry, RetryEvent{
+					Kind:        RetryEventEnd,
+					Error:       "",
+					Attempt:     attempt,
+					MaxAttempts: retry.MaxAttempts,
+					Delay:       0,
+				})
+			}
+			return result, nil
+		}
+		lastErr = err
+		if attempt == retry.MaxAttempts || !ShouldRetryModelError(err) {
+			return nil, err
+		}
+		delay := retryDelay(attempt, retry)
+		runtime.emitRetryEvent(ctx, onRetry, RetryEvent{
+			Kind:        RetryEventStart,
+			Attempt:     attempt + 1,
+			MaxAttempts: retry.MaxAttempts,
+			Delay:       delay,
+			Error:       err.Error(),
+		})
+		if waitErr := waitForRetry(ctx, delay); waitErr != nil {
+			return nil, oops.In("assistant").Code("retry_canceled").Wrapf(waitErr, "wait before retry")
+		}
+	}
+
+	return nil, lastErr
+}
+
+func (runtime *Runtime) emitRetryEvent(ctx context.Context, handler RetryEventHandler, retryEvent RetryEvent) {
+	if handler != nil {
+		handler(retryEvent)
+	}
+	runtime.emit(ctx, string(retryEvent.Kind), retryEvent)
+	if runtime.extensions == nil {
+		return
+	}
+	if err := runtime.extensions.Emit(ctx, string(retryEvent.Kind), map[string]any{
+		"attempt":      retryEvent.Attempt,
+		"max_attempts": retryEvent.MaxAttempts,
+		"delay_ms":     retryEvent.Delay.Milliseconds(),
+		"error":        retryEvent.Error,
+	}); err != nil && runtime.logger != nil {
+		runtime.logger.Debug("extension retry event failed", "event", retryEvent.Kind, "error", err)
+	}
 }
 
 func (runtime *Runtime) selectedModel() (model.Model, error) {

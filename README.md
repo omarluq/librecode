@@ -90,6 +90,11 @@ assistant:
   provider: openai-codex
   model: gpt-5.5
   thinking_level: off
+  retry:
+    enabled: true
+    max_attempts: 3
+    base_delay: 2s
+    max_delay: 30s
 ```
 
 Credentials can come from:

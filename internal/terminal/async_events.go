@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 
@@ -22,6 +23,7 @@ const (
 	asyncEventPromptThinkingDelta asyncEventKind = "prompt_thinking_delta"
 	asyncEventPromptToolStart     asyncEventKind = "prompt_tool_start"
 	asyncEventPromptToolResult    asyncEventKind = "prompt_tool_result"
+	asyncEventPromptRetry         asyncEventKind = "prompt_retry"
 	asyncEventPromptError         asyncEventKind = "prompt_error"
 )
 
@@ -42,6 +44,23 @@ func (app *App) promptUserEntryHandler(ctx context.Context, promptID uint64) fun
 			Kind:      asyncEventPromptUserEntry,
 			Provider:  event.SessionID,
 			Text:      event.EntryID,
+			PromptID:  promptID,
+		})
+	}
+}
+
+func (app *App) promptRetryHandler(ctx context.Context, promptID uint64) assistant.RetryEventHandler {
+	return func(event assistant.RetryEvent) {
+		text := "retrying model request"
+		if event.Kind == assistant.RetryEventStart {
+			text = "retrying model request in " + event.Delay.Round(time.Second).String()
+		}
+		app.postAsyncEvent(ctx, asyncEvent{
+			Response:  nil,
+			ToolEvent: nil,
+			Kind:      asyncEventPromptRetry,
+			Provider:  string(event.Kind),
+			Text:      text,
 			PromptID:  promptID,
 		})
 	}
@@ -140,6 +159,7 @@ func (app *App) handleAuthAsyncEvent(payload asyncEvent) bool {
 		asyncEventPromptThinkingDelta,
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
+		asyncEventPromptRetry,
 		asyncEventPromptError:
 		return false
 	}
@@ -177,6 +197,7 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 		asyncEventPromptThinkingDelta,
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
+		asyncEventPromptRetry,
 		asyncEventPromptError:
 		return true
 	case asyncEventAuthURL, asyncEventAuthDone, asyncEventAuthError:
@@ -200,6 +221,10 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload asyncEve
 		}
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventPromptUser, data)
 		app.applyPromptUserEntry(ctx, payload.Provider, payload.Text, payload.PromptID)
+		return true
+	case asyncEventPromptRetry:
+		app.emitPromptRetryExtensionEvent(ctx, payload)
+		app.setStatus(payload.Text)
 		return true
 	case asyncEventPromptError:
 		app.applyPromptError(payload.Text, payload.PromptID)
@@ -244,12 +269,24 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload asyncEvent)
 		return
 	case asyncEventPromptDone,
 		asyncEventPromptUserEntry,
+		asyncEventPromptRetry,
 		asyncEventPromptError,
 		asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError:
 		return
 	}
+}
+
+func (app *App) emitPromptRetryExtensionEvent(ctx context.Context, payload asyncEvent) {
+	eventName := extensionEventRetryStart
+	if payload.Provider == string(assistant.RetryEventEnd) {
+		eventName = extensionEventRetryEnd
+	}
+	app.emitExtensionRuntimeEventOrMessage(ctx, eventName, map[string]any{
+		extensionDataPromptID: payload.PromptID,
+		extensionDataText:     payload.Text,
+	})
 }
 
 func promptDoneExtensionData(response *assistant.PromptResponse) map[string]any {
