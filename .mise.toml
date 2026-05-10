@@ -2,7 +2,7 @@
 
 [tools]
 # Runtime toolchain
-go = "1.26.2"
+go = "1.26.3"
 
 # Task runner
 "go:github.com/go-task/task/v3/cmd/task" = "3.50.0"
