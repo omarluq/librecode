@@ -96,7 +96,7 @@ func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(a
 				Text:      event.Text,
 				PromptID:  promptID,
 			})
-		case assistant.StreamEventToolResult:
+		case assistant.StreamEventToolResult, assistant.StreamEventSkillLoaded:
 			app.postAsyncEvent(ctx, asyncEvent{
 				Response:  nil,
 				ToolEvent: event.ToolEvent,

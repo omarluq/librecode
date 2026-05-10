@@ -222,6 +222,9 @@ func toolTitle(event *parsedToolEvent) string {
 	if event.Error != "" {
 		return "✗ " + name
 	}
+	if strings.HasPrefix(name, "load skill: ") {
+		return "loaded skill " + strings.TrimSpace(strings.TrimPrefix(name, "load skill: "))
+	}
 
 	return "✓ " + name
 }

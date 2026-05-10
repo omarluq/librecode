@@ -144,9 +144,9 @@ func TestRuntime_PromptEmitsStreamEvents(t *testing.T) {
 	}
 	_, err := runtime.Prompt(context.Background(), request)
 	require.NoError(t, err)
-	require.NotEmpty(t, events)
-	assert.Equal(t, assistant.StreamEventTextDelta, events[0].Kind)
-	assert.Contains(t, events[0].Text, "stream me")
+	textEvent := firstStreamEventKind(events, assistant.StreamEventTextDelta)
+	require.NotNil(t, textEvent)
+	assert.Contains(t, textEvent.Text, "stream me")
 }
 
 func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
@@ -217,7 +217,8 @@ func TestRuntime_SlashSkillShowsContent(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
-	writeRuntimeTestFile(t, filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md"), strings.Join([]string{
+	skillPath := filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md")
+	writeRuntimeTestFile(t, skillPath, strings.Join([]string{
 		testSkillDelimiter,
 		"name: fix-bug",
 		"description: Fix bugs safely",
@@ -225,11 +226,21 @@ func TestRuntime_SlashSkillShowsContent(t *testing.T) {
 		"Use tests first.",
 	}, "\n"))
 	runtime, _ := newTestRuntime(t)
+	events := []assistant.StreamEvent{}
+	request := newRuntimePromptRequest(cwd, "/skill:fix-bug", "")
+	request.OnEvent = func(event assistant.StreamEvent) {
+		events = append(events, event)
+	}
 
-	response, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(cwd, "/skill fix-bug", ""))
+	response, err := runtime.Prompt(context.Background(), request)
 
 	require.NoError(t, err)
 	assert.Contains(t, response.Text, "Use tests first.")
+	require.Len(t, response.ToolEvents, 1)
+	assert.Equal(t, "load skill: fix-bug", response.ToolEvents[0].Name)
+	assert.Contains(t, response.ToolEvents[0].ArgumentsJSON, skillPath)
+	require.Len(t, events, 1)
+	assert.Equal(t, assistant.StreamEventSkillLoaded, events[0].Kind)
 }
 
 func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
@@ -254,6 +265,16 @@ func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 	assert.Contains(t, client.request.SystemPrompt, filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md"))
 	assert.Contains(t, client.request.SystemPrompt, "<active_skills>")
 	assert.Contains(t, client.request.SystemPrompt, "Use tests first.")
+}
+
+func firstStreamEventKind(events []assistant.StreamEvent, kind assistant.StreamEventKind) *assistant.StreamEvent {
+	for index := range events {
+		if events[index].Kind == kind {
+			return &events[index]
+		}
+	}
+
+	return nil
 }
 
 func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionRepository) {

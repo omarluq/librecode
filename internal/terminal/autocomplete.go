@@ -91,13 +91,29 @@ func (app *App) autocompleteMatches() []slashSuggestion {
 	}
 	query := strings.TrimPrefix(trimmed, "/")
 	matches := []slashSuggestion{}
-	for _, suggestion := range slashSuggestions() {
+	for _, suggestion := range app.allSlashSuggestions() {
 		if strings.HasPrefix(suggestion.Name, query) {
 			matches = append(matches, suggestion)
 		}
 	}
 
 	return matches
+}
+
+func (app *App) allSlashSuggestions() []slashSuggestion {
+	suggestions := append([]slashSuggestion{}, slashSuggestions()...)
+	for index := range app.resources.Skills {
+		skill := &app.resources.Skills[index]
+		if !skill.UserInvocable {
+			continue
+		}
+		suggestions = append(suggestions, slashSuggestion{
+			Name:        "skill:" + skill.Name,
+			Description: skill.Description,
+		})
+	}
+
+	return suggestions
 }
 
 func (app *App) workingIndicator() string {
