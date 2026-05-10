@@ -69,16 +69,17 @@ func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
 	}
 }
 
-func TestPromptToolStartDoesNotSetStatus(t *testing.T) {
+func TestFooterLinesIgnoreTransientStatus(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setStatus("ready")
+	app.setStatus("running tool: bash")
 
-	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptToolStart, "bash"))
-
-	if app.statusMessage != "ready" {
-		t.Fatalf("status = %q, want ready", app.statusMessage)
+	lines := app.footerLines(120)
+	for _, line := range lines {
+		if strings.Contains(line.Text, "running tool") {
+			t.Fatalf("footer rendered transient status line %q", line.Text)
+		}
 	}
 }
 
