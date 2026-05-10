@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 
@@ -42,7 +43,7 @@ const (
 )
 
 func (app *App) runStartupExtensions(ctx context.Context) error {
-	if app.extensions == nil {
+	if !app.hasExtensionHandlers(extensionEventStartup) {
 		return nil
 	}
 
@@ -66,7 +67,7 @@ func (app *App) runStartupExtensions(ctx context.Context) error {
 }
 
 func (app *App) handleExtensionKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
-	if app.extensions == nil {
+	if !app.hasExtensionHandlers(extensionEventKey) {
 		return false, nil
 	}
 
@@ -84,6 +85,9 @@ func (app *App) handleExtensionKey(ctx context.Context, event *tcell.EventKey) (
 }
 
 func (app *App) handleResizeExtensions(ctx context.Context) error {
+	if !app.hasExtensionHandlers(extensionEventResize) {
+		return nil
+	}
 	layout := app.currentRuntimeLayout()
 
 	return app.emitExtensionRuntimeEvent(
@@ -98,7 +102,7 @@ func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) 
 		return
 	}
 	app.resetFrameUIOverrides()
-	if app.extensions == nil {
+	if !app.hasExtensionHandlers(extensionEventRender) {
 		return
 	}
 	data := app.extensionRuntimeData(layout.Width, layout.Height)
@@ -113,6 +117,31 @@ func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) 
 
 func emptyExtensionKeyEvent() extension.ComposerKeyEvent {
 	return extension.ComposerKeyEvent{Key: "", Text: "", Ctrl: false, Alt: false, Shift: false}
+}
+
+func (app *App) hasExtensionHandlers(name string) bool {
+	if app.extensions == nil {
+		return false
+	}
+	inspector, ok := app.extensions.(extension.TerminalEventInspector)
+	if !ok {
+		return true
+	}
+
+	return inspector.HasTerminalEventHandlers(name)
+}
+
+func (app *App) hasExtensionTimers() bool {
+	if app.extensions == nil {
+		return false
+	}
+	scheduler, ok := app.extensions.(extension.TimerScheduler)
+	if !ok {
+		return false
+	}
+	_, hasTimer := scheduler.NextTimerDelay(time.Now())
+
+	return hasTimer
 }
 
 func (app *App) extensionRuntimeData(width, height int) map[string]any {
@@ -134,7 +163,7 @@ func (app *App) extensionRuntimeData(width, height int) map[string]any {
 }
 
 func (app *App) emitExtensionRuntimeEvent(ctx context.Context, name string, data map[string]any) error {
-	if app.extensions == nil {
+	if !app.hasExtensionHandlers(name) && !app.hasExtensionTimers() {
 		return nil
 	}
 	event := app.newExtensionEventWithData(name, emptyExtensionKeyEvent(), data)
@@ -159,7 +188,7 @@ func (app *App) resetFrameUIOverrides() {
 }
 
 func (app *App) applyPromptSubmitExtensions(ctx context.Context) (bool, error) {
-	if app.extensions == nil {
+	if !app.hasExtensionHandlers(extensionEventPromptSubmit) {
 		return false, nil
 	}
 

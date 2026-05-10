@@ -488,6 +488,24 @@ func assertLoadedExtension(t *testing.T, loaded []extension.LoadedExtension) {
 	assert.Positive(t, loaded[0].TotalDuration)
 }
 
+func TestManager_HasTerminalEventHandlers(t *testing.T) {
+	t.Parallel()
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	script := `
+librecode.on("startup", function() end)
+librecode.keymap.set({ role = "composer" }, "x", function() end)
+`
+	extensionPath := filepath.Join(t.TempDir(), "handlers.lua")
+	require.NoError(t, writeTestFile(extensionPath, script))
+	require.NoError(t, manager.LoadPaths(context.Background(), []string{extensionPath}))
+
+	assert.True(t, manager.HasTerminalEventHandlers(testEventStartup))
+	assert.True(t, manager.HasTerminalEventHandlers("key"))
+	assert.False(t, manager.HasTerminalEventHandlers("render"))
+}
+
 func assertCommandExecution(t *testing.T, manager *extension.Manager) {
 	t.Helper()
 

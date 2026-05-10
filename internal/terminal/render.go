@@ -24,6 +24,22 @@ func (app *App) draw(ctx context.Context) {
 		return
 	}
 
+	if app.needsRuntimeRenderPath() {
+		app.drawRuntime(ctx)
+		return
+	}
+
+	row := 0
+	if app.mode == modePanel && app.panel != nil {
+		row = app.drawPanel(width, height, row)
+	} else {
+		row = app.drawMessages(width, height, row)
+	}
+	app.drawEditorAndFooter(width, height, row)
+	app.flushFrame()
+}
+
+func (app *App) drawRuntime(ctx context.Context) {
 	layout := app.currentRuntimeLayout()
 	app.runRenderExtensions(ctx, &layout)
 	layout = app.currentRuntimeLayout()
@@ -40,6 +56,18 @@ func (app *App) draw(ctx context.Context) {
 	app.flushFrame()
 }
 
+func (app *App) needsRuntimeRenderPath() bool {
+	if app.hasExtensionHandlers(extensionEventRender) || app.runtimeLayout != nil || len(app.runtimeWindows) > 0 {
+		return true
+	}
+	if len(app.uiWindowOverrides) > 0 || app.uiCursor != nil {
+		return true
+	}
+	_, transcriptOverridden := app.extensionRuntimeBuffers[extensionBufferTranscript]
+
+	return transcriptOverridden
+}
+
 func (app *App) flushFrame() {
 	app.renderer.flush(app.frame)
 	app.screen.Show()
@@ -48,6 +76,31 @@ func (app *App) flushFrame() {
 func (app *App) drawTiny(width, height int) {
 	message := truncateText("librecode: terminal too small", width)
 	writeLine(app.frame, max(0, height/2), width, message, app.theme.style(colorWarning))
+}
+
+func (app *App) drawPanel(width, height, row int) int {
+	availableHeight := max(1, height-row-app.composerReserve(width, height))
+	lines := app.panel.render(width, availableHeight, app.theme, app.keys)
+	for _, line := range lines {
+		app.writeStyledLine(row, width, line)
+		row++
+	}
+
+	return row
+}
+
+func (app *App) drawMessages(width, height, row int) int {
+	if app.showWelcomeOnly() {
+		return app.drawWelcomeOnly(width, height, row)
+	}
+	availableRows := max(1, height-row-app.composerReserve(width, height))
+	lines := app.messageLines(width, availableRows)
+	for _, line := range lines {
+		app.writeStyledLine(row, width, line)
+		row++
+	}
+
+	return row
 }
 
 func (app *App) drawTranscriptWindow(layout *runtimeLayout) {
@@ -443,9 +496,60 @@ func (app *App) drawStatusWindow(layout *runtimeLayout) {
 	}
 }
 
+func (app *App) drawEditorAndFooter(width, height, _ int) {
+	layout := app.composerLayout(width, height)
+	for index, line := range layout.autocompleteLines {
+		writeLine(app.frame, layout.startRow+index, width, line.Text, line.Style)
+	}
+	borderStyle := app.theme.style(app.editorBorderColor())
+	for index, line := range layout.editor.Lines {
+		writeEditorLine(app.frame, layout.editorStart+index, width, line, index, len(layout.editor.Lines), borderStyle)
+	}
+	for index, line := range layout.footerLines {
+		writeLine(app.frame, layout.footerStart+index, width, line.Text, line.Style)
+	}
+	app.screen.ShowCursor(layout.editor.CursorCol, layout.editorStart+layout.editor.CursorRow)
+}
+
 func (app *App) composerReserve(width, height int) int {
-	layout := app.defaultRuntimeLayout(width, height)
-	return height - layout.Transcript.Height
+	return app.composerLayout(width, height).reserve
+}
+
+type composerLayout struct {
+	footerLines       []styledLine
+	autocompleteLines []styledLine
+	editor            editorRender
+	startRow          int
+	editorStart       int
+	footerStart       int
+	reserve           int
+}
+
+func (app *App) composerLayout(width, height int) composerLayout {
+	footerLines := app.footerLines(width)
+	autocompleteLines := app.autocompleteLines(width)
+	maxEditorRows := min(defaultEditorRows, max(3, height-len(footerLines)-len(autocompleteLines)-2))
+	maxEditorRows = max(3, maxEditorRows)
+	editor := app.renderComposerEditor(width, maxEditorRows-2)
+	reserve := len(footerLines) + len(autocompleteLines) + len(editor.Lines)
+	if reserve > height {
+		bodyRows := max(1, height-len(footerLines)-len(autocompleteLines)-2)
+		editor = app.renderComposerEditor(width, bodyRows)
+		reserve = len(footerLines) + len(autocompleteLines) + len(editor.Lines)
+	}
+	startRow := max(0, height-reserve)
+	editorStart := startRow + len(autocompleteLines)
+	footerStart := height - len(footerLines)
+
+	return composerLayout{
+		editor:            editor,
+		footerLines:       footerLines,
+		autocompleteLines: autocompleteLines,
+		startRow:          startRow,
+		editorStart:       editorStart,
+		footerStart:       footerStart,
+		reserve:           reserve,
+	}
 }
 
 func (app *App) currentRuntimeLayout() runtimeLayout {

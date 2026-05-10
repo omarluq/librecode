@@ -179,6 +179,11 @@ type TerminalEventRunner interface {
 	HandleTerminalEvent(ctx context.Context, event *TerminalEvent) (TerminalEventResult, error)
 }
 
+// TerminalEventInspector reports whether an extension manager has handlers for a terminal event.
+type TerminalEventInspector interface {
+	HasTerminalEventHandlers(eventName string) bool
+}
+
 // EventEmitter emits extension lifecycle events.
 type EventEmitter interface {
 	Emit(ctx context.Context, eventName string, payload map[string]any) error

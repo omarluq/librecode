@@ -326,6 +326,14 @@ func (manager *Manager) Emit(ctx context.Context, eventName string, payload map[
 	return nil
 }
 
+// HasTerminalEventHandlers reports whether any Lua handler is registered for eventName.
+func (manager *Manager) HasTerminalEventHandlers(eventName string) bool {
+	manager.lock.RLock()
+	defer manager.lock.RUnlock()
+
+	return len(manager.handlers[eventName]) > 0 || eventName == luaFieldKey && len(manager.keymaps) > 0
+}
+
 func (manager *Manager) handlersFor(eventName string) []luaHookHandler {
 	manager.lock.RLock()
 	handlers := append([]luaHookHandler{}, manager.handlers[eventName]...)
