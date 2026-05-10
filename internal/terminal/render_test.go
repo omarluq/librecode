@@ -130,6 +130,53 @@ func TestPromptLifecycleEventsForceImmediateDraw(t *testing.T) {
 	}
 }
 
+func TestScrolledMessageLinesCanReachFullHistory(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	for index := range 20 {
+		app.addMessage(database.RoleAssistant, "history message "+intText(index))
+	}
+
+	bottom := app.messageLines(80, 6)
+	if lineIndexContaining(bottom, "history message 19") == -1 {
+		t.Fatalf("expected latest history at bottom, got %v", lineTexts(bottom))
+	}
+
+	app.warmMessageLineCache()
+	app.scrollTranscript(100)
+	older := app.messageLines(80, 6)
+	if lineIndexContaining(older, "history message 0") == -1 {
+		t.Fatalf("expected older history after scrolling, got %v", lineTexts(older))
+	}
+}
+
+func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	for index := range 20 {
+		app.addMessage(database.RoleAssistant, "history message "+intText(index))
+	}
+
+	_ = app.messageLines(80, 6)
+	if app.messageCacheWarm {
+		t.Fatal("tail render should not eagerly warm full history")
+	}
+
+	app.warmMessageLineCache()
+	if !app.messageCacheWarm {
+		t.Fatal("expected history cache to be warm")
+	}
+	if len(app.messageRowPrefixSums) != len(app.messages)+1 {
+		t.Fatalf(
+			"row prefix length = %d, want %d",
+			len(app.messageRowPrefixSums),
+			len(app.messages)+1,
+		)
+	}
+}
+
 func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
 	t.Parallel()
 

@@ -124,7 +124,6 @@ type App struct {
 	streamingThinkingText        string
 	cwd                          string
 	promptHistoryDraft           string
-	composerBuffer               extension.BufferState
 	resources                    core.ResourceSnapshot
 	messageLineCache             []cachedRenderedMessage
 	streamingBlockLineCache      []cachedRenderedMessage
@@ -134,6 +133,7 @@ type App struct {
 	streamingBlocks              []chatMessage
 	promptHistory                []string
 	scopedOrder                  []string
+	composerBuffer               extension.BufferState
 	messageLineCacheState        messageLineCacheState
 	streamingBlockLineCacheState messageLineCacheState
 	workFrame                    int
@@ -142,6 +142,8 @@ type App struct {
 	streamedToolEvents           int
 	promptHistoryIndex           int
 	scrollOffset                 int
+	messageCacheWarm             bool
+	messageCacheWarmQueued       bool
 	sessionNamedOnly             bool
 	hideThinking                 bool
 	working                      bool
@@ -222,6 +224,8 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		messages:                     []chatMessage{},
 		messageLineCache:             nil,
 		messageRowPrefixSums:         nil,
+		messageCacheWarm:             false,
+		messageCacheWarmQueued:       false,
 		messageLineCacheState:        emptyMessageLineCacheState(),
 		queuedMessages:               []string{},
 		promptHistory:                []string{},
@@ -270,10 +274,13 @@ func (app *App) loop(ctx context.Context) {
 	extensionTimer := time.NewTimer(time.Hour)
 	stopTimer(extensionTimer)
 	defer extensionTimer.Stop()
+	messageWarmTimer := time.NewTimer(time.Hour)
+	stopTimer(messageWarmTimer)
+	defer messageWarmTimer.Stop()
 	dirty := true
 	for {
 		dirty = app.drawDirtyFrame(ctx, dirty)
-		shouldQuit, nextDirty := app.runLoopStep(ctx, workTicker, frameTicker, extensionTimer, dirty)
+		shouldQuit, nextDirty := app.runLoopStep(ctx, workTicker, frameTicker, extensionTimer, messageWarmTimer, dirty)
 		if shouldQuit {
 			return
 		}
@@ -295,6 +302,7 @@ func (app *App) runLoopStep(
 	workTicker *time.Ticker,
 	frameTicker *time.Ticker,
 	extensionTimer *time.Timer,
+	messageWarmTimer *time.Timer,
 	dirty bool,
 ) (shouldQuit, nextDirty bool) {
 	select {
@@ -311,6 +319,10 @@ func (app *App) runLoopStep(
 	case <-app.extensionTimerTick(extensionTimer):
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
 		return false, true
+	case <-app.messageCacheWarmTick(messageWarmTimer):
+		app.messageCacheWarmQueued = false
+		app.warmMessageLineCache()
+		return false, false
 	}
 }
 
@@ -387,6 +399,28 @@ func (app *App) frameTick(ticker *time.Ticker, dirty bool) <-chan time.Time {
 	}
 
 	return nil
+}
+
+func (app *App) messageCacheWarmTick(timer *time.Timer) <-chan time.Time {
+	if timer == nil {
+		return nil
+	}
+	if app.messageCacheWarm || app.working || app.authWorking || app.scrollOffset != 0 {
+		app.messageCacheWarmQueued = false
+		stopTimer(timer)
+		return nil
+	}
+	if len(app.messages) == 0 || app.lastMessageMaxRows <= 0 {
+		app.messageCacheWarmQueued = false
+		stopTimer(timer)
+		return nil
+	}
+	if !app.messageCacheWarmQueued {
+		resetTimer(timer, 1*time.Millisecond)
+		app.messageCacheWarmQueued = true
+	}
+
+	return timer.C
 }
 
 func (app *App) extensionTimerTick(timer *time.Timer) <-chan time.Time {
@@ -508,11 +542,15 @@ func emptyCachedRenderedMessage() cachedRenderedMessage {
 
 func (app *App) appendMessage(message chatMessage) {
 	app.messages = append(app.messages, message)
+	app.messageCacheWarm = false
 }
 
 func (app *App) resetMessages() {
 	app.messages = []chatMessage{}
 	app.messageLineCache = nil
+	app.messageRowPrefixSums = nil
+	app.messageCacheWarm = false
+	app.messageCacheWarmQueued = false
 	app.resetPromptHistory()
 }
 
@@ -521,6 +559,8 @@ func (app *App) truncateMessages(length int) {
 	if len(app.messageLineCache) > length {
 		app.messageLineCache = app.messageLineCache[:length]
 	}
+	app.messageRowPrefixSums = nil
+	app.messageCacheWarm = false
 }
 
 func (app *App) resetStreamingBlocks() {

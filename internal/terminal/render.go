@@ -159,21 +159,90 @@ func (app *App) drawPanelWindow(layout *runtimeLayout) {
 
 func (app *App) messageLines(width, maxRows int) []styledLine {
 	app.lastMessageMaxRows = maxRows
+	dynamicGroups := app.dynamicMessageLineGroups(width)
+	if maxRows < 0 {
+		return app.allMessageLines(width, dynamicGroups)
+	}
+	if app.scrollOffset == 0 {
+		return app.bottomMessageLines(width, maxRows, dynamicGroups)
+	}
 
-	return app.visibleMessageLineGroups(app.messageLineGroups(width), maxRows)
+	return app.scrolledMessageLines(width, maxRows, dynamicGroups)
 }
 
-func (app *App) messageLineGroups(width int) [][]styledLine {
-	staticGroupCount := len(app.messages)
-	extraGroups := app.dynamicMessageLineGroups(width)
-	groups := make([][]styledLine, 0, staticGroupCount+len(extraGroups))
-	start, end := app.visibleStaticMessageRange(width, max(0, extraGroupsVisibleRows(extraGroups)))
-	for index := start; index < end; index++ {
+func (app *App) allMessageLines(width int, dynamicGroups [][]styledLine) []styledLine {
+	groups := make([][]styledLine, 0, len(app.messages)+len(dynamicGroups))
+	for index := range app.messages {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
-	groups = append(groups, extraGroups...)
+	groups = append(groups, dynamicGroups...)
 
-	return groups
+	return flattenStyledLineGroups(groups, styledLineGroupRows(groups))
+}
+
+func (app *App) bottomMessageLines(width, maxRows int, dynamicGroups [][]styledLine) []styledLine {
+	reservedRows := extraGroupsVisibleRows(dynamicGroups)
+	staticMaxRows := max(0, maxRows-reservedRows)
+	groups := make([][]styledLine, 0, len(app.messages)+len(dynamicGroups))
+	if staticMaxRows > 0 {
+		start := app.tailStaticMessageRange(width, staticMaxRows)
+		for index := start; index < len(app.messages); index++ {
+			groups = append(groups, app.cachedMessageLines(width, index))
+		}
+	}
+	groups = append(groups, dynamicGroups...)
+
+	return sliceBottomStyledLineGroups(groups, maxRows)
+}
+
+func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]styledLine) []styledLine {
+	if maxRows <= 0 {
+		return nil
+	}
+	app.rebuildMessageRowPrefixSums(width)
+	app.messageCacheWarm = true
+	staticRows := app.messageRowPrefixSums[len(app.messages)]
+	dynamicRows := extraGroupsVisibleRows(dynamicGroups)
+	totalRows := staticRows + dynamicRows
+	if totalRows <= maxRows {
+		app.scrollOffset = 0
+
+		return app.allMessageLines(width, dynamicGroups)
+	}
+	app.scrollOffset = min(app.scrollOffset, totalRows-maxRows)
+	endRow := totalRows - app.scrollOffset
+	startRow := max(0, endRow-maxRows)
+	lines := make([]styledLine, 0, endRow-startRow)
+	if startRow < staticRows {
+		lines = append(lines, app.staticMessageLinesForRows(width, startRow, min(endRow, staticRows))...)
+	}
+	if endRow > staticRows {
+		dynamicStart := max(0, startRow-staticRows)
+		dynamicEnd := min(dynamicRows, endRow-staticRows)
+		lines = append(lines, sliceStyledLineGroups(dynamicGroups, dynamicStart, dynamicEnd)...)
+	}
+
+	return lines
+}
+
+func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []styledLine {
+	if endRow <= startRow || len(app.messages) == 0 {
+		return nil
+	}
+	app.rebuildMessageRowPrefixSums(width)
+	app.messageCacheWarm = true
+	startIndex := lowerBoundInts(app.messageRowPrefixSums, startRow+1) - 1
+	endIndex := lowerBoundInts(app.messageRowPrefixSums, endRow)
+	startIndex = min(max(0, startIndex), len(app.messages))
+	endIndex = min(max(startIndex, endIndex), len(app.messages))
+	groups := make([][]styledLine, 0, endIndex-startIndex)
+	for index := startIndex; index < endIndex; index++ {
+		groups = append(groups, app.cachedMessageLines(width, index))
+	}
+	relativeStart := startRow - app.messageRowPrefixSums[startIndex]
+	relativeEnd := endRow - app.messageRowPrefixSums[startIndex]
+
+	return sliceStyledLineGroups(groups, relativeStart, relativeEnd)
 }
 
 func (app *App) dynamicMessageLineGroups(width int) [][]styledLine {
@@ -233,6 +302,7 @@ func (app *App) ensureLineCache(
 		*cache = nil
 		*cacheState = state
 		app.messageRowPrefixSums = nil
+		app.messageCacheWarm = false
 	}
 	if len(*cache) > targetLength {
 		*cache = (*cache)[:targetLength]
@@ -251,46 +321,6 @@ func (app *App) currentLineCacheState(width int) messageLineCacheState {
 	}
 }
 
-func (app *App) visibleStaticMessageRange(width, reservedRows int) (start, end int) {
-	app.ensureMessageLineCache(width)
-	messageCount := len(app.messages)
-	if messageCount == 0 {
-		return 0, 0
-	}
-	maxRows := app.lastMessageMaxRows - reservedRows
-	if app.lastMessageMaxRows <= 0 {
-		maxRows = -1
-	}
-	if maxRows == 0 {
-		return messageCount, messageCount
-	}
-	if maxRows < 0 {
-		return 0, messageCount
-	}
-	if app.scrollOffset == 0 {
-		return app.tailStaticMessageRange(width, maxRows), messageCount
-	}
-	if app.messageRowPrefixSums == nil {
-		app.rebuildMessageRowPrefixSums(width)
-	}
-	totalRows := app.messageRowPrefixSums[messageCount]
-	if maxRows < 0 || totalRows <= maxRows {
-		app.scrollOffset = 0
-
-		return 0, messageCount
-	}
-	maxOffset := max(0, totalRows-maxRows)
-	app.scrollOffset = min(app.scrollOffset, maxOffset)
-	visibleEndRow := totalRows - app.scrollOffset
-	visibleStartRow := max(0, visibleEndRow-maxRows)
-	start = lowerBoundInts(app.messageRowPrefixSums, visibleStartRow+1) - 1
-	end = lowerBoundInts(app.messageRowPrefixSums, visibleEndRow)
-	start = min(max(0, start), messageCount)
-	end = min(max(start, end), messageCount)
-
-	return start, end
-}
-
 func (app *App) tailStaticMessageRange(width, maxRows int) int {
 	remainingRows := maxRows
 	for index := len(app.messages) - 1; index >= 0; index-- {
@@ -304,6 +334,7 @@ func (app *App) tailStaticMessageRange(width, maxRows int) int {
 }
 
 func (app *App) rebuildMessageRowPrefixSums(width int) {
+	app.ensureMessageLineCache(width)
 	prefixSums := make([]int, len(app.messageLineCache)+1)
 	for index := range app.messageLineCache {
 		if !app.messageLineCache[index].Valid {
@@ -315,6 +346,24 @@ func (app *App) rebuildMessageRowPrefixSums(width int) {
 		prefixSums[index+1] = prefixSums[index] + len(app.messageLineCache[index].Lines)
 	}
 	app.messageRowPrefixSums = prefixSums
+}
+
+func (app *App) warmMessageLineCache() {
+	if app.messageCacheWarm || len(app.messages) == 0 || app.lastMessageMaxRows <= 0 {
+		return
+	}
+	app.rebuildMessageRowPrefixSums(app.currentLineCacheStateWidth())
+	app.messageCacheWarm = true
+}
+
+func (app *App) currentLineCacheStateWidth() int {
+	state := app.messageLineCacheState
+	if state.Width > 0 {
+		return state.Width
+	}
+	width, _ := app.screenSize()
+
+	return width
 }
 
 func lowerBoundInts(values []int, target int) int {
@@ -332,12 +381,25 @@ func lowerBoundInts(values []int, target int) int {
 }
 
 func extraGroupsVisibleRows(groups [][]styledLine) int {
+	return styledLineGroupRows(groups)
+}
+
+func styledLineGroupRows(groups [][]styledLine) int {
 	total := 0
 	for _, group := range groups {
 		total += len(group)
 	}
 
 	return total
+}
+
+func sliceBottomStyledLineGroups(groups [][]styledLine, maxRows int) []styledLine {
+	totalRows := styledLineGroupRows(groups)
+	if maxRows < 0 || totalRows <= maxRows {
+		return flattenStyledLineGroups(groups, totalRows)
+	}
+
+	return sliceStyledLineGroups(groups, totalRows-maxRows, totalRows)
 }
 
 func (app *App) cachedStreamingBlockLines(width, index int) []styledLine {
