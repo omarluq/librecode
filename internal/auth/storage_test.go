@@ -32,6 +32,10 @@ func TestStorageResolvesAuthSourcesWithoutExposingSecrets(t *testing.T) {
 	apiKey, found = storage.APIKey("openai")
 	require.True(t, found)
 	assert.Equal(t, "runtime-key", apiKey)
+	assert.Equal(t,
+		auth.Status{Source: auth.SourceRuntime, Label: "--api-key", Configured: false},
+		storage.AuthStatus("openai"),
+	)
 
 	storage.RemoveRuntimeAPIKey("openai")
 	storage.SetFallbackResolver(func(provider string) (string, bool) {
@@ -102,4 +106,63 @@ func TestStoragePersistsMemoryCredentials(t *testing.T) {
 	apiKey, found := reloaded.APIKey("openai")
 	require.True(t, found)
 	assert.Equal(t, testStoredKey, apiKey)
+}
+
+func TestStorageFallbackResolverDoesNotRunUnderLock(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage, err := auth.NewInMemoryStorage(ctx, map[string]auth.Credential{})
+	require.NoError(t, err)
+
+	storage.SetFallbackResolver(func(provider string) (string, bool) {
+		storage.SetRuntimeAPIKey(provider, "runtime-from-resolver")
+		return "fallback-" + provider, true
+	})
+
+	apiKey, found := storage.APIKey("custom")
+	require.True(t, found)
+	assert.Equal(t, "fallback-custom", apiKey)
+
+	apiKey, found = storage.APIKey("custom")
+	require.True(t, found)
+	assert.Equal(t, "runtime-from-resolver", apiKey)
+}
+
+func TestStorageSetRemoveDoNotMutateMemoryWhenPersistFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	backend := &failingBackend{err: assert.AnError}
+	storage, err := auth.NewStorage(ctx, backend)
+	require.NoError(t, err)
+
+	credential := testAPIKeyCredential()
+	err = storage.Set(ctx, "openai", &credential)
+	require.Error(t, err)
+	assert.False(t, storage.HasStored("openai"))
+
+	storage.SetRuntimeAPIKey("openai", "runtime-key")
+	err = storage.Remove(ctx, "openai")
+	require.Error(t, err)
+	assert.False(t, storage.HasStored("openai"))
+}
+
+type failingBackend struct {
+	err error
+}
+
+func (backend *failingBackend) WithLock(
+	_ context.Context,
+	callback func(current []byte) (auth.LockResult, error),
+) error {
+	result, err := callback([]byte("{}"))
+	if err != nil {
+		return err
+	}
+	if result.Write {
+		return backend.err
+	}
+
+	return nil
 }

@@ -173,21 +173,28 @@ func (storage *Storage) Set(ctx context.Context, provider string, credential *Cr
 	if credential == nil {
 		return oops.In("auth").Code("nil_credential").Errorf("credential is required")
 	}
+	if err := storage.persistProviderChange(ctx, provider, credential); err != nil {
+		return err
+	}
 
 	storage.lock.Lock()
+	defer storage.lock.Unlock()
 	storage.credentials[provider] = *credential
-	storage.lock.Unlock()
 
-	return storage.persistProviderChange(ctx, provider, credential)
+	return nil
 }
 
 // Remove deletes a provider credential and persists the change.
 func (storage *Storage) Remove(ctx context.Context, provider string) error {
-	storage.lock.Lock()
-	delete(storage.credentials, provider)
-	storage.lock.Unlock()
+	if err := storage.persistProviderChange(ctx, provider, nil); err != nil {
+		return err
+	}
 
-	return storage.persistProviderChange(ctx, provider, nil)
+	storage.lock.Lock()
+	defer storage.lock.Unlock()
+	delete(storage.credentials, provider)
+
+	return nil
 }
 
 // List returns providers with stored credentials.
@@ -212,20 +219,18 @@ func (storage *Storage) HasStored(provider string) bool {
 
 // HasAuth reports whether any source can provide auth for provider.
 func (storage *Storage) HasAuth(provider string) bool {
-	storage.lock.RLock()
-	defer storage.lock.RUnlock()
-
-	if _, ok := storage.runtimeOverrides[provider]; ok {
+	_, runtimeOK, credential, credentialOK, resolver := storage.authSnapshot(provider)
+	if runtimeOK {
 		return true
 	}
-	if credential, ok := storage.credentials[provider]; ok {
-		return credential.hasSecretMaterial()
+	if credentialOK && credential.hasSecretMaterial() {
+		return true
 	}
 	if _, ok := envAPIKey(provider); ok {
 		return true
 	}
-	if storage.fallbackResolver != nil {
-		_, ok := storage.fallbackResolver(provider)
+	if resolver != nil {
+		_, ok := resolver(provider)
 		return ok
 	}
 
@@ -234,20 +239,20 @@ func (storage *Storage) HasAuth(provider string) bool {
 
 // APIKey resolves provider API key using runtime, stored, environment, then fallback sources.
 func (storage *Storage) APIKey(provider string) (string, bool) {
-	storage.lock.RLock()
-	defer storage.lock.RUnlock()
-
-	if apiKey, ok := storage.runtimeOverrides[provider]; ok {
+	apiKey, runtimeOK, credential, credentialOK, resolver := storage.authSnapshot(provider)
+	if runtimeOK {
 		return apiKey, true
 	}
-	if credential, ok := storage.credentials[provider]; ok {
-		return credential.apiKeyValue()
+	if credentialOK {
+		if apiKey, ok := credential.apiKeyValue(); ok {
+			return apiKey, true
+		}
 	}
 	if apiKey, ok := envAPIKey(provider); ok {
 		return apiKey, true
 	}
-	if storage.fallbackResolver != nil {
-		return storage.fallbackResolver(provider)
+	if resolver != nil {
+		return resolver(provider)
 	}
 
 	return "", false
@@ -255,26 +260,43 @@ func (storage *Storage) APIKey(provider string) (string, bool) {
 
 // APIKeyContext resolves provider API key and refreshes OAuth credentials when needed.
 func (storage *Storage) APIKeyContext(ctx context.Context, provider string) (apiKey string, found bool, err error) {
-	storage.lock.RLock()
-	if apiKey, ok := storage.runtimeOverrides[provider]; ok {
-		storage.lock.RUnlock()
+	apiKey, runtimeOK, credential, credentialOK, resolver := storage.authSnapshot(provider)
+	if runtimeOK {
 		return apiKey, true, nil
 	}
-	credential, hasCredential := storage.credentials[provider]
-	storage.lock.RUnlock()
 
-	if hasCredential {
-		return storage.credentialAPIKeyContext(ctx, provider, &credential)
+	if credentialOK {
+		apiKey, found, err := storage.credentialAPIKeyContext(ctx, provider, &credential)
+		if err != nil || found {
+			return apiKey, found, err
+		}
 	}
 	if apiKey, ok := envAPIKey(provider); ok {
 		return apiKey, true, nil
 	}
-	if storage.fallbackResolver != nil {
-		apiKey, ok := storage.fallbackResolver(provider)
+	if resolver != nil {
+		apiKey, ok := resolver(provider)
 		return apiKey, ok, nil
 	}
 
 	return "", false, nil
+}
+
+func (storage *Storage) authSnapshot(provider string) (
+	runtimeKey string,
+	hasRuntime bool,
+	credential Credential,
+	hasCredential bool,
+	resolver func(provider string) (string, bool),
+) {
+	storage.lock.RLock()
+	defer storage.lock.RUnlock()
+
+	runtimeKey, hasRuntime = storage.runtimeOverrides[provider]
+	credential, hasCredential = storage.credentials[provider]
+	resolver = storage.fallbackResolver
+
+	return runtimeKey, hasRuntime, credential, hasCredential, resolver
 }
 
 func (storage *Storage) credentialAPIKeyContext(
@@ -350,20 +372,20 @@ func (storage *Storage) importOpenAICodexFromKnownFiles(ctx context.Context) (bo
 
 // AuthStatus reports credential availability without exposing values.
 func (storage *Storage) AuthStatus(provider string) Status {
-	storage.lock.RLock()
-	defer storage.lock.RUnlock()
-
-	if _, ok := storage.credentials[provider]; ok {
-		return Status{Source: SourceStored, Label: "", Configured: true}
-	}
-	if _, ok := storage.runtimeOverrides[provider]; ok {
+	_, runtimeOK, credential, credentialOK, resolver := storage.authSnapshot(provider)
+	if runtimeOK {
 		return Status{Source: SourceRuntime, Label: "--api-key", Configured: false}
+	}
+	if credentialOK {
+		if _, ok := credential.apiKeyValue(); ok {
+			return Status{Source: SourceStored, Label: "", Configured: true}
+		}
 	}
 	if envKey, ok := envKeyName(provider); ok {
 		return Status{Source: SourceEnvironment, Label: envKey, Configured: false}
 	}
-	if storage.fallbackResolver != nil {
-		if _, ok := storage.fallbackResolver(provider); ok {
+	if resolver != nil {
+		if _, ok := resolver(provider); ok {
 			return Status{Source: SourceFallback, Label: "custom provider config", Configured: false}
 		}
 	}
