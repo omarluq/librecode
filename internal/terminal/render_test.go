@@ -221,6 +221,85 @@ func TestMouseSelectionCopiesFrameText(t *testing.T) {
 	}
 }
 
+func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
+	t.Parallel()
+
+	screen := newClipboardScreen()
+	app := newRenderTestApp(t)
+	app.screen = screen
+	app.frame = newCellBuffer(16, 1, tcell.StyleDefault)
+	writeLine(app.frame, 0, 16, "hello world", tcell.StyleDefault)
+	firstClick := time.Now()
+
+	app.beginMouseSelection(7, 0, firstClick)
+	app.finishMouseSelection(7, 0)
+	app.beginMouseSelection(7, 0, firstClick.Add(doubleClickDelay/2))
+
+	if got, want := string(screen.clipboard), "world"; got != want {
+		t.Fatalf("clipboard = %q, want %q", got, want)
+	}
+	for column := 6; column < 11; column++ {
+		if !app.selection.contains(column, 0) {
+			t.Fatalf("column %d on selected word is not selected", column)
+		}
+	}
+	if app.selection.contains(5, 0) || app.selection.contains(11, 0) {
+		t.Fatal("word selection includes adjacent whitespace")
+	}
+}
+
+func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
+	t.Parallel()
+
+	screen := newClipboardScreen()
+	app := newRenderTestApp(t)
+	app.screen = screen
+	app.frame = newCellBuffer(16, 1, tcell.StyleDefault)
+	writeLine(app.frame, 0, 16, "hello   world", tcell.StyleDefault)
+	firstClick := time.Now()
+
+	app.beginMouseSelection(6, 0, firstClick)
+	app.finishMouseSelection(6, 0)
+	app.beginMouseSelection(6, 0, firstClick.Add(doubleClickDelay/2))
+
+	if got, want := string(screen.clipboard), "   "; got != want {
+		t.Fatalf("clipboard = %q, want %q", got, want)
+	}
+	for column := 5; column < 8; column++ {
+		if !app.selection.contains(column, 0) {
+			t.Fatalf("column %d on selected whitespace is not selected", column)
+		}
+	}
+}
+
+func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
+	t.Parallel()
+
+	screen := newClipboardScreen()
+	app := newRenderTestApp(t)
+	app.screen = screen
+	app.frame = newCellBuffer(16, 2, tcell.StyleDefault)
+	writeLine(app.frame, 0, 16, "hello", tcell.StyleDefault)
+	writeLine(app.frame, 1, 16, "hello world", tcell.StyleDefault)
+	firstClick := time.Now()
+
+	app.beginMouseSelection(7, 1, firstClick)
+	app.finishMouseSelection(7, 1)
+	app.beginMouseSelection(7, 1, firstClick.Add(doubleClickDelay/4))
+	app.beginMouseSelection(7, 1, firstClick.Add(doubleClickDelay/3))
+	app.finishMouseSelection(7, 1)
+	app.beginMouseSelection(7, 1, firstClick.Add(doubleClickDelay/2))
+
+	if got, want := string(screen.clipboard), "hello world"; got != want {
+		t.Fatalf("clipboard = %q, want %q", got, want)
+	}
+	for column := range app.frame.width {
+		if !app.selection.contains(column, 1) {
+			t.Fatalf("column %d on selected line is not selected", column)
+		}
+	}
+}
+
 func TestFlushFrameHighlightsSelection(t *testing.T) {
 	t.Parallel()
 
@@ -230,7 +309,17 @@ func TestFlushFrameHighlightsSelection(t *testing.T) {
 	app.renderer = newScreenRenderer(screen)
 	app.frame = newCellBuffer(6, 1, tcell.StyleDefault)
 	writeLine(app.frame, 0, 6, "abcdef", app.theme.style(colorText))
-	app.selection = mouseSelection{startX: 1, startY: 0, endX: 4, endY: 0, active: true}
+	app.selection = mouseSelection{
+		lastClickUnixNano: 0,
+		startX:            1,
+		startY:            0,
+		endX:              4,
+		endY:              0,
+		lastClickX:        0,
+		lastClickY:        0,
+		clickCount:        0,
+		active:            true,
+	}
 
 	app.flushFrame()
 

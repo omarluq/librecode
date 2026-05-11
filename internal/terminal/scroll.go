@@ -39,7 +39,7 @@ func (app *App) handleMouse(event *tcell.EventMouse) {
 			app.updateMouseSelection(column, row)
 			return
 		}
-		app.beginMouseSelection(column, row)
+		app.beginMouseSelection(column, row, event.When())
 		return
 	}
 	if app.selection.active {
