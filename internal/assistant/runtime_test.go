@@ -195,6 +195,25 @@ func TestRuntime_PromptRetriesTransientModelErrors(t *testing.T) {
 	assert.Equal(t, assistant.RetryEventEnd, retryEvents[1].Kind)
 }
 
+func TestRuntime_PromptRetriesWrappedEmptyProviderResponse(t *testing.T) {
+	t.Parallel()
+
+	client := &retryCompletionClient{
+		err:               errors.New("[system] provider returned an empty response"),
+		response:          "recovered response",
+		attempts:          0,
+		failuresRemaining: 1,
+	}
+	runtime, _ := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "retry empty", "")
+
+	response, err := runtime.Prompt(context.Background(), request)
+
+	require.NoError(t, err)
+	assert.Equal(t, "recovered response for retry empty", response.Text)
+	assert.Equal(t, 2, client.attempts)
+}
+
 func TestRuntime_PromptDoesNotRetryNonTransientModelErrors(t *testing.T) {
 	t.Parallel()
 

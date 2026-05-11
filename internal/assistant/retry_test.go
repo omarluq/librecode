@@ -55,6 +55,11 @@ func TestShouldRetryModelError(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "empty provider response message",
+			err:  errors.New("provider returned an empty response"),
+			want: true,
+		},
+		{
 			name: "provider decode code",
 			err:  oops.In("assistant").Code("openai_response_decode").Errorf("decode response"),
 			want: false,

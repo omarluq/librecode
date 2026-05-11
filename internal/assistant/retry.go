@@ -235,6 +235,8 @@ func retryableProviderMessage(message string) bool {
 		"websocket closed",
 		"websocket error",
 		"terminated",
+		"empty response",
+		"returned an empty response",
 	}
 	for _, pattern := range retryable {
 		if strings.Contains(message, pattern) {
