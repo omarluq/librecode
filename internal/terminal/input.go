@@ -67,11 +67,17 @@ func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) ke
 }
 
 func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
+	if app.autocompleteActive() {
+		if app.handleAutocompleteKey(event) {
+			return false, nil
+		}
+	}
 	if app.keys.matches(event, actionInputSubmit) {
 		return app.submit(ctx)
 	}
 	if app.keys.matches(event, actionInputNewLine) {
 		app.resetPromptHistoryNavigation()
+		app.resetAutocompleteSelection()
 		app.insertComposerRune('\n')
 		return false, nil
 	}
@@ -130,12 +136,14 @@ func (app *App) handleEditorKey(event *tcell.EventKey) {
 	for _, action := range actions {
 		if app.keys.matches(event, action.action) {
 			app.resetPromptHistoryNavigation()
+			app.resetAutocompleteSelection()
 			action.handler()
 			return
 		}
 	}
 	if event.Key() == tcell.KeyRune {
 		app.resetPromptHistoryNavigation()
+		app.resetAutocompleteSelection()
 		app.insertComposerRune(eventRune(event))
 	}
 }

@@ -144,7 +144,9 @@ type App struct {
 	streamedToolEvents           int
 	promptHistoryIndex           int
 	scrollOffset                 int
+	autocompleteSelection        int
 	selection                    mouseSelection
+	autocompleteClosed           bool
 	messageCacheWarm             bool
 	messageCacheWarmQueued       bool
 	sessionNamedOnly             bool
@@ -222,6 +224,8 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		queuedMessages:               []string{},
 		promptHistory:                []string{},
 		promptHistoryDraft:           "",
+		autocompleteSelection:        0,
+		autocompleteClosed:           false,
 		composerBuffer:               newComposerBuffer(),
 		scopedOrder:                  []string{},
 		scopedEnabled:                map[string]bool{},

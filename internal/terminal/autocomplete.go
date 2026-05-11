@@ -49,21 +49,26 @@ func (app *App) autocompleteLines(width int) []styledLine {
 	if len(matches) == 0 {
 		return nil
 	}
+	selected := app.selectedAutocompleteIndex(matches)
 	limit := min(6, len(matches))
+	start := autocompleteWindowStart(selected, limit, len(matches))
 	lines := make([]styledLine, 0, limit+1)
 	lines = append(lines, styledLine{
 		Style: app.theme.background(colorCustomMessageBg).Bold(true),
-		Text:  padRight("  slash commands  tab to complete", width),
+		Text:  padRight("  slash commands  tab/enter to complete", width),
 	})
-	for index := range limit {
+	for offset := range limit {
+		index := start + offset
 		match := matches[index]
 		prefix := "  "
-		if index == 0 {
+		style := app.theme.background(colorCustomMessageBg)
+		if index == selected {
 			prefix = "› "
+			style = style.Bold(true)
 		}
 		text := fmt.Sprintf("%s/%-15s %s", prefix, match.Name, match.Description)
 		lines = append(lines, styledLine{
-			Style: app.theme.background(colorCustomMessageBg),
+			Style: style,
 			Text:  padRight(text, width),
 		})
 	}
@@ -71,25 +76,95 @@ func (app *App) autocompleteLines(width int) []styledLine {
 	return lines
 }
 
+func autocompleteWindowStart(selected, limit, total int) int {
+	if total <= limit || selected < limit {
+		return 0
+	}
+	start := selected - limit + 1
+	if start+limit > total {
+		return max(0, total-limit)
+	}
+
+	return start
+}
+
+func (app *App) autocompleteActive() bool {
+	return len(app.autocompleteMatches()) > 0
+}
+
+func (app *App) handleAutocompleteKey(event *tcell.EventKey) bool {
+	if event.Key() == tcell.KeyEscape {
+		app.closeAutocomplete()
+		return true
+	}
+	if app.keys.matches(event, actionCursorDown) {
+		return app.moveAutocompleteSelection(1)
+	}
+	if app.keys.matches(event, actionCursorUp) {
+		return app.moveAutocompleteSelection(-1)
+	}
+	if app.keys.matches(event, actionInputSubmit) || app.keys.matches(event, actionInputTab) {
+		return app.acceptAutocomplete()
+	}
+
+	return false
+}
+
 func (app *App) acceptAutocomplete() bool {
 	matches := app.autocompleteMatches()
 	if len(matches) == 0 {
 		return false
 	}
+	selected := app.selectedAutocompleteIndex(matches)
 	app.resetPromptHistoryNavigation()
-	app.setComposerText("/" + matches[0].Name + " ")
-	app.setStatus("completed /" + matches[0].Name)
+	app.setComposerText("/" + matches[selected].Name + " ")
+	app.setStatus("completed /" + matches[selected].Name)
+	app.resetAutocompleteSelection()
 
 	return true
 }
 
+func (app *App) moveAutocompleteSelection(delta int) bool {
+	matches := app.autocompleteMatches()
+	if len(matches) == 0 {
+		app.resetAutocompleteSelection()
+		return false
+	}
+	app.autocompleteSelection = (app.selectedAutocompleteIndex(matches) + delta + len(matches)) % len(matches)
+
+	return true
+}
+
+func (app *App) resetAutocompleteSelection() {
+	app.autocompleteSelection = 0
+	app.autocompleteClosed = false
+}
+
+func (app *App) closeAutocomplete() {
+	app.autocompleteSelection = 0
+	app.autocompleteClosed = true
+}
+
+func (app *App) selectedAutocompleteIndex(matches []slashSuggestion) int {
+	if len(matches) == 0 || app.autocompleteSelection < 0 || app.autocompleteSelection >= len(matches) {
+		return 0
+	}
+
+	return app.autocompleteSelection
+}
+
 func (app *App) autocompleteMatches() []slashSuggestion {
 	text := app.composerText()
+	if app.autocompleteClosed {
+		return nil
+	}
 	if strings.Contains(text, "\n") {
+		app.resetAutocompleteSelection()
 		return nil
 	}
 	trimmed := strings.TrimLeft(text, " \t")
 	if !strings.HasPrefix(trimmed, "/") || strings.Contains(trimmed, " ") {
+		app.resetAutocompleteSelection()
 		return nil
 	}
 	query := strings.TrimPrefix(trimmed, "/")
@@ -98,6 +173,10 @@ func (app *App) autocompleteMatches() []slashSuggestion {
 		if strings.HasPrefix(suggestion.Name, query) {
 			matches = append(matches, suggestion)
 		}
+	}
+
+	if app.autocompleteSelection >= len(matches) {
+		app.resetAutocompleteSelection()
 	}
 
 	return matches

@@ -9,6 +9,9 @@ import (
 const promptHistoryLimit = 100
 
 func (app *App) handlePromptHistoryKey(event *tcell.EventKey) bool {
+	if app.autocompleteActive() {
+		return false
+	}
 	if app.keys.matches(event, actionCursorUp) {
 		return app.showPreviousPrompt()
 	}
