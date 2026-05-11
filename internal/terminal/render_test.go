@@ -172,6 +172,62 @@ func TestScrollTranscriptDoesNotDrawImmediately(t *testing.T) {
 	}
 }
 
+func TestMouseWheelScrollsTranscript(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.addMessage(database.RoleAssistant, "scrollable content")
+
+	app.handleMouse(tcell.NewEventMouse(0, 0, tcell.WheelUp, tcell.ModNone))
+	if app.scrollOffset != mouseScrollRows {
+		t.Fatalf("scroll offset = %d, want %d", app.scrollOffset, mouseScrollRows)
+	}
+}
+
+func TestMouseSelectionCopiesFrameText(t *testing.T) {
+	t.Parallel()
+
+	screen := newClipboardScreen()
+	app := newRenderTestApp(t)
+	app.screen = screen
+	app.frame = newCellBuffer(8, 2, tcell.StyleDefault)
+	writeLine(app.frame, 0, 8, "hello", tcell.StyleDefault)
+	writeLine(app.frame, 1, 8, "world", tcell.StyleDefault)
+
+	app.handleMouse(tcell.NewEventMouse(1, 0, tcell.ButtonPrimary, tcell.ModNone))
+	app.handleMouse(tcell.NewEventMouse(3, 1, tcell.ButtonPrimary, tcell.ModNone))
+	app.handleMouse(tcell.NewEventMouse(3, 1, tcell.ButtonNone, tcell.ModNone))
+
+	if got, want := string(screen.clipboard), "ello\nwor"; got != want {
+		t.Fatalf("clipboard = %q, want %q", got, want)
+	}
+}
+
+func TestFlushFrameHighlightsSelection(t *testing.T) {
+	t.Parallel()
+
+	screen := newClipboardScreen()
+	app := newRenderTestApp(t)
+	app.screen = screen
+	app.renderer = newScreenRenderer(screen)
+	app.frame = newCellBuffer(6, 1, tcell.StyleDefault)
+	writeLine(app.frame, 0, 6, "abcdef", app.theme.style(colorText))
+	app.selection = mouseSelection{startX: 1, startY: 0, endX: 4, endY: 0, active: true}
+
+	app.flushFrame()
+
+	if got := app.frame.cell(0, 0).Style.GetBackground(); got != tcell.ColorDefault {
+		t.Fatalf("unselected background = %v, want default", got)
+	}
+	for column := 1; column < 4; column++ {
+		got := app.frame.cell(column, 0).Style.GetBackground()
+		want := app.theme.colors[colorSelectedBg]
+		if got != want {
+			t.Fatalf("selected background at %d = %v, want %v", column, got, want)
+		}
+	}
+}
+
 func TestHighVolumeStreamEventsDoNotForceImmediateDraw(t *testing.T) {
 	t.Parallel()
 

@@ -24,6 +24,7 @@ func (app *App) handleMouse(event *tcell.EventMouse) {
 	if app.mode != modeChat {
 		return
 	}
+	column, row := event.Position()
 	buttons := event.Buttons()
 	if buttons&tcell.WheelUp != 0 {
 		app.scrollTranscript(mouseScrollRows)
@@ -31,6 +32,18 @@ func (app *App) handleMouse(event *tcell.EventMouse) {
 	}
 	if buttons&tcell.WheelDown != 0 {
 		app.scrollTranscript(-mouseScrollRows)
+		return
+	}
+	if buttons&tcell.ButtonPrimary != 0 {
+		if app.selection.active {
+			app.updateMouseSelection(column, row)
+			return
+		}
+		app.beginMouseSelection(column, row)
+		return
+	}
+	if app.selection.active {
+		app.finishMouseSelection(column, row)
 	}
 }
 

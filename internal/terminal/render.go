@@ -88,6 +88,7 @@ func (app *App) needsRuntimeRenderPath() bool {
 }
 
 func (app *App) flushFrame() {
+	app.applySelectionHighlight()
 	app.renderer.flush(app.frame)
 	app.screen.Show()
 }

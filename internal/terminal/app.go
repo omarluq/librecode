@@ -143,6 +143,7 @@ type App struct {
 	streamedToolEvents           int
 	promptHistoryIndex           int
 	scrollOffset                 int
+	selection                    mouseSelection
 	messageCacheWarm             bool
 	messageCacheWarmQueued       bool
 	sessionNamedOnly             bool
@@ -163,7 +164,7 @@ func Run(ctx context.Context, options *RunOptions) error {
 	if err := screen.Init(); err != nil {
 		return fmt.Errorf("tui: init screen: %w", err)
 	}
-	screen.EnableMouse(tcell.MouseButtonEvents)
+	screen.EnableMouse(tcell.MouseDragEvents)
 	defer screen.Fini()
 
 	app := newApp(screen, options)
@@ -236,6 +237,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		workFrame:                    0,
 		lastMessageMaxRows:           0,
 		scrollOffset:                 0,
+		selection:                    emptyMouseSelection(),
 		streamedToolEvents:           0,
 		promptHistoryIndex:           0,
 		promptSequence:               0,
