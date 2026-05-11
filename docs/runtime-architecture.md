@@ -22,11 +22,11 @@ The default AI chat UI is the bundled product built on top of that runtime, not 
 
 A useful shorthand:
 
-> Go is the product core and runtime kernel. Lua is the optional extension layer.
+> Go is the product core and runtime kernel. Extensions are optional control layers. Lua is the first runtime adapter.
 
-Go provides the polished default chat experience plus sharp primitives for user customization. Lua composes those primitives for keymaps, commands, hooks, small overlays, prompt/context tweaks, and custom workflows.
+Go provides the polished default chat experience plus sharp primitives for user customization. Runtime adapters compose those primitives for keymaps, commands, hooks, small overlays, prompt/context tweaks, and custom workflows. Lua is currently the built-in adapter; future adapters may support shell hooks, toolbox executables, MCP, or experimental Go-like extension runtimes.
 
-Important rendering nuance: Lua is useful for control and customization, but Go remains the default UI implementation and fast rendering backend. Complex hot renderers should stay Go-owned unless an opt-in extension can match visual parity and performance through public primitives.
+Important rendering nuance: extension runtimes are useful for control and customization, but Go remains the default UI implementation and fast rendering backend. Complex hot renderers should stay Go-owned unless an opt-in extension can match visual parity and performance through public primitives.
 
 ## Responsibility boundary
 
@@ -36,7 +36,7 @@ Go should own the pieces that require native integration, performance, persisten
 
 - terminal input/output and screen flushing
 - process lifecycle and signal handling
-- extension loading and Lua VM management
+- extension host management and runtime-adapter loading
 - event dispatch and transaction application
 - buffers, windows, layout, and low-level UI drawing backends
 - measuring, wrapping, clipping, style application, and draw batching
@@ -50,9 +50,9 @@ Go should own the pieces that require native integration, performance, persisten
 
 Go should expose mechanisms for extensions while keeping the default product behavior polished and self-contained.
 
-### Lua owns optional customization
+### Extension runtimes own optional customization
 
-Lua should own behavior users choose to add or override:
+Extension runtimes should own behavior users choose to add or override:
 
 - custom keymaps and commands
 - small overlays and custom windows
@@ -62,7 +62,7 @@ Lua should own behavior users choose to add or override:
 - custom tools and workflow hooks
 - reskins, alternate UIs, custom workflows, and non-chat applications
 
-The default chat UI should not require Lua extensions. It must remain fast and polished with extensions disabled.
+The default chat UI should not require extensions. It must remain fast and polished with extensions disabled.
 
 ## Primitive API rule
 
@@ -91,7 +91,7 @@ Avoid new host APIs like:
 - `chat.add_message`
 - `vim.register_mode`
 
-Product-level convenience helpers can still exist in user/project Lua modules, not the Go kernel:
+Product-level convenience helpers can still exist in user/project extension modules, not the Go kernel:
 
 ```lua
 local chat = require("my_workflow.chat")
@@ -106,6 +106,7 @@ That helper should compose primitive APIs internally, for example by finding a w
 
 These parts fit the direction and should be strengthened:
 
+- extension host/runtime seam with Lua as the built-in adapter
 - trusted local Lua extension loading with one Lua state per file
 - open standard libraries for the Unix-style footgun model
 - event handlers with priorities, consume, and stop semantics

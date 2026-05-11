@@ -66,7 +66,7 @@ type luaTimer struct {
 	order     uint64
 }
 
-// Manager owns Lua extension runtimes and registered commands/tools.
+// Manager is the built-in Lua runtime adapter for the extension host.
 type Manager struct {
 	logger           *slog.Logger
 	commands         map[string]luaCommand
@@ -84,7 +84,7 @@ type Manager struct {
 	nextNamespaceID  int
 }
 
-// NewManager creates an empty Lua extension manager.
+// NewManager creates an empty Lua runtime adapter.
 func NewManager(logger *slog.Logger) *Manager {
 	return &Manager{
 		logger:           logger,
@@ -104,7 +104,7 @@ func NewManager(logger *slog.Logger) *Manager {
 	}
 }
 
-// LoadPaths discovers and loads Lua extensions from files or directories.
+// LoadPaths discovers and loads Lua extension sources from files or directories.
 func (manager *Manager) LoadPaths(ctx context.Context, paths []string) error {
 	for _, extensionPath := range paths {
 		if err := ctx.Err(); err != nil {
@@ -127,7 +127,7 @@ func (manager *Manager) LoadPaths(ctx context.Context, paths []string) error {
 	return nil
 }
 
-// LoadFile loads one Lua extension file.
+// LoadFile loads one Lua extension source file.
 func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -192,7 +192,7 @@ func (manager *Manager) Extensions() []LoadedExtension {
 	return extensions
 }
 
-// Commands returns registered Lua commands sorted by name.
+// Commands returns registered extension commands sorted by name.
 func (manager *Manager) Commands() []Command {
 	manager.lock.RLock()
 	defer manager.lock.RUnlock()
@@ -208,7 +208,7 @@ func (manager *Manager) Commands() []Command {
 	return commands
 }
 
-// Tools returns registered Lua tools sorted by name.
+// Tools returns registered extension tools sorted by name.
 func (manager *Manager) Tools() []Tool {
 	manager.lock.RLock()
 	defer manager.lock.RUnlock()
@@ -224,7 +224,7 @@ func (manager *Manager) Tools() []Tool {
 	return tools
 }
 
-// ExecuteCommand runs a registered Lua slash command.
+// ExecuteCommand runs a registered extension slash command.
 func (manager *Manager) ExecuteCommand(ctx context.Context, name, args string) (string, error) {
 	manager.lock.RLock()
 	command, ok := manager.commands[name]
@@ -245,7 +245,7 @@ func (manager *Manager) ExecuteCommand(ctx context.Context, name, args string) (
 	return result.String(), nil
 }
 
-// ExecuteTool runs a registered Lua tool.
+// ExecuteTool runs a registered extension tool.
 func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[string]any) (ToolResult, error) {
 	manager.lock.RLock()
 	tool, ok := manager.tools[name]
@@ -308,7 +308,7 @@ func (manager *Manager) HandleTerminalEvent(ctx context.Context, event *Terminal
 	return hostEvent.result(), nil
 }
 
-// Emit sends an event to registered Lua handlers.
+// Emit sends an event to registered extension handlers.
 func (manager *Manager) Emit(ctx context.Context, eventName string, payload map[string]any) error {
 	for _, handler := range manager.handlersFor(eventName) {
 		if err := ctx.Err(); err != nil {
@@ -326,7 +326,7 @@ func (manager *Manager) Emit(ctx context.Context, eventName string, payload map[
 	return nil
 }
 
-// HasTerminalEventHandlers reports whether any Lua handler is registered for eventName.
+// HasTerminalEventHandlers reports whether any extension handler is registered for eventName.
 func (manager *Manager) HasTerminalEventHandlers(eventName string) bool {
 	manager.lock.RLock()
 	defer manager.lock.RUnlock()
@@ -351,7 +351,7 @@ func (manager *Manager) handlersFor(eventName string) []luaHookHandler {
 	return handlers
 }
 
-// Shutdown closes all Lua runtimes.
+// Shutdown closes all loaded Lua states and clears registrations.
 func (manager *Manager) Shutdown() {
 	manager.lock.Lock()
 	defer manager.lock.Unlock()

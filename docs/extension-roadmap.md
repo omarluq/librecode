@@ -4,12 +4,15 @@ This roadmap turns the programmable-runtime architecture into concrete engineeri
 
 The guiding principle is simple:
 
-> Keep the default product polished in Go. Expose sharp Lua primitives for optional customization.
+> Keep the default product polished in Go. Expose sharp extension-host primitives for optional customization.
+
+Lua is the first runtime adapter, not the extension architecture itself. The host should eventually support multiple adapters such as Lua, shell hooks, toolbox executables, MCP, and experimental Go-like runtimes.
 
 ## Current checkpoint
 
 The runtime currently has:
 
+- a runtime-adapter seam with Lua as the built-in adapter
 - trusted Lua extension loading
 - commands and extension tools
 - event handlers/autocmds with priority, consume, and stop
@@ -25,9 +28,23 @@ The runtime currently has:
 
 This is a strong foundation. Go intentionally owns stock chat rendering and assistant orchestration by default.
 
-Important boundary: Lua is an optional control/customization layer; Go remains the product core and fast terminal rendering backend. Complex hot renderers should not migrate to Lua by default.
+Important boundary: extensions are optional control/customization layers; Go remains the product core and fast terminal rendering backend. Complex hot renderers should not migrate to an interpreted extension runtime by default.
 
 ## Immediate cleanup
+
+### 0. Keep the host/runtime split
+
+Extension APIs should be designed against the runtime-neutral host: events, commands, tools, keymaps, buffers, windows, layout, UI operations, and diagnostics. Lua-specific details belong in the Lua adapter.
+
+Do not design new lifecycle or tool middleware APIs only as Lua callbacks. Define the host contract first, then expose it through runtime adapters.
+
+Future runtime candidates:
+
+- Lua: lightweight scripting, keymaps, commands, hooks, overlays
+- shell hooks: deterministic team automation
+- toolbox executables: custom tools without embedding a language runtime
+- MCP: external tool servers
+- experimental Go-like runtime adapters: possible future path for typed extensions
 
 ### 1. Do not add transcript-specific host writes
 
