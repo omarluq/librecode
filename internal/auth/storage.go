@@ -577,27 +577,13 @@ func wellKnownEnvKey(provider string) (string, bool) {
 		"anthropic":              "ANTHROPIC" + apiKeyEnvSuffix(),
 		"azure-openai-responses": "AZURE_OPENAI" + apiKeyEnvSuffix(),
 		"cerebras":               "CEREBRAS" + apiKeyEnvSuffix(),
-		"cloudflare-ai-gateway":  "CLOUDFLARE" + apiKeyEnvSuffix(),
-		"cloudflare-workers-ai":  "CLOUDFLARE" + apiKeyEnvSuffix(),
 		"deepseek":               "DEEPSEEK" + apiKeyEnvSuffix(),
-		"fireworks":              "FIREWORKS" + apiKeyEnvSuffix(),
-		"google":                 "GEMINI" + apiKeyEnvSuffix(),
 		"groq":                   "GROQ" + apiKeyEnvSuffix(),
-		"huggingface":            "HF_" + credentialWord(),
-		"kimi-coding":            "KIMI" + apiKeyEnvSuffix(),
-		"minimax":                "MINIMAX" + apiKeyEnvSuffix(),
-		"minimax-cn":             "MINIMAX_CN" + apiKeyEnvSuffix(),
 		"mistral":                "MISTRAL" + apiKeyEnvSuffix(),
 		"openai":                 "OPENAI" + apiKeyEnvSuffix(),
-		"opencode":               "OPENCODE" + apiKeyEnvSuffix(),
-		"opencode-go":            "OPENCODE" + apiKeyEnvSuffix(),
 		"openrouter":             "OPENROUTER" + apiKeyEnvSuffix(),
 		"vercel-ai-gateway":      "AI_GATEWAY" + apiKeyEnvSuffix(),
 		"xai":                    "XAI" + apiKeyEnvSuffix(),
-		"xiaomi":                 "XIAOMI" + apiKeyEnvSuffix(),
-		"xiaomi-token-plan-ams":  "XIAOMI_TOKEN_PLAN_AMS" + apiKeyEnvSuffix(),
-		"xiaomi-token-plan-cn":   "XIAOMI_TOKEN_PLAN_CN" + apiKeyEnvSuffix(),
-		"xiaomi-token-plan-sgp":  "XIAOMI_TOKEN_PLAN_SGP" + apiKeyEnvSuffix(),
 		"zai":                    "ZAI" + apiKeyEnvSuffix(),
 	}
 	envKey, ok := keys[provider]
@@ -607,8 +593,4 @@ func wellKnownEnvKey(provider string) (string, bool) {
 
 func apiKeyEnvSuffix() string {
 	return "_API" + "_KEY"
-}
-
-func credentialWord() string {
-	return "TOK" + "EN"
 }

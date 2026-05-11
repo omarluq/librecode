@@ -97,6 +97,8 @@ assistant:
     max_delay: 30s
 ```
 
+Built-in providers are intentionally limited to API families librecode implements directly: OpenAI/Codex Responses, OpenAI-compatible chat completions, and Anthropic Messages. Additional providers can still be added through custom model/provider definitions.
+
 Credentials can come from:
 
 - provider-specific environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, or `ZAI_API_KEY`;
