@@ -146,30 +146,34 @@ func workingShimmerBrightColor() tcell.Color {
 	return hexColor(0xc7fff6)
 }
 
-func (app *App) workingShimmerFrame() int {
-	if app.workStartedAt.IsZero() {
-		return app.workFrame
+func (app *App) workingShimmerPosition(contentWidth int) int {
+	if contentWidth <= 1 {
+		return 0
 	}
+	if app.workStartedAt.IsZero() {
+		return app.workFrame % contentWidth
+	}
+	elapsed := time.Since(app.workStartedAt) % loaderShimmerSweepDuration
+	progress := float64(elapsed) / float64(loaderShimmerSweepDuration)
 
-	return int(time.Since(app.workStartedAt) / workFrameInterval)
+	return min(contentWidth-1, int(progress*float64(contentWidth)))
 }
 
-func workingShimmerColor(frame, column, contentWidth int) tcell.Color {
+func workingShimmerColor(position, column, contentWidth int) tcell.Color {
 	if contentWidth <= 0 || column < 0 || column >= contentWidth {
 		return workingShimmerBaseColor()
 	}
-	position := frame % contentWidth
-	distance := column - position
+	distanceBehindHead := position - column
 
-	switch distance {
+	switch distanceBehindHead {
 	case 0:
 		return workingShimmerBrightColor()
 	case 1:
-		return hexColor(0xa8d8d1)
+		return hexColor(0xa8f2e9)
 	case 2:
-		return hexColor(0x8abeb7)
+		return hexColor(0x86d8d0)
 	case 3:
-		return hexColor(0x6f9f98)
+		return hexColor(0x6aaea8)
 	default:
 		return workingShimmerBaseColor()
 	}

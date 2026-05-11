@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	cellcolor "github.com/gdamore/tcell/v3/color"
@@ -110,22 +111,39 @@ func assertWorkingShimmerMotion(t *testing.T, indicatorText string) {
 	base := workingShimmerBaseColor()
 	_, contentWidth := workingShimmerContentRange(indicatorText)
 	checks := []struct {
-		name   string
-		frame  int
-		column int
-		want   tcell.Color
+		name     string
+		position int
+		column   int
+		want     tcell.Color
 	}{
-		{name: "starts at left", frame: 0, column: 0, want: bright},
-		{name: "distant cell stays base", frame: 0, column: 6, want: base},
-		{name: "moves right", frame: 1, column: 1, want: bright},
-		{name: "loops immediately", frame: contentWidth, column: 0, want: bright},
-		{name: "reaches final cell", frame: contentWidth - 1, column: contentWidth - 1, want: bright},
-		{name: "does not wrap trail", frame: contentWidth - 1, column: 0, want: base},
+		{name: "starts at left", position: 0, column: 0, want: bright},
+		{name: "distant cell stays base", position: 0, column: 6, want: base},
+		{name: "moves right", position: 3, column: 3, want: bright},
+		{name: "leaves bright trail behind head", position: 3, column: 2, want: hexColor(0xa8f2e9)},
+		{name: "reaches final cell", position: contentWidth - 1, column: contentWidth - 1, want: bright},
+		{name: "does not wrap trail", position: contentWidth - 1, column: 0, want: base},
 	}
 	for _, check := range checks {
-		if got := workingShimmerColor(check.frame, check.column, contentWidth); got != check.want {
-			t.Fatalf("%s: color = %v, want %v", check.name, got, check.want)
-		}
+		t.Run(check.name, func(t *testing.T) {
+			t.Parallel()
+			if got := workingShimmerColor(check.position, check.column, contentWidth); got != check.want {
+				t.Fatalf("color = %v, want %v", got, check.want)
+			}
+		})
+	}
+}
+
+func TestWorkingShimmerUsesSweepDuration(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	contentWidth := len("Shenaniganing...")
+	app.workStartedAt = time.Now().Add(-loaderShimmerSweepDuration / 2)
+	got := app.workingShimmerPosition(contentWidth)
+	wantMin := contentWidth/2 - 1
+	wantMax := contentWidth/2 + 1
+	if got < wantMin || got > wantMax {
+		t.Fatalf("shimmer position = %d, want between %d and %d", got, wantMin, wantMax)
 	}
 }
 

@@ -19,11 +19,12 @@ import (
 )
 
 const (
-	defaultEditorRows      = 6
-	workFrameInterval      = 130 * time.Millisecond
-	streamingFrameInterval = 33 * time.Millisecond
-	doubleEscapeDelay      = 500 * time.Millisecond
-	doubleControlCDelay    = 2 * time.Second
+	defaultEditorRows          = 6
+	workFrameInterval          = 120 * time.Millisecond
+	loaderShimmerSweepDuration = 450 * time.Millisecond
+	streamingFrameInterval     = 8 * time.Millisecond
+	doubleEscapeDelay          = 500 * time.Millisecond
+	doubleControlCDelay        = 2 * time.Second
 )
 
 type appMode string
@@ -323,7 +324,9 @@ func (app *App) runLoopStep(
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
 		return false, true
 	case <-app.frameTick(frameTicker, dirty):
-		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
+		if dirty {
+			app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
+		}
 		app.draw(ctx)
 		return false, false
 	case <-app.extensionTimerTick(extensionTimer):
@@ -404,7 +407,7 @@ func (app *App) workTick(ticker *time.Ticker) <-chan time.Time {
 }
 
 func (app *App) frameTick(ticker *time.Ticker, dirty bool) <-chan time.Time {
-	if dirty && app.throttleDraws() {
+	if app.throttleDraws() || dirty {
 		return ticker.C
 	}
 
