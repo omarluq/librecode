@@ -139,15 +139,16 @@ type App struct {
 	composerBuffer               extension.BufferState
 	messageLineCacheState        messageLineCacheState
 	streamingBlockLineCacheState messageLineCacheState
+	selection                    mouseSelection
+	promptSequence               uint64
 	workFrame                    int
 	lastMessageMaxRows           int
-	promptSequence               uint64
 	streamedToolEvents           int
 	escapePresses                int
 	promptHistoryIndex           int
 	scrollOffset                 int
 	autocompleteSelection        int
-	selection                    mouseSelection
+	messageCacheWarmIndex        int
 	autocompleteClosed           bool
 	messageCacheWarm             bool
 	messageCacheWarmQueued       bool
@@ -220,6 +221,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		messages:                     []chatMessage{},
 		messageLineCache:             nil,
 		messageRowPrefixSums:         nil,
+		messageCacheWarmIndex:        0,
 		messageCacheWarm:             false,
 		messageCacheWarmQueued:       false,
 		messageLineCacheState:        emptyMessageLineCacheState(),
@@ -341,8 +343,8 @@ func (app *App) runLoopStep(
 		return false, true
 	case <-app.messageCacheWarmTick(messageWarmTimer):
 		app.messageCacheWarmQueued = false
-		app.warmMessageLineCache()
-		return false, false
+		app.warmMessageLineCacheStep()
+		return false, true
 	}
 }
 
@@ -563,6 +565,7 @@ func emptyCachedRenderedMessage() cachedRenderedMessage {
 
 func (app *App) appendMessage(message chatMessage) {
 	app.messages = append(app.messages, message)
+	app.messageCacheWarmIndex = 0
 	app.messageCacheWarm = false
 }
 
@@ -570,6 +573,7 @@ func (app *App) resetMessages() {
 	app.messages = []chatMessage{}
 	app.messageLineCache = nil
 	app.messageRowPrefixSums = nil
+	app.messageCacheWarmIndex = 0
 	app.messageCacheWarm = false
 	app.messageCacheWarmQueued = false
 	app.resetPromptHistory()
@@ -581,6 +585,7 @@ func (app *App) truncateMessages(length int) {
 		app.messageLineCache = app.messageLineCache[:length]
 	}
 	app.messageRowPrefixSums = nil
+	app.messageCacheWarmIndex = 0
 	app.messageCacheWarm = false
 }
 

@@ -84,8 +84,10 @@ func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]style
 	if maxRows <= 0 {
 		return nil
 	}
-	app.rebuildMessageRowPrefixSums(width)
-	app.messageCacheWarm = true
+	if !app.messageCacheWarm {
+		return app.scrolledMessageLinesFromTail(width, maxRows, dynamicGroups)
+	}
+
 	staticRows := app.messageRowPrefixSums[len(app.messages)]
 	dynamicRows := extraGroupsVisibleRows(dynamicGroups)
 	totalRows := staticRows + dynamicRows
@@ -108,6 +110,47 @@ func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]style
 	}
 
 	return lines
+}
+
+func (app *App) scrolledMessageLinesFromTail(width, maxRows int, dynamicGroups [][]styledLine) []styledLine {
+	dynamicRows := extraGroupsVisibleRows(dynamicGroups)
+	rowsNeededFromBottom := maxRows + app.scrollOffset
+	staticRowsNeeded := max(0, rowsNeededFromBottom-dynamicRows)
+	staticGroups, reachedStart := app.tailStaticMessageGroups(width, staticRowsNeeded)
+	groups := make([][]styledLine, 0, len(staticGroups)+len(dynamicGroups))
+	groups = append(groups, staticGroups...)
+	groups = append(groups, dynamicGroups...)
+	totalRows := styledLineGroupRows(groups)
+	if reachedStart && totalRows <= maxRows {
+		app.scrollOffset = 0
+
+		return flattenStyledLineGroups(groups, totalRows)
+	}
+	if reachedStart {
+		app.scrollOffset = min(app.scrollOffset, max(0, totalRows-maxRows))
+	}
+	endRow := max(0, totalRows-app.scrollOffset)
+	startRow := max(0, endRow-maxRows)
+
+	return sliceStyledLineGroups(groups, startRow, endRow)
+}
+
+func (app *App) tailStaticMessageGroups(width, rowsNeeded int) ([][]styledLine, bool) {
+	if rowsNeeded <= 0 || len(app.messages) == 0 {
+		return nil, len(app.messages) == 0
+	}
+	rows := 0
+	start := len(app.messages)
+	for start > 0 && rows < rowsNeeded {
+		start--
+		rows += len(app.cachedMessageLines(width, start))
+	}
+	groups := make([][]styledLine, 0, len(app.messages)-start)
+	for index := start; index < len(app.messages); index++ {
+		groups = append(groups, app.cachedMessageLines(width, index))
+	}
+
+	return groups, start == 0
 }
 
 func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []styledLine {
@@ -233,12 +276,44 @@ func (app *App) rebuildMessageRowPrefixSums(width int) {
 	app.messageRowPrefixSums = prefixSums
 }
 
+const messageCacheWarmBatchSize = 16
+
 func (app *App) warmMessageLineCache() {
+	for !app.messageCacheWarm {
+		app.warmMessageLineCacheStep()
+	}
+}
+
+func (app *App) warmMessageLineCacheStep() {
 	if app.messageCacheWarm || len(app.messages) == 0 || app.lastMessageMaxRows <= 0 {
 		return
 	}
-	app.rebuildMessageRowPrefixSums(app.currentLineCacheStateWidth())
+	width := app.currentLineCacheStateWidth()
+	app.ensureMessageLineCache(width)
+	start := min(max(0, app.messageCacheWarmIndex), len(app.messages))
+	end := min(len(app.messages), start+messageCacheWarmBatchSize)
+	for index := start; index < end; index++ {
+		if !app.messageLineCache[index].Valid {
+			app.messageLineCache[index] = cachedRenderedMessage{
+				Lines: app.renderMessage(width, app.messages[index]),
+				Valid: true,
+			}
+		}
+	}
+	app.messageCacheWarmIndex = end
+	if end < len(app.messages) {
+		return
+	}
+	app.rebuildMessageRowPrefixSumsFromCache()
 	app.messageCacheWarm = true
+}
+
+func (app *App) rebuildMessageRowPrefixSumsFromCache() {
+	prefixSums := make([]int, len(app.messageLineCache)+1)
+	for index := range app.messageLineCache {
+		prefixSums[index+1] = prefixSums[index] + len(app.messageLineCache[index].Lines)
+	}
+	app.messageRowPrefixSums = prefixSums
 }
 
 func (app *App) currentLineCacheStateWidth() int {

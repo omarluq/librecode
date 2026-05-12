@@ -437,6 +437,51 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 	}
 }
 
+func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	for index := range messageCacheWarmBatchSize + 1 {
+		app.addMessage(database.RoleAssistant, "history message "+intText(index))
+	}
+
+	_ = app.messageLines(80, 6)
+	app.warmMessageLineCacheStep()
+	if app.messageCacheWarm {
+		t.Fatal("single warm step should not eagerly warm full history")
+	}
+	if app.messageCacheWarmIndex != messageCacheWarmBatchSize {
+		t.Fatalf("warm index = %d, want %d", app.messageCacheWarmIndex, messageCacheWarmBatchSize)
+	}
+
+	app.warmMessageLineCacheStep()
+	if !app.messageCacheWarm {
+		t.Fatal("expected second warm step to finish cache")
+	}
+}
+
+func TestScrolledMessageLinesBeforeWarmCacheUsesVisibleTail(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	for index := range 100 {
+		app.addMessage(database.RoleAssistant, "history message "+intText(index))
+	}
+
+	_ = app.messageLines(80, 6)
+	if app.messageCacheWarm {
+		t.Fatal("tail render should not warm full history")
+	}
+	app.scrollTranscript(3)
+	lines := app.messageLines(80, 6)
+	if app.messageCacheWarm {
+		t.Fatal("scroll before cache warm should not synchronously warm full history")
+	}
+	if lineIndexContaining(lines, "history message 98") == -1 {
+		t.Fatalf("expected recent history while warm cache is pending, got %v", lineTexts(lines))
+	}
+}
+
 func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
 	t.Parallel()
 
