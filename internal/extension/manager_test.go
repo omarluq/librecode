@@ -430,21 +430,31 @@ func TestDefaultLoadPathsDedupesConfiguredExtensions(t *testing.T) {
 	assert.Equal(t, []string{testUserExtension, "extensions", "custom"}, paths)
 }
 
-func TestManager_LoadsLuaHelperModulesWithoutExecutingThem(t *testing.T) {
+func TestManager_LoadsDirectoryManifestEntryWithRootModules(t *testing.T) {
 	t.Parallel()
 
 	extensionRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(extensionRoot, "lua", "librecode"), 0o700))
 	require.NoError(t, writeTestFile(
-		filepath.Join(extensionRoot, "lua", "librecode", "chat.lua"),
+		filepath.Join(extensionRoot, "helper.lua"),
 		`return { greeting = function(name) return "hello " .. name end }`,
 	))
 	require.NoError(t, writeTestFile(
+		filepath.Join(extensionRoot, "init.lua"),
+		`return {
+  name = "greeter",
+  version = "0.1.0",
+  api_version = "v1alpha1",
+  entry = "main.lua",
+}`,
+	))
+	require.NoError(t, writeTestFile(
 		filepath.Join(extensionRoot, "main.lua"),
-		`local chat = require("librecode.chat")
-librecode.register_command("greet", "Greet", function(args)
-  return chat.greeting(args)
-end)`,
+		`local helper = require("helper")
+return function(librecode)
+  librecode.register_command("greet", "Greet", function(args)
+    return helper.greeting(args)
+  end)
+end`,
 	))
 
 	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -454,7 +464,38 @@ end)`,
 	result, err := manager.ExecuteCommand(context.Background(), "greet", "lua")
 	require.NoError(t, err)
 	assert.Equal(t, "hello lua", result)
-	assert.Len(t, manager.Extensions(), 1)
+	require.Len(t, manager.Extensions(), 1)
+	assert.Equal(t, "greeter", manager.Extensions()[0].Name)
+}
+
+func TestManager_LoadsSymlinkedDirectoryManifest(t *testing.T) {
+	t.Parallel()
+
+	extensionRoot := t.TempDir()
+	realExtension := filepath.Join(extensionRoot, "real")
+	linkedExtension := filepath.Join(extensionRoot, "linked")
+	require.NoError(t, os.MkdirAll(realExtension, 0o750))
+	require.NoError(t, writeTestFile(
+		filepath.Join(realExtension, "init.lua"),
+		`return { name = "linked", entry = "main.lua" }`,
+	))
+	require.NoError(t, writeTestFile(
+		filepath.Join(realExtension, "main.lua"),
+		`return function(librecode)
+  librecode.register_command("linked", "Linked command", function() return "ok" end)
+end`,
+	))
+	require.NoError(t, os.Symlink(realExtension, linkedExtension))
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	require.NoError(t, manager.LoadPaths(context.Background(), []string{extensionRoot}))
+
+	result, err := manager.ExecuteCommand(context.Background(), "linked", "")
+	require.NoError(t, err)
+	assert.Equal(t, "ok", result)
+	require.Len(t, manager.Extensions(), 1)
+	assert.Equal(t, "linked", manager.Extensions()[0].Name)
 }
 
 func assertLoadedCommand(t *testing.T, commands []extension.Command, extensionName string) {

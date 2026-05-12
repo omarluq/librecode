@@ -26,7 +26,7 @@ type ToolResult struct {
 	Content string         `json:"content"`
 }
 
-// LoadedExtension contains metadata for a loaded Lua source file.
+// LoadedExtension contains metadata for a loaded extension.
 type LoadedExtension struct {
 	Name          string        `json:"name"`
 	Path          string        `json:"path"`
@@ -36,6 +36,15 @@ type LoadedExtension struct {
 	Handlers      []string      `json:"handlers"`
 	Timers        int           `json:"timers"`
 	TotalDuration time.Duration `json:"total_duration"`
+}
+
+// Manifest describes a directory-based extension manifest returned from init.lua.
+type Manifest struct {
+	Name        string
+	Version     string
+	APIVersion  string
+	Description string
+	Entry       string
 }
 
 // BufferState describes an extension-visible mutable runtime buffer.

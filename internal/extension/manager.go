@@ -110,25 +110,100 @@ func (manager *Manager) LoadPaths(ctx context.Context, paths []string) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		manager.addModuleRootsForPath(extensionPath)
-
-		files, err := discoverLuaFiles(extensionPath)
-		if err != nil {
+		if err := manager.loadPath(ctx, extensionPath); err != nil {
 			return err
-		}
-
-		for _, file := range files {
-			if err := manager.LoadFile(ctx, file); err != nil {
-				return err
-			}
 		}
 	}
 
 	return nil
 }
 
+func (manager *Manager) loadPath(ctx context.Context, extensionPath string) error {
+	sources, err := discoverLuaSources(extensionPath)
+	if err != nil {
+		return err
+	}
+
+	for _, source := range sources {
+		if err := manager.loadSource(ctx, source); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (manager *Manager) loadSource(ctx context.Context, source luaSource) error {
+	if source.Manifest {
+		return manager.LoadManifest(ctx, source.Path)
+	}
+
+	return manager.LoadFile(ctx, source.Path)
+}
+
 // LoadFile loads one Lua extension source file.
 func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) error {
+	return manager.loadLuaFile(ctx, extensionPath, extensionName(extensionPath), extensionPath)
+}
+
+// LoadManifest loads one directory-based Lua extension manifest.
+func (manager *Manager) LoadManifest(ctx context.Context, manifestPath string) error {
+	manifest, err := manager.ReadManifest(manifestPath)
+	if err != nil {
+		return err
+	}
+
+	entry := strings.TrimSpace(manifest.Entry)
+	if entry == "" {
+		entry = "main.lua"
+	}
+	if filepath.IsAbs(entry) || strings.Contains(entry, "..") {
+		return fmt.Errorf("extension: invalid entry %q", manifest.Entry)
+	}
+
+	entryPath := filepath.Join(filepath.Dir(manifestPath), entry)
+	name := strings.TrimSpace(manifest.Name)
+	if name == "" {
+		name = extensionName(filepath.Dir(manifestPath))
+	}
+
+	return manager.loadLuaFile(ctx, entryPath, name, manifestPath)
+}
+
+// ReadManifest reads a directory-based Lua manifest without executing extension entry code.
+func (manager *Manager) ReadManifest(manifestPath string) (Manifest, error) {
+	absolutePath, err := filepath.Abs(manifestPath)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("extension: resolve manifest: %w", err)
+	}
+
+	state := lua.NewState(lua.Options{SkipOpenLibs: true})
+	defer state.Close()
+	openExtensionLibs(state)
+
+	if err := state.DoFile(absolutePath); err != nil {
+		return Manifest{}, fmt.Errorf("extension: load manifest %s: %w", absolutePath, err)
+	}
+	table, ok := state.Get(-1).(*lua.LTable)
+	if !ok {
+		return Manifest{}, fmt.Errorf("extension: manifest %s must return a table", absolutePath)
+	}
+
+	manifest := Manifest{
+		Name:        luaTableString(table, "name", ""),
+		Version:     luaTableString(table, "version", ""),
+		APIVersion:  luaTableString(table, "api_version", ""),
+		Description: luaTableString(table, "description", ""),
+		Entry:       luaTableString(table, "entry", ""),
+	}
+	if strings.TrimSpace(manifest.Name) == "" {
+		manifest.Name = extensionName(filepath.Dir(absolutePath))
+	}
+
+	return manifest, nil
+}
+
+func (manager *Manager) loadLuaFile(ctx context.Context, extensionPath, name, displayPath string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -142,8 +217,8 @@ func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) erro
 	extensionRuntime := &luaExtension{
 		activeEvent:   nil,
 		state:         lua.NewState(lua.Options{SkipOpenLibs: true}),
-		name:          extensionName(absolutePath),
-		path:          absolutePath,
+		name:          name,
+		path:          displayPath,
 		commands:      []string{},
 		tools:         []string{},
 		keymaps:       []string{},
@@ -159,6 +234,14 @@ func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) erro
 	if err := extensionRuntime.state.DoFile(absolutePath); err != nil {
 		extensionRuntime.state.Close()
 		return fmt.Errorf("extension: load %s: %w", absolutePath, err)
+	}
+	if setupFn, ok := extensionRuntime.state.Get(-1).(*lua.LFunction); ok {
+		extensionRuntime.state.Push(setupFn)
+		extensionRuntime.state.Push(extensionRuntime.state.GetGlobal("librecode"))
+		if err := extensionRuntime.state.PCall(1, 0, nil); err != nil {
+			extensionRuntime.state.Close()
+			return fmt.Errorf("extension: setup %s: %w", absolutePath, err)
+		}
 	}
 	recordLuaCallDuration(extensionRuntime, startedAt)
 
@@ -507,54 +590,92 @@ func recordLuaCallDuration(extensionRuntime *luaExtension, startedAt time.Time) 
 	extensionRuntime.totalDuration.Add(int64(time.Since(startedAt)))
 }
 
-func discoverLuaFiles(extensionPath string) ([]string, error) {
+type luaSource struct {
+	Path     string
+	Manifest bool
+}
+
+func discoverLuaSources(extensionPath string) ([]luaSource, error) {
 	if extensionPath == "" {
-		return []string{}, nil
+		return []luaSource{}, nil
 	}
 
 	info, err := os.Stat(extensionPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []string{}, nil
+			return []luaSource{}, nil
 		}
 		return nil, fmt.Errorf("extension: stat %s: %w", extensionPath, err)
 	}
 
 	if !info.IsDir() {
 		if strings.HasSuffix(extensionPath, ".lua") {
-			return []string{extensionPath}, nil
+			return []luaSource{{Path: extensionPath, Manifest: false}}, nil
 		}
-		return []string{}, nil
+		return []luaSource{}, nil
 	}
 
-	return walkLuaDir(extensionPath)
+	return discoverLuaDir(extensionPath)
 }
 
-func walkLuaDir(root string) ([]string, error) {
-	files := []string{}
-	walkErr := filepath.WalkDir(root, func(currentPath string, dirEntry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if dirEntry.IsDir() {
-			if currentPath != root && dirEntry.Name() == "lua" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(currentPath, ".lua") {
-			return nil
-		}
-		files = append(files, currentPath)
+func discoverLuaDir(root string) ([]luaSource, error) {
+	manifestPath := filepath.Join(root, "init.lua")
+	if info, err := os.Stat(manifestPath); err == nil && !info.IsDir() {
+		return []luaSource{{Path: manifestPath, Manifest: true}}, nil
+	}
 
-		return nil
+	sources := []luaSource{}
+	walkErr := filepath.WalkDir(root, func(currentPath string, dirEntry os.DirEntry, walkErr error) error {
+		return collectLuaSource(root, currentPath, dirEntry, walkErr, &sources)
 	})
 	if walkErr != nil {
 		return nil, fmt.Errorf("extension: walk %s: %w", root, walkErr)
 	}
-	sort.Strings(files)
+	sort.Slice(sources, func(i, j int) bool { return sources[i].Path < sources[j].Path })
 
-	return files, nil
+	return sources, nil
+}
+
+func collectLuaSource(root, currentPath string, dirEntry os.DirEntry, walkErr error, sources *[]luaSource) error {
+	if walkErr != nil {
+		return walkErr
+	}
+	if isExtensionDir(root, currentPath, dirEntry) {
+		return collectLuaSourceDir(root, currentPath, sources)
+	}
+	if strings.HasSuffix(currentPath, ".lua") {
+		*sources = append(*sources, luaSource{Path: currentPath, Manifest: false})
+	}
+
+	return nil
+}
+
+func isExtensionDir(root, currentPath string, dirEntry os.DirEntry) bool {
+	if dirEntry.IsDir() {
+		return true
+	}
+	if currentPath == root || dirEntry.Type()&os.ModeSymlink == 0 {
+		return false
+	}
+	info, err := os.Stat(currentPath)
+
+	return err == nil && info.IsDir()
+}
+
+func collectLuaSourceDir(root, currentPath string, sources *[]luaSource) error {
+	if currentPath == root {
+		return nil
+	}
+	if filepath.Base(currentPath) == "lua" {
+		return filepath.SkipDir
+	}
+	manifestPath := filepath.Join(currentPath, "init.lua")
+	if info, err := os.Stat(manifestPath); err == nil && !info.IsDir() {
+		*sources = append(*sources, luaSource{Path: manifestPath, Manifest: true})
+		return filepath.SkipDir
+	}
+
+	return nil
 }
 
 func (manager *Manager) addModuleRootsForPath(extensionPath string) {
@@ -589,7 +710,7 @@ func moduleRootsForPath(extensionPath string) []string {
 		root = filepath.Dir(extensionPath)
 	}
 
-	return []string{filepath.Join(root, "lua"), root}
+	return []string{root}
 }
 
 func (manager *Manager) configurePackagePath(state *lua.LState) {
