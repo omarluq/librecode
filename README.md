@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/librecode-logo.svg" alt="librecode logo" width="96" height="96">
+  <img src="docs/assets/librecode-logo.svg" alt="librecode logo" width="560">
 </p>
 
 <p align="center">
