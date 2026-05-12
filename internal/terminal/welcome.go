@@ -11,6 +11,8 @@ import (
 const (
 	welcomeMessagePrefix = "__librecode_welcome__\n"
 	welcomeTopMarginRows = 1
+	welcomePaddingX      = 2
+	welcomePaddingY      = 1
 )
 
 var welcomeArt = []string{
@@ -28,13 +30,12 @@ func (app *App) addWelcomeMessage() {
 
 func (app *App) renderWelcomeMessage(width int, content string) []styledLine {
 	bodyLines := welcomeLinesFromContent(content)
-	lines := make([]styledLine, 0, len(bodyLines)+welcomeTopMarginRows+1)
-	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
+	lines := make([]styledLine, 0, len(bodyLines)+(welcomePaddingY*2))
+	app.appendWelcomePaddingLines(&lines, width, welcomePaddingY)
 	for index, line := range bodyLines {
-		lineStyle := app.welcomeBodyStyle(index, line)
-		lines = append(lines, styledLine{Style: lineStyle, Text: padRight(line, width)})
+		lines = append(lines, app.welcomeStyledLine(width, index, line))
 	}
-	lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: ""})
+	app.appendWelcomePaddingLines(&lines, width, welcomePaddingY)
 
 	return lines
 }
@@ -45,19 +46,67 @@ func (app *App) drawWelcomeOnly(width, height, row int) int {
 	marginRows := min(welcomeTopMarginRows, max(0, availableRows-1))
 	row += marginRows
 	availableRows -= marginRows
-	if len(bodyLines) > availableRows {
-		bodyLines = bodyLines[:availableRows]
+	bodyRows := min(len(bodyLines), max(0, availableRows-(welcomePaddingY*2)))
+	if bodyRows == 0 && availableRows > 0 {
+		bodyRows = min(len(bodyLines), availableRows)
 	}
+	if welcomePaddingY > 0 && availableRows > bodyRows {
+		paddingRows := min(welcomePaddingY, availableRows-bodyRows)
+		app.writeWelcomePaddingRows(row, width, paddingRows)
+		row += paddingRows
+		availableRows -= paddingRows
+	}
+	bodyLines = bodyLines[:bodyRows]
 	for index, line := range bodyLines {
 		app.writeWelcomeLine(row, width, index, line)
 		row++
 	}
+	remainingRows := max(0, availableRows-bodyRows)
+	app.writeWelcomePaddingRows(row, width, min(welcomePaddingY, remainingRows))
 
-	return row + 1
+	return row + min(welcomePaddingY, remainingRows)
 }
 
 func (app *App) writeWelcomeLine(row, width, lineIndex int, content string) {
-	writeLine(app.frame, row, width, padRight(content, width), app.welcomeBodyStyle(lineIndex, content))
+	line := app.welcomeStyledLine(width, lineIndex, content)
+	writeLine(app.frame, row, width, line.Text, line.Style)
+}
+
+func (app *App) welcomeStyledLine(width, lineIndex int, content string) styledLine {
+	style := app.welcomeBodyStyle(lineIndex, content)
+	innerWidth := max(1, width-(welcomePaddingX*2))
+	centeredContent := centerText(truncateText(content, innerWidth), innerWidth)
+	paddedContent := strings.Repeat(" ", welcomePaddingX) +
+		centeredContent +
+		strings.Repeat(" ", welcomePaddingX)
+
+	return styledLine{Style: style, Text: truncateText(paddedContent, width)}
+}
+
+func centerText(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	text = truncateText(text, width)
+	padding := max(0, width-terminalTextWidth(text))
+	leftPadding := padding / 2
+	rightPadding := padding - leftPadding
+
+	return strings.Repeat(" ", leftPadding) + text + strings.Repeat(" ", rightPadding)
+}
+
+func (app *App) appendWelcomePaddingLines(lines *[]styledLine, width, count int) {
+	style := app.theme.background(colorCustomMessageBg)
+	for range count {
+		*lines = append(*lines, styledLine{Style: style, Text: padRight("", width)})
+	}
+}
+
+func (app *App) writeWelcomePaddingRows(row, width, count int) {
+	style := app.theme.background(colorCustomMessageBg)
+	for offset := range count {
+		writeLine(app.frame, row+offset, width, padRight("", width), style)
+	}
 }
 
 func (app *App) showWelcomeOnly() bool {

@@ -84,6 +84,31 @@ func TestFooterLinesIgnoreTransientStatus(t *testing.T) {
 	}
 }
 
+func TestRenderWelcomeMessageHasCardPadding(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	lines := app.renderWelcomeMessage(90, welcomeMessagePrefix+strings.Join(welcomeBodyLines("/tmp/work"), "\n"))
+
+	if len(lines) < len(welcomeArt)+2 {
+		t.Fatalf("welcome lines = %d, want at least %d", len(lines), len(welcomeArt)+2)
+	}
+	if strings.TrimSpace(lines[0].Text) != "" || strings.TrimSpace(lines[len(lines)-1].Text) != "" {
+		t.Fatalf("welcome should have vertical padding, got first=%q last=%q", lines[0].Text, lines[len(lines)-1].Text)
+	}
+	artLine := lines[1].Text
+	if !strings.Contains(artLine, "██╗") {
+		t.Fatalf("welcome art should render logo content, got %q", artLine)
+	}
+	if got, want := terminalTextWidth(artLine), 90; got != want {
+		t.Fatalf("welcome line width = %d, want %d", got, want)
+	}
+	leftPadding := len(artLine) - len(strings.TrimLeft(artLine, " "))
+	if leftPadding <= welcomePaddingX {
+		t.Fatalf("welcome art should be centered within padded card, got left padding %d in %q", leftPadding, artLine)
+	}
+}
+
 func TestRenderWorkingIndicatorHasMarginAndShimmer(t *testing.T) {
 	t.Parallel()
 
