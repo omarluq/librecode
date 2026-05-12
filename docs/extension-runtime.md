@@ -66,24 +66,35 @@ That means users should be able to:
 
 ## Loader
 
-Extensions are loaded by `internal/extension.Manager`.
-
-Default roots today come from configured `extensions.paths` entries.
+Extensions are loaded by `internal/extension.Manager` from configured `extensions.use` entries.
 
 Configured defaults currently come from `config/loader.go`:
 
-- `.librecode/extensions`
+```yaml
+extensions:
+  enabled: true
+  use:
+    - path:.librecode/extensions
+```
+
+Source schemes:
+
+- `path:<path>` loads extension files or directories from disk today.
+- `official:<name>` names first-party extensions for the extension manager.
+- `github:<owner>/<repo>` and `github:<owner>/<repo>//<subdir>` reserve the remote install/update interface.
 
 No bundled extension root is prepended automatically. Passing `--no-extensions` disables configured Lua extensions for the current command without changing config.
 
 The loader:
 
-- resolves each configured file or directory
-- recursively discovers `*.lua`
-- creates a dedicated Lua state per file
+- resolves configured sources only
+- resolves `path:` sources directly today
+- resolves future `official:` and `github:` entries through the extension manager install store and lockfile
+- discovers Lua files and directory manifests
+- creates a dedicated Lua state per extension entry
 - opens trusted standard libraries
 - installs the `librecode` Lua module/API table
-- executes the file
+- executes the entry file
 - records registered commands, tools, keymaps, and handlers
 
 ## Runtime model

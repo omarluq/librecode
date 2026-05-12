@@ -523,8 +523,8 @@ func testConfig() *config.Config {
 			ConnMaxLifetime: time.Minute,
 		},
 		Extensions: config.ExtensionsConfig{
+			Use:     []config.ExtensionUse{},
 			Enabled: true,
-			Paths:   []string{},
 		},
 		Assistant: config.AssistantConfig{
 			Retry: config.RetryConfig{

@@ -16,32 +16,63 @@ See also:
 
 ## Loading model
 
-Extensions are trusted local Lua files loaded from configured `extensions.paths`.
+Extensions are trusted local Lua files loaded from configured `extensions.use` sources.
 
-By default, configured extension paths are:
+Default config:
 
-- `.librecode/extensions`
+```yaml
+extensions:
+  enabled: true
+  use:
+    - path:.librecode/extensions
+```
+
+Supported source declaration forms:
+
+```yaml
+extensions:
+  use:
+    # shorthand string form
+    - official:vim-mode
+    - github:example/librecode-extension
+    - github:example/monorepo//extensions/fancy
+    - path:.librecode/extensions/my-extension
+    - path:/absolute/or/relative/extension
+
+    # object form with version pinning
+    - source: official:vim-mode
+      version: v0.1.0
+    - source: github:example/librecode-extension
+      version: v1.2.3
+```
+
+Startup loads only entries declared in `extensions.use`; extra directories on disk are ignored. `path:` sources load from disk today. `official:` and `github:` sources are installed and pinned by the extension manager. Unknown schemes are configuration errors.
 
 librecode does not auto-load a bundled `extensions/` directory. The stock chat UI is implemented in Go; Lua extensions are optional customization. Use `--no-extensions` to skip configured extensions for one command.
 
-Each Lua file runs in its own Lua state.
-
-Lua helper modules can live under a `lua/` subdirectory inside any configured extension root, or next to a loaded extension file. The extension manager adds those roots to `package.path` and skips `lua/` helper directories when discovering top-level extension files.
-
-Example:
+Each Lua file or directory extension entry runs in its own Lua state. Directory extensions use a small manifest plus entry file:
 
 ```text
-.librecode/extensions/
-  my-workflow.lua
-  lua/
-    my_workflow/
-      helpers.lua
+.librecode/extensions/my-workflow/
+  init.lua
+  workflow.lua
+  helpers.lua
 ```
 
-Then extensions can do:
+```lua
+-- init.lua
+return {
+  name = "my-workflow",
+  version = "0.1.0",
+  api_version = "v1alpha1",
+  entry = "workflow.lua",
+}
+```
+
+The extension root is added to `package.path`, so entry files can require sibling modules:
 
 ```lua
-local helpers = require("my_workflow.helpers")
+local helpers = require("helpers")
 ```
 
 Helper modules are convenience wrappers over primitive APIs. They are not a separate Go host API family.

@@ -4,6 +4,8 @@ package config
 import (
 	"fmt"
 	"time"
+
+	"github.com/omarluq/librecode/internal/extension"
 )
 
 // Config is the fully resolved application configuration.
@@ -46,9 +48,12 @@ type DatabaseConfig struct {
 
 // ExtensionsConfig controls workflow extension discovery and execution.
 type ExtensionsConfig struct {
-	Paths   []string `json:"paths" mapstructure:"paths" yaml:"paths"`
-	Enabled bool     `json:"enabled" mapstructure:"enabled" yaml:"enabled"`
+	Use     []ExtensionUse `json:"use" mapstructure:"use" yaml:"use"`
+	Enabled bool           `json:"enabled" mapstructure:"enabled" yaml:"enabled"`
 }
+
+// ExtensionUse declares one extension source.
+type ExtensionUse = extension.ConfiguredSource
 
 // AssistantConfig controls the assistant runtime defaults.
 type AssistantConfig struct {
@@ -103,6 +108,7 @@ func (config *Config) Validate() error {
 		config.validateApp,
 		config.validateLogging,
 		config.validateDatabase,
+		config.validateExtensions,
 		config.validateAssistant,
 		config.validateCache,
 		config.validateKSQL,
@@ -162,6 +168,16 @@ func (config *Config) validateDatabase() error {
 	}
 	if config.Database.ConnMaxLifetime < 0 {
 		return fmt.Errorf("config: database.conn_max_lifetime cannot be negative")
+	}
+
+	return nil
+}
+
+func (config *Config) validateExtensions() error {
+	for _, extensionUse := range config.Extensions.Use {
+		if extensionUse.Source == "" {
+			return fmt.Errorf("config: extensions.use source is required")
+		}
 	}
 
 	return nil

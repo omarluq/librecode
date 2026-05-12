@@ -54,6 +54,46 @@ func TestLoadIgnoresRootAndXDGConfig(t *testing.T) {
 	assert.Equal(t, "development", cfg.App.Env)
 }
 
+func TestLoadParsesExtensionUseForms(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
+	t.Chdir(cwd)
+
+	writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), `extensions:
+  use:
+    - official:vim-mode
+    - github:example/librecode-extension
+    - source: github:example/another-extension
+      version: v1.2.3
+`)
+
+	cfg := config.Load("").MustGet()
+	require.Len(t, cfg.Extensions.Use, 3)
+	assert.Equal(t, "official:vim-mode", cfg.Extensions.Use[0].Source)
+	assert.Equal(t, "github:example/librecode-extension", cfg.Extensions.Use[1].Source)
+	assert.Equal(t, "github:example/another-extension", cfg.Extensions.Use[2].Source)
+	assert.Equal(t, "v1.2.3", cfg.Extensions.Use[2].Version)
+}
+
+func TestLoadRejectsEmptyExtensionUseObject(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
+	t.Chdir(cwd)
+
+	writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), `extensions:
+  use:
+    - version: v1.2.3
+`)
+
+	result := config.Load("")
+	assert.True(t, result.IsError())
+	assert.ErrorContains(t, result.Error(), "extensions.use source is required")
+}
+
 func writeConfig(t *testing.T, path, content string) {
 	t.Helper()
 

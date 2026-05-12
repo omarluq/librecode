@@ -2,8 +2,23 @@ package extension
 
 import "strings"
 
-// DefaultLoadPaths returns configured extension roots with whitespace trimmed and duplicates removed.
-func DefaultLoadPaths(configuredPaths []string) []string {
+// LocalLoadPaths returns explicitly configured path: extension sources with duplicates removed.
+func LocalLoadPaths(configuredSources []ConfiguredSource) ([]string, error) {
+	paths := []string{}
+	for _, configuredSource := range configuredSources {
+		ref, err := ParseSourceRef(configuredSource.Source, configuredSource.Version)
+		if err != nil {
+			return nil, err
+		}
+		if path, ok := ref.LocalPath(); ok {
+			paths = append(paths, path)
+		}
+	}
+
+	return dedupePaths(paths), nil
+}
+
+func dedupePaths(configuredPaths []string) []string {
 	paths := make([]string, 0, len(configuredPaths))
 	seen := map[string]struct{}{}
 	for _, path := range configuredPaths {
