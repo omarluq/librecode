@@ -101,9 +101,10 @@ Built-in providers are intentionally limited to API families librecode implement
 
 Credentials can come from:
 
-- provider-specific environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, or `ZAI_API_KEY`;
-- custom provider config stored in the runtime model document;
-- compatible existing Codex auth files imported from `~/.codex/auth.json` or `~/.pi/agent/auth.json`.
+- `/login anthropic-claude` for Claude Pro/Max OAuth or `/login openai-codex` for Codex subscription OAuth;
+- `/login <provider> <api-key>` for API-key providers such as `anthropic`, `openai`, `openrouter`, or `zai`;
+- provider-specific environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_OAUTH_TOKEN`, `OPENROUTER_API_KEY`, or `ZAI_API_KEY`;
+- custom provider config stored in the runtime model document.
 
 Provider IDs are configured with `LIBRECODE_ASSISTANT_PROVIDER` or `assistant.provider`; model IDs use `LIBRECODE_ASSISTANT_MODEL` or `assistant.model`.
 

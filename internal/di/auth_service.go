@@ -24,13 +24,9 @@ func NewAuthService(_ do.Injector) (*AuthService, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx := context.Background()
-	storage, err := auth.NewStorage(ctx, auth.NewFileBackend(authPath))
+	storage, err := auth.NewStorage(context.Background(), auth.NewFileBackend(authPath))
 	if err != nil {
 		return nil, oops.In("auth").Code("load").Wrapf(err, "load auth storage")
-	}
-	if _, err := storage.ImportOpenAICodexFromKnownFiles(ctx); err != nil {
-		return nil, oops.In("auth").Code("import_codex").Wrapf(err, "import codex auth")
 	}
 
 	return &AuthService{Storage: storage}, nil

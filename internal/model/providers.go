@@ -4,6 +4,7 @@ import "slices"
 
 const (
 	providerAnthropic            = "anthropic"
+	providerAnthropicClaude      = "anthropic-claude"
 	providerAzureOpenAIResponses = "azure-openai-responses"
 	providerCerebras             = "cerebras"
 	providerDeepSeek             = "deepseek"
@@ -86,6 +87,7 @@ type providerMetadata struct {
 func defaultProviderMetadata() map[string]providerMetadata {
 	return map[string]providerMetadata{
 		providerAnthropic:            anthropicMetadata(),
+		providerAnthropicClaude:      anthropicMetadata(),
 		providerAzureOpenAIResponses: azureOpenAIMetadata(),
 		providerCerebras:             openAICompatibleMetadata("https://api.cerebras.ai/v1", true),
 		providerDeepSeek:             openAICompatibleMetadata("https://api.deepseek.com", true),
@@ -142,14 +144,16 @@ func openAICodexMetadata() providerMetadata {
 }
 
 func anthropicMetadata() providerMetadata {
+	xhigh := "xhigh"
+
 	return providerMetadata{
-		ThinkingLevelMap: nil,
+		ThinkingLevelMap: map[ThinkingLevel]*string{ThinkingXHigh: &xhigh},
 		Headers:          nil,
 		Compat:           nil,
 		API:              "anthropic-messages",
 		BaseURL:          "https://api.anthropic.com",
-		ContextWindow:    200000,
-		MaxTokens:        32000,
+		ContextWindow:    1000000,
+		MaxTokens:        128000,
 		Reasoning:        true,
 	}
 }
@@ -169,7 +173,8 @@ func azureOpenAIMetadata() providerMetadata {
 
 func providerDisplayNameMap() map[string]string {
 	pairs := []providerDisplayPair{
-		{Provider: providerAnthropic, Display: "Anthropic"},
+		{Provider: providerAnthropic, Display: "Anthropic API"},
+		{Provider: providerAnthropicClaude, Display: "Claude Pro/Max (Anthropic OAuth)"},
 		{Provider: providerAzureOpenAIResponses, Display: "Azure OpenAI Responses"},
 		{Provider: providerCerebras, Display: "Cerebras"},
 		{Provider: providerDeepSeek, Display: "DeepSeek"},
@@ -191,6 +196,7 @@ func providerDisplayNameMap() map[string]string {
 func defaultModelMap() map[string]string {
 	pairs := []providerModelPair{
 		{Provider: providerAnthropic, ModelID: "claude-opus-4-7"},
+		{Provider: providerAnthropicClaude, ModelID: "claude-opus-4-7"},
 		{Provider: providerAzureOpenAIResponses, ModelID: gpt54},
 		{Provider: providerCerebras, ModelID: "zai-glm-4.7"},
 		{Provider: providerDeepSeek, ModelID: "deepseek-v4-pro"},

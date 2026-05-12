@@ -8,7 +8,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
 )
 
 type asyncEventKind string
@@ -144,9 +143,7 @@ func (app *App) handleAuthAsyncEvent(payload asyncEvent) bool {
 	case asyncEventAuthDone:
 		app.authWorking = false
 		app.refreshModels()
-		if payload.Provider == openAICodexProviderID {
-			app.setModel(openAICodexProviderID, model.DefaultModelPerProvider[openAICodexProviderID])
-		}
+		app.selectProviderDefault(payload.Provider)
 		app.addSystemMessage("logged in to " + providerDisplayName(payload.Provider))
 		return true
 	case asyncEventAuthError:

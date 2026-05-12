@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -127,6 +128,53 @@ func TestStorageFallbackResolverDoesNotRunUnderLock(t *testing.T) {
 	apiKey, found = storage.APIKey("custom")
 	require.True(t, found)
 	assert.Equal(t, "runtime-from-resolver", apiKey)
+}
+
+func TestStorageSeparatesAnthropicAPIAndOAuthEnv(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-env")
+	t.Setenv("ANTHROPIC_OAUTH_TOKEN", "sk-ant-oat-env")
+
+	storage, err := auth.NewInMemoryStorage(t.Context(), map[string]auth.Credential{})
+	require.NoError(t, err)
+
+	apiKey, found := storage.APIKey("anthropic")
+	require.True(t, found)
+	assert.Equal(t, "sk-ant-api03-env", apiKey)
+	assert.Equal(t,
+		auth.Status{Source: auth.SourceEnvironment, Label: "ANTHROPIC_API_KEY", Configured: false},
+		storage.AuthStatus("anthropic"),
+	)
+
+	oauthToken, found := storage.APIKey("anthropic-claude")
+	require.True(t, found)
+	assert.Equal(t, "sk-ant-oat-env", oauthToken)
+	assert.Equal(t,
+		auth.Status{Source: auth.SourceEnvironment, Label: "ANTHROPIC_OAUTH_TOKEN", Configured: false},
+		storage.AuthStatus("anthropic-claude"),
+	)
+}
+
+func TestStorageUsesUnexpiredAnthropicOAuthCredential(t *testing.T) {
+	t.Parallel()
+
+	storage, err := auth.NewInMemoryStorage(t.Context(), map[string]auth.Credential{
+		"anthropic-claude": {
+			OAuth:     nil,
+			Type:      auth.CredentialTypeOAuth,
+			Key:       "",
+			Access:    "sk-ant-oat-stored",
+			Refresh:   "refresh",
+			AccountID: "",
+			Expires:   time.Now().Add(time.Hour).UnixMilli(),
+			ExpiresAt: 0,
+		},
+	})
+	require.NoError(t, err)
+
+	apiKey, found, err := storage.APIKeyContext(t.Context(), "anthropic-claude")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "sk-ant-oat-stored", apiKey)
 }
 
 func TestStorageSetRemoveDoNotMutateMemoryWhenPersistFails(t *testing.T) {

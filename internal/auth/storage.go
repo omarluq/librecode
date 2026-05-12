@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -37,8 +36,6 @@ const (
 	SourceEnvironment Source = "environment"
 	// SourceFallback comes from a caller-supplied resolver.
 	SourceFallback Source = "fallback"
-	// SourceExternal comes from compatible external auth files imported at startup.
-	SourceExternal Source = "external"
 )
 
 // Credential stores API-key or OAuth credentials.
@@ -308,11 +305,11 @@ func (storage *Storage) credentialAPIKeyContext(
 		value, ok := credential.apiKeyValue()
 		return value, ok, nil
 	}
-	if provider != openAICodexProvider || credential.Type != CredentialTypeOAuth {
+	if credential.Type != CredentialTypeOAuth {
 		value, ok := credential.apiKeyValue()
 		return value, ok, nil
 	}
-	refreshed, apiKey, err := openAICodexAPIKey(ctx, credential)
+	refreshed, apiKey, err := refreshOAuthCredential(ctx, provider, credential)
 	if err != nil {
 		return "", false, err
 	}
@@ -328,46 +325,16 @@ func (storage *Storage) credentialAPIKeyContext(
 	return apiKey, true, nil
 }
 
-// ImportOpenAICodexFromKnownFiles imports compatible existing Codex auth if librecode has no credential yet.
-func (storage *Storage) ImportOpenAICodexFromKnownFiles(ctx context.Context) (bool, error) {
-	if storage.HasStored(openAICodexProvider) {
-		return false, nil
+func refreshOAuthCredential(ctx context.Context, provider string, credential *Credential) (*Credential, string, error) {
+	switch provider {
+	case openAICodexProvider:
+		return openAICodexAPIKey(ctx, credential)
+	case anthropicClaudeProvider:
+		return anthropicAPIKey(ctx, credential)
+	default:
+		value, _ := credential.apiKeyValue()
+		return credential, value, nil
 	}
-
-	return storage.importOpenAICodexFromKnownFiles(ctx)
-}
-
-// SyncOpenAICodexFromKnownFiles refreshes librecode auth from compatible existing Codex auth.
-func (storage *Storage) SyncOpenAICodexFromKnownFiles(ctx context.Context) (bool, error) {
-	return storage.importOpenAICodexFromKnownFiles(ctx)
-}
-
-func (storage *Storage) importOpenAICodexFromKnownFiles(ctx context.Context) (bool, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false, oops.In("auth").Code("user_home").Wrapf(err, "resolve user home")
-	}
-	candidates := []func() (*Credential, bool){
-		func() (*Credential, bool) {
-			return openAICodexCredentialFromNativeFile(filepath.Join(home, ".codex", "auth.json"))
-		},
-		func() (*Credential, bool) {
-			return openAICodexCredentialFromAuthFile(filepath.Join(home, ".pi", "agent", "auth.json"))
-		},
-	}
-	for _, candidate := range candidates {
-		credential, ok := candidate()
-		if !ok {
-			continue
-		}
-		if err := storage.Set(ctx, openAICodexProvider, credential); err != nil {
-			return false, err
-		}
-
-		return true, nil
-	}
-
-	return false, nil
 }
 
 // AuthStatus reports credential availability without exposing values.
@@ -540,13 +507,14 @@ func parseCredentials(content []byte) (map[string]Credential, error) {
 }
 
 func envAPIKey(provider string) (string, bool) {
-	envKey, ok := envKeyName(provider)
-	if !ok {
-		return "", false
+	for _, envKey := range envKeyCandidates(provider) {
+		value := strings.TrimSpace(os.Getenv(envKey))
+		if value != "" {
+			return value, true
+		}
 	}
-	value := strings.TrimSpace(os.Getenv(envKey))
 
-	return value, value != ""
+	return "", false
 }
 
 func envKeyName(provider string) (string, bool) {
@@ -564,31 +532,33 @@ func envKeyName(provider string) (string, bool) {
 func envKeyCandidates(provider string) []string {
 	normalized := strings.ToUpper(provider)
 	normalized = strings.NewReplacer("-", "_", ".", "_", "/", "_").Replace(normalized)
-	candidates := []string{normalized + apiKeyEnvSuffix()}
-	if envKey, ok := wellKnownEnvKey(provider); ok {
-		candidates = append([]string{envKey}, candidates...)
+	candidates := []string{}
+	if envKeys, ok := wellKnownEnvKeys(provider); ok {
+		candidates = append(candidates, envKeys...)
 	}
+	candidates = append(candidates, normalized+apiKeyEnvSuffix())
 
 	return lo.Uniq(candidates)
 }
 
-func wellKnownEnvKey(provider string) (string, bool) {
-	keys := map[string]string{
-		"anthropic":              "ANTHROPIC" + apiKeyEnvSuffix(),
-		"azure-openai-responses": "AZURE_OPENAI" + apiKeyEnvSuffix(),
-		"cerebras":               "CEREBRAS" + apiKeyEnvSuffix(),
-		"deepseek":               "DEEPSEEK" + apiKeyEnvSuffix(),
-		"groq":                   "GROQ" + apiKeyEnvSuffix(),
-		"mistral":                "MISTRAL" + apiKeyEnvSuffix(),
-		"openai":                 "OPENAI" + apiKeyEnvSuffix(),
-		"openrouter":             "OPENROUTER" + apiKeyEnvSuffix(),
-		"vercel-ai-gateway":      "AI_GATEWAY" + apiKeyEnvSuffix(),
-		"xai":                    "XAI" + apiKeyEnvSuffix(),
-		"zai":                    "ZAI" + apiKeyEnvSuffix(),
+func wellKnownEnvKeys(provider string) ([]string, bool) {
+	keys := map[string][]string{
+		"anthropic":              {"ANTHROPIC" + apiKeyEnvSuffix()},
+		"anthropic-claude":       {"ANTHROPIC_OAUTH_TOKEN"},
+		"azure-openai-responses": {"AZURE_OPENAI" + apiKeyEnvSuffix()},
+		"cerebras":               {"CEREBRAS" + apiKeyEnvSuffix()},
+		"deepseek":               {"DEEPSEEK" + apiKeyEnvSuffix()},
+		"groq":                   {"GROQ" + apiKeyEnvSuffix()},
+		"mistral":                {"MISTRAL" + apiKeyEnvSuffix()},
+		"openai":                 {"OPENAI" + apiKeyEnvSuffix()},
+		"openrouter":             {"OPENROUTER" + apiKeyEnvSuffix()},
+		"vercel-ai-gateway":      {"AI_GATEWAY" + apiKeyEnvSuffix()},
+		"xai":                    {"XAI" + apiKeyEnvSuffix()},
+		"zai":                    {"ZAI" + apiKeyEnvSuffix()},
 	}
-	envKey, ok := keys[provider]
+	envKeys, ok := keys[provider]
 
-	return envKey, ok
+	return envKeys, ok
 }
 
 func apiKeyEnvSuffix() string {

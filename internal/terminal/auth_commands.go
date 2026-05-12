@@ -4,19 +4,25 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/omarluq/librecode/internal/auth"
+	"github.com/omarluq/librecode/internal/browser"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
 
-const openAICodexProviderID = "openai-codex"
+const (
+	anthropicAPIProviderID    = "anthropic"
+	anthropicClaudeProviderID = "anthropic-claude"
+	openAICodexProviderID     = "openai-codex"
+)
 
 func (app *App) openLoginPanel() {
 	app.openPanel(newSelectionPanel(
 		panelAuthLogin,
 		"Login",
-		"Select provider; Codex imports ~/.codex auth, API-key providers fill /login",
+		"Select provider; subscription providers open browser login, API-key providers fill /login",
 		app.loginProviderItems(),
 		true,
 	))
@@ -98,11 +104,16 @@ func (app *App) authStatusLabel(provider string) string {
 }
 
 func authDescription(provider string) string {
-	if provider == openAICodexProviderID {
+	switch provider {
+	case anthropicAPIProviderID:
+		return "Anthropic API key"
+	case anthropicClaudeProviderID:
+		return "Claude Pro/Max subscription OAuth"
+	case openAICodexProviderID:
 		return "ChatGPT Plus/Pro subscription OAuth"
+	default:
+		return "API key provider"
 	}
-
-	return "API key provider"
 }
 
 func providerDisplayName(provider string) string {
@@ -120,8 +131,16 @@ func (app *App) loginCommand(ctx context.Context, args string) error {
 		return nil
 	}
 	provider := fields[0]
-	if provider == openAICodexProviderID && len(fields) == 1 {
-		return app.loginOpenAICodex(ctx)
+	if len(fields) == 1 {
+		switch provider {
+		case anthropicClaudeProviderID:
+			return app.startAnthropicClaudeLogin(ctx)
+		case openAICodexProviderID:
+			return app.loginOpenAICodex(ctx)
+		}
+	}
+	if provider == anthropicClaudeProviderID {
+		return app.completeAnthropicClaudeLogin(ctx, strings.TrimSpace(strings.TrimPrefix(args, provider)))
 	}
 	if len(fields) < 2 {
 		app.resetPromptHistoryNavigation()
@@ -186,33 +205,138 @@ func (app *App) applyAuthSelection(ctx context.Context, value string) error {
 	return nil
 }
 
-func (app *App) loginOpenAICodex(ctx context.Context) error {
+type oauthLoginConfig struct {
+	LoginFunc      func(context.Context, func(auth.OAuthAuthInfo)) (*auth.Credential, error)
+	Provider       string
+	DisplayName    string
+	AlreadyMessage string
+	LoginFailed    string
+}
+
+func (app *App) startAnthropicClaudeLogin(_ context.Context) error {
 	if app.auth == nil {
 		return fmt.Errorf("auth storage is unavailable")
 	}
-	if imported, err := app.auth.SyncOpenAICodexFromKnownFiles(ctx); err != nil {
+	flowURL, err := auth.AnthropicLoginURL()
+	if err != nil {
 		return err
-	} else if imported {
-		app.refreshModels()
-		app.setModel(openAICodexProviderID, model.DefaultModelPerProvider[openAICodexProviderID])
-		app.addSystemMessage("imported Codex auth from ~/.codex/auth.json")
-		return nil
 	}
-	if _, ok, err := app.auth.APIKeyContext(ctx, openAICodexProviderID); err != nil {
+	text := authInfoText("Claude", auth.OAuthAuthInfo{
+		URL: flowURL,
+		Instructions: "Complete login in your browser, then paste the authorization code with: /login " +
+			anthropicClaudeProviderID + " <code#state>",
+	})
+	app.addMessage(database.RoleCustom, text)
+	app.resetPromptHistoryNavigation()
+	app.setComposerText("/login " + anthropicClaudeProviderID + " ")
+
+	return nil
+}
+
+func (app *App) completeAnthropicClaudeLogin(ctx context.Context, code string) error {
+	if app.auth == nil {
+		return fmt.Errorf("auth storage is unavailable")
+	}
+	credential, err := auth.LoginAnthropicWithCode(ctx, code)
+	if err != nil {
+		return err
+	}
+	if err := app.auth.Set(ctx, anthropicClaudeProviderID, credential); err != nil {
+		return err
+	}
+	app.refreshModels()
+	app.selectProviderDefault(anthropicClaudeProviderID)
+	app.addSystemMessage("logged in to " + providerDisplayName(anthropicClaudeProviderID))
+
+	return nil
+}
+
+func (app *App) loginOpenAICodex(ctx context.Context) error {
+	return app.loginOAuthProvider(ctx, oauthLoginConfig{
+		Provider:       openAICodexProviderID,
+		DisplayName:    "Codex",
+		AlreadyMessage: "Codex auth is already configured",
+		LoginFailed:    "Codex login failed: ",
+		LoginFunc:      auth.LoginOpenAICodex,
+	})
+}
+
+func (app *App) loginOAuthProvider(ctx context.Context, config oauthLoginConfig) error {
+	if app.auth == nil {
+		return fmt.Errorf("auth storage is unavailable")
+	}
+	if _, ok, err := app.auth.APIKeyContext(ctx, config.Provider); err != nil {
 		return err
 	} else if ok {
 		app.refreshModels()
-		app.setModel(openAICodexProviderID, model.DefaultModelPerProvider[openAICodexProviderID])
-		app.addSystemMessage("Codex auth is already configured")
+		app.setModel(config.Provider, model.DefaultModelPerProvider[config.Provider])
+		app.addSystemMessage(config.AlreadyMessage)
 		return nil
 	}
-	app.addSystemMessage(strings.Join([]string{
-		"No compatible Codex credentials found.",
-		"Run Codex's login once to create ~/.codex/auth.json, then run /login openai-codex again.",
-		"Direct embedded OpenAI OAuth currently returns Authentication Error for this client.",
-	}, "\n"))
+
+	app.authWorking = true
+	app.workStartedAt = time.Now()
+	app.workFrame = 0
+	go app.runOAuthLogin(ctx, config)
 
 	return nil
+}
+
+func (app *App) runOAuthLogin(ctx context.Context, config oauthLoginConfig) {
+	credential, err := config.LoginFunc(ctx, func(info auth.OAuthAuthInfo) {
+		app.postAsyncEvent(ctx, asyncEvent{
+			Response:  nil,
+			ToolEvent: nil,
+			Kind:      asyncEventAuthURL,
+			Provider:  config.Provider,
+			Text:      authInfoText(config.DisplayName, info),
+			PromptID:  0,
+		})
+	})
+	if err != nil {
+		app.postOAuthLoginError(ctx, config, err)
+		return
+	}
+	if err := app.auth.Set(ctx, config.Provider, credential); err != nil {
+		app.postOAuthLoginError(ctx, config, err)
+		return
+	}
+	app.postAsyncEvent(ctx, asyncEvent{
+		Response:  nil,
+		ToolEvent: nil,
+		Kind:      asyncEventAuthDone,
+		Provider:  config.Provider,
+		Text:      "",
+		PromptID:  0,
+	})
+}
+
+func (app *App) postOAuthLoginError(ctx context.Context, config oauthLoginConfig, err error) {
+	app.postAsyncEvent(ctx, asyncEvent{
+		Response:  nil,
+		ToolEvent: nil,
+		Kind:      asyncEventAuthError,
+		Provider:  config.Provider,
+		Text:      config.LoginFailed + err.Error(),
+		PromptID:  0,
+	})
+}
+
+func authInfoText(provider string, info auth.OAuthAuthInfo) string {
+	lines := []string{
+		provider + " browser login:",
+		info.URL,
+	}
+	if err := browser.Open(info.URL); err == nil {
+		lines = append(lines, "Opened your browser. Complete login there to continue.")
+	} else {
+		lines = append(lines, "Open the URL above in your browser to continue.")
+	}
+	if strings.TrimSpace(info.Instructions) != "" {
+		lines = append(lines, info.Instructions)
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func (app *App) refreshModels() {

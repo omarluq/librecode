@@ -13,25 +13,25 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/limitio"
 )
 
 const (
 	openAICodexProvider    = "openai-codex"
 	openAICodexClientID    = "app_EMoamEEZ73f0CkXaXp7hrann"
 	openAICodexAuthorize   = "https://auth.openai.com/oauth/authorize"
-	openAICodexExchangeURL = "https://auth.openai.com/oauth/" + "token"
 	openAICodexRedirectURI = "http://localhost:1455/auth/callback"
 	openAICodexScope       = "openid profile email offline_access"
 	openAICodexJWTClaim    = "https://api.openai.com/auth"
 	openAICodexCallback    = "127.0.0.1:1455"
 )
+
+var openAICodexExchangeURL = "https://auth.openai.com/oauth/token"
 
 // OAuthAuthInfo describes a browser OAuth step.
 type OAuthAuthInfo struct {
@@ -236,6 +236,15 @@ func exchangeOpenAICodexCode(ctx context.Context, code, verifier string) (*Crede
 }
 
 func requestOpenAICodexToken(ctx context.Context, values url.Values) (*Credential, error) {
+	body, err := postOpenAICodexToken(ctx, values)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeOpenAICodexToken(body)
+}
+
+func postOpenAICodexToken(ctx context.Context, values url.Values) ([]byte, error) {
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
@@ -251,18 +260,27 @@ func requestOpenAICodexToken(ctx context.Context, values url.Values) (*Credentia
 		return nil, oops.In("auth").Code("codex_token_http").Wrapf(err, "request token")
 	}
 	defer closeAuthBody(response.Body)
+	body, err := limitio.ReadAll(response.Body, 1<<20, "codex token response")
+	if err != nil {
+		return nil, oops.In("auth").Code("codex_token_body").Wrapf(err, "read token response")
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, oops.In("auth").
 			Code("codex_token_status").
 			With("status", response.StatusCode).
-			Errorf("token request failed")
+			Errorf("token request failed: %s", strings.TrimSpace(string(body)))
 	}
+
+	return body, nil
+}
+
+func decodeOpenAICodexToken(body []byte) (*Credential, error) {
 	var payload struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int64  `json:"expires_in"`
 	}
-	decodeErr := json.NewDecoder(response.Body).Decode(&payload)
+	decodeErr := json.Unmarshal(body, &payload)
 	if decodeErr != nil {
 		return nil, oops.In("auth").Code("codex_token_decode").Wrapf(decodeErr, "decode token response")
 	}
@@ -324,27 +342,6 @@ func accountIDFromJWT(token string) (string, error) {
 	return accountID, nil
 }
 
-func jwtExpiresMillis(token string) int64 {
-	payload, err := jwtPayload(token)
-	if err != nil {
-		return 0
-	}
-	expiresFloat, ok := payload["exp"].(float64)
-	if ok {
-		return int64(expiresFloat) * 1000
-	}
-	expiresString, ok := payload["exp"].(string)
-	if !ok {
-		return 0
-	}
-	expires, err := strconv.ParseInt(expiresString, 10, 64)
-	if err != nil {
-		return 0
-	}
-
-	return expires * 1000
-}
-
 func jwtPayload(token string) (map[string]any, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
@@ -361,56 +358,4 @@ func jwtPayload(token string) (map[string]any, error) {
 	}
 
 	return payload, nil
-}
-
-func openAICodexCredentialFromNativeFile(path string) (*Credential, bool) {
-	content, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return nil, false
-	}
-	var payload struct {
-		Tokens struct {
-			AccessToken  string `json:"access_token"`
-			RefreshToken string `json:"refresh_token"`
-		} `json:"tokens"`
-	}
-	decodeErr := json.Unmarshal(content, &payload)
-	if decodeErr != nil {
-		return nil, false
-	}
-	if payload.Tokens.AccessToken == "" || payload.Tokens.RefreshToken == "" {
-		return nil, false
-	}
-	accountID, err := accountIDFromJWT(payload.Tokens.AccessToken)
-	if err != nil {
-		return nil, false
-	}
-
-	return &Credential{
-		OAuth:     nil,
-		Type:      CredentialTypeOAuth,
-		Key:       "",
-		Access:    payload.Tokens.AccessToken,
-		Refresh:   payload.Tokens.RefreshToken,
-		AccountID: accountID,
-		Expires:   jwtExpiresMillis(payload.Tokens.AccessToken),
-		ExpiresAt: 0,
-	}, true
-}
-
-func openAICodexCredentialFromAuthFile(path string) (*Credential, bool) {
-	content, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return nil, false
-	}
-	credentials, err := parseCredentials(content)
-	if err != nil {
-		return nil, false
-	}
-	credential, ok := credentials[openAICodexProvider]
-	if !ok || credential.Type != CredentialTypeOAuth {
-		return nil, false
-	}
-
-	return &credential, true
 }

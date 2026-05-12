@@ -36,6 +36,15 @@ func TestBuiltInProvidersAreSupportedAPIFamilies(t *testing.T) {
 	}
 }
 
+func TestAnthropicAPIAndSubscriptionProvidersAreSeparate(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "Anthropic API", model.ProviderDisplayNames["anthropic"])
+	assert.Equal(t, "Claude Pro/Max (Anthropic OAuth)", model.ProviderDisplayNames["anthropic-claude"])
+	assert.Contains(t, model.DefaultModelPerProvider, "anthropic")
+	assert.Contains(t, model.DefaultModelPerProvider, "anthropic-claude")
+}
+
 func TestBuiltInProviderCatalogIsTrimmedToImplementedProviders(t *testing.T) {
 	t.Parallel()
 
