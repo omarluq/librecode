@@ -207,9 +207,29 @@ Inside chat, `/skill` lists discovered skills. Use `/skill my-skill` or `/skill:
 
 Extensions are trusted local code. librecode follows the Unix philosophy here: extensions are powerful, low-level, and allowed to footgun if you ask them to. Lua is the first supported extension runtime; the host is designed so additional runtimes can be added later.
 
-Default extension roots come from `extensions.paths` in config, defaulting to:
+Extensions are declared with `extensions.use` in config. The default source is:
 
-- `.librecode/extensions`
+```yaml
+extensions:
+  enabled: true
+  use:
+    - path:.librecode/extensions
+```
+
+The extension manager interface supports source strings and object entries with versions:
+
+```yaml
+extensions:
+  use:
+    - official:vim-mode
+    - github:example/librecode-extension
+    - github:example/monorepo//extensions/fancy
+    - path:.librecode/extensions/local-dev
+    - source: github:example/librecode-extension
+      version: v1.2.3
+```
+
+Startup loads only entries declared in `extensions.use`; extra directories on disk are ignored. `path:` sources load from disk today, while `official:` and `github:` sources are installed and pinned by the extension manager.
 
 The default chat UI is Go-owned and extensions are optional customization. Use `--no-extensions` to disable configured extensions for a single run.
 
@@ -228,15 +248,22 @@ For architecture, roadmap, and API details, see:
 - [`docs/adr/0001-programmable-runtime.md`](docs/adr/0001-programmable-runtime.md)
 - [`docs/runtime-architecture.md`](docs/runtime-architecture.md)
 - [`docs/extension-runtime.md`](docs/extension-runtime.md)
+- [`docs/extension-manager.md`](docs/extension-manager.md)
 - [`docs/extension-roadmap.md`](docs/extension-roadmap.md)
 - [`docs/extension-api.md`](docs/extension-api.md)
 - [`docs/rendering-boundary.md`](docs/rendering-boundary.md)
 - [`docs/skills.md`](docs/skills.md)
 
-Inspect loaded extensions:
+Inspect and manage extensions:
 
 ```bash
 librecode extension list
+librecode extension add <source> [--version vX.Y.Z]
+librecode extension remove <source-or-name>
+librecode extension install
+librecode extension update
+librecode extension tidy
+librecode extension doctor
 librecode extension run <command> [args...]
 ```
 
@@ -275,6 +302,12 @@ librecode skill validate
 librecode tool list
 librecode tool run <name> [json-args|-] [--cwd path]
 librecode extension list
+librecode extension add <source> [--version vX.Y.Z]
+librecode extension remove <source-or-name>
+librecode extension install
+librecode extension update
+librecode extension tidy
+librecode extension doctor
 librecode extension run <command> [args...]
 librecode config show
 librecode config validate

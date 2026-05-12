@@ -129,7 +129,7 @@ func configEntries(cfg *config.Config) []configEntry {
 		{key: "database.max_idle_conns", value: fmt.Sprint(cfg.Database.MaxIdleConns)},
 		{key: "database.conn_max_lifetime", value: cfg.Database.ConnMaxLifetime.String()},
 		{key: "extensions.enabled", value: fmt.Sprint(cfg.Extensions.Enabled)},
-		{key: "extensions.paths", value: strings.Join(cfg.Extensions.Paths, ",")},
+		{key: "extensions.use", value: strings.Join(extensionUseSources(cfg.Extensions.Use), ",")},
 		{key: "assistant.provider", value: cfg.Assistant.Provider},
 		{key: "assistant.model", value: cfg.Assistant.Model},
 		{key: "assistant.thinking_level", value: cfg.Assistant.ThinkingLevel},
@@ -144,6 +144,16 @@ func configEntries(cfg *config.Config) []configEntry {
 // resolveEnv returns the environment label, falling back to the provided default.
 func resolveEnv(env, fallback string) string {
 	return mo.EmptyableToOption(env).OrElse(fallback)
+}
+
+func extensionUseSources(entries []config.ExtensionUse) []string {
+	return lo.Map(entries, func(entry config.ExtensionUse, _ int) string {
+		if entry.Version == "" {
+			return entry.Source
+		}
+
+		return fmt.Sprintf("%s@%s", entry.Source, entry.Version)
+	})
 }
 
 // upperEnvKeys returns config keys uppercased with a given prefix (e.g. "LIBRECODE_APP_NAME").

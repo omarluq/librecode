@@ -15,13 +15,14 @@ import (
 )
 
 const (
-	testBufferComposer  = "composer"
-	testContextModeKey  = "mode"
-	testEventKey        = "key"
-	testEventStartup    = "startup"
-	testModeChat        = "chat"
-	testUserExtension   = ".librecode/extensions"
-	testRendererDefault = "default"
+	testBufferComposer      = "composer"
+	testContextModeKey      = "mode"
+	testEventKey            = "key"
+	testEventStartup        = "startup"
+	testModeChat            = "chat"
+	testUserExtension       = ".librecode/extensions"
+	testPathExtensionSource = "path:.librecode/extensions"
+	testRendererDefault     = "default"
 )
 
 func testLayout(windows map[string]extension.WindowState) extension.LayoutState {
@@ -417,17 +418,27 @@ end)
 	assert.Equal(t, "warning", result.UIDrawOps[5].Style.FG)
 }
 
-func TestDefaultLoadPathsDedupesConfiguredExtensions(t *testing.T) {
+func TestLocalLoadPathsParsesPathSources(t *testing.T) {
 	t.Parallel()
 
-	paths := extension.DefaultLoadPaths([]string{
-		testUserExtension,
-		"extensions",
-		" custom ",
-		testUserExtension,
+	paths, err := extension.LocalLoadPaths([]extension.ConfiguredSource{
+		{Source: " " + testPathExtensionSource + " ", Version: ""},
+		{Source: "path:./custom", Version: ""},
+		{Source: "official:vim-mode", Version: ""},
+		{Source: "github:example/extension", Version: "v1.2.3"},
+		{Source: testPathExtensionSource, Version: ""},
 	})
 
-	assert.Equal(t, []string{testUserExtension, "extensions", "custom"}, paths)
+	require.NoError(t, err)
+	assert.Equal(t, []string{".librecode/extensions", "./custom"}, paths)
+}
+
+func TestLocalLoadPathsRejectsUnknownScheme(t *testing.T) {
+	t.Parallel()
+
+	_, err := extension.LocalLoadPaths([]extension.ConfiguredSource{{Source: "npm:thing", Version: ""}})
+
+	assert.ErrorContains(t, err, "unsupported source scheme")
 }
 
 func TestManager_LoadsDirectoryManifestEntryWithRootModules(t *testing.T) {

@@ -216,7 +216,7 @@ func renderParityConfig() *config.Config {
 			WorkingLoader: config.LoaderUI{Text: "Shenaniganing..."},
 		},
 		Logging:    config.LoggingConfig{Level: "info", Format: "pretty"},
-		Extensions: config.ExtensionsConfig{Paths: nil, Enabled: false},
+		Extensions: config.ExtensionsConfig{Use: nil, Enabled: false},
 		KSQL: config.KSQLConfig{
 			Endpoint: "",
 			Timeout:  0,

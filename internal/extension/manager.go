@@ -167,7 +167,7 @@ func (manager *Manager) LoadManifest(ctx context.Context, manifestPath string) e
 		name = extensionName(filepath.Dir(manifestPath))
 	}
 
-	return manager.loadLuaFile(ctx, entryPath, name, manifestPath)
+	return manager.loadLuaFile(ctx, entryPath, name, filepath.Dir(manifestPath))
 }
 
 // ReadManifest reads a directory-based Lua manifest without executing extension entry code.

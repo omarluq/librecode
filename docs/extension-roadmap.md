@@ -65,6 +65,44 @@ The previous render-loop slowdown came from rebuilding too much transcript text 
 
 They are useful names and roles, but they should not become special host APIs.
 
+## Phase 0: explicit extension manager
+
+Status: planned; see [`docs/extension-manager.md`](extension-manager.md).
+
+Goal: make extension dependencies explicit, installable, lockable, and reproducible without embedding official extensions in the binary.
+
+Planned interface:
+
+```yaml
+extensions:
+  enabled: true
+  use:
+    - official:vim-mode
+    - github:user/ext
+    - source: github:user/ext
+      version: v1.2.3
+    - path:.librecode/extensions/local-dev
+```
+
+Planned commands:
+
+- `librecode extension list`
+- `librecode extension add <source> [--version vX.Y.Z]`
+- `librecode extension remove <source-or-name>`
+- `librecode extension install`
+- `librecode extension update`
+- `librecode extension tidy`
+- `librecode extension doctor`
+
+Design constraints:
+
+- startup loads only entries declared in `extensions.use`
+- extra directories on disk are ignored unless explicitly declared
+- `add` installs immediately and updates config + lock
+- `remove` tidies immediately and updates config + lock
+- lockfiles pin human-readable versions/tags first
+- official extensions are installed through the manager, not embedded into the binary
+
 ## Phase 1: generic structured buffers
 
 Status: implemented for the current runtime surface.

@@ -29,14 +29,15 @@ func newExtensionCmd() *cobra.Command {
 func newExtensionListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   listUse,
-		Short: "List loaded workflow extensions, commands, and tools",
+		Short: "List configured and loaded workflow extensions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withContainer(cmd.Context(), func(container *di.Container) error {
-				manager := di.MustInvoke[*di.ExtensionService](container).Manager
-				extensions := manager.Extensions()
-				for index := range extensions {
-					if err := printExtension(cmd, &extensions[index]); err != nil {
+				service := di.MustInvoke[*di.ExtensionService](container)
+				loadedByPath := loadedExtensionsByPath(service.Manager.Extensions())
+				for index := range service.State.Configured {
+					configuredExtension := &service.State.Configured[index]
+					if err := printConfiguredExtension(cmd, configuredExtension, loadedByPath); err != nil {
 						return err
 					}
 				}
@@ -66,12 +67,25 @@ func newExtensionRunCmd() *cobra.Command {
 	}
 }
 
-func printExtension(cmd *cobra.Command, loadedExtension *extension.LoadedExtension) error {
+func printConfiguredExtension(
+	cmd *cobra.Command,
+	configuredExtension *extension.ResolvedSource,
+	loadedByPath map[string]extension.LoadedExtension,
+) error {
+	loadedExtension, loaded := loadedByPath[configuredExtension.LoadPath]
+	status := configuredExtension.Status
+	if loaded {
+		status = "loaded"
+	}
+
 	_, err := fmt.Fprintf(
 		cmd.OutOrStdout(),
-		"%s\t%s\tcommands=%s\ttools=%s\tkeymaps=%s\thandlers=%s\ttimers=%d\tduration=%s\n",
-		loadedExtension.Name,
-		loadedExtension.Path,
+		"%s\t%s\t%s\tversion=%s\tpath=%s\tcommands=%s\ttools=%s\tkeymaps=%s\thandlers=%s\ttimers=%d\tduration=%s\n",
+		configuredExtension.Name,
+		configuredExtension.Ref.Key(),
+		status,
+		configuredExtension.Lock.Version,
+		configuredExtension.LoadPath,
 		strings.Join(loadedExtension.Commands, ","),
 		strings.Join(loadedExtension.Tools, ","),
 		strings.Join(loadedExtension.Keymaps, ","),
@@ -84,4 +98,14 @@ func printExtension(cmd *cobra.Command, loadedExtension *extension.LoadedExtensi
 	}
 
 	return nil
+}
+
+func loadedExtensionsByPath(loadedExtensions []extension.LoadedExtension) map[string]extension.LoadedExtension {
+	loadedByPath := make(map[string]extension.LoadedExtension, len(loadedExtensions))
+	for index := range loadedExtensions {
+		loadedExtension := loadedExtensions[index]
+		loadedByPath[loadedExtension.Path] = loadedExtension
+	}
+
+	return loadedByPath
 }

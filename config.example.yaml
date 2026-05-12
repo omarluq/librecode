@@ -19,8 +19,21 @@ database:
 
 extensions:
   enabled: true
-  paths:
-    - .librecode/extensions
+  # Extension sources use scheme:value syntax. Startup loads only entries listed
+  # here; extra directories on disk are ignored unless explicitly declared.
+  use:
+    # Shorthand string form.
+    - path:.librecode/extensions
+    - official:vim-mode
+    - github:example/librecode-extension
+    - github:example/monorepo//extensions/fancy
+    - path:/absolute/or/relative/extension
+
+    # Object form with version pinning.
+    - source: official:vim-mode
+      version: v0.1.0
+    - source: github:example/librecode-extension
+      version: v1.2.3
 
 assistant:
   provider: openai-codex

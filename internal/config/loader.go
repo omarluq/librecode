@@ -40,8 +40,8 @@ func Load(path string) mo.Result[*Config] {
 	}
 
 	var cfg Config
-	if err := viperInstance.Unmarshal(&cfg); err != nil {
-		return mo.Err[*Config](fmt.Errorf("config: unmarshal: %w", err))
+	if err := unmarshalConfig(viperInstance, &cfg); err != nil {
+		return mo.Err[*Config](err)
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -72,7 +72,7 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("database.max_idle_conns", 1)
 	viperInstance.SetDefault("database.conn_max_lifetime", 30*time.Minute)
 	viperInstance.SetDefault("extensions.enabled", true)
-	viperInstance.SetDefault("extensions.paths", []string{".librecode/extensions"})
+	viperInstance.SetDefault("extensions.use", []string{defaultLocalExtensionSource})
 	viperInstance.SetDefault("assistant.provider", "openai-codex")
 	viperInstance.SetDefault("assistant.model", "gpt-5.5")
 	viperInstance.SetDefault("assistant.thinking_level", "off")
