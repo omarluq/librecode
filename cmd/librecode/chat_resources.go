@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 
 	"github.com/omarluq/librecode/internal/core"
@@ -36,10 +35,10 @@ func loadTerminalResources(ctx context.Context, cwd string) core.ResourceSnapsho
 }
 
 func terminalAgentDir() string {
-	configDir, err := os.UserConfigDir()
+	home, err := core.LibrecodeHome()
 	if err != nil {
 		return filepath.Join(".", core.ConfigDirName)
 	}
 
-	return filepath.Join(configDir, core.GlobalAgentDirName)
+	return home
 }

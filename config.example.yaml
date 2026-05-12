@@ -9,7 +9,9 @@ logging:
   format: pretty
 
 database:
-  # Empty path resolves to ~/.local/state/librecode/sessions.db
+  # Empty path resolves to ./.librecode/librecode.db when present, otherwise
+  # ~/.librecode/librecode.db. Existing root-level ./librecode.db and legacy
+  # ~/.local/state/librecode/sessions.db files are migrated automatically.
   path: ""
   apply_migrations: true
   max_open_conns: 1

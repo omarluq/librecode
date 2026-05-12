@@ -3,11 +3,15 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/samber/mo"
 	"github.com/spf13/viper"
+
+	"github.com/omarluq/librecode/internal/core"
 )
 
 // Load resolves configuration from defaults, environment variables, and an optional file.
@@ -24,8 +28,9 @@ func Load(path string) mo.Result[*Config] {
 	} else {
 		viperInstance.SetConfigName("config")
 		viperInstance.SetConfigType("yaml")
-		viperInstance.AddConfigPath(".")
-		viperInstance.AddConfigPath("$HOME/.config/librecode")
+		for _, configPath := range defaultConfigPaths() {
+			viperInstance.AddConfigPath(configPath)
+		}
 	}
 
 	if err := viperInstance.ReadInConfig(); err != nil {
@@ -45,6 +50,19 @@ func Load(path string) mo.Result[*Config] {
 	}
 
 	return mo.Ok(&cfg)
+}
+
+func defaultConfigPaths() []string {
+	paths := []string{filepath.Join(".", core.ConfigDirName)}
+	if home, err := core.LibrecodeHome(); err == nil {
+		paths = append(paths, home)
+	}
+	paths = append(paths, ".")
+	if configDir, err := os.UserConfigDir(); err == nil {
+		paths = append(paths, filepath.Join(configDir, "librecode"))
+	}
+
+	return paths
 }
 
 func setDefaults(viperInstance *viper.Viper) {
