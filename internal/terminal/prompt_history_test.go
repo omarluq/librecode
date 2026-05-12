@@ -63,6 +63,41 @@ func TestPromptHistoryRecordsSubmittedCommands(t *testing.T) {
 	assertEditorText(t, app, "/quit")
 }
 
+func TestCtrlCClearsComposerText(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.recordPromptHistory("previous prompt")
+	app.setComposerText("draft text")
+
+	pressTerminalKey(t, app, tcell.KeyCtrlC, "")
+
+	assertEditorText(t, app, "")
+	pressTerminalKey(t, app, tcell.KeyUp, "")
+	assertEditorText(t, app, "previous prompt")
+}
+
+func TestCtrlCExitsWhenComposerEmpty(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+
+	shouldQuit, err := app.handleKey(context.Background(), tcell.NewEventKey(tcell.KeyCtrlC, "", tcell.ModNone))
+	if err != nil {
+		t.Fatalf("handleKey returned error: %v", err)
+	}
+	if shouldQuit {
+		t.Fatal("first Ctrl+C should not quit")
+	}
+	shouldQuit, err = app.handleKey(context.Background(), tcell.NewEventKey(tcell.KeyCtrlC, "", tcell.ModNone))
+	if err != nil {
+		t.Fatalf("handleKey returned error: %v", err)
+	}
+	if !shouldQuit {
+		t.Fatal("second Ctrl+C should quit")
+	}
+}
+
 func pressTerminalKey(t *testing.T, app *App, key tcell.Key, text string) {
 	t.Helper()
 

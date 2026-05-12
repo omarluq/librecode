@@ -53,7 +53,7 @@ func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) ke
 	if handled, err := app.handleExtensionKey(ctx, event); handled || err != nil {
 		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
 	}
-	if app.keys.matches(event, actionForceExit) {
+	if app.keys.matches(event, actionForceExit) && app.composerEmpty() {
 		return keyHandlingResult{err: nil, shouldQuit: app.handleForceExit(), handled: true}
 	}
 	if app.mode == modePanel && app.panel != nil {
@@ -71,6 +71,12 @@ func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool
 		if app.handleAutocompleteKey(event) {
 			return false, nil
 		}
+	}
+	if app.keys.matches(event, actionInputClear) && !app.composerEmpty() {
+		app.clearComposer()
+		app.resetPromptHistoryNavigation()
+		app.resetAutocompleteSelection()
+		return false, nil
 	}
 	if app.keys.matches(event, actionInputSubmit) {
 		return app.submit(ctx)

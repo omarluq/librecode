@@ -25,6 +25,7 @@ const (
 	actionDeleteWordForward          actionID = "tui.editor.deleteWordForward"
 	actionDeleteToLineStart          actionID = "tui.editor.deleteToLineStart"
 	actionDeleteToLineEnd            actionID = "tui.editor.deleteToLineEnd"
+	actionInputClear                 actionID = "tui.input.clear"
 	actionInputNewLine               actionID = "tui.input.newLine"
 	actionInputSubmit                actionID = "tui.input.submit"
 	actionInputTab                   actionID = "tui.input.tab"
@@ -97,6 +98,7 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionDeleteWordForward:          binding("Delete word forward", "alt+d", "alt+delete"),
 		actionDeleteToLineStart:          binding("Delete to line start", "ctrl+u"),
 		actionDeleteToLineEnd:            binding("Delete to line end", "ctrl+k"),
+		actionInputClear:                 binding("Clear input", "ctrl+c"),
 		actionInputNewLine:               binding("Insert newline", "shift+enter"),
 		actionInputSubmit:                binding("Submit input", "enter"),
 		actionInputTab:                   binding("Autocomplete or toggle scope", "tab"),
@@ -203,16 +205,24 @@ func normalizedEventKeys(event *tcell.EventKey) map[string]struct{} {
 	if event.Key() == tcell.KeyRune && unicode.IsUpper(eventRune(event)) {
 		addKey(keys, "shift+"+strings.ToLower(string(eventRune(event))))
 	}
-	if event.Key() >= tcell.KeyCtrlA && event.Key() <= tcell.KeyCtrlZ {
-		letter := rune('a' + event.Key() - tcell.KeyCtrlA)
-		prefix := "ctrl+"
-		if event.Modifiers()&tcell.ModShift != 0 {
-			prefix = "shift+" + prefix
-		}
-		addKey(keys, prefix+string(letter))
-	}
+	addControlKeyName(keys, event)
 
 	return keys
+}
+
+func addControlKeyName(keys map[string]struct{}, event *tcell.EventKey) {
+	key := event.Key()
+	if key >= tcell.KeyCtrlA && key <= tcell.KeyCtrlZ {
+		addCtrlLetter(keys, key-tcell.KeyCtrlA)
+		return
+	}
+	if key >= tcell.KeySOH && key <= tcell.KeySUB {
+		addCtrlLetter(keys, key-tcell.KeySOH)
+	}
+}
+
+func addCtrlLetter(keys map[string]struct{}, offset tcell.Key) {
+	addKey(keys, "ctrl+"+string(rune('a'+offset)))
 }
 
 func eventKeyName(event *tcell.EventKey) string {
