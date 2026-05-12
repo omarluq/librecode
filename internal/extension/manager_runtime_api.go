@@ -277,9 +277,6 @@ func (manager *Manager) keymapsFor(event *luaHostEvent) []luaKeymap {
 
 func keymapEventTargets(event *luaHostEvent) map[string]struct{} {
 	targets := map[string]struct{}{globalKeymapTarget().key(): {}}
-	if mode, ok := event.context["mode"].(string); ok && mode != "" {
-		targets[legacyKeymapTarget(mode).key()] = struct{}{}
-	}
 	for name, buffer := range event.buffers {
 		bufferName := buffer.Name
 		if bufferName == "" {
@@ -367,7 +364,7 @@ func luaKeymapTargets(value lua.LValue) []keymapTarget {
 		return values
 	}
 
-	return []keymapTarget{legacyKeymapTarget(value.String())}
+	return []keymapTarget{namedKeymapTarget(value.String())}
 }
 
 func luaKeymapTarget(table *lua.LTable) (keymapTarget, bool) {
@@ -390,13 +387,13 @@ func luaKeymapTarget(table *lua.LTable) (keymapTarget, bool) {
 	return keymapTarget{Scope: "", Name: ""}, false
 }
 
-func legacyKeymapTarget(mode string) keymapTarget {
-	mode = normalizeKeymapName(mode)
-	if mode == "" || mode == keymapScopeGlobal {
+func namedKeymapTarget(name string) keymapTarget {
+	name = normalizeKeymapName(name)
+	if name == "" || name == keymapScopeGlobal {
 		return globalKeymapTarget()
 	}
 
-	return keymapTarget{Scope: "", Name: mode}
+	return keymapTarget{Scope: keymapScopeRole, Name: name}
 }
 
 func globalKeymapTarget() keymapTarget {

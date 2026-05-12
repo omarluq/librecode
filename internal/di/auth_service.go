@@ -2,7 +2,6 @@ package di
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 
@@ -34,23 +33,13 @@ func NewAuthService(_ do.Injector) (*AuthService, error) {
 
 func resolveAuthPath() (string, error) {
 	projectPath, err := projectDataPath("auth.json")
-	if err == nil {
-		legacyProjectPath := filepath.Join(filepath.Dir(filepath.Dir(projectPath)), "auth.json")
-		migrateErr := migrateLegacyFile(projectPath, legacyProjectPath)
-		if migrateErr != nil {
-			return "", oops.In("auth").Code("migrate_project").Wrapf(migrateErr, "migrate project auth storage")
-		}
-		if fileExists(projectPath) {
-			return projectPath, nil
-		}
+	if err == nil && fileExists(projectPath) {
+		return projectPath, nil
 	}
 
 	globalPath, err := userDataPath("auth.json")
 	if err != nil {
 		return "", err
-	}
-	if err := migrateLegacyFile(globalPath, legacyUserConfigPath("auth.json")); err != nil {
-		return "", oops.In("auth").Code("migrate").Wrapf(err, "migrate auth storage")
 	}
 
 	return globalPath, nil
@@ -72,41 +61,6 @@ func userDataPath(filename string) (string, error) {
 	}
 
 	return filepath.Join(home, filename), nil
-}
-
-func legacyUserConfigPath(filename string) string {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return ""
-	}
-
-	return filepath.Join(configDir, "librecode", filename)
-}
-
-func migrateLegacyFile(newPath, legacyPath string) error {
-	if legacyPath == "" || newPath == legacyPath || fileExists(newPath) || !fileExists(legacyPath) {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(newPath), 0o700); err != nil {
-		return err
-	}
-	if err := os.Rename(legacyPath, newPath); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrPermission) && !errors.Is(err, os.ErrExist) {
-		return err
-	}
-
-	// #nosec G304 -- migration path is an app-owned legacy path.
-	content, err := os.ReadFile(filepath.Clean(legacyPath))
-	if err != nil {
-		return err
-	}
-	return writeMigratedFile(newPath, content)
-}
-
-func writeMigratedFile(path string, content []byte) error {
-	//nolint:gosec // migration destination is an app-owned file with private mode.
-	return os.WriteFile(filepath.Clean(path), content, 0o600)
 }
 
 func fileExists(path string) bool {

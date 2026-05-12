@@ -17,7 +17,7 @@ A spec skill is a directory containing `SKILL.md`:
 .librecode/skills/my-skill/SKILL.md
 ```
 
-Explicit Markdown files passed through resource configuration are still accepted as a librecode compatibility extension, but directory `SKILL.md` discovery is the preferred spec-compatible path.
+Skill discovery uses Agent Skills-compatible directories containing `SKILL.md`.
 
 Duplicate skill names are resolved by discovery priority. Lower-priority duplicates produce diagnostics and are ignored.
 

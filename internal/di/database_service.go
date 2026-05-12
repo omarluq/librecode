@@ -122,33 +122,14 @@ func resolveDatabasePath(cfg *config.Config) (string, error) {
 
 func defaultDatabasePath() (string, error) {
 	projectPath, err := projectDataPath("librecode.db")
-	if err == nil {
-		legacyProjectPath := filepath.Join(filepath.Dir(filepath.Dir(projectPath)), "librecode.db")
-		migrateErr := migrateLegacyFile(projectPath, legacyProjectPath)
-		if migrateErr != nil {
-			return "", oops.In("database").Code("migrate_project").Wrapf(migrateErr, "migrate project database")
-		}
-		if fileExists(projectPath) {
-			return projectPath, nil
-		}
+	if err == nil && fileExists(projectPath) {
+		return projectPath, nil
 	}
 
 	globalPath, err := userDataPath("librecode.db")
 	if err != nil {
 		return "", err
 	}
-	if err := migrateLegacyFile(globalPath, legacyDatabasePath()); err != nil {
-		return "", oops.In("database").Code("migrate").Wrapf(err, "migrate database")
-	}
 
 	return globalPath, nil
-}
-
-func legacyDatabasePath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-
-	return filepath.Join(homeDir, ".local", "state", "librecode", "sessions.db")
 }

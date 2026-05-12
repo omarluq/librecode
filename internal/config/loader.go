@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -56,10 +55,6 @@ func defaultConfigPaths() []string {
 	paths := []string{filepath.Join(".", core.ConfigDirName)}
 	if home, err := core.LibrecodeHome(); err == nil {
 		paths = append(paths, home)
-	}
-	paths = append(paths, ".")
-	if configDir, err := os.UserConfigDir(); err == nil {
-		paths = append(paths, filepath.Join(configDir, "librecode"))
 	}
 
 	return paths

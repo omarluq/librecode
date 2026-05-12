@@ -235,7 +235,7 @@ Supported target forms:
 - `{ scope = "buffer" | "window" | "role", name = "name" }`
 - a list of any of the above
 
-String targets other than `"global"` are kept only as a legacy shorthand and match buffer/window role names. New extensions should prefer explicit target tables.
+String targets other than `"global"` are shorthand for role-scoped keymaps. Prefer explicit target tables for clarity.
 
 Notes:
 

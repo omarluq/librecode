@@ -10,8 +10,7 @@ logging:
 
 database:
   # Empty path resolves to ./.librecode/librecode.db when present, otherwise
-  # ~/.librecode/librecode.db. Existing root-level ./librecode.db and legacy
-  # ~/.local/state/librecode/sessions.db files are migrated automatically.
+  # ~/.librecode/librecode.db.
   path: ""
   apply_migrations: true
   max_open_conns: 1

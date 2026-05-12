@@ -7,6 +7,4 @@ const (
 	ConfigDirName = ".librecode"
 	// AgentsDirName is the OpenSkills/agent-compatible configuration directory.
 	AgentsDirName = ".agents"
-	// GlobalAgentDirName is the legacy XDG user-level configuration directory name.
-	GlobalAgentDirName = "librecode"
 )

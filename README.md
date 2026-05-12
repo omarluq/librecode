@@ -139,9 +139,7 @@ librecode resolves config in this order:
 2. `LIBRECODE_*` environment variables
 3. `./.librecode/config.yaml`
 4. `~/.librecode/config.yaml` or `$LIBRECODE_HOME/config.yaml`
-5. legacy fallback: `./config.yaml`
-6. legacy fallback: `$HOME/.config/librecode/config.yaml`
-7. built-in defaults
+5. built-in defaults
 
 Useful commands:
 
@@ -161,13 +159,11 @@ Default global persistence lives under one librecode home:
 - sessions database: `~/.librecode/librecode.db`
 - auth storage: `~/.librecode/auth.json`
 
-Project-local overrides live under `./.librecode/` too. If `./.librecode/auth.json` or `./.librecode/librecode.db` exists, librecode uses it instead of the global file for that project. Legacy root-level `./auth.json` and `./librecode.db` files are migrated into `./.librecode/`.
-
-Legacy `~/.local/state/librecode/sessions.db` and `$XDG_CONFIG_HOME/librecode/auth.json` files are migrated automatically when the new global files do not already exist.
+Project-local overrides live under `./.librecode/` too. If `./.librecode/auth.json` or `./.librecode/librecode.db` exists, librecode uses it instead of the global file for that project.
 
 ## Skills
 
-Skills are Agent Skills-compatible directories containing `SKILL.md`. Explicit Markdown paths are also accepted for compatibility. Skill metadata is always advertised to the model, and matching skills can be auto-activated by loading their full `SKILL.md` into the request context.
+Skills are Agent Skills-compatible directories containing `SKILL.md`. Skill metadata is always advertised to the model, and matching skills can be auto-activated by loading their full `SKILL.md` into the request context.
 
 Default skill roots, in priority order:
 

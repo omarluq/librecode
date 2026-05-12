@@ -38,7 +38,7 @@ func TestLoadFallsBackToLibrecodeHomeConfig(t *testing.T) {
 	assert.Equal(t, "production", cfg.App.Env)
 }
 
-func TestLoadSupportsLegacyConfigFallbacks(t *testing.T) {
+func TestLoadIgnoresRootAndXDGConfig(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
 	xdgConfig := filepath.Join(home, ".xdg-config")
@@ -48,13 +48,10 @@ func TestLoadSupportsLegacyConfigFallbacks(t *testing.T) {
 	t.Chdir(cwd)
 
 	writeConfig(t, filepath.Join(cwd, "config.yaml"), "app:\n  env: test\n")
-	cfg := config.Load("").MustGet()
-	assert.Equal(t, "test", cfg.App.Env)
-
-	require.NoError(t, os.Remove(filepath.Join(cwd, "config.yaml")))
 	writeConfig(t, filepath.Join(xdgConfig, "librecode", "config.yaml"), "app:\n  env: production\n")
-	cfg = config.Load("").MustGet()
-	assert.Equal(t, "production", cfg.App.Env)
+
+	cfg := config.Load("").MustGet()
+	assert.Equal(t, "development", cfg.App.Env)
 }
 
 func writeConfig(t *testing.T, path, content string) {

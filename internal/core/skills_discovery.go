@@ -20,35 +20,22 @@ func loadSkillPath(rawPath, cwd string) LoadSkillsResult {
 		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
 	}
 	if info.IsDir() {
-		return loadSkillsFromDir(resolvedPath, cwd, false)
-	}
-	if info.Mode().IsRegular() && strings.HasSuffix(resolvedPath, ".md") {
-		skill, diagnostics := loadSkillFromFile(resolvedPath, cwd)
-		if skill == nil {
-			return LoadSkillsResult{Skills: []Skill{}, Diagnostics: diagnostics}
-		}
-
-		return LoadSkillsResult{Skills: []Skill{*skill}, Diagnostics: diagnostics}
+		return loadSkillsFromDir(resolvedPath, cwd)
 	}
 
 	return LoadSkillsResult{
 		Skills:      []Skill{},
-		Diagnostics: []ResourceDiagnostic{warningDiagnostic("skill path is not a markdown file", resolvedPath)},
+		Diagnostics: []ResourceDiagnostic{warningDiagnostic("skill path is not a directory", resolvedPath)},
 	}
 }
 
-func loadSkillsFromDir(dir, cwd string, includeLegacyRootFiles bool) LoadSkillsResult {
+func loadSkillsFromDir(dir, cwd string) LoadSkillsResult {
 	state := &skillDiscoveryState{seenDirs: map[string]bool{}}
 
-	return loadSkillsFromDirWithState(dir, cwd, includeLegacyRootFiles, state)
+	return loadSkillsFromDirWithState(dir, cwd, state)
 }
 
-func loadSkillsFromDirWithState(
-	dir string,
-	cwd string,
-	includeLegacyRootFiles bool,
-	state *skillDiscoveryState,
-) LoadSkillsResult {
+func loadSkillsFromDirWithState(dir, cwd string, state *skillDiscoveryState) LoadSkillsResult {
 	canonicalDir := canonicalizeResourcePath(dir)
 	if state.seenDirs[canonicalDir] {
 		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
@@ -66,7 +53,7 @@ func loadSkillsFromDirWithState(
 		return skillResult
 	}
 
-	return loadNestedSkills(entries, dir, cwd, includeLegacyRootFiles, state)
+	return loadNestedSkills(entries, dir, cwd, state)
 }
 
 func loadSkillRoot(entries []os.DirEntry, dir, cwd string) (LoadSkillsResult, bool) {
@@ -85,13 +72,7 @@ func loadSkillRoot(entries []os.DirEntry, dir, cwd string) (LoadSkillsResult, bo
 	return LoadSkillsResult{Skills: []Skill{*skill}, Diagnostics: diagnostics}, true
 }
 
-func loadNestedSkills(
-	entries []os.DirEntry,
-	dir string,
-	cwd string,
-	includeLegacyRootFiles bool,
-	state *skillDiscoveryState,
-) LoadSkillsResult {
+func loadNestedSkills(entries []os.DirEntry, dir, cwd string, state *skillDiscoveryState) LoadSkillsResult {
 	result := LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
 	ignorePatterns := readSkillIgnorePatterns(dir)
 	for _, entry := range entries {
@@ -100,17 +81,10 @@ func loadNestedSkills(
 			continue
 		}
 		if isSkillDirEntry(entry, entryPath) {
-			nested := loadSkillsFromDirWithState(entryPath, cwd, false, state)
+			nested := loadSkillsFromDirWithState(entryPath, cwd, state)
 			result.Skills = append(result.Skills, nested.Skills...)
 			result.Diagnostics = append(result.Diagnostics, nested.Diagnostics...)
 			continue
-		}
-		if includeLegacyRootFiles && strings.HasSuffix(entry.Name(), ".md") {
-			skill, diagnostics := loadSkillFromFile(entryPath, cwd)
-			result.Diagnostics = append(result.Diagnostics, diagnostics...)
-			if skill != nil {
-				result.Skills = append(result.Skills, *skill)
-			}
 		}
 	}
 

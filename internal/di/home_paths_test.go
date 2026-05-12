@@ -11,29 +11,6 @@ import (
 	"github.com/omarluq/librecode/internal/di"
 )
 
-func TestAuthServiceMigratesLegacyAuthToLibrecodeHome(t *testing.T) {
-	home := t.TempDir()
-	cwd := t.TempDir()
-	xdgConfig := filepath.Join(home, ".xdg-config")
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", xdgConfig)
-	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
-	t.Chdir(cwd)
-
-	legacyPath := filepath.Join(xdgConfig, "librecode", "auth.json")
-	newPath := filepath.Join(home, ".librecode", "auth.json")
-	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o700))
-	require.NoError(t, os.WriteFile(legacyPath, []byte("{}"), 0o600))
-
-	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
-	require.NoError(t, err)
-	_ = di.MustInvoke[*di.AuthService](container)
-	t.Cleanup(func() { require.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
-
-	assert.FileExists(t, newPath)
-	assert.NoFileExists(t, legacyPath)
-}
-
 func TestAuthServicePrefersProjectLibrecodeAuth(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
@@ -59,48 +36,6 @@ func TestAuthServicePrefersProjectLibrecodeAuth(t *testing.T) {
 	assert.False(t, storage.HasStored("global-provider"))
 }
 
-func TestAuthServiceMigratesLegacyProjectAuth(t *testing.T) {
-	home := t.TempDir()
-	cwd := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
-	t.Chdir(cwd)
-
-	legacyPath := filepath.Join(cwd, "auth.json")
-	newPath := filepath.Join(cwd, ".librecode", "auth.json")
-	require.NoError(t, os.WriteFile(legacyPath, []byte("{}"), 0o600))
-
-	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
-	require.NoError(t, err)
-	_ = di.MustInvoke[*di.AuthService](container)
-	t.Cleanup(func() { require.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
-
-	assert.FileExists(t, newPath)
-	assert.NoFileExists(t, legacyPath)
-}
-
-func TestDatabaseServiceMigratesLegacyDatabaseToLibrecodeHome(t *testing.T) {
-	home := t.TempDir()
-	cwd := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
-	t.Chdir(cwd)
-
-	legacyPath := filepath.Join(home, ".local", "state", "librecode", "sessions.db")
-	newPath := filepath.Join(home, ".librecode", "librecode.db")
-	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o700))
-	require.NoError(t, os.WriteFile(legacyPath, nil, 0o600))
-
-	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
-	require.NoError(t, err)
-	databaseService := di.MustInvoke[*di.DatabaseService](container)
-	t.Cleanup(func() { _ = container.ShutdownWithContext(t.Context()).Succeed })
-
-	assert.Equal(t, newPath, databaseService.Path())
-	assert.FileExists(t, newPath)
-	assert.NoFileExists(t, legacyPath)
-}
-
 func TestDatabaseServicePrefersProjectLibrecodeDatabase(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
@@ -118,25 +53,4 @@ func TestDatabaseServicePrefersProjectLibrecodeDatabase(t *testing.T) {
 	t.Cleanup(func() { _ = container.ShutdownWithContext(t.Context()).Succeed })
 
 	assert.Equal(t, projectPath, databaseService.Path())
-}
-
-func TestDatabaseServiceMigratesLegacyProjectDatabase(t *testing.T) {
-	home := t.TempDir()
-	cwd := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
-	t.Chdir(cwd)
-
-	legacyPath := filepath.Join(cwd, "librecode.db")
-	newPath := filepath.Join(cwd, ".librecode", "librecode.db")
-	require.NoError(t, os.WriteFile(legacyPath, nil, 0o600))
-
-	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
-	require.NoError(t, err)
-	databaseService := di.MustInvoke[*di.DatabaseService](container)
-	t.Cleanup(func() { _ = container.ShutdownWithContext(t.Context()).Succeed })
-
-	assert.Equal(t, newPath, databaseService.Path())
-	assert.FileExists(t, newPath)
-	assert.NoFileExists(t, legacyPath)
 }
