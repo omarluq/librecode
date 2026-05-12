@@ -153,12 +153,12 @@ func renderEditor(
 	lines := make([]styledLine, 0, len(visibleLines)+2)
 	borderStyle := theme.style(border)
 	bodyStyle := theme.style(colorText)
-	lines = append(lines, styledLine{Style: borderStyle, Text: editorTopBorder(width, label)})
+	lines = append(lines, newStyledLine(borderStyle, editorTopBorder(width, label)))
 	for _, bodyLine := range visibleLines {
 		bodyText := padRight(bodyLine, innerWidth)
-		lines = append(lines, styledLine{Style: bodyStyle, Text: "│ " + bodyText + " │"})
+		lines = append(lines, newStyledLine(bodyStyle, "│ "+bodyText+" │"))
 	}
-	lines = append(lines, styledLine{Style: borderStyle, Text: editorBottomBorder(width)})
+	lines = append(lines, newStyledLine(borderStyle, editorBottomBorder(width)))
 
 	return editorRender{
 		Lines:     lines,

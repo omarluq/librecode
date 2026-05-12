@@ -40,7 +40,7 @@ func (app *App) renderMarkdown(content string, width int) []styledLine {
 	document := terminalMarkdown.Parser().Parse(goldtext.NewReader(renderer.source))
 	renderer.renderChildren(document, markdownIndent)
 	if len(renderer.lines) == 0 {
-		return []styledLine{{Style: app.theme.style(colorText), Text: markdownIndent}}
+		return []styledLine{newStyledLine(app.theme.style(colorText), markdownIndent)}
 	}
 
 	return renderer.lines
@@ -119,16 +119,12 @@ func (renderer *markdownRenderer) renderCodeBlock(segments *goldtext.Segments, l
 		return
 	}
 	style := renderer.theme.background(colorCodeBg).Foreground(renderer.theme.colors[colorCodeText])
-	label := strings.TrimSpace(language)
-	if label == "" {
-		label = "code"
-	}
-	renderer.appendCodeFrame(label, text, style)
+	renderer.appendCodeBlockLines(syntaxHighlightedCodeLines(language, text, *renderer.theme, style))
 }
 
 func (renderer *markdownRenderer) renderDiff(text string) {
 	baseStyle := renderer.theme.background(colorCodeBg).Foreground(renderer.theme.colors[colorCodeText])
-	renderer.appendCodeFrameLines("diff", diffStyledLines(text, *renderer.theme, baseStyle))
+	renderer.appendCodeBlockLines(diffStyledLines(text, *renderer.theme, baseStyle))
 }
 
 func (renderer *markdownRenderer) renderList(list *ast.List, indent string) {
@@ -259,37 +255,71 @@ func (renderer *markdownRenderer) appendWrappedWithContinuation(
 		if index > 0 {
 			lineIndent = continuationIndent
 		}
-		renderer.lines = append(renderer.lines, styledLine{Style: style, Text: lineIndent + line})
+		renderer.lines = append(renderer.lines, newStyledLine(style, lineIndent+line))
 	}
 }
 
 func (renderer *markdownRenderer) appendLine(text string, token colorToken) {
-	renderer.lines = append(renderer.lines, styledLine{Style: renderer.theme.style(token), Text: text})
+	renderer.lines = append(renderer.lines, newStyledLine(renderer.theme.style(token), text))
 }
 
-func (renderer *markdownRenderer) appendCodeFrame(label, text string, style tcell.Style) {
-	renderer.appendCodeFrameLines(label, codeStyledLines(text, style))
-}
-
-func (renderer *markdownRenderer) appendCodeFrameLines(label string, content []styledLine) {
-	width := renderer.width
-	borderStyle := renderer.theme.background(colorCodeBg).Foreground(renderer.theme.colors[colorBorderMuted])
-	renderer.lines = append(renderer.lines, styledLine{Style: borderStyle, Text: boxTop(width, label)})
-	innerWidth := max(1, width-4)
+func (renderer *markdownRenderer) appendCodeBlockLines(content []styledLine) {
+	innerWidth := max(1, renderer.width-terminalTextWidth(markdownCodePrefix))
 	for _, line := range content {
-		for _, wrapped := range wrapText(line.Text, innerWidth) {
-			text := "│ " + padRight(wrapped, innerWidth) + " │"
-			renderer.lines = append(renderer.lines, styledLine{Style: line.Style, Text: text})
+		renderer.lines = append(renderer.lines, wrapStyledLinePreserveWhitespace(line, innerWidth)...)
+	}
+}
+
+func wrapStyledLinePreserveWhitespace(line styledLine, width int) []styledLine {
+	if len(line.Spans) == 0 {
+		return plainStyledWrappedLines(line, width)
+	}
+	return spanStyledWrappedLines(line, width)
+}
+
+func plainStyledWrappedLines(line styledLine, width int) []styledLine {
+	wrapped := wrapTextPreserveWhitespace(line.Text, width)
+	lines := make([]styledLine, 0, len(wrapped))
+	for _, text := range wrapped {
+		lines = append(lines, newStyledLine(line.Style, text))
+	}
+
+	return lines
+}
+
+func spanStyledWrappedLines(line styledLine, width int) []styledLine {
+	lines := []styledLine{newStyledLine(line.Style, "")}
+	used := 0
+	for _, span := range line.Spans {
+		for _, segment := range terminalTextSegments(span.Text) {
+			if used > 0 && used+segment.Width > width {
+				lines = append(lines, newStyledLine(line.Style, ""))
+				used = 0
+			}
+			appendSegmentSpanToLastLine(&lines, segment.Text, span.Style)
+			used += segment.Width
 		}
 	}
-	renderer.lines = append(renderer.lines, styledLine{Style: borderStyle, Text: boxBottom(width)})
+	if len(lines) == 0 {
+		return []styledLine{newStyledLine(line.Style, "")}
+	}
+
+	return lines
+}
+
+func appendSegmentSpanToLastLine(lines *[]styledLine, text string, style tcell.Style) {
+	index := len(*lines) - 1
+	line := (*lines)[index]
+	line.Text += text
+	line.Spans = append(line.Spans, styledSpan{Style: style, Text: text})
+	(*lines)[index] = line
 }
 
 func codeStyledLines(text string, style tcell.Style) []styledLine {
 	lines := strings.Split(text, "\n")
 	styled := make([]styledLine, 0, len(lines))
 	for _, line := range lines {
-		styled = append(styled, styledLine{Style: style, Text: markdownCodePrefix + line})
+		styled = append(styled, newStyledLine(style, markdownCodePrefix+line))
 	}
 
 	return styled
@@ -308,7 +338,7 @@ func diffStyledLines(text string, theme terminalTheme, baseStyle tcell.Style) []
 		case strings.HasPrefix(line, "@@"):
 			style = baseStyle.Foreground(theme.colors[colorAccent]).Bold(true)
 		}
-		styled = append(styled, styledLine{Style: style, Text: line})
+		styled = append(styled, newStyledLine(style, line))
 	}
 
 	return styled
@@ -316,15 +346,6 @@ func diffStyledLines(text string, theme terminalTheme, baseStyle tcell.Style) []
 
 func looksLikeDiff(text string) bool {
 	return strings.Contains(text, "\n+") && strings.Contains(text, "\n-")
-}
-
-func boxTop(width int, label string) string {
-	prefix := "╭─ " + label + " "
-	return prefix + strings.Repeat("─", max(1, width-runeLen(prefix)-1)) + "╮"
-}
-
-func boxBottom(width int) string {
-	return "╰" + strings.Repeat("─", max(1, width-2)) + "╯"
 }
 
 func compactJSON(raw string) string {

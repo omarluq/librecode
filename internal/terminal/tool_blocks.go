@@ -46,18 +46,18 @@ func (app *App) toolBlockStyle(event *parsedToolEvent) tcell.Style {
 func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []styledLine {
 	label := fmt.Sprintf("%s  %s expand", toolTitle(event), app.keys.hint(actionToolsExpand))
 	lines := []styledLine{
-		{Style: tcell.StyleDefault, Text: ""},
-		{Style: style.Bold(true), Text: padRight(label, width)},
+		newStyledLine(tcell.StyleDefault, ""),
+		newStyledLine(style.Bold(true), padRight(label, width)),
 	}
 	preview, hiddenLines := tailIndentedLines(width, toolEventOutput(event), style, maxCollapsedToolOutputLines)
 	if hiddenLines > 0 {
-		lines = append(lines, styledLine{
-			Style: style.Foreground(app.theme.colors[colorMuted]),
-			Text:  padRight(app.hiddenToolLinesText(hiddenLines), width),
-		})
+		lines = append(lines, newStyledLine(
+			style.Foreground(app.theme.colors[colorMuted]),
+			padRight(app.hiddenToolLinesText(hiddenLines), width),
+		))
 	}
 	lines = append(lines, preview...)
-	lines = append(lines, styledLine{Style: tcell.StyleDefault, Text: ""})
+	lines = append(lines, newStyledLine(tcell.StyleDefault, ""))
 
 	return lines
 }
@@ -66,13 +66,13 @@ func (app *App) renderExpandedToolBlock(width int, event *parsedToolEvent, style
 	lines := make([]styledLine, 0, 10)
 	label := fmt.Sprintf("%s  %s collapse", toolTitle(event), app.keys.hint(actionToolsExpand))
 	lines = append(lines,
-		styledLine{Style: tcell.StyleDefault, Text: ""},
-		styledLine{Style: style.Bold(true), Text: padRight(label, width)},
+		newStyledLine(tcell.StyleDefault, ""),
+		newStyledLine(style.Bold(true), padRight(label, width)),
 	)
 	lines = append(lines, app.toolArgumentLines(width, event, style)...)
 	lines = append(lines, app.toolDiffLines(width, event, style)...)
 	lines = append(lines, app.toolOutputLines(width, event, style)...)
-	lines = append(lines, styledLine{Style: tcell.StyleDefault, Text: ""})
+	lines = append(lines, newStyledLine(tcell.StyleDefault, ""))
 
 	return lines
 }
@@ -94,10 +94,10 @@ func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Sty
 	innerWidth := max(1, width-2)
 	baseStyle := app.theme.background(colorCodeBg).Foreground(app.theme.colors[colorCodeText])
 	content := diffStyledLines(diff, app.theme, baseStyle)
-	lines := []styledLine{{Style: style.Bold(true), Text: padRight("diff:", width)}}
+	lines := []styledLine{newStyledLine(style.Bold(true), padRight("diff:", width))}
 	for _, line := range content {
 		for _, wrapped := range wrapTextPreserveWhitespace(line.Text, innerWidth) {
-			lines = append(lines, styledLine{Style: line.Style, Text: padRight("  "+wrapped, width)})
+			lines = append(lines, newStyledLine(line.Style, padRight("  "+wrapped, width)))
 		}
 	}
 
@@ -116,7 +116,7 @@ func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.S
 func plainSectionLines(width int, label, content string, style tcell.Style) []styledLine {
 	contentLines := indentedLines(width, content, style)
 	lines := make([]styledLine, 0, len(contentLines)+1)
-	lines = append(lines, styledLine{Style: style.Bold(true), Text: padRight(label+":", width)})
+	lines = append(lines, newStyledLine(style.Bold(true), padRight(label+":", width)))
 
 	return append(lines, contentLines...)
 }
@@ -129,7 +129,7 @@ func indentedLines(width int, content string, style tcell.Style) []styledLine {
 	lines := []styledLine{}
 	for line := range strings.SplitSeq(content, "\n") {
 		for _, wrapped := range wrapTextPreserveWhitespace(line, innerWidth) {
-			lines = append(lines, styledLine{Style: style, Text: padRight("  "+wrapped, width)})
+			lines = append(lines, newStyledLine(style, padRight("  "+wrapped, width)))
 		}
 	}
 

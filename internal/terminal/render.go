@@ -113,5 +113,10 @@ func (app *App) writeStyledLine(row, width int, line styledLine) {
 		return
 	}
 
+	if len(line.Spans) > 0 {
+		writeStyled(app.frame, row, width, line)
+		return
+	}
+
 	writeLineWithVerticalBorders(app.frame, row, width, line.Text, line.Style, app.theme.colors[colorBorderMuted])
 }

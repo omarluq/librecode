@@ -8,6 +8,10 @@ import (
 type colorToken string
 
 const (
+	themeNameLight = "light"
+)
+
+const (
 	colorAccent          colorToken = "accent"
 	colorBorder          colorToken = "border"
 	colorBorderAccent    colorToken = "borderAccent"
@@ -89,7 +93,7 @@ func newTheme(name string, light bool) terminalTheme {
 }
 
 func themeByName(name string) terminalTheme {
-	if name == "light" {
+	if name == themeNameLight {
 		return lightTheme()
 	}
 

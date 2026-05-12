@@ -198,21 +198,21 @@ func (panel *selectionPanel) render(width, height int, theme terminalTheme, bind
 	lines := make([]styledLine, 0, min(height, maxItems+8))
 	borderStyle := theme.style(colorBorder)
 	lines = append(lines,
-		styledLine{Style: borderStyle, Text: editorTopBorder(width, "")},
-		styledLine{Style: theme.style(colorAccent).Bold(true), Text: panelRow(panel.title, contentWidth)},
+		newStyledLine(borderStyle, editorTopBorder(width, "")),
+		newStyledLine(theme.style(colorAccent).Bold(true), panelRow(panel.title, contentWidth)),
 	)
 	if panel.subtitle != "" {
-		lines = append(lines, styledLine{Style: theme.style(colorMuted), Text: panelRow(panel.subtitle, contentWidth)})
+		lines = append(lines, newStyledLine(theme.style(colorMuted), panelRow(panel.subtitle, contentWidth)))
 	}
 	if panel.searchable {
 		query := "Search: " + panel.query
-		lines = append(lines, styledLine{Style: theme.style(colorText), Text: panelRow(query, contentWidth)})
+		lines = append(lines, newStyledLine(theme.style(colorText), panelRow(query, contentWidth)))
 	}
-	lines = append(lines, styledLine{Style: borderStyle, Text: "├" + strings.Repeat("─", max(1, width-2)) + "┤"})
+	lines = append(lines, newStyledLine(borderStyle, "├"+strings.Repeat("─", max(1, width-2))+"┤"))
 	lines = append(lines, panel.itemLines(contentWidth, maxItems, theme)...)
 	lines = append(lines,
 		panel.hintLine(contentWidth, width, theme, bindings),
-		styledLine{Style: borderStyle, Text: editorBottomBorder(width)},
+		newStyledLine(borderStyle, editorBottomBorder(width)),
 	)
 
 	return safeSlice(lines, height)
@@ -220,7 +220,7 @@ func (panel *selectionPanel) render(width, height int, theme terminalTheme, bind
 
 func (panel *selectionPanel) itemLines(contentWidth, maxItems int, theme terminalTheme) []styledLine {
 	if len(panel.filtered) == 0 {
-		return []styledLine{{Style: theme.style(colorMuted), Text: panelRow("No matches", contentWidth)}}
+		return []styledLine{newStyledLine(theme.style(colorMuted), panelRow("No matches", contentWidth))}
 	}
 	startIndex := panel.windowStart(maxItems)
 	endIndex := min(startIndex+maxItems, len(panel.filtered))
@@ -248,7 +248,7 @@ func (panel *selectionPanel) itemLine(index, width int, theme terminalTheme) sty
 		text += " — " + item.Description
 	}
 
-	return styledLine{Style: style, Text: panelRow(text, width)}
+	return newStyledLine(style, panelRow(text, width))
 }
 
 func (panel *selectionPanel) windowStart(maxItems int) int {
@@ -275,7 +275,7 @@ func (panel *selectionPanel) hintLine(
 	hint := bindings.hint(actionSelectUp) + "/" + bindings.hint(actionSelectDown) + " navigate · " +
 		bindings.hint(actionSelectConfirm) + " select · " + bindings.hint(actionSelectCancel) + " cancel" + position
 
-	return styledLine{Style: theme.style(colorDim), Text: panelRow(hint, contentWidth)}
+	return newStyledLine(theme.style(colorDim), panelRow(hint, contentWidth))
 }
 
 func (panel *selectionPanel) positionText() string {

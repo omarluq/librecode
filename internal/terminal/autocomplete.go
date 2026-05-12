@@ -53,10 +53,10 @@ func (app *App) autocompleteLines(width int) []styledLine {
 	limit := min(6, len(matches))
 	start := autocompleteWindowStart(selected, limit, len(matches))
 	lines := make([]styledLine, 0, limit+1)
-	lines = append(lines, styledLine{
-		Style: app.theme.background(colorCustomMessageBg).Bold(true),
-		Text:  padRight("  slash commands  tab/enter to complete", width),
-	})
+	lines = append(lines, newStyledLine(
+		app.theme.background(colorCustomMessageBg).Bold(true),
+		padRight("  slash commands  tab/enter to complete", width),
+	))
 	for offset := range limit {
 		index := start + offset
 		match := matches[index]
@@ -67,10 +67,7 @@ func (app *App) autocompleteLines(width int) []styledLine {
 			style = style.Bold(true)
 		}
 		text := fmt.Sprintf("%s/%-15s %s", prefix, match.Name, match.Description)
-		lines = append(lines, styledLine{
-			Style: style,
-			Text:  padRight(text, width),
-		})
+		lines = append(lines, newStyledLine(style, padRight(text, width)))
 	}
 
 	return lines

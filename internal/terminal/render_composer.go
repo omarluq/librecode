@@ -134,7 +134,7 @@ func (app *App) footerLines(width int) []styledLine {
 	lineTexts := app.defaultStatusLineTexts()
 	lines := make([]styledLine, 0, len(lineTexts))
 	for _, lineText := range lineTexts {
-		lines = append(lines, styledLine{Style: app.theme.style(colorDim), Text: truncateText(lineText, width)})
+		lines = append(lines, newStyledLine(app.theme.style(colorDim), truncateText(lineText, width)))
 	}
 
 	return lines

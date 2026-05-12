@@ -263,11 +263,11 @@ func (app *App) renderBufferTextLines(width int, text string, style tcell.Style)
 	for _, part := range parts {
 		wrapped := wrapText(part, width)
 		if len(wrapped) == 0 {
-			lines = append(lines, styledLine{Style: style, Text: ""})
+			lines = append(lines, newStyledLine(style, ""))
 			continue
 		}
 		for _, line := range wrapped {
-			lines = append(lines, styledLine{Style: style, Text: line})
+			lines = append(lines, newStyledLine(style, line))
 		}
 	}
 

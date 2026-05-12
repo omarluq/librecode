@@ -179,16 +179,13 @@ func TestWriteStyledLineOnlyShimmersMarkedLines(t *testing.T) {
 	app.frame = newCellBuffer(20, 2, tcell.StyleDefault)
 	app.workFrame = 0
 	row := 0
-	app.writeStyledLine(row, 20, styledLine{Style: app.theme.style(colorText), Text: "assistant working… text"})
+	app.writeStyledLine(row, 20, newStyledLine(app.theme.style(colorText), "assistant working… text"))
 	if got, want := app.frame.cell(0, row).Style.GetForeground(), app.theme.colors[colorText]; got != want {
 		t.Fatalf("plain line foreground = %v, want %v", got, want)
 	}
 
 	row = 1
-	app.writeStyledLine(row, 20, styledLine{
-		Style: app.theme.style(colorText),
-		Text:  "⠋ Shenaniganing...",
-	})
+	app.writeStyledLine(row, 20, newStyledLine(app.theme.style(colorText), "⠋ Shenaniganing..."))
 	if got, want := app.frame.cell(0, row).Style.GetForeground(), workingShimmerBrightColor(); got != want {
 		t.Fatalf("spinner foreground = %v, want %v", got, want)
 	}

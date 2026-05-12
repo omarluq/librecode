@@ -80,7 +80,7 @@ func (app *App) welcomeStyledLine(width, lineIndex int, content string) styledLi
 		centeredContent +
 		strings.Repeat(" ", welcomePaddingX)
 
-	return styledLine{Style: style, Text: truncateText(paddedContent, width)}
+	return newStyledLine(style, truncateText(paddedContent, width))
 }
 
 func centerText(text string, width int) string {
@@ -98,7 +98,7 @@ func centerText(text string, width int) string {
 func (app *App) appendWelcomePaddingLines(lines *[]styledLine, width, count int) {
 	style := app.theme.background(colorCustomMessageBg)
 	for range count {
-		*lines = append(*lines, styledLine{Style: style, Text: padRight("", width)})
+		*lines = append(*lines, newStyledLine(style, padRight("", width)))
 	}
 }
 

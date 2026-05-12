@@ -6,6 +6,24 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
+func writeStyled(screen cellTarget, row, width int, line styledLine) {
+	if len(line.Spans) == 0 {
+		writeLine(screen, row, width, line.Text, line.Style)
+		return
+	}
+	used := 0
+	for _, span := range line.Spans {
+		if used >= width {
+			break
+		}
+		used += writeTextCellsNoFill(screen, used, row, width-used, span.Text, span.Style)
+	}
+	for used < width {
+		screen.SetContent(used, row, ' ', nil, line.Style)
+		used++
+	}
+}
+
 func writeLine(screen cellTarget, row, width int, text string, style tcell.Style) {
 	writeTextAt(screen, 0, row, width, text, style)
 }
@@ -169,7 +187,7 @@ func writeEditorLine(
 	borderStyle tcell.Style,
 ) {
 	if lineIndex == 0 || lineIndex == lineCount-1 {
-		writeLine(screen, row, width, line.Text, line.Style)
+		writeStyled(screen, row, width, line)
 		return
 	}
 	if row < 0 {
@@ -180,6 +198,20 @@ func writeEditorLine(
 }
 
 func writeEditorLineText(
+	screen cellTarget,
+	row int,
+	width int,
+	line styledLine,
+	borderStyle tcell.Style,
+) int {
+	if len(line.Spans) == 0 {
+		return writeEditorLinePlainText(screen, row, width, line, borderStyle)
+	}
+
+	return writeEditorLineSpans(screen, row, width, line, borderStyle)
+}
+
+func writeEditorLinePlainText(
 	screen cellTarget,
 	row int,
 	width int,
@@ -199,6 +231,30 @@ func writeEditorLineText(
 			segment,
 			editorLineStyle(used, width, line, borderStyle),
 		)
+	}
+
+	return used
+}
+
+func writeEditorLineSpans(
+	screen cellTarget,
+	row int,
+	width int,
+	line styledLine,
+	borderStyle tcell.Style,
+) int {
+	used := 0
+	for _, span := range line.Spans {
+		for _, segment := range terminalTextSegments(span.Text) {
+			if used+segment.Width > width {
+				return used
+			}
+			style := span.Style
+			if used < 2 || used >= max(0, width-2) {
+				style = borderStyle
+			}
+			used += writeTextSegment(screen, used, row, width-used, segment, style)
+		}
 	}
 
 	return used

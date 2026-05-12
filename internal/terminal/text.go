@@ -6,9 +6,19 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
+type styledSpan struct {
+	Style tcell.Style
+	Text  string
+}
+
 type styledLine struct {
 	Style tcell.Style
 	Text  string
+	Spans []styledSpan // optional per-segment styles for syntax-highlighted or mixed-style lines
+}
+
+func newStyledLine(style tcell.Style, text string) styledLine {
+	return styledLine{Style: style, Text: text, Spans: nil}
 }
 
 func wrapText(text string, width int) []string {
