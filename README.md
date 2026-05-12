@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="docs/assets/librecode-logo.svg" alt="librecode logo" width="560">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/librecode-logo.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/librecode-logo-light.svg">
+    <img src="docs/assets/librecode-logo-light.svg" alt="librecode logo" width="560">
+  </picture>
 </p>
 
 <p align="center">
