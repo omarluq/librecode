@@ -1,4 +1,6 @@
-# librecode
+<p align="center">
+  <img src="docs/assets/librecode-logo.svg" alt="librecode logo" width="96" height="96">
+</p>
 
 <p align="center">
   <a href="https://pkg.go.dev/github.com/omarluq/librecode"><img src="https://img.shields.io/badge/reference-007d9c?style=flat&labelColor=24292e&logo=go&logoColor=white" alt="Go Reference"></a>
@@ -8,18 +10,21 @@
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat&labelColor=24292e&logo=opensourceinitiative&logoColor=white" alt="License: MIT"></a>
 </p>
 
-**librecode** is a local-first AI coding assistant and programmable terminal runtime written in Go.
-It combines an interactive chat UI, persistent sessions, built-in coding tools, Agent Skills-compatible instructions, and trusted Lua extensions that can reach deep into the runtime.
+**librecode** is a free and open source terminal agent harness with a small core and room for extension. One binary. Terminal interface. Local sessions. Built-in tools. Provider auth by OAuth or API key. Lua at the edges.
+
+<p align="center">
+  <img src="docs/assets/librecode-introduce-yourself.gif" alt="librecode terminal demo" width="820">
+</p>
 
 ## Features
 
-- **Interactive terminal chat** with streaming answers, visible reasoning blocks, chronological tool activity, scrollback, prompt history, and optional Vim-style composer behavior.
-- **Fresh sessions by default**: `librecode` starts a new session; use `--resume` to reopen the latest session for the current working directory.
+- **Written in Go, not JavaScript** for a fast native CLI with straightforward binaries.
+- **Interactive terminal chat** with streaming answers, visible reasoning blocks, chronological tool activity, scrollback, prompt history, app-owned mouse selection/copy, and a shimmering configurable working loader.
 - **Persistent SQLite session trees** stored per user, with session listing, showing, branching metadata, and context rebuilding.
 - **Built-in coding tools**: `read`, `write`, `edit`, `bash`, `grep`, `find`, and `ls` are available to the assistant and through the CLI.
-- **Agent Skills support** loaded from project and user skill directories, with deterministic priority and dedupe.
-- **Trusted Lua extensions** for commands, tools, hooks, keymaps, runtime buffers, and low-level terminal events.
-- **Provider/model registry** with OpenAI/Codex Responses, OpenAI-compatible chat completions, Anthropic Messages, and custom model/provider definitions.
+- **Agent Skills support** loaded from project and user skill directories, with spec frontmatter support, autocomplete, explicit `/skill:<name>` loading, and conservative auto-activation.
+- **Provider/model registry** with true OAuth for ChatGPT/Codex and Claude Pro/Max, API-key providers, transient provider retries, and custom model/provider definitions.
+- **Trusted extensions** with Lua as the first runtime adapter for optional commands, tools, hooks, keymaps, runtime buffers, and low-level terminal events.
 - **Configuration via YAML + env vars** with sane defaults and strict validation.
 
 ## Install
@@ -83,6 +88,19 @@ librecode session show <session-id>
 
 ## Authentication and providers
 
+Built-in provider IDs:
+
+| Provider                    | Auth                               | API family                  |
+| --------------------------- | ---------------------------------- | --------------------------- |
+| `openai-codex`              | Browser OAuth for ChatGPT Plus/Pro | Codex Responses             |
+| `openai`                    | API key                            | OpenAI Responses            |
+| `anthropic-claude`          | Browser OAuth for Claude Pro/Max   | Anthropic Messages          |
+| `anthropic`                 | API key                            | Anthropic Messages          |
+| `azure-openai-responses`    | API key/custom config              | OpenAI Responses            |
+| OpenAI-compatible providers | API key                            | Chat Completions-compatible |
+
+OpenAI-compatible built-ins: `cerebras`, `deepseek`, `groq`, `mistral`, `moonshotai`, `moonshotai-cn`, `openrouter`, `vercel-ai-gateway`, `xai`, and `zai`.
+
 The default assistant config is:
 
 ```yaml
@@ -101,7 +119,8 @@ Built-in providers are intentionally limited to API families librecode implement
 
 Credentials can come from:
 
-- `/login anthropic-claude` for Claude Pro/Max OAuth or `/login openai-codex` for Codex subscription OAuth;
+- `/login openai-codex` for ChatGPT/Codex subscription OAuth;
+- `/login anthropic-claude` for Claude Pro/Max OAuth;
 - `/login <provider> <api-key>` for API-key providers such as `anthropic`, `openai`, `openrouter`, or `zai`;
 - provider-specific environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_OAUTH_TOKEN`, `OPENROUTER_API_KEY`, or `ZAI_API_KEY`;
 - custom provider config stored in the runtime model document.
@@ -114,9 +133,11 @@ librecode resolves config in this order:
 
 1. `--config <path>`
 2. `LIBRECODE_*` environment variables
-3. `./config.yaml`
-4. `$HOME/.config/librecode/config.yaml`
-5. built-in defaults
+3. `./.librecode/config.yaml`
+4. `~/.librecode/config.yaml` or `$LIBRECODE_HOME/config.yaml`
+5. legacy fallback: `./config.yaml`
+6. legacy fallback: `$HOME/.config/librecode/config.yaml`
+7. built-in defaults
 
 Useful commands:
 
@@ -125,18 +146,24 @@ librecode config show
 librecode config validate
 ```
 
-See [`config.example.yaml`](config.example.yaml) for all current config keys. The in-progress loader text is configurable with `app.working_loader.text`.
+See [`config.example.yaml`](config.example.yaml) for all current config keys. The in-progress loader text defaults to `Shenaniganing...` and is configurable with `app.working_loader.text`.
 
 Built-in memory limits protect untrusted input and remote bodies: prompt stdin and tool JSON stdin are capped at 1 MiB, provider response/error bodies at 16 MiB, and ksqlDB response bodies at 8 MiB.
 
-Default persistence paths:
+Default global persistence lives under one librecode home:
 
-- sessions database: `~/.local/state/librecode/sessions.db`
-- auth storage: `$XDG_CONFIG_HOME/librecode/auth.json` or `~/.config/librecode/auth.json`
+- librecode home: `~/.librecode` or `$LIBRECODE_HOME`
+- config: `~/.librecode/config.yaml`
+- sessions database: `~/.librecode/librecode.db`
+- auth storage: `~/.librecode/auth.json`
+
+Project-local overrides live under `./.librecode/` too. If `./.librecode/auth.json` or `./.librecode/librecode.db` exists, librecode uses it instead of the global file for that project. Legacy root-level `./auth.json` and `./librecode.db` files are migrated into `./.librecode/`.
+
+Legacy `~/.local/state/librecode/sessions.db` and `$XDG_CONFIG_HOME/librecode/auth.json` files are migrated automatically when the new global files do not already exist.
 
 ## Skills
 
-Skills are Agent Skills-compatible directories containing `SKILL.md`. Explicit Markdown paths are also accepted for compatibility. Skill metadata is always advertised to the model, and matching skills are auto-activated by loading their full `SKILL.md` into the request context.
+Skills are Agent Skills-compatible directories containing `SKILL.md`. Explicit Markdown paths are also accepted for compatibility. Skill metadata is always advertised to the model, and matching skills can be auto-activated by loading their full `SKILL.md` into the request context.
 
 Default skill roots, in priority order:
 
@@ -171,17 +198,17 @@ librecode skill show my-skill
 librecode skill validate
 ```
 
-Inside chat, `/skill` lists discovered skills and `/skill my-skill` prints the skill file.
+Inside chat, `/skill` lists discovered skills. Use `/skill my-skill` or `/skill:my-skill` to load a skill through the read-tool path and render a `loaded skill my-skill` block. User-invocable skills also appear in slash autocomplete as `/skill:<name>`.
 
 ## Extensions
 
-Extensions are trusted local Lua code. librecode follows the Unix philosophy here: extensions are powerful, low-level, and allowed to footgun if you ask them to.
+Extensions are trusted local code. librecode follows the Unix philosophy here: extensions are powerful, low-level, and allowed to footgun if you ask them to. Lua is the first supported extension runtime; the host is designed so additional runtimes can be added later.
 
-Default extension roots come only from `extensions.paths` in config, defaulting to:
+Default extension roots come from `extensions.paths` in config, defaulting to:
 
 - `.librecode/extensions`
 
-librecode no longer ships auto-loaded Lua extensions. The default chat UI is Go-owned and extensions are optional customization. Use `--no-extensions` to disable configured extensions for a single run.
+The default chat UI is Go-owned and extensions are optional customization. Use `--no-extensions` to disable configured extensions for a single run.
 
 Current extension capabilities include:
 
@@ -218,15 +245,15 @@ On Windows, the `bash` tool requires a real Bash shell rather than `cmd.exe`. li
 
 Available tools:
 
-| Tool | Mutates files? | Purpose |
-| --- | --- | --- |
-| `read` | No | Read text/image files with truncation controls. |
-| `ls` | No | List directory entries. |
-| `find` | No | Search file paths by glob. |
-| `grep` | No | Search file contents. |
-| `write` | Yes | Overwrite/create files. |
-| `edit` | Yes | Exact text replacement with uniqueness checks. |
-| `bash` | Yes | Execute shell commands with timeout/output limits. |
+| Tool    | Mutates files? | Purpose                                            |
+| ------- | -------------- | -------------------------------------------------- |
+| `read`  | No             | Read text/image files with truncation controls.    |
+| `ls`    | No             | List directory entries.                            |
+| `find`  | No             | Search file paths by glob.                         |
+| `grep`  | No             | Search file contents.                              |
+| `write` | Yes            | Overwrite/create files.                            |
+| `edit`  | Yes            | Exact text replacement with uniqueness checks.     |
+| `bash`  | Yes            | Execute shell commands with timeout/output limits. |
 
 Only run librecode in workspaces where you trust the model, tools, and extensions you enable.
 
@@ -239,6 +266,9 @@ librecode prompt [--resume | --session id | --name name] [message]
 librecode session new [name]
 librecode session list
 librecode session show <session-id>
+librecode skill list
+librecode skill show <name>
+librecode skill validate
 librecode tool list
 librecode tool run <name> [json-args|-] [--cwd path]
 librecode extension list
@@ -279,12 +309,12 @@ Project-local caches are used for reproducible local runs and are gitignored:
 ```text
 cmd/librecode/          CLI commands and process entrypoint
 internal/assistant/     Prompt orchestration, provider calls, tool loop, cache integration
-internal/auth/          Provider credential storage and Codex auth import/refresh
+internal/auth/          Provider credential storage, OAuth flows, and token refresh
 internal/config/        Viper config defaults, loading, and validation
 internal/core/          Resources: system prompts, context files, skills, slash prompts
 internal/database/      SQLite repositories, migrations, ksqlDB client
 internal/di/            Service wiring with samber/do
-internal/extension/     Lua extension manager and runtime API bridge
+internal/extension/     Extension host and Lua runtime API bridge
 internal/model/         Provider/model registry and auth resolution
 internal/terminal/      Interactive terminal UI
 internal/tool/          Built-in coding tools

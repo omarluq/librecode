@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">librecode L favicon</title>
+  <desc id="desc">The librecode L rendered with the same block ASCII style used by the wordmark.</desc>
+  <rect width="512" height="512" fill="#050505"/>
+  <text x="124" y="76"
+        fill="#eeeeea"
+        font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+        font-size="54"
+        font-weight="700"
+        letter-spacing="-2"
+        dominant-baseline="hanging">
+    <tspan x="124" dy="0">██╗</tspan>
+    <tspan x="124" dy="62">██║</tspan>
+    <tspan x="124" dy="62">██║</tspan>
+    <tspan x="124" dy="62">██║</tspan>
+    <tspan x="124" dy="62">███████╗</tspan>
+    <tspan x="124" dy="62">╚══════╝</tspan>
+  </text>
+</svg>
