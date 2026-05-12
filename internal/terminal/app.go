@@ -23,6 +23,7 @@ const (
 	workFrameInterval          = 120 * time.Millisecond
 	loaderShimmerSweepDuration = 450 * time.Millisecond
 	streamingFrameInterval     = 8 * time.Millisecond
+	interruptEscapePresses     = 2
 	doubleEscapeDelay          = 500 * time.Millisecond
 	doubleControlCDelay        = 2 * time.Second
 )
@@ -142,6 +143,7 @@ type App struct {
 	lastMessageMaxRows           int
 	promptSequence               uint64
 	streamedToolEvents           int
+	escapePresses                int
 	promptHistoryIndex           int
 	scrollOffset                 int
 	autocompleteSelection        int
@@ -237,6 +239,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		hideThinking:                 false,
 		lastEscape:                   time.Time{},
 		lastControlC:                 time.Time{},
+		escapePresses:                0,
 		working:                      false,
 		workStartedAt:                time.Time{},
 		workFrame:                    0,

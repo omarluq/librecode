@@ -199,6 +199,9 @@ type keyBindingRow struct {
 func normalizedEventKeys(event *tcell.EventKey) map[string]struct{} {
 	keys := map[string]struct{}{}
 	addKey(keys, eventKeyName(event))
+	if event.Key() == tcell.KeyEscape {
+		addKey(keys, "escape")
+	}
 	if event.Key() == tcell.KeyBacktab {
 		addKey(keys, "shift+tab")
 	}
