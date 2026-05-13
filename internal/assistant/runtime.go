@@ -557,9 +557,9 @@ func (runtime *Runtime) modelResponse(
 			With("provider", selectedModel.Provider).
 			Wrapf(fmt.Errorf("%s", auth.Error), "resolve model auth")
 	}
-	sessionMessages, err := runtime.sessions.Messages(ctx, sessionID)
+	messages, err := runtime.modelContextMessages(ctx, sessionID)
 	if err != nil {
-		return nil, oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
+		return nil, err
 	}
 
 	systemPrompt := defaultSystemPrompt(cwd)
@@ -590,7 +590,6 @@ func (runtime *Runtime) modelResponse(
 		}
 	}
 
-	messages := messageEntities(sessionMessages)
 	estimatedUsage := estimateTokenUsage(systemPrompt, messages, &selectedModel)
 	runtime.emitUsage(ctx, onEvent, estimatedUsage)
 	request := &CompletionRequest{
@@ -779,20 +778,50 @@ func activeSkillMatchPayload(matches []core.SkillActivationDiagnostic) []map[str
 	return payload
 }
 
-func messageEntities(messages []database.SessionMessageEntity) []database.MessageEntity {
-	converted := make([]database.MessageEntity, 0, len(messages))
-	for index := range messages {
-		message := &messages[index]
-		converted = append(converted, database.MessageEntity{
-			Timestamp: message.CreatedAt,
-			Role:      message.Role,
-			Content:   message.Content,
-			Provider:  message.Provider,
-			Model:     message.Model,
-		})
+func (runtime *Runtime) modelContextMessages(ctx context.Context, sessionID string) ([]database.MessageEntity, error) {
+	leafEntry, _, err := runtime.sessions.LeafEntry(ctx, sessionID)
+	if err != nil {
+		return nil, oops.In("assistant").Code("load_context_leaf").Wrapf(err, "load session leaf")
+	}
+	leafID := ""
+	if leafEntry != nil {
+		leafID = leafEntry.ID
+	}
+	contextEntity, err := runtime.sessions.BuildContext(ctx, sessionID, leafID)
+	if err != nil {
+		return nil, oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
 	}
 
-	return converted
+	return modelFacingMessages(contextEntity.Messages), nil
+}
+
+func modelFacingMessages(messages []database.MessageEntity) []database.MessageEntity {
+	filtered := make([]database.MessageEntity, 0, len(messages))
+	for index := range messages {
+		message := messages[index]
+		if !isModelFacingRole(message.Role) || strings.TrimSpace(message.Content) == "" {
+			continue
+		}
+		filtered = append(filtered, message)
+	}
+
+	return filtered
+}
+
+func isModelFacingRole(role database.Role) bool {
+	switch role {
+	case database.RoleUser, database.RoleAssistant:
+		return true
+	case database.RoleToolResult,
+		database.RoleThinking,
+		database.RoleCustom,
+		database.RoleBashExecution,
+		database.RoleBranchSummary,
+		database.RoleCompactionSummary:
+		return false
+	}
+
+	return false
 }
 
 func defaultSystemPrompt(cwd string) string {

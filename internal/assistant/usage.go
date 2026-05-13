@@ -61,10 +61,6 @@ func mergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
 	if reported.OutputTokens > 0 {
 		usage.OutputTokens = reported.OutputTokens
 	}
-	if reportedTotal := reported.TotalTokens(); reportedTotal > usage.ContextTokens {
-		usage.ContextTokens = reportedTotal
-	}
-
 	return usage
 }
 
