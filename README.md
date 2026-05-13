@@ -340,4 +340,4 @@ The release workflow cross-compiles Linux, macOS, and Windows binaries, archives
 
 MIT — see [`LICENSE.txt`](LICENSE.txt).
 
-<a href="https://sonarcloud.io/summary/new_code?id=omarluq_librecode"><img src="https://img.shields.io/sonar/quality_gate/omarluq_librecode?server=https%3A%2F%2Fsonarcloud.io&style=flat&labelColor=24292e&logo=sonarqube&logoColor=white" alt="SonarCloud Quality Gate"></a>
+<a href="https://sonarcloud.io/summary/new_code?id=omarluq_librecode"><img src="https://sonarcloud.io/images/project_badges/sonarcloud-dark.svg" alt="SonarCloud Quality Gate"></a>
