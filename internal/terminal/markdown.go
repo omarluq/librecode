@@ -10,6 +10,7 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
+	extast "github.com/yuin/goldmark/extension/ast"
 	goldtext "github.com/yuin/goldmark/text"
 )
 
@@ -68,6 +69,8 @@ func (renderer *markdownRenderer) renderBlock(node ast.Node, indent string) {
 		renderer.renderList(typed, indent)
 	case *ast.ThematicBreak:
 		renderer.appendLine(indent+strings.Repeat(markdownRule, max(3, renderer.width-runeLen(indent))), colorDim)
+	case *extast.Table:
+		renderer.renderTable(typed, indent)
 	default:
 		renderer.renderFallback(node, indent)
 	}

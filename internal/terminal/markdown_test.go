@@ -88,6 +88,68 @@ func TestRenderMarkdownListContinuationDoesNotRepeatBullet(t *testing.T) {
 	}
 }
 
+func TestRenderMarkdownTableUsesRichBoxDrawing(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	lines := app.renderMarkdown("| Name | Count |\n| :--- | ---: |\n| apples | 12 |\n| pears | 3 |", 80)
+	texts := lineTexts(lines)
+
+	assertLineContains(t, texts, "╭────────┬───────╮")
+	assertLineContains(t, texts, "│ Name   │ Count │")
+	assertLineContains(t, texts, "├────────┼───────┤")
+	assertLineContains(t, texts, "│ apples │    12 │")
+	assertLineContains(t, texts, "╰────────┴───────╯")
+}
+
+func TestRenderMarkdownTableStylesHeaderAndBorders(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	lines := app.renderMarkdown("| Name | Count |\n| --- | --- |\n| apples | 12 |", 80)
+	header := findLineContaining(t, lines, "Name")
+
+	if len(header.Spans) == 0 {
+		t.Fatalf("table header has no styled spans: %#v", header)
+	}
+	if header.Spans[0].Text != markdownIndent ||
+		header.Spans[0].Style.GetForeground() != app.theme.colors[colorBorderMuted] {
+		t.Fatalf("indent span = %#v, want muted border", header.Spans[0])
+	}
+	if header.Spans[1].Text != "│" || header.Spans[1].Style.GetForeground() != app.theme.colors[colorBorderMuted] {
+		t.Fatalf("first table border span = %#v, want muted border", header.Spans[1])
+	}
+	if !lineHasForeground(header, app.theme.colors[colorAccent]) {
+		t.Fatalf("table header does not include accent style: %#v", header.Spans)
+	}
+}
+
+func TestRenderMarkdownTableBordersAlignWithWideCells(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	lines := app.renderMarkdown("| 项目 | Count |\n| :--- | ---: |\n| apples | 12 |", 80)
+	app.frame = newCellBuffer(80, len(lines), tcell.StyleDefault)
+	for row, line := range lines {
+		app.writeStyledLine(row, 80, line)
+	}
+	text := frameText(app.frame)
+
+	if !strings.Contains(text, "│ 项 目    │ Count │") {
+		t.Fatalf("wide table cell borders are not aligned, frame = %q", text)
+	}
+}
+
+func assertLineContains(t *testing.T, lines []string, needle string) {
+	t.Helper()
+	for _, line := range lines {
+		if strings.Contains(line, needle) {
+			return
+		}
+	}
+	t.Fatalf("line containing %q not found in %#v", needle, lines)
+}
+
 func findLineContaining(t *testing.T, lines []styledLine, needle string) styledLine {
 	t.Helper()
 	for _, line := range lines {
