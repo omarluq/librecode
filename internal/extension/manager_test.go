@@ -420,27 +420,49 @@ end)
 	assert.Equal(t, "warning", result.UIDrawOps[5].Style.FG)
 }
 
-func TestLocalLoadPathsParsesPathSources(t *testing.T) {
+func TestLocalLoadPaths(t *testing.T) {
 	t.Parallel()
 
-	paths, err := extension.LocalLoadPaths([]extension.ConfiguredSource{
-		{Source: " " + testPathExtensionSource + " ", Version: ""},
-		{Source: "path:./custom", Version: ""},
-		{Source: testManagerVimModeSource, Version: ""},
-		{Source: "github:example/extension", Version: "v1.2.3"},
-		{Source: testPathExtensionSource, Version: ""},
-	})
+	tests := []struct {
+		name     string
+		err      string
+		sources  []extension.ConfiguredSource
+		expected []string
+	}{
+		{
+			name: "parses path sources",
+			err:  "",
+			sources: []extension.ConfiguredSource{
+				{Source: " " + testPathExtensionSource + " ", Version: ""},
+				{Source: "path:./custom", Version: ""},
+				{Source: testManagerVimModeSource, Version: ""},
+				{Source: "github:example/extension", Version: "v1.2.3"},
+				{Source: testPathExtensionSource, Version: ""},
+			},
+			expected: []string{".librecode/extensions", "./custom"},
+		},
+		{
+			name:     "rejects unknown scheme",
+			err:      "unsupported source scheme",
+			sources:  []extension.ConfiguredSource{{Source: "npm:thing", Version: ""}},
+			expected: nil,
+		},
+	}
 
-	require.NoError(t, err)
-	assert.Equal(t, []string{".librecode/extensions", "./custom"}, paths)
-}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestLocalLoadPathsRejectsUnknownScheme(t *testing.T) {
-	t.Parallel()
+			paths, err := extension.LocalLoadPaths(testCase.sources)
+			if testCase.err != "" {
+				assert.ErrorContains(t, err, testCase.err)
+				return
+			}
 
-	_, err := extension.LocalLoadPaths([]extension.ConfiguredSource{{Source: "npm:thing", Version: ""}})
-
-	assert.ErrorContains(t, err, "unsupported source scheme")
+			require.NoError(t, err)
+			assert.Equal(t, testCase.expected, paths)
+		})
+	}
 }
 
 func TestManager_LoadsDirectoryManifestEntryWithRootModules(t *testing.T) {
