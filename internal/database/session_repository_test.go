@@ -312,6 +312,26 @@ func newTestSessionRepository(t *testing.T) *database.SessionRepository {
 	return database.NewSessionRepository(connection)
 }
 
+func newMigratedThroughVersion(t *testing.T, version int64) *sql.DB {
+	t.Helper()
+
+	connection, err := sql.Open(sqliteDriver(), ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, connection.Close())
+	})
+	connection.SetMaxOpenConns(1)
+
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+	_, err = provider.UpTo(context.Background(), version)
+	require.NoError(t, err)
+
+	return connection
+}
+
 func sqliteDriver() string {
 	return "sqlite"
 }

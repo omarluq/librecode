@@ -82,35 +82,52 @@ type SessionEntity struct {
 
 // EntryEntity is a persisted node in a session tree.
 type EntryEntity struct {
-	Message    MessageEntity `json:"message"`
-	CreatedAt  time.Time     `json:"created_at"`
-	ParentID   *string       `json:"parent_id,omitempty"`
-	ID         string        `json:"id"`
-	SessionID  string        `json:"session_id"`
-	Type       EntryType     `json:"type"`
-	CustomType string        `json:"custom_type,omitempty"`
-	DataJSON   string        `json:"data_json,omitempty"`
-	Summary    string        `json:"summary,omitempty"`
+	CreatedAt                  time.Time     `json:"created_at"`
+	ParentID                   *string       `json:"parent_id,omitempty"`
+	Message                    MessageEntity `json:"message"`
+	Summary                    string        `json:"summary,omitempty"`
+	ToolStatus                 string        `json:"tool_status,omitempty"`
+	Type                       EntryType     `json:"type"`
+	CustomType                 string        `json:"custom_type,omitempty"`
+	DataJSON                   string        `json:"data_json,omitempty"`
+	ID                         string        `json:"id"`
+	ToolName                   string        `json:"tool_name,omitempty"`
+	SessionID                  string        `json:"session_id"`
+	ToolArgsJSON               string        `json:"tool_args_json,omitempty"`
+	BranchFromEntryID          string        `json:"branch_from_entry_id,omitempty"`
+	CompactionFirstKeptEntryID string        `json:"compaction_first_kept_entry_id,omitempty"`
+	CompactionTokensBefore     int           `json:"compaction_tokens_before,omitempty"`
+	TokenEstimate              int           `json:"token_estimate,omitempty"`
+	Display                    bool          `json:"display"`
+	ModelFacing                bool          `json:"model_facing"`
 }
 
 // EntryDataEntity stores flexible per-entry metadata encoded in session_entries.data_json.
 type EntryDataEntity struct {
-	Details          map[string]any `json:"details,omitempty"`
-	Display          *bool          `json:"display,omitempty"`
-	Label            *string        `json:"label,omitempty"`
-	FirstKeptEntryID string         `json:"firstKeptEntryId,omitempty"`
-	FromID           string         `json:"fromId,omitempty"`
-	Name             string         `json:"name,omitempty"`
-	TargetID         string         `json:"targetId,omitempty"`
-	ThinkingLevel    string         `json:"thinkingLevel,omitempty"`
-	TokensBefore     int            `json:"tokensBefore,omitempty"`
-	FromHook         bool           `json:"fromHook,omitempty"`
+	Details                    map[string]any `json:"details,omitempty"`
+	Display                    *bool          `json:"display,omitempty"`
+	Label                      *string        `json:"label,omitempty"`
+	ModelFacing                *bool          `json:"modelFacing,omitempty"`
+	FromID                     string         `json:"fromId,omitempty"`
+	BranchFromEntryID          string         `json:"branchFromEntryId,omitempty"`
+	TargetID                   string         `json:"targetId,omitempty"`
+	ThinkingLevel              string         `json:"thinkingLevel,omitempty"`
+	ToolName                   string         `json:"toolName,omitempty"`
+	ToolStatus                 string         `json:"toolStatus,omitempty"`
+	ToolArgsJSON               string         `json:"toolArgsJson,omitempty"`
+	Name                       string         `json:"name,omitempty"`
+	FirstKeptEntryID           string         `json:"firstKeptEntryId,omitempty"`
+	CompactionFirstKeptEntryID string         `json:"compactionFirstKeptEntryId,omitempty"`
+	TokenEstimate              int            `json:"tokenEstimate,omitempty"`
+	CompactionTokensBefore     int            `json:"compactionTokensBefore,omitempty"`
+	TokensBefore               int            `json:"tokensBefore,omitempty"`
+	FromHook                   bool           `json:"fromHook,omitempty"`
 }
 
 // TreeNodeEntity is an entry and its direct descendants.
 type TreeNodeEntity struct {
-	Entry    EntryEntity      `json:"entry"`
 	Children []TreeNodeEntity `json:"children"`
+	Entry    EntryEntity      `json:"entry"`
 }
 
 // SessionContextEntity is the reconstructed context from a session branch.
