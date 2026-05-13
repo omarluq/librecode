@@ -109,6 +109,23 @@ func TestLoadRejectsEmptyExtensionUseObject(t *testing.T) {
 	assert.ErrorContains(t, result.Error(), "extensions.use source is required")
 }
 
+func TestLoadRejectsInvalidExtensionUseSource(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
+	t.Chdir(cwd)
+
+	writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), `extensions:
+  use:
+    - github:owner
+`)
+
+	result := config.Load("")
+	assert.True(t, result.IsError())
+	assert.ErrorContains(t, result.Error(), `config: invalid extensions.use source "github:owner"`)
+}
+
 func writeConfig(t *testing.T, path, content string) {
 	t.Helper()
 
