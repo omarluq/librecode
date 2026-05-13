@@ -23,7 +23,8 @@ func (client *HTTPCompletionClient) completeAnthropic(
 		return nil, err
 	}
 	var response struct {
-		Error   providerError `json:"error"`
+		Error   providerError  `json:"error"`
+		Usage   map[string]any `json:"usage"`
 		Content []struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
@@ -46,7 +47,7 @@ func (client *HTTPCompletionClient) completeAnthropic(
 		return nil, oops.In("assistant").Code("anthropic_empty").Errorf("provider returned an empty response")
 	}
 
-	return textCompletionResult(text), nil
+	return textCompletionResult(text, usageFromObject(response.Usage)), nil
 }
 
 func anthropicPayload(request *CompletionRequest) map[string]any {

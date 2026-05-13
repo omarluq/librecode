@@ -29,7 +29,8 @@ func (client *HTTPCompletionClient) completeOpenAIChat(
 		return nil, err
 	}
 	var response struct {
-		Error   providerError `json:"error"`
+		Error   providerError  `json:"error"`
+		Usage   map[string]any `json:"usage"`
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
@@ -46,7 +47,7 @@ func (client *HTTPCompletionClient) completeOpenAIChat(
 		return nil, oops.In("assistant").Code("openai_chat_empty").Errorf("provider returned an empty response")
 	}
 
-	return textCompletionResult(response.Choices[0].Message.Content), nil
+	return textCompletionResult(response.Choices[0].Message.Content, usageFromObject(response.Usage)), nil
 }
 
 func openAIChatMessages(request *CompletionRequest) []map[string]string {

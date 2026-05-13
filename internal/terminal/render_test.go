@@ -9,10 +9,12 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	cellcolor "github.com/gdamore/tcell/v3/color"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 func TestRenderStreamingMessageUsesTextColor(t *testing.T) {
@@ -357,6 +359,41 @@ func TestFlushFrameHighlightsSelection(t *testing.T) {
 	}
 }
 
+func TestApplyPromptResponsePreservesLargerStreamedContextUsage(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.applyTokenUsage(&model.TokenUsage{
+		ContextWindow: 100_000,
+		ContextTokens: 14_000,
+		InputTokens:   14_000,
+		OutputTokens:  0,
+	})
+
+	app.applyPromptResponse(context.Background(), &assistant.PromptResponse{
+		SessionID:        "test-session",
+		UserEntryID:      "user",
+		AssistantEntryID: "assistant",
+		Text:             "ok",
+		Thinking:         nil,
+		ToolEvents:       nil,
+		Usage: model.TokenUsage{
+			ContextWindow: 100_000,
+			ContextTokens: 12_000,
+			InputTokens:   12_000,
+			OutputTokens:  700,
+		},
+		Cached: false,
+	}, 0)
+
+	assert.Equal(t, model.TokenUsage{
+		ContextWindow: 100_000,
+		ContextTokens: 14_000,
+		InputTokens:   0,
+		OutputTokens:  0,
+	}, app.tokenUsage)
+}
+
 func TestHighVolumeStreamEventsDoNotForceImmediateDraw(t *testing.T) {
 	t.Parallel()
 
@@ -366,6 +403,7 @@ func TestHighVolumeStreamEventsDoNotForceImmediateDraw(t *testing.T) {
 		asyncEventPromptThinkingDelta,
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
+		asyncEventPromptUsage,
 	} {
 		event := tcell.NewEventInterrupt(newTestAsyncEvent(kind, ""))
 		if app.shouldDrawImmediately(event) {
@@ -887,10 +925,11 @@ func newRenderTestApp(t *testing.T) *App {
 	return app
 }
 
-func newTestAsyncEvent(kind asyncEventKind, text string) asyncEvent {
-	return asyncEvent{
+func newTestAsyncEvent(kind asyncEventKind, text string) *asyncEvent {
+	return &asyncEvent{
 		Response:  nil,
 		ToolEvent: nil,
+		Usage:     nil,
 		Kind:      kind,
 		Provider:  "",
 		Text:      text,

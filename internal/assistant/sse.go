@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/model"
 )
 
 type sseAccumulator struct {
@@ -29,12 +31,26 @@ func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(Stream
 	if response, ok := event["response"].(map[string]any); ok {
 		accumulator.finalResponse = response
 	}
+	if usage, ok := event["usage"].(map[string]any); ok {
+		accumulator.finalResponse = ensureSSEFinalResponse(accumulator.finalResponse)
+		accumulator.finalResponse["usage"] = usage
+	}
 	if text, delta := thinkingTextFromSSEEvent(event); delta && text != "" {
-		emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Kind: StreamEventThinkingDelta, Text: text})
+		emitStreamEvent(onEvent, StreamEvent{
+			ToolEvent: nil,
+			Usage:     nil,
+			Kind:      StreamEventThinkingDelta,
+			Text:      text,
+		})
 	}
 	if text, delta := textFromSSEEvent(event); delta && text != "" {
 		accumulator.parts = append(accumulator.parts, text)
-		emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Kind: StreamEventTextDelta, Text: text})
+		emitStreamEvent(onEvent, StreamEvent{
+			ToolEvent: nil,
+			Usage:     nil,
+			Kind:      StreamEventTextDelta,
+			Text:      text,
+		})
 	}
 	if item, ok := event["item"].(map[string]any); ok {
 		accumulator.addItem(item)
@@ -67,6 +83,14 @@ func (accumulator *sseAccumulator) addArguments(event map[string]any, arguments 
 	}
 	item["arguments"] = arguments
 	accumulator.items = upsertSSEItem(accumulator.items, item)
+}
+
+func ensureSSEFinalResponse(response map[string]any) map[string]any {
+	if response != nil {
+		return response
+	}
+
+	return map[string]any{}
 }
 
 func sseItemID(event map[string]any) string {
@@ -109,7 +133,9 @@ func parseSSEResult(reader io.Reader, onEvent func(StreamEvent)) (*providerResul
 	if accumulator.finalResponse != nil {
 		result := providerResultFromResponse(accumulator.finalResponse)
 		if len(result.OutputItems) == 0 && len(accumulator.items) > 0 {
+			usage := result.Usage
 			result = providerResultFromOutputItems(accumulator.items, fallbackText)
+			result.Usage = usage
 		}
 		if strings.TrimSpace(result.Text) == "" {
 			result.Text = fallbackText
@@ -121,7 +147,13 @@ func parseSSEResult(reader io.Reader, onEvent func(StreamEvent)) (*providerResul
 		return providerResultFromOutputItems(accumulator.items, fallbackText), nil
 	}
 
-	return &providerResult{Text: fallbackText, OutputItems: nil, Thinking: nil, ToolCalls: nil}, nil
+	return &providerResult{
+		Text:        fallbackText,
+		OutputItems: nil,
+		Thinking:    nil,
+		ToolCalls:   nil,
+		Usage:       model.EmptyTokenUsage(),
+	}, nil
 }
 
 func scanSSEResponse(scanner *bufio.Scanner, onEvent func(StreamEvent)) (accumulator *sseAccumulator, err error) {

@@ -372,6 +372,7 @@ func (client *retryCompletionClient) Complete(
 		Text:       client.response + " for " + request.Messages[len(request.Messages)-1].Content,
 		Thinking:   nil,
 		ToolEvents: nil,
+		Usage:      model.EmptyTokenUsage(),
 	}, nil
 }
 
@@ -384,6 +385,7 @@ func (testCompletionClient) Complete(
 	if request.OnEvent != nil {
 		request.OnEvent(assistant.StreamEvent{
 			ToolEvent: nil,
+			Usage:     nil,
 			Kind:      assistant.StreamEventTextDelta,
 			Text:      "test assistant response for " + request.Messages[len(request.Messages)-1].Content,
 		})
@@ -393,6 +395,7 @@ func (testCompletionClient) Complete(
 		Text:       "test assistant response for " + request.Messages[len(request.Messages)-1].Content,
 		Thinking:   nil,
 		ToolEvents: nil,
+		Usage:      model.TokenUsage{InputTokens: 12, OutputTokens: 4, ContextTokens: 12, ContextWindow: 1000},
 	}, nil
 }
 

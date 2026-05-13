@@ -70,30 +70,35 @@ const (
 	StreamEventToolResult StreamEventKind = "tool_result"
 	// StreamEventSkillLoaded carries an explicitly loaded Agent Skill.
 	StreamEventSkillLoaded StreamEventKind = "skill_loaded"
+	// StreamEventUsage carries estimated or provider-reported token usage.
+	StreamEventUsage StreamEventKind = "usage"
 )
 
 // StreamEvent is emitted during prompt execution before final persistence.
 type StreamEvent struct {
-	ToolEvent *ToolEvent      `json:"tool_event,omitempty"`
-	Kind      StreamEventKind `json:"kind"`
-	Text      string          `json:"text,omitempty"`
+	ToolEvent *ToolEvent        `json:"tool_event,omitempty"`
+	Usage     *model.TokenUsage `json:"usage,omitempty"`
+	Kind      StreamEventKind   `json:"kind"`
+	Text      string            `json:"text,omitempty"`
 }
 
 // PromptResponse describes persisted prompt output.
 type PromptResponse struct {
-	SessionID        string      `json:"session_id"`
-	UserEntryID      string      `json:"user_entry_id"`
-	AssistantEntryID string      `json:"assistant_entry_id"`
-	Text             string      `json:"text"`
-	Thinking         []string    `json:"thinking,omitempty"`
-	ToolEvents       []ToolEvent `json:"tool_events,omitempty"`
-	Cached           bool        `json:"cached"`
+	SessionID        string           `json:"session_id"`
+	UserEntryID      string           `json:"user_entry_id"`
+	AssistantEntryID string           `json:"assistant_entry_id"`
+	Text             string           `json:"text"`
+	Thinking         []string         `json:"thinking,omitempty"`
+	ToolEvents       []ToolEvent      `json:"tool_events,omitempty"`
+	Usage            model.TokenUsage `json:"usage,omitempty"`
+	Cached           bool             `json:"cached"`
 }
 
 type responseBundle struct {
 	Text       string
 	Thinking   []string
 	ToolEvents []ToolEvent
+	Usage      model.TokenUsage
 }
 
 // NewRuntime creates an assistant runtime.
@@ -197,6 +202,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (*Pr
 		Text:             bundle.Text,
 		Thinking:         bundle.Thinking,
 		ToolEvents:       bundle.ToolEvents,
+		Usage:            bundle.Usage,
 		Cached:           cached,
 	}, nil
 }
@@ -368,7 +374,12 @@ func (runtime *Runtime) respond(
 ) {
 	if strings.HasPrefix(prompt, slashPrefix) {
 		slashResponse, slashToolEvents, slashErr := runtime.respondToSlashCommand(ctx, cwd, prompt, onEvent)
-		return &responseBundle{Text: slashResponse, Thinking: nil, ToolEvents: slashToolEvents}, false, slashErr
+		return &responseBundle{
+			Text:       slashResponse,
+			Thinking:   nil,
+			ToolEvents: slashToolEvents,
+			Usage:      model.EmptyTokenUsage(),
+		}, false, slashErr
 	}
 
 	cacheKey := runtime.cacheKey(sessionID, prompt)
@@ -377,7 +388,12 @@ func (runtime *Runtime) respond(
 		return nil, false, oops.In("assistant").Code("cache_get").Wrapf(err, "read response cache")
 	}
 	if found {
-		return &responseBundle{Text: cachedResponse, Thinking: nil, ToolEvents: nil}, true, nil
+		return &responseBundle{
+			Text:       cachedResponse,
+			Thinking:   nil,
+			ToolEvents: nil,
+			Usage:      model.EmptyTokenUsage(),
+		}, true, nil
 	}
 
 	bundle, err = runtime.modelResponse(ctx, sessionID, cwd, prompt, onEvent, onRetry)
@@ -449,7 +465,12 @@ func (runtime *Runtime) respondToSkillCommand(
 		if err != nil {
 			return "", nil, err
 		}
-		emitStreamEvent(onEvent, StreamEvent{ToolEvent: &toolEvent, Kind: StreamEventSkillLoaded, Text: skill.Name})
+		emitStreamEvent(onEvent, StreamEvent{
+			ToolEvent: &toolEvent,
+			Usage:     nil,
+			Kind:      StreamEventSkillLoaded,
+			Text:      skill.Name,
+		})
 
 		return result, []ToolEvent{toolEvent}, nil
 	}
@@ -569,10 +590,13 @@ func (runtime *Runtime) modelResponse(
 		}
 	}
 
+	messages := messageEntities(sessionMessages)
+	estimatedUsage := estimateTokenUsage(systemPrompt, messages, &selectedModel)
+	runtime.emitUsage(ctx, onEvent, estimatedUsage)
 	request := &CompletionRequest{
 		Model:         selectedModel,
 		Auth:          auth,
-		Messages:      messageEntities(sessionMessages),
+		Messages:      messages,
 		SessionID:     sessionID,
 		SystemPrompt:  systemPrompt,
 		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,
@@ -583,7 +607,15 @@ func (runtime *Runtime) modelResponse(
 	if err != nil {
 		return nil, err
 	}
-	return &responseBundle{Text: result.Text, Thinking: result.Thinking, ToolEvents: result.ToolEvents}, nil
+	usage := mergeUsage(estimatedUsage, result.Usage)
+	runtime.emitUsage(ctx, onEvent, usage)
+
+	return &responseBundle{
+		Text:       result.Text,
+		Thinking:   result.Thinking,
+		ToolEvents: result.ToolEvents,
+		Usage:      usage,
+	}, nil
 }
 
 func (runtime *Runtime) completeWithRetry(
@@ -701,7 +733,12 @@ func (runtime *Runtime) emitActivatedSkillReads(
 				slog.Any("error", err),
 			)
 		}
-		emitStreamEvent(onEvent, StreamEvent{ToolEvent: &toolEvent, Kind: StreamEventSkillLoaded, Text: skill.Name})
+		emitStreamEvent(onEvent, StreamEvent{
+			ToolEvent: &toolEvent,
+			Usage:     nil,
+			Kind:      StreamEventSkillLoaded,
+			Text:      skill.Name,
+		})
 		toolEvents = append(toolEvents, toolEvent)
 	}
 

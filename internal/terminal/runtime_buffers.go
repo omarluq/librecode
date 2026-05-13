@@ -239,6 +239,9 @@ func (app *App) defaultStatusLineTexts() []string {
 	if app.currentThinkingLevel() != "" {
 		modelText += " • " + app.currentThinkingLevel()
 	}
+	if tokenText := app.tokenStatusText(); tokenText != "" {
+		modelText += " • " + tokenText
+	}
 
 	return []string{pathLine, modelText}
 }
