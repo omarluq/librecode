@@ -29,7 +29,7 @@ func unmarshalConfig(viperInstance *viper.Viper, cfg *Config) error {
 }
 
 func decodeExtensionUseHook(_, to reflect.Type, data any) (any, error) {
-	if to != reflect.TypeOf(ExtensionUse{Source: "", Version: ""}) {
+	if to != reflect.TypeFor[ExtensionUse]() {
 		return data, nil
 	}
 
