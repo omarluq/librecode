@@ -61,7 +61,17 @@ func TestLoadParsesExtensionUseForms(t *testing.T) {
 	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
 	t.Chdir(cwd)
 
-	writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), `extensions:
+	writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), `database:
+  conn_max_lifetime: 45s
+cache:
+  ttl: 2m
+ksql:
+  timeout: 3s
+assistant:
+  retry:
+    base_delay: 4s
+    max_delay: 8s
+extensions:
   use:
     - official:vim-mode
     - github:example/librecode-extension
@@ -75,6 +85,11 @@ func TestLoadParsesExtensionUseForms(t *testing.T) {
 	assert.Equal(t, "github:example/librecode-extension", cfg.Extensions.Use[1].Source)
 	assert.Equal(t, "github:example/another-extension", cfg.Extensions.Use[2].Source)
 	assert.Equal(t, "v1.2.3", cfg.Extensions.Use[2].Version)
+	assert.Equal(t, "45s", cfg.Database.ConnMaxLifetime.String())
+	assert.Equal(t, "2m0s", cfg.Cache.TTL.String())
+	assert.Equal(t, "3s", cfg.KSQL.Timeout.String())
+	assert.Equal(t, "4s", cfg.Assistant.Retry.BaseDelay.String())
+	assert.Equal(t, "8s", cfg.Assistant.Retry.MaxDelay.String())
 }
 
 func TestLoadRejectsEmptyExtensionUseObject(t *testing.T) {
