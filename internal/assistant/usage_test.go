@@ -79,6 +79,20 @@ func TestMergeUsageNeverShrinksEstimatedContext(t *testing.T) {
 	}, mergeUsage(estimated, reported))
 }
 
+func TestMergeUsageDoesNotPromoteProviderTotalToContext(t *testing.T) {
+	t.Parallel()
+
+	estimated := model.TokenUsage{ContextWindow: 272_000, ContextTokens: 0, InputTokens: 0, OutputTokens: 0}
+	reported := model.TokenUsage{ContextWindow: 0, ContextTokens: 0, InputTokens: 13_000_000, OutputTokens: 100}
+
+	assert.Equal(t, model.TokenUsage{
+		ContextWindow: 272_000,
+		ContextTokens: 0,
+		InputTokens:   13_000_000,
+		OutputTokens:  100,
+	}, mergeUsage(estimated, reported))
+}
+
 func TestParseSSEResultPreservesUsageWhenItemsProvideText(t *testing.T) {
 	t.Parallel()
 

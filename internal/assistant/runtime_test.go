@@ -262,6 +262,54 @@ func TestRuntime_SlashSkillShowsContent(t *testing.T) {
 	assert.Equal(t, assistant.StreamEventSkillLoaded, events[0].Kind)
 }
 
+func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+
+	_, repository := newTestRuntime(t)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, cwd, "usage", "")
+	require.NoError(t, err)
+	userEntry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleUser,
+		Content:   "hello",
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+	_, err = repository.AppendMessage(ctx, session.ID, &userEntry.ID, &database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleToolResult,
+		Content:   strings.Repeat("tool output ", 10_000),
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+	client := &capturingCompletionClient{request: nil}
+	runtime, _ := newTestRuntimeWithRepositoryAndClient(t, repository, client)
+
+	var usageEvents []assistant.StreamEvent
+	request := newRuntimePromptRequest(cwd, "next", "")
+	request.SessionID = session.ID
+	request.OnEvent = func(event assistant.StreamEvent) {
+		if event.Kind == assistant.StreamEventUsage {
+			usageEvents = append(usageEvents, event)
+		}
+	}
+
+	_, err = runtime.Prompt(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, client.request)
+	for _, message := range client.request.Messages {
+		assert.NotEqual(t, database.RoleToolResult, message.Role)
+	}
+	require.NotEmpty(t, usageEvents)
+	require.NotNil(t, usageEvents[0].Usage)
+	assert.Less(t, usageEvents[0].Usage.ContextTokens, 1000)
+}
+
 func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
@@ -317,6 +365,16 @@ func newTestRuntimeWithClient(
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
 	repository := database.NewSessionRepository(connection)
+	return newTestRuntimeWithRepositoryAndClient(t, repository, client)
+}
+
+func newTestRuntimeWithRepositoryAndClient(
+	t *testing.T,
+	repository *database.SessionRepository,
+	client assistant.CompletionClient,
+) (*assistant.Runtime, *database.SessionRepository) {
+	t.Helper()
+
 	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Shutdown)
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
