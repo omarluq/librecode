@@ -14,9 +14,12 @@ const defaultLocalExtensionSource = "path:.librecode/extensions"
 func unmarshalConfig(viperInstance *viper.Viper, cfg *Config) error {
 	settings := viperInstance.AllSettings()
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		DecodeHook: decodeExtensionUseHook,
-		Result:     cfg,
-		TagName:    "mapstructure",
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			mapstructure.StringToTimeDurationHookFunc(),
+			decodeExtensionUseHook,
+		),
+		Result:  cfg,
+		TagName: "mapstructure",
 	})
 	if err != nil {
 		return fmt.Errorf("config: create decoder: %w", err)
