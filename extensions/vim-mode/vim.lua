@@ -55,9 +55,10 @@ end
 local function set_composer(chars, cursor)
   cursor = clamp(cursor or 0, 0, #chars)
   local buf = lc.buf.get("composer") or {}
+  local next_text = table.concat(chars)
   buf.name = "composer"
-  buf.text = table.concat(chars)
-  buf.chars = copy_chars(chars)
+  buf.text = next_text
+  buf.chars = nil
   buf.cursor = cursor
   buf.label = mode_label()
   lc.buf.set("composer", buf)
