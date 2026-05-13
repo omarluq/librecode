@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pkg.go.dev/librecode.sh"><img src="https://img.shields.io/badge/reference-007d9c?style=flat&labelColor=24292e&logo=go&logoColor=white" alt="Go Reference"></a>
+  <a href="https://pkg.go.dev/github.com/omarluq/librecode"><img src="https://img.shields.io/badge/reference-007d9c?style=flat&labelColor=24292e&logo=go&logoColor=white" alt="Go Reference"></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-%3E%3D1.26-00ADD8?style=flat&labelColor=24292e&logo=go&logoColor=white" alt="Go Version"></a>
   <a href="https://github.com/omarluq/librecode/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/omarluq/librecode/ci.yml?style=flat&labelColor=24292e&label=CI&logo=github&logoColor=white" alt="CI"></a>
   <a href="https://github.com/omarluq/librecode/releases"><img src="https://img.shields.io/github/v/release/omarluq/librecode?style=flat&labelColor=24292e&color=28a745&label=Version&logo=semver&logoColor=white" alt="Version"></a>
@@ -337,7 +337,7 @@ git push origin v0.1.0
 The release workflow cross-compiles Linux, macOS, and Windows binaries, archives them, generates checksums, and publishes a GitHub release.
 
 <p align="center">
-  <a href="https://sonarcloud.io/summary/new_code?id=omarluq_librecode"><img src="https://sonarcloud.io/images/project_badges/sonarcloud-dark.svg" alt="SonarCloud Quality Gate"></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=omarluq_librecode"><img src="https://img.shields.io/sonar/quality_gate/omarluq_librecode?server=https%3A%2F%2Fsonarcloud.io&style=flat&labelColor=24292e&logo=sonarqube&logoColor=white" alt="SonarCloud Quality Gate"></a>
 </p>
 
 ## License
