@@ -90,7 +90,7 @@ type PromptResponse struct {
 	Text             string           `json:"text"`
 	Thinking         []string         `json:"thinking,omitempty"`
 	ToolEvents       []ToolEvent      `json:"tool_events,omitempty"`
-	Usage            model.TokenUsage `json:"usage,omitempty"`
+	Usage            model.TokenUsage `json:"usage"`
 	Cached           bool             `json:"cached"`
 }
 
