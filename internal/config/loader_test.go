@@ -110,20 +110,31 @@ func TestLoadRejectsEmptyExtensionUseObject(t *testing.T) {
 }
 
 func TestLoadRejectsInvalidExtensionUseSource(t *testing.T) {
-	home := t.TempDir()
-	cwd := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
-	t.Chdir(cwd)
+	testCases := []struct {
+		name   string
+		source string
+	}{
+		{name: "invalid github shorthand", source: "github:owner"},
+		{name: "unsupported scheme", source: "npm:package"},
+		{name: "github traversal", source: "github:owner/repo//../bad"},
+	}
 
-	writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), `extensions:
-  use:
-    - github:owner
-`)
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			home := t.TempDir()
+			cwd := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
+			t.Chdir(cwd)
 
-	result := config.Load("")
-	assert.True(t, result.IsError())
-	assert.ErrorContains(t, result.Error(), `config: invalid extensions.use source "github:owner"`)
+			content := "extensions:\n  use:\n    - " + testCase.source + "\n"
+			writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), content)
+
+			result := config.Load("")
+			assert.True(t, result.IsError())
+			assert.ErrorContains(t, result.Error(), `config: invalid extensions.use source`)
+		})
+	}
 }
 
 func writeConfig(t *testing.T, path, content string) {

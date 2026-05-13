@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,14 +16,15 @@ import (
 )
 
 const (
-	testBufferComposer      = "composer"
-	testContextModeKey      = "mode"
-	testEventKey            = "key"
-	testEventStartup        = "startup"
-	testModeChat            = "chat"
-	testUserExtension       = ".librecode/extensions"
-	testPathExtensionSource = "path:.librecode/extensions"
-	testRendererDefault     = "default"
+	testBufferComposer       = "composer"
+	testContextModeKey       = "mode"
+	testEventKey             = "key"
+	testEventStartup         = "startup"
+	testModeChat             = "chat"
+	testUserExtension        = ".librecode/extensions"
+	testPathExtensionSource  = "path:.librecode/extensions"
+	testRendererDefault      = "default"
+	testManagerVimModeSource = "official:vim-mode"
 )
 
 func testLayout(windows map[string]extension.WindowState) extension.LayoutState {
@@ -424,7 +426,7 @@ func TestLocalLoadPathsParsesPathSources(t *testing.T) {
 	paths, err := extension.LocalLoadPaths([]extension.ConfiguredSource{
 		{Source: " " + testPathExtensionSource + " ", Version: ""},
 		{Source: "path:./custom", Version: ""},
-		{Source: "official:vim-mode", Version: ""},
+		{Source: testManagerVimModeSource, Version: ""},
 		{Source: "github:example/extension", Version: "v1.2.3"},
 		{Source: testPathExtensionSource, Version: ""},
 	})
@@ -496,7 +498,7 @@ func TestManager_LoadsSymlinkedDirectoryManifest(t *testing.T) {
   librecode.register_command("linked", "Linked command", function() return "ok" end)
 end`,
 	))
-	require.NoError(t, os.Symlink(realExtension, linkedExtension))
+	createManagerSymlinkOrSkip(t, realExtension, linkedExtension)
 
 	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Shutdown)
@@ -625,6 +627,15 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 	assert.Equal(t, 1, result.Buffers[testBufferComposer].Cursor)
 	assert.Equal(t, "normal", result.Buffers[testBufferComposer].Label)
 	assert.Equal(t, "vim", result.Buffers[testBufferComposer].Metadata[testContextModeKey])
+}
+
+func createManagerSymlinkOrSkip(t *testing.T, oldname, newname string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping symlink test on Windows: symlinks require elevated privileges")
+	}
+	require.NoError(t, os.Symlink(oldname, newname))
 }
 
 func writeTestFile(path, content string) error {

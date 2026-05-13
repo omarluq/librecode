@@ -1,8 +1,10 @@
 package di_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,11 +31,24 @@ func TestExtensionServiceUsesProjectLockfile(t *testing.T) {
 
 	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = container.ShutdownWithContext(t.Context()).Succeed })
+	t.Cleanup(func() {
+		report := container.ShutdownWithContext(context.Background())
+		assert.True(t, report.Succeed, report.Error())
+	})
 
 	state := di.MustInvoke[*di.ExtensionService](container).State
 	require.Len(t, state.Configured, 1)
 	assert.Equal(t, "v9.9.9", state.Configured[0].Lock.Version)
+}
+
+func TestExtensionLockPathUsesGlobalPathWhenConfigPathIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+
+	path := di.ExtensionLockPathForTest("", home)
+
+	assert.Equal(t, filepath.Join(home, extension.LockFileName), path)
 }
 
 func TestExtensionLoadPathsDeduplicatesCanonicalPaths(t *testing.T) {
@@ -41,7 +56,7 @@ func TestExtensionLoadPathsDeduplicatesCanonicalPaths(t *testing.T) {
 
 	extensionDir := t.TempDir()
 	symlinkPath := filepath.Join(t.TempDir(), "extension")
-	require.NoError(t, os.Symlink(extensionDir, symlinkPath))
+	createSymlinkOrSkip(t, extensionDir, symlinkPath)
 
 	paths := di.ExtensionLoadPathsForTest([]extension.ResolvedSource{
 		newResolvedSourceForTest(extensionDir),
@@ -62,6 +77,15 @@ func newResolvedSourceForTest(loadPath string) extension.ResolvedSource {
 		LoadPath:   loadPath,
 		Status:     "path",
 	}
+}
+
+func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
+	t.Helper()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping symlink test on Windows: symlinks require elevated privileges")
+	}
+	require.NoError(t, os.Symlink(oldname, newname))
 }
 
 func writeDIFile(t *testing.T, path string, content []byte) {
