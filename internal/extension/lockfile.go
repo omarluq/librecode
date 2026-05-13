@@ -44,7 +44,7 @@ func ReadLockFile(path string) (LockFile, error) {
 	return lockFile, nil
 }
 
-// WriteLockFile writes an extension lockfile atomically enough for normal CLI use.
+// WriteLockFile writes an extension lockfile atomically.
 func WriteLockFile(path string, lockFile LockFile) error {
 	if lockFile.Extensions == nil {
 		lockFile.Extensions = map[string]LockedExtension{}
@@ -53,14 +53,44 @@ func WriteLockFile(path string, lockFile LockFile) error {
 	if err != nil {
 		return fmt.Errorf("extension: marshal lockfile: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("extension: create lockfile dir: %w", err)
-	}
+
 	cleanPath := filepath.Clean(path)
-	// #nosec G304 -- user-selected librecode lockfile path.
-	if err := os.WriteFile(cleanPath, content, 0o600); err != nil {
-		return fmt.Errorf("extension: write lockfile: %w", err)
+	dir := filepath.Dir(cleanPath)
+	if mkdirErr := os.MkdirAll(dir, 0o700); mkdirErr != nil {
+		return fmt.Errorf("extension: create lockfile dir: %w", mkdirErr)
 	}
+
+	tempPattern := "." + filepath.Base(cleanPath) + "-*.tmp"
+	tempFile, err := os.CreateTemp(dir, tempPattern) // #nosec G304 -- user-selected librecode lockfile path.
+	if err != nil {
+		return fmt.Errorf("extension: create temporary lockfile: %w", err)
+	}
+	tempPath := tempFile.Name()
+	removeTempFile := true
+	defer func() {
+		if removeTempFile {
+			removeErr := os.Remove(tempPath)
+			_ = removeErr
+		}
+	}()
+
+	if _, err := tempFile.Write(content); err != nil {
+		closeErr := tempFile.Close()
+		_ = closeErr
+		return fmt.Errorf("extension: write temporary lockfile: %w", err)
+	}
+	if err := tempFile.Chmod(0o600); err != nil {
+		closeErr := tempFile.Close()
+		_ = closeErr
+		return fmt.Errorf("extension: chmod temporary lockfile: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return fmt.Errorf("extension: close temporary lockfile: %w", err)
+	}
+	if err := os.Rename(tempPath, cleanPath); err != nil {
+		return fmt.Errorf("extension: replace lockfile: %w", err)
+	}
+	removeTempFile = false
 
 	return nil
 }
