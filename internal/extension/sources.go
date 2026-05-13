@@ -2,6 +2,7 @@ package extension
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -10,6 +11,8 @@ const (
 	sourceSchemeGitHub   = "github"
 	sourceSchemePath     = "path"
 )
+
+var githubPathPartPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // ConfiguredSource is one extension source entry from user configuration.
 type ConfiguredSource struct {
@@ -86,12 +89,30 @@ func validateOfficialSource(value string) error {
 func validateGitHubSource(value string) error {
 	repo, subdir, _ := strings.Cut(value, "//")
 	parts := strings.Split(repo, "/")
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+	if len(parts) != 2 || !validGitHubPathPart(parts[0]) || !validGitHubPathPart(parts[1]) {
 		return fmt.Errorf("extension: github source %q must be github:owner/repo or github:owner/repo//subdir", value)
 	}
-	if strings.Contains(subdir, "..") {
+	if invalidGitHubSubdir(subdir) {
 		return fmt.Errorf("extension: github source %q has invalid subdir", value)
 	}
 
 	return nil
+}
+
+func validGitHubPathPart(part string) bool {
+	trimmed := strings.TrimSpace(part)
+	return trimmed != "" && trimmed != "." && trimmed != ".." && githubPathPartPattern.MatchString(trimmed)
+}
+
+func invalidGitHubSubdir(subdir string) bool {
+	if subdir == "" {
+		return false
+	}
+	for _, part := range strings.Split(subdir, "/") {
+		if part == "" || part == "." || part == ".." {
+			return true
+		}
+	}
+
+	return false
 }

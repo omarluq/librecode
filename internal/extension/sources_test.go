@@ -54,7 +54,10 @@ func TestParseSourceRefRejectsInvalidSources(t *testing.T) {
 		"official:owner/name",
 		"github:owner",
 		"github:/repo",
+		"github:../repo",
+		"github:owner/..",
 		"github:owner/repo//../bad",
+		"github:owner/repo//bad/../path",
 	}
 
 	for _, source := range testCases {
