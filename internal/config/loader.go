@@ -15,6 +15,22 @@ import (
 
 // Load resolves configuration from defaults, environment variables, and an optional file.
 func Load(path string) mo.Result[*Config] {
+	loaded, err := LoadResolved(path)
+	if err != nil {
+		return mo.Err[*Config](err)
+	}
+
+	return mo.Ok(loaded.Config)
+}
+
+// LoadedConfig contains the resolved config and the file path it came from, if any.
+type LoadedConfig struct {
+	Config *Config
+	Path   string
+}
+
+// LoadResolved resolves configuration and reports the file path used, if any.
+func LoadResolved(path string) (LoadedConfig, error) {
 	viperInstance := viper.New()
 	setDefaults(viperInstance)
 
@@ -35,20 +51,20 @@ func Load(path string) mo.Result[*Config] {
 	if err := viperInstance.ReadInConfig(); err != nil {
 		var notFoundErr viper.ConfigFileNotFoundError
 		if !errors.As(err, &notFoundErr) || path != "" {
-			return mo.Err[*Config](fmt.Errorf("config: read: %w", err))
+			return LoadedConfig{}, fmt.Errorf("config: read: %w", err)
 		}
 	}
 
 	var cfg Config
 	if err := unmarshalConfig(viperInstance, &cfg); err != nil {
-		return mo.Err[*Config](err)
+		return LoadedConfig{}, err
 	}
 
 	if err := cfg.Validate(); err != nil {
-		return mo.Err[*Config](err)
+		return LoadedConfig{}, err
 	}
 
-	return mo.Ok(&cfg)
+	return LoadedConfig{Config: &cfg, Path: viperInstance.ConfigFileUsed()}, nil
 }
 
 func defaultConfigPaths() []string {

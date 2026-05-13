@@ -24,3 +24,17 @@ func TestNewContainer_DisableExtensionsOverride(t *testing.T) {
 	cfg := di.MustInvoke[*di.ConfigService](container).Get()
 	assert.False(t, cfg.Extensions.Enabled)
 }
+
+func TestConfigServiceTracksLoadedPath(t *testing.T) {
+	t.Parallel()
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte("app:\n  env: test\n"), 0o600))
+
+	container, err := di.NewContainer(configPath, di.ConfigOverrides{DisableExtensions: false})
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
+
+	configService := di.MustInvoke[*di.ConfigService](container)
+	assert.Equal(t, configPath, configService.Path())
+}
