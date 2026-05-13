@@ -579,6 +579,7 @@ func (app *App) resetMessages() {
 	app.messageCacheWarmIndex = 0
 	app.messageCacheWarm = false
 	app.messageCacheWarmQueued = false
+	app.tokenUsage = model.EmptyTokenUsage()
 	app.resetPromptHistory()
 }
 
@@ -590,6 +591,7 @@ func (app *App) truncateMessages(length int) {
 	app.messageRowPrefixSums = nil
 	app.messageCacheWarmIndex = 0
 	app.messageCacheWarm = false
+	app.tokenUsage = model.EmptyTokenUsage()
 }
 
 func (app *App) resetStreamingBlocks() {

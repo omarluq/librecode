@@ -28,13 +28,8 @@ func newSSEAccumulator() *sseAccumulator {
 }
 
 func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(StreamEvent)) {
-	if response, ok := event["response"].(map[string]any); ok {
-		accumulator.finalResponse = response
-	}
-	if usage, ok := event["usage"].(map[string]any); ok {
-		accumulator.finalResponse = ensureSSEFinalResponse(accumulator.finalResponse)
-		accumulator.finalResponse["usage"] = usage
-	}
+	accumulator.addResponse(event)
+	accumulator.addUsage(event)
 	if text, delta := thinkingTextFromSSEEvent(event); delta && text != "" {
 		emitStreamEvent(onEvent, StreamEvent{
 			ToolEvent: nil,
@@ -58,6 +53,28 @@ func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(Stream
 	if arguments, ok := event["arguments"].(string); ok {
 		accumulator.addArguments(event, arguments)
 	}
+}
+
+func (accumulator *sseAccumulator) addResponse(event map[string]any) {
+	response, ok := event["response"].(map[string]any)
+	if !ok {
+		return
+	}
+	if accumulator.finalResponse != nil {
+		if usage := accumulator.finalResponse["usage"]; usage != nil && response["usage"] == nil {
+			response["usage"] = usage
+		}
+	}
+	accumulator.finalResponse = response
+}
+
+func (accumulator *sseAccumulator) addUsage(event map[string]any) {
+	usage, ok := event["usage"].(map[string]any)
+	if !ok {
+		return
+	}
+	accumulator.finalResponse = ensureSSEFinalResponse(accumulator.finalResponse)
+	accumulator.finalResponse["usage"] = usage
 }
 
 func (accumulator *sseAccumulator) addItem(item map[string]any) {
