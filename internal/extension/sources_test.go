@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	testGitHubSource       = "github:owner/repo"
 	testGitHubSubdirSource = "github:owner/repo//extensions/ext"
 	testPathSource         = "path:.librecode/extensions"
 	testVimModeSource      = "official:vim-mode"
@@ -26,7 +27,7 @@ func TestParseSourceRefValidatesSupportedSources(t *testing.T) {
 		key     string
 	}{
 		{name: "official", source: testVimModeSource, version: "", key: testVimModeSource},
-		{name: "github", source: "github:owner/repo", version: "v1.0.0", key: "github:owner/repo"},
+		{name: "github", source: testGitHubSource, version: "v1.0.0", key: testGitHubSource},
 		{name: "github subdir", source: testGitHubSubdirSource, version: "", key: testGitHubSubdirSource},
 		{name: "path", source: testPathSource, version: "", key: testPathSource},
 	}
