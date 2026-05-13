@@ -36,6 +36,34 @@ func TestExtensionServiceUsesProjectLockfile(t *testing.T) {
 	assert.Equal(t, "v9.9.9", state.Configured[0].Lock.Version)
 }
 
+func TestExtensionLoadPathsDeduplicatesCanonicalPaths(t *testing.T) {
+	t.Parallel()
+
+	extensionDir := t.TempDir()
+	symlinkPath := filepath.Join(t.TempDir(), "extension")
+	require.NoError(t, os.Symlink(extensionDir, symlinkPath))
+
+	paths := di.ExtensionLoadPathsForTest([]extension.ResolvedSource{
+		newResolvedSourceForTest(extensionDir),
+		newResolvedSourceForTest(symlinkPath),
+		newResolvedSourceForTest(extensionDir),
+	})
+
+	require.Len(t, paths, 1)
+	assert.Equal(t, extensionDir, paths[0])
+}
+
+func newResolvedSourceForTest(loadPath string) extension.ResolvedSource {
+	return extension.ResolvedSource{
+		Configured: extension.ConfiguredSource{Source: "path:" + loadPath, Version: ""},
+		Ref:        extension.SourceRef{Scheme: "path", Value: loadPath, Version: ""},
+		Lock:       extension.LockedExtension{Resolved: "", Version: ""},
+		Name:       loadPath,
+		LoadPath:   loadPath,
+		Status:     "path",
+	}
+}
+
 func writeDIFile(t *testing.T, path string, content []byte) {
 	t.Helper()
 

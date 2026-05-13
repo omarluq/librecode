@@ -75,12 +75,32 @@ func extensionLockPath(configPath, home string) string {
 
 func extensionLoadPaths(resolvedSources []extension.ResolvedSource) []string {
 	paths := make([]string, 0, len(resolvedSources))
+	seen := map[string]struct{}{}
 	for index := range resolvedSources {
-		if resolvedSources[index].LoadPath == "" {
+		path := resolvedSources[index].LoadPath
+		if path == "" {
 			continue
 		}
-		paths = append(paths, resolvedSources[index].LoadPath)
+		key := extensionLoadPathKey(path)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		paths = append(paths, path)
 	}
 
 	return paths
+}
+
+func extensionLoadPathKey(path string) string {
+	cleanPath := filepath.Clean(path)
+	absolutePath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return cleanPath
+	}
+	if realPath, err := filepath.EvalSymlinks(absolutePath); err == nil {
+		return realPath
+	}
+
+	return absolutePath
 }
