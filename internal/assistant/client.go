@@ -33,6 +33,7 @@ const (
 	jsonToolParamsKey       = "parameters"
 	jsonCallIDKey           = "call_id"
 	jsonOutputKey           = "output"
+	jsonOutputTokensKey     = "output_tokens"
 	jsonToolChoiceKey       = "tool_choice"
 	jsonTextKey             = "text"
 	jsonThinkingKey         = "thinking"
@@ -64,9 +65,10 @@ type CompletionRequest struct {
 
 // CompletionResult is a provider response plus model-visible side effects.
 type CompletionResult struct {
-	Text       string      `json:"text"`
-	Thinking   []string    `json:"thinking,omitempty"`
-	ToolEvents []ToolEvent `json:"tool_events,omitempty"`
+	Text       string           `json:"text"`
+	Thinking   []string         `json:"thinking,omitempty"`
+	ToolEvents []ToolEvent      `json:"tool_events,omitempty"`
+	Usage      model.TokenUsage `json:"usage,omitempty"`
 }
 
 // ToolEvent captures one tool call for persistence and TUI rendering.
@@ -95,6 +97,7 @@ type providerResult struct {
 	OutputItems []any
 	Thinking    []string
 	ToolCalls   []toolCall
+	Usage       model.TokenUsage
 }
 
 // HTTPCompletionClient is a small provider client for built-in API families.
@@ -133,6 +136,6 @@ func (client *HTTPCompletionClient) Complete(
 	}
 }
 
-func textCompletionResult(text string) *CompletionResult {
-	return &CompletionResult{Text: strings.TrimSpace(text), Thinking: nil, ToolEvents: nil}
+func textCompletionResult(text string, usage model.TokenUsage) *CompletionResult {
+	return &CompletionResult{Text: strings.TrimSpace(text), Thinking: nil, ToolEvents: nil, Usage: usage}
 }

@@ -122,11 +122,11 @@ type App struct {
 	selectedPanelKind            panelKind
 	sessionID                    string
 	statusMessage                string
-	mode                         appMode
 	streamingText                string
 	streamingThinkingText        string
 	cwd                          string
 	promptHistoryDraft           string
+	mode                         appMode
 	resources                    core.ResourceSnapshot
 	messageLineCache             []cachedRenderedMessage
 	streamingBlockLineCache      []cachedRenderedMessage
@@ -140,6 +140,7 @@ type App struct {
 	messageLineCacheState        messageLineCacheState
 	streamingBlockLineCacheState messageLineCacheState
 	selection                    mouseSelection
+	tokenUsage                   model.TokenUsage
 	promptSequence               uint64
 	workFrame                    int
 	lastMessageMaxRows           int
@@ -252,6 +253,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		promptHistoryIndex:           0,
 		promptSequence:               0,
 		statusMessage:                "",
+		tokenUsage:                   model.EmptyTokenUsage(),
 		selectedPanelKind:            "",
 		streamingText:                "",
 		streamingThinkingText:        "",
@@ -488,7 +490,7 @@ func (app *App) shouldDrawImmediately(event tcell.Event) bool {
 	if !ok {
 		return true
 	}
-	payload, ok := interrupt.Data().(asyncEvent)
+	payload, ok := interrupt.Data().(*asyncEvent)
 	if !ok {
 		return true
 	}
@@ -501,7 +503,8 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 	case asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
 		asyncEventPromptToolStart,
-		asyncEventPromptToolResult:
+		asyncEventPromptToolResult,
+		asyncEventPromptUsage:
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,

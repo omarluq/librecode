@@ -334,6 +334,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.scrollOffset = 0
 	app.streamingText = ""
 	app.streamingThinkingText = ""
+	app.tokenUsage = model.EmptyTokenUsage()
 	app.resetStreamingBlocks()
 	app.streamedToolEvents = 0
 	app.activePrompt = &activePromptState{
@@ -354,9 +355,10 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 		defer cancel()
 		response, err := app.runtime.Prompt(promptCtx, request)
 		if err != nil {
-			app.postAsyncEvent(ctx, asyncEvent{
+			app.postAsyncEvent(ctx, &asyncEvent{
 				Response:  nil,
 				ToolEvent: nil,
+				Usage:     nil,
 				Kind:      asyncEventPromptError,
 				Provider:  "",
 				Text:      err.Error(),
@@ -364,9 +366,10 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 			})
 			return
 		}
-		app.postAsyncEvent(ctx, asyncEvent{
+		app.postAsyncEvent(ctx, &asyncEvent{
 			Response:  response,
 			ToolEvent: nil,
+			Usage:     nil,
 			Kind:      asyncEventPromptDone,
 			Provider:  "",
 			Text:      "",
@@ -394,6 +397,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 		return
 	}
 	app.sessionID = response.SessionID
+	app.applyTokenUsage(&response.Usage)
 	app.applyPromptResponseSideEffects(response, streamingBlocks)
 	app.streamedToolEvents = 0
 	app.addMessage(database.RoleAssistant, response.Text)

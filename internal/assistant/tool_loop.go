@@ -39,7 +39,12 @@ func executeToolCalls(
 	outputs := make([]any, 0, len(calls))
 	events := make([]ToolEvent, 0, len(calls))
 	for _, call := range calls {
-		emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Kind: StreamEventToolStart, Text: call.Name})
+		emitStreamEvent(onEvent, StreamEvent{
+			ToolEvent: nil,
+			Usage:     nil,
+			Kind:      StreamEventToolStart,
+			Text:      call.Name,
+		})
 		result, err := registry.Execute(ctx, call.Name, call.Arguments)
 		resultText := result.Text()
 		detailsJSON := encodeToolDetails(result.Details)
@@ -59,7 +64,12 @@ func executeToolCalls(
 		}
 		event.Result = resultText
 		events = append(events, event)
-		emitStreamEvent(onEvent, StreamEvent{ToolEvent: &event, Kind: StreamEventToolResult, Text: ""})
+		emitStreamEvent(onEvent, StreamEvent{
+			ToolEvent: &event,
+			Usage:     nil,
+			Kind:      StreamEventToolResult,
+			Text:      "",
+		})
 		outputs = append(outputs, map[string]any{
 			jsonTypeKey:   functionCallOutputType,
 			jsonCallIDKey: call.ID,

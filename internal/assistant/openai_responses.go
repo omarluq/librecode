@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/model"
 )
 
 func (client *HTTPCompletionClient) completeOpenAIResponses(
@@ -36,7 +38,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	input []any,
 	stream bool,
 ) (*CompletionResult, error) {
-	result := &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil}
+	result := &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()}
 	for {
 		payload := responsesPayload(request, input, stream)
 		providerResult, err := client.requestResponses(ctx, endpoint, headers, payload, stream, request.OnEvent)
@@ -44,6 +46,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			return nil, err
 		}
 		result.Thinking = append(result.Thinking, providerResult.Thinking...)
+		result.Usage = mergeUsage(result.Usage, providerResult.Usage)
 		if err := validateToolCalls(providerResult.ToolCalls); err != nil {
 			return nil, err
 		}
@@ -181,6 +184,7 @@ func providerResultFromResponse(response map[string]any) *providerResult {
 		OutputItems: outputItems,
 		Thinking:    thinkingFromOutput(outputItems),
 		ToolCalls:   toolCallsFromOutput(outputItems),
+		Usage:       usageFromObject(response["usage"]),
 	}
 }
 
@@ -195,6 +199,7 @@ func providerResultFromOutputItems(outputItems []any, fallbackText string) *prov
 		OutputItems: outputItems,
 		Thinking:    thinkingFromOutput(outputItems),
 		ToolCalls:   toolCallsFromOutput(outputItems),
+		Usage:       model.EmptyTokenUsage(),
 	}
 }
 

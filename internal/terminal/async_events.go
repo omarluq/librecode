@@ -8,6 +8,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 type asyncEventKind string
@@ -23,12 +24,14 @@ const (
 	asyncEventPromptToolStart     asyncEventKind = "prompt_tool_start"
 	asyncEventPromptToolResult    asyncEventKind = "prompt_tool_result"
 	asyncEventPromptRetry         asyncEventKind = "prompt_retry"
+	asyncEventPromptUsage         asyncEventKind = "prompt_usage"
 	asyncEventPromptError         asyncEventKind = "prompt_error"
 )
 
 type asyncEvent struct {
 	Response  *assistant.PromptResponse
 	ToolEvent *assistant.ToolEvent
+	Usage     *model.TokenUsage
 	Kind      asyncEventKind
 	Provider  string
 	Text      string
@@ -37,9 +40,10 @@ type asyncEvent struct {
 
 func (app *App) promptUserEntryHandler(ctx context.Context, promptID uint64) func(assistant.PromptUserEntryEvent) {
 	return func(event assistant.PromptUserEntryEvent) {
-		app.postAsyncEvent(ctx, asyncEvent{
+		app.postAsyncEvent(ctx, &asyncEvent{
 			Response:  nil,
 			ToolEvent: nil,
+			Usage:     nil,
 			Kind:      asyncEventPromptUserEntry,
 			Provider:  event.SessionID,
 			Text:      event.EntryID,
@@ -54,9 +58,10 @@ func (app *App) promptRetryHandler(ctx context.Context, promptID uint64) assista
 		if event.Kind == assistant.RetryEventStart {
 			text = "retrying model request in " + event.Delay.Round(time.Second).String()
 		}
-		app.postAsyncEvent(ctx, asyncEvent{
+		app.postAsyncEvent(ctx, &asyncEvent{
 			Response:  nil,
 			ToolEvent: nil,
+			Usage:     nil,
 			Kind:      asyncEventPromptRetry,
 			Provider:  string(event.Kind),
 			Text:      text,
@@ -69,37 +74,51 @@ func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(a
 	return func(event assistant.StreamEvent) {
 		switch event.Kind {
 		case assistant.StreamEventTextDelta:
-			app.postAsyncEvent(ctx, asyncEvent{
+			app.postAsyncEvent(ctx, &asyncEvent{
 				Response:  nil,
 				ToolEvent: nil,
+				Usage:     nil,
 				Kind:      asyncEventPromptDelta,
 				Provider:  "",
 				Text:      event.Text,
 				PromptID:  promptID,
 			})
 		case assistant.StreamEventThinkingDelta:
-			app.postAsyncEvent(ctx, asyncEvent{
+			app.postAsyncEvent(ctx, &asyncEvent{
 				Response:  nil,
 				ToolEvent: nil,
+				Usage:     nil,
 				Kind:      asyncEventPromptThinkingDelta,
 				Provider:  "",
 				Text:      event.Text,
 				PromptID:  promptID,
 			})
 		case assistant.StreamEventToolStart:
-			app.postAsyncEvent(ctx, asyncEvent{
+			app.postAsyncEvent(ctx, &asyncEvent{
 				Response:  nil,
 				ToolEvent: nil,
+				Usage:     nil,
 				Kind:      asyncEventPromptToolStart,
 				Provider:  "",
 				Text:      event.Text,
 				PromptID:  promptID,
 			})
 		case assistant.StreamEventToolResult, assistant.StreamEventSkillLoaded:
-			app.postAsyncEvent(ctx, asyncEvent{
+			app.postAsyncEvent(ctx, &asyncEvent{
 				Response:  nil,
 				ToolEvent: event.ToolEvent,
+				Usage:     nil,
 				Kind:      asyncEventPromptToolResult,
+				Provider:  "",
+				Text:      "",
+				PromptID:  promptID,
+			})
+		case assistant.StreamEventUsage:
+			app.postAsyncEvent(ctx, &asyncEvent{
+				Response:  nil,
+				ToolEvent: nil,
+				Usage:     event.Usage,
+				Kind:      asyncEventPromptUsage,
 				Provider:  "",
 				Text:      "",
 				PromptID:  promptID,
@@ -108,7 +127,7 @@ func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(a
 	}
 }
 
-func (app *App) postAsyncEvent(ctx context.Context, event asyncEvent) {
+func (app *App) postAsyncEvent(ctx context.Context, event *asyncEvent) {
 	defer func() {
 		panicValue := recover()
 		if panicValue != nil {
@@ -122,7 +141,7 @@ func (app *App) postAsyncEvent(ctx context.Context, event asyncEvent) {
 }
 
 func (app *App) handleInterrupt(ctx context.Context, event *tcell.EventInterrupt) (bool, error) {
-	payload, ok := event.Data().(asyncEvent)
+	payload, ok := event.Data().(*asyncEvent)
 	if !ok {
 		return false, nil
 	}
@@ -134,7 +153,7 @@ func (app *App) handleInterrupt(ctx context.Context, event *tcell.EventInterrupt
 	return false, nil
 }
 
-func (app *App) handleAuthAsyncEvent(payload asyncEvent) bool {
+func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 	switch payload.Kind {
 	case asyncEventAuthURL:
 		app.addMessage(database.RoleCustom, payload.Text)
@@ -157,6 +176,7 @@ func (app *App) handleAuthAsyncEvent(payload asyncEvent) bool {
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
 		asyncEventPromptRetry,
+		asyncEventPromptUsage,
 		asyncEventPromptError:
 		return false
 	}
@@ -164,7 +184,7 @@ func (app *App) handleAuthAsyncEvent(payload asyncEvent) bool {
 	return false
 }
 
-func (app *App) handlePromptAsyncEvent(ctx context.Context, payload asyncEvent) {
+func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent) {
 	if app.ignorePromptEvent(payload) {
 		return
 	}
@@ -174,7 +194,7 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload asyncEvent) 
 	app.handlePromptStreamEvent(ctx, payload)
 }
 
-func (app *App) ignorePromptEvent(payload asyncEvent) bool {
+func (app *App) ignorePromptEvent(payload *asyncEvent) bool {
 	if !isPromptAsyncEvent(payload.Kind) {
 		return false
 	}
@@ -195,6 +215,7 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
 		asyncEventPromptRetry,
+		asyncEventPromptUsage,
 		asyncEventPromptError:
 		return true
 	case asyncEventAuthURL, asyncEventAuthDone, asyncEventAuthError:
@@ -204,7 +225,7 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 	return false
 }
 
-func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload asyncEvent) bool {
+func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEvent) bool {
 	switch payload.Kind {
 	case asyncEventPromptDone:
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventPromptDone, promptDoneExtensionData(payload.Response))
@@ -228,14 +249,18 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload asyncEve
 		return true
 	case asyncEventAuthURL, asyncEventAuthDone, asyncEventAuthError:
 		return true
-	case asyncEventPromptDelta, asyncEventPromptThinkingDelta, asyncEventPromptToolStart, asyncEventPromptToolResult:
+	case asyncEventPromptDelta,
+		asyncEventPromptThinkingDelta,
+		asyncEventPromptToolStart,
+		asyncEventPromptToolResult,
+		asyncEventPromptUsage:
 		return false
 	}
 
 	return false
 }
 
-func (app *App) handlePromptStreamEvent(ctx context.Context, payload asyncEvent) {
+func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent) {
 	if app.activePrompt != nil && app.activePrompt.Canceled {
 		return
 	}
@@ -264,6 +289,9 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload asyncEvent)
 			map[string]any{extensionDataName: payload.Text},
 		)
 		return
+	case asyncEventPromptUsage:
+		app.applyTokenUsage(payload.Usage)
+		return
 	case asyncEventPromptDone,
 		asyncEventPromptUserEntry,
 		asyncEventPromptRetry,
@@ -275,7 +303,7 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload asyncEvent)
 	}
 }
 
-func (app *App) emitPromptRetryExtensionEvent(ctx context.Context, payload asyncEvent) {
+func (app *App) emitPromptRetryExtensionEvent(ctx context.Context, payload *asyncEvent) {
 	eventName := extensionEventRetryStart
 	if payload.Provider == string(assistant.RetryEventEnd) {
 		eventName = extensionEventRetryEnd

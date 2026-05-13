@@ -284,9 +284,10 @@ func (app *App) loginOAuthProvider(ctx context.Context, config oauthLoginConfig)
 
 func (app *App) runOAuthLogin(ctx context.Context, config oauthLoginConfig) {
 	credential, err := config.LoginFunc(ctx, func(info auth.OAuthAuthInfo) {
-		app.postAsyncEvent(ctx, asyncEvent{
+		app.postAsyncEvent(ctx, &asyncEvent{
 			Response:  nil,
 			ToolEvent: nil,
+			Usage:     nil,
 			Kind:      asyncEventAuthURL,
 			Provider:  config.Provider,
 			Text:      authInfoText(config.DisplayName, info),
@@ -301,9 +302,10 @@ func (app *App) runOAuthLogin(ctx context.Context, config oauthLoginConfig) {
 		app.postOAuthLoginError(ctx, config, err)
 		return
 	}
-	app.postAsyncEvent(ctx, asyncEvent{
+	app.postAsyncEvent(ctx, &asyncEvent{
 		Response:  nil,
 		ToolEvent: nil,
+		Usage:     nil,
 		Kind:      asyncEventAuthDone,
 		Provider:  config.Provider,
 		Text:      "",
@@ -312,9 +314,10 @@ func (app *App) runOAuthLogin(ctx context.Context, config oauthLoginConfig) {
 }
 
 func (app *App) postOAuthLoginError(ctx context.Context, config oauthLoginConfig, err error) {
-	app.postAsyncEvent(ctx, asyncEvent{
+	app.postAsyncEvent(ctx, &asyncEvent{
 		Response:  nil,
 		ToolEvent: nil,
+		Usage:     nil,
 		Kind:      asyncEventAuthError,
 		Provider:  config.Provider,
 		Text:      config.LoginFailed + err.Error(),

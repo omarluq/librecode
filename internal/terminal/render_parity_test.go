@@ -14,6 +14,7 @@ import (
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 func TestRenderParityComposerFrame(t *testing.T) {
@@ -57,6 +58,28 @@ func TestRenderParityStatuslineFrame(t *testing.T) {
 	}
 	if !strings.Contains(second, modelLabel(app.currentProvider(), app.currentModel())) {
 		t.Fatalf("status second row = %q", second)
+	}
+}
+
+func TestRenderParityStatuslineTokenUsage(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.tokenUsage = model.TokenUsage{
+		ContextWindow: 1000,
+		ContextTokens: 250,
+		InputTokens:   0,
+		OutputTokens:  0,
+	}
+
+	layout := app.defaultRuntimeLayout(80, 12)
+	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.drawStatusWindow(&layout)
+
+	second := frameRowText(app.frame, layout.Status.Y+1)
+	assertFrameContainsAll(t, second, "ctx 250/1.0k 25%")
+	if strings.Contains(second, "↑") || strings.Contains(second, "↓") {
+		t.Fatalf("status should not include input/output tokens: %q", second)
 	}
 }
 
