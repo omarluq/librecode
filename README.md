@@ -336,10 +336,8 @@ git push origin v0.1.0
 
 The release workflow cross-compiles Linux, macOS, and Windows binaries, archives them, generates checksums, and publishes a GitHub release.
 
-<p align="center">
-  <a href="https://sonarcloud.io/summary/new_code?id=omarluq_librecode"><img src="https://img.shields.io/sonar/quality_gate/omarluq_librecode?server=https%3A%2F%2Fsonarcloud.io&style=flat&labelColor=24292e&logo=sonarqube&logoColor=white" alt="SonarCloud Quality Gate"></a>
-</p>
-
 ## License
 
 MIT — see [`LICENSE.txt`](LICENSE.txt).
+
+<a href="https://sonarcloud.io/summary/new_code?id=omarluq_librecode"><img src="https://img.shields.io/sonar/quality_gate/omarluq_librecode?server=https%3A%2F%2Fsonarcloud.io&style=flat&labelColor=24292e&logo=sonarqube&logoColor=white" alt="SonarCloud Quality Gate"></a>
