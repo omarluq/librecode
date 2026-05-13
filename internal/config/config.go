@@ -178,6 +178,9 @@ func (config *Config) validateExtensions() error {
 		if extensionUse.Source == "" {
 			return fmt.Errorf("config: extensions.use source is required")
 		}
+		if _, err := extension.ParseSourceRef(extensionUse.Source, extensionUse.Version); err != nil {
+			return fmt.Errorf("config: invalid extensions.use source %q: %w", extensionUse.Source, err)
+		}
 	}
 
 	return nil
