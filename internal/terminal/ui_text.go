@@ -227,9 +227,13 @@ func writeTextSegment(
 	if len(runes) > 0 {
 		mainRune = runes[0]
 	}
-	screen.SetContent(column, row, mainRune, nil, style)
+	combining := []rune(nil)
+	if len(runes) > 1 {
+		combining = runes[1:]
+	}
+	screen.SetContent(column, row, mainRune, combining, style)
 	for offset := 1; offset < segment.Width; offset++ {
-		screen.SetContent(column+offset, row, ' ', nil, style)
+		screen.SetContent(column+offset, row, 0, nil, style)
 	}
 
 	return segment.Width
