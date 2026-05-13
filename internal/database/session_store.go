@@ -155,6 +155,30 @@ func (repository *SessionRepository) BuildContext(
 	return &contextEntity, nil
 }
 
+func newEntryEntity(sessionID string, parentID *string, entryType EntryType, message *MessageEntity) EntryEntity {
+	createdAt := message.Timestamp
+	return EntryEntity{
+		CreatedAt:                  createdAt,
+		ParentID:                   parentID,
+		Message:                    *message,
+		Summary:                    "",
+		ToolStatus:                 "",
+		Type:                       entryType,
+		CustomType:                 "",
+		DataJSON:                   "{}",
+		ID:                         newEntryID(),
+		ToolName:                   "",
+		SessionID:                  sessionID,
+		ToolArgsJSON:               "",
+		BranchFromEntryID:          "",
+		CompactionFirstKeptEntryID: "",
+		CompactionTokensBefore:     0,
+		TokenEstimate:              0,
+		Display:                    true,
+		ModelFacing:                false,
+	}
+}
+
 // AppendMessage appends a message as a child of the current leaf or provided parent.
 func (repository *SessionRepository) AppendMessage(
 	ctx context.Context,
@@ -162,17 +186,9 @@ func (repository *SessionRepository) AppendMessage(
 	parentID *string,
 	message *MessageEntity,
 ) (*EntryEntity, error) {
-	entry := EntryEntity{
-		Message:    *message,
-		CreatedAt:  repository.now().UTC(),
-		ParentID:   parentID,
-		ID:         newEntryID(),
-		SessionID:  sessionID,
-		Type:       EntryTypeMessage,
-		CustomType: "",
-		DataJSON:   "{}",
-		Summary:    "",
-	}
+	entry := newEntryEntity(sessionID, parentID, EntryTypeMessage, message)
+	entry.CreatedAt = repository.now().UTC()
+	entry.Message.Timestamp = entry.CreatedAt
 
 	if err := repository.appendEntry(ctx, &entry); err != nil {
 		return nil, err
@@ -200,23 +216,15 @@ func (repository *SessionRepository) AppendCustomEntry(
 	dataJSON string,
 ) (*EntryEntity, error) {
 	timestamp := repository.now().UTC()
-	entry := EntryEntity{
-		Message: MessageEntity{
-			Timestamp: timestamp,
-			Role:      "",
-			Content:   "",
-			Provider:  "",
-			Model:     "",
-		},
-		CreatedAt:  timestamp,
-		ParentID:   parentID,
-		ID:         newEntryID(),
-		SessionID:  sessionID,
-		Type:       EntryTypeCustom,
-		CustomType: customType,
-		DataJSON:   normalizeDataJSON(dataJSON),
-		Summary:    "",
-	}
+	entry := newEntryEntity(sessionID, parentID, EntryTypeCustom, &MessageEntity{
+		Timestamp: timestamp,
+		Role:      "",
+		Content:   "",
+		Provider:  "",
+		Model:     "",
+	})
+	entry.CustomType = customType
+	entry.DataJSON = normalizeDataJSON(dataJSON)
 
 	if err := repository.appendEntry(ctx, &entry); err != nil {
 		return nil, err
@@ -236,39 +244,39 @@ func (repository *SessionRepository) AppendCustomMessage(
 	details map[string]any,
 ) (*EntryEntity, error) {
 	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:          details,
-		Display:          &display,
-		FromHook:         false,
-		FirstKeptEntryID: "",
-		FromID:           "",
-		Label:            nil,
-		Name:             "",
-		TargetID:         "",
-		ThinkingLevel:    "",
-		TokensBefore:     0,
+		Details:                    details,
+		Display:                    &display,
+		FromHook:                   false,
+		FirstKeptEntryID:           "",
+		FromID:                     "",
+		Label:                      nil,
+		Name:                       "",
+		TargetID:                   "",
+		ThinkingLevel:              "",
+		ToolName:                   "",
+		ToolStatus:                 "",
+		ToolArgsJSON:               "",
+		TokenEstimate:              0,
+		ModelFacing:                nil,
+		CompactionFirstKeptEntryID: "",
+		CompactionTokensBefore:     0,
+		BranchFromEntryID:          "",
+		TokensBefore:               0,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	timestamp := repository.now().UTC()
-	entry := EntryEntity{
-		Message: MessageEntity{
-			Timestamp: timestamp,
-			Role:      RoleCustom,
-			Content:   content,
-			Provider:  "",
-			Model:     "",
-		},
-		CreatedAt:  timestamp,
-		ParentID:   parentID,
-		ID:         newEntryID(),
-		SessionID:  sessionID,
-		Type:       EntryTypeCustomMessage,
-		CustomType: customType,
-		DataJSON:   dataJSON,
-		Summary:    "",
-	}
+	entry := newEntryEntity(sessionID, parentID, EntryTypeCustomMessage, &MessageEntity{
+		Timestamp: timestamp,
+		Role:      RoleCustom,
+		Content:   content,
+		Provider:  "",
+		Model:     "",
+	})
+	entry.CustomType = customType
+	entry.DataJSON = dataJSON
 
 	if err := repository.appendEntry(ctx, &entry); err != nil {
 		return nil, err
@@ -286,23 +294,13 @@ func (repository *SessionRepository) AppendModelChange(
 	model string,
 ) (*EntryEntity, error) {
 	timestamp := repository.now().UTC()
-	entry := EntryEntity{
-		Message: MessageEntity{
-			Timestamp: timestamp,
-			Role:      "",
-			Content:   "",
-			Provider:  provider,
-			Model:     model,
-		},
-		CreatedAt:  timestamp,
-		ParentID:   parentID,
-		ID:         newEntryID(),
-		SessionID:  sessionID,
-		Type:       EntryTypeModelChange,
-		CustomType: "",
-		DataJSON:   "{}",
-		Summary:    "",
-	}
+	entry := newEntryEntity(sessionID, parentID, EntryTypeModelChange, &MessageEntity{
+		Timestamp: timestamp,
+		Role:      "",
+		Content:   "",
+		Provider:  provider,
+		Model:     model,
+	})
 
 	if err := repository.appendEntry(ctx, &entry); err != nil {
 		return nil, err
@@ -319,39 +317,38 @@ func (repository *SessionRepository) AppendThinkingLevelChange(
 	thinkingLevel string,
 ) (*EntryEntity, error) {
 	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:          nil,
-		Display:          nil,
-		FromHook:         false,
-		FirstKeptEntryID: "",
-		FromID:           "",
-		Label:            nil,
-		Name:             "",
-		TargetID:         "",
-		ThinkingLevel:    thinkingLevel,
-		TokensBefore:     0,
+		Details:                    nil,
+		Display:                    nil,
+		FromHook:                   false,
+		FirstKeptEntryID:           "",
+		FromID:                     "",
+		Label:                      nil,
+		Name:                       "",
+		TargetID:                   "",
+		ThinkingLevel:              thinkingLevel,
+		ToolName:                   "",
+		ToolStatus:                 "",
+		ToolArgsJSON:               "",
+		TokenEstimate:              0,
+		ModelFacing:                nil,
+		CompactionFirstKeptEntryID: "",
+		CompactionTokensBefore:     0,
+		BranchFromEntryID:          "",
+		TokensBefore:               0,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	timestamp := repository.now().UTC()
-	entry := EntryEntity{
-		Message: MessageEntity{
-			Timestamp: timestamp,
-			Role:      "",
-			Content:   "",
-			Provider:  "",
-			Model:     "",
-		},
-		CreatedAt:  timestamp,
-		ParentID:   parentID,
-		ID:         newEntryID(),
-		SessionID:  sessionID,
-		Type:       EntryTypeThinkingLevelChange,
-		CustomType: "",
-		DataJSON:   dataJSON,
-		Summary:    "",
-	}
+	entry := newEntryEntity(sessionID, parentID, EntryTypeThinkingLevelChange, &MessageEntity{
+		Timestamp: timestamp,
+		Role:      "",
+		Content:   "",
+		Provider:  "",
+		Model:     "",
+	})
+	entry.DataJSON = dataJSON
 
 	if err := repository.appendEntry(ctx, &entry); err != nil {
 		return nil, err
@@ -372,16 +369,24 @@ func (repository *SessionRepository) AppendCompaction(
 	fromHook bool,
 ) (*EntryEntity, error) {
 	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:          details,
-		Display:          nil,
-		FromHook:         fromHook,
-		FirstKeptEntryID: firstKeptEntryID,
-		FromID:           "",
-		Label:            nil,
-		Name:             "",
-		TargetID:         "",
-		ThinkingLevel:    "",
-		TokensBefore:     tokensBefore,
+		Details:                    details,
+		Display:                    nil,
+		FromHook:                   fromHook,
+		FirstKeptEntryID:           firstKeptEntryID,
+		FromID:                     "",
+		Label:                      nil,
+		Name:                       "",
+		TargetID:                   "",
+		ThinkingLevel:              "",
+		ToolName:                   "",
+		ToolStatus:                 "",
+		ToolArgsJSON:               "",
+		TokenEstimate:              0,
+		ModelFacing:                nil,
+		CompactionFirstKeptEntryID: firstKeptEntryID,
+		CompactionTokensBefore:     tokensBefore,
+		BranchFromEntryID:          "",
+		TokensBefore:               tokensBefore,
 	})
 	if err != nil {
 		return nil, err
@@ -401,16 +406,24 @@ func (repository *SessionRepository) AppendBranchSummary(
 	fromHook bool,
 ) (*EntryEntity, error) {
 	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:          details,
-		Display:          nil,
-		FromHook:         fromHook,
-		FirstKeptEntryID: "",
-		FromID:           fromID,
-		Label:            nil,
-		Name:             "",
-		TargetID:         "",
-		ThinkingLevel:    "",
-		TokensBefore:     0,
+		Details:                    details,
+		Display:                    nil,
+		FromHook:                   fromHook,
+		FirstKeptEntryID:           "",
+		FromID:                     fromID,
+		Label:                      nil,
+		Name:                       "",
+		TargetID:                   "",
+		ThinkingLevel:              "",
+		ToolName:                   "",
+		ToolStatus:                 "",
+		ToolArgsJSON:               "",
+		TokenEstimate:              0,
+		ModelFacing:                nil,
+		CompactionFirstKeptEntryID: "",
+		CompactionTokensBefore:     0,
+		BranchFromEntryID:          fromID,
+		TokensBefore:               0,
 	})
 	if err != nil {
 		return nil, err
@@ -428,16 +441,24 @@ func (repository *SessionRepository) AppendLabelChange(
 	label *string,
 ) (*EntryEntity, error) {
 	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:          nil,
-		Display:          nil,
-		FromHook:         false,
-		FirstKeptEntryID: "",
-		FromID:           "",
-		Label:            label,
-		Name:             "",
-		TargetID:         targetID,
-		ThinkingLevel:    "",
-		TokensBefore:     0,
+		Details:                    nil,
+		Display:                    nil,
+		FromHook:                   false,
+		FirstKeptEntryID:           "",
+		FromID:                     "",
+		Label:                      label,
+		Name:                       "",
+		TargetID:                   targetID,
+		ThinkingLevel:              "",
+		ToolName:                   "",
+		ToolStatus:                 "",
+		ToolArgsJSON:               "",
+		TokenEstimate:              0,
+		ModelFacing:                nil,
+		CompactionFirstKeptEntryID: "",
+		CompactionTokensBefore:     0,
+		BranchFromEntryID:          "",
+		TokensBefore:               0,
 	})
 	if err != nil {
 		return nil, err
@@ -454,16 +475,24 @@ func (repository *SessionRepository) AppendSessionInfo(
 	name string,
 ) (*EntryEntity, error) {
 	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:          nil,
-		Display:          nil,
-		FromHook:         false,
-		FirstKeptEntryID: "",
-		FromID:           "",
-		Label:            nil,
-		Name:             name,
-		TargetID:         "",
-		ThinkingLevel:    "",
-		TokensBefore:     0,
+		Details:                    nil,
+		Display:                    nil,
+		FromHook:                   false,
+		FirstKeptEntryID:           "",
+		FromID:                     "",
+		Label:                      nil,
+		Name:                       name,
+		TargetID:                   "",
+		ThinkingLevel:              "",
+		ToolName:                   "",
+		ToolStatus:                 "",
+		ToolArgsJSON:               "",
+		TokenEstimate:              0,
+		ModelFacing:                nil,
+		CompactionFirstKeptEntryID: "",
+		CompactionTokensBefore:     0,
+		BranchFromEntryID:          "",
+		TokensBefore:               0,
 	})
 	if err != nil {
 		return nil, err
@@ -491,23 +520,15 @@ func (repository *SessionRepository) appendSummaryEntry(
 	dataJSON string,
 ) (*EntryEntity, error) {
 	timestamp := repository.now().UTC()
-	entry := EntryEntity{
-		Message: MessageEntity{
-			Timestamp: timestamp,
-			Role:      "",
-			Content:   "",
-			Provider:  "",
-			Model:     "",
-		},
-		CreatedAt:  timestamp,
-		ParentID:   parentID,
-		ID:         newEntryID(),
-		SessionID:  sessionID,
-		Type:       entryType,
-		CustomType: "",
-		DataJSON:   normalizeDataJSON(dataJSON),
-		Summary:    summary,
-	}
+	entry := newEntryEntity(sessionID, parentID, entryType, &MessageEntity{
+		Timestamp: timestamp,
+		Role:      "",
+		Content:   "",
+		Provider:  "",
+		Model:     "",
+	})
+	entry.DataJSON = normalizeDataJSON(dataJSON)
+	entry.Summary = summary
 
 	if err := repository.appendEntry(ctx, &entry); err != nil {
 		return nil, err
@@ -527,16 +548,24 @@ func dataJSONFromEntity(data *EntryDataEntity) (string, error) {
 
 func dataFromEntry(entry *EntryEntity) (EntryDataEntity, error) {
 	data := EntryDataEntity{
-		Details:          nil,
-		Display:          nil,
-		FromHook:         false,
-		FirstKeptEntryID: "",
-		FromID:           "",
-		Label:            nil,
-		Name:             "",
-		TargetID:         "",
-		ThinkingLevel:    "",
-		TokensBefore:     0,
+		Details:                    nil,
+		Display:                    nil,
+		FromHook:                   false,
+		FirstKeptEntryID:           "",
+		FromID:                     "",
+		Label:                      nil,
+		Name:                       "",
+		TargetID:                   "",
+		ThinkingLevel:              "",
+		ToolName:                   "",
+		ToolStatus:                 "",
+		ToolArgsJSON:               "",
+		TokenEstimate:              0,
+		ModelFacing:                nil,
+		CompactionFirstKeptEntryID: "",
+		CompactionTokensBefore:     0,
+		BranchFromEntryID:          "",
+		TokensBefore:               0,
 	}
 	if normalizeDataJSON(entry.DataJSON) == "{}" {
 		return data, nil

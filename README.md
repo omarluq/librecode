@@ -227,6 +227,7 @@ For architecture, roadmap, and API details, see:
 
 - [`docs/adr/0001-programmable-runtime.md`](docs/adr/0001-programmable-runtime.md)
 - [`docs/runtime-architecture.md`](docs/runtime-architecture.md)
+- [`docs/session-context.md`](docs/session-context.md)
 - [`docs/extension-runtime.md`](docs/extension-runtime.md)
 - [`docs/extension-roadmap.md`](docs/extension-roadmap.md)
 - [`docs/extension-api.md`](docs/extension-api.md)
