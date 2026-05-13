@@ -19,13 +19,14 @@ type ExtensionService struct {
 
 // NewExtensionService loads configured Lua extensions.
 func NewExtensionService(injector do.Injector) (*ExtensionService, error) {
-	cfg := do.MustInvoke[*ConfigService](injector).Get()
+	configService := do.MustInvoke[*ConfigService](injector)
+	cfg := configService.Get()
 	logger := do.MustInvoke[*LoggerService](injector).SlogLogger
 	manager := extension.NewManager(logger)
 	state := extension.ManagerState{Configured: []extension.ResolvedSource{}, Loaded: []extension.LoadedExtension{}}
 
 	if cfg.Extensions.Enabled {
-		resolvedSources, err := resolveExtensionSources(cfg.Extensions.Use)
+		resolvedSources, err := resolveExtensionSources(cfg.Extensions.Use, configService.Path())
 		if err != nil {
 			return nil, oops.In("extension").Code("extension_sources").Wrapf(err, "resolve extension sources")
 		}
@@ -46,12 +47,15 @@ func (service *ExtensionService) Shutdown() {
 	service.Manager.Shutdown()
 }
 
-func resolveExtensionSources(configuredSources []extension.ConfiguredSource) ([]extension.ResolvedSource, error) {
+func resolveExtensionSources(
+	configuredSources []extension.ConfiguredSource,
+	configPath string,
+) ([]extension.ResolvedSource, error) {
 	home, err := core.LibrecodeHome()
 	if err != nil {
 		return nil, err
 	}
-	lockPath := filepath.Join(home, extension.LockFileName)
+	lockPath := extensionLockPath(configPath, home)
 	lockFile, err := extension.ReadLockFile(lockPath)
 	if err != nil {
 		return nil, err
@@ -59,6 +63,14 @@ func resolveExtensionSources(configuredSources []extension.ConfiguredSource) ([]
 	installRoot := filepath.Join(home, "extensions", "store")
 
 	return extension.ResolveConfiguredSources(configuredSources, lockFile, installRoot)
+}
+
+func extensionLockPath(configPath, home string) string {
+	if configPath != "" && filepath.Base(filepath.Dir(configPath)) == core.ConfigDirName {
+		return filepath.Join(filepath.Dir(configPath), extension.LockFileName)
+	}
+
+	return filepath.Join(home, extension.LockFileName)
 }
 
 func extensionLoadPaths(resolvedSources []extension.ResolvedSource) []string {

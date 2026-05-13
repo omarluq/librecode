@@ -19,26 +19,33 @@ type ConfigOverrides struct {
 
 // ConfigService provides access to the resolved application configuration.
 type ConfigService struct {
-	cfg *config.Config
+	cfg  *config.Config
+	path string
 }
 
 // NewConfigService loads configuration from the injector's configured path.
 func NewConfigService(injector do.Injector) (*ConfigService, error) {
 	path := do.MustInvokeNamed[string](injector, ConfigPathKey)
 
-	cfg, err := config.Load(path).Get()
+	loaded, err := config.LoadResolved(path)
 	if err != nil {
 		return nil, err
 	}
+	cfg := loaded.Config
 	overrides := do.MustInvokeNamed[ConfigOverrides](injector, ConfigOverridesKey)
 	if overrides.DisableExtensions {
 		cfg.Extensions.Enabled = false
 	}
 
-	return &ConfigService{cfg: cfg}, nil
+	return &ConfigService{cfg: cfg, path: loaded.Path}, nil
 }
 
 // Get returns the resolved application configuration.
 func (s *ConfigService) Get() *config.Config {
 	return s.cfg
+}
+
+// Path returns the config file path used to load configuration, if any.
+func (s *ConfigService) Path() string {
+	return s.path
 }
