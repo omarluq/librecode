@@ -36,3 +36,26 @@ func TestMergeTerminalUsagePreservesEstimatedContext(t *testing.T) {
 		OutputTokens:  0,
 	}, terminal.MergeTerminalUsageForTest(current, next))
 }
+
+func TestResetMessagesClearsTokenUsage(t *testing.T) {
+	t.Parallel()
+
+	app := terminal.NewAppForTest()
+	app.SetTokenUsageForTest(model.TokenUsage{ContextWindow: 1000, ContextTokens: 250, InputTokens: 0, OutputTokens: 0})
+
+	app.ResetMessagesForTest()
+
+	assert.Equal(t, model.EmptyTokenUsage(), app.TokenUsageForTest())
+}
+
+func TestTruncateMessagesClearsTokenUsage(t *testing.T) {
+	t.Parallel()
+
+	app := terminal.NewAppForTest()
+	app.SetTokenUsageForTest(model.TokenUsage{ContextWindow: 1000, ContextTokens: 250, InputTokens: 0, OutputTokens: 0})
+	app.AddMessageForTest("user", "hello")
+
+	app.TruncateMessagesForTest(0)
+
+	assert.Equal(t, model.EmptyTokenUsage(), app.TokenUsageForTest())
+}

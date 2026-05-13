@@ -114,6 +114,28 @@ func TestParseSSEResultPreservesUsageWhenItemsProvideText(t *testing.T) {
 	assert.Equal(t, "hello", result.Text)
 }
 
+func TestParseSSEResultPreservesUsageAcrossLaterResponseEvents(t *testing.T) {
+	t.Parallel()
+
+	stream := strings.Join([]string{
+		`data: {"usage":{"input_tokens":12,"output_tokens":7}}`,
+		`data: {"response":{"output":[{"id":"msg_1","type":"message",` +
+			`"content":[{"type":"output_text","text":"hello"}]}]}}`,
+		`data: [DONE]`,
+		``,
+	}, "\n")
+
+	result, err := parseSSEResult(strings.NewReader(stream), nil)
+	require.NoError(t, err)
+	assert.Equal(t, model.TokenUsage{
+		ContextWindow: 0,
+		ContextTokens: 0,
+		InputTokens:   12,
+		OutputTokens:  7,
+	}, result.Usage)
+	assert.Equal(t, "hello", result.Text)
+}
+
 type usageParseTest struct {
 	usage    map[string]any
 	name     string
