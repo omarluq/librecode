@@ -144,6 +144,16 @@ type WindowState struct {
 	Visible   bool           `json:"visible"`
 }
 
+// FocusState describes the currently focused input target for extension key routing.
+type FocusState struct {
+	Kind      string `json:"kind"`
+	Window    string `json:"window"`
+	Buffer    string `json:"buffer"`
+	Role      string `json:"role"`
+	PanelKind string `json:"panel_kind"`
+	Exclusive bool   `json:"exclusive"`
+}
+
 // TerminalEvent describes a low-level terminal runtime event exposed to extensions.
 type TerminalEvent struct {
 	Buffers map[string]BufferState `json:"buffers"`
@@ -153,6 +163,7 @@ type TerminalEvent struct {
 	Name    string                 `json:"name"`
 	Key     ComposerKeyEvent       `json:"key"`
 	Layout  LayoutState            `json:"layout"`
+	Focus   FocusState             `json:"focus"`
 }
 
 // TerminalEventResult describes mutations produced by low-level extension handlers.

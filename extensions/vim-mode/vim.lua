@@ -628,7 +628,7 @@ local function setup(api)
     sync_label()
   end)
 
-  lc.keymap.set({ role = "composer" }, "*", function(ev)
+  lc.keymap.set({ focus = "composer" }, "*", function(ev)
     if state.mode == "insert" then
       return handle_insert(ev)
     elseif state.mode == "visual" then

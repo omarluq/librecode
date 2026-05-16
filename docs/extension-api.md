@@ -242,13 +242,13 @@ Registers a keymap against a generic target.
 Examples:
 
 ```lua
-lc.keymap.set({ role = "composer" }, "ctrl+j", function(ev)
+lc.keymap.set({ focus = "composer" }, "ctrl+j", function(ev)
   lc.buf.set_text("status", "ctrl+j pressed")
   return true
-end, { priority = 100, desc = "example role keymap" })
+end, { priority = 100, desc = "example composer keymap" })
 
 lc.keymap.set({ buffer = "composer" }, "*", function(ev)
-  lc.log("composer key: " .. ev.key)
+  lc.log("focused composer buffer key: " .. ev.key)
 end)
 
 lc.keymap.set("global", "ctrl+p", function()
@@ -260,13 +260,14 @@ end)
 Supported target forms:
 
 - `"global"` for global keymaps
-- `{ buffer = "name" }` for buffer-scoped keymaps
-- `{ window = "name" }` for window-scoped keymaps
-- `{ role = "name" }` for role-scoped keymaps
-- `{ scope = "buffer" | "window" | "role", name = "name" }`
+- `{ focus = "name" }` for focused target kind keymaps, such as `composer`, `autocomplete`, or `panel`
+- `{ buffer = "name" }` for focused-buffer keymaps
+- `{ window = "name" }` for focused-window keymaps
+- `{ role = "name" }` for focused-role keymaps
+- `{ scope = "focus" | "buffer" | "window" | "role", name = "name" }`
 - a list of any of the above
 
-String targets other than `"global"` are shorthand for role-scoped keymaps. Prefer explicit target tables for clarity.
+String targets other than `"global"` are shorthand for role-scoped keymaps. Prefer explicit target tables for clarity. Non-global keymaps match the currently focused target only, not every visible window. This keeps composer extensions from stealing keys while autocomplete or panels are focused.
 
 Notes:
 
@@ -626,6 +627,7 @@ Handlers for terminal events receive a table like:
   data = {
     text = "incremental event text",
   },
+  focus = { kind = "composer", window = "composer", buffer = "composer", role = "composer", exclusive = false },
   composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, metadata = {} },
   buffers = {
     composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, blocks = {}, metadata = {} },
@@ -653,7 +655,7 @@ A project extension can build substantial behavior using the current API:
 ```lua
 local lc = require("librecode")
 
-lc.keymap.set({ role = "composer" }, "<c-j>", function()
+lc.keymap.set({ focus = "composer" }, "<c-j>", function()
   lc.action.run("submit")
   lc.event.consume()
 end)

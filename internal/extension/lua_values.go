@@ -194,10 +194,26 @@ func terminalEventTable(state *lua.LState, event *TerminalEvent) *lua.LTable {
 		"buffers":      bufferMapForLua(event.Buffers),
 		"windows":      windowMapForLua(event.Windows),
 		"layout":       layoutForLua(&event.Layout),
+		"focus":        focusForLua(&event.Focus),
 		"composer":     bufferForLua(&composer),
 		"working":      luaContextBool(event.Context, "working"),
 		"auth_working": luaContextBool(event.Context, "auth_working"),
 	})
+}
+
+func focusForLua(focus *FocusState) map[string]any {
+	if focus == nil {
+		return map[string]any{}
+	}
+
+	return map[string]any{
+		"kind":          focus.Kind,
+		"window":        focus.Window,
+		"buffer":        focus.Buffer,
+		keymapScopeRole: focus.Role,
+		"panel_kind":    focus.PanelKind,
+		"exclusive":     focus.Exclusive,
+	}
 }
 
 func luaContextBool(eventContext map[string]any, key string) bool {
