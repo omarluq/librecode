@@ -242,6 +242,7 @@ func (app *App) newExtensionEventWithLayoutAndData(
 		Data:    cloneExtensionMetadata(data),
 		Name:    name,
 		Key:     key,
+		Focus:   app.focusState(),
 	}
 }
 
@@ -297,6 +298,7 @@ func (app *App) extensionContext() map[string]any {
 		"working":              app.working,
 		"auth_working":         app.authWorking,
 		"cwd":                  app.cwd,
+		"focus":                app.focusState(),
 		extensionDataSessionID: app.sessionID,
 	}
 }

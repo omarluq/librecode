@@ -53,23 +53,35 @@ func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) ke
 	if app.handleWorkingInterruptKey(ctx, event) {
 		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 	}
-	if handled, err := app.handleExtensionKey(ctx, event); handled || err != nil {
-		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
-	}
-	if app.handleAutocompleteEscape(event) {
-		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
-	}
 	if app.keys.matches(event, actionForceExit) && app.composerEmpty() {
 		return keyHandlingResult{err: nil, shouldQuit: app.handleForceExit(), handled: true}
 	}
-	if app.mode == modePanel && app.panel != nil {
-		return keyHandlingResult{err: app.handlePanelKey(ctx, event), shouldQuit: false, handled: true}
+	if result := app.handlePanelPriorityKey(ctx, event); result.handled || result.err != nil {
+		return result
+	}
+	if app.handleAutocompletePriorityKey(event) {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
+	}
+	if handled, err := app.handleExtensionKey(ctx, event); handled || err != nil {
+		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
 	}
 	if app.handlePreEditorKey(ctx, event) {
 		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 	}
 
 	return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
+}
+
+func (app *App) handlePanelPriorityKey(ctx context.Context, event *tcell.EventKey) keyHandlingResult {
+	if app.mode != modePanel || app.panel == nil {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
+	}
+
+	return keyHandlingResult{err: app.handlePanelKey(ctx, event), shouldQuit: false, handled: true}
+}
+
+func (app *App) handleAutocompletePriorityKey(event *tcell.EventKey) bool {
+	return app.handleAutocompleteEscape(event) || app.handleFocusedAutocompleteKey(event)
 }
 
 func (app *App) handleAutocompleteEscape(event *tcell.EventKey) bool {
@@ -81,12 +93,15 @@ func (app *App) handleAutocompleteEscape(event *tcell.EventKey) bool {
 	return true
 }
 
-func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
-	if app.autocompleteActive() {
-		if app.handleAutocompleteKey(event) {
-			return false, nil
-		}
+func (app *App) handleFocusedAutocompleteKey(event *tcell.EventKey) bool {
+	if app.working || !app.autocompleteActive() {
+		return false
 	}
+
+	return app.handleAutocompleteKey(event)
+}
+
+func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
 	if app.keys.matches(event, actionInputClear) && !app.composerEmpty() {
 		app.clearComposer()
 		app.resetPromptHistoryNavigation()

@@ -15,6 +15,7 @@ type luaHostEvent struct {
 	uiCursor       *UICursor
 	context        map[string]any
 	data           map[string]any
+	focus          FocusState
 	changedBuffers map[string]struct{}
 	name           string
 	key            ComposerKeyEvent
@@ -38,6 +39,7 @@ func newLuaHostEvent(event *TerminalEvent) *luaHostEvent {
 		layout:         cloneLayout(event.Layout),
 		context:        cloneMap(event.Context),
 		data:           cloneMap(event.Data),
+		focus:          event.Focus,
 		changedBuffers: map[string]struct{}{},
 		changedWindows: map[string]struct{}{},
 		actions:        []ActionCall{},
@@ -76,6 +78,7 @@ func (event *luaHostEvent) eventSnapshot() *TerminalEvent {
 		Data:    cloneMap(event.data),
 		Name:    event.name,
 		Key:     event.key,
+		Focus:   event.focus,
 	}
 }
 

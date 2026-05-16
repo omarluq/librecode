@@ -11,6 +11,7 @@ import (
 
 const (
 	keymapScopeBuffer = "buffer"
+	keymapScopeFocus  = "focus"
 	keymapScopeGlobal = "global"
 	keymapScopeRole   = "role"
 	keymapScopeWindow = "window"
@@ -277,24 +278,13 @@ func (manager *Manager) keymapsFor(event *luaHostEvent) []luaKeymap {
 
 func keymapEventTargets(event *luaHostEvent) map[string]struct{} {
 	targets := map[string]struct{}{globalKeymapTarget().key(): {}}
-	for name, buffer := range event.buffers {
-		bufferName := buffer.Name
-		if bufferName == "" {
-			bufferName = name
-		}
-		addKeymapTarget(targets, keymapScopeBuffer, bufferName)
-		addKeymapTarget(targets, "", bufferName)
-	}
-	for name := range event.windows {
-		window := event.windows[name]
-		windowName := window.Name
-		if windowName == "" {
-			windowName = name
-		}
-		addKeymapTarget(targets, keymapScopeWindow, windowName)
-		addKeymapTarget(targets, keymapScopeRole, window.Role)
-		addKeymapTarget(targets, "", window.Role)
-	}
+	focus := event.focus
+	addKeymapTarget(targets, keymapScopeFocus, focus.Kind)
+	addKeymapTarget(targets, keymapScopeBuffer, focus.Buffer)
+	addKeymapTarget(targets, keymapScopeWindow, focus.Window)
+	addKeymapTarget(targets, keymapScopeRole, focus.Role)
+	addKeymapTarget(targets, "", focus.Role)
+	addKeymapTarget(targets, "", focus.Kind)
 
 	return targets
 }
@@ -373,7 +363,7 @@ func luaKeymapTarget(table *lua.LTable) (keymapTarget, bool) {
 		return keymapTarget{Scope: scope, Name: luaTableString(table, "name", "")}, true
 	}
 
-	for _, field := range []string{keymapScopeBuffer, keymapScopeWindow, keymapScopeRole} {
+	for _, field := range []string{keymapScopeBuffer, keymapScopeFocus, keymapScopeWindow, keymapScopeRole} {
 		name := luaTableString(table, field, "")
 		if name != "" {
 			return keymapTarget{Scope: field, Name: name}, true
@@ -413,7 +403,7 @@ func normalizeKeymapTarget(target keymapTarget) keymapTarget {
 func normalizeKeymapScope(scope string) string {
 	scope = normalizeKeymapName(scope)
 	switch scope {
-	case "", keymapScopeBuffer, keymapScopeGlobal, keymapScopeRole, keymapScopeWindow:
+	case "", keymapScopeBuffer, keymapScopeFocus, keymapScopeGlobal, keymapScopeRole, keymapScopeWindow:
 		return scope
 	default:
 		return scope
