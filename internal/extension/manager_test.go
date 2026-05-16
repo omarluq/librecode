@@ -17,6 +17,7 @@ import (
 
 const (
 	testBufferComposer       = "composer"
+	testBufferTranscript     = "transcript"
 	testContextModeKey       = "mode"
 	testEventKey             = "key"
 	testEventStartup         = "startup"
@@ -65,8 +66,8 @@ func testTerminalEventWithComposerWindow(text, key string) extension.TerminalEve
 	window := testComposerWindow()
 	return extension.TerminalEvent{
 		Buffers: map[string]extension.BufferState{
-			testBufferComposer: testTextBuffer(testBufferComposer, text),
-			"transcript":       testTranscriptBuffer(text),
+			testBufferComposer:   testTextBuffer(testBufferComposer, text),
+			testBufferTranscript: testTranscriptBuffer(text),
 		},
 		Windows: map[string]extension.WindowState{testBufferComposer: window},
 		Layout:  testLayout(map[string]extension.WindowState{testBufferComposer: window}),
@@ -80,6 +81,18 @@ func testTerminalEventWithComposerWindow(text, key string) extension.TerminalEve
 			Alt:   false,
 			Shift: false,
 		},
+		Focus: testComposerFocus(),
+	}
+}
+
+func testComposerFocus() extension.FocusState {
+	return extension.FocusState{
+		Kind:      testBufferComposer,
+		Window:    testBufferComposer,
+		Buffer:    testBufferComposer,
+		Role:      testBufferComposer,
+		PanelKind: "",
+		Exclusive: false,
 	}
 }
 
@@ -105,7 +118,7 @@ func testTextBuffer(name, text string) extension.BufferState {
 }
 
 func testTranscriptBuffer(text string) extension.BufferState {
-	buffer := testTextBuffer("transcript", "")
+	buffer := testTextBuffer(testBufferTranscript, "")
 	buffer.Metadata = map[string]any{"count": 1}
 	buffer.Blocks = []extension.BufferBlock{
 		{
@@ -147,7 +160,7 @@ lc.on("startup", function()
   lc.buf.set("composer", composer)
 end)
 
-lc.keymap.set({ role = "composer" }, "x", function(event)
+lc.keymap.set({ focus = "composer" }, "x", function(event)
   local composer = lc.buf.get("composer")
   lc.buf.set("composer", {
     text = composer.text .. event.key,
@@ -214,6 +227,7 @@ end)
 			Alt:   false,
 			Shift: false,
 		},
+		Focus: testComposerFocus(),
 	}
 	result, err := manager.HandleTerminalEvent(context.Background(), &event)
 	require.NoError(t, err)
@@ -334,6 +348,7 @@ end)
 			Alt:   false,
 			Shift: false,
 		},
+		Focus: testComposerFocus(),
 	}
 	result, err := manager.HandleTerminalEvent(context.Background(), &event)
 	require.NoError(t, err)
@@ -560,7 +575,7 @@ func assertLoadedExtension(t *testing.T, loaded []extension.LoadedExtension) {
 
 	require.Len(t, loaded, 1)
 	assert.Equal(t, []string{testEventStartup}, loaded[0].Handlers)
-	assert.Equal(t, []string{"role:composer:x"}, loaded[0].Keymaps)
+	assert.Equal(t, []string{"focus:composer:x"}, loaded[0].Keymaps)
 	assert.Positive(t, loaded[0].TotalDuration)
 }
 
@@ -571,7 +586,7 @@ func TestManager_HasTerminalEventHandlers(t *testing.T) {
 	t.Cleanup(manager.Shutdown)
 	script := `
 librecode.on("startup", function() end)
-librecode.keymap.set({ role = "composer" }, "x", function() end)
+librecode.keymap.set({ focus = "composer" }, "x", function() end)
 `
 	extensionPath := filepath.Join(t.TempDir(), "handlers.lua")
 	require.NoError(t, writeTestFile(extensionPath, script))
@@ -619,6 +634,7 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 			Alt:   false,
 			Shift: false,
 		},
+		Focus: testComposerFocus(),
 	}
 	startup, err := manager.HandleTerminalEvent(context.Background(), &startupEvent)
 	require.NoError(t, err)
@@ -641,6 +657,7 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 			Alt:   false,
 			Shift: false,
 		},
+		Focus: testComposerFocus(),
 	}
 	result, err := manager.HandleTerminalEvent(context.Background(), &resultEvent)
 	require.NoError(t, err)
