@@ -8,6 +8,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/extension"
 )
 
 func TestFocusStatePrioritizesPanelAndAutocomplete(t *testing.T) {
@@ -64,6 +66,36 @@ end)
 
 	assert.NotZero(t, app.autocompleteSelection)
 	assertEditorText(t, app, "/s")
+}
+
+func TestExtensionComposerEditsReopenAutocomplete(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.keymap.set({ focus = "composer" }, "*", function()
+  local composer = librecode.buf.get("composer")
+  composer.text = composer.text .. "x"
+  composer.cursor = composer.cursor + 1
+  librecode.buf.set("composer", composer)
+  librecode.event.consume()
+  return true
+end)
+`)
+	app.setComposerText("/s")
+	app.closeAutocomplete()
+	assert.False(t, app.autocompleteActive())
+	app.applyComposerBuffer(&extension.BufferState{
+		Metadata: map[string]any{},
+		Blocks:   []extension.BufferBlock{},
+		Name:     extensionBufferComposer,
+		Text:     "/se",
+		Chars:    nil,
+		Label:    "",
+		Cursor:   3,
+	})
+
+	assert.True(t, app.autocompleteActive())
+	assertEditorText(t, app, "/se")
 }
 
 func TestFocusedComposerExtensionStillHandlesComposerKeys(t *testing.T) {

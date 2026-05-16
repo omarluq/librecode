@@ -444,6 +444,9 @@ func (app *App) applyComposerBuffer(buffer *extension.BufferState) {
 	if app.composerText() != oldText || app.composerCursor() != oldCursor {
 		app.resetPromptHistoryNavigation()
 	}
+	if app.composerText() != oldText {
+		app.resetAutocompleteSelection()
+	}
 }
 
 func (app *App) applyUIWindowResult(result *extension.TerminalEventResult) {
