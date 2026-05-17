@@ -202,10 +202,6 @@ func terminalEventTable(state *lua.LState, event *TerminalEvent) *lua.LTable {
 }
 
 func focusForLua(focus *FocusState) map[string]any {
-	if focus == nil {
-		return map[string]any{}
-	}
-
 	return map[string]any{
 		"kind":          focus.Kind,
 		"window":        focus.Window,

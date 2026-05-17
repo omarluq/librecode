@@ -627,7 +627,7 @@ Handlers for terminal events receive a table like:
   data = {
     text = "incremental event text",
   },
-  focus = { kind = "composer", window = "composer", buffer = "composer", role = "composer", exclusive = false },
+  focus = { kind = "composer", window = "composer", buffer = "composer", role = "composer", panel_kind = "", exclusive = false },
   composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, metadata = {} },
   buffers = {
     composer = { text = "hello", cursor = 5, chars = { "h", "e", "l", "l", "o" }, blocks = {}, metadata = {} },
