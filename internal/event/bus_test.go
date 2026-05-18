@@ -74,62 +74,120 @@ func TestBus_EmitLogsHandlerErrorsAndContinues(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
-func TestBus_StreamExposesReactiveEnvelopeStream(t *testing.T) {
+const (
+	testAgentChannel = "agent"
+	testAgentStart   = "agent:start"
+	testReadData     = "read"
+	testStartData    = "start"
+	testToolChannel  = "tool"
+	testToolRead     = "tool:read"
+)
+
+func TestBus_ReactiveStreams(t *testing.T) {
 	t.Parallel()
 
-	bus := event.NewBus(testLogger())
-	envelopes := []event.Envelope{}
-	subscription := bus.Stream().Subscribe(ro.NewObserver(
-		func(envelope event.Envelope) {
-			envelopes = append(envelopes, envelope)
+	tests := []struct {
+		name      string
+		subscribe func(*event.Bus, *[]string) event.Unsubscribe
+		emit      []event.Envelope
+		expected  []string
+	}{
+		{
+			name: "stream receives all envelopes",
+			subscribe: func(bus *event.Bus, got *[]string) event.Unsubscribe {
+				subscription := bus.Stream().Subscribe(ro.NewObserver(
+					func(envelope event.Envelope) {
+						*got = append(*got, envelope.Channel+":"+fmt.Sprint(envelope.Data))
+					},
+					func(error) {},
+					func() {},
+				))
+				return subscription.Unsubscribe
+			},
+			emit: []event.Envelope{
+				{Channel: testAgentChannel, Data: testStartData},
+				{Channel: testToolChannel, Data: testReadData},
+			},
+			expected: []string{testAgentStart, testToolRead},
 		},
-		func(error) {},
-		func() {},
-	))
-	defer subscription.Unsubscribe()
+		{
+			name: "channel filters envelopes",
+			subscribe: func(bus *event.Bus, got *[]string) event.Unsubscribe {
+				subscription := bus.Channel(testAgentChannel).Subscribe(ro.NewObserver(
+					func(envelope event.Envelope) {
+						*got = append(*got, envelope.Channel+":"+fmt.Sprint(envelope.Data))
+					},
+					func(error) {},
+					func() {},
+				))
+				return subscription.Unsubscribe
+			},
+			emit: []event.Envelope{
+				{Channel: testToolChannel, Data: "ignored"},
+				{Channel: testAgentChannel, Data: testStartData},
+			},
+			expected: []string{testAgentStart},
+		},
+		{
+			name: "envelope handler receives all channels",
+			subscribe: func(bus *event.Bus, got *[]string) event.Unsubscribe {
+				return bus.OnEnvelope(func(_ context.Context, envelope event.Envelope) error {
+					*got = append(*got, envelope.Channel+":"+fmt.Sprint(envelope.Data))
+					return nil
+				})
+			},
+			emit: []event.Envelope{
+				{Channel: testAgentChannel, Data: testStartData},
+				{Channel: testToolChannel, Data: testReadData},
+			},
+			expected: []string{testAgentStart, testToolRead},
+		},
+	}
 
-	bus.Emit(context.Background(), "agent", "start")
-	bus.Emit(context.Background(), "tool", "read")
-
-	require.Len(t, envelopes, 2)
-	assert.Equal(t, event.Envelope{Channel: "agent", Data: "start"}, envelopes[0])
-	assert.Equal(t, event.Envelope{Channel: "tool", Data: "read"}, envelopes[1])
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			runReactiveStreamCase(t, testCase.subscribe, testCase.emit, testCase.expected)
+		})
+	}
 }
 
-func TestBus_ChannelReturnsFilteredReactiveStream(t *testing.T) {
-	t.Parallel()
+func runReactiveStreamCase(
+	t *testing.T,
+	subscribe func(*event.Bus, *[]string) event.Unsubscribe,
+	emitted []event.Envelope,
+	expected []string,
+) {
+	t.Helper()
 
 	bus := event.NewBus(testLogger())
-	channels := []string{}
-	subscription := bus.Channel("agent").Subscribe(ro.NewObserver(
-		func(envelope event.Envelope) {
-			channels = append(channels, envelope.Channel+":"+fmt.Sprint(envelope.Data))
-		},
-		func(error) {},
-		func() {},
-	))
-	defer subscription.Unsubscribe()
+	got := []string{}
+	unsubscribe := subscribe(bus, &got)
+	defer unsubscribe()
 
-	bus.Emit(context.Background(), "tool", "ignored")
-	bus.Emit(context.Background(), "agent", "start")
+	for _, envelope := range emitted {
+		bus.Emit(context.Background(), envelope.Channel, envelope.Data)
+	}
 
-	assert.Equal(t, []string{"agent:start"}, channels)
+	assert.ElementsMatch(t, expected, got)
 }
 
-func TestBus_OnEnvelopeReceivesAllChannels(t *testing.T) {
+func TestBus_OnSubscribesToCurrentSubject(t *testing.T) {
 	t.Parallel()
 
 	bus := event.NewBus(testLogger())
-	calls := []string{}
-	bus.OnEnvelope(func(_ context.Context, envelope event.Envelope) error {
-		calls = append(calls, envelope.Channel+":"+fmt.Sprint(envelope.Data))
+	bus.Clear()
+
+	calls := 0
+	unsubscribe := bus.On("agent", func(context.Context, any) error {
+		calls++
 		return nil
 	})
+	defer unsubscribe()
 
 	bus.Emit(context.Background(), "agent", "start")
-	bus.Emit(context.Background(), "tool", "read")
 
-	assert.ElementsMatch(t, []string{"agent:start", "tool:read"}, calls)
+	require.Equal(t, 1, calls)
 }
 
 func testLogger() *slog.Logger {

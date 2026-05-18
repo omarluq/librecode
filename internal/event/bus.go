@@ -88,10 +88,17 @@ func (bus *Bus) On(channel string, handler Handler) Unsubscribe {
 		func(_ context.Context, err error) {
 			bus.logHandlerError(channel, err)
 		},
-		func(context.Context) {},
+		ignoreObserverComplete,
 	)
 
-	return bus.subscribe(bus.Channel(channel), observer)
+	return bus.subscribe(func(subject ro.Subject[Envelope]) ro.Observable[Envelope] {
+		return ro.Pipe1(
+			subject.AsObservable(),
+			ro.Filter(func(envelope Envelope) bool {
+				return envelope.Channel == channel
+			}),
+		)
+	}, observer)
 }
 
 // OnEnvelope registers a handler for every emitted envelope.
@@ -105,10 +112,12 @@ func (bus *Bus) OnEnvelope(handler EnvelopeHandler) Unsubscribe {
 		func(_ context.Context, err error) {
 			bus.logHandlerError("*", err)
 		},
-		func(context.Context) {},
+		ignoreObserverComplete,
 	)
 
-	return bus.subscribe(bus.Stream(), observer)
+	return bus.subscribe(func(subject ro.Subject[Envelope]) ro.Observable[Envelope] {
+		return subject.AsObservable()
+	}, observer)
 }
 
 // Clear removes all registered handlers and rotates the hot subject.
@@ -124,13 +133,17 @@ func (bus *Bus) Clear() {
 	bus.subject = ro.NewPublishSubject[Envelope]()
 }
 
-func (bus *Bus) subscribe(observable ro.Observable[Envelope], observer ro.Observer[Envelope]) Unsubscribe {
+func (bus *Bus) subscribe(
+	observableFor func(ro.Subject[Envelope]) ro.Observable[Envelope],
+	observer ro.Observer[Envelope],
+) Unsubscribe {
 	bus.lock.Lock()
+	defer bus.lock.Unlock()
+
 	bus.nextID++
 	subscriptionID := bus.nextID
-	subscription := observable.Subscribe(observer)
+	subscription := observableFor(bus.subject).Subscribe(observer)
 	bus.subscriptions[subscriptionID] = subscription
-	bus.lock.Unlock()
 
 	return func() {
 		bus.unsubscribe(subscriptionID)
@@ -160,4 +173,8 @@ func (bus *Bus) logHandlerError(channel string, err error) {
 		With("channel", channel).
 		Wrapf(err, "event handler failed")
 	bus.logger.Error("event handler failed", slog.Any("error", wrapped))
+}
+
+func ignoreObserverComplete(context.Context) {
+	// Clear rotates the hot subject; registered handlers have no completion cleanup.
 }

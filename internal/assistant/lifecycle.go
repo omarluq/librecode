@@ -10,7 +10,6 @@ import (
 )
 
 type promptTurnLifecycle struct {
-	ctx         context.Context
 	runtime     *Runtime
 	sessionID   string
 	userEntryID string
@@ -18,13 +17,11 @@ type promptTurnLifecycle struct {
 }
 
 func newPromptTurnLifecycle(
-	ctx context.Context,
 	runtime *Runtime,
 	sessionID string,
 	userEntryID string,
 ) *promptTurnLifecycle {
 	return &promptTurnLifecycle{
-		ctx:         ctx,
 		runtime:     runtime,
 		sessionID:   sessionID,
 		userEntryID: userEntryID,
@@ -33,6 +30,7 @@ func newPromptTurnLifecycle(
 }
 
 func (lifecycle *promptTurnLifecycle) dispatchEnd(
+	ctx context.Context,
 	assistantEntryID string,
 	cached bool,
 	usage model.TokenUsage,
@@ -42,7 +40,7 @@ func (lifecycle *promptTurnLifecycle) dispatchEnd(
 	}
 	lifecycle.ended = true
 	lifecycle.runtime.dispatchTurnEndLifecycle(
-		lifecycle.ctx,
+		ctx,
 		lifecycle.sessionID,
 		lifecycle.userEntryID,
 		assistantEntryID,
@@ -51,12 +49,12 @@ func (lifecycle *promptTurnLifecycle) dispatchEnd(
 	)
 }
 
-func (lifecycle *promptTurnLifecycle) dispatchError(err error) {
+func (lifecycle *promptTurnLifecycle) dispatchError(ctx context.Context, err error) {
 	if lifecycle == nil || lifecycle.ended || err == nil {
 		return
 	}
 	lifecycle.ended = true
-	lifecycle.runtime.dispatchTurnErrorLifecycle(lifecycle.ctx, lifecycle.sessionID, lifecycle.userEntryID, err)
+	lifecycle.runtime.dispatchTurnErrorLifecycle(ctx, lifecycle.sessionID, lifecycle.userEntryID, err)
 }
 
 func (runtime *Runtime) dispatchLifecycle(
