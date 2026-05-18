@@ -6,7 +6,7 @@ require (
 	github.com/Oudwins/zog v0.22.2
 	github.com/alecthomas/chroma/v2 v2.24.1
 	github.com/clipperhouse/displaywidth v0.11.0
-	github.com/gdamore/tcell/v3 v3.3.0
+	github.com/gdamore/tcell/v3 v3.4.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/uuid v1.6.0
 	github.com/pressly/goose/v3 v3.27.1
@@ -69,8 +69,8 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/term v0.42.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
