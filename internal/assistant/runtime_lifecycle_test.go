@@ -3,6 +3,7 @@ package assistant_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/samber/ro"
@@ -14,11 +15,7 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
-func TestRuntime_PromptEmitsSessionTurnLifecycleEvents(t *testing.T) {
-	t.Parallel()
-
-	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
-	loadRuntimeExtension(t, manager, `
+const lifecycleRecorderExtension = `
 local lc = require("librecode")
 local events = {}
 local names = {
@@ -34,29 +31,106 @@ local names = {
 }
 for _, name in ipairs(names) do
   lc.on(name, function(event)
-    table.insert(events, name .. ":" .. (event.payload.session_id or "") .. ":" .. (event.payload.role or ""))
+    local payload = event.payload or {}
+    local session = "no-session"
+    if payload.session_id and payload.session_id ~= "" then
+      session = "session"
+    end
+    local error_state = ""
+    if payload.error and payload.error ~= "" then
+      error_state = "error"
+    end
+    table.insert(events, name .. "|" .. (payload.role or "") .. "|" .. error_state .. "|" .. session)
   end)
 end
 lc.register_command("events", "events", function()
   return table.concat(events, "\n")
 end)
-`)
+`
 
-	response, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(testRuntimeCWD, "lifecycle", ""))
-	require.NoError(t, err)
+type lifecycleOrderTestCase struct {
+	expectedEvents *lifecycleExpectedEvents
+	name           string
+	prompt         string
+	expectError    bool
+}
 
-	output, err := manager.ExecuteCommand(context.Background(), "events", "")
-	require.NoError(t, err)
-	assert.Contains(t, output, "input::")
-	assert.Contains(t, output, "prompt_prepare::")
-	assert.Contains(t, output, "session_start:"+response.SessionID+":")
-	assert.Contains(t, output, "before_agent_start:"+response.SessionID+":")
-	assert.Contains(t, output, "agent_start:"+response.SessionID+":")
-	assert.Contains(t, output, "turn_start:"+response.SessionID+":")
-	assert.Contains(t, output, "message_append:"+response.SessionID+":user")
-	assert.Contains(t, output, "message_append:"+response.SessionID+":assistant")
-	assert.Contains(t, output, "turn_end:"+response.SessionID+":")
-	assert.Contains(t, output, "agent_end:"+response.SessionID+":")
+type lifecycleExpectedEvents struct {
+	items []string
+}
+
+func TestRuntime_PromptEmitsOrderedSessionTurnLifecycleEvents(t *testing.T) {
+	t.Parallel()
+
+	tests := []lifecycleOrderTestCase{
+		{
+			name:        "successful prompt",
+			prompt:      "lifecycle",
+			expectError: false,
+			expectedEvents: &lifecycleExpectedEvents{items: []string{
+				"input|||no-session",
+				"prompt_prepare|||no-session",
+				"session_start|||session",
+				"message_append|user||session",
+				"before_agent_start|||session",
+				"agent_start|||session",
+				"turn_start|||session",
+				"message_append|assistant||session",
+				"turn_end|||session",
+				"agent_end|||session",
+			}},
+		},
+		{
+			name:        "prompt error",
+			prompt:      "fail",
+			expectError: true,
+			expectedEvents: &lifecycleExpectedEvents{items: []string{
+				"input|||no-session",
+				"prompt_prepare|||no-session",
+				"session_start|||session",
+				"message_append|user||session",
+				"before_agent_start|||session",
+				"agent_start|||session",
+				"turn_start|||session",
+				"turn_end||error|session",
+				"agent_end||error|session",
+			}},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := lifecycleTestClient(testCase.expectError)
+			runtime, _, manager := newTestRuntimeWithManager(t, client)
+			loadRuntimeExtension(t, manager, lifecycleRecorderExtension)
+
+			_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(testRuntimeCWD, testCase.prompt, ""))
+			if testCase.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+
+			output, err := manager.ExecuteCommand(context.Background(), "events", "")
+			require.NoError(t, err)
+			assert.Equal(t, testCase.expectedEvents.items, strings.Split(output, "\n"))
+		})
+	}
+}
+
+func lifecycleTestClient(fails bool) assistant.CompletionClient {
+	if !fails {
+		return testCompletionClient{}
+	}
+
+	return &retryCompletionClient{
+		err:               errors.New("bad request"),
+		response:          "unused",
+		attempts:          0,
+		failuresRemaining: 1,
+	}
 }
 
 func TestRuntime_PromptLifecyclePublishesReactiveEventStream(t *testing.T) {
@@ -105,35 +179,6 @@ end)
 	output, err := manager.ExecuteCommand(ctx, "loaded", "")
 	require.NoError(t, err)
 	assert.Equal(t, firstResponse.SessionID, output)
-}
-
-func TestRuntime_PromptEmitsTurnEndOnPromptError(t *testing.T) {
-	t.Parallel()
-
-	client := &retryCompletionClient{
-		err:               errors.New("bad request"),
-		response:          "unused",
-		attempts:          0,
-		failuresRemaining: 1,
-	}
-	runtime, _, manager := newTestRuntimeWithManager(t, client)
-	loadRuntimeExtension(t, manager, `
-local lc = require("librecode")
-local seen = ""
-lc.on("turn_end", function(event)
-  seen = event.payload.error
-end)
-lc.register_command("turn_error", "turn_error", function()
-  return seen
-end)
-`)
-
-	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(testRuntimeCWD, "fail", ""))
-	require.Error(t, err)
-
-	output, commandErr := manager.ExecuteCommand(context.Background(), "turn_error", "")
-	require.NoError(t, commandErr)
-	assert.Contains(t, output, "bad request")
 }
 
 func TestRuntime_PromptEmitsSideEffectMessageAppendEvents(t *testing.T) {
