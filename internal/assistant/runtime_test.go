@@ -356,6 +356,17 @@ func newTestRuntimeWithClient(
 ) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
 
+	runtime, repository, _ := newTestRuntimeWithManager(t, client)
+
+	return runtime, repository
+}
+
+func newTestRuntimeWithManager(
+	t *testing.T,
+	client assistant.CompletionClient,
+) (*assistant.Runtime, *database.SessionRepository, *extension.Manager) {
+	t.Helper()
+
 	connection, err := sql.Open(sqliteDriver(), ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -365,7 +376,7 @@ func newTestRuntimeWithClient(
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
 	repository := database.NewSessionRepository(connection)
-	return newTestRuntimeWithRepositoryAndClient(t, repository, client)
+	return newTestRuntimeWithRepositoryClientAndManager(t, repository, client)
 }
 
 func newTestRuntimeWithRepositoryAndClient(
@@ -375,12 +386,24 @@ func newTestRuntimeWithRepositoryAndClient(
 ) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
 
+	runtime, repository, _ := newTestRuntimeWithRepositoryClientAndManager(t, repository, client)
+
+	return runtime, repository
+}
+
+func newTestRuntimeWithRepositoryClientAndManager(
+	t *testing.T,
+	repository *database.SessionRepository,
+	client assistant.CompletionClient,
+) (*assistant.Runtime, *database.SessionRepository, *extension.Manager) {
+	t.Helper()
+
 	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Shutdown)
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 
-	return assistant.NewRuntime(
+	runtime := assistant.NewRuntime(
 		testConfig(),
 		repository,
 		manager,
@@ -389,7 +412,17 @@ func newTestRuntimeWithRepositoryAndClient(
 		testRegistry(t),
 		client,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	), repository
+	)
+
+	return runtime, repository, manager
+}
+
+func loadRuntimeExtension(t *testing.T, manager *extension.Manager, source string) {
+	t.Helper()
+
+	extensionPath := filepath.Join(t.TempDir(), "runtime.lua")
+	writeRuntimeTestFile(t, extensionPath, source)
+	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
 }
 
 type capturingCompletionClient struct {

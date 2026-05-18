@@ -689,6 +689,39 @@ Useful patterns include:
 - label updates
 - low-level buffer mutation
 
+## Assistant lifecycle events
+
+The extension host also emits bounded lifecycle events around the assistant runtime. These are runtime-neutral host events exposed through Lua as regular `lc.on(...)` handlers. Handlers may observe payloads and return `{ stop = true }` to prevent later handlers from running, but session/input/turn events are observational in the current release.
+
+Current assistant lifecycle events include:
+
+- `input`
+- `prompt_prepare`
+- `session_start`
+- `session_load`
+- `before_agent_start`
+- `agent_start`
+- `turn_start`
+- `message_append`
+- `turn_end`
+- `agent_end`
+
+Example:
+
+```lua
+local lc = require("librecode")
+
+lc.on("turn_start", function(event)
+  lc.log("turn started for session " .. event.payload.session_id)
+end)
+
+lc.on("message_append", function(event)
+  lc.log("appended " .. event.payload.role .. " entry " .. event.payload.entry_id)
+end)
+```
+
+Lifecycle payloads are intentionally bounded. `message_append` includes the appended entry text and metadata for the current message, but lifecycle events do not include full transcript history. Future PRs will add explicit mutation contracts for context, provider, and tool middleware.
+
 ## Current limitations
 
 The API is still incomplete compared with the long-term target.

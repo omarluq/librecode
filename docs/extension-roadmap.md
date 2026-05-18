@@ -197,7 +197,22 @@ Add typed event names, payloads, results, and dispatch diagnostics for the agent
 
 ### Phase 5.2: session, input, and turn events
 
-Emit bounded events around session load/start/shutdown, user input, prompt preparation, turn start/end, message append, and agent end. These events are observational unless a later PR explicitly documents mutation.
+Status: implemented for prompt-time input/session/turn events.
+
+Implemented events:
+
+- `input`
+- `prompt_prepare`
+- `session_start`
+- `session_load`
+- `before_agent_start`
+- `agent_start`
+- `turn_start`
+- `message_append`
+- `turn_end`
+- `agent_end`
+
+The events are bounded and observational. They do not include full transcript history and do not currently mutate prompt text or session state.
 
 ### Phase 5.3: context build seams
 
