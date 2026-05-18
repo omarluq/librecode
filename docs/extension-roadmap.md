@@ -189,7 +189,25 @@ Keep raw draw operations available. Higher-level rendering should be Lua-composa
 
 Goal: add structured agent lifecycle events without making the default UI extension-owned.
 
-Add structured lifecycle events:
+Implementation should happen as a stack of small PRs. Each PR must define runtime-neutral Go contracts first, expose them through Lua second, and keep default behavior unchanged when no extension handles the event. See the kanban in `TODO.md` for executable tasks.
+
+### Phase 5.1: lifecycle event contracts
+
+Add typed event names, payloads, results, and dispatch diagnostics for the agent loop. This phase should not change assistant behavior. It gives later phases a stable host contract.
+
+### Phase 5.2: session, input, and turn events
+
+Emit bounded events around session load/start/shutdown, user input, prompt preparation, turn start/end, message append, and agent end. These events are observational unless a later PR explicitly documents mutation.
+
+### Phase 5.3: context build seams
+
+Add a typed `context_build` event for bounded context contributions and context accounting. Extensions may add labeled context blocks within a budget. The runtime should expose system/history/skills/extensions token estimates for debugging.
+
+### Phase 5.4: provider lifecycle hooks
+
+Emit `before_provider_request`, `after_provider_response`, and `provider_error` with redacted, bounded payloads. Request mutation must be conservative, typed, and logged. Auth headers and secrets must never be exposed.
+
+Initial lifecycle events:
 
 - `session_start`
 - `session_load`
@@ -201,7 +219,7 @@ Add structured lifecycle events:
 - `before_agent_start`
 - `agent_start`
 - `turn_start`
-- `context`
+- `context_build`
 - `before_provider_request`
 - `after_provider_response`
 - `provider_error`
@@ -213,19 +231,25 @@ Add structured lifecycle events:
 - `agent_end`
 - `shutdown`
 
-Events should have structured payloads, bounded data, clear mutation contracts, and extension timing diagnostics.
+Events should have structured payloads, bounded data, clear mutation contracts, extension timing diagnostics, and tests for both default behavior and extension-modified behavior.
 
 ## Phase 6: tool middleware and extension tools
 
 Goal: let extensions and hooks influence tool execution through explicit middleware contracts.
 
-Tool middleware should support:
+### Phase 6.1: built-in tool middleware
+
+Run tool middleware around built-in tool execution first. Middleware should support:
 
 - observe and continue
 - reject with a synthetic result
 - modify tool input
 - synthesize a result without executing the tool
 - redact or rewrite tool output before the model sees it
+
+### Phase 6.2: unified tool registry
+
+Replace ad-hoc built-in registry creation in the assistant loop with one model-visible registry that can hold built-ins, extension tools, future MCP tools, toolboxes, skill-bundled tools, subagents, and LSP tools.
 
 Extension-registered tools should be wired into the same model-visible tool registry as built-ins. Skill-bundled tools should activate only when the skill activates.
 

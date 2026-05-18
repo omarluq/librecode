@@ -176,6 +176,31 @@ The most valuable ideas to adopt are:
 
 The lesson is not to move default UI into extensions. The lesson is to make agent behavior and workflow policy extensible while Go keeps the default UI fast and coherent.
 
+## Agent lifecycle seams roadmap
+
+The next major architecture pillar is explicit lifecycle/tool/context seams. This work should be delivered as stacked, reviewable PRs:
+
+1. lifecycle event contracts and dispatch
+2. session/input/turn lifecycle instrumentation
+3. context build hooks, bounded context contributions, and token breakdown
+4. provider request/response/error hooks
+5. built-in tool middleware
+6. unified tool registry for built-ins and extension tools
+7. diagnostics, examples, and hardening
+
+The default terminal UI and assistant behavior must remain Go-owned and stable throughout this stack. Extension runtimes should observe and customize through typed host contracts rather than taking over hot UI paths.
+
+Design constraints for these seams:
+
+- payloads are bounded and redacted by default
+- mutation contracts are explicit per event
+- extension errors are visible and cannot corrupt the agent loop
+- tool decisions are auditable
+- context contributions have labels, token estimates, and budgets
+- provider hooks never expose auth headers or secrets
+- tests cover the no-extension path and at least one extension-modified path
+
+
 ## What still does not work
 
 The remaining architectural gaps are mostly about ownership:

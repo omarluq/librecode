@@ -1,5 +1,25 @@
 # Extension Lua API
 
+
+## Agent lifecycle seams (planned)
+
+The extension host is moving toward explicit lifecycle/tool/context seams while keeping the default UI and assistant loop Go-owned. New APIs should be runtime-neutral first and then exposed through Lua.
+
+Planned lifecycle events include:
+
+| Event | Purpose | Mutation policy |
+| --- | --- | --- |
+| `session_start` / `session_load` / `session_shutdown` | Observe session lifecycle. | Observational initially. |
+| `input` / `prompt_prepare` | Inspect or eventually transform user input before a turn. | Explicit transforms only. |
+| `turn_start` / `turn_end` / `agent_end` | Observe one assistant turn. | Observational initially. |
+| `context_build` | Add bounded, labeled context blocks and inspect context budgets. | Bounded contributions only. |
+| `before_provider_request` / `after_provider_response` / `provider_error` | Observe provider traffic with redacted payloads. | Conservative typed mutation only. |
+| `tool_call` / `tool_result` / `tool_error` | Mediate tool execution and results. | Allow, reject, modify, synthesize, or redact per documented contract. |
+| `message_append` | Observe durable message writes. | Observational initially. |
+
+All lifecycle payloads must be bounded. Provider events must redact auth headers and secrets. Tool middleware decisions should be visible in diagnostics.
+
+
 ## Status
 
 This document describes the currently implemented Lua API surface.
