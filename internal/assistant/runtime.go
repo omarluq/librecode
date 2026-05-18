@@ -217,6 +217,11 @@ func (runtime *Runtime) ModelRegistry() *model.Registry {
 	return runtime.models
 }
 
+// EventBus returns the observational reactive event stream for this runtime.
+func (runtime *Runtime) EventBus() *event.Bus {
+	return runtime.events
+}
+
 func (runtime *Runtime) emit(ctx context.Context, channel string, data any) {
 	if runtime.events == nil {
 		return

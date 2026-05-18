@@ -189,7 +189,18 @@ Keep raw draw operations available. Higher-level rendering should be Lua-composa
 
 Goal: add structured agent lifecycle events without making the default UI extension-owned.
 
-Implementation should happen as a stack of small PRs. Each PR must define runtime-neutral Go contracts first, expose them through Lua second, and keep default behavior unchanged when no extension handles the event. See the kanban in `TODO.md` for executable tasks.
+Implementation should happen as a stack of small PRs. Each PR must define runtime-neutral Go contracts first, expose them through Lua second, and keep default behavior unchanged when no extension handles the event. The executable kanban lives under `.librecode/work/plans/` so stable docs do not become scratch state.
+
+### Event stream vs middleware dispatcher
+
+librecode uses two different mechanisms on purpose:
+
+1. **Reactive event stream** — ro-backed, observational, async/fanout.
+   Use this for lifecycle telemetry, logs, UI notifications, headless JSON streams, retry/timer streams, future file watchers, and other data that flows over time without needing an ordered return value.
+2. **Middleware dispatcher** — ordered, synchronous, return-value driven.
+   Use this for tool allow/reject/modify decisions, context contributions, provider request mutation, and any hook that must deterministically change runtime behavior.
+
+Rule of thumb: if it is async, streaming, cancellable, or fanout, build it on the ro event spine. If it returns a decision or mutation, keep it in the explicit middleware dispatcher and emit observational ro events before/after the decision.
 
 ### Phase 5.1: lifecycle event contracts
 

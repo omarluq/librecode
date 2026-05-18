@@ -5,10 +5,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/samber/ro"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -55,6 +57,26 @@ end)
 	assert.Contains(t, output, "message_append:"+response.SessionID+":assistant")
 	assert.Contains(t, output, "turn_end:"+response.SessionID+":")
 	assert.Contains(t, output, "agent_end:"+response.SessionID+":")
+}
+
+func TestRuntime_PromptLifecyclePublishesReactiveEventStream(t *testing.T) {
+	t.Parallel()
+
+	runtime, _, _ := newTestRuntimeWithManager(t, testCompletionClient{})
+	events := []string{}
+	subscription := runtimeEventStream(t, runtime).Channel("turn_start").Subscribe(ro.NewObserver(
+		func(envelope event.Envelope) {
+			events = append(events, envelope.Channel)
+		},
+		func(error) {},
+		func() {},
+	))
+	defer subscription.Unsubscribe()
+
+	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(testRuntimeCWD, "stream lifecycle", ""))
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"turn_start"}, events)
 }
 
 func TestRuntime_PromptEmitsSessionLoadForExistingSession(t *testing.T) {
@@ -169,6 +191,15 @@ end)
 
 	require.NoError(t, err)
 	assert.Contains(t, response.Text, "still works")
+}
+
+func runtimeEventStream(t *testing.T, runtime *assistant.Runtime) *event.Bus {
+	t.Helper()
+
+	bus := runtime.EventBus()
+	require.NotNil(t, bus)
+
+	return bus
 }
 
 type staticCompletionClient struct {
