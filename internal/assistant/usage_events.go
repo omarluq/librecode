@@ -17,10 +17,10 @@ func (runtime *Runtime) emitUsage(ctx context.Context, onEvent func(StreamEvent)
 		Text:      "",
 	})
 	payload := map[string]any{
-		"context_window":    usage.ContextWindow,
-		"context_tokens":    usage.ContextTokens,
-		"input_tokens":      usage.InputTokens,
-		jsonOutputTokensKey: usage.OutputTokens,
+		jsonContextWindowKey: usage.ContextWindow,
+		jsonContextTokensKey: usage.ContextTokens,
+		jsonInputTokensKey:   usage.InputTokens,
+		jsonOutputTokensKey:  usage.OutputTokens,
 	}
 	runtime.emit(ctx, "usage", payload)
 	if runtime.extensions != nil {

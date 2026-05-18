@@ -128,14 +128,18 @@ func NewRuntime(
 }
 
 // Prompt appends a user prompt and an assistant response to the selected session.
-func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (*PromptResponse, error) {
+func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (response *PromptResponse, err error) {
 	if request == nil {
 		return nil, oops.In("assistant").Code("nil_prompt_request").Errorf("prompt request is nil")
 	}
-	activeSession, err := runtime.resolveSession(ctx, request)
+	runtime.dispatchLifecycle(ctx, extension.LifecycleInput, promptLifecyclePayload(request))
+	runtime.dispatchLifecycle(ctx, extension.LifecyclePromptPrepare, promptLifecyclePayload(request))
+
+	activeSession, sessionEvent, err := runtime.resolveSession(ctx, request)
 	if err != nil {
 		return nil, err
 	}
+	runtime.dispatchLifecycle(ctx, sessionEvent, sessionLifecyclePayload(activeSession))
 
 	parentID, err := runtime.promptParentID(ctx, activeSession.ID, request.ParentEntryID)
 	if err != nil {
@@ -153,13 +157,13 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (*Pr
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
 	}
+	runtime.dispatchMessageAppend(ctx, userEntry)
 	runtime.notifyPromptUserEntry(request, activeSession.ID, userEntry.ID)
-
-	runtime.emit(ctx, "before_agent_start", map[string]any{"prompt": request.Text})
-	emitErr := runtime.extensions.Emit(ctx, "before_agent_start", map[string]any{"prompt": request.Text})
-	if emitErr != nil {
-		return nil, oops.In("assistant").Code("before_agent_start").Wrapf(emitErr, "emit before_agent_start")
-	}
+	turnLifecycle := newPromptTurnLifecycle(ctx, runtime, activeSession.ID, userEntry.ID)
+	runtime.dispatchTurnStartLifecycle(ctx, activeSession.ID, request, userEntry.ID, parentID)
+	defer func() {
+		turnLifecycle.dispatchError(err)
+	}()
 
 	bundle, cached, err := runtime.respond(
 		ctx,
@@ -188,12 +192,8 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (*Pr
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_assistant").Wrapf(err, "append assistant message")
 	}
-
-	runtime.emit(ctx, "agent_end", map[string]any{"response": bundle.Text})
-	emitErr = runtime.extensions.Emit(ctx, "agent_end", map[string]any{"response": bundle.Text})
-	if emitErr != nil {
-		return nil, oops.In("assistant").Code("assistant_end").Wrapf(emitErr, "emit assistant end")
-	}
+	runtime.dispatchMessageAppend(ctx, assistantEntry)
+	turnLifecycle.dispatchEnd(assistantEntry.ID, cached, bundle.Usage)
 
 	return &PromptResponse{
 		SessionID:        activeSession.ID,
@@ -248,6 +248,7 @@ func (runtime *Runtime) appendAssistantSideEffects(
 		if err != nil {
 			return nil, oops.In("assistant").Code("append_thinking").Wrapf(err, "append thinking message")
 		}
+		runtime.dispatchMessageAppend(ctx, entry)
 		parentID = &entry.ID
 	}
 	for _, event := range bundle.ToolEvents {
@@ -262,6 +263,7 @@ func (runtime *Runtime) appendAssistantSideEffects(
 		if err != nil {
 			return nil, oops.In("assistant").Code("append_tool_result").Wrapf(err, "append tool result")
 		}
+		runtime.dispatchMessageAppend(ctx, entry)
 		parentID = &entry.ID
 	}
 
@@ -286,50 +288,55 @@ func formatToolEvent(toolEvent *ToolEvent) string {
 	return strings.Join(parts, "\n")
 }
 
-func (runtime *Runtime) resolveSession(ctx context.Context, request *PromptRequest) (*database.SessionEntity, error) {
+func (runtime *Runtime) resolveSession(
+	ctx context.Context,
+	request *PromptRequest,
+) (*database.SessionEntity, extension.LifecycleEventName, error) {
 	if request.SessionID != "" {
 		if request.ResumeLatest {
-			return nil, oops.
+			return nil, "", oops.
 				In("assistant").
 				Code("session_selection_conflict").
 				Errorf("resume latest cannot be used with an explicit session")
 		}
 		loadedSession, found, err := runtime.sessions.GetSession(ctx, request.SessionID)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if !found {
-			return nil, oops.
+			return nil, "", oops.
 				In("assistant").
 				Code("session_not_found").
 				With("session_id", request.SessionID).
 				Errorf("session not found")
 		}
 
-		return loadedSession, nil
+		return loadedSession, extension.LifecycleSessionLoad, nil
 	}
 
 	if request.ResumeLatest {
 		if request.Name != "" {
-			return nil, oops.
+			return nil, "", oops.
 				In("assistant").
 				Code("session_selection_conflict").
 				Errorf("resume latest cannot be used with a new session name")
 		}
 		latestSession, found, err := runtime.sessions.LatestSession(ctx, request.CWD)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if found {
-			return latestSession, nil
+			return latestSession, extension.LifecycleSessionLoad, nil
 		}
 	}
 
 	if request.Name != "" {
-		return runtime.sessions.CreateSession(ctx, request.CWD, request.Name, "")
+		session, err := runtime.sessions.CreateSession(ctx, request.CWD, request.Name, "")
+		return session, extension.LifecycleSessionStart, err
 	}
 
-	return runtime.sessions.CreateSession(ctx, request.CWD, "", "")
+	session, err := runtime.sessions.CreateSession(ctx, request.CWD, "", "")
+	return session, extension.LifecycleSessionStart, err
 }
 
 func (runtime *Runtime) notifyPromptUserEntry(request *PromptRequest, sessionID, entryID string) {
