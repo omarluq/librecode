@@ -14,6 +14,9 @@ import (
 // Handler processes one event payload for a channel.
 type Handler func(ctx context.Context, data any) error
 
+// EnvelopeHandler processes one full event envelope.
+type EnvelopeHandler func(ctx context.Context, envelope Envelope) error
+
 // Unsubscribe removes a previously registered handler.
 type Unsubscribe func()
 
@@ -52,19 +55,60 @@ func (bus *Bus) Emit(ctx context.Context, channel string, data any) {
 	subject.NextWithContext(ctx, Envelope{Data: data, Channel: channel})
 }
 
-// On registers a handler and returns an unsubscribe function.
-func (bus *Bus) On(channel string, handler Handler) Unsubscribe {
+// Stream returns the hot event stream backing this bus.
+//
+// The stream is observational only: subscribers must not mutate runtime state in
+// ways that require an ordered result. Use explicit middleware dispatchers for
+// allow/reject/modify decisions.
+func (bus *Bus) Stream() ro.Observable[Envelope] {
 	bus.lock.Lock()
-	bus.nextID++
-	subscriptionID := bus.nextID
-	subject := bus.subject
-	subscription := subject.Subscribe(bus.observer(channel, handler))
-	bus.subscriptions[subscriptionID] = subscription
-	bus.lock.Unlock()
+	defer bus.lock.Unlock()
 
-	return func() {
-		bus.unsubscribe(subscriptionID)
-	}
+	return bus.subject.AsObservable()
+}
+
+// Channel returns a filtered view of Stream for one channel.
+func (bus *Bus) Channel(channel string) ro.Observable[Envelope] {
+	return ro.Pipe1(
+		bus.Stream(),
+		ro.Filter(func(envelope Envelope) bool {
+			return envelope.Channel == channel
+		}),
+	)
+}
+
+// On registers a channel handler and returns an unsubscribe function.
+func (bus *Bus) On(channel string, handler Handler) Unsubscribe {
+	observer := ro.NewObserverWithContext(
+		func(ctx context.Context, envelope Envelope) {
+			if err := handler(ctx, envelope.Data); err != nil {
+				bus.logHandlerError(envelope.Channel, err)
+			}
+		},
+		func(_ context.Context, err error) {
+			bus.logHandlerError(channel, err)
+		},
+		func(context.Context) {},
+	)
+
+	return bus.subscribe(bus.Channel(channel), observer)
+}
+
+// OnEnvelope registers a handler for every emitted envelope.
+func (bus *Bus) OnEnvelope(handler EnvelopeHandler) Unsubscribe {
+	observer := ro.NewObserverWithContext(
+		func(ctx context.Context, envelope Envelope) {
+			if err := handler(ctx, envelope); err != nil {
+				bus.logHandlerError(envelope.Channel, err)
+			}
+		},
+		func(_ context.Context, err error) {
+			bus.logHandlerError("*", err)
+		},
+		func(context.Context) {},
+	)
+
+	return bus.subscribe(bus.Stream(), observer)
 }
 
 // Clear removes all registered handlers and rotates the hot subject.
@@ -80,21 +124,17 @@ func (bus *Bus) Clear() {
 	bus.subject = ro.NewPublishSubject[Envelope]()
 }
 
-func (bus *Bus) observer(channel string, handler Handler) ro.Observer[Envelope] {
-	return ro.NewObserverWithContext(
-		func(ctx context.Context, envelope Envelope) {
-			if envelope.Channel != channel {
-				return
-			}
-			if err := handler(ctx, envelope.Data); err != nil {
-				bus.logHandlerError(envelope.Channel, err)
-			}
-		},
-		func(_ context.Context, err error) {
-			bus.logHandlerError(channel, err)
-		},
-		func(context.Context) {},
-	)
+func (bus *Bus) subscribe(observable ro.Observable[Envelope], observer ro.Observer[Envelope]) Unsubscribe {
+	bus.lock.Lock()
+	bus.nextID++
+	subscriptionID := bus.nextID
+	subscription := observable.Subscribe(observer)
+	bus.subscriptions[subscriptionID] = subscription
+	bus.lock.Unlock()
+
+	return func() {
+		bus.unsubscribe(subscriptionID)
+	}
 }
 
 func (bus *Bus) unsubscribe(subscriptionID uint64) {

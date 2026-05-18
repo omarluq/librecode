@@ -19,6 +19,13 @@ Planned lifecycle events include:
 
 All lifecycle payloads must be bounded. Provider events must redact auth headers and secrets. Tool middleware decisions should be visible in diagnostics.
 
+librecode separates two event mechanisms:
+
+- the **ro-backed event stream** for observational async/fanout events such as lifecycle telemetry, headless JSON output, timers, retry notifications, and future watchers
+- the **ordered middleware dispatcher** for hooks that return decisions or mutations, such as tool allow/reject, context contributions, and provider request changes
+
+Extensions may observe lifecycle events through Lua handlers, while core Go services can subscribe to the reactive stream for telemetry and integrations. Do not use the observational stream for state mutations that require deterministic ordering.
+
 
 ## Status
 

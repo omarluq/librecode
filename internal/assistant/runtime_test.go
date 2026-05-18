@@ -20,6 +20,7 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -408,7 +409,7 @@ func newTestRuntimeWithRepositoryClientAndManager(
 		repository,
 		manager,
 		cache,
-		nil,
+		event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil))),
 		testRegistry(t),
 		client,
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
