@@ -650,6 +650,7 @@ func (runtime *Runtime) modelResponse(
 	}
 
 	estimatedUsage := estimateTokenUsage(systemPrompt, messages, &selectedModel)
+	runtime.dispatchContextBuild(ctx, sessionID, cwd, systemPrompt, messages, estimatedUsage)
 	runtime.emitUsage(ctx, onEvent, estimatedUsage)
 	request := &CompletionRequest{
 		Model:         selectedModel,
