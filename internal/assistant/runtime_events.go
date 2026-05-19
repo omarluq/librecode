@@ -1,0 +1,108 @@
+package assistant
+
+import (
+	"context"
+
+	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/model"
+)
+
+const (
+	lifecycleAPIKey       = "api"
+	lifecycleAttemptKey   = "attempt"
+	lifecycleProviderKey  = "provider"
+	lifecycleToolErrorKey = "error"
+)
+
+func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *CompletionRequest, attempt int) {
+	if request == nil {
+		return
+	}
+	runtime.dispatchLifecycle(ctx, extension.LifecycleBeforeProviderRequest, map[string]any{
+		lifecycleAPIKey:      request.Model.API,
+		lifecycleAttemptKey:  attempt,
+		jsonModelKey:         request.Model.ID,
+		lifecycleProviderKey: request.Model.Provider,
+		jsonSessionIDKey:     request.SessionID,
+		"thinking_level":     request.ThinkingLevel,
+	})
+}
+
+func (runtime *Runtime) emitProviderResponse(
+	ctx context.Context,
+	request *CompletionRequest,
+	attempt int,
+	result *CompletionResult,
+) {
+	if request == nil || result == nil {
+		return
+	}
+	runtime.dispatchLifecycle(ctx, extension.LifecycleAfterProviderResponse, map[string]any{
+		lifecycleAPIKey:      request.Model.API,
+		lifecycleAttemptKey:  attempt,
+		jsonModelKey:         request.Model.ID,
+		lifecycleProviderKey: request.Model.Provider,
+		jsonSessionIDKey:     request.SessionID,
+		jsonTextKey:          result.Text,
+		"thinking_count":     len(result.Thinking),
+		"tool_event_count":   len(result.ToolEvents),
+		jsonUsageKey:         tokenUsageLifecyclePayload(result.Usage),
+	})
+}
+
+func (runtime *Runtime) emitProviderError(ctx context.Context, request *CompletionRequest, attempt int, err error) {
+	if request == nil || err == nil {
+		return
+	}
+	runtime.dispatchLifecycle(ctx, extension.LifecycleProviderError, map[string]any{
+		lifecycleAPIKey:      request.Model.API,
+		lifecycleAttemptKey:  attempt,
+		jsonModelKey:         request.Model.ID,
+		lifecycleProviderKey: request.Model.Provider,
+		jsonSessionIDKey:     request.SessionID,
+		lifecycleErrorKey:    err.Error(),
+	})
+}
+
+func (runtime *Runtime) emitToolCall(ctx context.Context, call ToolCallEvent) {
+	runtime.dispatchLifecycle(ctx, extension.LifecycleToolCall, toolCallPayload(call))
+}
+
+func (runtime *Runtime) emitToolResult(ctx context.Context, event *ToolEvent) {
+	if event == nil {
+		return
+	}
+	payload := toolEventPayload(event)
+	runtime.dispatchLifecycle(ctx, extension.LifecycleToolResult, payload)
+	if event.Error != "" {
+		runtime.dispatchLifecycle(ctx, extension.LifecycleToolError, payload)
+	}
+}
+
+func toolCallPayload(call ToolCallEvent) map[string]any {
+	return map[string]any{
+		"call_id":        call.ID,
+		jsonToolNameKey:  call.Name,
+		"arguments_json": call.ArgumentsJSON,
+		"arguments":      call.Arguments,
+	}
+}
+
+func toolEventPayload(event *ToolEvent) map[string]any {
+	return map[string]any{
+		jsonToolNameKey:       event.Name,
+		"arguments_json":      event.ArgumentsJSON,
+		"details_json":        event.DetailsJSON,
+		"result":              event.Result,
+		lifecycleToolErrorKey: event.Error,
+	}
+}
+
+func tokenUsageLifecyclePayload(usage model.TokenUsage) map[string]any {
+	return map[string]any{
+		jsonContextWindowKey: usage.ContextWindow,
+		jsonContextTokensKey: usage.ContextTokens,
+		jsonInputTokensKey:   usage.InputTokens,
+		jsonOutputTokensKey:  usage.OutputTokens,
+	}
+}
