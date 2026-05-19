@@ -58,7 +58,14 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			return result, nil
 		}
 		input = append(input, statelessResponseOutputItems(providerResult.OutputItems)...)
-		outputs, events := executeToolCalls(ctx, request.CWD, providerResult.ToolCalls, request.OnEvent)
+		outputs, events := executeToolCalls(
+			ctx,
+			request.CWD,
+			providerResult.ToolCalls,
+			request.OnEvent,
+			request.OnToolCall,
+			request.OnToolResult,
+		)
 		result.ToolEvents = append(result.ToolEvents, events...)
 		input = append(input, outputs...)
 	}
