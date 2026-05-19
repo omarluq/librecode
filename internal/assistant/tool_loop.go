@@ -34,6 +34,8 @@ func executeToolCalls(
 	cwd string,
 	calls []toolCall,
 	onEvent func(StreamEvent),
+	onToolCall func(context.Context, ToolCallEvent),
+	onToolResult func(context.Context, *ToolEvent),
 ) ([]any, []ToolEvent) {
 	registry := tool.NewRegistry(cwd)
 	outputs := make([]any, 0, len(calls))
@@ -45,6 +47,9 @@ func executeToolCalls(
 			Kind:      StreamEventToolStart,
 			Text:      call.Name,
 		})
+		if onToolCall != nil {
+			onToolCall(ctx, ToolCallEvent(call))
+		}
 		result, err := registry.Execute(ctx, call.Name, call.Arguments)
 		resultText := result.Text()
 		detailsJSON := encodeToolDetails(result.Details)
@@ -64,6 +69,9 @@ func executeToolCalls(
 		}
 		event.Result = resultText
 		events = append(events, event)
+		if onToolResult != nil {
+			onToolResult(ctx, &event)
+		}
 		emitStreamEvent(onEvent, StreamEvent{
 			ToolEvent: &event,
 			Usage:     nil,
