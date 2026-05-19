@@ -6,6 +6,7 @@ require (
 	github.com/Oudwins/zog v0.22.2
 	github.com/alecthomas/chroma/v2 v2.24.1
 	github.com/clipperhouse/displaywidth v0.11.0
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gdamore/tcell/v3 v3.4.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/uuid v1.6.0

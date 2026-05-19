@@ -96,6 +96,9 @@ func (screen *clipboardScreen) SetClipboard(data []byte) {
 func (screen *clipboardScreen) GetClipboard()                   {}
 func (screen *clipboardScreen) HasClipboard() bool              { return true }
 func (screen *clipboardScreen) ShowNotification(string, string) {}
+func (screen *clipboardScreen) KeyboardProtocol() tcell.KeyProtocol {
+	return tcell.LegacyKeyboard
+}
 func (screen *clipboardScreen) Terminal() (name, version string) {
 	return clipboardTestTerminal, clipboardTestTerminal
 }
