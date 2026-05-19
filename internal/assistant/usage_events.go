@@ -22,9 +22,9 @@ func (runtime *Runtime) emitUsage(ctx context.Context, onEvent func(StreamEvent)
 		jsonInputTokensKey:   usage.InputTokens,
 		jsonOutputTokensKey:  usage.OutputTokens,
 	}
-	runtime.emit(ctx, "usage", payload)
+	runtime.emit(ctx, jsonUsageKey, payload)
 	if runtime.extensions != nil {
-		if err := runtime.extensions.Emit(ctx, "usage", payload); err != nil {
+		if err := runtime.extensions.Emit(ctx, jsonUsageKey, payload); err != nil {
 			runtime.logger.Debug("emit usage extension event failed", "error", err)
 		}
 	}
