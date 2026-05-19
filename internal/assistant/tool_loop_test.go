@@ -1,0 +1,90 @@
+//nolint:testpackage // These tests exercise unexported tool-loop helpers.
+package assistant
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		call toolCall
+	}{
+		{
+			name: "missing id",
+			call: toolCall{Arguments: nil, ID: "", Name: "read", ArgumentsJSON: ""},
+		},
+		{
+			name: "missing name",
+			call: toolCall{Arguments: nil, ID: "call-1", Name: "", ArgumentsJSON: ""},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateToolCalls([]toolCall{tt.call})
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
+	t.Parallel()
+
+	streamEvents := []StreamEvent{}
+	toolCalls := []ToolCallEvent{}
+	toolResults := []ToolEvent{}
+	outputs, events := executeToolCalls(
+		context.Background(),
+		t.TempDir(),
+		[]toolCall{{
+			Arguments:     map[string]any{jsonPathKey: "missing.txt"},
+			ID:            "call-1",
+			Name:          "read",
+			ArgumentsJSON: `{"path":"missing.txt"}`,
+		}},
+		func(event StreamEvent) {
+			streamEvents = append(streamEvents, event)
+		},
+		func(_ context.Context, event ToolCallEvent) {
+			toolCalls = append(toolCalls, event)
+		},
+		func(_ context.Context, event *ToolEvent) {
+			require.NotNil(t, event)
+			toolResults = append(toolResults, *event)
+		},
+	)
+
+	require.Len(t, outputs, 1)
+	require.Len(t, events, 1)
+	require.Len(t, toolCalls, 1)
+	require.Len(t, toolResults, 1)
+	require.Len(t, streamEvents, 2)
+	assert.Equal(t, StreamEventToolStart, streamEvents[0].Kind)
+	assert.Equal(t, StreamEventToolResult, streamEvents[1].Kind)
+	assert.Equal(t, "read", toolCalls[0].Name)
+	assert.Equal(t, "read", toolResults[0].Name)
+	assert.NotEmpty(t, toolResults[0].Error)
+}
+
+func TestToolOutputTextIncludesDetailsForEmptyResult(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "details:\n{}", toolOutputText("   ", "{}"))
+	assert.Equal(t, "plain", toolOutputText("plain", ""))
+	assert.Equal(t, "plain\ndetails:\n{}", toolOutputText(" plain ", "{}"))
+}
+
+func TestEncodeToolDetailsReturnsEmptyForInvalidDetails(t *testing.T) {
+	t.Parallel()
+
+	encoded := encodeToolDetails(map[string]any{"bad": func() {}})
+	assert.Empty(t, encoded)
+}

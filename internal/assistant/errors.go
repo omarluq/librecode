@@ -71,3 +71,13 @@ func stringValue(value any) string {
 		return ""
 	}
 }
+
+func firstNonEmptyString(values ...any) string {
+	for _, value := range values {
+		if text := strings.TrimSpace(stringValue(value)); text != "" {
+			return text
+		}
+	}
+
+	return ""
+}

@@ -27,8 +27,12 @@ func TestSignalStreamEmitsSignals(t *testing.T) {
 			count.Add(1)
 			cancel()
 		},
-		func(context.Context, error) {},
-		func(context.Context) {},
+		func(_ context.Context, err error) {
+			require.NoError(t, err)
+		},
+		func(context.Context) {
+			// Intentionally no-op: signal stream completion is not asserted here.
+		},
 	))
 	t.Cleanup(subscription.Unsubscribe)
 

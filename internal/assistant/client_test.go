@@ -1,7 +1,13 @@
 //nolint:testpackage // These tests cover unexported SSE accumulator behavior.
 package assistant
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 const answerDelta = "answer"
 
@@ -57,4 +63,19 @@ func TestSSEAccumulatorEmitsReasoningDeltaSeparately(t *testing.T) {
 	if len(accumulator.parts) != 0 {
 		t.Fatalf("reasoning deltas should not be response text parts: %#v", accumulator.parts)
 	}
+}
+func TestParseSSEResultExtractsToolCallFromOutputItems(t *testing.T) {
+	t.Parallel()
+
+	payload := `{"response":{"output":[{"id":"call_1","type":"function_call",` +
+		`"call_id":"call_1","name":"read","arguments":"{\"path\":\"README.md\"}"}]}}`
+	stream := "data: " + payload + "\n" + "data: [DONE]\n"
+
+	result, err := parseSSEResult(strings.NewReader(stream), nil)
+	require.NoError(t, err)
+	require.Len(t, result.ToolCalls, 1)
+	assert.Equal(t, "call_1", result.ToolCalls[0].ID)
+	assert.Equal(t, "read", result.ToolCalls[0].Name)
+	assert.Equal(t, `{"path":"README.md"}`, result.ToolCalls[0].ArgumentsJSON)
+	assert.Equal(t, "README.md", result.ToolCalls[0].Arguments["path"])
 }

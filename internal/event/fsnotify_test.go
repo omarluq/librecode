@@ -21,15 +21,21 @@ func TestFileWatchStreamEmitsFileEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var count atomic.Int64
+	errCh := make(chan error, 1)
 	subscription := event.FileWatchStream(dir).SubscribeWithContext(ctx, ro.NewObserverWithContext(
 		func(_ context.Context, _ event.FileEvent) {
 			count.Add(1)
 			cancel()
 		},
 		func(_ context.Context, err error) {
-			require.ErrorIs(t, err, context.Canceled)
+			select {
+			case errCh <- err:
+			default:
+			}
 		},
-		func(context.Context) {},
+		func(context.Context) {
+			// Intentionally no-op: the test observes cancellation through errCh.
+		},
 	))
 	t.Cleanup(subscription.Unsubscribe)
 
@@ -38,6 +44,13 @@ func TestFileWatchStreamEmitsFileEvents(t *testing.T) {
 		writeErr := os.WriteFile(watchedFile, []byte("updated"), 0o600)
 		return writeErr == nil && count.Load() > 0
 	}, 2*time.Second, 10*time.Millisecond)
+
+	select {
+	case err := <-errCh:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		require.Fail(t, "expected cancellation error")
+	}
 }
 
 func TestFileWatchStreamReportsAddErrors(t *testing.T) {
