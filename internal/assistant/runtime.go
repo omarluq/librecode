@@ -847,7 +847,7 @@ func activeSkillEventPayload(skills []core.ActivatedSkill) []map[string]any {
 		payload = append(payload, map[string]any{
 			"name":        skill.Name,
 			"description": skill.Description,
-			"path":        skill.FilePath,
+			jsonPathKey:   skill.FilePath,
 			"truncated":   skills[index].Truncated,
 		})
 	}
@@ -860,10 +860,10 @@ func activeSkillMatchPayload(matches []core.SkillActivationDiagnostic) []map[str
 	for index := range matches {
 		match := matches[index]
 		payload = append(payload, map[string]any{
-			"name":   match.Skill.Name,
-			"path":   match.Skill.FilePath,
-			"reason": match.Reason,
-			"score":  match.Score,
+			"name":      match.Skill.Name,
+			jsonPathKey: match.Skill.FilePath,
+			"reason":    match.Reason,
+			"score":     match.Score,
 		})
 	}
 

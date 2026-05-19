@@ -33,7 +33,9 @@ func NewDiagnosticObserver(bus *Bus, logger *slog.Logger) *DiagnosticObserver {
 		}),
 	)
 	observer.subscription = stream.Subscribe(ro.NewObserverWithContext(
-		func(context.Context, Envelope) {},
+		func(context.Context, Envelope) {
+			// Intentionally no-op: logging happens in the TapOnNext stage.
+		},
 		func(_ context.Context, err error) {
 			logger.Debug("runtime event stream failed", slog.Any("error", err))
 		},

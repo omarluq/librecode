@@ -237,8 +237,8 @@ func toolCallsFromOutput(output []any) []toolCall {
 		}
 		calls = append(calls, toolCall{
 			Arguments:     arguments,
-			ID:            stringValue(object[jsonCallIDKey]),
-			Name:          stringValue(object[jsonToolNameKey]),
+			ID:            firstNonEmptyString(object[jsonCallIDKey], object["id"]),
+			Name:          firstNonEmptyString(object[jsonToolNameKey], object["function"]),
 			ArgumentsJSON: argumentsJSON,
 		})
 	}

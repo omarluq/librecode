@@ -26,7 +26,9 @@ func SignalContext(parent context.Context, signals ...os.Signal) (context.Contex
 		func(context.Context, error) {
 			cancel()
 		},
-		func(context.Context) {},
+		func(context.Context) {
+			// Intentionally no-op: cancellation is driven by next/error handlers.
+		},
 	))
 
 	return ctx, func() {

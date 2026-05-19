@@ -22,13 +22,21 @@ func TestDiagnosticObserverLogsRuntimeEvents(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	bus := event.NewBus(logger)
 	observer := event.NewDiagnosticObserver(bus, logger)
-	t.Cleanup(observer.Stop)
 
 	bus.Emit(context.Background(), "turn_start", map[string]any{"session_id": "s1"})
+	bus.Emit(context.Background(), "turn_end", nil)
 
 	require.Eventually(t, func() bool {
-		return strings.Contains(output.String(), "turn_start")
+		logged := output.String()
+		return strings.Contains(logged, "turn_start") && strings.Contains(logged, "\u003cnil\u003e")
 	}, time.Second, 10*time.Millisecond)
+
+	observer.Stop()
+	observer.Stop()
+	nilObserver := event.NewDiagnosticObserver(nil, logger)
+	nilObserver.Stop()
+	nilLoggerObserver := event.NewDiagnosticObserver(bus, nil)
+	nilLoggerObserver.Stop()
 }
 
 func TestTickStreamEmitsIntervalValues(t *testing.T) {
@@ -43,8 +51,12 @@ func TestTickStreamEmitsIntervalValues(t *testing.T) {
 				cancel()
 			}
 		},
-		func(context.Context, error) {},
-		func(context.Context) {},
+		func(_ context.Context, err error) {
+			require.NoError(t, err)
+		},
+		func(context.Context) {
+			// Intentionally no-op: completion is not relevant to this ticker test.
+		},
 	))
 	t.Cleanup(subscription.Unsubscribe)
 
