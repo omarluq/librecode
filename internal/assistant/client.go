@@ -42,6 +42,7 @@ const (
 	jsonTextKey             = "text"
 	jsonThinkingKey         = "thinking"
 	jsonDisplayKey          = "display"
+	jsonUsageKey            = "usage"
 	jsonUserRole            = "user"
 	functionToolType        = "function"
 	functionCallType        = "function_call"

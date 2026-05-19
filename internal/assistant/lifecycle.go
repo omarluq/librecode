@@ -126,6 +126,18 @@ func (runtime *Runtime) dispatchTurnErrorLifecycle(
 	runtime.dispatchLifecycle(ctx, extension.LifecycleAgentEnd, payload)
 }
 
+func (runtime *Runtime) dispatchContextBuild(
+	ctx context.Context,
+	sessionID string,
+	cwd string,
+	systemPrompt string,
+	messages []database.MessageEntity,
+	usage model.TokenUsage,
+) {
+	payload := contextBuildLifecyclePayload(sessionID, cwd, systemPrompt, messages, usage)
+	runtime.dispatchLifecycle(ctx, extension.LifecycleContextBuild, payload)
+}
+
 func promptLifecyclePayload(request *PromptRequest) map[string]any {
 	if request == nil {
 		return map[string]any{}
@@ -185,7 +197,7 @@ func turnEndLifecyclePayload(
 		"cached":                     cached,
 		lifecycleErrorKey:            "",
 		jsonSessionIDKey:             sessionID,
-		"usage":                      tokenUsageLifecyclePayload(usage),
+		jsonUsageKey:                 tokenUsageLifecyclePayload(usage),
 		lifecycleUserEntryIDKey:      userEntryID,
 	}
 	if turnErr != nil {
@@ -193,6 +205,43 @@ func turnEndLifecyclePayload(
 	}
 
 	return payload
+}
+
+func contextBuildLifecyclePayload(
+	sessionID string,
+	cwd string,
+	systemPrompt string,
+	messages []database.MessageEntity,
+	usage model.TokenUsage,
+) map[string]any {
+	return map[string]any{
+		lifecycleCWDKey:      cwd,
+		jsonSessionIDKey:     sessionID,
+		"message_count":      len(messages),
+		"system_tokens":      estimateTokens(systemPrompt),
+		"message_tokens":     estimateMessageTokens(messages),
+		jsonUsageKey:         tokenUsageLifecyclePayload(usage),
+		"model_facing_roles": modelFacingRoleCounts(messages),
+	}
+}
+
+func estimateMessageTokens(messages []database.MessageEntity) int {
+	tokens := 0
+	for index := range messages {
+		tokens += estimateTokens(messages[index].Content)
+	}
+
+	return tokens
+}
+
+func modelFacingRoleCounts(messages []database.MessageEntity) map[string]int {
+	counts := map[string]int{}
+	for index := range messages {
+		role := string(messages[index].Role)
+		counts[role]++
+	}
+
+	return counts
 }
 
 func entryLifecyclePayload(entry *database.EntryEntity) map[string]any {
