@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/omarluq/librecode/internal/extension"
-	"github.com/omarluq/librecode/internal/model"
 )
 
 const (
@@ -95,14 +94,5 @@ func toolEventPayload(event *ToolEvent) map[string]any {
 		"details_json":        event.DetailsJSON,
 		"result":              event.Result,
 		lifecycleToolErrorKey: event.Error,
-	}
-}
-
-func tokenUsageLifecyclePayload(usage model.TokenUsage) map[string]any {
-	return map[string]any{
-		jsonContextWindowKey: usage.ContextWindow,
-		jsonContextTokensKey: usage.ContextTokens,
-		jsonInputTokensKey:   usage.InputTokens,
-		jsonOutputTokensKey:  usage.OutputTokens,
 	}
 }

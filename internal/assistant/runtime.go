@@ -652,16 +652,15 @@ func (runtime *Runtime) modelResponse(
 	estimatedUsage := estimateTokenUsage(systemPrompt, messages, &selectedModel)
 	runtime.dispatchContextBuild(ctx, sessionID, cwd, systemPrompt, messages, estimatedUsage)
 	runtime.emitUsage(ctx, onEvent, estimatedUsage)
-	request := &CompletionRequest{
-		Model:         selectedModel,
-		Auth:          auth,
-		Messages:      messages,
-		SessionID:     sessionID,
-		SystemPrompt:  systemPrompt,
-		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,
-		CWD:           cwd,
-		OnEvent:       onEvent,
-	}
+	request := runtime.modelCompletionRequest(
+		&selectedModel,
+		auth,
+		messages,
+		sessionID,
+		systemPrompt,
+		cwd,
+		onEvent,
+	)
 	result, err := runtime.completeWithRetry(ctx, request, onRetry)
 	if err != nil {
 		return nil, err
@@ -677,6 +676,29 @@ func (runtime *Runtime) modelResponse(
 	}, nil
 }
 
+func (runtime *Runtime) modelCompletionRequest(
+	selectedModel *model.Model,
+	auth model.RequestAuth,
+	messages []database.MessageEntity,
+	sessionID string,
+	systemPrompt string,
+	cwd string,
+	onEvent func(StreamEvent),
+) *CompletionRequest {
+	return &CompletionRequest{
+		OnEvent:       onEvent,
+		OnToolCall:    runtime.emitToolCall,
+		OnToolResult:  runtime.emitToolResult,
+		SessionID:     sessionID,
+		SystemPrompt:  systemPrompt,
+		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,
+		CWD:           cwd,
+		Auth:          auth,
+		Messages:      messages,
+		Model:         *selectedModel,
+	}
+}
+
 func (runtime *Runtime) completeWithRetry(
 	ctx context.Context,
 	request *CompletionRequest,
@@ -684,13 +706,22 @@ func (runtime *Runtime) completeWithRetry(
 ) (*CompletionResult, error) {
 	retry := retryConfig(runtime.cfg)
 	if !retry.Enabled || retry.MaxAttempts <= 1 {
-		return runtime.client.Complete(ctx, request)
+		runtime.emitProviderRequest(ctx, request, 1)
+		result, err := runtime.client.Complete(ctx, request)
+		if err != nil {
+			runtime.emitProviderError(ctx, request, 1, err)
+			return nil, err
+		}
+		runtime.emitProviderResponse(ctx, request, 1, result)
+		return result, nil
 	}
 
 	var lastErr error
 	for attempt := 1; attempt <= retry.MaxAttempts; attempt++ {
+		runtime.emitProviderRequest(ctx, request, attempt)
 		result, err := runtime.client.Complete(ctx, request)
 		if err == nil {
+			runtime.emitProviderResponse(ctx, request, attempt, result)
 			if attempt > 1 {
 				runtime.emitRetryEvent(ctx, onRetry, RetryEvent{
 					Kind:        RetryEventEnd,
@@ -703,6 +734,7 @@ func (runtime *Runtime) completeWithRetry(
 			return result, nil
 		}
 		lastErr = err
+		runtime.emitProviderError(ctx, request, attempt, err)
 		if attempt == retry.MaxAttempts || !ShouldRetryModelError(err) {
 			return nil, err
 		}

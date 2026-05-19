@@ -9,7 +9,7 @@ import (
 	"github.com/omarluq/librecode/internal/di"
 )
 
-func TestNewEventServiceStartsDiagnostics(t *testing.T) {
+func TestNewEventServiceExposesBus(t *testing.T) {
 	t.Parallel()
 
 	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
@@ -21,6 +21,5 @@ func TestNewEventServiceStartsDiagnostics(t *testing.T) {
 
 	service := di.MustInvoke[*di.EventService](container)
 
-	require.NotNil(t, service.Bus)
-	require.NotNil(t, di.EventDiagnosticsForTest(service))
+	require.True(t, di.EventBusAvailableForTest(service))
 }

@@ -58,14 +58,16 @@ const (
 
 // CompletionRequest describes one model completion request.
 type CompletionRequest struct {
-	OnEvent       func(StreamEvent)        `json:"-"`
-	SessionID     string                   `json:"session_id"`
-	SystemPrompt  string                   `json:"system_prompt"`
-	ThinkingLevel string                   `json:"thinking_level"`
-	CWD           string                   `json:"cwd"`
-	Auth          model.RequestAuth        `json:"auth"`
-	Messages      []database.MessageEntity `json:"messages"`
-	Model         model.Model              `json:"model"`
+	OnEvent       func(StreamEvent)                    `json:"-"`
+	OnToolCall    func(context.Context, ToolCallEvent) `json:"-"`
+	OnToolResult  func(context.Context, *ToolEvent)    `json:"-"`
+	SessionID     string                               `json:"session_id"`
+	SystemPrompt  string                               `json:"system_prompt"`
+	ThinkingLevel string                               `json:"thinking_level"`
+	CWD           string                               `json:"cwd"`
+	Auth          model.RequestAuth                    `json:"auth"`
+	Messages      []database.MessageEntity             `json:"messages"`
+	Model         model.Model                          `json:"model"`
 }
 
 // CompletionResult is a provider response plus model-visible side effects.
@@ -74,6 +76,14 @@ type CompletionResult struct {
 	Thinking   []string         `json:"thinking,omitempty"`
 	ToolEvents []ToolEvent      `json:"tool_events,omitempty"`
 	Usage      model.TokenUsage `json:"usage"`
+}
+
+// ToolCallEvent captures one requested tool call before execution.
+type ToolCallEvent struct {
+	Arguments     map[string]any `json:"arguments,omitempty"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	ArgumentsJSON string         `json:"arguments_json"`
 }
 
 // ToolEvent captures one tool call for persistence and TUI rendering.
