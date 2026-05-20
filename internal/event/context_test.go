@@ -11,56 +11,117 @@ import (
 	"github.com/omarluq/librecode/internal/event"
 )
 
-func TestAfterContextEmitsOnce(t *testing.T) {
+func TestContextStreams(t *testing.T) {
 	t.Parallel()
 
-	values, err := ro.Collect(event.AfterContext(context.Background(), time.Millisecond))
+	tests := []contextStreamCase{
+		{
+			name:          "after context emits once",
+			source:        afterContextSource(time.Millisecond),
+			subscriberCtx: nil,
+			expectedErr:   nil,
+			expected:      []int64{0},
+		},
+		{
+			name:          "after context emits immediately for non-positive delay",
+			source:        afterContextSource(0),
+			subscriberCtx: nil,
+			expectedErr:   nil,
+			expected:      []int64{0},
+		},
+		{
+			name:          "after context stops on source cancel",
+			source:        canceledAfterContextSource(time.Hour),
+			subscriberCtx: nil,
+			expectedErr:   context.Canceled,
+			expected:      []int64{},
+		},
+		{
+			name:          "after context stops on subscriber cancel",
+			source:        afterContextSource(time.Hour),
+			subscriberCtx: canceledTestContext,
+			expectedErr:   context.Canceled,
+			expected:      []int64{},
+		},
+		{
+			name:          "context done emits on cancel",
+			source:        canceledContextDoneSource,
+			subscriberCtx: nil,
+			expectedErr:   nil,
+			expected:      []int64{0},
+		},
+	}
 
-	require.NoError(t, err)
-	require.Len(t, values, 1)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			values, err := collectContextValues(t, testCase.source(t), testCase.subscriberCtx)
+
+			if testCase.expectedErr != nil {
+				require.ErrorIs(t, err, testCase.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, testCase.expected, values)
+		})
+	}
 }
 
-func TestAfterContextEmitsImmediatelyForNonPositiveDelay(t *testing.T) {
-	t.Parallel()
-
-	values, err := ro.Collect(event.AfterContext(context.Background(), 0))
-
-	require.NoError(t, err)
-	require.Equal(t, []int64{0}, values)
+type contextStreamCase struct {
+	source        func(t *testing.T) ro.Observable[int64]
+	subscriberCtx func(t *testing.T) context.Context
+	expectedErr   error
+	name          string
+	expected      []int64
 }
 
-func TestAfterContextStopsOnSourceCancel(t *testing.T) {
-	t.Parallel()
+func afterContextSource(delay time.Duration) func(t *testing.T) ro.Observable[int64] {
+	return func(t *testing.T) ro.Observable[int64] {
+		t.Helper()
+
+		return event.AfterContext(context.Background(), delay)
+	}
+}
+
+func canceledAfterContextSource(delay time.Duration) func(t *testing.T) ro.Observable[int64] {
+	return func(t *testing.T) ro.Observable[int64] {
+		t.Helper()
+
+		return event.AfterContext(canceledTestContext(t), delay)
+	}
+}
+
+func canceledContextDoneSource(t *testing.T) ro.Observable[int64] {
+	t.Helper()
+
+	return ro.Pipe1(
+		event.ContextDone(canceledTestContext(t)),
+		ro.Map(func(struct{}) int64 { return 0 }),
+	)
+}
+
+func canceledTestContext(t *testing.T) context.Context {
+	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+	t.Cleanup(cancel)
 
-	values, err := ro.Collect(event.AfterContext(ctx, time.Hour))
-
-	require.ErrorIs(t, err, context.Canceled)
-	require.Empty(t, values)
+	return ctx
 }
 
-func TestAfterContextStopsOnSubscriberCancel(t *testing.T) {
-	t.Parallel()
+func collectContextValues(
+	t *testing.T,
+	source ro.Observable[int64],
+	subscriberCtx func(t *testing.T) context.Context,
+) ([]int64, error) {
+	t.Helper()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	if subscriberCtx == nil {
+		return ro.Collect(source)
+	}
 
-	values, _, err := ro.CollectWithContext(ctx, event.AfterContext(context.Background(), time.Hour))
-
-	require.ErrorIs(t, err, context.Canceled)
-	require.Empty(t, values)
-}
-
-func TestContextDoneEmitsOnCancel(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	values, err := ro.Collect(event.ContextDone(ctx))
-
-	require.NoError(t, err)
-	require.Len(t, values, 1)
+	values, _, err := ro.CollectWithContext(subscriberCtx(t), source)
+	return values, err
 }
