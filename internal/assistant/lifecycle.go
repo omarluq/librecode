@@ -141,12 +141,8 @@ func (runtime *Runtime) dispatchObservationalLifecycle(
 	name extension.LifecycleEventName,
 	payload map[string]any,
 ) {
-	if _, err := runtime.dispatchLifecycle(ctx, name, payload); err != nil && runtime.logger != nil {
-		runtime.logger.Debug(
-			"observational lifecycle dispatch failed",
-			slog.String("event", string(name)),
-			slog.Any("error", err),
-		)
+	if _, err := runtime.dispatchLifecycle(ctx, name, payload); err != nil {
+		return
 	}
 }
 
