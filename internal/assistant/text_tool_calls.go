@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"encoding/json"
+	"fmt"
 	"html"
 	"regexp"
 	"strconv"
@@ -16,8 +17,8 @@ const (
 )
 
 var (
-	textToolUsePattern = regexp.MustCompile(`(?is)<tool_use\b[^>]*>(.*?)</tool_use>`)
-	textToolTagPattern = regexp.MustCompile(`(?is)<([a-zA-Z][a-zA-Z0-9_-]*)\b[^>]*>(.*?)</[a-zA-Z][a-zA-Z0-9_-]*>`)
+	textToolUsePattern     = regexp.MustCompile(`(?is)<tool_use\b[^>]*>(.*?)</tool_use>`)
+	textToolOpeningPattern = regexp.MustCompile(`(?is)<\s*([a-zA-Z][a-zA-Z0-9_-]*)\b[^>]*>`)
 )
 
 func textToolCallsFromText(text string) []toolCall {
@@ -49,15 +50,93 @@ func textToolCallsFromText(text string) []toolCall {
 
 func textToolFields(content string) map[string]string {
 	fields := map[string]string{}
-	for _, match := range textToolTagPattern.FindAllStringSubmatch(content, -1) {
-		key := normalizeTextToolKey(match[1])
+	searchOffset := 0
+	lowerContent := asciiLower(content)
+	for searchOffset < len(content) {
+		match := textToolOpeningPattern.FindStringSubmatchIndex(content[searchOffset:])
+		if match == nil {
+			break
+		}
+		openStart := searchOffset + match[0]
+		openEnd := searchOffset + match[1]
+		tag := content[searchOffset+match[2] : searchOffset+match[3]]
+		key := normalizeTextToolKey(tag)
 		if key == "" || key == anthropicToolUseType {
+			searchOffset = openEnd
 			continue
 		}
-		fields[key] = strings.TrimSpace(html.UnescapeString(match[2]))
+		closeStart, closeEnd, ok := findTextToolClosingTag(lowerContent, tag, openEnd)
+		if !ok {
+			searchOffset = openEnd
+			continue
+		}
+		value := html.UnescapeString(content[openEnd:closeStart])
+		if isTextToolContainerKey(key) {
+			mergeTextToolFields(fields, textToolFields(value))
+			mergeTextToolFields(fields, textToolJSONFields(value))
+		} else {
+			fields[key] = value
+		}
+		searchOffset = max(closeEnd, openStart+1)
 	}
 
 	return fields
+}
+
+func findTextToolClosingTag(lowerContent, tag string, after int) (closeStart, closeEnd int, ok bool) {
+	closingTag := "</" + asciiLower(tag) + ">"
+	closeStart = strings.Index(lowerContent[after:], closingTag)
+	if closeStart == -1 {
+		return 0, 0, false
+	}
+	closeStart += after
+
+	return closeStart, closeStart + len(closingTag), true
+}
+
+func mergeTextToolFields(destination, source map[string]string) {
+	for key, value := range source {
+		if _, exists := destination[key]; !exists {
+			destination[key] = value
+		}
+	}
+}
+
+func textToolJSONFields(value string) map[string]string {
+	payload := map[string]any{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(value)), &payload); err != nil {
+		return nil
+	}
+	fields := make(map[string]string, len(payload))
+	for key, fieldValue := range payload {
+		fields[normalizeTextToolKey(key)] = textToolJSONFieldValue(fieldValue)
+	}
+
+	return fields
+}
+
+func textToolJSONFieldValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
+func isTextToolContainerKey(key string) bool {
+	switch key {
+	case "args", "arguments", jsonInputKey, "parameters", "params":
+		return true
+	default:
+		return false
+	}
+}
+
+func asciiLower(value string) string {
+	return strings.ToLower(value)
 }
 
 func normalizeTextToolName(name string) string {
@@ -73,10 +152,10 @@ func normalizeTextToolName(name string) string {
 		return jsonWriteToolName
 	case jsonGrepToolName, "search":
 		return jsonGrepToolName
-	case "find":
-		return "find"
-	case "ls", "list", "list_dir", "list_directory":
-		return "ls"
+	case jsonFindToolName:
+		return jsonFindToolName
+	case jsonLSToolName, "list", "list_dir", "list_directory":
+		return jsonLSToolName
 	default:
 		return ""
 	}
@@ -96,16 +175,53 @@ func textToolArguments(name string, fields map[string]string) map[string]any {
 		if key == textToolNameField || key == jsonToolNameKey || key == jsonToolRole {
 			continue
 		}
-		arguments[textToolArgumentName(name, key)] = value
+		arguments[textToolArgumentName(name, key)] = strings.TrimSpace(value)
 	}
+	applyTextToolAliases(name, fields, arguments)
 
 	return arguments
+}
+
+func applyTextToolAliases(name string, fields map[string]string, arguments map[string]any) {
+	switch name {
+	case jsonWriteToolName:
+		content, hasContent := firstRawTextToolField(
+			fields,
+			jsonContentKey,
+			"contents",
+			"text",
+			"body",
+			"file_content",
+			"file_contents",
+			"new_content",
+			"new_contents",
+			"new_file_content",
+			"new_file_contents",
+			"code",
+		)
+		applyTextToolAlias(arguments, jsonContentKey, content, hasContent)
+	case jsonEditToolName:
+		oldText, hasOldText := firstRawTextToolField(fields, textToolOldTextKey, "old-text", "old")
+		newText, hasNewText := firstRawTextToolField(fields, textToolNewTextKey, "new-text", "new")
+		applyTextToolAlias(arguments, jsonOldTextKey, oldText, hasOldText)
+		applyTextToolAlias(arguments, jsonNewTextKey, newText, hasNewText)
+	case jsonBashToolName:
+		command, hasCommand := firstRawTextToolField(fields, jsonCommandKey, "cmd")
+		applyTextToolAlias(arguments, jsonCommandKey, command, hasCommand)
+	}
+}
+
+func applyTextToolAlias(arguments map[string]any, key, value string, exists bool) {
+	if !exists {
+		return
+	}
+	arguments[key] = value
 }
 
 func textToolArgumentName(toolName, fieldName string) string {
 	switch fieldName {
 	case textToolFilePathField, "filepath", "file", "filename":
-		return "path"
+		return jsonPathKey
 	case textToolOldTextKey:
 		return jsonOldTextKey
 	case textToolNewTextKey:
@@ -130,6 +246,17 @@ func firstTextToolField(fields map[string]string, names ...string) string {
 	}
 
 	return ""
+}
+
+func firstRawTextToolField(fields map[string]string, names ...string) (string, bool) {
+	for _, name := range names {
+		value, ok := fields[normalizeTextToolKey(name)]
+		if ok {
+			return value, true
+		}
+	}
+
+	return "", false
 }
 
 func encodeToolArguments(arguments map[string]any) string {

@@ -33,7 +33,7 @@ func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
 	defer server.Close()
 
 	request := testCompletionRequestAuth("sk-test")
-	request.CWD = testRepoRoot(t)
+	request.CWD = testToolWorkspace(t)
 	request.Model.BaseURL = server.URL
 
 	result, err := NewHTTPCompletionClient().completeOpenAIChat(context.Background(), request)
@@ -69,7 +69,7 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 	defer server.Close()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.CWD = testRepoRoot(t)
+	request.CWD = testToolWorkspace(t)
 	request.Model.BaseURL = server.URL
 
 	result, err := NewHTTPCompletionClient().completeAnthropic(context.Background(), request)
@@ -86,10 +86,19 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 }
 
 func openAIChatReadToolResponse() string {
+	arguments, err := json.Marshal(map[string]string{jsonPathKey: "README.md"})
+	if err != nil {
+		panic(err)
+	}
+	encodedArguments, err := json.Marshal(string(arguments))
+	if err != nil {
+		panic(err)
+	}
+
 	return `{
 		"choices":[{"message":{"tool_calls":[{"id":"call_1","type":"function","function":{
 			"name":"read",
-			"arguments":"{\"path\":\"README.md\"}"
+			"arguments":` + string(encodedArguments) + `
 		}}]}}]
 	}`
 }
@@ -149,12 +158,13 @@ func writeTestProviderResponse(t *testing.T, writer http.ResponseWriter, respons
 	require.NoError(t, err)
 }
 
-func testRepoRoot(t *testing.T) string {
+func testToolWorkspace(t *testing.T) string {
 	t.Helper()
-	cwd, err := os.Getwd()
-	require.NoError(t, err)
+	workspace := t.TempDir()
+	readmePath := filepath.Join(workspace, "README.md")
+	require.NoError(t, os.WriteFile(readmePath, []byte("# librecode\n"), 0o600))
 
-	return filepath.Clean(filepath.Join(cwd, "..", ".."))
+	return workspace
 }
 
 func TestCompleteOpenAIChatExecutesTextToolUseFallback(t *testing.T) {
@@ -177,7 +187,7 @@ func TestCompleteOpenAIChatExecutesTextToolUseFallback(t *testing.T) {
 	defer server.Close()
 
 	request := testCompletionRequestAuth("sk-test")
-	request.CWD = testRepoRoot(t)
+	request.CWD = testToolWorkspace(t)
 	request.Model.BaseURL = server.URL
 
 	result, err := NewHTTPCompletionClient().completeOpenAIChat(context.Background(), request)

@@ -16,21 +16,35 @@ const testAnthropicToolUseID = "toolu_1"
 func TestParseAnthropicResultExtractsNativeToolUse(t *testing.T) {
 	t.Parallel()
 
-	content := []byte(`{
-		"content": [
-			{"type":"tool_use","id":"toolu_1","name":"read","input":{"path":"README.md"}}
-		],
-		"usage": {"input_tokens": 12, "output_tokens": 3}
-	}`)
+	tests := []struct {
+		name     string
+		toolName string
+		wantName string
+	}{
+		{name: "local tool name", toolName: jsonReadToolName, wantName: jsonReadToolName},
+		{name: "claude code tool name", toolName: anthropicReadToolName, wantName: jsonReadToolName},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	result, err := parseAnthropicResult(content)
-	require.NoError(t, err)
-	require.Len(t, result.ToolCalls, 1)
-	assert.Equal(t, testAnthropicToolUseID, result.ToolCalls[0].ID)
-	assert.Equal(t, "read", result.ToolCalls[0].Name)
-	assert.Equal(t, "README.md", result.ToolCalls[0].Arguments[jsonPathKey])
-	assert.Equal(t, 12, result.Usage.InputTokens)
-	assert.Equal(t, 3, result.Usage.OutputTokens)
+			content := []byte(`{
+				"content": [
+					{"type":"tool_use","id":"toolu_1","name":"` + testCase.toolName + `","input":{"path":"README.md"}}
+				],
+				"usage": {"input_tokens": 12, "output_tokens": 3}
+			}`)
+
+			result, err := parseAnthropicResult(content)
+			require.NoError(t, err)
+			require.Len(t, result.ToolCalls, 1)
+			assert.Equal(t, testAnthropicToolUseID, result.ToolCalls[0].ID)
+			assert.Equal(t, testCase.wantName, result.ToolCalls[0].Name)
+			assert.Equal(t, "README.md", result.ToolCalls[0].Arguments[jsonPathKey])
+			assert.Equal(t, 12, result.Usage.InputTokens)
+			assert.Equal(t, 3, result.Usage.OutputTokens)
+		})
+	}
 }
 
 func TestAnthropicPayloadIncludesTools(t *testing.T) {
@@ -45,7 +59,8 @@ func TestAnthropicPayloadIncludesTools(t *testing.T) {
 	encoded, err := json.Marshal(tools)
 	require.NoError(t, err)
 	assert.Contains(t, string(encoded), `"input_schema"`)
-	assert.Contains(t, string(encoded), `"read"`)
+	assert.Contains(t, string(encoded), `"`+jsonReadToolName+`"`)
+	assert.Contains(t, string(encoded), `"eager_input_streaming":true`)
 }
 
 func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
@@ -107,7 +122,7 @@ func TestAppendAnthropicToolConversationRejectsMismatchedNativeResults(t *testin
 		Usage: model.EmptyTokenUsage(),
 	}
 
-	err := appendAnthropicToolConversation(state, result, nil)
+	err := appendAnthropicToolConversation(testCompletionRequestAuth("sk-ant-api03-secret"), state, result, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mismatched tool calls and results")
