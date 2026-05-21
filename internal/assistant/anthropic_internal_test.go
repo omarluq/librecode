@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -42,6 +43,10 @@ func TestAnthropicOAuthPayloadAddsClaudeCodeIdentity(t *testing.T) {
 	assert.Len(t, systemBlocks, 2)
 	assert.Contains(t, systemBlocks[0]["text"], "Claude Code")
 	assert.Equal(t, anthropicTestSystemPrompt, systemBlocks[1][jsonTextKey])
+	encodedTools := encodeTestJSON(t, payload["tools"])
+	assert.Contains(t, encodedTools, `"name":"Read"`)
+	assert.Contains(t, encodedTools, `"name":"Write"`)
+	assert.Contains(t, encodedTools, `"eager_input_streaming":true`)
 }
 
 func TestAnthropicPayloadAddsBudgetThinking(t *testing.T) {
@@ -71,6 +76,30 @@ func TestAnthropicPayloadDisablesThinkingWhenOff(t *testing.T) {
 
 	assert.Equal(t, map[string]any{jsonTypeKey: "disabled"}, payload[jsonThinkingKey])
 	assert.NotContains(t, payload, "output_config")
+}
+
+func TestAnthropicPayloadUsesLocalToolNamesForAPIKey(t *testing.T) {
+	t.Parallel()
+
+	payload := anthropicPayload(testCompletionRequestAuth("sk-ant-api03-secret"), nil)
+
+	encodedTools := encodeTestJSON(t, payload["tools"])
+	assert.Contains(t, encodedTools, `"name":"`+jsonReadToolName+`"`)
+	assert.Contains(t, encodedTools, `"name":"`+jsonWriteToolName+`"`)
+	assert.NotContains(t, encodedTools, `"name":"`+anthropicReadToolName+`"`)
+}
+
+func TestAnthropicToolCallMapsClaudeCodeNamesToLocalNames(t *testing.T) {
+	t.Parallel()
+
+	call := anthropicToolCall(testAnthropicToolUseID, "Write", map[string]any{
+		jsonPathKey:    "hello.txt",
+		jsonContentKey: "hello",
+	})
+
+	assert.Equal(t, jsonWriteToolName, call.Name)
+	assert.Equal(t, "hello.txt", call.Arguments[jsonPathKey])
+	assert.Equal(t, "hello", call.Arguments[jsonContentKey])
 }
 
 func TestAnthropicPayloadAddsAdaptiveThinking(t *testing.T) {
@@ -113,6 +142,15 @@ func TestAnthropicHeadersUseBearerForOAuth(t *testing.T) {
 	assert.Contains(t, headers["anthropic-beta"], "claude-code-20250219")
 	assert.Contains(t, headers["anthropic-beta"], "oauth-2025-04-20")
 	assert.NotContains(t, headers["anthropic-beta"], "interleaved-thinking-2025-05-14")
+}
+
+func encodeTestJSON(t *testing.T, value any) string {
+	t.Helper()
+
+	encoded, err := json.Marshal(value)
+	assert.NoError(t, err)
+
+	return string(encoded)
 }
 
 func testCompletionRequestAuth(args ...string) *CompletionRequest {
