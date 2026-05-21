@@ -17,7 +17,7 @@ func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *Comple
 	if request == nil {
 		return
 	}
-	runtime.dispatchLifecycle(ctx, extension.LifecycleBeforeProviderRequest, map[string]any{
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleBeforeProviderRequest, map[string]any{
 		lifecycleAPIKey:      request.Model.API,
 		lifecycleAttemptKey:  attempt,
 		jsonModelKey:         request.Model.ID,
@@ -36,7 +36,7 @@ func (runtime *Runtime) emitProviderResponse(
 	if request == nil || result == nil {
 		return
 	}
-	runtime.dispatchLifecycle(ctx, extension.LifecycleAfterProviderResponse, map[string]any{
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleAfterProviderResponse, map[string]any{
 		lifecycleAPIKey:      request.Model.API,
 		lifecycleAttemptKey:  attempt,
 		jsonModelKey:         request.Model.ID,
@@ -53,7 +53,7 @@ func (runtime *Runtime) emitProviderError(ctx context.Context, request *Completi
 	if request == nil || err == nil {
 		return
 	}
-	runtime.dispatchLifecycle(ctx, extension.LifecycleProviderError, map[string]any{
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleProviderError, map[string]any{
 		lifecycleAPIKey:      request.Model.API,
 		lifecycleAttemptKey:  attempt,
 		jsonModelKey:         request.Model.ID,
@@ -64,7 +64,7 @@ func (runtime *Runtime) emitProviderError(ctx context.Context, request *Completi
 }
 
 func (runtime *Runtime) emitToolCall(ctx context.Context, call ToolCallEvent) {
-	runtime.dispatchLifecycle(ctx, extension.LifecycleToolCall, toolCallPayload(call))
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleToolCall, toolCallPayload(call))
 }
 
 func (runtime *Runtime) emitToolResult(ctx context.Context, event *ToolEvent) {
@@ -72,9 +72,9 @@ func (runtime *Runtime) emitToolResult(ctx context.Context, event *ToolEvent) {
 		return
 	}
 	payload := toolEventPayload(event)
-	runtime.dispatchLifecycle(ctx, extension.LifecycleToolResult, payload)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleToolResult, payload)
 	if event.Error != "" {
-		runtime.dispatchLifecycle(ctx, extension.LifecycleToolError, payload)
+		runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleToolError, payload)
 	}
 }
 

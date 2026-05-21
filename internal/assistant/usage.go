@@ -9,21 +9,6 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
-func estimateTokenUsage(
-	systemPrompt string,
-	messages []database.MessageEntity,
-	selectedModel *model.Model,
-) model.TokenUsage {
-	inputTokens := estimateInputTokens(systemPrompt, messages)
-
-	return model.TokenUsage{
-		ContextWindow: selectedModel.ContextWindow,
-		ContextTokens: inputTokens,
-		InputTokens:   inputTokens,
-		OutputTokens:  0,
-	}
-}
-
 func estimateInputTokens(systemPrompt string, messages []database.MessageEntity) int {
 	count := estimateTokens(systemPrompt)
 	for index := range messages {
