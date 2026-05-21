@@ -156,3 +156,38 @@ func testRepoRoot(t *testing.T) string {
 
 	return filepath.Clean(filepath.Join(cwd, "..", ".."))
 }
+
+func TestCompleteOpenAIChatExecutesTextToolUseFallback(t *testing.T) {
+	t.Parallel()
+
+	var requests []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
+		requests = append(requests, payload)
+		writer.Header().Set("Content-Type", "application/json")
+		if len(requests) == 1 {
+			content, err := json.Marshal(anthropicTextReadToolMarkup())
+			require.NoError(t, err)
+			writeTestProviderResponse(t, writer, `{"choices":[{"message":{"content":`+string(content)+`}}]}`)
+			return
+		}
+		writeTestProviderResponse(t, writer, `{"choices":[{"message":{"content":"done"}}]}`)
+	}))
+	defer server.Close()
+
+	request := testCompletionRequestAuth("sk-test")
+	request.CWD = testRepoRoot(t)
+	request.Model.BaseURL = server.URL
+
+	result, err := NewHTTPCompletionClient().completeOpenAIChat(context.Background(), request)
+	require.NoError(t, err)
+	require.Equal(t, "done", result.Text)
+	require.Len(t, result.ToolEvents, 1)
+	assert.Equal(t, jsonReadToolName, result.ToolEvents[0].Name)
+	require.Len(t, requests, 2)
+	messages, ok := requests[1]["messages"].([]any)
+	require.True(t, ok)
+	assert.True(t, containsAssistantTextToolUsePrompt(messages))
+	assert.True(t, containsUserToolResultPrompt(messages))
+}
