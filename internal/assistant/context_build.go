@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/samber/oops"
@@ -215,15 +216,15 @@ func appendContextContributions(result *contextBuildResult, contributions []cont
 		result.Contributions = append(result.Contributions, contribution)
 		builder.WriteString("\n<block")
 		if contribution.Name != "" {
-			_, _ = fmt.Fprintf(&builder, " name=%q", contribution.Name)
+			builder.WriteString(" name=")
+			builder.WriteString(strconv.Quote(contribution.Name))
 		}
-		_, _ = fmt.Fprintf(
-			&builder,
-			" source=%q role=%q tokens=%d",
-			contribution.Source,
-			contribution.Role,
-			contribution.Tokens,
-		)
+		builder.WriteString(" source=")
+		builder.WriteString(strconv.Quote(contribution.Source))
+		builder.WriteString(" role=")
+		builder.WriteString(strconv.Quote(contribution.Role))
+		builder.WriteString(" tokens=")
+		builder.WriteString(strconv.Itoa(contribution.Tokens))
 		builder.WriteString(">\n")
 		builder.WriteString(contribution.Content)
 		builder.WriteString("\n</block>")
