@@ -66,7 +66,9 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 	}
 	events := executeOpenAIChatToolCalls(ctx, request, providerResult.ToolCalls)
 	state.result.ToolEvents = append(state.result.ToolEvents, events...)
-	appendOpenAIChatToolConversation(state, providerResult, events)
+	if err := appendOpenAIChatToolConversation(state, providerResult, events); err != nil {
+		return false, err
+	}
 
 	return false, nil
 }
@@ -88,20 +90,26 @@ func executeOpenAIChatToolCalls(
 	return events
 }
 
-func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *providerResult, events []ToolEvent) {
+func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *providerResult, events []ToolEvent) error {
 	if hasTextFallbackToolCalls(result.ToolCalls) {
 		state.messages = append(
 			state.messages,
 			map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: result.Text},
 			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: textToolResultPrompt(events)},
 		)
-		return
+		return nil
+	}
+	toolMessages, err := openAIChatToolMessages(result.ToolCalls, events)
+	if err != nil {
+		return err
 	}
 	state.messages = append(
 		state.messages,
 		openAIChatAssistantToolMessage(result),
 	)
-	state.messages = append(state.messages, openAIChatToolMessages(result.ToolCalls, events)...)
+	state.messages = append(state.messages, toolMessages...)
+
+	return nil
 }
 
 func openAIChatPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
@@ -207,21 +215,24 @@ func openAIChatAssistantToolMessage(result *providerResult) map[string]any {
 	}
 }
 
-func openAIChatToolMessages(calls []toolCall, events []ToolEvent) []map[string]any {
+func openAIChatToolMessages(calls []toolCall, events []ToolEvent) ([]map[string]any, error) {
+	if len(events) != len(calls) {
+		return nil, oops.In("assistant").
+			Code("openai_chat_tool_message_mismatch").
+			With("calls", len(calls)).
+			With("events", len(events)).
+			Errorf("build OpenAI chat tool messages: mismatched tool calls and results")
+	}
 	messages := make([]map[string]any, 0, len(events))
 	for index, event := range events {
-		callID := ""
-		if index < len(calls) {
-			callID = calls[index].ID
-		}
 		messages = append(messages, map[string]any{
 			jsonRoleKey:    jsonToolRole,
-			"tool_call_id": callID,
+			"tool_call_id": calls[index].ID,
 			jsonContentKey: toolOutputText(event.Result, event.DetailsJSON),
 		})
 	}
 
-	return messages
+	return messages, nil
 }
 
 func openAIRole(role database.Role) (string, bool) {

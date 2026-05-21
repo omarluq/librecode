@@ -89,3 +89,31 @@ func TestEncodeToolDetailsReturnsEmptyForInvalidDetails(t *testing.T) {
 	encoded := encodeToolDetails(map[string]any{"bad": func() {}})
 	assert.Empty(t, encoded)
 }
+
+func TestOpenAIChatToolMessagesRejectsMismatchedCallsAndEvents(t *testing.T) {
+	t.Parallel()
+
+	messages, err := openAIChatToolMessages(
+		[]toolCall{{Arguments: nil, ID: "call_1", Name: jsonReadToolName, ArgumentsJSON: `{}`, TextFallback: false}},
+		nil,
+	)
+
+	require.Error(t, err)
+	assert.Nil(t, messages)
+	assert.Contains(t, err.Error(), "mismatched tool calls and results")
+}
+
+func TestOpenAIChatToolMessagesUsesCallIDs(t *testing.T) {
+	t.Parallel()
+
+	messages, err := openAIChatToolMessages(
+		[]toolCall{{Arguments: nil, ID: "call_1", Name: jsonReadToolName, ArgumentsJSON: `{}`, TextFallback: false}},
+		[]ToolEvent{{Name: jsonReadToolName, ArgumentsJSON: `{}`, DetailsJSON: "", Result: "ok", Error: ""}},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	assert.Equal(t, jsonToolRole, messages[0][jsonRoleKey])
+	assert.Equal(t, "call_1", messages[0]["tool_call_id"])
+	assert.Equal(t, "ok", messages[0][jsonContentKey])
+}

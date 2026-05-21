@@ -67,12 +67,12 @@ func normalizeTextToolName(name string) string {
 		return jsonReadToolName
 	case jsonBashToolName, "shell", "sh", jsonCommandKey:
 		return jsonBashToolName
-	case "edit", "replace":
-		return "edit"
-	case "write", "create":
-		return "write"
-	case "grep", "search":
-		return "grep"
+	case jsonEditToolName, "replace":
+		return jsonEditToolName
+	case jsonWriteToolName, "create":
+		return jsonWriteToolName
+	case jsonGrepToolName, "search":
+		return jsonGrepToolName
 	case "find":
 		return "find"
 	case "ls", "list", "list_dir", "list_directory":

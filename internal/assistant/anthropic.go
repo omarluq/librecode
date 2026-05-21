@@ -64,7 +64,9 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 	}
 	events := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)
 	state.result.ToolEvents = append(state.result.ToolEvents, events...)
-	appendAnthropicToolConversation(state, providerResult, events)
+	if err := appendAnthropicToolConversation(state, providerResult, events); err != nil {
+		return false, err
+	}
 
 	return false, nil
 }
@@ -86,20 +88,30 @@ func executeAnthropicToolCalls(
 	return events
 }
 
-func appendAnthropicToolConversation(state *anthropicLoopState, providerResult *providerResult, events []ToolEvent) {
+func appendAnthropicToolConversation(
+	state *anthropicLoopState,
+	providerResult *providerResult,
+	events []ToolEvent,
+) error {
 	if hasTextFallbackToolCalls(providerResult.ToolCalls) {
 		state.messages = append(
 			state.messages,
 			map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: providerResult.Text},
 			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: textToolResultPrompt(events)},
 		)
-		return
+		return nil
+	}
+	toolResultMessage, err := anthropicToolResultMessage(providerResult.ToolCalls, events)
+	if err != nil {
+		return err
 	}
 	state.messages = append(
 		state.messages,
 		anthropicAssistantToolMessage(providerResult.ToolCalls),
-		anthropicToolResultMessage(providerResult.ToolCalls, events),
+		toolResultMessage,
 	)
+
+	return nil
 }
 
 func anthropicPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
@@ -355,21 +367,24 @@ func anthropicAssistantToolMessage(calls []toolCall) map[string]any {
 	return map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: blocks}
 }
 
-func anthropicToolResultMessage(calls []toolCall, events []ToolEvent) map[string]any {
+func anthropicToolResultMessage(calls []toolCall, events []ToolEvent) (map[string]any, error) {
+	if len(events) != len(calls) {
+		return nil, oops.In("assistant").
+			Code("anthropic_tool_message_mismatch").
+			With("calls", len(calls)).
+			With("events", len(events)).
+			Errorf("build Anthropic tool result message: mismatched tool calls and results")
+	}
 	blocks := make([]map[string]any, 0, len(events))
 	for index, event := range events {
-		toolUseID := ""
-		if index < len(calls) {
-			toolUseID = calls[index].ID
-		}
 		blocks = append(blocks, map[string]any{
 			jsonTypeKey:    anthropicToolResultType,
-			"tool_use_id":  toolUseID,
+			"tool_use_id":  calls[index].ID,
 			jsonContentKey: toolOutputText(event.Result, event.DetailsJSON),
 		})
 	}
 
-	return map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: blocks}
+	return map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: blocks}, nil
 }
 
 func anthropicMessages(messages []database.MessageEntity) []map[string]any {
