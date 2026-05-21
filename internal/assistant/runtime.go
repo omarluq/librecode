@@ -132,14 +132,14 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	if request == nil {
 		return nil, oops.In("assistant").Code("nil_prompt_request").Errorf("prompt request is nil")
 	}
-	runtime.dispatchLifecycle(ctx, extension.LifecycleInput, promptLifecyclePayload(request))
-	runtime.dispatchLifecycle(ctx, extension.LifecyclePromptPrepare, promptLifecyclePayload(request))
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleInput, promptLifecyclePayload(request))
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecyclePromptPrepare, promptLifecyclePayload(request))
 
 	activeSession, sessionEvent, err := runtime.resolveSession(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	runtime.dispatchLifecycle(ctx, sessionEvent, sessionLifecyclePayload(activeSession))
+	runtime.dispatchObservationalLifecycle(ctx, sessionEvent, sessionLifecyclePayload(activeSession))
 
 	parentID, err := runtime.promptParentID(ctx, activeSession.ID, request.ParentEntryID)
 	if err != nil {
@@ -616,48 +616,17 @@ func (runtime *Runtime) modelResponse(
 			With("provider", selectedModel.Provider).
 			Wrapf(fmt.Errorf("%s", auth.Error), "resolve model auth")
 	}
-	messages, err := runtime.modelContextMessages(ctx, sessionID)
+	contextResult, err := runtime.buildModelContext(ctx, sessionID, cwd, prompt, &selectedModel, onEvent)
 	if err != nil {
 		return nil, err
 	}
-
-	systemPrompt := defaultSystemPrompt(cwd)
-	skillActivation := core.AutoActivateSkillsDetailed(prompt, core.LoadSkills(cwd, nil, true).Skills)
-	activeSkills := skillActivation.Activated
-	if len(skillActivation.Diagnostics) > 0 {
-		runtime.logger.Debug("skill auto-activation diagnostics", slog.Int("count", len(skillActivation.Diagnostics)))
-	}
-	for index := range skillActivation.Matches {
-		match := &skillActivation.Matches[index]
-		runtime.logger.Debug(
-			"skill auto-activated",
-			slog.String("skill", match.Skill.Name),
-			slog.String("reason", match.Reason),
-			slog.Int("score", match.Score),
-		)
-	}
-	runtime.emitActivatedSkillReads(ctx, cwd, activeSkills, onEvent)
-	if len(activeSkills) > 0 {
-		systemPrompt += core.FormatActiveSkillsForPrompt(activeSkills)
-		payload := map[string]any{
-			"skills":  activeSkillEventPayload(activeSkills),
-			"matches": activeSkillMatchPayload(skillActivation.Matches),
-		}
-		runtime.emit(ctx, "skill_auto_activate", payload)
-		if emitErr := runtime.extensions.Emit(ctx, "skill_auto_activate", payload); emitErr != nil {
-			return nil, oops.In("assistant").Code("skill_auto_activate").Wrapf(emitErr, "emit skill auto activation")
-		}
-	}
-
-	estimatedUsage := estimateTokenUsage(systemPrompt, messages, &selectedModel)
-	runtime.dispatchContextBuild(ctx, sessionID, cwd, systemPrompt, messages, estimatedUsage)
-	runtime.emitUsage(ctx, onEvent, estimatedUsage)
+	runtime.emitUsage(ctx, onEvent, contextResult.Usage)
 	request := runtime.modelCompletionRequest(
 		&selectedModel,
 		auth,
-		messages,
+		contextResult.Messages,
 		sessionID,
-		systemPrompt,
+		contextResult.SystemPrompt,
 		cwd,
 		onEvent,
 	)
@@ -665,7 +634,7 @@ func (runtime *Runtime) modelResponse(
 	if err != nil {
 		return nil, err
 	}
-	usage := mergeUsage(estimatedUsage, result.Usage)
+	usage := mergeUsage(contextResult.Usage, result.Usage)
 	runtime.emitUsage(ctx, onEvent, usage)
 
 	return &responseBundle{
@@ -916,8 +885,8 @@ func isModelFacingRole(role database.Role) bool {
 	return false
 }
 
-func defaultSystemPrompt(cwd string) string {
-	prompt := strings.Join([]string{
+func baseSystemPrompt(cwd string) string {
+	return strings.Join([]string{
 		"You are librecode, an AI coding assistant. Be concise, helpful, and accurate.",
 		"You are running inside a local filesystem workspace.",
 		fmt.Sprintf("Current working directory: %s", cwd),
@@ -927,12 +896,6 @@ func defaultSystemPrompt(cwd string) string {
 		"Respect .gitignore and default ignored paths; avoid ignored files unless explicitly needed.",
 		"Use the fewest tool calls needed; once you have enough evidence, stop using tools and answer.",
 	}, "\n")
-	skills := core.LoadSkills(cwd, nil, true).Skills
-	if len(skills) > 0 {
-		prompt += core.FormatSkillsForPrompt(skills)
-	}
-
-	return prompt
 }
 
 func (runtime *Runtime) cacheKey(sessionID, prompt string) string {

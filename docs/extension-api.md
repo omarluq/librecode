@@ -709,6 +709,13 @@ Current assistant lifecycle events include:
 - `before_agent_start`
 - `agent_start`
 - `turn_start`
+- `context_build`
+- `before_provider_request`
+- `after_provider_response`
+- `provider_error`
+- `tool_call`
+- `tool_result`
+- `tool_error`
 - `message_append`
 - `turn_end`
 - `agent_end`
@@ -725,9 +732,23 @@ end)
 lc.on("message_append", function(event)
   lc.log("appended " .. event.payload.role .. " entry " .. event.payload.entry_id)
 end)
+
+lc.on("context_build", function(event)
+  event.payload.contributions = {
+    {
+      name = "project-constraints",
+      source = "my-extension",
+      role = "system",
+      content = "Prefer small focused commits and run the project CI before committing.",
+    },
+  }
+  return { payload = event.payload }
+end)
 ```
 
-Lifecycle payloads are intentionally bounded. `message_append` includes the appended entry text and metadata for the current message, but lifecycle events do not include full transcript history. Future PRs will add explicit mutation contracts for context, provider, and tool middleware.
+Lifecycle payloads are intentionally bounded. `message_append` includes the appended entry text and metadata for the current message, but lifecycle events do not include full transcript history.
+
+`context_build` is the first lifecycle seam with a mutation contract. Handlers may return bounded `contributions` entries. Each contribution must include non-empty `content` and is capped by the host. The context payload exposes `breakdown.system`, `breakdown.skills`, `breakdown.history`, and `breakdown.extensions` token estimates so extensions can reason about context budget without seeing the full transcript.
 
 ## Current limitations
 

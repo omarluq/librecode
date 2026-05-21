@@ -61,12 +61,20 @@ func (runtime *Runtime) dispatchLifecycle(
 	ctx context.Context,
 	name extension.LifecycleEventName,
 	payload map[string]any,
-) {
+) (extension.LifecycleDispatchResult, error) {
 	runtime.emit(ctx, string(name), payload)
 	if runtime.extensions == nil {
-		return
+		return extension.LifecycleDispatchResult{
+			Payload:      cloneAnyMap(payload),
+			Name:         string(name),
+			Errors:       []string{},
+			Duration:     0,
+			HandlerCount: 0,
+			Consumed:     false,
+			Stopped:      false,
+		}, nil
 	}
-	_, err := runtime.extensions.DispatchLifecycle(ctx, extension.LifecycleEvent{
+	result, err := runtime.extensions.DispatchLifecycle(ctx, extension.LifecycleEvent{
 		Payload: payload,
 		Name:    name,
 	})
@@ -77,13 +85,15 @@ func (runtime *Runtime) dispatchLifecycle(
 			slog.Any("error", err),
 		)
 	}
+
+	return result, err
 }
 
 func (runtime *Runtime) dispatchMessageAppend(ctx context.Context, entry *database.EntryEntity) {
 	if entry == nil {
 		return
 	}
-	runtime.dispatchLifecycle(ctx, extension.LifecycleMessageAppend, entryLifecyclePayload(entry))
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleMessageAppend, entryLifecyclePayload(entry))
 }
 
 func (runtime *Runtime) dispatchTurnStartLifecycle(
@@ -94,9 +104,9 @@ func (runtime *Runtime) dispatchTurnStartLifecycle(
 	parentEntryID *string,
 ) {
 	payload := turnLifecyclePayload(sessionID, request.CWD, request.Text, userEntryID, parentEntryID)
-	runtime.dispatchLifecycle(ctx, extension.LifecycleBeforeAgentStart, payload)
-	runtime.dispatchLifecycle(ctx, extension.LifecycleAgentStart, payload)
-	runtime.dispatchLifecycle(ctx, extension.LifecycleTurnStart, payload)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleBeforeAgentStart, payload)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleAgentStart, payload)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleTurnStart, payload)
 }
 
 func (runtime *Runtime) dispatchTurnEndLifecycle(
@@ -108,8 +118,8 @@ func (runtime *Runtime) dispatchTurnEndLifecycle(
 	usage model.TokenUsage,
 ) {
 	payload := turnEndLifecyclePayload(sessionID, userEntryID, assistantEntryID, cached, nil, usage)
-	runtime.dispatchLifecycle(ctx, extension.LifecycleTurnEnd, payload)
-	runtime.dispatchLifecycle(ctx, extension.LifecycleAgentEnd, payload)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleTurnEnd, payload)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleAgentEnd, payload)
 }
 
 func (runtime *Runtime) dispatchTurnErrorLifecycle(
@@ -122,20 +132,33 @@ func (runtime *Runtime) dispatchTurnErrorLifecycle(
 		return
 	}
 	payload := turnEndLifecyclePayload(sessionID, userEntryID, "", false, turnErr, model.EmptyTokenUsage())
-	runtime.dispatchLifecycle(ctx, extension.LifecycleTurnEnd, payload)
-	runtime.dispatchLifecycle(ctx, extension.LifecycleAgentEnd, payload)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleTurnEnd, payload)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleAgentEnd, payload)
+}
+
+func (runtime *Runtime) dispatchObservationalLifecycle(
+	ctx context.Context,
+	name extension.LifecycleEventName,
+	payload map[string]any,
+) {
+	if _, err := runtime.dispatchLifecycle(ctx, name, payload); err != nil && runtime.logger != nil {
+		runtime.logger.Debug(
+			"observational lifecycle dispatch failed",
+			slog.String("event", string(name)),
+			slog.Any("error", err),
+		)
+	}
 }
 
 func (runtime *Runtime) dispatchContextBuild(
 	ctx context.Context,
 	sessionID string,
 	cwd string,
-	systemPrompt string,
-	messages []database.MessageEntity,
-	usage model.TokenUsage,
-) {
-	payload := contextBuildLifecyclePayload(sessionID, cwd, systemPrompt, messages, usage)
-	runtime.dispatchLifecycle(ctx, extension.LifecycleContextBuild, payload)
+	base *modelContextBase,
+	result *contextBuildResult,
+) (extension.LifecycleDispatchResult, error) {
+	payload := contextBuildLifecyclePayload(sessionID, cwd, base, result)
+	return runtime.dispatchLifecycle(ctx, extension.LifecycleContextBuild, payload)
 }
 
 func promptLifecyclePayload(request *PromptRequest) map[string]any {
@@ -210,19 +233,40 @@ func turnEndLifecyclePayload(
 func contextBuildLifecyclePayload(
 	sessionID string,
 	cwd string,
-	systemPrompt string,
-	messages []database.MessageEntity,
-	usage model.TokenUsage,
+	base *modelContextBase,
+	result *contextBuildResult,
 ) map[string]any {
 	return map[string]any{
-		lifecycleCWDKey:      cwd,
-		jsonSessionIDKey:     sessionID,
-		"message_count":      len(messages),
-		"system_tokens":      estimateTokens(systemPrompt),
-		"message_tokens":     estimateMessageTokens(messages),
-		jsonUsageKey:         tokenUsageLifecyclePayload(usage),
-		"model_facing_roles": modelFacingRoleCounts(messages),
+		lifecycleCWDKey:           cwd,
+		jsonSessionIDKey:          sessionID,
+		"message_count":           len(base.Messages),
+		"breakdown":               cloneIntMap(result.Breakdown),
+		"contributions":           []any{},
+		"max_contribution_tokens": contextContributionMaxTokens,
+		"system_tokens":           base.SystemTokens,
+		"skill_tokens":            base.SkillTokens,
+		"message_tokens":          base.HistoryTokens,
+		jsonUsageKey:              tokenUsageLifecyclePayload(result.Usage),
+		"model_facing_roles":      modelFacingRoleCounts(base.Messages),
 	}
+}
+
+func cloneAnyMap(values map[string]any) map[string]any {
+	cloned := make(map[string]any, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+
+	return cloned
+}
+
+func cloneIntMap(values map[string]int) map[string]any {
+	cloned := make(map[string]any, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+
+	return cloned
 }
 
 func estimateMessageTokens(messages []database.MessageEntity) int {
