@@ -18,11 +18,11 @@
 </p>
 
 <p align="center">
-  <strong>librecode is a terminal AI agent for people who trust themselves.</strong>
+  <strong>librecode is a small, local-first terminal AI agent.</strong>
   <br><br>
-  No sandbox. No MCP. No permission prompts. No marketplace. No telemetry. No chaperone.
+  No sandbox. No MCP. No permission prompts. No marketplace. No telemetry.
   <br><br>
-  Just a model, your shell, and seven tools that do what they say. If you wouldn't <code>rm -rf</code> your homedir by accident, you don't need an LLM to ask you twice before it touches a file.
+  Just a model, your shell, and seven tools that do what they say, designed for developers who'd rather review their own diffs than click through approval dialogs.
 </p>
 
 <p align="center">
@@ -30,38 +30,42 @@
 </p>
 
 > [!IMPORTANT]
-> librecode is pre-release software. Expect bugs, rough edges, breaking changes, half-finished surfaces, and the occasional crash. APIs, config keys, and on-disk formats may shift without notice until 1.0. If you need stability, wait. If you want to help shape it, jump in — issues and PRs welcome.
+> librecode is pre-release software. Expect bugs, rough edges, breaking changes, half-finished surfaces, and the occasional crash. APIs, config keys, and on-disk formats may shift without notice until 1.0. If you need stability, wait. If you want to help shape it, jump in: issues and PRs welcome.
 
 ## Philosophy
 
-Most agent CLIs are racing toward enterprise-shaped problems: permission models, sandboxed tool servers, RBAC, audit logs, marketplaces, protocol committees. librecode runs the other way.
+The agent CLI space is moving toward more layers: permission models, sandboxed tool servers, plugin marketplaces, extension protocols. Those are reasonable choices for some teams. librecode is the smaller, simpler alternative for people who want fewer of them.
 
-- **No MCP.** Not an oversight — a stance. Built-in tools plus optional Lua are the entire surface area. No servers to spin up, no protocols to negotiate, no ecosystem tax.
-- **No sandbox.** `bash` runs what you tell it to run. `write` and `edit` mutate files. You are the adult in the room.
-- **No permission theater.** No "can the assistant read this file?" modal on every step. If you didn't want it touching your repo, you wouldn't have launched it in your repo.
-- **No vendor lock-in.** OAuth into ChatGPT/Codex or Claude Pro/Max, drop in an API key for anything OpenAI-compatible, or define your own provider. Pick the model that gets it done.
-- **One binary.** Static Go. No Node. No Python venv. No Electron. It starts in milliseconds and does not phone home.
-- **Local everything.** Sessions live in a SQLite file. Auth lives in a JSON file. Project-local `.librecode/` keeps secrets and history scoped to the repo.
+- **No MCP.** Built-in tools plus optional Lua extensions are the entire surface area. Fewer moving parts, no separate servers to manage.
+- **No sandbox.** Tools run with your permissions, in your shell, against your files. You decide what to run librecode against.
+- **No permission prompts.** The agent acts within the project you launched it in, without interrupting to confirm each step.
+- **Bring your own model.** OAuth into ChatGPT/Codex or Claude Pro/Max, use an API key for anything OpenAI-compatible, or define your own provider.
+- **One binary.** Static Go. No Node, no Python venv, no Electron. Fast cold start, no background services.
+- **Local everything.** Sessions in a SQLite file, auth in a JSON file. Project-local `.librecode/` keeps state scoped to the repo.
 
-This is a sharp knife. That's the feature.
+It's a direct, capable tool. Treat it like one.
 
 ## What's in the box
 
-- **Interactive terminal chat** — streaming output, visible reasoning blocks, chronological tool activity, scrollback, prompt history, mouse selection, configurable loader text.
-- **Seven built-in tools** — `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`. That's the entire toolkit. You don't need more.
-- **Persistent SQLite sessions** — branchable, resumable, listable. Per-project or global.
-- **Agent Skills support** — drop a `SKILL.md` in `.librecode/skills/` or `.agents/skills/` and it's discoverable. Autocomplete and explicit `/skill:<name>` loading included.
-- **Provider/model registry** — true OAuth for ChatGPT/Codex and Claude Pro/Max, API-key providers, automatic retries on transient failures, custom provider definitions.
-- **Lua extensions** — optional escape hatch. Register commands, intercept keys, mutate buffers, hook events. Trusted local code, not a plugin marketplace.
-- **YAML config + env vars** — sane defaults, strict validation, no surprises.
+- **Interactive terminal chat**: streaming output, visible reasoning blocks, chronological tool activity, scrollback, prompt history, mouse selection, configurable loader text.
+- **Seven built-in tools**: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`. A small toolkit that covers most coding workflows.
+- **Persistent SQLite sessions**: branchable, resumable, listable. Per-project or global.
+- **Agent Skills support**: drop a `SKILL.md` in `.librecode/skills/` or `.agents/skills/` and it's discoverable. Autocomplete and explicit `/skill:<name>` loading included.
+- **Provider/model registry**: OAuth for ChatGPT/Codex and Claude Pro/Max, API-key providers, automatic retries on transient failures, custom provider definitions.
+- **Lua extensions**: an optional layer for commands, key interception, buffer mutation, and event hooks. Trusted local code rather than a plugin marketplace.
+- **YAML config + env vars**: sane defaults and strict validation.
 
-## Threat model
+## What to expect
 
-librecode will execute any shell command the model asks for. It will overwrite any file you have write permission to. It does not ask first.
+librecode executes shell commands and edits files as the model requests them, without per-action confirmation prompts. That's the design: it keeps the loop fast and the surface area small, but it's worth being explicit about.
 
-This is intentional. Use it in workspaces you own, on commands you'd be willing to run yourself, with models you trust to behave. If that sounds reckless, you want a different tool — and that's fine, there are plenty.
+A few suggestions for using it comfortably:
 
-Run it like you'd run `make` from an unfamiliar repo: with your eyes open.
+- Run it in workspaces you own, ideally under version control, so changes are easy to review and revert.
+- Use models you've found reliable for the kind of work you're asking for.
+- Treat a librecode session like running a script from an unfamiliar repo: fine when you've decided to trust it, worth pausing on when you haven't.
+
+If you'd prefer per-action approval, sandboxing, or policy enforcement, other agent CLIs offer that and may suit you better.
 
 ## Install
 
@@ -234,7 +238,7 @@ Inside chat, `/skill` lists discovered skills. Use `/skill my-skill` or `/skill:
 
 ## Extensions
 
-Extensions are trusted local code — not a sandboxed plugin protocol, not a marketplace, not MCP. Lua is the first supported runtime; the host is designed so additional runtimes can be added later. Extensions are powerful, low-level, and allowed to footgun if you ask them to. That is the whole point.
+Extensions are trusted local code that runs in the same process as librecode. Lua is the first supported runtime; the host is designed so additional runtimes can be added later. Because extensions have direct access to runtime state, only install ones you've reviewed or trust the source of.
 
 Extensions are declared with `extensions.use` in config. The default source is:
 
@@ -297,7 +301,7 @@ librecode extension run <command> [args...]
 
 ## Built-in tools
 
-Seven tools. That's it. No registry, no marketplace, no MCP server lifecycle to babysit.
+Seven tools, kept deliberately small. No registry, marketplace, or external server lifecycle to manage.
 
 | Tool    | Mutates? | Purpose                                            |
 | ------- | -------- | -------------------------------------------------- |
@@ -309,7 +313,7 @@ Seven tools. That's it. No registry, no marketplace, no MCP server lifecycle to 
 | `edit`  | **Yes**  | Exact text replacement with uniqueness checks.     |
 | `bash`  | **Yes**  | Execute shell commands with timeout/output limits. |
 
-`bash` is `bash`. It runs commands. It does not negotiate.
+The `bash` tool executes commands directly in your shell with the permissions of the librecode process. There is no allowlist or interactive confirmation.
 
 On Windows, the `bash` tool requires a real Bash shell rather than `cmd.exe`. librecode checks `LIBRECODE_BASH_PATH`, common Git Bash install paths, then `bash.exe` on `PATH`. Native Windows users should install Git Bash/MSYS2/Cygwin or run librecode from WSL.
 
@@ -396,6 +400,6 @@ The release workflow cross-compiles Linux, macOS, and Windows binaries, archives
 
 ## License
 
-MIT — see [`LICENSE.txt`](LICENSE.txt).
+MIT. See [`LICENSE.txt`](LICENSE.txt).
 
 <a href="https://sonarcloud.io/summary/new_code?id=omarluq_librecode"><img src="https://sonarcloud.io/images/project_badges/sonarcloud-dark.svg" alt="SonarCloud Quality Gate"></a>
