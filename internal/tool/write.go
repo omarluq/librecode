@@ -55,6 +55,9 @@ func (writeTool *WriteTool) Write(ctx context.Context, input WriteInput) (Result
 	if strings.TrimSpace(input.Path) == "" {
 		return emptyToolResult(), oops.In("tool").Code("write_path_required").Errorf("write path is required")
 	}
+	if strings.TrimSpace(input.Content) == "" {
+		return emptyToolResult(), oops.In("tool").Code("write_content_required").Errorf("write content is required")
+	}
 	absolutePath, err := ResolveToCWD(input.Path, writeTool.cwd)
 	if err != nil {
 		return emptyToolResult(), oops.In("tool").Code("write_resolve_path").Wrapf(err, "resolve write path")

@@ -66,6 +66,19 @@ func TestRegistry_ExecuteJSONRunsBashInWorkingDirectory(t *testing.T) {
 	assert.Contains(t, result.Text(), "ok")
 }
 
+func TestRegistry_ExecuteJSONRejectsEmptyWriteContent(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	payload, err := json.Marshal(map[string]any{"path": "empty.txt", "content": ""})
+	require.NoError(t, err)
+
+	_, err = registry.ExecuteJSON(context.Background(), "write", payload)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "write content is required")
+}
+
 func executeTool(
 	ctx context.Context,
 	t *testing.T,

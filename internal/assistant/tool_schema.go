@@ -106,9 +106,9 @@ func writeToolSchema() map[string]any {
 			jsonPathKey: stringSchema(
 				"Path to create or overwrite, relative to the current workspace or absolute.",
 			),
-			"content": stringSchema("Complete file content to write."),
+			jsonContentKey: stringSchema("Complete file content to write."),
 		},
-		jsonRequiredKey: []string{jsonPathKey, "content"},
+		jsonRequiredKey: []string{jsonPathKey, jsonContentKey},
 	}
 }
 
