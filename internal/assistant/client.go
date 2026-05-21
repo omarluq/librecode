@@ -3,7 +3,6 @@ package assistant
 import (
 	"context"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/samber/oops"
@@ -31,6 +30,8 @@ const (
 	jsonObjectType          = "object"
 	jsonToolNameKey         = "name"
 	jsonToolParamsKey       = "parameters"
+	jsonInputSchemaKey      = "input_schema"
+	jsonArgumentsKey        = "arguments"
 	jsonCallIDKey           = "call_id"
 	jsonOutputKey           = "output"
 	jsonOutputTokensKey     = "output_tokens"
@@ -44,9 +45,18 @@ const (
 	jsonDisplayKey          = "display"
 	jsonUsageKey            = "usage"
 	jsonUserRole            = "user"
+	jsonAssistantRole       = "assistant"
+	jsonToolRole            = "tool"
+	jsonCommandKey          = "command"
+	jsonReadToolName        = "read"
+	jsonBashToolName        = "bash"
+	jsonOldTextKey          = "oldText"
+	jsonNewTextKey          = "newText"
 	functionToolType        = "function"
 	functionCallType        = "function_call"
 	functionCallOutputType  = "function_call_output"
+	anthropicToolUseType    = "tool_use"
+	anthropicToolResultType = "tool_result"
 	reasoningEffortKey      = "effort"
 	thinkingOff             = "off"
 	thinkingLow             = "low"
@@ -105,6 +115,7 @@ type toolCall struct {
 	ID            string
 	Name          string
 	ArgumentsJSON string
+	TextFallback  bool
 }
 
 type providerResult struct {
@@ -149,8 +160,4 @@ func (client *HTTPCompletionClient) Complete(
 			With("api", api).
 			Errorf("provider api is not implemented")
 	}
-}
-
-func textCompletionResult(text string, usage model.TokenUsage) *CompletionResult {
-	return &CompletionResult{Text: strings.TrimSpace(text), Thinking: nil, ToolEvents: nil, Usage: usage}
 }

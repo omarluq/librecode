@@ -151,11 +151,11 @@ func statelessResponseOutputItems(items []any) []any {
 			continue
 		}
 		stateless = append(stateless, map[string]any{
-			jsonTypeKey:     functionCallType,
-			jsonCallIDKey:   stringValue(object[jsonCallIDKey]),
-			jsonToolNameKey: stringValue(object[jsonToolNameKey]),
-			"arguments":     stringValue(object["arguments"]),
-			"status":        "completed",
+			jsonTypeKey:      functionCallType,
+			jsonCallIDKey:    stringValue(object[jsonCallIDKey]),
+			jsonToolNameKey:  stringValue(object[jsonToolNameKey]),
+			jsonArgumentsKey: stringValue(object[jsonArgumentsKey]),
+			"status":         "completed",
 		})
 	}
 
@@ -228,7 +228,7 @@ func toolCallsFromOutput(output []any) []toolCall {
 		if !ok || stringValue(object[jsonTypeKey]) != functionCallType {
 			continue
 		}
-		argumentsJSON := stringValue(object["arguments"])
+		argumentsJSON := stringValue(object[jsonArgumentsKey])
 		arguments := map[string]any{}
 		if strings.TrimSpace(argumentsJSON) != "" {
 			if err := json.Unmarshal([]byte(argumentsJSON), &arguments); err != nil {
@@ -240,6 +240,7 @@ func toolCallsFromOutput(output []any) []toolCall {
 			ID:            firstNonEmptyString(object[jsonCallIDKey], object["id"]),
 			Name:          firstNonEmptyString(object[jsonToolNameKey], object["function"]),
 			ArgumentsJSON: argumentsJSON,
+			TextFallback:  false,
 		})
 	}
 

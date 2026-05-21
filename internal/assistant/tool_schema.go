@@ -1,8 +1,14 @@
 package assistant
 
 import (
+	"encoding/json"
+
+	"github.com/samber/oops"
+
 	"github.com/omarluq/librecode/internal/tool"
 )
+
+const maxToolIterations = 8
 
 func responseTools() []map[string]any {
 	definitions := tool.AllDefinitions()
@@ -18,6 +24,39 @@ func responseTools() []map[string]any {
 	}
 
 	return tools
+}
+
+func openAIChatTools() []map[string]any {
+	definitions := tool.AllDefinitions()
+	tools := make([]map[string]any, 0, len(definitions))
+	for _, definition := range definitions {
+		tools = append(tools, map[string]any{
+			jsonTypeKey: functionToolType,
+			"function": map[string]any{
+				jsonToolNameKey:    string(definition.Name),
+				jsonDescriptionKey: definition.Description,
+				jsonToolParamsKey:  toolParameterSchema(definition.Name),
+			},
+		})
+	}
+
+	return tools
+}
+
+func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
+	arguments := map[string]any{}
+	if argumentsJSON == "" {
+		return arguments
+	}
+	if err := json.Unmarshal([]byte(argumentsJSON), &arguments); err != nil {
+		return map[string]any{}
+	}
+
+	return arguments
+}
+
+func toolIterationLimitError() error {
+	return oops.In("assistant").Code("tool_iteration_limit").Errorf("tool iteration limit reached")
 }
 
 func toolParameterSchema(name tool.Name) map[string]any {
@@ -65,10 +104,10 @@ func bashToolSchema() map[string]any {
 	return map[string]any{
 		jsonTypeKey: jsonObjectType,
 		jsonPropertiesKey: map[string]any{
-			"command": stringSchema("Bash command to execute in the current workspace."),
-			"timeout": numberSchema("Optional timeout in seconds."),
+			jsonCommandKey: stringSchema("Bash command to execute in the current workspace."),
+			"timeout":      numberSchema("Optional timeout in seconds."),
 		},
-		jsonRequiredKey: []string{"command"},
+		jsonRequiredKey: []string{jsonCommandKey},
 	}
 }
 
@@ -89,12 +128,12 @@ func editItemsSchema() map[string]any {
 		"items": map[string]any{
 			jsonTypeKey: jsonObjectType,
 			jsonPropertiesKey: map[string]any{
-				"oldText": stringSchema(
+				jsonOldTextKey: stringSchema(
 					"Exact text to replace. Must match a unique, non-overlapping region.",
 				),
-				"newText": stringSchema("Replacement text."),
+				jsonNewTextKey: stringSchema("Replacement text."),
 			},
-			jsonRequiredKey: []string{"oldText", "newText"},
+			jsonRequiredKey: []string{jsonOldTextKey, jsonNewTextKey},
 		},
 	}
 }

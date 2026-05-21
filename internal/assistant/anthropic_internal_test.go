@@ -11,7 +11,7 @@ import (
 func TestAnthropicPayloadOmitsTemperature(t *testing.T) {
 	t.Parallel()
 
-	payload := anthropicPayload(testCompletionRequestAuth("anthropic-claude", "subscription-access-token"))
+	payload := anthropicPayload(testCompletionRequestAuth("anthropic-claude", "subscription-access-token"), nil)
 
 	assert.NotContains(t, payload, "temperature")
 	assert.Equal(t, "", payload[jsonModelKey])
@@ -25,7 +25,7 @@ func TestAnthropicPayloadUsesStructuredSystemPrompt(t *testing.T) {
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
 	request.SystemPrompt = anthropicTestSystemPrompt
-	payload := anthropicPayload(request)
+	payload := anthropicPayload(request, nil)
 
 	assert.Equal(t, []map[string]any{anthropicSystemText(anthropicTestSystemPrompt)}, payload["system"])
 }
@@ -35,7 +35,7 @@ func TestAnthropicOAuthPayloadAddsClaudeCodeIdentity(t *testing.T) {
 
 	request := testCompletionRequestAuth("anthropic-claude", "sk-ant-oat-secret")
 	request.SystemPrompt = anthropicTestSystemPrompt
-	payload := anthropicPayload(request)
+	payload := anthropicPayload(request, nil)
 
 	systemBlocks, ok := payload["system"].([]map[string]any)
 	assert.True(t, ok)
@@ -51,7 +51,7 @@ func TestAnthropicPayloadAddsBudgetThinking(t *testing.T) {
 	request.Model.ID = "claude-sonnet-4-5"
 	request.Model.Reasoning = true
 	request.ThinkingLevel = thinkingLow
-	payload := anthropicPayload(request)
+	payload := anthropicPayload(request, nil)
 
 	assert.Equal(t, map[string]any{
 		jsonTypeKey:     "enabled",
@@ -67,7 +67,7 @@ func TestAnthropicPayloadDisablesThinkingWhenOff(t *testing.T) {
 	request.Model.ID = "claude-opus-4-7"
 	request.Model.Reasoning = true
 	request.ThinkingLevel = thinkingOff
-	payload := anthropicPayload(request)
+	payload := anthropicPayload(request, nil)
 
 	assert.Equal(t, map[string]any{jsonTypeKey: "disabled"}, payload[jsonThinkingKey])
 	assert.NotContains(t, payload, "output_config")
@@ -80,7 +80,7 @@ func TestAnthropicPayloadAddsAdaptiveThinking(t *testing.T) {
 	request.Model.ID = "claude-opus-4-7"
 	request.Model.Reasoning = true
 	request.ThinkingLevel = thinkingXHigh
-	payload := anthropicPayload(request)
+	payload := anthropicPayload(request, nil)
 
 	assert.Equal(t, map[string]any{
 		jsonTypeKey:    "adaptive",

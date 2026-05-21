@@ -48,7 +48,12 @@ func executeToolCalls(
 			Text:      call.Name,
 		})
 		if onToolCall != nil {
-			onToolCall(ctx, ToolCallEvent(call))
+			onToolCall(ctx, ToolCallEvent{
+				Arguments:     call.Arguments,
+				ID:            call.ID,
+				Name:          call.Name,
+				ArgumentsJSON: call.ArgumentsJSON,
+			})
 		}
 		result, err := registry.Execute(ctx, call.Name, call.Arguments)
 		resultText := result.Text()
@@ -86,6 +91,16 @@ func executeToolCalls(
 	}
 
 	return outputs, events
+}
+
+func finishTextResult(result *CompletionResult, text, emptyCode string) (bool, error) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false, emptyProviderResponseError(emptyCode)
+	}
+	result.Text = trimmed
+
+	return true, nil
 }
 
 func emitStreamEvent(onEvent func(StreamEvent), event StreamEvent) {
