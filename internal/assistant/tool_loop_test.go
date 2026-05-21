@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testCallID = "call-1"
+
 func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 	t.Parallel()
 
@@ -22,7 +24,7 @@ func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 		},
 		{
 			name: "missing name",
-			call: toolCall{Arguments: nil, ID: "call-1", Name: "", ArgumentsJSON: "", TextFallback: false},
+			call: toolCall{Arguments: nil, ID: testCallID, Name: "", ArgumentsJSON: "", TextFallback: false},
 		},
 	}
 	for _, tt := range tests {
@@ -46,8 +48,8 @@ func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
 		t.TempDir(),
 		[]toolCall{{
 			Arguments:     map[string]any{jsonPathKey: "missing.txt"},
-			ID:            "call-1",
-			Name:          "read",
+			ID:            testCallID,
+			Name:          jsonReadToolName,
 			ArgumentsJSON: `{"path":"missing.txt"}`,
 			TextFallback:  false,
 		}},

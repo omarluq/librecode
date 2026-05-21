@@ -64,7 +64,7 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 	}
 	events := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)
 	state.result.ToolEvents = append(state.result.ToolEvents, events...)
-	if err := appendAnthropicToolConversation(state, providerResult, events); err != nil {
+	if err := appendAnthropicToolConversation(request, state, providerResult, events); err != nil {
 		return false, err
 	}
 
@@ -89,6 +89,7 @@ func executeAnthropicToolCalls(
 }
 
 func appendAnthropicToolConversation(
+	request *CompletionRequest,
 	state *anthropicLoopState,
 	providerResult *providerResult,
 	events []ToolEvent,
@@ -107,7 +108,7 @@ func appendAnthropicToolConversation(
 	}
 	state.messages = append(
 		state.messages,
-		anthropicAssistantToolMessage(providerResult.ToolCalls),
+		anthropicAssistantToolMessage(request, providerResult.ToolCalls),
 		toolResultMessage,
 	)
 
@@ -122,7 +123,7 @@ func anthropicPayload(request *CompletionRequest, messages []map[string]any) map
 		jsonModelKey: request.Model.ID,
 		"max_tokens": minPositive(request.Model.MaxTokens, 4096),
 		"messages":   messages,
-		"tools":      anthropicTools(),
+		"tools":      anthropicTools(request),
 	}
 	if usesAnthropicOAuth(request) {
 		payload["system"] = anthropicOAuthSystemPrompt(request.SystemPrompt)
@@ -240,7 +241,7 @@ func anthropicSupportsAdaptiveThinking(modelID string) bool {
 }
 
 func anthropicBetaFeatures(request *CompletionRequest) []string {
-	features := []string{"fine-grained-tool-streaming-2025-05-14"}
+	features := []string{}
 	if request.Model.Reasoning && !anthropicSupportsAdaptiveThinking(request.Model.ID) {
 		features = append(features, "interleaved-thinking-2025-05-14")
 	}
@@ -334,7 +335,13 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 func anthropicToolCall(id, name string, input any) toolCall {
 	arguments, argumentsJSON := anthropicToolArguments(input)
 
-	return toolCall{Arguments: arguments, ID: id, Name: name, ArgumentsJSON: argumentsJSON, TextFallback: false}
+	return toolCall{
+		Arguments:     arguments,
+		ID:            id,
+		Name:          anthropicLocalToolName(name),
+		ArgumentsJSON: argumentsJSON,
+		TextFallback:  false,
+	}
 }
 
 func anthropicToolArguments(input any) (arguments map[string]any, argumentsJSON string) {
@@ -353,13 +360,13 @@ func anthropicToolArguments(input any) (arguments map[string]any, argumentsJSON 
 	return arguments, string(payload)
 }
 
-func anthropicAssistantToolMessage(calls []toolCall) map[string]any {
+func anthropicAssistantToolMessage(request *CompletionRequest, calls []toolCall) map[string]any {
 	blocks := make([]map[string]any, 0, len(calls))
 	for _, call := range calls {
 		blocks = append(blocks, map[string]any{
 			jsonTypeKey:     anthropicToolUseType,
 			"id":            call.ID,
-			jsonToolNameKey: call.Name,
+			jsonToolNameKey: anthropicProviderToolName(call.Name, usesAnthropicOAuth(request)),
 			"input":         call.Arguments,
 		})
 	}
@@ -400,18 +407,64 @@ func anthropicMessages(messages []database.MessageEntity) []map[string]any {
 	return output
 }
 
-func anthropicTools() []map[string]any {
+func anthropicTools(request *CompletionRequest) []map[string]any {
 	definitions := tool.AllDefinitions()
 	tools := make([]map[string]any, 0, len(definitions))
 	for _, definition := range definitions {
 		tools = append(tools, map[string]any{
-			jsonToolNameKey:    string(definition.Name),
-			jsonDescriptionKey: definition.Description,
-			jsonInputSchemaKey: toolParameterSchema(definition.Name),
+			jsonToolNameKey:         anthropicProviderToolName(string(definition.Name), usesAnthropicOAuth(request)),
+			jsonDescriptionKey:      definition.Description,
+			jsonInputSchemaKey:      toolParameterSchema(definition.Name),
+			"eager_input_streaming": true,
 		})
 	}
 
 	return tools
+}
+
+func anthropicProviderToolName(name string, oauth bool) string {
+	if !oauth {
+		return name
+	}
+	switch name {
+	case jsonReadToolName:
+		return anthropicReadToolName
+	case jsonWriteToolName:
+		return anthropicWriteToolName
+	case jsonEditToolName:
+		return anthropicEditToolName
+	case jsonBashToolName:
+		return anthropicBashToolName
+	case jsonGrepToolName:
+		return anthropicGrepToolName
+	case jsonFindToolName:
+		return anthropicFindToolName
+	case jsonLSToolName:
+		return anthropicLSToolName
+	default:
+		return name
+	}
+}
+
+func anthropicLocalToolName(name string) string {
+	switch strings.TrimSpace(name) {
+	case anthropicReadToolName:
+		return jsonReadToolName
+	case anthropicWriteToolName:
+		return jsonWriteToolName
+	case anthropicEditToolName:
+		return jsonEditToolName
+	case anthropicBashToolName:
+		return jsonBashToolName
+	case anthropicGrepToolName:
+		return jsonGrepToolName
+	case anthropicFindToolName:
+		return jsonFindToolName
+	case anthropicLSToolName, "List":
+		return jsonLSToolName
+	default:
+		return normalizeTextToolName(name)
+	}
 }
 
 func anthropicRole(role database.Role) (string, bool) {

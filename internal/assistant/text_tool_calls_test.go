@@ -65,6 +65,65 @@ func TestTextToolCallsFromTextParsesMultipleAndEscapedValues(t *testing.T) {
 	assert.Equal(t, `printf "hello"`, calls[1].Arguments[jsonCommandKey])
 }
 
+func TestTextToolCallsFromTextPreservesMultilineWriteContent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		markup    string
+		wantValue string
+	}{
+		{
+			name:      "content tag",
+			markup:    writeToolMarkupWithField(jsonContentKey, "line one\n\n\tindented line\nline three\n"),
+			wantValue: "line one\n\n\tindented line\nline three\n",
+		},
+		{
+			name:      "file content tag",
+			markup:    writeToolMarkupWithField("file_content", "package main\n\n\tindented line\nline three\n"),
+			wantValue: "package main\n\n\tindented line\nline three\n",
+		},
+		{
+			name:      "new content tag",
+			markup:    writeToolMarkupWithField("new_content", "# README\n\n\tindented line\nline three\n"),
+			wantValue: "# README\n\n\tindented line\nline three\n",
+		},
+		{
+			name:      "code tag",
+			markup:    writeToolMarkupWithField("code", "func main\n\n\tindented line\nline three\n"),
+			wantValue: "func main\n\n\tindented line\nline three\n",
+		},
+		{
+			name: "json input object",
+			markup: `<tool_use>
+<tool_name>Write</tool_name>
+<input>{"path":"hello.txt","content":"line one\n\n\tindented line\nline three\n"}</input>
+</tool_use>`,
+			wantValue: "line one\n\n\tindented line\nline three\n",
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			calls := textToolCallsFromText(testCase.markup)
+
+			require.Len(t, calls, 1)
+			assert.Equal(t, jsonWriteToolName, calls[0].Name)
+			assert.Equal(t, "hello.txt", calls[0].Arguments[jsonPathKey])
+			assert.Equal(t, testCase.wantValue, calls[0].Arguments[jsonContentKey])
+		})
+	}
+}
+
+func writeToolMarkupWithField(fieldName, value string) string {
+	return `<tool_use>
+<tool_name>Write</tool_name>
+<file_path>hello.txt</file_path>
+<` + fieldName + `>` + value + `</` + fieldName + `>
+</tool_use>`
+}
+
 func TestTextToolCallsFromTextMapsToolNamesAndArguments(t *testing.T) {
 	t.Parallel()
 
@@ -136,8 +195,8 @@ func TestTextToolResultPromptUsesErrorsAndEmptyFallback(t *testing.T) {
 	t.Parallel()
 
 	prompt := textToolResultPrompt([]ToolEvent{
-		{Name: "read", ArgumentsJSON: `{}`, DetailsJSON: "", Result: "", Error: "missing file"},
-		{Name: "bash", ArgumentsJSON: `{}`, DetailsJSON: "", Result: "   ", Error: ""},
+		{Name: jsonReadToolName, ArgumentsJSON: `{}`, DetailsJSON: "", Result: "", Error: "missing file"},
+		{Name: jsonBashToolName, ArgumentsJSON: `{}`, DetailsJSON: "", Result: "   ", Error: ""},
 	})
 
 	assert.Contains(t, prompt, "Tool result for read:\nmissing file")
