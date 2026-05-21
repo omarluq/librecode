@@ -17,22 +17,51 @@
   <a href="https://deepwiki.com/omarluq/librecode"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
 </p>
 
-**librecode** is a free and open source terminal agent harness with a small core and room for extension. One binary. Terminal interface. Local sessions. Built-in tools. Provider auth by OAuth or API key. Lua at the edges.
+<p align="center">
+  <strong>librecode is a terminal AI agent for people who trust themselves.</strong>
+  <br><br>
+  No sandbox. No MCP. No permission prompts. No marketplace. No telemetry. No chaperone.
+  <br><br>
+  Just a model, your shell, and seven tools that do what they say. If you wouldn't <code>rm -rf</code> your homedir by accident, you don't need an LLM to ask you twice before it touches a file.
+</p>
 
 <p align="center">
   <img src="docs/assets/librecode-introduce-yourself.gif" alt="librecode terminal demo" width="820">
 </p>
 
-## Features
+> [!IMPORTANT]
+> librecode is pre-release software. Expect bugs, rough edges, breaking changes, half-finished surfaces, and the occasional crash. APIs, config keys, and on-disk formats may shift without notice until 1.0. If you need stability, wait. If you want to help shape it, jump in — issues and PRs welcome.
 
-- **Written in Go, not JavaScript** for a fast native CLI with straightforward binaries.
-- **Interactive terminal chat** with streaming answers, visible reasoning blocks, chronological tool activity, scrollback, prompt history, app-owned mouse selection/copy, and a shimmering configurable working loader.
-- **Persistent SQLite session trees** stored per user, with session listing, showing, branching metadata, and context rebuilding.
-- **Built-in coding tools**: `read`, `write`, `edit`, `bash`, `grep`, `find`, and `ls` are available to the assistant and through the CLI.
-- **Agent Skills support** loaded from project and user skill directories, with spec frontmatter support, autocomplete, explicit `/skill:<name>` loading, and conservative auto-activation.
-- **Provider/model registry** with true OAuth for ChatGPT/Codex and Claude Pro/Max, API-key providers, transient provider retries, and custom model/provider definitions.
-- **Trusted extensions** with Lua as the first runtime adapter for optional commands, tools, hooks, keymaps, runtime buffers, and low-level terminal events.
-- **Configuration via YAML + env vars** with sane defaults and strict validation.
+## Philosophy
+
+Most agent CLIs are racing toward enterprise-shaped problems: permission models, sandboxed tool servers, RBAC, audit logs, marketplaces, protocol committees. librecode runs the other way.
+
+- **No MCP.** Not an oversight — a stance. Built-in tools plus optional Lua are the entire surface area. No servers to spin up, no protocols to negotiate, no ecosystem tax.
+- **No sandbox.** `bash` runs what you tell it to run. `write` and `edit` mutate files. You are the adult in the room.
+- **No permission theater.** No "can the assistant read this file?" modal on every step. If you didn't want it touching your repo, you wouldn't have launched it in your repo.
+- **No vendor lock-in.** OAuth into ChatGPT/Codex or Claude Pro/Max, drop in an API key for anything OpenAI-compatible, or define your own provider. Pick the model that gets it done.
+- **One binary.** Static Go. No Node. No Python venv. No Electron. It starts in milliseconds and does not phone home.
+- **Local everything.** Sessions live in a SQLite file. Auth lives in a JSON file. Project-local `.librecode/` keeps secrets and history scoped to the repo.
+
+This is a sharp knife. That's the feature.
+
+## What's in the box
+
+- **Interactive terminal chat** — streaming output, visible reasoning blocks, chronological tool activity, scrollback, prompt history, mouse selection, configurable loader text.
+- **Seven built-in tools** — `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`. That's the entire toolkit. You don't need more.
+- **Persistent SQLite sessions** — branchable, resumable, listable. Per-project or global.
+- **Agent Skills support** — drop a `SKILL.md` in `.librecode/skills/` or `.agents/skills/` and it's discoverable. Autocomplete and explicit `/skill:<name>` loading included.
+- **Provider/model registry** — true OAuth for ChatGPT/Codex and Claude Pro/Max, API-key providers, automatic retries on transient failures, custom provider definitions.
+- **Lua extensions** — optional escape hatch. Register commands, intercept keys, mutate buffers, hook events. Trusted local code, not a plugin marketplace.
+- **YAML config + env vars** — sane defaults, strict validation, no surprises.
+
+## Threat model
+
+librecode will execute any shell command the model asks for. It will overwrite any file you have write permission to. It does not ask first.
+
+This is intentional. Use it in workspaces you own, on commands you'd be willing to run yourself, with models you trust to behave. If that sounds reckless, you want a different tool — and that's fine, there are plenty.
+
+Run it like you'd run `make` from an unfamiliar repo: with your eyes open.
 
 ## Install
 
@@ -205,7 +234,7 @@ Inside chat, `/skill` lists discovered skills. Use `/skill my-skill` or `/skill:
 
 ## Extensions
 
-Extensions are trusted local code. librecode follows the Unix philosophy here: extensions are powerful, low-level, and allowed to footgun if you ask them to. Lua is the first supported extension runtime; the host is designed so additional runtimes can be added later.
+Extensions are trusted local code — not a sandboxed plugin protocol, not a marketplace, not MCP. Lua is the first supported runtime; the host is designed so additional runtimes can be added later. Extensions are powerful, low-level, and allowed to footgun if you ask them to. That is the whole point.
 
 Extensions are declared with `extensions.use` in config. The default source is:
 
@@ -241,8 +270,6 @@ Current extension capabilities include:
 - reading and mutating runtime buffers such as `composer`, `status`, `transcript`, `thinking`, and `tools`;
 - creating namespaces, autocmds, and keymaps through a Neovim-inspired Lua API.
 
-Architecture note: Go owns the polished default chat experience and hot rendering paths. Lua remains a trusted optional extension layer for keymaps, commands, hooks, small overlays, and custom workflows.
-
 For architecture, roadmap, and API details, see:
 
 - [`docs/adr/0001-programmable-runtime.md`](docs/adr/0001-programmable-runtime.md)
@@ -268,25 +295,23 @@ librecode extension doctor
 librecode extension run <command> [args...]
 ```
 
-## Built-in tools and trust boundaries
+## Built-in tools
 
-The built-in tools are intentionally powerful. `bash` can execute commands, and file tools can read or mutate paths you provide. This is a local coding assistant, not a sandbox.
+Seven tools. That's it. No registry, no marketplace, no MCP server lifecycle to babysit.
+
+| Tool    | Mutates? | Purpose                                            |
+| ------- | -------- | -------------------------------------------------- |
+| `read`  | No       | Read text/image files with truncation controls.    |
+| `ls`    | No       | List directory entries.                            |
+| `find`  | No       | Search file paths by glob.                         |
+| `grep`  | No       | Search file contents.                              |
+| `write` | **Yes**  | Overwrite/create files.                            |
+| `edit`  | **Yes**  | Exact text replacement with uniqueness checks.     |
+| `bash`  | **Yes**  | Execute shell commands with timeout/output limits. |
+
+`bash` is `bash`. It runs commands. It does not negotiate.
 
 On Windows, the `bash` tool requires a real Bash shell rather than `cmd.exe`. librecode checks `LIBRECODE_BASH_PATH`, common Git Bash install paths, then `bash.exe` on `PATH`. Native Windows users should install Git Bash/MSYS2/Cygwin or run librecode from WSL.
-
-Available tools:
-
-| Tool    | Mutates files? | Purpose                                            |
-| ------- | -------------- | -------------------------------------------------- |
-| `read`  | No             | Read text/image files with truncation controls.    |
-| `ls`    | No             | List directory entries.                            |
-| `find`  | No             | Search file paths by glob.                         |
-| `grep`  | No             | Search file contents.                              |
-| `write` | Yes            | Overwrite/create files.                            |
-| `edit`  | Yes            | Exact text replacement with uniqueness checks.     |
-| `bash`  | Yes            | Execute shell commands with timeout/output limits. |
-
-Only run librecode in workspaces where you trust the model, tools, and extensions you enable.
 
 ## CLI reference
 
