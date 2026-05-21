@@ -18,11 +18,11 @@ func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 	}{
 		{
 			name: "missing id",
-			call: toolCall{Arguments: nil, ID: "", Name: "read", ArgumentsJSON: ""},
+			call: toolCall{Arguments: nil, ID: "", Name: jsonReadToolName, ArgumentsJSON: "", TextFallback: false},
 		},
 		{
 			name: "missing name",
-			call: toolCall{Arguments: nil, ID: "call-1", Name: "", ArgumentsJSON: ""},
+			call: toolCall{Arguments: nil, ID: "call-1", Name: "", ArgumentsJSON: "", TextFallback: false},
 		},
 	}
 	for _, tt := range tests {
@@ -49,6 +49,7 @@ func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
 			ID:            "call-1",
 			Name:          "read",
 			ArgumentsJSON: `{"path":"missing.txt"}`,
+			TextFallback:  false,
 		}},
 		func(event StreamEvent) {
 			streamEvents = append(streamEvents, event)

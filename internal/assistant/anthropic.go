@@ -10,54 +10,107 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 func (client *HTTPCompletionClient) completeAnthropic(
 	ctx context.Context,
 	request *CompletionRequest,
 ) (*CompletionResult, error) {
-	payload := anthropicPayload(request)
-	endpoint := joinEndpoint(request.Model.BaseURL, "/v1/messages")
-	content, err := client.postJSON(ctx, endpoint, anthropicHeaders(request), payload)
-	if err != nil {
-		return nil, err
+	state := anthropicLoopState{
+		messages: anthropicMessages(request.Messages),
+		endpoint: joinEndpoint(request.Model.BaseURL, "/v1/messages"),
+		result:   &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()},
 	}
-	var response struct {
-		Error   providerError  `json:"error"`
-		Usage   map[string]any `json:"usage"`
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(content, &response); err != nil {
-		return nil, oops.In("assistant").Code("anthropic_decode").Wrapf(err, "decode anthropic response")
-	}
-	if response.Error.Message != "" {
-		return nil, providerErrorToOops("anthropic_error", &response.Error)
-	}
-	parts := make([]string, 0, len(response.Content))
-	for _, block := range response.Content {
-		if block.Type == jsonTextKey && block.Text != "" {
-			parts = append(parts, block.Text)
+	for range maxToolIterations {
+		finished, err := client.advanceAnthropicLoop(ctx, request, &state)
+		if err != nil {
+			return nil, err
+		}
+		if finished {
+			return state.result, nil
 		}
 	}
-	text := strings.TrimSpace(strings.Join(parts, "\n"))
-	if text == "" {
-		return nil, oops.In("assistant").Code("anthropic_empty").Errorf("provider returned an empty response")
-	}
 
-	return textCompletionResult(text, usageFromObject(response.Usage)), nil
+	return nil, toolIterationLimitError()
 }
 
-func anthropicPayload(request *CompletionRequest) map[string]any {
+type anthropicLoopState struct {
+	result   *CompletionResult
+	endpoint string
+	messages []map[string]any
+}
+
+func (client *HTTPCompletionClient) advanceAnthropicLoop(
+	ctx context.Context,
+	request *CompletionRequest,
+	state *anthropicLoopState,
+) (bool, error) {
+	payload := anthropicPayload(request, state.messages)
+	providerResult, err := client.requestAnthropic(ctx, state.endpoint, request, payload)
+	if err != nil {
+		return false, err
+	}
+	state.result.Usage = mergeUsage(state.result.Usage, providerResult.Usage)
+	if err := validateToolCalls(providerResult.ToolCalls); err != nil {
+		return false, err
+	}
+	if len(providerResult.ToolCalls) == 0 {
+		if fallback := textToolCallsFromText(providerResult.Text); len(fallback) > 0 {
+			providerResult.ToolCalls = fallback
+		} else {
+			return finishTextResult(state.result, providerResult.Text, "anthropic_empty")
+		}
+	}
+	events := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)
+	state.result.ToolEvents = append(state.result.ToolEvents, events...)
+	appendAnthropicToolConversation(state, providerResult, events)
+
+	return false, nil
+}
+
+func executeAnthropicToolCalls(
+	ctx context.Context,
+	request *CompletionRequest,
+	calls []toolCall,
+) []ToolEvent {
+	_, events := executeToolCalls(
+		ctx,
+		request.CWD,
+		calls,
+		request.OnEvent,
+		request.OnToolCall,
+		request.OnToolResult,
+	)
+
+	return events
+}
+
+func appendAnthropicToolConversation(state *anthropicLoopState, providerResult *providerResult, events []ToolEvent) {
+	if hasTextFallbackToolCalls(providerResult.ToolCalls) {
+		state.messages = append(
+			state.messages,
+			map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: providerResult.Text},
+			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: textToolResultPrompt(events)},
+		)
+		return
+	}
+	state.messages = append(
+		state.messages,
+		anthropicAssistantToolMessage(providerResult.ToolCalls),
+		anthropicToolResultMessage(providerResult.ToolCalls, events),
+	)
+}
+
+func anthropicPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
 	// Anthropic's recent Claude models reject temperature when thinking/adaptive
 	// reasoning is available. Match production agent clients by omitting
 	// temperature unless/until librecode exposes an explicit user setting.
 	payload := map[string]any{
 		jsonModelKey: request.Model.ID,
 		"max_tokens": minPositive(request.Model.MaxTokens, 4096),
-		"messages":   anthropicMessages(request.Messages),
+		"messages":   messages,
+		"tools":      anthropicTools(),
 	}
 	if usesAnthropicOAuth(request) {
 		payload["system"] = anthropicOAuthSystemPrompt(request.SystemPrompt)
@@ -212,17 +265,138 @@ func appendAnthropicBeta(existing string, values ...string) string {
 	return strings.Join(output, ",")
 }
 
-func anthropicMessages(messages []database.MessageEntity) []map[string]string {
-	output := []map[string]string{}
+func (client *HTTPCompletionClient) requestAnthropic(
+	ctx context.Context,
+	endpoint string,
+	request *CompletionRequest,
+	payload map[string]any,
+) (*providerResult, error) {
+	content, err := client.postJSON(ctx, endpoint, anthropicHeaders(request), payload)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseAnthropicResult(content)
+}
+
+func parseAnthropicResult(content []byte) (*providerResult, error) {
+	var response struct {
+		Error   providerError  `json:"error"`
+		Usage   map[string]any `json:"usage"`
+		Content []struct {
+			Type  string `json:"type"`
+			Text  string `json:"text"`
+			Input any    `json:"input"`
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(content, &response); err != nil {
+		return nil, oops.In("assistant").Code("anthropic_decode").Wrapf(err, "decode anthropic response")
+	}
+	if response.Error.Message != "" {
+		return nil, providerErrorToOops("anthropic_error", &response.Error)
+	}
+	parts := make([]string, 0, len(response.Content))
+	calls := make([]toolCall, 0, len(response.Content))
+	for _, block := range response.Content {
+		switch block.Type {
+		case jsonTextKey:
+			if block.Text != "" {
+				parts = append(parts, block.Text)
+			}
+		case anthropicToolUseType:
+			calls = append(calls, anthropicToolCall(block.ID, block.Name, block.Input))
+		}
+	}
+
+	return &providerResult{
+		Text:        strings.TrimSpace(strings.Join(parts, "\n")),
+		OutputItems: nil,
+		Thinking:    nil,
+		ToolCalls:   calls,
+		Usage:       usageFromObject(response.Usage),
+	}, nil
+}
+
+func anthropicToolCall(id, name string, input any) toolCall {
+	arguments, argumentsJSON := anthropicToolArguments(input)
+
+	return toolCall{Arguments: arguments, ID: id, Name: name, ArgumentsJSON: argumentsJSON, TextFallback: false}
+}
+
+func anthropicToolArguments(input any) (arguments map[string]any, argumentsJSON string) {
+	arguments = map[string]any{}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return arguments, "{}"
+	}
+	if len(payload) == 0 || string(payload) == "null" {
+		return arguments, "{}"
+	}
+	if err := json.Unmarshal(payload, &arguments); err != nil {
+		return map[string]any{}, string(payload)
+	}
+
+	return arguments, string(payload)
+}
+
+func anthropicAssistantToolMessage(calls []toolCall) map[string]any {
+	blocks := make([]map[string]any, 0, len(calls))
+	for _, call := range calls {
+		blocks = append(blocks, map[string]any{
+			jsonTypeKey:     anthropicToolUseType,
+			"id":            call.ID,
+			jsonToolNameKey: call.Name,
+			"input":         call.Arguments,
+		})
+	}
+
+	return map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: blocks}
+}
+
+func anthropicToolResultMessage(calls []toolCall, events []ToolEvent) map[string]any {
+	blocks := make([]map[string]any, 0, len(events))
+	for index, event := range events {
+		toolUseID := ""
+		if index < len(calls) {
+			toolUseID = calls[index].ID
+		}
+		blocks = append(blocks, map[string]any{
+			jsonTypeKey:    anthropicToolResultType,
+			"tool_use_id":  toolUseID,
+			jsonContentKey: toolOutputText(event.Result, event.DetailsJSON),
+		})
+	}
+
+	return map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: blocks}
+}
+
+func anthropicMessages(messages []database.MessageEntity) []map[string]any {
+	output := []map[string]any{}
 	for _, message := range messages {
 		role, ok := anthropicRole(message.Role)
 		if !ok || message.Content == "" {
 			continue
 		}
-		output = append(output, map[string]string{jsonRoleKey: role, jsonContentKey: message.Content})
+		output = append(output, map[string]any{jsonRoleKey: role, jsonContentKey: message.Content})
 	}
 
 	return output
+}
+
+func anthropicTools() []map[string]any {
+	definitions := tool.AllDefinitions()
+	tools := make([]map[string]any, 0, len(definitions))
+	for _, definition := range definitions {
+		tools = append(tools, map[string]any{
+			jsonToolNameKey:    string(definition.Name),
+			jsonDescriptionKey: definition.Description,
+			jsonInputSchemaKey: toolParameterSchema(definition.Name),
+		})
+	}
+
+	return tools
 }
 
 func anthropicRole(role database.Role) (string, bool) {
@@ -230,7 +404,7 @@ func anthropicRole(role database.Role) (string, bool) {
 	case database.RoleUser:
 		return jsonUserRole, true
 	case database.RoleAssistant:
-		return "assistant", true
+		return jsonAssistantRole, true
 	case database.RoleToolResult,
 		database.RoleThinking,
 		database.RoleCustom,
