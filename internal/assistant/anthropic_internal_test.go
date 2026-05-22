@@ -78,8 +78,34 @@ func TestAnthropicPayloadDisablesThinkingWhenOff(t *testing.T) {
 	assert.NotContains(t, payload, "output_config")
 }
 
-func TestAnthropicPayloadUsesLocalToolNamesForAPIKey(t *testing.T) {
+func TestAnthropicToolNameMapping(t *testing.T) {
 	t.Parallel()
+
+	tests := []struct {
+		run  func(t *testing.T)
+		name string
+	}{
+		{
+			name: "api key payload keeps local tool names",
+			run:  assertAnthropicPayloadKeepsLocalToolNames,
+		},
+		{
+			name: "native claude code tool calls map to local names",
+			run:  assertAnthropicToolCallMapsClaudeCodeName,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			testCase.run(t)
+		})
+	}
+}
+
+func assertAnthropicPayloadKeepsLocalToolNames(t *testing.T) {
+	t.Helper()
 
 	payload := anthropicPayload(testCompletionRequestAuth("sk-ant-api03-secret"), nil)
 
@@ -89,8 +115,8 @@ func TestAnthropicPayloadUsesLocalToolNamesForAPIKey(t *testing.T) {
 	assert.NotContains(t, encodedTools, `"name":"`+anthropicReadToolName+`"`)
 }
 
-func TestAnthropicToolCallMapsClaudeCodeNamesToLocalNames(t *testing.T) {
-	t.Parallel()
+func assertAnthropicToolCallMapsClaudeCodeName(t *testing.T) {
+	t.Helper()
 
 	call := anthropicToolCall(testAnthropicToolUseID, "Write", map[string]any{
 		jsonPathKey:    "hello.txt",
