@@ -10,7 +10,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/tool"
 )
 
 func (client *HTTPCompletionClient) completeAnthropic(
@@ -76,7 +75,7 @@ func executeAnthropicToolCalls(
 ) []ToolEvent {
 	_, events := executeToolCalls(
 		ctx,
-		request.CWD,
+		request.ToolRegistry,
 		calls,
 		request.OnEvent,
 		request.OnToolCall,
@@ -406,13 +405,13 @@ func anthropicMessages(messages []database.MessageEntity) []map[string]any {
 }
 
 func anthropicTools(request *CompletionRequest) []map[string]any {
-	definitions := tool.AllDefinitions()
+	definitions := requestToolDefinitions(request)
 	tools := make([]map[string]any, 0, len(definitions))
 	for _, definition := range definitions {
 		tools = append(tools, map[string]any{
 			jsonToolNameKey:         anthropicProviderToolName(string(definition.Name), usesAnthropicOAuth(request)),
 			jsonDescriptionKey:      definition.Description,
-			jsonInputSchemaKey:      toolParameterSchema(definition.Name),
+			jsonInputSchemaKey:      toolParameterSchema(&definition),
 			"eager_input_streaming": true,
 		})
 	}

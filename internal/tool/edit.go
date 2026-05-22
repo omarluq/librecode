@@ -28,6 +28,7 @@ func NewEditTool(cwd string) *EditTool {
 // Definition returns edit tool metadata.
 func (editTool *EditTool) Definition() Definition {
 	return Definition{
+		Schema:        nil,
 		Name:          NameEdit,
 		Label:         "edit",
 		Description:   editDescription(),

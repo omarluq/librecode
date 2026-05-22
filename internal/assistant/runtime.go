@@ -543,7 +543,10 @@ func (runtime *Runtime) loadSkillWithReadTool(
 	skill *core.Skill,
 	limit *int,
 ) (string, ToolEvent, error) {
-	registry := tool.NewRegistry(cwd)
+	registry, err := newToolRegistry(cwd, runtime.extensions)
+	if err != nil {
+		return "", ToolEvent{}, err
+	}
 	input := map[string]any{jsonPathKey: skill.FilePath}
 	if limit != nil {
 		input["limit"] = *limit
@@ -581,7 +584,10 @@ func (runtime *Runtime) respondToToolCommand(ctx context.Context, cwd, args stri
 		payload = "{}"
 	}
 
-	registry := tool.NewRegistry(cwd)
+	registry, err := newToolRegistry(cwd, runtime.extensions)
+	if err != nil {
+		return "", err
+	}
 	result, err := registry.ExecuteJSON(ctx, toolName, []byte(payload))
 	if err != nil {
 		return "", oops.
@@ -621,6 +627,10 @@ func (runtime *Runtime) modelResponse(
 		return nil, err
 	}
 	runtime.emitUsage(ctx, onEvent, contextResult.Usage)
+	registry, err := newToolRegistry(cwd, runtime.extensions)
+	if err != nil {
+		return nil, err
+	}
 	request := runtime.modelCompletionRequest(
 		&selectedModel,
 		auth,
@@ -628,6 +638,7 @@ func (runtime *Runtime) modelResponse(
 		sessionID,
 		contextResult.SystemPrompt,
 		cwd,
+		registry,
 		onEvent,
 	)
 	result, err := runtime.completeWithRetry(ctx, request, onRetry)
@@ -652,12 +663,14 @@ func (runtime *Runtime) modelCompletionRequest(
 	sessionID string,
 	systemPrompt string,
 	cwd string,
+	registry *tool.Registry,
 	onEvent func(StreamEvent),
 ) *CompletionRequest {
 	return &CompletionRequest{
 		OnEvent:       onEvent,
 		OnToolCall:    runtime.emitToolCall,
 		OnToolResult:  runtime.emitToolResult,
+		ToolRegistry:  registry,
 		SessionID:     sessionID,
 		SystemPrompt:  systemPrompt,
 		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,

@@ -31,13 +31,15 @@ func validateToolCalls(calls []toolCall) error {
 
 func executeToolCalls(
 	ctx context.Context,
-	cwd string,
+	registry *tool.Registry,
 	calls []toolCall,
 	onEvent func(StreamEvent),
 	onToolCall func(context.Context, ToolCallEvent),
 	onToolResult func(context.Context, *ToolEvent),
 ) ([]any, []ToolEvent) {
-	registry := tool.NewRegistry(cwd)
+	if registry == nil {
+		registry = tool.NewRegistry("")
+	}
 	outputs := make([]any, 0, len(calls))
 	events := make([]ToolEvent, 0, len(calls))
 	for _, call := range calls {

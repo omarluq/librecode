@@ -29,6 +29,7 @@ func NewWriteTool(cwd string) *WriteTool {
 // Definition returns write tool metadata.
 func (writeTool *WriteTool) Definition() Definition {
 	return Definition{
+		Schema:        nil,
 		Name:          NameWrite,
 		Label:         "write",
 		Description:   "Write content to a file. Creates parent directories and overwrites existing files.",

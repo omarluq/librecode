@@ -13,11 +13,12 @@ type Command struct {
 	Extension   string `json:"extension"`
 }
 
-// Tool describes a Lua-provided tool callable by the runtime.
+// Tool describes an extension-provided tool callable by the runtime.
 type Tool struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Extension   string `json:"extension"`
+	InputSchema map[string]any `json:"input_schema"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Extension   string         `json:"extension"`
 }
 
 // ToolResult is returned from Lua tool handlers.
