@@ -20,7 +20,7 @@ func (client *HTTPCompletionClient) completeOpenAIChat(
 		endpoint: joinEndpoint(request.Model.BaseURL, "/chat/completions"),
 		result:   &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()},
 	}
-	for range maxToolIterations {
+	for {
 		finished, err := client.advanceOpenAIChatLoop(ctx, request, &state)
 		if err != nil {
 			return nil, err
@@ -29,8 +29,6 @@ func (client *HTTPCompletionClient) completeOpenAIChat(
 			return state.result, nil
 		}
 	}
-
-	return nil, toolIterationLimitError()
 }
 
 type openAIChatLoopState struct {
