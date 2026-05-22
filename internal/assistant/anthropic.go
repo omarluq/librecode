@@ -22,7 +22,7 @@ func (client *HTTPCompletionClient) completeAnthropic(
 		endpoint: joinEndpoint(request.Model.BaseURL, "/v1/messages"),
 		result:   &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()},
 	}
-	for range maxToolIterations {
+	for {
 		finished, err := client.advanceAnthropicLoop(ctx, request, &state)
 		if err != nil {
 			return nil, err
@@ -31,8 +31,6 @@ func (client *HTTPCompletionClient) completeAnthropic(
 			return state.result, nil
 		}
 	}
-
-	return nil, toolIterationLimitError()
 }
 
 type anthropicLoopState struct {

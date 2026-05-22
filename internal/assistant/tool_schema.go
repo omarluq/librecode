@@ -3,12 +3,8 @@ package assistant
 import (
 	"encoding/json"
 
-	"github.com/samber/oops"
-
 	"github.com/omarluq/librecode/internal/tool"
 )
-
-const maxToolIterations = 8
 
 func responseTools() []map[string]any {
 	definitions := tool.AllDefinitions()
@@ -53,10 +49,6 @@ func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
 	}
 
 	return arguments
-}
-
-func toolIterationLimitError() error {
-	return oops.In("assistant").Code("tool_iteration_limit").Errorf("tool iteration limit reached")
 }
 
 func toolParameterSchema(name tool.Name) map[string]any {
