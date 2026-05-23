@@ -201,6 +201,7 @@ func testCompletionRequestAuth(args ...string) *CompletionRequest {
 		CWD:           "",
 		Auth:          testRequestAuth(apiKey),
 		Messages:      nil,
+		Usage:         model.EmptyTokenUsage(),
 		Model: model.Model{
 			ThinkingLevelMap: nil,
 			Headers:          nil,

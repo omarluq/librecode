@@ -50,6 +50,7 @@ const (
 	jsonAssistantRole       = "assistant"
 	jsonToolRole            = "tool"
 	jsonCommandKey          = "command"
+	jsonBreakdownKey        = "breakdown"
 	jsonReadToolName        = "read"
 	jsonBashToolName        = "bash"
 	jsonEditToolName        = "edit"
@@ -92,6 +93,7 @@ type CompletionRequest struct {
 	CWD           string                               `json:"cwd"`
 	Auth          model.RequestAuth                    `json:"auth"`
 	Messages      []database.MessageEntity             `json:"messages"`
+	Usage         model.TokenUsage                     `json:"usage"`
 	Model         model.Model                          `json:"model"`
 }
 
