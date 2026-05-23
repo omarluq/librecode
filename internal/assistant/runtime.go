@@ -356,7 +356,7 @@ func (progress *partialPromptProgress) reset() {
 }
 
 func (progress *partialPromptProgress) append(role database.Role, content string) {
-	if progress == nil || strings.TrimSpace(content) == "" {
+	if progress == nil || content == "" {
 		return
 	}
 	lastIndex := len(progress.blocks) - 1

@@ -254,7 +254,7 @@ func TestRuntime_PromptPersistsPartialProgressOnProviderFailure(t *testing.T) {
 	require.Len(t, messages, 4)
 	assert.Equal(t, database.RoleUser, messages[0].Role)
 	assert.Equal(t, database.RoleAssistant, messages[1].Role)
-	assert.Equal(t, "partial answer", messages[1].Content)
+	assert.Equal(t, "partial answer\n\nwith whitespace", messages[1].Content)
 	assert.Equal(t, database.RoleToolResult, messages[2].Role)
 	assert.Contains(t, messages[2].Content, "tool: read")
 	assert.Equal(t, database.RoleCustom, messages[3].Role)
@@ -525,6 +525,18 @@ func (partialFailureCompletionClient) Complete(
 		Usage:     nil,
 		Kind:      assistant.StreamEventTextDelta,
 		Text:      "partial answer",
+	})
+	request.OnEvent(assistant.StreamEvent{
+		ToolEvent: nil,
+		Usage:     nil,
+		Kind:      assistant.StreamEventTextDelta,
+		Text:      "\n\n",
+	})
+	request.OnEvent(assistant.StreamEvent{
+		ToolEvent: nil,
+		Usage:     nil,
+		Kind:      assistant.StreamEventTextDelta,
+		Text:      "with whitespace",
 	})
 	request.OnEvent(assistant.StreamEvent{
 		ToolEvent: &assistant.ToolEvent{
