@@ -20,6 +20,9 @@ func mergeTerminalUsage(current, next model.TokenUsage) model.TokenUsage {
 	if next.ContextTokens > current.ContextTokens {
 		current.ContextTokens = next.ContextTokens
 	}
+	if len(next.Breakdown) > 0 {
+		current.Breakdown = cloneTokenBreakdown(next.Breakdown)
+	}
 
 	return current
 }
@@ -56,6 +59,15 @@ func formatContextUsage(usage model.TokenUsage) string {
 	default:
 		return ""
 	}
+}
+
+func cloneTokenBreakdown(values map[string]int) map[string]int {
+	cloned := make(map[string]int, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+
+	return cloned
 }
 
 func compactCount(value int) string {

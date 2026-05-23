@@ -2,15 +2,22 @@ package model
 
 // TokenUsage tracks model context and request/response token counts.
 type TokenUsage struct {
-	ContextWindow int `json:"context_window,omitempty"`
-	ContextTokens int `json:"context_tokens,omitempty"`
-	InputTokens   int `json:"input_tokens,omitempty"`
-	OutputTokens  int `json:"output_tokens,omitempty"`
+	Breakdown     map[string]int `json:"breakdown,omitempty"`
+	ContextWindow int            `json:"context_window,omitempty"`
+	ContextTokens int            `json:"context_tokens,omitempty"`
+	InputTokens   int            `json:"input_tokens,omitempty"`
+	OutputTokens  int            `json:"output_tokens,omitempty"`
 }
 
 // EmptyTokenUsage returns a zero-value token usage with explicit fields.
 func EmptyTokenUsage() TokenUsage {
-	return TokenUsage{ContextWindow: 0, ContextTokens: 0, InputTokens: 0, OutputTokens: 0}
+	return TokenUsage{
+		Breakdown:     nil,
+		ContextWindow: 0,
+		ContextTokens: 0,
+		InputTokens:   0,
+		OutputTokens:  0,
+	}
 }
 
 // TotalTokens returns input plus output tokens reported for the turn.

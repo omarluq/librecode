@@ -139,8 +139,8 @@ type App struct {
 	composerBuffer               extension.BufferState
 	messageLineCacheState        messageLineCacheState
 	streamingBlockLineCacheState messageLineCacheState
-	selection                    mouseSelection
 	tokenUsage                   model.TokenUsage
+	selection                    mouseSelection
 	promptSequence               uint64
 	workFrame                    int
 	lastMessageMaxRows           int

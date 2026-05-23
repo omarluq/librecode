@@ -21,6 +21,7 @@ func slashSuggestions() []slashSuggestion {
 		{Name: "changelog", Description: "open changelog"},
 		{Name: "clone", Description: "clone current session"},
 		{Name: "compact", Description: "compact conversation context"},
+		{Name: "context", Description: "show context token breakdown"},
 		{Name: "copy", Description: "copy the last assistant message"},
 		{Name: "export", Description: "export current session"},
 		{Name: "fork", Description: "fork current session"},

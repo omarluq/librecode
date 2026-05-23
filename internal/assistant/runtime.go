@@ -787,6 +787,7 @@ func (runtime *Runtime) modelResponse(
 		sessionID,
 		contextResult.SystemPrompt,
 		cwd,
+		contextResult.Usage,
 		registry,
 		onEvent,
 	)
@@ -812,6 +813,7 @@ func (runtime *Runtime) modelCompletionRequest(
 	sessionID string,
 	systemPrompt string,
 	cwd string,
+	usage model.TokenUsage,
 	registry *tool.Registry,
 	onEvent func(StreamEvent),
 ) *CompletionRequest {
@@ -826,6 +828,7 @@ func (runtime *Runtime) modelCompletionRequest(
 		CWD:           cwd,
 		Auth:          auth,
 		Messages:      messages,
+		Usage:         usage,
 		Model:         *selectedModel,
 	}
 }

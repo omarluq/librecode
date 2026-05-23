@@ -9,6 +9,10 @@ func MergeTerminalUsageForTest(current, next model.TokenUsage) model.TokenUsage 
 	return mergeTerminalUsage(current, next)
 }
 
+func ContextBreakdownLinesForTest(breakdown map[string]int) []string {
+	return contextBreakdownLines(breakdown)
+}
+
 func NewAppForTest() *App {
 	return newApp(nil, &RunOptions{
 		Extensions: nil,

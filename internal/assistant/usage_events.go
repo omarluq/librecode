@@ -17,6 +17,7 @@ func (runtime *Runtime) emitUsage(ctx context.Context, onEvent func(StreamEvent)
 		Text:      "",
 	})
 	payload := map[string]any{
+		jsonBreakdownKey:     cloneIntMap(usage.Breakdown),
 		jsonContextWindowKey: usage.ContextWindow,
 		jsonContextTokensKey: usage.ContextTokens,
 		jsonInputTokensKey:   usage.InputTokens,

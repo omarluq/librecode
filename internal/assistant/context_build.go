@@ -151,16 +151,19 @@ func (runtime *Runtime) modelContextBase(
 }
 
 func initialContextBuildResult(base *modelContextBase, selectedModel *model.Model) *contextBuildResult {
+	breakdown := contextBreakdown(base.SystemTokens, base.SkillTokens, base.HistoryTokens, nil)
+
 	return &contextBuildResult{
 		Contributions: []contextContribution{},
 		Messages:      base.Messages,
-		Breakdown:     contextBreakdown(base.SystemTokens, base.SkillTokens, base.HistoryTokens, nil),
+		Breakdown:     breakdown,
 		SystemPrompt:  base.SystemPrompt,
 		Usage: estimateContextBuildUsage(
 			base.SystemPrompt,
 			base.Messages,
 			nil,
 			selectedModel,
+			breakdown,
 		),
 	}
 }
@@ -170,17 +173,18 @@ func recalculateContextBuildResult(
 	base *modelContextBase,
 	selectedModel *model.Model,
 ) {
-	result.Usage = estimateContextBuildUsage(
-		base.SystemPrompt,
-		base.Messages,
-		result.Contributions,
-		selectedModel,
-	)
 	result.Breakdown = contextBreakdown(
 		base.SystemTokens,
 		base.SkillTokens,
 		base.HistoryTokens,
 		result.Contributions,
+	)
+	result.Usage = estimateContextBuildUsage(
+		result.SystemPrompt,
+		base.Messages,
+		result.Contributions,
+		selectedModel,
+		result.Breakdown,
 	)
 }
 
@@ -189,6 +193,7 @@ func estimateContextBuildUsage(
 	messages []database.MessageEntity,
 	contributions []contextContribution,
 	selectedModel *model.Model,
+	breakdown map[string]int,
 ) model.TokenUsage {
 	inputTokens := estimateInputTokens(systemPrompt, messages)
 	for index := range contributions {
@@ -196,6 +201,7 @@ func estimateContextBuildUsage(
 	}
 
 	return model.TokenUsage{
+		Breakdown:     cloneIntMapForUsage(breakdown),
 		ContextWindow: selectedModel.ContextWindow,
 		ContextTokens: inputTokens,
 		InputTokens:   inputTokens,
