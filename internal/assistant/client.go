@@ -9,6 +9,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 const (
@@ -84,6 +85,7 @@ type CompletionRequest struct {
 	OnEvent       func(StreamEvent)                    `json:"-"`
 	OnToolCall    func(context.Context, ToolCallEvent) `json:"-"`
 	OnToolResult  func(context.Context, *ToolEvent)    `json:"-"`
+	ToolRegistry  *tool.Registry                       `json:"-"`
 	SessionID     string                               `json:"session_id"`
 	SystemPrompt  string                               `json:"system_prompt"`
 	ThinkingLevel string                               `json:"thinking_level"`

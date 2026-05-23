@@ -33,6 +33,7 @@ func NewReadTool(cwd string) *ReadTool {
 // Definition returns read tool metadata.
 func (readTool *ReadTool) Definition() Definition {
 	return Definition{
+		Schema:        nil,
 		Name:          NameRead,
 		Label:         "read",
 		Description:   readDescription(),

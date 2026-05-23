@@ -7,9 +7,20 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 const testCallID = "call-1"
+
+func newToolRegistryForTest(t *testing.T) *tool.Registry {
+	t.Helper()
+
+	registry, err := newToolRegistry(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	return registry
+}
 
 func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 	t.Parallel()
@@ -45,7 +56,7 @@ func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
 	toolResults := []ToolEvent{}
 	outputs, events := executeToolCalls(
 		context.Background(),
-		t.TempDir(),
+		newToolRegistryForTest(t),
 		[]toolCall{{
 			Arguments:     map[string]any{jsonPathKey: "missing.txt"},
 			ID:            testCallID,

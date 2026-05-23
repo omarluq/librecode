@@ -78,7 +78,7 @@ func executeOpenAIChatToolCalls(
 ) []ToolEvent {
 	_, events := executeToolCalls(
 		ctx,
-		request.CWD,
+		request.ToolRegistry,
 		calls,
 		request.OnEvent,
 		request.OnToolCall,
@@ -116,7 +116,7 @@ func openAIChatPayload(request *CompletionRequest, messages []map[string]any) ma
 		"messages":        messages,
 		"stream":          false,
 		"temperature":     0.2,
-		"tools":           openAIChatTools(),
+		"tools":           openAIChatTools(request),
 		jsonToolChoiceKey: "auto",
 	}
 	if request.Model.Reasoning && request.ThinkingLevel != "" && request.ThinkingLevel != thinkingOff {

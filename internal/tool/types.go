@@ -37,12 +37,13 @@ const (
 
 // Definition describes a built-in coding tool.
 type Definition struct {
-	Name             Name     `json:"name"`
-	Label            string   `json:"label"`
-	Description      string   `json:"description"`
-	PromptSnippet    string   `json:"prompt_snippet"`
-	PromptGuidelines []string `json:"prompt_guidelines"`
-	ReadOnly         bool     `json:"read_only"`
+	Schema           map[string]any `json:"schema"`
+	Name             Name           `json:"name"`
+	Label            string         `json:"label"`
+	Description      string         `json:"description"`
+	PromptSnippet    string         `json:"prompt_snippet"`
+	PromptGuidelines []string       `json:"prompt_guidelines"`
+	ReadOnly         bool           `json:"read_only"`
 }
 
 // ContentBlock is one model-facing piece of tool output.

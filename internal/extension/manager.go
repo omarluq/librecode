@@ -500,7 +500,12 @@ func (manager *Manager) luaRegisterCommand(extensionRuntime *luaExtension) lua.L
 func (manager *Manager) luaRegisterTool(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name, description, function := luaRegistrationArgs(state)
-		definition := Tool{Name: name, Description: description, Extension: extensionRuntime.name}
+		definition := Tool{
+			InputSchema: luaOptionalSchema(state, 4),
+			Name:        name,
+			Description: description,
+			Extension:   extensionRuntime.name,
+		}
 
 		manager.lock.Lock()
 		manager.tools[name] = luaTool{extension: extensionRuntime, function: function, definition: definition}
@@ -536,6 +541,17 @@ func (manager *Manager) luaLog(extensionRuntime *luaExtension) lua.LGFunction {
 
 func luaRegistrationArgs(state *lua.LState) (name, description string, function *lua.LFunction) {
 	return state.CheckString(1), state.OptString(2, ""), state.CheckFunction(3)
+}
+
+func luaOptionalSchema(state *lua.LState, index int) map[string]any {
+	if state.GetTop() < index {
+		return map[string]any{}
+	}
+	if table, ok := state.Get(index).(*lua.LTable); ok {
+		return luaTableToMap(table)
+	}
+
+	return map[string]any{}
 }
 
 func luaEventHandlerArgs(state *lua.LState) (priority int, function *lua.LFunction) {
