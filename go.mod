@@ -18,7 +18,7 @@ require (
 	github.com/samber/mo v1.16.0
 	github.com/samber/oops v1.21.0
 	github.com/samber/ro v0.3.0
-	github.com/samber/ro/plugins/fsnotify v0.0.0-20260516194255-a8c153943435
+	github.com/samber/ro/plugins/fsnotify v0.0.0-20260522200928-fb86b5fc464e
 	github.com/samber/ro/plugins/signal v0.0.0-20260522200928-fb86b5fc464e
 	github.com/samber/slog-zerolog/v2 v2.9.2
 	github.com/spf13/cobra v1.10.2
