@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -35,4 +36,12 @@ func TestWaitForRetryRespectsCancellation(t *testing.T) {
 	err := waitForRetry(ctx, time.Hour)
 
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestShouldRetryModelErrorTreatsHTTP2StreamErrorsAsTransient(t *testing.T) {
+	t.Parallel()
+
+	err := errors.New("read provider stream: stream error: stream ID 193; INTERNAL_ERROR; received from peer")
+
+	assert.True(t, ShouldRetryModelError(err))
 }
