@@ -66,6 +66,7 @@ func TestRenderParityStatuslineTokenUsage(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.tokenUsage = model.TokenUsage{
+		Breakdown:     nil,
 		ContextWindow: 1000,
 		ContextTokens: 250,
 		InputTokens:   0,

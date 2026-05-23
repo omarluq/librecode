@@ -48,7 +48,7 @@ func (app *App) openCommandPanel(ctx context.Context, command string) bool {
 }
 
 func (app *App) runSessionCommand(ctx context.Context, command, args, original string) (bool, error) {
-	if handler, ok := app.sessionCommandHandlers(ctx, args)[command]; ok {
+	if handler, ok := app.sessionCommandHandlers(ctx, args, original)[command]; ok {
 		return false, handler()
 	}
 	if handler, ok := app.sessionCommandNotifications(ctx, command); ok {
@@ -61,9 +61,10 @@ func (app *App) runSessionCommand(ctx context.Context, command, args, original s
 	return false, nil
 }
 
-func (app *App) sessionCommandHandlers(ctx context.Context, args string) map[string]func() error {
+func (app *App) sessionCommandHandlers(ctx context.Context, args, original string) map[string]func() error {
 	return map[string]func() error{
 		"clone":       func() error { return app.cloneSession(ctx, args) },
+		"context":     func() error { return app.showContextInfo(ctx, original) },
 		"copy":        func() error { return app.copyLastAssistantMessage(ctx) },
 		"fork":        func() error { return app.newSession(ctx, args) },
 		commandLogin:  func() error { return app.loginCommand(ctx, args) },

@@ -46,6 +46,10 @@ func mergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
 	if reported.OutputTokens > 0 {
 		usage.OutputTokens = reported.OutputTokens
 	}
+	if len(usage.Breakdown) == 0 && len(reported.Breakdown) > 0 {
+		usage.Breakdown = cloneIntMapForUsage(reported.Breakdown)
+	}
+
 	return usage
 }
 
@@ -57,7 +61,13 @@ func usageFromObject(value any) model.TokenUsage {
 	input := usageInputTokens(object)
 	output := intFromAny(firstPresent(object, jsonOutputTokensKey, "completion_tokens"))
 
-	return model.TokenUsage{ContextWindow: 0, ContextTokens: 0, InputTokens: input, OutputTokens: output}
+	return model.TokenUsage{
+		Breakdown:     nil,
+		ContextWindow: 0,
+		ContextTokens: 0,
+		InputTokens:   input,
+		OutputTokens:  output,
+	}
 }
 
 func usageInputTokens(object map[string]any) int {

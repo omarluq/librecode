@@ -29,7 +29,13 @@ func TestRuntime_ProviderLifecyclePublishesReactiveEvents(t *testing.T) {
 			Text:       testCompletionText,
 			Thinking:   nil,
 			ToolEvents: nil,
-			Usage:      model.TokenUsage{InputTokens: 9, OutputTokens: 3, ContextTokens: 9, ContextWindow: 100},
+			Usage: model.TokenUsage{
+				Breakdown:     nil,
+				ContextWindow: 100,
+				ContextTokens: 9,
+				InputTokens:   9,
+				OutputTokens:  3,
+			},
 		},
 		err: nil,
 	})
