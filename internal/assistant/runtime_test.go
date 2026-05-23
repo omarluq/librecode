@@ -169,12 +169,14 @@ func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 	assert.Equal(t, "hello", string(content))
 }
 
+const recoveredResponseText = "recovered response"
+
 func TestRuntime_PromptRetriesTransientModelErrors(t *testing.T) {
 	t.Parallel()
 
 	client := &retryCompletionClient{
 		err:               nil,
-		response:          "recovered response",
+		response:          recoveredResponseText,
 		attempts:          0,
 		failuresRemaining: 1,
 	}
@@ -188,7 +190,7 @@ func TestRuntime_PromptRetriesTransientModelErrors(t *testing.T) {
 	response, err := runtime.Prompt(context.Background(), request)
 
 	require.NoError(t, err)
-	assert.Equal(t, "recovered response for retry me", response.Text)
+	assert.Equal(t, recoveredResponseText+" for retry me", response.Text)
 	assert.Equal(t, 2, client.attempts)
 	require.Len(t, retryEvents, 2)
 	assert.Equal(t, assistant.RetryEventStart, retryEvents[0].Kind)
@@ -201,7 +203,7 @@ func TestRuntime_PromptRetriesWrappedEmptyProviderResponse(t *testing.T) {
 
 	client := &retryCompletionClient{
 		err:               errors.New("[system] provider returned an empty response"),
-		response:          "recovered response",
+		response:          recoveredResponseText,
 		attempts:          0,
 		failuresRemaining: 1,
 	}
@@ -211,8 +213,52 @@ func TestRuntime_PromptRetriesWrappedEmptyProviderResponse(t *testing.T) {
 	response, err := runtime.Prompt(context.Background(), request)
 
 	require.NoError(t, err)
-	assert.Equal(t, "recovered response for retry empty", response.Text)
+	assert.Equal(t, recoveredResponseText+" for retry empty", response.Text)
 	assert.Equal(t, 2, client.attempts)
+}
+
+func TestRuntime_PromptRetriesProviderStreamError(t *testing.T) {
+	t.Parallel()
+
+	client := &retryCompletionClient{
+		err: errors.New(
+			"read provider stream: stream error: stream ID 193; INTERNAL_ERROR; received from peer",
+		),
+		response:          recoveredResponseText,
+		attempts:          0,
+		failuresRemaining: 1,
+	}
+	runtime, _ := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "retry stream", "")
+
+	response, err := runtime.Prompt(context.Background(), request)
+
+	require.NoError(t, err)
+	assert.Equal(t, recoveredResponseText+" for retry stream", response.Text)
+	assert.Equal(t, 2, client.attempts)
+}
+
+func TestRuntime_PromptPersistsPartialProgressOnProviderFailure(t *testing.T) {
+	t.Parallel()
+
+	client := partialFailureCompletionClient{}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "fail after progress", "")
+
+	_, err := runtime.Prompt(context.Background(), request)
+
+	require.Error(t, err)
+	require.NotEmpty(t, request.SessionID)
+	messages, err := repository.Messages(context.Background(), request.SessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 4)
+	assert.Equal(t, database.RoleUser, messages[0].Role)
+	assert.Equal(t, database.RoleAssistant, messages[1].Role)
+	assert.Equal(t, "partial answer", messages[1].Content)
+	assert.Equal(t, database.RoleToolResult, messages[2].Role)
+	assert.Contains(t, messages[2].Content, "tool: read")
+	assert.Equal(t, database.RoleCustom, messages[3].Role)
+	assert.Contains(t, messages[3].Content, "provider returned an empty response")
 }
 
 func TestRuntime_PromptDoesNotRetryNonTransientModelErrors(t *testing.T) {
@@ -437,6 +483,8 @@ type retryCompletionClient struct {
 	failuresRemaining int
 }
 
+type partialFailureCompletionClient struct{}
+
 func (client *capturingCompletionClient) Complete(
 	ctx context.Context,
 	request *assistant.CompletionRequest,
@@ -466,6 +514,32 @@ func (client *retryCompletionClient) Complete(
 		ToolEvents: nil,
 		Usage:      model.EmptyTokenUsage(),
 	}, nil
+}
+
+func (partialFailureCompletionClient) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	request.OnEvent(assistant.StreamEvent{
+		ToolEvent: nil,
+		Usage:     nil,
+		Kind:      assistant.StreamEventTextDelta,
+		Text:      "partial answer",
+	})
+	request.OnEvent(assistant.StreamEvent{
+		ToolEvent: &assistant.ToolEvent{
+			Name:          "read",
+			ArgumentsJSON: `{"path":"README.md"}`,
+			DetailsJSON:   "",
+			Result:        "file content",
+			Error:         "",
+		},
+		Usage: nil,
+		Kind:  assistant.StreamEventToolResult,
+		Text:  "",
+	})
+
+	return nil, errors.New("provider returned an empty response")
 }
 
 type testCompletionClient struct{}

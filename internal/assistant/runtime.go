@@ -3,6 +3,7 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -101,6 +102,17 @@ type responseBundle struct {
 	Usage      model.TokenUsage
 }
 
+type partialPromptBlock struct {
+	Role    database.Role
+	Content string
+}
+
+type partialPromptProgress struct {
+	forward        func(StreamEvent)
+	blocks         []partialPromptBlock
+	fallbackBlocks []partialPromptBlock
+}
+
 // NewRuntime creates an assistant runtime.
 func NewRuntime(
 	cfg *config.Config,
@@ -157,6 +169,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
 	}
+	request.SessionID = activeSession.ID
 	runtime.dispatchMessageAppend(ctx, userEntry)
 	runtime.notifyPromptUserEntry(request, activeSession.ID, userEntry.ID)
 	turnLifecycle := newPromptTurnLifecycle(runtime, activeSession.ID, userEntry.ID)
@@ -165,14 +178,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		turnLifecycle.dispatchError(ctx, err)
 	}()
 
-	bundle, cached, err := runtime.respond(
-		ctx,
-		activeSession.ID,
-		request.CWD,
-		request.Text,
-		request.OnEvent,
-		request.OnRetry,
-	)
+	bundle, cached, err := runtime.respondWithPartialProgress(ctx, activeSession.ID, userEntry.ID, request)
 	if err != nil {
 		return nil, err
 	}
@@ -273,6 +279,155 @@ func (runtime *Runtime) appendAssistantSideEffects(
 	}
 
 	return parentID, nil
+}
+
+func (runtime *Runtime) respondWithPartialProgress(
+	ctx context.Context,
+	sessionID string,
+	userEntryID string,
+	request *PromptRequest,
+) (*responseBundle, bool, error) {
+	progress := newPartialPromptProgress(request.OnEvent)
+	bundle, cached, err := runtime.respond(
+		ctx,
+		sessionID,
+		request.CWD,
+		request.Text,
+		progress.handle,
+		progress.retryHandler(request.OnRetry),
+	)
+	if err != nil {
+		persistErr := runtime.appendPartialPromptFailure(ctx, sessionID, userEntryID, progress, err)
+		return nil, false, errors.Join(err, persistErr)
+	}
+
+	return bundle, cached, nil
+}
+
+func newPartialPromptProgress(forward func(StreamEvent)) *partialPromptProgress {
+	return &partialPromptProgress{forward: forward, blocks: []partialPromptBlock{}, fallbackBlocks: nil}
+}
+
+func (progress *partialPromptProgress) handle(streamEvent StreamEvent) {
+	if progress != nil {
+		progress.record(streamEvent)
+	}
+	if progress != nil && progress.forward != nil {
+		progress.forward(streamEvent)
+	}
+}
+
+func (progress *partialPromptProgress) record(streamEvent StreamEvent) {
+	switch streamEvent.Kind {
+	case StreamEventTextDelta:
+		progress.append(database.RoleAssistant, streamEvent.Text)
+	case StreamEventThinkingDelta:
+		progress.append(database.RoleThinking, streamEvent.Text)
+	case StreamEventToolResult:
+		if streamEvent.ToolEvent != nil {
+			progress.append(database.RoleToolResult, formatToolEvent(streamEvent.ToolEvent))
+		}
+	case StreamEventToolStart,
+		StreamEventSkillLoaded,
+		StreamEventUsage:
+		return
+	}
+}
+
+func (progress *partialPromptProgress) retryHandler(forward RetryEventHandler) RetryEventHandler {
+	return func(retryEvent RetryEvent) {
+		if retryEvent.Kind == RetryEventStart {
+			progress.reset()
+		}
+		if forward != nil {
+			forward(retryEvent)
+		}
+	}
+}
+
+func (progress *partialPromptProgress) reset() {
+	if progress == nil {
+		return
+	}
+	if len(progress.blocks) > 0 {
+		progress.fallbackBlocks = progressBlocks(progress.blocks)
+	}
+	progress.blocks = progress.blocks[:0]
+}
+
+func (progress *partialPromptProgress) append(role database.Role, content string) {
+	if progress == nil || strings.TrimSpace(content) == "" {
+		return
+	}
+	lastIndex := len(progress.blocks) - 1
+	if lastIndex >= 0 && progress.blocks[lastIndex].Role == role && canMergePartialPromptBlock(role) {
+		progress.blocks[lastIndex].Content += content
+		return
+	}
+	progress.blocks = append(progress.blocks, partialPromptBlock{Role: role, Content: content})
+}
+
+func canMergePartialPromptBlock(role database.Role) bool {
+	return role == database.RoleAssistant || role == database.RoleThinking
+}
+
+func (runtime *Runtime) appendPartialPromptFailure(
+	ctx context.Context,
+	sessionID string,
+	userEntryID string,
+	progress *partialPromptProgress,
+	promptErr error,
+) error {
+	parentID := &userEntryID
+	for _, block := range progress.persistableBlocks() {
+		message := database.MessageEntity{
+			Timestamp: time.Now().UTC(),
+			Role:      block.Role,
+			Content:   block.Content,
+			Provider:  runtime.cfg.Assistant.Provider,
+			Model:     runtime.cfg.Assistant.Model,
+		}
+		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
+		if err != nil {
+			return oops.In("assistant").Code("append_partial_prompt").Wrapf(err, "append partial prompt progress")
+		}
+		runtime.dispatchMessageAppend(ctx, entry)
+		parentID = &entry.ID
+	}
+	message := database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleCustom,
+		Content:   "[system] " + promptErr.Error(),
+		Provider:  runtime.cfg.Assistant.Provider,
+		Model:     runtime.cfg.Assistant.Model,
+	}
+	entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
+	if err != nil {
+		return oops.In("assistant").Code("append_prompt_error").Wrapf(err, "append prompt error")
+	}
+	runtime.dispatchMessageAppend(ctx, entry)
+
+	return nil
+}
+
+func (progress *partialPromptProgress) persistableBlocks() []partialPromptBlock {
+	if progress == nil {
+		return nil
+	}
+	if len(progress.blocks) > 0 {
+		return progressBlocks(progress.blocks)
+	}
+	return progressBlocks(progress.fallbackBlocks)
+}
+
+func progressBlocks(blocks []partialPromptBlock) []partialPromptBlock {
+	if len(blocks) == 0 {
+		return nil
+	}
+	clone := make([]partialPromptBlock, len(blocks))
+	copy(clone, blocks)
+
+	return clone
 }
 
 func formatToolEvent(toolEvent *ToolEvent) string {

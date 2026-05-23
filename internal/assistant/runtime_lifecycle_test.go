@@ -95,6 +95,7 @@ func TestRuntime_PromptEmitsOrderedSessionTurnLifecycleEvents(t *testing.T) {
 				"agent_start|||session",
 				"turn_start|||session",
 				"context_build|||session",
+				"message_append|custom||session",
 				"turn_end||error|session",
 				"agent_end||error|session",
 			}},
