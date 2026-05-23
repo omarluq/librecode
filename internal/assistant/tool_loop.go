@@ -32,13 +32,14 @@ func validateToolCalls(calls []toolCall) error {
 func executeToolCalls(
 	ctx context.Context,
 	registry *tool.Registry,
+	cwd string,
 	calls []toolCall,
 	onEvent func(StreamEvent),
 	onToolCall func(context.Context, ToolCallEvent),
 	onToolResult func(context.Context, *ToolEvent),
 ) ([]any, []ToolEvent) {
 	if registry == nil {
-		registry = tool.NewRegistry("")
+		registry = tool.NewRegistry(cwd)
 	}
 	outputs := make([]any, 0, len(calls))
 	events := make([]ToolEvent, 0, len(calls))

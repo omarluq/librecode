@@ -57,6 +57,7 @@ func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
 	outputs, events := executeToolCalls(
 		context.Background(),
 		newToolRegistryForTest(t),
+		t.TempDir(),
 		[]toolCall{{
 			Arguments:     map[string]any{jsonPathKey: "missing.txt"},
 			ID:            testCallID,

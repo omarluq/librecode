@@ -3,6 +3,8 @@ package tool
 import (
 	"context"
 
+	"github.com/samber/oops"
+
 	"github.com/omarluq/librecode/internal/extension"
 )
 
@@ -42,7 +44,11 @@ func (executor *ExtensionExecutor) Definition() Definition {
 func (executor *ExtensionExecutor) Execute(ctx context.Context, input map[string]any) (Result, error) {
 	result, err := executor.runner.ExecuteTool(ctx, string(executor.definition.Name), input)
 	if err != nil {
-		return emptyToolResult(), err
+		return emptyToolResult(), oops.
+			In("tool").
+			Code("execute_extension_tool").
+			With("tool", executor.definition.Name).
+			Wrapf(err, "execute extension tool")
 	}
 
 	return TextResult(result.Content, result.Details), nil
