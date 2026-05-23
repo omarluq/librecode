@@ -3,6 +3,7 @@ package tool_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -64,6 +65,17 @@ func TestRegistry_ExecuteJSONRunsBashInWorkingDirectory(t *testing.T) {
 	})
 
 	assert.Contains(t, result.Text(), "ok")
+}
+
+func TestRegistry_RegisterRejectsDuplicateTool(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+
+	err := registry.Register(tool.NewReadTool(t.TempDir()))
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, tool.ErrDuplicateTool))
 }
 
 func TestRegistry_ExecuteJSONRejectsEmptyWriteContent(t *testing.T) {

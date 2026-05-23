@@ -38,6 +38,7 @@ func NewFindTool(cwd string) *FindTool {
 // Definition returns find tool metadata.
 func (findTool *FindTool) Definition() Definition {
 	return Definition{
+		Schema:        nil,
 		Name:          NameFind,
 		Label:         "find",
 		Description:   findDescription(),

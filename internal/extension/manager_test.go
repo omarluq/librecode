@@ -564,6 +564,7 @@ func assertLoadedTool(t *testing.T, tools []extension.Tool, extensionName string
 
 	require.Len(t, tools, 1)
 	assert.Equal(t, extension.Tool{
+		InputSchema: map[string]any{},
 		Name:        "echo",
 		Description: "Echo text",
 		Extension:   extensionName,

@@ -776,6 +776,10 @@ func (runtime *Runtime) modelResponse(
 		return nil, err
 	}
 	runtime.emitUsage(ctx, onEvent, contextResult.Usage)
+	registry, err := newToolRegistry(cwd, runtime.extensions)
+	if err != nil {
+		return nil, err
+	}
 	request := runtime.modelCompletionRequest(
 		&selectedModel,
 		auth,
@@ -783,6 +787,7 @@ func (runtime *Runtime) modelResponse(
 		sessionID,
 		contextResult.SystemPrompt,
 		cwd,
+		registry,
 		onEvent,
 	)
 	result, err := runtime.completeWithRetry(ctx, request, onRetry)
@@ -807,12 +812,14 @@ func (runtime *Runtime) modelCompletionRequest(
 	sessionID string,
 	systemPrompt string,
 	cwd string,
+	registry *tool.Registry,
 	onEvent func(StreamEvent),
 ) *CompletionRequest {
 	return &CompletionRequest{
 		OnEvent:       onEvent,
 		OnToolCall:    runtime.emitToolCall,
 		OnToolResult:  runtime.emitToolResult,
+		ToolRegistry:  registry,
 		SessionID:     sessionID,
 		SystemPrompt:  systemPrompt,
 		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,

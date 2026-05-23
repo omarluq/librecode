@@ -13,6 +13,9 @@ import (
 // ErrUnknownTool is returned when a registry cannot resolve a tool name.
 var ErrUnknownTool = errors.New("tool: unknown tool")
 
+// ErrDuplicateTool is returned when a registry already has an executor for a tool name.
+var ErrDuplicateTool = errors.New("tool: duplicate tool")
+
 // Registry owns built-in tool executors for a working directory.
 type Registry struct {
 	executors map[Name]Executor
@@ -42,6 +45,21 @@ func NewRegistry(cwd string) *Registry {
 // CWD returns the registry working directory.
 func (registry *Registry) CWD() string {
 	return registry.cwd
+}
+
+// Register adds a tool executor to the registry.
+func (registry *Registry) Register(executor Executor) error {
+	definition := executor.Definition()
+	if _, exists := registry.executors[definition.Name]; exists {
+		return oops.
+			In("tool").
+			Code("duplicate_tool").
+			With("tool", definition.Name).
+			Wrapf(ErrDuplicateTool, "register tool")
+	}
+	registry.executors[definition.Name] = executor
+
+	return nil
 }
 
 // Definitions returns sorted tool definitions.

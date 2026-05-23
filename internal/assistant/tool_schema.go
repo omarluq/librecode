@@ -6,15 +6,15 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-func responseTools() []map[string]any {
-	definitions := tool.AllDefinitions()
+func responseTools(request *CompletionRequest) []map[string]any {
+	definitions := requestToolDefinitions(request)
 	tools := make([]map[string]any, 0, len(definitions))
 	for _, definition := range definitions {
 		tools = append(tools, map[string]any{
 			jsonTypeKey:        functionToolType,
 			jsonToolNameKey:    string(definition.Name),
 			jsonDescriptionKey: definition.Description,
-			jsonToolParamsKey:  toolParameterSchema(definition.Name),
+			jsonToolParamsKey:  toolParameterSchema(&definition),
 			"strict":           false,
 		})
 	}
@@ -22,8 +22,8 @@ func responseTools() []map[string]any {
 	return tools
 }
 
-func openAIChatTools() []map[string]any {
-	definitions := tool.AllDefinitions()
+func openAIChatTools(request *CompletionRequest) []map[string]any {
+	definitions := requestToolDefinitions(request)
 	tools := make([]map[string]any, 0, len(definitions))
 	for _, definition := range definitions {
 		tools = append(tools, map[string]any{
@@ -31,12 +31,20 @@ func openAIChatTools() []map[string]any {
 			"function": map[string]any{
 				jsonToolNameKey:    string(definition.Name),
 				jsonDescriptionKey: definition.Description,
-				jsonToolParamsKey:  toolParameterSchema(definition.Name),
+				jsonToolParamsKey:  toolParameterSchema(&definition),
 			},
 		})
 	}
 
 	return tools
+}
+
+func requestToolDefinitions(request *CompletionRequest) []tool.Definition {
+	if request != nil && request.ToolRegistry != nil {
+		return request.ToolRegistry.Definitions()
+	}
+
+	return tool.AllDefinitions()
 }
 
 func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
@@ -51,30 +59,36 @@ func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
 	return arguments
 }
 
-func toolParameterSchema(name tool.Name) map[string]any {
-	var schema map[string]any
-	switch name {
-	case tool.NameRead:
-		schema = readToolSchema()
-	case tool.NameBash:
-		schema = bashToolSchema()
-	case tool.NameEdit:
-		schema = editToolSchema()
-	case tool.NameWrite:
-		schema = writeToolSchema()
-	case tool.NameGrep:
-		schema = grepToolSchema()
-	case tool.NameFind:
-		schema = findToolSchema()
-	case tool.NameLS:
-		schema = lsToolSchema()
+var builtinToolSchemas = map[tool.Name]func() map[string]any{
+	tool.NameRead:  readToolSchema,
+	tool.NameBash:  bashToolSchema,
+	tool.NameEdit:  editToolSchema,
+	tool.NameWrite: writeToolSchema,
+	tool.NameGrep:  grepToolSchema,
+	tool.NameFind:  findToolSchema,
+	tool.NameLS:    lsToolSchema,
+}
+
+func toolParameterSchema(definition *tool.Definition) map[string]any {
+	if definition != nil && len(definition.Schema) > 0 {
+		return cloneToolSchema(definition.Schema)
 	}
-	if schema == nil {
-		return map[string]any{jsonTypeKey: jsonObjectType, "additionalProperties": true}
+	if definition == nil {
+		return freeformToolSchema()
 	}
+
+	factory, ok := builtinToolSchemas[definition.Name]
+	if !ok {
+		return freeformToolSchema()
+	}
+	schema := factory()
 	schema["additionalProperties"] = false
 
 	return schema
+}
+
+func freeformToolSchema() map[string]any {
+	return map[string]any{jsonTypeKey: jsonObjectType, "additionalProperties": true}
 }
 
 func readToolSchema() map[string]any {
@@ -179,6 +193,15 @@ func lsToolSchema() map[string]any {
 			jsonLimitKey: integerSchema("Optional maximum number of entries."),
 		},
 	}
+}
+
+func cloneToolSchema(schema map[string]any) map[string]any {
+	clone := make(map[string]any, len(schema))
+	for key, value := range schema {
+		clone[key] = value
+	}
+
+	return clone
 }
 
 func stringSchema(description string) map[string]any {

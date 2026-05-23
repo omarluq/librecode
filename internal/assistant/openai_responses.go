@@ -60,7 +60,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		input = append(input, statelessResponseOutputItems(providerResult.OutputItems)...)
 		outputs, events := executeToolCalls(
 			ctx,
-			request.CWD,
+			request.ToolRegistry,
 			providerResult.ToolCalls,
 			request.OnEvent,
 			request.OnToolCall,
@@ -73,7 +73,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 
 func responsesPayload(request *CompletionRequest, input []any, stream bool) map[string]any {
 	payload := responsesBasePayload(request, input, stream)
-	payload["tools"] = responseTools()
+	payload["tools"] = responseTools(request)
 	payload[jsonToolChoiceKey] = "auto"
 	payload["parallel_tool_calls"] = true
 
