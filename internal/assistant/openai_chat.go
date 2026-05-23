@@ -79,6 +79,7 @@ func executeOpenAIChatToolCalls(
 	_, events := executeToolCalls(
 		ctx,
 		request.ToolRegistry,
+		request.CWD,
 		calls,
 		request.OnEvent,
 		request.OnToolCall,

@@ -61,6 +61,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		outputs, events := executeToolCalls(
 			ctx,
 			request.ToolRegistry,
+			request.CWD,
 			providerResult.ToolCalls,
 			request.OnEvent,
 			request.OnToolCall,

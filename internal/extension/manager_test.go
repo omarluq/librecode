@@ -571,6 +571,55 @@ func assertLoadedTool(t *testing.T, tools []extension.Tool, extensionName string
 	}, tools[0])
 }
 
+func TestManager_RegisterToolPreservesInputSchema(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		expectedSchema map[string]any
+		name           string
+		schemaArg      string
+	}{
+		{
+			expectedSchema: map[string]any{},
+			name:           "empty schema by default",
+			schemaArg:      "",
+		},
+		{
+			expectedSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"foo": map[string]any{"type": "string"},
+				},
+			},
+			name:      "non-empty schema",
+			schemaArg: `, { type = "object", properties = { foo = { type = "string" } } }`,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			source := `
+local lc = require("librecode")
+lc.register_tool("echo", "Echo text", function(args)
+  return { content = args.foo or "" }
+end` + testCase.schemaArg + `)
+`
+			extensionPath := filepath.Join(t.TempDir(), "tool.lua")
+			require.NoError(t, writeTestFile(extensionPath, source))
+			manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+			t.Cleanup(manager.Shutdown)
+
+			require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
+
+			tools := manager.Tools()
+			require.Len(t, tools, 1)
+			assert.Equal(t, testCase.expectedSchema, tools[0].InputSchema)
+		})
+	}
+}
+
 func assertLoadedExtension(t *testing.T, loaded []extension.LoadedExtension) {
 	t.Helper()
 

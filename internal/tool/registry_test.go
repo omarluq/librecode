@@ -78,6 +78,17 @@ func TestRegistry_RegisterRejectsDuplicateTool(t *testing.T) {
 	assert.True(t, errors.Is(err, tool.ErrDuplicateTool))
 }
 
+func TestRegistry_Metadata(t *testing.T) {
+	t.Parallel()
+
+	cwd := t.TempDir()
+	registry := tool.NewRegistry(cwd)
+
+	assert.Equal(t, cwd, registry.CWD())
+	assert.NotEmpty(t, registry.Definitions())
+	assert.Len(t, tool.AllDefinitions(), len(registry.Definitions()))
+}
+
 func TestRegistry_ExecuteJSONRejectsEmptyWriteContent(t *testing.T) {
 	t.Parallel()
 
