@@ -1,9 +1,11 @@
 package terminal_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/terminal"
@@ -145,4 +147,42 @@ func TestContextBreakdownLinesSortsAndSkipsEmptyValues(t *testing.T) {
 	})
 
 	assert.Equal(t, []string{"  - history: 1.2k", "  - system: 50"}, lines)
+}
+
+func TestShowContextInfoHandlesContextCommandWithoutUsage(t *testing.T) {
+	t.Parallel()
+
+	app := terminal.NewAppForTest()
+
+	require.NoError(t, app.ShowContextInfoForTest("/context"))
+
+	messages := app.MessageContentsForTest()
+	require.NotEmpty(t, messages)
+	assert.Equal(t, "context:", messages[len(messages)-1])
+}
+
+func TestShowContextInfoDisplaysSummaryAndBreakdown(t *testing.T) {
+	t.Parallel()
+
+	app := terminal.NewAppForTest()
+	app.SetTokenUsageForTest(model.TokenUsage{
+		Breakdown: map[string]int{
+			testBreakdownExtensions: 0,
+			testBreakdownHistory:    1200,
+			testBreakdownSystem:     50,
+		},
+		ContextWindow: 1000,
+		ContextTokens: 250,
+		InputTokens:   0,
+		OutputTokens:  0,
+	})
+
+	require.NoError(t, app.ShowContextInfoForTest("/context now"))
+
+	messages := app.MessageContentsForTest()
+	require.NotEmpty(t, messages)
+	message := messages[len(messages)-1]
+	assert.Contains(t, message, "context:")
+	assert.Contains(t, message, "- ctx 250/1.0k 25%")
+	assert.True(t, strings.Contains(message, "- breakdown:\n  - history: 1.2k\n  - system: 50"))
 }

@@ -10,7 +10,7 @@ import (
 )
 
 func (app *App) showContextInfo(ctx context.Context, original string) error {
-	if !app.tokenUsage.HasAny() {
+	if !app.tokenUsage.HasAny() && !isContextCommand(original) {
 		app.sendPrompt(ctx, original)
 		return nil
 	}
@@ -27,6 +27,11 @@ func (app *App) showContextInfo(ctx context.Context, original string) error {
 	app.addMessage(database.RoleCustom, strings.Join(lines, "\n"))
 
 	return nil
+}
+
+func isContextCommand(original string) bool {
+	trimmed := strings.TrimSpace(original)
+	return trimmed == "/context" || strings.HasPrefix(trimmed, "/context ")
 }
 
 func contextBreakdownLines(breakdown map[string]int) []string {

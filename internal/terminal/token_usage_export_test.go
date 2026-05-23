@@ -1,6 +1,8 @@
 package terminal
 
 import (
+	"context"
+
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -45,4 +47,17 @@ func (app *App) TruncateMessagesForTest(length int) {
 
 func (app *App) AddMessageForTest(role, content string) {
 	app.addMessage(database.Role(role), content)
+}
+
+func (app *App) ShowContextInfoForTest(original string) error {
+	return app.showContextInfo(context.Background(), original)
+}
+
+func (app *App) MessageContentsForTest() []string {
+	contents := make([]string, 0, len(app.messages))
+	for _, message := range app.messages {
+		contents = append(contents, message.Content)
+	}
+
+	return contents
 }
