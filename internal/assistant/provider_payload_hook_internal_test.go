@@ -88,7 +88,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHookToOpenAIResponses(t *test
 	assert.Equal(t, "mutated", capture.Body["responses_metadata"])
 }
 
-func TestApplyProviderRequestHookObservesBeforeMutating(t *testing.T) {
+func TestApplyProviderRequestHookSkipsObserveWhenMutating(t *testing.T) {
 	t.Parallel()
 
 	request := providerPayloadHookRequest("https://example.test")
@@ -113,7 +113,7 @@ func TestApplyProviderRequestHookObservesBeforeMutating(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"observe:1", "mutate:1"}, calls)
+	assert.Equal(t, []string{"mutate:1"}, calls)
 }
 
 func TestApplyProviderRequestHookHandlesNilRequest(t *testing.T) {
