@@ -30,6 +30,23 @@ func TestShouldRetryModelErrorHandlesDeadlineExceeded(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "auth timeout is not retried",
+			err: oops.In("assistant").
+				Code("responses_http").
+				Wrapf(
+					context.DeadlineExceeded,
+					"authentication request: Client.Timeout exceeded while awaiting headers",
+				),
+			want: false,
+		},
+		{
+			name: "wrapped caller deadline is not retried",
+			err: oops.In("assistant").
+				Code("responses_http").
+				Wrapf(context.DeadlineExceeded, "request provider response"),
+			want: false,
+		},
+		{
 			name: "caller deadline is not retried",
 			err:  context.DeadlineExceeded,
 			want: false,

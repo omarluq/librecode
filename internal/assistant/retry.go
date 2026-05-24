@@ -91,6 +91,13 @@ func ShouldRetryModelError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return false
 	}
+	message := strings.ToLower(err.Error())
+	if nonRetryableProviderMessage(message) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return retryableDeadlineExceeded(message)
+	}
 	if code, ok := providerErrorCode(err); ok {
 		if nonRetryableProviderCode(code) {
 			return false
@@ -102,24 +109,23 @@ func ShouldRetryModelError(err error) bool {
 	if status, ok := providerErrorStatus(err); ok {
 		return retryableStatus(status)
 	}
-	message := strings.ToLower(err.Error())
-	if errors.Is(err, context.DeadlineExceeded) {
-		return retryableDeadlineExceeded(err, message)
-	}
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		return true
 	}
-	if nonRetryableProviderMessage(message) {
-		return false
-	}
 	return retryableProviderMessage(message)
 }
 
-func retryableDeadlineExceeded(_ error, message string) bool {
-	return strings.Contains(message, "client.timeout exceeded") ||
-		strings.Contains(message, "awaiting headers") ||
-		strings.Contains(message, "request provider response")
+func retryableDeadlineExceeded(message string) bool {
+	// Match provider/client timeout details, not wrapper call-site labels such as
+	// "request provider response", so caller-owned deadlines remain non-retryable.
+	providerTimeout := strings.Contains(message, "client.timeout exceeded") ||
+		strings.Contains(message, "awaiting headers")
+	if !providerTimeout {
+		return false
+	}
+
+	return !nonRetryableProviderMessage(message)
 }
 
 func providerErrorCode(err error) (string, bool) {
