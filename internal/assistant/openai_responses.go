@@ -41,7 +41,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	result := &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()}
 	for {
 		payload := responsesPayload(request, input, stream)
-		providerRequest, err := applyProviderRequestHook(ctx, request, payload, headers)
+		providerRequest, err := applyProviderRequestHook(ctx, request, payload, cloneStringMap(headers))
 		if err != nil {
 			return nil, err
 		}

@@ -90,13 +90,24 @@ func TestManager_DispatchLifecycleCollectsProviderRequestMutation(t *testing.T) 
 
 	manager := loadTestExtension(t, `
 local lc = require("librecode")
-lc.on("before_provider_request", function(event)
+lc.on("before_provider_request", { priority = 10 }, function(event)
   event.payload.payload.marker = "changed"
   return {
     payload = event.payload,
     provider_request = {
       headers = {
         ["X-Debug"] = "yes",
+        ["X-Shared"] = "first",
+      },
+    },
+  }
+end)
+lc.on("before_provider_request", { priority = 1 }, function(event)
+  return {
+    provider_request = {
+      headers = {
+        ["X-Trace"] = "trace-id",
+        ["X-Shared"] = "second",
       },
     },
   }
@@ -113,7 +124,11 @@ end)
 	payload, ok := result.Payload["payload"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "changed", payload["marker"])
-	assert.Equal(t, map[string]string{"X-Debug": "yes"}, result.ProviderRequest.Headers)
+	assert.Equal(t, map[string]string{
+		"X-Debug":  "yes",
+		"X-Shared": "second",
+		"X-Trace":  "trace-id",
+	}, result.ProviderRequest.Headers)
 }
 
 func TestManager_DispatchLifecycleRequiresName(t *testing.T) {
