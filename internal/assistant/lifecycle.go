@@ -65,13 +65,14 @@ func (runtime *Runtime) dispatchLifecycle(
 	runtime.emit(ctx, string(name), payload)
 	if runtime.extensions == nil {
 		return extension.LifecycleDispatchResult{
-			Payload:      cloneAnyMap(payload),
-			Name:         string(name),
-			Errors:       []string{},
-			Duration:     0,
-			HandlerCount: 0,
-			Consumed:     false,
-			Stopped:      false,
+			Payload:         cloneAnyMap(payload),
+			ProviderRequest: extension.ProviderRequestMutation{Headers: map[string]string{}},
+			Name:            string(name),
+			Errors:          []string{},
+			Duration:        0,
+			HandlerCount:    0,
+			Consumed:        false,
+			Stopped:         false,
 		}, nil
 	}
 	result, err := runtime.extensions.DispatchLifecycle(ctx, extension.LifecycleEvent{

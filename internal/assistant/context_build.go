@@ -246,10 +246,10 @@ func contextBreakdown(
 	contributions []contextContribution,
 ) map[string]int {
 	breakdown := map[string]int{
-		"system":     systemTokens,
-		"skills":     skillTokens,
-		"history":    historyTokens,
-		"extensions": 0,
+		jsonSystemRole: systemTokens,
+		"skills":       skillTokens,
+		"history":      historyTokens,
+		"extensions":   0,
 	}
 	for index := range contributions {
 		breakdown["extensions"] += contributions[index].Tokens

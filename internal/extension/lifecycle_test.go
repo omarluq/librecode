@@ -85,6 +85,37 @@ end)
 	assert.Contains(t, result.Errors[0], "boom")
 }
 
+func TestManager_DispatchLifecycleCollectsProviderRequestMutation(t *testing.T) {
+	t.Parallel()
+
+	manager := loadTestExtension(t, `
+local lc = require("librecode")
+lc.on("before_provider_request", function(event)
+  event.payload.payload.marker = "changed"
+  return {
+    payload = event.payload,
+    provider_request = {
+      headers = {
+        ["X-Debug"] = "yes",
+      },
+    },
+  }
+end)
+`)
+	result, err := manager.DispatchLifecycle(context.Background(), extension.LifecycleEvent{
+		Name: extension.LifecycleBeforeProviderRequest,
+		Payload: map[string]any{
+			"payload": map[string]any{},
+		},
+	})
+
+	require.NoError(t, err)
+	payload, ok := result.Payload["payload"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "changed", payload["marker"])
+	assert.Equal(t, map[string]string{"X-Debug": "yes"}, result.ProviderRequest.Headers)
+}
+
 func TestManager_DispatchLifecycleRequiresName(t *testing.T) {
 	t.Parallel()
 

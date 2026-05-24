@@ -118,10 +118,10 @@ func anthropicPayload(request *CompletionRequest, messages []map[string]any) map
 	// reasoning is available. Match production agent clients by omitting
 	// temperature unless/until librecode exposes an explicit user setting.
 	payload := map[string]any{
-		jsonModelKey: request.Model.ID,
-		"max_tokens": minPositive(request.Model.MaxTokens, 4096),
-		"messages":   messages,
-		"tools":      anthropicTools(request),
+		jsonModelKey:    request.Model.ID,
+		"max_tokens":    minPositive(request.Model.MaxTokens, 4096),
+		jsonMessagesKey: messages,
+		"tools":         anthropicTools(request),
 	}
 	if usesAnthropicOAuth(request) {
 		payload["system"] = anthropicOAuthSystemPrompt(request.SystemPrompt)
@@ -282,7 +282,12 @@ func (client *HTTPCompletionClient) requestAnthropic(
 	request *CompletionRequest,
 	payload map[string]any,
 ) (*providerResult, error) {
-	content, err := client.postJSON(ctx, endpoint, anthropicHeaders(request), payload)
+	headers := anthropicHeaders(request)
+	providerRequest, err := applyProviderRequestHook(ctx, request, payload, headers)
+	if err != nil {
+		return nil, err
+	}
+	content, err := client.postJSON(ctx, endpoint, providerRequest.Headers, providerRequest.Payload)
 	if err != nil {
 		return nil, err
 	}

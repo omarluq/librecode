@@ -748,7 +748,25 @@ end)
 
 Lifecycle payloads are intentionally bounded. `message_append` includes the appended entry text and metadata for the current message, but lifecycle events do not include full transcript history.
 
-`context_build` is the first lifecycle seam with a mutation contract. Handlers may return bounded `contributions` entries. Each contribution must include non-empty `content` and is capped by the host. The context payload exposes `breakdown.system`, `breakdown.skills`, `breakdown.history`, and `breakdown.extensions` token estimates so extensions can reason about context budget without seeing the full transcript.
+`context_build` has a bounded mutation contract. Handlers may return `contributions` entries. Each contribution must include non-empty `content` and is capped by the host. The context payload exposes `breakdown.system`, `breakdown.skills`, `breakdown.history`, and `breakdown.extensions` token estimates so extensions can reason about context budget without seeing the full transcript.
+
+`before_provider_request` has a conservative mutation contract. The payload exposes request metadata, a redacted header map, and a provider `payload` object. Handlers may return a modified `payload` and `provider_request.headers` for non-sensitive headers:
+
+```lua
+lc.on("before_provider_request", function(event)
+  event.payload.payload.metadata = "debug-marker"
+  return {
+    payload = event.payload,
+    provider_request = {
+      headers = {
+        ["X-Debug-Run"] = "local",
+      },
+    },
+  }
+end)
+```
+
+Sensitive headers such as `Authorization`, `x-api-key`, `cookie`, and `proxy-authorization` are redacted in payloads and cannot be modified by provider hooks.
 
 ## Current limitations
 
