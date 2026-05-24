@@ -52,11 +52,17 @@ func applyProviderRequestHook(
 	if request == nil {
 		return providerHookOutput{Payload: input.Payload, Headers: input.Headers}, nil
 	}
+	if request.OnProviderRequest != nil {
+		output, err := request.OnProviderRequest(ctx, input)
+		if err != nil {
+			return providerHookOutput{}, oops.In("assistant").
+				Code("provider_request_hook_failed").
+				Wrapf(err, "apply provider request hook")
+		}
+		return output, nil
+	}
 	if request.OnProviderObserve != nil {
 		request.OnProviderObserve(ctx, request, providerAttempt(request))
-	}
-	if request.OnProviderRequest != nil {
-		return request.OnProviderRequest(ctx, input)
 	}
 
 	return providerHookOutput{Payload: input.Payload, Headers: input.Headers}, nil
@@ -77,10 +83,14 @@ func (runtime *Runtime) dispatchProviderRequestHook(
 	payload := providerRequestLifecyclePayload(input)
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleBeforeProviderRequest, payload)
 	if err != nil {
-		return providerHookOutput{}, err
+		return providerHookOutput{}, oops.In("assistant").
+			Code("before_provider_request_dispatch_failed").
+			Wrapf(err, "dispatch before_provider_request lifecycle")
 	}
 	if err := validateProviderRequestMutation(result.ProviderRequest); err != nil {
-		return providerHookOutput{}, err
+		return providerHookOutput{}, oops.In("assistant").
+			Code("provider_request_mutation_invalid").
+			Wrapf(err, "validate provider_request mutation")
 	}
 
 	return providerHookOutput{

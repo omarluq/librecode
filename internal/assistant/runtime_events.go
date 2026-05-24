@@ -17,7 +17,7 @@ func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *Comple
 	if request == nil {
 		return
 	}
-	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleBeforeProviderRequest, map[string]any{
+	runtime.emit(ctx, string(extension.LifecycleBeforeProviderRequest), map[string]any{
 		lifecycleAPIKey:           request.Model.API,
 		lifecycleAttemptKey:       attempt,
 		providerRequestHeadersKey: redactedHeaders(request.Auth.Headers),
