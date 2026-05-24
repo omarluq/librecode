@@ -88,8 +88,8 @@ type CompletionRequest struct {
 	OnEvent           func(StreamEvent)                              `json:"-"`
 	OnProviderObserve func(context.Context, *CompletionRequest, int) `json:"-"`
 	OnProviderRequest ProviderRequestHook                            `json:"-"`
-	OnToolCall        func(context.Context, ToolCallEvent)           `json:"-"`
-	OnToolResult      func(context.Context, *ToolEvent)              `json:"-"`
+	OnToolCall        func(context.Context, *ToolCallEvent) error    `json:"-"`
+	OnToolResult      func(context.Context, *ToolEvent) error        `json:"-"`
 	ToolRegistry      *tool.Registry                                 `json:"-"`
 	SessionID         string                                         `json:"session_id"`
 	SystemPrompt      string                                         `json:"system_prompt"`

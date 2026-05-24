@@ -550,8 +550,8 @@ func (partialFailureCompletionClient) Complete(
 	})
 	request.OnEvent(assistant.StreamEvent{
 		ToolEvent: &assistant.ToolEvent{
-			Name:          "read",
-			ArgumentsJSON: `{"path":"README.md"}`,
+			Name:          testToolName,
+			ArgumentsJSON: testToolArgsJSON,
 			DetailsJSON:   "",
 			Result:        "file content",
 			Error:         "",

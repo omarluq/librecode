@@ -194,8 +194,8 @@ func TestRuntime_PromptEmitsSideEffectMessageAppendEvents(t *testing.T) {
 			Thinking: []string{"reasoning"},
 			ToolEvents: []assistant.ToolEvent{
 				{
-					Name:          "read",
-					ArgumentsJSON: `{"path":"README.md"}`,
+					Name:          testToolName,
+					ArgumentsJSON: testToolArgsJSON,
 					DetailsJSON:   "",
 					Result:        "contents",
 					Error:         "",
