@@ -249,17 +249,26 @@ func TestRuntime_PromptPersistsPartialProgressOnProviderFailure(t *testing.T) {
 
 	require.Error(t, err)
 	assert.EqualError(t, err, "provider returned an empty response")
-	require.NotEmpty(t, request.SessionID)
-	messages, err := repository.Messages(context.Background(), request.SessionID)
-	require.NoError(t, err)
-	require.Len(t, messages, 4)
-	assert.Equal(t, database.RoleUser, messages[0].Role)
-	assert.Equal(t, database.RoleAssistant, messages[1].Role)
-	assert.Equal(t, "partial answer\n\nwith whitespace", messages[1].Content)
-	assert.Equal(t, database.RoleToolResult, messages[2].Role)
-	assert.Contains(t, messages[2].Content, "tool: read")
-	assert.Equal(t, database.RoleCustom, messages[3].Role)
-	assert.Contains(t, messages[3].Content, "provider returned an empty response")
+	assertPersistedPartialFailure(t, repository, request.SessionID)
+}
+
+func TestRuntime_PromptReportsPersistenceFailureWhenFailedProgressCannotPersist(t *testing.T) {
+	t.Parallel()
+
+	client := partialFailureCompletionClient{}
+	runtime, _ := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "fail persistence", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request.OnEvent = func(assistant.StreamEvent) {
+		cancel()
+	}
+
+	_, err := runtime.Prompt(ctx, request)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "persist failed prompt progress")
+	assert.Contains(t, err.Error(), "append partial prompt progress")
 }
 
 func TestRuntime_PromptDoesNotRetryNonTransientModelErrors(t *testing.T) {
@@ -553,6 +562,26 @@ func (partialFailureCompletionClient) Complete(
 	})
 
 	return nil, errors.New("provider returned an empty response")
+}
+
+func assertPersistedPartialFailure(
+	t *testing.T,
+	repository *database.SessionRepository,
+	sessionID string,
+) {
+	t.Helper()
+
+	require.NotEmpty(t, sessionID)
+	messages, err := repository.Messages(context.Background(), sessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 4)
+	assert.Equal(t, database.RoleUser, messages[0].Role)
+	assert.Equal(t, database.RoleAssistant, messages[1].Role)
+	assert.Equal(t, "partial answer\n\nwith whitespace", messages[1].Content)
+	assert.Equal(t, database.RoleToolResult, messages[2].Role)
+	assert.Contains(t, messages[2].Content, "tool: read")
+	assert.Equal(t, database.RoleCustom, messages[3].Role)
+	assert.Contains(t, messages[3].Content, "provider returned an empty response")
 }
 
 type testCompletionClient struct{}

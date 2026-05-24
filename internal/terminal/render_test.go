@@ -80,21 +80,39 @@ func TestApplyPromptErrorKeepsStreamedProgressVisible(t *testing.T) {
 	app.working = true
 	app.activePrompt = newTestActivePrompt(nil)
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "partial"))
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptThinkingDelta, "\n\n"))
+	app.streamingBlocks = append(app.streamingBlocks,
+		newChatMessage(database.RoleUser, "ignored user echo"),
+		newChatMessage(database.RoleBashExecution, "bash output"),
+		newChatMessage(database.RoleCustom, "custom progress"),
+		newChatMessage(database.RoleBranchSummary, "ignored branch"),
+		newChatMessage(database.RoleCompactionSummary, "ignored compaction"),
+	)
 	toolEvent := newTestAsyncEvent(asyncEventPromptToolResult, "")
 	toolEvent.ToolEvent = newTestToolEvent("read", "file content")
 	app.handlePromptStreamEvent(context.Background(), toolEvent)
 
 	app.applyPromptError("provider returned an empty response", app.activePrompt.ID)
 
+	assertPromptErrorMessages(t, app)
+	assert.Empty(t, app.streamingBlocks)
+}
+
+func assertPromptErrorMessages(t *testing.T, app *App) {
+	t.Helper()
+
 	assert.False(t, app.working)
-	require.Len(t, app.messages, 3)
+	require.Len(t, app.messages, 5)
 	assert.Equal(t, database.RoleAssistant, app.messages[0].Role)
 	assert.Equal(t, "partial", app.messages[0].Content)
-	assert.Equal(t, database.RoleToolResult, app.messages[1].Role)
-	assert.Contains(t, app.messages[1].Content, "tool: read")
+	assert.Equal(t, database.RoleBashExecution, app.messages[1].Role)
+	assert.Equal(t, "bash output", app.messages[1].Content)
 	assert.Equal(t, database.RoleCustom, app.messages[2].Role)
-	assert.Equal(t, "provider returned an empty response", app.messages[2].Content)
-	assert.Empty(t, app.streamingBlocks)
+	assert.Equal(t, "custom progress", app.messages[2].Content)
+	assert.Equal(t, database.RoleToolResult, app.messages[3].Role)
+	assert.Contains(t, app.messages[3].Content, "tool: read")
+	assert.Equal(t, database.RoleCustom, app.messages[4].Role)
+	assert.Equal(t, "provider returned an empty response", app.messages[4].Content)
 }
 
 func TestFooterLinesIgnoreTransientStatus(t *testing.T) {
