@@ -68,12 +68,15 @@ func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
 		func(event StreamEvent) {
 			streamEvents = append(streamEvents, event)
 		},
-		func(_ context.Context, event ToolCallEvent) {
-			toolCalls = append(toolCalls, event)
+		func(_ context.Context, event *ToolCallEvent) error {
+			require.NotNil(t, event)
+			toolCalls = append(toolCalls, *event)
+			return nil
 		},
-		func(_ context.Context, event *ToolEvent) {
+		func(_ context.Context, event *ToolEvent) error {
 			require.NotNil(t, event)
 			toolResults = append(toolResults, *event)
+			return nil
 		},
 	)
 

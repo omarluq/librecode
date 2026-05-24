@@ -67,6 +67,8 @@ type LifecycleEvent struct {
 type LifecycleDispatchResult struct {
 	Payload         map[string]any          `json:"payload"`
 	ProviderRequest ProviderRequestMutation `json:"provider_request"`
+	ToolCall        ToolCallMutation        `json:"tool_call"`
+	ToolResult      ToolResultMutation      `json:"tool_result"`
 	Name            string                  `json:"name"`
 	Errors          []string                `json:"errors"`
 	Duration        time.Duration           `json:"duration"`
@@ -78,6 +80,18 @@ type LifecycleDispatchResult struct {
 // ProviderRequestMutation contains conservative provider request changes returned by lifecycle handlers.
 type ProviderRequestMutation struct {
 	Headers map[string]string `json:"headers"`
+}
+
+// ToolCallMutation contains tool call argument changes returned by lifecycle handlers.
+type ToolCallMutation struct {
+	Arguments map[string]any `json:"arguments"`
+}
+
+// ToolResultMutation contains tool result changes returned by lifecycle handlers.
+type ToolResultMutation struct {
+	Result      *string `json:"result,omitempty"`
+	DetailsJSON *string `json:"details_json,omitempty"`
+	Error       *string `json:"error,omitempty"`
 }
 
 // LifecycleDispatcher emits runtime-neutral lifecycle events.
@@ -94,6 +108,8 @@ func (manager *Manager) DispatchLifecycle(ctx context.Context, event LifecycleEv
 	result := LifecycleDispatchResult{
 		Payload:         cloneMap(event.Payload),
 		ProviderRequest: ProviderRequestMutation{Headers: map[string]string{}},
+		ToolCall:        ToolCallMutation{Arguments: nil},
+		ToolResult:      ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil},
 		Name:            string(event.Name),
 		Errors:          []string{},
 		Duration:        0,
@@ -163,6 +179,14 @@ func applyLifecycleLuaResult(result *LifecycleDispatchResult, value lua.LValue) 
 	if providerRequest, ok := providerRequestMutationFromLua(providerRequestValue); ok {
 		result.ProviderRequest = mergeProviderRequestMutation(result.ProviderRequest, providerRequest)
 	}
+	toolCallValue := table.RawGetString("tool_call")
+	if toolCall, ok := toolCallMutationFromLua(toolCallValue); ok {
+		result.ToolCall = mergeToolCallMutation(result.ToolCall, toolCall)
+	}
+	toolResultValue := table.RawGetString("tool_result")
+	if toolResult, ok := toolResultMutationFromLua(toolResultValue); ok {
+		result.ToolResult = mergeToolResultMutation(result.ToolResult, toolResult)
+	}
 }
 
 func mergeProviderRequestMutation(base, override ProviderRequestMutation) ProviderRequestMutation {
@@ -175,6 +199,68 @@ func mergeProviderRequestMutation(base, override ProviderRequestMutation) Provid
 	}
 
 	return merged
+}
+
+func mergeToolCallMutation(base, override ToolCallMutation) ToolCallMutation {
+	if len(override.Arguments) == 0 {
+		return base
+	}
+	arguments := cloneMap(base.Arguments)
+	for key, value := range override.Arguments {
+		arguments[key] = value
+	}
+
+	return ToolCallMutation{Arguments: arguments}
+}
+
+func mergeToolResultMutation(base, override ToolResultMutation) ToolResultMutation {
+	merged := base
+	if override.Result != nil {
+		merged.Result = override.Result
+	}
+	if override.DetailsJSON != nil {
+		merged.DetailsJSON = override.DetailsJSON
+	}
+	if override.Error != nil {
+		merged.Error = override.Error
+	}
+
+	return merged
+}
+
+func toolCallMutationFromLua(value lua.LValue) (ToolCallMutation, bool) {
+	payload, ok := luaValueToGo(value).(map[string]any)
+	if !ok {
+		return ToolCallMutation{Arguments: nil}, false
+	}
+	arguments, ok := payload["arguments"].(map[string]any)
+	if !ok || len(arguments) == 0 {
+		return ToolCallMutation{Arguments: nil}, false
+	}
+
+	return ToolCallMutation{Arguments: arguments}, true
+}
+
+func toolResultMutationFromLua(value lua.LValue) (ToolResultMutation, bool) {
+	payload, ok := luaValueToGo(value).(map[string]any)
+	if !ok {
+		return ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil}, false
+	}
+	mutation := ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil}
+	if result, ok := payload["result"].(string); ok {
+		mutation.Result = &result
+	}
+	if detailsJSON, ok := payload["details_json"].(string); ok {
+		mutation.DetailsJSON = &detailsJSON
+	}
+	if errorText, ok := payload["error"].(string); ok {
+		mutation.Error = &errorText
+	}
+	if mutation.Result == nil && mutation.DetailsJSON == nil && mutation.Error == nil {
+		return ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil}, false
+	}
+
+	return mutation, true
 }
 
 func providerRequestMutationFromLua(value lua.LValue) (ProviderRequestMutation, bool) {

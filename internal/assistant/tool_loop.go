@@ -35,8 +35,8 @@ func executeToolCalls(
 	cwd string,
 	calls []toolCall,
 	onEvent func(StreamEvent),
-	onToolCall func(context.Context, ToolCallEvent),
-	onToolResult func(context.Context, *ToolEvent),
+	onToolCall func(context.Context, *ToolCallEvent) error,
+	onToolResult func(context.Context, *ToolEvent) error,
 ) ([]any, []ToolEvent) {
 	if registry == nil {
 		registry = tool.NewRegistry(cwd)
@@ -44,56 +44,131 @@ func executeToolCalls(
 	outputs := make([]any, 0, len(calls))
 	events := make([]ToolEvent, 0, len(calls))
 	for _, call := range calls {
-		emitStreamEvent(onEvent, StreamEvent{
-			ToolEvent: nil,
-			Usage:     nil,
-			Kind:      StreamEventToolStart,
-			Text:      call.Name,
-		})
-		if onToolCall != nil {
-			onToolCall(ctx, ToolCallEvent{
-				Arguments:     call.Arguments,
-				ID:            call.ID,
-				Name:          call.Name,
-				ArgumentsJSON: call.ArgumentsJSON,
-			})
-		}
-		result, err := registry.Execute(ctx, call.Name, call.Arguments)
-		resultText := result.Text()
-		detailsJSON := encodeToolDetails(result.Details)
-		event := ToolEvent{
-			Name:          call.Name,
-			ArgumentsJSON: call.ArgumentsJSON,
-			DetailsJSON:   detailsJSON,
-			Result:        resultText,
-			Error:         "",
-		}
-		if err != nil {
-			event.Error = err.Error()
-			resultText = err.Error()
-		}
-		if strings.TrimSpace(resultText) == "" {
-			resultText = "(tool returned no text output)"
-		}
-		event.Result = resultText
+		event := executeOneToolCall(ctx, registry, call, onEvent, onToolCall, onToolResult)
 		events = append(events, event)
-		if onToolResult != nil {
-			onToolResult(ctx, &event)
-		}
-		emitStreamEvent(onEvent, StreamEvent{
-			ToolEvent: &event,
-			Usage:     nil,
-			Kind:      StreamEventToolResult,
-			Text:      "",
-		})
-		outputs = append(outputs, map[string]any{
-			jsonTypeKey:   functionCallOutputType,
-			jsonCallIDKey: call.ID,
-			jsonOutputKey: toolOutputText(resultText, detailsJSON),
-		})
+		outputs = append(outputs, toolOutputForCall(call.ID, event.Result, event.DetailsJSON))
 	}
 
 	return outputs, events
+}
+
+func executeOneToolCall(
+	ctx context.Context,
+	registry *tool.Registry,
+	call toolCall,
+	onEvent func(StreamEvent),
+	onToolCall func(context.Context, *ToolCallEvent) error,
+	onToolResult func(context.Context, *ToolEvent) error,
+) ToolEvent {
+	emitToolStart(onEvent, call.Name)
+	callEvent := newToolCallEvent(call)
+	if err := dispatchToolCallHook(ctx, onToolCall, &callEvent); err != nil {
+		event := toolLifecycleErrorEvent(callEvent, err)
+		emitToolResult(onEvent, &event)
+
+		return event
+	}
+	event := runToolCall(ctx, registry, callEvent)
+	if err := dispatchToolResultHook(ctx, onToolResult, &event); err != nil {
+		event.Error = err.Error()
+		event.Result = err.Error()
+	}
+	emitToolResult(onEvent, &event)
+
+	return event
+}
+
+func emitToolStart(onEvent func(StreamEvent), name string) {
+	emitStreamEvent(onEvent, StreamEvent{
+		ToolEvent: nil,
+		Usage:     nil,
+		Kind:      StreamEventToolStart,
+		Text:      name,
+	})
+}
+
+func emitToolResult(onEvent func(StreamEvent), event *ToolEvent) {
+	emitStreamEvent(onEvent, StreamEvent{
+		ToolEvent: event,
+		Usage:     nil,
+		Kind:      StreamEventToolResult,
+		Text:      "",
+	})
+}
+
+func newToolCallEvent(call toolCall) ToolCallEvent {
+	return ToolCallEvent{
+		Arguments:     call.Arguments,
+		ID:            call.ID,
+		Name:          call.Name,
+		ArgumentsJSON: call.ArgumentsJSON,
+	}
+}
+
+func dispatchToolCallHook(
+	ctx context.Context,
+	onToolCall func(context.Context, *ToolCallEvent) error,
+	call *ToolCallEvent,
+) error {
+	if onToolCall == nil {
+		return nil
+	}
+
+	return onToolCall(ctx, call)
+}
+
+func runToolCall(ctx context.Context, registry *tool.Registry, call ToolCallEvent) ToolEvent {
+	result, err := registry.Execute(ctx, call.Name, call.Arguments)
+	resultText := result.Text()
+	detailsJSON := encodeToolDetails(result.Details)
+	if err != nil {
+		resultText = err.Error()
+	}
+	if strings.TrimSpace(resultText) == "" {
+		resultText = "(tool returned no text output)"
+	}
+	event := ToolEvent{
+		Name:          call.Name,
+		ArgumentsJSON: call.ArgumentsJSON,
+		DetailsJSON:   detailsJSON,
+		Result:        resultText,
+		Error:         "",
+	}
+	if err != nil {
+		event.Error = err.Error()
+	}
+
+	return event
+}
+
+func dispatchToolResultHook(
+	ctx context.Context,
+	onToolResult func(context.Context, *ToolEvent) error,
+	event *ToolEvent,
+) error {
+	if onToolResult == nil {
+		return nil
+	}
+
+	return onToolResult(ctx, event)
+}
+
+func toolLifecycleErrorEvent(call ToolCallEvent, err error) ToolEvent {
+	return ToolEvent{
+		Name:          call.Name,
+		ArgumentsJSON: call.ArgumentsJSON,
+		DetailsJSON:   "",
+		Result:        err.Error(),
+		Error:         err.Error(),
+	}
+}
+
+func toolOutputForCall(callID, resultText, detailsJSON string) map[string]any {
+	return map[string]any{
+		jsonTypeKey:   functionCallOutputType,
+		jsonCallIDKey: callID,
+		jsonOutputKey: toolOutputText(resultText, detailsJSON),
+	}
 }
 
 func finishTextResult(result *CompletionResult, text, emptyCode string) (bool, error) {

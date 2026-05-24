@@ -67,6 +67,8 @@ func (runtime *Runtime) dispatchLifecycle(
 		return extension.LifecycleDispatchResult{
 			Payload:         cloneAnyMap(payload),
 			ProviderRequest: extension.ProviderRequestMutation{Headers: map[string]string{}},
+			ToolCall:        extension.ToolCallMutation{Arguments: nil},
+			ToolResult:      extension.ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil},
 			Name:            string(name),
 			Errors:          []string{},
 			Duration:        0,
@@ -225,6 +227,71 @@ func turnEndLifecyclePayload(
 	}
 
 	return payload
+}
+
+func (runtime *Runtime) dispatchToolCallLifecycle(ctx context.Context, call *ToolCallEvent) error {
+	if call == nil {
+		return nil
+	}
+	payload := toolCallPayload(*call)
+	runtime.emit(ctx, string(extension.LifecycleToolCall), payload)
+	if runtime.extensions == nil {
+		return nil
+	}
+
+	result, err := runtime.extensions.DispatchLifecycle(ctx, extension.LifecycleEvent{
+		Name:    extension.LifecycleToolCall,
+		Payload: payload,
+	})
+	if err != nil {
+		return err
+	}
+	applyToolCallMutation(call, result.ToolCall)
+
+	return nil
+}
+
+func (runtime *Runtime) dispatchToolResultLifecycle(ctx context.Context, event *ToolEvent) error {
+	if event == nil {
+		return nil
+	}
+	payload := toolEventPayload(event)
+	runtime.emit(ctx, string(extension.LifecycleToolResult), payload)
+	if runtime.extensions != nil {
+		result, err := runtime.extensions.DispatchLifecycle(ctx, extension.LifecycleEvent{
+			Name:    extension.LifecycleToolResult,
+			Payload: payload,
+		})
+		if err != nil {
+			return err
+		}
+		applyToolResultMutation(event, result.ToolResult)
+	}
+	if event.Error != "" {
+		runtime.emit(ctx, string(extension.LifecycleToolError), toolEventPayload(event))
+	}
+
+	return nil
+}
+
+func applyToolCallMutation(call *ToolCallEvent, mutation extension.ToolCallMutation) {
+	if len(mutation.Arguments) == 0 {
+		return
+	}
+	call.Arguments = mutation.Arguments
+	call.ArgumentsJSON = encodeToolArguments(call.Arguments)
+}
+
+func applyToolResultMutation(event *ToolEvent, mutation extension.ToolResultMutation) {
+	if mutation.Result != nil {
+		event.Result = *mutation.Result
+	}
+	if mutation.DetailsJSON != nil {
+		event.DetailsJSON = *mutation.DetailsJSON
+	}
+	if mutation.Error != nil {
+		event.Error = *mutation.Error
+	}
 }
 
 func contextBuildLifecyclePayload(

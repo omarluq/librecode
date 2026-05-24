@@ -64,21 +64,6 @@ func (runtime *Runtime) emitProviderError(ctx context.Context, request *Completi
 	})
 }
 
-func (runtime *Runtime) emitToolCall(ctx context.Context, call ToolCallEvent) {
-	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleToolCall, toolCallPayload(call))
-}
-
-func (runtime *Runtime) emitToolResult(ctx context.Context, event *ToolEvent) {
-	if event == nil {
-		return
-	}
-	payload := toolEventPayload(event)
-	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleToolResult, payload)
-	if event.Error != "" {
-		runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleToolError, payload)
-	}
-}
-
 func toolCallPayload(call ToolCallEvent) map[string]any {
 	return map[string]any{
 		"call_id":        call.ID,

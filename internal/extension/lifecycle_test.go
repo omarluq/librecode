@@ -10,6 +10,8 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 )
 
+const testLifecyclePathKey = "path"
+
 func TestManager_DispatchLifecycleRunsHandlersInPriorityOrder(t *testing.T) {
 	t.Parallel()
 
@@ -129,6 +131,69 @@ end)
 		"X-Shared": "second",
 		"X-Trace":  "trace-id",
 	}, result.ProviderRequest.Headers)
+}
+
+func TestManager_DispatchLifecycleCollectsToolMutations(t *testing.T) {
+	t.Parallel()
+
+	manager := loadTestExtension(t, `
+local lc = require("librecode")
+lc.on("tool_call", { priority = 10 }, function(event)
+  return {
+    tool_call = {
+      arguments = {
+        path = "changed.txt",
+      },
+    },
+  }
+end)
+lc.on("tool_call", { priority = 1 }, function(event)
+  return {
+    tool_call = {
+      arguments = {
+        limit = 5,
+      },
+    },
+  }
+end)
+lc.on("tool_result", function(event)
+  return {
+    tool_result = {
+      result = "filtered",
+      details_json = "{\"filtered\":true}",
+      error = "",
+    },
+  }
+end)
+`)
+	callResult, err := manager.DispatchLifecycle(context.Background(), extension.LifecycleEvent{
+		Name: extension.LifecycleToolCall,
+		Payload: map[string]any{
+			"name":      "read",
+			"arguments": map[string]any{testLifecyclePathKey: "README.md"},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		map[string]any{"limit": float64(5), testLifecyclePathKey: "changed.txt"},
+		callResult.ToolCall.Arguments,
+	)
+
+	resultResult, err := manager.DispatchLifecycle(context.Background(), extension.LifecycleEvent{
+		Name: extension.LifecycleToolResult,
+		Payload: map[string]any{
+			"name":   "read",
+			"result": "contents",
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resultResult.ToolResult.Result)
+	require.NotNil(t, resultResult.ToolResult.DetailsJSON)
+	require.NotNil(t, resultResult.ToolResult.Error)
+	assert.Equal(t, "filtered", *resultResult.ToolResult.Result)
+	assert.JSONEq(t, `{"filtered":true}`, *resultResult.ToolResult.DetailsJSON)
+	assert.Empty(t, *resultResult.ToolResult.Error)
 }
 
 func TestManager_DispatchLifecycleRequiresName(t *testing.T) {

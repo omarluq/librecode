@@ -18,6 +18,7 @@ import (
 const (
 	testCompletionText = "done"
 	testToolName       = "read"
+	testToolPathKey    = "path"
 	testToolArgsJSON   = `{"path":"README.md"}`
 )
 
@@ -101,21 +102,27 @@ func (toolCallbackClient) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	if request.OnToolCall != nil {
-		request.OnToolCall(ctx, assistant.ToolCallEvent{
+		toolCall := assistant.ToolCallEvent{
 			Arguments:     map[string]any{"path": "README.md"},
 			ID:            "call-1",
 			Name:          testToolName,
 			ArgumentsJSON: testToolArgsJSON,
-		})
+		}
+		if err := request.OnToolCall(ctx, &toolCall); err != nil {
+			return nil, err
+		}
 	}
 	if request.OnToolResult != nil {
-		request.OnToolResult(ctx, &assistant.ToolEvent{
+		toolResult := assistant.ToolEvent{
 			Name:          testToolName,
 			ArgumentsJSON: testToolArgsJSON,
 			DetailsJSON:   "",
 			Result:        "contents",
 			Error:         "",
-		})
+		}
+		if err := request.OnToolResult(ctx, &toolResult); err != nil {
+			return nil, err
+		}
 	}
 
 	return &assistant.CompletionResult{
