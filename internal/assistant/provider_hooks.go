@@ -11,6 +11,7 @@ import (
 
 const (
 	providerRequestHeadersKey = "headers"
+	providerRequestPayloadKey = "payload"
 )
 
 var blockedProviderHeaderNames = map[string]struct{}{
@@ -51,11 +52,11 @@ func applyProviderRequestHook(
 	if request == nil {
 		return providerHookOutput{Payload: input.Payload, Headers: input.Headers}, nil
 	}
-	if request.OnProviderRequest != nil {
-		return request.OnProviderRequest(ctx, input)
-	}
 	if request.OnProviderObserve != nil {
 		request.OnProviderObserve(ctx, request, providerAttempt(request))
+	}
+	if request.OnProviderRequest != nil {
+		return request.OnProviderRequest(ctx, input)
 	}
 
 	return providerHookOutput{Payload: input.Payload, Headers: input.Headers}, nil
@@ -101,7 +102,7 @@ func providerRequestLifecyclePayload(input providerHookInput) map[string]any {
 		jsonModelKey:              request.Model.ID,
 		lifecycleProviderKey:      request.Model.Provider,
 		jsonSessionIDKey:          request.SessionID,
-		"payload":                 cloneAnyMap(input.Payload),
+		providerRequestPayloadKey: cloneAnyMap(input.Payload),
 		"thinking_level":          request.ThinkingLevel,
 	}
 }
@@ -110,7 +111,7 @@ func providerPayloadFromLifecycle(payload, fallback map[string]any) map[string]a
 	if payload == nil {
 		return cloneAnyMap(fallback)
 	}
-	mutated, ok := payload["payload"].(map[string]any)
+	mutated, ok := payload[providerRequestPayloadKey].(map[string]any)
 	if !ok {
 		return cloneAnyMap(fallback)
 	}

@@ -161,8 +161,23 @@ func applyLifecycleLuaResult(result *LifecycleDispatchResult, value lua.LValue) 
 	}
 	providerRequestValue := table.RawGetString("provider_request")
 	if providerRequest, ok := providerRequestMutationFromLua(providerRequestValue); ok {
-		result.ProviderRequest = providerRequest
+		result.ProviderRequest = mergeProviderRequestMutation(result.ProviderRequest, providerRequest)
 	}
+}
+
+func mergeProviderRequestMutation(
+	base ProviderRequestMutation,
+	override ProviderRequestMutation,
+) ProviderRequestMutation {
+	merged := ProviderRequestMutation{Headers: map[string]string{}}
+	for key, value := range base.Headers {
+		merged.Headers[key] = value
+	}
+	for key, value := range override.Headers {
+		merged.Headers[key] = value
+	}
+
+	return merged
 }
 
 func providerRequestMutationFromLua(value lua.LValue) (ProviderRequestMutation, bool) {

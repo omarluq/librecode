@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -49,6 +50,79 @@ func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
 	messages, ok := requests[1]["messages"].([]any)
 	require.True(t, ok)
 	assert.True(t, containsRoleMessage(messages, jsonToolRole))
+}
+
+func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
+	t.Parallel()
+
+	workspace := testToolWorkspace(t)
+	captures := make(chan providerResponseHookCapture, 2)
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		capture := providerResponseHookCapture{
+			Err:    nil,
+			Body:   map[string]any{},
+			Header: request.Header.Get("X-Iteration"),
+		}
+		if err := json.NewDecoder(request.Body).Decode(&capture.Body); err != nil {
+			capture.Err = err
+			captures <- capture
+			return
+		}
+		requestCount++
+		captures <- capture
+		writer.Header().Set("Content-Type", "application/json")
+		if requestCount == 1 {
+			arguments, err := json.Marshal(map[string]string{jsonPathKey: "README.md"})
+			require.NoError(t, err)
+			writeTestProviderResponse(
+				t,
+				writer,
+				`{"output":[{"type":"function_call","call_id":"call_1","name":"read","arguments":`+
+					strconv.Quote(string(arguments))+
+					`}]}`,
+			)
+			return
+		}
+		writeTestProviderResponse(t, writer, `{"output_text":"done"}`)
+	}))
+	t.Cleanup(server.Close)
+
+	request := testCompletionRequestAuth("sk-test")
+	request.CWD = workspace
+	request.Model.Provider = "openai"
+	request.Model.API = apiOpenAIResponses
+	request.Model.BaseURL = server.URL
+	request.OnProviderRequest = func(
+		_ context.Context,
+		input providerHookInput,
+	) (providerHookOutput, error) {
+		payload := cloneAnyMap(input.Payload)
+		payload["iteration"] = input.Attempt
+		headers := cloneStringMap(input.Headers)
+		headers["X-Iteration"] = strconv.Itoa(input.Attempt)
+
+		return providerHookOutput{Payload: payload, Headers: headers}, nil
+	}
+
+	result, err := NewHTTPCompletionClient().completeOpenAIResponses(context.Background(), request)
+
+	require.NoError(t, err)
+	assert.Equal(t, "done", result.Text)
+	first := <-captures
+	second := <-captures
+	require.NoError(t, first.Err)
+	require.NoError(t, second.Err)
+	assert.Equal(t, "1", first.Header)
+	assert.Equal(t, "1", second.Header)
+	assert.Equal(t, float64(1), first.Body["iteration"])
+	assert.Equal(t, float64(1), second.Body["iteration"])
+}
+
+type providerResponseHookCapture struct {
+	Err    error
+	Body   map[string]any
+	Header string
 }
 
 func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {

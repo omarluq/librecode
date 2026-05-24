@@ -53,6 +53,35 @@ end)
 	assert.Equal(t, "Bearer secret", result.Headers["Authorization"])
 }
 
+func TestRuntime_ProviderRequestHookFallsBackWhenPayloadMutationIsMissing(t *testing.T) {
+	t.Parallel()
+
+	runtime := newProviderHookTestRuntime(t, `
+local lc = require("librecode")
+lc.on("before_provider_request", function()
+  return {
+    provider_request = {
+      headers = {
+        ["X-Test-Header"] = "yes",
+      },
+    },
+  }
+end)
+`)
+	input := providerHookInput{
+		Request: providerHookTestRequest(),
+		Payload: map[string]any{"original": "value"},
+		Headers: map[string]string{},
+		Attempt: 1,
+	}
+
+	result, err := runtime.dispatchProviderRequestHook(context.Background(), input)
+
+	require.NoError(t, err)
+	assert.Equal(t, "value", result.Payload["original"])
+	assert.Equal(t, "yes", result.Headers["X-Test-Header"])
+}
+
 func TestRuntime_ProviderRequestHookRedactsAndRejectsSensitiveHeaders(t *testing.T) {
 	t.Parallel()
 
