@@ -58,6 +58,7 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	workspace := testToolWorkspace(t)
 	captures := make(chan providerResponseHookCapture, 2)
 	var requestCount int
+	var hookIterations []int
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		capture := providerResponseHookCapture{
 			Err:    nil,
@@ -97,10 +98,12 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 		_ context.Context,
 		input providerHookInput,
 	) (providerHookOutput, error) {
+		iteration := len(hookIterations) + 1
+		hookIterations = append(hookIterations, iteration)
 		payload := cloneAnyMap(input.Payload)
-		payload["iteration"] = input.Attempt
+		payload["iteration"] = iteration
 		headers := cloneStringMap(input.Headers)
-		headers["X-Iteration"] = strconv.Itoa(input.Attempt)
+		headers["X-Iteration"] = strconv.Itoa(iteration)
 
 		return providerHookOutput{Payload: payload, Headers: headers}, nil
 	}
@@ -113,10 +116,11 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	second := <-captures
 	require.NoError(t, first.Err)
 	require.NoError(t, second.Err)
+	assert.Equal(t, []int{1, 2}, hookIterations)
 	assert.Equal(t, "1", first.Header)
-	assert.Equal(t, "1", second.Header)
+	assert.Equal(t, "2", second.Header)
 	assert.Equal(t, float64(1), first.Body["iteration"])
-	assert.Equal(t, float64(1), second.Body["iteration"])
+	assert.Equal(t, float64(2), second.Body["iteration"])
 }
 
 type providerResponseHookCapture struct {
