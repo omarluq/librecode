@@ -3,7 +3,6 @@ package assistant
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -298,7 +297,14 @@ func (runtime *Runtime) respondWithPartialProgress(
 	)
 	if err != nil {
 		persistErr := runtime.appendPartialPromptFailure(ctx, sessionID, userEntryID, progress, err)
-		return nil, false, errors.Join(err, persistErr)
+		if persistErr != nil {
+			return nil, false, oops.
+				In("assistant").
+				Code("persist_failed_prompt").
+				Wrapf(persistErr, "persist failed prompt progress")
+		}
+
+		return nil, false, err
 	}
 
 	return bundle, cached, nil

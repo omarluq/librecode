@@ -10,6 +10,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	cellcolor "github.com/gdamore/tcell/v3/color"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
@@ -70,6 +71,30 @@ func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
 	if app.statusMessage == "streaming response" {
 		t.Fatal("response deltas should not set the streaming response status")
 	}
+}
+
+func TestApplyPromptErrorKeepsStreamedProgressVisible(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.working = true
+	app.activePrompt = newTestActivePrompt(nil)
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "partial"))
+	toolEvent := newTestAsyncEvent(asyncEventPromptToolResult, "")
+	toolEvent.ToolEvent = newTestToolEvent("read", "file content")
+	app.handlePromptStreamEvent(context.Background(), toolEvent)
+
+	app.applyPromptError("provider returned an empty response", app.activePrompt.ID)
+
+	assert.False(t, app.working)
+	require.Len(t, app.messages, 3)
+	assert.Equal(t, database.RoleAssistant, app.messages[0].Role)
+	assert.Equal(t, "partial", app.messages[0].Content)
+	assert.Equal(t, database.RoleToolResult, app.messages[1].Role)
+	assert.Contains(t, app.messages[1].Content, "tool: read")
+	assert.Equal(t, database.RoleCustom, app.messages[2].Role)
+	assert.Equal(t, "provider returned an empty response", app.messages[2].Content)
+	assert.Empty(t, app.streamingBlocks)
 }
 
 func TestFooterLinesIgnoreTransientStatus(t *testing.T) {

@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
@@ -364,6 +365,7 @@ func (app *App) applyPromptError(message string, promptID uint64) {
 		app.setStatus("response canceled; conversation reverted")
 		return
 	}
+	streamingBlocks := append([]chatMessage(nil), app.streamingBlocks...)
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""
@@ -375,7 +377,31 @@ func (app *App) applyPromptError(message string, promptID uint64) {
 		return
 	}
 	app.activePrompt = nil
+	app.applyFailedPromptStreamedBlocks(streamingBlocks)
 	app.addMessage(database.RoleCustom, message)
+}
+
+func (app *App) applyFailedPromptStreamedBlocks(streamingBlocks []chatMessage) {
+	for _, block := range streamingBlocks {
+		if block.Content == "" {
+			continue
+		}
+		switch block.Role {
+		case database.RoleAssistant,
+			database.RoleToolResult,
+			database.RoleBashExecution,
+			database.RoleCustom:
+			app.addMessage(block.Role, block.Content)
+		case database.RoleThinking:
+			if strings.TrimSpace(block.Content) != "" {
+				app.addMessage(block.Role, block.Content)
+			}
+		case database.RoleUser,
+			database.RoleBranchSummary,
+			database.RoleCompactionSummary:
+			continue
+		}
+	}
 }
 
 func (app *App) consumeCanceledPrompt(promptID uint64) bool {
