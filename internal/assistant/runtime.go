@@ -824,18 +824,21 @@ func (runtime *Runtime) modelCompletionRequest(
 	onEvent func(StreamEvent),
 ) *CompletionRequest {
 	return &CompletionRequest{
-		OnEvent:       onEvent,
-		OnToolCall:    runtime.emitToolCall,
-		OnToolResult:  runtime.emitToolResult,
-		ToolRegistry:  registry,
-		SessionID:     sessionID,
-		SystemPrompt:  systemPrompt,
-		ThinkingLevel: runtime.cfg.Assistant.ThinkingLevel,
-		CWD:           cwd,
-		Auth:          auth,
-		Messages:      messages,
-		Usage:         usage,
-		Model:         *selectedModel,
+		OnEvent:           onEvent,
+		OnProviderObserve: runtime.emitProviderRequest,
+		OnProviderRequest: runtime.dispatchProviderRequestHook,
+		OnToolCall:        runtime.emitToolCall,
+		OnToolResult:      runtime.emitToolResult,
+		ToolRegistry:      registry,
+		SessionID:         sessionID,
+		SystemPrompt:      systemPrompt,
+		ThinkingLevel:     runtime.cfg.Assistant.ThinkingLevel,
+		CWD:               cwd,
+		Auth:              auth,
+		Messages:          messages,
+		Usage:             usage,
+		Model:             *selectedModel,
+		ProviderAttempt:   0,
 	}
 }
 
@@ -846,7 +849,7 @@ func (runtime *Runtime) completeWithRetry(
 ) (*CompletionResult, error) {
 	retry := retryConfig(runtime.cfg)
 	if !retry.Enabled || retry.MaxAttempts <= 1 {
-		runtime.emitProviderRequest(ctx, request, 1)
+		request.ProviderAttempt = 1
 		result, err := runtime.client.Complete(ctx, request)
 		if err != nil {
 			runtime.emitProviderError(ctx, request, 1, err)
@@ -858,7 +861,7 @@ func (runtime *Runtime) completeWithRetry(
 
 	var lastErr error
 	for attempt := 1; attempt <= retry.MaxAttempts; attempt++ {
-		runtime.emitProviderRequest(ctx, request, attempt)
+		request.ProviderAttempt = attempt
 		result, err := runtime.client.Complete(ctx, request)
 		if err == nil {
 			runtime.emitProviderResponse(ctx, request, attempt, result)

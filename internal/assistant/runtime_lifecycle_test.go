@@ -257,9 +257,12 @@ type staticCompletionClient struct {
 }
 
 func (client staticCompletionClient) Complete(
-	_ context.Context,
-	_ *assistant.CompletionRequest,
+	ctx context.Context,
+	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
+	if request.OnProviderObserve != nil {
+		request.OnProviderObserve(ctx, request, request.ProviderAttempt)
+	}
 	if client.err != nil {
 		return nil, client.err
 	}

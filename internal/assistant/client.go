@@ -49,6 +49,8 @@ const (
 	jsonUserRole            = "user"
 	jsonAssistantRole       = "assistant"
 	jsonToolRole            = "tool"
+	jsonSystemRole          = "system"
+	jsonMessagesKey         = "messages"
 	jsonCommandKey          = "command"
 	jsonBreakdownKey        = "breakdown"
 	jsonReadToolName        = "read"
@@ -83,18 +85,21 @@ const (
 
 // CompletionRequest describes one model completion request.
 type CompletionRequest struct {
-	OnEvent       func(StreamEvent)                    `json:"-"`
-	OnToolCall    func(context.Context, ToolCallEvent) `json:"-"`
-	OnToolResult  func(context.Context, *ToolEvent)    `json:"-"`
-	ToolRegistry  *tool.Registry                       `json:"-"`
-	SessionID     string                               `json:"session_id"`
-	SystemPrompt  string                               `json:"system_prompt"`
-	ThinkingLevel string                               `json:"thinking_level"`
-	CWD           string                               `json:"cwd"`
-	Auth          model.RequestAuth                    `json:"auth"`
-	Messages      []database.MessageEntity             `json:"messages"`
-	Usage         model.TokenUsage                     `json:"usage"`
-	Model         model.Model                          `json:"model"`
+	OnEvent           func(StreamEvent)                              `json:"-"`
+	OnProviderObserve func(context.Context, *CompletionRequest, int) `json:"-"`
+	OnProviderRequest ProviderRequestHook                            `json:"-"`
+	OnToolCall        func(context.Context, ToolCallEvent)           `json:"-"`
+	OnToolResult      func(context.Context, *ToolEvent)              `json:"-"`
+	ToolRegistry      *tool.Registry                                 `json:"-"`
+	SessionID         string                                         `json:"session_id"`
+	SystemPrompt      string                                         `json:"system_prompt"`
+	ThinkingLevel     string                                         `json:"thinking_level"`
+	CWD               string                                         `json:"cwd"`
+	Auth              model.RequestAuth                              `json:"auth"`
+	Messages          []database.MessageEntity                       `json:"messages"`
+	Usage             model.TokenUsage                               `json:"usage"`
+	Model             model.Model                                    `json:"model"`
+	ProviderAttempt   int                                            `json:"-"`
 }
 
 // CompletionResult is a provider response plus model-visible side effects.

@@ -43,7 +43,12 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 	state *openAIChatLoopState,
 ) (bool, error) {
 	payload := openAIChatPayload(request, state.messages)
-	content, err := client.postJSON(ctx, state.endpoint, openAIHeaders(request), payload)
+	headers := openAIHeaders(request)
+	providerRequest, err := applyProviderRequestHook(ctx, request, payload, headers)
+	if err != nil {
+		return false, err
+	}
+	content, err := client.postJSON(ctx, state.endpoint, providerRequest.Headers, providerRequest.Payload)
 	if err != nil {
 		return false, err
 	}
@@ -114,7 +119,7 @@ func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *provid
 func openAIChatPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
 	payload := map[string]any{
 		jsonModelKey:      request.Model.ID,
-		"messages":        messages,
+		jsonMessagesKey:   messages,
 		"stream":          false,
 		"temperature":     0.2,
 		"tools":           openAIChatTools(request),
@@ -181,7 +186,7 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 func openAIChatMessages(request *CompletionRequest) []map[string]any {
 	messages := []map[string]any{}
 	if request.SystemPrompt != "" {
-		messages = append(messages, map[string]any{jsonRoleKey: "system", jsonContentKey: request.SystemPrompt})
+		messages = append(messages, map[string]any{jsonRoleKey: jsonSystemRole, jsonContentKey: request.SystemPrompt})
 	}
 	for _, message := range request.Messages {
 		role, ok := openAIRole(message.Role)

@@ -191,17 +191,19 @@ func testCompletionRequestAuth(args ...string) *CompletionRequest {
 	}
 
 	return &CompletionRequest{
-		OnEvent:       nil,
-		OnToolCall:    nil,
-		OnToolResult:  nil,
-		ToolRegistry:  nil,
-		SessionID:     "",
-		SystemPrompt:  "",
-		ThinkingLevel: "",
-		CWD:           "",
-		Auth:          testRequestAuth(apiKey),
-		Messages:      nil,
-		Usage:         model.EmptyTokenUsage(),
+		OnEvent:           nil,
+		OnProviderObserve: nil,
+		OnProviderRequest: nil,
+		OnToolCall:        nil,
+		OnToolResult:      nil,
+		ToolRegistry:      nil,
+		SessionID:         "",
+		SystemPrompt:      "",
+		ThinkingLevel:     "",
+		CWD:               "",
+		Auth:              testRequestAuth(apiKey),
+		Messages:          nil,
+		Usage:             model.EmptyTokenUsage(),
 		Model: model.Model{
 			ThinkingLevelMap: nil,
 			Headers:          nil,
@@ -217,6 +219,7 @@ func testCompletionRequestAuth(args ...string) *CompletionRequest {
 			MaxTokens:        0,
 			Reasoning:        false,
 		},
+		ProviderAttempt: 0,
 	}
 }
 

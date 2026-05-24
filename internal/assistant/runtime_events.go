@@ -18,12 +18,13 @@ func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *Comple
 		return
 	}
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleBeforeProviderRequest, map[string]any{
-		lifecycleAPIKey:      request.Model.API,
-		lifecycleAttemptKey:  attempt,
-		jsonModelKey:         request.Model.ID,
-		lifecycleProviderKey: request.Model.Provider,
-		jsonSessionIDKey:     request.SessionID,
-		"thinking_level":     request.ThinkingLevel,
+		lifecycleAPIKey:           request.Model.API,
+		lifecycleAttemptKey:       attempt,
+		providerRequestHeadersKey: redactedHeaders(request.Auth.Headers),
+		jsonModelKey:              request.Model.ID,
+		lifecycleProviderKey:      request.Model.Provider,
+		jsonSessionIDKey:          request.SessionID,
+		"thinking_level":          request.ThinkingLevel,
 	})
 }
 

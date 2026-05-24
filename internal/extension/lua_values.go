@@ -36,6 +36,8 @@ func goValueToLua(state *lua.LState, value any) lua.LValue {
 	switch typedValue := value.(type) {
 	case map[string]any:
 		return mapToLuaTable(state, typedValue)
+	case map[string]string:
+		return stringMapToLuaTable(state, typedValue)
 	case []any:
 		return sliceToLuaTable(state, typedValue)
 	case []string:
@@ -68,6 +70,15 @@ func sliceToLuaTable(state *lua.LState, values []any) *lua.LTable {
 	table := state.NewTable()
 	for valueIndex, value := range values {
 		state.RawSetInt(table, valueIndex+1, goValueToLua(state, value))
+	}
+
+	return table
+}
+
+func stringMapToLuaTable(state *lua.LState, values map[string]string) *lua.LTable {
+	table := state.NewTable()
+	for key, value := range values {
+		state.SetField(table, key, lua.LString(value))
 	}
 
 	return table

@@ -65,13 +65,19 @@ type LifecycleEvent struct {
 
 // LifecycleDispatchResult describes the outcome of lifecycle handler dispatch.
 type LifecycleDispatchResult struct {
-	Payload      map[string]any `json:"payload"`
-	Name         string         `json:"name"`
-	Errors       []string       `json:"errors"`
-	Duration     time.Duration  `json:"duration"`
-	HandlerCount int            `json:"handler_count"`
-	Consumed     bool           `json:"consumed"`
-	Stopped      bool           `json:"stopped"`
+	Payload         map[string]any          `json:"payload"`
+	ProviderRequest ProviderRequestMutation `json:"provider_request"`
+	Name            string                  `json:"name"`
+	Errors          []string                `json:"errors"`
+	Duration        time.Duration           `json:"duration"`
+	HandlerCount    int                     `json:"handler_count"`
+	Consumed        bool                    `json:"consumed"`
+	Stopped         bool                    `json:"stopped"`
+}
+
+// ProviderRequestMutation contains conservative provider request changes returned by lifecycle handlers.
+type ProviderRequestMutation struct {
+	Headers map[string]string `json:"headers"`
 }
 
 // LifecycleDispatcher emits runtime-neutral lifecycle events.
@@ -86,13 +92,14 @@ func (manager *Manager) DispatchLifecycle(ctx context.Context, event LifecycleEv
 	}
 
 	result := LifecycleDispatchResult{
-		Name:         string(event.Name),
-		Payload:      cloneMap(event.Payload),
-		Errors:       []string{},
-		HandlerCount: 0,
-		Duration:     0,
-		Consumed:     false,
-		Stopped:      false,
+		Payload:         cloneMap(event.Payload),
+		ProviderRequest: ProviderRequestMutation{Headers: map[string]string{}},
+		Name:            string(event.Name),
+		Errors:          []string{},
+		Duration:        0,
+		HandlerCount:    0,
+		Consumed:        false,
+		Stopped:         false,
 	}
 	startedAt := time.Now()
 
@@ -152,4 +159,38 @@ func applyLifecycleLuaResult(result *LifecycleDispatchResult, value lua.LValue) 
 	if payload, ok := luaValueToGo(payloadValue).(map[string]any); ok {
 		result.Payload = payload
 	}
+	providerRequestValue := table.RawGetString("provider_request")
+	if providerRequest, ok := providerRequestMutationFromLua(providerRequestValue); ok {
+		result.ProviderRequest = providerRequest
+	}
+}
+
+func providerRequestMutationFromLua(value lua.LValue) (ProviderRequestMutation, bool) {
+	payload, ok := luaValueToGo(value).(map[string]any)
+	if !ok {
+		return ProviderRequestMutation{Headers: map[string]string{}}, false
+	}
+	headers := stringMapValue(payload["headers"])
+	if len(headers) == 0 {
+		return ProviderRequestMutation{Headers: map[string]string{}}, false
+	}
+
+	return ProviderRequestMutation{Headers: headers}, true
+}
+
+func stringMapValue(value any) map[string]string {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return map[string]string{}
+	}
+	output := make(map[string]string, len(object))
+	for key, item := range object {
+		text, ok := item.(string)
+		if !ok {
+			continue
+		}
+		output[key] = text
+	}
+
+	return output
 }
