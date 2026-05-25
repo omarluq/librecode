@@ -268,7 +268,7 @@ func (runtime *Runtime) dispatchToolResultLifecycle(ctx context.Context, event *
 		applyToolResultMutation(event, result.ToolResult)
 	}
 	if event.Error != "" {
-		runtime.emit(ctx, string(extension.LifecycleToolError), toolEventPayload(event))
+		runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleToolError, toolEventPayload(event))
 	}
 
 	return nil
