@@ -41,15 +41,67 @@ func durationMilliseconds(duration time.Duration) float64 {
 }
 
 func providerHookDiagnostics(input providerHookInput, output providerHookOutput) map[string]any {
-	return map[string]any{
-		lifecycleAPIKey:             input.Request.Model.API,
-		lifecycleAttemptKey:         input.Attempt,
-		jsonModelKey:                input.Request.Model.ID,
-		lifecycleProviderKey:        input.Request.Model.Provider,
-		jsonSessionIDKey:            input.Request.SessionID,
-		"mutated_header_count":      changedStringMapCount(input.Headers, output.Headers),
-		"mutated_payload_key_count": changedAnyMapCount(input.Payload, output.Payload),
+	diagnostics := providerBaseDiagnostics(input.Request, input.Attempt)
+	diagnostics["mutated_header_count"] = changedStringMapCount(input.Headers, output.Headers)
+	diagnostics["mutated_payload_key_count"] = changedAnyMapCount(input.Payload, output.Payload)
+
+	return diagnostics
+}
+
+func providerBaseDiagnostics(request *CompletionRequest, attempt int) map[string]any {
+	if request == nil {
+		return map[string]any{}
 	}
+
+	return map[string]any{
+		lifecycleAPIKey:      request.Model.API,
+		lifecycleAttemptKey:  attempt,
+		jsonModelKey:         request.Model.ID,
+		lifecycleProviderKey: request.Model.Provider,
+		jsonSessionIDKey:     request.SessionID,
+	}
+}
+
+func providerResponseDiagnostics(
+	request *CompletionRequest,
+	attempt int,
+	result *CompletionResult,
+) map[string]any {
+	if result == nil {
+		return map[string]any{}
+	}
+	diagnostics := providerBaseDiagnostics(request, attempt)
+	diagnostics["response_text_bytes"] = len(result.Text)
+	diagnostics["thinking_count"] = len(result.Thinking)
+	diagnostics["tool_event_count"] = len(result.ToolEvents)
+	diagnostics[jsonContextTokensKey] = result.Usage.ContextTokens
+	diagnostics[jsonContextWindowKey] = result.Usage.ContextWindow
+	diagnostics[jsonInputTokensKey] = result.Usage.InputTokens
+	diagnostics[jsonOutputTokensKey] = result.Usage.OutputTokens
+
+	return diagnostics
+}
+
+func providerErrorDiagnostics(
+	request *CompletionRequest,
+	attempt int,
+	err error,
+) map[string]any {
+	if err == nil {
+		return map[string]any{}
+	}
+
+	diagnostics := providerBaseDiagnostics(request, attempt)
+	diagnostics[lifecycleErrorKey] = err.Error()
+	diagnostics["retryable"] = ShouldRetryModelError(err)
+	if code, ok := providerErrorCode(err); ok {
+		diagnostics["error_code"] = code
+	}
+	if status, ok := providerErrorStatus(err); ok {
+		diagnostics["status"] = status
+	}
+
+	return diagnostics
 }
 
 func toolCallDiagnostics(call *ToolCallEvent) map[string]any {

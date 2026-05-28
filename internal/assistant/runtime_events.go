@@ -37,7 +37,7 @@ func (runtime *Runtime) emitProviderResponse(
 	if request == nil || result == nil {
 		return
 	}
-	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleAfterProviderResponse, map[string]any{
+	payload := map[string]any{
 		lifecycleAPIKey:      request.Model.API,
 		lifecycleAttemptKey:  attempt,
 		jsonModelKey:         request.Model.ID,
@@ -47,21 +47,41 @@ func (runtime *Runtime) emitProviderResponse(
 		"thinking_count":     len(result.Thinking),
 		"tool_event_count":   len(result.ToolEvents),
 		jsonUsageKey:         tokenUsageLifecyclePayload(result.Usage),
-	})
+	}
+	dispatchResult, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleAfterProviderResponse, payload)
+	if dispatchErr != nil && runtime.logger != nil {
+		runtime.logger.Debug("provider response lifecycle failed", "error", dispatchErr)
+	}
+	runtime.emitLifecycleDiagnostics(
+		ctx,
+		extension.LifecycleAfterProviderResponse,
+		&dispatchResult,
+		providerResponseDiagnostics(request, attempt, result),
+	)
 }
 
 func (runtime *Runtime) emitProviderError(ctx context.Context, request *CompletionRequest, attempt int, err error) {
 	if request == nil || err == nil {
 		return
 	}
-	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleProviderError, map[string]any{
+	payload := map[string]any{
 		lifecycleAPIKey:      request.Model.API,
 		lifecycleAttemptKey:  attempt,
 		jsonModelKey:         request.Model.ID,
 		lifecycleProviderKey: request.Model.Provider,
 		jsonSessionIDKey:     request.SessionID,
 		lifecycleErrorKey:    err.Error(),
-	})
+	}
+	dispatchResult, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleProviderError, payload)
+	if dispatchErr != nil && runtime.logger != nil {
+		runtime.logger.Debug("provider error lifecycle failed", "error", dispatchErr)
+	}
+	runtime.emitLifecycleDiagnostics(
+		ctx,
+		extension.LifecycleProviderError,
+		&dispatchResult,
+		providerErrorDiagnostics(request, attempt, err),
+	)
 }
 
 func toolCallPayload(call ToolCallEvent) map[string]any {
