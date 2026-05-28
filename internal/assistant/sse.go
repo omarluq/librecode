@@ -104,7 +104,7 @@ func responseHasResultData(response map[string]any) bool {
 	if output, ok := response[jsonOutputKey].([]any); ok && len(output) > 0 {
 		return true
 	}
-	if text := strings.TrimSpace(stringValue(response["output_text"])); text != "" {
+	if strings.TrimSpace(stringValue(response["output_text"])) != "" {
 		return true
 	}
 
