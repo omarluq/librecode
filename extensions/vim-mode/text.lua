@@ -27,6 +27,27 @@ function M.chars_from_text(text)
   return chars
 end
 
+local concat_chunk_size = 1024
+
+function M.join_chars(chars)
+  local count = #chars
+  if count == 0 then
+    return ""
+  end
+
+  local chunks = chars
+  while #chunks > concat_chunk_size do
+    local next_chunks = {}
+    for start_index = 1, #chunks, concat_chunk_size do
+      local end_index = math.min(start_index + concat_chunk_size - 1, #chunks)
+      next_chunks[#next_chunks + 1] = table.concat(chunks, "", start_index, end_index)
+    end
+    chunks = next_chunks
+  end
+
+  return table.concat(chunks)
+end
+
 function M.is_space(ch)
   return ch == nil or ch:match("^%s$") ~= nil
 end

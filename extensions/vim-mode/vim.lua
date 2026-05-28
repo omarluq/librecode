@@ -21,6 +21,7 @@ local line_start = text.line_start
 local line_end = text.line_end
 local line_bounds = text.line_bounds
 local first_nonblank = text.first_nonblank
+local join_chars = text.join_chars
 
 local function chars_from_buffer(buf)
   if buf.chars and #buf.chars > 0 then
@@ -55,7 +56,7 @@ end
 local function set_composer(chars, cursor)
   cursor = clamp(cursor or 0, 0, #chars)
   local buf = lc.buf.get("composer") or {}
-  local next_text = table.concat(chars)
+  local next_text = join_chars(chars)
   buf.name = "composer"
   buf.text = next_text
   buf.chars = nil
