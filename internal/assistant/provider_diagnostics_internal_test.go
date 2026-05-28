@@ -146,6 +146,10 @@ func assertProviderHookErrorDiagnostics(
 	diagnostic := events[0]
 	assert.Equal(t, 1, diagnostic[lifecycleHookCountKey])
 	require.Contains(t, diagnostic, lifecycleErrorsKey)
+	hookErrors, ok := diagnostic[lifecycleErrorsKey].([]string)
+	require.True(t, ok, "hook_errors should be a string slice")
+	require.NotEmpty(t, hookErrors)
+	assert.Contains(t, hookErrors[0], "provider hook failed")
 }
 
 func runProviderHookDiagnosticsTest(t *testing.T, testCase providerHookDiagnosticsTestCase) {
