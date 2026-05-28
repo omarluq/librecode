@@ -18,8 +18,11 @@ import (
 const (
 	testCompletionText = "done"
 	testToolName       = "read"
+	testToolPath       = "README.md"
 	testToolPathKey    = "path"
 	testToolArgsJSON   = `{"path":"README.md"}`
+	testToolCallID     = "call-1"
+	testToolResult     = "contents"
 )
 
 func TestRuntime_ProviderLifecyclePublishesReactiveEvents(t *testing.T) {
@@ -103,8 +106,8 @@ func (toolCallbackClient) Complete(
 ) (*assistant.CompletionResult, error) {
 	if request.OnToolCall != nil {
 		toolCall := assistant.ToolCallEvent{
-			Arguments:     map[string]any{"path": "README.md"},
-			ID:            "call-1",
+			Arguments:     map[string]any{testToolPathKey: testToolPath},
+			ID:            testToolCallID,
 			Name:          testToolName,
 			ArgumentsJSON: testToolArgsJSON,
 		}
@@ -117,7 +120,7 @@ func (toolCallbackClient) Complete(
 			Name:          testToolName,
 			ArgumentsJSON: testToolArgsJSON,
 			DetailsJSON:   "",
-			Result:        "contents",
+			Result:        testToolResult,
 			Error:         "",
 		}
 		if err := request.OnToolResult(ctx, &toolResult); err != nil {

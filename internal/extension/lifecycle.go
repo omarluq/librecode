@@ -268,12 +268,8 @@ func providerRequestMutationFromLua(value lua.LValue) (ProviderRequestMutation, 
 	if !ok {
 		return ProviderRequestMutation{Headers: map[string]string{}}, false
 	}
-	headers := stringMapValue(payload["headers"])
-	if len(headers) == 0 {
-		return ProviderRequestMutation{Headers: map[string]string{}}, false
-	}
 
-	return ProviderRequestMutation{Headers: headers}, true
+	return ProviderRequestMutation{Headers: stringMapValue(payload["headers"])}, true
 }
 
 func stringMapValue(value any) map[string]string {

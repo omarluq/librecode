@@ -234,19 +234,12 @@ func (runtime *Runtime) dispatchToolCallLifecycle(ctx context.Context, call *Too
 		return nil
 	}
 	payload := toolCallPayload(*call)
-	runtime.emit(ctx, string(extension.LifecycleToolCall), payload)
-	if runtime.extensions == nil {
-		return nil
-	}
-
-	result, err := runtime.extensions.DispatchLifecycle(ctx, extension.LifecycleEvent{
-		Name:    extension.LifecycleToolCall,
-		Payload: payload,
-	})
+	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolCall, payload)
 	if err != nil {
 		return err
 	}
 	applyToolCallMutation(call, result.ToolCall)
+	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
 
 	return nil
 }
@@ -256,22 +249,28 @@ func (runtime *Runtime) dispatchToolResultLifecycle(ctx context.Context, event *
 		return nil
 	}
 	payload := toolEventPayload(event)
-	runtime.emit(ctx, string(extension.LifecycleToolResult), payload)
-	if runtime.extensions != nil {
-		result, err := runtime.extensions.DispatchLifecycle(ctx, extension.LifecycleEvent{
-			Name:    extension.LifecycleToolResult,
-			Payload: payload,
-		})
-		if err != nil {
-			return err
-		}
-		applyToolResultMutation(event, result.ToolResult)
+	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolResult, payload)
+	if err != nil {
+		return err
 	}
+	applyToolResultMutation(event, result.ToolResult)
+	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolResult, &result, toolResultDiagnostics(event))
 	if event.Error != "" {
-		runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleToolError, toolEventPayload(event))
+		runtime.dispatchToolErrorLifecycle(ctx, event)
 	}
 
 	return nil
+}
+
+func (runtime *Runtime) dispatchToolErrorLifecycle(ctx context.Context, event *ToolEvent) {
+	if event == nil || event.Error == "" {
+		return
+	}
+	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolError, toolEventPayload(event))
+	if err != nil {
+		return
+	}
+	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolError, &result, toolResultDiagnostics(event))
 }
 
 func applyToolCallMutation(call *ToolCallEvent, mutation extension.ToolCallMutation) {

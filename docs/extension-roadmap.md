@@ -263,15 +263,15 @@ Events should have structured payloads, bounded data, clear mutation contracts, 
 
 Goal: let extensions and hooks influence tool execution through explicit middleware contracts.
 
-### Phase 6.1: built-in tool middleware
+### Phase 6.1: tool runtime hooks
 
-Run tool middleware around built-in tool execution first. Middleware should support:
+Run tool lifecycle hooks around tool execution. librecode stays YOLO by default: hooks are not a built-in permission gate, but they can normalize arguments, annotate calls, redact or rewrite results, and add diagnostics. Users who want policy gates can implement them as extensions that return tool errors or synthetic results.
 
-- observe and continue
-- reject with a synthetic result
-- modify tool input
-- synthesize a result without executing the tool
-- redact or rewrite tool output before the model sees it
+Implemented contract:
+
+- `tool_call` can return `tool_call.arguments` to replace/merge tool arguments before execution
+- `tool_result` can return `tool_result.result`, `tool_result.details_json`, and/or `tool_result.error` before the model sees the result
+- hook failures are surfaced as tool errors instead of silently mutating state
 
 ### Phase 6.2: unified tool registry
 
