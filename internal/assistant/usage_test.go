@@ -129,7 +129,7 @@ func TestParseSSEResultPreservesUsageWhenItemsProvideText(t *testing.T) {
 	stream := strings.Join([]string{
 		`data: {"response":{"usage":{"input_tokens":12,"output_tokens":7}}}`,
 		`data: {"item":{"id":"msg_1","type":"message","content":[{"type":"output_text","text":"hello"}]}}`,
-		`data: [DONE]`,
+		`data: {"type":"response.completed","response":{"id":"resp_1"}}`,
 		``,
 	}, "\n")
 
@@ -152,7 +152,7 @@ func TestParseSSEResultPreservesUsageAcrossLaterResponseEvents(t *testing.T) {
 		`data: {"usage":{"input_tokens":12,"output_tokens":7}}`,
 		`data: {"response":{"output":[{"id":"msg_1","type":"message",` +
 			`"content":[{"type":"output_text","text":"hello"}]}]}}`,
-		`data: [DONE]`,
+		`data: {"type":"response.completed","response":{"id":"resp_1"}}`,
 		``,
 	}, "\n")
 

@@ -85,6 +85,37 @@ func TestShouldRetryModelError(t *testing.T) {
 	}
 }
 
+func TestShouldRetryModelErrorHandlesResponsesStreamFailures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		err  error
+		name string
+		want bool
+	}{
+		{
+			name: "stream closed before completion code",
+			err: oops.In("assistant").
+				Code("responses_stream_incomplete").
+				Errorf("provider stream closed before completion"),
+			want: true,
+		},
+		{
+			name: "response failed without retryable details",
+			err:  oops.In("assistant").Code("responses_failed").Errorf("invalid prompt"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.want, assistant.ShouldRetryModelError(tt.err))
+		})
+	}
+}
+
 func providerStatusTestError(status int, message string) error {
 	return oops.In("assistant").
 		Code("provider_status").
