@@ -197,7 +197,7 @@ func TestRuntime_PromptEmitsSideEffectMessageAppendEvents(t *testing.T) {
 					Name:          testToolName,
 					ArgumentsJSON: testToolArgsJSON,
 					DetailsJSON:   "",
-					Result:        "contents",
+					Result:        testToolResult,
 					Error:         "",
 				},
 			},

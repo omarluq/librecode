@@ -24,7 +24,7 @@ func TestRuntime_ToolCallLifecycleAppliesArgumentMutation(t *testing.T) {
 	}{
 		{
 			name:             "rewrites path and adds limit",
-			initialArguments: map[string]any{testToolPathKey: "README.md"},
+			initialArguments: map[string]any{testToolPathKey: testToolPath},
 			lua: `
 local lc = require("librecode")
 lc.on("tool_call", function(event)
@@ -54,7 +54,7 @@ end)
 			loadRuntimeExtension(t, manager, testCase.lua)
 			call := assistant.ToolCallEvent{
 				Arguments:     testCase.initialArguments,
-				ID:            "call-1",
+				ID:            testToolCallID,
 				Name:          testToolName,
 				ArgumentsJSON: testToolArgsJSON,
 			}
@@ -123,6 +123,43 @@ end)
 	}
 }
 
+func TestRuntime_ToolLifecycleEmitsDiagnosticsWithoutHandlers(t *testing.T) {
+	t.Parallel()
+
+	runtime, _, _ := newTestRuntimeWithManager(t, testCompletionClient{})
+	toolCallDiagnostics := collectRuntimeDiagnosticPayloads(
+		t,
+		runtime.EventBus(),
+		"tool_call_diagnostic",
+	)
+	toolResultDiagnostics := collectRuntimeDiagnosticPayloads(
+		t,
+		runtime.EventBus(),
+		"tool_result_diagnostic",
+	)
+	call := assistant.ToolCallEvent{
+		Arguments:     map[string]any{testToolPathKey: testToolPath},
+		ID:            testToolCallID,
+		Name:          testToolName,
+		ArgumentsJSON: testToolArgsJSON,
+	}
+	event := &assistant.ToolEvent{
+		Name:          testToolName,
+		ArgumentsJSON: testToolArgsJSON,
+		DetailsJSON:   "{}",
+		Result:        testToolResult,
+		Error:         "",
+	}
+
+	require.NoError(t, runtime.DispatchToolCallLifecycleForTest(context.Background(), &call))
+	require.NoError(t, runtime.DispatchToolResultLifecycleForTest(context.Background(), event))
+
+	require.Len(t, *toolCallDiagnostics, 1)
+	assert.Equal(t, 0, (*toolCallDiagnostics)[0]["hook_count"])
+	require.Len(t, *toolResultDiagnostics, 1)
+	assert.Equal(t, 0, (*toolResultDiagnostics)[0]["hook_count"])
+}
+
 func TestRuntime_ToolResultLifecycleDispatchesToolErrorHandlers(t *testing.T) {
 	t.Parallel()
 
@@ -137,6 +174,11 @@ lc.register_command("seen_tool_error", "seen_tool_error", function()
   return seen
 end)
 `)
+	errorDiagnostics := collectRuntimeDiagnosticPayloads(
+		t,
+		runtime.EventBus(),
+		"tool_error_diagnostic",
+	)
 	event := &assistant.ToolEvent{
 		Name:          testToolName,
 		ArgumentsJSON: testToolArgsJSON,
@@ -151,4 +193,6 @@ end)
 	output, err := manager.ExecuteCommand(context.Background(), "seen_tool_error", "")
 	require.NoError(t, err)
 	assert.Equal(t, "read:boom", output)
+	require.Len(t, *errorDiagnostics, 1)
+	assert.Equal(t, 1, (*errorDiagnostics)[0]["hook_count"])
 }

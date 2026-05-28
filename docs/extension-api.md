@@ -1,11 +1,11 @@
 # Extension Lua API
 
 
-## Agent lifecycle seams (planned)
+## Agent lifecycle seams
 
-The extension host is moving toward explicit lifecycle/tool/context seams while keeping the default UI and assistant loop Go-owned. New APIs should be runtime-neutral first and then exposed through Lua.
+The extension host exposes explicit lifecycle/tool/context seams while keeping the default UI and assistant loop Go-owned. New APIs are designed as runtime-neutral host contracts first and then exposed through Lua.
 
-Planned lifecycle events include:
+Current lifecycle events include:
 
 | Event | Purpose | Mutation policy |
 | --- | --- | --- |
@@ -14,15 +14,15 @@ Planned lifecycle events include:
 | `turn_start` / `turn_end` / `agent_end` | Observe one assistant turn. | Observational initially. |
 | `context_build` | Add bounded, labeled context blocks and inspect context budgets. | Bounded contributions only. |
 | `before_provider_request` / `after_provider_response` / `provider_error` | Observe provider traffic with redacted payloads. | Conservative typed mutation only. |
-| `tool_call` / `tool_result` / `tool_error` | Mediate tool execution and results. | Allow, reject, modify, synthesize, or redact per documented contract. |
+| `tool_call` / `tool_result` / `tool_error` | Mediate tool execution and results. | Normalize arguments; rewrite/redact results; surface hook errors as tool errors. |
 | `message_append` | Observe durable message writes. | Observational initially. |
 
-All lifecycle payloads must be bounded. Provider events must redact auth headers and secrets. Tool middleware decisions should be visible in diagnostics.
+All lifecycle payloads must be bounded. Provider events must redact auth headers and secrets. Tool hook decisions should be visible in diagnostics.
 
 librecode separates two event mechanisms:
 
 - the **ro-backed event stream** for observational async/fanout events such as lifecycle telemetry, headless JSON output, timers, retry notifications, and future watchers
-- the **ordered middleware dispatcher** for hooks that return decisions or mutations, such as tool allow/reject, context contributions, and provider request changes
+- the **ordered middleware dispatcher** for hooks that return mutations, such as tool normalization/redaction, context contributions, and provider request changes
 
 Extensions may observe lifecycle events through Lua handlers, while core Go services can subscribe to the reactive stream for telemetry and integrations. Do not use the observational stream for state mutations that require deterministic ordering.
 
@@ -157,6 +157,40 @@ Current commonly emitted events include:
 - `tick`
 - `before_agent_start`
 - `agent_end`
+- `context_build`
+- `before_provider_request`
+- `after_provider_response`
+- `provider_error`
+- `tool_call`
+- `tool_result`
+- `tool_error`
+
+Tool lifecycle handlers may return small, explicit mutations. librecode stays YOLO by default; these hooks are for formatting, observability, redaction, or argument normalization rather than built-in permission gates.
+
+```lua
+lc.on("tool_call", function(ev)
+  if ev.payload.name == "read" then
+    return {
+      tool_call = {
+        arguments = {
+          path = ev.payload.arguments.path,
+          limit = 200,
+        },
+      },
+    }
+  end
+end)
+
+lc.on("tool_result", function(ev)
+  if ev.payload.name == "bash" then
+    return {
+      tool_result = {
+        result = ev.payload.result:gsub("SECRET=[^\\n]+", "SECRET=<redacted>"),
+      },
+    }
+  end
+end)
+```
 
 ## Diagnostics
 

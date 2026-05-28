@@ -93,10 +93,18 @@ func (runtime *Runtime) dispatchProviderRequestHook(
 			Wrapf(err, "validate provider_request mutation")
 	}
 
-	return providerHookOutput{
+	output := providerHookOutput{
 		Payload: providerPayloadFromLifecycle(result.Payload, input.Payload),
 		Headers: mergeProviderHeaders(input.Headers, result.ProviderRequest.Headers),
-	}, nil
+	}
+	runtime.emitLifecycleDiagnostics(
+		ctx,
+		extension.LifecycleBeforeProviderRequest,
+		&result,
+		providerHookDiagnostics(input, output),
+	)
+
+	return output, nil
 }
 
 func providerRequestLifecyclePayload(input providerHookInput) map[string]any {
