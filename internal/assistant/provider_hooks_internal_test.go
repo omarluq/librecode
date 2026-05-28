@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	providerHookTestModelID = "test-model"
-	providerHookMessagesKey = "messages"
+	providerHookOriginalKey   = "original"
+	providerHookOriginalValue = "value"
+	providerHookTestModelID   = "test-model"
+	providerHookMessagesKey   = "messages"
 )
 
 func TestRuntime_ProviderRequestHookMutatesPayloadAndHeaders(t *testing.T) {
@@ -71,7 +73,7 @@ end)
 `)
 	input := providerHookInput{
 		Request: providerHookTestRequest(),
-		Payload: map[string]any{"original": "value"},
+		Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
 		Headers: map[string]string{},
 		Attempt: 1,
 	}
@@ -79,7 +81,7 @@ end)
 	result, err := runtime.dispatchProviderRequestHook(context.Background(), input)
 
 	require.NoError(t, err)
-	assert.Equal(t, "value", result.Payload["original"])
+	assert.Equal(t, providerHookOriginalValue, result.Payload[providerHookOriginalKey])
 	assert.Equal(t, "yes", result.Headers["X-Test-Header"])
 }
 

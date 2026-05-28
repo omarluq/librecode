@@ -82,17 +82,6 @@ func (runtime *Runtime) dispatchProviderRequestHook(
 ) (providerHookOutput, error) {
 	payload := providerRequestLifecyclePayload(input)
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleBeforeProviderRequest, payload)
-	if err != nil {
-		return providerHookOutput{}, oops.In("assistant").
-			Code("before_provider_request_dispatch_failed").
-			Wrapf(err, "dispatch before_provider_request lifecycle")
-	}
-	if err := validateProviderRequestMutation(result.ProviderRequest); err != nil {
-		return providerHookOutput{}, oops.In("assistant").
-			Code("provider_request_mutation_invalid").
-			Wrapf(err, "validate provider_request mutation")
-	}
-
 	output := providerHookOutput{
 		Payload: providerPayloadFromLifecycle(result.Payload, input.Payload),
 		Headers: mergeProviderHeaders(input.Headers, result.ProviderRequest.Headers),
@@ -103,6 +92,16 @@ func (runtime *Runtime) dispatchProviderRequestHook(
 		&result,
 		providerHookDiagnostics(input, output),
 	)
+	if err != nil {
+		return providerHookOutput{}, oops.In("assistant").
+			Code("before_provider_request_dispatch_failed").
+			Wrapf(err, "dispatch before_provider_request lifecycle")
+	}
+	if err := validateProviderRequestMutation(result.ProviderRequest); err != nil {
+		return providerHookOutput{}, oops.In("assistant").
+			Code("provider_request_mutation_invalid").
+			Wrapf(err, "validate provider_request mutation")
+	}
 
 	return output, nil
 }

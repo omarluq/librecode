@@ -236,6 +236,7 @@ func (runtime *Runtime) dispatchToolCallLifecycle(ctx context.Context, call *Too
 	payload := toolCallPayload(*call)
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolCall, payload)
 	if err != nil {
+		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
 		return err
 	}
 	applyToolCallMutation(call, result.ToolCall)
@@ -251,6 +252,7 @@ func (runtime *Runtime) dispatchToolResultLifecycle(ctx context.Context, event *
 	payload := toolEventPayload(event)
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolResult, payload)
 	if err != nil {
+		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolResult, &result, toolResultDiagnostics(event))
 		return err
 	}
 	applyToolResultMutation(event, result.ToolResult)
@@ -267,10 +269,10 @@ func (runtime *Runtime) dispatchToolErrorLifecycle(ctx context.Context, event *T
 		return
 	}
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolError, toolEventPayload(event))
+	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolError, &result, toolResultDiagnostics(event))
 	if err != nil {
 		return
 	}
-	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolError, &result, toolResultDiagnostics(event))
 }
 
 func applyToolCallMutation(call *ToolCallEvent, mutation extension.ToolCallMutation) {
