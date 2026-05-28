@@ -12,10 +12,33 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 )
 
+type providerHookDiagnosticsTestCase struct {
+	assertFn func(t *testing.T, events []map[string]any, output providerHookOutput, err error)
+	input    providerHookInput
+	name     string
+	lua      string
+}
+
 func TestRuntime_ProviderRequestHookEmitsDiagnostics(t *testing.T) {
 	t.Parallel()
 
-	runtime := newProviderHookTestRuntime(t, `
+	tests := []providerHookDiagnosticsTestCase{
+		providerHookMutatedDiagnosticsCase(),
+		providerHookNoopDiagnosticsCase(),
+		providerHookErrorDiagnosticsCase(),
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			runProviderHookDiagnosticsTest(t, testCase)
+		})
+	}
+}
+
+func providerHookMutatedDiagnosticsCase() providerHookDiagnosticsTestCase {
+	return providerHookDiagnosticsTestCase{
+		name: "mutated request",
+		lua: `
 local lc = require("librecode")
 lc.on("before_provider_request", { priority = 10 }, function(event)
   event.payload.payload.metadata = "changed"
@@ -28,24 +51,66 @@ lc.on("before_provider_request", { priority = 10 }, function(event)
     },
   }
 end)
-`)
-	events := collectAssistantDiagnostics(
-		t,
-		runtime.EventBus(),
-		string(extension.LifecycleBeforeProviderRequest)+"_diagnostic",
-	)
-	input := providerHookInput{
-		Request: providerHookTestRequest(),
-		Payload: map[string]any{providerHookMessagesKey: []any{}},
-		Headers: map[string]string{},
-		Attempt: 3,
+`,
+		input: providerHookInput{
+			Request: providerHookTestRequest(),
+			Payload: map[string]any{providerHookMessagesKey: []any{}},
+			Headers: map[string]string{},
+			Attempt: 3,
+		},
+		assertFn: assertProviderHookMutatedDiagnostics,
 	}
+}
 
-	_, err := runtime.dispatchProviderRequestHook(context.Background(), input)
+func providerHookNoopDiagnosticsCase() providerHookDiagnosticsTestCase {
+	return providerHookDiagnosticsTestCase{
+		name: "noop handler",
+		lua: `
+local lc = require("librecode")
+lc.on("before_provider_request", function()
+  return { provider_request = {} }
+end)
+`,
+		input: providerHookInput{
+			Request: providerHookTestRequest(),
+			Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
+			Headers: map[string]string{},
+			Attempt: 1,
+		},
+		assertFn: assertProviderHookNoopDiagnostics,
+	}
+}
+
+func providerHookErrorDiagnosticsCase() providerHookDiagnosticsTestCase {
+	return providerHookDiagnosticsTestCase{
+		name: "handler error",
+		lua: `
+local lc = require("librecode")
+lc.on("before_provider_request", function()
+  error("provider hook failed")
+end)
+`,
+		input: providerHookInput{
+			Request: providerHookTestRequest(),
+			Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
+			Headers: map[string]string{},
+			Attempt: 1,
+		},
+		assertFn: assertProviderHookErrorDiagnostics,
+	}
+}
+
+func assertProviderHookMutatedDiagnostics(
+	t *testing.T,
+	events []map[string]any,
+	_ providerHookOutput,
+	err error,
+) {
+	t.Helper()
 
 	require.NoError(t, err)
-	require.Len(t, *events, 1)
-	diagnostic := (*events)[0]
+	require.Len(t, events, 1)
+	diagnostic := events[0]
 	assert.Equal(t, string(extension.LifecycleBeforeProviderRequest), diagnostic["event"])
 	assert.Equal(t, 1, diagnostic[lifecycleHookCountKey])
 	assert.Equal(t, 3, diagnostic[lifecycleAttemptKey])
@@ -54,63 +119,48 @@ end)
 	assert.Equal(t, 2, diagnostic["mutated_payload_key_count"])
 }
 
-func TestRuntime_ProviderRequestHookEmitsDiagnosticsForNoopHandler(t *testing.T) {
-	t.Parallel()
-
-	runtime := newProviderHookTestRuntime(t, `
-local lc = require("librecode")
-lc.on("before_provider_request", function()
-  return { provider_request = {} }
-end)
-`)
-	events := collectAssistantDiagnostics(
-		t,
-		runtime.EventBus(),
-		string(extension.LifecycleBeforeProviderRequest)+"_diagnostic",
-	)
-	input := providerHookInput{
-		Request: providerHookTestRequest(),
-		Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
-		Headers: map[string]string{},
-		Attempt: 1,
-	}
-
-	result, err := runtime.dispatchProviderRequestHook(context.Background(), input)
+func assertProviderHookNoopDiagnostics(
+	t *testing.T,
+	events []map[string]any,
+	output providerHookOutput,
+	err error,
+) {
+	t.Helper()
 
 	require.NoError(t, err)
-	assert.Equal(t, providerHookOriginalValue, result.Payload[providerHookOriginalKey])
-	require.Len(t, *events, 1)
-	assert.Equal(t, 1, (*events)[0][lifecycleHookCountKey])
+	assert.Equal(t, providerHookOriginalValue, output.Payload[providerHookOriginalKey])
+	require.Len(t, events, 1)
+	assert.Equal(t, 1, events[0][lifecycleHookCountKey])
 }
 
-func TestRuntime_ProviderRequestHookEmitsDiagnosticsOnHandlerError(t *testing.T) {
-	t.Parallel()
+func assertProviderHookErrorDiagnostics(
+	t *testing.T,
+	events []map[string]any,
+	_ providerHookOutput,
+	err error,
+) {
+	t.Helper()
 
-	runtime := newProviderHookTestRuntime(t, `
-local lc = require("librecode")
-lc.on("before_provider_request", function()
-  error("provider hook failed")
-end)
-`)
+	require.Error(t, err)
+	require.Len(t, events, 1)
+	diagnostic := events[0]
+	assert.Equal(t, 1, diagnostic[lifecycleHookCountKey])
+	require.Contains(t, diagnostic, lifecycleErrorsKey)
+}
+
+func runProviderHookDiagnosticsTest(t *testing.T, testCase providerHookDiagnosticsTestCase) {
+	t.Helper()
+
+	runtime := newProviderHookTestRuntime(t, testCase.lua)
 	events := collectAssistantDiagnostics(
 		t,
 		runtime.EventBus(),
 		string(extension.LifecycleBeforeProviderRequest)+"_diagnostic",
 	)
-	input := providerHookInput{
-		Request: providerHookTestRequest(),
-		Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
-		Headers: map[string]string{},
-		Attempt: 1,
-	}
 
-	_, err := runtime.dispatchProviderRequestHook(context.Background(), input)
+	output, err := runtime.dispatchProviderRequestHook(context.Background(), testCase.input)
 
-	require.Error(t, err)
-	require.Len(t, *events, 1)
-	diagnostic := (*events)[0]
-	assert.Equal(t, 1, diagnostic[lifecycleHookCountKey])
-	require.Contains(t, diagnostic, lifecycleErrorsKey)
+	testCase.assertFn(t, *events, output, err)
 }
 
 func collectAssistantDiagnostics(t *testing.T, bus *event.Bus, channel string) *[]map[string]any {

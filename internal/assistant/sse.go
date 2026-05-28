@@ -12,22 +12,32 @@ import (
 )
 
 type sseAccumulator struct {
-	itemByID      map[string]map[string]any
-	finalResponse map[string]any
-	parts         []string
-	items         []any
+	itemByID              map[string]map[string]any
+	finalResponse         map[string]any
+	terminalErr           error
+	parts                 []string
+	items                 []any
+	completed             bool
+	sawTypedResponseEvent bool
 }
 
 func newSSEAccumulator() *sseAccumulator {
 	return &sseAccumulator{
-		itemByID:      map[string]map[string]any{},
-		finalResponse: nil,
-		parts:         []string{},
-		items:         []any{},
+		itemByID:              map[string]map[string]any{},
+		finalResponse:         nil,
+		terminalErr:           nil,
+		parts:                 []string{},
+		items:                 []any{},
+		completed:             false,
+		sawTypedResponseEvent: false,
 	}
 }
 
 func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(StreamEvent)) {
+	accumulator.addResponseEventState(event)
+	if accumulator.terminalErr != nil {
+		return
+	}
 	accumulator.addResponse(event)
 	accumulator.addUsage(event)
 	if text, delta := thinkingTextFromSSEEvent(event); delta && text != "" {
@@ -55,9 +65,31 @@ func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(Stream
 	}
 }
 
+func (accumulator *sseAccumulator) addResponseEventState(event map[string]any) {
+	eventType := stringValue(event[jsonTypeKey])
+	if !strings.HasPrefix(eventType, "response.") {
+		return
+	}
+	accumulator.sawTypedResponseEvent = true
+	switch eventType {
+	case "response.completed", "response.done":
+		accumulator.completed = true
+	case "response.failed":
+		accumulator.terminalErr = sseProviderError("responses_failed", event, "provider response failed")
+	case "response.incomplete":
+		accumulator.terminalErr = sseProviderError("responses_incomplete", event, "provider response incomplete")
+	}
+}
+
 func (accumulator *sseAccumulator) addResponse(event map[string]any) {
 	response, ok := event["response"].(map[string]any)
 	if !ok {
+		return
+	}
+	if accumulator.completed && !responseHasResultData(response) && accumulator.finalResponse != nil {
+		if accumulator.finalResponse["usage"] == nil && response["usage"] != nil {
+			accumulator.finalResponse["usage"] = response["usage"]
+		}
 		return
 	}
 	if accumulator.finalResponse != nil {
@@ -66,6 +98,17 @@ func (accumulator *sseAccumulator) addResponse(event map[string]any) {
 		}
 	}
 	accumulator.finalResponse = response
+}
+
+func responseHasResultData(response map[string]any) bool {
+	if output, ok := response[jsonOutputKey].([]any); ok && len(output) > 0 {
+		return true
+	}
+	if text := strings.TrimSpace(stringValue(response["output_text"])); text != "" {
+		return true
+	}
+
+	return false
 }
 
 func (accumulator *sseAccumulator) addUsage(event map[string]any) {
@@ -146,6 +189,14 @@ func parseSSEResult(reader io.Reader, onEvent func(StreamEvent)) (*providerResul
 	if err != nil {
 		return nil, err
 	}
+	if accumulator.terminalErr != nil {
+		return nil, accumulator.terminalErr
+	}
+	if accumulator.sawTypedResponseEvent && !accumulator.completed {
+		return nil, oops.In("assistant").
+			Code("responses_stream_incomplete").
+			Errorf("provider stream closed before completion")
+	}
 	fallbackText := strings.TrimSpace(strings.Join(accumulator.parts, ""))
 	if accumulator.finalResponse != nil {
 		result := providerResultFromResponse(accumulator.finalResponse)
@@ -186,6 +237,38 @@ func scanSSEResponse(scanner *bufio.Scanner, onEvent func(StreamEvent)) (accumul
 	}
 
 	return accumulator, nil
+}
+
+func sseProviderError(code string, event map[string]any, fallback string) error {
+	message := fallback
+	if response, ok := event["response"].(map[string]any); ok {
+		if responseMessage := sseErrorMessage(response); responseMessage != "" {
+			message = responseMessage
+		}
+	}
+	if eventMessage := sseErrorMessage(event); eventMessage != "" {
+		message = eventMessage
+	}
+
+	return oops.In("assistant").Code(code).Errorf("%s", message)
+}
+
+func sseErrorMessage(value any) string {
+	message := errorMessage(value)
+	if message != "" {
+		return message
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if details, ok := object["incomplete_details"].(map[string]any); ok {
+		if reason := stringValue(details["reason"]); reason != "" {
+			return "provider response incomplete: " + reason
+		}
+	}
+
+	return ""
 }
 
 func eventFromSSELine(line string) (map[string]any, bool) {

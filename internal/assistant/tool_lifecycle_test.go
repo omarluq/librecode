@@ -203,9 +203,18 @@ end)
 	require.Error(t, callErr)
 	require.Error(t, resultErr)
 	require.Len(t, *toolCallDiagnostics, 1)
-	require.Contains(t, (*toolCallDiagnostics)[0], "hook_errors")
+	assertHookErrorDiagnostic(t, (*toolCallDiagnostics)[0])
 	require.Len(t, *toolResultDiagnostics, 1)
-	require.Contains(t, (*toolResultDiagnostics)[0], "hook_errors")
+	assertHookErrorDiagnostic(t, (*toolResultDiagnostics)[0])
+}
+
+func assertHookErrorDiagnostic(t *testing.T, diagnostic map[string]any) {
+	t.Helper()
+
+	assert.Equal(t, 1, diagnostic["hook_count"])
+	hookErrors, ok := diagnostic["hook_errors"].([]string)
+	require.True(t, ok, "hook_errors should be a string slice")
+	require.NotEmpty(t, hookErrors)
 }
 
 func TestRuntime_ToolResultLifecycleDispatchesToolErrorHandlers(t *testing.T) {

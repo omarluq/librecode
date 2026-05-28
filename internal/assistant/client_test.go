@@ -69,7 +69,7 @@ func TestParseSSEResultExtractsToolCallFromOutputItems(t *testing.T) {
 
 	payload := `{"response":{"output":[{"id":"call_1","type":"function_call",` +
 		`"call_id":"call_1","name":"read","arguments":"{\"path\":\"README.md\"}"}]}}`
-	stream := "data: " + payload + "\n" + "data: [DONE]\n"
+	stream := "data: " + payload + "\n" + completedSSEEvent()
 
 	result, err := parseSSEResult(strings.NewReader(stream), nil)
 	require.NoError(t, err)
@@ -78,4 +78,45 @@ func TestParseSSEResultExtractsToolCallFromOutputItems(t *testing.T) {
 	assert.Equal(t, "read", result.ToolCalls[0].Name)
 	assert.Equal(t, `{"path":"README.md"}`, result.ToolCalls[0].ArgumentsJSON)
 	assert.Equal(t, "README.md", result.ToolCalls[0].Arguments["path"])
+}
+
+func TestParseSSEResultFailsWhenTypedResponsesStreamClosesBeforeCompletion(t *testing.T) {
+	t.Parallel()
+
+	stream := "data: {\"type\":\"response.output_item.done\"}\n\n"
+
+	_, err := parseSSEResult(strings.NewReader(stream), nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "provider stream closed before completion")
+}
+
+func TestParseSSEResultReturnsResponseFailedError(t *testing.T) {
+	t.Parallel()
+
+	stream := `data: {"type":"response.failed",` +
+		`"response":{"error":{"message":"server overloaded","code":"server_is_overloaded"}}}` +
+		"\n\n"
+
+	_, err := parseSSEResult(strings.NewReader(stream), nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "server overloaded")
+}
+
+func TestParseSSEResultReturnsResponseIncompleteReason(t *testing.T) {
+	t.Parallel()
+
+	stream := `data: {"type":"response.incomplete",` +
+		`"response":{"incomplete_details":{"reason":"content_filter"}}}` +
+		"\n\n"
+
+	_, err := parseSSEResult(strings.NewReader(stream), nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "provider response incomplete: content_filter")
+}
+
+func completedSSEEvent() string {
+	return "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\"}}\n\n"
 }
