@@ -80,41 +80,46 @@ func TestParseSSEResultExtractsToolCallFromOutputItems(t *testing.T) {
 	assert.Equal(t, "README.md", result.ToolCalls[0].Arguments["path"])
 }
 
-func TestParseSSEResultFailsWhenTypedResponsesStreamClosesBeforeCompletion(t *testing.T) {
+func TestParseSSEResultFailureCases(t *testing.T) {
 	t.Parallel()
 
-	stream := "data: {\"type\":\"response.output_item.done\"}\n\n"
+	tests := []struct {
+		name              string
+		stream            string
+		expectedSubstring string
+	}{
+		{
+			name:              "typed responses stream closes before completion",
+			stream:            "data: {\"type\":\"response.output_item.done\"}\n\n",
+			expectedSubstring: "provider stream closed before completion",
+		},
+		{
+			name: "response failed",
+			stream: `data: {"type":"response.failed",` +
+				`"response":{"error":{"message":"server overloaded","code":"server_is_overloaded"}}}` +
+				"\n\n",
+			expectedSubstring: "server overloaded",
+		},
+		{
+			name: "response incomplete",
+			stream: `data: {"type":"response.incomplete",` +
+				`"response":{"incomplete_details":{"reason":"content_filter"}}}` +
+				"\n\n",
+			expectedSubstring: "provider response incomplete: content_filter",
+		},
+	}
 
-	_, err := parseSSEResult(strings.NewReader(stream), nil)
+	for _, testCase := range tests {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "provider stream closed before completion")
-}
+			_, err := parseSSEResult(strings.NewReader(testCase.stream), nil)
 
-func TestParseSSEResultReturnsResponseFailedError(t *testing.T) {
-	t.Parallel()
-
-	stream := `data: {"type":"response.failed",` +
-		`"response":{"error":{"message":"server overloaded","code":"server_is_overloaded"}}}` +
-		"\n\n"
-
-	_, err := parseSSEResult(strings.NewReader(stream), nil)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "server overloaded")
-}
-
-func TestParseSSEResultReturnsResponseIncompleteReason(t *testing.T) {
-	t.Parallel()
-
-	stream := `data: {"type":"response.incomplete",` +
-		`"response":{"incomplete_details":{"reason":"content_filter"}}}` +
-		"\n\n"
-
-	_, err := parseSSEResult(strings.NewReader(stream), nil)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "provider response incomplete: content_filter")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.expectedSubstring)
+		})
+	}
 }
 
 func completedSSEEvent() string {
