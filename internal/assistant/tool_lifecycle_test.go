@@ -160,6 +160,54 @@ func TestRuntime_ToolLifecycleEmitsDiagnosticsWithoutHandlers(t *testing.T) {
 	assert.Equal(t, 0, (*toolResultDiagnostics)[0]["hook_count"])
 }
 
+func TestRuntime_ToolLifecycleEmitsDiagnosticsOnHandlerError(t *testing.T) {
+	t.Parallel()
+
+	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+	loadRuntimeExtension(t, manager, `
+local lc = require("librecode")
+lc.on("tool_call", function()
+  error("tool hook failed")
+end)
+lc.on("tool_result", function()
+  error("tool result hook failed")
+end)
+`)
+	toolCallDiagnostics := collectRuntimeDiagnosticPayloads(
+		t,
+		runtime.EventBus(),
+		"tool_call_diagnostic",
+	)
+	toolResultDiagnostics := collectRuntimeDiagnosticPayloads(
+		t,
+		runtime.EventBus(),
+		"tool_result_diagnostic",
+	)
+	call := assistant.ToolCallEvent{
+		Arguments:     map[string]any{testToolPathKey: testToolPath},
+		ID:            testToolCallID,
+		Name:          testToolName,
+		ArgumentsJSON: testToolArgsJSON,
+	}
+	event := &assistant.ToolEvent{
+		Name:          testToolName,
+		ArgumentsJSON: testToolArgsJSON,
+		DetailsJSON:   "{}",
+		Result:        testToolResult,
+		Error:         "",
+	}
+
+	callErr := runtime.DispatchToolCallLifecycleForTest(context.Background(), &call)
+	resultErr := runtime.DispatchToolResultLifecycleForTest(context.Background(), event)
+
+	require.Error(t, callErr)
+	require.Error(t, resultErr)
+	require.Len(t, *toolCallDiagnostics, 1)
+	require.Contains(t, (*toolCallDiagnostics)[0], "hook_errors")
+	require.Len(t, *toolResultDiagnostics, 1)
+	require.Contains(t, (*toolResultDiagnostics)[0], "hook_errors")
+}
+
 func TestRuntime_ToolResultLifecycleDispatchesToolErrorHandlers(t *testing.T) {
 	t.Parallel()
 

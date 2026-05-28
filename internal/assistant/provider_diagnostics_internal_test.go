@@ -70,7 +70,7 @@ end)
 	)
 	input := providerHookInput{
 		Request: providerHookTestRequest(),
-		Payload: map[string]any{"original": "value"},
+		Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
 		Headers: map[string]string{},
 		Attempt: 1,
 	}
@@ -78,9 +78,39 @@ end)
 	result, err := runtime.dispatchProviderRequestHook(context.Background(), input)
 
 	require.NoError(t, err)
-	assert.Equal(t, "value", result.Payload["original"])
+	assert.Equal(t, providerHookOriginalValue, result.Payload[providerHookOriginalKey])
 	require.Len(t, *events, 1)
 	assert.Equal(t, 1, (*events)[0][lifecycleHookCountKey])
+}
+
+func TestRuntime_ProviderRequestHookEmitsDiagnosticsOnHandlerError(t *testing.T) {
+	t.Parallel()
+
+	runtime := newProviderHookTestRuntime(t, `
+local lc = require("librecode")
+lc.on("before_provider_request", function()
+  error("provider hook failed")
+end)
+`)
+	events := collectAssistantDiagnostics(
+		t,
+		runtime.EventBus(),
+		string(extension.LifecycleBeforeProviderRequest)+"_diagnostic",
+	)
+	input := providerHookInput{
+		Request: providerHookTestRequest(),
+		Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
+		Headers: map[string]string{},
+		Attempt: 1,
+	}
+
+	_, err := runtime.dispatchProviderRequestHook(context.Background(), input)
+
+	require.Error(t, err)
+	require.Len(t, *events, 1)
+	diagnostic := (*events)[0]
+	assert.Equal(t, 1, diagnostic[lifecycleHookCountKey])
+	require.Contains(t, diagnostic, lifecycleErrorsKey)
 }
 
 func collectAssistantDiagnostics(t *testing.T, bus *event.Bus, channel string) *[]map[string]any {
