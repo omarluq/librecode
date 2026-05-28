@@ -28,7 +28,7 @@ require (
 	github.com/yuin/gopher-lua v1.1.2
 	golang.org/x/text v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.50.1
+	modernc.org/sqlite v1.51.0
 )
 
 require (
