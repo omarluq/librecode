@@ -15,6 +15,10 @@ func ContextBreakdownLinesForTest(breakdown map[string]int) []string {
 	return contextBreakdownLines(breakdown)
 }
 
+func ContextContributorLinesForTest(contributors []model.TokenContributor) []string {
+	return contextContributorLines(contributors)
+}
+
 func NewAppForTest() *App {
 	return newApp(nil, &RunOptions{
 		Extensions: nil,

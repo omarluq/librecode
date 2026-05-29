@@ -49,8 +49,21 @@ func mergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
 	if len(usage.Breakdown) == 0 && len(reported.Breakdown) > 0 {
 		usage.Breakdown = cloneIntMapForUsage(reported.Breakdown)
 	}
+	if len(usage.TopContributors) == 0 && len(reported.TopContributors) > 0 {
+		usage.TopContributors = cloneTokenContributors(reported.TopContributors)
+	}
 
 	return usage
+}
+
+func cloneTokenContributors(contributors []model.TokenContributor) []model.TokenContributor {
+	if len(contributors) == 0 {
+		return nil
+	}
+	cloned := make([]model.TokenContributor, len(contributors))
+	copy(cloned, contributors)
+
+	return cloned
 }
 
 func usageFromObject(value any) model.TokenUsage {
@@ -62,11 +75,12 @@ func usageFromObject(value any) model.TokenUsage {
 	output := intFromAny(firstPresent(object, jsonOutputTokensKey, "completion_tokens"))
 
 	return model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 0,
-		ContextTokens: 0,
-		InputTokens:   input,
-		OutputTokens:  output,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   0,
+		ContextTokens:   0,
+		InputTokens:     input,
+		OutputTokens:    output,
 	}
 }
 
