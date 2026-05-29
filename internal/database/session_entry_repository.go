@@ -2,14 +2,11 @@ package database
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/samber/oops"
 )
 
@@ -379,12 +376,7 @@ func boolToInt(value bool) int {
 }
 
 func newEntryID() string {
-	buffer := make([]byte, 4)
-	if _, err := rand.Read(buffer); err != nil {
-		return uuid.NewString()[:8]
-	}
-
-	return hex.EncodeToString(buffer)
+	return newUUIDv7()
 }
 
 func normalizeDataJSON(dataJSON string) string {
