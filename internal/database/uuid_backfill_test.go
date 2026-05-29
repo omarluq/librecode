@@ -192,7 +192,7 @@ func queryMessageBackfillRows(ctx context.Context, t *testing.T, connection *sql
 
 	rows, err := connection.QueryContext(
 		ctx,
-		`SELECT id, session_id, entry_id FROM session_messages ORDER BY created_at ASC`,
+		`SELECT id, session_id, entry_id FROM session_messages ORDER BY created_at ASC, id ASC`,
 	)
 	require.NoError(t, err)
 

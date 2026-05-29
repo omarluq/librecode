@@ -8,6 +8,8 @@ import (
 	"fmt"
 )
 
+const closeUUIDv7ForeignKeyCheckRowsError = "database: close UUIDv7 foreign key check rows: %w"
+
 type sessionIDRow struct {
 	ID            string
 	ParentSession string
@@ -28,17 +30,27 @@ type messageIDRow struct {
 	EntryID   string
 }
 
+type uuidV7BackfillRows struct {
+	sessions []sessionIDRow
+	entries  []entryIDRow
+	messages []messageIDRow
+}
+
+type uuidV7BackfillReplacements struct {
+	sessions map[string]string
+	entries  map[string]string
+	messages map[string]string
+}
+
 // BackfillUUIDv7IDs rewrites existing session graph identifiers to UUIDv7 while preserving relationships.
 func BackfillUUIDv7IDs(ctx context.Context, connection *sql.DB) (err error) {
-	sessions, entries, messages, err := loadIDRows(ctx, connection)
+	rows, err := loadIDRows(ctx, connection)
 	if err != nil {
 		return err
 	}
 
-	sessionIDs := uuidV7ReplacementMap(sessionIDsFromRows(sessions))
-	entryIDs := uuidV7ReplacementMap(entryIDsFromRows(entries))
-	messageIDs := uuidV7ReplacementMap(messageIDsFromRows(messages))
-	if noUUIDv7BackfillNeeded(sessionIDs, entryIDs, messageIDs) {
+	replacements := uuidV7ReplacementMaps(rows)
+	if replacements.none() {
 		return nil
 	}
 
@@ -53,16 +65,7 @@ func BackfillUUIDv7IDs(ctx context.Context, connection *sql.DB) (err error) {
 		}
 	}()
 
-	if err := runUUIDv7BackfillTransaction(
-		ctx,
-		connection,
-		sessions,
-		entries,
-		messages,
-		sessionIDs,
-		entryIDs,
-		messageIDs,
-	); err != nil {
+	if err := runUUIDv7BackfillTransaction(ctx, connection, rows, replacements); err != nil {
 		return err
 	}
 	if err := restoreForeignKeySetting(ctx, connection, foreignKeysEnabled); err != nil {
@@ -73,34 +76,29 @@ func BackfillUUIDv7IDs(ctx context.Context, connection *sql.DB) (err error) {
 	return checkForeignKeys(ctx, connection)
 }
 
-func noUUIDv7BackfillNeeded(sessionIDs, entryIDs, messageIDs map[string]string) bool {
-	return len(sessionIDs) == 0 && len(entryIDs) == 0 && len(messageIDs) == 0
+func uuidV7ReplacementMaps(rows uuidV7BackfillRows) uuidV7BackfillReplacements {
+	return uuidV7BackfillReplacements{
+		sessions: uuidV7ReplacementMap(sessionIDsFromRows(rows.sessions)),
+		entries:  uuidV7ReplacementMap(entryIDsFromRows(rows.entries)),
+		messages: uuidV7ReplacementMap(messageIDsFromRows(rows.messages)),
+	}
+}
+
+func (replacements uuidV7BackfillReplacements) none() bool {
+	return len(replacements.sessions) == 0 && len(replacements.entries) == 0 && len(replacements.messages) == 0
 }
 
 func runUUIDv7BackfillTransaction(
 	ctx context.Context,
 	connection *sql.DB,
-	sessions []sessionIDRow,
-	entries []entryIDRow,
-	messages []messageIDRow,
-	sessionIDs map[string]string,
-	entryIDs map[string]string,
-	messageIDs map[string]string,
+	rows uuidV7BackfillRows,
+	replacements uuidV7BackfillReplacements,
 ) error {
 	transaction, err := connection.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("database: begin UUIDv7 backfill: %w", err)
 	}
-	if err := backfillUUIDv7IDsTx(
-		ctx,
-		transaction,
-		sessions,
-		entries,
-		messages,
-		sessionIDs,
-		entryIDs,
-		messageIDs,
-	); err != nil {
+	if err := backfillUUIDv7IDsTx(ctx, transaction, rows, replacements); err != nil {
 		rollbackErr := transaction.Rollback()
 		if rollbackErr != nil {
 			return fmt.Errorf("database: rollback UUIDv7 backfill: %w", rollbackErr)
@@ -114,13 +112,10 @@ func runUUIDv7BackfillTransaction(
 	return nil
 }
 
-func loadIDRows(
-	ctx context.Context,
-	connection *sql.DB,
-) ([]sessionIDRow, []entryIDRow, []messageIDRow, error) {
+func loadIDRows(ctx context.Context, connection *sql.DB) (uuidV7BackfillRows, error) {
 	sessions, err := queryRows(ctx, connection, `SELECT id, parent_session FROM sessions`, scanSessionIDRow)
 	if err != nil {
-		return nil, nil, nil, err
+		return uuidV7BackfillRows{}, err
 	}
 	entries, err := queryRows(
 		ctx,
@@ -131,7 +126,7 @@ FROM session_entries`,
 		scanEntryIDRow,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return uuidV7BackfillRows{}, err
 	}
 	messages, err := queryRows(
 		ctx,
@@ -140,10 +135,14 @@ FROM session_entries`,
 		scanMessageIDRow,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return uuidV7BackfillRows{}, err
 	}
 
-	return sessions, entries, messages, nil
+	return uuidV7BackfillRows{
+		sessions: sessions,
+		entries:  entries,
+		messages: messages,
+	}, nil
 }
 
 func scanSessionIDRow(scanner rowScanner) (*sessionIDRow, error) {
@@ -245,21 +244,17 @@ func messageIDsFromRows(rows []messageIDRow) []string {
 func backfillUUIDv7IDsTx(
 	ctx context.Context,
 	transaction *sql.Tx,
-	sessions []sessionIDRow,
-	entries []entryIDRow,
-	messages []messageIDRow,
-	sessionIDs map[string]string,
-	entryIDs map[string]string,
-	messageIDs map[string]string,
+	rows uuidV7BackfillRows,
+	replacements uuidV7BackfillReplacements,
 ) error {
-	if err := backfillSessionUUIDv7IDsTx(ctx, transaction, sessions, sessionIDs); err != nil {
+	if err := backfillSessionUUIDv7IDsTx(ctx, transaction, rows.sessions, replacements.sessions); err != nil {
 		return err
 	}
-	if err := backfillEntryUUIDv7IDsTx(ctx, transaction, entries, sessionIDs, entryIDs); err != nil {
+	if err := backfillEntryUUIDv7IDsTx(ctx, transaction, rows.entries, replacements); err != nil {
 		return err
 	}
 
-	return backfillMessageUUIDv7IDsTx(ctx, transaction, messages, sessionIDs, entryIDs, messageIDs)
+	return backfillMessageUUIDv7IDsTx(ctx, transaction, rows.messages, replacements)
 }
 
 func backfillSessionUUIDv7IDsTx(
@@ -287,11 +282,10 @@ func backfillEntryUUIDv7IDsTx(
 	ctx context.Context,
 	transaction *sql.Tx,
 	rows []entryIDRow,
-	sessionIDs map[string]string,
-	entryIDs map[string]string,
+	replacements uuidV7BackfillReplacements,
 ) error {
 	for index := range rows {
-		if err := backfillEntryUUIDv7IDTx(ctx, transaction, &rows[index], sessionIDs, entryIDs); err != nil {
+		if err := backfillEntryUUIDv7IDTx(ctx, transaction, &rows[index], replacements); err != nil {
 			return err
 		}
 	}
@@ -303,14 +297,13 @@ func backfillEntryUUIDv7IDTx(
 	ctx context.Context,
 	transaction *sql.Tx,
 	row *entryIDRow,
-	sessionIDs map[string]string,
-	entryIDs map[string]string,
+	replacements uuidV7BackfillReplacements,
 ) error {
 	parentID := sql.NullString{}
 	if row.ParentID.Valid {
-		parentID = sql.NullString{String: replaceID(entryIDs, row.ParentID.String), Valid: true}
+		parentID = sql.NullString{String: replaceID(replacements.entries, row.ParentID.String), Valid: true}
 	}
-	dataJSON, err := replaceEntryDataIDs(row.DataJSON, entryIDs)
+	dataJSON, err := replaceEntryDataIDs(row.DataJSON, replacements.entries)
 	if err != nil {
 		return err
 	}
@@ -319,12 +312,12 @@ func backfillEntryUUIDv7IDTx(
 		`UPDATE session_entries
 SET id = ?, session_id = ?, parent_id = ?, data_json = ?, compaction_first_kept_entry_id = ?, branch_from_entry_id = ?
 WHERE id = ?`,
-		replaceID(entryIDs, row.ID),
-		replaceID(sessionIDs, row.SessionID),
+		replaceID(replacements.entries, row.ID),
+		replaceID(replacements.sessions, row.SessionID),
 		parentID,
 		dataJSON,
-		replaceID(entryIDs, row.CompactionFirstKeptEntryID),
-		replaceID(entryIDs, row.BranchFromEntryID),
+		replaceID(replacements.entries, row.CompactionFirstKeptEntryID),
+		replaceID(replacements.entries, row.BranchFromEntryID),
 		row.ID,
 	)
 	if err != nil {
@@ -338,17 +331,15 @@ func backfillMessageUUIDv7IDsTx(
 	ctx context.Context,
 	transaction *sql.Tx,
 	rows []messageIDRow,
-	sessionIDs map[string]string,
-	entryIDs map[string]string,
-	messageIDs map[string]string,
+	replacements uuidV7BackfillReplacements,
 ) error {
 	for _, row := range rows {
 		if _, err := transaction.ExecContext(
 			ctx,
 			`UPDATE session_messages SET id = ?, session_id = ?, entry_id = ? WHERE id = ?`,
-			replaceID(messageIDs, row.ID),
-			replaceID(sessionIDs, row.SessionID),
-			replaceID(entryIDs, row.EntryID),
+			replaceID(replacements.messages, row.ID),
+			replaceID(replacements.sessions, row.SessionID),
+			replaceID(replacements.entries, row.EntryID),
 			row.ID,
 		); err != nil {
 			return fmt.Errorf("database: backfill message UUIDv7 IDs: %w", err)
@@ -438,18 +429,18 @@ func checkForeignKeys(ctx context.Context, connection *sql.DB) error {
 	}
 	if rows.Next() {
 		if closeErr := rows.Close(); closeErr != nil {
-			return fmt.Errorf("database: close UUIDv7 foreign key check rows: %w", closeErr)
+			return fmt.Errorf(closeUUIDv7ForeignKeyCheckRowsError, closeErr)
 		}
 		return fmt.Errorf("database: UUIDv7 backfill left invalid foreign keys")
 	}
 	if err := rows.Err(); err != nil {
 		if closeErr := rows.Close(); closeErr != nil {
-			return fmt.Errorf("database: close UUIDv7 foreign key check rows: %w", closeErr)
+			return fmt.Errorf(closeUUIDv7ForeignKeyCheckRowsError, closeErr)
 		}
 		return fmt.Errorf("database: iterate UUIDv7 foreign key check: %w", err)
 	}
 	if err := rows.Close(); err != nil {
-		return fmt.Errorf("database: close UUIDv7 foreign key check rows: %w", err)
+		return fmt.Errorf(closeUUIDv7ForeignKeyCheckRowsError, err)
 	}
 
 	return nil
