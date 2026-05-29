@@ -604,11 +604,12 @@ func (testCompletionClient) Complete(
 		Thinking:   nil,
 		ToolEvents: nil,
 		Usage: model.TokenUsage{
-			Breakdown:     nil,
-			ContextWindow: 1000,
-			ContextTokens: 12,
-			InputTokens:   12,
-			OutputTokens:  4,
+			Breakdown:       nil,
+			TopContributors: nil,
+			ContextWindow:   1000,
+			ContextTokens:   12,
+			InputTokens:     12,
+			OutputTokens:    4,
 		},
 	}, nil
 }

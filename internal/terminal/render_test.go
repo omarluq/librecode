@@ -407,11 +407,12 @@ func TestApplyPromptResponsePreservesLargerStreamedContextUsage(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.applyTokenUsage(&model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 100_000,
-		ContextTokens: 14_000,
-		InputTokens:   14_000,
-		OutputTokens:  0,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100_000,
+		ContextTokens:   14_000,
+		InputTokens:     14_000,
+		OutputTokens:    0,
 	})
 
 	app.applyPromptResponse(context.Background(), &assistant.PromptResponse{
@@ -422,21 +423,23 @@ func TestApplyPromptResponsePreservesLargerStreamedContextUsage(t *testing.T) {
 		Thinking:         nil,
 		ToolEvents:       nil,
 		Usage: model.TokenUsage{
-			Breakdown:     nil,
-			ContextWindow: 100_000,
-			ContextTokens: 12_000,
-			InputTokens:   12_000,
-			OutputTokens:  700,
+			Breakdown:       nil,
+			TopContributors: nil,
+			ContextWindow:   100_000,
+			ContextTokens:   12_000,
+			InputTokens:     12_000,
+			OutputTokens:    700,
 		},
 		Cached: false,
 	}, 0)
 
 	assert.Equal(t, model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 100_000,
-		ContextTokens: 14_000,
-		InputTokens:   0,
-		OutputTokens:  0,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100_000,
+		ContextTokens:   14_000,
+		InputTokens:     0,
+		OutputTokens:    0,
 	}, app.tokenUsage)
 }
 
