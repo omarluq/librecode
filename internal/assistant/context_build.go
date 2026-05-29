@@ -201,11 +201,12 @@ func estimateContextBuildUsage(
 	}
 
 	return model.TokenUsage{
-		Breakdown:     cloneIntMapForUsage(breakdown),
-		ContextWindow: selectedModel.ContextWindow,
-		ContextTokens: inputTokens,
-		InputTokens:   inputTokens,
-		OutputTokens:  0,
+		Breakdown:       cloneIntMapForUsage(breakdown),
+		TopContributors: topContextContributors(systemPrompt, messages, contributions),
+		ContextWindow:   selectedModel.ContextWindow,
+		ContextTokens:   inputTokens,
+		InputTokens:     inputTokens,
+		OutputTokens:    0,
 	}
 }
 

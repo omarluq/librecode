@@ -307,6 +307,7 @@ func contextBuildLifecyclePayload(
 		"message_count":           len(base.Messages),
 		jsonBreakdownKey:          cloneIntMap(result.Breakdown),
 		"contributions":           []any{},
+		"top_contributors":        tokenContributorsLifecyclePayload(result.Usage.TopContributors),
 		"max_contribution_tokens": contextContributionMaxTokens,
 		"system_tokens":           base.SystemTokens,
 		"skill_tokens":            base.SkillTokens,
@@ -381,11 +382,28 @@ func entryLifecyclePayload(entry *database.EntryEntity) map[string]any {
 func tokenUsageLifecyclePayload(usage model.TokenUsage) map[string]any {
 	return map[string]any{
 		jsonBreakdownKey:     cloneIntMap(usage.Breakdown),
+		"top_contributors":   tokenContributorsLifecyclePayload(usage.TopContributors),
 		jsonContextTokensKey: usage.ContextTokens,
 		jsonContextWindowKey: usage.ContextWindow,
 		jsonInputTokensKey:   usage.InputTokens,
 		jsonOutputTokensKey:  usage.OutputTokens,
 	}
+}
+
+func tokenContributorsLifecyclePayload(contributors []model.TokenContributor) []any {
+	payload := make([]any, 0, len(contributors))
+	for index := range contributors {
+		contributor := contributors[index]
+		payload = append(payload, map[string]any{
+			"label":     contributor.Label,
+			jsonRoleKey: contributor.Role,
+			"preview":   contributor.Preview,
+			"tokens":    contributor.Tokens,
+			"chars":     contributor.Chars,
+		})
+	}
+
+	return payload
 }
 
 func stringPtrValue(value *string) string {

@@ -23,6 +23,9 @@ func mergeTerminalUsage(current, next model.TokenUsage) model.TokenUsage {
 	if len(next.Breakdown) > 0 {
 		current.Breakdown = cloneTokenBreakdown(next.Breakdown)
 	}
+	if len(next.TopContributors) > 0 {
+		current.TopContributors = cloneTokenContributors(next.TopContributors)
+	}
 
 	return current
 }
@@ -66,6 +69,16 @@ func cloneTokenBreakdown(values map[string]int) map[string]int {
 	for key, value := range values {
 		cloned[key] = value
 	}
+
+	return cloned
+}
+
+func cloneTokenContributors(contributors []model.TokenContributor) []model.TokenContributor {
+	if len(contributors) == 0 {
+		return nil
+	}
+	cloned := make([]model.TokenContributor, len(contributors))
+	copy(cloned, contributors)
 
 	return cloned
 }

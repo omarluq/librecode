@@ -12,11 +12,12 @@ func TestTokenUsageHelpers(t *testing.T) {
 	t.Parallel()
 
 	usage := model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 100,
-		ContextTokens: 25,
-		InputTokens:   10,
-		OutputTokens:  15,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100,
+		ContextTokens:   25,
+		InputTokens:     10,
+		OutputTokens:    15,
 	}
 
 	assert.Equal(t, 25, usage.TotalTokens())
@@ -28,11 +29,12 @@ func TestTokenUsageContextPercentCapsAtHundred(t *testing.T) {
 	t.Parallel()
 
 	usage := model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 100,
-		ContextTokens: 250,
-		InputTokens:   0,
-		OutputTokens:  0,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100,
+		ContextTokens:   250,
+		InputTokens:     0,
+		OutputTokens:    0,
 	}
 
 	assert.Equal(t, 100, usage.ContextPercent())

@@ -24,7 +24,8 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 			},
 			expected: model.TokenUsage{
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
-				InputTokens: 123, OutputTokens: 45,
+				TopContributors: nil,
+				InputTokens:     123, OutputTokens: 45,
 			},
 		},
 		{
@@ -35,7 +36,8 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 			},
 			expected: model.TokenUsage{
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
-				InputTokens: 77, OutputTokens: 9,
+				TopContributors: nil,
+				InputTokens:     77, OutputTokens: 9,
 			},
 		},
 		{
@@ -46,7 +48,8 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 			},
 			expected: model.TokenUsage{
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
-				InputTokens: 100, OutputTokens: 20,
+				TopContributors: nil,
+				InputTokens:     100, OutputTokens: 20,
 			},
 		},
 	}
@@ -65,19 +68,22 @@ func TestMergeUsagePreservesEstimatedContextWindow(t *testing.T) {
 
 	estimated := model.TokenUsage{
 		Breakdown: nil, ContextWindow: 1000, ContextTokens: 200,
-		InputTokens: 200, OutputTokens: 0,
+		TopContributors: nil,
+		InputTokens:     200, OutputTokens: 0,
 	}
 	reported := model.TokenUsage{
 		Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
-		InputTokens: 150, OutputTokens: 25,
+		TopContributors: nil,
+		InputTokens:     150, OutputTokens: 25,
 	}
 
 	assert.Equal(t, model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 1000,
-		ContextTokens: 200,
-		InputTokens:   150,
-		OutputTokens:  25,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   1000,
+		ContextTokens:   200,
+		InputTokens:     150,
+		OutputTokens:    25,
 	}, mergeUsage(estimated, reported))
 }
 
@@ -86,19 +92,22 @@ func TestMergeUsageNeverShrinksEstimatedContext(t *testing.T) {
 
 	estimated := model.TokenUsage{
 		Breakdown: nil, ContextWindow: 100_000, ContextTokens: 14_000,
-		InputTokens: 14_000, OutputTokens: 0,
+		TopContributors: nil,
+		InputTokens:     14_000, OutputTokens: 0,
 	}
 	reported := model.TokenUsage{
 		Breakdown: nil, ContextWindow: 0, ContextTokens: 12_000,
-		InputTokens: 12_000, OutputTokens: 700,
+		TopContributors: nil,
+		InputTokens:     12_000, OutputTokens: 700,
 	}
 
 	assert.Equal(t, model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 100_000,
-		ContextTokens: 14_000,
-		InputTokens:   12_000,
-		OutputTokens:  700,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100_000,
+		ContextTokens:   14_000,
+		InputTokens:     12_000,
+		OutputTokens:    700,
 	}, mergeUsage(estimated, reported))
 }
 
@@ -107,19 +116,22 @@ func TestMergeUsageDoesNotPromoteProviderTotalToContext(t *testing.T) {
 
 	estimated := model.TokenUsage{
 		Breakdown: nil, ContextWindow: 272_000, ContextTokens: 0,
-		InputTokens: 0, OutputTokens: 0,
+		TopContributors: nil,
+		InputTokens:     0, OutputTokens: 0,
 	}
 	reported := model.TokenUsage{
 		Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
-		InputTokens: 13_000_000, OutputTokens: 100,
+		TopContributors: nil,
+		InputTokens:     13_000_000, OutputTokens: 100,
 	}
 
 	assert.Equal(t, model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 272_000,
-		ContextTokens: 0,
-		InputTokens:   13_000_000,
-		OutputTokens:  100,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   272_000,
+		ContextTokens:   0,
+		InputTokens:     13_000_000,
+		OutputTokens:    100,
 	}, mergeUsage(estimated, reported))
 }
 
@@ -136,11 +148,12 @@ func TestParseSSEResultPreservesUsageWhenItemsProvideText(t *testing.T) {
 	result, err := parseSSEResult(strings.NewReader(stream), nil)
 	require.NoError(t, err)
 	assert.Equal(t, model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 0,
-		ContextTokens: 0,
-		InputTokens:   12,
-		OutputTokens:  7,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   0,
+		ContextTokens:   0,
+		InputTokens:     12,
+		OutputTokens:    7,
 	}, result.Usage)
 	assert.Equal(t, "hello", result.Text)
 }
@@ -159,11 +172,12 @@ func TestParseSSEResultPreservesUsageAcrossLaterResponseEvents(t *testing.T) {
 	result, err := parseSSEResult(strings.NewReader(stream), nil)
 	require.NoError(t, err)
 	assert.Equal(t, model.TokenUsage{
-		Breakdown:     nil,
-		ContextWindow: 0,
-		ContextTokens: 0,
-		InputTokens:   12,
-		OutputTokens:  7,
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   0,
+		ContextTokens:   0,
+		InputTokens:     12,
+		OutputTokens:    7,
 	}, result.Usage)
 	assert.Equal(t, "hello", result.Text)
 }

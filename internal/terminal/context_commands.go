@@ -24,6 +24,11 @@ func (app *App) showContextInfo(ctx context.Context, original string) error {
 		lines = append(lines, "- breakdown:")
 		lines = append(lines, breakdownLines...)
 	}
+	contributorLines := contextContributorLines(app.tokenUsage.TopContributors)
+	if len(contributorLines) > 0 {
+		lines = append(lines, "- top contributors:")
+		lines = append(lines, contributorLines...)
+	}
 	app.addMessage(database.RoleCustom, strings.Join(lines, "\n"))
 
 	return nil
