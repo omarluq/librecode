@@ -89,13 +89,14 @@ func TestSessionRepository_BackfillsEntryMetadataMigration(t *testing.T) {
 	require.NoError(t, err)
 
 	createdAt := time.Now().UTC().Format(time.RFC3339Nano)
+	legacyEntryID := "019aced0-f39d-7d31-a522-b8d50af94d6a"
 	_, err = connection.ExecContext(
 		ctx,
 		`INSERT INTO session_entries (
 			id, session_id, parent_id, entry_type, role, content,
 			provider, model, custom_type, data_json, summary, created_at
 		) VALUES (?, ?, NULL, ?, ?, ?, '', '', '', '{}', '', ?)`,
-		"legacy-tool",
+		legacyEntryID,
 		session.ID,
 		string(database.EntryTypeMessage),
 		string(database.RoleToolResult),
@@ -106,7 +107,7 @@ func TestSessionRepository_BackfillsEntryMetadataMigration(t *testing.T) {
 
 	require.NoError(t, database.Migrate(ctx, connection))
 
-	entry, found, err := repository.Entry(ctx, session.ID, "legacy-tool")
+	entry, found, err := repository.Entry(ctx, session.ID, legacyEntryID)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "bash", entry.ToolName)

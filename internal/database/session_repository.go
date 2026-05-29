@@ -7,7 +7,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/samber/oops"
 )
 
@@ -25,6 +24,10 @@ func NewSessionRepository(connection *sql.DB) *SessionRepository {
 	}
 }
 
+func newSessionID() string {
+	return newUUIDv7()
+}
+
 // CreateSession creates a new persisted session for a working directory.
 func (repository *SessionRepository) CreateSession(
 	ctx context.Context,
@@ -36,7 +39,7 @@ func (repository *SessionRepository) CreateSession(
 	createdSession := SessionEntity{
 		CreatedAt:     timestamp,
 		UpdatedAt:     timestamp,
-		ID:            uuid.NewString(),
+		ID:            newSessionID(),
 		CWD:           cwd,
 		Name:          name,
 		ParentSession: parentSession,

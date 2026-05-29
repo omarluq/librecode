@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -28,6 +29,7 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 
 	createdSession, err := repository.CreateSession(ctx, "/work", "port", "")
 	require.NoError(t, err)
+	assertUUIDV7(t, createdSession.ID)
 
 	firstMessage := database.MessageEntity{
 		Timestamp: time.Now().UTC(),
@@ -38,6 +40,7 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 	}
 	firstEntry, err := repository.AppendMessage(ctx, createdSession.ID, nil, &firstMessage)
 	require.NoError(t, err)
+	assertUUIDV7(t, firstEntry.ID)
 
 	secondMessage := database.MessageEntity{
 		Timestamp: time.Now().UTC(),
@@ -48,6 +51,7 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 	}
 	secondEntry, err := repository.AppendMessage(ctx, createdSession.ID, &firstEntry.ID, &secondMessage)
 	require.NoError(t, err)
+	assertUUIDV7(t, secondEntry.ID)
 
 	latestSession, found, err := repository.LatestSession(ctx, "/work")
 	require.NoError(t, err)
@@ -330,6 +334,14 @@ func newMigratedThroughVersion(t *testing.T, version int64) *sql.DB {
 	require.NoError(t, err)
 
 	return connection
+}
+
+func assertUUIDV7(t *testing.T, value string) {
+	t.Helper()
+
+	parsed, err := uuid.FromString(value)
+	require.NoError(t, err)
+	assert.Equal(t, byte(7), parsed.Version())
 }
 
 func sqliteDriver() string {

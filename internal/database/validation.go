@@ -7,10 +7,11 @@ import (
 	"time"
 
 	zog "github.com/Oudwins/zog"
+	"github.com/gofrs/uuid/v5"
 )
 
 func validateSessionEntity(entity *SessionEntity) error {
-	if err := validateRequiredText("session.id", entity.ID); err != nil {
+	if err := validateUUIDv7("session.id", entity.ID); err != nil {
 		return err
 	}
 	if err := validateRequiredText("session.cwd", entity.CWD); err != nil {
@@ -24,11 +25,16 @@ func validateSessionEntity(entity *SessionEntity) error {
 }
 
 func validateEntryEntity(entity *EntryEntity) error {
-	if err := validateRequiredText("entry.id", entity.ID); err != nil {
+	if err := validateUUIDv7("entry.id", entity.ID); err != nil {
 		return err
 	}
-	if err := validateRequiredText("entry.session_id", entity.SessionID); err != nil {
+	if err := validateUUIDv7("entry.session_id", entity.SessionID); err != nil {
 		return err
+	}
+	if entity.ParentID != nil {
+		if err := validateUUIDv7("entry.parent_id", *entity.ParentID); err != nil {
+			return err
+		}
 	}
 	if err := validateRequiredText("entry.type", string(entity.Type)); err != nil {
 		return err
@@ -44,13 +50,13 @@ func validateEntryEntity(entity *EntryEntity) error {
 }
 
 func validateSessionMessageEntity(entity *SessionMessageEntity) error {
-	if err := validateRequiredText("message.id", entity.ID); err != nil {
+	if err := validateUUIDv7("message.id", entity.ID); err != nil {
 		return err
 	}
-	if err := validateRequiredText("message.session_id", entity.SessionID); err != nil {
+	if err := validateUUIDv7("message.session_id", entity.SessionID); err != nil {
 		return err
 	}
-	if err := validateRequiredText("message.entry_id", entity.EntryID); err != nil {
+	if err := validateUUIDv7("message.entry_id", entity.EntryID); err != nil {
 		return err
 	}
 	if err := validateRequiredText("message.sender", entity.Sender); err != nil {
@@ -79,6 +85,27 @@ func validateDocumentEntity(entity *DocumentEntity) error {
 
 func validateKSQLRequestEntity(entity *KSQLRequestEntity) error {
 	return validateRequiredText("ksql.statement", entity.KSQL)
+}
+
+func validateUUIDv7(name, value string) error {
+	trimmed := strings.TrimSpace(value)
+	parsed, err := uuid.FromString(trimmed)
+	if trimmed == "" {
+		return fmt.Errorf("%s is required", name)
+	}
+	if err != nil {
+		return fmt.Errorf("%s must be a UUIDv7", name)
+	}
+	if parsed.Version() != 7 {
+		return fmt.Errorf("%s must be a UUIDv7", name)
+	}
+
+	return nil
+}
+
+func isUUIDv7(value string) bool {
+	parsed, err := uuid.FromString(strings.TrimSpace(value))
+	return err == nil && parsed.Version() == 7
 }
 
 func validateRequiredText(name, value string) error {
