@@ -524,6 +524,25 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 	}
 }
 
+func TestWarmMessageLineCacheStopsWhenNoProgressIsPossible(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.addMessage(database.RoleAssistant, "history message")
+
+	app.warmMessageLineCache()
+	if app.messageLineCache.warm {
+		t.Fatal("cache should not warm without a measured viewport")
+	}
+
+	app.lastMessageMaxRows = 6
+	app.toolsExpanded = true
+	app.warmMessageLineCache()
+	if app.messageLineCache.warm {
+		t.Fatal("cache should not warm while tools are expanded")
+	}
+}
+
 func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
 	t.Parallel()
 
@@ -567,6 +586,25 @@ func TestScrolledMessageLinesBeforeWarmCacheUsesVisibleTail(t *testing.T) {
 	if lineIndexContaining(lines, "history message 98") == -1 {
 		t.Fatalf("expected recent history while warm cache is pending, got %v", lineTexts(lines))
 	}
+}
+
+func TestScrolledMessageLinesRevalidatesWarmCacheAfterResize(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	for index := range 20 {
+		app.addMessage(database.RoleAssistant, "history message "+intText(index)+" with enough text to wrap")
+	}
+	_ = app.messageLines(80, 6)
+	app.warmMessageLineCache()
+	require.True(t, app.messageLineCache.warm)
+	require.Equal(t, 80, app.messageLineCache.state.Width)
+
+	app.scrollTranscript(3)
+	_ = app.messageLines(24, 6)
+
+	require.Equal(t, 24, app.messageLineCache.state.Width)
+	require.False(t, app.messageLineCache.warm)
 }
 
 func TestBottomMessageLinesExpandedToolUsesTailWithoutFullRender(t *testing.T) {

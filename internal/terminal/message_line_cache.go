@@ -97,14 +97,17 @@ func (cache *messageLineCache) rebuildPrefixesFromCache() {
 	cache.prefixes = prefixes
 }
 
-func (cache *messageLineCache) warmStep(app *App) {
+func (cache *messageLineCache) warmStep(app *App) bool {
 	if cache.warm || app.toolsExpanded || len(app.messages) == 0 || app.lastMessageMaxRows <= 0 {
-		return
+		return false
 	}
 	width := app.currentLineCacheStateWidth()
 	cache.ensure(app, width, len(app.messages))
 	start := min(max(0, cache.warmIndex), len(app.messages))
 	end := min(len(app.messages), start+messageCacheWarmBatchSize)
+	if end <= start {
+		return false
+	}
 	for index := start; index < end; index++ {
 		if !cache.items[index].Valid {
 			cache.items[index] = cachedRenderedMessage{
@@ -115,10 +118,12 @@ func (cache *messageLineCache) warmStep(app *App) {
 	}
 	cache.warmIndex = end
 	if end < len(app.messages) {
-		return
+		return true
 	}
 	cache.rebuildPrefixesFromCache()
 	cache.warm = true
+
+	return true
 }
 
 func emptyMessageLineCacheState() messageLineCacheState {
