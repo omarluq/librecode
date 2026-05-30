@@ -146,6 +146,136 @@ func tailIndentedLines(width int, content string, style tcell.Style, limit int) 
 	return lines[hiddenLines:], hiddenLines
 }
 
+func (app *App) renderToolMessageTail(width int, message chatMessage, rowsNeeded int) ([]styledLine, bool) {
+	if rowsNeeded <= 0 {
+		return nil, true
+	}
+	event := parseToolEventContent(message.Content, string(message.Role))
+	style := app.toolBlockStyle(&event)
+	footer := newStyledLine(tcell.StyleDefault, "")
+	tailBudget := max(0, rowsNeeded-1)
+	if tailBudget == 0 {
+		return []styledLine{footer}, false
+	}
+	tail, hidden := tailExpandedToolLines(width, &event, style, tailBudget)
+	if hidden {
+		return append(tail, footer), false
+	}
+	prefix := app.expandedToolPrefixLines(width, &event, style)
+	lines := make([]styledLine, 0, len(prefix)+len(tail)+1)
+	lines = append(lines, prefix...)
+	lines = append(lines, tail...)
+	lines = append(lines, footer)
+	if len(lines) <= rowsNeeded {
+		return lines, true
+	}
+
+	return lines[len(lines)-rowsNeeded:], false
+}
+
+func (app *App) expandedToolPrefixLines(width int, event *parsedToolEvent, style tcell.Style) []styledLine {
+	label := fmt.Sprintf("%s  %s collapse", toolTitle(event), app.keys.hint(actionToolsExpand))
+	lines := make([]styledLine, 0, 2)
+	lines = append(lines,
+		newStyledLine(tcell.StyleDefault, ""),
+		newStyledLine(style.Bold(true), padRight(label, width)),
+	)
+	lines = append(lines, app.toolArgumentLines(width, event, style)...)
+	lines = append(lines, app.toolDiffLines(width, event, style)...)
+
+	return lines
+}
+
+func tailExpandedToolLines(width int, event *parsedToolEvent, style tcell.Style, rowsNeeded int) ([]styledLine, bool) {
+	if event.Output != "" {
+		return tailSectionLinesFromEnd(width, "output", event.Output, style, rowsNeeded)
+	}
+	if event.Error != "" {
+		return tailSectionLinesFromEnd(width, "error", event.Error, style, rowsNeeded)
+	}
+	if event.DetailsJSON != "" {
+		return tailSectionLinesFromEnd(width, "details", compactJSON(event.DetailsJSON), style, rowsNeeded)
+	}
+	if event.ArgumentsJSON != "" {
+		return tailSectionLinesFromEnd(width, "args", compactJSON(event.ArgumentsJSON), style, rowsNeeded)
+	}
+
+	return nil, false
+}
+
+func tailSectionLinesFromEnd(width int, label, content string, style tcell.Style, rowsNeeded int) ([]styledLine, bool) {
+	if rowsNeeded <= 0 || strings.TrimSpace(content) == "" {
+		return nil, false
+	}
+	if rowsNeeded == 1 {
+		return []styledLine{newStyledLine(style.Bold(true), padRight(label+":", width))}, true
+	}
+	tail, hidden := tailIndentedLinesFromEnd(width, content, style, rowsNeeded-1)
+	lines := make([]styledLine, 0, len(tail)+1)
+	lines = append(lines, newStyledLine(style.Bold(true), padRight(label+":", width)))
+	lines = append(lines, tail...)
+
+	return lines, hidden
+}
+
+func tailIndentedLinesFromEnd(width int, content string, style tcell.Style, limit int) ([]styledLine, bool) {
+	if limit <= 0 || strings.TrimSpace(content) == "" {
+		return nil, false
+	}
+	collector := tailLineCollector{
+		Style:  style,
+		Lines:  make([]styledLine, 0, limit),
+		Width:  width,
+		Limit:  limit,
+		Hidden: false,
+	}
+	collector.Collect(strings.Trim(content, "\n"))
+	reverseStyledLines(collector.Lines)
+
+	return collector.Lines, collector.Hidden
+}
+
+type tailLineCollector struct {
+	Style  tcell.Style
+	Lines  []styledLine
+	Width  int
+	Limit  int
+	Hidden bool
+}
+
+func (collector *tailLineCollector) Collect(content string) {
+	for end := len(content); end >= 0 && len(collector.Lines) < collector.Limit; {
+		start := strings.LastIndexByte(content[:end], '\n') + 1
+		collector.collectWrappedLine(content[start:end])
+		if start == 0 {
+			return
+		}
+		end = start - 1
+	}
+	collector.Hidden = true
+}
+
+func (collector *tailLineCollector) collectWrappedLine(line string) {
+	wrapped := wrapTextPreserveWhitespace(line, max(1, collector.Width-2))
+	added := 0
+	for index := len(wrapped) - 1; index >= 0 && len(collector.Lines) < collector.Limit; index-- {
+		collector.Lines = append(collector.Lines, newStyledLine(
+			collector.Style,
+			padRight("  "+wrapped[index], collector.Width),
+		))
+		added++
+	}
+	if added < len(wrapped) {
+		collector.Hidden = true
+	}
+}
+
+func reverseStyledLines(lines []styledLine) {
+	for left, right := 0, len(lines)-1; left < right; left, right = left+1, right-1 {
+		lines[left], lines[right] = lines[right], lines[left]
+	}
+}
+
 func (app *App) hiddenToolLinesText(hiddenLines int) string {
 	unit := "lines"
 	if hiddenLines == 1 {

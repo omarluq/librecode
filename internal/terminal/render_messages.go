@@ -70,10 +70,8 @@ func (app *App) bottomMessageLines(width, maxRows int, dynamicGroups [][]styledL
 	staticMaxRows := max(0, maxRows-reservedRows)
 	groups := make([][]styledLine, 0, len(app.messages)+len(dynamicGroups))
 	if staticMaxRows > 0 {
-		start := app.tailStaticMessageRange(width, staticMaxRows)
-		for index := start; index < len(app.messages); index++ {
-			groups = append(groups, app.cachedMessageLines(width, index))
-		}
+		staticGroups, _ := app.tailStaticMessageGroups(width, staticMaxRows)
+		groups = append(groups, staticGroups...)
 	}
 	groups = append(groups, dynamicGroups...)
 
@@ -141,16 +139,39 @@ func (app *App) tailStaticMessageGroups(width, rowsNeeded int) ([][]styledLine, 
 	}
 	rows := 0
 	start := len(app.messages)
+	var partial []styledLine
 	for start > 0 && rows < rowsNeeded {
 		start--
-		rows += len(app.cachedMessageLines(width, start))
+		remaining := rowsNeeded - rows
+		lines, complete := app.cachedMessageTailLines(width, start, remaining)
+		if !complete {
+			partial = lines
+			break
+		}
+		rows += len(lines)
 	}
 	groups := make([][]styledLine, 0, len(app.messages)-start)
+	if partial != nil {
+		groups = append(groups, partial)
+		start++
+	}
 	for index := start; index < len(app.messages); index++ {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
 
-	return groups, start == 0
+	return groups, start == 0 && partial == nil
+}
+
+func (app *App) cachedMessageTailLines(width, index, rowsNeeded int) ([]styledLine, bool) {
+	if rowsNeeded <= 0 {
+		return nil, true
+	}
+	if app.toolsExpanded && app.messages[index].Role == database.RoleToolResult {
+		return app.renderToolMessageTail(width, app.messages[index], rowsNeeded)
+	}
+	lines := app.cachedMessageLines(width, index)
+
+	return lines, true
 }
 
 func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []styledLine {
@@ -249,18 +270,6 @@ func (app *App) currentLineCacheState(width int) messageLineCacheState {
 	}
 }
 
-func (app *App) tailStaticMessageRange(width, maxRows int) int {
-	remainingRows := maxRows
-	for index := len(app.messages) - 1; index >= 0; index-- {
-		remainingRows -= len(app.cachedMessageLines(width, index))
-		if remainingRows <= 0 {
-			return index
-		}
-	}
-
-	return 0
-}
-
 func (app *App) rebuildMessageRowPrefixSums(width int) {
 	app.ensureMessageLineCache(width)
 	prefixSums := make([]int, len(app.messageLineCache)+1)
@@ -285,7 +294,7 @@ func (app *App) warmMessageLineCache() {
 }
 
 func (app *App) warmMessageLineCacheStep() {
-	if app.messageCacheWarm || len(app.messages) == 0 || app.lastMessageMaxRows <= 0 {
+	if app.messageCacheWarm || app.toolsExpanded || len(app.messages) == 0 || app.lastMessageMaxRows <= 0 {
 		return
 	}
 	width := app.currentLineCacheStateWidth()
