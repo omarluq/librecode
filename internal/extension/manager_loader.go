@@ -141,6 +141,7 @@ func (manager *Manager) loadLuaFile(ctx context.Context, extensionPath, name, di
 
 	startedAt := time.Now()
 	if err := extensionRuntime.state.DoFile(absolutePath); err != nil {
+		manager.unregisterRuntime(extensionRuntime)
 		extensionRuntime.state.Close()
 		return fmt.Errorf("extension: load %s: %w", absolutePath, err)
 	}
@@ -148,6 +149,7 @@ func (manager *Manager) loadLuaFile(ctx context.Context, extensionPath, name, di
 		extensionRuntime.state.Push(setupFn)
 		extensionRuntime.state.Push(extensionRuntime.state.GetGlobal("librecode"))
 		if err := extensionRuntime.state.PCall(1, 0, nil); err != nil {
+			manager.unregisterRuntime(extensionRuntime)
 			extensionRuntime.state.Close()
 			return fmt.Errorf("extension: setup %s: %w", absolutePath, err)
 		}
