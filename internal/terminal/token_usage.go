@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -66,9 +67,7 @@ func formatContextUsage(usage model.TokenUsage) string {
 
 func cloneTokenBreakdown(values map[string]int) map[string]int {
 	cloned := make(map[string]int, len(values))
-	for key, value := range values {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, values)
 
 	return cloned
 }

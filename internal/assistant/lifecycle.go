@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"log/slog"
+	"maps"
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
@@ -319,9 +320,7 @@ func contextBuildLifecyclePayload(
 
 func cloneAnyMap(values map[string]any) map[string]any {
 	cloned := make(map[string]any, len(values))
-	for key, value := range values {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, values)
 
 	return cloned
 }

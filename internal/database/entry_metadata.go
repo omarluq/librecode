@@ -121,8 +121,8 @@ func parseToolMetadata(content string) toolMetadata {
 func splitToolSections(content string) map[string]string {
 	sections := map[string]string{}
 	current := ""
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(content, "\n")
+	for line := range lines {
 		name, value, ok := splitToolHeader(line)
 		if ok {
 			current = name
@@ -145,8 +145,8 @@ func splitToolSections(content string) map[string]string {
 func splitToolHeader(line string) (name, value string, ok bool) {
 	for _, section := range []string{"tool", "arguments", "error", "details", "output"} {
 		prefix := section + ":"
-		if strings.HasPrefix(line, prefix) {
-			return section, strings.TrimSpace(strings.TrimPrefix(line, prefix)), true
+		if after, ok0 := strings.CutPrefix(line, prefix); ok0 {
+			return section, strings.TrimSpace(after), true
 		}
 	}
 

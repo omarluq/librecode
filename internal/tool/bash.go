@@ -167,8 +167,7 @@ func formatBashWaitError(output []byte, waitErr error) (Result, error) {
 	if err != nil {
 		return emptyToolResult(), err
 	}
-	var exitErr *exec.ExitError
-	if errors.As(waitErr, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
 		status := fmt.Sprintf("Command exited with code %d", exitErr.ExitCode())
 		return emptyToolResult(), errors.New(appendStatus(outputText, status))
 	}

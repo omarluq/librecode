@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
@@ -191,12 +192,8 @@ func applyLifecycleLuaResult(result *LifecycleDispatchResult, value lua.LValue) 
 
 func mergeProviderRequestMutation(base, override ProviderRequestMutation) ProviderRequestMutation {
 	merged := ProviderRequestMutation{Headers: map[string]string{}}
-	for key, value := range base.Headers {
-		merged.Headers[key] = value
-	}
-	for key, value := range override.Headers {
-		merged.Headers[key] = value
-	}
+	maps.Copy(merged.Headers, base.Headers)
+	maps.Copy(merged.Headers, override.Headers)
 
 	return merged
 }
@@ -206,9 +203,7 @@ func mergeToolCallMutation(base, override ToolCallMutation) ToolCallMutation {
 		return base
 	}
 	arguments := cloneMap(base.Arguments)
-	for key, value := range override.Arguments {
-		arguments[key] = value
-	}
+	maps.Copy(arguments, override.Arguments)
 
 	return ToolCallMutation{Arguments: arguments}
 }

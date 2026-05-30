@@ -2,6 +2,7 @@ package tool
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -246,8 +247,7 @@ func applyMatchedEdits(baseContent string, edits []matchedEdit) string {
 	sortedEdits := append([]matchedEdit{}, edits...)
 	sortMatchedEdits(sortedEdits)
 	newContent := baseContent
-	for editIndex := len(sortedEdits) - 1; editIndex >= 0; editIndex-- {
-		edit := sortedEdits[editIndex]
+	for _, edit := range slices.Backward(sortedEdits) {
 		newContent = newContent[:edit.matchIndex] + edit.newText + newContent[edit.matchIndex+edit.matchLength:]
 	}
 

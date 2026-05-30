@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"encoding/json"
+	"maps"
 
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -197,9 +198,7 @@ func lsToolSchema() map[string]any {
 
 func cloneToolSchema(schema map[string]any) map[string]any {
 	clone := make(map[string]any, len(schema))
-	for key, value := range schema {
-		clone[key] = value
-	}
+	maps.Copy(clone, schema)
 
 	return clone
 }
