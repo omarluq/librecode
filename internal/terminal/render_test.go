@@ -527,19 +527,38 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 func TestWarmMessageLineCacheStopsWhenNoProgressIsPossible(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
-	app.addMessage(database.RoleAssistant, "history message")
-
-	app.warmMessageLineCache()
-	if app.messageLineCache.warm {
-		t.Fatal("cache should not warm without a measured viewport")
+	tests := []struct {
+		setup func(*App)
+		name  string
+	}{
+		{
+			name: "no measured viewport",
+			setup: func(*App) {
+				// Leave lastMessageMaxRows at zero.
+			},
+		},
+		{
+			name: "tools expanded",
+			setup: func(a *App) {
+				a.lastMessageMaxRows = 6
+				a.toolsExpanded = true
+			},
+		},
 	}
 
-	app.lastMessageMaxRows = 6
-	app.toolsExpanded = true
-	app.warmMessageLineCache()
-	if app.messageLineCache.warm {
-		t.Fatal("cache should not warm while tools are expanded")
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			app.addMessage(database.RoleAssistant, "history message")
+			testCase.setup(app)
+
+			app.warmMessageLineCache()
+			if app.messageLineCache.warm {
+				t.Fatal("cache should not warm when progress is blocked")
+			}
+		})
 	}
 }
 
