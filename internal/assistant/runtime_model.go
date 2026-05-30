@@ -89,17 +89,17 @@ func (runtime *Runtime) modelResponse(
 	if err != nil {
 		return nil, err
 	}
-	request := runtime.modelCompletionRequest(
-		&selectedModel,
-		auth,
-		contextResult.Messages,
-		sessionID,
-		contextResult.SystemPrompt,
-		cwd,
-		contextResult.Usage,
-		registry,
-		onEvent,
-	)
+	request := runtime.modelCompletionRequest(&modelCompletionRequestInput{
+		selectedModel: &selectedModel,
+		registry:      registry,
+		onEvent:       onEvent,
+		messages:      contextResult.Messages,
+		auth:          auth,
+		usage:         contextResult.Usage,
+		sessionID:     sessionID,
+		systemPrompt:  contextResult.SystemPrompt,
+		cwd:           cwd,
+	})
 	result, err := runtime.completeWithRetry(ctx, request, onRetry)
 	if err != nil {
 		return nil, err
@@ -115,32 +115,34 @@ func (runtime *Runtime) modelResponse(
 	}, nil
 }
 
-func (runtime *Runtime) modelCompletionRequest(
-	selectedModel *model.Model,
-	auth model.RequestAuth,
-	messages []database.MessageEntity,
-	sessionID string,
-	systemPrompt string,
-	cwd string,
-	usage model.TokenUsage,
-	registry *tool.Registry,
-	onEvent func(StreamEvent),
-) *CompletionRequest {
+type modelCompletionRequestInput struct {
+	selectedModel *model.Model
+	registry      *tool.Registry
+	onEvent       func(StreamEvent)
+	sessionID     string
+	systemPrompt  string
+	cwd           string
+	auth          model.RequestAuth
+	messages      []database.MessageEntity
+	usage         model.TokenUsage
+}
+
+func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInput) *CompletionRequest {
 	return &CompletionRequest{
-		OnEvent:           onEvent,
+		OnEvent:           input.onEvent,
 		OnProviderObserve: runtime.emitProviderRequest,
 		OnProviderRequest: runtime.dispatchProviderRequestHook,
 		OnToolCall:        runtime.dispatchToolCallLifecycle,
 		OnToolResult:      runtime.dispatchToolResultLifecycle,
-		ToolRegistry:      registry,
-		SessionID:         sessionID,
-		SystemPrompt:      systemPrompt,
+		ToolRegistry:      input.registry,
+		SessionID:         input.sessionID,
+		SystemPrompt:      input.systemPrompt,
 		ThinkingLevel:     runtime.cfg.Assistant.ThinkingLevel,
-		CWD:               cwd,
-		Auth:              auth,
-		Messages:          messages,
-		Usage:             usage,
-		Model:             *selectedModel,
+		CWD:               input.cwd,
+		Auth:              input.auth,
+		Messages:          input.messages,
+		Usage:             input.usage,
+		Model:             *input.selectedModel,
 		ProviderAttempt:   0,
 	}
 }

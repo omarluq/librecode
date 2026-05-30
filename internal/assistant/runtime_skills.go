@@ -8,6 +8,8 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 )
 
+const maxActiveSkillReadLines = 2000
+
 func (runtime *Runtime) emitActivatedSkillReads(
 	ctx context.Context,
 	cwd string,
@@ -17,7 +19,7 @@ func (runtime *Runtime) emitActivatedSkillReads(
 	if len(skills) == 0 {
 		return nil
 	}
-	limit := maxActiveSkillReadLines()
+	limit := maxActiveSkillReadLines
 	toolEvents := make([]ToolEvent, 0, len(skills))
 	for index := range skills {
 		skill := &skills[index].Skill
@@ -39,10 +41,6 @@ func (runtime *Runtime) emitActivatedSkillReads(
 	}
 
 	return toolEvents
-}
-
-func maxActiveSkillReadLines() int {
-	return 2000
 }
 
 func activeSkillEventPayload(skills []core.ActivatedSkill) []map[string]any {

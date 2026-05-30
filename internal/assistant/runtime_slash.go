@@ -22,7 +22,7 @@ func (runtime *Runtime) respondToSlashCommand(
 ) (string, []ToolEvent, error) {
 	commandName, commandArgs := splitSlashCommand(prompt)
 	if commandName == "" {
-		return "", nil, fmt.Errorf("assistant: empty slash command")
+		return "", nil, oops.In("assistant").Code("empty_slash_command").Errorf("empty slash command")
 	}
 
 	if commandName == "skill" {
@@ -84,7 +84,7 @@ func (runtime *Runtime) respondToSkillCommand(
 		return result, []ToolEvent{toolEvent}, nil
 	}
 
-	return "", nil, fmt.Errorf("assistant: skill %q not found", name)
+	return "", nil, oops.In("assistant").Code("skill_not_found").With("skill", name).Errorf("skill %q not found", name)
 }
 
 func (runtime *Runtime) loadSkillWithReadTool(
