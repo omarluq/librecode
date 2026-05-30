@@ -82,6 +82,7 @@ func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]style
 	if maxRows <= 0 {
 		return nil
 	}
+	app.messageLineCache.ensure(app, width, len(app.messages))
 	if !app.messageLineCache.warm {
 		return app.scrolledMessageLinesFromTail(width, maxRows, dynamicGroups)
 	}
@@ -237,12 +238,14 @@ func (app *App) rebuildMessageRowPrefixSums(width int) {
 
 func (app *App) warmMessageLineCache() {
 	for !app.messageLineCache.warm {
-		app.warmMessageLineCacheStep()
+		if !app.warmMessageLineCacheStep() {
+			return
+		}
 	}
 }
 
-func (app *App) warmMessageLineCacheStep() {
-	app.messageLineCache.warmStep(app)
+func (app *App) warmMessageLineCacheStep() bool {
+	return app.messageLineCache.warmStep(app)
 }
 
 func (app *App) currentLineCacheStateWidth() int {
