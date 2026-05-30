@@ -12,7 +12,7 @@ type TokenContributor struct {
 // TokenUsage tracks model context and request/response token counts.
 type TokenUsage struct {
 	Breakdown       map[string]int     `json:"breakdown,omitempty"`
-	TopContributors []TokenContributor `json:"top_contributors,omitempty"`
+	TopContributors []TokenContributor `json:"topContributors,omitempty"`
 	ContextWindow   int                `json:"context_window,omitempty"`
 	ContextTokens   int                `json:"context_tokens,omitempty"`
 	InputTokens     int                `json:"input_tokens,omitempty"`

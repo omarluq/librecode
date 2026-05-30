@@ -307,7 +307,7 @@ func contextBuildLifecyclePayload(
 		"message_count":           len(base.Messages),
 		jsonBreakdownKey:          cloneIntMap(result.Breakdown),
 		"contributions":           []any{},
-		"top_contributors":        tokenContributorsLifecyclePayload(result.Usage.TopContributors),
+		"topContributors":         tokenContributorsLifecyclePayload(result.Usage.TopContributors),
 		"max_contribution_tokens": contextContributionMaxTokens,
 		"system_tokens":           base.SystemTokens,
 		"skill_tokens":            base.SkillTokens,
@@ -382,7 +382,7 @@ func entryLifecyclePayload(entry *database.EntryEntity) map[string]any {
 func tokenUsageLifecyclePayload(usage model.TokenUsage) map[string]any {
 	return map[string]any{
 		jsonBreakdownKey:     cloneIntMap(usage.Breakdown),
-		"top_contributors":   tokenContributorsLifecyclePayload(usage.TopContributors),
+		"topContributors":    tokenContributorsLifecyclePayload(usage.TopContributors),
 		jsonContextTokensKey: usage.ContextTokens,
 		jsonContextWindowKey: usage.ContextWindow,
 		jsonInputTokensKey:   usage.InputTokens,
