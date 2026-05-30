@@ -135,6 +135,35 @@ func TestMergeUsageDoesNotPromoteProviderTotalToContext(t *testing.T) {
 	}, mergeUsage(estimated, reported))
 }
 
+func TestMergeUsageClonesReportedContributors(t *testing.T) {
+	t.Parallel()
+
+	reported := model.TokenUsage{
+		Breakdown: map[string]int{contextBreakdownHistory: 12}, ContextWindow: 0, ContextTokens: 0,
+		TopContributors: []model.TokenContributor{
+			{Label: "message 1", Role: "user", Preview: "usage contributor preview", Tokens: 10, Chars: 40},
+		},
+		InputTokens: 0, OutputTokens: 0,
+	}
+
+	merged := mergeUsage(model.EmptyTokenUsage(), reported)
+	reported.TopContributors[0].Label = "changed contributor"
+
+	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
+}
+
+func TestEstimateTokensHandlesEmptyText(t *testing.T) {
+	t.Parallel()
+
+	assert.Zero(t, estimateTokens(" \n\t "))
+}
+
+func TestIntFromAnyIgnoresInvalidJSONNumber(t *testing.T) {
+	t.Parallel()
+
+	assert.Zero(t, intFromAny(json.Number("not-a-number")))
+}
+
 func TestParseSSEResultPreservesUsageWhenItemsProvideText(t *testing.T) {
 	t.Parallel()
 

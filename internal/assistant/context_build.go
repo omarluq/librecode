@@ -19,6 +19,7 @@ const (
 	contextContributionSourceExtension = "extension"
 	contextContributionRoleSystem      = "system"
 	contextContributionMaxTokens       = 2048
+	contextBreakdownHistory            = "history"
 )
 
 type contextContribution struct {
@@ -247,10 +248,10 @@ func contextBreakdown(
 	contributions []contextContribution,
 ) map[string]int {
 	breakdown := map[string]int{
-		jsonSystemRole: systemTokens,
-		"skills":       skillTokens,
-		"history":      historyTokens,
-		"extensions":   0,
+		jsonSystemRole:          systemTokens,
+		"skills":                skillTokens,
+		contextBreakdownHistory: historyTokens,
+		"extensions":            0,
 	}
 	for index := range contributions {
 		breakdown["extensions"] += contributions[index].Tokens
