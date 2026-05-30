@@ -190,7 +190,7 @@ tail_budget = clamp(context_window * 25%, 2000, 8000)
 
 For unknown model context windows (`0`), do not reject by default. Still emit estimates and warnings, and rely on provider overflow recovery.
 
-## Token counting strategy
+## Token-counting strategy
 
 Counting tiers:
 

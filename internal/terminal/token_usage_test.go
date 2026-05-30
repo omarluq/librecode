@@ -141,13 +141,14 @@ func TestMergeTerminalUsageKeepsBreakdownAndContributors(t *testing.T) {
 	}
 
 	merged := terminal.MergeTerminalUsageForTest(current, next)
+	next.TopContributors[0].Label = "mutated"
 
 	assert.Equal(t, map[string]int{
 		testBreakdownExtensions: 5,
 		testBreakdownHistory:    15,
 		testBreakdownSystem:     10,
 	}, merged.Breakdown)
-	assert.Equal(t, next.TopContributors, merged.TopContributors)
+	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
 }
 
 func TestContextBreakdownLinesSortsAndSkipsEmptyValues(t *testing.T) {
@@ -170,6 +171,19 @@ func TestContextContributorLinesFormatsTopContributors(t *testing.T) {
 	})
 
 	assert.Equal(t, []string{"  - message 1 18k user — long pasted traceback"}, lines)
+}
+
+func TestCompactCountFormatsMillionValues(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "ctx 1.2m", terminal.FormatContextUsageForTest(model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   0,
+		ContextTokens:   1_250_000,
+		InputTokens:     0,
+		OutputTokens:    0,
+	}))
 }
 
 func TestShowContextInfoHandlesContextCommandWithoutUsage(t *testing.T) {
