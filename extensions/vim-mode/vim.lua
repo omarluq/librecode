@@ -556,6 +556,10 @@ local function handle_normal(ev)
     return true
   end
 
+  if ev.text and ev.text ~= "" and not ev.ctrl and not ev.alt then
+    return true
+  end
+
   return false
 end
 
