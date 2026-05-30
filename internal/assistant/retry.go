@@ -98,22 +98,35 @@ func ShouldRetryModelError(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return retryableDeadlineExceeded(message)
 	}
-	if code, ok := providerErrorCode(err); ok {
-		if nonRetryableProviderCode(code) {
-			return false
-		}
-		if retryableProviderCode(code) {
-			return true
-		}
+	if retry, ok := retryDecisionFromProviderCode(err); ok {
+		return retry
 	}
 	if status, ok := providerErrorStatus(err); ok {
 		return retryableStatus(status)
 	}
-	var netErr net.Error
-	if errors.As(err, &netErr) {
+	if retryableNetworkError(err) {
 		return true
 	}
 	return retryableProviderMessage(message)
+}
+
+func retryDecisionFromProviderCode(err error) (retry, known bool) {
+	code, ok := providerErrorCode(err)
+	if !ok {
+		return false, false
+	}
+	if nonRetryableProviderCode(code) {
+		return false, true
+	}
+	if retryableProviderCode(code) {
+		return true, true
+	}
+	return false, false
+}
+
+func retryableNetworkError(err error) bool {
+	netErr, ok := errors.AsType[net.Error](err)
+	return ok && netErr != nil
 }
 
 func retryableDeadlineExceeded(message string) bool {

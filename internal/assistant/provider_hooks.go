@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"maps"
 	"strings"
 
 	"github.com/samber/oops"
@@ -138,9 +139,7 @@ func providerPayloadFromLifecycle(payload, fallback map[string]any) map[string]a
 
 func mergeProviderHeaders(headers, additions map[string]string) map[string]string {
 	merged := cloneStringMap(headers)
-	for key, value := range additions {
-		merged[key] = value
-	}
+	maps.Copy(merged, additions)
 
 	return merged
 }
@@ -176,9 +175,7 @@ func cloneStringMap(values map[string]string) map[string]string {
 		return map[string]string{}
 	}
 	cloned := make(map[string]string, len(values))
-	for key, value := range values {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, values)
 
 	return cloned
 }

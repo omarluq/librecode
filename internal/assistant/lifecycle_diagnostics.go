@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"time"
 
@@ -29,9 +30,7 @@ func (runtime *Runtime) emitLifecycleDiagnostics(
 	if len(result.Errors) > 0 {
 		payload[lifecycleErrorsKey] = append([]string{}, result.Errors...)
 	}
-	for key, value := range extra {
-		payload[key] = value
-	}
+	maps.Copy(payload, extra)
 
 	runtime.emit(ctx, string(name)+"_diagnostic", payload)
 }

@@ -108,7 +108,7 @@ func invalidGitHubSubdir(subdir string) bool {
 	if subdir == "" {
 		return false
 	}
-	for _, part := range strings.Split(subdir, "/") {
+	for part := range strings.SplitSeq(subdir, "/") {
 		if part == "" || part == "." || part == ".." {
 			return true
 		}
