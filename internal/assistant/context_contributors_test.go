@@ -53,5 +53,15 @@ end)
 	require.NotNil(t, client.request)
 	assert.Contains(t, client.request.SystemPrompt, "big-note")
 	assert.Contains(t, client.request.Usage.Breakdown, "extensions")
-	assert.NotEmpty(t, client.request.Usage.TopContributors)
+	require.NotEmpty(t, client.request.Usage.TopContributors)
+
+	var foundExtension bool
+	for _, contributor := range client.request.Usage.TopContributors {
+		if contributor.Label == "big-note" {
+			foundExtension = true
+			assert.Greater(t, contributor.Tokens, 0)
+			assert.Contains(t, contributor.Preview, "extension context")
+		}
+	}
+	assert.True(t, foundExtension, "expected extension contribution in top contributors")
 }

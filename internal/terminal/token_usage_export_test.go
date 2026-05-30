@@ -11,6 +11,14 @@ func MergeTerminalUsageForTest(current, next model.TokenUsage) model.TokenUsage 
 	return mergeTerminalUsage(current, next)
 }
 
+func FormatContextUsageForTest(usage model.TokenUsage) string {
+	return formatContextUsage(usage)
+}
+
+func FormatTokenStatusForTest(usage model.TokenUsage) string {
+	return formatTokenStatus(usage)
+}
+
 func ContextBreakdownLinesForTest(breakdown map[string]int) []string {
 	return contextBreakdownLines(breakdown)
 }
@@ -35,6 +43,14 @@ func NewAppForTest() *App {
 
 func (app *App) SetTokenUsageForTest(usage model.TokenUsage) {
 	app.tokenUsage = usage
+}
+
+func (app *App) ApplyTokenUsageForTest(usage *model.TokenUsage) {
+	app.applyTokenUsage(usage)
+}
+
+func (app *App) TokenStatusTextForTest() string {
+	return app.tokenStatusText()
 }
 
 func (app *App) TokenUsageForTest() model.TokenUsage {
