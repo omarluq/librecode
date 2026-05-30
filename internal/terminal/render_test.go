@@ -569,6 +569,40 @@ func TestScrolledMessageLinesBeforeWarmCacheUsesVisibleTail(t *testing.T) {
 	}
 }
 
+func TestBottomMessageLinesExpandedToolUsesTailWithoutFullRender(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.toolsExpanded = true
+	output := strings.Join([]string{
+		"line 0",
+		"line 1",
+		"line 2",
+		"line 3",
+		"line 4",
+		"line 5",
+	}, "\n")
+	app.addMessage(database.RoleToolResult, formatToolEventForUI(&assistant.ToolEvent{
+		Name:          "read",
+		ArgumentsJSON: "{}",
+		DetailsJSON:   "",
+		Result:        output,
+		Error:         "",
+	}))
+
+	lines := app.messageLines(80, 4)
+	texts := lineTexts(lines)
+	if lineIndexContaining(lines, "line 5") == -1 {
+		t.Fatalf("expected latest tool output tail, got %v", texts)
+	}
+	if lineIndexContaining(lines, "line 0") != -1 {
+		t.Fatalf("expected old tool output to stay unrendered in bottom tail, got %v", texts)
+	}
+	if len(app.messageLineCache) > 0 && app.messageLineCache[0].Valid {
+		t.Fatal("bottom tail render should not populate full expanded tool cache")
+	}
+}
+
 func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
 	t.Parallel()
 

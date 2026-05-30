@@ -429,7 +429,7 @@ func (app *App) messageCacheWarmTick(timer *time.Timer) <-chan time.Time {
 	if timer == nil {
 		return nil
 	}
-	if app.messageCacheWarm || app.working || app.authWorking || app.scrollOffset != 0 {
+	if app.messageCacheWarm || app.working || app.authWorking || app.scrollOffset != 0 || app.toolsExpanded {
 		app.messageCacheWarmQueued = false
 		stopTimer(timer)
 		return nil
