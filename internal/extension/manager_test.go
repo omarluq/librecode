@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -546,6 +547,90 @@ end`,
 	assert.Equal(t, "ok", result)
 	require.Len(t, manager.Extensions(), 1)
 	assert.Equal(t, "linked", manager.Extensions()[0].Name)
+}
+
+func TestManager_DoesNotRunCanceledCommandOrTool(t *testing.T) {
+	t.Parallel()
+
+	manager := loadTestExtension(t, `
+local lc = require("librecode")
+
+lc.register_command("touch", "Touch command", function()
+  lc.buf.set_text("side_effect", "command")
+  return "command"
+end)
+
+lc.register_tool("touch", "Touch tool", function()
+  lc.buf.set_text("side_effect", "tool")
+  return { content = "tool" }
+end)
+`)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, commandErr := manager.ExecuteCommand(ctx, "touch", "")
+	require.ErrorIs(t, commandErr, context.Canceled)
+	_, toolErr := manager.ExecuteTool(ctx, "touch", map[string]any{})
+	require.ErrorIs(t, toolErr, context.Canceled)
+}
+
+func TestManager_RollsBackPartialRegistrationsOnLoadFailure(t *testing.T) {
+	t.Parallel()
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	extensionPath := filepath.Join(t.TempDir(), "broken.lua")
+	require.NoError(t, writeTestFile(extensionPath, `
+local lc = require("librecode")
+
+lc.register_command("broken", "Broken command", function()
+  return "should not run"
+end)
+lc.register_tool("broken", "Broken tool", function()
+  return { content = "should not run" }
+end)
+lc.on("startup", function() end)
+lc.keymap.set({ focus = "composer" }, "x", function() return true end)
+lc.timer.defer(1000, function() end)
+error("boom")
+`))
+
+	err := manager.LoadFile(context.Background(), extensionPath)
+	require.Error(t, err)
+	assert.Empty(t, manager.Commands())
+	assert.Empty(t, manager.Tools())
+	assert.Empty(t, manager.Extensions())
+	assert.False(t, manager.HasTerminalEventHandlers(testEventStartup))
+	assert.False(t, manager.HasTerminalEventHandlers(testEventKey))
+	_, hasTimer := manager.NextTimerDelay(time.Now())
+	assert.False(t, hasTimer)
+}
+
+func TestManager_RollsBackPartialRegistrationsOnSetupFailure(t *testing.T) {
+	t.Parallel()
+
+	extensionRoot := t.TempDir()
+	require.NoError(t, writeTestFile(
+		filepath.Join(extensionRoot, "init.lua"),
+		`return { name = "broken", entry = "main.lua" }`,
+	))
+	require.NoError(t, writeTestFile(filepath.Join(extensionRoot, "main.lua"), `
+return function(librecode)
+  librecode.register_command("broken", "Broken command", function()
+    return "should not run"
+  end)
+  librecode.on("startup", function() end)
+  error("boom")
+end
+`))
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+	err := manager.LoadPaths(context.Background(), []string{extensionRoot})
+	require.Error(t, err)
+	assert.Empty(t, manager.Commands())
+	assert.Empty(t, manager.Extensions())
+	assert.False(t, manager.HasTerminalEventHandlers(testEventStartup))
 }
 
 func assertLoadedCommand(t *testing.T, commands []extension.Command, extensionName string) {

@@ -174,3 +174,89 @@ func (manager *Manager) Shutdown() {
 	manager.nextTimerID = 1
 	manager.nextNamespaceID = 1
 }
+
+func (manager *Manager) unregisterRuntime(extensionRuntime *luaExtension) {
+	manager.lock.Lock()
+	defer manager.lock.Unlock()
+
+	manager.unregisterRuntimeLocked(extensionRuntime)
+}
+
+func (manager *Manager) unregisterRuntimeLocked(extensionRuntime *luaExtension) {
+	manager.unregisterCommandsLocked(extensionRuntime)
+	manager.unregisterToolsLocked(extensionRuntime)
+	manager.unregisterHandlersLocked(extensionRuntime)
+	manager.unregisterKeymapsLocked(extensionRuntime)
+	manager.unregisterTimersLocked(extensionRuntime)
+	manager.unregisterExtensionLocked(extensionRuntime)
+}
+
+func (manager *Manager) unregisterCommandsLocked(extensionRuntime *luaExtension) {
+	for _, name := range extensionRuntime.commands {
+		if command, ok := manager.commands[name]; ok && command.extension == extensionRuntime {
+			delete(manager.commands, name)
+		}
+	}
+}
+
+func (manager *Manager) unregisterToolsLocked(extensionRuntime *luaExtension) {
+	for _, name := range extensionRuntime.tools {
+		if tool, ok := manager.tools[name]; ok && tool.extension == extensionRuntime {
+			delete(manager.tools, name)
+		}
+	}
+}
+
+func (manager *Manager) unregisterHandlersLocked(extensionRuntime *luaExtension) {
+	for eventName, handlers := range manager.handlers {
+		filtered := keepHandlersFromOtherRuntimes(handlers, extensionRuntime)
+		if len(filtered) == 0 {
+			delete(manager.handlers, eventName)
+			continue
+		}
+		manager.handlers[eventName] = filtered
+	}
+}
+
+func keepHandlersFromOtherRuntimes(handlers []luaHookHandler, extensionRuntime *luaExtension) []luaHookHandler {
+	filtered := handlers[:0]
+	for _, handler := range handlers {
+		if handler.extension != extensionRuntime {
+			filtered = append(filtered, handler)
+		}
+	}
+
+	return filtered
+}
+
+func (manager *Manager) unregisterKeymapsLocked(extensionRuntime *luaExtension) {
+	filtered := manager.keymaps[:0]
+	for _, keymap := range manager.keymaps {
+		if keymap.extension != extensionRuntime {
+			filtered = append(filtered, keymap)
+		}
+	}
+	manager.keymaps = filtered
+}
+
+func (manager *Manager) unregisterTimersLocked(extensionRuntime *luaExtension) {
+	filtered := manager.timers[:0]
+	for _, timer := range manager.timers {
+		if timer.extension != extensionRuntime {
+			filtered = append(filtered, timer)
+			continue
+		}
+		manager.canceledTimers[timer.id] = struct{}{}
+	}
+	manager.timers = filtered
+}
+
+func (manager *Manager) unregisterExtensionLocked(extensionRuntime *luaExtension) {
+	filtered := manager.extensions[:0]
+	for _, loadedRuntime := range manager.extensions {
+		if loadedRuntime != extensionRuntime {
+			filtered = append(filtered, loadedRuntime)
+		}
+	}
+	manager.extensions = filtered
+}

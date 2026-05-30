@@ -18,6 +18,10 @@ func (manager *Manager) ExecuteCommand(ctx context.Context, name, args string) (
 		return "", fmt.Errorf("extension: command %q not found", name)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	result, err := callLua(command.extension, command.function, lua.LString(args))
 	if err != nil {
 		return "", fmt.Errorf("extension: command %q failed: %w", name, err)
@@ -37,6 +41,10 @@ func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[s
 	manager.lock.RUnlock()
 	if !ok {
 		return ToolResult{Details: map[string]any{}, Content: ""}, fmt.Errorf("extension: tool %q not found", name)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return ToolResult{Details: map[string]any{}, Content: ""}, err
 	}
 
 	result, err := callLuaPrepared(tool.extension, nil, tool.function, func(state *lua.LState) []lua.LValue {
