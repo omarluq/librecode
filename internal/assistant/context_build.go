@@ -51,6 +51,38 @@ type modelContextBase struct {
 	HistoryTokens    int
 }
 
+// ContextUsage estimates the current model-facing context without executing a prompt.
+// It is intended for diagnostics such as /context and intentionally avoids
+// prompt-dependent skill activation and extension context mutation.
+func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string) (model.TokenUsage, error) {
+	selectedModel, err := runtime.selectedModel()
+	if err != nil {
+		return model.EmptyTokenUsage(), err
+	}
+
+	messages := []database.MessageEntity{}
+	if strings.TrimSpace(sessionID) != "" {
+		messages, err = runtime.modelContextMessages(ctx, sessionID)
+		if err != nil {
+			return model.EmptyTokenUsage(), err
+		}
+	}
+
+	basePrompt := baseSystemPrompt(cwd)
+	skillPrompt := ""
+	if skills := core.LoadSkills(cwd, nil, true).Skills; len(skills) > 0 {
+		skillPrompt = core.FormatSkillsForPrompt(skills)
+	}
+	breakdown := contextBreakdown(
+		estimateTokens(basePrompt),
+		estimateTokens(skillPrompt),
+		estimateMessageTokens(messages),
+		nil,
+	)
+
+	return estimateContextBuildUsage(basePrompt+skillPrompt, messages, nil, &selectedModel, breakdown), nil
+}
+
 func (runtime *Runtime) buildModelContext(
 	ctx context.Context,
 	sessionID string,

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 func (app *App) showContextInfo(ctx context.Context, original string) error {
@@ -15,16 +16,17 @@ func (app *App) showContextInfo(ctx context.Context, original string) error {
 		return nil
 	}
 
+	usage := app.contextUsage(ctx)
 	lines := []string{"context:"}
-	if summary := formatContextUsage(app.tokenUsage); summary != "" {
+	if summary := formatContextUsage(usage); summary != "" {
 		lines = append(lines, "- "+summary)
 	}
-	breakdownLines := contextBreakdownLines(app.tokenUsage.Breakdown)
+	breakdownLines := contextBreakdownLines(usage.Breakdown)
 	if len(breakdownLines) > 0 {
 		lines = append(lines, "- breakdown:")
 		lines = append(lines, breakdownLines...)
 	}
-	contributorLines := contextContributorLines(app.tokenUsage.TopContributors)
+	contributorLines := contextContributorLines(usage.TopContributors)
 	if len(contributorLines) > 0 {
 		lines = append(lines, "- top contributors:")
 		lines = append(lines, contributorLines...)
@@ -58,4 +60,18 @@ func contextBreakdownLines(breakdown map[string]int) []string {
 	}
 
 	return lines
+}
+
+func (app *App) contextUsage(ctx context.Context) model.TokenUsage {
+	if app.tokenUsage.HasAny() {
+		return app.tokenUsage
+	}
+	if app.runtime == nil {
+		return model.EmptyTokenUsage()
+	}
+	usage, err := app.runtime.ContextUsage(ctx, app.sessionID, app.cwd)
+	if err != nil {
+		return model.EmptyTokenUsage()
+	}
+	return usage
 }
