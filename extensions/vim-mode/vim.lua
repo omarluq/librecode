@@ -296,10 +296,10 @@ local function handle_insert(ev)
     set_composer(chars, move_right(chars, cursor))
     return true
   elseif key == "up" then
-    set_composer(chars, move_line_delta(chars, cursor, -1))
+    lc.action.run("history.prev")
     return true
   elseif key == "down" then
-    set_composer(chars, move_line_delta(chars, cursor, 1))
+    lc.action.run("history.next")
     return true
   elseif key == "home" or key == "ctrl+a" then
     set_composer(chars, line_start(chars, cursor))
@@ -556,7 +556,7 @@ local function handle_normal(ev)
     return true
   end
 
-  return true
+  return false
 end
 
 local function handle_visual(ev)
@@ -619,7 +619,7 @@ local function handle_visual(ev)
     return true
   end
 
-  return true
+  return false
 end
 
 local function setup(api)
