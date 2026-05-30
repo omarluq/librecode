@@ -507,18 +507,18 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 	}
 
 	_ = app.messageLines(80, 6)
-	if app.messageCacheWarm {
+	if app.messageLineCache.warm {
 		t.Fatal("tail render should not eagerly warm full history")
 	}
 
 	app.warmMessageLineCache()
-	if !app.messageCacheWarm {
+	if !app.messageLineCache.warm {
 		t.Fatal("expected history cache to be warm")
 	}
-	if len(app.messageRowPrefixSums) != len(app.messages)+1 {
+	if len(app.messageLineCache.prefixes) != len(app.messages)+1 {
 		t.Fatalf(
 			"row prefix length = %d, want %d",
-			len(app.messageRowPrefixSums),
+			len(app.messageLineCache.prefixes),
 			len(app.messages)+1,
 		)
 	}
@@ -534,15 +534,15 @@ func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
 
 	_ = app.messageLines(80, 6)
 	app.warmMessageLineCacheStep()
-	if app.messageCacheWarm {
+	if app.messageLineCache.warm {
 		t.Fatal("single warm step should not eagerly warm full history")
 	}
-	if app.messageCacheWarmIndex != messageCacheWarmBatchSize {
-		t.Fatalf("warm index = %d, want %d", app.messageCacheWarmIndex, messageCacheWarmBatchSize)
+	if app.messageLineCache.warmIndex != messageCacheWarmBatchSize {
+		t.Fatalf("warm index = %d, want %d", app.messageLineCache.warmIndex, messageCacheWarmBatchSize)
 	}
 
 	app.warmMessageLineCacheStep()
-	if !app.messageCacheWarm {
+	if !app.messageLineCache.warm {
 		t.Fatal("expected second warm step to finish cache")
 	}
 }
@@ -556,12 +556,12 @@ func TestScrolledMessageLinesBeforeWarmCacheUsesVisibleTail(t *testing.T) {
 	}
 
 	_ = app.messageLines(80, 6)
-	if app.messageCacheWarm {
+	if app.messageLineCache.warm {
 		t.Fatal("tail render should not warm full history")
 	}
 	app.scrollTranscript(3)
 	lines := app.messageLines(80, 6)
-	if app.messageCacheWarm {
+	if app.messageLineCache.warm {
 		t.Fatal("scroll before cache warm should not synchronously warm full history")
 	}
 	if lineIndexContaining(lines, "history message 98") == -1 {
@@ -598,7 +598,7 @@ func TestBottomMessageLinesExpandedToolUsesTailWithoutFullRender(t *testing.T) {
 	if lineIndexContaining(lines, "line 0") != -1 {
 		t.Fatalf("expected old tool output to stay unrendered in bottom tail, got %v", texts)
 	}
-	if len(app.messageLineCache) > 0 && app.messageLineCache[0].Valid {
+	if len(app.messageLineCache.items) > 0 && app.messageLineCache.items[0].Valid {
 		t.Fatal("bottom tail render should not populate full expanded tool cache")
 	}
 }

@@ -128,16 +128,14 @@ type App struct {
 	promptHistoryDraft           string
 	mode                         appMode
 	resources                    core.ResourceSnapshot
-	messageLineCache             []cachedRenderedMessage
+	messageLineCache             messageLineCache
 	streamingBlockLineCache      []cachedRenderedMessage
-	messageRowPrefixSums         []int
 	queuedMessages               []string
 	messages                     []chatMessage
 	streamingBlocks              []chatMessage
 	promptHistory                []string
 	scopedOrder                  []string
 	composerBuffer               extension.BufferState
-	messageLineCacheState        messageLineCacheState
 	streamingBlockLineCacheState messageLineCacheState
 	tokenUsage                   model.TokenUsage
 	selection                    mouseSelection
@@ -149,10 +147,7 @@ type App struct {
 	promptHistoryIndex           int
 	scrollOffset                 int
 	autocompleteSelection        int
-	messageCacheWarmIndex        int
 	autocompleteClosed           bool
-	messageCacheWarm             bool
-	messageCacheWarmQueued       bool
 	sessionNamedOnly             bool
 	hideThinking                 bool
 	working                      bool
@@ -220,12 +215,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		activePrompt:                 nil,
 		canceledPrompts:              map[uint64]*activePromptState{},
 		messages:                     []chatMessage{},
-		messageLineCache:             nil,
-		messageRowPrefixSums:         nil,
-		messageCacheWarmIndex:        0,
-		messageCacheWarm:             false,
-		messageCacheWarmQueued:       false,
-		messageLineCacheState:        emptyMessageLineCacheState(),
+		messageLineCache:             emptyMessageLineCache(),
 		queuedMessages:               []string{},
 		promptHistory:                []string{},
 		promptHistoryDraft:           "",
@@ -344,7 +334,7 @@ func (app *App) runLoopStep(
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
 		return false, true
 	case <-app.messageCacheWarmTick(messageWarmTimer):
-		app.messageCacheWarmQueued = false
+		app.messageLineCache.queued = false
 		app.warmMessageLineCacheStep()
 		return false, true
 	}
@@ -429,19 +419,19 @@ func (app *App) messageCacheWarmTick(timer *time.Timer) <-chan time.Time {
 	if timer == nil {
 		return nil
 	}
-	if app.messageCacheWarm || app.working || app.authWorking || app.scrollOffset != 0 || app.toolsExpanded {
-		app.messageCacheWarmQueued = false
+	if app.messageLineCache.warm || app.working || app.authWorking || app.scrollOffset != 0 || app.toolsExpanded {
+		app.messageLineCache.queued = false
 		stopTimer(timer)
 		return nil
 	}
 	if len(app.messages) == 0 || app.lastMessageMaxRows <= 0 {
-		app.messageCacheWarmQueued = false
+		app.messageLineCache.queued = false
 		stopTimer(timer)
 		return nil
 	}
-	if !app.messageCacheWarmQueued {
+	if !app.messageLineCache.queued {
 		resetTimer(timer, 1*time.Millisecond)
-		app.messageCacheWarmQueued = true
+		app.messageLineCache.queued = true
 	}
 
 	return timer.C
@@ -554,12 +544,6 @@ func newChatMessage(role database.Role, content string) chatMessage {
 	return chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content}
 }
 
-func emptyMessageLineCacheState() messageLineCacheState {
-	var state messageLineCacheState
-
-	return state
-}
-
 func emptyCachedRenderedMessage() cachedRenderedMessage {
 	var message cachedRenderedMessage
 
@@ -568,29 +552,19 @@ func emptyCachedRenderedMessage() cachedRenderedMessage {
 
 func (app *App) appendMessage(message chatMessage) {
 	app.messages = append(app.messages, message)
-	app.messageCacheWarmIndex = 0
-	app.messageCacheWarm = false
+	app.messageLineCache.appendInvalidation()
 }
 
 func (app *App) resetMessages() {
 	app.messages = []chatMessage{}
-	app.messageLineCache = nil
-	app.messageRowPrefixSums = nil
-	app.messageCacheWarmIndex = 0
-	app.messageCacheWarm = false
-	app.messageCacheWarmQueued = false
+	app.messageLineCache.reset()
 	app.tokenUsage = model.EmptyTokenUsage()
 	app.resetPromptHistory()
 }
 
 func (app *App) truncateMessages(length int) {
 	app.messages = app.messages[:length]
-	if len(app.messageLineCache) > length {
-		app.messageLineCache = app.messageLineCache[:length]
-	}
-	app.messageRowPrefixSums = nil
-	app.messageCacheWarmIndex = 0
-	app.messageCacheWarm = false
+	app.messageLineCache.truncate(length)
 	app.tokenUsage = model.EmptyTokenUsage()
 }
 
