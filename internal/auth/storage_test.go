@@ -14,9 +14,11 @@ import (
 )
 
 const (
-	testStoredKey        = "stored-key"
-	testStoredProvider   = "stored"
-	testFallbackProvider = "fallback"
+	testStoredKey          = "stored-key"
+	testStoredProvider     = "stored"
+	testFallbackProvider   = "fallback"
+	testStoredOAuthAccess  = "stored-oauth-access"
+	testStoredOAuthRefresh = "stored-oauth-refresh"
 )
 
 func TestStorageResolvesAuthSourcesWithoutExposingSecrets(t *testing.T) {
@@ -212,27 +214,65 @@ func TestStorageSeparatesAnthropicAPIAndOAuthEnv(t *testing.T) {
 	)
 }
 
-func TestStorageUsesUnexpiredAnthropicOAuthCredential(t *testing.T) {
+func TestStorageUsesStoredOAuthCredentialMaterial(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(t.Context(), map[string]auth.Credential{
-		"anthropic-claude": {
-			OAuth:     nil,
-			Type:      auth.CredentialTypeOAuth,
-			Key:       "",
-			Access:    "sk-ant-oat-stored",
-			Refresh:   "refresh",
-			AccountID: "",
-			Expires:   time.Now().Add(time.Hour).UnixMilli(),
-			ExpiresAt: 0,
+	tests := []struct {
+		name       string
+		apiKey     string
+		credential auth.Credential
+		found      bool
+	}{
+		{
+			name: "unexpired access token",
+			credential: auth.Credential{
+				OAuth:     nil,
+				Type:      auth.CredentialTypeOAuth,
+				Key:       "",
+				Access:    testStoredOAuthAccess,
+				Refresh:   testStoredOAuthRefresh,
+				AccountID: "",
+				Expires:   time.Now().Add(time.Hour).UnixMilli(),
+				ExpiresAt: 0,
+			},
+			apiKey: testStoredOAuthAccess,
+			found:  true,
 		},
-	})
-	require.NoError(t, err)
+		{
+			name: "refresh token only reports stored status",
+			credential: auth.Credential{
+				OAuth:     nil,
+				Type:      auth.CredentialTypeOAuth,
+				Key:       "",
+				Access:    "",
+				Refresh:   testStoredOAuthRefresh,
+				AccountID: "",
+				Expires:   0,
+				ExpiresAt: 0,
+			},
+			apiKey: "",
+			found:  false,
+		},
+	}
 
-	apiKey, found, err := storage.APIKeyContext(t.Context(), "anthropic-claude")
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, "sk-ant-oat-stored", apiKey)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			storage, err := auth.NewInMemoryStorage(t.Context(), map[string]auth.Credential{
+				"anthropic-claude": test.credential,
+			})
+			require.NoError(t, err)
+
+			apiKey, found := storage.APIKey("anthropic-claude")
+			assert.Equal(t, test.found, found)
+			assert.Equal(t, test.apiKey, apiKey)
+			assert.Equal(t,
+				auth.Status{Source: auth.SourceStored, Label: "", Configured: true},
+				storage.AuthStatus("anthropic-claude"),
+			)
+		})
+	}
 }
 
 func TestStorageSetRemoveDoNotMutateMemoryWhenPersistFails(t *testing.T) {

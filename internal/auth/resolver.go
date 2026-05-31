@@ -167,10 +167,8 @@ func (storage *Storage) AuthStatus(provider string) Status {
 	if runtimeOK {
 		return Status{Source: SourceRuntime, Label: "--api-key", Configured: false}
 	}
-	if credentialOK {
-		if _, ok := credential.apiKeyValue(); ok {
-			return Status{Source: SourceStored, Label: "", Configured: true}
-		}
+	if credentialOK && credential.hasSecretMaterial() {
+		return Status{Source: SourceStored, Label: "", Configured: true}
 	}
 	if envKey, ok := envKeyName(provider); ok {
 		return Status{Source: SourceEnvironment, Label: envKey, Configured: false}
