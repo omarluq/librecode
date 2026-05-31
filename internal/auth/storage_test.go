@@ -17,6 +17,7 @@ const (
 	testStoredKey          = "stored-key"
 	testStoredProvider     = "stored"
 	testFallbackProvider   = "fallback"
+	testEmptyProvider      = "empty"
 	testStoredOAuthAccess  = "stored-oauth-access"
 	testStoredOAuthRefresh = "stored-oauth-refresh"
 )
@@ -120,10 +121,22 @@ func TestStoragePersistsMemoryCredentials(t *testing.T) {
 }
 
 func TestStorageReportsAuthAvailabilityBySource(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	storage, err := auth.NewInMemoryStorage(ctx, map[string]auth.Credential{
+		"env-only": {
+			OAuth:     nil,
+			Type:      auth.CredentialTypeAPIKey,
+			Key:       "env-key",
+			Access:    "",
+			Refresh:   "",
+			AccountID: "",
+			Expires:   0,
+			ExpiresAt: 0,
+		},
 		testStoredProvider: testAPIKeyCredential(),
-		"empty": {
+		testEmptyProvider: {
 			OAuth:     nil,
 			Type:      auth.CredentialTypeAPIKey,
 			Key:       "",
@@ -135,18 +148,31 @@ func TestStorageReportsAuthAvailabilityBySource(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	t.Setenv("ENV_ONLY_API_KEY", "env-key")
 	storage.SetRuntimeAPIKey("runtime", "runtime-key")
 	storage.SetFallbackResolver(func(provider string) (string, bool) {
 		return "fallback-key", provider == testFallbackProvider
 	})
 
-	assert.True(t, storage.HasAuth("runtime"))
-	assert.True(t, storage.HasAuth(testStoredProvider))
-	assert.True(t, storage.HasAuth("env-only"))
-	assert.True(t, storage.HasAuth(testFallbackProvider))
-	assert.False(t, storage.HasAuth("empty"))
-	assert.False(t, storage.HasAuth("missing"))
+	tests := []struct {
+		name     string
+		provider string
+		expected bool
+	}{
+		{name: "runtime", provider: "runtime", expected: true},
+		{name: "stored", provider: testStoredProvider, expected: true},
+		{name: "env", provider: "env-only", expected: true},
+		{name: "fallback", provider: testFallbackProvider, expected: true},
+		{name: "empty", provider: testEmptyProvider, expected: false},
+		{name: "missing", provider: "missing", expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.expected, storage.HasAuth(tt.provider))
+		})
+	}
 }
 
 func TestStorageDrainsErrors(t *testing.T) {
