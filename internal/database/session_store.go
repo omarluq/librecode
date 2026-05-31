@@ -180,26 +180,8 @@ func newEntryEntity(sessionID string, parentID *string, entryType EntryType, mes
 }
 
 func newEntryData() EntryDataEntity {
-	return EntryDataEntity{
-		Details:                    nil,
-		Display:                    nil,
-		FromHook:                   false,
-		FirstKeptEntryID:           "",
-		FromID:                     "",
-		Label:                      nil,
-		Name:                       "",
-		TargetID:                   "",
-		ThinkingLevel:              "",
-		ToolName:                   "",
-		ToolStatus:                 "",
-		ToolArgsJSON:               "",
-		TokenEstimate:              0,
-		ModelFacing:                nil,
-		CompactionFirstKeptEntryID: "",
-		CompactionTokensBefore:     0,
-		BranchFromEntryID:          "",
-		TokensBefore:               0,
-	}
+	var data EntryDataEntity
+	return data
 }
 
 // AppendMessage appends a message as a child of the current leaf or provided parent.
