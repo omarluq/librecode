@@ -33,6 +33,11 @@ func TestFocusStatePrioritizesPanelAndAutocomplete(t *testing.T) {
 func TestFocusedPanelPreventsComposerExtensionKeymap(t *testing.T) {
 	t.Parallel()
 
+	const (
+		firstPanelItem  = "one"
+		secondPanelItem = "two"
+	)
+
 	app := newExtensionRuntimeTestApp(t, `
 librecode.keymap.set({ focus = "composer" }, "down", function()
   librecode.buf.set_text("composer", "stolen")
@@ -40,8 +45,8 @@ librecode.keymap.set({ focus = "composer" }, "down", function()
 end)
 `)
 	app.openPanel(newSelectionPanel(panelModel, "Models", "", []panelItem{
-		{Value: "one", Title: "one", Description: "", Meta: ""},
-		{Value: "two", Title: "two", Description: "", Meta: ""},
+		{Value: firstPanelItem, Title: firstPanelItem, Description: "", Meta: ""},
+		{Value: secondPanelItem, Title: secondPanelItem, Description: "", Meta: ""},
 	}, true))
 	selected := app.panel.selected
 

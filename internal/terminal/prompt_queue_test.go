@@ -2,6 +2,7 @@
 package terminal
 
 import (
+	"context"
 	"slices"
 	"testing"
 )
@@ -16,7 +17,7 @@ func TestQueueFollowUpText(t *testing.T) {
 		text string
 		want []string
 	}{
-		{name: "text", text: testQueuedPromptText, want: []string{testQueuedPromptText}},
+		{name: "plain prompt", text: testQueuedPromptText, want: []string{testQueuedPromptText}},
 		{name: "trimmed text", text: "  " + testQueuedPromptText + "  ", want: []string{testQueuedPromptText}},
 		{name: "empty", text: "", want: nil},
 		{name: "whitespace only", text: "  \n\t", want: nil},
@@ -124,6 +125,63 @@ func TestBoolText(t *testing.T) {
 
 			if got := boolText(tt.value); got != tt.want {
 				t.Fatalf("boolText(%t) = %q, want %q", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProcessQueuedPrompt(t *testing.T) {
+	t.Parallel()
+
+	const (
+		firstQueuedPrompt  = "one"
+		secondQueuedPrompt = "two"
+	)
+
+	tests := []struct {
+		setup       func(*App)
+		name        string
+		wantQueued  []string
+		wantWorking bool
+	}{
+		{
+			name: "busy leaves queue unchanged",
+			setup: func(app *App) {
+				app.working = true
+				app.queuedMessages = []string{firstQueuedPrompt}
+			},
+			wantQueued:  []string{firstQueuedPrompt},
+			wantWorking: true,
+		},
+		{
+			name:        "empty queue leaves idle",
+			setup:       func(*App) {},
+			wantQueued:  nil,
+			wantWorking: false,
+		},
+		{
+			name:        "sends first queued prompt",
+			setup:       func(app *App) { app.queuedMessages = []string{firstQueuedPrompt, secondQueuedPrompt} },
+			wantQueued:  []string{secondQueuedPrompt},
+			wantWorking: true,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
+			app := newPromptSendTestApp(t, client)
+			testCase.setup(app)
+
+			app.processQueuedPrompt(context.Background())
+
+			if !slices.Equal(app.queuedMessages, testCase.wantQueued) {
+				t.Fatalf("queuedMessages = %v, want %v", app.queuedMessages, testCase.wantQueued)
+			}
+			if app.working != testCase.wantWorking {
+				t.Fatalf("working = %v, want %v", app.working, testCase.wantWorking)
 			}
 		})
 	}

@@ -3,6 +3,7 @@ package terminal
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,6 +59,9 @@ func TestApplyPromptResponseNilClearsStreamedToolEvents(t *testing.T) {
 	if app.activePrompt != nil {
 		t.Fatal("activePrompt should be cleared")
 	}
+	if app.working {
+		t.Fatal("working should be false")
+	}
 }
 
 func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
@@ -102,5 +106,71 @@ func assertPromptResponseRoles(t *testing.T, app *App, want []database.Role) {
 		if got := app.messages[index].Role; got != role {
 			t.Fatalf("message[%d].Role = %q, want %q", index, got, role)
 		}
+	}
+}
+
+func TestApplyPromptResponseIgnoresCanceledPrompt(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.addMessage(database.RoleUser, "kept")
+	app.canceledPrompts[42] = newTestActivePrompt(nil)
+	app.working = true
+
+	app.applyPromptResponse(context.Background(), newTestPromptResponse("ignored"), 42)
+
+	if got, want := len(app.messages), 1; got != want {
+		t.Fatalf("messages length = %d, want %d", got, want)
+	}
+	if _, ok := app.canceledPrompts[42]; ok {
+		t.Fatal("canceled prompt should be consumed")
+	}
+}
+
+func TestApplyPromptResponseClearsCanceledActivePrompt(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.activePrompt = newTestActivePrompt(nil)
+	app.activePrompt.Canceled = true
+
+	app.applyPromptResponse(context.Background(), newTestPromptResponse("ignored"), app.activePrompt.ID)
+
+	if app.activePrompt != nil {
+		t.Fatal("activePrompt should be cleared")
+	}
+}
+
+func TestApplyPromptResponseAddsAssistantAndProcessesQueue(t *testing.T) {
+	t.Parallel()
+
+	client := newTerminalPromptClient(newTerminalCompletionResult("queued response"), nil)
+	app := newPromptSendTestApp(t, client)
+	app.activePrompt = newTestActivePrompt(nil)
+	app.queuedMessages = []string{"queued"}
+
+	app.applyPromptResponse(context.Background(), newTestPromptResponse("assistant response"), app.activePrompt.ID)
+
+	if got, want := app.messages[0].Content, "assistant response"; got != want {
+		t.Fatalf("assistant message = %q, want %q", got, want)
+	}
+	if !app.working {
+		t.Fatal("queued prompt should start after response")
+	}
+	if got, want := app.queuedMessages, []string(nil); !slices.Equal(got, want) {
+		t.Fatalf("queuedMessages = %v, want empty", got)
+	}
+}
+
+func newTestPromptResponse(text string) *assistant.PromptResponse {
+	return &assistant.PromptResponse{
+		SessionID:        "",
+		UserEntryID:      "",
+		AssistantEntryID: "",
+		Text:             text,
+		Thinking:         nil,
+		ToolEvents:       nil,
+		Usage:            model.EmptyTokenUsage(),
+		Cached:           false,
 	}
 }

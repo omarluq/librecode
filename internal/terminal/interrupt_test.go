@@ -74,17 +74,68 @@ func TestWorkingEscapeSequenceResetsAfterEditorInput(t *testing.T) {
 	}
 }
 
-func TestHandleEscapeOpensTreeWhenIdleComposerEmpty(t *testing.T) {
+func TestForceExitRequiresDoubleControlC(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	pressTerminalKey(t, app, tcell.KeyEscape, "")
-	if app.mode != modeChat {
-		t.Fatal("first escape should not open tree")
+	if app.handleForceExit() {
+		t.Fatal("first Ctrl+C should not quit")
 	}
-	pressTerminalKey(t, app, tcell.KeyEscape, "")
-	if app.mode != modePanel {
-		t.Fatal("second idle escape should open tree panel")
+	if got, want := app.statusMessage, "press Ctrl+C again to exit"; got != want {
+		t.Fatalf("statusMessage = %q, want %q", got, want)
+	}
+	if !app.handleForceExit() {
+		t.Fatal("second Ctrl+C should quit")
+	}
+}
+
+func TestHandleEscape(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		setup      func(*App)
+		assert     func(*testing.T, *App)
+		name       string
+		pressCount int
+	}{
+		{
+			name:       "clears composer text",
+			pressCount: 1,
+			setup:      func(app *App) { app.setComposerText("draft") },
+			assert: func(t *testing.T, app *App) {
+				t.Helper()
+				if got := app.composerText(); got != "" {
+					t.Fatalf("composer text = %q, want empty", got)
+				}
+				if got, want := app.statusMessage, "editor cleared"; got != want {
+					t.Fatalf("statusMessage = %q, want %q", got, want)
+				}
+			},
+		},
+		{
+			name:       "opens tree on double escape",
+			pressCount: 2,
+			setup:      func(*App) {},
+			assert: func(t *testing.T, app *App) {
+				t.Helper()
+				if app.mode != modePanel {
+					t.Fatal("second idle escape should open tree panel")
+				}
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			testCase.setup(app)
+			for range testCase.pressCount {
+				pressTerminalKey(t, app, tcell.KeyEscape, "")
+			}
+			testCase.assert(t, app)
+		})
 	}
 }
 
