@@ -12,7 +12,11 @@ func (credential *Credential) apiKeyValue() (string, bool) {
 		return resolved, resolved != ""
 	case CredentialTypeOAuth:
 		access := credential.oauthAccess()
-		return access, access != "" && !credential.oauthExpired()
+		if access == "" || credential.oauthExpired() {
+			return "", false
+		}
+
+		return access, true
 	default:
 		return "", false
 	}
