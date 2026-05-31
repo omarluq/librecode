@@ -20,6 +20,7 @@ func (app *App) cancelActivePrompt(ctx context.Context) {
 	}
 
 	activePrompt := app.activePrompt
+	app.activePrompt = nil
 	activePrompt.Canceled = true
 	app.canceledPrompts[activePrompt.ID] = activePrompt
 	activePrompt.Cancel()
