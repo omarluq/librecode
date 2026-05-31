@@ -2,6 +2,9 @@ package auth
 
 import "strings"
 
+// timestampMillisThreshold separates second epoch timestamps from millisecond epoch timestamps.
+const timestampMillisThreshold int64 = 100_000_000_000
+
 func (credential *Credential) apiKeyValue() (string, bool) {
 	switch credential.Type {
 	case CredentialTypeAPIKey:
@@ -53,7 +56,7 @@ func (credential *Credential) oauthExpired() bool {
 	if expires == 0 {
 		expires = credential.ExpiresAt
 	}
-	if expires == 0 || expires > 100000000000 {
+	if expires == 0 || expires > timestampMillisThreshold {
 		return expires != 0 && timeNowMillis() >= expires
 	}
 
