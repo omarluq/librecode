@@ -179,6 +179,29 @@ func newEntryEntity(sessionID string, parentID *string, entryType EntryType, mes
 	}
 }
 
+func newEntryData() EntryDataEntity {
+	return EntryDataEntity{
+		Details:                    nil,
+		Display:                    nil,
+		FromHook:                   false,
+		FirstKeptEntryID:           "",
+		FromID:                     "",
+		Label:                      nil,
+		Name:                       "",
+		TargetID:                   "",
+		ThinkingLevel:              "",
+		ToolName:                   "",
+		ToolStatus:                 "",
+		ToolArgsJSON:               "",
+		TokenEstimate:              0,
+		ModelFacing:                nil,
+		CompactionFirstKeptEntryID: "",
+		CompactionTokensBefore:     0,
+		BranchFromEntryID:          "",
+		TokensBefore:               0,
+	}
+}
+
 // AppendMessage appends a message as a child of the current leaf or provided parent.
 func (repository *SessionRepository) AppendMessage(
 	ctx context.Context,
@@ -243,26 +266,11 @@ func (repository *SessionRepository) AppendCustomMessage(
 	display bool,
 	details map[string]any,
 ) (*EntryEntity, error) {
-	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:                    details,
-		Display:                    &display,
-		FromHook:                   false,
-		FirstKeptEntryID:           "",
-		FromID:                     "",
-		Label:                      nil,
-		Name:                       "",
-		TargetID:                   "",
-		ThinkingLevel:              "",
-		ToolName:                   "",
-		ToolStatus:                 "",
-		ToolArgsJSON:               "",
-		TokenEstimate:              0,
-		ModelFacing:                nil,
-		CompactionFirstKeptEntryID: "",
-		CompactionTokensBefore:     0,
-		BranchFromEntryID:          "",
-		TokensBefore:               0,
-	})
+	data := newEntryData()
+	data.Details = details
+	data.Display = &display
+
+	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
 		return nil, err
 	}
@@ -316,26 +324,10 @@ func (repository *SessionRepository) AppendThinkingLevelChange(
 	parentID *string,
 	thinkingLevel string,
 ) (*EntryEntity, error) {
-	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:                    nil,
-		Display:                    nil,
-		FromHook:                   false,
-		FirstKeptEntryID:           "",
-		FromID:                     "",
-		Label:                      nil,
-		Name:                       "",
-		TargetID:                   "",
-		ThinkingLevel:              thinkingLevel,
-		ToolName:                   "",
-		ToolStatus:                 "",
-		ToolArgsJSON:               "",
-		TokenEstimate:              0,
-		ModelFacing:                nil,
-		CompactionFirstKeptEntryID: "",
-		CompactionTokensBefore:     0,
-		BranchFromEntryID:          "",
-		TokensBefore:               0,
-	})
+	data := newEntryData()
+	data.ThinkingLevel = thinkingLevel
+
+	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
 		return nil, err
 	}
@@ -368,26 +360,15 @@ func (repository *SessionRepository) AppendCompaction(
 	details map[string]any,
 	fromHook bool,
 ) (*EntryEntity, error) {
-	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:                    details,
-		Display:                    nil,
-		FromHook:                   fromHook,
-		FirstKeptEntryID:           firstKeptEntryID,
-		FromID:                     "",
-		Label:                      nil,
-		Name:                       "",
-		TargetID:                   "",
-		ThinkingLevel:              "",
-		ToolName:                   "",
-		ToolStatus:                 "",
-		ToolArgsJSON:               "",
-		TokenEstimate:              0,
-		ModelFacing:                nil,
-		CompactionFirstKeptEntryID: firstKeptEntryID,
-		CompactionTokensBefore:     tokensBefore,
-		BranchFromEntryID:          "",
-		TokensBefore:               tokensBefore,
-	})
+	data := newEntryData()
+	data.Details = details
+	data.FromHook = fromHook
+	data.FirstKeptEntryID = firstKeptEntryID
+	data.CompactionFirstKeptEntryID = firstKeptEntryID
+	data.CompactionTokensBefore = tokensBefore
+	data.TokensBefore = tokensBefore
+
+	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
 		return nil, err
 	}
@@ -405,26 +386,13 @@ func (repository *SessionRepository) AppendBranchSummary(
 	details map[string]any,
 	fromHook bool,
 ) (*EntryEntity, error) {
-	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:                    details,
-		Display:                    nil,
-		FromHook:                   fromHook,
-		FirstKeptEntryID:           "",
-		FromID:                     fromID,
-		Label:                      nil,
-		Name:                       "",
-		TargetID:                   "",
-		ThinkingLevel:              "",
-		ToolName:                   "",
-		ToolStatus:                 "",
-		ToolArgsJSON:               "",
-		TokenEstimate:              0,
-		ModelFacing:                nil,
-		CompactionFirstKeptEntryID: "",
-		CompactionTokensBefore:     0,
-		BranchFromEntryID:          fromID,
-		TokensBefore:               0,
-	})
+	data := newEntryData()
+	data.Details = details
+	data.FromHook = fromHook
+	data.FromID = fromID
+	data.BranchFromEntryID = fromID
+
+	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
 		return nil, err
 	}
@@ -440,26 +408,11 @@ func (repository *SessionRepository) AppendLabelChange(
 	targetID string,
 	label *string,
 ) (*EntryEntity, error) {
-	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:                    nil,
-		Display:                    nil,
-		FromHook:                   false,
-		FirstKeptEntryID:           "",
-		FromID:                     "",
-		Label:                      label,
-		Name:                       "",
-		TargetID:                   targetID,
-		ThinkingLevel:              "",
-		ToolName:                   "",
-		ToolStatus:                 "",
-		ToolArgsJSON:               "",
-		TokenEstimate:              0,
-		ModelFacing:                nil,
-		CompactionFirstKeptEntryID: "",
-		CompactionTokensBefore:     0,
-		BranchFromEntryID:          "",
-		TokensBefore:               0,
-	})
+	data := newEntryData()
+	data.Label = label
+	data.TargetID = targetID
+
+	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
 		return nil, err
 	}
@@ -474,26 +427,10 @@ func (repository *SessionRepository) AppendSessionInfo(
 	parentID *string,
 	name string,
 ) (*EntryEntity, error) {
-	dataJSON, err := dataJSONFromEntity(&EntryDataEntity{
-		Details:                    nil,
-		Display:                    nil,
-		FromHook:                   false,
-		FirstKeptEntryID:           "",
-		FromID:                     "",
-		Label:                      nil,
-		Name:                       name,
-		TargetID:                   "",
-		ThinkingLevel:              "",
-		ToolName:                   "",
-		ToolStatus:                 "",
-		ToolArgsJSON:               "",
-		TokenEstimate:              0,
-		ModelFacing:                nil,
-		CompactionFirstKeptEntryID: "",
-		CompactionTokensBefore:     0,
-		BranchFromEntryID:          "",
-		TokensBefore:               0,
-	})
+	data := newEntryData()
+	data.Name = name
+
+	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
 		return nil, err
 	}
@@ -547,26 +484,7 @@ func dataJSONFromEntity(data *EntryDataEntity) (string, error) {
 }
 
 func dataFromEntry(entry *EntryEntity) (EntryDataEntity, error) {
-	data := EntryDataEntity{
-		Details:                    nil,
-		Display:                    nil,
-		FromHook:                   false,
-		FirstKeptEntryID:           "",
-		FromID:                     "",
-		Label:                      nil,
-		Name:                       "",
-		TargetID:                   "",
-		ThinkingLevel:              "",
-		ToolName:                   "",
-		ToolStatus:                 "",
-		ToolArgsJSON:               "",
-		TokenEstimate:              0,
-		ModelFacing:                nil,
-		CompactionFirstKeptEntryID: "",
-		CompactionTokensBefore:     0,
-		BranchFromEntryID:          "",
-		TokensBefore:               0,
-	}
+	data := newEntryData()
 	if normalizeDataJSON(entry.DataJSON) == "{}" {
 		return data, nil
 	}
