@@ -109,7 +109,7 @@ func parseCustomModels(content []byte, sourcePath string) customModelsResult {
 	}
 
 	result := emptyCustomModelsResult(nil)
-	for providerName, providerConfig := range config.Providers {
+	for providerName, providerCfg := range config.Providers {
 		if providerName == "" {
 			result.Err = oops.In("model").Code("models_empty_provider_name").Errorf(
 				"models.json %s contains an empty provider name",
@@ -117,17 +117,17 @@ func parseCustomModels(content []byte, sourcePath string) customModelsResult {
 			)
 			continue
 		}
-		result.ProviderConfigs[providerName] = requestConfig(&providerConfig)
-		if providerConfig.BaseURL != "" || providerConfig.Compat != nil {
+		result.ProviderConfigs[providerName] = requestConfig(&providerCfg)
+		if providerCfg.BaseURL != "" || providerCfg.Compat != nil {
 			result.ProviderPatches[providerName] = providerPatch{
-				Compat:  cloneAnyMap(providerConfig.Compat),
-				BaseURL: providerConfig.BaseURL,
+				Compat:  cloneAnyMap(providerCfg.Compat),
+				BaseURL: providerCfg.BaseURL,
 			}
 		}
-		for modelID, override := range providerConfig.ModelOverrides {
+		for modelID, override := range providerCfg.ModelOverrides {
 			storeModelOverride(result.ModelOverrides, providerName, modelID, &override)
 		}
-		result.Models = append(result.Models, modelsFromProvider(providerName, &providerConfig)...)
+		result.Models = append(result.Models, modelsFromProvider(providerName, &providerCfg)...)
 	}
 
 	return result
