@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	// Register the sqlite driver used by prompt-send integration-style tests.
 	_ "modernc.org/sqlite"
 
 	"github.com/omarluq/librecode/internal/assistant"
