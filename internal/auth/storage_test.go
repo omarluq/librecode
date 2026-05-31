@@ -18,6 +18,7 @@ const (
 	testStoredProvider     = "stored"
 	testFallbackProvider   = "fallback"
 	testEmptyProvider      = "empty"
+	testStoredEnvLike      = "stored-env-like"
 	testStoredOAuthAccess  = "stored-oauth-access"
 	testStoredOAuthRefresh = "stored-oauth-refresh"
 )
@@ -125,7 +126,7 @@ func TestStorageReportsAuthAvailabilityBySource(t *testing.T) {
 
 	ctx := context.Background()
 	storage, err := auth.NewInMemoryStorage(ctx, map[string]auth.Credential{
-		"env-only": {
+		testStoredEnvLike: {
 			OAuth:     nil,
 			Type:      auth.CredentialTypeAPIKey,
 			Key:       "env-key",
@@ -160,7 +161,7 @@ func TestStorageReportsAuthAvailabilityBySource(t *testing.T) {
 	}{
 		{name: "runtime", provider: "runtime", expected: true},
 		{name: "stored", provider: testStoredProvider, expected: true},
-		{name: "env", provider: "env-only", expected: true},
+		{name: testStoredEnvLike, provider: testStoredEnvLike, expected: true},
 		{name: "fallback", provider: testFallbackProvider, expected: true},
 		{name: "empty", provider: testEmptyProvider, expected: false},
 		{name: "missing", provider: "missing", expected: false},
