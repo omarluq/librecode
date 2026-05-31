@@ -7,51 +7,54 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
-func TestToggleToolsExpanded(t *testing.T) {
+func TestToggleFlags(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
-
-	app.toggleToolsExpanded()
-
-	if !app.toolsExpanded {
-		t.Fatal("toolsExpanded should be true after first toggle")
-	}
-	if got, want := app.statusMessage, "tool output expanded: on"; got != want {
-		t.Fatalf("statusMessage = %q, want %q", got, want)
-	}
-
-	app.toggleToolsExpanded()
-
-	if app.toolsExpanded {
-		t.Fatal("toolsExpanded should be false after second toggle")
-	}
-	if got, want := app.statusMessage, "tool output expanded: off"; got != want {
-		t.Fatalf("statusMessage = %q, want %q", got, want)
-	}
-}
-
-func TestToggleThinkingHidden(t *testing.T) {
-	t.Parallel()
-
-	app := newRenderTestApp(t)
-
-	app.toggleThinkingHidden()
-
-	if !app.hideThinking {
-		t.Fatal("hideThinking should be true after first toggle")
-	}
-	if got, want := app.statusMessage, "thinking hidden: on"; got != want {
-		t.Fatalf("statusMessage = %q, want %q", got, want)
+	tests := []struct {
+		name          string
+		run           func(*App)
+		flag          func(*App) bool
+		wantOnStatus  string
+		wantOffStatus string
+	}{
+		{
+			name:          "tools expanded",
+			run:           (*App).toggleToolsExpanded,
+			flag:          func(app *App) bool { return app.toolsExpanded },
+			wantOnStatus:  "tool output expanded: on",
+			wantOffStatus: "tool output expanded: off",
+		},
+		{
+			name:          "thinking hidden",
+			run:           (*App).toggleThinkingHidden,
+			flag:          func(app *App) bool { return app.hideThinking },
+			wantOnStatus:  "thinking hidden: on",
+			wantOffStatus: "thinking hidden: off",
+		},
 	}
 
-	app.toggleThinkingHidden()
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	if app.hideThinking {
-		t.Fatal("hideThinking should be false after second toggle")
-	}
-	if got, want := app.statusMessage, "thinking hidden: off"; got != want {
-		t.Fatalf("statusMessage = %q, want %q", got, want)
+			app := newRenderTestApp(t)
+
+			testCase.run(app)
+			if !testCase.flag(app) {
+				t.Fatal("flag should be true after first toggle")
+			}
+			if got := app.statusMessage; got != testCase.wantOnStatus {
+				t.Fatalf("statusMessage = %q, want %q", got, testCase.wantOnStatus)
+			}
+
+			testCase.run(app)
+			if testCase.flag(app) {
+				t.Fatal("flag should be false after second toggle")
+			}
+			if got := app.statusMessage; got != testCase.wantOffStatus {
+				t.Fatalf("statusMessage = %q, want %q", got, testCase.wantOffStatus)
+			}
+		})
 	}
 }
 

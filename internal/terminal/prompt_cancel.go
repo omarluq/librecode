@@ -35,7 +35,6 @@ func (app *App) revertActivePromptUI(activePrompt *activePromptState) {
 		app.truncateMessages(activePrompt.BaselineMessages)
 	}
 	app.pendingParentID = cloneStringPtr(activePrompt.ParentEntryID)
-	app.queuedMessages = []string{}
 	app.streamingText = ""
 	app.streamingThinkingText = ""
 	app.resetStreamingBlocks()

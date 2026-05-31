@@ -2,6 +2,7 @@
 package terminal
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -39,6 +40,24 @@ func TestApplyStreamedSideEffectBlocks(t *testing.T) {
 		database.RoleToolResult,
 		database.RoleBashExecution,
 	})
+}
+
+func TestApplyPromptResponseNilClearsStreamedToolEvents(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.activePrompt = newTestActivePrompt(nil)
+	app.streamedToolEvents = 2
+	app.working = true
+
+	app.applyPromptResponse(context.Background(), nil, app.activePrompt.ID)
+
+	if got := app.streamedToolEvents; got != 0 {
+		t.Fatalf("streamedToolEvents = %d, want 0", got)
+	}
+	if app.activePrompt != nil {
+		t.Fatal("activePrompt should be cleared")
+	}
 }
 
 func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
