@@ -3,14 +3,8 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"slices"
-	"strings"
 	"sync"
-	"time"
 
-	"github.com/samber/lo"
 	"github.com/samber/oops"
 )
 
@@ -39,6 +33,10 @@ const (
 )
 
 // Credential stores API-key or OAuth credentials.
+//
+// Key may either be the literal API key or the name of an environment variable
+// containing the key. OAuth token fields are kept in both flat and map shapes
+// to support existing auth files and provider-specific OAuth flows.
 type Credential struct {
 	OAuth     map[string]string `json:"oauth,omitempty"`
 	Type      CredentialType    `json:"type"`
@@ -69,6 +67,11 @@ type Backend interface {
 }
 
 // Storage provides librecode-style credential lookup with stored, runtime, env, and fallback sources.
+//
+// Locking contract: lock protects credentials, runtimeOverrides, errors,
+// loadError, and fallbackResolver. Do not call fallbackResolver or OAuth
+// refreshers while holding lock; take an authSnapshot first and operate on the
+// copied values.
 type Storage struct {
 	backend          Backend
 	loadError        error
@@ -156,15 +159,6 @@ func (storage *Storage) SetFallbackResolver(resolver func(provider string) (stri
 	storage.fallbackResolver = resolver
 }
 
-// Get returns a stored credential only.
-func (storage *Storage) Get(provider string) (Credential, bool) {
-	storage.lock.RLock()
-	defer storage.lock.RUnlock()
-
-	credential, ok := storage.credentials[provider]
-	return credential, ok
-}
-
 // Set stores a provider credential and persists it.
 func (storage *Storage) Set(ctx context.Context, provider string, credential *Credential) error {
 	if credential == nil {
@@ -192,375 +186,4 @@ func (storage *Storage) Remove(ctx context.Context, provider string) error {
 	delete(storage.credentials, provider)
 
 	return nil
-}
-
-// List returns providers with stored credentials.
-func (storage *Storage) List() []string {
-	storage.lock.RLock()
-	defer storage.lock.RUnlock()
-
-	providers := lo.Keys(storage.credentials)
-	slices.Sort(providers)
-
-	return providers
-}
-
-// HasStored reports whether auth.json contains a credential for provider.
-func (storage *Storage) HasStored(provider string) bool {
-	storage.lock.RLock()
-	defer storage.lock.RUnlock()
-
-	_, ok := storage.credentials[provider]
-	return ok
-}
-
-// HasAuth reports whether any source can provide auth for provider.
-func (storage *Storage) HasAuth(provider string) bool {
-	_, runtimeOK, credential, credentialOK, resolver := storage.authSnapshot(provider)
-	if runtimeOK {
-		return true
-	}
-	if credentialOK && credential.hasSecretMaterial() {
-		return true
-	}
-	if _, ok := envAPIKey(provider); ok {
-		return true
-	}
-	if resolver != nil {
-		_, ok := resolver(provider)
-		return ok
-	}
-
-	return false
-}
-
-// APIKey resolves provider API key using runtime, stored, environment, then fallback sources.
-func (storage *Storage) APIKey(provider string) (string, bool) {
-	apiKey, runtimeOK, credential, credentialOK, resolver := storage.authSnapshot(provider)
-	if runtimeOK {
-		return apiKey, true
-	}
-	if credentialOK {
-		if apiKey, ok := credential.apiKeyValue(); ok {
-			return apiKey, true
-		}
-	}
-	if apiKey, ok := envAPIKey(provider); ok {
-		return apiKey, true
-	}
-	if resolver != nil {
-		return resolver(provider)
-	}
-
-	return "", false
-}
-
-// APIKeyContext resolves provider API key and refreshes OAuth credentials when needed.
-func (storage *Storage) APIKeyContext(ctx context.Context, provider string) (apiKey string, found bool, err error) {
-	apiKey, runtimeOK, credential, credentialOK, resolver := storage.authSnapshot(provider)
-	if runtimeOK {
-		return apiKey, true, nil
-	}
-
-	if credentialOK {
-		apiKey, found, err := storage.credentialAPIKeyContext(ctx, provider, &credential)
-		if err != nil || found {
-			return apiKey, found, err
-		}
-	}
-	if apiKey, ok := envAPIKey(provider); ok {
-		return apiKey, true, nil
-	}
-	if resolver != nil {
-		apiKey, ok := resolver(provider)
-		return apiKey, ok, nil
-	}
-
-	return "", false, nil
-}
-
-func (storage *Storage) authSnapshot(provider string) (
-	runtimeKey string,
-	hasRuntime bool,
-	credential Credential,
-	hasCredential bool,
-	resolver func(provider string) (string, bool),
-) {
-	storage.lock.RLock()
-	defer storage.lock.RUnlock()
-
-	runtimeKey, hasRuntime = storage.runtimeOverrides[provider]
-	credential, hasCredential = storage.credentials[provider]
-	resolver = storage.fallbackResolver
-
-	return runtimeKey, hasRuntime, credential, hasCredential, resolver
-}
-
-func (storage *Storage) credentialAPIKeyContext(
-	ctx context.Context,
-	provider string,
-	credential *Credential,
-) (apiKey string, found bool, err error) {
-	if credential.Type == CredentialTypeAPIKey {
-		value, ok := credential.apiKeyValue()
-		return value, ok, nil
-	}
-	if credential.Type != CredentialTypeOAuth {
-		value, ok := credential.apiKeyValue()
-		return value, ok, nil
-	}
-	refreshed, apiKey, err := refreshOAuthCredential(ctx, provider, credential)
-	if err != nil {
-		return "", false, err
-	}
-	if apiKey == "" {
-		return "", false, nil
-	}
-	if refreshed != credential && refreshed.oauthAccess() != credential.oauthAccess() {
-		if err := storage.Set(ctx, provider, refreshed); err != nil {
-			return "", false, err
-		}
-	}
-
-	return apiKey, true, nil
-}
-
-func refreshOAuthCredential(ctx context.Context, provider string, credential *Credential) (*Credential, string, error) {
-	switch provider {
-	case openAICodexProvider:
-		return openAICodexAPIKey(ctx, credential)
-	case anthropicClaudeProvider:
-		return anthropicAPIKey(ctx, credential)
-	default:
-		value, _ := credential.apiKeyValue()
-		return credential, value, nil
-	}
-}
-
-// AuthStatus reports credential availability without exposing values.
-func (storage *Storage) AuthStatus(provider string) Status {
-	_, runtimeOK, credential, credentialOK, resolver := storage.authSnapshot(provider)
-	if runtimeOK {
-		return Status{Source: SourceRuntime, Label: "--api-key", Configured: false}
-	}
-	if credentialOK {
-		if _, ok := credential.apiKeyValue(); ok {
-			return Status{Source: SourceStored, Label: "", Configured: true}
-		}
-	}
-	if envKey, ok := envKeyName(provider); ok {
-		return Status{Source: SourceEnvironment, Label: envKey, Configured: false}
-	}
-	if resolver != nil {
-		if _, ok := resolver(provider); ok {
-			return Status{Source: SourceFallback, Label: "custom provider config", Configured: false}
-		}
-	}
-
-	return Status{Source: "", Label: "", Configured: false}
-}
-
-// DrainErrors returns accumulated non-secret storage errors and clears them.
-func (storage *Storage) DrainErrors() []error {
-	storage.lock.Lock()
-	defer storage.lock.Unlock()
-
-	drained := append([]error{}, storage.errors...)
-	storage.errors = []error{}
-
-	return drained
-}
-
-func (storage *Storage) persistProviderChange(
-	ctx context.Context,
-	provider string,
-	credential *Credential,
-) error {
-	if err := storage.currentLoadError(); err != nil {
-		return oops.In("auth").Code("load_error").Wrapf(err, "persist credentials")
-	}
-	err := storage.backend.WithLock(ctx, func(current []byte) (LockResult, error) {
-		credentials, err := parseCredentials(current)
-		if err != nil {
-			return LockResult{Next: nil, Write: false}, err
-		}
-		if credential == nil {
-			delete(credentials, provider)
-		} else {
-			credentials[provider] = *credential
-		}
-		next, err := json.MarshalIndent(credentials, "", "  ")
-		if err != nil {
-			return LockResult{Next: nil, Write: false}, err
-		}
-
-		return LockResult{Next: next, Write: true}, nil
-	})
-	if err != nil {
-		storage.recordError(err)
-		return oops.In("auth").Code("persist").Wrapf(err, "persist credentials")
-	}
-
-	return nil
-}
-
-func (storage *Storage) currentLoadError() error {
-	storage.lock.RLock()
-	defer storage.lock.RUnlock()
-
-	return storage.loadError
-}
-
-func (storage *Storage) recordError(err error) {
-	storage.lock.Lock()
-	defer storage.lock.Unlock()
-
-	storage.errors = append(storage.errors, err)
-}
-
-func (credential *Credential) apiKeyValue() (string, bool) {
-	switch credential.Type {
-	case CredentialTypeAPIKey:
-		resolved := resolveStoredKey(credential.Key)
-		return resolved, resolved != ""
-	case CredentialTypeOAuth:
-		access := credential.oauthAccess()
-		return access, access != "" && !credential.oauthExpired()
-	default:
-		return "", false
-	}
-}
-
-func (credential *Credential) hasSecretMaterial() bool {
-	switch credential.Type {
-	case CredentialTypeAPIKey:
-		return strings.TrimSpace(credential.Key) != ""
-	case CredentialTypeOAuth:
-		return credential.oauthAccess() != "" || credential.oauthRefresh() != ""
-	default:
-		return false
-	}
-}
-
-func (credential *Credential) oauthAccess() string {
-	if credential.Access != "" {
-		return credential.Access
-	}
-	if credential.OAuth != nil {
-		return credential.OAuth["access"]
-	}
-
-	return ""
-}
-
-func (credential *Credential) oauthRefresh() string {
-	if credential.Refresh != "" {
-		return credential.Refresh
-	}
-	if credential.OAuth != nil {
-		return credential.OAuth["refresh"]
-	}
-
-	return ""
-}
-
-func (credential *Credential) oauthExpired() bool {
-	expires := credential.Expires
-	if expires == 0 {
-		expires = credential.ExpiresAt
-	}
-	if expires == 0 || expires > 100000000000 {
-		return expires != 0 && timeNowMillis() >= expires
-	}
-
-	return timeNowMillis() >= expires*1000
-}
-
-func resolveStoredKey(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return ""
-	}
-	if envValue := strings.TrimSpace(os.Getenv(trimmed)); envValue != "" {
-		return envValue
-	}
-
-	return trimmed
-}
-
-func timeNowMillis() int64 {
-	return timeNow().UnixMilli()
-}
-
-var timeNow = time.Now
-
-func parseCredentials(content []byte) (map[string]Credential, error) {
-	if strings.TrimSpace(string(content)) == "" {
-		return map[string]Credential{}, nil
-	}
-	credentials := map[string]Credential{}
-	if err := json.Unmarshal(content, &credentials); err != nil {
-		return map[string]Credential{}, err
-	}
-
-	return credentials, nil
-}
-
-func envAPIKey(provider string) (string, bool) {
-	for _, envKey := range envKeyCandidates(provider) {
-		value := strings.TrimSpace(os.Getenv(envKey))
-		if value != "" {
-			return value, true
-		}
-	}
-
-	return "", false
-}
-
-func envKeyName(provider string) (string, bool) {
-	candidates := envKeyCandidates(provider)
-	key, ok := lo.Find(candidates, func(candidate string) bool {
-		return strings.TrimSpace(os.Getenv(candidate)) != ""
-	})
-	if ok {
-		return key, true
-	}
-
-	return "", false
-}
-
-func envKeyCandidates(provider string) []string {
-	normalized := strings.ToUpper(provider)
-	normalized = strings.NewReplacer("-", "_", ".", "_", "/", "_").Replace(normalized)
-	candidates := []string{}
-	if envKeys, ok := wellKnownEnvKeys(provider); ok {
-		candidates = append(candidates, envKeys...)
-	}
-	candidates = append(candidates, normalized+apiKeyEnvSuffix())
-
-	return lo.Uniq(candidates)
-}
-
-func wellKnownEnvKeys(provider string) ([]string, bool) {
-	keys := map[string][]string{
-		"anthropic":              {"ANTHROPIC" + apiKeyEnvSuffix()},
-		"anthropic-claude":       {"ANTHROPIC_OAUTH_TOKEN"},
-		"azure-openai-responses": {"AZURE_OPENAI" + apiKeyEnvSuffix()},
-		"cerebras":               {"CEREBRAS" + apiKeyEnvSuffix()},
-		"deepseek":               {"DEEPSEEK" + apiKeyEnvSuffix()},
-		"groq":                   {"GROQ" + apiKeyEnvSuffix()},
-		"mistral":                {"MISTRAL" + apiKeyEnvSuffix()},
-		"openai":                 {"OPENAI" + apiKeyEnvSuffix()},
-		"openrouter":             {"OPENROUTER" + apiKeyEnvSuffix()},
-		"vercel-ai-gateway":      {"AI_GATEWAY" + apiKeyEnvSuffix()},
-		"xai":                    {"XAI" + apiKeyEnvSuffix()},
-		"zai":                    {"ZAI" + apiKeyEnvSuffix()},
-	}
-	envKeys, ok := keys[provider]
-
-	return envKeys, ok
-}
-
-func apiKeyEnvSuffix() string {
-	return "_API" + "_KEY"
 }
