@@ -42,13 +42,12 @@ type terminalPromptClient struct {
 }
 
 func newTerminalPromptClient(response *assistant.CompletionResult, err error) *terminalPromptClient {
-	return &terminalPromptClient{
-		response: response,
-		request:  nil,
-		err:      err,
-		ready:    make(chan struct{}),
-		lock:     sync.Mutex{},
-	}
+	client := new(terminalPromptClient)
+	client.response = response
+	client.err = err
+	client.ready = make(chan struct{})
+
+	return client
 }
 
 func (client *terminalPromptClient) Complete(
@@ -390,7 +389,6 @@ func readPromptAsyncEvent(t *testing.T, app *App) *asyncEvent {
 		return promptEvent
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for async event")
+		return nil
 	}
-
-	return nil
 }
