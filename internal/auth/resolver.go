@@ -140,7 +140,7 @@ func (storage *Storage) credentialAPIKeyContext(
 	if apiKey == "" {
 		return "", false, nil
 	}
-	if refreshed != credential && refreshed.oauthAccess() != credential.oauthAccess() {
+	if refreshed.oauthAccess() != credential.oauthAccess() {
 		if err := storage.Set(ctx, provider, refreshed); err != nil {
 			return "", false, err
 		}

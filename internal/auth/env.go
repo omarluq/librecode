@@ -40,26 +40,24 @@ func parseCredentials(content []byte) (map[string]Credential, error) {
 }
 
 func envAPIKey(provider string) (string, bool) {
-	for _, envKey := range envKeyCandidates(provider) {
-		value := strings.TrimSpace(os.Getenv(envKey))
-		if value != "" {
-			return value, true
-		}
-	}
-
-	return "", false
+	value, _, found := resolveEnvKey(provider)
+	return value, found
 }
 
 func envKeyName(provider string) (string, bool) {
-	candidates := envKeyCandidates(provider)
-	key, ok := lo.Find(candidates, func(candidate string) bool {
-		return strings.TrimSpace(os.Getenv(candidate)) != ""
-	})
-	if ok {
-		return key, true
+	_, key, found := resolveEnvKey(provider)
+	return key, found
+}
+
+func resolveEnvKey(provider string) (value, key string, found bool) {
+	for _, envKey := range envKeyCandidates(provider) {
+		value := strings.TrimSpace(os.Getenv(envKey))
+		if value != "" {
+			return value, envKey, true
+		}
 	}
 
-	return "", false
+	return "", "", false
 }
 
 func envKeyCandidates(provider string) []string {
