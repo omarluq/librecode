@@ -134,8 +134,9 @@ func TestProcessQueuedPrompt(t *testing.T) {
 	t.Parallel()
 
 	const (
-		firstQueuedPrompt  = "one"
-		secondQueuedPrompt = "two"
+		firstQueuedPrompt     = "one"
+		secondQueuedPrompt    = "two"
+		sendFirstQueuedPrompt = "sends first queued prompt"
 	)
 
 	tests := []struct {
@@ -160,7 +161,7 @@ func TestProcessQueuedPrompt(t *testing.T) {
 			wantWorking: false,
 		},
 		{
-			name:        "sends first queued prompt",
+			name:        sendFirstQueuedPrompt,
 			setup:       func(app *App) { app.queuedMessages = []string{firstQueuedPrompt, secondQueuedPrompt} },
 			wantQueued:  []string{secondQueuedPrompt},
 			wantWorking: true,
@@ -173,9 +174,15 @@ func TestProcessQueuedPrompt(t *testing.T) {
 
 			client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
 			app := newPromptSendTestApp(t, client)
+			if testCase.name == sendFirstQueuedPrompt {
+				app.screen = newClipboardScreen()
+			}
 			testCase.setup(app)
 
 			app.processQueuedPrompt(context.Background())
+			if testCase.name == sendFirstQueuedPrompt {
+				_ = readPromptAsyncEvent(t, app)
+			}
 
 			if !slices.Equal(app.queuedMessages, testCase.wantQueued) {
 				t.Fatalf("queuedMessages = %v, want %v", app.queuedMessages, testCase.wantQueued)
