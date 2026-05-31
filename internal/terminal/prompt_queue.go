@@ -16,6 +16,10 @@ func (app *App) queueFollowUp() {
 }
 
 func (app *App) queueFollowUpText(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
 	app.queuedMessages = append(app.queuedMessages, text)
 }
 

@@ -6,19 +6,38 @@ import (
 	"testing"
 )
 
-func TestQueueFollowUpDoesNotSetStatus(t *testing.T) {
+const testQueuedPromptText = "next prompt"
+
+func TestQueueFollowUpText(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
-	app.setStatus("ready")
-
-	app.queueFollowUpText("next prompt")
-
-	if got, want := app.statusMessage, "ready"; got != want {
-		t.Fatalf("statusMessage = %q, want %q", got, want)
+	tests := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{name: "text", text: testQueuedPromptText, want: []string{testQueuedPromptText}},
+		{name: "trimmed text", text: "  " + testQueuedPromptText + "  ", want: []string{testQueuedPromptText}},
+		{name: "empty", text: "", want: nil},
+		{name: "whitespace only", text: "  \n\t", want: nil},
 	}
-	if got, want := len(app.queuedMessages), 1; got != want {
-		t.Fatalf("queuedMessages length = %d, want %d", got, want)
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			app.setStatus("ready")
+
+			app.queueFollowUpText(testCase.text)
+
+			if got, want := app.statusMessage, "ready"; got != want {
+				t.Fatalf("statusMessage = %q, want %q", got, want)
+			}
+			if got := app.queuedMessages; !slices.Equal(got, testCase.want) {
+				t.Fatalf("queuedMessages = %v, want %v", got, testCase.want)
+			}
+		})
 	}
 }
 

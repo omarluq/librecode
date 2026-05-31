@@ -23,6 +23,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	app.resetStreamingBlocks()
 	if response == nil {
 		app.activePrompt = nil
+		app.streamedToolEvents = 0
 		app.processQueuedPrompt(ctx)
 		return
 	}
