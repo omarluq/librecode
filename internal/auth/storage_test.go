@@ -13,7 +13,11 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 )
 
-const testStoredKey = "stored-key"
+const (
+	testStoredKey        = "stored-key"
+	testStoredProvider   = "stored"
+	testFallbackProvider = "fallback"
+)
 
 func TestStorageResolvesAuthSourcesWithoutExposingSecrets(t *testing.T) {
 	t.Parallel()
@@ -104,9 +108,63 @@ func TestStoragePersistsMemoryCredentials(t *testing.T) {
 
 	reloaded, err := auth.NewStorage(ctx, backend)
 	require.NoError(t, err)
+	storedCredential, found := reloaded.Get("openai")
+	require.True(t, found)
+	assert.Equal(t, credential, storedCredential)
+
 	apiKey, found := reloaded.APIKey("openai")
 	require.True(t, found)
 	assert.Equal(t, testStoredKey, apiKey)
+}
+
+func TestStorageReportsAuthAvailabilityBySource(t *testing.T) {
+	ctx := context.Background()
+	storage, err := auth.NewInMemoryStorage(ctx, map[string]auth.Credential{
+		testStoredProvider: testAPIKeyCredential(),
+		"empty": {
+			OAuth:     nil,
+			Type:      auth.CredentialTypeAPIKey,
+			Key:       "",
+			Access:    "",
+			Refresh:   "",
+			AccountID: "",
+			Expires:   0,
+			ExpiresAt: 0,
+		},
+	})
+	require.NoError(t, err)
+	t.Setenv("ENV_ONLY_API_KEY", "env-key")
+	storage.SetRuntimeAPIKey("runtime", "runtime-key")
+	storage.SetFallbackResolver(func(provider string) (string, bool) {
+		return "fallback-key", provider == testFallbackProvider
+	})
+
+	assert.True(t, storage.HasAuth("runtime"))
+	assert.True(t, storage.HasAuth(testStoredProvider))
+	assert.True(t, storage.HasAuth("env-only"))
+	assert.True(t, storage.HasAuth(testFallbackProvider))
+	assert.False(t, storage.HasAuth("empty"))
+	assert.False(t, storage.HasAuth("missing"))
+}
+
+func TestStorageDrainsErrors(t *testing.T) {
+	t.Parallel()
+
+	backend := &invalidJSONBackend{}
+	storage, err := auth.NewStorage(t.Context(), backend)
+	require.Error(t, err)
+	require.Nil(t, storage)
+
+	credential := testAPIKeyCredential()
+	storageBackend := &failingBackend{err: assert.AnError}
+	failingStorage, err := auth.NewStorage(t.Context(), storageBackend)
+	require.NoError(t, err)
+	require.Error(t, failingStorage.Set(t.Context(), "openai", &credential))
+
+	drained := failingStorage.DrainErrors()
+	require.Len(t, drained, 1)
+	assert.ErrorIs(t, drained[0], assert.AnError)
+	assert.Empty(t, failingStorage.DrainErrors())
 }
 
 func TestStorageFallbackResolverDoesNotRunUnderLock(t *testing.T) {
@@ -213,4 +271,14 @@ func (backend *failingBackend) WithLock(
 	}
 
 	return nil
+}
+
+type invalidJSONBackend struct{}
+
+func (backend *invalidJSONBackend) WithLock(
+	_ context.Context,
+	callback func(current []byte) (auth.LockResult, error),
+) error {
+	_, err := callback([]byte("{"))
+	return err
 }
