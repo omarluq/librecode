@@ -124,10 +124,7 @@ func mergeAnyMaps(left, right map[string]any) map[string]any {
 	return merged
 }
 
-func mergeThinkingMaps(
-	left map[ThinkingLevel]*string,
-	right map[ThinkingLevel]*string,
-) map[ThinkingLevel]*string {
+func mergeThinkingMaps(left, right map[ThinkingLevel]*string) map[ThinkingLevel]*string {
 	if left == nil && right == nil {
 		return nil
 	}
