@@ -18,6 +18,19 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
+func TestAllMessageLinesFlattensStaticAndDynamicGroups(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.messages = []chatMessage{newChatMessage(database.RoleAssistant, "hello")}
+	dynamic := [][]styledLine{{newStyledLine(app.theme.style(colorText), "dynamic")}}
+
+	lines := app.allMessageLines(40, dynamic)
+	texts := lineTexts(lines)
+	assert.Contains(t, texts, " hello")
+	assert.Contains(t, texts, "dynamic")
+}
+
 func TestRenderStreamingMessageUsesTextColor(t *testing.T) {
 	t.Parallel()
 
@@ -44,6 +57,19 @@ func TestRenderThinkingMessageKeepsDimColor(t *testing.T) {
 
 	lines := app.renderThinkingMessage(80, newChatMessage(database.RoleThinking, "thinking details"))
 	assertThinkingLineDim(t, app, lines)
+}
+
+func TestRenderThinkingMessagePreservesMarkdownSpans(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	lines := app.renderThinkingMessage(80, newChatMessage(database.RoleThinking, "```go\nfunc hi() {}\n```"))
+	content := lines[2]
+	require.NotEmpty(t, content.Spans)
+	assert.True(t, content.Style.HasItalic())
+	for _, span := range content.Spans {
+		assert.True(t, span.Style.HasItalic())
+	}
 }
 
 func TestRenderStreamingThinkingMessageKeepsDimColor(t *testing.T) {
@@ -127,6 +153,44 @@ func TestFooterLinesIgnoreTransientStatus(t *testing.T) {
 			t.Fatalf("footer rendered transient status line %q", line.Text)
 		}
 	}
+}
+
+func TestRenderQueuedMessagesRendersHeadersAndBody(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.queuedMessages = []string{"first queued", "second queued"}
+
+	lines := app.renderQueuedMessages(40)
+	texts := lineTexts(lines)
+	assert.Contains(t, texts, "  queued follow-up 1                    ")
+	assert.Contains(t, texts, "  first queued                          ")
+	assert.Contains(t, texts, "  queued follow-up 2                    ")
+	assert.Contains(t, texts, "  second queued                         ")
+}
+
+func TestRenderCustomAndSummaryMessagesUseBoxedLayout(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	custom := app.renderCustomMessage(30, "system note")
+	summary := app.renderSummaryMessage(30, newChatMessage(database.RoleCompactionSummary, "summary note"))
+
+	assert.Contains(t, lineTexts(custom), "  [system]                    ")
+	assert.Contains(t, lineTexts(summary), "  [compactionSummary]         ")
+}
+
+func TestVisibleMessageLineGroupsDoesNotMutateScrollOffset(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.scrollOffset = 5
+	groups := [][]styledLine{{newStyledLine(app.theme.style(colorText), "one")}}
+
+	lines := app.visibleMessageLineGroups(groups, 10)
+
+	require.Len(t, lines, 1)
+	assert.Equal(t, 5, app.scrollOffset)
 }
 
 func TestRenderWelcomeMessageHasCardPadding(t *testing.T) {

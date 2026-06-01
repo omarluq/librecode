@@ -152,11 +152,48 @@ func (app *App) renderThinkingMessage(width int, message chatMessage) []styledLi
 		newStyledLine(style.Bold(true), settingThinking),
 	)
 	for _, line := range markdownLines {
-		lines = append(lines, newStyledLine(style, line.Text))
+		lines = append(lines, mergeLineStyle(line, style))
 	}
 	lines = append(lines, newStyledLine(app.theme.style(colorDim), ""))
 
 	return lines
+}
+
+func mergeLineStyle(line styledLine, style tcell.Style) styledLine {
+	merged := line
+	merged.Style = mergeStyles(line.Style, style)
+	if len(line.Spans) > 0 {
+		merged.Spans = make([]styledSpan, len(line.Spans))
+		for index, span := range line.Spans {
+			merged.Spans[index] = styledSpan{Style: mergeStyles(span.Style, style), Text: span.Text}
+		}
+	}
+
+	return merged
+}
+
+func mergeStyles(base, overlay tcell.Style) tcell.Style {
+	merged := base
+	if overlay.HasBold() {
+		merged = merged.Bold(true)
+	}
+	if overlay.HasItalic() {
+		merged = merged.Italic(true)
+	}
+	if overlay.HasUnderline() {
+		merged = merged.Underline(true)
+	}
+	if overlay.HasReverse() {
+		merged = merged.Reverse(true)
+	}
+	if fg := overlay.GetForeground(); fg != tcell.ColorDefault {
+		merged = merged.Foreground(fg)
+	}
+	if bg := overlay.GetBackground(); bg != tcell.ColorDefault {
+		merged = merged.Background(bg)
+	}
+
+	return merged
 }
 
 func (app *App) renderCustomMessage(width int, content string) []styledLine {
