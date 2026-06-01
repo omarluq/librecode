@@ -218,12 +218,11 @@ func (app *App) visibleMessageLineGroups(groups [][]styledLine, maxRows int) []s
 		totalRows += len(group)
 	}
 	if maxRows < 0 || totalRows <= maxRows {
-		app.scrollOffset = 0
 		return flattenStyledLineGroups(groups, totalRows)
 	}
 	maxOffset := max(0, totalRows-maxRows)
-	app.scrollOffset = min(app.scrollOffset, maxOffset)
-	end := totalRows - app.scrollOffset
+	offset := min(app.scrollOffset, maxOffset)
+	end := totalRows - offset
 	start := max(0, end-maxRows)
 
 	return sliceStyledLineGroups(groups, start, end)
