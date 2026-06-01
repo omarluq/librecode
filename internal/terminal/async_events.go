@@ -365,7 +365,7 @@ func (app *App) applyPromptError(message string, promptID uint64) {
 		app.setStatus("response canceled; conversation reverted")
 		return
 	}
-	streamingBlocks := append([]chatMessage(nil), app.streamingBlocks...)
+	streamingBlocks := append([]chatMessage(nil), app.transcript.Streaming.Blocks...)
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""
@@ -428,21 +428,24 @@ func (app *App) appendStreamingBlock(role database.Role, content string) {
 	if content == "" {
 		return
 	}
-	lastIndex := len(app.streamingBlocks) - 1
-	if lastIndex >= 0 && canMergeStreamingBlock(role) && app.streamingBlocks[lastIndex].Role == role {
-		app.streamingBlocks[lastIndex].Content += content
+	lastIndex := len(app.transcript.Streaming.Blocks) - 1
+	if lastIndex >= 0 && canMergeStreamingBlock(role) && app.transcript.Streaming.Blocks[lastIndex].Role == role {
+		app.transcript.Streaming.Blocks[lastIndex].Content += content
 		app.invalidateStreamingBlockCache(lastIndex)
 		return
 	}
-	app.streamingBlocks = append(app.streamingBlocks, newChatMessage(role, content))
-	if len(app.streamingBlockLineCache) > 0 {
-		app.streamingBlockLineCache = append(app.streamingBlockLineCache, emptyCachedRenderedMessage())
+	app.transcript.Streaming.Blocks = append(app.transcript.Streaming.Blocks, newChatMessage(role, content))
+	if len(app.transcript.Streaming.LineCache) > 0 {
+		app.transcript.Streaming.LineCache = append(
+			app.transcript.Streaming.LineCache,
+			emptyCachedRenderedMessage(),
+		)
 	}
 }
 
 func (app *App) invalidateStreamingBlockCache(index int) {
-	if index >= 0 && index < len(app.streamingBlockLineCache) {
-		app.streamingBlockLineCache[index] = emptyCachedRenderedMessage()
+	if index >= 0 && index < len(app.transcript.Streaming.LineCache) {
+		app.transcript.Streaming.LineCache[index] = emptyCachedRenderedMessage()
 	}
 }
 

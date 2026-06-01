@@ -64,6 +64,19 @@ type cachedRenderedMessage struct {
 	Valid bool
 }
 
+type transcriptStreamingState struct {
+	Blocks     []chatMessage
+	LineCache  []cachedRenderedMessage
+	CacheState messageLineCacheState
+}
+
+type transcriptState struct {
+	History     []chatMessage
+	Streaming   transcriptStreamingState
+	LineCache   messageLineCache
+	LastMaxRows int
+}
+
 type runtimeLayout struct {
 	Windows      map[string]extension.WindowState
 	Transcript   extension.WindowState
@@ -94,67 +107,62 @@ type RunOptions struct {
 
 // App is the terminal chat UI.
 type App struct {
-	lastEscape                   time.Time
-	lastControlC                 time.Time
-	workStartedAt                time.Time
-	screen                       tcell.Screen
-	extensions                   extension.TerminalEventRunner
-	renderer                     *screenRenderer
-	frame                        *cellBuffer
-	lastResize                   *tcell.EventResize
-	runtime                      *assistant.Runtime
-	settings                     *database.DocumentRepository
-	models                       *model.Registry
-	auth                         *auth.Storage
-	cfg                          *config.Config
-	keys                         *keybindings
-	panel                        *selectionPanel
-	pendingParentID              *string
-	activePrompt                 *activePromptState
-	canceledPrompts              map[uint64]*activePromptState
-	scopedEnabled                map[string]bool
-	extensionRuntimeBuffers      map[string]extension.BufferState
-	runtimeWindows               map[string]extension.WindowState
-	runtimeLayout                *extension.LayoutState
-	uiWindowOverrides            map[string]uiWindowOverride
-	uiCursor                     *extension.UICursor
-	theme                        terminalTheme
-	selectedPanelKind            panelKind
-	sessionID                    string
-	statusMessage                string
-	streamingText                string
-	streamingThinkingText        string
-	cwd                          string
-	promptHistoryDraft           string
-	mode                         appMode
-	resources                    core.ResourceSnapshot
-	messageLineCache             messageLineCache
-	streamingBlockLineCache      []cachedRenderedMessage
-	queuedMessages               []string
-	messages                     []chatMessage
-	streamingBlocks              []chatMessage
-	promptHistory                []string
-	scopedOrder                  []string
-	composerBuffer               extension.BufferState
-	streamingBlockLineCacheState messageLineCacheState
-	tokenUsage                   model.TokenUsage
-	selection                    mouseSelection
-	promptSequence               uint64
-	workFrame                    int
-	lastMessageMaxRows           int
-	streamedToolEvents           int
-	escapePresses                int
-	promptHistoryIndex           int
-	scrollOffset                 int
-	autocompleteSelection        int
-	autocompleteClosed           bool
-	sessionNamedOnly             bool
-	hideThinking                 bool
-	working                      bool
-	toolsExpanded                bool
-	authWorking                  bool
-	sessionShowPath              bool
-	sessionSortRecent            bool
+	lastEscape              time.Time
+	lastControlC            time.Time
+	workStartedAt           time.Time
+	screen                  tcell.Screen
+	extensions              extension.TerminalEventRunner
+	renderer                *screenRenderer
+	frame                   *cellBuffer
+	lastResize              *tcell.EventResize
+	runtime                 *assistant.Runtime
+	settings                *database.DocumentRepository
+	models                  *model.Registry
+	auth                    *auth.Storage
+	cfg                     *config.Config
+	keys                    *keybindings
+	panel                   *selectionPanel
+	pendingParentID         *string
+	activePrompt            *activePromptState
+	canceledPrompts         map[uint64]*activePromptState
+	scopedEnabled           map[string]bool
+	extensionRuntimeBuffers map[string]extension.BufferState
+	runtimeWindows          map[string]extension.WindowState
+	runtimeLayout           *extension.LayoutState
+	uiWindowOverrides       map[string]uiWindowOverride
+	uiCursor                *extension.UICursor
+	theme                   terminalTheme
+	selectedPanelKind       panelKind
+	sessionID               string
+	statusMessage           string
+	streamingText           string
+	streamingThinkingText   string
+	cwd                     string
+	promptHistoryDraft      string
+	mode                    appMode
+	resources               core.ResourceSnapshot
+	transcript              transcriptState
+	queuedMessages          []string
+	promptHistory           []string
+	scopedOrder             []string
+	composerBuffer          extension.BufferState
+	tokenUsage              model.TokenUsage
+	selection               mouseSelection
+	promptSequence          uint64
+	workFrame               int
+	streamedToolEvents      int
+	escapePresses           int
+	promptHistoryIndex      int
+	scrollOffset            int
+	autocompleteSelection   int
+	autocompleteClosed      bool
+	sessionNamedOnly        bool
+	hideThinking            bool
+	working                 bool
+	toolsExpanded           bool
+	authWorking             bool
+	sessionShowPath         bool
+	sessionSortRecent       bool
 }
 
 // Run starts an interactive tcell chat loop.
@@ -194,67 +202,71 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 	}
 	resources := initialResourceSnapshot(options)
 	app := &App{
-		screen:                       screen,
-		renderer:                     newScreenRenderer(screen),
-		frame:                        nil,
-		lastResize:                   nil,
-		runtime:                      options.Runtime,
-		extensions:                   options.Extensions,
-		settings:                     options.Settings,
-		models:                       options.Models,
-		auth:                         options.Auth,
-		cfg:                          options.Config,
-		keys:                         newDefaultKeybindings(),
-		theme:                        appTheme,
-		resources:                    resources,
-		mode:                         modeChat,
-		panel:                        nil,
-		cwd:                          options.CWD,
-		sessionID:                    options.SessionID,
-		pendingParentID:              nil,
-		activePrompt:                 nil,
-		canceledPrompts:              map[uint64]*activePromptState{},
-		messages:                     []chatMessage{},
-		messageLineCache:             emptyMessageLineCache(),
-		queuedMessages:               []string{},
-		promptHistory:                []string{},
-		promptHistoryDraft:           "",
-		autocompleteSelection:        0,
-		autocompleteClosed:           false,
-		composerBuffer:               newComposerBuffer(),
-		scopedOrder:                  []string{},
-		scopedEnabled:                map[string]bool{},
-		sessionSortRecent:            true,
-		sessionNamedOnly:             false,
-		sessionShowPath:              false,
-		authWorking:                  false,
-		toolsExpanded:                false,
-		hideThinking:                 false,
-		lastEscape:                   time.Time{},
-		lastControlC:                 time.Time{},
-		escapePresses:                0,
-		working:                      false,
-		workStartedAt:                time.Time{},
-		workFrame:                    0,
-		lastMessageMaxRows:           0,
-		scrollOffset:                 0,
-		selection:                    emptyMouseSelection(),
-		streamedToolEvents:           0,
-		promptHistoryIndex:           0,
-		promptSequence:               0,
-		statusMessage:                "",
-		tokenUsage:                   model.EmptyTokenUsage(),
-		selectedPanelKind:            "",
-		streamingText:                "",
-		streamingThinkingText:        "",
-		streamingBlocks:              []chatMessage{},
-		streamingBlockLineCache:      nil,
-		streamingBlockLineCacheState: emptyMessageLineCacheState(),
-		extensionRuntimeBuffers:      map[string]extension.BufferState{},
-		runtimeWindows:               map[string]extension.WindowState{},
-		runtimeLayout:                nil,
-		uiWindowOverrides:            map[string]uiWindowOverride{},
-		uiCursor:                     nil,
+		screen:          screen,
+		renderer:        newScreenRenderer(screen),
+		frame:           nil,
+		lastResize:      nil,
+		runtime:         options.Runtime,
+		extensions:      options.Extensions,
+		settings:        options.Settings,
+		models:          options.Models,
+		auth:            options.Auth,
+		cfg:             options.Config,
+		keys:            newDefaultKeybindings(),
+		theme:           appTheme,
+		resources:       resources,
+		mode:            modeChat,
+		panel:           nil,
+		cwd:             options.CWD,
+		sessionID:       options.SessionID,
+		pendingParentID: nil,
+		activePrompt:    nil,
+		canceledPrompts: map[uint64]*activePromptState{},
+		transcript: transcriptState{
+			History: []chatMessage{},
+			Streaming: transcriptStreamingState{
+				Blocks:     []chatMessage{},
+				LineCache:  nil,
+				CacheState: emptyMessageLineCacheState(),
+			},
+			LineCache:   emptyMessageLineCache(),
+			LastMaxRows: 0,
+		},
+		queuedMessages:          []string{},
+		promptHistory:           []string{},
+		promptHistoryDraft:      "",
+		autocompleteSelection:   0,
+		autocompleteClosed:      false,
+		composerBuffer:          newComposerBuffer(),
+		scopedOrder:             []string{},
+		scopedEnabled:           map[string]bool{},
+		sessionSortRecent:       true,
+		sessionNamedOnly:        false,
+		sessionShowPath:         false,
+		authWorking:             false,
+		toolsExpanded:           false,
+		hideThinking:            false,
+		lastEscape:              time.Time{},
+		lastControlC:            time.Time{},
+		escapePresses:           0,
+		working:                 false,
+		workStartedAt:           time.Time{},
+		workFrame:               0,
+		scrollOffset:            0,
+		selection:               emptyMouseSelection(),
+		streamedToolEvents:      0,
+		promptHistoryIndex:      0,
+		promptSequence:          0,
+		statusMessage:           "",
+		tokenUsage:              model.EmptyTokenUsage(),
+		selectedPanelKind:       "",
+		streamingText:           "",
+		streamingThinkingText:   "",
+		extensionRuntimeBuffers: map[string]extension.BufferState{},
+		runtimeWindows:          map[string]extension.WindowState{},
+		runtimeLayout:           nil,
+		uiWindowOverrides:       map[string]uiWindowOverride{},
+		uiCursor:                nil,
 	}
 	app.addWelcomeMessage()
 
@@ -334,7 +346,7 @@ func (app *App) runLoopStep(
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
 		return false, true
 	case <-app.messageCacheWarmTick(messageWarmTimer):
-		app.messageLineCache.queued = false
+		app.transcript.LineCache.queued = false
 		app.warmMessageLineCacheStep()
 		return false, true
 	}
@@ -419,19 +431,19 @@ func (app *App) messageCacheWarmTick(timer *time.Timer) <-chan time.Time {
 	if timer == nil {
 		return nil
 	}
-	if app.messageLineCache.warm || app.working || app.authWorking || app.scrollOffset != 0 || app.toolsExpanded {
-		app.messageLineCache.queued = false
+	if app.transcript.LineCache.warm || app.working || app.authWorking || app.scrollOffset != 0 || app.toolsExpanded {
+		app.transcript.LineCache.queued = false
 		stopTimer(timer)
 		return nil
 	}
-	if len(app.messages) == 0 || app.lastMessageMaxRows <= 0 {
-		app.messageLineCache.queued = false
+	if len(app.transcript.History) == 0 || app.transcript.LastMaxRows <= 0 {
+		app.transcript.LineCache.queued = false
 		stopTimer(timer)
 		return nil
 	}
-	if !app.messageLineCache.queued {
+	if !app.transcript.LineCache.queued {
 		resetTimer(timer, 1*time.Millisecond)
-		app.messageLineCache.queued = true
+		app.transcript.LineCache.queued = true
 	}
 
 	return timer.C
@@ -551,26 +563,26 @@ func emptyCachedRenderedMessage() cachedRenderedMessage {
 }
 
 func (app *App) appendMessage(message chatMessage) {
-	app.messages = append(app.messages, message)
-	app.messageLineCache.appendInvalidation()
+	app.transcript.History = append(app.transcript.History, message)
+	app.transcript.LineCache.appendInvalidation()
 }
 
 func (app *App) resetMessages() {
-	app.messages = []chatMessage{}
-	app.messageLineCache.reset()
+	app.transcript.History = []chatMessage{}
+	app.transcript.LineCache.reset()
 	app.tokenUsage = model.EmptyTokenUsage()
 	app.resetPromptHistory()
 }
 
 func (app *App) truncateMessages(length int) {
-	app.messages = app.messages[:length]
-	app.messageLineCache.truncate(length)
+	app.transcript.History = app.transcript.History[:length]
+	app.transcript.LineCache.truncate(length)
 	app.tokenUsage = model.EmptyTokenUsage()
 }
 
 func (app *App) resetStreamingBlocks() {
-	app.streamingBlocks = nil
-	app.streamingBlockLineCache = nil
+	app.transcript.Streaming.Blocks = nil
+	app.transcript.Streaming.LineCache = nil
 }
 
 func (app *App) setStatus(message string) {

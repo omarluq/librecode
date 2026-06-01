@@ -21,7 +21,7 @@ func TestCancelActivePromptPreservesQueuedMessages(t *testing.T) {
 
 	app.cancelActivePrompt(context.Background())
 
-	if got, want := len(app.messages), 0; got != want {
+	if got, want := len(app.transcript.History), 0; got != want {
 		t.Fatalf("messages length = %d, want %d", got, want)
 	}
 	if got, want := app.queuedMessages, []string{"follow up"}; len(got) != len(want) || got[0] != want[0] {
@@ -39,7 +39,7 @@ func TestCancelActivePromptWithoutActivePromptClearsTransientState(t *testing.T)
 	app.working = true
 	app.streamingText = "partial"
 	app.streamingThinkingText = "thinking"
-	app.streamingBlocks = []chatMessage{newChatMessage(database.RoleAssistant, "partial")}
+	app.transcript.Streaming.Blocks = []chatMessage{newChatMessage(database.RoleAssistant, "partial")}
 	app.streamedToolEvents = 2
 
 	app.cancelActivePrompt(context.Background())
@@ -54,8 +54,8 @@ func TestCancelActivePromptWithoutActivePromptClearsTransientState(t *testing.T)
 			app.streamingThinkingText,
 		)
 	}
-	if len(app.streamingBlocks) != 0 {
-		t.Fatalf("streamingBlocks length = %d, want 0", len(app.streamingBlocks))
+	if len(app.transcript.Streaming.Blocks) != 0 {
+		t.Fatalf("streamingBlocks length = %d, want 0", len(app.transcript.Streaming.Blocks))
 	}
 	if app.streamedToolEvents != 0 {
 		t.Fatalf("streamedToolEvents = %d, want 0", app.streamedToolEvents)

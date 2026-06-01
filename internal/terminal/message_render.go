@@ -10,14 +10,14 @@ import (
 
 func (app *App) cachedStreamingBlockLines(width, index int) []styledLine {
 	app.ensureStreamingBlockLineCache(width)
-	if index < len(app.streamingBlockLineCache) && app.streamingBlockLineCache[index].Valid {
-		return app.streamingBlockLineCache[index].Lines
+	if index < len(app.transcript.Streaming.LineCache) && app.transcript.Streaming.LineCache[index].Valid {
+		return app.transcript.Streaming.LineCache[index].Lines
 	}
-	lines := app.renderStreamingBlockMessage(width, app.streamingBlocks[index])
-	if index >= len(app.streamingBlockLineCache) {
+	lines := app.renderStreamingBlockMessage(width, app.transcript.Streaming.Blocks[index])
+	if index >= len(app.transcript.Streaming.LineCache) {
 		return lines
 	}
-	app.streamingBlockLineCache[index] = cachedRenderedMessage{Lines: lines, Valid: true}
+	app.transcript.Streaming.LineCache[index] = cachedRenderedMessage{Lines: lines, Valid: true}
 
 	return lines
 }
@@ -25,9 +25,9 @@ func (app *App) cachedStreamingBlockLines(width, index int) []styledLine {
 func (app *App) ensureStreamingBlockLineCache(width int) {
 	app.ensureLineCache(
 		width,
-		len(app.streamingBlocks),
-		&app.streamingBlockLineCache,
-		&app.streamingBlockLineCacheState,
+		len(app.transcript.Streaming.Blocks),
+		&app.transcript.Streaming.LineCache,
+		&app.transcript.Streaming.CacheState,
 	)
 }
 

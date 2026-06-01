@@ -16,7 +16,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 		app.activePrompt = nil
 		return
 	}
-	streamingBlocks := append([]chatMessage(nil), app.streamingBlocks...)
+	streamingBlocks := append([]chatMessage(nil), app.transcript.Streaming.Blocks...)
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""

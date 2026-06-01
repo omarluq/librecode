@@ -42,7 +42,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 		SessionID:        app.sessionID,
 		UserEntryID:      "",
 		Prompt:           text,
-		BaselineMessages: len(app.messages),
+		BaselineMessages: len(app.transcript.History),
 		Canceled:         false,
 	}
 	app.addMessage(database.RoleUser, text)

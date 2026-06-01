@@ -47,7 +47,7 @@ func (app *App) transcriptBufferState() extension.BufferState {
 	buffer := textBufferState(extensionBufferTranscript, "")
 	buffer.Blocks = snapshot.Blocks
 	buffer.Metadata = cloneExtensionMetadata(snapshot.Metadata)
-	buffer.Metadata[extensionMetadataCount] = len(app.messages)
+	buffer.Metadata[extensionMetadataCount] = len(app.transcript.History)
 	buffer.Metadata["snapshot_count"] = snapshot.Count
 	buffer.Metadata["snapshot_start"] = snapshot.Start
 	buffer.Metadata["snapshot_limit"] = snapshot.Limit
@@ -92,7 +92,7 @@ type transcriptBufferSnapshot struct {
 }
 
 func (app *App) transcriptBufferBlocks(limit int) transcriptBufferSnapshot {
-	count := len(app.messages) + len(app.streamingBlocks)
+	count := len(app.transcript.History) + len(app.transcript.Streaming.Blocks)
 	limit = clampTranscriptLimit(limit, count)
 	start := max(0, count-limit)
 	blocks := make([]extension.BufferBlock, 0, limit)
@@ -102,9 +102,9 @@ func (app *App) transcriptBufferBlocks(limit int) transcriptBufferSnapshot {
 
 	return transcriptBufferSnapshot{
 		Metadata: map[string]any{
-			"message_count":   len(app.messages),
+			"message_count":   len(app.transcript.History),
 			"queued_count":    len(app.queuedMessages),
-			"streaming_count": len(app.streamingBlocks),
+			"streaming_count": len(app.transcript.Streaming.Blocks),
 			"working":         app.working,
 		},
 		Blocks: blocks,
@@ -126,13 +126,13 @@ func clampTranscriptLimit(limit, count int) int {
 }
 
 func (app *App) transcriptBlock(index int) extension.BufferBlock {
-	messageCount := len(app.messages)
+	messageCount := len(app.transcript.History)
 	if index < messageCount {
-		return app.messageTranscriptBlock(index, app.messages[index], false)
+		return app.messageTranscriptBlock(index, app.transcript.History[index], false)
 	}
 	streamingIndex := index - messageCount
 
-	return app.messageTranscriptBlock(index, app.streamingBlocks[streamingIndex], true)
+	return app.messageTranscriptBlock(index, app.transcript.Streaming.Blocks[streamingIndex], true)
 }
 
 func (app *App) messageTranscriptBlock(
@@ -186,12 +186,12 @@ func transcriptBlockKind(streaming bool) string {
 
 func (app *App) countRuntimeMessages(matchesRole func(database.Role) bool) int {
 	count := 0
-	for _, message := range app.messages {
+	for _, message := range app.transcript.History {
 		if matchesRole(message.Role) {
 			count++
 		}
 	}
-	for _, message := range app.streamingBlocks {
+	for _, message := range app.transcript.Streaming.Blocks {
 		if matchesRole(message.Role) {
 			count++
 		}

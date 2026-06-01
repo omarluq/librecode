@@ -5,7 +5,7 @@ func (app *App) drawMessages(width, height, row int) int {
 		return app.drawWelcomeOnly(width, height, row)
 	}
 	availableRows := max(1, height-row-app.composerReserve(width, height))
-	app.lastMessageMaxRows = availableRows
+	app.transcript.LastMaxRows = availableRows
 	lines := app.messageLines(width, availableRows)
 	for _, line := range lines {
 		app.writeStyledLine(row, width, line)
@@ -35,7 +35,7 @@ func (app *App) drawTranscriptWindow(layout *runtimeLayout) {
 }
 
 func (app *App) messageLines(width, maxRows int) []styledLine {
-	app.lastMessageMaxRows = maxRows
+	app.transcript.LastMaxRows = maxRows
 	dynamicGroups := app.dynamicMessageLineGroups(width)
 	if maxRows < 0 {
 		return app.allMessageLines(width, dynamicGroups)
@@ -48,7 +48,7 @@ func (app *App) messageLines(width, maxRows int) []styledLine {
 }
 
 func (app *App) cachedMessageLines(width, index int) []styledLine {
-	return app.messageLineCache.lines(app, width, index)
+	return app.transcript.LineCache.lines(app, width, index)
 }
 
 func (app *App) currentLineCacheState(width int) messageLineCacheState {
@@ -61,11 +61,11 @@ func (app *App) currentLineCacheState(width int) messageLineCacheState {
 }
 
 func (app *App) rebuildMessageRowPrefixSums(width int) {
-	app.messageLineCache.rebuildPrefixes(app, width)
+	app.transcript.LineCache.rebuildPrefixes(app, width)
 }
 
 func (app *App) warmMessageLineCache() {
-	for !app.messageLineCache.warm {
+	for !app.transcript.LineCache.warm {
 		if !app.warmMessageLineCacheStep() {
 			return
 		}
@@ -73,5 +73,5 @@ func (app *App) warmMessageLineCache() {
 }
 
 func (app *App) warmMessageLineCacheStep() bool {
-	return app.messageLineCache.warmStep(app)
+	return app.transcript.LineCache.warmStep(app)
 }

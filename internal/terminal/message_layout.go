@@ -3,8 +3,8 @@ package terminal
 import "github.com/omarluq/librecode/internal/database"
 
 func (app *App) allMessageLines(width int, dynamicGroups [][]styledLine) []styledLine {
-	groups := make([][]styledLine, 0, len(app.messages)+len(dynamicGroups))
-	for index := range app.messages {
+	groups := make([][]styledLine, 0, len(app.transcript.History)+len(dynamicGroups))
+	for index := range app.transcript.History {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
 	groups = append(groups, dynamicGroups...)
@@ -15,7 +15,7 @@ func (app *App) allMessageLines(width int, dynamicGroups [][]styledLine) []style
 func (app *App) bottomMessageLines(width, maxRows int, dynamicGroups [][]styledLine) []styledLine {
 	reservedRows := extraGroupsVisibleRows(dynamicGroups)
 	staticMaxRows := max(0, maxRows-reservedRows)
-	groups := make([][]styledLine, 0, len(app.messages)+len(dynamicGroups))
+	groups := make([][]styledLine, 0, len(app.transcript.History)+len(dynamicGroups))
 	if staticMaxRows > 0 {
 		staticGroups, _ := app.tailStaticMessageGroups(width, staticMaxRows)
 		groups = append(groups, staticGroups...)
@@ -29,12 +29,12 @@ func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]style
 	if maxRows <= 0 {
 		return nil
 	}
-	app.messageLineCache.ensure(app, width, len(app.messages))
-	if !app.messageLineCache.warm {
+	app.transcript.LineCache.ensure(app, width, len(app.transcript.History))
+	if !app.transcript.LineCache.warm {
 		return app.scrolledMessageLinesFromTail(width, maxRows, dynamicGroups)
 	}
 
-	staticRows := app.messageLineCache.prefixes[len(app.messages)]
+	staticRows := app.transcript.LineCache.prefixes[len(app.transcript.History)]
 	dynamicRows := extraGroupsVisibleRows(dynamicGroups)
 	totalRows := staticRows + dynamicRows
 	if totalRows <= maxRows {
@@ -82,11 +82,11 @@ func (app *App) scrolledMessageLinesFromTail(width, maxRows int, dynamicGroups [
 }
 
 func (app *App) tailStaticMessageGroups(width, rowsNeeded int) ([][]styledLine, bool) {
-	if rowsNeeded <= 0 || len(app.messages) == 0 {
-		return nil, len(app.messages) == 0
+	if rowsNeeded <= 0 || len(app.transcript.History) == 0 {
+		return nil, len(app.transcript.History) == 0
 	}
 	rows := 0
-	start := len(app.messages)
+	start := len(app.transcript.History)
 	var partial []styledLine
 	for start > 0 && rows < rowsNeeded {
 		start--
@@ -98,12 +98,12 @@ func (app *App) tailStaticMessageGroups(width, rowsNeeded int) ([][]styledLine, 
 		}
 		rows += len(lines)
 	}
-	groups := make([][]styledLine, 0, len(app.messages)-start)
+	groups := make([][]styledLine, 0, len(app.transcript.History)-start)
 	if partial != nil {
 		groups = append(groups, partial)
 		start++
 	}
-	for index := start; index < len(app.messages); index++ {
+	for index := start; index < len(app.transcript.History); index++ {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
 
@@ -114,8 +114,8 @@ func (app *App) cachedMessageTailLines(width, index, rowsNeeded int) ([]styledLi
 	if rowsNeeded <= 0 {
 		return nil, true
 	}
-	if app.toolsExpanded && app.messages[index].Role == database.RoleToolResult {
-		return app.renderToolMessageTail(width, app.messages[index], rowsNeeded)
+	if app.toolsExpanded && app.transcript.History[index].Role == database.RoleToolResult {
+		return app.renderToolMessageTail(width, app.transcript.History[index], rowsNeeded)
 	}
 	lines := app.cachedMessageLines(width, index)
 
@@ -123,29 +123,29 @@ func (app *App) cachedMessageTailLines(width, index, rowsNeeded int) ([]styledLi
 }
 
 func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []styledLine {
-	if endRow <= startRow || len(app.messages) == 0 {
+	if endRow <= startRow || len(app.transcript.History) == 0 {
 		return nil
 	}
 	app.rebuildMessageRowPrefixSums(width)
-	app.messageLineCache.warm = true
-	startIndex := lowerBoundInts(app.messageLineCache.prefixes, startRow+1) - 1
-	endIndex := lowerBoundInts(app.messageLineCache.prefixes, endRow)
-	startIndex = min(max(0, startIndex), len(app.messages))
-	endIndex = min(max(startIndex, endIndex), len(app.messages))
+	app.transcript.LineCache.warm = true
+	startIndex := lowerBoundInts(app.transcript.LineCache.prefixes, startRow+1) - 1
+	endIndex := lowerBoundInts(app.transcript.LineCache.prefixes, endRow)
+	startIndex = min(max(0, startIndex), len(app.transcript.History))
+	endIndex = min(max(startIndex, endIndex), len(app.transcript.History))
 	groups := make([][]styledLine, 0, endIndex-startIndex)
 	for index := startIndex; index < endIndex; index++ {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
-	relativeStart := startRow - app.messageLineCache.prefixes[startIndex]
-	relativeEnd := endRow - app.messageLineCache.prefixes[startIndex]
+	relativeStart := startRow - app.transcript.LineCache.prefixes[startIndex]
+	relativeEnd := endRow - app.transcript.LineCache.prefixes[startIndex]
 
 	return sliceStyledLineGroups(groups, relativeStart, relativeEnd)
 }
 
 func (app *App) dynamicMessageLineGroups(width int) [][]styledLine {
-	groups := make([][]styledLine, 0, len(app.streamingBlocks)+3)
-	if len(app.streamingBlocks) > 0 {
-		for index := range app.streamingBlocks {
+	groups := make([][]styledLine, 0, len(app.transcript.Streaming.Blocks)+3)
+	if len(app.transcript.Streaming.Blocks) > 0 {
+		for index := range app.transcript.Streaming.Blocks {
 			groups = append(groups, app.cachedStreamingBlockLines(width, index))
 		}
 	} else {
@@ -167,7 +167,7 @@ func (app *App) dynamicMessageLineGroups(width int) [][]styledLine {
 }
 
 func (app *App) currentLineCacheStateWidth() int {
-	state := app.messageLineCache.state
+	state := app.transcript.LineCache.state
 	if state.Width > 0 {
 		return state.Width
 	}

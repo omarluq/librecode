@@ -60,11 +60,11 @@ func (cache *messageLineCache) truncate(length int) {
 }
 
 func (cache *messageLineCache) lines(app *App, width, index int) []styledLine {
-	cache.ensure(app, width, len(app.messages))
+	cache.ensure(app, width, len(app.transcript.History))
 	if index < len(cache.items) && cache.items[index].Valid {
 		return cache.items[index].Lines
 	}
-	lines := app.renderMessage(width, app.messages[index])
+	lines := app.renderMessage(width, app.transcript.History[index])
 	if index >= len(cache.items) {
 		return lines
 	}
@@ -75,12 +75,12 @@ func (cache *messageLineCache) lines(app *App, width, index int) []styledLine {
 }
 
 func (cache *messageLineCache) rebuildPrefixes(app *App, width int) {
-	cache.ensure(app, width, len(app.messages))
+	cache.ensure(app, width, len(app.transcript.History))
 	prefixes := make([]int, len(cache.items)+1)
 	for index := range cache.items {
 		if !cache.items[index].Valid {
 			cache.items[index] = cachedRenderedMessage{
-				Lines: app.renderMessage(width, app.messages[index]),
+				Lines: app.renderMessage(width, app.transcript.History[index]),
 				Valid: true,
 			}
 		}
@@ -98,26 +98,26 @@ func (cache *messageLineCache) rebuildPrefixesFromCache() {
 }
 
 func (cache *messageLineCache) warmStep(app *App) bool {
-	if cache.warm || app.toolsExpanded || len(app.messages) == 0 || app.lastMessageMaxRows <= 0 {
+	if cache.warm || app.toolsExpanded || len(app.transcript.History) == 0 || app.transcript.LastMaxRows <= 0 {
 		return false
 	}
 	width := app.currentLineCacheStateWidth()
-	cache.ensure(app, width, len(app.messages))
-	start := min(max(0, cache.warmIndex), len(app.messages))
-	end := min(len(app.messages), start+messageCacheWarmBatchSize)
+	cache.ensure(app, width, len(app.transcript.History))
+	start := min(max(0, cache.warmIndex), len(app.transcript.History))
+	end := min(len(app.transcript.History), start+messageCacheWarmBatchSize)
 	if end <= start {
 		return false
 	}
 	for index := start; index < end; index++ {
 		if !cache.items[index].Valid {
 			cache.items[index] = cachedRenderedMessage{
-				Lines: app.renderMessage(width, app.messages[index]),
+				Lines: app.renderMessage(width, app.transcript.History[index]),
 				Valid: true,
 			}
 		}
 	}
 	cache.warmIndex = end
-	if end < len(app.messages) {
+	if end < len(app.transcript.History) {
 		return true
 	}
 	cache.rebuildPrefixesFromCache()

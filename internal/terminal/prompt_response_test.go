@@ -88,10 +88,10 @@ func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
 		database.RoleThinking,
 		database.RoleToolResult,
 	})
-	if got, want := app.messages[0].Content, "remaining thinking"; got != want {
+	if got, want := app.transcript.History[0].Content, "remaining thinking"; got != want {
 		t.Fatalf("thinking content = %q, want %q", got, want)
 	}
-	if got := app.messages[1].Content; !strings.Contains(got, "tool: write") {
+	if got := app.transcript.History[1].Content; !strings.Contains(got, "tool: write") {
 		t.Fatalf("tool content = %q, want write tool", got)
 	}
 }
@@ -99,11 +99,11 @@ func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
 func assertPromptResponseRoles(t *testing.T, app *App, want []database.Role) {
 	t.Helper()
 
-	if got := len(app.messages); got != len(want) {
+	if got := len(app.transcript.History); got != len(want) {
 		t.Fatalf("message count = %d, want %d", got, len(want))
 	}
 	for index, role := range want {
-		if got := app.messages[index].Role; got != role {
+		if got := app.transcript.History[index].Role; got != role {
 			t.Fatalf("message[%d].Role = %q, want %q", index, got, role)
 		}
 	}
@@ -119,7 +119,7 @@ func TestApplyPromptResponseIgnoresCanceledPrompt(t *testing.T) {
 
 	app.applyPromptResponse(context.Background(), newTestPromptResponse("ignored"), 42)
 
-	if got, want := len(app.messages), 1; got != want {
+	if got, want := len(app.transcript.History), 1; got != want {
 		t.Fatalf("messages length = %d, want %d", got, want)
 	}
 	if _, ok := app.canceledPrompts[42]; ok {
@@ -151,7 +151,7 @@ func TestApplyPromptResponseAddsAssistantAndProcessesQueue(t *testing.T) {
 
 	app.applyPromptResponse(context.Background(), newTestPromptResponse("assistant response"), app.activePrompt.ID)
 
-	if got, want := app.messages[0].Content, "assistant response"; got != want {
+	if got, want := app.transcript.History[0].Content, "assistant response"; got != want {
 		t.Fatalf("assistant message = %q, want %q", got, want)
 	}
 	if !app.working {
