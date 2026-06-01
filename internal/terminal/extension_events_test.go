@@ -60,7 +60,7 @@ end)
 	}
 
 	assertEditorText(t, app, "")
-	if got := len(app.messages); got != 0 {
+	if got := len(app.transcript.History); got != 0 {
 		t.Fatalf("host messages = %d, want 0", got)
 	}
 	transcript := app.extensionRuntimeBuffers[extensionBufferTranscript]

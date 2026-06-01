@@ -39,7 +39,7 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 		Width:   width,
 		Height:  height,
 		Transcript: extension.WindowState{
-			Metadata:  map[string]any{extensionMetadataCount: len(app.messages)},
+			Metadata:  map[string]any{extensionMetadataCount: len(app.transcript.History)},
 			Name:      extensionBufferTranscript,
 			Role:      extensionBufferTranscript,
 			Buffer:    extensionBufferTranscript,

@@ -31,7 +31,7 @@ func (app *App) cancelActivePrompt(ctx context.Context) {
 }
 
 func (app *App) revertActivePromptUI(activePrompt *activePromptState) {
-	if activePrompt.BaselineMessages >= 0 && activePrompt.BaselineMessages <= len(app.messages) {
+	if activePrompt.BaselineMessages >= 0 && activePrompt.BaselineMessages <= len(app.transcript.History) {
 		app.truncateMessages(activePrompt.BaselineMessages)
 	}
 	app.pendingParentID = cloneStringPtr(activePrompt.ParentEntryID)

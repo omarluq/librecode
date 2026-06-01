@@ -22,7 +22,7 @@ func TestAllMessageLinesFlattensStaticAndDynamicGroups(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.messages = []chatMessage{newChatMessage(database.RoleAssistant, "hello")}
+	app.transcript.History = []chatMessage{newChatMessage(database.RoleAssistant, "hello")}
 	dynamic := [][]styledLine{{newStyledLine(app.theme.style(colorText), "dynamic")}}
 
 	lines := app.allMessageLines(40, dynamic)
@@ -90,7 +90,7 @@ func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptThinkingDelta, "thinking"))
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
 
-	got := streamingBlockRoles(app.streamingBlocks)
+	got := streamingBlockRoles(app.transcript.Streaming.Blocks)
 	want := []database.Role{database.RoleThinking, database.RoleAssistant}
 	if !rolesEqual(got, want) {
 		t.Fatalf("streaming block roles = %v, want %v", got, want)
@@ -108,7 +108,7 @@ func TestApplyPromptErrorKeepsStreamedProgressVisible(t *testing.T) {
 	app.activePrompt = newTestActivePrompt(nil)
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "partial"))
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptThinkingDelta, "\n\n"))
-	app.streamingBlocks = append(app.streamingBlocks,
+	app.transcript.Streaming.Blocks = append(app.transcript.Streaming.Blocks,
 		newChatMessage(database.RoleUser, "ignored user echo"),
 		newChatMessage(database.RoleBashExecution, "bash output"),
 		newChatMessage(database.RoleCustom, "custom progress"),
@@ -122,24 +122,24 @@ func TestApplyPromptErrorKeepsStreamedProgressVisible(t *testing.T) {
 	app.applyPromptError("provider returned an empty response", app.activePrompt.ID)
 
 	assertPromptErrorMessages(t, app)
-	assert.Empty(t, app.streamingBlocks)
+	assert.Empty(t, app.transcript.Streaming.Blocks)
 }
 
 func assertPromptErrorMessages(t *testing.T, app *App) {
 	t.Helper()
 
 	assert.False(t, app.working)
-	require.Len(t, app.messages, 5)
-	assert.Equal(t, database.RoleAssistant, app.messages[0].Role)
-	assert.Equal(t, "partial", app.messages[0].Content)
-	assert.Equal(t, database.RoleBashExecution, app.messages[1].Role)
-	assert.Equal(t, "bash output", app.messages[1].Content)
-	assert.Equal(t, database.RoleCustom, app.messages[2].Role)
-	assert.Equal(t, "custom progress", app.messages[2].Content)
-	assert.Equal(t, database.RoleToolResult, app.messages[3].Role)
-	assert.Contains(t, app.messages[3].Content, "tool: read")
-	assert.Equal(t, database.RoleCustom, app.messages[4].Role)
-	assert.Equal(t, "provider returned an empty response", app.messages[4].Content)
+	require.Len(t, app.transcript.History, 5)
+	assert.Equal(t, database.RoleAssistant, app.transcript.History[0].Role)
+	assert.Equal(t, "partial", app.transcript.History[0].Content)
+	assert.Equal(t, database.RoleBashExecution, app.transcript.History[1].Role)
+	assert.Equal(t, "bash output", app.transcript.History[1].Content)
+	assert.Equal(t, database.RoleCustom, app.transcript.History[2].Role)
+	assert.Equal(t, "custom progress", app.transcript.History[2].Content)
+	assert.Equal(t, database.RoleToolResult, app.transcript.History[3].Role)
+	assert.Contains(t, app.transcript.History[3].Content, "tool: read")
+	assert.Equal(t, database.RoleCustom, app.transcript.History[4].Role)
+	assert.Equal(t, "provider returned an empty response", app.transcript.History[4].Content)
 }
 
 func TestFooterLinesIgnoreTransientStatus(t *testing.T) {
@@ -630,19 +630,19 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 	}
 
 	_ = app.messageLines(80, 6)
-	if app.messageLineCache.warm {
+	if app.transcript.LineCache.warm {
 		t.Fatal("tail render should not eagerly warm full history")
 	}
 
 	app.warmMessageLineCache()
-	if !app.messageLineCache.warm {
+	if !app.transcript.LineCache.warm {
 		t.Fatal("expected history cache to be warm")
 	}
-	if len(app.messageLineCache.prefixes) != len(app.messages)+1 {
+	if len(app.transcript.LineCache.prefixes) != len(app.transcript.History)+1 {
 		t.Fatalf(
 			"row prefix length = %d, want %d",
-			len(app.messageLineCache.prefixes),
-			len(app.messages)+1,
+			len(app.transcript.LineCache.prefixes),
+			len(app.transcript.History)+1,
 		)
 	}
 }
@@ -663,7 +663,7 @@ func TestWarmMessageLineCacheStopsWhenNoProgressIsPossible(t *testing.T) {
 		{
 			name: "tools expanded",
 			setup: func(a *App) {
-				a.lastMessageMaxRows = 6
+				a.transcript.LastMaxRows = 6
 				a.toolsExpanded = true
 			},
 		},
@@ -678,7 +678,7 @@ func TestWarmMessageLineCacheStopsWhenNoProgressIsPossible(t *testing.T) {
 			testCase.setup(app)
 
 			app.warmMessageLineCache()
-			if app.messageLineCache.warm {
+			if app.transcript.LineCache.warm {
 				t.Fatal("cache should not warm when progress is blocked")
 			}
 		})
@@ -695,15 +695,15 @@ func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
 
 	_ = app.messageLines(80, 6)
 	app.warmMessageLineCacheStep()
-	if app.messageLineCache.warm {
+	if app.transcript.LineCache.warm {
 		t.Fatal("single warm step should not eagerly warm full history")
 	}
-	if app.messageLineCache.warmIndex != messageCacheWarmBatchSize {
-		t.Fatalf("warm index = %d, want %d", app.messageLineCache.warmIndex, messageCacheWarmBatchSize)
+	if app.transcript.LineCache.warmIndex != messageCacheWarmBatchSize {
+		t.Fatalf("warm index = %d, want %d", app.transcript.LineCache.warmIndex, messageCacheWarmBatchSize)
 	}
 
 	app.warmMessageLineCacheStep()
-	if !app.messageLineCache.warm {
+	if !app.transcript.LineCache.warm {
 		t.Fatal("expected second warm step to finish cache")
 	}
 }
@@ -717,12 +717,12 @@ func TestScrolledMessageLinesBeforeWarmCacheUsesVisibleTail(t *testing.T) {
 	}
 
 	_ = app.messageLines(80, 6)
-	if app.messageLineCache.warm {
+	if app.transcript.LineCache.warm {
 		t.Fatal("tail render should not warm full history")
 	}
 	app.scrollTranscript(3)
 	lines := app.messageLines(80, 6)
-	if app.messageLineCache.warm {
+	if app.transcript.LineCache.warm {
 		t.Fatal("scroll before cache warm should not synchronously warm full history")
 	}
 	if lineIndexContaining(lines, "history message 98") == -1 {
@@ -739,14 +739,14 @@ func TestScrolledMessageLinesRevalidatesWarmCacheAfterResize(t *testing.T) {
 	}
 	_ = app.messageLines(80, 6)
 	app.warmMessageLineCache()
-	require.True(t, app.messageLineCache.warm)
-	require.Equal(t, 80, app.messageLineCache.state.Width)
+	require.True(t, app.transcript.LineCache.warm)
+	require.Equal(t, 80, app.transcript.LineCache.state.Width)
 
 	app.scrollTranscript(3)
 	_ = app.messageLines(24, 6)
 
-	require.Equal(t, 24, app.messageLineCache.state.Width)
-	require.False(t, app.messageLineCache.warm)
+	require.Equal(t, 24, app.transcript.LineCache.state.Width)
+	require.False(t, app.transcript.LineCache.warm)
 }
 
 func TestBottomMessageLinesExpandedToolUsesTailWithoutFullRender(t *testing.T) {
@@ -778,7 +778,7 @@ func TestBottomMessageLinesExpandedToolUsesTailWithoutFullRender(t *testing.T) {
 	if lineIndexContaining(lines, "line 0") != -1 {
 		t.Fatalf("expected old tool output to stay unrendered in bottom tail, got %v", texts)
 	}
-	if len(app.messageLineCache.items) > 0 && app.messageLineCache.items[0].Valid {
+	if len(app.transcript.LineCache.items) > 0 && app.transcript.LineCache.items[0].Valid {
 		t.Fatal("bottom tail render should not populate full expanded tool cache")
 	}
 }
@@ -831,7 +831,7 @@ func TestStreamingBlocksRenderChronologically(t *testing.T) {
 	secondThought := newTestAsyncEvent(asyncEventPromptThinkingDelta, "second thought")
 	app.handlePromptStreamEvent(context.Background(), secondThought)
 
-	got := streamingBlockRoles(app.streamingBlocks)
+	got := streamingBlockRoles(app.transcript.Streaming.Blocks)
 	want := []database.Role{
 		database.RoleThinking,
 		database.RoleToolResult,

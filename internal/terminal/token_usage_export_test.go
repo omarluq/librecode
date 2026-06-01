@@ -74,8 +74,8 @@ func (app *App) ShowContextInfoForTest(original string) error {
 }
 
 func (app *App) MessageContentsForTest() []string {
-	contents := make([]string, 0, len(app.messages))
-	for _, message := range app.messages {
+	contents := make([]string, 0, len(app.transcript.History))
+	for _, message := range app.transcript.History {
 		contents = append(contents, message.Content)
 	}
 

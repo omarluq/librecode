@@ -33,13 +33,13 @@ func TestApplySessionSelectionAddsMessageAfterSuccessfulLoad(t *testing.T) {
 		t.Fatalf("applySessionSelection error = %v", err)
 	}
 
-	if got, want := len(app.messages), 2; got != want {
+	if got, want := len(app.transcript.History), 2; got != want {
 		t.Fatalf("len(messages) = %d, want %d", got, want)
 	}
-	if got, want := app.messages[0].Content, interruptTestPrompt; got != want {
+	if got, want := app.transcript.History[0].Content, interruptTestPrompt; got != want {
 		t.Fatalf("messages[0].Content = %q, want %q", got, want)
 	}
-	if got, want := app.messages[1].Content, "resumed session: "+session.ID; got != want {
+	if got, want := app.transcript.History[1].Content, "resumed session: "+session.ID; got != want {
 		t.Fatalf("messages[1].Content = %q, want %q", got, want)
 	}
 }

@@ -111,8 +111,8 @@ func (app *App) writeWelcomePaddingRows(row, width, count int) {
 
 func (app *App) showWelcomeOnly() bool {
 	return app.mode == modeChat &&
-		len(app.messages) == 1 &&
-		isWelcomeMessage(app.messages[0].Content)
+		len(app.transcript.History) == 1 &&
+		isWelcomeMessage(app.transcript.History[0].Content)
 }
 
 func isWelcomeMessage(content string) bool {

@@ -160,8 +160,8 @@ func (app *App) extensionRuntimeData(width, height int) map[string]any {
 		"tools_expanded":        app.toolsExpanded,
 		"thinking_hidden":       app.hideThinking,
 		"queued_count":          len(app.queuedMessages),
-		"message_count":         len(app.messages),
-		"streaming_block_count": len(app.streamingBlocks),
+		"message_count":         len(app.transcript.History),
+		"streaming_block_count": len(app.transcript.Streaming.Blocks),
 	}
 }
 
