@@ -19,10 +19,12 @@ func TestMergeCostAppliesPartialOverrides(t *testing.T) {
 	t.Parallel()
 
 	cost := Cost{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4}
+	inputCost := 10.0
+	cacheReadCost := 30.0
 	override := &partialCost{
-		Input:      floatPtr(10),
+		Input:      &inputCost,
 		Output:     nil,
-		CacheRead:  floatPtr(30),
+		CacheRead:  &cacheReadCost,
 		CacheWrite: nil,
 	}
 
@@ -142,16 +144,23 @@ func TestApplyModelOverrideMergesOptionalFields(t *testing.T) {
 	maxTokens := 64
 	reasoning := true
 	newThinking := "low"
+	overrideInputCost := 10.0
+	overrideCacheWriteCost := 40.0
 	override := &modelOverride{
 		ThinkingLevelMap: map[ThinkingLevel]*string{ThinkingLow: &newThinking},
 		Headers:          map[string]string{mergeTestHeaderKey: mergeTestOverride, "x-new": "new"},
 		Compat:           map[string]any{mergeTestModeKey: mergeTestOverride, "extra": true},
-		Cost:             &partialCost{Input: floatPtr(10), Output: nil, CacheRead: nil, CacheWrite: floatPtr(40)},
-		Name:             &name,
-		ContextWindow:    &contextWindow,
-		MaxTokens:        &maxTokens,
-		Reasoning:        &reasoning,
-		Input:            []InputMode{InputText, InputImage},
+		Cost: &partialCost{
+			Input:      &overrideInputCost,
+			Output:     nil,
+			CacheRead:  nil,
+			CacheWrite: &overrideCacheWriteCost,
+		},
+		Name:          &name,
+		ContextWindow: &contextWindow,
+		MaxTokens:     &maxTokens,
+		Reasoning:     &reasoning,
+		Input:         []InputMode{InputText, InputImage},
 	}
 
 	result := applyModelOverride(&model, override)
@@ -191,10 +200,6 @@ func TestMergeCustomModelsReplacesMatchingModel(t *testing.T) {
 	assert.Equal(t, "Custom", merged[0].Name)
 	assert.Equal(t, "Other", merged[1].Name)
 	assert.Equal(t, "New", merged[2].Name)
-}
-
-func floatPtr(value float64) *float64 {
-	return &value
 }
 
 func mergeTestModel(modelID, name string) Model {
