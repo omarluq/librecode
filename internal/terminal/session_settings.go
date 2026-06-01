@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 const sessionSettingsNamespace = "terminal_session_settings"
@@ -104,6 +105,30 @@ func (app *App) currentSessionSettings() sessionSettingsDocument {
 	}
 }
 
+func (app *App) currentThinkingLevel() string {
+	if app.cfg == nil || app.cfg.Assistant.ThinkingLevel == "" {
+		return string(model.ThinkingOff)
+	}
+
+	return app.cfg.Assistant.ThinkingLevel
+}
+
+func (app *App) currentProvider() string {
+	if app.cfg == nil {
+		return "local"
+	}
+
+	return app.cfg.Assistant.Provider
+}
+
+func (app *App) currentModel() string {
+	if app.cfg == nil {
+		return "librecode"
+	}
+
+	return app.cfg.Assistant.Model
+}
+
 func (app *App) scopedEnabledValues() []string {
 	values := make([]string, 0, len(app.scopedEnabled))
 	for value, enabled := range app.scopedEnabled {
@@ -138,4 +163,19 @@ func (app *App) applySessionSettings(settings *sessionSettingsDocument) {
 	for _, value := range settings.ScopedEnabled {
 		app.scopedEnabled[value] = true
 	}
+}
+
+func (app *App) setModelSelection(provider, modelID string) {
+	if app.cfg != nil {
+		app.cfg.Assistant.Provider = provider
+		app.cfg.Assistant.Model = modelID
+	}
+	app.persistSessionSettings()
+}
+
+func (app *App) setThinkingLevelValue(level string) {
+	if app.cfg != nil {
+		app.cfg.Assistant.ThinkingLevel = level
+	}
+	app.persistSessionSettings()
 }

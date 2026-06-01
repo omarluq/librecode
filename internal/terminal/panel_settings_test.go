@@ -25,8 +25,8 @@ func TestToggleTheme(t *testing.T) {
 	}
 
 	app.toggleTheme()
-	if got := app.theme.name; got != "light" {
-		t.Fatalf("theme after toggle = %q, want light", got)
+	if got := app.theme.name; got != themeNameLight {
+		t.Fatalf("theme after toggle = %q, want %s", got, themeNameLight)
 	}
 
 	app.toggleTheme()
@@ -45,8 +45,11 @@ func TestApplySettingSelectionRefreshesPanel(t *testing.T) {
 	}
 
 	app.applySettingSelection(settingTheme)
-	if got, want := app.theme.name, "light"; got != want {
+	if got, want := app.theme.name, themeNameLight; got != want {
 		t.Fatalf("theme after setting selection = %q, want %q", got, want)
+	}
+	if app.sessionID != "" {
+		t.Fatal("render test app should not persist theme settings without a session")
 	}
 	if app.panel == nil || app.panel.kind != panelSettings {
 		t.Fatal("settings panel should be rebuilt after selection")

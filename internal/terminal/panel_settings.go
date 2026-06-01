@@ -79,11 +79,9 @@ func (app *App) applySettingSelection(value string) {
 	case settingThinking:
 		app.cycleThinking()
 	case "hide-thinking":
-		app.hideThinking = !app.hideThinking
-		app.persistSessionSettings()
+		app.setHideThinking(!app.hideThinking)
 	case "tools-expanded":
-		app.toolsExpanded = !app.toolsExpanded
-		app.persistSessionSettings()
+		app.setToolsExpanded(!app.toolsExpanded)
 	}
 	app.panel = newSelectionPanel(
 		panelSettings,
@@ -96,10 +94,8 @@ func (app *App) applySettingSelection(value string) {
 
 func (app *App) toggleTheme() {
 	if app.theme.name == themeNameDark {
-		app.theme = lightTheme()
-		app.persistSessionSettings()
+		app.setTheme(lightTheme())
 		return
 	}
-	app.theme = darkTheme()
-	app.persistSessionSettings()
+	app.setTheme(darkTheme())
 }

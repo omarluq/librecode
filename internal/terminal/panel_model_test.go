@@ -10,14 +10,16 @@ import (
 func TestEnsureCurrentModel(t *testing.T) {
 	t.Parallel()
 
-	models := ensureCurrentModel(nil, "openai", "gpt-5")
+	const testGPT5Model = "gpt-5"
+
+	models := ensureCurrentModel(nil, testProviderOpenAI, testGPT5Model)
 	if got, want := len(models), 1; got != want {
 		t.Fatalf("len(models) = %d, want %d", got, want)
 	}
 	if got, want := models[0].Provider, testProviderOpenAI; got != want {
 		t.Fatalf("models[0].Provider = %q, want %q", got, want)
 	}
-	if got, want := models[0].ID, "gpt-5"; got != want {
+	if got, want := models[0].ID, testGPT5Model; got != want {
 		t.Fatalf("models[0].ID = %q, want %q", got, want)
 	}
 }
@@ -51,6 +53,9 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 	app.applyModelSelection(promptSendTestProvider + "/other-model")
 	if got, want := app.currentModel(), "other-model"; got != want {
 		t.Fatalf("currentModel = %q, want %q", got, want)
+	}
+	if app.sessionID != "" {
+		t.Fatal("render test app should not persist model settings without a session")
 	}
 
 	app.cycleModel(1)

@@ -62,9 +62,7 @@ func (app *App) orderedAvailableModels() []model.Model {
 }
 
 func (app *App) toggleScopedModel(value string) {
-	app.ensureScopedOrder()
-	app.scopedEnabled[value] = !app.scopedEnabled[value]
-	app.persistSessionSettings()
+	app.setScopedModelEnabled(value, !app.scopedEnabled[value])
 	app.refreshScopedModelsPanel()
 }
 
