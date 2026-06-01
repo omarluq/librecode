@@ -299,9 +299,11 @@ func newPromptSendTestApp(t *testing.T, client assistant.CompletionClient) *App 
 			},
 		},
 	})
+	sessionRepository := database.NewSessionRepository(connection)
+	settingsRepository := database.NewDocumentRepository(connection)
 	runtime := assistant.NewRuntime(
 		promptSendTestConfig(),
-		database.NewSessionRepository(connection),
+		sessionRepository,
 		manager,
 		cache,
 		event.NewBus(slog.Default()),
@@ -311,6 +313,7 @@ func newPromptSendTestApp(t *testing.T, client assistant.CompletionClient) *App 
 	)
 	app := newRenderTestApp(t)
 	app.runtime = runtime
+	app.settings = settingsRepository
 	app.cwd = t.TempDir()
 	app.cfg = promptSendTestConfig()
 

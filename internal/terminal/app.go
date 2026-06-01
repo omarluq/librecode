@@ -577,44 +577,13 @@ func (app *App) setStatus(message string) {
 	app.statusMessage = message
 }
 
-func (app *App) currentThinkingLevel() string {
-	if app.cfg == nil || app.cfg.Assistant.ThinkingLevel == "" {
-		return string(model.ThinkingOff)
-	}
-
-	return app.cfg.Assistant.ThinkingLevel
-}
-
-func (app *App) currentProvider() string {
-	if app.cfg == nil {
-		return "local"
-	}
-
-	return app.cfg.Assistant.Provider
-}
-
-func (app *App) currentModel() string {
-	if app.cfg == nil {
-		return "librecode"
-	}
-
-	return app.cfg.Assistant.Model
-}
-
 func (app *App) setModel(provider, modelID string) {
-	if app.cfg != nil {
-		app.cfg.Assistant.Provider = provider
-		app.cfg.Assistant.Model = modelID
-	}
-	app.persistSessionSettings()
+	app.setModelSelection(provider, modelID)
 	app.addSystemMessage("model selected: " + provider + "/" + modelID)
 }
 
 func (app *App) setThinkingLevel(level string) {
-	if app.cfg != nil {
-		app.cfg.Assistant.ThinkingLevel = level
-	}
-	app.persistSessionSettings()
+	app.setThinkingLevelValue(level)
 	app.setStatus("thinking: " + level)
 }
 

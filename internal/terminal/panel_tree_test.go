@@ -25,9 +25,11 @@ func TestTreeDescription(t *testing.T) {
 	}
 
 	entry = testEntryEntity()
+	const testGPT5Model = "gpt-5"
+
 	entry.Message.Provider = testProviderOpenAI
-	entry.Message.Model = "gpt-5"
-	if got, want := treeDescription(&entry), "openai/gpt-5"; got != want {
+	entry.Message.Model = testGPT5Model
+	if got, want := treeDescription(&entry), testProviderOpenAI+"/"+testGPT5Model; got != want {
 		t.Fatalf("treeDescription(model) = %q, want %q", got, want)
 	}
 }

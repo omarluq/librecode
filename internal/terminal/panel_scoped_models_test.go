@@ -47,6 +47,9 @@ func TestScopedModelPanelBehavior(t *testing.T) {
 	if !app.scopedEnabled[value] {
 		t.Fatalf("scopedEnabled[%q] = false, want true", value)
 	}
+	if app.sessionID != "" {
+		t.Fatal("render test app should not persist scoped model settings without a session")
+	}
 	if app.panel == nil || app.panel.kind != panelScopedModels {
 		t.Fatal("scoped models panel should remain open after toggle")
 	}

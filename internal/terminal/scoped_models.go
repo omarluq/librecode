@@ -32,19 +32,20 @@ func (app *App) saveScopedModels() {
 }
 
 func (app *App) enableFilteredScopedModels() {
-	app.ensureScopedOrder()
+	values := make([]string, 0, len(app.panel.filtered))
 	for _, item := range app.panel.filtered {
-		app.scopedEnabled[item.Value] = true
+		values = append(values, item.Value)
 	}
-	app.persistSessionSettings()
+	app.setScopedModelsEnabled(values, true)
 	app.refreshScopedModelsPanel()
 }
 
 func (app *App) clearFilteredScopedModels() {
+	values := make([]string, 0, len(app.panel.filtered))
 	for _, item := range app.panel.filtered {
-		delete(app.scopedEnabled, item.Value)
+		values = append(values, item.Value)
 	}
-	app.persistSessionSettings()
+	app.clearScopedModels(values)
 	app.refreshScopedModelsPanel()
 }
 
@@ -62,12 +63,7 @@ func (app *App) toggleSelectedProviderModels() {
 			break
 		}
 	}
-	for _, modelItem := range items {
-		if providerFromModelValue(modelItem.Value) == provider {
-			app.scopedEnabled[modelItem.Value] = !allEnabled
-		}
-	}
-	app.persistSessionSettings()
+	app.setScopedProviderEnabled(provider, !allEnabled)
 	app.refreshScopedModelsPanel()
 }
 
@@ -76,17 +72,9 @@ func (app *App) reorderSelectedScopedModel(delta int) {
 	if !ok {
 		return
 	}
-	app.ensureScopedOrder()
-	index := scopedModelIndex(app.scopedOrder, value)
-	if index == -1 {
+	if !app.moveScopedModel(value, delta) {
 		return
 	}
-	nextIndex := index + delta
-	if nextIndex < 0 || nextIndex >= len(app.scopedOrder) {
-		return
-	}
-	app.scopedOrder[index], app.scopedOrder[nextIndex] = app.scopedOrder[nextIndex], app.scopedOrder[index]
-	app.persistSessionSettings()
 	app.refreshScopedModelsPanel()
 }
 
