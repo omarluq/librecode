@@ -2,7 +2,9 @@
 package terminal
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/omarluq/librecode/internal/database"
 )
@@ -52,5 +54,36 @@ func TestSessionPanelSubtitle(t *testing.T) {
 	app.sessionShowPath = true
 	if got, want := app.sessionPanelSubtitle(), "fuzzy • named • path on"; got != want {
 		t.Fatalf("sessionPanelSubtitle() = %q, want %q", got, want)
+	}
+}
+
+func TestSessionPanelOpenAndItems(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
+
+	firstSession, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, "beta", "")
+	if err != nil {
+		t.Fatalf("create first session: %v", err)
+	}
+	secondSession, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, "alpha", "")
+	if err != nil {
+		t.Fatalf("create second session: %v", err)
+	}
+	secondSession.UpdatedAt = firstSession.UpdatedAt.Add(time.Minute)
+
+	app.openSessionPanel(ctx)
+	if got, want := app.selectedPanelKind, panelSessions; got != want {
+		t.Fatalf("selectedPanelKind = %q, want %q", got, want)
+	}
+	if app.panel == nil || app.panel.kind != panelSessions {
+		t.Fatal("session panel should be open")
+	}
+	if len(app.panel.items) != 2 {
+		t.Fatalf("len(panel.items) = %d, want 2", len(app.panel.items))
+	}
+	if app.panel.items[0].Value != firstSession.ID && app.panel.items[0].Value != secondSession.ID {
+		t.Fatalf("unexpected first session item value %q", app.panel.items[0].Value)
 	}
 }

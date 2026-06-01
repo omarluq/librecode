@@ -28,15 +28,15 @@ func (app *App) submitCommand(ctx context.Context, text string) (bool, error) {
 
 func (app *App) openCommandPanel(ctx context.Context, command string) bool {
 	handlers := map[string]func(){
-		"changelog":     app.openChangelogPanel,
-		"hotkeys":       app.openHotkeysPanel,
-		commandLogin:    app.openLoginPanel,
-		commandLogout:   app.openLogoutPanel,
-		"model":         app.openModelPanel,
-		"scoped-models": app.openScopedModelsPanel,
-		"settings":      app.openSettingsPanel,
-		"resume":        func() { app.openSessionPanel(ctx) },
-		"tree":          func() { app.openTreePanel(ctx) },
+		changelogCommandName: app.openChangelogPanel,
+		hotkeysCommandName:   app.openHotkeysPanel,
+		commandLogin:         app.openLoginPanel,
+		commandLogout:        app.openLogoutPanel,
+		"model":              app.openModelPanel,
+		"scoped-models":      app.openScopedModelsPanel,
+		"settings":           app.openSettingsPanel,
+		"resume":             func() { app.openSessionPanel(ctx) },
+		"tree":               func() { app.openTreePanel(ctx) },
 	}
 	handler, ok := handlers[command]
 	if !ok {

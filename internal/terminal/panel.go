@@ -10,13 +10,17 @@ import (
 type panelKind string
 
 const (
-	panelModel        panelKind = "model"
-	panelScopedModels panelKind = "scoped_models"
-	panelAuthLogin    panelKind = "auth_login"
-	panelAuthLogout   panelKind = "auth_logout"
-	panelSettings     panelKind = "settings"
-	panelSessions     panelKind = "sessions"
-	panelTree         panelKind = "tree"
+	panelModel           panelKind = "model"
+	panelScopedModels    panelKind = "scoped_models"
+	panelAuthLogin       panelKind = "auth_login"
+	panelAuthLogout      panelKind = "auth_logout"
+	panelSettings        panelKind = "settings"
+	panelHotkeys         panelKind = hotkeysCommandName
+	panelChangelog       panelKind = changelogCommandName
+	panelSessions        panelKind = "sessions"
+	panelTree            panelKind = "tree"
+	hotkeysCommandName             = "hotkeys"
+	changelogCommandName           = "changelog"
 )
 
 type panelItem struct {

@@ -18,14 +18,14 @@ type slashSuggestion struct {
 func slashSuggestions() []slashSuggestion {
 	return []slashSuggestion{
 		{Name: "auth", Description: "show auth status"},
-		{Name: "changelog", Description: "open changelog"},
+		{Name: changelogCommandName, Description: "open changelog"},
 		{Name: "clone", Description: "clone current session"},
 		{Name: "compact", Description: "compact conversation context"},
 		{Name: "context", Description: "show context token breakdown"},
 		{Name: "copy", Description: "copy the last assistant message"},
 		{Name: "export", Description: "export current session"},
 		{Name: "fork", Description: "fork current session"},
-		{Name: "hotkeys", Description: "show keybindings"},
+		{Name: hotkeysCommandName, Description: "show keybindings"},
 		{Name: "import", Description: "import a session"},
 		{Name: commandLogin, Description: "authenticate a provider"},
 		{Name: commandLogout, Description: "clear provider auth"},

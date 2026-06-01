@@ -198,7 +198,7 @@ func (app *App) applyAuthSelection(ctx context.Context, value string) error {
 	case panelAuthLogout:
 		app.closePanel()
 		return app.logoutCommand(ctx, value)
-	case panelModel, panelScopedModels, panelSettings, panelSessions, panelTree:
+	case panelModel, panelScopedModels, panelSettings, panelHotkeys, panelChangelog, panelSessions, panelTree:
 		return nil
 	}
 
