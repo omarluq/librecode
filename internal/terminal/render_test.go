@@ -64,6 +64,7 @@ func TestRenderThinkingMessagePreservesMarkdownSpans(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	lines := app.renderThinkingMessage(80, newChatMessage(database.RoleThinking, "```go\nfunc hi() {}\n```"))
+	require.GreaterOrEqual(t, len(lines), 3, "expected thinking content line")
 	content := lines[2]
 	require.NotEmpty(t, content.Spans)
 	assert.True(t, content.Style.HasItalic())
@@ -158,26 +159,84 @@ func TestFooterLinesIgnoreTransientStatus(t *testing.T) {
 func TestRenderQueuedMessagesRendersHeadersAndBody(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
-	app.queuedMessages = []string{"first queued", "second queued"}
+	tests := []struct {
+		queuedMessages []string
+		name           string
+		expectedLines  []string
+		width          int
+	}{
+		{
+			name:           "single queued message",
+			queuedMessages: []string{"first queued"},
+			width:          40,
+			expectedLines: []string{
+				"  queued follow-up 1                    ",
+				"  first queued                          ",
+			},
+		},
+		{
+			name:           "multiple queued messages",
+			queuedMessages: []string{"first queued", "second queued"},
+			width:          40,
+			expectedLines: []string{
+				"  queued follow-up 1                    ",
+				"  first queued                          ",
+				"  queued follow-up 2                    ",
+				"  second queued                         ",
+			},
+		},
+	}
 
-	lines := app.renderQueuedMessages(40)
-	texts := lineTexts(lines)
-	assert.Contains(t, texts, "  queued follow-up 1                    ")
-	assert.Contains(t, texts, "  first queued                          ")
-	assert.Contains(t, texts, "  queued follow-up 2                    ")
-	assert.Contains(t, texts, "  second queued                         ")
+	for _, tt := range tests {
+		testCase := tt
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			app.queuedMessages = testCase.queuedMessages
+
+			lines := app.renderQueuedMessages(testCase.width)
+			texts := lineTexts(lines)
+			for _, expected := range testCase.expectedLines {
+				assert.Contains(t, texts, expected)
+			}
+		})
+	}
 }
 
-func TestRenderCustomAndSummaryMessagesUseBoxedLayout(t *testing.T) {
+func TestRenderBoxedMessagesUseBoxedLayout(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
-	custom := app.renderCustomMessage(30, "system note")
-	summary := app.renderSummaryMessage(30, newChatMessage(database.RoleCompactionSummary, "summary note"))
+	tests := []struct {
+		name     string
+		render   func(app *App) []styledLine
+		expected string
+	}{
+		{
+			name: "custom message",
+			render: func(app *App) []styledLine {
+				return app.renderCustomMessage(30, "system note")
+			},
+			expected: "  [system]                    ",
+		},
+		{
+			name: "summary message",
+			render: func(app *App) []styledLine {
+				return app.renderSummaryMessage(30, newChatMessage(database.RoleCompactionSummary, "summary note"))
+			},
+			expected: "  [compactionSummary]         ",
+		},
+	}
 
-	assert.Contains(t, lineTexts(custom), "  [system]                    ")
-	assert.Contains(t, lineTexts(summary), "  [compactionSummary]         ")
+	for _, tt := range tests {
+		testCase := tt
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			assert.Contains(t, lineTexts(testCase.render(app)), testCase.expected)
+		})
+	}
 }
 
 func TestVisibleMessageLineGroupsDoesNotMutateScrollOffset(t *testing.T) {
