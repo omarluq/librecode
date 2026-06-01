@@ -1,6 +1,9 @@
 package terminal
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 func (app *App) closePanel() {
 	app.mode = modeChat
@@ -21,15 +24,20 @@ func (app *App) applyPanelSelection(ctx context.Context, value string) error {
 	case panelModel:
 		app.applyModelSelection(value)
 		app.closePanel()
+		return nil
 	case panelScopedModels:
 		app.toggleScopedModel(value)
+		return nil
 	case panelSettings:
 		app.applySettingSelection(value)
+		return nil
+	case panelHotkeys, panelChangelog:
+		return nil
 	case panelSessions:
 		return app.applySessionSelection(ctx, value)
 	case panelTree:
 		return app.applyTreeSelection(ctx, value)
+	default:
+		return fmt.Errorf("unknown panel kind: %q", app.selectedPanelKind)
 	}
-
-	return nil
 }

@@ -27,7 +27,7 @@ func (app *App) openHotkeysPanel() {
 			Meta:        row.Action,
 		})
 	}
-	app.openPanel(newSelectionPanel(panelSettings, "Hotkeys", "librecode default keybindings", items, true))
+	app.openPanel(newSelectionPanel(panelHotkeys, "Hotkeys", "librecode default keybindings", items, true))
 }
 
 func (app *App) openChangelogPanel() {
@@ -45,7 +45,7 @@ func (app *App) openChangelogPanel() {
 			Meta:        "done",
 		},
 	}
-	app.openPanel(newSelectionPanel(panelSettings, "Changelog", "recent runtime work", items, false))
+	app.openPanel(newSelectionPanel(panelChangelog, "Changelog", "recent runtime work", items, false))
 }
 
 func (app *App) settingsItems() []panelItem {

@@ -45,10 +45,10 @@ func (app *App) applySessionSelection(ctx context.Context, value string) error {
 	if err := app.loadSessionSettings(ctx); err != nil {
 		return err
 	}
-	app.addSystemMessage("resumed session: " + value)
 	if err := app.loadInitialMessages(ctx); err != nil {
 		return err
 	}
+	app.addSystemMessage("resumed session: " + value)
 	app.closePanel()
 
 	return nil

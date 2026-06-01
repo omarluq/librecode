@@ -34,3 +34,29 @@ func TestToggleTheme(t *testing.T) {
 		t.Fatalf("theme after second toggle = %q, want dark", got)
 	}
 }
+
+func TestApplySettingSelectionRefreshesPanel(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.openSettingsPanel()
+	if app.panel == nil {
+		t.Fatal("settings panel should be open")
+	}
+
+	app.applySettingSelection(settingTheme)
+	if got, want := app.theme.name, "light"; got != want {
+		t.Fatalf("theme after setting selection = %q, want %q", got, want)
+	}
+	if app.panel == nil || app.panel.kind != panelSettings {
+		t.Fatal("settings panel should be rebuilt after selection")
+	}
+
+	app.applySettingSelection("tools-expanded")
+	if !app.toolsExpanded {
+		t.Fatal("toolsExpanded should toggle on selection")
+	}
+	if app.panel == nil || app.panel.kind != panelSettings {
+		t.Fatal("settings panel should remain open after tools toggle")
+	}
+}
