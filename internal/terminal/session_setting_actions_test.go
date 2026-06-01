@@ -4,8 +4,10 @@ package terminal
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -76,6 +78,12 @@ func TestCycleThinking(t *testing.T) {
 	app.cycleThinking()
 	if got, want := app.currentThinkingLevel(), string(model.ThinkingOff); got != want {
 		t.Fatalf("thinking level = %q, want %q", got, want)
+	}
+
+	app.setThinkingLevel("mystery")
+	app.cycleThinking()
+	if got, want := app.currentThinkingLevel(), string(model.ThinkingOff); got != want {
+		t.Fatalf("thinking level after fallback = %q, want %q", got, want)
 	}
 }
 
@@ -160,9 +168,113 @@ func assertPersistedSessionSettings(t *testing.T, settings *sessionSettingsDocum
 	if settings.ThinkingLevel != string(model.ThinkingHigh) {
 		t.Fatalf("thinking level = %q, want %q", settings.ThinkingLevel, model.ThinkingHigh)
 	}
-	for _, value := range settings.ScopedEnabled {
-		if value == testAnthropicClaudeID {
-			t.Fatalf("unexpected cleared scoped model in persisted settings: %q", value)
+	if !slices.Equal(settings.ScopedEnabled, []string{}) {
+		t.Fatalf("scoped enabled = %v, want []", settings.ScopedEnabled)
+	}
+}
+
+func TestMoveScopedModelGuards(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.scopedOrder = []string{"a", "b"}
+
+	if app.moveScopedModel("missing", 1) {
+		t.Fatal("moveScopedModel should fail for missing value")
+	}
+	if app.moveScopedModel("a", -1) {
+		t.Fatal("moveScopedModel should fail when target index is out of bounds")
+	}
+}
+
+func TestHandleScopedModelKeyEnableAll(t *testing.T) {
+	t.Parallel()
+
+	app := newScopedModelTestApp(t)
+	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlA, "", tcell.ModNone)) {
+		t.Fatal("ctrl+a should be handled")
+	}
+	for _, item := range app.panel.filtered {
+		if !app.scopedEnabled[item.Value] {
+			t.Fatalf("expected scoped model %q to be enabled", item.Value)
 		}
 	}
+}
+
+func TestHandleScopedModelKeyClearAll(t *testing.T) {
+	t.Parallel()
+
+	app := newScopedModelTestApp(t)
+	for _, item := range app.panel.filtered {
+		app.scopedEnabled[item.Value] = true
+	}
+
+	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlX, "", tcell.ModNone)) {
+		t.Fatal("ctrl+x should be handled")
+	}
+	for _, item := range app.panel.filtered {
+		if app.scopedEnabled[item.Value] {
+			t.Fatalf("expected scoped model %q to be cleared", item.Value)
+		}
+	}
+}
+
+func TestHandleScopedModelKeyToggleProvider(t *testing.T) {
+	t.Parallel()
+
+	app := newScopedModelTestApp(t)
+	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlP, "", tcell.ModNone)) {
+		t.Fatal("ctrl+p should be handled")
+	}
+	provider := providerFromModelValue(app.panel.filtered[0].Value)
+	for _, item := range app.panel.filtered {
+		if providerFromModelValue(item.Value) == provider && !app.scopedEnabled[item.Value] {
+			t.Fatalf("expected provider-scoped model %q to be enabled", item.Value)
+		}
+	}
+}
+
+func TestHandleScopedModelKeyReorderUp(t *testing.T) {
+	t.Parallel()
+
+	app := newScopedModelTestApp(t)
+	app.scopedOrder = make([]string, 0, len(app.panel.filtered))
+	for _, item := range app.panel.filtered {
+		app.scopedOrder = append(app.scopedOrder, item.Value)
+	}
+	app.panel.selected = 1
+	selected := app.panel.filtered[1].Value
+
+	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyUp, "", tcell.ModAlt)) {
+		t.Fatal("alt+up should be handled")
+	}
+	if got := app.scopedOrder[0]; got != selected {
+		t.Fatalf("scoped order[0] = %q, want %q after reorder", got, selected)
+	}
+}
+
+func TestHandleScopedModelKeySave(t *testing.T) {
+	t.Parallel()
+
+	app := newScopedModelTestApp(t)
+	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlS, "", tcell.ModNone)) {
+		t.Fatal("ctrl+s should be handled")
+	}
+	if app.selectedPanelKind != "" || app.panel != nil {
+		t.Fatal("save should close scoped models panel")
+	}
+}
+
+func newScopedModelTestApp(t *testing.T) *App {
+	t.Helper()
+
+	app := newRenderTestApp(t)
+	app.models = model.NewRegistry(nil)
+	app.scopedEnabled = map[string]bool{}
+	app.openScopedModelsPanel()
+	if len(app.panel.filtered) < 2 {
+		t.Fatal("expected at least two scoped model items")
+	}
+
+	return app
 }
