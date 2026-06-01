@@ -4,7 +4,6 @@ package terminal
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/omarluq/librecode/internal/database"
 )
@@ -71,7 +70,6 @@ func TestSessionPanelOpenAndItems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create second session: %v", err)
 	}
-	secondSession.UpdatedAt = firstSession.UpdatedAt.Add(time.Minute)
 
 	app.openSessionPanel(ctx)
 	if got, want := app.selectedPanelKind, panelSessions; got != want {
