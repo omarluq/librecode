@@ -102,7 +102,8 @@ func TestEmptyParentID(t *testing.T) {
 	if got := emptyParentID(nil); got == nil || *got != "" {
 		t.Fatal("emptyParentID(nil) should return pointer to empty string")
 	}
-	if got := emptyParentID(new("parent")); got == nil || *got != "parent" {
+	parent := "parent"
+	if got := emptyParentID(&parent); got == nil || *got != "parent" {
 		t.Fatal("emptyParentID should return original value when non-nil")
 	}
 }
