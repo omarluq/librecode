@@ -87,6 +87,35 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 	assert.Equal(t, "librecode", message.Model)
 }
 
+func TestSessionRepository_AppendMessagePreservesInputTimestamp(t *testing.T) {
+	t.Parallel()
+
+	repository := newTestSessionRepository(t)
+	ctx := context.Background()
+
+	createdSession, err := repository.CreateSession(ctx, "/work", "timestamp", "")
+	require.NoError(t, err)
+
+	timestamp := time.Date(2026, time.May, 31, 12, 34, 56, 789000000, time.UTC)
+	message := database.MessageEntity{
+		Timestamp: timestamp,
+		Role:      database.RoleUser,
+		Content:   "hello",
+		Provider:  "",
+		Model:     "",
+	}
+
+	entry, err := repository.AppendMessage(ctx, createdSession.ID, nil, &message)
+	require.NoError(t, err)
+	assert.Equal(t, timestamp, entry.CreatedAt)
+	assert.Equal(t, timestamp, entry.Message.Timestamp)
+
+	storedMessage, found, err := repository.MessageForEntry(ctx, createdSession.ID, entry.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, timestamp, storedMessage.CreatedAt)
+}
+
 func TestSessionRepository_DeleteSessionRemovesSessionRows(t *testing.T) {
 	t.Parallel()
 
