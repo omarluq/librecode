@@ -90,30 +90,50 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 func TestSessionRepository_AppendMessagePreservesInputTimestamp(t *testing.T) {
 	t.Parallel()
 
-	repository := newTestSessionRepository(t)
-	ctx := context.Background()
-
-	createdSession, err := repository.CreateSession(ctx, "/work", "timestamp", "")
-	require.NoError(t, err)
-
-	timestamp := time.Date(2026, time.May, 31, 12, 34, 56, 789000000, time.UTC)
-	message := database.MessageEntity{
-		Timestamp: timestamp,
-		Role:      database.RoleUser,
-		Content:   "hello",
-		Provider:  "",
-		Model:     "",
+	tests := []struct {
+		timestamp time.Time
+		name      string
+	}{
+		{
+			name:      "UTC timestamp",
+			timestamp: time.Date(2026, time.May, 31, 12, 34, 56, 789000000, time.UTC),
+		},
+		{
+			name:      "non-UTC timestamp",
+			timestamp: time.Date(2026, time.May, 31, 7, 34, 56, 789000000, time.FixedZone("CDT", -5*60*60)),
+		},
 	}
 
-	entry, err := repository.AppendMessage(ctx, createdSession.ID, nil, &message)
-	require.NoError(t, err)
-	assert.Equal(t, timestamp, entry.CreatedAt)
-	assert.Equal(t, timestamp, entry.Message.Timestamp)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	storedMessage, found, err := repository.MessageForEntry(ctx, createdSession.ID, entry.ID)
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, timestamp, storedMessage.CreatedAt)
+			repository := newTestSessionRepository(t)
+			ctx := context.Background()
+
+			createdSession, err := repository.CreateSession(ctx, "/work", "timestamp", "")
+			require.NoError(t, err)
+
+			message := database.MessageEntity{
+				Timestamp: testCase.timestamp,
+				Role:      database.RoleUser,
+				Content:   "hello",
+				Provider:  "",
+				Model:     "",
+			}
+			expectedTimestamp := testCase.timestamp.UTC()
+
+			entry, err := repository.AppendMessage(ctx, createdSession.ID, nil, &message)
+			require.NoError(t, err)
+			assert.Equal(t, expectedTimestamp, entry.CreatedAt)
+			assert.Equal(t, expectedTimestamp, entry.Message.Timestamp)
+
+			storedMessage, found, err := repository.MessageForEntry(ctx, createdSession.ID, entry.ID)
+			require.NoError(t, err)
+			require.True(t, found)
+			assert.Equal(t, expectedTimestamp, storedMessage.CreatedAt)
+		})
+	}
 }
 
 func TestSessionRepository_DeleteSessionRemovesSessionRows(t *testing.T) {
