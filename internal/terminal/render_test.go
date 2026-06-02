@@ -804,6 +804,29 @@ func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
 	}
 }
 
+func TestLoadInitialMessagesUsesTranscriptHistory(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
+	session, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, "load", "")
+	require.NoError(t, err)
+	_, err = app.runtime.SessionRepository().AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Time{},
+		Role:      database.RoleAssistant,
+		Content:   "loaded assistant",
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+	app.sessionID = session.ID
+	app.resetMessages()
+
+	require.NoError(t, app.loadInitialMessages(ctx))
+	require.Len(t, app.transcript.History, 1)
+	assert.Equal(t, "loaded assistant", app.transcript.History[0].Content)
+}
+
 func TestStreamingBlockCacheInvalidatesOnMergedDelta(t *testing.T) {
 	t.Parallel()
 
