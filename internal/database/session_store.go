@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/samber/oops"
 )
@@ -185,13 +186,14 @@ func newEntryData() EntryDataEntity {
 }
 
 type appendEntryOptions struct {
+	timestamp  time.Time
 	content    string
 	customType string
 	dataJSON   string
 	model      string
 	provider   string
-	role       Role
 	summary    string
+	role       Role
 }
 
 func newAppendEntryOptions() *appendEntryOptions {
@@ -206,7 +208,12 @@ func (repository *SessionRepository) appendBuiltEntry(
 	entryType EntryType,
 	options *appendEntryOptions,
 ) (*EntryEntity, error) {
-	timestamp := repository.now().UTC()
+	timestamp := options.timestamp
+	if timestamp.IsZero() {
+		timestamp = repository.now().UTC()
+	} else {
+		timestamp = timestamp.UTC()
+	}
 	entry := newEntryEntity(sessionID, parentID, entryType, &MessageEntity{
 		Timestamp: timestamp,
 		Role:      options.role,
@@ -243,6 +250,7 @@ func (repository *SessionRepository) AppendMessage(
 	options.model = message.Model
 	options.provider = message.Provider
 	options.role = message.Role
+	options.timestamp = message.Timestamp
 
 	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeMessage, options)
 }
