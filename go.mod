@@ -15,7 +15,7 @@ require (
 	github.com/samber/do/v2 v2.0.0
 	github.com/samber/hot v0.13.0
 	github.com/samber/lo v1.53.0
-	github.com/samber/mo v1.16.0
+	github.com/samber/mo v1.17.0
 	github.com/samber/oops v1.22.0
 	github.com/samber/ro v0.3.0
 	github.com/samber/ro/plugins/fsnotify v0.0.0-20260522200928-fb86b5fc464e
