@@ -184,6 +184,53 @@ func newEntryData() EntryDataEntity {
 	return data
 }
 
+type appendEntryOptions struct {
+	content    string
+	customType string
+	dataJSON   string
+	model      string
+	provider   string
+	role       Role
+	summary    string
+}
+
+func newAppendEntryOptions() *appendEntryOptions {
+	var options appendEntryOptions
+	return &options
+}
+
+func (repository *SessionRepository) appendBuiltEntry(
+	ctx context.Context,
+	sessionID string,
+	parentID *string,
+	entryType EntryType,
+	options *appendEntryOptions,
+) (*EntryEntity, error) {
+	timestamp := repository.now().UTC()
+	entry := newEntryEntity(sessionID, parentID, entryType, &MessageEntity{
+		Timestamp: timestamp,
+		Role:      options.role,
+		Content:   options.content,
+		Provider:  options.provider,
+		Model:     options.model,
+	})
+	if options.customType != "" {
+		entry.CustomType = options.customType
+	}
+	if options.dataJSON != "" {
+		entry.DataJSON = normalizeDataJSON(options.dataJSON)
+	}
+	if options.summary != "" {
+		entry.Summary = options.summary
+	}
+
+	if err := repository.appendEntry(ctx, &entry); err != nil {
+		return nil, err
+	}
+
+	return &entry, nil
+}
+
 // AppendMessage appends a message as a child of the current leaf or provided parent.
 func (repository *SessionRepository) AppendMessage(
 	ctx context.Context,
@@ -191,15 +238,13 @@ func (repository *SessionRepository) AppendMessage(
 	parentID *string,
 	message *MessageEntity,
 ) (*EntryEntity, error) {
-	entry := newEntryEntity(sessionID, parentID, EntryTypeMessage, message)
-	entry.CreatedAt = repository.now().UTC()
-	entry.Message.Timestamp = entry.CreatedAt
+	options := newAppendEntryOptions()
+	options.content = message.Content
+	options.model = message.Model
+	options.provider = message.Provider
+	options.role = message.Role
 
-	if err := repository.appendEntry(ctx, &entry); err != nil {
-		return nil, err
-	}
-
-	return &entry, nil
+	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeMessage, options)
 }
 
 // AppendCustom appends extension state that does not participate in prompt context.
@@ -220,22 +265,11 @@ func (repository *SessionRepository) AppendCustomEntry(
 	customType string,
 	dataJSON string,
 ) (*EntryEntity, error) {
-	timestamp := repository.now().UTC()
-	entry := newEntryEntity(sessionID, parentID, EntryTypeCustom, &MessageEntity{
-		Timestamp: timestamp,
-		Role:      "",
-		Content:   "",
-		Provider:  "",
-		Model:     "",
-	})
-	entry.CustomType = customType
-	entry.DataJSON = normalizeDataJSON(dataJSON)
+	options := newAppendEntryOptions()
+	options.customType = customType
+	options.dataJSON = dataJSON
 
-	if err := repository.appendEntry(ctx, &entry); err != nil {
-		return nil, err
-	}
-
-	return &entry, nil
+	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeCustom, options)
 }
 
 // AppendCustomMessage appends extension context that participates in session context.
@@ -257,22 +291,13 @@ func (repository *SessionRepository) AppendCustomMessage(
 		return nil, err
 	}
 
-	timestamp := repository.now().UTC()
-	entry := newEntryEntity(sessionID, parentID, EntryTypeCustomMessage, &MessageEntity{
-		Timestamp: timestamp,
-		Role:      RoleCustom,
-		Content:   content,
-		Provider:  "",
-		Model:     "",
-	})
-	entry.CustomType = customType
-	entry.DataJSON = dataJSON
+	options := newAppendEntryOptions()
+	options.content = content
+	options.customType = customType
+	options.dataJSON = dataJSON
+	options.role = RoleCustom
 
-	if err := repository.appendEntry(ctx, &entry); err != nil {
-		return nil, err
-	}
-
-	return &entry, nil
+	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeCustomMessage, options)
 }
 
 // AppendModelChange records a provider/model switch.
@@ -283,20 +308,11 @@ func (repository *SessionRepository) AppendModelChange(
 	provider string,
 	model string,
 ) (*EntryEntity, error) {
-	timestamp := repository.now().UTC()
-	entry := newEntryEntity(sessionID, parentID, EntryTypeModelChange, &MessageEntity{
-		Timestamp: timestamp,
-		Role:      "",
-		Content:   "",
-		Provider:  provider,
-		Model:     model,
-	})
+	options := newAppendEntryOptions()
+	options.model = model
+	options.provider = provider
 
-	if err := repository.appendEntry(ctx, &entry); err != nil {
-		return nil, err
-	}
-
-	return &entry, nil
+	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeModelChange, options)
 }
 
 // AppendThinkingLevelChange records a reasoning/thinking level switch.
@@ -314,21 +330,10 @@ func (repository *SessionRepository) AppendThinkingLevelChange(
 		return nil, err
 	}
 
-	timestamp := repository.now().UTC()
-	entry := newEntryEntity(sessionID, parentID, EntryTypeThinkingLevelChange, &MessageEntity{
-		Timestamp: timestamp,
-		Role:      "",
-		Content:   "",
-		Provider:  "",
-		Model:     "",
-	})
-	entry.DataJSON = dataJSON
+	options := newAppendEntryOptions()
+	options.dataJSON = dataJSON
 
-	if err := repository.appendEntry(ctx, &entry); err != nil {
-		return nil, err
-	}
-
-	return &entry, nil
+	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeThinkingLevelChange, options)
 }
 
 // AppendCompaction records a summary for compacted context.
@@ -438,22 +443,11 @@ func (repository *SessionRepository) appendSummaryEntry(
 	summary string,
 	dataJSON string,
 ) (*EntryEntity, error) {
-	timestamp := repository.now().UTC()
-	entry := newEntryEntity(sessionID, parentID, entryType, &MessageEntity{
-		Timestamp: timestamp,
-		Role:      "",
-		Content:   "",
-		Provider:  "",
-		Model:     "",
-	})
-	entry.DataJSON = normalizeDataJSON(dataJSON)
-	entry.Summary = summary
+	options := newAppendEntryOptions()
+	options.dataJSON = dataJSON
+	options.summary = summary
 
-	if err := repository.appendEntry(ctx, &entry); err != nil {
-		return nil, err
-	}
-
-	return &entry, nil
+	return repository.appendBuiltEntry(ctx, sessionID, parentID, entryType, options)
 }
 
 func dataJSONFromEntity(data *EntryDataEntity) (string, error) {
