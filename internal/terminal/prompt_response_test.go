@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
@@ -50,6 +52,7 @@ func TestApplyPromptResponseNilClearsStreamedToolEvents(t *testing.T) {
 	app.activePrompt = newTestActivePrompt(nil)
 	app.streamedToolEvents = 2
 	app.working = true
+	app.appendStreamingBlock(database.RoleAssistant, "partial")
 
 	app.applyPromptResponse(context.Background(), nil, app.activePrompt.ID)
 
@@ -62,6 +65,7 @@ func TestApplyPromptResponseNilClearsStreamedToolEvents(t *testing.T) {
 	if app.working {
 		t.Fatal("working should be false")
 	}
+	assert.Empty(t, app.transcript.Streaming.Blocks)
 }
 
 func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
@@ -133,6 +137,7 @@ func TestApplyPromptResponseClearsCanceledActivePrompt(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.activePrompt = newTestActivePrompt(nil)
 	app.activePrompt.Canceled = true
+	app.appendStreamingBlock(database.RoleAssistant, "ignored stream")
 
 	app.applyPromptResponse(context.Background(), newTestPromptResponse("ignored"), app.activePrompt.ID)
 

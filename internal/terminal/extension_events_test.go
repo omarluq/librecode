@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
@@ -121,6 +122,18 @@ func TestExtensionEventsExposeTranscriptThinkingAndToolBuffers(t *testing.T) {
 	if got := buffers[extensionBufferTranscript].Text; got != "" {
 		t.Fatalf("default transcript buffer text = %q, want empty projection", got)
 	}
+}
+
+func TestExtensionRuntimeDataUsesTranscriptState(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.addMessage(database.RoleUser, "hello")
+	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
+
+	data := app.extensionRuntimeData(80, 24)
+	assert.Equal(t, 1, data["message_count"])
+	assert.Equal(t, 1, data["streaming_block_count"])
 }
 
 func TestExtensionEventExposesStructuredTranscriptBuffer(t *testing.T) {

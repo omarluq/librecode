@@ -18,19 +18,43 @@ const (
 func TestMergeCostAppliesPartialOverrides(t *testing.T) {
 	t.Parallel()
 
-	cost := Cost{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4}
-	inputCost := 10.0
-	cacheReadCost := 30.0
-	override := &partialCost{
-		Input:      &inputCost,
-		Output:     nil,
-		CacheRead:  &cacheReadCost,
-		CacheWrite: nil,
-	}
+	t.Run("partial override", func(t *testing.T) {
+		t.Parallel()
 
-	merged := mergeCost(cost, override)
+		cost := Cost{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4}
+		inputCost := 10.0
+		cacheReadCost := 30.0
+		override := &partialCost{
+			Input:      &inputCost,
+			Output:     nil,
+			CacheRead:  &cacheReadCost,
+			CacheWrite: nil,
+		}
 
-	assert.Equal(t, Cost{Input: 10, Output: 2, CacheRead: 30, CacheWrite: 4}, merged)
+		merged := mergeCost(cost, override)
+
+		assert.Equal(t, Cost{Input: 10, Output: 2, CacheRead: 30, CacheWrite: 4}, merged)
+	})
+
+	t.Run("full override", func(t *testing.T) {
+		t.Parallel()
+
+		cost := Cost{Input: 1, Output: 2, CacheRead: 3, CacheWrite: 4}
+		inputCost := 11.0
+		outputCost := 12.0
+		cacheReadCost := 13.0
+		cacheWriteCost := 14.0
+		override := &partialCost{
+			Input:      &inputCost,
+			Output:     &outputCost,
+			CacheRead:  &cacheReadCost,
+			CacheWrite: &cacheWriteCost,
+		}
+
+		merged := mergeCost(cost, override)
+
+		assert.Equal(t, Cost{Input: 11, Output: 12, CacheRead: 13, CacheWrite: 14}, merged)
+	})
 }
 
 func TestMergeStringMaps(t *testing.T) {
