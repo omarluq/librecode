@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 )
 
@@ -35,22 +36,41 @@ func modelFacingMessages(messages []database.MessageEntity) []database.MessageEn
 		if !isModelFacingRole(message.Role) || strings.TrimSpace(message.Content) == "" {
 			continue
 		}
-		filtered = append(filtered, message)
+		filtered = append(filtered, modelFacingMessage(&message))
 	}
 
 	return filtered
 }
 
+func modelFacingMessage(message *database.MessageEntity) database.MessageEntity {
+	converted := *message
+	switch message.Role {
+	case database.RoleCompactionSummary:
+		converted.Role = database.RoleUser
+		converted.Content = core.CompactionSummaryPrefix + message.Content + core.CompactionSummarySuffix
+	case database.RoleBranchSummary:
+		converted.Role = database.RoleUser
+		converted.Content = core.BranchSummaryPrefix + message.Content + core.BranchSummarySuffix
+	case database.RoleUser,
+		database.RoleAssistant,
+		database.RoleToolResult,
+		database.RoleThinking,
+		database.RoleCustom,
+		database.RoleBashExecution:
+		return converted
+	}
+
+	return converted
+}
+
 func isModelFacingRole(role database.Role) bool {
 	switch role {
-	case database.RoleUser, database.RoleAssistant:
+	case database.RoleUser, database.RoleAssistant, database.RoleBranchSummary, database.RoleCompactionSummary:
 		return true
 	case database.RoleToolResult,
 		database.RoleThinking,
 		database.RoleCustom,
-		database.RoleBashExecution,
-		database.RoleBranchSummary,
-		database.RoleCompactionSummary:
+		database.RoleBashExecution:
 		return false
 	}
 

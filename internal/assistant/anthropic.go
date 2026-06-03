@@ -476,12 +476,12 @@ func anthropicRole(role database.Role) (string, bool) {
 		return jsonUserRole, true
 	case database.RoleAssistant:
 		return jsonAssistantRole, true
+	case database.RoleBranchSummary, database.RoleCompactionSummary:
+		return jsonUserRole, true
 	case database.RoleToolResult,
 		database.RoleThinking,
 		database.RoleCustom,
-		database.RoleBashExecution,
-		database.RoleBranchSummary,
-		database.RoleCompactionSummary:
+		database.RoleBashExecution:
 		return "", false
 	}
 

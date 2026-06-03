@@ -212,6 +212,12 @@ func renderParityConfig() *config.Config {
 				Enabled:     false,
 			},
 		},
+		Context: config.ContextConfig{
+			OutputReserveTokens:   0,
+			ProviderReserveTokens: 0,
+			SafetyMarginTokens:    0,
+			PreflightEnabled:      false,
+		},
 		App: config.AppConfig{
 			Name:          "librecode",
 			Env:           "test",

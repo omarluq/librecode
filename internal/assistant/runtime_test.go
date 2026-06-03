@@ -367,6 +367,54 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 	assert.Less(t, usageEvents[0].Usage.ContextTokens, 1000)
 }
 
+func TestRuntime_PromptIncludesCompactionSummaryContext(t *testing.T) {
+	t.Parallel()
+
+	_, repository := newTestRuntime(t)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compacted", "")
+	require.NoError(t, err)
+	userEntry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleUser,
+		Content:   "old user prompt",
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+	compactionEntry, err := repository.AppendCompaction(
+		ctx,
+		session.ID,
+		&userEntry.ID,
+		"summary of old work",
+		userEntry.ID,
+		42,
+		nil,
+		false,
+	)
+	require.NoError(t, err)
+	client := &capturingCompletionClient{request: nil}
+	runtime, _ := newTestRuntimeWithRepositoryAndClient(t, repository, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
+	request.SessionID = session.ID
+
+	response, err := runtime.Prompt(ctx, request)
+	require.NoError(t, err)
+	require.NotNil(t, client.request)
+	require.NotEmpty(t, client.request.Messages)
+	assert.Equal(t, database.RoleUser, client.request.Messages[0].Role)
+	assert.Contains(t, client.request.Messages[0].Content, "The conversation history before this point was compacted")
+	assert.Contains(t, client.request.Messages[0].Content, "<summary>")
+	assert.Contains(t, client.request.Messages[0].Content, "summary of old work")
+	assert.Equal(t, database.RoleUser, client.request.Messages[1].Role)
+	assert.Equal(t, "old user prompt", client.request.Messages[1].Content)
+	userEntry, found, err := repository.Entry(ctx, response.SessionID, response.UserEntryID)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NotNil(t, userEntry.ParentID)
+	assert.Equal(t, compactionEntry.ID, *userEntry.ParentID)
+}
+
 func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
@@ -638,7 +686,7 @@ func testRegistry(t *testing.T) *model.Registry {
 				BaseURL:          "https://example.invalid/v1",
 				Input:            []model.InputMode{model.InputText},
 				Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
-				ContextWindow:    0,
+				ContextWindow:    100_000,
 				MaxTokens:        0,
 				Reasoning:        false,
 			},
@@ -693,6 +741,12 @@ func testConfig() *config.Config {
 			Provider:      testRuntimeProvider,
 			Model:         testRuntimeModel,
 			ThinkingLevel: "off",
+		},
+		Context: config.ContextConfig{
+			OutputReserveTokens:   0,
+			ProviderReserveTokens: 2048,
+			SafetyMarginTokens:    8192,
+			PreflightEnabled:      true,
 		},
 		Cache: config.CacheConfig{
 			Enabled:  true,

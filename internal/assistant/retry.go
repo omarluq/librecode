@@ -195,7 +195,8 @@ func retryableProviderCode(code string) bool {
 
 func nonRetryableProviderCode(code string) bool {
 	switch code {
-	case "openai_chat_decode",
+	case "context_window_exceeded",
+		"openai_chat_decode",
 		"anthropic_decode",
 		"openai_response_decode",
 		"provider_payload",

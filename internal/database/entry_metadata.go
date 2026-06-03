@@ -15,7 +15,11 @@ func applyEntryMetadata(entry *EntryEntity) error {
 	}
 
 	entry.TokenEstimate = estimateEntryTokens(entry)
-	entry.ModelFacing = entryParticipatesInModelContext(entry)
+	if data.ModelFacing != nil {
+		entry.ModelFacing = *data.ModelFacing
+	} else {
+		entry.ModelFacing = entryParticipatesInModelContext(entry)
+	}
 	entry.Display = entryDisplaysInTranscript(entry, &data)
 	entry.CompactionFirstKeptEntryID = firstNonEmpty(data.CompactionFirstKeptEntryID, data.FirstKeptEntryID)
 	entry.CompactionTokensBefore = firstPositive(data.CompactionTokensBefore, data.TokensBefore)

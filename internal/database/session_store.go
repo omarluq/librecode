@@ -148,6 +148,12 @@ func (repository *SessionRepository) BuildContext(
 		ThinkingLevel: "",
 	}
 	for index := range branch {
+		if branch[index].Type == EntryTypeCompaction {
+			if err := applyCompactionContextWithTail(&contextEntity, branch, index); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if err := applyEntryToContext(&contextEntity, &branch[index]); err != nil {
 			return nil, err
 		}
@@ -186,14 +192,15 @@ func newEntryData() EntryDataEntity {
 }
 
 type appendEntryOptions struct {
-	timestamp  time.Time
-	content    string
-	customType string
-	dataJSON   string
-	model      string
-	provider   string
-	summary    string
-	role       Role
+	modelFacing *bool
+	timestamp   time.Time
+	content     string
+	customType  string
+	dataJSON    string
+	model       string
+	provider    string
+	summary     string
+	role        Role
 }
 
 func newAppendEntryOptions() *appendEntryOptions {
@@ -227,6 +234,18 @@ func (repository *SessionRepository) appendBuiltEntry(
 	if options.dataJSON != "" {
 		entry.DataJSON = normalizeDataJSON(options.dataJSON)
 	}
+	if options.modelFacing != nil {
+		data, err := dataFromEntry(&entry)
+		if err != nil {
+			return nil, err
+		}
+		data.ModelFacing = options.modelFacing
+		dataJSON, err := dataJSONFromEntity(&data)
+		if err != nil {
+			return nil, err
+		}
+		entry.DataJSON = normalizeDataJSON(dataJSON)
+	}
 	if options.summary != "" {
 		entry.Summary = options.summary
 	}
@@ -245,12 +264,24 @@ func (repository *SessionRepository) AppendMessage(
 	parentID *string,
 	message *MessageEntity,
 ) (*EntryEntity, error) {
+	return repository.AppendMessageWithModelFacing(ctx, sessionID, parentID, message, nil)
+}
+
+// AppendMessageWithModelFacing appends a message with an optional model-facing override.
+func (repository *SessionRepository) AppendMessageWithModelFacing(
+	ctx context.Context,
+	sessionID string,
+	parentID *string,
+	message *MessageEntity,
+	modelFacing *bool,
+) (*EntryEntity, error) {
 	options := newAppendEntryOptions()
 	options.content = message.Content
 	options.model = message.Model
 	options.provider = message.Provider
 	options.role = message.Role
 	options.timestamp = message.Timestamp
+	options.modelFacing = modelFacing
 
 	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeMessage, options)
 }
@@ -293,6 +324,7 @@ func (repository *SessionRepository) AppendCustomMessage(
 	data := newEntryData()
 	data.Details = details
 	data.Display = &display
+	data.ModelFacing = &display
 
 	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
@@ -304,6 +336,7 @@ func (repository *SessionRepository) AppendCustomMessage(
 	options.customType = customType
 	options.dataJSON = dataJSON
 	options.role = RoleCustom
+	options.modelFacing = &display
 
 	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeCustomMessage, options)
 }
@@ -480,39 +513,114 @@ func dataFromEntry(entry *EntryEntity) (EntryDataEntity, error) {
 }
 
 func applyEntryToContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
-	switch entry.Type {
-	case EntryTypeMessage:
-		contextEntity.Messages = append(contextEntity.Messages, entry.Message)
-	case EntryTypeCustomMessage:
-		contextEntity.Messages = append(contextEntity.Messages, entry.Message)
-	case EntryTypeBranchSummary:
-		contextEntity.Messages = append(contextEntity.Messages, MessageEntity{
-			Timestamp: entry.CreatedAt,
-			Role:      RoleBranchSummary,
-			Content:   entry.Summary,
-			Provider:  "",
-			Model:     "",
-		})
-	case EntryTypeCompaction:
-		contextEntity.Messages = []MessageEntity{{
-			Timestamp: entry.CreatedAt,
-			Role:      RoleCompactionSummary,
-			Content:   entry.Summary,
-			Provider:  "",
-			Model:     "",
-		}}
-	case EntryTypeModelChange:
-		contextEntity.Provider = entry.Message.Provider
-		contextEntity.Model = entry.Message.Model
-	case EntryTypeThinkingLevelChange:
-		data, err := dataFromEntry(entry)
-		if err != nil {
-			return err
-		}
-		contextEntity.ThinkingLevel = data.ThinkingLevel
-	case EntryTypeCustom, EntryTypeLabel, EntryTypeSessionInfo:
+	handler, ok := entryContextAppliers[entry.Type]
+	if !ok {
 		return nil
 	}
+
+	return handler(contextEntity, entry)
+}
+
+type entryContextApplier func(*SessionContextEntity, *EntryEntity) error
+
+var entryContextAppliers = map[EntryType]entryContextApplier{
+	EntryTypeMessage:             appendModelFacingEntryMessage,
+	EntryTypeCustomMessage:       appendModelFacingEntryMessage,
+	EntryTypeBranchSummary:       appendBranchSummaryContext,
+	EntryTypeCompaction:          applyCompactionContext,
+	EntryTypeModelChange:         applyModelChangeContext,
+	EntryTypeThinkingLevelChange: applyThinkingLevelContext,
+}
+
+func appendModelFacingEntryMessage(contextEntity *SessionContextEntity, entry *EntryEntity) error {
+	if entry.ModelFacing {
+		contextEntity.Messages = append(contextEntity.Messages, entry.Message)
+	}
+
+	return nil
+}
+
+func appendBranchSummaryContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
+	contextEntity.Messages = append(contextEntity.Messages, MessageEntity{
+		Timestamp: entry.CreatedAt,
+		Role:      RoleBranchSummary,
+		Content:   entry.Summary,
+		Provider:  "",
+		Model:     "",
+	})
+
+	return nil
+}
+
+func applyCompactionContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
+	contextEntity.Messages = compactionSummaryMessages(entry)
+
+	return nil
+}
+
+func applyCompactionContextWithTail(
+	contextEntity *SessionContextEntity,
+	branch []EntryEntity,
+	compactionIndex int,
+) error {
+	compactionEntry := &branch[compactionIndex]
+	contextEntity.Messages = compactionSummaryMessages(compactionEntry)
+
+	firstKeptIndex := compactionIndex
+	for index := range compactionIndex {
+		if branch[index].ID == compactionEntry.CompactionFirstKeptEntryID {
+			firstKeptIndex = index
+			break
+		}
+	}
+	for index := firstKeptIndex; index < compactionIndex; index++ {
+		if err := appendRetainedCompactionTailEntry(contextEntity, &branch[index]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func compactionSummaryMessages(entry *EntryEntity) []MessageEntity {
+	return []MessageEntity{{
+		Timestamp: entry.CreatedAt,
+		Role:      RoleCompactionSummary,
+		Content:   entry.Summary,
+		Provider:  "",
+		Model:     "",
+	}}
+}
+
+func appendRetainedCompactionTailEntry(contextEntity *SessionContextEntity, entry *EntryEntity) error {
+	switch entry.Type {
+	case EntryTypeMessage, EntryTypeCustomMessage, EntryTypeBranchSummary:
+		return applyEntryToContext(contextEntity, entry)
+	case EntryTypeCompaction,
+		EntryTypeModelChange,
+		EntryTypeThinkingLevelChange,
+		EntryTypeCustom,
+		EntryTypeLabel,
+		EntryTypeSessionInfo:
+		return nil
+	}
+
+	return nil
+}
+
+func applyModelChangeContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
+	contextEntity.Provider = entry.Message.Provider
+	contextEntity.Model = entry.Message.Model
+
+	return nil
+}
+
+func applyThinkingLevelContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
+	data, err := dataFromEntry(entry)
+	if err != nil {
+		return err
+	}
+	contextEntity.ThinkingLevel = data.ThinkingLevel
 
 	return nil
 }

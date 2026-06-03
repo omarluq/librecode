@@ -90,6 +90,9 @@ extensions:
 	assert.Equal(t, "3s", cfg.KSQL.Timeout.String())
 	assert.Equal(t, "4s", cfg.Assistant.Retry.BaseDelay.String())
 	assert.Equal(t, "8s", cfg.Assistant.Retry.MaxDelay.String())
+	assert.True(t, cfg.Context.PreflightEnabled)
+	assert.Equal(t, 2048, cfg.Context.ProviderReserveTokens)
+	assert.Equal(t, 8192, cfg.Context.SafetyMarginTokens)
 }
 
 func TestLoadRejectsEmptyExtensionUseObject(t *testing.T) {
