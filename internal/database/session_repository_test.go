@@ -228,9 +228,13 @@ func TestSessionRepository_SupportsLibrecodeStyleTreeMetadata(t *testing.T) {
 	assert.Equal(t, "anthropic", contextEntity.Provider)
 	assert.Equal(t, "sonnet", contextEntity.Model)
 	assert.Equal(t, "high", contextEntity.ThinkingLevel)
-	require.Len(t, contextEntity.Messages, 1)
+	require.Len(t, contextEntity.Messages, 3)
 	assert.Equal(t, database.RoleCompactionSummary, contextEntity.Messages[0].Role)
 	assert.Equal(t, "summary of earlier work", contextEntity.Messages[0].Content)
+	assert.Equal(t, database.RoleAssistant, contextEntity.Messages[1].Role)
+	assert.Equal(t, testAssistantReply, contextEntity.Messages[1].Content)
+	assert.Equal(t, database.RoleCustom, contextEntity.Messages[2].Role)
+	assert.Equal(t, testCustomMessageValue, contextEntity.Messages[2].Content)
 
 	_, err = fixture.repository.AppendSessionInfo(
 		fixture.ctx,

@@ -12,7 +12,15 @@ librecode can resume very long sessions, rebuild the active branch, and send the
 [system] Your input exceeds the context window of this model. Please adjust your input and try again.
 ```
 
-The current runtime estimates context, but it does not enforce a budget, compact before overflow, or recover automatically when a provider rejects a request. Repeating prompts such as `continue` in an already oversized session sends the same oversized request again.
+A related output-budget failure can happen when the provider accepts the request but ends the response before producing a complete assistant turn:
+
+```text
+[system] provider response incomplete: max_output_tokens
+```
+
+This is not necessarily an input context overflow. It means the provider stopped because the configured or provider-side maximum output token budget was exhausted.
+
+The current runtime estimates context, but it does not enforce a budget, compact before overflow, or recover automatically when a provider rejects a request. It also surfaces incomplete provider responses as terminal errors without guided recovery. Repeating prompts such as `continue` in an already oversized session sends the same oversized request again.
 
 ## Current code scan
 
@@ -44,9 +52,12 @@ Relevant current behavior from the codebase:
   - provider payload includes tool schemas, but context estimation does not count schema overhead.
 - `internal/assistant/openai_responses.go`, `openai_chat.go`, `anthropic.go`
   - provider payloads add envelopes, tools, reasoning settings, and tool-call loop messages that are not fully represented in preflight estimates.
+- `internal/assistant/sse.go`
+  - `response.incomplete` events become terminal errors through `sseProviderError`.
+  - `incomplete_details.reason` is surfaced as `provider response incomplete: <reason>`, including `max_output_tokens`.
 - `internal/assistant/retry.go`
   - context-window/provider token-limit messages are treated as non-retryable transient errors.
-  - there is no special compact-and-retry path for context overflow.
+  - there is no special compact-and-retry path for context overflow or incomplete output recovery.
 
 ## Design goals
 
@@ -56,10 +67,11 @@ Relevant current behavior from the codebase:
 4. Keep conservative reserves for output, tool schemas, hidden provider overhead, and estimation error.
 5. Automatically compact before overflow.
 6. Detect provider context-overflow errors, compact, and retry once.
-7. Make manual `/compact` real and useful.
-8. Preserve task continuity by keeping a summary plus recent tail turns.
-9. Keep the transcript and audit history durable; compact only model context.
-10. Expose clear diagnostics through `/context`, events, logs, and extension lifecycle payloads.
+7. Classify incomplete responses such as `max_output_tokens` separately from input overflow and present actionable recovery.
+8. Make manual `/compact` real and useful.
+9. Preserve task continuity by keeping a summary plus recent tail turns.
+10. Keep the transcript and audit history durable; compact only model context.
+11. Expose clear diagnostics through `/context`, events, logs, and extension lifecycle payloads.
 
 ## Non-goals
 
@@ -474,6 +486,24 @@ Flow:
 
 This should be independent from transient retry backoff. Context overflow is non-transient, but recoverable via compaction.
 
+## Incomplete response detection
+
+OpenAI Responses streaming can emit `response.incomplete` with `incomplete_details.reason`. librecode currently renders this as:
+
+```text
+[system] provider response incomplete: max_output_tokens
+```
+
+Treat `max_output_tokens` as an output-budget exhaustion signal, not an input-context overflow signal. Recommended behavior:
+
+1. Preserve any partial assistant text/tool state if the provider supplied usable output.
+2. Show a clear local message explaining that generation stopped because the output token budget was exhausted.
+3. Suggest concrete next actions: ask the model to continue, reduce requested scope, or increase the configured output token limit when the provider/model allows it.
+4. Do not blindly retry the same request with the same output budget; that can reproduce the same incomplete response.
+5. If the input context is also near the auto-compaction threshold, offer or run compaction before the next continuation request.
+
+Other incomplete reasons, such as `content_filter`, should keep their provider-specific wording and should not be treated as context-budget failures.
+
 ## Provider/tool-loop considerations
 
 Provider payloads differ:
@@ -580,6 +610,7 @@ context:
 | Summary provider fails transiently | normal retry applies |
 | Summary provider context-overflows | reduce chunk size/tail and retry |
 | Cannot compact enough | local error with next actions |
+| Provider response incomplete: `max_output_tokens` | preserve partial output when possible and show output-budget recovery guidance |
 | User disables auto-compact | preflight rejects instead of silently sending oversized prompt |
 | Tokenizer unavailable | conservative approximate counter |
 | Ledger missing/corrupt | ignore ledger and estimate from current context |
@@ -603,6 +634,7 @@ Unit tests:
 - model-facing role inclusion for compaction summaries
 - compaction planner tail boundary selection
 - overflow error classifier
+- incomplete response classifier for `max_output_tokens` versus provider safety/filter reasons
 - usage ledger persistence and lookup
 - request-hash/calibration logic
 

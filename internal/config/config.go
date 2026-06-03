@@ -10,12 +10,13 @@ import (
 
 // Config is the fully resolved application configuration.
 type Config struct {
-	Assistant  AssistantConfig  `json:"assistant" mapstructure:"assistant" yaml:"assistant"`
 	App        AppConfig        `json:"app" mapstructure:"app" yaml:"app"`
 	Logging    LoggingConfig    `json:"logging" mapstructure:"logging" yaml:"logging"`
-	Extensions ExtensionsConfig `json:"extensions" mapstructure:"extensions" yaml:"extensions"`
 	KSQL       KSQLConfig       `json:"ksql" mapstructure:"ksql" yaml:"ksql"`
+	Extensions ExtensionsConfig `json:"extensions" mapstructure:"extensions" yaml:"extensions"`
+	Assistant  AssistantConfig  `json:"assistant" mapstructure:"assistant" yaml:"assistant"`
 	Database   DatabaseConfig   `json:"database" mapstructure:"database" yaml:"database"`
+	Context    ContextConfig    `json:"context" mapstructure:"context" yaml:"context"`
 	Cache      CacheConfig      `json:"cache" mapstructure:"cache" yaml:"cache"`
 }
 
@@ -61,6 +62,14 @@ type AssistantConfig struct {
 	Model         string      `json:"model" mapstructure:"model" yaml:"model"`
 	ThinkingLevel string      `json:"thinking_level" mapstructure:"thinking_level" yaml:"thinking_level"`
 	Retry         RetryConfig `json:"retry" mapstructure:"retry" yaml:"retry"`
+}
+
+// ContextConfig controls local context-window budgeting before provider requests.
+type ContextConfig struct {
+	OutputReserveTokens   int  `mapstructure:"output_reserve_tokens"`
+	ProviderReserveTokens int  `mapstructure:"provider_reserve_tokens"`
+	SafetyMarginTokens    int  `mapstructure:"safety_margin_tokens"`
+	PreflightEnabled      bool `mapstructure:"preflight_enabled"`
 }
 
 // RetryConfig controls transient model request retries.
@@ -110,6 +119,7 @@ func (config *Config) Validate() error {
 		config.validateDatabase,
 		config.validateExtensions,
 		config.validateAssistant,
+		config.validateContext,
 		config.validateCache,
 		config.validateKSQL,
 	}
@@ -198,6 +208,20 @@ func (config *Config) validateAssistant() error {
 		return fmt.Errorf("config: assistant.retry.max_delay cannot be negative")
 	}
 	config.Assistant.Retry = retry
+
+	return nil
+}
+
+func (config *Config) validateContext() error {
+	if config.Context.OutputReserveTokens < 0 {
+		return fmt.Errorf("config: context.output_reserve_tokens cannot be negative")
+	}
+	if config.Context.ProviderReserveTokens < 0 {
+		return fmt.Errorf("config: context.provider_reserve_tokens cannot be negative")
+	}
+	if config.Context.SafetyMarginTokens < 0 {
+		return fmt.Errorf("config: context.safety_margin_tokens cannot be negative")
+	}
 
 	return nil
 }

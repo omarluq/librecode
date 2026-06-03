@@ -28,10 +28,11 @@ func (runtime *Runtime) respond(
 	if strings.HasPrefix(prompt, slashPrefix) {
 		slashResponse, slashToolEvents, slashErr := runtime.respondToSlashCommand(ctx, cwd, prompt, onEvent)
 		return &responseBundle{
-			Text:       slashResponse,
-			Thinking:   nil,
-			ToolEvents: slashToolEvents,
-			Usage:      model.EmptyTokenUsage(),
+			Text:        slashResponse,
+			Thinking:    nil,
+			ToolEvents:  slashToolEvents,
+			Usage:       model.EmptyTokenUsage(),
+			ModelFacing: false,
 		}, false, slashErr
 	}
 
@@ -42,10 +43,11 @@ func (runtime *Runtime) respond(
 	}
 	if found {
 		return &responseBundle{
-			Text:       cachedResponse,
-			Thinking:   nil,
-			ToolEvents: nil,
-			Usage:      model.EmptyTokenUsage(),
+			Text:        cachedResponse,
+			Thinking:    nil,
+			ToolEvents:  nil,
+			Usage:       model.EmptyTokenUsage(),
+			ModelFacing: true,
 		}, true, nil
 	}
 
@@ -84,7 +86,6 @@ func (runtime *Runtime) modelResponse(
 	if err != nil {
 		return nil, err
 	}
-	runtime.emitUsage(ctx, onEvent, contextResult.Usage)
 	registry, err := newToolRegistry(cwd, runtime.extensions)
 	if err != nil {
 		return nil, err
@@ -100,6 +101,16 @@ func (runtime *Runtime) modelResponse(
 		systemPrompt:  contextResult.SystemPrompt,
 		cwd:           cwd,
 	})
+	budget := newContextBudget(contextResult.Usage, &selectedModel, runtime.cfg.Context, request)
+	contextResult.Usage = budget.UsageWithBudget(contextResult.Usage)
+	runtime.emitUsage(ctx, onEvent, contextResult.Usage)
+	if runtime.cfg.Context.PreflightEnabled {
+		validationErr := budget.Validate()
+		if validationErr != nil {
+			return nil, validationErr
+		}
+	}
+	request.Usage = contextResult.Usage
 	result, err := runtime.completeWithRetry(ctx, request, onRetry)
 	if err != nil {
 		return nil, err
@@ -108,10 +119,11 @@ func (runtime *Runtime) modelResponse(
 	runtime.emitUsage(ctx, onEvent, usage)
 
 	return &responseBundle{
-		Text:       result.Text,
-		Thinking:   result.Thinking,
-		ToolEvents: result.ToolEvents,
-		Usage:      usage,
+		Text:        result.Text,
+		Thinking:    result.Thinking,
+		ToolEvents:  result.ToolEvents,
+		Usage:       usage,
+		ModelFacing: true,
 	}, nil
 }
 

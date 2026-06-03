@@ -333,6 +333,12 @@ func promptSendTestConfig() *config.Config {
 				Enabled:     true,
 			},
 		},
+		Context: config.ContextConfig{
+			OutputReserveTokens:   0,
+			ProviderReserveTokens: 0,
+			SafetyMarginTokens:    0,
+			PreflightEnabled:      false,
+		},
 		App: config.AppConfig{
 			Name:          promptSendTestAppName,
 			Env:           promptSendTestEnv,

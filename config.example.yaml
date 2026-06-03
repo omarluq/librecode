@@ -45,6 +45,13 @@ assistant:
     base_delay: 2s
     max_delay: 30s
 
+context:
+  preflight_enabled: true
+  # 0 uses the selected model max_tokens, otherwise 16k capped at 20% of context.
+  output_reserve_tokens: 0
+  provider_reserve_tokens: 2048
+  safety_margin_tokens: 8192
+
 cache:
   enabled: true
   capacity: 512

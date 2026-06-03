@@ -59,6 +59,27 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 	if err != nil {
 		return model.EmptyTokenUsage(), err
 	}
+	registry, err := newToolRegistry(cwd, runtime.extensions)
+	if err != nil {
+		return model.EmptyTokenUsage(), err
+	}
+	request := &CompletionRequest{
+		OnEvent:           nil,
+		OnProviderObserve: nil,
+		OnProviderRequest: nil,
+		OnToolCall:        nil,
+		OnToolResult:      nil,
+		ToolRegistry:      registry,
+		SessionID:         sessionID,
+		SystemPrompt:      "",
+		ThinkingLevel:     "",
+		CWD:               cwd,
+		Auth:              model.RequestAuth{Headers: nil, APIKey: "", Error: "", OK: false},
+		Messages:          nil,
+		Usage:             model.EmptyTokenUsage(),
+		Model:             selectedModel,
+		ProviderAttempt:   0,
+	}
 
 	messages := []database.MessageEntity{}
 	if strings.TrimSpace(sessionID) != "" {
@@ -80,7 +101,10 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		nil,
 	)
 
-	return estimateContextBuildUsage(basePrompt+skillPrompt, messages, nil, &selectedModel, breakdown), nil
+	usage := estimateContextBuildUsage(basePrompt+skillPrompt, messages, nil, &selectedModel, breakdown)
+	budget := newContextBudget(usage, &selectedModel, runtime.cfg.Context, request)
+
+	return budget.UsageWithBudget(usage), nil
 }
 
 func (runtime *Runtime) buildModelContext(

@@ -27,12 +27,12 @@ func openAIResponseInputRole(role database.Role) (string, bool) {
 		// With store=false, Responses continuation must not rely on provider-side
 		// assistant output item IDs. Replay assistant text as user-visible context.
 		return jsonUserRole, true
+	case database.RoleBranchSummary, database.RoleCompactionSummary:
+		return jsonUserRole, true
 	case database.RoleToolResult,
 		database.RoleThinking,
 		database.RoleCustom,
-		database.RoleBashExecution,
-		database.RoleBranchSummary,
-		database.RoleCompactionSummary:
+		database.RoleBashExecution:
 		return "", false
 	}
 

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/samber/oops"
 
@@ -17,11 +16,18 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
+type runtimeExtensions interface {
+	extension.CommandRunner
+	extension.EventEmitter
+	extension.LifecycleDispatcher
+	toolProvider
+}
+
 // Runtime coordinates prompt handling and durable sessions.
 type Runtime struct {
 	cfg        *config.Config
 	sessions   *database.SessionRepository
-	extensions *extension.Manager
+	extensions runtimeExtensions
 	cache      *ResponseCache
 	events     *event.Bus
 	models     *model.Registry
@@ -90,17 +96,18 @@ type PromptResponse struct {
 }
 
 type responseBundle struct {
-	Text       string
-	Thinking   []string
-	ToolEvents []ToolEvent
-	Usage      model.TokenUsage
+	Text        string
+	Thinking    []string
+	ToolEvents  []ToolEvent
+	Usage       model.TokenUsage
+	ModelFacing bool
 }
 
 // NewRuntime creates an assistant runtime.
 func NewRuntime(
 	cfg *config.Config,
 	sessions *database.SessionRepository,
-	extensions *extension.Manager,
+	extensions runtimeExtensions,
 	cache *ResponseCache,
 	events *event.Bus,
 	models *model.Registry,
@@ -141,14 +148,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		return nil, err
 	}
 
-	userMessage := database.MessageEntity{
-		Timestamp: time.Now().UTC(),
-		Role:      database.RoleUser,
-		Content:   request.Text,
-		Provider:  "",
-		Model:     "",
-	}
-	userEntry, err := runtime.sessions.AppendMessage(ctx, activeSession.ID, parentID, &userMessage)
+	userEntry, err := runtime.appendUserPromptEntry(ctx, activeSession.ID, parentID, request.Text)
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
 	}
@@ -170,14 +170,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	if err != nil {
 		return nil, err
 	}
-	assistantMessage := database.MessageEntity{
-		Timestamp: time.Now().UTC(),
-		Role:      database.RoleAssistant,
-		Content:   bundle.Text,
-		Provider:  runtime.cfg.Assistant.Provider,
-		Model:     runtime.cfg.Assistant.Model,
-	}
-	assistantEntry, err := runtime.sessions.AppendMessage(ctx, activeSession.ID, assistantParentID, &assistantMessage)
+	assistantEntry, err := runtime.appendAssistantResponseEntry(ctx, activeSession.ID, assistantParentID, bundle)
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_assistant").Wrapf(err, "append assistant message")
 	}

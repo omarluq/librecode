@@ -14,6 +14,10 @@ import (
 
 const slashPrefix = "/"
 
+func promptModelFacing(prompt string) bool {
+	return !strings.HasPrefix(strings.TrimSpace(prompt), slashPrefix)
+}
+
 func (runtime *Runtime) respondToSlashCommand(
 	ctx context.Context,
 	cwd string,
