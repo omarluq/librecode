@@ -495,6 +495,7 @@ func (runtime *Runtime) summarizeCompaction(
 	auth model.RequestAuth,
 	plan *compactionPlan,
 ) (string, error) {
+	systemPrompt := compactionSystemPrompt(plan.PreviousSummary)
 	request := &CompletionRequest{
 		OnEvent:           nil,
 		OnProviderObserve: runtime.emitProviderRequest,
@@ -504,12 +505,12 @@ func (runtime *Runtime) summarizeCompaction(
 		ToolRegistry:      tool.NewRegistry(cwd),
 		DisableTools:      true,
 		SessionID:         sessionID,
-		SystemPrompt:      compactionSystemPrompt(plan.PreviousSummary),
+		SystemPrompt:      systemPrompt,
 		ThinkingLevel:     thinkingOff,
 		CWD:               cwd,
 		Auth:              auth,
 		Messages:          plan.Messages,
-		Usage:             compactionRequestUsage(selectedModel, plan.Messages),
+		Usage:             compactionRequestUsage(selectedModel, systemPrompt, plan.Messages),
 		Model:             *selectedModel,
 		ProviderAttempt:   0,
 	}
@@ -533,16 +534,20 @@ func compactionSystemPrompt(previousSummary string) string {
 	return fmt.Sprintf(compactionUpdatePrompt, previousSummary)
 }
 
-func compactionRequestUsage(selectedModel *model.Model, messages []database.MessageEntity) model.TokenUsage {
+func compactionRequestUsage(
+	selectedModel *model.Model,
+	systemPrompt string,
+	messages []database.MessageEntity,
+) model.TokenUsage {
 	contextWindow := 0
 	if selectedModel != nil {
 		contextWindow = selectedModel.ContextWindow
 	}
-	inputTokens := estimateInputTokens(compactionSummaryPrompt, messages)
+	inputTokens := estimateInputTokens(systemPrompt, messages)
 
 	return model.TokenUsage{
 		Breakdown: map[string]int{
-			jsonSystemRole:          estimateTokens(compactionSummaryPrompt),
+			jsonSystemRole:          estimateTokens(systemPrompt),
 			contextBreakdownHistory: estimateMessageTokens(messages),
 		},
 		TopContributors: nil,

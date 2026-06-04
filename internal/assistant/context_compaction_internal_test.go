@@ -11,16 +11,48 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
-func TestPlanCompactionAfterPreviousCompactionUsesPreviousKeptBoundary(t *testing.T) {
+//nolint:govet // Test fixture readability matters more than field packing.
+type planCompactionCase struct {
+	entries  []database.EntryEntity
+	assertFn func(t *testing.T, plan *compactionPlan)
+	name     string
+	wantErr  string
+	keep     int
+}
+
+func TestPlanCompactionScenarios(t *testing.T) {
 	t.Parallel()
 
-	oldUser := compactionTestEntry("old-user", database.EntryTypeMessage, database.RoleUser, "old user history")
-	oldAssistant := compactionTestEntry(
-		"old-assistant",
-		database.EntryTypeMessage,
-		database.RoleAssistant,
-		"old assistant history",
-	)
+	for _, testCase := range planCompactionCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			plan, err := planCompaction(testCase.entries, testCase.keep)
+			if testCase.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), testCase.wantErr)
+				testCase.assertFn(t, &plan)
+
+				return
+			}
+			require.NoError(t, err)
+			testCase.assertFn(t, &plan)
+		})
+	}
+}
+
+func planCompactionCases() []planCompactionCase {
+	return []planCompactionCase{
+		previousKeptBoundaryCase(),
+		turnBoundaryCase(),
+		defaultKeepRecentTokensCase(),
+		latestCompactionCase(),
+	}
+}
+
+func previousKeptBoundaryCase() planCompactionCase {
+	oldUser := compactMessageEntry("old-user", database.RoleUser, "old user history")
+	oldAssistant := compactMessageEntry("old-assistant", database.RoleAssistant, "old assistant history")
 	firstSummary := compactionTestEntry(
 		"first-summary",
 		database.EntryTypeCompaction,
@@ -29,95 +61,77 @@ func TestPlanCompactionAfterPreviousCompactionUsesPreviousKeptBoundary(t *testin
 	)
 	firstSummary.Summary = "first compacted summary"
 	firstSummary.CompactionFirstKeptEntryID = oldAssistant.ID
-	recentUser := compactionTestEntry("recent-user", database.EntryTypeMessage, database.RoleUser, "recent user tail")
-	recentAssistant := compactionTestEntry(
-		"recent-assistant",
-		database.EntryTypeMessage,
-		database.RoleAssistant,
-		"recent assistant tail",
-	)
+	recentUser := compactMessageEntry("recent-user", database.RoleUser, "recent user tail")
+	recentAssistant := compactMessageEntry("recent-assistant", database.RoleAssistant, "recent assistant tail")
 
-	plan, err := planCompaction(
-		[]database.EntryEntity{oldUser, oldAssistant, firstSummary, recentUser, recentAssistant},
-		1,
-	)
+	return planCompactionCase{
+		assertFn: assertPreviousKeptBoundaryPlan,
+		entries:  []database.EntryEntity{oldUser, oldAssistant, firstSummary, recentUser, recentAssistant},
+		name:     "uses previous kept boundary",
+		wantErr:  "",
+		keep:     1,
+	}
+}
 
-	require.NoError(t, err)
+func assertPreviousKeptBoundaryPlan(t *testing.T, plan *compactionPlan) {
+	t.Helper()
+
 	assert.Equal(t, "first compacted summary", plan.PreviousSummary)
-	assert.Equal(t, []string{oldAssistant.ID, recentUser.ID}, plan.SummarizedEntryIDs)
-	assert.Equal(t, []string{recentAssistant.ID}, plan.KeptEntryIDs)
-	assert.Equal(t, recentAssistant.ID, plan.FirstKeptEntryID)
+	assert.Equal(t, []string{"old-assistant", "recent-user"}, plan.SummarizedEntryIDs)
+	assert.Equal(t, []string{"recent-assistant"}, plan.KeptEntryIDs)
+	assert.Equal(t, "recent-assistant", plan.FirstKeptEntryID)
 	require.Len(t, plan.Messages, 2)
 	assert.Equal(t, "old assistant history", plan.Messages[0].Content)
 	assert.Equal(t, "recent user tail", plan.Messages[1].Content)
 }
 
-func TestPlanCompactionCutsAtTurnBoundaryWhenPossible(t *testing.T) {
-	t.Parallel()
-
-	firstUser := compactionTestEntry("user-1", database.EntryTypeMessage, database.RoleUser, "first user")
-	firstAssistant := compactionTestEntry(
-		"assistant-1",
-		database.EntryTypeMessage,
-		database.RoleAssistant,
-		"first assistant",
-	)
-	secondUser := compactionTestEntry("user-2", database.EntryTypeMessage, database.RoleUser, "second user")
-	secondAssistant := compactionTestEntry(
-		"assistant-2",
-		database.EntryTypeMessage,
-		database.RoleAssistant,
-		"second assistant long enough",
-	)
-
-	plan, err := planCompaction(
-		[]database.EntryEntity{firstUser, firstAssistant, secondUser, secondAssistant},
-		8,
-	)
-
-	require.NoError(t, err)
-	assert.Equal(t, []string{firstUser.ID, firstAssistant.ID}, plan.SummarizedEntryIDs)
-	assert.Equal(t, []string{secondUser.ID, secondAssistant.ID}, plan.KeptEntryIDs)
-	assert.Equal(t, secondUser.ID, plan.FirstKeptEntryID)
+func turnBoundaryCase() planCompactionCase {
+	return planCompactionCase{
+		assertFn: assertTurnBoundaryPlan,
+		entries: []database.EntryEntity{
+			compactMessageEntry("user-1", database.RoleUser, "first user"),
+			compactMessageEntry("assistant-1", database.RoleAssistant, "first assistant"),
+			compactMessageEntry("user-2", database.RoleUser, "second user"),
+			compactMessageEntry("assistant-2", database.RoleAssistant, "second assistant long enough"),
+		},
+		name:    "cuts at turn boundary when possible",
+		wantErr: "",
+		keep:    8,
+	}
 }
 
-func TestPlanCompactionFallsBackToDefaultKeepRecentTokens(t *testing.T) {
-	t.Parallel()
+func assertTurnBoundaryPlan(t *testing.T, plan *compactionPlan) {
+	t.Helper()
 
-	firstUser := compactionTestEntry(
-		"user-1",
-		database.EntryTypeMessage,
-		database.RoleUser,
-		strings.Repeat("old ", 30_000),
-	)
-	firstAssistant := compactionTestEntry(
-		"assistant-1",
-		database.EntryTypeMessage,
-		database.RoleAssistant,
-		strings.Repeat("old ", 30_000),
-	)
-	secondUser := compactionTestEntry("user-2", database.EntryTypeMessage, database.RoleUser, "second user")
-	secondAssistant := compactionTestEntry(
-		"assistant-2",
-		database.EntryTypeMessage,
-		database.RoleAssistant,
-		"second assistant",
-	)
+	assert.Equal(t, []string{"user-1", "assistant-1"}, plan.SummarizedEntryIDs)
+	assert.Equal(t, []string{"user-2", "assistant-2"}, plan.KeptEntryIDs)
+	assert.Equal(t, "user-2", plan.FirstKeptEntryID)
+}
 
-	plan, err := planCompaction(
-		[]database.EntryEntity{firstUser, firstAssistant, secondUser, secondAssistant},
-		0,
-	)
+func defaultKeepRecentTokensCase() planCompactionCase {
+	return planCompactionCase{
+		assertFn: assertDefaultKeepRecentTokensPlan,
+		entries: []database.EntryEntity{
+			compactMessageEntry("user-1", database.RoleUser, strings.Repeat("old ", 30_000)),
+			compactMessageEntry("assistant-1", database.RoleAssistant, strings.Repeat("old ", 30_000)),
+			compactMessageEntry("user-2", database.RoleUser, "second user"),
+			compactMessageEntry("assistant-2", database.RoleAssistant, "second assistant"),
+		},
+		name:    "falls back to default keep recent tokens",
+		wantErr: "",
+		keep:    0,
+	}
+}
 
-	require.NoError(t, err)
+func assertDefaultKeepRecentTokensPlan(t *testing.T, plan *compactionPlan) {
+	t.Helper()
+
 	assert.NotEmpty(t, plan.SummarizedEntryIDs)
 	assert.NotEmpty(t, plan.KeptEntryIDs)
 }
 
-func TestPlanCompactionRejectsLatestCompaction(t *testing.T) {
-	t.Parallel()
-
-	firstUser := compactionTestEntry("user-1", database.EntryTypeMessage, database.RoleUser, "first user")
+func latestCompactionCase() planCompactionCase {
+	firstUser := compactMessageEntry("user-1", database.RoleUser, "first user")
 	latestSummary := compactionTestEntry(
 		"summary",
 		database.EntryTypeCompaction,
@@ -126,10 +140,18 @@ func TestPlanCompactionRejectsLatestCompaction(t *testing.T) {
 	)
 	latestSummary.CompactionFirstKeptEntryID = firstUser.ID
 
-	plan, err := planCompaction([]database.EntryEntity{firstUser, latestSummary}, 1)
+	return planCompactionCase{
+		assertFn: assertLatestCompactionPlan,
+		entries:  []database.EntryEntity{firstUser, latestSummary},
+		name:     "rejects latest compaction",
+		wantErr:  "no new history to compact",
+		keep:     1,
+	}
+}
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no new history to compact")
+func assertLatestCompactionPlan(t *testing.T, plan *compactionPlan) {
+	t.Helper()
+
 	assert.Empty(t, plan.FirstKeptEntryID)
 }
 
@@ -140,6 +162,10 @@ func TestCompactionSystemPromptIncludesPreviousSummary(t *testing.T) {
 
 	assert.Contains(t, prompt, "Update the existing compaction summary")
 	assert.Contains(t, prompt, "previous compacted facts")
+}
+
+func compactMessageEntry(entryID string, role database.Role, content string) database.EntryEntity {
+	return compactionTestEntry(entryID, database.EntryTypeMessage, role, content)
 }
 
 func compactionTestEntry(

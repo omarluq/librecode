@@ -25,12 +25,13 @@ import (
 )
 
 const (
-	promptSendTestAppName  = "test-app"
-	promptSendTestFormat   = "plain"
-	promptSendTestModel    = "test-model"
-	promptSendTestEnv      = "test-env"
-	promptSendTestProvider = "test-provider"
-	promptSendTestText     = "hello"
+	promptSendTestAppName     = "test-app"
+	promptSendTestFormat      = "plain"
+	promptSendTestModel       = "test-model"
+	promptSendTestEnv         = "test-env"
+	promptSendTestProvider    = "test-provider"
+	promptSendTestText        = "hello"
+	promptSendWhitespaceInput = "   "
 )
 
 type terminalPromptClient struct {
@@ -69,96 +70,121 @@ func (client *terminalPromptClient) Complete(
 	return client.response, nil
 }
 
-func TestSubmitIgnoresEmptyPrompt(t *testing.T) {
+//nolint:govet // Test fixture readability matters more than field packing.
+type submitCase struct {
+	wantQueued        []string
+	setupApp          func(*App)
+	composerText      string
+	wantComposerText  string
+	name              string
+	wantMode          appMode
+	wantPromptHistory int
+	wantConsumed      bool
+	wantRequest       bool
+}
+
+func TestSubmit(t *testing.T) {
 	t.Parallel()
 
-	client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
-	app := newPromptSendTestApp(t, client)
-	app.setComposerText("   ")
+	for _, testCase := range submitCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	consumed, err := app.submit(context.Background())
-	if err != nil {
-		t.Fatalf("submit returned error: %v", err)
-	}
-	if consumed {
-		t.Fatal("submit should not consume terminal exit")
-	}
-	if app.working {
-		t.Fatal("app should not be working for empty prompt")
-	}
-	if client.request != nil {
-		t.Fatal("runtime should not receive empty prompt")
+			client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
+			app := newPromptSendTestApp(t, client)
+			if testCase.setupApp != nil {
+				testCase.setupApp(app)
+			}
+			app.setComposerText(testCase.composerText)
+
+			consumed, err := app.submit(context.Background())
+
+			assertSubmitCase(t, app, client, &testCase, consumed, err)
+		})
 	}
 }
 
-func TestSubmitSlashCommandOpensPanel(t *testing.T) {
-	t.Parallel()
-
-	client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
-	app := newPromptSendTestApp(t, client)
-	app.setComposerText("/model")
-
-	consumed, err := app.submit(context.Background())
-	if err != nil {
-		t.Fatalf("submit returned error: %v", err)
-	}
-	if consumed {
-		t.Fatal("submit should not consume terminal exit")
-	}
-	if app.mode != modePanel {
-		t.Fatal("slash command should open panel")
-	}
-	if client.request != nil {
-		t.Fatal("runtime should not receive panel command")
+func submitCases() []submitCase {
+	return []submitCase{
+		{
+			setupApp:          nil,
+			composerText:      promptSendWhitespaceInput,
+			wantComposerText:  promptSendWhitespaceInput,
+			wantQueued:        nil,
+			name:              "ignores empty prompt",
+			wantMode:          modeChat,
+			wantPromptHistory: 0,
+			wantConsumed:      false,
+			wantRequest:       false,
+		},
+		{
+			setupApp:          nil,
+			composerText:      "/model",
+			wantComposerText:  "",
+			wantQueued:        nil,
+			name:              "slash command opens panel",
+			wantMode:          modePanel,
+			wantPromptHistory: 1,
+			wantConsumed:      false,
+			wantRequest:       false,
+		},
+		{
+			setupApp: func(app *App) {
+				app.working = true
+			},
+			composerText:      "queued follow-up",
+			wantComposerText:  "",
+			wantQueued:        []string{"queued follow-up"},
+			name:              "queues when working",
+			wantMode:          modeChat,
+			wantPromptHistory: 1,
+			wantConsumed:      false,
+			wantRequest:       false,
+		},
+		{
+			setupApp:          func(app *App) { app.compacting = true },
+			composerText:      "wait for compaction",
+			wantComposerText:  "wait for compaction",
+			wantQueued:        nil,
+			name:              "restores prompt without history when compacting",
+			wantMode:          modeChat,
+			wantPromptHistory: 0,
+			wantConsumed:      false,
+			wantRequest:       false,
+		},
 	}
 }
 
-func TestSubmitQueuesWhenWorking(t *testing.T) {
-	t.Parallel()
+func assertSubmitCase(
+	t *testing.T,
+	app *App,
+	client *terminalPromptClient,
+	testCase *submitCase,
+	consumed bool,
+	err error,
+) {
+	t.Helper()
 
-	client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
-	app := newPromptSendTestApp(t, client)
-	app.working = true
-	app.setComposerText("queued follow-up")
-
-	consumed, err := app.submit(context.Background())
 	if err != nil {
 		t.Fatalf("submit returned error: %v", err)
 	}
-	if consumed {
-		t.Fatal("submit should not consume terminal exit")
+	if got := consumed; got != testCase.wantConsumed {
+		t.Fatalf("consumed = %v, want %v", got, testCase.wantConsumed)
 	}
-	if got, want := app.queuedMessages, []string{"queued follow-up"}; !slices.Equal(got, want) {
-		t.Fatalf("queuedMessages = %v, want %v", got, want)
+	if got := app.mode; got != testCase.wantMode {
+		t.Fatalf("mode = %q, want %q", got, testCase.wantMode)
 	}
-	if client.request != nil {
-		t.Fatal("runtime should not receive queued prompt immediately")
+	if got := app.composerText(); got != testCase.wantComposerText {
+		t.Fatalf("composer text = %q, want %q", got, testCase.wantComposerText)
 	}
-}
-
-func TestSubmitRestoresPromptWithoutHistoryWhenCompacting(t *testing.T) {
-	t.Parallel()
-
-	client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
-	app := newPromptSendTestApp(t, client)
-	app.compacting = true
-	app.setComposerText("wait for compaction")
-
-	consumed, err := app.submit(context.Background())
-	if err != nil {
-		t.Fatalf("submit returned error: %v", err)
+	if got := len(app.promptHistory); got != testCase.wantPromptHistory {
+		t.Fatalf("promptHistory length = %d, want %d", got, testCase.wantPromptHistory)
 	}
-	if consumed {
-		t.Fatal("submit should not consume terminal exit")
+	if !slices.Equal(app.queuedMessages, testCase.wantQueued) {
+		t.Fatalf("queuedMessages = %v, want %v", app.queuedMessages, testCase.wantQueued)
 	}
-	if got := app.composerText(); got != "wait for compaction" {
-		t.Fatalf("composer text = %q, want restored prompt", got)
-	}
-	if len(app.promptHistory) != 0 {
-		t.Fatalf("promptHistory = %v, want empty", app.promptHistory)
-	}
-	if client.request != nil {
-		t.Fatal("runtime should not receive prompt while compacting")
+	if got := client.request != nil; got != testCase.wantRequest {
+		t.Fatalf("request captured = %v, want %v", got, testCase.wantRequest)
 	}
 }
 
