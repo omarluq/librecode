@@ -46,10 +46,7 @@ func newContextBudget(
 		ProviderReserve:   nonNegativeOrDefault(policy.ProviderReserveTokens, defaultContextProviderReserve),
 		SafetyMargin:      nonNegativeOrDefault(policy.SafetyMarginTokens, defaultContextSafetyMargin),
 	}
-	budget.UsableInput = contextWindow - budget.TotalReserve()
-	if budget.UsableInput < 0 {
-		budget.UsableInput = 0
-	}
+	budget.UsableInput = max(contextWindow-budget.TotalReserve(), 0)
 
 	return budget
 }

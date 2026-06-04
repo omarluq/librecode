@@ -531,7 +531,6 @@ var entryContextAppliers = map[EntryType]entryContextApplier{
 	EntryTypeMessage:             appendModelFacingEntryMessage,
 	EntryTypeCustomMessage:       appendModelFacingEntryMessage,
 	EntryTypeBranchSummary:       appendBranchSummaryContext,
-	EntryTypeCompaction:          applyCompactionContext,
 	EntryTypeModelChange:         applyModelChangeContext,
 	EntryTypeThinkingLevelChange: applyThinkingLevelContext,
 }
@@ -552,12 +551,6 @@ func appendBranchSummaryContext(contextEntity *SessionContextEntity, entry *Entr
 		Provider:  "",
 		Model:     "",
 	})
-
-	return nil
-}
-
-func applyCompactionContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
-	contextEntity.Messages = compactionSummaryMessages(entry)
 
 	return nil
 }
