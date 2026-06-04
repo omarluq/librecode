@@ -104,6 +104,18 @@ func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
 	assert.Equal(t, 0, usage.Breakdown["reserve_safety"])
 }
 
+func TestRuntime_ContextUsageUsesModelMaxTokensAsOutputReserve(t *testing.T) {
+	t.Parallel()
+
+	client := &capturingCompletionClient{request: nil}
+	runtime := newTestRuntimeWithContextWindowAndMaxTokens(t, client, 100_000, 1234)
+
+	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1234, usage.Breakdown["reserve_output"])
+}
+
 func TestLoadRejectsNegativeContextBudget(t *testing.T) {
 	t.Parallel()
 
@@ -129,6 +141,17 @@ func newTestRuntimeWithContextWindow(
 ) *assistant.Runtime {
 	t.Helper()
 
+	return newTestRuntimeWithContextWindowAndMaxTokens(t, client, contextWindow, 0)
+}
+
+func newTestRuntimeWithContextWindowAndMaxTokens(
+	t *testing.T,
+	client assistant.CompletionClient,
+	contextWindow int,
+	maxTokens int,
+) *assistant.Runtime {
+	t.Helper()
+
 	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
 		testRuntimeProvider: testProviderCredential(),
 	})
@@ -137,7 +160,7 @@ func newTestRuntimeWithContextWindow(
 		ConfigSource: nil,
 		Auth:         storage,
 		ModelsPath:   "",
-		BuiltIns:     []model.Model{testRuntimeModelWithContextWindow(contextWindow)},
+		BuiltIns:     []model.Model{testRuntimeModelWithContextWindowAndMaxTokens(contextWindow, maxTokens)},
 	})
 	runtimeConfig := testConfig()
 	manager := extension.NewManager(nil)
@@ -159,7 +182,7 @@ func newTestRuntimeWithContextWindow(
 	return runtime
 }
 
-func testRuntimeModelWithContextWindow(contextWindow int) model.Model {
+func testRuntimeModelWithContextWindowAndMaxTokens(contextWindow, maxTokens int) model.Model {
 	return model.Model{
 		ThinkingLevelMap: nil,
 		Headers:          nil,
@@ -172,7 +195,7 @@ func testRuntimeModelWithContextWindow(contextWindow int) model.Model {
 		Input:            []model.InputMode{model.InputText},
 		Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
 		ContextWindow:    contextWindow,
-		MaxTokens:        0,
+		MaxTokens:        maxTokens,
 		Reasoning:        false,
 	}
 }

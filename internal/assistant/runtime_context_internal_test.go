@@ -39,6 +39,25 @@ func TestModelFacingMessagesPreservesModelFacingCustomRoles(t *testing.T) {
 	assert.Contains(t, filtered[3].Content, "branch summary")
 }
 
+func TestProviderRoleMappersPreserveModelFacingCustomRoles(t *testing.T) {
+	t.Parallel()
+
+	roles := []database.Role{database.RoleCustom, database.RoleBashExecution}
+	for _, role := range roles {
+		responseRole, responseOK := openAIResponseInputRole(role)
+		assert.True(t, responseOK)
+		assert.Equal(t, jsonUserRole, responseRole)
+
+		chatRole, chatOK := openAIRole(role)
+		assert.True(t, chatOK)
+		assert.Equal(t, jsonUserRole, chatRole)
+
+		anthropicMappedRole, anthropicOK := anthropicRole(role)
+		assert.True(t, anthropicOK)
+		assert.Equal(t, jsonUserRole, anthropicMappedRole)
+	}
+}
+
 func newRuntimeContextTestMessage(role database.Role, content string) database.MessageEntity {
 	return database.MessageEntity{
 		Timestamp: time.Now().UTC(),

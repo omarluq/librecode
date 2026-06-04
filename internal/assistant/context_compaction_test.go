@@ -133,6 +133,85 @@ func TestRuntime_CompactSessionRejectsShortHistory(t *testing.T) {
 	assert.Empty(t, client.requests)
 }
 
+func TestRuntime_CompactSessionFromUsesExplicitParent(t *testing.T) {
+	t.Parallel()
+
+	client := &compactionCompletionClient{summary: "summary of selected branch", requests: nil}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	runtimeConfig := testConfig()
+	runtimeConfig.Context.KeepRecentTokens = 1
+	runtime = assistant.NewRuntime(
+		runtimeConfig,
+		repository,
+		nil,
+		assistant.NewResponseCache(false, 1, time.Minute),
+		runtime.EventBus(),
+		runtime.ModelRegistry(),
+		client,
+		nil,
+	)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	root := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("root ", 1000))
+	selectedTail := appendRuntimeTestMessage(
+		t,
+		repository,
+		session.ID,
+		&root.ID,
+		database.RoleAssistant,
+		"selected tail",
+	)
+	_ = appendRuntimeTestMessage(
+		t,
+		repository,
+		session.ID,
+		&root.ID,
+		database.RoleAssistant,
+		"other branch tail",
+	)
+
+	entry, err := runtime.CompactSessionFrom(ctx, session.ID, testRuntimeCWD, &selectedTail.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, entry.ParentID)
+	assert.Equal(t, selectedTail.ID, *entry.ParentID)
+	assert.Equal(t, selectedTail.ID, entry.CompactionFirstKeptEntryID)
+	require.Len(t, client.requests, 1)
+	require.Len(t, client.requests[0].Messages, 1)
+	assert.Equal(t, root.Message.Content, client.requests[0].Messages[0].Content)
+}
+
+func TestRuntime_CompactSessionRejectsEmptySummary(t *testing.T) {
+	t.Parallel()
+
+	client := &compactionCompletionClient{summary: "   ", requests: nil}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	runtimeConfig := testConfig()
+	runtimeConfig.Context.KeepRecentTokens = 1
+	runtime = assistant.NewRuntime(
+		runtimeConfig,
+		repository,
+		nil,
+		assistant.NewResponseCache(false, 1, time.Minute),
+		runtime.EventBus(),
+		runtime.ModelRegistry(),
+		client,
+		nil,
+	)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 1000))
+	appendRuntimeTestMessage(t, repository, session.ID, &old.ID, database.RoleAssistant, "tail")
+
+	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "compaction summary was empty")
+	assert.Nil(t, entry)
+}
+
 func appendRuntimeTestMessage(
 	t *testing.T,
 	repository *database.SessionRepository,
