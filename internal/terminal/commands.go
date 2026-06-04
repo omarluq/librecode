@@ -64,6 +64,7 @@ func (app *App) runSessionCommand(ctx context.Context, command, args, original s
 func (app *App) sessionCommandHandlers(ctx context.Context, args, original string) map[string]func() error {
 	return map[string]func() error{
 		"clone":       func() error { return app.cloneSession(ctx, args) },
+		"compact":     func() error { return app.compactSession(ctx) },
 		"context":     func() error { return app.showContextInfo(ctx, original) },
 		"copy":        func() error { return app.copyLastAssistantMessage(ctx) },
 		"fork":        func() error { return app.newSession(ctx, args) },
@@ -78,7 +79,6 @@ func (app *App) sessionCommandHandlers(ctx context.Context, args, original strin
 func (app *App) sessionCommandNotifications(ctx context.Context, command string) (func(), bool) {
 	handlers := map[string]func(){
 		"auth":    app.showAuthInfo,
-		"compact": func() { app.addSystemMessage("manual compaction is not implemented yet") },
 		"export":  func() { app.addSystemMessage("/" + command + " is not implemented yet") },
 		"import":  func() { app.addSystemMessage("/" + command + " is not implemented yet") },
 		"session": func() { app.showSessionInfo(ctx) },

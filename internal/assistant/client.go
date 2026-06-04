@@ -100,6 +100,7 @@ type CompletionRequest struct {
 	Usage             model.TokenUsage                               `json:"usage"`
 	Model             model.Model                                    `json:"model"`
 	ProviderAttempt   int                                            `json:"-"`
+	DisableTools      bool                                           `json:"-"`
 }
 
 // CompletionResult is a provider response plus model-visible side effects.

@@ -296,6 +296,7 @@ func (app *App) extensionContext() map[string]any {
 	return map[string]any{
 		"mode":                 string(app.mode),
 		"working":              app.working,
+		"compacting":           app.compacting,
 		"auth_working":         app.authWorking,
 		"cwd":                  app.cwd,
 		"focus":                app.focusState(),

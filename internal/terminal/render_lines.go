@@ -57,6 +57,7 @@ func writeShimmerLineWithVerticalBorders(
 	style tcell.Style,
 	borderColor tcell.Color,
 	shimmerPosition int,
+	palette workingShimmerPalette,
 ) {
 	spinnerStart, spinnerWidth := workingSpinnerRange(text)
 	contentStart, contentWidth := workingShimmerContentRange(text)
@@ -65,13 +66,13 @@ func writeShimmerLineWithVerticalBorders(
 			return style.Foreground(borderColor)
 		}
 		if spinnerWidth > 0 && used >= spinnerStart && used < spinnerStart+spinnerWidth {
-			return style.Foreground(workingShimmerBrightColor())
+			return style.Foreground(palette.bright)
 		}
 		if contentWidth == 0 || used < contentStart || used >= contentStart+contentWidth {
 			return style
 		}
 
-		return style.Foreground(workingShimmerColor(shimmerPosition, used-contentStart, contentWidth))
+		return style.Foreground(workingShimmerColor(shimmerPosition, used-contentStart, contentWidth, palette))
 	})
 }
 

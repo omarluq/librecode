@@ -79,7 +79,7 @@ func (app *App) handleAutocompletePriorityKey(event *tcell.EventKey) bool {
 }
 
 func (app *App) handleAutocompleteEscape(event *tcell.EventKey) bool {
-	if app.working || !app.autocompleteActive() || event.Key() != tcell.KeyEscape {
+	if app.busy() || !app.autocompleteActive() || event.Key() != tcell.KeyEscape {
 		return false
 	}
 	app.closeAutocomplete()
@@ -88,7 +88,7 @@ func (app *App) handleAutocompleteEscape(event *tcell.EventKey) bool {
 }
 
 func (app *App) handleFocusedAutocompleteKey(event *tcell.EventKey) bool {
-	if app.working || !app.autocompleteActive() {
+	if app.busy() || !app.autocompleteActive() {
 		return false
 	}
 

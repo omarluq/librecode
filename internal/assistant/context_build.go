@@ -79,6 +79,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		Usage:             model.EmptyTokenUsage(),
 		Model:             selectedModel,
 		ProviderAttempt:   0,
+		DisableTools:      false,
 	}
 
 	messages := []database.MessageEntity{}

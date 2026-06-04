@@ -195,6 +195,7 @@ func providerHookTestRequest() *CompletionRequest {
 			Reasoning:        false,
 		},
 		ProviderAttempt: 1,
+		DisableTools:    false,
 	}
 }
 

@@ -24,7 +24,7 @@ func (app *App) queueFollowUpText(text string) {
 }
 
 func (app *App) processQueuedPrompt(ctx context.Context) {
-	if app.working || len(app.queuedMessages) == 0 {
+	if app.busy() || len(app.queuedMessages) == 0 {
 		return
 	}
 	text := app.queuedMessages[0]

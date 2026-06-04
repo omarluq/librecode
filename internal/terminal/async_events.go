@@ -27,6 +27,8 @@ const (
 	asyncEventPromptRetry         asyncEventKind = "prompt_retry"
 	asyncEventPromptUsage         asyncEventKind = "prompt_usage"
 	asyncEventPromptError         asyncEventKind = "prompt_error"
+	asyncEventCompactDone         asyncEventKind = "compact_done"
+	asyncEventCompactError        asyncEventKind = "compact_error"
 )
 
 type asyncEvent struct {
@@ -149,6 +151,9 @@ func (app *App) handleInterrupt(ctx context.Context, event *tcell.EventInterrupt
 	if app.handleAuthAsyncEvent(payload) {
 		return false, nil
 	}
+	if app.handleCompactAsyncEvent(payload) {
+		return false, nil
+	}
 	app.handlePromptAsyncEvent(ctx, payload)
 
 	return false, nil
@@ -178,7 +183,9 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 		asyncEventPromptToolResult,
 		asyncEventPromptRetry,
 		asyncEventPromptUsage,
-		asyncEventPromptError:
+		asyncEventPromptError,
+		asyncEventCompactDone,
+		asyncEventCompactError:
 		return false
 	}
 
@@ -219,7 +226,11 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 		asyncEventPromptUsage,
 		asyncEventPromptError:
 		return true
-	case asyncEventAuthURL, asyncEventAuthDone, asyncEventAuthError:
+	case asyncEventAuthURL,
+		asyncEventAuthDone,
+		asyncEventAuthError,
+		asyncEventCompactDone,
+		asyncEventCompactError:
 		return false
 	}
 
@@ -248,7 +259,11 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 	case asyncEventPromptError:
 		app.applyPromptError(payload.Text, payload.PromptID)
 		return true
-	case asyncEventAuthURL, asyncEventAuthDone, asyncEventAuthError:
+	case asyncEventAuthURL,
+		asyncEventAuthDone,
+		asyncEventAuthError,
+		asyncEventCompactDone,
+		asyncEventCompactError:
 		return true
 	case asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -299,7 +314,9 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 		asyncEventPromptError,
 		asyncEventAuthURL,
 		asyncEventAuthDone,
-		asyncEventAuthError:
+		asyncEventAuthError,
+		asyncEventCompactDone,
+		asyncEventCompactError:
 		return
 	}
 }

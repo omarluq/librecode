@@ -216,6 +216,7 @@ func renderParityConfig() *config.Config {
 			OutputReserveTokens:   0,
 			ProviderReserveTokens: 0,
 			SafetyMarginTokens:    0,
+			KeepRecentTokens:      20_000,
 			PreflightEnabled:      false,
 		},
 		App: config.AppConfig{

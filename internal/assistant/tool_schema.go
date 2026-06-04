@@ -41,6 +41,9 @@ func openAIChatTools(request *CompletionRequest) []map[string]any {
 }
 
 func requestToolDefinitions(request *CompletionRequest) []tool.Definition {
+	if request != nil && request.DisableTools {
+		return []tool.Definition{}
+	}
 	if request != nil && request.ToolRegistry != nil {
 		return request.ToolRegistry.Definitions()
 	}

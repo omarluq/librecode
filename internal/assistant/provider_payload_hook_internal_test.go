@@ -187,6 +187,7 @@ func providerPayloadHookRequest(baseURL string) *CompletionRequest {
 		},
 		Usage:           model.EmptyTokenUsage(),
 		ProviderAttempt: 1,
+		DisableTools:    false,
 		Model: model.Model{
 			ThinkingLevelMap: nil,
 			Headers:          nil,
