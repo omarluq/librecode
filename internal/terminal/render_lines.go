@@ -49,31 +49,47 @@ func writeTextAt(screen cellTarget, column, row, width int, text string, style t
 	writeTextCells(screen, column, row, width, text, style)
 }
 
+type shimmerLineOptions struct {
+	shimmerPosition int
+	borderColor     tcell.Color
+	palette         workingShimmerPalette
+}
+
 func writeShimmerLineWithVerticalBorders(
 	screen cellTarget,
 	row int,
 	width int,
 	text string,
 	style tcell.Style,
-	borderColor tcell.Color,
-	shimmerPosition int,
-	palette workingShimmerPalette,
+	options shimmerLineOptions,
 ) {
 	spinnerStart, spinnerWidth := workingSpinnerRange(text)
 	contentStart, contentWidth := workingShimmerContentRange(text)
-	writeLineWithStyleFunc(screen, row, width, text, style, func(segment terminalTextSegment, used int) tcell.Style {
-		if segment.Text == "│" && (used == 0 || used == width-1) {
-			return style.Foreground(borderColor)
-		}
-		if spinnerWidth > 0 && used >= spinnerStart && used < spinnerStart+spinnerWidth {
-			return style.Foreground(palette.bright)
-		}
-		if contentWidth == 0 || used < contentStart || used >= contentStart+contentWidth {
-			return style
-		}
+	writeLineWithStyleFunc(
+		screen,
+		row,
+		width,
+		text,
+		style,
+		func(segment terminalTextSegment, used int) tcell.Style {
+			if segment.Text == "│" && (used == 0 || used == width-1) {
+				return style.Foreground(options.borderColor)
+			}
+			if spinnerWidth > 0 && used >= spinnerStart && used < spinnerStart+spinnerWidth {
+				return style.Foreground(options.palette.bright)
+			}
+			if contentWidth == 0 || used < contentStart || used >= contentStart+contentWidth {
+				return style
+			}
 
-		return style.Foreground(workingShimmerColor(shimmerPosition, used-contentStart, contentWidth, palette))
-	})
+			return style.Foreground(workingShimmerColor(
+				options.shimmerPosition,
+				used-contentStart,
+				contentWidth,
+				options.palette,
+			))
+		},
+	)
 }
 
 func isWorkingIndicatorText(text string) bool {
