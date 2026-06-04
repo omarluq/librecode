@@ -106,6 +106,7 @@ func (app *App) transcriptBufferBlocks(limit int) transcriptBufferSnapshot {
 			"queued_count":    len(app.queuedMessages),
 			"streaming_count": len(app.transcript.Streaming.Blocks),
 			"working":         app.working,
+			"compacting":      app.compacting,
 		},
 		Blocks: blocks,
 		Count:  count,

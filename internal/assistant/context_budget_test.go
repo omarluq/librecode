@@ -86,6 +86,7 @@ func TestLoadRejectsNegativeContextBudget(t *testing.T) {
 		OutputReserveTokens:   0,
 		ProviderReserveTokens: 0,
 		SafetyMarginTokens:    -1,
+		KeepRecentTokens:      20_000,
 		PreflightEnabled:      true,
 	}
 

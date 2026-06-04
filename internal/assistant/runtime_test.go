@@ -746,6 +746,7 @@ func testConfig() *config.Config {
 			OutputReserveTokens:   0,
 			ProviderReserveTokens: 2048,
 			SafetyMarginTokens:    8192,
+			KeepRecentTokens:      20_000,
 			PreflightEnabled:      true,
 		},
 		Cache: config.CacheConfig{

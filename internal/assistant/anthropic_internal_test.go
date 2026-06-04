@@ -220,6 +220,7 @@ func testCompletionRequestAuth(args ...string) *CompletionRequest {
 			Reasoning:        false,
 		},
 		ProviderAttempt: 0,
+		DisableTools:    false,
 	}
 }
 

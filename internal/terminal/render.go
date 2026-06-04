@@ -109,6 +109,7 @@ func (app *App) writeStyledLine(row, width int, line styledLine) {
 			line.Style,
 			app.theme.colors[colorBorderMuted],
 			app.workingShimmerPosition(contentWidth),
+			app.workingShimmerPalette(),
 		)
 		return
 	}

@@ -26,6 +26,11 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 		app.queueFollowUpText(text)
 		return false, nil
 	}
+	if app.compacting {
+		app.setComposerText(text)
+		app.setStatus("wait for context compaction to finish")
+		return false, nil
+	}
 
 	app.sendPrompt(ctx, text)
 	return false, nil

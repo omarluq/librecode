@@ -156,6 +156,7 @@ func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInpu
 		Usage:             input.usage,
 		Model:             *input.selectedModel,
 		ProviderAttempt:   0,
+		DisableTools:      false,
 	}
 }
 

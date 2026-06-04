@@ -204,6 +204,9 @@ func (app *App) workingIndicator() string {
 }
 
 func (app *App) workingLoaderText() string {
+	if app.compacting {
+		return "Compacting context..."
+	}
 	if app.cfg == nil || strings.TrimSpace(app.cfg.App.WorkingLoader.Text) == "" {
 		return "Shenaniganing..."
 	}
@@ -212,15 +215,31 @@ func (app *App) workingLoaderText() string {
 }
 
 func (app *App) workingIndicatorStyle() tcell.Style {
-	return tcell.StyleDefault.Foreground(workingShimmerBaseColor()).Bold(true)
+	return tcell.StyleDefault.Foreground(app.workingShimmerBaseColor()).Bold(true)
 }
 
-func workingShimmerBaseColor() tcell.Color {
+func (app *App) workingShimmerBaseColor() tcell.Color {
+	if app.compacting {
+		return compactingShimmerBaseColor()
+	}
+
+	return defaultWorkingShimmerBaseColor()
+}
+
+func defaultWorkingShimmerBaseColor() tcell.Color {
 	return hexColor(0x4f6f6a)
 }
 
-func workingShimmerBrightColor() tcell.Color {
+func defaultWorkingShimmerBrightColor() tcell.Color {
 	return hexColor(0xc7fff6)
+}
+
+func compactingShimmerBaseColor() tcell.Color {
+	return hexColor(0x6f5fa8)
+}
+
+func compactingShimmerBrightColor() tcell.Color {
+	return hexColor(0xf2d5ff)
 }
 
 func (app *App) workingShimmerPosition(contentWidth int) int {
@@ -236,23 +255,59 @@ func (app *App) workingShimmerPosition(contentWidth int) int {
 	return min(contentWidth-1, int(progress*float64(contentWidth)))
 }
 
-func workingShimmerColor(position, column, contentWidth int) tcell.Color {
+type workingShimmerPalette struct {
+	base   tcell.Color
+	bright tcell.Color
+	trail1 tcell.Color
+	trail2 tcell.Color
+	trail3 tcell.Color
+}
+
+func defaultWorkingShimmerPalette() workingShimmerPalette {
+	return workingShimmerPalette{
+		base:   defaultWorkingShimmerBaseColor(),
+		bright: defaultWorkingShimmerBrightColor(),
+		trail1: hexColor(0xa8f2e9),
+		trail2: hexColor(0x86d8d0),
+		trail3: hexColor(0x6aaea8),
+	}
+}
+
+func compactingShimmerPalette() workingShimmerPalette {
+	return workingShimmerPalette{
+		base:   compactingShimmerBaseColor(),
+		bright: compactingShimmerBrightColor(),
+		trail1: hexColor(0xe9c6ff),
+		trail2: hexColor(0xcfa0e8),
+		trail3: hexColor(0xa77ac0),
+	}
+}
+
+func (app *App) workingShimmerPalette() workingShimmerPalette {
+	if app.compacting {
+		return compactingShimmerPalette()
+	}
+
+	return defaultWorkingShimmerPalette()
+}
+
+func workingShimmerColor(position, column, contentWidth int, palette workingShimmerPalette) tcell.Color {
 	if contentWidth <= 0 || column < 0 || column >= contentWidth {
-		return workingShimmerBaseColor()
+		return palette.base
 	}
 	distanceBehindHead := position - column
 
 	switch distanceBehindHead {
 	case 0:
-		return workingShimmerBrightColor()
+		return palette.bright
 	case 1:
-		return hexColor(0xa8f2e9)
+		return palette.trail1
 	case 2:
-		return hexColor(0x86d8d0)
+		return palette.trail2
 	case 3:
-		return hexColor(0x6aaea8)
+		return palette.trail3
 	default:
-		return workingShimmerBaseColor()
+		return palette.base
 	}
 }
 

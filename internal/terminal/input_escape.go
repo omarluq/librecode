@@ -18,7 +18,7 @@ func (app *App) handleForceExit() bool {
 }
 
 func (app *App) handleEscape(ctx context.Context) {
-	if app.working {
+	if app.working || app.compacting {
 		app.handleWorkingEscape(ctx, 1)
 		return
 	}
@@ -39,7 +39,7 @@ func (app *App) handleEscape(ctx context.Context) {
 }
 
 func (app *App) handleWorkingInterruptKey(ctx context.Context, event *tcell.EventKey) bool {
-	if !app.working || !isEscapeKey(event) {
+	if (!app.working && !app.compacting) || !isEscapeKey(event) {
 		return false
 	}
 	app.handleWorkingEscape(ctx, escapePressCount(event))
@@ -69,7 +69,7 @@ func (app *App) handleWorkingEscape(ctx context.Context, presses int) {
 	if app.escapePresses >= interruptEscapePresses {
 		app.escapePresses = 0
 		app.lastEscape = time.Time{}
-		app.cancelActivePrompt(ctx)
+		app.cancelActiveOperation(ctx)
 		return
 	}
 	app.setStatus("escape again to interrupt")

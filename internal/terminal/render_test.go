@@ -298,10 +298,26 @@ func TestRenderWorkingIndicatorHasMarginAndShimmer(t *testing.T) {
 	assertWorkingShimmerMotion(t, lines[1].Text)
 }
 
+func TestRenderCompactingIndicatorUsesCompactionTextAndPalette(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.compacting = true
+	app.workFrame = 0
+	lines := app.renderWorkingIndicator(40)
+	if !strings.HasPrefix(lines[1].Text, "⠋ Compacting context...") {
+		t.Fatalf("compacting indicator text = %q", lines[1].Text)
+	}
+	if got, want := app.workingShimmerPalette().bright, compactingShimmerBrightColor(); got != want {
+		t.Fatalf("compacting shimmer bright = %v, want %v", got, want)
+	}
+}
+
 func assertWorkingShimmerMotion(t *testing.T, indicatorText string) {
 	t.Helper()
-	bright := workingShimmerBrightColor()
-	base := workingShimmerBaseColor()
+	palette := defaultWorkingShimmerPalette()
+	bright := palette.bright
+	base := palette.base
 	_, contentWidth := workingShimmerContentRange(indicatorText)
 	checks := []struct {
 		name     string
@@ -319,7 +335,7 @@ func assertWorkingShimmerMotion(t *testing.T, indicatorText string) {
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
 			t.Parallel()
-			if got := workingShimmerColor(check.position, check.column, contentWidth); got != check.want {
+			if got := workingShimmerColor(check.position, check.column, contentWidth, palette); got != check.want {
 				t.Fatalf("color = %v, want %v", got, check.want)
 			}
 		})
@@ -354,12 +370,12 @@ func TestWriteStyledLineOnlyShimmersMarkedLines(t *testing.T) {
 
 	row = 1
 	app.writeStyledLine(row, 20, newStyledLine(app.theme.style(colorText), "⠋ Shenaniganing..."))
-	if got, want := app.frame.cell(0, row).Style.GetForeground(), workingShimmerBrightColor(); got != want {
+	if got, want := app.frame.cell(0, row).Style.GetForeground(), defaultWorkingShimmerBrightColor(); got != want {
 		t.Fatalf("spinner foreground = %v, want %v", got, want)
 	}
 	textStart := 2
 	got := app.frame.cell(textStart, row).Style.GetForeground()
-	want := workingShimmerColor(0, 0, len("Shenaniganing..."))
+	want := workingShimmerColor(0, 0, len("Shenaniganing..."), defaultWorkingShimmerPalette())
 	if got != want {
 		t.Fatalf("shimmer text foreground = %v, want %v", got, want)
 	}

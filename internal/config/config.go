@@ -69,6 +69,7 @@ type ContextConfig struct {
 	OutputReserveTokens   int  `mapstructure:"output_reserve_tokens"`
 	ProviderReserveTokens int  `mapstructure:"provider_reserve_tokens"`
 	SafetyMarginTokens    int  `mapstructure:"safety_margin_tokens"`
+	KeepRecentTokens      int  `mapstructure:"keep_recent_tokens"`
 	PreflightEnabled      bool `mapstructure:"preflight_enabled"`
 }
 
@@ -221,6 +222,9 @@ func (config *Config) validateContext() error {
 	}
 	if config.Context.SafetyMarginTokens < 0 {
 		return fmt.Errorf("config: context.safety_margin_tokens cannot be negative")
+	}
+	if config.Context.KeepRecentTokens < 0 {
+		return fmt.Errorf("config: context.keep_recent_tokens cannot be negative")
 	}
 
 	return nil

@@ -100,6 +100,7 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("context.output_reserve_tokens", 0)
 	viperInstance.SetDefault("context.provider_reserve_tokens", 2048)
 	viperInstance.SetDefault("context.safety_margin_tokens", 8192)
+	viperInstance.SetDefault("context.keep_recent_tokens", 20000)
 	viperInstance.SetDefault("cache.enabled", true)
 	viperInstance.SetDefault("cache.capacity", 512)
 	viperInstance.SetDefault("cache.ttl", 10*time.Minute)

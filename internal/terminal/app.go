@@ -52,6 +52,11 @@ type activePromptState struct {
 	Canceled         bool
 }
 
+type activeCompactionState struct {
+	Cancel context.CancelFunc
+	ID     uint64
+}
+
 type messageLineCacheState struct {
 	ThemeName     string
 	Width         int
@@ -124,6 +129,7 @@ type App struct {
 	panel                   *selectionPanel
 	pendingParentID         *string
 	activePrompt            *activePromptState
+	activeCompaction        *activeCompactionState
 	canceledPrompts         map[uint64]*activePromptState
 	scopedEnabled           map[string]bool
 	extensionRuntimeBuffers map[string]extension.BufferState
@@ -159,6 +165,7 @@ type App struct {
 	sessionNamedOnly        bool
 	hideThinking            bool
 	working                 bool
+	compacting              bool
 	toolsExpanded           bool
 	authWorking             bool
 	sessionShowPath         bool
@@ -202,26 +209,27 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 	}
 	resources := initialResourceSnapshot(options)
 	app := &App{
-		screen:          screen,
-		renderer:        newScreenRenderer(screen),
-		frame:           nil,
-		lastResize:      nil,
-		runtime:         options.Runtime,
-		extensions:      options.Extensions,
-		settings:        options.Settings,
-		models:          options.Models,
-		auth:            options.Auth,
-		cfg:             options.Config,
-		keys:            newDefaultKeybindings(),
-		theme:           appTheme,
-		resources:       resources,
-		mode:            modeChat,
-		panel:           nil,
-		cwd:             options.CWD,
-		sessionID:       options.SessionID,
-		pendingParentID: nil,
-		activePrompt:    nil,
-		canceledPrompts: map[uint64]*activePromptState{},
+		screen:           screen,
+		renderer:         newScreenRenderer(screen),
+		frame:            nil,
+		lastResize:       nil,
+		runtime:          options.Runtime,
+		extensions:       options.Extensions,
+		settings:         options.Settings,
+		models:           options.Models,
+		auth:             options.Auth,
+		cfg:              options.Config,
+		keys:             newDefaultKeybindings(),
+		theme:            appTheme,
+		resources:        resources,
+		mode:             modeChat,
+		panel:            nil,
+		cwd:              options.CWD,
+		sessionID:        options.SessionID,
+		pendingParentID:  nil,
+		activePrompt:     nil,
+		activeCompaction: nil,
+		canceledPrompts:  map[uint64]*activePromptState{},
 		transcript: transcriptState{
 			History: []chatMessage{},
 			Streaming: transcriptStreamingState{
@@ -250,6 +258,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		lastControlC:            time.Time{},
 		escapePresses:           0,
 		working:                 false,
+		compacting:              false,
 		workStartedAt:           time.Time{},
 		workFrame:               0,
 		scrollOffset:            0,
@@ -412,7 +421,7 @@ func (app *App) coalesceResizeEvents(
 }
 
 func (app *App) workTick(ticker *time.Ticker) <-chan time.Time {
-	if app.working || app.authWorking {
+	if app.busy() {
 		return ticker.C
 	}
 
@@ -431,7 +440,7 @@ func (app *App) messageCacheWarmTick(timer *time.Timer) <-chan time.Time {
 	if timer == nil {
 		return nil
 	}
-	if app.transcript.LineCache.warm || app.working || app.authWorking || app.scrollOffset != 0 || app.toolsExpanded {
+	if app.transcript.LineCache.warm || app.busy() || app.scrollOffset != 0 || app.toolsExpanded {
 		app.transcript.LineCache.queued = false
 		stopTimer(timer)
 		return nil
@@ -484,7 +493,11 @@ func stopTimer(timer *time.Timer) {
 }
 
 func (app *App) throttleDraws() bool {
-	return app.working || app.authWorking
+	return app.busy()
+}
+
+func (app *App) busy() bool {
+	return app.working || app.authWorking || app.compacting
 }
 
 func (app *App) shouldDrawImmediately(event tcell.Event) bool {
@@ -511,6 +524,8 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
+		asyncEventCompactDone,
+		asyncEventCompactError,
 		asyncEventPromptDone,
 		asyncEventPromptUserEntry,
 		asyncEventPromptRetry,
