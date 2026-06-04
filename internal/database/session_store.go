@@ -237,12 +237,16 @@ func (repository *SessionRepository) appendBuiltEntry(
 	if options.modelFacing != nil {
 		data, err := dataFromEntry(&entry)
 		if err != nil {
-			return nil, err
+			return nil, oops.In("database").
+				Code("decode_entry_data").
+				Wrapf(err, "decode entry data before setting model-facing metadata")
 		}
 		data.ModelFacing = options.modelFacing
 		dataJSON, err := dataJSONFromEntity(&data)
 		if err != nil {
-			return nil, err
+			return nil, oops.In("database").
+				Code("encode_entry_data").
+				Wrapf(err, "encode entry data after setting model-facing metadata")
 		}
 		entry.DataJSON = normalizeDataJSON(dataJSON)
 	}
@@ -618,7 +622,9 @@ func applyModelChangeContext(contextEntity *SessionContextEntity, entry *EntryEn
 func applyThinkingLevelContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
 	data, err := dataFromEntry(entry)
 	if err != nil {
-		return err
+		return oops.In("database").
+			Code("decode_entry_data").
+			Wrapf(err, "decode thinking level entry data")
 	}
 	contextEntity.ThinkingLevel = data.ThinkingLevel
 

@@ -156,7 +156,7 @@ func (app *App) dynamicMessageLineGroups(width int) [][]styledLine {
 			groups = append(groups, app.renderStreamingMessage(width, app.streamingText))
 		}
 	}
-	if app.working || app.compacting {
+	if app.busy() {
 		groups = append(groups, app.renderWorkingIndicator(width))
 	}
 	if len(app.queuedMessages) > 0 {

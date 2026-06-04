@@ -136,6 +136,32 @@ func TestSubmitQueuesWhenWorking(t *testing.T) {
 	}
 }
 
+func TestSubmitRestoresPromptWithoutHistoryWhenCompacting(t *testing.T) {
+	t.Parallel()
+
+	client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
+	app := newPromptSendTestApp(t, client)
+	app.compacting = true
+	app.setComposerText("wait for compaction")
+
+	consumed, err := app.submit(context.Background())
+	if err != nil {
+		t.Fatalf("submit returned error: %v", err)
+	}
+	if consumed {
+		t.Fatal("submit should not consume terminal exit")
+	}
+	if got := app.composerText(); got != "wait for compaction" {
+		t.Fatalf("composer text = %q, want restored prompt", got)
+	}
+	if len(app.promptHistory) != 0 {
+		t.Fatalf("promptHistory = %v, want empty", app.promptHistory)
+	}
+	if client.request != nil {
+		t.Fatal("runtime should not receive prompt while compacting")
+	}
+}
+
 func TestSendPromptQueuesWhenWorking(t *testing.T) {
 	t.Parallel()
 

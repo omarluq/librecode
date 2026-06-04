@@ -51,6 +51,8 @@ context:
   output_reserve_tokens: 0
   provider_reserve_tokens: 2048
   safety_margin_tokens: 8192
+  # Recent history retained verbatim during /compact; reserves above still apply to provider requests.
+  keep_recent_tokens: 20000
 
 cache:
   enabled: true

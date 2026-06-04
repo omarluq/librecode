@@ -305,11 +305,27 @@ func TestRenderCompactingIndicatorUsesCompactionTextAndPalette(t *testing.T) {
 	app.compacting = true
 	app.workFrame = 0
 	lines := app.renderWorkingIndicator(40)
+	if len(lines) != 3 {
+		t.Fatalf("compacting indicator lines = %d, want 3", len(lines))
+	}
 	if !strings.HasPrefix(lines[1].Text, "⠋ Compacting context...") {
 		t.Fatalf("compacting indicator text = %q", lines[1].Text)
 	}
-	if got, want := app.workingShimmerPalette().bright, compactingShimmerBrightColor(); got != want {
+	palette := app.workingShimmerPalette()
+	if got, want := palette.bright, compactingShimmerBrightColor(); got != want {
 		t.Fatalf("compacting shimmer bright = %v, want %v", got, want)
+	}
+
+	app.frame = newCellBuffer(40, len(lines), tcell.StyleDefault)
+	app.writeStyledLine(1, 40, lines[1])
+	if got, want := app.frame.cell(0, 1).Style.GetForeground(), palette.bright; got != want {
+		t.Fatalf("spinner foreground = %v, want %v", got, want)
+	}
+	_, contentWidth := workingShimmerContentRange(lines[1].Text)
+	labelForeground := app.frame.cell(2, 1).Style.GetForeground()
+	labelShimmer := workingShimmerColor(0, 0, contentWidth, palette)
+	if labelForeground != labelShimmer {
+		t.Fatalf("label foreground = %v, want %v", labelForeground, labelShimmer)
 	}
 }
 
