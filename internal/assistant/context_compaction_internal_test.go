@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -78,6 +79,67 @@ func TestPlanCompactionCutsAtTurnBoundaryWhenPossible(t *testing.T) {
 	assert.Equal(t, []string{firstUser.ID, firstAssistant.ID}, plan.SummarizedEntryIDs)
 	assert.Equal(t, []string{secondUser.ID, secondAssistant.ID}, plan.KeptEntryIDs)
 	assert.Equal(t, secondUser.ID, plan.FirstKeptEntryID)
+}
+
+func TestPlanCompactionFallsBackToDefaultKeepRecentTokens(t *testing.T) {
+	t.Parallel()
+
+	firstUser := compactionTestEntry(
+		"user-1",
+		database.EntryTypeMessage,
+		database.RoleUser,
+		strings.Repeat("old ", 30_000),
+	)
+	firstAssistant := compactionTestEntry(
+		"assistant-1",
+		database.EntryTypeMessage,
+		database.RoleAssistant,
+		strings.Repeat("old ", 30_000),
+	)
+	secondUser := compactionTestEntry("user-2", database.EntryTypeMessage, database.RoleUser, "second user")
+	secondAssistant := compactionTestEntry(
+		"assistant-2",
+		database.EntryTypeMessage,
+		database.RoleAssistant,
+		"second assistant",
+	)
+
+	plan, err := planCompaction(
+		[]database.EntryEntity{firstUser, firstAssistant, secondUser, secondAssistant},
+		0,
+	)
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, plan.SummarizedEntryIDs)
+	assert.NotEmpty(t, plan.KeptEntryIDs)
+}
+
+func TestPlanCompactionRejectsLatestCompaction(t *testing.T) {
+	t.Parallel()
+
+	firstUser := compactionTestEntry("user-1", database.EntryTypeMessage, database.RoleUser, "first user")
+	latestSummary := compactionTestEntry(
+		"summary",
+		database.EntryTypeCompaction,
+		database.RoleCompactionSummary,
+		"already compacted",
+	)
+	latestSummary.CompactionFirstKeptEntryID = firstUser.ID
+
+	plan, err := planCompaction([]database.EntryEntity{firstUser, latestSummary}, 1)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no new history to compact")
+	assert.Empty(t, plan.FirstKeptEntryID)
+}
+
+func TestCompactionSystemPromptIncludesPreviousSummary(t *testing.T) {
+	t.Parallel()
+
+	prompt := compactionSystemPrompt("previous compacted facts")
+
+	assert.Contains(t, prompt, "Update the existing compaction summary")
+	assert.Contains(t, prompt, "previous compacted facts")
 }
 
 func compactionTestEntry(
