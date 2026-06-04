@@ -4,7 +4,6 @@ package assistant
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -240,16 +239,17 @@ func compactNothingToDoError(message string) error {
 }
 
 func previousCompactionBoundary(branch []database.EntryEntity) (summary string, boundaryStart int) {
-	for index, b := range slices.Backward(branch) {
-		if b.Type != database.EntryTypeCompaction {
+	for index := len(branch) - 1; index >= 0; index-- {
+		entry := &branch[index]
+		if entry.Type != database.EntryTypeCompaction {
 			continue
 		}
-		firstKeptIndex := entryIndexByID(branch, b.CompactionFirstKeptEntryID)
+		firstKeptIndex := entryIndexByID(branch, entry.CompactionFirstKeptEntryID)
 		if firstKeptIndex < 0 {
 			firstKeptIndex = index + 1
 		}
 
-		return b.Summary, firstKeptIndex
+		return entry.Summary, firstKeptIndex
 	}
 
 	return "", 0
