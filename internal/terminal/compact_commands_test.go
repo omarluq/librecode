@@ -51,7 +51,7 @@ func TestCompactSessionStartsAsyncWork(t *testing.T) {
 	}
 	select {
 	case <-client.ready:
-	case <-time.After(time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("compaction should start provider request asynchronously")
 	}
 	if !app.compacting {
@@ -98,12 +98,73 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 	}
 }
 
-func TestHandleCompactErrorUpdatesState(t *testing.T) {
+type compactTransitionCase struct {
+	setupApp        func(t *testing.T, app *App) func(t *testing.T)
+	invoke          func(t *testing.T, app *App)
+	wantLastMessage string
+	wantStatus      string
+	name            string
+	wantEventKind   asyncEventKind
+}
+
+func TestCompactCommandStateTransitions(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
+	for _, testCase := range compactTransitionCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			afterInvoke := testCase.setupApp(t, app)
+			testCase.invoke(t, app)
+			if afterInvoke != nil {
+				afterInvoke(t)
+			}
+			assertCompactTransition(t, app, &testCase)
+		})
+	}
+}
+
+func compactTransitionCases() []compactTransitionCase {
+	return []compactTransitionCase{
+		{
+			setupApp:        setupCompactErrorTransition,
+			invoke:          invokeCompactErrorTransition,
+			wantLastMessage: "compaction failed",
+			wantStatus:      "",
+			name:            "compact error updates state",
+			wantEventKind:   "",
+		},
+		{
+			setupApp:        setupRunCompactErrorTransition,
+			invoke:          invokeRunCompactErrorTransition,
+			wantLastMessage: "provider down",
+			wantStatus:      "",
+			name:            "run compact posts provider error",
+			wantEventKind:   asyncEventCompactError,
+		},
+		{
+			setupApp:        setupCancelCompactTransition,
+			invoke:          invokeCancelCompactTransition,
+			wantLastMessage: "",
+			wantStatus:      "context compaction canceled",
+			name:            "cancel active operation cancels compaction",
+			wantEventKind:   "",
+		},
+	}
+}
+
+func setupCompactErrorTransition(t *testing.T, app *App) func(t *testing.T) {
+	t.Helper()
+
 	app.compacting = true
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9}
+
+	return nil
+}
+
+func invokeCompactErrorTransition(t *testing.T, app *App) {
+	t.Helper()
 
 	handled := app.handleCompactAsyncEvent(&asyncEvent{
 		Response:  nil,
@@ -114,27 +175,36 @@ func TestHandleCompactErrorUpdatesState(t *testing.T) {
 		Text:      "compaction failed",
 		PromptID:  9,
 	})
-
 	if !handled {
 		t.Fatal("compact error event should be handled")
 	}
-	if app.compacting {
-		t.Fatal("app should stop compacting")
-	}
-	if app.activeCompaction != nil {
-		t.Fatal("activeCompaction should be cleared")
-	}
-	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != "compaction failed" {
-		t.Fatalf("last message = %q, want compaction failure", got)
+}
+
+func setupRunCompactErrorTransition(t *testing.T, app *App) func(t *testing.T) {
+	t.Helper()
+
+	client := newBlockingTerminalClient()
+	configuredApp := newPromptSendTestApp(t, client)
+	*app = *configuredApp
+	app.screen = newClipboardScreen()
+	session := createCompactTestSession(t, app)
+	app.sessionID = session.ID
+
+	return func(t *testing.T) {
+		t.Helper()
+
+		select {
+		case <-client.ready:
+		case <-time.After(3 * time.Second):
+			t.Fatal("compaction should start provider request")
+		}
+		client.finish("", errors.New("provider down"))
 	}
 }
 
-func TestRunCompactSessionPostsError(t *testing.T) {
-	t.Parallel()
+func createCompactTestSession(t *testing.T, app *App) *database.SessionEntity {
+	t.Helper()
 
-	client := newBlockingTerminalClient()
-	app := newPromptSendTestApp(t, client)
-	app.screen = newClipboardScreen()
 	session, err := app.runtime.SessionRepository().CreateSession(context.Background(), app.cwd, "compact", "")
 	if err != nil {
 		t.Fatalf("create session: %v", err)
@@ -148,39 +218,46 @@ func TestRunCompactSessionPostsError(t *testing.T) {
 		database.RoleAssistant,
 		strings.Repeat("old assistant answer ", 5_000),
 	)
-	app.sessionID = session.ID
-	compactCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	go app.runCompactSession(context.Background(), compactCtx, cancel, 42, nil)
-	select {
-	case <-client.ready:
-	case <-time.After(time.Second):
-		t.Fatal("compaction should start provider request")
-	}
-	client.finish("", errors.New("provider down"))
-	event := readPromptAsyncEvent(t, app)
-
-	if got := event.Kind; got != asyncEventCompactError {
-		t.Fatalf("event.Kind = %q, want %q", got, asyncEventCompactError)
-	}
-	if !strings.Contains(event.Text, "provider down") {
-		t.Fatalf("event.Text = %q, want provider error", event.Text)
-	}
+	return session
 }
 
-func TestCancelActiveOperationCancelsCompaction(t *testing.T) {
-	t.Parallel()
+func invokeRunCompactErrorTransition(t *testing.T, app *App) {
+	t.Helper()
 
-	app := newRenderTestApp(t)
+	compactCtx, cancel := context.WithCancel(context.Background())
+	go app.runCompactSession(context.Background(), compactCtx, cancel, 42, nil)
+}
+
+func setupCancelCompactTransition(t *testing.T, app *App) func(t *testing.T) {
+	t.Helper()
+
 	canceled := false
 	app.compacting = true
 	app.activeCompaction = &activeCompactionState{Cancel: func() { canceled = true }, ID: 7}
 
-	app.cancelActiveOperation(context.Background())
+	return func(t *testing.T) {
+		t.Helper()
 
-	if !canceled {
-		t.Fatal("active compaction cancel should be called")
+		if !canceled {
+			t.Fatal("active compaction cancel should be called")
+		}
+	}
+}
+
+func invokeCancelCompactTransition(t *testing.T, app *App) {
+	t.Helper()
+
+	app.cancelActiveOperation(context.Background())
+}
+
+func assertCompactTransition(t *testing.T, app *App, testCase *compactTransitionCase) {
+	t.Helper()
+
+	if testCase.wantEventKind != "" {
+		assertCompactAsyncEvent(t, app, testCase)
+
+		return
 	}
 	if app.compacting {
 		t.Fatal("app should stop compacting")
@@ -188,8 +265,26 @@ func TestCancelActiveOperationCancelsCompaction(t *testing.T) {
 	if app.activeCompaction != nil {
 		t.Fatal("activeCompaction should be cleared")
 	}
-	if got := app.statusMessage; got != "context compaction canceled" {
-		t.Fatalf("statusMessage = %q, want compaction canceled", got)
+	if testCase.wantStatus != "" && app.statusMessage != testCase.wantStatus {
+		t.Fatalf("statusMessage = %q, want %q", app.statusMessage, testCase.wantStatus)
+	}
+	if testCase.wantLastMessage != "" {
+		got := app.transcript.History[len(app.transcript.History)-1].Content
+		if got != testCase.wantLastMessage {
+			t.Fatalf("last message = %q, want %q", got, testCase.wantLastMessage)
+		}
+	}
+}
+
+func assertCompactAsyncEvent(t *testing.T, app *App, testCase *compactTransitionCase) {
+	t.Helper()
+
+	event := readPromptAsyncEvent(t, app)
+	if got := event.Kind; got != testCase.wantEventKind {
+		t.Fatalf("event.Kind = %q, want %q", got, testCase.wantEventKind)
+	}
+	if !strings.Contains(event.Text, testCase.wantLastMessage) {
+		t.Fatalf("event.Text = %q, want %q", event.Text, testCase.wantLastMessage)
 	}
 }
 

@@ -100,6 +100,9 @@ func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
 	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
 
 	require.NoError(t, err)
+	require.NotNil(t, usage.Breakdown)
+	require.Contains(t, usage.Breakdown, "reserve_provider")
+	require.Contains(t, usage.Breakdown, "reserve_safety")
 	assert.Equal(t, 0, usage.Breakdown["reserve_provider"])
 	assert.Equal(t, 0, usage.Breakdown["reserve_safety"])
 }
