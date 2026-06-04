@@ -24,13 +24,14 @@ func (app *App) compactSession(ctx context.Context) error {
 
 	compactCtx, cancel := context.WithCancel(ctx)
 	compactID := app.nextPromptID()
+	parentEntryID := app.compactionParentEntryID()
 	app.compacting = true
 	app.activeCompaction = &activeCompactionState{Cancel: cancel, ID: compactID}
 	app.workStartedAt = time.Now()
 	app.workFrame = 0
 	app.scrollOffset = 0
 	app.setStatus("compacting context")
-	go app.runCompactSession(ctx, compactCtx, cancel, compactID)
+	go app.runCompactSession(ctx, compactCtx, cancel, compactID, parentEntryID)
 
 	return nil
 }
@@ -40,9 +41,10 @@ func (app *App) runCompactSession(
 	compactCtx context.Context,
 	cancel context.CancelFunc,
 	compactID uint64,
+	parentEntryID *string,
 ) {
 	defer cancel()
-	entry, err := app.runtime.CompactSession(compactCtx, app.sessionID, app.cwd)
+	entry, err := app.runtime.CompactSessionFrom(compactCtx, app.sessionID, app.cwd, parentEntryID)
 	if err != nil {
 		app.postCompactError(ctx, compactID, err)
 		return
@@ -56,7 +58,7 @@ func (app *App) postCompactDone(ctx context.Context, compactID uint64, entry *da
 		ToolEvent: nil,
 		Usage:     nil,
 		Kind:      asyncEventCompactDone,
-		Provider:  firstKeptEntryID(entry),
+		Provider:  compactionEntryID(entry),
 		Text:      compactDoneText(entry),
 		PromptID:  compactID,
 	})
@@ -140,12 +142,20 @@ func compactDoneText(entry *database.EntryEntity) string {
 	)
 }
 
-func firstKeptEntryID(entry *database.EntryEntity) string {
+func compactionEntryID(entry *database.EntryEntity) string {
 	if entry == nil {
 		return ""
 	}
 
-	return entry.CompactionFirstKeptEntryID
+	return entry.ID
+}
+
+func (app *App) compactionParentEntryID() *string {
+	if app.pendingParentID != nil {
+		return cloneStringPtr(app.pendingParentID)
+	}
+
+	return nil
 }
 
 func nonEmptyStringPtr(value string) *string {

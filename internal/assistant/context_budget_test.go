@@ -78,6 +78,32 @@ func TestRuntime_ContextUsageIncludesBudgetReserves(t *testing.T) {
 	assert.Greater(t, usage.Breakdown["usable_input"], 0)
 }
 
+func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
+	t.Parallel()
+
+	client := &capturingCompletionClient{request: nil}
+	runtime := newTestRuntimeWithContextWindow(t, client, 512)
+	runtimeConfig := testConfig()
+	runtimeConfig.Context.ProviderReserveTokens = 0
+	runtimeConfig.Context.SafetyMarginTokens = 0
+	runtime = assistant.NewRuntime(
+		runtimeConfig,
+		runtime.SessionRepository(),
+		nil,
+		assistant.NewResponseCache(false, 1, time.Minute),
+		runtime.EventBus(),
+		runtime.ModelRegistry(),
+		client,
+		nil,
+	)
+
+	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, usage.Breakdown["reserve_provider"])
+	assert.Equal(t, 0, usage.Breakdown["reserve_safety"])
+}
+
 func TestLoadRejectsNegativeContextBudget(t *testing.T) {
 	t.Parallel()
 

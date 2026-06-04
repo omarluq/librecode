@@ -66,11 +66,11 @@ type AssistantConfig struct {
 
 // ContextConfig controls local context-window budgeting before provider requests.
 type ContextConfig struct {
-	OutputReserveTokens   int  `mapstructure:"output_reserve_tokens"`
-	ProviderReserveTokens int  `mapstructure:"provider_reserve_tokens"`
-	SafetyMarginTokens    int  `mapstructure:"safety_margin_tokens"`
-	KeepRecentTokens      int  `mapstructure:"keep_recent_tokens"`
-	PreflightEnabled      bool `mapstructure:"preflight_enabled"`
+	OutputReserveTokens   int  `json:"output_reserve_tokens" mapstructure:"output_reserve_tokens" yaml:"output_reserve_tokens"`       //nolint:lll // struct tags must stay on one line
+	ProviderReserveTokens int  `json:"provider_reserve_tokens" mapstructure:"provider_reserve_tokens" yaml:"provider_reserve_tokens"` //nolint:lll // struct tags must stay on one line
+	SafetyMarginTokens    int  `json:"safety_margin_tokens" mapstructure:"safety_margin_tokens" yaml:"safety_margin_tokens"`          //nolint:lll // struct tags must stay on one line
+	KeepRecentTokens      int  `json:"keep_recent_tokens" mapstructure:"keep_recent_tokens" yaml:"keep_recent_tokens"`
+	PreflightEnabled      bool `json:"preflight_enabled" mapstructure:"preflight_enabled" yaml:"preflight_enabled"`
 }
 
 // RetryConfig controls transient model request retries.

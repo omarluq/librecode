@@ -79,6 +79,42 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	assert.Equal(t, "recent assistant tail", contextEntity.Messages[2].Content)
 }
 
+func TestRuntime_CompactSessionChainsNextPromptFromCompactionEntry(t *testing.T) {
+	t.Parallel()
+
+	client := &compactionCompletionClient{summary: "summary of compacted work", requests: nil}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	runtimeConfig := testConfig()
+	runtimeConfig.Context.KeepRecentTokens = 1
+	runtime = assistant.NewRuntime(
+		runtimeConfig,
+		repository,
+		nil,
+		assistant.NewResponseCache(false, 1, time.Minute),
+		runtime.EventBus(),
+		runtime.ModelRegistry(),
+		client,
+		nil,
+	)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 1000))
+	appendRuntimeTestMessage(t, repository, session.ID, &old.ID, database.RoleAssistant, "tail")
+
+	compactionEntry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+	require.NoError(t, err)
+	followUp := appendRuntimeTestMessage(t, repository, session.ID, &compactionEntry.ID, database.RoleUser, "continue")
+
+	contextEntity, err := repository.BuildContext(ctx, session.ID, followUp.ID)
+
+	require.NoError(t, err)
+	require.Len(t, contextEntity.Messages, 3)
+	assert.Equal(t, database.RoleCompactionSummary, contextEntity.Messages[0].Role)
+	assert.Equal(t, "tail", contextEntity.Messages[1].Content)
+	assert.Equal(t, "continue", contextEntity.Messages[2].Content)
+}
+
 func TestRuntime_CompactSessionRejectsShortHistory(t *testing.T) {
 	t.Parallel()
 
@@ -92,7 +128,7 @@ func TestRuntime_CompactSessionRejectsShortHistory(t *testing.T) {
 	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not enough model-facing history to compact")
+	assert.Contains(t, err.Error(), "not enough old history to compact")
 	assert.Nil(t, entry)
 	assert.Empty(t, client.requests)
 }

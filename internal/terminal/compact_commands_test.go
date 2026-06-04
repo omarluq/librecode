@@ -75,7 +75,7 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 		ToolEvent: nil,
 		Usage:     nil,
 		Kind:      asyncEventCompactDone,
-		Provider:  "kept-entry",
+		Provider:  "compaction-entry",
 		Text:      compactedStatusMessage,
 		PromptID:  9,
 	})
@@ -89,8 +89,8 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 	if app.activeCompaction != nil {
 		t.Fatal("activeCompaction should be cleared")
 	}
-	if app.pendingParentID == nil || *app.pendingParentID != "kept-entry" {
-		t.Fatalf("pendingParentID = %v, want kept-entry", app.pendingParentID)
+	if app.pendingParentID == nil || *app.pendingParentID != "compaction-entry" {
+		t.Fatalf("pendingParentID = %v, want compaction-entry", app.pendingParentID)
 	}
 	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != compactedStatusMessage {
 		t.Fatalf("last message = %q, want compacted message", got)

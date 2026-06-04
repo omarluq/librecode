@@ -65,12 +65,15 @@ func modelFacingMessage(message *database.MessageEntity) database.MessageEntity 
 
 func isModelFacingRole(role database.Role) bool {
 	switch role {
-	case database.RoleUser, database.RoleAssistant, database.RoleBranchSummary, database.RoleCompactionSummary:
-		return true
-	case database.RoleToolResult,
-		database.RoleThinking,
+	case database.RoleUser,
+		database.RoleAssistant,
+		database.RoleBranchSummary,
+		database.RoleCompactionSummary,
 		database.RoleCustom,
 		database.RoleBashExecution:
+		return true
+	case database.RoleToolResult,
+		database.RoleThinking:
 		return false
 	}
 

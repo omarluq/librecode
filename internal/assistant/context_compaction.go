@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/samber/oops"
 
@@ -25,6 +26,20 @@ Preserve:
 - pending next steps and open questions
 
 Be concise but specific. Do not invent facts. Return only the summary.`
+	compactionUpdatePrompt = `Update the existing compaction summary with the new conversation history below.
+
+Rules:
+- preserve important facts from the existing summary
+- add new progress, decisions, files, commands, errors, validation results, next steps, and open questions
+- remove details that are clearly obsolete
+- be concise but specific
+- do not invent facts
+- return only the updated summary
+
+Existing summary:
+<summary>
+%s
+</summary>`
 )
 
 // CompactSession summarizes older model-facing context and appends a compaction entry.
@@ -32,6 +47,16 @@ func (runtime *Runtime) CompactSession(
 	ctx context.Context,
 	sessionID string,
 	cwd string,
+) (*database.EntryEntity, error) {
+	return runtime.CompactSessionFrom(ctx, sessionID, cwd, nil)
+}
+
+// CompactSessionFrom compacts the branch ending at parentEntryID, or the latest leaf when nil.
+func (runtime *Runtime) CompactSessionFrom(
+	ctx context.Context,
+	sessionID string,
+	cwd string,
+	parentEntryID *string,
 ) (*database.EntryEntity, error) {
 	if strings.TrimSpace(sessionID) == "" {
 		return nil, oops.In("assistant").Code("compact_no_session").Errorf("no active session to compact")
@@ -44,7 +69,7 @@ func (runtime *Runtime) CompactSession(
 	if err != nil {
 		return nil, err
 	}
-	parentID, branch, err := runtime.compactionBranch(ctx, sessionID)
+	parentID, branch, err := runtime.compactionBranch(ctx, sessionID, parentEntryID)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +78,7 @@ func (runtime *Runtime) CompactSession(
 		return nil, err
 	}
 
-	summary, err := runtime.summarizeCompaction(ctx, cwd, sessionID, selectedModel, auth, plan.Messages)
+	summary, err := runtime.summarizeCompaction(ctx, cwd, sessionID, selectedModel, auth, &plan)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +105,12 @@ func (runtime *Runtime) compactionModelAuth(ctx context.Context) (*model.Model, 
 func (runtime *Runtime) compactionBranch(
 	ctx context.Context,
 	sessionID string,
+	parentEntryID *string,
 ) (*string, []database.EntryEntity, error) {
+	if parentEntryID != nil {
+		return runtime.explicitCompactionBranch(ctx, sessionID, parentEntryID)
+	}
+
 	leaf, _, err := runtime.sessions.LeafEntry(ctx, sessionID)
 	if err != nil {
 		return nil, nil, oops.In("assistant").Code("compact_leaf").Wrapf(err, "load session leaf")
@@ -97,6 +127,22 @@ func (runtime *Runtime) compactionBranch(
 	}
 
 	return parentID, branch, nil
+}
+
+func (runtime *Runtime) explicitCompactionBranch(
+	ctx context.Context,
+	sessionID string,
+	parentEntryID *string,
+) (*string, []database.EntryEntity, error) {
+	if strings.TrimSpace(*parentEntryID) == "" {
+		return nil, []database.EntryEntity{}, nil
+	}
+	branch, err := runtime.sessions.Branch(ctx, sessionID, *parentEntryID)
+	if err != nil {
+		return nil, nil, oops.In("assistant").Code("compact_branch").Wrapf(err, "load session branch")
+	}
+
+	return parentEntryID, branch, nil
 }
 
 func (runtime *Runtime) appendCompaction(
@@ -132,60 +178,258 @@ func (runtime *Runtime) appendCompaction(
 type compactionPlan struct {
 	FirstKeptEntryID   string
 	Messages           []database.MessageEntity
+	PreviousSummary    string
 	SummarizedEntryIDs []string
 	KeptEntryIDs       []string
 	TokensBefore       int
 }
 
 func planCompaction(branch []database.EntryEntity, keepRecentTokens int) (compactionPlan, error) {
-	modelFacing := modelFacingBranchEntries(branch)
-	if len(modelFacing) < 2 {
-		return compactionPlan{}, oops.In("assistant").
-			Code("compact_nothing_to_do").
-			Errorf("not enough model-facing history to compact")
+	if len(branch) == 0 {
+		return compactionPlan{}, compactNothingToDoError("not enough model-facing history to compact")
+	}
+	if branch[len(branch)-1].Type == database.EntryTypeCompaction {
+		return compactionPlan{}, compactNothingToDoError("no new history to compact after the latest compaction")
 	}
 	if keepRecentTokens <= 0 {
 		keepRecentTokens = defaultCompactionKeepRecentTokens
 	}
 
-	firstKept := firstKeptEntryIndex(modelFacing, keepRecentTokens)
-	if firstKept <= 0 {
-		return compactionPlan{}, oops.In("assistant").
-			Code("compact_nothing_to_do").
-			Errorf("not enough old history to compact while preserving the recent tail")
+	previousSummary, boundaryStart := previousCompactionBoundary(branch)
+	cutPoint := findCompactionCutPoint(branch, boundaryStart, len(branch), keepRecentTokens)
+	if cutPoint.firstKeptEntryIndex <= boundaryStart || cutPoint.firstKeptEntryIndex >= len(branch) {
+		return compactionPlan{}, compactNothingToDoError(
+			"not enough old history to compact while preserving the recent tail",
+		)
 	}
 
-	summarized := modelFacing[:firstKept]
-	kept := modelFacing[firstKept:]
-	messages := make([]database.MessageEntity, 0, len(summarized))
-	summarizedIDs := make([]string, 0, len(summarized))
-	keptIDs := make([]string, 0, len(kept))
-	for index := range summarized {
-		messages = append(messages, modelFacingMessage(&summarized[index].Message))
-		summarizedIDs = append(summarizedIDs, summarized[index].ID)
+	summarizeEnd := cutPoint.firstKeptEntryIndex
+	if cutPoint.isSplitTurn {
+		summarizeEnd = cutPoint.turnStartIndex
 	}
-	for index := range kept {
-		keptIDs = append(keptIDs, kept[index].ID)
+	messages, summarizedIDs := compactionMessagesInRange(branch, boundaryStart, summarizeEnd)
+	if cutPoint.isSplitTurn {
+		turnPrefixMessages, turnPrefixIDs := compactionMessagesInRange(
+			branch,
+			cutPoint.turnStartIndex,
+			cutPoint.firstKeptEntryIndex,
+		)
+		messages = append(messages, turnPrefixMessages...)
+		summarizedIDs = append(summarizedIDs, turnPrefixIDs...)
 	}
+	if len(messages) == 0 {
+		return compactionPlan{}, compactNothingToDoError("no model-facing history was selected for compaction")
+	}
+
+	keptIDs := keptCompactionEntryIDs(branch[cutPoint.firstKeptEntryIndex:])
+	firstKeptEntryID := branch[cutPoint.firstKeptEntryIndex].ID
 
 	return compactionPlan{
 		Messages:           messages,
+		PreviousSummary:    previousSummary,
 		SummarizedEntryIDs: summarizedIDs,
 		KeptEntryIDs:       keptIDs,
-		FirstKeptEntryID:   kept[0].ID,
-		TokensBefore:       estimateMessageTokens(messages),
+		FirstKeptEntryID:   firstKeptEntryID,
+		TokensBefore:       effectiveBranchTokens(branch),
 	}, nil
+}
+
+func compactNothingToDoError(message string) error {
+	return oops.In("assistant").Code("compact_nothing_to_do").Errorf("%s", message)
+}
+
+func previousCompactionBoundary(branch []database.EntryEntity) (summary string, boundaryStart int) {
+	for index := len(branch) - 1; index >= 0; index-- {
+		if branch[index].Type != database.EntryTypeCompaction {
+			continue
+		}
+		firstKeptIndex := entryIndexByID(branch, branch[index].CompactionFirstKeptEntryID)
+		if firstKeptIndex < 0 {
+			firstKeptIndex = index + 1
+		}
+
+		return branch[index].Summary, firstKeptIndex
+	}
+
+	return "", 0
+}
+
+func entryIndexByID(entries []database.EntryEntity, entryID string) int {
+	for index := range entries {
+		if entries[index].ID == entryID {
+			return index
+		}
+	}
+
+	return -1
+}
+
+type compactionCutPoint struct {
+	firstKeptEntryIndex int
+	turnStartIndex      int
+	isSplitTurn         bool
+}
+
+func findCompactionCutPoint(
+	entries []database.EntryEntity,
+	startIndex int,
+	endIndex int,
+	keepRecentTokens int,
+) compactionCutPoint {
+	cutPoints := validCompactionCutPoints(entries, startIndex, endIndex)
+	if len(cutPoints) == 0 {
+		return compactionCutPoint{firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false}
+	}
+
+	accumulatedTokens := 0
+	cutIndex := cutPoints[0]
+	for index := endIndex - 1; index >= startIndex; index-- {
+		message, ok := messageForCompactionSummary(&entries[index])
+		if !ok {
+			continue
+		}
+		accumulatedTokens += estimateTokens(message.Content)
+		if accumulatedTokens < keepRecentTokens {
+			continue
+		}
+		cutIndex = firstCutPointAtOrAfter(cutPoints, index)
+		break
+	}
+
+	turnStartIndex := -1
+	if !isTurnStartEntry(&entries[cutIndex]) {
+		turnStartIndex = findTurnStartEntryIndex(entries, cutIndex, startIndex)
+	}
+
+	return compactionCutPoint{
+		firstKeptEntryIndex: cutIndex,
+		turnStartIndex:      turnStartIndex,
+		isSplitTurn:         turnStartIndex >= 0,
+	}
+}
+
+func validCompactionCutPoints(entries []database.EntryEntity, startIndex, endIndex int) []int {
+	cutPoints := []int{}
+	for index := startIndex; index < endIndex; index++ {
+		if isValidCompactionCutPoint(&entries[index]) {
+			cutPoints = append(cutPoints, index)
+		}
+	}
+
+	return cutPoints
+}
+
+func isValidCompactionCutPoint(entry *database.EntryEntity) bool {
+	_, ok := messageForCompactionSummary(entry)
+
+	return ok
+}
+
+func firstCutPointAtOrAfter(cutPoints []int, entryIndex int) int {
+	for index := range cutPoints {
+		if cutPoints[index] >= entryIndex {
+			return cutPoints[index]
+		}
+	}
+
+	return cutPoints[len(cutPoints)-1]
+}
+
+func findTurnStartEntryIndex(entries []database.EntryEntity, entryIndex, startIndex int) int {
+	for index := entryIndex; index >= startIndex; index-- {
+		if isTurnStartEntry(&entries[index]) {
+			return index
+		}
+	}
+
+	return -1
+}
+
+func isTurnStartEntry(entry *database.EntryEntity) bool {
+	message, ok := messageForCompactionSummary(entry)
+	if !ok {
+		return false
+	}
+
+	return message.Role == database.RoleUser || message.Role == database.RoleCustom
+}
+
+func compactionMessagesInRange(
+	entries []database.EntryEntity,
+	startIndex int,
+	endIndex int,
+) (messages []database.MessageEntity, entryIDs []string) {
+	messages = make([]database.MessageEntity, 0, endIndex-startIndex)
+	entryIDs = make([]string, 0, endIndex-startIndex)
+	for index := startIndex; index < endIndex; index++ {
+		message, ok := messageForCompactionSummary(&entries[index])
+		if !ok {
+			continue
+		}
+		messages = append(messages, modelFacingMessage(&message))
+		entryIDs = append(entryIDs, entries[index].ID)
+	}
+
+	return messages, entryIDs
+}
+
+func keptCompactionEntryIDs(entries []database.EntryEntity) []string {
+	entryIDs := make([]string, 0, len(entries))
+	for index := range entries {
+		if _, ok := messageForCompactionContext(&entries[index]); ok {
+			entryIDs = append(entryIDs, entries[index].ID)
+		}
+	}
+
+	return entryIDs
+}
+
+func effectiveBranchTokens(branch []database.EntryEntity) int {
+	effective := effectiveModelFacingBranchEntries(branch)
+	messages := make([]database.MessageEntity, 0, len(effective))
+	for index := range effective {
+		message, ok := messageForCompactionContext(&effective[index])
+		if !ok {
+			continue
+		}
+		messages = append(messages, modelFacingMessage(&message))
+	}
+
+	return estimateMessageTokens(messages)
+}
+
+func effectiveModelFacingBranchEntries(branch []database.EntryEntity) []database.EntryEntity {
+	entries := modelFacingBranchEntries(branch)
+	effective := make([]database.EntryEntity, 0, len(entries))
+	for index := range entries {
+		entry := entries[index]
+		if entry.Type != database.EntryTypeCompaction {
+			effective = append(effective, entry)
+			continue
+		}
+
+		firstKeptIndex := len(effective)
+		for effectiveIndex := range effective {
+			if effective[effectiveIndex].ID == entry.CompactionFirstKeptEntryID {
+				firstKeptIndex = effectiveIndex
+				break
+			}
+		}
+		compacted := make([]database.EntryEntity, 0, 1+len(effective)-firstKeptIndex)
+		compacted = append(compacted, entry)
+		compacted = append(compacted, effective[firstKeptIndex:]...)
+		effective = compacted
+	}
+
+	return effective
 }
 
 func modelFacingBranchEntries(branch []database.EntryEntity) []database.EntryEntity {
 	entries := make([]database.EntryEntity, 0, len(branch))
 	for index := range branch {
 		entry := branch[index]
-		if !isCompactionCandidateEntry(entry.Type) {
-			continue
-		}
-		message := compactionCandidateMessage(&entry)
-		if !entry.ModelFacing || !isModelFacingRole(message.Role) || strings.TrimSpace(message.Content) == "" {
+		message, ok := messageForCompactionContext(&entry)
+		if !ok {
 			continue
 		}
 		entry.Message = message
@@ -195,22 +439,31 @@ func modelFacingBranchEntries(branch []database.EntryEntity) []database.EntryEnt
 	return entries
 }
 
-func isCompactionCandidateEntry(entryType database.EntryType) bool {
-	switch entryType {
-	case database.EntryTypeMessage,
-		database.EntryTypeCustomMessage,
-		database.EntryTypeBranchSummary,
-		database.EntryTypeCompaction:
-		return true
-	case database.EntryTypeCustom,
-		database.EntryTypeLabel,
-		database.EntryTypeModelChange,
-		database.EntryTypeSessionInfo,
-		database.EntryTypeThinkingLevelChange:
-		return false
+func emptyMessageEntity() database.MessageEntity {
+	return database.MessageEntity{
+		Timestamp: time.Time{},
+		Role:      "",
+		Content:   "",
+		Provider:  "",
+		Model:     "",
+	}
+}
+
+func messageForCompactionContext(entry *database.EntryEntity) (database.MessageEntity, bool) {
+	message := compactionCandidateMessage(entry)
+	if !entry.ModelFacing || !isModelFacingRole(message.Role) || strings.TrimSpace(message.Content) == "" {
+		return emptyMessageEntity(), false
 	}
 
-	return false
+	return message, true
+}
+
+func messageForCompactionSummary(entry *database.EntryEntity) (database.MessageEntity, bool) {
+	if entry.Type == database.EntryTypeCompaction {
+		return emptyMessageEntity(), false
+	}
+
+	return messageForCompactionContext(entry)
 }
 
 func compactionCandidateMessage(entry *database.EntryEntity) database.MessageEntity {
@@ -234,30 +487,13 @@ func compactionCandidateMessage(entry *database.EntryEntity) database.MessageEnt
 	return message
 }
 
-func firstKeptEntryIndex(entries []database.EntryEntity, keepRecentTokens int) int {
-	lastIndex := len(entries) - 1
-	tokens := 0
-	for index := lastIndex; index >= 0; index-- {
-		message := modelFacingMessage(&entries[index].Message)
-		tokens += estimateTokens(message.Content)
-		if index == lastIndex {
-			continue
-		}
-		if tokens > keepRecentTokens {
-			return index + 1
-		}
-	}
-
-	return 0
-}
-
 func (runtime *Runtime) summarizeCompaction(
 	ctx context.Context,
 	cwd string,
 	sessionID string,
 	selectedModel *model.Model,
 	auth model.RequestAuth,
-	messages []database.MessageEntity,
+	plan *compactionPlan,
 ) (string, error) {
 	request := &CompletionRequest{
 		OnEvent:           nil,
@@ -268,12 +504,12 @@ func (runtime *Runtime) summarizeCompaction(
 		ToolRegistry:      tool.NewRegistry(cwd),
 		DisableTools:      true,
 		SessionID:         sessionID,
-		SystemPrompt:      compactionSummaryPrompt,
+		SystemPrompt:      compactionSystemPrompt(plan.PreviousSummary),
 		ThinkingLevel:     thinkingOff,
 		CWD:               cwd,
 		Auth:              auth,
-		Messages:          messages,
-		Usage:             compactionRequestUsage(selectedModel, messages),
+		Messages:          plan.Messages,
+		Usage:             compactionRequestUsage(selectedModel, plan.Messages),
 		Model:             *selectedModel,
 		ProviderAttempt:   0,
 	}
@@ -287,6 +523,14 @@ func (runtime *Runtime) summarizeCompaction(
 	}
 
 	return summary, nil
+}
+
+func compactionSystemPrompt(previousSummary string) string {
+	if strings.TrimSpace(previousSummary) == "" {
+		return compactionSummaryPrompt
+	}
+
+	return fmt.Sprintf(compactionUpdatePrompt, previousSummary)
 }
 
 func compactionRequestUsage(selectedModel *model.Model, messages []database.MessageEntity) model.TokenUsage {

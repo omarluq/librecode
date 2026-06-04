@@ -43,8 +43,8 @@ func newContextBudget(
 		UsableInput:       0,
 		OutputReserve:     contextOutputReserve(selectedModel, contextWindow, policy),
 		ToolSchemaReserve: estimateToolSchemaTokens(request),
-		ProviderReserve:   positiveOrDefault(policy.ProviderReserveTokens, defaultContextProviderReserve),
-		SafetyMargin:      positiveOrDefault(policy.SafetyMarginTokens, defaultContextSafetyMargin),
+		ProviderReserve:   nonNegativeOrDefault(policy.ProviderReserveTokens, defaultContextProviderReserve),
+		SafetyMargin:      nonNegativeOrDefault(policy.SafetyMarginTokens, defaultContextSafetyMargin),
 	}
 	budget.UsableInput = contextWindow - budget.TotalReserve()
 	if budget.UsableInput < 0 {
@@ -132,8 +132,8 @@ func estimateToolSchemaTokens(request *CompletionRequest) int {
 	return estimateTokens(string(encoded))
 }
 
-func positiveOrDefault(value, fallback int) int {
-	if value > 0 {
+func nonNegativeOrDefault(value, fallback int) int {
+	if value >= 0 {
 		return value
 	}
 

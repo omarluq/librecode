@@ -29,10 +29,10 @@ func openAIResponseInputRole(role database.Role) (string, bool) {
 		return jsonUserRole, true
 	case database.RoleBranchSummary, database.RoleCompactionSummary:
 		return jsonUserRole, true
+	case database.RoleCustom, database.RoleBashExecution:
+		return jsonUserRole, true
 	case database.RoleToolResult,
-		database.RoleThinking,
-		database.RoleCustom,
-		database.RoleBashExecution:
+		database.RoleThinking:
 		return "", false
 	}
 
