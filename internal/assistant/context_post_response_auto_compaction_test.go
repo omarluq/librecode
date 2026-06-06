@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,37 +15,17 @@ import (
 func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
 	t.Parallel()
 
-	client := &sequencedCompletionClient{
-		responses: []string{"final answer", "summary of completed work"},
-		requests:  nil,
-	}
-	runtime := newTestRuntimeWithContextWindow(t, client, 16_000)
-	runtimeConfig := testConfig()
-	runtimeConfig.Context.KeepRecentTokens = 1
-	runtimeConfig.Context.ProviderReserveTokens = 0
-	runtimeConfig.Context.SafetyMarginTokens = 0
-	runtimeConfig.Context.OutputReserveTokens = 0
-	runtime = assistant.NewRuntime(
-		runtimeConfig,
-		runtime.SessionRepository(),
-		nil,
-		assistant.NewResponseCache(false, 1, time.Minute),
-		runtime.EventBus(),
-		runtime.ModelRegistry(),
-		client,
-		nil,
-	)
-
+	harness := newAutoCompactionRuntimeHarness(t, []string{"final answer", "summary of completed work"}, 16_000)
 	ctx := context.Background()
-	session, err := runtime.SessionRepository().CreateSession(ctx, testRuntimeCWD, "post compact", "")
+	session, err := harness.runtime.SessionRepository().CreateSession(ctx, testRuntimeCWD, "post compact", "")
 	require.NoError(t, err)
 	old := appendRuntimeTestMessage(
 		t,
-		runtime.SessionRepository(),
+		harness.runtime.SessionRepository(),
 		session.ID,
 		nil,
 		database.RoleUser,
-		strings.Repeat("old ", 1_000),
+		strings.Repeat("old ", 2_600),
 	)
 	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
 	request.SessionID = session.ID
@@ -56,23 +35,23 @@ func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
 		events = append(events, event)
 	}
 
-	response, err := runtime.Prompt(ctx, request)
+	response, err := harness.runtime.Prompt(ctx, request)
 
 	require.NoError(t, err)
 	assert.Equal(t, "final answer", response.Text)
-	require.Len(t, client.requests, 2)
-	assert.False(t, client.requests[0].DisableTools)
-	assert.True(t, client.requests[1].DisableTools)
-	assert.Contains(t, client.requests[1].Messages[0].Content, "old")
+	require.Len(t, harness.client.requests, 2)
+	assert.False(t, harness.client.requests[0].DisableTools)
+	assert.True(t, harness.client.requests[1].DisableTools)
+	assert.Contains(t, harness.client.requests[1].Messages[0].Content, "old")
 	assertPostResponseCompactionEvent(t, events)
 
-	leaf, found, err := runtime.SessionRepository().LeafEntry(ctx, session.ID)
+	leaf, found, err := harness.runtime.SessionRepository().LeafEntry(ctx, session.ID)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, database.EntryTypeCompaction, leaf.Type)
 	assert.Equal(t, response.AssistantEntryID, *leaf.ParentID)
 
-	branch, err := runtime.SessionRepository().Branch(ctx, session.ID, leaf.ID)
+	branch, err := harness.runtime.SessionRepository().Branch(ctx, session.ID, leaf.ID)
 	require.NoError(t, err)
 	assert.Equal(t, database.EntryTypeCompaction, branch[len(branch)-1].Type)
 }
