@@ -88,13 +88,15 @@ func (runtime *Runtime) modelResponse(
 	}
 	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(
 		ctx,
-		sessionID,
-		cwd,
-		prompt,
-		userEntryID,
-		&selectedModel,
-		auth,
-		onEvent,
+		&completionRequestPreparationInput{
+			sessionID:     sessionID,
+			cwd:           cwd,
+			prompt:        prompt,
+			userEntryID:   userEntryID,
+			selectedModel: &selectedModel,
+			auth:          &auth,
+			onEvent:       onEvent,
+		},
 	)
 	if err != nil {
 		return nil, err
