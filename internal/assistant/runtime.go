@@ -169,6 +169,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		return nil, err
 	}
 
+	compactedBeforeRequest := bundle.ParentEntryID != nil
 	assistantParentID := bundle.ParentEntryID
 	if assistantParentID == nil {
 		assistantParentID = &userEntry.ID
@@ -183,6 +184,14 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	}
 	runtime.dispatchMessageAppend(ctx, assistantEntry)
 	turnLifecycle.dispatchEnd(ctx, assistantEntry.ID, cached, bundle.Usage)
+	if !compactedBeforeRequest {
+		runtime.autoCompactAfterResponse(ctx, &postResponseAutoCompactionInput{
+			onEvent:       request.OnEvent,
+			sessionID:     activeSession.ID,
+			cwd:           request.CWD,
+			parentEntryID: assistantEntry.ID,
+		})
+	}
 
 	return &PromptResponse{
 		SessionID:        activeSession.ID,
