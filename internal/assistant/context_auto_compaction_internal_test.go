@@ -9,24 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRuntime_PrepareCompletionRequestWithAutoCompactionRejectsNilInput(t *testing.T) {
+func TestRuntime_PrepareCompletionRequestWithAutoCompactionInputValidation(t *testing.T) {
 	t.Parallel()
 
-	runtime := runtimeWithoutDependencies()
-	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(context.Background(), nil)
-
-	require.Nil(t, build)
-	require.Nil(t, compactionEntry)
-	requirePrepareInputError(t, err)
-}
-
-func TestRuntime_PrepareCompletionRequestWithAutoCompactionRejectsNilAuth(t *testing.T) {
-	t.Parallel()
-
-	runtime := runtimeWithoutDependencies()
-	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(
-		context.Background(),
-		&completionRequestPreparationInput{
+	tests := map[string]*completionRequestPreparationInput{
+		"rejects nil input": nil,
+		"rejects nil auth": {
 			selectedModel: nil,
 			onEvent:       nil,
 			auth:          nil,
@@ -35,11 +23,23 @@ func TestRuntime_PrepareCompletionRequestWithAutoCompactionRejectsNilAuth(t *tes
 			prompt:        "",
 			userEntryID:   "",
 		},
-	)
+	}
 
-	require.Nil(t, build)
-	require.Nil(t, compactionEntry)
-	requirePrepareInputError(t, err)
+	for testName, input := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			runtime := runtimeWithoutDependencies()
+			build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(
+				context.Background(),
+				input,
+			)
+
+			require.Nil(t, build)
+			require.Nil(t, compactionEntry)
+			requirePrepareInputError(t, err)
+		})
+	}
 }
 
 func runtimeWithoutDependencies() Runtime {
