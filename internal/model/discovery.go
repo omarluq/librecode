@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -229,11 +230,8 @@ func discoveryInputModes(modalities *discoveryModalities) []InputMode {
 		return []InputMode{InputText}
 	}
 	input := []InputMode{InputText}
-	for _, mode := range modalities.Input {
-		if mode == string(InputImage) {
-			input = append(input, InputImage)
-			break
-		}
+	if slices.Contains(modalities.Input, string(InputImage)) {
+		input = append(input, InputImage)
 	}
 
 	return input

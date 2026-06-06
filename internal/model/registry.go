@@ -96,6 +96,14 @@ func (registry *Registry) All() []Model {
 	return cloneModels(registry.models)
 }
 
+// DiscoveryOptions returns the registry's configured discovery settings.
+func (registry *Registry) DiscoveryOptions() DiscoveryOptions {
+	registry.lock.RLock()
+	defer registry.lock.RUnlock()
+
+	return registry.discovery
+}
+
 // Available returns models whose provider has some configured auth.
 func (registry *Registry) Available() []Model {
 	models := registry.All()

@@ -9,7 +9,7 @@ import (
 	"github.com/samber/do/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register SQLite driver for sql.Open in this test
 
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/config"
@@ -45,6 +45,13 @@ func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
 	require.NotNil(t, service.Registry)
 	assert.NotEmpty(t, service.Registry.All())
 	assert.Equal(t, filepath.Join(home, "models-dev.json"), modelDiscoveryCachePath())
+
+	discovery := service.Registry.DiscoveryOptions()
+	assert.Equal(t, cfg.Models.Discovery.SourceURL, discovery.SourceURL)
+	assert.Equal(t, cfg.Models.Discovery.CacheTTL, discovery.CacheTTL)
+	assert.Equal(t, cfg.Models.Discovery.FetchTimeout, discovery.FetchTimeout)
+	assert.Equal(t, cfg.Models.Discovery.Enabled, discovery.Enabled)
+	assert.Equal(t, filepath.Join(home, "models-dev.json"), discovery.CachePath)
 }
 
 func newModelServiceTestDB(t *testing.T) *sql.DB {
