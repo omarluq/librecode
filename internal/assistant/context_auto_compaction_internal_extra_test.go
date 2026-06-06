@@ -79,13 +79,13 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 }
 
 func TestRuntime_AutoCompactionAfterResponseErrorEvent(t *testing.T) {
-	t.Parallel()
+	t.Setenv("HOME", t.TempDir())
 
-	runtime := newAutoCompactionErrorRuntimeWithWindow(t, autoCompactionFailingSummaryClient{}, 30_000)
+	runtime := newAutoCompactionErrorRuntimeWithWindow(t, autoCompactionFailingSummaryClient{}, 160_000)
 	repository := runtime.SessionRepository()
 	session, err := repository.CreateSession(context.Background(), testRuntimeCWD, "post error", "")
 	require.NoError(t, err)
-	old := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 20_000))
+	old := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 150_000))
 	oldAssistant := appendRuntimeTestMessage(t, repository, session.ID, &old.ID, database.RoleAssistant, "recent tail")
 	events := []assistant.StreamEvent{}
 
@@ -93,16 +93,20 @@ func TestRuntime_AutoCompactionAfterResponseErrorEvent(t *testing.T) {
 		events = append(events, event)
 	}, session.ID, testRuntimeCWD, oldAssistant.ID)
 
-	assert.Condition(t, func() bool {
-		for _, event := range events {
-			if event.Kind == assistant.StreamEventContextCompaction &&
-				strings.Contains(event.Text, "context auto-compaction after response failed:") {
-				return true
-			}
-		}
+	assertContainsCompactionErrorEvent(t, events)
+}
 
-		return false
-	})
+func assertContainsCompactionErrorEvent(t *testing.T, events []assistant.StreamEvent) {
+	t.Helper()
+
+	for _, event := range events {
+		if event.Kind == assistant.StreamEventContextCompaction &&
+			strings.Contains(event.Text, "context auto-compaction after response failed:") {
+			return
+		}
+	}
+
+	t.Error("expected context compaction error event not found")
 }
 
 func TestRuntime_EmitPostResponseAutoCompactionErrorSkipsNil(t *testing.T) {
