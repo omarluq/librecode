@@ -91,7 +91,7 @@ func ShouldRetryModelError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return false
 	}
-	message := strings.ToLower(err.Error())
+	message := normalizedErrorMessage(err)
 	if nonRetryableProviderMessage(message) {
 		return false
 	}
@@ -108,6 +108,19 @@ func ShouldRetryModelError(err error) bool {
 		return true
 	}
 	return retryableProviderMessage(message)
+}
+
+// IsContextWindowError reports whether err indicates provider-side context exhaustion.
+func IsContextWindowError(err error) bool {
+	if err == nil {
+		return false
+	}
+	code, ok := providerErrorCode(err)
+	if ok && code == "context_window_exceeded" {
+		return true
+	}
+
+	return contextWindowProviderMessage(normalizedErrorMessage(err))
 }
 
 func retryDecisionFromProviderCode(err error) (retry, known bool) {
@@ -222,11 +235,10 @@ func retryableStatus(status int) bool {
 }
 
 func nonRetryableProviderMessage(message string) bool {
+	if contextWindowProviderMessage(message) {
+		return true
+	}
 	nonRetryable := []string{
-		"context length",
-		"context window",
-		"maximum context",
-		"token limit",
 		"invalid api key",
 		"unauthorized",
 		"authentication",
@@ -241,6 +253,32 @@ func nonRetryableProviderMessage(message string) bool {
 		}
 	}
 	return false
+}
+
+func contextWindowProviderMessage(message string) bool {
+	patterns := []string{
+		"context length",
+		"context window",
+		"maximum context",
+		"token limit",
+		"input exceeds the context",
+		"too many tokens",
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(message, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func normalizedErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	return strings.ToLower(err.Error())
 }
 
 func retryableProviderMessage(message string) bool {

@@ -101,7 +101,23 @@ func (runtime *Runtime) modelResponse(
 	if err != nil {
 		return nil, err
 	}
-	result, err := runtime.completeWithRetry(ctx, build.Request, onRetry)
+	build, compactionEntry, result, err := runtime.completeWithProviderOverflowRecovery(
+		ctx,
+		&providerOverflowRecoveryInput{
+			preparation: &completionRequestPreparationInput{
+				sessionID:     sessionID,
+				cwd:           cwd,
+				prompt:        prompt,
+				userEntryID:   userEntryID,
+				selectedModel: &selectedModel,
+				auth:          &auth,
+				onEvent:       onEvent,
+			},
+			build:           build,
+			compactionEntry: compactionEntry,
+			onRetry:         onRetry,
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
