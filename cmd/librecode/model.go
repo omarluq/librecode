@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"sort"
@@ -39,7 +38,13 @@ func newModelListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer shutdownModelContainer(cmd.Context(), container)
+			defer func() {
+				if report := container.ShutdownWithContext(cmd.Context()); report != nil && !report.Succeed {
+					if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "shutdown failed: %v\n", report.Errors); err != nil {
+						return
+					}
+				}
+			}()
 
 			registry := di.MustInvoke[*di.ModelService](container).Registry
 			models := listedModels(registry, all)
@@ -53,12 +58,6 @@ func newModelListCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&all, "all", false, "include models from unauthorized providers")
 
 	return cmd
-}
-
-func shutdownModelContainer(ctx context.Context, container *di.Container) {
-	if report := container.ShutdownWithContext(ctx); report != nil {
-		return
-	}
 }
 
 func listedModels(registry *model.Registry, all bool) []model.Model {

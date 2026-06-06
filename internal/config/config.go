@@ -248,8 +248,8 @@ func (config *Config) validateContext() error {
 }
 
 func (config *Config) validateModels() error {
-	if config.Models.Discovery.SourceURL == "" {
-		return fmt.Errorf("config: models.discovery.source_url is required")
+	if config.Models.Discovery.Enabled && config.Models.Discovery.SourceURL == "" {
+		return fmt.Errorf("config: models.discovery.source_url is required when discovery is enabled")
 	}
 	if config.Models.Discovery.CacheTTL < 0 {
 		return fmt.Errorf("config: models.discovery.cache_ttl cannot be negative")

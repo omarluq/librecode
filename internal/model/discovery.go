@@ -14,6 +14,7 @@ import (
 const (
 	apiAnthropicMessages   = "anthropic-messages"
 	apiOpenAICodexResponse = "openai-codex-responses"
+	gpt52                  = "gpt-5.2"
 )
 
 // DiscoveryOptions configures remote model catalog discovery.
@@ -291,7 +292,7 @@ func discoveredCodexDefinitions(defaultWindow int) []discoveredCodexDefinition {
 	textImage := []InputMode{InputText, InputImage}
 
 	return []discoveredCodexDefinition{
-		codexDefinition("gpt-5.2", "GPT-5.2", textImage, defaultWindow, 1.75, 14, 0.175),
+		codexDefinition(gpt52, "GPT-5.2", textImage, defaultWindow, 1.75, 14, 0.175),
 		codexDefinition("gpt-5.3-codex", "GPT-5.3 Codex", textImage, defaultWindow, 1.75, 14, 0.175),
 		codexDefinition("gpt-5.3-codex-spark", "GPT-5.3 Codex Spark", []InputMode{InputText}, 128000, 1.75, 14, 0.175),
 		codexDefinition(gpt54, "GPT-5.4", textImage, defaultWindow, 2.5, 15, 0.25),
@@ -353,7 +354,7 @@ func addOpenAIXHigh(levels map[ThinkingLevel]*string, modelID string) {
 }
 
 func openAISupportsXHigh(modelID string) bool {
-	return strings.Contains(modelID, "gpt-5.2") ||
+	return strings.Contains(modelID, gpt52) ||
 		strings.Contains(modelID, "gpt-5.3") ||
 		strings.Contains(modelID, "gpt-5.4") ||
 		strings.Contains(modelID, gpt55)
@@ -367,7 +368,7 @@ func closeResponseBody(body io.Closer) {
 
 func openAIResponsesNoReasoningModel(modelID string) bool {
 	switch modelID {
-	case "gpt-5.1", "gpt-5.2", "gpt-5.3-codex", gpt54, "gpt-5.4-mini", "gpt-5.4-nano", gpt55:
+	case "gpt-5.1", gpt52, "gpt-5.3-codex", gpt54, "gpt-5.4-mini", "gpt-5.4-nano", gpt55:
 		return true
 	default:
 		return false
