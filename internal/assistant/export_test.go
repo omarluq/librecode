@@ -55,6 +55,8 @@ func (runtime *Runtime) EmitPostResponseAutoCompactionErrorForTest(
 }
 
 // AutoCompactionMessageForTest exposes compaction notice formatting for external package tests.
+// The contextBudget field values are arbitrary; tests use them only to exercise
+// compactionMessage formatting, not to assert semantic budget calculations.
 func AutoCompactionMessageForTest(entry *database.EntryEntity) string {
 	return compactionMessage("context auto-compacted", contextBudget{
 		InputTokens:       12,
