@@ -27,6 +27,7 @@ const (
 	asyncEventPromptRetry         asyncEventKind = "prompt_retry"
 	asyncEventPromptUsage         asyncEventKind = "prompt_usage"
 	asyncEventPromptError         asyncEventKind = "prompt_error"
+	asyncEventPromptContext       asyncEventKind = "prompt_context"
 	asyncEventCompactDone         asyncEventKind = "compact_done"
 	asyncEventCompactError        asyncEventKind = "compact_error"
 )
@@ -126,6 +127,16 @@ func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(a
 				Text:      "",
 				PromptID:  promptID,
 			})
+		case assistant.StreamEventContextCompaction:
+			app.postAsyncEvent(ctx, &asyncEvent{
+				Response:  nil,
+				ToolEvent: nil,
+				Usage:     nil,
+				Kind:      asyncEventPromptContext,
+				Provider:  "",
+				Text:      event.Text,
+				PromptID:  promptID,
+			})
 		}
 	}
 }
@@ -184,6 +195,7 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 		asyncEventPromptRetry,
 		asyncEventPromptUsage,
 		asyncEventPromptError,
+		asyncEventPromptContext,
 		asyncEventCompactDone,
 		asyncEventCompactError:
 		return false
@@ -224,7 +236,8 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 		asyncEventPromptToolResult,
 		asyncEventPromptRetry,
 		asyncEventPromptUsage,
-		asyncEventPromptError:
+		asyncEventPromptError,
+		asyncEventPromptContext:
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
@@ -258,6 +271,9 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 		return true
 	case asyncEventPromptError:
 		app.applyPromptError(payload.Text, payload.PromptID)
+		return true
+	case asyncEventPromptContext:
+		app.addSystemMessage(payload.Text)
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
@@ -312,6 +328,7 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 		asyncEventPromptUserEntry,
 		asyncEventPromptRetry,
 		asyncEventPromptError,
+		asyncEventPromptContext,
 		asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,

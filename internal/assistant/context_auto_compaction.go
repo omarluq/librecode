@@ -1,0 +1,134 @@
+// Package assistant orchestrates conversations, extensions, cache, and prompt execution.
+package assistant
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
+)
+
+type contextRequestBuild struct {
+	Context *contextBuildResult
+	Request *CompletionRequest
+	Budget  contextBudget
+}
+
+func (runtime *Runtime) buildCompletionRequest(
+	ctx context.Context,
+	sessionID string,
+	cwd string,
+	prompt string,
+	selectedModel *model.Model,
+	auth model.RequestAuth,
+	onEvent func(StreamEvent),
+) (*contextRequestBuild, error) {
+	contextResult, err := runtime.buildModelContext(ctx, sessionID, cwd, prompt, selectedModel, onEvent)
+	if err != nil {
+		return nil, err
+	}
+	registry, err := newToolRegistry(cwd, runtime.extensions)
+	if err != nil {
+		return nil, err
+	}
+	request := runtime.modelCompletionRequest(&modelCompletionRequestInput{
+		selectedModel: selectedModel,
+		registry:      registry,
+		onEvent:       onEvent,
+		messages:      contextResult.Messages,
+		auth:          auth,
+		usage:         contextResult.Usage,
+		sessionID:     sessionID,
+		systemPrompt:  contextResult.SystemPrompt,
+		cwd:           cwd,
+	})
+	budget := newContextBudget(contextResult.Usage, selectedModel, runtime.cfg.Context, request)
+	contextResult.Usage = budget.UsageWithBudget(contextResult.Usage)
+	request.Usage = contextResult.Usage
+
+	return &contextRequestBuild{Context: contextResult, Request: request, Budget: budget}, nil
+}
+
+func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
+	ctx context.Context,
+	sessionID string,
+	cwd string,
+	prompt string,
+	userEntryID string,
+	selectedModel *model.Model,
+	auth model.RequestAuth,
+	onEvent func(StreamEvent),
+) (*contextRequestBuild, *database.EntryEntity, error) {
+	build, err := runtime.buildCompletionRequest(ctx, sessionID, cwd, prompt, selectedModel, auth, onEvent)
+	if err != nil {
+		return nil, nil, err
+	}
+	runtime.emitUsage(ctx, onEvent, build.Context.Usage)
+	if !runtime.cfg.Context.PreflightEnabled {
+		return build, nil, nil
+	}
+	validationErr := build.Budget.Validate()
+	if validationErr == nil {
+		return build, nil, nil
+	}
+
+	compactionEntry, err := runtime.CompactSessionFrom(ctx, sessionID, cwd, &userEntryID)
+	if isCompactNothingToDoError(err) {
+		return nil, nil, validationErr
+	}
+	if err != nil {
+		return nil, nil, oops.In("assistant").
+			Code("auto_compact").
+			Wrapf(err, "auto-compact context before provider request")
+	}
+	runtime.emitContextCompaction(ctx, onEvent, autoCompactionMessage(build.Budget, compactionEntry))
+
+	build, err = runtime.buildCompletionRequest(ctx, sessionID, cwd, prompt, selectedModel, auth, onEvent)
+	if err != nil {
+		return nil, nil, err
+	}
+	runtime.emitUsage(ctx, onEvent, build.Context.Usage)
+	if err := build.Budget.Validate(); err != nil {
+		return nil, nil, err
+	}
+
+	return build, compactionEntry, nil
+}
+
+func isCompactNothingToDoError(err error) bool {
+	code, ok := providerErrorCode(err)
+
+	return ok && code == "compact_nothing_to_do"
+}
+
+func (runtime *Runtime) emitContextCompaction(ctx context.Context, onEvent func(StreamEvent), message string) {
+	emitStreamEvent(onEvent, StreamEvent{
+		ToolEvent: nil,
+		Usage:     nil,
+		Kind:      StreamEventContextCompaction,
+		Text:      message,
+	})
+	runtime.emit(ctx, string(StreamEventContextCompaction), map[string]any{"message": message})
+}
+
+func autoCompactionMessage(budget contextBudget, entry *database.EntryEntity) string {
+	message := fmt.Sprintf(
+		"context auto-compacted before request: estimated input was %d tokens; usable input budget is %d tokens",
+		budget.InputTokens,
+		budget.UsableInput,
+	)
+	if entry == nil {
+		return message
+	}
+	if entry.CompactionTokensBefore > 0 {
+		message += fmt.Sprintf("; summarized %dk tokens", entry.CompactionTokensBefore/1000)
+	}
+	if entry.CompactionFirstKeptEntryID != "" {
+		message += "; kept recent context from entry " + entry.CompactionFirstKeptEntryID
+	}
+
+	return message
+}

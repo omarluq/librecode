@@ -26,10 +26,9 @@ type partialPromptProgress struct {
 func (runtime *Runtime) appendAssistantSideEffects(
 	ctx context.Context,
 	sessionID string,
-	userEntryID string,
+	parentID *string,
 	bundle *responseBundle,
 ) (*string, error) {
-	parentID := &userEntryID
 	for _, thinking := range bundle.Thinking {
 		trimmed := strings.TrimSpace(thinking)
 		if trimmed == "" {
@@ -78,6 +77,7 @@ func (runtime *Runtime) respondWithPartialProgress(
 	bundle, cached, err := runtime.respond(
 		ctx,
 		sessionID,
+		userEntryID,
 		request.CWD,
 		request.Text,
 		progress.handle,
@@ -123,7 +123,8 @@ func (progress *partialPromptProgress) record(streamEvent StreamEvent) {
 		}
 	case StreamEventToolStart,
 		StreamEventSkillLoaded,
-		StreamEventUsage:
+		StreamEventUsage,
+		StreamEventContextCompaction:
 		return
 	}
 }
