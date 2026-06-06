@@ -26,6 +26,9 @@ func TestEnsureCurrentModel(t *testing.T) {
 	}
 
 	models = ensureCurrentModel(models, promptSendTestProvider, promptSendTestModel)
+	if got, want := len(models), 2; got != want {
+		t.Fatalf("len(models) after second call = %d, want %d", got, want)
+	}
 	if got, want := models[1].Provider, promptSendTestProvider; got != want {
 		t.Fatalf("models[1].Provider = %q, want %q", got, want)
 	}

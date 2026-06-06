@@ -99,6 +99,24 @@ extensions:
 	assert.Equal(t, "10s", cfg.Models.Discovery.FetchTimeout.String())
 }
 
+func TestLoadAllowsEmptyModelsDiscoverySourceURLWhenDisabled(t *testing.T) {
+	home := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
+	t.Chdir(cwd)
+
+	writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), `models:
+  discovery:
+    enabled: false
+    source_url: ''
+`)
+
+	result := config.Load("")
+	assert.False(t, result.IsError())
+	assert.Empty(t, result.MustGet().Models.Discovery.SourceURL)
+}
+
 func TestLoadRejectsInvalidModelsDiscoveryConfig(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -106,9 +124,9 @@ func TestLoadRejectsInvalidModelsDiscoveryConfig(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "empty source url",
+			name:     "empty source url when enabled",
 			content:  "models:\n  discovery:\n    source_url: ''\n",
-			expected: "models.discovery.source_url is required",
+			expected: "models.discovery.source_url is required when discovery is enabled",
 		},
 		{
 			name:     "negative cache ttl",
