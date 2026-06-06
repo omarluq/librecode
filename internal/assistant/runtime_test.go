@@ -691,6 +691,7 @@ func testRegistry(t *testing.T) *model.Registry {
 				Reasoning:        false,
 			},
 		},
+		Discovery: disabledModelDiscovery(),
 	})
 }
 
@@ -748,6 +749,14 @@ func testConfig() *config.Config {
 			SafetyMarginTokens:    8192,
 			KeepRecentTokens:      20_000,
 			PreflightEnabled:      true,
+		},
+		Models: config.ModelsConfig{
+			Discovery: config.ModelDiscoveryConfig{
+				CacheTTL:     0,
+				FetchTimeout: 0,
+				SourceURL:    "https://models.dev/api.json",
+				Enabled:      false,
+			},
 		},
 		Cache: config.CacheConfig{
 			Enabled:  true,

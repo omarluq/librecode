@@ -42,6 +42,7 @@ func TestRegistryLoadsCustomModelsAndProviderOverrides(t *testing.T) {
 		Auth:         nil,
 		ModelsPath:   modelsPath,
 		BuiltIns:     []model.Model{testModel("openai", "gpt-5.4", "GPT")},
+		Discovery:    disabledDiscovery(),
 	})
 	require.NoError(t, registry.Error())
 
@@ -62,23 +63,39 @@ func TestRegistryLoadsCustomModelsAndProviderOverrides(t *testing.T) {
 func TestRegistryAvailableUsesAuthStorage(t *testing.T) {
 	t.Parallel()
 
+	assertRegistryAvailableProvider(t, "auth-provider", []model.Model{
+		testModel("auth-provider", "claude", "Claude"),
+		testModel("noauth-provider", "gpt", "GPT"),
+	})
+}
+
+func TestRegistryAvailableIncludesOAuthProviderDiscoveredModels(t *testing.T) {
+	t.Parallel()
+
+	assertRegistryAvailableProvider(t, "anthropic-claude", []model.Model{
+		testModel("anthropic", "claude-opus-4-7", "Claude Opus API"),
+		testModel("anthropic-claude", "claude-opus-4-7", "Claude Opus OAuth"),
+	})
+}
+
+func assertRegistryAvailableProvider(t *testing.T, expectedProvider string, models []model.Model) {
+	t.Helper()
+
 	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
-		"auth-provider": testCredential(),
+		expectedProvider: testCredential(),
 	})
 	require.NoError(t, err)
 	registry := model.NewRegistry(&model.RegistryOptions{
 		ConfigSource: nil,
 		Auth:         storage,
 		ModelsPath:   "",
-		BuiltIns: []model.Model{
-			testModel("auth-provider", "claude", "Claude"),
-			testModel("noauth-provider", "gpt", "GPT"),
-		},
+		BuiltIns:     models,
+		Discovery:    disabledDiscovery(),
 	})
 
 	available := registry.Available()
 	require.Len(t, available, 1)
-	assert.Equal(t, "auth-provider", available[0].Provider)
+	assert.Equal(t, expectedProvider, available[0].Provider)
 }
 
 func testCredential() auth.Credential {

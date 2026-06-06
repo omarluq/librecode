@@ -16,10 +16,11 @@ type ConfigSource interface {
 
 // RegistryOptions configures a model registry.
 type RegistryOptions struct {
-	ConfigSource ConfigSource  `json:"-"`
-	Auth         *auth.Storage `json:"-"`
-	ModelsPath   string        `json:"models_path"`
-	BuiltIns     []Model       `json:"built_ins"`
+	ConfigSource ConfigSource     `json:"-"`
+	Auth         *auth.Storage    `json:"-"`
+	ModelsPath   string           `json:"models_path"`
+	BuiltIns     []Model          `json:"built_ins"`
+	Discovery    DiscoveryOptions `json:"discovery"`
 }
 
 // Registry loads built-in and custom models and resolves provider request auth.
@@ -31,6 +32,7 @@ type Registry struct {
 	modelsPath      string
 	models          []Model
 	builtIns        []Model
+	discovery       DiscoveryOptions
 	lock            sync.RWMutex
 }
 
@@ -50,6 +52,7 @@ func NewRegistry(options *RegistryOptions) *Registry {
 		modelsPath:      resolvedOptions.ModelsPath,
 		models:          []Model{},
 		builtIns:        cloneModels(resolvedOptions.BuiltIns),
+		discovery:       resolvedOptions.Discovery,
 		lock:            sync.RWMutex{},
 		loadError:       nil,
 	}
@@ -60,14 +63,20 @@ func NewRegistry(options *RegistryOptions) *Registry {
 
 // Refresh reloads models from disk and registered built-ins.
 func (registry *Registry) Refresh() {
+	registry.RefreshContext(context.Background())
+}
+
+// RefreshContext reloads models from custom config, discovery, and registered built-ins.
+func (registry *Registry) RefreshContext(ctx context.Context) {
 	customResult := registry.loadCustomModels()
+	discoveredModels, discoveryErr := DiscoverModels(ctx, registry.discovery)
 	builtIns := applyProviderPatches(registry.builtIns, customResult.ProviderPatches, customResult.ModelOverrides)
-	models := mergeCustomModels(builtIns, customResult.Models)
+	models := mergeModelCatalogs(builtIns, discoveredModels, customResult.Models)
 
 	registry.lock.Lock()
 	registry.models = models
 	registry.providerConfigs = customResult.ProviderConfigs
-	registry.loadError = customResult.Err
+	registry.loadError = firstRegistryError(customResult.Err, discoveryErr)
 	registry.lock.Unlock()
 }
 
@@ -165,5 +174,26 @@ func registryOptions(options *RegistryOptions) *RegistryOptions {
 		return options
 	}
 
-	return &RegistryOptions{ConfigSource: nil, Auth: nil, ModelsPath: "", BuiltIns: BuiltInModels()}
+	return &RegistryOptions{
+		ConfigSource: nil,
+		Auth:         nil,
+		ModelsPath:   "",
+		BuiltIns:     BuiltInModels(),
+		Discovery: DiscoveryOptions{
+			Client:       nil,
+			CachePath:    "",
+			SourceURL:    "",
+			CacheTTL:     0,
+			FetchTimeout: 0,
+			Enabled:      false,
+		},
+	}
+}
+
+func firstRegistryError(left, right error) error {
+	if left != nil {
+		return left
+	}
+
+	return right
 }

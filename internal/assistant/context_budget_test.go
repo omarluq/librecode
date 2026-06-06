@@ -164,6 +164,7 @@ func newTestRuntimeWithContextWindowAndMaxTokens(
 		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns:     []model.Model{testRuntimeModelWithContextWindowAndMaxTokens(contextWindow, maxTokens)},
+		Discovery:    disabledModelDiscovery(),
 	})
 	runtimeConfig := testConfig()
 	manager := extension.NewManager(nil)

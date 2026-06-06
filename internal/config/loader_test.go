@@ -93,6 +93,50 @@ extensions:
 	assert.True(t, cfg.Context.PreflightEnabled)
 	assert.Equal(t, 2048, cfg.Context.ProviderReserveTokens)
 	assert.Equal(t, 8192, cfg.Context.SafetyMarginTokens)
+	assert.True(t, cfg.Models.Discovery.Enabled)
+	assert.Equal(t, "https://models.dev/api.json", cfg.Models.Discovery.SourceURL)
+	assert.Equal(t, "24h0m0s", cfg.Models.Discovery.CacheTTL.String())
+	assert.Equal(t, "10s", cfg.Models.Discovery.FetchTimeout.String())
+}
+
+func TestLoadRejectsInvalidModelsDiscoveryConfig(t *testing.T) {
+	testCases := []struct {
+		name     string
+		content  string
+		expected string
+	}{
+		{
+			name:     "empty source url",
+			content:  "models:\n  discovery:\n    source_url: ''\n",
+			expected: "models.discovery.source_url is required",
+		},
+		{
+			name:     "negative cache ttl",
+			content:  "models:\n  discovery:\n    cache_ttl: -1s\n",
+			expected: "models.discovery.cache_ttl cannot be negative",
+		},
+		{
+			name:     "negative fetch timeout",
+			content:  "models:\n  discovery:\n    fetch_timeout: -1s\n",
+			expected: "models.discovery.fetch_timeout cannot be negative",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			home := t.TempDir()
+			cwd := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
+			t.Chdir(cwd)
+
+			writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), testCase.content)
+
+			result := config.Load("")
+			assert.True(t, result.IsError())
+			assert.ErrorContains(t, result.Error(), testCase.expected)
+		})
+	}
 }
 
 func TestLoadRejectsEmptyExtensionUseObject(t *testing.T) {

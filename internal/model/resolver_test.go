@@ -55,6 +55,7 @@ func TestResolveCLIModelInfersProviderAndRejectsUnknownProvider(t *testing.T) {
 			testModel("openai", "gpt-5.4", "GPT"),
 			testModel("zai", "glm-5.1", "GLM"),
 		},
+		Discovery: disabledDiscovery(),
 	})
 
 	resolved := model.ResolveCLIModel(model.ResolveCLIModelOptions{
@@ -90,6 +91,7 @@ func TestResolveModelScopeSupportsGlobsAndDeduplicates(t *testing.T) {
 			testModel("openai", "gpt-5.4-20250101", "GPT dated"),
 			testModel("anthropic", "claude-opus", "Claude"),
 		},
+		Discovery: disabledDiscovery(),
 	})
 
 	scopedModels, warnings := model.ResolveModelScope([]string{"openai/gpt*:low", "gpt-5.4"}, registry)

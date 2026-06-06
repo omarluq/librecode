@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -269,7 +270,22 @@ func newScopedModelTestApp(t *testing.T) *App {
 	t.Helper()
 
 	app := newRenderTestApp(t)
-	app.models = model.NewRegistry(nil)
+	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+		promptSendTestProvider: testPanelAuthCredential(),
+	})
+	if err != nil {
+		t.Fatalf("create auth storage: %v", err)
+	}
+	app.models = model.NewRegistry(&model.RegistryOptions{
+		ConfigSource: nil,
+		Auth:         storage,
+		ModelsPath:   "",
+		BuiltIns: []model.Model{
+			newPanelTestModel("test-model-a", "Test Model A"),
+			newPanelTestModel("test-model-b", "Test Model B"),
+		},
+		Discovery: disabledModelDiscovery(),
+	})
 	app.scopedEnabled = map[string]bool{}
 	app.openScopedModelsPanel()
 	if len(app.panel.filtered) < 2 {

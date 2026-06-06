@@ -54,6 +54,13 @@ context:
   # Recent history retained verbatim during /compact; reserves above still apply to provider requests.
   keep_recent_tokens: 20000
 
+models:
+  discovery:
+    enabled: true
+    source_url: https://models.dev/api.json
+    cache_ttl: 24h
+    fetch_timeout: 10s
+
 cache:
   enabled: true
   capacity: 512

@@ -2,8 +2,10 @@
 package terminal
 
 import (
+	"context"
 	"testing"
 
+	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -22,6 +24,11 @@ func TestEnsureCurrentModel(t *testing.T) {
 	if got, want := models[0].ID, testGPT5Model; got != want {
 		t.Fatalf("models[0].ID = %q, want %q", got, want)
 	}
+
+	models = ensureCurrentModel(models, promptSendTestProvider, promptSendTestModel)
+	if got, want := models[1].Provider, promptSendTestProvider; got != want {
+		t.Fatalf("models[1].Provider = %q, want %q", got, want)
+	}
 }
 
 func TestModelPanelSelectionAndCycling(t *testing.T) {
@@ -29,14 +36,21 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.cfg = promptSendTestConfig()
+	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+		promptSendTestProvider: testPanelAuthCredential(),
+	})
+	if err != nil {
+		t.Fatalf("create auth storage: %v", err)
+	}
 	app.models = model.NewRegistry(&model.RegistryOptions{
 		ConfigSource: nil,
-		Auth:         nil,
+		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns: []model.Model{
-			newPanelTestModel(promptSendTestProvider, promptSendTestModel, "Current"),
-			newPanelTestModel(promptSendTestProvider, "other-model", "Other"),
+			newPanelTestModel(promptSendTestModel, "Current"),
+			newPanelTestModel("other-model", "Other"),
 		},
+		Discovery: disabledModelDiscovery(),
 	})
 
 	app.openModelPanel()
@@ -67,12 +81,50 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 	}
 }
 
-func newPanelTestModel(provider, modelID, name string) model.Model {
+func TestAvailableModelsDoesNotFallbackToUnauthorizedCatalog(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.cfg = promptSendTestConfig()
+	app.models = model.NewRegistry(&model.RegistryOptions{
+		ConfigSource: nil,
+		Auth:         nil,
+		ModelsPath:   "",
+		BuiltIns: []model.Model{
+			newPanelTestModel(promptSendTestModel, "Current"),
+			newPanelTestModel("other-model", "Other"),
+		},
+		Discovery: disabledModelDiscovery(),
+	})
+
+	models := app.availableModels()
+	if len(models) != 1 {
+		t.Fatalf("len(availableModels) = %d, want current model only", len(models))
+	}
+	if got, want := models[0].ID, promptSendTestModel; got != want {
+		t.Fatalf("availableModels[0].ID = %q, want %q", got, want)
+	}
+}
+
+func testPanelAuthCredential() auth.Credential {
+	return auth.Credential{
+		OAuth:     nil,
+		Type:      auth.CredentialTypeAPIKey,
+		Key:       "test-key",
+		Access:    "",
+		Refresh:   "",
+		AccountID: "",
+		Expires:   0,
+		ExpiresAt: 0,
+	}
+}
+
+func newPanelTestModel(modelID, name string) model.Model {
 	return model.Model{
 		ThinkingLevelMap: nil,
 		Headers:          nil,
 		Compat:           nil,
-		Provider:         provider,
+		Provider:         promptSendTestProvider,
 		ID:               modelID,
 		Name:             name,
 		API:              "",

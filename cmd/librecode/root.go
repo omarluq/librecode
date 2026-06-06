@@ -45,6 +45,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newConfigCmd())
 	cmd.AddCommand(newKSQLCmd())
 	cmd.AddCommand(newMigrateCmd())
+	cmd.AddCommand(newModelCmd())
 	cmd.AddCommand(newExtensionCmd())
 	cmd.AddCommand(newPromptCmd())
 	cmd.AddCommand(newSessionCmd())

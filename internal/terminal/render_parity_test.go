@@ -219,6 +219,14 @@ func renderParityConfig() *config.Config {
 			KeepRecentTokens:      20_000,
 			PreflightEnabled:      false,
 		},
+		Models: config.ModelsConfig{
+			Discovery: config.ModelDiscoveryConfig{
+				CacheTTL:     0,
+				FetchTimeout: 0,
+				SourceURL:    "https://models.dev/api.json",
+				Enabled:      false,
+			},
+		},
 		App: config.AppConfig{
 			Name:          "librecode",
 			Env:           "test",
