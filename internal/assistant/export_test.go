@@ -2,6 +2,8 @@ package assistant
 
 import (
 	"context"
+
+	"github.com/omarluq/librecode/internal/database"
 )
 
 // DispatchToolCallLifecycleForTest exposes tool call lifecycle dispatch for external package tests.
@@ -25,4 +27,42 @@ func ShouldAutoCompactAfterResponseForTest(usageInput, usableInput, contextWindo
 		ProviderReserve:   0,
 		SafetyMargin:      0,
 	})
+}
+
+// AutoCompactAfterResponseForTest exposes post-response auto-compaction for external package tests.
+func (runtime *Runtime) AutoCompactAfterResponseForTest(
+	ctx context.Context,
+	onEvent func(StreamEvent),
+	sessionID string,
+	cwd string,
+	parentEntryID string,
+) {
+	runtime.autoCompactAfterResponse(ctx, &postResponseAutoCompactionInput{
+		onEvent:       onEvent,
+		sessionID:     sessionID,
+		cwd:           cwd,
+		parentEntryID: parentEntryID,
+	})
+}
+
+// EmitPostResponseAutoCompactionErrorForTest exposes error event formatting for external package tests.
+func (runtime *Runtime) EmitPostResponseAutoCompactionErrorForTest(
+	ctx context.Context,
+	onEvent func(StreamEvent),
+	err error,
+) {
+	runtime.emitPostResponseAutoCompactionError(ctx, onEvent, err)
+}
+
+// AutoCompactionMessageForTest exposes compaction notice formatting for external package tests.
+func AutoCompactionMessageForTest(entry *database.EntryEntity) string {
+	return compactionMessage("context auto-compacted", contextBudget{
+		InputTokens:       12,
+		ContextWindow:     0,
+		UsableInput:       10,
+		OutputReserve:     0,
+		ToolSchemaReserve: 0,
+		ProviderReserve:   0,
+		SafetyMargin:      0,
+	}, entry)
 }
