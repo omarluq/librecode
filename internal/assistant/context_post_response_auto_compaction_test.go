@@ -13,7 +13,7 @@ import (
 )
 
 func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
-	t.Parallel()
+	t.Setenv("HOME", t.TempDir())
 
 	harness := newAutoCompactionRuntimeHarness(t, []string{"final answer", "summary of completed work"}, 16_000)
 	ctx := context.Background()
@@ -25,7 +25,7 @@ func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
 		session.ID,
 		nil,
 		database.RoleUser,
-		strings.Repeat("old ", 2_600),
+		strings.Repeat("old ", 12_000),
 	)
 	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
 	request.SessionID = session.ID
