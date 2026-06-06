@@ -89,6 +89,8 @@ func newAutoCompactionRuntimeHarness(
 	runtimeConfig.Context.KeepRecentTokens = 1
 	runtimeConfig.Context.ProviderReserveTokens = 0
 	runtimeConfig.Context.SafetyMarginTokens = 0
+	// Reserve one token so post-response compaction tests keep a stable output headroom
+	// and do not depend on off-by-one budget boundaries.
 	runtimeConfig.Context.OutputReserveTokens = 1
 	runtime = assistant.NewRuntime(
 		runtimeConfig,
