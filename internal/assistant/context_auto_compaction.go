@@ -4,12 +4,15 @@ package assistant
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
+
+const postResponseAutoCompactThresholdPercent = 80
 
 type contextRequestBuild struct {
 	Context *contextBuildResult
@@ -149,9 +152,96 @@ func (runtime *Runtime) emitContextCompaction(ctx context.Context, onEvent func(
 	runtime.emit(ctx, string(StreamEventContextCompaction), map[string]any{"message": message})
 }
 
+type postResponseAutoCompactionInput struct {
+	onEvent       func(StreamEvent)
+	sessionID     string
+	cwd           string
+	parentEntryID string
+}
+
+func (runtime *Runtime) autoCompactAfterResponse(ctx context.Context, input *postResponseAutoCompactionInput) {
+	if !runtime.shouldTryPostResponseAutoCompaction(input) {
+		return
+	}
+	usage, err := runtime.ContextUsage(ctx, input.sessionID, input.cwd)
+	if err != nil {
+		runtime.emitPostResponseAutoCompactionError(ctx, input.onEvent, err)
+		return
+	}
+	budget := contextBudgetFromUsage(usage)
+	if !shouldAutoCompactAfterResponse(budget) {
+		return
+	}
+
+	runtime.emitContextCompaction(ctx, input.onEvent, postResponseAutoCompactionStartMessage(budget))
+	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.parentEntryID)
+	if isCompactNothingToDoError(err) {
+		return
+	}
+	if err != nil {
+		runtime.emitPostResponseAutoCompactionError(ctx, input.onEvent, err)
+		return
+	}
+	runtime.emitContextCompaction(ctx, input.onEvent, compactionMessage(
+		"context auto-compacted after response",
+		budget,
+		entry,
+	))
+}
+
+func (runtime *Runtime) shouldTryPostResponseAutoCompaction(input *postResponseAutoCompactionInput) bool {
+	return runtime.cfg.Context.PreflightEnabled && input != nil && strings.TrimSpace(input.sessionID) != "" &&
+		strings.TrimSpace(input.parentEntryID) != ""
+}
+
+func contextBudgetFromUsage(usage model.TokenUsage) contextBudget {
+	budget := contextBudget{
+		InputTokens:       usage.ContextTokens,
+		ContextWindow:     usage.ContextWindow,
+		UsableInput:       usage.Breakdown["usable_input"],
+		OutputReserve:     usage.Breakdown["reserve_output"],
+		ToolSchemaReserve: usage.Breakdown["reserve_tools"],
+		ProviderReserve:   usage.Breakdown["reserve_provider"],
+		SafetyMargin:      usage.Breakdown["reserve_safety"],
+	}
+
+	return budget
+}
+
+func shouldAutoCompactAfterResponse(budget contextBudget) bool {
+	if budget.ContextWindow <= 0 || budget.UsableInput <= 0 || budget.InputTokens <= 0 {
+		return false
+	}
+
+	return budget.InputTokens >= budget.UsableInput*postResponseAutoCompactThresholdPercent/100
+}
+
+func (runtime *Runtime) emitPostResponseAutoCompactionError(
+	ctx context.Context,
+	onEvent func(StreamEvent),
+	err error,
+) {
+	if err == nil {
+		return
+	}
+	runtime.emitContextCompaction(ctx, onEvent, "context auto-compaction after response failed: "+err.Error())
+}
+
+func postResponseAutoCompactionStartMessage(budget contextBudget) string {
+	message := "context auto-compacting after response: estimated input is %d tokens; " +
+		"threshold is %d%% of usable input budget %d"
+
+	return fmt.Sprintf(message, budget.InputTokens, postResponseAutoCompactThresholdPercent, budget.UsableInput)
+}
+
 func autoCompactionMessage(budget contextBudget, entry *database.EntryEntity) string {
+	return compactionMessage("context auto-compacted before request", budget, entry)
+}
+
+func compactionMessage(prefix string, budget contextBudget, entry *database.EntryEntity) string {
 	message := fmt.Sprintf(
-		"context auto-compacted before request: estimated input was %d tokens; usable input budget is %d tokens",
+		"%s: estimated input was %d tokens; usable input budget is %d tokens",
+		prefix,
 		budget.InputTokens,
 		budget.UsableInput,
 	)

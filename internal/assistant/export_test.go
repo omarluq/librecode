@@ -13,3 +13,16 @@ func (runtime *Runtime) DispatchToolCallLifecycleForTest(ctx context.Context, ca
 func (runtime *Runtime) DispatchToolResultLifecycleForTest(ctx context.Context, event *ToolEvent) error {
 	return runtime.dispatchToolResultLifecycle(ctx, event)
 }
+
+// ShouldAutoCompactAfterResponseForTest exposes post-response threshold policy for external package tests.
+func ShouldAutoCompactAfterResponseForTest(usageInput, usableInput, contextWindow int) bool {
+	return shouldAutoCompactAfterResponse(contextBudget{
+		InputTokens:       usageInput,
+		ContextWindow:     contextWindow,
+		UsableInput:       usableInput,
+		OutputReserve:     0,
+		ToolSchemaReserve: 0,
+		ProviderReserve:   0,
+		SafetyMargin:      0,
+	})
+}
