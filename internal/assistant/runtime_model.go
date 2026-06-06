@@ -16,6 +16,7 @@ import (
 func (runtime *Runtime) respond(
 	ctx context.Context,
 	sessionID string,
+	userEntryID string,
 	cwd string,
 	prompt string,
 	onEvent func(StreamEvent),
@@ -28,11 +29,12 @@ func (runtime *Runtime) respond(
 	if strings.HasPrefix(prompt, slashPrefix) {
 		slashResponse, slashToolEvents, slashErr := runtime.respondToSlashCommand(ctx, cwd, prompt, onEvent)
 		return &responseBundle{
-			Text:        slashResponse,
-			Thinking:    nil,
-			ToolEvents:  slashToolEvents,
-			Usage:       model.EmptyTokenUsage(),
-			ModelFacing: false,
+			ParentEntryID: nil,
+			Text:          slashResponse,
+			Thinking:      nil,
+			ToolEvents:    slashToolEvents,
+			Usage:         model.EmptyTokenUsage(),
+			ModelFacing:   false,
 		}, false, slashErr
 	}
 
@@ -43,15 +45,16 @@ func (runtime *Runtime) respond(
 	}
 	if found {
 		return &responseBundle{
-			Text:        cachedResponse,
-			Thinking:    nil,
-			ToolEvents:  nil,
-			Usage:       model.EmptyTokenUsage(),
-			ModelFacing: true,
+			ParentEntryID: nil,
+			Text:          cachedResponse,
+			Thinking:      nil,
+			ToolEvents:    nil,
+			Usage:         model.EmptyTokenUsage(),
+			ModelFacing:   true,
 		}, true, nil
 	}
 
-	bundle, err = runtime.modelResponse(ctx, sessionID, cwd, prompt, onEvent, onRetry)
+	bundle, err = runtime.modelResponse(ctx, sessionID, userEntryID, cwd, prompt, onEvent, onRetry)
 	if err != nil {
 		return nil, false, err
 	}
@@ -63,6 +66,7 @@ func (runtime *Runtime) respond(
 func (runtime *Runtime) modelResponse(
 	ctx context.Context,
 	sessionID string,
+	userEntryID string,
 	cwd string,
 	prompt string,
 	onEvent func(StreamEvent),
@@ -82,48 +86,38 @@ func (runtime *Runtime) modelResponse(
 			With("provider", selectedModel.Provider).
 			Wrapf(fmt.Errorf("%s", auth.Error), "resolve model auth")
 	}
-	contextResult, err := runtime.buildModelContext(ctx, sessionID, cwd, prompt, &selectedModel, onEvent)
+	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(
+		ctx,
+		sessionID,
+		cwd,
+		prompt,
+		userEntryID,
+		&selectedModel,
+		auth,
+		onEvent,
+	)
 	if err != nil {
 		return nil, err
 	}
-	registry, err := newToolRegistry(cwd, runtime.extensions)
+	result, err := runtime.completeWithRetry(ctx, build.Request, onRetry)
 	if err != nil {
 		return nil, err
 	}
-	request := runtime.modelCompletionRequest(&modelCompletionRequestInput{
-		selectedModel: &selectedModel,
-		registry:      registry,
-		onEvent:       onEvent,
-		messages:      contextResult.Messages,
-		auth:          auth,
-		usage:         contextResult.Usage,
-		sessionID:     sessionID,
-		systemPrompt:  contextResult.SystemPrompt,
-		cwd:           cwd,
-	})
-	budget := newContextBudget(contextResult.Usage, &selectedModel, runtime.cfg.Context, request)
-	contextResult.Usage = budget.UsageWithBudget(contextResult.Usage)
-	runtime.emitUsage(ctx, onEvent, contextResult.Usage)
-	if runtime.cfg.Context.PreflightEnabled {
-		validationErr := budget.Validate()
-		if validationErr != nil {
-			return nil, validationErr
-		}
-	}
-	request.Usage = contextResult.Usage
-	result, err := runtime.completeWithRetry(ctx, request, onRetry)
-	if err != nil {
-		return nil, err
-	}
-	usage := mergeUsage(contextResult.Usage, result.Usage)
+	usage := mergeUsage(build.Context.Usage, result.Usage)
 	runtime.emitUsage(ctx, onEvent, usage)
 
+	parentEntryID := (*string)(nil)
+	if compactionEntry != nil {
+		parentEntryID = &compactionEntry.ID
+	}
+
 	return &responseBundle{
-		Text:        result.Text,
-		Thinking:    result.Thinking,
-		ToolEvents:  result.ToolEvents,
-		Usage:       usage,
-		ModelFacing: true,
+		ParentEntryID: parentEntryID,
+		Text:          result.Text,
+		Thinking:      result.Thinking,
+		ToolEvents:    result.ToolEvents,
+		Usage:         usage,
+		ModelFacing:   true,
 	}, nil
 }
 

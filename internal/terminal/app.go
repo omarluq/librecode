@@ -529,7 +529,8 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 		asyncEventPromptDone,
 		asyncEventPromptUserEntry,
 		asyncEventPromptRetry,
-		asyncEventPromptError:
+		asyncEventPromptError,
+		asyncEventPromptContext:
 		return false
 	}
 

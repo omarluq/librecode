@@ -1,0 +1,113 @@
+package assistant_test
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
+)
+
+func TestRuntime_AutoCompactsOversizedRequestBeforeProviderCall(t *testing.T) {
+	t.Parallel()
+
+	client := &sequencedCompletionClient{
+		responses: []string{"summary of old context", "final answer"},
+		requests:  nil,
+	}
+	runtime := newTestRuntimeWithContextWindow(t, client, 16_000)
+	runtimeConfig := testConfig()
+	runtimeConfig.Context.KeepRecentTokens = 1
+	runtimeConfig.Context.ProviderReserveTokens = 0
+	runtimeConfig.Context.SafetyMarginTokens = 0
+	runtimeConfig.Context.OutputReserveTokens = 0
+	runtime = assistant.NewRuntime(
+		runtimeConfig,
+		runtime.SessionRepository(),
+		nil,
+		assistant.NewResponseCache(false, 1, time.Minute),
+		runtime.EventBus(),
+		runtime.ModelRegistry(),
+		client,
+		nil,
+	)
+
+	ctx := context.Background()
+	session, err := runtime.SessionRepository().CreateSession(ctx, testRuntimeCWD, "auto compact", "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(
+		t,
+		runtime.SessionRepository(),
+		session.ID,
+		nil,
+		database.RoleUser,
+		strings.Repeat("old ", 15_000),
+	)
+	appendRuntimeTestMessage(t, runtime.SessionRepository(), session.ID, &old.ID, database.RoleAssistant, "tail")
+	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
+	request.SessionID = session.ID
+	events := []assistant.StreamEvent{}
+	request.OnEvent = func(event assistant.StreamEvent) {
+		events = append(events, event)
+	}
+
+	response, err := runtime.Prompt(ctx, request)
+
+	require.NoError(t, err)
+	assert.Equal(t, "final answer", response.Text)
+	require.Len(t, client.requests, 2)
+	assert.True(t, client.requests[0].DisableTools)
+	assert.False(t, client.requests[1].DisableTools)
+	assert.Contains(t, client.requests[1].Messages[0].Content, "summary of old context")
+	assert.Equal(t, "continue", client.requests[1].Messages[len(client.requests[1].Messages)-1].Content)
+	assert.Condition(t, func() bool {
+		for _, event := range events {
+			if isContextAutoCompactionEvent(&event) {
+				return true
+			}
+		}
+		return false
+	})
+
+	branch, err := runtime.SessionRepository().Branch(ctx, session.ID, response.AssistantEntryID)
+	require.NoError(t, err)
+	roles := make([]database.EntryType, 0, len(branch))
+	for index := range branch {
+		roles = append(roles, branch[index].Type)
+	}
+	assert.Contains(t, roles, database.EntryTypeCompaction)
+}
+
+func isContextAutoCompactionEvent(event *assistant.StreamEvent) bool {
+	return event.Kind == assistant.StreamEventContextCompaction &&
+		strings.Contains(event.Text, "context auto-compacted")
+}
+
+type sequencedCompletionClient struct {
+	responses []string
+	requests  []*assistant.CompletionRequest
+}
+
+func (client *sequencedCompletionClient) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.requests = append(client.requests, request)
+	response := "ok"
+	if len(client.responses) >= len(client.requests) {
+		response = client.responses[len(client.requests)-1]
+	}
+
+	return &assistant.CompletionResult{
+		Text:       response,
+		Thinking:   nil,
+		ToolEvents: nil,
+		Usage:      model.EmptyTokenUsage(),
+	}, nil
+}

@@ -73,6 +73,8 @@ const (
 	StreamEventSkillLoaded StreamEventKind = "skill_loaded"
 	// StreamEventUsage carries estimated or provider-reported token usage.
 	StreamEventUsage StreamEventKind = "usage"
+	// StreamEventContextCompaction carries UI-only context compaction notices.
+	StreamEventContextCompaction StreamEventKind = "context_compaction"
 )
 
 // StreamEvent is emitted during prompt execution before final persistence.
@@ -96,11 +98,12 @@ type PromptResponse struct {
 }
 
 type responseBundle struct {
-	Text        string
-	Thinking    []string
-	ToolEvents  []ToolEvent
-	Usage       model.TokenUsage
-	ModelFacing bool
+	ParentEntryID *string
+	Text          string
+	Thinking      []string
+	ToolEvents    []ToolEvent
+	Usage         model.TokenUsage
+	ModelFacing   bool
 }
 
 // NewRuntime creates an assistant runtime.
@@ -166,7 +169,11 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		return nil, err
 	}
 
-	assistantParentID, err := runtime.appendAssistantSideEffects(ctx, activeSession.ID, userEntry.ID, bundle)
+	assistantParentID := bundle.ParentEntryID
+	if assistantParentID == nil {
+		assistantParentID = &userEntry.ID
+	}
+	assistantParentID, err = runtime.appendAssistantSideEffects(ctx, activeSession.ID, assistantParentID, bundle)
 	if err != nil {
 		return nil, err
 	}

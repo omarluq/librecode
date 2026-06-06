@@ -95,7 +95,8 @@ func (app *App) handleCompactAsyncEvent(payload *asyncEvent) bool {
 		asyncEventPromptToolResult,
 		asyncEventPromptRetry,
 		asyncEventPromptUsage,
-		asyncEventPromptError:
+		asyncEventPromptError,
+		asyncEventPromptContext:
 		return false
 	}
 
