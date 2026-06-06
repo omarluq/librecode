@@ -38,6 +38,8 @@ func NewModelService(injector do.Injector) (*ModelService, error) {
 	return &ModelService{Registry: registry}, nil
 }
 
+// modelDiscoveryCachePath returns the models-dev.json cache file path.
+// If core.LibrecodeHome fails, it returns an empty string to disable the on-disk cache gracefully.
 func modelDiscoveryCachePath() string {
 	home, err := core.LibrecodeHome()
 	if err != nil {

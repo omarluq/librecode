@@ -2,8 +2,6 @@ package model
 
 import (
 	"context"
-	"errors"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -88,10 +86,6 @@ func writeDiscoveryCache(path string, content []byte) error {
 		return oops.In("model").Code("model_discovery_cache_dir").Wrapf(err, "create model discovery cache directory")
 	}
 	if err := os.WriteFile(cleanPath, content, 0o600); err != nil {
-		if errors.Is(err, fs.ErrPermission) {
-			return oops.In("model").Code("model_discovery_cache_write").Wrapf(err, "write model discovery cache")
-		}
-
 		return oops.In("model").Code("model_discovery_cache_write").Wrapf(err, "write model discovery cache")
 	}
 
