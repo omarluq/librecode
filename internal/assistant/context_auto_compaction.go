@@ -66,13 +66,22 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 	ctx context.Context,
 	input *completionRequestPreparationInput,
 ) (*contextRequestBuild, *database.EntryEntity, error) {
+	if input == nil || input.auth == nil {
+		err := fmt.Errorf("nil completion request preparation input")
+
+		return nil, nil, oops.In("assistant").
+			Code("context_prepare_input").
+			Wrapf(err, "context: invalid completion preparation input")
+	}
+	auth := *input.auth
+
 	build, err := runtime.buildCompletionRequest(
 		ctx,
 		input.sessionID,
 		input.cwd,
 		input.prompt,
 		input.selectedModel,
-		*input.auth,
+		auth,
 		input.onEvent,
 	)
 	if err != nil {
@@ -106,7 +115,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 		input.cwd,
 		input.prompt,
 		input.selectedModel,
-		*input.auth,
+		auth,
 		input.onEvent,
 	)
 	if err != nil {
