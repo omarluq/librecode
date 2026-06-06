@@ -28,11 +28,11 @@ func (runtime *Runtime) buildCompletionRequest(
 ) (*contextRequestBuild, error) {
 	contextResult, err := runtime.buildModelContext(ctx, sessionID, cwd, prompt, selectedModel, onEvent)
 	if err != nil {
-		return nil, err
+		return nil, oops.In("assistant").Code("context_build_model").Wrapf(err, "context: build model context")
 	}
 	registry, err := newToolRegistry(cwd, runtime.extensions)
 	if err != nil {
-		return nil, err
+		return nil, oops.In("assistant").Code("context_tool_registry").Wrapf(err, "context: create tool registry")
 	}
 	request := runtime.modelCompletionRequest(&modelCompletionRequestInput{
 		selectedModel: selectedModel,
@@ -52,21 +52,35 @@ func (runtime *Runtime) buildCompletionRequest(
 	return &contextRequestBuild{Context: contextResult, Request: request, Budget: budget}, nil
 }
 
+type completionRequestPreparationInput struct {
+	selectedModel *model.Model
+	onEvent       func(StreamEvent)
+	auth          *model.RequestAuth
+	sessionID     string
+	cwd           string
+	prompt        string
+	userEntryID   string
+}
+
 func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 	ctx context.Context,
-	sessionID string,
-	cwd string,
-	prompt string,
-	userEntryID string,
-	selectedModel *model.Model,
-	auth model.RequestAuth,
-	onEvent func(StreamEvent),
+	input *completionRequestPreparationInput,
 ) (*contextRequestBuild, *database.EntryEntity, error) {
-	build, err := runtime.buildCompletionRequest(ctx, sessionID, cwd, prompt, selectedModel, auth, onEvent)
+	build, err := runtime.buildCompletionRequest(
+		ctx,
+		input.sessionID,
+		input.cwd,
+		input.prompt,
+		input.selectedModel,
+		*input.auth,
+		input.onEvent,
+	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, oops.In("assistant").
+			Code("context_request_build").
+			Wrapf(err, "context: build completion request")
 	}
-	runtime.emitUsage(ctx, onEvent, build.Context.Usage)
+	runtime.emitUsage(ctx, input.onEvent, build.Context.Usage)
 	if !runtime.cfg.Context.PreflightEnabled {
 		return build, nil, nil
 	}
@@ -75,7 +89,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 		return build, nil, nil
 	}
 
-	compactionEntry, err := runtime.CompactSessionFrom(ctx, sessionID, cwd, &userEntryID)
+	compactionEntry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.userEntryID)
 	if isCompactNothingToDoError(err) {
 		return nil, nil, validationErr
 	}
@@ -84,15 +98,27 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 			Code("auto_compact").
 			Wrapf(err, "auto-compact context before provider request")
 	}
-	runtime.emitContextCompaction(ctx, onEvent, autoCompactionMessage(build.Budget, compactionEntry))
+	runtime.emitContextCompaction(ctx, input.onEvent, autoCompactionMessage(build.Budget, compactionEntry))
 
-	build, err = runtime.buildCompletionRequest(ctx, sessionID, cwd, prompt, selectedModel, auth, onEvent)
+	build, err = runtime.buildCompletionRequest(
+		ctx,
+		input.sessionID,
+		input.cwd,
+		input.prompt,
+		input.selectedModel,
+		*input.auth,
+		input.onEvent,
+	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, oops.In("assistant").
+			Code("context_request_rebuild").
+			Wrapf(err, "context: rebuild completion request after compaction")
 	}
-	runtime.emitUsage(ctx, onEvent, build.Context.Usage)
+	runtime.emitUsage(ctx, input.onEvent, build.Context.Usage)
 	if err := build.Budget.Validate(); err != nil {
-		return nil, nil, err
+		return nil, nil, oops.In("assistant").
+			Code("context_budget_after_compact").
+			Wrapf(err, "context: validate rebuilt budget")
 	}
 
 	return build, compactionEntry, nil

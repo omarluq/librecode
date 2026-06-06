@@ -64,6 +64,63 @@ func TestCompactSessionStartsAsyncWork(t *testing.T) {
 	}
 }
 
+const (
+	compactTestSessionID = "compact-session"
+	compactTestIgnored   = "compact-ignored"
+	compactTestParentID  = "compact-parent"
+)
+
+func TestCompactSessionValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		setup   func(*testing.T, *App)
+		name    string
+		wantErr string
+	}{
+		{
+			name:    "runtime missing",
+			setup:   func(*testing.T, *App) {},
+			wantErr: "runtime is not configured",
+		},
+		{
+			name: "session missing",
+			setup: func(t *testing.T, app *App) {
+				t.Helper()
+				configured := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
+				app.runtime = configured.runtime
+			},
+			wantErr: "no active session",
+		},
+		{
+			name: "busy",
+			setup: func(t *testing.T, app *App) {
+				t.Helper()
+				configured := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
+				app.runtime = configured.runtime
+				app.sessionID = compactTestSessionID
+				app.working = true
+			},
+			wantErr: "another operation is already running",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			testCase.setup(t, app)
+
+			err := app.compactSession(context.Background())
+
+			if err == nil || !strings.Contains(err.Error(), testCase.wantErr) {
+				t.Fatalf("compactSession error = %v, want %q", err, testCase.wantErr)
+			}
+		})
+	}
+}
+
 func TestHandleCompactDoneUpdatesState(t *testing.T) {
 	t.Parallel()
 
@@ -349,4 +406,83 @@ func (client *blockingTerminalClient) Complete(
 
 func (client *blockingTerminalClient) finish(summary string, err error) {
 	client.finishC <- blockingTerminalResult{err: err, summary: summary}
+}
+
+func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.compacting = true
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9}
+
+	handled := app.handleCompactAsyncEvent(&asyncEvent{
+		Response: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventCompactDone, Provider: "stale", Text: compactTestIgnored, PromptID: 10,
+	})
+	if !handled {
+		t.Fatal("compact done event should be handled even when stale")
+	}
+	if !app.compacting {
+		t.Fatal("stale compaction event should not stop active compaction")
+	}
+	if app.pendingParentID != nil {
+		t.Fatalf("pendingParentID = %v, want nil", app.pendingParentID)
+	}
+
+	handled = app.handleCompactAsyncEvent(&asyncEvent{
+		Response: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventPromptDelta, Provider: "", Text: "not compact", PromptID: 9,
+	})
+	if handled {
+		t.Fatal("non-compact event should not be handled")
+	}
+}
+
+func TestApplyCompactErrorDefaultMessage(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.compacting = true
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9}
+
+	app.applyCompactError(&asyncEvent{
+		Response: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventCompactError, Provider: "", Text: "", PromptID: 9,
+	})
+
+	if app.compacting {
+		t.Fatal("app should stop compacting")
+	}
+	if app.activeCompaction != nil {
+		t.Fatal("activeCompaction should be cleared")
+	}
+	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != "context compaction failed" {
+		t.Fatalf("last message = %q, want default failure", got)
+	}
+}
+
+func TestCompactFormattingHelpers(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	parentID := compactTestParentID
+	app.pendingParentID = &parentID
+	cloned := app.compactionParentEntryID()
+	if cloned == nil || *cloned != parentID {
+		t.Fatalf("compactionParentEntryID = %v, want parent", cloned)
+	}
+	*cloned = "changed"
+	if *app.pendingParentID != parentID {
+		t.Fatal("compactionParentEntryID should clone pending parent")
+	}
+
+	if got := compactDoneText(nil); got != compactedStatusMessage {
+		t.Fatalf("compactDoneText(nil) = %q", got)
+	}
+	if got := compactionEntryID(nil); got != "" {
+		t.Fatalf("compactionEntryID(nil) = %q, want empty", got)
+	}
+	if got := nonEmptyStringPtr("   "); got != nil {
+		t.Fatalf("nonEmptyStringPtr(blank) = %v, want nil", got)
+	}
 }
