@@ -33,9 +33,6 @@ func (app *App) availableModels() []model.Model {
 	models := []model.Model{}
 	if app.models != nil {
 		models = app.models.Available()
-		if len(models) == 0 {
-			models = app.models.All()
-		}
 	}
 	models = ensureCurrentModel(models, app.currentProvider(), app.currentModel())
 	sort.Slice(models, func(leftIndex, rightIndex int) bool {

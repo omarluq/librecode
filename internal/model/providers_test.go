@@ -60,8 +60,6 @@ func TestBuiltInProviderCatalogIsTrimmedToImplementedProviders(t *testing.T) {
 		"kimi-coding",
 		"minimax",
 		"minimax-cn",
-		"opencode",
-		"opencode-go",
 		"xiaomi",
 		"xiaomi-token-plan-ams",
 		"xiaomi-token-plan-cn",

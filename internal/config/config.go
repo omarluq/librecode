@@ -9,15 +9,18 @@ import (
 )
 
 // Config is the fully resolved application configuration.
+//
+//nolint:govet // Logical config grouping is more important than field packing.
 type Config struct {
-	App        AppConfig        `json:"app" mapstructure:"app" yaml:"app"`
-	Logging    LoggingConfig    `json:"logging" mapstructure:"logging" yaml:"logging"`
+	Database   DatabaseConfig   `json:"database" mapstructure:"database" yaml:"database"`
+	Cache      CacheConfig      `json:"cache" mapstructure:"cache" yaml:"cache"`
 	KSQL       KSQLConfig       `json:"ksql" mapstructure:"ksql" yaml:"ksql"`
 	Extensions ExtensionsConfig `json:"extensions" mapstructure:"extensions" yaml:"extensions"`
 	Assistant  AssistantConfig  `json:"assistant" mapstructure:"assistant" yaml:"assistant"`
-	Database   DatabaseConfig   `json:"database" mapstructure:"database" yaml:"database"`
 	Context    ContextConfig    `json:"context" mapstructure:"context" yaml:"context"`
-	Cache      CacheConfig      `json:"cache" mapstructure:"cache" yaml:"cache"`
+	Models     ModelsConfig     `json:"models" mapstructure:"models" yaml:"models"`
+	Logging    LoggingConfig    `json:"logging" mapstructure:"logging" yaml:"logging"`
+	App        AppConfig        `json:"app" mapstructure:"app" yaml:"app"`
 }
 
 // AppConfig contains application identity and environment settings.
@@ -73,6 +76,19 @@ type ContextConfig struct {
 	PreflightEnabled      bool `json:"preflight_enabled" mapstructure:"preflight_enabled" yaml:"preflight_enabled"`
 }
 
+// ModelsConfig controls model catalog discovery.
+type ModelsConfig struct {
+	Discovery ModelDiscoveryConfig `json:"discovery" mapstructure:"discovery" yaml:"discovery"`
+}
+
+// ModelDiscoveryConfig controls remote model catalog discovery.
+type ModelDiscoveryConfig struct {
+	SourceURL    string        `json:"source_url" mapstructure:"source_url" yaml:"source_url"`
+	CacheTTL     time.Duration `json:"cache_ttl" mapstructure:"cache_ttl" yaml:"cache_ttl"`
+	FetchTimeout time.Duration `json:"fetch_timeout" mapstructure:"fetch_timeout" yaml:"fetch_timeout"`
+	Enabled      bool          `json:"enabled" mapstructure:"enabled" yaml:"enabled"`
+}
+
 // RetryConfig controls transient model request retries.
 type RetryConfig struct {
 	BaseDelay   time.Duration `json:"base_delay" mapstructure:"base_delay" yaml:"base_delay"`
@@ -121,6 +137,7 @@ func (config *Config) Validate() error {
 		config.validateExtensions,
 		config.validateAssistant,
 		config.validateContext,
+		config.validateModels,
 		config.validateCache,
 		config.validateKSQL,
 	}
@@ -225,6 +242,20 @@ func (config *Config) validateContext() error {
 	}
 	if config.Context.KeepRecentTokens < 0 {
 		return fmt.Errorf("config: context.keep_recent_tokens cannot be negative")
+	}
+
+	return nil
+}
+
+func (config *Config) validateModels() error {
+	if config.Models.Discovery.SourceURL == "" {
+		return fmt.Errorf("config: models.discovery.source_url is required")
+	}
+	if config.Models.Discovery.CacheTTL < 0 {
+		return fmt.Errorf("config: models.discovery.cache_ttl cannot be negative")
+	}
+	if config.Models.Discovery.FetchTimeout < 0 {
+		return fmt.Errorf("config: models.discovery.fetch_timeout cannot be negative")
 	}
 
 	return nil

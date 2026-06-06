@@ -82,10 +82,12 @@ func wellKnownEnvKeys(provider string) ([]string, bool) {
 		"groq":                   {"GROQ" + apiKeyEnvSuffix()},
 		"mistral":                {"MISTRAL" + apiKeyEnvSuffix()},
 		"openai":                 {"OPENAI" + apiKeyEnvSuffix()},
+		"opencode":               {"OPENCODE" + apiKeyEnvSuffix()},
+		"opencode-go":            {"OPENCODE" + apiKeyEnvSuffix()},
 		"openrouter":             {"OPENROUTER" + apiKeyEnvSuffix()},
 		"vercel-ai-gateway":      {"AI_GATEWAY" + apiKeyEnvSuffix()},
 		"xai":                    {"XAI" + apiKeyEnvSuffix()},
-		"zai":                    {"ZAI" + apiKeyEnvSuffix()},
+		"zai":                    {"ZHIPU" + apiKeyEnvSuffix(), "ZAI" + apiKeyEnvSuffix()},
 	}
 	envKeys, ok := keys[provider]
 

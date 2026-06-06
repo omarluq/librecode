@@ -53,24 +53,29 @@ func applyModelOverride(model *Model, override *modelOverride) Model {
 }
 
 func mergeCustomModels(builtIns, customModels []Model) []Model {
-	merged := cloneModels(builtIns)
-	for customIndex := range customModels {
-		customModel := &customModels[customIndex]
-		inserted := false
-		for mergedIndex := range merged {
-			existing := &merged[mergedIndex]
-			if ModelsAreEqual(existing, customModel) {
-				merged[mergedIndex] = cloneModel(customModel)
-				inserted = true
-				break
-			}
-		}
-		if !inserted {
-			merged = append(merged, cloneModel(customModel))
+	return mergeModelCatalogs(builtIns, customModels)
+}
+
+func mergeModelCatalogs(catalogs ...[]Model) []Model {
+	merged := []Model{}
+	for _, catalog := range catalogs {
+		for modelIndex := range catalog {
+			mergeModel(&merged, &catalog[modelIndex])
 		}
 	}
 
 	return merged
+}
+
+func mergeModel(merged *[]Model, next *Model) {
+	for mergedIndex := range *merged {
+		existing := &(*merged)[mergedIndex]
+		if ModelsAreEqual(existing, next) {
+			(*merged)[mergedIndex] = cloneModel(next)
+			return
+		}
+	}
+	*merged = append(*merged, cloneModel(next))
 }
 
 func firstNonEmpty(primary, fallback string) string {

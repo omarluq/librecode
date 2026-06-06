@@ -139,7 +139,7 @@ Built-in provider IDs:
 | `azure-openai-responses`    | API key/custom config              | OpenAI Responses            |
 | OpenAI-compatible providers | API key                            | Chat Completions-compatible |
 
-OpenAI-compatible built-ins: `cerebras`, `deepseek`, `groq`, `mistral`, `moonshotai`, `moonshotai-cn`, `openrouter`, `vercel-ai-gateway`, `xai`, and `zai`.
+OpenAI-compatible built-ins: `cerebras`, `deepseek`, `groq`, `mistral`, `moonshotai`, `moonshotai-cn`, `opencode`, `opencode-go`, `openrouter`, `vercel-ai-gateway`, `xai`, and `zai`.
 
 The default assistant config is:
 
@@ -155,7 +155,7 @@ assistant:
     max_delay: 30s
 ```
 
-Built-in providers are intentionally limited to API families librecode implements directly: OpenAI/Codex Responses, OpenAI-compatible chat completions, and Anthropic Messages. Additional providers can still be added through custom model/provider definitions.
+Built-in providers are limited to API families librecode implements directly: OpenAI/Codex Responses, OpenAI-compatible chat completions, and Anthropic Messages. At startup librecode can enrich those built-ins from the models.dev catalog so model pickers and context budgeting know current context windows, output limits, costs, reasoning support, and image support. Additional providers can still be added through custom model/provider definitions.
 
 Credentials can come from:
 

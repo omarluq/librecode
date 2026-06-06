@@ -14,11 +14,16 @@ const (
 	providerMoonshotAICN         = "moonshotai-cn"
 	providerOpenAI               = "openai"
 	providerOpenAICodex          = "openai-codex"
+	providerOpenCode             = "opencode"
+	providerOpenCodeGo           = "opencode-go"
 	providerOpenRouter           = "openrouter"
 	providerVercelAIGateway      = "vercel-ai-gateway"
 	providerXAI                  = "xai"
 	providerZAI                  = "zai"
+	apiOpenAICompletions         = "openai-completions"
+	apiOpenAIResponses           = "openai-responses"
 	gpt54                        = "gpt-5.4"
+	gpt55                        = "gpt-5.5"
 	kimiK26                      = "kimi-k2.6"
 )
 
@@ -97,6 +102,8 @@ func defaultProviderMetadata() map[string]providerMetadata {
 		providerMoonshotAICN:         openAICompatibleMetadata("https://api.moonshot.cn/v1", false),
 		providerOpenAI:               openAIResponsesMetadata(),
 		providerOpenAICodex:          openAICodexMetadata(),
+		providerOpenCode:             openAICompatibleMetadata("https://opencode.ai/zen/v1", true),
+		providerOpenCodeGo:           openAICompatibleMetadata("https://opencode.ai/zen/go/v1", true),
 		providerOpenRouter:           openAICompatibleMetadata("https://openrouter.ai/api/v1", false),
 		providerVercelAIGateway:      openAICompatibleMetadata("https://ai-gateway.vercel.sh/v1", true),
 		providerXAI:                  openAICompatibleMetadata("https://api.x.ai/v1", true),
@@ -109,7 +116,7 @@ func openAICompatibleMetadata(baseURL string, reasoning bool) providerMetadata {
 		ThinkingLevelMap: nil,
 		Headers:          nil,
 		Compat:           nil,
-		API:              "openai-completions",
+		API:              apiOpenAICompletions,
 		BaseURL:          baseURL,
 		ContextWindow:    0,
 		MaxTokens:        0,
@@ -122,7 +129,7 @@ func openAIResponsesMetadata() providerMetadata {
 		ThinkingLevelMap: nil,
 		Headers:          nil,
 		Compat:           nil,
-		API:              "openai-responses",
+		API:              apiOpenAIResponses,
 		BaseURL:          "https://api.openai.com/v1",
 		ContextWindow:    0,
 		MaxTokens:        0,
@@ -163,7 +170,7 @@ func azureOpenAIMetadata() providerMetadata {
 		ThinkingLevelMap: nil,
 		Headers:          nil,
 		Compat:           nil,
-		API:              "openai-responses",
+		API:              apiOpenAIResponses,
 		BaseURL:          "",
 		ContextWindow:    0,
 		MaxTokens:        0,
@@ -184,6 +191,8 @@ func providerDisplayNameMap() map[string]string {
 		{Provider: providerMoonshotAICN, Display: "Moonshot AI (China)"},
 		{Provider: providerOpenAI, Display: "OpenAI"},
 		{Provider: providerOpenAICodex, Display: "ChatGPT Plus/Pro (Codex)"},
+		{Provider: providerOpenCode, Display: "OpenCode Zen"},
+		{Provider: providerOpenCodeGo, Display: "OpenCode Go"},
 		{Provider: providerOpenRouter, Display: "OpenRouter"},
 		{Provider: providerVercelAIGateway, Display: "Vercel AI Gateway"},
 		{Provider: providerXAI, Display: "xAI"},
@@ -205,7 +214,9 @@ func defaultModelMap() map[string]string {
 		{Provider: providerMoonshotAI, ModelID: kimiK26},
 		{Provider: providerMoonshotAICN, ModelID: kimiK26},
 		{Provider: providerOpenAI, ModelID: gpt54},
-		{Provider: providerOpenAICodex, ModelID: "gpt-5.5"},
+		{Provider: providerOpenAICodex, ModelID: gpt55},
+		{Provider: providerOpenCode, ModelID: gpt55},
+		{Provider: providerOpenCodeGo, ModelID: kimiK26},
 		{Provider: providerOpenRouter, ModelID: "moonshotai/kimi-k2.6"},
 		{Provider: providerVercelAIGateway, ModelID: "zai/glm-5.1"},
 		{Provider: providerXAI, ModelID: "grok-4.20-0309-reasoning"},
