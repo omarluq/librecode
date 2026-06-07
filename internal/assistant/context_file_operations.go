@@ -112,7 +112,7 @@ func fileOperationsFromToolEntry(entry *database.EntryEntity) []compactionFileOp
 		return pathArgumentFileOperation(entry, args, compactionFileActionModified)
 	case tool.NameBash:
 		return bashFileOperations(entry, args)
-	case tool.NameFind, tool.NameGrep, tool.NameLS:
+	case tool.NameFind, tool.NameGrep, tool.NameLS, tool.NameAST:
 		return pathArgumentFileOperation(entry, args, jsonReadToolName)
 	}
 

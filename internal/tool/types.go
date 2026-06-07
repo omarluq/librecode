@@ -26,6 +26,8 @@ const (
 	NameFind Name = "find"
 	// NameLS lists directory entries.
 	NameLS Name = "ls"
+	// NameAST inspects a file's syntax tree structure.
+	NameAST Name = "ast"
 )
 
 const (
