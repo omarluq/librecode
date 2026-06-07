@@ -210,7 +210,7 @@ func TestHandleInterruptRoutesAsyncEvents(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.compacting = true
-	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 12}
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 12, QueuedStart: 0}
 
 	handled, err := app.handleInterrupt(context.Background(), tcell.NewEventInterrupt(&asyncEvent{
 		Response:  nil,
