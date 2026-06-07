@@ -2,6 +2,7 @@ package assistant_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -14,10 +15,12 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
+const compactedWorkSummary = "summary of compacted work"
+
 func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: "summary of compacted work", requests: nil}
+	client := &compactionCompletionClient{summary: compactedWorkSummary, requests: nil}
 	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 10)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
@@ -46,7 +49,7 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, entry)
 	assert.Equal(t, database.EntryTypeCompaction, entry.Type)
-	assert.Equal(t, "summary of compacted work", entry.Summary)
+	assert.Equal(t, compactedWorkSummary, entry.Summary)
 	assert.Equal(t, third.ID, entry.CompactionFirstKeptEntryID)
 	assert.Positive(t, entry.CompactionTokensBefore)
 	require.NotNil(t, entry.ParentID)
@@ -62,7 +65,7 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, contextEntity.Messages, 3)
 	assert.Equal(t, database.RoleCompactionSummary, contextEntity.Messages[0].Role)
-	assert.Equal(t, "summary of compacted work", contextEntity.Messages[0].Content)
+	assert.Equal(t, compactedWorkSummary, contextEntity.Messages[0].Content)
 	assert.Equal(t, "recent user tail", contextEntity.Messages[1].Content)
 	assert.Equal(t, "recent assistant tail", contextEntity.Messages[2].Content)
 }
@@ -70,7 +73,7 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 func TestRuntime_CompactSessionChainsNextPromptFromCompactionEntry(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: "summary of compacted work", requests: nil}
+	client := &compactionCompletionClient{summary: compactedWorkSummary, requests: nil}
 	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
@@ -164,6 +167,67 @@ func TestRuntime_CompactSessionRejectsEmptySummary(t *testing.T) {
 	assert.Nil(t, entry)
 }
 
+func TestRuntime_CompactSessionPreservesFileOperations(t *testing.T) {
+	t.Parallel()
+
+	client := &compactionCompletionClient{summary: compactedWorkSummary, requests: nil}
+	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	user := appendRuntimeTestMessage(
+		t,
+		repository,
+		session.ID,
+		nil,
+		database.RoleUser,
+		strings.Repeat("inspect files ", 200),
+	)
+	readEntry := appendRuntimeTestToolResult(
+		t,
+		repository,
+		session.ID,
+		&user.ID,
+		"read",
+		`{"path":"internal/assistant/runtime.go"}`,
+		"runtime file",
+	)
+	writeEntry := appendRuntimeTestToolResult(
+		t,
+		repository,
+		session.ID,
+		&readEntry.ID,
+		"write",
+		`{"path":"internal/assistant/new_file.go"}`,
+		"wrote file",
+	)
+	bashEntry := appendRuntimeTestToolResult(
+		t,
+		repository,
+		session.ID,
+		&writeEntry.ID,
+		"bash",
+		`{"command":"sed -i 's/a/b/' internal/assistant/runtime.go"}`,
+		"edited",
+	)
+	appendRuntimeTestMessage(t, repository, session.ID, &bashEntry.ID, database.RoleAssistant, "tail")
+
+	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+
+	require.NoError(t, err)
+	assert.Contains(t, entry.Summary, "File operations preserved during compaction:")
+	assert.Contains(t, entry.Summary, "read: internal/assistant/runtime.go")
+	assert.Contains(t, entry.Summary, "modified: internal/assistant/new_file.go")
+	assert.Contains(t, entry.Summary, "modified: internal/assistant/runtime.go")
+	data := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(entry.DataJSON), &data))
+	details, ok := data["details"].(map[string]any)
+	require.True(t, ok)
+	operations, ok := details["file_operations"].([]any)
+	require.True(t, ok)
+	assert.Len(t, operations, 3)
+}
+
 func newCompactionRuntimeWithKeepRecentTokens(
 	t *testing.T,
 	client assistant.CompletionClient,
@@ -207,6 +271,27 @@ func appendRuntimeTestMessage(
 	require.NoError(t, err)
 
 	return entry
+}
+
+func appendRuntimeTestToolResult(
+	t *testing.T,
+	repository *database.SessionRepository,
+	sessionID string,
+	parentID *string,
+	name string,
+	argsJSON string,
+	result string,
+) *database.EntryEntity {
+	t.Helper()
+
+	return appendRuntimeTestMessage(
+		t,
+		repository,
+		sessionID,
+		parentID,
+		database.RoleToolResult,
+		strings.Join([]string{"tool: " + name, "arguments:", argsJSON, "output:", result}, "\n"),
+	)
 }
 
 type compactionCompletionClient struct {

@@ -77,6 +77,7 @@ func (runtime *Runtime) CompactSessionFrom(
 	if err != nil {
 		return nil, err
 	}
+	plan.FileOperations = collectCompactionFileOperations(branch[:plan.FirstKeptEntryIndex])
 
 	summary, err := runtime.summarizeCompaction(ctx, cwd, sessionID, selectedModel, auth, &plan)
 	if err != nil {
@@ -157,6 +158,9 @@ func (runtime *Runtime) appendCompaction(
 		"kept_entries":       len(plan.KeptEntryIDs),
 		"tokens_before":      plan.TokensBefore,
 	}
+	if len(plan.FileOperations) > 0 {
+		details[compactionFileOperationsKey] = plan.FileOperations
+	}
 	entry, err := runtime.sessions.AppendCompaction(
 		ctx,
 		sessionID,
@@ -176,13 +180,15 @@ func (runtime *Runtime) appendCompaction(
 }
 
 type compactionPlan struct {
-	FirstKeptEntryID   string
-	Messages           []database.MessageEntity
-	PreviousSummary    string
-	SplitTurnSummary   string
-	SummarizedEntryIDs []string
-	KeptEntryIDs       []string
-	TokensBefore       int
+	FirstKeptEntryID    string
+	Messages            []database.MessageEntity
+	PreviousSummary     string
+	SplitTurnSummary    string
+	SummarizedEntryIDs  []string
+	KeptEntryIDs        []string
+	FileOperations      []compactionFileOperation
+	TokensBefore        int
+	FirstKeptEntryIndex int
 }
 
 func planCompaction(branch []database.EntryEntity, keepRecentTokens int) (compactionPlan, error) {
@@ -213,13 +219,15 @@ func planCompaction(branch []database.EntryEntity, keepRecentTokens int) (compac
 	firstKeptEntryID := branch[cutPoint.firstKeptEntryIndex].ID
 
 	return compactionPlan{
-		Messages:           messages,
-		PreviousSummary:    previousSummary,
-		SplitTurnSummary:   splitTurnSummary,
-		SummarizedEntryIDs: summarizedIDs,
-		KeptEntryIDs:       keptIDs,
-		FirstKeptEntryID:   firstKeptEntryID,
-		TokensBefore:       effectiveBranchTokens(branch),
+		Messages:            messages,
+		PreviousSummary:     previousSummary,
+		SplitTurnSummary:    splitTurnSummary,
+		SummarizedEntryIDs:  summarizedIDs,
+		KeptEntryIDs:        keptIDs,
+		FileOperations:      nil,
+		FirstKeptEntryID:    firstKeptEntryID,
+		TokensBefore:        effectiveBranchTokens(branch),
+		FirstKeptEntryIndex: cutPoint.firstKeptEntryIndex,
 	}, nil
 }
 
@@ -563,7 +571,7 @@ func (runtime *Runtime) summarizeCompaction(
 		return "", oops.In("assistant").Code("compact_empty_summary").Errorf("compaction summary was empty")
 	}
 
-	return summary, nil
+	return appendFileOperationsSummary(summary, plan.FileOperations), nil
 }
 
 func compactionSystemPrompt(previousSummary string) string {
