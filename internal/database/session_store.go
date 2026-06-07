@@ -615,7 +615,7 @@ func applyCompactionContextWithTail(
 ) error {
 	compactionEntry := &branch[compactionIndex]
 	contextEntity.Messages = compactionSummaryMessages(compactionEntry)
-	contextEntity.UsageAnchor = nil
+	clearCompactedUsageAnchor(contextEntity)
 
 	firstKeptIndex := compactionIndex
 	for index := range compactionIndex {
@@ -631,6 +631,12 @@ func applyCompactionContextWithTail(
 	}
 
 	return nil
+}
+
+func clearCompactedUsageAnchor(contextEntity *SessionContextEntity) {
+	// Provider usage anchors describe the pre-compaction prompt shape. After a
+	// compaction entry rewrites context to summary + tail, that usage is stale.
+	contextEntity.UsageAnchor = nil
 }
 
 func compactionSummaryMessages(entry *EntryEntity) []MessageEntity {
