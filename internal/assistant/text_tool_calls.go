@@ -227,7 +227,7 @@ func textToolArgumentName(toolName, fieldName string) string {
 	case textToolNewTextKey:
 		return jsonNewTextKey
 	case "allow_ignored":
-		return "allowIgnored"
+		return jsonAllowIgnoredKey
 	case "ignore_case":
 		return "ignoreCase"
 	default:

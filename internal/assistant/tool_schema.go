@@ -71,6 +71,7 @@ var builtinToolSchemas = map[tool.Name]func() map[string]any{
 	tool.NameGrep:  grepToolSchema,
 	tool.NameFind:  findToolSchema,
 	tool.NameLS:    lsToolSchema,
+	tool.NameAST:   astToolSchema,
 }
 
 func toolParameterSchema(definition *tool.Definition) map[string]any {
@@ -102,7 +103,7 @@ func readToolSchema() map[string]any {
 			jsonPathKey:  stringSchema("Path to the file to read, relative to the current workspace or absolute."),
 			"offset":     integerSchema("Optional 1-indexed line number to start reading from."),
 			jsonLimitKey: integerSchema("Optional maximum number of lines to return."),
-			"allowIgnored": booleanSchema(
+			jsonAllowIgnoredKey: booleanSchema(
 				"Set true only when an ignored file is explicitly needed despite .gitignore/default ignores.",
 			),
 		},
@@ -196,6 +197,27 @@ func lsToolSchema() map[string]any {
 			jsonPathKey:  stringSchema("Optional directory to list."),
 			jsonLimitKey: integerSchema("Optional maximum number of entries."),
 		},
+	}
+}
+
+func astToolSchema() map[string]any {
+	return map[string]any{
+		jsonTypeKey: jsonObjectType,
+		jsonPropertiesKey: map[string]any{
+			jsonPathKey: stringSchema(
+				"Path to the source file to inspect, relative to the current workspace or absolute.",
+			),
+			"mode": stringSchema(
+				"Inspection mode: 'outline' (default), 'symbols', 'query', 'node', or 'tree'.",
+			),
+			"query": stringSchema("Tree-sitter S-expression query for mode=query."),
+			"line":  integerSchema("One-based line number for mode=node or mode=tree."),
+			"depth": integerSchema("Optional recursion depth for mode=symbols."),
+			jsonAllowIgnoredKey: booleanSchema(
+				"Set true only when an ignored file is explicitly needed despite .gitignore/default ignores.",
+			),
+		},
+		jsonRequiredKey: []string{jsonPathKey},
 	}
 }
 

@@ -2,7 +2,6 @@ package tool_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,6 +18,7 @@ const (
 	astModeNode    = "node"
 	astModeSymb    = "symbols"
 	astModeTree    = "tree"
+	astLineKey     = "line"
 	astContentKey  = "content"
 	astSamplePath  = "sample.go"
 	astIgnoredPath = "node_modules/pkg.go"
@@ -112,13 +112,51 @@ func TestASTTool_QueryFindsFunctionDeclarations(t *testing.T) {
 	assert.Equal(t, 1, result.Details["matches"])
 }
 
-func TestASTTool_QueryRequiresQueryText(t *testing.T) {
+func TestASTTool_ModeParameterValidation(t *testing.T) {
 	t.Parallel()
 
-	registry := newASTRegistry(t)
-	_, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath, astModeKey: astModeQuery})
+	tests := []struct {
+		name    string
+		input   map[string]any
+		wantErr string
+	}{
+		{
+			name:    "query mode requires query text",
+			input:   map[string]any{astPathKey: astSamplePath, astModeKey: astModeQuery},
+			wantErr: "query",
+		},
+		{
+			name:    "node mode requires line",
+			input:   map[string]any{astPathKey: astSamplePath, astModeKey: astModeNode},
+			wantErr: astLineKey,
+		},
+		{
+			name:    "invalid mode is rejected",
+			input:   map[string]any{astPathKey: astSamplePath, astModeKey: "bogus"},
+			wantErr: "",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			registry := newASTRegistry(t)
+			_, err := runAST(t, registry, testCase.input)
+			require.Error(t, err)
+			if testCase.wantErr != "" {
+				assert.Contains(t, err.Error(), testCase.wantErr)
+			}
+		})
+	}
+}
+
+func TestASTTool_PathRequired(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	_, err := runAST(t, registry, map[string]any{astPathKey: "  "})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "query")
 }
 
 func TestASTTool_QueryRejectsInvalidExpression(t *testing.T) {
@@ -140,22 +178,14 @@ func TestASTTool_NodeReportsEnclosingAncestry(t *testing.T) {
 	result, err := runAST(t, registry, map[string]any{
 		astPathKey: astSamplePath,
 		astModeKey: astModeNode,
-		"line":     14, // inside Widget.Render body
+		astLineKey: 14, // inside Widget.Render body
 	})
 	require.NoError(t, err)
 
 	text := result.Text()
 	assert.Contains(t, text, "method_declaration")
-	assert.True(t, strings.Contains(text, "Render") || strings.Contains(text, "source_file"))
-}
-
-func TestASTTool_NodeRequiresLine(t *testing.T) {
-	t.Parallel()
-
-	registry := newASTRegistry(t)
-	_, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath, astModeKey: astModeNode})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "line")
+	assert.Contains(t, text, "Render")
+	assert.Contains(t, text, "source_file")
 }
 
 func TestASTTool_SymbolsNestsMethodsUnderTypes(t *testing.T) {
@@ -207,26 +237,10 @@ func TestASTTool_TreeForLineScopesToSubtree(t *testing.T) {
 	result, err := runAST(t, registry, map[string]any{
 		astPathKey: astSamplePath,
 		astModeKey: astModeTree,
-		"line":     19, // inside Build
+		astLineKey: 19, // inside Build
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 19, result.Details["line"])
-}
-
-func TestASTTool_InvalidModeErrors(t *testing.T) {
-	t.Parallel()
-
-	registry := newASTRegistry(t)
-	_, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath, astModeKey: "bogus"})
-	require.Error(t, err)
-}
-
-func TestASTTool_PathRequired(t *testing.T) {
-	t.Parallel()
-
-	registry := tool.NewRegistry(t.TempDir())
-	_, err := runAST(t, registry, map[string]any{astPathKey: "  "})
-	require.Error(t, err)
+	assert.Equal(t, 19, result.Details[astLineKey])
 }
 
 func TestASTTool_UnsupportedLanguageIsGraceful(t *testing.T) {
