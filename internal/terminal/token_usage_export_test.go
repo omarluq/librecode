@@ -49,6 +49,10 @@ func (app *App) ApplyTokenUsageForTest(usage *model.TokenUsage) {
 	app.applyTokenUsage(usage)
 }
 
+func (app *App) ApplyTokenUsageSnapshotForTest(usage *model.TokenUsage) {
+	app.applyTokenUsageEvent(usage, true)
+}
+
 func (app *App) TokenStatusTextForTest() string {
 	return app.tokenStatusText()
 }

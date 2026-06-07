@@ -73,6 +73,8 @@ const (
 	StreamEventSkillLoaded StreamEventKind = "skill_loaded"
 	// StreamEventUsage carries estimated or provider-reported token usage.
 	StreamEventUsage StreamEventKind = "usage"
+	// StreamEventUsageSnapshot carries a fresh full-context usage snapshot that should replace prior UI usage.
+	StreamEventUsageSnapshot StreamEventKind = "usage_snapshot"
 	// StreamEventContextCompaction carries UI-only context compaction notices.
 	StreamEventContextCompaction StreamEventKind = "context_compaction"
 )
@@ -184,14 +186,14 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	}
 	runtime.dispatchMessageAppend(ctx, assistantEntry)
 	turnLifecycle.dispatchEnd(ctx, assistantEntry.ID, cached, bundle.Usage)
-	if !compactedBeforeRequest {
-		runtime.autoCompactAfterResponse(ctx, &postResponseAutoCompactionInput{
-			onEvent:       request.OnEvent,
-			sessionID:     activeSession.ID,
-			cwd:           request.CWD,
-			parentEntryID: assistantEntry.ID,
-		})
-	}
+	runtime.maybeAutoCompactAfterResponse(
+		ctx,
+		activeSession.ID,
+		assistantEntry.ID,
+		request,
+		bundle,
+		compactedBeforeRequest,
+	)
 
 	return &PromptResponse{
 		SessionID:        activeSession.ID,
@@ -203,6 +205,28 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		Usage:            bundle.Usage,
 		Cached:           cached,
 	}, nil
+}
+
+func (runtime *Runtime) maybeAutoCompactAfterResponse(
+	ctx context.Context,
+	sessionID string,
+	assistantEntryID string,
+	request *PromptRequest,
+	bundle *responseBundle,
+	compactedBeforeRequest bool,
+) {
+	if compactedBeforeRequest || request == nil || bundle == nil {
+		return
+	}
+	usage, compacted := runtime.autoCompactAfterResponse(ctx, &postResponseAutoCompactionInput{
+		onEvent:       request.OnEvent,
+		sessionID:     sessionID,
+		cwd:           request.CWD,
+		parentEntryID: assistantEntryID,
+	})
+	if compacted {
+		bundle.Usage = usage
+	}
 }
 
 // SessionRepository returns the underlying session repository for command and UI layers.

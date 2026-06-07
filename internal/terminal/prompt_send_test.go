@@ -223,11 +223,22 @@ func TestSendPromptInitializesPromptState(t *testing.T) {
 	app := newPromptSendTestApp(t, client)
 	parentID := ""
 	app.pendingParentID = &parentID
+	app.tokenUsage = model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100_000,
+		ContextTokens:   25_000,
+		InputTokens:     25_000,
+		OutputTokens:    0,
+	}
 
 	app.screen = newClipboardScreen()
 	app.sendPrompt(context.Background(), promptSendTestText)
 	_ = readPromptAsyncEvent(t, app)
 
+	if got := app.tokenUsage.ContextTokens; got != 25_000 {
+		t.Fatalf("tokenUsage.ContextTokens = %d, want 25000", got)
+	}
 	request := waitForPromptRequest(t, client)
 	if got := request.Messages[len(request.Messages)-1].Content; got != promptSendTestText {
 		t.Fatalf("last request message = %q, want hello", got)

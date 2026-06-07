@@ -37,8 +37,8 @@ func (runtime *Runtime) AutoCompactAfterResponseForTest(
 	sessionID string,
 	cwd string,
 	parentEntryID string,
-) {
-	runtime.autoCompactAfterResponse(ctx, &postResponseAutoCompactionInput{
+) (model.TokenUsage, bool) {
+	return runtime.autoCompactAfterResponse(ctx, &postResponseAutoCompactionInput{
 		onEvent:       onEvent,
 		sessionID:     sessionID,
 		cwd:           cwd,

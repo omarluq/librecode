@@ -26,6 +26,7 @@ const (
 	asyncEventPromptToolResult    asyncEventKind = "prompt_tool_result"
 	asyncEventPromptRetry         asyncEventKind = "prompt_retry"
 	asyncEventPromptUsage         asyncEventKind = "prompt_usage"
+	asyncEventPromptUsageSnapshot asyncEventKind = "prompt_usage_snapshot"
 	asyncEventPromptError         asyncEventKind = "prompt_error"
 	asyncEventPromptContext       asyncEventKind = "prompt_context"
 	asyncEventCompactDone         asyncEventKind = "compact_done"
@@ -127,6 +128,16 @@ func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(a
 				Text:      "",
 				PromptID:  promptID,
 			})
+		case assistant.StreamEventUsageSnapshot:
+			app.postAsyncEvent(ctx, &asyncEvent{
+				Response:  nil,
+				ToolEvent: nil,
+				Usage:     event.Usage,
+				Kind:      asyncEventPromptUsageSnapshot,
+				Provider:  "",
+				Text:      "",
+				PromptID:  promptID,
+			})
 		case assistant.StreamEventContextCompaction:
 			app.postAsyncEvent(ctx, &asyncEvent{
 				Response:  nil,
@@ -194,6 +205,7 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 		asyncEventPromptToolResult,
 		asyncEventPromptRetry,
 		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot,
 		asyncEventPromptError,
 		asyncEventPromptContext,
 		asyncEventCompactDone,
@@ -236,6 +248,7 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 		asyncEventPromptToolResult,
 		asyncEventPromptRetry,
 		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot,
 		asyncEventPromptError,
 		asyncEventPromptContext:
 		return true
@@ -285,7 +298,8 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 		asyncEventPromptThinkingDelta,
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
-		asyncEventPromptUsage:
+		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot:
 		return false
 	}
 
@@ -323,6 +337,9 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 		return
 	case asyncEventPromptUsage:
 		app.applyTokenUsage(payload.Usage)
+		return
+	case asyncEventPromptUsageSnapshot:
+		app.applyTokenUsageEvent(payload.Usage, true)
 		return
 	case asyncEventPromptDone,
 		asyncEventPromptUserEntry,

@@ -8,10 +8,25 @@ import (
 )
 
 func (app *App) applyTokenUsage(usage *model.TokenUsage) {
+	app.applyTokenUsageEvent(usage, false)
+}
+
+func (app *App) applyTokenUsageEvent(usage *model.TokenUsage, snapshot bool) {
 	if usage == nil || !usage.HasAny() {
 		return
 	}
+	if snapshot {
+		app.tokenUsage = cloneTerminalUsage(*usage)
+		return
+	}
 	app.tokenUsage = mergeTerminalUsage(app.tokenUsage, *usage)
+}
+
+func cloneTerminalUsage(usage model.TokenUsage) model.TokenUsage {
+	usage.Breakdown = cloneTokenBreakdown(usage.Breakdown)
+	usage.TopContributors = cloneTokenContributors(usage.TopContributors)
+
+	return usage
 }
 
 func mergeTerminalUsage(current, next model.TokenUsage) model.TokenUsage {
@@ -60,7 +75,7 @@ func formatContextUsage(usage model.TokenUsage) string {
 	case usage.ContextTokens > 0:
 		return "ctx " + compactCount(usage.ContextTokens)
 	case window > 0:
-		return "ctx 0/" + compactCount(window)
+		return ""
 	default:
 		return ""
 	}

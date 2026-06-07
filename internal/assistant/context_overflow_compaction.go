@@ -93,7 +93,7 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 			Code("context_overflow_rebuild").
 			Wrapf(err, "context: rebuild completion request after provider overflow compaction")
 	}
-	runtime.emitUsage(ctx, input.preparation.onEvent, recoveredBuild.Context.Usage)
+	runtime.emitUsageSnapshot(ctx, input.preparation.onEvent, recoveredBuild.Context.Usage)
 	if runtime.cfg.Context.PreflightEnabled {
 		validationErr := recoveredBuild.Budget.Validate()
 		if validationErr != nil {

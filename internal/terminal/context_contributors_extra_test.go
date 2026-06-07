@@ -39,8 +39,8 @@ func TestApplyTokenUsageAndFormattingVariants(t *testing.T) {
 		OutputTokens:    0,
 	}
 	app.ApplyTokenUsageForTest(&usage)
-	assert.Equal(t, "ctx 0/9.0k", app.TokenStatusTextForTest())
-	assert.Equal(t, "ctx 0/9.0k", terminal.FormatTokenStatusForTest(usage))
+	assert.Empty(t, app.TokenStatusTextForTest())
+	assert.Empty(t, terminal.FormatTokenStatusForTest(usage))
 
 	assert.Equal(t, "ctx 42", terminal.FormatContextUsageForTest(model.TokenUsage{
 		Breakdown:       nil,

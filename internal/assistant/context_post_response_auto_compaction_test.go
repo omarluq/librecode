@@ -39,11 +39,13 @@ func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "final answer", response.Text)
+	assert.Greater(t, response.Usage.ContextTokens, 0)
 	require.Len(t, harness.client.requests, 2)
 	assert.False(t, harness.client.requests[0].DisableTools)
 	assert.True(t, harness.client.requests[1].DisableTools)
 	assert.Contains(t, harness.client.requests[1].Messages[0].Content, "old")
 	assertPostResponseCompactionEvent(t, events)
+	assertPostResponseUsageSnapshot(t, events)
 
 	leaf, found, err := harness.runtime.SessionRepository().LeafEntry(ctx, session.ID)
 	require.NoError(t, err)
@@ -103,4 +105,18 @@ func assertPostResponseCompactionEvent(t *testing.T, events []assistant.StreamEv
 	}
 	assert.True(t, foundStart, "expected post-response auto-compaction start event")
 	assert.True(t, foundDone, "expected post-response auto-compaction completion event")
+}
+
+func assertPostResponseUsageSnapshot(t *testing.T, events []assistant.StreamEvent) {
+	t.Helper()
+
+	for _, event := range events {
+		if event.Kind != assistant.StreamEventUsageSnapshot || event.Usage == nil {
+			continue
+		}
+		if event.Usage.ContextTokens > 0 {
+			return
+		}
+	}
+	assert.Fail(t, "expected post-response auto-compaction usage snapshot")
 }

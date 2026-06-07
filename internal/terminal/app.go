@@ -520,7 +520,8 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 		asyncEventPromptThinkingDelta,
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
-		asyncEventPromptUsage:
+		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot:
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,

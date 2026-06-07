@@ -126,7 +126,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 			Code("context_request_rebuild").
 			Wrapf(err, "context: rebuild completion request after compaction")
 	}
-	runtime.emitUsage(ctx, input.onEvent, build.Context.Usage)
+	runtime.emitUsageSnapshot(ctx, input.onEvent, build.Context.Usage)
 	if err := build.Budget.Validate(); err != nil {
 		return nil, nil, oops.In("assistant").
 			Code("context_budget_after_compact").
@@ -159,34 +159,45 @@ type postResponseAutoCompactionInput struct {
 	parentEntryID string
 }
 
-func (runtime *Runtime) autoCompactAfterResponse(ctx context.Context, input *postResponseAutoCompactionInput) {
+func (runtime *Runtime) autoCompactAfterResponse(
+	ctx context.Context,
+	input *postResponseAutoCompactionInput,
+) (model.TokenUsage, bool) {
 	if !runtime.shouldTryPostResponseAutoCompaction(input) {
-		return
+		return model.EmptyTokenUsage(), false
 	}
 	usage, err := runtime.ContextUsage(ctx, input.sessionID, input.cwd)
 	if err != nil {
 		runtime.emitPostResponseAutoCompactionError(ctx, input.onEvent, err)
-		return
+		return model.EmptyTokenUsage(), false
 	}
 	budget := contextBudgetFromUsage(usage)
 	if !shouldAutoCompactAfterResponse(budget) {
-		return
+		return model.EmptyTokenUsage(), false
 	}
 
 	runtime.emitContextCompaction(ctx, input.onEvent, postResponseAutoCompactionStartMessage(budget))
 	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.parentEntryID)
 	if isCompactNothingToDoError(err) {
-		return
+		return model.EmptyTokenUsage(), false
 	}
 	if err != nil {
 		runtime.emitPostResponseAutoCompactionError(ctx, input.onEvent, err)
-		return
+		return model.EmptyTokenUsage(), false
 	}
+	compactedUsage, err := runtime.ContextUsage(ctx, input.sessionID, input.cwd)
+	if err != nil {
+		runtime.emitPostResponseAutoCompactionError(ctx, input.onEvent, err)
+		return model.EmptyTokenUsage(), false
+	}
+	runtime.emitUsageSnapshot(ctx, input.onEvent, compactedUsage)
 	runtime.emitContextCompaction(ctx, input.onEvent, compactionMessage(
 		"context auto-compacted after response",
 		budget,
 		entry,
 	))
+
+	return compactedUsage, true
 }
 
 func (runtime *Runtime) shouldTryPostResponseAutoCompaction(input *postResponseAutoCompactionInput) bool {
