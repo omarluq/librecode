@@ -48,7 +48,20 @@ func formatTokenStatus(usage model.TokenUsage) string {
 }
 
 func formatContextUsage(usage model.TokenUsage) string {
+	usableInput := usableInputBudget(usage)
 	switch {
+	case usage.ContextTokens > 0 && usableInput > 0:
+		contextText := fmt.Sprintf(
+			"ctx %s/%s usable %d%%",
+			compactCount(usage.ContextTokens),
+			compactCount(usableInput),
+			percentOf(usage.ContextTokens, usableInput),
+		)
+		if usage.ContextWindow > 0 {
+			contextText += fmt.Sprintf(" (%d%% window)", usage.ContextPercent())
+		}
+
+		return contextText
 	case usage.ContextTokens > 0 && usage.ContextWindow > 0:
 		return fmt.Sprintf(
 			"ctx %s/%s %d%%",
@@ -63,6 +76,22 @@ func formatContextUsage(usage model.TokenUsage) string {
 	default:
 		return ""
 	}
+}
+
+func usableInputBudget(usage model.TokenUsage) int {
+	if len(usage.Breakdown) == 0 {
+		return 0
+	}
+
+	return usage.Breakdown["usable_input"]
+}
+
+func percentOf(tokens, budget int) int {
+	if tokens <= 0 || budget <= 0 {
+		return 0
+	}
+
+	return tokens * 100 / budget
 }
 
 func cloneTokenBreakdown(values map[string]int) map[string]int {
