@@ -27,6 +27,7 @@ const (
 	jsonRequiredKey         = "required"
 	jsonPathKey             = "path"
 	jsonLimitKey            = "limit"
+	jsonAllowIgnoredKey     = "allowIgnored"
 	jsonPatternKey          = "pattern"
 	jsonObjectType          = "object"
 	jsonToolNameKey         = "name"
