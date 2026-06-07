@@ -62,6 +62,42 @@ func TestCompactSessionStartsAsyncWork(t *testing.T) {
 	assertCompactDoneEventHasUsage(t, readPromptAsyncEvent(t, app))
 }
 
+func TestPostCompactDoneAllowsNilUsage(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.compacting = true
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
+	app.tokenUsage = model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100_000,
+		ContextTokens:   42_000,
+		InputTokens:     42_000,
+		OutputTokens:    0,
+	}
+
+	app.applyCompactDone(context.Background(), &asyncEvent{
+		Response:  nil,
+		ToolEvent: nil,
+		Usage:     nil,
+		Kind:      asyncEventCompactDone,
+		Provider:  compactTestEntryID,
+		Text:      compactedStatusMessage,
+		PromptID:  9,
+	})
+
+	if app.compacting {
+		t.Fatal("app should stop compacting")
+	}
+	if got := app.tokenUsage.ContextTokens; got != 42_000 {
+		t.Fatalf("tokenUsage.ContextTokens = %d, want previous usage preserved", got)
+	}
+	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != compactedStatusMessage {
+		t.Fatalf("last message = %q, want compacted message", got)
+	}
+}
+
 func assertCompactDoneEventHasUsage(t *testing.T, event *asyncEvent) {
 	t.Helper()
 
@@ -77,6 +113,7 @@ const (
 	compactTestSessionID = "compact-session"
 	compactTestIgnored   = "compact-ignored"
 	compactTestParentID  = "compact-parent"
+	compactTestEntryID   = "compaction-entry"
 	compactTestFailed    = "compaction failed"
 )
 
@@ -143,7 +180,7 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 		ToolEvent: nil,
 		Usage:     nil,
 		Kind:      asyncEventCompactDone,
-		Provider:  "compaction-entry",
+		Provider:  compactTestEntryID,
 		Text:      compactedStatusMessage,
 		PromptID:  9,
 	})
@@ -157,8 +194,8 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 	if app.activeCompaction != nil {
 		t.Fatal("activeCompaction should be cleared")
 	}
-	if app.pendingParentID == nil || *app.pendingParentID != "compaction-entry" {
-		t.Fatalf("pendingParentID = %v, want compaction-entry", app.pendingParentID)
+	if app.pendingParentID == nil || *app.pendingParentID != compactTestEntryID {
+		t.Fatalf("pendingParentID = %v, want %s", app.pendingParentID, compactTestEntryID)
 	}
 	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != compactedStatusMessage {
 		t.Fatalf("last message = %q, want compacted message", got)
@@ -474,7 +511,7 @@ func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
 
 	handled = app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
 		Response: nil, ToolEvent: nil, Usage: nil,
-		Kind: asyncEventPromptDelta, Provider: "", Text: "not compact", PromptID: 9,
+		Kind: asyncEventPromptUsageSnapshot, Provider: "", Text: "not compact", PromptID: 9,
 	})
 	if handled {
 		t.Fatal("non-compact event should not be handled")
