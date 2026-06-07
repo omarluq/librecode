@@ -14,6 +14,7 @@ import (
 const (
 	compactionFileOperationsKey    = "file_operations"
 	compactionFileOperationsHeader = "File operations preserved during compaction:"
+	compactionFileActionModified   = "modified"
 	maxCompactionFileOperations    = 64
 )
 
@@ -106,13 +107,13 @@ func fileOperationsFromToolEntry(entry *database.EntryEntity) []compactionFileOp
 	}
 	switch tool.Name(entry.ToolName) {
 	case tool.NameRead:
-		return pathArgumentFileOperation(entry, args, "read")
+		return pathArgumentFileOperation(entry, args, jsonReadToolName)
 	case tool.NameEdit, tool.NameWrite:
-		return pathArgumentFileOperation(entry, args, "modified")
+		return pathArgumentFileOperation(entry, args, compactionFileActionModified)
 	case tool.NameBash:
 		return bashFileOperations(entry, args)
 	case tool.NameFind, tool.NameGrep, tool.NameLS:
-		return pathArgumentFileOperation(entry, args, "read")
+		return pathArgumentFileOperation(entry, args, jsonReadToolName)
 	}
 
 	return nil
@@ -149,9 +150,9 @@ func bashFileOperations(entry *database.EntryEntity, args map[string]any) []comp
 	if len(paths) == 0 {
 		return nil
 	}
-	action := "read"
+	action := jsonReadToolName
 	if shellCommandLooksMutating(command) {
-		action = "modified"
+		action = compactionFileActionModified
 	}
 	operations := make([]compactionFileOperation, 0, len(paths))
 	for _, path := range paths {
@@ -182,14 +183,26 @@ func shellCommandLooksMutating(command string) bool {
 	if strings.Contains(lower, ">") {
 		return true
 	}
-	mutatingCommands := []string{"cp", "mv", "rm", "mkdir", "touch", "tee", "sed -i", "perl -i"}
-	for _, candidate := range mutatingCommands {
-		if strings.Contains(lower, candidate) {
-			return true
-		}
+	fields := strings.Fields(lower)
+	if len(fields) == 0 {
+		return false
+	}
+	mutatingCommands := []string{"cp", "mv", "rm", "mkdir", "touch", "tee"}
+	if slices.Contains(mutatingCommands, fields[0]) {
+		return true
 	}
 
-	return false
+	return commandUsesInPlaceEdit(fields)
+}
+
+func commandUsesInPlaceEdit(fields []string) bool {
+	if len(fields) == 0 || (fields[0] != "sed" && fields[0] != "perl") {
+		return false
+	}
+	return slices.ContainsFunc(fields[1:], func(field string) bool {
+		return field == "-i" || strings.HasPrefix(field, "-i.") || strings.HasPrefix(field, "-i'") ||
+			strings.HasPrefix(field, "-i\"")
+	})
 }
 
 func shellCommandPathTokens(command string) []string {

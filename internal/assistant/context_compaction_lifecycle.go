@@ -4,6 +4,7 @@ package assistant
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/samber/oops"
@@ -16,6 +17,7 @@ const (
 	compactionSourceCore      = "core"
 	compactionSourceExtension = "extension"
 	compactionTokensBeforeKey = "tokens_before"
+	compactionPhaseKey        = "phase"
 )
 
 var errNoCompactionDecision = errors.New("no compaction lifecycle decision")
@@ -100,7 +102,7 @@ func compactionDecisionFromMutation(
 	}
 	if mutation.FirstKeptEntryID != nil {
 		decision.FirstKeptEntryID = strings.TrimSpace(*mutation.FirstKeptEntryID)
-		if !slicesContainsString(plan.KeptEntryIDs, decision.FirstKeptEntryID) {
+		if !slices.Contains(plan.KeptEntryIDs, decision.FirstKeptEntryID) {
 			return nil, oops.In("assistant").Code("compact_hook_invalid_first_kept").Errorf(
 				"extension compaction first kept entry is outside the planned retained tail",
 			)
@@ -148,11 +150,11 @@ func compactionSavedPayload(
 
 func compactionLifecycleDiagnostics(plan *compactionPlan, phase string) map[string]any {
 	if plan == nil {
-		return map[string]any{"phase": phase}
+		return map[string]any{compactionPhaseKey: phase}
 	}
 
 	return map[string]any{
-		"phase":                   phase,
+		compactionPhaseKey:        phase,
 		"summarized_entries":      len(plan.SummarizedEntryIDs),
 		"kept_entries":            len(plan.KeptEntryIDs),
 		"file_operation_count":    len(plan.FileOperations),
@@ -185,14 +187,4 @@ func stringSlicePayload(values []string) []any {
 	}
 
 	return payload
-}
-
-func slicesContainsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-
-	return false
 }
