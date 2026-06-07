@@ -53,8 +53,9 @@ type activePromptState struct {
 }
 
 type activeCompactionState struct {
-	Cancel context.CancelFunc
-	ID     uint64
+	Cancel      context.CancelFunc
+	ID          uint64
+	QueuedStart int
 }
 
 type messageLineCacheState struct {

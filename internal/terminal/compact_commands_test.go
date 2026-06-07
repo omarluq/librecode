@@ -68,6 +68,7 @@ const (
 	compactTestSessionID = "compact-session"
 	compactTestIgnored   = "compact-ignored"
 	compactTestParentID  = "compact-parent"
+	compactTestFailed    = "compaction failed"
 )
 
 func TestCompactSessionValidation(t *testing.T) {
@@ -126,9 +127,9 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.compacting = true
-	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9}
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
 
-	handled := app.handleCompactAsyncEvent(&asyncEvent{
+	handled := app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
 		Response:  nil,
 		ToolEvent: nil,
 		Usage:     nil,
@@ -152,6 +153,29 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 	}
 	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != compactedStatusMessage {
 		t.Fatalf("last message = %q, want compacted message", got)
+	}
+}
+
+func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
+	t.Parallel()
+
+	client := newTerminalPromptClient(newTerminalCompletionResult("queued response"), nil)
+	app := newPromptSendTestApp(t, client)
+	app.compacting = true
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
+	app.queuedMessages = []string{"queued after compact"}
+
+	app.applyCompactDone(context.Background(), &asyncEvent{
+		Response: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventCompactDone, Provider: "", Text: compactedStatusMessage, PromptID: 9,
+	})
+
+	request := waitForPromptRequest(t, client)
+	if got := request.Messages[len(request.Messages)-1].Content; got != "queued after compact" {
+		t.Fatalf("queued request text = %q", got)
+	}
+	if len(app.queuedMessages) != 0 {
+		t.Fatalf("queuedMessages length = %d, want 0", len(app.queuedMessages))
 	}
 }
 
@@ -187,7 +211,7 @@ func compactTransitionCases() []compactTransitionCase {
 		{
 			setupApp:        setupCompactErrorTransition,
 			invoke:          invokeCompactErrorTransition,
-			wantLastMessage: "compaction failed",
+			wantLastMessage: compactTestFailed,
 			wantStatus:      "",
 			name:            "compact error updates state",
 			wantEventKind:   "",
@@ -215,7 +239,7 @@ func setupCompactErrorTransition(t *testing.T, app *App) func(t *testing.T) {
 	t.Helper()
 
 	app.compacting = true
-	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9}
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
 
 	return nil
 }
@@ -223,13 +247,13 @@ func setupCompactErrorTransition(t *testing.T, app *App) func(t *testing.T) {
 func invokeCompactErrorTransition(t *testing.T, app *App) {
 	t.Helper()
 
-	handled := app.handleCompactAsyncEvent(&asyncEvent{
+	handled := app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
 		Response:  nil,
 		ToolEvent: nil,
 		Usage:     nil,
 		Kind:      asyncEventCompactError,
 		Provider:  "",
-		Text:      "compaction failed",
+		Text:      compactTestFailed,
 		PromptID:  9,
 	})
 	if !handled {
@@ -291,7 +315,7 @@ func setupCancelCompactTransition(t *testing.T, app *App) func(t *testing.T) {
 
 	canceled := false
 	app.compacting = true
-	app.activeCompaction = &activeCompactionState{Cancel: func() { canceled = true }, ID: 7}
+	app.activeCompaction = &activeCompactionState{Cancel: func() { canceled = true }, ID: 7, QueuedStart: 0}
 
 	return func(t *testing.T) {
 		t.Helper()
@@ -413,9 +437,9 @@ func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.compacting = true
-	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9}
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
 
-	handled := app.handleCompactAsyncEvent(&asyncEvent{
+	handled := app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
 		Response: nil, ToolEvent: nil, Usage: nil,
 		Kind: asyncEventCompactDone, Provider: "stale", Text: compactTestIgnored, PromptID: 10,
 	})
@@ -429,7 +453,7 @@ func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
 		t.Fatalf("pendingParentID = %v, want nil", app.pendingParentID)
 	}
 
-	handled = app.handleCompactAsyncEvent(&asyncEvent{
+	handled = app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
 		Response: nil, ToolEvent: nil, Usage: nil,
 		Kind: asyncEventPromptDelta, Provider: "", Text: "not compact", PromptID: 9,
 	})
@@ -443,7 +467,7 @@ func TestApplyCompactErrorDefaultMessage(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.compacting = true
-	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9}
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
 
 	app.applyCompactError(&asyncEvent{
 		Response: nil, ToolEvent: nil, Usage: nil,
@@ -458,6 +482,27 @@ func TestApplyCompactErrorDefaultMessage(t *testing.T) {
 	}
 	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != "context compaction failed" {
 		t.Fatalf("last message = %q, want default failure", got)
+	}
+}
+
+func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.queuedMessages = []string{"preexisting", "during compaction"}
+	app.compacting = true
+	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 1}
+
+	app.applyCompactError(&asyncEvent{
+		Response: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventCompactError, Provider: "", Text: compactTestFailed, PromptID: 9,
+	})
+
+	if got, want := app.composerText(), "during compaction"; got != want {
+		t.Fatalf("composer text = %q, want %q", got, want)
+	}
+	if got, want := app.queuedMessages, []string{"preexisting"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("queuedMessages = %v, want %v", got, want)
 	}
 }
 

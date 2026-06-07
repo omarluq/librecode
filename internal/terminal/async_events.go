@@ -162,7 +162,7 @@ func (app *App) handleInterrupt(ctx context.Context, event *tcell.EventInterrupt
 	if app.handleAuthAsyncEvent(payload) {
 		return false, nil
 	}
-	if app.handleCompactAsyncEvent(payload) {
+	if app.handleCompactAsyncEvent(ctx, payload) {
 		return false, nil
 	}
 	app.handlePromptAsyncEvent(ctx, payload)
