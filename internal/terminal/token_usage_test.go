@@ -243,5 +243,5 @@ func TestFormatContextUsagePrefersUsableInputBudget(t *testing.T) {
 		OutputTokens:    0,
 	}
 
-	assert.Equal(t, "ctx 156k/132k usable 118% (57% window)", terminal.FormatContextUsageForTest(usage))
+	assert.Equal(t, "ctx 156k/132k 118%", terminal.FormatContextUsageForTest(usage))
 }
