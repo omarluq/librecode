@@ -32,6 +32,24 @@ func (app *App) processQueuedPrompt(ctx context.Context) {
 	app.sendPrompt(ctx, text)
 }
 
+func (app *App) queuedCompactionPrompts() []string {
+	if app.activeCompaction == nil || app.activeCompaction.QueuedStart >= len(app.queuedMessages) {
+		return nil
+	}
+	queued := append([]string(nil), app.queuedMessages[app.activeCompaction.QueuedStart:]...)
+	app.queuedMessages = app.queuedMessages[:app.activeCompaction.QueuedStart]
+
+	return queued
+}
+
+func (app *App) restoreCompactionQueuedPrompts(queued []string) {
+	if len(queued) == 0 {
+		return
+	}
+	app.queuedMessages = append(app.queuedMessages, queued...)
+	app.dequeueFollowUp()
+}
+
 func (app *App) dequeueFollowUp() {
 	if len(app.queuedMessages) == 0 {
 		app.setStatus("no queued messages")

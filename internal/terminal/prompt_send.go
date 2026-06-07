@@ -10,7 +10,7 @@ import (
 )
 
 func (app *App) sendPrompt(ctx context.Context, text string) {
-	if app.working {
+	if app.busy() {
 		app.queueFollowUpText(text)
 		return
 	}

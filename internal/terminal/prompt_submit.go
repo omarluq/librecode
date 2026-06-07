@@ -19,8 +19,14 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	if app.compacting {
-		app.setComposerText(text)
-		app.setStatus("wait for context compaction to finish")
+		if strings.HasPrefix(text, "/") {
+			app.setComposerText(text)
+			app.setStatus("wait for context compaction to finish")
+			return false, nil
+		}
+		app.recordPromptHistory(text)
+		app.queueFollowUpText(text)
+		app.setStatus("queued prompt until context compaction finishes")
 		return false, nil
 	}
 	app.recordPromptHistory(text)

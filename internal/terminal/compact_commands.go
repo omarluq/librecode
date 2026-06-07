@@ -26,7 +26,11 @@ func (app *App) compactSession(ctx context.Context) error {
 	compactID := app.nextPromptID()
 	parentEntryID := app.compactionParentEntryID()
 	app.compacting = true
-	app.activeCompaction = &activeCompactionState{Cancel: cancel, ID: compactID}
+	app.activeCompaction = &activeCompactionState{
+		Cancel:      cancel,
+		ID:          compactID,
+		QueuedStart: len(app.queuedMessages),
+	}
 	app.workStartedAt = time.Now()
 	app.workFrame = 0
 	app.scrollOffset = 0
@@ -76,10 +80,10 @@ func (app *App) postCompactError(ctx context.Context, compactID uint64, err erro
 	})
 }
 
-func (app *App) handleCompactAsyncEvent(payload *asyncEvent) bool {
+func (app *App) handleCompactAsyncEvent(ctx context.Context, payload *asyncEvent) bool {
 	switch payload.Kind {
 	case asyncEventCompactDone:
-		app.applyCompactDone(payload)
+		app.applyCompactDone(ctx, payload)
 		return true
 	case asyncEventCompactError:
 		app.applyCompactError(payload)
@@ -103,7 +107,7 @@ func (app *App) handleCompactAsyncEvent(payload *asyncEvent) bool {
 	return false
 }
 
-func (app *App) applyCompactDone(payload *asyncEvent) {
+func (app *App) applyCompactDone(ctx context.Context, payload *asyncEvent) {
 	if app.ignoreCompactEvent(payload) {
 		return
 	}
@@ -112,19 +116,22 @@ func (app *App) applyCompactDone(payload *asyncEvent) {
 	app.activeCompaction = nil
 	app.addSystemMessage(payload.Text)
 	app.setStatus(compactedStatusMessage)
+	app.processQueuedPrompt(ctx)
 }
 
 func (app *App) applyCompactError(payload *asyncEvent) {
 	if app.ignoreCompactEvent(payload) {
 		return
 	}
+	queued := app.queuedCompactionPrompts()
 	app.compacting = false
 	app.activeCompaction = nil
 	if payload.Text == "" {
 		app.addSystemMessage("context compaction failed")
-		return
+	} else {
+		app.addSystemMessage(payload.Text)
 	}
-	app.addSystemMessage(payload.Text)
+	app.restoreCompactionQueuedPrompts(queued)
 }
 
 func (app *App) ignoreCompactEvent(payload *asyncEvent) bool {
