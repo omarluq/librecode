@@ -10,7 +10,10 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 )
 
-const testLifecyclePathKey = "path"
+const (
+	testLifecyclePathKey = "path"
+	testLifecycleYes     = "yes"
+)
 
 func TestManager_DispatchLifecycleRunsHandlersInPriorityOrder(t *testing.T) {
 	t.Parallel()
@@ -98,7 +101,7 @@ lc.on("before_provider_request", { priority = 10 }, function(event)
     payload = event.payload,
     provider_request = {
       headers = {
-        ["X-Debug"] = "yes",
+        ["X-Debug"] = "debug-ok",
         ["X-Shared"] = "first",
       },
     },
@@ -127,7 +130,7 @@ end)
 	require.True(t, ok)
 	assert.Equal(t, "changed", payload["marker"])
 	assert.Equal(t, map[string]string{
-		"X-Debug":  "yes",
+		"X-Debug":  "debug-ok",
 		"X-Shared": "second",
 		"X-Trace":  "trace-id",
 	}, result.ProviderRequest.Headers)
@@ -194,6 +197,44 @@ end)
 	assert.Equal(t, "filtered", *resultResult.ToolResult.Result)
 	assert.JSONEq(t, `{"filtered":true}`, *resultResult.ToolResult.DetailsJSON)
 	assert.Empty(t, *resultResult.ToolResult.Error)
+}
+
+func TestManager_DispatchLifecycleCollectsCompactionMutations(t *testing.T) {
+	t.Parallel()
+
+	manager := loadTestExtension(t, `
+local lc = require("librecode")
+lc.on("session_before_compact", { priority = 10 }, function()
+  return {
+    compaction = {
+      summary = "first summary",
+      first_kept_entry_id = "entry-a",
+      details = { first = "`+testLifecycleYes+`" },
+    },
+  }
+end)
+lc.on("session_before_compact", { priority = 1 }, function()
+  return {
+    compaction = {
+      summary = "final summary",
+      details = { second = "`+testLifecycleYes+`" },
+      cancel = true,
+    },
+  }
+end)
+`)
+	result, err := manager.DispatchLifecycle(context.Background(), extension.LifecycleEvent{
+		Name:    extension.LifecycleSessionBeforeCompact,
+		Payload: map[string]any{},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Compaction.Summary)
+	require.NotNil(t, result.Compaction.FirstKeptEntryID)
+	assert.Equal(t, "final summary", *result.Compaction.Summary)
+	assert.Equal(t, "entry-a", *result.Compaction.FirstKeptEntryID)
+	assert.Equal(t, map[string]any{"first": testLifecycleYes, "second": testLifecycleYes}, result.Compaction.Details)
+	assert.True(t, result.Compaction.Cancel)
 }
 
 func TestManager_DispatchLifecycleRequiresName(t *testing.T) {

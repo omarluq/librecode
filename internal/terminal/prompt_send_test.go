@@ -31,6 +31,7 @@ const (
 	promptSendTestEnv         = "test-env"
 	promptSendTestProvider    = "test-provider"
 	promptSendTestText        = "hello"
+	promptSendSlashModel      = "/model"
 	promptSendWhitespaceInput = "   "
 )
 
@@ -119,7 +120,7 @@ func submitCases() []submitCase {
 		},
 		{
 			setupApp:          nil,
-			composerText:      "/model",
+			composerText:      promptSendSlashModel,
 			wantComposerText:  "",
 			wantQueued:        nil,
 			name:              "slash command opens panel",
@@ -149,6 +150,17 @@ func submitCases() []submitCase {
 			name:              "queues prompt while compacting",
 			wantMode:          modeChat,
 			wantPromptHistory: 1,
+			wantConsumed:      false,
+			wantRequest:       false,
+		},
+		{
+			setupApp:          func(app *App) { app.compacting = true },
+			composerText:      promptSendSlashModel,
+			wantComposerText:  promptSendSlashModel,
+			wantQueued:        nil,
+			name:              "defers command while compacting",
+			wantMode:          modeChat,
+			wantPromptHistory: 0,
 			wantConsumed:      false,
 			wantRequest:       false,
 		},
