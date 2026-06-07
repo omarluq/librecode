@@ -12,7 +12,10 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
-func (runtime *Runtime) modelContextMessages(ctx context.Context, sessionID string) ([]database.MessageEntity, error) {
+func (runtime *Runtime) modelContextEntity(
+	ctx context.Context,
+	sessionID string,
+) (*database.SessionContextEntity, error) {
 	leafEntry, _, err := runtime.sessions.LeafEntry(ctx, sessionID)
 	if err != nil {
 		return nil, oops.In("assistant").Code("load_context_leaf").Wrapf(err, "load session leaf")
@@ -26,7 +29,7 @@ func (runtime *Runtime) modelContextMessages(ctx context.Context, sessionID stri
 		return nil, oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
 	}
 
-	return modelFacingMessages(contextEntity.Messages), nil
+	return contextEntity, nil
 }
 
 func modelFacingMessages(messages []database.MessageEntity) []database.MessageEntity {
@@ -40,6 +43,34 @@ func modelFacingMessages(messages []database.MessageEntity) []database.MessageEn
 	}
 
 	return filtered
+}
+
+func remapUsageAnchor(
+	anchor *database.ContextUsageAnchorEntity,
+	originalMessages []database.MessageEntity,
+	modelMessages []database.MessageEntity,
+) *database.ContextUsageAnchorEntity {
+	if anchor == nil || anchor.MessageIndex < 0 || anchor.MessageIndex >= len(originalMessages) {
+		return nil
+	}
+	anchorMessage := originalMessages[anchor.MessageIndex]
+	modelIndex := -1
+	for originalIndex := range originalMessages[:anchor.MessageIndex+1] {
+		message := originalMessages[originalIndex]
+		if isModelFacingRole(message.Role) && strings.TrimSpace(message.Content) != "" {
+			modelIndex++
+		}
+	}
+	if modelIndex < 0 || modelIndex >= len(modelMessages) {
+		return nil
+	}
+	if modelMessages[modelIndex].Timestamp != anchorMessage.Timestamp {
+		return nil
+	}
+	remapped := *anchor
+	remapped.MessageIndex = modelIndex
+
+	return &remapped
 }
 
 func modelFacingMessage(message *database.MessageEntity) database.MessageEntity {

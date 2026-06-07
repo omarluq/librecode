@@ -36,19 +36,21 @@ type contextBuildResult struct {
 	SystemPrompt  string
 	Contributions []contextContribution
 	Messages      []database.MessageEntity
+	UsageAnchor   *database.ContextUsageAnchorEntity
 	Usage         model.TokenUsage
 }
 
 type modelContextBase struct {
+	UsageAnchor      *database.ContextUsageAnchorEntity
 	BaseSystemPrompt string
 	SkillPrompt      string
 	SystemPrompt     string
 	ActiveSkills     []core.ActivatedSkill
 	SkillDiagnostics []core.SkillActivationDiagnostic
 	Messages         []database.MessageEntity
+	HistoryTokens    int
 	SystemTokens     int
 	SkillTokens      int
-	HistoryTokens    int
 }
 
 // ContextUsage estimates the current model-facing context without executing a prompt.
@@ -83,11 +85,14 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 	}
 
 	messages := []database.MessageEntity{}
+	var usageAnchor *database.ContextUsageAnchorEntity
 	if strings.TrimSpace(sessionID) != "" {
-		messages, err = runtime.modelContextMessages(ctx, sessionID)
+		contextEntity, err := runtime.modelContextEntity(ctx, sessionID)
 		if err != nil {
 			return model.EmptyTokenUsage(), err
 		}
+		messages = modelFacingMessages(contextEntity.Messages)
+		usageAnchor = remapUsageAnchor(contextEntity.UsageAnchor, contextEntity.Messages, messages)
 	}
 
 	basePrompt := baseSystemPrompt(cwd)
@@ -102,7 +107,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		nil,
 	)
 
-	usage := estimateContextBuildUsage(basePrompt+skillPrompt, messages, nil, &selectedModel, breakdown)
+	usage := estimateContextBuildUsage(basePrompt+skillPrompt, messages, nil, &selectedModel, breakdown, usageAnchor)
 	budget := newContextBudget(usage, &selectedModel, runtime.cfg.Context, request)
 
 	return budget.UsageWithBudget(usage), nil
@@ -116,12 +121,14 @@ func (runtime *Runtime) buildModelContext(
 	selectedModel *model.Model,
 	onEvent func(StreamEvent),
 ) (*contextBuildResult, error) {
-	messages, err := runtime.modelContextMessages(ctx, sessionID)
+	contextEntity, err := runtime.modelContextEntity(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
+	messages := modelFacingMessages(contextEntity.Messages)
+	usageAnchor := remapUsageAnchor(contextEntity.UsageAnchor, contextEntity.Messages, messages)
 
-	base, err := runtime.modelContextBase(ctx, cwd, prompt, messages, onEvent)
+	base, err := runtime.modelContextBase(ctx, cwd, prompt, messages, usageAnchor, onEvent)
 	if err != nil {
 		return nil, err
 	}
@@ -152,6 +159,7 @@ func (runtime *Runtime) modelContextBase(
 	cwd string,
 	prompt string,
 	messages []database.MessageEntity,
+	usageAnchor *database.ContextUsageAnchorEntity,
 	onEvent func(StreamEvent),
 ) (modelContextBase, error) {
 	basePrompt := baseSystemPrompt(cwd)
@@ -199,6 +207,7 @@ func (runtime *Runtime) modelContextBase(
 		ActiveSkills:     activeSkills,
 		SkillDiagnostics: skillActivation.Matches,
 		Messages:         messages,
+		UsageAnchor:      usageAnchor,
 		SystemPrompt:     basePrompt + availableSkillsPrompt + activeSkillsPrompt,
 		BaseSystemPrompt: basePrompt,
 		SkillPrompt:      availableSkillsPrompt + activeSkillsPrompt,
@@ -216,12 +225,14 @@ func initialContextBuildResult(base *modelContextBase, selectedModel *model.Mode
 		Messages:      base.Messages,
 		Breakdown:     breakdown,
 		SystemPrompt:  base.SystemPrompt,
+		UsageAnchor:   base.UsageAnchor,
 		Usage: estimateContextBuildUsage(
 			base.SystemPrompt,
 			base.Messages,
 			nil,
 			selectedModel,
 			breakdown,
+			base.UsageAnchor,
 		),
 	}
 }
@@ -237,12 +248,14 @@ func recalculateContextBuildResult(
 		base.HistoryTokens,
 		result.Contributions,
 	)
+	result.UsageAnchor = base.UsageAnchor
 	result.Usage = estimateContextBuildUsage(
 		result.SystemPrompt,
 		base.Messages,
 		result.Contributions,
 		selectedModel,
 		result.Breakdown,
+		base.UsageAnchor,
 	)
 }
 
@@ -252,11 +265,9 @@ func estimateContextBuildUsage(
 	contributions []contextContribution,
 	selectedModel *model.Model,
 	breakdown map[string]int,
+	usageAnchor *database.ContextUsageAnchorEntity,
 ) model.TokenUsage {
-	inputTokens := estimateInputTokens(systemPrompt, messages)
-	for index := range contributions {
-		inputTokens += contributions[index].Tokens
-	}
+	inputTokens := estimateUsageLedInputTokens(systemPrompt, messages, contributions, usageAnchor)
 
 	return model.TokenUsage{
 		Breakdown:       cloneIntMapForUsage(breakdown),
