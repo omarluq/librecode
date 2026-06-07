@@ -32,6 +32,7 @@ func NewRegistry(cwd string) *Registry {
 		NewGrepTool(cwd),
 		NewFindTool(cwd),
 		NewLSTool(cwd),
+		NewASTTool(cwd),
 	}
 
 	return &Registry{

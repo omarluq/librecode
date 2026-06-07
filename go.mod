@@ -10,6 +10,7 @@ require (
 	github.com/gdamore/tcell/v3 v3.4.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/gofrs/uuid/v5 v5.4.0
+	github.com/odvcencio/gotreesitter v0.20.2
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/rs/zerolog v1.35.1
 	github.com/samber/do/v2 v2.0.0

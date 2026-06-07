@@ -1,0 +1,307 @@
+package tool_test
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/tool"
+)
+
+const (
+	astPathKey     = "path"
+	astModeKey     = "mode"
+	astQueryKey    = "query"
+	astModeQuery   = "query"
+	astModeNode    = "node"
+	astModeSymb    = "symbols"
+	astModeTree    = "tree"
+	astContentKey  = "content"
+	astSamplePath  = "sample.go"
+	astIgnoredPath = "node_modules/pkg.go"
+	astFuncDeclQ   = `(function_declaration name: (identifier) @fn)`
+)
+
+const astFixture = `package sample
+
+import "fmt"
+
+const Greeting = "hi"
+
+var counter int
+
+type Widget struct {
+	Name string
+}
+
+func (w Widget) Render() string {
+	return fmt.Sprintf("%s", w.Name)
+}
+
+func Build(n int) *Widget {
+	return &Widget{Name: Greeting}
+}
+`
+
+func newASTRegistry(t *testing.T) *tool.Registry {
+	t.Helper()
+	registry := tool.NewRegistry(t.TempDir())
+	_, err := registry.Execute(context.Background(), "write", map[string]any{
+		astPathKey:    astSamplePath,
+		astContentKey: astFixture,
+	})
+	require.NoError(t, err)
+
+	return registry
+}
+
+func runAST(t *testing.T, registry *tool.Registry, input map[string]any) (tool.Result, error) {
+	t.Helper()
+
+	return registry.Execute(context.Background(), "ast", input)
+}
+
+func TestASTTool_OutlineListsTopLevelDeclarations(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath})
+	require.NoError(t, err)
+
+	text := result.Text()
+	for _, want := range []string{
+		"const_declaration",
+		"var_declaration",
+		"type_declaration Widget",
+		"method_declaration Render",
+		"function_declaration Build",
+	} {
+		assert.Contains(t, text, want, "outline should mention %q", want)
+	}
+	assert.Equal(t, "go", result.Details["language"])
+}
+
+func TestASTTool_OutlineIsDefaultMode(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	implicit, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath})
+	require.NoError(t, err)
+	explicit, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath, astModeKey: "outline"})
+	require.NoError(t, err)
+	assert.Equal(t, explicit.Text(), implicit.Text())
+}
+
+func TestASTTool_QueryFindsFunctionDeclarations(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey:  astSamplePath,
+		astModeKey:  astModeQuery,
+		astQueryKey: astFuncDeclQ,
+	})
+	require.NoError(t, err)
+
+	text := result.Text()
+	assert.Contains(t, text, "@fn")
+	assert.Contains(t, text, "Build")
+	assert.Equal(t, 1, result.Details["matches"])
+}
+
+func TestASTTool_QueryRequiresQueryText(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	_, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath, astModeKey: astModeQuery})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "query")
+}
+
+func TestASTTool_QueryRejectsInvalidExpression(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	_, err := runAST(t, registry, map[string]any{
+		astPathKey:  astSamplePath,
+		astModeKey:  astModeQuery,
+		astQueryKey: `(this is not valid`,
+	})
+	require.Error(t, err)
+}
+
+func TestASTTool_NodeReportsEnclosingAncestry(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey: astSamplePath,
+		astModeKey: astModeNode,
+		"line":     14, // inside Widget.Render body
+	})
+	require.NoError(t, err)
+
+	text := result.Text()
+	assert.Contains(t, text, "method_declaration")
+	assert.True(t, strings.Contains(text, "Render") || strings.Contains(text, "source_file"))
+}
+
+func TestASTTool_NodeRequiresLine(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	_, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath, astModeKey: astModeNode})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "line")
+}
+
+func TestASTTool_SymbolsNestsMethodsUnderTypes(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey: astSamplePath,
+		astModeKey: astModeSymb,
+	})
+	require.NoError(t, err)
+
+	text := result.Text()
+	assert.Contains(t, text, "symbols")
+	assert.Contains(t, text, "Widget")
+	assert.Contains(t, text, "Build")
+	assert.Equal(t, "go", result.Details["language"])
+}
+
+func TestASTTool_SymbolsRespectsDepthZero(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey: astSamplePath,
+		astModeKey: astModeSymb,
+		"depth":    0,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.Details["depth"])
+}
+
+func TestASTTool_TreeDumpsSExpression(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey: astSamplePath,
+		astModeKey: astModeTree,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, result.Text(), "source_file")
+}
+
+func TestASTTool_TreeForLineScopesToSubtree(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey: astSamplePath,
+		astModeKey: astModeTree,
+		"line":     19, // inside Build
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 19, result.Details["line"])
+}
+
+func TestASTTool_InvalidModeErrors(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	_, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath, astModeKey: "bogus"})
+	require.Error(t, err)
+}
+
+func TestASTTool_PathRequired(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	_, err := runAST(t, registry, map[string]any{astPathKey: "  "})
+	require.Error(t, err)
+}
+
+func TestASTTool_UnsupportedLanguageIsGraceful(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	_, err := registry.Execute(context.Background(), "write", map[string]any{
+		astPathKey:    "data.unknownext",
+		astContentKey: "noop",
+	})
+	require.NoError(t, err)
+
+	result, err := runAST(t, registry, map[string]any{astPathKey: "data.unknownext"})
+	require.NoError(t, err)
+	assert.Equal(t, false, result.Details["supported"])
+}
+
+func TestASTTool_RefusesIgnoredPathByDefault(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	_, err := registry.Execute(context.Background(), "write", map[string]any{
+		astPathKey:    astIgnoredPath,
+		astContentKey: astFixture,
+	})
+	require.NoError(t, err)
+
+	result, err := runAST(t, registry, map[string]any{astPathKey: astIgnoredPath})
+	require.NoError(t, err)
+	assert.Equal(t, true, result.Details["ignored"])
+	assert.NotContains(t, result.Text(), "outline")
+}
+
+func TestASTTool_AllowIgnoredReadsIgnoredPath(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	_, err := registry.Execute(context.Background(), "write", map[string]any{
+		astPathKey:    astIgnoredPath,
+		astContentKey: astFixture,
+	})
+	require.NoError(t, err)
+
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey:     astIgnoredPath,
+		"allowIgnored": true,
+	})
+	require.NoError(t, err)
+	assert.Nil(t, result.Details["ignored"])
+	assert.Contains(t, result.Text(), "outline")
+}
+
+func TestASTTool_QueryReportsMatchLimitReached(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey:  astSamplePath,
+		astModeKey:  astModeQuery,
+		astQueryKey: astFuncDeclQ,
+	})
+	require.NoError(t, err)
+	// The fixture has fewer matches than the limit, so it is not reached.
+	assert.Equal(t, false, result.Details["matchLimitReached"])
+	assert.Contains(t, result.Details, "matchLimit")
+}
+
+func TestASTTool_RegisteredInRegistry(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	definitions := registry.Definitions()
+	names := make([]string, 0, len(definitions))
+	for _, def := range definitions {
+		names = append(names, string(def.Name))
+	}
+	assert.Contains(t, names, "ast")
+}
