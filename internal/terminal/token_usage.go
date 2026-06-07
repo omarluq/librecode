@@ -48,38 +48,22 @@ func formatTokenStatus(usage model.TokenUsage) string {
 }
 
 func formatContextUsage(usage model.TokenUsage) string {
-	budget := contextDisplayBudget(usage)
+	window := usage.ContextWindow
 	switch {
-	case usage.ContextTokens > 0 && budget > 0:
+	case usage.ContextTokens > 0 && window > 0:
 		return fmt.Sprintf(
 			"ctx %s/%s %d%%",
 			compactCount(usage.ContextTokens),
-			compactCount(budget),
-			percentOf(usage.ContextTokens, budget),
+			compactCount(window),
+			percentOf(usage.ContextTokens, window),
 		)
 	case usage.ContextTokens > 0:
 		return "ctx " + compactCount(usage.ContextTokens)
-	case budget > 0:
-		return "ctx 0/" + compactCount(budget)
+	case window > 0:
+		return "ctx 0/" + compactCount(window)
 	default:
 		return ""
 	}
-}
-
-func contextDisplayBudget(usage model.TokenUsage) int {
-	if usableInput := usableInputBudget(usage); usableInput > 0 {
-		return usableInput
-	}
-
-	return usage.ContextWindow
-}
-
-func usableInputBudget(usage model.TokenUsage) int {
-	if len(usage.Breakdown) == 0 {
-		return 0
-	}
-
-	return usage.Breakdown["usable_input"]
 }
 
 func percentOf(tokens, budget int) int {
