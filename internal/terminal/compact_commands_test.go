@@ -10,6 +10,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 func TestCompactSessionStartsAsyncWork(t *testing.T) {
@@ -58,9 +59,17 @@ func TestCompactSessionStartsAsyncWork(t *testing.T) {
 		t.Fatal("app should still be compacting while provider is blocked")
 	}
 	client.finish("summary of compacted work", nil)
-	event := readPromptAsyncEvent(t, app)
+	assertCompactDoneEventHasUsage(t, readPromptAsyncEvent(t, app))
+}
+
+func assertCompactDoneEventHasUsage(t *testing.T, event *asyncEvent) {
+	t.Helper()
+
 	if got := event.Kind; got != asyncEventCompactDone {
 		t.Fatalf("event.Kind = %q, want %q", got, asyncEventCompactDone)
+	}
+	if event.Usage == nil || event.Usage.ContextTokens <= 0 {
+		t.Fatalf("compact done usage = %v, want refreshed usage", event.Usage)
 	}
 }
 
@@ -166,7 +175,14 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 	app.queuedMessages = []string{"queued after compact"}
 
 	app.applyCompactDone(context.Background(), &asyncEvent{
-		Response: nil, ToolEvent: nil, Usage: nil,
+		Response: nil, ToolEvent: nil, Usage: &model.TokenUsage{
+			Breakdown:       nil,
+			TopContributors: nil,
+			ContextWindow:   100_000,
+			ContextTokens:   10_000,
+			InputTokens:     10_000,
+			OutputTokens:    0,
+		},
 		Kind: asyncEventCompactDone, Provider: "", Text: compactedStatusMessage, PromptID: 9,
 	})
 
@@ -176,6 +192,9 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 	}
 	if len(app.queuedMessages) != 0 {
 		t.Fatalf("queuedMessages length = %d, want 0", len(app.queuedMessages))
+	}
+	if got := app.tokenUsage.ContextTokens; got != 10_000 {
+		t.Fatalf("tokenUsage.ContextTokens = %d, want 10000", got)
 	}
 }
 

@@ -124,6 +124,7 @@ func (progress *partialPromptProgress) record(streamEvent StreamEvent) {
 	case StreamEventToolStart,
 		StreamEventSkillLoaded,
 		StreamEventUsage,
+		StreamEventUsageSnapshot,
 		StreamEventContextCompaction:
 		return
 	}

@@ -77,6 +77,60 @@ func TestMergeTerminalUsagePreservesEstimatedContext(t *testing.T) {
 	}, terminal.MergeTerminalUsageForTest(current, next))
 }
 
+func TestApplyTokenUsageSnapshotAllowsContextDecrease(t *testing.T) {
+	t.Parallel()
+
+	app := terminal.NewAppForTest()
+	app.ApplyTokenUsageForTest(&model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100_000,
+		ContextTokens:   80_000,
+		InputTokens:     80_000,
+		OutputTokens:    0,
+	})
+	usage := model.TokenUsage{
+		Breakdown: map[string]int{testBreakdownHistory: 5_000},
+		TopContributors: []model.TokenContributor{
+			{Label: "summary", Role: "", Preview: "", Tokens: 5_000, Chars: 20_000},
+		},
+		ContextWindow: 100_000,
+		ContextTokens: 12_000,
+		InputTokens:   12_000,
+		OutputTokens:  0,
+	}
+
+	app.ApplyTokenUsageSnapshotForTest(&usage)
+	usage.Breakdown[testBreakdownHistory] = 99
+	usage.TopContributors[0].Label = "mutated"
+
+	assert.Equal(t, model.TokenUsage{
+		Breakdown: map[string]int{testBreakdownHistory: 5_000},
+		TopContributors: []model.TokenContributor{
+			{Label: "summary", Role: "", Preview: "", Tokens: 5_000, Chars: 20_000},
+		},
+		ContextWindow: 100_000,
+		ContextTokens: 12_000,
+		InputTokens:   12_000,
+		OutputTokens:  0,
+	}, app.TokenUsageForTest())
+}
+
+func TestFormatTokenStatusHidesWindowOnlyUsage(t *testing.T) {
+	t.Parallel()
+
+	usage := model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   9_000,
+		ContextTokens:   0,
+		InputTokens:     0,
+		OutputTokens:    0,
+	}
+
+	assert.Empty(t, terminal.FormatTokenStatusForTest(usage))
+}
+
 func TestResetMessagesClearsTokenUsage(t *testing.T) {
 	t.Parallel()
 

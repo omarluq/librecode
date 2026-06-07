@@ -6,7 +6,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
 )
 
 func (app *App) sendPrompt(ctx context.Context, text string) {
@@ -32,7 +31,6 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.scrollOffset = 0
 	app.streamingText = ""
 	app.streamingThinkingText = ""
-	app.tokenUsage = model.EmptyTokenUsage()
 	app.resetStreamingBlocks()
 	app.streamedToolEvents = 0
 	app.activePrompt = &activePromptState{

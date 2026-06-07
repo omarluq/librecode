@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 const compactedStatusMessage = "context compacted"
@@ -53,14 +54,24 @@ func (app *App) runCompactSession(
 		app.postCompactError(ctx, compactID, err)
 		return
 	}
-	app.postCompactDone(ctx, compactID, entry)
+	usage, err := app.runtime.ContextUsage(compactCtx, app.sessionID, app.cwd)
+	if err != nil {
+		app.postCompactError(ctx, compactID, err)
+		return
+	}
+	app.postCompactDone(ctx, compactID, entry, &usage)
 }
 
-func (app *App) postCompactDone(ctx context.Context, compactID uint64, entry *database.EntryEntity) {
+func (app *App) postCompactDone(
+	ctx context.Context,
+	compactID uint64,
+	entry *database.EntryEntity,
+	usage *model.TokenUsage,
+) {
 	app.postAsyncEvent(ctx, &asyncEvent{
 		Response:  nil,
 		ToolEvent: nil,
-		Usage:     nil,
+		Usage:     usage,
 		Kind:      asyncEventCompactDone,
 		Provider:  compactionEntryID(entry),
 		Text:      compactDoneText(entry),
@@ -99,6 +110,7 @@ func (app *App) handleCompactAsyncEvent(ctx context.Context, payload *asyncEvent
 		asyncEventPromptToolResult,
 		asyncEventPromptRetry,
 		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot,
 		asyncEventPromptError,
 		asyncEventPromptContext:
 		return false
@@ -114,6 +126,7 @@ func (app *App) applyCompactDone(ctx context.Context, payload *asyncEvent) {
 	app.pendingParentID = nonEmptyStringPtr(payload.Provider)
 	app.compacting = false
 	app.activeCompaction = nil
+	app.applyTokenUsageEvent(payload.Usage, true)
 	app.addSystemMessage(payload.Text)
 	app.setStatus(compactedStatusMessage)
 	app.processQueuedPrompt(ctx)
