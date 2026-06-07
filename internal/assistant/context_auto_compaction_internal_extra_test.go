@@ -2,7 +2,6 @@ package assistant_test
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -12,13 +11,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
-)
-
-const (
-	autoCompactionTestFinalAnswer     = "final answer"
-	autoCompactionTestUnused          = "unused"
-	testContextWindowExceededOopsCode = "context_window_exceeded"
 )
 
 func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
@@ -32,13 +24,13 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 	}{
 		{
 			name:     "preserves validation error when nothing can be compacted",
-			client:   autoCompactionValidationOnlyClient{},
+			client:   newSequencedCompletionClient(autoCompactionTestUnused),
 			seed:     nil,
 			wantCode: testContextWindowExceededOopsCode,
 		},
 		{
 			name:   "wraps summarization failure",
-			client: autoCompactionFailingSummaryClient{},
+			client: failingSummaryClient(),
 			seed: func(t *testing.T, repository *database.SessionRepository, sessionID string) {
 				t.Helper()
 				appendAutoCompactionOldTurn(t, repository, sessionID)
@@ -47,7 +39,7 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 		},
 		{
 			name:   "wraps rebuilt budget failure",
-			client: autoCompactionLargeSummaryClient{},
+			client: largeSummaryClient(200),
 			seed: func(t *testing.T, repository *database.SessionRepository, sessionID string) {
 				t.Helper()
 				appendAutoCompactionOldTurn(t, repository, sessionID)
@@ -81,7 +73,7 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 func TestRuntime_AutoCompactionAfterResponseErrorEvent(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	runtime := newAutoCompactionErrorRuntimeWithWindow(t, autoCompactionFailingSummaryClient{}, 160_000)
+	runtime := newAutoCompactionErrorRuntimeWithWindow(t, failingSummaryClient(), 160_000)
 	repository := runtime.SessionRepository()
 	session, err := repository.CreateSession(context.Background(), testRuntimeCWD, "post error", "")
 	require.NoError(t, err)
@@ -112,7 +104,8 @@ func assertContainsCompactionErrorEvent(t *testing.T, events []assistant.StreamE
 func TestRuntime_EmitPostResponseAutoCompactionErrorSkipsNil(t *testing.T) {
 	t.Parallel()
 
-	runtime := newAutoCompactionErrorRuntime(t, autoCompactionStaticSummaryClient{})
+	client := newSummaryAwareCompletionClient("summary", nil, autoCompactionTestFinalAnswer)
+	runtime := newAutoCompactionErrorRuntime(t, client)
 	events := []assistant.StreamEvent{}
 
 	runtime.EmitPostResponseAutoCompactionErrorForTest(context.Background(), func(event assistant.StreamEvent) {
@@ -172,65 +165,25 @@ func appendAutoCompactionOldTurn(t *testing.T, repository *database.SessionRepos
 func requireOopsCode(t *testing.T, err error, wantCode string) {
 	t.Helper()
 
-	require.Error(t, err)
-	oopsErr, ok := oops.AsOops(err)
-	require.True(t, ok)
+	oopsErr := requireOopsError(t, err)
 	require.Equal(t, wantCode, oopsErr.Code())
 }
 
-type autoCompactionValidationOnlyClient struct{}
+func requireOuterOopsCode(t *testing.T, err error, wantCode string) {
+	t.Helper()
 
-func (autoCompactionValidationOnlyClient) Complete(
-	context.Context,
-	*assistant.CompletionRequest,
-) (*assistant.CompletionResult, error) {
-	return autoCompactionResult(autoCompactionTestUnused), nil
+	oopsErr := requireOopsError(t, err)
+	layers := oopsErr.Layers()
+	require.NotEmpty(t, layers)
+	require.Equal(t, wantCode, layers[0].Code)
 }
 
-type autoCompactionFailingSummaryClient struct{}
+func requireOopsError(t *testing.T, err error) oops.OopsError {
+	t.Helper()
 
-func (autoCompactionFailingSummaryClient) Complete(
-	_ context.Context,
-	request *assistant.CompletionRequest,
-) (*assistant.CompletionResult, error) {
-	if request.DisableTools {
-		return nil, errors.New("summary failed")
-	}
+	require.Error(t, err)
+	oopsErr, ok := oops.AsOops(err)
+	require.True(t, ok)
 
-	return autoCompactionResult(autoCompactionTestFinalAnswer), nil
-}
-
-type autoCompactionLargeSummaryClient struct{}
-
-func (autoCompactionLargeSummaryClient) Complete(
-	_ context.Context,
-	request *assistant.CompletionRequest,
-) (*assistant.CompletionResult, error) {
-	if request.DisableTools {
-		return autoCompactionResult(strings.Repeat("summary ", 200)), nil
-	}
-
-	return autoCompactionResult(autoCompactionTestFinalAnswer), nil
-}
-
-type autoCompactionStaticSummaryClient struct{}
-
-func (autoCompactionStaticSummaryClient) Complete(
-	_ context.Context,
-	request *assistant.CompletionRequest,
-) (*assistant.CompletionResult, error) {
-	if request.DisableTools {
-		return autoCompactionResult("summary"), nil
-	}
-
-	return autoCompactionResult(autoCompactionTestFinalAnswer), nil
-}
-
-func autoCompactionResult(text string) *assistant.CompletionResult {
-	return &assistant.CompletionResult{
-		Thinking:   nil,
-		ToolEvents: nil,
-		Text:       text,
-		Usage:      model.EmptyTokenUsage(),
-	}
+	return oopsErr
 }

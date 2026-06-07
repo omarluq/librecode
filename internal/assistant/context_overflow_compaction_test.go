@@ -12,19 +12,16 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
 )
 
 func TestRuntime_CompactsAndRetriesProviderContextOverflow(t *testing.T) {
 	t.Parallel()
 
-	client := &providerOverflowRecoveryClient{
-		overflowErr:        nil,
-		requests:           nil,
-		disableToolsByCall: nil,
-		summary:            "summary after provider overflow",
-		final:              "recovered answer",
-	}
+	client := newOverflowRecoveryCompletionClient(
+		"summary after provider overflow",
+		"recovered answer",
+		nil,
+	)
 	runtime := newProviderOverflowRecoveryRuntime(t, client)
 	ctx := context.Background()
 	session, err := runtime.SessionRepository().CreateSession(ctx, testRuntimeCWD, "overflow", "")
@@ -64,13 +61,11 @@ func TestRuntime_CompactsAndRetriesProviderContextOverflow(t *testing.T) {
 func TestRuntime_ProviderContextOverflowRetriesOnlyOnce(t *testing.T) {
 	t.Parallel()
 
-	client := &providerOverflowRecoveryClient{
-		overflowErr:        nil,
-		requests:           nil,
-		disableToolsByCall: nil,
-		summary:            "summary after overflow",
-		final:              autoCompactionTestUnused,
-	}
+	client := newOverflowRecoveryCompletionClient(
+		"summary after overflow",
+		autoCompactionTestUnused,
+		nil,
+	)
 	runtime := newProviderOverflowRecoveryRuntime(t, client)
 	ctx := context.Background()
 	session, err := runtime.SessionRepository().CreateSession(ctx, testRuntimeCWD, "overflow once", "")
@@ -99,13 +94,7 @@ func TestRuntime_ProviderContextOverflowPreservesOriginalErrorWhenNoCompaction(t
 	t.Parallel()
 
 	overflowErr := errors.New("Your input exceeds the context window of this model")
-	client := &providerOverflowRecoveryClient{
-		overflowErr:        overflowErr,
-		requests:           nil,
-		disableToolsByCall: nil,
-		summary:            "",
-		final:              "",
-	}
+	client := newOverflowRecoveryCompletionClient("", "", overflowErr)
 	runtime := newProviderOverflowRecoveryRuntime(t, client)
 	request := newRuntimePromptRequest(testRuntimeCWD, "short", "")
 
@@ -127,14 +116,14 @@ func TestRuntime_ProviderContextOverflowRecoveryErrorPaths(t *testing.T) {
 	}{
 		{
 			name:          "wraps compaction failure",
-			client:        providerOverflowFailingSummaryClient{},
-			wantCode:      "compact_summarize",
+			client:        newOverflowSummaryCompletionClient("", errors.New("summary failed")),
+			wantCode:      "context_overflow_compact",
 			contextWindow: 200_000,
 		},
 		{
 			name:          "wraps rebuilt budget failure",
-			client:        providerOverflowLargeSummaryClient{},
-			wantCode:      testContextWindowExceededOopsCode,
+			client:        newOverflowSummaryCompletionClient(strings.Repeat("summary ", 30_000), nil),
+			wantCode:      "context_budget_after_provider_overflow_compact",
 			contextWindow: 20_000,
 		},
 	}
@@ -154,7 +143,7 @@ func TestRuntime_ProviderContextOverflowRecoveryErrorPaths(t *testing.T) {
 			response, err := runtime.Prompt(context.Background(), request)
 
 			require.Nil(t, response)
-			requireOopsCode(t, err, testCase.wantCode)
+			requireOuterOopsCode(t, err, testCase.wantCode)
 		})
 	}
 }
@@ -298,49 +287,6 @@ func branchEntryTypes(branch []database.EntryEntity) []database.EntryType {
 	return types
 }
 
-//nolint:govet // Test fixture readability matters more than field packing.
-type providerOverflowRecoveryClient struct {
-	overflowErr        error
-	requests           []*assistant.CompletionRequest
-	disableToolsByCall []bool
-	summary            string
-	final              string
-}
-
-func (client *providerOverflowRecoveryClient) Complete(
-	_ context.Context,
-	request *assistant.CompletionRequest,
-) (*assistant.CompletionResult, error) {
-	client.requests = append(client.requests, request)
-	client.disableToolsByCall = append(client.disableToolsByCall, request.DisableTools)
-	if request.DisableTools {
-		return providerOverflowCompletionResult(client.summary), nil
-	}
-	switch len(client.disableToolsByCall) {
-	case 1:
-		if client.overflowErr != nil {
-			return nil, client.overflowErr
-		}
-
-		return nil, oops.In("assistant").Code("responses_status").Errorf("maximum context length exceeded")
-	case 3:
-		if client.final == autoCompactionTestUnused {
-			return nil, oops.In("assistant").Code("responses_status").Errorf("maximum context length exceeded")
-		}
-	}
-
-	return providerOverflowCompletionResult(client.final), nil
-}
-
-func providerOverflowCompletionResult(text string) *assistant.CompletionResult {
-	return &assistant.CompletionResult{
-		Text:       text,
-		Thinking:   nil,
-		ToolEvents: nil,
-		Usage:      model.EmptyTokenUsage(),
-	}
-}
-
 type providerOverflowStaticErrorClient struct{}
 
 func (providerOverflowStaticErrorClient) Complete(
@@ -348,30 +294,4 @@ func (providerOverflowStaticErrorClient) Complete(
 	*assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	return nil, errors.New("provider exploded")
-}
-
-type providerOverflowFailingSummaryClient struct{}
-
-func (providerOverflowFailingSummaryClient) Complete(
-	_ context.Context,
-	request *assistant.CompletionRequest,
-) (*assistant.CompletionResult, error) {
-	if request.DisableTools {
-		return nil, errors.New("summary failed")
-	}
-
-	return nil, oops.In("assistant").Code("responses_status").Errorf("maximum context length exceeded")
-}
-
-type providerOverflowLargeSummaryClient struct{}
-
-func (providerOverflowLargeSummaryClient) Complete(
-	_ context.Context,
-	request *assistant.CompletionRequest,
-) (*assistant.CompletionResult, error) {
-	if request.DisableTools {
-		return providerOverflowCompletionResult(strings.Repeat("summary ", 30_000)), nil
-	}
-
-	return nil, oops.In("assistant").Code("responses_status").Errorf("maximum context length exceeded")
 }

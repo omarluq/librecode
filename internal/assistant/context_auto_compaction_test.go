@@ -11,7 +11,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
 )
 
 func TestRuntime_AutoCompactsOversizedRequestBeforeProviderCall(t *testing.T) {
@@ -73,7 +72,7 @@ func TestRuntime_AutoCompactsOversizedRequestBeforeProviderCall(t *testing.T) {
 
 type autoCompactionRuntimeHarness struct {
 	runtime *assistant.Runtime
-	client  *sequencedCompletionClient
+	client  *recordingCompletionClient
 }
 
 func newAutoCompactionRuntimeHarness(
@@ -83,7 +82,7 @@ func newAutoCompactionRuntimeHarness(
 ) autoCompactionRuntimeHarness {
 	t.Helper()
 
-	client := &sequencedCompletionClient{responses: responses, requests: nil}
+	client := newSequencedCompletionClient(responses...)
 	runtime := newAutoCompactionTestRuntime(t, client, contextWindow)
 
 	return autoCompactionRuntimeHarness{runtime: runtime, client: client}
@@ -120,27 +119,4 @@ func newAutoCompactionTestRuntime(
 func isContextAutoCompactionEvent(event *assistant.StreamEvent) bool {
 	return event.Kind == assistant.StreamEventContextCompaction &&
 		strings.Contains(event.Text, "context auto-compacted")
-}
-
-type sequencedCompletionClient struct {
-	responses []string
-	requests  []*assistant.CompletionRequest
-}
-
-func (client *sequencedCompletionClient) Complete(
-	_ context.Context,
-	request *assistant.CompletionRequest,
-) (*assistant.CompletionResult, error) {
-	client.requests = append(client.requests, request)
-	response := "ok"
-	if len(client.responses) >= len(client.requests) {
-		response = client.responses[len(client.requests)-1]
-	}
-
-	return &assistant.CompletionResult{
-		Text:       response,
-		Thinking:   nil,
-		ToolEvents: nil,
-		Usage:      model.EmptyTokenUsage(),
-	}, nil
 }
