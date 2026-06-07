@@ -44,6 +44,7 @@ func planCompactionCases() []planCompactionCase {
 	return []planCompactionCase{
 		previousKeptBoundaryCase(),
 		turnBoundaryCase(),
+		splitTurnSummaryCase(),
 		defaultKeepRecentTokensCase(),
 		latestCompactionCase(),
 	}
@@ -79,9 +80,9 @@ func assertPreviousKeptBoundaryPlan(t *testing.T, plan *compactionPlan) {
 	assert.Equal(t, []string{"old-assistant", "recent-user"}, plan.SummarizedEntryIDs)
 	assert.Equal(t, []string{"recent-assistant"}, plan.KeptEntryIDs)
 	assert.Equal(t, "recent-assistant", plan.FirstKeptEntryID)
-	require.Len(t, plan.Messages, 2)
+	require.Len(t, plan.Messages, 1)
 	assert.Equal(t, "old assistant history", plan.Messages[0].Content)
-	assert.Equal(t, "recent user tail", plan.Messages[1].Content)
+	assert.Contains(t, plan.SplitTurnSummary, "recent user tail")
 }
 
 func turnBoundaryCase() planCompactionCase {
@@ -105,6 +106,33 @@ func assertTurnBoundaryPlan(t *testing.T, plan *compactionPlan) {
 	assert.Equal(t, []string{"user-1", "assistant-1"}, plan.SummarizedEntryIDs)
 	assert.Equal(t, []string{"user-2", "assistant-2"}, plan.KeptEntryIDs)
 	assert.Equal(t, "user-2", plan.FirstKeptEntryID)
+}
+
+func splitTurnSummaryCase() planCompactionCase {
+	return planCompactionCase{
+		assertFn: assertSplitTurnSummaryPlan,
+		entries: []database.EntryEntity{
+			compactMessageEntry("user-1", database.RoleUser, strings.Repeat("old ", 10)),
+			compactMessageEntry("assistant-1", database.RoleAssistant, strings.Repeat("old ", 10)),
+			compactMessageEntry("user-2", database.RoleUser, "split user context"),
+			compactMessageEntry("assistant-2", database.RoleAssistant, strings.Repeat("large tail ", 100)),
+		},
+		name:    "records split turn summary separately",
+		wantErr: "",
+		keep:    40,
+	}
+}
+
+func assertSplitTurnSummaryPlan(t *testing.T, plan *compactionPlan) {
+	t.Helper()
+
+	assert.Equal(t, []string{"user-1", "assistant-1", "user-2"}, plan.SummarizedEntryIDs)
+	assert.Equal(t, []string{"assistant-2"}, plan.KeptEntryIDs)
+	assert.Equal(t, "assistant-2", plan.FirstKeptEntryID)
+	assert.Contains(t, plan.SplitTurnSummary, "split user context")
+	for index := range plan.Messages {
+		assert.NotContains(t, plan.Messages[index].Content, "split user context")
+	}
 }
 
 func defaultKeepRecentTokensCase() planCompactionCase {
@@ -161,6 +189,15 @@ func TestCompactionSystemPromptIncludesPreviousSummary(t *testing.T) {
 
 	assert.Contains(t, prompt, "Update the existing compaction summary")
 	assert.Contains(t, prompt, "previous compacted facts")
+}
+
+func TestCompactionSystemPromptIncludesSplitTurnSummary(t *testing.T) {
+	t.Parallel()
+
+	prompt := compactionSystemPromptWithSplit("", "split facts")
+
+	assert.Contains(t, prompt, "<split_turn_summary>")
+	assert.Contains(t, prompt, "split facts")
 }
 
 func compactMessageEntry(entryID string, role database.Role, content string) database.EntryEntity {

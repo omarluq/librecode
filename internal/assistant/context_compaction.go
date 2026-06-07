@@ -179,6 +179,7 @@ type compactionPlan struct {
 	FirstKeptEntryID   string
 	Messages           []database.MessageEntity
 	PreviousSummary    string
+	SplitTurnSummary   string
 	SummarizedEntryIDs []string
 	KeptEntryIDs       []string
 	TokensBefore       int
@@ -203,21 +204,8 @@ func planCompaction(branch []database.EntryEntity, keepRecentTokens int) (compac
 		)
 	}
 
-	summarizeEnd := cutPoint.firstKeptEntryIndex
-	if cutPoint.isSplitTurn {
-		summarizeEnd = cutPoint.turnStartIndex
-	}
-	messages, summarizedIDs := compactionMessagesInRange(branch, boundaryStart, summarizeEnd)
-	if cutPoint.isSplitTurn {
-		turnPrefixMessages, turnPrefixIDs := compactionMessagesInRange(
-			branch,
-			cutPoint.turnStartIndex,
-			cutPoint.firstKeptEntryIndex,
-		)
-		messages = append(messages, turnPrefixMessages...)
-		summarizedIDs = append(summarizedIDs, turnPrefixIDs...)
-	}
-	if len(messages) == 0 {
+	messages, summarizedIDs, splitTurnSummary := compactionSummaryPayload(branch, boundaryStart, cutPoint)
+	if len(messages) == 0 && strings.TrimSpace(splitTurnSummary) == "" {
 		return compactionPlan{}, compactNothingToDoError("no model-facing history was selected for compaction")
 	}
 
@@ -227,11 +215,39 @@ func planCompaction(branch []database.EntryEntity, keepRecentTokens int) (compac
 	return compactionPlan{
 		Messages:           messages,
 		PreviousSummary:    previousSummary,
+		SplitTurnSummary:   splitTurnSummary,
 		SummarizedEntryIDs: summarizedIDs,
 		KeptEntryIDs:       keptIDs,
 		FirstKeptEntryID:   firstKeptEntryID,
 		TokensBefore:       effectiveBranchTokens(branch),
 	}, nil
+}
+
+func compactionSummaryPayload(
+	branch []database.EntryEntity,
+	boundaryStart int,
+	cutPoint compactionCutPoint,
+) (messages []database.MessageEntity, summarizedIDs []string, splitTurnSummary string) {
+	summarizeEnd := cutPoint.firstKeptEntryIndex
+	if cutPoint.isSplitTurn {
+		summarizeEnd = cutPoint.turnStartIndex
+	}
+	messages, summarizedIDs = compactionMessagesInRange(branch, boundaryStart, summarizeEnd)
+	if !cutPoint.isSplitTurn {
+		return messages, summarizedIDs, ""
+	}
+
+	turnPrefixMessages, turnPrefixIDs := compactionMessagesInRange(
+		branch,
+		cutPoint.turnStartIndex,
+		cutPoint.firstKeptEntryIndex,
+	)
+	summarizedIDs = append(summarizedIDs, turnPrefixIDs...)
+	if len(messages) == 0 {
+		return append(messages, turnPrefixMessages...), summarizedIDs, ""
+	}
+
+	return messages, summarizedIDs, formatSplitTurnSummary(turnPrefixMessages)
 }
 
 func compactNothingToDoError(message string) error {
@@ -374,6 +390,29 @@ func compactionMessagesInRange(
 	return messages, entryIDs
 }
 
+func formatSplitTurnSummary(messages []database.MessageEntity) string {
+	if len(messages) == 0 {
+		return ""
+	}
+	builder := strings.Builder{}
+	builder.WriteString("The compaction boundary split an in-progress turn. ")
+	builder.WriteString("The following earlier messages from that turn were compacted:\n")
+	for index := range messages {
+		message := messages[index]
+		content := strings.TrimSpace(message.Content)
+		if content == "" {
+			continue
+		}
+		builder.WriteString("\n[")
+		builder.WriteString(string(message.Role))
+		builder.WriteString("]\n")
+		builder.WriteString(content)
+		builder.WriteString("\n")
+	}
+
+	return strings.TrimSpace(builder.String())
+}
+
 func keptCompactionEntryIDs(entries []database.EntryEntity) []string {
 	entryIDs := make([]string, 0, len(entries))
 	for index := range entries {
@@ -496,7 +535,7 @@ func (runtime *Runtime) summarizeCompaction(
 	auth model.RequestAuth,
 	plan *compactionPlan,
 ) (string, error) {
-	systemPrompt := compactionSystemPrompt(plan.PreviousSummary)
+	systemPrompt := compactionSystemPromptWithSplit(plan.PreviousSummary, plan.SplitTurnSummary)
 	request := &CompletionRequest{
 		OnEvent:           nil,
 		OnProviderObserve: runtime.emitProviderRequest,
@@ -528,11 +567,31 @@ func (runtime *Runtime) summarizeCompaction(
 }
 
 func compactionSystemPrompt(previousSummary string) string {
+	return compactionSystemPromptWithSplit(previousSummary, "")
+}
+
+func compactionSystemPromptWithSplit(previousSummary, splitTurnSummary string) string {
+	prompt := compactionBaseSystemPrompt(previousSummary)
+	if strings.TrimSpace(splitTurnSummary) == "" {
+		return prompt
+	}
+
+	return prompt + "\n\n" + splitTurnPromptSection(splitTurnSummary)
+}
+
+func compactionBaseSystemPrompt(previousSummary string) string {
 	if strings.TrimSpace(previousSummary) == "" {
 		return compactionSummaryPrompt
 	}
 
 	return fmt.Sprintf(compactionUpdatePrompt, previousSummary)
+}
+
+func splitTurnPromptSection(splitTurnSummary string) string {
+	return strings.TrimSpace(`Additional split-turn context:
+<split_turn_summary>
+` + strings.TrimSpace(splitTurnSummary) + `
+</split_turn_summary>`)
 }
 
 func compactionRequestUsage(
