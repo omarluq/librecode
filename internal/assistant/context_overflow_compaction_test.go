@@ -14,80 +14,59 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
-func TestRuntime_CompactsAndRetriesProviderContextOverflow(t *testing.T) {
+func TestRuntime_ProviderContextOverflowRecoveryScenarios(t *testing.T) {
 	t.Parallel()
 
-	client := newOverflowRecoveryCompletionClient(
-		"summary after provider overflow",
-		"recovered answer",
-		nil,
-	)
-	runtime := newProviderOverflowRecoveryRuntime(t, client)
-	ctx := context.Background()
-	session, err := runtime.SessionRepository().CreateSession(ctx, testRuntimeCWD, "overflow", "")
-	require.NoError(t, err)
-	old := appendRuntimeTestMessage(
-		t,
-		runtime.SessionRepository(),
-		session.ID,
-		nil,
-		database.RoleUser,
-		strings.Repeat("old ", 1_000),
-	)
-	appendRuntimeTestMessage(t, runtime.SessionRepository(), session.ID, &old.ID, database.RoleAssistant, "tail")
-	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
-	request.SessionID = session.ID
-	events := []assistant.StreamEvent{}
-	request.OnEvent = func(event assistant.StreamEvent) {
-		events = append(events, event)
+	tests := []struct {
+		name         string
+		summary      string
+		final        string
+		wantText     string
+		wantRetryErr bool
+	}{
+		{
+			name:         "compacts and retries successfully",
+			summary:      "summary after provider overflow",
+			final:        "recovered answer",
+			wantText:     "recovered answer",
+			wantRetryErr: false,
+		},
+		{
+			name:         "retries only once",
+			summary:      "summary after overflow",
+			final:        autoCompactionTestUnused,
+			wantText:     "",
+			wantRetryErr: true,
+		},
 	}
 
-	response, err := runtime.Prompt(ctx, request)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, err)
-	assert.Equal(t, "recovered answer", response.Text)
-	assert.Equal(t, []bool{false, true, false}, client.disableToolsByCall)
-	require.Len(t, client.requests, 3)
-	assert.Contains(t, client.requests[2].Messages[0].Content, "summary after provider overflow")
-	assert.Contains(t, client.requests[2].Messages[len(client.requests[2].Messages)-1].Content, "continue")
-	assertContainsContextCompactionEvent(t, events, "attempting compaction before retry")
-	assertContainsContextCompactionEvent(t, events, "context auto-compacted after provider overflow")
+			client := newOverflowRecoveryCompletionClient(testCase.summary, testCase.final, nil)
+			runtime := newProviderOverflowRecoveryRuntime(t, client)
+			response, events, sessionID, err := runProviderOverflowPrompt(t, runtime, testCase.name)
 
-	branch, err := runtime.SessionRepository().Branch(ctx, session.ID, response.AssistantEntryID)
-	require.NoError(t, err)
-	assert.Contains(t, branchEntryTypes(branch), database.EntryTypeCompaction)
-}
+			assert.Equal(t, []bool{false, true, false}, client.disableToolsByCall)
+			if testCase.wantRetryErr {
+				require.Nil(t, response)
+				require.Error(t, err)
+				assert.True(t, assistant.IsContextWindowError(err))
+				return
+			}
 
-func TestRuntime_ProviderContextOverflowRetriesOnlyOnce(t *testing.T) {
-	t.Parallel()
-
-	client := newOverflowRecoveryCompletionClient(
-		"summary after overflow",
-		autoCompactionTestUnused,
-		nil,
-	)
-	runtime := newProviderOverflowRecoveryRuntime(t, client)
-	ctx := context.Background()
-	session, err := runtime.SessionRepository().CreateSession(ctx, testRuntimeCWD, "overflow once", "")
-	require.NoError(t, err)
-	old := appendRuntimeTestMessage(
-		t,
-		runtime.SessionRepository(),
-		session.ID,
-		nil,
-		database.RoleUser,
-		strings.Repeat("old ", 1_000),
-	)
-	appendRuntimeTestMessage(t, runtime.SessionRepository(), session.ID, &old.ID, database.RoleAssistant, "tail")
-	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
-	request.SessionID = session.ID
-
-	response, err := runtime.Prompt(ctx, request)
-
-	require.Nil(t, response)
-	require.Error(t, err)
-	assert.True(t, assistant.IsContextWindowError(err))
-	assert.Equal(t, []bool{false, true, false}, client.disableToolsByCall)
+			require.NoError(t, err)
+			require.NotNil(t, response)
+			assert.Equal(t, testCase.wantText, response.Text)
+			require.Len(t, client.requests, 3)
+			assert.Contains(t, client.requests[2].Messages[0].Content, testCase.summary)
+			assert.Contains(t, client.requests[2].Messages[len(client.requests[2].Messages)-1].Content, "continue")
+			assertContainsContextCompactionEvent(t, events, "attempting compaction before retry")
+			assertContainsContextCompactionEvent(t, events, "context auto-compacted after provider overflow")
+			assertBranchContainsCompaction(t, runtime, sessionID, response.AssistantEntryID)
+		})
+	}
 }
 
 func TestRuntime_ProviderContextOverflowPreservesOriginalErrorWhenNoCompaction(t *testing.T) {
@@ -133,14 +112,8 @@ func TestRuntime_ProviderContextOverflowRecoveryErrorPaths(t *testing.T) {
 			t.Parallel()
 
 			runtime := newAutoCompactionTestRuntime(t, testCase.client, testCase.contextWindow)
-			repository := runtime.SessionRepository()
-			session, err := repository.CreateSession(context.Background(), testRuntimeCWD, testCase.name, "")
-			require.NoError(t, err)
-			appendAutoCompactionOldTurn(t, repository, session.ID)
-			request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
-			request.SessionID = session.ID
 
-			response, err := runtime.Prompt(context.Background(), request)
+			response, _, _, err := runProviderOverflowPrompt(t, runtime, testCase.name)
 
 			require.Nil(t, response)
 			requireOuterOopsCode(t, err, testCase.wantCode)
@@ -257,6 +230,37 @@ func TestIsContextWindowError(t *testing.T) {
 	}
 }
 
+func runProviderOverflowPrompt(
+	t *testing.T,
+	runtime *assistant.Runtime,
+	name string,
+) (*assistant.PromptResponse, []assistant.StreamEvent, string, error) {
+	t.Helper()
+
+	session, err := runtime.SessionRepository().CreateSession(context.Background(), testRuntimeCWD, name, "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(
+		t,
+		runtime.SessionRepository(),
+		session.ID,
+		nil,
+		database.RoleUser,
+		strings.Repeat("old ", 1_000),
+	)
+	appendRuntimeTestMessage(t, runtime.SessionRepository(), session.ID, &old.ID, database.RoleAssistant, "tail")
+
+	events := []assistant.StreamEvent{}
+	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
+	request.SessionID = session.ID
+	request.OnEvent = func(event assistant.StreamEvent) {
+		events = append(events, event)
+	}
+
+	response, promptErr := runtime.Prompt(context.Background(), request)
+
+	return response, events, session.ID, promptErr
+}
+
 func newProviderOverflowRecoveryRuntime(
 	t *testing.T,
 	client assistant.CompletionClient,
@@ -278,13 +282,23 @@ func assertContainsContextCompactionEvent(t *testing.T, events []assistant.Strea
 	t.Fatalf("expected context compaction event containing %q", text)
 }
 
-func branchEntryTypes(branch []database.EntryEntity) []database.EntryType {
-	types := make([]database.EntryType, 0, len(branch))
+func assertBranchContainsCompaction(
+	t *testing.T,
+	runtime *assistant.Runtime,
+	sessionID string,
+	leafID string,
+) {
+	t.Helper()
+
+	branch, err := runtime.SessionRepository().Branch(context.Background(), sessionID, leafID)
+	require.NoError(t, err)
 	for index := range branch {
-		types = append(types, branch[index].Type)
+		if branch[index].Type == database.EntryTypeCompaction {
+			return
+		}
 	}
 
-	return types
+	t.Fatal("expected branch to contain compaction entry")
 }
 
 type providerOverflowStaticErrorClient struct{}
