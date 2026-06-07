@@ -573,19 +573,26 @@ var entryContextAppliers = map[EntryType]entryContextApplier{
 func appendModelFacingEntryMessage(contextEntity *SessionContextEntity, entry *EntryEntity) error {
 	if entry.ModelFacing {
 		contextEntity.Messages = append(contextEntity.Messages, entry.Message)
-		updateContextUsageAnchor(contextEntity, entry, len(contextEntity.Messages)-1)
+		if err := updateContextUsageAnchor(contextEntity, entry, len(contextEntity.Messages)-1); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-func updateContextUsageAnchor(contextEntity *SessionContextEntity, entry *EntryEntity, messageIndex int) {
+func updateContextUsageAnchor(contextEntity *SessionContextEntity, entry *EntryEntity, messageIndex int) error {
 	if entry.Type != EntryTypeMessage || entry.Message.Role != RoleAssistant {
-		return
+		return nil
 	}
 	data, err := dataFromEntry(entry)
-	if err != nil || data.Usage == nil || !data.Usage.HasAny() {
-		return
+	if err != nil {
+		return oops.In("database").
+			Code("decode_entry_usage").
+			Wrapf(err, "decode assistant entry usage")
+	}
+	if data.Usage == nil || !data.Usage.HasAny() {
+		return nil
 	}
 	contextEntity.UsageAnchor = &ContextUsageAnchorEntity{
 		EntryID:      entry.ID,
@@ -594,6 +601,8 @@ func updateContextUsageAnchor(contextEntity *SessionContextEntity, entry *EntryE
 		Model:        entry.Message.Model,
 		Usage:        *data.Usage,
 	}
+
+	return nil
 }
 
 func appendBranchSummaryContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
