@@ -86,33 +86,23 @@ func (runtime *Runtime) modelResponse(
 			With("provider", selectedModel.Provider).
 			Wrapf(fmt.Errorf("%s", auth.Error), "resolve model auth")
 	}
-	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(
-		ctx,
-		&completionRequestPreparationInput{
-			sessionID:     sessionID,
-			cwd:           cwd,
-			prompt:        prompt,
-			userEntryID:   userEntryID,
-			selectedModel: &selectedModel,
-			auth:          &auth,
-			onEvent:       onEvent,
-		},
-	)
+	preparation := &completionRequestPreparationInput{
+		sessionID:     sessionID,
+		cwd:           cwd,
+		prompt:        prompt,
+		userEntryID:   userEntryID,
+		selectedModel: &selectedModel,
+		auth:          &auth,
+		onEvent:       onEvent,
+	}
+	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(ctx, preparation)
 	if err != nil {
 		return nil, err
 	}
 	build, compactionEntry, result, err := runtime.completeWithProviderOverflowRecovery(
 		ctx,
 		&providerOverflowRecoveryInput{
-			preparation: &completionRequestPreparationInput{
-				sessionID:     sessionID,
-				cwd:           cwd,
-				prompt:        prompt,
-				userEntryID:   userEntryID,
-				selectedModel: &selectedModel,
-				auth:          &auth,
-				onEvent:       onEvent,
-			},
+			preparation:     preparation,
 			build:           build,
 			compactionEntry: compactionEntry,
 			onRetry:         onRetry,
