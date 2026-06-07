@@ -256,13 +256,28 @@ func nonRetryableProviderMessage(message string) bool {
 }
 
 func contextWindowProviderMessage(message string) bool {
+	negativePatterns := []string{
+		"billing",
+		"daily token limit",
+		"monthly token limit",
+		"plan limit",
+		"quota exceeded",
+	}
+	for _, pattern := range negativePatterns {
+		if strings.Contains(message, pattern) {
+			return false
+		}
+	}
+
 	patterns := []string{
 		"context length",
+		"context token limit",
 		"context window",
-		"maximum context",
-		"token limit",
 		"input exceeds the context",
-		"too many tokens",
+		"maximum context",
+		"token limit exceeded for request",
+		"token limit for this request",
+		"too many tokens in request",
 	}
 	for _, pattern := range patterns {
 		if strings.Contains(message, pattern) {
