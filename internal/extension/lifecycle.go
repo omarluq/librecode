@@ -52,6 +52,10 @@ const (
 	LifecycleMessageAppend LifecycleEventName = "message_append"
 	// LifecycleTurnEnd fires when a model-facing turn ends.
 	LifecycleTurnEnd LifecycleEventName = "turn_end"
+	// LifecycleSessionBeforeCompact fires before compacted context is summarized and saved.
+	LifecycleSessionBeforeCompact LifecycleEventName = "session_before_compact"
+	// LifecycleSessionCompact fires after a compaction entry is saved.
+	LifecycleSessionCompact LifecycleEventName = "session_compact"
 	// LifecycleAgentEnd fires when assistant turn execution ends.
 	LifecycleAgentEnd LifecycleEventName = "agent_end"
 	// LifecycleShutdown fires before the runtime exits.
@@ -70,6 +74,7 @@ type LifecycleDispatchResult struct {
 	ProviderRequest ProviderRequestMutation `json:"provider_request"`
 	ToolCall        ToolCallMutation        `json:"tool_call"`
 	ToolResult      ToolResultMutation      `json:"tool_result"`
+	Compaction      CompactionMutation      `json:"compaction"`
 	Name            string                  `json:"name"`
 	Errors          []string                `json:"errors"`
 	Duration        time.Duration           `json:"duration"`
@@ -95,6 +100,14 @@ type ToolResultMutation struct {
 	Error       *string `json:"error,omitempty"`
 }
 
+// CompactionMutation contains conservative compaction changes returned by lifecycle handlers.
+type CompactionMutation struct {
+	Summary          *string        `json:"summary,omitempty"`
+	FirstKeptEntryID *string        `json:"first_kept_entry_id,omitempty"`
+	Details          map[string]any `json:"details,omitempty"`
+	Cancel           bool           `json:"cancel,omitempty"`
+}
+
 // LifecycleDispatcher emits runtime-neutral lifecycle events.
 type LifecycleDispatcher interface {
 	DispatchLifecycle(ctx context.Context, event LifecycleEvent) (LifecycleDispatchResult, error)
@@ -111,6 +124,7 @@ func (manager *Manager) DispatchLifecycle(ctx context.Context, event LifecycleEv
 		ProviderRequest: ProviderRequestMutation{Headers: map[string]string{}},
 		ToolCall:        ToolCallMutation{Arguments: nil},
 		ToolResult:      ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil},
+		Compaction:      CompactionMutation{Summary: nil, FirstKeptEntryID: nil, Details: nil, Cancel: false},
 		Name:            string(event.Name),
 		Errors:          []string{},
 		Duration:        0,
@@ -165,6 +179,12 @@ func applyLifecycleLuaResult(result *LifecycleDispatchResult, value lua.LValue) 
 	if !ok {
 		return
 	}
+	applyLifecycleControlResult(result, table)
+	applyLifecyclePayloadResult(result, table)
+	applyLifecycleMutationResult(result, table)
+}
+
+func applyLifecycleControlResult(result *LifecycleDispatchResult, table *lua.LTable) {
 	if luaTableBool(table, "handled") || luaTableBool(table, "consumed") {
 		result.Consumed = true
 	}
@@ -172,10 +192,16 @@ func applyLifecycleLuaResult(result *LifecycleDispatchResult, value lua.LValue) 
 		result.Consumed = true
 		result.Stopped = true
 	}
+}
+
+func applyLifecyclePayloadResult(result *LifecycleDispatchResult, table *lua.LTable) {
 	payloadValue := table.RawGetString("payload")
 	if payload, ok := luaValueToGo(payloadValue).(map[string]any); ok {
 		result.Payload = payload
 	}
+}
+
+func applyLifecycleMutationResult(result *LifecycleDispatchResult, table *lua.LTable) {
 	providerRequestValue := table.RawGetString("provider_request")
 	if providerRequest, ok := providerRequestMutationFromLua(providerRequestValue); ok {
 		result.ProviderRequest = mergeProviderRequestMutation(result.ProviderRequest, providerRequest)
@@ -187,6 +213,10 @@ func applyLifecycleLuaResult(result *LifecycleDispatchResult, value lua.LValue) 
 	toolResultValue := table.RawGetString("tool_result")
 	if toolResult, ok := toolResultMutationFromLua(toolResultValue); ok {
 		result.ToolResult = mergeToolResultMutation(result.ToolResult, toolResult)
+	}
+	compactionValue := table.RawGetString("compaction")
+	if compaction, ok := compactionMutationFromLua(compactionValue); ok {
+		result.Compaction = mergeCompactionMutation(result.Compaction, compaction)
 	}
 }
 
@@ -223,6 +253,25 @@ func mergeToolResultMutation(base, override ToolResultMutation) ToolResultMutati
 	return merged
 }
 
+func mergeCompactionMutation(base, override CompactionMutation) CompactionMutation {
+	merged := base
+	if override.Summary != nil {
+		merged.Summary = override.Summary
+	}
+	if override.FirstKeptEntryID != nil {
+		merged.FirstKeptEntryID = override.FirstKeptEntryID
+	}
+	if override.Details != nil {
+		merged.Details = cloneMap(base.Details)
+		maps.Copy(merged.Details, override.Details)
+	}
+	if override.Cancel {
+		merged.Cancel = true
+	}
+
+	return merged
+}
+
 func toolCallMutationFromLua(value lua.LValue) (ToolCallMutation, bool) {
 	payload, ok := luaValueToGo(value).(map[string]any)
 	if !ok {
@@ -253,6 +302,31 @@ func toolResultMutationFromLua(value lua.LValue) (ToolResultMutation, bool) {
 	}
 	if mutation.Result == nil && mutation.DetailsJSON == nil && mutation.Error == nil {
 		return ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil}, false
+	}
+
+	return mutation, true
+}
+
+func compactionMutationFromLua(value lua.LValue) (CompactionMutation, bool) {
+	payload, ok := luaValueToGo(value).(map[string]any)
+	if !ok {
+		return CompactionMutation{Summary: nil, FirstKeptEntryID: nil, Details: nil, Cancel: false}, false
+	}
+	mutation := CompactionMutation{Summary: nil, FirstKeptEntryID: nil, Details: nil, Cancel: false}
+	if summary, ok := payload["summary"].(string); ok {
+		mutation.Summary = &summary
+	}
+	if firstKeptEntryID, ok := payload["first_kept_entry_id"].(string); ok {
+		mutation.FirstKeptEntryID = &firstKeptEntryID
+	}
+	if details, ok := payload["details"].(map[string]any); ok {
+		mutation.Details = details
+	}
+	if cancel, ok := payload["cancel"].(bool); ok {
+		mutation.Cancel = cancel
+	}
+	if mutation.Summary == nil && mutation.FirstKeptEntryID == nil && mutation.Details == nil && !mutation.Cancel {
+		return CompactionMutation{Summary: nil, FirstKeptEntryID: nil, Details: nil, Cancel: false}, false
 	}
 
 	return mutation, true
