@@ -228,3 +228,19 @@ func TestShowContextInfoDisplaysSummaryAndBreakdown(t *testing.T) {
 	assert.Contains(t, message, "- top contributors:")
 	assert.Contains(t, message, "message 2 7.0k assistant")
 }
+
+func TestFormatContextUsagePrefersUsableInputBudget(t *testing.T) {
+	t.Parallel()
+
+	usage := model.TokenUsage{
+		Breakdown: map[string]int{
+			"usable_input": 132_624,
+		},
+		ContextWindow: 272_000,
+		ContextTokens: 156_652,
+		InputTokens:   156_652,
+		OutputTokens:  0,
+	}
+
+	assert.Equal(t, "ctx 156k/132k usable 118% (57% window)", terminal.FormatContextUsageForTest(usage))
+}

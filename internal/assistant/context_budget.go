@@ -89,12 +89,9 @@ func (budget contextBudget) Validate() error {
 		Errorf(message, budget.InputTokens, budget.UsableInput, budget.TotalReserve(), budget.ContextWindow)
 }
 
-func contextOutputReserve(selectedModel *model.Model, contextWindow int, policy config.ContextConfig) int {
+func contextOutputReserve(_ *model.Model, contextWindow int, policy config.ContextConfig) int {
 	if policy.OutputReserveTokens > 0 {
 		return policy.OutputReserveTokens
-	}
-	if selectedModel != nil && selectedModel.MaxTokens > 0 {
-		return selectedModel.MaxTokens
 	}
 	reserve := defaultContextOutputReserve
 	if contextWindow > 0 {

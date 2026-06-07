@@ -107,11 +107,35 @@ func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
 	assert.Equal(t, 0, usage.Breakdown["reserve_safety"])
 }
 
-func TestRuntime_ContextUsageUsesModelMaxTokensAsOutputReserve(t *testing.T) {
+func TestRuntime_ContextUsageUsesDefaultOutputReserveWhenModelMaxTokensIsLarge(t *testing.T) {
 	t.Parallel()
 
 	client := &capturingCompletionClient{request: nil}
-	runtime := newTestRuntimeWithContextWindowAndMaxTokens(t, client, 100_000, 1234)
+	runtime := newTestRuntimeWithContextWindowAndMaxTokens(t, client, 272_000, 128_000)
+
+	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
+
+	require.NoError(t, err)
+	assert.Equal(t, 16_384, usage.Breakdown["reserve_output"])
+}
+
+func TestRuntime_ContextUsageUsesExplicitOutputReserve(t *testing.T) {
+	t.Parallel()
+
+	client := &capturingCompletionClient{request: nil}
+	runtime := newTestRuntimeWithContextWindowAndMaxTokens(t, client, 100_000, 128_000)
+	runtimeConfig := testConfig()
+	runtimeConfig.Context.OutputReserveTokens = 1234
+	runtime = assistant.NewRuntime(
+		runtimeConfig,
+		runtime.SessionRepository(),
+		nil,
+		assistant.NewResponseCache(false, 1, time.Minute),
+		runtime.EventBus(),
+		runtime.ModelRegistry(),
+		client,
+		nil,
+	)
 
 	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
 
