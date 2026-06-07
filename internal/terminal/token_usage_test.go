@@ -229,7 +229,7 @@ func TestShowContextInfoDisplaysSummaryAndBreakdown(t *testing.T) {
 	assert.Contains(t, message, "message 2 7.0k assistant")
 }
 
-func TestFormatContextUsagePrefersUsableInputBudget(t *testing.T) {
+func TestFormatContextUsageUsesModelWindow(t *testing.T) {
 	t.Parallel()
 
 	usage := model.TokenUsage{
@@ -243,5 +243,5 @@ func TestFormatContextUsagePrefersUsableInputBudget(t *testing.T) {
 		OutputTokens:    0,
 	}
 
-	assert.Equal(t, "ctx 156k/132k 118%", terminal.FormatContextUsageForTest(usage))
+	assert.Equal(t, "ctx 156k/272k 57%", terminal.FormatContextUsageForTest(usage))
 }
