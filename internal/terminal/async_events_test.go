@@ -458,6 +458,7 @@ func TestHandlePromptAsyncEventIgnoresStalePromptEvents(t *testing.T) {
 type streamEventApplyCase struct {
 	payload        *asyncEvent
 	assert         func(*testing.T, *App)
+	prepare        func(*App)
 	name           string
 	canceledActive bool
 }
@@ -470,6 +471,9 @@ func TestHandlePromptStreamEventAppliesStreamData(t *testing.T) {
 			t.Parallel()
 
 			app := newRenderTestApp(t)
+			if testCase.prepare != nil {
+				testCase.prepare(app)
+			}
 			if testCase.canceledActive {
 				app.activePrompt = newTestActivePrompt(nil)
 				app.activePrompt.Canceled = true
@@ -496,6 +500,7 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 				assert.Equal(t, database.RoleAssistant, app.transcript.Streaming.Blocks[0].Role)
 				assert.Equal(t, asyncTestGreeting, app.transcript.Streaming.Blocks[0].Content)
 			},
+			prepare:        nil,
 			canceledActive: false,
 		},
 		{
@@ -506,6 +511,7 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 				require.Len(t, app.transcript.Streaming.Blocks, 1)
 				assert.Equal(t, database.RoleThinking, app.transcript.Streaming.Blocks[0].Role)
 			},
+			prepare:        nil,
 			canceledActive: false,
 		},
 		{
@@ -517,6 +523,7 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 				assert.Equal(t, database.RoleToolResult, app.transcript.Streaming.Blocks[0].Role)
 				assert.Equal(t, 1, app.streamedToolEvents)
 			},
+			prepare:        nil,
 			canceledActive: false,
 		},
 		{
@@ -526,11 +533,15 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 				t.Helper()
 				assert.Equal(t, 25, app.tokenUsage.ContextTokens)
 			},
+			prepare:        nil,
 			canceledActive: false,
 		},
 		{
 			name:    "usage snapshot replaces token usage",
 			payload: asyncTestEventWithUsage(asyncEventPromptUsageSnapshot, usage),
+			prepare: func(app *App) {
+				app.tokenUsage.ContextTokens = 123
+			},
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
 				assert.Equal(t, 25, app.tokenUsage.ContextTokens)
@@ -544,6 +555,7 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 				t.Helper()
 				assert.Empty(t, app.transcript.Streaming.Blocks)
 			},
+			prepare:        nil,
 			canceledActive: true,
 		},
 	}
