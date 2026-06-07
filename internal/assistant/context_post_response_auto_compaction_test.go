@@ -110,13 +110,24 @@ func assertPostResponseCompactionEvent(t *testing.T, events []assistant.StreamEv
 func assertPostResponseUsageSnapshot(t *testing.T, events []assistant.StreamEvent) {
 	t.Helper()
 
+	snapshotCount := 0
 	for _, event := range events {
 		if event.Kind != assistant.StreamEventUsageSnapshot || event.Usage == nil {
 			continue
 		}
+		snapshotCount++
 		if event.Usage.ContextTokens > 0 {
 			return
 		}
 	}
-	assert.Fail(t, "expected post-response auto-compaction usage snapshot")
+	if snapshotCount == 0 {
+		assert.Fail(t, "expected post-response auto-compaction usage snapshot, found no snapshot events")
+		return
+	}
+	assert.Failf(
+		t,
+		"expected post-response auto-compaction usage snapshot",
+		"found %d snapshot events but all had ContextTokens == 0",
+		snapshotCount,
+	)
 }

@@ -195,6 +195,14 @@ func promptStreamHandlerPostCases() []streamHandlerPostCase {
 			wantUsage:   true,
 		},
 		{
+			name:        "usage snapshot",
+			streamEvent: asyncTestStreamEvent(assistant.StreamEventUsageSnapshot, "", nil, usage),
+			wantKind:    asyncEventPromptUsageSnapshot,
+			wantText:    "",
+			wantTool:    false,
+			wantUsage:   true,
+		},
+		{
 			name:        "context compaction",
 			streamEvent: asyncTestStreamEvent(assistant.StreamEventContextCompaction, asyncTestCompact, nil, nil),
 			wantKind:    asyncEventPromptContext,
@@ -327,6 +335,7 @@ func TestPromptAsyncEventHelpers(t *testing.T) {
 		asyncEventPromptToolResult,
 		asyncEventPromptRetry,
 		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot,
 		asyncEventPromptError,
 		asyncEventPromptContext,
 	} {
@@ -513,6 +522,15 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 		{
 			name:    "usage updates token usage",
 			payload: asyncTestEventWithUsage(asyncEventPromptUsage, usage),
+			assert: func(t *testing.T, app *App) {
+				t.Helper()
+				assert.Equal(t, 25, app.tokenUsage.ContextTokens)
+			},
+			canceledActive: false,
+		},
+		{
+			name:    "usage snapshot replaces token usage",
+			payload: asyncTestEventWithUsage(asyncEventPromptUsageSnapshot, usage),
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
 				assert.Equal(t, 25, app.tokenUsage.ContextTokens)

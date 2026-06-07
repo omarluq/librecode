@@ -318,6 +318,46 @@ func TestRunPromptPostsDoneAndError(t *testing.T) {
 func newPromptSendTestApp(t *testing.T, client assistant.CompletionClient) *App {
 	t.Helper()
 
+	return newPromptSendTestAppWithConfig(t, client, promptSendTestConfig())
+}
+
+func newPromptSendTestAppWithConfig(
+	t *testing.T,
+	client assistant.CompletionClient,
+	runtimeConfig *config.Config,
+) *App {
+	t.Helper()
+
+	connection := newPromptSendTestConnection(t)
+	manager := extension.NewManager(slog.Default())
+	t.Cleanup(manager.Shutdown)
+	cache := assistant.NewResponseCache(false, 1, time.Minute)
+	t.Cleanup(cache.Shutdown)
+	registry := newPromptSendTestModelRegistry(t)
+	sessionRepository := database.NewSessionRepository(connection)
+	settingsRepository := database.NewDocumentRepository(connection)
+	runtime := assistant.NewRuntime(
+		runtimeConfig,
+		sessionRepository,
+		manager,
+		cache,
+		event.NewBus(slog.Default()),
+		registry,
+		client,
+		slog.Default(),
+	)
+	app := newRenderTestApp(t)
+	app.runtime = runtime
+	app.settings = settingsRepository
+	app.cwd = t.TempDir()
+	app.cfg = runtimeConfig
+
+	return app
+}
+
+func newPromptSendTestConnection(t *testing.T) *sql.DB {
+	t.Helper()
+
 	connection, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -333,10 +373,12 @@ func newPromptSendTestApp(t *testing.T, client assistant.CompletionClient) *App 
 		t.Fatalf("migrate sqlite: %v", migrateErr)
 	}
 
-	manager := extension.NewManager(slog.Default())
-	t.Cleanup(manager.Shutdown)
-	cache := assistant.NewResponseCache(false, 1, time.Minute)
-	t.Cleanup(cache.Shutdown)
+	return connection
+}
+
+func newPromptSendTestModelRegistry(t *testing.T) *model.Registry {
+	t.Helper()
+
 	authStorage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
 		promptSendTestProvider: {
 			OAuth:     nil,
@@ -352,48 +394,32 @@ func newPromptSendTestApp(t *testing.T, client assistant.CompletionClient) *App 
 	if err != nil {
 		t.Fatalf("create auth storage: %v", err)
 	}
-	registry := model.NewRegistry(&model.RegistryOptions{
+
+	return model.NewRegistry(&model.RegistryOptions{
 		ConfigSource: nil,
 		Auth:         authStorage,
 		ModelsPath:   "",
-		BuiltIns: []model.Model{
-			{
-				ThinkingLevelMap: nil,
-				Headers:          nil,
-				Compat:           nil,
-				Provider:         promptSendTestProvider,
-				ID:               promptSendTestModel,
-				Name:             promptSendTestModel,
-				API:              "openai-completions",
-				BaseURL:          "https://example.invalid/v1",
-				Input:            []model.InputMode{model.InputText},
-				Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
-				ContextWindow:    1000,
-				MaxTokens:        0,
-				Reasoning:        false,
-			},
-		},
-		Discovery: disabledModelDiscovery(),
+		BuiltIns:     []model.Model{promptSendTestModelDefinition()},
+		Discovery:    disabledModelDiscovery(),
 	})
-	sessionRepository := database.NewSessionRepository(connection)
-	settingsRepository := database.NewDocumentRepository(connection)
-	runtime := assistant.NewRuntime(
-		promptSendTestConfig(),
-		sessionRepository,
-		manager,
-		cache,
-		event.NewBus(slog.Default()),
-		registry,
-		client,
-		slog.Default(),
-	)
-	app := newRenderTestApp(t)
-	app.runtime = runtime
-	app.settings = settingsRepository
-	app.cwd = t.TempDir()
-	app.cfg = promptSendTestConfig()
+}
 
-	return app
+func promptSendTestModelDefinition() model.Model {
+	return model.Model{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		Provider:         promptSendTestProvider,
+		ID:               promptSendTestModel,
+		Name:             promptSendTestModel,
+		API:              "openai-completions",
+		BaseURL:          "https://example.invalid/v1",
+		Input:            []model.InputMode{model.InputText},
+		Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
+		ContextWindow:    1000,
+		MaxTokens:        0,
+		Reasoning:        false,
+	}
 }
 
 func promptSendTestConfig() *config.Config {

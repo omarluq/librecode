@@ -56,7 +56,7 @@ func (app *App) runCompactSession(
 	}
 	usage, err := app.runtime.ContextUsage(compactCtx, app.sessionID, app.cwd)
 	if err != nil {
-		app.postCompactError(ctx, compactID, err)
+		app.postCompactDone(ctx, compactID, entry, nil)
 		return
 	}
 	app.postCompactDone(ctx, compactID, entry, &usage)
