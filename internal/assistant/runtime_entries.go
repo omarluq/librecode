@@ -40,5 +40,12 @@ func (runtime *Runtime) appendAssistantResponseEntry(
 		Model:     runtime.cfg.Assistant.Model,
 	}
 
-	return runtime.sessions.AppendMessageWithModelFacing(ctx, sessionID, parentID, &message, &bundle.ModelFacing)
+	return runtime.sessions.AppendMessageWithMetadata(
+		ctx,
+		sessionID,
+		parentID,
+		&message,
+		&bundle.ModelFacing,
+		providerUsageEntity(bundle.Usage),
+	)
 }

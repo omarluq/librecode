@@ -104,24 +104,25 @@ type EntryEntity struct {
 
 // EntryDataEntity stores flexible per-entry metadata encoded in session_entries.data_json.
 type EntryDataEntity struct {
-	Details                    map[string]any `json:"details,omitempty"`
-	Display                    *bool          `json:"display,omitempty"`
-	Label                      *string        `json:"label,omitempty"`
-	ModelFacing                *bool          `json:"modelFacing,omitempty"`
-	FromID                     string         `json:"fromId,omitempty"`
-	BranchFromEntryID          string         `json:"branchFromEntryId,omitempty"`
-	TargetID                   string         `json:"targetId,omitempty"`
-	ThinkingLevel              string         `json:"thinkingLevel,omitempty"`
-	ToolName                   string         `json:"toolName,omitempty"`
-	ToolStatus                 string         `json:"toolStatus,omitempty"`
-	ToolArgsJSON               string         `json:"toolArgsJson,omitempty"`
-	Name                       string         `json:"name,omitempty"`
-	FirstKeptEntryID           string         `json:"firstKeptEntryId,omitempty"`
-	CompactionFirstKeptEntryID string         `json:"compactionFirstKeptEntryId,omitempty"`
-	TokenEstimate              int            `json:"tokenEstimate,omitempty"`
-	CompactionTokensBefore     int            `json:"compactionTokensBefore,omitempty"`
-	TokensBefore               int            `json:"tokensBefore,omitempty"`
-	FromHook                   bool           `json:"fromHook,omitempty"`
+	Details                    map[string]any         `json:"details,omitempty"`
+	Display                    *bool                  `json:"display,omitempty"`
+	Label                      *string                `json:"label,omitempty"`
+	ModelFacing                *bool                  `json:"modelFacing,omitempty"`
+	Usage                      *EntryTokenUsageEntity `json:"usage,omitempty"`
+	FromID                     string                 `json:"fromId,omitempty"`
+	BranchFromEntryID          string                 `json:"branchFromEntryId,omitempty"`
+	TargetID                   string                 `json:"targetId,omitempty"`
+	ThinkingLevel              string                 `json:"thinkingLevel,omitempty"`
+	ToolName                   string                 `json:"toolName,omitempty"`
+	ToolStatus                 string                 `json:"toolStatus,omitempty"`
+	ToolArgsJSON               string                 `json:"toolArgsJson,omitempty"`
+	Name                       string                 `json:"name,omitempty"`
+	FirstKeptEntryID           string                 `json:"firstKeptEntryId,omitempty"`
+	CompactionFirstKeptEntryID string                 `json:"compactionFirstKeptEntryId,omitempty"`
+	TokenEstimate              int                    `json:"tokenEstimate,omitempty"`
+	CompactionTokensBefore     int                    `json:"compactionTokensBefore,omitempty"`
+	TokensBefore               int                    `json:"tokensBefore,omitempty"`
+	FromHook                   bool                   `json:"fromHook,omitempty"`
 }
 
 // TreeNodeEntity is an entry and its direct descendants.
@@ -130,12 +131,35 @@ type TreeNodeEntity struct {
 	Entry    EntryEntity      `json:"entry"`
 }
 
+// EntryTokenUsageEntity stores provider-reported token usage on a durable entry.
+type EntryTokenUsageEntity struct {
+	ContextWindow int `json:"contextWindow,omitempty"`
+	ContextTokens int `json:"contextTokens,omitempty"`
+	InputTokens   int `json:"inputTokens,omitempty"`
+	OutputTokens  int `json:"outputTokens,omitempty"`
+}
+
+// HasAny reports whether the usage entity has any provider-reported values.
+func (usage EntryTokenUsageEntity) HasAny() bool {
+	return usage.ContextWindow > 0 || usage.ContextTokens > 0 || usage.InputTokens > 0 || usage.OutputTokens > 0
+}
+
+// ContextUsageAnchorEntity identifies the latest model response with known provider usage.
+type ContextUsageAnchorEntity struct {
+	EntryID      string                `json:"entry_id"`
+	Provider     string                `json:"provider,omitempty"`
+	Model        string                `json:"model,omitempty"`
+	Usage        EntryTokenUsageEntity `json:"usage"`
+	MessageIndex int                   `json:"message_index"`
+}
+
 // SessionContextEntity is the reconstructed context from a session branch.
 type SessionContextEntity struct {
-	Provider      string          `json:"provider,omitempty"`
-	Model         string          `json:"model,omitempty"`
-	ThinkingLevel string          `json:"thinking_level,omitempty"`
-	Messages      []MessageEntity `json:"messages"`
+	UsageAnchor   *ContextUsageAnchorEntity `json:"usage_anchor,omitempty"`
+	Provider      string                    `json:"provider,omitempty"`
+	Model         string                    `json:"model,omitempty"`
+	ThinkingLevel string                    `json:"thinking_level,omitempty"`
+	Messages      []MessageEntity           `json:"messages"`
 }
 
 // DocumentEntity stores JSON-backed runtime documents in SQLite.

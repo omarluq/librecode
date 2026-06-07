@@ -11,12 +11,11 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
-//nolint:govet // Test fixture readability matters more than field packing.
 type planCompactionCase struct {
-	entries  []database.EntryEntity
 	assertFn func(t *testing.T, plan *compactionPlan)
 	name     string
 	wantErr  string
+	entries  []database.EntryEntity
 	keep     int
 }
 

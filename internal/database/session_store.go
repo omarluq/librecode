@@ -142,6 +142,7 @@ func (repository *SessionRepository) BuildContext(
 	}
 
 	contextEntity := SessionContextEntity{
+		UsageAnchor:   nil,
 		Messages:      []MessageEntity{},
 		Provider:      "",
 		Model:         "",
@@ -194,6 +195,7 @@ func newEntryData() EntryDataEntity {
 type appendEntryOptions struct {
 	modelFacing *bool
 	timestamp   time.Time
+	usage       *EntryTokenUsageEntity
 	content     string
 	customType  string
 	dataJSON    string
@@ -215,6 +217,23 @@ func (repository *SessionRepository) appendBuiltEntry(
 	entryType EntryType,
 	options *appendEntryOptions,
 ) (*EntryEntity, error) {
+	entry := repository.entryFromAppendOptions(sessionID, parentID, entryType, options)
+	if err := applyAppendEntryMetadata(&entry, options); err != nil {
+		return nil, err
+	}
+	if err := repository.appendEntry(ctx, &entry); err != nil {
+		return nil, err
+	}
+
+	return &entry, nil
+}
+
+func (repository *SessionRepository) entryFromAppendOptions(
+	sessionID string,
+	parentID *string,
+	entryType EntryType,
+	options *appendEntryOptions,
+) EntryEntity {
 	timestamp := options.timestamp
 	if timestamp.IsZero() {
 		timestamp = repository.now().UTC()
@@ -228,37 +247,40 @@ func (repository *SessionRepository) appendBuiltEntry(
 		Provider:  options.provider,
 		Model:     options.model,
 	})
-	if options.customType != "" {
-		entry.CustomType = options.customType
-	}
+	entry.CustomType = options.customType
 	if options.dataJSON != "" {
 		entry.DataJSON = normalizeDataJSON(options.dataJSON)
 	}
+	entry.Summary = options.summary
+
+	return entry
+}
+
+func applyAppendEntryMetadata(entry *EntryEntity, options *appendEntryOptions) error {
+	if options.modelFacing == nil && options.usage == nil {
+		return nil
+	}
+	data, err := dataFromEntry(entry)
+	if err != nil {
+		return oops.In("database").
+			Code("decode_entry_data").
+			Wrapf(err, "decode entry data before setting metadata")
+	}
 	if options.modelFacing != nil {
-		data, err := dataFromEntry(&entry)
-		if err != nil {
-			return nil, oops.In("database").
-				Code("decode_entry_data").
-				Wrapf(err, "decode entry data before setting model-facing metadata")
-		}
 		data.ModelFacing = options.modelFacing
-		dataJSON, err := dataJSONFromEntity(&data)
-		if err != nil {
-			return nil, oops.In("database").
-				Code("encode_entry_data").
-				Wrapf(err, "encode entry data after setting model-facing metadata")
-		}
-		entry.DataJSON = normalizeDataJSON(dataJSON)
 	}
-	if options.summary != "" {
-		entry.Summary = options.summary
+	if options.usage != nil {
+		data.Usage = options.usage
 	}
+	dataJSON, err := dataJSONFromEntity(&data)
+	if err != nil {
+		return oops.In("database").
+			Code("encode_entry_data").
+			Wrapf(err, "encode entry data after setting metadata")
+	}
+	entry.DataJSON = normalizeDataJSON(dataJSON)
 
-	if err := repository.appendEntry(ctx, &entry); err != nil {
-		return nil, err
-	}
-
-	return &entry, nil
+	return nil
 }
 
 // AppendMessage appends a message as a child of the current leaf or provided parent.
@@ -279,6 +301,18 @@ func (repository *SessionRepository) AppendMessageWithModelFacing(
 	message *MessageEntity,
 	modelFacing *bool,
 ) (*EntryEntity, error) {
+	return repository.AppendMessageWithMetadata(ctx, sessionID, parentID, message, modelFacing, nil)
+}
+
+// AppendMessageWithMetadata appends a message with optional model-facing and token usage metadata.
+func (repository *SessionRepository) AppendMessageWithMetadata(
+	ctx context.Context,
+	sessionID string,
+	parentID *string,
+	message *MessageEntity,
+	modelFacing *bool,
+	usage *EntryTokenUsageEntity,
+) (*EntryEntity, error) {
 	options := newAppendEntryOptions()
 	options.content = message.Content
 	options.model = message.Model
@@ -286,6 +320,7 @@ func (repository *SessionRepository) AppendMessageWithModelFacing(
 	options.role = message.Role
 	options.timestamp = message.Timestamp
 	options.modelFacing = modelFacing
+	options.usage = usage
 
 	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeMessage, options)
 }
@@ -538,9 +573,27 @@ var entryContextAppliers = map[EntryType]entryContextApplier{
 func appendModelFacingEntryMessage(contextEntity *SessionContextEntity, entry *EntryEntity) error {
 	if entry.ModelFacing {
 		contextEntity.Messages = append(contextEntity.Messages, entry.Message)
+		updateContextUsageAnchor(contextEntity, entry, len(contextEntity.Messages)-1)
 	}
 
 	return nil
+}
+
+func updateContextUsageAnchor(contextEntity *SessionContextEntity, entry *EntryEntity, messageIndex int) {
+	if entry.Type != EntryTypeMessage || entry.Message.Role != RoleAssistant {
+		return
+	}
+	data, err := dataFromEntry(entry)
+	if err != nil || data.Usage == nil || !data.Usage.HasAny() {
+		return
+	}
+	contextEntity.UsageAnchor = &ContextUsageAnchorEntity{
+		EntryID:      entry.ID,
+		MessageIndex: messageIndex,
+		Provider:     entry.Message.Provider,
+		Model:        entry.Message.Model,
+		Usage:        *data.Usage,
+	}
 }
 
 func appendBranchSummaryContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
@@ -562,6 +615,7 @@ func applyCompactionContextWithTail(
 ) error {
 	compactionEntry := &branch[compactionIndex]
 	contextEntity.Messages = compactionSummaryMessages(compactionEntry)
+	contextEntity.UsageAnchor = nil
 
 	firstKeptIndex := compactionIndex
 	for index := range compactionIndex {
@@ -591,8 +645,13 @@ func compactionSummaryMessages(entry *EntryEntity) []MessageEntity {
 
 func appendRetainedCompactionTailEntry(contextEntity *SessionContextEntity, entry *EntryEntity) error {
 	switch entry.Type {
-	case EntryTypeMessage, EntryTypeCustomMessage, EntryTypeBranchSummary:
-		return applyEntryToContext(contextEntity, entry)
+	case EntryTypeMessage, EntryTypeCustomMessage:
+		if entry.ModelFacing {
+			contextEntity.Messages = append(contextEntity.Messages, entry.Message)
+		}
+		return nil
+	case EntryTypeBranchSummary:
+		return appendBranchSummaryContext(contextEntity, entry)
 	case EntryTypeCompaction,
 		EntryTypeModelChange,
 		EntryTypeThinkingLevelChange,
