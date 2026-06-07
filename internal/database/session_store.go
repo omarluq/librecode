@@ -674,9 +674,9 @@ func appendRetainedCompactionTailEntry(contextEntity *SessionContextEntity, entr
 		EntryTypeLabel,
 		EntryTypeSessionInfo:
 		return nil
+	default:
+		return nil
 	}
-
-	return nil
 }
 
 func applyModelChangeContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
