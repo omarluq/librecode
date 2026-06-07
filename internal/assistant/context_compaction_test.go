@@ -97,7 +97,7 @@ func TestRuntime_CompactSessionChainsNextPromptFromCompactionEntry(t *testing.T)
 func TestRuntime_CompactSessionRejectsShortHistory(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: "unused", requests: nil}
+	client := &compactionCompletionClient{summary: autoCompactionTestUnused, requests: nil}
 	runtime, repository := newTestRuntimeWithClient(t, client)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")

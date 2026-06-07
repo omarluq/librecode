@@ -65,18 +65,7 @@ func (runtime *Runtime) dispatchLifecycle(
 ) (extension.LifecycleDispatchResult, error) {
 	runtime.emit(ctx, string(name), payload)
 	if runtime.extensions == nil {
-		return extension.LifecycleDispatchResult{
-			Payload:         cloneAnyMap(payload),
-			ProviderRequest: extension.ProviderRequestMutation{Headers: map[string]string{}},
-			ToolCall:        extension.ToolCallMutation{Arguments: nil},
-			ToolResult:      extension.ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil},
-			Name:            string(name),
-			Errors:          []string{},
-			Duration:        0,
-			HandlerCount:    0,
-			Consumed:        false,
-			Stopped:         false,
-		}, nil
+		return emptyLifecycleDispatchResult(name, payload), nil
 	}
 	result, err := runtime.extensions.DispatchLifecycle(ctx, extension.LifecycleEvent{
 		Payload: payload,
@@ -159,6 +148,30 @@ func (runtime *Runtime) dispatchContextBuild(
 ) (extension.LifecycleDispatchResult, error) {
 	payload := contextBuildLifecyclePayload(sessionID, cwd, base, result)
 	return runtime.dispatchLifecycle(ctx, extension.LifecycleContextBuild, payload)
+}
+
+func emptyLifecycleDispatchResult(
+	name extension.LifecycleEventName,
+	payload map[string]any,
+) extension.LifecycleDispatchResult {
+	return extension.LifecycleDispatchResult{
+		Payload:         cloneAnyMap(payload),
+		ProviderRequest: extension.ProviderRequestMutation{Headers: map[string]string{}},
+		ToolCall:        extension.ToolCallMutation{Arguments: nil},
+		ToolResult:      extension.ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil},
+		Compaction: extension.CompactionMutation{
+			Summary:          nil,
+			FirstKeptEntryID: nil,
+			Details:          nil,
+			Cancel:           false,
+		},
+		Name:         string(name),
+		Errors:       []string{},
+		Duration:     0,
+		HandlerCount: 0,
+		Consumed:     false,
+		Stopped:      false,
+	}
 }
 
 func promptLifecyclePayload(request *PromptRequest) map[string]any {
