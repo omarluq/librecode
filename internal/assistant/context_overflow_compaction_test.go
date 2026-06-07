@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
@@ -54,7 +53,7 @@ func TestRuntime_CompactsAndRetriesProviderContextOverflow(t *testing.T) {
 	require.Len(t, client.requests, 3)
 	assert.Contains(t, client.requests[2].Messages[0].Content, "summary after provider overflow")
 	assert.Contains(t, client.requests[2].Messages[len(client.requests[2].Messages)-1].Content, "continue")
-	assertContainsContextCompactionEvent(t, events, "provider reported context overflow")
+	assertContainsContextCompactionEvent(t, events, "attempting compaction before retry")
 	assertContainsContextCompactionEvent(t, events, "context auto-compacted after provider overflow")
 
 	branch, err := runtime.SessionRepository().Branch(ctx, session.ID, response.AssistantEntryID)
@@ -117,6 +116,94 @@ func TestRuntime_ProviderContextOverflowPreservesOriginalErrorWhenNoCompaction(t
 	assert.Equal(t, []bool{false}, client.disableToolsByCall)
 }
 
+func TestRuntime_ProviderContextOverflowRecoveryErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		client        assistant.CompletionClient
+		name          string
+		wantCode      string
+		contextWindow int
+	}{
+		{
+			name:          "wraps compaction failure",
+			client:        providerOverflowFailingSummaryClient{},
+			wantCode:      "compact_summarize",
+			contextWindow: 200_000,
+		},
+		{
+			name:          "wraps rebuilt budget failure",
+			client:        providerOverflowLargeSummaryClient{},
+			wantCode:      testContextWindowExceededOopsCode,
+			contextWindow: 20_000,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			runtime := newAutoCompactionTestRuntime(t, testCase.client, testCase.contextWindow)
+			repository := runtime.SessionRepository()
+			session, err := repository.CreateSession(context.Background(), testRuntimeCWD, testCase.name, "")
+			require.NoError(t, err)
+			appendAutoCompactionOldTurn(t, repository, session.ID)
+			request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
+			request.SessionID = session.ID
+
+			response, err := runtime.Prompt(context.Background(), request)
+
+			require.Nil(t, response)
+			requireOopsCode(t, err, testCase.wantCode)
+		})
+	}
+}
+
+func TestRuntime_ProviderOverflowRecoveryInputGuards(t *testing.T) {
+	t.Parallel()
+
+	runtime := newProviderOverflowRecoveryRuntime(t, providerOverflowStaticErrorClient{})
+	tests := []struct {
+		call     func() error
+		name     string
+		wantCode string
+	}{
+		{
+			name: "nil input",
+			call: func() error {
+				return runtime.ProviderOverflowRecoveryNilInputForTest(context.Background())
+			},
+			wantCode: "context_overflow_recovery_input",
+		},
+		{
+			name: "nil nested input",
+			call: func() error {
+				return runtime.ProviderOverflowRecoveryNilBuildForTest(context.Background())
+			},
+			wantCode: "context_overflow_recovery_input",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			requireOopsCode(t, testCase.call(), testCase.wantCode)
+		})
+	}
+}
+
+func TestRuntime_ProviderOverflowRecoveryPassesThroughNonContextErrors(t *testing.T) {
+	t.Parallel()
+
+	runtime := newProviderOverflowRecoveryRuntime(t, providerOverflowStaticErrorClient{})
+
+	err := runtime.ProviderOverflowRecoveryNonContextErrorForTest(context.Background())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "provider exploded")
+}
+
 func TestIsContextWindowError(t *testing.T) {
 	t.Parallel()
 
@@ -127,7 +214,7 @@ func TestIsContextWindowError(t *testing.T) {
 	}{
 		{
 			name: "oops context code",
-			err:  oops.In("assistant").Code("context_window_exceeded").Errorf("preflight failed"),
+			err:  oops.In("assistant").Code(testContextWindowExceededOopsCode).Errorf("preflight failed"),
 			want: true,
 		},
 		{
@@ -144,6 +231,21 @@ func TestIsContextWindowError(t *testing.T) {
 			name: "too many tokens message",
 			err:  errors.New("too many tokens in request"),
 			want: true,
+		},
+		{
+			name: "request token limit message",
+			err:  errors.New("token limit exceeded for request"),
+			want: true,
+		},
+		{
+			name: "daily token quota message",
+			err:  errors.New("daily token limit exceeded"),
+			want: false,
+		},
+		{
+			name: "billing quota message",
+			err:  errors.New("quota exceeded; update billing"),
+			want: false,
 		},
 		{
 			name: "rate limit",
@@ -172,23 +274,7 @@ func newProviderOverflowRecoveryRuntime(
 ) *assistant.Runtime {
 	t.Helper()
 
-	runtime := newTestRuntimeWithContextWindow(t, client, 64_000)
-	runtimeConfig := testConfig()
-	runtimeConfig.Context.KeepRecentTokens = 1
-	runtimeConfig.Context.ProviderReserveTokens = 0
-	runtimeConfig.Context.SafetyMarginTokens = 0
-	runtimeConfig.Context.OutputReserveTokens = 1
-
-	return assistant.NewRuntime(
-		runtimeConfig,
-		runtime.SessionRepository(),
-		nil,
-		assistant.NewResponseCache(false, 1, time.Minute),
-		runtime.EventBus(),
-		runtime.ModelRegistry(),
-		client,
-		nil,
-	)
+	return newAutoCompactionTestRuntime(t, client, 64_000)
 }
 
 func assertContainsContextCompactionEvent(t *testing.T, events []assistant.StreamEvent, text string) {
@@ -253,4 +339,39 @@ func providerOverflowCompletionResult(text string) *assistant.CompletionResult {
 		ToolEvents: nil,
 		Usage:      model.EmptyTokenUsage(),
 	}
+}
+
+type providerOverflowStaticErrorClient struct{}
+
+func (providerOverflowStaticErrorClient) Complete(
+	context.Context,
+	*assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	return nil, errors.New("provider exploded")
+}
+
+type providerOverflowFailingSummaryClient struct{}
+
+func (providerOverflowFailingSummaryClient) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	if request.DisableTools {
+		return nil, errors.New("summary failed")
+	}
+
+	return nil, oops.In("assistant").Code("responses_status").Errorf("maximum context length exceeded")
+}
+
+type providerOverflowLargeSummaryClient struct{}
+
+func (providerOverflowLargeSummaryClient) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	if request.DisableTools {
+		return providerOverflowCompletionResult(strings.Repeat("summary ", 30_000)), nil
+	}
+
+	return nil, oops.In("assistant").Code("responses_status").Errorf("maximum context length exceeded")
 }

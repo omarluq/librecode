@@ -50,6 +50,11 @@ func TestShouldRetryModelError(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "billing token limit message",
+			err:  errors.New("daily token limit exceeded; upgrade your billing plan"),
+			want: false,
+		},
+		{
 			name: "empty provider response code",
 			err:  oops.In("assistant").Code("responses_empty").Errorf("provider returned an empty response"),
 			want: true,

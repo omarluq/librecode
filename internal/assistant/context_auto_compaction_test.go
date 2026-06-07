@@ -84,6 +84,18 @@ func newAutoCompactionRuntimeHarness(
 	t.Helper()
 
 	client := &sequencedCompletionClient{responses: responses, requests: nil}
+	runtime := newAutoCompactionTestRuntime(t, client, contextWindow)
+
+	return autoCompactionRuntimeHarness{runtime: runtime, client: client}
+}
+
+func newAutoCompactionTestRuntime(
+	t *testing.T,
+	client assistant.CompletionClient,
+	contextWindow int,
+) *assistant.Runtime {
+	t.Helper()
+
 	runtime := newTestRuntimeWithContextWindow(t, client, contextWindow)
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.KeepRecentTokens = 1
@@ -92,7 +104,8 @@ func newAutoCompactionRuntimeHarness(
 	// Reserve one token so post-response compaction tests keep a stable output headroom
 	// and do not depend on off-by-one budget boundaries.
 	runtimeConfig.Context.OutputReserveTokens = 1
-	runtime = assistant.NewRuntime(
+
+	return assistant.NewRuntime(
 		runtimeConfig,
 		runtime.SessionRepository(),
 		nil,
@@ -102,8 +115,6 @@ func newAutoCompactionRuntimeHarness(
 		client,
 		nil,
 	)
-
-	return autoCompactionRuntimeHarness{runtime: runtime, client: client}
 }
 
 func isContextAutoCompactionEvent(event *assistant.StreamEvent) bool {

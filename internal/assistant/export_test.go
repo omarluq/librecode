@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 // DispatchToolCallLifecycleForTest exposes tool call lifecycle dispatch for external package tests.
@@ -67,4 +68,99 @@ func AutoCompactionMessageForTest(entry *database.EntryEntity) string {
 		ProviderReserve:   0,
 		SafetyMargin:      0,
 	}, entry)
+}
+
+// ProviderOverflowRecoveryNilInputForTest exercises the nil-input guard for external package tests.
+func (runtime *Runtime) ProviderOverflowRecoveryNilInputForTest(ctx context.Context) error {
+	_, _, _, err := runtime.completeWithProviderOverflowRecovery(ctx, nil)
+
+	return err
+}
+
+// ProviderOverflowRecoveryNilBuildForTest exercises nested nil-input guards for external package tests.
+func (runtime *Runtime) ProviderOverflowRecoveryNilBuildForTest(ctx context.Context) error {
+	_, _, _, err := runtime.completeWithProviderOverflowRecovery(ctx, &providerOverflowRecoveryInput{
+		preparation:     nil,
+		build:           nil,
+		compactionEntry: nil,
+		onRetry:         nil,
+	})
+
+	return err
+}
+
+// ProviderOverflowRecoveryNonContextErrorForTest exercises the non-overflow passthrough path.
+func (runtime *Runtime) ProviderOverflowRecoveryNonContextErrorForTest(ctx context.Context) error {
+	auth := model.RequestAuth{Headers: nil, APIKey: "test", Error: "", OK: true}
+	_, _, _, err := runtime.completeWithProviderOverflowRecovery(ctx, &providerOverflowRecoveryInput{
+		preparation: &completionRequestPreparationInput{
+			selectedModel: nil,
+			onEvent:       nil,
+			auth:          &auth,
+			sessionID:     "",
+			cwd:           "",
+			prompt:        "",
+			userEntryID:   "",
+		},
+		build: &contextRequestBuild{
+			Context: nil,
+			Request: &CompletionRequest{
+				OnEvent:           nil,
+				OnProviderObserve: nil,
+				OnProviderRequest: nil,
+				OnToolCall:        nil,
+				OnToolResult:      nil,
+				ToolRegistry:      nil,
+				SessionID:         "",
+				SystemPrompt:      "",
+				ThinkingLevel:     "",
+				CWD:               "",
+				Auth:              auth,
+				Messages:          nil,
+				Usage: model.TokenUsage{
+					Breakdown:       nil,
+					TopContributors: nil,
+					ContextWindow:   0,
+					ContextTokens:   0,
+					InputTokens:     0,
+					OutputTokens:    0,
+				},
+				Model: model.Model{
+					ThinkingLevelMap: nil,
+					Headers:          nil,
+					Compat:           nil,
+					Provider:         "",
+					ID:               "",
+					Name:             "",
+					API:              "",
+					BaseURL:          "",
+					Input:            nil,
+					Cost: model.Cost{
+						Input:      0,
+						Output:     0,
+						CacheRead:  0,
+						CacheWrite: 0,
+					},
+					ContextWindow: 0,
+					MaxTokens:     0,
+					Reasoning:     false,
+				},
+				ProviderAttempt: 0,
+				DisableTools:    false,
+			},
+			Budget: contextBudget{
+				InputTokens:       0,
+				ContextWindow:     0,
+				UsableInput:       0,
+				OutputReserve:     0,
+				ToolSchemaReserve: 0,
+				ProviderReserve:   0,
+				SafetyMargin:      0,
+			},
+		},
+		compactionEntry: nil,
+		onRetry:         nil,
+	})
+
+	return err
 }

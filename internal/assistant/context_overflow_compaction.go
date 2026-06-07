@@ -62,7 +62,7 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 	runtime.emitContextCompaction(
 		ctx,
 		input.preparation.onEvent,
-		"provider reported context overflow; compacting context before retry...",
+		"provider reported context overflow; attempting compaction before retry...",
 	)
 	recoveredEntry, err := runtime.CompactSessionFrom(
 		ctx,
@@ -78,11 +78,6 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 			Code("context_overflow_compact").
 			Wrapf(err, "compact context after provider overflow")
 	}
-	runtime.emitContextCompaction(
-		ctx,
-		input.preparation.onEvent,
-		compactionMessage("context auto-compacted after provider overflow", input.build.Budget, recoveredEntry),
-	)
 
 	recoveredBuild, err := runtime.buildCompletionRequest(
 		ctx,
@@ -107,6 +102,11 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 				Wrapf(validationErr, "context: validate budget after provider overflow compaction")
 		}
 	}
+	runtime.emitContextCompaction(
+		ctx,
+		input.preparation.onEvent,
+		compactionMessage("context auto-compacted after provider overflow", recoveredBuild.Budget, recoveredEntry),
+	)
 
 	result, err := runtime.completeWithRetry(ctx, recoveredBuild.Request, input.onRetry)
 	if err != nil {

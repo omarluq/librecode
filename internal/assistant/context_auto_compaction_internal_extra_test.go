@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
@@ -17,8 +16,9 @@ import (
 )
 
 const (
-	autoCompactionTestFinalAnswer = "final answer"
-	autoCompactionTestUnused      = "unused"
+	autoCompactionTestFinalAnswer     = "final answer"
+	autoCompactionTestUnused          = "unused"
+	testContextWindowExceededOopsCode = "context_window_exceeded"
 )
 
 func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
@@ -34,7 +34,7 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 			name:     "preserves validation error when nothing can be compacted",
 			client:   autoCompactionValidationOnlyClient{},
 			seed:     nil,
-			wantCode: "context_window_exceeded",
+			wantCode: testContextWindowExceededOopsCode,
 		},
 		{
 			name:   "wraps summarization failure",
@@ -52,7 +52,7 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 				t.Helper()
 				appendAutoCompactionOldTurn(t, repository, sessionID)
 			},
-			wantCode: "context_window_exceeded",
+			wantCode: testContextWindowExceededOopsCode,
 		},
 	}
 
@@ -145,23 +145,7 @@ func newAutoCompactionErrorRuntimeWithWindow(
 ) *assistant.Runtime {
 	t.Helper()
 
-	runtime := newTestRuntimeWithContextWindow(t, client, contextWindow)
-	runtimeConfig := testConfig()
-	runtimeConfig.Context.KeepRecentTokens = 1
-	runtimeConfig.Context.ProviderReserveTokens = 0
-	runtimeConfig.Context.SafetyMarginTokens = 0
-	runtimeConfig.Context.OutputReserveTokens = 1
-
-	return assistant.NewRuntime(
-		runtimeConfig,
-		runtime.SessionRepository(),
-		nil,
-		assistant.NewResponseCache(false, 1, time.Minute),
-		runtime.EventBus(),
-		runtime.ModelRegistry(),
-		client,
-		nil,
-	)
+	return newAutoCompactionTestRuntime(t, client, contextWindow)
 }
 
 func appendAutoCompactionOldTurn(t *testing.T, repository *database.SessionRepository, sessionID string) {
