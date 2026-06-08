@@ -78,7 +78,7 @@ func collectSymbols(
 		return
 	}
 	count := node.NamedChildCount()
-	for index := 0; index < count; index++ {
+	for index := range count {
 		child := node.NamedChild(index)
 		if child == nil {
 			continue

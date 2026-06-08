@@ -39,7 +39,7 @@ func generateDiffString(oldContent, newContent string) (EditDetails, error) {
 
 func firstChangedLineFromUnifiedDiff(diff string) int {
 	currentLine := 0
-	for _, line := range strings.Split(diff, "\n") {
+	for line := range strings.SplitSeq(diff, "\n") {
 		if strings.HasPrefix(line, "@@") {
 			lineNumber, ok := parseUnifiedHunkStart(line)
 			if !ok {

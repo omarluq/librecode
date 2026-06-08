@@ -15,7 +15,7 @@ func astOutline(tree *gt.Tree, lang *gt.Language, source []byte, language string
 		truncated bool
 	)
 	count := root.NamedChildCount()
-	for index := 0; index < count; index++ {
+	for index := range count {
 		child := root.NamedChild(index)
 		if child == nil {
 			continue
