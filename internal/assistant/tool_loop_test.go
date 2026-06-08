@@ -93,6 +93,34 @@ func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
 	assert.True(t, toolResults[0].IsError)
 }
 
+func TestExecuteToolCallsMarksToolCallHookErrors(t *testing.T) {
+	t.Parallel()
+
+	outputs, events := executeToolCalls(
+		context.Background(),
+		newToolRegistryForTest(t),
+		t.TempDir(),
+		[]toolCall{{
+			Arguments:     map[string]any{jsonPathKey: compactFileOperationTestPath},
+			ID:            testCallID,
+			Name:          jsonReadToolName,
+			ArgumentsJSON: `{"path":"` + compactFileOperationTestPath + `"}`,
+			TextFallback:  false,
+		}},
+		nil,
+		func(context.Context, *ToolCallEvent) error {
+			return assert.AnError
+		},
+		nil,
+	)
+
+	require.Len(t, events, 1)
+	assert.Equal(t, assert.AnError.Error(), events[0].Error)
+	assert.True(t, events[0].IsError)
+	require.Len(t, outputs, 1)
+	assert.Contains(t, outputs[0], jsonOutputKey)
+}
+
 func TestRunToolCallMarksFailedToolsAsErrors(t *testing.T) {
 	t.Parallel()
 

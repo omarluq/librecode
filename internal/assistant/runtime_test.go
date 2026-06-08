@@ -169,6 +169,21 @@ func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 	assert.Equal(t, "hello", string(content))
 }
 
+func TestRuntime_PromptReportsBuiltInToolSlashCommandValidationErrors(t *testing.T) {
+	t.Parallel()
+
+	runtime, _ := newTestRuntime(t)
+
+	_, err := runtime.Prompt(
+		context.Background(),
+		newRuntimePromptRequest(t.TempDir(), `/tool bash {}`, ""),
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "execute built-in tool")
+	assert.Contains(t, err.Error(), "bash command is required")
+}
+
 const recoveredResponseText = "recovered response"
 
 func TestRuntime_PromptRetriesTransientModelErrors(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 
 const (
 	registryTestContentKey = "content"
+	registryTestEmptyPath  = "empty.txt"
 	registryTestPathKey    = "path"
 )
 
@@ -104,11 +105,10 @@ func TestRegistry_ExecuteJSONValidatesRequiredArgumentsBeforeExecution(t *testin
 		{
 			name:    "write content",
 			tool:    "write",
-			input:   map[string]any{registryTestPathKey: "empty.txt"},
+			input:   map[string]any{registryTestPathKey: registryTestEmptyPath},
 			missing: registryTestContentKey,
 		},
 	}
-	registry := tool.NewRegistry(t.TempDir())
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
@@ -116,7 +116,7 @@ func TestRegistry_ExecuteJSONValidatesRequiredArgumentsBeforeExecution(t *testin
 			payload, err := json.Marshal(testCase.input)
 			require.NoError(t, err)
 
-			_, err = registry.ExecuteJSON(context.Background(), testCase.tool, payload)
+			_, err = tool.NewRegistry(t.TempDir()).ExecuteJSON(context.Background(), testCase.tool, payload)
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), testCase.missing+" is required")
@@ -130,11 +130,20 @@ func TestRegistry_ExecuteJSONAllowsIntentionalEmptyWriteContent(t *testing.T) {
 
 	registry := tool.NewRegistry(t.TempDir())
 	result := executeTool(context.Background(), t, registry, "write", map[string]any{
-		registryTestPathKey:    "empty.txt",
+		registryTestPathKey:    registryTestEmptyPath,
 		registryTestContentKey: "",
 	})
 
 	assert.Contains(t, result.Text(), "Successfully wrote 0 bytes")
+}
+
+func TestRegistry_ExecuteValidatesNilInput(t *testing.T) {
+	t.Parallel()
+
+	_, err := tool.NewRegistry(t.TempDir()).Execute(context.Background(), "bash", nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bash command is required")
 }
 
 func executeTool(
