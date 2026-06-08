@@ -1,4 +1,4 @@
-package assistant
+package provider
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	providerHookTestModelID         = "gpt-test"
 	providerHookPayloadKey          = "payload"
 	providerPayloadHookSystemPrompt = "system"
 	providerPayloadHookHeaderValue  = "yes"
@@ -38,14 +39,14 @@ func TestHTTPCompletionClientAppliesProviderRequestHook(t *testing.T) {
 	completionRequest := providerPayloadHookRequest(server.URL)
 	completionRequest.OnProviderRequest = func(
 		_ context.Context,
-		input providerHookInput,
-	) (providerHookOutput, error) {
+		input HookInput,
+	) (HookOutput, error) {
 		payload := cloneAnyMap(input.Payload)
 		payload["metadata"] = "mutated"
 		headers := cloneStringMap(input.Headers)
 		headers["X-Test-Header"] = providerPayloadHookHeaderValue
 
-		return providerHookOutput{Payload: payload, Headers: headers}, nil
+		return HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
 	result, err := NewHTTPCompletionClient().Complete(context.Background(), completionRequest)
@@ -68,14 +69,14 @@ func TestHTTPCompletionClientAppliesProviderRequestHookToOpenAIResponses(t *test
 	completionRequest.Model.API = apiOpenAIResponses
 	completionRequest.OnProviderRequest = func(
 		_ context.Context,
-		input providerHookInput,
-	) (providerHookOutput, error) {
+		input HookInput,
+	) (HookOutput, error) {
 		payload := cloneAnyMap(input.Payload)
 		payload["responses_metadata"] = "mutated"
 		headers := cloneStringMap(input.Headers)
 		headers["X-Responses-Hook"] = strconv.Itoa(input.Attempt)
 
-		return providerHookOutput{Payload: payload, Headers: headers}, nil
+		return HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
 	result, err := NewHTTPCompletionClient().Complete(context.Background(), completionRequest)
@@ -98,11 +99,11 @@ func TestApplyProviderRequestHookSkipsObserveWhenMutating(t *testing.T) {
 	}
 	request.OnProviderRequest = func(
 		_ context.Context,
-		input providerHookInput,
-	) (providerHookOutput, error) {
+		input HookInput,
+	) (HookOutput, error) {
 		calls = append(calls, "mutate:"+strconv.Itoa(input.Attempt))
 
-		return providerHookOutput{Payload: input.Payload, Headers: input.Headers}, nil
+		return HookOutput{Payload: input.Payload, Headers: input.Headers}, nil
 	}
 
 	_, err := applyProviderRequestHook(

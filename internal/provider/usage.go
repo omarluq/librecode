@@ -1,22 +1,12 @@
-package assistant
+package provider
 
 import (
 	"encoding/json"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
-
-func estimateInputTokens(systemPrompt string, messages []database.MessageEntity) int {
-	count := estimateTokens(systemPrompt)
-	for index := range messages {
-		count += estimateTokens(messages[index].Content)
-	}
-
-	return count
-}
 
 func estimateTokens(text string) int {
 	trimmed := strings.TrimSpace(text)

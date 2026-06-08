@@ -1,5 +1,5 @@
 //nolint:testpackage // Tests exercise provider-specific unexported tool-loop helpers.
-package assistant
+package provider
 
 import (
 	"context"
@@ -96,8 +96,8 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	request.Model.BaseURL = server.URL
 	request.OnProviderRequest = func(
 		_ context.Context,
-		input providerHookInput,
-	) (providerHookOutput, error) {
+		input HookInput,
+	) (HookOutput, error) {
 		iteration := len(hookIterations) + 1
 		hookIterations = append(hookIterations, iteration)
 		payload := cloneAnyMap(input.Payload)
@@ -105,7 +105,7 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 		headers := cloneStringMap(input.Headers)
 		headers["X-Iteration"] = strconv.Itoa(iteration)
 
-		return providerHookOutput{Payload: payload, Headers: headers}, nil
+		return HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
 	result, err := NewHTTPCompletionClient().completeOpenAIResponses(context.Background(), request)

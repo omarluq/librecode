@@ -1,4 +1,4 @@
-package assistant
+package provider
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-func validateToolCalls(calls []toolCall) error {
+func validateToolCalls(calls []ToolCall) error {
 	for _, call := range calls {
 		if strings.TrimSpace(call.ID) == "" {
 			return oops.In("assistant").
@@ -33,7 +33,7 @@ func executeToolCalls(
 	ctx context.Context,
 	registry *tool.Registry,
 	cwd string,
-	calls []toolCall,
+	calls []ToolCall,
 	onEvent func(StreamEvent),
 	onToolCall func(context.Context, *ToolCallEvent) error,
 	onToolResult func(context.Context, *ToolEvent) error,
@@ -55,7 +55,7 @@ func executeToolCalls(
 func executeOneToolCall(
 	ctx context.Context,
 	registry *tool.Registry,
-	call toolCall,
+	call ToolCall,
 	onEvent func(StreamEvent),
 	onToolCall func(context.Context, *ToolCallEvent) error,
 	onToolResult func(context.Context, *ToolEvent) error,
@@ -96,7 +96,7 @@ func emitToolResult(onEvent func(StreamEvent), event *ToolEvent) {
 	})
 }
 
-func newToolCallEvent(call toolCall) ToolCallEvent {
+func newToolCallEvent(call ToolCall) ToolCallEvent {
 	return ToolCallEvent{
 		Arguments:     call.Arguments,
 		ID:            call.ID,

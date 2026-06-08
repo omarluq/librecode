@@ -1,5 +1,5 @@
 //nolint:testpackage // These tests exercise unexported usage parsing helpers.
-package assistant
+package provider
 
 import (
 	"encoding/json"
@@ -139,7 +139,7 @@ func TestMergeUsageClonesReportedContributors(t *testing.T) {
 	t.Parallel()
 
 	reported := model.TokenUsage{
-		Breakdown: map[string]int{contextBreakdownHistory: 12}, ContextWindow: 0, ContextTokens: 0,
+		Breakdown: map[string]int{"history": 12}, ContextWindow: 0, ContextTokens: 0,
 		TopContributors: []model.TokenContributor{
 			{Label: "message 1", Role: "user", Preview: "usage contributor preview", Tokens: 10, Chars: 40},
 		},

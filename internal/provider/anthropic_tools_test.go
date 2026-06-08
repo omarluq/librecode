@@ -1,5 +1,5 @@
 //nolint:testpackage // Tests exercise unexported Anthropic tool helpers.
-package assistant
+package provider
 
 import (
 	"encoding/json"
@@ -70,7 +70,7 @@ func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
 	t.Parallel()
 
 	message, err := anthropicToolResultMessage(
-		[]toolCall{{
+		[]ToolCall{{
 			Arguments:     nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
@@ -100,7 +100,7 @@ func TestAnthropicToolResultMessageMarksToolErrors(t *testing.T) {
 	t.Parallel()
 
 	message, err := anthropicToolResultMessage(
-		[]toolCall{{
+		[]ToolCall{{
 			Arguments:     nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
@@ -128,7 +128,7 @@ func TestAnthropicToolResultMessageRejectsMismatchedCallsAndEvents(t *testing.T)
 	t.Parallel()
 
 	message, err := anthropicToolResultMessage(
-		[]toolCall{{
+		[]ToolCall{{
 			Arguments:     nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
@@ -151,7 +151,7 @@ func TestAppendAnthropicToolConversationRejectsMismatchedNativeResults(t *testin
 		Text:        "",
 		OutputItems: nil,
 		Thinking:    nil,
-		ToolCalls: []toolCall{{
+		ToolCalls: []ToolCall{{
 			Arguments:     nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,

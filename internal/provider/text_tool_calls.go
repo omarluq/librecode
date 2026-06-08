@@ -1,4 +1,4 @@
-package assistant
+package provider
 
 import (
 	"encoding/json"
@@ -21,22 +21,23 @@ var (
 	textToolOpeningPattern = regexp.MustCompile(`(?is)<\s*([a-zA-Z][a-zA-Z0-9_-]*)\b[^>]*>`)
 )
 
-func textToolCallsFromText(text string) []toolCall {
+// TextToolCallsFromText extracts XML-style fallback tool calls from assistant text.
+func TextToolCallsFromText(text string) []ToolCall {
 	matches := textToolUsePattern.FindAllStringSubmatch(text, -1)
 	if len(matches) == 0 {
 		return nil
 	}
 
-	calls := make([]toolCall, 0, len(matches))
+	calls := make([]ToolCall, 0, len(matches))
 	for index, match := range matches {
 		fields := textToolFields(match[1])
-		name := normalizeTextToolName(firstTextToolField(fields, textToolNameField, jsonToolNameKey, jsonToolRole))
+		name := NormalizeTextToolName(firstTextToolField(fields, textToolNameField, jsonToolNameKey, jsonToolRole))
 		if name == "" {
 			continue
 		}
 		arguments := textToolArguments(name, fields)
-		argumentsJSON := encodeToolArguments(arguments)
-		calls = append(calls, toolCall{
+		argumentsJSON := EncodeToolArguments(arguments)
+		calls = append(calls, ToolCall{
 			Arguments:     arguments,
 			ID:            textToolCallID(index),
 			Name:          name,
@@ -139,7 +140,8 @@ func asciiLower(value string) string {
 	return strings.ToLower(value)
 }
 
-func normalizeTextToolName(name string) string {
+// NormalizeTextToolName maps provider/fallback tool aliases to local tool names.
+func NormalizeTextToolName(name string) string {
 	normalized := normalizeTextToolKey(name)
 	switch normalized {
 	case jsonReadToolName:
@@ -261,7 +263,8 @@ func firstRawTextToolField(fields map[string]string, names ...string) (string, b
 	return "", false
 }
 
-func encodeToolArguments(arguments map[string]any) string {
+// EncodeToolArguments encodes tool arguments for provider replay.
+func EncodeToolArguments(arguments map[string]any) string {
 	if len(arguments) == 0 {
 		return "{}"
 	}
@@ -277,7 +280,8 @@ func textToolCallID(index int) string {
 	return "text_tool_call_" + strconv.Itoa(index+1)
 }
 
-func hasTextFallbackToolCalls(calls []toolCall) bool {
+// HasTextFallbackToolCalls reports whether calls came from text fallback parsing.
+func HasTextFallbackToolCalls(calls []ToolCall) bool {
 	for _, call := range calls {
 		if call.TextFallback {
 			return true
@@ -287,7 +291,8 @@ func hasTextFallbackToolCalls(calls []toolCall) bool {
 	return false
 }
 
-func textToolResultPrompt(events []ToolEvent) string {
+// TextToolResultPrompt formats fallback tool results as user-visible text.
+func TextToolResultPrompt(events []ToolEvent) string {
 	parts := make([]string, 0, len(events))
 	for _, event := range events {
 		label := "Tool result for " + event.Name
