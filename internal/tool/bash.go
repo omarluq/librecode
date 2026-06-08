@@ -10,8 +10,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/samber/oops"
 )
 
 // BashInput contains arguments for the bash tool.
@@ -62,6 +65,9 @@ func (bashTool *BashTool) Execute(ctx context.Context, input map[string]any) (Re
 
 // Bash executes a command and returns combined stdout and stderr.
 func (bashTool *BashTool) Bash(ctx context.Context, input BashInput) (Result, error) {
+	if strings.TrimSpace(input.Command) == "" {
+		return emptyToolResult(), oops.In("tool").Code("bash_command_required").Errorf("bash command is required")
+	}
 	workingDirectory, err := bashTool.workingDirectory()
 	if err != nil {
 		return emptyToolResult(), err
