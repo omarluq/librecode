@@ -1,5 +1,5 @@
 //nolint:testpackage // These tests cover unexported SSE accumulator behavior.
-package assistant
+package provider
 
 import (
 	"strings"

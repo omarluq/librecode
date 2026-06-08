@@ -1,4 +1,4 @@
-package assistant
+package provider
 
 import (
 	"net/http"

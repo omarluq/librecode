@@ -1,4 +1,4 @@
-package assistant
+package provider
 
 import (
 	"context"
@@ -61,7 +61,7 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 		return false, err
 	}
 	if len(providerResult.ToolCalls) == 0 {
-		if fallback := textToolCallsFromText(providerResult.Text); len(fallback) > 0 {
+		if fallback := TextToolCallsFromText(providerResult.Text); len(fallback) > 0 {
 			providerResult.ToolCalls = fallback
 		} else {
 			return finishTextResult(state.result, providerResult.Text)
@@ -79,7 +79,7 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 func executeOpenAIChatToolCalls(
 	ctx context.Context,
 	request *CompletionRequest,
-	calls []toolCall,
+	calls []ToolCall,
 ) []ToolEvent {
 	_, events := executeToolCalls(
 		ctx,
@@ -95,11 +95,11 @@ func executeOpenAIChatToolCalls(
 }
 
 func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *providerResult, events []ToolEvent) error {
-	if hasTextFallbackToolCalls(result.ToolCalls) {
+	if HasTextFallbackToolCalls(result.ToolCalls) {
 		state.messages = append(
 			state.messages,
 			map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: result.Text},
-			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: textToolResultPrompt(events)},
+			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: TextToolResultPrompt(events)},
 		)
 		return nil
 	}
@@ -166,12 +166,12 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 		}, nil
 	}
 	message := response.Choices[0].Message
-	calls := make([]toolCall, 0, len(message.ToolCalls))
+	calls := make([]ToolCall, 0, len(message.ToolCalls))
 	for _, call := range message.ToolCalls {
 		if call.Type != "" && call.Type != functionToolType {
 			continue
 		}
-		calls = append(calls, toolCall{
+		calls = append(calls, ToolCall{
 			Arguments:     toolArgumentsFromJSON(call.Function.Arguments),
 			ID:            call.ID,
 			Name:          call.Function.Name,
@@ -225,7 +225,7 @@ func openAIChatAssistantToolMessage(result *providerResult) map[string]any {
 	}
 }
 
-func openAIChatToolMessages(calls []toolCall, events []ToolEvent) ([]map[string]any, error) {
+func openAIChatToolMessages(calls []ToolCall, events []ToolEvent) ([]map[string]any, error) {
 	if len(events) != len(calls) {
 		return nil, oops.In("assistant").
 			Code("openai_chat_tool_message_mismatch").

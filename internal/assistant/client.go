@@ -1,27 +1,17 @@
 package assistant
 
-import (
-	"context"
-	"net/http"
-	"time"
-
-	"github.com/samber/oops"
-
-	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/tool"
-)
+import "github.com/omarluq/librecode/internal/provider"
 
 const (
 	apiOpenAICompletions    = "openai-completions"
 	apiOpenAIResponses      = "openai-responses"
 	apiOpenAICodexResponses = "openai-codex-responses"
 	apiAnthropicMessages    = "anthropic-messages"
-	jsonModelKey            = "model"
-	jsonContentKey          = "content"
-	jsonRoleKey             = "role"
-	jsonSummaryKey          = "summary"
 	jsonTypeKey             = "type"
+	jsonModelKey            = "model"
+	jsonRoleKey             = "role"
+	jsonContentKey          = "content"
+	jsonSummaryKey          = "summary"
 	jsonDescriptionKey      = "description"
 	jsonPropertiesKey       = "properties"
 	jsonRequiredKey         = "required"
@@ -34,26 +24,20 @@ const (
 	jsonStringType          = "string"
 	jsonToolNameKey         = "name"
 	jsonToolParamsKey       = "parameters"
-	jsonInputSchemaKey      = "input_schema"
-	jsonArgumentsKey        = "arguments"
-	jsonCallIDKey           = "call_id"
+	jsonInputKey            = "input"
 	jsonOutputKey           = "output"
 	jsonOutputTokensKey     = "output_tokens"
-	jsonToolChoiceKey       = "tool_choice"
-	jsonInputTokensKey      = "input_tokens"
 	jsonContextTokensKey    = "context_tokens"
 	jsonContextWindowKey    = "context_window"
 	jsonSessionIDKey        = "session_id"
 	jsonTextKey             = "text"
-	jsonInputKey            = "input"
-	jsonThinkingKey         = "thinking"
 	jsonDisplayKey          = "display"
+	jsonThinkingKey         = "thinking"
 	jsonUsageKey            = "usage"
 	jsonUserRole            = "user"
 	jsonAssistantRole       = "assistant"
 	jsonToolRole            = "tool"
 	jsonSystemRole          = "system"
-	jsonMessagesKey         = "messages"
 	jsonCommandKey          = "command"
 	jsonBreakdownKey        = "breakdown"
 	jsonReadToolName        = "read"
@@ -64,128 +48,43 @@ const (
 	jsonFindToolName        = "find"
 	jsonLSToolName          = "ls"
 	jsonASTToolName         = "ast"
-	anthropicReadToolName   = "Read"
-	anthropicBashToolName   = "Bash"
-	anthropicEditToolName   = "Edit"
-	anthropicWriteToolName  = "Write"
-	anthropicGrepToolName   = "Grep"
-	anthropicFindToolName   = "Find"
-	anthropicLSToolName     = "LS"
 	jsonOldTextKey          = "oldText"
 	jsonNewTextKey          = "newText"
-	functionToolType        = "function"
-	functionCallType        = "function_call"
-	functionCallOutputType  = "function_call_output"
-	anthropicToolUseType    = "tool_use"
-	anthropicToolResultType = "tool_result"
-	reasoningEffortKey      = "effort"
-	thinkingOff             = "off"
-	thinkingLow             = "low"
-	thinkingHigh            = "high"
-	thinkingXHigh           = "xhigh"
+	jsonInputTokensKey      = "input_tokens"
 	thinkingDisplaySummary  = "summarized"
-	reasoningSummaryAuto    = "auto"
+	thinkingOff             = "off"
+	functionToolType        = "function"
 )
 
-// CompletionRequest describes one model completion request.
-type CompletionRequest struct {
-	OnEvent           func(StreamEvent)                              `json:"-"`
-	OnProviderObserve func(context.Context, *CompletionRequest, int) `json:"-"`
-	OnProviderRequest ProviderRequestHook                            `json:"-"`
-	OnToolCall        func(context.Context, *ToolCallEvent) error    `json:"-"`
-	OnToolResult      func(context.Context, *ToolEvent) error        `json:"-"`
-	ToolRegistry      *tool.Registry                                 `json:"-"`
-	SessionID         string                                         `json:"session_id"`
-	SystemPrompt      string                                         `json:"system_prompt"`
-	ThinkingLevel     string                                         `json:"thinking_level"`
-	CWD               string                                         `json:"cwd"`
-	Auth              model.RequestAuth                              `json:"auth"`
-	Messages          []database.MessageEntity                       `json:"messages"`
-	Usage             model.TokenUsage                               `json:"usage"`
-	Model             model.Model                                    `json:"model"`
-	ProviderAttempt   int                                            `json:"-"`
-	DisableTools      bool                                           `json:"-"`
-}
+// CompletionRequest aliases the provider completion request during the provider package extraction.
+type CompletionRequest = provider.CompletionRequest
 
-// CompletionResult is a provider response plus model-visible side effects.
-type CompletionResult struct {
-	Text       string           `json:"text"`
-	Thinking   []string         `json:"thinking,omitempty"`
-	ToolEvents []ToolEvent      `json:"tool_events,omitempty"`
-	Usage      model.TokenUsage `json:"usage"`
-}
+// CompletionResult aliases the provider completion result during the provider package extraction.
+type CompletionResult = provider.CompletionResult
 
-// ToolCallEvent captures one requested tool call before execution.
-type ToolCallEvent struct {
-	Arguments     map[string]any `json:"arguments,omitempty"`
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	ArgumentsJSON string         `json:"arguments_json"`
-}
+// ToolCallEvent aliases the provider tool-call event during the provider package extraction.
+type ToolCallEvent = provider.ToolCallEvent
 
-// ToolEvent captures one tool call for persistence and TUI rendering.
-type ToolEvent struct {
-	Name          string `json:"name"`
-	ArgumentsJSON string `json:"arguments_json"`
-	DetailsJSON   string `json:"details_json,omitempty"`
-	Result        string `json:"result"`
-	Error         string `json:"error,omitempty"`
-	IsError       bool   `json:"is_error,omitempty"`
-}
+// ToolEvent aliases the provider tool event during the provider package extraction.
+type ToolEvent = provider.ToolEvent
 
-// CompletionClient talks to provider APIs.
-type CompletionClient interface {
-	Complete(ctx context.Context, request *CompletionRequest) (*CompletionResult, error)
-}
+// ProviderStreamEvent aliases provider stream events for tests and adapters.
+type ProviderStreamEvent = provider.StreamEvent
 
-type toolCall struct {
-	Arguments     map[string]any
-	ID            string
-	Name          string
-	ArgumentsJSON string
-	TextFallback  bool
-}
+// CompletionClient aliases the provider completion client interface.
+type CompletionClient = provider.CompletionClient
 
-type providerResult struct {
-	Text        string
-	OutputItems []any
-	Thinking    []string
-	ToolCalls   []toolCall
-	Usage       model.TokenUsage
-}
+// HTTPCompletionClient aliases the provider HTTP implementation.
+type HTTPCompletionClient = provider.HTTPCompletionClient
 
-// HTTPCompletionClient is a small provider client for built-in API families.
-type HTTPCompletionClient struct {
-	client *http.Client
-}
-
-// NewHTTPCompletionClient creates an HTTP-backed completion client.
+// NewHTTPCompletionClient creates an HTTP-backed provider client.
 func NewHTTPCompletionClient() *HTTPCompletionClient {
-	return &HTTPCompletionClient{client: &http.Client{Timeout: 10 * time.Minute}}
+	return provider.NewHTTPCompletionClient()
 }
 
-// Complete sends a request to the selected provider.
-func (client *HTTPCompletionClient) Complete(
-	ctx context.Context,
-	request *CompletionRequest,
-) (*CompletionResult, error) {
-	api := request.Model.API
-	if api == "" {
-		api = apiOpenAICompletions
-	}
-	switch api {
-	case apiOpenAICompletions:
-		return client.completeOpenAIChat(ctx, request)
-	case apiOpenAIResponses:
-		return client.completeOpenAIResponses(ctx, request)
-	case apiOpenAICodexResponses:
-		return client.completeOpenAICodex(ctx, request)
-	case apiAnthropicMessages:
-		return client.completeAnthropic(ctx, request)
-	default:
-		return nil, oops.In("assistant").
-			Code("unsupported_provider_api").
-			With("api", api).
-			Errorf("provider api is not implemented")
-	}
-}
+const (
+	// ProviderStreamEventKindTextDelta mirrors provider text delta events for test clients.
+	ProviderStreamEventKindTextDelta = provider.StreamEventTextDelta
+	// ProviderStreamEventKindToolResult mirrors provider tool result events for test clients.
+	ProviderStreamEventKindToolResult = provider.StreamEventToolResult
+)

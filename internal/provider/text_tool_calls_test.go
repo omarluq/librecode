@@ -1,5 +1,5 @@
 //nolint:testpackage // Tests exercise unexported text fallback tool-call helpers.
-package assistant
+package provider
 
 import (
 	"testing"
@@ -16,7 +16,7 @@ func TestTextToolCallsFromTextParsesXMLStyleToolUse(t *testing.T) {
 <file_path>/tmp/README.md</file_path>
 </tool_use>`
 
-	calls := textToolCallsFromText(text)
+	calls := TextToolCallsFromText(text)
 	require.Len(t, calls, 1)
 	assert.Equal(t, "read", calls[0].Name)
 	assert.Equal(t, "/tmp/README.md", calls[0].Arguments[jsonPathKey])
@@ -29,7 +29,7 @@ func TestTextToolCallsFromTextMapsCommonFields(t *testing.T) {
 
 	text := `<tool_use><name>shell</name><cmd>pwd</cmd></tool_use>`
 
-	calls := textToolCallsFromText(text)
+	calls := TextToolCallsFromText(text)
 	require.Len(t, calls, 1)
 	assert.Equal(t, "bash", calls[0].Name)
 	assert.Equal(t, "pwd", calls[0].Arguments["command"])
@@ -38,7 +38,7 @@ func TestTextToolCallsFromTextMapsCommonFields(t *testing.T) {
 func TestTextToolCallsFromTextIgnoresUnknownTools(t *testing.T) {
 	t.Parallel()
 
-	calls := textToolCallsFromText(`<tool_use><tool_name>unknown</tool_name></tool_use>`)
+	calls := TextToolCallsFromText(`<tool_use><tool_name>unknown</tool_name></tool_use>`)
 
 	assert.Empty(t, calls)
 }
@@ -55,7 +55,7 @@ func TestTextToolCallsFromTextParsesMultipleAndEscapedValues(t *testing.T) {
 <command>printf &quot;hello&quot;</command>
 </tool_use>`
 
-	calls := textToolCallsFromText(text)
+	calls := TextToolCallsFromText(text)
 	require.Len(t, calls, 2)
 	assert.Equal(t, "text_tool_call_1", calls[0].ID)
 	assert.Equal(t, "read", calls[0].Name)
@@ -106,7 +106,7 @@ func TestTextToolCallsFromTextPreservesMultilineWriteContent(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			calls := textToolCallsFromText(testCase.markup)
+			calls := TextToolCallsFromText(testCase.markup)
 
 			require.Len(t, calls, 1)
 			assert.Equal(t, jsonWriteToolName, calls[0].Name)
@@ -174,7 +174,7 @@ func TestTextToolCallsFromTextMapsToolNamesAndArguments(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			calls := textToolCallsFromText(testCase.markup)
+			calls := TextToolCallsFromText(testCase.markup)
 
 			require.Len(t, calls, 1)
 			assert.Equal(t, testCase.expectedTool, calls[0].Name)
@@ -201,7 +201,7 @@ func grepTextToolMarkup() string {
 func TestTextToolResultPromptUsesErrorsAndEmptyFallback(t *testing.T) {
 	t.Parallel()
 
-	prompt := textToolResultPrompt([]ToolEvent{
+	prompt := TextToolResultPrompt([]ToolEvent{
 		{
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,

@@ -8,6 +8,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/provider"
 )
 
 const (
@@ -111,7 +112,7 @@ func estimateToolSchemaTokens(request *CompletionRequest) int {
 	case apiOpenAICompletions:
 		tools = openAIChatTools(request)
 	case apiAnthropicMessages:
-		tools = anthropicTools(request)
+		tools = provider.AnthropicTools(request)
 	default:
 		tools = responseTools(request)
 	}

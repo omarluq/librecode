@@ -1,4 +1,4 @@
-package assistant
+package provider
 
 import (
 	"context"
@@ -53,7 +53,7 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 		return false, err
 	}
 	if len(providerResult.ToolCalls) == 0 {
-		if fallback := textToolCallsFromText(providerResult.Text); len(fallback) > 0 {
+		if fallback := TextToolCallsFromText(providerResult.Text); len(fallback) > 0 {
 			providerResult.ToolCalls = fallback
 		} else {
 			return finishTextResult(state.result, providerResult.Text)
@@ -71,7 +71,7 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 func executeAnthropicToolCalls(
 	ctx context.Context,
 	request *CompletionRequest,
-	calls []toolCall,
+	calls []ToolCall,
 ) []ToolEvent {
 	_, events := executeToolCalls(
 		ctx,
@@ -92,11 +92,11 @@ func appendAnthropicToolConversation(
 	providerResult *providerResult,
 	events []ToolEvent,
 ) error {
-	if hasTextFallbackToolCalls(providerResult.ToolCalls) {
+	if HasTextFallbackToolCalls(providerResult.ToolCalls) {
 		state.messages = append(
 			state.messages,
 			map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: providerResult.Text},
-			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: textToolResultPrompt(events)},
+			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: TextToolResultPrompt(events)},
 		)
 		return nil
 	}
@@ -121,7 +121,7 @@ func anthropicPayload(request *CompletionRequest, messages []map[string]any) map
 		jsonModelKey:    request.Model.ID,
 		"max_tokens":    minPositive(request.Model.MaxTokens, 4096),
 		jsonMessagesKey: messages,
-		"tools":         anthropicTools(request),
+		"tools":         AnthropicTools(request),
 	}
 	if usesAnthropicOAuth(request) {
 		payload["system"] = anthropicOAuthSystemPrompt(request.SystemPrompt)
@@ -314,7 +314,7 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 		return nil, providerErrorToOops("anthropic_error", &response.Error)
 	}
 	parts := make([]string, 0, len(response.Content))
-	calls := make([]toolCall, 0, len(response.Content))
+	calls := make([]ToolCall, 0, len(response.Content))
 	for _, block := range response.Content {
 		switch block.Type {
 		case jsonTextKey:
@@ -335,10 +335,10 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 	}, nil
 }
 
-func anthropicToolCall(id, name string, input any) toolCall {
+func anthropicToolCall(id, name string, input any) ToolCall {
 	arguments, argumentsJSON := anthropicToolArguments(input)
 
-	return toolCall{
+	return ToolCall{
 		Arguments:     arguments,
 		ID:            id,
 		Name:          anthropicLocalToolName(name),
@@ -363,7 +363,7 @@ func anthropicToolArguments(input any) (arguments map[string]any, argumentsJSON 
 	return arguments, string(payload)
 }
 
-func anthropicAssistantToolMessage(request *CompletionRequest, calls []toolCall) map[string]any {
+func anthropicAssistantToolMessage(request *CompletionRequest, calls []ToolCall) map[string]any {
 	blocks := make([]map[string]any, 0, len(calls))
 	for _, call := range calls {
 		blocks = append(blocks, map[string]any{
@@ -377,7 +377,7 @@ func anthropicAssistantToolMessage(request *CompletionRequest, calls []toolCall)
 	return map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: blocks}
 }
 
-func anthropicToolResultMessage(calls []toolCall, events []ToolEvent) (map[string]any, error) {
+func anthropicToolResultMessage(calls []ToolCall, events []ToolEvent) (map[string]any, error) {
 	if len(events) != len(calls) {
 		return nil, oops.In("assistant").
 			Code("anthropic_tool_message_mismatch").
@@ -414,7 +414,8 @@ func anthropicMessages(messages []database.MessageEntity) []map[string]any {
 	return output
 }
 
-func anthropicTools(request *CompletionRequest) []map[string]any {
+// AnthropicTools converts local tool definitions into Anthropic tool schemas.
+func AnthropicTools(request *CompletionRequest) []map[string]any {
 	definitions := requestToolDefinitions(request)
 	tools := make([]map[string]any, 0, len(definitions))
 	for _, definition := range definitions {
@@ -470,7 +471,7 @@ func anthropicLocalToolName(name string) string {
 	case anthropicLSToolName, "List":
 		return jsonLSToolName
 	default:
-		return normalizeTextToolName(name)
+		return NormalizeTextToolName(name)
 	}
 }
 

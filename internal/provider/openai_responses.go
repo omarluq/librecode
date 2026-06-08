@@ -1,4 +1,4 @@
-package assistant
+package provider
 
 import (
 	"context"
@@ -230,8 +230,8 @@ func outputItemsFromResponse(output any) []any {
 	return cloned
 }
 
-func toolCallsFromOutput(output []any) []toolCall {
-	calls := []toolCall{}
+func toolCallsFromOutput(output []any) []ToolCall {
+	calls := []ToolCall{}
 	for _, item := range output {
 		object, ok := item.(map[string]any)
 		if !ok || stringValue(object[jsonTypeKey]) != functionCallType {
@@ -244,7 +244,7 @@ func toolCallsFromOutput(output []any) []toolCall {
 				arguments = map[string]any{}
 			}
 		}
-		calls = append(calls, toolCall{
+		calls = append(calls, ToolCall{
 			Arguments:     arguments,
 			ID:            firstNonEmptyString(object[jsonCallIDKey], object["id"]),
 			Name:          firstNonEmptyString(object[jsonToolNameKey], object["function"]),

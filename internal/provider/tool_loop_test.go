@@ -1,5 +1,5 @@
 //nolint:testpackage // These tests exercise unexported tool-loop helpers.
-package assistant
+package provider
 
 import (
 	"context"
@@ -11,15 +11,15 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-const testCallID = "call-1"
+const (
+	testCallID   = "call-1"
+	testToolPath = "README.md"
+)
 
 func newToolRegistryForTest(t *testing.T) *tool.Registry {
 	t.Helper()
 
-	registry, err := newToolRegistry(t.TempDir(), nil)
-	require.NoError(t, err)
-
-	return registry
+	return tool.NewRegistry(t.TempDir())
 }
 
 func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
@@ -27,22 +27,22 @@ func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 
 	tests := []struct {
 		name string
-		call toolCall
+		call ToolCall
 	}{
 		{
 			name: "missing id",
-			call: toolCall{Arguments: nil, ID: "", Name: jsonReadToolName, ArgumentsJSON: "", TextFallback: false},
+			call: ToolCall{Arguments: nil, ID: "", Name: jsonReadToolName, ArgumentsJSON: "", TextFallback: false},
 		},
 		{
 			name: "missing name",
-			call: toolCall{Arguments: nil, ID: testCallID, Name: "", ArgumentsJSON: "", TextFallback: false},
+			call: ToolCall{Arguments: nil, ID: testCallID, Name: "", ArgumentsJSON: "", TextFallback: false},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := validateToolCalls([]toolCall{tt.call})
+			err := validateToolCalls([]ToolCall{tt.call})
 			require.Error(t, err)
 		})
 	}
@@ -58,7 +58,7 @@ func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
 		context.Background(),
 		newToolRegistryForTest(t),
 		t.TempDir(),
-		[]toolCall{{
+		[]ToolCall{{
 			Arguments:     map[string]any{jsonPathKey: "missing.txt"},
 			ID:            testCallID,
 			Name:          jsonReadToolName,
@@ -100,11 +100,11 @@ func TestExecuteToolCallsMarksToolCallHookErrors(t *testing.T) {
 		context.Background(),
 		newToolRegistryForTest(t),
 		t.TempDir(),
-		[]toolCall{{
-			Arguments:     map[string]any{jsonPathKey: compactFileOperationTestPath},
+		[]ToolCall{{
+			Arguments:     map[string]any{jsonPathKey: testToolPath},
 			ID:            testCallID,
 			Name:          jsonReadToolName,
-			ArgumentsJSON: `{"path":"` + compactFileOperationTestPath + `"}`,
+			ArgumentsJSON: `{"path":"` + testToolPath + `"}`,
 			TextFallback:  false,
 		}},
 		nil,
@@ -154,7 +154,7 @@ func TestOpenAIChatToolMessagesRejectsMismatchedCallsAndEvents(t *testing.T) {
 	t.Parallel()
 
 	messages, err := openAIChatToolMessages(
-		[]toolCall{{Arguments: nil, ID: "call_1", Name: jsonReadToolName, ArgumentsJSON: `{}`, TextFallback: false}},
+		[]ToolCall{{Arguments: nil, ID: "call_1", Name: jsonReadToolName, ArgumentsJSON: `{}`, TextFallback: false}},
 		nil,
 	)
 
@@ -167,7 +167,7 @@ func TestOpenAIChatToolMessagesUsesCallIDs(t *testing.T) {
 	t.Parallel()
 
 	messages, err := openAIChatToolMessages(
-		[]toolCall{{Arguments: nil, ID: "call_1", Name: jsonReadToolName, ArgumentsJSON: `{}`, TextFallback: false}},
+		[]ToolCall{{Arguments: nil, ID: "call_1", Name: jsonReadToolName, ArgumentsJSON: `{}`, TextFallback: false}},
 		[]ToolEvent{{
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,

@@ -23,7 +23,7 @@ func (runtime *Runtime) respondToSlashCommand(
 	cwd string,
 	prompt string,
 	onEvent func(StreamEvent),
-) (string, []ToolEvent, error) {
+) (response string, toolEvents []ToolEvent, err error) {
 	commandName, commandArgs := splitSlashCommand(prompt)
 	if commandName == "" {
 		return "", nil, oops.In("assistant").Code("empty_slash_command").Errorf("empty slash command")
@@ -33,11 +33,11 @@ func (runtime *Runtime) respondToSlashCommand(
 		return runtime.respondToSkillCommand(ctx, cwd, commandArgs, onEvent)
 	}
 	if commandName == "tool" {
-		response, err := runtime.respondToToolCommand(ctx, cwd, commandArgs)
+		response, err = runtime.respondToToolCommand(ctx, cwd, commandArgs)
 		return response, nil, err
 	}
 
-	response, err := runtime.extensions.ExecuteCommand(ctx, commandName, commandArgs)
+	response, err = runtime.extensions.ExecuteCommand(ctx, commandName, commandArgs)
 	if err != nil {
 		return "", nil, oops.
 			In("assistant").
@@ -54,7 +54,7 @@ func (runtime *Runtime) respondToSkillCommand(
 	cwd string,
 	args string,
 	onEvent func(StreamEvent),
-) (string, []ToolEvent, error) {
+) (response string, toolEvents []ToolEvent, err error) {
 	skills := core.LoadSkills(cwd, nil, true).Skills
 	name := strings.TrimSpace(args)
 	if name == "" {
@@ -96,14 +96,14 @@ func (runtime *Runtime) loadSkillWithReadTool(
 	cwd string,
 	skill *core.Skill,
 	limit *int,
-) (string, ToolEvent, error) {
+) (content string, toolEvent ToolEvent, err error) {
 	registry := tool.NewRegistry(cwd)
 	input := map[string]any{jsonPathKey: skill.FilePath}
 	if limit != nil {
 		input["limit"] = *limit
 	}
 	result, err := registry.Execute(ctx, string(tool.NameRead), input)
-	toolEvent := ToolEvent{
+	toolEvent = ToolEvent{
 		Name:          "load skill: " + skill.Name,
 		ArgumentsJSON: skillReadArgumentsJSON(skill.FilePath, limit),
 		DetailsJSON:   "",

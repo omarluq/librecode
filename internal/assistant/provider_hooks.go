@@ -8,6 +8,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/provider"
 )
 
 const (
@@ -26,56 +27,9 @@ var blockedProviderHeaderNames = map[string]struct{}{
 // ProviderRequestHook can inspect and conservatively mutate a provider request.
 type ProviderRequestHook func(context.Context, providerHookInput) (providerHookOutput, error)
 
-type providerHookInput struct {
-	Request *CompletionRequest
-	Payload map[string]any
-	Headers map[string]string
-	Attempt int
-}
+type providerHookInput = provider.HookInput
 
-type providerHookOutput struct {
-	Payload map[string]any
-	Headers map[string]string
-}
-
-func applyProviderRequestHook(
-	ctx context.Context,
-	request *CompletionRequest,
-	payload map[string]any,
-	headers map[string]string,
-) (providerHookOutput, error) {
-	input := providerHookInput{
-		Request: request,
-		Payload: cloneAnyMap(payload),
-		Headers: cloneStringMap(headers),
-		Attempt: providerAttempt(request),
-	}
-	if request == nil {
-		return providerHookOutput{Payload: input.Payload, Headers: input.Headers}, nil
-	}
-	if request.OnProviderRequest != nil {
-		output, err := request.OnProviderRequest(ctx, input)
-		if err != nil {
-			return providerHookOutput{}, oops.In("assistant").
-				Code("provider_request_hook_failed").
-				Wrapf(err, "apply provider request hook")
-		}
-		return output, nil
-	}
-	if request.OnProviderObserve != nil {
-		request.OnProviderObserve(ctx, request, providerAttempt(request))
-	}
-
-	return providerHookOutput{Payload: input.Payload, Headers: input.Headers}, nil
-}
-
-func providerAttempt(request *CompletionRequest) int {
-	if request == nil || request.ProviderAttempt <= 0 {
-		return 1
-	}
-
-	return request.ProviderAttempt
-}
+type providerHookOutput = provider.HookOutput
 
 func (runtime *Runtime) dispatchProviderRequestHook(
 	ctx context.Context,
@@ -168,14 +122,4 @@ func redactedHeaders(headers map[string]string) map[string]string {
 	}
 
 	return redacted
-}
-
-func cloneStringMap(values map[string]string) map[string]string {
-	if values == nil {
-		return map[string]string{}
-	}
-	cloned := make(map[string]string, len(values))
-	maps.Copy(cloned, values)
-
-	return cloned
 }
