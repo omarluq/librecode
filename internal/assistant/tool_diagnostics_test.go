@@ -58,6 +58,7 @@ end)
 		DetailsJSON:   "{}",
 		Result:        "secret",
 		Error:         "",
+		IsError:       false,
 	}
 
 	require.NoError(t, runtime.DispatchToolCallLifecycleForTest(context.Background(), &call))

@@ -387,11 +387,15 @@ func anthropicToolResultMessage(calls []toolCall, events []ToolEvent) (map[strin
 	}
 	blocks := make([]map[string]any, 0, len(events))
 	for index, event := range events {
-		blocks = append(blocks, map[string]any{
+		block := map[string]any{
 			jsonTypeKey:    anthropicToolResultType,
 			"tool_use_id":  calls[index].ID,
 			jsonContentKey: toolOutputText(event.Result, event.DetailsJSON),
-		})
+		}
+		if event.IsError {
+			block["is_error"] = true
+		}
+		blocks = append(blocks, block)
 	}
 
 	return map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: blocks}, nil

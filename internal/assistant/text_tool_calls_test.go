@@ -202,10 +202,24 @@ func TestTextToolResultPromptUsesErrorsAndEmptyFallback(t *testing.T) {
 	t.Parallel()
 
 	prompt := textToolResultPrompt([]ToolEvent{
-		{Name: jsonReadToolName, ArgumentsJSON: `{}`, DetailsJSON: "", Result: "", Error: "missing file"},
-		{Name: jsonBashToolName, ArgumentsJSON: `{}`, DetailsJSON: "", Result: "   ", Error: ""},
+		{
+			Name:          jsonReadToolName,
+			ArgumentsJSON: `{}`,
+			DetailsJSON:   "",
+			Result:        "",
+			Error:         missingFileToolError,
+			IsError:       true,
+		},
+		{
+			Name:          jsonBashToolName,
+			ArgumentsJSON: `{}`,
+			DetailsJSON:   "",
+			Result:        "   ",
+			Error:         "",
+			IsError:       false,
+		},
 	})
 
-	assert.Contains(t, prompt, "Tool result for read:\nmissing file")
+	assert.Contains(t, prompt, "Tool result for read:\n"+missingFileToolError)
 	assert.Contains(t, prompt, "Tool result for bash:\n(tool returned no text output)")
 }

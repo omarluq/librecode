@@ -98,6 +98,7 @@ func toolEventPayload(event *ToolEvent) map[string]any {
 		jsonToolNameKey:       event.Name,
 		"arguments_json":      event.ArgumentsJSON,
 		"details_json":        event.DetailsJSON,
+		"is_error":            event.IsError,
 		"result":              event.Result,
 		lifecycleToolErrorKey: event.Error,
 	}

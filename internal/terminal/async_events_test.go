@@ -586,6 +586,7 @@ func TestAsyncEventDataHelpers(t *testing.T) {
 		DetailsJSON:   "details",
 		Result:        "ok",
 		Error:         "",
+		IsError:       false,
 	})
 	assert.Equal(t, asyncTestToolStart, toolData[extensionDataName])
 	assert.Equal(t, "ok", toolData[extensionDataResult])
@@ -609,6 +610,7 @@ func asyncTestToolEvent() *assistant.ToolEvent {
 		DetailsJSON:   "",
 		Result:        "ok",
 		Error:         "",
+		IsError:       false,
 	}
 }
 

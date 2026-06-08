@@ -79,8 +79,8 @@ func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
 		Text:             "",
 		Thinking:         []string{"streamed thinking", "remaining thinking"},
 		ToolEvents: []assistant.ToolEvent{
-			{Name: "read", ArgumentsJSON: "{}", DetailsJSON: "", Result: "streamed", Error: ""},
-			{Name: "write", ArgumentsJSON: "{}", DetailsJSON: "", Result: "remaining", Error: ""},
+			{Name: "read", ArgumentsJSON: "{}", DetailsJSON: "", Result: "streamed", Error: "", IsError: false},
+			{Name: "write", ArgumentsJSON: "{}", DetailsJSON: "", Result: "remaining", Error: "", IsError: false},
 		},
 		Usage:  model.EmptyTokenUsage(),
 		Cached: false,

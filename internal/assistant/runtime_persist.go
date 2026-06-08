@@ -234,6 +234,9 @@ func formatToolEvent(toolEvent *ToolEvent) string {
 	if toolEvent.Error != "" {
 		parts = append(parts, "error:", toolEvent.Error)
 	}
+	if toolEvent.IsError {
+		parts = append(parts, "is_error: true")
+	}
 	if strings.TrimSpace(toolEvent.DetailsJSON) != "" {
 		parts = append(parts, "details:", toolEvent.DetailsJSON)
 	}

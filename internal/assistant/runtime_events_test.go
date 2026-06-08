@@ -123,6 +123,7 @@ func (toolCallbackClient) Complete(
 			DetailsJSON:   "",
 			Result:        testToolResult,
 			Error:         "",
+			IsError:       false,
 		}
 		if err := request.OnToolResult(ctx, &toolResult); err != nil {
 			return nil, err

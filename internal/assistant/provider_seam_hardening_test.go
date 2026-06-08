@@ -27,6 +27,7 @@ func TestRuntime_ProviderLifecycleEmitsDiagnostics(t *testing.T) {
 				DetailsJSON:   `{}`,
 				Result:        "ok",
 				Error:         "",
+				IsError:       false,
 			}},
 			Usage: model.TokenUsage{
 				Breakdown:       nil,

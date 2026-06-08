@@ -800,6 +800,7 @@ func TestBottomMessageLinesExpandedToolUsesTailWithoutFullRender(t *testing.T) {
 		DetailsJSON:   "",
 		Result:        output,
 		Error:         "",
+		IsError:       false,
 	}))
 
 	lines := app.messageLines(80, 4)
@@ -1262,6 +1263,7 @@ func newTestToolEvent(name, result string) *assistant.ToolEvent {
 		DetailsJSON:   "",
 		Result:        result,
 		Error:         "",
+		IsError:       false,
 	}
 }
 

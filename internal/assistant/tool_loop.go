@@ -46,7 +46,7 @@ func executeToolCalls(
 	for _, call := range calls {
 		event := executeOneToolCall(ctx, registry, call, onEvent, onToolCall, onToolResult)
 		events = append(events, event)
-		outputs = append(outputs, toolOutputForCall(call.ID, event.Result, event.DetailsJSON))
+		outputs = append(outputs, toolOutputForCall(call.ID, &event))
 	}
 
 	return outputs, events
@@ -133,9 +133,11 @@ func runToolCall(ctx context.Context, registry *tool.Registry, call ToolCallEven
 		DetailsJSON:   detailsJSON,
 		Result:        resultText,
 		Error:         "",
+		IsError:       false,
 	}
 	if err != nil {
 		event.Error = err.Error()
+		event.IsError = true
 	}
 
 	return event
@@ -160,14 +162,20 @@ func toolLifecycleErrorEvent(call ToolCallEvent, err error) ToolEvent {
 		DetailsJSON:   "",
 		Result:        err.Error(),
 		Error:         err.Error(),
+		IsError:       true,
 	}
 }
 
-func toolOutputForCall(callID, resultText, detailsJSON string) map[string]any {
+func toolOutputForCall(callID string, event *ToolEvent) map[string]any {
+	output := ""
+	if event != nil {
+		output = toolOutputText(event.Result, event.DetailsJSON)
+	}
+
 	return map[string]any{
 		jsonTypeKey:   functionCallOutputType,
 		jsonCallIDKey: callID,
-		jsonOutputKey: toolOutputText(resultText, detailsJSON),
+		jsonOutputKey: output,
 	}
 }
 

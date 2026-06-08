@@ -621,6 +621,7 @@ func (partialFailureCompletionClient) Complete(
 			DetailsJSON:   "",
 			Result:        "file content",
 			Error:         "",
+			IsError:       false,
 		},
 		Usage: nil,
 		Kind:  assistant.StreamEventToolResult,

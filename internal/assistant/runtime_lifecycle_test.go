@@ -199,6 +199,7 @@ func TestRuntime_PromptEmitsSideEffectMessageAppendEvents(t *testing.T) {
 					DetailsJSON:   "",
 					Result:        testToolResult,
 					Error:         "",
+					IsError:       false,
 				},
 			},
 			Usage: model.EmptyTokenUsage(),

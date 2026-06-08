@@ -90,6 +90,21 @@ func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
 	assert.Equal(t, "read", toolCalls[0].Name)
 	assert.Equal(t, "read", toolResults[0].Name)
 	assert.NotEmpty(t, toolResults[0].Error)
+	assert.True(t, toolResults[0].IsError)
+}
+
+func TestRunToolCallMarksFailedToolsAsErrors(t *testing.T) {
+	t.Parallel()
+
+	event := runToolCall(context.Background(), newToolRegistryForTest(t), ToolCallEvent{
+		Arguments:     map[string]any{jsonPathKey: "missing.txt"},
+		ID:            testCallID,
+		Name:          jsonReadToolName,
+		ArgumentsJSON: `{"path":"missing.txt"}`,
+	})
+
+	require.NotEmpty(t, event.Error)
+	assert.True(t, event.IsError)
 }
 
 func TestToolOutputTextIncludesDetailsForEmptyResult(t *testing.T) {
@@ -125,7 +140,14 @@ func TestOpenAIChatToolMessagesUsesCallIDs(t *testing.T) {
 
 	messages, err := openAIChatToolMessages(
 		[]toolCall{{Arguments: nil, ID: "call_1", Name: jsonReadToolName, ArgumentsJSON: `{}`, TextFallback: false}},
-		[]ToolEvent{{Name: jsonReadToolName, ArgumentsJSON: `{}`, DetailsJSON: "", Result: "ok", Error: ""}},
+		[]ToolEvent{{
+			Name:          jsonReadToolName,
+			ArgumentsJSON: `{}`,
+			DetailsJSON:   "",
+			Result:        "ok",
+			Error:         "",
+			IsError:       false,
+		}},
 	)
 
 	require.NoError(t, err)
