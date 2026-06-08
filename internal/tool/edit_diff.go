@@ -19,6 +19,7 @@ type Replacement struct {
 type EditDetails struct {
 	Diff             string `json:"diff"`
 	FirstChangedLine int    `json:"first_changed_line,omitempty"`
+	Truncated        bool   `json:"truncated,omitempty"`
 }
 
 type fuzzyMatchResult struct {
