@@ -171,12 +171,8 @@ func toolOutputForCall(callID, resultText, detailsJSON string) map[string]any {
 	}
 }
 
-func finishTextResult(result *CompletionResult, text, emptyCode string) (bool, error) {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
-		return false, emptyProviderResponseError(emptyCode)
-	}
-	result.Text = trimmed
+func finishTextResult(result *CompletionResult, text string) (bool, error) {
+	result.Text = strings.TrimSpace(text)
 
 	return true, nil
 }

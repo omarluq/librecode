@@ -56,7 +56,7 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 		if fallback := textToolCallsFromText(providerResult.Text); len(fallback) > 0 {
 			providerResult.ToolCalls = fallback
 		} else {
-			return finishTextResult(state.result, providerResult.Text, "anthropic_empty")
+			return finishTextResult(state.result, providerResult.Text)
 		}
 	}
 	events := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)

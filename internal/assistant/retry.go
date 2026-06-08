@@ -191,10 +191,7 @@ func providerErrorStatus(err error) (int, bool) {
 
 func retryableProviderCode(code string) bool {
 	switch code {
-	case "openai_chat_empty",
-		"anthropic_empty",
-		"responses_empty",
-		"responses_stream_incomplete",
+	case "responses_stream_incomplete",
 		"responses_http",
 		"provider_http",
 		"responses_read",
@@ -324,8 +321,6 @@ func retryableProviderMessage(message string) bool {
 		"websocket closed",
 		"websocket error",
 		"terminated",
-		"empty response",
-		"returned an empty response",
 	}
 	for _, pattern := range retryable {
 		if strings.Contains(message, pattern) {

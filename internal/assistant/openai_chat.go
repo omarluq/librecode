@@ -64,7 +64,7 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 		if fallback := textToolCallsFromText(providerResult.Text); len(fallback) > 0 {
 			providerResult.ToolCalls = fallback
 		} else {
-			return finishTextResult(state.result, providerResult.Text, "openai_chat_empty")
+			return finishTextResult(state.result, providerResult.Text)
 		}
 	}
 	events := executeOpenAIChatToolCalls(ctx, request, providerResult.ToolCalls)
@@ -157,7 +157,13 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 		return nil, providerErrorToOops("openai_chat_error", &response.Error)
 	}
 	if len(response.Choices) == 0 {
-		return nil, emptyProviderResponseError("openai_chat_empty")
+		return &providerResult{
+			Text:        "",
+			OutputItems: nil,
+			Thinking:    nil,
+			ToolCalls:   nil,
+			Usage:       usageFromObject(response.Usage),
+		}, nil
 	}
 	message := response.Choices[0].Message
 	calls := make([]toolCall, 0, len(message.ToolCalls))
