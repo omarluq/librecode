@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/provider"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -36,7 +37,7 @@ func TestToolParameterSchema(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			schema := toolParameterSchema(testCase.definition)
+			schema := provider.ToolParameterSchema(testCase.definition)
 
 			require.NotNil(t, schema)
 			testCase.assertion(t, schema)

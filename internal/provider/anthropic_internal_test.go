@@ -197,6 +197,7 @@ func testCompletionRequestAuth(args ...string) *CompletionRequest {
 		OnToolCall:        nil,
 		OnToolResult:      nil,
 		ToolRegistry:      nil,
+		ExecuteTools:      nil,
 		SessionID:         "",
 		SystemPrompt:      "",
 		ThinkingLevel:     "",

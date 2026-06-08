@@ -172,6 +172,7 @@ func providerPayloadHookRequest(baseURL string) *CompletionRequest {
 		OnToolCall:        nil,
 		OnToolResult:      nil,
 		ToolRegistry:      nil,
+		ExecuteTools:      nil,
 		SessionID:         "session-1",
 		SystemPrompt:      providerPayloadHookSystemPrompt,
 		ThinkingLevel:     "off",

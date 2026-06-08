@@ -49,8 +49,8 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 		return false, err
 	}
 	state.result.Usage = mergeUsage(state.result.Usage, providerResult.Usage)
-	if err := validateToolCalls(providerResult.ToolCalls); err != nil {
-		return false, err
+	if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
+		return false, validateErr
 	}
 	if len(providerResult.ToolCalls) == 0 {
 		if fallback := TextToolCallsFromText(providerResult.Text); len(fallback) > 0 {
@@ -59,7 +59,10 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 			return finishTextResult(state.result, providerResult.Text)
 		}
 	}
-	events := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)
+	events, err := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)
+	if err != nil {
+		return false, err
+	}
 	state.result.ToolEvents = append(state.result.ToolEvents, events...)
 	if err := appendAnthropicToolConversation(request, state, providerResult, events); err != nil {
 		return false, err
@@ -72,18 +75,13 @@ func executeAnthropicToolCalls(
 	ctx context.Context,
 	request *CompletionRequest,
 	calls []ToolCall,
-) []ToolEvent {
-	_, events := executeToolCalls(
-		ctx,
-		request.ToolRegistry,
-		request.CWD,
-		calls,
-		request.OnEvent,
-		request.OnToolCall,
-		request.OnToolResult,
-	)
+) ([]ToolEvent, error) {
+	_, events, err := executeToolCalls(ctx, request, calls)
+	if err != nil {
+		return nil, err
+	}
 
-	return events
+	return events, nil
 }
 
 func appendAnthropicToolConversation(
@@ -422,7 +420,7 @@ func AnthropicTools(request *CompletionRequest) []map[string]any {
 		tools = append(tools, map[string]any{
 			jsonToolNameKey:         anthropicProviderToolName(string(definition.Name), usesAnthropicOAuth(request)),
 			jsonDescriptionKey:      definition.Description,
-			jsonInputSchemaKey:      toolParameterSchema(&definition),
+			jsonInputSchemaKey:      ToolParameterSchema(&definition),
 			"eager_input_streaming": true,
 		})
 	}

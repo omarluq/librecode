@@ -87,6 +87,9 @@ const (
 	reasoningSummaryAuto    = "auto"
 )
 
+// ToolExecutor executes provider-requested tool calls outside the wire client.
+type ToolExecutor func(context.Context, []ToolCall, func(StreamEvent)) ([]ToolEvent, error)
+
 // CompletionRequest describes one model completion request.
 type CompletionRequest struct {
 	OnEvent           func(StreamEvent)                                    `json:"-"`
@@ -95,6 +98,7 @@ type CompletionRequest struct {
 	OnToolCall        func(context.Context, *ToolCallEvent) error          `json:"-"`
 	OnToolResult      func(context.Context, *ToolEvent) error              `json:"-"`
 	ToolRegistry      *tool.Registry                                       `json:"-"`
+	ExecuteTools      ToolExecutor                                         `json:"-"`
 	SessionID         string                                               `json:"session_id"`
 	SystemPrompt      string                                               `json:"system_prompt"`
 	ThinkingLevel     string                                               `json:"thinking_level"`

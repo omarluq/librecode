@@ -105,27 +105,15 @@ func (toolCallbackClient) Complete(
 	ctx context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
-	if request.OnToolCall != nil {
-		toolCall := assistant.ToolCallEvent{
+	if request.ExecuteTools != nil {
+		_, err := request.ExecuteTools(ctx, []assistant.ToolCall{{
 			Arguments:     map[string]any{testToolPathKey: testToolPath},
 			ID:            testToolCallID,
 			Name:          testToolName,
 			ArgumentsJSON: testToolArgsJSON,
-		}
-		if err := request.OnToolCall(ctx, &toolCall); err != nil {
-			return nil, err
-		}
-	}
-	if request.OnToolResult != nil {
-		toolResult := assistant.ToolEvent{
-			Name:          testToolName,
-			ArgumentsJSON: testToolArgsJSON,
-			DetailsJSON:   "",
-			Result:        testToolResult,
-			Error:         "",
-			IsError:       false,
-		}
-		if err := request.OnToolResult(ctx, &toolResult); err != nil {
+			TextFallback:  false,
+		}}, request.OnEvent)
+		if err != nil {
 			return nil, err
 		}
 	}

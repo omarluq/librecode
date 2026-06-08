@@ -31,25 +31,91 @@ func validateToolCalls(calls []ToolCall) error {
 
 func executeToolCalls(
 	ctx context.Context,
+	request *CompletionRequest,
+	calls []ToolCall,
+) ([]any, []ToolEvent, error) {
+	var events []ToolEvent
+	var err error
+	if request != nil && request.ExecuteTools != nil {
+		events, err = request.ExecuteTools(ctx, calls, request.OnEvent)
+	} else {
+		events = executeToolCallsLocally(
+			ctx,
+			requestToolRegistry(request),
+			calls,
+			requestEventHandler(request),
+			requestToolCallHook(request),
+			requestToolResultHook(request),
+		)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	outputs := make([]any, 0, len(calls))
+	for index := range calls {
+		outputs = append(outputs, toolOutputForCall(calls[index].ID, &events[index]))
+	}
+
+	return outputs, events, nil
+}
+
+func executeToolCallsLocally(
+	ctx context.Context,
 	registry *tool.Registry,
-	cwd string,
 	calls []ToolCall,
 	onEvent func(StreamEvent),
 	onToolCall func(context.Context, *ToolCallEvent) error,
 	onToolResult func(context.Context, *ToolEvent) error,
-) ([]any, []ToolEvent) {
+) []ToolEvent {
 	if registry == nil {
-		registry = tool.NewRegistry(cwd)
+		registry = tool.NewRegistry("")
 	}
-	outputs := make([]any, 0, len(calls))
 	events := make([]ToolEvent, 0, len(calls))
 	for _, call := range calls {
-		event := executeOneToolCall(ctx, registry, call, onEvent, onToolCall, onToolResult)
-		events = append(events, event)
-		outputs = append(outputs, toolOutputForCall(call.ID, &event))
+		events = append(events, executeOneToolCall(ctx, registry, call, onEvent, onToolCall, onToolResult))
 	}
 
-	return outputs, events
+	return events
+}
+
+func requestToolRegistry(request *CompletionRequest) *tool.Registry {
+	if request == nil || request.ToolRegistry == nil {
+		return tool.NewRegistry(requestCWD(request))
+	}
+
+	return request.ToolRegistry
+}
+
+func requestCWD(request *CompletionRequest) string {
+	if request == nil {
+		return ""
+	}
+
+	return request.CWD
+}
+
+func requestEventHandler(request *CompletionRequest) func(StreamEvent) {
+	if request == nil {
+		return nil
+	}
+
+	return request.OnEvent
+}
+
+func requestToolCallHook(request *CompletionRequest) func(context.Context, *ToolCallEvent) error {
+	if request == nil {
+		return nil
+	}
+
+	return request.OnToolCall
+}
+
+func requestToolResultHook(request *CompletionRequest) func(context.Context, *ToolEvent) error {
+	if request == nil {
+		return nil
+	}
+
+	return request.OnToolResult
 }
 
 func executeOneToolCall(
@@ -119,6 +185,12 @@ func dispatchToolCallHook(
 
 func runToolCall(ctx context.Context, registry *tool.Registry, call ToolCallEvent) ToolEvent {
 	result, err := registry.Execute(ctx, call.Name, call.Arguments)
+
+	return ToolEventFromResult(call, result, err)
+}
+
+// ToolEventFromResult converts a local tool execution result into a provider-facing tool event.
+func ToolEventFromResult(call ToolCallEvent, result tool.Result, err error) ToolEvent {
 	resultText := result.Text()
 	detailsJSON := encodeToolDetails(result.Details)
 	if err != nil {

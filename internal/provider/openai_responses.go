@@ -58,23 +58,18 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		}
 		result.Thinking = append(result.Thinking, providerResult.Thinking...)
 		result.Usage = mergeUsage(result.Usage, providerResult.Usage)
-		if err := validateToolCalls(providerResult.ToolCalls); err != nil {
-			return nil, err
+		if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
+			return nil, validateErr
 		}
 		if len(providerResult.ToolCalls) == 0 {
 			result.Text = strings.TrimSpace(providerResult.Text)
 			return result, nil
 		}
 		input = append(input, statelessResponseOutputItems(providerResult.OutputItems)...)
-		outputs, events := executeToolCalls(
-			ctx,
-			request.ToolRegistry,
-			request.CWD,
-			providerResult.ToolCalls,
-			request.OnEvent,
-			request.OnToolCall,
-			request.OnToolResult,
-		)
+		outputs, events, err := executeToolCalls(ctx, request, providerResult.ToolCalls)
+		if err != nil {
+			return nil, err
+		}
 		result.ToolEvents = append(result.ToolEvents, events...)
 		input = append(input, outputs...)
 	}
@@ -82,7 +77,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 
 func responsesPayload(request *CompletionRequest, input []any, stream bool) map[string]any {
 	payload := responsesBasePayload(request, input, stream)
-	payload["tools"] = responseTools(request)
+	payload["tools"] = ResponseTools(request)
 	payload[jsonToolChoiceKey] = "auto"
 	payload["parallel_tool_calls"] = true
 

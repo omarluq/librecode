@@ -110,11 +110,11 @@ func estimateToolSchemaTokens(request *CompletionRequest) int {
 	var tools []map[string]any
 	switch request.Model.API {
 	case apiOpenAICompletions:
-		tools = openAIChatTools(request)
+		tools = provider.OpenAIChatTools(request)
 	case apiAnthropicMessages:
 		tools = provider.AnthropicTools(request)
 	default:
-		tools = responseTools(request)
+		tools = provider.ResponseTools(request)
 	}
 	if len(tools) == 0 {
 		return 0

@@ -7,7 +7,8 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-func responseTools(request *CompletionRequest) []map[string]any {
+// ResponseTools returns OpenAI Responses API tool declarations for a completion request.
+func ResponseTools(request *CompletionRequest) []map[string]any {
 	definitions := requestToolDefinitions(request)
 	tools := make([]map[string]any, 0, len(definitions))
 	for _, definition := range definitions {
@@ -15,7 +16,7 @@ func responseTools(request *CompletionRequest) []map[string]any {
 			jsonTypeKey:        functionToolType,
 			jsonToolNameKey:    string(definition.Name),
 			jsonDescriptionKey: definition.Description,
-			jsonToolParamsKey:  toolParameterSchema(&definition),
+			jsonToolParamsKey:  ToolParameterSchema(&definition),
 			"strict":           false,
 		})
 	}
@@ -23,7 +24,8 @@ func responseTools(request *CompletionRequest) []map[string]any {
 	return tools
 }
 
-func openAIChatTools(request *CompletionRequest) []map[string]any {
+// OpenAIChatTools returns OpenAI Chat Completions tool declarations for a completion request.
+func OpenAIChatTools(request *CompletionRequest) []map[string]any {
 	definitions := requestToolDefinitions(request)
 	tools := make([]map[string]any, 0, len(definitions))
 	for _, definition := range definitions {
@@ -32,7 +34,7 @@ func openAIChatTools(request *CompletionRequest) []map[string]any {
 			"function": map[string]any{
 				jsonToolNameKey:    string(definition.Name),
 				jsonDescriptionKey: definition.Description,
-				jsonToolParamsKey:  toolParameterSchema(&definition),
+				jsonToolParamsKey:  ToolParameterSchema(&definition),
 			},
 		})
 	}
@@ -74,7 +76,8 @@ var builtinToolSchemas = map[tool.Name]func() map[string]any{
 	tool.NameAST:   astToolSchema,
 }
 
-func toolParameterSchema(definition *tool.Definition) map[string]any {
+// ToolParameterSchema returns the JSON parameter schema for a local tool definition.
+func ToolParameterSchema(definition *tool.Definition) map[string]any {
 	if definition != nil && len(definition.Schema) > 0 {
 		return cloneToolSchema(definition.Schema)
 	}

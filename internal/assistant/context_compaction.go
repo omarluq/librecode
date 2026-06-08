@@ -611,6 +611,7 @@ func (runtime *Runtime) summarizeCompaction(
 		OnToolCall:        nil,
 		OnToolResult:      nil,
 		ToolRegistry:      tool.NewRegistry(cwd),
+		ExecuteTools:      nil,
 		DisableTools:      true,
 		SessionID:         sessionID,
 		SystemPrompt:      systemPrompt,
