@@ -357,7 +357,8 @@ func TestASTTool_QueryOutputIsExplicitlyBounded(t *testing.T) {
 	var builder strings.Builder
 	builder.WriteString("package sample\n\n")
 	for index := 0; index < 260; index++ {
-		fmt.Fprintf(&builder, "func Func%d() {}\n", index)
+		_, err := fmt.Fprintf(&builder, "func Func%d() {}\n", index)
+		require.NoError(t, err)
 	}
 	_, err := registry.Execute(context.Background(), "write", map[string]any{
 		astPathKey:    astSamplePath,
@@ -385,7 +386,8 @@ func TestASTTool_OutlineOutputIsBounded(t *testing.T) {
 	var builder strings.Builder
 	builder.WriteString("package sample\n\n")
 	for index := 0; index < 430; index++ {
-		fmt.Fprintf(&builder, "func Func%d() {}\n", index)
+		_, err := fmt.Fprintf(&builder, "func Func%d() {}\n", index)
+		require.NoError(t, err)
 	}
 	_, err := registry.Execute(context.Background(), "write", map[string]any{
 		astPathKey:    astSamplePath,
