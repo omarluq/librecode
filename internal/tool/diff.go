@@ -65,21 +65,48 @@ func firstChangedLineFromUnifiedDiff(diff string) int {
 }
 
 func parseUnifiedHunkStart(header string) (int, bool) {
-	parts := strings.Split(header, " ")
-	if len(parts) < 2 || !strings.HasPrefix(parts[1], "-") {
+	parts := strings.Fields(header)
+	if len(parts) < 3 || !strings.HasPrefix(parts[1], "-") || !strings.HasPrefix(parts[2], "+") {
 		return 0, false
 	}
-	lineRange := strings.TrimPrefix(parts[1], "-")
-	lineText, _, _ := strings.Cut(lineRange, ",")
-	lineNumber, err := strconv.Atoi(lineText)
-	if err != nil {
+	oldStart, oldLength, ok := parseUnifiedRange(strings.TrimPrefix(parts[1], "-"))
+	if !ok {
 		return 0, false
 	}
-	if lineNumber == 0 {
-		return 1, true
+	newStart, _, ok := parseUnifiedRange(strings.TrimPrefix(parts[2], "+"))
+	if !ok {
+		return 0, false
+	}
+	if oldLength == 0 {
+		return normalizeUnifiedLineNumber(newStart), true
 	}
 
-	return lineNumber, true
+	return normalizeUnifiedLineNumber(oldStart), true
+}
+
+func parseUnifiedRange(lineRange string) (start, length int, ok bool) {
+	lineText, lengthText, hasLength := strings.Cut(lineRange, ",")
+	lineNumber, err := strconv.Atoi(lineText)
+	if err != nil {
+		return 0, 0, false
+	}
+	if !hasLength {
+		return lineNumber, 1, true
+	}
+	lineCount, err := strconv.Atoi(lengthText)
+	if err != nil {
+		return 0, 0, false
+	}
+
+	return lineNumber, lineCount, true
+}
+
+func normalizeUnifiedLineNumber(lineNumber int) int {
+	if lineNumber == 0 {
+		return 1
+	}
+
+	return lineNumber
 }
 
 func diffTruncationMessage(details EditDetails) string {
