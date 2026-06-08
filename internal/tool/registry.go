@@ -85,6 +85,13 @@ func (registry *Registry) Execute(ctx context.Context, name string, input map[st
 			With("tool", name).
 			Wrapf(ErrUnknownTool, "resolve tool")
 	}
+	if input == nil {
+		input = map[string]any{}
+	}
+	definition := executor.Definition()
+	if err := validateToolInput(&definition, input); err != nil {
+		return emptyToolResult(), err
+	}
 
 	return executor.Execute(ctx, input)
 }
