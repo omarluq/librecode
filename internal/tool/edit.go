@@ -91,6 +91,11 @@ func (editTool *EditTool) editLocked(ctx context.Context, absolutePath string, i
 		return emptyToolResult(), err
 	}
 	finalContent := bom + restoreLineEndings(applied.newContent, lineEnding)
+	diffDetails, err := generateDiffString(applied.baseContent, applied.newContent)
+	if err != nil {
+		return emptyToolResult(), err
+	}
+
 	//nolint:gosec // The edit tool intentionally writes user-selected workspace paths.
 	writeErr := os.WriteFile(absolutePath, []byte(finalContent), 0o600)
 	if writeErr != nil {
@@ -99,11 +104,6 @@ func (editTool *EditTool) editLocked(ctx context.Context, absolutePath string, i
 			Code("edit_write_file").
 			With("path", input.Path).
 			Wrapf(writeErr, "write file")
-	}
-
-	diffDetails, err := generateDiffString(applied.baseContent, applied.newContent)
-	if err != nil {
-		return emptyToolResult(), err
 	}
 	message := fmt.Sprintf(
 		"Successfully replaced %d block(s) in %s.%s",

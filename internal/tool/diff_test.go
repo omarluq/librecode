@@ -14,71 +14,117 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-func TestEditToolDiffUsesUnifiedHunksForDistantEdits(t *testing.T) {
-	t.Parallel()
+const editDiffMaxLinesForTest = 400
 
-	editTool, relativePath := newEditDiffFixture(t, numberedLines(30))
-
-	result, err := editTool.Edit(context.Background(), tool.EditInput{
-		Path: relativePath,
-		Edits: []tool.Replacement{
-			{OldText: "line 03\n", NewText: "line 03 changed\n"},
-			{OldText: "line 27\n", NewText: "line 27 changed\n"},
-		},
-	})
-
-	require.NoError(t, err)
-	diff := requireDiffDetail(t, result)
-	assert.Equal(t, 3, requireIntDetail(t, result, "firstChangedLine"))
-	assert.False(t, requireBoolDetail(t, result, "diffTruncated"))
-	assert.Contains(t, diff, "--- before")
-	assert.Contains(t, diff, "+++ after")
-	assert.Contains(t, diff, "@@ -1,7 +1,7 @@")
-	assert.Contains(t, diff, "@@ -23,8 +23,8 @@")
-	assert.Contains(t, diff, "-line 03")
-	assert.Contains(t, diff, "+line 03 changed")
-	assert.Contains(t, diff, "-line 27")
-	assert.Contains(t, diff, "+line 27 changed")
-	assert.NotContains(t, diff, "line 15")
+type editDiffBehaviorCase struct {
+	name              string
+	content           string
+	wantMessageString string
+	wantContains      []string
+	wantNotContains   []string
+	edits             []tool.Replacement
+	wantFirstLine     int
+	maxDiffLineCount  int
+	wantTruncated     bool
 }
 
-func TestEditToolDiffReportsFirstChangedLine(t *testing.T) {
+func TestEditToolDiffBehavior(t *testing.T) {
 	t.Parallel()
 
-	editTool, relativePath := newEditDiffFixture(t, numberedLines(5))
+	for _, testCase := range editDiffBehaviorCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	result, err := editTool.Edit(context.Background(), tool.EditInput{
-		Path: relativePath,
-		Edits: []tool.Replacement{
-			{OldText: "line 01\n", NewText: "hello\n"},
-		},
-	})
+			editTool, relativePath := newEditDiffFixture(t, testCase.content)
+			result, err := editTool.Edit(context.Background(), tool.EditInput{
+				Path:  relativePath,
+				Edits: testCase.edits,
+			})
 
-	require.NoError(t, err)
-	assert.Equal(t, 1, requireIntDetail(t, result, "firstChangedLine"))
-	diff := requireDiffDetail(t, result)
-	assert.Contains(t, diff, "@@ -1,5 +1,5 @@")
-	assert.Contains(t, diff, "+hello")
+			require.NoError(t, err)
+			diff := requireDiffDetail(t, result)
+			assert.Equal(t, testCase.wantFirstLine, requireIntDetail(t, result, "firstChangedLine"))
+			assert.Equal(t, testCase.wantTruncated, requireBoolDetail(t, result, "diffTruncated"))
+			for _, substring := range testCase.wantContains {
+				assert.Contains(t, diff, substring)
+			}
+			for _, substring := range testCase.wantNotContains {
+				assert.NotContains(t, diff, substring)
+			}
+			if testCase.maxDiffLineCount > 0 {
+				assert.LessOrEqual(t, len(strings.Split(diff, "\n")), testCase.maxDiffLineCount)
+			}
+			if testCase.wantMessageString != "" {
+				assert.Contains(t, result.Text(), testCase.wantMessageString)
+			}
+		})
+	}
 }
 
-func TestEditToolDiffTruncatesLargeDiff(t *testing.T) {
-	t.Parallel()
+func editDiffBehaviorCases() []editDiffBehaviorCase {
+	largeOldContent := numberedLines(700)
+	largeNewContent := strings.ReplaceAll(largeOldContent, "line ", "changed line ")
 
-	oldContent := numberedLines(700)
-	newContent := strings.ReplaceAll(oldContent, "line ", "changed line ")
-	editTool, relativePath := newEditDiffFixture(t, oldContent)
-
-	result, err := editTool.Edit(context.Background(), tool.EditInput{
-		Path: relativePath,
-		Edits: []tool.Replacement{
-			{OldText: oldContent, NewText: newContent},
+	return []editDiffBehaviorCase{
+		{
+			name:    "distant edits use separate unified hunks",
+			content: numberedLines(30),
+			edits: []tool.Replacement{
+				{OldText: "line 03\n", NewText: "line 03 changed\n"},
+				{OldText: "line 27\n", NewText: "line 27 changed\n"},
+			},
+			wantContains: []string{
+				"--- before",
+				"+++ after",
+				"@@ -1,7 +1,7 @@",
+				"@@ -23,8 +23,8 @@",
+				"-line 03",
+				"+line 03 changed",
+				"-line 27",
+				"+line 27 changed",
+			},
+			wantNotContains:   []string{"line 15"},
+			wantMessageString: "",
+			wantFirstLine:     3,
+			maxDiffLineCount:  0,
+			wantTruncated:     false,
 		},
-	})
-
-	require.NoError(t, err)
-	assert.True(t, requireBoolDetail(t, result, "diffTruncated"))
-	assert.LessOrEqual(t, len(strings.Split(requireDiffDetail(t, result), "\n")), 400)
-	assert.Contains(t, result.Text(), "diff truncated")
+		{
+			name:              "reports first changed line at start of file",
+			content:           numberedLines(5),
+			edits:             []tool.Replacement{{OldText: "line 01\n", NewText: "hello\n"}},
+			wantContains:      []string{"@@ -1,5 +1,5 @@", "+hello"},
+			wantNotContains:   []string{},
+			wantMessageString: "",
+			wantFirstLine:     1,
+			maxDiffLineCount:  0,
+			wantTruncated:     false,
+		},
+		{
+			name:              "truncates large diffs",
+			content:           largeOldContent,
+			edits:             []tool.Replacement{{OldText: largeOldContent, NewText: largeNewContent}},
+			wantContains:      []string{},
+			wantNotContains:   []string{},
+			wantMessageString: "diff truncated",
+			wantFirstLine:     1,
+			maxDiffLineCount:  editDiffMaxLinesForTest,
+			wantTruncated:     true,
+		},
+		{
+			name:    "insert only hunk reports new line",
+			content: numberedLines(12),
+			edits: []tool.Replacement{
+				{OldText: "line 09\nline 10\n", NewText: "line 09\ninserted\nline 10\n"},
+			},
+			wantContains:      []string{"@@ -6,7 +6,8 @@", "+inserted"},
+			wantNotContains:   []string{},
+			wantMessageString: "",
+			wantFirstLine:     10,
+			maxDiffLineCount:  0,
+			wantTruncated:     false,
+		},
+	}
 }
 
 func newEditDiffFixture(t *testing.T, content string) (editTool *tool.EditTool, relativePath string) {
@@ -123,7 +169,9 @@ func requireBoolDetail(t *testing.T, result tool.Result, key string) bool {
 func numberedLines(count int) string {
 	var builder strings.Builder
 	for line := 1; line <= count; line++ {
-		_, _ = fmt.Fprintf(&builder, "line %02d\n", line)
+		if _, err := fmt.Fprintf(&builder, "line %02d\n", line); err != nil {
+			panic(fmt.Sprintf("failed to build numbered lines: %v", err))
+		}
 	}
 
 	return builder.String()
