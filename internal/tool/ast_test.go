@@ -2,6 +2,8 @@ package tool_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -318,4 +320,99 @@ func TestASTTool_RegisteredInRegistry(t *testing.T) {
 		names = append(names, string(def.Name))
 	}
 	assert.Contains(t, names, "ast")
+}
+
+func TestASTTool_NormalizesModeWhitespaceAndCase(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey: astSamplePath,
+		astModeKey: " Symbols ",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, result.Text(), "symbols")
+}
+
+func TestASTTool_QueryCountsMatchesAndCapturesSeparately(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey:  astSamplePath,
+		astModeKey:  astModeQuery,
+		astQueryKey: `(function_declaration name: (identifier) @name parameters: (parameter_list) @params)`,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.Details["matches"])
+	assert.Equal(t, 2, result.Details["captures"])
+	assert.Contains(t, result.Text(), "1 matches, 2 captures")
+}
+
+func TestASTTool_QueryOutputIsExplicitlyBounded(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	var builder strings.Builder
+	builder.WriteString("package sample\n\n")
+	for index := 0; index < 260; index++ {
+		fmt.Fprintf(&builder, "func Func%d() {}\n", index)
+	}
+	_, err := registry.Execute(context.Background(), "write", map[string]any{
+		astPathKey:    astSamplePath,
+		astContentKey: builder.String(),
+	})
+	require.NoError(t, err)
+
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey:  astSamplePath,
+		astModeKey:  astModeQuery,
+		astQueryKey: `(function_declaration name: (identifier) @fn)`,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 200, result.Details["captures"])
+	assert.Equal(t, 200, result.Details["captureLimit"])
+	assert.Equal(t, true, result.Details["truncated"])
+	assert.Contains(t, result.Text(), "output truncated")
+}
+
+func TestASTTool_OutlineOutputIsBounded(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	var builder strings.Builder
+	builder.WriteString("package sample\n\n")
+	for index := 0; index < 430; index++ {
+		fmt.Fprintf(&builder, "func Func%d() {}\n", index)
+	}
+	_, err := registry.Execute(context.Background(), "write", map[string]any{
+		astPathKey:    astSamplePath,
+		astContentKey: builder.String(),
+	})
+	require.NoError(t, err)
+
+	result, err := runAST(t, registry, map[string]any{astPathKey: astSamplePath})
+	require.NoError(t, err)
+
+	assert.Equal(t, 400, result.Details["count"])
+	assert.Equal(t, true, result.Details["truncated"])
+	assert.Contains(t, result.Text(), "output truncated")
+}
+
+func TestASTTool_TreeLinePastEOFDoesNotDumpRoot(t *testing.T) {
+	t.Parallel()
+
+	registry := newASTRegistry(t)
+	result, err := runAST(t, registry, map[string]any{
+		astPathKey: astSamplePath,
+		astModeKey: astModeTree,
+		astLineKey: 999,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 999, result.Details[astLineKey])
+	assert.Contains(t, result.Text(), "No node found")
+	assert.NotContains(t, result.Text(), "source_file")
 }

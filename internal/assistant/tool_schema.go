@@ -207,12 +207,13 @@ func astToolSchema() map[string]any {
 			jsonPathKey: stringSchema(
 				"Path to the source file to inspect, relative to the current workspace or absolute.",
 			),
-			"mode": stringSchema(
+			"mode": enumStringSchema(
 				"Inspection mode: 'outline' (default), 'symbols', 'query', 'node', or 'tree'.",
+				[]string{"outline", "symbols", "query", "node", "tree"},
 			),
-			"query": stringSchema("Tree-sitter S-expression query for mode=query."),
-			"line":  integerSchema("One-based line number for mode=node or mode=tree."),
-			"depth": integerSchema("Optional recursion depth for mode=symbols."),
+			jsonQueryKey: stringSchema("Tree-sitter S-expression query for mode=query."),
+			"line":       integerSchema("One-based line number for mode=node or mode=tree."),
+			"depth":      integerSchema("Optional recursion depth for mode=symbols."),
 			jsonAllowIgnoredKey: booleanSchema(
 				"Set true only when an ignored file is explicitly needed despite .gitignore/default ignores.",
 			),
@@ -229,7 +230,11 @@ func cloneToolSchema(schema map[string]any) map[string]any {
 }
 
 func stringSchema(description string) map[string]any {
-	return map[string]any{jsonTypeKey: "string", jsonDescriptionKey: description}
+	return map[string]any{jsonTypeKey: jsonStringType, jsonDescriptionKey: description}
+}
+
+func enumStringSchema(description string, values []string) map[string]any {
+	return map[string]any{jsonTypeKey: jsonStringType, jsonDescriptionKey: description, "enum": values}
 }
 
 func integerSchema(description string) map[string]any {

@@ -24,6 +24,10 @@ const (
 	astModeTree = "tree"
 
 	defaultASTMatchLimit = 200
+	// maxASTQueryCaptures caps query capture output to protect the context budget.
+	maxASTQueryCaptures = 200
+	// maxASTOutlineLines caps outline output to protect the context budget.
+	maxASTOutlineLines = 400
 	// maxASTSymbolLines caps symbols output to protect the context budget.
 	maxASTSymbolLines = 400
 	// maxASTTreeChars caps the S-expression dump length for tree mode.
@@ -37,6 +41,9 @@ const (
 	astDetailTruncated = "truncated"
 	astDetailLine      = "line"
 
+	astDetailMatches      = "matches"
+	astDetailCaptures     = "captures"
+	astDetailCaptureLimit = "captureLimit"
 	astDetailMatchLimit   = "matchLimit"
 	astDetailLimitReached = "matchLimitReached"
 )
@@ -133,6 +140,7 @@ type astParse struct {
 
 // astMode normalizes an optional mode string, defaulting to outline.
 func astMode(mode string) string {
+	mode = strings.TrimSpace(strings.ToLower(mode))
 	if mode == "" {
 		return astModeOutline
 	}
