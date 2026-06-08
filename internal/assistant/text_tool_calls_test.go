@@ -162,6 +162,13 @@ func TestTextToolCallsFromTextMapsToolNamesAndArguments(t *testing.T) {
 			expectedKey:   jsonPathKey,
 			expectedValue: ".",
 		},
+		{
+			name:          "ast path",
+			markup:        `<tool_use><tool_name>ast</tool_name><filepath>main.go</filepath></tool_use>`,
+			expectedTool:  jsonASTToolName,
+			expectedKey:   jsonPathKey,
+			expectedValue: "main.go",
+		},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {

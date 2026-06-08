@@ -24,50 +24,101 @@ func astQuery(tree *gt.Tree, lang *gt.Language, source []byte, queryText string)
 			Wrapf(err, "compile ast query")
 	}
 
+	output := collectASTQueryOutput(tree, lang, source, query)
+
+	return astQueryResult(output), nil
+}
+
+type astQueryOutput struct {
+	lines               []string
+	matchCount          int
+	limitReached        bool
+	captureLimitReached bool
+}
+
+func collectASTQueryOutput(tree *gt.Tree, lang *gt.Language, source []byte, query *gt.Query) astQueryOutput {
 	cursor := query.Exec(tree.RootNode(), lang, source)
 	cursor.SetMatchLimit(defaultASTMatchLimit)
 
-	var lines []string
+	output := astQueryOutput{
+		lines:               []string{},
+		matchCount:          0,
+		limitReached:        false,
+		captureLimitReached: false,
+	}
 	for {
 		match, ok := cursor.NextMatch()
 		if !ok {
 			break
 		}
-		for _, capture := range match.Captures {
-			node := capture.Node
-			if node == nil {
-				continue
-			}
-			text := capture.TextOverride
-			if text == "" {
-				text = node.Text(source)
-			}
-			lines = append(lines, fmt.Sprintf(
-				"  L%d  @%s  %s",
-				node.StartPoint().Row+1,
-				capture.Name,
-				firstLine(text),
-			))
+		output.matchCount++
+		if appendASTQueryCaptures(&output, match.Captures, source) {
+			break
 		}
 	}
+	output.limitReached = cursor.DidExceedMatchLimit()
 
-	limitReached := cursor.DidExceedMatchLimit()
+	return output
+}
 
-	if len(lines) == 0 {
-		return TextResult("No matches found", map[string]any{"matches": 0}), nil
+func appendASTQueryCaptures(output *astQueryOutput, captures []gt.QueryCapture, source []byte) bool {
+	for _, capture := range captures {
+		if len(output.lines) >= maxASTQueryCaptures {
+			output.captureLimitReached = true
+
+			return true
+		}
+		node := capture.Node
+		if node == nil {
+			continue
+		}
+		output.lines = append(output.lines, astQueryCaptureLine(capture, source))
 	}
 
-	header := fmt.Sprintf("%d matches:", len(lines))
-	body := header + "\n" + strings.Join(lines, "\n")
-	if limitReached {
-		body += fmt.Sprintf("\n  ... more matches beyond the %d-match limit (narrow the query)", defaultASTMatchLimit)
+	return false
+}
+
+func astQueryCaptureLine(capture gt.QueryCapture, source []byte) string {
+	text := capture.TextOverride
+	if text == "" {
+		text = capture.Node.Text(source)
 	}
 
-	return TextResult(body, map[string]any{
-		"matches":             len(lines),
+	return fmt.Sprintf(
+		"  L%d  @%s  %s",
+		capture.Node.StartPoint().Row+1,
+		capture.Name,
+		firstLine(text),
+	)
+}
+
+func astQueryResult(output astQueryOutput) Result {
+	truncated := output.limitReached || output.captureLimitReached
+	details := map[string]any{
+		astDetailMatches:      output.matchCount,
+		astDetailCaptures:     len(output.lines),
+		astDetailCaptureLimit: maxASTQueryCaptures,
 		astDetailMatchLimit:   defaultASTMatchLimit,
-		astDetailLimitReached: limitReached,
-	}), nil
+		astDetailLimitReached: output.limitReached,
+		astDetailTruncated:    truncated,
+	}
+	if len(output.lines) == 0 {
+		return TextResult("No matches found", details)
+	}
+
+	header := fmt.Sprintf("%d matches, %d captures:", output.matchCount, len(output.lines))
+	body := header + "\n" + strings.Join(output.lines, "\n")
+	if output.captureLimitReached {
+		body += fmt.Sprintf("\n  ... output truncated at %d captures (narrow the query)", maxASTQueryCaptures)
+	}
+	if output.limitReached {
+		body += fmt.Sprintf(
+			"\n  ... output truncated by the %d-match query limit (narrow the query)",
+			defaultASTMatchLimit,
+		)
+	}
+
+	return TextResult(body, details)
 }
 
 // astNode reports the named node ancestry enclosing a one-based line.
@@ -82,9 +133,7 @@ func astNode(tree *gt.Tree, lang *gt.Language, source []byte, line *int) (Result
 		return emptyToolResult(), oopsInvalidLine()
 	}
 
-	row := uint32(*line - 1) //nolint:gosec // line is validated >= 1 above; the offset is non-negative.
-	point := gt.Point{Row: row, Column: 0}
-	target := tree.RootNode().NamedDescendantForPointRange(point, point)
+	target := namedNodeAtLine(tree.RootNode(), *line)
 	if target == nil {
 		return TextResult(
 			fmt.Sprintf("No node found at line %d", *line),

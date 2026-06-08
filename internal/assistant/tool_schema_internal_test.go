@@ -21,13 +21,14 @@ func TestToolParameterSchema(t *testing.T) {
 	customSchema := map[string]any{
 		jsonTypeKey: jsonObjectType,
 		jsonPropertiesKey: map[string]any{
-			"message": map[string]any{jsonTypeKey: "string"},
+			"message": map[string]any{jsonTypeKey: jsonStringType},
 		},
 	}
 	tests := []toolSchemaCase{
 		freeformSchemaCase("nil definition is freeform", nil),
 		customToolSchemaCase(customSchema),
 		strictReadToolSchemaCase(),
+		strictASTToolSchemaCase(),
 		freeformSchemaCase("unknown definition is freeform", echoToolDefinition(nil)),
 	}
 
@@ -86,6 +87,29 @@ func strictReadToolSchemaCase() toolSchemaCase {
 			ReadOnly:         true,
 		},
 		name: "built-in schema is strict",
+	}
+}
+
+func strictASTToolSchemaCase() toolSchemaCase {
+	return toolSchemaCase{
+		assertion: func(t *testing.T, schema map[string]any) {
+			t.Helper()
+			properties, ok := schema[jsonPropertiesKey].(map[string]any)
+			require.True(t, ok)
+			mode, ok := properties["mode"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, []string{"outline", "symbols", jsonQueryKey, "node", "tree"}, mode["enum"])
+		},
+		definition: &tool.Definition{
+			Schema:           nil,
+			Name:             tool.NameAST,
+			Label:            "ast",
+			Description:      "Inspect syntax tree",
+			PromptSnippet:    "",
+			PromptGuidelines: []string{},
+			ReadOnly:         true,
+		},
+		name: "ast mode schema is enum-constrained",
 	}
 }
 

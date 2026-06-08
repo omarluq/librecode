@@ -10,12 +10,20 @@ import (
 // astOutline renders the top-level named declarations of the tree.
 func astOutline(tree *gt.Tree, lang *gt.Language, source []byte, language string) Result {
 	root := tree.RootNode()
-	var lines []string
+	var (
+		lines     []string
+		truncated bool
+	)
 	count := root.NamedChildCount()
 	for index := 0; index < count; index++ {
 		child := root.NamedChild(index)
 		if child == nil {
 			continue
+		}
+		if len(lines) >= maxASTOutlineLines {
+			truncated = true
+
+			break
 		}
 		lines = append(lines, formatOutlineNode(child, lang, source))
 	}
@@ -29,10 +37,14 @@ func astOutline(tree *gt.Tree, lang *gt.Language, source []byte, language string
 
 	header := fmt.Sprintf("%s outline (%d top-level declarations):", language, len(lines))
 	body := header + "\n" + strings.Join(lines, "\n")
+	if truncated {
+		body += fmt.Sprintf("\n  ... output truncated at %d declarations", maxASTOutlineLines)
+	}
 
 	return TextResult(body, map[string]any{
-		astDetailLanguage: language,
-		astDetailCount:    len(lines),
+		astDetailLanguage:  language,
+		astDetailCount:     len(lines),
+		astDetailTruncated: truncated,
 	})
 }
 
@@ -44,10 +56,12 @@ func astTree(tree *gt.Tree, lang *gt.Language, line *int) (Result, error) {
 		if *line < 1 {
 			return emptyToolResult(), oopsInvalidLine()
 		}
-		row := uint32(*line - 1) //nolint:gosec // line is validated >= 1 above.
-		point := gt.Point{Row: row, Column: 0}
-		if enclosing := tree.RootNode().NamedDescendantForPointRange(point, point); enclosing != nil {
-			target = enclosing
+		target = namedNodeAtLine(tree.RootNode(), *line)
+		if target == nil {
+			return TextResult(
+				fmt.Sprintf("No node found at line %d", *line),
+				map[string]any{astDetailLine: *line},
+			), nil
 		}
 	}
 
@@ -76,4 +90,18 @@ func formatOutlineNode(node *gt.Node, lang *gt.Language, source []byte) string {
 	}
 
 	return fmt.Sprintf("  L%d  %s %s", line, nodeType, name)
+}
+
+// namedNodeAtLine returns the smallest named node enclosing a one-based line.
+func namedNodeAtLine(root *gt.Node, line int) *gt.Node {
+	if root == nil || line < 1 {
+		return nil
+	}
+	row := uint32(line - 1) //nolint:gosec // line is validated >= 1 above.
+	if row > root.EndPoint().Row {
+		return nil
+	}
+	point := gt.Point{Row: row, Column: 0}
+
+	return root.NamedDescendantForPointRange(point, point)
 }

@@ -156,6 +156,8 @@ func normalizeTextToolName(name string) string {
 		return jsonFindToolName
 	case jsonLSToolName, "list", "list_dir", "list_directory":
 		return jsonLSToolName
+	case jsonASTToolName:
+		return jsonASTToolName
 	default:
 		return ""
 	}
