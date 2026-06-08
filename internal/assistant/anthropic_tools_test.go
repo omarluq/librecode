@@ -11,7 +11,10 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
-const testAnthropicToolUseID = "toolu_1"
+const (
+	testAnthropicToolUseID = "toolu_1"
+	missingFileToolError   = "missing file"
+)
 
 func TestParseAnthropicResultExtractsNativeToolUse(t *testing.T) {
 	t.Parallel()
@@ -74,7 +77,14 @@ func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
 			ArgumentsJSON: `{}`,
 			TextFallback:  false,
 		}},
-		[]ToolEvent{{Name: jsonReadToolName, ArgumentsJSON: `{}`, DetailsJSON: "", Result: "ok", Error: ""}},
+		[]ToolEvent{{
+			Name:          jsonReadToolName,
+			ArgumentsJSON: `{}`,
+			DetailsJSON:   "",
+			Result:        "ok",
+			Error:         "",
+			IsError:       false,
+		}},
 	)
 
 	require.NoError(t, err)
@@ -83,6 +93,35 @@ func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
 	require.Len(t, blocks, 1)
 	assert.Equal(t, testAnthropicToolUseID, blocks[0]["tool_use_id"])
 	assert.Equal(t, "ok", blocks[0][jsonContentKey])
+	assert.NotContains(t, blocks[0], "is_error")
+}
+
+func TestAnthropicToolResultMessageMarksToolErrors(t *testing.T) {
+	t.Parallel()
+
+	message, err := anthropicToolResultMessage(
+		[]toolCall{{
+			Arguments:     nil,
+			ID:            testAnthropicToolUseID,
+			Name:          jsonReadToolName,
+			ArgumentsJSON: `{}`,
+			TextFallback:  false,
+		}},
+		[]ToolEvent{{
+			Name:          jsonReadToolName,
+			ArgumentsJSON: `{}`,
+			DetailsJSON:   "",
+			Result:        missingFileToolError,
+			Error:         missingFileToolError,
+			IsError:       true,
+		}},
+	)
+
+	require.NoError(t, err)
+	blocks, ok := message[jsonContentKey].([]map[string]any)
+	require.True(t, ok)
+	require.Len(t, blocks, 1)
+	assert.Equal(t, true, blocks[0]["is_error"])
 }
 
 func TestAnthropicToolResultMessageRejectsMismatchedCallsAndEvents(t *testing.T) {

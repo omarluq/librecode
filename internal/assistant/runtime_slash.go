@@ -109,9 +109,11 @@ func (runtime *Runtime) loadSkillWithReadTool(
 		DetailsJSON:   "",
 		Result:        result.Text(),
 		Error:         "",
+		IsError:       false,
 	}
 	if err != nil {
 		toolEvent.Error = err.Error()
+		toolEvent.IsError = true
 		return "", toolEvent, oops.In("assistant").Code("skill_read").Wrapf(err, "load skill with read tool")
 	}
 

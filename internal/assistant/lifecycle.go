@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"maps"
+	"strings"
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
@@ -306,6 +307,7 @@ func applyToolResultMutation(event *ToolEvent, mutation extension.ToolResultMuta
 	}
 	if mutation.Error != nil {
 		event.Error = *mutation.Error
+		event.IsError = strings.TrimSpace(*mutation.Error) != ""
 	}
 }
 

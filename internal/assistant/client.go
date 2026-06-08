@@ -130,6 +130,7 @@ type ToolEvent struct {
 	DetailsJSON   string `json:"details_json,omitempty"`
 	Result        string `json:"result"`
 	Error         string `json:"error,omitempty"`
+	IsError       bool   `json:"is_error,omitempty"`
 }
 
 // CompletionClient talks to provider APIs.

@@ -87,6 +87,7 @@ func TestRuntime_ToolResultLifecycleAppliesResultMutation(t *testing.T) {
 				DetailsJSON:   "{}",
 				Result:        "secret",
 				Error:         testToolLifecycleError,
+				IsError:       true,
 			},
 			lua: `
 local lc = require("librecode")
@@ -149,6 +150,7 @@ func TestRuntime_ToolLifecycleEmitsDiagnosticsWithoutHandlers(t *testing.T) {
 		DetailsJSON:   "{}",
 		Result:        testToolResult,
 		Error:         "",
+		IsError:       false,
 	}
 
 	require.NoError(t, runtime.DispatchToolCallLifecycleForTest(context.Background(), &call))
@@ -195,6 +197,7 @@ end)
 		DetailsJSON:   "{}",
 		Result:        testToolResult,
 		Error:         "",
+		IsError:       false,
 	}
 
 	callErr := runtime.DispatchToolCallLifecycleForTest(context.Background(), &call)
@@ -242,6 +245,7 @@ end)
 		DetailsJSON:   "",
 		Result:        testToolLifecycleError,
 		Error:         testToolLifecycleError,
+		IsError:       true,
 	}
 
 	err := runtime.DispatchToolResultLifecycleForTest(context.Background(), event)
