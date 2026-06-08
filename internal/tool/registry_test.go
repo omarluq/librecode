@@ -12,20 +12,22 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
+const (
+	registryTestContentKey = "content"
+	registryTestPathKey    = "path"
+)
+
 func TestRegistry_ExecuteJSONRunsBuiltInFileTools(t *testing.T) {
 	t.Parallel()
 
-	const (
-		pathKey  = "path"
-		testPath = "src/main.go"
-	)
+	const testPath = "src/main.go"
 
 	ctx := context.Background()
 	registry := tool.NewRegistry(t.TempDir())
 
 	writeResult := executeTool(ctx, t, registry, "write", map[string]any{
-		pathKey:   testPath,
-		"content": "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n",
+		registryTestPathKey:    testPath,
+		registryTestContentKey: "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n",
 	})
 	assert.Contains(t, writeResult.Text(), "Successfully wrote")
 
@@ -33,15 +35,15 @@ func TestRegistry_ExecuteJSONRunsBuiltInFileTools(t *testing.T) {
 	assert.Contains(t, findResult.Text(), "src/main.go")
 
 	grepResult := executeTool(ctx, t, registry, "grep", map[string]any{
-		"pattern": "println",
-		pathKey:   ".",
-		"glob":    "**/*.go",
+		"pattern":           "println",
+		registryTestPathKey: ".",
+		"glob":              "**/*.go",
 	})
 	assert.Contains(t, grepResult.Text(), "src/main.go:4:")
 	assert.Contains(t, grepResult.Text(), "println")
 
 	editResult := executeTool(ctx, t, registry, "edit", map[string]any{
-		pathKey: testPath,
+		registryTestPathKey: testPath,
 		"edits": []map[string]any{
 			{"oldText": "hello", "newText": "hola"},
 		},
@@ -49,10 +51,10 @@ func TestRegistry_ExecuteJSONRunsBuiltInFileTools(t *testing.T) {
 	assert.Contains(t, editResult.Text(), "Successfully replaced")
 	assert.Contains(t, editResult.Details["diff"], "hola")
 
-	readResult := executeTool(ctx, t, registry, "read", map[string]any{pathKey: testPath})
+	readResult := executeTool(ctx, t, registry, "read", map[string]any{registryTestPathKey: testPath})
 	assert.Contains(t, readResult.Text(), "hola")
 
-	lsResult := executeTool(ctx, t, registry, "ls", map[string]any{pathKey: "src"})
+	lsResult := executeTool(ctx, t, registry, "ls", map[string]any{registryTestPathKey: "src"})
 	assert.Equal(t, "main.go", lsResult.Text())
 }
 
@@ -89,6 +91,40 @@ func TestRegistry_Metadata(t *testing.T) {
 	assert.Len(t, tool.AllDefinitions(), len(registry.Definitions()))
 }
 
+func TestRegistry_ExecuteJSONValidatesRequiredArgumentsBeforeExecution(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input   map[string]any
+		name    string
+		tool    string
+		missing string
+	}{
+		{name: "bash command", tool: "bash", input: map[string]any{}, missing: "command"},
+		{
+			name:    "write content",
+			tool:    "write",
+			input:   map[string]any{registryTestPathKey: "empty.txt"},
+			missing: registryTestContentKey,
+		},
+	}
+	registry := tool.NewRegistry(t.TempDir())
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			payload, err := json.Marshal(testCase.input)
+			require.NoError(t, err)
+
+			_, err = registry.ExecuteJSON(context.Background(), testCase.tool, payload)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.missing+" is required")
+			assert.Contains(t, err.Error(), "call "+testCase.tool+" with")
+		})
+	}
+}
+
 func TestRegistry_ExecuteJSONRejectsEmptyWriteContent(t *testing.T) {
 	t.Parallel()
 
@@ -101,11 +137,14 @@ func TestRegistry_ExecuteJSONRejectsEmptyWriteContent(t *testing.T) {
 	}
 
 	registry := tool.NewRegistry(t.TempDir())
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			payload, err := json.Marshal(map[string]any{"path": "empty.txt", "content": tt.content})
+			payload, err := json.Marshal(map[string]any{
+				registryTestPathKey:    "empty.txt",
+				registryTestContentKey: testCase.content,
+			})
 			require.NoError(t, err)
 
 			_, err = registry.ExecuteJSON(context.Background(), "write", payload)
