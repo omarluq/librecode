@@ -2,93 +2,90 @@ package tool
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+
+	udiff "github.com/aymanbagabas/go-udiff"
+	"github.com/samber/oops"
 )
 
-const editDiffContextLines = 4
+const (
+	editDiffContextLines = 4
+	editDiffMaxLines     = 400
+	editDiffMaxBytes     = 24 * 1024
+)
 
-type diffWindow struct {
-	oldStart int
-	oldEnd   int
-	newStart int
-	newEnd   int
-	prefix   int
-}
-
-func generateDiffString(oldContent, newContent string) EditDetails {
-	oldLines := strings.Split(oldContent, "\n")
-	newLines := strings.Split(newContent, "\n")
-	prefix := commonLinePrefix(oldLines, newLines)
-	oldSuffix, newSuffix := commonLineSuffix(oldLines, newLines, prefix)
-	if prefix == len(oldLines) && prefix == len(newLines) {
-		return EditDetails{Diff: "", FirstChangedLine: 0}
+func generateDiffString(oldContent, newContent string) (EditDetails, error) {
+	edits := udiff.Lines(oldContent, newContent)
+	if len(edits) == 0 {
+		return EditDetails{Diff: "", FirstChangedLine: 0, Truncated: false}, nil
 	}
 
-	window := newDiffWindow(prefix, oldSuffix, newSuffix, len(oldLines), len(newLines))
-	lineNumberWidth := len(fmt.Sprint(max(len(oldLines), len(newLines))))
-	output := make([]string, 0, windowSize(window))
-	output = appendContextLines(output, ' ', oldLines, window.oldStart, prefix, lineNumberWidth)
-	output = appendContextLines(output, '-', oldLines, prefix, oldSuffix, lineNumberWidth)
-	output = appendContextLines(output, '+', newLines, prefix, newSuffix, lineNumberWidth)
-	output = appendContextLines(output, ' ', oldLines, oldSuffix, window.oldEnd, lineNumberWidth)
+	diff, err := udiff.ToUnified("before", "after", oldContent, edits, editDiffContextLines)
+	if err != nil {
+		return EditDetails{Diff: "", FirstChangedLine: 0, Truncated: false}, oops.
+			In("tool").
+			Code("edit_generate_diff").
+			Wrapf(err, "generate unified diff")
+	}
 
-	return EditDetails{Diff: strings.Join(output, "\n"), FirstChangedLine: prefix + 1}
+	truncation := TruncateHead(diff, TruncationOptions{MaxLines: editDiffMaxLines, MaxBytes: editDiffMaxBytes})
+	return EditDetails{
+		Diff:             truncation.Content,
+		FirstChangedLine: firstChangedLineFromUnifiedDiff(diff),
+		Truncated:        truncation.Truncated,
+	}, nil
 }
 
-func commonLinePrefix(leftLines, rightLines []string) int {
-	limit := min(len(leftLines), len(rightLines))
-	for lineIndex := range limit {
-		if leftLines[lineIndex] != rightLines[lineIndex] {
-			return lineIndex
+func firstChangedLineFromUnifiedDiff(diff string) int {
+	currentLine := 0
+	for _, line := range strings.Split(diff, "\n") {
+		if strings.HasPrefix(line, "@@") {
+			lineNumber, ok := parseUnifiedHunkStart(line)
+			if !ok {
+				continue
+			}
+			currentLine = lineNumber
+			continue
+		}
+		if currentLine == 0 || strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "-"):
+			return currentLine
+		case strings.HasPrefix(line, "+"):
+			return currentLine
+		case strings.HasPrefix(line, " "):
+			currentLine++
 		}
 	}
 
-	return limit
+	return 0
 }
 
-func commonLineSuffix(leftLines, rightLines []string, prefix int) (leftSuffix, rightSuffix int) {
-	leftIndex := len(leftLines)
-	rightIndex := len(rightLines)
-	for leftIndex > prefix && rightIndex > prefix {
-		if leftLines[leftIndex-1] != rightLines[rightIndex-1] {
-			break
-		}
-		leftIndex--
-		rightIndex--
+func parseUnifiedHunkStart(header string) (int, bool) {
+	parts := strings.Split(header, " ")
+	if len(parts) < 2 || !strings.HasPrefix(parts[1], "-") {
+		return 0, false
+	}
+	lineRange := strings.TrimPrefix(parts[1], "-")
+	lineText, _, _ := strings.Cut(lineRange, ",")
+	lineNumber, err := strconv.Atoi(lineText)
+	if err != nil {
+		return 0, false
+	}
+	if lineNumber == 0 {
+		return 1, true
 	}
 
-	return leftIndex, rightIndex
+	return lineNumber, true
 }
 
-func newDiffWindow(prefix, oldSuffix, newSuffix, oldLength, newLength int) diffWindow {
-	return diffWindow{
-		oldStart: max(0, prefix-editDiffContextLines),
-		oldEnd:   min(oldLength, oldSuffix+editDiffContextLines),
-		newStart: max(0, prefix-editDiffContextLines),
-		newEnd:   min(newLength, newSuffix+editDiffContextLines),
-		prefix:   prefix,
-	}
-}
-
-func windowSize(window diffWindow) int {
-	oldSize := max(0, window.oldEnd-window.oldStart)
-	newChangedSize := max(0, window.newEnd-window.newStart)
-
-	return oldSize + newChangedSize
-}
-
-func appendContextLines(
-	output []string,
-	marker rune,
-	lines []string,
-	start int,
-	end int,
-	lineNumberWidth int,
-) []string {
-	for lineIndex := start; lineIndex < end; lineIndex++ {
-		lineNumber := fmt.Sprintf("%*d", lineNumberWidth, lineIndex+1)
-		output = append(output, fmt.Sprintf("%c%s %s", marker, lineNumber, lines[lineIndex]))
+func diffTruncationMessage(details EditDetails) string {
+	if !details.Truncated {
+		return ""
 	}
 
-	return output
+	return fmt.Sprintf("\n\n[diff truncated to %d lines / %s]", editDiffMaxLines, FormatSize(editDiffMaxBytes))
 }

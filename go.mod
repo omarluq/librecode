@@ -5,6 +5,7 @@ go 1.26.3
 require (
 	github.com/Oudwins/zog v0.22.2
 	github.com/alecthomas/chroma/v2 v2.26.1
+	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gdamore/tcell/v3 v3.4.0
