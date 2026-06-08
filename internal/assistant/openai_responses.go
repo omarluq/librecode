@@ -62,9 +62,6 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			return nil, err
 		}
 		if len(providerResult.ToolCalls) == 0 {
-			if strings.TrimSpace(providerResult.Text) == "" {
-				return nil, oops.In("assistant").Code("responses_empty").Errorf("provider returned an empty response")
-			}
 			result.Text = strings.TrimSpace(providerResult.Text)
 			return result, nil
 		}

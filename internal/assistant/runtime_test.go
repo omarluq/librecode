@@ -198,23 +198,23 @@ func TestRuntime_PromptRetriesTransientModelErrors(t *testing.T) {
 	assert.Equal(t, assistant.RetryEventEnd, retryEvents[1].Kind)
 }
 
-func TestRuntime_PromptRetriesWrappedEmptyProviderResponse(t *testing.T) {
+func TestRuntime_PromptPersistsEmptyProviderResponse(t *testing.T) {
 	t.Parallel()
 
-	client := &retryCompletionClient{
-		err:               errors.New("[system] provider returned an empty response"),
-		response:          recoveredResponseText,
-		attempts:          0,
-		failuresRemaining: 1,
-	}
-	runtime, _ := newTestRuntimeWithClient(t, client)
-	request := newRuntimePromptRequest(testRuntimeCWD, "retry empty", "")
+	client := &emptyCompletionClient{attempts: 0}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "blank is ok", "")
 
 	response, err := runtime.Prompt(context.Background(), request)
 
 	require.NoError(t, err)
-	assert.Equal(t, recoveredResponseText+" for retry empty", response.Text)
-	assert.Equal(t, 2, client.attempts)
+	assert.Empty(t, response.Text)
+	assert.Equal(t, 1, client.attempts)
+	messages, err := repository.Messages(context.Background(), request.SessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 2)
+	assert.Equal(t, database.RoleAssistant, messages[1].Role)
+	assert.Empty(t, messages[1].Content)
 }
 
 func TestRuntime_PromptRetriesProviderStreamError(t *testing.T) {
@@ -543,6 +543,10 @@ type retryCompletionClient struct {
 
 type partialFailureCompletionClient struct{}
 
+type emptyCompletionClient struct {
+	attempts int
+}
+
 func (client *capturingCompletionClient) Complete(
 	ctx context.Context,
 	request *assistant.CompletionRequest,
@@ -568,6 +572,20 @@ func (client *retryCompletionClient) Complete(
 
 	return &assistant.CompletionResult{
 		Text:       client.response + " for " + request.Messages[len(request.Messages)-1].Content,
+		Thinking:   nil,
+		ToolEvents: nil,
+		Usage:      model.EmptyTokenUsage(),
+	}, nil
+}
+
+func (client *emptyCompletionClient) Complete(
+	_ context.Context,
+	_ *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.attempts++
+
+	return &assistant.CompletionResult{
+		Text:       "",
 		Thinking:   nil,
 		ToolEvents: nil,
 		Usage:      model.EmptyTokenUsage(),
