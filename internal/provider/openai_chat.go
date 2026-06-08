@@ -57,8 +57,8 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 		return false, err
 	}
 	state.result.Usage = mergeUsage(state.result.Usage, providerResult.Usage)
-	if err := validateToolCalls(providerResult.ToolCalls); err != nil {
-		return false, err
+	if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
+		return false, validateErr
 	}
 	if len(providerResult.ToolCalls) == 0 {
 		if fallback := TextToolCallsFromText(providerResult.Text); len(fallback) > 0 {
@@ -67,7 +67,10 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 			return finishTextResult(state.result, providerResult.Text)
 		}
 	}
-	events := executeOpenAIChatToolCalls(ctx, request, providerResult.ToolCalls)
+	events, err := executeOpenAIChatToolCalls(ctx, request, providerResult.ToolCalls)
+	if err != nil {
+		return false, err
+	}
 	state.result.ToolEvents = append(state.result.ToolEvents, events...)
 	if err := appendOpenAIChatToolConversation(state, providerResult, events); err != nil {
 		return false, err
@@ -80,18 +83,13 @@ func executeOpenAIChatToolCalls(
 	ctx context.Context,
 	request *CompletionRequest,
 	calls []ToolCall,
-) []ToolEvent {
-	_, events := executeToolCalls(
-		ctx,
-		request.ToolRegistry,
-		request.CWD,
-		calls,
-		request.OnEvent,
-		request.OnToolCall,
-		request.OnToolResult,
-	)
+) ([]ToolEvent, error) {
+	_, events, err := executeToolCalls(ctx, request, calls)
+	if err != nil {
+		return nil, err
+	}
 
-	return events
+	return events, nil
 }
 
 func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *providerResult, events []ToolEvent) error {
@@ -122,7 +120,7 @@ func openAIChatPayload(request *CompletionRequest, messages []map[string]any) ma
 		jsonMessagesKey:   messages,
 		"stream":          false,
 		"temperature":     0.2,
-		"tools":           openAIChatTools(request),
+		"tools":           OpenAIChatTools(request),
 		jsonToolChoiceKey: "auto",
 	}
 	if request.Model.Reasoning && request.ThinkingLevel != "" && request.ThinkingLevel != thinkingOff {

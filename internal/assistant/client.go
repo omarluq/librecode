@@ -62,6 +62,9 @@ type CompletionRequest = provider.CompletionRequest
 // CompletionResult aliases the provider completion result during the provider package extraction.
 type CompletionResult = provider.CompletionResult
 
+// ToolCall aliases provider tool calls during the provider package extraction.
+type ToolCall = provider.ToolCall
+
 // ToolCallEvent aliases the provider tool-call event during the provider package extraction.
 type ToolCallEvent = provider.ToolCallEvent
 

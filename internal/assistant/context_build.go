@@ -72,6 +72,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		OnToolCall:        nil,
 		OnToolResult:      nil,
 		ToolRegistry:      registry,
+		ExecuteTools:      nil,
 		SessionID:         sessionID,
 		SystemPrompt:      "",
 		ThinkingLevel:     "",

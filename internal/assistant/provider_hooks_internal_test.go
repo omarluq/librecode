@@ -172,6 +172,7 @@ func providerHookTestRequest() *CompletionRequest {
 		OnToolCall:        nil,
 		OnToolResult:      nil,
 		ToolRegistry:      nil,
+		ExecuteTools:      nil,
 		SessionID:         "session-1",
 		SystemPrompt:      "",
 		ThinkingLevel:     "off",
