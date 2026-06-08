@@ -24,7 +24,7 @@ func nodeName(node *gt.Node, lang *gt.Language, source []byte) string {
 	// type_declaration -> type_spec -> name). Descend into named children and
 	// retry the common name fields, then fall back to any identifier-like node.
 	count := node.NamedChildCount()
-	for index := 0; index < count; index++ {
+	for index := range count {
 		if child := node.NamedChild(index); child != nil {
 			if name := childFieldName(child, lang, source); name != "" {
 				return name
@@ -60,7 +60,7 @@ func childFieldName(child *gt.Node, lang *gt.Language, source []byte) string {
 // identifierChildName returns the first identifier-like named child's text.
 func identifierChildName(node *gt.Node, lang *gt.Language, source []byte) string {
 	count := node.NamedChildCount()
-	for index := 0; index < count; index++ {
+	for index := range count {
 		child := node.NamedChild(index)
 		if child != nil && strings.Contains(child.Type(lang), "identifier") {
 			return firstLine(child.Text(source))

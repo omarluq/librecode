@@ -78,8 +78,7 @@ func IsKind(err error, kind ErrorKind) bool {
 
 // AsProviderError returns err as a ProviderError when possible.
 func AsProviderError(err error) (*ProviderError, bool) {
-	var providerError *ProviderError
-	if errors.As(err, &providerError) {
+	if providerError, ok := errors.AsType[*ProviderError](err); ok {
 		return providerError, true
 	}
 

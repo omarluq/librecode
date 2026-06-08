@@ -263,9 +263,7 @@ func appendFileOperationsSummary(summary string, operations []compactionFileOper
 	builder.WriteString(strings.TrimSpace(summary))
 	builder.WriteString("\n\n")
 	builder.WriteString(compactionFileOperationsHeader)
-	limit := min(len(operations), maxCompactionFileOperations)
-	for index := 0; index < limit; index++ {
-		operation := operations[index]
+	for _, operation := range operations[:min(len(operations), maxCompactionFileOperations)] {
 		builder.WriteString("\n- ")
 		builder.WriteString(operation.Action)
 		builder.WriteString(": ")
@@ -281,12 +279,12 @@ func appendFileOperationsSummary(summary string, operations []compactionFileOper
 }
 
 func stripFileOperationsSummary(summary string) string {
-	index := strings.Index(summary, compactionFileOperationsHeader)
-	if index < 0 {
+	before, _, ok := strings.Cut(summary, compactionFileOperationsHeader)
+	if !ok {
 		return strings.TrimSpace(summary)
 	}
 
-	return strings.TrimSpace(summary[:index])
+	return strings.TrimSpace(before)
 }
 
 type entryDataForCompaction struct {

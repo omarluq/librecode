@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -214,9 +215,7 @@ func (runtime *Runtime) appendCompaction(
 		compactionTokensBeforeKey: plan.TokensBefore,
 	}
 	if decision != nil {
-		for key, value := range decision.Details {
-			details[key] = value
-		}
+		maps.Copy(details, decision.Details)
 	}
 	if len(plan.FileOperations) > 0 {
 		details[compactionFileOperationsKey] = plan.FileOperations
