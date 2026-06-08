@@ -12,8 +12,8 @@ import (
 
 // WriteInput contains arguments for the write tool.
 type WriteInput struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Content *string `json:"content"`
+	Path    string  `json:"path"`
 }
 
 // WriteTool creates or overwrites complete files.
@@ -56,7 +56,7 @@ func (writeTool *WriteTool) Write(ctx context.Context, input WriteInput) (Result
 	if strings.TrimSpace(input.Path) == "" {
 		return emptyToolResult(), oops.In("tool").Code("write_path_required").Errorf("write path is required")
 	}
-	if strings.TrimSpace(input.Content) == "" {
+	if input.Content == nil {
 		return emptyToolResult(), oops.In("tool").Code("write_content_required").Errorf("write content is required")
 	}
 	absolutePath, err := ResolveToCWD(input.Path, writeTool.cwd)
@@ -75,7 +75,8 @@ func (writeTool *WriteTool) Write(ctx context.Context, input WriteInput) (Result
 			return emptyToolResult(), ctxErr
 		}
 
-		if err := os.WriteFile(absolutePath, []byte(input.Content), 0o600); err != nil {
+		content := *input.Content
+		if err := os.WriteFile(absolutePath, []byte(content), 0o600); err != nil {
 			return emptyToolResult(), oops.
 				In("tool").
 				Code("write_file").
@@ -84,7 +85,7 @@ func (writeTool *WriteTool) Write(ctx context.Context, input WriteInput) (Result
 		}
 
 		return TextResult(
-			fmt.Sprintf("Successfully wrote %d bytes to %s", len([]byte(input.Content)), input.Path),
+			fmt.Sprintf("Successfully wrote %d bytes to %s", len([]byte(content)), input.Path),
 			map[string]any{},
 		), nil
 	})

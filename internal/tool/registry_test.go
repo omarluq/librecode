@@ -125,34 +125,16 @@ func TestRegistry_ExecuteJSONValidatesRequiredArgumentsBeforeExecution(t *testin
 	}
 }
 
-func TestRegistry_ExecuteJSONRejectsEmptyWriteContent(t *testing.T) {
+func TestRegistry_ExecuteJSONAllowsIntentionalEmptyWriteContent(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name    string
-		content string
-	}{
-		{name: "empty", content: ""},
-		{name: "whitespace only", content: "   \n\t"},
-	}
-
 	registry := tool.NewRegistry(t.TempDir())
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
+	result := executeTool(context.Background(), t, registry, "write", map[string]any{
+		registryTestPathKey:    "empty.txt",
+		registryTestContentKey: "",
+	})
 
-			payload, err := json.Marshal(map[string]any{
-				registryTestPathKey:    "empty.txt",
-				registryTestContentKey: testCase.content,
-			})
-			require.NoError(t, err)
-
-			_, err = registry.ExecuteJSON(context.Background(), "write", payload)
-
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "write content is required")
-		})
-	}
+	assert.Contains(t, result.Text(), "Successfully wrote 0 bytes")
 }
 
 func executeTool(
