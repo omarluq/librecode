@@ -2,9 +2,11 @@ package terminal
 
 import (
 	"context"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 
 	"github.com/gdamore/tcell/v3"
+
+	"github.com/omarluq/librecode/internal/terminal/extui"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 )
 
 const (
@@ -77,13 +79,15 @@ func (app *App) drawRuntime(ctx context.Context) {
 }
 
 func (app *App) needsRuntimeRenderPath() bool {
-	if app.hasExtensionHandlers(extensionEventRender) || app.runtimeLayout != nil || len(app.runtimeWindows) > 0 {
+	if app.hasExtensionHandlers(extensionEventRender) ||
+		app.extensionUI.Layout != nil ||
+		len(app.extensionUI.Windows) > 0 {
 		return true
 	}
-	if len(app.uiWindowOverrides) > 0 || app.uiCursor != nil {
+	if len(app.extensionUI.Overrides) > 0 || app.extensionUI.Cursor != nil {
 		return true
 	}
-	_, transcriptOverridden := app.extensionRuntimeBuffers[extensionBufferTranscript]
+	_, transcriptOverridden := app.extensionUI.Buffers[extui.BufferTranscript]
 
 	return transcriptOverridden
 }

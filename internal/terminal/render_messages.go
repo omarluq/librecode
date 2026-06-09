@@ -1,6 +1,9 @@
 package terminal
 
-import "github.com/omarluq/librecode/internal/terminal/rendertext"
+import (
+	"github.com/omarluq/librecode/internal/terminal/extui"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
+)
 
 func (app *App) drawMessages(width, height, row int) int {
 	if app.showWelcomeOnly() {
@@ -17,7 +20,7 @@ func (app *App) drawMessages(width, height, row int) int {
 	return row
 }
 
-func (app *App) drawTranscriptWindow(layout *runtimeLayout) {
+func (app *App) drawTranscriptWindow(layout *extui.Layout) {
 	window := layout.Transcript
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return

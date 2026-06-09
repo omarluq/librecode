@@ -3,11 +3,12 @@ package terminal
 import (
 	"strings"
 
+	"github.com/omarluq/librecode/internal/terminal/extui"
 	"github.com/omarluq/librecode/internal/terminal/input"
 	"github.com/omarluq/librecode/internal/terminal/rendertext"
 )
 
-func (app *App) drawAutocompleteWindow(layout *runtimeLayout) {
+func (app *App) drawAutocompleteWindow(layout *extui.Layout) {
 	window := layout.Autocomplete
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
@@ -18,7 +19,7 @@ func (app *App) drawAutocompleteWindow(layout *runtimeLayout) {
 	}
 }
 
-func (app *App) drawComposerWindow(layout *runtimeLayout) {
+func (app *App) drawComposerWindow(layout *extui.Layout) {
 	window := layout.Composer
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
@@ -48,7 +49,7 @@ func (app *App) renderComposerEditor(width, bodyRows int) input.Render {
 	)
 }
 
-func (app *App) drawStatusWindow(layout *runtimeLayout) {
+func (app *App) drawStatusWindow(layout *extui.Layout) {
 	window := layout.Status
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return

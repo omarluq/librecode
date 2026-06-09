@@ -4,21 +4,22 @@ import (
 	"strings"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/terminal/extui"
 )
 
-func (app *App) currentRuntimeLayout() runtimeLayout {
+func (app *App) currentRuntimeLayout() extui.Layout {
 	width, height := app.screenSize()
 
 	return app.currentRuntimeLayoutForSize(width, height)
 }
 
-func (app *App) currentRuntimeLayoutForSize(width, height int) runtimeLayout {
+func (app *App) currentRuntimeLayoutForSize(width, height int) extui.Layout {
 	layout := app.defaultRuntimeLayout(width, height)
 
 	return app.mergeRuntimeLayout(&layout)
 }
 
-func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
+func (app *App) defaultRuntimeLayout(width, height int) extui.Layout {
 	statusLines := app.footerLines(width)
 	autocompleteLines := app.autocompleteLines(width)
 	maxComposerHeight := min(defaultEditorRows, max(3, height-len(statusLines)-len(autocompleteLines)-2))
@@ -34,15 +35,15 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 	composerStart := autocompleteStart + len(autocompleteLines)
 	statusStart := height - len(statusLines)
 
-	return runtimeLayout{
+	return extui.Layout{
 		Windows: nil,
 		Width:   width,
 		Height:  height,
 		Transcript: extension.WindowState{
-			Metadata:  map[string]any{extensionMetadataCount: len(app.transcript.History)},
-			Name:      extensionBufferTranscript,
-			Role:      extensionBufferTranscript,
-			Buffer:    extensionBufferTranscript,
+			Metadata:  map[string]any{extui.MetadataCount: len(app.transcript.History)},
+			Name:      extui.BufferTranscript,
+			Role:      extui.BufferTranscript,
+			Buffer:    extui.BufferTranscript,
 			Renderer:  windowRendererDefault,
 			X:         0,
 			Y:         0,
@@ -56,7 +57,7 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 			Metadata:  map[string]any{},
 			Name:      "autocomplete",
 			Role:      "autocomplete",
-			Buffer:    extensionBufferStatus,
+			Buffer:    extui.BufferStatus,
 			Renderer:  windowRendererDefault,
 			X:         0,
 			Y:         autocompleteStart,
@@ -68,9 +69,9 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 		},
 		Composer: extension.WindowState{
 			Metadata:  map[string]any{},
-			Name:      extensionBufferComposer,
-			Role:      extensionBufferComposer,
-			Buffer:    extensionBufferComposer,
+			Name:      extui.BufferComposer,
+			Role:      extui.BufferComposer,
+			Buffer:    extui.BufferComposer,
 			Renderer:  windowRendererDefault,
 			X:         0,
 			Y:         composerStart,
@@ -82,9 +83,9 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 		},
 		Status: extension.WindowState{
 			Metadata:  map[string]any{},
-			Name:      extensionBufferStatus,
-			Role:      extensionBufferStatus,
-			Buffer:    extensionBufferStatus,
+			Name:      extui.BufferStatus,
+			Role:      extui.BufferStatus,
+			Buffer:    extui.BufferStatus,
 			Renderer:  windowRendererDefault,
 			X:         0,
 			Y:         statusStart,
@@ -97,14 +98,14 @@ func (app *App) defaultRuntimeLayout(width, height int) runtimeLayout {
 	}
 }
 
-func (app *App) mergeRuntimeLayout(layout *runtimeLayout) runtimeLayout {
+func (app *App) mergeRuntimeLayout(layout *extui.Layout) extui.Layout {
 	windows := app.cloneRuntimeWindows(layout)
-	transcript := windows[extensionBufferTranscript]
+	transcript := windows[extui.BufferTranscript]
 	autocomplete := windows["autocomplete"]
-	composer := windows[extensionBufferComposer]
-	status := windows[extensionBufferStatus]
+	composer := windows[extui.BufferComposer]
+	status := windows[extui.BufferStatus]
 
-	return runtimeLayout{
+	return extui.Layout{
 		Width:        layout.Width,
 		Height:       layout.Height,
 		Transcript:   transcript,
@@ -116,7 +117,7 @@ func (app *App) mergeRuntimeLayout(layout *runtimeLayout) runtimeLayout {
 }
 
 func (app *App) extensionOwnsWindow(name string) bool {
-	window, ok := app.runtimeWindows[name]
+	window, ok := app.extensionUI.Windows[name]
 	if !ok {
 		return false
 	}
@@ -124,20 +125,20 @@ func (app *App) extensionOwnsWindow(name string) bool {
 	return strings.EqualFold(strings.TrimSpace(window.Renderer), windowRendererExtension)
 }
 
-func (app *App) cloneRuntimeWindows(layout *runtimeLayout) map[string]extension.WindowState {
+func (app *App) cloneRuntimeWindows(layout *extui.Layout) map[string]extension.WindowState {
 	windows := map[string]extension.WindowState{
 		layout.Transcript.Name:   layout.Transcript,
 		layout.Autocomplete.Name: layout.Autocomplete,
 		layout.Composer.Name:     layout.Composer,
 		layout.Status.Name:       layout.Status,
 	}
-	if app.runtimeLayout != nil && len(app.runtimeLayout.Windows) > 0 {
-		for name := range app.runtimeLayout.Windows {
-			windows[name] = app.runtimeLayout.Windows[name]
+	if app.extensionUI.Layout != nil && len(app.extensionUI.Layout.Windows) > 0 {
+		for name := range app.extensionUI.Layout.Windows {
+			windows[name] = app.extensionUI.Layout.Windows[name]
 		}
 	}
-	for name := range app.runtimeWindows {
-		windows[name] = app.runtimeWindows[name]
+	for name := range app.extensionUI.Windows {
+		windows[name] = app.extensionUI.Windows[name]
 	}
 	for name := range windows {
 		window := windows[name]

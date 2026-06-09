@@ -1,6 +1,9 @@
 package terminal
 
-import "github.com/omarluq/librecode/internal/extension"
+import (
+	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/terminal/extui"
+)
 
 const (
 	focusKindAutocomplete = "autocomplete"
@@ -12,8 +15,8 @@ func (app *App) focusState() extension.FocusState {
 	if app.mode == modePanel && app.panel != nil {
 		return extension.FocusState{
 			Kind:      focusKindPanel,
-			Window:    extensionBufferTranscript,
-			Buffer:    extensionBufferTranscript,
+			Window:    extui.BufferTranscript,
+			Buffer:    extui.BufferTranscript,
 			Role:      string(app.selectedPanelKind),
 			PanelKind: string(app.selectedPanelKind),
 			Exclusive: true,
@@ -23,7 +26,7 @@ func (app *App) focusState() extension.FocusState {
 		return extension.FocusState{
 			Kind:      focusKindAutocomplete,
 			Window:    focusKindAutocomplete,
-			Buffer:    extensionBufferStatus,
+			Buffer:    extui.BufferStatus,
 			Role:      focusKindAutocomplete,
 			PanelKind: "",
 			Exclusive: true,
@@ -32,9 +35,9 @@ func (app *App) focusState() extension.FocusState {
 
 	return extension.FocusState{
 		Kind:      focusKindComposer,
-		Window:    extensionBufferComposer,
-		Buffer:    extensionBufferComposer,
-		Role:      extensionBufferComposer,
+		Window:    extui.BufferComposer,
+		Buffer:    extui.BufferComposer,
+		Role:      extui.BufferComposer,
 		PanelKind: "",
 		Exclusive: false,
 	}

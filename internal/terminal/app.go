@@ -16,6 +16,7 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/terminal/extui"
 	"github.com/omarluq/librecode/internal/terminal/input"
 	"github.com/omarluq/librecode/internal/terminal/panel"
 	"github.com/omarluq/librecode/internal/terminal/rendertext"
@@ -87,21 +88,6 @@ type transcriptState struct {
 	LastMaxRows int
 }
 
-type runtimeLayout struct {
-	Windows      map[string]extension.WindowState
-	Transcript   extension.WindowState
-	Autocomplete extension.WindowState
-	Composer     extension.WindowState
-	Status       extension.WindowState
-	Width        int
-	Height       int
-}
-
-type uiWindowOverride struct {
-	DrawOps []extension.UIDrawOp
-	Reset   bool
-}
-
 // RunOptions configures the terminal app.
 type RunOptions struct {
 	Extensions extension.TerminalEventRunner `json:"-"`
@@ -117,64 +103,60 @@ type RunOptions struct {
 
 // App is the terminal chat UI.
 type App struct {
-	lastEscape              time.Time
-	lastControlC            time.Time
-	workStartedAt           time.Time
-	screen                  tcell.Screen
-	extensions              extension.TerminalEventRunner
-	renderer                *rendertext.Renderer
-	frame                   *rendertext.Buffer
-	lastResize              *tcell.EventResize
-	runtime                 *assistant.Runtime
-	settings                *database.DocumentRepository
-	models                  *model.Registry
-	auth                    *auth.Storage
-	cfg                     *config.Config
-	keys                    *keybindings
-	panel                   *panel.Model
-	pendingParentID         *string
-	activePrompt            *activePromptState
-	activeCompaction        *activeCompactionState
-	canceledPrompts         map[uint64]*activePromptState
-	scopedEnabled           map[string]bool
-	extensionRuntimeBuffers map[string]extension.BufferState
-	runtimeWindows          map[string]extension.WindowState
-	runtimeLayout           *extension.LayoutState
-	uiWindowOverrides       map[string]uiWindowOverride
-	uiCursor                *extension.UICursor
-	theme                   terminalTheme
-	selectedPanelKind       panel.Kind
-	sessionID               string
-	statusMessage           string
-	streamingText           string
-	streamingThinkingText   string
-	cwd                     string
-	promptHistoryDraft      string
-	mode                    appMode
-	resources               core.ResourceSnapshot
-	transcript              transcriptState
-	queuedMessages          []string
-	promptHistory           []string
-	scopedOrder             []string
-	composerBuffer          input.Buffer
-	tokenUsage              model.TokenUsage
-	selection               mouseSelection
-	promptSequence          uint64
-	workFrame               int
-	streamedToolEvents      int
-	escapePresses           int
-	promptHistoryIndex      int
-	scrollOffset            int
-	autocompleteSelection   int
-	autocompleteClosed      bool
-	sessionNamedOnly        bool
-	hideThinking            bool
-	working                 bool
-	compacting              bool
-	toolsExpanded           bool
-	authWorking             bool
-	sessionShowPath         bool
-	sessionSortRecent       bool
+	lastEscape            time.Time
+	lastControlC          time.Time
+	workStartedAt         time.Time
+	screen                tcell.Screen
+	extensions            extension.TerminalEventRunner
+	renderer              *rendertext.Renderer
+	frame                 *rendertext.Buffer
+	lastResize            *tcell.EventResize
+	runtime               *assistant.Runtime
+	settings              *database.DocumentRepository
+	models                *model.Registry
+	auth                  *auth.Storage
+	cfg                   *config.Config
+	keys                  *keybindings
+	panel                 *panel.Model
+	pendingParentID       *string
+	activePrompt          *activePromptState
+	activeCompaction      *activeCompactionState
+	canceledPrompts       map[uint64]*activePromptState
+	scopedEnabled         map[string]bool
+	extensionUI           extui.State
+	theme                 terminalTheme
+	selectedPanelKind     panel.Kind
+	sessionID             string
+	statusMessage         string
+	streamingText         string
+	streamingThinkingText string
+	cwd                   string
+	promptHistoryDraft    string
+	mode                  appMode
+	resources             core.ResourceSnapshot
+	transcript            transcriptState
+	queuedMessages        []string
+	promptHistory         []string
+	scopedOrder           []string
+	composerBuffer        input.Buffer
+	tokenUsage            model.TokenUsage
+	selection             mouseSelection
+	promptSequence        uint64
+	workFrame             int
+	streamedToolEvents    int
+	escapePresses         int
+	promptHistoryIndex    int
+	scrollOffset          int
+	autocompleteSelection int
+	autocompleteClosed    bool
+	sessionNamedOnly      bool
+	hideThinking          bool
+	working               bool
+	compacting            bool
+	toolsExpanded         bool
+	authWorking           bool
+	sessionShowPath       bool
+	sessionSortRecent     bool
 }
 
 // Run starts an interactive tcell chat loop.
@@ -245,42 +227,38 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 			LineCache:   emptyMessageLineCache(),
 			LastMaxRows: 0,
 		},
-		queuedMessages:          []string{},
-		promptHistory:           []string{},
-		promptHistoryDraft:      "",
-		autocompleteSelection:   0,
-		autocompleteClosed:      false,
-		composerBuffer:          input.NewBuffer(),
-		scopedOrder:             []string{},
-		scopedEnabled:           map[string]bool{},
-		sessionSortRecent:       true,
-		sessionNamedOnly:        false,
-		sessionShowPath:         false,
-		authWorking:             false,
-		toolsExpanded:           false,
-		hideThinking:            false,
-		lastEscape:              time.Time{},
-		lastControlC:            time.Time{},
-		escapePresses:           0,
-		working:                 false,
-		compacting:              false,
-		workStartedAt:           time.Time{},
-		workFrame:               0,
-		scrollOffset:            0,
-		selection:               emptyMouseSelection(),
-		streamedToolEvents:      0,
-		promptHistoryIndex:      0,
-		promptSequence:          0,
-		statusMessage:           "",
-		tokenUsage:              model.EmptyTokenUsage(),
-		selectedPanelKind:       "",
-		streamingText:           "",
-		streamingThinkingText:   "",
-		extensionRuntimeBuffers: map[string]extension.BufferState{},
-		runtimeWindows:          map[string]extension.WindowState{},
-		runtimeLayout:           nil,
-		uiWindowOverrides:       map[string]uiWindowOverride{},
-		uiCursor:                nil,
+		queuedMessages:        []string{},
+		promptHistory:         []string{},
+		promptHistoryDraft:    "",
+		autocompleteSelection: 0,
+		autocompleteClosed:    false,
+		composerBuffer:        input.NewBuffer(),
+		scopedOrder:           []string{},
+		scopedEnabled:         map[string]bool{},
+		sessionSortRecent:     true,
+		sessionNamedOnly:      false,
+		sessionShowPath:       false,
+		authWorking:           false,
+		toolsExpanded:         false,
+		hideThinking:          false,
+		lastEscape:            time.Time{},
+		lastControlC:          time.Time{},
+		escapePresses:         0,
+		working:               false,
+		compacting:            false,
+		workStartedAt:         time.Time{},
+		workFrame:             0,
+		scrollOffset:          0,
+		selection:             emptyMouseSelection(),
+		streamedToolEvents:    0,
+		promptHistoryIndex:    0,
+		promptSequence:        0,
+		statusMessage:         "",
+		tokenUsage:            model.EmptyTokenUsage(),
+		selectedPanelKind:     "",
+		streamingText:         "",
+		streamingThinkingText: "",
+		extensionUI:           extui.NewState(),
 	}
 	app.addWelcomeMessage()
 
