@@ -1,55 +1,51 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/input"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/terminal/extui"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
 const (
-	extensionBufferThinking        = "thinking"
-	extensionBufferTools           = "tools"
-	extensionMetadataCount         = "count"
-	extensionMetadataMessage       = "message"
 	maxTranscriptSnapshotBlocks    = 32
 	maxTranscriptSnapshotTextRunes = 4_000
 )
 
 func (app *App) reservedRuntimeBuffers() map[string]extension.BufferState {
 	return map[string]extension.BufferState{
-		extensionBufferComposer:   extensionBufferFromComposer(app.composerBuffer),
-		extensionBufferStatus:     app.statusBufferState(),
-		extensionBufferTranscript: app.transcriptBufferState(),
-		extensionBufferThinking:   app.thinkingBufferState(),
-		extensionBufferTools:      app.toolsBufferState(),
+		extui.BufferComposer:   extensionBufferFromComposer(app.composerBuffer),
+		extui.BufferStatus:     app.statusBufferState(),
+		extui.BufferTranscript: app.transcriptBufferState(),
+		extui.BufferThinking:   app.thinkingBufferState(),
+		extui.BufferTools:      app.toolsBufferState(),
 	}
 }
 
 func (app *App) statusBufferState() extension.BufferState {
-	if buffer, ok := app.runtimeBufferOverride(extensionBufferStatus); ok {
+	if buffer, ok := app.runtimeBufferOverride(extui.BufferStatus); ok {
 		return buffer
 	}
-	buffer := textBufferState(extensionBufferStatus, app.defaultStatusText())
-	buffer.Metadata = map[string]any{extensionMetadataMessage: app.statusMessage}
+	buffer := textBufferState(extui.BufferStatus, app.defaultStatusText())
+	buffer.Metadata = map[string]any{extui.MetadataMessage: app.statusMessage}
 
 	return buffer
 }
 
 func (app *App) transcriptBufferState() extension.BufferState {
-	if buffer, ok := app.runtimeBufferOverride(extensionBufferTranscript); ok {
+	if buffer, ok := app.runtimeBufferOverride(extui.BufferTranscript); ok {
 		return buffer
 	}
 	snapshot := app.transcriptBufferBlocks(maxTranscriptSnapshotBlocks)
-	buffer := textBufferState(extensionBufferTranscript, "")
+	buffer := textBufferState(extui.BufferTranscript, "")
 	buffer.Blocks = snapshot.Blocks
-	buffer.Metadata = cloneExtensionMetadata(snapshot.Metadata)
-	buffer.Metadata[extensionMetadataCount] = len(app.transcript.History)
+	buffer.Metadata = extui.CloneMetadata(snapshot.Metadata)
+	buffer.Metadata[extui.MetadataCount] = len(app.transcript.History)
 	buffer.Metadata["snapshot_count"] = snapshot.Count
 	buffer.Metadata["snapshot_start"] = snapshot.Start
 	buffer.Metadata["snapshot_limit"] = snapshot.Limit
@@ -58,12 +54,12 @@ func (app *App) transcriptBufferState() extension.BufferState {
 }
 
 func (app *App) thinkingBufferState() extension.BufferState {
-	if buffer, ok := app.runtimeBufferOverride(extensionBufferThinking); ok {
+	if buffer, ok := app.runtimeBufferOverride(extui.BufferThinking); ok {
 		return buffer
 	}
-	buffer := textBufferState(extensionBufferThinking, "")
+	buffer := textBufferState(extui.BufferThinking, "")
 	buffer.Metadata = map[string]any{
-		extensionMetadataCount: app.countRuntimeMessages(func(role transcript.Role) bool {
+		extui.MetadataCount: app.countRuntimeMessages(func(role transcript.Role) bool {
 			return role == transcript.RoleThinking
 		}),
 	}
@@ -72,12 +68,12 @@ func (app *App) thinkingBufferState() extension.BufferState {
 }
 
 func (app *App) toolsBufferState() extension.BufferState {
-	if buffer, ok := app.runtimeBufferOverride(extensionBufferTools); ok {
+	if buffer, ok := app.runtimeBufferOverride(extui.BufferTools); ok {
 		return buffer
 	}
-	buffer := textBufferState(extensionBufferTools, "")
+	buffer := textBufferState(extui.BufferTools, "")
 	buffer.Metadata = map[string]any{
-		extensionMetadataCount: app.countRuntimeMessages(func(role transcript.Role) bool {
+		extui.MetadataCount: app.countRuntimeMessages(func(role transcript.Role) bool {
 			return role == transcript.RoleToolResult || role == transcript.RoleBashExecution
 		}),
 	}
@@ -171,7 +167,7 @@ func transcriptBlockText(text string) (string, bool) {
 }
 
 func transcriptBlockID(index int, streaming bool) string {
-	prefix := extensionMetadataMessage
+	prefix := extui.MetadataMessage
 	if streaming {
 		prefix = "streaming"
 	}
@@ -184,7 +180,7 @@ func transcriptBlockKind(streaming bool) string {
 		return "streaming"
 	}
 
-	return extensionMetadataMessage
+	return extui.MetadataMessage
 }
 
 func (app *App) countRuntimeMessages(matchesRole func(transcript.Role) bool) int {
@@ -204,29 +200,7 @@ func (app *App) countRuntimeMessages(matchesRole func(transcript.Role) bool) int
 }
 
 func (app *App) runtimeBufferOverride(name string) (extension.BufferState, bool) {
-	buffer, ok := app.extensionRuntimeBuffers[name]
-	if !ok {
-		var empty extension.BufferState
-
-		return empty, false
-	}
-
-	return cloneRuntimeBufferState(name, &buffer), true
-}
-
-func cloneRuntimeBufferState(name string, buffer *extension.BufferState) extension.BufferState {
-	cloned := *buffer
-	if cloned.Name == "" {
-		cloned.Name = name
-	}
-	cloned.Metadata = cloneExtensionMetadata(cloned.Metadata)
-	cloned.Chars = append([]string{}, cloned.Chars...)
-	if cloned.Chars == nil {
-		cloned.Chars = input.StringChars(cloned.Text)
-	}
-	cloned.Cursor = input.ClampCursor(cloned.Cursor, len([]rune(cloned.Text)))
-
-	return cloned
+	return app.extensionUI.RuntimeBuffer(name)
 }
 
 func (app *App) defaultStatusText() string {

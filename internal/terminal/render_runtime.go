@@ -1,17 +1,18 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/terminal/extui"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 )
 
-func (app *App) applyUIOverrides(layout *runtimeLayout) {
+func (app *App) applyUIOverrides(layout *extui.Layout) {
 	windows := app.cloneRuntimeWindows(layout)
-	for name, override := range app.uiWindowOverrides {
+	for name, override := range app.extensionUI.Overrides {
 		window, ok := windows[name]
 		if !ok || !window.Visible {
 			continue
@@ -139,7 +140,7 @@ func (app *App) uiStyle(style extension.UIStyle) tcell.Style {
 	return resolved
 }
 
-func (app *App) showRuntimeCursor(layout *runtimeLayout) {
+func (app *App) showRuntimeCursor(layout *extui.Layout) {
 	if app.screen == nil {
 		return
 	}
@@ -147,13 +148,13 @@ func (app *App) showRuntimeCursor(layout *runtimeLayout) {
 	if len(windows) == 0 {
 		windows = app.cloneRuntimeWindows(layout)
 	}
-	if app.uiCursor != nil {
-		if window, ok := windows[app.uiCursor.Window]; ok {
-			app.screen.ShowCursor(window.X+app.uiCursor.Col, window.Y+app.uiCursor.Row)
+	if app.extensionUI.Cursor != nil {
+		if window, ok := windows[app.extensionUI.Cursor.Window]; ok {
+			app.screen.ShowCursor(window.X+app.extensionUI.Cursor.Col, window.Y+app.extensionUI.Cursor.Row)
 			return
 		}
 	}
-	composer, ok := windows[extensionBufferComposer]
+	composer, ok := windows[extui.BufferComposer]
 	if !ok {
 		app.screen.HideCursor()
 		return

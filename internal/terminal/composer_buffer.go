@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/terminal/extui"
 	"github.com/omarluq/librecode/internal/terminal/input"
 )
 
@@ -10,7 +11,7 @@ func composerBufferFromExtension(buffer *extension.BufferState) input.Buffer {
 	if buffer == nil {
 		return nextBuffer
 	}
-	nextBuffer.Metadata = cloneExtensionMetadata(buffer.Metadata)
+	nextBuffer.Metadata = extui.CloneMetadata(buffer.Metadata)
 	nextBuffer.Text = buffer.Text
 	nextBuffer.Chars = input.StringChars(buffer.Text)
 	nextBuffer.Label = buffer.Label
@@ -21,9 +22,9 @@ func composerBufferFromExtension(buffer *extension.BufferState) input.Buffer {
 
 func extensionBufferFromComposer(buffer input.Buffer) extension.BufferState {
 	return extension.BufferState{
-		Metadata: cloneExtensionMetadata(buffer.Metadata),
+		Metadata: extui.CloneMetadata(buffer.Metadata),
 		Blocks:   []extension.BufferBlock{},
-		Name:     extensionBufferComposer,
+		Name:     extui.BufferComposer,
 		Text:     buffer.Text,
 		Label:    buffer.Label,
 		Chars:    append([]string{}, buffer.Chars...),

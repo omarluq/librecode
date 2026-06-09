@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/terminal/extui"
 )
 
 func TestFocusStatePrioritizesPanelAndAutocomplete(t *testing.T) {
@@ -93,7 +94,7 @@ end)
 	app.applyComposerBuffer(&extension.BufferState{
 		Metadata: map[string]any{},
 		Blocks:   []extension.BufferBlock{},
-		Name:     extensionBufferComposer,
+		Name:     extui.BufferComposer,
 		Text:     "/se",
 		Chars:    nil,
 		Label:    "",

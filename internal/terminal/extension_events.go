@@ -8,6 +8,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/terminal/extui"
 	"github.com/omarluq/librecode/internal/terminal/input"
 )
 
@@ -40,9 +41,6 @@ const (
 	extensionEventThinkingDelta   = "thinking_delta"
 	extensionEventToolEnd         = "tool_end"
 	extensionEventToolStart       = "tool_start"
-	extensionBufferComposer       = "composer"
-	extensionBufferStatus         = "status"
-	extensionBufferTranscript     = "transcript"
 )
 
 func (app *App) runStartupExtensions(ctx context.Context) error {
@@ -100,7 +98,7 @@ func (app *App) handleResizeExtensions(ctx context.Context) error {
 	)
 }
 
-func (app *App) runRenderExtensions(ctx context.Context, layout *runtimeLayout) {
+func (app *App) runRenderExtensions(ctx context.Context, layout *extui.Layout) {
 	if layout == nil {
 		return
 	}
@@ -186,8 +184,7 @@ func (app *App) emitExtensionRuntimeEventOrMessage(ctx context.Context, name str
 }
 
 func (app *App) resetFrameUIOverrides() {
-	app.uiWindowOverrides = map[string]uiWindowOverride{}
-	app.uiCursor = nil
+	app.extensionUI.ResetFrameOverrides()
 }
 
 func (app *App) applyPromptSubmitExtensions(ctx context.Context) (bool, error) {
@@ -230,7 +227,7 @@ func (app *App) newExtensionEventWithData(
 func (app *App) newExtensionEventWithLayoutAndData(
 	name string,
 	key extension.ComposerKeyEvent,
-	layout *runtimeLayout,
+	layout *extui.Layout,
 	data map[string]any,
 ) extension.TerminalEvent {
 	windows := app.cloneRuntimeWindows(layout)
@@ -239,7 +236,7 @@ func (app *App) newExtensionEventWithLayoutAndData(
 		Windows: windows,
 		Layout:  extension.LayoutState{Windows: windows, Width: layout.Width, Height: layout.Height},
 		Context: app.extensionContext(),
-		Data:    cloneExtensionMetadata(data),
+		Data:    extui.CloneMetadata(data),
 		Name:    name,
 		Key:     key,
 		Focus:   app.focusState(),
@@ -248,23 +245,13 @@ func (app *App) newExtensionEventWithLayoutAndData(
 
 func (app *App) extensionBuffers() map[string]extension.BufferState {
 	reservedBuffers := app.reservedRuntimeBuffers()
-	buffers := make(map[string]extension.BufferState, len(app.extensionRuntimeBuffers)+len(reservedBuffers))
-	for name, buffer := range app.extensionRuntimeBuffers {
-		buffers[name] = cloneRuntimeBufferState(name, &buffer)
+	buffers := make(map[string]extension.BufferState, len(app.extensionUI.Buffers)+len(reservedBuffers))
+	for name, buffer := range app.extensionUI.Buffers {
+		buffers[name] = extui.CloneBuffer(name, &buffer)
 	}
 	maps.Copy(buffers, reservedBuffers)
 
 	return buffers
-}
-
-func cloneExtensionMetadata(values map[string]any) map[string]any {
-	if values == nil {
-		return map[string]any{}
-	}
-	cloned := make(map[string]any, len(values))
-	maps.Copy(cloned, values)
-
-	return cloned
 }
 
 func textBufferState(name, text string) extension.BufferState {
@@ -342,85 +329,39 @@ func (app *App) applyExtensionAction(ctx context.Context, action extension.Actio
 
 func (app *App) applyExtensionBuffer(name string, buffer *extension.BufferState) {
 	switch name {
-	case extensionBufferComposer:
+	case extui.BufferComposer:
 		app.applyComposerBuffer(buffer)
-	case extensionBufferStatus:
-		app.extensionRuntimeBuffers[name] = cloneRuntimeBufferState(name, buffer)
+	case extui.BufferStatus:
+		app.extensionUI.ApplyBuffer(name, buffer)
 		app.statusMessage = buffer.Text
-	case extensionBufferTranscript, extensionBufferThinking, extensionBufferTools:
-		app.extensionRuntimeBuffers[name] = cloneRuntimeBufferState(name, buffer)
+	case extui.BufferTranscript, extui.BufferThinking, extui.BufferTools:
+		app.extensionUI.ApplyBuffer(name, buffer)
 	default:
-		app.extensionRuntimeBuffers[name] = cloneRuntimeBufferState(name, buffer)
+		app.extensionUI.ApplyBuffer(name, buffer)
 	}
 }
 
 func (app *App) applyRuntimeWindow(name string, window *extension.WindowState) {
-	if window == nil {
-		return
-	}
-	if window.Name == "" {
-		window.Name = name
-	}
-	app.runtimeWindows[name] = *window
-	app.ensureRuntimeLayoutWindow(name, window)
+	app.extensionUI.ApplyWindow(name, window)
 }
 
 func (app *App) applyRuntimeLayout(layout *extension.LayoutState) {
-	if layout == nil {
-		return
-	}
-	cloned := extension.LayoutState{
-		Windows: map[string]extension.WindowState{},
-		Width:   layout.Width,
-		Height:  layout.Height,
-	}
-	for name := range layout.Windows {
-		window := layout.Windows[name]
-		if window.Name == "" {
-			window.Name = name
-		}
-		if window.Metadata == nil {
-			window.Metadata = map[string]any{}
-		}
-		cloned.Windows[name] = window
-	}
-	app.runtimeLayout = &cloned
-	app.runtimeWindows = map[string]extension.WindowState{}
-	for name := range cloned.Windows {
-		app.runtimeWindows[name] = cloned.Windows[name]
-	}
-}
-
-func (app *App) ensureRuntimeLayoutWindow(name string, window *extension.WindowState) {
-	if app.runtimeLayout == nil || window == nil {
-		return
-	}
-	if app.runtimeLayout.Windows == nil {
-		app.runtimeLayout.Windows = map[string]extension.WindowState{}
-	}
-	app.runtimeLayout.Windows[name] = *window
+	app.extensionUI.ApplyLayout(layout)
 }
 
 func (app *App) applyRuntimeWindowDelete(name string) {
-	delete(app.runtimeWindows, name)
-	if app.runtimeLayout != nil {
-		delete(app.runtimeLayout.Windows, name)
-	}
-	delete(app.uiWindowOverrides, name)
-	if app.uiCursor != nil && app.uiCursor.Window == name {
-		app.uiCursor = nil
-	}
+	app.extensionUI.DeleteWindow(name)
 }
 
 func (app *App) applyExtensionBufferDelete(name string) {
-	delete(app.extensionRuntimeBuffers, name)
+	app.extensionUI.DeleteBuffer(name)
 	switch name {
-	case extensionBufferComposer:
+	case extui.BufferComposer:
 		app.composerBuffer = input.NewBuffer()
 		app.resetPromptHistoryNavigation()
-	case extensionBufferStatus:
+	case extui.BufferStatus:
 		app.statusMessage = ""
-	case extensionBufferTranscript:
+	case extui.BufferTranscript:
 		app.resetMessages()
 	}
 }
@@ -439,35 +380,10 @@ func (app *App) applyComposerBuffer(buffer *extension.BufferState) {
 
 func (app *App) applyUIWindowResult(result *extension.TerminalEventResult) {
 	for _, windowName := range result.ResetUIWindows {
-		app.resetUIWindowOverride(windowName)
+		app.extensionUI.ResetWindowOverride(windowName)
 	}
 	for index := range result.UIDrawOps {
-		app.appendUIWindowDrawOp(&result.UIDrawOps[index])
+		app.extensionUI.AppendDrawOp(&result.UIDrawOps[index])
 	}
-	if result.UICursor != nil {
-		cursor := *result.UICursor
-		app.uiCursor = &cursor
-	}
-}
-
-func (app *App) resetUIWindowOverride(name string) {
-	if name == "" {
-		return
-	}
-	override := app.uiWindowOverrides[name]
-	override.Reset = true
-	override.DrawOps = nil
-	app.uiWindowOverrides[name] = override
-	if app.uiCursor != nil && app.uiCursor.Window == name {
-		app.uiCursor = nil
-	}
-}
-
-func (app *App) appendUIWindowDrawOp(drawOp *extension.UIDrawOp) {
-	if drawOp == nil || drawOp.Window == "" {
-		return
-	}
-	override := app.uiWindowOverrides[drawOp.Window]
-	override.DrawOps = append(override.DrawOps, *drawOp)
-	app.uiWindowOverrides[drawOp.Window] = override
+	app.extensionUI.SetCursor(result.UICursor)
 }

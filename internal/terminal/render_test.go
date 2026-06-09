@@ -3,7 +3,6 @@ package terminal
 
 import (
 	"context"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +16,8 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/terminal/extui"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
@@ -978,7 +979,7 @@ func TestExtensionRendererSkipsDefaultComposerDraw(t *testing.T) {
 	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	window := layout.Composer
 	window.Renderer = "extension"
-	app.runtimeWindows[window.Name] = window
+	app.extensionUI.Windows[window.Name] = window
 
 	app.drawComposerWindow(&layout)
 
@@ -993,7 +994,7 @@ func TestUIRenderDrawsSpansWithoutClearingLaterSpans(t *testing.T) {
 	app := newRenderTestApp(t)
 	layout := app.defaultRuntimeLayout(40, 12)
 	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
-	app.uiWindowOverrides[extensionBufferComposer] = uiWindowOverride{
+	app.extensionUI.Overrides[extui.BufferComposer] = extui.WindowOverride{
 		DrawOps: []extension.UIDrawOp{
 			{
 				Style: extension.UIStyle{FG: "", BG: "", Bold: false, Italic: false},
@@ -1001,7 +1002,7 @@ func TestUIRenderDrawsSpansWithoutClearingLaterSpans(t *testing.T) {
 					{Text: "hot", Style: extension.UIStyle{FG: "accent", BG: "", Bold: true, Italic: false}},
 					{Text: " cold", Style: extension.UIStyle{FG: string(colorDim), BG: "", Bold: false, Italic: false}},
 				},
-				Window: extensionBufferComposer,
+				Window: extui.BufferComposer,
 				Kind:   extension.UIDrawKindSpans,
 				Text:   "",
 				Row:    1,
@@ -1036,12 +1037,12 @@ func TestUIRenderDrawsWideRunesByCellWidth(t *testing.T) {
 	app := newRenderTestApp(t)
 	layout := app.defaultRuntimeLayout(40, 12)
 	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
-	app.uiWindowOverrides[extensionBufferComposer] = uiWindowOverride{
+	app.extensionUI.Overrides[extui.BufferComposer] = extui.WindowOverride{
 		DrawOps: []extension.UIDrawOp{
 			{
 				Style:  extension.UIStyle{FG: "text", BG: "", Bold: false, Italic: false},
 				Spans:  []extension.UISpan{},
-				Window: extensionBufferComposer,
+				Window: extui.BufferComposer,
 				Kind:   extension.UIDrawKindText,
 				Text:   "語x",
 				Row:    1,
@@ -1084,12 +1085,12 @@ func TestUIRenderClearRegionClipsToWindow(t *testing.T) {
 			tcell.StyleDefault.Foreground(cellcolor.Red),
 		)
 	}
-	app.uiWindowOverrides[extensionBufferComposer] = uiWindowOverride{
+	app.extensionUI.Overrides[extui.BufferComposer] = extui.WindowOverride{
 		DrawOps: []extension.UIDrawOp{
 			{
 				Style:  extension.UIStyle{FG: string(colorDim), BG: "", Bold: false, Italic: false},
 				Spans:  []extension.UISpan{},
-				Window: extensionBufferComposer,
+				Window: extui.BufferComposer,
 				Kind:   extension.UIDrawKindClear,
 				Text:   "",
 				Row:    1,
@@ -1198,7 +1199,7 @@ func TestDrawComposerDoesNotPersistDefaultWindowGeometry(t *testing.T) {
 	wideLayout := app.defaultRuntimeLayout(80, 24)
 	app.frame = rendertext.NewBuffer(wideLayout.Width, wideLayout.Height, tcell.StyleDefault)
 	app.drawComposerWindow(&wideLayout)
-	if _, ok := app.runtimeWindows[extensionBufferComposer]; ok {
+	if _, ok := app.extensionUI.Windows[extui.BufferComposer]; ok {
 		t.Fatal("default composer draw should not persist runtime window geometry")
 	}
 
