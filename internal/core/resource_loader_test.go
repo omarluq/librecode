@@ -45,6 +45,11 @@ func TestDefaultResourceLoaderReloadsPiResources(t *testing.T) {
 	require.NoError(t, loader.Reload(context.Background()))
 
 	snapshot := loader.Snapshot()
+	assert.Equal(t, snapshot.Skills, loader.Skills().Skills)
+	assert.Equal(t, snapshot.Prompts, loader.Prompts().Prompts)
+	assert.Equal(t, snapshot.ContextFiles, loader.ContextFiles())
+	assert.Equal(t, snapshot.SystemPrompt, loader.SystemPrompt())
+	assert.Equal(t, snapshot.AppendSystemPrompt, loader.AppendSystemPrompt())
 	assert.Equal(t, "project system", snapshot.SystemPrompt)
 	assert.Equal(t, []string{"append system"}, snapshot.AppendSystemPrompt)
 	require.Len(t, snapshot.ContextFiles, 3)

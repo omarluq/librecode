@@ -78,6 +78,36 @@ func TestFilterModelListMatchesProviderIDAndName(t *testing.T) {
 
 	assert.Equal(t, []model.Model{models[1]}, filterModelList(models, "oauth"))
 	assert.Equal(t, []model.Model{models[0]}, filterModelList(models, "openai"))
+	assert.Equal(t, models, filterModelList(models, "  "))
+}
+
+func TestModelListFormattingHelpers(t *testing.T) {
+	t.Parallel()
+
+	rows := []modelListRow{{
+		Provider:  "long-provider",
+		Model:     "m",
+		Context:   "1M",
+		MaxOutput: "128K",
+		Reasoning: "yes",
+		Images:    "no",
+	}}
+	widths := computeModelListWidths(rows)
+	assert.Equal(t, len("long-provider"), widths.Provider)
+	assert.Equal(t, len("max-out"), widths.MaxOutput)
+
+	assert.Equal(t, "999", formatTokenCount(999))
+	assert.Equal(t, "1K", formatTokenCount(1000))
+	assert.Equal(t, "1.5K", formatTokenCount(1500))
+	assert.Equal(t, "1M", formatTokenCount(1_000_000))
+	assert.Equal(t, "1.5M", formatTokenCount(1_500_000))
+	assert.Equal(t, "yes", yesNo(true))
+	assert.Equal(t, "no", yesNo(false))
+	imageModel := testCLIModel("openai", "vision", "Vision")
+	imageModel.Input = []model.InputMode{model.InputText, model.InputImage}
+	textModel := testCLIModel("openai", "text", "Text")
+	assert.True(t, modelSupportsImage(&imageModel))
+	assert.False(t, modelSupportsImage(&textModel))
 }
 
 func testCLIAuthCredential() auth.Credential {

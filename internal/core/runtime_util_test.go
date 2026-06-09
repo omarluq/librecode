@@ -11,6 +11,8 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 )
 
+const testSessionFile = "session.jsonl"
+
 type testSessionCWDSource struct {
 	cwd         string
 	sessionFile string
@@ -39,18 +41,28 @@ func TestSessionCWDReportsMissingStoredDirectory(t *testing.T) {
 	missingCWD := filepath.Join(t.TempDir(), "missing")
 	issue, found := core.MissingSessionCWDIssueFor(testSessionCWDSource{
 		cwd:         missingCWD,
-		sessionFile: "session.jsonl",
+		sessionFile: testSessionFile,
 	}, fallbackCWD)
 	require.True(t, found)
 
 	assert.Equal(t, missingCWD, issue.SessionCWD)
-	assert.Contains(t, core.FormatMissingSessionCWDError(issue), "Session file: session.jsonl")
+	assert.Contains(t, core.FormatMissingSessionCWDError(issue), "Session file: "+testSessionFile)
 	assert.Contains(t, core.FormatMissingSessionCWDPrompt(issue), fallbackCWD)
 	var missingErr *core.MissingSessionCWDError
 	assert.ErrorAs(t, core.AssertSessionCWDExists(testSessionCWDSource{
 		cwd:         missingCWD,
-		sessionFile: "session.jsonl",
+		sessionFile: testSessionFile,
 	}, fallbackCWD), &missingErr)
+	assert.Contains(t, missingErr.Error(), missingCWD)
+	assert.NoError(t, core.AssertSessionCWDExists(testSessionCWDSource{
+		cwd:         fallbackCWD,
+		sessionFile: testSessionFile,
+	}, fallbackCWD))
+	_, found = core.MissingSessionCWDIssueFor(testSessionCWDSource{
+		cwd:         missingCWD,
+		sessionFile: "",
+	}, fallbackCWD)
+	assert.False(t, found)
 }
 
 func TestTelemetryEnvOverridesSettings(t *testing.T) {
