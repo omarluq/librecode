@@ -307,7 +307,7 @@ func formatGrepBlock(displayPath string, lines []string, matchIndex, contextLine
 
 	lineIndexes := lo.RangeFrom(startLine, endLine-startLine+1)
 	linesTruncated := false
-	outputLines := lo.Map(lineIndexes, func(lineIndex int, _ int) string {
+	outputLines := lo.Map(lineIndexes, func(lineIndex, _ int) string {
 		lineText, wasTruncated := TruncateLine(strings.TrimRight(lines[lineIndex], "\r"), GrepMaxLineLength)
 		linesTruncated = linesTruncated || wasTruncated
 		separator := ":"

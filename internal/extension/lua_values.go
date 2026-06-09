@@ -110,7 +110,7 @@ func luaValueToGo(value lua.LValue) any {
 
 func luaTableToMap(table *lua.LTable) map[string]any {
 	values := map[string]any{}
-	table.ForEach(func(key lua.LValue, value lua.LValue) {
+	table.ForEach(func(key, value lua.LValue) {
 		values[key.String()] = luaValueToGo(value)
 	})
 
@@ -479,7 +479,7 @@ func luaLayoutState(value lua.LValue) *LayoutState {
 	windows := map[string]WindowState{}
 	windowsValue := table.RawGetString("windows")
 	if windowsTable, ok := windowsValue.(*lua.LTable); ok {
-		windowsTable.ForEach(func(key lua.LValue, windowValue lua.LValue) {
+		windowsTable.ForEach(func(key, windowValue lua.LValue) {
 			name := key.String()
 			windows[name] = luaWindowState(name, windowValue)
 		})

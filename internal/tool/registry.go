@@ -68,7 +68,7 @@ func (registry *Registry) Definitions() []Definition {
 	definitions := lo.Map(lo.Values(registry.executors), func(executor Executor, _ int) Definition {
 		return executor.Definition()
 	})
-	sort.Slice(definitions, func(leftIndex int, rightIndex int) bool {
+	sort.Slice(definitions, func(leftIndex, rightIndex int) bool {
 		return definitions[leftIndex].Name < definitions[rightIndex].Name
 	})
 

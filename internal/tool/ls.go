@@ -102,7 +102,7 @@ func readSortedDirectory(absolutePath string) ([]os.DirEntry, error) {
 	if err != nil {
 		return []os.DirEntry{}, fmt.Errorf("cannot read directory: %w", err)
 	}
-	sort.Slice(entries, func(leftIndex int, rightIndex int) bool {
+	sort.Slice(entries, func(leftIndex, rightIndex int) bool {
 		leftName := strings.ToLower(entries[leftIndex].Name())
 		rightName := strings.ToLower(entries[rightIndex].Name())
 		return leftName < rightName
