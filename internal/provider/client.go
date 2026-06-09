@@ -131,8 +131,8 @@ type ToolEvent struct {
 	IsError       bool   `json:"is_error,omitempty"`
 }
 
-// CompletionClient talks to provider APIs.
-type CompletionClient interface {
+// Completer talks to provider APIs.
+type Completer interface {
 	Complete(ctx context.Context, request *CompletionRequest) (*CompletionResult, error)
 }
 

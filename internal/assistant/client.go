@@ -49,8 +49,8 @@ type ToolEvent = provider.ToolEvent
 // ProviderStreamEvent aliases provider stream events for tests and adapters.
 type ProviderStreamEvent = provider.StreamEvent
 
-// CompletionClient aliases the provider completion client interface.
-type CompletionClient = provider.CompletionClient
+// CompletionClient aliases the provider completion interface during extraction.
+type CompletionClient = provider.Completer
 
 // HTTPCompletionClient aliases the provider HTTP implementation.
 type HTTPCompletionClient = provider.HTTPCompletionClient
