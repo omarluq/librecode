@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/omarluq/librecode/internal/terminal/panel"
 	"github.com/omarluq/librecode/internal/transcript"
 
 	"github.com/omarluq/librecode/internal/auth"
@@ -22,7 +23,7 @@ const (
 )
 
 func (app *App) openLoginPanel() {
-	app.openPanel(newSelectionPanel(
+	app.openPanel(panel.New(
 		panelAuthLogin,
 		"Login",
 		"Select provider; subscription providers open browser login, API-key providers fill /login",
@@ -37,14 +38,14 @@ func (app *App) openLogoutPanel() {
 		app.addSystemMessage("no stored credentials to remove")
 		return
 	}
-	app.openPanel(newSelectionPanel(panelAuthLogout, "Logout", "Select stored credential to remove", items, true))
+	app.openPanel(panel.New(panelAuthLogout, "Logout", "Select stored credential to remove", items, true))
 }
 
-func (app *App) loginProviderItems() []panelItem {
+func (app *App) loginProviderItems() []panel.Item {
 	providers := app.authProviderIDs()
-	items := make([]panelItem, 0, len(providers))
+	items := make([]panel.Item, 0, len(providers))
 	for _, provider := range providers {
-		items = append(items, panelItem{
+		items = append(items, panel.Item{
 			Value:       provider,
 			Title:       providerDisplayName(provider),
 			Description: authDescription(provider),
@@ -55,14 +56,14 @@ func (app *App) loginProviderItems() []panelItem {
 	return items
 }
 
-func (app *App) logoutProviderItems() []panelItem {
+func (app *App) logoutProviderItems() []panel.Item {
 	providers := []string{}
 	if app.auth != nil {
 		providers = app.auth.List()
 	}
-	items := make([]panelItem, 0, len(providers))
+	items := make([]panel.Item, 0, len(providers))
 	for _, provider := range providers {
-		items = append(items, panelItem{
+		items = append(items, panel.Item{
 			Value:       provider,
 			Title:       providerDisplayName(provider),
 			Description: authDescription(provider),

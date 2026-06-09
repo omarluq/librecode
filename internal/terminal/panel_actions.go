@@ -3,6 +3,8 @@ package terminal
 import (
 	"context"
 	"fmt"
+
+	"github.com/omarluq/librecode/internal/terminal/panel"
 )
 
 func (app *App) closePanel() {
@@ -11,10 +13,10 @@ func (app *App) closePanel() {
 	app.selectedPanelKind = ""
 }
 
-func (app *App) openPanel(panel *selectionPanel) {
+func (app *App) openPanel(panelModel *panel.Model) {
 	app.mode = modePanel
-	app.selectedPanelKind = panel.kind
-	app.panel = panel
+	app.selectedPanelKind = panelModel.Kind()
+	app.panel = panelModel
 }
 
 func (app *App) applyPanelSelection(ctx context.Context, value string) error {

@@ -5,16 +5,17 @@ import (
 	"strings"
 
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/terminal/panel"
 )
 
 func (app *App) openModelPanel() {
 	items := app.modelItems()
-	app.openPanel(newSelectionPanel(panelModel, "Select Model", "type to filter; Enter selects", items, true))
+	app.openPanel(panel.New(panelModel, "Select Model", "type to filter; Enter selects", items, true))
 }
 
-func (app *App) modelItems() []panelItem {
+func (app *App) modelItems() []panel.Item {
 	models := app.availableModels()
-	items := make([]panelItem, 0, len(models))
+	items := make([]panel.Item, 0, len(models))
 	current := modelLabel(app.currentProvider(), app.currentModel())
 	for index := range models {
 		knownModel := &models[index]
@@ -23,7 +24,7 @@ func (app *App) modelItems() []panelItem {
 		if value == current {
 			meta += " ✓"
 		}
-		items = append(items, panelItem{Value: value, Title: knownModel.ID, Description: knownModel.Name, Meta: meta})
+		items = append(items, panel.Item{Value: value, Title: knownModel.ID, Description: knownModel.Name, Meta: meta})
 	}
 
 	return items

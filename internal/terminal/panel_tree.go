@@ -2,9 +2,10 @@ package terminal
 
 import (
 	"context"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/terminal/panel"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 )
 
 func (app *App) openTreePanel(ctx context.Context) {
@@ -13,24 +14,24 @@ func (app *App) openTreePanel(ctx context.Context) {
 		app.addSystemMessage(err.Error())
 		return
 	}
-	app.openPanel(newSelectionPanel(panelTree, "Session Tree", "select any entry to branch from it", items, true))
+	app.openPanel(panel.New(panelTree, "Session Tree", "select any entry to branch from it", items, true))
 }
 
-func (app *App) treeItems(ctx context.Context) ([]panelItem, error) {
+func (app *App) treeItems(ctx context.Context) ([]panel.Item, error) {
 	if app.sessionID == "" {
-		return []panelItem{}, nil
+		return []panel.Item{}, nil
 	}
 	tree, err := app.runtime.SessionRepository().Tree(ctx, app.sessionID)
 	if err != nil {
 		return nil, err
 	}
-	items := []panelItem{}
+	items := []panel.Item{}
 	appendTreeItems(&items, tree, "")
 
 	return items, nil
 }
 
-func appendTreeItems(items *[]panelItem, nodes []database.TreeNodeEntity, prefix string) {
+func appendTreeItems(items *[]panel.Item, nodes []database.TreeNodeEntity, prefix string) {
 	for index := range nodes {
 		node := &nodes[index]
 		branch := "├─ "
@@ -42,7 +43,7 @@ func appendTreeItems(items *[]panelItem, nodes []database.TreeNodeEntity, prefix
 		entry := &node.Entry
 		title := prefix + branch + string(entry.Type)
 		description := treeDescription(entry)
-		*items = append(*items, panelItem{
+		*items = append(*items, panel.Item{
 			Value:       entry.ID,
 			Title:       title,
 			Description: description,

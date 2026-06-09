@@ -60,11 +60,11 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 	if got, want := app.selectedPanelKind, panelModel; got != want {
 		t.Fatalf("selectedPanelKind = %q, want %q", got, want)
 	}
-	if app.panel == nil || app.panel.kind != panelModel {
+	if app.panel == nil || app.panel.Kind() != panelModel {
 		t.Fatal("model panel should be open")
 	}
-	if len(app.panel.items) != 2 {
-		t.Fatalf("len(panel.items) = %d, want 2", len(app.panel.items))
+	if items := app.panel.Items(); len(items) != 2 {
+		t.Fatalf("len(panel.items) = %d, want 2", len(items))
 	}
 
 	app.applyModelSelection(promptSendTestProvider + "/other-model")

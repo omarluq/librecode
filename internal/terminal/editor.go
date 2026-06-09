@@ -1,9 +1,10 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"unicode"
+
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 )
 
 type editorRender struct {
@@ -154,12 +155,12 @@ func renderEditor(
 	lines := make([]rendertext.Line, 0, len(visibleLines)+2)
 	borderStyle := theme.style(border)
 	bodyStyle := theme.style(colorText)
-	lines = append(lines, rendertext.NewLine(borderStyle, editorTopBorder(width, label)))
+	lines = append(lines, rendertext.NewLine(borderStyle, rendertext.TopBorder(width, label)))
 	for _, bodyLine := range visibleLines {
 		bodyText := rendertext.PadRight(bodyLine, innerWidth)
 		lines = append(lines, rendertext.NewLine(bodyStyle, "│ "+bodyText+" │"))
 	}
-	lines = append(lines, rendertext.NewLine(borderStyle, editorBottomBorder(width)))
+	lines = append(lines, rendertext.NewLine(borderStyle, rendertext.BottomBorder(width)))
 
 	return editorRender{
 		Lines:     lines,
@@ -233,24 +234,6 @@ func visibleEditorLines(lines []string, maxRows, cursorRow int) (visible []strin
 	}
 
 	return lines[start : start+maxRows], start
-}
-
-func editorTopBorder(width int, label string) string {
-	innerWidth := max(1, width-2)
-	label = strings.TrimSpace(label)
-	if label == "" {
-		return "╭" + strings.Repeat("─", innerWidth) + "╮"
-	}
-
-	label = strings.ReplaceAll(label, "\n", " ")
-	suffix := rendertext.Truncate(label+"──", innerWidth)
-	fillWidth := max(0, innerWidth-rendertext.RuneLen(suffix))
-
-	return "╭" + strings.Repeat("─", fillWidth) + suffix + "╮"
-}
-
-func editorBottomBorder(width int) string {
-	return "╰" + strings.Repeat("─", max(1, width-2)) + "╯"
 }
 
 func wordLeft(value []rune, cursor int) int {

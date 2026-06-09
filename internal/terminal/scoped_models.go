@@ -32,8 +32,9 @@ func (app *App) saveScopedModels() {
 }
 
 func (app *App) enableFilteredScopedModels() {
-	values := make([]string, 0, len(app.panel.filtered))
-	for _, item := range app.panel.filtered {
+	items := app.panel.FilteredItems()
+	values := make([]string, 0, len(items))
+	for _, item := range items {
 		values = append(values, item.Value)
 	}
 	app.setScopedModelsEnabled(values, true)
@@ -41,8 +42,9 @@ func (app *App) enableFilteredScopedModels() {
 }
 
 func (app *App) clearFilteredScopedModels() {
-	values := make([]string, 0, len(app.panel.filtered))
-	for _, item := range app.panel.filtered {
+	items := app.panel.FilteredItems()
+	values := make([]string, 0, len(items))
+	for _, item := range items {
 		values = append(values, item.Value)
 	}
 	app.clearScopedModels(values)
@@ -50,7 +52,7 @@ func (app *App) clearFilteredScopedModels() {
 }
 
 func (app *App) toggleSelectedProviderModels() {
-	item, ok := app.panel.selectedItem()
+	item, ok := app.panel.SelectedItem()
 	if !ok {
 		return
 	}
@@ -68,7 +70,7 @@ func (app *App) toggleSelectedProviderModels() {
 }
 
 func (app *App) reorderSelectedScopedModel(delta int) {
-	value, ok := app.panel.selectedValue()
+	value, ok := app.panel.SelectedValue()
 	if !ok {
 		return
 	}

@@ -1,6 +1,10 @@
 package terminal
 
-import "context"
+import (
+	"context"
+
+	"github.com/omarluq/librecode/internal/terminal/panel"
+)
 
 func (app *App) openSessionPanel(ctx context.Context) {
 	items, err := app.sessionItems(ctx)
@@ -8,16 +12,16 @@ func (app *App) openSessionPanel(ctx context.Context) {
 		app.addSystemMessage(err.Error())
 		return
 	}
-	panel := newSelectionPanel(panelSessions, "Resume Session", app.sessionPanelSubtitle(), items, true)
-	app.openPanel(panel)
+	model := panel.New(panelSessions, "Resume Session", app.sessionPanelSubtitle(), items, true)
+	app.openPanel(model)
 }
 
-func (app *App) sessionItems(ctx context.Context) ([]panelItem, error) {
+func (app *App) sessionItems(ctx context.Context) ([]panel.Item, error) {
 	sessions, err := app.runtime.SessionRepository().ListSessions(ctx, app.cwd)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]panelItem, 0, len(sessions))
+	items := make([]panel.Item, 0, len(sessions))
 	filteredSessions := app.filteredSessionEntities(sessions)
 	for index := range filteredSessions {
 		session := &filteredSessions[index]
@@ -27,7 +31,7 @@ func (app *App) sessionItems(ctx context.Context) ([]panelItem, error) {
 			description = session.CWD
 		}
 		meta := session.UpdatedAt.Format("2006-01-02 15:04")
-		items = append(items, panelItem{
+		items = append(items, panel.Item{
 			Value:       session.ID,
 			Title:       title,
 			Description: description,

@@ -4,6 +4,7 @@ package terminal
 import (
 	"context"
 	"fmt"
+	"github.com/omarluq/librecode/internal/terminal/panel"
 	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"time"
@@ -129,7 +130,7 @@ type App struct {
 	auth                    *auth.Storage
 	cfg                     *config.Config
 	keys                    *keybindings
-	panel                   *selectionPanel
+	panel                   *panel.Model
 	pendingParentID         *string
 	activePrompt            *activePromptState
 	activeCompaction        *activeCompactionState
@@ -141,7 +142,7 @@ type App struct {
 	uiWindowOverrides       map[string]uiWindowOverride
 	uiCursor                *extension.UICursor
 	theme                   terminalTheme
-	selectedPanelKind       panelKind
+	selectedPanelKind       panel.Kind
 	sessionID               string
 	statusMessage           string
 	streamingText           string

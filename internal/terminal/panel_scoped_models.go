@@ -1,9 +1,12 @@
 package terminal
 
-import "github.com/omarluq/librecode/internal/model"
+import (
+	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/terminal/panel"
+)
 
 func (app *App) openScopedModelsPanel() {
-	app.openPanel(newSelectionPanel(
+	app.openPanel(panel.New(
 		panelScopedModels,
 		"Scoped Models",
 		"Enter toggles; Ctrl+S saves; Ctrl+A all; Ctrl+X clear; Ctrl+P provider",
@@ -12,9 +15,9 @@ func (app *App) openScopedModelsPanel() {
 	))
 }
 
-func (app *App) scopedModelItems() []panelItem {
+func (app *App) scopedModelItems() []panel.Item {
 	models := app.orderedAvailableModels()
-	items := make([]panelItem, 0, len(models))
+	items := make([]panel.Item, 0, len(models))
 	for index := range models {
 		knownModel := &models[index]
 		value := modelLabel(knownModel.Provider, knownModel.ID)
@@ -22,7 +25,7 @@ func (app *App) scopedModelItems() []panelItem {
 		if app.scopedEnabled[value] {
 			check = "☑"
 		}
-		items = append(items, panelItem{
+		items = append(items, panel.Item{
 			Value:       value,
 			Title:       check + " " + knownModel.ID,
 			Description: knownModel.Name,
@@ -81,7 +84,7 @@ func (app *App) refreshScopedModelsPanel() {
 	if app.selectedPanelKind != panelScopedModels {
 		return
 	}
-	app.panel = newSelectionPanel(
+	app.panel = panel.New(
 		panelScopedModels,
 		"Scoped Models",
 		"Enter toggles; Ctrl+S saves; Ctrl+A all; Ctrl+X clear; Ctrl+P provider",

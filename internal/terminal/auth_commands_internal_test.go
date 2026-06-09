@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"github.com/omarluq/librecode/internal/terminal/panel"
 	"testing"
 	"time"
 
@@ -24,8 +25,8 @@ func TestAuthPanelItemsReflectProviderStatus(t *testing.T) {
 	require.Equal(t, modePanel, app.mode)
 	require.NotNil(t, app.panel)
 	assert.Equal(t, panelAuthLogin, app.selectedPanelKind)
-	assert.Contains(t, panelItemValues(app.panel.items), openAICodexProviderID)
-	assert.Contains(t, panelItemValues(app.panel.items), promptSendTestProvider)
+	assert.Contains(t, panelItemValues(app.panel.Items()), openAICodexProviderID)
+	assert.Contains(t, panelItemValues(app.panel.Items()), promptSendTestProvider)
 	assert.Contains(t, app.authStatusLabel(promptSendTestProvider), string(auth.SourceStored))
 	assert.Equal(t, "API key provider", authDescription(promptSendTestProvider))
 	assert.Equal(t, promptSendTestProvider, providerDisplayName(promptSendTestProvider))
@@ -45,7 +46,7 @@ func TestLogoutPanelAndSelectionRemoveCredential(t *testing.T) {
 	require.Equal(t, modePanel, app.mode)
 	require.NotNil(t, app.panel)
 	assert.Equal(t, panelAuthLogout, app.selectedPanelKind)
-	assert.Contains(t, panelItemValues(app.panel.items), promptSendTestProvider)
+	assert.Contains(t, panelItemValues(app.panel.Items()), promptSendTestProvider)
 
 	err = app.applyAuthSelection(context.Background(), promptSendTestProvider)
 
@@ -213,7 +214,7 @@ func readAuthAsyncEvent(t *testing.T, app *App) *asyncEvent {
 	}
 }
 
-func panelItemValues(items []panelItem) []string {
+func panelItemValues(items []panel.Item) []string {
 	values := make([]string, 0, len(items))
 	for _, item := range items {
 		values = append(values, item.Value)

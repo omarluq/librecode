@@ -44,10 +44,10 @@ func TestTreePanelFlow(t *testing.T) {
 	if got, want := app.selectedPanelKind, panelTree; got != want {
 		t.Fatalf("selectedPanelKind = %q, want %q", got, want)
 	}
-	if app.panel == nil || app.panel.kind != panelTree {
+	if app.panel == nil || app.panel.Kind() != panelTree {
 		t.Fatal("tree panel should be open")
 	}
-	if len(app.panel.items) == 0 {
+	if len(app.panel.Items()) == 0 {
 		t.Fatal("tree panel should include session entries")
 	}
 
