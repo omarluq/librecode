@@ -38,7 +38,8 @@ func (usage Usage) TotalTokens() int {
 
 // HasAny reports whether any usage field is populated.
 func (usage Usage) HasAny() bool {
-	return usage.ContextWindow > 0 || usage.ContextTokens > 0 || usage.InputTokens > 0 || usage.OutputTokens > 0
+	return usage.ContextWindow > 0 || usage.ContextTokens > 0 || usage.InputTokens > 0 || usage.OutputTokens > 0 ||
+		len(usage.Breakdown) > 0 || len(usage.TopContributors) > 0
 }
 
 // ContextPercent returns the context-window usage percentage, if known.

@@ -13,7 +13,7 @@ func mergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
 	if reported.ContextWindow > 0 {
 		usage.ContextWindow = reported.ContextWindow
 	}
-	if reported.ContextTokens > usage.ContextTokens {
+	if reported.ContextTokens > 0 {
 		usage.ContextTokens = reported.ContextTokens
 	}
 	if reported.InputTokens > 0 {

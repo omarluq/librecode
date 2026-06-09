@@ -63,6 +63,36 @@ func TestTopContextContributorsCapsResults(t *testing.T) {
 	assert.Equal(t, "message 12", contributors[0].Label)
 }
 
+func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
+	t.Parallel()
+
+	estimated := model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100_000,
+		ContextTokens:   14_000,
+		InputTokens:     14_000,
+		OutputTokens:    0,
+	}
+	reported := model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   0,
+		ContextTokens:   12_000,
+		InputTokens:     12_000,
+		OutputTokens:    700,
+	}
+
+	assert.Equal(t, model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100_000,
+		ContextTokens:   12_000,
+		InputTokens:     12_000,
+		OutputTokens:    700,
+	}, mergeUsage(estimated, reported))
+}
+
 func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
 	t.Parallel()
 

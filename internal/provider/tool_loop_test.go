@@ -106,6 +106,49 @@ func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
 	assert.True(t, toolResults[0].IsError)
 }
 
+func TestExecuteToolCallsHandlesCustomExecutorMissingEvents(t *testing.T) {
+	t.Parallel()
+
+	request := &CompletionRequest{
+		OnEvent:           nil,
+		OnProviderObserve: nil,
+		OnProviderRequest: nil,
+		OnToolCall:        nil,
+		OnToolResult:      nil,
+		ToolRegistry:      nil,
+		ExecuteTools: func(context.Context, []ToolCall, func(StreamEvent)) ([]ToolEvent, error) {
+			return []ToolEvent{}, nil
+		},
+		SessionID:       "",
+		SystemPrompt:    "",
+		ThinkingLevel:   "",
+		CWD:             "",
+		Auth:            emptyRequestAuth(),
+		Messages:        nil,
+		Usage:           model.EmptyTokenUsage(),
+		Model:           emptyModel(),
+		ProviderAttempt: 0,
+		DisableTools:    false,
+	}
+
+	outputs, events, err := executeToolCalls(context.Background(), request, []ToolCall{{
+		Arguments:     nil,
+		ID:            testCallID,
+		Name:          jsonReadToolName,
+		ArgumentsJSON: `{}`,
+		TextFallback:  false,
+	}})
+
+	require.NoError(t, err)
+	assert.Empty(t, events)
+	require.Len(t, outputs, 1)
+	assert.Equal(t, map[string]any{
+		jsonTypeKey:   functionCallOutputType,
+		jsonCallIDKey: testCallID,
+		jsonOutputKey: "",
+	}, outputs[0])
+}
+
 func TestExecuteToolCallsMarksToolCallHookErrors(t *testing.T) {
 	t.Parallel()
 

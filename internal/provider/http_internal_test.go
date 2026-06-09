@@ -10,35 +10,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPostJSONRejectsProviderResponseAboveLimit(t *testing.T) {
+func TestPostJSONRejectsProviderBodiesAboveLimit(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		_, err := writer.Write([]byte(strings.Repeat("a", int(providerResponseLimitBytes)+1)))
-		require.NoError(t, err)
-	}))
-	t.Cleanup(server.Close)
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{name: "success", statusCode: http.StatusOK},
+		{name: "error", statusCode: http.StatusInternalServerError},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	client := &HTTPCompletionClient{client: server.Client()}
-	content, err := client.postJSON(t.Context(), server.URL, nil, map[string]any{"ok": true})
-	require.Error(t, err)
-	assert.Nil(t, content)
-	assert.Contains(t, err.Error(), "provider response exceeds limit")
-}
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.WriteHeader(test.statusCode)
+				_, err := writer.Write([]byte(strings.Repeat("a", int(providerResponseLimitBytes)+1)))
+				require.NoError(t, err)
+			}))
+			t.Cleanup(server.Close)
 
-func TestPostJSONRejectsProviderErrorBodyAboveLimit(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.WriteHeader(http.StatusInternalServerError)
-		_, err := writer.Write([]byte(strings.Repeat("a", int(providerResponseLimitBytes)+1)))
-		require.NoError(t, err)
-	}))
-	t.Cleanup(server.Close)
-
-	client := &HTTPCompletionClient{client: server.Client()}
-	content, err := client.postJSON(t.Context(), server.URL, nil, map[string]any{"ok": true})
-	require.Error(t, err)
-	assert.Nil(t, content)
-	assert.Contains(t, err.Error(), "provider response exceeds limit")
+			client := &HTTPCompletionClient{client: server.Client()}
+			content, err := client.postJSON(t.Context(), server.URL, nil, map[string]any{"ok": true})
+			require.Error(t, err)
+			assert.Nil(t, content)
+			assert.Contains(t, err.Error(), "provider response exceeds limit")
+		})
+	}
 }

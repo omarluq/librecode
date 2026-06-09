@@ -1,36 +1,19 @@
 package assistant
 
-import "maps"
+import "github.com/omarluq/librecode/internal/mapsutil"
 
 func cloneStringMap(values map[string]string) map[string]string {
-	if values == nil {
-		return map[string]string{}
-	}
-
-	return maps.Clone(values)
+	return mapsutil.CloneOrEmpty(values)
 }
 
 func cloneAnyMap(values map[string]any) map[string]any {
-	if values == nil {
-		return map[string]any{}
-	}
-
-	return maps.Clone(values)
+	return mapsutil.CloneOrEmpty(values)
 }
 
 func cloneIntMap(values map[string]int) map[string]int {
-	if values == nil {
-		return nil
-	}
-
-	return maps.Clone(values)
+	return mapsutil.CloneOrNil(values)
 }
 
 func cloneIntAnyMap(values map[string]int) map[string]any {
-	cloned := make(map[string]any, len(values))
-	for key, value := range values {
-		cloned[key] = value
-	}
-
-	return cloned
+	return mapsutil.IntMapToAnyMap(values)
 }

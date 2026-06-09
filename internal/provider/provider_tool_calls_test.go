@@ -19,26 +19,12 @@ import (
 func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
 	t.Parallel()
 
-	var requests []map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		var payload map[string]any
-		require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
-		requests = append(requests, payload)
-		writer.Header().Set("Content-Type", "application/json")
-		if len(requests) == 1 {
-			writeTestProviderResponse(t, writer, openAIChatReadToolResponse())
-			return
-		}
-		writeTestProviderResponse(t, writer, `{"choices":[{"message":{"content":"done"}}]}`)
-	}))
-	defer server.Close()
+	requests, result := completeOpenAIChatWithResponses(
+		t,
+		openAIChatReadToolResponse(),
+		`{"choices":[{"message":{"content":"done"}}]}`,
+	)
 
-	request := testCompletionRequestAuth("sk-test")
-	request.CWD = testToolWorkspace(t)
-	request.Model.BaseURL = server.URL
-
-	result, err := NewHTTPCompletionClient().completeOpenAIChat(context.Background(), request)
-	require.NoError(t, err)
 	require.Equal(t, "done", result.Text)
 	require.Len(t, result.ToolEvents, 1)
 	assert.Equal(t, jsonReadToolName, result.ToolEvents[0].Name)
@@ -163,6 +149,37 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 	assert.True(t, containsUserToolResultPrompt(messages))
 }
 
+func completeOpenAIChatWithResponses(
+	t *testing.T,
+	firstResponse string,
+	secondResponse string,
+) ([]map[string]any, *CompletionResult) {
+	t.Helper()
+
+	var requests []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
+		requests = append(requests, payload)
+		writer.Header().Set("Content-Type", "application/json")
+		if len(requests) == 1 {
+			writeTestProviderResponse(t, writer, firstResponse)
+			return
+		}
+		writeTestProviderResponse(t, writer, secondResponse)
+	}))
+	t.Cleanup(server.Close)
+
+	request := testCompletionRequestAuth("sk-test")
+	request.CWD = testToolWorkspace(t)
+	request.Model.BaseURL = server.URL
+
+	result, err := NewHTTPCompletionClient().completeOpenAIChat(context.Background(), request)
+	require.NoError(t, err)
+
+	return requests, result
+}
+
 func openAIChatReadToolResponse() string {
 	arguments, err := json.Marshal(map[string]string{jsonPathKey: "README.md"})
 	if err != nil {
@@ -248,28 +265,14 @@ func testToolWorkspace(t *testing.T) string {
 func TestCompleteOpenAIChatExecutesTextToolUseFallback(t *testing.T) {
 	t.Parallel()
 
-	var requests []map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		var payload map[string]any
-		require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
-		requests = append(requests, payload)
-		writer.Header().Set("Content-Type", "application/json")
-		if len(requests) == 1 {
-			content, err := json.Marshal(anthropicTextReadToolMarkup())
-			require.NoError(t, err)
-			writeTestProviderResponse(t, writer, `{"choices":[{"message":{"content":`+string(content)+`}}]}`)
-			return
-		}
-		writeTestProviderResponse(t, writer, `{"choices":[{"message":{"content":"done"}}]}`)
-	}))
-	defer server.Close()
-
-	request := testCompletionRequestAuth("sk-test")
-	request.CWD = testToolWorkspace(t)
-	request.Model.BaseURL = server.URL
-
-	result, err := NewHTTPCompletionClient().completeOpenAIChat(context.Background(), request)
+	content, err := json.Marshal(anthropicTextReadToolMarkup())
 	require.NoError(t, err)
+	requests, result := completeOpenAIChatWithResponses(
+		t,
+		`{"choices":[{"message":{"content":`+string(content)+`}}]}`,
+		`{"choices":[{"message":{"content":"done"}}]}`,
+	)
+
 	require.Equal(t, "done", result.Text)
 	require.Len(t, result.ToolEvents, 1)
 	assert.Equal(t, jsonReadToolName, result.ToolEvents[0].Name)

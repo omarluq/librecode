@@ -87,7 +87,7 @@ func TestMergeUsagePreservesEstimatedContextWindow(t *testing.T) {
 	}, mergeUsage(estimated, reported))
 }
 
-func TestMergeUsageNeverShrinksEstimatedContext(t *testing.T) {
+func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
 	t.Parallel()
 
 	estimated := model.TokenUsage{
@@ -105,7 +105,7 @@ func TestMergeUsageNeverShrinksEstimatedContext(t *testing.T) {
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
-		ContextTokens:   14_000,
+		ContextTokens:   12_000,
 		InputTokens:     12_000,
 		OutputTokens:    700,
 	}, mergeUsage(estimated, reported))
