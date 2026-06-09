@@ -277,7 +277,7 @@ func newScopedModelTestApp(t *testing.T) *App {
 		t.Fatalf("create auth storage: %v", err)
 	}
 	app.models = model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns: []model.Model{

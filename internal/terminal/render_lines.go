@@ -6,7 +6,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
-func writeStyled(screen cellTarget, row, width int, line styledLine) {
+func writeStyled(screen contentSetter, row, width int, line styledLine) {
 	if len(line.Spans) == 0 {
 		writeLine(screen, row, width, line.Text, line.Style)
 		return
@@ -24,12 +24,12 @@ func writeStyled(screen cellTarget, row, width int, line styledLine) {
 	}
 }
 
-func writeLine(screen cellTarget, row, width int, text string, style tcell.Style) {
+func writeLine(screen contentSetter, row, width int, text string, style tcell.Style) {
 	writeTextAt(screen, 0, row, width, text, style)
 }
 
 func writeLineWithVerticalBorders(
-	screen cellTarget,
+	screen contentSetter,
 	row int,
 	width int,
 	text string,
@@ -45,7 +45,7 @@ func writeLineWithVerticalBorders(
 	})
 }
 
-func writeTextAt(screen cellTarget, column, row, width int, text string, style tcell.Style) {
+func writeTextAt(screen contentSetter, column, row, width int, text string, style tcell.Style) {
 	writeTextCells(screen, column, row, width, text, style)
 }
 
@@ -56,7 +56,7 @@ type shimmerLineOptions struct {
 }
 
 func writeShimmerLineWithVerticalBorders(
-	screen cellTarget,
+	screen contentSetter,
 	row int,
 	width int,
 	text string,
@@ -171,7 +171,7 @@ func isWorkingSpinner(text string) bool {
 }
 
 func writeLineWithStyleFunc(
-	screen cellTarget,
+	screen contentSetter,
 	row int,
 	width int,
 	text string,
@@ -195,7 +195,7 @@ func writeLineWithStyleFunc(
 }
 
 func writeEditorLine(
-	screen cellTarget,
+	screen contentSetter,
 	row int,
 	width int,
 	line styledLine,
@@ -215,7 +215,7 @@ func writeEditorLine(
 }
 
 func writeEditorLineText(
-	screen cellTarget,
+	screen contentSetter,
 	row int,
 	width int,
 	line styledLine,
@@ -229,7 +229,7 @@ func writeEditorLineText(
 }
 
 func writeEditorLinePlainText(
-	screen cellTarget,
+	screen contentSetter,
 	row int,
 	width int,
 	line styledLine,
@@ -254,7 +254,7 @@ func writeEditorLinePlainText(
 }
 
 func writeEditorLineSpans(
-	screen cellTarget,
+	screen contentSetter,
 	row int,
 	width int,
 	line styledLine,
@@ -278,7 +278,7 @@ func writeEditorLineSpans(
 }
 
 func writeEditorLinePadding(
-	screen cellTarget,
+	screen contentSetter,
 	row int,
 	width int,
 	used int,

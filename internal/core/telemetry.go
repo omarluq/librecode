@@ -2,8 +2,8 @@ package core
 
 import "strings"
 
-// InstallTelemetrySettings exposes the persisted install telemetry preference.
-type InstallTelemetrySettings interface {
+// InstallTelemetryEnabler exposes the persisted install telemetry preference.
+type InstallTelemetryEnabler interface {
 	InstallTelemetryEnabled() bool
 }
 
@@ -18,7 +18,7 @@ func TruthyEnvFlag(value string) bool {
 }
 
 // InstallTelemetryEnabled resolves env override before settings.
-func InstallTelemetryEnabled(settings InstallTelemetrySettings, telemetryEnv string, envProvided bool) bool {
+func InstallTelemetryEnabled(settings InstallTelemetryEnabler, telemetryEnv string, envProvided bool) bool {
 	if envProvided {
 		return TruthyEnvFlag(telemetryEnv)
 	}

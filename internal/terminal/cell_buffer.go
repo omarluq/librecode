@@ -2,7 +2,7 @@ package terminal
 
 import "github.com/gdamore/tcell/v3"
 
-type cellTarget interface {
+type contentSetter interface {
 	SetContent(column, row int, mainc rune, combc []rune, style tcell.Style)
 }
 

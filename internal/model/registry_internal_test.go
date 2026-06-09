@@ -20,7 +20,7 @@ func TestRegistryRequestAuthBranches(t *testing.T) {
 	t.Parallel()
 
 	registry := NewRegistry(&RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   "",
 		BuiltIns:     []Model{},
@@ -58,7 +58,7 @@ func TestRegistryRequestAuthContext(t *testing.T) {
 	require.NoError(t, err)
 	storage.SetRuntimeAPIKey("stored", "runtime-key")
 	registry := NewRegistry(&RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns:     []Model{},
@@ -91,7 +91,7 @@ func TestRegistryRequestAuthContextReturnsAuthErrors(t *testing.T) {
 		return "", false
 	})
 	registry := NewRegistry(&RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns:     []Model{},
@@ -113,7 +113,7 @@ func TestRegistryOptionsAndFirstRegistryError(t *testing.T) {
 	assert.False(t, defaults.Discovery.Enabled)
 
 	withDefaultBuiltIns := registryOptions(&RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   "",
 		BuiltIns:     nil,
@@ -122,7 +122,7 @@ func TestRegistryOptionsAndFirstRegistryError(t *testing.T) {
 	assert.NotEmpty(t, withDefaultBuiltIns.BuiltIns)
 
 	withCustomBuiltIns := registryOptions(&RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   "",
 		BuiltIns: []Model{{

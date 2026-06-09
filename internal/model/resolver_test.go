@@ -48,7 +48,7 @@ func TestResolveCLIModelInfersProviderAndRejectsUnknownProvider(t *testing.T) {
 	t.Parallel()
 
 	registry := model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   "",
 		BuiltIns: []model.Model{
@@ -83,7 +83,7 @@ func TestResolveModelScopeSupportsGlobsAndDeduplicates(t *testing.T) {
 	})
 	require.NoError(t, err)
 	registry := model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns: []model.Model{
