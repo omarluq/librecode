@@ -9,7 +9,7 @@ import (
 	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register sqlite driver for repository integration tests
 
 	"github.com/omarluq/librecode/internal/database"
 )

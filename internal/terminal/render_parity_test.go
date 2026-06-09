@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register sqlite driver for render parity fixtures
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/config"
