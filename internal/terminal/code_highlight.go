@@ -195,11 +195,8 @@ func codeStringColor(theme terminalTheme) tcell.Color {
 }
 
 func codeNumberColor(theme terminalTheme) tcell.Color {
-	if theme.name == themeNameLight {
-		return hexColor(0x0550ae)
-	}
-
-	return hexColor(0x79c0ff)
+	// Numbers intentionally share GitHub's blue literal color with variables.
+	return codeVariableColor(theme)
 }
 
 func codeOperatorColor(theme terminalTheme) tcell.Color {
