@@ -1,4 +1,4 @@
-package assistant
+package contextwindow
 
 import (
 	"strings"
@@ -18,17 +18,17 @@ const (
 	testUsagePreview             = "usage preview"
 )
 
-func TestTopContextContributorsRankingAndFallbacks(t *testing.T) {
+func TestTopContributorsRankingAndFallbacks(t *testing.T) {
 	t.Parallel()
 
-	contributors := topContextContributors(
+	contributors := TopContributors(
 		"",
 		[]database.MessageEntity{
 			testMessageEntity(database.RoleUser, strings.Repeat("tiny ", 4)),
 			testMessageEntity(database.RoleAssistant, strings.Repeat("large assistant message ", 80)),
 		},
-		[]contextContribution{
-			testContextContribution("", "extension", strings.Repeat("extension context ", 120), 500),
+		[]Contribution{
+			testContribution("", "extension", strings.Repeat("extension context ", 120), 500),
 		},
 	)
 
@@ -49,17 +49,17 @@ func TestTopContextContributorsRankingAndFallbacks(t *testing.T) {
 	assert.True(t, foundMessage, "expected large assistant message contributor")
 }
 
-func TestTopContextContributorsCapsResults(t *testing.T) {
+func TestTopContributorsCapsResults(t *testing.T) {
 	t.Parallel()
 
-	messages := make([]database.MessageEntity, 0, maxContextContributors+4)
-	for index := range maxContextContributors + 4 {
+	messages := make([]database.MessageEntity, 0, MaxContributors+4)
+	for index := range MaxContributors + 4 {
 		messages = append(messages, testMessageEntity(database.RoleUser, strings.Repeat("message ", index+1)))
 	}
 
-	contributors := topContextContributors("", messages, nil)
+	contributors := TopContributors("", messages, nil)
 
-	require.Len(t, contributors, maxContextContributors)
+	require.Len(t, contributors, MaxContributors)
 	assert.Equal(t, "message 12", contributors[0].Label)
 }
 
@@ -90,7 +90,7 @@ func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
 		ContextTokens:   12_000,
 		InputTokens:     12_000,
 		OutputTokens:    700,
-	}, mergeUsage(estimated, reported))
+	}, MergeUsage(estimated, reported))
 }
 
 func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
@@ -98,7 +98,7 @@ func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
 
 	reported := model.TokenUsage{
 		Breakdown: map[string]int{
-			contextBreakdownHistory: 10,
+			BreakdownHistory: 10,
 		},
 		TopContributors: []model.TokenContributor{
 			{Label: "message 1", Role: testContributorUserRole, Preview: testUsagePreview, Tokens: 10, Chars: 40},
@@ -108,15 +108,15 @@ func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
 		InputTokens:   0,
 		OutputTokens:  0,
 	}
-	merged := mergeUsage(model.EmptyTokenUsage(), reported)
+	merged := MergeUsage(model.EmptyTokenUsage(), reported)
 
 	require.Equal(t, reported.Breakdown, merged.Breakdown)
 	require.Equal(t, reported.TopContributors, merged.TopContributors)
 
-	reported.Breakdown[contextBreakdownHistory] = 999
+	reported.Breakdown[BreakdownHistory] = 999
 	reported.TopContributors[0].Label = testContributorMutationLabel
 
-	assert.Equal(t, 10, merged.Breakdown[contextBreakdownHistory])
+	assert.Equal(t, 10, merged.Breakdown[BreakdownHistory])
 	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
 }
 
@@ -130,10 +130,10 @@ func testMessageEntity(role database.Role, content string) database.MessageEntit
 	}
 }
 
-func testContextContribution(name, role, content string, tokens int) contextContribution {
-	return contextContribution{
+func testContribution(name, role, content string, tokens int) Contribution {
+	return Contribution{
 		Metadata: nil,
-		Source:   contextContributionSourceExtension,
+		Source:   ContributionSourceExtension,
 		Name:     name,
 		Role:     role,
 		Content:  content,

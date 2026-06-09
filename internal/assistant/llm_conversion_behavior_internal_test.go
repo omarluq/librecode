@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
@@ -86,21 +87,21 @@ func TestLLMTokenContributorConversionsCloneAndRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	contributors := []model.TokenContributor{
-		{Label: contextBreakdownHistory, Role: string(llm.RoleUser), Preview: "hello", Tokens: 4, Chars: 20},
+		{Label: contextwindow.BreakdownHistory, Role: string(llm.RoleUser), Preview: "hello", Tokens: 4, Chars: 20},
 	}
 	converted := llmTokenContributorsFromModel(contributors)
 	require.Len(t, converted, 1)
-	assert.Equal(t, contextBreakdownHistory, converted[0].Label)
+	assert.Equal(t, contextwindow.BreakdownHistory, converted[0].Label)
 
 	contributors[0].Label = testLLMMutatedLabel
-	assert.Equal(t, contextBreakdownHistory, converted[0].Label)
+	assert.Equal(t, contextwindow.BreakdownHistory, converted[0].Label)
 
 	roundTrip := llmTokenContributorsToModel(converted)
 	require.Len(t, roundTrip, 1)
-	assert.Equal(t, contextBreakdownHistory, roundTrip[0].Label)
+	assert.Equal(t, contextwindow.BreakdownHistory, roundTrip[0].Label)
 
 	converted[0].Label = testLLMMutatedAgainLabel
-	assert.Equal(t, contextBreakdownHistory, roundTrip[0].Label)
+	assert.Equal(t, contextwindow.BreakdownHistory, roundTrip[0].Label)
 
 	assert.Nil(t, llmTokenContributorsFromModel(nil))
 	assert.Nil(t, llmTokenContributorsToModel(nil))
@@ -110,25 +111,25 @@ func TestLLMUsageConversionsCloneMapsAndContributors(t *testing.T) {
 	t.Parallel()
 
 	usage := model.TokenUsage{
-		Breakdown: map[string]int{contextBreakdownHistory: 1}, ContextWindow: 10, ContextTokens: 2,
+		Breakdown: map[string]int{contextwindow.BreakdownHistory: 1}, ContextWindow: 10, ContextTokens: 2,
 		TopContributors: []model.TokenContributor{
-			{Label: contextBreakdownHistory, Role: string(llm.RoleUser), Preview: "", Tokens: 1, Chars: 1},
+			{Label: contextwindow.BreakdownHistory, Role: string(llm.RoleUser), Preview: "", Tokens: 1, Chars: 1},
 		},
 		InputTokens: 2, OutputTokens: 1,
 	}
 
 	converted := llmUsageFromModel(usage)
-	usage.Breakdown[contextBreakdownHistory] = 99
+	usage.Breakdown[contextwindow.BreakdownHistory] = 99
 	usage.TopContributors[0].Label = testLLMMutatedLabel
 
-	assert.Equal(t, 1, converted.Breakdown[contextBreakdownHistory])
-	assert.Equal(t, contextBreakdownHistory, converted.TopContributors[0].Label)
+	assert.Equal(t, 1, converted.Breakdown[contextwindow.BreakdownHistory])
+	assert.Equal(t, contextwindow.BreakdownHistory, converted.TopContributors[0].Label)
 
 	modelUsage := llmUsageToModel(converted)
-	converted.Breakdown[contextBreakdownHistory] = 42
+	converted.Breakdown[contextwindow.BreakdownHistory] = 42
 	converted.TopContributors[0].Label = testLLMMutatedAgainLabel
-	assert.Equal(t, 1, modelUsage.Breakdown[contextBreakdownHistory])
-	assert.Equal(t, contextBreakdownHistory, modelUsage.TopContributors[0].Label)
+	assert.Equal(t, 1, modelUsage.Breakdown[contextwindow.BreakdownHistory])
+	assert.Equal(t, contextwindow.BreakdownHistory, modelUsage.TopContributors[0].Label)
 }
 
 func TestLLMToolDefinitionsUseBuiltinsWhenRegistryNil(t *testing.T) {

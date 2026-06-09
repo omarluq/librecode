@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
@@ -111,7 +112,7 @@ func (runtime *Runtime) modelResponse(
 	if err != nil {
 		return nil, err
 	}
-	usage := mergeUsage(build.Context.Usage, result.Usage)
+	usage := contextwindow.MergeUsage(build.Context.Usage, result.Usage)
 	runtime.emitUsage(ctx, onEvent, usage)
 
 	parentEntryID := (*string)(nil)

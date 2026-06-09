@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -15,9 +16,9 @@ import (
 const postResponseAutoCompactThresholdPercent = 80
 
 type contextRequestBuild struct {
-	Context *contextBuildResult
+	Context *contextwindow.BuildResult
 	Request *CompletionRequest
-	Budget  contextBudget
+	Budget  contextwindow.Budget
 }
 
 func (runtime *Runtime) buildCompletionRequest(
@@ -48,7 +49,12 @@ func (runtime *Runtime) buildCompletionRequest(
 		systemPrompt:  contextResult.SystemPrompt,
 		cwd:           cwd,
 	})
-	budget := newContextBudget(contextResult.Usage, selectedModel, runtime.cfg.Context, request)
+	budget := contextwindow.NewBudget(
+		contextResult.Usage,
+		selectedModel,
+		runtime.cfg.Context,
+		func() int { return estimateToolSchemaTokens(request) },
+	)
 	contextResult.Usage = budget.UsageWithBudget(contextResult.Usage)
 	request.Usage = contextResult.Usage
 
@@ -171,7 +177,7 @@ func (runtime *Runtime) autoCompactAfterResponse(
 		runtime.emitPostResponseAutoCompactionError(ctx, input.onEvent, err)
 		return model.EmptyTokenUsage(), false
 	}
-	budget := contextBudgetFromUsage(usage)
+	budget := contextwindow.BudgetFromUsage(usage)
 	if !shouldAutoCompactAfterResponse(budget) {
 		return model.EmptyTokenUsage(), false
 	}
@@ -205,21 +211,7 @@ func (runtime *Runtime) shouldTryPostResponseAutoCompaction(input *postResponseA
 		strings.TrimSpace(input.parentEntryID) != ""
 }
 
-func contextBudgetFromUsage(usage model.TokenUsage) contextBudget {
-	budget := contextBudget{
-		InputTokens:       usage.ContextTokens,
-		ContextWindow:     usage.ContextWindow,
-		UsableInput:       usage.Breakdown["usable_input"],
-		OutputReserve:     usage.Breakdown["reserve_output"],
-		ToolSchemaReserve: usage.Breakdown["reserve_tools"],
-		ProviderReserve:   usage.Breakdown["reserve_provider"],
-		SafetyMargin:      usage.Breakdown["reserve_safety"],
-	}
-
-	return budget
-}
-
-func shouldAutoCompactAfterResponse(budget contextBudget) bool {
+func shouldAutoCompactAfterResponse(budget contextwindow.Budget) bool {
 	if budget.ContextWindow <= 0 || budget.UsableInput <= 0 || budget.InputTokens <= 0 {
 		return false
 	}
@@ -238,18 +230,18 @@ func (runtime *Runtime) emitPostResponseAutoCompactionError(
 	runtime.emitContextCompaction(ctx, onEvent, "context auto-compaction after response failed: "+err.Error())
 }
 
-func postResponseAutoCompactionStartMessage(budget contextBudget) string {
+func postResponseAutoCompactionStartMessage(budget contextwindow.Budget) string {
 	message := "context auto-compacting after response: estimated input is %d tokens; " +
 		"threshold is %d%% of usable input budget %d"
 
 	return fmt.Sprintf(message, budget.InputTokens, postResponseAutoCompactThresholdPercent, budget.UsableInput)
 }
 
-func autoCompactionMessage(budget contextBudget, entry *database.EntryEntity) string {
+func autoCompactionMessage(budget contextwindow.Budget, entry *database.EntryEntity) string {
 	return compactionMessage("context auto-compacted before request", budget, entry)
 }
 
-func compactionMessage(prefix string, budget contextBudget, entry *database.EntryEntity) string {
+func compactionMessage(prefix string, budget contextwindow.Budget, entry *database.EntryEntity) string {
 	message := fmt.Sprintf(
 		"%s: estimated input was %d tokens; usable input budget is %d tokens",
 		prefix,

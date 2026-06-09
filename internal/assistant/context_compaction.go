@@ -11,6 +11,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/compaction"
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
@@ -47,7 +48,7 @@ func (runtime *Runtime) CompactSessionFrom(
 	if err != nil {
 		return nil, err
 	}
-	plan, err := compaction.PlanBranch(branch, runtime.cfg.Context.KeepRecentTokens, estimateTokens)
+	plan, err := compaction.PlanBranch(branch, runtime.cfg.Context.KeepRecentTokens, contextwindow.EstimateTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -258,12 +259,12 @@ func compactionRequestUsage(
 	if selectedModel != nil {
 		contextWindow = selectedModel.ContextWindow
 	}
-	inputTokens := estimateInputTokens(systemPrompt, messages)
+	inputTokens := contextwindow.EstimateInputTokens(systemPrompt, messages)
 
 	return model.TokenUsage{
 		Breakdown: map[string]int{
-			jsonSystemRole:          estimateTokens(systemPrompt),
-			contextBreakdownHistory: estimateMessageTokens(messages),
+			jsonSystemRole:                 contextwindow.EstimateTokens(systemPrompt),
+			contextwindow.BreakdownHistory: contextwindow.EstimateMessageTokens(messages),
 		},
 		TopContributors: nil,
 		ContextWindow:   contextWindow,
