@@ -275,7 +275,7 @@ func (event *luaHostEvent) applyLuaResultBuffers(value lua.LValue) {
 	if !ok {
 		return
 	}
-	table.ForEach(func(key lua.LValue, bufferValue lua.LValue) {
+	table.ForEach(func(key, bufferValue lua.LValue) {
 		name := key.String()
 		buffer := luaBufferState(name, bufferValue)
 		event.setBuffer(name, &buffer)
@@ -287,7 +287,7 @@ func (event *luaHostEvent) applyLuaResultWindows(value lua.LValue) {
 	if !ok {
 		return
 	}
-	table.ForEach(func(key lua.LValue, windowValue lua.LValue) {
+	table.ForEach(func(key, windowValue lua.LValue) {
 		name := key.String()
 		window := luaWindowState(name, windowValue)
 		event.setWindow(name, &window)
