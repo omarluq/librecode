@@ -4,12 +4,12 @@ package tool
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/samber/lo"
+	"github.com/samber/oops"
 )
 
 const (
@@ -39,28 +39,40 @@ func findWindowsBash() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf(
-		"%w: install Git Bash, MSYS2/Cygwin/WSL bash, or set LIBRECODE_BASH_PATH to "+windowsBashExecutable,
+	return "", oops.In("tool").Code("bash-discovery").Wrapf(
 		errBashNotFound,
+		"install Git Bash, MSYS2/Cygwin/WSL bash, or set LIBRECODE_BASH_PATH to %s",
+		windowsBashExecutable,
 	)
 }
 
 func windowsBashCandidates() []string {
-	programFiles := os.Getenv("ProgramFiles")
-	programFilesX86 := os.Getenv("ProgramFiles(x86)")
-	localAppData := os.Getenv("LOCALAPPDATA")
-
-	return lo.Compact([]string{
+	candidates := lo.Compact([]string{
 		os.Getenv("LIBRECODE_BASH_PATH"),
-		filepath.Join(programFiles, "Git", "bin", windowsBashExecutable),
-		filepath.Join(programFiles, "Git", "usr", "bin", windowsBashExecutable),
-		filepath.Join(programFilesX86, "Git", "bin", windowsBashExecutable),
-		filepath.Join(programFilesX86, "Git", "usr", "bin", windowsBashExecutable),
-		filepath.Join(localAppData, "Programs", "Git", "bin", windowsBashExecutable),
-		filepath.Join(localAppData, "Programs", "Git", "usr", "bin", windowsBashExecutable),
 		windowsBashExecutable,
 		"bash",
 	})
+
+	for _, candidate := range windowsBashDirectoryCandidates() {
+		candidates = append(candidates,
+			filepath.Join(candidate, "Git", "bin", windowsBashExecutable),
+			filepath.Join(candidate, "Git", "usr", "bin", windowsBashExecutable),
+		)
+	}
+
+	return candidates
+}
+
+func windowsBashDirectoryCandidates() []string {
+	candidates := lo.Compact([]string{
+		os.Getenv("ProgramFiles"),
+		os.Getenv("ProgramFiles(x86)"),
+	})
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		candidates = append(candidates, filepath.Join(localAppData, "Programs"))
+	}
+
+	return candidates
 }
 
 func configureShellCommand(_ *exec.Cmd) {

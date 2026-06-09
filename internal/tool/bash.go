@@ -234,15 +234,15 @@ func writeFullBashOutput(output []byte) (string, error) {
 	}
 	file, err := os.CreateTemp(outputDir, "librecode-bash-*.log")
 	if err != nil {
-		return "", fmt.Errorf("create full bash output file: %w", err)
+		return "", bashOutputFSError(err, "create full bash output file")
 	}
 	outputPath := file.Name()
 	if _, err := file.Write(output); err != nil {
 		cleanupErr := errors.Join(file.Close(), os.Remove(outputPath))
-		return "", errors.Join(fmt.Errorf("write full bash output: %w", err), cleanupErr)
+		return "", errors.Join(bashOutputFSError(err, "write full bash output"), cleanupErr)
 	}
 	if err := file.Close(); err != nil {
-		return "", errors.Join(fmt.Errorf("close full bash output: %w", err), os.Remove(outputPath))
+		return "", errors.Join(bashOutputFSError(err, "close full bash output"), os.Remove(outputPath))
 	}
 
 	return outputPath, nil
@@ -251,14 +251,18 @@ func writeFullBashOutput(output []byte) (string, error) {
 func fullBashOutputDir() (string, error) {
 	cacheDir, err := os.UserCacheDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve cache dir for full bash output: %w", err)
+		return "", bashOutputFSError(err, "resolve cache dir for full bash output")
 	}
 	outputDir := filepath.Join(cacheDir, "librecode", "bash-output")
 	if err := os.MkdirAll(outputDir, 0o700); err != nil {
-		return "", fmt.Errorf("create full bash output dir: %w", err)
+		return "", bashOutputFSError(err, "create full bash output dir")
 	}
 
 	return outputDir, nil
+}
+
+func bashOutputFSError(err error, message string) error {
+	return oops.In("tool.bash").Code("bash-output-fs").Wrapf(err, "%s", message)
 }
 
 func lastLineByteCount(text string) int {
