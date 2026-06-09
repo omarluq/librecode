@@ -20,7 +20,7 @@ func providerStatusError(code string, status int, content []byte) error {
 		message = fmt.Sprintf("provider returned HTTP %d", status)
 	}
 
-	return oops.In("assistant").Code(code).With("status", status).Errorf("%s", message)
+	return oops.In("provider").Code(code).With("status", status).Errorf("%s", message)
 }
 
 func providerErrorToOops(code string, providerError *providerError) error {
@@ -29,7 +29,7 @@ func providerErrorToOops(code string, providerError *providerError) error {
 		message = "provider returned an error"
 	}
 
-	return oops.In("assistant").
+	return oops.In("provider").
 		Code(code).
 		With(jsonTypeKey, providerError.Type).
 		With("provider_code", providerError.Code).

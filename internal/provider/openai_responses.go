@@ -125,13 +125,13 @@ func (client *HTTPCompletionClient) requestResponses(
 	}
 	response, err := client.client.Do(httpRequest)
 	if err != nil {
-		return nil, oops.In("assistant").Code("responses_http").Wrapf(err, "request provider response")
+		return nil, oops.In("provider").Code("responses_http").Wrapf(err, "request provider response")
 	}
 	defer closeBody(response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		content, readErr := readProviderBody(response.Body)
 		if readErr != nil {
-			return nil, oops.In("assistant").Code("responses_error_read").Wrapf(readErr, "read provider error")
+			return nil, oops.In("provider").Code("responses_error_read").Wrapf(readErr, "read provider error")
 		}
 
 		return nil, providerStatusError("responses_status", response.StatusCode, content)
@@ -141,7 +141,7 @@ func (client *HTTPCompletionClient) requestResponses(
 	}
 	content, err := readProviderBody(response.Body)
 	if err != nil {
-		return nil, oops.In("assistant").Code("responses_read").Wrapf(err, "read provider response")
+		return nil, oops.In("provider").Code("responses_read").Wrapf(err, "read provider response")
 	}
 
 	return parseOpenAIResponseResult(content)
@@ -169,12 +169,12 @@ func statelessResponseOutputItems(items []any) []any {
 func parseOpenAIResponseResult(content []byte) (*providerResult, error) {
 	var response map[string]any
 	if err := json.Unmarshal(content, &response); err != nil {
-		return nil, oops.In("assistant").Code("openai_response_decode").Wrapf(err, "decode response")
+		return nil, oops.In("provider").Code("openai_response_decode").Wrapf(err, "decode response")
 	}
 	if errorValue, ok := response["error"]; ok {
 		message := errorMessage(errorValue)
 		if message != "" {
-			return nil, oops.In("assistant").Code("openai_response_error").Errorf("%s", message)
+			return nil, oops.In("provider").Code("openai_response_error").Errorf("%s", message)
 		}
 	}
 

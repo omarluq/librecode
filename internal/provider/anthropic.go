@@ -306,7 +306,7 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 		} `json:"content"`
 	}
 	if err := json.Unmarshal(content, &response); err != nil {
-		return nil, oops.In("assistant").Code("anthropic_decode").Wrapf(err, "decode anthropic response")
+		return nil, oops.In("provider").Code("anthropic_decode").Wrapf(err, "decode anthropic response")
 	}
 	if response.Error.Message != "" {
 		return nil, providerErrorToOops("anthropic_error", &response.Error)
@@ -377,7 +377,7 @@ func anthropicAssistantToolMessage(request *CompletionRequest, calls []ToolCall)
 
 func anthropicToolResultMessage(calls []ToolCall, events []ToolEvent) (map[string]any, error) {
 	if len(events) != len(calls) {
-		return nil, oops.In("assistant").
+		return nil, oops.In("provider").
 			Code("anthropic_tool_message_mismatch").
 			With("calls", len(calls)).
 			With("events", len(events)).

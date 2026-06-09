@@ -1,7 +1,6 @@
 package assistant
 
 import (
-	"maps"
 	"strings"
 	"unicode/utf8"
 
@@ -24,23 +23,13 @@ func mergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
 		usage.OutputTokens = reported.OutputTokens
 	}
 	if len(usage.Breakdown) == 0 && len(reported.Breakdown) > 0 {
-		usage.Breakdown = cloneIntMapForMerge(reported.Breakdown)
+		usage.Breakdown = cloneIntMap(reported.Breakdown)
 	}
 	if len(usage.TopContributors) == 0 && len(reported.TopContributors) > 0 {
 		usage.TopContributors = cloneTokenContributors(reported.TopContributors)
 	}
 
 	return usage
-}
-
-func cloneIntMapForMerge(input map[string]int) map[string]int {
-	if input == nil {
-		return nil
-	}
-	output := make(map[string]int, len(input))
-	maps.Copy(output, input)
-
-	return output
 }
 
 func cloneTokenContributors(contributors []model.TokenContributor) []model.TokenContributor {

@@ -13,13 +13,13 @@ import (
 func validateToolCalls(calls []ToolCall) error {
 	for _, call := range calls {
 		if strings.TrimSpace(call.ID) == "" {
-			return oops.In("assistant").
+			return oops.In("provider").
 				Code("responses_tool_call_missing_id").
 				With("name", call.Name).
 				Errorf("provider response produced a tool call without call_id")
 		}
 		if strings.TrimSpace(call.Name) == "" {
-			return oops.In("assistant").
+			return oops.In("provider").
 				Code("responses_tool_call_missing_name").
 				With("call_id", call.ID).
 				Errorf("provider response produced a tool call without name")

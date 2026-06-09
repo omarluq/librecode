@@ -30,12 +30,12 @@ func (client *HTTPCompletionClient) postJSON(
 	}
 	response, err := client.client.Do(request)
 	if err != nil {
-		return nil, oops.In("assistant").Code("provider_http").Wrapf(err, "request provider response")
+		return nil, oops.In("provider").Code("provider_http").Wrapf(err, "request provider response")
 	}
 	defer closeBody(response.Body)
 	content, err := readProviderBody(response.Body)
 	if err != nil {
-		return nil, oops.In("assistant").Code("provider_read").Wrapf(err, "read provider response")
+		return nil, oops.In("provider").Code("provider_read").Wrapf(err, "read provider response")
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, providerStatusError("provider_status", response.StatusCode, content)
@@ -62,11 +62,11 @@ func jsonRequest(
 ) (*http.Request, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, oops.In("assistant").Code("provider_payload").Wrapf(err, "encode provider payload")
+		return nil, oops.In("provider").Code("provider_payload").Wrapf(err, "encode provider payload")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, oops.In("assistant").Code("provider_request").Wrapf(err, "create provider request")
+		return nil, oops.In("provider").Code("provider_request").Wrapf(err, "create provider request")
 	}
 	request.Header.Set("Content-Type", "application/json")
 	for key, value := range headers {

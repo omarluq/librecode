@@ -12,8 +12,23 @@ func providerStreamEvent(event provider.StreamEvent) StreamEvent {
 	return StreamEvent{
 		ToolEvent: event.ToolEvent,
 		Usage:     event.Usage,
-		Kind:      StreamEventKind(event.Kind),
+		Kind:      providerStreamEventKind(event.Kind),
 		Text:      event.Text,
+	}
+}
+
+func providerStreamEventKind(kind provider.StreamEventKind) StreamEventKind {
+	switch kind {
+	case provider.StreamEventTextDelta:
+		return StreamEventTextDelta
+	case provider.StreamEventThinkingDelta:
+		return StreamEventThinkingDelta
+	case provider.StreamEventToolStart:
+		return StreamEventToolStart
+	case provider.StreamEventToolResult:
+		return StreamEventToolResult
+	default:
+		return StreamEventKind(kind)
 	}
 }
 
