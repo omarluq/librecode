@@ -522,16 +522,16 @@ func newTestRuntimeWithRepositoryClientAndManager(
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 
-	runtime := assistant.NewRuntime(
-		testConfig(),
-		repository,
-		manager,
-		cache,
-		event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil))),
-		testRegistry(t),
-		client,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	)
+	runtime := assistant.NewRuntime(&assistant.RuntimeOptions{
+		Config:     testConfig(),
+		Sessions:   repository,
+		Extensions: manager,
+		Cache:      cache,
+		Events:     event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		Models:     testRegistry(t),
+		Client:     client,
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 
 	return runtime, repository, manager
 }

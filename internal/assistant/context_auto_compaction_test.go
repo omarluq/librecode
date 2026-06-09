@@ -104,16 +104,16 @@ func newAutoCompactionTestRuntime(
 	// and do not depend on off-by-one budget boundaries.
 	runtimeConfig.Context.OutputReserveTokens = 1
 
-	return assistant.NewRuntime(
-		runtimeConfig,
-		runtime.SessionRepository(),
-		nil,
-		assistant.NewResponseCache(false, 1, time.Minute),
-		runtime.EventBus(),
-		runtime.ModelRegistry(),
-		client,
-		nil,
-	)
+	return assistant.NewRuntime(&assistant.RuntimeOptions{
+		Config:     runtimeConfig,
+		Sessions:   runtime.SessionRepository(),
+		Extensions: nil,
+		Cache:      assistant.NewResponseCache(false, 1, time.Minute),
+		Events:     runtime.EventBus(),
+		Models:     runtime.ModelRegistry(),
+		Client:     client,
+		Logger:     nil,
+	})
 }
 
 func isContextAutoCompactionEvent(event *assistant.StreamEvent) bool {
