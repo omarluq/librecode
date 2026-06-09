@@ -17,19 +17,7 @@ import (
 func TestAuthPanelItemsReflectProviderStatus(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
-		promptSendTestProvider: testPanelAuthCredential(),
-	})
-	require.NoError(t, err)
-	app := newRenderTestApp(t)
-	app.auth = storage
-	app.models = model.NewRegistry(&model.RegistryOptions{
-		ConfigReader: nil,
-		Auth:         storage,
-		ModelsPath:   "",
-		BuiltIns:     []model.Model{newPanelTestModel(promptSendTestModel, "Current")},
-		Discovery:    disabledModelDiscovery(),
-	})
+	app := newAuthPanelTestApp(t)
 
 	app.openLoginPanel()
 
@@ -98,22 +86,10 @@ func TestAuthInfoTextIncludesProviderURLAndInstructions(t *testing.T) {
 func TestShowAuthInfoAndReloadRuntime(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
-		promptSendTestProvider: testPanelAuthCredential(),
-	})
-	require.NoError(t, err)
-	app := newRenderTestApp(t)
-	app.auth = storage
-	app.models = model.NewRegistry(&model.RegistryOptions{
-		ConfigReader: nil,
-		Auth:         storage,
-		ModelsPath:   "",
-		BuiltIns:     []model.Model{newPanelTestModel(promptSendTestModel, "Current")},
-		Discovery:    disabledModelDiscovery(),
-	})
+	app := newAuthPanelTestApp(t)
 
 	app.showAuthInfo()
-	err = app.reloadRuntime(context.Background())
+	err := app.reloadRuntime(context.Background())
 
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(app.transcript.History), 2)
@@ -198,6 +174,26 @@ func TestParentIDFromEntry(t *testing.T) {
 	})
 	require.NotNil(t, parentID)
 	assert.Equal(t, "entry-1", *parentID)
+}
+
+func newAuthPanelTestApp(t *testing.T) *App {
+	t.Helper()
+
+	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+		promptSendTestProvider: testPanelAuthCredential(),
+	})
+	require.NoError(t, err)
+	app := newRenderTestApp(t)
+	app.auth = storage
+	app.models = model.NewRegistry(&model.RegistryOptions{
+		ConfigReader: nil,
+		Auth:         storage,
+		ModelsPath:   "",
+		BuiltIns:     []model.Model{newPanelTestModel(promptSendTestModel, "Current")},
+		Discovery:    disabledModelDiscovery(),
+	})
+
+	return app
 }
 
 func readAuthAsyncEvent(t *testing.T, app *App) *asyncEvent {
