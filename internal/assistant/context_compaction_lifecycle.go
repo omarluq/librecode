@@ -9,6 +9,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 )
@@ -33,7 +34,7 @@ func (runtime *Runtime) dispatchBeforeCompaction(
 	ctx context.Context,
 	sessionID string,
 	cwd string,
-	plan *compactionPlan,
+	plan *compaction.Plan,
 ) (*compactionLifecycleDecision, error) {
 	payload := compactionPreparationPayload(sessionID, cwd, plan)
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleSessionBeforeCompact, payload)
@@ -47,7 +48,7 @@ func (runtime *Runtime) dispatchBeforeCompaction(
 		return nil, oops.In("assistant").Code("compact_before_hook").Wrapf(err, "dispatch before compact lifecycle")
 	}
 	if result.Compaction.Cancel || result.Stopped {
-		return nil, compactNothingToDoError("context compaction was canceled by an extension")
+		return nil, compaction.NothingToDoError("context compaction was canceled by an extension")
 	}
 
 	decision, err := compactionDecisionFromMutation(result.Compaction, plan)
@@ -63,7 +64,7 @@ func (runtime *Runtime) dispatchAfterCompaction(
 	sessionID string,
 	cwd string,
 	entry *database.EntryEntity,
-	plan *compactionPlan,
+	plan *compaction.Plan,
 	fromHook bool,
 ) {
 	payload := compactionSavedPayload(sessionID, cwd, entry, plan, fromHook)
@@ -81,7 +82,7 @@ func (runtime *Runtime) dispatchAfterCompaction(
 
 func compactionDecisionFromMutation(
 	mutation extension.CompactionMutation,
-	plan *compactionPlan,
+	plan *compaction.Plan,
 ) (*compactionLifecycleDecision, error) {
 	if mutation.Summary == nil && mutation.FirstKeptEntryID == nil && len(mutation.Details) == 0 {
 		return nil, errNoCompactionDecision
@@ -112,17 +113,17 @@ func compactionDecisionFromMutation(
 	return decision, nil
 }
 
-func compactionPreparationPayload(sessionID, cwd string, plan *compactionPlan) map[string]any {
+func compactionPreparationPayload(sessionID, cwd string, plan *compaction.Plan) map[string]any {
 	return map[string]any{
-		lifecycleCWDKey:             cwd,
-		jsonSessionIDKey:            sessionID,
-		"first_kept_entry_id":       plan.FirstKeptEntryID,
-		compactionTokensBeforeKey:   plan.TokensBefore,
-		"summary_message_count":     len(plan.Messages),
-		"summarized_entry_ids":      stringSlicePayload(plan.SummarizedEntryIDs),
-		"kept_entry_ids":            stringSlicePayload(plan.KeptEntryIDs),
-		"split_turn_summary":        plan.SplitTurnSummary,
-		compactionFileOperationsKey: compactionFileOperationsPayload(plan.FileOperations),
+		lifecycleCWDKey:              cwd,
+		jsonSessionIDKey:             sessionID,
+		"first_kept_entry_id":        plan.FirstKeptEntryID,
+		compactionTokensBeforeKey:    plan.TokensBefore,
+		"summary_message_count":      len(plan.Messages),
+		"summarized_entry_ids":       stringSlicePayload(plan.SummarizedEntryIDs),
+		"kept_entry_ids":             stringSlicePayload(plan.KeptEntryIDs),
+		"split_turn_summary":         plan.SplitTurnSummary,
+		compaction.FileOperationsKey: compactionFileOperationsPayload(plan.FileOperations),
 	}
 }
 
@@ -130,7 +131,7 @@ func compactionSavedPayload(
 	sessionID string,
 	cwd string,
 	entry *database.EntryEntity,
-	plan *compactionPlan,
+	plan *compaction.Plan,
 	fromHook bool,
 ) map[string]any {
 	payload := compactionPreparationPayload(sessionID, cwd, plan)
@@ -148,7 +149,7 @@ func compactionSavedPayload(
 	return payload
 }
 
-func compactionLifecycleDiagnostics(plan *compactionPlan, phase string) map[string]any {
+func compactionLifecycleDiagnostics(plan *compaction.Plan, phase string) map[string]any {
 	if plan == nil {
 		return map[string]any{compactionPhaseKey: phase}
 	}
@@ -164,7 +165,7 @@ func compactionLifecycleDiagnostics(plan *compactionPlan, phase string) map[stri
 	}
 }
 
-func compactionFileOperationsPayload(operations []compactionFileOperation) []any {
+func compactionFileOperationsPayload(operations []compaction.FileOperation) []any {
 	payload := make([]any, 0, len(operations))
 	for index := range operations {
 		operation := operations[index]

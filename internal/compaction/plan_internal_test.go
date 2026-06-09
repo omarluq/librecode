@@ -1,4 +1,4 @@
-package assistant
+package compaction
 
 import (
 	"strings"
@@ -12,7 +12,7 @@ import (
 )
 
 type planCompactionCase struct {
-	assertFn func(t *testing.T, plan *compactionPlan)
+	assertFn func(t *testing.T, plan *Plan)
 	name     string
 	wantErr  string
 	entries  []database.EntryEntity
@@ -26,7 +26,7 @@ func TestPlanCompactionScenarios(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			plan, err := planCompaction(testCase.entries, testCase.keep)
+			plan, err := PlanBranch(testCase.entries, testCase.keep, estimateTokens)
 			if testCase.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), testCase.wantErr)
@@ -51,9 +51,9 @@ func planCompactionCases() []planCompactionCase {
 }
 
 func previousKeptBoundaryCase() planCompactionCase {
-	oldUser := compactMessageEntry("old-user", database.RoleUser, "old user history")
-	oldAssistant := compactMessageEntry("old-assistant", database.RoleAssistant, "old assistant history")
-	firstSummary := compactionTestEntry(
+	oldUser := messageEntry("old-user", database.RoleUser, "old user history")
+	oldAssistant := messageEntry("old-assistant", database.RoleAssistant, "old assistant history")
+	firstSummary := testEntry(
 		"first-summary",
 		database.EntryTypeCompaction,
 		database.RoleCompactionSummary,
@@ -61,8 +61,8 @@ func previousKeptBoundaryCase() planCompactionCase {
 	)
 	firstSummary.Summary = "first compacted summary"
 	firstSummary.CompactionFirstKeptEntryID = oldAssistant.ID
-	recentUser := compactMessageEntry("recent-user", database.RoleUser, "recent user tail")
-	recentAssistant := compactMessageEntry("recent-assistant", database.RoleAssistant, "recent assistant tail")
+	recentUser := messageEntry("recent-user", database.RoleUser, "recent user tail")
+	recentAssistant := messageEntry("recent-assistant", database.RoleAssistant, "recent assistant tail")
 
 	return planCompactionCase{
 		assertFn: assertPreviousKeptBoundaryPlan,
@@ -73,7 +73,7 @@ func previousKeptBoundaryCase() planCompactionCase {
 	}
 }
 
-func assertPreviousKeptBoundaryPlan(t *testing.T, plan *compactionPlan) {
+func assertPreviousKeptBoundaryPlan(t *testing.T, plan *Plan) {
 	t.Helper()
 
 	assert.Equal(t, "first compacted summary", plan.PreviousSummary)
@@ -89,10 +89,10 @@ func turnBoundaryCase() planCompactionCase {
 	return planCompactionCase{
 		assertFn: assertTurnBoundaryPlan,
 		entries: []database.EntryEntity{
-			compactMessageEntry("user-1", database.RoleUser, "first user"),
-			compactMessageEntry("assistant-1", database.RoleAssistant, "first assistant"),
-			compactMessageEntry("user-2", database.RoleUser, "second user"),
-			compactMessageEntry("assistant-2", database.RoleAssistant, "second assistant long enough"),
+			messageEntry("user-1", database.RoleUser, "first user"),
+			messageEntry("assistant-1", database.RoleAssistant, "first assistant"),
+			messageEntry("user-2", database.RoleUser, "second user"),
+			messageEntry("assistant-2", database.RoleAssistant, "second assistant long enough"),
 		},
 		name:    "cuts at turn boundary when possible",
 		wantErr: "",
@@ -100,7 +100,7 @@ func turnBoundaryCase() planCompactionCase {
 	}
 }
 
-func assertTurnBoundaryPlan(t *testing.T, plan *compactionPlan) {
+func assertTurnBoundaryPlan(t *testing.T, plan *Plan) {
 	t.Helper()
 
 	assert.Equal(t, []string{"user-1", "assistant-1"}, plan.SummarizedEntryIDs)
@@ -112,10 +112,10 @@ func splitTurnSummaryCase() planCompactionCase {
 	return planCompactionCase{
 		assertFn: assertSplitTurnSummaryPlan,
 		entries: []database.EntryEntity{
-			compactMessageEntry("user-1", database.RoleUser, strings.Repeat("old ", 10)),
-			compactMessageEntry("assistant-1", database.RoleAssistant, strings.Repeat("old ", 10)),
-			compactMessageEntry("user-2", database.RoleUser, "split user context"),
-			compactMessageEntry("assistant-2", database.RoleAssistant, strings.Repeat("large tail ", 100)),
+			messageEntry("user-1", database.RoleUser, strings.Repeat("old ", 10)),
+			messageEntry("assistant-1", database.RoleAssistant, strings.Repeat("old ", 10)),
+			messageEntry("user-2", database.RoleUser, "split user context"),
+			messageEntry("assistant-2", database.RoleAssistant, strings.Repeat("large tail ", 100)),
 		},
 		name:    "records split turn summary separately",
 		wantErr: "",
@@ -123,7 +123,7 @@ func splitTurnSummaryCase() planCompactionCase {
 	}
 }
 
-func assertSplitTurnSummaryPlan(t *testing.T, plan *compactionPlan) {
+func assertSplitTurnSummaryPlan(t *testing.T, plan *Plan) {
 	t.Helper()
 
 	assert.Equal(t, []string{"user-1", "assistant-1", "user-2"}, plan.SummarizedEntryIDs)
@@ -139,10 +139,10 @@ func defaultKeepRecentTokensCase() planCompactionCase {
 	return planCompactionCase{
 		assertFn: assertDefaultKeepRecentTokensPlan,
 		entries: []database.EntryEntity{
-			compactMessageEntry("user-1", database.RoleUser, strings.Repeat("old ", 30_000)),
-			compactMessageEntry("assistant-1", database.RoleAssistant, strings.Repeat("old ", 30_000)),
-			compactMessageEntry("user-2", database.RoleUser, "second user"),
-			compactMessageEntry("assistant-2", database.RoleAssistant, "second assistant"),
+			messageEntry("user-1", database.RoleUser, strings.Repeat("old ", 30_000)),
+			messageEntry("assistant-1", database.RoleAssistant, strings.Repeat("old ", 30_000)),
+			messageEntry("user-2", database.RoleUser, "second user"),
+			messageEntry("assistant-2", database.RoleAssistant, "second assistant"),
 		},
 		name:    "falls back to default keep recent tokens",
 		wantErr: "",
@@ -150,7 +150,7 @@ func defaultKeepRecentTokensCase() planCompactionCase {
 	}
 }
 
-func assertDefaultKeepRecentTokensPlan(t *testing.T, plan *compactionPlan) {
+func assertDefaultKeepRecentTokensPlan(t *testing.T, plan *Plan) {
 	t.Helper()
 
 	assert.NotEmpty(t, plan.SummarizedEntryIDs)
@@ -158,8 +158,8 @@ func assertDefaultKeepRecentTokensPlan(t *testing.T, plan *compactionPlan) {
 }
 
 func latestCompactionCase() planCompactionCase {
-	firstUser := compactMessageEntry("user-1", database.RoleUser, "first user")
-	latestSummary := compactionTestEntry(
+	firstUser := messageEntry("user-1", database.RoleUser, "first user")
+	latestSummary := testEntry(
 		"summary",
 		database.EntryTypeCompaction,
 		database.RoleCompactionSummary,
@@ -176,7 +176,7 @@ func latestCompactionCase() planCompactionCase {
 	}
 }
 
-func assertLatestCompactionPlan(t *testing.T, plan *compactionPlan) {
+func assertLatestCompactionPlan(t *testing.T, plan *Plan) {
 	t.Helper()
 
 	assert.Empty(t, plan.FirstKeptEntryID)
@@ -185,7 +185,7 @@ func assertLatestCompactionPlan(t *testing.T, plan *compactionPlan) {
 func TestCompactionSystemPromptIncludesPreviousSummary(t *testing.T) {
 	t.Parallel()
 
-	prompt := compactionSystemPrompt("previous compacted facts")
+	prompt := SystemPrompt("previous compacted facts", "")
 
 	assert.Contains(t, prompt, "Update the existing compaction summary")
 	assert.Contains(t, prompt, "previous compacted facts")
@@ -194,17 +194,17 @@ func TestCompactionSystemPromptIncludesPreviousSummary(t *testing.T) {
 func TestCompactionSystemPromptIncludesSplitTurnSummary(t *testing.T) {
 	t.Parallel()
 
-	prompt := compactionSystemPromptWithSplit("", "split facts")
+	prompt := SystemPrompt("", "split facts")
 
 	assert.Contains(t, prompt, "<split_turn_summary>")
 	assert.Contains(t, prompt, "split facts")
 }
 
-func compactMessageEntry(entryID string, role database.Role, content string) database.EntryEntity {
-	return compactionTestEntry(entryID, database.EntryTypeMessage, role, content)
+func messageEntry(entryID string, role database.Role, content string) database.EntryEntity {
+	return testEntry(entryID, database.EntryTypeMessage, role, content)
 }
 
-func compactionTestEntry(
+func testEntry(
 	entryID string,
 	entryType database.EntryType,
 	role database.Role,
@@ -241,4 +241,13 @@ func compactionTestEntry(
 	}
 
 	return entry
+}
+
+func estimateTokens(text string) int {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return 0
+	}
+
+	return max(1, (len([]rune(trimmed))+3)/4)
 }

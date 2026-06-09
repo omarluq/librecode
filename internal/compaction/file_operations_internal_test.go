@@ -1,4 +1,4 @@
-package assistant
+package compaction
 
 import (
 	"encoding/json"
@@ -15,7 +15,7 @@ const (
 	compactFileOperationTestBlank      = "   "
 	compactFileOperationTestCommand    = "cat README.md"
 	compactFileOperationTestPath       = "README.md"
-	compactFileOperationTestReadTool   = jsonReadToolName
+	compactFileOperationTestReadTool   = fileActionRead
 	compactFileOperationTestSourcePath = "cmd/app/main.go"
 	compactFileOperationTestSummary    = "summary"
 	compactFileOperationTestOrigin     = "test"
@@ -24,7 +24,7 @@ const (
 func TestCollectCompactionFileOperations(t *testing.T) {
 	t.Parallel()
 
-	prior := compactFileOperationCompactionEntry(t, []compactionFileOperation{{
+	prior := compactFileOperationCompactionEntry(t, []FileOperation{{
 		EntryID: "prior",
 		Action:  compactFileOperationTestReadTool,
 		Path:    compactFileOperationTestPath,
@@ -59,7 +59,7 @@ func TestCollectCompactionFileOperations(t *testing.T) {
 	badArgs := compactFileOperationToolEntry("bad-args", compactFileOperationTestReadTool, `{`)
 	missingPath := compactFileOperationToolEntry("missing-path", compactFileOperationTestReadTool, `{}`)
 
-	operations := collectCompactionFileOperations([]database.EntryEntity{
+	operations := CollectFileOperations([]database.EntryEntity{
 		prior,
 		invalidPrior,
 		*read,
@@ -86,7 +86,7 @@ func TestCollectCompactionFileOperations(t *testing.T) {
 		compactFileOperationTestSourcePath,
 		compactFileOperationTestReadTool,
 	)
-	assertCompactionFileOperation(t, operations, compactionFileActionModified, "internal/app.go", "write")
+	assertCompactionFileOperation(t, operations, fileActionModified, "internal/app.go", "write")
 	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "internal/**/*.go", "find")
 	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "go.mod", "bash")
 	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "internal/app.go", "bash")
@@ -95,7 +95,7 @@ func TestCollectCompactionFileOperations(t *testing.T) {
 		map[string]any{"command": "sed -i 's/a/b/' internal/app.go"},
 	)
 	require.Len(t, mutatingBash, 1)
-	assert.Equal(t, compactionFileActionModified, mutatingBash[0].Action)
+	assert.Equal(t, fileActionModified, mutatingBash[0].Action)
 	assert.Len(t, operations, 6)
 }
 
@@ -103,30 +103,30 @@ func TestAppendUniqueCompactionFileOperation(t *testing.T) {
 	t.Parallel()
 
 	seen := map[string]struct{}{}
-	operations := []compactionFileOperation{}
-	operations = appendUniqueCompactionFileOperation(operations, seen, nil)
-	operations = appendUniqueCompactionFileOperation(operations, seen, &compactionFileOperation{
+	operations := []FileOperation{}
+	operations = appendUniqueFileOperation(operations, seen, nil)
+	operations = appendUniqueFileOperation(operations, seen, &FileOperation{
 		EntryID: "",
 		Action:  " ",
 		Path:    "x.go",
 		Tool:    "",
 		Command: "",
 	})
-	operations = appendUniqueCompactionFileOperation(operations, seen, &compactionFileOperation{
+	operations = appendUniqueFileOperation(operations, seen, &FileOperation{
 		EntryID: "",
 		Action:  compactFileOperationTestReadTool,
 		Path:    " ",
 		Tool:    "",
 		Command: "",
 	})
-	operations = appendUniqueCompactionFileOperation(operations, seen, &compactionFileOperation{
+	operations = appendUniqueFileOperation(operations, seen, &FileOperation{
 		EntryID: "",
 		Action:  " " + compactFileOperationTestReadTool + " ",
 		Path:    " " + compactFileOperationTestPath + " ",
 		Tool:    " " + compactFileOperationTestReadTool + " ",
 		Command: " " + compactFileOperationTestCommand + " ",
 	})
-	operations = appendUniqueCompactionFileOperation(operations, seen, &compactionFileOperation{
+	operations = appendUniqueFileOperation(operations, seen, &FileOperation{
 		EntryID: "",
 		Action:  compactFileOperationTestReadTool,
 		Path:    compactFileOperationTestPath,
@@ -135,7 +135,7 @@ func TestAppendUniqueCompactionFileOperation(t *testing.T) {
 	})
 
 	require.Len(t, operations, 1)
-	assert.Equal(t, compactionFileOperation{
+	assert.Equal(t, FileOperation{
 		EntryID: "",
 		Action:  compactFileOperationTestReadTool,
 		Path:    compactFileOperationTestPath,
@@ -175,12 +175,12 @@ func TestFileOperationFormattingHelpers(t *testing.T) {
 	t.Parallel()
 
 	command := strings.Repeat("x", 200)
-	assert.Len(t, truncateCompactionOperationCommand(command), 160)
-	assert.True(t, strings.HasSuffix(truncateCompactionOperationCommand(command), "..."))
+	assert.Len(t, truncateCommand(command), 160)
+	assert.True(t, strings.HasSuffix(truncateCommand(command), "..."))
 
-	summary := appendFileOperationsSummary(
-		"summary\n\n"+compactionFileOperationsHeader+"\n- read: stale",
-		[]compactionFileOperation{{
+	summary := AppendFileOperationsSummary(
+		"summary\n\n"+fileOperationsHeader+"\n- read: stale",
+		[]FileOperation{{
 			EntryID: "",
 			Action:  compactFileOperationTestReadTool,
 			Path:    compactFileOperationTestPath,
@@ -188,13 +188,13 @@ func TestFileOperationFormattingHelpers(t *testing.T) {
 			Command: "",
 		}},
 	)
-	assert.Equal(t, "summary\n\n"+compactionFileOperationsHeader+"\n- read: README.md (via read)", summary)
-	assert.Equal(t, "summary", stripFileOperationsSummary(summary))
+	assert.Equal(t, "summary\n\n"+fileOperationsHeader+"\n- read: README.md (via read)", summary)
+	assert.Equal(t, "summary", StripFileOperationsSummary(summary))
 }
 
 func compactFileOperationCompactionEntry(
 	t *testing.T,
-	operations []compactionFileOperation,
+	operations []FileOperation,
 ) database.EntryEntity {
 	t.Helper()
 
@@ -204,7 +204,7 @@ func compactFileOperationCompactionEntry(
 		database.RoleCompactionSummary,
 		compactFileOperationTestSummary,
 	)
-	data := entryDataForCompaction{Details: map[string]any{compactionFileOperationsKey: operations}}
+	data := entryData{Details: map[string]any{FileOperationsKey: operations}}
 	encoded, err := json.Marshal(data)
 	require.NoError(t, err)
 	entry.DataJSON = string(encoded)
@@ -226,7 +226,7 @@ func compactFileOperationEntry(
 	role database.Role,
 	content string,
 ) database.EntryEntity {
-	return compactionTestEntry(entryID, entryType, role, content)
+	return testEntry(entryID, entryType, role, content)
 }
 
 func compactFileOperationPathArgsJSON() string {
@@ -235,7 +235,7 @@ func compactFileOperationPathArgsJSON() string {
 
 func assertCompactionFileOperation(
 	t *testing.T,
-	operations []compactionFileOperation,
+	operations []FileOperation,
 	action string,
 	path string,
 	tool string,

@@ -1,5 +1,4 @@
-// Package assistant orchestrates conversations, extensions, cache, and prompt execution.
-package assistant
+package compaction
 
 import (
 	"encoding/json"
@@ -12,15 +11,18 @@ import (
 )
 
 const (
-	compactionFileOperationsKey    = "file_operations"
-	compactionFileOperationsHeader = "File operations preserved during compaction:"
-	compactionFileActionModified   = "modified"
-	maxCompactionFileOperations    = 64
+	// FileOperationsKey is the details key used for preserved file-operation metadata.
+	FileOperationsKey    = "file_operations"
+	fileOperationsHeader = "File operations preserved during compaction:"
+	fileActionRead       = "read"
+	fileActionModified   = "modified"
+	maxFileOperations    = 64
 )
 
 var shellPathTokenPattern = regexp.MustCompile(`^[./A-Za-z0-9_@~][A-Za-z0-9_@~./+%:=,-]*$`)
 
-type compactionFileOperation struct {
+// FileOperation records file activity that should survive compaction summaries.
+type FileOperation struct {
 	EntryID string `json:"entry_id,omitempty"`
 	Action  string `json:"action"`
 	Path    string `json:"path"`
@@ -28,30 +30,31 @@ type compactionFileOperation struct {
 	Command string `json:"command,omitempty"`
 }
 
-func collectCompactionFileOperations(entries []database.EntryEntity) []compactionFileOperation {
-	operations := []compactionFileOperation{}
+// CollectFileOperations extracts bounded, de-duplicated file operations from compacted entries.
+func CollectFileOperations(entries []database.EntryEntity) []FileOperation {
+	operations := []FileOperation{}
 	seen := map[string]struct{}{}
 	for index := range entries {
 		entry := &entries[index]
 		for _, operation := range fileOperationsFromPriorCompaction(entry) {
-			operations = appendUniqueCompactionFileOperation(operations, seen, &operation)
+			operations = appendUniqueFileOperation(operations, seen, &operation)
 		}
 		for _, operation := range fileOperationsFromToolEntry(entry) {
-			operations = appendUniqueCompactionFileOperation(operations, seen, &operation)
+			operations = appendUniqueFileOperation(operations, seen, &operation)
 		}
-		if len(operations) >= maxCompactionFileOperations {
-			return operations[:maxCompactionFileOperations]
+		if len(operations) >= maxFileOperations {
+			return operations[:maxFileOperations]
 		}
 	}
 
 	return operations
 }
 
-func appendUniqueCompactionFileOperation(
-	operations []compactionFileOperation,
+func appendUniqueFileOperation(
+	operations []FileOperation,
 	seen map[string]struct{},
-	operation *compactionFileOperation,
-) []compactionFileOperation {
+	operation *FileOperation,
+) []FileOperation {
 	if operation == nil {
 		return operations
 	}
@@ -71,15 +74,15 @@ func appendUniqueCompactionFileOperation(
 	return append(operations, *operation)
 }
 
-func fileOperationsFromPriorCompaction(entry *database.EntryEntity) []compactionFileOperation {
+func fileOperationsFromPriorCompaction(entry *database.EntryEntity) []FileOperation {
 	if entry.Type != database.EntryTypeCompaction {
 		return nil
 	}
-	data := entryDataForCompaction{Details: nil}
+	data := entryData{Details: nil}
 	if err := json.Unmarshal([]byte(entry.DataJSON), &data); err != nil {
 		return nil
 	}
-	rawOperations, ok := data.Details[compactionFileOperationsKey]
+	rawOperations, ok := data.Details[FileOperationsKey]
 	if !ok {
 		return nil
 	}
@@ -87,7 +90,7 @@ func fileOperationsFromPriorCompaction(entry *database.EntryEntity) []compaction
 	if err != nil {
 		return nil
 	}
-	operations := []compactionFileOperation{}
+	operations := []FileOperation{}
 	if err := json.Unmarshal(encoded, &operations); err != nil {
 		return nil
 	}
@@ -95,7 +98,7 @@ func fileOperationsFromPriorCompaction(entry *database.EntryEntity) []compaction
 	return operations
 }
 
-func fileOperationsFromToolEntry(entry *database.EntryEntity) []compactionFileOperation {
+func fileOperationsFromToolEntry(entry *database.EntryEntity) []FileOperation {
 	if entry.Type != database.EntryTypeMessage || entry.Message.Role != database.RoleToolResult {
 		return nil
 	}
@@ -107,13 +110,13 @@ func fileOperationsFromToolEntry(entry *database.EntryEntity) []compactionFileOp
 	}
 	switch tool.Name(entry.ToolName) {
 	case tool.NameRead:
-		return pathArgumentFileOperation(entry, args, jsonReadToolName)
+		return pathArgumentFileOperation(entry, args, fileActionRead)
 	case tool.NameEdit, tool.NameWrite:
-		return pathArgumentFileOperation(entry, args, compactionFileActionModified)
+		return pathArgumentFileOperation(entry, args, fileActionModified)
 	case tool.NameBash:
 		return bashFileOperations(entry, args)
 	case tool.NameFind, tool.NameGrep, tool.NameLS, tool.NameAST:
-		return pathArgumentFileOperation(entry, args, jsonReadToolName)
+		return pathArgumentFileOperation(entry, args, fileActionRead)
 	}
 
 	return nil
@@ -123,7 +126,7 @@ func pathArgumentFileOperation(
 	entry *database.EntryEntity,
 	args map[string]any,
 	action string,
-) []compactionFileOperation {
+) []FileOperation {
 	path, ok := stringArgument(args, "path")
 	if !ok {
 		path, ok = stringArgument(args, "pattern")
@@ -132,7 +135,7 @@ func pathArgumentFileOperation(
 		return nil
 	}
 
-	return []compactionFileOperation{{
+	return []FileOperation{{
 		EntryID: entry.ID,
 		Action:  action,
 		Path:    path,
@@ -141,7 +144,7 @@ func pathArgumentFileOperation(
 	}}
 }
 
-func bashFileOperations(entry *database.EntryEntity, args map[string]any) []compactionFileOperation {
+func bashFileOperations(entry *database.EntryEntity, args map[string]any) []FileOperation {
 	command, ok := stringArgument(args, "command")
 	if !ok {
 		return nil
@@ -150,18 +153,18 @@ func bashFileOperations(entry *database.EntryEntity, args map[string]any) []comp
 	if len(paths) == 0 {
 		return nil
 	}
-	action := jsonReadToolName
+	action := fileActionRead
 	if shellCommandLooksMutating(command) {
-		action = compactionFileActionModified
+		action = fileActionModified
 	}
-	operations := make([]compactionFileOperation, 0, len(paths))
+	operations := make([]FileOperation, 0, len(paths))
 	for _, path := range paths {
-		operations = append(operations, compactionFileOperation{
+		operations = append(operations, FileOperation{
 			EntryID: entry.ID,
 			Action:  action,
 			Path:    path,
 			Tool:    entry.ToolName,
-			Command: truncateCompactionOperationCommand(command),
+			Command: truncateCommand(command),
 		})
 	}
 
@@ -244,7 +247,7 @@ func looksLikeShellPath(path string) bool {
 	return strings.Contains(path, "/") || strings.Contains(path, ".")
 }
 
-func truncateCompactionOperationCommand(command string) string {
+func truncateCommand(command string) string {
 	command = strings.TrimSpace(command)
 	if len(command) <= 160 {
 		return command
@@ -253,8 +256,9 @@ func truncateCompactionOperationCommand(command string) string {
 	return command[:157] + "..."
 }
 
-func appendFileOperationsSummary(summary string, operations []compactionFileOperation) string {
-	summary = stripFileOperationsSummary(summary)
+// AppendFileOperationsSummary replaces stale operation text and appends current operations.
+func AppendFileOperationsSummary(summary string, operations []FileOperation) string {
+	summary = StripFileOperationsSummary(summary)
 	if len(operations) == 0 {
 		return summary
 	}
@@ -262,8 +266,8 @@ func appendFileOperationsSummary(summary string, operations []compactionFileOper
 	builder := strings.Builder{}
 	builder.WriteString(strings.TrimSpace(summary))
 	builder.WriteString("\n\n")
-	builder.WriteString(compactionFileOperationsHeader)
-	for _, operation := range operations[:min(len(operations), maxCompactionFileOperations)] {
+	builder.WriteString(fileOperationsHeader)
+	for _, operation := range operations[:min(len(operations), maxFileOperations)] {
 		builder.WriteString("\n- ")
 		builder.WriteString(operation.Action)
 		builder.WriteString(": ")
@@ -278,8 +282,9 @@ func appendFileOperationsSummary(summary string, operations []compactionFileOper
 	return strings.TrimSpace(builder.String())
 }
 
-func stripFileOperationsSummary(summary string) string {
-	before, _, ok := strings.Cut(summary, compactionFileOperationsHeader)
+// StripFileOperationsSummary removes the generated file-operation section from summary text.
+func StripFileOperationsSummary(summary string) string {
+	before, _, ok := strings.Cut(summary, fileOperationsHeader)
 	if !ok {
 		return strings.TrimSpace(summary)
 	}
@@ -287,6 +292,6 @@ func stripFileOperationsSummary(summary string) string {
 	return strings.TrimSpace(before)
 }
 
-type entryDataForCompaction struct {
+type entryData struct {
 	Details map[string]any `json:"details,omitempty"`
 }
