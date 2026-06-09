@@ -3,6 +3,8 @@ package terminal
 import (
 	"context"
 
+	"github.com/omarluq/librecode/internal/terminal/panel"
+
 	"github.com/gdamore/tcell/v3"
 )
 
@@ -213,13 +215,13 @@ func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) error
 	if app.selectedPanelKind == panelScopedModels && app.handleScopedModelKey(event) {
 		return nil
 	}
-	action := app.panel.handleKey(event, app.keys)
+	action := app.panel.HandleKey(event, panelKeybindings{keys: app.keys})
 	switch action.Type {
-	case panelActionCancel:
+	case panel.ActionCancel:
 		app.closePanel()
-	case panelActionSelect:
+	case panel.ActionSelect:
 		return app.applyPanelSelection(ctx, action.Value)
-	case panelActionNone:
+	case panel.ActionNone:
 		return nil
 	}
 

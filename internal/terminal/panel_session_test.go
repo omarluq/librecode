@@ -75,13 +75,14 @@ func TestSessionPanelOpenAndItems(t *testing.T) {
 	if got, want := app.selectedPanelKind, panelSessions; got != want {
 		t.Fatalf("selectedPanelKind = %q, want %q", got, want)
 	}
-	if app.panel == nil || app.panel.kind != panelSessions {
+	if app.panel == nil || app.panel.Kind() != panelSessions {
 		t.Fatal("session panel should be open")
 	}
-	if len(app.panel.items) != 2 {
-		t.Fatalf("len(panel.items) = %d, want 2", len(app.panel.items))
+	items := app.panel.Items()
+	if len(items) != 2 {
+		t.Fatalf("len(panel.items) = %d, want 2", len(items))
 	}
-	if app.panel.items[0].Value != firstSession.ID && app.panel.items[0].Value != secondSession.ID {
-		t.Fatalf("unexpected first session item value %q", app.panel.items[0].Value)
+	if items[0].Value != firstSession.ID && items[0].Value != secondSession.ID {
+		t.Fatalf("unexpected first session item value %q", items[0].Value)
 	}
 }

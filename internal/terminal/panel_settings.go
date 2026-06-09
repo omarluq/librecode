@@ -1,5 +1,7 @@
 package terminal
 
+import "github.com/omarluq/librecode/internal/terminal/panel"
+
 const (
 	settingTheme    = "theme"
 	settingThinking = "thinking"
@@ -7,31 +9,31 @@ const (
 )
 
 func (app *App) openSettingsPanel() {
-	panel := newSelectionPanel(
+	model := panel.New(
 		panelSettings,
 		"Settings",
 		"Enter cycles values; Esc returns",
 		app.settingsItems(),
 		false,
 	)
-	app.openPanel(panel)
+	app.openPanel(model)
 }
 
 func (app *App) openHotkeysPanel() {
-	items := make([]panelItem, 0, len(app.keys.rows()))
+	items := make([]panel.Item, 0, len(app.keys.rows()))
 	for _, row := range app.keys.rows() {
-		items = append(items, panelItem{
+		items = append(items, panel.Item{
 			Value:       row.Action,
 			Title:       row.Keys,
 			Description: row.Description,
 			Meta:        row.Action,
 		})
 	}
-	app.openPanel(newSelectionPanel(panelHotkeys, "Hotkeys", "librecode default keybindings", items, true))
+	app.openPanel(panel.New(panelHotkeys, "Hotkeys", "librecode default keybindings", items, true))
 }
 
 func (app *App) openChangelogPanel() {
-	items := []panelItem{
+	items := []panel.Item{
 		{
 			Value:       "tui",
 			Title:       "TUI parity",
@@ -45,11 +47,11 @@ func (app *App) openChangelogPanel() {
 			Meta:        "done",
 		},
 	}
-	app.openPanel(newSelectionPanel(panelChangelog, "Changelog", "recent runtime work", items, false))
+	app.openPanel(panel.New(panelChangelog, "Changelog", "recent runtime work", items, false))
 }
 
-func (app *App) settingsItems() []panelItem {
-	return []panelItem{
+func (app *App) settingsItems() []panel.Item {
+	return []panel.Item{
 		{Value: settingTheme, Title: "Theme", Description: "dark/light visual palette", Meta: app.theme.name},
 		{
 			Value:       settingThinking,
@@ -83,7 +85,7 @@ func (app *App) applySettingSelection(value string) {
 	case "tools-expanded":
 		app.setToolsExpanded(!app.toolsExpanded)
 	}
-	app.panel = newSelectionPanel(
+	app.panel = panel.New(
 		panelSettings,
 		"Settings",
 		"Enter cycles values; Esc returns",

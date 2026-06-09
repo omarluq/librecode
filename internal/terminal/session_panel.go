@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"github.com/omarluq/librecode/internal/terminal/panel"
 	"sort"
 
 	"github.com/gdamore/tcell/v3"
@@ -43,7 +44,7 @@ func (app *App) toggleNamedSessionFilter() {
 }
 
 func (app *App) deleteSelectedSession(ctx context.Context) {
-	value, ok := app.panel.selectedValue()
+	value, ok := app.panel.SelectedValue()
 	if !ok {
 		return
 	}
@@ -66,7 +67,7 @@ func (app *App) refreshSessionPanel(ctx context.Context) {
 		app.setStatus(err.Error())
 		return
 	}
-	app.panel = newSelectionPanel(panelSessions, "Resume Session", app.sessionPanelSubtitle(), items, true)
+	app.panel = panel.New(panelSessions, "Resume Session", app.sessionPanelSubtitle(), items, true)
 }
 
 func (app *App) sessionPanelSubtitle() string {

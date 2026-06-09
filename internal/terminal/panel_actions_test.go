@@ -5,13 +5,15 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/omarluq/librecode/internal/terminal/panel"
 )
 
 func TestApplyPanelSelectionUnknownKindReturnsError(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.selectedPanelKind = panelKind("mystery")
+	app.selectedPanelKind = panel.Kind("mystery")
 
 	err := app.applyPanelSelection(context.Background(), "value")
 	if err == nil {
@@ -27,7 +29,7 @@ func TestApplyPanelSelectionHotkeysAndChangelogAreNoops(t *testing.T) {
 
 	for _, testCase := range []struct {
 		name string
-		kind panelKind
+		kind panel.Kind
 	}{
 		{name: hotkeysCommandName, kind: panelHotkeys},
 		{name: changelogCommandName, kind: panelChangelog},

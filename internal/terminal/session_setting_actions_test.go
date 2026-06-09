@@ -195,7 +195,7 @@ func TestHandleScopedModelKeyEnableAll(t *testing.T) {
 	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlA, "", tcell.ModNone)) {
 		t.Fatal("ctrl+a should be handled")
 	}
-	for _, item := range app.panel.filtered {
+	for _, item := range app.panel.FilteredItems() {
 		if !app.scopedEnabled[item.Value] {
 			t.Fatalf("expected scoped model %q to be enabled", item.Value)
 		}
@@ -206,14 +206,14 @@ func TestHandleScopedModelKeyClearAll(t *testing.T) {
 	t.Parallel()
 
 	app := newScopedModelTestApp(t)
-	for _, item := range app.panel.filtered {
+	for _, item := range app.panel.FilteredItems() {
 		app.scopedEnabled[item.Value] = true
 	}
 
 	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlX, "", tcell.ModNone)) {
 		t.Fatal("ctrl+x should be handled")
 	}
-	for _, item := range app.panel.filtered {
+	for _, item := range app.panel.FilteredItems() {
 		if app.scopedEnabled[item.Value] {
 			t.Fatalf("expected scoped model %q to be cleared", item.Value)
 		}
@@ -227,8 +227,9 @@ func TestHandleScopedModelKeyToggleProvider(t *testing.T) {
 	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlP, "", tcell.ModNone)) {
 		t.Fatal("ctrl+p should be handled")
 	}
-	provider := providerFromModelValue(app.panel.filtered[0].Value)
-	for _, item := range app.panel.filtered {
+	items := app.panel.FilteredItems()
+	provider := providerFromModelValue(items[0].Value)
+	for _, item := range items {
 		if providerFromModelValue(item.Value) == provider && !app.scopedEnabled[item.Value] {
 			t.Fatalf("expected provider-scoped model %q to be enabled", item.Value)
 		}
@@ -239,12 +240,13 @@ func TestHandleScopedModelKeyReorderUp(t *testing.T) {
 	t.Parallel()
 
 	app := newScopedModelTestApp(t)
-	app.scopedOrder = make([]string, 0, len(app.panel.filtered))
-	for _, item := range app.panel.filtered {
+	items := app.panel.FilteredItems()
+	app.scopedOrder = make([]string, 0, len(items))
+	for _, item := range items {
 		app.scopedOrder = append(app.scopedOrder, item.Value)
 	}
-	app.panel.selected = 1
-	selected := app.panel.filtered[1].Value
+	app.panel.SetSelectedIndex(1)
+	selected := items[1].Value
 
 	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyUp, "", tcell.ModAlt)) {
 		t.Fatal("alt+up should be handled")
@@ -288,7 +290,7 @@ func newScopedModelTestApp(t *testing.T) *App {
 	})
 	app.scopedEnabled = map[string]bool{}
 	app.openScopedModelsPanel()
-	if len(app.panel.filtered) < 2 {
+	if len(app.panel.FilteredItems()) < 2 {
 		t.Fatal("expected at least two scoped model items")
 	}
 

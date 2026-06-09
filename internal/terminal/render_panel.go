@@ -2,7 +2,8 @@ package terminal
 
 func (app *App) drawPanel(width, height, row int) int {
 	availableHeight := max(1, height-row-app.composerReserve(width, height))
-	lines := app.panel.render(width, availableHeight, app.theme, app.keys)
+	options := panelRenderOptions(width, availableHeight, app.theme, app.keys)
+	lines := app.panel.Render(&options)
 	for _, line := range lines {
 		app.writeStyledLine(row, width, line)
 		row++
@@ -16,7 +17,8 @@ func (app *App) drawPanelWindow(layout *runtimeLayout) {
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
-	lines := app.panel.render(window.Width, window.Height, app.theme, app.keys)
+	options := panelRenderOptions(window.Width, window.Height, app.theme, app.keys)
+	lines := app.panel.Render(&options)
 	for index, line := range lines {
 		app.writeStyledLine(window.Y+index, window.Width, line)
 	}

@@ -3,6 +3,7 @@ package terminal
 
 import (
 	"context"
+	"github.com/omarluq/librecode/internal/terminal/panel"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -44,15 +45,15 @@ librecode.keymap.set({ focus = "composer" }, "down", function()
   librecode.event.consume()
 end)
 `)
-	app.openPanel(newSelectionPanel(panelModel, "Models", "", []panelItem{
+	app.openPanel(panel.New(panelModel, "Models", "", []panel.Item{
 		{Value: firstPanelItem, Title: firstPanelItem, Description: "", Meta: ""},
 		{Value: secondPanelItem, Title: secondPanelItem, Description: "", Meta: ""},
 	}, true))
-	selected := app.panel.selected
+	selected := app.panel.SelectedIndex()
 
 	pressTerminalKey(t, app, tcell.KeyDown, "")
 
-	assert.Equal(t, selected+1, app.panel.selected)
+	assert.Equal(t, selected+1, app.panel.SelectedIndex())
 	assertEditorText(t, app, "")
 }
 

@@ -201,6 +201,31 @@ func JoinSegments(segments []Segment) string {
 	return builder.String()
 }
 
+// TopBorder returns a rounded top border with an optional right-aligned label.
+func TopBorder(width int, label string) string {
+	innerWidth := max(1, width-2)
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "╭" + strings.Repeat("─", innerWidth) + "╮"
+	}
+
+	label = strings.ReplaceAll(label, "\n", " ")
+	suffix := Truncate(label+"──", innerWidth)
+	fillWidth := max(0, innerWidth-RuneLen(suffix))
+
+	return "╭" + strings.Repeat("─", fillWidth) + suffix + "╮"
+}
+
+// MiddleBorder returns a horizontal separator border.
+func MiddleBorder(width int) string {
+	return "├" + strings.Repeat("─", max(1, width-2)) + "┤"
+}
+
+// BottomBorder returns a rounded bottom border.
+func BottomBorder(width int) string {
+	return "╰" + strings.Repeat("─", max(1, width-2)) + "╯"
+}
+
 // WriteCells writes text into exactly width cells, filling remaining cells with spaces.
 func WriteCells(screen ContentSetter, column, row, width int, text string, style tcell.Style) int {
 	used := WriteCellsNoFill(screen, column, row, width, text, style)
