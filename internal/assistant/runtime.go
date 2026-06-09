@@ -9,6 +9,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/event"
@@ -150,14 +151,19 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	if request == nil {
 		return nil, oops.In("assistant").Code("nil_prompt_request").Errorf("prompt request is nil")
 	}
-	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleInput, promptLifecyclePayload(request))
-	runtime.dispatchObservationalLifecycle(ctx, extension.LifecyclePromptPrepare, promptLifecyclePayload(request))
+	promptPayload := lifecyclePromptRequest(request)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleInput, lifecyclepayload.Prompt(promptPayload))
+	runtime.dispatchObservationalLifecycle(
+		ctx,
+		extension.LifecyclePromptPrepare,
+		lifecyclepayload.Prompt(promptPayload),
+	)
 
 	activeSession, sessionEvent, err := runtime.resolveSession(ctx, request)
 	if err != nil {
 		return nil, err
 	}
-	runtime.dispatchObservationalLifecycle(ctx, sessionEvent, sessionLifecyclePayload(activeSession))
+	runtime.dispatchObservationalLifecycle(ctx, sessionEvent, lifecyclepayload.Session(activeSession))
 
 	parentID, err := runtime.promptParentID(ctx, activeSession.ID, request.ParentEntryID)
 	if err != nil {

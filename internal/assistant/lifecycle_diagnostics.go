@@ -3,17 +3,10 @@ package assistant
 import (
 	"context"
 	"fmt"
-	"maps"
 	"sort"
-	"time"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/extension"
-)
-
-const (
-	lifecycleHookCountKey  = "hook_count"
-	lifecycleDurationMsKey = "duration_ms"
-	lifecycleErrorsKey     = "hook_errors"
 )
 
 func (runtime *Runtime) emitLifecycleDiagnostics(
@@ -22,21 +15,14 @@ func (runtime *Runtime) emitLifecycleDiagnostics(
 	result *extension.LifecycleDispatchResult,
 	extra map[string]any,
 ) {
-	payload := map[string]any{
-		"event":                string(name),
-		lifecycleHookCountKey:  result.HandlerCount,
-		lifecycleDurationMsKey: durationMilliseconds(result.Duration),
-	}
-	if len(result.Errors) > 0 {
-		payload[lifecycleErrorsKey] = append([]string{}, result.Errors...)
-	}
-	maps.Copy(payload, extra)
-
+	payload := lifecyclepayload.Diagnostic(
+		string(name),
+		result.HandlerCount,
+		result.Duration,
+		result.Errors,
+		extra,
+	)
 	runtime.emit(ctx, string(name)+"_diagnostic", payload)
-}
-
-func durationMilliseconds(duration time.Duration) float64 {
-	return float64(duration.Microseconds()) / 1000
 }
 
 func providerHookDiagnostics(input providerHookInput, output providerHookOutput) map[string]any {
@@ -53,11 +39,11 @@ func providerBaseDiagnostics(request *CompletionRequest, attempt int) map[string
 	}
 
 	return map[string]any{
-		lifecycleAPIKey:      request.Model.API,
-		lifecycleAttemptKey:  attempt,
-		jsonModelKey:         request.Model.ID,
-		lifecycleProviderKey: request.Model.Provider,
-		jsonSessionIDKey:     request.SessionID,
+		lifecyclepayload.APIKey:       request.Model.API,
+		lifecyclepayload.AttemptKey:   attempt,
+		lifecyclepayload.ModelKey:     request.Model.ID,
+		lifecyclepayload.ProviderKey:  request.Model.Provider,
+		lifecyclepayload.SessionIDKey: request.SessionID,
 	}
 }
 
@@ -73,10 +59,10 @@ func providerResponseDiagnostics(
 	diagnostics["response_text_bytes"] = len(result.Text)
 	diagnostics["thinking_count"] = len(result.Thinking)
 	diagnostics["tool_event_count"] = len(result.ToolEvents)
-	diagnostics[jsonContextTokensKey] = result.Usage.ContextTokens
-	diagnostics[jsonContextWindowKey] = result.Usage.ContextWindow
-	diagnostics[jsonInputTokensKey] = result.Usage.InputTokens
-	diagnostics[jsonOutputTokensKey] = result.Usage.OutputTokens
+	diagnostics[lifecyclepayload.ContextTokensKey] = result.Usage.ContextTokens
+	diagnostics[lifecyclepayload.ContextWindowKey] = result.Usage.ContextWindow
+	diagnostics[lifecyclepayload.InputTokensKey] = result.Usage.InputTokens
+	diagnostics[lifecyclepayload.OutputTokensKey] = result.Usage.OutputTokens
 
 	return diagnostics
 }
@@ -91,7 +77,7 @@ func providerErrorDiagnostics(
 	}
 
 	diagnostics := providerBaseDiagnostics(request, attempt)
-	diagnostics[lifecycleErrorKey] = err.Error()
+	diagnostics[lifecyclepayload.ErrorKey] = err.Error()
 	diagnostics["retryable"] = ShouldRetryModelError(err)
 	if code, ok := providerErrorCode(err); ok {
 		diagnostics["error_code"] = code
@@ -105,9 +91,9 @@ func providerErrorDiagnostics(
 
 func toolCallDiagnostics(call *ToolCallEvent) map[string]any {
 	return map[string]any{
-		"call_id":       call.ID,
-		jsonToolNameKey: call.Name,
-		"argument_keys": sortedAnyMapKeys(call.Arguments),
+		"call_id":                    call.ID,
+		lifecyclepayload.ToolNameKey: call.Name,
+		"argument_keys":              sortedAnyMapKeys(call.Arguments),
 	}
 }
 
@@ -123,11 +109,11 @@ func sortedAnyMapKeys(values map[string]any) []string {
 
 func toolResultDiagnostics(event *ToolEvent) map[string]any {
 	return map[string]any{
-		jsonToolNameKey:       event.Name,
-		"has_error":           event.Error != "",
-		"result_bytes":        len(event.Result),
-		"details_json_bytes":  len(event.DetailsJSON),
-		lifecycleToolErrorKey: event.Error,
+		lifecyclepayload.ToolNameKey:  event.Name,
+		"has_error":                   event.Error != "",
+		"result_bytes":                len(event.Result),
+		"details_json_bytes":          len(event.DetailsJSON),
+		lifecyclepayload.ToolErrorKey: event.Error,
 	}
 }
 

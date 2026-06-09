@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
@@ -88,7 +89,7 @@ func (runtime *Runtime) dispatchMessageAppend(ctx context.Context, entry *databa
 	if entry == nil {
 		return
 	}
-	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleMessageAppend, entryLifecyclePayload(entry))
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleMessageAppend, lifecyclepayload.Entry(entry))
 }
 
 func (runtime *Runtime) dispatchTurnStartLifecycle(
@@ -98,7 +99,7 @@ func (runtime *Runtime) dispatchTurnStartLifecycle(
 	userEntryID string,
 	parentEntryID *string,
 ) {
-	payload := turnLifecyclePayload(sessionID, request.CWD, request.Text, userEntryID, parentEntryID)
+	payload := lifecyclepayload.TurnStart(sessionID, request.CWD, request.Text, userEntryID, parentEntryID)
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleBeforeAgentStart, payload)
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleAgentStart, payload)
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleTurnStart, payload)
@@ -112,7 +113,14 @@ func (runtime *Runtime) dispatchTurnEndLifecycle(
 	cached bool,
 	usage model.TokenUsage,
 ) {
-	payload := turnEndLifecyclePayload(sessionID, userEntryID, assistantEntryID, cached, nil, usage)
+	payload := lifecyclepayload.TurnEndPayload(&lifecyclepayload.TurnEnd{
+		Err:              nil,
+		Usage:            usage,
+		AssistantEntryID: assistantEntryID,
+		SessionID:        sessionID,
+		UserEntryID:      userEntryID,
+		Cached:           cached,
+	})
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleTurnEnd, payload)
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleAgentEnd, payload)
 }
@@ -126,7 +134,14 @@ func (runtime *Runtime) dispatchTurnErrorLifecycle(
 	if turnErr == nil {
 		return
 	}
-	payload := turnEndLifecyclePayload(sessionID, userEntryID, "", false, turnErr, model.EmptyTokenUsage())
+	payload := lifecyclepayload.TurnEndPayload(&lifecyclepayload.TurnEnd{
+		Err:              turnErr,
+		Usage:            model.EmptyTokenUsage(),
+		AssistantEntryID: "",
+		SessionID:        sessionID,
+		UserEntryID:      userEntryID,
+		Cached:           false,
+	})
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleTurnEnd, payload)
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleAgentEnd, payload)
 }
@@ -148,7 +163,7 @@ func (runtime *Runtime) dispatchContextBuild(
 	base *contextwindow.Base,
 	result *contextwindow.BuildResult,
 ) (extension.LifecycleDispatchResult, error) {
-	payload := contextBuildLifecyclePayload(sessionID, cwd, base, result)
+	payload := lifecyclepayload.ContextBuild(sessionID, cwd, base, result)
 	return runtime.dispatchLifecycle(ctx, extension.LifecycleContextBuild, payload)
 }
 
@@ -176,80 +191,11 @@ func emptyLifecycleDispatchResult(
 	}
 }
 
-func promptLifecyclePayload(request *PromptRequest) map[string]any {
-	if request == nil {
-		return map[string]any{}
-	}
-
-	return map[string]any{
-		lifecycleCWDKey:           request.CWD,
-		jsonToolNameKey:           request.Name,
-		lifecycleParentEntryIDKey: stringPtrValue(request.ParentEntryID),
-		lifecyclePromptKey:        request.Text,
-		"resume_latest":           request.ResumeLatest,
-		jsonSessionIDKey:          request.SessionID,
-	}
-}
-
-func sessionLifecyclePayload(session *database.SessionEntity) map[string]any {
-	if session == nil {
-		return map[string]any{}
-	}
-
-	return map[string]any{
-		lifecycleCWDKey:           session.CWD,
-		lifecycleCreatedAtKey:     session.CreatedAt.Format(timeFormatRFC3339Nano),
-		jsonToolNameKey:           session.Name,
-		lifecycleParentSessionKey: session.ParentSession,
-		jsonSessionIDKey:          session.ID,
-		lifecycleUpdatedAtKey:     session.UpdatedAt.Format(timeFormatRFC3339Nano),
-	}
-}
-
-func turnLifecyclePayload(
-	sessionID string,
-	cwd string,
-	prompt string,
-	userEntryID string,
-	parentEntryID *string,
-) map[string]any {
-	return map[string]any{
-		lifecycleCWDKey:           cwd,
-		lifecycleParentEntryIDKey: stringPtrValue(parentEntryID),
-		lifecyclePromptKey:        prompt,
-		jsonSessionIDKey:          sessionID,
-		lifecycleUserEntryIDKey:   userEntryID,
-	}
-}
-
-func turnEndLifecyclePayload(
-	sessionID string,
-	userEntryID string,
-	assistantEntryID string,
-	cached bool,
-	turnErr error,
-	usage model.TokenUsage,
-) map[string]any {
-	payload := map[string]any{
-		lifecycleAssistantEntryIDKey: assistantEntryID,
-		"cached":                     cached,
-		lifecycleErrorKey:            "",
-		jsonSessionIDKey:             sessionID,
-		jsonUsageKey:                 tokenUsageLifecyclePayload(usage),
-		lifecycleUserEntryIDKey:      userEntryID,
-	}
-	if turnErr != nil {
-		payload[lifecycleErrorKey] = turnErr.Error()
-	}
-
-	return payload
-}
-
 func (runtime *Runtime) dispatchToolCallLifecycle(ctx context.Context, call *ToolCallEvent) error {
 	if call == nil {
 		return nil
 	}
-	payload := toolCallPayload(*call)
+	payload := lifecyclepayload.ToolCallPayload(lifecycleToolCall(*call))
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolCall, payload)
 	if err != nil {
 		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
@@ -265,7 +211,7 @@ func (runtime *Runtime) dispatchToolResultLifecycle(ctx context.Context, event *
 	if event == nil {
 		return nil
 	}
-	payload := toolEventPayload(event)
+	payload := lifecyclepayload.ToolResultPayload(lifecycleToolResult(event))
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolResult, payload)
 	if err != nil {
 		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolResult, &result, toolResultDiagnostics(event))
@@ -284,7 +230,8 @@ func (runtime *Runtime) dispatchToolErrorLifecycle(ctx context.Context, event *T
 	if event == nil || event.Error == "" {
 		return
 	}
-	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolError, toolEventPayload(event))
+	payload := lifecyclepayload.ToolResultPayload(lifecycleToolResult(event))
+	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolError, payload)
 	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolError, &result, toolResultDiagnostics(event))
 	if err != nil {
 		return
@@ -312,108 +259,44 @@ func applyToolResultMutation(event *ToolEvent, mutation extension.ToolResultMuta
 	}
 }
 
-func contextBuildLifecyclePayload(
-	sessionID string,
-	cwd string,
-	base *contextwindow.Base,
-	result *contextwindow.BuildResult,
-) map[string]any {
-	return map[string]any{
-		lifecycleCWDKey:           cwd,
-		jsonSessionIDKey:          sessionID,
-		"message_count":           len(base.Messages),
-		jsonBreakdownKey:          cloneIntAnyMap(result.Breakdown),
-		"contributions":           []any{},
-		"topContributors":         tokenContributorsLifecyclePayload(result.Usage.TopContributors),
-		"max_contribution_tokens": contextwindow.ContributionMaxTokens,
-		"system_tokens":           base.SystemTokens,
-		"skill_tokens":            base.SkillTokens,
-		"message_tokens":          base.HistoryTokens,
-		jsonUsageKey:              tokenUsageLifecyclePayload(result.Usage),
-		"model_facing_roles":      modelFacingRoleCounts(base.Messages),
+func lifecyclePromptRequest(request *PromptRequest) *lifecyclepayload.PromptRequest {
+	if request == nil {
+		return &lifecyclepayload.PromptRequest{
+			ParentEntryID: nil,
+			CWD:           "",
+			Name:          "",
+			SessionID:     "",
+			Text:          "",
+			ResumeLatest:  false,
+		}
+	}
+
+	return &lifecyclepayload.PromptRequest{
+		ParentEntryID: request.ParentEntryID,
+		CWD:           request.CWD,
+		Name:          request.Name,
+		SessionID:     request.SessionID,
+		Text:          request.Text,
+		ResumeLatest:  request.ResumeLatest,
 	}
 }
 
-func modelFacingRoleCounts(messages []database.MessageEntity) map[string]int {
-	counts := map[string]int{}
-	for index := range messages {
-		role := string(messages[index].Role)
-		counts[role]++
-	}
-
-	return counts
-}
-
-func entryLifecyclePayload(entry *database.EntryEntity) map[string]any {
-	return map[string]any{
-		lifecycleCreatedAtKey:            entry.CreatedAt.Format(timeFormatRFC3339Nano),
-		"custom_type":                    entry.CustomType,
-		"display":                        entry.Display,
-		lifecycleEntryIDKey:              entry.ID,
-		"entry_type":                     string(entry.Type),
-		jsonModelKey:                     entry.Message.Model,
-		"model_facing":                   entry.ModelFacing,
-		"parent_id":                      stringPtrValue(entry.ParentID),
-		"provider":                       entry.Message.Provider,
-		jsonRoleKey:                      string(entry.Message.Role),
-		jsonSessionIDKey:                 entry.SessionID,
-		jsonSummaryKey:                   entry.Summary,
-		jsonTextKey:                      entry.Message.Content,
-		"token_estimate":                 entry.TokenEstimate,
-		"tool_args_json":                 entry.ToolArgsJSON,
-		"tool_name":                      entry.ToolName,
-		"tool_status":                    entry.ToolStatus,
-		"branch_from_entry_id":           entry.BranchFromEntryID,
-		"compaction_first_kept_entry_id": entry.CompactionFirstKeptEntryID,
-		"compaction_tokens_before":       entry.CompactionTokensBefore,
+func lifecycleToolCall(call ToolCallEvent) lifecyclepayload.ToolCall {
+	return lifecyclepayload.ToolCall{
+		Arguments:     call.Arguments,
+		ID:            call.ID,
+		Name:          call.Name,
+		ArgumentsJSON: call.ArgumentsJSON,
 	}
 }
 
-func tokenUsageLifecyclePayload(usage model.TokenUsage) map[string]any {
-	return map[string]any{
-		jsonBreakdownKey:     cloneIntAnyMap(usage.Breakdown),
-		"topContributors":    tokenContributorsLifecyclePayload(usage.TopContributors),
-		jsonContextTokensKey: usage.ContextTokens,
-		jsonContextWindowKey: usage.ContextWindow,
-		jsonInputTokensKey:   usage.InputTokens,
-		jsonOutputTokensKey:  usage.OutputTokens,
+func lifecycleToolResult(event *ToolEvent) *lifecyclepayload.ToolResult {
+	return &lifecyclepayload.ToolResult{
+		Name:          event.Name,
+		ArgumentsJSON: event.ArgumentsJSON,
+		DetailsJSON:   event.DetailsJSON,
+		Result:        event.Result,
+		Error:         event.Error,
+		IsError:       event.IsError,
 	}
 }
-
-func tokenContributorsLifecyclePayload(contributors []model.TokenContributor) []any {
-	payload := make([]any, 0, len(contributors))
-	for index := range contributors {
-		contributor := contributors[index]
-		payload = append(payload, map[string]any{
-			"label":     contributor.Label,
-			jsonRoleKey: contributor.Role,
-			"preview":   contributor.Preview,
-			"tokens":    contributor.Tokens,
-			"chars":     contributor.Chars,
-		})
-	}
-
-	return payload
-}
-
-func stringPtrValue(value *string) string {
-	if value == nil {
-		return ""
-	}
-
-	return *value
-}
-
-const (
-	lifecycleAssistantEntryIDKey = "assistant_entry_id"
-	lifecycleCWDKey              = "cwd"
-	lifecycleCreatedAtKey        = "created_at"
-	lifecycleEntryIDKey          = "entry_id"
-	lifecycleErrorKey            = "error"
-	lifecycleParentEntryIDKey    = "parent_entry_id"
-	lifecycleParentSessionKey    = "parent_session"
-	lifecyclePromptKey           = "prompt"
-	lifecycleUpdatedAtKey        = "updated_at"
-	lifecycleUserEntryIDKey      = "user_entry_id"
-	timeFormatRFC3339Nano        = "2006-01-02T15:04:05.999999999Z07:00"
-)

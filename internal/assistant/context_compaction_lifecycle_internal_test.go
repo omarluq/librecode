@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/extension"
 )
@@ -125,7 +126,7 @@ func TestCompactionLifecycleDiagnosticsHandlesNilPlan(t *testing.T) {
 
 	assert.Equal(
 		t,
-		map[string]any{compactionPhaseKey: "before"},
-		compactionLifecycleDiagnostics(nil, "before"),
+		map[string]any{lifecyclepayload.PhaseKey: "before"},
+		lifecyclepayload.CompactionDiagnostics(nil, "before"),
 	)
 }

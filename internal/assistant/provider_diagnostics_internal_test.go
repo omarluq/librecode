@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 )
@@ -112,9 +113,9 @@ func assertProviderHookMutatedDiagnostics(
 	require.Len(t, events, 1)
 	diagnostic := events[0]
 	assert.Equal(t, string(extension.LifecycleBeforeProviderRequest), diagnostic["event"])
-	assert.Equal(t, 1, diagnostic[lifecycleHookCountKey])
-	assert.Equal(t, 3, diagnostic[lifecycleAttemptKey])
-	assert.Equal(t, providerHookTestModelID, diagnostic[jsonModelKey])
+	assert.Equal(t, 1, diagnostic[lifecyclepayload.HookCountKey])
+	assert.Equal(t, 3, diagnostic[lifecyclepayload.AttemptKey])
+	assert.Equal(t, providerHookTestModelID, diagnostic[lifecyclepayload.ModelKey])
 	assert.Equal(t, 1, diagnostic["mutated_header_count"])
 	assert.Equal(t, 2, diagnostic["mutated_payload_key_count"])
 }
@@ -130,7 +131,7 @@ func assertProviderHookNoopDiagnostics(
 	require.NoError(t, err)
 	assert.Equal(t, providerHookOriginalValue, output.Payload[providerHookOriginalKey])
 	require.Len(t, events, 1)
-	assert.Equal(t, 1, events[0][lifecycleHookCountKey])
+	assert.Equal(t, 1, events[0][lifecyclepayload.HookCountKey])
 }
 
 func assertProviderHookErrorDiagnostics(
@@ -144,9 +145,9 @@ func assertProviderHookErrorDiagnostics(
 	require.Error(t, err)
 	require.Len(t, events, 1)
 	diagnostic := events[0]
-	assert.Equal(t, 1, diagnostic[lifecycleHookCountKey])
-	require.Contains(t, diagnostic, lifecycleErrorsKey)
-	hookErrors, ok := diagnostic[lifecycleErrorsKey].([]string)
+	assert.Equal(t, 1, diagnostic[lifecyclepayload.HookCountKey])
+	require.Contains(t, diagnostic, lifecyclepayload.ErrorsKey)
+	hookErrors, ok := diagnostic[lifecyclepayload.ErrorsKey].([]string)
 	require.True(t, ok, "hook_errors should be a string slice")
 	require.NotEmpty(t, hookErrors)
 	assert.Contains(t, hookErrors[0], "provider hook failed")

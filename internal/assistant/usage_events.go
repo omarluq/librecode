@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -29,19 +30,13 @@ func (runtime *Runtime) emitUsageEvent(
 		Kind:      kind,
 		Text:      "",
 	})
-	payload := map[string]any{
-		jsonBreakdownKey:     cloneIntAnyMap(usage.Breakdown),
-		jsonContextWindowKey: usage.ContextWindow,
-		jsonContextTokensKey: usage.ContextTokens,
-		jsonInputTokensKey:   usage.InputTokens,
-		jsonOutputTokensKey:  usage.OutputTokens,
-	}
+	payload := lifecyclepayload.TokenUsage(usage)
 	if kind == StreamEventUsageSnapshot {
 		payload["snapshot"] = true
 	}
-	runtime.emit(ctx, jsonUsageKey, payload)
+	runtime.emit(ctx, lifecyclepayload.UsageKey, payload)
 	if runtime.extensions != nil {
-		if err := runtime.extensions.Emit(ctx, jsonUsageKey, payload); err != nil {
+		if err := runtime.extensions.Emit(ctx, lifecyclepayload.UsageKey, payload); err != nil {
 			runtime.logger.Debug("emit usage extension event failed", "error", err)
 		}
 	}
