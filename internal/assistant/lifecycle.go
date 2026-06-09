@@ -3,12 +3,12 @@ package assistant
 import (
 	"context"
 	"log/slog"
-	"maps"
 	"strings"
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/provider"
 )
 
 type promptTurnLifecycle struct {
@@ -295,7 +295,7 @@ func applyToolCallMutation(call *ToolCallEvent, mutation extension.ToolCallMutat
 		return
 	}
 	call.Arguments = mutation.Arguments
-	call.ArgumentsJSON = encodeToolArguments(call.Arguments)
+	call.ArgumentsJSON = provider.EncodeToolArguments(call.Arguments)
 }
 
 func applyToolResultMutation(event *ToolEvent, mutation extension.ToolResultMutation) {
@@ -321,7 +321,7 @@ func contextBuildLifecyclePayload(
 		lifecycleCWDKey:           cwd,
 		jsonSessionIDKey:          sessionID,
 		"message_count":           len(base.Messages),
-		jsonBreakdownKey:          cloneIntMap(result.Breakdown),
+		jsonBreakdownKey:          cloneIntAnyMap(result.Breakdown),
 		"contributions":           []any{},
 		"topContributors":         tokenContributorsLifecyclePayload(result.Usage.TopContributors),
 		"max_contribution_tokens": contextContributionMaxTokens,
@@ -331,22 +331,6 @@ func contextBuildLifecyclePayload(
 		jsonUsageKey:              tokenUsageLifecyclePayload(result.Usage),
 		"model_facing_roles":      modelFacingRoleCounts(base.Messages),
 	}
-}
-
-func cloneAnyMap(values map[string]any) map[string]any {
-	cloned := make(map[string]any, len(values))
-	maps.Copy(cloned, values)
-
-	return cloned
-}
-
-func cloneIntMap(values map[string]int) map[string]any {
-	cloned := make(map[string]any, len(values))
-	for key, value := range values {
-		cloned[key] = value
-	}
-
-	return cloned
 }
 
 func estimateMessageTokens(messages []database.MessageEntity) int {
@@ -395,7 +379,7 @@ func entryLifecyclePayload(entry *database.EntryEntity) map[string]any {
 
 func tokenUsageLifecyclePayload(usage model.TokenUsage) map[string]any {
 	return map[string]any{
-		jsonBreakdownKey:     cloneIntMap(usage.Breakdown),
+		jsonBreakdownKey:     cloneIntAnyMap(usage.Breakdown),
 		"topContributors":    tokenContributorsLifecyclePayload(usage.TopContributors),
 		jsonContextTokensKey: usage.ContextTokens,
 		jsonContextWindowKey: usage.ContextWindow,

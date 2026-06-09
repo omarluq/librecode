@@ -30,7 +30,7 @@ func (runtime *Runtime) emitUsageEvent(
 		Text:      "",
 	})
 	payload := map[string]any{
-		jsonBreakdownKey:     cloneIntMap(usage.Breakdown),
+		jsonBreakdownKey:     cloneIntAnyMap(usage.Breakdown),
 		jsonContextWindowKey: usage.ContextWindow,
 		jsonContextTokensKey: usage.ContextTokens,
 		jsonInputTokensKey:   usage.InputTokens,

@@ -193,7 +193,7 @@ func parseSSEResult(reader io.Reader, onEvent func(StreamEvent)) (*providerResul
 		return nil, accumulator.terminalErr
 	}
 	if accumulator.sawTypedResponseEvent && !accumulator.completed {
-		return nil, oops.In("assistant").
+		return nil, oops.In("provider").
 			Code("responses_stream_incomplete").
 			Errorf("provider stream closed before completion")
 	}
@@ -233,7 +233,7 @@ func scanSSEResponse(scanner *bufio.Scanner, onEvent func(StreamEvent)) (accumul
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, oops.In("assistant").Code("sse_read").Wrapf(err, "read provider stream")
+		return nil, oops.In("provider").Code("sse_read").Wrapf(err, "read provider stream")
 	}
 
 	return accumulator, nil
@@ -250,7 +250,7 @@ func sseProviderError(code string, event map[string]any, fallback string) error 
 		message = eventMessage
 	}
 
-	return oops.In("assistant").Code(code).Errorf("%s", message)
+	return oops.In("provider").Code(code).Errorf("%s", message)
 }
 
 func sseErrorMessage(value any) string {

@@ -149,7 +149,7 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(content, &response); err != nil {
-		return nil, oops.In("assistant").Code("openai_chat_decode").Wrapf(err, "decode chat response")
+		return nil, oops.In("provider").Code("openai_chat_decode").Wrapf(err, "decode chat response")
 	}
 	if response.Error.Message != "" {
 		return nil, providerErrorToOops("openai_chat_error", &response.Error)
@@ -225,7 +225,7 @@ func openAIChatAssistantToolMessage(result *providerResult) map[string]any {
 
 func openAIChatToolMessages(calls []ToolCall, events []ToolEvent) ([]map[string]any, error) {
 	if len(events) != len(calls) {
-		return nil, oops.In("assistant").
+		return nil, oops.In("provider").
 			Code("openai_chat_tool_message_mismatch").
 			With("calls", len(calls)).
 			With("events", len(events)).

@@ -11,38 +11,42 @@ import (
 
 func llmRequestFromCompletionRequest(request *CompletionRequest) llm.Request {
 	if request == nil {
-		return llm.Request{
-			ProviderOptions: nil,
-			Auth:            llm.Auth{Headers: nil, APIKey: ""},
-			SystemPrompt:    "",
-			ThinkingLevel:   "",
-			SessionID:       "",
-			Messages:        nil,
-			Tools:           nil,
-			Model: llm.ModelRef{
-				Metadata:      nil,
-				Provider:      "",
-				ID:            "",
-				API:           "",
-				BaseURL:       "",
-				MaxTokens:     0,
-				ContextWindow: 0,
-				Reasoning:     false,
-			},
-			DisableTools: false,
-		}
+		return emptyLLMRequest()
 	}
 
 	return llm.Request{
 		ProviderOptions: nil,
-		Auth:            llm.AuthFromModel(request.Auth),
+		Auth:            llmAuthFromModel(request.Auth),
 		SystemPrompt:    request.SystemPrompt,
 		ThinkingLevel:   request.ThinkingLevel,
 		SessionID:       request.SessionID,
 		Messages:        llmMessagesFromDatabase(request.Messages),
 		Tools:           llmToolDefinitionsFromRegistry(request.ToolRegistry, request.DisableTools),
-		Model:           llm.ModelRefFromModel(&request.Model),
+		Model:           llmModelRefFromModel(&request.Model),
 		DisableTools:    request.DisableTools,
+	}
+}
+
+func emptyLLMRequest() llm.Request {
+	return llm.Request{
+		ProviderOptions: nil,
+		Auth:            llm.Auth{Headers: nil, APIKey: ""},
+		SystemPrompt:    "",
+		ThinkingLevel:   "",
+		SessionID:       "",
+		Messages:        nil,
+		Tools:           nil,
+		Model: llm.ModelRef{
+			Metadata:      nil,
+			Provider:      "",
+			ID:            "",
+			API:           "",
+			BaseURL:       "",
+			MaxTokens:     0,
+			ContextWindow: 0,
+			Reasoning:     false,
+		},
+		DisableTools: false,
 	}
 }
 
@@ -107,7 +111,7 @@ func llmToolDefinitionsFromRegistry(registry *tool.Registry, disabled bool) []ll
 	}
 	converted := make([]llm.ToolDefinition, 0, len(definitions))
 	for index := range definitions {
-		converted = append(converted, llm.ToolDefinitionFromTool(&definitions[index]))
+		converted = append(converted, llmToolDefinitionFromTool(&definitions[index]))
 	}
 
 	return converted
@@ -149,7 +153,7 @@ func llmResponseFromCompletionResult(result *CompletionResult) llm.Response {
 		FinishReason: llm.FinishReasonStop,
 		Content:      content,
 		ToolCalls:    nil,
-		Usage:        llm.UsageFromModel(result.Usage),
+		Usage:        llmUsageFromModel(result.Usage),
 	}
 }
 
@@ -189,6 +193,110 @@ func llmToolResultFromEvent(event *ToolEvent) *llm.ToolResult {
 	}
 }
 
+func llmUsageFromModel(usage model.TokenUsage) llm.Usage {
+	return llm.Usage{
+		Breakdown:       cloneIntMap(usage.Breakdown),
+		TopContributors: llmTokenContributorsFromModel(usage.TopContributors),
+		ContextWindow:   usage.ContextWindow,
+		ContextTokens:   usage.ContextTokens,
+		InputTokens:     usage.InputTokens,
+		OutputTokens:    usage.OutputTokens,
+	}
+}
+
 func llmUsageToModel(usage llm.Usage) model.TokenUsage {
-	return llm.UsageToModel(usage)
+	return model.TokenUsage{
+		Breakdown:       cloneIntMap(usage.Breakdown),
+		TopContributors: llmTokenContributorsToModel(usage.TopContributors),
+		ContextWindow:   usage.ContextWindow,
+		ContextTokens:   usage.ContextTokens,
+		InputTokens:     usage.InputTokens,
+		OutputTokens:    usage.OutputTokens,
+	}
+}
+
+func llmModelRefFromModel(input *model.Model) llm.ModelRef {
+	if input == nil {
+		return emptyLLMRequest().Model
+	}
+
+	return llm.ModelRef{
+		Metadata:      cloneAnyMapNil(input.Compat),
+		Provider:      input.Provider,
+		ID:            input.ID,
+		API:           input.API,
+		BaseURL:       input.BaseURL,
+		MaxTokens:     input.MaxTokens,
+		ContextWindow: input.ContextWindow,
+		Reasoning:     input.Reasoning,
+	}
+}
+
+func llmAuthFromModel(auth model.RequestAuth) llm.Auth {
+	return llm.Auth{Headers: cloneStringMapNil(auth.Headers), APIKey: auth.APIKey}
+}
+
+func llmToolDefinitionFromTool(definition *tool.Definition) llm.ToolDefinition {
+	if definition == nil {
+		return llm.ToolDefinition{Schema: nil, Name: "", Description: "", ReadOnly: false}
+	}
+
+	return llm.ToolDefinition{
+		Schema:      cloneAnyMapNil(definition.Schema),
+		Name:        string(definition.Name),
+		Description: definition.Description,
+		ReadOnly:    definition.ReadOnly,
+	}
+}
+
+func llmTokenContributorsFromModel(contributors []model.TokenContributor) []llm.TokenContributor {
+	if len(contributors) == 0 {
+		return nil
+	}
+	output := make([]llm.TokenContributor, 0, len(contributors))
+	for _, contributor := range contributors {
+		output = append(output, llm.TokenContributor{
+			Label:   contributor.Label,
+			Role:    contributor.Role,
+			Preview: contributor.Preview,
+			Tokens:  contributor.Tokens,
+			Chars:   contributor.Chars,
+		})
+	}
+
+	return output
+}
+
+func llmTokenContributorsToModel(contributors []llm.TokenContributor) []model.TokenContributor {
+	if len(contributors) == 0 {
+		return nil
+	}
+	output := make([]model.TokenContributor, 0, len(contributors))
+	for _, contributor := range contributors {
+		output = append(output, model.TokenContributor{
+			Label:   contributor.Label,
+			Role:    contributor.Role,
+			Preview: contributor.Preview,
+			Tokens:  contributor.Tokens,
+			Chars:   contributor.Chars,
+		})
+	}
+
+	return output
+}
+
+func cloneStringMapNil(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+
+	return cloneStringMap(values)
+}
+
+func cloneAnyMapNil(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+
+	return cloneAnyMap(values)
 }
