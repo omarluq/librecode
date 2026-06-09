@@ -69,6 +69,11 @@ const (
 	actionScopedModelsReorderDown    actionID = "app.models.reorderDown"
 )
 
+const (
+	keyShiftTab = "shift+tab"
+	keyCtrlP    = "ctrl+p"
+)
+
 type keyBindingDefinition struct {
 	description string
 	keys        []string
@@ -110,8 +115,8 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionSelectCancel:               binding("Cancel selection", "escape"),
 		actionInterrupt:                  binding("Clear/cancel; press twice while working to stop response", "escape"),
 		actionForceExit:                  binding("Press twice to exit librecode", "ctrl+c"),
-		actionThinkingCycle:              binding("Cycle thinking level", "shift+tab"),
-		actionModelCycleForward:          binding("Cycle to next model", "ctrl+p"),
+		actionThinkingCycle:              binding("Cycle thinking level", keyShiftTab),
+		actionModelCycleForward:          binding("Cycle to next model", keyCtrlP),
 		actionModelCycleBackward:         binding("Cycle to previous model", "shift+ctrl+p"),
 		actionModelSelect:                binding("Open model selector", "ctrl+l"),
 		actionToolsExpand:                binding("Toggle tool output", "ctrl+o"),
@@ -123,7 +128,7 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionSessionTree:                binding("Open session tree"),
 		actionSessionFork:                binding("Fork current session"),
 		actionSessionResume:              binding("Resume a session"),
-		actionSessionTogglePath:          binding("Toggle session path display", "ctrl+p"),
+		actionSessionTogglePath:          binding("Toggle session path display", keyCtrlP),
 		actionSessionToggleSort:          binding("Toggle session sort mode", "ctrl+s"),
 		actionSessionRename:              binding("Rename session", "ctrl+r"),
 		actionSessionDelete:              binding("Delete session", "delete"),
@@ -137,7 +142,7 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionScopedModelsSave:           binding("Save model selection", "ctrl+s"),
 		actionScopedModelsEnableAll:      binding("Enable all models", "ctrl+a"),
 		actionScopedModelsClearAll:       binding("Clear selected models", "ctrl+x"),
-		actionScopedModelsToggleProvider: binding("Toggle provider models", "ctrl+p"),
+		actionScopedModelsToggleProvider: binding("Toggle provider models", keyCtrlP),
 		actionScopedModelsReorderUp:      binding("Move model up", "alt+up"),
 		actionScopedModelsReorderDown:    binding("Move model down", "alt+down"),
 	}
@@ -203,7 +208,7 @@ func normalizedEventKeys(event *tcell.EventKey) map[string]struct{} {
 		addKey(keys, "escape")
 	}
 	if event.Key() == tcell.KeyBacktab {
-		addKey(keys, "shift+tab")
+		addKey(keys, keyShiftTab)
 	}
 	if event.Key() == tcell.KeyRune && unicode.IsUpper(eventRune(event)) {
 		addKey(keys, "shift+"+strings.ToLower(string(eventRune(event))))
@@ -254,7 +259,7 @@ func normalizeKeyName(key string) string {
 	key = strings.ReplaceAll(key, "pgdn", "pagedown")
 	key = strings.ReplaceAll(key, "esc", "escape")
 	key = strings.ReplaceAll(key, "return", "enter")
-	key = strings.ReplaceAll(key, "backtab", "shift+tab")
+	key = strings.ReplaceAll(key, "backtab", keyShiftTab)
 
 	return key
 }
