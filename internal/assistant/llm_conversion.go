@@ -3,8 +3,11 @@ package assistant
 import (
 	"strings"
 
+	"github.com/samber/lo"
+
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -54,16 +57,10 @@ func llmMessagesFromDatabase(messages []database.MessageEntity) []llm.Message {
 	if len(messages) == 0 {
 		return nil
 	}
-	converted := make([]llm.Message, 0, len(messages))
-	for index := range messages {
-		message, ok := llmMessageFromDatabase(&messages[index])
-		if !ok {
-			continue
-		}
-		converted = append(converted, message)
-	}
 
-	return converted
+	return lo.FilterMap(messages, func(message database.MessageEntity, _ int) (llm.Message, bool) {
+		return llmMessageFromDatabase(&message)
+	})
 }
 
 func llmMessageFromDatabase(message *database.MessageEntity) (llm.Message, bool) {
@@ -109,12 +106,10 @@ func llmToolDefinitionsFromRegistry(registry *tool.Registry, disabled bool) []ll
 	if registry != nil {
 		definitions = registry.Definitions()
 	}
-	converted := make([]llm.ToolDefinition, 0, len(definitions))
-	for index := range definitions {
-		converted = append(converted, llmToolDefinitionFromTool(&definitions[index]))
-	}
 
-	return converted
+	return lo.Map(definitions, func(definition tool.Definition, _ int) llm.ToolDefinition {
+		return llmToolDefinitionFromTool(&definition)
+	})
 }
 
 func llmResponseFromCompletionResult(result *CompletionResult) llm.Response {
@@ -195,7 +190,7 @@ func llmToolResultFromEvent(event *ToolEvent) *llm.ToolResult {
 
 func llmUsageFromModel(usage model.TokenUsage) llm.Usage {
 	return llm.Usage{
-		Breakdown:       cloneIntMap(usage.Breakdown),
+		Breakdown:       mapsutil.CloneOrNil(usage.Breakdown),
 		TopContributors: llmTokenContributorsFromModel(usage.TopContributors),
 		ContextWindow:   usage.ContextWindow,
 		ContextTokens:   usage.ContextTokens,
@@ -206,7 +201,7 @@ func llmUsageFromModel(usage model.TokenUsage) llm.Usage {
 
 func llmUsageToModel(usage llm.Usage) model.TokenUsage {
 	return model.TokenUsage{
-		Breakdown:       cloneIntMap(usage.Breakdown),
+		Breakdown:       mapsutil.CloneOrNil(usage.Breakdown),
 		TopContributors: llmTokenContributorsToModel(usage.TopContributors),
 		ContextWindow:   usage.ContextWindow,
 		ContextTokens:   usage.ContextTokens,
@@ -253,50 +248,38 @@ func llmTokenContributorsFromModel(contributors []model.TokenContributor) []llm.
 	if len(contributors) == 0 {
 		return nil
 	}
-	output := make([]llm.TokenContributor, 0, len(contributors))
-	for _, contributor := range contributors {
-		output = append(output, llm.TokenContributor{
+
+	return lo.Map(contributors, func(contributor model.TokenContributor, _ int) llm.TokenContributor {
+		return llm.TokenContributor{
 			Label:   contributor.Label,
 			Role:    contributor.Role,
 			Preview: contributor.Preview,
 			Tokens:  contributor.Tokens,
 			Chars:   contributor.Chars,
-		})
-	}
-
-	return output
+		}
+	})
 }
 
 func llmTokenContributorsToModel(contributors []llm.TokenContributor) []model.TokenContributor {
 	if len(contributors) == 0 {
 		return nil
 	}
-	output := make([]model.TokenContributor, 0, len(contributors))
-	for _, contributor := range contributors {
-		output = append(output, model.TokenContributor{
+
+	return lo.Map(contributors, func(contributor llm.TokenContributor, _ int) model.TokenContributor {
+		return model.TokenContributor{
 			Label:   contributor.Label,
 			Role:    contributor.Role,
 			Preview: contributor.Preview,
 			Tokens:  contributor.Tokens,
 			Chars:   contributor.Chars,
-		})
-	}
-
-	return output
+		}
+	})
 }
 
 func cloneStringMapNil(values map[string]string) map[string]string {
-	if values == nil {
-		return nil
-	}
-
-	return cloneStringMap(values)
+	return mapsutil.ClonePreserveNil(values)
 }
 
 func cloneAnyMapNil(values map[string]any) map[string]any {
-	if values == nil {
-		return nil
-	}
-
-	return cloneAnyMap(values)
+	return mapsutil.ClonePreserveNil(values)
 }

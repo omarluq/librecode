@@ -78,9 +78,9 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 	assert.Equal(t, llm.RoleTool, converted.Messages[3].Role)
 	require.NotEmpty(t, converted.Tools)
 
-	converted.Auth.Headers["x-test"] = "changed"
+	converted.Auth.Headers["x-test"] = testLLMMutatedLabel
 	assert.Equal(t, "value", request.Auth.Headers["x-test"])
-	converted.Model.Metadata["compat"] = "changed"
+	converted.Model.Metadata["compat"] = testLLMMutatedLabel
 	assert.Equal(t, "yes", request.Model.Compat["compat"])
 }
 
@@ -121,7 +121,7 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 		Text:     "final answer",
 		Thinking: []string{" thought ", "   "},
 		ToolEvents: []provider.ToolEvent{{
-			Name:          "read",
+			Name:          jsonReadToolName,
 			ArgumentsJSON: `{"path":"README.md"}`,
 			DetailsJSON:   "",
 			Result:        "read output",
@@ -136,7 +136,7 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 			IsError:       true,
 		}},
 		Usage: model.TokenUsage{
-			Breakdown:       map[string]int{"history": 10},
+			Breakdown:       map[string]int{contextBreakdownHistory: 10},
 			TopContributors: nil,
 			ContextWindow:   100,
 			ContextTokens:   20,

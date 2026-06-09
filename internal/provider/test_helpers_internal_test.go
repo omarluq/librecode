@@ -1,6 +1,25 @@
 package provider
 
-import "github.com/omarluq/librecode/internal/model"
+import (
+	"time"
+
+	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
+)
+
+const (
+	testBranchContent       = "branch"
+	testCompactionContent   = "compaction"
+	testCustomContent       = "custom"
+	testThinkingDelta       = "thinking"
+	testOpenAIProvider      = "openai"
+	testProviderMessageType = jsonMessageType
+	testToolArgumentsJSON   = `{"path":"README.md"}`
+)
+
+func providerTestMessageEntity(role database.Role, content string) database.MessageEntity {
+	return database.MessageEntity{Timestamp: time.Time{}, Role: role, Content: content, Provider: "", Model: ""}
+}
 
 func emptyRequestAuth() model.RequestAuth {
 	return model.RequestAuth{Headers: nil, APIKey: "", Error: "", OK: false}

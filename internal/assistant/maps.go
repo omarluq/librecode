@@ -10,10 +10,6 @@ func cloneAnyMap(values map[string]any) map[string]any {
 	return mapsutil.CloneOrEmpty(values)
 }
 
-func cloneIntMap(values map[string]int) map[string]int {
-	return mapsutil.CloneOrNil(values)
-}
-
 func cloneIntAnyMap(values map[string]int) map[string]any {
 	return mapsutil.IntMapToAnyMap(values)
 }

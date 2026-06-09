@@ -46,7 +46,7 @@ func TestSSEAccumulatorEmitsReasoningDeltaSeparately(t *testing.T) {
 
 	accumulator.add(map[string]any{
 		jsonTypeKey: "response.reasoning_summary_text.delta",
-		"delta":     "thinking",
+		"delta":     testThinkingDelta,
 	}, func(event StreamEvent) {
 		events = append(events, event)
 	})
@@ -57,8 +57,8 @@ func TestSSEAccumulatorEmitsReasoningDeltaSeparately(t *testing.T) {
 	if events[0].Kind != StreamEventThinkingDelta {
 		t.Fatalf("event kind = %q, want %q", events[0].Kind, StreamEventThinkingDelta)
 	}
-	if events[0].Text != "thinking" {
-		t.Fatalf("event text = %q, want %q", events[0].Text, "thinking")
+	if events[0].Text != testThinkingDelta {
+		t.Fatalf("event text = %q, want %q", events[0].Text, testThinkingDelta)
 	}
 	if len(accumulator.parts) != 0 {
 		t.Fatalf("reasoning deltas should not be response text parts: %#v", accumulator.parts)

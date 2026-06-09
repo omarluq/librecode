@@ -315,7 +315,7 @@ func extractText(value any) string {
 
 func codexReasoning(request *CompletionRequest) map[string]string {
 	if request.ThinkingLevel == "" || request.ThinkingLevel == thinkingOff {
-		return map[string]string{reasoningEffortKey: "none", jsonSummaryKey: reasoningSummaryAuto}
+		return map[string]string{reasoningEffortKey: reasoningEffortNone, jsonSummaryKey: reasoningSummaryAuto}
 	}
 
 	return map[string]string{reasoningEffortKey: request.ThinkingLevel, jsonSummaryKey: reasoningSummaryAuto}

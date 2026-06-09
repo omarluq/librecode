@@ -212,10 +212,10 @@ func anthropicThinkingEffort(request *CompletionRequest) string {
 		return *mapped
 	}
 	switch request.ThinkingLevel {
-	case "minimal", thinkingLow:
+	case thinkingMinimal, thinkingLow:
 		return thinkingLow
-	case "medium":
-		return "medium"
+	case thinkingMedium:
+		return thinkingMedium
 	case thinkingHigh:
 		return thinkingHigh
 	case thinkingXHigh:
@@ -247,7 +247,7 @@ func anthropicBetaFeatures(request *CompletionRequest) []string {
 
 func anthropicThinkingBudget(level string) int {
 	switch level {
-	case "minimal":
+	case thinkingMinimal:
 		return 1024
 	case thinkingLow:
 		return 4096

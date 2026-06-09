@@ -31,7 +31,7 @@ func OpenAIChatTools(request *CompletionRequest) []map[string]any {
 	for _, definition := range definitions {
 		tools = append(tools, map[string]any{
 			jsonTypeKey: functionToolType,
-			"function": map[string]any{
+			jsonFunctionKey: map[string]any{
 				jsonToolNameKey:    string(definition.Name),
 				jsonDescriptionKey: definition.Description,
 				jsonToolParamsKey:  ToolParameterSchema(&definition),

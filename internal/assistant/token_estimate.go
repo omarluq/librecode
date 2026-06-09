@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -23,7 +24,7 @@ func mergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
 		usage.OutputTokens = reported.OutputTokens
 	}
 	if len(usage.Breakdown) == 0 && len(reported.Breakdown) > 0 {
-		usage.Breakdown = cloneIntMap(reported.Breakdown)
+		usage.Breakdown = mapsutil.CloneOrNil(reported.Breakdown)
 	}
 	if len(usage.TopContributors) == 0 && len(reported.TopContributors) > 0 {
 		usage.TopContributors = cloneTokenContributors(reported.TopContributors)

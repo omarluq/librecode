@@ -12,6 +12,7 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -271,7 +272,7 @@ func estimateContextBuildUsage(
 	inputTokens := estimateUsageLedInputTokens(systemPrompt, messages, contributions, usageAnchor)
 
 	return model.TokenUsage{
-		Breakdown:       cloneIntMapForUsage(breakdown),
+		Breakdown:       mapsutil.CloneOrNil(breakdown),
 		TopContributors: topContextContributors(systemPrompt, messages, contributions),
 		ContextWindow:   selectedModel.ContextWindow,
 		ContextTokens:   inputTokens,

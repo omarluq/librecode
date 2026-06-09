@@ -141,7 +141,7 @@ func TestMergeUsageClonesReportedContributors(t *testing.T) {
 	reported := model.TokenUsage{
 		Breakdown: map[string]int{"history": 12}, ContextWindow: 0, ContextTokens: 0,
 		TopContributors: []model.TokenContributor{
-			{Label: "message 1", Role: "user", Preview: "usage contributor preview", Tokens: 10, Chars: 40},
+			{Label: "message 1", Role: jsonUserRole, Preview: "usage contributor preview", Tokens: 10, Chars: 40},
 		},
 		InputTokens: 0, OutputTokens: 0,
 	}
