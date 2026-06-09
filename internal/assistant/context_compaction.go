@@ -220,16 +220,15 @@ func (runtime *Runtime) appendCompaction(
 	if len(plan.FileOperations) > 0 {
 		details[compactionFileOperationsKey] = plan.FileOperations
 	}
-	entry, err := runtime.sessions.AppendCompaction(
-		ctx,
-		sessionID,
-		parentID,
-		summary,
-		plan.FirstKeptEntryID,
-		plan.TokensBefore,
-		details,
-		fromHook,
-	)
+	entry, err := runtime.sessions.AppendCompaction(ctx, &database.AppendCompactionInput{
+		ParentID:         parentID,
+		Details:          details,
+		SessionID:        sessionID,
+		Summary:          summary,
+		FirstKeptEntryID: plan.FirstKeptEntryID,
+		TokensBefore:     plan.TokensBefore,
+		FromHook:         fromHook,
+	})
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_compaction").Wrapf(err, "append compaction")
 	}

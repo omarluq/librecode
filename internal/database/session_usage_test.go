@@ -82,16 +82,15 @@ func TestBuildContextClearsUsageAnchorAfterCompaction(t *testing.T) {
 		OutputTokens:  0,
 	})
 	require.NoError(t, err)
-	compactionEntry, err := repository.AppendCompaction(
-		ctx,
-		session.ID,
-		&assistantEntry.ID,
-		"summary",
-		userEntry.ID,
-		100,
-		nil,
-		false,
-	)
+	compactionEntry, err := repository.AppendCompaction(ctx, &database.AppendCompactionInput{
+		ParentID:         &assistantEntry.ID,
+		Details:          nil,
+		SessionID:        session.ID,
+		Summary:          "summary",
+		FirstKeptEntryID: userEntry.ID,
+		TokensBefore:     100,
+		FromHook:         false,
+	})
 	require.NoError(t, err)
 
 	contextEntity, err := repository.BuildContext(ctx, session.ID, compactionEntry.ID)
