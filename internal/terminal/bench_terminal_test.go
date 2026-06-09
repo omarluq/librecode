@@ -8,7 +8,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 func BenchmarkDrawMessagesSameWidth(b *testing.B) {
@@ -25,9 +25,9 @@ func BenchmarkDrawMessagesSameWidth(b *testing.B) {
 	})
 	app.resetMessages()
 	for i := range 200 {
-		app.addMessage(database.RoleUser, fmt.Sprintf("message %d %s", i, strings.Repeat("hello world ", 20)))
+		app.addMessage(transcript.RoleUser, fmt.Sprintf("message %d %s", i, strings.Repeat("hello world ", 20)))
 		app.addMessage(
-			database.RoleAssistant,
+			transcript.RoleAssistant,
 			fmt.Sprintf("answer %d %s", i, strings.Repeat("lorem ipsum dolor sit amet ", 30)),
 		)
 	}

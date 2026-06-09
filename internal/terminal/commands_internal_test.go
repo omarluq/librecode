@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 func TestRunSessionCommandDispatchesNotification(t *testing.T) {
@@ -63,6 +63,6 @@ func TestShowSessionInfoWithoutActiveSession(t *testing.T) {
 	app.showSessionInfo(context.Background())
 
 	require.NotEmpty(t, app.transcript.History)
-	assert.Equal(t, database.RoleCustom, app.transcript.History[len(app.transcript.History)-1].Role)
+	assert.Equal(t, transcript.RoleCustom, app.transcript.History[len(app.transcript.History)-1].Role)
 	assert.Equal(t, "session: none", app.transcript.History[len(app.transcript.History)-1].Content)
 }

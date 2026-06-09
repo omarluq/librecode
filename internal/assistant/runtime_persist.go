@@ -3,17 +3,17 @@ package assistant
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 type partialPromptBlock struct {
-	Role    database.Role
+	Role    transcript.Role
 	Content string
 }
 
@@ -114,12 +114,12 @@ func (progress *partialPromptProgress) handle(streamEvent StreamEvent) {
 func (progress *partialPromptProgress) record(streamEvent StreamEvent) {
 	switch streamEvent.Kind {
 	case StreamEventTextDelta:
-		progress.append(database.RoleAssistant, streamEvent.Text)
+		progress.append(transcript.RoleAssistant, streamEvent.Text)
 	case StreamEventThinkingDelta:
-		progress.append(database.RoleThinking, streamEvent.Text)
+		progress.append(transcript.RoleThinking, streamEvent.Text)
 	case StreamEventToolResult:
 		if streamEvent.ToolEvent != nil {
-			progress.append(database.RoleToolResult, formatToolEvent(streamEvent.ToolEvent))
+			progress.append(transcript.RoleToolResult, formatToolEvent(streamEvent.ToolEvent))
 		}
 	case StreamEventToolStart,
 		StreamEventSkillLoaded,
@@ -152,20 +152,16 @@ func (progress *partialPromptProgress) reset() {
 	progress.blocks = progress.blocks[:0]
 }
 
-func (progress *partialPromptProgress) append(role database.Role, content string) {
+func (progress *partialPromptProgress) append(role transcript.Role, content string) {
 	if progress == nil || content == "" {
 		return
 	}
 	lastIndex := len(progress.blocks) - 1
-	if lastIndex >= 0 && progress.blocks[lastIndex].Role == role && canMergePartialPromptBlock(role) {
+	if lastIndex >= 0 && progress.blocks[lastIndex].Role == role && transcript.CanMergeStreamingRole(role) {
 		progress.blocks[lastIndex].Content += content
 		return
 	}
 	progress.blocks = append(progress.blocks, partialPromptBlock{Role: role, Content: content})
-}
-
-func canMergePartialPromptBlock(role database.Role) bool {
-	return role == database.RoleAssistant || role == database.RoleThinking
 }
 
 func (runtime *Runtime) appendPartialPromptFailure(
@@ -179,7 +175,7 @@ func (runtime *Runtime) appendPartialPromptFailure(
 	for _, block := range progress.persistableBlocks() {
 		message := database.MessageEntity{
 			Timestamp: time.Now().UTC(),
-			Role:      block.Role,
+			Role:      transcript.ToDatabaseRole(block.Role),
 			Content:   block.Content,
 			Provider:  runtime.cfg.Assistant.Provider,
 			Model:     runtime.cfg.Assistant.Model,
@@ -228,22 +224,15 @@ func progressBlocks(blocks []partialPromptBlock) []partialPromptBlock {
 }
 
 func formatToolEvent(toolEvent *ToolEvent) string {
-	parts := []string{fmt.Sprintf("tool: %s", toolEvent.Name)}
-	if strings.TrimSpace(toolEvent.ArgumentsJSON) != "" {
-		parts = append(parts, "arguments:", toolEvent.ArgumentsJSON)
+	if toolEvent == nil {
+		return transcript.FormatToolEventPersistence(nil)
 	}
-	if toolEvent.Error != "" {
-		parts = append(parts, "error:", toolEvent.Error)
-	}
-	if toolEvent.IsError {
-		parts = append(parts, "is_error: true")
-	}
-	if strings.TrimSpace(toolEvent.DetailsJSON) != "" {
-		parts = append(parts, "details:", toolEvent.DetailsJSON)
-	}
-	if strings.TrimSpace(toolEvent.Result) != "" {
-		parts = append(parts, "output:", toolEvent.Result)
-	}
-
-	return strings.Join(parts, "\n")
+	return transcript.FormatToolEventPersistence(&transcript.ToolEvent{
+		Name:          toolEvent.Name,
+		ArgumentsJSON: toolEvent.ArgumentsJSON,
+		DetailsJSON:   toolEvent.DetailsJSON,
+		Result:        toolEvent.Result,
+		Error:         toolEvent.Error,
+		IsError:       toolEvent.IsError,
+	})
 }

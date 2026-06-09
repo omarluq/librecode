@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/omarluq/librecode/internal/assistant"
-	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 func TestApplyStreamedSideEffectBlocks(t *testing.T) {
@@ -19,15 +19,15 @@ func TestApplyStreamedSideEffectBlocks(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	blocks := []chatMessage{
-		newChatMessage(database.RoleThinking, "thinking"),
-		newChatMessage(database.RoleThinking, "\n\t"),
-		newChatMessage(database.RoleToolResult, "tool result"),
-		newChatMessage(database.RoleBashExecution, "bash result"),
-		newChatMessage(database.RoleAssistant, "ignored assistant"),
-		newChatMessage(database.RoleUser, "ignored user"),
-		newChatMessage(database.RoleCustom, "ignored custom"),
-		newChatMessage(database.RoleBranchSummary, "ignored branch"),
-		newChatMessage(database.RoleCompactionSummary, "ignored compaction"),
+		newChatMessage(transcript.RoleThinking, "thinking"),
+		newChatMessage(transcript.RoleThinking, "\n\t"),
+		newChatMessage(transcript.RoleToolResult, "tool result"),
+		newChatMessage(transcript.RoleBashExecution, "bash result"),
+		newChatMessage(transcript.RoleAssistant, "ignored assistant"),
+		newChatMessage(transcript.RoleUser, "ignored user"),
+		newChatMessage(transcript.RoleCustom, "ignored custom"),
+		newChatMessage(transcript.RoleBranchSummary, "ignored branch"),
+		newChatMessage(transcript.RoleCompactionSummary, "ignored compaction"),
 	}
 
 	thinkingBlocks, toolBlocks := app.applyStreamedSideEffectBlocks(blocks)
@@ -38,10 +38,10 @@ func TestApplyStreamedSideEffectBlocks(t *testing.T) {
 	if got, want := toolBlocks, 2; got != want {
 		t.Fatalf("toolBlocks = %d, want %d", got, want)
 	}
-	assertPromptResponseRoles(t, app, []database.Role{
-		database.RoleThinking,
-		database.RoleToolResult,
-		database.RoleBashExecution,
+	assertPromptResponseRoles(t, app, []transcript.Role{
+		transcript.RoleThinking,
+		transcript.RoleToolResult,
+		transcript.RoleBashExecution,
 	})
 }
 
@@ -52,7 +52,7 @@ func TestApplyPromptResponseNilClearsStreamedToolEvents(t *testing.T) {
 	app.activePrompt = newTestActivePrompt(nil)
 	app.streamedToolEvents = 2
 	app.working = true
-	app.appendStreamingBlock(database.RoleAssistant, "partial")
+	app.appendStreamingBlock(transcript.RoleAssistant, "partial")
 
 	app.applyPromptResponse(context.Background(), nil, app.activePrompt.ID)
 
@@ -88,9 +88,9 @@ func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
 
 	app.applyRemainingSideEffects(response, 1, 1)
 
-	assertPromptResponseRoles(t, app, []database.Role{
-		database.RoleThinking,
-		database.RoleToolResult,
+	assertPromptResponseRoles(t, app, []transcript.Role{
+		transcript.RoleThinking,
+		transcript.RoleToolResult,
 	})
 	if got, want := app.transcript.History[0].Content, "remaining thinking"; got != want {
 		t.Fatalf("thinking content = %q, want %q", got, want)
@@ -100,7 +100,7 @@ func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
 	}
 }
 
-func assertPromptResponseRoles(t *testing.T, app *App, want []database.Role) {
+func assertPromptResponseRoles(t *testing.T, app *App, want []transcript.Role) {
 	t.Helper()
 
 	if got := len(app.transcript.History); got != len(want) {
@@ -117,7 +117,7 @@ func TestApplyPromptResponseIgnoresCanceledPrompt(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.addMessage(database.RoleUser, "kept")
+	app.addMessage(transcript.RoleUser, "kept")
 	app.canceledPrompts[42] = newTestActivePrompt(nil)
 	app.working = true
 
@@ -137,7 +137,7 @@ func TestApplyPromptResponseClearsCanceledActivePrompt(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.activePrompt = newTestActivePrompt(nil)
 	app.activePrompt.Canceled = true
-	app.appendStreamingBlock(database.RoleAssistant, "ignored stream")
+	app.appendStreamingBlock(transcript.RoleAssistant, "ignored stream")
 
 	app.applyPromptResponse(context.Background(), newTestPromptResponse("ignored"), app.activePrompt.ID)
 

@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/transcript"
+
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 )
@@ -64,9 +66,9 @@ end)
 	if got := len(app.transcript.History); got != 0 {
 		t.Fatalf("host messages = %d, want 0", got)
 	}
-	transcript := app.extensionRuntimeBuffers[extensionBufferTranscript]
-	require.Len(t, transcript.Blocks, 1)
-	if got, want := transcript.Blocks[0].Text, "handled: from extension"; got != want {
+	transcriptBuffer := app.extensionRuntimeBuffers[extensionBufferTranscript]
+	require.Len(t, transcriptBuffer.Blocks, 1)
+	if got, want := transcriptBuffer.Blocks[0].Text, "handled: from extension"; got != want {
 		t.Fatalf("transcript block = %q, want %q", got, want)
 	}
 }
@@ -98,9 +100,9 @@ func TestExtensionEventsExposeTranscriptThinkingAndToolBuffers(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.addMessage(database.RoleUser, "hello")
-	app.addMessage(database.RoleThinking, "because")
-	app.addMessage(database.RoleToolResult, "tool output")
+	app.addMessage(transcript.RoleUser, "hello")
+	app.addMessage(transcript.RoleThinking, "because")
+	app.addMessage(transcript.RoleToolResult, "tool output")
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
 
 	buffers := app.extensionBuffers()
@@ -128,7 +130,7 @@ func TestExtensionRuntimeDataUsesTranscriptState(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.addMessage(database.RoleUser, "hello")
+	app.addMessage(transcript.RoleUser, "hello")
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
 
 	data := app.extensionRuntimeData(80, 24)
@@ -140,28 +142,28 @@ func TestExtensionEventExposesStructuredTranscriptBuffer(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.addMessage(database.RoleUser, "hello")
-	app.addMessage(database.RoleThinking, "because")
+	app.addMessage(transcript.RoleUser, "hello")
+	app.addMessage(transcript.RoleThinking, "because")
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
 
 	event := app.newExtensionEvent(extensionEventRender, emptyExtensionKeyEvent())
-	transcript := event.Buffers[extensionBufferTranscript]
-	if got, want := transcript.Metadata["snapshot_count"], 3; got != want {
+	transcriptBuffer := event.Buffers[extensionBufferTranscript]
+	if got, want := transcriptBuffer.Metadata["snapshot_count"], 3; got != want {
 		t.Fatalf("transcript count = %v, want %d", got, want)
 	}
-	if got, want := len(transcript.Blocks), 3; got != want {
+	if got, want := len(transcriptBuffer.Blocks), 3; got != want {
 		t.Fatalf("transcript blocks = %d, want %d", got, want)
 	}
-	assertTranscriptBlock(t, &transcript.Blocks[0], database.RoleUser, "hello", false)
-	assertTranscriptBlock(t, &transcript.Blocks[1], database.RoleThinking, "because", false)
-	assertTranscriptBlock(t, &transcript.Blocks[2], database.RoleAssistant, "answer", true)
+	assertTranscriptBlock(t, &transcriptBuffer.Blocks[0], database.RoleUser, "hello", false)
+	assertTranscriptBlock(t, &transcriptBuffer.Blocks[1], database.RoleThinking, "because", false)
+	assertTranscriptBlock(t, &transcriptBuffer.Blocks[2], database.RoleAssistant, "answer", true)
 }
 
 func TestExtensionCanOverrideTranscriptBufferRendering(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.addMessage(database.RoleUser, "host transcript")
+	app.addMessage(transcript.RoleUser, "host transcript")
 	app.applyExtensionBuffer(extensionBufferTranscript, &extension.BufferState{
 		Metadata: map[string]any{},
 		Blocks:   []extension.BufferBlock{},

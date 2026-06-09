@@ -8,8 +8,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/assistant"
-	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 type asyncEventKind string
@@ -186,7 +186,7 @@ func (app *App) handleInterrupt(ctx context.Context, event *tcell.EventInterrupt
 func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 	switch payload.Kind {
 	case asyncEventAuthURL:
-		app.addMessage(database.RoleCustom, payload.Text)
+		app.addMessage(transcript.RoleCustom, payload.Text)
 		app.setStatus("complete browser login or keep coding")
 		return true
 	case asyncEventAuthDone:
@@ -319,14 +319,14 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 			extensionEventModelDelta,
 			map[string]any{extensionDataText: payload.Text},
 		)
-		app.appendStreamingBlock(database.RoleAssistant, payload.Text)
+		app.appendStreamingBlock(transcript.RoleAssistant, payload.Text)
 	case asyncEventPromptThinkingDelta:
 		app.emitExtensionRuntimeEventOrMessage(
 			ctx,
 			extensionEventThinkingDelta,
 			map[string]any{extensionDataText: payload.Text},
 		)
-		app.appendStreamingBlock(database.RoleThinking, payload.Text)
+		app.appendStreamingBlock(transcript.RoleThinking, payload.Text)
 	case asyncEventPromptToolResult:
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventToolEnd, toolExtensionData(payload.ToolEvent))
 		app.applyStreamedToolEvent(payload.ToolEvent)
@@ -431,7 +431,7 @@ func (app *App) applyPromptError(message string, promptID uint64) {
 	}
 	app.activePrompt = nil
 	app.applyFailedPromptStreamedBlocks(streamingBlocks)
-	app.addMessage(database.RoleCustom, message)
+	app.addMessage(transcript.RoleCustom, message)
 }
 
 func (app *App) applyFailedPromptStreamedBlocks(streamingBlocks []chatMessage) {
@@ -440,18 +440,18 @@ func (app *App) applyFailedPromptStreamedBlocks(streamingBlocks []chatMessage) {
 			continue
 		}
 		switch block.Role {
-		case database.RoleAssistant,
-			database.RoleToolResult,
-			database.RoleBashExecution,
-			database.RoleCustom:
+		case transcript.RoleAssistant,
+			transcript.RoleToolResult,
+			transcript.RoleBashExecution,
+			transcript.RoleCustom:
 			app.addMessage(block.Role, block.Content)
-		case database.RoleThinking:
+		case transcript.RoleThinking:
 			if strings.TrimSpace(block.Content) != "" {
 				app.addMessage(block.Role, block.Content)
 			}
-		case database.RoleUser,
-			database.RoleBranchSummary,
-			database.RoleCompactionSummary:
+		case transcript.RoleUser,
+			transcript.RoleBranchSummary,
+			transcript.RoleCompactionSummary:
 			continue
 		}
 	}
@@ -473,16 +473,18 @@ func (app *App) applyStreamedToolEvent(event *assistant.ToolEvent) {
 	if event == nil {
 		return
 	}
-	app.appendStreamingBlock(database.RoleToolResult, formatToolEventForUI(event))
+	app.appendStreamingBlock(transcript.RoleToolResult, formatToolEventForUI(event))
 	app.streamedToolEvents++
 }
 
-func (app *App) appendStreamingBlock(role database.Role, content string) {
+func (app *App) appendStreamingBlock(role transcript.Role, content string) {
 	if content == "" {
 		return
 	}
 	lastIndex := len(app.transcript.Streaming.Blocks) - 1
-	if lastIndex >= 0 && canMergeStreamingBlock(role) && app.transcript.Streaming.Blocks[lastIndex].Role == role {
+	if lastIndex >= 0 &&
+		transcript.CanMergeStreamingRole(role) &&
+		app.transcript.Streaming.Blocks[lastIndex].Role == role {
 		app.transcript.Streaming.Blocks[lastIndex].Content += content
 		app.invalidateStreamingBlockCache(lastIndex)
 		return
@@ -500,20 +502,4 @@ func (app *App) invalidateStreamingBlockCache(index int) {
 	if index >= 0 && index < len(app.transcript.Streaming.LineCache) {
 		app.transcript.Streaming.LineCache[index] = emptyCachedRenderedMessage()
 	}
-}
-
-func canMergeStreamingBlock(role database.Role) bool {
-	switch role {
-	case database.RoleAssistant, database.RoleThinking:
-		return true
-	case database.RoleUser,
-		database.RoleToolResult,
-		database.RoleBashExecution,
-		database.RoleCustom,
-		database.RoleBranchSummary,
-		database.RoleCompactionSummary:
-		return false
-	}
-
-	return false
 }

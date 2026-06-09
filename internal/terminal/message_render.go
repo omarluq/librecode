@@ -5,7 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 func (app *App) cachedStreamingBlockLines(width, index int) []styledLine {
@@ -33,17 +33,17 @@ func (app *App) ensureStreamingBlockLineCache(width int) {
 
 func (app *App) renderMessage(width int, message chatMessage) []styledLine {
 	switch message.Role {
-	case database.RoleUser:
+	case transcript.RoleUser:
 		return app.renderUserMessage(width, message.Content)
-	case database.RoleAssistant:
+	case transcript.RoleAssistant:
 		return app.renderAssistantMessage(width, message.Content)
-	case database.RoleToolResult, database.RoleBashExecution:
+	case transcript.RoleToolResult, transcript.RoleBashExecution:
 		return app.renderToolMessage(width, message)
-	case database.RoleThinking:
+	case transcript.RoleThinking:
 		return app.renderThinkingMessage(width, message)
-	case database.RoleCustom:
+	case transcript.RoleCustom:
 		return app.renderCustomMessage(width, message.Content)
-	case database.RoleBranchSummary, database.RoleCompactionSummary:
+	case transcript.RoleBranchSummary, transcript.RoleCompactionSummary:
 		return app.renderSummaryMessage(width, message)
 	}
 
@@ -110,21 +110,21 @@ func (app *App) renderStreamingMessage(width int, content string) []styledLine {
 }
 
 func (app *App) renderStreamingThinkingMessage(width int, content string) []styledLine {
-	return app.renderThinkingMessage(width, newChatMessage(database.RoleThinking, content))
+	return app.renderThinkingMessage(width, newChatMessage(transcript.RoleThinking, content))
 }
 
 func (app *App) renderStreamingBlockMessage(width int, message chatMessage) []styledLine {
 	switch message.Role {
-	case database.RoleAssistant:
+	case transcript.RoleAssistant:
 		return app.renderStreamingMessage(width, message.Content)
-	case database.RoleThinking:
+	case transcript.RoleThinking:
 		return app.renderStreamingThinkingMessage(width, message.Content)
-	case database.RoleToolResult, database.RoleBashExecution:
+	case transcript.RoleToolResult, transcript.RoleBashExecution:
 		return app.renderToolMessage(width, message)
-	case database.RoleUser,
-		database.RoleCustom,
-		database.RoleBranchSummary,
-		database.RoleCompactionSummary:
+	case transcript.RoleUser,
+		transcript.RoleCustom,
+		transcript.RoleBranchSummary,
+		transcript.RoleCompactionSummary:
 		return app.renderMessage(width, message)
 	}
 

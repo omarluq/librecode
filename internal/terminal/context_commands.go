@@ -6,7 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/transcript"
+
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -31,7 +32,7 @@ func (app *App) showContextInfo(ctx context.Context, original string) error {
 		lines = append(lines, "- top contributors:")
 		lines = append(lines, contributorLines...)
 	}
-	app.addMessage(database.RoleCustom, strings.Join(lines, "\n"))
+	app.addMessage(transcript.RoleCustom, strings.Join(lines, "\n"))
 
 	return nil
 }

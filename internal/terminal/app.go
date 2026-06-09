@@ -16,6 +16,7 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 const (
@@ -37,7 +38,7 @@ const (
 
 type chatMessage struct {
 	CreatedAt time.Time
-	Role      database.Role
+	Role      transcript.Role
 	Content   string
 }
 
@@ -368,7 +369,7 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 	}
 	shouldQuit, err := app.handleEvent(ctx, event)
 	if err != nil {
-		app.addMessage(database.RoleCustom, err.Error())
+		app.addMessage(transcript.RoleCustom, err.Error())
 	}
 	if shouldQuit {
 		return true, false
@@ -411,7 +412,7 @@ func (app *App) coalesceResizeEvents(
 				return event, true
 			}
 			if err := app.applyResizeEvent(ctx, nextResize); err != nil {
-				app.addMessage(database.RoleCustom, err.Error())
+				app.addMessage(transcript.RoleCustom, err.Error())
 			}
 			latest = nextResize
 		default:
@@ -551,7 +552,7 @@ func (app *App) loadInitialMessages(ctx context.Context) error {
 		message := &messages[index]
 		app.appendMessage(chatMessage{
 			CreatedAt: message.CreatedAt,
-			Role:      message.Role,
+			Role:      transcript.FromDatabaseRole(message.Role),
 			Content:   message.Content,
 		})
 		if message.Role == database.RoleUser {
@@ -563,14 +564,14 @@ func (app *App) loadInitialMessages(ctx context.Context) error {
 }
 
 func (app *App) addSystemMessage(content string) {
-	app.addMessage(database.RoleCustom, content)
+	app.addMessage(transcript.RoleCustom, content)
 }
 
-func (app *App) addMessage(role database.Role, content string) {
+func (app *App) addMessage(role transcript.Role, content string) {
 	app.appendMessage(newChatMessage(role, content))
 }
 
-func newChatMessage(role database.Role, content string) chatMessage {
+func newChatMessage(role transcript.Role, content string) chatMessage {
 	return chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content}
 }
 
