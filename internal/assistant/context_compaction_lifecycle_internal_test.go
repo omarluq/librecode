@@ -8,13 +8,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/extension"
 )
+
+const compactionTestOrigin = "test"
 
 func TestCompactionDecisionFromMutation(t *testing.T) {
 	t.Parallel()
 
-	plan := &compactionPlan{
+	plan := &compaction.Plan{
 		FirstKeptEntryID:    "",
 		Messages:            nil,
 		PreviousSummary:     "",
@@ -50,7 +53,7 @@ func TestCompactionDecisionFromMutation(t *testing.T) {
 			require.NotNil(t, decision)
 			assert.Equal(t, "extension summary", decision.Summary)
 			assert.Equal(t, "kept-2", decision.FirstKeptEntryID)
-			assert.Equal(t, map[string]any{"origin": compactFileOperationTestOrigin}, decision.Details)
+			assert.Equal(t, map[string]any{"origin": compactionTestOrigin}, decision.Details)
 			assert.True(t, decision.FromHook)
 		})
 	}
@@ -65,7 +68,7 @@ type compactionDecisionMutationCase struct {
 
 func compactionDecisionMutationCases() []compactionDecisionMutationCase {
 	summary := " extension summary "
-	emptySummary := compactFileOperationTestBlank
+	emptySummary := "   "
 	firstKept := " kept-2 "
 	invalidFirstKept := "missing"
 
@@ -105,7 +108,7 @@ func compactionDecisionMutationCases() []compactionDecisionMutationCase {
 		},
 		{
 			mutation: extension.CompactionMutation{
-				Details:          map[string]any{"origin": compactFileOperationTestOrigin},
+				Details:          map[string]any{"origin": compactionTestOrigin},
 				Summary:          &summary,
 				FirstKeptEntryID: &firstKept,
 				Cancel:           false,
