@@ -397,16 +397,15 @@ func TestRuntime_PromptIncludesCompactionSummaryContext(t *testing.T) {
 		Model:     "",
 	})
 	require.NoError(t, err)
-	compactionEntry, err := repository.AppendCompaction(
-		ctx,
-		session.ID,
-		&userEntry.ID,
-		"summary of old work",
-		userEntry.ID,
-		42,
-		nil,
-		false,
-	)
+	compactionEntry, err := repository.AppendCompaction(ctx, &database.AppendCompactionInput{
+		ParentID:         &userEntry.ID,
+		Details:          nil,
+		SessionID:        session.ID,
+		Summary:          "summary of old work",
+		FirstKeptEntryID: userEntry.ID,
+		TokensBefore:     42,
+		FromHook:         false,
+	})
 	require.NoError(t, err)
 	client := &capturingCompletionClient{request: nil}
 	runtime, _ := newTestRuntimeWithRepositoryAndClient(t, repository, client)

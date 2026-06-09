@@ -295,16 +295,15 @@ func newMetadataFixture(ctx context.Context, t *testing.T) metadataFixture {
 		nil,
 	)
 	require.NoError(t, err)
-	compactionEntry, err := repository.AppendCompaction(
-		ctx,
-		createdSession.ID,
-		&customEntry.ID,
-		"summary of earlier work",
-		assistantEntry.ID,
-		1200,
-		nil,
-		false,
-	)
+	compactionEntry, err := repository.AppendCompaction(ctx, &database.AppendCompactionInput{
+		ParentID:         &customEntry.ID,
+		Details:          nil,
+		SessionID:        createdSession.ID,
+		Summary:          "summary of earlier work",
+		FirstKeptEntryID: assistantEntry.ID,
+		TokensBefore:     1200,
+		FromHook:         false,
+	})
 	require.NoError(t, err)
 	branchEntry, err := repository.AppendBranchSummary(
 		ctx,

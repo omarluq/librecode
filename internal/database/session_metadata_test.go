@@ -61,16 +61,15 @@ func TestSessionRepository_EnrichesCompactionMetadata(t *testing.T) {
 	require.NoError(t, err)
 	rootEntry := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "hello")
 
-	compactionEntry, err := repository.AppendCompaction(
-		ctx,
-		session.ID,
-		&rootEntry.ID,
-		"summary",
-		rootEntry.ID,
-		1234,
-		nil,
-		false,
-	)
+	compactionEntry, err := repository.AppendCompaction(ctx, &database.AppendCompactionInput{
+		ParentID:         &rootEntry.ID,
+		Details:          nil,
+		SessionID:        session.ID,
+		Summary:          "summary",
+		FirstKeptEntryID: rootEntry.ID,
+		TokensBefore:     1234,
+		FromHook:         false,
+	})
 	require.NoError(t, err)
 	assert.True(t, compactionEntry.ModelFacing)
 	assert.True(t, compactionEntry.Display)

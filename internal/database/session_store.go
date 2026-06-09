@@ -10,6 +10,8 @@ import (
 	"github.com/samber/oops"
 )
 
+const appendCompactionNilInputCode = "append_compaction_nil_input"
+
 // Branch returns the path from root to the requested entry or current leaf.
 func (repository *SessionRepository) Branch(ctx context.Context, sessionID, entryID string) ([]EntryEntity, error) {
 	entries, err := repository.Entries(ctx, sessionID)
@@ -416,31 +418,47 @@ func (repository *SessionRepository) AppendThinkingLevelChange(
 	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeThinkingLevelChange, options)
 }
 
+// AppendCompactionInput describes a compaction summary entry to append.
+type AppendCompactionInput struct {
+	ParentID         *string
+	Details          map[string]any
+	SessionID        string
+	Summary          string
+	FirstKeptEntryID string
+	TokensBefore     int
+	FromHook         bool
+}
+
 // AppendCompaction records a summary for compacted context.
 func (repository *SessionRepository) AppendCompaction(
 	ctx context.Context,
-	sessionID string,
-	parentID *string,
-	summary string,
-	firstKeptEntryID string,
-	tokensBefore int,
-	details map[string]any,
-	fromHook bool,
+	input *AppendCompactionInput,
 ) (*EntryEntity, error) {
+	if input == nil {
+		return nil, oops.In("database").Code(appendCompactionNilInputCode).Errorf("append compaction input is nil")
+	}
+
 	data := newEntryData()
-	data.Details = details
-	data.FromHook = fromHook
-	data.FirstKeptEntryID = firstKeptEntryID
-	data.CompactionFirstKeptEntryID = firstKeptEntryID
-	data.CompactionTokensBefore = tokensBefore
-	data.TokensBefore = tokensBefore
+	data.Details = input.Details
+	data.FromHook = input.FromHook
+	data.FirstKeptEntryID = input.FirstKeptEntryID
+	data.CompactionFirstKeptEntryID = input.FirstKeptEntryID
+	data.CompactionTokensBefore = input.TokensBefore
+	data.TokensBefore = input.TokensBefore
 
 	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
 		return nil, err
 	}
 
-	return repository.appendSummaryEntry(ctx, sessionID, parentID, EntryTypeCompaction, summary, dataJSON)
+	return repository.appendSummaryEntry(
+		ctx,
+		input.SessionID,
+		input.ParentID,
+		EntryTypeCompaction,
+		input.Summary,
+		dataJSON,
+	)
 }
 
 // AppendBranchSummary records summary context from an abandoned branch.
