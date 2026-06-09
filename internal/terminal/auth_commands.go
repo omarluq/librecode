@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,9 +14,10 @@ import (
 )
 
 const (
-	anthropicAPIProviderID    = "anthropic"
-	anthropicClaudeProviderID = "anthropic-claude"
-	openAICodexProviderID     = "openai-codex"
+	anthropicAPIProviderID        = "anthropic"
+	anthropicClaudeProviderID     = "anthropic-claude"
+	openAICodexProviderID         = "openai-codex"
+	authStorageUnavailableMessage = "auth storage is unavailable"
 )
 
 func (app *App) openLoginPanel() {
@@ -179,7 +181,7 @@ func (app *App) logoutCommand(ctx context.Context, args string) error {
 		return nil
 	}
 	if app.auth == nil {
-		return fmt.Errorf("auth storage is unavailable")
+		return errors.New(authStorageUnavailableMessage)
 	}
 	if err := app.auth.Remove(ctx, provider); err != nil {
 		return err
@@ -215,7 +217,7 @@ type oauthLoginConfig struct {
 
 func (app *App) startAnthropicClaudeLogin(_ context.Context) error {
 	if app.auth == nil {
-		return fmt.Errorf("auth storage is unavailable")
+		return errors.New(authStorageUnavailableMessage)
 	}
 	flowURL, err := auth.AnthropicLoginURL()
 	if err != nil {
@@ -235,7 +237,7 @@ func (app *App) startAnthropicClaudeLogin(_ context.Context) error {
 
 func (app *App) completeAnthropicClaudeLogin(ctx context.Context, code string) error {
 	if app.auth == nil {
-		return fmt.Errorf("auth storage is unavailable")
+		return errors.New(authStorageUnavailableMessage)
 	}
 	credential, err := auth.LoginAnthropicWithCode(ctx, code)
 	if err != nil {
@@ -263,7 +265,7 @@ func (app *App) loginOpenAICodex(ctx context.Context) error {
 
 func (app *App) loginOAuthProvider(ctx context.Context, config oauthLoginConfig) error {
 	if app.auth == nil {
-		return fmt.Errorf("auth storage is unavailable")
+		return errors.New(authStorageUnavailableMessage)
 	}
 	if _, ok, err := app.auth.APIKeyContext(ctx, config.Provider); err != nil {
 		return err
