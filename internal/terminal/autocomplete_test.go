@@ -29,7 +29,7 @@ func TestAutocompleteMatchesIncludesUserInvocableSkills(t *testing.T) {
 		testAutocompleteSkill("fix-bug", "Fix bugs safely", true),
 		testAutocompleteSkill("hidden", "Hidden skill", false),
 	}
-	app.setComposerText("/skill:f")
+	app.composerBuffer.SetText("/skill:f")
 
 	matches := app.autocompleteMatches()
 
@@ -41,7 +41,7 @@ func TestAutocompleteArrowSelectionAcceptsSelectedSuggestion(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setComposerText("/s")
+	app.composerBuffer.SetText("/s")
 
 	pressTerminalKey(t, app, tcell.KeyDown, "")
 	pressTerminalKey(t, app, tcell.KeyEnter, "")
@@ -53,7 +53,7 @@ func TestAutocompleteUpWrapsToLastSuggestion(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setComposerText("/s")
+	app.composerBuffer.SetText("/s")
 
 	pressTerminalKey(t, app, tcell.KeyUp, "")
 	pressTerminalKey(t, app, tcell.KeyTab, "")
@@ -66,7 +66,7 @@ func TestAutocompleteArrowKeysDoNotNavigatePromptHistory(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.recordPromptHistory("previous prompt")
-	app.setComposerText("/s")
+	app.composerBuffer.SetText("/s")
 
 	pressTerminalKey(t, app, tcell.KeyUp, "")
 
@@ -77,7 +77,7 @@ func TestAutocompleteEscapeClosesSuggestions(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setComposerText("/s")
+	app.composerBuffer.SetText("/s")
 
 	pressTerminalKey(t, app, tcell.KeyEscape, "")
 
@@ -89,7 +89,7 @@ func TestAutocompleteReopensAfterEditing(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setComposerText("/s")
+	app.composerBuffer.SetText("/s")
 	pressTerminalKey(t, app, tcell.KeyEscape, "")
 
 	pressTerminalKey(t, app, tcell.KeyRune, "e")

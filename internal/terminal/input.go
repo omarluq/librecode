@@ -49,7 +49,7 @@ func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) ke
 	if app.handleWorkingInterruptKey(ctx, event) {
 		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 	}
-	if app.keys.matches(event, actionForceExit) && app.composerEmpty() {
+	if app.keys.matches(event, actionForceExit) && app.composerBuffer.Empty() {
 		return keyHandlingResult{err: nil, shouldQuit: app.handleForceExit(), handled: true}
 	}
 	if result := app.handlePanelPriorityKey(ctx, event); result.handled || result.err != nil {
@@ -98,8 +98,8 @@ func (app *App) handleFocusedAutocompleteKey(event *tcell.EventKey) bool {
 }
 
 func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
-	if app.keys.matches(event, actionInputClear) && !app.composerEmpty() {
-		app.clearComposer()
+	if app.keys.matches(event, actionInputClear) && !app.composerBuffer.Empty() {
+		app.composerBuffer.Clear()
 		app.resetPromptHistoryNavigation()
 		app.resetAutocompleteSelection()
 		app.escapePresses = 0
@@ -112,7 +112,7 @@ func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool
 		app.resetPromptHistoryNavigation()
 		app.resetAutocompleteSelection()
 		app.escapePresses = 0
-		app.insertComposerRune('\n')
+		app.composerBuffer.InsertRune('\n')
 		return false, nil
 	}
 	if app.keys.matches(event, actionInputTab) && app.acceptAutocomplete() {
@@ -179,24 +179,24 @@ func (app *App) handleEditorKey(event *tcell.EventKey) {
 	if event.Key() == tcell.KeyRune {
 		app.resetPromptHistoryNavigation()
 		app.resetAutocompleteSelection()
-		app.insertComposerRune(eventRune(event))
+		app.composerBuffer.InsertRune(eventRune(event))
 	}
 }
 
 func (app *App) editorActions() []shortcutHandler {
 	return []shortcutHandler{
-		app.composerShortcut(actionCursorLeft, app.moveComposerLeft),
-		app.composerShortcut(actionCursorRight, app.moveComposerRight),
-		app.composerShortcut(actionCursorWordLeft, app.moveComposerWordLeft),
-		app.composerShortcut(actionCursorWordRight, app.moveComposerWordRight),
-		app.composerShortcut(actionCursorLineStart, app.moveComposerLineStart),
-		app.composerShortcut(actionCursorLineEnd, app.moveComposerLineEnd),
-		app.composerShortcut(actionDeleteCharBackward, app.deleteComposerBackward),
-		app.composerShortcut(actionDeleteCharForward, app.deleteComposerForward),
-		app.composerShortcut(actionDeleteWordBackward, app.deleteComposerWordBackward),
-		app.composerShortcut(actionDeleteWordForward, app.deleteComposerWordForward),
-		app.composerShortcut(actionDeleteToLineStart, app.deleteComposerToLineStart),
-		app.composerShortcut(actionDeleteToLineEnd, app.deleteComposerToLineEnd),
+		app.composerShortcut(actionCursorLeft, app.composerBuffer.MoveLeft),
+		app.composerShortcut(actionCursorRight, app.composerBuffer.MoveRight),
+		app.composerShortcut(actionCursorWordLeft, app.composerBuffer.MoveWordLeft),
+		app.composerShortcut(actionCursorWordRight, app.composerBuffer.MoveWordRight),
+		app.composerShortcut(actionCursorLineStart, app.composerBuffer.MoveLineStart),
+		app.composerShortcut(actionCursorLineEnd, app.composerBuffer.MoveLineEnd),
+		app.composerShortcut(actionDeleteCharBackward, app.composerBuffer.DeleteBackward),
+		app.composerShortcut(actionDeleteCharForward, app.composerBuffer.DeleteForward),
+		app.composerShortcut(actionDeleteWordBackward, app.composerBuffer.DeleteWordBackward),
+		app.composerShortcut(actionDeleteWordForward, app.composerBuffer.DeleteWordForward),
+		app.composerShortcut(actionDeleteToLineStart, app.composerBuffer.DeleteToLineStart),
+		app.composerShortcut(actionDeleteToLineEnd, app.composerBuffer.DeleteToLineEnd),
 	}
 }
 

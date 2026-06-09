@@ -58,8 +58,8 @@ func (app *App) revertActivePromptUI(activePrompt *activePromptState) {
 	app.streamedToolEvents = 0
 	app.working = false
 	app.scrollOffset = 0
-	if app.composerEmpty() {
-		app.setComposerText(activePrompt.Prompt)
+	if app.composerBuffer.Empty() {
+		app.composerBuffer.SetText(activePrompt.Prompt)
 	}
 }
 

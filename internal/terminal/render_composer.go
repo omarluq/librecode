@@ -1,8 +1,10 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
+
+	"github.com/omarluq/librecode/internal/terminal/input"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 )
 
 func (app *App) drawAutocompleteWindow(layout *runtimeLayout) {
@@ -34,15 +36,15 @@ func (app *App) drawComposerWindow(layout *runtimeLayout) {
 	}
 }
 
-func (app *App) renderComposerEditor(width, bodyRows int) editorRender {
-	return renderEditor(
-		[]rune(app.composerText()),
-		app.composerCursor(),
+func (app *App) renderComposerEditor(width, bodyRows int) input.Render {
+	return input.RenderEditor(
+		[]rune(app.composerBuffer.TextValue()),
+		app.composerBuffer.CursorValue(),
 		width,
 		bodyRows,
-		app.theme,
-		app.editorBorderColor(),
-		app.composerBorderLabel(),
+		app.theme.style(app.editorBorderColor()),
+		app.theme.style(colorText),
+		app.composerBuffer.Label,
 	)
 }
 
@@ -85,7 +87,7 @@ func (app *App) composerReserve(width, height int) int {
 type composerLayout struct {
 	footerLines       []rendertext.Line
 	autocompleteLines []rendertext.Line
-	editor            editorRender
+	editor            input.Render
 	startRow          int
 	editorStart       int
 	footerStart       int
@@ -120,7 +122,7 @@ func (app *App) composerLayout(width, height int) composerLayout {
 }
 
 func (app *App) editorBorderColor() colorToken {
-	if strings.HasPrefix(strings.TrimSpace(app.composerText()), "!") {
+	if strings.HasPrefix(strings.TrimSpace(app.composerBuffer.TextValue()), "!") {
 		return colorBashMode
 	}
 	switch app.currentThinkingLevel() {

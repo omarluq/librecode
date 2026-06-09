@@ -6,7 +6,7 @@ import (
 )
 
 func (app *App) queueFollowUp() {
-	text := strings.TrimSpace(app.clearComposer())
+	text := strings.TrimSpace(app.composerBuffer.Clear())
 	if text == "" {
 		app.setStatus("no follow-up text to queue")
 		return
@@ -57,7 +57,7 @@ func (app *App) dequeueFollowUp() {
 	}
 	lastIndex := len(app.queuedMessages) - 1
 	app.resetPromptHistoryNavigation()
-	app.setComposerText(app.queuedMessages[lastIndex])
+	app.composerBuffer.SetText(app.queuedMessages[lastIndex])
 	app.queuedMessages = app.queuedMessages[:lastIndex]
 	app.setStatus("restored queued message")
 }

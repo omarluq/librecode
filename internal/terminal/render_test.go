@@ -973,7 +973,7 @@ func TestExtensionRendererSkipsDefaultComposerDraw(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setComposerText("host text")
+	app.composerBuffer.SetText("host text")
 	layout := app.defaultRuntimeLayout(40, 12)
 	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	window := layout.Composer
@@ -1137,7 +1137,7 @@ func TestDefaultLayoutComposerTouchesStatus(t *testing.T) {
 			t.Parallel()
 
 			app := newRenderTestApp(t)
-			app.setComposerText(tt.prompt)
+			app.composerBuffer.SetText(tt.prompt)
 
 			layout := app.defaultRuntimeLayout(80, 24)
 			composerBottom := layout.Composer.Y + layout.Composer.Height
@@ -1152,7 +1152,7 @@ func TestComposerLayoutReflowsAfterPromptAndTerminalResize(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setComposerText(strings.Repeat("wide ", 24))
+	app.composerBuffer.SetText(strings.Repeat("wide ", 24))
 
 	wide := app.defaultRuntimeLayout(80, 24)
 	narrow := app.defaultRuntimeLayout(32, 24)
@@ -1171,7 +1171,7 @@ func TestComposerLayoutReflowsAfterPromptAndTerminalResize(t *testing.T) {
 		)
 	}
 
-	app.setComposerText("")
+	app.composerBuffer.SetText("")
 	empty := app.defaultRuntimeLayout(32, 24)
 	if empty.Composer.Height >= narrow.Composer.Height {
 		t.Fatalf(
@@ -1193,7 +1193,7 @@ func TestDrawComposerDoesNotPersistDefaultWindowGeometry(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setComposerText(strings.Repeat("wide ", 24))
+	app.composerBuffer.SetText(strings.Repeat("wide ", 24))
 
 	wideLayout := app.defaultRuntimeLayout(80, 24)
 	app.frame = rendertext.NewBuffer(wideLayout.Width, wideLayout.Height, tcell.StyleDefault)

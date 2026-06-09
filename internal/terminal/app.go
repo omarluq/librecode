@@ -4,8 +4,6 @@ package terminal
 import (
 	"context"
 	"fmt"
-	"github.com/omarluq/librecode/internal/terminal/panel"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"time"
 
@@ -18,6 +16,9 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/terminal/input"
+	"github.com/omarluq/librecode/internal/terminal/panel"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
@@ -155,7 +156,7 @@ type App struct {
 	queuedMessages          []string
 	promptHistory           []string
 	scopedOrder             []string
-	composerBuffer          extension.BufferState
+	composerBuffer          input.Buffer
 	tokenUsage              model.TokenUsage
 	selection               mouseSelection
 	promptSequence          uint64
@@ -249,7 +250,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 		promptHistoryDraft:      "",
 		autocompleteSelection:   0,
 		autocompleteClosed:      false,
-		composerBuffer:          newComposerBuffer(),
+		composerBuffer:          input.NewBuffer(),
 		scopedOrder:             []string{},
 		scopedEnabled:           map[string]bool{},
 		sessionSortRecent:       true,

@@ -57,7 +57,7 @@ func TestTreePanelFlow(t *testing.T) {
 	if app.pendingParentID == nil || *app.pendingParentID != "" {
 		t.Fatalf("pendingParentID = %v, want root branch pointer", app.pendingParentID)
 	}
-	if got, want := app.composerText(), interruptTestPrompt; got != want {
+	if got, want := app.composerBuffer.TextValue(), interruptTestPrompt; got != want {
 		t.Fatalf("composer text = %q, want %q", got, want)
 	}
 }

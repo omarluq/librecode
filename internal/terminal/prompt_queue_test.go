@@ -60,11 +60,11 @@ func TestQueueFollowUpRecordsAndClearsComposer(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setComposerText("  follow me  ")
+	app.composerBuffer.SetText("  follow me  ")
 
 	app.queueFollowUp()
 
-	if got, want := app.composerText(), ""; got != want {
+	if got, want := app.composerBuffer.TextValue(), ""; got != want {
 		t.Fatalf("composer text = %q, want empty", got)
 	}
 	if got, want := app.queuedMessages, []string{"follow me"}; !slices.Equal(got, want) {
@@ -84,7 +84,7 @@ func TestDequeueFollowUpRestoresLastMessage(t *testing.T) {
 
 	app.dequeueFollowUp()
 
-	if got, want := app.composerText(), "second"; got != want {
+	if got, want := app.composerBuffer.TextValue(), "second"; got != want {
 		t.Fatalf("composer text = %q, want %q", got, want)
 	}
 	if got, want := app.queuedMessages, []string{"first"}; !slices.Equal(got, want) {

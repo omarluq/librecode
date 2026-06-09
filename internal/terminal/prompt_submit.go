@@ -6,7 +6,7 @@ import (
 )
 
 func (app *App) submit(ctx context.Context) (bool, error) {
-	text := strings.TrimSpace(app.composerText())
+	text := strings.TrimSpace(app.composerBuffer.TextValue())
 	if text == "" {
 		return false, nil
 	}
@@ -14,13 +14,13 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 	if consumed || err != nil {
 		return false, err
 	}
-	text = strings.TrimSpace(app.clearComposer())
+	text = strings.TrimSpace(app.composerBuffer.Clear())
 	if text == "" {
 		return false, nil
 	}
 	if app.compacting {
 		if strings.HasPrefix(text, "/") {
-			app.setComposerText(text)
+			app.composerBuffer.SetText(text)
 			app.setStatus("wait for context compaction to finish")
 			return false, nil
 		}

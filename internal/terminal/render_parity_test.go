@@ -23,7 +23,7 @@ func TestRenderParityComposerFrame(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.setComposerText("first line\nsecond line")
+	app.composerBuffer.SetText("first line\nsecond line")
 
 	layout := app.defaultRuntimeLayout(40, 12)
 	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)

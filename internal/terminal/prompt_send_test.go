@@ -96,7 +96,7 @@ func TestSubmit(t *testing.T) {
 			if testCase.setupApp != nil {
 				testCase.setupApp(app)
 			}
-			app.setComposerText(testCase.composerText)
+			app.composerBuffer.SetText(testCase.composerText)
 
 			consumed, err := app.submit(context.Background())
 
@@ -186,7 +186,7 @@ func assertSubmitCase(
 	if got := app.mode; got != testCase.wantMode {
 		t.Fatalf("mode = %q, want %q", got, testCase.wantMode)
 	}
-	if got := app.composerText(); got != testCase.wantComposerText {
+	if got := app.composerBuffer.TextValue(); got != testCase.wantComposerText {
 		t.Fatalf("composer text = %q, want %q", got, testCase.wantComposerText)
 	}
 	if got := len(app.promptHistory); got != testCase.wantPromptHistory {

@@ -23,8 +23,8 @@ func (app *App) handleEscape(ctx context.Context) {
 		return
 	}
 	app.escapePresses = 0
-	if !app.composerEmpty() {
-		app.clearComposer()
+	if !app.composerBuffer.Empty() {
+		app.composerBuffer.Clear()
 		app.resetPromptHistoryNavigation()
 		app.setStatus("editor cleared")
 		return
