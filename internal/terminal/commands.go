@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	commandLogin  = "login"
-	commandLogout = "logout"
+	commandLogin          = "login"
+	commandLogout         = "logout"
+	commandNotImplemented = " is not implemented yet"
 )
 
 func (app *App) submitCommand(ctx context.Context, text string) (bool, error) {
@@ -79,10 +80,10 @@ func (app *App) sessionCommandHandlers(ctx context.Context, args, original strin
 func (app *App) sessionCommandNotifications(ctx context.Context, command string) (func(), bool) {
 	handlers := map[string]func(){
 		"auth":    app.showAuthInfo,
-		"export":  func() { app.addSystemMessage("/" + command + " is not implemented yet") },
-		"import":  func() { app.addSystemMessage("/" + command + " is not implemented yet") },
+		"export":  func() { app.addSystemMessage("/" + command + commandNotImplemented) },
+		"import":  func() { app.addSystemMessage("/" + command + commandNotImplemented) },
 		"session": func() { app.showSessionInfo(ctx) },
-		"share":   func() { app.addSystemMessage("/" + command + " is not implemented yet") },
+		"share":   func() { app.addSystemMessage("/" + command + commandNotImplemented) },
 	}
 	handler, ok := handlers[command]
 
