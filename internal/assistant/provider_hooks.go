@@ -7,13 +7,9 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/provider"
-)
-
-const (
-	providerRequestHeadersKey = "headers"
-	providerRequestPayloadKey = "payload"
 )
 
 var blockedProviderHeaderNames = map[string]struct{}{
@@ -67,23 +63,23 @@ func providerRequestLifecyclePayload(input providerHookInput) map[string]any {
 		return map[string]any{}
 	}
 
-	return map[string]any{
-		lifecycleAPIKey:           request.Model.API,
-		lifecycleAttemptKey:       input.Attempt,
-		providerRequestHeadersKey: redactedHeaders(input.Headers),
-		jsonModelKey:              request.Model.ID,
-		lifecycleProviderKey:      request.Model.Provider,
-		jsonSessionIDKey:          request.SessionID,
-		providerRequestPayloadKey: cloneAnyMap(input.Payload),
-		"thinking_level":          request.ThinkingLevel,
-	}
+	return lifecyclepayload.ProviderRequestPayload(&lifecyclepayload.ProviderRequest{
+		Payload:       input.Payload,
+		Headers:       redactedHeaders(input.Headers),
+		API:           request.Model.API,
+		ModelID:       request.Model.ID,
+		Provider:      request.Model.Provider,
+		SessionID:     request.SessionID,
+		ThinkingLevel: request.ThinkingLevel,
+		Attempt:       input.Attempt,
+	})
 }
 
 func providerPayloadFromLifecycle(payload, fallback map[string]any) map[string]any {
 	if payload == nil {
 		return cloneAnyMap(fallback)
 	}
-	mutated, ok := payload[providerRequestPayloadKey].(map[string]any)
+	mutated, ok := payload[lifecyclepayload.ProviderPayloadKey].(map[string]any)
 	if !ok {
 		return cloneAnyMap(fallback)
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
@@ -183,9 +184,9 @@ func (runtime *Runtime) appendCompaction(
 	fromHook bool,
 ) (*database.EntryEntity, error) {
 	details := map[string]any{
-		"summarized_entries":      len(plan.SummarizedEntryIDs),
-		"kept_entries":            len(plan.KeptEntryIDs),
-		compactionTokensBeforeKey: plan.TokensBefore,
+		"summarized_entries":             len(plan.SummarizedEntryIDs),
+		"kept_entries":                   len(plan.KeptEntryIDs),
+		lifecyclepayload.TokensBeforeKey: plan.TokensBefore,
 	}
 	if decision != nil {
 		maps.Copy(details, decision.Details)

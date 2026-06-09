@@ -3,29 +3,26 @@ package assistant
 import (
 	"context"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/extension"
-)
-
-const (
-	lifecycleAPIKey       = "api"
-	lifecycleAttemptKey   = "attempt"
-	lifecycleProviderKey  = "provider"
-	lifecycleToolErrorKey = "error"
 )
 
 func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *CompletionRequest, attempt int) {
 	if request == nil {
 		return
 	}
-	runtime.emit(ctx, string(extension.LifecycleBeforeProviderRequest), map[string]any{
-		lifecycleAPIKey:           request.Model.API,
-		lifecycleAttemptKey:       attempt,
-		providerRequestHeadersKey: redactedHeaders(request.Auth.Headers),
-		jsonModelKey:              request.Model.ID,
-		lifecycleProviderKey:      request.Model.Provider,
-		jsonSessionIDKey:          request.SessionID,
-		"thinking_level":          request.ThinkingLevel,
-	})
+	runtime.emit(ctx, string(extension.LifecycleBeforeProviderRequest), lifecyclepayload.ProviderRequestPayload(
+		&lifecyclepayload.ProviderRequest{
+			Payload:       nil,
+			Headers:       redactedHeaders(request.Auth.Headers),
+			API:           request.Model.API,
+			ModelID:       request.Model.ID,
+			Provider:      request.Model.Provider,
+			SessionID:     request.SessionID,
+			ThinkingLevel: request.ThinkingLevel,
+			Attempt:       attempt,
+		},
+	))
 }
 
 func (runtime *Runtime) emitProviderResponse(
@@ -37,17 +34,17 @@ func (runtime *Runtime) emitProviderResponse(
 	if request == nil || result == nil {
 		return
 	}
-	payload := map[string]any{
-		lifecycleAPIKey:      request.Model.API,
-		lifecycleAttemptKey:  attempt,
-		jsonModelKey:         request.Model.ID,
-		lifecycleProviderKey: request.Model.Provider,
-		jsonSessionIDKey:     request.SessionID,
-		jsonTextKey:          result.Text,
-		"thinking_count":     len(result.Thinking),
-		"tool_event_count":   len(result.ToolEvents),
-		jsonUsageKey:         tokenUsageLifecyclePayload(result.Usage),
-	}
+	payload := lifecyclepayload.ProviderResponsePayload(&lifecyclepayload.ProviderResponse{
+		Usage:          result.Usage,
+		API:            request.Model.API,
+		ModelID:        request.Model.ID,
+		Provider:       request.Model.Provider,
+		SessionID:      request.SessionID,
+		Text:           result.Text,
+		Attempt:        attempt,
+		ThinkingCount:  len(result.Thinking),
+		ToolEventCount: len(result.ToolEvents),
+	})
 	dispatchResult, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleAfterProviderResponse, payload)
 	if dispatchErr != nil && runtime.logger != nil {
 		runtime.logger.Debug("provider response lifecycle failed", "error", dispatchErr)
@@ -64,14 +61,14 @@ func (runtime *Runtime) emitProviderError(ctx context.Context, request *Completi
 	if request == nil || err == nil {
 		return
 	}
-	payload := map[string]any{
-		lifecycleAPIKey:      request.Model.API,
-		lifecycleAttemptKey:  attempt,
-		jsonModelKey:         request.Model.ID,
-		lifecycleProviderKey: request.Model.Provider,
-		jsonSessionIDKey:     request.SessionID,
-		lifecycleErrorKey:    err.Error(),
-	}
+	payload := lifecyclepayload.ProviderErrorPayload(&lifecyclepayload.ProviderError{
+		Err:       err,
+		API:       request.Model.API,
+		ModelID:   request.Model.ID,
+		Provider:  request.Model.Provider,
+		SessionID: request.SessionID,
+		Attempt:   attempt,
+	})
 	dispatchResult, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleProviderError, payload)
 	if dispatchErr != nil && runtime.logger != nil {
 		runtime.logger.Debug("provider error lifecycle failed", "error", dispatchErr)
@@ -82,24 +79,4 @@ func (runtime *Runtime) emitProviderError(ctx context.Context, request *Completi
 		&dispatchResult,
 		providerErrorDiagnostics(request, attempt, err),
 	)
-}
-
-func toolCallPayload(call ToolCallEvent) map[string]any {
-	return map[string]any{
-		"call_id":        call.ID,
-		jsonToolNameKey:  call.Name,
-		"arguments_json": call.ArgumentsJSON,
-		"arguments":      call.Arguments,
-	}
-}
-
-func toolEventPayload(event *ToolEvent) map[string]any {
-	return map[string]any{
-		jsonToolNameKey:       event.Name,
-		"arguments_json":      event.ArgumentsJSON,
-		"details_json":        event.DetailsJSON,
-		"is_error":            event.IsError,
-		"result":              event.Result,
-		lifecycleToolErrorKey: event.Error,
-	}
 }

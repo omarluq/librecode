@@ -9,6 +9,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
@@ -17,8 +18,6 @@ import (
 const (
 	compactionSourceCore      = "core"
 	compactionSourceExtension = "extension"
-	compactionTokensBeforeKey = "tokens_before"
-	compactionPhaseKey        = "phase"
 )
 
 var errNoCompactionDecision = errors.New("no compaction lifecycle decision")
@@ -36,13 +35,13 @@ func (runtime *Runtime) dispatchBeforeCompaction(
 	cwd string,
 	plan *compaction.Plan,
 ) (*compactionLifecycleDecision, error) {
-	payload := compactionPreparationPayload(sessionID, cwd, plan)
+	payload := lifecyclepayload.CompactionPreparation(sessionID, cwd, plan)
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleSessionBeforeCompact, payload)
 	runtime.emitLifecycleDiagnostics(
 		ctx,
 		extension.LifecycleSessionBeforeCompact,
 		&result,
-		compactionLifecycleDiagnostics(plan, "before"),
+		lifecyclepayload.CompactionDiagnostics(plan, "before"),
 	)
 	if err != nil {
 		return nil, oops.In("assistant").Code("compact_before_hook").Wrapf(err, "dispatch before compact lifecycle")
@@ -67,13 +66,23 @@ func (runtime *Runtime) dispatchAfterCompaction(
 	plan *compaction.Plan,
 	fromHook bool,
 ) {
-	payload := compactionSavedPayload(sessionID, cwd, entry, plan, fromHook)
+	source := compactionSourceCore
+	if fromHook {
+		source = compactionSourceExtension
+	}
+	payload := lifecyclepayload.CompactionSavedPayload(lifecyclepayload.CompactionSaved{
+		Entry:     entry,
+		Plan:      plan,
+		SessionID: sessionID,
+		CWD:       cwd,
+		Source:    source,
+	})
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleSessionCompact, payload)
 	runtime.emitLifecycleDiagnostics(
 		ctx,
 		extension.LifecycleSessionCompact,
 		&result,
-		compactionLifecycleDiagnostics(plan, "after"),
+		lifecyclepayload.CompactionDiagnostics(plan, "after"),
 	)
 	if err != nil {
 		return
@@ -111,81 +120,4 @@ func compactionDecisionFromMutation(
 	}
 
 	return decision, nil
-}
-
-func compactionPreparationPayload(sessionID, cwd string, plan *compaction.Plan) map[string]any {
-	return map[string]any{
-		lifecycleCWDKey:              cwd,
-		jsonSessionIDKey:             sessionID,
-		"first_kept_entry_id":        plan.FirstKeptEntryID,
-		compactionTokensBeforeKey:    plan.TokensBefore,
-		"summary_message_count":      len(plan.Messages),
-		"summarized_entry_ids":       stringSlicePayload(plan.SummarizedEntryIDs),
-		"kept_entry_ids":             stringSlicePayload(plan.KeptEntryIDs),
-		"split_turn_summary":         plan.SplitTurnSummary,
-		compaction.FileOperationsKey: compactionFileOperationsPayload(plan.FileOperations),
-	}
-}
-
-func compactionSavedPayload(
-	sessionID string,
-	cwd string,
-	entry *database.EntryEntity,
-	plan *compaction.Plan,
-	fromHook bool,
-) map[string]any {
-	payload := compactionPreparationPayload(sessionID, cwd, plan)
-	payload[lifecycleEntryIDKey] = ""
-	payload[jsonSummaryKey] = ""
-	payload["source"] = compactionSourceCore
-	if entry != nil {
-		payload[lifecycleEntryIDKey] = entry.ID
-		payload[jsonSummaryKey] = entry.Summary
-	}
-	if fromHook {
-		payload["source"] = compactionSourceExtension
-	}
-
-	return payload
-}
-
-func compactionLifecycleDiagnostics(plan *compaction.Plan, phase string) map[string]any {
-	if plan == nil {
-		return map[string]any{compactionPhaseKey: phase}
-	}
-
-	return map[string]any{
-		compactionPhaseKey:        phase,
-		"summarized_entries":      len(plan.SummarizedEntryIDs),
-		"kept_entries":            len(plan.KeptEntryIDs),
-		"file_operation_count":    len(plan.FileOperations),
-		"has_split_turn_summary":  strings.TrimSpace(plan.SplitTurnSummary) != "",
-		compactionTokensBeforeKey: plan.TokensBefore,
-		"first_kept_entry_id":     plan.FirstKeptEntryID,
-	}
-}
-
-func compactionFileOperationsPayload(operations []compaction.FileOperation) []any {
-	payload := make([]any, 0, len(operations))
-	for index := range operations {
-		operation := operations[index]
-		payload = append(payload, map[string]any{
-			"entry_id": operation.EntryID,
-			"action":   operation.Action,
-			"path":     operation.Path,
-			"tool":     operation.Tool,
-			"command":  operation.Command,
-		})
-	}
-
-	return payload
-}
-
-func stringSlicePayload(values []string) []any {
-	payload := make([]any, 0, len(values))
-	for _, value := range values {
-		payload = append(payload, value)
-	}
-
-	return payload
 }

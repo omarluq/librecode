@@ -7,6 +7,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
@@ -122,7 +123,7 @@ func (runtime *Runtime) buildModelContext(
 	runtime.emit(
 		ctx,
 		string(extension.LifecycleContextBuild),
-		contextBuildLifecyclePayload(sessionID, cwd, &base, result),
+		lifecyclepayload.ContextBuild(sessionID, cwd, &base, result),
 	)
 
 	return result, nil
