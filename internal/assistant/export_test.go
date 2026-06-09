@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -19,7 +20,7 @@ func (runtime *Runtime) DispatchToolResultLifecycleForTest(ctx context.Context, 
 
 // ShouldAutoCompactAfterResponseForTest exposes post-response threshold policy for external package tests.
 func ShouldAutoCompactAfterResponseForTest(usageInput, usableInput, contextWindow int) bool {
-	return shouldAutoCompactAfterResponse(contextBudget{
+	return shouldAutoCompactAfterResponse(contextwindow.Budget{
 		InputTokens:       usageInput,
 		ContextWindow:     contextWindow,
 		UsableInput:       usableInput,
@@ -56,10 +57,10 @@ func (runtime *Runtime) EmitPostResponseAutoCompactionErrorForTest(
 }
 
 // AutoCompactionMessageForTest exposes compaction notice formatting for external package tests.
-// The contextBudget field values are arbitrary; tests use them only to exercise
+// The contextwindow.Budget field values are arbitrary; tests use them only to exercise
 // compactionMessage formatting, not to assert semantic budget calculations.
 func AutoCompactionMessageForTest(entry *database.EntryEntity) string {
-	return compactionMessage("context auto-compacted", contextBudget{
+	return compactionMessage("context auto-compacted", contextwindow.Budget{
 		InputTokens:       12,
 		ContextWindow:     0,
 		UsableInput:       10,
@@ -149,7 +150,7 @@ func (runtime *Runtime) ProviderOverflowRecoveryNonContextErrorForTest(ctx conte
 				ProviderAttempt: 0,
 				DisableTools:    false,
 			},
-			Budget: contextBudget{
+			Budget: contextwindow.Budget{
 				InputTokens:       0,
 				ContextWindow:     0,
 				UsableInput:       0,

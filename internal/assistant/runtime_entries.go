@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 )
 
@@ -46,6 +47,6 @@ func (runtime *Runtime) appendAssistantResponseEntry(
 		parentID,
 		&message,
 		&bundle.ModelFacing,
-		providerUsageEntity(bundle.Usage),
+		contextwindow.ProviderUsageEntity(bundle.Usage),
 	)
 }

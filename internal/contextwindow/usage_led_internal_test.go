@@ -1,5 +1,4 @@
-// Package assistant orchestrates conversations, extensions, cache, and prompt execution.
-package assistant
+package contextwindow
 
 import (
 	"testing"
@@ -33,7 +32,7 @@ func TestEstimateUsageLedInputTokensUsesProviderAnchorAndTrailingEstimate(t *tes
 		MessageIndex: 1,
 	}
 
-	tokens := estimateUsageLedInputTokens(
+	tokens := EstimateUsageLedInputTokens(
 		"large system prompt that should be covered by provider usage",
 		messages,
 		nil,
@@ -47,7 +46,7 @@ func TestEstimateUsageLedInputTokensFallsBackWhenAnchorMissing(t *testing.T) {
 	t.Parallel()
 
 	messages := []database.MessageEntity{newUsageLedTestMessage(database.RoleUser, repeatedTokenText(20))}
-	contributions := []contextContribution{{
+	contributions := []Contribution{{
 		Metadata: nil,
 		Source:   "",
 		Name:     "",
@@ -56,7 +55,7 @@ func TestEstimateUsageLedInputTokensFallsBackWhenAnchorMissing(t *testing.T) {
 		Tokens:   7,
 	}}
 
-	tokens := estimateUsageLedInputTokens(repeatedTokenText(12), messages, contributions, nil)
+	tokens := EstimateUsageLedInputTokens(repeatedTokenText(12), messages, contributions, nil)
 
 	assert.Equal(t, 39, tokens)
 }
@@ -64,9 +63,9 @@ func TestEstimateUsageLedInputTokensFallsBackWhenAnchorMissing(t *testing.T) {
 func TestProviderUsageEntitySkipsEmptyUsage(t *testing.T) {
 	t.Parallel()
 
-	assert.Nil(t, providerUsageEntity(model.EmptyTokenUsage()))
+	assert.Nil(t, ProviderUsageEntity(model.EmptyTokenUsage()))
 
-	entity := providerUsageEntity(model.TokenUsage{
+	entity := ProviderUsageEntity(model.TokenUsage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1000,

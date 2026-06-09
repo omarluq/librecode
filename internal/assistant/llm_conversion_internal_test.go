@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
@@ -136,7 +137,7 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 			IsError:       true,
 		}},
 		Usage: model.TokenUsage{
-			Breakdown:       map[string]int{contextBreakdownHistory: 10},
+			Breakdown:       map[string]int{contextwindow.BreakdownHistory: 10},
 			TopContributors: nil,
 			ContextWindow:   100,
 			ContextTokens:   20,

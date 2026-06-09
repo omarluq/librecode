@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
@@ -144,8 +145,8 @@ func (runtime *Runtime) dispatchContextBuild(
 	ctx context.Context,
 	sessionID string,
 	cwd string,
-	base *modelContextBase,
-	result *contextBuildResult,
+	base *contextwindow.Base,
+	result *contextwindow.BuildResult,
 ) (extension.LifecycleDispatchResult, error) {
 	payload := contextBuildLifecyclePayload(sessionID, cwd, base, result)
 	return runtime.dispatchLifecycle(ctx, extension.LifecycleContextBuild, payload)
@@ -314,8 +315,8 @@ func applyToolResultMutation(event *ToolEvent, mutation extension.ToolResultMuta
 func contextBuildLifecyclePayload(
 	sessionID string,
 	cwd string,
-	base *modelContextBase,
-	result *contextBuildResult,
+	base *contextwindow.Base,
+	result *contextwindow.BuildResult,
 ) map[string]any {
 	return map[string]any{
 		lifecycleCWDKey:           cwd,
@@ -324,22 +325,13 @@ func contextBuildLifecyclePayload(
 		jsonBreakdownKey:          cloneIntAnyMap(result.Breakdown),
 		"contributions":           []any{},
 		"topContributors":         tokenContributorsLifecyclePayload(result.Usage.TopContributors),
-		"max_contribution_tokens": contextContributionMaxTokens,
+		"max_contribution_tokens": contextwindow.ContributionMaxTokens,
 		"system_tokens":           base.SystemTokens,
 		"skill_tokens":            base.SkillTokens,
 		"message_tokens":          base.HistoryTokens,
 		jsonUsageKey:              tokenUsageLifecyclePayload(result.Usage),
 		"model_facing_roles":      modelFacingRoleCounts(base.Messages),
 	}
-}
-
-func estimateMessageTokens(messages []database.MessageEntity) int {
-	tokens := 0
-	for index := range messages {
-		tokens += estimateTokens(messages[index].Content)
-	}
-
-	return tokens
 }
 
 func modelFacingRoleCounts(messages []database.MessageEntity) map[string]int {
