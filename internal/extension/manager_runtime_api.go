@@ -401,13 +401,7 @@ func normalizeKeymapTarget(target keymapTarget) keymapTarget {
 }
 
 func normalizeKeymapScope(scope string) string {
-	scope = normalizeKeymapName(scope)
-	switch scope {
-	case "", keymapScopeBuffer, keymapScopeFocus, keymapScopeGlobal, keymapScopeRole, keymapScopeWindow:
-		return scope
-	default:
-		return scope
-	}
+	return normalizeKeymapName(scope)
 }
 
 func normalizeKeymapName(name string) string {
