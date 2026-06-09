@@ -3,8 +3,6 @@ package tool
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -230,16 +228,37 @@ func bashTruncationNotice(truncation *TruncationResult, fullOutputPath string, l
 }
 
 func writeFullBashOutput(output []byte) (string, error) {
-	randomBytes := make([]byte, 8)
-	if _, err := rand.Read(randomBytes); err != nil {
-		return "", fmt.Errorf("generate temp output path: %w", err)
+	outputDir, err := fullBashOutputDir()
+	if err != nil {
+		return "", err
 	}
-	outputPath := filepath.Join(os.TempDir(), "librecode-bash-"+hex.EncodeToString(randomBytes)+".log")
-	if err := os.WriteFile(outputPath, output, 0o600); err != nil {
-		return "", fmt.Errorf("write full bash output: %w", err)
+	file, err := os.CreateTemp(outputDir, "librecode-bash-*.log")
+	if err != nil {
+		return "", fmt.Errorf("create full bash output file: %w", err)
+	}
+	outputPath := file.Name()
+	if _, err := file.Write(output); err != nil {
+		cleanupErr := errors.Join(file.Close(), os.Remove(outputPath))
+		return "", errors.Join(fmt.Errorf("write full bash output: %w", err), cleanupErr)
+	}
+	if err := file.Close(); err != nil {
+		return "", errors.Join(fmt.Errorf("close full bash output: %w", err), os.Remove(outputPath))
 	}
 
 	return outputPath, nil
+}
+
+func fullBashOutputDir() (string, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve cache dir for full bash output: %w", err)
+	}
+	outputDir := filepath.Join(cacheDir, "librecode", "bash-output")
+	if err := os.MkdirAll(outputDir, 0o700); err != nil {
+		return "", fmt.Errorf("create full bash output dir: %w", err)
+	}
+
+	return outputDir, nil
 }
 
 func lastLineByteCount(text string) int {
