@@ -28,7 +28,7 @@ func providerStreamEventKind(kind provider.StreamEventKind) StreamEventKind {
 	case provider.StreamEventToolResult:
 		return StreamEventToolResult
 	default:
-		return StreamEventKind(kind)
+		return StreamEventUnknown
 	}
 }
 

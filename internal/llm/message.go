@@ -42,6 +42,8 @@ type Message struct {
 }
 
 // Part is one typed content block inside a message or response.
+// Image/document inputs and provider cache-control metadata are intentionally
+// flattened for this staged boundary and can grow when runtime support lands.
 type Part struct {
 	Metadata   map[string]any `json:"metadata,omitempty"`
 	ToolCall   *ToolCall      `json:"tool_call,omitempty"`

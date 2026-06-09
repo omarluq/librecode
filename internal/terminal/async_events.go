@@ -148,6 +148,8 @@ func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(a
 				Text:      event.Text,
 				PromptID:  promptID,
 			})
+		case assistant.StreamEventUnknown:
+			return
 		}
 	}
 }
