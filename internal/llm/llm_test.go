@@ -1,7 +1,9 @@
 package llm_test
 
 import (
+	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +11,73 @@ import (
 
 	"github.com/omarluq/librecode/internal/llm"
 )
+
+func TestBoundaryInterfaces(t *testing.T) {
+	t.Parallel()
+
+	var generator llm.Generator = testGenerator{}
+	response, err := generator.Generate(context.Background(), llm.Request{
+		ProviderOptions: nil,
+		Auth: llm.Auth{
+			Headers: nil,
+			APIKey:  "",
+		},
+		SystemPrompt:  "",
+		ThinkingLevel: "",
+		SessionID:     "",
+		Messages:      []llm.Message{},
+		Tools:         nil,
+		Model: llm.ModelRef{
+			Metadata:      nil,
+			Provider:      "test",
+			ID:            "model",
+			API:           "",
+			BaseURL:       "",
+			MaxTokens:     0,
+			ContextWindow: 0,
+			Reasoning:     false,
+		},
+		DisableTools: false,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, llm.FinishReasonStop, response.FinishReason)
+
+	var streamer llm.Streamer = testStreamer{}
+	stream, err := streamer.Stream(context.Background(), emptyRequest())
+	require.NoError(t, err)
+	chunk, err := stream.Recv()
+	require.NoError(t, err)
+	assert.Equal(t, llm.FinishReasonToolCalls, chunk.FinishReason)
+	assert.NoError(t, stream.Close())
+	_, err = stream.Recv()
+	assert.ErrorIs(t, err, io.EOF)
+}
+
+func emptyRequest() llm.Request {
+	return llm.Request{
+		ProviderOptions: nil,
+		Auth: llm.Auth{
+			Headers: nil,
+			APIKey:  "",
+		},
+		SystemPrompt:  "",
+		ThinkingLevel: "",
+		SessionID:     "",
+		Messages:      nil,
+		Tools:         nil,
+		Model: llm.ModelRef{
+			Metadata:      nil,
+			Provider:      "",
+			ID:            "",
+			API:           "",
+			BaseURL:       "",
+			MaxTokens:     0,
+			ContextWindow: 0,
+			Reasoning:     false,
+		},
+		DisableTools: false,
+	}
+}
 
 func TestTextMessageCreatesTextPart(t *testing.T) {
 	t.Parallel()
@@ -22,6 +91,92 @@ func TestTextMessageCreatesTextPart(t *testing.T) {
 	assert.Nil(t, message.Content[0].Metadata)
 	assert.Nil(t, message.Content[0].ToolCall)
 	assert.Nil(t, message.Content[0].ToolResult)
+}
+
+func TestPartKinds(t *testing.T) {
+	t.Parallel()
+
+	parts := []llm.Part{
+		{
+			Metadata:   map[string]any{"source": "fixture"},
+			ToolCall:   nil,
+			ToolResult: nil,
+			Type:       llm.PartImage,
+			Text:       "",
+			Data:       "base64-image",
+			MIMEType:   "image/png",
+		},
+		{
+			Metadata:   nil,
+			ToolCall:   nil,
+			ToolResult: nil,
+			Type:       llm.PartFile,
+			Text:       "",
+			Data:       "document",
+			MIMEType:   "text/markdown",
+		},
+		{
+			Metadata:   nil,
+			ToolCall:   nil,
+			ToolResult: nil,
+			Type:       llm.PartSource,
+			Text:       "citation",
+			Data:       "",
+			MIMEType:   "",
+		},
+		{
+			Metadata: nil,
+			ToolCall: &llm.ToolCall{
+				Arguments:     map[string]any{"path": "README.md"},
+				ID:            "call_1",
+				Name:          "read",
+				ArgumentsJSON: `{"path":"README.md"}`,
+			},
+			ToolResult: nil,
+			Type:       llm.PartToolCall,
+			Text:       "",
+			Data:       "",
+			MIMEType:   "",
+		},
+		{
+			Metadata: nil,
+			ToolCall: nil,
+			ToolResult: &llm.ToolResult{
+				Metadata:      nil,
+				ToolCallID:    "call_1",
+				ArgumentsJSON: `{"path":"README.md"}`,
+				Name:          "read",
+				Error:         "",
+				Content: []llm.Part{
+					llm.TextPart("contents"),
+				},
+				IsError: false,
+			},
+			Type:     llm.PartToolResult,
+			Text:     "",
+			Data:     "",
+			MIMEType: "",
+		},
+	}
+
+	assert.Len(t, parts, 5)
+	assert.Equal(t, llm.PartImage, parts[0].Type)
+	assert.Equal(t, llm.PartFile, parts[1].Type)
+	assert.Equal(t, llm.PartSource, parts[2].Type)
+	assert.Equal(t, llm.PartToolCall, parts[3].Type)
+	assert.Equal(t, llm.PartToolResult, parts[4].Type)
+}
+
+func TestFinishReasonValues(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, llm.FinishReason(""), llm.FinishReasonUnknown)
+	assert.Equal(t, llm.FinishReason("stop"), llm.FinishReasonStop)
+	assert.Equal(t, llm.FinishReason("length"), llm.FinishReasonLength)
+	assert.Equal(t, llm.FinishReason("tool-calls"), llm.FinishReasonToolCalls)
+	assert.Equal(t, llm.FinishReason("content-filter"), llm.FinishReasonContentFilter)
+	assert.Equal(t, llm.FinishReason("error"), llm.FinishReasonError)
+	assert.Equal(t, llm.FinishReason("aborted"), llm.FinishReasonAborted)
 }
 
 func TestUsageHelpers(t *testing.T) {

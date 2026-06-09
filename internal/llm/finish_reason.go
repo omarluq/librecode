@@ -11,9 +11,9 @@ const (
 	// FinishReasonLength means the model hit an output or context limit.
 	FinishReasonLength FinishReason = "length"
 	// FinishReasonToolCalls means the model stopped to request tool execution.
-	FinishReasonToolCalls FinishReason = "tool_calls"
+	FinishReasonToolCalls FinishReason = "tool-calls"
 	// FinishReasonContentFilter means provider policy filtered the response.
-	FinishReasonContentFilter FinishReason = "content_filter"
+	FinishReasonContentFilter FinishReason = "content-filter"
 	// FinishReasonError means the provider reported a generation error.
 	FinishReasonError FinishReason = "error"
 	// FinishReasonAborted means generation was canceled or aborted.

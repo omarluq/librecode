@@ -77,6 +77,8 @@ const (
 	StreamEventUsageSnapshot StreamEventKind = "usage_snapshot"
 	// StreamEventContextCompaction carries UI-only context compaction notices.
 	StreamEventContextCompaction StreamEventKind = "context_compaction"
+	// StreamEventUnknown carries unexpected provider events without persistence side effects.
+	StreamEventUnknown StreamEventKind = "unknown"
 )
 
 // StreamEvent is emitted during prompt execution before final persistence.
