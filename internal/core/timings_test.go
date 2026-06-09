@@ -35,7 +35,9 @@ func TestTimingsEntriesAreDefensiveCopy(t *testing.T) {
 	require.Len(t, entries, 1)
 	entries[0].Label = "mutated"
 
-	assert.Equal(t, "load", timings.Entries()[0].Label)
+	after := timings.Entries()
+	require.Len(t, after, 1)
+	assert.Equal(t, "load", after[0].Label)
 }
 
 func TestTimingsResetRestartsClock(t *testing.T) {

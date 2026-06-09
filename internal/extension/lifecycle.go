@@ -169,8 +169,8 @@ func (manager *Manager) DispatchLifecycle(ctx context.Context, event LifecycleEv
 
 func lifecycleEventTable(state *lua.LState, name LifecycleEventName, payload map[string]any) *lua.LTable {
 	return mapToLuaTable(state, map[string]any{
-		"name":    string(name),
-		"payload": payload,
+		luaFieldName: string(name),
+		"payload":    payload,
 	})
 }
 

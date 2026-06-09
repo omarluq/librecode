@@ -17,7 +17,7 @@ func uiThemeTokens() []string {
 		"muted",
 		"selectedBg",
 		"success",
-		"text",
+		UIDrawKindText,
 		"thinkingText",
 		"toolErrorBg",
 		"toolPendingBg",

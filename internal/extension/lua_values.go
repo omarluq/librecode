@@ -9,14 +9,27 @@ import (
 
 const (
 	luaBufferComposer = "composer"
-	luaFieldCreate    = "create"
-	luaFieldGet       = "get"
-	luaFieldHeight    = "height"
-	luaFieldKey       = "key"
-	luaFieldMetadata  = "metadata"
-	luaFieldName      = "name"
-	luaFieldSet       = "set"
-	luaFieldText      = "text"
+
+	luaFieldActions        = "actions"
+	luaFieldBuffers        = "buffers"
+	luaFieldDeletedBuffers = "deleted_buffers"
+	luaFieldDeletedWindows = "deleted_windows"
+	luaFieldLayout         = "layout"
+	luaFieldResetUIWindows = "reset_ui_windows"
+	luaFieldUICursor       = "ui_cursor"
+	luaFieldUIDrawOps      = "ui_draw_ops"
+
+	luaFieldCreate   = "create"
+	luaFieldGet      = "get"
+	luaFieldHeight   = "height"
+	luaFieldKey      = "key"
+	luaFieldKind     = "kind"
+	luaFieldMetadata = "metadata"
+	luaFieldName     = "name"
+	luaFieldSet      = "set"
+	luaFieldText     = "text"
+	luaFieldWidth    = "width"
+	luaFieldWindows  = "windows"
 )
 
 func mapToLuaTable(state *lua.LState, values map[string]any) *lua.LTable {
@@ -194,32 +207,32 @@ func terminalEventTable(state *lua.LState, event *TerminalEvent) *lua.LTable {
 	composer := event.Buffers[luaBufferComposer]
 
 	return mapToLuaTable(state, map[string]any{
-		luaFieldName:   event.Name,
-		luaFieldKey:    event.Key.Key,
-		luaFieldText:   event.Key.Text,
-		"ctrl":         event.Key.Ctrl,
-		"alt":          event.Key.Alt,
-		"shift":        event.Key.Shift,
-		"context":      event.Context,
-		"data":         event.Data,
-		"buffers":      bufferMapForLua(event.Buffers),
-		"windows":      windowMapForLua(event.Windows),
-		"layout":       layoutForLua(&event.Layout),
-		"focus":        focusForLua(&event.Focus),
-		"composer":     bufferForLua(&composer),
-		"working":      luaContextBool(event.Context, "working"),
-		"auth_working": luaContextBool(event.Context, "auth_working"),
+		luaFieldName:    event.Name,
+		luaFieldKey:     event.Key.Key,
+		luaFieldText:    event.Key.Text,
+		"ctrl":          event.Key.Ctrl,
+		"alt":           event.Key.Alt,
+		"shift":         event.Key.Shift,
+		"context":       event.Context,
+		"data":          event.Data,
+		"buffers":       bufferMapForLua(event.Buffers),
+		luaFieldWindows: windowMapForLua(event.Windows),
+		"layout":        layoutForLua(&event.Layout),
+		"focus":         focusForLua(&event.Focus),
+		"composer":      bufferForLua(&composer),
+		"working":       luaContextBool(event.Context, "working"),
+		"auth_working":  luaContextBool(event.Context, "auth_working"),
 	})
 }
 
 func focusForLua(focus *FocusState) map[string]any {
 	return map[string]any{
-		"kind":          focus.Kind,
-		"window":        focus.Window,
-		"buffer":        focus.Buffer,
-		keymapScopeRole: focus.Role,
-		"panel_kind":    focus.PanelKind,
-		"exclusive":     focus.Exclusive,
+		luaFieldKind:      focus.Kind,
+		keymapScopeWindow: focus.Window,
+		keymapScopeBuffer: focus.Buffer,
+		keymapScopeRole:   focus.Role,
+		"panel_kind":      focus.PanelKind,
+		"exclusive":       focus.Exclusive,
 	}
 }
 
@@ -253,9 +266,9 @@ func windowMapForLua(windows map[string]WindowState) map[string]any {
 
 func layoutForLua(layout *LayoutState) map[string]any {
 	return map[string]any{
-		"windows":      windowMapForLua(layout.Windows),
-		"width":        layout.Width,
-		luaFieldHeight: layout.Height,
+		luaFieldWindows: windowMapForLua(layout.Windows),
+		luaFieldWidth:   layout.Width,
+		luaFieldHeight:  layout.Height,
 	}
 }
 
@@ -273,18 +286,18 @@ func bufferForLua(buffer *BufferState) map[string]any {
 
 func windowForLua(window *WindowState) map[string]any {
 	return map[string]any{
-		luaFieldName:     window.Name,
-		"role":           window.Role,
-		"buffer":         window.Buffer,
-		"renderer":       window.Renderer,
-		"x":              window.X,
-		"y":              window.Y,
-		"width":          window.Width,
-		luaFieldHeight:   window.Height,
-		"cursor_row":     window.CursorRow,
-		"cursor_col":     window.CursorCol,
-		"visible":        window.Visible,
-		luaFieldMetadata: window.Metadata,
+		luaFieldName:      window.Name,
+		"role":            window.Role,
+		keymapScopeBuffer: window.Buffer,
+		"renderer":        window.Renderer,
+		"x":               window.X,
+		"y":               window.Y,
+		luaFieldWidth:     window.Width,
+		luaFieldHeight:    window.Height,
+		"cursor_row":      window.CursorRow,
+		"cursor_col":      window.CursorCol,
+		"visible":         window.Visible,
+		luaFieldMetadata:  window.Metadata,
 	}
 }
 
@@ -306,7 +319,7 @@ func bufferBlockForLua(block *BufferBlock) map[string]any {
 		luaFieldMetadata: block.Metadata,
 		"created_at":     block.CreatedAt,
 		"id":             block.ID,
-		"kind":           block.Kind,
+		luaFieldKind:     block.Kind,
 		"role":           block.Role,
 		luaFieldText:     block.Text,
 		"index":          block.Index,
@@ -328,7 +341,7 @@ func luaBufferState(name string, value lua.LValue) BufferState {
 		return BufferState{
 			Metadata: luaDetails(table.RawGetString(luaFieldMetadata)),
 			Blocks:   luaBufferBlocksFromValue(table.RawGetString("blocks")),
-			Name:     luaTableString(table, "name", name),
+			Name:     luaTableString(table, luaFieldName, name),
 			Text:     text,
 			Chars:    stringChars(text),
 			Label:    luaTableString(table, "label", ""),
@@ -379,7 +392,7 @@ func luaBufferBlock(table *lua.LTable, index int) BufferBlock {
 		Metadata:  luaDetails(table.RawGetString(luaFieldMetadata)),
 		CreatedAt: luaTableString(table, "created_at", ""),
 		ID:        luaTableString(table, "id", ""),
-		Kind:      luaTableString(table, "kind", ""),
+		Kind:      luaTableString(table, luaFieldKind, ""),
 		Role:      luaTableString(table, "role", ""),
 		Text:      luaTableString(table, luaFieldText, ""),
 		Index:     luaTableIntValueWithDefault(table, "index", index),
@@ -388,7 +401,7 @@ func luaBufferBlock(table *lua.LTable, index int) BufferBlock {
 }
 
 func isBufferBlockTable(table *lua.LTable) bool {
-	return table.RawGetString("kind") != lua.LNil ||
+	return table.RawGetString(luaFieldKind) != lua.LNil ||
 		table.RawGetString("role") != lua.LNil ||
 		table.RawGetString("id") != lua.LNil ||
 		table.RawGetString("created_at") != lua.LNil ||
@@ -404,13 +417,13 @@ func luaWindowState(name string, value lua.LValue) WindowState {
 
 		return WindowState{
 			Metadata:  luaDetails(table.RawGetString(luaFieldMetadata)),
-			Name:      luaTableString(table, "name", name),
+			Name:      luaTableString(table, luaFieldName, name),
 			Role:      luaTableString(table, "role", ""),
-			Buffer:    luaTableString(table, "buffer", ""),
+			Buffer:    luaTableString(table, keymapScopeBuffer, ""),
 			Renderer:  luaTableString(table, "renderer", ""),
 			X:         luaTableIntValue(table, "x"),
 			Y:         luaTableIntValue(table, "y"),
-			Width:     luaTableIntValue(table, "width"),
+			Width:     luaTableIntValue(table, luaFieldWidth),
 			Height:    luaTableIntValue(table, luaFieldHeight),
 			CursorRow: luaTableIntValue(table, "cursor_row"),
 			CursorCol: luaTableIntValue(table, "cursor_col"),
@@ -444,12 +457,12 @@ func luaUIDrawOp(value lua.LValue) *UIDrawOp {
 		return &UIDrawOp{
 			Style:  luaUIStyle(table),
 			Spans:  spans,
-			Window: luaTableString(table, "window", ""),
-			Kind:   luaTableString(table, "kind", ""),
+			Window: luaTableString(table, keymapScopeWindow, ""),
+			Kind:   luaTableString(table, luaFieldKind, ""),
 			Text:   luaTableString(table, luaFieldText, ""),
 			Row:    luaTableIntValue(table, "row"),
 			Col:    luaTableIntValue(table, "col"),
-			Width:  luaTableIntValue(table, "width"),
+			Width:  luaTableIntValue(table, luaFieldWidth),
 			Height: luaTableIntValue(table, luaFieldHeight),
 			Clear:  luaTableBool(table, "clear"),
 		}
@@ -465,7 +478,7 @@ func luaUICursor(value lua.LValue) *UICursor {
 	}
 
 	return &UICursor{
-		Window: luaTableString(table, "window", ""),
+		Window: luaTableString(table, keymapScopeWindow, ""),
 		Row:    luaTableIntValue(table, "row"),
 		Col:    luaTableIntValue(table, "col"),
 	}
@@ -477,7 +490,7 @@ func luaLayoutState(value lua.LValue) *LayoutState {
 		return nil
 	}
 	windows := map[string]WindowState{}
-	windowsValue := table.RawGetString("windows")
+	windowsValue := table.RawGetString(luaFieldWindows)
 	if windowsTable, ok := windowsValue.(*lua.LTable); ok {
 		windowsTable.ForEach(func(key, windowValue lua.LValue) {
 			name := key.String()
@@ -487,7 +500,7 @@ func luaLayoutState(value lua.LValue) *LayoutState {
 
 	return &LayoutState{
 		Windows: windows,
-		Width:   luaTableIntValue(table, "width"),
+		Width:   luaTableIntValue(table, luaFieldWidth),
 		Height:  luaTableIntValue(table, luaFieldHeight),
 	}
 }
@@ -517,7 +530,7 @@ func luaTableBoolValue(table *lua.LTable, key string) (value, ok bool) {
 
 func luaActionCall(value lua.LValue) ActionCall {
 	if table, ok := value.(*lua.LTable); ok {
-		return ActionCall{Name: luaTableString(table, "name", "")}
+		return ActionCall{Name: luaTableString(table, luaFieldName, "")}
 	}
 
 	return ActionCall{Name: value.String()}
