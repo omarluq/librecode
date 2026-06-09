@@ -259,15 +259,15 @@ func (event *luaHostEvent) applyLuaResult(value lua.LValue) {
 		event.consumed = true
 		event.stopped = true
 	}
-	event.applyLuaResultBuffers(table.RawGetString("buffers"))
-	event.applyLuaResultWindows(table.RawGetString("windows"))
-	event.applyLuaResultLayout(table.RawGetString("layout"))
-	event.applyLuaResultActions(table.RawGetString("actions"))
-	event.applyLuaResultDrawOps(table.RawGetString("ui_draw_ops"))
-	event.applyLuaResultResetUI(table.RawGetString("reset_ui_windows"))
-	event.applyLuaResultCursor(table.RawGetString("ui_cursor"))
-	event.applyLuaResultDeletes(table.RawGetString("deleted_buffers"))
-	event.applyLuaResultDeletedWindows(table.RawGetString("deleted_windows"))
+	event.applyLuaResultBuffers(table.RawGetString(luaFieldBuffers))
+	event.applyLuaResultWindows(table.RawGetString(luaFieldWindows))
+	event.applyLuaResultLayout(table.RawGetString(luaFieldLayout))
+	event.applyLuaResultActions(table.RawGetString(luaFieldActions))
+	event.applyLuaResultDrawOps(table.RawGetString(luaFieldUIDrawOps))
+	event.applyLuaResultResetUI(table.RawGetString(luaFieldResetUIWindows))
+	event.applyLuaResultCursor(table.RawGetString(luaFieldUICursor))
+	event.applyLuaResultDeletes(table.RawGetString(luaFieldDeletedBuffers))
+	event.applyLuaResultDeletedWindows(table.RawGetString(luaFieldDeletedWindows))
 }
 
 func (event *luaHostEvent) applyLuaResultBuffers(value lua.LValue) {
