@@ -126,12 +126,26 @@ func TestAnthropicMessagesAndRoles(t *testing.T) {
 func TestAnthropicLocalToolNameFallbacks(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, jsonWriteToolName, anthropicLocalToolName(anthropicWriteToolName))
-	assert.Equal(t, jsonEditToolName, anthropicLocalToolName(anthropicEditToolName))
-	assert.Equal(t, jsonBashToolName, anthropicLocalToolName(anthropicBashToolName))
-	assert.Equal(t, jsonGrepToolName, anthropicLocalToolName(anthropicGrepToolName))
-	assert.Equal(t, jsonFindToolName, anthropicLocalToolName(anthropicFindToolName))
-	assert.Equal(t, jsonLSToolName, anthropicLocalToolName(anthropicLSToolName))
-	assert.Equal(t, jsonLSToolName, anthropicLocalToolName("List"))
-	assert.Empty(t, anthropicLocalToolName("Unknown"))
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "write", input: anthropicWriteToolName, want: jsonWriteToolName},
+		{name: "edit", input: anthropicEditToolName, want: jsonEditToolName},
+		{name: "bash", input: anthropicBashToolName, want: jsonBashToolName},
+		{name: "grep", input: anthropicGrepToolName, want: jsonGrepToolName},
+		{name: "find", input: anthropicFindToolName, want: jsonFindToolName},
+		{name: "ls", input: anthropicLSToolName, want: jsonLSToolName},
+		{name: "list alias", input: "List", want: jsonLSToolName},
+		{name: "unknown", input: "Unknown", want: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, test.want, anthropicLocalToolName(test.input))
+		})
+	}
 }

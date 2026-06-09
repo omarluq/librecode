@@ -156,7 +156,6 @@ func TestCompleteOpenAICodexCompactsAssistantMessages(t *testing.T) {
 	request.Messages = nil
 	request.Usage = model.EmptyTokenUsage()
 
-	assert.NotNil(t, request)
 	assert.Equal(t, map[string]string{
 		reasoningEffortKey: reasoningEffortNone,
 		jsonSummaryKey:     reasoningSummaryAuto,
