@@ -62,7 +62,7 @@ func composerSpecialKeys() map[tcell.Key]string {
 		tcell.KeyEscape:     "escape",
 		tcell.KeyEnter:      "enter",
 		tcell.KeyTab:        "tab",
-		tcell.KeyBacktab:    "shift+tab",
+		tcell.KeyBacktab:    keyShiftTab,
 		tcell.KeyBackspace:  "backspace",
 		tcell.KeyBackspace2: "backspace",
 		tcell.KeyDelete:     "delete",

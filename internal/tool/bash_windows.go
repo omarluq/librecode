@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/samber/lo"
 )
 
 const (
@@ -29,9 +31,6 @@ func shellConfig(command string) (shellPath string, shellArgs []string, err erro
 func findWindowsBash() (string, error) {
 	candidates := windowsBashCandidates()
 	for _, candidate := range candidates {
-		if candidate == "" {
-			continue
-		}
 		if path, err := exec.LookPath(candidate); err == nil {
 			return path, nil
 		}
@@ -51,7 +50,7 @@ func windowsBashCandidates() []string {
 	programFilesX86 := os.Getenv("ProgramFiles(x86)")
 	localAppData := os.Getenv("LOCALAPPDATA")
 
-	return []string{
+	return lo.Compact([]string{
 		os.Getenv("LIBRECODE_BASH_PATH"),
 		filepath.Join(programFiles, "Git", "bin", windowsBashExecutable),
 		filepath.Join(programFiles, "Git", "usr", "bin", windowsBashExecutable),
@@ -61,7 +60,7 @@ func windowsBashCandidates() []string {
 		filepath.Join(localAppData, "Programs", "Git", "usr", "bin", windowsBashExecutable),
 		windowsBashExecutable,
 		"bash",
-	}
+	})
 }
 
 func configureShellCommand(_ *exec.Cmd) {
