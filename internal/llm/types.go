@@ -4,7 +4,7 @@ import "context"
 
 // Generator generates model responses from provider-neutral requests.
 type Generator interface {
-	Generate(ctx context.Context, request Request) (*Response, error)
+	Generate(ctx context.Context, request *Request) (*Response, error)
 }
 
 // Streamer generates streamed model responses from provider-neutral requests.
@@ -28,6 +28,7 @@ type Request struct {
 	Messages        []Message        `json:"messages"`
 	Tools           []ToolDefinition `json:"tools,omitempty"`
 	Model           ModelRef         `json:"model"`
+	Usage           Usage            `json:"usage"`
 	DisableTools    bool             `json:"disable_tools,omitempty"`
 }
 
@@ -55,12 +56,13 @@ type Auth struct {
 
 // ModelRef identifies the concrete model and provider endpoint family.
 type ModelRef struct {
-	Metadata      map[string]any `json:"metadata,omitempty"`
-	Provider      string         `json:"provider"`
-	ID            string         `json:"id"`
-	API           string         `json:"api,omitempty"`
-	BaseURL       string         `json:"base_url,omitempty"`
-	MaxTokens     int            `json:"max_tokens,omitempty"`
-	ContextWindow int            `json:"context_window,omitempty"`
-	Reasoning     bool           `json:"reasoning,omitempty"`
+	Metadata         map[string]any     `json:"metadata,omitempty"`
+	ThinkingLevelMap map[string]*string `json:"thinking_level_map,omitempty"`
+	Provider         string             `json:"provider"`
+	ID               string             `json:"id"`
+	API              string             `json:"api,omitempty"`
+	BaseURL          string             `json:"base_url,omitempty"`
+	MaxTokens        int                `json:"max_tokens,omitempty"`
+	ContextWindow    int                `json:"context_window,omitempty"`
+	Reasoning        bool               `json:"reasoning,omitempty"`
 }

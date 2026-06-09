@@ -8,20 +8,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 const (
 	testCallID   = "call-1"
 	testToolPath = "README.md"
 )
-
-func newToolRegistryForTest(t *testing.T) *tool.Registry {
-	t.Helper()
-
-	return tool.NewRegistry(t.TempDir())
-}
 
 func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 	t.Parallel()
@@ -32,11 +25,25 @@ func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 	}{
 		{
 			name: "missing id",
-			call: ToolCall{Arguments: nil, ID: "", Name: jsonReadToolName, ArgumentsJSON: "", TextFallback: false},
+			call: ToolCall{
+				Arguments:     nil,
+				Metadata:      nil,
+				ID:            "",
+				Name:          jsonReadToolName,
+				ArgumentsJSON: "",
+				TextFallback:  false,
+			},
 		},
 		{
 			name: "missing name",
-			call: ToolCall{Arguments: nil, ID: testCallID, Name: "", ArgumentsJSON: "", TextFallback: false},
+			call: ToolCall{
+				Arguments:     nil,
+				Metadata:      nil,
+				ID:            testCallID,
+				Name:          "",
+				ArgumentsJSON: "",
+				TextFallback:  false,
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -49,95 +56,39 @@ func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 	}
 }
 
-func TestExecuteToolCallsInvokesCallbacksAndStreamsEvents(t *testing.T) {
+func TestExecuteToolCallsRequiresExecutor(t *testing.T) {
 	t.Parallel()
 
-	streamEvents := []StreamEvent{}
-	toolCalls := []ToolCallEvent{}
-	toolResults := []ToolEvent{}
-	request := &CompletionRequest{
-		OnEvent: func(event StreamEvent) {
-			streamEvents = append(streamEvents, event)
-		},
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		OnToolCall: func(_ context.Context, event *ToolCallEvent) error {
-			require.NotNil(t, event)
-			toolCalls = append(toolCalls, *event)
-			return nil
-		},
-		OnToolResult: func(_ context.Context, event *ToolEvent) error {
-			require.NotNil(t, event)
-			toolResults = append(toolResults, *event)
-			return nil
-		},
-		ToolRegistry:    newToolRegistryForTest(t),
-		ExecuteTools:    nil,
-		SessionID:       "",
-		SystemPrompt:    "",
-		ThinkingLevel:   "",
-		CWD:             t.TempDir(),
-		Auth:            emptyRequestAuth(),
-		Messages:        nil,
-		Usage:           model.EmptyTokenUsage(),
-		Model:           emptyModel(),
-		ProviderAttempt: 0,
-		DisableTools:    false,
-	}
-	outputs, events, err := executeToolCalls(context.Background(), request, []ToolCall{{
-		Arguments:     map[string]any{jsonPathKey: "missing.txt"},
-		ID:            testCallID,
-		Name:          jsonReadToolName,
-		ArgumentsJSON: `{"path":"missing.txt"}`,
-		TextFallback:  false,
-	}})
-	require.NoError(t, err)
+	outputs, events, err := executeToolCalls(
+		context.Background(),
+		emptyCompletionRequest(),
+		[]ToolCall{readToolCall(testCallID)},
+	)
 
-	require.Len(t, outputs, 1)
-	require.Len(t, events, 1)
-	require.Len(t, toolCalls, 1)
-	require.Len(t, toolResults, 1)
-	require.Len(t, streamEvents, 2)
-	assert.Equal(t, StreamEventToolStart, streamEvents[0].Kind)
-	assert.Equal(t, StreamEventToolResult, streamEvents[1].Kind)
-	assert.Equal(t, "read", toolCalls[0].Name)
-	assert.Equal(t, "read", toolResults[0].Name)
-	assert.NotEmpty(t, toolResults[0].Error)
-	assert.True(t, toolResults[0].IsError)
+	require.Error(t, err)
+	assert.Nil(t, outputs)
+	assert.Nil(t, events)
 }
 
-func TestExecuteToolCallsHandlesCustomExecutorMissingEvents(t *testing.T) {
+func TestExecuteToolCallsUsesInjectedExecutorAndHandlesMissingEvents(t *testing.T) {
 	t.Parallel()
 
-	request := &CompletionRequest{
-		OnEvent:           nil,
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		OnToolCall:        nil,
-		OnToolResult:      nil,
-		ToolRegistry:      nil,
-		ExecuteTools: func(context.Context, []ToolCall, func(StreamEvent)) ([]ToolEvent, error) {
-			return []ToolEvent{}, nil
-		},
-		SessionID:       "",
-		SystemPrompt:    "",
-		ThinkingLevel:   "",
-		CWD:             "",
-		Auth:            emptyRequestAuth(),
-		Messages:        nil,
-		Usage:           model.EmptyTokenUsage(),
-		Model:           emptyModel(),
-		ProviderAttempt: 0,
-		DisableTools:    false,
+	request := emptyCompletionRequest()
+	request.ExecuteTools = func(
+		_ context.Context,
+		calls []llm.ToolCall,
+		_ func(*llm.StreamChunk),
+	) ([]llm.ToolResult, error) {
+		require.Len(t, calls, 1)
+		assert.Equal(t, testCallID, calls[0].ID)
+		return []llm.ToolResult{}, nil
 	}
 
-	outputs, events, err := executeToolCalls(context.Background(), request, []ToolCall{{
-		Arguments:     nil,
-		ID:            testCallID,
-		Name:          jsonReadToolName,
-		ArgumentsJSON: `{}`,
-		TextFallback:  false,
-	}})
+	outputs, events, err := executeToolCalls(
+		context.Background(),
+		request,
+		[]ToolCall{readToolCall(testCallID)},
+	)
 
 	require.NoError(t, err)
 	assert.Empty(t, events)
@@ -149,58 +100,15 @@ func TestExecuteToolCallsHandlesCustomExecutorMissingEvents(t *testing.T) {
 	}, outputs[0])
 }
 
-func TestExecuteToolCallsMarksToolCallHookErrors(t *testing.T) {
+func TestToolCallMetadataMarksTextFallback(t *testing.T) {
 	t.Parallel()
 
-	request := &CompletionRequest{
-		OnEvent:           nil,
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		OnToolCall: func(context.Context, *ToolCallEvent) error {
-			return assert.AnError
-		},
-		OnToolResult:    nil,
-		ToolRegistry:    newToolRegistryForTest(t),
-		ExecuteTools:    nil,
-		SessionID:       "",
-		SystemPrompt:    "",
-		ThinkingLevel:   "",
-		CWD:             t.TempDir(),
-		Auth:            emptyRequestAuth(),
-		Messages:        nil,
-		Usage:           model.EmptyTokenUsage(),
-		Model:           emptyModel(),
-		ProviderAttempt: 0,
-		DisableTools:    false,
-	}
-	outputs, events, err := executeToolCalls(context.Background(), request, []ToolCall{{
-		Arguments:     map[string]any{jsonPathKey: testToolPath},
-		ID:            testCallID,
-		Name:          jsonReadToolName,
-		ArgumentsJSON: `{"path":"` + testToolPath + `"}`,
-		TextFallback:  false,
-	}})
-	require.NoError(t, err)
+	call := readToolCall(testCallID)
+	call.Metadata = map[string]any{testExistingKey: true}
+	call.TextFallback = true
+	metadata := toolCallMetadata(call)
 
-	require.Len(t, events, 1)
-	assert.Equal(t, assert.AnError.Error(), events[0].Error)
-	assert.True(t, events[0].IsError)
-	require.Len(t, outputs, 1)
-	assert.Contains(t, outputs[0], jsonOutputKey)
-}
-
-func TestRunToolCallMarksFailedToolsAsErrors(t *testing.T) {
-	t.Parallel()
-
-	event := runToolCall(context.Background(), newToolRegistryForTest(t), ToolCallEvent{
-		Arguments:     map[string]any{jsonPathKey: "missing.txt"},
-		ID:            testCallID,
-		Name:          jsonReadToolName,
-		ArgumentsJSON: `{"path":"missing.txt"}`,
-	})
-
-	require.NotEmpty(t, event.Error)
-	assert.True(t, event.IsError)
+	assert.Equal(t, map[string]any{testExistingKey: true, "text_fallback": true}, metadata)
 }
 
 func TestToolOutputTextIncludesDetailsForEmptyResult(t *testing.T) {
@@ -221,10 +129,7 @@ func TestEncodeToolDetailsReturnsEmptyForInvalidDetails(t *testing.T) {
 func TestOpenAIChatToolMessagesRejectsMismatchedCallsAndEvents(t *testing.T) {
 	t.Parallel()
 
-	messages, err := openAIChatToolMessages(
-		[]ToolCall{{Arguments: nil, ID: "call_1", Name: jsonReadToolName, ArgumentsJSON: `{}`, TextFallback: false}},
-		nil,
-	)
+	messages, err := openAIChatToolMessages([]ToolCall{readToolCall("call_1")}, nil)
 
 	require.Error(t, err)
 	assert.Nil(t, messages)
@@ -235,7 +140,7 @@ func TestOpenAIChatToolMessagesUsesCallIDs(t *testing.T) {
 	t.Parallel()
 
 	messages, err := openAIChatToolMessages(
-		[]ToolCall{{Arguments: nil, ID: "call_1", Name: jsonReadToolName, ArgumentsJSON: `{}`, TextFallback: false}},
+		[]ToolCall{readToolCall("call_1")},
 		[]ToolEvent{{
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
@@ -251,4 +156,15 @@ func TestOpenAIChatToolMessagesUsesCallIDs(t *testing.T) {
 	assert.Equal(t, jsonToolRole, messages[0][jsonRoleKey])
 	assert.Equal(t, "call_1", messages[0]["tool_call_id"])
 	assert.Equal(t, "ok", messages[0][jsonContentKey])
+}
+
+func readToolCall(callID string) ToolCall {
+	return ToolCall{
+		Arguments:     nil,
+		Metadata:      nil,
+		ID:            callID,
+		Name:          jsonReadToolName,
+		ArgumentsJSON: `{}`,
+		TextFallback:  false,
+	}
 }

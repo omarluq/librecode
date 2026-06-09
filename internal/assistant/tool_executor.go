@@ -2,26 +2,28 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/provider"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
 func (runtime *Runtime) executeProviderToolCalls(
 	registry *tool.Registry,
-) provider.ToolExecutor {
+) ToolExecutor {
 	return func(
 		ctx context.Context,
-		calls []provider.ToolCall,
-		onEvent func(provider.StreamEvent),
-	) ([]provider.ToolEvent, error) {
+		calls []ToolCall,
+		onEvent func(StreamEvent),
+	) ([]ToolEvent, error) {
 		if registry == nil {
 			return nil, oops.In("assistant").Code("tool_registry_missing").Errorf("tool registry is not configured")
 		}
 
-		events := make([]provider.ToolEvent, 0, len(calls))
+		events := make([]ToolEvent, 0, len(calls))
 		for _, call := range calls {
 			events = append(events, runtime.executeProviderToolCall(ctx, registry, call, onEvent))
 		}
@@ -33,32 +35,25 @@ func (runtime *Runtime) executeProviderToolCalls(
 func (runtime *Runtime) executeProviderToolCall(
 	ctx context.Context,
 	registry *tool.Registry,
-	call provider.ToolCall,
-	onEvent func(provider.StreamEvent),
-) provider.ToolEvent {
+	call ToolCall,
+	onEvent func(StreamEvent),
+) ToolEvent {
 	emitProviderToolStart(onEvent, call.Name)
-	callEvent := provider.ToolCallEvent{
+	callEvent := ToolCallEvent{
 		Arguments:     call.Arguments,
 		ID:            call.ID,
 		Name:          call.Name,
 		ArgumentsJSON: call.ArgumentsJSON,
 	}
 	if err := runtime.dispatchToolCallLifecycle(ctx, &callEvent); err != nil {
-		event := provider.ToolEvent{
-			Name:          callEvent.Name,
-			ArgumentsJSON: callEvent.ArgumentsJSON,
-			DetailsJSON:   "",
-			Result:        err.Error(),
-			Error:         err.Error(),
-			IsError:       true,
-		}
+		event := toolLifecycleErrorEvent(callEvent, err)
 		emitProviderToolResult(onEvent, &event)
 
 		return event
 	}
 
 	result, err := registry.Execute(ctx, callEvent.Name, callEvent.Arguments)
-	event := provider.ToolEventFromResult(callEvent, result, err)
+	event := toolEventFromResult(callEvent, result, err)
 	if lifecycleErr := runtime.dispatchToolResultLifecycle(ctx, &event); lifecycleErr != nil {
 		event.Error = lifecycleErr.Error()
 		event.Result = lifecycleErr.Error()
@@ -69,26 +64,88 @@ func (runtime *Runtime) executeProviderToolCall(
 	return event
 }
 
-func emitProviderToolStart(onEvent func(provider.StreamEvent), name string) {
-	if onEvent == nil {
-		return
+func toolLifecycleErrorEvent(call ToolCallEvent, err error) ToolEvent {
+	return ToolEvent{
+		Name:          call.Name,
+		ArgumentsJSON: call.ArgumentsJSON,
+		DetailsJSON:   "",
+		Result:        err.Error(),
+		Error:         err.Error(),
+		IsError:       true,
 	}
-	onEvent(provider.StreamEvent{
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      provider.StreamEventToolStart,
-		Text:      name,
-	})
 }
 
-func emitProviderToolResult(onEvent func(provider.StreamEvent), event *provider.ToolEvent) {
+func toolEventFromResult(call ToolCallEvent, result tool.Result, err error) ToolEvent {
+	resultText := result.Text()
+	detailsJSON := encodeToolDetails(result.Details)
+	if err != nil {
+		resultText = err.Error()
+	}
+	if strings.TrimSpace(resultText) == "" {
+		resultText = "(tool returned no text output)"
+	}
+	event := ToolEvent{
+		Name:          call.Name,
+		ArgumentsJSON: call.ArgumentsJSON,
+		DetailsJSON:   detailsJSON,
+		Result:        resultText,
+		Error:         "",
+		IsError:       false,
+	}
+	if err != nil {
+		event.Error = err.Error()
+		event.IsError = true
+	}
+
+	return event
+}
+
+func encodeToolDetails(details map[string]any) string {
+	if len(details) == 0 {
+		return ""
+	}
+	encoded, err := json.Marshal(details)
+	if err != nil {
+		return ""
+	}
+
+	return string(encoded)
+}
+
+func emitProviderToolStart(onEvent func(StreamEvent), name string) {
 	if onEvent == nil {
 		return
 	}
-	onEvent(provider.StreamEvent{
-		ToolEvent: event,
-		Usage:     nil,
-		Kind:      provider.StreamEventToolResult,
-		Text:      "",
-	})
+	onEvent(StreamEvent{ToolEvent: nil, Usage: nil, Kind: StreamEventToolStart, Text: name})
+}
+
+func emitProviderToolResult(onEvent func(StreamEvent), event *ToolEvent) {
+	if onEvent == nil {
+		return
+	}
+	onEvent(StreamEvent{ToolEvent: event, Usage: nil, Kind: StreamEventToolResult, Text: ""})
+}
+
+func llmToolResultFromToolEvent(event *ToolEvent) llm.ToolResult {
+	if event == nil {
+		return llm.ToolResult{
+			Metadata:      nil,
+			ToolCallID:    "",
+			ArgumentsJSON: "",
+			Name:          "",
+			Error:         "",
+			Content:       nil,
+			IsError:       false,
+		}
+	}
+
+	return llm.ToolResult{
+		Metadata:      nil,
+		ToolCallID:    "",
+		ArgumentsJSON: event.ArgumentsJSON,
+		Name:          event.Name,
+		Error:         event.Error,
+		Content:       []llm.Part{llm.TextPart(event.Result)},
+		IsError:       event.IsError,
+	}
 }

@@ -11,13 +11,14 @@ import (
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 type providerHookDiagnosticsTestCase struct {
-	assertFn func(t *testing.T, events []map[string]any, output providerHookOutput, err error)
-	input    providerHookInput
-	name     string
+	assertFn func(t *testing.T, events []map[string]any, output llm.HookOutput, err error)
+	input    *llm.HookInput
 	lua      string
+	name     string
 }
 
 func TestRuntime_ProviderRequestHookEmitsDiagnostics(t *testing.T) {
@@ -31,7 +32,7 @@ func TestRuntime_ProviderRequestHookEmitsDiagnostics(t *testing.T) {
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			runProviderHookDiagnosticsTest(t, testCase)
+			runProviderHookDiagnosticsTest(t, &testCase)
 		})
 	}
 }
@@ -53,12 +54,7 @@ lc.on("before_provider_request", { priority = 10 }, function(event)
   }
 end)
 `,
-		input: providerHookInput{
-			Request: providerHookTestRequest(),
-			Payload: map[string]any{providerHookMessagesKey: []any{}},
-			Headers: map[string]string{},
-			Attempt: 3,
-		},
+		input:    providerHookTestInput(map[string]any{providerHookMessagesKey: []any{}}, map[string]string{}, 3),
 		assertFn: assertProviderHookMutatedDiagnostics,
 	}
 }
@@ -72,12 +68,11 @@ lc.on("before_provider_request", function()
   return { provider_request = {} }
 end)
 `,
-		input: providerHookInput{
-			Request: providerHookTestRequest(),
-			Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
-			Headers: map[string]string{},
-			Attempt: 1,
-		},
+		input: providerHookTestInput(
+			map[string]any{providerHookOriginalKey: providerHookOriginalValue},
+			map[string]string{},
+			1,
+		),
 		assertFn: assertProviderHookNoopDiagnostics,
 	}
 }
@@ -91,12 +86,11 @@ lc.on("before_provider_request", function()
   error("provider hook failed")
 end)
 `,
-		input: providerHookInput{
-			Request: providerHookTestRequest(),
-			Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
-			Headers: map[string]string{},
-			Attempt: 1,
-		},
+		input: providerHookTestInput(
+			map[string]any{providerHookOriginalKey: providerHookOriginalValue},
+			map[string]string{},
+			1,
+		),
 		assertFn: assertProviderHookErrorDiagnostics,
 	}
 }
@@ -104,7 +98,7 @@ end)
 func assertProviderHookMutatedDiagnostics(
 	t *testing.T,
 	events []map[string]any,
-	_ providerHookOutput,
+	_ llm.HookOutput,
 	err error,
 ) {
 	t.Helper()
@@ -123,7 +117,7 @@ func assertProviderHookMutatedDiagnostics(
 func assertProviderHookNoopDiagnostics(
 	t *testing.T,
 	events []map[string]any,
-	output providerHookOutput,
+	output llm.HookOutput,
 	err error,
 ) {
 	t.Helper()
@@ -137,7 +131,7 @@ func assertProviderHookNoopDiagnostics(
 func assertProviderHookErrorDiagnostics(
 	t *testing.T,
 	events []map[string]any,
-	_ providerHookOutput,
+	_ llm.HookOutput,
 	err error,
 ) {
 	t.Helper()
@@ -153,7 +147,7 @@ func assertProviderHookErrorDiagnostics(
 	assert.Contains(t, hookErrors[0], "provider hook failed")
 }
 
-func runProviderHookDiagnosticsTest(t *testing.T, testCase providerHookDiagnosticsTestCase) {
+func runProviderHookDiagnosticsTest(t *testing.T, testCase *providerHookDiagnosticsTestCase) {
 	t.Helper()
 
 	runtime := newProviderHookTestRuntime(t, testCase.lua)

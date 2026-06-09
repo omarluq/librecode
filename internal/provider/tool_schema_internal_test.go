@@ -6,8 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
@@ -25,7 +24,7 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 	t.Run("unknown definition is freeform", func(t *testing.T) {
 		t.Parallel()
 
-		schema := ToolParameterSchema(newToolDefinitionForSchemaTest(tool.Name("custom"), nil))
+		schema := ToolParameterSchema(newToolDefinitionForSchemaTest("custom", nil))
 
 		assert.Equal(t, jsonObjectType, schema[jsonTypeKey])
 		assertAdditionalProperties(t, schema, true)
@@ -35,7 +34,7 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 		t.Parallel()
 
 		original := map[string]any{jsonTypeKey: jsonObjectType}
-		schema := ToolParameterSchema(newToolDefinitionForSchemaTest(tool.Name("custom"), original))
+		schema := ToolParameterSchema(newToolDefinitionForSchemaTest("custom", original))
 
 		schema[jsonTypeKey] = "changed"
 		assert.Equal(t, jsonObjectType, original[jsonTypeKey])
@@ -44,7 +43,7 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 	t.Run("builtin schema is strict", func(t *testing.T) {
 		t.Parallel()
 
-		schema := ToolParameterSchema(newToolDefinitionForSchemaTest(tool.NameRead, nil))
+		schema := ToolParameterSchema(newToolDefinitionForSchemaTest(jsonReadToolName, nil))
 
 		assert.Equal(t, jsonObjectType, schema[jsonTypeKey])
 		assertAdditionalProperties(t, schema, false)
@@ -58,23 +57,23 @@ func TestRequestToolDefinitions(t *testing.T) {
 		t.Parallel()
 
 		definitions := requestToolDefinitions(&CompletionRequest{
-			OnEvent:           nil,
 			OnProviderObserve: nil,
 			OnProviderRequest: nil,
-			OnToolCall:        nil,
-			OnToolResult:      nil,
-			ToolRegistry:      tool.NewRegistry(t.TempDir()),
 			ExecuteTools:      nil,
-			SessionID:         "",
-			SystemPrompt:      "",
-			ThinkingLevel:     "",
-			CWD:               "",
-			Auth:              emptyRequestAuth(),
-			Messages:          nil,
-			Usage:             model.EmptyTokenUsage(),
-			Model:             emptyModel(),
-			ProviderAttempt:   0,
-			DisableTools:      true,
+			OnEvent:           nil,
+			Request: llm.Request{
+				ProviderOptions: nil,
+				Auth:            llm.Auth{Headers: nil, APIKey: ""},
+				SystemPrompt:    "",
+				ThinkingLevel:   "",
+				SessionID:       "",
+				Messages:        nil,
+				Tools:           nil,
+				Model:           emptyModelRef(),
+				Usage:           llm.EmptyUsage(),
+				DisableTools:    true,
+			},
+			ProviderAttempt: 0,
 		})
 
 		assert.Empty(t, definitions)
@@ -111,28 +110,20 @@ func TestToolArgumentsFromJSON(t *testing.T) {
 	}
 }
 
-func TestToolSchemaFactoriesIncludeExpectedShape(t *testing.T) {
-	t.Parallel()
+func assertAdditionalProperties(t *testing.T, schema map[string]any, expected bool) {
+	t.Helper()
+	actual, ok := schema["additionalProperties"].(bool)
+	require.True(t, ok)
+	assert.Equal(t, expected, actual)
+}
 
-	assertRequired := func(t *testing.T, schema map[string]any, required ...string) {
-		t.Helper()
-
-		actual, ok := schema[jsonRequiredKey].([]string)
-		require.True(t, ok)
-		assert.ElementsMatch(t, required, actual)
+func newToolDefinitionForSchemaTest(name string, schema map[string]any) *llm.ToolDefinition {
+	return &llm.ToolDefinition{
+		Schema:      schema,
+		Name:        name,
+		Description: "description",
+		ReadOnly:    false,
 	}
-
-	assertRequired(t, bashToolSchema(), jsonCommandKey)
-	assertRequired(t, writeToolSchema(), jsonPathKey, jsonContentKey)
-	assertRequired(t, grepToolSchema(), jsonPatternKey)
-	assertRequired(t, findToolSchema(), jsonPatternKey)
-	assertRequired(t, astToolSchema(), jsonPathKey)
-
-	properties, ok := astToolSchema()[jsonPropertiesKey].(map[string]any)
-	require.True(t, ok)
-	astMode, ok := properties["mode"].(map[string]any)
-	require.True(t, ok)
-	assert.ElementsMatch(t, []string{"outline", "symbols", "query", "node", "tree"}, astMode["enum"])
 }
 
 func TestSchemaPrimitiveHelpers(t *testing.T) {
@@ -143,27 +134,4 @@ func TestSchemaPrimitiveHelpers(t *testing.T) {
 		jsonDescriptionKey: "description",
 		"enum":             []string{"a", "b"},
 	}, enumStringSchema("description", []string{"a", "b"}))
-	assert.Equal(t, "integer", integerSchema("n")[jsonTypeKey])
-	assert.Equal(t, "number", numberSchema("n")[jsonTypeKey])
-	assert.Equal(t, "boolean", booleanSchema("b")[jsonTypeKey])
-}
-
-func newToolDefinitionForSchemaTest(name tool.Name, schema map[string]any) *tool.Definition {
-	return &tool.Definition{
-		Schema:           schema,
-		Name:             name,
-		Label:            string(name),
-		Description:      string(name) + " tool",
-		PromptSnippet:    "",
-		PromptGuidelines: nil,
-		ReadOnly:         false,
-	}
-}
-
-func assertAdditionalProperties(t *testing.T, schema map[string]any, expected bool) {
-	t.Helper()
-
-	actual, ok := schema["additionalProperties"].(bool)
-	require.True(t, ok)
-	assert.Equal(t, expected, actual)
 }

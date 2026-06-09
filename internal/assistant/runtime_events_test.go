@@ -107,11 +107,11 @@ func (toolCallbackClient) Complete(
 ) (*assistant.CompletionResult, error) {
 	if request.ExecuteTools != nil {
 		_, err := request.ExecuteTools(ctx, []assistant.ToolCall{{
+			Metadata:      nil,
 			Arguments:     map[string]any{testToolPathKey: testToolPath},
 			ID:            testToolCallID,
 			Name:          testToolName,
 			ArgumentsJSON: testToolArgsJSON,
-			TextFallback:  false,
 		}}, request.OnEvent)
 		if err != nil {
 			return nil, err

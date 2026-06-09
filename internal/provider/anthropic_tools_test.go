@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 const (
@@ -72,6 +72,7 @@ func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
 	message, err := anthropicToolResultMessage(
 		[]ToolCall{{
 			Arguments:     nil,
+			Metadata:      nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
@@ -102,6 +103,7 @@ func TestAnthropicToolResultMessageMarksToolErrors(t *testing.T) {
 	message, err := anthropicToolResultMessage(
 		[]ToolCall{{
 			Arguments:     nil,
+			Metadata:      nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
@@ -130,6 +132,7 @@ func TestAnthropicToolResultMessageRejectsMismatchedCallsAndEvents(t *testing.T)
 	message, err := anthropicToolResultMessage(
 		[]ToolCall{{
 			Arguments:     nil,
+			Metadata:      nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
@@ -153,12 +156,13 @@ func TestAppendAnthropicToolConversationRejectsMismatchedNativeResults(t *testin
 		Thinking:    nil,
 		ToolCalls: []ToolCall{{
 			Arguments:     nil,
+			Metadata:      nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
 			TextFallback:  false,
 		}},
-		Usage: model.EmptyTokenUsage(),
+		Usage: llm.EmptyUsage(),
 	}
 
 	err := appendAnthropicToolConversation(testCompletionRequestAuth("sk-ant-api03-secret"), state, result, nil)

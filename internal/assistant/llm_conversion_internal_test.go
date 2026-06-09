@@ -10,7 +10,6 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/provider"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -22,8 +21,6 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 		OnEvent:           nil,
 		OnProviderObserve: nil,
 		OnProviderRequest: nil,
-		OnToolCall:        nil,
-		OnToolResult:      nil,
 		ToolRegistry:      registry,
 		ExecuteTools:      nil,
 		SessionID:         "session-1",
@@ -96,8 +93,6 @@ func TestLLMRequestFromCompletionRequestNilAndDisabledTools(t *testing.T) {
 		OnEvent:           nil,
 		OnProviderObserve: nil,
 		OnProviderRequest: nil,
-		OnToolCall:        nil,
-		OnToolResult:      nil,
 		ToolRegistry:      tool.NewRegistry(t.TempDir()),
 		ExecuteTools:      nil,
 		SessionID:         "",
@@ -121,7 +116,7 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 	result := &CompletionResult{
 		Text:     "final answer",
 		Thinking: []string{" thought ", "   "},
-		ToolEvents: []provider.ToolEvent{{
+		ToolEvents: []ToolEvent{{
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{"path":"README.md"}`,
 			DetailsJSON:   "",

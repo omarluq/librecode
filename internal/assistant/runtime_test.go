@@ -616,25 +616,25 @@ func (partialFailureCompletionClient) Complete(
 	_ context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
-	request.OnEvent(assistant.ProviderStreamEvent{
+	request.OnEvent(assistant.StreamEvent{
 		ToolEvent: nil,
 		Usage:     nil,
-		Kind:      assistant.ProviderStreamEventKindTextDelta,
+		Kind:      assistant.StreamEventTextDelta,
 		Text:      "partial answer",
 	})
-	request.OnEvent(assistant.ProviderStreamEvent{
+	request.OnEvent(assistant.StreamEvent{
 		ToolEvent: nil,
 		Usage:     nil,
-		Kind:      assistant.ProviderStreamEventKindTextDelta,
+		Kind:      assistant.StreamEventTextDelta,
 		Text:      "\n\n",
 	})
-	request.OnEvent(assistant.ProviderStreamEvent{
+	request.OnEvent(assistant.StreamEvent{
 		ToolEvent: nil,
 		Usage:     nil,
-		Kind:      assistant.ProviderStreamEventKindTextDelta,
+		Kind:      assistant.StreamEventTextDelta,
 		Text:      "with whitespace",
 	})
-	request.OnEvent(assistant.ProviderStreamEvent{
+	request.OnEvent(assistant.StreamEvent{
 		ToolEvent: &assistant.ToolEvent{
 			Name:          testToolName,
 			ArgumentsJSON: testToolArgsJSON,
@@ -644,7 +644,7 @@ func (partialFailureCompletionClient) Complete(
 			IsError:       false,
 		},
 		Usage: nil,
-		Kind:  assistant.ProviderStreamEventKindToolResult,
+		Kind:  assistant.StreamEventToolResult,
 		Text:  "",
 	})
 
@@ -678,10 +678,10 @@ func (testCompletionClient) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	if request.OnEvent != nil {
-		request.OnEvent(assistant.ProviderStreamEvent{
+		request.OnEvent(assistant.StreamEvent{
 			ToolEvent: nil,
 			Usage:     nil,
-			Kind:      assistant.ProviderStreamEventKindTextDelta,
+			Kind:      assistant.StreamEventTextDelta,
 			Text:      "test assistant response for " + request.Messages[len(request.Messages)-1].Content,
 		})
 	}

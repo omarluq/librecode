@@ -7,17 +7,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestOpenAIChatPayloadAndRoles(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth(testOpenAIProvider, "sk-test")
-	request.Model.ID = "gpt-test"
-	request.Model.Reasoning = true
-	request.ThinkingLevel = thinkingHigh
+	setTestRequestModelID(request, "gpt-test")
+	setTestRequestReasoning(request, true)
+	setTestRequestThinkingLevel(request, thinkingHigh)
 	payload := openAIChatPayload(request, nil)
 
 	assert.Equal(t, "gpt-test", payload[jsonModelKey])
@@ -30,30 +29,28 @@ func TestOpenAIChatMessagesAndRoles(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth(testOpenAIProvider, "sk-test")
-	request.SystemPrompt = "system"
-	request.Messages = []database.MessageEntity{
-		providerTestMessageEntity(database.RoleUser, jsonUserRole),
-		providerTestMessageEntity(database.RoleAssistant, jsonAssistantRole),
-		providerTestMessageEntity(database.RoleBranchSummary, testBranchContent),
-		providerTestMessageEntity(database.RoleCompactionSummary, testCompactionContent),
-		providerTestMessageEntity(database.RoleCustom, testCustomContent),
-		providerTestMessageEntity(database.RoleBashExecution, jsonBashToolName),
-		providerTestMessageEntity(database.RoleToolResult, jsonToolRole),
-		providerTestMessageEntity(database.RoleThinking, testThinkingDelta),
-		providerTestMessageEntity(database.RoleUser, ""),
-	}
+	setTestRequestSystemPrompt(request, "system")
+	setTestRequestMessages(request, []llm.Message{
+		llm.TextMessage(llm.RoleUser, jsonUserRole),
+		llm.TextMessage(llm.RoleAssistant, jsonAssistantRole),
+		llm.TextMessage(llm.RoleUser, testBranchContent),
+		llm.TextMessage(llm.RoleUser, testCompactionContent),
+		llm.TextMessage(llm.RoleUser, testCustomContent),
+		llm.TextMessage(llm.RoleUser, jsonBashToolName),
+		llm.TextMessage(llm.RoleTool, jsonToolRole),
+		llm.TextMessage(llm.RoleAssistant, testThinkingDelta),
+		llm.TextMessage(llm.RoleUser, ""),
+	})
 
 	messages := openAIChatMessages(request)
 
-	assert.Len(t, messages, 7)
+	assert.Len(t, messages, 8)
 	assert.Equal(t, jsonSystemRole, messages[0][jsonRoleKey])
 	assert.Equal(t, jsonUserRole, messages[1][jsonRoleKey])
 	assert.Equal(t, jsonAssistantRole, messages[2][jsonRoleKey])
-	for _, role := range []database.Role{database.RoleToolResult, database.RoleThinking} {
-		mapped, ok := openAIRole(role)
-		assert.False(t, ok)
-		assert.Empty(t, mapped)
-	}
+	mapped, ok := openAIRole(llm.RoleTool)
+	assert.False(t, ok)
+	assert.Empty(t, mapped)
 }
 
 func TestParseOpenAIChatResultHandlesErrorsAndToolFiltering(t *testing.T) {
@@ -78,7 +75,7 @@ func TestParseOpenAIChatResultHandlesErrorsAndToolFiltering(t *testing.T) {
 	require.Len(t, result.ToolCalls, 1)
 	assert.Equal(t, testCallID, result.ToolCalls[0].ID)
 	assert.Equal(t, testToolPath, result.ToolCalls[0].Arguments[jsonPathKey])
-	assert.Equal(t, model.TokenUsage{
+	assert.Equal(t, llm.Usage{
 		Breakdown: nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
 		InputTokens: 8, OutputTokens: 2,
 	}, result.Usage)
@@ -93,12 +90,13 @@ func TestOpenAIChatAssistantToolMessage(t *testing.T) {
 		Thinking:    nil,
 		ToolCalls: []ToolCall{{
 			Arguments:     nil,
+			Metadata:      nil,
 			ID:            testCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: testToolArgumentsJSON,
 			TextFallback:  false,
 		}},
-		Usage: model.EmptyTokenUsage(),
+		Usage: llm.EmptyUsage(),
 	})
 
 	assert.Equal(t, jsonAssistantRole, message[jsonRoleKey])

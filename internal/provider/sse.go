@@ -8,7 +8,7 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 type sseAccumulator struct {
@@ -33,7 +33,7 @@ func newSSEAccumulator() *sseAccumulator {
 	}
 }
 
-func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(StreamEvent)) {
+func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(*llm.StreamChunk)) {
 	accumulator.addResponseEventState(event)
 	if accumulator.terminalErr != nil {
 		return
@@ -182,7 +182,7 @@ func upsertSSEItem(items []any, item map[string]any) []any {
 	return append(items, item)
 }
 
-func parseSSEResult(reader io.Reader, onEvent func(StreamEvent)) (*providerResult, error) {
+func parseSSEResult(reader io.Reader, onEvent func(*llm.StreamChunk)) (*providerResult, error) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	accumulator, err := scanSSEResponse(scanner, onEvent)
@@ -220,11 +220,11 @@ func parseSSEResult(reader io.Reader, onEvent func(StreamEvent)) (*providerResul
 		OutputItems: nil,
 		Thinking:    nil,
 		ToolCalls:   nil,
-		Usage:       model.EmptyTokenUsage(),
+		Usage:       llm.EmptyUsage(),
 	}, nil
 }
 
-func scanSSEResponse(scanner *bufio.Scanner, onEvent func(StreamEvent)) (accumulator *sseAccumulator, err error) {
+func scanSSEResponse(scanner *bufio.Scanner, onEvent func(*llm.StreamChunk)) (accumulator *sseAccumulator, err error) {
 	accumulator = newSSEAccumulator()
 	for scanner.Scan() {
 		event, ok := eventFromSSELine(scanner.Text())

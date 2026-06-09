@@ -40,13 +40,11 @@ lc.on("before_provider_request", function(event)
   }
 end)
 `)
-	request := providerHookTestRequest()
-	input := providerHookInput{
-		Request: request,
-		Payload: map[string]any{providerHookMessagesKey: []any{}},
-		Headers: map[string]string{"Authorization": "Bearer secret"},
-		Attempt: 2,
-	}
+	input := providerHookTestInput(
+		map[string]any{providerHookMessagesKey: []any{}},
+		map[string]string{"Authorization": "Bearer secret"},
+		2,
+	)
 
 	result, err := runtime.dispatchProviderRequestHook(context.Background(), input)
 
@@ -71,12 +69,11 @@ lc.on("before_provider_request", function()
   }
 end)
 `)
-	input := providerHookInput{
-		Request: providerHookTestRequest(),
-		Payload: map[string]any{providerHookOriginalKey: providerHookOriginalValue},
-		Headers: map[string]string{},
-		Attempt: 1,
-	}
+	input := providerHookTestInput(
+		map[string]any{providerHookOriginalKey: providerHookOriginalValue},
+		map[string]string{},
+		1,
+	)
 
 	result, err := runtime.dispatchProviderRequestHook(context.Background(), input)
 
@@ -120,13 +117,7 @@ end)
 		client:     nil,
 		logger:     testProviderHookLogger(),
 	}
-	request := providerHookTestRequest()
-	input := providerHookInput{
-		Request: request,
-		Payload: map[string]any{},
-		Headers: map[string]string{"authorization": "Bearer secret"},
-		Attempt: 1,
-	}
+	input := providerHookTestInput(map[string]any{}, map[string]string{"authorization": "Bearer secret"}, 1)
 
 	_, err := runtime.dispatchProviderRequestHook(context.Background(), input)
 
@@ -169,8 +160,6 @@ func providerHookTestRequest() *CompletionRequest {
 		OnEvent:           nil,
 		OnProviderObserve: nil,
 		OnProviderRequest: nil,
-		OnToolCall:        nil,
-		OnToolResult:      nil,
 		ToolRegistry:      nil,
 		ExecuteTools:      nil,
 		SessionID:         "session-1",

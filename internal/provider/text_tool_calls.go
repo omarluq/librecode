@@ -39,6 +39,7 @@ func TextToolCallsFromText(text string) []ToolCall {
 		argumentsJSON := EncodeToolArguments(arguments)
 		calls = append(calls, ToolCall{
 			Arguments:     arguments,
+			Metadata:      nil,
 			ID:            textToolCallID(index),
 			Name:          name,
 			ArgumentsJSON: argumentsJSON,

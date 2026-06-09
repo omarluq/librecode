@@ -8,18 +8,17 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func (client *HTTPCompletionClient) completeAnthropic(
 	ctx context.Context,
 	request *CompletionRequest,
-) (*CompletionResult, error) {
+) (*llm.Response, error) {
 	state := anthropicLoopState{
-		messages: anthropicMessages(request.Messages),
-		endpoint: joinEndpoint(request.Model.BaseURL, "/v1/messages"),
-		result:   &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()},
+		messages: anthropicMessages(request.Request.Messages),
+		endpoint: joinEndpoint(request.Request.Model.BaseURL, "/v1/messages"),
+		result:   newResponse(),
 	}
 	for {
 		finished, err := client.advanceAnthropicLoop(ctx, request, &state)
@@ -33,7 +32,7 @@ func (client *HTTPCompletionClient) completeAnthropic(
 }
 
 type anthropicLoopState struct {
-	result   *CompletionResult
+	result   *llm.Response
 	endpoint string
 	messages []map[string]any
 }
@@ -63,7 +62,7 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 	if err != nil {
 		return false, err
 	}
-	state.result.ToolEvents = append(state.result.ToolEvents, events...)
+	appendToolResults(state.result, events)
 	if err := appendAnthropicToolConversation(request, state, providerResult, events); err != nil {
 		return false, err
 	}
@@ -116,17 +115,17 @@ func anthropicPayload(request *CompletionRequest, messages []map[string]any) map
 	// reasoning is available. Match production agent clients by omitting
 	// temperature unless/until librecode exposes an explicit user setting.
 	payload := map[string]any{
-		jsonModelKey:    request.Model.ID,
-		"max_tokens":    minPositive(request.Model.MaxTokens, 4096),
+		jsonModelKey:    request.Request.Model.ID,
+		"max_tokens":    minPositive(request.Request.Model.MaxTokens, 4096),
 		jsonMessagesKey: messages,
 		"tools":         AnthropicTools(request),
 	}
 	if usesAnthropicOAuth(request) {
-		payload["system"] = anthropicOAuthSystemPrompt(request.SystemPrompt)
-	} else if request.SystemPrompt != "" {
-		payload["system"] = []map[string]any{anthropicSystemText(request.SystemPrompt)}
+		payload["system"] = anthropicOAuthSystemPrompt(request.Request.SystemPrompt)
+	} else if request.Request.SystemPrompt != "" {
+		payload["system"] = []map[string]any{anthropicSystemText(request.Request.SystemPrompt)}
 	}
-	if request.Model.Reasoning {
+	if request.Request.Model.Reasoning {
 		maps.Copy(payload, anthropicThinkingConfig(request))
 	}
 
@@ -136,10 +135,10 @@ func anthropicPayload(request *CompletionRequest, messages []map[string]any) map
 const anthropicBetaHeader = "anthropic-beta"
 
 func anthropicHeaders(request *CompletionRequest) map[string]string {
-	headers := cloneHeaders(request.Auth.Headers)
+	headers := cloneHeaders(request.Request.Auth.Headers)
 	betaFeatures := anthropicBetaFeatures(request)
 	if usesAnthropicOAuth(request) {
-		headers["Authorization"] = "Bearer " + request.Auth.APIKey
+		headers["Authorization"] = "Bearer " + request.Request.Auth.APIKey
 		headers[anthropicBetaHeader] = appendAnthropicBeta(
 			headers[anthropicBetaHeader],
 			append([]string{"claude-code-20250219", "oauth-2025-04-20"}, betaFeatures...)...,
@@ -147,7 +146,7 @@ func anthropicHeaders(request *CompletionRequest) map[string]string {
 		headers["user-agent"] = "claude-cli/2.1.2 (external, cli)"
 		headers["x-app"] = "cli"
 	} else {
-		headers["x-api-key"] = request.Auth.APIKey
+		headers["x-api-key"] = request.Request.Auth.APIKey
 		headers[anthropicBetaHeader] = appendAnthropicBeta(headers[anthropicBetaHeader], betaFeatures...)
 	}
 	headers["anthropic-version"] = "2023-06-01"
@@ -156,7 +155,7 @@ func anthropicHeaders(request *CompletionRequest) map[string]string {
 }
 
 func usesAnthropicOAuth(request *CompletionRequest) bool {
-	return request.Model.Provider == "anthropic-claude" || isAnthropicOAuthToken(request.Auth.APIKey)
+	return request.Request.Model.Provider == "anthropic-claude" || isAnthropicOAuthToken(request.Request.Auth.APIKey)
 }
 
 func isAnthropicOAuthToken(apiKey string) bool {
@@ -183,10 +182,10 @@ func anthropicSystemText(text string) map[string]any {
 }
 
 func anthropicThinkingConfig(request *CompletionRequest) map[string]any {
-	if request.ThinkingLevel == "" || request.ThinkingLevel == thinkingOff {
+	if request.Request.ThinkingLevel == "" || request.Request.ThinkingLevel == thinkingOff {
 		return map[string]any{jsonThinkingKey: map[string]any{jsonTypeKey: "disabled"}}
 	}
-	if anthropicSupportsAdaptiveThinking(request.Model.ID) {
+	if anthropicSupportsAdaptiveThinking(request.Request.Model.ID) {
 		config := map[string]any{
 			jsonThinkingKey: map[string]any{jsonTypeKey: "adaptive", jsonDisplayKey: thinkingDisplaySummary},
 		}
@@ -197,7 +196,7 @@ func anthropicThinkingConfig(request *CompletionRequest) map[string]any {
 		return config
 	}
 
-	return map[string]any{jsonThinkingKey: anthropicBudgetThinking(request.ThinkingLevel)}
+	return map[string]any{jsonThinkingKey: anthropicBudgetThinking(request.Request.ThinkingLevel)}
 }
 
 func anthropicBudgetThinking(level string) map[string]any {
@@ -209,11 +208,10 @@ func anthropicBudgetThinking(level string) map[string]any {
 }
 
 func anthropicThinkingEffort(request *CompletionRequest) string {
-	level := model.ThinkingLevel(request.ThinkingLevel)
-	if mapped := request.Model.ThinkingLevelMap[level]; mapped != nil {
+	if mapped := request.Request.Model.ThinkingLevelMap[request.Request.ThinkingLevel]; mapped != nil {
 		return *mapped
 	}
-	switch request.ThinkingLevel {
+	switch request.Request.ThinkingLevel {
 	case thinkingMinimal, thinkingLow:
 		return thinkingLow
 	case thinkingMedium:
@@ -240,7 +238,7 @@ func anthropicSupportsAdaptiveThinking(modelID string) bool {
 
 func anthropicBetaFeatures(request *CompletionRequest) []string {
 	features := []string{}
-	if request.Model.Reasoning && !anthropicSupportsAdaptiveThinking(request.Model.ID) {
+	if request.Request.Model.Reasoning && !anthropicSupportsAdaptiveThinking(request.Request.Model.ID) {
 		features = append(features, "interleaved-thinking-2025-05-14")
 	}
 
@@ -335,12 +333,13 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 	}, nil
 }
 
-func anthropicToolCall(id, name string, input any) ToolCall {
+func anthropicToolCall(callID, name string, input any) ToolCall {
 	arguments, argumentsJSON := anthropicToolArguments(input)
 
 	return ToolCall{
 		Arguments:     arguments,
-		ID:            id,
+		Metadata:      nil,
+		ID:            callID,
 		Name:          anthropicLocalToolName(name),
 		ArgumentsJSON: argumentsJSON,
 		TextFallback:  false,
@@ -401,14 +400,15 @@ func anthropicToolResultMessage(calls []ToolCall, events []ToolEvent) (map[strin
 	return map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: blocks}, nil
 }
 
-func anthropicMessages(messages []database.MessageEntity) []map[string]any {
+func anthropicMessages(messages []llm.Message) []map[string]any {
 	output := []map[string]any{}
 	for _, message := range messages {
 		role, ok := anthropicRole(message.Role)
-		if !ok || message.Content == "" {
+		content := messageText(message)
+		if !ok || content == "" {
 			continue
 		}
-		output = append(output, map[string]any{jsonRoleKey: role, jsonContentKey: message.Content})
+		output = append(output, map[string]any{jsonRoleKey: role, jsonContentKey: content})
 	}
 
 	return output
@@ -416,11 +416,15 @@ func anthropicMessages(messages []database.MessageEntity) []map[string]any {
 
 // AnthropicTools converts local tool definitions into Anthropic tool schemas.
 func AnthropicTools(request *CompletionRequest) []map[string]any {
-	definitions := requestToolDefinitions(request)
+	return AnthropicToolsFromDefinitions(requestToolDefinitions(request), usesAnthropicOAuth(request))
+}
+
+// AnthropicToolsFromDefinitions returns Anthropic tool declarations for definitions.
+func AnthropicToolsFromDefinitions(definitions []llm.ToolDefinition, oauth bool) []map[string]any {
 	tools := make([]map[string]any, 0, len(definitions))
 	for _, definition := range definitions {
 		tools = append(tools, map[string]any{
-			jsonToolNameKey:         anthropicProviderToolName(string(definition.Name), usesAnthropicOAuth(request)),
+			jsonToolNameKey:         anthropicProviderToolName(definition.Name, oauth),
 			jsonDescriptionKey:      definition.Description,
 			jsonInputSchemaKey:      ToolParameterSchema(&definition),
 			"eager_input_streaming": true,
@@ -475,18 +479,13 @@ func anthropicLocalToolName(name string) string {
 	}
 }
 
-func anthropicRole(role database.Role) (string, bool) {
+func anthropicRole(role llm.Role) (string, bool) {
 	switch role {
-	case database.RoleUser:
+	case llm.RoleUser, llm.RoleSystem:
 		return jsonUserRole, true
-	case database.RoleAssistant:
+	case llm.RoleAssistant:
 		return jsonAssistantRole, true
-	case database.RoleBranchSummary, database.RoleCompactionSummary:
-		return jsonUserRole, true
-	case database.RoleCustom, database.RoleBashExecution:
-		return jsonUserRole, true
-	case database.RoleToolResult,
-		database.RoleThinking:
+	case llm.RoleTool:
 		return "", false
 	}
 

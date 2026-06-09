@@ -26,6 +26,7 @@ func llmRequestFromCompletionRequest(request *CompletionRequest) llm.Request {
 		Messages:        llmMessagesFromDatabase(request.Messages),
 		Tools:           llmToolDefinitionsFromRegistry(request.ToolRegistry, request.DisableTools),
 		Model:           llmModelRefFromModel(&request.Model),
+		Usage:           llmUsageFromModel(request.Usage),
 		DisableTools:    request.DisableTools,
 	}
 }
@@ -40,15 +41,17 @@ func emptyLLMRequest() llm.Request {
 		Messages:        nil,
 		Tools:           nil,
 		Model: llm.ModelRef{
-			Metadata:      nil,
-			Provider:      "",
-			ID:            "",
-			API:           "",
-			BaseURL:       "",
-			MaxTokens:     0,
-			ContextWindow: 0,
-			Reasoning:     false,
+			Metadata:         nil,
+			ThinkingLevelMap: nil,
+			Provider:         "",
+			ID:               "",
+			API:              "",
+			BaseURL:          "",
+			MaxTokens:        0,
+			ContextWindow:    0,
+			Reasoning:        false,
 		},
+		Usage:        llm.EmptyUsage(),
 		DisableTools: false,
 	}
 }
@@ -102,11 +105,14 @@ func llmToolDefinitionsFromRegistry(registry *tool.Registry, disabled bool) []ll
 	if disabled {
 		return nil
 	}
-	definitions := tool.AllDefinitions()
-	if registry != nil {
-		definitions = registry.Definitions()
+	if registry == nil {
+		return llmToolDefinitionsFromTool(tool.AllDefinitions())
 	}
 
+	return llmToolDefinitionsFromTool(registry.Definitions())
+}
+
+func llmToolDefinitionsFromTool(definitions []tool.Definition) []llm.ToolDefinition {
 	return lo.Map(definitions, func(definition tool.Definition, _ int) llm.ToolDefinition {
 		return llmToolDefinitionFromTool(&definition)
 	})
@@ -216,14 +222,15 @@ func llmModelRefFromModel(input *model.Model) llm.ModelRef {
 	}
 
 	return llm.ModelRef{
-		Metadata:      cloneAnyMapNil(input.Compat),
-		Provider:      input.Provider,
-		ID:            input.ID,
-		API:           input.API,
-		BaseURL:       input.BaseURL,
-		MaxTokens:     input.MaxTokens,
-		ContextWindow: input.ContextWindow,
-		Reasoning:     input.Reasoning,
+		Metadata:         cloneAnyMapNil(input.Compat),
+		ThinkingLevelMap: thinkingLevelMapToLLM(input.ThinkingLevelMap),
+		Provider:         input.Provider,
+		ID:               input.ID,
+		API:              input.API,
+		BaseURL:          input.BaseURL,
+		MaxTokens:        input.MaxTokens,
+		ContextWindow:    input.ContextWindow,
+		Reasoning:        input.Reasoning,
 	}
 }
 
@@ -274,6 +281,18 @@ func llmTokenContributorsToModel(contributors []llm.TokenContributor) []model.To
 			Chars:   contributor.Chars,
 		}
 	})
+}
+
+func thinkingLevelMapToLLM(values map[model.ThinkingLevel]*string) map[string]*string {
+	if values == nil {
+		return nil
+	}
+	converted := make(map[string]*string, len(values))
+	for level, value := range values {
+		converted[string(level)] = value
+	}
+
+	return converted
 }
 
 func cloneStringMapNil(values map[string]string) map[string]string {

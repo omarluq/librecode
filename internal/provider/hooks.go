@@ -4,11 +4,12 @@ import (
 	"context"
 
 	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 // HookInput describes a provider request before it is sent.
 type HookInput struct {
-	Request *CompletionRequest
 	Payload map[string]any
 	Headers map[string]string
 	Attempt int
@@ -27,7 +28,6 @@ func applyProviderRequestHook(
 	headers map[string]string,
 ) (HookOutput, error) {
 	input := HookInput{
-		Request: request,
 		Payload: cloneAnyMap(payload),
 		Headers: cloneStringMap(headers),
 		Attempt: providerAttempt(request),
@@ -37,16 +37,18 @@ func applyProviderRequestHook(
 	}
 	output := HookOutput{Payload: input.Payload, Headers: input.Headers}
 	if request.OnProviderRequest != nil {
-		mutated, err := request.OnProviderRequest(ctx, input)
+		hookInput := hookInputToLLM(request, input.Payload, input.Headers, input.Attempt)
+		mutated, err := request.OnProviderRequest(ctx, hookInput)
 		if err != nil {
 			return HookOutput{}, oops.In("provider").
 				Code("provider_request_hook_failed").
 				Wrapf(err, "apply provider request hook")
 		}
-		output = mutated
+		output = HookOutput{Payload: mutated.Payload, Headers: mutated.Headers}
 	}
 	if request.OnProviderObserve != nil {
-		request.OnProviderObserve(ctx, request, providerAttempt(request))
+		observeInput := hookInputToLLM(request, output.Payload, output.Headers, providerAttempt(request))
+		request.OnProviderObserve(ctx, observeInput)
 	}
 
 	return output, nil
@@ -58,4 +60,47 @@ func providerAttempt(request *CompletionRequest) int {
 	}
 
 	return request.ProviderAttempt
+}
+
+func hookInputToLLM(
+	request *CompletionRequest,
+	payload map[string]any,
+	headers map[string]string,
+	attempt int,
+) *llm.HookInput {
+	if request == nil {
+		return &llm.HookInput{
+			Model:           emptyModelRef(),
+			ProviderOptions: nil,
+			Payload:         cloneAnyMap(payload),
+			Headers:         cloneStringMap(headers),
+			SessionID:       "",
+			ThinkingLevel:   "",
+			Attempt:         attempt,
+		}
+	}
+
+	return &llm.HookInput{
+		Model:           request.Request.Model,
+		ProviderOptions: cloneAnyMap(request.Request.ProviderOptions),
+		Payload:         cloneAnyMap(payload),
+		Headers:         cloneStringMap(headers),
+		SessionID:       request.Request.SessionID,
+		ThinkingLevel:   request.Request.ThinkingLevel,
+		Attempt:         attempt,
+	}
+}
+
+func emptyModelRef() llm.ModelRef {
+	return llm.ModelRef{
+		Metadata:         nil,
+		ThinkingLevelMap: nil,
+		Provider:         "",
+		ID:               "",
+		API:              "",
+		BaseURL:          "",
+		MaxTokens:        0,
+		ContextWindow:    0,
+		Reasoning:        false,
+	}
 }

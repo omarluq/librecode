@@ -7,7 +7,7 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func validateToolCalls(calls []ToolCall) error {
@@ -34,23 +34,16 @@ func executeToolCalls(
 	request *CompletionRequest,
 	calls []ToolCall,
 ) ([]any, []ToolEvent, error) {
-	var events []ToolEvent
-	var err error
-	if request != nil && request.ExecuteTools != nil {
-		events, err = request.ExecuteTools(ctx, calls, request.OnEvent)
-	} else {
-		events = executeToolCallsLocally(
-			ctx,
-			requestToolRegistry(request),
-			calls,
-			requestEventHandler(request),
-			requestToolCallHook(request),
-			requestToolResultHook(request),
-		)
+	if request == nil || request.ExecuteTools == nil {
+		return nil, nil, oops.In("provider").
+			Code("tool_executor_missing").
+			Errorf("tool executor is not configured")
 	}
+	results, err := request.ExecuteTools(ctx, toolCallsToLLM(calls), request.OnEvent)
 	if err != nil {
 		return nil, nil, err
 	}
+	events := toolEventsFromLLM(results)
 	outputs := make([]any, 0, len(calls))
 	for index, call := range calls {
 		var event *ToolEvent
@@ -63,183 +56,108 @@ func executeToolCalls(
 	return outputs, events, nil
 }
 
-func executeToolCallsLocally(
-	ctx context.Context,
-	registry *tool.Registry,
-	calls []ToolCall,
-	onEvent func(StreamEvent),
-	onToolCall func(context.Context, *ToolCallEvent) error,
-	onToolResult func(context.Context, *ToolEvent) error,
-) []ToolEvent {
-	if registry == nil {
-		registry = tool.NewRegistry("")
+func toolCallsToLLM(calls []ToolCall) []llm.ToolCall {
+	if len(calls) == 0 {
+		return nil
 	}
-	events := make([]ToolEvent, 0, len(calls))
+
+	results := make([]llm.ToolCall, 0, len(calls))
 	for _, call := range calls {
-		events = append(events, executeOneToolCall(ctx, registry, call, onEvent, onToolCall, onToolResult))
+		results = append(results, llm.ToolCall{
+			Metadata:      toolCallMetadata(call),
+			Arguments:     cloneAnyMap(call.Arguments),
+			ID:            call.ID,
+			Name:          call.Name,
+			ArgumentsJSON: call.ArgumentsJSON,
+		})
+	}
+
+	return results
+}
+
+func toolCallMetadata(call ToolCall) map[string]any {
+	metadata := cloneAnyMap(call.Metadata)
+	if !call.TextFallback {
+		return metadata
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["text_fallback"] = true
+
+	return metadata
+}
+
+func toolEventsFromLLM(results []llm.ToolResult) []ToolEvent {
+	if len(results) == 0 {
+		return nil
+	}
+
+	events := make([]ToolEvent, 0, len(results))
+	for index := range results {
+		events = append(events, toolEventFromLLM(&results[index]))
 	}
 
 	return events
 }
 
-func requestToolRegistry(request *CompletionRequest) *tool.Registry {
-	if request == nil || request.ToolRegistry == nil {
-		return tool.NewRegistry(requestCWD(request))
+func toolEventFromLLM(result *llm.ToolResult) ToolEvent {
+	if result == nil {
+		return ToolEvent{Name: "", ArgumentsJSON: "", DetailsJSON: "", Result: "", Error: "", IsError: false}
 	}
 
-	return request.ToolRegistry
-}
-
-func requestCWD(request *CompletionRequest) string {
-	if request == nil {
-		return ""
-	}
-
-	return request.CWD
-}
-
-func requestEventHandler(request *CompletionRequest) func(StreamEvent) {
-	if request == nil {
-		return nil
-	}
-
-	return request.OnEvent
-}
-
-func requestToolCallHook(request *CompletionRequest) func(context.Context, *ToolCallEvent) error {
-	if request == nil {
-		return nil
-	}
-
-	return request.OnToolCall
-}
-
-func requestToolResultHook(request *CompletionRequest) func(context.Context, *ToolEvent) error {
-	if request == nil {
-		return nil
-	}
-
-	return request.OnToolResult
-}
-
-func executeOneToolCall(
-	ctx context.Context,
-	registry *tool.Registry,
-	call ToolCall,
-	onEvent func(StreamEvent),
-	onToolCall func(context.Context, *ToolCallEvent) error,
-	onToolResult func(context.Context, *ToolEvent) error,
-) ToolEvent {
-	emitToolStart(onEvent, call.Name)
-	callEvent := newToolCallEvent(call)
-	if err := dispatchToolCallHook(ctx, onToolCall, &callEvent); err != nil {
-		event := toolLifecycleErrorEvent(callEvent, err)
-		emitToolResult(onEvent, &event)
-
-		return event
-	}
-	event := runToolCall(ctx, registry, callEvent)
-	if err := dispatchToolResultHook(ctx, onToolResult, &event); err != nil {
-		event.Error = err.Error()
-		event.Result = err.Error()
-	}
-	emitToolResult(onEvent, &event)
-
-	return event
-}
-
-func emitToolStart(onEvent func(StreamEvent), name string) {
-	emitStreamEvent(onEvent, StreamEvent{
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      StreamEventToolStart,
-		Text:      name,
-	})
-}
-
-func emitToolResult(onEvent func(StreamEvent), event *ToolEvent) {
-	emitStreamEvent(onEvent, StreamEvent{
-		ToolEvent: event,
-		Usage:     nil,
-		Kind:      StreamEventToolResult,
-		Text:      "",
-	})
-}
-
-func newToolCallEvent(call ToolCall) ToolCallEvent {
-	return ToolCallEvent{
-		Arguments:     call.Arguments,
-		ID:            call.ID,
-		Name:          call.Name,
-		ArgumentsJSON: call.ArgumentsJSON,
-	}
-}
-
-func dispatchToolCallHook(
-	ctx context.Context,
-	onToolCall func(context.Context, *ToolCallEvent) error,
-	call *ToolCallEvent,
-) error {
-	if onToolCall == nil {
-		return nil
-	}
-
-	return onToolCall(ctx, call)
-}
-
-func runToolCall(ctx context.Context, registry *tool.Registry, call ToolCallEvent) ToolEvent {
-	result, err := registry.Execute(ctx, call.Name, call.Arguments)
-
-	return ToolEventFromResult(call, result, err)
-}
-
-// ToolEventFromResult converts a local tool execution result into a provider-facing tool event.
-func ToolEventFromResult(call ToolCallEvent, result tool.Result, err error) ToolEvent {
-	resultText := result.Text()
-	detailsJSON := encodeToolDetails(result.Details)
-	if err != nil {
-		resultText = err.Error()
-	}
-	if strings.TrimSpace(resultText) == "" {
-		resultText = "(tool returned no text output)"
-	}
-	event := ToolEvent{
-		Name:          call.Name,
-		ArgumentsJSON: call.ArgumentsJSON,
-		DetailsJSON:   detailsJSON,
-		Result:        resultText,
-		Error:         "",
-		IsError:       false,
-	}
-	if err != nil {
-		event.Error = err.Error()
-		event.IsError = true
-	}
-
-	return event
-}
-
-func dispatchToolResultHook(
-	ctx context.Context,
-	onToolResult func(context.Context, *ToolEvent) error,
-	event *ToolEvent,
-) error {
-	if onToolResult == nil {
-		return nil
-	}
-
-	return onToolResult(ctx, event)
-}
-
-func toolLifecycleErrorEvent(call ToolCallEvent, err error) ToolEvent {
 	return ToolEvent{
-		Name:          call.Name,
-		ArgumentsJSON: call.ArgumentsJSON,
-		DetailsJSON:   "",
-		Result:        err.Error(),
-		Error:         err.Error(),
-		IsError:       true,
+		Name:          result.Name,
+		ArgumentsJSON: result.ArgumentsJSON,
+		DetailsJSON:   stringFromOptions(result.Metadata, "details_json"),
+		Result:        partsText(result.Content),
+		Error:         result.Error,
+		IsError:       result.IsError,
 	}
+}
+
+func toolResultPartFromEvent(event *ToolEvent) llm.Part {
+	return llm.Part{
+		Metadata:   nil,
+		ToolCall:   nil,
+		ToolResult: toolResultFromEvent(event),
+		Type:       llm.PartToolResult,
+		Text:       "",
+		Data:       "",
+		MIMEType:   "",
+	}
+}
+
+func toolResultFromEvent(event *ToolEvent) *llm.ToolResult {
+	if event == nil {
+		return &llm.ToolResult{
+			Metadata:      nil,
+			ToolCallID:    "",
+			ArgumentsJSON: "",
+			Name:          "",
+			Error:         "",
+			Content:       nil,
+			IsError:       false,
+		}
+	}
+
+	return &llm.ToolResult{
+		Metadata:      toolResultMetadataFromEvent(event),
+		ToolCallID:    "",
+		ArgumentsJSON: event.ArgumentsJSON,
+		Name:          event.Name,
+		Error:         event.Error,
+		Content:       []llm.Part{llm.TextPart(event.Result)},
+		IsError:       event.IsError,
+	}
+}
+
+func toolResultMetadataFromEvent(event *ToolEvent) map[string]any {
+	if event == nil || strings.TrimSpace(event.DetailsJSON) == "" {
+		return nil
+	}
+
+	return map[string]any{"details_json": event.DetailsJSON}
 }
 
 func toolOutputForCall(callID string, event *ToolEvent) map[string]any {
@@ -255,15 +173,15 @@ func toolOutputForCall(callID string, event *ToolEvent) map[string]any {
 	}
 }
 
-func finishTextResult(result *CompletionResult, text string) (bool, error) {
-	result.Text = strings.TrimSpace(text)
+func finishTextResult(result *llm.Response, text string) (bool, error) {
+	result.Content = append(result.Content, llm.TextPart(strings.TrimSpace(text)))
 
 	return true, nil
 }
 
-func emitStreamEvent(onEvent func(StreamEvent), event StreamEvent) {
+func emitStreamEvent(onEvent func(*llm.StreamChunk), event StreamEvent) {
 	if onEvent != nil {
-		onEvent(event)
+		onEvent(streamChunkToLLM(event))
 	}
 }
 
@@ -289,4 +207,13 @@ func toolOutputText(resultText, detailsJSON string) string {
 	}
 
 	return trimmedResult + "\ndetails:\n" + detailsJSON
+}
+
+func stringFromOptions(options map[string]any, key string) string {
+	value, ok := options[key].(string)
+	if !ok {
+		return ""
+	}
+
+	return value
 }

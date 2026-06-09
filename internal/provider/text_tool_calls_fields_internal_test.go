@@ -23,9 +23,9 @@ func TestTextToolFieldsNestedContainersAndMissingClosingTags(t *testing.T) {
 func TestApplyTextToolAliasesDoesNotOverwriteMissingValues(t *testing.T) {
 	t.Parallel()
 
-	arguments := map[string]any{jsonContentKey: "existing"}
+	arguments := map[string]any{jsonContentKey: testExistingKey}
 	applyTextToolAliases(jsonWriteToolName, map[string]string{}, arguments)
-	assert.Equal(t, "existing", arguments[jsonContentKey])
+	assert.Equal(t, testExistingKey, arguments[jsonContentKey])
 }
 
 func TestNormalizeTextToolNameAliasesAndUnknowns(t *testing.T) {
@@ -57,6 +57,7 @@ func TestHasTextFallbackToolCallsFalse(t *testing.T) {
 
 	assert.False(t, HasTextFallbackToolCalls([]ToolCall{{
 		Arguments:     nil,
+		Metadata:      nil,
 		ID:            testCallID,
 		Name:          jsonReadToolName,
 		ArgumentsJSON: `{}`,

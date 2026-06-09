@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestAnthropicPayloadOmitsTemperature(t *testing.T) {
@@ -25,7 +25,7 @@ func TestAnthropicPayloadUsesStructuredSystemPrompt(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.SystemPrompt = anthropicTestSystemPrompt
+	setTestRequestSystemPrompt(request, anthropicTestSystemPrompt)
 	payload := anthropicPayload(request, nil)
 
 	assert.Equal(t, []map[string]any{anthropicSystemText(anthropicTestSystemPrompt)}, payload["system"])
@@ -35,7 +35,7 @@ func TestAnthropicOAuthPayloadAddsClaudeCodeIdentity(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("anthropic-claude", "sk-ant-oat-secret")
-	request.SystemPrompt = anthropicTestSystemPrompt
+	setTestRequestSystemPrompt(request, anthropicTestSystemPrompt)
 	payload := anthropicPayload(request, nil)
 
 	systemBlocks, ok := payload["system"].([]map[string]any)
@@ -53,9 +53,9 @@ func TestAnthropicPayloadAddsBudgetThinking(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.Model.ID = "claude-sonnet-4-5"
-	request.Model.Reasoning = true
-	request.ThinkingLevel = thinkingLow
+	setTestRequestModelID(request, "claude-sonnet-4-5")
+	setTestRequestReasoning(request, true)
+	setTestRequestThinkingLevel(request, thinkingLow)
 	payload := anthropicPayload(request, nil)
 
 	assert.Equal(t, map[string]any{
@@ -69,9 +69,9 @@ func TestAnthropicPayloadDisablesThinkingWhenOff(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.Model.ID = testAdaptiveAnthropicModelID
-	request.Model.Reasoning = true
-	request.ThinkingLevel = thinkingOff
+	setTestRequestModelID(request, testAdaptiveAnthropicModelID)
+	setTestRequestReasoning(request, true)
+	setTestRequestThinkingLevel(request, thinkingOff)
 	payload := anthropicPayload(request, nil)
 
 	assert.Equal(t, map[string]any{jsonTypeKey: "disabled"}, payload[jsonThinkingKey])
@@ -132,9 +132,9 @@ func TestAnthropicPayloadAddsAdaptiveThinking(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.Model.ID = testAdaptiveAnthropicModelID
-	request.Model.Reasoning = true
-	request.ThinkingLevel = thinkingXHigh
+	setTestRequestModelID(request, testAdaptiveAnthropicModelID)
+	setTestRequestReasoning(request, true)
+	setTestRequestThinkingLevel(request, thinkingXHigh)
 	payload := anthropicPayload(request, nil)
 
 	assert.Equal(t, map[string]any{
@@ -193,40 +193,32 @@ func testCompletionRequestAuth(args ...string) *CompletionRequest {
 	}
 
 	return &CompletionRequest{
-		OnEvent:           nil,
 		OnProviderObserve: nil,
 		OnProviderRequest: nil,
-		OnToolCall:        nil,
-		OnToolResult:      nil,
-		ToolRegistry:      nil,
 		ExecuteTools:      nil,
-		SessionID:         "",
-		SystemPrompt:      "",
-		ThinkingLevel:     "",
-		CWD:               "",
-		Auth:              testRequestAuth(apiKey),
-		Messages:          nil,
-		Usage:             model.EmptyTokenUsage(),
-		Model: model.Model{
-			ThinkingLevelMap: nil,
-			Headers:          nil,
-			Compat:           nil,
-			Provider:         provider,
-			ID:               "",
-			Name:             "",
-			API:              "",
-			BaseURL:          "",
-			Input:            nil,
-			Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
-			ContextWindow:    0,
-			MaxTokens:        0,
-			Reasoning:        false,
+		OnEvent:           nil,
+		Request: llm.Request{
+			ProviderOptions: nil,
+			Auth:            llm.Auth{Headers: nil, APIKey: apiKey},
+			SystemPrompt:    "",
+			ThinkingLevel:   "",
+			SessionID:       "",
+			Messages:        nil,
+			Tools:           nil,
+			Model: llm.ModelRef{
+				Metadata:         nil,
+				ThinkingLevelMap: nil,
+				Provider:         provider,
+				ID:               "",
+				API:              "",
+				BaseURL:          "",
+				MaxTokens:        0,
+				ContextWindow:    0,
+				Reasoning:        false,
+			},
+			Usage:        llm.EmptyUsage(),
+			DisableTools: false,
 		},
 		ProviderAttempt: 0,
-		DisableTools:    false,
 	}
-}
-
-func testRequestAuth(apiKey string) model.RequestAuth {
-	return model.RequestAuth{Headers: nil, APIKey: apiKey, Error: "", OK: true}
 }

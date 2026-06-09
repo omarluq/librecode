@@ -9,7 +9,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/extension"
-	"github.com/omarluq/librecode/internal/provider"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 var blockedProviderHeaderNames = map[string]struct{}{
@@ -20,20 +20,16 @@ var blockedProviderHeaderNames = map[string]struct{}{
 	"api-key":             {},
 }
 
-// ProviderRequestHook can inspect and conservatively mutate a provider request.
-type ProviderRequestHook func(context.Context, providerHookInput) (providerHookOutput, error)
-
-type providerHookInput = provider.HookInput
-
-type providerHookOutput = provider.HookOutput
-
 func (runtime *Runtime) dispatchProviderRequestHook(
 	ctx context.Context,
-	input providerHookInput,
-) (providerHookOutput, error) {
+	input *llm.HookInput,
+) (llm.HookOutput, error) {
+	if input == nil {
+		return llm.HookOutput{Payload: nil, Headers: nil}, nil
+	}
 	payload := providerRequestLifecyclePayload(input)
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleBeforeProviderRequest, payload)
-	output := providerHookOutput{
+	output := llm.HookOutput{
 		Payload: providerPayloadFromLifecycle(result.Payload, input.Payload),
 		Headers: mergeProviderHeaders(input.Headers, result.ProviderRequest.Headers),
 	}
@@ -44,12 +40,12 @@ func (runtime *Runtime) dispatchProviderRequestHook(
 		providerHookDiagnostics(input, output),
 	)
 	if err != nil {
-		return providerHookOutput{}, oops.In("assistant").
+		return llm.HookOutput{}, oops.In("assistant").
 			Code("before_provider_request_dispatch_failed").
 			Wrapf(err, "dispatch before_provider_request lifecycle")
 	}
 	if err := validateProviderRequestMutation(result.ProviderRequest); err != nil {
-		return providerHookOutput{}, oops.In("assistant").
+		return llm.HookOutput{}, oops.In("assistant").
 			Code("provider_request_mutation_invalid").
 			Wrapf(err, "validate provider_request mutation")
 	}
@@ -57,20 +53,19 @@ func (runtime *Runtime) dispatchProviderRequestHook(
 	return output, nil
 }
 
-func providerRequestLifecyclePayload(input providerHookInput) map[string]any {
-	request := input.Request
-	if request == nil {
+func providerRequestLifecyclePayload(input *llm.HookInput) map[string]any {
+	if input == nil {
 		return map[string]any{}
 	}
 
 	return lifecyclepayload.ProviderRequestPayload(&lifecyclepayload.ProviderRequest{
 		Payload:       input.Payload,
 		Headers:       redactedHeaders(input.Headers),
-		API:           request.Model.API,
-		ModelID:       request.Model.ID,
-		Provider:      request.Model.Provider,
-		SessionID:     request.SessionID,
-		ThinkingLevel: request.ThinkingLevel,
+		API:           input.Model.API,
+		ModelID:       input.Model.ID,
+		Provider:      input.Model.Provider,
+		SessionID:     input.SessionID,
+		ThinkingLevel: input.ThinkingLevel,
 		Attempt:       input.Attempt,
 	})
 }

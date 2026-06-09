@@ -7,15 +7,15 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func (client *HTTPCompletionClient) completeOpenAIResponses(
 	ctx context.Context,
 	request *CompletionRequest,
-) (*CompletionResult, error) {
-	input := openAIResponseInput(request.Messages)
-	endpoint := joinEndpoint(request.Model.BaseURL, "/responses")
+) (*llm.Response, error) {
+	input := openAIResponseInput(request.Request.Messages)
+	endpoint := joinEndpoint(request.Request.Model.BaseURL, "/responses")
 
 	return client.completeResponsesLoop(ctx, request, endpoint, openAIHeaders(request), input, false)
 }
@@ -23,9 +23,9 @@ func (client *HTTPCompletionClient) completeOpenAIResponses(
 func (client *HTTPCompletionClient) completeOpenAICodex(
 	ctx context.Context,
 	request *CompletionRequest,
-) (*CompletionResult, error) {
-	input := openAIResponseInput(compactResponseMessages(request.Messages))
-	endpoint := joinEndpoint(request.Model.BaseURL, "/codex/responses")
+) (*llm.Response, error) {
+	input := openAIResponseInput(compactResponseMessages(request.Request.Messages))
+	endpoint := joinEndpoint(request.Request.Model.BaseURL, "/codex/responses")
 
 	return client.completeResponsesLoop(ctx, request, endpoint, codexHeaders(request), input, true)
 }
@@ -37,8 +37,8 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	headers map[string]string,
 	input []any,
 	stream bool,
-) (*CompletionResult, error) {
-	result := &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()}
+) (*llm.Response, error) {
+	result := newResponse()
 	for {
 		payload := responsesPayload(request, input, stream)
 		providerRequest, err := applyProviderRequestHook(ctx, request, payload, cloneStringMap(headers))
@@ -56,13 +56,13 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		if err != nil {
 			return nil, err
 		}
-		result.Thinking = append(result.Thinking, providerResult.Thinking...)
+		appendThinking(result, providerResult.Thinking)
 		result.Usage = mergeUsage(result.Usage, providerResult.Usage)
 		if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
 			return nil, validateErr
 		}
 		if len(providerResult.ToolCalls) == 0 {
-			result.Text = strings.TrimSpace(providerResult.Text)
+			setResponseText(result, providerResult.Text)
 			return result, nil
 		}
 		input = append(input, statelessResponseOutputItems(providerResult.OutputItems)...)
@@ -70,7 +70,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		if err != nil {
 			return nil, err
 		}
-		result.ToolEvents = append(result.ToolEvents, events...)
+		appendToolResults(result, events)
 		input = append(input, outputs...)
 	}
 }
@@ -86,22 +86,22 @@ func responsesPayload(request *CompletionRequest, input []any, stream bool) map[
 
 func responsesBasePayload(request *CompletionRequest, input []any, stream bool) map[string]any {
 	payload := map[string]any{
-		jsonModelKey: request.Model.ID,
+		jsonModelKey: request.Request.Model.ID,
 		"store":      false,
 		"stream":     stream,
 		"input":      input,
 	}
-	if request.SystemPrompt != "" {
-		payload["instructions"] = request.SystemPrompt
+	if request.Request.SystemPrompt != "" {
+		payload["instructions"] = request.Request.SystemPrompt
 	}
 	if stream {
 		payload["text"] = map[string]string{"verbosity": "low"}
 		payload["include"] = []string{"reasoning.encrypted_content"}
-		payload["prompt_cache_key"] = request.SessionID
+		payload["prompt_cache_key"] = request.Request.SessionID
 	}
-	if request.Model.Reasoning && request.ThinkingLevel != "" && request.ThinkingLevel != thinkingOff {
+	if shouldIncludeReasoningEffort(request) {
 		payload["reasoning"] = map[string]any{
-			reasoningEffortKey: request.ThinkingLevel,
+			reasoningEffortKey: request.Request.ThinkingLevel,
 			jsonSummaryKey:     reasoningSummaryAuto,
 		}
 	} else if stream {
@@ -117,7 +117,7 @@ func (client *HTTPCompletionClient) requestResponses(
 	headers map[string]string,
 	payload map[string]any,
 	stream bool,
-	onEvent func(StreamEvent),
+	onEvent func(*llm.StreamChunk),
 ) (*providerResult, error) {
 	httpRequest, err := jsonRequest(ctx, endpoint, headers, payload)
 	if err != nil {
@@ -210,7 +210,7 @@ func providerResultFromOutputItems(outputItems []any, fallbackText string) *prov
 		OutputItems: outputItems,
 		Thinking:    thinkingFromOutput(outputItems),
 		ToolCalls:   toolCallsFromOutput(outputItems),
-		Usage:       model.EmptyTokenUsage(),
+		Usage:       llm.EmptyUsage(),
 	}
 }
 
@@ -241,6 +241,7 @@ func toolCallsFromOutput(output []any) []ToolCall {
 		}
 		calls = append(calls, ToolCall{
 			Arguments:     arguments,
+			Metadata:      nil,
 			ID:            firstNonEmptyString(object[jsonCallIDKey], object["id"]),
 			Name:          firstNonEmptyString(object[jsonToolNameKey], object["function"]),
 			ArgumentsJSON: argumentsJSON,
@@ -314,9 +315,9 @@ func extractText(value any) string {
 }
 
 func codexReasoning(request *CompletionRequest) map[string]string {
-	if request.ThinkingLevel == "" || request.ThinkingLevel == thinkingOff {
+	if request.Request.ThinkingLevel == "" || request.Request.ThinkingLevel == thinkingOff {
 		return map[string]string{reasoningEffortKey: reasoningEffortNone, jsonSummaryKey: reasoningSummaryAuto}
 	}
 
-	return map[string]string{reasoningEffortKey: request.ThinkingLevel, jsonSummaryKey: reasoningSummaryAuto}
+	return map[string]string{reasoningEffortKey: request.Request.ThinkingLevel, jsonSummaryKey: reasoningSummaryAuto}
 }

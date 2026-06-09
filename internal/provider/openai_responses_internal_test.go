@@ -7,8 +7,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/omarluq/librecode/internal/model"
 )
 
 func TestStatelessResponseOutputItemsFiltersFunctionCalls(t *testing.T) {
@@ -93,18 +91,18 @@ func TestResponsesPayloadReasoningModes(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("sk-test")
-	request.Model.Provider = testOpenAIProvider
-	request.Model.ID = "gpt-test"
-	request.Model.Reasoning = true
-	request.ThinkingLevel = thinkingHigh
+	setTestRequestProvider(request, testOpenAIProvider)
+	setTestRequestModelID(request, "gpt-test")
+	setTestRequestReasoning(request, true)
+	setTestRequestThinkingLevel(request, thinkingHigh)
 	payload := responsesBasePayload(request, nil, false)
 	assert.Equal(t, map[string]any{
 		reasoningEffortKey: thinkingHigh,
 		jsonSummaryKey:     reasoningSummaryAuto,
 	}, payload["reasoning"])
 
-	request.Model.Reasoning = false
-	request.ThinkingLevel = ""
+	setTestRequestReasoning(request, false)
+	setTestRequestThinkingLevel(request, "")
 	payload = responsesBasePayload(request, nil, true)
 	assert.Equal(t, map[string]string{
 		reasoningEffortKey: reasoningEffortNone,
@@ -151,10 +149,9 @@ func TestCompleteOpenAICodexCompactsAssistantMessages(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("openai-codex", "codex-token")
-	request.Model.API = apiOpenAICodexResponses
-	request.Model.BaseURL = "https://example.test"
-	request.Messages = nil
-	request.Usage = model.EmptyTokenUsage()
+	setTestRequestAPI(request, apiOpenAICodexResponses)
+	setTestRequestBaseURL(request, "https://example.test")
+	setTestRequestMessages(request, nil)
 
 	assert.Equal(t, map[string]string{
 		reasoningEffortKey: reasoningEffortNone,

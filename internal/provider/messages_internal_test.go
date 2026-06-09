@@ -5,27 +5,28 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestOpenAIResponseInputRoleMapping(t *testing.T) {
 	t.Parallel()
 
-	messages := []database.MessageEntity{
-		providerTestMessageEntity(database.RoleUser, jsonUserRole),
-		providerTestMessageEntity(database.RoleAssistant, jsonAssistantRole),
-		providerTestMessageEntity(database.RoleBranchSummary, testBranchContent),
-		providerTestMessageEntity(database.RoleCompactionSummary, testCompactionContent),
-		providerTestMessageEntity(database.RoleCustom, testCustomContent),
-		providerTestMessageEntity(database.RoleBashExecution, jsonBashToolName),
-		providerTestMessageEntity(database.RoleToolResult, jsonToolRole),
-		providerTestMessageEntity(database.RoleThinking, testThinkingDelta),
-		providerTestMessageEntity(database.RoleUser, ""),
-	}
+	request := emptyCompletionRequest()
+	setTestRequestMessages(request, []llm.Message{
+		llm.TextMessage(llm.RoleUser, jsonUserRole),
+		llm.TextMessage(llm.RoleAssistant, jsonAssistantRole),
+		llm.TextMessage(llm.RoleUser, testBranchContent),
+		llm.TextMessage(llm.RoleUser, testCompactionContent),
+		llm.TextMessage(llm.RoleUser, testCustomContent),
+		llm.TextMessage(llm.RoleUser, jsonBashToolName),
+		llm.TextMessage(llm.RoleTool, jsonToolRole),
+		llm.TextMessage(llm.RoleAssistant, testThinkingDelta),
+		llm.TextMessage(llm.RoleUser, ""),
+	})
 
-	input := openAIResponseInput(messages)
+	input := openAIResponseInput(request.Request.Messages)
 
-	assert.Len(t, input, 6)
+	assert.Len(t, input, 7)
 	for _, item := range input {
 		object, ok := item.(map[string]any)
 		assert.True(t, ok)
@@ -37,46 +38,44 @@ func TestOpenAIResponseInputRoleMapping(t *testing.T) {
 func TestOpenAIResponseInputRoleRejectsNonReplayRoles(t *testing.T) {
 	t.Parallel()
 
-	for _, role := range []database.Role{database.RoleToolResult, database.RoleThinking} {
-		mapped, ok := openAIResponseInputRole(role)
+	mapped, ok := openAIResponseInputRole(llm.RoleTool)
 
-		assert.False(t, ok)
-		assert.Empty(t, mapped)
-	}
+	assert.False(t, ok)
+	assert.Empty(t, mapped)
 }
 
 func TestCompactResponseMessagesMergesConsecutiveAssistantMessages(t *testing.T) {
 	t.Parallel()
 
-	messages := []database.MessageEntity{
-		providerTestMessageEntity(database.RoleUser, jsonUserRole),
-		providerTestMessageEntity(database.RoleAssistant, "first"),
-		providerTestMessageEntity(database.RoleAssistant, "  "),
-		providerTestMessageEntity(database.RoleAssistant, "second"),
-		providerTestMessageEntity(database.RoleUser, "next"),
-		providerTestMessageEntity(database.RoleAssistant, "tail"),
+	messages := []llm.Message{
+		llm.TextMessage(llm.RoleUser, jsonUserRole),
+		llm.TextMessage(llm.RoleAssistant, "first"),
+		llm.TextMessage(llm.RoleAssistant, "  "),
+		llm.TextMessage(llm.RoleAssistant, "second"),
+		llm.TextMessage(llm.RoleUser, "next"),
+		llm.TextMessage(llm.RoleAssistant, "tail"),
 	}
 
 	compacted := compactResponseMessages(messages)
 
 	assert.Len(t, compacted, 4)
-	assert.Equal(t, database.RoleUser, compacted[0].Role)
-	assert.Equal(t, database.RoleAssistant, compacted[1].Role)
-	assert.Equal(t, "first\n\nsecond", compacted[1].Content)
-	assert.Equal(t, database.RoleUser, compacted[2].Role)
-	assert.Equal(t, database.RoleAssistant, compacted[3].Role)
-	assert.Equal(t, "tail", compacted[3].Content)
+	assert.Equal(t, llm.RoleUser, compacted[0].Role)
+	assert.Equal(t, llm.RoleAssistant, compacted[1].Role)
+	assert.Equal(t, "first\n\nsecond", messageText(compacted[1]))
+	assert.Equal(t, llm.RoleUser, compacted[2].Role)
+	assert.Equal(t, llm.RoleAssistant, compacted[3].Role)
+	assert.Equal(t, "tail", messageText(compacted[3]))
 }
 
 func TestCompactResponseMessagesDropsBlankAssistantRuns(t *testing.T) {
 	t.Parallel()
 
-	messages := []database.MessageEntity{
-		providerTestMessageEntity(database.RoleAssistant, "  "),
-		providerTestMessageEntity(database.RoleUser, jsonUserRole),
+	messages := []llm.Message{
+		llm.TextMessage(llm.RoleAssistant, "  "),
+		llm.TextMessage(llm.RoleUser, jsonUserRole),
 	}
 
 	compacted := compactResponseMessages(messages)
 
-	assert.Equal(t, []database.MessageEntity{providerTestMessageEntity(database.RoleUser, jsonUserRole)}, compacted)
+	assert.Equal(t, []llm.Message{llm.TextMessage(llm.RoleUser, jsonUserRole)}, compacted)
 }

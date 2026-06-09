@@ -224,8 +224,6 @@ func (runtime *Runtime) summarizeCompaction(
 		OnEvent:           nil,
 		OnProviderObserve: runtime.emitProviderRequest,
 		OnProviderRequest: runtime.dispatchProviderRequestHook,
-		OnToolCall:        nil,
-		OnToolResult:      nil,
 		ToolRegistry:      tool.NewRegistry(cwd),
 		ExecuteTools:      nil,
 		DisableTools:      true,

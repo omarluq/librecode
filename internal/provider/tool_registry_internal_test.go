@@ -1,47 +1,44 @@
 package provider
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
-func TestExecuteToolCallsUsesFallbackRegistryCWD(t *testing.T) {
+func TestRequestToolDefinitionsUsesLLMDefinitions(t *testing.T) {
 	t.Parallel()
 
-	cwd := t.TempDir()
 	request := &CompletionRequest{
-		OnEvent:           nil,
 		OnProviderObserve: nil,
 		OnProviderRequest: nil,
-		OnToolCall:        nil,
-		OnToolResult:      nil,
-		ToolRegistry:      nil,
 		ExecuteTools:      nil,
-		SessionID:         "",
-		SystemPrompt:      "",
-		ThinkingLevel:     "",
-		CWD:               cwd,
-		Auth:              emptyRequestAuth(),
-		Messages:          nil,
-		Usage:             model.EmptyTokenUsage(),
-		Model:             emptyModel(),
-		ProviderAttempt:   0,
-		DisableTools:      false,
+		OnEvent:           nil,
+		Request: llm.Request{
+			ProviderOptions: nil,
+			Auth:            llm.Auth{Headers: nil, APIKey: ""},
+			SystemPrompt:    "",
+			ThinkingLevel:   "",
+			SessionID:       "",
+			Messages:        nil,
+			Tools: []llm.ToolDefinition{{
+				Schema:      map[string]any{jsonTypeKey: jsonObjectType},
+				Name:        "custom",
+				Description: "custom tool",
+				ReadOnly:    true,
+			}},
+			Model:        emptyModelRef(),
+			Usage:        llm.EmptyUsage(),
+			DisableTools: false,
+		},
+		ProviderAttempt: 0,
 	}
-	_, events, err := executeToolCalls(context.Background(), request, []ToolCall{{
-		Arguments:     map[string]any{jsonCommandKey: "pwd"},
-		ID:            testCallID,
-		Name:          jsonBashToolName,
-		ArgumentsJSON: `{"command":"pwd"}`,
-		TextFallback:  false,
-	}})
-	require.NoError(t, err)
 
-	require.Len(t, events, 1)
-	assert.Contains(t, events[0].Result, cwd)
+	definitions := requestToolDefinitions(request)
+
+	assert.Len(t, definitions, 1)
+	assert.Equal(t, "custom", definitions[0].Name)
+	assert.True(t, definitions[0].ReadOnly)
 }
