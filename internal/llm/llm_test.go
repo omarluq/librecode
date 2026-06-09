@@ -220,6 +220,26 @@ func TestUsageHelpers(t *testing.T) {
 	assert.True(t, inputOnly.HasAny())
 	assert.Equal(t, 7, inputOnly.TotalTokens())
 	assert.Zero(t, inputOnly.ContextPercent())
+
+	metadataOnly := llm.Usage{
+		Breakdown:       map[string]int{"tools": 3},
+		TopContributors: nil,
+		ContextWindow:   0,
+		ContextTokens:   0,
+		InputTokens:     0,
+		OutputTokens:    0,
+	}
+	assert.True(t, metadataOnly.HasAny())
+
+	contributorsOnly := llm.Usage{
+		Breakdown:       nil,
+		TopContributors: []llm.TokenContributor{{Label: "system", Role: "system", Preview: "", Tokens: 3, Chars: 12}},
+		ContextWindow:   0,
+		ContextTokens:   0,
+		InputTokens:     0,
+		OutputTokens:    0,
+	}
+	assert.True(t, contributorsOnly.HasAny())
 }
 
 func TestProviderError(t *testing.T) {
@@ -307,7 +327,11 @@ func TestProviderErrorFallbackMessages(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, test.want, test.err.Error())
+			got := ""
+			if test.err != nil {
+				got = test.err.Error()
+			}
+			assert.Equal(t, test.want, got)
 		})
 	}
 }

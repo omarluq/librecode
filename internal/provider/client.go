@@ -168,6 +168,12 @@ func (client *HTTPCompletionClient) Complete(
 	ctx context.Context,
 	request *CompletionRequest,
 ) (*CompletionResult, error) {
+	if request == nil {
+		return nil, oops.In("provider").
+			Code("invalid_completion_request").
+			Errorf("completion request is nil")
+	}
+
 	api := request.Model.API
 	if api == "" {
 		api = apiOpenAICompletions

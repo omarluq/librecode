@@ -107,7 +107,7 @@ func (runtime *Runtime) loadSkillWithReadTool(
 		Name:          "load skill: " + skill.Name,
 		ArgumentsJSON: skillReadArgumentsJSON(skill.FilePath, limit),
 		DetailsJSON:   "",
-		Result:        result.Text(),
+		Result:        "",
 		Error:         "",
 		IsError:       false,
 	}
@@ -116,8 +116,9 @@ func (runtime *Runtime) loadSkillWithReadTool(
 		toolEvent.IsError = true
 		return "", toolEvent, oops.In("assistant").Code("skill_read").Wrapf(err, "load skill with read tool")
 	}
+	toolEvent.Result = result.Text()
 
-	return result.Text(), toolEvent, nil
+	return toolEvent.Result, toolEvent, nil
 }
 
 func skillReadArgumentsJSON(path string, limit *int) string {

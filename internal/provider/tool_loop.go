@@ -52,8 +52,12 @@ func executeToolCalls(
 		return nil, nil, err
 	}
 	outputs := make([]any, 0, len(calls))
-	for index := range calls {
-		outputs = append(outputs, toolOutputForCall(calls[index].ID, &events[index]))
+	for index, call := range calls {
+		var event *ToolEvent
+		if index < len(events) {
+			event = &events[index]
+		}
+		outputs = append(outputs, toolOutputForCall(call.ID, event))
 	}
 
 	return outputs, events, nil
