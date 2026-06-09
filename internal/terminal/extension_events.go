@@ -3,12 +3,12 @@ package terminal
 import (
 	"context"
 	"maps"
-	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/terminal/input"
 )
 
 const (
@@ -257,10 +257,6 @@ func (app *App) extensionBuffers() map[string]extension.BufferState {
 	return buffers
 }
 
-func (app *App) composerBufferState() extension.BufferState {
-	return cloneBufferState(&app.composerBuffer)
-}
-
 func cloneExtensionMetadata(values map[string]any) map[string]any {
 	if values == nil {
 		return map[string]any{}
@@ -277,19 +273,10 @@ func textBufferState(name, text string) extension.BufferState {
 		Blocks:   []extension.BufferBlock{},
 		Name:     name,
 		Text:     text,
-		Chars:    stringBufferChars(text),
+		Chars:    input.StringChars(text),
 		Label:    "",
 		Cursor:   len([]rune(text)),
 	}
-}
-
-func stringBufferChars(text string) []string {
-	chars := make([]string, 0, len([]rune(text)))
-	for _, char := range text {
-		chars = append(chars, string(char))
-	}
-
-	return chars
 }
 
 func (app *App) extensionContext() map[string]any {
@@ -429,7 +416,7 @@ func (app *App) applyExtensionBufferDelete(name string) {
 	delete(app.extensionRuntimeBuffers, name)
 	switch name {
 	case extensionBufferComposer:
-		app.setComposerBuffer(nil)
+		app.composerBuffer = input.NewBuffer()
 		app.resetPromptHistoryNavigation()
 	case extensionBufferStatus:
 		app.statusMessage = ""
@@ -439,13 +426,13 @@ func (app *App) applyExtensionBufferDelete(name string) {
 }
 
 func (app *App) applyComposerBuffer(buffer *extension.BufferState) {
-	oldText := app.composerText()
-	oldCursor := app.composerCursor()
-	app.setComposerBuffer(buffer)
-	if app.composerText() != oldText || app.composerCursor() != oldCursor {
+	oldText := app.composerBuffer.TextValue()
+	oldCursor := app.composerBuffer.CursorValue()
+	app.composerBuffer = composerBufferFromExtension(buffer)
+	if app.composerBuffer.TextValue() != oldText || app.composerBuffer.CursorValue() != oldCursor {
 		app.resetPromptHistoryNavigation()
 	}
-	if app.composerText() != oldText {
+	if app.composerBuffer.TextValue() != oldText {
 		app.resetAutocompleteSelection()
 	}
 }
@@ -483,22 +470,4 @@ func (app *App) appendUIWindowDrawOp(drawOp *extension.UIDrawOp) {
 	override := app.uiWindowOverrides[drawOp.Window]
 	override.DrawOps = append(override.DrawOps, *drawOp)
 	app.uiWindowOverrides[drawOp.Window] = override
-}
-
-func terminalKeyEvent(event *tcell.EventKey) extension.ComposerKeyEvent {
-	if keyEvent, ok := composerKeyEvent(event); ok {
-		return keyEvent
-	}
-
-	keyName := strings.ToLower(event.Name())
-	keyName = strings.ReplaceAll(keyName, "ctrl-", "ctrl+")
-	keyName = strings.ReplaceAll(keyName, " ", "-")
-
-	return extension.ComposerKeyEvent{
-		Key:   keyName,
-		Text:  event.Str(),
-		Ctrl:  event.Modifiers()&tcell.ModCtrl != 0,
-		Alt:   event.Modifiers()&tcell.ModAlt != 0,
-		Shift: event.Modifiers()&tcell.ModShift != 0,
-	}
 }

@@ -27,12 +27,12 @@ func (app *App) showPreviousPrompt() bool {
 		return false
 	}
 	if app.promptHistoryIndex == len(app.promptHistory) {
-		app.promptHistoryDraft = app.composerText()
+		app.promptHistoryDraft = app.composerBuffer.TextValue()
 	}
 	if app.promptHistoryIndex > 0 {
 		app.promptHistoryIndex--
 	}
-	app.setComposerText(app.promptHistory[app.promptHistoryIndex])
+	app.composerBuffer.SetText(app.promptHistory[app.promptHistoryIndex])
 
 	return true
 }
@@ -43,11 +43,11 @@ func (app *App) showNextPrompt() bool {
 	}
 	if app.promptHistoryIndex < len(app.promptHistory)-1 {
 		app.promptHistoryIndex++
-		app.setComposerText(app.promptHistory[app.promptHistoryIndex])
+		app.composerBuffer.SetText(app.promptHistory[app.promptHistoryIndex])
 		return true
 	}
 	app.promptHistoryIndex = len(app.promptHistory)
-	app.setComposerText(app.promptHistoryDraft)
+	app.composerBuffer.SetText(app.promptHistoryDraft)
 	app.promptHistoryDraft = ""
 
 	return true

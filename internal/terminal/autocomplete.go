@@ -117,7 +117,7 @@ func (app *App) acceptAutocomplete() bool {
 	}
 	selected := app.selectedAutocompleteIndex(matches)
 	app.resetPromptHistoryNavigation()
-	app.setComposerText("/" + matches[selected].Name + " ")
+	app.composerBuffer.SetText("/" + matches[selected].Name + " ")
 	app.setStatus("completed /" + matches[selected].Name)
 	app.resetAutocompleteSelection()
 
@@ -154,7 +154,7 @@ func (app *App) selectedAutocompleteIndex(matches []slashSuggestion) int {
 }
 
 func (app *App) autocompleteMatches() []slashSuggestion {
-	text := app.composerText()
+	text := app.composerBuffer.TextValue()
 	if app.autocompleteClosed {
 		return nil
 	}

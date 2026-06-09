@@ -554,7 +554,7 @@ func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
 		Kind: asyncEventCompactError, Provider: "", Text: compactTestFailed, PromptID: 9,
 	})
 
-	if got, want := app.composerText(), "during compaction"; got != want {
+	if got, want := app.composerBuffer.TextValue(), "during compaction"; got != want {
 		t.Fatalf("composer text = %q, want %q", got, want)
 	}
 	if got, want := app.queuedMessages, []string{"preexisting"}; len(got) != len(want) || got[0] != want[0] {

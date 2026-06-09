@@ -19,7 +19,7 @@ func TestFocusStatePrioritizesPanelAndAutocomplete(t *testing.T) {
 	app := newRenderTestApp(t)
 	assert.Equal(t, focusKindComposer, app.focusState().Kind)
 
-	app.setComposerText("/s")
+	app.composerBuffer.SetText("/s")
 	autocompleteFocus := app.focusState()
 	assert.Equal(t, focusKindAutocomplete, autocompleteFocus.Kind)
 	assert.True(t, autocompleteFocus.Exclusive)
@@ -66,7 +66,7 @@ librecode.keymap.set({ focus = "composer" }, "down", function()
   librecode.event.consume()
 end)
 `)
-	app.setComposerText("/s")
+	app.composerBuffer.SetText("/s")
 
 	pressTerminalKey(t, app, tcell.KeyDown, "")
 
@@ -87,7 +87,7 @@ librecode.keymap.set({ focus = "composer" }, "*", function()
   return true
 end)
 `)
-	app.setComposerText("/s")
+	app.composerBuffer.SetText("/s")
 	app.closeAutocomplete()
 	assert.False(t, app.autocompleteActive())
 	app.applyComposerBuffer(&extension.BufferState{

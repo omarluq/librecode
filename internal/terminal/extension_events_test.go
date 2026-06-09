@@ -36,10 +36,10 @@ end)
 	pressTerminalKey(t, app, tcell.KeyRune, "x")
 
 	assertEditorText(t, app, "lua")
-	if got, want := app.composerCursor(), 1; got != want {
+	if got, want := app.composerBuffer.CursorValue(), 1; got != want {
 		t.Fatalf("cursor = %d, want %d", got, want)
 	}
-	if got, want := app.composerLabel(), "lua:EDIT"; got != want {
+	if got, want := app.composerBuffer.Label, "lua:EDIT"; got != want {
 		t.Fatalf("composer label = %s, want %s", got, want)
 	}
 }
@@ -55,7 +55,7 @@ librecode.on("prompt_submit", function()
   librecode.event.consume()
 end)
 `)
-	app.setComposerText("from extension")
+	app.composerBuffer.SetText("from extension")
 
 	shouldQuit, err := app.submit(context.Background())
 	require.NoError(t, err)

@@ -101,10 +101,10 @@ func TestHandleEscape(t *testing.T) {
 		{
 			name:       "clears composer text",
 			pressCount: 1,
-			setup:      func(app *App) { app.setComposerText("draft") },
+			setup:      func(app *App) { app.composerBuffer.SetText("draft") },
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
-				if got := app.composerText(); got != "" {
+				if got := app.composerBuffer.TextValue(); got != "" {
 					t.Fatalf("composer text = %q, want empty", got)
 				}
 				if got, want := app.statusMessage, "editor cleared"; got != want {
@@ -148,7 +148,7 @@ func assertPromptCanceled(t *testing.T, app *App, canceled bool) {
 	if app.working {
 		t.Fatal("cancellation should stop working state")
 	}
-	if got := app.composerText(); got != interruptTestPrompt {
+	if got := app.composerBuffer.TextValue(); got != interruptTestPrompt {
 		t.Fatalf("composer text = %q, want restored prompt", got)
 	}
 }

@@ -148,7 +148,7 @@ func (app *App) loginCommand(ctx context.Context, args string) error {
 	}
 	if len(fields) < 2 {
 		app.resetPromptHistoryNavigation()
-		app.setComposerText("/login " + provider + " ")
+		app.composerBuffer.SetText("/login " + provider + " ")
 		app.setStatus("paste API key after provider and press Enter")
 		return nil
 	}
@@ -232,7 +232,7 @@ func (app *App) startAnthropicClaudeLogin(_ context.Context) error {
 	})
 	app.addMessage(transcript.RoleCustom, text)
 	app.resetPromptHistoryNavigation()
-	app.setComposerText("/login " + anthropicClaudeProviderID + " ")
+	app.composerBuffer.SetText("/login " + anthropicClaudeProviderID + " ")
 
 	return nil
 }

@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/input"
 	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"time"
@@ -22,7 +23,7 @@ const (
 
 func (app *App) reservedRuntimeBuffers() map[string]extension.BufferState {
 	return map[string]extension.BufferState{
-		extensionBufferComposer:   app.composerBufferState(),
+		extensionBufferComposer:   extensionBufferFromComposer(app.composerBuffer),
 		extensionBufferStatus:     app.statusBufferState(),
 		extensionBufferTranscript: app.transcriptBufferState(),
 		extensionBufferThinking:   app.thinkingBufferState(),
@@ -221,9 +222,9 @@ func cloneRuntimeBufferState(name string, buffer *extension.BufferState) extensi
 	cloned.Metadata = cloneExtensionMetadata(cloned.Metadata)
 	cloned.Chars = append([]string{}, cloned.Chars...)
 	if cloned.Chars == nil {
-		cloned.Chars = stringBufferChars(cloned.Text)
+		cloned.Chars = input.StringChars(cloned.Text)
 	}
-	cloned.Cursor = clampComposerCursor(cloned.Cursor, len([]rune(cloned.Text)))
+	cloned.Cursor = input.ClampCursor(cloned.Cursor, len([]rune(cloned.Text)))
 
 	return cloned
 }

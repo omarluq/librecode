@@ -86,13 +86,13 @@ func (app *App) prepareBranchFromEntry(entry *database.EntryEntity) {
 	if entry.Message.Role == database.RoleUser || entry.Message.Role == database.RoleCustom {
 		app.pendingParentID = emptyParentID(entry.ParentID)
 		app.resetPromptHistoryNavigation()
-		app.setComposerText(entry.Message.Content)
+		app.composerBuffer.SetText(entry.Message.Content)
 		app.setStatus("editing selected message to create a branch")
 		return
 	}
 	app.pendingParentID = &entry.ID
 	app.resetPromptHistoryNavigation()
-	app.setComposerText("")
+	app.composerBuffer.SetText("")
 	app.setStatus("continuing from " + entry.ID)
 }
 
