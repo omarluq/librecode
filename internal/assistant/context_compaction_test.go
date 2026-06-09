@@ -239,16 +239,16 @@ func newCompactionRuntimeWithKeepRecentTokens(
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.KeepRecentTokens = keepRecentTokens
 
-	return assistant.NewRuntime(
-		runtimeConfig,
-		repository,
-		nil,
-		assistant.NewResponseCache(false, 1, time.Minute),
-		runtime.EventBus(),
-		runtime.ModelRegistry(),
-		client,
-		nil,
-	), repository
+	return assistant.NewRuntime(&assistant.RuntimeOptions{
+		Config:     runtimeConfig,
+		Sessions:   repository,
+		Extensions: nil,
+		Cache:      assistant.NewResponseCache(false, 1, time.Minute),
+		Events:     runtime.EventBus(),
+		Models:     runtime.ModelRegistry(),
+		Client:     client,
+		Logger:     nil,
+	}), repository
 }
 
 func appendRuntimeTestMessage(

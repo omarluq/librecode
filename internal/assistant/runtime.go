@@ -110,29 +110,34 @@ type responseBundle struct {
 	ModelFacing   bool
 }
 
+// RuntimeOptions contains dependencies for an assistant runtime.
+type RuntimeOptions struct {
+	Config     *config.Config
+	Sessions   *database.SessionRepository
+	Extensions runtimeExtensions
+	Cache      *ResponseCache
+	Events     *event.Bus
+	Models     *model.Registry
+	Client     CompletionClient
+	Logger     *slog.Logger
+}
+
 // NewRuntime creates an assistant runtime.
-func NewRuntime(
-	cfg *config.Config,
-	sessions *database.SessionRepository,
-	extensions runtimeExtensions,
-	cache *ResponseCache,
-	events *event.Bus,
-	models *model.Registry,
-	client CompletionClient,
-	logger *slog.Logger,
-) *Runtime {
+func NewRuntime(options *RuntimeOptions) *Runtime {
+	client := options.Client
 	if client == nil {
 		client = NewHTTPCompletionClient()
 	}
+
 	return &Runtime{
-		cfg:        cfg,
-		sessions:   sessions,
-		extensions: extensions,
-		cache:      cache,
-		events:     events,
-		models:     models,
+		cfg:        options.Config,
+		sessions:   options.Sessions,
+		extensions: options.Extensions,
+		cache:      options.Cache,
+		events:     options.Events,
+		models:     options.Models,
 		client:     client,
-		logger:     logger,
+		logger:     options.Logger,
 	}
 }
 

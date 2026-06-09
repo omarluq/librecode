@@ -22,15 +22,15 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 	logger := do.MustInvoke[*LoggerService](injector).SlogLogger
 
 	return &AssistantService{
-		Runtime: assistant.NewRuntime(
-			cfg,
-			databaseService.Sessions,
-			extensionService.Manager,
-			cache.Responses,
-			events.Bus,
-			models.Registry,
-			nil,
-			logger,
-		),
+		Runtime: assistant.NewRuntime(&assistant.RuntimeOptions{
+			Config:     cfg,
+			Sessions:   databaseService.Sessions,
+			Extensions: extensionService.Manager,
+			Cache:      cache.Responses,
+			Events:     events.Bus,
+			Models:     models.Registry,
+			Client:     nil,
+			Logger:     logger,
+		}),
 	}, nil
 }

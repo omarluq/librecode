@@ -126,14 +126,14 @@ func newCompactionRuntimeWithManager(
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 
-	return assistant.NewRuntime(
-		runtimeConfig,
-		repository,
-		manager,
-		cache,
-		event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil))),
-		testRegistry(t),
-		client,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	)
+	return assistant.NewRuntime(&assistant.RuntimeOptions{
+		Config:     runtimeConfig,
+		Sessions:   repository,
+		Extensions: manager,
+		Cache:      cache,
+		Events:     event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		Models:     testRegistry(t),
+		Client:     client,
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 }
