@@ -1,11 +1,14 @@
 package terminal
 
-import "github.com/gdamore/tcell/v3"
+import (
+	"github.com/gdamore/tcell/v3"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
+)
 
-func (app *App) renderWorkingIndicator(_ int) []styledLine {
-	return []styledLine{
-		newStyledLine(tcell.StyleDefault, ""),
-		newStyledLine(app.workingIndicatorStyle(), app.workingIndicator()),
-		newStyledLine(tcell.StyleDefault, ""),
+func (app *App) renderWorkingIndicator(_ int) []rendertext.Line {
+	return []rendertext.Line{
+		rendertext.NewLine(tcell.StyleDefault, ""),
+		rendertext.NewLine(app.workingIndicatorStyle(), app.workingIndicator()),
+		rendertext.NewLine(tcell.StyleDefault, ""),
 	}
 }

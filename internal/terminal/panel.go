@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strconv"
 	"strings"
 
@@ -193,42 +194,42 @@ func itemMatchesQuery(item panelItem, query string) bool {
 }
 
 func panelRow(text string, width int) string {
-	return "│ " + padRight(text, width) + " │"
+	return "│ " + rendertext.PadRight(text, width) + " │"
 }
 
-func (panel *selectionPanel) render(width, height int, theme terminalTheme, bindings *keybindings) []styledLine {
+func (panel *selectionPanel) render(width, height int, theme terminalTheme, bindings *keybindings) []rendertext.Line {
 	contentWidth := max(1, width-4)
 	maxItems := max(1, height-8)
-	lines := make([]styledLine, 0, min(height, maxItems+8))
+	lines := make([]rendertext.Line, 0, min(height, maxItems+8))
 	borderStyle := theme.style(colorBorder)
 	lines = append(lines,
-		newStyledLine(borderStyle, editorTopBorder(width, "")),
-		newStyledLine(theme.style(colorAccent).Bold(true), panelRow(panel.title, contentWidth)),
+		rendertext.NewLine(borderStyle, editorTopBorder(width, "")),
+		rendertext.NewLine(theme.style(colorAccent).Bold(true), panelRow(panel.title, contentWidth)),
 	)
 	if panel.subtitle != "" {
-		lines = append(lines, newStyledLine(theme.style(colorMuted), panelRow(panel.subtitle, contentWidth)))
+		lines = append(lines, rendertext.NewLine(theme.style(colorMuted), panelRow(panel.subtitle, contentWidth)))
 	}
 	if panel.searchable {
 		query := "Search: " + panel.query
-		lines = append(lines, newStyledLine(theme.style(colorText), panelRow(query, contentWidth)))
+		lines = append(lines, rendertext.NewLine(theme.style(colorText), panelRow(query, contentWidth)))
 	}
-	lines = append(lines, newStyledLine(borderStyle, "├"+strings.Repeat("─", max(1, width-2))+"┤"))
+	lines = append(lines, rendertext.NewLine(borderStyle, "├"+strings.Repeat("─", max(1, width-2))+"┤"))
 	lines = append(lines, panel.itemLines(contentWidth, maxItems, theme)...)
 	lines = append(lines,
 		panel.hintLine(contentWidth, width, theme, bindings),
-		newStyledLine(borderStyle, editorBottomBorder(width)),
+		rendertext.NewLine(borderStyle, editorBottomBorder(width)),
 	)
 
-	return safeSlice(lines, height)
+	return rendertext.SafeTail(lines, height)
 }
 
-func (panel *selectionPanel) itemLines(contentWidth, maxItems int, theme terminalTheme) []styledLine {
+func (panel *selectionPanel) itemLines(contentWidth, maxItems int, theme terminalTheme) []rendertext.Line {
 	if len(panel.filtered) == 0 {
-		return []styledLine{newStyledLine(theme.style(colorMuted), panelRow("No matches", contentWidth))}
+		return []rendertext.Line{rendertext.NewLine(theme.style(colorMuted), panelRow("No matches", contentWidth))}
 	}
 	startIndex := panel.windowStart(maxItems)
 	endIndex := min(startIndex+maxItems, len(panel.filtered))
-	lines := make([]styledLine, 0, endIndex-startIndex)
+	lines := make([]rendertext.Line, 0, endIndex-startIndex)
 	for index := startIndex; index < endIndex; index++ {
 		lines = append(lines, panel.itemLine(index, contentWidth, theme))
 	}
@@ -236,7 +237,7 @@ func (panel *selectionPanel) itemLines(contentWidth, maxItems int, theme termina
 	return lines
 }
 
-func (panel *selectionPanel) itemLine(index, width int, theme terminalTheme) styledLine {
+func (panel *selectionPanel) itemLine(index, width int, theme terminalTheme) rendertext.Line {
 	item := panel.filtered[index]
 	prefix := "  "
 	style := theme.style(colorText)
@@ -252,7 +253,7 @@ func (panel *selectionPanel) itemLine(index, width int, theme terminalTheme) sty
 		text += " — " + item.Description
 	}
 
-	return newStyledLine(style, panelRow(text, width))
+	return rendertext.NewLine(style, panelRow(text, width))
 }
 
 func (panel *selectionPanel) windowStart(maxItems int) int {
@@ -271,15 +272,15 @@ func (panel *selectionPanel) hintLine(
 	width int,
 	theme terminalTheme,
 	bindings *keybindings,
-) styledLine {
+) rendertext.Line {
 	position := ""
 	if len(panel.filtered) > 0 {
-		position = " " + truncateText(panel.positionText(), max(0, width/4))
+		position = " " + rendertext.Truncate(panel.positionText(), max(0, width/4))
 	}
 	hint := bindings.hint(actionSelectUp) + "/" + bindings.hint(actionSelectDown) + " navigate · " +
 		bindings.hint(actionSelectConfirm) + " select · " + bindings.hint(actionSelectCancel) + " cancel" + position
 
-	return newStyledLine(theme.style(colorDim), panelRow(hint, contentWidth))
+	return rendertext.NewLine(theme.style(colorDim), panelRow(hint, contentWidth))
 }
 
 func (panel *selectionPanel) positionText() string {

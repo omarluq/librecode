@@ -4,6 +4,7 @@ package terminal
 import (
 	"context"
 	"fmt"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"time"
 
@@ -67,7 +68,7 @@ type messageLineCacheState struct {
 }
 
 type cachedRenderedMessage struct {
-	Lines []styledLine
+	Lines []rendertext.Line
 	Valid bool
 }
 
@@ -119,8 +120,8 @@ type App struct {
 	workStartedAt           time.Time
 	screen                  tcell.Screen
 	extensions              extension.TerminalEventRunner
-	renderer                *screenRenderer
-	frame                   *cellBuffer
+	renderer                *rendertext.Renderer
+	frame                   *rendertext.Buffer
 	lastResize              *tcell.EventResize
 	runtime                 *assistant.Runtime
 	settings                *database.DocumentRepository
@@ -212,7 +213,7 @@ func newApp(screen tcell.Screen, options *RunOptions) *App {
 	resources := initialResourceSnapshot(options)
 	app := &App{
 		screen:           screen,
-		renderer:         newScreenRenderer(screen),
+		renderer:         rendertext.NewRenderer(screen),
 		frame:            nil,
 		lastResize:       nil,
 		runtime:          options.Runtime,

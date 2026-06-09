@@ -1,9 +1,12 @@
 package terminal
 
-import "github.com/omarluq/librecode/internal/transcript"
+import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/transcript"
+)
 
-func (app *App) allMessageLines(width int, dynamicGroups [][]styledLine) []styledLine {
-	groups := make([][]styledLine, 0, len(app.transcript.History)+len(dynamicGroups))
+func (app *App) allMessageLines(width int, dynamicGroups [][]rendertext.Line) []rendertext.Line {
+	groups := make([][]rendertext.Line, 0, len(app.transcript.History)+len(dynamicGroups))
 	for index := range app.transcript.History {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
@@ -12,10 +15,10 @@ func (app *App) allMessageLines(width int, dynamicGroups [][]styledLine) []style
 	return flattenStyledLineGroups(groups, styledLineGroupRows(groups))
 }
 
-func (app *App) bottomMessageLines(width, maxRows int, dynamicGroups [][]styledLine) []styledLine {
+func (app *App) bottomMessageLines(width, maxRows int, dynamicGroups [][]rendertext.Line) []rendertext.Line {
 	reservedRows := extraGroupsVisibleRows(dynamicGroups)
 	staticMaxRows := max(0, maxRows-reservedRows)
-	groups := make([][]styledLine, 0, len(app.transcript.History)+len(dynamicGroups))
+	groups := make([][]rendertext.Line, 0, len(app.transcript.History)+len(dynamicGroups))
 	if staticMaxRows > 0 {
 		staticGroups, _ := app.tailStaticMessageGroups(width, staticMaxRows)
 		groups = append(groups, staticGroups...)
@@ -25,7 +28,7 @@ func (app *App) bottomMessageLines(width, maxRows int, dynamicGroups [][]styledL
 	return sliceBottomStyledLineGroups(groups, maxRows)
 }
 
-func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]styledLine) []styledLine {
+func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]rendertext.Line) []rendertext.Line {
 	if maxRows <= 0 {
 		return nil
 	}
@@ -45,7 +48,7 @@ func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]style
 	app.scrollOffset = min(app.scrollOffset, totalRows-maxRows)
 	endRow := totalRows - app.scrollOffset
 	startRow := max(0, endRow-maxRows)
-	lines := make([]styledLine, 0, endRow-startRow)
+	lines := make([]rendertext.Line, 0, endRow-startRow)
 	if startRow < staticRows {
 		lines = append(lines, app.staticMessageLinesForRows(width, startRow, min(endRow, staticRows))...)
 	}
@@ -58,12 +61,12 @@ func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]style
 	return lines
 }
 
-func (app *App) scrolledMessageLinesFromTail(width, maxRows int, dynamicGroups [][]styledLine) []styledLine {
+func (app *App) scrolledMessageLinesFromTail(width, maxRows int, dynamicGroups [][]rendertext.Line) []rendertext.Line {
 	dynamicRows := extraGroupsVisibleRows(dynamicGroups)
 	rowsNeededFromBottom := maxRows + app.scrollOffset
 	staticRowsNeeded := max(0, rowsNeededFromBottom-dynamicRows)
 	staticGroups, reachedStart := app.tailStaticMessageGroups(width, staticRowsNeeded)
-	groups := make([][]styledLine, 0, len(staticGroups)+len(dynamicGroups))
+	groups := make([][]rendertext.Line, 0, len(staticGroups)+len(dynamicGroups))
 	groups = append(groups, staticGroups...)
 	groups = append(groups, dynamicGroups...)
 	totalRows := styledLineGroupRows(groups)
@@ -81,13 +84,13 @@ func (app *App) scrolledMessageLinesFromTail(width, maxRows int, dynamicGroups [
 	return sliceStyledLineGroups(groups, startRow, endRow)
 }
 
-func (app *App) tailStaticMessageGroups(width, rowsNeeded int) ([][]styledLine, bool) {
+func (app *App) tailStaticMessageGroups(width, rowsNeeded int) ([][]rendertext.Line, bool) {
 	if rowsNeeded <= 0 || len(app.transcript.History) == 0 {
 		return nil, len(app.transcript.History) == 0
 	}
 	rows := 0
 	start := len(app.transcript.History)
-	var partial []styledLine
+	var partial []rendertext.Line
 	for start > 0 && rows < rowsNeeded {
 		start--
 		remaining := rowsNeeded - rows
@@ -98,7 +101,7 @@ func (app *App) tailStaticMessageGroups(width, rowsNeeded int) ([][]styledLine, 
 		}
 		rows += len(lines)
 	}
-	groups := make([][]styledLine, 0, len(app.transcript.History)-start)
+	groups := make([][]rendertext.Line, 0, len(app.transcript.History)-start)
 	if partial != nil {
 		groups = append(groups, partial)
 		start++
@@ -110,7 +113,7 @@ func (app *App) tailStaticMessageGroups(width, rowsNeeded int) ([][]styledLine, 
 	return groups, start == 0 && partial == nil
 }
 
-func (app *App) cachedMessageTailLines(width, index, rowsNeeded int) ([]styledLine, bool) {
+func (app *App) cachedMessageTailLines(width, index, rowsNeeded int) ([]rendertext.Line, bool) {
 	if rowsNeeded <= 0 {
 		return nil, true
 	}
@@ -122,7 +125,7 @@ func (app *App) cachedMessageTailLines(width, index, rowsNeeded int) ([]styledLi
 	return lines, true
 }
 
-func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []styledLine {
+func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []rendertext.Line {
 	if endRow <= startRow || len(app.transcript.History) == 0 {
 		return nil
 	}
@@ -132,7 +135,7 @@ func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []styledL
 	endIndex := lowerBoundInts(app.transcript.LineCache.prefixes, endRow)
 	startIndex = min(max(0, startIndex), len(app.transcript.History))
 	endIndex = min(max(startIndex, endIndex), len(app.transcript.History))
-	groups := make([][]styledLine, 0, endIndex-startIndex)
+	groups := make([][]rendertext.Line, 0, endIndex-startIndex)
 	for index := startIndex; index < endIndex; index++ {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
@@ -142,8 +145,8 @@ func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []styledL
 	return sliceStyledLineGroups(groups, relativeStart, relativeEnd)
 }
 
-func (app *App) dynamicMessageLineGroups(width int) [][]styledLine {
-	groups := make([][]styledLine, 0, len(app.transcript.Streaming.Blocks)+3)
+func (app *App) dynamicMessageLineGroups(width int) [][]rendertext.Line {
+	groups := make([][]rendertext.Line, 0, len(app.transcript.Streaming.Blocks)+3)
 	if len(app.transcript.Streaming.Blocks) > 0 {
 		for index := range app.transcript.Streaming.Blocks {
 			groups = append(groups, app.cachedStreamingBlockLines(width, index))
@@ -190,11 +193,11 @@ func lowerBoundInts(values []int, target int) int {
 	return low
 }
 
-func extraGroupsVisibleRows(groups [][]styledLine) int {
+func extraGroupsVisibleRows(groups [][]rendertext.Line) int {
 	return styledLineGroupRows(groups)
 }
 
-func styledLineGroupRows(groups [][]styledLine) int {
+func styledLineGroupRows(groups [][]rendertext.Line) int {
 	total := 0
 	for _, group := range groups {
 		total += len(group)
@@ -203,7 +206,7 @@ func styledLineGroupRows(groups [][]styledLine) int {
 	return total
 }
 
-func sliceBottomStyledLineGroups(groups [][]styledLine, maxRows int) []styledLine {
+func sliceBottomStyledLineGroups(groups [][]rendertext.Line, maxRows int) []rendertext.Line {
 	totalRows := styledLineGroupRows(groups)
 	if maxRows < 0 || totalRows <= maxRows {
 		return flattenStyledLineGroups(groups, totalRows)
@@ -212,7 +215,7 @@ func sliceBottomStyledLineGroups(groups [][]styledLine, maxRows int) []styledLin
 	return sliceStyledLineGroups(groups, totalRows-maxRows, totalRows)
 }
 
-func (app *App) visibleMessageLineGroups(groups [][]styledLine, maxRows int) []styledLine {
+func (app *App) visibleMessageLineGroups(groups [][]rendertext.Line, maxRows int) []rendertext.Line {
 	totalRows := 0
 	for _, group := range groups {
 		totalRows += len(group)
@@ -228,8 +231,8 @@ func (app *App) visibleMessageLineGroups(groups [][]styledLine, maxRows int) []s
 	return sliceStyledLineGroups(groups, start, end)
 }
 
-func flattenStyledLineGroups(groups [][]styledLine, totalRows int) []styledLine {
-	lines := make([]styledLine, 0, totalRows)
+func flattenStyledLineGroups(groups [][]rendertext.Line, totalRows int) []rendertext.Line {
+	lines := make([]rendertext.Line, 0, totalRows)
 	for _, group := range groups {
 		lines = append(lines, group...)
 	}
@@ -237,8 +240,8 @@ func flattenStyledLineGroups(groups [][]styledLine, totalRows int) []styledLine 
 	return lines
 }
 
-func sliceStyledLineGroups(groups [][]styledLine, start, end int) []styledLine {
-	lines := make([]styledLine, 0, max(0, end-start))
+func sliceStyledLineGroups(groups [][]rendertext.Line, start, end int) []rendertext.Line {
+	lines := make([]rendertext.Line, 0, max(0, end-start))
 	offset := 0
 	for _, group := range groups {
 		nextOffset := offset + len(group)

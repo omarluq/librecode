@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 
 	"github.com/gdamore/tcell/v3"
 )
@@ -36,7 +37,7 @@ func (app *App) prepareScreenForFrame() {
 func (app *App) draw(ctx context.Context) {
 	app.prepareScreenForFrame()
 	width, height := app.screenSize()
-	app.frame = newCellBuffer(width, height, tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(width, height, tcell.StyleDefault)
 	if width < 20 || height < 8 {
 		app.drawTiny(width, height)
 		app.flushFrame()
@@ -89,16 +90,16 @@ func (app *App) needsRuntimeRenderPath() bool {
 
 func (app *App) flushFrame() {
 	app.applySelectionHighlight()
-	app.renderer.flush(app.frame)
+	app.renderer.Flush(app.frame)
 	app.screen.Show()
 }
 
 func (app *App) drawTiny(width, height int) {
-	message := truncateText("librecode: terminal too small", width)
+	message := rendertext.Truncate("librecode: terminal too small", width)
 	writeLine(app.frame, max(0, height/2), width, message, app.theme.style(colorWarning))
 }
 
-func (app *App) writeStyledLine(row, width int, line styledLine) {
+func (app *App) writeStyledLine(row, width int, line rendertext.Line) {
 	if isWorkingIndicatorText(line.Text) {
 		_, contentWidth := workingShimmerContentRange(line.Text)
 		writeShimmerLineWithVerticalBorders(

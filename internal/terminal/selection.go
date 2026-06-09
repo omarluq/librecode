@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"time"
 
@@ -71,20 +72,20 @@ func (selection *mouseSelection) contains(column, row int) bool {
 	return true
 }
 
-func (selection *mouseSelection) textFrom(frame *cellBuffer) string {
+func (selection *mouseSelection) textFrom(frame *rendertext.Buffer) string {
 	if frame == nil || selection.empty() {
 		return ""
 	}
 	startX, startY, endX, endY := selection.normalized()
-	startY = max(0, min(startY, frame.height-1))
-	endY = max(0, min(endY, frame.height-1))
+	startY = max(0, min(startY, frame.Height()-1))
+	endY = max(0, min(endY, frame.Height()-1))
 	if startY > endY {
 		return ""
 	}
 
 	lines := make([]string, 0, endY-startY+1)
 	for row := startY; row <= endY; row++ {
-		from, to := selectionRowBounds(row, startX, startY, endX, endY, frame.width)
+		from, to := selectionRowBounds(row, startX, startY, endX, endY, frame.Width())
 		if from >= to {
 			lines = append(lines, "")
 			continue
@@ -110,13 +111,13 @@ func selectionRowBounds(row, startX, startY, endX, endY, width int) (from, to in
 	return from, to
 }
 
-func selectedFrameLine(frame *cellBuffer, row, from, limit int) string {
+func selectedFrameLine(frame *rendertext.Buffer, row, from, limit int) string {
 	var builder strings.Builder
 	for column := from; column < limit; column++ {
-		builder.WriteRune(frame.cell(column, row).Rune)
+		builder.WriteRune(frame.Cell(column, row).Rune)
 	}
 	text := builder.String()
-	if limit >= frame.width {
+	if limit >= frame.Width() {
 		return strings.TrimRight(text, " ")
 	}
 
@@ -172,7 +173,7 @@ func intAbs(value int) int {
 func (app *App) selectFrameLine(row int, clickedAt time.Time, column, clickCount int) {
 	width := 0
 	if app.frame != nil {
-		width = app.frame.width
+		width = app.frame.Width()
 	}
 	app.selection = mouseSelection{
 		lastClickUnixNano: clickedAt.UnixNano(),
@@ -205,20 +206,20 @@ func (app *App) selectFrameToken(column, row int, clickedAt time.Time, clickCoun
 }
 
 func (app *App) frameTokenBounds(column, row int) (start, end int) {
-	if app.frame == nil || row < 0 || row >= app.frame.height {
+	if app.frame == nil || row < 0 || row >= app.frame.Height() {
 		return column, column
 	}
-	column = max(0, min(column, app.frame.width-1))
-	if app.frame.cell(column, row).Rune == ' ' {
+	column = max(0, min(column, app.frame.Width()-1))
+	if app.frame.Cell(column, row).Rune == ' ' {
 		return app.frameWhitespaceBounds(column, row)
 	}
 
 	start = column
-	for start > 0 && app.frame.cell(start-1, row).Rune != ' ' {
+	for start > 0 && app.frame.Cell(start-1, row).Rune != ' ' {
 		start--
 	}
 	end = column + 1
-	for end < app.frame.width && app.frame.cell(end, row).Rune != ' ' {
+	for end < app.frame.Width() && app.frame.Cell(end, row).Rune != ' ' {
 		end++
 	}
 
@@ -227,11 +228,11 @@ func (app *App) frameTokenBounds(column, row int) (start, end int) {
 
 func (app *App) frameWhitespaceBounds(column, row int) (start, end int) {
 	start = column
-	for start > 0 && app.frame.cell(start-1, row).Rune == ' ' {
+	for start > 0 && app.frame.Cell(start-1, row).Rune == ' ' {
 		start--
 	}
 	end = column + 1
-	for end < app.frame.width && app.frame.cell(end, row).Rune == ' ' {
+	for end < app.frame.Width() && app.frame.Cell(end, row).Rune == ' ' {
 		end++
 	}
 
@@ -280,12 +281,12 @@ func (app *App) applySelectionHighlight() {
 	if app.frame == nil || app.selection.empty() {
 		return
 	}
-	for row := range app.frame.height {
-		for column := range app.frame.width {
+	for row := range app.frame.Height() {
+		for column := range app.frame.Width() {
 			if !app.selection.contains(column, row) {
 				continue
 			}
-			cell := app.frame.cell(column, row)
+			cell := app.frame.Cell(column, row)
 			cell.Style = app.selectionStyle(cell.Style)
 			app.frame.SetContent(column, row, cell.Rune, nil, cell.Style)
 		}

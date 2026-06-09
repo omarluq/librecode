@@ -3,6 +3,7 @@ package terminal
 
 import (
 	"fmt"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"testing"
 
@@ -31,12 +32,12 @@ func BenchmarkDrawMessagesSameWidth(b *testing.B) {
 			fmt.Sprintf("answer %d %s", i, strings.Repeat("lorem ipsum dolor sit amet ", 30)),
 		)
 	}
-	app.frame = newCellBuffer(120, 50, tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(120, 50, tcell.StyleDefault)
 	app.drawMessages(120, 50, 0)
 
 	b.ReportAllocs()
 	for b.Loop() {
-		app.frame = newCellBuffer(120, 50, tcell.StyleDefault)
+		app.frame = rendertext.NewBuffer(120, 50, tcell.StyleDefault)
 		app.drawMessages(120, 50, 0)
 	}
 }

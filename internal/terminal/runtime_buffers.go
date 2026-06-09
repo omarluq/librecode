@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"time"
 
@@ -253,25 +254,25 @@ func (app *App) drawRuntimeTextBuffer(
 	style tcell.Style,
 ) {
 	lines := app.renderBufferTextLines(window.Width, buffer.Text, style)
-	for index, line := range app.visibleMessageLineGroups([][]styledLine{lines}, window.Height) {
+	for index, line := range app.visibleMessageLineGroups([][]rendertext.Line{lines}, window.Height) {
 		app.writeStyledLine(window.Y+index, window.Width, line)
 	}
 }
 
-func (app *App) renderBufferTextLines(width int, text string, style tcell.Style) []styledLine {
+func (app *App) renderBufferTextLines(width int, text string, style tcell.Style) []rendertext.Line {
 	if text == "" {
-		return []styledLine{}
+		return []rendertext.Line{}
 	}
 	parts := strings.Split(text, "\n")
-	lines := make([]styledLine, 0, len(parts))
+	lines := make([]rendertext.Line, 0, len(parts))
 	for _, part := range parts {
-		wrapped := wrapText(part, width)
+		wrapped := rendertext.Wrap(part, width)
 		if len(wrapped) == 0 {
-			lines = append(lines, newStyledLine(style, ""))
+			lines = append(lines, rendertext.NewLine(style, ""))
 			continue
 		}
 		for _, line := range wrapped {
-			lines = append(lines, newStyledLine(style, line))
+			lines = append(lines, rendertext.NewLine(style, line))
 		}
 	}
 

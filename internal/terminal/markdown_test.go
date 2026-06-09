@@ -2,6 +2,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"testing"
 
@@ -129,7 +130,7 @@ func TestRenderMarkdownTableBordersAlignWithWideCells(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	lines := app.renderMarkdown("| 项目 | Count |\n| :--- | ---: |\n| apples | 12 |", 80)
-	app.frame = newCellBuffer(80, len(lines), tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(80, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 80, line)
 	}
@@ -150,7 +151,7 @@ func assertLineContains(t *testing.T, lines []string, needle string) {
 	t.Fatalf("line containing %q not found in %#v", needle, lines)
 }
 
-func findLineContaining(t *testing.T, lines []styledLine, needle string) styledLine {
+func findLineContaining(t *testing.T, lines []rendertext.Line, needle string) rendertext.Line {
 	t.Helper()
 	for _, line := range lines {
 		if strings.Contains(line.Text, needle) {
@@ -159,10 +160,10 @@ func findLineContaining(t *testing.T, lines []styledLine, needle string) styledL
 	}
 	t.Fatalf("line containing %q not found in %#v", needle, lineTexts(lines))
 
-	return newStyledLine(tcell.StyleDefault, "")
+	return rendertext.NewLine(tcell.StyleDefault, "")
 }
 
-func lineHasForeground(line styledLine, color tcell.Color) bool {
+func lineHasForeground(line rendertext.Line, color tcell.Color) bool {
 	for _, span := range line.Spans {
 		if span.Style.GetForeground() == color {
 			return true

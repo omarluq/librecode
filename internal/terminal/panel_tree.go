@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 
 	"github.com/omarluq/librecode/internal/database"
 )
@@ -53,10 +54,10 @@ func appendTreeItems(items *[]panelItem, nodes []database.TreeNodeEntity, prefix
 
 func treeDescription(entry *database.EntryEntity) string {
 	if entry.Message.Content != "" {
-		return truncateText(entry.Message.Content, 80)
+		return rendertext.Truncate(entry.Message.Content, 80)
 	}
 	if entry.Summary != "" {
-		return truncateText(entry.Summary, 80)
+		return rendertext.Truncate(entry.Summary, 80)
 	}
 	if entry.Message.Model != "" {
 		return modelLabel(entry.Message.Provider, entry.Message.Model)

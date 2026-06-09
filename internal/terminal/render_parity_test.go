@@ -4,6 +4,7 @@ package terminal
 import (
 	"context"
 	"database/sql"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ func TestRenderParityComposerFrame(t *testing.T) {
 	app.setComposerText("first line\nsecond line")
 
 	layout := app.defaultRuntimeLayout(40, 12)
-	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	app.drawComposerWindow(&layout)
 
 	frame := frameText(app.frame)
@@ -48,7 +49,7 @@ func TestRenderParityStatuslineFrame(t *testing.T) {
 	app.sessionID = "session-123"
 
 	layout := app.defaultRuntimeLayout(60, 12)
-	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	app.drawStatusWindow(&layout)
 
 	statusY := layout.Status.Y
@@ -76,7 +77,7 @@ func TestRenderParityStatuslineTokenUsage(t *testing.T) {
 	}
 
 	layout := app.defaultRuntimeLayout(80, 12)
-	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	app.drawStatusWindow(&layout)
 
 	second := frameRowText(app.frame, layout.Status.Y+1)
@@ -93,7 +94,7 @@ func TestRenderParityToolBlockFrame(t *testing.T) {
 	app.toolsExpanded = true
 	event := newTestToolEvent("read", "func main() {\n    fmt.Println(\"hi\")\n}")
 	lines := app.renderToolMessage(50, newChatMessage(transcript.RoleToolResult, formatToolEventForUI(event)))
-	app.frame = newCellBuffer(50, len(lines), tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(50, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 50, line)
 	}
@@ -113,7 +114,7 @@ func TestRenderParitySkillLoadBlockFrame(t *testing.T) {
 	app := newRenderTestApp(t)
 	event := newTestToolEvent("load skill: golang-testing", "# golang-testing\nUse table-driven tests.")
 	lines := app.renderToolMessage(60, newChatMessage(transcript.RoleToolResult, formatToolEventForUI(event)))
-	app.frame = newCellBuffer(60, len(lines), tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(60, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 60, line)
 	}
@@ -131,7 +132,7 @@ func TestRenderParityThinkingBlockStyle(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	lines := app.renderThinkingMessage(50, newChatMessage(transcript.RoleThinking, "reasoning\ncontinues"))
-	app.frame = newCellBuffer(50, len(lines), tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(50, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 50, line)
 	}
@@ -157,7 +158,7 @@ func TestRenderParityWrappedBulletsFrame(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	lines := app.renderMarkdown("- alpha beta gamma delta epsilon zeta eta theta", 18)
-	app.frame = newCellBuffer(18, len(lines), tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(18, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 18, line)
 	}
@@ -317,24 +318,24 @@ func appendRenderParityMessage(
 	return entry
 }
 
-func frameRowText(frame *cellBuffer, row int) string {
-	if frame == nil || row < 0 || row >= frame.height {
+func frameRowText(frame *rendertext.Buffer, row int) string {
+	if frame == nil || row < 0 || row >= frame.Height() {
 		return ""
 	}
 	var builder strings.Builder
-	for column := range frame.width {
-		builder.WriteRune(frame.cell(column, row).Rune)
+	for column := range frame.Width() {
+		builder.WriteRune(frame.Cell(column, row).Rune)
 	}
 
 	return builder.String()
 }
 
-func firstNonSpaceCell(frame *cellBuffer, row int) screenCell {
-	if frame == nil || row < 0 || row >= frame.height {
+func firstNonSpaceCell(frame *rendertext.Buffer, row int) rendertext.Cell {
+	if frame == nil || row < 0 || row >= frame.Height() {
 		return emptyScreenCell()
 	}
-	for column := range frame.width {
-		cell := frame.cell(column, row)
+	for column := range frame.Width() {
+		cell := frame.Cell(column, row)
 		if cell.Rune != ' ' {
 			return cell
 		}
@@ -343,8 +344,8 @@ func firstNonSpaceCell(frame *cellBuffer, row int) screenCell {
 	return emptyScreenCell()
 }
 
-func emptyScreenCell() screenCell {
-	return screenCell{Style: tcell.StyleDefault, Rune: 0}
+func emptyScreenCell() rendertext.Cell {
+	return rendertext.Cell{Style: tcell.StyleDefault, Rune: 0}
 }
 
 func assertFrameContainsAll(t *testing.T, frame string, values ...string) {
