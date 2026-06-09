@@ -1,6 +1,6 @@
 package terminal
 
-import "github.com/omarluq/librecode/internal/database"
+import "github.com/omarluq/librecode/internal/transcript"
 
 func (app *App) allMessageLines(width int, dynamicGroups [][]styledLine) []styledLine {
 	groups := make([][]styledLine, 0, len(app.transcript.History)+len(dynamicGroups))
@@ -114,7 +114,7 @@ func (app *App) cachedMessageTailLines(width, index, rowsNeeded int) ([]styledLi
 	if rowsNeeded <= 0 {
 		return nil, true
 	}
-	if app.toolsExpanded && app.transcript.History[index].Role == database.RoleToolResult {
+	if app.toolsExpanded && app.transcript.History[index].Role == transcript.RoleToolResult {
 		return app.renderToolMessageTail(width, app.transcript.History[index], rowsNeeded)
 	}
 	lines := app.cachedMessageLines(width, index)

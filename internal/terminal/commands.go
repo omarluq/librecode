@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/omarluq/librecode/internal/transcript"
+
 	"github.com/omarluq/librecode/internal/database"
 )
 
@@ -146,7 +148,7 @@ func (app *App) showSessionInfo(ctx context.Context) {
 		"messages: " + intText(len(messages)),
 		"model: " + modelLabel(app.currentProvider(), app.currentModel()),
 	}, "\n")
-	app.addMessage(database.RoleCustom, content)
+	app.addMessage(transcript.RoleCustom, content)
 }
 
 func parentIDFromEntry(entry *database.EntryEntity) *string {

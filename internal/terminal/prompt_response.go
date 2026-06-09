@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/omarluq/librecode/internal/assistant"
-	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 func (app *App) applyPromptResponse(ctx context.Context, response *assistant.PromptResponse, promptID uint64) {
@@ -31,7 +31,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	app.applyTokenUsage(&response.Usage)
 	app.applyPromptResponseSideEffects(response, streamingBlocks)
 	app.streamedToolEvents = 0
-	app.addMessage(database.RoleAssistant, response.Text)
+	app.addMessage(transcript.RoleAssistant, response.Text)
 	app.activePrompt = nil
 	app.persistSessionSettings()
 	app.processQueuedPrompt(ctx)
@@ -62,16 +62,16 @@ func (app *App) applyStreamedSideEffectBlocks(
 
 func (app *App) applyStreamedSideEffectBlock(block chatMessage) (thinkingBlocks, toolBlocks int) {
 	switch block.Role {
-	case database.RoleThinking:
+	case transcript.RoleThinking:
 		return app.applyStreamedThinkingBlock(block.Content), 0
-	case database.RoleToolResult, database.RoleBashExecution:
+	case transcript.RoleToolResult, transcript.RoleBashExecution:
 		app.addMessage(block.Role, block.Content)
 		return 0, 1
-	case database.RoleAssistant,
-		database.RoleUser,
-		database.RoleCustom,
-		database.RoleBranchSummary,
-		database.RoleCompactionSummary:
+	case transcript.RoleAssistant,
+		transcript.RoleUser,
+		transcript.RoleCustom,
+		transcript.RoleBranchSummary,
+		transcript.RoleCompactionSummary:
 		return 0, 0
 	}
 
@@ -82,7 +82,7 @@ func (app *App) applyStreamedThinkingBlock(content string) int {
 	if strings.TrimSpace(content) == "" {
 		return 0
 	}
-	app.addMessage(database.RoleThinking, content)
+	app.addMessage(transcript.RoleThinking, content)
 
 	return 1
 }
@@ -93,9 +93,9 @@ func (app *App) applyRemainingSideEffects(
 	streamedToolBlocks int,
 ) {
 	for index := streamedThinkingBlocks; index < len(response.Thinking); index++ {
-		app.addMessage(database.RoleThinking, response.Thinking[index])
+		app.addMessage(transcript.RoleThinking, response.Thinking[index])
 	}
 	for index := streamedToolBlocks; index < len(response.ToolEvents); index++ {
-		app.addMessage(database.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
+		app.addMessage(transcript.RoleToolResult, formatToolEventForUI(&response.ToolEvents[index]))
 	}
 }

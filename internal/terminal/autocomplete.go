@@ -8,6 +8,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 type slashSuggestion struct {
@@ -312,19 +313,15 @@ func workingShimmerColor(position, column, contentWidth int, palette workingShim
 }
 
 func formatToolEventForUI(event *assistant.ToolEvent) string {
-	parts := []string{fmt.Sprintf("tool: %s", event.Name)}
-	if strings.TrimSpace(event.ArgumentsJSON) != "" {
-		parts = append(parts, "arguments:", event.ArgumentsJSON)
+	if event == nil {
+		return transcript.FormatToolEventDisplay(nil)
 	}
-	if event.Error != "" {
-		parts = append(parts, "error:", event.Error)
-	}
-	if strings.TrimSpace(event.DetailsJSON) != "" {
-		parts = append(parts, "details:", event.DetailsJSON)
-	}
-	if strings.TrimSpace(event.Result) != "" {
-		parts = append(parts, "output:", event.Result)
-	}
-
-	return strings.Join(parts, "\n")
+	return transcript.FormatToolEventDisplay(&transcript.ToolEvent{
+		Name:          event.Name,
+		ArgumentsJSON: event.ArgumentsJSON,
+		DetailsJSON:   event.DetailsJSON,
+		Result:        event.Result,
+		Error:         event.Error,
+		IsError:       event.IsError,
+	})
 }

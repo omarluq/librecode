@@ -7,9 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/omarluq/librecode/internal/transcript"
+
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/browser"
-	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -228,7 +229,7 @@ func (app *App) startAnthropicClaudeLogin(_ context.Context) error {
 		Instructions: "Complete login in your browser, then paste the authorization code with: /login " +
 			anthropicClaudeProviderID + " <code#state>",
 	})
-	app.addMessage(database.RoleCustom, text)
+	app.addMessage(transcript.RoleCustom, text)
 	app.resetPromptHistoryNavigation()
 	app.setComposerText("/login " + anthropicClaudeProviderID + " ")
 
@@ -365,7 +366,7 @@ func (app *App) showAuthInfo() {
 	for _, provider := range providers {
 		lines = append(lines, provider+": "+app.authStatusLabel(provider))
 	}
-	app.addMessage(database.RoleCustom, strings.Join(lines, "\n"))
+	app.addMessage(transcript.RoleCustom, strings.Join(lines, "\n"))
 }
 
 func (app *App) reloadRuntime(ctx context.Context) error {

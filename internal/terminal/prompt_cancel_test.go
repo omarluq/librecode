@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 func TestCancelActivePromptPreservesQueuedMessages(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.addMessage(database.RoleUser, "prompt")
+	app.addMessage(transcript.RoleUser, "prompt")
 	app.queuedMessages = []string{"follow up"}
 	app.activePrompt = newTestActivePrompt(func() {})
 	app.activePrompt.BaselineMessages = 0
@@ -39,7 +39,7 @@ func TestCancelActivePromptWithoutActivePromptClearsTransientState(t *testing.T)
 	app.working = true
 	app.streamingText = "partial"
 	app.streamingThinkingText = "thinking"
-	app.transcript.Streaming.Blocks = []chatMessage{newChatMessage(database.RoleAssistant, "partial")}
+	app.transcript.Streaming.Blocks = []chatMessage{newChatMessage(transcript.RoleAssistant, "partial")}
 	app.streamedToolEvents = 2
 
 	app.cancelActivePrompt(context.Background())

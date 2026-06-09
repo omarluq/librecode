@@ -6,8 +6,8 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 const (
@@ -61,8 +61,8 @@ func (app *App) thinkingBufferState() extension.BufferState {
 	}
 	buffer := textBufferState(extensionBufferThinking, "")
 	buffer.Metadata = map[string]any{
-		extensionMetadataCount: app.countRuntimeMessages(func(role database.Role) bool {
-			return role == database.RoleThinking
+		extensionMetadataCount: app.countRuntimeMessages(func(role transcript.Role) bool {
+			return role == transcript.RoleThinking
 		}),
 	}
 
@@ -75,8 +75,8 @@ func (app *App) toolsBufferState() extension.BufferState {
 	}
 	buffer := textBufferState(extensionBufferTools, "")
 	buffer.Metadata = map[string]any{
-		extensionMetadataCount: app.countRuntimeMessages(func(role database.Role) bool {
-			return role == database.RoleToolResult || role == database.RoleBashExecution
+		extensionMetadataCount: app.countRuntimeMessages(func(role transcript.Role) bool {
+			return role == transcript.RoleToolResult || role == transcript.RoleBashExecution
 		}),
 	}
 
@@ -185,7 +185,7 @@ func transcriptBlockKind(streaming bool) string {
 	return extensionMetadataMessage
 }
 
-func (app *App) countRuntimeMessages(matchesRole func(database.Role) bool) int {
+func (app *App) countRuntimeMessages(matchesRole func(transcript.Role) bool) int {
 	count := 0
 	for _, message := range app.transcript.History {
 		if matchesRole(message.Role) {

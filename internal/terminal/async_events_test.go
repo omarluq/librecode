@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
-	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 const (
@@ -497,7 +497,7 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
 				require.Len(t, app.transcript.Streaming.Blocks, 1)
-				assert.Equal(t, database.RoleAssistant, app.transcript.Streaming.Blocks[0].Role)
+				assert.Equal(t, transcript.RoleAssistant, app.transcript.Streaming.Blocks[0].Role)
 				assert.Equal(t, asyncTestGreeting, app.transcript.Streaming.Blocks[0].Content)
 			},
 			prepare:        nil,
@@ -509,7 +509,7 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
 				require.Len(t, app.transcript.Streaming.Blocks, 1)
-				assert.Equal(t, database.RoleThinking, app.transcript.Streaming.Blocks[0].Role)
+				assert.Equal(t, transcript.RoleThinking, app.transcript.Streaming.Blocks[0].Role)
 			},
 			prepare:        nil,
 			canceledActive: false,
@@ -520,7 +520,7 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
 				require.Len(t, app.transcript.Streaming.Blocks, 1)
-				assert.Equal(t, database.RoleToolResult, app.transcript.Streaming.Blocks[0].Role)
+				assert.Equal(t, transcript.RoleToolResult, app.transcript.Streaming.Blocks[0].Role)
 				assert.Equal(t, 1, app.streamedToolEvents)
 			},
 			prepare:        nil,

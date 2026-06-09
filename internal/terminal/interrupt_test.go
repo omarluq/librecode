@@ -7,7 +7,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 const interruptTestPrompt = "hello"
@@ -159,7 +159,7 @@ func newInterruptTestApp(t *testing.T, cancel context.CancelFunc) *App {
 	app := newRenderTestApp(t)
 	app.working = true
 	app.activePrompt = newTestActivePrompt(cancel)
-	app.addMessage(database.RoleUser, interruptTestPrompt)
+	app.addMessage(transcript.RoleUser, interruptTestPrompt)
 
 	return app
 }

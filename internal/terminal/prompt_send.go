@@ -4,8 +4,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/omarluq/librecode/internal/transcript"
+
 	"github.com/omarluq/librecode/internal/assistant"
-	"github.com/omarluq/librecode/internal/database"
 )
 
 func (app *App) sendPrompt(ctx context.Context, text string) {
@@ -43,7 +44,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 		BaselineMessages: len(app.transcript.History),
 		Canceled:         false,
 	}
-	app.addMessage(database.RoleUser, text)
+	app.addMessage(transcript.RoleUser, text)
 	app.working = true
 	app.workStartedAt = time.Now()
 	app.workFrame = 0

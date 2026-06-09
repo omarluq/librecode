@@ -3,7 +3,8 @@ package terminal
 import (
 	"context"
 
-	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/transcript"
+
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -70,7 +71,7 @@ func (app *App) TruncateMessagesForTest(length int) {
 }
 
 func (app *App) AddMessageForTest(role, content string) {
-	app.addMessage(database.Role(role), content)
+	app.addMessage(transcript.Role(role), content)
 }
 
 func (app *App) ShowContextInfoForTest(original string) error {

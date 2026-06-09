@@ -15,6 +15,7 @@ import (
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 func TestRenderParityComposerFrame(t *testing.T) {
@@ -91,7 +92,7 @@ func TestRenderParityToolBlockFrame(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.toolsExpanded = true
 	event := newTestToolEvent("read", "func main() {\n    fmt.Println(\"hi\")\n}")
-	lines := app.renderToolMessage(50, newChatMessage(database.RoleToolResult, formatToolEventForUI(event)))
+	lines := app.renderToolMessage(50, newChatMessage(transcript.RoleToolResult, formatToolEventForUI(event)))
 	app.frame = newCellBuffer(50, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 50, line)
@@ -111,7 +112,7 @@ func TestRenderParitySkillLoadBlockFrame(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	event := newTestToolEvent("load skill: golang-testing", "# golang-testing\nUse table-driven tests.")
-	lines := app.renderToolMessage(60, newChatMessage(database.RoleToolResult, formatToolEventForUI(event)))
+	lines := app.renderToolMessage(60, newChatMessage(transcript.RoleToolResult, formatToolEventForUI(event)))
 	app.frame = newCellBuffer(60, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 60, line)
@@ -129,7 +130,7 @@ func TestRenderParityThinkingBlockStyle(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	lines := app.renderThinkingMessage(50, newChatMessage(database.RoleThinking, "reasoning\ncontinues"))
+	lines := app.renderThinkingMessage(50, newChatMessage(transcript.RoleThinking, "reasoning\ncontinues"))
 	app.frame = newCellBuffer(50, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 50, line)

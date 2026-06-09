@@ -16,13 +16,14 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 func TestAllMessageLinesFlattensStaticAndDynamicGroups(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.transcript.History = []chatMessage{newChatMessage(database.RoleAssistant, "hello")}
+	app.transcript.History = []chatMessage{newChatMessage(transcript.RoleAssistant, "hello")}
 	dynamic := [][]styledLine{{newStyledLine(app.theme.style(colorText), "dynamic")}}
 
 	lines := app.allMessageLines(40, dynamic)
@@ -55,7 +56,7 @@ func TestRenderThinkingMessageKeepsDimColor(t *testing.T) {
 
 	app := newRenderTestApp(t)
 
-	lines := app.renderThinkingMessage(80, newChatMessage(database.RoleThinking, "thinking details"))
+	lines := app.renderThinkingMessage(80, newChatMessage(transcript.RoleThinking, "thinking details"))
 	assertThinkingLineDim(t, app, lines)
 }
 
@@ -63,7 +64,7 @@ func TestRenderThinkingMessagePreservesMarkdownSpans(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	lines := app.renderThinkingMessage(80, newChatMessage(database.RoleThinking, "```go\nfunc hi() {}\n```"))
+	lines := app.renderThinkingMessage(80, newChatMessage(transcript.RoleThinking, "```go\nfunc hi() {}\n```"))
 	require.GreaterOrEqual(t, len(lines), 3, "expected thinking content line")
 	content := lines[2]
 	require.NotEmpty(t, content.Spans)
@@ -91,7 +92,7 @@ func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
 
 	got := streamingBlockRoles(app.transcript.Streaming.Blocks)
-	want := []database.Role{database.RoleThinking, database.RoleAssistant}
+	want := []transcript.Role{transcript.RoleThinking, transcript.RoleAssistant}
 	if !rolesEqual(got, want) {
 		t.Fatalf("streaming block roles = %v, want %v", got, want)
 	}
@@ -109,11 +110,11 @@ func TestApplyPromptErrorKeepsStreamedProgressVisible(t *testing.T) {
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "partial"))
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptThinkingDelta, "\n\n"))
 	app.transcript.Streaming.Blocks = append(app.transcript.Streaming.Blocks,
-		newChatMessage(database.RoleUser, "ignored user echo"),
-		newChatMessage(database.RoleBashExecution, "bash output"),
-		newChatMessage(database.RoleCustom, "custom progress"),
-		newChatMessage(database.RoleBranchSummary, "ignored branch"),
-		newChatMessage(database.RoleCompactionSummary, "ignored compaction"),
+		newChatMessage(transcript.RoleUser, "ignored user echo"),
+		newChatMessage(transcript.RoleBashExecution, "bash output"),
+		newChatMessage(transcript.RoleCustom, "custom progress"),
+		newChatMessage(transcript.RoleBranchSummary, "ignored branch"),
+		newChatMessage(transcript.RoleCompactionSummary, "ignored compaction"),
 	)
 	toolEvent := newTestAsyncEvent(asyncEventPromptToolResult, "")
 	toolEvent.ToolEvent = newTestToolEvent("read", "file content")
@@ -130,15 +131,15 @@ func assertPromptErrorMessages(t *testing.T, app *App) {
 
 	assert.False(t, app.working)
 	require.Len(t, app.transcript.History, 5)
-	assert.Equal(t, database.RoleAssistant, app.transcript.History[0].Role)
+	assert.Equal(t, transcript.RoleAssistant, app.transcript.History[0].Role)
 	assert.Equal(t, "partial", app.transcript.History[0].Content)
-	assert.Equal(t, database.RoleBashExecution, app.transcript.History[1].Role)
+	assert.Equal(t, transcript.RoleBashExecution, app.transcript.History[1].Role)
 	assert.Equal(t, "bash output", app.transcript.History[1].Content)
-	assert.Equal(t, database.RoleCustom, app.transcript.History[2].Role)
+	assert.Equal(t, transcript.RoleCustom, app.transcript.History[2].Role)
 	assert.Equal(t, "custom progress", app.transcript.History[2].Content)
-	assert.Equal(t, database.RoleToolResult, app.transcript.History[3].Role)
+	assert.Equal(t, transcript.RoleToolResult, app.transcript.History[3].Role)
 	assert.Contains(t, app.transcript.History[3].Content, "tool: read")
-	assert.Equal(t, database.RoleCustom, app.transcript.History[4].Role)
+	assert.Equal(t, transcript.RoleCustom, app.transcript.History[4].Role)
 	assert.Equal(t, "provider returned an empty response", app.transcript.History[4].Content)
 }
 
@@ -222,7 +223,7 @@ func TestRenderBoxedMessagesUseBoxedLayout(t *testing.T) {
 		{
 			name: "summary message",
 			render: func(app *App) []styledLine {
-				return app.renderSummaryMessage(30, newChatMessage(database.RoleCompactionSummary, "summary note"))
+				return app.renderSummaryMessage(30, newChatMessage(transcript.RoleCompactionSummary, "summary note"))
 			},
 			expected: "  [compactionSummary]         ",
 		},
@@ -416,7 +417,7 @@ func TestMouseWheelScrollsTranscript(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.addMessage(database.RoleAssistant, "scrollable content")
+	app.addMessage(transcript.RoleAssistant, "scrollable content")
 
 	app.handleMouse(tcell.NewEventMouse(0, 0, tcell.WheelUp, tcell.ModNone))
 	if app.scrollOffset != mouseScrollRows {
@@ -637,7 +638,7 @@ func TestScrolledMessageLinesCanReachFullHistory(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range 20 {
-		app.addMessage(database.RoleAssistant, "history message "+intText(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+intText(index))
 	}
 
 	bottom := app.messageLines(80, 6)
@@ -658,7 +659,7 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 
 	app := newRenderTestApp(t)
 	for index := range 20 {
-		app.addMessage(database.RoleAssistant, "history message "+intText(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+intText(index))
 	}
 
 	_ = app.messageLines(80, 6)
@@ -706,7 +707,7 @@ func TestWarmMessageLineCacheStopsWhenNoProgressIsPossible(t *testing.T) {
 			t.Parallel()
 
 			app := newRenderTestApp(t)
-			app.addMessage(database.RoleAssistant, "history message")
+			app.addMessage(transcript.RoleAssistant, "history message")
 			testCase.setup(app)
 
 			app.warmMessageLineCache()
@@ -722,7 +723,7 @@ func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range messageCacheWarmBatchSize + 1 {
-		app.addMessage(database.RoleAssistant, "history message "+intText(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+intText(index))
 	}
 
 	_ = app.messageLines(80, 6)
@@ -745,7 +746,7 @@ func TestScrolledMessageLinesBeforeWarmCacheUsesVisibleTail(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range 100 {
-		app.addMessage(database.RoleAssistant, "history message "+intText(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+intText(index))
 	}
 
 	_ = app.messageLines(80, 6)
@@ -767,7 +768,7 @@ func TestScrolledMessageLinesRevalidatesWarmCacheAfterResize(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range 20 {
-		app.addMessage(database.RoleAssistant, "history message "+intText(index)+" with enough text to wrap")
+		app.addMessage(transcript.RoleAssistant, "history message "+intText(index)+" with enough text to wrap")
 	}
 	_ = app.messageLines(80, 6)
 	app.warmMessageLineCache()
@@ -794,7 +795,7 @@ func TestBottomMessageLinesExpandedToolUsesTailWithoutFullRender(t *testing.T) {
 		"line 4",
 		"line 5",
 	}, "\n")
-	app.addMessage(database.RoleToolResult, formatToolEventForUI(&assistant.ToolEvent{
+	app.addMessage(transcript.RoleToolResult, formatToolEventForUI(&assistant.ToolEvent{
 		Name:          "read",
 		ArgumentsJSON: "{}",
 		DetailsJSON:   "",
@@ -820,7 +821,7 @@ func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.addMessage(database.RoleThinking, "cached thought")
+	app.addMessage(transcript.RoleThinking, "cached thought")
 
 	visible := app.messageLines(80, 100)
 	if lineIndexContaining(visible, "cached thought") == -1 {
@@ -888,10 +889,10 @@ func TestStreamingBlocksRenderChronologically(t *testing.T) {
 	app.handlePromptStreamEvent(context.Background(), secondThought)
 
 	got := streamingBlockRoles(app.transcript.Streaming.Blocks)
-	want := []database.Role{
-		database.RoleThinking,
-		database.RoleToolResult,
-		database.RoleThinking,
+	want := []transcript.Role{
+		transcript.RoleThinking,
+		transcript.RoleToolResult,
+		transcript.RoleThinking,
 	}
 	if !rolesEqual(got, want) {
 		t.Fatalf("streaming block roles = %v, want %v", got, want)
@@ -914,7 +915,7 @@ func TestToolBlockPreservesFileContentIndentation(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	event := newTestToolEvent("read", "func main() {\n\tif ok {\n        fmt.Println(\"yes\")\n\t}\n}")
-	lines := app.renderToolMessage(80, newChatMessage(database.RoleToolResult, formatToolEventForUI(event)))
+	lines := app.renderToolMessage(80, newChatMessage(transcript.RoleToolResult, formatToolEventForUI(event)))
 	texts := lineTexts(lines)
 
 	if lineIndexContaining(lines, "  \tif ok {") == -1 {
@@ -938,7 +939,7 @@ func TestToolBlockWrapPreservesContinuationIndentation(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.toolsExpanded = true
 	event := newTestToolEvent("read", "    "+strings.Repeat("word ", 20))
-	lines := app.renderToolMessage(24, newChatMessage(database.RoleToolResult, formatToolEventForUI(event)))
+	lines := app.renderToolMessage(24, newChatMessage(transcript.RoleToolResult, formatToolEventForUI(event)))
 	texts := lineTexts(lines)
 
 	if lineIndexContaining(lines, "      word") == -1 {
@@ -956,7 +957,7 @@ func TestToolDiffPreservesIndentation(t *testing.T) {
 	app.toolsExpanded = true
 	event := newTestToolEvent("edit", "ok")
 	event.DetailsJSON = `{"diff":"+1     indented\n+2 \t tabbed"}`
-	lines := app.renderToolMessage(80, newChatMessage(database.RoleToolResult, formatToolEventForUI(event)))
+	lines := app.renderToolMessage(80, newChatMessage(transcript.RoleToolResult, formatToolEventForUI(event)))
 	texts := lineTexts(lines)
 
 	if lineIndexContaining(lines, "+1     indented") == -1 {
@@ -1282,8 +1283,8 @@ func assertThinkingLineDim(t *testing.T, app *App, lines []styledLine) {
 	}
 }
 
-func streamingBlockRoles(blocks []chatMessage) []database.Role {
-	roles := make([]database.Role, 0, len(blocks))
+func streamingBlockRoles(blocks []chatMessage) []transcript.Role {
+	roles := make([]transcript.Role, 0, len(blocks))
 	for _, block := range blocks {
 		roles = append(roles, block.Role)
 	}
@@ -1291,7 +1292,7 @@ func streamingBlockRoles(blocks []chatMessage) []database.Role {
 	return roles
 }
 
-func rolesEqual(left, right []database.Role) bool {
+func rolesEqual(left, right []transcript.Role) bool {
 	if len(left) != len(right) {
 		return false
 	}
