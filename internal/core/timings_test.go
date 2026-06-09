@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/core"
 )
@@ -31,6 +32,7 @@ func TestTimingsEntriesAreDefensiveCopy(t *testing.T) {
 	timings.Mark("load")
 
 	entries := timings.Entries()
+	require.Len(t, entries, 1)
 	entries[0].Label = "mutated"
 
 	assert.Equal(t, "load", timings.Entries()[0].Label)
@@ -48,7 +50,7 @@ func TestTimingsResetRestartsClock(t *testing.T) {
 	timings.Mark("after")
 
 	entries := timings.Entries()
-	assert.Len(t, entries, 1)
+	require.Len(t, entries, 1)
 	assert.Equal(t, "after", entries[0].Label)
 	assert.Equal(t, 250*time.Millisecond, entries[0].Delta)
 }

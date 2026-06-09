@@ -128,6 +128,12 @@ type KSQLConfig struct {
 	Timeout  time.Duration `json:"timeout" mapstructure:"timeout" yaml:"timeout"`
 }
 
+const (
+	envDevelopment = "development"
+	envTest        = "test"
+	envProduction  = "production"
+)
+
 // Validate ensures the configuration is internally consistent.
 func (config *Config) Validate() error {
 	validators := []func() error{
@@ -153,7 +159,7 @@ func (config *Config) Validate() error {
 
 // IsDev reports whether the application is running in development mode.
 func (config *Config) IsDev() bool {
-	return config.App.Env == "development"
+	return config.App.Env == envDevelopment
 }
 
 func (config *Config) validateApp() error {
@@ -165,7 +171,7 @@ func (config *Config) validateApp() error {
 	}
 
 	switch config.App.Env {
-	case "development", "test", "production":
+	case envDevelopment, envTest, envProduction:
 		return nil
 	default:
 		return fmt.Errorf("config: app.env must be development, test, or production")

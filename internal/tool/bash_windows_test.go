@@ -13,12 +13,12 @@ import (
 )
 
 func TestFindWindowsBashReturnsConfiguredPath(t *testing.T) {
-	t.Setenv("LIBRECODE_BASH_PATH", `C:\\Tools\\Git\\bin\\bash.exe`)
+	t.Setenv("LIBRECODE_BASH_PATH", "C:\\Tools\\Git\\bin\\bash.exe")
 
 	path, err := findWindowsBash()
 	require.NoError(t, err)
 
-	assert.Equal(t, `C:\\Tools\\Git\\bin\\bash.exe`, path)
+	assert.Equal(t, "C:\\Tools\\Git\\bin\\bash.exe", path)
 }
 
 func TestWindowsBashCandidatesSkipsEmptyBaseDirs(t *testing.T) {
@@ -37,17 +37,17 @@ func TestWindowsBashCandidatesSkipsEmptyBaseDirs(t *testing.T) {
 }
 
 func TestWindowsBashCandidatesIncludesConfiguredBaseDirs(t *testing.T) {
-	t.Setenv("LIBRECODE_BASH_PATH", `C:\\custom\\bash.exe`)
-	t.Setenv("ProgramFiles", `C:\\Program Files`)
-	t.Setenv("ProgramFiles(x86)", `C:\\Program Files (x86)`)
-	t.Setenv("LOCALAPPDATA", `C:\\Users\\omar\\AppData\\Local`)
+	t.Setenv("LIBRECODE_BASH_PATH", "C:\\custom\\bash.exe")
+	t.Setenv("ProgramFiles", "C:\\Program Files")
+	t.Setenv("ProgramFiles(x86)", "C:\\Program Files (x86)")
+	t.Setenv("LOCALAPPDATA", "C:\\Users\\omar\\AppData\\Local")
 
 	candidates := windowsBashCandidates()
 
-	assert.Equal(t, `C:\\custom\\bash.exe`, candidates[0])
-	assert.True(t, lo.Contains(candidates, filepath.Join(`C:\\Program Files`, "Git", "bin", windowsBashExecutable)))
-	assert.True(t, lo.Contains(candidates, filepath.Join(`C:\\Program Files (x86)`, "Git", "usr", "bin", windowsBashExecutable)))
-	assert.True(t, lo.Contains(candidates, filepath.Join(`C:\\Users\\omar\\AppData\\Local`, "Programs", "Git", "bin", windowsBashExecutable)))
+	assert.Equal(t, "C:\\custom\\bash.exe", candidates[0])
+	assert.True(t, lo.Contains(candidates, filepath.Join("C:\\Program Files", "Git", "bin", windowsBashExecutable)))
+	assert.True(t, lo.Contains(candidates, filepath.Join("C:\\Program Files (x86)", "Git", "usr", "bin", windowsBashExecutable)))
+	assert.True(t, lo.Contains(candidates, filepath.Join("C:\\Users\\omar\\AppData\\Local", "Programs", "Git", "bin", windowsBashExecutable)))
 }
 
 func TestFindWindowsBashDoesNotFallbackToCmd(t *testing.T) {
