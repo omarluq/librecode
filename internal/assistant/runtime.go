@@ -124,6 +124,10 @@ type RuntimeOptions struct {
 
 // NewRuntime creates an assistant runtime.
 func NewRuntime(options *RuntimeOptions) *Runtime {
+	if options == nil {
+		return nil
+	}
+
 	client := options.Client
 	if client == nil {
 		client = NewHTTPCompletionClient()

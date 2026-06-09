@@ -536,6 +536,12 @@ func newTestRuntimeWithRepositoryClientAndManager(
 	return runtime, repository, manager
 }
 
+func TestNewRuntimeNilOptions(t *testing.T) {
+	t.Parallel()
+
+	assert.Nil(t, assistant.NewRuntime(nil))
+}
+
 func loadRuntimeExtension(t *testing.T, manager *extension.Manager, source string) {
 	t.Helper()
 
