@@ -9,14 +9,14 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 )
 
-// ConfigSource reads model registry configuration from database-backed runtime documents.
-type ConfigSource interface {
+// ConfigReader reads model registry configuration from database-backed runtime documents.
+type ConfigReader interface {
 	Read() (content []byte, found bool, err error)
 }
 
 // RegistryOptions configures a model registry.
 type RegistryOptions struct {
-	ConfigSource ConfigSource     `json:"-"`
+	ConfigReader ConfigReader     `json:"-"`
 	Auth         *auth.Storage    `json:"-"`
 	ModelsPath   string           `json:"models_path"`
 	BuiltIns     []Model          `json:"built_ins"`
@@ -26,7 +26,7 @@ type RegistryOptions struct {
 // Registry loads built-in and custom models and resolves provider request auth.
 type Registry struct {
 	loadError       error
-	configSource    ConfigSource
+	configSource    ConfigReader
 	auth            *auth.Storage
 	providerConfigs map[string]providerRequestConfig
 	modelsPath      string
@@ -46,7 +46,7 @@ type providerRequestConfig struct {
 func NewRegistry(options *RegistryOptions) *Registry {
 	resolvedOptions := registryOptions(options)
 	registry := &Registry{
-		configSource:    resolvedOptions.ConfigSource,
+		configSource:    resolvedOptions.ConfigReader,
 		auth:            resolvedOptions.Auth,
 		providerConfigs: map[string]providerRequestConfig{},
 		modelsPath:      resolvedOptions.ModelsPath,
@@ -183,7 +183,7 @@ func registryOptions(options *RegistryOptions) *RegistryOptions {
 	}
 
 	return &RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   "",
 		BuiltIns:     BuiltInModels(),

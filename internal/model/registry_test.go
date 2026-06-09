@@ -38,7 +38,7 @@ func TestRegistryLoadsCustomModelsAndProviderOverrides(t *testing.T) {
 	}, "\n"))
 
 	registry := model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   modelsPath,
 		BuiltIns:     []model.Model{testModel("openai", "gpt-5.4", "GPT")},
@@ -86,7 +86,7 @@ func assertRegistryAvailableProvider(t *testing.T, expectedProvider string, mode
 	})
 	require.NoError(t, err)
 	registry := model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns:     models,

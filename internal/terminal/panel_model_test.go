@@ -46,7 +46,7 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 		t.Fatalf("create auth storage: %v", err)
 	}
 	app.models = model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns: []model.Model{
@@ -90,7 +90,7 @@ func TestAvailableModelsDoesNotFallbackToUnauthorizedCatalog(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.cfg = promptSendTestConfig()
 	app.models = model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   "",
 		BuiltIns: []model.Model{

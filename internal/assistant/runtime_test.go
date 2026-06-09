@@ -704,7 +704,7 @@ func testRegistry(t *testing.T) *model.Registry {
 	require.NoError(t, err)
 
 	return model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns: []model.Model{

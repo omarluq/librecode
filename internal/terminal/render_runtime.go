@@ -113,7 +113,7 @@ func (app *App) drawUIWindowSpans(window *extension.WindowState, drawOp *extensi
 	}
 }
 
-func clearWindow(target cellTarget, window *extension.WindowState) {
+func clearWindow(target contentSetter, window *extension.WindowState) {
 	style := tcell.StyleDefault
 	for row := 0; row < window.Height; row++ {
 		writeLine(target, window.Y+row, window.Width, "", style)

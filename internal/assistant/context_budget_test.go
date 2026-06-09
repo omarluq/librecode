@@ -184,7 +184,7 @@ func newTestRuntimeWithContextWindowAndMaxTokens(
 	})
 	require.NoError(t, err)
 	registry := model.NewRegistry(&model.RegistryOptions{
-		ConfigSource: nil,
+		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
 		BuiltIns:     []model.Model{testRuntimeModelWithContextWindowAndMaxTokens(contextWindow, maxTokens)},

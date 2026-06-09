@@ -180,7 +180,7 @@ func terminalTextJoinSegments(segments []terminalTextSegment) string {
 	return builder.String()
 }
 
-func writeTextCells(screen cellTarget, column, row, width int, text string, style tcell.Style) int {
+func writeTextCells(screen contentSetter, column, row, width int, text string, style tcell.Style) int {
 	used := writeTextCellsNoFill(screen, column, row, width, text, style)
 	for used < width {
 		screen.SetContent(column+used, row, ' ', nil, style)
@@ -190,7 +190,7 @@ func writeTextCells(screen cellTarget, column, row, width int, text string, styl
 	return used
 }
 
-func writeTextCellsNoFill(screen cellTarget, column, row, width int, text string, style tcell.Style) int {
+func writeTextCellsNoFill(screen contentSetter, column, row, width int, text string, style tcell.Style) int {
 	if row < 0 || column < 0 || width <= 0 {
 		return 0
 	}
@@ -206,7 +206,7 @@ func writeTextCellsNoFill(screen cellTarget, column, row, width int, text string
 }
 
 func writeTextSegment(
-	screen cellTarget,
+	screen contentSetter,
 	column int,
 	row int,
 	width int,
@@ -239,7 +239,7 @@ func writeTextSegment(
 	return segment.Width
 }
 
-func writeTabSegment(screen cellTarget, column, row, width int, style tcell.Style) int {
+func writeTabSegment(screen contentSetter, column, row, width int, style tcell.Style) int {
 	const tabWidth = 4
 
 	spaces := min(tabWidth, width)

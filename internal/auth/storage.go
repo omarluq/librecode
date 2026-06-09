@@ -61,8 +61,8 @@ type LockResult struct {
 	Write bool
 }
 
-// Backend serializes access to credential bytes.
-type Backend interface {
+// Locker serializes access to credential bytes.
+type Locker interface {
 	WithLock(ctx context.Context, callback func(current []byte) (LockResult, error)) error
 }
 
@@ -73,7 +73,7 @@ type Backend interface {
 // refreshers while holding lock; take an authSnapshot first and operate on the
 // copied values.
 type Storage struct {
-	backend          Backend
+	backend          Locker
 	loadError        error
 	fallbackResolver func(provider string) (string, bool)
 	credentials      map[string]Credential
@@ -83,7 +83,7 @@ type Storage struct {
 }
 
 // NewStorage creates credential storage over a backend and loads existing credentials.
-func NewStorage(ctx context.Context, backend Backend) (*Storage, error) {
+func NewStorage(ctx context.Context, backend Locker) (*Storage, error) {
 	storage := &Storage{
 		fallbackResolver: nil,
 		backend:          backend,
