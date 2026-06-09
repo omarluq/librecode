@@ -10,7 +10,10 @@ import (
 	"path/filepath"
 )
 
-const shellLoginArg = "-lc"
+const (
+	shellLoginArg         = "-lc"
+	windowsBashExecutable = "bash.exe"
+)
 
 var errBashNotFound = errors.New("bash shell not found")
 
@@ -38,7 +41,7 @@ func findWindowsBash() (string, error) {
 	}
 
 	return "", fmt.Errorf(
-		"%w: install Git Bash, MSYS2/Cygwin/WSL bash, or set LIBRECODE_BASH_PATH to bash.exe",
+		"%w: install Git Bash, MSYS2/Cygwin/WSL bash, or set LIBRECODE_BASH_PATH to "+windowsBashExecutable,
 		errBashNotFound,
 	)
 }
@@ -50,18 +53,20 @@ func windowsBashCandidates() []string {
 
 	return []string{
 		os.Getenv("LIBRECODE_BASH_PATH"),
-		filepath.Join(programFiles, "Git", "bin", "bash.exe"),
-		filepath.Join(programFiles, "Git", "usr", "bin", "bash.exe"),
-		filepath.Join(programFilesX86, "Git", "bin", "bash.exe"),
-		filepath.Join(programFilesX86, "Git", "usr", "bin", "bash.exe"),
-		filepath.Join(localAppData, "Programs", "Git", "bin", "bash.exe"),
-		filepath.Join(localAppData, "Programs", "Git", "usr", "bin", "bash.exe"),
-		"bash.exe",
+		filepath.Join(programFiles, "Git", "bin", windowsBashExecutable),
+		filepath.Join(programFiles, "Git", "usr", "bin", windowsBashExecutable),
+		filepath.Join(programFilesX86, "Git", "bin", windowsBashExecutable),
+		filepath.Join(programFilesX86, "Git", "usr", "bin", windowsBashExecutable),
+		filepath.Join(localAppData, "Programs", "Git", "bin", windowsBashExecutable),
+		filepath.Join(localAppData, "Programs", "Git", "usr", "bin", windowsBashExecutable),
+		windowsBashExecutable,
 		"bash",
 	}
 }
 
-func configureShellCommand(_ *exec.Cmd) {}
+func configureShellCommand(_ *exec.Cmd) {
+	// Windows process groups are not configured here; terminateShellCommand kills the shell process directly.
+}
 
 func terminateShellCommand(cmd *exec.Cmd) error {
 	if cmd.Process == nil {
