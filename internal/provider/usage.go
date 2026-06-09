@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/mapsutil"
-	"github.com/omarluq/librecode/internal/model"
 )
 
 func estimateTokens(text string) int {
@@ -23,7 +23,7 @@ func estimateTokens(text string) int {
 	return max(1, (runes+3)/4)
 }
 
-func mergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
+func mergeUsage(estimated, reported llm.Usage) llm.Usage {
 	usage := estimated
 	if reported.ContextWindow > 0 {
 		usage.ContextWindow = reported.ContextWindow
@@ -47,25 +47,25 @@ func mergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
 	return usage
 }
 
-func cloneTokenContributors(contributors []model.TokenContributor) []model.TokenContributor {
+func cloneTokenContributors(contributors []llm.TokenContributor) []llm.TokenContributor {
 	if len(contributors) == 0 {
 		return nil
 	}
-	cloned := make([]model.TokenContributor, len(contributors))
+	cloned := make([]llm.TokenContributor, len(contributors))
 	copy(cloned, contributors)
 
 	return cloned
 }
 
-func usageFromObject(value any) model.TokenUsage {
+func usageFromObject(value any) llm.Usage {
 	object, ok := value.(map[string]any)
 	if !ok {
-		return model.EmptyTokenUsage()
+		return llm.EmptyUsage()
 	}
 	input := usageInputTokens(object)
 	output := intFromAny(firstPresent(object, jsonOutputTokensKey, "completion_tokens"))
 
-	return model.TokenUsage{
+	return llm.Usage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,

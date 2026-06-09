@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 const (
@@ -26,16 +26,17 @@ func TestEstimateTokensCountsRunesConservatively(t *testing.T) {
 func TestMergeUsageKeepsExistingBreakdownWhenPresent(t *testing.T) {
 	t.Parallel()
 
-	estimated := model.TokenUsage{
+	estimated := llm.Usage{
 		Breakdown: map[string]int{testEstimatedUsageLabel: 1}, ContextWindow: 10, ContextTokens: 2,
-		TopContributors: []model.TokenContributor{
+		TopContributors: []llm.TokenContributor{
 			{Label: testEstimatedUsageLabel, Role: jsonSystemRole, Preview: "", Tokens: 1, Chars: 1},
 		},
-		InputTokens: 0, OutputTokens: 0,
+		InputTokens:  0,
+		OutputTokens: 0,
 	}
-	reported := model.TokenUsage{
+	reported := llm.Usage{
 		Breakdown: map[string]int{testReportedUsageLabel: 2}, ContextWindow: 20, ContextTokens: 3,
-		TopContributors: []model.TokenContributor{
+		TopContributors: []llm.TokenContributor{
 			{Label: testReportedUsageLabel, Role: jsonUserRole, Preview: "", Tokens: 2, Chars: 2},
 		},
 		InputTokens: 4, OutputTokens: 5,
@@ -54,8 +55,8 @@ func TestMergeUsageKeepsExistingBreakdownWhenPresent(t *testing.T) {
 func TestUsageFromObjectIgnoresNonObjectsAndMissingValues(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, model.EmptyTokenUsage(), usageFromObject("not object"))
-	assert.Equal(t, model.EmptyTokenUsage(), usageFromObject(map[string]any{"total_tokens": float64(10)}))
+	assert.Equal(t, llm.EmptyUsage(), usageFromObject("not object"))
+	assert.Equal(t, llm.EmptyUsage(), usageFromObject(map[string]any{"total_tokens": float64(10)}))
 }
 
 func TestIntFromAnyParsesSupportedTypes(t *testing.T) {

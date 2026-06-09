@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
@@ -22,7 +22,7 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 				"input_tokens":      float64(123),
 				jsonOutputTokensKey: float64(45),
 			},
-			expected: model.TokenUsage{
+			expected: llm.Usage{
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
 				TopContributors: nil,
 				InputTokens:     123, OutputTokens: 45,
@@ -34,7 +34,7 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 				"prompt_tokens":     json.Number("77"),
 				"completion_tokens": json.Number("9"),
 			},
-			expected: model.TokenUsage{
+			expected: llm.Usage{
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
 				TopContributors: nil,
 				InputTokens:     77, OutputTokens: 9,
@@ -46,7 +46,7 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 				"total_tokens":      json.Number("120"),
 				jsonOutputTokensKey: json.Number("20"),
 			},
-			expected: model.TokenUsage{
+			expected: llm.Usage{
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
 				TopContributors: nil,
 				InputTokens:     100, OutputTokens: 20,
@@ -66,18 +66,10 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 func TestMergeUsagePreservesEstimatedContextWindow(t *testing.T) {
 	t.Parallel()
 
-	estimated := model.TokenUsage{
-		Breakdown: nil, ContextWindow: 1000, ContextTokens: 200,
-		TopContributors: nil,
-		InputTokens:     200, OutputTokens: 0,
-	}
-	reported := model.TokenUsage{
-		Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
-		TopContributors: nil,
-		InputTokens:     150, OutputTokens: 25,
-	}
+	estimated := usageFixture(1000, 200, 200, 0)
+	reported := usageFixture(0, 0, 150, 25)
 
-	assert.Equal(t, model.TokenUsage{
+	assert.Equal(t, llm.Usage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1000,
@@ -90,18 +82,10 @@ func TestMergeUsagePreservesEstimatedContextWindow(t *testing.T) {
 func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
 	t.Parallel()
 
-	estimated := model.TokenUsage{
-		Breakdown: nil, ContextWindow: 100_000, ContextTokens: 14_000,
-		TopContributors: nil,
-		InputTokens:     14_000, OutputTokens: 0,
-	}
-	reported := model.TokenUsage{
-		Breakdown: nil, ContextWindow: 0, ContextTokens: 12_000,
-		TopContributors: nil,
-		InputTokens:     12_000, OutputTokens: 700,
-	}
+	estimated := usageFixture(100_000, 14_000, 14_000, 0)
+	reported := usageFixture(0, 12_000, 12_000, 700)
 
-	assert.Equal(t, model.TokenUsage{
+	assert.Equal(t, llm.Usage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
@@ -114,18 +98,10 @@ func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
 func TestMergeUsageDoesNotPromoteProviderTotalToContext(t *testing.T) {
 	t.Parallel()
 
-	estimated := model.TokenUsage{
-		Breakdown: nil, ContextWindow: 272_000, ContextTokens: 0,
-		TopContributors: nil,
-		InputTokens:     0, OutputTokens: 0,
-	}
-	reported := model.TokenUsage{
-		Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
-		TopContributors: nil,
-		InputTokens:     13_000_000, OutputTokens: 100,
-	}
+	estimated := usageFixture(272_000, 0, 0, 0)
+	reported := usageFixture(0, 0, 13_000_000, 100)
 
-	assert.Equal(t, model.TokenUsage{
+	assert.Equal(t, llm.Usage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   272_000,
@@ -138,15 +114,18 @@ func TestMergeUsageDoesNotPromoteProviderTotalToContext(t *testing.T) {
 func TestMergeUsageClonesReportedContributors(t *testing.T) {
 	t.Parallel()
 
-	reported := model.TokenUsage{
-		Breakdown: map[string]int{"history": 12}, ContextWindow: 0, ContextTokens: 0,
-		TopContributors: []model.TokenContributor{
+	reported := llm.Usage{
+		Breakdown:     map[string]int{"history": 12},
+		ContextWindow: 0,
+		ContextTokens: 0,
+		TopContributors: []llm.TokenContributor{
 			{Label: "message 1", Role: jsonUserRole, Preview: "usage contributor preview", Tokens: 10, Chars: 40},
 		},
-		InputTokens: 0, OutputTokens: 0,
+		InputTokens:  0,
+		OutputTokens: 0,
 	}
 
-	merged := mergeUsage(model.EmptyTokenUsage(), reported)
+	merged := mergeUsage(llm.EmptyUsage(), reported)
 	reported.TopContributors[0].Label = "changed contributor"
 
 	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
@@ -176,7 +155,7 @@ func TestParseSSEResultPreservesUsageWhenItemsProvideText(t *testing.T) {
 
 	result, err := parseSSEResult(strings.NewReader(stream), nil)
 	require.NoError(t, err)
-	assert.Equal(t, model.TokenUsage{
+	assert.Equal(t, llm.Usage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -200,7 +179,7 @@ func TestParseSSEResultPreservesUsageAcrossLaterResponseEvents(t *testing.T) {
 
 	result, err := parseSSEResult(strings.NewReader(stream), nil)
 	require.NoError(t, err)
-	assert.Equal(t, model.TokenUsage{
+	assert.Equal(t, llm.Usage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -214,5 +193,16 @@ func TestParseSSEResultPreservesUsageAcrossLaterResponseEvents(t *testing.T) {
 type usageParseTest struct {
 	usage    map[string]any
 	name     string
-	expected model.TokenUsage
+	expected llm.Usage
+}
+
+func usageFixture(contextWindow, contextTokens, inputTokens, outputTokens int) llm.Usage {
+	return llm.Usage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   contextWindow,
+		ContextTokens:   contextTokens,
+		InputTokens:     inputTokens,
+		OutputTokens:    outputTokens,
+	}
 }

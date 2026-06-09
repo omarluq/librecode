@@ -7,13 +7,11 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 const (
@@ -22,8 +20,6 @@ const (
 	providerPayloadHookSystemPrompt = "system"
 	providerPayloadHookHeaderValue  = "yes"
 )
-
-var zeroTestTime = time.Time{}
 
 func TestHTTPCompletionClientAppliesProviderRequestHook(t *testing.T) {
 	t.Parallel()
@@ -39,14 +35,14 @@ func TestHTTPCompletionClientAppliesProviderRequestHook(t *testing.T) {
 	completionRequest := providerPayloadHookRequest(server.URL)
 	completionRequest.OnProviderRequest = func(
 		_ context.Context,
-		input HookInput,
-	) (HookOutput, error) {
+		input *llm.HookInput,
+	) (llm.HookOutput, error) {
 		payload := cloneAnyMap(input.Payload)
 		payload["metadata"] = "mutated"
 		headers := cloneStringMap(input.Headers)
 		headers["X-Test-Header"] = providerPayloadHookHeaderValue
 
-		return HookOutput{Payload: payload, Headers: headers}, nil
+		return llm.HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
 	result, err := NewHTTPCompletionClient().Complete(context.Background(), completionRequest)
@@ -54,7 +50,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHook(t *testing.T) {
 	require.NoError(t, err)
 	capture := <-captures
 	require.NoError(t, capture.Err)
-	assert.Equal(t, "ok", result.Text)
+	assert.Equal(t, "ok", responseText(result))
 	assert.Equal(t, providerPayloadHookHeaderValue, capture.Header)
 	assert.Equal(t, "mutated", capture.Body["metadata"])
 }
@@ -66,17 +62,17 @@ func TestHTTPCompletionClientAppliesProviderRequestHookToOpenAIResponses(t *test
 	server := newProviderHookCaptureServer(t, captures, "X-Responses-Hook", `{"output_text":"ok"}`)
 	t.Cleanup(server.Close)
 	completionRequest := providerPayloadHookRequest(server.URL)
-	completionRequest.Model.API = apiOpenAIResponses
+	setTestRequestAPI(completionRequest, apiOpenAIResponses)
 	completionRequest.OnProviderRequest = func(
 		_ context.Context,
-		input HookInput,
-	) (HookOutput, error) {
+		input *llm.HookInput,
+	) (llm.HookOutput, error) {
 		payload := cloneAnyMap(input.Payload)
 		payload["responses_metadata"] = "mutated"
 		headers := cloneStringMap(input.Headers)
 		headers["X-Responses-Hook"] = strconv.Itoa(input.Attempt)
 
-		return HookOutput{Payload: payload, Headers: headers}, nil
+		return llm.HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
 	result, err := NewHTTPCompletionClient().Complete(context.Background(), completionRequest)
@@ -84,7 +80,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHookToOpenAIResponses(t *test
 	require.NoError(t, err)
 	capture := <-captures
 	require.NoError(t, capture.Err)
-	assert.Equal(t, "ok", result.Text)
+	assert.Equal(t, "ok", responseText(result))
 	assert.Equal(t, "1", capture.Header)
 	assert.Equal(t, "mutated", capture.Body["responses_metadata"])
 }
@@ -94,16 +90,16 @@ func TestApplyProviderRequestHookObservesMutatedRequests(t *testing.T) {
 
 	request := providerPayloadHookRequest("https://example.test")
 	calls := []string{}
-	request.OnProviderObserve = func(_ context.Context, _ *CompletionRequest, attempt int) {
-		calls = append(calls, "observe:"+strconv.Itoa(attempt))
+	request.OnProviderObserve = func(_ context.Context, input *llm.HookInput) {
+		calls = append(calls, "observe:"+strconv.Itoa(input.Attempt))
 	}
 	request.OnProviderRequest = func(
 		_ context.Context,
-		input HookInput,
-	) (HookOutput, error) {
+		input *llm.HookInput,
+	) (llm.HookOutput, error) {
 		calls = append(calls, "mutate:"+strconv.Itoa(input.Attempt))
 
-		return HookOutput{Payload: input.Payload, Headers: input.Headers}, nil
+		return llm.HookOutput{Payload: input.Payload, Headers: input.Headers}, nil
 	}
 
 	_, err := applyProviderRequestHook(
@@ -166,44 +162,32 @@ func newProviderHookCaptureServer(
 
 func providerPayloadHookRequest(baseURL string) *CompletionRequest {
 	return &CompletionRequest{
-		OnEvent:           nil,
 		OnProviderObserve: nil,
 		OnProviderRequest: nil,
-		OnToolCall:        nil,
-		OnToolResult:      nil,
-		ToolRegistry:      nil,
 		ExecuteTools:      nil,
-		SessionID:         "session-1",
-		SystemPrompt:      providerPayloadHookSystemPrompt,
-		ThinkingLevel:     "off",
-		CWD:               "/work",
-		Auth:              model.RequestAuth{Headers: map[string]string{}, APIKey: "test-key", Error: "", OK: true},
-		Messages: []database.MessageEntity{
-			{
-				Timestamp: zeroTestTime,
-				Role:      database.RoleUser,
-				Content:   "hello",
-				Provider:  "",
-				Model:     "",
+		OnEvent:           nil,
+		Request: llm.Request{
+			ProviderOptions: map[string]any{"cwd": "/work"},
+			Auth:            llm.Auth{Headers: map[string]string{}, APIKey: "test-key"},
+			SystemPrompt:    providerPayloadHookSystemPrompt,
+			ThinkingLevel:   "off",
+			SessionID:       "session-1",
+			Messages:        []llm.Message{llm.TextMessage(llm.RoleUser, "hello")},
+			Tools:           nil,
+			Model: llm.ModelRef{
+				Metadata:         nil,
+				ThinkingLevelMap: nil,
+				Provider:         testOpenAIProvider,
+				ID:               providerHookTestModelID,
+				API:              apiOpenAICompletions,
+				BaseURL:          baseURL,
+				MaxTokens:        0,
+				ContextWindow:    0,
+				Reasoning:        false,
 			},
+			Usage:        llm.EmptyUsage(),
+			DisableTools: false,
 		},
-		Usage:           model.EmptyTokenUsage(),
 		ProviderAttempt: 1,
-		DisableTools:    false,
-		Model: model.Model{
-			ThinkingLevelMap: nil,
-			Headers:          nil,
-			Compat:           nil,
-			Provider:         testOpenAIProvider,
-			ID:               providerHookTestModelID,
-			Name:             providerHookTestModelID,
-			API:              apiOpenAICompletions,
-			BaseURL:          baseURL,
-			Input:            []model.InputMode{model.InputText},
-			Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
-			ContextWindow:    0,
-			MaxTokens:        0,
-			Reasoning:        false,
-		},
 	}
 }

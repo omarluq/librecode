@@ -4,19 +4,77 @@ import (
 	"encoding/json"
 	"maps"
 
-	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 // ResponseTools returns OpenAI Responses API tool declarations for a completion request.
 func ResponseTools(request *CompletionRequest) []map[string]any {
-	definitions := requestToolDefinitions(request)
+	return ResponseToolsFromDefinitions(requestToolDefinitions(request))
+}
+
+// OpenAIChatTools returns OpenAI Chat Completions tool declarations for a completion request.
+func OpenAIChatTools(request *CompletionRequest) []map[string]any {
+	return OpenAIChatToolsFromDefinitions(requestToolDefinitions(request))
+}
+
+func requestToolDefinitions(request *CompletionRequest) []llm.ToolDefinition {
+	if request != nil && request.Request.DisableTools {
+		return nil
+	}
+	if request != nil && len(request.Request.Tools) > 0 {
+		return request.Request.Tools
+	}
+
+	return builtinToolDefinitions()
+}
+
+func builtinToolDefinitions() []llm.ToolDefinition {
+	definitions := make([]llm.ToolDefinition, 0, len(builtinToolSchemas))
+	for name := range builtinToolSchemas {
+		definitions = append(definitions, llm.ToolDefinition{
+			Schema:      nil,
+			Name:        name,
+			Description: builtinToolDescription(name),
+			ReadOnly:    name != jsonBashToolName && name != jsonEditToolName && name != jsonWriteToolName,
+		})
+	}
+
+	return definitions
+}
+
+func builtinToolDescription(name string) string {
+	switch name {
+	case jsonReadToolName:
+		return "Read file contents."
+	case jsonBashToolName:
+		return "Execute a bash command."
+	case jsonEditToolName:
+		return "Edit a file."
+	case jsonWriteToolName:
+		return "Write a file."
+	case jsonGrepToolName:
+		return "Search file contents."
+	case jsonFindToolName:
+		return "Find files by glob."
+	case jsonLSToolName:
+		return "List directory contents."
+	case jsonASTToolName:
+		return "Inspect source syntax trees."
+	default:
+		return "Tool."
+	}
+}
+
+// ResponseToolsFromDefinitions returns OpenAI Responses API tool declarations for definitions.
+func ResponseToolsFromDefinitions(definitions []llm.ToolDefinition) []map[string]any {
 	tools := make([]map[string]any, 0, len(definitions))
-	for _, definition := range definitions {
+	for index := range definitions {
+		definition := &definitions[index]
 		tools = append(tools, map[string]any{
 			jsonTypeKey:        functionToolType,
-			jsonToolNameKey:    string(definition.Name),
+			jsonToolNameKey:    definition.Name,
 			jsonDescriptionKey: definition.Description,
-			jsonToolParamsKey:  ToolParameterSchema(&definition),
+			jsonToolParamsKey:  ToolParameterSchema(definition),
 			"strict":           false,
 		})
 	}
@@ -24,33 +82,22 @@ func ResponseTools(request *CompletionRequest) []map[string]any {
 	return tools
 }
 
-// OpenAIChatTools returns OpenAI Chat Completions tool declarations for a completion request.
-func OpenAIChatTools(request *CompletionRequest) []map[string]any {
-	definitions := requestToolDefinitions(request)
+// OpenAIChatToolsFromDefinitions returns OpenAI Chat Completions tool declarations for definitions.
+func OpenAIChatToolsFromDefinitions(definitions []llm.ToolDefinition) []map[string]any {
 	tools := make([]map[string]any, 0, len(definitions))
-	for _, definition := range definitions {
+	for index := range definitions {
+		definition := &definitions[index]
 		tools = append(tools, map[string]any{
 			jsonTypeKey: functionToolType,
 			jsonFunctionKey: map[string]any{
-				jsonToolNameKey:    string(definition.Name),
+				jsonToolNameKey:    definition.Name,
 				jsonDescriptionKey: definition.Description,
-				jsonToolParamsKey:  ToolParameterSchema(&definition),
+				jsonToolParamsKey:  ToolParameterSchema(definition),
 			},
 		})
 	}
 
 	return tools
-}
-
-func requestToolDefinitions(request *CompletionRequest) []tool.Definition {
-	if request != nil && request.DisableTools {
-		return []tool.Definition{}
-	}
-	if request != nil && request.ToolRegistry != nil {
-		return request.ToolRegistry.Definitions()
-	}
-
-	return tool.AllDefinitions()
 }
 
 func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
@@ -65,19 +112,19 @@ func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
 	return arguments
 }
 
-var builtinToolSchemas = map[tool.Name]func() map[string]any{
-	tool.NameRead:  readToolSchema,
-	tool.NameBash:  bashToolSchema,
-	tool.NameEdit:  editToolSchema,
-	tool.NameWrite: writeToolSchema,
-	tool.NameGrep:  grepToolSchema,
-	tool.NameFind:  findToolSchema,
-	tool.NameLS:    lsToolSchema,
-	tool.NameAST:   astToolSchema,
+var builtinToolSchemas = map[string]func() map[string]any{
+	jsonReadToolName:  readToolSchema,
+	jsonBashToolName:  bashToolSchema,
+	jsonEditToolName:  editToolSchema,
+	jsonWriteToolName: writeToolSchema,
+	jsonGrepToolName:  grepToolSchema,
+	jsonFindToolName:  findToolSchema,
+	jsonLSToolName:    lsToolSchema,
+	jsonASTToolName:   astToolSchema,
 }
 
 // ToolParameterSchema returns the JSON parameter schema for a local tool definition.
-func ToolParameterSchema(definition *tool.Definition) map[string]any {
+func ToolParameterSchema(definition *llm.ToolDefinition) map[string]any {
 	if definition != nil && len(definition.Schema) > 0 {
 		return cloneToolSchema(definition.Schema)
 	}
@@ -236,10 +283,6 @@ func stringSchema(description string) map[string]any {
 	return map[string]any{jsonTypeKey: jsonStringType, jsonDescriptionKey: description}
 }
 
-func enumStringSchema(description string, values []string) map[string]any {
-	return map[string]any{jsonTypeKey: jsonStringType, jsonDescriptionKey: description, "enum": values}
-}
-
 func integerSchema(description string) map[string]any {
 	return map[string]any{jsonTypeKey: "integer", jsonDescriptionKey: description}
 }
@@ -250,4 +293,11 @@ func numberSchema(description string) map[string]any {
 
 func booleanSchema(description string) map[string]any {
 	return map[string]any{jsonTypeKey: "boolean", jsonDescriptionKey: description}
+}
+
+func enumStringSchema(description string, values []string) map[string]any {
+	schema := stringSchema(description)
+	schema["enum"] = append([]string{}, values...)
+
+	return schema
 }

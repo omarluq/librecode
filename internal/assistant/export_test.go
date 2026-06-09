@@ -109,8 +109,6 @@ func (runtime *Runtime) ProviderOverflowRecoveryNonContextErrorForTest(ctx conte
 				OnEvent:           nil,
 				OnProviderObserve: nil,
 				OnProviderRequest: nil,
-				OnToolCall:        nil,
-				OnToolResult:      nil,
 				ToolRegistry:      nil,
 				ExecuteTools:      nil,
 				SessionID:         "",

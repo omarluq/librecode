@@ -7,18 +7,17 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func (client *HTTPCompletionClient) completeOpenAIChat(
 	ctx context.Context,
 	request *CompletionRequest,
-) (*CompletionResult, error) {
+) (*llm.Response, error) {
 	state := openAIChatLoopState{
 		messages: openAIChatMessages(request),
-		endpoint: joinEndpoint(request.Model.BaseURL, "/chat/completions"),
-		result:   &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()},
+		endpoint: joinEndpoint(request.Request.Model.BaseURL, "/chat/completions"),
+		result:   newResponse(),
 	}
 	for {
 		finished, err := client.advanceOpenAIChatLoop(ctx, request, &state)
@@ -32,7 +31,7 @@ func (client *HTTPCompletionClient) completeOpenAIChat(
 }
 
 type openAIChatLoopState struct {
-	result   *CompletionResult
+	result   *llm.Response
 	endpoint string
 	messages []map[string]any
 }
@@ -71,7 +70,7 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 	if err != nil {
 		return false, err
 	}
-	state.result.ToolEvents = append(state.result.ToolEvents, events...)
+	appendToolResults(state.result, events)
 	if err := appendOpenAIChatToolConversation(state, providerResult, events); err != nil {
 		return false, err
 	}
@@ -116,15 +115,15 @@ func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *provid
 
 func openAIChatPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
 	payload := map[string]any{
-		jsonModelKey:      request.Model.ID,
+		jsonModelKey:      request.Request.Model.ID,
 		jsonMessagesKey:   messages,
 		"stream":          false,
 		"temperature":     0.2,
 		"tools":           OpenAIChatTools(request),
 		jsonToolChoiceKey: "auto",
 	}
-	if request.Model.Reasoning && request.ThinkingLevel != "" && request.ThinkingLevel != thinkingOff {
-		payload["reasoning_effort"] = request.ThinkingLevel
+	if shouldIncludeReasoningEffort(request) {
+		payload["reasoning_effort"] = request.Request.ThinkingLevel
 	}
 
 	return payload
@@ -171,6 +170,7 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 		}
 		calls = append(calls, ToolCall{
 			Arguments:     toolArgumentsFromJSON(call.Function.Arguments),
+			Metadata:      nil,
 			ID:            call.ID,
 			Name:          call.Function.Name,
 			ArgumentsJSON: call.Function.Arguments,
@@ -187,17 +187,27 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 	}, nil
 }
 
+func shouldIncludeReasoningEffort(request *CompletionRequest) bool {
+	return request.Request.Model.Reasoning &&
+		request.Request.ThinkingLevel != "" &&
+		request.Request.ThinkingLevel != thinkingOff
+}
+
 func openAIChatMessages(request *CompletionRequest) []map[string]any {
 	messages := []map[string]any{}
-	if request.SystemPrompt != "" {
-		messages = append(messages, map[string]any{jsonRoleKey: jsonSystemRole, jsonContentKey: request.SystemPrompt})
+	if request.Request.SystemPrompt != "" {
+		messages = append(messages, map[string]any{
+			jsonRoleKey:    jsonSystemRole,
+			jsonContentKey: request.Request.SystemPrompt,
+		})
 	}
-	for _, message := range request.Messages {
+	for _, message := range request.Request.Messages {
 		role, ok := openAIRole(message.Role)
-		if !ok || message.Content == "" {
+		content := messageText(message)
+		if !ok || content == "" {
 			continue
 		}
-		messages = append(messages, map[string]any{jsonRoleKey: role, jsonContentKey: message.Content})
+		messages = append(messages, map[string]any{jsonRoleKey: role, jsonContentKey: content})
 	}
 
 	return messages
@@ -243,18 +253,13 @@ func openAIChatToolMessages(calls []ToolCall, events []ToolEvent) ([]map[string]
 	return messages, nil
 }
 
-func openAIRole(role database.Role) (string, bool) {
+func openAIRole(role llm.Role) (string, bool) {
 	switch role {
-	case database.RoleUser:
+	case llm.RoleUser, llm.RoleSystem:
 		return jsonUserRole, true
-	case database.RoleAssistant:
+	case llm.RoleAssistant:
 		return jsonAssistantRole, true
-	case database.RoleBranchSummary, database.RoleCompactionSummary:
-		return jsonUserRole, true
-	case database.RoleCustom, database.RoleBashExecution:
-		return jsonUserRole, true
-	case database.RoleToolResult,
-		database.RoleThinking:
+	case llm.RoleTool:
 		return "", false
 	}
 

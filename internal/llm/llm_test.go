@@ -16,7 +16,7 @@ func TestBoundaryInterfaces(t *testing.T) {
 	t.Parallel()
 
 	var generator llm.Generator = testGenerator{}
-	response, err := generator.Generate(context.Background(), llm.Request{
+	request := llm.Request{
 		ProviderOptions: nil,
 		Auth: llm.Auth{
 			Headers: nil,
@@ -28,17 +28,20 @@ func TestBoundaryInterfaces(t *testing.T) {
 		Messages:      []llm.Message{},
 		Tools:         nil,
 		Model: llm.ModelRef{
-			Metadata:      nil,
-			Provider:      "test",
-			ID:            "model",
-			API:           "",
-			BaseURL:       "",
-			MaxTokens:     0,
-			ContextWindow: 0,
-			Reasoning:     false,
+			Metadata:         nil,
+			ThinkingLevelMap: nil,
+			Provider:         "test",
+			ID:               "model",
+			API:              "",
+			BaseURL:          "",
+			MaxTokens:        0,
+			ContextWindow:    0,
+			Reasoning:        false,
 		},
+		Usage:        llm.EmptyUsage(),
 		DisableTools: false,
-	})
+	}
+	response, err := generator.Generate(context.Background(), &request)
 	require.NoError(t, err)
 	assert.Equal(t, llm.FinishReasonStop, response.FinishReason)
 
@@ -66,15 +69,17 @@ func emptyRequest() llm.Request {
 		Messages:      nil,
 		Tools:         nil,
 		Model: llm.ModelRef{
-			Metadata:      nil,
-			Provider:      "",
-			ID:            "",
-			API:           "",
-			BaseURL:       "",
-			MaxTokens:     0,
-			ContextWindow: 0,
-			Reasoning:     false,
+			Metadata:         nil,
+			ThinkingLevelMap: nil,
+			Provider:         "",
+			ID:               "",
+			API:              "",
+			BaseURL:          "",
+			MaxTokens:        0,
+			ContextWindow:    0,
+			Reasoning:        false,
 		},
+		Usage:        llm.EmptyUsage(),
 		DisableTools: false,
 	}
 }
@@ -127,6 +132,7 @@ func TestPartKinds(t *testing.T) {
 		{
 			Metadata: nil,
 			ToolCall: &llm.ToolCall{
+				Metadata:      nil,
 				Arguments:     map[string]any{"path": "README.md"},
 				ID:            "call_1",
 				Name:          "read",

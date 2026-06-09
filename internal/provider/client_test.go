@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 const answerDelta = "answer"
@@ -15,55 +17,44 @@ func TestSSEAccumulatorEmitsOutputTextDelta(t *testing.T) {
 	t.Parallel()
 
 	accumulator := newSSEAccumulator()
-	events := []StreamEvent{}
+	events := []llm.StreamChunk{}
 
 	accumulator.add(map[string]any{
 		jsonTypeKey: "response.output_text.delta",
 		"delta":     answerDelta,
-	}, func(event StreamEvent) {
-		events = append(events, event)
+	}, func(event *llm.StreamChunk) {
+		require.NotNil(t, event)
+		events = append(events, *event)
 	})
 
-	if len(events) != 1 {
-		t.Fatalf("events = %d, want 1", len(events))
-	}
-	if events[0].Kind != StreamEventTextDelta {
-		t.Fatalf("event kind = %q, want %q", events[0].Kind, StreamEventTextDelta)
-	}
-	if events[0].Text != answerDelta {
-		t.Fatalf("event text = %q, want %q", events[0].Text, answerDelta)
-	}
-	if got := len(accumulator.parts); got != 1 || accumulator.parts[0] != answerDelta {
-		t.Fatalf("accumulator parts = %#v, want [%s]", accumulator.parts, answerDelta)
-	}
+	require.Len(t, events, 1)
+	require.NotNil(t, events[0].Part)
+	assert.Equal(t, llm.PartText, events[0].Part.Type)
+	assert.Equal(t, answerDelta, events[0].Part.Text)
+	assert.Equal(t, []string{answerDelta}, accumulator.parts)
 }
 
 func TestSSEAccumulatorEmitsReasoningDeltaSeparately(t *testing.T) {
 	t.Parallel()
 
 	accumulator := newSSEAccumulator()
-	events := []StreamEvent{}
+	events := []llm.StreamChunk{}
 
 	accumulator.add(map[string]any{
 		jsonTypeKey: "response.reasoning_summary_text.delta",
 		"delta":     testThinkingDelta,
-	}, func(event StreamEvent) {
-		events = append(events, event)
+	}, func(event *llm.StreamChunk) {
+		require.NotNil(t, event)
+		events = append(events, *event)
 	})
 
-	if len(events) != 1 {
-		t.Fatalf("events = %d, want 1", len(events))
-	}
-	if events[0].Kind != StreamEventThinkingDelta {
-		t.Fatalf("event kind = %q, want %q", events[0].Kind, StreamEventThinkingDelta)
-	}
-	if events[0].Text != testThinkingDelta {
-		t.Fatalf("event text = %q, want %q", events[0].Text, testThinkingDelta)
-	}
-	if len(accumulator.parts) != 0 {
-		t.Fatalf("reasoning deltas should not be response text parts: %#v", accumulator.parts)
-	}
+	require.Len(t, events, 1)
+	require.NotNil(t, events[0].Part)
+	assert.Equal(t, llm.PartReasoning, events[0].Part.Type)
+	assert.Equal(t, testThinkingDelta, events[0].Part.Text)
+	assert.Empty(t, accumulator.parts)
 }
+
 func TestParseSSEResultExtractsToolCallFromOutputItems(t *testing.T) {
 	t.Parallel()
 
@@ -89,38 +80,36 @@ func TestParseSSEResultFailureCases(t *testing.T) {
 		expectedSubstring string
 	}{
 		{
-			name:              "typed responses stream closes before completion",
-			stream:            "data: {\"type\":\"response.output_item.done\"}\n\n",
+			name: "failed event",
+			stream: "data: " + `{"type":"response.failed",` +
+				`"response":{"error":{"message":"nope"}}}` + "\n",
+			expectedSubstring: "nope",
+		},
+		{
+			name: "incomplete event",
+			stream: "data: " + `{"type":"response.incomplete",` +
+				`"response":{"incomplete_details":{"reason":"max_output_tokens"}}}` + "\n",
+			expectedSubstring: "provider response incomplete: max_output_tokens",
+		},
+		{
+			name:              "closed before completion",
+			stream:            "data: " + `{"type":"response.created"}` + "\n",
 			expectedSubstring: "provider stream closed before completion",
-		},
-		{
-			name: "response failed",
-			stream: `data: {"type":"response.failed",` +
-				`"response":{"error":{"message":"server overloaded","code":"server_is_overloaded"}}}` +
-				"\n\n",
-			expectedSubstring: "server overloaded",
-		},
-		{
-			name: "response incomplete",
-			stream: `data: {"type":"response.incomplete",` +
-				`"response":{"incomplete_details":{"reason":"content_filter"}}}` +
-				"\n\n",
-			expectedSubstring: "provider response incomplete: content_filter",
 		},
 	}
 
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := parseSSEResult(strings.NewReader(testCase.stream), nil)
+			_, err := parseSSEResult(strings.NewReader(test.stream), nil)
 
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), testCase.expectedSubstring)
+			assert.Contains(t, err.Error(), test.expectedSubstring)
 		})
 	}
 }
 
 func completedSSEEvent() string {
-	return "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\"}}\n\n"
+	return "data: " + `{"type":"response.completed","response":{"output":[]}}` + "\n"
 }

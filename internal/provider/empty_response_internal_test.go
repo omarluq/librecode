@@ -7,18 +7,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestFinishTextResultAllowsEmptyText(t *testing.T) {
 	t.Parallel()
 
-	result := &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()}
+	result := &llm.Response{
+		FinishReason: llm.FinishReasonUnknown,
+		Content:      nil,
+		ToolCalls:    nil,
+		Usage:        llm.EmptyUsage(),
+	}
 	finished, err := finishTextResult(result, "   ")
 
 	require.NoError(t, err)
 	assert.True(t, finished)
-	assert.Empty(t, result.Text)
+	assert.Empty(t, responseText(result))
 }
 
 func TestProviderParsersAllowSuccessfulEmptyResponses(t *testing.T) {

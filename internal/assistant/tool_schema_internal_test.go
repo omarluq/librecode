@@ -6,13 +6,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/provider"
-	"github.com/omarluq/librecode/internal/tool"
 )
 
 type toolSchemaCase struct {
 	assertion  func(*testing.T, map[string]any)
-	definition *tool.Definition
+	definition *llm.ToolDefinition
 	name       string
 }
 
@@ -45,7 +45,7 @@ func TestToolParameterSchema(t *testing.T) {
 	}
 }
 
-func freeformSchemaCase(name string, definition *tool.Definition) toolSchemaCase {
+func freeformSchemaCase(name string, definition *llm.ToolDefinition) toolSchemaCase {
 	return toolSchemaCase{
 		assertion: func(t *testing.T, schema map[string]any) {
 			t.Helper()
@@ -78,14 +78,11 @@ func strictReadToolSchemaCase() toolSchemaCase {
 			require.True(t, ok)
 			assert.Contains(t, properties, jsonPathKey)
 		},
-		definition: &tool.Definition{
-			Schema:           nil,
-			Name:             tool.NameRead,
-			Label:            jsonReadToolName,
-			Description:      "Read file",
-			PromptSnippet:    "",
-			PromptGuidelines: []string{},
-			ReadOnly:         true,
+		definition: &llm.ToolDefinition{
+			Schema:      nil,
+			Name:        jsonReadToolName,
+			Description: "Read file",
+			ReadOnly:    true,
 		},
 		name: "built-in schema is strict",
 	}
@@ -99,29 +96,23 @@ func strictASTToolSchemaCase() toolSchemaCase {
 			require.True(t, ok)
 			mode, ok := properties["mode"].(map[string]any)
 			require.True(t, ok)
-			assert.Equal(t, []string{"outline", "symbols", jsonQueryKey, "node", "tree"}, mode["enum"])
+			assert.Equal(t, []string{"outline", "symbols", "query", "node", "tree"}, mode["enum"])
 		},
-		definition: &tool.Definition{
-			Schema:           nil,
-			Name:             tool.NameAST,
-			Label:            "ast",
-			Description:      "Inspect syntax tree",
-			PromptSnippet:    "",
-			PromptGuidelines: []string{},
-			ReadOnly:         true,
+		definition: &llm.ToolDefinition{
+			Schema:      nil,
+			Name:        "ast",
+			Description: "Inspect syntax trees",
+			ReadOnly:    true,
 		},
-		name: "ast mode schema is enum-constrained",
+		name: "ast schema constrains mode enum",
 	}
 }
 
-func echoToolDefinition(schema map[string]any) *tool.Definition {
-	return &tool.Definition{
-		Schema:           schema,
-		Name:             tool.Name("echo"),
-		Label:            "echo",
-		Description:      "Echo text",
-		PromptSnippet:    "",
-		PromptGuidelines: []string{},
-		ReadOnly:         false,
+func echoToolDefinition(schema map[string]any) *llm.ToolDefinition {
+	return &llm.ToolDefinition{
+		Schema:      schema,
+		Name:        "echo",
+		Description: "Echo",
+		ReadOnly:    false,
 	}
 }

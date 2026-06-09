@@ -144,11 +144,9 @@ type modelCompletionRequestInput struct {
 
 func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInput) *CompletionRequest {
 	return &CompletionRequest{
-		OnEvent:           wrapProviderEvent(input.onEvent),
+		OnEvent:           input.onEvent,
 		OnProviderObserve: runtime.emitProviderRequest,
 		OnProviderRequest: runtime.dispatchProviderRequestHook,
-		OnToolCall:        nil,
-		OnToolResult:      nil,
 		ToolRegistry:      input.registry,
 		ExecuteTools:      runtime.executeProviderToolCalls(input.registry),
 		SessionID:         input.sessionID,

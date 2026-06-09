@@ -1,44 +1,198 @@
 package provider
 
 import (
-	"time"
+	"context"
+	"strings"
 
-	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 const (
 	testBranchContent       = "branch"
 	testCompactionContent   = "compaction"
 	testCustomContent       = "custom"
+	testExistingKey         = "existing"
 	testThinkingDelta       = "thinking"
 	testOpenAIProvider      = "openai"
 	testProviderMessageType = jsonMessageType
 	testToolArgumentsJSON   = `{"path":"README.md"}`
 )
 
-func providerTestMessageEntity(role database.Role, content string) database.MessageEntity {
-	return database.MessageEntity{Timestamp: time.Time{}, Role: role, Content: content, Provider: "", Model: ""}
+type providerResponse struct {
+	Text       string
+	Thinking   []string
+	ToolEvents []ToolEvent
+	Usage      llm.Usage
 }
 
-func emptyRequestAuth() model.RequestAuth {
-	return model.RequestAuth{Headers: nil, APIKey: "", Error: "", OK: false}
-}
-
-func emptyModel() model.Model {
-	return model.Model{
-		ThinkingLevelMap: nil,
-		Headers:          nil,
-		Compat:           nil,
-		Provider:         "",
-		ID:               "",
-		Name:             "",
-		API:              "",
-		BaseURL:          "",
-		Input:            nil,
-		Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
-		ContextWindow:    0,
-		MaxTokens:        0,
-		Reasoning:        false,
+func providerResponseView(response *llm.Response) providerResponse {
+	if response == nil {
+		return providerResponse{Text: "", Thinking: nil, ToolEvents: nil, Usage: llm.EmptyUsage()}
 	}
+
+	return providerResponse{
+		Text:       responseText(response),
+		Thinking:   responseThinking(response),
+		ToolEvents: responseToolEvents(response),
+		Usage:      response.Usage,
+	}
+}
+
+func emptyCompletionRequest() *CompletionRequest {
+	return &CompletionRequest{
+		OnProviderObserve: nil,
+		OnProviderRequest: nil,
+		ExecuteTools:      nil,
+		OnEvent:           nil,
+		Request:           emptyRequest(),
+		ProviderAttempt:   0,
+	}
+}
+
+func setTestRequestProvider(request *CompletionRequest, provider string) {
+	request.Request.Model.Provider = provider
+}
+
+func setTestRequestAPI(request *CompletionRequest, api string) {
+	request.Request.Model.API = api
+}
+
+func setTestRequestBaseURL(request *CompletionRequest, baseURL string) {
+	request.Request.Model.BaseURL = baseURL
+}
+
+func setTestRequestModelID(request *CompletionRequest, modelID string) {
+	request.Request.Model.ID = modelID
+}
+
+func setTestRequestReasoning(request *CompletionRequest, reasoning bool) {
+	request.Request.Model.Reasoning = reasoning
+}
+
+func setTestRequestThinkingLevel(request *CompletionRequest, level string) {
+	request.Request.ThinkingLevel = level
+}
+
+func setTestRequestSystemPrompt(request *CompletionRequest, prompt string) {
+	request.Request.SystemPrompt = prompt
+}
+
+func setTestRequestMessages(request *CompletionRequest, messages []llm.Message) {
+	request.Request.Messages = messages
+}
+
+func setTestRequestCWD(request *CompletionRequest, cwd string) {
+	if request.Request.ProviderOptions == nil {
+		request.Request.ProviderOptions = map[string]any{}
+	}
+	request.Request.ProviderOptions["cwd"] = cwd
+}
+
+func testRequestCWD(request *CompletionRequest) string {
+	if request == nil || request.Request.ProviderOptions == nil {
+		return ""
+	}
+	cwd, ok := request.Request.ProviderOptions["cwd"].(string)
+	if !ok {
+		return ""
+	}
+
+	return cwd
+}
+
+func installTestToolExecutor(request *CompletionRequest) {
+	registry := tool.NewRegistry(testRequestCWD(request))
+	request.ExecuteTools = func(
+		ctx context.Context,
+		calls []llm.ToolCall,
+		onEvent func(*llm.StreamChunk),
+	) ([]llm.ToolResult, error) {
+		if registry == nil {
+			return nil, oops.In("provider").Code("tool_registry_missing").Errorf("tool registry is not configured")
+		}
+		results := make([]llm.ToolResult, 0, len(calls))
+		for _, call := range calls {
+			emitLLMToolStart(onEvent, call.Name)
+			result, err := registry.Execute(ctx, call.Name, call.Arguments)
+			toolResult := llmToolResultFromExecution(call, result, err)
+			emitLLMToolResult(onEvent, &toolResult)
+			results = append(results, toolResult)
+		}
+
+		return results, nil
+	}
+}
+
+func emitLLMToolStart(onEvent func(*llm.StreamChunk), name string) {
+	if onEvent == nil {
+		return
+	}
+	part := llm.TextPart(name)
+	onEvent(&llm.StreamChunk{
+		Part:         &part,
+		ToolCall:     nil,
+		FinishReason: llm.FinishReasonUnknown,
+		Usage:        llm.EmptyUsage(),
+	})
+}
+
+func emitLLMToolResult(onEvent func(*llm.StreamChunk), result *llm.ToolResult) {
+	if onEvent == nil {
+		return
+	}
+	part := llm.Part{
+		Metadata:   nil,
+		ToolCall:   nil,
+		ToolResult: result,
+		Type:       llm.PartToolResult,
+		Text:       "",
+		Data:       "",
+		MIMEType:   "",
+	}
+	onEvent(&llm.StreamChunk{
+		Part:         &part,
+		ToolCall:     nil,
+		FinishReason: llm.FinishReasonUnknown,
+		Usage:        llm.EmptyUsage(),
+	})
+}
+
+func llmToolResultFromExecution(call llm.ToolCall, result tool.Result, err error) llm.ToolResult {
+	text := result.Text()
+	errorText := ""
+	if err != nil {
+		text = err.Error()
+		errorText = err.Error()
+	}
+	if strings.TrimSpace(text) == "" {
+		text = "(tool returned no text output)"
+	}
+	metadata := map[string]any{}
+	if details := encodeToolDetails(result.Details); details != "" {
+		metadata["details_json"] = details
+	}
+	if len(metadata) == 0 {
+		metadata = nil
+	}
+
+	return llm.ToolResult{
+		Metadata:      metadata,
+		ToolCallID:    call.ID,
+		ArgumentsJSON: call.ArgumentsJSON,
+		Name:          call.Name,
+		Error:         errorText,
+		Content:       []llm.Part{llm.TextPart(text)},
+		IsError:       err != nil,
+	}
+}
+
+func setTestThinkingMap(request *CompletionRequest, level, value string) {
+	if request.Request.Model.ThinkingLevelMap == nil {
+		request.Request.Model.ThinkingLevelMap = map[string]*string{}
+	}
+	trimmed := strings.TrimSpace(value)
+	request.Request.Model.ThinkingLevelMap[level] = &trimmed
 }

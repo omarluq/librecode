@@ -7,6 +7,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func (runtime *Runtime) emitLifecycleDiagnostics(
@@ -25,8 +26,11 @@ func (runtime *Runtime) emitLifecycleDiagnostics(
 	runtime.emit(ctx, string(name)+"_diagnostic", payload)
 }
 
-func providerHookDiagnostics(input providerHookInput, output providerHookOutput) map[string]any {
-	diagnostics := providerBaseDiagnostics(input.Request, input.Attempt)
+func providerHookDiagnostics(input *llm.HookInput, output llm.HookOutput) map[string]any {
+	diagnostics := providerBaseDiagnostics(completionRequestFromHookInput(input), hookAttempt(input))
+	if input == nil {
+		return diagnostics
+	}
 	diagnostics["mutated_header_count"] = changedStringMapCount(input.Headers, output.Headers)
 	diagnostics["mutated_payload_key_count"] = changedAnyMapCount(input.Payload, output.Payload)
 

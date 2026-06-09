@@ -10,6 +10,7 @@ type ToolDefinition struct {
 
 // ToolCall is a provider-neutral request to invoke a tool.
 type ToolCall struct {
+	Metadata      map[string]any `json:"metadata,omitempty"`
 	Arguments     map[string]any `json:"arguments,omitempty"`
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`

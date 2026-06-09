@@ -6,8 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestAnthropicThinkingEffortMappings(t *testing.T) {
@@ -15,11 +14,11 @@ func TestAnthropicThinkingEffortMappings(t *testing.T) {
 
 	mappedHigh := thinkingHigh
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.Model.ThinkingLevelMap = map[model.ThinkingLevel]*string{model.ThinkingLevel(thinkingLow): &mappedHigh}
-	request.ThinkingLevel = thinkingLow
+	setTestThinkingMap(request, thinkingLow, mappedHigh)
+	setTestRequestThinkingLevel(request, thinkingLow)
 	assert.Equal(t, thinkingHigh, anthropicThinkingEffort(request))
 
-	request.Model.ThinkingLevelMap = nil
+	request.Request.Model.ThinkingLevelMap = nil
 	for _, testCase := range []struct {
 		level string
 		want  string
@@ -34,7 +33,7 @@ func TestAnthropicThinkingEffortMappings(t *testing.T) {
 			t.Parallel()
 
 			request := testCompletionRequestAuth("sk-ant-api03-secret")
-			request.ThinkingLevel = testCase.level
+			setTestRequestThinkingLevel(request, testCase.level)
 			assert.Equal(t, testCase.want, anthropicThinkingEffort(request))
 		})
 	}
@@ -54,14 +53,14 @@ func TestAnthropicBetaFeatures(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.Model.Reasoning = false
+	setTestRequestReasoning(request, false)
 	assert.Empty(t, anthropicBetaFeatures(request))
 
-	request.Model.Reasoning = true
-	request.Model.ID = "claude-sonnet-4-5"
+	setTestRequestReasoning(request, true)
+	setTestRequestModelID(request, "claude-sonnet-4-5")
 	assert.Contains(t, anthropicBetaFeatures(request), "interleaved-thinking-2025-05-14")
 
-	request.Model.ID = testAdaptiveAnthropicModelID
+	setTestRequestModelID(request, testAdaptiveAnthropicModelID)
 	assert.Empty(t, anthropicBetaFeatures(request))
 }
 
@@ -83,6 +82,7 @@ func TestAnthropicAssistantToolMessageMapsProviderNames(t *testing.T) {
 	request := testCompletionRequestAuth("anthropic-claude", "subscription-access-token")
 	message := anthropicAssistantToolMessage(request, []ToolCall{{
 		Arguments:     map[string]any{jsonPathKey: testToolPath},
+		Metadata:      nil,
 		ID:            testAnthropicToolUseID,
 		Name:          jsonReadToolName,
 		ArgumentsJSON: testToolArgumentsJSON,
@@ -99,28 +99,27 @@ func TestAnthropicAssistantToolMessageMapsProviderNames(t *testing.T) {
 func TestAnthropicMessagesAndRoles(t *testing.T) {
 	t.Parallel()
 
-	messages := []database.MessageEntity{
-		providerTestMessageEntity(database.RoleUser, jsonUserRole),
-		providerTestMessageEntity(database.RoleAssistant, jsonAssistantRole),
-		providerTestMessageEntity(database.RoleBranchSummary, testBranchContent),
-		providerTestMessageEntity(database.RoleCompactionSummary, testCompactionContent),
-		providerTestMessageEntity(database.RoleCustom, testCustomContent),
-		providerTestMessageEntity(database.RoleBashExecution, jsonBashToolName),
-		providerTestMessageEntity(database.RoleToolResult, jsonToolRole),
-		providerTestMessageEntity(database.RoleThinking, testThinkingDelta),
-		providerTestMessageEntity(database.RoleUser, ""),
-	}
+	request := emptyCompletionRequest()
+	setTestRequestMessages(request, []llm.Message{
+		llm.TextMessage(llm.RoleUser, jsonUserRole),
+		llm.TextMessage(llm.RoleAssistant, jsonAssistantRole),
+		llm.TextMessage(llm.RoleUser, testBranchContent),
+		llm.TextMessage(llm.RoleUser, testCompactionContent),
+		llm.TextMessage(llm.RoleUser, testCustomContent),
+		llm.TextMessage(llm.RoleUser, jsonBashToolName),
+		llm.TextMessage(llm.RoleTool, jsonToolRole),
+		llm.TextMessage(llm.RoleAssistant, testThinkingDelta),
+		llm.TextMessage(llm.RoleUser, ""),
+	})
 
-	converted := anthropicMessages(messages)
+	converted := anthropicMessages(request.Request.Messages)
 
-	assert.Len(t, converted, 6)
+	assert.Len(t, converted, 7)
 	assert.Equal(t, jsonUserRole, converted[0][jsonRoleKey])
 	assert.Equal(t, jsonAssistantRole, converted[1][jsonRoleKey])
-	for _, role := range []database.Role{database.RoleToolResult, database.RoleThinking} {
-		mapped, ok := anthropicRole(role)
-		assert.False(t, ok)
-		assert.Empty(t, mapped)
-	}
+	mapped, ok := anthropicRole(llm.RoleTool)
+	assert.False(t, ok)
+	assert.Empty(t, mapped)
 }
 
 func TestAnthropicLocalToolNameFallbacks(t *testing.T) {

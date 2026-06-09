@@ -14,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
@@ -76,14 +78,15 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	request := testCompletionRequestAuth("sk-test")
-	request.CWD = workspace
-	request.Model.Provider = testOpenAIProvider
-	request.Model.API = apiOpenAIResponses
-	request.Model.BaseURL = server.URL
+	setTestRequestCWD(request, workspace)
+	setTestRequestProvider(request, testOpenAIProvider)
+	setTestRequestAPI(request, apiOpenAIResponses)
+	setTestRequestBaseURL(request, server.URL)
+	installTestToolExecutor(request)
 	request.OnProviderRequest = func(
 		_ context.Context,
-		input HookInput,
-	) (HookOutput, error) {
+		input *llm.HookInput,
+	) (llm.HookOutput, error) {
 		iteration := len(hookIterations) + 1
 		hookIterations = append(hookIterations, iteration)
 		payload := cloneAnyMap(input.Payload)
@@ -91,13 +94,14 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 		headers := cloneStringMap(input.Headers)
 		headers["X-Iteration"] = strconv.Itoa(iteration)
 
-		return HookOutput{Payload: payload, Headers: headers}, nil
+		return llm.HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
 	result, err := NewHTTPCompletionClient().completeOpenAIResponses(context.Background(), request)
+	response := providerResponseView(result)
 
 	require.NoError(t, err)
-	assert.Equal(t, "done", result.Text)
+	assert.Equal(t, "done", response.Text)
 	first := <-captures
 	second := <-captures
 	require.NoError(t, first.Err)
@@ -133,15 +137,17 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 	defer server.Close()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.CWD = testToolWorkspace(t)
-	request.Model.BaseURL = server.URL
+	setTestRequestCWD(request, testToolWorkspace(t))
+	setTestRequestBaseURL(request, server.URL)
+	installTestToolExecutor(request)
 
 	result, err := NewHTTPCompletionClient().completeAnthropic(context.Background(), request)
+	response := providerResponseView(result)
 	require.NoError(t, err)
-	require.Equal(t, "done", result.Text)
-	require.Len(t, result.ToolEvents, 1)
-	assert.Equal(t, jsonReadToolName, result.ToolEvents[0].Name)
-	assert.Contains(t, result.ToolEvents[0].Result, "librecode")
+	require.Equal(t, "done", response.Text)
+	require.Len(t, response.ToolEvents, 1)
+	assert.Equal(t, jsonReadToolName, response.ToolEvents[0].Name)
+	assert.Contains(t, response.ToolEvents[0].Result, "librecode")
 	require.Len(t, requests, 2)
 	messages, ok := requests[1]["messages"].([]any)
 	require.True(t, ok)
@@ -153,7 +159,7 @@ func completeOpenAIChatWithResponses(
 	t *testing.T,
 	firstResponse string,
 	secondResponse string,
-) ([]map[string]any, *CompletionResult) {
+) ([]map[string]any, providerResponse) {
 	t.Helper()
 
 	var requests []map[string]any
@@ -171,13 +177,14 @@ func completeOpenAIChatWithResponses(
 	t.Cleanup(server.Close)
 
 	request := testCompletionRequestAuth("sk-test")
-	request.CWD = testToolWorkspace(t)
-	request.Model.BaseURL = server.URL
+	setTestRequestCWD(request, testToolWorkspace(t))
+	setTestRequestBaseURL(request, server.URL)
+	installTestToolExecutor(request)
 
 	result, err := NewHTTPCompletionClient().completeOpenAIChat(context.Background(), request)
 	require.NoError(t, err)
 
-	return requests, result
+	return requests, providerResponseView(result)
 }
 
 func openAIChatReadToolResponse() string {

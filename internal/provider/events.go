@@ -1,6 +1,6 @@
 package provider
 
-import "github.com/omarluq/librecode/internal/model"
+import "github.com/omarluq/librecode/internal/llm"
 
 // StreamEventKind identifies incremental provider/client activity.
 type StreamEventKind string
@@ -18,8 +18,55 @@ const (
 
 // StreamEvent is emitted while the provider client is producing a result.
 type StreamEvent struct {
-	ToolEvent *ToolEvent        `json:"tool_event,omitempty"`
-	Usage     *model.TokenUsage `json:"usage,omitempty"`
-	Kind      StreamEventKind   `json:"kind"`
-	Text      string            `json:"text,omitempty"`
+	ToolEvent *ToolEvent      `json:"tool_event,omitempty"`
+	Usage     *llm.Usage      `json:"usage,omitempty"`
+	Kind      StreamEventKind `json:"kind"`
+	Text      string          `json:"text,omitempty"`
+}
+
+func streamChunkToLLM(event StreamEvent) *llm.StreamChunk {
+	return &llm.StreamChunk{
+		Part:         streamPartToLLM(event),
+		ToolCall:     nil,
+		FinishReason: llm.FinishReasonUnknown,
+		Usage:        usagePointerToLLM(event.Usage),
+	}
+}
+
+func streamPartToLLM(event StreamEvent) *llm.Part {
+	switch event.Kind {
+	case StreamEventTextDelta:
+		part := llm.TextPart(event.Text)
+		return &part
+	case StreamEventThinkingDelta:
+		part := llm.Part{
+			Metadata:   nil,
+			ToolCall:   nil,
+			ToolResult: nil,
+			Type:       llm.PartReasoning,
+			Text:       event.Text,
+			Data:       "",
+			MIMEType:   "",
+		}
+		return &part
+	case StreamEventToolResult:
+		if event.ToolEvent == nil {
+			return nil
+		}
+		part := toolResultPartFromEvent(event.ToolEvent)
+		return &part
+	case StreamEventToolStart:
+		part := llm.TextPart(event.Text)
+		return &part
+	}
+
+	return nil
+}
+
+func usagePointerToLLM(usage *llm.Usage) llm.Usage {
+	if usage == nil {
+		return llm.EmptyUsage()
+	}
+
+	return *usage
 }

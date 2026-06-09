@@ -12,15 +12,16 @@ func estimateToolSchemaTokens(request *CompletionRequest) int {
 	if request == nil {
 		return 0
 	}
+	definitions := llmToolDefinitionsFromRegistry(request.ToolRegistry, request.DisableTools)
 
 	var tools []map[string]any
 	switch request.Model.API {
 	case apiOpenAICompletions:
-		tools = provider.OpenAIChatTools(request)
+		tools = provider.OpenAIChatToolsFromDefinitions(definitions)
 	case apiAnthropicMessages:
-		tools = provider.AnthropicTools(request)
+		tools = provider.AnthropicToolsFromDefinitions(definitions, requestUsesAnthropicOAuth(request))
 	default:
-		tools = provider.ResponseTools(request)
+		tools = provider.ResponseToolsFromDefinitions(definitions)
 	}
 	if len(tools) == 0 {
 		return 0

@@ -9,7 +9,7 @@ import (
 
 type testGenerator struct{}
 
-func (testGenerator) Generate(context.Context, llm.Request) (*llm.Response, error) {
+func (testGenerator) Generate(context.Context, *llm.Request) (*llm.Response, error) {
 	return &llm.Response{
 		FinishReason: llm.FinishReasonStop,
 		Content:      []llm.Part{llm.TextPart("done")},

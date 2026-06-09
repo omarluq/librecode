@@ -1,6 +1,14 @@
 package assistant
 
-import "github.com/omarluq/librecode/internal/provider"
+import (
+	"context"
+
+	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/provider"
+	"github.com/omarluq/librecode/internal/tool"
+)
 
 const (
 	apiOpenAICompletions = "openai-completions"
@@ -19,38 +27,87 @@ const (
 	thinkingOff          = "off"
 )
 
-// CompletionRequest aliases the provider completion request during the provider package extraction.
-type CompletionRequest = provider.CompletionRequest
+// ToolExecutor executes provider-requested tool calls through the assistant runtime.
+type ToolExecutor func(context.Context, []ToolCall, func(StreamEvent)) ([]ToolEvent, error)
 
-// CompletionResult aliases the provider completion result during the provider package extraction.
-type CompletionResult = provider.CompletionResult
+// CompletionRequest describes one assistant-owned model completion request.
+type CompletionRequest struct {
+	OnEvent           func(StreamEvent)                              `json:"-"`
+	OnProviderObserve func(context.Context, *CompletionRequest, int) `json:"-"`
+	OnProviderRequest llm.ProviderRequestHook                        `json:"-"`
+	ToolRegistry      *tool.Registry                                 `json:"-"`
+	ExecuteTools      ToolExecutor                                   `json:"-"`
+	SessionID         string                                         `json:"session_id"`
+	SystemPrompt      string                                         `json:"system_prompt"`
+	ThinkingLevel     string                                         `json:"thinking_level"`
+	CWD               string                                         `json:"cwd"`
+	Auth              model.RequestAuth                              `json:"auth"`
+	Messages          []database.MessageEntity                       `json:"messages"`
+	Usage             model.TokenUsage                               `json:"usage"`
+	Model             model.Model                                    `json:"model"`
+	ProviderAttempt   int                                            `json:"-"`
+	DisableTools      bool                                           `json:"-"`
+}
 
-// ToolCall aliases provider tool calls during the provider package extraction.
-type ToolCall = provider.ToolCall
+// CompletionResult is an assistant-owned provider response plus model-visible side effects.
+type CompletionResult struct {
+	Text       string           `json:"text"`
+	Thinking   []string         `json:"thinking,omitempty"`
+	ToolEvents []ToolEvent      `json:"tool_events,omitempty"`
+	Usage      model.TokenUsage `json:"usage"`
+}
 
-// ToolCallEvent aliases the provider tool-call event during the provider package extraction.
-type ToolCallEvent = provider.ToolCallEvent
+// ToolCallEvent captures one requested tool call before execution.
+type ToolCallEvent struct {
+	Arguments     map[string]any `json:"arguments,omitempty"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	ArgumentsJSON string         `json:"arguments_json"`
+}
 
-// ToolEvent aliases the provider tool event during the provider package extraction.
-type ToolEvent = provider.ToolEvent
+// ToolEvent captures one tool call for persistence and TUI rendering.
+type ToolEvent struct {
+	Name          string `json:"name"`
+	ArgumentsJSON string `json:"arguments_json"`
+	DetailsJSON   string `json:"details_json,omitempty"`
+	Result        string `json:"result"`
+	Error         string `json:"error,omitempty"`
+	IsError       bool   `json:"is_error,omitempty"`
+}
 
-// ProviderStreamEvent aliases provider stream events for tests and adapters.
-type ProviderStreamEvent = provider.StreamEvent
+// ToolCall is an assistant-local tool invocation requested by the model.
+type ToolCall struct {
+	Metadata      map[string]any `json:"metadata,omitempty"`
+	Arguments     map[string]any `json:"arguments,omitempty"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	ArgumentsJSON string         `json:"arguments_json,omitempty"`
+}
 
-// CompletionClient aliases the provider completion interface during extraction.
-type CompletionClient = provider.Completer
+// CompletionClient talks to provider APIs through assistant-owned request/result types.
+type CompletionClient interface {
+	Complete(ctx context.Context, request *CompletionRequest) (*CompletionResult, error)
+}
 
-// HTTPCompletionClient aliases the provider HTTP implementation.
-type HTTPCompletionClient = provider.HTTPCompletionClient
+// HTTPCompletionClient adapts the provider HTTP client to assistant-owned types.
+type HTTPCompletionClient struct {
+	provider *provider.HTTPCompletionClient
+}
 
 // NewHTTPCompletionClient creates an HTTP-backed provider client.
 func NewHTTPCompletionClient() *HTTPCompletionClient {
-	return provider.NewHTTPCompletionClient()
+	return &HTTPCompletionClient{provider: provider.NewHTTPCompletionClient()}
 }
 
-const (
-	// ProviderStreamEventKindTextDelta mirrors provider text delta events for test clients.
-	ProviderStreamEventKindTextDelta = provider.StreamEventTextDelta
-	// ProviderStreamEventKindToolResult mirrors provider tool result events for test clients.
-	ProviderStreamEventKindToolResult = provider.StreamEventToolResult
-)
+// Complete sends an assistant-owned completion request to the provider client.
+func (client *HTTPCompletionClient) Complete(
+	ctx context.Context,
+	request *CompletionRequest,
+) (*CompletionResult, error) {
+	response, err := client.provider.Complete(ctx, providerRequestFromCompletionRequest(request))
+	if err != nil {
+		return nil, err
+	}
+
+	return completionResultFromLLMResponse(response), nil
+}

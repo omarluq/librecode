@@ -77,17 +77,17 @@ func jsonRequest(
 }
 
 func openAIHeaders(request *CompletionRequest) map[string]string {
-	headers := cloneHeaders(request.Auth.Headers)
-	headers["Authorization"] = "Bearer " + request.Auth.APIKey
+	headers := cloneHeaders(request.Request.Auth.Headers)
+	headers["Authorization"] = "Bearer " + request.Request.Auth.APIKey
 
 	return headers
 }
 
 func codexHeaders(request *CompletionRequest) map[string]string {
 	headers := openAIHeaders(request)
-	accountID := request.Auth.Headers["chatgpt-account-id"]
+	accountID := request.Request.Auth.Headers["chatgpt-account-id"]
 	if accountID == "" {
-		accountID = accountIDFromToken(request.Auth.APIKey)
+		accountID = accountIDFromToken(request.Request.Auth.APIKey)
 	}
 	headers["chatgpt-account-id"] = accountID
 	headers["originator"] = "librecode"

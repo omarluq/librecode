@@ -7,9 +7,7 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 const (
@@ -88,68 +86,39 @@ const (
 	sseOutputItemIDKey      = "output_item_id"
 )
 
-// ToolExecutor executes provider-requested tool calls outside the wire client.
-type ToolExecutor func(context.Context, []ToolCall, func(StreamEvent)) ([]ToolEvent, error)
-
-// CompletionRequest describes one model completion request.
+// CompletionRequest describes one provider-neutral generation request plus runtime callbacks.
 type CompletionRequest struct {
-	OnEvent           func(StreamEvent)                                    `json:"-"`
-	OnProviderObserve func(context.Context, *CompletionRequest, int)       `json:"-"`
-	OnProviderRequest func(context.Context, HookInput) (HookOutput, error) `json:"-"`
-	OnToolCall        func(context.Context, *ToolCallEvent) error          `json:"-"`
-	OnToolResult      func(context.Context, *ToolEvent) error              `json:"-"`
-	ToolRegistry      *tool.Registry                                       `json:"-"`
-	ExecuteTools      ToolExecutor                                         `json:"-"`
-	SessionID         string                                               `json:"session_id"`
-	SystemPrompt      string                                               `json:"system_prompt"`
-	ThinkingLevel     string                                               `json:"thinking_level"`
-	CWD               string                                               `json:"cwd"`
-	Auth              model.RequestAuth                                    `json:"auth"`
-	Messages          []database.MessageEntity                             `json:"messages"`
-	Usage             model.TokenUsage                                     `json:"usage"`
-	Model             model.Model                                          `json:"model"`
-	ProviderAttempt   int                                                  `json:"-"`
-	DisableTools      bool                                                 `json:"-"`
-}
-
-// CompletionResult is a provider response plus model-visible side effects.
-type CompletionResult struct {
-	Text       string           `json:"text"`
-	Thinking   []string         `json:"thinking,omitempty"`
-	ToolEvents []ToolEvent      `json:"tool_events,omitempty"`
-	Usage      model.TokenUsage `json:"usage"`
-}
-
-// ToolCallEvent captures one requested tool call before execution.
-type ToolCallEvent struct {
-	Arguments     map[string]any `json:"arguments,omitempty"`
-	ID            string         `json:"id"`
-	Name          string         `json:"name"`
-	ArgumentsJSON string         `json:"arguments_json"`
-}
-
-// ToolEvent captures one tool call for persistence and TUI rendering.
-type ToolEvent struct {
-	Name          string `json:"name"`
-	ArgumentsJSON string `json:"arguments_json"`
-	DetailsJSON   string `json:"details_json,omitempty"`
-	Result        string `json:"result"`
-	Error         string `json:"error,omitempty"`
-	IsError       bool   `json:"is_error,omitempty"`
+	OnProviderObserve llm.ProviderObserver
+	OnProviderRequest llm.ProviderRequestHook
+	ExecuteTools      llm.ToolExecutor
+	OnEvent           func(*llm.StreamChunk)
+	Request           llm.Request
+	ProviderAttempt   int
 }
 
 // Completer talks to provider APIs.
 type Completer interface {
-	Complete(ctx context.Context, request *CompletionRequest) (*CompletionResult, error)
+	Complete(ctx context.Context, request *CompletionRequest) (*llm.Response, error)
 }
 
 // ToolCall is a provider-returned or text-fallback local tool invocation.
 type ToolCall struct {
 	Arguments     map[string]any
+	Metadata      map[string]any
 	ID            string
 	Name          string
 	ArgumentsJSON string
 	TextFallback  bool
+}
+
+// ToolEvent captures one tool result for provider follow-up messages.
+type ToolEvent struct {
+	Name          string
+	ArgumentsJSON string
+	DetailsJSON   string
+	Result        string
+	Error         string
+	IsError       bool
 }
 
 type providerResult struct {
@@ -157,7 +126,7 @@ type providerResult struct {
 	OutputItems []any
 	Thinking    []string
 	ToolCalls   []ToolCall
-	Usage       model.TokenUsage
+	Usage       llm.Usage
 }
 
 // HTTPCompletionClient is a small provider client for built-in API families.
@@ -170,18 +139,35 @@ func NewHTTPCompletionClient() *HTTPCompletionClient {
 	return &HTTPCompletionClient{client: &http.Client{Timeout: 10 * time.Minute}}
 }
 
+// Generate sends a provider-neutral request without runtime callbacks.
+func (client *HTTPCompletionClient) Generate(ctx context.Context, request *llm.Request) (*llm.Response, error) {
+	completionRequest := CompletionRequest{
+		OnProviderObserve: nil,
+		OnProviderRequest: nil,
+		ExecuteTools:      nil,
+		OnEvent:           nil,
+		Request:           emptyRequest(),
+		ProviderAttempt:   0,
+	}
+	if request != nil {
+		completionRequest.Request = *request
+	}
+
+	return client.Complete(ctx, &completionRequest)
+}
+
 // Complete sends a request to the selected provider.
 func (client *HTTPCompletionClient) Complete(
 	ctx context.Context,
 	request *CompletionRequest,
-) (*CompletionResult, error) {
+) (*llm.Response, error) {
 	if request == nil {
 		return nil, oops.In("provider").
 			Code("invalid_completion_request").
 			Errorf("completion request is nil")
 	}
 
-	api := request.Model.API
+	api := request.Request.Model.API
 	if api == "" {
 		api = apiOpenAICompletions
 	}
@@ -199,5 +185,30 @@ func (client *HTTPCompletionClient) Complete(
 			Code("unsupported_provider_api").
 			With("api", api).
 			Errorf("provider api is not implemented")
+	}
+}
+
+func emptyRequest() llm.Request {
+	return llm.Request{
+		ProviderOptions: nil,
+		Auth:            llm.Auth{Headers: nil, APIKey: ""},
+		SystemPrompt:    "",
+		ThinkingLevel:   "",
+		SessionID:       "",
+		Messages:        nil,
+		Tools:           nil,
+		Model: llm.ModelRef{
+			Metadata:         nil,
+			ThinkingLevelMap: nil,
+			Provider:         "",
+			ID:               "",
+			API:              "",
+			BaseURL:          "",
+			MaxTokens:        0,
+			ContextWindow:    0,
+			Reasoning:        false,
+		},
+		Usage:        llm.EmptyUsage(),
+		DisableTools: false,
 	}
 }
