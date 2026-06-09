@@ -133,20 +133,22 @@ func anthropicPayload(request *CompletionRequest, messages []map[string]any) map
 	return payload
 }
 
+const anthropicBetaHeader = "anthropic-beta"
+
 func anthropicHeaders(request *CompletionRequest) map[string]string {
 	headers := cloneHeaders(request.Auth.Headers)
 	betaFeatures := anthropicBetaFeatures(request)
 	if usesAnthropicOAuth(request) {
 		headers["Authorization"] = "Bearer " + request.Auth.APIKey
-		headers["anthropic-beta"] = appendAnthropicBeta(
-			headers["anthropic-beta"],
+		headers[anthropicBetaHeader] = appendAnthropicBeta(
+			headers[anthropicBetaHeader],
 			append([]string{"claude-code-20250219", "oauth-2025-04-20"}, betaFeatures...)...,
 		)
 		headers["user-agent"] = "claude-cli/2.1.2 (external, cli)"
 		headers["x-app"] = "cli"
 	} else {
 		headers["x-api-key"] = request.Auth.APIKey
-		headers["anthropic-beta"] = appendAnthropicBeta(headers["anthropic-beta"], betaFeatures...)
+		headers[anthropicBetaHeader] = appendAnthropicBeta(headers[anthropicBetaHeader], betaFeatures...)
 	}
 	headers["anthropic-version"] = "2023-06-01"
 
