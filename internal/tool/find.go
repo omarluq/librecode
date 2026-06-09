@@ -128,13 +128,15 @@ func collectFindResults(ctx context.Context, searchRoot, pattern string, limit i
 	}
 
 	state := &findWalkState{
-		ctx:        ctx,
 		matcher:    matcher,
 		results:    []string{},
 		searchRoot: searchRoot,
 		limit:      limit,
 	}
-	if walkErr := filepath.WalkDir(searchRoot, state.visit); walkErr != nil {
+	visitor := func(currentPath string, dirEntry fs.DirEntry, walkErr error) error {
+		return state.visit(ctx, currentPath, dirEntry, walkErr)
+	}
+	if walkErr := filepath.WalkDir(searchRoot, visitor); walkErr != nil {
 		return []string{}, oops.In("tool").Code("find_walk").Wrapf(walkErr, "walk find path")
 	}
 	sort.Strings(state.results)
@@ -143,18 +145,17 @@ func collectFindResults(ctx context.Context, searchRoot, pattern string, limit i
 }
 
 type findWalkState struct {
-	ctx        context.Context
 	matcher    globMatcher
 	searchRoot string
 	results    []string
 	limit      int
 }
 
-func (state *findWalkState) visit(currentPath string, dirEntry fs.DirEntry, walkErr error) error {
+func (state *findWalkState) visit(ctx context.Context, currentPath string, dirEntry fs.DirEntry, walkErr error) error {
 	if walkErr != nil {
 		return walkErr
 	}
-	if err := state.ctx.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if shouldSkipSearchEntry(dirEntry) {
