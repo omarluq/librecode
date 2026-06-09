@@ -10,6 +10,8 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+const luaManifestFile = "init.lua"
+
 type luaSource struct {
 	Path     string
 	Manifest bool
@@ -39,7 +41,7 @@ func discoverLuaSources(extensionPath string) ([]luaSource, error) {
 }
 
 func discoverLuaDir(root string) ([]luaSource, error) {
-	manifestPath := filepath.Join(root, "init.lua")
+	manifestPath := filepath.Join(root, luaManifestFile)
 	if info, err := os.Stat(manifestPath); err == nil && !info.IsDir() {
 		return []luaSource{{Path: manifestPath, Manifest: true}}, nil
 	}
@@ -89,7 +91,7 @@ func collectLuaSourceDir(root, currentPath string, sources *[]luaSource) error {
 	if filepath.Base(currentPath) == "lua" {
 		return filepath.SkipDir
 	}
-	manifestPath := filepath.Join(currentPath, "init.lua")
+	manifestPath := filepath.Join(currentPath, luaManifestFile)
 	if info, err := os.Stat(manifestPath); err == nil && !info.IsDir() {
 		*sources = append(*sources, luaSource{Path: manifestPath, Manifest: true})
 		return filepath.SkipDir
@@ -142,7 +144,7 @@ func (manager *Manager) configurePackagePath(state *lua.LState) {
 	for _, root := range manager.moduleRootsSnapshot() {
 		patterns = append(patterns,
 			filepath.ToSlash(filepath.Join(root, "?.lua")),
-			filepath.ToSlash(filepath.Join(root, "?", "init.lua")),
+			filepath.ToSlash(filepath.Join(root, "?", luaManifestFile)),
 		)
 	}
 	packageTable.RawSetString("path", lua.LString(strings.Join(patterns, ";")))
