@@ -11,15 +11,23 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 )
 
+const hiddenSkillName = "hidden"
+
 func TestLoadSkillsDiscoversConfiguredRootsAndFormatsPrompt(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	agentDir := t.TempDir()
 	t.Setenv("HOME", home)
 
-	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "hidden", "SKILL.md"), strings.Join([]string{
+	writeTestFile(t, filepath.Join(
+		cwd,
+		core.ConfigDirName,
+		"skills",
+		hiddenSkillName,
+		"SKILL.md",
+	), strings.Join([]string{
 		frontmatterDelimiter,
-		"name: hidden",
+		"name: " + hiddenSkillName,
 		"description: Hidden skill",
 		"disable-model-invocation: true",
 		frontmatterDelimiter,
@@ -44,7 +52,7 @@ func TestLoadSkillsDiscoversConfiguredRootsAndFormatsPrompt(t *testing.T) {
 
 	assert.Equal(
 		t,
-		[]string{"hidden", "fix-bug", "user-libre", "user-agent"},
+		[]string{hiddenSkillName, "fix-bug", "user-libre", "user-agent"},
 		skillNames(result.Skills),
 	)
 	assert.Equal(t, core.SourceScopeProject, result.Skills[0].SourceInfo.Scope)
@@ -57,7 +65,7 @@ func TestLoadSkillsDiscoversConfiguredRootsAndFormatsPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "<name>user-libre</name>")
 	assert.Contains(t, prompt, "<name>user-agent</name>")
 	assert.NotContains(t, prompt, "<name>legacy-agent</name>")
-	assert.NotContains(t, prompt, "<name>hidden</name>")
+	assert.NotContains(t, prompt, "<name>"+hiddenSkillName+"</name>")
 }
 
 func TestLoadSkillsDedupesByPriority(t *testing.T) {
@@ -113,6 +121,9 @@ func TestLoadSkillsParsesSpecFrontmatter(t *testing.T) {
 	assert.Equal(t, []string{"Bash(git:*)", "Read"}, skill.AllowedTools)
 	assert.True(t, skill.UserInvocable)
 	assert.Equal(t, "omar", skill.Metadata["author"])
+	content, err := core.SkillContent(&skill)
+	require.NoError(t, err)
+	assert.Contains(t, content, "spec-skill")
 }
 
 func TestLoadSkillsHonorsIgnoreFiles(t *testing.T) {

@@ -9,15 +9,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestToolPayloadReadsStdinBelowLimit(t *testing.T) {
+func TestToolPayload(t *testing.T) {
 	t.Parallel()
 
-	cmd := &cobra.Command{}
-	cmd.SetIn(strings.NewReader(`{"command":"pwd"}`))
+	tests := []struct { //nolint:govet // Readability matters more than field packing in test cases.
+		args     []string
+		name     string
+		stdin    string
+		expected string
+	}{
+		{name: "default", args: nil, stdin: "", expected: `{}`},
+		{name: "blank stdin", args: []string{"-"}, stdin: "  \n", expected: `{}`},
+		{name: "stdin JSON", args: []string{"-"}, stdin: `{"command":"pwd"}`, expected: `{"command":"pwd"}`},
+		{name: "joined args", args: []string{`{"command":`, `"pwd"}`}, stdin: "", expected: `{"command": "pwd"}`},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	payload, err := toolPayload(cmd, []string{"-"})
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"command":"pwd"}`, string(payload))
+			cmd := &cobra.Command{}
+			cmd.SetIn(strings.NewReader(testCase.stdin))
+
+			payload, err := toolPayload(cmd, testCase.args)
+			require.NoError(t, err)
+			assert.JSONEq(t, testCase.expected, string(payload))
+		})
+	}
 }
 
 func TestToolPayloadRejectsStdinAboveLimit(t *testing.T) {

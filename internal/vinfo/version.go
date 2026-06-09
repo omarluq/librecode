@@ -7,9 +7,11 @@ import (
 	"strings"
 )
 
+const devVersion = "dev"
+
 var (
 	// Version is the semantic version injected at build time.
-	Version = "dev"
+	Version = devVersion
 	// Commit is the VCS revision injected at build time.
 	Commit = "none"
 	// BuildDate is the UTC build timestamp injected at build time.
@@ -20,7 +22,7 @@ var (
 func String() string {
 	version := Version
 
-	if version == "dev" {
+	if version == devVersion {
 		if info, ok := debug.ReadBuildInfo(); ok {
 			version = fallbackVersion(info.Main.Version)
 		}
@@ -31,7 +33,7 @@ func String() string {
 
 func fallbackVersion(version string) string {
 	if version == "" || version == "(devel)" {
-		return "dev"
+		return devVersion
 	}
 
 	return strings.TrimSpace(version)
