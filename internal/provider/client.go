@@ -49,6 +49,7 @@ const (
 	jsonToolRole            = "tool"
 	jsonSystemRole          = "system"
 	jsonMessagesKey         = "messages"
+	jsonMessageType         = "message"
 	jsonCommandKey          = "command"
 	jsonReadToolName        = "read"
 	jsonBashToolName        = "bash"
@@ -67,18 +68,24 @@ const (
 	anthropicLSToolName     = "LS"
 	jsonOldTextKey          = "oldText"
 	jsonNewTextKey          = "newText"
-	functionToolType        = "function"
+	jsonFunctionKey         = "function"
+	functionToolType        = jsonFunctionKey
 	functionCallType        = "function_call"
 	functionCallOutputType  = "function_call_output"
 	anthropicToolUseType    = "tool_use"
 	anthropicToolResultType = "tool_result"
 	reasoningEffortKey      = "effort"
 	thinkingOff             = "off"
+	thinkingMinimal         = "minimal"
 	thinkingLow             = "low"
+	thinkingMedium          = "medium"
 	thinkingHigh            = "high"
 	thinkingXHigh           = "xhigh"
 	thinkingDisplaySummary  = "summarized"
 	reasoningSummaryAuto    = "auto"
+	reasoningEffortNone     = "none"
+	sseItemIDKey            = "item_id"
+	sseOutputItemIDKey      = "output_item_id"
 )
 
 // ToolExecutor executes provider-requested tool calls outside the wire client.

@@ -81,7 +81,7 @@ func strictReadToolSchemaCase() toolSchemaCase {
 		definition: &tool.Definition{
 			Schema:           nil,
 			Name:             tool.NameRead,
-			Label:            "read",
+			Label:            jsonReadToolName,
 			Description:      "Read file",
 			PromptSnippet:    "",
 			PromptGuidelines: []string{},

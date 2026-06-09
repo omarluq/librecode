@@ -60,7 +60,7 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 		captures <- capture
 		writer.Header().Set("Content-Type", "application/json")
 		if requestCount == 1 {
-			arguments, err := json.Marshal(map[string]string{jsonPathKey: "README.md"})
+			arguments, err := json.Marshal(map[string]string{jsonPathKey: testToolPath})
 			require.NoError(t, err)
 			writeTestProviderResponse(
 				t,
@@ -77,7 +77,7 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 
 	request := testCompletionRequestAuth("sk-test")
 	request.CWD = workspace
-	request.Model.Provider = "openai"
+	request.Model.Provider = testOpenAIProvider
 	request.Model.API = apiOpenAIResponses
 	request.Model.BaseURL = server.URL
 	request.OnProviderRequest = func(

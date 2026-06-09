@@ -12,6 +12,15 @@ func CloneOrEmpty[M ~map[K]V, K comparable, V any](values M) M {
 	return maps.Clone(values)
 }
 
+// ClonePreserveNil returns a copy of values, or nil for nil input.
+func ClonePreserveNil[M ~map[K]V, K comparable, V any](values M) M {
+	if values == nil {
+		return nil
+	}
+
+	return maps.Clone(values)
+}
+
 // CloneOrNil returns a copy of values, or nil for nil or empty input.
 func CloneOrNil[M ~map[K]V, K comparable, V any](values M) M {
 	if len(values) == 0 {

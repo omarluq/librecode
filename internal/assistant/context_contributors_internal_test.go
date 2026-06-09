@@ -98,7 +98,7 @@ func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
 
 	reported := model.TokenUsage{
 		Breakdown: map[string]int{
-			"history": 10,
+			contextBreakdownHistory: 10,
 		},
 		TopContributors: []model.TokenContributor{
 			{Label: "message 1", Role: testContributorUserRole, Preview: testUsagePreview, Tokens: 10, Chars: 40},
@@ -113,10 +113,10 @@ func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
 	require.Equal(t, reported.Breakdown, merged.Breakdown)
 	require.Equal(t, reported.TopContributors, merged.TopContributors)
 
-	reported.Breakdown["history"] = 999
+	reported.Breakdown[contextBreakdownHistory] = 999
 	reported.TopContributors[0].Label = testContributorMutationLabel
 
-	assert.Equal(t, 10, merged.Breakdown["history"])
+	assert.Equal(t, 10, merged.Breakdown[contextBreakdownHistory])
 	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
 }
 

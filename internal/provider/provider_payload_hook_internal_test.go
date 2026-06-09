@@ -194,7 +194,7 @@ func providerPayloadHookRequest(baseURL string) *CompletionRequest {
 			ThinkingLevelMap: nil,
 			Headers:          nil,
 			Compat:           nil,
-			Provider:         "openai",
+			Provider:         testOpenAIProvider,
 			ID:               providerHookTestModelID,
 			Name:             providerHookTestModelID,
 			API:              apiOpenAICompletions,

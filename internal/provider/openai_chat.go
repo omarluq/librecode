@@ -209,7 +209,7 @@ func openAIChatAssistantToolMessage(result *providerResult) map[string]any {
 		toolCalls = append(toolCalls, map[string]any{
 			"id":        call.ID,
 			jsonTypeKey: functionToolType,
-			"function": map[string]any{
+			jsonFunctionKey: map[string]any{
 				jsonToolNameKey:  call.Name,
 				jsonArgumentsKey: call.ArgumentsJSON,
 			},

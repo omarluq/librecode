@@ -69,7 +69,7 @@ func TestAnthropicPayloadDisablesThinkingWhenOff(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.Model.ID = "claude-opus-4-7"
+	request.Model.ID = testAdaptiveAnthropicModelID
 	request.Model.Reasoning = true
 	request.ThinkingLevel = thinkingOff
 	payload := anthropicPayload(request, nil)
@@ -132,7 +132,7 @@ func TestAnthropicPayloadAddsAdaptiveThinking(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	request.Model.ID = "claude-opus-4-7"
+	request.Model.ID = testAdaptiveAnthropicModelID
 	request.Model.Reasoning = true
 	request.ThinkingLevel = thinkingXHigh
 	payload := anthropicPayload(request, nil)
@@ -169,6 +169,8 @@ func TestAnthropicHeadersUseBearerForOAuth(t *testing.T) {
 	assert.Contains(t, headers["anthropic-beta"], "oauth-2025-04-20")
 	assert.NotContains(t, headers["anthropic-beta"], "interleaved-thinking-2025-05-14")
 }
+
+const testAdaptiveAnthropicModelID = "claude-opus-4-7"
 
 func encodeTestJSON(t *testing.T, value any) string {
 	t.Helper()

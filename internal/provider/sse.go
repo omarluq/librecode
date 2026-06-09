@@ -154,7 +154,7 @@ func ensureSSEFinalResponse(response map[string]any) map[string]any {
 }
 
 func sseItemID(event map[string]any) string {
-	for _, key := range []string{"item_id", "output_item_id", "id"} {
+	for _, key := range []string{sseItemIDKey, sseOutputItemIDKey, "id"} {
 		if value := stringValue(event[key]); value != "" {
 			return value
 		}
