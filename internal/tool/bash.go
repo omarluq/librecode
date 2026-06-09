@@ -238,11 +238,15 @@ func writeFullBashOutput(output []byte) (string, error) {
 	}
 	outputPath := file.Name()
 	if _, err := file.Write(output); err != nil {
-		cleanupErr := errors.Join(file.Close(), os.Remove(outputPath))
+		cleanupErr := errors.Join(
+			bashOutputCleanupError(file.Close(), "close full bash output"),
+			bashOutputCleanupError(os.Remove(outputPath), "remove full bash output file"),
+		)
 		return "", errors.Join(bashOutputFSError(err, "write full bash output"), cleanupErr)
 	}
 	if err := file.Close(); err != nil {
-		return "", errors.Join(bashOutputFSError(err, "close full bash output"), os.Remove(outputPath))
+		cleanupErr := bashOutputCleanupError(os.Remove(outputPath), "remove full bash output file")
+		return "", errors.Join(bashOutputFSError(err, "close full bash output"), cleanupErr)
 	}
 
 	return outputPath, nil
@@ -263,6 +267,14 @@ func fullBashOutputDir() (string, error) {
 
 func bashOutputFSError(err error, message string) error {
 	return oops.In("tool.bash").Code("bash-output-fs").Wrapf(err, "%s", message)
+}
+
+func bashOutputCleanupError(err error, message string) error {
+	if err == nil {
+		return nil
+	}
+
+	return bashOutputFSError(err, message)
 }
 
 func lastLineByteCount(text string) int {

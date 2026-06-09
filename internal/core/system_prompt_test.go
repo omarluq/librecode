@@ -8,113 +8,165 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 )
 
-const bashToolName = "bash"
+const (
+	availableSkillsTag = "<available_skills>"
+	bashToolName       = "bash"
+)
 
-func TestBuildSystemPromptDefaultIncludesToolsContextAndSkills(t *testing.T) {
+func TestBuildSystemPrompt(t *testing.T) {
 	t.Parallel()
 
-	prompt := core.BuildSystemPrompt(&core.BuildSystemPromptOptions{
-		ToolSnippets:       map[string]string{"read": "Read files", bashToolName: "Run commands"},
-		CustomPrompt:       "",
-		AppendSystemPrompt: "extra instruction",
-		CWD:                "/work/project",
-		SelectedTools:      []string{"read", bashToolName, "missing"},
-		PromptGuidelines:   []string{"  Be safe  ", ""},
-		ContextFiles:       []core.ContextFile{{Path: "AGENTS.md", Content: "project rules"}},
-		Skills: []core.Skill{{
-			Metadata:               nil,
-			SourceInfo:             core.SourceInfo{Path: "", Source: "", Scope: "", Origin: "", BaseDir: ""},
-			Name:                   "go-test",
-			Description:            "Use when writing tests",
-			FilePath:               "/skills/go-test/SKILL.md",
-			BaseDir:                "/skills/go-test",
-			License:                "",
-			Compatibility:          "",
-			AllowedTools:           nil,
-			UserInvocable:          false,
-			DisableModelInvocation: false,
-		}},
-	})
+	cases := []systemPromptCase{
+		defaultSystemPromptCase(),
+		customPromptWithoutReadCase(),
+		customPromptWithDefaultToolsCase(),
+		{
+			name:        "nil options use defaults",
+			options:     nil,
+			contains:    []string{"Available tools:", "Current date:"},
+			notContains: []string{},
+		},
+	}
 
-	assert.Contains(t, prompt, "- read: Read files")
-	assert.Contains(t, prompt, "- bash: Run commands")
-	assert.NotContains(t, prompt, "missing:")
-	assert.Contains(t, prompt, "extra instruction")
-	assert.Contains(t, prompt, "AGENTS.md")
-	assert.Contains(t, prompt, "project rules")
-	assert.Contains(t, prompt, "<available_skills>")
-	assert.Contains(t, prompt, "Current working directory: /work/project")
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			prompt := core.BuildSystemPrompt(testCase.options)
+
+			for _, expected := range testCase.contains {
+				assert.Contains(t, prompt, expected)
+			}
+			for _, unexpected := range testCase.notContains {
+				assert.NotContains(t, prompt, unexpected)
+			}
+		})
+	}
 }
 
-func TestBuildSystemPromptCustomCanOmitSkillsWithoutRead(t *testing.T) {
-	t.Parallel()
-
-	skills := []core.Skill{testPromptSkill("staged-skill", false)}
-	withoutRead := core.BuildSystemPrompt(&core.BuildSystemPromptOptions{
-		ToolSnippets:       nil,
-		CustomPrompt:       "Custom prompt",
-		AppendSystemPrompt: "append",
-		CWD:                "/work",
-		SelectedTools:      []string{bashToolName},
-		PromptGuidelines:   nil,
-		ContextFiles:       nil,
-		Skills:             skills,
-	})
-	assert.Contains(t, withoutRead, "Custom prompt\n\nappend")
-	assert.NotContains(t, withoutRead, "<available_skills>")
-
-	withDefaultTools := core.BuildSystemPrompt(&core.BuildSystemPromptOptions{
-		ToolSnippets:       nil,
-		CustomPrompt:       "Custom prompt",
-		AppendSystemPrompt: "",
-		CWD:                "/work",
-		SelectedTools:      nil,
-		PromptGuidelines:   nil,
-		ContextFiles:       nil,
-		Skills:             skills,
-	})
-	assert.Contains(t, withDefaultTools, "<available_skills>")
+type systemPromptCase struct {
+	name        string
+	options     *core.BuildSystemPromptOptions
+	contains    []string
+	notContains []string
 }
 
-func TestBuildSystemPromptNilOptions(t *testing.T) {
-	t.Parallel()
-
-	prompt := core.BuildSystemPrompt(nil)
-
-	assert.Contains(t, prompt, "Available tools:")
-	assert.Contains(t, prompt, "Current date:")
+func defaultSystemPromptCase() systemPromptCase {
+	return systemPromptCase{
+		name: "default includes selected tools context and skills",
+		options: &core.BuildSystemPromptOptions{
+			ToolSnippets:       map[string]string{"read": "Read files", bashToolName: "Run commands"},
+			CustomPrompt:       "",
+			AppendSystemPrompt: "extra instruction",
+			CWD:                "/work/project",
+			SelectedTools:      []string{"read", bashToolName, "missing"},
+			PromptGuidelines:   []string{"  Be safe  ", ""},
+			ContextFiles:       []core.ContextFile{{Path: "AGENTS.md", Content: "project rules"}},
+			Skills:             []core.Skill{projectPromptSkill("go-test", false)},
+		},
+		contains: []string{
+			"- read: Read files",
+			"- bash: Run commands",
+			"extra instruction",
+			"AGENTS.md",
+			"project rules",
+			availableSkillsTag,
+			"Current working directory: /work/project",
+		},
+		notContains: []string{"missing:"},
+	}
 }
 
-func TestFormatSkillsForPromptEscapesAndFilters(t *testing.T) {
+func customPromptWithoutReadCase() systemPromptCase {
+	return systemPromptCase{
+		name: "custom prompt omits skills when read is unavailable",
+		options: &core.BuildSystemPromptOptions{
+			ToolSnippets:       nil,
+			CustomPrompt:       "Custom prompt",
+			AppendSystemPrompt: "append",
+			CWD:                "/work",
+			SelectedTools:      []string{bashToolName},
+			PromptGuidelines:   nil,
+			ContextFiles:       nil,
+			Skills:             []core.Skill{projectPromptSkill("staged-skill", false)},
+		},
+		contains:    []string{"Custom prompt\n\nappend"},
+		notContains: []string{availableSkillsTag},
+	}
+}
+
+func customPromptWithDefaultToolsCase() systemPromptCase {
+	return systemPromptCase{
+		name: "custom prompt includes skills when default tools include read",
+		options: &core.BuildSystemPromptOptions{
+			ToolSnippets:       nil,
+			CustomPrompt:       "Custom prompt",
+			AppendSystemPrompt: "",
+			CWD:                "/work",
+			SelectedTools:      nil,
+			PromptGuidelines:   nil,
+			ContextFiles:       nil,
+			Skills:             []core.Skill{projectPromptSkill("staged-skill", false)},
+		},
+		contains:    []string{availableSkillsTag},
+		notContains: []string{},
+	}
+}
+
+func TestFormatSkillPrompts(t *testing.T) {
 	t.Parallel()
 
-	prompt := core.FormatSkillsForPrompt([]core.Skill{
-		testPromptSkill("visible<&>", false),
-		testPromptSkill("staged-skill", true),
-	})
+	cases := []struct {
+		name        string
+		format      func() string
+		contains    []string
+		notContains []string
+	}{
+		{
+			name: "available skills escape and filter disabled model invocation",
+			format: func() string {
+				return core.FormatSkillsForPrompt([]core.Skill{
+					projectPromptSkill("visible<&>", false),
+					projectPromptSkill("staged-skill", true),
+				})
+			},
+			contains:    []string{"visible&lt;&amp;&gt;", "Use &lt;now&gt;"},
+			notContains: []string{"staged-skill"},
+		},
+		{
+			name: "active skills escape content and preserve truncation flag",
+			format: func() string {
+				return core.FormatActiveSkillsForPrompt([]core.ActivatedSkill{{
+					Skill:     projectPromptSkill("active<&>", false),
+					Content:   "Read <this>",
+					Truncated: true,
+				}})
+			},
+			contains:    []string{"active&lt;&amp;&gt;", "<truncated>true</truncated>", "Read &lt;this&gt;"},
+			notContains: []string{},
+		},
+	}
 
-	assert.Contains(t, prompt, "visible&lt;&amp;&gt;")
-	assert.Contains(t, prompt, "Use &lt;now&gt;")
-	assert.NotContains(t, prompt, "staged-skill")
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			prompt := testCase.format()
+
+			for _, expected := range testCase.contains {
+				assert.Contains(t, prompt, expected)
+			}
+			for _, unexpected := range testCase.notContains {
+				assert.NotContains(t, prompt, unexpected)
+			}
+		})
+	}
+
 	assert.Empty(t, core.FormatSkillsForPrompt(nil))
-}
-
-func TestFormatActiveSkillsForPrompt(t *testing.T) {
-	t.Parallel()
-
-	prompt := core.FormatActiveSkillsForPrompt([]core.ActivatedSkill{{
-		Skill:     testPromptSkill("active<&>", false),
-		Content:   "Read <this>",
-		Truncated: true,
-	}})
-
-	assert.Contains(t, prompt, "active&lt;&amp;&gt;")
-	assert.Contains(t, prompt, "<truncated>true</truncated>")
-	assert.Contains(t, prompt, "Read &lt;this&gt;")
 	assert.Empty(t, core.FormatActiveSkillsForPrompt(nil))
 }
 
-func testPromptSkill(name string, disabled bool) core.Skill {
+func projectPromptSkill(name string, disabled bool) core.Skill {
 	return core.Skill{
 		Metadata:               nil,
 		SourceInfo:             core.SourceInfo{Path: "", Source: "", Scope: "", Origin: "", BaseDir: ""},

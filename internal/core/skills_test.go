@@ -93,37 +93,70 @@ func TestLoadSkillsDedupesByPriority(t *testing.T) {
 }
 
 func TestLoadSkillsParsesSpecFrontmatter(t *testing.T) {
-	cwd := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	cases := []struct {
+		name         string
+		allowedTools []string
+		wantTools    []string
+	}{
+		{
+			name:         "space separated allowed tools",
+			allowedTools: []string{"allowed-tools: Bash(git:*) Read"},
+			wantTools:    []string{"Bash(git:*)", "Read"},
+		},
+		{
+			name: "sequence allowed tools trims blank entries",
+			allowedTools: []string{
+				"allowed-tools:",
+				"  - Bash(git:*)",
+				"  - '  Read  '",
+				"  - ''",
+			},
+			wantTools: []string{"Bash(git:*)", "Read"},
+		},
+	}
 
-	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "spec-skill", "SKILL.md"), strings.Join([]string{
-		frontmatterDelimiter,
-		"name: spec-skill",
-		"description: Use for spec parsing",
-		"license: MIT",
-		"compatibility: Works with librecode",
-		"allowed-tools: Bash(git:*) Read",
-		"user-invocable: true",
-		"metadata:",
-		"  author: omar",
-		frontmatterDelimiter,
-		"Body.",
-	}, "\n"))
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cwd := t.TempDir()
+			home := t.TempDir()
+			t.Setenv("HOME", home)
 
-	result := core.LoadSkills(cwd, nil, true)
+			frontmatter := []string{
+				frontmatterDelimiter,
+				"name: spec-skill",
+				"description: Use for spec parsing",
+				"license: MIT",
+				"compatibility: Works with librecode",
+			}
+			frontmatter = append(frontmatter, testCase.allowedTools...)
+			frontmatter = append(frontmatter,
+				"user-invocable: true",
+				"metadata:",
+				"  author: omar",
+				frontmatterDelimiter,
+				"Body.",
+			)
+			writeTestFile(
+				t,
+				filepath.Join(cwd, core.ConfigDirName, "skills", "spec-skill", "SKILL.md"),
+				strings.Join(frontmatter, "\n"),
+			)
 
-	require.Empty(t, result.Diagnostics)
-	require.Len(t, result.Skills, 1)
-	skill := result.Skills[0]
-	assert.Equal(t, "MIT", skill.License)
-	assert.Equal(t, "Works with librecode", skill.Compatibility)
-	assert.Equal(t, []string{"Bash(git:*)", "Read"}, skill.AllowedTools)
-	assert.True(t, skill.UserInvocable)
-	assert.Equal(t, "omar", skill.Metadata["author"])
-	content, err := core.SkillContent(&skill)
-	require.NoError(t, err)
-	assert.Contains(t, content, "spec-skill")
+			result := core.LoadSkills(cwd, nil, true)
+
+			require.Empty(t, result.Diagnostics)
+			require.Len(t, result.Skills, 1)
+			skill := result.Skills[0]
+			assert.Equal(t, "MIT", skill.License)
+			assert.Equal(t, "Works with librecode", skill.Compatibility)
+			assert.Equal(t, testCase.wantTools, skill.AllowedTools)
+			assert.True(t, skill.UserInvocable)
+			assert.Equal(t, "omar", skill.Metadata["author"])
+			content, err := core.SkillContent(&skill)
+			require.NoError(t, err)
+			assert.Contains(t, content, "spec-skill")
+		})
+	}
 }
 
 func TestLoadSkillsHonorsIgnoreFiles(t *testing.T) {
