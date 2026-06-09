@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -28,9 +29,9 @@ func (app *App) addWelcomeMessage() {
 	app.addSystemMessage(welcomeMessagePrefix + strings.Join(welcomeBodyLines(app.cwd), "\n"))
 }
 
-func (app *App) renderWelcomeMessage(width int, content string) []styledLine {
+func (app *App) renderWelcomeMessage(width int, content string) []rendertext.Line {
 	bodyLines := welcomeLinesFromContent(content)
-	lines := make([]styledLine, 0, len(bodyLines)+(welcomePaddingY*2))
+	lines := make([]rendertext.Line, 0, len(bodyLines)+(welcomePaddingY*2))
 	app.appendWelcomePaddingLines(&lines, width, welcomePaddingY)
 	for index, line := range bodyLines {
 		lines = append(lines, app.welcomeStyledLine(width, index, line))
@@ -72,40 +73,40 @@ func (app *App) writeWelcomeLine(row, width, lineIndex int, content string) {
 	writeLine(app.frame, row, width, line.Text, line.Style)
 }
 
-func (app *App) welcomeStyledLine(width, lineIndex int, content string) styledLine {
+func (app *App) welcomeStyledLine(width, lineIndex int, content string) rendertext.Line {
 	style := app.welcomeBodyStyle(lineIndex, content)
 	innerWidth := max(1, width-(welcomePaddingX*2))
-	centeredContent := centerText(truncateText(content, innerWidth), innerWidth)
+	centeredContent := centerText(rendertext.Truncate(content, innerWidth), innerWidth)
 	paddedContent := strings.Repeat(" ", welcomePaddingX) +
 		centeredContent +
 		strings.Repeat(" ", welcomePaddingX)
 
-	return newStyledLine(style, truncateText(paddedContent, width))
+	return rendertext.NewLine(style, rendertext.Truncate(paddedContent, width))
 }
 
 func centerText(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	text = truncateText(text, width)
-	padding := max(0, width-terminalTextWidth(text))
+	text = rendertext.Truncate(text, width)
+	padding := max(0, width-rendertext.Width(text))
 	leftPadding := padding / 2
 	rightPadding := padding - leftPadding
 
 	return strings.Repeat(" ", leftPadding) + text + strings.Repeat(" ", rightPadding)
 }
 
-func (app *App) appendWelcomePaddingLines(lines *[]styledLine, width, count int) {
+func (app *App) appendWelcomePaddingLines(lines *[]rendertext.Line, width, count int) {
 	style := app.theme.background(colorCustomMessageBg)
 	for range count {
-		*lines = append(*lines, newStyledLine(style, padRight("", width)))
+		*lines = append(*lines, rendertext.NewLine(style, rendertext.PadRight("", width)))
 	}
 }
 
 func (app *App) writeWelcomePaddingRows(row, width, count int) {
 	style := app.theme.background(colorCustomMessageBg)
 	for offset := range count {
-		writeLine(app.frame, row+offset, width, padRight("", width), style)
+		writeLine(app.frame, row+offset, width, rendertext.PadRight("", width), style)
 	}
 }
 

@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -101,8 +102,8 @@ func (app *App) drawUIWindowSpans(window *extension.WindowState, drawOp *extensi
 		if column >= window.Width {
 			return
 		}
-		text := terminalTextFit(span.Text, window.Width-column)
-		column += writeTextCellsNoFill(
+		text := rendertext.Fit(span.Text, window.Width-column)
+		column += rendertext.WriteCellsNoFill(
 			app.frame,
 			window.X+column,
 			window.Y+drawOp.Row,
@@ -113,7 +114,7 @@ func (app *App) drawUIWindowSpans(window *extension.WindowState, drawOp *extensi
 	}
 }
 
-func clearWindow(target contentSetter, window *extension.WindowState) {
+func clearWindow(target rendertext.ContentSetter, window *extension.WindowState) {
 	style := tcell.StyleDefault
 	for row := 0; row < window.Height; row++ {
 		writeLine(target, window.Y+row, window.Width, "", style)

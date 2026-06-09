@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"fmt"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"time"
 
@@ -46,7 +47,7 @@ func slashSuggestions() []slashSuggestion {
 	}
 }
 
-func (app *App) autocompleteLines(width int) []styledLine {
+func (app *App) autocompleteLines(width int) []rendertext.Line {
 	matches := app.autocompleteMatches()
 	if len(matches) == 0 {
 		return nil
@@ -54,10 +55,10 @@ func (app *App) autocompleteLines(width int) []styledLine {
 	selected := app.selectedAutocompleteIndex(matches)
 	limit := min(6, len(matches))
 	start := autocompleteWindowStart(selected, limit, len(matches))
-	lines := make([]styledLine, 0, limit+1)
-	lines = append(lines, newStyledLine(
+	lines := make([]rendertext.Line, 0, limit+1)
+	lines = append(lines, rendertext.NewLine(
 		app.theme.background(colorCustomMessageBg).Bold(true),
-		padRight("  slash commands  tab/enter to complete", width),
+		rendertext.PadRight("  slash commands  tab/enter to complete", width),
 	))
 	for offset := range limit {
 		index := start + offset
@@ -69,7 +70,7 @@ func (app *App) autocompleteLines(width int) []styledLine {
 			style = style.Bold(true)
 		}
 		text := fmt.Sprintf("%s/%-15s %s", prefix, match.Name, match.Description)
-		lines = append(lines, newStyledLine(style, padRight(text, width)))
+		lines = append(lines, rendertext.NewLine(style, rendertext.PadRight(text, width)))
 	}
 
 	return lines

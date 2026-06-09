@@ -1,5 +1,7 @@
 package terminal
 
+import "github.com/omarluq/librecode/internal/terminal/rendertext"
+
 const messageCacheWarmBatchSize = 16
 
 type messageLineCache struct {
@@ -59,7 +61,7 @@ func (cache *messageLineCache) truncate(length int) {
 	cache.queued = false
 }
 
-func (cache *messageLineCache) lines(app *App, width, index int) []styledLine {
+func (cache *messageLineCache) lines(app *App, width, index int) []rendertext.Line {
 	cache.ensure(app, width, len(app.transcript.History))
 	if index < len(cache.items) && cache.items[index].Valid {
 		return cache.items[index].Lines

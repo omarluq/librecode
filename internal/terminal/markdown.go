@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -27,21 +28,21 @@ var terminalMarkdown = goldmark.New(goldmark.WithExtensions(extension.GFM))
 type markdownRenderer struct {
 	theme  *terminalTheme
 	source []byte
-	lines  []styledLine
+	lines  []rendertext.Line
 	width  int
 }
 
-func (app *App) renderMarkdown(content string, width int) []styledLine {
+func (app *App) renderMarkdown(content string, width int) []rendertext.Line {
 	renderer := markdownRenderer{
 		theme:  &app.theme,
 		source: []byte(content),
-		lines:  []styledLine{},
+		lines:  []rendertext.Line{},
 		width:  max(1, width),
 	}
 	document := terminalMarkdown.Parser().Parse(goldtext.NewReader(renderer.source))
 	renderer.renderChildren(document, markdownIndent)
 	if len(renderer.lines) == 0 {
-		return []styledLine{newStyledLine(app.theme.style(colorText), markdownIndent)}
+		return []rendertext.Line{rendertext.NewLine(app.theme.style(colorText), markdownIndent)}
 	}
 
 	return renderer.lines
@@ -68,7 +69,8 @@ func (renderer *markdownRenderer) renderBlock(node ast.Node, indent string) {
 	case *ast.List:
 		renderer.renderList(typed, indent)
 	case *ast.ThematicBreak:
-		renderer.appendLine(indent+strings.Repeat(markdownRule, max(3, renderer.width-runeLen(indent))), colorDim)
+		ruleWidth := max(3, renderer.width-rendertext.RuneLen(indent))
+		renderer.appendLine(indent+strings.Repeat(markdownRule, ruleWidth), colorDim)
 	case *extast.Table:
 		renderer.renderTable(typed, indent)
 	default:
@@ -144,7 +146,7 @@ func (renderer *markdownRenderer) renderList(list *ast.List, indent string) {
 
 func (renderer *markdownRenderer) renderListItem(item ast.Node, indent, marker string) {
 	first := true
-	childIndent := indent + strings.Repeat(" ", runeLen(marker))
+	childIndent := indent + strings.Repeat(" ", rendertext.RuneLen(marker))
 	for child := item.FirstChild(); child != nil; child = child.NextSibling() {
 		currentIndent := childIndent
 		if first {
@@ -252,51 +254,51 @@ func (renderer *markdownRenderer) appendWrappedWithContinuation(
 	text string,
 	style tcell.Style,
 ) {
-	availableWidth := max(1, renderer.width-runeLen(firstIndent))
-	for index, line := range wrapText(text, availableWidth) {
+	availableWidth := max(1, renderer.width-rendertext.RuneLen(firstIndent))
+	for index, line := range rendertext.Wrap(text, availableWidth) {
 		lineIndent := firstIndent
 		if index > 0 {
 			lineIndent = continuationIndent
 		}
-		renderer.lines = append(renderer.lines, newStyledLine(style, lineIndent+line))
+		renderer.lines = append(renderer.lines, rendertext.NewLine(style, lineIndent+line))
 	}
 }
 
 func (renderer *markdownRenderer) appendLine(text string, token colorToken) {
-	renderer.lines = append(renderer.lines, newStyledLine(renderer.theme.style(token), text))
+	renderer.lines = append(renderer.lines, rendertext.NewLine(renderer.theme.style(token), text))
 }
 
-func (renderer *markdownRenderer) appendCodeBlockLines(content []styledLine) {
-	innerWidth := max(1, renderer.width-terminalTextWidth(markdownCodePrefix))
+func (renderer *markdownRenderer) appendCodeBlockLines(content []rendertext.Line) {
+	innerWidth := max(1, renderer.width-rendertext.Width(markdownCodePrefix))
 	for _, line := range content {
 		renderer.lines = append(renderer.lines, wrapStyledLinePreserveWhitespace(line, innerWidth)...)
 	}
 }
 
-func wrapStyledLinePreserveWhitespace(line styledLine, width int) []styledLine {
+func wrapStyledLinePreserveWhitespace(line rendertext.Line, width int) []rendertext.Line {
 	if len(line.Spans) == 0 {
 		return plainStyledWrappedLines(line, width)
 	}
 	return spanStyledWrappedLines(line, width)
 }
 
-func plainStyledWrappedLines(line styledLine, width int) []styledLine {
-	wrapped := wrapTextPreserveWhitespace(line.Text, width)
-	lines := make([]styledLine, 0, len(wrapped))
+func plainStyledWrappedLines(line rendertext.Line, width int) []rendertext.Line {
+	wrapped := rendertext.WrapPreserveWhitespace(line.Text, width)
+	lines := make([]rendertext.Line, 0, len(wrapped))
 	for _, text := range wrapped {
-		lines = append(lines, newStyledLine(line.Style, text))
+		lines = append(lines, rendertext.NewLine(line.Style, text))
 	}
 
 	return lines
 }
 
-func spanStyledWrappedLines(line styledLine, width int) []styledLine {
-	lines := []styledLine{newStyledLine(line.Style, "")}
+func spanStyledWrappedLines(line rendertext.Line, width int) []rendertext.Line {
+	lines := []rendertext.Line{rendertext.NewLine(line.Style, "")}
 	used := 0
 	for _, span := range line.Spans {
-		for _, segment := range terminalTextSegments(span.Text) {
+		for _, segment := range rendertext.Segments(span.Text) {
 			if used > 0 && used+segment.Width > width {
-				lines = append(lines, newStyledLine(line.Style, ""))
+				lines = append(lines, rendertext.NewLine(line.Style, ""))
 				used = 0
 			}
 			appendSegmentSpanToLastLine(&lines, segment.Text, span.Style)
@@ -304,33 +306,33 @@ func spanStyledWrappedLines(line styledLine, width int) []styledLine {
 		}
 	}
 	if len(lines) == 0 {
-		return []styledLine{newStyledLine(line.Style, "")}
+		return []rendertext.Line{rendertext.NewLine(line.Style, "")}
 	}
 
 	return lines
 }
 
-func appendSegmentSpanToLastLine(lines *[]styledLine, text string, style tcell.Style) {
+func appendSegmentSpanToLastLine(lines *[]rendertext.Line, text string, style tcell.Style) {
 	index := len(*lines) - 1
 	line := (*lines)[index]
 	line.Text += text
-	line.Spans = append(line.Spans, styledSpan{Style: style, Text: text})
+	line.Spans = append(line.Spans, rendertext.Span{Style: style, Text: text})
 	(*lines)[index] = line
 }
 
-func codeStyledLines(text string, style tcell.Style) []styledLine {
+func codeStyledLines(text string, style tcell.Style) []rendertext.Line {
 	lines := strings.Split(text, "\n")
-	styled := make([]styledLine, 0, len(lines))
+	styled := make([]rendertext.Line, 0, len(lines))
 	for _, line := range lines {
-		styled = append(styled, newStyledLine(style, markdownCodePrefix+line))
+		styled = append(styled, rendertext.NewLine(style, markdownCodePrefix+line))
 	}
 
 	return styled
 }
 
-func diffStyledLines(text string, theme terminalTheme, baseStyle tcell.Style) []styledLine {
+func diffStyledLines(text string, theme terminalTheme, baseStyle tcell.Style) []rendertext.Line {
 	lines := strings.Split(text, "\n")
-	styled := make([]styledLine, 0, len(lines))
+	styled := make([]rendertext.Line, 0, len(lines))
 	for _, line := range lines {
 		style := baseStyle
 		switch {
@@ -341,7 +343,7 @@ func diffStyledLines(text string, theme terminalTheme, baseStyle tcell.Style) []
 		case strings.HasPrefix(line, "@@"):
 			style = baseStyle.Foreground(theme.colors[colorAccent]).Bold(true)
 		}
-		styled = append(styled, newStyledLine(style, line))
+		styled = append(styled, rendertext.NewLine(style, line))
 	}
 
 	return styled

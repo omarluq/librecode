@@ -1,12 +1,13 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"unicode"
 )
 
 type editorRender struct {
-	Lines     []styledLine
+	Lines     []rendertext.Line
 	CursorCol int
 	CursorRow int
 }
@@ -150,15 +151,15 @@ func renderEditor(
 	bodyLines := editorBodyLines(value, innerWidth)
 	cursorRow, cursorColumn := editorCursorPosition(value, cursor, innerWidth)
 	visibleLines, skippedRows := visibleEditorLines(bodyLines, maxRows, cursorRow)
-	lines := make([]styledLine, 0, len(visibleLines)+2)
+	lines := make([]rendertext.Line, 0, len(visibleLines)+2)
 	borderStyle := theme.style(border)
 	bodyStyle := theme.style(colorText)
-	lines = append(lines, newStyledLine(borderStyle, editorTopBorder(width, label)))
+	lines = append(lines, rendertext.NewLine(borderStyle, editorTopBorder(width, label)))
 	for _, bodyLine := range visibleLines {
-		bodyText := padRight(bodyLine, innerWidth)
-		lines = append(lines, newStyledLine(bodyStyle, "│ "+bodyText+" │"))
+		bodyText := rendertext.PadRight(bodyLine, innerWidth)
+		lines = append(lines, rendertext.NewLine(bodyStyle, "│ "+bodyText+" │"))
 	}
-	lines = append(lines, newStyledLine(borderStyle, editorBottomBorder(width)))
+	lines = append(lines, rendertext.NewLine(borderStyle, editorBottomBorder(width)))
 
 	return editorRender{
 		Lines:     lines,
@@ -187,7 +188,7 @@ func editorCursorPosition(value []rune, cursor, width int) (row, column int) {
 		return len(lines) - 1, 0
 	}
 
-	return len(lines) - 1, terminalTextWidth(lastLine)
+	return len(lines) - 1, rendertext.Width(lastLine)
 }
 
 func editorWrapText(text string, width int) []string {
@@ -208,11 +209,11 @@ func editorWrapLogicalLine(line string, width int) []string {
 		return []string{""}
 	}
 
-	segments := terminalTextSegments(line)
+	segments := rendertext.Segments(line)
 	lines := []string{}
 	for len(segments) > 0 {
-		breakIndex := terminalTextWrapBreakIndex(segments, width)
-		lines = append(lines, terminalTextJoinSegments(segments[:breakIndex]))
+		breakIndex := rendertext.WrapBreakIndex(segments, width)
+		lines = append(lines, rendertext.JoinSegments(segments[:breakIndex]))
 		segments = segments[breakIndex:]
 	}
 	if len(lines) == 0 {
@@ -242,8 +243,8 @@ func editorTopBorder(width int, label string) string {
 	}
 
 	label = strings.ReplaceAll(label, "\n", " ")
-	suffix := truncateText(label+"──", innerWidth)
-	fillWidth := max(0, innerWidth-runeLen(suffix))
+	suffix := rendertext.Truncate(label+"──", innerWidth)
+	fillWidth := max(0, innerWidth-rendertext.RuneLen(suffix))
 
 	return "╭" + strings.Repeat("─", fillWidth) + suffix + "╮"
 }

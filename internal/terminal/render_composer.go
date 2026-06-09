@@ -1,6 +1,9 @@
 package terminal
 
-import "strings"
+import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"strings"
+)
 
 func (app *App) drawAutocompleteWindow(layout *runtimeLayout) {
 	window := layout.Autocomplete
@@ -80,8 +83,8 @@ func (app *App) composerReserve(width, height int) int {
 }
 
 type composerLayout struct {
-	footerLines       []styledLine
-	autocompleteLines []styledLine
+	footerLines       []rendertext.Line
+	autocompleteLines []rendertext.Line
 	editor            editorRender
 	startRow          int
 	editorStart       int
@@ -130,11 +133,11 @@ func (app *App) editorBorderColor() colorToken {
 	}
 }
 
-func (app *App) footerLines(width int) []styledLine {
+func (app *App) footerLines(width int) []rendertext.Line {
 	lineTexts := app.defaultStatusLineTexts()
-	lines := make([]styledLine, 0, len(lineTexts))
+	lines := make([]rendertext.Line, 0, len(lineTexts))
 	for _, lineText := range lineTexts {
-		lines = append(lines, newStyledLine(app.theme.style(colorDim), truncateText(lineText, width)))
+		lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), rendertext.Truncate(lineText, width)))
 	}
 
 	return lines

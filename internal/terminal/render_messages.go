@@ -1,5 +1,7 @@
 package terminal
 
+import "github.com/omarluq/librecode/internal/terminal/rendertext"
+
 func (app *App) drawMessages(width, height, row int) int {
 	if app.showWelcomeOnly() {
 		return app.drawWelcomeOnly(width, height, row)
@@ -34,7 +36,7 @@ func (app *App) drawTranscriptWindow(layout *runtimeLayout) {
 	}
 }
 
-func (app *App) messageLines(width, maxRows int) []styledLine {
+func (app *App) messageLines(width, maxRows int) []rendertext.Line {
 	app.transcript.LastMaxRows = maxRows
 	dynamicGroups := app.dynamicMessageLineGroups(width)
 	if maxRows < 0 {
@@ -47,7 +49,7 @@ func (app *App) messageLines(width, maxRows int) []styledLine {
 	return app.scrolledMessageLines(width, maxRows, dynamicGroups)
 }
 
-func (app *App) cachedMessageLines(width, index int) []styledLine {
+func (app *App) cachedMessageLines(width, index int) []rendertext.Line {
 	return app.transcript.LineCache.lines(app, width, index)
 }
 

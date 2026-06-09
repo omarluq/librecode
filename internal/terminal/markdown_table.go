@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -44,7 +45,7 @@ func (renderer *markdownRenderer) renderTable(table *extast.Table, indent string
 	}
 
 	borderStyle := renderer.theme.style(colorBorderMuted)
-	renderer.lines = append(renderer.lines, newStyledLine(borderStyle, indent+markdownTableBorderLine(
+	renderer.lines = append(renderer.lines, rendertext.NewLine(borderStyle, indent+markdownTableBorderLine(
 		markdownTableTopLeft,
 		markdownTableTopJoin,
 		markdownTableTopRight,
@@ -53,7 +54,7 @@ func (renderer *markdownRenderer) renderTable(table *extast.Table, indent string
 	for index, row := range rows {
 		renderer.lines = append(renderer.lines, renderer.markdownTableStyledRow(indent, row, columnWidths))
 		if row.header && index < len(rows)-1 {
-			renderer.lines = append(renderer.lines, newStyledLine(borderStyle, indent+markdownTableBorderLine(
+			renderer.lines = append(renderer.lines, rendertext.NewLine(borderStyle, indent+markdownTableBorderLine(
 				markdownTableMidLeft,
 				markdownTableMidJoin,
 				markdownTableMidRight,
@@ -61,7 +62,7 @@ func (renderer *markdownRenderer) renderTable(table *extast.Table, indent string
 			)))
 		}
 	}
-	renderer.lines = append(renderer.lines, newStyledLine(borderStyle, indent+markdownTableBorderLine(
+	renderer.lines = append(renderer.lines, rendertext.NewLine(borderStyle, indent+markdownTableBorderLine(
 		markdownTableBottomLeft,
 		markdownTableBottomJoin,
 		markdownTableBottomRight,
@@ -108,7 +109,7 @@ func markdownTableColumnWidths(rows []markdownTableRow) []int {
 	widths := make([]int, columnCount)
 	for _, row := range rows {
 		for index, cell := range row.cells {
-			widths[index] = max(widths[index], terminalTextWidth(cell.text))
+			widths[index] = max(widths[index], rendertext.Width(cell.text))
 		}
 	}
 	for index := range widths {
@@ -131,9 +132,9 @@ func (renderer *markdownRenderer) markdownTableStyledRow(
 	indent string,
 	row markdownTableRow,
 	widths []int,
-) styledLine {
+) rendertext.Line {
 	borderStyle := renderer.theme.style(colorBorderMuted)
-	line := newStyledLine(borderStyle, "")
+	line := rendertext.NewLine(borderStyle, "")
 	if indent != "" {
 		appendMarkdownTableSpan(&line, indent, borderStyle)
 	}
@@ -162,9 +163,9 @@ func (renderer *markdownRenderer) markdownTableCellStyle(cell markdownTableCell)
 	return style
 }
 
-func appendMarkdownTableSpan(line *styledLine, text string, style tcell.Style) {
+func appendMarkdownTableSpan(line *rendertext.Line, text string, style tcell.Style) {
 	line.Text += text
-	line.Spans = append(line.Spans, styledSpan{Style: style, Text: text})
+	line.Spans = append(line.Spans, rendertext.Span{Style: style, Text: text})
 }
 
 func emptyMarkdownTableCell() markdownTableCell {
@@ -176,8 +177,8 @@ func emptyMarkdownTableCell() markdownTableCell {
 }
 
 func markdownTableAlignedText(text string, width int, alignment extast.Alignment) string {
-	text = terminalTextFit(text, width)
-	padding := max(0, width-terminalTextWidth(text))
+	text = rendertext.Fit(text, width)
+	padding := max(0, width-rendertext.Width(text))
 	switch alignment {
 	case extast.AlignRight:
 		return strings.Repeat(" ", padding) + text

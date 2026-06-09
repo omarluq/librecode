@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 
 	"github.com/alecthomas/chroma/v2"
@@ -8,7 +9,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
-func syntaxHighlightedCodeLines(language, text string, theme terminalTheme, baseStyle tcell.Style) []styledLine {
+func syntaxHighlightedCodeLines(language, text string, theme terminalTheme, baseStyle tcell.Style) []rendertext.Line {
 	lexer := codeLexer(language, text)
 	if lexer == nil {
 		return codeStyledLines(text, baseStyle)
@@ -20,7 +21,7 @@ func syntaxHighlightedCodeLines(language, text string, theme terminalTheme, base
 
 	lines := codeLinesFromTokens(iterator.Tokens(), theme, baseStyle)
 	if len(lines) == 0 {
-		return []styledLine{newStyledLine(baseStyle, markdownCodePrefix)}
+		return []rendertext.Line{rendertext.NewLine(baseStyle, markdownCodePrefix)}
 	}
 
 	return lines
@@ -41,8 +42,8 @@ func codeLexer(language, text string) chroma.Lexer {
 	return chroma.Coalesce(lexer)
 }
 
-func codeLinesFromTokens(tokens []chroma.Token, theme terminalTheme, baseStyle tcell.Style) []styledLine {
-	lines := []styledLine{newStyledLine(baseStyle, markdownCodePrefix)}
+func codeLinesFromTokens(tokens []chroma.Token, theme terminalTheme, baseStyle tcell.Style) []rendertext.Line {
+	lines := []rendertext.Line{rendertext.NewLine(baseStyle, markdownCodePrefix)}
 	for _, token := range tokens {
 		if token.Type == chroma.EOFType {
 			break
@@ -57,25 +58,25 @@ func codeLinesFromTokens(tokens []chroma.Token, theme terminalTheme, baseStyle t
 	return lines
 }
 
-func appendTokenToCodeLines(lines *[]styledLine, value string, style, baseStyle tcell.Style) {
+func appendTokenToCodeLines(lines *[]rendertext.Line, value string, style, baseStyle tcell.Style) {
 	for {
 		before, after, found := strings.Cut(value, "\n")
 		appendStyledTextToLastLine(lines, before, style)
 		if !found {
 			return
 		}
-		*lines = append(*lines, newStyledLine(baseStyle, markdownCodePrefix))
+		*lines = append(*lines, rendertext.NewLine(baseStyle, markdownCodePrefix))
 		value = after
 	}
 }
 
-func appendStyledTextToLastLine(lines *[]styledLine, text string, style tcell.Style) {
+func appendStyledTextToLastLine(lines *[]rendertext.Line, text string, style tcell.Style) {
 	if text == "" {
 		return
 	}
 	index := len(*lines) - 1
 	line := (*lines)[index]
-	line.Spans = append(line.Spans, styledSpan{Style: style, Text: text})
+	line.Spans = append(line.Spans, rendertext.Span{Style: style, Text: text})
 	line.Text += text
 	(*lines)[index] = line
 }

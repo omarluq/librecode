@@ -3,6 +3,7 @@ package terminal
 
 import (
 	"context"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"io"
 	"log/slog"
 	"os"
@@ -174,7 +175,7 @@ func TestExtensionCanOverrideTranscriptBufferRendering(t *testing.T) {
 		Cursor:   14,
 	})
 	layout := app.defaultRuntimeLayout(40, 12)
-	app.frame = newCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 
 	app.drawTranscriptWindow(&layout)
 
