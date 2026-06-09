@@ -2,13 +2,13 @@ package llm
 
 import "context"
 
-// Client generates model responses from provider-neutral requests.
-type Client interface {
+// Generator generates model responses from provider-neutral requests.
+type Generator interface {
 	Generate(ctx context.Context, request Request) (*Response, error)
 }
 
-// StreamClient generates streamed model responses from provider-neutral requests.
-type StreamClient interface {
+// Streamer generates streamed model responses from provider-neutral requests.
+type Streamer interface {
 	Stream(ctx context.Context, request Request) (Stream, error)
 }
 
