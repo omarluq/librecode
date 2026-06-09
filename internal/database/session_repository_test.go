@@ -193,27 +193,28 @@ func TestSessionRepository_DeleteEntryBranchRemovesDescendants(t *testing.T) {
 func TestSessionRepository_SupportsLibrecodeStyleTreeMetadata(t *testing.T) {
 	t.Parallel()
 
-	fixture := newMetadataFixture(t)
+	ctx := context.Background()
+	fixture := newMetadataFixture(ctx, t)
 
-	foundLabel, found, err := fixture.repository.Label(fixture.ctx, fixture.sessionID, fixture.userEntry.ID)
+	foundLabel, found, err := fixture.repository.Label(ctx, fixture.sessionID, fixture.userEntry.ID)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, fixture.label, foundLabel)
 
-	branch, err := fixture.repository.Branch(fixture.ctx, fixture.sessionID, fixture.branchEntry.ID)
+	branch, err := fixture.repository.Branch(ctx, fixture.sessionID, fixture.branchEntry.ID)
 	require.NoError(t, err)
 	require.Len(t, branch, 2)
 	assert.Equal(t, fixture.userEntry.ID, branch[0].ID)
 	assert.Equal(t, fixture.branchEntry.ID, branch[1].ID)
 
-	tree, err := fixture.repository.Tree(fixture.ctx, fixture.sessionID)
+	tree, err := fixture.repository.Tree(ctx, fixture.sessionID)
 	require.NoError(t, err)
 	require.Len(t, tree, 1)
 	assert.Equal(t, fixture.userEntry.ID, tree[0].Entry.ID)
 	require.Len(t, tree[0].Children, 2)
 
 	customMessage, found, err := fixture.repository.MessageForEntry(
-		fixture.ctx,
+		ctx,
 		fixture.sessionID,
 		fixture.customMessageEntry.ID,
 	)
@@ -223,7 +224,7 @@ func TestSessionRepository_SupportsLibrecodeStyleTreeMetadata(t *testing.T) {
 	assert.Equal(t, database.RoleCustom, customMessage.Role)
 	assert.Equal(t, testCustomMessageValue, customMessage.Content)
 
-	contextEntity, err := fixture.repository.BuildContext(fixture.ctx, fixture.sessionID, fixture.compactionEntry.ID)
+	contextEntity, err := fixture.repository.BuildContext(ctx, fixture.sessionID, fixture.compactionEntry.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "anthropic", contextEntity.Provider)
 	assert.Equal(t, "sonnet", contextEntity.Model)
@@ -237,20 +238,19 @@ func TestSessionRepository_SupportsLibrecodeStyleTreeMetadata(t *testing.T) {
 	assert.Equal(t, testCustomMessageValue, contextEntity.Messages[2].Content)
 
 	_, err = fixture.repository.AppendSessionInfo(
-		fixture.ctx,
+		ctx,
 		fixture.sessionID,
 		&fixture.compactionEntry.ID,
 		"named session",
 	)
 	require.NoError(t, err)
-	updatedSession, found, err := fixture.repository.GetSession(fixture.ctx, fixture.sessionID)
+	updatedSession, found, err := fixture.repository.GetSession(ctx, fixture.sessionID)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, "named session", updatedSession.Name)
 }
 
 type metadataFixture struct {
-	ctx                context.Context
 	repository         *database.SessionRepository
 	userEntry          *database.EntryEntity
 	branchEntry        *database.EntryEntity
@@ -260,11 +260,10 @@ type metadataFixture struct {
 	label              string
 }
 
-func newMetadataFixture(t *testing.T) metadataFixture {
+func newMetadataFixture(ctx context.Context, t *testing.T) metadataFixture {
 	t.Helper()
 
 	repository := newTestSessionRepository(t)
-	ctx := context.Background()
 	createdSession, err := repository.CreateSession(ctx, "/work", "", "")
 	require.NoError(t, err)
 
@@ -319,7 +318,6 @@ func newMetadataFixture(t *testing.T) metadataFixture {
 	require.NoError(t, err)
 
 	return metadataFixture{
-		ctx:                ctx,
 		repository:         repository,
 		userEntry:          userEntry,
 		branchEntry:        branchEntry,
