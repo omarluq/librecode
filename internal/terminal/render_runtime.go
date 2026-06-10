@@ -118,7 +118,7 @@ func (app *App) drawUIWindowSpans(window *extension.WindowState, drawOp *extensi
 func clearWindow(target rendertext.ContentSetter, window *extension.WindowState) {
 	style := tcell.StyleDefault
 	for row := 0; row < window.Height; row++ {
-		writeLine(target, window.Y+row, window.Width, "", style)
+		writeTextAt(target, window.X, window.Y+row, window.Width, "", style)
 	}
 }
 

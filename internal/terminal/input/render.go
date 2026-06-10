@@ -74,33 +74,7 @@ func WrapText(text string, width int) []string {
 	if width <= 0 {
 		return []string{""}
 	}
-	logicalLines := strings.Split(text, "\n")
-	lines := make([]string, 0, len(logicalLines))
-	for _, logicalLine := range logicalLines {
-		lines = append(lines, WrapLogicalLine(logicalLine, width)...)
-	}
-
-	return lines
-}
-
-// WrapLogicalLine wraps one logical line by display width.
-func WrapLogicalLine(line string, width int) []string {
-	if line == "" {
-		return []string{""}
-	}
-
-	segments := rendertext.Segments(line)
-	lines := []string{}
-	for len(segments) > 0 {
-		breakIndex := rendertext.WrapBreakIndex(segments, width)
-		lines = append(lines, rendertext.JoinSegments(segments[:breakIndex]))
-		segments = segments[breakIndex:]
-	}
-	if len(lines) == 0 {
-		lines = append(lines, "")
-	}
-
-	return lines
+	return rendertext.WrapPreserveWhitespace(text, width)
 }
 
 // VisibleLines returns the visible viewport for lines and cursor position.

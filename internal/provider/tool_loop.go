@@ -41,7 +41,9 @@ func executeToolCalls(
 	}
 	results, err := request.ExecuteTools(ctx, toolCallsToLLM(calls), request.OnEvent)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, oops.In("provider").
+			Code("tool_execution_failed").
+			Wrapf(err, "execute tool calls")
 	}
 	events := toolEventsFromLLM(results)
 	outputs := make([]any, 0, len(calls))

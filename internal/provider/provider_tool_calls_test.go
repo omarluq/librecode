@@ -98,9 +98,8 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	}
 
 	result, err := NewHTTPCompletionClient().completeOpenAIResponses(context.Background(), request)
-	response := providerResponseView(result)
-
 	require.NoError(t, err)
+	response := providerResponseView(result)
 	assert.Equal(t, "done", response.Text)
 	first := <-captures
 	second := <-captures
@@ -142,8 +141,8 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 	installTestToolExecutor(request)
 
 	result, err := NewHTTPCompletionClient().completeAnthropic(context.Background(), request)
-	response := providerResponseView(result)
 	require.NoError(t, err)
+	response := providerResponseView(result)
 	require.Equal(t, "done", response.Text)
 	require.Len(t, response.ToolEvents, 1)
 	assert.Equal(t, jsonReadToolName, response.ToolEvents[0].Name)

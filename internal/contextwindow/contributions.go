@@ -78,6 +78,8 @@ func ContributionsFromPayload(payload map[string]any) ([]Contribution, error) {
 	return contributions, nil
 }
 
+// numericMapValues returns values ordered by consecutive 1-indexed string keys.
+// A gap in the sequence, such as {"1": a, "3": b}, returns an empty slice.
 func numericMapValues(values map[string]any) []any {
 	items := make([]any, 0, len(values))
 	for index := 1; index <= len(values); index++ {

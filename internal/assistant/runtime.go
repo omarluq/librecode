@@ -32,7 +32,7 @@ type Runtime struct {
 	cache      *ResponseCache
 	events     *event.Bus
 	models     *model.Registry
-	client     CompletionClient
+	client     Completer
 	logger     *slog.Logger
 }
 
@@ -119,7 +119,7 @@ type RuntimeOptions struct {
 	Cache      *ResponseCache
 	Events     *event.Bus
 	Models     *model.Registry
-	Client     CompletionClient
+	Client     Completer
 	Logger     *slog.Logger
 }
 
@@ -131,7 +131,7 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 
 	client := options.Client
 	if client == nil {
-		client = NewHTTPCompletionClient()
+		client = NewHTTPClient()
 	}
 
 	return &Runtime{

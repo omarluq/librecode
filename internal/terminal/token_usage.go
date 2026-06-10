@@ -24,7 +24,7 @@ func (app *App) applyTokenUsageEvent(usage *model.TokenUsage, snapshot bool) {
 
 func cloneTerminalUsage(usage model.TokenUsage) model.TokenUsage {
 	usage.Breakdown = cloneTokenBreakdown(usage.Breakdown)
-	usage.TopContributors = cloneTokenContributors(usage.TopContributors)
+	usage.TopContributors = model.CloneTokenContributors(usage.TopContributors)
 
 	return usage
 }
@@ -40,7 +40,7 @@ func mergeTerminalUsage(current, next model.TokenUsage) model.TokenUsage {
 		current.Breakdown = cloneTokenBreakdown(next.Breakdown)
 	}
 	if len(next.TopContributors) > 0 {
-		current.TopContributors = cloneTokenContributors(next.TopContributors)
+		current.TopContributors = model.CloneTokenContributors(next.TopContributors)
 	}
 
 	return current
@@ -92,16 +92,6 @@ func percentOf(tokens, budget int) int {
 func cloneTokenBreakdown(values map[string]int) map[string]int {
 	cloned := make(map[string]int, len(values))
 	maps.Copy(cloned, values)
-
-	return cloned
-}
-
-func cloneTokenContributors(contributors []model.TokenContributor) []model.TokenContributor {
-	if len(contributors) == 0 {
-		return nil
-	}
-	cloned := make([]model.TokenContributor, len(contributors))
-	copy(cloned, contributors)
 
 	return cloned
 }

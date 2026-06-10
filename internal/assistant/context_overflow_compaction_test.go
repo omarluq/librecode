@@ -44,7 +44,7 @@ func TestRuntime_ProviderContextOverflowRecoveryScenarios(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			client := newOverflowRecoveryCompletionClient(testCase.summary, testCase.final, nil)
+			client := newOverflowRecoveryCompleter(testCase.summary, testCase.final, nil)
 			runtime := newProviderOverflowRecoveryRuntime(t, client)
 			response, events, sessionID, err := runProviderOverflowPrompt(t, runtime, testCase.name)
 
@@ -73,7 +73,7 @@ func TestRuntime_ProviderContextOverflowPreservesOriginalErrorWhenNoCompaction(t
 	t.Parallel()
 
 	overflowErr := errors.New("Your input exceeds the context window of this model")
-	client := newOverflowRecoveryCompletionClient("", "", overflowErr)
+	client := newOverflowRecoveryCompleter("", "", overflowErr)
 	runtime := newProviderOverflowRecoveryRuntime(t, client)
 	request := newRuntimePromptRequest(testRuntimeCWD, "short", "")
 
@@ -88,20 +88,20 @@ func TestRuntime_ProviderContextOverflowRecoveryErrorPaths(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		client        assistant.CompletionClient
+		client        assistant.Completer
 		name          string
 		wantCode      string
 		contextWindow int
 	}{
 		{
 			name:          "wraps compaction failure",
-			client:        newOverflowSummaryCompletionClient("", errors.New("summary failed")),
+			client:        newOverflowSummaryCompleter("", errors.New("summary failed")),
 			wantCode:      "context_overflow_compact",
 			contextWindow: 200_000,
 		},
 		{
 			name:          "wraps rebuilt budget failure",
-			client:        newOverflowSummaryCompletionClient(strings.Repeat("summary ", 30_000), nil),
+			client:        newOverflowSummaryCompleter(strings.Repeat("summary ", 30_000), nil),
 			wantCode:      "context_budget_after_provider_overflow_compact",
 			contextWindow: 20_000,
 		},
@@ -263,7 +263,7 @@ func runProviderOverflowPrompt(
 
 func newProviderOverflowRecoveryRuntime(
 	t *testing.T,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 ) *assistant.Runtime {
 	t.Helper()
 

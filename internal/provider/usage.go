@@ -41,20 +41,10 @@ func mergeUsage(estimated, reported llm.Usage) llm.Usage {
 		usage.Breakdown = mapsutil.CloneOrNil(reported.Breakdown)
 	}
 	if len(usage.TopContributors) == 0 && len(reported.TopContributors) > 0 {
-		usage.TopContributors = cloneTokenContributors(reported.TopContributors)
+		usage.TopContributors = llm.CloneTokenContributors(reported.TopContributors)
 	}
 
 	return usage
-}
-
-func cloneTokenContributors(contributors []llm.TokenContributor) []llm.TokenContributor {
-	if len(contributors) == 0 {
-		return nil
-	}
-	cloned := make([]llm.TokenContributor, len(contributors))
-	copy(cloned, contributors)
-
-	return cloned
 }
 
 func usageFromObject(value any) llm.Usage {

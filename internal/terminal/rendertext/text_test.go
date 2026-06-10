@@ -62,11 +62,13 @@ func TestTextWidthFitTruncateAndPad(t *testing.T) {
 	}
 }
 
+const rendertextBeta = "beta"
+
 func TestWrapModes(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, []string{"alpha", "beta"}, rendertext.Wrap("alpha beta", 6))
-	assert.Equal(t, []string{"alpha ", "beta"}, rendertext.WrapPreserveWhitespace("alpha beta", 6))
+	assert.Equal(t, []string{"alpha", rendertextBeta}, rendertext.Wrap("alpha beta", 6))
+	assert.Equal(t, []string{"alpha ", rendertextBeta}, rendertext.WrapPreserveWhitespace("alpha beta", 6))
 	assert.Equal(t, []string{""}, rendertext.Wrap("anything", 0))
 	assert.Equal(t, []string{"one", "two"}, rendertext.Wrap("one\ntwo", 10))
 }

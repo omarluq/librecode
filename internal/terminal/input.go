@@ -3,9 +3,10 @@ package terminal
 import (
 	"context"
 
-	"github.com/omarluq/librecode/internal/terminal/panel"
-
 	"github.com/gdamore/tcell/v3"
+
+	"github.com/omarluq/librecode/internal/terminal/keyevent"
+	"github.com/omarluq/librecode/internal/terminal/panel"
 )
 
 func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error) {
@@ -179,7 +180,7 @@ func (app *App) handleEditorKey(event *tcell.EventKey) {
 	if event.Key() == tcell.KeyRune {
 		app.resetPromptHistoryNavigation()
 		app.resetAutocompleteSelection()
-		app.composerBuffer.InsertRune(eventRune(event))
+		app.composerBuffer.InsertRune(keyevent.Rune(event))
 	}
 }
 

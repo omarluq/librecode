@@ -21,9 +21,9 @@ import (
 func TestRuntime_CompactionLifecycleCanProvideSummary(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: autoCompactionTestUnused, requests: nil}
+	client := &compactionCompleter{summary: autoCompactionTestUnused, requests: nil}
 	_, repository, manager := newTestRuntimeWithManager(t, client)
-	runtime := newCompactionRuntimeWithManager(t, repository, manager, client, 1)
+	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.on("session_before_compact", function(event)
@@ -59,9 +59,9 @@ end)
 func TestRuntime_CompactionLifecycleCanCancel(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: autoCompactionTestUnused, requests: nil}
+	client := &compactionCompleter{summary: autoCompactionTestUnused, requests: nil}
 	_, repository, manager := newTestRuntimeWithManager(t, client)
-	runtime := newCompactionRuntimeWithManager(t, repository, manager, client, 1)
+	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.on("session_before_compact", function()
@@ -85,9 +85,9 @@ end)
 func TestRuntime_CompactionLifecyclePublishesSavedEvent(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: compactedWorkSummary, requests: nil}
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
 	_, repository, manager := newTestRuntimeWithManager(t, client)
-	runtime := newCompactionRuntimeWithManager(t, repository, manager, client, 1)
+	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 local saved = ""
@@ -116,13 +116,12 @@ func newCompactionRuntimeWithManager(
 	t *testing.T,
 	repository *database.SessionRepository,
 	manager *extension.Manager,
-	client assistant.CompletionClient,
-	keepRecentTokens int,
+	client assistant.Completer,
 ) *assistant.Runtime {
 	t.Helper()
 
 	runtimeConfig := testConfig()
-	runtimeConfig.Context.KeepRecentTokens = keepRecentTokens
+	runtimeConfig.Context.KeepRecentTokens = 1
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 

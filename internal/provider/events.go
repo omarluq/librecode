@@ -38,6 +38,24 @@ func streamPartToLLM(event StreamEvent) *llm.Part {
 	case StreamEventTextDelta:
 		part := llm.TextPart(event.Text)
 		return &part
+	case StreamEventToolStart:
+		call := llm.ToolCall{
+			Metadata:      nil,
+			Arguments:     nil,
+			ID:            "",
+			Name:          event.Text,
+			ArgumentsJSON: "",
+		}
+		part := llm.Part{
+			Metadata:   nil,
+			ToolCall:   &call,
+			ToolResult: nil,
+			Type:       llm.PartToolCall,
+			Text:       "",
+			Data:       "",
+			MIMEType:   "",
+		}
+		return &part
 	case StreamEventThinkingDelta:
 		part := llm.Part{
 			Metadata:   nil,
@@ -54,9 +72,6 @@ func streamPartToLLM(event StreamEvent) *llm.Part {
 			return nil
 		}
 		part := toolResultPartFromEvent(event.ToolEvent)
-		return &part
-	case StreamEventToolStart:
-		part := llm.TextPart(event.Text)
 		return &part
 	}
 

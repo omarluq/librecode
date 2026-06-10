@@ -263,23 +263,16 @@ func AppendFileOperationsSummary(summary string, operations []FileOperation) str
 		return summary
 	}
 
-	builder := strings.Builder{}
-	builder.WriteString(strings.TrimSpace(summary))
-	builder.WriteString("\n\n")
-	builder.WriteString(fileOperationsHeader)
+	lines := []string{strings.TrimSpace(summary), "", fileOperationsHeader}
 	for _, operation := range operations[:min(len(operations), maxFileOperations)] {
-		builder.WriteString("\n- ")
-		builder.WriteString(operation.Action)
-		builder.WriteString(": ")
-		builder.WriteString(operation.Path)
+		line := "- " + operation.Action + ": " + operation.Path
 		if operation.Tool != "" {
-			builder.WriteString(" (via ")
-			builder.WriteString(operation.Tool)
-			builder.WriteString(")")
+			line += " (via " + operation.Tool + ")"
 		}
+		lines = append(lines, line)
 	}
 
-	return strings.TrimSpace(builder.String())
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 // StripFileOperationsSummary removes the generated file-operation section from summary text.

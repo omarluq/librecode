@@ -55,7 +55,7 @@ func (runtime *Runtime) CompactSessionFrom(
 	}
 	plan.FileOperations = compaction.CollectFileOperations(branch[:plan.FirstKeptEntryIndex])
 
-	return runtime.compactSessionWithPlan(ctx, sessionID, cwd, parentID, selectedModel, auth, &plan)
+	return runtime.compactSessionWithPlan(ctx, sessionID, cwd, parentID, branch, selectedModel, auth, &plan)
 }
 
 func (runtime *Runtime) compactSessionWithPlan(
@@ -63,23 +63,32 @@ func (runtime *Runtime) compactSessionWithPlan(
 	sessionID string,
 	cwd string,
 	parentID *string,
+	branch []database.EntryEntity,
 	selectedModel *model.Model,
 	auth model.RequestAuth,
 	plan *compaction.Plan,
 ) (*database.EntryEntity, error) {
-	summary, decision, fromHook, err := runtime.compactionSummaryDecision(
-		ctx,
-		cwd,
-		sessionID,
-		selectedModel,
-		auth,
-		plan,
-	)
-	if err != nil {
+	decision, err := runtime.dispatchBeforeCompaction(ctx, sessionID, cwd, plan)
+	if errors.Is(err, errNoCompactionDecision) {
+		decision = nil
+	} else if err != nil {
 		return nil, err
 	}
 	if decision != nil && decision.FirstKeptEntryID != "" {
-		plan.FirstKeptEntryID = decision.FirstKeptEntryID
+		adjustedPlan, planErr := compaction.PlanBranchFromFirstKept(
+			branch,
+			decision.FirstKeptEntryID,
+			contextwindow.EstimateTokens,
+		)
+		if planErr != nil {
+			return nil, planErr
+		}
+		plan = &adjustedPlan
+	}
+
+	summary, fromHook, err := runtime.compactionSummary(ctx, cwd, sessionID, selectedModel, auth, plan, decision)
+	if err != nil {
+		return nil, err
 	}
 
 	entry, err := runtime.appendCompaction(ctx, sessionID, parentID, summary, plan, decision, fromHook)
@@ -149,29 +158,24 @@ func (runtime *Runtime) explicitCompactionBranch(
 	return parentEntryID, branch, nil
 }
 
-func (runtime *Runtime) compactionSummaryDecision(
+func (runtime *Runtime) compactionSummary(
 	ctx context.Context,
 	cwd string,
 	sessionID string,
 	selectedModel *model.Model,
 	auth model.RequestAuth,
 	plan *compaction.Plan,
-) (summary string, decision *compactionLifecycleDecision, fromHook bool, err error) {
-	decision, err = runtime.dispatchBeforeCompaction(ctx, sessionID, cwd, plan)
-	if errors.Is(err, errNoCompactionDecision) {
-		decision = nil
-	} else if err != nil {
-		return "", nil, false, err
-	}
+	decision *compactionLifecycleDecision,
+) (summary string, fromHook bool, err error) {
 	if decision != nil && decision.Summary != "" {
-		return compaction.AppendFileOperationsSummary(decision.Summary, plan.FileOperations), decision, true, nil
+		return compaction.AppendFileOperationsSummary(decision.Summary, plan.FileOperations), true, nil
 	}
 	summary, err = runtime.summarizeCompaction(ctx, cwd, sessionID, selectedModel, auth, plan)
 	if err != nil {
-		return "", nil, false, err
+		return "", false, err
 	}
 
-	return summary, decision, false, nil
+	return summary, false, nil
 }
 
 func (runtime *Runtime) appendCompaction(

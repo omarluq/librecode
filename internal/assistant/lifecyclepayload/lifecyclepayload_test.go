@@ -173,6 +173,13 @@ func TestCompactionAndDiagnosticPayloads(t *testing.T) {
 	assert.Equal(t, 42, payload[lifecyclepayload.TokensBeforeKey])
 	assert.Equal(t, []any{"old-1"}, payload["summarized_entry_ids"])
 
+	nilPlanPayload := lifecyclepayload.CompactionPreparation(lifecycleTestSessionID, "/work", nil)
+	assert.Equal(t, lifecycleTestSessionID, nilPlanPayload[lifecyclepayload.SessionIDKey])
+	assert.Equal(t, "/work", nilPlanPayload[lifecyclepayload.CWDKey])
+	assert.Equal(t, "", nilPlanPayload["first_kept_entry_id"])
+	assert.Equal(t, []any{}, nilPlanPayload["summarized_entry_ids"])
+	assert.Equal(t, []any{}, nilPlanPayload[compaction.FileOperationsKey])
+
 	diagnostic := lifecyclepayload.Diagnostic(
 		"event",
 		2,

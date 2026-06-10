@@ -72,7 +72,7 @@ func TestRuntime_AutoCompactsOversizedRequestBeforeProviderCall(t *testing.T) {
 
 type autoCompactionRuntimeHarness struct {
 	runtime *assistant.Runtime
-	client  *recordingCompletionClient
+	client  *recordingCompleter
 }
 
 func newAutoCompactionRuntimeHarness(
@@ -82,7 +82,7 @@ func newAutoCompactionRuntimeHarness(
 ) autoCompactionRuntimeHarness {
 	t.Helper()
 
-	client := newSequencedCompletionClient(responses...)
+	client := newSequencedCompleter(responses...)
 	runtime := newAutoCompactionTestRuntime(t, client, contextWindow)
 
 	return autoCompactionRuntimeHarness{runtime: runtime, client: client}
@@ -90,7 +90,7 @@ func newAutoCompactionRuntimeHarness(
 
 func newAutoCompactionTestRuntime(
 	t *testing.T,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 	contextWindow int,
 ) *assistant.Runtime {
 	t.Helper()

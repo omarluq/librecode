@@ -124,12 +124,12 @@ func TestRuntime_PromptEmitsOrderedSessionTurnLifecycleEvents(t *testing.T) {
 	}
 }
 
-func lifecycleTestClient(fails bool) assistant.CompletionClient {
+func lifecycleTestClient(fails bool) assistant.Completer {
 	if !fails {
-		return testCompletionClient{}
+		return testCompleter{}
 	}
 
-	return &retryCompletionClient{
+	return &retryCompleter{
 		err:               errors.New("bad request"),
 		response:          "unused",
 		attempts:          0,
@@ -140,7 +140,7 @@ func lifecycleTestClient(fails bool) assistant.CompletionClient {
 func TestRuntime_PromptLifecyclePublishesReactiveEventStream(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, _ := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, _ := newTestRuntimeWithManager(t, testCompleter{})
 	events := []string{}
 	subscription := runtimeEventStream(t, runtime).Channel("turn_start").Subscribe(ro.NewObserver(
 		func(envelope event.Envelope) {
@@ -160,7 +160,7 @@ func TestRuntime_PromptLifecyclePublishesReactiveEventStream(t *testing.T) {
 func TestRuntime_PromptEmitsSessionLoadForExistingSession(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 	ctx := context.Background()
 	firstResponse, err := runtime.Prompt(ctx, newRuntimePromptRequest(testRuntimeCWD, "first", ""))
 	require.NoError(t, err)
@@ -188,7 +188,7 @@ end)
 func TestRuntime_PromptEmitsSideEffectMessageAppendEvents(t *testing.T) {
 	t.Parallel()
 
-	client := staticCompletionClient{
+	client := staticCompleter{
 		result: &assistant.CompletionResult{
 			Text:     "done",
 			Thinking: []string{"reasoning"},
@@ -229,7 +229,7 @@ end)
 func TestRuntime_PromptLifecycleIgnoresHandlerErrors(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.on("turn_start", function()
@@ -252,12 +252,12 @@ func runtimeEventStream(t *testing.T, runtime *assistant.Runtime) *event.Bus {
 	return bus
 }
 
-type staticCompletionClient struct {
+type staticCompleter struct {
 	result *assistant.CompletionResult
 	err    error
 }
 
-func (client staticCompletionClient) Complete(
+func (client staticCompleter) Complete(
 	ctx context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {

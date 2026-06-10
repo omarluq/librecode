@@ -1,11 +1,11 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
 
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
@@ -76,7 +76,7 @@ func (app *App) renderQueuedMessages(width int) []rendertext.Line {
 	innerWidth := max(1, width-4)
 	lines := []rendertext.Line{rendertext.NewLine(app.theme.style(colorDim), "")}
 	for index, message := range app.queuedMessages {
-		header := "queued follow-up " + intText(index+1)
+		header := "queued follow-up " + rendertext.Int(index+1)
 		lines = append(lines, rendertext.NewLine(style.Bold(true), "  "+rendertext.PadRight(header, innerWidth)+"  "))
 		for _, line := range rendertext.Wrap(message, innerWidth) {
 			lines = append(lines, rendertext.NewLine(style, "  "+rendertext.PadRight(line, innerWidth)+"  "))

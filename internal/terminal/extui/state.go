@@ -4,6 +4,8 @@ import (
 	"maps"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/mapsutil"
+	"github.com/omarluq/librecode/internal/terminal/input"
 )
 
 // Reserved buffer names exposed to terminal extensions.
@@ -178,17 +180,6 @@ func (state *State) ensureLayoutWindow(name string, window *extension.WindowStat
 	state.Layout.Windows[name] = *window
 }
 
-// CloneMetadata clones extension metadata, returning an initialized map for nil input.
-func CloneMetadata(values map[string]any) map[string]any {
-	if values == nil {
-		return map[string]any{}
-	}
-	cloned := make(map[string]any, len(values))
-	maps.Copy(cloned, values)
-
-	return cloned
-}
-
 // CloneBuffer clones a runtime buffer and normalizes its name, metadata, chars, and cursor.
 func CloneBuffer(name string, buffer *extension.BufferState) extension.BufferState {
 	if buffer == nil {
@@ -206,34 +197,13 @@ func CloneBuffer(name string, buffer *extension.BufferState) extension.BufferSta
 	if cloned.Name == "" {
 		cloned.Name = name
 	}
-	cloned.Metadata = CloneMetadata(cloned.Metadata)
+	cloned.Metadata = mapsutil.CloneOrEmpty(cloned.Metadata)
 	cloned.Blocks = append([]extension.BufferBlock{}, cloned.Blocks...)
 	cloned.Chars = append([]string{}, cloned.Chars...)
 	if len(cloned.Chars) == 0 && cloned.Text != "" {
-		cloned.Chars = stringChars(cloned.Text)
+		cloned.Chars = input.StringChars(cloned.Text)
 	}
-	cloned.Cursor = clampCursor(cloned.Cursor, len([]rune(cloned.Text)))
+	cloned.Cursor = input.ClampCursor(cloned.Cursor, len([]rune(cloned.Text)))
 
 	return cloned
-}
-
-func stringChars(text string) []string {
-	runes := []rune(text)
-	chars := make([]string, 0, len(runes))
-	for _, r := range runes {
-		chars = append(chars, string(r))
-	}
-
-	return chars
-}
-
-func clampCursor(cursor, maxCursor int) int {
-	if cursor < 0 {
-		return 0
-	}
-	if cursor > maxCursor {
-		return maxCursor
-	}
-
-	return cursor
 }

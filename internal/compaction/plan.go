@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/samber/oops"
 
@@ -97,6 +98,48 @@ func PlanBranch(
 		FirstKeptEntryID:    firstKeptEntryID,
 		TokensBefore:        branchTokens(branch, countTokens),
 		FirstKeptEntryIndex: cutPoint.firstKeptEntryIndex,
+	}, nil
+}
+
+// PlanBranchFromFirstKept builds a compaction plan using an extension-selected retained tail.
+func PlanBranchFromFirstKept(
+	branch []database.EntryEntity,
+	firstKeptEntryID string,
+	countTokens TokenCounter,
+) (Plan, error) {
+	if countTokens == nil {
+		countTokens = countRunesAsTokens
+	}
+	firstKeptEntryIndex := entryIndexByID(branch, firstKeptEntryID)
+	if firstKeptEntryIndex < 0 {
+		return Plan{}, NothingToDoError("selected first kept entry was not found")
+	}
+	previousSummary, boundaryStart := previousCompactionBoundary(branch)
+	if firstKeptEntryIndex <= boundaryStart || firstKeptEntryIndex >= len(branch) {
+		return Plan{}, NothingToDoError("selected first kept entry leaves no old history to compact")
+	}
+
+	cutPoint := cutPoint{firstKeptEntryIndex: firstKeptEntryIndex, turnStartIndex: -1, isSplitTurn: false}
+	if !isTurnStartEntry(&branch[firstKeptEntryIndex]) {
+		turnStartIndex := findTurnStartEntryIndex(branch, firstKeptEntryIndex, boundaryStart)
+		cutPoint.turnStartIndex = turnStartIndex
+		cutPoint.isSplitTurn = turnStartIndex >= 0
+	}
+	messages, summarizedIDs, splitTurnSummary := summaryPayload(branch, boundaryStart, cutPoint)
+	if len(messages) == 0 && strings.TrimSpace(splitTurnSummary) == "" {
+		return Plan{}, NothingToDoError("no model-facing history was selected for compaction")
+	}
+
+	return Plan{
+		FirstKeptEntryID:    firstKeptEntryID,
+		Messages:            messages,
+		PreviousSummary:     previousSummary,
+		SplitTurnSummary:    splitTurnSummary,
+		SummarizedEntryIDs:  summarizedIDs,
+		KeptEntryIDs:        keptEntryIDs(branch[firstKeptEntryIndex:]),
+		FileOperations:      CollectFileOperations(branch[:firstKeptEntryIndex]),
+		TokensBefore:        branchTokens(branch, countTokens),
+		FirstKeptEntryIndex: firstKeptEntryIndex,
 	}, nil
 }
 
@@ -454,7 +497,7 @@ func messageTokens(messages []database.MessageEntity, countTokens TokenCounter) 
 }
 
 func countRunesAsTokens(text string) int {
-	return len(strings.TrimSpace(text))
+	return utf8.RuneCountInString(strings.TrimSpace(text))
 }
 
 // SystemPrompt builds the summary prompt used for compaction provider requests.

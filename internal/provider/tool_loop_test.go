@@ -3,8 +3,10 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -68,6 +70,33 @@ func TestExecuteToolCallsRequiresExecutor(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, outputs)
 	assert.Nil(t, events)
+}
+
+func TestExecuteToolCallsWrapsExecutorErrors(t *testing.T) {
+	t.Parallel()
+
+	request := emptyCompletionRequest()
+	request.ExecuteTools = func(
+		_ context.Context,
+		_ []llm.ToolCall,
+		_ func(*llm.StreamChunk),
+	) ([]llm.ToolResult, error) {
+		return nil, errors.New("boom")
+	}
+
+	outputs, events, err := executeToolCalls(
+		context.Background(),
+		request,
+		[]ToolCall{readToolCall(testCallID)},
+	)
+
+	require.Error(t, err)
+	assert.Nil(t, outputs)
+	assert.Nil(t, events)
+	var coded oops.OopsError
+	require.ErrorAs(t, err, &coded)
+	assert.Equal(t, "tool_execution_failed", coded.Code())
+	assert.Equal(t, "provider", coded.Domain())
 }
 
 func TestExecuteToolCallsUsesInjectedExecutorAndHandlesMissingEvents(t *testing.T) {

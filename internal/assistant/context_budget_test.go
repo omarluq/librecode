@@ -20,7 +20,7 @@ import (
 func TestRuntime_ContextPreflightRejectsOversizedRequest(t *testing.T) {
 	t.Parallel()
 
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime := newTestRuntimeWithContextWindow(t, client, 512)
 	request := newRuntimePromptRequest(testRuntimeCWD, strings.Repeat("overflow ", 2600), "")
 
@@ -35,7 +35,7 @@ func TestRuntime_ContextPreflightRejectsOversizedRequest(t *testing.T) {
 func TestRuntime_ContextPreflightCanBeDisabled(t *testing.T) {
 	t.Parallel()
 
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime := newTestRuntimeWithContextWindow(t, client, 512)
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.PreflightEnabled = false
@@ -81,7 +81,7 @@ func TestRuntime_ContextUsageIncludesBudgetReserves(t *testing.T) {
 func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
 	t.Parallel()
 
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime := newTestRuntimeWithContextWindow(t, client, 512)
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.ProviderReserveTokens = 0
@@ -110,7 +110,7 @@ func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
 func TestRuntime_ContextUsageUsesDefaultOutputReserveWhenModelMaxTokensIsLarge(t *testing.T) {
 	t.Parallel()
 
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime := newTestRuntimeWithContextWindowAndMaxTokens(t, client, 272_000, 128_000)
 
 	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
@@ -122,7 +122,7 @@ func TestRuntime_ContextUsageUsesDefaultOutputReserveWhenModelMaxTokensIsLarge(t
 func TestRuntime_ContextUsageUsesExplicitOutputReserve(t *testing.T) {
 	t.Parallel()
 
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime := newTestRuntimeWithContextWindowAndMaxTokens(t, client, 100_000, 128_000)
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.OutputReserveTokens = 1234
@@ -163,7 +163,7 @@ func TestLoadRejectsNegativeContextBudget(t *testing.T) {
 
 func newTestRuntimeWithContextWindow(
 	t *testing.T,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 	contextWindow int,
 ) *assistant.Runtime {
 	t.Helper()
@@ -173,7 +173,7 @@ func newTestRuntimeWithContextWindow(
 
 func newTestRuntimeWithContextWindowAndMaxTokens(
 	t *testing.T,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 	contextWindow int,
 	maxTokens int,
 ) *assistant.Runtime {

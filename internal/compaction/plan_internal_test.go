@@ -182,6 +182,39 @@ func assertLatestCompactionPlan(t *testing.T, plan *Plan) {
 	assert.Empty(t, plan.FirstKeptEntryID)
 }
 
+func TestPlanBranchFromFirstKeptUsesSelectedBoundary(t *testing.T) {
+	t.Parallel()
+
+	branch := []database.EntryEntity{
+		messageEntry("old", database.RoleUser, "old context"),
+		messageEntry("selected", database.RoleAssistant, "selected tail"),
+		messageEntry("tail", database.RoleAssistant, "tail context"),
+	}
+
+	plan, err := PlanBranchFromFirstKept(branch, "selected", nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "selected", plan.FirstKeptEntryID)
+	assert.Equal(t, []string{"old"}, plan.SummarizedEntryIDs)
+	assert.Equal(t, []string{"selected", "tail"}, plan.KeptEntryIDs)
+	assert.Equal(t, "old context", plan.Messages[0].Content)
+	assert.Positive(t, plan.TokensBefore)
+}
+
+func TestPlanBranchCountsRunesByDefault(t *testing.T) {
+	t.Parallel()
+
+	branch := []database.EntryEntity{
+		messageEntry("old", database.RoleUser, "éééé"),
+		messageEntry("tail", database.RoleAssistant, "語"),
+	}
+
+	plan, err := PlanBranch(branch, 1, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, 5, plan.TokensBefore)
+}
+
 func TestCompactionSystemPromptIncludesPreviousSummary(t *testing.T) {
 	t.Parallel()
 

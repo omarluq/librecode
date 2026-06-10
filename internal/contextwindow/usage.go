@@ -172,20 +172,10 @@ func MergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
 		usage.Breakdown = mapsutil.CloneOrNil(reported.Breakdown)
 	}
 	if len(usage.TopContributors) == 0 && len(reported.TopContributors) > 0 {
-		usage.TopContributors = cloneTokenContributors(reported.TopContributors)
+		usage.TopContributors = model.CloneTokenContributors(reported.TopContributors)
 	}
 
 	return usage
-}
-
-func cloneTokenContributors(contributors []model.TokenContributor) []model.TokenContributor {
-	if len(contributors) == 0 {
-		return nil
-	}
-	cloned := make([]model.TokenContributor, len(contributors))
-	copy(cloned, contributors)
-
-	return cloned
 }
 
 // ProviderUsageEntity converts model usage into database usage metadata for persisted provider entries.

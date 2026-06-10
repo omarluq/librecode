@@ -28,7 +28,7 @@ const (
 func TestRuntime_ProviderLifecyclePublishesReactiveEvents(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, _ := newTestRuntimeWithManager(t, staticCompletionClient{
+	runtime, _, _ := newTestRuntimeWithManager(t, staticCompleter{
 		result: &assistant.CompletionResult{
 			Text:       testCompletionText,
 			Thinking:   nil,
@@ -56,7 +56,7 @@ func TestRuntime_ProviderLifecyclePublishesReactiveEvents(t *testing.T) {
 func TestRuntime_ProviderErrorPublishesReactiveEvent(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, _ := newTestRuntimeWithManager(t, staticCompletionClient{
+	runtime, _, _ := newTestRuntimeWithManager(t, staticCompleter{
 		result: nil,
 		err:    errors.New("provider unavailable"),
 	})

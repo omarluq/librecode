@@ -6,6 +6,8 @@ import (
 	"unicode"
 
 	"github.com/gdamore/tcell/v3"
+
+	"github.com/omarluq/librecode/internal/terminal/keyevent"
 )
 
 type actionID string
@@ -210,8 +212,8 @@ func normalizedEventKeys(event *tcell.EventKey) map[string]struct{} {
 	if event.Key() == tcell.KeyBacktab {
 		addKey(keys, keyShiftTab)
 	}
-	if event.Key() == tcell.KeyRune && unicode.IsUpper(eventRune(event)) {
-		addKey(keys, "shift+"+strings.ToLower(string(eventRune(event))))
+	if event.Key() == tcell.KeyRune && unicode.IsUpper(keyevent.Rune(event)) {
+		addKey(keys, "shift+"+strings.ToLower(string(keyevent.Rune(event))))
 	}
 	addControlKeyName(keys, event)
 
@@ -236,7 +238,7 @@ func addCtrlLetter(keys map[string]struct{}, offset tcell.Key) {
 func eventKeyName(event *tcell.EventKey) string {
 	name := event.Name()
 	if event.Key() == tcell.KeyRune {
-		name = string(unicode.ToLower(eventRune(event)))
+		name = string(unicode.ToLower(keyevent.Rune(event)))
 		if event.Modifiers()&tcell.ModAlt != 0 {
 			name = "alt+" + name
 		}

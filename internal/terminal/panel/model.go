@@ -2,7 +2,6 @@
 package panel
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -302,9 +301,5 @@ func (model *Model) hintLine(contentWidth, width int, styles *Styles, hints *Hin
 }
 
 func (model *Model) positionText() string {
-	return "(" + intText(model.selected+1) + "/" + intText(len(model.filtered)) + ")"
-}
-
-func intText(value int) string {
-	return strconv.Itoa(value)
+	return "(" + rendertext.Int(model.selected+1) + "/" + rendertext.Int(len(model.filtered)) + ")"
 }
