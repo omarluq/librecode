@@ -72,9 +72,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Setup Task
+      - name: Install Task
         if: env.bench_auth_configured == 'true'
-        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        env:
+          TASK_VERSION: v3.51.1
+        run: |
+          set -euo pipefail
+          go install github.com/go-task/task/v3/cmd/task@$TASK_VERSION
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          task --version
 
       - name: Setup Python
         if: env.bench_auth_configured == 'true'

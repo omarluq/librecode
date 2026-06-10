@@ -142,6 +142,24 @@ tasks:
         INCLUDE_TASKS="${LIBRECODE_BENCH_INCLUDE_TASKS:-}"
         EXCLUDE_TASKS="${LIBRECODE_BENCH_EXCLUDE_TASKS:-}"
         N_TASKS="${LIBRECODE_BENCH_N_TASKS:-}"
+        TASK_FILTER_PREFIX=""
+        if [ -n "${LIBRECODE_BENCH_TASK_PREFIX:-}" ]; then
+          TASK_FILTER_PREFIX="$LIBRECODE_BENCH_TASK_PREFIX"
+        elif [ -n "${DATASET%%/*}" ] && [ "$DATASET" != "${DATASET%%/*}" ]; then
+          TASK_FILTER_PREFIX="${DATASET%%/*}"
+        fi
+        qualify_task_filter() {
+          case "$1" in
+            */*) printf '%s\n' "$1" ;;
+            *)
+              if [ -n "$TASK_FILTER_PREFIX" ]; then
+                printf '%s/%s\n' "$TASK_FILTER_PREFIX" "$1"
+              else
+                printf '%s\n' "$1"
+              fi
+              ;;
+          esac
+        }
 
         if [ ! -d "$AUTH_DIR" ]; then
           echo "librecode auth dir not found: $AUTH_DIR" >&2
@@ -201,12 +219,12 @@ tasks:
         fi
         if [ -n "$EXCLUDE_TASKS" ]; then
           for task in $EXCLUDE_TASKS; do
-            set -- "$@" --exclude-task-name "$task"
+            set -- "$@" --exclude-task-name "$(qualify_task_filter "$task")"
           done
         fi
         if [ -n "$INCLUDE_TASKS" ]; then
           for task in $INCLUDE_TASKS; do
-            set -- "$@" --include-task-name "$task"
+            set -- "$@" --include-task-name "$(qualify_task_filter "$task")"
           done
         fi
         if [ -n "$SHARD_INDEX" ] || [ -n "$SHARD_TOTAL" ]; then
@@ -242,7 +260,7 @@ tasks:
           printf '%s\n' "$SHARD_TASKS" | sed 's/^/  - /'
           while IFS= read -r task; do
             [ -n "$task" ] || continue
-            set -- "$@" --include-task-name "$task"
+            set -- "$@" --include-task-name "$(qualify_task_filter "$task")"
           done <<EOF
         $SHARD_TASKS
         EOF

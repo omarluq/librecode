@@ -43,6 +43,7 @@ Flags/env:
 - `LIBRECODE_BENCH_N` defaults to `4` concurrent trials locally. GitHub Actions uses `16` per shard across `64` shards by default.
 - `LIBRECODE_BENCH_SHARD_INDEX` and `LIBRECODE_BENCH_SHARD_TOTAL` split a dataset across shards.
 - `LIBRECODE_BENCH_INCLUDE_TASKS` and `LIBRECODE_BENCH_EXCLUDE_TASKS` pass task filters to Harbor.
+- `LIBRECODE_BENCH_TASK_PREFIX` controls the prefix added to sharded task filters. It defaults to the dataset namespace, for example `terminal-bench` for `terminal-bench/terminal-bench-2-1`.
 - `LIBRECODE_BENCH_N_TASKS` caps tasks per shard after filtering.
 - `LIBRECODE_BENCH_JOBS_DIR` controls where Harbor writes job logs.
 - `LIBRECODE_BENCH_DEBUG=true` enables Harbor debug logging.
