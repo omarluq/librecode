@@ -50,6 +50,8 @@ jobs:
       - name: Checkout
         if: env.bench_auth_configured == 'true'
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         if: env.bench_auth_configured == 'true'
