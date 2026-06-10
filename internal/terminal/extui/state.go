@@ -2,6 +2,7 @@ package extui
 
 import (
 	"maps"
+	"slices"
 
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/mapsutil"
@@ -198,8 +199,8 @@ func CloneBuffer(name string, buffer *extension.BufferState) extension.BufferSta
 		cloned.Name = name
 	}
 	cloned.Metadata = mapsutil.CloneOrEmpty(cloned.Metadata)
-	cloned.Blocks = append([]extension.BufferBlock{}, cloned.Blocks...)
-	cloned.Chars = append([]string{}, cloned.Chars...)
+	cloned.Blocks = slices.Clone(cloned.Blocks)
+	cloned.Chars = slices.Clone(cloned.Chars)
 	if len(cloned.Chars) == 0 && cloned.Text != "" {
 		cloned.Chars = input.StringChars(cloned.Text)
 	}

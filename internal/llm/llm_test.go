@@ -46,7 +46,7 @@ func TestBoundaryInterfaces(t *testing.T) {
 	assert.Equal(t, llm.FinishReasonStop, response.FinishReason)
 
 	var streamer llm.Streamer = testStreamer{}
-	stream, err := streamer.Stream(context.Background(), emptyRequest())
+	stream, err := streamer.Stream(context.Background(), llm.EmptyRequest())
 	require.NoError(t, err)
 	chunk, err := stream.Recv()
 	require.NoError(t, err)
@@ -54,34 +54,6 @@ func TestBoundaryInterfaces(t *testing.T) {
 	assert.NoError(t, stream.Close())
 	_, err = stream.Recv()
 	assert.ErrorIs(t, err, io.EOF)
-}
-
-func emptyRequest() llm.Request {
-	return llm.Request{
-		ProviderOptions: nil,
-		Auth: llm.Auth{
-			Headers: nil,
-			APIKey:  "",
-		},
-		SystemPrompt:  "",
-		ThinkingLevel: "",
-		SessionID:     "",
-		Messages:      nil,
-		Tools:         nil,
-		Model: llm.ModelRef{
-			Metadata:         nil,
-			ThinkingLevelMap: nil,
-			Provider:         "",
-			ID:               "",
-			API:              "",
-			BaseURL:          "",
-			MaxTokens:        0,
-			ContextWindow:    0,
-			Reasoning:        false,
-		},
-		Usage:        llm.EmptyUsage(),
-		DisableTools: false,
-	}
 }
 
 func TestTextMessageCreatesTextPart(t *testing.T) {

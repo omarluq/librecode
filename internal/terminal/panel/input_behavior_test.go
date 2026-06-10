@@ -63,19 +63,42 @@ func TestModelHandleKeyNavigationCancelAndSearch(t *testing.T) {
 	assert.Equal(t, panel.ActionCancel, action.Type)
 }
 
-func TestModelHandleKeyIgnoresSearchWhenDisabled(t *testing.T) {
+func TestModelHandleKeyIgnoresSearchWhenDisabledOrEventNil(t *testing.T) {
 	t.Parallel()
 
-	model := panel.New(
-		panel.Kind("test"),
-		"Pick",
-		"",
-		[]panel.Item{{Value: "a", Title: "Alpha", Description: "", Meta: ""}},
-		false,
-	)
+	tests := []struct {
+		event      *tcell.EventKey
+		name       string
+		searchable bool
+	}{
+		{
+			name:       "search disabled",
+			searchable: false,
+			event:      tcell.NewEventKey(tcell.KeyRune, "z", tcell.ModNone),
+		},
+		{
+			name:       "nil event",
+			searchable: true,
+			event:      nil,
+		},
+	}
+	for _, testCase := range tests {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	model.HandleKey(tcell.NewEventKey(tcell.KeyRune, "z", tcell.ModNone), testBindings{})
-	require.Len(t, model.FilteredItems(), 1)
+			model := panel.New(
+				panel.Kind("test"),
+				"Pick",
+				"",
+				[]panel.Item{{Value: "a", Title: "Alpha", Description: "", Meta: ""}},
+				testCase.searchable,
+			)
+
+			model.HandleKey(testCase.event, testBindings{})
+			require.Len(t, model.FilteredItems(), 1)
+		})
+	}
 }
 
 func TestModelAccessorsAndWindowStart(t *testing.T) {

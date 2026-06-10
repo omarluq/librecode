@@ -6,7 +6,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/omarluq/librecode/internal/llm"
-	"github.com/omarluq/librecode/internal/mapsutil"
 )
 
 func estimateTokens(text string) int {
@@ -37,14 +36,7 @@ func mergeUsage(estimated, reported llm.Usage) llm.Usage {
 	if reported.OutputTokens > 0 {
 		usage.OutputTokens = reported.OutputTokens
 	}
-	if len(usage.Breakdown) == 0 && len(reported.Breakdown) > 0 {
-		usage.Breakdown = mapsutil.CloneOrNil(reported.Breakdown)
-	}
-	if len(usage.TopContributors) == 0 && len(reported.TopContributors) > 0 {
-		usage.TopContributors = llm.CloneTokenContributors(reported.TopContributors)
-	}
-
-	return usage
+	return llm.MergeUsage(usage, reported)
 }
 
 func usageFromObject(value any) llm.Usage {
