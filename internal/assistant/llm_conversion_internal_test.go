@@ -9,6 +9,7 @@ import (
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/llmconv"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -169,7 +170,7 @@ func TestLLMUsageToModelRoundTrips(t *testing.T) {
 		OutputTokens:    1,
 	}
 
-	converted := llmUsageToModel(usage)
+	converted := llmconv.UsageToModel(usage)
 
 	assert.Equal(t, 10, converted.ContextWindow)
 	assert.Equal(t, 2, converted.InputTokens)

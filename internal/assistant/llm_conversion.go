@@ -7,6 +7,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/llmconv"
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
@@ -26,7 +27,7 @@ func llmRequestFromCompletionRequest(request *CompletionRequest) llm.Request {
 		Messages:        llmMessagesFromDatabase(request.Messages),
 		Tools:           llmToolDefinitionsFromRegistry(request.ToolRegistry, request.DisableTools),
 		Model:           llmModelRefFromModel(&request.Model),
-		Usage:           llmUsageFromModel(request.Usage),
+		Usage:           llmconv.UsageFromModel(request.Usage),
 		DisableTools:    request.DisableTools,
 	}
 }
@@ -133,7 +134,7 @@ func llmResponseFromCompletionResult(result *CompletionResult) llm.Response {
 		FinishReason: llm.FinishReasonStop,
 		Content:      content,
 		ToolCalls:    nil,
-		Usage:        llmUsageFromModel(result.Usage),
+		Usage:        llmconv.UsageFromModel(result.Usage),
 	}
 }
 
@@ -173,28 +174,6 @@ func llmToolResultFromEvent(event *ToolEvent) *llm.ToolResult {
 	}
 }
 
-func llmUsageFromModel(usage model.TokenUsage) llm.Usage {
-	return llm.Usage{
-		Breakdown:       mapsutil.CloneOrNil(usage.Breakdown),
-		TopContributors: llmTokenContributorsFromModel(usage.TopContributors),
-		ContextWindow:   usage.ContextWindow,
-		ContextTokens:   usage.ContextTokens,
-		InputTokens:     usage.InputTokens,
-		OutputTokens:    usage.OutputTokens,
-	}
-}
-
-func llmUsageToModel(usage llm.Usage) model.TokenUsage {
-	return model.TokenUsage{
-		Breakdown:       mapsutil.CloneOrNil(usage.Breakdown),
-		TopContributors: llmTokenContributorsToModel(usage.TopContributors),
-		ContextWindow:   usage.ContextWindow,
-		ContextTokens:   usage.ContextTokens,
-		InputTokens:     usage.InputTokens,
-		OutputTokens:    usage.OutputTokens,
-	}
-}
-
 func llmModelRefFromModel(input *model.Model) llm.ModelRef {
 	if input == nil {
 		return emptyLLMRequest().Model
@@ -228,38 +207,6 @@ func llmToolDefinitionFromTool(definition *tool.Definition) llm.ToolDefinition {
 		Description: definition.Description,
 		ReadOnly:    definition.ReadOnly,
 	}
-}
-
-func llmTokenContributorsFromModel(contributors []model.TokenContributor) []llm.TokenContributor {
-	if len(contributors) == 0 {
-		return nil
-	}
-
-	return lo.Map(contributors, func(contributor model.TokenContributor, _ int) llm.TokenContributor {
-		return llm.TokenContributor{
-			Label:   contributor.Label,
-			Role:    contributor.Role,
-			Preview: contributor.Preview,
-			Tokens:  contributor.Tokens,
-			Chars:   contributor.Chars,
-		}
-	})
-}
-
-func llmTokenContributorsToModel(contributors []llm.TokenContributor) []model.TokenContributor {
-	if len(contributors) == 0 {
-		return nil
-	}
-
-	return lo.Map(contributors, func(contributor llm.TokenContributor, _ int) model.TokenContributor {
-		return model.TokenContributor{
-			Label:   contributor.Label,
-			Role:    contributor.Role,
-			Preview: contributor.Preview,
-			Tokens:  contributor.Tokens,
-			Chars:   contributor.Chars,
-		}
-	})
 }
 
 func thinkingLevelMapToLLM(values map[model.ThinkingLevel]*string) map[string]*string {

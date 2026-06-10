@@ -9,6 +9,7 @@ import (
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/llmconv"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -89,22 +90,22 @@ func TestLLMTokenContributorConversionsCloneAndRoundTrip(t *testing.T) {
 	contributors := []model.TokenContributor{
 		{Label: contextwindow.BreakdownHistory, Role: string(llm.RoleUser), Preview: "hello", Tokens: 4, Chars: 20},
 	}
-	converted := llmTokenContributorsFromModel(contributors)
+	converted := llmconv.TokenContributorsFromModel(contributors)
 	require.Len(t, converted, 1)
 	assert.Equal(t, contextwindow.BreakdownHistory, converted[0].Label)
 
 	contributors[0].Label = testLLMMutatedLabel
 	assert.Equal(t, contextwindow.BreakdownHistory, converted[0].Label)
 
-	roundTrip := llmTokenContributorsToModel(converted)
+	roundTrip := llmconv.TokenContributorsToModel(converted)
 	require.Len(t, roundTrip, 1)
 	assert.Equal(t, contextwindow.BreakdownHistory, roundTrip[0].Label)
 
 	converted[0].Label = testLLMMutatedAgainLabel
 	assert.Equal(t, contextwindow.BreakdownHistory, roundTrip[0].Label)
 
-	assert.Nil(t, llmTokenContributorsFromModel(nil))
-	assert.Nil(t, llmTokenContributorsToModel(nil))
+	assert.Nil(t, llmconv.TokenContributorsFromModel(nil))
+	assert.Nil(t, llmconv.TokenContributorsToModel(nil))
 }
 
 func TestLLMUsageConversionsCloneMapsAndContributors(t *testing.T) {
@@ -118,14 +119,14 @@ func TestLLMUsageConversionsCloneMapsAndContributors(t *testing.T) {
 		InputTokens: 2, OutputTokens: 1,
 	}
 
-	converted := llmUsageFromModel(usage)
+	converted := llmconv.UsageFromModel(usage)
 	usage.Breakdown[contextwindow.BreakdownHistory] = 99
 	usage.TopContributors[0].Label = testLLMMutatedLabel
 
 	assert.Equal(t, 1, converted.Breakdown[contextwindow.BreakdownHistory])
 	assert.Equal(t, contextwindow.BreakdownHistory, converted.TopContributors[0].Label)
 
-	modelUsage := llmUsageToModel(converted)
+	modelUsage := llmconv.UsageToModel(converted)
 	converted.Breakdown[contextwindow.BreakdownHistory] = 42
 	converted.TopContributors[0].Label = testLLMMutatedAgainLabel
 	assert.Equal(t, 1, modelUsage.Breakdown[contextwindow.BreakdownHistory])

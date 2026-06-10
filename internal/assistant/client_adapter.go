@@ -7,6 +7,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/llmconv"
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/provider"
@@ -137,7 +138,7 @@ func completionResultFromLLMResponse(response *llm.Response) *CompletionResult {
 		Text:       textFromLLMParts(response.Content),
 		Thinking:   thinkingFromLLMParts(response.Content),
 		ToolEvents: toolEventsFromLLMParts(response.Content),
-		Usage:      llmUsageToModel(response.Usage),
+		Usage:      llmconv.UsageToModel(response.Usage),
 	}
 }
 
@@ -276,7 +277,7 @@ func usagePointerFromLLMUsage(usage llm.Usage) *model.TokenUsage {
 	if !usage.HasAny() {
 		return nil
 	}
-	converted := llmUsageToModel(usage)
+	converted := llmconv.UsageToModel(usage)
 
 	return &converted
 }
@@ -398,7 +399,7 @@ func llmUsageFromPointer(usage *model.TokenUsage) llm.Usage {
 		return llm.EmptyUsage()
 	}
 
-	return llmUsageFromModel(*usage)
+	return llmconv.UsageFromModel(*usage)
 }
 
 func stringFromOptions(options map[string]any, key string) string {
