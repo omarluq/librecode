@@ -138,6 +138,11 @@ tasks:
           echo "Set LIBRECODE_BENCH_AUTH_DIR to the host directory to copy into the benchmark mount." >&2
           exit 1
         fi
+        if [ ! -r "$AUTH_DIR/auth.json" ]; then
+          echo "librecode auth file not found or unreadable: $AUTH_DIR/auth.json" >&2
+          echo "Set LIBRECODE_BENCH_AUTH_DIR to a directory containing auth.json." >&2
+          exit 1
+        fi
 
         BENCH_HOME="$(mktemp -d "${TMPDIR:-/tmp}/librecode-bench-home.XXXXXX")"
         cleanup() {
