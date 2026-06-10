@@ -132,6 +132,16 @@ tasks:
         K="${LIBRECODE_BENCH_K:-5}"
         N="${LIBRECODE_BENCH_N:-4}"
         CONTAINER_HOME="${LIBRECODE_BENCH_CONTAINER_HOME:-/librecode-home}"
+        JOBS_DIR="${LIBRECODE_BENCH_JOBS_DIR:-jobs}"
+        JOB_NAME="${LIBRECODE_BENCH_JOB_NAME:-}"
+        DEBUG="${LIBRECODE_BENCH_DEBUG:-false}"
+        LOG_WATCH="${LIBRECODE_BENCH_LOG_WATCH:-false}"
+        LOG_WATCH_INTERVAL="${LIBRECODE_BENCH_LOG_WATCH_INTERVAL:-60}"
+        SHARD_INDEX="${LIBRECODE_BENCH_SHARD_INDEX:-}"
+        SHARD_TOTAL="${LIBRECODE_BENCH_SHARD_TOTAL:-}"
+        INCLUDE_TASKS="${LIBRECODE_BENCH_INCLUDE_TASKS:-}"
+        EXCLUDE_TASKS="${LIBRECODE_BENCH_EXCLUDE_TASKS:-}"
+        N_TASKS="${LIBRECODE_BENCH_N_TASKS:-}"
 
         if [ ! -d "$AUTH_DIR" ]; then
           echo "librecode auth dir not found: $AUTH_DIR" >&2
@@ -171,10 +181,90 @@ tasks:
         PY
         })"
 
-        harbor run \
+        set -- harbor run \
           -d "$DATASET" \
           --agent-import-path "$AGENT_IMPORT_PATH" \
           -k "$K" \
           -n "$N" \
+          --jobs-dir "$JOBS_DIR" \
           --mounts-json "$MOUNTS_JSON" \
           --ae "LIBRECODE_HOME=$CONTAINER_HOME"
+
+        if [ -n "$JOB_NAME" ]; then
+          set -- "$@" --job-name "$JOB_NAME"
+        fi
+        if [ "$DEBUG" = "true" ]; then
+          set -- "$@" --debug
+        fi
+        if [ -n "$N_TASKS" ]; then
+          set -- "$@" --n-tasks "$N_TASKS"
+        fi
+        if [ -n "$EXCLUDE_TASKS" ]; then
+          for task in $EXCLUDE_TASKS; do
+            set -- "$@" --exclude-task-name "$task"
+          done
+        fi
+        if [ -n "$INCLUDE_TASKS" ]; then
+          for task in $INCLUDE_TASKS; do
+            set -- "$@" --include-task-name "$task"
+          done
+        fi
+        if [ -n "$SHARD_INDEX" ] || [ -n "$SHARD_TOTAL" ]; then
+          if [ -z "$SHARD_INDEX" ] || [ -z "$SHARD_TOTAL" ]; then
+            echo "Set both LIBRECODE_BENCH_SHARD_INDEX and LIBRECODE_BENCH_SHARD_TOTAL, or neither." >&2
+            exit 1
+          fi
+          if [ "$SHARD_TOTAL" -le 0 ]; then
+            echo "LIBRECODE_BENCH_SHARD_TOTAL must be greater than zero." >&2
+            exit 1
+          fi
+          if [ "$SHARD_INDEX" -lt 0 ] || [ "$SHARD_INDEX" -ge "$SHARD_TOTAL" ]; then
+            echo "LIBRECODE_BENCH_SHARD_INDEX must be in [0, LIBRECODE_BENCH_SHARD_TOTAL)." >&2
+            exit 1
+          fi
+
+          DATASET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/librecode-bench-dataset.XXXXXX")"
+          cleanup_dataset() {
+            rm -rf "$DATASET_DIR"
+          }
+          trap 'cleanup; cleanup_dataset' EXIT
+
+          echo "Downloading dataset index for shard $SHARD_INDEX/$SHARD_TOTAL..."
+          harbor dataset download "$DATASET" --output-dir "$DATASET_DIR" --export >/dev/null
+          TASK_LIST="$(mktemp "${TMPDIR:-/tmp}/librecode-bench-tasks.XXXXXX")"
+          find "$DATASET_DIR" -mindepth 2 -maxdepth 2 -type d -printf '%f\n' | sort > "$TASK_LIST"
+          SHARD_TASKS="$(awk -v shard="$SHARD_INDEX" -v total="$SHARD_TOTAL" '((NR - 1) % total) == shard { print }' "$TASK_LIST")"
+          if [ -z "$SHARD_TASKS" ]; then
+            echo "No tasks selected for shard $SHARD_INDEX/$SHARD_TOTAL."
+            exit 0
+          fi
+          echo "Selected $(printf '%s\n' "$SHARD_TASKS" | sed '/^$/d' | wc -l | tr -d ' ') tasks for shard $SHARD_INDEX/$SHARD_TOTAL:"
+          printf '%s\n' "$SHARD_TASKS" | sed 's/^/  - /'
+          while IFS= read -r task; do
+            [ -n "$task" ] || continue
+            set -- "$@" --include-task-name "$task"
+          done <<EOF
+        $SHARD_TASKS
+        EOF
+        fi
+
+        echo "Running benchmark: dataset=$DATASET attempts=$K concurrency=$N jobs_dir=$JOBS_DIR"
+        if [ "$LOG_WATCH" = "true" ]; then
+          "$@" &
+          harbor_pid=$!
+          while kill -0 "$harbor_pid" 2>/dev/null; do
+            sleep "$LOG_WATCH_INTERVAL"
+            echo "--- latest Harbor trial logs ($(date -u +%Y-%m-%dT%H:%M:%SZ)) ---"
+            find "$JOBS_DIR" -path '*/trial.log' -type f -printf '%T@ %p\n' 2>/dev/null \
+              | sort -rn \
+              | head -5 \
+              | cut -d' ' -f2- \
+              | while IFS= read -r log; do
+                  echo "### $log"
+                  tail -n 40 "$log" || true
+                done
+          done
+          wait "$harbor_pid"
+        else
+          "$@"
+        fi

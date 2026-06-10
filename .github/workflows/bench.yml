@@ -14,7 +14,15 @@ on:
       concurrency:
         description: Concurrent trials per runner (-n)
         required: false
-        default: "4"
+        default: "16"
+      shards:
+        description: Number of GitHub runner shards (1-64)
+        required: false
+        default: "64"
+      n_tasks:
+        description: Optional max tasks per shard after filtering
+        required: false
+        default: ""
   push:
     branches: [main, master]
 
@@ -27,9 +35,13 @@ concurrency:
 
 jobs:
   bench:
-    name: Terminal Bench
+    name: Terminal Bench (${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
     steps:
       - name: Check benchmark auth
         env:
@@ -104,13 +116,28 @@ jobs:
           LIBRECODE_BENCH_AUTH_DIR: ${{ runner.temp }}/librecode-bench-auth
           LIBRECODE_BENCH_DATASET: ${{ github.event.inputs.dataset || 'terminal-bench/terminal-bench-2-1' }}
           LIBRECODE_BENCH_K: ${{ github.event.inputs.attempts || '5' }}
-          LIBRECODE_BENCH_N: ${{ github.event.inputs.concurrency || '4' }}
-        run: task bench
+          LIBRECODE_BENCH_N: ${{ github.event.inputs.concurrency || '16' }}
+          LIBRECODE_BENCH_SHARD_INDEX: ${{ matrix.shard }}
+          LIBRECODE_BENCH_SHARD_TOTAL: ${{ github.event.inputs.shards || '64' }}
+          LIBRECODE_BENCH_N_TASKS: ${{ github.event.inputs.n_tasks || '' }}
+          LIBRECODE_BENCH_JOBS_DIR: jobs/shard-${{ matrix.shard }}
+          LIBRECODE_BENCH_JOB_NAME: ${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
+          LIBRECODE_BENCH_DEBUG: "true"
+          LIBRECODE_BENCH_LOG_WATCH: "true"
+          LIBRECODE_BENCH_LOG_WATCH_INTERVAL: "120"
+        run: |
+          set -euo pipefail
+          SHARDS="${{ github.event.inputs.shards || '64' }}"
+          if [ "${{ matrix.shard }}" -ge "$SHARDS" ]; then
+            echo "Skipping inactive shard ${{ matrix.shard }} of $SHARDS."
+            exit 0
+          fi
+          task bench
 
       - name: Upload benchmark jobs
         if: always() && env.bench_auth_configured == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: terminal-bench-jobs
-          path: jobs/
+          name: terminal-bench-jobs-${{ matrix.shard }}
+          path: jobs/shard-${{ matrix.shard }}/
           if-no-files-found: warn
