@@ -60,7 +60,7 @@ Harbor tasks may pull many Docker images. If pulls fail with an unauthenticated 
 docker login
 ```
 
-Then rerun the Harbor command. Lower `-n` if pulls or local resources are the bottleneck.
+Then rerun `task bench`. Lower `LIBRECODE_BENCH_N` if pulls or local resources are the bottleneck.
 
 ## Go render microbenchmarks
 
