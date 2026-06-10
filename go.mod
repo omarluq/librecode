@@ -1,6 +1,6 @@
 module github.com/omarluq/librecode
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/Oudwins/zog v0.22.2
