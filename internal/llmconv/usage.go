@@ -1,4 +1,5 @@
-package contextwindow
+// Package llmconv contains adapters between provider-neutral LLM DTOs and app model DTOs.
+package llmconv
 
 import (
 	"github.com/samber/lo"
@@ -8,10 +9,11 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
-func llmUsageFromModel(usage model.TokenUsage) llm.Usage {
+// UsageFromModel converts model token usage into provider-neutral LLM usage.
+func UsageFromModel(usage model.TokenUsage) llm.Usage {
 	return llm.Usage{
 		Breakdown:       mapsutil.CloneOrNil(usage.Breakdown),
-		TopContributors: llmTokenContributorsFromModel(usage.TopContributors),
+		TopContributors: TokenContributorsFromModel(usage.TopContributors),
 		ContextWindow:   usage.ContextWindow,
 		ContextTokens:   usage.ContextTokens,
 		InputTokens:     usage.InputTokens,
@@ -19,10 +21,11 @@ func llmUsageFromModel(usage model.TokenUsage) llm.Usage {
 	}
 }
 
-func modelUsageFromLLM(usage llm.Usage) model.TokenUsage {
+// UsageToModel converts provider-neutral LLM usage into model token usage.
+func UsageToModel(usage llm.Usage) model.TokenUsage {
 	return model.TokenUsage{
 		Breakdown:       mapsutil.CloneOrNil(usage.Breakdown),
-		TopContributors: llmTokenContributorsToModel(usage.TopContributors),
+		TopContributors: TokenContributorsToModel(usage.TopContributors),
 		ContextWindow:   usage.ContextWindow,
 		ContextTokens:   usage.ContextTokens,
 		InputTokens:     usage.InputTokens,
@@ -30,7 +33,8 @@ func modelUsageFromLLM(usage llm.Usage) model.TokenUsage {
 	}
 }
 
-func llmTokenContributorsFromModel(contributors []model.TokenContributor) []llm.TokenContributor {
+// TokenContributorsFromModel converts model token contributors to LLM token contributors.
+func TokenContributorsFromModel(contributors []model.TokenContributor) []llm.TokenContributor {
 	if len(contributors) == 0 {
 		return nil
 	}
@@ -46,7 +50,8 @@ func llmTokenContributorsFromModel(contributors []model.TokenContributor) []llm.
 	})
 }
 
-func llmTokenContributorsToModel(contributors []llm.TokenContributor) []model.TokenContributor {
+// TokenContributorsToModel converts LLM token contributors to model token contributors.
+func TokenContributorsToModel(contributors []llm.TokenContributor) []model.TokenContributor {
 	if len(contributors) == 0 {
 		return nil
 	}
