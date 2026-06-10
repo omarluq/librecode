@@ -17,7 +17,7 @@ import (
 func TestRuntime_ProviderLifecycleEmitsDiagnostics(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, _ := newTestRuntimeWithManager(t, staticCompletionClient{
+	runtime, _, _ := newTestRuntimeWithManager(t, staticCompleter{
 		result: &assistant.CompletionResult{
 			Text:     "provider response",
 			Thinking: []string{"thinking"},
@@ -70,7 +70,7 @@ func TestRuntime_ProviderErrorDiagnosticsIncludeRetryAndErrorMetadata(t *testing
 		Code("responses_status").
 		With("status", 503).
 		Errorf("service unavailable")
-	runtime, _, _ := newTestRuntimeWithManager(t, staticCompletionClient{
+	runtime, _, _ := newTestRuntimeWithManager(t, staticCompleter{
 		result: nil,
 		err:    providerErr,
 	})
@@ -97,7 +97,7 @@ func TestRuntime_ProviderErrorDiagnosticsIncludeRetryAndErrorMetadata(t *testing
 func TestRuntime_ProviderErrorDiagnosticsCaptureHookErrors(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, manager := newTestRuntimeWithManager(t, staticCompletionClient{
+	runtime, _, manager := newTestRuntimeWithManager(t, staticCompleter{
 		result: nil,
 		err:    errors.New("provider unavailable"),
 	})

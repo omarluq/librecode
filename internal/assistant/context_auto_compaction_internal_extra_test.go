@@ -17,14 +17,14 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		client   assistant.CompletionClient
+		client   assistant.Completer
 		seed     func(t *testing.T, repository *database.SessionRepository, sessionID string)
 		name     string
 		wantCode string
 	}{
 		{
 			name:     "preserves validation error when nothing can be compacted",
-			client:   newSequencedCompletionClient(autoCompactionTestUnused),
+			client:   newSequencedCompleter(autoCompactionTestUnused),
 			seed:     nil,
 			wantCode: testContextWindowExceededOopsCode,
 		},
@@ -104,7 +104,7 @@ func assertContainsCompactionErrorEvent(t *testing.T, events []assistant.StreamE
 func TestRuntime_EmitPostResponseAutoCompactionErrorSkipsNil(t *testing.T) {
 	t.Parallel()
 
-	client := newSummaryAwareCompletionClient("summary", nil, autoCompactionTestFinalAnswer)
+	client := newSummaryAwareCompleter("summary", nil, autoCompactionTestFinalAnswer)
 	runtime := newAutoCompactionErrorRuntime(t, client)
 	events := []assistant.StreamEvent{}
 
@@ -125,7 +125,7 @@ func TestRuntime_ContextCompactionEventWithoutEntryDetails(t *testing.T) {
 	assert.NotContains(t, message, "kept recent context")
 }
 
-func newAutoCompactionErrorRuntime(t *testing.T, client assistant.CompletionClient) *assistant.Runtime {
+func newAutoCompactionErrorRuntime(t *testing.T, client assistant.Completer) *assistant.Runtime {
 	t.Helper()
 
 	return newAutoCompactionErrorRuntimeWithWindow(t, client, 64)
@@ -133,7 +133,7 @@ func newAutoCompactionErrorRuntime(t *testing.T, client assistant.CompletionClie
 
 func newAutoCompactionErrorRuntimeWithWindow(
 	t *testing.T,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 	contextWindow int,
 ) *assistant.Runtime {
 	t.Helper()

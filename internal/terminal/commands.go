@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/omarluq/librecode/internal/transcript"
-
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 const (
@@ -144,8 +144,8 @@ func (app *App) showSessionInfo(ctx context.Context) {
 	content := strings.Join([]string{
 		"session: " + app.sessionID,
 		"cwd: " + app.cwd,
-		"entries: " + intText(len(entries)),
-		"messages: " + intText(len(messages)),
+		"entries: " + rendertext.Int(len(entries)),
+		"messages: " + rendertext.Int(len(messages)),
 		"model: " + modelLabel(app.currentProvider(), app.currentModel()),
 	}, "\n")
 	app.addMessage(transcript.RoleCustom, content)

@@ -8,6 +8,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/terminal/extui"
 	"github.com/omarluq/librecode/internal/terminal/input"
 )
@@ -236,7 +237,7 @@ func (app *App) newExtensionEventWithLayoutAndData(
 		Windows: windows,
 		Layout:  extension.LayoutState{Windows: windows, Width: layout.Width, Height: layout.Height},
 		Context: app.extensionContext(),
-		Data:    extui.CloneMetadata(data),
+		Data:    mapsutil.CloneOrEmpty(data),
 		Name:    name,
 		Key:     key,
 		Focus:   app.focusState(),

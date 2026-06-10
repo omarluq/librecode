@@ -84,23 +84,23 @@ type ToolCall struct {
 	ArgumentsJSON string         `json:"arguments_json,omitempty"`
 }
 
-// CompletionClient talks to provider APIs through assistant-owned request/result types.
-type CompletionClient interface {
+// Completer talks to provider APIs through assistant-owned request/result types.
+type Completer interface {
 	Complete(ctx context.Context, request *CompletionRequest) (*CompletionResult, error)
 }
 
-// HTTPCompletionClient adapts the provider HTTP client to assistant-owned types.
-type HTTPCompletionClient struct {
+// HTTPClient adapts the provider HTTP client to assistant-owned types.
+type HTTPClient struct {
 	provider *provider.HTTPCompletionClient
 }
 
-// NewHTTPCompletionClient creates an HTTP-backed provider client.
-func NewHTTPCompletionClient() *HTTPCompletionClient {
-	return &HTTPCompletionClient{provider: provider.NewHTTPCompletionClient()}
+// NewHTTPClient creates an HTTP-backed provider client.
+func NewHTTPClient() *HTTPClient {
+	return &HTTPClient{provider: provider.NewHTTPCompletionClient()}
 }
 
 // Complete sends an assistant-owned completion request to the provider client.
-func (client *HTTPCompletionClient) Complete(
+func (client *HTTPClient) Complete(
 	ctx context.Context,
 	request *CompletionRequest,
 ) (*CompletionResult, error) {

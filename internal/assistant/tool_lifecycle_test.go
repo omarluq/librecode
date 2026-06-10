@@ -50,7 +50,7 @@ end)
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+			runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 			loadRuntimeExtension(t, manager, testCase.lua)
 			call := assistant.ToolCallEvent{
 				Arguments:     testCase.initialArguments,
@@ -111,7 +111,7 @@ end)
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+			runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 			loadRuntimeExtension(t, manager, testCase.lua)
 
 			err := runtime.DispatchToolResultLifecycleForTest(context.Background(), testCase.initialEvent)
@@ -127,7 +127,7 @@ end)
 func TestRuntime_ToolLifecycleEmitsDiagnosticsWithoutHandlers(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, _ := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, _ := newTestRuntimeWithManager(t, testCompleter{})
 	toolCallDiagnostics := collectRuntimeDiagnosticPayloads(
 		t,
 		runtime.EventBus(),
@@ -165,7 +165,7 @@ func TestRuntime_ToolLifecycleEmitsDiagnosticsWithoutHandlers(t *testing.T) {
 func TestRuntime_ToolLifecycleEmitsDiagnosticsOnHandlerError(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.on("tool_call", function()
@@ -223,7 +223,7 @@ func assertHookErrorDiagnostic(t *testing.T, diagnostic map[string]any) {
 func TestRuntime_ToolResultLifecycleDispatchesToolErrorHandlers(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 local seen = ""

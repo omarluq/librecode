@@ -16,7 +16,7 @@ import (
 func TestRuntime_ToolLifecycleEmitsDiagnostics(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.on("tool_call", function(event)

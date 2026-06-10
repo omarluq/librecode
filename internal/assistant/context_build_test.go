@@ -17,7 +17,7 @@ import (
 func TestRuntime_ContextBuildAcceptsBoundedExtensionContributions(t *testing.T) {
 	t.Parallel()
 
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime, _, manager := newTestRuntimeWithManager(t, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
@@ -49,7 +49,7 @@ end)
 func TestRuntime_ContextBuildRejectsOversizedExtensionContributions(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.on("context_build", function(event)
@@ -69,7 +69,7 @@ end)
 func TestRuntime_ContextBuildPayloadContainsBreakdown(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 local seen = ""
@@ -100,7 +100,7 @@ end)
 func TestRuntime_ContextBuildPublishesContributionBreakdown(t *testing.T) {
 	t.Parallel()
 
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime, _, manager := newTestRuntimeWithManager(t, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")

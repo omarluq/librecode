@@ -3,10 +3,11 @@ package terminal
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 )
 
 const (
@@ -294,7 +295,7 @@ func (app *App) hiddenToolLinesText(hiddenLines int) string {
 		unit = "line"
 	}
 
-	return "  … " + intText(hiddenLines) + " earlier output " + unit + " hidden; " +
+	return "  … " + rendertext.Int(hiddenLines) + " earlier output " + unit + " hidden; " +
 		app.keys.hint(actionToolsExpand) + " expand"
 }
 

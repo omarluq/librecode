@@ -16,7 +16,7 @@ import (
 func TestRuntimeRegistersExtensionToolsInModelRegistry(t *testing.T) {
 	t.Parallel()
 
-	client := newExtensionToolCompletionClient()
+	client := newExtensionToolCompleter()
 	runtime, _, manager := newTestRuntimeWithManager(t, client)
 	loadRuntimeExtension(t, manager, echoToolExtensionSource())
 
@@ -31,7 +31,7 @@ func TestRuntimeRegistersExtensionToolsInModelRegistry(t *testing.T) {
 func TestRuntimeRejectsExtensionToolNameCollision(t *testing.T) {
 	t.Parallel()
 
-	runtime, _, manager := newTestRuntimeWithManager(t, testCompletionClient{})
+	runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.register_tool("read", "collides", function()
@@ -48,7 +48,7 @@ end)
 func TestExtensionToolSchemaIsVisibleInRegistryDefinitions(t *testing.T) {
 	t.Parallel()
 
-	client := newExtensionToolCompletionClient()
+	client := newExtensionToolCompleter()
 	runtime, _, manager := newTestRuntimeWithManager(t, client)
 	loadRuntimeExtension(t, manager, echoToolExtensionSource())
 
@@ -61,25 +61,25 @@ func TestExtensionToolSchemaIsVisibleInRegistryDefinitions(t *testing.T) {
 	assert.Contains(t, properties, "text")
 }
 
-type extensionToolCompletionClient struct {
+type extensionToolCompleter struct {
 	toolDetails *map[string]any
 	definitions *[]tool.Definition
 	toolResult  *string
 }
 
-func newExtensionToolCompletionClient() *extensionToolCompletionClient {
+func newExtensionToolCompleter() *extensionToolCompleter {
 	definitions := []tool.Definition{}
 	toolDetails := map[string]any{}
 	toolResult := ""
 
-	return &extensionToolCompletionClient{
+	return &extensionToolCompleter{
 		toolDetails: &toolDetails,
 		definitions: &definitions,
 		toolResult:  &toolResult,
 	}
 }
 
-func (client *extensionToolCompletionClient) Complete(
+func (client *extensionToolCompleter) Complete(
 	ctx context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {

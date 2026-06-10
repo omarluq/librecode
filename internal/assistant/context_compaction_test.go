@@ -20,7 +20,7 @@ const compactedWorkSummary = "summary of compacted work"
 func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: compactedWorkSummary, requests: nil}
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
 	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 10)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
@@ -73,7 +73,7 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 func TestRuntime_CompactSessionChainsNextPromptFromCompactionEntry(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: compactedWorkSummary, requests: nil}
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
 	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
@@ -97,7 +97,7 @@ func TestRuntime_CompactSessionChainsNextPromptFromCompactionEntry(t *testing.T)
 func TestRuntime_CompactSessionRejectsShortHistory(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: autoCompactionTestUnused, requests: nil}
+	client := &compactionCompleter{summary: autoCompactionTestUnused, requests: nil}
 	runtime, repository := newTestRuntimeWithClient(t, client)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
@@ -115,7 +115,7 @@ func TestRuntime_CompactSessionRejectsShortHistory(t *testing.T) {
 func TestRuntime_CompactSessionFromUsesExplicitParent(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: "summary of selected branch", requests: nil}
+	client := &compactionCompleter{summary: "summary of selected branch", requests: nil}
 	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
@@ -149,10 +149,50 @@ func TestRuntime_CompactSessionFromUsesExplicitParent(t *testing.T) {
 	assert.Equal(t, root.Message.Content, client.requests[0].Messages[0].Content)
 }
 
+func TestRuntime_CompactSessionReplansHookSelectedFirstKeptEntry(t *testing.T) {
+	t.Parallel()
+
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
+	_, repository, manager := newTestRuntimeWithManager(t, client)
+	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
+	loadRuntimeExtension(t, manager, `
+local lc = require("librecode")
+lc.on("session_before_compact", function(event)
+  return {
+    compaction = {
+      first_kept_entry_id = event.payload.kept_entry_ids[2],
+    }
+  }
+end)
+`)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 1000))
+	firstTail := appendRuntimeTestMessage(t, repository, session.ID, &old.ID, database.RoleAssistant, "first tail")
+	selectedTail := appendRuntimeTestMessage(
+		t,
+		repository,
+		session.ID,
+		&firstTail.ID,
+		database.RoleAssistant,
+		"selected tail",
+	)
+
+	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+
+	require.NoError(t, err)
+	assert.Equal(t, selectedTail.ID, entry.CompactionFirstKeptEntryID)
+	require.Len(t, client.requests, 1)
+	require.Len(t, client.requests[0].Messages, 2)
+	assert.Equal(t, old.Message.Content, client.requests[0].Messages[0].Content)
+	assert.Equal(t, firstTail.Message.Content, client.requests[0].Messages[1].Content)
+}
+
 func TestRuntime_CompactSessionRejectsEmptySummary(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: "   ", requests: nil}
+	client := &compactionCompleter{summary: "   ", requests: nil}
 	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
@@ -170,7 +210,7 @@ func TestRuntime_CompactSessionRejectsEmptySummary(t *testing.T) {
 func TestRuntime_CompactSessionPreservesFileOperations(t *testing.T) {
 	t.Parallel()
 
-	client := &compactionCompletionClient{summary: compactedWorkSummary, requests: nil}
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
 	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
@@ -230,7 +270,7 @@ func TestRuntime_CompactSessionPreservesFileOperations(t *testing.T) {
 
 func newCompactionRuntimeWithKeepRecentTokens(
 	t *testing.T,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 	keepRecentTokens int,
 ) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
@@ -294,12 +334,12 @@ func appendRuntimeTestToolResult(
 	)
 }
 
-type compactionCompletionClient struct {
+type compactionCompleter struct {
 	summary  string
 	requests []*assistant.CompletionRequest
 }
 
-func (client *compactionCompletionClient) Complete(
+func (client *compactionCompleter) Complete(
 	_ context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {

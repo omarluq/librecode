@@ -223,11 +223,12 @@ func streamEventKindFromLLMChunk(chunk *llm.StreamChunk) StreamEventKind {
 		return StreamEventThinkingDelta
 	case llm.PartToolResult:
 		return StreamEventToolResult
+	case llm.PartToolCall:
+		return StreamEventToolStart
 	case llm.PartText,
 		llm.PartImage,
 		llm.PartFile,
-		llm.PartSource,
-		llm.PartToolCall:
+		llm.PartSource:
 		return StreamEventTextDelta
 	}
 
@@ -238,6 +239,9 @@ func textFromLLMChunk(chunk *llm.StreamChunk) string {
 	part := chunkPart(chunk)
 	if part == nil {
 		return ""
+	}
+	if part.Type == llm.PartToolCall && part.ToolCall != nil {
+		return part.ToolCall.Name
 	}
 
 	return part.Text
@@ -342,6 +346,24 @@ func llmPartFromStreamEvent(event StreamEvent) *llm.Part {
 			MIMEType:   "",
 		}
 		return &part
+	case StreamEventToolStart:
+		call := llm.ToolCall{
+			Metadata:      nil,
+			Arguments:     nil,
+			ID:            "",
+			Name:          event.Text,
+			ArgumentsJSON: "",
+		}
+		part := llm.Part{
+			Metadata:   nil,
+			ToolCall:   &call,
+			ToolResult: nil,
+			Type:       llm.PartToolCall,
+			Text:       "",
+			Data:       "",
+			MIMEType:   "",
+		}
+		return &part
 	case StreamEventToolResult:
 		if event.ToolEvent == nil {
 			return nil
@@ -358,7 +380,6 @@ func llmPartFromStreamEvent(event StreamEvent) *llm.Part {
 		}
 		return &part
 	case StreamEventTextDelta,
-		StreamEventToolStart,
 		StreamEventSkillLoaded,
 		StreamEventUsage,
 		StreamEventUsageSnapshot,

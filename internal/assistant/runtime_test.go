@@ -189,7 +189,7 @@ const recoveredResponseText = "recovered response"
 func TestRuntime_PromptRetriesTransientModelErrors(t *testing.T) {
 	t.Parallel()
 
-	client := &retryCompletionClient{
+	client := &retryCompleter{
 		err:               nil,
 		response:          recoveredResponseText,
 		attempts:          0,
@@ -216,7 +216,7 @@ func TestRuntime_PromptRetriesTransientModelErrors(t *testing.T) {
 func TestRuntime_PromptPersistsEmptyProviderResponse(t *testing.T) {
 	t.Parallel()
 
-	client := &emptyCompletionClient{attempts: 0}
+	client := &emptyCompleter{attempts: 0}
 	runtime, repository := newTestRuntimeWithClient(t, client)
 	request := newRuntimePromptRequest(testRuntimeCWD, "blank is ok", "")
 
@@ -235,7 +235,7 @@ func TestRuntime_PromptPersistsEmptyProviderResponse(t *testing.T) {
 func TestRuntime_PromptRetriesProviderStreamError(t *testing.T) {
 	t.Parallel()
 
-	client := &retryCompletionClient{
+	client := &retryCompleter{
 		err: errors.New(
 			"read provider stream: stream error: stream ID 193; INTERNAL_ERROR; received from peer",
 		),
@@ -256,7 +256,7 @@ func TestRuntime_PromptRetriesProviderStreamError(t *testing.T) {
 func TestRuntime_PromptPersistsPartialProgressOnProviderFailure(t *testing.T) {
 	t.Parallel()
 
-	client := partialFailureCompletionClient{}
+	client := partialFailureCompleter{}
 	runtime, repository := newTestRuntimeWithClient(t, client)
 	request := newRuntimePromptRequest(testRuntimeCWD, "fail after progress", "")
 
@@ -270,7 +270,7 @@ func TestRuntime_PromptPersistsPartialProgressOnProviderFailure(t *testing.T) {
 func TestRuntime_PromptReportsPersistenceFailureWhenFailedProgressCannotPersist(t *testing.T) {
 	t.Parallel()
 
-	client := partialFailureCompletionClient{}
+	client := partialFailureCompleter{}
 	runtime, _ := newTestRuntimeWithClient(t, client)
 	request := newRuntimePromptRequest(testRuntimeCWD, "fail persistence", "")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -289,7 +289,7 @@ func TestRuntime_PromptReportsPersistenceFailureWhenFailedProgressCannotPersist(
 func TestRuntime_PromptDoesNotRetryNonTransientModelErrors(t *testing.T) {
 	t.Parallel()
 
-	client := &retryCompletionClient{
+	client := &retryCompleter{
 		err:               errors.New("maximum context length exceeded"),
 		response:          "should not be used",
 		attempts:          0,
@@ -359,7 +359,7 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 		Model:     "",
 	})
 	require.NoError(t, err)
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime, _ := newTestRuntimeWithRepositoryAndClient(t, repository, client)
 
 	var usageEvents []assistant.StreamEvent
@@ -407,7 +407,7 @@ func TestRuntime_PromptIncludesCompactionSummaryContext(t *testing.T) {
 		FromHook:         false,
 	})
 	require.NoError(t, err)
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime, _ := newTestRuntimeWithRepositoryAndClient(t, repository, client)
 	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
 	request.SessionID = session.ID
@@ -440,7 +440,7 @@ func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 		testSkillDelimiter,
 		"Use tests first.",
 	}, "\n"))
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime, _ := newTestRuntimeWithClient(t, client)
 
 	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(cwd, "please fix-bug", ""))
@@ -466,12 +466,12 @@ func firstStreamEventKind(events []assistant.StreamEvent, kind assistant.StreamE
 func newTestRuntime(t *testing.T) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
 
-	return newTestRuntimeWithClient(t, testCompletionClient{})
+	return newTestRuntimeWithClient(t, testCompleter{})
 }
 
 func newTestRuntimeWithClient(
 	t *testing.T,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 ) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
 
@@ -482,7 +482,7 @@ func newTestRuntimeWithClient(
 
 func newTestRuntimeWithManager(
 	t *testing.T,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 ) (*assistant.Runtime, *database.SessionRepository, *extension.Manager) {
 	t.Helper()
 
@@ -501,7 +501,7 @@ func newTestRuntimeWithManager(
 func newTestRuntimeWithRepositoryAndClient(
 	t *testing.T,
 	repository *database.SessionRepository,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 ) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
 
@@ -513,7 +513,7 @@ func newTestRuntimeWithRepositoryAndClient(
 func newTestRuntimeWithRepositoryClientAndManager(
 	t *testing.T,
 	repository *database.SessionRepository,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 ) (*assistant.Runtime, *database.SessionRepository, *extension.Manager) {
 	t.Helper()
 
@@ -550,33 +550,33 @@ func loadRuntimeExtension(t *testing.T, manager *extension.Manager, source strin
 	require.NoError(t, manager.LoadFile(context.Background(), extensionPath))
 }
 
-type capturingCompletionClient struct {
+type capturingCompleter struct {
 	request *assistant.CompletionRequest
 }
 
-type retryCompletionClient struct {
+type retryCompleter struct {
 	err               error
 	response          string
 	attempts          int
 	failuresRemaining int
 }
 
-type partialFailureCompletionClient struct{}
+type partialFailureCompleter struct{}
 
-type emptyCompletionClient struct {
+type emptyCompleter struct {
 	attempts int
 }
 
-func (client *capturingCompletionClient) Complete(
+func (client *capturingCompleter) Complete(
 	ctx context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	client.request = request
 
-	return testCompletionClient{}.Complete(ctx, request)
+	return testCompleter{}.Complete(ctx, request)
 }
 
-func (client *retryCompletionClient) Complete(
+func (client *retryCompleter) Complete(
 	_ context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
@@ -598,7 +598,7 @@ func (client *retryCompletionClient) Complete(
 	}, nil
 }
 
-func (client *emptyCompletionClient) Complete(
+func (client *emptyCompleter) Complete(
 	_ context.Context,
 	_ *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
@@ -612,7 +612,7 @@ func (client *emptyCompletionClient) Complete(
 	}, nil
 }
 
-func (partialFailureCompletionClient) Complete(
+func (partialFailureCompleter) Complete(
 	_ context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
@@ -671,9 +671,9 @@ func assertPersistedPartialFailure(
 	assert.Contains(t, messages[3].Content, "provider returned an empty response")
 }
 
-type testCompletionClient struct{}
+type testCompleter struct{}
 
-func (testCompletionClient) Complete(
+func (testCompleter) Complete(
 	_ context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {

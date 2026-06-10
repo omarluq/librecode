@@ -359,17 +359,30 @@ func ToolResultPayload(event *ToolResult) map[string]any {
 
 // CompactionPreparation builds before-compaction lifecycle payloads.
 func CompactionPreparation(sessionID, cwd string, plan *compaction.Plan) map[string]any {
-	return map[string]any{
+	payload := map[string]any{
 		CWDKey:                       cwd,
 		SessionIDKey:                 sessionID,
-		"first_kept_entry_id":        plan.FirstKeptEntryID,
-		TokensBeforeKey:              plan.TokensBefore,
-		"summary_message_count":      len(plan.Messages),
-		"summarized_entry_ids":       StringSlice(plan.SummarizedEntryIDs),
-		"kept_entry_ids":             StringSlice(plan.KeptEntryIDs),
-		"split_turn_summary":         plan.SplitTurnSummary,
-		compaction.FileOperationsKey: CompactionFileOperations(plan.FileOperations),
+		"first_kept_entry_id":        "",
+		TokensBeforeKey:              0,
+		"summary_message_count":      0,
+		"summarized_entry_ids":       []any{},
+		"kept_entry_ids":             []any{},
+		"split_turn_summary":         "",
+		compaction.FileOperationsKey: []any{},
 	}
+	if plan == nil {
+		return payload
+	}
+
+	payload["first_kept_entry_id"] = plan.FirstKeptEntryID
+	payload[TokensBeforeKey] = plan.TokensBefore
+	payload["summary_message_count"] = len(plan.Messages)
+	payload["summarized_entry_ids"] = StringSlice(plan.SummarizedEntryIDs)
+	payload["kept_entry_ids"] = StringSlice(plan.KeptEntryIDs)
+	payload["split_turn_summary"] = plan.SplitTurnSummary
+	payload[compaction.FileOperationsKey] = CompactionFileOperations(plan.FileOperations)
+
+	return payload
 }
 
 // CompactionSavedPayload builds after-compaction lifecycle payloads.

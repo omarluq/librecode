@@ -17,13 +17,13 @@ const (
 	testContextWindowExceededOopsCode = "context_window_exceeded"
 )
 
-type recordingCompletionClient struct {
+type recordingCompleter struct {
 	complete           func(call int, request *assistant.CompletionRequest) (*assistant.CompletionResult, error)
 	requests           []*assistant.CompletionRequest
 	disableToolsByCall []bool
 }
 
-func (client *recordingCompletionClient) Complete(
+func (client *recordingCompleter) Complete(
 	_ context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
@@ -36,8 +36,8 @@ func (client *recordingCompletionClient) Complete(
 	return client.complete(len(client.requests), request)
 }
 
-func newSequencedCompletionClient(responses ...string) *recordingCompletionClient {
-	return &recordingCompletionClient{
+func newSequencedCompleter(responses ...string) *recordingCompleter {
+	return &recordingCompleter{
 		complete: func(call int, _ *assistant.CompletionRequest) (*assistant.CompletionResult, error) {
 			response := "ok"
 			if len(responses) >= call {
@@ -51,12 +51,12 @@ func newSequencedCompletionClient(responses ...string) *recordingCompletionClien
 	}
 }
 
-func newSummaryAwareCompletionClient(
+func newSummaryAwareCompleter(
 	summary string,
 	summaryErr error,
 	final string,
-) *recordingCompletionClient {
-	return &recordingCompletionClient{
+) *recordingCompleter {
+	return &recordingCompleter{
 		complete: func(_ int, request *assistant.CompletionRequest) (*assistant.CompletionResult, error) {
 			if request.DisableTools {
 				if summaryErr != nil {
@@ -73,12 +73,12 @@ func newSummaryAwareCompletionClient(
 	}
 }
 
-func newOverflowRecoveryCompletionClient(
+func newOverflowRecoveryCompleter(
 	summary string,
 	final string,
 	overflowErr error,
-) *recordingCompletionClient {
-	return &recordingCompletionClient{
+) *recordingCompleter {
+	return &recordingCompleter{
 		complete: func(call int, request *assistant.CompletionRequest) (*assistant.CompletionResult, error) {
 			if request.DisableTools {
 				return testCompletionResult(summary), nil
@@ -103,8 +103,8 @@ func newOverflowRecoveryCompletionClient(
 	}
 }
 
-func newOverflowSummaryCompletionClient(summary string, summaryErr error) *recordingCompletionClient {
-	return &recordingCompletionClient{
+func newOverflowSummaryCompleter(summary string, summaryErr error) *recordingCompleter {
+	return &recordingCompleter{
 		complete: func(_ int, request *assistant.CompletionRequest) (*assistant.CompletionResult, error) {
 			if request.DisableTools {
 				if summaryErr != nil {
@@ -134,10 +134,10 @@ func testCompletionResult(text string) *assistant.CompletionResult {
 	}
 }
 
-func failingSummaryClient() *recordingCompletionClient {
-	return newSummaryAwareCompletionClient("", errors.New("summary failed"), autoCompactionTestFinalAnswer)
+func failingSummaryClient() *recordingCompleter {
+	return newSummaryAwareCompleter("", errors.New("summary failed"), autoCompactionTestFinalAnswer)
 }
 
-func largeSummaryClient(words int) *recordingCompletionClient {
-	return newSummaryAwareCompletionClient(strings.Repeat("summary ", words), nil, autoCompactionTestFinalAnswer)
+func largeSummaryClient(words int) *recordingCompleter {
+	return newSummaryAwareCompleter(strings.Repeat("summary ", words), nil, autoCompactionTestFinalAnswer)
 }

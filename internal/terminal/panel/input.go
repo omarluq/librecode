@@ -1,9 +1,9 @@
 package panel
 
 import (
-	"unicode/utf8"
-
 	"github.com/gdamore/tcell/v3"
+
+	"github.com/omarluq/librecode/internal/terminal/keyevent"
 )
 
 // ActionID identifies one app-level keybinding action relevant to panels.
@@ -19,8 +19,8 @@ const (
 	ActionSelectPageDown ActionID = "select_page_down"
 )
 
-// Keybindings matches app-level actions against key events.
-type Keybindings interface {
+// KeyMatcher matches app-level actions against key events.
+type KeyMatcher interface {
 	Matches(event *tcell.EventKey, action ActionID) bool
 }
 
@@ -41,7 +41,7 @@ type Action struct {
 }
 
 // HandleKey mutates panel selection/query state for a key event and returns any selected action.
-func (model *Model) HandleKey(event *tcell.EventKey, bindings Keybindings) Action {
+func (model *Model) HandleKey(event *tcell.EventKey, bindings KeyMatcher) Action {
 	if bindings.Matches(event, ActionSelectCancel) {
 		return Action{Type: ActionCancel, Value: ""}
 	}
@@ -77,12 +77,6 @@ func (model *Model) selectedAction() Action {
 	return Action{Type: ActionNone, Value: ""}
 }
 
-func eventRune(event *tcell.EventKey) rune {
-	value, _ := utf8.DecodeRuneInString(event.Str())
-
-	return value
-}
-
 func (model *Model) handleSearchKey(event *tcell.EventKey) {
 	if model == nil || !model.searchable {
 		return
@@ -92,6 +86,6 @@ func (model *Model) handleSearchKey(event *tcell.EventKey) {
 		return
 	}
 	if event.Key() == tcell.KeyRune {
-		model.AppendQueryRune(eventRune(event))
+		model.AppendQueryRune(keyevent.Rune(event))
 	}
 }

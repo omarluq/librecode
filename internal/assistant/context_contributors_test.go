@@ -12,7 +12,7 @@ import (
 func TestRuntime_ContextBuildTracksTopContributors(t *testing.T) {
 	t.Parallel()
 
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime, _, _ := newTestRuntimeWithManager(t, client)
 	prompt := strings.Repeat("large prompt ", 400)
 
@@ -35,7 +35,7 @@ func TestRuntime_ContextBuildTracksTopContributors(t *testing.T) {
 func TestRuntime_ContextBuildTopContributorsIncludeExtensionContext(t *testing.T) {
 	t.Parallel()
 
-	client := &capturingCompletionClient{request: nil}
+	client := &capturingCompleter{request: nil}
 	runtime, _, manager := newTestRuntimeWithManager(t, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")

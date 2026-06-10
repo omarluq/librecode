@@ -7,6 +7,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/terminal/extui"
 	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
@@ -44,7 +45,7 @@ func (app *App) transcriptBufferState() extension.BufferState {
 	snapshot := app.transcriptBufferBlocks(maxTranscriptSnapshotBlocks)
 	buffer := textBufferState(extui.BufferTranscript, "")
 	buffer.Blocks = snapshot.Blocks
-	buffer.Metadata = extui.CloneMetadata(snapshot.Metadata)
+	buffer.Metadata = mapsutil.CloneOrEmpty(snapshot.Metadata)
 	buffer.Metadata[extui.MetadataCount] = len(app.transcript.History)
 	buffer.Metadata["snapshot_count"] = snapshot.Count
 	buffer.Metadata["snapshot_start"] = snapshot.Start
@@ -172,7 +173,7 @@ func transcriptBlockID(index int, streaming bool) string {
 		prefix = "streaming"
 	}
 
-	return prefix + ":" + intText(index)
+	return prefix + ":" + rendertext.Int(index)
 }
 
 func transcriptBlockKind(streaming bool) string {

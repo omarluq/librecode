@@ -315,7 +315,7 @@ func TestRunPromptPostsDoneAndError(t *testing.T) {
 	}
 }
 
-func newPromptSendTestApp(t *testing.T, client assistant.CompletionClient) *App {
+func newPromptSendTestApp(t *testing.T, client assistant.Completer) *App {
 	t.Helper()
 
 	return newPromptSendTestAppWithConfig(t, client, promptSendTestConfig())
@@ -323,7 +323,7 @@ func newPromptSendTestApp(t *testing.T, client assistant.CompletionClient) *App 
 
 func newPromptSendTestAppWithConfig(
 	t *testing.T,
-	client assistant.CompletionClient,
+	client assistant.Completer,
 	runtimeConfig *config.Config,
 ) *App {
 	t.Helper()

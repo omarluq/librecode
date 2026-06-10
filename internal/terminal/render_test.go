@@ -21,6 +21,37 @@ import (
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
+func TestClearWindowRespectsWindowOrigin(t *testing.T) {
+	t.Parallel()
+
+	buffer := rendertext.NewBuffer(5, 2, tcell.StyleDefault)
+	for row := 0; row < buffer.Height(); row++ {
+		for column := 0; column < buffer.Width(); column++ {
+			buffer.SetContent(column, row, 'x', nil, tcell.StyleDefault)
+		}
+	}
+	window := extension.WindowState{
+		Metadata:  nil,
+		Name:      "window",
+		Role:      "",
+		Buffer:    "",
+		Renderer:  "",
+		X:         2,
+		Y:         0,
+		Width:     2,
+		Height:    2,
+		CursorRow: 0,
+		CursorCol: 0,
+		Visible:   true,
+	}
+	clearWindow(buffer, &window)
+
+	assert.Equal(t, 'x', buffer.Cell(1, 0).Rune)
+	assert.Equal(t, ' ', buffer.Cell(2, 0).Rune)
+	assert.Equal(t, ' ', buffer.Cell(3, 1).Rune)
+	assert.Equal(t, 'x', buffer.Cell(4, 1).Rune)
+}
+
 func TestAllMessageLinesFlattensStaticAndDynamicGroups(t *testing.T) {
 	t.Parallel()
 
@@ -640,7 +671,7 @@ func TestScrolledMessageLinesCanReachFullHistory(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range 20 {
-		app.addMessage(transcript.RoleAssistant, "history message "+intText(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index))
 	}
 
 	bottom := app.messageLines(80, 6)
@@ -661,7 +692,7 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 
 	app := newRenderTestApp(t)
 	for index := range 20 {
-		app.addMessage(transcript.RoleAssistant, "history message "+intText(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index))
 	}
 
 	_ = app.messageLines(80, 6)
@@ -725,7 +756,7 @@ func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range messageCacheWarmBatchSize + 1 {
-		app.addMessage(transcript.RoleAssistant, "history message "+intText(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index))
 	}
 
 	_ = app.messageLines(80, 6)
@@ -748,7 +779,7 @@ func TestScrolledMessageLinesBeforeWarmCacheUsesVisibleTail(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range 100 {
-		app.addMessage(transcript.RoleAssistant, "history message "+intText(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index))
 	}
 
 	_ = app.messageLines(80, 6)
@@ -770,7 +801,7 @@ func TestScrolledMessageLinesRevalidatesWarmCacheAfterResize(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range 20 {
-		app.addMessage(transcript.RoleAssistant, "history message "+intText(index)+" with enough text to wrap")
+		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index)+" with enough text to wrap")
 	}
 	_ = app.messageLines(80, 6)
 	app.warmMessageLineCache()

@@ -211,7 +211,7 @@ func TopBorder(width int, label string) string {
 
 	label = strings.ReplaceAll(label, "\n", " ")
 	suffix := Truncate(label+"──", innerWidth)
-	fillWidth := max(0, innerWidth-RuneLen(suffix))
+	fillWidth := max(0, innerWidth-Width(suffix))
 
 	return "╭" + strings.Repeat("─", fillWidth) + suffix + "╮"
 }
