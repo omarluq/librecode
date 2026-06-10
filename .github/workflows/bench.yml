@@ -1,0 +1,113 @@
+name: Terminal Bench
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: Harbor dataset or task
+        required: false
+        default: terminal-bench/terminal-bench-2-1
+      attempts:
+        description: Attempts per trial (-k)
+        required: false
+        default: "5"
+      concurrency:
+        description: Concurrent trials per runner (-n)
+        required: false
+        default: "4"
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terminal-bench-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    name: Terminal Bench
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check benchmark auth
+        env:
+          LIBRECODE_BENCH_AUTH_JSON_B64: ${{ secrets.LIBRECODE_BENCH_AUTH_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -n "${LIBRECODE_BENCH_AUTH_JSON_B64:-}" ]; then
+            echo "bench_auth_configured=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "LIBRECODE_BENCH_AUTH_JSON_B64 is required for manual benchmark runs." >&2
+            exit 1
+          fi
+          echo "bench_auth_configured=false" >> "$GITHUB_ENV"
+          echo "Skipping terminal bench: LIBRECODE_BENCH_AUTH_JSON_B64 is not configured."
+
+      - name: Checkout
+        if: env.bench_auth_configured == 'true'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Setup Go
+        if: env.bench_auth_configured == 'true'
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Task
+        if: env.bench_auth_configured == 'true'
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+
+      - name: Setup Python
+        if: env.bench_auth_configured == 'true'
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6
+        with:
+          python-version: "3.13"
+
+      - name: Cache Harbor data
+        if: env.bench_auth_configured == 'true'
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        with:
+          path: ~/.cache/harbor
+          key: harbor-${{ runner.os }}-${{ hashFiles('bench/harbor/librecode_agent.py') }}
+          restore-keys: |
+            harbor-${{ runner.os }}-
+
+      - name: Install Harbor
+        if: env.bench_auth_configured == 'true'
+        run: python -m pip install --upgrade harbor==0.6.6
+
+      - name: Prepare librecode bench auth
+        if: env.bench_auth_configured == 'true'
+        env:
+          LIBRECODE_BENCH_AUTH_JSON_B64: ${{ secrets.LIBRECODE_BENCH_AUTH_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/librecode-bench-auth"
+          if [ -z "${LIBRECODE_BENCH_AUTH_JSON_B64:-}" ]; then
+            echo "LIBRECODE_BENCH_AUTH_JSON_B64 is required for benchmark runs." >&2
+            exit 1
+          fi
+          printf '%s' "$LIBRECODE_BENCH_AUTH_JSON_B64" | base64 -d > "$RUNNER_TEMP/librecode-bench-auth/auth.json"
+          chmod 600 "$RUNNER_TEMP/librecode-bench-auth/auth.json"
+
+      - name: Run Terminal Bench
+        if: env.bench_auth_configured == 'true'
+        env:
+          LIBRECODE_BENCH_AUTH_DIR: ${{ runner.temp }}/librecode-bench-auth
+          LIBRECODE_BENCH_DATASET: ${{ github.event.inputs.dataset || 'terminal-bench/terminal-bench-2-1' }}
+          LIBRECODE_BENCH_K: ${{ github.event.inputs.attempts || '5' }}
+          LIBRECODE_BENCH_N: ${{ github.event.inputs.concurrency || '4' }}
+        run: task bench
+
+      - name: Upload benchmark jobs
+        if: always() && env.bench_auth_configured == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: terminal-bench-jobs
+          path: jobs/
+          if-no-files-found: warn

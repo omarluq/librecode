@@ -19,40 +19,37 @@ mise exec -- task build
 Then run Harbor from the repository root:
 
 ```bash
-PYTHONPATH=$PWD harbor run \
-  -d terminal-bench/terminal-bench-2-1 \
-  --agent-import-path bench.harbor.librecode_agent:LibrecodeAgent \
-  -k 5 \
-  -n 8
+task bench
 ```
 
-Flags:
+`task bench` builds librecode, copies `${LIBRECODE_BENCH_AUTH_DIR:-${LIBRECODE_HOME:-$HOME/.librecode}}` to a temporary writable mount, and passes that mount to Harbor as `LIBRECODE_HOME`.
 
-- `--agent-import-path bench.harbor.librecode_agent:LibrecodeAgent` tells Harbor to use this adapter.
-- `-d terminal-bench/terminal-bench-2-1` selects the Harbor dataset/task collection.
-- `-k 5` runs five attempts per trial.
-- `-n 8` runs eight trials concurrently.
+Useful overrides:
+
+```bash
+LIBRECODE_BENCH_N=2 task bench
+LIBRECODE_BENCH_K=1 LIBRECODE_BENCH_N=1 task bench
+LIBRECODE_BENCH_DATASET=terminal-bench/polyglot-rust-c task bench
+LIBRECODE_BENCH_AUTH_DIR=$HOME/.librecode task bench
+```
+
+Flags/env:
+
+- `LIBRECODE_BENCH_AGENT_IMPORT_PATH` defaults to `bench.harbor.librecode_agent:LibrecodeAgent`.
+- `LIBRECODE_BENCH_DATASET` defaults to `terminal-bench/terminal-bench-2-1`.
+- `LIBRECODE_BENCH_K` defaults to `5` attempts per trial.
+- `LIBRECODE_BENCH_N` defaults to `4` concurrent trials.
 
 If your binary is somewhere else:
 
 ```bash
-PYTHONPATH=$PWD LIBRECODE_BINARY=/path/to/librecode harbor run \
-  -d terminal-bench/terminal-bench-2-1 \
-  --agent-import-path bench.harbor.librecode_agent:LibrecodeAgent \
-  -k 5 \
-  -n 8
+LIBRECODE_BINARY=/path/to/librecode task bench
 ```
 
 If you prefer installing inside the container instead of uploading a binary:
 
 ```bash
-PYTHONPATH=$PWD \
-LIBRECODE_INSTALL_COMMAND='your install command here' \
-harbor run \
-  -d terminal-bench/terminal-bench-2-1 \
-  --agent-import-path bench.harbor.librecode_agent:LibrecodeAgent \
-  -k 5 \
-  -n 8
+LIBRECODE_INSTALL_COMMAND='your install command here' task bench
 ```
 
 ## Docker Hub rate limits

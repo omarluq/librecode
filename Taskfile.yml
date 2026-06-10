@@ -119,3 +119,53 @@ tasks:
       - task: lint
       - task: test
       - task: build
+
+  bench:
+    desc: Run terminal-bench Harbor benchmark with local librecode auth mounted
+    deps: [ensure-cache, build]
+    cmds:
+      - |
+        set -euo pipefail
+        AUTH_DIR="${LIBRECODE_BENCH_AUTH_DIR:-${LIBRECODE_HOME:-$HOME/.librecode}}"
+        DATASET="${LIBRECODE_BENCH_DATASET:-terminal-bench/terminal-bench-2-1}"
+        AGENT_IMPORT_PATH="${LIBRECODE_BENCH_AGENT_IMPORT_PATH:-bench.harbor.librecode_agent:LibrecodeAgent}"
+        K="${LIBRECODE_BENCH_K:-5}"
+        N="${LIBRECODE_BENCH_N:-4}"
+        CONTAINER_HOME="${LIBRECODE_BENCH_CONTAINER_HOME:-/librecode-home}"
+
+        if [ ! -d "$AUTH_DIR" ]; then
+          echo "librecode auth dir not found: $AUTH_DIR" >&2
+          echo "Set LIBRECODE_BENCH_AUTH_DIR to the host directory to copy into the benchmark mount." >&2
+          exit 1
+        fi
+
+        BENCH_HOME="$(mktemp -d "${TMPDIR:-/tmp}/librecode-bench-home.XXXXXX")"
+        cleanup() {
+          rm -rf "$BENCH_HOME"
+        }
+        trap cleanup EXIT
+
+        cp -a "$AUTH_DIR/." "$BENCH_HOME/"
+        export PYTHONPATH="$(pwd)${PYTHONPATH:+:$PYTHONPATH}"
+
+        MOUNTS_JSON="$({
+          BENCH_HOME="$BENCH_HOME" CONTAINER_HOME="$CONTAINER_HOME" python - <<'PY'
+        import json
+        import os
+
+        print(json.dumps([{
+            "type": "bind",
+            "source": os.environ["BENCH_HOME"],
+            "target": os.environ["CONTAINER_HOME"],
+            "read_only": False,
+        }]))
+        PY
+        })"
+
+        harbor run \
+          -d "$DATASET" \
+          --agent-import-path "$AGENT_IMPORT_PATH" \
+          -k "$K" \
+          -n "$N" \
+          --mounts-json "$MOUNTS_JSON" \
+          --ae "LIBRECODE_HOME=$CONTAINER_HOME"
