@@ -8,8 +8,8 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 const (
@@ -305,7 +305,7 @@ func messagesInRange(
 		if !ok {
 			continue
 		}
-		messages = append(messages, modelFacingMessage(&message))
+		messages = append(messages, model.FacingMessage(&message))
 		entryIDs = append(entryIDs, entries[index].ID)
 	}
 
@@ -354,7 +354,7 @@ func branchTokens(branch []database.EntryEntity, countTokens TokenCounter) int {
 		if !ok {
 			continue
 		}
-		messages = append(messages, modelFacingMessage(&message))
+		messages = append(messages, model.FacingMessage(&message))
 	}
 
 	return messageTokens(messages, countTokens)
@@ -413,7 +413,7 @@ func emptyMessage() database.MessageEntity {
 
 func messageForContext(entry *database.EntryEntity) (database.MessageEntity, bool) {
 	message := candidateMessage(entry)
-	if !entry.ModelFacing || !isModelFacingRole(message.Role) || strings.TrimSpace(message.Content) == "" {
+	if !entry.ModelFacing || !model.IsFacingMessage(&message) {
 		return emptyMessage(), false
 	}
 
@@ -447,44 +447,6 @@ func candidateMessage(entry *database.EntryEntity) database.MessageEntity {
 	}
 
 	return message
-}
-
-func modelFacingMessage(message *database.MessageEntity) database.MessageEntity {
-	converted := *message
-	switch message.Role {
-	case database.RoleCompactionSummary:
-		converted.Role = database.RoleUser
-		converted.Content = core.CompactionSummaryPrefix + message.Content + core.CompactionSummarySuffix
-	case database.RoleBranchSummary:
-		converted.Role = database.RoleUser
-		converted.Content = core.BranchSummaryPrefix + message.Content + core.BranchSummarySuffix
-	case database.RoleUser,
-		database.RoleAssistant,
-		database.RoleToolResult,
-		database.RoleThinking,
-		database.RoleCustom,
-		database.RoleBashExecution:
-		return converted
-	}
-
-	return converted
-}
-
-func isModelFacingRole(role database.Role) bool {
-	switch role {
-	case database.RoleUser,
-		database.RoleAssistant,
-		database.RoleBranchSummary,
-		database.RoleCompactionSummary,
-		database.RoleCustom,
-		database.RoleBashExecution:
-		return true
-	case database.RoleToolResult,
-		database.RoleThinking:
-		return false
-	}
-
-	return false
 }
 
 func messageTokens(messages []database.MessageEntity, countTokens TokenCounter) int {

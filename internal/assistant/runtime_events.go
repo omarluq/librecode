@@ -11,18 +11,20 @@ func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *Comple
 	if request == nil {
 		return
 	}
-	runtime.emit(ctx, string(extension.LifecycleBeforeProviderRequest), lifecyclepayload.ProviderRequestPayload(
-		&lifecyclepayload.ProviderRequest{
-			Payload:       nil,
-			Headers:       redactedHeaders(request.Auth.Headers),
-			API:           request.Model.API,
-			ModelID:       request.Model.ID,
-			Provider:      request.Model.Provider,
-			SessionID:     request.SessionID,
-			ThinkingLevel: request.ThinkingLevel,
-			Attempt:       attempt,
-		},
-	))
+	payload := new(lifecyclepayload.ProviderRequest)
+	payload.Headers = redactedHeaders(request.Auth.Headers)
+	payload.API = request.Model.API
+	payload.ModelID = request.Model.ID
+	payload.Provider = request.Model.Provider
+	payload.SessionID = request.SessionID
+	payload.ThinkingLevel = request.ThinkingLevel
+	payload.Attempt = attempt
+
+	runtime.emit(
+		ctx,
+		string(extension.LifecycleBeforeProviderRequest),
+		lifecyclepayload.ProviderRequestPayload(payload),
+	)
 }
 
 func (runtime *Runtime) emitProviderResponse(

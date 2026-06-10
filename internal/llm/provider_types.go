@@ -6,6 +6,7 @@ import "context"
 type ToolExecutor func(context.Context, []ToolCall, func(*StreamChunk)) ([]ToolResult, error)
 
 // ProviderRequestHook can inspect and conservatively mutate a provider wire request.
+// It returns HookOutput by value so a hook cannot return a nil output object.
 type ProviderRequestHook func(context.Context, *HookInput) (HookOutput, error)
 
 // ProviderObserver observes provider attempts without mutating them.

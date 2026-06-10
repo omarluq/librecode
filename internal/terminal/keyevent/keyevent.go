@@ -9,6 +9,9 @@ import (
 
 // Rune returns the first rune carried by a tcell rune key event.
 func Rune(event *tcell.EventKey) rune {
+	if event == nil || event.Str() == "" {
+		return 0
+	}
 	value, _ := utf8.DecodeRuneInString(event.Str())
 
 	return value

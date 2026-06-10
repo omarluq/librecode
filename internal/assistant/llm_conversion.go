@@ -32,28 +32,7 @@ func llmRequestFromCompletionRequest(request *CompletionRequest) llm.Request {
 }
 
 func emptyLLMRequest() llm.Request {
-	return llm.Request{
-		ProviderOptions: nil,
-		Auth:            llm.Auth{Headers: nil, APIKey: ""},
-		SystemPrompt:    "",
-		ThinkingLevel:   "",
-		SessionID:       "",
-		Messages:        nil,
-		Tools:           nil,
-		Model: llm.ModelRef{
-			Metadata:         nil,
-			ThinkingLevelMap: nil,
-			Provider:         "",
-			ID:               "",
-			API:              "",
-			BaseURL:          "",
-			MaxTokens:        0,
-			ContextWindow:    0,
-			Reasoning:        false,
-		},
-		Usage:        llm.EmptyUsage(),
-		DisableTools: false,
-	}
+	return llm.EmptyRequest()
 }
 
 func llmMessagesFromDatabase(messages []database.MessageEntity) []llm.Message {

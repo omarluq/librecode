@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -155,27 +156,9 @@ func ContributorPreview(content string) string {
 
 // MergeUsage overlays provider-reported usage on an estimated usage snapshot.
 func MergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
-	usage := estimated
-	if reported.ContextWindow > 0 {
-		usage.ContextWindow = reported.ContextWindow
-	}
-	if reported.ContextTokens > 0 {
-		usage.ContextTokens = reported.ContextTokens
-	}
-	if reported.InputTokens > 0 {
-		usage.InputTokens = reported.InputTokens
-	}
-	if reported.OutputTokens > 0 {
-		usage.OutputTokens = reported.OutputTokens
-	}
-	if len(usage.Breakdown) == 0 && len(reported.Breakdown) > 0 {
-		usage.Breakdown = mapsutil.CloneOrNil(reported.Breakdown)
-	}
-	if len(usage.TopContributors) == 0 && len(reported.TopContributors) > 0 {
-		usage.TopContributors = model.CloneTokenContributors(reported.TopContributors)
-	}
+	usage := llm.MergeUsage(llmUsageFromModel(estimated), llmUsageFromModel(reported))
 
-	return usage
+	return modelUsageFromLLM(usage)
 }
 
 // ProviderUsageEntity converts model usage into database usage metadata for persisted provider entries.

@@ -78,7 +78,7 @@ func (model *Model) selectedAction() Action {
 }
 
 func (model *Model) handleSearchKey(event *tcell.EventKey) {
-	if model == nil || !model.searchable {
+	if model == nil || event == nil || !model.searchable {
 		return
 	}
 	if event.Key() == tcell.KeyBackspace || event.Key() == tcell.KeyBackspace2 {

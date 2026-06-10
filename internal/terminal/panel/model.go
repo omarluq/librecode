@@ -2,9 +2,11 @@
 package panel
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/samber/lo"
 
 	"github.com/omarluq/librecode/internal/terminal/rendertext"
 )
@@ -40,7 +42,7 @@ func New(kind Kind, title, subtitle string, items []Item, searchable bool) *Mode
 		title:       title,
 		subtitle:    subtitle,
 		query:       "",
-		items:       append([]Item{}, items...),
+		items:       slices.Clone(items),
 		filtered:    []Item{},
 		selected:    0,
 		searchable:  searchable,
@@ -66,7 +68,7 @@ func (model *Model) Items() []Item {
 		return []Item{}
 	}
 
-	return append([]Item{}, model.items...)
+	return slices.Clone(model.items)
 }
 
 // FilteredItems returns a copy of the visible item list.
@@ -75,7 +77,7 @@ func (model *Model) FilteredItems() []Item {
 		return []Item{}
 	}
 
-	return append([]Item{}, model.filtered...)
+	return slices.Clone(model.filtered)
 }
 
 // SelectedIndex returns the currently selected visible row.
@@ -158,17 +160,14 @@ func (model *Model) ApplyFilter() {
 		return
 	}
 	if strings.TrimSpace(model.query) == "" {
-		model.filtered = append([]Item{}, model.items...)
+		model.filtered = slices.Clone(model.items)
 		model.selected = min(model.selected, max(0, len(model.filtered)-1))
 		return
 	}
 	query := strings.ToLower(strings.TrimSpace(model.query))
-	model.filtered = []Item{}
-	for _, item := range model.items {
-		if itemMatchesQuery(item, query) {
-			model.filtered = append(model.filtered, item)
-		}
-	}
+	model.filtered = lo.Filter(model.items, func(item Item, _ int) bool {
+		return itemMatchesQuery(item, query)
+	})
 	model.selected = min(model.selected, max(0, len(model.filtered)-1))
 }
 

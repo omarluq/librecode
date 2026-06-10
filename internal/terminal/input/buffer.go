@@ -1,5 +1,7 @@
 package input
 
+import "github.com/samber/lo"
+
 // Buffer is the editable terminal composer state.
 type Buffer struct {
 	Metadata map[string]any
@@ -146,12 +148,9 @@ func (buffer *Buffer) DeleteToLineEnd() {
 
 // Chars converts runes into extension-visible string cells.
 func Chars(value []rune) []string {
-	chars := make([]string, 0, len(value))
-	for _, char := range value {
-		chars = append(chars, string(char))
-	}
-
-	return chars
+	return lo.Map(value, func(char rune, _ int) string {
+		return string(char)
+	})
 }
 
 // StringChars converts text into extension-visible string cells.

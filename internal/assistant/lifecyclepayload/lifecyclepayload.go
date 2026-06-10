@@ -4,6 +4,8 @@ package lifecyclepayload
 import (
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
@@ -262,19 +264,15 @@ func TokenUsage(usage model.TokenUsage) map[string]any {
 
 // TokenContributors builds token-contributor lifecycle payloads.
 func TokenContributors(contributors []model.TokenContributor) []any {
-	payload := make([]any, 0, len(contributors))
-	for index := range contributors {
-		contributor := contributors[index]
-		payload = append(payload, map[string]any{
+	return lo.Map(contributors, func(contributor model.TokenContributor, _ int) any {
+		return map[string]any{
 			"label":   contributor.Label,
 			RoleKey:   contributor.Role,
 			"preview": contributor.Preview,
 			"tokens":  contributor.Tokens,
 			"chars":   contributor.Chars,
-		})
-	}
-
-	return payload
+		}
+	})
 }
 
 // ProviderRequestPayload builds before-provider-request lifecycle payloads.
@@ -418,19 +416,15 @@ func CompactionDiagnostics(plan *compaction.Plan, phase string) map[string]any {
 
 // CompactionFileOperations builds compaction file-operation lifecycle payloads.
 func CompactionFileOperations(operations []compaction.FileOperation) []any {
-	payload := make([]any, 0, len(operations))
-	for index := range operations {
-		operation := operations[index]
-		payload = append(payload, map[string]any{
+	return lo.Map(operations, func(operation compaction.FileOperation, _ int) any {
+		return map[string]any{
 			"entry_id": operation.EntryID,
 			"action":   operation.Action,
 			"path":     operation.Path,
 			"tool":     operation.Tool,
 			"command":  operation.Command,
-		})
-	}
-
-	return payload
+		}
+	})
 }
 
 // Diagnostic builds a lifecycle diagnostic payload.
@@ -463,12 +457,9 @@ func DurationMilliseconds(duration time.Duration) float64 {
 
 // StringSlice converts a string slice to an extension-friendly any slice.
 func StringSlice(values []string) []any {
-	payload := make([]any, 0, len(values))
-	for _, value := range values {
-		payload = append(payload, value)
-	}
-
-	return payload
+	return lo.Map(values, func(value string, _ int) any {
+		return value
+	})
 }
 
 func stringPtrValue(value *string) string {

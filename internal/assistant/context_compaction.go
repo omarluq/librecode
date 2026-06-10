@@ -55,7 +55,14 @@ func (runtime *Runtime) CompactSessionFrom(
 	}
 	plan.FileOperations = compaction.CollectFileOperations(branch[:plan.FirstKeptEntryIndex])
 
-	return runtime.compactSessionWithPlan(ctx, sessionID, cwd, parentID, branch, selectedModel, auth, &plan)
+	providerInput := compactionProviderInput{selectedModel: selectedModel, auth: auth}
+
+	return runtime.compactSessionWithPlan(ctx, sessionID, cwd, parentID, branch, providerInput, &plan)
+}
+
+type compactionProviderInput struct {
+	selectedModel *model.Model
+	auth          model.RequestAuth
 }
 
 func (runtime *Runtime) compactSessionWithPlan(
@@ -64,8 +71,7 @@ func (runtime *Runtime) compactSessionWithPlan(
 	cwd string,
 	parentID *string,
 	branch []database.EntryEntity,
-	selectedModel *model.Model,
-	auth model.RequestAuth,
+	providerInput compactionProviderInput,
 	plan *compaction.Plan,
 ) (*database.EntryEntity, error) {
 	decision, err := runtime.dispatchBeforeCompaction(ctx, sessionID, cwd, plan)
@@ -86,12 +92,28 @@ func (runtime *Runtime) compactSessionWithPlan(
 		plan = &adjustedPlan
 	}
 
-	summary, fromHook, err := runtime.compactionSummary(ctx, cwd, sessionID, selectedModel, auth, plan, decision)
+	summary, fromHook, err := runtime.compactionSummary(
+		ctx,
+		cwd,
+		sessionID,
+		providerInput.selectedModel,
+		providerInput.auth,
+		plan,
+		decision,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	entry, err := runtime.appendCompaction(ctx, sessionID, parentID, summary, plan, decision, fromHook)
+	entry, err := runtime.appendCompaction(
+		ctx,
+		sessionID,
+		parentID,
+		summary,
+		plan,
+		decision,
+		fromHook,
+	)
 	if err != nil {
 		return nil, err
 	}
