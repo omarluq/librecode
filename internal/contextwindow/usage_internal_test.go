@@ -18,6 +18,49 @@ const (
 	testUsagePreview             = "usage preview"
 )
 
+func TestBreakdownAndEstimateBuildUsage(t *testing.T) {
+	t.Parallel()
+
+	breakdown := Breakdown(10, 5, 20, []Contribution{
+		testContribution("ext-a", "alpha", 3),
+		testContribution("ext-b", "beta", 4),
+	})
+	usage := EstimateBuildUsage(
+		"system prompt",
+		[]database.MessageEntity{testMessageEntity(database.RoleUser, "hello user")},
+		[]Contribution{testContribution("ext", "extension content", 7)},
+		&model.Model{
+			ThinkingLevelMap: nil,
+			Headers:          nil,
+			Compat:           nil,
+			Provider:         "",
+			ID:               "",
+			Name:             "",
+			API:              "",
+			BaseURL:          "",
+			Input:            nil,
+			Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
+			ContextWindow:    4096,
+			MaxTokens:        0,
+			Reasoning:        false,
+		},
+		breakdown,
+		nil,
+	)
+
+	assert.Equal(t, map[string]int{
+		BreakdownSystem:     10,
+		BreakdownSkills:     5,
+		BreakdownHistory:    20,
+		BreakdownExtensions: 7,
+	}, breakdown)
+	assert.Equal(t, 4096, usage.ContextWindow)
+	assert.Positive(t, usage.InputTokens)
+	assert.Equal(t, usage.InputTokens, usage.ContextTokens)
+	assert.Equal(t, breakdown, usage.Breakdown)
+	assert.NotEmpty(t, usage.TopContributors)
+}
+
 func TestTopContributorsRankingAndFallbacks(t *testing.T) {
 	t.Parallel()
 
@@ -28,7 +71,7 @@ func TestTopContributorsRankingAndFallbacks(t *testing.T) {
 			testMessageEntity(database.RoleAssistant, strings.Repeat("large assistant message ", 80)),
 		},
 		[]Contribution{
-			testContribution("", "extension", strings.Repeat("extension context ", 120), 500),
+			testContribution("", strings.Repeat("extension context ", 120), 500),
 		},
 	)
 
@@ -130,12 +173,12 @@ func testMessageEntity(role database.Role, content string) database.MessageEntit
 	}
 }
 
-func testContribution(name, role, content string, tokens int) Contribution {
+func testContribution(name, content string, tokens int) Contribution {
 	return Contribution{
 		Metadata: nil,
 		Source:   ContributionSourceExtension,
 		Name:     name,
-		Role:     role,
+		Role:     "extension",
 		Content:  content,
 		Tokens:   tokens,
 	}

@@ -91,6 +91,7 @@ func (runtime *Runtime) compactSessionWithPlan(
 		}
 		plan = &adjustedPlan
 	}
+	plan.FileOperations = compaction.CollectFileOperations(branch[:plan.FirstKeptEntryIndex])
 
 	summary, fromHook, err := runtime.compactionSummary(
 		ctx,

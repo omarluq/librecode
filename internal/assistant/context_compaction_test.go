@@ -3,6 +3,7 @@ package assistant_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -187,6 +188,63 @@ end)
 	require.Len(t, client.requests[0].Messages, 2)
 	assert.Equal(t, old.Message.Content, client.requests[0].Messages[0].Content)
 	assert.Equal(t, firstTail.Message.Content, client.requests[0].Messages[1].Content)
+}
+
+func TestRuntime_CompactSessionReplansHookFileOperations(t *testing.T) {
+	t.Parallel()
+
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
+	_, repository, manager := newTestRuntimeWithManager(t, client)
+	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 1000))
+	firstRead := appendRuntimeTestToolResult(
+		t,
+		repository,
+		session.ID,
+		&old.ID,
+		"read",
+		`{"path":"first.txt"}`,
+		"first file",
+	)
+	selectedTail := appendRuntimeTestMessage(
+		t,
+		repository,
+		session.ID,
+		&firstRead.ID,
+		database.RoleAssistant,
+		"selected tail",
+	)
+	trailingRead := appendRuntimeTestToolResult(
+		t,
+		repository,
+		session.ID,
+		&selectedTail.ID,
+		"read",
+		`{"path":"tail.txt"}`,
+		"tail file",
+	)
+	tail := appendRuntimeTestMessage(t, repository, session.ID, &trailingRead.ID, database.RoleAssistant, "tail")
+	loadRuntimeExtension(t, manager, fmt.Sprintf(`
+local lc = require("librecode")
+lc.on("session_before_compact", function()
+  return {
+    compaction = {
+      first_kept_entry_id = %q,
+      summary = "hook summary",
+    }
+  }
+end)
+`, tail.ID))
+
+	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+
+	require.NoError(t, err)
+	assert.Equal(t, tail.ID, entry.CompactionFirstKeptEntryID)
+	assert.Contains(t, entry.Summary, "read: first.txt")
+	assert.Contains(t, entry.Summary, "read: tail.txt")
 }
 
 func TestRuntime_CompactSessionRejectsEmptySummary(t *testing.T) {
