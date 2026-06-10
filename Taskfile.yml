@@ -151,7 +151,11 @@ tasks:
         trap cleanup EXIT
 
         cp -a "$AUTH_DIR/." "$BENCH_HOME/"
-        export PYTHONPATH="$(pwd)${PYTHONPATH:+:$PYTHONPATH}"
+        if [ -n "${PYTHONPATH:-}" ]; then
+          export PYTHONPATH="$(pwd):$PYTHONPATH"
+        else
+          export PYTHONPATH="$(pwd)"
+        fi
 
         MOUNTS_JSON="$({
           BENCH_HOME="$BENCH_HOME" CONTAINER_HOME="$CONTAINER_HOME" python - <<'PY'
