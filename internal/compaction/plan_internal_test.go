@@ -137,7 +137,7 @@ func assertSplitTurnSummaryPlan(t *testing.T, plan *Plan) {
 
 func invalidKeepRecentTokensCase() planCompactionCase {
 	return planCompactionCase{
-		assertFn: assertInvalidKeepRecentTokensPlan,
+		assertFn: assertNoCompactionPlan,
 		entries: []database.EntryEntity{
 			messageEntry("user-1", database.RoleUser, strings.Repeat("old ", 30_000)),
 			messageEntry("assistant-1", database.RoleAssistant, strings.Repeat("old ", 30_000)),
@@ -150,7 +150,7 @@ func invalidKeepRecentTokensCase() planCompactionCase {
 	}
 }
 
-func assertInvalidKeepRecentTokensPlan(t *testing.T, plan *Plan) {
+func assertNoCompactionPlan(t *testing.T, plan *Plan) {
 	t.Helper()
 
 	assert.Empty(t, plan.FirstKeptEntryID)
@@ -167,18 +167,12 @@ func latestCompactionCase() planCompactionCase {
 	latestSummary.CompactionFirstKeptEntryID = firstUser.ID
 
 	return planCompactionCase{
-		assertFn: assertLatestCompactionPlan,
+		assertFn: assertNoCompactionPlan,
 		entries:  []database.EntryEntity{firstUser, latestSummary},
 		name:     "rejects latest compaction",
 		wantErr:  "no new history to compact",
 		keep:     1,
 	}
-}
-
-func assertLatestCompactionPlan(t *testing.T, plan *Plan) {
-	t.Helper()
-
-	assert.Empty(t, plan.FirstKeptEntryID)
 }
 
 func TestPlanBranchFromFirstKeptUsesSelectedBoundary(t *testing.T) {
