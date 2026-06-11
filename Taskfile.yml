@@ -142,6 +142,10 @@ tasks:
         INCLUDE_TASKS="${LIBRECODE_BENCH_INCLUDE_TASKS:-}"
         EXCLUDE_TASKS="${LIBRECODE_BENCH_EXCLUDE_TASKS:-}"
         N_TASKS="${LIBRECODE_BENCH_N_TASKS:-}"
+        TASK_LIST_FILE="${LIBRECODE_BENCH_TASK_LIST_FILE:-}"
+        if [ -z "$TASK_LIST_FILE" ] && [ "$DATASET" = "terminal-bench/terminal-bench-2-1" ] && [ -r "bench/terminal-bench-2-1-tasks.txt" ]; then
+          TASK_LIST_FILE="bench/terminal-bench-2-1-tasks.txt"
+        fi
         TASK_FILTER_PREFIX=""
         if [ -n "${LIBRECODE_BENCH_TASK_PREFIX:-}" ]; then
           TASK_FILTER_PREFIX="$LIBRECODE_BENCH_TASK_PREFIX"
@@ -241,16 +245,25 @@ tasks:
             exit 1
           fi
 
-          DATASET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/librecode-bench-dataset.XXXXXX")"
-          cleanup_dataset() {
-            rm -rf "$DATASET_DIR"
-          }
-          trap 'cleanup; cleanup_dataset' EXIT
-
-          echo "Downloading dataset index for shard $SHARD_INDEX/$SHARD_TOTAL..."
-          harbor dataset download "$DATASET" --output-dir "$DATASET_DIR" --export >/dev/null
           TASK_LIST="$(mktemp "${TMPDIR:-/tmp}/librecode-bench-tasks.XXXXXX")"
-          find "$DATASET_DIR" -mindepth 2 -maxdepth 2 -type d -printf '%f\n' | sort > "$TASK_LIST"
+          if [ -n "$TASK_LIST_FILE" ]; then
+            if [ ! -r "$TASK_LIST_FILE" ]; then
+              echo "LIBRECODE_BENCH_TASK_LIST_FILE is unreadable: $TASK_LIST_FILE" >&2
+              exit 1
+            fi
+            echo "Using benchmark task list from $TASK_LIST_FILE for shard $SHARD_INDEX/$SHARD_TOTAL..."
+            sed '/^[[:space:]]*$/d; /^[[:space:]]*#/d' "$TASK_LIST_FILE" | sort > "$TASK_LIST"
+          else
+            DATASET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/librecode-bench-dataset.XXXXXX")"
+            cleanup_dataset() {
+              rm -rf "$DATASET_DIR"
+            }
+            trap 'cleanup; cleanup_dataset' EXIT
+
+            echo "Downloading dataset index for shard $SHARD_INDEX/$SHARD_TOTAL..."
+            harbor dataset download "$DATASET" --output-dir "$DATASET_DIR" --export >/dev/null
+            find "$DATASET_DIR" -mindepth 2 -maxdepth 2 -type d -printf '%f\n' | sort > "$TASK_LIST"
+          fi
           SHARD_TASKS="$(awk -v shard="$SHARD_INDEX" -v total="$SHARD_TOTAL" '((NR - 1) % total) == shard { print }' "$TASK_LIST")"
           if [ -z "$SHARD_TASKS" ]; then
             echo "No tasks selected for shard $SHARD_INDEX/$SHARD_TOTAL."

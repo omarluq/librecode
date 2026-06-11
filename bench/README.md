@@ -40,8 +40,9 @@ Flags/env:
 - `LIBRECODE_BENCH_AGENT_IMPORT_PATH` defaults to `bench.harbor.librecode_agent:LibrecodeAgent`.
 - `LIBRECODE_BENCH_DATASET` defaults to `terminal-bench/terminal-bench-2-1`.
 - `LIBRECODE_BENCH_K` defaults to `5` attempts per trial.
-- `LIBRECODE_BENCH_N` defaults to `4` concurrent trials locally. GitHub Actions uses `16` per shard across `64` shards by default.
+- `LIBRECODE_BENCH_N` defaults to `4` concurrent trials locally. The GitHub Actions benchmark workflow is manual-only; its defaults are `16` per shard across `64` shards.
 - `LIBRECODE_BENCH_SHARD_INDEX` and `LIBRECODE_BENCH_SHARD_TOTAL` split a dataset across shards.
+- `LIBRECODE_BENCH_TASK_LIST_FILE` points sharding at a local newline-delimited task list. GitHub Actions uses `bench/terminal-bench-2-1-tasks.txt` to avoid 64 shards all downloading the dataset only to discover task names.
 - `LIBRECODE_BENCH_INCLUDE_TASKS` and `LIBRECODE_BENCH_EXCLUDE_TASKS` pass task filters to Harbor.
 - `LIBRECODE_BENCH_TASK_PREFIX` controls the prefix added to sharded task filters. It defaults to the dataset namespace, for example `terminal-bench` for `terminal-bench/terminal-bench-2-1`.
 - `LIBRECODE_BENCH_N_TASKS` caps tasks per shard after filtering.
