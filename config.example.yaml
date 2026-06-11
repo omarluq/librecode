@@ -51,8 +51,10 @@ context:
   output_reserve_tokens: 0
   provider_reserve_tokens: 2048
   safety_margin_tokens: 8192
-  # Recent history retained verbatim during /compact; reserves above still apply to provider requests.
-  keep_recent_tokens: 20000
+  # Recent history retained verbatim during /compact.
+  # 0 keeps the newest one third of the selected model context window; positive values force a fixed tail.
+  # Reserves above still apply to provider requests.
+  keep_recent_tokens: 0
 
 models:
   discovery:

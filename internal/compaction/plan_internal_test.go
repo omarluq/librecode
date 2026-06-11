@@ -45,7 +45,7 @@ func planCompactionCases() []planCompactionCase {
 		previousKeptBoundaryCase(),
 		turnBoundaryCase(),
 		splitTurnSummaryCase(),
-		defaultKeepRecentTokensCase(),
+		invalidKeepRecentTokensCase(),
 		latestCompactionCase(),
 	}
 }
@@ -135,26 +135,25 @@ func assertSplitTurnSummaryPlan(t *testing.T, plan *Plan) {
 	}
 }
 
-func defaultKeepRecentTokensCase() planCompactionCase {
+func invalidKeepRecentTokensCase() planCompactionCase {
 	return planCompactionCase{
-		assertFn: assertDefaultKeepRecentTokensPlan,
+		assertFn: assertInvalidKeepRecentTokensPlan,
 		entries: []database.EntryEntity{
 			messageEntry("user-1", database.RoleUser, strings.Repeat("old ", 30_000)),
 			messageEntry("assistant-1", database.RoleAssistant, strings.Repeat("old ", 30_000)),
 			messageEntry("user-2", database.RoleUser, "second user"),
 			messageEntry("assistant-2", database.RoleAssistant, "second assistant"),
 		},
-		name:    "falls back to default keep recent tokens",
-		wantErr: "",
+		name:    "rejects missing keep recent token target",
+		wantErr: "recent tail token target must be greater than zero",
 		keep:    0,
 	}
 }
 
-func assertDefaultKeepRecentTokensPlan(t *testing.T, plan *Plan) {
+func assertInvalidKeepRecentTokensPlan(t *testing.T, plan *Plan) {
 	t.Helper()
 
-	assert.NotEmpty(t, plan.SummarizedEntryIDs)
-	assert.NotEmpty(t, plan.KeptEntryIDs)
+	assert.Empty(t, plan.FirstKeptEntryID)
 }
 
 func latestCompactionCase() planCompactionCase {

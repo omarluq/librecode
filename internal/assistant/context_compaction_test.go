@@ -71,6 +71,59 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	assert.Equal(t, "recent assistant tail", contextEntity.Messages[2].Content)
 }
 
+func TestRuntime_CompactSessionUsesDynamicModelContextTail(t *testing.T) {
+	t.Parallel()
+
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
+	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 0)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	first := appendRuntimeTestMessage(
+		t,
+		repository,
+		session.ID,
+		nil,
+		database.RoleUser,
+		repeatedTokenEstimate(10_000),
+	)
+	second := appendRuntimeTestMessage(
+		t,
+		repository,
+		session.ID,
+		&first.ID,
+		database.RoleAssistant,
+		repeatedTokenEstimate(10_000),
+	)
+	third := appendRuntimeTestMessage(
+		t,
+		repository,
+		session.ID,
+		&second.ID,
+		database.RoleUser,
+		repeatedTokenEstimate(15_000),
+	)
+	fourth := appendRuntimeTestMessage(
+		t,
+		repository,
+		session.ID,
+		&third.ID,
+		database.RoleAssistant,
+		repeatedTokenEstimate(15_000),
+	)
+
+	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	assert.Equal(t, second.ID, entry.CompactionFirstKeptEntryID)
+	require.NotNil(t, entry.ParentID)
+	assert.Equal(t, fourth.ID, *entry.ParentID)
+	require.Len(t, client.requests, 1)
+	require.Len(t, client.requests[0].Messages, 1)
+	assert.Equal(t, first.Message.Content, client.requests[0].Messages[0].Content)
+}
+
 func TestRuntime_CompactSessionChainsNextPromptFromCompactionEntry(t *testing.T) {
 	t.Parallel()
 
@@ -324,6 +377,10 @@ func TestRuntime_CompactSessionPreservesFileOperations(t *testing.T) {
 	operations, ok := details["file_operations"].([]any)
 	require.True(t, ok)
 	assert.Len(t, operations, 3)
+}
+
+func repeatedTokenEstimate(tokens int) string {
+	return strings.Repeat("x", tokens*4)
 }
 
 func newCompactionRuntimeWithKeepRecentTokens(
