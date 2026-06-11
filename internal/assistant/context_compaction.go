@@ -49,7 +49,8 @@ func (runtime *Runtime) CompactSessionFrom(
 	if err != nil {
 		return nil, err
 	}
-	plan, err := compaction.PlanBranch(branch, runtime.cfg.Context.KeepRecentTokens, contextwindow.EstimateTokens)
+	keepRecentTokens := runtime.compactionKeepRecentTokens(selectedModel)
+	plan, err := compaction.PlanBranch(branch, keepRecentTokens, contextwindow.EstimateTokens)
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +64,18 @@ func (runtime *Runtime) CompactSessionFrom(
 type compactionProviderInput struct {
 	selectedModel *model.Model
 	auth          model.RequestAuth
+}
+
+func (runtime *Runtime) compactionKeepRecentTokens(selectedModel *model.Model) int {
+	contextWindow := 0
+	if selectedModel != nil {
+		contextWindow = selectedModel.ContextWindow
+	}
+
+	return contextwindow.RecentTailTarget(contextwindow.RecentTailInput{
+		ExplicitKeepRecentTokens: runtime.cfg.Context.KeepRecentTokens,
+		ContextWindow:            contextWindow,
+	})
 }
 
 func (runtime *Runtime) compactSessionWithPlan(

@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	defaultKeepRecentTokens = 20_000
-	summaryPrompt           = `Summarize the conversation history below for a coding agent that will continue
+	summaryPrompt = `Summarize the conversation history below for a coding agent that will continue
 this same session.
 
 Preserve:
@@ -69,7 +68,7 @@ func PlanBranch(
 		return Plan{}, NothingToDoError("no new history to compact after the latest compaction")
 	}
 	if keepRecentTokens <= 0 {
-		keepRecentTokens = defaultKeepRecentTokens
+		return Plan{}, NothingToDoError("recent tail token target must be greater than zero")
 	}
 	if countTokens == nil {
 		countTokens = countRunesAsTokens
