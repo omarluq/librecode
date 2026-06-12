@@ -11,7 +11,12 @@ import (
 	"github.com/omarluq/librecode/internal/llm"
 )
 
-const answerDelta = "answer"
+const (
+	answerDelta                     = "answer"
+	incompleteTextTrailer           = `,"output":[],"usage":{"input_tokens":10,"output_tokens":2}}}`
+	incompleteFilteredTextTrailer   = `,"output":[],"usage":{"input_tokens":7,"output_tokens":1}}}`
+	incompleteMissingDetailsTrailer = `"output":[],"usage":{"input_tokens":5,"output_tokens":1}}}`
+)
 
 func TestSSEAccumulatorEmitsOutputTextDelta(t *testing.T) {
 	t.Parallel()
@@ -107,66 +112,7 @@ func TestParseSSEResultFailureCases(t *testing.T) {
 func TestParseSSEResultIncompleteEvents(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name                 string
-		stream               string
-		expectedText         string
-		expectedFinishReason llm.FinishReason
-		expectedToolName     string
-		expectedInputTokens  int
-		expectedOutputTokens int
-		expectedToolCalls    int
-	}{
-		{
-			name: "max output tokens returns accumulated deltas",
-			stream: strings.Join([]string{
-				`data: {"type":"response.output_text.delta","delta":"partial "}`,
-				`data: {"type":"response.output_text.delta","delta":"answer"}`,
-				`data: {"type":"response.incomplete","response":{"status":"incomplete",` +
-					`"incomplete_details":{"reason":"max_output_tokens"},"output":[],` +
-					`"usage":{"input_tokens":10,"output_tokens":2}}}`,
-				``,
-			}, "\n"),
-			expectedText:         "partial answer",
-			expectedFinishReason: llm.FinishReasonLength,
-			expectedToolName:     "",
-			expectedInputTokens:  10,
-			expectedOutputTokens: 2,
-			expectedToolCalls:    0,
-		},
-		{
-			name: "max output tokens preserves final finish reason with accumulated items",
-			stream: strings.Join([]string{
-				`data: {"type":"response.output_item.done","item":{"id":"msg_1","type":"message",` +
-					`"content":[{"type":"output_text","text":"partial answer"}]}}`,
-				`data: {"type":"response.incomplete","response":{"status":"incomplete",` +
-					`"incomplete_details":{"reason":"max_output_tokens"},"output":[],` +
-					`"usage":{"input_tokens":10,"output_tokens":2}}}`,
-				``,
-			}, "\n"),
-			expectedText:         "partial answer",
-			expectedFinishReason: llm.FinishReasonLength,
-			expectedToolName:     "",
-			expectedInputTokens:  10,
-			expectedOutputTokens: 2,
-			expectedToolCalls:    0,
-		},
-		{
-			name: "tool calls win over length",
-			stream: "data: " + `{"type":"response.incomplete","response":{"status":"incomplete",` +
-				`"incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"call_1",` +
-				`"type":"function_call","call_id":"call_1","name":"read",` +
-				`"arguments":"{\"path\":\"README.md\"}"}]}}` + "\n",
-			expectedText:         "",
-			expectedFinishReason: llm.FinishReasonToolCalls,
-			expectedToolName:     jsonReadToolName,
-			expectedInputTokens:  0,
-			expectedOutputTokens: 0,
-			expectedToolCalls:    1,
-		},
-	}
-
-	for _, test := range tests {
+	for _, test := range incompleteSSECases() {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -183,6 +129,103 @@ func TestParseSSEResultIncompleteEvents(t *testing.T) {
 			}
 		})
 	}
+}
+
+type incompleteSSECase struct {
+	name                 string
+	stream               string
+	expectedText         string
+	expectedFinishReason llm.FinishReason
+	expectedToolName     string
+	expectedInputTokens  int
+	expectedOutputTokens int
+	expectedToolCalls    int
+}
+
+func incompleteSSECases() []incompleteSSECase {
+	return []incompleteSSECase{
+		{
+			name:                 "max output tokens returns accumulated deltas",
+			stream:               incompleteTextSSE("partial ", "max_output_tokens", incompleteTextTrailer),
+			expectedText:         "partial answer",
+			expectedFinishReason: llm.FinishReasonLength,
+			expectedToolName:     "",
+			expectedInputTokens:  10,
+			expectedOutputTokens: 2,
+			expectedToolCalls:    0,
+		},
+		{
+			name:                 "max output tokens preserves final finish reason with accumulated items",
+			stream:               incompleteOutputItemSSE(),
+			expectedText:         "partial answer",
+			expectedFinishReason: llm.FinishReasonLength,
+			expectedToolName:     "",
+			expectedInputTokens:  10,
+			expectedOutputTokens: 2,
+			expectedToolCalls:    0,
+		},
+		{
+			name:                 "content filter maps to content filter finish reason",
+			stream:               incompleteTextSSE("safe ", "content_filter", incompleteFilteredTextTrailer),
+			expectedText:         "safe answer",
+			expectedFinishReason: llm.FinishReasonContentFilter,
+			expectedToolName:     "",
+			expectedInputTokens:  7,
+			expectedOutputTokens: 1,
+			expectedToolCalls:    0,
+		},
+		{
+			name:                 "missing incomplete details defaults to length",
+			stream:               incompleteTextSSE("truncated ", "", incompleteMissingDetailsTrailer),
+			expectedText:         "truncated answer",
+			expectedFinishReason: llm.FinishReasonLength,
+			expectedToolName:     "",
+			expectedInputTokens:  5,
+			expectedOutputTokens: 1,
+			expectedToolCalls:    0,
+		},
+		{
+			name:                 "tool calls win over length",
+			stream:               incompleteToolCallSSE(),
+			expectedText:         "",
+			expectedFinishReason: llm.FinishReasonToolCalls,
+			expectedToolName:     jsonReadToolName,
+			expectedInputTokens:  0,
+			expectedOutputTokens: 0,
+			expectedToolCalls:    1,
+		},
+	}
+}
+
+func incompleteTextSSE(prefix, reason, trailer string) string {
+	incompleteDetails := ""
+	if reason != "" {
+		incompleteDetails = `"incomplete_details":{"reason":"` + reason + `"}`
+	}
+
+	return strings.Join([]string{
+		`data: {"type":"response.output_text.delta","delta":"` + prefix + `"}`,
+		`data: {"type":"response.output_text.delta","delta":"` + answerDelta + `"}`,
+		`data: {"type":"response.incomplete","response":{"status":"incomplete",` + incompleteDetails + trailer,
+		``,
+	}, "\n")
+}
+
+func incompleteOutputItemSSE() string {
+	return strings.Join([]string{
+		`data: {"type":"response.output_item.done","item":{"id":"msg_1","type":"message",` +
+			`"content":[{"type":"output_text","text":"partial answer"}]}}`,
+		`data: {"type":"response.incomplete","response":{"status":"incomplete",` +
+			`"incomplete_details":{"reason":"max_output_tokens"}` + incompleteTextTrailer,
+		``,
+	}, "\n")
+}
+
+func incompleteToolCallSSE() string {
+	return "data: " + `{"type":"response.incomplete","response":{"status":"incomplete",` +
+		`"incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"call_1",` +
+		`"type":"function_call","call_id":"call_1","name":"read",` +
+		`"arguments":"{\"path\":\"README.md\"}"}]}}` + "\n"
 }
 
 func completedSSEEvent() string {
