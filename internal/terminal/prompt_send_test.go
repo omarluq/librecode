@@ -458,7 +458,6 @@ func promptSendTestConfig() *config.Config {
 		},
 		Logging:    config.LoggingConfig{Level: "disabled", Format: promptSendTestFormat},
 		Extensions: config.ExtensionsConfig{Use: nil, Enabled: false},
-		KSQL:       config.KSQLConfig{Endpoint: "", Timeout: time.Second},
 		Database: config.DatabaseConfig{
 			Path:            "",
 			ApplyMigrations: true,

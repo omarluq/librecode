@@ -29,7 +29,6 @@ func TestConfigFormattingHelpers(t *testing.T) {
 			BusyTimeout:     15 * time.Second,
 		},
 		Cache: config.CacheConfig{Enabled: true, Capacity: 10, TTL: time.Hour},
-		KSQL:  config.KSQLConfig{Endpoint: "http://ksql", Timeout: time.Second},
 		Extensions: config.ExtensionsConfig{
 			Use: []config.ExtensionUse{
 				{Source: "github:user/ext", Version: "v1"},

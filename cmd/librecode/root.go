@@ -43,7 +43,6 @@ func newRootCmd() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&disableExtensions, "no-extensions", false, "disable Lua extensions for this run")
 	cmd.AddCommand(newChatCmd())
 	cmd.AddCommand(newConfigCmd())
-	cmd.AddCommand(newKSQLCmd())
 	cmd.AddCommand(newMigrateCmd())
 	cmd.AddCommand(newModelCmd())
 	cmd.AddCommand(newExtensionCmd())

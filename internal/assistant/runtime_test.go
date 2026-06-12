@@ -807,10 +807,6 @@ func testConfig() *config.Config {
 			Capacity: 32,
 			TTL:      time.Minute,
 		},
-		KSQL: config.KSQLConfig{
-			Endpoint: "",
-			Timeout:  time.Second,
-		},
 	}
 }
 

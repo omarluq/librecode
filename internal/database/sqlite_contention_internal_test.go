@@ -70,22 +70,22 @@ func TestSQLiteBusyTimeoutWaitsForExternalWriter(t *testing.T) {
 
 	ctx := context.Background()
 	dbs := openMigratedSQLitePair(ctx, t, 2*time.Second)
-	lock := lockSessionsTable(ctx, t, dbs.primary)
+	withSessionsTableLock(ctx, t, dbs.primary, func(lock *sql.Tx) {
+		insertDone := make(chan error, 1)
+		go func() {
+			_, createErr := database.NewSessionRepository(dbs.secondary).CreateSession(ctx, t.TempDir(), "waiter", "")
+			insertDone <- createErr
+		}()
 
-	insertDone := make(chan error, 1)
-	go func() {
-		_, createErr := database.NewSessionRepository(dbs.secondary).CreateSession(ctx, t.TempDir(), "waiter", "")
-		insertDone <- createErr
-	}()
+		select {
+		case err := <-insertDone:
+			require.FailNowf(t, "writer completed before lock release", "error: %v", err)
+		case <-time.After(100 * time.Millisecond):
+		}
 
-	select {
-	case err := <-insertDone:
-		require.FailNowf(t, "writer completed before lock release", "error: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-
-	require.NoError(t, lock.Commit())
-	require.NoError(t, <-insertDone)
+		require.NoError(t, lock.Commit())
+		require.NoError(t, <-insertDone)
+	})
 }
 
 func TestSQLiteShortBusyTimeoutStillReportsBusy(t *testing.T) {
@@ -96,12 +96,11 @@ func TestSQLiteShortBusyTimeoutStillReportsBusy(t *testing.T) {
 
 	ctx := context.Background()
 	dbs := openMigratedSQLitePair(ctx, t, 10*time.Millisecond)
-	lock := lockSessionsTable(ctx, t, dbs.primary)
-	t.Cleanup(func() { require.NoError(t, lock.Rollback()) })
-
-	_, err := database.NewSessionRepository(dbs.secondary).CreateSession(ctx, t.TempDir(), "blocked", "")
-	require.Error(t, err)
-	require.True(t, isSQLiteBusyError(err), "expected busy error, got %v", err)
+	withSessionsTableLock(ctx, t, dbs.primary, func(_ *sql.Tx) {
+		_, err := database.NewSessionRepository(dbs.secondary).CreateSession(ctx, t.TempDir(), "blocked", "")
+		require.Error(t, err)
+		require.True(t, isSQLiteBusyError(err), "expected busy error, got %v", err)
+	})
 }
 
 func openMigratedSQLitePair(ctx context.Context, t *testing.T, busyTimeout time.Duration) sqlitePair {
@@ -117,15 +116,21 @@ func openMigratedSQLitePair(ctx context.Context, t *testing.T, busyTimeout time.
 	return sqlitePair{primary: primary, secondary: secondary}
 }
 
-func lockSessionsTable(ctx context.Context, t *testing.T, connection *sql.DB) *sql.Tx {
+func withSessionsTableLock(ctx context.Context, t *testing.T, connection *sql.DB, callback func(*sql.Tx)) {
 	t.Helper()
 
 	lock, err := connection.BeginTx(ctx, nil)
 	require.NoError(t, err)
+	defer func() {
+		rollbackErr := lock.Rollback()
+		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			require.NoError(t, rollbackErr)
+		}
+	}()
 	_, err = lock.ExecContext(ctx, `UPDATE sessions SET updated_at = updated_at`)
 	require.NoError(t, err)
 
-	return lock
+	callback(lock)
 }
 
 func isSQLiteBusyError(err error) bool {

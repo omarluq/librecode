@@ -7,17 +7,45 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+	"github.com/vingarcia/ksql"
+	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 )
 
 // DocumentRepository persists runtime documents that upstream persists as JSON files.
 type DocumentRepository struct {
-	connection *sql.DB
-	now        func() time.Time
+	sql ksql.Provider
+	now func() time.Time
 }
 
 // NewDocumentRepository creates a document repository.
 func NewDocumentRepository(connection *sql.DB) *DocumentRepository {
-	return &DocumentRepository{connection: connection, now: time.Now}
+	sqlProvider, err := ksqlite.NewFromSQLDB(connection)
+	if err != nil {
+		panic(err)
+	}
+
+	return NewDocumentRepositoryWithProvider(sqlProvider)
+}
+
+// NewDocumentRepositoryWithProvider creates a document repository with an explicit SQL provider.
+func NewDocumentRepositoryWithProvider(sqlProvider ksql.Provider) *DocumentRepository {
+	return &DocumentRepository{sql: sqlProvider, now: time.Now}
+}
+
+type documentRow struct {
+	Namespace string `ksql:"namespace"`
+	Key       string `ksql:"document_key"`
+	ValueJSON string `ksql:"value_json"`
+	UpdatedAt string `ksql:"updated_at"`
+}
+
+func documentFromRow(row *documentRow) (*DocumentEntity, error) {
+	updatedAt, err := parseTime(row.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DocumentEntity{UpdatedAt: updatedAt, Namespace: row.Namespace, Key: row.Key, ValueJSON: row.ValueJSON}, nil
 }
 
 // Get loads one document by namespace and key.
@@ -27,12 +55,17 @@ SELECT namespace, document_key, value_json, updated_at
 FROM runtime_documents
 WHERE namespace = ? AND document_key = ?`
 
-	document, err := scanDocument(repository.connection.QueryRowContext(ctx, query, namespace, key))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	var row documentRow
+	if err := repository.sql.QueryOne(ctx, &row, query, namespace, key); err != nil {
+		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
 		return nil, false, oops.In("database").Code("get_document").Wrapf(err, "load runtime document")
+	}
+
+	document, err := documentFromRow(&row)
+	if err != nil {
+		return nil, false, oops.In("database").Code("scan_document").Wrapf(err, "scan runtime document")
 	}
 
 	return document, true, nil
@@ -54,7 +87,7 @@ VALUES (?, ?, ?, ?)
 ON CONFLICT(namespace, document_key) DO UPDATE SET
     value_json = excluded.value_json,
     updated_at = excluded.updated_at`
-	_, err := repository.connection.ExecContext(
+	_, err := repository.sql.Exec(
 		ctx,
 		statement,
 		document.Namespace,
@@ -72,25 +105,10 @@ ON CONFLICT(namespace, document_key) DO UPDATE SET
 // Delete removes one runtime document.
 func (repository *DocumentRepository) Delete(ctx context.Context, namespace, key string) error {
 	const statement = `DELETE FROM runtime_documents WHERE namespace = ? AND document_key = ?`
-	_, err := repository.connection.ExecContext(ctx, statement, namespace, key)
+	_, err := repository.sql.Exec(ctx, statement, namespace, key)
 	if err != nil {
 		return oops.In("database").Code("delete_document").Wrapf(err, "delete runtime document")
 	}
 
 	return nil
-}
-
-func scanDocument(row rowScanner) (*DocumentEntity, error) {
-	var updatedAtRaw string
-	document := DocumentEntity{UpdatedAt: time.Time{}, Namespace: "", Key: "", ValueJSON: ""}
-	if err := row.Scan(&document.Namespace, &document.Key, &document.ValueJSON, &updatedAtRaw); err != nil {
-		return nil, err
-	}
-	updatedAt, err := parseTime(updatedAtRaw)
-	if err != nil {
-		return nil, err
-	}
-	document.UpdatedAt = updatedAt
-
-	return &document, nil
 }

@@ -169,9 +169,3 @@ type DocumentEntity struct {
 	Key       string    `json:"key"`
 	ValueJSON string    `json:"value_json"`
 }
-
-// KSQLRequestEntity is the JSON body posted to the ksqlDB REST API.
-type KSQLRequestEntity struct {
-	StreamsProperties map[string]string `json:"streamsProperties"`
-	KSQL              string            `json:"ksql"`
-}

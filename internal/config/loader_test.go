@@ -65,8 +65,6 @@ func TestLoadParsesExtensionUseForms(t *testing.T) {
   conn_max_lifetime: 45s
 cache:
   ttl: 2m
-ksql:
-  timeout: 3s
 assistant:
   retry:
     base_delay: 4s
@@ -88,7 +86,6 @@ extensions:
 	assert.Equal(t, "45s", cfg.Database.ConnMaxLifetime.String())
 	assert.Equal(t, "15s", cfg.Database.BusyTimeout.String())
 	assert.Equal(t, "2m0s", cfg.Cache.TTL.String())
-	assert.Equal(t, "3s", cfg.KSQL.Timeout.String())
 	assert.Equal(t, "4s", cfg.Assistant.Retry.BaseDelay.String())
 	assert.Equal(t, "8s", cfg.Assistant.Retry.MaxDelay.String())
 	assert.True(t, cfg.Context.PreflightEnabled)

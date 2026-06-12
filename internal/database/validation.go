@@ -83,10 +83,6 @@ func validateDocumentEntity(entity *DocumentEntity) error {
 	return nil
 }
 
-func validateKSQLRequestEntity(entity *KSQLRequestEntity) error {
-	return validateRequiredText("ksql.statement", entity.KSQL)
-}
-
 func validateUUIDv7(name, value string) error {
 	trimmed := strings.TrimSpace(value)
 	parsed, err := uuid.FromString(trimmed)
@@ -101,11 +97,6 @@ func validateUUIDv7(name, value string) error {
 	}
 
 	return nil
-}
-
-func isUUIDv7(value string) bool {
-	parsed, err := uuid.FromString(strings.TrimSpace(value))
-	return err == nil && parsed.Version() == 7
 }
 
 func validateRequiredText(name, value string) error {

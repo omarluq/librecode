@@ -2,13 +2,77 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/samber/oops"
+	"github.com/vingarcia/ksql"
 )
+
+type entryRow struct {
+	ParentID                   *string `ksql:"parent_id"`
+	ID                         string  `ksql:"id"`
+	SessionID                  string  `ksql:"session_id"`
+	EntryType                  string  `ksql:"entry_type"`
+	Role                       string  `ksql:"role"`
+	Content                    string  `ksql:"content"`
+	Provider                   string  `ksql:"provider"`
+	Model                      string  `ksql:"model"`
+	CustomType                 string  `ksql:"custom_type"`
+	DataJSON                   string  `ksql:"data_json"`
+	Summary                    string  `ksql:"summary"`
+	CreatedAt                  string  `ksql:"created_at"`
+	ToolName                   string  `ksql:"tool_name"`
+	ToolStatus                 string  `ksql:"tool_status"`
+	ToolArgsJSON               string  `ksql:"tool_args_json"`
+	CompactionFirstKeptEntryID string  `ksql:"compaction_first_kept_entry_id"`
+	BranchFromEntryID          string  `ksql:"branch_from_entry_id"`
+	TokenEstimate              int     `ksql:"token_estimate"`
+	ModelFacing                int     `ksql:"model_facing"`
+	Display                    int     `ksql:"display"`
+	CompactionTokensBefore     int     `ksql:"compaction_tokens_before"`
+}
+
+func entryFromRow(row *entryRow) (*EntryEntity, error) {
+	createdAt, err := parseTime(row.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if row.ParentID != nil && *row.ParentID == "" {
+		row.ParentID = nil
+	}
+
+	return &EntryEntity{
+		CreatedAt: createdAt,
+		ParentID:  row.ParentID,
+		Message: MessageEntity{
+			Timestamp: createdAt,
+			Role:      Role(row.Role),
+			Content:   row.Content,
+			Provider:  row.Provider,
+			Model:     row.Model,
+		},
+		Summary:                    row.Summary,
+		ToolStatus:                 row.ToolStatus,
+		Type:                       EntryType(row.EntryType),
+		CustomType:                 row.CustomType,
+		DataJSON:                   row.DataJSON,
+		ID:                         row.ID,
+		ToolName:                   row.ToolName,
+		SessionID:                  row.SessionID,
+		ToolArgsJSON:               row.ToolArgsJSON,
+		BranchFromEntryID:          row.BranchFromEntryID,
+		CompactionFirstKeptEntryID: row.CompactionFirstKeptEntryID,
+		CompactionTokensBefore:     row.CompactionTokensBefore,
+		TokenEstimate:              row.TokenEstimate,
+		Display:                    row.Display != 0,
+		ModelFacing:                row.ModelFacing != 0,
+	}, nil
+}
+
+func entriesFromRows(rows []entryRow) ([]EntryEntity, error) {
+	return collectSQLRows(rows, entryFromRow)
+}
 
 const entrySelectColumns = `
 id, session_id, parent_id, entry_type, role, content,
@@ -25,12 +89,17 @@ WHERE session_id = ?
 ORDER BY created_at DESC
 LIMIT 1`, entrySelectColumns)
 
-	entry, err := scanEntry(repository.connection.QueryRowContext(ctx, query, sessionID))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	var row entryRow
+	if err := repository.sql.QueryOne(ctx, &row, query, sessionID); err != nil {
+		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
 		return nil, false, oops.In("database").Code("leaf_entry").Wrapf(err, "load leaf entry")
+	}
+
+	entry, err := entryFromRow(&row)
+	if err != nil {
+		return nil, false, oops.In("database").Code("scan_entry").Wrapf(err, "scan leaf entry")
 	}
 
 	return entry, true, nil
@@ -44,19 +113,17 @@ FROM session_entries
 WHERE session_id = ?
 ORDER BY created_at ASC`, entrySelectColumns)
 
-	rows, err := repository.connection.QueryContext(ctx, query, sessionID)
-	if err != nil {
+	rows := []entryRow{}
+	if err := repository.sql.Query(ctx, &rows, query, sessionID); err != nil {
 		return nil, oops.In("database").Code("list_entries").Wrapf(err, "query session entries")
 	}
 
-	return collectRows(rows, scanEntry, &rowErrorInfo{
-		scanCode:  "scan_entry",
-		scanMsg:   "scan session entry",
-		iterCode:  "iterate_entries",
-		iterMsg:   "iterate session entries",
-		closeCode: "close_entries",
-		closeMsg:  "close entry rows",
-	})
+	entries, err := entriesFromRows(rows)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_entry").Wrapf(err, "scan session entries")
+	}
+
+	return entries, nil
 }
 
 // Entry loads one entry by id.
@@ -66,12 +133,17 @@ SELECT %s
 FROM session_entries
 WHERE session_id = ? AND id = ?`, entrySelectColumns)
 
-	entry, err := scanEntry(repository.connection.QueryRowContext(ctx, query, sessionID, entryID))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	var row entryRow
+	if err := repository.sql.QueryOne(ctx, &row, query, sessionID, entryID); err != nil {
+		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
 		return nil, false, oops.In("database").Code("get_entry").Wrapf(err, "load entry")
+	}
+
+	entry, err := entryFromRow(&row)
+	if err != nil {
+		return nil, false, oops.In("database").Code("scan_entry").Wrapf(err, "scan entry")
 	}
 
 	return entry, true, nil
@@ -79,23 +151,10 @@ WHERE session_id = ? AND id = ?`, entrySelectColumns)
 
 // DeleteEntryBranch removes an entry and all descendants from one session.
 func (repository *SessionRepository) DeleteEntryBranch(ctx context.Context, sessionID, entryID string) error {
-	transaction, err := repository.connection.BeginTx(ctx, nil)
-	if err != nil {
-		return oops.In("database").Code("begin_delete_entry_branch").Wrapf(err, "begin delete entry branch")
-	}
-	if err := repository.deleteEntryBranchTx(ctx, transaction, sessionID, entryID); err != nil {
-		rollbackErr := transaction.Rollback()
-		if rollbackErr != nil {
-			return oops.
-				In("database").
-				Code("delete_entry_branch_rollback").
-				Wrapf(rollbackErr, "rollback delete entry branch")
-		}
-
-		return err
-	}
-	if err := transaction.Commit(); err != nil {
-		return oops.In("database").Code("commit_delete_entry_branch").Wrapf(err, "commit delete entry branch")
+	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+		return repository.deleteEntryBranchTx(ctx, transaction, sessionID, entryID)
+	}); err != nil {
+		return oops.In("database").Code("delete_entry_branch").Wrapf(err, "delete entry branch")
 	}
 
 	return nil
@@ -103,11 +162,11 @@ func (repository *SessionRepository) DeleteEntryBranch(ctx context.Context, sess
 
 func (repository *SessionRepository) deleteEntryBranchTx(
 	ctx context.Context,
-	transaction *sql.Tx,
+	transaction ksql.Provider,
 	sessionID string,
 	entryID string,
 ) error {
-	if _, err := transaction.ExecContext(
+	if _, err := transaction.Exec(
 		ctx,
 		deleteEntryBranchMessages,
 		sessionID,
@@ -117,7 +176,7 @@ func (repository *SessionRepository) deleteEntryBranchTx(
 	); err != nil {
 		return oops.In("database").Code("delete_branch_messages").Wrapf(err, "delete branch messages")
 	}
-	if _, err := transaction.ExecContext(
+	if _, err := transaction.Exec(
 		ctx,
 		deleteEntryBranchEntries,
 		sessionID,
@@ -128,7 +187,7 @@ func (repository *SessionRepository) deleteEntryBranchTx(
 		return oops.In("database").Code("delete_branch_entries").Wrapf(err, "delete branch entries")
 	}
 	const touchSession = `UPDATE sessions SET updated_at = ? WHERE id = ?`
-	if _, err := transaction.ExecContext(ctx, touchSession, formatTime(repository.now().UTC()), sessionID); err != nil {
+	if _, err := transaction.Exec(ctx, touchSession, formatTime(repository.now().UTC()), sessionID); err != nil {
 		return oops.In("database").Code("touch_after_delete_branch").Wrapf(err, "touch session after delete branch")
 	}
 
@@ -180,19 +239,17 @@ ORDER BY created_at ASC`, entrySelectColumns)
 		args = append(args, *parentID)
 	}
 
-	rows, err := repository.connection.QueryContext(ctx, query, args...)
-	if err != nil {
+	rows := []entryRow{}
+	if err := repository.sql.Query(ctx, &rows, query, args...); err != nil {
 		return nil, oops.In("database").Code("list_children").Wrapf(err, "query child entries")
 	}
 
-	return collectRows(rows, scanEntry, &rowErrorInfo{
-		scanCode:  "scan_child",
-		scanMsg:   "scan child entry",
-		iterCode:  "iterate_children",
-		iterMsg:   "iterate child entries",
-		closeCode: "close_children",
-		closeMsg:  "close child rows",
-	})
+	entries, err := entriesFromRows(rows)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_child").Wrapf(err, "scan child entries")
+	}
+
+	return entries, nil
 }
 
 func (repository *SessionRepository) appendEntry(ctx context.Context, entry *EntryEntity) error {
@@ -200,38 +257,31 @@ func (repository *SessionRepository) appendEntry(ctx context.Context, entry *Ent
 		return err
 	}
 
-	transaction, err := repository.connection.BeginTx(ctx, nil)
-	if err != nil {
-		return oops.In("database").Code("begin_append").Wrapf(err, "begin append entry")
+	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+		return repository.appendEntryTx(ctx, transaction, entry)
+	}); err != nil {
+		return oops.In("database").Code("append_entry_tx").Wrapf(err, "append entry transaction")
 	}
 
+	return nil
+}
+
+func (repository *SessionRepository) appendEntryTx(
+	ctx context.Context,
+	transaction ksql.Provider,
+	entry *EntryEntity,
+) error {
 	if err := repository.insertEntryTx(ctx, transaction, entry); err != nil {
-		rollbackErr := transaction.Rollback()
-		if rollbackErr != nil {
-			return oops.In("database").Code("append_entry_rollback").Wrapf(rollbackErr, "rollback append entry")
-		}
 		return err
 	}
 
 	if err := repository.appendEntryMessage(ctx, transaction, entry); err != nil {
-		rollbackErr := transaction.Rollback()
-		if rollbackErr != nil {
-			return oops.In("database").Code("append_entry_rollback").Wrapf(rollbackErr, "rollback append entry")
-		}
 		return err
 	}
 
 	const touchSession = `UPDATE sessions SET updated_at = ? WHERE id = ?`
-	if _, err := transaction.ExecContext(ctx, touchSession, formatTime(entry.CreatedAt), entry.SessionID); err != nil {
-		rollbackErr := transaction.Rollback()
-		if rollbackErr != nil {
-			return oops.In("database").Code("touch_session_rollback").Wrapf(rollbackErr, "rollback touch session")
-		}
+	if _, err := transaction.Exec(ctx, touchSession, formatTime(entry.CreatedAt), entry.SessionID); err != nil {
 		return oops.In("database").Code("touch_session").Wrapf(err, "touch session")
-	}
-
-	if err := transaction.Commit(); err != nil {
-		return oops.In("database").Code("commit_append").Wrapf(err, "commit append entry")
 	}
 
 	return nil
@@ -248,7 +298,11 @@ func (repository *SessionRepository) prepareAppendEntry(entry *EntryEntity) erro
 	return nil
 }
 
-func (repository *SessionRepository) insertEntryTx(ctx context.Context, transaction *sql.Tx, entry *EntryEntity) error {
+func (repository *SessionRepository) insertEntryTx(
+	ctx context.Context,
+	transaction ksql.Provider,
+	entry *EntryEntity,
+) error {
 	const insertEntry = `
 INSERT INTO session_entries (
     id, session_id, parent_id, entry_type, role, content,
@@ -257,7 +311,7 @@ INSERT INTO session_entries (
     compaction_first_kept_entry_id, compaction_tokens_before, branch_from_entry_id
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := transaction.ExecContext(
+	_, err := transaction.Exec(
 		ctx,
 		insertEntry,
 		entry.ID,
@@ -287,84 +341,6 @@ INSERT INTO session_entries (
 	}
 
 	return nil
-}
-
-func scanEntry(scanner rowScanner) (*EntryEntity, error) {
-	var parentID sql.NullString
-	var createdAt string
-	var entryType string
-	var role string
-	entry := EntryEntity{
-		CreatedAt: time.Time{},
-		ParentID:  nil,
-		Message: MessageEntity{
-			Timestamp: time.Time{},
-			Role:      "",
-			Content:   "",
-			Provider:  "",
-			Model:     "",
-		},
-		Summary:                    "",
-		ToolStatus:                 "",
-		Type:                       "",
-		CustomType:                 "",
-		DataJSON:                   "",
-		ID:                         "",
-		ToolName:                   "",
-		SessionID:                  "",
-		ToolArgsJSON:               "",
-		BranchFromEntryID:          "",
-		CompactionFirstKeptEntryID: "",
-		CompactionTokensBefore:     0,
-		TokenEstimate:              0,
-		Display:                    true,
-		ModelFacing:                false,
-	}
-
-	var modelFacing int
-	var display int
-	if err := scanner.Scan(
-		&entry.ID,
-		&entry.SessionID,
-		&parentID,
-		&entryType,
-		&role,
-		&entry.Message.Content,
-		&entry.Message.Provider,
-		&entry.Message.Model,
-		&entry.CustomType,
-		&entry.DataJSON,
-		&entry.Summary,
-		&createdAt,
-		&entry.ToolName,
-		&entry.ToolStatus,
-		&entry.ToolArgsJSON,
-		&entry.TokenEstimate,
-		&modelFacing,
-		&display,
-		&entry.CompactionFirstKeptEntryID,
-		&entry.CompactionTokensBefore,
-		&entry.BranchFromEntryID,
-	); err != nil {
-		return nil, err
-	}
-
-	if parentID.Valid {
-		entry.ParentID = &parentID.String
-	}
-
-	parsedCreatedAt, err := parseTime(createdAt)
-	if err != nil {
-		return nil, err
-	}
-	entry.Type = EntryType(entryType)
-	entry.Message.Role = Role(role)
-	entry.Message.Timestamp = parsedCreatedAt
-	entry.CreatedAt = parsedCreatedAt
-	entry.ModelFacing = modelFacing != 0
-	entry.Display = display != 0
-
-	return &entry, nil
 }
 
 func boolToInt(value bool) int {

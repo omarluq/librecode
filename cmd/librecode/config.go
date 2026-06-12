@@ -141,8 +141,6 @@ func configEntries(cfg *config.Config) []configEntry {
 		{key: "cache.enabled", value: fmt.Sprint(cfg.Cache.Enabled)},
 		{key: "cache.capacity", value: fmt.Sprint(cfg.Cache.Capacity)},
 		{key: "cache.ttl", value: cfg.Cache.TTL.String()},
-		{key: "ksql.endpoint", value: cfg.KSQL.Endpoint},
-		{key: "ksql.timeout", value: cfg.KSQL.Timeout.String()},
 	}
 }
 

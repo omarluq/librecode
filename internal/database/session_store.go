@@ -526,7 +526,7 @@ func (repository *SessionRepository) AppendSessionInfo(
 	}
 
 	const statement = `UPDATE sessions SET name = ? WHERE id = ?`
-	if _, err := repository.connection.ExecContext(ctx, statement, name, sessionID); err != nil {
+	if _, err := repository.sql.Exec(ctx, statement, name, sessionID); err != nil {
 		return nil, oops.In("database").Code("set_session_name").Wrapf(err, "set session name")
 	}
 

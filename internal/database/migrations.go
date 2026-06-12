@@ -52,5 +52,6 @@ func Migrate(ctx context.Context, database *sql.DB) error {
 	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("database: apply migrations: %w", err)
 	}
-	return BackfillUUIDv7IDs(ctx, database)
+
+	return nil
 }

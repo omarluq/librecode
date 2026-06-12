@@ -236,10 +236,6 @@ func renderParityConfig() *config.Config {
 		},
 		Logging:    config.LoggingConfig{Level: "info", Format: "pretty"},
 		Extensions: config.ExtensionsConfig{Use: nil, Enabled: false},
-		KSQL: config.KSQLConfig{
-			Endpoint: "",
-			Timeout:  0,
-		},
 		Database: config.DatabaseConfig{
 			Path:            "",
 			ApplyMigrations: false,
