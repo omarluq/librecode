@@ -27,6 +27,26 @@ func TestSQLiteDSNAddsPragmas(t *testing.T) {
 	assert.Contains(t, dsn, "_pragma=foreign_keys%3DON")
 }
 
+func TestSQLiteDSNAppendsPragmasToExistingURI(t *testing.T) {
+	t.Parallel()
+
+	dsn := database.SQLiteDSN("file:librecode.db?mode=rwc", database.SQLiteOptions{BusyTimeout: time.Second})
+
+	assert.Contains(t, dsn, "mode=rwc")
+	assert.Contains(t, dsn, "_pragma=busy_timeout%3D1000")
+	assert.Contains(t, dsn, "_pragma=journal_mode%3DWAL")
+	assert.Contains(t, dsn, "_pragma=synchronous%3DNORMAL")
+	assert.Contains(t, dsn, "_pragma=foreign_keys%3DON")
+}
+
+func TestSQLiteDSNClampsNegativeBusyTimeout(t *testing.T) {
+	t.Parallel()
+
+	dsn := database.SQLiteDSN("/tmp/librecode.db", database.SQLiteOptions{BusyTimeout: -time.Second})
+
+	assert.Contains(t, dsn, "_pragma=busy_timeout%3D0")
+}
+
 func TestConfigureSQLiteAppliesPragmas(t *testing.T) {
 	t.Parallel()
 
@@ -42,6 +62,18 @@ func TestConfigureSQLiteAppliesPragmas(t *testing.T) {
 	assert.Equal(t, "wal", queryPragmaString(t, connection, "journal_mode"))
 	assert.Equal(t, 1, queryPragmaInt(t, connection, "synchronous"))
 	assert.Equal(t, 1, queryPragmaInt(t, connection, "foreign_keys"))
+}
+
+func TestConfigureSQLiteReturnsPragmaError(t *testing.T) {
+	t.Parallel()
+
+	connection, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "librecode.db"))
+	require.NoError(t, err)
+	require.NoError(t, connection.Close())
+
+	err = database.ConfigureSQLite(context.Background(), connection, database.SQLiteOptions{BusyTimeout: time.Second})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "configure sqlite")
 }
 
 func openTestSQLite(t *testing.T, path string, busyTimeout time.Duration) *sql.DB {

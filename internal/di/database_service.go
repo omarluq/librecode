@@ -3,6 +3,7 @@ package di
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -120,11 +121,17 @@ func setupSQLiteDatabase(
 }
 
 func closeAfterSetupError(connection *sql.DB, closeCode, code, databasePath string, err error) error {
+	setupErr := oops.In("database").Code(code).With("path", databasePath).Wrapf(err, "%s database", code)
 	if closeErr := connection.Close(); closeErr != nil {
-		return oops.In("database").Code(closeCode).Wrapf(closeErr, "close failed database")
+		return oops.In("database").Code(closeCode).With("path", databasePath).Wrapf(
+			errors.Join(setupErr, closeErr),
+			"close failed after %s database setup at %s",
+			code,
+			databasePath,
+		)
 	}
 
-	return oops.In("database").Code(code).With("path", databasePath).Wrapf(err, "%s database", code)
+	return setupErr
 }
 
 func resolveDatabasePath(cfg *config.Config) (string, error) {

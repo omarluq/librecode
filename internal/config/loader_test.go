@@ -86,6 +86,7 @@ extensions:
 	assert.Equal(t, "github:example/another-extension", cfg.Extensions.Use[2].Source)
 	assert.Equal(t, "v1.2.3", cfg.Extensions.Use[2].Version)
 	assert.Equal(t, "45s", cfg.Database.ConnMaxLifetime.String())
+	assert.Equal(t, "15s", cfg.Database.BusyTimeout.String())
 	assert.Equal(t, "2m0s", cfg.Cache.TTL.String())
 	assert.Equal(t, "3s", cfg.KSQL.Timeout.String())
 	assert.Equal(t, "4s", cfg.Assistant.Retry.BaseDelay.String())
@@ -117,7 +118,33 @@ func TestLoadAllowsEmptyModelsDiscoverySourceURLWhenDisabled(t *testing.T) {
 	assert.Empty(t, result.MustGet().Models.Discovery.SourceURL)
 }
 
+func TestLoadRejectsInvalidDatabaseConfig(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		content  string
+		expected string
+	}{
+		{
+			name:     "negative busy timeout",
+			content:  "database:\n  busy_timeout: -1s\n",
+			expected: "database.busy_timeout cannot be negative",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			assertLoadError(t, testCase.content, testCase.expected)
+		})
+	}
+}
+
 func TestLoadRejectsInvalidModelsDiscoveryConfig(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name     string
 		content  string
@@ -142,17 +169,9 @@ func TestLoadRejectsInvalidModelsDiscoveryConfig(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			home := t.TempDir()
-			cwd := t.TempDir()
-			t.Setenv("HOME", home)
-			t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
-			t.Chdir(cwd)
+			t.Parallel()
 
-			writeConfig(t, filepath.Join(cwd, ".librecode", "config.yaml"), testCase.content)
-
-			result := config.Load("")
-			assert.True(t, result.IsError())
-			assert.ErrorContains(t, result.Error(), testCase.expected)
+			assertLoadError(t, testCase.content, testCase.expected)
 		})
 	}
 }
@@ -200,6 +219,17 @@ func TestLoadRejectsInvalidExtensionUseSource(t *testing.T) {
 			assert.ErrorContains(t, result.Error(), `config: invalid extensions.use source`)
 		})
 	}
+}
+
+func assertLoadError(t *testing.T, content, expected string) {
+	t.Helper()
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	writeConfig(t, configPath, content)
+
+	result := config.Load(configPath)
+	assert.True(t, result.IsError())
+	assert.ErrorContains(t, result.Error(), expected)
 }
 
 func writeConfig(t *testing.T, path, content string) {
