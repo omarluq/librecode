@@ -27,9 +27,9 @@ const (
 func RequiresAdaptiveThinking(modelID string) bool {
 	normalizedModelID := strings.ToLower(modelID)
 
-	return strings.Contains(normalizedModelID, fable5Family) ||
-		strings.Contains(normalizedModelID, mythos5Family) ||
-		strings.Contains(normalizedModelID, mythosPreview)
+	return hasFamily(normalizedModelID, fable5Family) ||
+		hasFamily(normalizedModelID, mythos5Family) ||
+		hasFamily(normalizedModelID, mythosPreview)
 }
 
 // SupportsAdaptiveThinking reports whether the model supports Anthropic's
@@ -38,14 +38,14 @@ func SupportsAdaptiveThinking(modelID string) bool {
 	normalizedModelID := strings.ToLower(modelID)
 
 	return RequiresAdaptiveThinking(normalizedModelID) ||
-		strings.Contains(normalizedModelID, opus46Hyphen) ||
-		strings.Contains(normalizedModelID, opus46Dot) ||
-		strings.Contains(normalizedModelID, opus47Hyphen) ||
-		strings.Contains(normalizedModelID, opus47Dot) ||
-		strings.Contains(normalizedModelID, opus48Hyphen) ||
-		strings.Contains(normalizedModelID, opus48Dot) ||
-		strings.Contains(normalizedModelID, sonnet46Hyphen) ||
-		strings.Contains(normalizedModelID, sonnet46Dot)
+		hasFamily(normalizedModelID, opus46Hyphen) ||
+		hasFamily(normalizedModelID, opus46Dot) ||
+		hasFamily(normalizedModelID, opus47Hyphen) ||
+		hasFamily(normalizedModelID, opus47Dot) ||
+		hasFamily(normalizedModelID, opus48Hyphen) ||
+		hasFamily(normalizedModelID, opus48Dot) ||
+		hasFamily(normalizedModelID, sonnet46Hyphen) ||
+		hasFamily(normalizedModelID, sonnet46Dot)
 }
 
 // SupportsXHigh reports whether the model supports librecode's xhigh thinking
@@ -54,8 +54,37 @@ func SupportsXHigh(modelID string) bool {
 	normalizedModelID := strings.ToLower(modelID)
 
 	return RequiresAdaptiveThinking(normalizedModelID) ||
-		strings.Contains(normalizedModelID, opus47Hyphen) ||
-		strings.Contains(normalizedModelID, opus47Dot) ||
-		strings.Contains(normalizedModelID, opus48Hyphen) ||
-		strings.Contains(normalizedModelID, opus48Dot)
+		hasFamily(normalizedModelID, opus47Hyphen) ||
+		hasFamily(normalizedModelID, opus47Dot) ||
+		hasFamily(normalizedModelID, opus48Hyphen) ||
+		hasFamily(normalizedModelID, opus48Dot)
+}
+
+func hasFamily(modelID, family string) bool {
+	for offset := 0; ; {
+		index := strings.Index(modelID[offset:], family)
+		if index == -1 {
+			return false
+		}
+
+		start := offset + index
+		end := start + len(family)
+		if isBoundary(modelID, start-1) && isBoundary(modelID, end) {
+			return true
+		}
+		offset = end
+	}
+}
+
+func isBoundary(value string, index int) bool {
+	if index < 0 || index >= len(value) {
+		return true
+	}
+
+	switch value[index] {
+	case '-', '.', '_':
+		return true
+	default:
+		return false
+	}
 }

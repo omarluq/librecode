@@ -82,7 +82,9 @@ func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 	assert.Equal(t, "anthropic-messages", anthropicOAuthModel.API)
 	assert.Equal(t, "https://api.anthropic.com", anthropicOAuthModel.BaseURL)
 	assert.Contains(t, anthropicOAuthModel.ThinkingLevelMap, model.ThinkingOff)
-	assert.Contains(t, anthropicOAuthModel.ThinkingLevelMap, model.ThinkingXHigh)
+	xhighLevel := anthropicOAuthModel.ThinkingLevelMap[model.ThinkingXHigh]
+	require.NotNil(t, xhighLevel)
+	assert.Equal(t, string(model.ThinkingXHigh), *xhighLevel)
 
 	codexModel := findModel(t, models, "openai-codex", testDiscoveryGPT55)
 	assert.Equal(t, "openai-codex-responses", codexModel.API)

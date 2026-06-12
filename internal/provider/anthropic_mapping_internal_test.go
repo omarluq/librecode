@@ -80,28 +80,45 @@ func TestParseAnthropicResultMapsFinishReason(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		want llm.FinishReason
-		name string
-		body string
+		want     llm.FinishReason
+		name     string
+		body     string
+		wantText string
 	}{
 		{
-			name: "max tokens",
-			body: `{"stop_reason":"max_tokens","content":[{"type":"text","text":"partial"}]}`,
-			want: llm.FinishReasonLength,
+			name:     "max tokens",
+			body:     `{"stop_reason":"max_tokens","content":[{"type":"text","text":"partial"}]}`,
+			want:     llm.FinishReasonLength,
+			wantText: "",
 		},
 		{
-			name: "context exceeded",
-			body: `{"stop_reason":"model_context_window_exceeded","content":[{"type":"text","text":"partial"}]}`,
-			want: llm.FinishReasonLength,
+			name:     "context exceeded",
+			body:     `{"stop_reason":"model_context_window_exceeded","content":[{"type":"text","text":"partial"}]}`,
+			want:     llm.FinishReasonLength,
+			wantText: "",
 		},
 		{
-			name: "refusal",
+			name: "refusal keeps provider text and drops tool calls",
 			body: `{
 				"stop_reason":"refusal",
 				"stop_details":{"type":"refusal","category":"cyber","explanation":"declined"},
-				"content":[{"type":"text","text":"partial"}]
+				"content":[
+					{"type":"text","text":"partial"},
+					{"type":"tool_use","id":"toolu_1","name":"read","input":{"path":"README.md"}}
+				]
 			}`,
-			want: llm.FinishReasonRefusal,
+			want:     llm.FinishReasonRefusal,
+			wantText: "partial",
+		},
+		{
+			name: "refusal without provider text uses stop details",
+			body: `{
+				"stop_reason":"refusal",
+				"stop_details":{"type":"refusal","category":"cyber","explanation":"declined"},
+				"content":[]
+			}`,
+			want:     llm.FinishReasonRefusal,
+			wantText: "The model refused the request (cyber): declined",
 		},
 	}
 
@@ -113,8 +130,11 @@ func TestParseAnthropicResultMapsFinishReason(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, test.want, result.FinishReason)
+			if test.wantText != "" {
+				assert.Equal(t, test.wantText, result.Text)
+			}
 			if test.want == llm.FinishReasonRefusal {
-				assert.Equal(t, "The model refused the request (cyber): declined", result.Text)
+				assert.Empty(t, result.ToolCalls)
 			}
 		})
 	}

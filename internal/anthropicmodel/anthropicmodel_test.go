@@ -60,6 +60,20 @@ func TestCapabilities(t *testing.T) {
 			wantRequired:     false,
 			wantSupportsHigh: false,
 		},
+		{
+			name:             "mythos false positive",
+			modelID:          "claude-mythos-50",
+			wantAdaptive:     false,
+			wantRequired:     false,
+			wantSupportsHigh: false,
+		},
+		{
+			name:             "opus false positive",
+			modelID:          "claude-opus-4-70",
+			wantAdaptive:     false,
+			wantRequired:     false,
+			wantSupportsHigh: false,
+		},
 	}
 
 	for _, test := range tests {
