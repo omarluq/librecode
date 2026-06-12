@@ -274,12 +274,33 @@ func assertContainsContextCompactionEvent(t *testing.T, events []assistant.Strea
 	t.Helper()
 
 	for index := range events {
-		if events[index].Kind == assistant.StreamEventContextCompaction && strings.Contains(events[index].Text, text) {
+		if isContextCompactionLifecycleEvent(events[index].Kind) && strings.Contains(events[index].Text, text) {
 			return
 		}
 	}
 
 	t.Fatalf("expected context compaction event containing %q", text)
+}
+
+func isContextCompactionLifecycleEvent(kind assistant.StreamEventKind) bool {
+	switch kind {
+	case assistant.StreamEventContextCompaction,
+		assistant.StreamEventContextCompactionStart,
+		assistant.StreamEventContextCompactionDone,
+		assistant.StreamEventContextCompactionError:
+		return true
+	case assistant.StreamEventTextDelta,
+		assistant.StreamEventThinkingDelta,
+		assistant.StreamEventToolStart,
+		assistant.StreamEventToolResult,
+		assistant.StreamEventSkillLoaded,
+		assistant.StreamEventUsage,
+		assistant.StreamEventUsageSnapshot,
+		assistant.StreamEventUnknown:
+		return false
+	}
+
+	return false
 }
 
 func assertBranchContainsCompaction(

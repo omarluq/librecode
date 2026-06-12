@@ -117,6 +117,6 @@ func newAutoCompactionTestRuntime(
 }
 
 func isContextAutoCompactionEvent(event *assistant.StreamEvent) bool {
-	return event.Kind == assistant.StreamEventContextCompaction &&
+	return event.Kind == assistant.StreamEventContextCompactionDone &&
 		strings.Contains(event.Text, "context auto-compacted")
 }

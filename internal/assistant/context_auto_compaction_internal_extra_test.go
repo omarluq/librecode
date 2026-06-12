@@ -92,7 +92,7 @@ func assertContainsCompactionErrorEvent(t *testing.T, events []assistant.StreamE
 	t.Helper()
 
 	for _, event := range events {
-		if event.Kind == assistant.StreamEventContextCompaction &&
+		if event.Kind == assistant.StreamEventContextCompactionError &&
 			strings.Contains(event.Text, "context auto-compaction after response failed:") {
 			return
 		}

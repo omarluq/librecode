@@ -59,9 +59,10 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 		currentParentID = input.compactionEntry.ID
 	}
 
-	runtime.emitContextCompaction(
+	runtime.emitContextCompactionEvent(
 		ctx,
 		input.preparation.onEvent,
+		StreamEventContextCompactionStart,
 		"provider reported context overflow; attempting compaction before retry...",
 	)
 	recoveredEntry, err := runtime.CompactSessionFrom(
@@ -102,9 +103,10 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 				Wrapf(validationErr, "context: validate budget after provider overflow compaction")
 		}
 	}
-	runtime.emitContextCompaction(
+	runtime.emitContextCompactionEvent(
 		ctx,
 		input.preparation.onEvent,
+		StreamEventContextCompactionDone,
 		compactionMessage("context auto-compacted after provider overflow", recoveredBuild.Budget, recoveredEntry),
 	)
 

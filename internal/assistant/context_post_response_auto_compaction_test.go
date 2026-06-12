@@ -97,11 +97,23 @@ func assertPostResponseCompactionEvent(t *testing.T, events []assistant.StreamEv
 	foundStart := false
 	foundDone := false
 	for _, event := range events {
-		if event.Kind != assistant.StreamEventContextCompaction {
+		switch event.Kind {
+		case assistant.StreamEventContextCompactionStart:
+			foundStart = foundStart || strings.Contains(event.Text, "context auto-compacting after response")
+		case assistant.StreamEventContextCompactionDone:
+			foundDone = foundDone || strings.Contains(event.Text, "context auto-compacted after response")
+		case assistant.StreamEventContextCompaction,
+			assistant.StreamEventContextCompactionError,
+			assistant.StreamEventTextDelta,
+			assistant.StreamEventThinkingDelta,
+			assistant.StreamEventToolStart,
+			assistant.StreamEventToolResult,
+			assistant.StreamEventSkillLoaded,
+			assistant.StreamEventUsage,
+			assistant.StreamEventUsageSnapshot,
+			assistant.StreamEventUnknown:
 			continue
 		}
-		foundStart = foundStart || strings.Contains(event.Text, "context auto-compacting after response")
-		foundDone = foundDone || strings.Contains(event.Text, "context auto-compacted after response")
 	}
 	assert.True(t, foundStart, "expected post-response auto-compaction start event")
 	assert.True(t, foundDone, "expected post-response auto-compaction completion event")
