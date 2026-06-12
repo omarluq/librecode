@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/anthropicmodel"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -36,8 +37,8 @@ func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 		},
 		"anthropic": {
 			"models": {
-				"claude-opus-4-7": {
-					"name": "Claude Opus 4.7",
+				"` + anthropicmodel.Fable5 + `": {
+					"name": "Claude Fable 5",
 					"tool_call": true,
 					"reasoning": true,
 					"modalities": {"input": ["text", "image"]},
@@ -77,9 +78,11 @@ func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 	assert.Equal(t, []model.InputMode{model.InputText}, openCodeModel.Input)
 	assert.NotContains(t, modelIDsForProvider(models, testDiscoveryOpenAI), "text-only")
 
-	anthropicOAuthModel := findModel(t, models, "anthropic-claude", "claude-opus-4-7")
+	anthropicOAuthModel := findModel(t, models, "anthropic-claude", anthropicmodel.Fable5)
 	assert.Equal(t, "anthropic-messages", anthropicOAuthModel.API)
 	assert.Equal(t, "https://api.anthropic.com", anthropicOAuthModel.BaseURL)
+	assert.Contains(t, anthropicOAuthModel.ThinkingLevelMap, model.ThinkingOff)
+	assert.Contains(t, anthropicOAuthModel.ThinkingLevelMap, model.ThinkingXHigh)
 
 	codexModel := findModel(t, models, "openai-codex", testDiscoveryGPT55)
 	assert.Equal(t, "openai-codex-responses", codexModel.API)

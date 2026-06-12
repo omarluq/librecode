@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/anthropicmodel"
 	"github.com/omarluq/librecode/internal/llm"
 )
 
@@ -183,20 +184,27 @@ func anthropicSystemText(text string) map[string]any {
 
 func anthropicThinkingConfig(request *CompletionRequest) map[string]any {
 	if request.Request.ThinkingLevel == "" || request.Request.ThinkingLevel == thinkingOff {
+		if anthropicmodel.RequiresAdaptiveThinking(request.Request.Model.ID) {
+			return map[string]any{}
+		}
 		return map[string]any{jsonThinkingKey: map[string]any{jsonTypeKey: "disabled"}}
 	}
-	if anthropicSupportsAdaptiveThinking(request.Request.Model.ID) {
-		config := map[string]any{
-			jsonThinkingKey: map[string]any{jsonTypeKey: "adaptive", jsonDisplayKey: thinkingDisplaySummary},
-		}
-		if effort := anthropicThinkingEffort(request); effort != "" {
-			config["output_config"] = map[string]any{"effort": effort}
-		}
-
-		return config
+	if anthropicmodel.SupportsAdaptiveThinking(request.Request.Model.ID) {
+		return anthropicAdaptiveThinkingConfig(request)
 	}
 
 	return map[string]any{jsonThinkingKey: anthropicBudgetThinking(request.Request.ThinkingLevel)}
+}
+
+func anthropicAdaptiveThinkingConfig(request *CompletionRequest) map[string]any {
+	config := map[string]any{
+		jsonThinkingKey: map[string]any{jsonTypeKey: "adaptive", jsonDisplayKey: thinkingDisplaySummary},
+	}
+	if effort := anthropicThinkingEffort(request); effort != "" {
+		config["output_config"] = map[string]any{"effort": effort}
+	}
+
+	return config
 }
 
 func anthropicBudgetThinking(level string) map[string]any {
@@ -225,20 +233,9 @@ func anthropicThinkingEffort(request *CompletionRequest) string {
 	}
 }
 
-func anthropicSupportsAdaptiveThinking(modelID string) bool {
-	normalizedModelID := strings.ToLower(modelID)
-
-	return strings.Contains(normalizedModelID, "opus-4-6") ||
-		strings.Contains(normalizedModelID, "opus-4.6") ||
-		strings.Contains(normalizedModelID, "opus-4-7") ||
-		strings.Contains(normalizedModelID, "opus-4.7") ||
-		strings.Contains(normalizedModelID, "sonnet-4-6") ||
-		strings.Contains(normalizedModelID, "sonnet-4.6")
-}
-
 func anthropicBetaFeatures(request *CompletionRequest) []string {
 	features := []string{}
-	if request.Request.Model.Reasoning && !anthropicSupportsAdaptiveThinking(request.Request.Model.ID) {
+	if request.Request.Model.Reasoning && !anthropicmodel.SupportsAdaptiveThinking(request.Request.Model.ID) {
 		features = append(features, "interleaved-thinking-2025-05-14")
 	}
 
@@ -295,10 +292,11 @@ func (client *HTTPCompletionClient) requestAnthropic(
 
 func parseAnthropicResult(content []byte) (*providerResult, error) {
 	var response struct {
-		Error      providerError  `json:"error"`
-		Usage      map[string]any `json:"usage"`
-		StopReason string         `json:"stop_reason"`
-		Content    []struct {
+		Error       providerError         `json:"error"`
+		Usage       map[string]any        `json:"usage"`
+		StopDetails *anthropicStopDetails `json:"stop_details"`
+		StopReason  string                `json:"stop_reason"`
+		Content     []struct {
 			Type  string `json:"type"`
 			Text  string `json:"text"`
 			Input any    `json:"input"`
@@ -312,9 +310,40 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 	if response.Error.Message != "" {
 		return nil, providerErrorToOops("anthropic_error", &response.Error)
 	}
-	parts := make([]string, 0, len(response.Content))
-	calls := make([]ToolCall, 0, len(response.Content))
-	for _, block := range response.Content {
+	parts, calls := anthropicContentParts(response.Content)
+	finishReason := anthropicFinishReason(response.StopReason, len(calls) > 0)
+	text := strings.TrimSpace(strings.Join(parts, "\n"))
+	if finishReason == llm.FinishReasonRefusal {
+		text = anthropicRefusalText(response.StopDetails)
+		calls = nil
+	}
+
+	return &providerResult{
+		FinishReason: finishReason,
+		Text:         text,
+		OutputItems:  nil,
+		Thinking:     nil,
+		ToolCalls:    calls,
+		Usage:        usageFromObject(response.Usage),
+	}, nil
+}
+
+type anthropicStopDetails struct {
+	Type        string `json:"type"`
+	Category    string `json:"category"`
+	Explanation string `json:"explanation"`
+}
+
+func anthropicContentParts(content []struct {
+	Type  string `json:"type"`
+	Text  string `json:"text"`
+	Input any    `json:"input"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+}) ([]string, []ToolCall) {
+	parts := make([]string, 0, len(content))
+	calls := make([]ToolCall, 0, len(content))
+	for _, block := range content {
 		switch block.Type {
 		case jsonTextKey:
 			if block.Text != "" {
@@ -325,14 +354,26 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 		}
 	}
 
-	return &providerResult{
-		FinishReason: anthropicFinishReason(response.StopReason, len(calls) > 0),
-		Text:         strings.TrimSpace(strings.Join(parts, "\n")),
-		OutputItems:  nil,
-		Thinking:     nil,
-		ToolCalls:    calls,
-		Usage:        usageFromObject(response.Usage),
-	}, nil
+	return parts, calls
+}
+
+func anthropicRefusalText(details *anthropicStopDetails) string {
+	if details == nil {
+		return "The model refused the request."
+	}
+	explanation := strings.TrimSpace(details.Explanation)
+	category := strings.TrimSpace(details.Category)
+	if explanation != "" && category != "" {
+		return "The model refused the request (" + category + "): " + explanation
+	}
+	if explanation != "" {
+		return "The model refused the request: " + explanation
+	}
+	if category != "" {
+		return "The model refused the request (" + category + ")."
+	}
+
+	return "The model refused the request."
 }
 
 func anthropicFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
@@ -342,10 +383,12 @@ func anthropicFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
 	switch reason {
 	case "end_turn", "stop_sequence":
 		return llm.FinishReasonStop
-	case finishReasonMaxTokens:
+	case finishReasonMaxTokens, "model_context_window_exceeded":
 		return llm.FinishReasonLength
 	case "tool_use":
 		return llm.FinishReasonToolCalls
+	case "refusal":
+		return llm.FinishReasonRefusal
 	default:
 		return llm.FinishReasonUnknown
 	}

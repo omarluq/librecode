@@ -1,6 +1,10 @@
 package model
 
-import "slices"
+import (
+	"slices"
+
+	"github.com/omarluq/librecode/internal/anthropicmodel"
+)
 
 const (
 	providerAnthropic            = "anthropic"
@@ -51,12 +55,22 @@ func BuiltInModels() []Model {
 	}
 	slices.Sort(providers)
 
-	models := make([]Model, 0, len(providers))
+	models := make([]Model, 0, len(providers)+len(additionalBuiltInModels()))
 	for _, provider := range providers {
 		models = append(models, builtInDefaultModel(provider, DefaultModelPerProvider[provider]))
 	}
+	for _, pair := range additionalBuiltInModels() {
+		models = append(models, builtInDefaultModel(pair.Provider, pair.ModelID))
+	}
 
 	return models
+}
+
+func additionalBuiltInModels() []providerModelPair {
+	return []providerModelPair{
+		{Provider: providerAnthropic, ModelID: anthropicmodel.Mythos5},
+		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Mythos5},
+	}
 }
 
 func builtInDefaultModel(provider, modelID string) Model {
@@ -151,10 +165,10 @@ func openAICodexMetadata() providerMetadata {
 }
 
 func anthropicMetadata() providerMetadata {
-	xhigh := "xhigh"
+	xhigh := string(ThinkingXHigh)
 
 	return providerMetadata{
-		ThinkingLevelMap: map[ThinkingLevel]*string{ThinkingXHigh: &xhigh},
+		ThinkingLevelMap: map[ThinkingLevel]*string{ThinkingOff: nil, ThinkingXHigh: &xhigh},
 		Headers:          nil,
 		Compat:           nil,
 		API:              "anthropic-messages",
@@ -204,8 +218,8 @@ func providerDisplayNameMap() map[string]string {
 
 func defaultModelMap() map[string]string {
 	pairs := []providerModelPair{
-		{Provider: providerAnthropic, ModelID: "claude-opus-4-7"},
-		{Provider: providerAnthropicClaude, ModelID: "claude-opus-4-7"},
+		{Provider: providerAnthropic, ModelID: anthropicmodel.Fable5},
+		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Fable5},
 		{Provider: providerAzureOpenAIResponses, ModelID: gpt54},
 		{Provider: providerCerebras, ModelID: "zai-glm-4.7"},
 		{Provider: providerDeepSeek, ModelID: "deepseek-v4-pro"},

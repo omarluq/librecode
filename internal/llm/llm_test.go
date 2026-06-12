@@ -153,6 +153,7 @@ func TestFinishReasonValues(t *testing.T) {
 	assert.Equal(t, llm.FinishReason("length"), llm.FinishReasonLength)
 	assert.Equal(t, llm.FinishReason("tool-calls"), llm.FinishReasonToolCalls)
 	assert.Equal(t, llm.FinishReason("content-filter"), llm.FinishReasonContentFilter)
+	assert.Equal(t, llm.FinishReason("refusal"), llm.FinishReasonRefusal)
 	assert.Equal(t, llm.FinishReason("error"), llm.FinishReasonError)
 	assert.Equal(t, llm.FinishReason("aborted"), llm.FinishReasonAborted)
 }
