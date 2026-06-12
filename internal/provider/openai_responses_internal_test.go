@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestStatelessResponseOutputItemsFiltersFunctionCalls(t *testing.T) {
@@ -54,6 +56,44 @@ func TestParseOpenAIResponseResultExtractsTextThinkingAndToolCalls(t *testing.T)
 	assert.Equal(t, testToolPath, result.ToolCalls[0].Arguments[jsonPathKey])
 	assert.Equal(t, 12, result.Usage.InputTokens)
 	assert.Equal(t, 3, result.Usage.OutputTokens)
+	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
+}
+
+func TestParseOpenAIResponseResultMapsIncompleteFinishReasons(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+		want llm.FinishReason
+	}{
+		{
+			name: "max output tokens",
+			body: `{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},` +
+				`"output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}]}`,
+			want: llm.FinishReasonLength,
+		},
+		{
+			name: "content filter",
+			body: `{"status":"incomplete","incomplete_details":{"reason":"content_filter"},"output_text":"partial"}`,
+			want: llm.FinishReasonContentFilter,
+		},
+		{
+			name: statusCompleted,
+			body: `{"status":"completed","output_text":"done"}`,
+			want: llm.FinishReasonStop,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := parseOpenAIResponseResult([]byte(testCase.body))
+
+			require.NoError(t, err)
+			assert.Equal(t, testCase.want, result.FinishReason)
+		})
+	}
 }
 
 func TestParseOpenAIResponseResultUsesOutputTextFallbackAndErrors(t *testing.T) {

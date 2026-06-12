@@ -55,7 +55,7 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 		if fallback := TextToolCallsFromText(providerResult.Text); len(fallback) > 0 {
 			providerResult.ToolCalls = fallback
 		} else {
-			return finishTextResult(state.result, providerResult.Text)
+			return finishProviderResult(state.result, providerResult)
 		}
 	}
 	events, err := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)
@@ -115,10 +115,10 @@ func anthropicPayload(request *CompletionRequest, messages []map[string]any) map
 	// reasoning is available. Match production agent clients by omitting
 	// temperature unless/until librecode exposes an explicit user setting.
 	payload := map[string]any{
-		jsonModelKey:    request.Request.Model.ID,
-		"max_tokens":    minPositive(request.Request.Model.MaxTokens, 4096),
-		jsonMessagesKey: messages,
-		"tools":         AnthropicTools(request),
+		jsonModelKey:          request.Request.Model.ID,
+		finishReasonMaxTokens: minPositive(request.Request.Model.MaxTokens, 4096),
+		jsonMessagesKey:       messages,
+		"tools":               AnthropicTools(request),
 	}
 	if usesAnthropicOAuth(request) {
 		payload["system"] = anthropicOAuthSystemPrompt(request.Request.SystemPrompt)
@@ -295,9 +295,10 @@ func (client *HTTPCompletionClient) requestAnthropic(
 
 func parseAnthropicResult(content []byte) (*providerResult, error) {
 	var response struct {
-		Error   providerError  `json:"error"`
-		Usage   map[string]any `json:"usage"`
-		Content []struct {
+		Error      providerError  `json:"error"`
+		Usage      map[string]any `json:"usage"`
+		StopReason string         `json:"stop_reason"`
+		Content    []struct {
 			Type  string `json:"type"`
 			Text  string `json:"text"`
 			Input any    `json:"input"`
@@ -325,12 +326,29 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 	}
 
 	return &providerResult{
-		Text:        strings.TrimSpace(strings.Join(parts, "\n")),
-		OutputItems: nil,
-		Thinking:    nil,
-		ToolCalls:   calls,
-		Usage:       usageFromObject(response.Usage),
+		FinishReason: anthropicFinishReason(response.StopReason, len(calls) > 0),
+		Text:         strings.TrimSpace(strings.Join(parts, "\n")),
+		OutputItems:  nil,
+		Thinking:     nil,
+		ToolCalls:    calls,
+		Usage:        usageFromObject(response.Usage),
 	}, nil
+}
+
+func anthropicFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
+	if hasToolCalls {
+		return llm.FinishReasonToolCalls
+	}
+	switch reason {
+	case "end_turn", "stop_sequence":
+		return llm.FinishReasonStop
+	case finishReasonMaxTokens:
+		return llm.FinishReasonLength
+	case "tool_use":
+		return llm.FinishReasonToolCalls
+	default:
+		return llm.FinishReasonUnknown
+	}
 }
 
 func anthropicToolCall(callID, name string, input any) ToolCall {

@@ -175,8 +175,16 @@ func toolOutputForCall(callID string, event *ToolEvent) map[string]any {
 	}
 }
 
-func finishTextResult(result *llm.Response, text string) (bool, error) {
-	result.Content = append(result.Content, llm.TextPart(strings.TrimSpace(text)))
+func finishProviderResult(result *llm.Response, providerResult *providerResult) (bool, error) {
+	if providerResult == nil {
+		result.FinishReason = llm.FinishReasonStop
+		return true, nil
+	}
+	result.FinishReason = providerResult.FinishReason
+	if result.FinishReason == llm.FinishReasonUnknown {
+		result.FinishReason = llm.FinishReasonStop
+	}
+	result.Content = append(result.Content, llm.TextPart(strings.TrimSpace(providerResult.Text)))
 
 	return true, nil
 }

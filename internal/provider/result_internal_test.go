@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,9 +17,10 @@ func TestResponseResultHelpers(t *testing.T) {
 	assert.Equal(t, llm.FinishReasonUnknown, response.FinishReason)
 	assert.Equal(t, llm.EmptyUsage(), response.Usage)
 
-	appendThinking(response, []string{"  reason  ", "   "})
+	blank := strings.Repeat(" ", 3)
+	appendThinking(response, []string{"  reason  ", blank})
 	setResponseText(response, " hello ")
-	setResponseText(response, "   ")
+	setResponseText(response, blank)
 	appendToolResults(response, []ToolEvent{{
 		Name:          jsonReadToolName,
 		ArgumentsJSON: `{"path":"README.md"}`,

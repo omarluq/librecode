@@ -12,6 +12,7 @@ import (
 	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -109,6 +110,7 @@ func TestProviderResponseErrorAndNilPayloads(t *testing.T) {
 		OutputTokens:    5,
 	}
 	response := lifecyclepayload.ProviderResponsePayload(&lifecyclepayload.ProviderResponse{
+		FinishReason:   llm.FinishReasonLength,
 		API:            "openai-responses",
 		ModelID:        lifecycleProviderModel,
 		Provider:       "openai",
@@ -120,6 +122,7 @@ func TestProviderResponseErrorAndNilPayloads(t *testing.T) {
 		ToolEventCount: 3,
 	})
 	assert.Equal(t, lifecycleAnswer, response[lifecyclepayload.TextKey])
+	assert.Equal(t, string(llm.FinishReasonLength), response["finish_reason"])
 	assert.Equal(t, 3, response["tool_event_count"])
 
 	providerErr := lifecyclepayload.ProviderErrorPayload(&lifecyclepayload.ProviderError{

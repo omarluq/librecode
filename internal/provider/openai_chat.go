@@ -63,7 +63,7 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 		if fallback := TextToolCallsFromText(providerResult.Text); len(fallback) > 0 {
 			providerResult.ToolCalls = fallback
 		} else {
-			return finishTextResult(state.result, providerResult.Text)
+			return finishProviderResult(state.result, providerResult)
 		}
 	}
 	events, err := executeOpenAIChatToolCalls(ctx, request, providerResult.ToolCalls)
@@ -134,7 +134,8 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 		Error   providerError  `json:"error"`
 		Usage   map[string]any `json:"usage"`
 		Choices []struct {
-			Message struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
 				Content   string `json:"content"`
 				ToolCalls []struct {
 					ID       string `json:"id"`
@@ -155,11 +156,12 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 	}
 	if len(response.Choices) == 0 {
 		return &providerResult{
-			Text:        "",
-			OutputItems: nil,
-			Thinking:    nil,
-			ToolCalls:   nil,
-			Usage:       usageFromObject(response.Usage),
+			FinishReason: llm.FinishReasonUnknown,
+			Text:         "",
+			OutputItems:  nil,
+			Thinking:     nil,
+			ToolCalls:    nil,
+			Usage:        usageFromObject(response.Usage),
 		}, nil
 	}
 	message := response.Choices[0].Message
@@ -179,12 +181,31 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 	}
 
 	return &providerResult{
-		Text:        strings.TrimSpace(message.Content),
-		OutputItems: nil,
-		Thinking:    nil,
-		ToolCalls:   calls,
-		Usage:       usageFromObject(response.Usage),
+		FinishReason: openAIChatFinishReason(response.Choices[0].FinishReason, len(calls) > 0),
+		Text:         strings.TrimSpace(message.Content),
+		OutputItems:  nil,
+		Thinking:     nil,
+		ToolCalls:    calls,
+		Usage:        usageFromObject(response.Usage),
 	}, nil
+}
+
+func openAIChatFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
+	if hasToolCalls {
+		return llm.FinishReasonToolCalls
+	}
+	switch reason {
+	case "stop":
+		return llm.FinishReasonStop
+	case "length":
+		return llm.FinishReasonLength
+	case "tool_calls", "function_call":
+		return llm.FinishReasonToolCalls
+	case "content_filter":
+		return llm.FinishReasonContentFilter
+	default:
+		return llm.FinishReasonUnknown
+	}
 }
 
 func shouldIncludeReasoningEffort(request *CompletionRequest) bool {

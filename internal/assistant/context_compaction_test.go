@@ -15,6 +15,7 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/event"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -546,9 +547,10 @@ func (client *compactionCompleter) Complete(
 	}
 
 	return &assistant.CompletionResult{
-		Text:       text,
-		Thinking:   nil,
-		ToolEvents: nil,
-		Usage:      model.EmptyTokenUsage(),
+		FinishReason: llm.FinishReasonStop,
+		Text:         text,
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        model.EmptyTokenUsage(),
 	}, nil
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -127,10 +128,11 @@ func testContextWindowError() error {
 
 func testCompletionResult(text string) *assistant.CompletionResult {
 	return &assistant.CompletionResult{
-		Text:       text,
-		Thinking:   nil,
-		ToolEvents: nil,
-		Usage:      model.EmptyTokenUsage(),
+		FinishReason: llm.FinishReasonStop,
+		Text:         text,
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        model.EmptyTokenUsage(),
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -471,10 +472,11 @@ func promptSendTestConfig() *config.Config {
 
 func newTerminalCompletionResult(text string) *assistant.CompletionResult {
 	return &assistant.CompletionResult{
-		Text:       text,
-		Thinking:   nil,
-		ToolEvents: nil,
-		Usage:      model.EmptyTokenUsage(),
+		FinishReason: llm.FinishReasonStop,
+		Text:         text,
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        model.EmptyTokenUsage(),
 	}
 }
 

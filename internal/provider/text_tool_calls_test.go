@@ -2,6 +2,7 @@
 package provider
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -214,7 +215,7 @@ func TestTextToolResultPromptUsesErrorsAndEmptyFallback(t *testing.T) {
 			Name:          jsonBashToolName,
 			ArgumentsJSON: `{}`,
 			DetailsJSON:   "",
-			Result:        "   ",
+			Result:        strings.Repeat(" ", 3),
 			Error:         "",
 			IsError:       false,
 		},

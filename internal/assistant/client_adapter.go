@@ -132,13 +132,20 @@ func thinkingLevelMapFromLLM(values map[string]*string) map[model.ThinkingLevel]
 
 func completionResultFromLLMResponse(response *llm.Response) *CompletionResult {
 	if response == nil {
-		return &CompletionResult{Text: "", Thinking: nil, ToolEvents: nil, Usage: model.EmptyTokenUsage()}
+		return &CompletionResult{
+			FinishReason: llm.FinishReasonUnknown,
+			Text:         "",
+			Thinking:     nil,
+			ToolEvents:   nil,
+			Usage:        model.EmptyTokenUsage(),
+		}
 	}
 	return &CompletionResult{
-		Text:       textFromLLMParts(response.Content),
-		Thinking:   thinkingFromLLMParts(response.Content),
-		ToolEvents: toolEventsFromLLMParts(response.Content),
-		Usage:      llmconv.UsageToModel(response.Usage),
+		FinishReason: response.FinishReason,
+		Text:         textFromLLMParts(response.Content),
+		Thinking:     thinkingFromLLMParts(response.Content),
+		ToolEvents:   toolEventsFromLLMParts(response.Content),
+		Usage:        llmconv.UsageToModel(response.Usage),
 	}
 }
 

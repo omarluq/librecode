@@ -22,6 +22,7 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -591,10 +592,11 @@ func (client *retryCompleter) Complete(
 	}
 
 	return &assistant.CompletionResult{
-		Text:       client.response + " for " + request.Messages[len(request.Messages)-1].Content,
-		Thinking:   nil,
-		ToolEvents: nil,
-		Usage:      model.EmptyTokenUsage(),
+		FinishReason: llm.FinishReasonStop,
+		Text:         client.response + " for " + request.Messages[len(request.Messages)-1].Content,
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        model.EmptyTokenUsage(),
 	}, nil
 }
 
@@ -605,10 +607,11 @@ func (client *emptyCompleter) Complete(
 	client.attempts++
 
 	return &assistant.CompletionResult{
-		Text:       "",
-		Thinking:   nil,
-		ToolEvents: nil,
-		Usage:      model.EmptyTokenUsage(),
+		FinishReason: llm.FinishReasonStop,
+		Text:         "",
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        model.EmptyTokenUsage(),
 	}, nil
 }
 
@@ -687,9 +690,10 @@ func (testCompleter) Complete(
 	}
 
 	return &assistant.CompletionResult{
-		Text:       "test assistant response for " + request.Messages[len(request.Messages)-1].Content,
-		Thinking:   nil,
-		ToolEvents: nil,
+		FinishReason: llm.FinishReasonStop,
+		Text:         "test assistant response for " + request.Messages[len(request.Messages)-1].Content,
+		Thinking:     nil,
+		ToolEvents:   nil,
 		Usage: model.TokenUsage{
 			Breakdown:       nil,
 			TopContributors: nil,

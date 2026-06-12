@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -95,10 +96,11 @@ func (client *extensionToolCompleter) Complete(
 	*client.toolDetails = result.Details
 
 	return &assistant.CompletionResult{
-		Text:       "tool registry inspected",
-		Thinking:   nil,
-		ToolEvents: nil,
-		Usage:      model.EmptyTokenUsage(),
+		FinishReason: llm.FinishReasonStop,
+		Text:         "tool registry inspected",
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        model.EmptyTokenUsage(),
 	}, nil
 }
 

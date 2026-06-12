@@ -12,6 +12,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/event"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -30,9 +31,10 @@ func TestRuntime_ProviderLifecyclePublishesReactiveEvents(t *testing.T) {
 
 	runtime, _, _ := newTestRuntimeWithManager(t, staticCompleter{
 		result: &assistant.CompletionResult{
-			Text:       testCompletionText,
-			Thinking:   nil,
-			ToolEvents: nil,
+			FinishReason: llm.FinishReasonStop,
+			Text:         testCompletionText,
+			Thinking:     nil,
+			ToolEvents:   nil,
 			Usage: model.TokenUsage{
 				Breakdown:       nil,
 				TopContributors: nil,
@@ -119,9 +121,10 @@ func (toolCallbackClient) Complete(
 	}
 
 	return &assistant.CompletionResult{
-		Text:       testCompletionText,
-		Thinking:   nil,
-		ToolEvents: nil,
-		Usage:      model.EmptyTokenUsage(),
+		FinishReason: llm.FinishReasonStop,
+		Text:         testCompletionText,
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        model.EmptyTokenUsage(),
 	}, nil
 }

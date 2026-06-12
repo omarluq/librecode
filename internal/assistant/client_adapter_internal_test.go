@@ -128,6 +128,7 @@ func TestCompletionResultFromLLMResponseConvertsPartsAndUsage(t *testing.T) {
 
 	converted := completionResultFromLLMResponse(response)
 	require.NotNil(t, converted)
+	assert.Equal(t, llm.FinishReasonStop, converted.FinishReason)
 	assert.Equal(t, "first \nsecond", converted.Text)
 	assert.Equal(t, []string{adapterThought}, converted.Thinking)
 	require.Len(t, converted.ToolEvents, 2)
@@ -140,6 +141,7 @@ func TestCompletionResultFromLLMResponseConvertsPartsAndUsage(t *testing.T) {
 
 	empty := completionResultFromLLMResponse(nil)
 	require.NotNil(t, empty)
+	assert.Equal(t, llm.FinishReasonUnknown, empty.FinishReason)
 	assert.Empty(t, empty.Text)
 	assert.Empty(t, empty.Thinking)
 	assert.Empty(t, empty.ToolEvents)
