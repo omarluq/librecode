@@ -15,10 +15,10 @@ func TestBashExecutionToText(t *testing.T) {
 	t.Parallel()
 
 	exitCode := 2
-	tests := []struct { //nolint:govet // Readability matters more than field packing in test cases.
-		message  core.BashExecutionMessage
-		contains []string
+	tests := []struct {
 		name     string
+		contains []string
+		message  core.BashExecutionMessage
 	}{
 		{
 			name: "output",

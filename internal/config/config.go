@@ -9,17 +9,15 @@ import (
 )
 
 // Config is the fully resolved application configuration.
-//
-//nolint:govet // Logical config grouping is more important than field packing.
 type Config struct {
-	Database   DatabaseConfig   `json:"database" mapstructure:"database" yaml:"database"`
-	Cache      CacheConfig      `json:"cache" mapstructure:"cache" yaml:"cache"`
-	Extensions ExtensionsConfig `json:"extensions" mapstructure:"extensions" yaml:"extensions"`
-	Assistant  AssistantConfig  `json:"assistant" mapstructure:"assistant" yaml:"assistant"`
-	Context    ContextConfig    `json:"context" mapstructure:"context" yaml:"context"`
-	Models     ModelsConfig     `json:"models" mapstructure:"models" yaml:"models"`
-	Logging    LoggingConfig    `json:"logging" mapstructure:"logging" yaml:"logging"`
 	App        AppConfig        `json:"app" mapstructure:"app" yaml:"app"`
+	Logging    LoggingConfig    `json:"logging" mapstructure:"logging" yaml:"logging"`
+	Extensions ExtensionsConfig `json:"extensions" mapstructure:"extensions" yaml:"extensions"`
+	Models     ModelsConfig     `json:"models" mapstructure:"models" yaml:"models"`
+	Assistant  AssistantConfig  `json:"assistant" mapstructure:"assistant" yaml:"assistant"`
+	Database   DatabaseConfig   `json:"database" mapstructure:"database" yaml:"database"`
+	Context    ContextConfig    `json:"context" mapstructure:"context" yaml:"context"`
+	Cache      CacheConfig      `json:"cache" mapstructure:"cache" yaml:"cache"`
 }
 
 // AppConfig contains application identity and environment settings.
@@ -69,11 +67,11 @@ type AssistantConfig struct {
 
 // ContextConfig controls local context-window budgeting before provider requests.
 type ContextConfig struct {
-	OutputReserveTokens   int  `json:"output_reserve_tokens" mapstructure:"output_reserve_tokens" yaml:"output_reserve_tokens"`       //nolint:lll // struct tags must stay on one line
-	ProviderReserveTokens int  `json:"provider_reserve_tokens" mapstructure:"provider_reserve_tokens" yaml:"provider_reserve_tokens"` //nolint:lll // struct tags must stay on one line
-	SafetyMarginTokens    int  `json:"safety_margin_tokens" mapstructure:"safety_margin_tokens" yaml:"safety_margin_tokens"`          //nolint:lll // struct tags must stay on one line
-	KeepRecentTokens      int  `json:"keep_recent_tokens" mapstructure:"keep_recent_tokens" yaml:"keep_recent_tokens"`
-	PreflightEnabled      bool `json:"preflight_enabled" mapstructure:"preflight_enabled" yaml:"preflight_enabled"`
+	OutputReserveTokens   int  `mapstructure:"output_reserve_tokens"`
+	ProviderReserveTokens int  `mapstructure:"provider_reserve_tokens"`
+	SafetyMarginTokens    int  `mapstructure:"safety_margin_tokens"`
+	KeepRecentTokens      int  `mapstructure:"keep_recent_tokens"`
+	PreflightEnabled      bool `mapstructure:"preflight_enabled"`
 }
 
 // ModelsConfig controls model catalog discovery.

@@ -22,7 +22,7 @@ func TestWriteFullBashOutputUsesPrivateCacheFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
 
-	content, err := os.ReadFile(outputPath) //nolint:gosec // path is returned by os.CreateTemp in the test cache dir.
+	content, err := os.ReadFile(filepath.Clean(outputPath))
 	require.NoError(t, err)
 	assert.Equal(t, "hello\nworld", string(content))
 }

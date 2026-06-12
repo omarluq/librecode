@@ -34,7 +34,8 @@ func newModelListCmd() *cobra.Command {
 		Short: "List models for authorized providers",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			container, err := di.NewContainer(cfgFile, di.ConfigOverrides{DisableExtensions: disableExtensions})
+			options := commandOptionsFromCommand(cmd)
+			container, err := di.NewContainer(options.configFile, options.configOverrides())
 			if err != nil {
 				return err
 			}

@@ -24,18 +24,16 @@ func TestNewCacheServiceUsesConfiguredCache(t *testing.T) {
 	t.Cleanup(service.Shutdown)
 }
 
-//nolint:paralleltest // t.Chdir cannot run in parallel tests.
 func TestNewToolServiceUsesCurrentWorkingDirectory(t *testing.T) {
-	cwd := t.TempDir()
-	t.Chdir(cwd)
+	t.Parallel()
 
 	service, err := NewToolService(do.New())
 	require.NoError(t, err)
 	require.NotNil(t, service.Registry)
 
-	absoluteCWD, err := filepath.Abs(cwd)
+	cwd, err := filepath.Abs(".")
 	require.NoError(t, err)
-	assert.Equal(t, absoluteCWD, service.Registry.CWD())
+	assert.Equal(t, cwd, service.Registry.CWD())
 }
 
 func testServiceConfig() *config.Config {

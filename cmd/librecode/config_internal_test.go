@@ -3,19 +3,19 @@ package main
 import (
 	"bytes"
 	"path/filepath"
-	"sync"
+	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-//nolint:paralleltest // Uses package-level cfgFile flag state.
 func TestConfigShowCommandPrintsResolvedConfig(t *testing.T) {
-	configPath := writeTestConfig(t, "database:\n  busy_timeout: 7s\nextensions:\n  use: []\n")
-	withConfigFile(t, configPath)
+	t.Parallel()
 
-	cmd := newConfigShowCmd()
+	configPath := writeTestConfig(t, "database:\n  busy_timeout: 7s\nextensions:\n  use: []\n")
+	cmd := rootWrappedCommand(newConfigShowCmd(), configPath)
 	output := new(bytes.Buffer)
 	cmd.SetOut(output)
 
@@ -25,12 +25,11 @@ func TestConfigShowCommandPrintsResolvedConfig(t *testing.T) {
 	assert.Contains(t, output.String(), "7s")
 }
 
-//nolint:paralleltest // Uses package-level cfgFile flag state.
 func TestConfigValidateCommandPrintsSuccess(t *testing.T) {
-	configPath := writeTestConfig(t, "extensions:\n  use: []\n")
-	withConfigFile(t, configPath)
+	t.Parallel()
 
-	cmd := newConfigValidateCmd()
+	configPath := writeTestConfig(t, "extensions:\n  use: []\n")
+	cmd := rootWrappedCommand(newConfigValidateCmd(), configPath)
 	output := new(bytes.Buffer)
 	cmd.SetOut(output)
 
@@ -38,12 +37,11 @@ func TestConfigValidateCommandPrintsSuccess(t *testing.T) {
 	assert.Equal(t, "configuration is valid\n", output.String())
 }
 
-//nolint:paralleltest // Uses package-level cfgFile flag state.
 func TestLoadConfigWrapsInvalidConfig(t *testing.T) {
-	configPath := writeTestConfig(t, "database:\n  busy_timeout: -1s\nextensions:\n  use: []\n")
-	withConfigFile(t, configPath)
+	t.Parallel()
 
-	_, err := loadConfig()
+	configPath := writeTestConfig(t, "database:\n  busy_timeout: -1s\nextensions:\n  use: []\n")
+	_, err := loadConfig(configPath)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "load configuration")
 	assert.Contains(t, err.Error(), "database.busy_timeout cannot be negative")
@@ -58,16 +56,12 @@ func writeTestConfig(t *testing.T, content string) string {
 	return path
 }
 
-var cfgFileTestMu sync.Mutex
+func rootWrappedCommand(child *cobra.Command, configPath string) *cobra.Command {
+	root := &cobra.Command{Use: "root"}
+	root.PersistentFlags().String("config", configPath, "config file path")
+	root.PersistentFlags().Bool("no-extensions", false, "disable Lua extensions for this run")
+	root.AddCommand(child)
+	root.SetArgs([]string{strings.Fields(child.Use)[0]})
 
-func withConfigFile(t *testing.T, path string) {
-	t.Helper()
-
-	cfgFileTestMu.Lock()
-	previous := cfgFile
-	cfgFile = path
-	t.Cleanup(func() {
-		cfgFile = previous
-		cfgFileTestMu.Unlock()
-	})
+	return root
 }

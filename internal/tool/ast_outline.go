@@ -97,9 +97,13 @@ func namedNodeAtLine(root *gt.Node, line int) *gt.Node {
 	if root == nil || line < 1 {
 		return nil
 	}
-	row := uint32(line - 1) //nolint:gosec // line is validated >= 1 above.
-	if row > root.EndPoint().Row {
-		return nil
+	row := uint32(0)
+	endRow := root.EndPoint().Row
+	for range line - 1 {
+		if row >= endRow {
+			return nil
+		}
+		row++
 	}
 	point := gt.Point{Row: row, Column: 0}
 

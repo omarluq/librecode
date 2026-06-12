@@ -10,8 +10,9 @@ import (
 	main "github.com/omarluq/librecode/cmd/librecode"
 )
 
-//nolint:paralleltest // newRootCmd binds package-level flag variables.
 func TestRootCmd_HelpFlagShowsHelp(t *testing.T) {
+	t.Parallel()
+
 	cmd := main.NewRootCmdForTest()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
@@ -22,8 +23,9 @@ func TestRootCmd_HelpFlagShowsHelp(t *testing.T) {
 	assert.Contains(t, buf.String(), "librecode")
 }
 
-//nolint:paralleltest // newRootCmd binds package-level flag variables.
 func TestRootCmd_VersionFlagShowsVersion(t *testing.T) {
+	t.Parallel()
+
 	cmd := main.NewRootCmdForTest()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)

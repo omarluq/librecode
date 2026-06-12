@@ -1,8 +1,9 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
+
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -34,12 +35,30 @@ func codeLexer(language, text string) chroma.Lexer {
 			return chroma.Coalesce(lexer)
 		}
 	}
-	lexer := lexers.Analyse(text) //nolint:misspell // Chroma uses British spelling in its public API.
+	lexer := analyzeCode(text)
 	if lexer == nil {
 		return nil
 	}
 
 	return chroma.Coalesce(lexer)
+}
+
+func analyzeCode(text string) chroma.Lexer {
+	var picked chroma.Lexer
+	highest := float32(0)
+	for _, lexer := range lexers.GlobalLexerRegistry.Lexers {
+		analyzer, ok := lexer.(chroma.Analyser)
+		if !ok {
+			continue
+		}
+		weight := analyzer.AnalyseText(text)
+		if weight > highest {
+			picked = lexer
+			highest = weight
+		}
+	}
+
+	return picked
 }
 
 func codeLinesFromTokens(tokens []chroma.Token, theme terminalTheme, baseStyle tcell.Style) []rendertext.Line {
@@ -83,15 +102,14 @@ func appendStyledTextToLastLine(lines *[]rendertext.Line, text string, style tce
 
 func styleForToken(token chroma.TokenType, theme terminalTheme, baseStyle tcell.Style) tcell.Style {
 	style := baseStyle.Foreground(colorForToken(token, theme))
-	//nolint:exhaustive // Categories are broad ranges; default handles all uncategorized tokens.
-	switch token.Category() {
-	case chroma.Keyword:
+	category := token.Category()
+	if category == chroma.Keyword {
 		return style.Bold(true)
-	case chroma.Name:
-		if token.InCategory(chroma.NameFunction) || token.InCategory(chroma.NameClass) {
-			return style.Bold(true)
-		}
-	case chroma.Comment:
+	}
+	if category == chroma.Name && (token.InCategory(chroma.NameFunction) || token.InCategory(chroma.NameClass)) {
+		return style.Bold(true)
+	}
+	if category == chroma.Comment {
 		return style.Italic(true)
 	}
 
@@ -99,23 +117,27 @@ func styleForToken(token chroma.TokenType, theme terminalTheme, baseStyle tcell.
 }
 
 func colorForToken(token chroma.TokenType, theme terminalTheme) tcell.Color {
-	//nolint:exhaustive // Categories are broad ranges; default handles all uncategorized tokens.
-	switch token.Category() {
-	case chroma.Keyword:
+	category := token.Category()
+	if category == chroma.Keyword {
 		return codeKeywordColor(theme)
-	case chroma.Name:
-		return codeNameColor(token, theme)
-	case chroma.Literal:
-		return codeLiteralColor(token, theme)
-	case chroma.Operator:
-		return codeOperatorColor(theme)
-	case chroma.Comment:
-		return theme.colors[colorDim]
-	case chroma.Generic:
-		return codeGenericColor(token, theme)
-	default:
-		return theme.colors[colorCodeText]
 	}
+	if category == chroma.Name {
+		return codeNameColor(token, theme)
+	}
+	if category == chroma.Literal {
+		return codeLiteralColor(token, theme)
+	}
+	if category == chroma.Operator {
+		return codeOperatorColor(theme)
+	}
+	if category == chroma.Comment {
+		return theme.colors[colorDim]
+	}
+	if category == chroma.Generic {
+		return codeGenericColor(token, theme)
+	}
+
+	return theme.colors[colorCodeText]
 }
 
 func codeNameColor(token chroma.TokenType, theme terminalTheme) tcell.Color {

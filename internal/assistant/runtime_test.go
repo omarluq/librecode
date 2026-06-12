@@ -164,8 +164,7 @@ func TestRuntime_PromptRunsBuiltInToolSlashCommand(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, response.Text, "Successfully wrote")
 
-	//nolint:gosec // Test reads from t.TempDir-controlled path.
-	content, err := os.ReadFile(filepath.Join(cwd, "note.txt"))
+	content, err := os.ReadFile(filepath.Clean(filepath.Join(cwd, "note.txt")))
 	require.NoError(t, err)
 	assert.Equal(t, "hello", string(content))
 }

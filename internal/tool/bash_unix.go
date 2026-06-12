@@ -3,6 +3,7 @@
 package tool
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -44,4 +45,11 @@ func killProcessGroup(pid int) error {
 	}
 
 	return nil
+}
+
+func shellCommandContext(ctx context.Context, shellPath string, shellArgs []string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, shellPath)
+	cmd.Args = append(cmd.Args, shellArgs...)
+
+	return cmd
 }

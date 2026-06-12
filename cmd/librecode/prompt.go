@@ -48,7 +48,7 @@ func runPrompt(cmd *cobra.Command, args []string, options promptRunOptions) erro
 		return err
 	}
 
-	return withContainer(cmd.Context(), func(container *di.Container) error {
+	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 		return runPromptWithContainer(cmd, container, options, message)
 	})
 }

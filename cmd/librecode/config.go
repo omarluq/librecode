@@ -35,7 +35,7 @@ func newConfigShowCmd() *cobra.Command {
 		Short: "Display resolved configuration",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := loadConfig()
+			cfg, err := loadConfig(commandOptionsFromCommand(cmd).configFile)
 			if err != nil {
 				return err
 			}
@@ -83,7 +83,7 @@ func newConfigValidateCmd() *cobra.Command {
 		Short: "Validate configuration and report errors",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if _, err := loadConfig(); err != nil {
+			if _, err := loadConfig(commandOptionsFromCommand(cmd).configFile); err != nil {
 				return err
 			}
 
@@ -92,8 +92,8 @@ func newConfigValidateCmd() *cobra.Command {
 	}
 }
 
-func loadConfig() (*config.Config, error) {
-	cfg, err := config.Load(cfgFile).Get()
+func loadConfig(configFile string) (*config.Config, error) {
+	cfg, err := config.Load(configFile).Get()
 	if err != nil {
 		return nil, oops.
 			In("config").

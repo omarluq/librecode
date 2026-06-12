@@ -3,7 +3,6 @@ package tool
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	gt "github.com/odvcencio/gotreesitter"
@@ -175,8 +174,7 @@ func (astTool *ASTTool) parse(ctx context.Context, path string, allowIgnored boo
 		return nil, &unsupported, nil
 	}
 
-	//nolint:gosec // The ast tool intentionally reads user-selected workspace paths.
-	source, err := os.ReadFile(absolutePath)
+	source, err := readResolvedPath(absolutePath)
 	if err != nil {
 		return nil, nil, oops.In("tool").Code("ast_read_file").Wrapf(err, "read ast file")
 	}

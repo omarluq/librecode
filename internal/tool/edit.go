@@ -3,7 +3,6 @@ package tool
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/samber/oops"
@@ -71,8 +70,7 @@ func (editTool *EditTool) editLocked(ctx context.Context, absolutePath string, i
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return emptyToolResult(), ctxErr
 	}
-	//nolint:gosec // The edit tool intentionally reads user-selected workspace paths.
-	rawData, err := os.ReadFile(absolutePath)
+	rawData, err := readResolvedPath(absolutePath)
 	if err != nil {
 		return emptyToolResult(), oops.
 			In("tool").
@@ -96,8 +94,7 @@ func (editTool *EditTool) editLocked(ctx context.Context, absolutePath string, i
 		return emptyToolResult(), err
 	}
 
-	//nolint:gosec // The edit tool intentionally writes user-selected workspace paths.
-	writeErr := os.WriteFile(absolutePath, []byte(finalContent), 0o600)
+	writeErr := writeResolvedPath(absolutePath, []byte(finalContent), 0o600)
 	if writeErr != nil {
 		return emptyToolResult(), oops.
 			In("tool").

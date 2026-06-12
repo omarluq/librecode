@@ -45,8 +45,9 @@ func writeClipboardCommand(text, name string, args ...string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	//nolint:gosec // Clipboard writer is selected from a fixed allowlist.
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := exec.CommandContext(ctx, "")
+	cmd.Path = path
+	cmd.Args = append([]string{path}, args...)
 	cmd.Stdin = strings.NewReader(text)
 
 	return cmd.Run()

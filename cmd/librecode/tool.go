@@ -39,7 +39,7 @@ func newToolListCmd() *cobra.Command {
 }
 
 func runToolList(cmd *cobra.Command, _ []string) error {
-	return withContainer(cmd.Context(), func(container *di.Container) error {
+	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 		registry := di.MustInvoke[*di.ToolService](container).Registry
 		definitions := registry.Definitions()
 		for index := range definitions {
@@ -65,7 +65,7 @@ func newToolRunCmd() *cobra.Command {
 				return err
 			}
 
-			return withContainer(cmd.Context(), func(container *di.Container) error {
+			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 				service := di.MustInvoke[*di.ToolService](container)
 				registry, err := toolRegistryForCWD(service, cwd)
 				if err != nil {

@@ -132,10 +132,10 @@ func TestDiscoverModelsValidationAndFetchErrors(t *testing.T) {
 	}
 }
 
-type discoveryErrorCase struct { //nolint:govet // Test-case readability is more useful than packing a small table row.
-	options DiscoveryOptions
+type discoveryErrorCase struct {
 	error   string
 	name    string
+	options DiscoveryOptions
 	empty   bool
 }
 

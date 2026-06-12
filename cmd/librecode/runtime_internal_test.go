@@ -12,13 +12,13 @@ import (
 	"github.com/omarluq/librecode/internal/di"
 )
 
-//nolint:paralleltest // Uses package-level cfgFile and disableExtensions flag state.
 func TestWithContainerRunsHandler(t *testing.T) {
-	withConfigFile(t, writeTestConfig(t, "extensions:\n  use: []\n"))
-	withDisableExtensions(t, true)
+	t.Parallel()
+
+	options := commandOptions{configFile: writeTestConfig(t, "extensions:\n  use: []\n"), disableExtensions: true}
 
 	called := false
-	err := withContainer(context.Background(), func(container *di.Container) error {
+	err := withContainerOptions(context.Background(), options, func(container *di.Container) error {
 		called = true
 		require.NotNil(t, container)
 
@@ -29,13 +29,13 @@ func TestWithContainerRunsHandler(t *testing.T) {
 	assert.True(t, called)
 }
 
-//nolint:paralleltest // Uses package-level cfgFile and disableExtensions flag state.
 func TestWithContainerReturnsHandlerError(t *testing.T) {
-	withConfigFile(t, writeTestConfig(t, "extensions:\n  use: []\n"))
-	withDisableExtensions(t, true)
+	t.Parallel()
+
+	options := commandOptions{configFile: writeTestConfig(t, "extensions:\n  use: []\n"), disableExtensions: true}
 
 	expectedErr := errors.New("handler failed")
-	err := withContainer(context.Background(), func(*di.Container) error {
+	err := withContainerOptions(context.Background(), options, func(*di.Container) error {
 		return expectedErr
 	})
 
@@ -110,12 +110,15 @@ func TestFinishContainerRun(t *testing.T) {
 	}
 }
 
-//nolint:paralleltest // Uses package-level cfgFile and disableExtensions flag state.
 func TestWithContainerReturnsConfigError(t *testing.T) {
-	withConfigFile(t, writeTestConfig(t, "database:\n  busy_timeout: -1s\nextensions:\n  use: []\n"))
-	withDisableExtensions(t, true)
+	t.Parallel()
 
-	err := withContainer(context.Background(), func(*di.Container) error {
+	options := commandOptions{
+		configFile:        writeTestConfig(t, "database:\n  busy_timeout: -1s\nextensions:\n  use: []\n"),
+		disableExtensions: true,
+	}
+
+	err := withContainerOptions(context.Background(), options, func(*di.Container) error {
 		return nil
 	})
 
@@ -130,12 +133,4 @@ func failedShutdownReport(err error) *do.ShutdownReport {
 			{Service: "database"}: err,
 		},
 	}
-}
-
-func withDisableExtensions(t *testing.T, disabled bool) {
-	t.Helper()
-
-	previous := disableExtensions
-	disableExtensions = disabled
-	t.Cleanup(func() { disableExtensions = previous })
 }

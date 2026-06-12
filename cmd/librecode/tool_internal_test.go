@@ -12,11 +12,11 @@ import (
 func TestToolPayload(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct { //nolint:govet // Readability matters more than field packing in test cases.
-		args     []string
+	tests := []struct {
 		name     string
 		stdin    string
 		expected string
+		args     []string
 	}{
 		{name: "default", args: nil, stdin: "", expected: `{}`},
 		{name: "blank stdin", args: []string{"-"}, stdin: "  \n", expected: `{}`},

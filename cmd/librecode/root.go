@@ -3,11 +3,32 @@ package main
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/omarluq/librecode/internal/di"
 	"github.com/omarluq/librecode/internal/vinfo"
 )
 
-var cfgFile string
-var disableExtensions bool
+type commandOptions struct {
+	configFile        string
+	disableExtensions bool
+}
+
+func commandOptionsFromCommand(cmd *cobra.Command) commandOptions {
+	root := cmd.Root()
+	configFile, err := root.PersistentFlags().GetString("config")
+	if err != nil {
+		configFile = ""
+	}
+	disableExtensions, err := root.PersistentFlags().GetBool("no-extensions")
+	if err != nil {
+		disableExtensions = false
+	}
+
+	return commandOptions{configFile: configFile, disableExtensions: disableExtensions}
+}
+
+func (options commandOptions) configOverrides() di.ConfigOverrides {
+	return di.ConfigOverrides{DisableExtensions: options.disableExtensions}
+}
 
 func newRootCmd() *cobra.Command {
 	var resumeSession string
@@ -39,8 +60,8 @@ func newRootCmd() *cobra.Command {
 		"resume a session by id (defaults to latest when omitted)",
 	)
 	cmd.Flags().Lookup("resume").NoOptDefVal = latestSessionFlagValue
-	cmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file path")
-	cmd.PersistentFlags().BoolVar(&disableExtensions, "no-extensions", false, "disable Lua extensions for this run")
+	cmd.PersistentFlags().String("config", "", "config file path")
+	cmd.PersistentFlags().Bool("no-extensions", false, "disable Lua extensions for this run")
 	cmd.AddCommand(newChatCmd())
 	cmd.AddCommand(newConfigCmd())
 	cmd.AddCommand(newMigrateCmd())
