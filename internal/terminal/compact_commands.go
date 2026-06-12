@@ -94,9 +94,15 @@ func (app *App) postCompactError(ctx context.Context, compactID uint64, err erro
 func (app *App) handleCompactAsyncEvent(ctx context.Context, payload *asyncEvent) bool {
 	switch payload.Kind {
 	case asyncEventCompactDone:
+		if app.activeCompaction == nil {
+			return false
+		}
 		app.applyCompactDone(ctx, payload)
 		return true
 	case asyncEventCompactError:
+		if app.activeCompaction == nil {
+			return false
+		}
 		app.applyCompactError(payload)
 		return true
 	case asyncEventAuthURL,

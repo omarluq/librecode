@@ -339,20 +339,19 @@ func asyncContextEventKind(kind assistant.StreamEventKind) asyncEventKind {
 }
 
 func (app *App) applyPromptContextEvent(payload *asyncEvent) {
-	app.addSystemMessage(payload.Text)
+	if payload.Text != "" {
+		app.addSystemMessage(payload.Text)
+	}
 	switch payload.Kind {
 	case asyncEventCompactStart:
-		app.compacting = true
-		app.workStartedAt = time.Now()
-		app.workFrame = 0
-		app.setStatus("compacting context")
+		app.startCompactionIndicator()
 	case asyncEventCompactDone:
-		app.compacting = false
+		app.stopCompactionIndicator()
 		if payload.Text != "" {
 			app.setStatus(compactedStatusMessage)
 		}
 	case asyncEventCompactError:
-		app.compacting = false
+		app.stopCompactionIndicator()
 	case asyncEventPromptContext:
 		return
 	case asyncEventAuthURL,
@@ -370,6 +369,17 @@ func (app *App) applyPromptContextEvent(payload *asyncEvent) {
 		asyncEventPromptError:
 		return
 	}
+}
+
+func (app *App) startCompactionIndicator() {
+	app.compacting = true
+	app.workStartedAt = time.Now()
+	app.workFrame = 0
+	app.setStatus("compacting context")
+}
+
+func (app *App) stopCompactionIndicator() {
+	app.compacting = false
 }
 
 func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent) {

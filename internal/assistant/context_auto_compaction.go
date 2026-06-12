@@ -107,27 +107,10 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 		return build, nil, nil
 	}
 
-	runtime.emitContextCompactionEvent(
-		ctx,
-		input.onEvent,
-		StreamEventContextCompactionStart,
-		preRequestAutoCompactionStartMessage(build.Budget),
-	)
-	compactionEntry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.userEntryID)
-	if isCompactNothingToDoError(err) {
-		return nil, nil, validationErr
-	}
+	compactionEntry, err := runtime.compactBeforeRequest(ctx, input, build.Budget, validationErr)
 	if err != nil {
-		return nil, nil, oops.In("assistant").
-			Code("auto_compact").
-			Wrapf(err, "auto-compact context before provider request")
+		return nil, nil, err
 	}
-	runtime.emitContextCompactionEvent(
-		ctx,
-		input.onEvent,
-		StreamEventContextCompactionDone,
-		autoCompactionMessage(build.Budget, compactionEntry),
-	)
 
 	build, err = runtime.buildCompletionRequest(
 		ctx,
@@ -139,18 +122,61 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 		input.onEvent,
 	)
 	if err != nil {
+		runtime.emitContextCompactionError(ctx, input.onEvent, "context auto-compaction before request failed", err)
+
 		return nil, nil, oops.In("assistant").
 			Code("context_request_rebuild").
 			Wrapf(err, "context: rebuild completion request after compaction")
 	}
 	runtime.emitUsageSnapshot(ctx, input.onEvent, build.Context.Usage)
 	if err := build.Budget.Validate(); err != nil {
+		runtime.emitContextCompactionError(ctx, input.onEvent, "context auto-compaction before request failed", err)
+
 		return nil, nil, oops.In("assistant").
 			Code("context_budget_after_compact").
 			Wrapf(err, "context: validate rebuilt budget")
 	}
 
 	return build, compactionEntry, nil
+}
+
+func (runtime *Runtime) compactBeforeRequest(
+	ctx context.Context,
+	input *completionRequestPreparationInput,
+	budget contextwindow.Budget,
+	validationErr error,
+) (*database.EntryEntity, error) {
+	runtime.emitContextCompactionEvent(
+		ctx,
+		input.onEvent,
+		StreamEventContextCompactionStart,
+		preRequestAutoCompactionStartMessage(budget),
+	)
+	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.userEntryID)
+	if isCompactNothingToDoError(err) {
+		runtime.emitContextCompactionErrorMessage(
+			ctx,
+			input.onEvent,
+			"context auto-compaction before request skipped: nothing to compact",
+		)
+
+		return nil, validationErr
+	}
+	if err != nil {
+		runtime.emitContextCompactionError(ctx, input.onEvent, "context auto-compaction before request failed", err)
+
+		return nil, oops.In("assistant").
+			Code("auto_compact").
+			Wrapf(err, "auto-compact context before provider request")
+	}
+	runtime.emitContextCompactionEvent(
+		ctx,
+		input.onEvent,
+		StreamEventContextCompactionDone,
+		autoCompactionMessage(budget, entry),
+	)
+
+	return entry, nil
 }
 
 func isCompactNothingToDoError(err error) bool {
@@ -167,6 +193,26 @@ func (runtime *Runtime) emitContextCompactionEvent(
 ) {
 	emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Usage: nil, Kind: kind, Text: message})
 	runtime.emit(ctx, string(kind), map[string]any{"message": message})
+}
+
+func (runtime *Runtime) emitContextCompactionError(
+	ctx context.Context,
+	onEvent func(StreamEvent),
+	prefix string,
+	err error,
+) {
+	if err == nil {
+		return
+	}
+	runtime.emitContextCompactionErrorMessage(ctx, onEvent, prefix+": "+err.Error())
+}
+
+func (runtime *Runtime) emitContextCompactionErrorMessage(
+	ctx context.Context,
+	onEvent func(StreamEvent),
+	message string,
+) {
+	runtime.emitContextCompactionEvent(ctx, onEvent, StreamEventContextCompactionError, message)
 }
 
 type postResponseAutoCompactionInput struct {
@@ -201,6 +247,12 @@ func (runtime *Runtime) autoCompactAfterResponse(
 	)
 	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.parentEntryID)
 	if isCompactNothingToDoError(err) {
+		runtime.emitContextCompactionErrorMessage(
+			ctx,
+			input.onEvent,
+			"context auto-compaction after response skipped: nothing to compact",
+		)
+
 		return model.EmptyTokenUsage(), false
 	}
 	if err != nil {
@@ -243,12 +295,7 @@ func (runtime *Runtime) emitPostResponseAutoCompactionError(
 	if err == nil {
 		return
 	}
-	runtime.emitContextCompactionEvent(
-		ctx,
-		onEvent,
-		StreamEventContextCompactionError,
-		"context auto-compaction after response failed: "+err.Error(),
-	)
+	runtime.emitContextCompactionError(ctx, onEvent, "context auto-compaction after response failed", err)
 }
 
 func preRequestAutoCompactionStartMessage(budget contextwindow.Budget) string {
