@@ -314,7 +314,9 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 	finishReason := anthropicFinishReason(response.StopReason, len(calls) > 0)
 	text := strings.TrimSpace(strings.Join(parts, "\n"))
 	if finishReason == llm.FinishReasonRefusal {
-		text = anthropicRefusalText(response.StopDetails)
+		if text == "" {
+			text = anthropicRefusalText(response.StopDetails)
+		}
 		calls = nil
 	}
 
@@ -377,9 +379,6 @@ func anthropicRefusalText(details *anthropicStopDetails) string {
 }
 
 func anthropicFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
-	if hasToolCalls {
-		return llm.FinishReasonToolCalls
-	}
 	switch reason {
 	case "end_turn", "stop_sequence":
 		return llm.FinishReasonStop
@@ -390,6 +389,9 @@ func anthropicFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
 	case "refusal":
 		return llm.FinishReasonRefusal
 	default:
+		if hasToolCalls {
+			return llm.FinishReasonToolCalls
+		}
 		return llm.FinishReasonUnknown
 	}
 }
