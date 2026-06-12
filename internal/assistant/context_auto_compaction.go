@@ -13,7 +13,10 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
-const postResponseAutoCompactThresholdPercent = 80
+const (
+	contextAutoCompactionBeforeRequestFailed = "context auto-compaction before request failed"
+	postResponseAutoCompactThresholdPercent  = 80
+)
 
 type contextRequestBuild struct {
 	Context *contextwindow.BuildResult
@@ -102,12 +105,13 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 	if !runtime.cfg.Context.PreflightEnabled {
 		return build, nil, nil
 	}
-	validationErr := build.Budget.Validate()
+	originalBudget := build.Budget
+	validationErr := originalBudget.Validate()
 	if validationErr == nil {
 		return build, nil, nil
 	}
 
-	compactionEntry, err := runtime.compactBeforeRequest(ctx, input, build.Budget, validationErr)
+	compactionEntry, err := runtime.compactBeforeRequest(ctx, input, originalBudget, validationErr)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -122,7 +126,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 		input.onEvent,
 	)
 	if err != nil {
-		runtime.emitContextCompactionError(ctx, input.onEvent, "context auto-compaction before request failed", err)
+		runtime.emitContextCompactionError(ctx, input.onEvent, contextAutoCompactionBeforeRequestFailed, err)
 
 		return nil, nil, oops.In("assistant").
 			Code("context_request_rebuild").
@@ -130,12 +134,18 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 	}
 	runtime.emitUsageSnapshot(ctx, input.onEvent, build.Context.Usage)
 	if err := build.Budget.Validate(); err != nil {
-		runtime.emitContextCompactionError(ctx, input.onEvent, "context auto-compaction before request failed", err)
+		runtime.emitContextCompactionError(ctx, input.onEvent, contextAutoCompactionBeforeRequestFailed, err)
 
 		return nil, nil, oops.In("assistant").
 			Code("context_budget_after_compact").
 			Wrapf(err, "context: validate rebuilt budget")
 	}
+	runtime.emitContextCompactionEvent(
+		ctx,
+		input.onEvent,
+		StreamEventContextCompactionDone,
+		autoCompactionMessage(originalBudget, compactionEntry),
+	)
 
 	return build, compactionEntry, nil
 }
@@ -163,18 +173,12 @@ func (runtime *Runtime) compactBeforeRequest(
 		return nil, validationErr
 	}
 	if err != nil {
-		runtime.emitContextCompactionError(ctx, input.onEvent, "context auto-compaction before request failed", err)
+		runtime.emitContextCompactionError(ctx, input.onEvent, contextAutoCompactionBeforeRequestFailed, err)
 
 		return nil, oops.In("assistant").
 			Code("auto_compact").
 			Wrapf(err, "auto-compact context before provider request")
 	}
-	runtime.emitContextCompactionEvent(
-		ctx,
-		input.onEvent,
-		StreamEventContextCompactionDone,
-		autoCompactionMessage(budget, entry),
-	)
 
 	return entry, nil
 }
