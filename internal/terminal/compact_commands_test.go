@@ -518,6 +518,40 @@ func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
 	}
 }
 
+func TestHandleCompactAsyncEventPassesThroughAutoCompactionEvents(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		kind asyncEventKind
+	}{
+		{name: "start", kind: asyncEventCompactStart},
+		{name: "completion event", kind: asyncEventCompactDone},
+		{name: "error", kind: asyncEventCompactError},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+
+			handled := app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
+				Response: nil, ToolEvent: nil, Usage: nil,
+				Kind: testCase.kind, Provider: "", Text: "auto compact", PromptID: 9,
+			})
+
+			if handled {
+				t.Fatal("auto-compaction event should pass through prompt lifecycle " +
+					"when no manual compaction is active")
+			}
+			if app.compacting {
+				t.Fatal("pass-through should not update compaction state")
+			}
+		})
+	}
+}
+
 func TestApplyCompactErrorDefaultMessage(t *testing.T) {
 	t.Parallel()
 

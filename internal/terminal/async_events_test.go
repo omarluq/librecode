@@ -471,6 +471,17 @@ func promptCompactionLifecycleEventCases() []promptLifecycleCase {
 			},
 			wantHandled: true,
 		},
+		{
+			name:    "plain context notice",
+			payload: asyncTestEvent(asyncEventPromptContext, "", asyncTestCompact, 1),
+			setup:   func(*App) {},
+			assert: func(t *testing.T, app *App) {
+				t.Helper()
+				assert.False(t, app.compacting)
+				assert.Equal(t, asyncTestCompact, app.transcript.History[len(app.transcript.History)-1].Content)
+			},
+			wantHandled: true,
+		},
 	}
 }
 

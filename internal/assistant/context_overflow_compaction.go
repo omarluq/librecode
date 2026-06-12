@@ -10,6 +10,8 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
+const providerContextOverflowCompactionFailed = "provider context overflow compaction failed"
+
 type providerOverflowRecoveryInput struct {
 	preparation     *completionRequestPreparationInput
 	build           *contextRequestBuild
@@ -77,7 +79,7 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 		runtime.emitContextCompactionError(
 			ctx,
 			input.preparation.onEvent,
-			"provider context overflow compaction failed",
+			providerContextOverflowCompactionFailed,
 			err,
 		)
 
@@ -92,7 +94,7 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 			runtime.emitContextCompactionError(
 				ctx,
 				input.preparation.onEvent,
-				"provider context overflow compaction failed",
+				providerContextOverflowCompactionFailed,
 				validationErr,
 			)
 
@@ -105,7 +107,7 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 		ctx,
 		input.preparation.onEvent,
 		StreamEventContextCompactionDone,
-		compactionMessage("context auto-compacted after provider overflow", recoveredBuild.Budget, recoveredEntry),
+		compactionMessage("context auto-compacted after provider overflow", input.build.Budget, recoveredEntry),
 	)
 
 	result, err := runtime.completeWithRetry(ctx, recoveredBuild.Request, input.onRetry)
@@ -147,7 +149,7 @@ func (runtime *Runtime) compactAfterProviderOverflow(
 		runtime.emitContextCompactionError(
 			ctx,
 			input.preparation.onEvent,
-			"provider context overflow compaction failed",
+			providerContextOverflowCompactionFailed,
 			err,
 		)
 
