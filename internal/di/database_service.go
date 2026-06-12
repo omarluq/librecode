@@ -15,6 +15,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
+	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 )
 
 const sqliteDriverName = "sqlite"
@@ -45,10 +46,15 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 		return nil, err
 	}
 
+	sqlProvider, err := ksqlite.NewFromSQLDB(connection)
+	if err != nil {
+		return nil, closeAfterSetupError(connection, "close_after_sql_provider", "sql_provider", databasePath, err)
+	}
+
 	return &DatabaseService{
 		DB:        connection,
-		Sessions:  database.NewSessionRepository(connection),
-		Documents: database.NewDocumentRepository(connection),
+		Sessions:  database.NewSessionRepositoryWithProvider(sqlProvider),
+		Documents: database.NewDocumentRepositoryWithProvider(sqlProvider),
 		path:      databasePath,
 	}, nil
 }

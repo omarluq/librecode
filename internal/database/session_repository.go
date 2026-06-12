@@ -8,20 +8,65 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+	"github.com/vingarcia/ksql"
+	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 )
 
 // SessionRepository provides persistence for sessions and tree entries.
 type SessionRepository struct {
-	connection *sql.DB
-	now        func() time.Time
+	sql ksql.Provider
+	now func() time.Time
 }
 
 // NewSessionRepository creates a session repository.
 func NewSessionRepository(connection *sql.DB) *SessionRepository {
-	return &SessionRepository{
-		connection: connection,
-		now:        time.Now,
+	sqlProvider, err := ksqlite.NewFromSQLDB(connection)
+	if err != nil {
+		panic(err)
 	}
+
+	return NewSessionRepositoryWithProvider(sqlProvider)
+}
+
+// NewSessionRepositoryWithProvider creates a session repository with an explicit SQL provider.
+func NewSessionRepositoryWithProvider(sqlProvider ksql.Provider) *SessionRepository {
+	return &SessionRepository{
+		sql: sqlProvider,
+		now: time.Now,
+	}
+}
+
+type sessionRow struct {
+	ID            string `ksql:"id"`
+	CWD           string `ksql:"cwd"`
+	Name          string `ksql:"name"`
+	ParentSession string `ksql:"parent_session"`
+	CreatedAt     string `ksql:"created_at"`
+	UpdatedAt     string `ksql:"updated_at"`
+}
+
+func sessionFromRow(row *sessionRow) (*SessionEntity, error) {
+	createdAt, err := parseTime(row.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	updatedAt, err := parseTime(row.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SessionEntity{
+		CreatedAt:     createdAt,
+		UpdatedAt:     updatedAt,
+		ID:            row.ID,
+		CWD:           row.CWD,
+		Name:          row.Name,
+		ParentSession: row.ParentSession,
+	}, nil
+}
+
+func sessionsFromRows(rows []sessionRow) ([]SessionEntity, error) {
+	return collectSQLRows(rows, sessionFromRow)
 }
 
 func newSessionID() string {
@@ -52,7 +97,7 @@ VALUES (?, ?, ?, ?, ?, ?)`
 		return nil, oops.In("database").Code("validate_session").Wrapf(err, "validate session")
 	}
 
-	if _, err := repository.connection.ExecContext(
+	if _, err := repository.sql.Exec(
 		ctx,
 		statement,
 		createdSession.ID,
@@ -77,15 +122,7 @@ WHERE cwd = ?
 ORDER BY updated_at DESC
 LIMIT 1`
 
-	foundSession, err := scanSession(repository.connection.QueryRowContext(ctx, query, cwd))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, false, nil
-		}
-		return nil, false, oops.In("database").Code("latest_session").Wrapf(err, "load latest session")
-	}
-
-	return foundSession, true, nil
+	return repository.loadSession(ctx, query, "latest_session", "load latest session", cwd)
 }
 
 // GetSession loads a session by id.
@@ -95,12 +132,27 @@ SELECT id, cwd, name, parent_session, created_at, updated_at
 FROM sessions
 WHERE id = ?`
 
-	foundSession, err := scanSession(repository.connection.QueryRowContext(ctx, query, sessionID))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	return repository.loadSession(ctx, query, "get_session", "load session", sessionID)
+}
+
+func (repository *SessionRepository) loadSession(
+	ctx context.Context,
+	query string,
+	code string,
+	message string,
+	args ...any,
+) (*SessionEntity, bool, error) {
+	var row sessionRow
+	if err := repository.sql.QueryOne(ctx, &row, query, args...); err != nil {
+		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
-		return nil, false, oops.In("database").Code("get_session").Wrapf(err, "load session")
+		return nil, false, oops.In("database").Code(code).Wrapf(err, "%s", message)
+	}
+
+	foundSession, err := sessionFromRow(&row)
+	if err != nil {
+		return nil, false, oops.In("database").Code("scan_session").Wrapf(err, "scan session")
 	}
 
 	return foundSession, true, nil
@@ -114,94 +166,41 @@ FROM sessions
 WHERE cwd = ?
 ORDER BY updated_at DESC`
 
-	rows, err := repository.connection.QueryContext(ctx, query, cwd)
-	if err != nil {
+	rows := []sessionRow{}
+	if err := repository.sql.Query(ctx, &rows, query, cwd); err != nil {
 		return nil, oops.In("database").Code("list_sessions").Wrapf(err, "query sessions")
 	}
 
-	return collectRows(rows, scanSession, sessionRowsErrorInfo())
+	sessions, err := sessionsFromRows(rows)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_session").Wrapf(err, "scan sessions")
+	}
+
+	return sessions, nil
 }
 
 // DeleteSession removes a session and its entry/message rows.
 func (repository *SessionRepository) DeleteSession(ctx context.Context, sessionID string) error {
-	transaction, err := repository.connection.BeginTx(ctx, nil)
-	if err != nil {
-		return oops.In("database").Code("begin_delete_session").Wrapf(err, "begin delete session")
-	}
-	if err := deleteSessionRows(ctx, transaction, sessionID); err != nil {
-		rollbackErr := transaction.Rollback()
-		if rollbackErr != nil {
-			return oops.In("database").Code("delete_session_rollback").Wrapf(rollbackErr, "rollback delete session")
-		}
-
-		return err
-	}
-	if err := transaction.Commit(); err != nil {
-		return oops.In("database").Code("commit_delete_session").Wrapf(err, "commit delete session")
+	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+		return deleteSessionRows(ctx, transaction, sessionID)
+	}); err != nil {
+		return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
 	}
 
 	return nil
 }
 
-func deleteSessionRows(ctx context.Context, transaction *sql.Tx, sessionID string) error {
+func deleteSessionRows(ctx context.Context, transaction ksql.Provider, sessionID string) error {
 	statements := []string{
 		`DELETE FROM session_messages WHERE session_id = ?`,
 		`DELETE FROM session_entries WHERE session_id = ?`,
 		`DELETE FROM sessions WHERE id = ?`,
 	}
 	for _, statement := range statements {
-		if _, err := transaction.ExecContext(ctx, statement, sessionID); err != nil {
+		if _, err := transaction.Exec(ctx, statement, sessionID); err != nil {
 			return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
 		}
 	}
 
 	return nil
-}
-
-func sessionRowsErrorInfo() *rowErrorInfo {
-	return &rowErrorInfo{
-		scanCode:  "scan_session",
-		scanMsg:   "scan session",
-		iterCode:  "iterate_sessions",
-		iterMsg:   "iterate sessions",
-		closeCode: "close_sessions",
-		closeMsg:  "close session rows",
-	}
-}
-
-func scanSession(scanner rowScanner) (*SessionEntity, error) {
-	var createdAt string
-	var updatedAt string
-	foundSession := SessionEntity{
-		CreatedAt:     time.Time{},
-		UpdatedAt:     time.Time{},
-		ID:            "",
-		CWD:           "",
-		Name:          "",
-		ParentSession: "",
-	}
-
-	if err := scanner.Scan(
-		&foundSession.ID,
-		&foundSession.CWD,
-		&foundSession.Name,
-		&foundSession.ParentSession,
-		&createdAt,
-		&updatedAt,
-	); err != nil {
-		return nil, err
-	}
-
-	parsedCreatedAt, err := parseTime(createdAt)
-	if err != nil {
-		return nil, err
-	}
-	parsedUpdatedAt, err := parseTime(updatedAt)
-	if err != nil {
-		return nil, err
-	}
-	foundSession.CreatedAt = parsedCreatedAt
-	foundSession.UpdatedAt = parsedUpdatedAt
-
-	return &foundSession, nil
 }

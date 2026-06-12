@@ -13,6 +13,5 @@ func RegisterServices(injector do.Injector) {
 	do.Provide(injector, NewCacheService)
 	do.Provide(injector, NewExtensionService)
 	do.Provide(injector, NewToolService)
-	do.Provide(injector, NewKSQLService)
 	do.Provide(injector, NewAssistantService)
 }

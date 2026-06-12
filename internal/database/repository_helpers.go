@@ -1,49 +1,22 @@
 package database
 
 import (
-	"database/sql"
 	"fmt"
 	"time"
 
-	"github.com/samber/oops"
+	"github.com/samber/lo"
 )
 
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
-type rowErrorInfo struct {
-	scanCode  string
-	scanMsg   string
-	iterCode  string
-	iterMsg   string
-	closeCode string
-	closeMsg  string
-}
-
-func collectRows[T any](rows *sql.Rows, scan func(rowScanner) (*T, error), errorInfo *rowErrorInfo) (
-	items []T,
-	err error,
-) {
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil && err == nil {
-			err = oops.In("database").Code(errorInfo.closeCode).Wrapf(closeErr, "%s", errorInfo.closeMsg)
+func collectSQLRows[T any, R any](rows []T, convert func(*T) (*R, error)) ([]R, error) {
+	return lo.MapErr(rows, func(row T, _ int) (R, error) {
+		item, err := convert(&row)
+		if err != nil {
+			var zero R
+			return zero, err
 		}
-	}()
 
-	items = []T{}
-	for rows.Next() {
-		item, scanErr := scan(rows)
-		if scanErr != nil {
-			return nil, oops.In("database").Code(errorInfo.scanCode).Wrapf(scanErr, "%s", errorInfo.scanMsg)
-		}
-		items = append(items, *item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, oops.In("database").Code(errorInfo.iterCode).Wrapf(err, "%s", errorInfo.iterMsg)
-	}
-
-	return items, nil
+		return *item, nil
+	})
 }
 
 func parseTime(value string) (time.Time, error) {

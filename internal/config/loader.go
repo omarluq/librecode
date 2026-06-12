@@ -109,6 +109,4 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("cache.enabled", true)
 	viperInstance.SetDefault("cache.capacity", 512)
 	viperInstance.SetDefault("cache.ttl", 10*time.Minute)
-	viperInstance.SetDefault("ksql.endpoint", "")
-	viperInstance.SetDefault("ksql.timeout", 10*time.Second)
 }

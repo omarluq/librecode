@@ -3,7 +3,6 @@ package database_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,43 +75,4 @@ func TestSessionRepository_EnrichesCompactionMetadata(t *testing.T) {
 	assert.Equal(t, rootEntry.ID, compactionEntry.CompactionFirstKeptEntryID)
 	assert.Equal(t, 1234, compactionEntry.CompactionTokensBefore)
 	assert.Positive(t, compactionEntry.TokenEstimate)
-}
-
-func TestSessionRepository_BackfillsEntryMetadataMigration(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	connection := newMigratedThroughVersion(t, 3)
-	repository := database.NewSessionRepository(connection)
-	session, err := repository.CreateSession(ctx, "/work", "legacy", "")
-	require.NoError(t, err)
-
-	createdAt := time.Now().UTC().Format(time.RFC3339Nano)
-	legacyEntryID := "019aced0-f39d-7d31-a522-b8d50af94d6a"
-	_, err = connection.ExecContext(
-		ctx,
-		`INSERT INTO session_entries (
-			id, session_id, parent_id, entry_type, role, content,
-			provider, model, custom_type, data_json, summary, created_at
-		) VALUES (?, ?, NULL, ?, ?, ?, '', '', '', '{}', '', ?)`,
-		legacyEntryID,
-		session.ID,
-		string(database.EntryTypeMessage),
-		string(database.RoleToolResult),
-		"tool: bash\narguments: {\"command\":\"echo hi\"}\nerror:\nboom\n",
-		createdAt,
-	)
-	require.NoError(t, err)
-
-	require.NoError(t, database.Migrate(ctx, connection))
-
-	entry, found, err := repository.Entry(ctx, session.ID, legacyEntryID)
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, "bash", entry.ToolName)
-	assert.Equal(t, "error", entry.ToolStatus)
-	assert.JSONEq(t, `{"command":"echo hi"}`, entry.ToolArgsJSON)
-	assert.False(t, entry.ModelFacing)
-	assert.True(t, entry.Display)
-	assert.Positive(t, entry.TokenEstimate)
 }

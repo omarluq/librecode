@@ -2,12 +2,46 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"time"
 
 	"github.com/samber/oops"
+	"github.com/vingarcia/ksql"
 )
+
+type sessionMessageRow struct {
+	ID        string `ksql:"id"`
+	SessionID string `ksql:"session_id"`
+	EntryID   string `ksql:"entry_id"`
+	Sender    string `ksql:"sender"`
+	Role      string `ksql:"role"`
+	Content   string `ksql:"content"`
+	Provider  string `ksql:"provider"`
+	Model     string `ksql:"model"`
+	CreatedAt string `ksql:"created_at"`
+}
+
+func sessionMessageFromRow(row *sessionMessageRow) (*SessionMessageEntity, error) {
+	createdAt, err := parseTime(row.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &SessionMessageEntity{
+		CreatedAt: createdAt,
+		ID:        row.ID,
+		SessionID: row.SessionID,
+		EntryID:   row.EntryID,
+		Sender:    row.Sender,
+		Role:      Role(row.Role),
+		Content:   row.Content,
+		Provider:  row.Provider,
+		Model:     row.Model,
+	}, nil
+}
+
+func sessionMessagesFromRows(rows []sessionMessageRow) ([]SessionMessageEntity, error) {
+	return collectSQLRows(rows, sessionMessageFromRow)
+}
 
 // Messages returns normalized messages for a session in creation order.
 func (repository *SessionRepository) Messages(ctx context.Context, sessionID string) ([]SessionMessageEntity, error) {
@@ -17,19 +51,17 @@ FROM session_messages
 WHERE session_id = ?
 ORDER BY created_at ASC`
 
-	rows, err := repository.connection.QueryContext(ctx, query, sessionID)
-	if err != nil {
+	rows := []sessionMessageRow{}
+	if err := repository.sql.Query(ctx, &rows, query, sessionID); err != nil {
 		return nil, oops.In("database").Code("list_messages").Wrapf(err, "query session messages")
 	}
 
-	return collectRows(rows, scanSessionMessage, &rowErrorInfo{
-		scanCode:  "scan_message",
-		scanMsg:   "scan session message",
-		iterCode:  "iterate_messages",
-		iterMsg:   "iterate session messages",
-		closeCode: "close_messages",
-		closeMsg:  "close message rows",
-	})
+	messages, err := sessionMessagesFromRows(rows)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_message").Wrapf(err, "scan session messages")
+	}
+
+	return messages, nil
 }
 
 // MessageForEntry returns the normalized message for an entry.
@@ -43,12 +75,17 @@ SELECT id, session_id, entry_id, sender, role, content, provider, model, created
 FROM session_messages
 WHERE session_id = ? AND entry_id = ?`
 
-	message, err := scanSessionMessage(repository.connection.QueryRowContext(ctx, query, sessionID, entryID))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+	var row sessionMessageRow
+	if err := repository.sql.QueryOne(ctx, &row, query, sessionID, entryID); err != nil {
+		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
 		return nil, false, oops.In("database").Code("get_message").Wrapf(err, "load session message")
+	}
+
+	message, err := sessionMessageFromRow(&row)
+	if err != nil {
+		return nil, false, oops.In("database").Code("scan_message").Wrapf(err, "scan session message")
 	}
 
 	return message, true, nil
@@ -56,7 +93,7 @@ WHERE session_id = ? AND entry_id = ?`
 
 func (repository *SessionRepository) appendEntryMessage(
 	ctx context.Context,
-	transaction *sql.Tx,
+	transaction ksql.Provider,
 	entry *EntryEntity,
 ) error {
 	if !entryCarriesMessage(entry) {
@@ -70,7 +107,7 @@ func (repository *SessionRepository) appendEntryMessage(
 	const insertMessage = `
 INSERT INTO session_messages (id, session_id, entry_id, sender, role, content, provider, model, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := transaction.ExecContext(
+	_, err := transaction.Exec(
 		ctx,
 		insertMessage,
 		message.ID,
@@ -119,41 +156,4 @@ func senderIdentity(entry *EntryEntity) string {
 	}
 
 	return string(entry.Message.Role)
-}
-
-func scanSessionMessage(scanner rowScanner) (*SessionMessageEntity, error) {
-	var createdAtRaw string
-	var role string
-	message := SessionMessageEntity{
-		CreatedAt: time.Time{},
-		ID:        "",
-		SessionID: "",
-		EntryID:   "",
-		Sender:    "",
-		Role:      "",
-		Content:   "",
-		Provider:  "",
-		Model:     "",
-	}
-	if err := scanner.Scan(
-		&message.ID,
-		&message.SessionID,
-		&message.EntryID,
-		&message.Sender,
-		&role,
-		&message.Content,
-		&message.Provider,
-		&message.Model,
-		&createdAtRaw,
-	); err != nil {
-		return nil, err
-	}
-	createdAt, err := parseTime(createdAtRaw)
-	if err != nil {
-		return nil, err
-	}
-	message.CreatedAt = createdAt
-	message.Role = Role(role)
-
-	return &message, nil
 }

@@ -44,7 +44,7 @@ func TestBuildContextReturnsAssistantUsageDecodeError(t *testing.T) {
 	})
 	entry.ModelFacing = true
 	require.NoError(t, repository.appendEntry(ctx, &entry))
-	_, err = repository.connection.ExecContext(
+	_, err = repository.sql.Exec(
 		ctx,
 		`UPDATE session_entries SET data_json = ? WHERE id = ?`,
 		`{"usage":`,

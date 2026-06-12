@@ -14,7 +14,6 @@ import (
 type Config struct {
 	Database   DatabaseConfig   `json:"database" mapstructure:"database" yaml:"database"`
 	Cache      CacheConfig      `json:"cache" mapstructure:"cache" yaml:"cache"`
-	KSQL       KSQLConfig       `json:"ksql" mapstructure:"ksql" yaml:"ksql"`
 	Extensions ExtensionsConfig `json:"extensions" mapstructure:"extensions" yaml:"extensions"`
 	Assistant  AssistantConfig  `json:"assistant" mapstructure:"assistant" yaml:"assistant"`
 	Context    ContextConfig    `json:"context" mapstructure:"context" yaml:"context"`
@@ -123,12 +122,6 @@ type CacheConfig struct {
 	TTL      time.Duration `json:"ttl" mapstructure:"ttl" yaml:"ttl"`
 }
 
-// KSQLConfig controls optional ksqlDB integration.
-type KSQLConfig struct {
-	Endpoint string        `json:"endpoint" mapstructure:"endpoint" yaml:"endpoint"`
-	Timeout  time.Duration `json:"timeout" mapstructure:"timeout" yaml:"timeout"`
-}
-
 const (
 	envDevelopment = "development"
 	envTest        = "test"
@@ -146,7 +139,6 @@ func (config *Config) Validate() error {
 		config.validateContext,
 		config.validateModels,
 		config.validateCache,
-		config.validateKSQL,
 	}
 
 	for _, validate := range validators {
@@ -277,14 +269,6 @@ func (config *Config) validateCache() error {
 	}
 	if config.Cache.TTL <= 0 {
 		return fmt.Errorf("config: cache.ttl must be greater than zero")
-	}
-
-	return nil
-}
-
-func (config *Config) validateKSQL() error {
-	if config.KSQL.Timeout <= 0 {
-		return fmt.Errorf("config: ksql.timeout must be greater than zero")
 	}
 
 	return nil
