@@ -42,21 +42,72 @@ func TestWithContainerReturnsHandlerError(t *testing.T) {
 	require.ErrorIs(t, err, expectedErr)
 }
 
-func TestFinishContainerRunCombinesRunAndShutdownErrors(t *testing.T) {
+func TestFinishContainerRun(t *testing.T) {
 	t.Parallel()
+
 	runErr := errors.New("run failed")
-	err := finishContainerRun(runErr, failedShutdownReport(errors.New("shutdown failed")))
 
-	require.ErrorIs(t, err, runErr)
-	assert.Contains(t, err.Error(), "shutdown failed")
-}
+	tests := []struct {
+		name           string
+		report         *do.ShutdownReport
+		runErr         error
+		expectErrIs    error
+		expectContains string
+		expectErr      bool
+	}{
+		{
+			name:           "run and shutdown errors",
+			report:         failedShutdownReport(errors.New("shutdown failed")),
+			runErr:         runErr,
+			expectErrIs:    runErr,
+			expectContains: "shutdown failed",
+			expectErr:      true,
+		},
+		{
+			name:           "shutdown error only",
+			report:         failedShutdownReport(errors.New("shutdown failed")),
+			runErr:         nil,
+			expectErrIs:    nil,
+			expectContains: "shutdown failed",
+			expectErr:      true,
+		},
+		{
+			name:           "run error only",
+			report:         nil,
+			runErr:         runErr,
+			expectErrIs:    runErr,
+			expectContains: "",
+			expectErr:      true,
+		},
+		{
+			name:           "nil shutdown report success",
+			report:         nil,
+			runErr:         nil,
+			expectErrIs:    nil,
+			expectContains: "",
+			expectErr:      false,
+		},
+	}
 
-func TestFinishContainerRunReturnsShutdownError(t *testing.T) {
-	t.Parallel()
-	err := finishContainerRun(nil, failedShutdownReport(errors.New("shutdown failed")))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "shutdown failed")
+			err := finishContainerRun(test.runErr, test.report)
+			if !test.expectErr {
+				require.NoError(t, err)
+				return
+			}
+
+			require.Error(t, err)
+			if test.expectErrIs != nil {
+				require.ErrorIs(t, err, test.expectErrIs)
+			}
+			if test.expectContains != "" {
+				assert.Contains(t, err.Error(), test.expectContains)
+			}
+		})
+	}
 }
 
 //nolint:paralleltest // Uses package-level cfgFile and disableExtensions flag state.
