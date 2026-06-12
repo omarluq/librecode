@@ -770,6 +770,7 @@ func testConfig() *config.Config {
 			MaxOpenConns:    1,
 			MaxIdleConns:    1,
 			ConnMaxLifetime: time.Minute,
+			BusyTimeout:     15 * time.Second,
 		},
 		Extensions: config.ExtensionsConfig{
 			Use:     []config.ExtensionUse{},

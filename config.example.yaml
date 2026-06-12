@@ -13,9 +13,12 @@ database:
   # ~/.librecode/librecode.db.
   path: ""
   apply_migrations: true
+  # SQLite remains single-writer; keep one connection per process and let
+  # busy_timeout wait for short writes from other librecode sessions.
   max_open_conns: 1
   max_idle_conns: 1
   conn_max_lifetime: 30m
+  busy_timeout: 15s
 
 extensions:
   enabled: true

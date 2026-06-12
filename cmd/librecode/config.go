@@ -128,6 +128,7 @@ func configEntries(cfg *config.Config) []configEntry {
 		{key: "database.max_open_conns", value: fmt.Sprint(cfg.Database.MaxOpenConns)},
 		{key: "database.max_idle_conns", value: fmt.Sprint(cfg.Database.MaxIdleConns)},
 		{key: "database.conn_max_lifetime", value: cfg.Database.ConnMaxLifetime.String()},
+		{key: "database.busy_timeout", value: cfg.Database.BusyTimeout.String()},
 		{key: "extensions.enabled", value: fmt.Sprint(cfg.Extensions.Enabled)},
 		{key: "extensions.use", value: strings.Join(extensionUseSources(cfg.Extensions.Use), ",")},
 		{key: "assistant.provider", value: cfg.Assistant.Provider},

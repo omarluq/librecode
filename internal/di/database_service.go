@@ -39,31 +39,9 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 		return nil, oops.In("database").Code("mkdir").With("path", databasePath).Wrapf(mkdirErr, "create database dir")
 	}
 
-	connection, err := sql.Open(sqliteDriverName, databasePath)
+	connection, err := openSQLiteDatabase(databasePath, cfg.Database)
 	if err != nil {
-		return nil, oops.In("database").Code("open").With("path", databasePath).Wrapf(err, "open database")
-	}
-
-	connection.SetMaxOpenConns(cfg.Database.MaxOpenConns)
-	connection.SetMaxIdleConns(cfg.Database.MaxIdleConns)
-	connection.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime)
-
-	if err := connection.PingContext(context.Background()); err != nil {
-		closeErr := connection.Close()
-		if closeErr != nil {
-			return nil, oops.In("database").Code("close_after_ping").Wrapf(closeErr, "close failed database")
-		}
-		return nil, oops.In("database").Code("ping").With("path", databasePath).Wrapf(err, "ping database")
-	}
-
-	if cfg.Database.ApplyMigrations {
-		if err := database.Migrate(context.Background(), connection); err != nil {
-			closeErr := connection.Close()
-			if closeErr != nil {
-				return nil, oops.In("database").Code("close_after_migrate").Wrapf(closeErr, "close failed database")
-			}
-			return nil, oops.In("database").Code("migrate").With("path", databasePath).Wrapf(err, "migrate database")
-		}
+		return nil, err
 	}
 
 	return &DatabaseService{
@@ -96,6 +74,57 @@ func (service *DatabaseService) Shutdown(ctx context.Context) error {
 
 		return nil
 	}
+}
+
+func openSQLiteDatabase(databasePath string, cfg config.DatabaseConfig) (*sql.DB, error) {
+	dsn := database.SQLiteDSN(databasePath, database.SQLiteOptions{BusyTimeout: cfg.BusyTimeout})
+	connection, err := sql.Open(sqliteDriverName, dsn)
+	if err != nil {
+		return nil, oops.In("database").Code("open").With("path", databasePath).Wrapf(err, "open database")
+	}
+
+	connection.SetMaxOpenConns(cfg.MaxOpenConns)
+	connection.SetMaxIdleConns(cfg.MaxIdleConns)
+	connection.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+
+	setupCtx := context.Background()
+	if err := setupSQLiteDatabase(setupCtx, connection, databasePath, cfg); err != nil {
+		return nil, err
+	}
+
+	return connection, nil
+}
+
+func setupSQLiteDatabase(
+	ctx context.Context,
+	connection *sql.DB,
+	databasePath string,
+	cfg config.DatabaseConfig,
+) error {
+	if err := connection.PingContext(ctx); err != nil {
+		return closeAfterSetupError(connection, "close_after_ping", "ping", databasePath, err)
+	}
+
+	options := database.SQLiteOptions{BusyTimeout: cfg.BusyTimeout}
+	if err := database.ConfigureSQLite(ctx, connection, options); err != nil {
+		return closeAfterSetupError(connection, "close_after_configure", "configure", databasePath, err)
+	}
+
+	if cfg.ApplyMigrations {
+		if err := database.Migrate(ctx, connection); err != nil {
+			return closeAfterSetupError(connection, "close_after_migrate", "migrate", databasePath, err)
+		}
+	}
+
+	return nil
+}
+
+func closeAfterSetupError(connection *sql.DB, closeCode, code, databasePath string, err error) error {
+	if closeErr := connection.Close(); closeErr != nil {
+		return oops.In("database").Code(closeCode).Wrapf(closeErr, "close failed database")
+	}
+
+	return oops.In("database").Code(code).With("path", databasePath).Wrapf(err, "%s database", code)
 }
 
 func resolveDatabasePath(cfg *config.Config) (string, error) {

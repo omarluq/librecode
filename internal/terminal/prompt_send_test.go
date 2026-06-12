@@ -465,6 +465,7 @@ func promptSendTestConfig() *config.Config {
 			MaxOpenConns:    1,
 			MaxIdleConns:    1,
 			ConnMaxLifetime: time.Minute,
+			BusyTimeout:     15 * time.Second,
 		},
 		Cache: config.CacheConfig{Enabled: false, Capacity: 1, TTL: time.Minute},
 	}

@@ -246,6 +246,7 @@ func renderParityConfig() *config.Config {
 			MaxOpenConns:    0,
 			MaxIdleConns:    0,
 			ConnMaxLifetime: 0,
+			BusyTimeout:     0,
 		},
 		Cache: config.CacheConfig{
 			Enabled:  false,
