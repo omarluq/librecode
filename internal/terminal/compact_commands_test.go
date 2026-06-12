@@ -526,7 +526,7 @@ func TestHandleCompactAsyncEventPassesThroughAutoCompactionEvents(t *testing.T) 
 		kind asyncEventKind
 	}{
 		{name: "start", kind: asyncEventCompactStart},
-		{name: "completion event", kind: asyncEventCompactDone},
+		{name: "done", kind: asyncEventCompactDone},
 		{name: "error", kind: asyncEventCompactError},
 	}
 
