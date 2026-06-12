@@ -104,62 +104,85 @@ func TestParseSSEResultFailureCases(t *testing.T) {
 	}
 }
 
-func TestParseSSEResultIncompleteMaxOutputTokensReturnsPartialResult(t *testing.T) {
+func TestParseSSEResultIncompleteEvents(t *testing.T) {
 	t.Parallel()
 
-	stream := strings.Join([]string{
-		`data: {"type":"response.output_text.delta","delta":"partial "}`,
-		`data: {"type":"response.output_text.delta","delta":"answer"}`,
-		`data: {"type":"response.incomplete","response":{"status":"incomplete",` +
-			`"incomplete_details":{"reason":"max_output_tokens"},"output":[],` +
-			`"usage":{"input_tokens":10,"output_tokens":2}}}`,
-		``,
-	}, "\n")
+	tests := []struct {
+		name                 string
+		stream               string
+		expectedText         string
+		expectedFinishReason llm.FinishReason
+		expectedToolName     string
+		expectedInputTokens  int
+		expectedOutputTokens int
+		expectedToolCalls    int
+	}{
+		{
+			name: "max output tokens returns accumulated deltas",
+			stream: strings.Join([]string{
+				`data: {"type":"response.output_text.delta","delta":"partial "}`,
+				`data: {"type":"response.output_text.delta","delta":"answer"}`,
+				`data: {"type":"response.incomplete","response":{"status":"incomplete",` +
+					`"incomplete_details":{"reason":"max_output_tokens"},"output":[],` +
+					`"usage":{"input_tokens":10,"output_tokens":2}}}`,
+				``,
+			}, "\n"),
+			expectedText:         "partial answer",
+			expectedFinishReason: llm.FinishReasonLength,
+			expectedToolName:     "",
+			expectedInputTokens:  10,
+			expectedOutputTokens: 2,
+			expectedToolCalls:    0,
+		},
+		{
+			name: "max output tokens preserves final finish reason with accumulated items",
+			stream: strings.Join([]string{
+				`data: {"type":"response.output_item.done","item":{"id":"msg_1","type":"message",` +
+					`"content":[{"type":"output_text","text":"partial answer"}]}}`,
+				`data: {"type":"response.incomplete","response":{"status":"incomplete",` +
+					`"incomplete_details":{"reason":"max_output_tokens"},"output":[],` +
+					`"usage":{"input_tokens":10,"output_tokens":2}}}`,
+				``,
+			}, "\n"),
+			expectedText:         "partial answer",
+			expectedFinishReason: llm.FinishReasonLength,
+			expectedToolName:     "",
+			expectedInputTokens:  10,
+			expectedOutputTokens: 2,
+			expectedToolCalls:    0,
+		},
+		{
+			name: "tool calls win over length",
+			stream: "data: " + `{"type":"response.incomplete","response":{"status":"incomplete",` +
+				`"incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"call_1",` +
+				`"type":"function_call","call_id":"call_1","name":"read",` +
+				`"arguments":"{\"path\":\"README.md\"}"}]}}` + "\n",
+			expectedText:         "",
+			expectedFinishReason: llm.FinishReasonToolCalls,
+			expectedToolName:     jsonReadToolName,
+			expectedInputTokens:  0,
+			expectedOutputTokens: 0,
+			expectedToolCalls:    1,
+		},
+	}
 
-	result, err := parseSSEResult(strings.NewReader(stream), nil)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, err)
-	assert.Equal(t, "partial answer", result.Text)
-	assert.Equal(t, llm.FinishReasonLength, result.FinishReason)
-	assert.Equal(t, 10, result.Usage.InputTokens)
-	assert.Equal(t, 2, result.Usage.OutputTokens)
-}
+			result, err := parseSSEResult(strings.NewReader(test.stream), nil)
 
-func TestParseSSEResultPreservesFinalFinishReasonWhenUsingAccumulatedItems(t *testing.T) {
-	t.Parallel()
-
-	stream := strings.Join([]string{
-		`data: {"type":"response.output_item.done","item":{"id":"msg_1","type":"message",` +
-			`"content":[{"type":"output_text","text":"partial answer"}]}}`,
-		`data: {"type":"response.incomplete","response":{"status":"incomplete",` +
-			`"incomplete_details":{"reason":"max_output_tokens"},"output":[],` +
-			`"usage":{"input_tokens":10,"output_tokens":2}}}`,
-		``,
-	}, "\n")
-
-	result, err := parseSSEResult(strings.NewReader(stream), nil)
-
-	require.NoError(t, err)
-	assert.Equal(t, "partial answer", result.Text)
-	assert.Equal(t, llm.FinishReasonLength, result.FinishReason)
-	assert.Equal(t, 10, result.Usage.InputTokens)
-	assert.Equal(t, 2, result.Usage.OutputTokens)
-}
-
-func TestParseSSEResultIncompleteToolCallsWinOverLength(t *testing.T) {
-	t.Parallel()
-
-	stream := "data: " + `{"type":"response.incomplete","response":{"status":"incomplete",` +
-		`"incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"call_1",` +
-		`"type":"function_call","call_id":"call_1","name":"read",` +
-		`"arguments":"{\"path\":\"README.md\"}"}]}}` + "\n"
-
-	result, err := parseSSEResult(strings.NewReader(stream), nil)
-
-	require.NoError(t, err)
-	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
-	require.Len(t, result.ToolCalls, 1)
-	assert.Equal(t, jsonReadToolName, result.ToolCalls[0].Name)
+			require.NoError(t, err)
+			assert.Equal(t, test.expectedText, result.Text)
+			assert.Equal(t, test.expectedFinishReason, result.FinishReason)
+			assert.Equal(t, test.expectedInputTokens, result.Usage.InputTokens)
+			assert.Equal(t, test.expectedOutputTokens, result.Usage.OutputTokens)
+			require.Len(t, result.ToolCalls, test.expectedToolCalls)
+			if test.expectedToolCalls > 0 {
+				assert.Equal(t, test.expectedToolName, result.ToolCalls[0].Name)
+			}
+		})
+	}
 }
 
 func completedSSEEvent() string {
