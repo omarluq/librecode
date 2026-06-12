@@ -14,6 +14,8 @@ const (
 	FinishReasonToolCalls FinishReason = "tool-calls"
 	// FinishReasonContentFilter means provider policy filtered the response.
 	FinishReasonContentFilter FinishReason = "content-filter"
+	// FinishReasonRefusal means the model declined the request as a successful response.
+	FinishReasonRefusal FinishReason = "refusal"
 	// FinishReasonError means the provider reported a generation error.
 	FinishReasonError FinishReason = "error"
 	// FinishReasonAborted means generation was canceled or aborted.

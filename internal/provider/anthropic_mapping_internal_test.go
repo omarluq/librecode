@@ -76,16 +76,48 @@ func TestAnthropicToolArgumentsHandlesMalformedAndScalarInput(t *testing.T) {
 	assert.JSONEq(t, `"plain"`, argumentsJSON)
 }
 
-func TestParseAnthropicResultMapsMaxTokensFinishReason(t *testing.T) {
+func TestParseAnthropicResultMapsFinishReason(t *testing.T) {
 	t.Parallel()
 
-	result, err := parseAnthropicResult([]byte(
-		`{"stop_reason":"max_tokens","content":[{"type":"text","text":"partial"}]}`,
-	))
+	tests := []struct {
+		want llm.FinishReason
+		name string
+		body string
+	}{
+		{
+			name: "max tokens",
+			body: `{"stop_reason":"max_tokens","content":[{"type":"text","text":"partial"}]}`,
+			want: llm.FinishReasonLength,
+		},
+		{
+			name: "context exceeded",
+			body: `{"stop_reason":"model_context_window_exceeded","content":[{"type":"text","text":"partial"}]}`,
+			want: llm.FinishReasonLength,
+		},
+		{
+			name: "refusal",
+			body: `{
+				"stop_reason":"refusal",
+				"stop_details":{"type":"refusal","category":"cyber","explanation":"declined"},
+				"content":[{"type":"text","text":"partial"}]
+			}`,
+			want: llm.FinishReasonRefusal,
+		},
+	}
 
-	require.NoError(t, err)
-	assert.Equal(t, "partial", result.Text)
-	assert.Equal(t, llm.FinishReasonLength, result.FinishReason)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			result, err := parseAnthropicResult([]byte(test.body))
+
+			require.NoError(t, err)
+			assert.Equal(t, test.want, result.FinishReason)
+			if test.want == llm.FinishReasonRefusal {
+				assert.Equal(t, "The model refused the request (cyber): declined", result.Text)
+			}
+		})
+	}
 }
 
 func TestAnthropicAssistantToolMessageMapsProviderNames(t *testing.T) {

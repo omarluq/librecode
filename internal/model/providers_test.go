@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/anthropicmodel"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -41,8 +42,57 @@ func TestAnthropicAPIAndSubscriptionProvidersAreSeparate(t *testing.T) {
 
 	assert.Equal(t, "Anthropic API", model.ProviderDisplayNames["anthropic"])
 	assert.Equal(t, "Claude Pro/Max (Anthropic OAuth)", model.ProviderDisplayNames["anthropic-claude"])
-	assert.Contains(t, model.DefaultModelPerProvider, "anthropic")
-	assert.Contains(t, model.DefaultModelPerProvider, "anthropic-claude")
+	assert.Equal(t, anthropicmodel.Fable5, model.DefaultModelPerProvider["anthropic"])
+	assert.Equal(t, anthropicmodel.Fable5, model.DefaultModelPerProvider["anthropic-claude"])
+}
+
+func TestAnthropicBuiltInDefaultsSupportFableAndMythos(t *testing.T) {
+	t.Parallel()
+
+	for _, provider := range []string{"anthropic", "anthropic-claude"} {
+		for _, modelID := range []string{anthropicmodel.Fable5, anthropicmodel.Mythos5} {
+			t.Run(provider+"/"+modelID, func(t *testing.T) {
+				t.Parallel()
+
+				builtIn := findBuiltIn(t, provider, modelID)
+				assert.Equal(t, 1_000_000, builtIn.ContextWindow)
+				assert.Equal(t, 128_000, builtIn.MaxTokens)
+				assert.True(t, builtIn.Reasoning)
+				assert.NotNil(t, builtIn.ThinkingLevelMap)
+				assert.Contains(t, builtIn.ThinkingLevelMap, model.ThinkingOff)
+				assert.Contains(t, builtIn.ThinkingLevelMap, model.ThinkingXHigh)
+			})
+		}
+	}
+}
+
+func findBuiltIn(t *testing.T, provider, modelID string) model.Model {
+	t.Helper()
+
+	builtIns := model.BuiltInModels()
+	for index := range builtIns {
+		builtIn := builtIns[index]
+		if builtIn.Provider == provider && builtIn.ID == modelID {
+			return builtIn
+		}
+	}
+	require.Failf(t, "built-in model not found", "%s/%s", provider, modelID)
+
+	return model.Model{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		Provider:         "",
+		ID:               "",
+		Name:             "",
+		API:              "",
+		BaseURL:          "",
+		Input:            nil,
+		Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
+		ContextWindow:    0,
+		MaxTokens:        0,
+		Reasoning:        false,
+	}
 }
 
 func TestBuiltInProviderCatalogIsTrimmedToImplementedProviders(t *testing.T) {

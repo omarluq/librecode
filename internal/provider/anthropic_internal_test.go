@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/omarluq/librecode/internal/anthropicmodel"
 	"github.com/omarluq/librecode/internal/llm"
 )
 
@@ -65,17 +66,57 @@ func TestAnthropicPayloadAddsBudgetThinking(t *testing.T) {
 	}, payload[jsonThinkingKey])
 }
 
-func TestAnthropicPayloadDisablesThinkingWhenOff(t *testing.T) {
+func TestAnthropicPayloadThinkingWhenOff(t *testing.T) {
 	t.Parallel()
 
-	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	setTestRequestModelID(request, testAdaptiveAnthropicModelID)
-	setTestRequestReasoning(request, true)
-	setTestRequestThinkingLevel(request, thinkingOff)
-	payload := anthropicPayload(request, nil)
+	tests := []struct {
+		wantThinking map[string]any
+		name         string
+		modelID      string
+		wantEffort   string
+	}{
+		{
+			name:         "adaptive capable model can disable thinking",
+			modelID:      testAdaptiveAnthropicModelID,
+			wantThinking: map[string]any{jsonTypeKey: "disabled"},
+			wantEffort:   "",
+		},
+		{
+			name:         "fable omits unsupported disabled thinking",
+			modelID:      anthropicmodel.Fable5,
+			wantThinking: nil,
+			wantEffort:   "",
+		},
+		{
+			name:         "mythos omits unsupported disabled thinking",
+			modelID:      anthropicmodel.Mythos5,
+			wantThinking: nil,
+			wantEffort:   "",
+		},
+	}
 
-	assert.Equal(t, map[string]any{jsonTypeKey: "disabled"}, payload[jsonThinkingKey])
-	assert.NotContains(t, payload, "output_config")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := testCompletionRequestAuth("sk-ant-api03-secret")
+			setTestRequestModelID(request, test.modelID)
+			setTestRequestReasoning(request, true)
+			setTestRequestThinkingLevel(request, thinkingOff)
+			payload := anthropicPayload(request, nil)
+
+			if test.wantThinking == nil {
+				assert.NotContains(t, payload, jsonThinkingKey)
+			} else {
+				assert.Equal(t, test.wantThinking, payload[jsonThinkingKey])
+			}
+			if test.wantEffort == "" {
+				assert.NotContains(t, payload, "output_config")
+				return
+			}
+			assert.Equal(t, map[string]any{reasoningEffortKey: test.wantEffort}, payload["output_config"])
+		})
+	}
 }
 
 func TestAnthropicToolNameMapping(t *testing.T) {

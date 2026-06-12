@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/anthropicmodel"
 )
 
 const (
@@ -319,6 +321,7 @@ func codexDefinition(
 
 func thinkingLevelsForDiscoveredModel(provider, modelID string) map[ThinkingLevel]*string {
 	levels := map[ThinkingLevel]*string{}
+	addAnthropicThinkingLevels(levels, provider, modelID)
 	addOpenAIThinkingOff(levels, provider, modelID)
 	addOpenAIThinkingNone(levels, provider, modelID)
 	addOpenAIXHigh(levels, modelID)
@@ -327,6 +330,18 @@ func thinkingLevelsForDiscoveredModel(provider, modelID string) map[ThinkingLeve
 	}
 
 	return levels
+}
+
+func addAnthropicThinkingLevels(levels map[ThinkingLevel]*string, provider, modelID string) {
+	if provider != providerAnthropic && provider != providerAnthropicClaude {
+		return
+	}
+	levels[ThinkingOff] = nil
+	if !anthropicmodel.SupportsXHigh(modelID) {
+		return
+	}
+	xhigh := string(ThinkingXHigh)
+	levels[ThinkingXHigh] = &xhigh
 }
 
 func addOpenAIThinkingOff(levels map[ThinkingLevel]*string, provider, modelID string) {
@@ -347,7 +362,7 @@ func addOpenAIXHigh(levels map[ThinkingLevel]*string, modelID string) {
 	if !openAISupportsXHigh(modelID) {
 		return
 	}
-	xhigh := "xhigh"
+	xhigh := string(ThinkingXHigh)
 	levels[ThinkingXHigh] = &xhigh
 }
 
