@@ -31,6 +31,7 @@ func TestFinishProviderResultAllowsEmptyText(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.True(t, finished)
+	assert.Empty(t, result.Content)
 	assert.Empty(t, responseText(result))
 }
 

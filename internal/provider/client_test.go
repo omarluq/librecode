@@ -125,6 +125,27 @@ func TestParseSSEResultIncompleteMaxOutputTokensReturnsPartialResult(t *testing.
 	assert.Equal(t, 2, result.Usage.OutputTokens)
 }
 
+func TestParseSSEResultPreservesFinalFinishReasonWhenUsingAccumulatedItems(t *testing.T) {
+	t.Parallel()
+
+	stream := strings.Join([]string{
+		`data: {"type":"response.output_item.done","item":{"id":"msg_1","type":"message",` +
+			`"content":[{"type":"output_text","text":"partial answer"}]}}`,
+		`data: {"type":"response.incomplete","response":{"status":"incomplete",` +
+			`"incomplete_details":{"reason":"max_output_tokens"},"output":[],` +
+			`"usage":{"input_tokens":10,"output_tokens":2}}}`,
+		``,
+	}, "\n")
+
+	result, err := parseSSEResult(strings.NewReader(stream), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "partial answer", result.Text)
+	assert.Equal(t, llm.FinishReasonLength, result.FinishReason)
+	assert.Equal(t, 10, result.Usage.InputTokens)
+	assert.Equal(t, 2, result.Usage.OutputTokens)
+}
+
 func TestParseSSEResultIncompleteToolCallsWinOverLength(t *testing.T) {
 	t.Parallel()
 

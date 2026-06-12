@@ -202,21 +202,16 @@ func parseSSEResult(reader io.Reader, onEvent func(*llm.StreamChunk)) (*provider
 			Errorf("provider stream closed before completion")
 	}
 	fallbackText := strings.TrimSpace(strings.Join(accumulator.parts, ""))
-	if accumulator.finalResponse != nil {
-		result := providerResultFromResponse(accumulator.finalResponse)
-		if len(result.OutputItems) == 0 && len(accumulator.items) > 0 {
-			usage := result.Usage
-			result = providerResultFromOutputItems(accumulator.items, fallbackText)
-			result.Usage = usage
-		}
-		if strings.TrimSpace(result.Text) == "" {
-			result.Text = fallbackText
-		}
 
-		return result, nil
+	return providerResultFromSSEAccumulator(accumulator, fallbackText), nil
+}
+
+func providerResultFromSSEAccumulator(accumulator *sseAccumulator, fallbackText string) *providerResult {
+	if accumulator.finalResponse != nil {
+		return providerResultFromSSEFinalResponse(accumulator, fallbackText)
 	}
 	if len(accumulator.items) > 0 {
-		return providerResultFromOutputItems(accumulator.items, fallbackText), nil
+		return providerResultFromOutputItems(accumulator.items, fallbackText)
 	}
 
 	return &providerResult{
@@ -226,7 +221,25 @@ func parseSSEResult(reader io.Reader, onEvent func(*llm.StreamChunk)) (*provider
 		Thinking:     nil,
 		ToolCalls:    nil,
 		Usage:        llm.EmptyUsage(),
-	}, nil
+	}
+}
+
+func providerResultFromSSEFinalResponse(accumulator *sseAccumulator, fallbackText string) *providerResult {
+	result := providerResultFromResponse(accumulator.finalResponse)
+	if len(result.OutputItems) == 0 && len(accumulator.items) > 0 {
+		usage := result.Usage
+		finishReason := result.FinishReason
+		result = providerResultFromOutputItems(accumulator.items, fallbackText)
+		result.Usage = usage
+		if result.FinishReason == llm.FinishReasonUnknown {
+			result.FinishReason = finishReason
+		}
+	}
+	if strings.TrimSpace(result.Text) == "" {
+		result.Text = fallbackText
+	}
+
+	return result
 }
 
 func scanSSEResponse(scanner *bufio.Scanner, onEvent func(*llm.StreamChunk)) (accumulator *sseAccumulator, err error) {
