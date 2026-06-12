@@ -184,7 +184,9 @@ func finishProviderResult(result *llm.Response, providerResult *providerResult) 
 	if result.FinishReason == llm.FinishReasonUnknown {
 		result.FinishReason = llm.FinishReasonStop
 	}
-	result.Content = append(result.Content, llm.TextPart(strings.TrimSpace(providerResult.Text)))
+	if text := strings.TrimSpace(providerResult.Text); text != "" {
+		result.Content = append(result.Content, llm.TextPart(text))
+	}
 
 	return true, nil
 }
