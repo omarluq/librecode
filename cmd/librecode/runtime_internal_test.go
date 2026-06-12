@@ -1,0 +1,90 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/samber/do/v2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/di"
+)
+
+//nolint:paralleltest // Uses package-level cfgFile and disableExtensions flag state.
+func TestWithContainerRunsHandler(t *testing.T) {
+	withConfigFile(t, writeTestConfig(t, "extensions:\n  use: []\n"))
+	withDisableExtensions(t, true)
+
+	called := false
+	err := withContainer(context.Background(), func(container *di.Container) error {
+		called = true
+		require.NotNil(t, container)
+
+		return nil
+	})
+
+	require.NoError(t, err)
+	assert.True(t, called)
+}
+
+//nolint:paralleltest // Uses package-level cfgFile and disableExtensions flag state.
+func TestWithContainerReturnsHandlerError(t *testing.T) {
+	withConfigFile(t, writeTestConfig(t, "extensions:\n  use: []\n"))
+	withDisableExtensions(t, true)
+
+	expectedErr := errors.New("handler failed")
+	err := withContainer(context.Background(), func(*di.Container) error {
+		return expectedErr
+	})
+
+	require.ErrorIs(t, err, expectedErr)
+}
+
+func TestFinishContainerRunCombinesRunAndShutdownErrors(t *testing.T) {
+	t.Parallel()
+	runErr := errors.New("run failed")
+	err := finishContainerRun(runErr, failedShutdownReport(errors.New("shutdown failed")))
+
+	require.ErrorIs(t, err, runErr)
+	assert.Contains(t, err.Error(), "shutdown failed")
+}
+
+func TestFinishContainerRunReturnsShutdownError(t *testing.T) {
+	t.Parallel()
+	err := finishContainerRun(nil, failedShutdownReport(errors.New("shutdown failed")))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "shutdown failed")
+}
+
+//nolint:paralleltest // Uses package-level cfgFile and disableExtensions flag state.
+func TestWithContainerReturnsConfigError(t *testing.T) {
+	withConfigFile(t, writeTestConfig(t, "database:\n  busy_timeout: -1s\nextensions:\n  use: []\n"))
+	withDisableExtensions(t, true)
+
+	err := withContainer(context.Background(), func(*di.Container) error {
+		return nil
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "database.busy_timeout cannot be negative")
+}
+
+func failedShutdownReport(err error) *do.ShutdownReport {
+	return &do.ShutdownReport{
+		Succeed: false,
+		Errors: map[do.ServiceDescription]error{
+			{Service: "database"}: err,
+		},
+	}
+}
+
+func withDisableExtensions(t *testing.T, disabled bool) {
+	t.Helper()
+
+	previous := disableExtensions
+	disableExtensions = disabled
+	t.Cleanup(func() { disableExtensions = previous })
+}

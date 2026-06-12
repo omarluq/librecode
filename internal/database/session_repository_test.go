@@ -70,6 +70,15 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 	require.NotNil(t, entries[1].ParentID)
 	assert.Equal(t, firstEntry.ID, *entries[1].ParentID)
 
+	rootChildren, err := repository.Children(ctx, createdSession.ID, nil)
+	require.NoError(t, err)
+	require.Len(t, rootChildren, 1)
+	assert.Equal(t, firstEntry.ID, rootChildren[0].ID)
+	childEntries, err := repository.Children(ctx, createdSession.ID, &firstEntry.ID)
+	require.NoError(t, err)
+	require.Len(t, childEntries, 1)
+	assert.Equal(t, secondEntry.ID, childEntries[0].ID)
+
 	messages, err := repository.Messages(ctx, createdSession.ID)
 	require.NoError(t, err)
 	require.Len(t, messages, 2)
@@ -134,6 +143,31 @@ func TestSessionRepository_AppendMessagePreservesInputTimestamp(t *testing.T) {
 			assert.Equal(t, expectedTimestamp, storedMessage.CreatedAt)
 		})
 	}
+}
+
+func TestSessionRepository_LoadsAndListsSessions(t *testing.T) {
+	t.Parallel()
+
+	repository := newTestSessionRepository(t)
+	ctx := context.Background()
+
+	oldSession, err := repository.CreateSession(ctx, "/work", "old", "")
+	require.NoError(t, err)
+	newSession, err := repository.CreateSession(ctx, "/work", "new", oldSession.ID)
+	require.NoError(t, err)
+	_, err = repository.CreateSession(ctx, "/other", "other", "")
+	require.NoError(t, err)
+
+	foundSession, found, err := repository.GetSession(ctx, newSession.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, oldSession.ID, foundSession.ParentSession)
+
+	sessions, err := repository.ListSessions(ctx, "/work")
+	require.NoError(t, err)
+	require.Len(t, sessions, 2)
+	assert.Equal(t, newSession.ID, sessions[0].ID)
+	assert.Equal(t, oldSession.ID, sessions[1].ID)
 }
 
 func TestSessionRepository_DeleteSessionRemovesSessionRows(t *testing.T) {
