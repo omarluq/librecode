@@ -76,6 +76,18 @@ func TestAnthropicToolArgumentsHandlesMalformedAndScalarInput(t *testing.T) {
 	assert.JSONEq(t, `"plain"`, argumentsJSON)
 }
 
+func TestParseAnthropicResultMapsMaxTokensFinishReason(t *testing.T) {
+	t.Parallel()
+
+	result, err := parseAnthropicResult([]byte(
+		`{"stop_reason":"max_tokens","content":[{"type":"text","text":"partial"}]}`,
+	))
+
+	require.NoError(t, err)
+	assert.Equal(t, "partial", result.Text)
+	assert.Equal(t, llm.FinishReasonLength, result.FinishReason)
+}
+
 func TestAnthropicAssistantToolMessageMapsProviderNames(t *testing.T) {
 	t.Parallel()
 

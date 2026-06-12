@@ -9,6 +9,7 @@ import (
 	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -85,6 +86,7 @@ type ProviderRequest struct {
 
 // ProviderResponse describes after-provider-response lifecycle payload metadata.
 type ProviderResponse struct {
+	FinishReason   llm.FinishReason
 	API            string
 	ModelID        string
 	Provider       string
@@ -304,6 +306,7 @@ func ProviderResponsePayload(response *ProviderResponse) map[string]any {
 		ProviderKey:        response.Provider,
 		SessionIDKey:       response.SessionID,
 		TextKey:            response.Text,
+		"finish_reason":    string(response.FinishReason),
 		"thinking_count":   response.ThinkingCount,
 		"tool_event_count": response.ToolEventCount,
 		UsageKey:           TokenUsage(response.Usage),

@@ -18,6 +18,7 @@ type sseAccumulator struct {
 	parts                 []string
 	items                 []any
 	completed             bool
+	terminal              bool
 	sawTypedResponseEvent bool
 }
 
@@ -29,6 +30,7 @@ func newSSEAccumulator() *sseAccumulator {
 		parts:                 []string{},
 		items:                 []any{},
 		completed:             false,
+		terminal:              false,
 		sawTypedResponseEvent: false,
 	}
 }
@@ -74,10 +76,12 @@ func (accumulator *sseAccumulator) addResponseEventState(event map[string]any) {
 	switch eventType {
 	case "response.completed", "response.done":
 		accumulator.completed = true
+		accumulator.terminal = true
 	case "response.failed":
+		accumulator.terminal = true
 		accumulator.terminalErr = sseProviderError("responses_failed", event, "provider response failed")
 	case "response.incomplete":
-		accumulator.terminalErr = sseProviderError("responses_incomplete", event, "provider response incomplete")
+		accumulator.terminal = true
 	}
 }
 
@@ -192,7 +196,7 @@ func parseSSEResult(reader io.Reader, onEvent func(*llm.StreamChunk)) (*provider
 	if accumulator.terminalErr != nil {
 		return nil, accumulator.terminalErr
 	}
-	if accumulator.sawTypedResponseEvent && !accumulator.completed {
+	if accumulator.sawTypedResponseEvent && !accumulator.terminal {
 		return nil, oops.In("provider").
 			Code("responses_stream_incomplete").
 			Errorf("provider stream closed before completion")
@@ -216,11 +220,12 @@ func parseSSEResult(reader io.Reader, onEvent func(*llm.StreamChunk)) (*provider
 	}
 
 	return &providerResult{
-		Text:        fallbackText,
-		OutputItems: nil,
-		Thinking:    nil,
-		ToolCalls:   nil,
-		Usage:       llm.EmptyUsage(),
+		FinishReason: llm.FinishReasonUnknown,
+		Text:         fallbackText,
+		OutputItems:  nil,
+		Thinking:     nil,
+		ToolCalls:    nil,
+		Usage:        llm.EmptyUsage(),
 	}, nil
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/event"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -190,8 +191,9 @@ func TestRuntime_PromptEmitsSideEffectMessageAppendEvents(t *testing.T) {
 
 	client := staticCompleter{
 		result: &assistant.CompletionResult{
-			Text:     "done",
-			Thinking: []string{"reasoning"},
+			FinishReason: llm.FinishReasonStop,
+			Text:         "done",
+			Thinking:     []string{"reasoning"},
 			ToolEvents: []assistant.ToolEvent{
 				{
 					Name:          testToolName,

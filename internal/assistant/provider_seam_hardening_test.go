@@ -11,6 +11,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -19,8 +20,9 @@ func TestRuntime_ProviderLifecycleEmitsDiagnostics(t *testing.T) {
 
 	runtime, _, _ := newTestRuntimeWithManager(t, staticCompleter{
 		result: &assistant.CompletionResult{
-			Text:     "provider response",
-			Thinking: []string{"thinking"},
+			FinishReason: llm.FinishReasonStop,
+			Text:         "provider response",
+			Thinking:     []string{"thinking"},
 			ToolEvents: []assistant.ToolEvent{{
 				Name:          "read",
 				ArgumentsJSON: `{}`,

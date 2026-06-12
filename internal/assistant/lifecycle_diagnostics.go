@@ -61,6 +61,7 @@ func providerResponseDiagnostics(
 	}
 	diagnostics := providerBaseDiagnostics(request, attempt)
 	diagnostics["response_text_bytes"] = len(result.Text)
+	diagnostics["finish_reason"] = string(result.FinishReason)
 	diagnostics["thinking_count"] = len(result.Thinking)
 	diagnostics["tool_event_count"] = len(result.ToolEvents)
 	diagnostics[lifecyclepayload.ContextTokensKey] = result.Usage.ContextTokens

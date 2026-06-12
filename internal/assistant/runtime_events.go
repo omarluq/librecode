@@ -37,6 +37,7 @@ func (runtime *Runtime) emitProviderResponse(
 		return
 	}
 	payload := lifecyclepayload.ProviderResponsePayload(&lifecyclepayload.ProviderResponse{
+		FinishReason:   result.FinishReason,
 		Usage:          result.Usage,
 		API:            request.Model.API,
 		ModelID:        request.Model.ID,

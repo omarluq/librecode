@@ -51,10 +51,11 @@ type CompletionRequest struct {
 
 // CompletionResult is an assistant-owned provider response plus model-visible side effects.
 type CompletionResult struct {
-	Text       string           `json:"text"`
-	Thinking   []string         `json:"thinking,omitempty"`
-	ToolEvents []ToolEvent      `json:"tool_events,omitempty"`
-	Usage      model.TokenUsage `json:"usage"`
+	FinishReason llm.FinishReason `json:"finish_reason,omitempty"`
+	Text         string           `json:"text"`
+	Thinking     []string         `json:"thinking,omitempty"`
+	ToolEvents   []ToolEvent      `json:"tool_events,omitempty"`
+	Usage        model.TokenUsage `json:"usage"`
 }
 
 // ToolCallEvent captures one requested tool call before execution.

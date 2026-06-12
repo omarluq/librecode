@@ -82,6 +82,8 @@ const (
 	thinkingDisplaySummary  = "summarized"
 	reasoningSummaryAuto    = "auto"
 	reasoningEffortNone     = "none"
+	statusCompleted         = "completed"
+	finishReasonMaxTokens   = "max_tokens"
 	sseItemIDKey            = "item_id"
 	sseOutputItemIDKey      = "output_item_id"
 )
@@ -122,11 +124,12 @@ type ToolEvent struct {
 }
 
 type providerResult struct {
-	Text        string
-	OutputItems []any
-	Thinking    []string
-	ToolCalls   []ToolCall
-	Usage       llm.Usage
+	FinishReason llm.FinishReason
+	Text         string
+	OutputItems  []any
+	Thinking     []string
+	ToolCalls    []ToolCall
+	Usage        llm.Usage
 }
 
 // HTTPCompletionClient is a small provider client for built-in API families.

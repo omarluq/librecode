@@ -86,12 +86,6 @@ func TestParseSSEResultFailureCases(t *testing.T) {
 			expectedSubstring: "nope",
 		},
 		{
-			name: "incomplete event",
-			stream: "data: " + `{"type":"response.incomplete",` +
-				`"response":{"incomplete_details":{"reason":"max_output_tokens"}}}` + "\n",
-			expectedSubstring: "provider response incomplete: max_output_tokens",
-		},
-		{
 			name:              "closed before completion",
 			stream:            "data: " + `{"type":"response.created"}` + "\n",
 			expectedSubstring: "provider stream closed before completion",
@@ -110,6 +104,43 @@ func TestParseSSEResultFailureCases(t *testing.T) {
 	}
 }
 
+func TestParseSSEResultIncompleteMaxOutputTokensReturnsPartialResult(t *testing.T) {
+	t.Parallel()
+
+	stream := strings.Join([]string{
+		`data: {"type":"response.output_text.delta","delta":"partial "}`,
+		`data: {"type":"response.output_text.delta","delta":"answer"}`,
+		`data: {"type":"response.incomplete","response":{"status":"incomplete",` +
+			`"incomplete_details":{"reason":"max_output_tokens"},"output":[],` +
+			`"usage":{"input_tokens":10,"output_tokens":2}}}`,
+		``,
+	}, "\n")
+
+	result, err := parseSSEResult(strings.NewReader(stream), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "partial answer", result.Text)
+	assert.Equal(t, llm.FinishReasonLength, result.FinishReason)
+	assert.Equal(t, 10, result.Usage.InputTokens)
+	assert.Equal(t, 2, result.Usage.OutputTokens)
+}
+
+func TestParseSSEResultIncompleteToolCallsWinOverLength(t *testing.T) {
+	t.Parallel()
+
+	stream := "data: " + `{"type":"response.incomplete","response":{"status":"incomplete",` +
+		`"incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"call_1",` +
+		`"type":"function_call","call_id":"call_1","name":"read",` +
+		`"arguments":"{\"path\":\"README.md\"}"}]}}` + "\n"
+
+	result, err := parseSSEResult(strings.NewReader(stream), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
+	require.Len(t, result.ToolCalls, 1)
+	assert.Equal(t, jsonReadToolName, result.ToolCalls[0].Name)
+}
+
 func completedSSEEvent() string {
-	return "data: " + `{"type":"response.completed","response":{"output":[]}}` + "\n"
+	return "data: " + `{"type":"response.completed","response":{"status":"completed","output":[]}}` + "\n"
 }

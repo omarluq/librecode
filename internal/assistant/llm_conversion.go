@@ -131,11 +131,19 @@ func llmResponseFromCompletionResult(result *CompletionResult) llm.Response {
 	}
 
 	return llm.Response{
-		FinishReason: llm.FinishReasonStop,
+		FinishReason: completionResultFinishReason(result),
 		Content:      content,
 		ToolCalls:    nil,
 		Usage:        llmconv.UsageFromModel(result.Usage),
 	}
+}
+
+func completionResultFinishReason(result *CompletionResult) llm.FinishReason {
+	if result == nil || result.FinishReason == llm.FinishReasonUnknown {
+		return llm.FinishReasonStop
+	}
+
+	return result.FinishReason
 }
 
 func llmToolResultPart(event *ToolEvent) llm.Part {

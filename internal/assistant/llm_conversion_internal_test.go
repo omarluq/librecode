@@ -115,8 +115,9 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 	t.Parallel()
 
 	result := &CompletionResult{
-		Text:     "final answer",
-		Thinking: []string{" thought ", "   "},
+		FinishReason: llm.FinishReasonLength,
+		Text:         "final answer",
+		Thinking:     []string{" thought ", "   "},
 		ToolEvents: []ToolEvent{{
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{"path":"README.md"}`,
@@ -144,7 +145,7 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 
 	converted := llmResponseFromCompletionResult(result)
 
-	assert.Equal(t, llm.FinishReasonStop, converted.FinishReason)
+	assert.Equal(t, llm.FinishReasonLength, converted.FinishReason)
 	assert.Equal(t, 18, converted.Usage.InputTokens)
 	require.Len(t, converted.Content, 4)
 	assert.Equal(t, llm.PartReasoning, converted.Content[0].Type)

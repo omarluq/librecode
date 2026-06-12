@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,7 +11,7 @@ import (
 	"github.com/omarluq/librecode/internal/llm"
 )
 
-func TestFinishTextResultAllowsEmptyText(t *testing.T) {
+func TestFinishProviderResultAllowsEmptyText(t *testing.T) {
 	t.Parallel()
 
 	result := &llm.Response{
@@ -19,7 +20,14 @@ func TestFinishTextResultAllowsEmptyText(t *testing.T) {
 		ToolCalls:    nil,
 		Usage:        llm.EmptyUsage(),
 	}
-	finished, err := finishTextResult(result, "   ")
+	finished, err := finishProviderResult(result, &providerResult{
+		FinishReason: llm.FinishReasonStop,
+		Text:         strings.Repeat(" ", 3),
+		OutputItems:  nil,
+		Thinking:     nil,
+		ToolCalls:    nil,
+		Usage:        llm.EmptyUsage(),
+	})
 
 	require.NoError(t, err)
 	assert.True(t, finished)

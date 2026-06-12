@@ -62,6 +62,7 @@ func TestParseOpenAIChatResultHandlesErrorsAndToolFiltering(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "answer", result.Text)
+	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
 	require.Len(t, result.ToolCalls, 1)
 	assert.Equal(t, testCallID, result.ToolCalls[0].ID)
 	assert.Equal(t, testToolPath, result.ToolCalls[0].Arguments[jsonPathKey])
@@ -71,13 +72,26 @@ func TestParseOpenAIChatResultHandlesErrorsAndToolFiltering(t *testing.T) {
 	}, result.Usage)
 }
 
+func TestParseOpenAIChatResultMapsFinishReasonLength(t *testing.T) {
+	t.Parallel()
+
+	result, err := parseOpenAIChatResult([]byte(
+		`{"choices":[{"finish_reason":"length","message":{"content":"partial"}}]}`,
+	))
+
+	require.NoError(t, err)
+	assert.Equal(t, "partial", result.Text)
+	assert.Equal(t, llm.FinishReasonLength, result.FinishReason)
+}
+
 func TestOpenAIChatAssistantToolMessage(t *testing.T) {
 	t.Parallel()
 
 	message := openAIChatAssistantToolMessage(&providerResult{
-		Text:        "using tool",
-		OutputItems: nil,
-		Thinking:    nil,
+		FinishReason: llm.FinishReasonToolCalls,
+		Text:         "using tool",
+		OutputItems:  nil,
+		Thinking:     nil,
 		ToolCalls: []ToolCall{{
 			Arguments:     nil,
 			Metadata:      nil,

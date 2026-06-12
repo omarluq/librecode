@@ -58,11 +58,15 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		}
 		appendThinking(result, providerResult.Thinking)
 		result.Usage = mergeUsage(result.Usage, providerResult.Usage)
+		result.FinishReason = providerResult.FinishReason
 		if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
 			return nil, validateErr
 		}
 		if len(providerResult.ToolCalls) == 0 {
 			setResponseText(result, providerResult.Text)
+			if result.FinishReason == llm.FinishReasonUnknown {
+				result.FinishReason = llm.FinishReasonStop
+			}
 			return result, nil
 		}
 		input = append(input, statelessResponseOutputItems(providerResult.OutputItems)...)
@@ -159,7 +163,7 @@ func statelessResponseOutputItems(items []any) []any {
 			jsonCallIDKey:    stringValue(object[jsonCallIDKey]),
 			jsonToolNameKey:  stringValue(object[jsonToolNameKey]),
 			jsonArgumentsKey: stringValue(object[jsonArgumentsKey]),
-			"status":         "completed",
+			"status":         statusCompleted,
 		})
 	}
 
@@ -183,6 +187,7 @@ func parseOpenAIResponseResult(content []byte) (*providerResult, error) {
 
 func providerResultFromResponse(response map[string]any) *providerResult {
 	outputItems := outputItemsFromResponse(response[jsonOutputKey])
+	toolCalls := toolCallsFromOutput(outputItems)
 	text := strings.TrimSpace(extractText(response[jsonOutputKey]))
 	if text == "" {
 		if outputText, ok := response["output_text"].(string); ok {
@@ -191,11 +196,12 @@ func providerResultFromResponse(response map[string]any) *providerResult {
 	}
 
 	return &providerResult{
-		Text:        text,
-		OutputItems: outputItems,
-		Thinking:    thinkingFromOutput(outputItems),
-		ToolCalls:   toolCallsFromOutput(outputItems),
-		Usage:       usageFromObject(response["usage"]),
+		FinishReason: openAIResponseFinishReason(response, len(toolCalls) > 0),
+		Text:         text,
+		OutputItems:  outputItems,
+		Thinking:     thinkingFromOutput(outputItems),
+		ToolCalls:    toolCalls,
+		Usage:        usageFromObject(response["usage"]),
 	}
 }
 
@@ -205,13 +211,57 @@ func providerResultFromOutputItems(outputItems []any, fallbackText string) *prov
 		text = fallbackText
 	}
 
+	toolCalls := toolCallsFromOutput(outputItems)
+
 	return &providerResult{
-		Text:        text,
-		OutputItems: outputItems,
-		Thinking:    thinkingFromOutput(outputItems),
-		ToolCalls:   toolCallsFromOutput(outputItems),
-		Usage:       llm.EmptyUsage(),
+		FinishReason: openAIResponseOutputItemsFinishReason(toolCalls),
+		Text:         text,
+		OutputItems:  outputItems,
+		Thinking:     thinkingFromOutput(outputItems),
+		ToolCalls:    toolCalls,
+		Usage:        llm.EmptyUsage(),
 	}
+}
+
+func openAIResponseFinishReason(response map[string]any, hasToolCalls bool) llm.FinishReason {
+	if hasToolCalls {
+		return llm.FinishReasonToolCalls
+	}
+	status := stringValue(response["status"])
+	if status == statusCompleted {
+		return llm.FinishReasonStop
+	}
+	if status == "failed" {
+		return llm.FinishReasonError
+	}
+	if status != "incomplete" {
+		return llm.FinishReasonUnknown
+	}
+
+	return openAIIncompleteFinishReason(response)
+}
+
+func openAIIncompleteFinishReason(response map[string]any) llm.FinishReason {
+	details, ok := response["incomplete_details"].(map[string]any)
+	if !ok {
+		return llm.FinishReasonLength
+	}
+	switch stringValue(details["reason"]) {
+	case "max_output_tokens", finishReasonMaxTokens:
+		return llm.FinishReasonLength
+	case "content_filter":
+		return llm.FinishReasonContentFilter
+	default:
+		return llm.FinishReasonLength
+	}
+}
+
+func openAIResponseOutputItemsFinishReason(toolCalls []ToolCall) llm.FinishReason {
+	if len(toolCalls) > 0 {
+		return llm.FinishReasonToolCalls
+	}
+
+	return llm.FinishReasonUnknown
 }
 
 func outputItemsFromResponse(output any) []any {
