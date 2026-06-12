@@ -12,6 +12,8 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
+const testDocumentNamespace = "settings"
+
 func TestDocumentRepositoryStoresRuntimeDocuments(t *testing.T) {
 	t.Parallel()
 
@@ -21,25 +23,25 @@ func TestDocumentRepositoryStoresRuntimeDocuments(t *testing.T) {
 
 	document := database.DocumentEntity{
 		UpdatedAt: time.Time{},
-		Namespace: "settings",
+		Namespace: testDocumentNamespace,
 		Key:       "global",
 		ValueJSON: `{"ok":true}`,
 	}
 	require.NoError(t, repository.Put(ctx, &document))
 
-	loaded, found, err := repository.Get(ctx, "settings", "global")
+	loaded, found, err := repository.Get(ctx, testDocumentNamespace, "global")
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, document.ValueJSON, loaded.ValueJSON)
 
-	source := database.NewDocumentSource(repository, "settings", "global")
+	source := database.NewDocumentSource(repository, testDocumentNamespace, "global")
 	content, found, err := source.Read()
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.JSONEq(t, document.ValueJSON, string(content))
 
-	require.NoError(t, repository.Delete(ctx, "settings", "global"))
-	_, found, err = repository.Get(ctx, "settings", "global")
+	require.NoError(t, repository.Delete(ctx, testDocumentNamespace, "global"))
+	_, found, err = repository.Get(ctx, testDocumentNamespace, "global")
 	require.NoError(t, err)
 	assert.False(t, found)
 }

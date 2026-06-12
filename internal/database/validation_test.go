@@ -19,6 +19,12 @@ type invalidUUIDCase struct {
 	wantError string
 }
 
+type invalidEntityCase struct {
+	run       func(context.Context, *database.SessionRepository, *database.SessionEntity) error
+	name      string
+	wantError string
+}
+
 func TestRepositoryRejectsInvalidUUIDs(t *testing.T) {
 	t.Parallel()
 
@@ -40,12 +46,118 @@ func TestRepositoryRejectsInvalidUUIDs(t *testing.T) {
 	}
 }
 
+func TestRepositoryRejectsInvalidEntities(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range invalidEntityCases() {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			repository := newTestSessionRepository(t)
+			session, err := repository.CreateSession(ctx, "/work", "validation", "")
+			require.NoError(t, err)
+
+			err = test.run(ctx, repository, session)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.wantError)
+		})
+	}
+}
+
 func invalidUUIDCases() []invalidUUIDCase {
 	return []invalidUUIDCase{
 		invalidSessionIDCase(),
 		invalidEntryIDCase(),
 		invalidMessageEntryIDCase(),
 		invalidMessageIDCase(),
+	}
+}
+
+func invalidEntityCases() []invalidEntityCase {
+	return []invalidEntityCase{
+		{
+			name: "blank session cwd",
+			run: func(ctx context.Context, repository *database.SessionRepository, _ *database.SessionEntity) error {
+				_, err := repository.CreateSession(ctx, "", "invalid", "")
+
+				return err
+			},
+			wantError: "session.cwd is required",
+		},
+		{
+			name:      "blank message sender",
+			run:       appendBlankCustomMessage,
+			wantError: "message.sender is required",
+		},
+	}
+}
+
+func appendBlankCustomMessage(
+	ctx context.Context,
+	repository *database.SessionRepository,
+	session *database.SessionEntity,
+) error {
+	_, err := repository.AppendCustomMessage(ctx, session.ID, nil, " ", "hello", true, nil)
+
+	return err
+}
+
+func TestDocumentRepositoryRejectsInvalidEntities(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range invalidDocumentCases() {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			documents := database.NewDocumentRepository(newTestConnection(t))
+			err := documents.Put(context.Background(), &test.document)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.wantError)
+		})
+	}
+}
+
+func invalidDocumentCases() []struct {
+	document  database.DocumentEntity
+	name      string
+	wantError string
+} {
+	return []struct {
+		document  database.DocumentEntity
+		name      string
+		wantError string
+	}{
+		{
+			name: "blank namespace",
+			document: database.DocumentEntity{
+				UpdatedAt: time.Time{},
+				Namespace: " ",
+				Key:       "app",
+				ValueJSON: "{}",
+			},
+			wantError: "document.namespace is required",
+		},
+		{
+			name: "blank key",
+			document: database.DocumentEntity{
+				UpdatedAt: time.Time{},
+				Namespace: testDocumentNamespace,
+				Key:       " ",
+				ValueJSON: "{}",
+			},
+			wantError: "document.key is required",
+		},
+		{
+			name: "invalid JSON",
+			document: database.DocumentEntity{
+				UpdatedAt: time.Time{},
+				Namespace: testDocumentNamespace,
+				Key:       "app",
+				ValueJSON: "{",
+			},
+			wantError: "document.value_json must be valid JSON",
+		},
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/samber/do/v2"
+
 	"github.com/omarluq/librecode/internal/di"
 )
 
@@ -15,7 +17,11 @@ func withContainer(ctx context.Context, handler func(*di.Container) error) error
 	}
 
 	runErr := handler(container)
-	shutdownReport := container.ShutdownWithContext(ctx)
+
+	return finishContainerRun(runErr, container.ShutdownWithContext(ctx))
+}
+
+func finishContainerRun(runErr error, shutdownReport *do.ShutdownReport) error {
 	if !shutdownReport.Succeed && shutdownReport.Error() != "" {
 		shutdownErr := fmt.Errorf("%w", shutdownReport)
 		if runErr != nil {
