@@ -22,7 +22,7 @@ func withContainer(ctx context.Context, handler func(*di.Container) error) error
 }
 
 func finishContainerRun(runErr error, shutdownReport *do.ShutdownReport) error {
-	if !shutdownReport.Succeed && shutdownReport.Error() != "" {
+	if shutdownReport != nil && !shutdownReport.Succeed && shutdownReport.Error() != "" {
 		shutdownErr := fmt.Errorf("%w", shutdownReport)
 		if runErr != nil {
 			return errors.Join(runErr, shutdownErr)

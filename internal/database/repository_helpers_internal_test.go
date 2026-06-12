@@ -42,35 +42,66 @@ func TestRowConvertersReturnTimestampErrors(t *testing.T) {
 
 	const invalidTimestamp = "not-time"
 
-	session := validSessionRow()
-	session.CreatedAt = invalidTimestamp
-	_, err := sessionFromRow(&session)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "parse timestamp")
+	tests := []struct {
+		run  func() error
+		name string
+	}{
+		{
+			name: "session created_at",
+			run: func() error {
+				row := validSessionRow()
+				row.CreatedAt = invalidTimestamp
+				_, err := sessionFromRow(&row)
+				return err
+			},
+		},
+		{
+			name: "session updated_at",
+			run: func() error {
+				row := validSessionRow()
+				row.UpdatedAt = invalidTimestamp
+				_, err := sessionFromRow(&row)
+				return err
+			},
+		},
+		{
+			name: "entry created_at",
+			run: func() error {
+				row := validEntryRow()
+				row.CreatedAt = invalidTimestamp
+				_, err := entryFromRow(&row)
+				return err
+			},
+		},
+		{
+			name: "session_message created_at",
+			run: func() error {
+				row := validSessionMessageRow()
+				row.CreatedAt = invalidTimestamp
+				_, err := sessionMessageFromRow(&row)
+				return err
+			},
+		},
+		{
+			name: "document updated_at",
+			run: func() error {
+				row := validDocumentRow()
+				row.UpdatedAt = invalidTimestamp
+				_, err := documentFromRow(&row)
+				return err
+			},
+		},
+	}
 
-	session = validSessionRow()
-	session.UpdatedAt = invalidTimestamp
-	_, err = sessionFromRow(&session)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "parse timestamp")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	entry := validEntryRow()
-	entry.CreatedAt = invalidTimestamp
-	_, err = entryFromRow(&entry)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "parse timestamp")
-
-	message := validSessionMessageRow()
-	message.CreatedAt = invalidTimestamp
-	_, err = sessionMessageFromRow(&message)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "parse timestamp")
-
-	document := validDocumentRow()
-	document.UpdatedAt = invalidTimestamp
-	_, err = documentFromRow(&document)
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "parse timestamp")
+			err := test.run()
+			require.Error(t, err)
+			assert.ErrorContains(t, err, "parse timestamp")
+		})
+	}
 }
 
 func validSessionRow() sessionRow {
