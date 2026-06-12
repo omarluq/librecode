@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -198,7 +199,7 @@ func formatTokenCount(count int) string {
 		return fmt.Sprintf("%.1fK", thousands)
 	}
 
-	return fmt.Sprint(count)
+	return strconv.Itoa(count)
 }
 
 func yesNo(value bool) string {

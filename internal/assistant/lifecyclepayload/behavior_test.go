@@ -144,7 +144,7 @@ func TestProviderResponseErrorAndNilPayloads(t *testing.T) {
 		SessionID: "",
 		Attempt:   0,
 	})
-	assert.Equal(t, "", withoutErr[lifecyclepayload.ErrorKey])
+	assert.Empty(t, withoutErr[lifecyclepayload.ErrorKey])
 	assert.Empty(t, lifecyclepayload.ProviderResponsePayload(nil))
 	assert.Empty(t, lifecyclepayload.ProviderErrorPayload(nil))
 	assert.Empty(t, lifecyclepayload.ToolResultPayload(nil))
@@ -172,8 +172,8 @@ func TestCompactionSavedAndDiagnosticsPayloads(t *testing.T) {
 		CWD:       lifecycleWorkdir,
 		Source:    "auto",
 	})
-	assert.Equal(t, "", savedWithoutEntry[lifecyclepayload.EntryIDKey])
-	assert.Equal(t, "", savedWithoutEntry[lifecyclepayload.SummaryKey])
+	assert.Empty(t, savedWithoutEntry[lifecyclepayload.EntryIDKey])
+	assert.Empty(t, savedWithoutEntry[lifecyclepayload.SummaryKey])
 
 	diagnostic := lifecyclepayload.CompactionDiagnostics(plan, "after")
 	assert.Equal(t, "after", diagnostic[lifecyclepayload.PhaseKey])
@@ -200,7 +200,7 @@ func TestTokenContributorAndUtilityPayloads(t *testing.T) {
 	assert.Equal(t, 10, contributor["tokens"])
 
 	assert.Equal(t, []any{"a", "b"}, lifecyclepayload.StringSlice([]string{"a", "b"}))
-	assert.Equal(t, 1.5, lifecyclepayload.DurationMilliseconds(1500*time.Microsecond))
+	assert.InDelta(t, 1.5, lifecyclepayload.DurationMilliseconds(1500*time.Microsecond), 0)
 }
 
 func messageEntity(role database.Role, content string) database.MessageEntity {

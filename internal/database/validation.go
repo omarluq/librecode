@@ -2,6 +2,7 @@ package database
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -43,7 +44,7 @@ func validateEntryEntity(entity *EntryEntity) error {
 		return err
 	}
 	if !json.Valid([]byte(normalizeDataJSON(entity.DataJSON))) {
-		return fmt.Errorf("entry.data_json must be valid JSON")
+		return errors.New("entry.data_json must be valid JSON")
 	}
 
 	return nil
@@ -77,7 +78,7 @@ func validateDocumentEntity(entity *DocumentEntity) error {
 		return err
 	}
 	if !json.Valid([]byte(entity.ValueJSON)) {
-		return fmt.Errorf("document.value_json must be valid JSON")
+		return errors.New("document.value_json must be valid JSON")
 	}
 
 	return nil

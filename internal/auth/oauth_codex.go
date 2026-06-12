@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -151,13 +152,13 @@ func startOpenAICodexCallbackServer(state string) (*openAICodexCallbackServer, e
 		query := request.URL.Query()
 		if query.Get("state") != state {
 			writeOAuthHTML(writer, http.StatusBadRequest, "Authentication state mismatch.")
-			codes <- callbackResult{Code: "", Err: fmt.Errorf("state mismatch")}
+			codes <- callbackResult{Code: "", Err: errors.New("state mismatch")}
 			return
 		}
 		code := query.Get("code")
 		if code == "" {
 			writeOAuthHTML(writer, http.StatusBadRequest, "Missing authorization code.")
-			codes <- callbackResult{Code: "", Err: fmt.Errorf("missing authorization code")}
+			codes <- callbackResult{Code: "", Err: errors.New("missing authorization code")}
 			return
 		}
 		writeOAuthHTML(writer, http.StatusOK, "librecode authentication complete. You can close this tab.")

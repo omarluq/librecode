@@ -216,7 +216,7 @@ func findNotices(limit int, resultLimitReached bool, truncation *TruncationResul
 		)
 	}
 	if truncation.Truncated {
-		notices = append(notices, fmt.Sprintf("%s limit reached", FormatSize(DefaultMaxBytes)))
+		notices = append(notices, FormatSize(DefaultMaxBytes)+" limit reached")
 	}
 
 	return notices

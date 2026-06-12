@@ -36,7 +36,6 @@ func TestModelCoreBehavior(t *testing.T) {
 		{name: "render shows selection hints and position", scenario: panelScenarioRender},
 	}
 	for _, testCase := range tests {
-		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			runPanelScenario(t, testCase.scenario)

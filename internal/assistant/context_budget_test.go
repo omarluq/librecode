@@ -70,12 +70,12 @@ func TestRuntime_ContextUsageIncludesBudgetReserves(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, usage.Breakdown)
 	assert.Equal(t, 100_000, usage.ContextWindow)
-	assert.Greater(t, usage.ContextTokens, 0)
-	assert.Greater(t, usage.Breakdown["reserve_output"], 0)
-	assert.Greater(t, usage.Breakdown["reserve_tools"], 0)
+	assert.Positive(t, usage.ContextTokens)
+	assert.Positive(t, usage.Breakdown["reserve_output"])
+	assert.Positive(t, usage.Breakdown["reserve_tools"])
 	assert.Equal(t, 2048, usage.Breakdown["reserve_provider"])
 	assert.Equal(t, 8192, usage.Breakdown["reserve_safety"])
-	assert.Greater(t, usage.Breakdown["usable_input"], 0)
+	assert.Positive(t, usage.Breakdown["usable_input"])
 }
 
 func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {

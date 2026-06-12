@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -124,22 +125,22 @@ func configEntries(cfg *config.Config) []configEntry {
 		{key: "logging.level", value: cfg.Logging.Level},
 		{key: "logging.format", value: cfg.Logging.Format},
 		{key: "database.path", value: cfg.Database.Path},
-		{key: "database.apply_migrations", value: fmt.Sprint(cfg.Database.ApplyMigrations)},
-		{key: "database.max_open_conns", value: fmt.Sprint(cfg.Database.MaxOpenConns)},
-		{key: "database.max_idle_conns", value: fmt.Sprint(cfg.Database.MaxIdleConns)},
+		{key: "database.apply_migrations", value: strconv.FormatBool(cfg.Database.ApplyMigrations)},
+		{key: "database.max_open_conns", value: strconv.Itoa(cfg.Database.MaxOpenConns)},
+		{key: "database.max_idle_conns", value: strconv.Itoa(cfg.Database.MaxIdleConns)},
 		{key: "database.conn_max_lifetime", value: cfg.Database.ConnMaxLifetime.String()},
 		{key: "database.busy_timeout", value: cfg.Database.BusyTimeout.String()},
-		{key: "extensions.enabled", value: fmt.Sprint(cfg.Extensions.Enabled)},
+		{key: "extensions.enabled", value: strconv.FormatBool(cfg.Extensions.Enabled)},
 		{key: "extensions.use", value: strings.Join(extensionUseSources(cfg.Extensions.Use), ",")},
 		{key: "assistant.provider", value: cfg.Assistant.Provider},
 		{key: "assistant.model", value: cfg.Assistant.Model},
 		{key: "assistant.thinking_level", value: cfg.Assistant.ThinkingLevel},
-		{key: "models.discovery.enabled", value: fmt.Sprint(cfg.Models.Discovery.Enabled)},
+		{key: "models.discovery.enabled", value: strconv.FormatBool(cfg.Models.Discovery.Enabled)},
 		{key: "models.discovery.source_url", value: cfg.Models.Discovery.SourceURL},
 		{key: "models.discovery.cache_ttl", value: cfg.Models.Discovery.CacheTTL.String()},
 		{key: "models.discovery.fetch_timeout", value: cfg.Models.Discovery.FetchTimeout.String()},
-		{key: "cache.enabled", value: fmt.Sprint(cfg.Cache.Enabled)},
-		{key: "cache.capacity", value: fmt.Sprint(cfg.Cache.Capacity)},
+		{key: "cache.enabled", value: strconv.FormatBool(cfg.Cache.Enabled)},
+		{key: "cache.capacity", value: strconv.Itoa(cfg.Cache.Capacity)},
 		{key: "cache.ttl", value: cfg.Cache.TTL.String()},
 	}
 }

@@ -3,7 +3,6 @@ package terminal
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -154,7 +153,7 @@ func (app *App) loginCommand(ctx context.Context, args string) error {
 	}
 	apiKey := strings.TrimSpace(strings.TrimPrefix(args, provider))
 	if apiKey == "" {
-		return fmt.Errorf("api key is required")
+		return errors.New("api key is required")
 	}
 	credential := auth.Credential{
 		OAuth:     nil,

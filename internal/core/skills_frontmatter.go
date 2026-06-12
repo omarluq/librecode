@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -33,7 +34,7 @@ func (tools *allowedTools) UnmarshalYAML(value *yaml.Node) error {
 	case yaml.SequenceNode:
 		return unmarshalAllowedToolsSequence(tools, value.Content)
 	case yaml.DocumentNode, yaml.MappingNode, yaml.AliasNode:
-		return fmt.Errorf("allowed-tools must be a string or string list")
+		return errors.New("allowed-tools must be a string or string list")
 	default:
 		return fmt.Errorf("allowed-tools has unsupported YAML kind %d", value.Kind)
 	}
@@ -43,7 +44,7 @@ func unmarshalAllowedToolsSequence(tools *allowedTools, items []*yaml.Node) erro
 	parsed := make([]string, 0, len(items))
 	for _, item := range items {
 		if item.Kind != yaml.ScalarNode {
-			return fmt.Errorf("allowed-tools entries must be strings")
+			return errors.New("allowed-tools entries must be strings")
 		}
 		trimmed := strings.TrimSpace(item.Value)
 		if trimmed != "" {

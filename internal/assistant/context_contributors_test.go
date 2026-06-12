@@ -25,7 +25,7 @@ func TestRuntime_ContextBuildTracksTopContributors(t *testing.T) {
 	for _, contributor := range client.request.Usage.TopContributors {
 		if contributor.Label == "message 1" && contributor.Role == "user" {
 			foundUser = true
-			assert.Greater(t, contributor.Tokens, 0)
+			assert.Positive(t, contributor.Tokens)
 			assert.NotEmpty(t, contributor.Preview)
 		}
 	}
@@ -59,7 +59,7 @@ end)
 	for _, contributor := range client.request.Usage.TopContributors {
 		if contributor.Label == "big-note" {
 			foundExtension = true
-			assert.Greater(t, contributor.Tokens, 0)
+			assert.Positive(t, contributor.Tokens)
 			assert.Contains(t, contributor.Preview, "extension context")
 		}
 	}

@@ -176,7 +176,7 @@ func TestCompactionAndDiagnosticPayloads(t *testing.T) {
 	nilPlanPayload := lifecyclepayload.CompactionPreparation(lifecycleTestSessionID, "/work", nil)
 	assert.Equal(t, lifecycleTestSessionID, nilPlanPayload[lifecyclepayload.SessionIDKey])
 	assert.Equal(t, "/work", nilPlanPayload[lifecyclepayload.CWDKey])
-	assert.Equal(t, "", nilPlanPayload["first_kept_entry_id"])
+	assert.Empty(t, nilPlanPayload["first_kept_entry_id"])
 	assert.Equal(t, []any{}, nilPlanPayload["summarized_entry_ids"])
 	assert.Equal(t, []any{}, nilPlanPayload[compaction.FileOperationsKey])
 
@@ -188,7 +188,7 @@ func TestCompactionAndDiagnosticPayloads(t *testing.T) {
 		map[string]any{"extra": true},
 	)
 	assert.Equal(t, 2, diagnostic[lifecyclepayload.HookCountKey])
-	assert.Equal(t, 1.5, diagnostic[lifecyclepayload.DurationMsKey])
+	assert.InDelta(t, 1.5, diagnostic[lifecyclepayload.DurationMsKey], 0)
 	assert.Equal(t, []string{"oops"}, diagnostic[lifecyclepayload.ErrorsKey])
 	assert.Equal(t, true, diagnostic["extra"])
 }

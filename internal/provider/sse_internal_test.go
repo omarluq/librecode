@@ -26,7 +26,9 @@ func TestSSEAccumulatorAddsArgumentsBeforeItem(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, testCallID, item["id"])
 	assert.Equal(t, functionCallType, item[jsonTypeKey])
-	assert.Equal(t, testToolArgumentsJSON, item[jsonArgumentsKey])
+	argumentsJSON, ok := item[jsonArgumentsKey].(string)
+	require.True(t, ok)
+	assert.JSONEq(t, testToolArgumentsJSON, argumentsJSON)
 }
 
 func TestSSEAccumulatorUpsertsItemsByID(t *testing.T) {
@@ -44,7 +46,7 @@ func TestSSEAccumulatorUpsertsItemsByID(t *testing.T) {
 	assert.Len(t, accumulator.items, 2)
 	first, ok := accumulator.items[0].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, jsonReadToolName, first[jsonToolNameKey])
+	assert.JSONEq(t, jsonString(jsonReadToolName), jsonString(first[jsonToolNameKey]))
 }
 
 func TestSSEItemIDSources(t *testing.T) {

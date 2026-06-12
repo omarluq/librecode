@@ -35,9 +35,9 @@ func TestOpenAIChatMessagesAndRoles(t *testing.T) {
 	messages := openAIChatMessages(request)
 
 	assert.Len(t, messages, 8)
-	assert.Equal(t, jsonSystemRole, messages[0][jsonRoleKey])
-	assert.Equal(t, jsonUserRole, messages[1][jsonRoleKey])
-	assert.Equal(t, jsonAssistantRole, messages[2][jsonRoleKey])
+	assert.JSONEq(t, jsonString(jsonSystemRole), jsonString(messages[0][jsonRoleKey]))
+	assert.JSONEq(t, jsonString(jsonUserRole), jsonString(messages[1][jsonRoleKey]))
+	assert.JSONEq(t, jsonString(jsonAssistantRole), jsonString(messages[2][jsonRoleKey]))
 	mapped, ok := openAIRole(llm.RoleTool)
 	assert.False(t, ok)
 	assert.Empty(t, mapped)
@@ -103,7 +103,7 @@ func TestOpenAIChatAssistantToolMessage(t *testing.T) {
 		Usage: llm.EmptyUsage(),
 	})
 
-	assert.Equal(t, jsonAssistantRole, message[jsonRoleKey])
+	assert.JSONEq(t, jsonString(jsonAssistantRole), jsonString(message[jsonRoleKey]))
 	assert.Equal(t, "using tool", message[jsonContentKey])
 	calls, ok := message["tool_calls"].([]map[string]any)
 	require.True(t, ok)

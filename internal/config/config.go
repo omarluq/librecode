@@ -2,6 +2,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -155,17 +156,17 @@ func (config *Config) IsDev() bool {
 
 func (config *Config) validateApp() error {
 	if config.App.Name == "" {
-		return fmt.Errorf("config: app.name is required")
+		return errors.New("config: app.name is required")
 	}
 	if config.App.WorkingLoader.Text == "" {
-		return fmt.Errorf("config: app.working_loader.text is required")
+		return errors.New("config: app.working_loader.text is required")
 	}
 
 	switch config.App.Env {
 	case envDevelopment, envTest, envProduction:
 		return nil
 	default:
-		return fmt.Errorf("config: app.env must be development, test, or production")
+		return errors.New("config: app.env must be development, test, or production")
 	}
 }
 
@@ -173,29 +174,29 @@ func (config *Config) validateLogging() error {
 	switch config.Logging.Level {
 	case "debug", "info", "warn", "error":
 	default:
-		return fmt.Errorf("config: logging.level must be debug, info, warn, or error")
+		return errors.New("config: logging.level must be debug, info, warn, or error")
 	}
 
 	switch config.Logging.Format {
 	case "pretty", "json":
 		return nil
 	default:
-		return fmt.Errorf("config: logging.format must be pretty or json")
+		return errors.New("config: logging.format must be pretty or json")
 	}
 }
 
 func (config *Config) validateDatabase() error {
 	if config.Database.MaxOpenConns < 1 {
-		return fmt.Errorf("config: database.max_open_conns must be greater than zero")
+		return errors.New("config: database.max_open_conns must be greater than zero")
 	}
 	if config.Database.MaxIdleConns < 0 {
-		return fmt.Errorf("config: database.max_idle_conns cannot be negative")
+		return errors.New("config: database.max_idle_conns cannot be negative")
 	}
 	if config.Database.ConnMaxLifetime < 0 {
-		return fmt.Errorf("config: database.conn_max_lifetime cannot be negative")
+		return errors.New("config: database.conn_max_lifetime cannot be negative")
 	}
 	if config.Database.BusyTimeout < 0 {
-		return fmt.Errorf("config: database.busy_timeout cannot be negative")
+		return errors.New("config: database.busy_timeout cannot be negative")
 	}
 
 	return nil
@@ -204,7 +205,7 @@ func (config *Config) validateDatabase() error {
 func (config *Config) validateExtensions() error {
 	for _, extensionUse := range config.Extensions.Use {
 		if extensionUse.Source == "" {
-			return fmt.Errorf("config: extensions.use source is required")
+			return errors.New("config: extensions.use source is required")
 		}
 		if _, err := extension.ParseSourceRef(extensionUse.Source, extensionUse.Version); err != nil {
 			return fmt.Errorf("config: invalid extensions.use source %q: %w", extensionUse.Source, err)
@@ -217,13 +218,13 @@ func (config *Config) validateExtensions() error {
 func (config *Config) validateAssistant() error {
 	retry := config.Assistant.Retry.Normalized()
 	if config.Assistant.Retry.MaxAttempts < 0 {
-		return fmt.Errorf("config: assistant.retry.max_attempts cannot be negative")
+		return errors.New("config: assistant.retry.max_attempts cannot be negative")
 	}
 	if config.Assistant.Retry.BaseDelay < 0 {
-		return fmt.Errorf("config: assistant.retry.base_delay cannot be negative")
+		return errors.New("config: assistant.retry.base_delay cannot be negative")
 	}
 	if config.Assistant.Retry.MaxDelay < 0 {
-		return fmt.Errorf("config: assistant.retry.max_delay cannot be negative")
+		return errors.New("config: assistant.retry.max_delay cannot be negative")
 	}
 	config.Assistant.Retry = retry
 
@@ -232,16 +233,16 @@ func (config *Config) validateAssistant() error {
 
 func (config *Config) validateContext() error {
 	if config.Context.OutputReserveTokens < 0 {
-		return fmt.Errorf("config: context.output_reserve_tokens cannot be negative")
+		return errors.New("config: context.output_reserve_tokens cannot be negative")
 	}
 	if config.Context.ProviderReserveTokens < 0 {
-		return fmt.Errorf("config: context.provider_reserve_tokens cannot be negative")
+		return errors.New("config: context.provider_reserve_tokens cannot be negative")
 	}
 	if config.Context.SafetyMarginTokens < 0 {
-		return fmt.Errorf("config: context.safety_margin_tokens cannot be negative")
+		return errors.New("config: context.safety_margin_tokens cannot be negative")
 	}
 	if config.Context.KeepRecentTokens < 0 {
-		return fmt.Errorf("config: context.keep_recent_tokens cannot be negative")
+		return errors.New("config: context.keep_recent_tokens cannot be negative")
 	}
 
 	return nil
@@ -249,13 +250,13 @@ func (config *Config) validateContext() error {
 
 func (config *Config) validateModels() error {
 	if config.Models.Discovery.Enabled && config.Models.Discovery.SourceURL == "" {
-		return fmt.Errorf("config: models.discovery.source_url is required when discovery is enabled")
+		return errors.New("config: models.discovery.source_url is required when discovery is enabled")
 	}
 	if config.Models.Discovery.CacheTTL < 0 {
-		return fmt.Errorf("config: models.discovery.cache_ttl cannot be negative")
+		return errors.New("config: models.discovery.cache_ttl cannot be negative")
 	}
 	if config.Models.Discovery.FetchTimeout < 0 {
-		return fmt.Errorf("config: models.discovery.fetch_timeout cannot be negative")
+		return errors.New("config: models.discovery.fetch_timeout cannot be negative")
 	}
 
 	return nil
@@ -263,10 +264,10 @@ func (config *Config) validateModels() error {
 
 func (config *Config) validateCache() error {
 	if config.Cache.Capacity < 1 {
-		return fmt.Errorf("config: cache.capacity must be greater than zero")
+		return errors.New("config: cache.capacity must be greater than zero")
 	}
 	if config.Cache.TTL <= 0 {
-		return fmt.Errorf("config: cache.ttl must be greater than zero")
+		return errors.New("config: cache.ttl must be greater than zero")
 	}
 
 	return nil

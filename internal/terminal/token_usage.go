@@ -3,6 +3,7 @@ package terminal
 import (
 	"fmt"
 	"maps"
+	"strconv"
 
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -107,5 +108,5 @@ func compactCount(value int) string {
 		return fmt.Sprintf("%.1fk", float64(value)/1_000)
 	}
 
-	return fmt.Sprintf("%d", value)
+	return strconv.Itoa(value)
 }

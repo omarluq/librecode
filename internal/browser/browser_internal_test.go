@@ -1,7 +1,6 @@
 package browser
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,7 +19,7 @@ func TestOpenReturnsErrNoOpenerWhenCommandsAreMissing(t *testing.T) {
 
 	err := Open("https://example.com")
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, ErrNoOpener))
+	assert.ErrorIs(t, err, ErrNoOpener)
 }
 
 func TestOpenerCommandsPrefersConfiguredBrowser(t *testing.T) {

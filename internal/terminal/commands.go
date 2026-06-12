@@ -2,7 +2,7 @@ package terminal
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/omarluq/librecode/internal/database"
@@ -108,10 +108,10 @@ func (app *App) newSession(ctx context.Context, name string) error {
 
 func (app *App) renameSession(ctx context.Context, name string) error {
 	if app.sessionID == "" {
-		return fmt.Errorf("no active session")
+		return errors.New("no active session")
 	}
 	if name == "" {
-		return fmt.Errorf("name is required")
+		return errors.New("name is required")
 	}
 	leaf, _, err := app.runtime.SessionRepository().LeafEntry(ctx, app.sessionID)
 	if err != nil {

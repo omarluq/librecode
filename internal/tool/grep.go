@@ -352,7 +352,7 @@ func grepNotices(limit int, matchResult grepMatchResult, truncation *TruncationR
 		)
 	}
 	if truncation.Truncated {
-		notices = append(notices, fmt.Sprintf("%s limit reached", FormatSize(DefaultMaxBytes)))
+		notices = append(notices, FormatSize(DefaultMaxBytes)+" limit reached")
 	}
 	if matchResult.linesTruncated {
 		notices = append(

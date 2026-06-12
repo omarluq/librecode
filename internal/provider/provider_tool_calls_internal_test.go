@@ -28,7 +28,7 @@ func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
 
 	require.Equal(t, "done", result.Text)
 	require.Len(t, result.ToolEvents, 1)
-	assert.Equal(t, jsonReadToolName, result.ToolEvents[0].Name)
+	assert.Equal(t, expectedReadToolName, result.ToolEvents[0].Name)
 	assert.Contains(t, result.ToolEvents[0].Result, "librecode")
 	require.Len(t, requests, 2)
 	tools, ok := requests[0]["tools"].([]any)
@@ -62,7 +62,7 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 		writer.Header().Set("Content-Type", "application/json")
 		if requestCount == 1 {
 			arguments, err := json.Marshal(map[string]string{jsonPathKey: testToolPath})
-			require.NoError(t, err)
+			assert.NoError(t, err)
 			writeTestProviderResponse(
 				t,
 				writer,
@@ -107,8 +107,8 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	assert.Equal(t, []int{1, 2}, hookIterations)
 	assert.Equal(t, "1", first.Header)
 	assert.Equal(t, "2", second.Header)
-	assert.Equal(t, float64(1), first.Body["iteration"])
-	assert.Equal(t, float64(2), second.Body["iteration"])
+	assert.InDelta(t, 1, first.Body["iteration"], 0)
+	assert.InDelta(t, 2, second.Body["iteration"], 0)
 }
 
 type providerResponseHookCapture struct {
@@ -123,7 +123,7 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 	var requests []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var payload map[string]any
-		require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
+		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		requests = append(requests, payload)
 		writer.Header().Set("Content-Type", "application/json")
 		if len(requests) == 1 {
@@ -144,7 +144,7 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 	response := providerResponseView(result)
 	require.Equal(t, "done", response.Text)
 	require.Len(t, response.ToolEvents, 1)
-	assert.Equal(t, jsonReadToolName, response.ToolEvents[0].Name)
+	assert.Equal(t, expectedReadToolName, response.ToolEvents[0].Name)
 	assert.Contains(t, response.ToolEvents[0].Result, "librecode")
 	require.Len(t, requests, 2)
 	messages, ok := requests[1]["messages"].([]any)
@@ -163,7 +163,7 @@ func completeOpenAIChatWithResponses(
 	var requests []map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var payload map[string]any
-		require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
+		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		requests = append(requests, payload)
 		writer.Header().Set("Content-Type", "application/json")
 		if len(requests) == 1 {
@@ -280,7 +280,7 @@ func TestCompleteOpenAIChatExecutesTextToolUseFallback(t *testing.T) {
 
 	require.Equal(t, "done", result.Text)
 	require.Len(t, result.ToolEvents, 1)
-	assert.Equal(t, jsonReadToolName, result.ToolEvents[0].Name)
+	assert.Equal(t, expectedReadToolName, result.ToolEvents[0].Name)
 	require.Len(t, requests, 2)
 	messages, ok := requests[1]["messages"].([]any)
 	require.True(t, ok)

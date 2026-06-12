@@ -20,7 +20,7 @@ func TestOpenAIResponseInputRoleMapping(t *testing.T) {
 	for _, item := range input {
 		object, ok := item.(map[string]any)
 		assert.True(t, ok)
-		assert.Equal(t, jsonUserRole, object[jsonRoleKey])
+		assert.JSONEq(t, jsonString(jsonUserRole), jsonString(object[jsonRoleKey]))
 		assert.NotEmpty(t, object[jsonContentKey])
 	}
 }

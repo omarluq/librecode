@@ -54,7 +54,7 @@ func TestSessionCWDReportsMissingStoredDirectory(t *testing.T) {
 		sessionFile: testSessionFile,
 	}, fallbackCWD), &missingErr)
 	assert.Contains(t, missingErr.Error(), missingCWD)
-	assert.NoError(t, core.AssertSessionCWDExists(testSessionCWDSource{
+	require.NoError(t, core.AssertSessionCWDExists(testSessionCWDSource{
 		cwd:         fallbackCWD,
 		sessionFile: testSessionFile,
 	}, fallbackCWD))

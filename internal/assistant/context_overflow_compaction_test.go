@@ -80,7 +80,7 @@ func TestRuntime_ProviderContextOverflowPreservesOriginalErrorWhenNoCompaction(t
 	response, err := runtime.Prompt(context.Background(), request)
 
 	require.Nil(t, response)
-	assert.ErrorIs(t, err, overflowErr)
+	require.ErrorIs(t, err, overflowErr)
 	assert.Equal(t, []bool{false}, client.disableToolsByCall)
 }
 

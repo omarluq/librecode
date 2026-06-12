@@ -162,7 +162,7 @@ func lsNotices(limit int, entryLimitReached bool, truncation *TruncationResult) 
 		notices = append(notices, fmt.Sprintf("%d entries limit reached. Use limit=%d for more", limit, limit*2))
 	}
 	if truncation.Truncated {
-		notices = append(notices, fmt.Sprintf("%s limit reached", FormatSize(DefaultMaxBytes)))
+		notices = append(notices, FormatSize(DefaultMaxBytes)+" limit reached")
 	}
 
 	return notices

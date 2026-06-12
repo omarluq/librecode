@@ -52,7 +52,7 @@ func TestParseOpenAIResponseResultExtractsTextThinkingAndToolCalls(t *testing.T)
 	assert.Equal(t, []string{"thought one\n\nthought two"}, result.Thinking)
 	require.Len(t, result.ToolCalls, 1)
 	assert.Equal(t, "call_1", result.ToolCalls[0].ID)
-	assert.Equal(t, jsonReadToolName, result.ToolCalls[0].Name)
+	assert.Equal(t, expectedReadToolName, result.ToolCalls[0].Name)
 	assert.Equal(t, testToolPath, result.ToolCalls[0].Arguments[jsonPathKey])
 	assert.Equal(t, 12, result.Usage.InputTokens)
 	assert.Equal(t, 3, result.Usage.OutputTokens)
@@ -123,7 +123,7 @@ func TestProviderResultFromOutputItemsUsesFallbackAndInvalidArguments(t *testing
 	assert.Equal(t, "fallback", result.Text)
 	require.Len(t, result.ToolCalls, 1)
 	assert.Equal(t, "item_1", result.ToolCalls[0].ID)
-	assert.Equal(t, jsonBashToolName, result.ToolCalls[0].Name)
+	assert.Equal(t, expectedBashToolName, result.ToolCalls[0].Name)
 	assert.Empty(t, result.ToolCalls[0].Arguments)
 }
 
@@ -158,7 +158,7 @@ func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
 
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			_, err := writer.Write([]byte(`{"output_text":"ok"}`))
-			require.NoError(t, err)
+			assert.NoError(t, err)
 		}))
 		t.Cleanup(server.Close)
 
@@ -174,7 +174,7 @@ func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			writer.WriteHeader(http.StatusBadRequest)
 			_, err := writer.Write([]byte(`{"error":{"message":"bad status"}}`))
-			require.NoError(t, err)
+			assert.NoError(t, err)
 		}))
 		t.Cleanup(server.Close)
 

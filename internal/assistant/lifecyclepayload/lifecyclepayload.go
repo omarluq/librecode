@@ -2,6 +2,7 @@
 package lifecyclepayload
 
 import (
+	"maps"
 	"time"
 
 	"github.com/samber/lo"
@@ -446,9 +447,7 @@ func Diagnostic(
 	if len(hookErrors) > 0 {
 		payload[ErrorsKey] = append([]string{}, hookErrors...)
 	}
-	for key, value := range extra {
-		payload[key] = value
-	}
+	maps.Copy(payload, extra)
 
 	return payload
 }

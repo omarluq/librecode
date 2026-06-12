@@ -1,6 +1,7 @@
 package tool
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -176,7 +177,7 @@ func applyEditsToNormalizedContent(
 
 func normalizeEdits(edits []Replacement, displayPath string) ([]Replacement, error) {
 	if len(edits) == 0 {
-		return []Replacement{}, fmt.Errorf("edit tool input is invalid: edits must contain at least one replacement")
+		return []Replacement{}, errors.New("edit tool input is invalid: edits must contain at least one replacement")
 	}
 
 	normalizedEdits := make([]Replacement, 0, len(edits))

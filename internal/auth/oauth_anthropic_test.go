@@ -46,7 +46,7 @@ func TestLoginAnthropicWithCode(t *testing.T) {
 		assert.Equal(t, "application/json", request.Header.Get("Content-Type"))
 
 		var payload map[string]string
-		require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
+		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		assert.Equal(t, "authorization_code", payload["grant_type"])
 		assert.Equal(t, "code", payload["code"])
 		assert.Equal(t, "state", payload["state"])
@@ -59,7 +59,7 @@ func TestLoginAnthropicWithCode(t *testing.T) {
 			"refresh_token":"refresh",
 			"expires_in":3600
 		}`))
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	}))
 	defer server.Close()
 
@@ -79,7 +79,7 @@ func TestRequestAnthropicToken(t *testing.T) {
 		assert.Equal(t, "application/json", request.Header.Get("Content-Type"))
 
 		var payload map[string]string
-		require.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
+		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		assert.Equal(t, "refresh_token", payload["grant_type"])
 		assert.Equal(t, auth.AnthropicClientIDForTest(), payload["client_id"])
 
@@ -89,7 +89,7 @@ func TestRequestAnthropicToken(t *testing.T) {
 			"refresh_token":"refresh",
 			"expires_in":3600
 		}`))
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	}))
 	defer server.Close()
 

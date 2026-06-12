@@ -84,8 +84,8 @@ func TestCloseAfterSetupErrorPreservesSetupAndCloseErrors(t *testing.T) {
 
 	err = closeAfterSetupError(connection, "close_after_setup", "setup", "/tmp/librecode.db", setupErr)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, setupErr)
-	assert.ErrorIs(t, err, errCloseFailed)
+	require.ErrorIs(t, err, setupErr)
+	require.ErrorIs(t, err, errCloseFailed)
 	assert.ErrorContains(t, err, "/tmp/librecode.db")
 }
 

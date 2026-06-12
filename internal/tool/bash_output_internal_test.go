@@ -34,6 +34,6 @@ func TestBashOutputFSErrorPreservesCause(t *testing.T) {
 	err := bashOutputFSError(cause, "write full bash output")
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, cause)
+	require.ErrorIs(t, err, cause)
 	assert.Contains(t, err.Error(), "write full bash output")
 }

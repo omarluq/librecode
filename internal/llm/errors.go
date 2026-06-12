@@ -1,9 +1,6 @@
 package llm
 
-import (
-	"errors"
-	"fmt"
-)
+import "errors"
 
 // ErrorKind identifies provider error classes that assistant orchestration can handle.
 type ErrorKind string
@@ -54,7 +51,7 @@ func (err *ProviderError) Error() string {
 		return err.Cause.Error()
 	}
 	if err.Code != "" {
-		return fmt.Sprintf("provider error: %s", err.Code)
+		return "provider error: " + err.Code
 	}
 
 	return "provider error"

@@ -69,7 +69,7 @@ func TestAnthropicToolArgumentsHandlesMalformedAndScalarInput(t *testing.T) {
 
 	arguments, argumentsJSON := anthropicToolArguments(func() {})
 	assert.Equal(t, map[string]any{}, arguments)
-	assert.Equal(t, "{}", argumentsJSON)
+	assert.JSONEq(t, "{}", argumentsJSON)
 
 	arguments, argumentsJSON = anthropicToolArguments("plain")
 	assert.Equal(t, map[string]any{}, arguments)
@@ -169,8 +169,8 @@ func TestAnthropicMessagesAndRoles(t *testing.T) {
 	converted := anthropicMessages(request.Request.Messages)
 
 	assert.Len(t, converted, 7)
-	assert.Equal(t, jsonUserRole, converted[0][jsonRoleKey])
-	assert.Equal(t, jsonAssistantRole, converted[1][jsonRoleKey])
+	assert.JSONEq(t, jsonString(jsonUserRole), jsonString(converted[0][jsonRoleKey]))
+	assert.JSONEq(t, jsonString(jsonAssistantRole), jsonString(converted[1][jsonRoleKey]))
 	mapped, ok := anthropicRole(llm.RoleTool)
 	assert.False(t, ok)
 	assert.Empty(t, mapped)

@@ -1,6 +1,7 @@
 package contextwindow
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -83,7 +84,7 @@ func ContributionsFromPayload(payload map[string]any) ([]Contribution, error) {
 func numericMapValues(values map[string]any) []any {
 	items := make([]any, 0, len(values))
 	for index := 1; index <= len(values); index++ {
-		value, ok := values[fmt.Sprint(index)]
+		value, ok := values[strconv.Itoa(index)]
 		if !ok {
 			return []any{}
 		}
@@ -96,11 +97,11 @@ func numericMapValues(values map[string]any) []any {
 func contributionFromValue(value any) (Contribution, error) {
 	object, ok := value.(map[string]any)
 	if !ok {
-		return Contribution{}, fmt.Errorf("must be an object")
+		return Contribution{}, errors.New("must be an object")
 	}
 	content := strings.TrimSpace(stringFromAny(object[jsonContentKey]))
 	if content == "" {
-		return Contribution{}, fmt.Errorf("content is required")
+		return Contribution{}, errors.New("content is required")
 	}
 	tokens := EstimateTokens(content)
 	if tokens > ContributionMaxTokens {
