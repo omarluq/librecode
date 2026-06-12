@@ -29,6 +29,7 @@ const (
 	asyncEventPromptUsageSnapshot asyncEventKind = "prompt_usage_snapshot"
 	asyncEventPromptError         asyncEventKind = "prompt_error"
 	asyncEventPromptContext       asyncEventKind = "prompt_context"
+	asyncEventCompactStart        asyncEventKind = "compact_start"
 	asyncEventCompactDone         asyncEventKind = "compact_done"
 	asyncEventCompactError        asyncEventKind = "compact_error"
 )
@@ -138,12 +139,15 @@ func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(a
 				Text:      "",
 				PromptID:  promptID,
 			})
-		case assistant.StreamEventContextCompaction:
+		case assistant.StreamEventContextCompaction,
+			assistant.StreamEventContextCompactionStart,
+			assistant.StreamEventContextCompactionDone,
+			assistant.StreamEventContextCompactionError:
 			app.postAsyncEvent(ctx, &asyncEvent{
 				Response:  nil,
 				ToolEvent: nil,
 				Usage:     nil,
-				Kind:      asyncEventPromptContext,
+				Kind:      asyncContextEventKind(event.Kind),
 				Provider:  "",
 				Text:      event.Text,
 				PromptID:  promptID,
@@ -210,6 +214,7 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 		asyncEventPromptUsageSnapshot,
 		asyncEventPromptError,
 		asyncEventPromptContext,
+		asyncEventCompactStart,
 		asyncEventCompactDone,
 		asyncEventCompactError:
 		return false
@@ -252,13 +257,14 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 		asyncEventPromptUsage,
 		asyncEventPromptUsageSnapshot,
 		asyncEventPromptError,
-		asyncEventPromptContext:
+		asyncEventPromptContext,
+		asyncEventCompactStart,
+		asyncEventCompactDone,
+		asyncEventCompactError:
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
-		asyncEventAuthError,
-		asyncEventCompactDone,
-		asyncEventCompactError:
+		asyncEventAuthError:
 		return false
 	}
 
@@ -287,14 +293,15 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 	case asyncEventPromptError:
 		app.applyPromptError(payload.Text, payload.PromptID)
 		return true
-	case asyncEventPromptContext:
-		app.addSystemMessage(payload.Text)
+	case asyncEventPromptContext,
+		asyncEventCompactStart,
+		asyncEventCompactDone,
+		asyncEventCompactError:
+		app.applyPromptContextEvent(payload)
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
-		asyncEventAuthError,
-		asyncEventCompactDone,
-		asyncEventCompactError:
+		asyncEventAuthError:
 		return true
 	case asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -306,6 +313,63 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 	}
 
 	return false
+}
+
+func asyncContextEventKind(kind assistant.StreamEventKind) asyncEventKind {
+	switch kind {
+	case assistant.StreamEventContextCompactionStart:
+		return asyncEventCompactStart
+	case assistant.StreamEventContextCompactionDone:
+		return asyncEventCompactDone
+	case assistant.StreamEventContextCompactionError:
+		return asyncEventCompactError
+	case assistant.StreamEventContextCompaction,
+		assistant.StreamEventTextDelta,
+		assistant.StreamEventThinkingDelta,
+		assistant.StreamEventToolStart,
+		assistant.StreamEventToolResult,
+		assistant.StreamEventSkillLoaded,
+		assistant.StreamEventUsage,
+		assistant.StreamEventUsageSnapshot,
+		assistant.StreamEventUnknown:
+		return asyncEventPromptContext
+	}
+
+	return asyncEventPromptContext
+}
+
+func (app *App) applyPromptContextEvent(payload *asyncEvent) {
+	app.addSystemMessage(payload.Text)
+	switch payload.Kind {
+	case asyncEventCompactStart:
+		app.compacting = true
+		app.workStartedAt = time.Now()
+		app.workFrame = 0
+		app.setStatus("compacting context")
+	case asyncEventCompactDone:
+		app.compacting = false
+		if payload.Text != "" {
+			app.setStatus(compactedStatusMessage)
+		}
+	case asyncEventCompactError:
+		app.compacting = false
+	case asyncEventPromptContext:
+		return
+	case asyncEventAuthURL,
+		asyncEventAuthDone,
+		asyncEventAuthError,
+		asyncEventPromptDone,
+		asyncEventPromptUserEntry,
+		asyncEventPromptDelta,
+		asyncEventPromptThinkingDelta,
+		asyncEventPromptToolStart,
+		asyncEventPromptToolResult,
+		asyncEventPromptRetry,
+		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot,
+		asyncEventPromptError:
+		return
+	}
 }
 
 func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent) {
@@ -351,6 +415,7 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 		asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
+		asyncEventCompactStart,
 		asyncEventCompactDone,
 		asyncEventCompactError:
 		return

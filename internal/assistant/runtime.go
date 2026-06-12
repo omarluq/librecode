@@ -78,6 +78,12 @@ const (
 	StreamEventUsageSnapshot StreamEventKind = "usage_snapshot"
 	// StreamEventContextCompaction carries UI-only context compaction notices.
 	StreamEventContextCompaction StreamEventKind = "context_compaction"
+	// StreamEventContextCompactionStart reports that context compaction has started.
+	StreamEventContextCompactionStart StreamEventKind = "context_compaction_start"
+	// StreamEventContextCompactionDone reports that context compaction completed.
+	StreamEventContextCompactionDone StreamEventKind = "context_compaction_done"
+	// StreamEventContextCompactionError reports that context compaction failed.
+	StreamEventContextCompactionError StreamEventKind = "context_compaction_error"
 	// StreamEventUnknown carries unexpected provider events without persistence side effects.
 	StreamEventUnknown StreamEventKind = "unknown"
 )

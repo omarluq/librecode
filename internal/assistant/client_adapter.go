@@ -392,6 +392,9 @@ func llmPartFromStreamEvent(event StreamEvent) *llm.Part {
 		StreamEventUsage,
 		StreamEventUsageSnapshot,
 		StreamEventContextCompaction,
+		StreamEventContextCompactionStart,
+		StreamEventContextCompactionDone,
+		StreamEventContextCompactionError,
 		StreamEventUnknown:
 		part := llm.TextPart(event.Text)
 		return &part

@@ -142,6 +142,10 @@ func TestPromptStreamHandlerPostsEvents(t *testing.T) {
 }
 
 func promptStreamHandlerPostCases() []streamHandlerPostCase {
+	return append(promptStreamContentEventCases(), promptStreamContextEventCases()...)
+}
+
+func promptStreamContentEventCases() []streamHandlerPostCase {
 	usage := asyncTestUsage()
 	toolEvent := asyncTestToolEvent()
 
@@ -202,14 +206,46 @@ func promptStreamHandlerPostCases() []streamHandlerPostCase {
 			wantTool:    false,
 			wantUsage:   true,
 		},
-		{
-			name:        "context compaction",
-			streamEvent: asyncTestStreamEvent(assistant.StreamEventContextCompaction, asyncTestCompact, nil, nil),
-			wantKind:    asyncEventPromptContext,
-			wantText:    asyncTestCompact,
-			wantTool:    false,
-			wantUsage:   false,
-		},
+	}
+}
+
+func promptStreamContextEventCases() []streamHandlerPostCase {
+	return []streamHandlerPostCase{
+		promptStreamContextEventCase(
+			"context compaction info",
+			assistant.StreamEventContextCompaction,
+			asyncEventPromptContext,
+		),
+		promptStreamContextEventCase(
+			"context compaction start",
+			assistant.StreamEventContextCompactionStart,
+			asyncEventCompactStart,
+		),
+		promptStreamContextEventCase(
+			"context compaction done",
+			assistant.StreamEventContextCompactionDone,
+			asyncEventCompactDone,
+		),
+		promptStreamContextEventCase(
+			"context compaction error",
+			assistant.StreamEventContextCompactionError,
+			asyncEventCompactError,
+		),
+	}
+}
+
+func promptStreamContextEventCase(
+	name string,
+	streamKind assistant.StreamEventKind,
+	wantKind asyncEventKind,
+) streamHandlerPostCase {
+	return streamHandlerPostCase{
+		name:        name,
+		streamEvent: asyncTestStreamEvent(streamKind, asyncTestCompact, nil, nil),
+		wantKind:    wantKind,
+		wantText:    asyncTestCompact,
+		wantTool:    false,
+		wantUsage:   false,
 	}
 }
 
@@ -338,6 +374,9 @@ func TestPromptAsyncEventHelpers(t *testing.T) {
 		asyncEventPromptUsageSnapshot,
 		asyncEventPromptError,
 		asyncEventPromptContext,
+		asyncEventCompactStart,
+		asyncEventCompactDone,
+		asyncEventCompactError,
 	} {
 		assert.True(t, isPromptAsyncEvent(kind), "kind %q", kind)
 	}
@@ -345,8 +384,6 @@ func TestPromptAsyncEventHelpers(t *testing.T) {
 		asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
-		asyncEventCompactDone,
-		asyncEventCompactError,
 		asyncEventKind("unknown"),
 	} {
 		assert.False(t, isPromptAsyncEvent(kind), "kind %q", kind)
@@ -382,13 +419,28 @@ func TestPromptLifecycleEvents(t *testing.T) {
 func promptLifecycleEventCases() []promptLifecycleCase {
 	return []promptLifecycleCase{
 		{
-			name:    "prompt context",
-			payload: asyncTestEvent(asyncEventPromptContext, "", asyncTestCompact, 1),
+			name:    "prompt context start",
+			payload: asyncTestEvent(asyncEventCompactStart, "", asyncTestCompact, 1),
 			setup:   func(*App) {},
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
 				last := app.transcript.History[len(app.transcript.History)-1].Content
 				assert.Equal(t, asyncTestCompact, last)
+				assert.True(t, app.compacting)
+				assert.Equal(t, "compacting context", app.statusMessage)
+			},
+			wantHandled: true,
+		},
+		{
+			name:    "prompt context done",
+			payload: asyncTestEvent(asyncEventCompactDone, "", asyncTestCompact, 1),
+			setup: func(app *App) {
+				app.compacting = true
+			},
+			assert: func(t *testing.T, app *App) {
+				t.Helper()
+				assert.False(t, app.compacting)
+				assert.Equal(t, compactedStatusMessage, app.statusMessage)
 			},
 			wantHandled: true,
 		},

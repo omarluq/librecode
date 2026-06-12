@@ -508,6 +508,7 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
+		asyncEventCompactStart,
 		asyncEventCompactDone,
 		asyncEventCompactError,
 		asyncEventPromptDone,
