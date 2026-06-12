@@ -26,6 +26,7 @@ func TestConfigFormattingHelpers(t *testing.T) {
 			MaxOpenConns:    4,
 			MaxIdleConns:    2,
 			ConnMaxLifetime: time.Minute,
+			BusyTimeout:     15 * time.Second,
 		},
 		Cache: config.CacheConfig{Enabled: true, Capacity: 10, TTL: time.Hour},
 		KSQL:  config.KSQLConfig{Endpoint: "http://ksql", Timeout: time.Second},
@@ -65,6 +66,7 @@ func TestConfigFormattingHelpers(t *testing.T) {
 	}
 
 	entries := configEntries(cfg)
+	assert.Contains(t, entries, configEntry{key: "database.busy_timeout", value: "15s"})
 	assert.Contains(t, entries, configEntry{key: "extensions.use", value: "github:user/ext@v1,local:./ext"})
 	assert.Equal(t, "development", resolveEnv("", "development"))
 	assert.Equal(t, []string{"github:user/ext@v1", "local:./ext"}, extensionUseSources(cfg.Extensions.Use))

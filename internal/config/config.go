@@ -48,6 +48,7 @@ type DatabaseConfig struct {
 	MaxOpenConns    int           `json:"max_open_conns" mapstructure:"max_open_conns" yaml:"max_open_conns"`
 	MaxIdleConns    int           `json:"max_idle_conns" mapstructure:"max_idle_conns" yaml:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `json:"conn_max_lifetime" mapstructure:"conn_max_lifetime" yaml:"conn_max_lifetime"`
+	BusyTimeout     time.Duration `json:"busy_timeout" mapstructure:"busy_timeout" yaml:"busy_timeout"`
 }
 
 // ExtensionsConfig controls workflow extension discovery and execution.
@@ -202,6 +203,9 @@ func (config *Config) validateDatabase() error {
 	}
 	if config.Database.ConnMaxLifetime < 0 {
 		return fmt.Errorf("config: database.conn_max_lifetime cannot be negative")
+	}
+	if config.Database.BusyTimeout < 0 {
+		return fmt.Errorf("config: database.busy_timeout cannot be negative")
 	}
 
 	return nil

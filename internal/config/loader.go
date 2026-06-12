@@ -87,6 +87,7 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("database.max_open_conns", 1)
 	viperInstance.SetDefault("database.max_idle_conns", 1)
 	viperInstance.SetDefault("database.conn_max_lifetime", 30*time.Minute)
+	viperInstance.SetDefault("database.busy_timeout", 15*time.Second)
 	viperInstance.SetDefault("extensions.enabled", true)
 	viperInstance.SetDefault("extensions.use", []string{defaultLocalExtensionSource})
 	viperInstance.SetDefault("assistant.provider", "openai-codex")
