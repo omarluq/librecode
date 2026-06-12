@@ -186,7 +186,7 @@ librecode config validate
 
 See [`config.example.yaml`](config.example.yaml) for all current config keys. The in-progress loader text defaults to `Shenaniganing...` and is configurable with `app.working_loader.text`.
 
-Built-in memory limits protect untrusted input and remote bodies: prompt stdin and tool JSON stdin are capped at 1 MiB, provider response/error bodies at 16 MiB, and ksqlDB response bodies at 8 MiB.
+Built-in memory limits protect untrusted input and remote bodies: prompt stdin and tool JSON stdin are capped at 1 MiB, provider response/error bodies at 16 MiB.
 
 Default global persistence lives under one librecode home:
 
@@ -381,7 +381,7 @@ internal/compaction/    Pure compaction planning, summaries, and file-operation 
 internal/config/        Viper config defaults, loading, and validation
 internal/contextwindow/ Context budgets, token estimates, contributors, and usage-led estimates
 internal/core/          Resources: system prompts, context files, skills, slash prompts
-internal/database/      SQLite repositories, migrations, ksqlDB client
+internal/database/      SQLite repositories and migrations
 internal/di/            Service wiring with samber/do
 internal/event/         Runtime event spine and stream helpers
 internal/extension/     Extension host and Lua runtime API bridge

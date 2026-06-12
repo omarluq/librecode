@@ -37,7 +37,7 @@ internal/assistant/   # assistant runtime, model retry, tool loop, slash command
 internal/auth/        # provider auth and credential storage
 internal/config/      # YAML/env/default config loading and validation
 internal/core/        # resources, skills, system prompt helpers
-internal/database/    # SQLite sessions/migrations and ksqlDB client
+internal/database/    # SQLite sessions/migrations and repositories
 internal/di/          # samber/do dependency registration
 internal/event/       # in-process event bus
 internal/extension/   # trusted Lua extension host/runtime
