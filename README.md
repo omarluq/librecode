@@ -374,16 +374,25 @@ Project-local caches are used for reproducible local runs and are gitignored:
 
 ```text
 cmd/librecode/          CLI commands and process entrypoint
-internal/assistant/     Prompt orchestration, provider calls, tool loop, cache integration
+internal/assistant/     Prompt/session orchestration, lifecycle hooks, tool execution, persistence
 internal/auth/          Provider credential storage, OAuth flows, and token refresh
+internal/browser/       Cross-platform browser opener helpers
+internal/compaction/    Pure compaction planning, summaries, and file-operation preservation
 internal/config/        Viper config defaults, loading, and validation
+internal/contextwindow/ Context budgets, token estimates, contributors, and usage-led estimates
 internal/core/          Resources: system prompts, context files, skills, slash prompts
 internal/database/      SQLite repositories, migrations, ksqlDB client
 internal/di/            Service wiring with samber/do
+internal/event/         Runtime event spine and stream helpers
 internal/extension/     Extension host and Lua runtime API bridge
-internal/model/         Provider/model registry and auth resolution
-internal/terminal/      Interactive terminal UI
+internal/llm/           Provider-neutral LLM DTOs, finish reasons, usage, and typed errors
+internal/llmconv/       Shared conversions between model usage and LLM DTOs
+internal/mapsutil/      Small map-clone helpers with explicit nil/empty semantics
+internal/model/         Provider/model registry, catalog discovery, and auth resolution
+internal/provider/      Provider HTTP/SSE wire clients and protocol normalization
+internal/terminal/      Interactive terminal UI and terminal-specific subpackages
 internal/tool/          Built-in coding tools
+internal/transcript/    Shared transcript roles and tool-event formatting
 internal/vinfo/         Version metadata injected at build time
 ```
 
