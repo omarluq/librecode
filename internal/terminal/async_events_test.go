@@ -416,7 +416,7 @@ func TestPromptLifecycleEvents(t *testing.T) {
 	}
 }
 
-func promptLifecycleEventCases() []promptLifecycleCase {
+func promptCompactionLifecycleEventCases() []promptLifecycleCase {
 	return []promptLifecycleCase{
 		{
 			name:    "prompt context start",
@@ -444,6 +444,38 @@ func promptLifecycleEventCases() []promptLifecycleCase {
 			},
 			wantHandled: true,
 		},
+		{
+			name:    "prompt context done with empty text",
+			payload: asyncTestEvent(asyncEventCompactDone, "", "", 1),
+			setup: func(app *App) {
+				app.compacting = true
+				app.statusMessage = "previous status"
+			},
+			assert: func(t *testing.T, app *App) {
+				t.Helper()
+				assert.False(t, app.compacting)
+				assert.Equal(t, "previous status", app.statusMessage)
+			},
+			wantHandled: true,
+		},
+		{
+			name:    "prompt context error",
+			payload: asyncTestEvent(asyncEventCompactError, "", asyncTestCompact, 1),
+			setup: func(app *App) {
+				app.compacting = true
+			},
+			assert: func(t *testing.T, app *App) {
+				t.Helper()
+				assert.False(t, app.compacting)
+				assert.Equal(t, asyncTestCompact, app.transcript.History[len(app.transcript.History)-1].Content)
+			},
+			wantHandled: true,
+		},
+	}
+}
+
+func promptLifecycleEventCases() []promptLifecycleCase {
+	return append(promptCompactionLifecycleEventCases(), []promptLifecycleCase{
 		{
 			name:    "prompt retry",
 			payload: asyncTestEvent(asyncEventPromptRetry, string(assistant.RetryEventStart), "retrying", 1),
@@ -492,7 +524,7 @@ func promptLifecycleEventCases() []promptLifecycleCase {
 			assert:      func(*testing.T, *App) {},
 			wantHandled: false,
 		},
-	}
+	}...)
 }
 
 func TestHandlePromptAsyncEventIgnoresStalePromptEvents(t *testing.T) {

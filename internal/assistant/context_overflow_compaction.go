@@ -59,25 +59,9 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 		currentParentID = input.compactionEntry.ID
 	}
 
-	runtime.emitContextCompactionEvent(
-		ctx,
-		input.preparation.onEvent,
-		StreamEventContextCompactionStart,
-		"provider reported context overflow; attempting compaction before retry...",
-	)
-	recoveredEntry, err := runtime.CompactSessionFrom(
-		ctx,
-		input.preparation.sessionID,
-		input.preparation.cwd,
-		&currentParentID,
-	)
-	if isCompactNothingToDoError(err) {
-		return nil, nil, nil, providerErr
-	}
+	recoveredEntry, err := runtime.compactAfterProviderOverflow(ctx, input, currentParentID, providerErr)
 	if err != nil {
-		return nil, nil, nil, oops.In("assistant").
-			Code("context_overflow_compact").
-			Wrapf(err, "compact context after provider overflow")
+		return nil, nil, nil, err
 	}
 
 	recoveredBuild, err := runtime.buildCompletionRequest(
@@ -90,6 +74,13 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 		input.preparation.onEvent,
 	)
 	if err != nil {
+		runtime.emitContextCompactionError(
+			ctx,
+			input.preparation.onEvent,
+			"provider context overflow compaction failed",
+			err,
+		)
+
 		return nil, recoveredEntry, nil, oops.In("assistant").
 			Code("context_overflow_rebuild").
 			Wrapf(err, "context: rebuild completion request after provider overflow compaction")
@@ -98,6 +89,13 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 	if runtime.cfg.Context.PreflightEnabled {
 		validationErr := recoveredBuild.Budget.Validate()
 		if validationErr != nil {
+			runtime.emitContextCompactionError(
+				ctx,
+				input.preparation.onEvent,
+				"provider context overflow compaction failed",
+				validationErr,
+			)
+
 			return nil, recoveredEntry, nil, oops.In("assistant").
 				Code("context_budget_after_provider_overflow_compact").
 				Wrapf(validationErr, "context: validate budget after provider overflow compaction")
@@ -116,4 +114,47 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 	}
 
 	return recoveredBuild, recoveredEntry, result, nil
+}
+
+func (runtime *Runtime) compactAfterProviderOverflow(
+	ctx context.Context,
+	input *providerOverflowRecoveryInput,
+	parentID string,
+	providerErr error,
+) (*database.EntryEntity, error) {
+	runtime.emitContextCompactionEvent(
+		ctx,
+		input.preparation.onEvent,
+		StreamEventContextCompactionStart,
+		"provider reported context overflow; attempting compaction before retry...",
+	)
+	entry, err := runtime.CompactSessionFrom(
+		ctx,
+		input.preparation.sessionID,
+		input.preparation.cwd,
+		&parentID,
+	)
+	if isCompactNothingToDoError(err) {
+		runtime.emitContextCompactionErrorMessage(
+			ctx,
+			input.preparation.onEvent,
+			"provider context overflow compaction skipped: nothing to compact",
+		)
+
+		return nil, providerErr
+	}
+	if err != nil {
+		runtime.emitContextCompactionError(
+			ctx,
+			input.preparation.onEvent,
+			"provider context overflow compaction failed",
+			err,
+		)
+
+		return nil, oops.In("assistant").
+			Code("context_overflow_compact").
+			Wrapf(err, "compact context after provider overflow")
+	}
+
+	return entry, nil
 }
