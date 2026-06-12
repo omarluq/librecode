@@ -268,8 +268,8 @@ func TestRunPromptPostsDoneAndError(t *testing.T) {
 		wantText string
 	}{
 		{
-			name:     "done",
-			client:   newTerminalPromptClient(newTerminalCompletionResult("done"), nil),
+			name:     statusDone,
+			client:   newTerminalPromptClient(newTerminalCompletionResult(statusDone), nil),
 			wantKind: asyncEventPromptDone,
 			wantText: "",
 		},

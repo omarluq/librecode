@@ -5,6 +5,7 @@ import "github.com/omarluq/librecode/internal/terminal/panel"
 const (
 	settingTheme    = "theme"
 	settingThinking = "thinking"
+	statusDone      = "done"
 	themeNameDark   = "dark"
 )
 
@@ -44,7 +45,7 @@ func (app *App) openChangelogPanel() {
 			Value:       "db",
 			Title:       "Database sessions",
 			Description: "Session entries and normalized messages are SQLite-backed",
-			Meta:        "done",
+			Meta:        statusDone,
 		},
 	}
 	app.openPanel(panel.New(panelChangelog, "Changelog", "recent runtime work", items, false))
