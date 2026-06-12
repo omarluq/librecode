@@ -17,7 +17,7 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 
 		schema := ToolParameterSchema(nil)
 
-		assert.Equal(t, jsonObjectType, schema[jsonTypeKey])
+		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(schema[jsonTypeKey]))
 		assertAdditionalProperties(t, schema, true)
 	})
 
@@ -26,7 +26,7 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 
 		schema := ToolParameterSchema(newToolDefinitionForSchemaTest("custom", nil))
 
-		assert.Equal(t, jsonObjectType, schema[jsonTypeKey])
+		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(schema[jsonTypeKey]))
 		assertAdditionalProperties(t, schema, true)
 	})
 
@@ -37,7 +37,7 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 		schema := ToolParameterSchema(newToolDefinitionForSchemaTest("custom", original))
 
 		schema[jsonTypeKey] = "changed"
-		assert.Equal(t, jsonObjectType, original[jsonTypeKey])
+		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(original[jsonTypeKey]))
 	})
 
 	t.Run("builtin schema is strict", func(t *testing.T) {
@@ -45,7 +45,7 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 
 		schema := ToolParameterSchema(newToolDefinitionForSchemaTest(jsonReadToolName, nil))
 
-		assert.Equal(t, jsonObjectType, schema[jsonTypeKey])
+		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(schema[jsonTypeKey]))
 		assertAdditionalProperties(t, schema, false)
 	})
 }

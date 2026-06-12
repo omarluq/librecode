@@ -2,10 +2,7 @@
 // assistant persistence and terminal presentation.
 package transcript
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 // ToolEvent captures the display/persistence fields of a completed tool call.
 type ToolEvent struct {
@@ -31,7 +28,7 @@ func formatToolEvent(event *ToolEvent, includeStructuredError bool) string {
 	if event == nil {
 		return "tool: "
 	}
-	parts := []string{fmt.Sprintf("tool: %s", event.Name)}
+	parts := []string{"tool: " + event.Name}
 	if strings.TrimSpace(event.ArgumentsJSON) != "" {
 		parts = append(parts, "arguments:", event.ArgumentsJSON)
 	}

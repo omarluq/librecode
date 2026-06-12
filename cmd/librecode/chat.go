@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/spf13/cobra"
 
@@ -88,7 +88,7 @@ func resolveChatSessionID(
 	options chatRunOptions,
 ) (string, error) {
 	if options.SessionID != "" && options.Resume {
-		return "", fmt.Errorf("--resume cannot be used with --session")
+		return "", errors.New("--resume cannot be used with --session")
 	}
 	if !options.Resume || runtime == nil {
 		return options.SessionID, nil

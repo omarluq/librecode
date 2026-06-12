@@ -58,6 +58,28 @@ linters:
     - forbidigo
     - cyclop
 
+    # Safety / correctness
+    - asasalint
+    - bidichk
+    - canonicalheader
+    - durationcheck
+    - errchkjson
+    - fatcontext
+    - forcetypeassert
+    - makezero
+    - nilnesserr
+    - nosprintfhostport
+    - rowserrcheck
+    - sqlclosecheck
+    - usestdlibvars
+
+    # Modernization / tests / performance
+    - copyloopvar
+    - modernize
+    - perfsprint
+    - testifylint
+    - dupword
+
   exclusions:
     rules:
       - linters: [all]

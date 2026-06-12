@@ -42,7 +42,7 @@ func TestExchangeOpenAICodexCodeSendsPKCEForm(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodPost, request.Method)
 		assert.Equal(t, "application/x-www-form-urlencoded", request.Header.Get("Content-Type"))
-		require.NoError(t, request.ParseForm())
+		assert.NoError(t, request.ParseForm())
 		assert.Equal(t, "authorization_code", request.Form.Get("grant_type"))
 		assert.Equal(t, auth.OpenAICodexClientIDForTest(), request.Form.Get("client_id"))
 		assert.Equal(t, "auth-code", request.Form.Get("code"))
@@ -55,7 +55,7 @@ func TestExchangeOpenAICodexCodeSendsPKCEForm(t *testing.T) {
 			"refresh_token": "refresh-token",
 			"expires_in": 3600
 		}`))
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	}))
 	defer server.Close()
 	auth.SetOpenAICodexTokenURLForTest(t, server.URL)
@@ -72,7 +72,7 @@ func TestRefreshOpenAICodexSendsRefreshForm(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		require.NoError(t, request.ParseForm())
+		assert.NoError(t, request.ParseForm())
 		assert.Equal(t, "refresh_token", request.Form.Get("grant_type"))
 		assert.Equal(t, "old-refresh", request.Form.Get("refresh_token"))
 		assert.Equal(t, auth.OpenAICodexClientIDForTest(), request.Form.Get("client_id"))
@@ -82,7 +82,7 @@ func TestRefreshOpenAICodexSendsRefreshForm(t *testing.T) {
 			"refresh_token": "new-refresh",
 			"expires_in": 3600
 		}`))
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	}))
 	defer server.Close()
 	auth.SetOpenAICodexTokenURLForTest(t, server.URL)
@@ -99,7 +99,7 @@ func TestOpenAICodexTokenErrorIncludesBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusForbidden)
 		_, err := writer.Write([]byte(`{"error":"blocked"}`))
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	}))
 	defer server.Close()
 	auth.SetOpenAICodexTokenURLForTest(t, server.URL)

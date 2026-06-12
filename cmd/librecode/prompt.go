@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -55,10 +56,10 @@ func runPrompt(cmd *cobra.Command, args []string, options promptRunOptions) erro
 
 func validatePromptRunOptions(options promptRunOptions) error {
 	if options.Resume && options.SessionID != "" {
-		return fmt.Errorf("--resume cannot be used with --session")
+		return errors.New("--resume cannot be used with --session")
 	}
 	if options.Resume && options.SessionName != "" {
-		return fmt.Errorf("--resume cannot be used with --name")
+		return errors.New("--resume cannot be used with --name")
 	}
 
 	return nil
@@ -110,7 +111,7 @@ func promptMessage(cmd *cobra.Command, args []string) (string, error) {
 	}
 	message = strings.TrimSpace(string(stdin))
 	if message == "" {
-		return "", fmt.Errorf("prompt message is required")
+		return "", errors.New("prompt message is required")
 	}
 
 	return message, nil

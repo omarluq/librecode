@@ -2,7 +2,7 @@ package terminal
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/omarluq/librecode/internal/database"
@@ -10,7 +10,7 @@ import (
 
 func (app *App) cloneSession(ctx context.Context, name string) error {
 	if app.sessionID == "" {
-		return fmt.Errorf("no active session")
+		return errors.New("no active session")
 	}
 	createdSession, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, name, app.sessionID)
 	if err != nil {
@@ -29,7 +29,7 @@ func (app *App) copyLastAssistantMessage(ctx context.Context) error {
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("no assistant message to copy")
+		return errors.New("no assistant message to copy")
 	}
 	app.copyTextToClipboard(message.Content)
 	app.setStatus("copied last assistant message")
@@ -45,7 +45,8 @@ func (app *App) lastAssistantMessage(ctx context.Context) (*database.SessionMess
 	if err != nil {
 		return nil, false, err
 	}
-	for index := len(messages) - 1; index >= 0; index-- {
+	for offset := range len(messages) {
+		index := len(messages) - 1 - offset
 		message := &messages[index]
 		if message.Role == database.RoleAssistant && strings.TrimSpace(message.Content) != "" {
 			return message, true, nil

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/anthropicmodel"
 	"github.com/omarluq/librecode/internal/llm"
@@ -16,7 +17,7 @@ func TestAnthropicPayloadOmitsTemperature(t *testing.T) {
 	payload := anthropicPayload(testCompletionRequestAuth("anthropic-claude", "subscription-access-token"), nil)
 
 	assert.NotContains(t, payload, "temperature")
-	assert.Equal(t, "", payload[jsonModelKey])
+	assert.Empty(t, payload[jsonModelKey])
 	assert.Equal(t, 4096, payload["max_tokens"])
 }
 
@@ -164,7 +165,7 @@ func assertAnthropicToolCallMapsClaudeCodeName(t *testing.T) {
 		jsonContentKey: "hello",
 	})
 
-	assert.Equal(t, jsonWriteToolName, call.Name)
+	assert.Equal(t, expectedWriteToolName, call.Name)
 	assert.Equal(t, "hello.txt", call.Arguments[jsonPathKey])
 	assert.Equal(t, "hello", call.Arguments[jsonContentKey])
 }
@@ -217,7 +218,7 @@ func encodeTestJSON(t *testing.T, value any) string {
 	t.Helper()
 
 	encoded, err := json.Marshal(value)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	return string(encoded)
 }

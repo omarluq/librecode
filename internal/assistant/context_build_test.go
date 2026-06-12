@@ -43,7 +43,7 @@ end)
 	assert.Contains(t, client.request.SystemPrompt, "project-note")
 	assert.Contains(t, client.request.SystemPrompt, "Always mention extension context")
 	require.NotNil(t, client.request.Usage.Breakdown)
-	assert.Greater(t, client.request.Usage.Breakdown["extensions"], 0)
+	assert.Positive(t, client.request.Usage.Breakdown["extensions"])
 }
 
 func TestRuntime_ContextBuildRejectsOversizedExtensionContributions(t *testing.T) {
@@ -137,5 +137,5 @@ end)
 	require.True(t, ok)
 	extensionTokens, ok := breakdown["extensions"].(int)
 	require.True(t, ok)
-	assert.Greater(t, extensionTokens, 0)
+	assert.Positive(t, extensionTokens)
 }

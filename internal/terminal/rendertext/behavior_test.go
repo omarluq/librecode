@@ -61,9 +61,9 @@ func TestRendererFlushWritesOnlyChangedCells(t *testing.T) {
 func TestTextEdgeCases(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "", rendertext.Truncate("hello", 0))
+	assert.Empty(t, rendertext.Truncate("hello", 0))
 	assert.Equal(t, "hello", rendertext.Truncate("hello", 10))
-	assert.Equal(t, "", rendertext.Fit("hello", 0))
+	assert.Empty(t, rendertext.Fit("hello", 0))
 	assert.Equal(t, "hello  ", rendertext.PadRight("hello", 7))
 	assert.Equal(t, " ", rendertext.PadRight("語", 1))
 

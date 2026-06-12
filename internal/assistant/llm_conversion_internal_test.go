@@ -64,7 +64,7 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 	converted := llmRequestFromCompletionRequest(request)
 
 	assert.Equal(t, "session-1", converted.SessionID)
-	assert.Equal(t, jsonSystemRole, converted.SystemPrompt)
+	assert.Equal(t, expectedSystemRole, converted.SystemPrompt)
 	assert.Equal(t, "high", converted.ThinkingLevel)
 	assert.Equal(t, "openai", converted.Model.Provider)
 	assert.Equal(t, "gpt-test", converted.Model.ID)

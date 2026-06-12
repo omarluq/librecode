@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/omarluq/librecode/internal/model"
@@ -25,7 +24,7 @@ func contextContributorLines(contributors []model.TokenContributor) []string {
 
 func contextContributorLine(contributor *model.TokenContributor) string {
 	parts := []string{
-		fmt.Sprintf("  - %s", contributor.Label),
+		"  - " + contributor.Label,
 		compactCount(contributor.Tokens),
 	}
 	if contributor.Role != "" {

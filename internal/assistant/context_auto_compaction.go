@@ -3,6 +3,7 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -79,7 +80,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 	input *completionRequestPreparationInput,
 ) (*contextRequestBuild, *database.EntryEntity, error) {
 	if input == nil || input.auth == nil {
-		err := fmt.Errorf("nil completion request preparation input")
+		err := errors.New("nil completion request preparation input")
 
 		return nil, nil, oops.In("assistant").
 			Code("context_prepare_input").

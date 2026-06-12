@@ -1,7 +1,6 @@
 package terminal_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -278,7 +277,7 @@ func TestShowContextInfoDisplaysSummaryAndBreakdown(t *testing.T) {
 	message := messages[len(messages)-1]
 	assert.Contains(t, message, "context:")
 	assert.Contains(t, message, "- ctx 250/1.0k 25%")
-	assert.True(t, strings.Contains(message, "- breakdown:\n  - history: 1.2k\n  - system: 50"))
+	assert.Contains(t, message, "- breakdown:\n  - history: 1.2k\n  - system: 50")
 	assert.Contains(t, message, "- top contributors:")
 	assert.Contains(t, message, "message 2 7.0k assistant")
 }

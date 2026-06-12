@@ -3,7 +3,7 @@ package assistant
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/samber/oops"
 
@@ -24,7 +24,7 @@ func (runtime *Runtime) completeWithProviderOverflowRecovery(
 	input *providerOverflowRecoveryInput,
 ) (*contextRequestBuild, *database.EntryEntity, *CompletionResult, error) {
 	if input == nil || input.build == nil || input.preparation == nil || input.preparation.auth == nil {
-		err := fmt.Errorf("nil provider overflow recovery input")
+		err := errors.New("nil provider overflow recovery input")
 
 		return nil, nil, nil, oops.In("assistant").
 			Code("context_overflow_recovery_input").

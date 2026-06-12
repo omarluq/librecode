@@ -175,7 +175,8 @@ func summaryPayload(
 }
 
 func previousCompactionBoundary(branch []database.EntryEntity) (summary string, boundaryStart int) {
-	for index := len(branch) - 1; index >= 0; index-- {
+	for offset := range len(branch) {
+		index := len(branch) - 1 - offset
 		entry := &branch[index]
 		if entry.Type != database.EntryTypeCompaction {
 			continue

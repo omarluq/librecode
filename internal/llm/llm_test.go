@@ -51,7 +51,7 @@ func TestBoundaryInterfaces(t *testing.T) {
 	chunk, err := stream.Recv()
 	require.NoError(t, err)
 	assert.Equal(t, llm.FinishReasonToolCalls, chunk.FinishReason)
-	assert.NoError(t, stream.Close())
+	require.NoError(t, stream.Close())
 	_, err = stream.Recv()
 	assert.ErrorIs(t, err, io.EOF)
 }
@@ -148,14 +148,14 @@ func TestPartKinds(t *testing.T) {
 func TestFinishReasonValues(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, llm.FinishReason(""), llm.FinishReasonUnknown)
-	assert.Equal(t, llm.FinishReason("stop"), llm.FinishReasonStop)
-	assert.Equal(t, llm.FinishReason("length"), llm.FinishReasonLength)
-	assert.Equal(t, llm.FinishReason("tool-calls"), llm.FinishReasonToolCalls)
-	assert.Equal(t, llm.FinishReason("content-filter"), llm.FinishReasonContentFilter)
-	assert.Equal(t, llm.FinishReason("refusal"), llm.FinishReasonRefusal)
-	assert.Equal(t, llm.FinishReason("error"), llm.FinishReasonError)
-	assert.Equal(t, llm.FinishReason("aborted"), llm.FinishReasonAborted)
+	assert.Equal(t, llm.FinishReasonUnknown, llm.FinishReason(""))
+	assert.Equal(t, llm.FinishReasonStop, llm.FinishReason("stop"))
+	assert.Equal(t, llm.FinishReasonLength, llm.FinishReason("length"))
+	assert.Equal(t, llm.FinishReasonToolCalls, llm.FinishReason("tool-calls"))
+	assert.Equal(t, llm.FinishReasonContentFilter, llm.FinishReason("content-filter"))
+	assert.Equal(t, llm.FinishReasonRefusal, llm.FinishReason("refusal"))
+	assert.Equal(t, llm.FinishReasonError, llm.FinishReason("error"))
+	assert.Equal(t, llm.FinishReasonAborted, llm.FinishReason("aborted"))
 }
 
 func TestUsageHelpers(t *testing.T) {
@@ -238,7 +238,7 @@ func TestProviderError(t *testing.T) {
 	}
 
 	assert.Equal(t, "slow down", err.Error())
-	assert.ErrorIs(t, err, cause)
+	require.ErrorIs(t, err, cause)
 	assert.True(t, llm.IsKind(err, llm.ErrorKindRateLimit))
 	assert.False(t, llm.IsKind(err, llm.ErrorKindAuth))
 	unwrapped, ok := llm.AsProviderError(err)
@@ -319,7 +319,7 @@ func TestProviderErrorNilHelpers(t *testing.T) {
 	t.Parallel()
 
 	var providerError *llm.ProviderError
-	assert.NoError(t, providerError.Unwrap())
+	require.NoError(t, providerError.Unwrap())
 	assert.False(t, llm.IsKind(assert.AnError, llm.ErrorKindUnknown))
 	converted, ok := llm.AsProviderError(assert.AnError)
 	assert.False(t, ok)

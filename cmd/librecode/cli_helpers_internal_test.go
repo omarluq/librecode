@@ -125,7 +125,7 @@ func TestPrintSessionSummaryAndEntry(t *testing.T) {
 		Display:                    false,
 		ModelFacing:                false,
 	}))
-	assert.Contains(t, output.String(), "entry-1\tmessage\tmessage text")
+	assert.Contains(t, output.String(), "entry-1\t"+"message\t"+"message text")
 }
 
 func TestExtensionFormattingHelpers(t *testing.T) {

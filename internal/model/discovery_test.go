@@ -68,8 +68,8 @@ func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 	assert.Equal(t, 128000, openAIModel.MaxTokens)
 	assert.Equal(t, []model.InputMode{model.InputText, model.InputImage}, openAIModel.Input)
 	assert.True(t, openAIModel.Reasoning)
-	assert.Equal(t, 2.5, openAIModel.Cost.Input)
-	assert.Equal(t, 15.0, openAIModel.Cost.Output)
+	assert.InDelta(t, 2.5, openAIModel.Cost.Input, 0)
+	assert.InDelta(t, 15.0, openAIModel.Cost.Output, 0)
 	assert.NotNil(t, openAIModel.ThinkingLevelMap[model.ThinkingOff])
 
 	openCodeModel := findModel(t, models, "opencode", testDiscoveryGPT55)

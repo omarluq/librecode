@@ -27,7 +27,7 @@ func TestPostJSONRejectsProviderBodiesAboveLimit(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 				writer.WriteHeader(test.statusCode)
 				_, err := writer.Write([]byte(strings.Repeat("a", int(providerResponseLimitBytes)+1)))
-				require.NoError(t, err)
+				assert.NoError(t, err)
 			}))
 			t.Cleanup(server.Close)
 

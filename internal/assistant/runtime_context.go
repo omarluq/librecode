@@ -3,7 +3,6 @@ package assistant
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/samber/oops"
@@ -68,7 +67,7 @@ func baseSystemPrompt(cwd string) string {
 	return strings.Join([]string{
 		"You are librecode, an AI coding assistant. Be concise, helpful, and accurate.",
 		"You are running inside a local filesystem workspace.",
-		fmt.Sprintf("Current working directory: %s", cwd),
+		"Current working directory: " + cwd,
 		"Use built-in tools (ls, find, grep, read, bash, edit, write) " +
 			"to inspect or change workspace files when needed.",
 		"Do not claim you cannot access files; inspect them with tools instead.",

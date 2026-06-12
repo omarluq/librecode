@@ -39,7 +39,7 @@ func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "final answer", response.Text)
-	assert.Greater(t, response.Usage.ContextTokens, 0)
+	assert.Positive(t, response.Usage.ContextTokens)
 	require.Len(t, harness.client.requests, 2)
 	assert.False(t, harness.client.requests[0].DisableTools)
 	assert.True(t, harness.client.requests[1].DisableTools)

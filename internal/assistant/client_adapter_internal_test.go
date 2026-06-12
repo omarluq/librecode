@@ -50,7 +50,7 @@ func TestProviderRequestFromCompletionRequestAdaptsCallbacksAndRequest(t *testin
 		Messages: nil,
 		Usage:    model.EmptyTokenUsage(),
 		Model: model.Model{
-			ThinkingLevelMap: map[model.ThinkingLevel]*string{model.ThinkingHigh: stringPtr("enabled")},
+			ThinkingLevelMap: map[model.ThinkingLevel]*string{model.ThinkingHigh: new("enabled")},
 			Headers:          nil,
 			Compat:           map[string]any{"feature": "on"},
 			Provider:         "anthropic",
@@ -132,7 +132,7 @@ func TestCompletionResultFromLLMResponseConvertsPartsAndUsage(t *testing.T) {
 	assert.Equal(t, "first \nsecond", converted.Text)
 	assert.Equal(t, []string{adapterThought}, converted.Thinking)
 	require.Len(t, converted.ToolEvents, 2)
-	assert.Equal(t, jsonReadToolName, converted.ToolEvents[0].Name)
+	assert.Equal(t, expectedReadToolName, converted.ToolEvents[0].Name)
 	assert.Equal(t, `{"ok":true}`, converted.ToolEvents[0].DetailsJSON)
 	assert.False(t, converted.ToolEvents[0].IsError)
 	assert.Equal(t, "failed", converted.ToolEvents[1].Error)
@@ -268,7 +268,7 @@ func TestToolExecutorAdapterConvertsCallsEventsAndErrors(t *testing.T) {
 	require.NotNil(t, observedEvent.Part)
 	assert.Equal(t, llm.PartToolResult, observedEvent.Part.Type)
 	require.Len(t, results, 1)
-	assert.Equal(t, jsonReadToolName, results[0].Name)
+	assert.Equal(t, expectedReadToolName, results[0].Name)
 
 	assert.Nil(t, llmToolExecutor(nil))
 	assert.Nil(t, assistantStreamEventHandler(nil))
@@ -312,7 +312,7 @@ func adapterHookInput() *llm.HookInput {
 		ProviderOptions: map[string]any{"cwd": adapterCWD},
 		Model: llm.ModelRef{
 			Metadata:         map[string]any{"feature": "on"},
-			ThinkingLevelMap: map[string]*string{adapterThinkingLevel: stringPtr("enabled")},
+			ThinkingLevelMap: map[string]*string{adapterThinkingLevel: new("enabled")},
 			Provider:         "anthropic",
 			ID:               "claude",
 			API:              apiAnthropicMessages,
@@ -364,8 +364,4 @@ func adapterToolEvent() *ToolEvent {
 		Error:         "",
 		IsError:       false,
 	}
-}
-
-func stringPtr(value string) *string {
-	return &value
 }

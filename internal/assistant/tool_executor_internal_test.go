@@ -126,8 +126,8 @@ func TestLLMToolResultFromToolEvent(t *testing.T) {
 		IsError:       true,
 	})
 
-	assert.Equal(t, jsonReadToolName, result.Name)
-	assert.Equal(t, toolExecutorReadArgs, result.ArgumentsJSON)
+	assert.Equal(t, expectedReadToolName, result.Name)
+	assert.JSONEq(t, toolExecutorReadArgs, result.ArgumentsJSON)
 	assert.Equal(t, "boom", result.Error)
 	assert.True(t, result.IsError)
 	require.Len(t, result.Content, 1)

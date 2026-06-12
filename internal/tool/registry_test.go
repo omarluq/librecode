@@ -3,7 +3,6 @@ package tool_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -78,7 +77,7 @@ func TestRegistry_RegisterRejectsDuplicateTool(t *testing.T) {
 	err := registry.Register(tool.NewReadTool(t.TempDir()))
 
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, tool.ErrDuplicateTool))
+	assert.ErrorIs(t, err, tool.ErrDuplicateTool)
 }
 
 func TestRegistry_Metadata(t *testing.T) {

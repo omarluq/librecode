@@ -30,7 +30,6 @@ func TestRuntime_ProviderRequestHookEmitsDiagnostics(t *testing.T) {
 		providerHookErrorDiagnosticsCase(),
 	}
 	for _, testCase := range tests {
-		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			runProviderHookDiagnosticsTest(t, &testCase)
@@ -107,7 +106,7 @@ func assertProviderHookMutatedDiagnostics(
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 	diagnostic := events[0]
-	assert.Equal(t, string(extension.LifecycleBeforeProviderRequest), diagnostic["event"])
+	assert.EqualValues(t, extension.LifecycleBeforeProviderRequest, diagnostic["event"])
 	assert.Equal(t, 1, diagnostic[lifecyclepayload.HookCountKey])
 	assert.Equal(t, 3, diagnostic[lifecyclepayload.AttemptKey])
 	assert.Equal(t, providerHookTestModelID, diagnostic[lifecyclepayload.ModelKey])

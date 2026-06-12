@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -31,7 +32,7 @@ type SourceRef struct {
 func ParseSourceRef(source, version string) (SourceRef, error) {
 	trimmed := strings.TrimSpace(source)
 	if trimmed == "" {
-		return SourceRef{}, fmt.Errorf("extension: source is required")
+		return SourceRef{}, errors.New("extension: source is required")
 	}
 
 	scheme, value, ok := strings.Cut(trimmed, ":")

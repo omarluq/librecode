@@ -263,7 +263,7 @@ func TestRuntime_PromptPersistsPartialProgressOnProviderFailure(t *testing.T) {
 	_, err := runtime.Prompt(context.Background(), request)
 
 	require.Error(t, err)
-	assert.EqualError(t, err, "provider returned an empty response")
+	require.EqualError(t, err, "provider returned an empty response")
 	assertPersistedPartialFailure(t, repository, request.SessionID)
 }
 

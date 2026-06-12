@@ -3,7 +3,6 @@ package extension
 import (
 	"context"
 	"errors"
-	"fmt"
 	"maps"
 	"time"
 
@@ -116,7 +115,7 @@ type LifecycleDispatcher interface {
 // DispatchLifecycle runs registered handlers for a lifecycle event.
 func (manager *Manager) DispatchLifecycle(ctx context.Context, event LifecycleEvent) (LifecycleDispatchResult, error) {
 	if event.Name == "" {
-		return LifecycleDispatchResult{}, fmt.Errorf("extension: lifecycle event name is required")
+		return LifecycleDispatchResult{}, errors.New("extension: lifecycle event name is required")
 	}
 
 	result := LifecycleDispatchResult{

@@ -34,9 +34,9 @@ func TestResponseResultHelpers(t *testing.T) {
 	assert.Equal(t, []string{"reason"}, responseThinking(response))
 	events := responseToolEvents(response)
 	require.Len(t, events, 1)
-	assert.Equal(t, jsonReadToolName, events[0].Name)
+	assert.Equal(t, expectedReadToolName, events[0].Name)
 	assert.Equal(t, "contents", events[0].Result)
-	assert.Equal(t, `{"path":"README.md"}`, events[0].DetailsJSON)
+	assert.JSONEq(t, `{"path":"README.md"}`, events[0].DetailsJSON)
 }
 
 func TestResponseResultHelpersHandleEmptyInputs(t *testing.T) {

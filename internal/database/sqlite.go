@@ -67,10 +67,7 @@ func sqlitePragmas(options SQLiteOptions) url.Values {
 }
 
 func sqlitePragmaValues(options SQLiteOptions) []string {
-	busyTimeout := int(options.BusyTimeout / time.Millisecond)
-	if busyTimeout < 0 {
-		busyTimeout = 0
-	}
+	busyTimeout := max(int(options.BusyTimeout/time.Millisecond), 0)
 
 	return []string{
 		fmt.Sprintf("%s=%s", sqliteBusyTimeoutPragma, strconv.Itoa(busyTimeout)),

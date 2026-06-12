@@ -192,7 +192,7 @@ func TestStorageDrainsErrors(t *testing.T) {
 
 	drained := failingStorage.DrainErrors()
 	require.Len(t, drained, 1)
-	assert.ErrorIs(t, drained[0], assert.AnError)
+	require.ErrorIs(t, drained[0], assert.AnError)
 	assert.Empty(t, failingStorage.DrainErrors())
 }
 

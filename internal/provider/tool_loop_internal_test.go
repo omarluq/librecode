@@ -181,7 +181,7 @@ func TestOpenAIChatToolMessagesUsesCallIDs(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, messages, 1)
-	assert.Equal(t, jsonToolRole, messages[0][jsonRoleKey])
+	assert.JSONEq(t, jsonString(jsonToolRole), jsonString(messages[0][jsonRoleKey]))
 	assert.Equal(t, "call_1", messages[0]["tool_call_id"])
 	assert.Equal(t, "ok", messages[0][jsonContentKey])
 }

@@ -146,9 +146,9 @@ func TestRegistryOptionsAndFirstRegistryError(t *testing.T) {
 
 	left := errors.New("left")
 	right := errors.New("right")
-	assert.ErrorIs(t, firstRegistryError(left, right), left)
-	assert.ErrorIs(t, firstRegistryError(nil, right), right)
-	assert.NoError(t, firstRegistryError(nil, nil))
+	require.ErrorIs(t, firstRegistryError(left, right), left)
+	require.ErrorIs(t, firstRegistryError(nil, right), right)
+	require.NoError(t, firstRegistryError(nil, nil))
 }
 
 func disabledDiscoveryOptions() DiscoveryOptions {

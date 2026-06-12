@@ -86,7 +86,7 @@ func TestTopContributorsRankingAndFallbacks(t *testing.T) {
 		if contributor.Label == "message 2" {
 			foundMessage = true
 			assert.Equal(t, string(database.RoleAssistant), contributor.Role)
-			assert.Greater(t, contributor.Tokens, 0)
+			assert.Positive(t, contributor.Tokens)
 		}
 	}
 	assert.True(t, foundMessage, "expected large assistant message contributor")

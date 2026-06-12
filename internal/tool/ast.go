@@ -2,7 +2,6 @@ package tool
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	gt "github.com/odvcencio/gotreesitter"
@@ -167,7 +166,7 @@ func (astTool *ASTTool) parse(ctx context.Context, path string, allowIgnored boo
 	entry := grammars.DetectLanguage(absolutePath)
 	if entry == nil {
 		unsupported := TextResult(
-			fmt.Sprintf("No syntax grammar available for %s", path),
+			"No syntax grammar available for "+path,
 			map[string]any{"path": path, "supported": false},
 		)
 

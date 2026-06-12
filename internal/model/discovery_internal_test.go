@@ -40,7 +40,7 @@ func TestDiscoverModelsFetchesCatalog(t *testing.T) {
 		assert.Equal(t, http.MethodGet, request.Method)
 		assert.Equal(t, "application/json", request.Header.Get("Accept"))
 		_, err := writer.Write([]byte(discoveryCatalogFixture))
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	}))
 	t.Cleanup(server.Close)
 
@@ -206,7 +206,7 @@ func TestDiscoveryCacheFetchWritesCatalog(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_, err := writer.Write([]byte(discoveryCatalogFixture))
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	}))
 	t.Cleanup(server.Close)
 	cachePath := filepath.Join(t.TempDir(), "nested", "models.json")
@@ -230,7 +230,7 @@ func TestDiscoveryCacheFetchWritesCatalog(t *testing.T) {
 func TestDiscoveryCacheHelpers(t *testing.T) {
 	t.Parallel()
 
-	assert.NoError(t, writeDiscoveryCache("", []byte("{}")))
+	require.NoError(t, writeDiscoveryCache("", []byte("{}")))
 	content, ok := readDiscoveryCache("")
 	assert.False(t, ok)
 	assert.Nil(t, content)

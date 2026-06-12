@@ -2,7 +2,6 @@ package tool
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,5 +18,5 @@ func TestCollectFindResultsRespectsCanceledContext(t *testing.T) {
 	_, err := collectFindResults(ctx, root, "**/*", 10)
 
 	require.Error(t, err)
-	assert.True(t, errors.Is(err, context.Canceled))
+	assert.ErrorIs(t, err, context.Canceled)
 }

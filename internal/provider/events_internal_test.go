@@ -22,6 +22,6 @@ func TestStreamChunkToLLMUsesTypedToolStartPart(t *testing.T) {
 	require.NotNil(t, chunk.Part)
 	require.NotNil(t, chunk.Part.ToolCall)
 	assert.Equal(t, llm.PartToolCall, chunk.Part.Type)
-	assert.Equal(t, jsonBashToolName, chunk.Part.ToolCall.Name)
+	assert.Equal(t, expectedBashToolName, chunk.Part.ToolCall.Name)
 	assert.Empty(t, chunk.Part.Text)
 }

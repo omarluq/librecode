@@ -36,9 +36,7 @@ func TestSessionRepositoryConcurrentWritersWaitForBusyDatabase(t *testing.T) {
 	var waitGroup sync.WaitGroup
 	appendErrors := make(chan error, 40)
 	for writerIndex, repository := range []*database.SessionRepository{primaryRepository, secondaryRepository} {
-		waitGroup.Add(1)
-		go func() {
-			defer waitGroup.Done()
+		waitGroup.Go(func() {
 			for entryIndex := range 20 {
 				_, appendErr := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
 					Timestamp: time.Now().UTC(),
@@ -49,7 +47,7 @@ func TestSessionRepositoryConcurrentWritersWaitForBusyDatabase(t *testing.T) {
 				})
 				appendErrors <- appendErr
 			}
-		}()
+		})
 	}
 	waitGroup.Wait()
 	close(appendErrors)

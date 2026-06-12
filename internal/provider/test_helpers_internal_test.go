@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/samber/oops"
@@ -196,3 +197,22 @@ func setTestThinkingMap(request *CompletionRequest, level, value string) {
 	trimmed := strings.TrimSpace(value)
 	request.Request.Model.ThinkingLevelMap[level] = &trimmed
 }
+
+func jsonString(value any) string {
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+
+	return string(bytes)
+}
+
+var (
+	expectedReadToolName    = string(jsonReadToolName)
+	expectedWriteToolName   = string(jsonWriteToolName)
+	expectedBashToolName    = string(jsonBashToolName)
+	expectedFindToolName    = string(jsonFindToolName)
+	expectedPathKey         = string(jsonPathKey)
+	expectedAllowIgnoredKey = string(jsonAllowIgnoredKey)
+	expectedCommandKey      = string(jsonCommandKey)
+)

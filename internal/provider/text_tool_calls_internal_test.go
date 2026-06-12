@@ -20,7 +20,7 @@ func TestTextToolCallsFromTextParsesXMLStyleToolUse(t *testing.T) {
 	require.Len(t, calls, 1)
 	assert.Equal(t, "read", calls[0].Name)
 	assert.Equal(t, "/tmp/README.md", calls[0].Arguments[jsonPathKey])
-	assert.Equal(t, `{"path":"/tmp/README.md"}`, calls[0].ArgumentsJSON)
+	assert.JSONEq(t, `{"path":"/tmp/README.md"}`, calls[0].ArgumentsJSON)
 	assert.True(t, calls[0].TextFallback)
 }
 
@@ -75,23 +75,23 @@ func TestTextToolCallsFromTextPreservesMultilineWriteContent(t *testing.T) {
 	}{
 		{
 			name:      "content tag",
-			markup:    writeToolMarkupWithField(jsonContentKey, "line one\n\n\tindented line\nline three\n"),
-			wantValue: "line one\n\n\tindented line\nline three\n",
+			markup:    writeToolMarkupWithField(jsonContentKey, "line one\n\n\tindented line\n"),
+			wantValue: "line one\n\n\tindented line\n",
 		},
 		{
 			name:      "file content tag",
-			markup:    writeToolMarkupWithField("file_content", "package main\n\n\tindented line\nline three\n"),
-			wantValue: "package main\n\n\tindented line\nline three\n",
+			markup:    writeToolMarkupWithField("file_content", "package main\n\n\tindented line\n"),
+			wantValue: "package main\n\n\tindented line\n",
 		},
 		{
 			name:      "new content tag",
-			markup:    writeToolMarkupWithField("new_content", "# README\n\n\tindented line\nline three\n"),
-			wantValue: "# README\n\n\tindented line\nline three\n",
+			markup:    writeToolMarkupWithField("new_content", "# README\n\n\tindented line\n"),
+			wantValue: "# README\n\n\tindented line\n",
 		},
 		{
 			name:      "code tag",
-			markup:    writeToolMarkupWithField("code", "func main\n\n\tindented line\nline three\n"),
-			wantValue: "func main\n\n\tindented line\nline three\n",
+			markup:    writeToolMarkupWithField("code", "func main\n\n\tindented line\n"),
+			wantValue: "func main\n\n\tindented line\n",
 		},
 		{
 			name: "json input object",
@@ -99,7 +99,7 @@ func TestTextToolCallsFromTextPreservesMultilineWriteContent(t *testing.T) {
 <tool_name>Write</tool_name>
 <input>{"path":"hello.txt","content":"line one\n\n\tindented line\nline three\n"}</input>
 </tool_use>`,
-			wantValue: "line one\n\n\tindented line\nline three\n",
+			wantValue: strings.Join([]string{"line one", "", "\tindented line", "line three", ""}, "\n"),
 		},
 	}
 	for _, testCase := range tests {
@@ -109,7 +109,7 @@ func TestTextToolCallsFromTextPreservesMultilineWriteContent(t *testing.T) {
 			calls := TextToolCallsFromText(testCase.markup)
 
 			require.Len(t, calls, 1)
-			assert.Equal(t, jsonWriteToolName, calls[0].Name)
+			assert.Equal(t, expectedWriteToolName, calls[0].Name)
 			assert.Equal(t, "hello.txt", calls[0].Arguments[jsonPathKey])
 			assert.Equal(t, testCase.wantValue, calls[0].Arguments[jsonContentKey])
 		})

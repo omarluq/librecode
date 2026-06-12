@@ -64,7 +64,7 @@ end)
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, 1.0, result.Payload["count"])
+	assert.InDelta(t, 1.0, result.Payload["count"], 0)
 	assert.Equal(t, 1, result.HandlerCount)
 	assert.True(t, result.Consumed)
 	assert.True(t, result.Stopped)

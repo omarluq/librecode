@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,13 +15,13 @@ const compactedStatusMessage = "context compacted"
 
 func (app *App) compactSession(ctx context.Context) error {
 	if app.runtime == nil {
-		return fmt.Errorf("runtime is not configured")
+		return errors.New("runtime is not configured")
 	}
 	if app.sessionID == "" {
-		return fmt.Errorf("no active session")
+		return errors.New("no active session")
 	}
 	if app.busy() {
-		return fmt.Errorf("another operation is already running")
+		return errors.New("another operation is already running")
 	}
 
 	compactCtx, cancel := context.WithCancel(ctx)

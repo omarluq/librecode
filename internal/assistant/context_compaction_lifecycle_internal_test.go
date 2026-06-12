@@ -1,7 +1,6 @@
 package assistant
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/samber/oops"
@@ -44,7 +43,7 @@ func TestCompactionDecisionFromMutation(t *testing.T) {
 			if testCase.wantCode != "" {
 				require.Error(t, err)
 				var oopsErr oops.OopsError
-				require.True(t, errors.As(err, &oopsErr))
+				require.ErrorAs(t, err, &oopsErr)
 				assert.Equal(t, testCase.wantCode, oopsErr.Code())
 				assert.Nil(t, decision)
 
