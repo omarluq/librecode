@@ -2,6 +2,7 @@ package tool
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,8 +90,7 @@ func normalizeAtPrefix(filePath string) string {
 }
 
 func fileExists(filePath string) bool {
-	//nolint:gosec // Tool paths are intentionally user/model-selected workspace paths.
-	_, err := os.Stat(filePath)
+	_, err := statResolvedPath(filePath)
 	return err == nil || !errors.Is(err, os.ErrNotExist)
 }
 
@@ -113,4 +113,46 @@ func tryMacOSScreenshotPath(filePath string) string {
 
 func normNFD(value string) string {
 	return norm.NFD.String(value)
+}
+
+func statResolvedPath(filePath string) (os.FileInfo, error) {
+	root, err := os.OpenRoot(filepath.Dir(filePath))
+	if err != nil {
+		return nil, err
+	}
+	defer closeFile(root)
+
+	return root.Stat(filepath.Base(filePath))
+}
+
+func readResolvedPath(filePath string) ([]byte, error) {
+	root, err := os.OpenRoot(filepath.Dir(filePath))
+	if err != nil {
+		return nil, err
+	}
+	defer closeFile(root)
+
+	file, err := root.Open(filepath.Base(filePath))
+	if err != nil {
+		return nil, err
+	}
+	defer closeFile(file)
+
+	return io.ReadAll(file)
+}
+
+func writeResolvedPath(filePath string, data []byte, perm os.FileMode) error {
+	root, err := os.OpenRoot(filepath.Dir(filePath))
+	if err != nil {
+		return err
+	}
+	defer closeFile(root)
+
+	return root.WriteFile(filepath.Base(filePath), data, perm)
+}
+
+func closeFile(file interface{ Close() error }) {
+	if err := file.Close(); err != nil {
+		return
+	}
 }

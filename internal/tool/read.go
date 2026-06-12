@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -72,8 +71,7 @@ func (readTool *ReadTool) Read(ctx context.Context, input ReadInput) (Result, er
 		return ignoredReadResult(input.Path, reason), nil
 	}
 
-	//nolint:gosec // The read tool intentionally reads user-selected workspace paths.
-	data, err := os.ReadFile(absolutePath)
+	data, err := readResolvedPath(absolutePath)
 	if err != nil {
 		return emptyToolResult(), oops.
 			In("tool").

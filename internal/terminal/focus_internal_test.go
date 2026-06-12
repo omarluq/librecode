@@ -1,0 +1,121 @@
+package terminal
+
+import (
+	"context"
+	"github.com/omarluq/librecode/internal/terminal/panel"
+	"testing"
+
+	"github.com/gdamore/tcell/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/terminal/extui"
+)
+
+func TestFocusStatePrioritizesPanelAndAutocomplete(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	assert.Equal(t, focusKindComposer, app.focusState().Kind)
+
+	app.composerBuffer.SetText("/s")
+	autocompleteFocus := app.focusState()
+	assert.Equal(t, focusKindAutocomplete, autocompleteFocus.Kind)
+	assert.True(t, autocompleteFocus.Exclusive)
+
+	app.openModelPanel()
+	panelFocus := app.focusState()
+	assert.Equal(t, focusKindPanel, panelFocus.Kind)
+	assert.Equal(t, string(panelModel), panelFocus.PanelKind)
+	assert.True(t, panelFocus.Exclusive)
+}
+
+func TestFocusedPanelPreventsComposerExtensionKeymap(t *testing.T) {
+	t.Parallel()
+
+	const (
+		firstPanelItem  = "one"
+		secondPanelItem = "two"
+	)
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.keymap.set({ focus = "composer" }, "down", function()
+  librecode.buf.set_text("composer", "stolen")
+  librecode.event.consume()
+end)
+`)
+	app.openPanel(panel.New(panelModel, "Models", "", []panel.Item{
+		{Value: firstPanelItem, Title: firstPanelItem, Description: "", Meta: ""},
+		{Value: secondPanelItem, Title: secondPanelItem, Description: "", Meta: ""},
+	}, true))
+	selected := app.panel.SelectedIndex()
+
+	pressTerminalKey(t, app, tcell.KeyDown, "")
+
+	assert.Equal(t, selected+1, app.panel.SelectedIndex())
+	assertEditorText(t, app, "")
+}
+
+func TestFocusedAutocompletePreventsComposerExtensionKeymap(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.keymap.set({ focus = "composer" }, "down", function()
+  librecode.buf.set_text("composer", "stolen")
+  librecode.event.consume()
+end)
+`)
+	app.composerBuffer.SetText("/s")
+
+	pressTerminalKey(t, app, tcell.KeyDown, "")
+
+	assert.NotZero(t, app.autocompleteSelection)
+	assertEditorText(t, app, "/s")
+}
+
+func TestExtensionComposerEditsReopenAutocomplete(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.keymap.set({ focus = "composer" }, "*", function()
+  local composer = librecode.buf.get("composer")
+  composer.text = composer.text .. "x"
+  composer.cursor = composer.cursor + 1
+  librecode.buf.set("composer", composer)
+  librecode.event.consume()
+  return true
+end)
+`)
+	app.composerBuffer.SetText("/s")
+	app.closeAutocomplete()
+	assert.False(t, app.autocompleteActive())
+	app.applyComposerBuffer(&extension.BufferState{
+		Metadata: map[string]any{},
+		Blocks:   []extension.BufferBlock{},
+		Name:     extui.BufferComposer,
+		Text:     "/se",
+		Chars:    nil,
+		Label:    "",
+		Cursor:   3,
+	})
+
+	assert.True(t, app.autocompleteActive())
+	assertEditorText(t, app, "/se")
+}
+
+func TestFocusedComposerExtensionStillHandlesComposerKeys(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.keymap.set({ focus = "composer" }, "x", function()
+  librecode.buf.set_text("composer", "handled")
+  librecode.event.consume()
+end)
+`)
+
+	shouldQuit, err := app.handleKey(context.Background(), tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone))
+	require.NoError(t, err)
+	assert.False(t, shouldQuit)
+	assertEditorText(t, app, "handled")
+}

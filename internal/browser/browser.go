@@ -61,8 +61,9 @@ func runOpener(name string, args ...string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	//nolint:gosec // Browser opener command comes from BROWSER or a fixed platform allowlist.
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := exec.CommandContext(ctx, "")
+	cmd.Path = path
+	cmd.Args = append([]string{path}, args...)
 	if err := cmd.Start(); err != nil {
 		return err
 	}

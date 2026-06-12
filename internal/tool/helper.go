@@ -12,6 +12,5 @@ func emptyToolResult() Result {
 }
 
 func filepathStat(path string) (os.FileInfo, error) {
-	//nolint:gosec // Tool paths are intentionally user/model-selected workspace paths.
-	return os.Stat(path)
+	return statResolvedPath(path)
 }

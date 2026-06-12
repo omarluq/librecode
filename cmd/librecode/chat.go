@@ -49,7 +49,7 @@ func newChatCmd() *cobra.Command {
 }
 
 func runChat(cmd *cobra.Command, options chatRunOptions) error {
-	return withContainer(cmd.Context(), func(container *di.Container) error {
+	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 		databaseService := di.MustInvoke[*di.DatabaseService](container)
 		runtime := di.MustInvoke[*di.AssistantService](container).Runtime
 		modelRegistry := di.MustInvoke[*di.ModelService](container).Registry

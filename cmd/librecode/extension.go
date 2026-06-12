@@ -32,7 +32,7 @@ func newExtensionListCmd() *cobra.Command {
 		Short: "List configured and loaded workflow extensions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return withContainer(cmd.Context(), func(container *di.Container) error {
+			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 				service := di.MustInvoke[*di.ExtensionService](container)
 				loadedByPath := loadedExtensionsByPath(service.Manager.Extensions())
 				for index := range service.State.Configured {
@@ -54,7 +54,7 @@ func newExtensionRunCmd() *cobra.Command {
 		Short: "Run a workflow extension command",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withContainer(cmd.Context(), func(container *di.Container) error {
+			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 				manager := di.MustInvoke[*di.ExtensionService](container).Manager
 				result, err := manager.ExecuteCommand(cmd.Context(), args[0], strings.Join(args[1:], " "))
 				if err != nil {

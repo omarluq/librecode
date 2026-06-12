@@ -10,8 +10,12 @@ import (
 	"github.com/omarluq/librecode/internal/di"
 )
 
-func withContainer(ctx context.Context, handler func(*di.Container) error) error {
-	container, err := di.NewContainer(cfgFile, di.ConfigOverrides{DisableExtensions: disableExtensions})
+func withContainer(ctx context.Context, options commandOptions, handler func(*di.Container) error) error {
+	return withContainerOptions(ctx, options, handler)
+}
+
+func withContainerOptions(ctx context.Context, options commandOptions, handler func(*di.Container) error) error {
+	container, err := di.NewContainer(options.configFile, options.configOverrides())
 	if err != nil {
 		return err
 	}

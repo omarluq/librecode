@@ -122,8 +122,7 @@ func runShellCommand(ctx context.Context, cwd, command string) (*commandOutput, 
 		return output, err
 	}
 
-	//nolint:gosec // The bash tool intentionally executes model/user-supplied shell commands.
-	cmd := exec.CommandContext(ctx, shellPath, shellArgs...)
+	cmd := shellCommandContext(ctx, shellPath, shellArgs)
 	cmd.Dir = cwd
 	configureShellCommand(cmd)
 	cmd.Cancel = func() error {

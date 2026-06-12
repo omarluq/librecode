@@ -36,7 +36,7 @@ func newSessionNewCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := strings.TrimSpace(strings.Join(args, " "))
 
-			return withContainer(cmd.Context(), func(container *di.Container) error {
+			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 				repository := di.MustInvoke[*di.DatabaseService](container).Sessions
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
@@ -60,7 +60,7 @@ func newSessionListCmd() *cobra.Command {
 		Short: "List sessions for the current working directory",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return withContainer(cmd.Context(), func(container *di.Container) error {
+			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 				repository := di.MustInvoke[*di.DatabaseService](container).Sessions
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
@@ -90,7 +90,7 @@ func newSessionShowCmd() *cobra.Command {
 		Short: "Show entries for a session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withContainer(cmd.Context(), func(container *di.Container) error {
+			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 				repository := di.MustInvoke[*di.DatabaseService](container).Sessions
 				entries, err := repository.Entries(cmd.Context(), args[0])
 				if err != nil {

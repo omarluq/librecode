@@ -3,6 +3,7 @@
 package tool
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -85,4 +86,11 @@ func terminateShellCommand(cmd *exec.Cmd) error {
 	}
 
 	return cmd.Process.Kill()
+}
+
+func shellCommandContext(ctx context.Context, shellPath string, shellArgs []string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, shellPath)
+	cmd.Args = append(cmd.Args, shellArgs...)
+
+	return cmd
 }
