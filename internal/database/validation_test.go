@@ -172,7 +172,7 @@ func invalidSessionIDCase() invalidUUIDCase {
 	return invalidUUIDCase{
 		name: "session id trigger",
 		query: `INSERT INTO sessions (id, cwd, name, parent_session, created_at, updated_at)
-VALUES ('legacy-session', '/work', '', '', ?, ?)`,
+VALUES ('invalid-session', '/work', '', '', ?, ?)`,
 		args: func(_ *testing.T, _ *database.SessionEntity, _ *database.EntryEntity) []any {
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 
@@ -191,7 +191,7 @@ func invalidEntryIDCase() invalidUUIDCase {
     tool_name, tool_status, tool_args_json, token_estimate, model_facing, display,
     compaction_first_kept_entry_id, compaction_tokens_before, branch_from_entry_id
 ) VALUES (
-    'legacy-entry', ?, NULL, 'message', 'user', 'hello',
+    'invalid-entry', ?, NULL, 'message', 'user', 'hello',
     '', '', '', '{}', '', ?, '', '', '', 1, 1, 1, '', 0, ''
 )`,
 		args: func(_ *testing.T, session *database.SessionEntity, _ *database.EntryEntity) []any {
@@ -206,7 +206,7 @@ func invalidMessageEntryIDCase() invalidUUIDCase {
 		name: "message entry id trigger",
 		query: `INSERT INTO session_messages (
     id, session_id, entry_id, sender, role, content, provider, model, created_at
-) VALUES (?, ?, 'legacy-entry', 'user', 'user', 'hello', '', '', ?)`,
+) VALUES (?, ?, 'invalid-entry', 'user', 'user', 'hello', '', '', ?)`,
 		args: func(t *testing.T, session *database.SessionEntity, _ *database.EntryEntity) []any {
 			t.Helper()
 
@@ -221,7 +221,7 @@ func invalidMessageIDCase() invalidUUIDCase {
 		name: "message id trigger",
 		query: `INSERT INTO session_messages (
     id, session_id, entry_id, sender, role, content, provider, model, created_at
-) VALUES ('legacy-message', ?, ?, 'user', 'user', 'hello', '', '', ?)`,
+) VALUES ('invalid-message', ?, ?, 'user', 'user', 'hello', '', '', ?)`,
 		args: func(_ *testing.T, session *database.SessionEntity, entry *database.EntryEntity) []any {
 			return []any{session.ID, entry.ID, time.Now().UTC().Format(time.RFC3339Nano)}
 		},
