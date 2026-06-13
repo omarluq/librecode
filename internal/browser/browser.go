@@ -2,27 +2,27 @@
 package browser
 
 import (
-	"context"
 	"errors"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/omarluq/librecode/internal/execpath"
 )
-
-const openerStartTimeout = 3 * time.Second
 
 // ErrNoOpener indicates no browser opener command is available.
 var ErrNoOpener = errors.New("no browser opener available")
 
 // Open asks the operating system to open targetURL in the user's browser.
 func Open(targetURL string) error {
+	return openWithCommands(targetURL, openerCommands())
+}
+
+func openWithCommands(targetURL string, commands []openerCommand) error {
 	if targetURL == "" {
 		return nil
 	}
 
-	for _, command := range openerCommands() {
+	for _, command := range commands {
 		if err := runOpener(command.name, append(command.args, targetURL)...); err == nil {
 			return nil
 		}
@@ -59,10 +59,7 @@ func platformOpeners() []openerCommand {
 }
 
 func runOpener(name string, args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), openerStartTimeout)
-	defer cancel()
-
-	cmd, err := execpath.CommandContext(ctx, name, args...)
+	cmd, err := execpath.Command(name, args...)
 	if err != nil {
 		return browserError(err, "find browser opener")
 	}

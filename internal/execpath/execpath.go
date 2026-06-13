@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const (
@@ -18,18 +19,56 @@ const (
 	windowsOS                  = "windows"
 )
 
-// CommandContext builds a command whose executable is resolved from fixed system directories.
-func CommandContext(ctx context.Context, name string, args ...string) (*exec.Cmd, error) {
+// Command builds a command whose executable is resolved from fixed system directories.
+func Command(name string, args ...string) (*exec.Cmd, error) {
 	path, err := Find(name)
 	if err != nil {
 		return nil, err
 	}
 
-	cmd := exec.CommandContext(ctx, "")
-	cmd.Path = path
-	cmd.Args = append([]string{path}, args...)
+	cmd := &exec.Cmd{
+		Path: path,
+		Args: append([]string{path}, args...),
+	}
 
 	return cmd, nil
+}
+
+// RunWithTimeout runs cmd and kills it if timeout elapses before it exits.
+func RunWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {
+	if timeout <= 0 {
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("run command: %w", err)
+		}
+
+		return nil
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start command: %w", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		killErr := cmd.Process.Kill()
+		waitErr := <-done
+
+		return errors.Join(
+			fmt.Errorf("command timed out after %s: %w", timeout, context.DeadlineExceeded),
+			killErr,
+			waitErr,
+		)
+	}
 }
 
 // Find resolves name to an executable path from fixed system directories.
