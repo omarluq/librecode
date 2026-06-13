@@ -14,14 +14,16 @@ const (
 	toolInputPathKey    = "path"
 )
 
-var builtinRequiredToolArguments = map[Name][]string{
-	NameRead:  {toolInputPathKey},
-	NameBash:  {toolInputCommandKey},
-	NameEdit:  {toolInputPathKey, "edits"},
-	NameWrite: {toolInputPathKey, toolInputContentKey},
-	NameGrep:  {"pattern"},
-	NameFind:  {"pattern"},
-	NameAST:   {toolInputPathKey},
+func builtinRequiredToolArguments() map[Name][]string {
+	return map[Name][]string{
+		NameRead:  {toolInputPathKey},
+		NameBash:  {toolInputCommandKey},
+		NameEdit:  {toolInputPathKey, "edits"},
+		NameWrite: {toolInputPathKey, toolInputContentKey},
+		NameGrep:  {"pattern"},
+		NameFind:  {"pattern"},
+		NameAST:   {toolInputPathKey},
+	}
 }
 
 func validateToolInput(definition *Definition, input map[string]any) error {
@@ -29,6 +31,7 @@ func validateToolInput(definition *Definition, input map[string]any) error {
 	if len(required) == 0 {
 		return nil
 	}
+
 	for _, field := range required {
 		if _, ok := input[field]; ok {
 			continue
@@ -44,10 +47,12 @@ func requiredToolArguments(definition *Definition) []string {
 	if definition == nil {
 		return nil
 	}
+
 	if required, ok := schemaRequiredArguments(definition.Schema); ok {
 		return required
 	}
-	if required, ok := builtinRequiredToolArguments[definition.Name]; ok {
+
+	if required, ok := builtinRequiredToolArguments()[definition.Name]; ok {
 		return required
 	}
 
@@ -58,10 +63,12 @@ func schemaRequiredArguments(schema map[string]any) ([]string, bool) {
 	if len(schema) == 0 {
 		return nil, false
 	}
+
 	raw, ok := schema["required"]
 	if !ok {
 		return nil, false
 	}
+
 	switch values := raw.(type) {
 	case []string:
 		return values, true
@@ -72,6 +79,7 @@ func schemaRequiredArguments(schema map[string]any) ([]string, bool) {
 			if !ok || strings.TrimSpace(name) == "" {
 				continue
 			}
+
 			required = append(required, name)
 		}
 
@@ -95,6 +103,7 @@ func expectedToolInputShape(required []string) string {
 	for _, field := range required {
 		shape[field] = fmt.Sprintf("<%s>", field)
 	}
+
 	encoded, err := json.Marshal(shape)
 	if err != nil {
 		return "{}"

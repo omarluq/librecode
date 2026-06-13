@@ -29,6 +29,7 @@ func (client *recordingCompleter) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	client.requests = append(client.requests, request)
+
 	client.disableToolsByCall = append(client.disableToolsByCall, request.DisableTools)
 	if client.complete == nil {
 		return testCompletionResult("ok"), nil
@@ -84,6 +85,7 @@ func newOverflowRecoveryCompleter(
 			if request.DisableTools {
 				return testCompletionResult(summary), nil
 			}
+
 			switch call {
 			case 1:
 				if overflowErr != nil {

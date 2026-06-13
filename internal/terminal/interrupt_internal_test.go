@@ -18,9 +18,11 @@ func TestDoubleEscapeInterruptsWorkingPrompt(t *testing.T) {
 	app := newInterruptTestApp(t, func() { canceled = true })
 
 	pressTerminalKey(t, app, tcell.KeyEscape, "")
+
 	if canceled {
 		t.Fatal("first escape should not cancel")
 	}
+
 	if !app.working {
 		t.Fatal("first escape should keep prompt working")
 	}
@@ -42,9 +44,11 @@ func TestAltEscapeInterruptsWorkingPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleKey returned error: %v", err)
 	}
+
 	if shouldQuit {
 		t.Fatal("Alt+Escape should not quit")
 	}
+
 	assertPromptCanceled(t, app, canceled)
 }
 
@@ -68,6 +72,7 @@ func TestWorkingEscapeSequenceResetsAfterEditorInput(t *testing.T) {
 	pressTerminalKey(t, app, tcell.KeyEscape, "")
 	pressTerminalKey(t, app, tcell.KeyRune, "x")
 	pressTerminalKey(t, app, tcell.KeyEscape, "")
+
 	if canceled {
 		t.Fatal("escape sequence should reset after editor input")
 	}
@@ -80,9 +85,11 @@ func TestForceExitRequiresDoubleControlC(t *testing.T) {
 	if app.handleForceExit() {
 		t.Fatal("first Ctrl+C should not quit")
 	}
+
 	if got, want := app.statusMessage, "press Ctrl+C again to exit"; got != want {
 		t.Fatalf("statusMessage = %q, want %q", got, want)
 	}
+
 	if !app.handleForceExit() {
 		t.Fatal("second Ctrl+C should quit")
 	}
@@ -103,9 +110,11 @@ func TestHandleEscape(t *testing.T) {
 			setup:      func(app *App) { app.composerBuffer.SetText("draft") },
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
+
 				if got := app.composerBuffer.TextValue(); got != "" {
 					t.Fatalf("composer text = %q, want empty", got)
 				}
+
 				if got, want := app.statusMessage, "editor cleared"; got != want {
 					t.Fatalf("statusMessage = %q, want %q", got, want)
 				}
@@ -117,6 +126,7 @@ func TestHandleEscape(t *testing.T) {
 			setup:      func(*App) {},
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
+
 				if app.mode != modePanel {
 					t.Fatal("second idle escape should open tree panel")
 				}
@@ -130,9 +140,11 @@ func TestHandleEscape(t *testing.T) {
 
 			app := newRenderTestApp(t)
 			testCase.setup(app)
+
 			for range testCase.pressCount {
 				pressTerminalKey(t, app, tcell.KeyEscape, "")
 			}
+
 			testCase.assert(t, app)
 		})
 	}
@@ -144,9 +156,11 @@ func assertPromptCanceled(t *testing.T, app *App, canceled bool) {
 	if !canceled {
 		t.Fatal("expected active prompt cancellation")
 	}
+
 	if app.working {
 		t.Fatal("cancellation should stop working state")
 	}
+
 	if got := app.composerBuffer.TextValue(); got != interruptTestPrompt {
 		t.Fatalf("composer text = %q, want restored prompt", got)
 	}

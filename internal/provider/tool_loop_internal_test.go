@@ -92,6 +92,7 @@ func TestExecuteToolCallsWrapsExecutorErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, outputs)
 	assert.Nil(t, events)
+
 	var coded oops.OopsError
 	require.ErrorAs(t, err, &coded)
 	assert.Equal(t, "tool_execution_failed", coded.Code())
@@ -109,6 +110,7 @@ func TestExecuteToolCallsUsesInjectedExecutorAndHandlesMissingEvents(t *testing.
 	) ([]llm.ToolResult, error) {
 		require.Len(t, calls, 1)
 		assert.Equal(t, testCallID, calls[0].ID)
+
 		return []llm.ToolResult{}, nil
 	}
 

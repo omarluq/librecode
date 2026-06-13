@@ -19,6 +19,7 @@ func TestAnthropicThinkingEffortMappings(t *testing.T) {
 	assert.Equal(t, thinkingHigh, anthropicThinkingEffort(request))
 
 	request.Request.Model.ThinkingLevelMap = nil
+
 	for _, testCase := range []struct {
 		level string
 		want  string
@@ -130,9 +131,11 @@ func TestParseAnthropicResultMapsFinishReason(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, test.want, result.FinishReason)
+
 			if test.wantText != "" {
 				assert.Equal(t, test.wantText, result.Text)
 			}
+
 			if test.want == llm.FinishReasonRefusal {
 				assert.Empty(t, result.ToolCalls)
 			}
@@ -171,6 +174,7 @@ func TestAnthropicMessagesAndRoles(t *testing.T) {
 	assert.Len(t, converted, 7)
 	assert.JSONEq(t, jsonString(jsonUserRole), jsonString(converted[0][jsonRoleKey]))
 	assert.JSONEq(t, jsonString(jsonAssistantRole), jsonString(converted[1][jsonRoleKey]))
+
 	mapped, ok := anthropicRole(llm.RoleTool)
 	assert.False(t, ok)
 	assert.Empty(t, mapped)

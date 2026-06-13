@@ -35,7 +35,42 @@ func (c *Container) ShutdownWithContext(ctx context.Context) *do.ShutdownReport 
 	return c.injector.ShutdownWithContext(ctx)
 }
 
-// MustInvoke resolves a dependency and panics if it cannot be created.
-func MustInvoke[T any](c *Container) T {
-	return do.MustInvoke[T](c.injector)
+// ConfigService resolves the configuration service.
+func (c *Container) ConfigService() *ConfigService {
+	return do.MustInvoke[*ConfigService](c.injector)
+}
+
+// AuthService resolves the auth service.
+func (c *Container) AuthService() *AuthService {
+	return do.MustInvoke[*AuthService](c.injector)
+}
+
+// DatabaseService resolves the database service.
+func (c *Container) DatabaseService() *DatabaseService {
+	return do.MustInvoke[*DatabaseService](c.injector)
+}
+
+// EventService resolves the event service.
+func (c *Container) EventService() *EventService {
+	return do.MustInvoke[*EventService](c.injector)
+}
+
+// ExtensionService resolves the extension service.
+func (c *Container) ExtensionService() *ExtensionService {
+	return do.MustInvoke[*ExtensionService](c.injector)
+}
+
+// ModelService resolves the model service.
+func (c *Container) ModelService() *ModelService {
+	return do.MustInvoke[*ModelService](c.injector)
+}
+
+// AssistantService resolves the assistant service.
+func (c *Container) AssistantService() *AssistantService {
+	return do.MustInvoke[*AssistantService](c.injector)
+}
+
+// ToolService resolves the tool service.
+func (c *Container) ToolService() *ToolService {
+	return do.MustInvoke[*ToolService](c.injector)
 }

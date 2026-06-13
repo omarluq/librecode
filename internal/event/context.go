@@ -22,14 +22,18 @@ func AfterContext(ctx context.Context, delay time.Duration) ro.Observable[int64]
 		if delay <= 0 {
 			destination.NextWithContext(subscriberCtx, 0)
 			destination.CompleteWithContext(subscriberCtx)
+
 			return nil
 		}
 
 		timer := time.NewTimer(delay)
 		done := make(chan struct{})
+
 		var closeDone sync.Once
+
 		go func() {
 			defer timer.Stop()
+
 			select {
 			case <-timer.C:
 				destination.NextWithContext(subscriberCtx, 0)
@@ -56,7 +60,9 @@ func AfterContext(ctx context.Context, delay time.Duration) ro.Observable[int64]
 func ContextDone(ctx context.Context) ro.Observable[struct{}] {
 	return ro.NewObservableWithContext(func(_ context.Context, destination ro.Observer[struct{}]) ro.Teardown {
 		done := make(chan struct{})
+
 		var closeDone sync.Once
+
 		go func() {
 			select {
 			case <-ctx.Done():

@@ -89,10 +89,12 @@ func validateOfficialSource(value string) error {
 
 func validateGitHubSource(value string) error {
 	repo, subdir, _ := strings.Cut(value, "//")
+
 	parts := strings.Split(repo, "/")
 	if len(parts) != 2 || !validGitHubPathPart(parts[0]) || !validGitHubPathPart(parts[1]) {
 		return fmt.Errorf("extension: github source %q must be github:owner/repo or github:owner/repo//subdir", value)
 	}
+
 	if invalidGitHubSubdir(subdir) {
 		return fmt.Errorf("extension: github source %q has invalid subdir", value)
 	}
@@ -102,6 +104,7 @@ func validateGitHubSource(value string) error {
 
 func validGitHubPathPart(part string) bool {
 	trimmed := strings.TrimSpace(part)
+
 	return trimmed != "" && trimmed != "." && trimmed != ".." && githubPathPartPattern.MatchString(trimmed)
 }
 
@@ -109,6 +112,7 @@ func invalidGitHubSubdir(subdir string) bool {
 	if subdir == "" {
 		return false
 	}
+
 	for part := range strings.SplitSeq(subdir, "/") {
 		if part == "" || part == "." || part == ".." {
 			return true

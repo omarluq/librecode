@@ -10,21 +10,25 @@ import (
 // astOutline renders the top-level named declarations of the tree.
 func astOutline(tree *gt.Tree, lang *gt.Language, source []byte, language string) Result {
 	root := tree.RootNode()
+
 	var (
 		lines     []string
 		truncated bool
 	)
+
 	count := root.NamedChildCount()
 	for index := range count {
 		child := root.NamedChild(index)
 		if child == nil {
 			continue
 		}
+
 		if len(lines) >= maxASTOutlineLines {
 			truncated = true
 
 			break
 		}
+
 		lines = append(lines, formatOutlineNode(child, lang, source))
 	}
 
@@ -36,6 +40,7 @@ func astOutline(tree *gt.Tree, lang *gt.Language, source []byte, language string
 	}
 
 	header := fmt.Sprintf("%s outline (%d top-level declarations):", language, len(lines))
+
 	body := header + "\n" + strings.Join(lines, "\n")
 	if truncated {
 		body += fmt.Sprintf("\n  ... output truncated at %d declarations", maxASTOutlineLines)
@@ -52,10 +57,12 @@ func astOutline(tree *gt.Tree, lang *gt.Language, source []byte, language string
 // node enclosing line when line is provided.
 func astTree(tree *gt.Tree, lang *gt.Language, line *int) (Result, error) {
 	target := tree.RootNode()
+
 	if line != nil {
 		if *line < 1 {
 			return emptyToolResult(), oopsInvalidLine()
 		}
+
 		target = namedNodeAtLine(tree.RootNode(), *line)
 		if target == nil {
 			return TextResult(
@@ -67,6 +74,7 @@ func astTree(tree *gt.Tree, lang *gt.Language, line *int) (Result, error) {
 
 	sexpr := target.SExpr(lang)
 	truncated := false
+
 	if len(sexpr) > maxASTTreeChars {
 		sexpr = sexpr[:maxASTTreeChars] + "\n... (truncated)"
 		truncated = true
@@ -84,6 +92,7 @@ func astTree(tree *gt.Tree, lang *gt.Language, line *int) (Result, error) {
 func formatOutlineNode(node *gt.Node, lang *gt.Language, source []byte) string {
 	line := node.StartPoint().Row + 1
 	name := nodeName(node, lang, source)
+
 	nodeType := node.Type(lang)
 	if name == "" {
 		return fmt.Sprintf("  L%d  %s", line, nodeType)
@@ -97,14 +106,18 @@ func namedNodeAtLine(root *gt.Node, line int) *gt.Node {
 	if root == nil || line < 1 {
 		return nil
 	}
+
 	row := uint32(0)
+
 	endRow := root.EndPoint().Row
 	for range line - 1 {
 		if row >= endRow {
 			return nil
 		}
+
 		row++
 	}
+
 	point := gt.Point{Row: row, Column: 0}
 
 	return root.NamedDescendantForPointRange(point, point)

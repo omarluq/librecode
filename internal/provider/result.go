@@ -21,6 +21,7 @@ func appendThinking(response *llm.Response, thinking []string) {
 		if trimmed == "" {
 			continue
 		}
+
 		response.Content = append(response.Content, llm.Part{
 			Metadata:   nil,
 			ToolCall:   nil,
@@ -44,6 +45,7 @@ func setResponseText(response *llm.Response, text string) {
 	if trimmed == "" {
 		return
 	}
+
 	response.Content = append(response.Content, llm.TextPart(trimmed))
 }
 
@@ -62,6 +64,7 @@ func responseText(response *llm.Response) string {
 	if response == nil {
 		return ""
 	}
+
 	return partsText(response.Content)
 }
 
@@ -69,12 +72,15 @@ func responseThinking(response *llm.Response) []string {
 	if response == nil {
 		return nil
 	}
+
 	thinking := []string{}
+
 	for _, part := range response.Content {
 		if part.Type == llm.PartReasoning && strings.TrimSpace(part.Text) != "" {
 			thinking = append(thinking, strings.TrimSpace(part.Text))
 		}
 	}
+
 	if len(thinking) == 0 {
 		return nil
 	}
@@ -86,12 +92,15 @@ func responseToolEvents(response *llm.Response) []ToolEvent {
 	if response == nil {
 		return nil
 	}
+
 	events := []ToolEvent{}
+
 	for _, part := range response.Content {
 		if part.Type == llm.PartToolResult && part.ToolResult != nil {
 			events = append(events, toolEventFromLLM(part.ToolResult))
 		}
 	}
+
 	if len(events) == 0 {
 		return nil
 	}

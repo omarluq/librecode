@@ -25,9 +25,11 @@ func DiscoverModelsCached(ctx context.Context, options CachedDiscoveryOptions) (
 	if !options.Enabled {
 		return []Model{}, nil
 	}
+
 	if cached, ok := readFreshDiscoveryCache(options.CachePath, options.CacheTTL); ok {
 		return ParseDiscoveredModels(cached)
 	}
+
 	content, err := fetchDiscoveryCatalog(ctx, DiscoveryOptions{
 		Client:       options.Client,
 		CachePath:    "",
@@ -46,6 +48,7 @@ func DiscoverModelsCached(ctx context.Context, options CachedDiscoveryOptions) (
 
 		return []Model{}, err
 	}
+
 	if err := writeDiscoveryCache(options.CachePath, content); err != nil {
 		return []Model{}, err
 	}
@@ -57,6 +60,7 @@ func readFreshDiscoveryCache(path string, ttl time.Duration) ([]byte, bool) {
 	if path == "" || ttl == 0 {
 		return nil, false
 	}
+
 	stat, err := os.Stat(path)
 	if err != nil || time.Since(stat.ModTime()) > ttl {
 		return nil, false
@@ -69,6 +73,7 @@ func readDiscoveryCache(path string) ([]byte, bool) {
 	if path == "" {
 		return nil, false
 	}
+
 	content, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return nil, false
@@ -77,15 +82,22 @@ func readDiscoveryCache(path string) ([]byte, bool) {
 	return content, true
 }
 
+const (
+	modelCacheDirMode  = 0o700
+	modelCacheFileMode = 0o600
+)
+
 func writeDiscoveryCache(path string, content []byte) error {
 	if path == "" {
 		return nil
 	}
+
 	cleanPath := filepath.Clean(path)
-	if err := os.MkdirAll(filepath.Dir(cleanPath), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cleanPath), modelCacheDirMode); err != nil {
 		return oops.In("model").Code("model_discovery_cache_dir").Wrapf(err, "create model discovery cache directory")
 	}
-	if err := os.WriteFile(cleanPath, content, 0o600); err != nil {
+
+	if err := os.WriteFile(cleanPath, content, modelCacheFileMode); err != nil {
 		return oops.In("model").Code("model_discovery_cache_write").Wrapf(err, "write model discovery cache")
 	}
 

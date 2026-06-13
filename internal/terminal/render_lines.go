@@ -10,15 +10,19 @@ import (
 func writeStyled(screen rendertext.ContentSetter, row, width int, line rendertext.Line) {
 	if len(line.Spans) == 0 {
 		writeLine(screen, row, width, line.Text, line.Style)
+
 		return
 	}
+
 	used := 0
 	for _, span := range line.Spans {
 		if used >= width {
 			break
 		}
+
 		used += rendertext.WriteCellsNoFill(screen, used, row, width-used, span.Text, span.Style)
 	}
+
 	for used < width {
 		screen.SetContent(used, row, ' ', nil, line.Style)
 		used++
@@ -76,9 +80,11 @@ func writeShimmerLineWithVerticalBorders(
 			if segment.Text == "│" && (used == 0 || used == width-1) {
 				return style.Foreground(options.borderColor)
 			}
+
 			if spinnerWidth > 0 && used >= spinnerStart && used < spinnerStart+spinnerWidth {
 				return style.Foreground(options.palette.bright)
 			}
+
 			if contentWidth == 0 || used < contentStart || used >= contentStart+contentWidth {
 				return style
 			}
@@ -133,15 +139,19 @@ func emptyWorkingIndicatorParts() workingIndicatorPartsResult {
 
 func workingIndicatorParts(text string) workingIndicatorPartsResult {
 	trimmedLeft := strings.TrimLeft(text, " ")
+
 	spinner := firstField(trimmedLeft)
 	if !isWorkingSpinner(spinner) {
 		return emptyWorkingIndicatorParts()
 	}
+
 	afterSpinner := strings.TrimPrefix(trimmedLeft, spinner)
+
 	label := strings.TrimLeft(strings.TrimRight(afterSpinner, " "), " ")
 	if label == "" {
 		return emptyWorkingIndicatorParts()
 	}
+
 	beforeLabel := text[:len(text)-len(afterSpinner)]
 	labelPadding := rendertext.Width(afterSpinner) - rendertext.Width(strings.TrimLeft(afterSpinner, " "))
 
@@ -182,13 +192,16 @@ func writeLineWithStyleFunc(
 	if row < 0 || width <= 0 {
 		return
 	}
+
 	used := 0
 	for _, segment := range rendertext.Segments(text) {
 		if used+segment.Width > width {
 			break
 		}
+
 		used += rendertext.WriteSegment(screen, used, row, width-used, segment, styleFor(segment, used))
 	}
+
 	for used < width {
 		screen.SetContent(used, row, ' ', nil, defaultStyle)
 		used++
@@ -206,11 +219,14 @@ func writeEditorLine(
 ) {
 	if lineIndex == 0 || lineIndex == lineCount-1 {
 		writeStyled(screen, row, width, line)
+
 		return
 	}
+
 	if row < 0 {
 		return
 	}
+
 	used := writeEditorLineText(screen, row, width, line, borderStyle)
 	writeEditorLinePadding(screen, row, width, used, line, borderStyle)
 }
@@ -241,6 +257,7 @@ func writeEditorLinePlainText(
 		if used+segment.Width > width {
 			break
 		}
+
 		used += rendertext.WriteSegment(
 			screen,
 			used,
@@ -262,15 +279,18 @@ func writeEditorLineSpans(
 	borderStyle tcell.Style,
 ) int {
 	used := 0
+
 	for _, span := range line.Spans {
 		for _, segment := range rendertext.Segments(span.Text) {
 			if used+segment.Width > width {
 				return used
 			}
+
 			style := span.Style
-			if used < 2 || used >= max(0, width-2) {
+			if used < terminalMarkerMargin || used >= max(0, width-terminalMarkerMargin) {
 				style = borderStyle
 			}
+
 			used += rendertext.WriteSegment(screen, used, row, width-used, segment, style)
 		}
 	}
@@ -293,7 +313,7 @@ func writeEditorLinePadding(
 }
 
 func editorLineStyle(position, width int, line rendertext.Line, borderStyle tcell.Style) tcell.Style {
-	if position < 2 || position >= max(0, width-2) {
+	if position < terminalMarkerMargin || position >= max(0, width-terminalMarkerMargin) {
 		return borderStyle
 	}
 

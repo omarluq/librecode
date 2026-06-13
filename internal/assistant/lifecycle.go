@@ -42,6 +42,7 @@ func (lifecycle *promptTurnLifecycle) dispatchEnd(
 	if lifecycle == nil || lifecycle.ended {
 		return
 	}
+
 	lifecycle.ended = true
 	lifecycle.runtime.dispatchTurnEndLifecycle(
 		ctx,
@@ -57,6 +58,7 @@ func (lifecycle *promptTurnLifecycle) dispatchError(ctx context.Context, err err
 	if lifecycle == nil || lifecycle.ended || err == nil {
 		return
 	}
+
 	lifecycle.ended = true
 	lifecycle.runtime.dispatchTurnErrorLifecycle(ctx, lifecycle.sessionID, lifecycle.userEntryID, err)
 }
@@ -67,9 +69,11 @@ func (runtime *Runtime) dispatchLifecycle(
 	payload map[string]any,
 ) (extension.LifecycleDispatchResult, error) {
 	runtime.emit(ctx, string(name), payload)
+
 	if runtime.extensions == nil {
 		return emptyLifecycleDispatchResult(name, payload), nil
 	}
+
 	result, err := runtime.extensions.DispatchLifecycle(ctx, extension.LifecycleEvent{
 		Payload: payload,
 		Name:    name,
@@ -82,13 +86,14 @@ func (runtime *Runtime) dispatchLifecycle(
 		)
 	}
 
-	return result, err
+	return result, assistantError(err, "dispatch lifecycle event")
 }
 
 func (runtime *Runtime) dispatchMessageAppend(ctx context.Context, entry *database.EntryEntity) {
 	if entry == nil {
 		return
 	}
+
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleMessageAppend, lifecyclepayload.Entry(entry))
 }
 
@@ -134,6 +139,7 @@ func (runtime *Runtime) dispatchTurnErrorLifecycle(
 	if turnErr == nil {
 		return
 	}
+
 	payload := lifecyclepayload.TurnEndPayload(&lifecyclepayload.TurnEnd{
 		Err:              turnErr,
 		Usage:            model.EmptyTokenUsage(),
@@ -164,6 +170,7 @@ func (runtime *Runtime) dispatchContextBuild(
 	result *contextwindow.BuildResult,
 ) (extension.LifecycleDispatchResult, error) {
 	payload := lifecyclepayload.ContextBuild(sessionID, cwd, base, result)
+
 	return runtime.dispatchLifecycle(ctx, extension.LifecycleContextBuild, payload)
 }
 
@@ -195,12 +202,16 @@ func (runtime *Runtime) dispatchToolCallLifecycle(ctx context.Context, call *Too
 	if call == nil {
 		return nil
 	}
+
 	payload := lifecyclepayload.ToolCallPayload(lifecycleToolCall(*call))
+
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolCall, payload)
 	if err != nil {
 		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
+
 		return err
 	}
+
 	applyToolCallMutation(call, result.ToolCall)
 	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
 
@@ -211,14 +222,19 @@ func (runtime *Runtime) dispatchToolResultLifecycle(ctx context.Context, event *
 	if event == nil {
 		return nil
 	}
+
 	payload := lifecyclepayload.ToolResultPayload(lifecycleToolResult(event))
+
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolResult, payload)
 	if err != nil {
 		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolResult, &result, toolResultDiagnostics(event))
+
 		return err
 	}
+
 	applyToolResultMutation(event, result.ToolResult)
 	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolResult, &result, toolResultDiagnostics(event))
+
 	if event.Error != "" {
 		runtime.dispatchToolErrorLifecycle(ctx, event)
 	}
@@ -230,9 +246,11 @@ func (runtime *Runtime) dispatchToolErrorLifecycle(ctx context.Context, event *T
 	if event == nil || event.Error == "" {
 		return
 	}
+
 	payload := lifecyclepayload.ToolResultPayload(lifecycleToolResult(event))
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolError, payload)
 	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolError, &result, toolResultDiagnostics(event))
+
 	if err != nil {
 		return
 	}
@@ -242,6 +260,7 @@ func applyToolCallMutation(call *ToolCallEvent, mutation extension.ToolCallMutat
 	if len(mutation.Arguments) == 0 {
 		return
 	}
+
 	call.Arguments = mutation.Arguments
 	call.ArgumentsJSON = provider.EncodeToolArguments(call.Arguments)
 }
@@ -250,9 +269,11 @@ func applyToolResultMutation(event *ToolEvent, mutation extension.ToolResultMuta
 	if mutation.Result != nil {
 		event.Result = *mutation.Result
 	}
+
 	if mutation.DetailsJSON != nil {
 		event.DetailsJSON = *mutation.DetailsJSON
 	}
+
 	if mutation.Error != nil {
 		event.Error = *mutation.Error
 		event.IsError = strings.TrimSpace(*mutation.Error) != ""

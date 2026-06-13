@@ -19,10 +19,12 @@ func (runtime *Runtime) modelContextEntity(
 	if err != nil {
 		return nil, oops.In("assistant").Code("load_context_leaf").Wrapf(err, "load session leaf")
 	}
+
 	leafID := ""
 	if leafEntry != nil {
 		leafID = leafEntry.ID
 	}
+
 	contextEntity, err := runtime.sessions.BuildContext(ctx, sessionID, leafID)
 	if err != nil {
 		return nil, oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
@@ -43,20 +45,25 @@ func remapUsageAnchor(
 	if anchor == nil || anchor.MessageIndex < 0 || anchor.MessageIndex >= len(originalMessages) {
 		return nil
 	}
+
 	anchorMessage := originalMessages[anchor.MessageIndex]
 	modelIndex := -1
+
 	for originalIndex := range originalMessages[:anchor.MessageIndex+1] {
 		message := originalMessages[originalIndex]
 		if model.IsFacingMessage(&message) {
 			modelIndex++
 		}
 	}
+
 	if modelIndex < 0 || modelIndex >= len(modelMessages) {
 		return nil
 	}
+
 	if modelMessages[modelIndex].Timestamp != anchorMessage.Timestamp {
 		return nil
 	}
+
 	remapped := *anchor
 	remapped.MessageIndex = modelIndex
 

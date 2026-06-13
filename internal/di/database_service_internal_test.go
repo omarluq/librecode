@@ -40,6 +40,7 @@ func TestOpenSQLiteDatabaseAppliesPragmasAndMigrations(t *testing.T) {
 	assert.Equal(t, 1, queryDatabasePragmaInt(t, connection, "foreign_keys"))
 
 	var tableName string
+
 	err = connection.QueryRowContext(
 		context.Background(),
 		`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'`,
@@ -53,6 +54,7 @@ func TestDatabaseServiceHealthCheckAndShutdown(t *testing.T) {
 
 	connection, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "librecode.db"))
 	require.NoError(t, err)
+
 	service := &DatabaseService{DB: connection, Sessions: nil, Documents: nil, path: ""}
 
 	require.NoError(t, service.HealthCheck(context.Background()))
@@ -66,6 +68,7 @@ func TestDatabaseServiceShutdownReturnsContextError(t *testing.T) {
 	connection, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "librecode.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+
 	service := &DatabaseService{DB: connection, Sessions: nil, Documents: nil, path: ""}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -76,16 +79,17 @@ func TestDatabaseServiceShutdownReturnsContextError(t *testing.T) {
 func TestCloseAfterSetupErrorPreservesSetupAndCloseErrors(t *testing.T) {
 	t.Parallel()
 
-	connection, err := sql.Open(registerCloseErrorDriver(), "")
+	connection, err := sql.Open(closeDriverRegistry().registerCloseErrorDriver(), "")
 	require.NoError(t, err)
 	connection.SetMaxIdleConns(1)
 	require.NoError(t, connection.PingContext(context.Background()))
+
 	setupErr := errors.New("setup failed")
 
 	err = closeAfterSetupError(connection, "close_after_setup", "setup", "/tmp/librecode.db", setupErr)
 	require.Error(t, err)
 	require.ErrorIs(t, err, setupErr)
-	require.ErrorIs(t, err, errCloseFailed)
+	require.ErrorContains(t, err, errCloseFailed().Error())
 	assert.ErrorContains(t, err, "/tmp/librecode.db")
 }
 
@@ -138,17 +142,25 @@ func queryDatabasePragmaString(t *testing.T, db *sql.DB, name string) string {
 	return value
 }
 
-var (
-	closeDriverIndex int
-	closeDriverMu    sync.Mutex
-	errCloseFailed   = errors.New("close failed")
-)
+func errCloseFailed() error {
+	return errors.New("close failed")
+}
 
-func registerCloseErrorDriver() string {
-	closeDriverMu.Lock()
-	defer closeDriverMu.Unlock()
-	closeDriverIndex++
-	driverName := "close-error-sqlite-test-" + strconv.Itoa(closeDriverIndex)
+func closeDriverRegistry() *driverRegistry {
+	return &driverRegistry{index: 0, mu: sync.Mutex{}}
+}
+
+type driverRegistry struct {
+	index int
+	mu    sync.Mutex
+}
+
+func (registry *driverRegistry) registerCloseErrorDriver() string {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+
+	registry.index++
+	driverName := "close-error-sqlite-test-" + strconv.Itoa(registry.index)
 	sql.Register(driverName, closeErrorDriver{})
 
 	return driverName
@@ -165,7 +177,7 @@ type closeErrorConn struct{}
 func (closeErrorConn) Prepare(_ string) (driver.Stmt, error) {
 	return nil, errors.New("prepare unsupported")
 }
-func (closeErrorConn) Close() error                       { return errCloseFailed }
+func (closeErrorConn) Close() error                       { return errCloseFailed() }
 func (closeErrorConn) Begin() (driver.Tx, error)          { return nil, errors.New("begin unsupported") }
 func (closeErrorConn) Ping(context.Context) error         { return nil }
 func (closeErrorConn) ResetSession(context.Context) error { return nil }

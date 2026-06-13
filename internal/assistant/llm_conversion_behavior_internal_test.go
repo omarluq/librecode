@@ -129,6 +129,7 @@ func TestLLMUsageConversionsCloneMapsAndContributors(t *testing.T) {
 	modelUsage := llmconv.UsageToModel(converted)
 	converted.Breakdown[contextwindow.BreakdownHistory] = 42
 	converted.TopContributors[0].Label = testLLMMutatedAgainLabel
+
 	assert.Equal(t, 1, modelUsage.Breakdown[contextwindow.BreakdownHistory])
 	assert.Equal(t, contextwindow.BreakdownHistory, modelUsage.TopContributors[0].Label)
 }
@@ -156,6 +157,7 @@ func TestLLMToolDefinitionClonesSchema(t *testing.T) {
 	})
 
 	definition.Schema["type"] = testLLMMutatedLabel
+
 	assert.Equal(t, "object", schema["type"])
 	assert.True(t, definition.ReadOnly)
 }

@@ -20,6 +20,7 @@ func applyEntryMetadata(entry *EntryEntity) error {
 	} else {
 		entry.ModelFacing = entryParticipatesInModelContext(entry)
 	}
+
 	entry.Display = entryDisplaysInTranscript(entry, &data)
 	entry.CompactionFirstKeptEntryID = firstNonEmpty(data.CompactionFirstKeptEntryID, data.FirstKeptEntryID)
 	entry.CompactionTokensBefore = firstPositive(data.CompactionTokensBefore, data.TokensBefore)
@@ -39,6 +40,7 @@ func applyEntryMetadata(entry *EntryEntity) error {
 	data.ModelFacing = &entry.ModelFacing
 	data.CompactionFirstKeptEntryID = entry.CompactionFirstKeptEntryID
 	data.CompactionTokensBefore = entry.CompactionTokensBefore
+
 	data.BranchFromEntryID = entry.BranchFromEntryID
 	if data.Display == nil {
 		data.Display = &entry.Display
@@ -48,6 +50,7 @@ func applyEntryMetadata(entry *EntryEntity) error {
 	if err != nil {
 		return err
 	}
+
 	entry.DataJSON = normalizeDataJSON(dataJSON)
 
 	return nil
@@ -58,6 +61,7 @@ func estimateEntryTokens(entry *EntryEntity) int {
 	if strings.TrimSpace(text) == "" {
 		text = entry.Summary
 	}
+
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return 0
@@ -111,10 +115,12 @@ func parseToolMetadata(content string) toolMetadata {
 	metadata := toolMetadata{Name: "", Status: "success", ArgsJSON: ""}
 	sections := splitToolSections(content)
 	metadata.Name = strings.TrimSpace(sections["tool"])
+
 	metadata.ArgsJSON = strings.TrimSpace(sections["arguments"])
 	if strings.TrimSpace(sections["error"]) != "" {
 		metadata.Status = "error"
 	}
+
 	if metadata.ArgsJSON != "" {
 		metadata.ArgsJSON = firstNonEmpty(compactJSON(metadata.ArgsJSON), metadata.ArgsJSON)
 	}
@@ -125,17 +131,21 @@ func parseToolMetadata(content string) toolMetadata {
 func splitToolSections(content string) map[string]string {
 	sections := map[string]string{}
 	current := ""
+
 	lines := strings.SplitSeq(content, "\n")
 	for line := range lines {
 		name, value, ok := splitToolHeader(line)
 		if ok {
 			current = name
 			sections[current] = value
+
 			continue
 		}
+
 		if current == "" {
 			continue
 		}
+
 		if sections[current] == "" {
 			sections[current] = line
 		} else {
@@ -181,10 +191,12 @@ func compactJSON(value string) string {
 	if strings.TrimSpace(value) == "" {
 		return ""
 	}
+
 	var decoded any
 	if err := json.Unmarshal([]byte(value), &decoded); err != nil {
 		return value
 	}
+
 	encoded, err := json.Marshal(decoded)
 	if err != nil {
 		return value

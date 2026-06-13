@@ -7,18 +7,21 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
+const charsPerEstimatedToken = 4
+
 // EstimateTokens returns a rough cross-provider estimate used until provider usage arrives.
 func EstimateTokens(text string) int {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return 0
 	}
+
 	runes := utf8.RuneCountInString(trimmed)
 	if runes == 0 {
 		return 0
 	}
 
-	return max(1, (runes+3)/4)
+	return max(1, (runes+charsPerEstimatedToken-1)/charsPerEstimatedToken)
 }
 
 // EstimateInputTokens estimates the model-facing input tokens for system prompt plus messages.

@@ -33,7 +33,8 @@ func newExtensionListCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				service := di.MustInvoke[*di.ExtensionService](container)
+				service := container.ExtensionService()
+
 				loadedByPath := loadedExtensionsByPath(service.Manager.Extensions())
 				for index := range service.State.Configured {
 					configuredExtension := &service.State.Configured[index]
@@ -55,10 +56,11 @@ func newExtensionRunCmd() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				manager := di.MustInvoke[*di.ExtensionService](container).Manager
+				manager := container.ExtensionService().Manager
+
 				result, err := manager.ExecuteCommand(cmd.Context(), args[0], strings.Join(args[1:], " "))
 				if err != nil {
-					return err
+					return cliError(err, "run extension command")
 				}
 
 				return printLine(cmd.OutOrStdout(), "%s", result)
@@ -73,6 +75,7 @@ func printConfiguredExtension(
 	loadedByPath map[string]extension.LoadedExtension,
 ) error {
 	loadedExtension, loaded := loadedByPath[configuredExtension.LoadPath]
+
 	status := configuredExtension.Status
 	if loaded {
 		status = "loaded"

@@ -15,6 +15,7 @@ func TestBashExecutionToText(t *testing.T) {
 	t.Parallel()
 
 	exitCode := 2
+
 	tests := []struct {
 		name     string
 		contains []string

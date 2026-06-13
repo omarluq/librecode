@@ -3,6 +3,7 @@ package assistant_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -49,10 +50,12 @@ func TestRuntime_ProviderContextOverflowRecoveryScenarios(t *testing.T) {
 			response, events, sessionID, err := runProviderOverflowPrompt(t, runtime, testCase.name)
 
 			assert.Equal(t, []bool{false, true, false}, client.disableToolsByCall)
+
 			if testCase.wantRetryErr {
 				require.Nil(t, response)
 				require.Error(t, err)
 				assert.True(t, assistant.IsContextWindowError(err))
+
 				return
 			}
 
@@ -257,8 +260,11 @@ func runProviderOverflowPrompt(
 	}
 
 	response, promptErr := runtime.Prompt(context.Background(), request)
+	if promptErr != nil {
+		return response, events, session.ID, fmt.Errorf("prompt with overflow compaction: %w", promptErr)
+	}
 
-	return response, events, session.ID, promptErr
+	return response, events, session.ID, nil
 }
 
 func newProviderOverflowRecoveryRuntime(
@@ -313,6 +319,7 @@ func assertBranchContainsCompaction(
 
 	branch, err := runtime.SessionRepository().Branch(context.Background(), sessionID, leafID)
 	require.NoError(t, err)
+
 	for index := range branch {
 		if branch[index].Type == database.EntryTypeCompaction {
 			return

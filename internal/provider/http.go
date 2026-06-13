@@ -14,9 +14,13 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/limitio"
+	"github.com/omarluq/librecode/internal/units"
 )
 
-const providerResponseLimitBytes int64 = 16 << 20
+const (
+	providerResponseLimitBytes int64 = 16 * units.MiB
+	jwtSegmentCount                  = 3
+)
 
 func (client *HTTPCompletionClient) postJSON(
 	ctx context.Context,
@@ -28,15 +32,18 @@ func (client *HTTPCompletionClient) postJSON(
 	if err != nil {
 		return nil, err
 	}
+
 	response, err := client.client.Do(request)
 	if err != nil {
 		return nil, oops.In("provider").Code("provider_http").Wrapf(err, "request provider response")
 	}
 	defer closeBody(response.Body)
+
 	content, err := readProviderBody(response.Body)
 	if err != nil {
 		return nil, oops.In("provider").Code("provider_read").Wrapf(err, "read provider response")
 	}
+
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, providerStatusError("provider_status", response.StatusCode, content)
 	}
@@ -45,7 +52,9 @@ func (client *HTTPCompletionClient) postJSON(
 }
 
 func readProviderBody(reader io.Reader) ([]byte, error) {
-	return limitio.ReadAll(reader, providerResponseLimitBytes, "provider response")
+	body, err := limitio.ReadAll(reader, providerResponseLimitBytes, "provider response")
+
+	return body, providerWrap(err, "read provider response")
 }
 
 func closeBody(body io.Closer) {
@@ -64,11 +73,14 @@ func jsonRequest(
 	if err != nil {
 		return nil, oops.In("provider").Code("provider_payload").Wrapf(err, "encode provider payload")
 	}
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, oops.In("provider").Code("provider_request").Wrapf(err, "create provider request")
 	}
+
 	request.Header.Set("Content-Type", "application/json")
+
 	for key, value := range headers {
 		request.Header.Set(key, value)
 	}
@@ -85,10 +97,12 @@ func openAIHeaders(request *CompletionRequest) map[string]string {
 
 func codexHeaders(request *CompletionRequest) map[string]string {
 	headers := openAIHeaders(request)
+
 	accountID := request.Request.Auth.Headers["chatgpt-account-id"]
 	if accountID == "" {
 		accountID = accountIDFromToken(request.Request.Auth.APIKey)
 	}
+
 	headers["chatgpt-account-id"] = accountID
 	headers["originator"] = "librecode"
 	headers["User-Agent"] = "librecode"
@@ -103,17 +117,21 @@ func joinEndpoint(baseURL, suffix string) string {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
+
 	parsed, err := url.Parse(baseURL)
 	if err != nil {
 		return strings.TrimRight(baseURL, "/") + suffix
 	}
+
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + suffix
 
 	return parsed.String()
 }
 
+const providerHeaderExtraCapacity = 2
+
 func cloneHeaders(headers map[string]string) map[string]string {
-	cloned := make(map[string]string, len(headers)+2)
+	cloned := make(map[string]string, len(headers)+providerHeaderExtraCapacity)
 	maps.Copy(cloned, headers)
 
 	return cloned
@@ -121,23 +139,27 @@ func cloneHeaders(headers map[string]string) map[string]string {
 
 func accountIDFromToken(token string) string {
 	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
+	if len(parts) != jwtSegmentCount {
 		return ""
 	}
+
 	decoded, err := base64URLDecode(parts[1])
 	if err != nil {
 		return ""
 	}
+
 	var payload map[string]any
 	if err := json.Unmarshal(decoded, &payload); err != nil {
 		return ""
 	}
-	authClaims, ok := payload["https://api.openai.com/auth"].(map[string]any)
-	if !ok {
+
+	authClaims, matched := payload["https://api.openai.com/auth"].(map[string]any)
+	if !matched {
 		return ""
 	}
-	accountID, ok := authClaims["chatgpt_account_id"].(string)
-	if !ok {
+
+	accountID, matched := authClaims["chatgpt_account_id"].(string)
+	if !matched {
 		return ""
 	}
 
@@ -145,11 +167,9 @@ func accountIDFromToken(token string) string {
 }
 
 func base64URLDecode(value string) ([]byte, error) {
-	return base64RawURLDecode(value)
-}
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
 
-var base64RawURLDecode = func(value string) ([]byte, error) {
-	return base64.RawURLEncoding.DecodeString(value)
+	return decoded, providerWrap(err, "decode base64 url")
 }
 
 func minPositive(value, fallback int) int {

@@ -45,6 +45,7 @@ func TestResponseResultHelpersHandleEmptyInputs(t *testing.T) {
 	assert.Empty(t, responseText(nil))
 	assert.Nil(t, responseThinking(nil))
 	assert.Nil(t, responseToolEvents(nil))
+
 	plainResponse := &llm.Response{
 		FinishReason: llm.FinishReasonUnknown,
 		Content:      []llm.Part{llm.TextPart("plain")},

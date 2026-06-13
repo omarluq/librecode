@@ -17,9 +17,11 @@ func (app *App) compactSession(ctx context.Context) error {
 	if app.runtime == nil {
 		return errors.New("runtime is not configured")
 	}
+
 	if app.sessionID == "" {
 		return errors.New("no active session")
 	}
+
 	if app.busy() {
 		return errors.New("another operation is already running")
 	}
@@ -36,6 +38,7 @@ func (app *App) compactSession(ctx context.Context) error {
 	app.workStartedAt = time.Now()
 	app.workFrame = 0
 	app.scrollOffset = 0
+
 	app.setStatus("compacting context")
 	go app.runCompactSession(ctx, compactCtx, cancel, compactID, parentEntryID)
 
@@ -50,16 +53,21 @@ func (app *App) runCompactSession(
 	parentEntryID *string,
 ) {
 	defer cancel()
+
 	entry, err := app.runtime.CompactSessionFrom(compactCtx, app.sessionID, app.cwd, parentEntryID)
 	if err != nil {
 		app.postCompactError(ctx, compactID, err)
+
 		return
 	}
+
 	usage, err := app.runtime.ContextUsage(compactCtx, app.sessionID, app.cwd)
 	if err != nil {
 		app.postCompactDone(ctx, compactID, entry, nil)
+
 		return
 	}
+
 	app.postCompactDone(ctx, compactID, entry, &usage)
 }
 
@@ -98,13 +106,17 @@ func (app *App) handleCompactAsyncEvent(ctx context.Context, payload *asyncEvent
 		if app.activeCompaction == nil {
 			return false
 		}
+
 		app.applyCompactDone(ctx, payload)
+
 		return true
 	case asyncEventCompactError:
 		if app.activeCompaction == nil {
 			return false
 		}
+
 		app.applyCompactError(payload)
+
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
@@ -131,6 +143,7 @@ func (app *App) applyCompactDone(ctx context.Context, payload *asyncEvent) {
 	if app.ignoreCompactEvent(payload) {
 		return
 	}
+
 	app.pendingParentID = nonEmptyStringPtr(payload.Provider)
 	app.compacting = false
 	app.activeCompaction = nil
@@ -144,14 +157,17 @@ func (app *App) applyCompactError(payload *asyncEvent) {
 	if app.ignoreCompactEvent(payload) {
 		return
 	}
+
 	queued := app.queuedCompactionPrompts()
 	app.compacting = false
+
 	app.activeCompaction = nil
 	if payload.Text == "" {
 		app.addSystemMessage("context compaction failed")
 	} else {
 		app.addSystemMessage(payload.Text)
 	}
+
 	app.restoreCompactionQueuedPrompts(queued)
 }
 

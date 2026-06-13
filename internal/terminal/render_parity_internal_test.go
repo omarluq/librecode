@@ -35,6 +35,7 @@ func TestRenderParityComposerFrame(t *testing.T) {
 		"second line",
 		"╰",
 	)
+
 	if layout.Composer.Y+layout.Composer.Height != layout.Status.Y {
 		t.Fatalf("composer bottom = %d, status y = %d", layout.Composer.Y+layout.Composer.Height, layout.Status.Y)
 	}
@@ -54,9 +55,11 @@ func TestRenderParityStatuslineFrame(t *testing.T) {
 	statusY := layout.Status.Y
 	first := frameRowText(app.frame, statusY)
 	second := frameRowText(app.frame, statusY+1)
+
 	if !strings.Contains(first, "/work/librecode • session-123") {
 		t.Fatalf("status first row = %q", first)
 	}
+
 	if !strings.Contains(second, modelLabel(app.currentProvider(), app.currentModel())) {
 		t.Fatalf("status second row = %q", second)
 	}
@@ -81,6 +84,7 @@ func TestRenderParityStatuslineTokenUsage(t *testing.T) {
 
 	second := frameRowText(app.frame, layout.Status.Y+1)
 	assertFrameContainsAll(t, second, "ctx 250/1.0k 25%")
+
 	if strings.Contains(second, "↑") || strings.Contains(second, "↓") {
 		t.Fatalf("status should not include input/output tokens: %q", second)
 	}
@@ -93,6 +97,7 @@ func TestRenderParityToolBlockFrame(t *testing.T) {
 	app.toolsExpanded = true
 	event := newTestToolEvent("read", "func main() {\n    fmt.Println(\"hi\")\n}")
 	lines := app.renderToolMessage(50, newChatMessage(transcript.RoleToolResult, formatToolEventForUI(event)))
+
 	app.frame = rendertext.NewBuffer(50, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 50, line)
@@ -113,6 +118,7 @@ func TestRenderParitySkillLoadBlockFrame(t *testing.T) {
 	app := newRenderTestApp(t)
 	event := newTestToolEvent("load skill: golang-testing", "# golang-testing\nUse table-driven tests.")
 	lines := app.renderToolMessage(60, newChatMessage(transcript.RoleToolResult, formatToolEventForUI(event)))
+
 	app.frame = rendertext.NewBuffer(60, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 60, line)
@@ -131,21 +137,25 @@ func TestRenderParityThinkingBlockStyle(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	lines := app.renderThinkingMessage(50, newChatMessage(transcript.RoleThinking, "reasoning\ncontinues"))
+
 	app.frame = rendertext.NewBuffer(50, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 50, line)
 	}
 
 	thinkingRow := lineIndexContaining(lines, settingThinking)
+
 	contentRow := lineIndexContaining(lines, "reasoning")
 	if thinkingRow == -1 || contentRow == -1 {
 		t.Fatalf("thinking lines missing: %#v", lineTexts(lines))
 	}
+
 	for _, row := range []int{thinkingRow, contentRow} {
 		cell := firstNonSpaceCell(app.frame, row)
 		if got, want := cell.Style.GetForeground(), app.theme.colors[colorDim]; got != want {
 			t.Fatalf("thinking row %d foreground = %v, want %v", row, got, want)
 		}
+
 		if !cell.Style.HasItalic() {
 			t.Fatalf("thinking row %d should be italic", row)
 		}
@@ -157,6 +167,7 @@ func TestRenderParityWrappedBulletsFrame(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	lines := app.renderMarkdown("- alpha beta gamma delta epsilon zeta eta theta", 18)
+
 	app.frame = rendertext.NewBuffer(18, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 18, line)
@@ -194,6 +205,7 @@ func TestRenderParityResumedHistoryViewport(t *testing.T) {
 
 	app.warmMessageLineCache()
 	app.scrollTranscript(100)
+
 	scrolled := app.messageLines(60, 8)
 	if lineIndexContaining(scrolled, "oldest user history") == -1 {
 		t.Fatalf("expected oldest resumed history after scroll, got %#v", lineTexts(scrolled))
@@ -217,7 +229,6 @@ func renderParityConfig() *config.Config {
 			OutputReserveTokens:   0,
 			ProviderReserveTokens: 0,
 			SafetyMarginTokens:    0,
-			KeepRecentTokens:      20_000,
 			PreflightEnabled:      false,
 		},
 		Models: config.ModelsConfig{
@@ -318,6 +329,7 @@ func frameRowText(frame *rendertext.Buffer, row int) string {
 	if frame == nil || row < 0 || row >= frame.Height() {
 		return ""
 	}
+
 	var builder strings.Builder
 	for column := range frame.Width() {
 		builder.WriteRune(frame.Cell(column, row).Rune)
@@ -330,6 +342,7 @@ func firstNonSpaceCell(frame *rendertext.Buffer, row int) rendertext.Cell {
 	if frame == nil || row < 0 || row >= frame.Height() {
 		return emptyScreenCell()
 	}
+
 	for column := range frame.Width() {
 		cell := frame.Cell(column, row)
 		if cell.Rune != ' ' {
@@ -346,6 +359,7 @@ func emptyScreenCell() rendertext.Cell {
 
 func assertFrameContainsAll(t *testing.T, frame string, values ...string) {
 	t.Helper()
+
 	for _, value := range values {
 		if !strings.Contains(frame, value) {
 			t.Fatalf("frame missing %q: %q", value, frame)
@@ -355,6 +369,7 @@ func assertFrameContainsAll(t *testing.T, frame string, values ...string) {
 
 func requireNoError(t *testing.T, err error) {
 	t.Helper()
+
 	if err != nil {
 		t.Fatal(err)
 	}

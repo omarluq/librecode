@@ -23,7 +23,7 @@ type ContentPart struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
 	Data     string `json:"data,omitempty"`
-	MIMEType string `json:"mimeType,omitempty"`
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
 // LLMMessage is the generic message shape sent to a model.
@@ -35,20 +35,20 @@ type LLMMessage struct {
 
 // BashExecutionMessage records a user-triggered shell command.
 type BashExecutionMessage struct {
-	ExitCode           *int   `json:"exitCode,omitempty"`
+	ExitCode           *int   `json:"exit_code,omitempty"`
 	Command            string `json:"command"`
 	Output             string `json:"output"`
-	FullOutputPath     string `json:"fullOutputPath,omitempty"`
+	FullOutputPath     string `json:"full_output_path,omitempty"`
 	Timestamp          int64  `json:"timestamp"`
 	Canceled           bool   "json:\"cancel\u006ced\""
 	Truncated          bool   `json:"truncated"`
-	ExcludeFromContext bool   `json:"excludeFromContext,omitempty"`
+	ExcludeFromContext bool   `json:"exclude_from_context,omitempty"`
 }
 
 // CustomMessage is extension-injected context.
 type CustomMessage struct {
 	Details    any           `json:"details,omitempty"`
-	CustomType string        `json:"customType"`
+	CustomType string        `json:"custom_type"`
 	Content    []ContentPart `json:"content"`
 	Timestamp  int64         `json:"timestamp"`
 	Display    bool          `json:"display"`
@@ -57,7 +57,7 @@ type CustomMessage struct {
 // BranchSummaryMessage is a summary for a branch that was left.
 type BranchSummaryMessage struct {
 	Summary   string `json:"summary"`
-	FromID    string `json:"fromId"`
+	FromID    string `json:"from_id"`
 	Timestamp int64  `json:"timestamp"`
 }
 
@@ -65,7 +65,7 @@ type BranchSummaryMessage struct {
 type CompactionSummaryMessage struct {
 	Summary      string `json:"summary"`
 	Timestamp    int64  `json:"timestamp"`
-	TokensBefore int    `json:"tokensBefore"`
+	TokensBefore int    `json:"tokens_before"`
 }
 
 // BashExecutionToText renders a shell execution as user-message context.
@@ -74,6 +74,7 @@ func BashExecutionToText(message BashExecutionMessage) string {
 	builder.WriteString("Ran `")
 	builder.WriteString(message.Command)
 	builder.WriteString("`\n")
+
 	if message.Output != "" {
 		builder.WriteString("```\n")
 		builder.WriteString(message.Output)
@@ -81,12 +82,14 @@ func BashExecutionToText(message BashExecutionMessage) string {
 	} else {
 		builder.WriteString("(no output)")
 	}
+
 	if message.Canceled {
 		builder.WriteString("\n\n(command canceled)")
 	} else if message.ExitCode != nil && *message.ExitCode != 0 {
 		builder.WriteString("\n\nCommand exited with code ")
 		builder.WriteString(strconv.Itoa(*message.ExitCode))
 	}
+
 	if message.Truncated && message.FullOutputPath != "" {
 		builder.WriteString("\n\n[Output truncated. Full output: ")
 		builder.WriteString(message.FullOutputPath)

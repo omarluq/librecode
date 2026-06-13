@@ -24,17 +24,21 @@ func (runtime *Runtime) emitUsageEvent(
 	if !usage.HasAny() {
 		return
 	}
+
 	emitStreamEvent(onEvent, StreamEvent{
 		ToolEvent: nil,
 		Usage:     &usage,
 		Kind:      kind,
 		Text:      "",
 	})
+
 	payload := lifecyclepayload.TokenUsage(usage)
 	if kind == StreamEventUsageSnapshot {
 		payload["snapshot"] = true
 	}
+
 	runtime.emit(ctx, lifecyclepayload.UsageKey, payload)
+
 	if runtime.extensions != nil {
 		if err := runtime.extensions.Emit(ctx, lifecyclepayload.UsageKey, payload); err != nil {
 			runtime.logger.Debug("emit usage extension event failed", "error", err)

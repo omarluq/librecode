@@ -5,6 +5,7 @@ func CloneTokenContributors(contributors []TokenContributor) []TokenContributor 
 	if len(contributors) == 0 {
 		return nil
 	}
+
 	cloned := make([]TokenContributor, len(contributors))
 	copy(cloned, contributors)
 

@@ -56,6 +56,7 @@ func filterTimers(timers []luaTimer, keep func(luaTimer) bool) []luaTimer {
 
 func (manager *Manager) extensionTimerCount(extensionRuntime *luaExtension) int {
 	count := 0
+
 	for _, timer := range manager.timers {
 		if timer.extension == extensionRuntime {
 			count++
@@ -71,19 +72,24 @@ func (manager *Manager) NextTimerDelay(now time.Time) (time.Duration, bool) {
 	defer manager.lock.RUnlock()
 
 	var nextDue time.Time
+
 	found := false
+
 	for _, timer := range manager.timers {
 		if _, canceled := manager.canceledTimers[timer.id]; canceled {
 			continue
 		}
+
 		if !found || timer.due.Before(nextDue) {
 			nextDue = timer.due
 			found = true
 		}
 	}
+
 	if !found {
 		return 0, false
 	}
+
 	if !nextDue.After(now) {
 		return 0, true
 	}
@@ -95,10 +101,11 @@ func (manager *Manager) runDueTimers(ctx context.Context, event *luaHostEvent, n
 	due := manager.takeDueTimers(now)
 	for _, timer := range due {
 		if err := ctx.Err(); err != nil {
-			return err
+			return extensionError(err, "check extension context")
 		}
+
 		if err := manager.runTimer(ctx, event, timer); err != nil {
-			return err
+			return extensionError(err, "check extension context")
 		}
 	}
 
@@ -110,21 +117,29 @@ func (manager *Manager) takeDueTimers(now time.Time) []luaTimer {
 	defer manager.lock.Unlock()
 
 	due := []luaTimer{}
+
 	pending := manager.timers[:0]
 	for _, timer := range manager.timers {
 		if _, canceled := manager.canceledTimers[timer.id]; canceled {
 			delete(manager.canceledTimers, timer.id)
+
 			continue
 		}
+
 		if timer.due.After(now) {
 			pending = append(pending, timer)
+
 			continue
 		}
+
 		due = append(due, timer)
 	}
+
 	manager.timers = pending
+
 	sort.SliceStable(due, func(leftIndex, rightIndex int) bool {
 		left := due[leftIndex]
+
 		right := due[rightIndex]
 		if left.due.Equal(right.due) {
 			return left.order < right.order
@@ -143,12 +158,14 @@ func (manager *Manager) runTimer(ctx context.Context, event *luaHostEvent, timer
 	if err != nil {
 		return fmt.Errorf("extension: timer %d failed: %w", timer.id, err)
 	}
-	event.applyLuaResult(result)
+
+	result.ApplyTo(event)
+
 	if timer.interval > 0 && !manager.timerCanceled(timer.id) {
 		manager.rescheduleTimer(timer)
 	}
 
-	return ctx.Err()
+	return extensionError(ctx.Err(), "check extension context")
 }
 
 func (manager *Manager) timerCanceled(timerID uint64) bool {
@@ -166,8 +183,10 @@ func (manager *Manager) rescheduleTimer(timer luaTimer) {
 
 	if _, canceled := manager.canceledTimers[timer.id]; canceled {
 		delete(manager.canceledTimers, timer.id)
+
 		return
 	}
+
 	timer.due = time.Now().Add(timer.interval)
 	manager.timers = append(manager.timers, timer)
 }

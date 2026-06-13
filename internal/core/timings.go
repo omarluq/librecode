@@ -37,6 +37,7 @@ func (timings *Timings) Reset() {
 	if !timings.enabled {
 		return
 	}
+
 	timings.entries = []TimingEntry{}
 	timings.last = timings.clock()
 }
@@ -46,6 +47,7 @@ func (timings *Timings) Mark(label string) {
 	if !timings.enabled {
 		return
 	}
+
 	now := timings.clock()
 	timings.entries = append(timings.entries, TimingEntry{Label: label, Delta: now.Sub(timings.last)})
 	timings.last = now
@@ -61,12 +63,15 @@ func (timings *Timings) String() string {
 	if !timings.enabled || len(timings.entries) == 0 {
 		return ""
 	}
+
 	lines := []string{"--- Startup Timings ---"}
+
 	total := time.Duration(0)
 	for _, entry := range timings.entries {
 		total += entry.Delta
 		lines = append(lines, fmt.Sprintf("  %s: %dms", entry.Label, entry.Delta.Milliseconds()))
 	}
+
 	lines = append(lines, fmt.Sprintf("  TOTAL: %dms", total.Milliseconds()), "------------------------")
 
 	return strings.Join(lines, "\n")

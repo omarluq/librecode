@@ -34,6 +34,7 @@ func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
 	tools, ok := requests[0]["tools"].([]any)
 	require.True(t, ok)
 	assert.NotEmpty(t, tools)
+
 	messages, ok := requests[1]["messages"].([]any)
 	require.True(t, ok)
 	assert.True(t, containsRoleMessage(messages, jsonToolRole))
@@ -44,35 +45,15 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 
 	workspace := testToolWorkspace(t)
 	captures := make(chan providerResponseHookCapture, 2)
-	var requestCount int
+
 	var hookIterations []int
+
+	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		capture := providerResponseHookCapture{
-			Err:    nil,
-			Body:   map[string]any{},
-			Header: request.Header.Get("X-Iteration"),
-		}
-		if err := json.NewDecoder(request.Body).Decode(&capture.Body); err != nil {
-			capture.Err = err
-			captures <- capture
-			return
-		}
 		requestCount++
-		captures <- capture
-		writer.Header().Set("Content-Type", "application/json")
-		if requestCount == 1 {
-			arguments, err := json.Marshal(map[string]string{jsonPathKey: testToolPath})
-			assert.NoError(t, err)
-			writeTestProviderResponse(
-				t,
-				writer,
-				`{"output":[{"type":"function_call","call_id":"call_1","name":"read","arguments":`+
-					strconv.Quote(string(arguments))+
-					`}]}`,
-			)
-			return
-		}
-		writeTestProviderResponse(t, writer, `{"output_text":"done"}`)
+
+		captureProviderHookRequest(t, writer, request, captures)
+		writeProviderHookIterationResponse(t, writer, requestCount)
 	}))
 	t.Cleanup(server.Close)
 
@@ -98,10 +79,13 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 
 	result, err := NewHTTPCompletionClient().completeOpenAIResponses(context.Background(), request)
 	require.NoError(t, err)
+
 	response := providerResponseView(result)
 	assert.Equal(t, "done", response.Text)
+
 	first := <-captures
 	second := <-captures
+
 	require.NoError(t, first.Err)
 	require.NoError(t, second.Err)
 	assert.Equal(t, []int{1, 2}, hookIterations)
@@ -109,6 +93,48 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	assert.Equal(t, "2", second.Header)
 	assert.InDelta(t, 1, first.Body["iteration"], 0)
 	assert.InDelta(t, 2, second.Body["iteration"], 0)
+}
+
+func captureProviderHookRequest(
+	t *testing.T,
+	writer http.ResponseWriter,
+	request *http.Request,
+	captures chan<- providerResponseHookCapture,
+) {
+	t.Helper()
+
+	capture := providerResponseHookCapture{
+		Err:    nil,
+		Body:   map[string]any{},
+		Header: request.Header.Get("X-Iteration"),
+	}
+	if err := json.NewDecoder(request.Body).Decode(&capture.Body); err != nil {
+		capture.Err = err
+	}
+
+	captures <- capture
+
+	writer.Header().Set("Content-Type", "application/json")
+}
+
+func writeProviderHookIterationResponse(t *testing.T, writer http.ResponseWriter, requestCount int) {
+	t.Helper()
+
+	if requestCount != 1 {
+		writeTestProviderResponse(t, writer, `{"output_text":"done"}`)
+
+		return
+	}
+
+	arguments, err := json.Marshal(map[string]string{jsonPathKey: testToolPath})
+	require.NoError(t, err)
+	writeTestProviderResponse(
+		t,
+		writer,
+		`{"output":[{"type":"function_call","call_id":"call_1","name":"read","arguments":`+
+			strconv.Quote(string(arguments))+
+			`}]}`,
+	)
 }
 
 type providerResponseHookCapture struct {
@@ -121,15 +147,20 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 	t.Parallel()
 
 	var requests []map[string]any
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var payload map[string]any
 		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		requests = append(requests, payload)
+
 		writer.Header().Set("Content-Type", "application/json")
+
 		if len(requests) == 1 {
 			writeTestProviderResponse(t, writer, anthropicTextReadToolResponse())
+
 			return
 		}
+
 		writeTestProviderResponse(t, writer, `{"content":[{"type":"text","text":"done"}]}`)
 	}))
 	defer server.Close()
@@ -141,6 +172,7 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 
 	result, err := NewHTTPCompletionClient().completeAnthropic(context.Background(), request)
 	require.NoError(t, err)
+
 	response := providerResponseView(result)
 	require.Equal(t, "done", response.Text)
 	require.Len(t, response.ToolEvents, 1)
@@ -161,15 +193,20 @@ func completeOpenAIChatWithResponses(
 	t.Helper()
 
 	var requests []map[string]any
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var payload map[string]any
 		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		requests = append(requests, payload)
+
 		writer.Header().Set("Content-Type", "application/json")
+
 		if len(requests) == 1 {
 			writeTestProviderResponse(t, writer, firstResponse)
+
 			return
 		}
+
 		writeTestProviderResponse(t, writer, secondResponse)
 	}))
 	t.Cleanup(server.Close)
@@ -190,6 +227,7 @@ func openAIChatReadToolResponse() string {
 	if err != nil {
 		panic(err)
 	}
+
 	encodedArguments, err := json.Marshal(string(arguments))
 	if err != nil {
 		panic(err)
@@ -213,8 +251,8 @@ func anthropicTextReadToolMarkup() string {
 
 func containsRoleMessage(messages []any, role string) bool {
 	for _, message := range messages {
-		object, ok := message.(map[string]any)
-		if ok && object[jsonRoleKey] == role {
+		object, matched := message.(map[string]any)
+		if matched && object[jsonRoleKey] == role {
 			return true
 		}
 	}
@@ -224,10 +262,11 @@ func containsRoleMessage(messages []any, role string) bool {
 
 func containsAssistantTextToolUsePrompt(messages []any) bool {
 	for _, message := range messages {
-		object, ok := message.(map[string]any)
-		if !ok || object[jsonRoleKey] != jsonAssistantRole {
+		object, matched := message.(map[string]any)
+		if !matched || object[jsonRoleKey] != jsonAssistantRole {
 			continue
 		}
+
 		content, ok := object[jsonContentKey].(string)
 		if ok && strings.Contains(content, "<tool_use>") {
 			return true
@@ -239,10 +278,11 @@ func containsAssistantTextToolUsePrompt(messages []any) bool {
 
 func containsUserToolResultPrompt(messages []any) bool {
 	for _, message := range messages {
-		object, ok := message.(map[string]any)
-		if !ok || object[jsonRoleKey] != jsonUserRole {
+		object, matched := message.(map[string]any)
+		if !matched || object[jsonRoleKey] != jsonUserRole {
 			continue
 		}
+
 		content, ok := object[jsonContentKey].(string)
 		if ok && strings.HasPrefix(content, "Tool result for read") {
 			return true
@@ -254,6 +294,7 @@ func containsUserToolResultPrompt(messages []any) bool {
 
 func writeTestProviderResponse(t *testing.T, writer http.ResponseWriter, response string) {
 	t.Helper()
+
 	_, err := writer.Write([]byte(response))
 	require.NoError(t, err)
 }

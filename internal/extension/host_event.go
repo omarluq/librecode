@@ -87,12 +87,15 @@ func (event *luaHostEvent) buffer(name string) BufferState {
 	if !ok {
 		return newBufferState(name, "")
 	}
+
 	if buffer.Name == "" {
 		buffer.Name = name
 	}
+
 	if buffer.Chars == nil {
 		buffer.Chars = stringChars(buffer.Text)
 	}
+
 	if buffer.Metadata == nil {
 		buffer.Metadata = map[string]any{}
 	}
@@ -104,9 +107,11 @@ func (event *luaHostEvent) setBuffer(name string, buffer *BufferState) {
 	if buffer.Name == "" {
 		buffer.Name = name
 	}
+
 	if buffer.Chars == nil {
 		buffer.Chars = stringChars(buffer.Text)
 	}
+
 	buffer.Metadata = cloneMap(buffer.Metadata)
 	buffer.Blocks = cloneBufferBlocks(buffer.Blocks)
 	event.buffers[name] = *buffer
@@ -117,9 +122,11 @@ func (event *luaHostEvent) setBuffer(name string, buffer *BufferState) {
 func (event *luaHostEvent) deleteBuffer(name string) {
 	delete(event.buffers, name)
 	delete(event.changedBuffers, name)
+
 	if slices.Contains(event.deletedBuffers, name) {
 		return
 	}
+
 	event.deletedBuffers = append(event.deletedBuffers, name)
 }
 
@@ -127,6 +134,7 @@ func (event *luaHostEvent) removeDeletedBuffer(name string) {
 	for index, deletedBuffer := range event.deletedBuffers {
 		if deletedBuffer == name {
 			event.deletedBuffers = append(event.deletedBuffers[:index], event.deletedBuffers[index+1:]...)
+
 			return
 		}
 	}
@@ -137,6 +145,7 @@ func (event *luaHostEvent) bufferNames() []string {
 	for name := range event.buffers {
 		names = append(names, name)
 	}
+
 	sort.Strings(names)
 
 	return names
@@ -147,6 +156,7 @@ func (event *luaHostEvent) windowNames() []string {
 	for name := range event.windows {
 		names = append(names, name)
 	}
+
 	sort.Strings(names)
 
 	return names
@@ -170,9 +180,11 @@ func (event *luaHostEvent) window(name string) (WindowState, bool) {
 			Visible:   false,
 		}, false
 	}
+
 	if window.Name == "" {
 		window.Name = name
 	}
+
 	if window.Metadata == nil {
 		window.Metadata = map[string]any{}
 	}
@@ -184,6 +196,7 @@ func (event *luaHostEvent) setWindow(name string, window *WindowState) {
 	if window.Name == "" {
 		window.Name = name
 	}
+
 	window.Metadata = cloneMap(window.Metadata)
 	event.windows[name] = *window
 	event.layout.Windows[name] = *window
@@ -195,6 +208,7 @@ func (event *luaHostEvent) setLayout(layout *LayoutState) {
 	if layout.Windows == nil {
 		layout.Windows = map[string]WindowState{}
 	}
+
 	event.layout = cloneLayout(*layout)
 	event.windows = cloneWindows(event.layout.Windows)
 	event.layoutChanged = true
@@ -204,9 +218,11 @@ func (event *luaHostEvent) deleteWindow(name string) {
 	delete(event.windows, name)
 	delete(event.layout.Windows, name)
 	delete(event.changedWindows, name)
+
 	if slices.Contains(event.deletedWindows, name) {
 		return
 	}
+
 	event.deletedWindows = append(event.deletedWindows, name)
 }
 
@@ -214,6 +230,7 @@ func (event *luaHostEvent) removeDeletedWindow(name string) {
 	for index, deletedWindow := range event.deletedWindows {
 		if deletedWindow == name {
 			event.deletedWindows = append(event.deletedWindows[:index], event.deletedWindows[index+1:]...)
+
 			return
 		}
 	}
@@ -223,6 +240,7 @@ func (event *luaHostEvent) appendUIDrawOp(drawOp *UIDrawOp) {
 	if drawOp == nil || drawOp.Window == "" {
 		return
 	}
+
 	event.uiDrawOps = append(event.uiDrawOps, *drawOp)
 }
 
@@ -230,9 +248,11 @@ func (event *luaHostEvent) resetWindowUI(name string) {
 	if name == "" {
 		return
 	}
+
 	if slices.Contains(event.resetUIWindows, name) {
 		return
 	}
+
 	event.resetUIWindows = append(event.resetUIWindows, name)
 }
 
@@ -244,6 +264,7 @@ func (event *luaHostEvent) appendAction(action ActionCall) {
 	if action.Name == "" {
 		return
 	}
+
 	event.actions = append(event.actions, action)
 }
 
@@ -252,13 +273,16 @@ func (event *luaHostEvent) applyLuaResult(value lua.LValue) {
 	if !ok {
 		return
 	}
+
 	if luaTableBool(table, "handled") || luaTableBool(table, "consumed") {
 		event.consumed = true
 	}
+
 	if luaTableBool(table, "stop") || luaTableBool(table, "stopped") {
 		event.consumed = true
 		event.stopped = true
 	}
+
 	event.applyLuaResultBuffers(table.RawGetString(luaFieldBuffers))
 	event.applyLuaResultWindows(table.RawGetString(luaFieldWindows))
 	event.applyLuaResultLayout(table.RawGetString(luaFieldLayout))
@@ -275,6 +299,7 @@ func (event *luaHostEvent) applyLuaResultBuffers(value lua.LValue) {
 	if !ok {
 		return
 	}
+
 	table.ForEach(func(key, bufferValue lua.LValue) {
 		name := key.String()
 		buffer := luaBufferState(name, bufferValue)
@@ -287,6 +312,7 @@ func (event *luaHostEvent) applyLuaResultWindows(value lua.LValue) {
 	if !ok {
 		return
 	}
+
 	table.ForEach(func(key, windowValue lua.LValue) {
 		name := key.String()
 		window := luaWindowState(name, windowValue)
@@ -299,6 +325,7 @@ func (event *luaHostEvent) applyLuaResultLayout(value lua.LValue) {
 	if layout == nil {
 		return
 	}
+
 	event.setLayout(layout)
 }
 
@@ -307,6 +334,7 @@ func (event *luaHostEvent) applyLuaResultActions(value lua.LValue) {
 	if !ok {
 		return
 	}
+
 	for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
 		event.appendAction(luaActionCall(table.RawGetInt(valueIndex)))
 	}
@@ -317,6 +345,7 @@ func (event *luaHostEvent) applyLuaResultDrawOps(value lua.LValue) {
 	if !ok {
 		return
 	}
+
 	for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
 		event.appendUIDrawOp(luaUIDrawOp(table.RawGetInt(valueIndex)))
 	}
@@ -327,6 +356,7 @@ func (event *luaHostEvent) applyLuaResultResetUI(value lua.LValue) {
 	if !ok {
 		return
 	}
+
 	for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
 		event.resetWindowUI(table.RawGetInt(valueIndex).String())
 	}
@@ -337,6 +367,7 @@ func (event *luaHostEvent) applyLuaResultCursor(value lua.LValue) {
 	if cursor == nil {
 		return
 	}
+
 	event.setUICursor(cursor)
 }
 
@@ -345,6 +376,7 @@ func (event *luaHostEvent) applyLuaResultDeletes(value lua.LValue) {
 	if !ok {
 		return
 	}
+
 	for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
 		event.deleteBuffer(table.RawGetInt(valueIndex).String())
 	}
@@ -355,6 +387,7 @@ func (event *luaHostEvent) applyLuaResultDeletedWindows(value lua.LValue) {
 	if !ok {
 		return
 	}
+
 	for valueIndex := 1; valueIndex <= table.Len(); valueIndex++ {
 		event.deleteWindow(table.RawGetInt(valueIndex).String())
 	}
@@ -388,6 +421,7 @@ func cloneBuffer(buffer *BufferState, name string) BufferState {
 	if cloned.Name == "" {
 		cloned.Name = name
 	}
+
 	cloned.Chars = append([]string{}, cloned.Chars...)
 	cloned.Blocks = cloneBufferBlocks(cloned.Blocks)
 	cloned.Metadata = cloneMap(cloned.Metadata)
@@ -415,6 +449,7 @@ func cloneWindows(windows map[string]WindowState) map[string]WindowState {
 	if windows == nil {
 		return map[string]WindowState{}
 	}
+
 	cloned := make(map[string]WindowState, len(windows))
 	for name := range windows {
 		window := windows[name]
@@ -443,6 +478,7 @@ func cloneWindow(window *WindowState, name string) WindowState {
 	if cloned.Name == "" {
 		cloned.Name = name
 	}
+
 	cloned.Metadata = cloneMap(cloned.Metadata)
 
 	return cloned
@@ -468,6 +504,7 @@ func cloneLayoutPtr(layout *LayoutState) *LayoutState {
 	if layout == nil {
 		return nil
 	}
+
 	cloned := cloneLayout(*layout)
 
 	return &cloned
@@ -487,6 +524,7 @@ func cloneUICursor(cursor *UICursor) *UICursor {
 	if cursor == nil {
 		return nil
 	}
+
 	cloned := *cursor
 
 	return &cloned
@@ -496,6 +534,7 @@ func cloneMap(values map[string]any) map[string]any {
 	if values == nil {
 		return map[string]any{}
 	}
+
 	cloned := make(map[string]any, len(values))
 	maps.Copy(cloned, values)
 

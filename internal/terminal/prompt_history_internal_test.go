@@ -54,6 +54,7 @@ func TestPromptHistoryRecordsSubmittedCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("submit returned error: %v", err)
 	}
+
 	if !shouldQuit {
 		t.Fatal("submit should quit for /quit")
 	}
@@ -85,13 +86,16 @@ func TestCtrlCExitsWhenComposerEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleKey returned error: %v", err)
 	}
+
 	if shouldQuit {
 		t.Fatal("first Ctrl+C should not quit")
 	}
+
 	shouldQuit, err = app.handleKey(context.Background(), tcell.NewEventKey(tcell.KeyCtrlC, "", tcell.ModNone))
 	if err != nil {
 		t.Fatalf("handleKey returned error: %v", err)
 	}
+
 	if !shouldQuit {
 		t.Fatal("second Ctrl+C should quit")
 	}
@@ -104,6 +108,7 @@ func pressTerminalKey(t *testing.T, app *App, key tcell.Key, text string) {
 	if err != nil {
 		t.Fatalf("handleKey returned error: %v", err)
 	}
+
 	if shouldQuit {
 		t.Fatal("handleKey should not quit")
 	}

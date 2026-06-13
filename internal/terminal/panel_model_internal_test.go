@@ -17,9 +17,11 @@ func TestEnsureCurrentModel(t *testing.T) {
 	if got, want := len(models), 1; got != want {
 		t.Fatalf("len(models) = %d, want %d", got, want)
 	}
+
 	if got, want := models[0].Provider, testProviderOpenAI; got != want {
 		t.Fatalf("models[0].Provider = %q, want %q", got, want)
 	}
+
 	if got, want := models[0].ID, testGPT5Model; got != want {
 		t.Fatalf("models[0].ID = %q, want %q", got, want)
 	}
@@ -28,6 +30,7 @@ func TestEnsureCurrentModel(t *testing.T) {
 	if got, want := len(models), 2; got != want {
 		t.Fatalf("len(models) after second call = %d, want %d", got, want)
 	}
+
 	if got, want := models[1].Provider, promptSendTestProvider; got != want {
 		t.Fatalf("models[1].Provider = %q, want %q", got, want)
 	}
@@ -38,12 +41,14 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.cfg = promptSendTestConfig()
+
 	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
 		promptSendTestProvider: testPanelAuthCredential(),
 	})
 	if err != nil {
 		t.Fatalf("create auth storage: %v", err)
 	}
+
 	app.models = model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
@@ -56,28 +61,35 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 	})
 
 	app.openModelPanel()
+
 	if got, want := app.selectedPanelKind, panelModel; got != want {
 		t.Fatalf("selectedPanelKind = %q, want %q", got, want)
 	}
+
 	if app.panel == nil || app.panel.Kind() != panelModel {
 		t.Fatal("model panel should be open")
 	}
+
 	if items := app.panel.Items(); len(items) != 2 {
 		t.Fatalf("len(panel.items) = %d, want 2", len(items))
 	}
 
 	app.applyModelSelection(promptSendTestProvider + "/other-model")
+
 	if got, want := app.currentModel(), "other-model"; got != want {
 		t.Fatalf("currentModel = %q, want %q", got, want)
 	}
+
 	if app.sessionID != "" {
 		t.Fatal("render test app should not persist model settings without a session")
 	}
 
 	app.cycleModel(1)
+
 	if got, want := app.currentModel(), promptSendTestModel; got != want {
 		t.Fatalf("currentModel after cycle = %q, want %q", got, want)
 	}
+
 	if values := app.cycleModelValues(); len(values) != 2 {
 		t.Fatalf("len(cycleModelValues) = %d, want 2", len(values))
 	}
@@ -103,6 +115,7 @@ func TestAvailableModelsDoesNotFallbackToUnauthorizedCatalog(t *testing.T) {
 	if len(models) != 1 {
 		t.Fatalf("len(availableModels) = %d, want current model only", len(models))
 	}
+
 	if got, want := models[0].ID, promptSendTestModel; got != want {
 		t.Fatalf("availableModels[0].ID = %q, want %q", got, want)
 	}

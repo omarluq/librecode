@@ -107,22 +107,22 @@ type EntryDataEntity struct {
 	Details                    map[string]any         `json:"details,omitempty"`
 	Display                    *bool                  `json:"display,omitempty"`
 	Label                      *string                `json:"label,omitempty"`
-	ModelFacing                *bool                  `json:"modelFacing,omitempty"`
+	ModelFacing                *bool                  `json:"model_facing,omitempty"`
 	Usage                      *EntryTokenUsageEntity `json:"usage,omitempty"`
-	FromID                     string                 `json:"fromId,omitempty"`
-	BranchFromEntryID          string                 `json:"branchFromEntryId,omitempty"`
-	TargetID                   string                 `json:"targetId,omitempty"`
-	ThinkingLevel              string                 `json:"thinkingLevel,omitempty"`
-	ToolName                   string                 `json:"toolName,omitempty"`
-	ToolStatus                 string                 `json:"toolStatus,omitempty"`
-	ToolArgsJSON               string                 `json:"toolArgsJson,omitempty"`
+	FromID                     string                 `json:"from_id,omitempty"`
+	BranchFromEntryID          string                 `json:"branch_from_entry_id,omitempty"`
+	TargetID                   string                 `json:"target_id,omitempty"`
+	ThinkingLevel              string                 `json:"thinking_level,omitempty"`
+	ToolName                   string                 `json:"tool_name,omitempty"`
+	ToolStatus                 string                 `json:"tool_status,omitempty"`
+	ToolArgsJSON               string                 `json:"tool_args_json,omitempty"`
 	Name                       string                 `json:"name,omitempty"`
-	FirstKeptEntryID           string                 `json:"firstKeptEntryId,omitempty"`
-	CompactionFirstKeptEntryID string                 `json:"compactionFirstKeptEntryId,omitempty"`
-	TokenEstimate              int                    `json:"tokenEstimate,omitempty"`
-	CompactionTokensBefore     int                    `json:"compactionTokensBefore,omitempty"`
-	TokensBefore               int                    `json:"tokensBefore,omitempty"`
-	FromHook                   bool                   `json:"fromHook,omitempty"`
+	FirstKeptEntryID           string                 `json:"first_kept_entry_id,omitempty"`
+	CompactionFirstKeptEntryID string                 `json:"compaction_first_kept_entry_id,omitempty"`
+	TokenEstimate              int                    `json:"token_estimate,omitempty"`
+	CompactionTokensBefore     int                    `json:"compaction_tokens_before,omitempty"`
+	TokensBefore               int                    `json:"tokens_before,omitempty"`
+	FromHook                   bool                   `json:"from_hook,omitempty"`
 }
 
 // TreeNodeEntity is an entry and its direct descendants.
@@ -133,10 +133,10 @@ type TreeNodeEntity struct {
 
 // EntryTokenUsageEntity stores provider-reported token usage on a durable entry.
 type EntryTokenUsageEntity struct {
-	ContextWindow int `json:"contextWindow,omitempty"`
-	ContextTokens int `json:"contextTokens,omitempty"`
-	InputTokens   int `json:"inputTokens,omitempty"`
-	OutputTokens  int `json:"outputTokens,omitempty"`
+	ContextWindow int `json:"context_window,omitempty"`
+	ContextTokens int `json:"context_tokens,omitempty"`
+	InputTokens   int `json:"input_tokens,omitempty"`
+	OutputTokens  int `json:"output_tokens,omitempty"`
 }
 
 // HasAny reports whether the usage entity has any provider-reported values.

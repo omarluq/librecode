@@ -31,6 +31,7 @@ func providerHookDiagnostics(input *llm.HookInput, output llm.HookOutput) map[st
 	if input == nil {
 		return diagnostics
 	}
+
 	diagnostics["mutated_header_count"] = changedStringMapCount(input.Headers, output.Headers)
 	diagnostics["mutated_payload_key_count"] = changedAnyMapCount(input.Payload, output.Payload)
 
@@ -59,6 +60,7 @@ func providerResponseDiagnostics(
 	if result == nil {
 		return map[string]any{}
 	}
+
 	diagnostics := providerBaseDiagnostics(request, attempt)
 	diagnostics["response_text_bytes"] = len(result.Text)
 	diagnostics["finish_reason"] = string(result.FinishReason)
@@ -83,10 +85,12 @@ func providerErrorDiagnostics(
 
 	diagnostics := providerBaseDiagnostics(request, attempt)
 	diagnostics[lifecyclepayload.ErrorKey] = err.Error()
+
 	diagnostics["retryable"] = ShouldRetryModelError(err)
 	if code, ok := providerErrorCode(err); ok {
 		diagnostics["error_code"] = code
 	}
+
 	if status, ok := providerErrorStatus(err); ok {
 		diagnostics["status"] = status
 	}
@@ -107,6 +111,7 @@ func sortedAnyMapKeys(values map[string]any) []string {
 	for key := range values {
 		keys = append(keys, key)
 	}
+
 	sort.Strings(keys)
 
 	return keys
@@ -124,6 +129,7 @@ func toolResultDiagnostics(event *ToolEvent) map[string]any {
 
 func changedStringMapCount(before, after map[string]string) int {
 	changed := 0
+
 	seen := map[string]struct{}{}
 	for key, beforeValue := range before {
 		seen[key] = struct{}{}
@@ -131,6 +137,7 @@ func changedStringMapCount(before, after map[string]string) int {
 			changed++
 		}
 	}
+
 	for key := range after {
 		if _, ok := seen[key]; !ok {
 			changed++
@@ -142,6 +149,7 @@ func changedStringMapCount(before, after map[string]string) int {
 
 func changedAnyMapCount(before, after map[string]any) int {
 	changed := 0
+
 	seen := map[string]struct{}{}
 	for key, beforeValue := range before {
 		seen[key] = struct{}{}
@@ -149,6 +157,7 @@ func changedAnyMapCount(before, after map[string]any) int {
 			changed++
 		}
 	}
+
 	for key := range after {
 		if _, ok := seen[key]; !ok {
 			changed++

@@ -71,7 +71,6 @@ type ContextConfig struct {
 	OutputReserveTokens   int  `mapstructure:"output_reserve_tokens"`
 	ProviderReserveTokens int  `mapstructure:"provider_reserve_tokens"`
 	SafetyMarginTokens    int  `mapstructure:"safety_margin_tokens"`
-	KeepRecentTokens      int  `mapstructure:"keep_recent_tokens"`
 	PreflightEnabled      bool `mapstructure:"preflight_enabled"`
 }
 
@@ -99,14 +98,17 @@ type RetryConfig struct {
 // Normalized returns retry settings with safe defaults for omitted values.
 func (retry RetryConfig) Normalized() RetryConfig {
 	if retry.MaxAttempts <= 0 {
-		retry.MaxAttempts = 3
+		retry.MaxAttempts = defaultRetryMaxAttempts
 	}
+
 	if retry.BaseDelay <= 0 {
-		retry.BaseDelay = 2 * time.Second
+		retry.BaseDelay = defaultRetryBaseDelay
 	}
+
 	if retry.MaxDelay <= 0 {
-		retry.MaxDelay = 30 * time.Second
+		retry.MaxDelay = defaultRetryMaxDelay
 	}
+
 	if retry.MaxDelay < retry.BaseDelay {
 		retry.MaxDelay = retry.BaseDelay
 	}
@@ -158,6 +160,7 @@ func (config *Config) validateApp() error {
 	if config.App.Name == "" {
 		return errors.New("config: app.name is required")
 	}
+
 	if config.App.WorkingLoader.Text == "" {
 		return errors.New("config: app.working_loader.text is required")
 	}
@@ -189,12 +192,15 @@ func (config *Config) validateDatabase() error {
 	if config.Database.MaxOpenConns < 1 {
 		return errors.New("config: database.max_open_conns must be greater than zero")
 	}
+
 	if config.Database.MaxIdleConns < 0 {
 		return errors.New("config: database.max_idle_conns cannot be negative")
 	}
+
 	if config.Database.ConnMaxLifetime < 0 {
 		return errors.New("config: database.conn_max_lifetime cannot be negative")
 	}
+
 	if config.Database.BusyTimeout < 0 {
 		return errors.New("config: database.busy_timeout cannot be negative")
 	}
@@ -207,6 +213,7 @@ func (config *Config) validateExtensions() error {
 		if extensionUse.Source == "" {
 			return errors.New("config: extensions.use source is required")
 		}
+
 		if _, err := extension.ParseSourceRef(extensionUse.Source, extensionUse.Version); err != nil {
 			return fmt.Errorf("config: invalid extensions.use source %q: %w", extensionUse.Source, err)
 		}
@@ -220,12 +227,15 @@ func (config *Config) validateAssistant() error {
 	if config.Assistant.Retry.MaxAttempts < 0 {
 		return errors.New("config: assistant.retry.max_attempts cannot be negative")
 	}
+
 	if config.Assistant.Retry.BaseDelay < 0 {
 		return errors.New("config: assistant.retry.base_delay cannot be negative")
 	}
+
 	if config.Assistant.Retry.MaxDelay < 0 {
 		return errors.New("config: assistant.retry.max_delay cannot be negative")
 	}
+
 	config.Assistant.Retry = retry
 
 	return nil
@@ -235,14 +245,13 @@ func (config *Config) validateContext() error {
 	if config.Context.OutputReserveTokens < 0 {
 		return errors.New("config: context.output_reserve_tokens cannot be negative")
 	}
+
 	if config.Context.ProviderReserveTokens < 0 {
 		return errors.New("config: context.provider_reserve_tokens cannot be negative")
 	}
+
 	if config.Context.SafetyMarginTokens < 0 {
 		return errors.New("config: context.safety_margin_tokens cannot be negative")
-	}
-	if config.Context.KeepRecentTokens < 0 {
-		return errors.New("config: context.keep_recent_tokens cannot be negative")
 	}
 
 	return nil
@@ -252,9 +261,11 @@ func (config *Config) validateModels() error {
 	if config.Models.Discovery.Enabled && config.Models.Discovery.SourceURL == "" {
 		return errors.New("config: models.discovery.source_url is required when discovery is enabled")
 	}
+
 	if config.Models.Discovery.CacheTTL < 0 {
 		return errors.New("config: models.discovery.cache_ttl cannot be negative")
 	}
+
 	if config.Models.Discovery.FetchTimeout < 0 {
 		return errors.New("config: models.discovery.fetch_timeout cannot be negative")
 	}
@@ -266,6 +277,7 @@ func (config *Config) validateCache() error {
 	if config.Cache.Capacity < 1 {
 		return errors.New("config: cache.capacity must be greater than zero")
 	}
+
 	if config.Cache.TTL <= 0 {
 		return errors.New("config: cache.ttl must be greater than zero")
 	}

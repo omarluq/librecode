@@ -10,10 +10,10 @@ type ResourceDiagnostic struct {
 
 // ResourceCollision describes a resource name collision.
 type ResourceCollision struct {
-	ResourceType string `json:"resourceType"`
+	ResourceType string `json:"resource_type"`
 	Name         string `json:"name"`
-	WinnerPath   string `json:"winnerPath"`
-	LoserPath    string `json:"loserPath"`
+	WinnerPath   string `json:"winner_path"`
+	LoserPath    string `json:"loser_path"`
 }
 
 func warningDiagnostic(message, path string) ResourceDiagnostic {

@@ -18,7 +18,10 @@ import (
 	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 )
 
-const sqliteDriverName = "sqlite"
+const (
+	sqliteDriverName = "sqlite"
+	databaseDirMode  = 0o700
+)
 
 // DatabaseService owns the session database connection and schema lifecycle.
 type DatabaseService struct {
@@ -31,12 +34,13 @@ type DatabaseService struct {
 // NewDatabaseService opens the session database and applies embedded migrations.
 func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 	cfg := do.MustInvoke[*ConfigService](injector).Get()
+
 	databasePath, err := resolveDatabasePath(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	mkdirErr := os.MkdirAll(filepath.Dir(databasePath), 0o700)
+	mkdirErr := os.MkdirAll(filepath.Dir(databasePath), databaseDirMode)
 	if mkdirErr != nil {
 		return nil, oops.In("database").Code("mkdir").With("path", databasePath).Wrapf(mkdirErr, "create database dir")
 	}
@@ -66,14 +70,14 @@ func (service *DatabaseService) Path() string {
 
 // HealthCheck verifies the database connection is alive.
 func (service *DatabaseService) HealthCheck(ctx context.Context) error {
-	return service.DB.PingContext(ctx)
+	return serviceError(service.DB.PingContext(ctx), "ping database")
 }
 
 // Shutdown closes the database connection.
 func (service *DatabaseService) Shutdown(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return serviceError(ctx.Err(), "shutdown database")
 	default:
 		if err := service.DB.Close(); err != nil {
 			return fmt.Errorf("database: close: %w", err)
@@ -85,6 +89,7 @@ func (service *DatabaseService) Shutdown(ctx context.Context) error {
 
 func openSQLiteDatabase(databasePath string, cfg config.DatabaseConfig) (*sql.DB, error) {
 	dsn := database.SQLiteDSN(databasePath, database.SQLiteOptions{BusyTimeout: cfg.BusyTimeout})
+
 	connection, err := sql.Open(sqliteDriverName, dsn)
 	if err != nil {
 		return nil, oops.In("database").Code("open").With("path", databasePath).Wrapf(err, "open database")

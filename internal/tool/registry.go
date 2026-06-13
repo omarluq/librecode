@@ -58,6 +58,7 @@ func (registry *Registry) Register(executor Executor) error {
 			With("tool", definition.Name).
 			Wrapf(ErrDuplicateTool, "register tool")
 	}
+
 	registry.executors[definition.Name] = executor
 
 	return nil
@@ -85,15 +86,19 @@ func (registry *Registry) Execute(ctx context.Context, name string, input map[st
 			With("tool", name).
 			Wrapf(ErrUnknownTool, "resolve tool")
 	}
+
 	if input == nil {
 		input = map[string]any{}
 	}
+
 	definition := executor.Definition()
 	if err := validateToolInput(&definition, input); err != nil {
 		return emptyToolResult(), err
 	}
 
-	return executor.Execute(ctx, input)
+	result, err := executor.Execute(ctx, input)
+
+	return result, toolWrap(err, "execute tool")
 }
 
 // ExecuteJSON runs a named tool with raw JSON object arguments.
@@ -113,15 +118,15 @@ func AllDefinitions() []Definition {
 	return NewRegistry("").Definitions()
 }
 
-func decodeInput[T any](input map[string]any) (T, error) {
-	var decoded T
+func decodeInput(input map[string]any, decoded any) error {
 	payload, err := json.Marshal(input)
 	if err != nil {
-		return decoded, oops.In("tool").Code("encode_input").Wrapf(err, "encode tool input")
-	}
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		return decoded, oops.In("tool").Code("decode_input").Wrapf(err, "decode tool input")
+		return oops.In("tool").Code("encode_input").Wrapf(err, "encode tool input")
 	}
 
-	return decoded, nil
+	if err := json.Unmarshal(payload, decoded); err != nil {
+		return oops.In("tool").Code("decode_input").Wrapf(err, "decode tool input")
+	}
+
+	return nil
 }

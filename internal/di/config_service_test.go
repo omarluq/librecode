@@ -21,7 +21,7 @@ func TestNewContainer_DisableExtensionsOverride(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
 
-	cfg := di.MustInvoke[*di.ConfigService](container).Get()
+	cfg := container.ConfigService().Get()
 	assert.False(t, cfg.Extensions.Enabled)
 }
 
@@ -35,6 +35,6 @@ func TestConfigServiceTracksLoadedPath(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
 
-	configService := di.MustInvoke[*di.ConfigService](container)
+	configService := container.ConfigService()
 	assert.Equal(t, configPath, configService.Path())
 }

@@ -26,12 +26,15 @@ func (app *App) applyPanelSelection(ctx context.Context, value string) error {
 	case panelModel:
 		app.applyModelSelection(value)
 		app.closePanel()
+
 		return nil
 	case panelScopedModels:
 		app.toggleScopedModel(value)
+
 		return nil
 	case panelSettings:
 		app.applySettingSelection(value)
+
 		return nil
 	case panelHotkeys, panelChangelog:
 		return nil

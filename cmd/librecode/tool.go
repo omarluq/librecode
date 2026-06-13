@@ -40,7 +40,8 @@ func newToolListCmd() *cobra.Command {
 
 func runToolList(cmd *cobra.Command, _ []string) error {
 	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-		registry := di.MustInvoke[*di.ToolService](container).Registry
+		registry := container.ToolService().Registry
+
 		definitions := registry.Definitions()
 		for index := range definitions {
 			if err := printToolDefinition(cmd, &definitions[index]); err != nil {
@@ -66,14 +67,16 @@ func newToolRunCmd() *cobra.Command {
 			}
 
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				service := di.MustInvoke[*di.ToolService](container)
+				service := container.ToolService()
+
 				registry, err := toolRegistryForCWD(service, cwd)
 				if err != nil {
 					return err
 				}
+
 				result, err := registry.ExecuteJSON(cmd.Context(), args[0], payload)
 				if err != nil {
-					return err
+					return cliError(err, "execute tool")
 				}
 
 				text := strings.TrimRight(result.Text(), "\n")
@@ -105,6 +108,7 @@ func toolRegistryForCWD(service *di.ToolService, cwd string) (*builtintool.Regis
 	if strings.TrimSpace(cwd) == "" {
 		return service.Registry, nil
 	}
+
 	absoluteCWD, err := filepath.Abs(cwd)
 	if err != nil {
 		return nil, oops.In("tool").Code("resolve_cwd").Wrapf(err, "resolve tool cwd")
@@ -117,11 +121,13 @@ func toolPayload(cmd *cobra.Command, args []string) ([]byte, error) {
 	if len(args) == 0 {
 		return []byte("{}"), nil
 	}
+
 	if len(args) == 1 && args[0] == "-" {
 		payload, err := limitio.ReadAll(cmd.InOrStdin(), toolJSONStdinLimitBytes, "tool JSON stdin")
 		if err != nil {
 			return []byte{}, oops.Wrapf(err, "read tool args")
 		}
+
 		if strings.TrimSpace(string(payload)) == "" {
 			return []byte("{}"), nil
 		}

@@ -107,7 +107,7 @@ func (client *HTTPClient) Complete(
 ) (*CompletionResult, error) {
 	response, err := client.provider.Complete(ctx, providerRequestFromCompletionRequest(request))
 	if err != nil {
-		return nil, err
+		return nil, assistantError(err, "complete provider request")
 	}
 
 	return completionResultFromLLMResponse(response), nil

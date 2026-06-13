@@ -118,6 +118,7 @@ func (registry *Registry) HasAuth(provider string) bool {
 	if registry.auth != nil && registry.auth.HasAuth(provider) {
 		return true
 	}
+
 	registry.lock.RLock()
 	defer registry.lock.RUnlock()
 
@@ -136,6 +137,7 @@ func (registry *Registry) RequestAuth(provider string) RequestAuth {
 			apiKey = resolvedAPIKey
 		}
 	}
+
 	if apiKey == "" && config.AuthHeader {
 		return RequestAuth{Headers: cloneStringMap(config.Headers), APIKey: "", Error: "missing API key", OK: false}
 	}
@@ -150,15 +152,18 @@ func (registry *Registry) RequestAuthContext(ctx context.Context, provider strin
 	registry.lock.RUnlock()
 
 	apiKey := config.APIKey
+
 	if registry.auth != nil {
 		resolvedAPIKey, ok, err := registry.auth.APIKeyContext(ctx, provider)
 		if err != nil {
 			return RequestAuth{Headers: cloneStringMap(config.Headers), APIKey: "", Error: err.Error(), OK: false}
 		}
+
 		if ok {
 			apiKey = resolvedAPIKey
 		}
 	}
+
 	if apiKey == "" {
 		return RequestAuth{
 			Headers: cloneStringMap(config.Headers),
@@ -176,6 +181,7 @@ func registryOptions(options *RegistryOptions) *RegistryOptions {
 		if len(options.BuiltIns) == 0 {
 			copyOptions := *options
 			copyOptions.BuiltIns = BuiltInModels()
+
 			return &copyOptions
 		}
 

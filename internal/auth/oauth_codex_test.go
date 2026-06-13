@@ -22,6 +22,7 @@ func TestNewOpenAICodexFlowMatchesOAuthShape(t *testing.T) {
 	authURL := auth.NewOpenAICodexFlowURLForTest(t)
 	parsed, err := url.Parse(authURL)
 	require.NoError(t, err)
+
 	query := parsed.Query()
 
 	assert.Equal(t, "code", query.Get("response_type"))
@@ -58,9 +59,8 @@ func TestExchangeOpenAICodexCodeSendsPKCEForm(t *testing.T) {
 		assert.NoError(t, err)
 	}))
 	defer server.Close()
-	auth.SetOpenAICodexTokenURLForTest(t, server.URL)
 
-	credential, err := auth.ExchangeOpenAICodexCodeForTest(t.Context(), "auth-code", "verifier")
+	credential, err := auth.ExchangeOpenAICodexCodeForTest(t.Context(), "auth-code", "verifier", server.URL)
 	require.NoError(t, err)
 	assert.Equal(t, auth.CredentialTypeOAuth, credential.Type)
 	assert.Equal(t, "acct_123", credential.AccountID)
@@ -85,9 +85,8 @@ func TestRefreshOpenAICodexSendsRefreshForm(t *testing.T) {
 		assert.NoError(t, err)
 	}))
 	defer server.Close()
-	auth.SetOpenAICodexTokenURLForTest(t, server.URL)
 
-	credential, err := auth.RefreshOpenAICodexForTest(t.Context(), "old-refresh")
+	credential, err := auth.RefreshOpenAICodexForTest(t.Context(), "old-refresh", server.URL)
 	require.NoError(t, err)
 	assert.Equal(t, "acct_refresh", credential.AccountID)
 	assert.Equal(t, "new-refresh", credential.Refresh)
@@ -102,9 +101,8 @@ func TestOpenAICodexTokenErrorIncludesBody(t *testing.T) {
 		assert.NoError(t, err)
 	}))
 	defer server.Close()
-	auth.SetOpenAICodexTokenURLForTest(t, server.URL)
 
-	_, err := auth.RefreshOpenAICodexForTest(t.Context(), "refresh")
+	_, err := auth.RefreshOpenAICodexForTest(t.Context(), "refresh", server.URL)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "token request failed")
 	assert.Contains(t, err.Error(), "blocked")
@@ -112,6 +110,7 @@ func TestOpenAICodexTokenErrorIncludesBody(t *testing.T) {
 
 func testOpenAICodexJWT(t *testing.T, accountID string) string {
 	t.Helper()
+
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
 	payloadBytes, err := json.Marshal(map[string]any{
 		"https://api.openai.com/auth": map[string]any{
@@ -119,6 +118,7 @@ func testOpenAICodexJWT(t *testing.T, accountID string) string {
 		},
 	})
 	require.NoError(t, err)
+
 	payload := base64.RawURLEncoding.EncodeToString(payloadBytes)
 
 	return strings.Join([]string{header, payload, "signature"}, ".")

@@ -158,6 +158,7 @@ func (bus *Bus) unsubscribe(subscriptionID uint64) {
 	if !ok {
 		return
 	}
+
 	subscription.Unsubscribe()
 	delete(bus.subscriptions, subscriptionID)
 }

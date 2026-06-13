@@ -23,7 +23,9 @@ func TestExtensionServiceUsesProjectLockfile(t *testing.T) {
 
 	projectConfig := filepath.Join(cwd, ".librecode", "config.yaml")
 	projectLock := filepath.Join(cwd, ".librecode", extension.LockFileName)
+
 	writeDIFile(t, projectConfig, []byte("extensions:\n  use:\n    - github:owner/repo\n"))
+
 	lockFile := extension.LockFile{Extensions: map[string]extension.LockedExtension{
 		"github:owner/repo": {Resolved: "", Version: "v9.9.9"},
 	}}
@@ -36,7 +38,7 @@ func TestExtensionServiceUsesProjectLockfile(t *testing.T) {
 		assert.True(t, report.Succeed, report.Error())
 	})
 
-	state := di.MustInvoke[*di.ExtensionService](container).State
+	state := container.ExtensionService().State
 	require.Len(t, state.Configured, 1)
 	assert.Equal(t, "v9.9.9", state.Configured[0].Lock.Version)
 }
@@ -85,6 +87,7 @@ func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping symlink test on Windows: symlinks require elevated privileges")
 	}
+
 	require.NoError(t, os.Symlink(oldname, newname))
 }
 

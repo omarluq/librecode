@@ -25,6 +25,7 @@ func TestNewAssistantServiceWiresRuntimeOptions(t *testing.T) {
 	injector := do.New()
 	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: ""})
 	do.ProvideValue(injector, newTestDatabaseService(t))
+
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	do.ProvideValue(injector, &ExtensionService{
 		Manager: extension.NewManager(logger),

@@ -2,32 +2,37 @@ package tool
 
 import "sync"
 
-var mutationLocks = struct {
+type fileMutationLocks struct {
 	files map[string]*sync.Mutex
 	lock  sync.Mutex
-}{
-	lock:  sync.Mutex{},
-	files: map[string]*sync.Mutex{},
 }
 
-func withFileMutation[T any](absolutePath string, mutate func() (T, error)) (T, error) {
-	fileLock := mutationLockFor(absolutePath)
+func newFileMutationLocks() *fileMutationLocks {
+	return &fileMutationLocks{
+		files: map[string]*sync.Mutex{},
+		lock:  sync.Mutex{},
+	}
+}
+
+func (locks *fileMutationLocks) mutate(absolutePath string, mutate func() (Result, error)) (Result, error) {
+	fileLock := locks.lockFor(absolutePath)
 	fileLock.Lock()
 	defer fileLock.Unlock()
 
 	return mutate()
 }
 
-func mutationLockFor(absolutePath string) *sync.Mutex {
-	mutationLocks.lock.Lock()
-	defer mutationLocks.lock.Unlock()
+func (locks *fileMutationLocks) lockFor(absolutePath string) *sync.Mutex {
+	locks.lock.Lock()
+	defer locks.lock.Unlock()
 
-	fileLock, ok := mutationLocks.files[absolutePath]
+	fileLock, ok := locks.files[absolutePath]
 	if ok {
 		return fileLock
 	}
+
 	fileLock = &sync.Mutex{}
-	mutationLocks.files[absolutePath] = fileLock
+	locks.files[absolutePath] = fileLock
 
 	return fileLock
 }

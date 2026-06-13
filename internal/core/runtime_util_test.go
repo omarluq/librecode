@@ -48,6 +48,7 @@ func TestSessionCWDReportsMissingStoredDirectory(t *testing.T) {
 	assert.Equal(t, missingCWD, issue.SessionCWD)
 	assert.Contains(t, core.FormatMissingSessionCWDError(issue), "Session file: "+testSessionFile)
 	assert.Contains(t, core.FormatMissingSessionCWDPrompt(issue), fallbackCWD)
+
 	var missingErr *core.MissingSessionCWDError
 	require.ErrorAs(t, core.AssertSessionCWDExists(testSessionCWDSource{
 		cwd:         missingCWD,
@@ -81,8 +82,11 @@ func TestTimingsRecordsElapsedSegments(t *testing.T) {
 		return current
 	})
 	current = current.Add(25 * time.Millisecond)
+
 	timings.Mark("load")
+
 	current = current.Add(75 * time.Millisecond)
+
 	timings.Mark("render")
 
 	entries := timings.Entries()

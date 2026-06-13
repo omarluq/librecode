@@ -72,6 +72,7 @@ func (manager *Manager) luaKeymapAPI(extensionRuntime *luaExtension) *lua.LTable
 func (manager *Manager) luaCreateAutocmd(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		events := luaEventNames(state.CheckAny(1))
+
 		priority, function := luaAutocmdArgs(state)
 		for _, eventName := range events {
 			manager.registerHandler(extensionRuntime, eventName, priority, function)
@@ -84,11 +85,13 @@ func (manager *Manager) luaCreateAutocmd(extensionRuntime *luaExtension) lua.LGF
 func (manager *Manager) luaCreateNamespace() lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
+
 		manager.lock.Lock()
 		defer manager.lock.Unlock()
 
 		if namespaceID, ok := manager.namespaces[name]; ok {
 			state.Push(lua.LNumber(namespaceID))
+
 			return 1
 		}
 
@@ -119,9 +122,9 @@ func (manager *Manager) luaCreateUserCommand(extensionRuntime *luaExtension) lua
 func (manager *Manager) luaKeymapSet(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		targets := luaKeymapTargets(state.CheckAny(1))
-		lhs := normalizeKeySpec(state.CheckString(2))
-		function := state.CheckFunction(3)
-		options := state.OptTable(4, state.NewTable())
+		lhs := normalizeKeySpec(state.CheckString(luaFirstArgument))
+		function := state.CheckFunction(luaSecondArgument)
+		options := state.OptTable(luaThirdArgument, state.NewTable())
 		priority := int(lua.LVAsNumber(options.RawGetString("priority")))
 		description := luaTableString(options, "desc", luaTableString(options, "description", ""))
 
@@ -136,8 +139,9 @@ func (manager *Manager) luaKeymapSet(extensionRuntime *luaExtension) lua.LGFunct
 func (manager *Manager) luaKeymapDel(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		targets := luaKeymapTargets(state.CheckAny(1))
-		lhs := normalizeKeySpec(state.CheckString(2))
+		lhs := normalizeKeySpec(state.CheckString(luaFirstArgument))
 		targetSet := make(map[string]struct{}, len(targets))
+
 		labels := make(map[string]struct{}, len(targets))
 		for _, target := range targets {
 			key := target.key()
@@ -154,8 +158,10 @@ func (manager *Manager) luaKeymapDel(extensionRuntime *luaExtension) lua.LGFunct
 			if keymap.extension == extensionRuntime && sameTarget && keymap.lhs == lhs {
 				continue
 			}
+
 			keymaps = append(keymaps, keymap)
 		}
+
 		manager.keymaps = keymaps
 		extensionRuntime.keymaps = removeKeymapLabels(extensionRuntime.keymaps, labels)
 
@@ -169,6 +175,7 @@ func removeKeymapLabels(keymaps []string, labels map[string]struct{}) []string {
 		if _, ok := labels[keymap]; ok {
 			continue
 		}
+
 		filtered = append(filtered, keymap)
 	}
 
@@ -202,6 +209,7 @@ func (manager *Manager) registerKeymap(
 	function *lua.LFunction,
 ) {
 	target = normalizeKeymapTarget(target)
+
 	manager.lock.Lock()
 	manager.nextHandlerOrder++
 	manager.keymaps = append(manager.keymaps, luaKeymap{
@@ -220,7 +228,7 @@ func (manager *Manager) registerKeymap(
 func (manager *Manager) runKeymaps(ctx context.Context, event *luaHostEvent) error {
 	for _, keymap := range manager.keymapsFor(event) {
 		if err := ctx.Err(); err != nil {
-			return err
+			return extensionError(err, "check extension context")
 		}
 
 		result, err := callLuaPrepared(
@@ -234,10 +242,13 @@ func (manager *Manager) runKeymaps(ctx context.Context, event *luaHostEvent) err
 		if err != nil {
 			return fmt.Errorf("extension: keymap %s %q failed: %w", keymap.target.key(), keymap.lhs, err)
 		}
-		if result == lua.LTrue {
+
+		if result.IsTrue() {
 			event.consumed = true
 		}
-		event.applyLuaResult(result)
+
+		result.ApplyTo(event)
+
 		if event.stopped {
 			return nil
 		}
@@ -253,18 +264,23 @@ func (manager *Manager) keymapsFor(event *luaHostEvent) []luaKeymap {
 
 	eventKey := normalizeKeySpec(event.key.Key)
 	eventTargets := keymapEventTargets(event)
+
 	matched := make([]luaKeymap, 0, len(keymaps))
 	for _, keymap := range keymaps {
 		if keymap.lhs != keymapWildcard && keymap.lhs != eventKey {
 			continue
 		}
+
 		if _, ok := eventTargets[keymap.target.key()]; !ok {
 			continue
 		}
+
 		matched = append(matched, keymap)
 	}
+
 	sort.SliceStable(matched, func(leftIndex, rightIndex int) bool {
 		left := matched[leftIndex]
+
 		right := matched[rightIndex]
 		if left.priority == right.priority {
 			return left.order < right.order
@@ -294,21 +310,24 @@ func addKeymapTarget(targets map[string]struct{}, scope, name string) {
 	if target.Name == "" && target.Scope != keymapScopeGlobal {
 		return
 	}
+
 	targets[target.key()] = struct{}{}
 }
 
 func luaAutocmdArgs(state *lua.LState) (priority int, function *lua.LFunction) {
-	second := state.CheckAny(2)
+	second := state.CheckAny(luaFirstArgument)
 	if handler, ok := second.(*lua.LFunction); ok {
 		return 0, handler
 	}
 
-	options := state.CheckTable(2)
+	options := state.CheckTable(luaFirstArgument)
 	priority = int(lua.LVAsNumber(options.RawGetString("priority")))
+
 	function = luaTableFunction(options, "callback")
 	if function == nil {
 		function = luaTableFunction(options, "command")
 	}
+
 	if function == nil {
 		state.RaiseError("autocmd callback must be a function")
 	}
@@ -317,13 +336,14 @@ func luaAutocmdArgs(state *lua.LState) (priority int, function *lua.LFunction) {
 }
 
 func luaUserCommandArgs(state *lua.LState) (description string, function *lua.LFunction) {
-	second := state.CheckAny(2)
+	second := state.CheckAny(luaFirstArgument)
 	if handler, ok := second.(*lua.LFunction); ok {
 		return "", handler
 	}
 
-	options := state.CheckTable(2)
+	options := state.CheckTable(luaFirstArgument)
 	description = luaTableString(options, "desc", luaTableString(options, "description", ""))
+
 	function = luaTableFunction(options, "callback")
 	if function == nil {
 		state.RaiseError("command callback must be a function")
@@ -392,6 +412,7 @@ func globalKeymapTarget() keymapTarget {
 
 func normalizeKeymapTarget(target keymapTarget) keymapTarget {
 	target.Scope = normalizeKeymapScope(target.Scope)
+
 	target.Name = normalizeKeymapName(target.Name)
 	if target.Scope == keymapScopeGlobal || target.Name == keymapScopeGlobal {
 		return globalKeymapTarget()
@@ -413,6 +434,7 @@ func (target keymapTarget) key() string {
 	if target.Scope == keymapScopeGlobal {
 		return keymapScopeGlobal
 	}
+
 	if target.Scope == "" {
 		return target.Name
 	}
@@ -425,9 +447,11 @@ func normalizeKeySpec(key string) string {
 	if key == "" {
 		return ""
 	}
+
 	if strings.HasPrefix(key, "<") && strings.HasSuffix(key, ">") {
 		key = strings.TrimSuffix(strings.TrimPrefix(key, "<"), ">")
 	}
+
 	key = strings.ReplaceAll(key, "c-", "ctrl+")
 	key = strings.ReplaceAll(key, "ctrl-", "ctrl+")
 	key = strings.ReplaceAll(key, "control-", "ctrl+")

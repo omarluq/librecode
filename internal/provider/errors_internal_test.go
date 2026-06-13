@@ -15,6 +15,7 @@ func TestProviderStatusErrorUsesStructuredMessage(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "rate limited")
+
 	var coded oops.OopsError
 	require.ErrorAs(t, err, &coded)
 	assert.Equal(t, "provider_status", coded.Code())
@@ -41,6 +42,7 @@ func TestProviderErrorToOopsUsesFallbackAndMetadata(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "provider returned an error")
+
 	var coded oops.OopsError
 	require.ErrorAs(t, err, &coded)
 	assert.Equal(t, "provider_error", coded.Code())

@@ -28,19 +28,24 @@ func formatToolEvent(event *ToolEvent, includeStructuredError bool) string {
 	if event == nil {
 		return "tool: "
 	}
+
 	parts := []string{"tool: " + event.Name}
 	if strings.TrimSpace(event.ArgumentsJSON) != "" {
 		parts = append(parts, "arguments:", event.ArgumentsJSON)
 	}
+
 	if event.Error != "" {
 		parts = append(parts, "error:", event.Error)
 	}
+
 	if includeStructuredError && event.IsError {
 		parts = append(parts, "is_error: true")
 	}
+
 	if strings.TrimSpace(event.DetailsJSON) != "" {
 		parts = append(parts, "details:", event.DetailsJSON)
 	}
+
 	if strings.TrimSpace(event.Result) != "" {
 		parts = append(parts, "output:", event.Result)
 	}

@@ -41,29 +41,42 @@ type Action struct {
 }
 
 // HandleKey mutates panel selection/query state for a key event and returns any selected action.
+const pageSelectionStep = 10
+
+// HandleKey applies a keyboard event to the panel and returns the selected action.
 func (model *Model) HandleKey(event *tcell.EventKey, bindings KeyMatcher) Action {
 	if bindings.Matches(event, ActionSelectCancel) {
 		return Action{Type: ActionCancel, Value: ""}
 	}
+
 	if bindings.Matches(event, ActionSelectConfirm) {
 		return model.selectedAction()
 	}
+
 	if bindings.Matches(event, ActionSelectUp) {
 		model.MoveSelection(-1)
+
 		return Action{Type: ActionNone, Value: ""}
 	}
+
 	if bindings.Matches(event, ActionSelectDown) {
 		model.MoveSelection(1)
+
 		return Action{Type: ActionNone, Value: ""}
 	}
+
 	if bindings.Matches(event, ActionSelectPageUp) {
-		model.MoveSelection(-10)
+		model.MoveSelection(-pageSelectionStep)
+
 		return Action{Type: ActionNone, Value: ""}
 	}
+
 	if bindings.Matches(event, ActionSelectPageDown) {
-		model.MoveSelection(10)
+		model.MoveSelection(pageSelectionStep)
+
 		return Action{Type: ActionNone, Value: ""}
 	}
+
 	model.handleSearchKey(event)
 
 	return Action{Type: ActionNone, Value: ""}
@@ -81,10 +94,13 @@ func (model *Model) handleSearchKey(event *tcell.EventKey) {
 	if model == nil || event == nil || !model.searchable {
 		return
 	}
+
 	if event.Key() == tcell.KeyBackspace || event.Key() == tcell.KeyBackspace2 {
 		model.BackspaceQuery()
+
 		return
 	}
+
 	if event.Key() == tcell.KeyRune {
 		model.AppendQueryRune(keyevent.Rune(event))
 	}

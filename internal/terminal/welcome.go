@@ -16,13 +16,15 @@ const (
 	welcomePaddingY      = 1
 )
 
-var welcomeArt = []string{
-	" ██╗     ██╗██████╗ ██████╗ ███████╗ ██████╗ ██████╗ ██████╗ ███████╗",
-	" ██║     ██║██╔══██╗██╔══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝",
-	" ██║     ██║██████╔╝██████╔╝█████╗  ██║     ██║   ██║██║  ██║█████╗  ",
-	" ██║     ██║██╔══██╗██╔══██╗██╔══╝  ██║     ██║   ██║██║  ██║██╔══╝  ",
-	" ███████╗██║██████╔╝██║  ██║███████╗╚██████╗╚██████╔╝██████╔╝███████╗",
-	" ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝",
+func welcomeArt() []string {
+	return []string{
+		" ██╗     ██╗██████╗ ██████╗ ███████╗ ██████╗ ██████╗ ██████╗ ███████╗",
+		" ██║     ██║██╔══██╗██╔══██╗██╔════╝██╔════╝██╔═══██╗██╔══██╗██╔════╝",
+		" ██║     ██║██████╔╝██████╔╝█████╗  ██║     ██║   ██║██║  ██║█████╗  ",
+		" ██║     ██║██╔══██╗██╔══██╗██╔══╝  ██║     ██║   ██║██║  ██║██╔══╝  ",
+		" ███████╗██║██████╔╝██║  ██║███████╗╚██████╗╚██████╔╝██████╔╝███████╗",
+		" ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝",
+	}
 }
 
 func (app *App) addWelcomeMessage() {
@@ -31,11 +33,13 @@ func (app *App) addWelcomeMessage() {
 
 func (app *App) renderWelcomeMessage(width int, content string) []rendertext.Line {
 	bodyLines := welcomeLinesFromContent(content)
-	lines := make([]rendertext.Line, 0, len(bodyLines)+(welcomePaddingY*2))
+	lines := make([]rendertext.Line, 0, len(bodyLines)+(welcomePaddingY*welcomeDoublePadding))
 	app.appendWelcomePaddingLines(&lines, width, welcomePaddingY)
+
 	for index, line := range bodyLines {
 		lines = append(lines, app.welcomeStyledLine(width, index, line))
 	}
+
 	app.appendWelcomePaddingLines(&lines, width, welcomePaddingY)
 
 	return lines
@@ -47,21 +51,25 @@ func (app *App) drawWelcomeOnly(width, height, row int) int {
 	marginRows := min(welcomeTopMarginRows, max(0, availableRows-1))
 	row += marginRows
 	availableRows -= marginRows
-	bodyRows := min(len(bodyLines), max(0, availableRows-(welcomePaddingY*2)))
+
+	bodyRows := min(len(bodyLines), max(0, availableRows-(welcomePaddingY*welcomeDoublePadding)))
 	if bodyRows == 0 && availableRows > 0 {
 		bodyRows = min(len(bodyLines), availableRows)
 	}
+
 	if welcomePaddingY > 0 && availableRows > bodyRows {
 		paddingRows := min(welcomePaddingY, availableRows-bodyRows)
 		app.writeWelcomePaddingRows(row, width, paddingRows)
 		row += paddingRows
 		availableRows -= paddingRows
 	}
+
 	bodyLines = bodyLines[:bodyRows]
 	for index, line := range bodyLines {
 		app.writeWelcomeLine(row, width, index, line)
 		row++
 	}
+
 	remainingRows := max(0, availableRows-bodyRows)
 	app.writeWelcomePaddingRows(row, width, min(welcomePaddingY, remainingRows))
 
@@ -75,7 +83,7 @@ func (app *App) writeWelcomeLine(row, width, lineIndex int, content string) {
 
 func (app *App) welcomeStyledLine(width, lineIndex int, content string) rendertext.Line {
 	style := app.welcomeBodyStyle(lineIndex, content)
-	innerWidth := max(1, width-(welcomePaddingX*2))
+	innerWidth := max(1, width-(welcomePaddingX*welcomeDoublePadding))
 	centeredContent := centerText(rendertext.Truncate(content, innerWidth), innerWidth)
 	paddedContent := strings.Repeat(" ", welcomePaddingX) +
 		centeredContent +
@@ -88,9 +96,10 @@ func centerText(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
+
 	text = rendertext.Truncate(text, width)
 	padding := max(0, width-rendertext.Width(text))
-	leftPadding := padding / 2
+	leftPadding := padding / welcomeDoublePadding
 	rightPadding := padding - leftPadding
 
 	return strings.Repeat(" ", leftPadding) + text + strings.Repeat(" ", rightPadding)
@@ -121,14 +130,16 @@ func isWelcomeMessage(content string) bool {
 }
 
 func (app *App) welcomeBodyStyle(index int, line string) tcell.Style {
-	if index < len(welcomeArt) {
+	if index < len(welcomeArt()) {
 		return app.theme.background(colorCustomMessageBg).
 			Foreground(app.theme.colors[colorBorderAccent]).
 			Bold(true)
 	}
+
 	if strings.HasPrefix(line, "Type /") || strings.HasPrefix(line, "Press Ctrl+C") {
 		return app.theme.background(colorCustomMessageBg).Foreground(app.theme.colors[colorAccent]).Bold(true)
 	}
+
 	if strings.HasPrefix(line, "version") || strings.HasPrefix(line, "workspace") {
 		return app.theme.background(colorCustomMessageBg).Foreground(app.theme.colors[colorMuted])
 	}
@@ -137,8 +148,9 @@ func (app *App) welcomeBodyStyle(index int, line string) tcell.Style {
 }
 
 func welcomeBodyLines(cwd string) []string {
-	lines := make([]string, 0, len(welcomeArt)+8)
-	lines = append(lines, welcomeArt...)
+	art := welcomeArt()
+	lines := make([]string, 0, len(art)+welcomeArtExtraLines)
+	lines = append(lines, art...)
 	lines = append(lines,
 		"",
 		"version   "+vinfo.String(),

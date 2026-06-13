@@ -18,6 +18,7 @@ func validateToolCalls(calls []ToolCall) error {
 				With("name", call.Name).
 				Errorf("provider response produced a tool call without call_id")
 		}
+
 		if strings.TrimSpace(call.Name) == "" {
 			return oops.In("provider").
 				Code("responses_tool_call_missing_name").
@@ -39,19 +40,23 @@ func executeToolCalls(
 			Code("tool_executor_missing").
 			Errorf("tool executor is not configured")
 	}
+
 	results, err := request.ExecuteTools(ctx, toolCallsToLLM(calls), request.OnEvent)
 	if err != nil {
 		return nil, nil, oops.In("provider").
 			Code("tool_execution_failed").
 			Wrapf(err, "execute tool calls")
 	}
+
 	events := toolEventsFromLLM(results)
+
 	outputs := make([]any, 0, len(calls))
 	for index, call := range calls {
 		var event *ToolEvent
 		if index < len(events) {
 			event = &events[index]
 		}
+
 		outputs = append(outputs, toolOutputForCall(call.ID, event))
 	}
 
@@ -82,9 +87,11 @@ func toolCallMetadata(call ToolCall) map[string]any {
 	if !call.TextFallback {
 		return metadata
 	}
+
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
+
 	metadata["text_fallback"] = true
 
 	return metadata
@@ -178,12 +185,15 @@ func toolOutputForCall(callID string, event *ToolEvent) map[string]any {
 func finishProviderResult(result *llm.Response, providerResult *providerResult) (bool, error) {
 	if providerResult == nil {
 		result.FinishReason = llm.FinishReasonStop
+
 		return true, nil
 	}
+
 	result.FinishReason = providerResult.FinishReason
 	if result.FinishReason == llm.FinishReasonUnknown {
 		result.FinishReason = llm.FinishReasonStop
 	}
+
 	if text := strings.TrimSpace(providerResult.Text); text != "" {
 		result.Content = append(result.Content, llm.TextPart(text))
 	}
@@ -201,6 +211,7 @@ func encodeToolDetails(details map[string]any) string {
 	if len(details) == 0 {
 		return ""
 	}
+
 	encoded, err := json.Marshal(details)
 	if err != nil {
 		return ""
@@ -213,6 +224,7 @@ func toolOutputText(resultText, detailsJSON string) string {
 	if strings.TrimSpace(detailsJSON) == "" {
 		return resultText
 	}
+
 	trimmedResult := strings.TrimSpace(resultText)
 	if trimmedResult == "" {
 		return "details:\n" + detailsJSON

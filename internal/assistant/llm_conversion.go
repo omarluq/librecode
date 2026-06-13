@@ -50,6 +50,7 @@ func llmMessageFromDatabase(message *database.MessageEntity) (llm.Message, bool)
 	if message == nil || strings.TrimSpace(message.Content) == "" {
 		return emptyLLMMessage(), false
 	}
+
 	role, ok := llmRoleFromDatabase(message.Role)
 	if !ok {
 		return emptyLLMMessage(), false
@@ -85,6 +86,7 @@ func llmToolDefinitionsFromRegistry(registry *tool.Registry, disabled bool) []ll
 	if disabled {
 		return nil
 	}
+
 	if registry == nil {
 		return llmToolDefinitionsFromTool(tool.AllDefinitions())
 	}
@@ -107,12 +109,15 @@ func llmResponseFromCompletionResult(result *CompletionResult) llm.Response {
 			Usage:        llm.EmptyUsage(),
 		}
 	}
+
 	content := []llm.Part{}
+
 	for _, thinking := range result.Thinking {
 		trimmed := strings.TrimSpace(thinking)
 		if trimmed == "" {
 			continue
 		}
+
 		content = append(content, llm.Part{
 			Metadata:   nil,
 			ToolCall:   nil,
@@ -123,9 +128,11 @@ func llmResponseFromCompletionResult(result *CompletionResult) llm.Response {
 			MIMEType:   "",
 		})
 	}
+
 	if strings.TrimSpace(result.Text) != "" {
 		content = append(content, llm.TextPart(result.Text))
 	}
+
 	for index := range result.ToolEvents {
 		content = append(content, llmToolResultPart(&result.ToolEvents[index]))
 	}
@@ -221,6 +228,7 @@ func thinkingLevelMapToLLM(values map[model.ThinkingLevel]*string) map[string]*s
 	if values == nil {
 		return nil
 	}
+
 	converted := make(map[string]*string, len(values))
 	for level, value := range values {
 		converted[string(level)] = value

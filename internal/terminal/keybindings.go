@@ -159,6 +159,7 @@ func (bindings *keybindings) matches(event *tcell.EventKey, action actionID) boo
 	if !ok {
 		return false
 	}
+
 	eventKeys := normalizedEventKeys(event)
 	for _, configuredKey := range definition.keys {
 		if _, ok := eventKeys[normalizeKeyName(configuredKey)]; ok {
@@ -183,7 +184,9 @@ func (bindings *keybindings) rows() []keyBindingRow {
 	for action := range bindings.definitions {
 		actions = append(actions, action)
 	}
+
 	slices.Sort(actions)
+
 	rows := make([]keyBindingRow, 0, len(actions))
 	for _, action := range actions {
 		definition := bindings.definitions[action]
@@ -206,15 +209,19 @@ type keyBindingRow struct {
 func normalizedEventKeys(event *tcell.EventKey) map[string]struct{} {
 	keys := map[string]struct{}{}
 	addKey(keys, eventKeyName(event))
+
 	if event.Key() == tcell.KeyEscape {
 		addKey(keys, "escape")
 	}
+
 	if event.Key() == tcell.KeyBacktab {
 		addKey(keys, keyShiftTab)
 	}
+
 	if event.Key() == tcell.KeyRune && unicode.IsUpper(keyevent.Rune(event)) {
 		addKey(keys, "shift+"+strings.ToLower(string(keyevent.Rune(event))))
 	}
+
 	addControlKeyName(keys, event)
 
 	return keys
@@ -224,8 +231,10 @@ func addControlKeyName(keys map[string]struct{}, event *tcell.EventKey) {
 	key := event.Key()
 	if key >= tcell.KeyCtrlA && key <= tcell.KeyCtrlZ {
 		addCtrlLetter(keys, key-tcell.KeyCtrlA)
+
 		return
 	}
+
 	if key >= tcell.KeySOH && key <= tcell.KeySUB {
 		addCtrlLetter(keys, key-tcell.KeySOH)
 	}
@@ -242,6 +251,7 @@ func eventKeyName(event *tcell.EventKey) string {
 		if event.Modifiers()&tcell.ModAlt != 0 {
 			name = "alt+" + name
 		}
+
 		if event.Modifiers()&tcell.ModCtrl != 0 {
 			name = "ctrl+" + name
 		}

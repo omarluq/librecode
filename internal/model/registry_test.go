@@ -23,11 +23,11 @@ func TestRegistryLoadsCustomModelsAndProviderOverrides(t *testing.T) {
 		"  // comments and trailing commas are accepted",
 		"  \"providers\": {",
 		"    \"openai\": {",
-		"      \"api\" + \"Key\": \"from-config\",",
-		"      \"baseUrl\": \"https://example.invalid\",",
+		"      \"api_key\": \"from-config\",",
+		"      \"base_url\": \"https://example.invalid\",",
 		"      \"headers\": {\"X-Test\": \"yes\"},",
-		"      \"modelOverrides\": {",
-		"        \"gpt-5.4\": {\"name\": \"Overridden GPT\", \"maxTokens\": 99},",
+		"      \"model_overrides\": {",
+		"        \"gpt-5.4\": {\"name\": \"Overridden GPT\", \"max_tokens\": 99},",
 		"      },",
 		"      \"models\": [",
 		"        {\"id\": \"custom\", \"name\": \"Custom Model\", \"input\": [\"text\", \"image\"]},",
@@ -85,6 +85,7 @@ func assertRegistryAvailableProvider(t *testing.T, expectedProvider string, mode
 		expectedProvider: testCredential(),
 	})
 	require.NoError(t, err)
+
 	registry := model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,

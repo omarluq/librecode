@@ -40,9 +40,11 @@ func FindExactModelReferenceMatch(modelReference string, availableModels []Model
 	if trimmedReference == "" {
 		return zeroModel(), false
 	}
+
 	if model, found := exactlyOneModel(canonicalReferenceMatches(trimmedReference, availableModels)); found {
 		return model, true
 	}
+
 	if provider, modelID, ok := providerModelReference(trimmedReference); ok {
 		matches := providerReferenceMatches(provider, modelID, availableModels)
 		if model, found := exactlyOneModel(matches); found {
@@ -58,15 +60,19 @@ func ParseModelPattern(pattern string, availableModels []Model, allowInvalidThin
 	if model, ok := tryMatchModel(pattern, availableModels); ok {
 		return ParsedPattern{ThinkingLevel: nil, Model: &model, Warning: ""}
 	}
+
 	colonIndex := strings.LastIndex(pattern, ":")
 	if colonIndex == -1 {
 		return ParsedPattern{ThinkingLevel: nil, Model: nil, Warning: ""}
 	}
+
 	prefix := pattern[:colonIndex]
+
 	suffix := pattern[colonIndex+1:]
 	if IsValidThinkingLevel(suffix) {
 		return parseValidThinkingSuffix(prefix, ThinkingLevel(suffix), availableModels, allowInvalidThinkingFallback)
 	}
+
 	if !allowInvalidThinkingFallback {
 		return ParsedPattern{ThinkingLevel: nil, Model: nil, Warning: ""}
 	}
@@ -80,6 +86,7 @@ func ResolveModelScope(patterns []string, registry *Registry) (scopedModels []Sc
 	for _, pattern := range patterns {
 		matchedModels, thinkingLevel, patternWarnings := resolveScopePattern(pattern, availableModels)
 		warnings = append(warnings, patternWarnings...)
+
 		for matchedIndex := range matchedModels {
 			matchedModel := &matchedModels[matchedIndex]
 			if !containsScopedModel(scopedModels, matchedModel) {
@@ -96,6 +103,7 @@ func ResolveCLIModel(options ResolveCLIModelOptions) ResolveCLIModelResult {
 	if options.CLIModel == "" {
 		return ResolveCLIModelResult{ThinkingLevel: nil, Model: nil, Warning: "", Error: ""}
 	}
+
 	availableModels := options.Registry.All()
 	if len(availableModels) == 0 {
 		return ResolveCLIModelResult{
@@ -105,10 +113,12 @@ func ResolveCLIModel(options ResolveCLIModelOptions) ResolveCLIModelResult {
 			Error:         "No models available. Check your installation or add models to models.json.",
 		}
 	}
+
 	provider, pattern, errMessage := cliProviderAndPattern(options, availableModels)
 	if errMessage != "" {
 		return ResolveCLIModelResult{ThinkingLevel: nil, Model: nil, Warning: "", Error: errMessage}
 	}
+
 	parsed := ParseModelPattern(pattern, cliCandidates(provider, availableModels), false)
 	if parsed.Model == nil {
 		return ResolveCLIModelResult{
@@ -137,6 +147,7 @@ func parseValidThinkingSuffix(
 	if parsed.Model == nil || parsed.Warning != "" {
 		return parsed
 	}
+
 	parsed.ThinkingLevel = &thinkingLevel
 
 	return parsed
@@ -153,6 +164,7 @@ func parseInvalidThinkingSuffix(
 	if parsed.Model == nil {
 		return parsed
 	}
+
 	parsed.Warning = "Invalid thinking level \"" + suffix + "\" in pattern \"" + pattern + "\". Using default instead."
 
 	return parsed
@@ -162,10 +174,12 @@ func resolveScopePattern(pattern string, availableModels []Model) ([]Model, *Thi
 	if hasGlob(pattern) {
 		return resolveGlobScopePattern(pattern, availableModels)
 	}
+
 	parsed := ParseModelPattern(pattern, availableModels, true)
 	if parsed.Model == nil {
 		return []Model{}, nil, []string{"No models match pattern \"" + pattern + "\""}
 	}
+
 	warnings := []string{}
 	if parsed.Warning != "" {
 		warnings = append(warnings, parsed.Warning)
@@ -176,11 +190,14 @@ func resolveScopePattern(pattern string, availableModels []Model) ([]Model, *Thi
 
 func resolveGlobScopePattern(pattern string, availableModels []Model) ([]Model, *ThinkingLevel, []string) {
 	globPattern := pattern
+
 	var thinkingLevel *ThinkingLevel
+
 	if prefix, suffix, ok := splitThinkingSuffix(pattern); ok {
 		globPattern = prefix
 		thinkingLevel = &suffix
 	}
+
 	matches := filterModels(availableModels, func(model *Model) bool {
 		return globMatches(globPattern, model.Provider+"/"+model.ID) || globMatches(globPattern, model.ID)
 	})
@@ -196,6 +213,7 @@ func splitThinkingSuffix(pattern string) (prefix string, thinkingLevel ThinkingL
 	if colonIndex == -1 {
 		return "", "", false
 	}
+
 	suffix := pattern[colonIndex+1:]
 	if !IsValidThinkingLevel(suffix) {
 		return "", "", false
@@ -214,8 +232,10 @@ func cliProviderAndPattern(
 		if !ok {
 			return "", "", "Unknown provider \"" + options.CLIProvider + "\"."
 		}
+
 		provider = canonicalProvider
 	}
+
 	pattern = options.CLIModel
 	if provider == "" {
 		provider, pattern = inferProvider(pattern, providerMap)
@@ -229,6 +249,7 @@ func inferProvider(pattern string, providerMap map[string]string) (provider, mod
 	if !ok {
 		return "", pattern
 	}
+
 	canonicalProvider, found := providerMap[strings.ToLower(providerPrefix)]
 	if !found {
 		return "", pattern
@@ -249,6 +270,7 @@ func cliCandidates(provider string, availableModels []Model) []Model {
 
 func providerLookup(models []Model) map[string]string {
 	providers := map[string]string{}
+
 	for index := range models {
 		model := &models[index]
 		providers[strings.ToLower(model.Provider)] = model.Provider
@@ -261,6 +283,7 @@ func tryMatchModel(modelPattern string, availableModels []Model) (Model, bool) {
 	if exactMatch, ok := FindExactModelReferenceMatch(modelPattern, availableModels); ok {
 		return exactMatch, true
 	}
+
 	matches := filterModels(availableModels, func(model *Model) bool {
 		return strings.Contains(strings.ToLower(model.ID), strings.ToLower(modelPattern)) ||
 			strings.Contains(strings.ToLower(model.Name), strings.ToLower(modelPattern))
@@ -268,6 +291,7 @@ func tryMatchModel(modelPattern string, availableModels []Model) (Model, bool) {
 	if len(matches) == 0 {
 		return zeroModel(), false
 	}
+
 	aliases := filterModels(matches, func(model *Model) bool { return isAlias(model.ID) })
 	if len(aliases) > 0 {
 		sort.Slice(aliases, func(leftIndex, rightIndex int) bool {
@@ -276,6 +300,7 @@ func tryMatchModel(modelPattern string, availableModels []Model) (Model, bool) {
 
 		return aliases[0], true
 	}
+
 	sort.Slice(matches, func(leftIndex, rightIndex int) bool {
 		return matches[leftIndex].ID > matches[rightIndex].ID
 	})
@@ -315,17 +340,22 @@ func providerModelReference(reference string) (provider, modelID string, found b
 	return provider, modelID, found && provider != "" && modelID != ""
 }
 
+const dateAliasSuffixLength = len("-20250101")
+
 func isAlias(modelID string) bool {
 	if strings.HasSuffix(modelID, "-latest") {
 		return true
 	}
-	if len(modelID) < 9 {
+
+	if len(modelID) < dateAliasSuffixLength {
 		return true
 	}
-	dateSuffix := modelID[len(modelID)-9:]
+
+	dateSuffix := modelID[len(modelID)-dateAliasSuffixLength:]
 	if dateSuffix[0] != '-' {
 		return true
 	}
+
 	for _, character := range dateSuffix[1:] {
 		if character < '0' || character > '9' {
 			return true

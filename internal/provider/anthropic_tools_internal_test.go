@@ -88,6 +88,7 @@ func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
 	)
 
 	require.NoError(t, err)
+
 	blocks, ok := message[jsonContentKey].([]map[string]any)
 	require.True(t, ok)
 	require.Len(t, blocks, 1)
@@ -119,6 +120,7 @@ func TestAnthropicToolResultMessageMarksToolErrors(t *testing.T) {
 	)
 
 	require.NoError(t, err)
+
 	blocks, ok := message[jsonContentKey].([]map[string]any)
 	require.True(t, ok)
 	require.Len(t, blocks, 1)

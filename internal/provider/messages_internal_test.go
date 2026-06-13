@@ -17,6 +17,7 @@ func TestOpenAIResponseInputRoleMapping(t *testing.T) {
 	input := openAIResponseInput(request.Request.Messages)
 
 	assert.Len(t, input, 7)
+
 	for _, item := range input {
 		object, ok := item.(map[string]any)
 		assert.True(t, ok)

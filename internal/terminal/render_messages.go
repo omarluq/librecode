@@ -9,8 +9,10 @@ func (app *App) drawMessages(width, height, row int) int {
 	if app.showWelcomeOnly() {
 		return app.drawWelcomeOnly(width, height, row)
 	}
+
 	availableRows := max(1, height-row-app.composerReserve(width, height))
 	app.transcript.LastMaxRows = availableRows
+
 	lines := app.messageLines(width, availableRows)
 	for _, line := range lines {
 		app.writeStyledLine(row, width, line)
@@ -25,14 +27,19 @@ func (app *App) drawTranscriptWindow(layout *extui.Layout) {
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
+
 	if buffer, ok := app.runtimeBufferOverride(window.Buffer); ok {
 		app.drawRuntimeTextBuffer(&window, &buffer, app.theme.style(colorText))
+
 		return
 	}
+
 	if app.showWelcomeOnly() {
 		app.drawWelcomeOnly(window.Width, window.Height, window.Y)
+
 		return
 	}
+
 	lines := app.messageLines(window.Width, window.Height)
 	for index, line := range lines {
 		app.writeStyledLine(window.Y+index, window.Width, line)
@@ -41,10 +48,12 @@ func (app *App) drawTranscriptWindow(layout *extui.Layout) {
 
 func (app *App) messageLines(width, maxRows int) []rendertext.Line {
 	app.transcript.LastMaxRows = maxRows
+
 	dynamicGroups := app.dynamicMessageLineGroups(width)
 	if maxRows < 0 {
 		return app.allMessageLines(width, dynamicGroups)
 	}
+
 	if app.scrollOffset == 0 {
 		return app.bottomMessageLines(width, maxRows, dynamicGroups)
 	}

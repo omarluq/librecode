@@ -123,6 +123,7 @@ func TestParseSSEResultIncompleteEvents(t *testing.T) {
 			assert.Equal(t, test.expectedInputTokens, result.Usage.InputTokens)
 			assert.Equal(t, test.expectedOutputTokens, result.Usage.OutputTokens)
 			require.Len(t, result.ToolCalls, test.expectedToolCalls)
+
 			if test.expectedToolCalls > 0 {
 				assert.Equal(t, test.expectedToolName, result.ToolCalls[0].Name)
 			}

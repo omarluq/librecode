@@ -13,6 +13,7 @@ func TestCollectSQLRowsReturnsConvertedRows(t *testing.T) {
 
 	rows, err := collectSQLRows([]string{"alpha", "beta"}, func(row *string) (*int, error) {
 		length := len(*row)
+
 		return &length, nil
 	})
 
@@ -52,6 +53,7 @@ func TestRowConvertersReturnTimestampErrors(t *testing.T) {
 				row := validSessionRow()
 				row.CreatedAt = invalidTimestamp
 				_, err := sessionFromRow(&row)
+
 				return err
 			},
 		},
@@ -61,6 +63,7 @@ func TestRowConvertersReturnTimestampErrors(t *testing.T) {
 				row := validSessionRow()
 				row.UpdatedAt = invalidTimestamp
 				_, err := sessionFromRow(&row)
+
 				return err
 			},
 		},
@@ -70,6 +73,7 @@ func TestRowConvertersReturnTimestampErrors(t *testing.T) {
 				row := validEntryRow()
 				row.CreatedAt = invalidTimestamp
 				_, err := entryFromRow(&row)
+
 				return err
 			},
 		},
@@ -79,6 +83,7 @@ func TestRowConvertersReturnTimestampErrors(t *testing.T) {
 				row := validSessionMessageRow()
 				row.CreatedAt = invalidTimestamp
 				_, err := sessionMessageFromRow(&row)
+
 				return err
 			},
 		},
@@ -88,6 +93,7 @@ func TestRowConvertersReturnTimestampErrors(t *testing.T) {
 				row := validDocumentRow()
 				row.UpdatedAt = invalidTimestamp
 				_, err := documentFromRow(&row)
+
 				return err
 			},
 		},

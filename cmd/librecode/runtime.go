@@ -17,7 +17,7 @@ func withContainer(ctx context.Context, options commandOptions, handler func(*di
 func withContainerOptions(ctx context.Context, options commandOptions, handler func(*di.Container) error) error {
 	container, err := di.NewContainer(options.configFile, options.configOverrides())
 	if err != nil {
-		return err
+		return cliError(err, "initialize services")
 	}
 
 	runErr := handler(container)

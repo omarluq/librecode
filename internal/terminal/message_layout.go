@@ -10,6 +10,7 @@ func (app *App) allMessageLines(width int, dynamicGroups [][]rendertext.Line) []
 	for index := range app.transcript.History {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
+
 	groups = append(groups, dynamicGroups...)
 
 	return flattenStyledLineGroups(groups, styledLineGroupRows(groups))
@@ -18,11 +19,13 @@ func (app *App) allMessageLines(width int, dynamicGroups [][]rendertext.Line) []
 func (app *App) bottomMessageLines(width, maxRows int, dynamicGroups [][]rendertext.Line) []rendertext.Line {
 	reservedRows := extraGroupsVisibleRows(dynamicGroups)
 	staticMaxRows := max(0, maxRows-reservedRows)
+
 	groups := make([][]rendertext.Line, 0, len(app.transcript.History)+len(dynamicGroups))
 	if staticMaxRows > 0 {
 		staticGroups, _ := app.tailStaticMessageGroups(width, staticMaxRows)
 		groups = append(groups, staticGroups...)
 	}
+
 	groups = append(groups, dynamicGroups...)
 
 	return sliceBottomStyledLineGroups(groups, maxRows)
@@ -32,26 +35,32 @@ func (app *App) scrolledMessageLines(width, maxRows int, dynamicGroups [][]rende
 	if maxRows <= 0 {
 		return nil
 	}
+
 	app.transcript.LineCache.ensure(app, width, len(app.transcript.History))
+
 	if !app.transcript.LineCache.warm {
 		return app.scrolledMessageLinesFromTail(width, maxRows, dynamicGroups)
 	}
 
 	staticRows := app.transcript.LineCache.prefixes[len(app.transcript.History)]
 	dynamicRows := extraGroupsVisibleRows(dynamicGroups)
+
 	totalRows := staticRows + dynamicRows
 	if totalRows <= maxRows {
 		app.scrollOffset = 0
 
 		return app.allMessageLines(width, dynamicGroups)
 	}
+
 	app.scrollOffset = min(app.scrollOffset, totalRows-maxRows)
 	endRow := totalRows - app.scrollOffset
 	startRow := max(0, endRow-maxRows)
+
 	lines := make([]rendertext.Line, 0, endRow-startRow)
 	if startRow < staticRows {
 		lines = append(lines, app.staticMessageLinesForRows(width, startRow, min(endRow, staticRows))...)
 	}
+
 	if endRow > staticRows {
 		dynamicStart := max(0, startRow-staticRows)
 		dynamicEnd := min(dynamicRows, endRow-staticRows)
@@ -69,15 +78,18 @@ func (app *App) scrolledMessageLinesFromTail(width, maxRows int, dynamicGroups [
 	groups := make([][]rendertext.Line, 0, len(staticGroups)+len(dynamicGroups))
 	groups = append(groups, staticGroups...)
 	groups = append(groups, dynamicGroups...)
+
 	totalRows := styledLineGroupRows(groups)
 	if reachedStart && totalRows <= maxRows {
 		app.scrollOffset = 0
 
 		return flattenStyledLineGroups(groups, totalRows)
 	}
+
 	if reachedStart {
 		app.scrollOffset = min(app.scrollOffset, max(0, totalRows-maxRows))
 	}
+
 	endRow := max(0, totalRows-app.scrollOffset)
 	startRow := max(0, endRow-maxRows)
 
@@ -88,24 +100,32 @@ func (app *App) tailStaticMessageGroups(width, rowsNeeded int) ([][]rendertext.L
 	if rowsNeeded <= 0 || len(app.transcript.History) == 0 {
 		return nil, len(app.transcript.History) == 0
 	}
+
 	rows := 0
 	start := len(app.transcript.History)
+
 	var partial []rendertext.Line
+
 	for start > 0 && rows < rowsNeeded {
 		start--
 		remaining := rowsNeeded - rows
+
 		lines, complete := app.cachedMessageTailLines(width, start, remaining)
 		if !complete {
 			partial = lines
+
 			break
 		}
+
 		rows += len(lines)
 	}
+
 	groups := make([][]rendertext.Line, 0, len(app.transcript.History)-start)
 	if partial != nil {
 		groups = append(groups, partial)
 		start++
 	}
+
 	for index := start; index < len(app.transcript.History); index++ {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
@@ -117,9 +137,11 @@ func (app *App) cachedMessageTailLines(width, index, rowsNeeded int) ([]renderte
 	if rowsNeeded <= 0 {
 		return nil, true
 	}
+
 	if app.toolsExpanded && app.transcript.History[index].Role == transcript.RoleToolResult {
 		return app.renderToolMessageTail(width, app.transcript.History[index], rowsNeeded)
 	}
+
 	lines := app.cachedMessageLines(width, index)
 
 	return lines, true
@@ -129,16 +151,19 @@ func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []rendert
 	if endRow <= startRow || len(app.transcript.History) == 0 {
 		return nil
 	}
+
 	app.rebuildMessageRowPrefixSums(width)
 	app.transcript.LineCache.warm = true
 	startIndex := lowerBoundInts(app.transcript.LineCache.prefixes, startRow+1) - 1
 	endIndex := lowerBoundInts(app.transcript.LineCache.prefixes, endRow)
 	startIndex = min(max(0, startIndex), len(app.transcript.History))
 	endIndex = min(max(startIndex, endIndex), len(app.transcript.History))
+
 	groups := make([][]rendertext.Line, 0, endIndex-startIndex)
 	for index := startIndex; index < endIndex; index++ {
 		groups = append(groups, app.cachedMessageLines(width, index))
 	}
+
 	relativeStart := startRow - app.transcript.LineCache.prefixes[startIndex]
 	relativeEnd := endRow - app.transcript.LineCache.prefixes[startIndex]
 
@@ -146,7 +171,7 @@ func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []rendert
 }
 
 func (app *App) dynamicMessageLineGroups(width int) [][]rendertext.Line {
-	groups := make([][]rendertext.Line, 0, len(app.transcript.Streaming.Blocks)+3)
+	groups := make([][]rendertext.Line, 0, len(app.transcript.Streaming.Blocks)+messageMetadataRows)
 	if len(app.transcript.Streaming.Blocks) > 0 {
 		for index := range app.transcript.Streaming.Blocks {
 			groups = append(groups, app.cachedStreamingBlockLines(width, index))
@@ -155,13 +180,16 @@ func (app *App) dynamicMessageLineGroups(width int) [][]rendertext.Line {
 		if app.streamingThinkingText != "" {
 			groups = append(groups, app.renderStreamingThinkingMessage(width, app.streamingThinkingText))
 		}
+
 		if app.streamingText != "" {
 			groups = append(groups, app.renderStreamingMessage(width, app.streamingText))
 		}
 	}
+
 	if app.busy() {
 		groups = append(groups, app.renderWorkingIndicator(width))
 	}
+
 	if len(app.queuedMessages) > 0 {
 		groups = append(groups, app.renderQueuedMessages(width))
 	}
@@ -174,6 +202,7 @@ func (app *App) currentLineCacheStateWidth() int {
 	if state.Width > 0 {
 		return state.Width
 	}
+
 	width, _ := app.screenSize()
 
 	return width
@@ -182,7 +211,7 @@ func (app *App) currentLineCacheStateWidth() int {
 func lowerBoundInts(values []int, target int) int {
 	low, high := 0, len(values)
 	for low < high {
-		mid := low + (high-low)/2
+		mid := low + (high-low)/terminalHalf
 		if values[mid] < target {
 			low = mid + 1
 		} else {
@@ -220,9 +249,11 @@ func (app *App) visibleMessageLineGroups(groups [][]rendertext.Line, maxRows int
 	for _, group := range groups {
 		totalRows += len(group)
 	}
+
 	if maxRows < 0 || totalRows <= maxRows {
 		return flattenStyledLineGroups(groups, totalRows)
 	}
+
 	maxOffset := max(0, totalRows-maxRows)
 	offset := min(app.scrollOffset, maxOffset)
 	end := totalRows - offset
@@ -242,6 +273,7 @@ func flattenStyledLineGroups(groups [][]rendertext.Line, totalRows int) []render
 
 func sliceStyledLineGroups(groups [][]rendertext.Line, start, end int) []rendertext.Line {
 	lines := make([]rendertext.Line, 0, max(0, end-start))
+
 	offset := 0
 	for _, group := range groups {
 		nextOffset := offset + len(group)
@@ -250,6 +282,7 @@ func sliceStyledLineGroups(groups [][]rendertext.Line, start, end int) []rendert
 			groupEnd := min(len(group), end-offset)
 			lines = append(lines, group[groupStart:groupEnd]...)
 		}
+
 		offset = nextOffset
 		if offset >= end {
 			break

@@ -9,6 +9,12 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/units"
+)
+
+const (
+	sseInitialBufferSize = 64 * units.KiB
+	sseMaxBufferSize     = 8 * units.MiB
 )
 
 type sseAccumulator struct {
@@ -37,11 +43,14 @@ func newSSEAccumulator() *sseAccumulator {
 
 func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(*llm.StreamChunk)) {
 	accumulator.addResponseEventState(event)
+
 	if accumulator.terminalErr != nil {
 		return
 	}
+
 	accumulator.addResponse(event)
 	accumulator.addUsage(event)
+
 	if text, delta := thinkingTextFromSSEEvent(event); delta && text != "" {
 		emitStreamEvent(onEvent, StreamEvent{
 			ToolEvent: nil,
@@ -50,6 +59,7 @@ func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(*llm.S
 			Text:      text,
 		})
 	}
+
 	if text, delta := textFromSSEEvent(event); delta && text != "" {
 		accumulator.parts = append(accumulator.parts, text)
 		emitStreamEvent(onEvent, StreamEvent{
@@ -59,9 +69,11 @@ func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(*llm.S
 			Text:      text,
 		})
 	}
+
 	if item, ok := event["item"].(map[string]any); ok {
 		accumulator.addItem(item)
 	}
+
 	if arguments, ok := event["arguments"].(string); ok {
 		accumulator.addArguments(event, arguments)
 	}
@@ -72,7 +84,9 @@ func (accumulator *sseAccumulator) addResponseEventState(event map[string]any) {
 	if !strings.HasPrefix(eventType, "response.") {
 		return
 	}
+
 	accumulator.sawTypedResponseEvent = true
+
 	switch eventType {
 	case "response.completed", "response.done":
 		accumulator.completed = true
@@ -90,17 +104,21 @@ func (accumulator *sseAccumulator) addResponse(event map[string]any) {
 	if !ok {
 		return
 	}
+
 	if accumulator.completed && !responseHasResultData(response) && accumulator.finalResponse != nil {
 		if accumulator.finalResponse["usage"] == nil && response["usage"] != nil {
 			accumulator.finalResponse["usage"] = response["usage"]
 		}
+
 		return
 	}
+
 	if accumulator.finalResponse != nil {
 		if usage := accumulator.finalResponse["usage"]; usage != nil && response["usage"] == nil {
 			response["usage"] = usage
 		}
 	}
+
 	accumulator.finalResponse = response
 }
 
@@ -108,6 +126,7 @@ func responseHasResultData(response map[string]any) bool {
 	if output, ok := response[jsonOutputKey].([]any); ok && len(output) > 0 {
 		return true
 	}
+
 	if strings.TrimSpace(stringValue(response["output_text"])) != "" {
 		return true
 	}
@@ -120,6 +139,7 @@ func (accumulator *sseAccumulator) addUsage(event map[string]any) {
 	if !ok {
 		return
 	}
+
 	accumulator.finalResponse = ensureSSEFinalResponse(accumulator.finalResponse)
 	accumulator.finalResponse["usage"] = usage
 }
@@ -129,6 +149,7 @@ func (accumulator *sseAccumulator) addItem(item map[string]any) {
 	if itemID != "" {
 		accumulator.itemByID[itemID] = item
 	}
+
 	accumulator.items = upsertSSEItem(accumulator.items, item)
 }
 
@@ -137,6 +158,7 @@ func (accumulator *sseAccumulator) addArguments(event map[string]any, arguments 
 	if itemID == "" {
 		return
 	}
+
 	item, ok := accumulator.itemByID[itemID]
 	if !ok {
 		item = map[string]any{
@@ -145,6 +167,7 @@ func (accumulator *sseAccumulator) addArguments(event map[string]any, arguments 
 		}
 		accumulator.itemByID[itemID] = item
 	}
+
 	item["arguments"] = arguments
 	accumulator.items = upsertSSEItem(accumulator.items, item)
 }
@@ -163,6 +186,7 @@ func sseItemID(event map[string]any) string {
 			return value
 		}
 	}
+
 	if item, ok := event["item"].(map[string]any); ok {
 		return stringValue(item["id"])
 	}
@@ -175,10 +199,12 @@ func upsertSSEItem(items []any, item map[string]any) []any {
 	if itemID == "" {
 		return append(items, item)
 	}
+
 	for index, existing := range items {
 		existingItem, ok := existing.(map[string]any)
 		if ok && stringValue(existingItem["id"]) == itemID {
 			items[index] = item
+
 			return items
 		}
 	}
@@ -188,19 +214,23 @@ func upsertSSEItem(items []any, item map[string]any) []any {
 
 func parseSSEResult(reader io.Reader, onEvent func(*llm.StreamChunk)) (*providerResult, error) {
 	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	scanner.Buffer(make([]byte, 0, sseInitialBufferSize), sseMaxBufferSize)
+
 	accumulator, err := scanSSEResponse(scanner, onEvent)
 	if err != nil {
 		return nil, err
 	}
+
 	if accumulator.terminalErr != nil {
 		return nil, accumulator.terminalErr
 	}
+
 	if accumulator.sawTypedResponseEvent && !accumulator.terminal {
 		return nil, oops.In("provider").
 			Code("responses_stream_incomplete").
 			Errorf("provider stream closed before completion")
 	}
+
 	fallbackText := strings.TrimSpace(strings.Join(accumulator.parts, ""))
 
 	return providerResultFromSSEAccumulator(accumulator, fallbackText), nil
@@ -210,6 +240,7 @@ func providerResultFromSSEAccumulator(accumulator *sseAccumulator, fallbackText 
 	if accumulator.finalResponse != nil {
 		return providerResultFromSSEFinalResponse(accumulator, fallbackText)
 	}
+
 	if len(accumulator.items) > 0 {
 		return providerResultFromOutputItems(accumulator.items, fallbackText)
 	}
@@ -230,11 +261,13 @@ func providerResultFromSSEFinalResponse(accumulator *sseAccumulator, fallbackTex
 		usage := result.Usage
 		finishReason := result.FinishReason
 		result = providerResultFromOutputItems(accumulator.items, fallbackText)
+
 		result.Usage = usage
 		if result.FinishReason == llm.FinishReasonUnknown {
 			result.FinishReason = finishReason
 		}
 	}
+
 	if strings.TrimSpace(result.Text) == "" {
 		result.Text = fallbackText
 	}
@@ -244,12 +277,14 @@ func providerResultFromSSEFinalResponse(accumulator *sseAccumulator, fallbackTex
 
 func scanSSEResponse(scanner *bufio.Scanner, onEvent func(*llm.StreamChunk)) (accumulator *sseAccumulator, err error) {
 	accumulator = newSSEAccumulator()
+
 	for scanner.Scan() {
 		event, ok := eventFromSSELine(scanner.Text())
 		if ok {
 			accumulator.add(event, onEvent)
 		}
 	}
+
 	if err := scanner.Err(); err != nil {
 		return nil, oops.In("provider").Code("sse_read").Wrapf(err, "read provider stream")
 	}
@@ -259,11 +294,13 @@ func scanSSEResponse(scanner *bufio.Scanner, onEvent func(*llm.StreamChunk)) (ac
 
 func sseProviderError(code string, event map[string]any, fallback string) error {
 	message := fallback
+
 	if response, ok := event["response"].(map[string]any); ok {
 		if responseMessage := sseErrorMessage(response); responseMessage != "" {
 			message = responseMessage
 		}
 	}
+
 	if eventMessage := sseErrorMessage(event); eventMessage != "" {
 		message = eventMessage
 	}
@@ -276,10 +313,12 @@ func sseErrorMessage(value any) string {
 	if message != "" {
 		return message
 	}
+
 	object, ok := value.(map[string]any)
 	if !ok {
 		return ""
 	}
+
 	if details, ok := object["incomplete_details"].(map[string]any); ok {
 		if reason := stringValue(details["reason"]); reason != "" {
 			return "provider response incomplete: " + reason
@@ -294,6 +333,7 @@ func eventFromSSELine(line string) (map[string]any, bool) {
 	if !strings.HasPrefix(trimmed, "data:") {
 		return nil, false
 	}
+
 	data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
 	if data == "" || data == "[DONE]" {
 		return nil, false
@@ -316,6 +356,7 @@ func thinkingTextFromSSEEvent(event map[string]any) (text string, delta bool) {
 	if value, ok := event[jsonTypeKey].(string); ok {
 		eventType = value
 	}
+
 	if !isThinkingDeltaEvent(eventType) {
 		return "", false
 	}
@@ -328,6 +369,7 @@ func textFromSSEEvent(event map[string]any) (text string, delta bool) {
 	if value, ok := event[jsonTypeKey].(string); ok {
 		eventType = value
 	}
+
 	if !isTextDeltaEvent(eventType) {
 		return "", false
 	}
@@ -339,6 +381,7 @@ func deltaTextFromSSEEvent(event map[string]any) (text string, delta bool) {
 	if deltaText, ok := event["delta"].(string); ok {
 		return deltaText, true
 	}
+
 	if eventText, ok := event["text"].(string); ok {
 		return eventText, true
 	}

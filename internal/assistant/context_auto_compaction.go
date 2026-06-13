@@ -12,6 +12,7 @@ import (
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/units"
 )
 
 const (
@@ -38,10 +39,12 @@ func (runtime *Runtime) buildCompletionRequest(
 	if err != nil {
 		return nil, oops.In("assistant").Code("context_build_model").Wrapf(err, "context: build model context")
 	}
+
 	registry, err := newToolRegistry(cwd, runtime.extensions)
 	if err != nil {
 		return nil, oops.In("assistant").Code("context_tool_registry").Wrapf(err, "context: create tool registry")
 	}
+
 	request := runtime.modelCompletionRequest(&modelCompletionRequestInput{
 		selectedModel: selectedModel,
 		registry:      registry,
@@ -86,6 +89,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 			Code("context_prepare_input").
 			Wrapf(err, "context: invalid completion preparation input")
 	}
+
 	auth := *input.auth
 
 	build, err := runtime.buildCompletionRequest(
@@ -102,11 +106,15 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 			Code("context_request_build").
 			Wrapf(err, "context: build completion request")
 	}
+
 	runtime.emitUsage(ctx, input.onEvent, build.Context.Usage)
+
 	if !runtime.cfg.Context.PreflightEnabled {
 		return build, nil, nil
 	}
+
 	originalBudget := build.Budget
+
 	validationErr := originalBudget.Validate()
 	if validationErr == nil {
 		return build, nil, nil
@@ -117,7 +125,27 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 		return nil, nil, err
 	}
 
-	build, err = runtime.buildCompletionRequest(
+	build, err = runtime.rebuildAfterPreRequestCompaction(ctx, input, auth)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	runtime.emitContextCompactionEvent(
+		ctx,
+		input.onEvent,
+		StreamEventContextCompactionDone,
+		autoCompactionMessage(originalBudget, compactionEntry),
+	)
+
+	return build, compactionEntry, nil
+}
+
+func (runtime *Runtime) rebuildAfterPreRequestCompaction(
+	ctx context.Context,
+	input *completionRequestPreparationInput,
+	auth model.RequestAuth,
+) (*contextRequestBuild, error) {
+	build, err := runtime.buildCompletionRequest(
 		ctx,
 		input.sessionID,
 		input.cwd,
@@ -129,26 +157,22 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 	if err != nil {
 		runtime.emitContextCompactionError(ctx, input.onEvent, contextAutoCompactionBeforeRequestFailed, err)
 
-		return nil, nil, oops.In("assistant").
+		return nil, oops.In("assistant").
 			Code("context_request_rebuild").
 			Wrapf(err, "context: rebuild completion request after compaction")
 	}
+
 	runtime.emitUsageSnapshot(ctx, input.onEvent, build.Context.Usage)
+
 	if err := build.Budget.Validate(); err != nil {
 		runtime.emitContextCompactionError(ctx, input.onEvent, contextAutoCompactionBeforeRequestFailed, err)
 
-		return nil, nil, oops.In("assistant").
+		return nil, oops.In("assistant").
 			Code("context_budget_after_compact").
 			Wrapf(err, "context: validate rebuilt budget")
 	}
-	runtime.emitContextCompactionEvent(
-		ctx,
-		input.onEvent,
-		StreamEventContextCompactionDone,
-		autoCompactionMessage(originalBudget, compactionEntry),
-	)
 
-	return build, compactionEntry, nil
+	return build, nil
 }
 
 func (runtime *Runtime) compactBeforeRequest(
@@ -163,6 +187,7 @@ func (runtime *Runtime) compactBeforeRequest(
 		StreamEventContextCompactionStart,
 		preRequestAutoCompactionStartMessage(budget),
 	)
+
 	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.userEntryID)
 	if isCompactNothingToDoError(err) {
 		runtime.emitContextCompactionErrorMessage(
@@ -173,6 +198,7 @@ func (runtime *Runtime) compactBeforeRequest(
 
 		return nil, validationErr
 	}
+
 	if err != nil {
 		runtime.emitContextCompactionError(ctx, input.onEvent, contextAutoCompactionBeforeRequestFailed, err)
 
@@ -209,6 +235,7 @@ func (runtime *Runtime) emitContextCompactionError(
 	if err == nil {
 		return
 	}
+
 	runtime.emitContextCompactionErrorMessage(ctx, onEvent, prefix+": "+err.Error())
 }
 
@@ -234,11 +261,14 @@ func (runtime *Runtime) autoCompactAfterResponse(
 	if !runtime.shouldTryPostResponseAutoCompaction(input) {
 		return model.EmptyTokenUsage(), false
 	}
+
 	usage, err := runtime.ContextUsage(ctx, input.sessionID, input.cwd)
 	if err != nil {
 		runtime.emitPostResponseAutoCompactionError(ctx, input.onEvent, err)
+
 		return model.EmptyTokenUsage(), false
 	}
+
 	budget := contextwindow.BudgetFromUsage(usage)
 	if !shouldAutoCompactAfterResponse(budget) {
 		return model.EmptyTokenUsage(), false
@@ -250,6 +280,7 @@ func (runtime *Runtime) autoCompactAfterResponse(
 		StreamEventContextCompactionStart,
 		postResponseAutoCompactionStartMessage(budget),
 	)
+
 	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.parentEntryID)
 	if isCompactNothingToDoError(err) {
 		runtime.emitContextCompactionErrorMessage(
@@ -260,15 +291,20 @@ func (runtime *Runtime) autoCompactAfterResponse(
 
 		return model.EmptyTokenUsage(), false
 	}
+
 	if err != nil {
 		runtime.emitPostResponseAutoCompactionError(ctx, input.onEvent, err)
+
 		return model.EmptyTokenUsage(), false
 	}
+
 	compactedUsage, err := runtime.ContextUsage(ctx, input.sessionID, input.cwd)
 	if err != nil {
 		runtime.emitPostResponseAutoCompactionError(ctx, input.onEvent, err)
+
 		return model.EmptyTokenUsage(), false
 	}
+
 	runtime.emitUsageSnapshot(ctx, input.onEvent, compactedUsage)
 	runtime.emitContextCompactionEvent(ctx, input.onEvent, StreamEventContextCompactionDone, compactionMessage(
 		"context auto-compacted after response",
@@ -300,6 +336,7 @@ func (runtime *Runtime) emitPostResponseAutoCompactionError(
 	if err == nil {
 		return
 	}
+
 	runtime.emitContextCompactionError(ctx, onEvent, "context auto-compaction after response failed", err)
 }
 
@@ -330,9 +367,11 @@ func compactionMessage(prefix string, budget contextwindow.Budget, entry *databa
 	if entry == nil {
 		return message
 	}
+
 	if entry.CompactionTokensBefore > 0 {
-		message += fmt.Sprintf("; summarized %dk tokens", entry.CompactionTokensBefore/1000)
+		message += fmt.Sprintf("; summarized %dk tokens", entry.CompactionTokensBefore/units.TokenThousand)
 	}
+
 	if entry.CompactionFirstKeptEntryID != "" {
 		message += "; kept recent context from entry " + entry.CompactionFirstKeptEntryID
 	}

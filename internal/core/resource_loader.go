@@ -102,7 +102,7 @@ func NewDefaultResourceLoader(options *ResourceLoaderOptions) *DefaultResourceLo
 // Reload refreshes all resource snapshots from disk.
 func (loader *DefaultResourceLoader) Reload(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return coreError(err, "reload resources")
 	}
 
 	snapshot := emptyResourceSnapshot()
@@ -116,7 +116,7 @@ func (loader *DefaultResourceLoader) Reload(ctx context.Context) error {
 	loader.snapshot = snapshot
 	loader.lock.Unlock()
 
-	return ctx.Err()
+	return coreError(ctx.Err(), "reload resources")
 }
 
 // ExtendResources adds runtime resource paths and reloads affected resources.
@@ -169,6 +169,7 @@ func (loader *DefaultResourceLoader) AppendSystemPrompt() []string {
 func LoadProjectContextFiles(cwd, agentDir string) []ContextFile {
 	contextFiles := []ContextFile{}
 	seenPaths := map[string]bool{}
+
 	if contextFile, ok := loadContextFileFromDir(agentDir); ok {
 		contextFiles = append(contextFiles, contextFile)
 		seenPaths[canonicalizeResourcePath(contextFile.Path)] = true
@@ -185,9 +186,11 @@ func ResolvePromptInput(input string) (string, bool) {
 	if input == "" {
 		return "", false
 	}
+
 	if !resourcePathExists(input) {
 		return input, true
 	}
+
 	content, err := readResourceFile(input)
 	if err != nil {
 		return input, true
@@ -230,6 +233,7 @@ func (loader *DefaultResourceLoader) loadSkillsSnapshot() ([]Skill, []ResourceDi
 	if loader.noSkills && len(loader.additionalSkillPaths) == 0 {
 		return []Skill{}, []ResourceDiagnostic{}
 	}
+
 	result := LoadSkills(loader.cwd, loader.additionalSkillPaths, !loader.noSkills)
 	result.Skills = loader.applySkillSourceInfo(result.Skills)
 	result.Diagnostics = append(result.Diagnostics,
@@ -243,6 +247,7 @@ func (loader *DefaultResourceLoader) loadPromptsSnapshot() ([]PromptTemplate, []
 	if loader.noPromptTemplates && len(loader.additionalPromptTemplatePaths) == 0 {
 		return []PromptTemplate{}, []ResourceDiagnostic{}
 	}
+
 	result := LoadPromptTemplates(&LoadPromptTemplatesOptions{
 		CWD:             loader.cwd,
 		AgentDir:        loader.agentDir,
@@ -273,6 +278,7 @@ func (loader *DefaultResourceLoader) loadSystemPrompt() string {
 	if source == "" {
 		source = loader.discoverPromptFile(systemPromptFileName)
 	}
+
 	content, ok := ResolvePromptInput(source)
 	if !ok {
 		return ""
@@ -299,6 +305,7 @@ func (loader *DefaultResourceLoader) discoverPromptFile(filename string) string 
 	if resourcePathExists(projectPath) {
 		return projectPath
 	}
+
 	globalPath := filepath.Join(loader.agentDir, filename)
 	if resourcePathExists(globalPath) {
 		return globalPath
@@ -310,6 +317,7 @@ func (loader *DefaultResourceLoader) discoverPromptFile(filename string) string 
 func (loader *DefaultResourceLoader) addRuntimeResources(paths ResourceExtensionPaths) {
 	for _, skillPath := range paths.SkillPaths {
 		resolvedPath := resolveResourcePath(skillPath.Path, loader.cwd)
+
 		loader.additionalSkillPaths = mergeResourcePaths(
 			loader.cwd,
 			loader.additionalSkillPaths,
@@ -319,8 +327,10 @@ func (loader *DefaultResourceLoader) addRuntimeResources(paths ResourceExtension
 			loader.skillSourceInfos[resolvedPath] = *skillPath.SourceInfo
 		}
 	}
+
 	for _, promptPath := range paths.PromptPaths {
 		resolvedPath := resolveResourcePath(promptPath.Path, loader.cwd)
+
 		loader.additionalPromptTemplatePaths = mergeResourcePaths(
 			loader.cwd,
 			loader.additionalPromptTemplatePaths,
@@ -361,6 +371,7 @@ func (loader *DefaultResourceLoader) findSourceInfo(
 		resolvedSourcePath := canonicalizeResourcePath(sourcePath)
 		if isUnderPath(resolvedResourcePath, resolvedSourcePath) {
 			sourceInfo.Path = resourcePath
+
 			return sourceInfo, true
 		}
 	}
@@ -374,6 +385,7 @@ func loadContextFileFromDir(dir string) (ContextFile, bool) {
 		if !resourcePathExists(filePath) {
 			continue
 		}
+
 		content, err := readResourceFile(filePath)
 		if err != nil {
 			continue
@@ -388,12 +400,14 @@ func loadContextFileFromDir(dir string) (ContextFile, bool) {
 func loadAncestorContextFiles(cwd string, seenPaths map[string]bool) []ContextFile {
 	contextFiles := []ContextFile{}
 	currentDir := filepath.Clean(cwd)
+
 	rootDir := filepath.VolumeName(currentDir) + string(filepath.Separator)
 	for {
 		contextFiles = prependContextFile(contextFiles, currentDir, seenPaths)
 		if currentDir == rootDir || filepath.Dir(currentDir) == currentDir {
 			break
 		}
+
 		currentDir = filepath.Dir(currentDir)
 	}
 
@@ -405,10 +419,12 @@ func prependContextFile(contextFiles []ContextFile, dir string, seenPaths map[st
 	if !ok {
 		return contextFiles
 	}
+
 	canonicalPath := canonicalizeResourcePath(contextFile.Path)
 	if seenPaths[canonicalPath] {
 		return contextFiles
 	}
+
 	seenPaths[canonicalPath] = true
 
 	return append([]ContextFile{contextFile}, contextFiles...)
@@ -428,13 +444,17 @@ func missingResourceDiagnostics(cwd string, paths []string, resourceType string)
 func mergeResourcePaths(cwd string, primary, additional []string) []string {
 	merged := make([]string, 0, len(primary)+len(additional))
 	seen := map[string]bool{}
+
 	for _, path := range append(append([]string{}, primary...), additional...) {
 		resolvedPath := resolveResourcePath(path, cwd)
+
 		canonicalPath := canonicalizeResourcePath(resolvedPath)
 		if seen[canonicalPath] {
 			continue
 		}
+
 		seen[canonicalPath] = true
+
 		merged = append(merged, resolvedPath)
 	}
 

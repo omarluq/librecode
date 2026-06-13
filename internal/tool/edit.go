@@ -16,12 +16,16 @@ type EditInput struct {
 
 // EditTool applies exact text replacements to files.
 type EditTool struct {
-	cwd string
+	locks *fileMutationLocks
+	cwd   string
 }
 
 // NewEditTool creates the edit tool for cwd.
 func NewEditTool(cwd string) *EditTool {
-	return &EditTool{cwd: cwd}
+	return &EditTool{
+		locks: newFileMutationLocks(),
+		cwd:   cwd,
+	}
 }
 
 // Definition returns edit tool metadata.
@@ -43,7 +47,9 @@ func (editTool *EditTool) Definition() Definition {
 
 // Execute runs the edit tool.
 func (editTool *EditTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
-	args, err := decodeInput[EditInput](input)
+	var args EditInput
+
+	err := decodeInput(input, &args)
 	if err != nil {
 		return emptyToolResult(), err
 	}
@@ -56,12 +62,13 @@ func (editTool *EditTool) Edit(ctx context.Context, input EditInput) (Result, er
 	if strings.TrimSpace(input.Path) == "" {
 		return emptyToolResult(), oops.In("tool").Code("edit_path_required").Errorf("edit path is required")
 	}
+
 	absolutePath, err := ResolveToCWD(input.Path, editTool.cwd)
 	if err != nil {
 		return emptyToolResult(), oops.In("tool").Code("edit_resolve_path").Wrapf(err, "resolve edit path")
 	}
 
-	return withFileMutation(absolutePath, func() (Result, error) {
+	return editTool.locks.mutate(absolutePath, func() (Result, error) {
 		return editTool.editLocked(ctx, absolutePath, input)
 	})
 }
@@ -70,6 +77,7 @@ func (editTool *EditTool) editLocked(ctx context.Context, absolutePath string, i
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return emptyToolResult(), ctxErr
 	}
+
 	rawData, err := readResolvedPath(absolutePath)
 	if err != nil {
 		return emptyToolResult(), oops.
@@ -78,23 +86,27 @@ func (editTool *EditTool) editLocked(ctx context.Context, absolutePath string, i
 			With("path", input.Path).
 			Wrapf(err, "read file")
 	}
+
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return emptyToolResult(), ctxErr
 	}
 
 	bom, content := stripBOM(string(rawData))
 	lineEnding := detectLineEnding(content)
+
 	applied, err := applyEditsToNormalizedContent(normalizeToLF(content), input.Edits, input.Path)
 	if err != nil {
 		return emptyToolResult(), err
 	}
+
 	finalContent := bom + restoreLineEndings(applied.newContent, lineEnding)
+
 	diffDetails, err := generateDiffString(applied.baseContent, applied.newContent)
 	if err != nil {
 		return emptyToolResult(), err
 	}
 
-	writeErr := writeResolvedPath(absolutePath, []byte(finalContent), 0o600)
+	writeErr := writeResolvedPath(absolutePath, []byte(finalContent), privateFileMode)
 	if writeErr != nil {
 		return emptyToolResult(), oops.
 			In("tool").
@@ -102,12 +114,14 @@ func (editTool *EditTool) editLocked(ctx context.Context, absolutePath string, i
 			With("path", input.Path).
 			Wrapf(writeErr, "write file")
 	}
+
 	message := fmt.Sprintf(
 		"Successfully replaced %d block(s) in %s.%s",
 		len(input.Edits),
 		input.Path,
 		diffTruncationMessage(diffDetails),
 	)
+
 	return TextResult(
 		message,
 		map[string]any{

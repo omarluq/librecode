@@ -20,6 +20,7 @@ func TestWithContainerRunsHandler(t *testing.T) {
 	called := false
 	err := withContainerOptions(context.Background(), options, func(container *di.Container) error {
 		called = true
+
 		require.NotNil(t, container)
 
 		return nil
@@ -96,13 +97,16 @@ func TestFinishContainerRun(t *testing.T) {
 			err := finishContainerRun(test.runErr, test.report)
 			if !test.expectErr {
 				require.NoError(t, err)
+
 				return
 			}
 
 			require.Error(t, err)
+
 			if test.expectErrIs != nil {
 				require.ErrorIs(t, err, test.expectErrIs)
 			}
+
 			if test.expectContains != "" {
 				assert.Contains(t, err.Error(), test.expectContains)
 			}

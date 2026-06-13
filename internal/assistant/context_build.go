@@ -23,10 +23,12 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 	if err != nil {
 		return model.EmptyTokenUsage(), err
 	}
+
 	registry, err := newToolRegistry(cwd, runtime.extensions)
 	if err != nil {
 		return model.EmptyTokenUsage(), err
 	}
+
 	request := &CompletionRequest{
 		OnEvent:           nil,
 		OnProviderObserve: nil,
@@ -46,21 +48,26 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 	}
 
 	messages := []database.MessageEntity{}
+
 	var usageAnchor *database.ContextUsageAnchorEntity
+
 	if strings.TrimSpace(sessionID) != "" {
 		contextEntity, err := runtime.modelContextEntity(ctx, sessionID)
 		if err != nil {
 			return model.EmptyTokenUsage(), err
 		}
+
 		messages = modelFacingMessages(contextEntity.Messages)
 		usageAnchor = remapUsageAnchor(contextEntity.UsageAnchor, contextEntity.Messages, messages)
 	}
 
 	basePrompt := baseSystemPrompt(cwd)
+
 	skillPrompt := ""
 	if skills := core.LoadSkills(cwd, nil, true).Skills; len(skills) > 0 {
 		skillPrompt = core.FormatSkillsForPrompt(skills)
 	}
+
 	breakdown := contextwindow.Breakdown(
 		contextwindow.EstimateTokens(basePrompt),
 		contextwindow.EstimateTokens(skillPrompt),
@@ -98,6 +105,7 @@ func (runtime *Runtime) buildModelContext(
 	if err != nil {
 		return nil, err
 	}
+
 	messages := modelFacingMessages(contextEntity.Messages)
 	usageAnchor := remapUsageAnchor(contextEntity.UsageAnchor, contextEntity.Messages, messages)
 
@@ -105,6 +113,7 @@ func (runtime *Runtime) buildModelContext(
 	if err != nil {
 		return nil, err
 	}
+
 	result := initialContextBuildResult(&base, selectedModel)
 
 	dispatchResult, err := runtime.dispatchContextBuild(ctx, sessionID, cwd, &base, result)
@@ -114,8 +123,9 @@ func (runtime *Runtime) buildModelContext(
 
 	contributions, err := contextwindow.ContributionsFromPayload(dispatchResult.Payload)
 	if err != nil {
-		return nil, err
+		return nil, assistantError(err, "parse context contributions")
 	}
+
 	contextwindow.AppendContributions(result, contributions)
 	recalculateContextBuildResult(result, &base, selectedModel)
 	runtime.emit(
@@ -137,16 +147,19 @@ func (runtime *Runtime) modelContextBase(
 ) (contextwindow.Base, error) {
 	basePrompt := baseSystemPrompt(cwd)
 	skills := core.LoadSkills(cwd, nil, true).Skills
+
 	availableSkillsPrompt := ""
 	if len(skills) > 0 {
 		availableSkillsPrompt = core.FormatSkillsForPrompt(skills)
 	}
 
 	skillActivation := core.AutoActivateSkillsDetailed(prompt, skills)
+
 	activeSkills := skillActivation.Activated
 	if len(skillActivation.Diagnostics) > 0 && runtime.logger != nil {
 		runtime.logger.Debug("skill auto-activation diagnostics", slog.Int("count", len(skillActivation.Diagnostics)))
 	}
+
 	for index := range skillActivation.Matches {
 		match := &skillActivation.Matches[index]
 		if runtime.logger != nil {
@@ -158,8 +171,11 @@ func (runtime *Runtime) modelContextBase(
 			)
 		}
 	}
+
 	activeSkillsPrompt := ""
+
 	runtime.emitActivatedSkillReads(ctx, cwd, activeSkills, onEvent)
+
 	if len(activeSkills) > 0 {
 		activeSkillsPrompt = core.FormatActiveSkillsForPrompt(activeSkills)
 		payload := map[string]any{
@@ -167,6 +183,7 @@ func (runtime *Runtime) modelContextBase(
 			"matches": activeSkillMatchPayload(skillActivation.Matches),
 		}
 		runtime.emit(ctx, "skill_auto_activate", payload)
+
 		if runtime.extensions != nil {
 			if emitErr := runtime.extensions.Emit(ctx, "skill_auto_activate", payload); emitErr != nil {
 				return contextwindow.Base{}, oops.In("assistant").

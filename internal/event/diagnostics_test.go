@@ -19,6 +19,7 @@ func TestDiagnosticObserverLogsRuntimeEvents(t *testing.T) {
 	t.Parallel()
 
 	var output bytes.Buffer
+
 	logger := slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	bus := event.NewBus(logger)
 	observer := event.NewDiagnosticObserver(bus, logger)
@@ -28,13 +29,16 @@ func TestDiagnosticObserverLogsRuntimeEvents(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		logged := output.String()
+
 		return strings.Contains(logged, "turn_start") && strings.Contains(logged, "\u003cnil\u003e")
 	}, time.Second, 10*time.Millisecond)
 
 	observer.Stop()
 	observer.Stop()
+
 	nilObserver := event.NewDiagnosticObserver(nil, logger)
 	nilObserver.Stop()
+
 	nilLoggerObserver := event.NewDiagnosticObserver(bus, nil)
 	nilLoggerObserver.Stop()
 }
@@ -44,7 +48,9 @@ func TestTickStreamEmitsIntervalValues(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	var count atomic.Int64
+
 	subscription := event.TickStream(time.Millisecond).SubscribeWithContext(ctx, ro.NewObserverWithContext(
 		func(_ context.Context, _ int64) {
 			if count.Add(1) >= 2 {

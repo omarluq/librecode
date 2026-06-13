@@ -52,23 +52,27 @@ func (app *App) autocompleteLines(width int) []rendertext.Line {
 	if len(matches) == 0 {
 		return nil
 	}
+
 	selected := app.selectedAutocompleteIndex(matches)
-	limit := min(6, len(matches))
+	limit := min(maxAutocompleteMatches, len(matches))
 	start := autocompleteWindowStart(selected, limit, len(matches))
 	lines := make([]rendertext.Line, 0, limit+1)
 	lines = append(lines, rendertext.NewLine(
 		app.theme.background(colorCustomMessageBg).Bold(true),
 		rendertext.PadRight("  slash commands  tab/enter to complete", width),
 	))
+
 	for offset := range limit {
 		index := start + offset
 		match := matches[index]
 		prefix := "  "
 		style := app.theme.background(colorCustomMessageBg)
+
 		if index == selected {
 			prefix = "› "
 			style = style.Bold(true)
 		}
+
 		text := fmt.Sprintf("%s/%-15s %s", prefix, match.Name, match.Description)
 		lines = append(lines, rendertext.NewLine(style, rendertext.PadRight(text, width)))
 	}
@@ -80,6 +84,7 @@ func autocompleteWindowStart(selected, limit, total int) int {
 	if total <= limit || selected < limit {
 		return 0
 	}
+
 	start := selected - limit + 1
 	if start+limit > total {
 		return max(0, total-limit)
@@ -95,14 +100,18 @@ func (app *App) autocompleteActive() bool {
 func (app *App) handleAutocompleteKey(event *tcell.EventKey) bool {
 	if event.Key() == tcell.KeyEscape {
 		app.closeAutocomplete()
+
 		return true
 	}
+
 	if app.keys.matches(event, actionCursorDown) {
 		return app.moveAutocompleteSelection(1)
 	}
+
 	if app.keys.matches(event, actionCursorUp) {
 		return app.moveAutocompleteSelection(-1)
 	}
+
 	if app.keys.matches(event, actionInputSubmit) || app.keys.matches(event, actionInputTab) {
 		return app.acceptAutocomplete()
 	}
@@ -115,6 +124,7 @@ func (app *App) acceptAutocomplete() bool {
 	if len(matches) == 0 {
 		return false
 	}
+
 	selected := app.selectedAutocompleteIndex(matches)
 	app.resetPromptHistoryNavigation()
 	app.composerBuffer.SetText("/" + matches[selected].Name + " ")
@@ -128,8 +138,10 @@ func (app *App) moveAutocompleteSelection(delta int) bool {
 	matches := app.autocompleteMatches()
 	if len(matches) == 0 {
 		app.resetAutocompleteSelection()
+
 		return false
 	}
+
 	app.autocompleteSelection = (app.selectedAutocompleteIndex(matches) + delta + len(matches)) % len(matches)
 
 	return true
@@ -158,17 +170,23 @@ func (app *App) autocompleteMatches() []slashSuggestion {
 	if app.autocompleteClosed {
 		return nil
 	}
+
 	if strings.Contains(text, "\n") {
 		app.resetAutocompleteSelection()
+
 		return nil
 	}
+
 	trimmed := strings.TrimLeft(text, " \t")
 	if !strings.HasPrefix(trimmed, "/") || strings.Contains(trimmed, " ") {
 		app.resetAutocompleteSelection()
+
 		return nil
 	}
+
 	query := strings.TrimPrefix(trimmed, "/")
 	matches := []slashSuggestion{}
+
 	for _, suggestion := range app.allSlashSuggestions() {
 		if strings.HasPrefix(suggestion.Name, query) {
 			matches = append(matches, suggestion)
@@ -184,11 +202,13 @@ func (app *App) autocompleteMatches() []slashSuggestion {
 
 func (app *App) allSlashSuggestions() []slashSuggestion {
 	suggestions := append([]slashSuggestion{}, slashSuggestions()...)
+
 	for index := range app.resources.Skills {
 		skill := &app.resources.Skills[index]
 		if !skill.UserInvocable {
 			continue
 		}
+
 		suggestions = append(suggestions, slashSuggestion{
 			Name:        "skill:" + skill.Name,
 			Description: skill.Description,
@@ -209,6 +229,7 @@ func (app *App) workingLoaderText() string {
 	if app.compacting {
 		return "Compacting context..."
 	}
+
 	if app.cfg == nil || strings.TrimSpace(app.cfg.App.WorkingLoader.Text) == "" {
 		return "Shenaniganing..."
 	}
@@ -229,28 +250,30 @@ func (app *App) workingShimmerBaseColor() tcell.Color {
 }
 
 func defaultWorkingShimmerBaseColor() tcell.Color {
-	return hexColor(0x4f6f6a)
+	return hexColorFromString("#4f6f6a")
 }
 
 func defaultWorkingShimmerBrightColor() tcell.Color {
-	return hexColor(0xc7fff6)
+	return hexColorFromString("#c7fff6")
 }
 
 func compactingShimmerBaseColor() tcell.Color {
-	return hexColor(0x6f5fa8)
+	return hexColorFromString("#6f5fa8")
 }
 
 func compactingShimmerBrightColor() tcell.Color {
-	return hexColor(0xf2d5ff)
+	return hexColorFromString("#f2d5ff")
 }
 
 func (app *App) workingShimmerPosition(contentWidth int) int {
 	if contentWidth <= 1 {
 		return 0
 	}
+
 	if app.workStartedAt.IsZero() {
 		return app.workFrame % contentWidth
 	}
+
 	elapsed := time.Since(app.workStartedAt) % loaderShimmerSweepDuration
 	progress := float64(elapsed) / float64(loaderShimmerSweepDuration)
 
@@ -269,9 +292,9 @@ func defaultWorkingShimmerPalette() workingShimmerPalette {
 	return workingShimmerPalette{
 		base:   defaultWorkingShimmerBaseColor(),
 		bright: defaultWorkingShimmerBrightColor(),
-		trail1: hexColor(0xa8f2e9),
-		trail2: hexColor(0x86d8d0),
-		trail3: hexColor(0x6aaea8),
+		trail1: hexColorFromString("#a8f2e9"),
+		trail2: hexColorFromString("#86d8d0"),
+		trail3: hexColorFromString("#6aaea8"),
 	}
 }
 
@@ -279,9 +302,9 @@ func compactingShimmerPalette() workingShimmerPalette {
 	return workingShimmerPalette{
 		base:   compactingShimmerBaseColor(),
 		bright: compactingShimmerBrightColor(),
-		trail1: hexColor(0xe9c6ff),
-		trail2: hexColor(0xcfa0e8),
-		trail3: hexColor(0xa77ac0),
+		trail1: hexColorFromString("#e9c6ff"),
+		trail2: hexColorFromString("#cfa0e8"),
+		trail3: hexColorFromString("#a77ac0"),
 	}
 }
 
@@ -297,6 +320,7 @@ func workingShimmerColor(position, column, contentWidth int, palette workingShim
 	if contentWidth <= 0 || column < 0 || column >= contentWidth {
 		return palette.base
 	}
+
 	distanceBehindHead := position - column
 
 	switch distanceBehindHead {
@@ -304,9 +328,9 @@ func workingShimmerColor(position, column, contentWidth int, palette workingShim
 		return palette.bright
 	case 1:
 		return palette.trail1
-	case 2:
+	case compactStageNear:
 		return palette.trail2
-	case 3:
+	case compactStageFar:
 		return palette.trail3
 	default:
 		return palette.base
@@ -317,6 +341,7 @@ func formatToolEventForUI(event *assistant.ToolEvent) string {
 	if event == nil {
 		return transcript.FormatToolEventDisplay(nil)
 	}
+
 	return transcript.FormatToolEventDisplay(&transcript.ToolEvent{
 		Name:          event.Name,
 		ArgumentsJSON: event.ArgumentsJSON,

@@ -56,9 +56,11 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 			repository := runtime.SessionRepository()
 			session, err := repository.CreateSession(context.Background(), testRuntimeCWD, testCase.name, "")
 			require.NoError(t, err)
+
 			if testCase.seed != nil {
 				testCase.seed(t, repository, session.ID)
 			}
+
 			request := newRuntimePromptRequest(testRuntimeCWD, strings.Repeat("prompt ", 200), "")
 			request.SessionID = session.ID
 

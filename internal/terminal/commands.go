@@ -19,9 +19,11 @@ const (
 func (app *App) submitCommand(ctx context.Context, text string) (bool, error) {
 	command, args, _ := strings.Cut(trimCommandPrefix(text), " ")
 	trimmedArgs := strings.TrimSpace(args)
+
 	if command == "quit" || command == "exit" {
 		return true, nil
 	}
+
 	if trimmedArgs == "" && app.openCommandPanel(ctx, command) {
 		return false, nil
 	}
@@ -41,10 +43,12 @@ func (app *App) openCommandPanel(ctx context.Context, command string) bool {
 		"resume":             func() { app.openSessionPanel(ctx) },
 		"tree":               func() { app.openTreePanel(ctx) },
 	}
+
 	handler, ok := handlers[command]
 	if !ok {
 		return false
 	}
+
 	handler()
 
 	return true
@@ -54,8 +58,10 @@ func (app *App) runSessionCommand(ctx context.Context, command, args, original s
 	if handler, ok := app.sessionCommandHandlers(ctx, args, original)[command]; ok {
 		return false, handler()
 	}
+
 	if handler, ok := app.sessionCommandNotifications(ctx, command); ok {
 		handler()
+
 		return false, nil
 	}
 
@@ -95,8 +101,9 @@ func (app *App) sessionCommandNotifications(ctx context.Context, command string)
 func (app *App) newSession(ctx context.Context, name string) error {
 	createdSession, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, name, app.sessionID)
 	if err != nil {
-		return err
+		return terminalError(err, "create session")
 	}
+
 	app.sessionID = createdSession.ID
 	app.pendingParentID = nil
 	app.resetMessages()
@@ -110,17 +117,21 @@ func (app *App) renameSession(ctx context.Context, name string) error {
 	if app.sessionID == "" {
 		return errors.New("no active session")
 	}
+
 	if name == "" {
 		return errors.New("name is required")
 	}
+
 	leaf, _, err := app.runtime.SessionRepository().LeafEntry(ctx, app.sessionID)
 	if err != nil {
-		return err
+		return terminalError(err, "load session leaf")
 	}
+
 	_, err = app.runtime.SessionRepository().AppendSessionInfo(ctx, app.sessionID, parentIDFromEntry(leaf), name)
 	if err != nil {
-		return err
+		return terminalError(err, "rename session")
 	}
+
 	app.setStatus("session named: " + name)
 
 	return nil
@@ -129,18 +140,24 @@ func (app *App) renameSession(ctx context.Context, name string) error {
 func (app *App) showSessionInfo(ctx context.Context) {
 	if app.sessionID == "" {
 		app.addSystemMessage("session: none")
+
 		return
 	}
+
 	entries, err := app.runtime.SessionRepository().Entries(ctx, app.sessionID)
 	if err != nil {
 		app.addSystemMessage(err.Error())
+
 		return
 	}
+
 	messages, err := app.runtime.SessionRepository().Messages(ctx, app.sessionID)
 	if err != nil {
 		app.addSystemMessage(err.Error())
+
 		return
 	}
+
 	content := strings.Join([]string{
 		"session: " + app.sessionID,
 		"cwd: " + app.cwd,

@@ -45,15 +45,19 @@ func TestEditToolDiffBehavior(t *testing.T) {
 			diff := requireDiffDetail(t, result)
 			assert.Equal(t, testCase.wantFirstLine, requireIntDetail(t, result, "firstChangedLine"))
 			assert.Equal(t, testCase.wantTruncated, requireBoolDetail(t, result, "diffTruncated"))
+
 			for _, substring := range testCase.wantContains {
 				assert.Contains(t, diff, substring)
 			}
+
 			for _, substring := range testCase.wantNotContains {
 				assert.NotContains(t, diff, substring)
 			}
+
 			if testCase.maxDiffLineCount > 0 {
 				assert.LessOrEqual(t, len(strings.Split(diff, "\n")), testCase.maxDiffLineCount)
 			}
+
 			if testCase.wantMessageString != "" {
 				assert.Contains(t, result.Text(), testCase.wantMessageString)
 			}

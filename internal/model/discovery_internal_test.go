@@ -39,6 +39,7 @@ func TestDiscoverModelsFetchesCatalog(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodGet, request.Method)
 		assert.Equal(t, "application/json", request.Header.Get("Accept"))
+
 		_, err := writer.Write([]byte(discoveryCatalogFixture))
 		assert.NoError(t, err)
 	}))
@@ -122,9 +123,12 @@ func TestDiscoverModelsValidationAndFetchErrors(t *testing.T) {
 			if testCase.error != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), testCase.error)
+
 				return
 			}
+
 			require.NoError(t, err)
+
 			if testCase.empty {
 				assert.Empty(t, models)
 			}
@@ -231,6 +235,7 @@ func TestDiscoveryCacheHelpers(t *testing.T) {
 	t.Parallel()
 
 	require.NoError(t, writeDiscoveryCache("", []byte("{}")))
+
 	content, ok := readDiscoveryCache("")
 	assert.False(t, ok)
 	assert.Nil(t, content)

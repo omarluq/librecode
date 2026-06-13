@@ -42,6 +42,7 @@ func retryConfig(cfg *config.Config) config.RetryConfig {
 	if cfg == nil {
 		return defaultRetryConfig()
 	}
+
 	return cfg.Assistant.Retry.Normalized()
 }
 
@@ -56,9 +57,11 @@ func defaultRetryConfig() config.RetryConfig {
 
 func retryDelay(attempt int, retry config.RetryConfig) time.Duration {
 	retry = retry.Normalized()
+
 	if attempt < 1 {
 		attempt = 1
 	}
+
 	delay := retry.BaseDelay
 	for range attempt - 1 {
 		delay *= 2
@@ -66,9 +69,11 @@ func retryDelay(attempt int, retry config.RetryConfig) time.Duration {
 			return retry.MaxDelay
 		}
 	}
+
 	if delay > retry.MaxDelay {
 		return retry.MaxDelay
 	}
+
 	return delay
 }
 
@@ -76,13 +81,15 @@ func waitForRetry(ctx context.Context, delay time.Duration) error {
 	if delay <= 0 {
 		return nil
 	}
+
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
+
 	select {
 	case <-timer.C:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return assistantError(ctx.Err(), "wait before retry")
 	}
 }
 
@@ -91,22 +98,28 @@ func ShouldRetryModelError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return false
 	}
+
 	message := normalizedErrorMessage(err)
 	if nonRetryableProviderMessage(message) {
 		return false
 	}
+
 	if errors.Is(err, context.DeadlineExceeded) {
 		return retryableDeadlineExceeded(message)
 	}
+
 	if retry, ok := retryDecisionFromProviderCode(err); ok {
 		return retry
 	}
+
 	if status, ok := providerErrorStatus(err); ok {
 		return retryableStatus(status)
 	}
+
 	if retryableNetworkError(err) {
 		return true
 	}
+
 	return retryableProviderMessage(message)
 }
 
@@ -115,8 +128,9 @@ func IsContextWindowError(err error) bool {
 	if err == nil {
 		return false
 	}
-	code, ok := providerErrorCode(err)
-	if ok && code == "context_window_exceeded" {
+
+	code, matched := providerErrorCode(err)
+	if matched && code == "context_window_exceeded" {
 		return true
 	}
 
@@ -124,21 +138,25 @@ func IsContextWindowError(err error) bool {
 }
 
 func retryDecisionFromProviderCode(err error) (retry, known bool) {
-	code, ok := providerErrorCode(err)
-	if !ok {
+	code, matched := providerErrorCode(err)
+	if !matched {
 		return false, false
 	}
+
 	if nonRetryableProviderCode(code) {
 		return false, true
 	}
+
 	if retryableProviderCode(code) {
 		return true, true
 	}
+
 	return false, false
 }
 
 func retryableNetworkError(err error) bool {
 	netErr, ok := errors.AsType[net.Error](err)
+
 	return ok && netErr != nil
 }
 
@@ -155,28 +173,32 @@ func retryableDeadlineExceeded(message string) bool {
 }
 
 func providerErrorCode(err error) (string, bool) {
-	oopsErr, ok := oops.AsOops(err)
-	if !ok {
+	oopsErr, matched := oops.AsOops(err)
+	if !matched {
 		return "", false
 	}
-	codeValue, ok := oopsErr.Code().(string)
-	if !ok {
+
+	codeValue, matched := oopsErr.Code().(string)
+	if !matched {
 		return "", false
 	}
+
 	code := strings.ToLower(strings.TrimSpace(codeValue))
 
 	return code, code != ""
 }
 
 func providerErrorStatus(err error) (int, bool) {
-	oopsErr, ok := oops.AsOops(err)
-	if !ok {
+	oopsErr, matched := oops.AsOops(err)
+	if !matched {
 		return 0, false
 	}
-	status, ok := oopsErr.Context()["status"]
-	if !ok {
+
+	status, matched := oopsErr.Context()["status"]
+	if !matched {
 		return 0, false
 	}
+
 	switch value := status.(type) {
 	case int:
 		return value, true
@@ -235,6 +257,7 @@ func nonRetryableProviderMessage(message string) bool {
 	if contextWindowProviderMessage(message) {
 		return true
 	}
+
 	nonRetryable := []string{
 		"invalid api key",
 		"unauthorized",
@@ -249,6 +272,7 @@ func nonRetryableProviderMessage(message string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -327,5 +351,6 @@ func retryableProviderMessage(message string) bool {
 			return true
 		}
 	}
+
 	return false
 }

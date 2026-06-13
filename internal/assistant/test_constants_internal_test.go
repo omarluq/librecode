@@ -1,6 +1,6 @@
 package assistant
 
-var (
+const (
 	expectedReadToolName = string(jsonReadToolName)
 	expectedSystemRole   = string(jsonSystemRole)
 )

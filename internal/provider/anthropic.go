@@ -26,6 +26,7 @@ func (client *HTTPCompletionClient) completeAnthropic(
 		if err != nil {
 			return nil, err
 		}
+
 		if finished {
 			return state.result, nil
 		}
@@ -44,14 +45,17 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 	state *anthropicLoopState,
 ) (bool, error) {
 	payload := anthropicPayload(request, state.messages)
+
 	providerResult, err := client.requestAnthropic(ctx, state.endpoint, request, payload)
 	if err != nil {
 		return false, err
 	}
+
 	state.result.Usage = mergeUsage(state.result.Usage, providerResult.Usage)
 	if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
 		return false, validateErr
 	}
+
 	if len(providerResult.ToolCalls) == 0 {
 		if fallback := TextToolCallsFromText(providerResult.Text); len(fallback) > 0 {
 			providerResult.ToolCalls = fallback
@@ -59,11 +63,14 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 			return finishProviderResult(state.result, providerResult)
 		}
 	}
+
 	events, err := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)
 	if err != nil {
 		return false, err
 	}
+
 	appendToolResults(state.result, events)
+
 	if err := appendAnthropicToolConversation(request, state, providerResult, events); err != nil {
 		return false, err
 	}
@@ -96,12 +103,15 @@ func appendAnthropicToolConversation(
 			map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: providerResult.Text},
 			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: TextToolResultPrompt(events)},
 		)
+
 		return nil
 	}
+
 	toolResultMessage, err := anthropicToolResultMessage(providerResult.ToolCalls, events)
 	if err != nil {
 		return err
 	}
+
 	state.messages = append(
 		state.messages,
 		anthropicAssistantToolMessage(request, providerResult.ToolCalls),
@@ -111,13 +121,15 @@ func appendAnthropicToolConversation(
 	return nil
 }
 
+const anthropicDefaultMaxTokens = 4_096
+
 func anthropicPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
 	// Anthropic's recent Claude models reject temperature when thinking/adaptive
 	// reasoning is available. Match production agent clients by omitting
 	// temperature unless/until librecode exposes an explicit user setting.
 	payload := map[string]any{
 		jsonModelKey:          request.Request.Model.ID,
-		finishReasonMaxTokens: minPositive(request.Request.Model.MaxTokens, 4096),
+		finishReasonMaxTokens: minPositive(request.Request.Model.MaxTokens, anthropicDefaultMaxTokens),
 		jsonMessagesKey:       messages,
 		"tools":               AnthropicTools(request),
 	}
@@ -126,6 +138,7 @@ func anthropicPayload(request *CompletionRequest, messages []map[string]any) map
 	} else if request.Request.SystemPrompt != "" {
 		payload["system"] = []map[string]any{anthropicSystemText(request.Request.SystemPrompt)}
 	}
+
 	if request.Request.Model.Reasoning {
 		maps.Copy(payload, anthropicThinkingConfig(request))
 	}
@@ -137,6 +150,7 @@ const anthropicBetaHeader = "anthropic-beta"
 
 func anthropicHeaders(request *CompletionRequest) map[string]string {
 	headers := cloneHeaders(request.Request.Auth.Headers)
+
 	betaFeatures := anthropicBetaFeatures(request)
 	if usesAnthropicOAuth(request) {
 		headers["Authorization"] = "Bearer " + request.Request.Auth.APIKey
@@ -150,6 +164,7 @@ func anthropicHeaders(request *CompletionRequest) map[string]string {
 		headers["x-api-key"] = request.Request.Auth.APIKey
 		headers[anthropicBetaHeader] = appendAnthropicBeta(headers[anthropicBetaHeader], betaFeatures...)
 	}
+
 	headers["anthropic-version"] = "2023-06-01"
 
 	return headers
@@ -187,8 +202,10 @@ func anthropicThinkingConfig(request *CompletionRequest) map[string]any {
 		if anthropicmodel.RequiresAdaptiveThinking(request.Request.Model.ID) {
 			return map[string]any{}
 		}
+
 		return map[string]any{jsonThinkingKey: map[string]any{jsonTypeKey: "disabled"}}
 	}
+
 	if anthropicmodel.SupportsAdaptiveThinking(request.Request.Model.ID) {
 		return anthropicAdaptiveThinkingConfig(request)
 	}
@@ -219,6 +236,7 @@ func anthropicThinkingEffort(request *CompletionRequest) string {
 	if mapped := request.Request.Model.ThinkingLevelMap[request.Request.ThinkingLevel]; mapped != nil {
 		return *mapped
 	}
+
 	switch request.Request.ThinkingLevel {
 	case thinkingMinimal, thinkingLow:
 		return thinkingLow
@@ -242,28 +260,37 @@ func anthropicBetaFeatures(request *CompletionRequest) []string {
 	return features
 }
 
+const (
+	anthropicMinimalThinkingBudget = 1_024
+	anthropicLowThinkingBudget     = 4_096
+	anthropicMediumThinkingBudget  = 10_240
+	anthropicHighThinkingBudget    = 20_480
+)
+
 func anthropicThinkingBudget(level string) int {
 	switch level {
 	case thinkingMinimal:
-		return 1024
+		return anthropicMinimalThinkingBudget
 	case thinkingLow:
-		return 4096
+		return anthropicLowThinkingBudget
 	case thinkingHigh, thinkingXHigh:
-		return 20480
+		return anthropicHighThinkingBudget
 	default:
-		return 10240
+		return anthropicMediumThinkingBudget
 	}
 }
 
 func appendAnthropicBeta(existing string, values ...string) string {
 	seen := map[string]bool{}
 	output := make([]string, 0, len(values)+1)
+
 	items := append(strings.Split(existing, ","), values...)
 	for _, item := range items {
 		trimmed := strings.TrimSpace(item)
 		if trimmed == "" || seen[trimmed] {
 			continue
 		}
+
 		seen[trimmed] = true
 		output = append(output, trimmed)
 	}
@@ -278,10 +305,12 @@ func (client *HTTPCompletionClient) requestAnthropic(
 	payload map[string]any,
 ) (*providerResult, error) {
 	headers := anthropicHeaders(request)
+
 	providerRequest, err := applyProviderRequestHook(ctx, request, payload, headers)
 	if err != nil {
 		return nil, err
 	}
+
 	content, err := client.postJSON(ctx, endpoint, providerRequest.Headers, providerRequest.Payload)
 	if err != nil {
 		return nil, err
@@ -307,16 +336,20 @@ func parseAnthropicResult(content []byte) (*providerResult, error) {
 	if err := json.Unmarshal(content, &response); err != nil {
 		return nil, oops.In("provider").Code("anthropic_decode").Wrapf(err, "decode anthropic response")
 	}
+
 	if response.Error.Message != "" {
 		return nil, providerErrorToOops("anthropic_error", &response.Error)
 	}
+
 	parts, calls := anthropicContentParts(response.Content)
 	finishReason := anthropicFinishReason(response.StopReason, len(calls) > 0)
+
 	text := strings.TrimSpace(strings.Join(parts, "\n"))
 	if finishReason == llm.FinishReasonRefusal {
 		if text == "" {
 			text = anthropicRefusalText(response.StopDetails)
 		}
+
 		calls = nil
 	}
 
@@ -344,6 +377,7 @@ func anthropicContentParts(content []struct {
 	Name  string `json:"name"`
 }) ([]string, []ToolCall) {
 	parts := make([]string, 0, len(content))
+
 	calls := make([]ToolCall, 0, len(content))
 	for _, block := range content {
 		switch block.Type {
@@ -363,14 +397,18 @@ func anthropicRefusalText(details *anthropicStopDetails) string {
 	if details == nil {
 		return "The model refused the request."
 	}
+
 	explanation := strings.TrimSpace(details.Explanation)
+
 	category := strings.TrimSpace(details.Category)
 	if explanation != "" && category != "" {
 		return "The model refused the request (" + category + "): " + explanation
 	}
+
 	if explanation != "" {
 		return "The model refused the request: " + explanation
 	}
+
 	if category != "" {
 		return "The model refused the request (" + category + ")."
 	}
@@ -392,6 +430,7 @@ func anthropicFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
 		if hasToolCalls {
 			return llm.FinishReasonToolCalls
 		}
+
 		return llm.FinishReasonUnknown
 	}
 }
@@ -411,13 +450,16 @@ func anthropicToolCall(callID, name string, input any) ToolCall {
 
 func anthropicToolArguments(input any) (arguments map[string]any, argumentsJSON string) {
 	arguments = map[string]any{}
+
 	payload, err := json.Marshal(input)
 	if err != nil {
 		return arguments, "{}"
 	}
+
 	if len(payload) == 0 || string(payload) == "null" {
 		return arguments, "{}"
 	}
+
 	if err := json.Unmarshal(payload, &arguments); err != nil {
 		return map[string]any{}, string(payload)
 	}
@@ -447,6 +489,7 @@ func anthropicToolResultMessage(calls []ToolCall, events []ToolEvent) (map[strin
 			With("events", len(events)).
 			Errorf("build Anthropic tool result message: mismatched tool calls and results")
 	}
+
 	blocks := make([]map[string]any, 0, len(events))
 	for index, event := range events {
 		block := map[string]any{
@@ -457,6 +500,7 @@ func anthropicToolResultMessage(calls []ToolCall, events []ToolEvent) (map[strin
 		if event.IsError {
 			block["is_error"] = true
 		}
+
 		blocks = append(blocks, block)
 	}
 
@@ -465,12 +509,15 @@ func anthropicToolResultMessage(calls []ToolCall, events []ToolEvent) (map[strin
 
 func anthropicMessages(messages []llm.Message) []map[string]any {
 	output := []map[string]any{}
+
 	for _, message := range messages {
 		role, ok := anthropicRole(message.Role)
+
 		content := messageText(message)
 		if !ok || content == "" {
 			continue
 		}
+
 		output = append(output, map[string]any{jsonRoleKey: role, jsonContentKey: content})
 	}
 
@@ -501,6 +548,7 @@ func anthropicProviderToolName(name string, oauth bool) string {
 	if !oauth {
 		return name
 	}
+
 	switch name {
 	case jsonReadToolName:
 		return anthropicReadToolName

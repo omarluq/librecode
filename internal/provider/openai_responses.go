@@ -39,12 +39,15 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	stream bool,
 ) (*llm.Response, error) {
 	result := newResponse()
+
 	for {
 		payload := responsesPayload(request, input, stream)
+
 		providerRequest, err := applyProviderRequestHook(ctx, request, payload, cloneStringMap(headers))
 		if err != nil {
 			return nil, err
 		}
+
 		providerResult, err := client.requestResponses(
 			ctx,
 			endpoint,
@@ -56,25 +59,34 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		if err != nil {
 			return nil, err
 		}
+
 		appendThinking(result, providerResult.Thinking)
 		result.Usage = mergeUsage(result.Usage, providerResult.Usage)
+
 		result.FinishReason = providerResult.FinishReason
 		if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
 			return nil, validateErr
 		}
+
 		if len(providerResult.ToolCalls) == 0 {
 			setResponseText(result, providerResult.Text)
+
 			if result.FinishReason == llm.FinishReasonUnknown {
 				result.FinishReason = llm.FinishReasonStop
 			}
+
 			return result, nil
 		}
+
 		input = append(input, statelessResponseOutputItems(providerResult.OutputItems)...)
+
 		outputs, events, err := executeToolCalls(ctx, request, providerResult.ToolCalls)
 		if err != nil {
 			return nil, err
 		}
+
 		appendToolResults(result, events)
+
 		input = append(input, outputs...)
 	}
 }
@@ -98,11 +110,13 @@ func responsesBasePayload(request *CompletionRequest, input []any, stream bool) 
 	if request.Request.SystemPrompt != "" {
 		payload["instructions"] = request.Request.SystemPrompt
 	}
+
 	if stream {
 		payload["text"] = map[string]string{"verbosity": "low"}
 		payload["include"] = []string{"reasoning.encrypted_content"}
 		payload["prompt_cache_key"] = request.Request.SessionID
 	}
+
 	if shouldIncludeReasoningEffort(request) {
 		payload["reasoning"] = map[string]any{
 			reasoningEffortKey: request.Request.ThinkingLevel,
@@ -127,11 +141,13 @@ func (client *HTTPCompletionClient) requestResponses(
 	if err != nil {
 		return nil, err
 	}
+
 	response, err := client.client.Do(httpRequest)
 	if err != nil {
 		return nil, oops.In("provider").Code("responses_http").Wrapf(err, "request provider response")
 	}
 	defer closeBody(response.Body)
+
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		content, readErr := readProviderBody(response.Body)
 		if readErr != nil {
@@ -140,9 +156,11 @@ func (client *HTTPCompletionClient) requestResponses(
 
 		return nil, providerStatusError("responses_status", response.StatusCode, content)
 	}
+
 	if stream {
 		return parseSSEResult(response.Body, onEvent)
 	}
+
 	content, err := readProviderBody(response.Body)
 	if err != nil {
 		return nil, oops.In("provider").Code("responses_read").Wrapf(err, "read provider response")
@@ -158,6 +176,7 @@ func statelessResponseOutputItems(items []any) []any {
 		if !ok || stringValue(object[jsonTypeKey]) != functionCallType {
 			continue
 		}
+
 		stateless = append(stateless, map[string]any{
 			jsonTypeKey:      functionCallType,
 			jsonCallIDKey:    stringValue(object[jsonCallIDKey]),
@@ -175,6 +194,7 @@ func parseOpenAIResponseResult(content []byte) (*providerResult, error) {
 	if err := json.Unmarshal(content, &response); err != nil {
 		return nil, oops.In("provider").Code("openai_response_decode").Wrapf(err, "decode response")
 	}
+
 	if errorValue, ok := response["error"]; ok {
 		message := errorMessage(errorValue)
 		if message != "" {
@@ -188,6 +208,7 @@ func parseOpenAIResponseResult(content []byte) (*providerResult, error) {
 func providerResultFromResponse(response map[string]any) *providerResult {
 	outputItems := outputItemsFromResponse(response[jsonOutputKey])
 	toolCalls := toolCallsFromOutput(outputItems)
+
 	text := strings.TrimSpace(extractText(response[jsonOutputKey]))
 	if text == "" {
 		if outputText, ok := response["output_text"].(string); ok {
@@ -227,13 +248,16 @@ func openAIResponseFinishReason(response map[string]any, hasToolCalls bool) llm.
 	if hasToolCalls {
 		return llm.FinishReasonToolCalls
 	}
+
 	status := stringValue(response["status"])
 	if status == statusCompleted {
 		return llm.FinishReasonStop
 	}
+
 	if status == "failed" {
 		return llm.FinishReasonError
 	}
+
 	if status != "incomplete" {
 		return llm.FinishReasonUnknown
 	}
@@ -246,6 +270,7 @@ func openAIIncompleteFinishReason(response map[string]any) llm.FinishReason {
 	if !ok {
 		return llm.FinishReasonLength
 	}
+
 	switch stringValue(details["reason"]) {
 	case "max_output_tokens", finishReasonMaxTokens:
 		return llm.FinishReasonLength
@@ -269,6 +294,7 @@ func outputItemsFromResponse(output any) []any {
 	if !ok {
 		return nil
 	}
+
 	cloned := make([]any, 0, len(items))
 	cloned = append(cloned, items...)
 
@@ -277,18 +303,22 @@ func outputItemsFromResponse(output any) []any {
 
 func toolCallsFromOutput(output []any) []ToolCall {
 	calls := []ToolCall{}
+
 	for _, item := range output {
 		object, ok := item.(map[string]any)
 		if !ok || stringValue(object[jsonTypeKey]) != functionCallType {
 			continue
 		}
+
 		argumentsJSON := stringValue(object[jsonArgumentsKey])
+
 		arguments := map[string]any{}
 		if strings.TrimSpace(argumentsJSON) != "" {
 			if err := json.Unmarshal([]byte(argumentsJSON), &arguments); err != nil {
 				arguments = map[string]any{}
 			}
 		}
+
 		calls = append(calls, ToolCall{
 			Arguments:     arguments,
 			Metadata:      nil,
@@ -304,11 +334,13 @@ func toolCallsFromOutput(output []any) []ToolCall {
 
 func thinkingFromOutput(output []any) []string {
 	thinking := []string{}
+
 	for _, item := range output {
 		object, ok := item.(map[string]any)
 		if !ok || stringValue(object[jsonTypeKey]) != "reasoning" {
 			continue
 		}
+
 		text := strings.TrimSpace(extractThinkingText(object["summary"]))
 		if text != "" {
 			thinking = append(thinking, text)
@@ -353,9 +385,11 @@ func extractText(value any) string {
 		if text, ok := typed["text"].(string); ok {
 			return text
 		}
+
 		if content, ok := typed["content"]; ok {
 			return extractText(content)
 		}
+
 		if output, ok := typed[jsonOutputKey]; ok {
 			return extractText(output)
 		}

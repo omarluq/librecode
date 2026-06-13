@@ -22,6 +22,7 @@ func (app *App) focusState() extension.FocusState {
 			Exclusive: true,
 		}
 	}
+
 	if app.autocompleteActive() {
 		return extension.FocusState{
 			Kind:      focusKindAutocomplete,

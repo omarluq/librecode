@@ -30,6 +30,7 @@ func generateDiffString(oldContent, newContent string) (EditDetails, error) {
 	}
 
 	truncation := TruncateHead(diff, TruncationOptions{MaxLines: editDiffMaxLines, MaxBytes: editDiffMaxBytes})
+
 	return EditDetails{
 		Diff:             truncation.Content,
 		FirstChangedLine: firstChangedLineFromUnifiedDiff(diff),
@@ -39,18 +40,23 @@ func generateDiffString(oldContent, newContent string) (EditDetails, error) {
 
 func firstChangedLineFromUnifiedDiff(diff string) int {
 	currentLine := 0
+
 	for line := range strings.SplitSeq(diff, "\n") {
 		if strings.HasPrefix(line, "@@") {
-			lineNumber, ok := parseUnifiedHunkStart(line)
-			if !ok {
+			lineNumber, matched := parseUnifiedHunkStart(line)
+			if !matched {
 				continue
 			}
+
 			currentLine = lineNumber
+
 			continue
 		}
+
 		if currentLine == 0 || strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
 			continue
 		}
+
 		switch {
 		case strings.HasPrefix(line, "-"):
 			return currentLine
@@ -69,14 +75,17 @@ func parseUnifiedHunkStart(header string) (int, bool) {
 	if len(parts) < 3 || !strings.HasPrefix(parts[1], "-") || !strings.HasPrefix(parts[2], "+") {
 		return 0, false
 	}
-	oldStart, oldLength, ok := parseUnifiedRange(strings.TrimPrefix(parts[1], "-"))
-	if !ok {
+
+	oldStart, oldLength, matched := parseUnifiedRange(strings.TrimPrefix(parts[1], "-"))
+	if !matched {
 		return 0, false
 	}
-	newStart, _, ok := parseUnifiedRange(strings.TrimPrefix(parts[2], "+"))
-	if !ok {
+
+	newStart, _, matched := parseUnifiedRange(strings.TrimPrefix(parts[2], "+"))
+	if !matched {
 		return 0, false
 	}
+
 	if oldLength == 0 {
 		return normalizeUnifiedLineNumber(newStart), true
 	}
@@ -86,13 +95,16 @@ func parseUnifiedHunkStart(header string) (int, bool) {
 
 func parseUnifiedRange(lineRange string) (start, length int, ok bool) {
 	lineText, lengthText, hasLength := strings.Cut(lineRange, ",")
+
 	lineNumber, err := strconv.Atoi(lineText)
 	if err != nil {
 		return 0, 0, false
 	}
+
 	if !hasLength {
 		return lineNumber, 1, true
 	}
+
 	lineCount, err := strconv.Atoi(lengthText)
 	if err != nil {
 		return 0, 0, false

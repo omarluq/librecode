@@ -22,6 +22,7 @@ func NewDiagnosticObserver(bus *Bus, logger *slog.Logger) *DiagnosticObserver {
 	if bus == nil || logger == nil {
 		return observer
 	}
+
 	stream := ro.Pipe1(
 		bus.Stream(),
 		ro.TapOnNextWithContext(func(_ context.Context, envelope Envelope) {
@@ -52,6 +53,7 @@ func (observer *DiagnosticObserver) Stop() {
 	if observer == nil || observer.subscription == nil {
 		return
 	}
+
 	observer.subscription.Unsubscribe()
 	observer.subscription = nil
 }

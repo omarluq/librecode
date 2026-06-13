@@ -16,7 +16,7 @@ func newVersionCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), vinfo.String())
 
-			return err
+			return cliError(err, "write version")
 		},
 	}
 }

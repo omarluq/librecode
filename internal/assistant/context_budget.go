@@ -12,9 +12,11 @@ func estimateToolSchemaTokens(request *CompletionRequest) int {
 	if request == nil {
 		return 0
 	}
+
 	definitions := llmToolDefinitionsFromRegistry(request.ToolRegistry, request.DisableTools)
 
 	var tools []map[string]any
+
 	switch request.Model.API {
 	case apiOpenAICompletions:
 		tools = provider.OpenAIChatToolsFromDefinitions(definitions)
@@ -23,9 +25,11 @@ func estimateToolSchemaTokens(request *CompletionRequest) int {
 	default:
 		tools = provider.ResponseToolsFromDefinitions(definitions)
 	}
+
 	if len(tools) == 0 {
 		return 0
 	}
+
 	encoded, err := json.Marshal(tools)
 	if err != nil {
 		return contextwindow.EstimateTokens(fmt.Sprint(tools))

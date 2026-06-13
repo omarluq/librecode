@@ -12,6 +12,7 @@ func Rune(event *tcell.EventKey) rune {
 	if event == nil || event.Str() == "" {
 		return 0
 	}
+
 	value, _ := utf8.DecodeRuneInString(event.Str())
 
 	return value

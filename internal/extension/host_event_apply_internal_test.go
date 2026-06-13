@@ -15,6 +15,7 @@ func TestLuaHostEventApplyLuaResultMutatesChangedState(t *testing.T) {
 
 	state := lua.NewState()
 	t.Cleanup(state.Close)
+
 	event := newLuaHostEvent(&TerminalEvent{
 		Buffers: map[string]BufferState{
 			luaBufferComposer: newBufferState(luaBufferComposer, "old"),
@@ -68,9 +69,11 @@ func TestLuaHostEventDeleteThenSetRemovesDeletedMarkers(t *testing.T) {
 	})
 
 	event.deleteBuffer("b")
+
 	buffer := newBufferState("b", "new")
 	event.setBuffer("b", &buffer)
 	event.deleteWindow("w")
+
 	window := testLuaHostWindow()
 	event.setWindow("w", &window)
 
@@ -99,6 +102,7 @@ func TestLuaHostEventNamesAndFallbacks(t *testing.T) {
 	assert.Equal(t, []string{"a", "z"}, event.windowNames())
 	missingBuffer := event.buffer("missing")
 	assert.Equal(t, "missing", missingBuffer.Name)
+
 	missingWindow, ok := event.window("missing")
 	assert.False(t, ok)
 	assert.Empty(t, missingWindow.Name)

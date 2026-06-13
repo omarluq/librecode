@@ -46,6 +46,7 @@ func NewSourceInfo(path string, options SourceInfoOptions) SourceInfo {
 	if scope == "" {
 		scope = SourceScopeTemporary
 	}
+
 	origin := options.Origin
 	if origin == "" {
 		origin = SourceOriginTopLevel

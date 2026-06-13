@@ -51,7 +51,6 @@ func TestConfigFormattingHelpers(t *testing.T) {
 			OutputReserveTokens:   1,
 			ProviderReserveTokens: 2,
 			SafetyMarginTokens:    3,
-			KeepRecentTokens:      4,
 			PreflightEnabled:      true,
 		},
 		Models: config.ModelsConfig{Discovery: config.ModelDiscoveryConfig{
@@ -86,6 +85,7 @@ func TestPrintSessionSummaryAndEntry(t *testing.T) {
 	cmd := &cobra.Command{}
 	output := new(bytes.Buffer)
 	cmd.SetOut(output)
+
 	updatedAt := time.Date(2026, 6, 9, 1, 2, 3, 0, time.UTC)
 
 	require.NoError(t, printSessionSummary(cmd, &database.SessionEntity{

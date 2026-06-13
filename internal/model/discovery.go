@@ -12,12 +12,25 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/anthropicmodel"
+	"github.com/omarluq/librecode/internal/units"
 )
 
 const (
 	apiAnthropicMessages   = "anthropic-messages"
 	apiOpenAICodexResponse = "openai-codex-responses"
 	gpt52                  = "gpt-5.2"
+	gpt52InputCost         = 1.75
+	gpt52OutputCost        = 14
+	gpt52CacheCost         = 0.175
+	gpt54InputCost         = 2.5
+	gpt54OutputCost        = 15
+	gpt54CacheCost         = 0.25
+	gpt54MiniInput         = 0.75
+	gpt54MiniOutput        = 4.5
+	gpt54MiniCache         = 0.075
+	gpt55InputCost         = 5
+	gpt55OutputCost        = 30
+	gpt55CacheCost         = 0.5
 )
 
 // DiscoveryOptions configures remote model catalog discovery.
@@ -83,11 +96,13 @@ func DiscoverModels(ctx context.Context, options DiscoveryOptions) ([]Model, err
 	if !options.Enabled {
 		return []Model{}, nil
 	}
+
 	if strings.TrimSpace(options.SourceURL) == "" {
 		return []Model{}, oops.In("model").Code("model_discovery_source").Errorf(
 			"model discovery source URL is required",
 		)
 	}
+
 	if options.CachePath != "" {
 		return DiscoverModelsCached(ctx, CachedDiscoveryOptions{
 			Client:       options.Client,
@@ -98,6 +113,7 @@ func DiscoverModels(ctx context.Context, options DiscoveryOptions) ([]Model, err
 			Enabled:      true,
 		})
 	}
+
 	content, err := fetchDiscoveryCatalog(ctx, options)
 	if err != nil {
 		return []Model{}, err
@@ -117,13 +133,16 @@ func ParseDiscoveredModels(content []byte) ([]Model, error) {
 	}
 
 	models := []Model{}
+
 	for _, mapping := range discoveryProviderMappings() {
 		provider, ok := catalog[mapping.Source]
 		if !ok {
 			continue
 		}
+
 		models = append(models, discoveredProviderModels(provider.Models, mapping)...)
 	}
+
 	models = append(models, discoveredCodexModels()...)
 
 	return models, nil
@@ -134,29 +153,36 @@ func fetchDiscoveryCatalog(ctx context.Context, options DiscoveryOptions) ([]byt
 	if client == nil {
 		client = http.DefaultClient
 	}
+
 	if options.FetchTimeout > 0 {
 		var cancel context.CancelFunc
+
 		ctx, cancel = context.WithTimeout(ctx, options.FetchTimeout)
 		defer cancel()
 	}
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, options.SourceURL, http.NoBody)
 	if err != nil {
 		return nil, oops.In("model").Code("model_discovery_request").Wrapf(err, "create model discovery request")
 	}
+
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", "librecode model discovery")
+
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, oops.In("model").Code("model_discovery_fetch").Wrapf(err, "fetch model discovery catalog")
 	}
 	defer closeResponseBody(response.Body)
+
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return nil, oops.In("model").Code("model_discovery_status").Errorf(
 			"fetch model discovery catalog: unexpected status %s",
 			response.Status,
 		)
 	}
-	content, err := io.ReadAll(io.LimitReader(response.Body, 16<<20))
+
+	content, err := io.ReadAll(io.LimitReader(response.Body, discoveryCatalogMaxBytes))
 	if err != nil {
 		return nil, oops.In("model").Code("model_discovery_read").Wrapf(err, "read model discovery catalog")
 	}
@@ -194,6 +220,7 @@ func discoveredProviderModels(definitions map[string]discoveryModel, mapping dis
 		if !definition.ToolCall {
 			continue
 		}
+
 		models = append(models, modelFromDiscovery(modelID, &definition, mapping))
 	}
 
@@ -205,6 +232,7 @@ func modelFromDiscovery(modelID string, definition *discoveryModel, mapping disc
 	if definition.ID != "" {
 		discoveryModelID = definition.ID
 	}
+
 	name := definition.Name
 	if name == "" {
 		name = discoveryModelID
@@ -231,6 +259,7 @@ func discoveryInputModes(modalities *discoveryModalities) []InputMode {
 	if modalities == nil {
 		return []InputMode{InputText}
 	}
+
 	input := []InputMode{InputText}
 	if slices.Contains(modalities.Input, string(InputImage)) {
 		input = append(input, InputImage)
@@ -266,6 +295,7 @@ func discoveryMaxTokens(limit *discoveryLimit) int {
 func discoveredCodexModels() []Model {
 	metadata := openAICodexMetadata()
 	definitions := discoveredCodexDefinitions(metadata.ContextWindow)
+
 	models := make([]Model, 0, len(definitions))
 	for _, definition := range definitions {
 		models = append(models, Model{
@@ -288,16 +318,40 @@ func discoveredCodexModels() []Model {
 	return models
 }
 
+const discoveryCatalogMaxBytes = 16 * units.MiB
+
+func codexGPT52Cost() Cost {
+	return Cost{Input: gpt52InputCost, Output: gpt52OutputCost, CacheRead: gpt52CacheCost, CacheWrite: 0}
+}
+
+func codexGPT54Cost() Cost {
+	return Cost{Input: gpt54InputCost, Output: gpt54OutputCost, CacheRead: gpt54CacheCost, CacheWrite: 0}
+}
+
+func codexGPT54MiniCost() Cost {
+	return Cost{Input: gpt54MiniInput, Output: gpt54MiniOutput, CacheRead: gpt54MiniCache, CacheWrite: 0}
+}
+
+func codexGPT55Cost() Cost {
+	return Cost{Input: gpt55InputCost, Output: gpt55OutputCost, CacheRead: gpt55CacheCost, CacheWrite: 0}
+}
+
 func discoveredCodexDefinitions(defaultWindow int) []discoveredCodexDefinition {
 	textImage := []InputMode{InputText, InputImage}
 
 	return []discoveredCodexDefinition{
-		codexDefinition(gpt52, "GPT-5.2", textImage, defaultWindow, 1.75, 14, 0.175),
-		codexDefinition("gpt-5.3-codex", "GPT-5.3 Codex", textImage, defaultWindow, 1.75, 14, 0.175),
-		codexDefinition("gpt-5.3-codex-spark", "GPT-5.3 Codex Spark", []InputMode{InputText}, 128000, 1.75, 14, 0.175),
-		codexDefinition(gpt54, "GPT-5.4", textImage, defaultWindow, 2.5, 15, 0.25),
-		codexDefinition("gpt-5.4-mini", "GPT-5.4 mini", textImage, defaultWindow, 0.75, 4.5, 0.075),
-		codexDefinition(gpt55, "GPT-5.5", textImage, defaultWindow, 5, 30, 0.5),
+		codexDefinition(gpt52, "GPT-5.2", textImage, defaultWindow, codexGPT52Cost()),
+		codexDefinition("gpt-5.3-codex", "GPT-5.3 Codex", textImage, defaultWindow, codexGPT52Cost()),
+		codexDefinition(
+			"gpt-5.3-codex-spark",
+			"GPT-5.3 Codex Spark",
+			[]InputMode{InputText},
+			largeMaxOutputTokens,
+			codexGPT52Cost(),
+		),
+		codexDefinition(gpt54, "GPT-5.4", textImage, defaultWindow, codexGPT54Cost()),
+		codexDefinition("gpt-5.4-mini", "GPT-5.4 mini", textImage, defaultWindow, codexGPT54MiniCost()),
+		codexDefinition(gpt55, "GPT-5.5", textImage, defaultWindow, codexGPT55Cost()),
 	}
 }
 
@@ -306,12 +360,10 @@ func codexDefinition(
 	name string,
 	input []InputMode,
 	window int,
-	inputCost float64,
-	outputCost float64,
-	cacheReadCost float64,
+	cost Cost,
 ) discoveredCodexDefinition {
 	return discoveredCodexDefinition{
-		Cost:   Cost{Input: inputCost, Output: outputCost, CacheRead: cacheReadCost, CacheWrite: 0},
+		Cost:   cost,
 		Input:  append([]InputMode{}, input...),
 		ID:     modelID,
 		Name:   name,
@@ -325,6 +377,7 @@ func thinkingLevelsForDiscoveredModel(provider, modelID string) map[ThinkingLeve
 	addOpenAIThinkingOff(levels, provider, modelID)
 	addOpenAIThinkingNone(levels, provider, modelID)
 	addOpenAIXHigh(levels, modelID)
+
 	if len(levels) == 0 {
 		return nil
 	}
@@ -336,10 +389,13 @@ func addAnthropicThinkingLevels(levels map[ThinkingLevel]*string, provider, mode
 	if provider != providerAnthropic && provider != providerAnthropicClaude {
 		return
 	}
+
 	levels[ThinkingOff] = nil
+
 	if !anthropicmodel.SupportsXHigh(modelID) {
 		return
 	}
+
 	xhigh := string(ThinkingXHigh)
 	levels[ThinkingXHigh] = &xhigh
 }
@@ -354,6 +410,7 @@ func addOpenAIThinkingNone(levels map[ThinkingLevel]*string, provider, modelID s
 	if provider != providerOpenAI || !openAIResponsesNoReasoningModel(modelID) {
 		return
 	}
+
 	none := "none"
 	levels[ThinkingOff] = &none
 }
@@ -362,6 +419,7 @@ func addOpenAIXHigh(levels map[ThinkingLevel]*string, modelID string) {
 	if !openAISupportsXHigh(modelID) {
 		return
 	}
+
 	xhigh := string(ThinkingXHigh)
 	levels[ThinkingXHigh] = &xhigh
 }

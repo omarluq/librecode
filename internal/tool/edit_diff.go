@@ -12,8 +12,8 @@ import (
 
 // Replacement is one exact text replacement for the edit tool.
 type Replacement struct {
-	OldText string `json:"oldText"`
-	NewText string `json:"newText"`
+	OldText string `json:"old_text"`
+	NewText string `json:"new_text"`
 }
 
 // EditDetails describes the applied edit diff.
@@ -45,10 +45,12 @@ type appliedEdits struct {
 
 func detectLineEnding(content string) string {
 	crlfIndex := strings.Index(content, "\r\n")
+
 	lfIndex := strings.Index(content, "\n")
 	if lfIndex == -1 || crlfIndex == -1 {
 		return "\n"
 	}
+
 	if crlfIndex < lfIndex {
 		return "\r\n"
 	}
@@ -78,6 +80,7 @@ func stripBOM(content string) (bom, text string) {
 
 func normalizeForFuzzyMatch(text string) string {
 	normalizedText := norm.NFKC.String(text)
+
 	lines := strings.Split(normalizedText, "\n")
 	for lineIndex := range lines {
 		lines[lineIndex] = strings.TrimRightFunc(lines[lineIndex], unicode.IsSpace)
@@ -105,7 +108,7 @@ func replaceFuzzyRunes(text string) string {
 		"\u2212", "-",
 	)
 
-	return unicodeSpaceReplacer.Replace(replacer.Replace(text))
+	return unicodeSpaceReplacer().Replace(replacer.Replace(text))
 }
 
 func fuzzyFindText(content, oldText string) fuzzyMatchResult {
@@ -121,6 +124,7 @@ func fuzzyFindText(content, oldText string) fuzzyMatchResult {
 
 	fuzzyContent := normalizeForFuzzyMatch(content)
 	fuzzyOldText := normalizeForFuzzyMatch(oldText)
+
 	fuzzyIndex := strings.Index(fuzzyContent, fuzzyOldText)
 	if fuzzyIndex == -1 {
 		return fuzzyMatchResult{
@@ -155,6 +159,7 @@ func applyEditsToNormalizedContent(
 	for _, edit := range normalizedEdits {
 		if fuzzyFindText(normalizedContent, edit.OldText).usedFuzzyMatch {
 			baseContent = normalizeForFuzzyMatch(normalizedContent)
+
 			break
 		}
 	}
@@ -163,6 +168,7 @@ func applyEditsToNormalizedContent(
 	if err != nil {
 		return appliedEdits{baseContent: "", newContent: ""}, err
 	}
+
 	if err := rejectOverlappingEdits(matchedEdits, displayPath); err != nil {
 		return appliedEdits{baseContent: "", newContent: ""}, err
 	}
@@ -185,6 +191,7 @@ func normalizeEdits(edits []Replacement, displayPath string) ([]Replacement, err
 		if edit.OldText == "" {
 			return []Replacement{}, emptyOldTextError(displayPath, editIndex, len(edits))
 		}
+
 		normalizedEdits = append(normalizedEdits, Replacement{
 			OldText: normalizeToLF(edit.OldText),
 			NewText: normalizeToLF(edit.NewText),
@@ -201,10 +208,12 @@ func collectMatchedEdits(baseContent string, edits []Replacement, displayPath st
 		if !matchResult.found {
 			return []matchedEdit{}, notFoundError(displayPath, editIndex, len(edits))
 		}
+
 		occurrences := countOccurrences(baseContent, edit.OldText)
 		if occurrences > 1 {
 			return []matchedEdit{}, duplicateError(displayPath, editIndex, len(edits), occurrences)
 		}
+
 		matchedEdits = append(matchedEdits, matchedEdit{
 			newText:     edit.NewText,
 			editIndex:   editIndex,
@@ -218,6 +227,7 @@ func collectMatchedEdits(baseContent string, edits []Replacement, displayPath st
 
 func countOccurrences(content, oldText string) int {
 	fuzzyContent := normalizeForFuzzyMatch(content)
+
 	fuzzyOldText := normalizeForFuzzyMatch(oldText)
 	if fuzzyOldText == "" {
 		return 0
@@ -229,8 +239,10 @@ func countOccurrences(content, oldText string) int {
 func rejectOverlappingEdits(edits []matchedEdit, displayPath string) error {
 	sortedEdits := append([]matchedEdit{}, edits...)
 	sortMatchedEdits(sortedEdits)
+
 	for editIndex := 1; editIndex < len(sortedEdits); editIndex++ {
 		previousEdit := sortedEdits[editIndex-1]
+
 		currentEdit := sortedEdits[editIndex]
 		if previousEdit.matchIndex+previousEdit.matchLength > currentEdit.matchIndex {
 			return fmt.Errorf(
@@ -248,6 +260,7 @@ func rejectOverlappingEdits(edits []matchedEdit, displayPath string) error {
 func applyMatchedEdits(baseContent string, edits []matchedEdit) string {
 	sortedEdits := append([]matchedEdit{}, edits...)
 	sortMatchedEdits(sortedEdits)
+
 	newContent := baseContent
 	for _, edit := range slices.Backward(sortedEdits) {
 		newContent = newContent[:edit.matchIndex] + edit.newText + newContent[edit.matchIndex+edit.matchLength:]
@@ -259,11 +272,13 @@ func applyMatchedEdits(baseContent string, edits []matchedEdit) string {
 func sortMatchedEdits(edits []matchedEdit) {
 	for leftIndex := 1; leftIndex < len(edits); leftIndex++ {
 		currentEdit := edits[leftIndex]
+
 		rightIndex := leftIndex - 1
 		for rightIndex >= 0 && edits[rightIndex].matchIndex > currentEdit.matchIndex {
 			edits[rightIndex+1] = edits[rightIndex]
 			rightIndex--
 		}
+
 		edits[rightIndex+1] = currentEdit
 	}
 }

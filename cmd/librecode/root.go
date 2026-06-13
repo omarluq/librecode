@@ -14,10 +14,12 @@ type commandOptions struct {
 
 func commandOptionsFromCommand(cmd *cobra.Command) commandOptions {
 	root := cmd.Root()
+
 	configFile, err := root.PersistentFlags().GetString("config")
 	if err != nil {
 		configFile = ""
 	}
+
 	disableExtensions, err := root.PersistentFlags().GetBool("no-extensions")
 	if err != nil {
 		disableExtensions = false
@@ -44,6 +46,7 @@ func newRootCmd() *cobra.Command {
 			if resumeSession != "" && len(args) > 0 {
 				resumeSession = args[0]
 			}
+
 			return runChat(cmd, chatRunOptions{
 				SessionID: "",
 				ResumeID:  resumeSession,

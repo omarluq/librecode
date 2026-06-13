@@ -82,6 +82,7 @@ func TestResolveModelScopeSupportsGlobsAndDeduplicates(t *testing.T) {
 		"openai": testAuthCredential(),
 	})
 	require.NoError(t, err)
+
 	registry := model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,

@@ -21,6 +21,7 @@ func uiTextWidth(text string) int {
 
 func uiTextSegments(text string) []uiTextSegment {
 	segments := []uiTextSegment{}
+
 	iterator := displaywidth.StringGraphemes(text)
 	for iterator.Next() {
 		segments = append(segments, uiTextSegment{
@@ -36,9 +37,11 @@ func uiTextTruncate(text string, width int) string {
 	if width <= 0 || text == "" {
 		return ""
 	}
+
 	if uiTextWidth(text) <= width {
 		return text
 	}
+
 	if width == 1 {
 		return "…"
 	}
@@ -52,15 +55,20 @@ func uiTextFit(text string, width int) string {
 	}
 
 	var builder strings.Builder
+
 	used := 0
+
 	for _, segment := range uiTextSegments(text) {
 		if segment.Width == 0 {
 			builder.WriteString(segment.Text)
+
 			continue
 		}
+
 		if used+segment.Width > width {
 			break
 		}
+
 		builder.WriteString(segment.Text)
 		used += segment.Width
 	}
@@ -72,7 +80,9 @@ func uiTextPadRight(text string, width int) string {
 	if width <= 0 {
 		return ""
 	}
+
 	text = uiTextFit(text, width)
+
 	padding := width - uiTextWidth(text)
 	if padding <= 0 {
 		return text
@@ -85,7 +95,9 @@ func uiTextWrap(text string, width int) []string {
 	if width <= 0 {
 		return []string{""}
 	}
+
 	logicalLines := strings.Split(text, "\n")
+
 	lines := make([]string, 0, len(logicalLines))
 	for _, logicalLine := range logicalLines {
 		lines = append(lines, uiTextWrapLogicalLine(logicalLine, width)...)
@@ -101,11 +113,13 @@ func uiTextWrapLogicalLine(line string, width int) []string {
 
 	segments := uiTextSegments(line)
 	lines := []string{}
+
 	for len(segments) > 0 {
 		breakIndex := uiTextWrapBreakIndex(segments, width)
 		lines = append(lines, strings.TrimRight(uiTextJoinSegments(segments[:breakIndex]), " "))
 		segments = uiTextTrimLeadingSpaces(segments[breakIndex:])
 	}
+
 	if len(lines) == 0 {
 		lines = append(lines, "")
 	}
@@ -117,24 +131,31 @@ func uiTextWrapBreakIndex(segments []uiTextSegment, width int) int {
 	used := 0
 	limit := 0
 	lastSpace := -1
+
 	for limit < len(segments) {
 		segment := segments[limit]
 		if segment.Width == 0 {
 			limit++
+
 			continue
 		}
+
 		if used+segment.Width > width {
 			break
 		}
+
 		used += segment.Width
 		if segment.Text == " " || segment.Text == "\t" {
 			lastSpace = limit
 		}
+
 		limit++
 	}
+
 	if limit == 0 {
 		return 1
 	}
+
 	if limit < len(segments) && lastSpace > 0 {
 		return lastSpace + 1
 	}
@@ -146,6 +167,7 @@ func uiTextViewport(lines []string, height, offset int) (visible []string, start
 	if height <= 0 || len(lines) == 0 {
 		return []string{}, 0, 0, 0
 	}
+
 	maxOffset = max(0, len(lines)-height)
 	offset = clampInt(offset, 0, maxOffset)
 	end = len(lines) - offset

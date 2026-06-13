@@ -17,9 +17,11 @@ func (app *App) applyUIOverrides(layout *extui.Layout) {
 		if !ok || !window.Visible {
 			continue
 		}
+
 		if override.Reset {
 			clearWindow(app.frame, &window)
 		}
+
 		for index := range override.DrawOps {
 			drawOp := &override.DrawOps[index]
 			app.drawUIWindowText(&window, drawOp)
@@ -51,16 +53,20 @@ func (app *App) drawUIWindowText(window *extension.WindowState, drawOp *extensio
 func (app *App) drawUIWindowClear(window *extension.WindowState, drawOp *extension.UIDrawOp) {
 	startRow := min(max(drawOp.Row, 0), window.Height)
 	startCol := min(max(drawOp.Col, 0), window.Width)
+
 	height := drawOp.Height
 	if height <= 0 {
 		height = window.Height - startRow
 	}
+
 	width := drawOp.Width
 	if width <= 0 {
 		width = window.Width - startCol
 	}
+
 	endRow := min(max(startRow+height, startRow), window.Height)
 	endCol := min(max(startCol+width, startCol), window.Width)
+
 	style := app.uiStyle(drawOp.Style)
 	for row := startRow; row < endRow; row++ {
 		writeTextAt(
@@ -78,20 +84,26 @@ func (app *App) drawUIWindowBox(window *extension.WindowState, style extension.U
 	if window.Width <= 0 || window.Height <= 0 {
 		return
 	}
+
 	resolved := app.uiStyle(style)
+
 	if window.Width == 1 {
 		for row := 0; row < window.Height; row++ {
 			writeTextAt(app.frame, window.X, window.Y+row, 1, "│", resolved)
 		}
+
 		return
 	}
-	top := "╭" + strings.Repeat("─", max(0, window.Width-2)) + "╮"
-	bottom := "╰" + strings.Repeat("─", max(0, window.Width-2)) + "╯"
+
+	top := "╭" + strings.Repeat("─", max(0, window.Width-runtimeBorderWidth)) + "╮"
+	bottom := "╰" + strings.Repeat("─", max(0, window.Width-runtimeBorderWidth)) + "╯"
 	writeTextAt(app.frame, window.X, window.Y, window.Width, top, resolved)
+
 	for row := 1; row < window.Height-1; row++ {
 		writeTextAt(app.frame, window.X, window.Y+row, 1, "│", resolved)
 		writeTextAt(app.frame, window.X+window.Width-1, window.Y+row, 1, "│", resolved)
 	}
+
 	if window.Height > 1 {
 		writeTextAt(app.frame, window.X, window.Y+window.Height-1, window.Width, bottom, resolved)
 	}
@@ -103,6 +115,7 @@ func (app *App) drawUIWindowSpans(window *extension.WindowState, drawOp *extensi
 		if column >= window.Width {
 			return
 		}
+
 		text := rendertext.Fit(span.Text, window.Width-column)
 		column += rendertext.WriteCellsNoFill(
 			app.frame,
@@ -127,12 +140,15 @@ func (app *App) uiStyle(style extension.UIStyle) tcell.Style {
 	if style.FG != "" {
 		resolved = resolved.Foreground(app.namedUIColor(style.FG))
 	}
+
 	if style.BG != "" {
 		resolved = resolved.Background(app.namedUIColor(style.BG))
 	}
+
 	if style.Bold {
 		resolved = resolved.Bold(true)
 	}
+
 	if style.Italic {
 		resolved = resolved.Italic(true)
 	}
@@ -144,20 +160,26 @@ func (app *App) showRuntimeCursor(layout *extui.Layout) {
 	if app.screen == nil {
 		return
 	}
+
 	windows := layout.Windows
 	if len(windows) == 0 {
 		windows = app.cloneRuntimeWindows(layout)
 	}
+
 	if app.extensionUI.Cursor != nil {
 		if window, ok := windows[app.extensionUI.Cursor.Window]; ok {
 			app.screen.ShowCursor(window.X+app.extensionUI.Cursor.Col, window.Y+app.extensionUI.Cursor.Row)
+
 			return
 		}
 	}
+
 	composer, ok := windows[extui.BufferComposer]
 	if !ok {
 		app.screen.HideCursor()
+
 		return
 	}
+
 	app.screen.ShowCursor(composer.X+composer.CursorCol, composer.Y+composer.CursorRow)
 }

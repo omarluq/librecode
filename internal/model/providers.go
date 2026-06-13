@@ -42,23 +42,31 @@ type providerModelPair struct {
 }
 
 // ProviderDisplayNames maps built-in provider IDs to user-facing names.
-var ProviderDisplayNames = providerDisplayNameMap()
+func ProviderDisplayNames() map[string]string {
+	return providerDisplayNameMap()
+}
 
 // DefaultModelPerProvider maps supported provider IDs to librecode's default model IDs.
-var DefaultModelPerProvider = defaultModelMap()
+func DefaultModelPerProvider() map[string]string {
+	return defaultModelMap()
+}
 
 // BuiltInModels returns a deterministic built-in model catalog.
 func BuiltInModels() []Model {
-	providers := make([]string, 0, len(DefaultModelPerProvider))
-	for provider := range DefaultModelPerProvider {
+	defaultModels := DefaultModelPerProvider()
+
+	providers := make([]string, 0, len(defaultModels))
+	for provider := range defaultModels {
 		providers = append(providers, provider)
 	}
+
 	slices.Sort(providers)
 
 	models := make([]Model, 0, len(providers)+len(additionalBuiltInModels()))
 	for _, provider := range providers {
-		models = append(models, builtInDefaultModel(provider, DefaultModelPerProvider[provider]))
+		models = append(models, builtInDefaultModel(provider, defaultModels[provider]))
 	}
+
 	for _, pair := range additionalBuiltInModels() {
 		models = append(models, builtInDefaultModel(pair.Provider, pair.ModelID))
 	}
@@ -75,6 +83,7 @@ func additionalBuiltInModels() []providerModelPair {
 
 func builtInDefaultModel(provider, modelID string) Model {
 	metadata := defaultProviderMetadata()[provider]
+
 	return Model{
 		ThinkingLevelMap: metadata.ThinkingLevelMap,
 		Headers:          metadata.Headers,
@@ -138,6 +147,12 @@ func openAICompatibleMetadata(baseURL string, reasoning bool) providerMetadata {
 	}
 }
 
+const (
+	openAICodexContextWindow = 272_000
+	anthropicContextWindow   = 1_000_000
+	largeMaxOutputTokens     = 128_000
+)
+
 func openAIResponsesMetadata() providerMetadata {
 	return providerMetadata{
 		ThinkingLevelMap: nil,
@@ -158,8 +173,8 @@ func openAICodexMetadata() providerMetadata {
 		Compat:           nil,
 		API:              "openai-codex-responses",
 		BaseURL:          "https://chatgpt.com/backend-api",
-		ContextWindow:    272000,
-		MaxTokens:        128000,
+		ContextWindow:    openAICodexContextWindow,
+		MaxTokens:        largeMaxOutputTokens,
 		Reasoning:        true,
 	}
 }
@@ -173,8 +188,8 @@ func anthropicMetadata() providerMetadata {
 		Compat:           nil,
 		API:              "anthropic-messages",
 		BaseURL:          "https://api.anthropic.com",
-		ContextWindow:    1000000,
-		MaxTokens:        128000,
+		ContextWindow:    anthropicContextWindow,
+		MaxTokens:        largeMaxOutputTokens,
 		Reasoning:        true,
 	}
 }

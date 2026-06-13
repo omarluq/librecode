@@ -39,6 +39,7 @@ func (runtime *Runtime) executeProviderToolCall(
 	onEvent func(StreamEvent),
 ) ToolEvent {
 	emitProviderToolStart(onEvent, call.Name)
+
 	callEvent := ToolCallEvent{
 		Arguments:     call.Arguments,
 		ID:            call.ID,
@@ -53,12 +54,14 @@ func (runtime *Runtime) executeProviderToolCall(
 	}
 
 	result, err := registry.Execute(ctx, callEvent.Name, callEvent.Arguments)
+
 	event := toolEventFromResult(callEvent, result, err)
 	if lifecycleErr := runtime.dispatchToolResultLifecycle(ctx, &event); lifecycleErr != nil {
 		event.Error = lifecycleErr.Error()
 		event.Result = lifecycleErr.Error()
 		event.IsError = true
 	}
+
 	emitProviderToolResult(onEvent, &event)
 
 	return event
@@ -78,12 +81,15 @@ func toolLifecycleErrorEvent(call ToolCallEvent, err error) ToolEvent {
 func toolEventFromResult(call ToolCallEvent, result tool.Result, err error) ToolEvent {
 	resultText := result.Text()
 	detailsJSON := encodeToolDetails(result.Details)
+
 	if err != nil {
 		resultText = err.Error()
 	}
+
 	if strings.TrimSpace(resultText) == "" {
 		resultText = "(tool returned no text output)"
 	}
+
 	event := ToolEvent{
 		Name:          call.Name,
 		ArgumentsJSON: call.ArgumentsJSON,
@@ -104,6 +110,7 @@ func encodeToolDetails(details map[string]any) string {
 	if len(details) == 0 {
 		return ""
 	}
+
 	encoded, err := json.Marshal(details)
 	if err != nil {
 		return ""
@@ -116,6 +123,7 @@ func emitProviderToolStart(onEvent func(StreamEvent), name string) {
 	if onEvent == nil {
 		return
 	}
+
 	onEvent(StreamEvent{ToolEvent: nil, Usage: nil, Kind: StreamEventToolStart, Text: name})
 }
 
@@ -123,6 +131,7 @@ func emitProviderToolResult(onEvent func(StreamEvent), event *ToolEvent) {
 	if onEvent == nil {
 		return
 	}
+
 	onEvent(StreamEvent{ToolEvent: event, Usage: nil, Kind: StreamEventToolResult, Text: ""})
 }
 

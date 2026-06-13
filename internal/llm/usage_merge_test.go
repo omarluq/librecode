@@ -82,6 +82,7 @@ func TestMergeUsageClonesReportedMetadataWhenEstimateIsEmpty(t *testing.T) {
 	require.Equal(t, reported.TopContributors, merged.TopContributors)
 	reported.Breakdown["history"] = 999
 	reported.TopContributors[0].Label = "mutated"
+
 	assert.Equal(t, 12, merged.Breakdown["history"])
 	assert.Equal(t, "message", merged.TopContributors[0].Label)
 }

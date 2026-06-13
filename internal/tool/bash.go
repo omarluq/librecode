@@ -53,7 +53,9 @@ func (bashTool *BashTool) Definition() Definition {
 
 // Execute runs the bash tool.
 func (bashTool *BashTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
-	args, err := decodeInput[BashInput](input)
+	var args BashInput
+
+	err := decodeInput(input, &args)
 	if err != nil {
 		return emptyToolResult(), err
 	}
@@ -66,10 +68,12 @@ func (bashTool *BashTool) Bash(ctx context.Context, input BashInput) (Result, er
 	if strings.TrimSpace(input.Command) == "" {
 		return emptyToolResult(), oops.In("tool").Code("bash_command_required").Errorf("bash command is required")
 	}
+
 	workingDirectory, err := bashTool.workingDirectory()
 	if err != nil {
 		return emptyToolResult(), err
 	}
+
 	execCtx, cancel := contextWithOptionalTimeout(ctx, input.Timeout)
 	defer cancel()
 
@@ -83,10 +87,12 @@ func (bashTool *BashTool) workingDirectory() (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	info, err := os.Stat(workingDirectory)
 	if err != nil {
 		return "", fmt.Errorf("working directory does not exist: %s", workingDirectory)
 	}
+
 	if !info.IsDir() {
 		return "", fmt.Errorf("working directory is not a directory: %s", workingDirectory)
 	}
@@ -117,9 +123,10 @@ type commandOutput struct {
 
 func runShellCommand(ctx context.Context, cwd, command string) (*commandOutput, error) {
 	output := &commandOutput{buffer: &synchronizedBuffer{buffer: bytes.Buffer{}, lock: sync.Mutex{}}}
+
 	shellPath, shellArgs, err := shellConfig(command)
 	if err != nil {
-		return output, err
+		return output, toolWrap(err, "start bash command")
 	}
 
 	cmd := shellCommandContext(ctx, shellPath, shellArgs)
@@ -128,16 +135,16 @@ func runShellCommand(ctx context.Context, cwd, command string) (*commandOutput, 
 	cmd.Cancel = func() error {
 		return terminateShellCommand(cmd)
 	}
-	cmd.WaitDelay = 2 * time.Second
+	cmd.WaitDelay = commandWaitDelay
 
 	cmd.Stdout = output.buffer
 	cmd.Stderr = output.buffer
 
 	if err := cmd.Start(); err != nil {
-		return output, err
+		return output, toolWrap(err, "start bash command")
 	}
 
-	return output, cmd.Wait()
+	return output, toolWrap(cmd.Wait(), "wait for bash command")
 }
 
 func formatBashResult(ctx context.Context, input BashInput, output []byte, waitErr error) (Result, error) {
@@ -146,13 +153,16 @@ func formatBashResult(ctx context.Context, input BashInput, output []byte, waitE
 		if err != nil {
 			return emptyToolResult(), err
 		}
+
 		if errors.Is(contextErr, context.DeadlineExceeded) && input.Timeout != nil {
 			status := fmt.Sprintf("Command timed out after %.3g seconds", *input.Timeout)
+
 			return emptyToolResult(), errors.New(appendStatus(outputText, status))
 		}
 
 		return emptyToolResult(), errors.New(appendStatus(outputText, "Command aborted"))
 	}
+
 	if waitErr != nil {
 		return formatBashWaitError(output, waitErr)
 	}
@@ -170,8 +180,10 @@ func formatBashWaitError(output []byte, waitErr error) (Result, error) {
 	if err != nil {
 		return emptyToolResult(), err
 	}
+
 	if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
 		status := fmt.Sprintf("Command exited with code %d", exitErr.ExitCode())
+
 		return emptyToolResult(), errors.New(appendStatus(outputText, status))
 	}
 
@@ -181,10 +193,12 @@ func formatBashWaitError(output []byte, waitErr error) (Result, error) {
 func formatBashOutput(output []byte, emptyText string) (outputText string, details map[string]any, err error) {
 	text := string(output)
 	truncation := TruncateTail(text, TruncationOptions{MaxLines: 0, MaxBytes: 0})
+
 	outputText = truncation.Content
 	if outputText == "" {
 		outputText = emptyText
 	}
+
 	if !truncation.Truncated {
 		return outputText, map[string]any{}, nil
 	}
@@ -193,7 +207,9 @@ func formatBashOutput(output []byte, emptyText string) (outputText string, detai
 	if err != nil {
 		return "", map[string]any{}, err
 	}
+
 	notice := bashTruncationNotice(&truncation, fullOutputPath, lastLineByteCount(text))
+
 	return outputText + "\n\n" + notice, map[string]any{
 		detailTruncation:     truncation,
 		detailFullOutputPath: fullOutputPath,
@@ -202,6 +218,7 @@ func formatBashOutput(output []byte, emptyText string) (outputText string, detai
 
 func bashTruncationNotice(truncation *TruncationResult, fullOutputPath string, lastLineBytes int) string {
 	startLine := truncation.TotalLines - truncation.OutputLines + 1
+
 	endLine := truncation.TotalLines
 	if truncation.LastLinePartial {
 		return fmt.Sprintf(
@@ -212,6 +229,7 @@ func bashTruncationNotice(truncation *TruncationResult, fullOutputPath string, l
 			fullOutputPath,
 		)
 	}
+
 	if truncation.TruncatedBy == TruncatedByLines {
 		return fmt.Sprintf("[Showing lines %d-%d of %d. Full output: %s]", startLine, endLine, endLine, fullOutputPath)
 	}
@@ -231,20 +249,25 @@ func writeFullBashOutput(output []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	file, err := os.CreateTemp(outputDir, "librecode-bash-*.log")
 	if err != nil {
 		return "", bashOutputFSError(err, "create full bash output file")
 	}
+
 	outputPath := file.Name()
 	if _, err := file.Write(output); err != nil {
 		cleanupErr := errors.Join(
 			bashOutputCleanupError(file.Close(), "close full bash output"),
 			bashOutputCleanupError(os.Remove(outputPath), "remove full bash output file"),
 		)
+
 		return "", errors.Join(bashOutputFSError(err, "write full bash output"), cleanupErr)
 	}
+
 	if err := file.Close(); err != nil {
 		cleanupErr := bashOutputCleanupError(os.Remove(outputPath), "remove full bash output file")
+
 		return "", errors.Join(bashOutputFSError(err, "close full bash output"), cleanupErr)
 	}
 
@@ -256,8 +279,9 @@ func fullBashOutputDir() (string, error) {
 	if err != nil {
 		return "", bashOutputFSError(err, "resolve cache dir for full bash output")
 	}
+
 	outputDir := filepath.Join(cacheDir, "librecode", "bash-output")
-	if err := os.MkdirAll(outputDir, 0o700); err != nil {
+	if err := os.MkdirAll(outputDir, secureDirMode); err != nil {
 		return "", bashOutputFSError(err, "create full bash output dir")
 	}
 
@@ -301,7 +325,9 @@ func (buffer *synchronizedBuffer) Write(data []byte) (int, error) {
 	buffer.lock.Lock()
 	defer buffer.lock.Unlock()
 
-	return buffer.buffer.Write(data)
+	written, err := buffer.buffer.Write(data)
+
+	return written, toolWrap(err, "buffer bash output")
 }
 
 func (buffer *synchronizedBuffer) bytes() []byte {

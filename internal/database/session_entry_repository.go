@@ -38,6 +38,7 @@ func entryFromRow(row *entryRow) (*EntryEntity, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if row.ParentID != nil && *row.ParentID == "" {
 		row.ParentID = nil
 	}
@@ -94,6 +95,7 @@ LIMIT 1`, entrySelectColumns)
 		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
+
 		return nil, false, oops.In("database").Code("leaf_entry").Wrapf(err, "load leaf entry")
 	}
 
@@ -138,6 +140,7 @@ WHERE session_id = ? AND id = ?`, entrySelectColumns)
 		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
+
 		return nil, false, oops.In("database").Code("get_entry").Wrapf(err, "load entry")
 	}
 
@@ -176,6 +179,7 @@ func (repository *SessionRepository) deleteEntryBranchTx(
 	); err != nil {
 		return oops.In("database").Code("delete_branch_messages").Wrapf(err, "delete branch messages")
 	}
+
 	if _, err := transaction.Exec(
 		ctx,
 		deleteEntryBranchEntries,
@@ -186,6 +190,7 @@ func (repository *SessionRepository) deleteEntryBranchTx(
 	); err != nil {
 		return oops.In("database").Code("delete_branch_entries").Wrapf(err, "delete branch entries")
 	}
+
 	const touchSession = `UPDATE sessions SET updated_at = ? WHERE id = ?`
 	if _, err := transaction.Exec(ctx, touchSession, formatTime(repository.now().UTC()), sessionID); err != nil {
 		return oops.In("database").Code("touch_after_delete_branch").Wrapf(err, "touch session after delete branch")
@@ -230,12 +235,14 @@ FROM session_entries
 WHERE session_id = ? AND parent_id IS NULL
 ORDER BY created_at ASC`, entrySelectColumns)
 	args := []any{sessionID}
+
 	if parentID != nil {
 		query = fmt.Sprintf(`
 SELECT %s
 FROM session_entries
 WHERE session_id = ? AND parent_id = ?
 ORDER BY created_at ASC`, entrySelectColumns)
+
 		args = append(args, *parentID)
 	}
 
@@ -291,6 +298,7 @@ func (repository *SessionRepository) prepareAppendEntry(entry *EntryEntity) erro
 	if err := applyEntryMetadata(entry); err != nil {
 		return oops.In("database").Code("entry_metadata").Wrapf(err, "prepare entry metadata")
 	}
+
 	if err := validateEntryEntity(entry); err != nil {
 		return oops.In("database").Code("validate_entry").Wrapf(err, "validate entry")
 	}

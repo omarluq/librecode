@@ -113,6 +113,7 @@ end)
 `)
 
 	var payload map[string]any
+
 	subscription := runtime.EventBus().Channel(string(extension.LifecycleContextBuild)).Subscribe(ro.NewObserver(
 		func(envelope event.Envelope) {
 			data, ok := envelope.Data.(map[string]any)

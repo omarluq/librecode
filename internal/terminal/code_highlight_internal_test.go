@@ -12,6 +12,7 @@ func TestCodeHighlightColorHelpersReturnThemeColors(t *testing.T) {
 	t.Parallel()
 
 	theme := darkTheme()
+
 	colors := []tcell.Color{
 		codeNameColor(chroma.NameFunction, theme),
 		codeNameColor(chroma.NameClass, theme),
@@ -30,6 +31,7 @@ func TestCodeHighlightColorHelpersReturnThemeColors(t *testing.T) {
 	for _, color := range colors {
 		assert.NotEqual(t, tcell.ColorDefault, color)
 	}
+
 	assert.Equal(t, codeVariableColor(theme), codeNumberColor(theme))
 }
 

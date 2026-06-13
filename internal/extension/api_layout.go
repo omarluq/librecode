@@ -29,8 +29,10 @@ func (manager *Manager) luaLayoutSet(extensionRuntime *luaExtension) lua.LGFunct
 		layout := luaLayoutState(state.CheckAny(1))
 		if layout == nil {
 			state.RaiseError("layout.set expects a layout table")
+
 			return 0
 		}
+
 		checkActiveEvent(state, extensionRuntime).setLayout(layout)
 
 		return 0

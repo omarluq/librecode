@@ -54,11 +54,6 @@ context:
   output_reserve_tokens: 0
   provider_reserve_tokens: 2048
   safety_margin_tokens: 8192
-  # Recent history retained verbatim during /compact.
-  # 0 keeps the newest one third of the selected model context window; if the window is unknown,
-  # librecode falls back to the fixed tail from internal/contextwindow/recent_tail.go.
-  # Positive values force a fixed tail. Reserves above still apply to provider requests.
-  keep_recent_tokens: 0
 
 models:
   discovery:

@@ -26,7 +26,8 @@ const (
 	jsonPathKey             = "path"
 	jsonLimitKey            = "limit"
 	jsonQueryKey            = "query"
-	jsonAllowIgnoredKey     = "allowIgnored"
+	jsonAllowIgnoredKey     = "allow_ignored"
+	jsonIgnoreCaseKey       = "ignore_case"
 	jsonPatternKey          = "pattern"
 	jsonObjectType          = "object"
 	jsonStringType          = "string"
@@ -64,8 +65,8 @@ const (
 	anthropicGrepToolName   = "Grep"
 	anthropicFindToolName   = "Find"
 	anthropicLSToolName     = "LS"
-	jsonOldTextKey          = "oldText"
-	jsonNewTextKey          = "newText"
+	jsonOldTextKey          = "old_text"
+	jsonNewTextKey          = "new_text"
 	jsonFunctionKey         = "function"
 	functionToolType        = jsonFunctionKey
 	functionCallType        = "function_call"
@@ -137,9 +138,11 @@ type HTTPCompletionClient struct {
 	client *http.Client
 }
 
+const providerHTTPTimeout = 10 * time.Minute
+
 // NewHTTPCompletionClient creates an HTTP-backed completion client.
 func NewHTTPCompletionClient() *HTTPCompletionClient {
-	return &HTTPCompletionClient{client: &http.Client{Timeout: 10 * time.Minute}}
+	return &HTTPCompletionClient{client: &http.Client{Timeout: providerHTTPTimeout}}
 }
 
 // Generate sends a provider-neutral request without runtime callbacks.
@@ -174,6 +177,7 @@ func (client *HTTPCompletionClient) Complete(
 	if api == "" {
 		api = apiOpenAICompletions
 	}
+
 	switch api {
 	case apiOpenAICompletions:
 		return client.completeOpenAIChat(ctx, request)

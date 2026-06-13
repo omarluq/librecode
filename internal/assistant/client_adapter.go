@@ -122,6 +122,7 @@ func thinkingLevelMapFromLLM(values map[string]*string) map[model.ThinkingLevel]
 	if values == nil {
 		return nil
 	}
+
 	converted := make(map[model.ThinkingLevel]*string, len(values))
 	for level, value := range values {
 		converted[model.ThinkingLevel(level)] = value
@@ -140,6 +141,7 @@ func completionResultFromLLMResponse(response *llm.Response) *CompletionResult {
 			Usage:        model.EmptyTokenUsage(),
 		}
 	}
+
 	return &CompletionResult{
 		FinishReason: response.FinishReason,
 		Text:         textFromLLMParts(response.Content),
@@ -226,6 +228,7 @@ func streamEventKindFromLLMChunk(chunk *llm.StreamChunk) StreamEventKind {
 	if part == nil {
 		return StreamEventTextDelta
 	}
+
 	switch part.Type {
 	case llm.PartReasoning:
 		return StreamEventThinkingDelta
@@ -248,6 +251,7 @@ func textFromLLMChunk(chunk *llm.StreamChunk) string {
 	if part == nil {
 		return ""
 	}
+
 	if part.Type == llm.PartToolCall && part.ToolCall != nil {
 		return part.ToolCall.Name
 	}
@@ -275,6 +279,7 @@ func toolEventPointerFromLLMPart(part *llm.Part) *ToolEvent {
 	if part == nil || part.ToolResult == nil {
 		return nil
 	}
+
 	event := toolEventFromLLMToolResult(part.ToolResult)
 
 	return &event
@@ -284,6 +289,7 @@ func usagePointerFromLLMUsage(usage llm.Usage) *model.TokenUsage {
 	if !usage.HasAny() {
 		return nil
 	}
+
 	converted := llmconv.UsageToModel(usage)
 
 	return &converted
@@ -353,6 +359,7 @@ func llmPartFromStreamEvent(event StreamEvent) *llm.Part {
 			Data:       "",
 			MIMEType:   "",
 		}
+
 		return &part
 	case StreamEventToolStart:
 		call := llm.ToolCall{
@@ -371,11 +378,13 @@ func llmPartFromStreamEvent(event StreamEvent) *llm.Part {
 			Data:       "",
 			MIMEType:   "",
 		}
+
 		return &part
 	case StreamEventToolResult:
 		if event.ToolEvent == nil {
 			return nil
 		}
+
 		result := llmToolResultFromToolEvent(event.ToolEvent)
 		part := llm.Part{
 			Metadata:   nil,
@@ -386,6 +395,7 @@ func llmPartFromStreamEvent(event StreamEvent) *llm.Part {
 			Data:       "",
 			MIMEType:   "",
 		}
+
 		return &part
 	case StreamEventTextDelta,
 		StreamEventSkillLoaded,
@@ -397,10 +407,12 @@ func llmPartFromStreamEvent(event StreamEvent) *llm.Part {
 		StreamEventContextCompactionError,
 		StreamEventUnknown:
 		part := llm.TextPart(event.Text)
+
 		return &part
 	}
 
 	part := llm.TextPart(event.Text)
+
 	return &part
 }
 

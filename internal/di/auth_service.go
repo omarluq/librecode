@@ -23,6 +23,7 @@ func NewAuthService(_ do.Injector) (*AuthService, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	storage, err := auth.NewStorage(context.Background(), auth.NewFileBackend(authPath))
 	if err != nil {
 		return nil, oops.In("auth").Code("load").Wrapf(err, "load auth storage")
@@ -67,6 +68,7 @@ func fileExists(path string) bool {
 	if path == "" {
 		return false
 	}
+
 	_, err := os.Stat(path)
 
 	return err == nil

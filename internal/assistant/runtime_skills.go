@@ -19,10 +19,13 @@ func (runtime *Runtime) emitActivatedSkillReads(
 	if len(skills) == 0 {
 		return nil
 	}
+
 	limit := maxActiveSkillReadLines
+
 	toolEvents := make([]ToolEvent, 0, len(skills))
 	for index := range skills {
 		skill := &skills[index].Skill
+
 		_, toolEvent, err := runtime.loadSkillWithReadTool(ctx, cwd, skill, &limit)
 		if err != nil {
 			runtime.logger.Debug(
@@ -31,6 +34,7 @@ func (runtime *Runtime) emitActivatedSkillReads(
 				slog.Any("error", err),
 			)
 		}
+
 		emitStreamEvent(onEvent, StreamEvent{
 			ToolEvent: &toolEvent,
 			Usage:     nil,

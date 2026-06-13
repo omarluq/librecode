@@ -16,6 +16,7 @@ func TestPrintModelsIncludesCapabilityColumns(t *testing.T) {
 	t.Parallel()
 
 	var output bytes.Buffer
+
 	err := printModels(&output, []model.Model{
 		{
 			ThinkingLevelMap: nil,
@@ -49,6 +50,7 @@ func TestListedModelsDefaultsToAuthorizedProviders(t *testing.T) {
 		"anthropic-claude": testCLIAuthCredential(),
 	})
 	require.NoError(t, err)
+
 	registry := model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
@@ -103,9 +105,11 @@ func TestModelListFormattingHelpers(t *testing.T) {
 	assert.Equal(t, "1.5M", formatTokenCount(1_500_000))
 	assert.Equal(t, "yes", yesNo(true))
 	assert.Equal(t, "no", yesNo(false))
+
 	imageModel := testCLIModel("openai", "vision", "Vision")
 	imageModel.Input = []model.InputMode{model.InputText, model.InputImage}
 	textModel := testCLIModel("openai", "text", "Text")
+
 	assert.True(t, modelSupportsImage(&imageModel))
 	assert.False(t, modelSupportsImage(&textModel))
 }

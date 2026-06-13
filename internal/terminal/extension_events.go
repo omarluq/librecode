@@ -56,13 +56,15 @@ func (app *App) runStartupExtensions(ctx context.Context) error {
 		Alt:   false,
 		Shift: false,
 	})
+
 	result, err := app.extensions.HandleTerminalEvent(
 		ctx,
 		&event,
 	)
 	if err != nil {
-		return err
+		return terminalError(err, "dispatch focus event")
 	}
+
 	app.applyExtensionEventResult(ctx, &result)
 
 	return nil
@@ -74,13 +76,15 @@ func (app *App) handleExtensionKey(ctx context.Context, event *tcell.EventKey) (
 	}
 
 	extEvent := app.newExtensionEvent(extensionEventKey, terminalKeyEvent(event))
+
 	result, err := app.extensions.HandleTerminalEvent(
 		ctx,
 		&extEvent,
 	)
 	if err != nil {
-		return false, err
+		return false, terminalError(err, "dispatch key event")
 	}
+
 	app.applyExtensionEventResult(ctx, &result)
 
 	return result.Consumed, nil
@@ -90,6 +94,7 @@ func (app *App) handleResizeExtensions(ctx context.Context) error {
 	if !app.hasExtensionHandlers(extensionEventResize) {
 		return nil
 	}
+
 	layout := app.currentRuntimeLayout()
 
 	return app.emitExtensionRuntimeEvent(
@@ -103,17 +108,23 @@ func (app *App) runRenderExtensions(ctx context.Context, layout *extui.Layout) {
 	if layout == nil {
 		return
 	}
+
 	app.resetFrameUIOverrides()
+
 	if !app.hasExtensionHandlers(extensionEventRender) {
 		return
 	}
+
 	data := app.extensionRuntimeData(layout.Width, layout.Height)
 	event := app.newExtensionEventWithLayoutAndData(extensionEventRender, emptyExtensionKeyEvent(), layout, data)
+
 	result, err := app.extensions.HandleTerminalEvent(ctx, &event)
 	if err != nil {
 		app.addSystemMessage(err.Error())
+
 		return
 	}
+
 	app.applyExtensionEventResult(ctx, &result)
 }
 
@@ -125,6 +136,7 @@ func (app *App) hasExtensionHandlers(name string) bool {
 	if app.extensions == nil {
 		return false
 	}
+
 	inspector, ok := app.extensions.(extension.TerminalEventInspector)
 	if !ok {
 		return true
@@ -137,10 +149,12 @@ func (app *App) hasExtensionTimers() bool {
 	if app.extensions == nil {
 		return false
 	}
+
 	scheduler, ok := app.extensions.(extension.TimerScheduler)
 	if !ok {
 		return false
 	}
+
 	_, hasTimer := scheduler.NextTimerDelay(time.Now())
 
 	return hasTimer
@@ -168,11 +182,14 @@ func (app *App) emitExtensionRuntimeEvent(ctx context.Context, name string, data
 	if !app.hasExtensionHandlers(name) && !app.hasExtensionTimers() {
 		return nil
 	}
+
 	event := app.newExtensionEventWithData(name, emptyExtensionKeyEvent(), data)
+
 	result, err := app.extensions.HandleTerminalEvent(ctx, &event)
 	if err != nil {
-		return err
+		return terminalError(err, "dispatch runtime event")
 	}
+
 	app.applyExtensionEventResult(ctx, &result)
 
 	return nil
@@ -200,13 +217,15 @@ func (app *App) applyPromptSubmitExtensions(ctx context.Context) (bool, error) {
 		Alt:   false,
 		Shift: false,
 	})
+
 	result, err := app.extensions.HandleTerminalEvent(
 		ctx,
 		&event,
 	)
 	if err != nil {
-		return false, err
+		return false, terminalError(err, "dispatch prompt submit event")
 	}
+
 	app.applyExtensionEventResult(ctx, &result)
 
 	return result.Consumed, nil
@@ -222,6 +241,7 @@ func (app *App) newExtensionEventWithData(
 	data map[string]any,
 ) extension.TerminalEvent {
 	layout := app.currentRuntimeLayout()
+
 	return app.newExtensionEventWithLayoutAndData(name, key, &layout, data)
 }
 
@@ -232,6 +252,7 @@ func (app *App) newExtensionEventWithLayoutAndData(
 	data map[string]any,
 ) extension.TerminalEvent {
 	windows := app.cloneRuntimeWindows(layout)
+
 	return extension.TerminalEvent{
 		Buffers: app.extensionBuffers(),
 		Windows: windows,
@@ -246,10 +267,12 @@ func (app *App) newExtensionEventWithLayoutAndData(
 
 func (app *App) extensionBuffers() map[string]extension.BufferState {
 	reservedBuffers := app.reservedRuntimeBuffers()
+
 	buffers := make(map[string]extension.BufferState, len(app.extensionUI.Buffers)+len(reservedBuffers))
 	for name, buffer := range app.extensionUI.Buffers {
 		buffers[name] = extui.CloneBuffer(name, &buffer)
 	}
+
 	maps.Copy(buffers, reservedBuffers)
 
 	return buffers
@@ -283,25 +306,32 @@ func (app *App) applyExtensionEventResult(ctx context.Context, result *extension
 	if result == nil {
 		return
 	}
+
 	for _, name := range result.DeletedBuffers {
 		app.applyExtensionBufferDelete(name)
 	}
+
 	for _, name := range result.DeletedWindows {
 		app.applyRuntimeWindowDelete(name)
 	}
+
 	for name, buffer := range result.Buffers {
 		app.applyExtensionBuffer(name, &buffer)
 	}
+
 	for name := range result.Windows {
 		window := result.Windows[name]
 		app.applyRuntimeWindow(name, &window)
 	}
+
 	if result.Layout != nil {
 		app.applyRuntimeLayout(result.Layout)
 	}
+
 	for _, action := range result.Actions {
 		app.applyExtensionAction(ctx, action)
 	}
+
 	app.applyUIWindowResult(result)
 }
 
@@ -318,11 +348,14 @@ func (app *App) applyExtensionAction(ctx context.Context, action extension.Actio
 	}
 	if handler, ok := handlers[action.Name]; ok {
 		handler()
+
 		return
 	}
+
 	if action.Name != "submit" {
 		return
 	}
+
 	if _, err := app.submit(ctx); err != nil {
 		app.addSystemMessage(err.Error())
 	}
@@ -356,6 +389,7 @@ func (app *App) applyRuntimeWindowDelete(name string) {
 
 func (app *App) applyExtensionBufferDelete(name string) {
 	app.extensionUI.DeleteBuffer(name)
+
 	switch name {
 	case extui.BufferComposer:
 		app.composerBuffer = input.NewBuffer()
@@ -370,10 +404,12 @@ func (app *App) applyExtensionBufferDelete(name string) {
 func (app *App) applyComposerBuffer(buffer *extension.BufferState) {
 	oldText := app.composerBuffer.TextValue()
 	oldCursor := app.composerBuffer.CursorValue()
+
 	app.composerBuffer = composerBufferFromExtension(buffer)
 	if app.composerBuffer.TextValue() != oldText || app.composerBuffer.CursorValue() != oldCursor {
 		app.resetPromptHistoryNavigation()
 	}
+
 	if app.composerBuffer.TextValue() != oldText {
 		app.resetAutocompleteSelection()
 	}
@@ -383,8 +419,10 @@ func (app *App) applyUIWindowResult(result *extension.TerminalEventResult) {
 	for _, windowName := range result.ResetUIWindows {
 		app.extensionUI.ResetWindowOverride(windowName)
 	}
+
 	for index := range result.UIDrawOps {
 		app.extensionUI.AppendDrawOp(&result.UIDrawOps[index])
 	}
+
 	app.extensionUI.SetCursor(result.UICursor)
 }

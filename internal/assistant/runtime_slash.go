@@ -33,8 +33,10 @@ func (runtime *Runtime) respondToSlashCommand(
 	if commandName == "skill" {
 		return runtime.respondToSkillCommand(ctx, cwd, commandArgs, onEvent)
 	}
+
 	if commandName == "tool" {
 		response, err = runtime.respondToToolCommand(ctx, cwd, commandArgs)
+
 		return response, nil, err
 	}
 
@@ -57,11 +59,13 @@ func (runtime *Runtime) respondToSkillCommand(
 	onEvent func(StreamEvent),
 ) (response string, toolEvents []ToolEvent, err error) {
 	skills := core.LoadSkills(cwd, nil, true).Skills
+
 	name := strings.TrimSpace(args)
 	if name == "" {
 		if len(skills) == 0 {
 			return "No skills found.", nil, nil
 		}
+
 		lines := []string{"Available skills:"}
 		for index := range skills {
 			lines = append(lines, fmt.Sprintf("- %s: %s", skills[index].Name, skills[index].Description))
@@ -75,10 +79,12 @@ func (runtime *Runtime) respondToSkillCommand(
 		if skill.Name != name {
 			continue
 		}
+
 		result, toolEvent, err := runtime.loadSkillWithReadTool(ctx, cwd, skill, nil)
 		if err != nil {
 			return "", nil, err
 		}
+
 		emitStreamEvent(onEvent, StreamEvent{
 			ToolEvent: &toolEvent,
 			Usage:     nil,
@@ -99,11 +105,14 @@ func (runtime *Runtime) loadSkillWithReadTool(
 	limit *int,
 ) (content string, toolEvent ToolEvent, err error) {
 	registry := tool.NewRegistry(cwd)
+
 	input := map[string]any{jsonPathKey: skill.FilePath}
 	if limit != nil {
 		input["limit"] = *limit
 	}
+
 	result, err := registry.Execute(ctx, string(tool.NameRead), input)
+
 	toolEvent = ToolEvent{
 		Name:          "load skill: " + skill.Name,
 		ArgumentsJSON: skillReadArgumentsJSON(skill.FilePath, limit),
@@ -115,8 +124,10 @@ func (runtime *Runtime) loadSkillWithReadTool(
 	if err != nil {
 		toolEvent.Error = err.Error()
 		toolEvent.IsError = true
+
 		return "", toolEvent, oops.In("assistant").Code("skill_read").Wrapf(err, "load skill with read tool")
 	}
+
 	toolEvent.Result = result.Text()
 
 	return toolEvent.Result, toolEvent, nil
@@ -135,11 +146,13 @@ func (runtime *Runtime) respondToToolCommand(ctx context.Context, cwd, args stri
 	if toolName == "" {
 		return "", errors.New("assistant: tool command requires a tool name")
 	}
+
 	if !found || strings.TrimSpace(payload) == "" {
 		payload = "{}"
 	}
 
 	registry := tool.NewRegistry(cwd)
+
 	result, err := registry.ExecuteJSON(ctx, toolName, []byte(payload))
 	if err != nil {
 		return "", oops.

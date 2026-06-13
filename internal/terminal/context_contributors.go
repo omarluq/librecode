@@ -10,12 +10,14 @@ func contextContributorLines(contributors []model.TokenContributor) []string {
 	if len(contributors) == 0 {
 		return nil
 	}
+
 	lines := make([]string, 0, len(contributors))
 	for index := range contributors {
 		contributor := contributors[index]
 		if contributor.Tokens <= 0 {
 			continue
 		}
+
 		lines = append(lines, contextContributorLine(&contributor))
 	}
 
@@ -30,6 +32,7 @@ func contextContributorLine(contributor *model.TokenContributor) string {
 	if contributor.Role != "" {
 		parts = append(parts, contributor.Role)
 	}
+
 	if contributor.Preview != "" {
 		parts = append(parts, "— "+contributor.Preview)
 	}

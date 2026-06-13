@@ -79,6 +79,18 @@ linters:
     - perfsprint
     - testifylint
     - dupword
+    - zerologlint
+
+    # Strict style / API hygiene
+    - gochecknoglobals
+    - gomodguard_v2
+    - ireturn
+    - mnd
+    - musttag
+    - nlreturn
+    - tagliatelle
+    - wrapcheck
+    - wsl_v5
 
   exclusions:
     rules:
@@ -162,6 +174,19 @@ linters:
         global:
           nosec: true
           audit: true
+
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+          yaml: snake
+          mapstructure: snake
+        overrides:
+          - pkg: github.com/omarluq/librecode/internal/core
+            rules:
+              json: snake
+              yaml: kebab
+              mapstructure: snake
 
     gocritic:
       enabled-tags:

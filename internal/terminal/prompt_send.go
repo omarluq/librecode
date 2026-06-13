@@ -12,8 +12,10 @@ import (
 func (app *App) sendPrompt(ctx context.Context, text string) {
 	if app.busy() {
 		app.queueFollowUpText(text)
+
 		return
 	}
+
 	promptCtx, cancel := context.WithCancel(ctx)
 	parentEntryID := cloneStringPtr(app.pendingParentID)
 	promptID := app.nextPromptID()
@@ -47,6 +49,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.addMessage(transcript.RoleUser, text)
 	app.working = true
 	app.workStartedAt = time.Now()
+
 	app.workFrame = 0
 	go app.runPrompt(ctx, promptCtx, cancel, request, promptID)
 }
@@ -59,11 +62,14 @@ func (app *App) runPrompt(
 	promptID uint64,
 ) {
 	defer cancel()
+
 	response, err := app.runtime.Prompt(promptCtx, request)
 	if err != nil {
 		app.postPromptError(ctx, promptID, err)
+
 		return
 	}
+
 	app.postPromptDone(ctx, promptID, response)
 }
 

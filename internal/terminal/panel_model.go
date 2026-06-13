@@ -17,13 +17,16 @@ func (app *App) modelItems() []panel.Item {
 	models := app.availableModels()
 	items := make([]panel.Item, 0, len(models))
 	current := modelLabel(app.currentProvider(), app.currentModel())
+
 	for index := range models {
 		knownModel := &models[index]
 		value := modelLabel(knownModel.Provider, knownModel.ID)
+
 		meta := "[" + knownModel.Provider + "]"
 		if value == current {
 			meta += " ✓"
 		}
+
 		items = append(items, panel.Item{Value: value, Title: knownModel.ID, Description: knownModel.Name, Meta: meta})
 	}
 
@@ -35,10 +38,12 @@ func (app *App) availableModels() []model.Model {
 	if app.models != nil {
 		models = app.models.Available()
 	}
+
 	models = ensureCurrentModel(models, app.currentProvider(), app.currentModel())
 	sort.Slice(models, func(leftIndex, rightIndex int) bool {
 		left := modelLabel(models[leftIndex].Provider, models[leftIndex].ID)
 		right := modelLabel(models[rightIndex].Provider, models[rightIndex].ID)
+
 		return left < right
 	})
 
@@ -52,6 +57,7 @@ func ensureCurrentModel(models []model.Model, provider, modelID string) []model.
 			return models
 		}
 	}
+
 	current := model.Model{
 		ThinkingLevelMap: nil,
 		Headers:          nil,
@@ -77,6 +83,7 @@ func (app *App) applyModelSelection(value string) {
 		provider = app.currentProvider()
 		modelID = value
 	}
+
 	app.setModel(provider, modelID)
 }
 
@@ -84,16 +91,21 @@ func (app *App) cycleModel(delta int) {
 	modelValues := app.cycleModelValues()
 	if len(modelValues) == 0 {
 		app.setStatus("no models available")
+
 		return
 	}
+
 	current := modelLabel(app.currentProvider(), app.currentModel())
 	selectedIndex := 0
+
 	for index, value := range modelValues {
 		if value == current {
 			selectedIndex = index
+
 			break
 		}
 	}
+
 	nextIndex := (selectedIndex + delta + len(modelValues)) % len(modelValues)
 	app.applyModelSelection(modelValues[nextIndex])
 }
@@ -103,7 +115,9 @@ func (app *App) cycleModelValues() []string {
 	if len(modelValues) > 0 {
 		return modelValues
 	}
+
 	models := app.availableModels()
+
 	modelValues = make([]string, 0, len(models))
 	for index := range models {
 		modelValues = append(modelValues, modelLabel(models[index].Provider, models[index].ID))

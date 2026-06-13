@@ -35,9 +35,11 @@ end)
 	pressTerminalKey(t, app, tcell.KeyRune, "x")
 
 	assertEditorText(t, app, "lua")
+
 	if got, want := app.composerBuffer.CursorValue(), 1; got != want {
 		t.Fatalf("cursor = %d, want %d", got, want)
 	}
+
 	if got, want := app.composerBuffer.Label, "lua:EDIT"; got != want {
 		t.Fatalf("composer label = %s, want %s", got, want)
 	}
@@ -58,16 +60,20 @@ end)
 
 	shouldQuit, err := app.submit(context.Background())
 	require.NoError(t, err)
+
 	if shouldQuit {
 		t.Fatal("submit should not quit")
 	}
 
 	assertEditorText(t, app, "")
+
 	if got := len(app.transcript.History); got != 0 {
 		t.Fatalf("host messages = %d, want 0", got)
 	}
+
 	transcriptBuffer := app.extensionUI.Buffers[extui.BufferTranscript]
 	require.Len(t, transcriptBuffer.Blocks, 1)
+
 	if got, want := transcriptBuffer.Blocks[0].Text, "handled: from extension"; got != want {
 		t.Fatalf("transcript block = %q, want %q", got, want)
 	}
@@ -91,6 +97,7 @@ end)
 	if !ok {
 		t.Fatal("scratch buffer should persist")
 	}
+
 	if got, want := buffer.Text, "xx"; got != want {
 		t.Fatalf("scratch buffer = %q, want %q", got, want)
 	}
@@ -115,12 +122,15 @@ func TestExtensionEventsExposeTranscriptThinkingAndToolBuffers(t *testing.T) {
 			t.Fatalf("expected %s buffer", name)
 		}
 	}
+
 	assertBufferCount(t, buffers, extui.BufferTranscript, 3)
 	assertBufferCount(t, buffers, extui.BufferThinking, 1)
 	assertBufferCount(t, buffers, extui.BufferTools, 1)
+
 	if got := buffers[extui.BufferTranscript].Metadata["snapshot_count"]; got != 4 {
 		t.Fatalf("snapshot count = %v, want 4", got)
 	}
+
 	if got := buffers[extui.BufferTranscript].Text; got != "" {
 		t.Fatalf("default transcript buffer text = %q, want empty projection", got)
 	}
@@ -147,13 +157,16 @@ func TestExtensionEventExposesStructuredTranscriptBuffer(t *testing.T) {
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
 
 	event := app.newExtensionEvent(extensionEventRender, emptyExtensionKeyEvent())
+
 	transcriptBuffer := event.Buffers[extui.BufferTranscript]
 	if got, want := transcriptBuffer.Metadata["snapshot_count"], 3; got != want {
 		t.Fatalf("transcript count = %v, want %d", got, want)
 	}
+
 	if got, want := len(transcriptBuffer.Blocks), 3; got != want {
 		t.Fatalf("transcript blocks = %d, want %d", got, want)
 	}
+
 	assertTranscriptBlock(t, &transcriptBuffer.Blocks[0], database.RoleUser, "hello", false)
 	assertTranscriptBlock(t, &transcriptBuffer.Blocks[1], database.RoleThinking, "because", false)
 	assertTranscriptBlock(t, &transcriptBuffer.Blocks[2], database.RoleAssistant, "answer", true)
@@ -182,6 +195,7 @@ func TestExtensionCanOverrideTranscriptBufferRendering(t *testing.T) {
 	if !strings.Contains(text, "lua transcript") {
 		t.Fatalf("expected extension transcript buffer render, frame = %q", text)
 	}
+
 	if strings.Contains(text, "host transcript") {
 		t.Fatalf("host transcript should be hidden by buffer override, frame = %q", text)
 	}
@@ -203,9 +217,11 @@ end)
 
 	shouldQuit, err := app.handleKey(context.Background(), tcell.NewEventKey(tcell.KeyF1, "", tcell.ModNone))
 	require.NoError(t, err)
+
 	if shouldQuit {
 		t.Fatal("handleKey should not quit")
 	}
+
 	assertEditorText(t, app, "second")
 }
 
@@ -233,27 +249,35 @@ end)
 	if app.extensionUI.Layout == nil {
 		t.Fatal("render extension should set runtime layout")
 	}
+
 	composer := app.extensionUI.Layout.Windows[extui.BufferComposer]
 	if got, want := composer.Y, 1; got != want {
 		t.Fatalf("composer y = %d, want %d", got, want)
 	}
+
 	if got, want := composer.Height, 4; got != want {
 		t.Fatalf("composer height = %d, want %d", got, want)
 	}
+
 	if got, want := composer.Renderer, "extension"; got != want {
 		t.Fatalf("composer renderer = %q, want %q", got, want)
 	}
+
 	override := app.extensionUI.Overrides[extui.BufferComposer]
 	if !override.Reset {
 		t.Fatal("composer window should be cleared")
 	}
+
 	require.Len(t, override.DrawOps, 1)
+
 	if got, want := override.DrawOps[0].Text, "lua composer"; got != want {
 		t.Fatalf("draw text = %q, want %q", got, want)
 	}
+
 	if app.extensionUI.Cursor == nil {
 		t.Fatal("render extension should set cursor")
 	}
+
 	if got, want := app.extensionUI.Cursor.Row, 1; got != want {
 		t.Fatalf("cursor row = %d, want %d", got, want)
 	}
@@ -301,6 +325,7 @@ end)
 	app.handlePromptStreamEvent(context.Background(), toolEvent)
 
 	buffer := app.extensionUI.Buffers["events"]
+
 	want := "model:hello\nthinking:why\ntool_start:bash\ntool_end:bash:ok\n"
 	if got := buffer.Text; got != want {
 		t.Fatalf("events buffer = %q, want %q", got, want)
@@ -311,10 +336,12 @@ func assertBufferCount(t *testing.T, buffers map[string]extension.BufferState, n
 	t.Helper()
 
 	buffer := buffers[name]
+
 	got, ok := buffer.Metadata[extui.MetadataCount].(int)
 	if !ok {
 		t.Fatalf("buffer %s count metadata = %#v, want int", name, buffer.Metadata[extui.MetadataCount])
 	}
+
 	if got != want {
 		t.Fatalf("buffer %s count = %d, want %d", name, got, want)
 	}
@@ -328,12 +355,15 @@ func assertTranscriptBlock(
 	streaming bool,
 ) {
 	t.Helper()
+
 	if got := block.Role; got != string(role) {
 		t.Fatalf("block role = %s, want %s", got, role)
 	}
+
 	if got := block.Text; got != text {
 		t.Fatalf("block text = %q, want %q", got, text)
 	}
+
 	if got := block.Streaming; got != streaming {
 		t.Fatalf("block streaming = %v, want %v", got, streaming)
 	}
@@ -356,7 +386,7 @@ func newExtensionRuntimeTestApp(t *testing.T, source string) *App {
 }
 
 func writeTerminalTestFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0o600)
+	return terminalError(os.WriteFile(path, []byte(content), privateTestFileMode), "write terminal test file")
 }
 
 func TestExtensionTimerDeferRunsOnNextRuntimeEvent(t *testing.T) {

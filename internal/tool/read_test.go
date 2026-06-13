@@ -53,7 +53,7 @@ func TestReadToolAllowsExplicitIgnoredReads(t *testing.T) {
 	assert.Contains(t, blockedResult.Text(), "Refusing to read ignored path")
 
 	allowedResult, err := reader.Execute(context.Background(), map[string]any{
-		"allowIgnored":  true,
+		"allow_ignored": true,
 		readTestPathKey: ".env",
 	})
 	require.NoError(t, err)

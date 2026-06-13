@@ -8,12 +8,15 @@ import (
 
 func openAIResponseInput(messages []llm.Message) []any {
 	input := []any{}
+
 	for _, message := range messages {
 		role, ok := openAIResponseInputRole(message.Role)
+
 		content := messageText(message)
 		if !ok || content == "" {
 			continue
 		}
+
 		input = append(input, map[string]any{jsonRoleKey: role, jsonContentKey: content})
 	}
 
@@ -39,16 +42,22 @@ func openAIResponseInputRole(role llm.Role) (string, bool) {
 
 func compactResponseMessages(messages []llm.Message) []llm.Message {
 	compacted := make([]llm.Message, 0, len(messages))
+
 	var pending []llm.Message
+
 	for _, message := range messages {
 		if message.Role == llm.RoleAssistant {
 			pending = append(pending, message)
+
 			continue
 		}
+
 		flushPendingAssistantMessages(&compacted, pending)
 		pending = nil
+
 		compacted = append(compacted, message)
 	}
+
 	flushPendingAssistantMessages(&compacted, pending)
 
 	return compacted
@@ -58,13 +67,16 @@ func flushPendingAssistantMessages(compacted *[]llm.Message, pending []llm.Messa
 	if len(pending) == 0 {
 		return
 	}
+
 	merged := pending[len(pending)-1]
+
 	parts := make([]string, 0, len(pending))
 	for _, message := range pending {
 		if text := strings.TrimSpace(messageText(message)); text != "" {
 			parts = append(parts, text)
 		}
 	}
+
 	merged.Content = []llm.Part{llm.TextPart(strings.TrimSpace(strings.Join(parts, "\n\n")))}
 	if messageText(merged) != "" {
 		*compacted = append(*compacted, merged)

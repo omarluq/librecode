@@ -34,14 +34,17 @@ type FileOperation struct {
 func CollectFileOperations(entries []database.EntryEntity) []FileOperation {
 	operations := []FileOperation{}
 	seen := map[string]struct{}{}
+
 	for index := range entries {
 		entry := &entries[index]
 		for _, operation := range fileOperationsFromPriorCompaction(entry) {
 			operations = appendUniqueFileOperation(operations, seen, &operation)
 		}
+
 		for _, operation := range fileOperationsFromToolEntry(entry) {
 			operations = appendUniqueFileOperation(operations, seen, &operation)
 		}
+
 		if len(operations) >= maxFileOperations {
 			return operations[:maxFileOperations]
 		}
@@ -58,17 +61,21 @@ func appendUniqueFileOperation(
 	if operation == nil {
 		return operations
 	}
+
 	operation.Action = strings.TrimSpace(operation.Action)
 	operation.Path = strings.TrimSpace(operation.Path)
 	operation.Tool = strings.TrimSpace(operation.Tool)
+
 	operation.Command = strings.TrimSpace(operation.Command)
 	if operation.Action == "" || operation.Path == "" {
 		return operations
 	}
+
 	key := operation.Action + "\x00" + operation.Path + "\x00" + operation.Tool + "\x00" + operation.Command
 	if _, ok := seen[key]; ok {
 		return operations
 	}
+
 	seen[key] = struct{}{}
 
 	return append(operations, *operation)
@@ -78,18 +85,22 @@ func fileOperationsFromPriorCompaction(entry *database.EntryEntity) []FileOperat
 	if entry.Type != database.EntryTypeCompaction {
 		return nil
 	}
+
 	data := entryData{Details: nil}
 	if err := json.Unmarshal([]byte(entry.DataJSON), &data); err != nil {
 		return nil
 	}
+
 	rawOperations, ok := data.Details[FileOperationsKey]
 	if !ok {
 		return nil
 	}
+
 	encoded, err := json.Marshal(rawOperations)
 	if err != nil {
 		return nil
 	}
+
 	operations := []FileOperation{}
 	if err := json.Unmarshal(encoded, &operations); err != nil {
 		return nil
@@ -102,12 +113,14 @@ func fileOperationsFromToolEntry(entry *database.EntryEntity) []FileOperation {
 	if entry.Type != database.EntryTypeMessage || entry.Message.Role != database.RoleToolResult {
 		return nil
 	}
+
 	args := map[string]any{}
 	if strings.TrimSpace(entry.ToolArgsJSON) != "" {
 		if err := json.Unmarshal([]byte(entry.ToolArgsJSON), &args); err != nil {
 			return nil
 		}
 	}
+
 	switch tool.Name(entry.ToolName) {
 	case tool.NameRead:
 		return pathArgumentFileOperation(entry, args, fileActionRead)
@@ -131,6 +144,7 @@ func pathArgumentFileOperation(
 	if !ok {
 		path, ok = stringArgument(args, "pattern")
 	}
+
 	if !ok {
 		return nil
 	}
@@ -149,14 +163,17 @@ func bashFileOperations(entry *database.EntryEntity, args map[string]any) []File
 	if !ok {
 		return nil
 	}
+
 	paths := shellCommandPathTokens(command)
 	if len(paths) == 0 {
 		return nil
 	}
+
 	action := fileActionRead
 	if shellCommandLooksMutating(command) {
 		action = fileActionModified
 	}
+
 	operations := make([]FileOperation, 0, len(paths))
 	for _, path := range paths {
 		operations = append(operations, FileOperation{
@@ -176,6 +193,7 @@ func stringArgument(args map[string]any, key string) (string, bool) {
 	if !ok {
 		return "", false
 	}
+
 	value = strings.TrimSpace(value)
 
 	return value, value != ""
@@ -186,10 +204,12 @@ func shellCommandLooksMutating(command string) bool {
 	if strings.Contains(lower, ">") {
 		return true
 	}
+
 	fields := strings.Fields(lower)
 	if len(fields) == 0 {
 		return false
 	}
+
 	mutatingCommands := []string{"cp", "mv", "rm", "mkdir", "touch", "tee"}
 	if slices.Contains(mutatingCommands, fields[0]) {
 		return true
@@ -202,6 +222,7 @@ func commandUsesInPlaceEdit(fields []string) bool {
 	if len(fields) == 0 || (fields[0] != "sed" && fields[0] != "perl") {
 		return false
 	}
+
 	return slices.ContainsFunc(fields[1:], func(field string) bool {
 		return field == "-i" || strings.HasPrefix(field, "-i.") || strings.HasPrefix(field, "-i'") ||
 			strings.HasPrefix(field, "-i\"")
@@ -211,14 +232,17 @@ func commandUsesInPlaceEdit(fields []string) bool {
 func shellCommandPathTokens(command string) []string {
 	fields := strings.Fields(command)
 	paths := []string{}
+
 	for index, field := range fields {
 		if index == 0 || shellTokenIsIgnored(field) {
 			continue
 		}
+
 		path := cleanShellPathToken(field)
 		if !looksLikeShellPath(path) || slices.Contains(paths, path) {
 			continue
 		}
+
 		paths = append(paths, path)
 	}
 
@@ -227,6 +251,7 @@ func shellCommandPathTokens(command string) []string {
 
 func shellTokenIsIgnored(token string) bool {
 	trimmed := strings.TrimSpace(token)
+
 	return trimmed == "" || strings.HasPrefix(trimmed, "-") || trimmed == "|" || trimmed == "&&" ||
 		trimmed == "||" || trimmed == ";" || trimmed == ">" || trimmed == ">>" || trimmed == "<"
 }
@@ -244,16 +269,22 @@ func looksLikeShellPath(path string) bool {
 	if path == "" || strings.HasPrefix(path, "-") || !shellPathTokenPattern.MatchString(path) {
 		return false
 	}
+
 	return strings.Contains(path, "/") || strings.Contains(path, ".")
 }
 
+const (
+	commandPreviewLimit       = 160
+	commandPreviewSuffixWidth = len("...")
+)
+
 func truncateCommand(command string) string {
 	command = strings.TrimSpace(command)
-	if len(command) <= 160 {
+	if len(command) <= commandPreviewLimit {
 		return command
 	}
 
-	return command[:157] + "..."
+	return command[:commandPreviewLimit-commandPreviewSuffixWidth] + "..."
 }
 
 // AppendFileOperationsSummary replaces stale operation text and appends current operations.
@@ -264,11 +295,13 @@ func AppendFileOperationsSummary(summary string, operations []FileOperation) str
 	}
 
 	lines := []string{strings.TrimSpace(summary), "", fileOperationsHeader}
+
 	for _, operation := range operations[:min(len(operations), maxFileOperations)] {
 		line := "- " + operation.Action + ": " + operation.Path
 		if operation.Tool != "" {
 			line += " (via " + operation.Tool + ")"
 		}
+
 		lines = append(lines, line)
 	}
 

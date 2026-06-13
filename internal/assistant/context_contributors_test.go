@@ -21,14 +21,18 @@ func TestRuntime_ContextBuildTracksTopContributors(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client.request)
 	require.NotEmpty(t, client.request.Usage.TopContributors)
+
 	var foundUser bool
+
 	for _, contributor := range client.request.Usage.TopContributors {
 		if contributor.Label == "message 1" && contributor.Role == "user" {
 			foundUser = true
+
 			assert.Positive(t, contributor.Tokens)
 			assert.NotEmpty(t, contributor.Preview)
 		}
 	}
+
 	assert.True(t, foundUser, "expected user prompt in top contributors")
 }
 
@@ -56,12 +60,15 @@ end)
 	require.NotEmpty(t, client.request.Usage.TopContributors)
 
 	var foundExtension bool
+
 	for _, contributor := range client.request.Usage.TopContributors {
 		if contributor.Label == "big-note" {
 			foundExtension = true
+
 			assert.Positive(t, contributor.Tokens)
 			assert.Contains(t, contributor.Preview, "extension context")
 		}
 	}
+
 	assert.True(t, foundExtension, "expected extension contribution in top contributors")
 }

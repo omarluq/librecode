@@ -6,32 +6,57 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ParseFrontmatter extracts YAML frontmatter delimited by --- from markdown content.
-func ParseFrontmatter[T any](content string) (metadata T, body string, err error) {
+// Frontmatter extracts YAML frontmatter delimited by --- from markdown content.
+func Frontmatter(content string) (data []byte, body string) {
 	if !strings.HasPrefix(content, "---\n") && !strings.HasPrefix(content, "---\r\n") {
-		return metadata, content, nil
+		return nil, content
 	}
 
 	separator := "\n---\n"
 	endIndex := strings.Index(content, separator)
+
 	separatorLength := len(separator)
 	if endIndex == -1 {
 		separator = "\r\n---\r\n"
 		endIndex = strings.Index(content, separator)
 		separatorLength = len(separator)
 	}
+
 	if endIndex == -1 {
-		return metadata, content, nil
+		return nil, content
 	}
 
 	frontmatter := strings.TrimPrefix(content[:endIndex], "---")
 	frontmatter = strings.TrimSpace(frontmatter)
-	body = content[endIndex+separatorLength:]
-	if strings.TrimSpace(frontmatter) == "" {
+
+	return []byte(frontmatter), content[endIndex+separatorLength:]
+}
+
+func parsePromptFrontmatter(content string) (promptFrontmatter, string, error) {
+	var metadata promptFrontmatter
+
+	frontmatter, body := Frontmatter(content)
+	if strings.TrimSpace(string(frontmatter)) == "" {
 		return metadata, body, nil
 	}
-	if err := yaml.Unmarshal([]byte(frontmatter), &metadata); err != nil {
-		return metadata, body, err
+
+	if err := yaml.Unmarshal(frontmatter, &metadata); err != nil {
+		return metadata, body, coreError(err, "parse frontmatter")
+	}
+
+	return metadata, body, nil
+}
+
+func parseSkillFrontmatter(content string) (skillFrontmatter, string, error) {
+	var metadata skillFrontmatter
+
+	frontmatter, body := Frontmatter(content)
+	if strings.TrimSpace(string(frontmatter)) == "" {
+		return metadata, body, nil
+	}
+
+	if err := yaml.Unmarshal(frontmatter, &metadata); err != nil {
+		return metadata, body, coreError(err, "parse frontmatter")
 	}
 
 	return metadata, body, nil

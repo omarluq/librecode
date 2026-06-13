@@ -94,6 +94,7 @@ func TestRuntime_PromptStartsNewSessionByDefault(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotEqual(t, firstResponse.SessionID, secondResponse.SessionID)
+
 	sessions, err := repository.ListSessions(ctx, testRuntimeCWD)
 	require.NoError(t, err)
 	assert.Len(t, sessions, 2)
@@ -107,6 +108,7 @@ func TestRuntime_PromptResumesLatestSessionWhenRequested(t *testing.T) {
 
 	firstResponse, err := runtime.Prompt(ctx, newRuntimePromptRequest(testRuntimeCWD, "first session", ""))
 	require.NoError(t, err)
+
 	resumeRequest := newRuntimePromptRequest(testRuntimeCWD, "resume session", "")
 	resumeRequest.ResumeLatest = true
 	secondResponse, err := runtime.Prompt(ctx, resumeRequest)
@@ -146,6 +148,7 @@ func TestRuntime_PromptEmitsStreamEvents(t *testing.T) {
 	}
 	_, err := runtime.Prompt(context.Background(), request)
 	require.NoError(t, err)
+
 	textEvent := firstStreamEventKind(events, assistant.StreamEventTextDelta)
 	require.NotNil(t, textEvent)
 	assert.Contains(t, textEvent.Text, "stream me")
@@ -225,6 +228,7 @@ func TestRuntime_PromptPersistsEmptyProviderResponse(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, response.Text)
 	assert.Equal(t, 1, client.attempts)
+
 	messages, err := repository.Messages(context.Background(), request.SessionID)
 	require.NoError(t, err)
 	require.Len(t, messages, 2)
@@ -263,7 +267,7 @@ func TestRuntime_PromptPersistsPartialProgressOnProviderFailure(t *testing.T) {
 	_, err := runtime.Prompt(context.Background(), request)
 
 	require.Error(t, err)
-	require.EqualError(t, err, "provider returned an empty response")
+	require.EqualError(t, err, "complete model request: provider returned an empty response")
 	assertPersistedPartialFailure(t, repository, request.SessionID)
 }
 
@@ -273,8 +277,10 @@ func TestRuntime_PromptReportsPersistenceFailureWhenFailedProgressCannotPersist(
 	client := partialFailureCompleter{}
 	runtime, _ := newTestRuntimeWithClient(t, client)
 	request := newRuntimePromptRequest(testRuntimeCWD, "fail persistence", "")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	request.OnEvent = func(assistant.StreamEvent) {
 		cancel()
 	}
@@ -308,6 +314,7 @@ func TestRuntime_SlashSkillShowsContent(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
+
 	skillPath := filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md")
 	writeRuntimeTestFile(t, skillPath, strings.Join([]string{
 		testSkillDelimiter,
@@ -359,10 +366,12 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 		Model:     "",
 	})
 	require.NoError(t, err)
+
 	client := &capturingCompleter{request: nil}
 	runtime, _ := newTestRuntimeWithRepositoryAndClient(t, repository, client)
 
 	var usageEvents []assistant.StreamEvent
+
 	request := newRuntimePromptRequest(cwd, "next", "")
 	request.SessionID = session.ID
 	request.OnEvent = func(event assistant.StreamEvent) {
@@ -374,9 +383,11 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 	_, err = runtime.Prompt(ctx, request)
 	require.NoError(t, err)
 	require.NotNil(t, client.request)
+
 	for _, message := range client.request.Messages {
 		assert.NotEqual(t, database.RoleToolResult, message.Role)
 	}
+
 	require.NotEmpty(t, usageEvents)
 	require.NotNil(t, usageEvents[0].Usage)
 	assert.Less(t, usageEvents[0].Usage.ContextTokens, 1000)
@@ -407,6 +418,7 @@ func TestRuntime_PromptIncludesCompactionSummaryContext(t *testing.T) {
 		FromHook:         false,
 	})
 	require.NoError(t, err)
+
 	client := &capturingCompleter{request: nil}
 	runtime, _ := newTestRuntimeWithRepositoryAndClient(t, repository, client)
 	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
@@ -422,6 +434,7 @@ func TestRuntime_PromptIncludesCompactionSummaryContext(t *testing.T) {
 	assert.Contains(t, client.request.Messages[0].Content, "summary of old work")
 	assert.Equal(t, database.RoleUser, client.request.Messages[1].Role)
 	assert.Equal(t, "old user prompt", client.request.Messages[1].Content)
+
 	userEntry, found, err := repository.Entry(ctx, response.SessionID, response.UserEntryID)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -440,6 +453,7 @@ func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 		testSkillDelimiter,
 		"Use tests first.",
 	}, "\n"))
+
 	client := &capturingCompleter{request: nil}
 	runtime, _ := newTestRuntimeWithClient(t, client)
 
@@ -495,6 +509,7 @@ func newTestRuntimeWithManager(
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
 	repository := database.NewSessionRepository(connection)
+
 	return newTestRuntimeWithRepositoryClientAndManager(t, repository, client)
 }
 
@@ -519,6 +534,7 @@ func newTestRuntimeWithRepositoryClientAndManager(
 
 	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Shutdown)
+
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 
@@ -790,7 +806,6 @@ func testConfig() *config.Config {
 			OutputReserveTokens:   0,
 			ProviderReserveTokens: 2048,
 			SafetyMarginTokens:    8192,
-			KeepRecentTokens:      20_000,
 			PreflightEnabled:      true,
 		},
 		Models: config.ModelsConfig{

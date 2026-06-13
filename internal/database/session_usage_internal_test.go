@@ -54,6 +54,7 @@ func TestBuildContextReturnsAssistantUsageDecodeError(t *testing.T) {
 
 	_, err = repository.BuildContext(ctx, session.ID, entry.ID)
 	require.Error(t, err)
+
 	var oopsError oops.OopsError
 	require.ErrorAs(t, err, &oopsError)
 	assert.Equal(t, "decode_entry_usage", oopsError.Code())

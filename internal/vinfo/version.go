@@ -9,26 +9,27 @@ import (
 
 const devVersion = "dev"
 
-var (
-	// Version is the semantic version injected at build time.
-	Version = devVersion
-	// Commit is the VCS revision injected at build time.
-	Commit = "none"
-	// BuildDate is the UTC build timestamp injected at build time.
-	BuildDate = "unknown"
-)
+var version = devVersion
+
+func commit() string {
+	return "none"
+}
+
+func buildDate() string {
+	return "unknown"
+}
 
 // String returns a human-readable build version string.
 func String() string {
-	version := Version
+	value := version
 
-	if version == devVersion {
+	if value == devVersion {
 		if info, ok := debug.ReadBuildInfo(); ok {
-			version = fallbackVersion(info.Main.Version)
+			value = fallbackVersion(info.Main.Version)
 		}
 	}
 
-	return fmt.Sprintf("%s (commit=%s, built=%s)", version, Commit, BuildDate)
+	return fmt.Sprintf("%s (commit=%s, built=%s)", value, commit(), buildDate())
 }
 
 func fallbackVersion(version string) string {

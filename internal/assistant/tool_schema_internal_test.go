@@ -62,6 +62,7 @@ func customToolSchemaCase(customSchema map[string]any) toolSchemaCase {
 			t.Helper()
 			assert.Equal(t, customSchema, schema)
 			schema["mutated"] = true
+
 			assert.NotContains(t, customSchema, "mutated")
 		},
 		definition: echoToolDefinition(customSchema),
@@ -92,6 +93,7 @@ func strictASTToolSchemaCase() toolSchemaCase {
 	return toolSchemaCase{
 		assertion: func(t *testing.T, schema map[string]any) {
 			t.Helper()
+
 			properties, ok := schema[jsonPropertiesKey].(map[string]any)
 			require.True(t, ok)
 			mode, ok := properties["mode"].(map[string]any)

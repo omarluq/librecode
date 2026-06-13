@@ -18,6 +18,7 @@ func (repository *SessionRepository) Branch(ctx context.Context, sessionID, entr
 	if err != nil {
 		return nil, err
 	}
+
 	if len(entries) == 0 {
 		return []EntryEntity{}, nil
 	}
@@ -33,21 +34,25 @@ func (repository *SessionRepository) Branch(ctx context.Context, sessionID, entr
 	}
 
 	branch := []EntryEntity{}
+
 	seen := map[string]bool{}
 	for currentID != "" {
 		if seen[currentID] {
 			return nil, fmt.Errorf("database: session tree contains cycle at %s", currentID)
 		}
+
 		seen[currentID] = true
 
 		entry, ok := entryByID[currentID]
 		if !ok {
 			return nil, fmt.Errorf("database: entry %s not found", currentID)
 		}
+
 		branch = append(branch, entry)
 		if entry.ParentID == nil {
 			break
 		}
+
 		currentID = *entry.ParentID
 	}
 
@@ -66,13 +71,16 @@ func (repository *SessionRepository) Tree(ctx context.Context, sessionID string)
 	}
 
 	childrenByParent := map[string][]EntryEntity{}
+
 	for index := range entries {
 		parentID := ""
 		if entries[index].ParentID != nil {
 			parentID = *entries[index].ParentID
 		}
+
 		childrenByParent[parentID] = append(childrenByParent[parentID], entries[index])
 	}
+
 	for parentID := range childrenByParent {
 		sort.Slice(childrenByParent[parentID], func(leftIndex, rightIndex int) bool {
 			return childrenByParent[parentID][leftIndex].CreatedAt.Before(
@@ -82,8 +90,10 @@ func (repository *SessionRepository) Tree(ctx context.Context, sessionID string)
 	}
 
 	var build func(parentID string) []TreeNodeEntity
+
 	build = func(parentID string) []TreeNodeEntity {
 		children := childrenByParent[parentID]
+
 		nodes := make([]TreeNodeEntity, 0, len(children))
 		for index := range children {
 			nodes = append(nodes, TreeNodeEntity{
@@ -113,18 +123,23 @@ func (repository *SessionRepository) Label(
 		if entries[index].Type != EntryTypeLabel {
 			continue
 		}
+
 		data, err := dataFromEntry(&entries[index])
 		if err != nil {
 			return "", false, err
 		}
+
 		if data.TargetID != targetID {
 			continue
 		}
+
 		if data.Label == nil {
 			label = ""
 			found = false
+
 			continue
 		}
+
 		label = *data.Label
 		found = true
 	}
@@ -150,13 +165,16 @@ func (repository *SessionRepository) BuildContext(
 		Model:         "",
 		ThinkingLevel: "",
 	}
+
 	for index := range branch {
 		if branch[index].Type == EntryTypeCompaction {
 			if err := applyCompactionContextWithTail(&contextEntity, branch, index); err != nil {
 				return nil, err
 			}
+
 			continue
 		}
+
 		if err := applyEntryToContext(&contextEntity, &branch[index]); err != nil {
 			return nil, err
 		}
@@ -167,6 +185,7 @@ func (repository *SessionRepository) BuildContext(
 
 func newEntryEntity(sessionID string, parentID *string, entryType EntryType, message *MessageEntity) EntryEntity {
 	createdAt := message.Timestamp
+
 	return EntryEntity{
 		CreatedAt:                  createdAt,
 		ParentID:                   parentID,
@@ -191,6 +210,7 @@ func newEntryEntity(sessionID string, parentID *string, entryType EntryType, mes
 
 func newEntryData() EntryDataEntity {
 	var data EntryDataEntity
+
 	return data
 }
 
@@ -209,6 +229,7 @@ type appendEntryOptions struct {
 
 func newAppendEntryOptions() *appendEntryOptions {
 	var options appendEntryOptions
+
 	return &options
 }
 
@@ -223,6 +244,7 @@ func (repository *SessionRepository) appendBuiltEntry(
 	if err := applyAppendEntryMetadata(&entry, options); err != nil {
 		return nil, err
 	}
+
 	if err := repository.appendEntry(ctx, &entry); err != nil {
 		return nil, err
 	}
@@ -242,6 +264,7 @@ func (repository *SessionRepository) entryFromAppendOptions(
 	} else {
 		timestamp = timestamp.UTC()
 	}
+
 	entry := newEntryEntity(sessionID, parentID, entryType, &MessageEntity{
 		Timestamp: timestamp,
 		Role:      options.role,
@@ -249,10 +272,12 @@ func (repository *SessionRepository) entryFromAppendOptions(
 		Provider:  options.provider,
 		Model:     options.model,
 	})
+
 	entry.CustomType = options.customType
 	if options.dataJSON != "" {
 		entry.DataJSON = normalizeDataJSON(options.dataJSON)
 	}
+
 	entry.Summary = options.summary
 
 	return entry
@@ -262,24 +287,29 @@ func applyAppendEntryMetadata(entry *EntryEntity, options *appendEntryOptions) e
 	if options.modelFacing == nil && options.usage == nil {
 		return nil
 	}
+
 	data, err := dataFromEntry(entry)
 	if err != nil {
 		return oops.In("database").
 			Code("decode_entry_data").
 			Wrapf(err, "decode entry data before setting metadata")
 	}
+
 	if options.modelFacing != nil {
 		data.ModelFacing = options.modelFacing
 	}
+
 	if options.usage != nil {
 		data.Usage = options.usage
 	}
+
 	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
 		return oops.In("database").
 			Code("encode_entry_data").
 			Wrapf(err, "encode entry data after setting metadata")
 	}
+
 	entry.DataJSON = normalizeDataJSON(dataJSON)
 
 	return nil
@@ -562,6 +592,7 @@ func dataFromEntry(entry *EntryEntity) (EntryDataEntity, error) {
 	if normalizeDataJSON(entry.DataJSON) == "{}" {
 		return data, nil
 	}
+
 	if err := json.Unmarshal([]byte(entry.DataJSON), &data); err != nil {
 		return data, fmt.Errorf("database: decode entry data: %w", err)
 	}
@@ -570,22 +601,20 @@ func dataFromEntry(entry *EntryEntity) (EntryDataEntity, error) {
 }
 
 func applyEntryToContext(contextEntity *SessionContextEntity, entry *EntryEntity) error {
-	handler, ok := entryContextAppliers[entry.Type]
-	if !ok {
+	switch entry.Type {
+	case EntryTypeMessage, EntryTypeCustomMessage:
+		return appendModelFacingEntryMessage(contextEntity, entry)
+	case EntryTypeBranchSummary:
+		return appendBranchSummaryContext(contextEntity, entry)
+	case EntryTypeModelChange:
+		return applyModelChangeContext(contextEntity, entry)
+	case EntryTypeThinkingLevelChange:
+		return applyThinkingLevelContext(contextEntity, entry)
+	case EntryTypeCustom, EntryTypeCompaction, EntryTypeLabel, EntryTypeSessionInfo:
 		return nil
 	}
 
-	return handler(contextEntity, entry)
-}
-
-type entryContextApplier func(*SessionContextEntity, *EntryEntity) error
-
-var entryContextAppliers = map[EntryType]entryContextApplier{
-	EntryTypeMessage:             appendModelFacingEntryMessage,
-	EntryTypeCustomMessage:       appendModelFacingEntryMessage,
-	EntryTypeBranchSummary:       appendBranchSummaryContext,
-	EntryTypeModelChange:         applyModelChangeContext,
-	EntryTypeThinkingLevelChange: applyThinkingLevelContext,
+	return nil
 }
 
 func appendModelFacingEntryMessage(contextEntity *SessionContextEntity, entry *EntryEntity) error {
@@ -603,15 +632,18 @@ func updateContextUsageAnchor(contextEntity *SessionContextEntity, entry *EntryE
 	if entry.Type != EntryTypeMessage || entry.Message.Role != RoleAssistant {
 		return nil
 	}
+
 	data, err := dataFromEntry(entry)
 	if err != nil {
 		return oops.In("database").
 			Code("decode_entry_usage").
 			Wrapf(err, "decode assistant entry usage")
 	}
+
 	if data.Usage == nil || !data.Usage.HasAny() {
 		return nil
 	}
+
 	contextEntity.UsageAnchor = &ContextUsageAnchorEntity{
 		EntryID:      entry.ID,
 		MessageIndex: messageIndex,
@@ -648,9 +680,11 @@ func applyCompactionContextWithTail(
 	for index := range compactionIndex {
 		if branch[index].ID == compactionEntry.CompactionFirstKeptEntryID {
 			firstKeptIndex = index
+
 			break
 		}
 	}
+
 	for index := firstKeptIndex; index < compactionIndex; index++ {
 		if err := appendRetainedCompactionTailEntry(contextEntity, &branch[index]); err != nil {
 			return err
@@ -682,6 +716,7 @@ func appendRetainedCompactionTailEntry(contextEntity *SessionContextEntity, entr
 		if entry.ModelFacing {
 			contextEntity.Messages = append(contextEntity.Messages, entry.Message)
 		}
+
 		return nil
 	case EntryTypeBranchSummary:
 		return appendBranchSummaryContext(contextEntity, entry)
@@ -711,6 +746,7 @@ func applyThinkingLevelContext(contextEntity *SessionContextEntity, entry *Entry
 			Code("decode_entry_data").
 			Wrapf(err, "decode thinking level entry data")
 	}
+
 	contextEntity.ThinkingLevel = data.ThinkingLevel
 
 	return nil

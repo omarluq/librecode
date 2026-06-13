@@ -23,9 +23,11 @@ func TestCancelActivePromptPreservesQueuedMessages(t *testing.T) {
 	if got, want := len(app.transcript.History), 0; got != want {
 		t.Fatalf("messages length = %d, want %d", got, want)
 	}
+
 	if got, want := app.queuedMessages, []string{"follow up"}; len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("queuedMessages = %v, want %v", got, want)
 	}
+
 	if app.activePrompt != nil {
 		t.Fatal("activePrompt should be cleared")
 	}
@@ -46,6 +48,7 @@ func TestCancelActivePromptWithoutActivePromptClearsTransientState(t *testing.T)
 	if app.working {
 		t.Fatal("working should be false")
 	}
+
 	if app.streamingText != "" || app.streamingThinkingText != "" {
 		t.Fatalf(
 			"streaming text should be cleared, got text=%q thinking=%q",
@@ -53,12 +56,15 @@ func TestCancelActivePromptWithoutActivePromptClearsTransientState(t *testing.T)
 			app.streamingThinkingText,
 		)
 	}
+
 	if len(app.transcript.Streaming.Blocks) != 0 {
 		t.Fatalf("streamingBlocks length = %d, want 0", len(app.transcript.Streaming.Blocks))
 	}
+
 	if app.streamedToolEvents != 0 {
 		t.Fatalf("streamedToolEvents = %d, want 0", app.streamedToolEvents)
 	}
+
 	if got, want := app.statusMessage, "no active response to cancel"; got != want {
 		t.Fatalf("statusMessage = %q, want %q", got, want)
 	}
@@ -81,6 +87,7 @@ func TestDeleteCanceledPromptBranchFailureKeepsCanceledPrompt(t *testing.T) {
 	if _, ok := app.canceledPrompts[promptID]; !ok {
 		t.Fatal("canceled prompt should remain tracked when persisted branch deletion fails")
 	}
+
 	if !strings.Contains(app.statusMessage, "failed to revert persisted branch") {
 		t.Fatalf("statusMessage = %q, want failed revert message", app.statusMessage)
 	}

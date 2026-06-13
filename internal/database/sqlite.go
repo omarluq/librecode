@@ -33,6 +33,7 @@ func SQLiteDSN(path string, options SQLiteOptions) string {
 	for _, pragma := range values["_pragma"] {
 		query.Add("_pragma", pragma)
 	}
+
 	parsed.RawQuery = query.Encode()
 
 	return parsed.String()

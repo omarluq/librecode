@@ -57,6 +57,7 @@ func (client *terminalPromptClient) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	client.lock.Lock()
+
 	client.request = request
 	select {
 	case <-client.ready:
@@ -64,6 +65,7 @@ func (client *terminalPromptClient) Complete(
 		close(client.ready)
 	}
 	client.lock.Unlock()
+
 	if client.err != nil {
 		return nil, client.err
 	}
@@ -91,10 +93,12 @@ func TestSubmit(t *testing.T) {
 			t.Parallel()
 
 			client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
+
 			app := newPromptSendTestApp(t, client)
 			if testCase.setupApp != nil {
 				testCase.setupApp(app)
 			}
+
 			app.composerBuffer.SetText(testCase.composerText)
 
 			consumed, err := app.submit(context.Background())
@@ -179,21 +183,27 @@ func assertSubmitCase(
 	if err != nil {
 		t.Fatalf("submit returned error: %v", err)
 	}
+
 	if got := consumed; got != testCase.wantConsumed {
 		t.Fatalf("consumed = %v, want %v", got, testCase.wantConsumed)
 	}
+
 	if got := app.mode; got != testCase.wantMode {
 		t.Fatalf("mode = %q, want %q", got, testCase.wantMode)
 	}
+
 	if got := app.composerBuffer.TextValue(); got != testCase.wantComposerText {
 		t.Fatalf("composer text = %q, want %q", got, testCase.wantComposerText)
 	}
+
 	if got := len(app.promptHistory); got != testCase.wantPromptHistory {
 		t.Fatalf("promptHistory length = %d, want %d", got, testCase.wantPromptHistory)
 	}
+
 	if !slices.Equal(app.queuedMessages, testCase.wantQueued) {
 		t.Fatalf("queuedMessages = %v, want %v", app.queuedMessages, testCase.wantQueued)
 	}
+
 	if got := client.request != nil; got != testCase.wantRequest {
 		t.Fatalf("request captured = %v, want %v", got, testCase.wantRequest)
 	}
@@ -210,6 +220,7 @@ func TestSendPromptQueuesWhenWorking(t *testing.T) {
 	if got, want := app.queuedMessages, []string{testQueuedPromptText}; !slices.Equal(got, want) {
 		t.Fatalf("queuedMessages = %v, want %v", got, want)
 	}
+
 	if app.activePrompt != nil {
 		t.Fatal("activePrompt should not be set when queuing follow-up")
 	}
@@ -238,19 +249,24 @@ func TestSendPromptInitializesPromptState(t *testing.T) {
 	if got := app.tokenUsage.ContextTokens; got != 25_000 {
 		t.Fatalf("tokenUsage.ContextTokens = %d, want 25000", got)
 	}
+
 	request := waitForPromptRequest(t, client)
 	if got := request.Messages[len(request.Messages)-1].Content; got != promptSendTestText {
 		t.Fatalf("last request message = %q, want hello", got)
 	}
+
 	if app.pendingParentID != nil {
 		t.Fatal("pendingParentID should be cleared")
 	}
+
 	if !app.working {
 		t.Fatal("app should be marked working after send")
 	}
+
 	if app.activePrompt == nil {
 		t.Fatal("activePrompt should be initialized")
 	}
+
 	if got, want := app.activePrompt.Prompt, promptSendTestText; got != want {
 		t.Fatalf("activePrompt.Prompt = %q, want %q", got, want)
 	}
@@ -275,7 +291,7 @@ func TestRunPromptPostsDoneAndError(t *testing.T) {
 			name:     "error",
 			client:   newTerminalPromptClient(nil, errors.New("boom")),
 			wantKind: asyncEventPromptError,
-			wantText: "boom",
+			wantText: "complete model request: boom",
 		},
 	}
 
@@ -304,9 +320,11 @@ func TestRunPromptPostsDoneAndError(t *testing.T) {
 			if got := promptEvent.Kind; got != testCase.wantKind {
 				t.Fatalf("promptEvent.Kind = %q, want %q", got, testCase.wantKind)
 			}
+
 			if got := promptEvent.Text; got != testCase.wantText {
 				t.Fatalf("promptEvent.Text = %q, want %q", got, testCase.wantText)
 			}
+
 			if got := promptEvent.PromptID; got != 7 {
 				t.Fatalf("promptEvent.PromptID = %d, want 7", got)
 			}
@@ -330,6 +348,7 @@ func newPromptSendTestAppWithConfig(
 	connection := newPromptSendTestConnection(t)
 	manager := extension.NewManager(slog.Default())
 	t.Cleanup(manager.Shutdown)
+
 	cache := assistant.NewResponseCache(false, 1, time.Minute)
 	t.Cleanup(cache.Shutdown)
 	registry := newPromptSendTestModelRegistry(t)
@@ -361,12 +380,14 @@ func newPromptSendTestConnection(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+
 	t.Cleanup(func() {
 		if closeErr := connection.Close(); closeErr != nil {
 			t.Fatalf("close sqlite: %v", closeErr)
 		}
 	})
 	connection.SetMaxOpenConns(1)
+
 	migrateErr := database.Migrate(context.Background(), connection)
 	if migrateErr != nil {
 		t.Fatalf("migrate sqlite: %v", migrateErr)
@@ -438,7 +459,6 @@ func promptSendTestConfig() *config.Config {
 			OutputReserveTokens:   0,
 			ProviderReserveTokens: 0,
 			SafetyMarginTokens:    0,
-			KeepRecentTokens:      20_000,
 			PreflightEnabled:      false,
 		},
 		Models: config.ModelsConfig{
@@ -486,6 +506,7 @@ func waitForPromptRequest(t *testing.T, client *terminalPromptClient) *assistant
 	case <-time.After(time.Second):
 		t.Fatal("runtime request should be captured")
 	}
+
 	client.lock.Lock()
 	defer client.lock.Unlock()
 
@@ -497,18 +518,20 @@ func readPromptAsyncEvent(t *testing.T, app *App) *asyncEvent {
 
 	select {
 	case raw := <-app.screen.EventQ():
-		interrupt, ok := raw.(*tcell.EventInterrupt)
-		if !ok {
+		interrupt, matched := raw.(*tcell.EventInterrupt)
+		if !matched {
 			t.Fatalf("event = %T, want *tcell.EventInterrupt", raw)
 		}
-		promptEvent, ok := interrupt.Data().(*asyncEvent)
-		if !ok {
+
+		promptEvent, matched := interrupt.Data().(*asyncEvent)
+		if !matched {
 			t.Fatalf("interrupt data = %T, want *asyncEvent", interrupt.Data())
 		}
 
 		return promptEvent
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for async event")
+
 		return nil
 	}
 }

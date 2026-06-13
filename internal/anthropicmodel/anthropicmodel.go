@@ -68,10 +68,12 @@ func hasFamily(modelID, family string) bool {
 		}
 
 		start := offset + index
+
 		end := start + len(family)
 		if isBoundary(modelID, start-1) && isBoundary(modelID, end) {
 			return true
 		}
+
 		offset = end
 	}
 }

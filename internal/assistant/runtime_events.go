@@ -11,6 +11,7 @@ func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *Comple
 	if request == nil {
 		return
 	}
+
 	payload := new(lifecyclepayload.ProviderRequest)
 	payload.Headers = redactedHeaders(request.Auth.Headers)
 	payload.API = request.Model.API
@@ -36,6 +37,7 @@ func (runtime *Runtime) emitProviderResponse(
 	if request == nil || result == nil {
 		return
 	}
+
 	payload := lifecyclepayload.ProviderResponsePayload(&lifecyclepayload.ProviderResponse{
 		FinishReason:   result.FinishReason,
 		Usage:          result.Usage,
@@ -48,10 +50,12 @@ func (runtime *Runtime) emitProviderResponse(
 		ThinkingCount:  len(result.Thinking),
 		ToolEventCount: len(result.ToolEvents),
 	})
+
 	dispatchResult, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleAfterProviderResponse, payload)
 	if dispatchErr != nil && runtime.logger != nil {
 		runtime.logger.Debug("provider response lifecycle failed", "error", dispatchErr)
 	}
+
 	runtime.emitLifecycleDiagnostics(
 		ctx,
 		extension.LifecycleAfterProviderResponse,
@@ -64,6 +68,7 @@ func (runtime *Runtime) emitProviderError(ctx context.Context, request *Completi
 	if request == nil || err == nil {
 		return
 	}
+
 	payload := lifecyclepayload.ProviderErrorPayload(&lifecyclepayload.ProviderError{
 		Err:       err,
 		API:       request.Model.API,
@@ -72,10 +77,12 @@ func (runtime *Runtime) emitProviderError(ctx context.Context, request *Completi
 		SessionID: request.SessionID,
 		Attempt:   attempt,
 	})
+
 	dispatchResult, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleProviderError, payload)
 	if dispatchErr != nil && runtime.logger != nil {
 		runtime.logger.Debug("provider error lifecycle failed", "error", dispatchErr)
 	}
+
 	runtime.emitLifecycleDiagnostics(
 		ctx,
 		extension.LifecycleProviderError,

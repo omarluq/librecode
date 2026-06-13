@@ -57,6 +57,11 @@ type activePromptState struct {
 	Canceled         bool
 }
 
+type resizeCoalescedEvent struct {
+	Resize *tcell.EventResize
+	Event  tcell.Event
+}
+
 type activeCompactionState struct {
 	Cancel      context.CancelFunc
 	ID          uint64
@@ -106,7 +111,7 @@ type App struct {
 	lastEscape            time.Time
 	lastControlC          time.Time
 	workStartedAt         time.Time
-	screen                tcell.Screen
+	screen                terminalScreen
 	extensions            extension.TerminalEventRunner
 	renderer              *rendertext.Renderer
 	frame                 *rendertext.Buffer
@@ -165,9 +170,11 @@ func Run(ctx context.Context, options *RunOptions) error {
 	if err != nil {
 		return fmt.Errorf("tui: create screen: %w", err)
 	}
+
 	if err := screen.Init(); err != nil {
 		return fmt.Errorf("tui: init screen: %w", err)
 	}
+
 	screen.EnableMouse(tcell.MouseDragEvents)
 	defer screen.Fini()
 
@@ -175,25 +182,40 @@ func Run(ctx context.Context, options *RunOptions) error {
 	if err := app.loadInitialMessages(ctx); err != nil {
 		app.addSystemMessage(err.Error())
 	}
+
 	if err := app.loadSessionSettings(ctx); err != nil {
 		app.addSystemMessage(err.Error())
 	}
+
 	if err := app.loadLatestSessionSettings(ctx); err != nil {
 		app.addSystemMessage(err.Error())
 	}
+
 	if err := app.runStartupExtensions(ctx); err != nil {
 		app.addSystemMessage(err.Error())
 	}
+
 	app.loop(ctx)
 
 	return nil
 }
 
-func newApp(screen tcell.Screen, options *RunOptions) *App {
+type terminalScreen interface {
+	rendertext.ContentScreen
+	EventQ() chan tcell.Event
+	HideCursor()
+	Show()
+	SetClipboard(data []byte)
+	ShowCursor(x, y int)
+	Size() (width, height int)
+}
+
+func newApp(screen terminalScreen, options *RunOptions) *App {
 	appTheme := themeByName("dark")
 	if options.Config != nil && options.Config.App.Env == "test" {
 		appTheme = darkTheme()
 	}
+
 	resources := initialResourceSnapshot(options)
 	app := &App{
 		screen:           screen,
@@ -285,21 +307,29 @@ func initialResourceSnapshot(options *RunOptions) core.ResourceSnapshot {
 func (app *App) loop(ctx context.Context) {
 	workTicker := time.NewTicker(workFrameInterval)
 	defer workTicker.Stop()
+
 	frameTicker := time.NewTicker(streamingFrameInterval)
 	defer frameTicker.Stop()
+
 	extensionTimer := time.NewTimer(time.Hour)
+
 	stopTimer(extensionTimer)
 	defer extensionTimer.Stop()
+
 	messageWarmTimer := time.NewTimer(time.Hour)
+
 	stopTimer(messageWarmTimer)
 	defer messageWarmTimer.Stop()
+
 	dirty := true
 	for {
 		dirty = app.drawDirtyFrame(ctx, dirty)
+
 		shouldQuit, nextDirty := app.runLoopStep(ctx, workTicker, frameTicker, extensionTimer, messageWarmTimer, dirty)
 		if shouldQuit {
 			return
 		}
+
 		dirty = nextDirty
 	}
 }
@@ -307,6 +337,7 @@ func (app *App) loop(ctx context.Context) {
 func (app *App) drawDirtyFrame(ctx context.Context, dirty bool) bool {
 	if dirty && !app.throttleDraws() {
 		app.draw(ctx)
+
 		return false
 	}
 
@@ -327,19 +358,24 @@ func (app *App) runLoopStep(
 	case <-app.workTick(workTicker):
 		app.workFrame++
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
+
 		return false, true
 	case <-app.frameTick(frameTicker, dirty):
 		if dirty {
 			app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
 		}
+
 		app.draw(ctx)
+
 		return false, false
 	case <-app.extensionTimerTick(extensionTimer):
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
+
 		return false, true
 	case <-app.messageCacheWarmTick(messageWarmTimer):
 		app.transcript.LineCache.queued = false
 		app.warmMessageLineCacheStep()
+
 		return false, true
 	}
 }
@@ -348,18 +384,23 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 	if event == nil {
 		return true, false
 	}
+
 	shouldQuit, err := app.handleEvent(ctx, event)
 	if err != nil {
 		app.addMessage(transcript.RoleCustom, err.Error())
 	}
+
 	if shouldQuit {
 		return true, false
 	}
+
 	if resize, ok := event.(*tcell.EventResize); ok {
 		return app.drawLatestResize(ctx, resize)
 	}
+
 	if app.shouldDrawImmediately(event) {
 		app.draw(ctx)
+
 		return false, false
 	}
 
@@ -367,38 +408,41 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 }
 
 func (app *App) drawLatestResize(ctx context.Context, resize *tcell.EventResize) (shouldQuit, dirty bool) {
-	pending, hasPending := app.coalesceResizeEvents(ctx, resize)
-	if hasPending {
-		shouldQuit, _ = app.handleLoopEvent(ctx, pending)
+	pending := app.coalesceResizeEvents(resize)
+	if pending.Resize != nil {
+		if err := app.applyResizeEvent(ctx, pending.Resize); err != nil {
+			app.addMessage(transcript.RoleCustom, err.Error())
+		}
+	} else if pending.Event != nil {
+		shouldQuit, _ = app.handleLoopEvent(ctx, pending.Event)
 		if shouldQuit {
 			return true, false
 		}
 	}
+
 	app.draw(ctx)
 
 	return false, false
 }
 
-func (app *App) coalesceResizeEvents(
-	ctx context.Context,
-	resize *tcell.EventResize,
-) (pending tcell.Event, hasPending bool) {
+func (app *App) coalesceResizeEvents(resize *tcell.EventResize) resizeCoalescedEvent {
 	latest := resize
+
 	for {
 		select {
 		case event := <-app.screen.EventQ():
-			nextResize, ok := event.(*tcell.EventResize)
-			if !ok {
+			nextResize, matched := event.(*tcell.EventResize)
+			if !matched {
 				app.lastResize = latest
-				return event, true
+
+				return resizeCoalescedEvent{Resize: nil, Event: event}
 			}
-			if err := app.applyResizeEvent(ctx, nextResize); err != nil {
-				app.addMessage(transcript.RoleCustom, err.Error())
-			}
+
 			latest = nextResize
 		default:
 			app.lastResize = latest
-			return nil, false
+
+			return resizeCoalescedEvent{Resize: latest, Event: nil}
 		}
 	}
 }
@@ -423,18 +467,26 @@ func (app *App) messageCacheWarmTick(timer *time.Timer) <-chan time.Time {
 	if timer == nil {
 		return nil
 	}
+
 	if app.transcript.LineCache.warm || app.busy() || app.scrollOffset != 0 || app.toolsExpanded {
 		app.transcript.LineCache.queued = false
+
 		stopTimer(timer)
+
 		return nil
 	}
+
 	if len(app.transcript.History) == 0 || app.transcript.LastMaxRows <= 0 {
 		app.transcript.LineCache.queued = false
+
 		stopTimer(timer)
+
 		return nil
 	}
+
 	if !app.transcript.LineCache.queued {
 		resetTimer(timer, 1*time.Millisecond)
+
 		app.transcript.LineCache.queued = true
 	}
 
@@ -445,16 +497,21 @@ func (app *App) extensionTimerTick(timer *time.Timer) <-chan time.Time {
 	if timer == nil {
 		return nil
 	}
+
 	scheduler, hasScheduler := app.extensions.(extension.TimerScheduler)
 	if !hasScheduler {
 		stopTimer(timer)
+
 		return nil
 	}
+
 	delay, hasTimer := scheduler.NextTimerDelay(time.Now())
 	if !hasTimer {
 		stopTimer(timer)
+
 		return nil
 	}
+
 	resetTimer(timer, delay)
 
 	return timer.C
@@ -469,6 +526,7 @@ func stopTimer(timer *time.Timer) {
 	if timer.Stop() {
 		return
 	}
+
 	select {
 	case <-timer.C:
 	default:
@@ -484,12 +542,13 @@ func (app *App) busy() bool {
 }
 
 func (app *App) shouldDrawImmediately(event tcell.Event) bool {
-	interrupt, ok := event.(*tcell.EventInterrupt)
-	if !ok {
+	interrupt, matched := event.(*tcell.EventInterrupt)
+	if !matched {
 		return true
 	}
-	payload, ok := interrupt.Data().(*asyncEvent)
-	if !ok {
+
+	payload, matched := interrupt.Data().(*asyncEvent)
+	if !matched {
 		return true
 	}
 
@@ -526,10 +585,12 @@ func (app *App) loadInitialMessages(ctx context.Context) error {
 	if app.sessionID == "" || app.runtime == nil {
 		return nil
 	}
+
 	messages, err := app.runtime.SessionRepository().Messages(ctx, app.sessionID)
 	if err != nil {
-		return err
+		return terminalError(err, "load initial messages")
 	}
+
 	for index := range messages {
 		message := &messages[index]
 		app.appendMessage(chatMessage{
@@ -537,6 +598,7 @@ func (app *App) loadInitialMessages(ctx context.Context) error {
 			Role:      transcript.FromDatabaseRole(message.Role),
 			Content:   message.Content,
 		})
+
 		if message.Role == database.RoleUser {
 			app.recordPromptHistory(message.Content)
 		}

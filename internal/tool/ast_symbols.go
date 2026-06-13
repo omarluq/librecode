@@ -10,24 +10,28 @@ import (
 // astDeclarationMarkers are substrings that mark a node type as a declaration
 // worth surfacing in symbols mode. Kept as substrings so the set stays
 // language-agnostic (declaration, definition, _item, etc.).
-var astDeclarationMarkers = []string{
-	"declaration",
-	"definition",
-	"_item",
-	"_decl",
-	"_def",
+func astDeclarationMarkers() []string {
+	return []string{
+		"declaration",
+		"definition",
+		"_item",
+		"_decl",
+		"_def",
+	}
 }
 
 // astSymbolNoise are declaration-like node types that add depth without
 // navigational value, so symbols mode descends through them without emitting
 // a line. Matched as substrings.
-var astSymbolNoise = []string{
-	"parameter_declaration",
-	"_declaration_list",
-	"declaration_list",
-	"short_var_declaration",
-	"var_spec",
-	"const_spec",
+func astSymbolNoise() []string {
+	return []string{
+		"parameter_declaration",
+		"_declaration_list",
+		"declaration_list",
+		"short_var_declaration",
+		"var_spec",
+		"const_spec",
+	}
 }
 
 // astSymbols renders a nested, indented tree of declaration nodes down to depth.
@@ -51,6 +55,7 @@ func astSymbols(tree *gt.Tree, lang *gt.Language, source []byte, language string
 	}
 
 	header := fmt.Sprintf("%s symbols (depth %d):", language, maxDepth)
+
 	body := header + "\n" + strings.Join(lines, "\n")
 	if truncated {
 		body += fmt.Sprintf("\n  ... output truncated at %d symbols (narrow with depth)", maxASTSymbolLines)
@@ -77,23 +82,27 @@ func collectSymbols(
 	if node == nil || *truncated {
 		return
 	}
+
 	count := node.NamedChildCount()
 	for index := range count {
 		child := node.NamedChild(index)
 		if child == nil {
 			continue
 		}
+
 		if !isDeclarationNode(child, lang) {
 			// Descend through wrappers (blocks, bodies) without spending a depth level.
 			collectSymbols(child, lang, source, depth, maxDepth, lines, truncated)
 
 			continue
 		}
+
 		if len(*lines) >= maxASTSymbolLines {
 			*truncated = true
 
 			return
 		}
+
 		*lines = append(*lines, formatSymbolNode(child, lang, source, depth))
 		if depth < maxDepth {
 			collectSymbols(child, lang, source, depth+1, maxDepth, lines, truncated)
@@ -106,6 +115,7 @@ func formatSymbolNode(node *gt.Node, lang *gt.Language, source []byte, depth int
 	indent := strings.Repeat("  ", depth+1)
 	line := node.StartPoint().Row + 1
 	name := nodeName(node, lang, source)
+
 	nodeType := node.Type(lang)
 	if name == "" {
 		return fmt.Sprintf("%sL%d  %s", indent, line, nodeType)
@@ -119,12 +129,13 @@ func formatSymbolNode(node *gt.Node, lang *gt.Language, source []byte, depth int
 // excluded so symbols mode stays navigation-focused.
 func isDeclarationNode(node *gt.Node, lang *gt.Language) bool {
 	nodeType := node.Type(lang)
-	for _, noise := range astSymbolNoise {
+	for _, noise := range astSymbolNoise() {
 		if strings.Contains(nodeType, noise) {
 			return false
 		}
 	}
-	for _, marker := range astDeclarationMarkers {
+
+	for _, marker := range astDeclarationMarkers() {
 		if strings.Contains(nodeType, marker) {
 			return true
 		}

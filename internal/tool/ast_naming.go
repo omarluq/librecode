@@ -76,6 +76,7 @@ func firstLine(text string) string {
 	if index := strings.IndexByte(trimmed, '\n'); index >= 0 {
 		trimmed = strings.TrimSpace(trimmed[:index])
 	}
+
 	result, _ := TruncateLine(trimmed, GrepMaxLineLength)
 
 	return result

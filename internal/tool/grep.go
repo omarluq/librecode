@@ -22,7 +22,7 @@ type GrepInput struct {
 	Pattern    string `json:"pattern"`
 	Path       string `json:"path,omitempty"`
 	Glob       string `json:"glob,omitempty"`
-	IgnoreCase bool   `json:"ignoreCase,omitempty"`
+	IgnoreCase bool   `json:"ignore_case,omitempty"`
 	Literal    bool   `json:"literal,omitempty"`
 }
 
@@ -73,7 +73,9 @@ func (grepTool *GrepTool) Definition() Definition {
 
 // Execute runs the grep tool.
 func (grepTool *GrepTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
-	args, err := decodeInput[GrepInput](input)
+	var args GrepInput
+
+	err := decodeInput(input, &args)
 	if err != nil {
 		return emptyToolResult(), err
 	}
@@ -87,10 +89,12 @@ func (grepTool *GrepTool) Grep(ctx context.Context, input GrepInput) (Result, er
 	if err != nil {
 		return emptyToolResult(), err
 	}
+
 	matchResult, err := runGrepSearch(ctx, search)
 	if err != nil {
 		return emptyToolResult(), err
 	}
+
 	if len(matchResult.outputLines) == 0 {
 		return TextResult("No matches found", map[string]any{}), nil
 	}
@@ -114,24 +118,30 @@ func (grepTool *GrepTool) prepareSearch(input GrepInput) (grepSearch, error) {
 		return grepSearch{matcher: nil, targets: []grepTarget{}, contextLines: 0, limit: 0},
 			oops.In("tool").Code("grep_pattern_required").Errorf("grep pattern is required")
 	}
+
 	limit, err := positiveLimit(input.Limit, defaultGrepLimit, "grep")
 	if err != nil {
 		return grepSearch{matcher: nil, targets: []grepTarget{}, contextLines: 0, limit: 0},
 			oops.In("tool").Code("grep_invalid_limit").Wrapf(err, "validate grep limit")
 	}
+
 	contextLines := 0
+
 	if input.Context != nil {
 		if *input.Context < 0 {
 			return grepSearch{matcher: nil, targets: []grepTarget{}, contextLines: 0, limit: 0},
 				oops.In("tool").Code("grep_invalid_context").Errorf("grep context cannot be negative")
 		}
+
 		contextLines = *input.Context
 	}
+
 	matcher, err := newGrepMatcher(input.Pattern, input.IgnoreCase, input.Literal)
 	if err != nil {
 		return grepSearch{matcher: nil, targets: []grepTarget{}, contextLines: 0, limit: 0},
 			oops.In("tool").Code("grep_invalid_pattern").Wrapf(err, "compile grep pattern")
 	}
+
 	targets, err := grepTool.targets(input.Path, input.Glob)
 	if err != nil {
 		return grepSearch{matcher: nil, targets: []grepTarget{}, contextLines: 0, limit: 0}, err
@@ -146,6 +156,7 @@ func newGrepMatcher(pattern string, ignoreCase, literal bool) (grepMatcher, erro
 		if ignoreCase {
 			needle = strings.ToLower(needle)
 		}
+
 		return func(line string) bool {
 			candidate := line
 			if ignoreCase {
@@ -160,9 +171,10 @@ func newGrepMatcher(pattern string, ignoreCase, literal bool) (grepMatcher, erro
 	if ignoreCase {
 		regexPattern = "(?i)" + regexPattern
 	}
+
 	compiled, err := regexp.Compile(regexPattern)
 	if err != nil {
-		return nil, err
+		return nil, toolWrap(err, "compile pattern")
 	}
 
 	return compiled.MatchString, nil
@@ -172,10 +184,12 @@ func (grepTool *GrepTool) targets(searchPath, glob string) ([]grepTarget, error)
 	if searchPath == "" {
 		searchPath = "."
 	}
+
 	absolutePath, err := ResolveToCWD(searchPath, grepTool.cwd)
 	if err != nil {
 		return []grepTarget{}, oops.In("tool").Code("grep_resolve_path").Wrapf(err, "resolve grep path")
 	}
+
 	info, err := filepathStat(absolutePath)
 	if err != nil {
 		return []grepTarget{}, oops.
@@ -184,6 +198,7 @@ func (grepTool *GrepTool) targets(searchPath, glob string) ([]grepTarget, error)
 			With("path", absolutePath).
 			Wrapf(err, "stat grep path")
 	}
+
 	if !info.IsDir() {
 		return []grepTarget{{absolutePath: absolutePath, displayPath: filepath.Base(absolutePath)}}, nil
 	}
@@ -198,20 +213,25 @@ func grepDirectoryTargets(root, glob string) ([]grepTarget, error) {
 	}
 
 	targets := []grepTarget{}
+
 	walkErr := filepath.WalkDir(root, func(currentPath string, dirEntry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
+
 		if shouldSkipSearchEntry(dirEntry) {
 			return filepath.SkipDir
 		}
+
 		if dirEntry.IsDir() {
 			return nil
 		}
+
 		relativePath, err := filepath.Rel(root, currentPath)
 		if err != nil {
-			return err
+			return toolWrap(err, "walk filesystem")
 		}
+
 		displayPath := filepath.ToSlash(relativePath)
 		if matcher(displayPath) {
 			targets = append(targets, grepTarget{absolutePath: currentPath, displayPath: displayPath})
@@ -237,19 +257,24 @@ func optionalGlobMatcher(glob string) (globMatcher, error) {
 func runGrepSearch(ctx context.Context, search grepSearch) (grepMatchResult, error) {
 	result := grepMatchResult{outputLines: []string{}, matchLimitReached: false, linesTruncated: false}
 	matchCount := 0
+
 	for _, target := range search.targets {
 		if err := ctx.Err(); err != nil {
-			return grepMatchResult{outputLines: []string{}, matchLimitReached: false, linesTruncated: false}, err
+			return grepMatchResult{}, toolWrap(err, "search files")
 		}
+
 		fileResult, err := grepFile(target, search.matcher, search.contextLines, search.limit-matchCount)
 		if err != nil {
 			continue
 		}
+
 		result.outputLines = append(result.outputLines, fileResult.outputLines...)
 		result.linesTruncated = result.linesTruncated || fileResult.linesTruncated
+
 		matchCount += fileResult.matchCount
 		if matchCount >= search.limit {
 			result.matchLimitReached = true
+
 			break
 		}
 	}
@@ -270,8 +295,9 @@ func grepFile(target grepTarget, matcher grepMatcher, contextLines, remainingLim
 
 	data, err := os.ReadFile(target.absolutePath)
 	if err != nil {
-		return grepFileResult{outputLines: []string{}, matchCount: 0, linesTruncated: false}, err
+		return grepFileResult{}, toolWrap(err, "read grep file")
 	}
+
 	content := string(data)
 	if strings.ContainsRune(content, '\x00') {
 		return grepFileResult{outputLines: []string{}, matchCount: 0, linesTruncated: false}, nil
@@ -281,13 +307,16 @@ func grepFile(target grepTarget, matcher grepMatcher, contextLines, remainingLim
 	outputLines := []string{}
 	matchCount := 0
 	linesTruncated := false
+
 	for lineIndex, line := range lines {
 		if matchCount >= remainingLimit {
 			break
 		}
+
 		if !matcher(line) {
 			continue
 		}
+
 		blockLines, blockTruncated := formatGrepBlock(target.displayPath, lines, lineIndex, contextLines)
 		outputLines = append(outputLines, blockLines...)
 		linesTruncated = linesTruncated || blockTruncated
@@ -299,6 +328,7 @@ func grepFile(target grepTarget, matcher grepMatcher, contextLines, remainingLim
 
 func formatGrepBlock(displayPath string, lines []string, matchIndex, contextLines int) ([]string, bool) {
 	startLine := matchIndex
+
 	endLine := matchIndex
 	if contextLines > 0 {
 		startLine = max(0, matchIndex-contextLines)
@@ -310,6 +340,7 @@ func formatGrepBlock(displayPath string, lines []string, matchIndex, contextLine
 	outputLines := lo.Map(lineIndexes, func(lineIndex, _ int) string {
 		lineText, wasTruncated := TruncateLine(strings.TrimRight(lines[lineIndex], "\r"), GrepMaxLineLength)
 		linesTruncated = linesTruncated || wasTruncated
+
 		separator := ":"
 		if lineIndex != matchIndex {
 			separator = "-"
@@ -323,19 +354,23 @@ func formatGrepBlock(displayPath string, lines []string, matchIndex, contextLine
 
 func formatGrepResults(matchResult grepMatchResult, limit int) Result {
 	rawOutput := strings.Join(matchResult.outputLines, "\n")
-	truncation := TruncateHead(rawOutput, TruncationOptions{MaxLines: 1 << 30, MaxBytes: 0})
+	truncation := TruncateHead(rawOutput, TruncationOptions{MaxLines: maxTruncationLines, MaxBytes: 0})
 	output := truncation.Content
 	details := map[string]any{}
+
 	notices := grepNotices(limit, matchResult, &truncation)
 	if len(notices) > 0 {
 		output += "\n\n[" + strings.Join(notices, ". ") + "]"
 	}
+
 	if matchResult.matchLimitReached {
 		details["matchLimitReached"] = limit
 	}
+
 	if truncation.Truncated {
 		details[detailTruncation] = truncation
 	}
+
 	if matchResult.linesTruncated {
 		details["linesTruncated"] = true
 	}
@@ -346,14 +381,13 @@ func formatGrepResults(matchResult grepMatchResult, limit int) Result {
 func grepNotices(limit int, matchResult grepMatchResult, truncation *TruncationResult) []string {
 	notices := []string{}
 	if matchResult.matchLimitReached {
-		notices = append(
-			notices,
-			fmt.Sprintf("%d matches limit reached. Use limit=%d for more, or refine pattern", limit, limit*2),
-		)
+		notices = append(notices, limitReachedNotice("matches", limit, "or refine pattern"))
 	}
+
 	if truncation.Truncated {
 		notices = append(notices, FormatSize(DefaultMaxBytes)+" limit reached")
 	}
+
 	if matchResult.linesTruncated {
 		notices = append(
 			notices,

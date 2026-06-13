@@ -18,12 +18,16 @@ type WriteInput struct {
 
 // WriteTool creates or overwrites complete files.
 type WriteTool struct {
-	cwd string
+	locks *fileMutationLocks
+	cwd   string
 }
 
 // NewWriteTool creates the write tool for cwd.
 func NewWriteTool(cwd string) *WriteTool {
-	return &WriteTool{cwd: cwd}
+	return &WriteTool{
+		locks: newFileMutationLocks(),
+		cwd:   cwd,
+	}
 }
 
 // Definition returns write tool metadata.
@@ -43,7 +47,9 @@ func (writeTool *WriteTool) Definition() Definition {
 
 // Execute runs the write tool.
 func (writeTool *WriteTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
-	args, err := decodeInput[WriteInput](input)
+	var args WriteInput
+
+	err := decodeInput(input, &args)
 	if err != nil {
 		return emptyToolResult(), err
 	}
@@ -56,27 +62,31 @@ func (writeTool *WriteTool) Write(ctx context.Context, input WriteInput) (Result
 	if strings.TrimSpace(input.Path) == "" {
 		return emptyToolResult(), oops.In("tool").Code("write_path_required").Errorf("write path is required")
 	}
+
 	if input.Content == nil {
 		return emptyToolResult(), oops.In("tool").Code("write_content_required").Errorf("write content is required")
 	}
+
 	absolutePath, err := ResolveToCWD(input.Path, writeTool.cwd)
 	if err != nil {
 		return emptyToolResult(), oops.In("tool").Code("write_resolve_path").Wrapf(err, "resolve write path")
 	}
 
-	return withFileMutation(absolutePath, func() (Result, error) {
+	return writeTool.locks.mutate(absolutePath, func() (Result, error) {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return emptyToolResult(), ctxErr
 		}
-		if err := os.MkdirAll(filepath.Dir(absolutePath), 0o750); err != nil {
+
+		if err := os.MkdirAll(filepath.Dir(absolutePath), privateDirMode); err != nil {
 			return emptyToolResult(), oops.In("tool").Code("write_create_parent").Wrapf(err, "create parent directory")
 		}
+
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return emptyToolResult(), ctxErr
 		}
 
 		content := *input.Content
-		if err := os.WriteFile(absolutePath, []byte(content), 0o600); err != nil {
+		if err := os.WriteFile(absolutePath, []byte(content), privateFileMode); err != nil {
 			return emptyToolResult(), oops.
 				In("tool").
 				Code("write_file").

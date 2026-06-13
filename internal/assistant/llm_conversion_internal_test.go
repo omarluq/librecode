@@ -79,6 +79,7 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 
 	converted.Auth.Headers["x-test"] = testLLMMutatedLabel
 	assert.Equal(t, "value", request.Auth.Headers["x-test"])
+
 	converted.Model.Metadata["compat"] = testLLMMutatedLabel
 	assert.Equal(t, "yes", request.Model.Compat["compat"])
 }

@@ -42,6 +42,7 @@ func (selection *mouseSelection) empty() bool {
 
 func (selection *mouseSelection) normalized() (startX, startY, endX, endY int) {
 	startX, startY = selection.startX, selection.startY
+
 	endX, endY = selection.endX, selection.endY
 	if startY > endY || (startY == endY && startX > endX) {
 		startX, endX = endX, startX
@@ -55,16 +56,20 @@ func (selection *mouseSelection) contains(column, row int) bool {
 	if selection.empty() {
 		return false
 	}
+
 	startX, startY, endX, endY := selection.normalized()
 	if row < startY || row > endY {
 		return false
 	}
+
 	if startY == endY {
 		return column >= startX && column < endX
 	}
+
 	if row == startY {
 		return column >= startX
 	}
+
 	if row == endY {
 		return column < endX
 	}
@@ -76,8 +81,10 @@ func (selection *mouseSelection) textFrom(frame *rendertext.Buffer) string {
 	if frame == nil || selection.empty() {
 		return ""
 	}
+
 	startX, startY, endX, endY := selection.normalized()
 	startY = max(0, min(startY, frame.Height()-1))
+
 	endY = max(0, min(endY, frame.Height()-1))
 	if startY > endY {
 		return ""
@@ -85,12 +92,14 @@ func (selection *mouseSelection) textFrom(frame *rendertext.Buffer) string {
 
 	lines := make([]string, 0, endY-startY+1)
 	for row := startY; row <= endY; row++ {
-		from, to := selectionRowBounds(row, startX, startY, endX, endY, frame.Width())
-		if from >= to {
+		from, through := selectionRowBounds(row, startX, startY, endX, endY, frame.Width())
+		if from >= through {
 			lines = append(lines, "")
+
 			continue
 		}
-		lines = append(lines, selectedFrameLine(frame, row, from, to))
+
+		lines = append(lines, selectedFrameLine(frame, row, from, through))
 	}
 
 	return strings.Join(lines, "\n")
@@ -99,12 +108,15 @@ func (selection *mouseSelection) textFrom(frame *rendertext.Buffer) string {
 func selectionRowBounds(row, startX, startY, endX, endY, width int) (from, to int) {
 	from = 0
 	to = width
+
 	if row == startY {
 		from = startX
 	}
+
 	if row == endY {
 		to = endX
 	}
+
 	from = max(0, min(from, width))
 	to = max(0, min(to, width))
 
@@ -116,6 +128,7 @@ func selectedFrameLine(frame *rendertext.Buffer, row, from, limit int) string {
 	for column := from; column < limit; column++ {
 		builder.WriteRune(frame.Cell(column, row).Rune)
 	}
+
 	text := builder.String()
 	if limit >= frame.Width() {
 		return strings.TrimRight(text, " ")
@@ -150,6 +163,7 @@ func (app *App) nextMouseClickCount(column, row int, clickedAt time.Time) int {
 	if app.selection.lastClickUnixNano == 0 || row != app.selection.lastClickY {
 		return 1
 	}
+
 	if intAbs(column-app.selection.lastClickX) > 1 {
 		return 1
 	}
@@ -175,6 +189,7 @@ func (app *App) selectFrameLine(row int, clickedAt time.Time, column, clickCount
 	if app.frame != nil {
 		width = app.frame.Width()
 	}
+
 	app.selection = mouseSelection{
 		lastClickUnixNano: clickedAt.UnixNano(),
 		startX:            0,
@@ -209,6 +224,7 @@ func (app *App) frameTokenBounds(column, row int) (start, end int) {
 	if app.frame == nil || row < 0 || row >= app.frame.Height() {
 		return column, column
 	}
+
 	column = max(0, min(column, app.frame.Width()-1))
 	if app.frame.Cell(column, row).Rune == ' ' {
 		return app.frameWhitespaceBounds(column, row)
@@ -218,6 +234,7 @@ func (app *App) frameTokenBounds(column, row int) (start, end int) {
 	for start > 0 && app.frame.Cell(start-1, row).Rune != ' ' {
 		start--
 	}
+
 	end = column + 1
 	for end < app.frame.Width() && app.frame.Cell(end, row).Rune != ' ' {
 		end++
@@ -231,6 +248,7 @@ func (app *App) frameWhitespaceBounds(column, row int) (start, end int) {
 	for start > 0 && app.frame.Cell(start-1, row).Rune == ' ' {
 		start--
 	}
+
 	end = column + 1
 	for end < app.frame.Width() && app.frame.Cell(end, row).Rune == ' ' {
 		end++
@@ -243,6 +261,7 @@ func (app *App) updateMouseSelection(column, row int) {
 	if !app.selection.active {
 		return
 	}
+
 	app.selection.endX = column
 	app.selection.endY = row
 }
@@ -251,6 +270,7 @@ func (app *App) finishMouseSelection(column, row int) {
 	if !app.selection.active {
 		return
 	}
+
 	app.updateMouseSelection(column, row)
 	app.selection.active = false
 	app.copySelectionToClipboard()
@@ -260,18 +280,26 @@ func (app *App) copySelectionToClipboard() {
 	if app.screen == nil || app.frame == nil {
 		return
 	}
+
 	text := app.selection.textFrom(app.frame)
 	if text == "" {
 		return
 	}
+
 	copyTextToClipboard(app.screen, text)
 }
 
-func copyTextToClipboard(screen tcell.Screen, text string) {
+type clipboardWriter interface {
+	SetClipboard(data []byte)
+}
+
+func copyTextToClipboard(screen clipboardWriter, text string) {
 	if screen == nil || text == "" {
 		return
 	}
+
 	screen.SetClipboard([]byte(text))
+
 	if err := writeSystemClipboard(text); err != nil {
 		return
 	}
@@ -281,11 +309,13 @@ func (app *App) applySelectionHighlight() {
 	if app.frame == nil || app.selection.empty() {
 		return
 	}
+
 	for row := range app.frame.Height() {
 		for column := range app.frame.Width() {
 			if !app.selection.contains(column, row) {
 				continue
 			}
+
 			cell := app.frame.Cell(column, row)
 			cell.Style = app.selectionStyle(cell.Style)
 			app.frame.SetContent(column, row, cell.Rune, nil, cell.Style)

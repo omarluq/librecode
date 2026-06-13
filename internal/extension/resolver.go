@@ -7,11 +7,13 @@ import (
 
 const officialVimModeVersion = "v0.1.0"
 
-var officialExtensions = map[string]LockedExtension{
-	"vim-mode": {
-		Resolved: "github:omarluq/librecode//extensions/vim-mode",
-		Version:  officialVimModeVersion,
-	},
+func officialExtensions() map[string]LockedExtension {
+	return map[string]LockedExtension{
+		"vim-mode": {
+			Resolved: "github:omarluq/librecode//extensions/vim-mode",
+			Version:  officialVimModeVersion,
+		},
+	}
 }
 
 // ResolvedSource describes a configured extension after applying aliases and locks.
@@ -41,6 +43,7 @@ func ResolveConfiguredSources(
 		if err != nil {
 			return nil, err
 		}
+
 		resolved = append(resolved, resolvedSource)
 	}
 
@@ -71,6 +74,7 @@ func resolveSource(
 	case sourceSchemePath:
 		resolvedSource.LoadPath = ref.Value
 		resolvedSource.Status = "path"
+
 		return resolvedSource, nil
 	case sourceSchemeOfficial:
 		return resolveOfficialSource(&resolvedSource, installRoot)
@@ -82,16 +86,19 @@ func resolveSource(
 }
 
 func resolveOfficialSource(resolvedSource *ResolvedSource, installRoot string) (ResolvedSource, error) {
-	official, ok := officialExtensions[resolvedSource.Ref.Value]
+	official, ok := officialExtensions()[resolvedSource.Ref.Value]
 	if !ok {
 		return ResolvedSource{}, fmt.Errorf("extension: unknown official extension %q", resolvedSource.Ref.Value)
 	}
+
 	if resolvedSource.Lock.Resolved == "" {
 		resolvedSource.Lock.Resolved = official.Resolved
 	}
+
 	if resolvedSource.Lock.Version == "" {
 		resolvedSource.Lock.Version = official.Version
 	}
+
 	resolvedSource.LoadPath = filepath.Join(installRoot, "official", resolvedSource.Ref.Value)
 	resolvedSource.Status = "missing"
 	resolvedSource.Name = resolvedSource.Ref.Value

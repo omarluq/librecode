@@ -83,8 +83,10 @@ func TestMergeStringMaps(t *testing.T) {
 			merged := mergeStringMaps(test.left, test.right)
 
 			assert.Equal(t, test.expected, merged)
+
 			if len(test.left) > 0 && len(test.right) > 0 {
 				merged["a"] = "changed"
+
 				assert.Equal(t, "1", test.left["a"])
 			}
 		})
@@ -146,6 +148,7 @@ func TestMergeThinkingMaps(t *testing.T) {
 	assert.Nil(t, merged[ThinkingOff])
 
 	rightHigh = "mutated"
+
 	assert.Equal(t, "high-right", *merged[ThinkingHigh])
 
 	assert.Nil(t, mergeThinkingMaps(nil, nil))

@@ -112,6 +112,7 @@ func TestToolArgumentsFromJSON(t *testing.T) {
 
 func assertAdditionalProperties(t *testing.T, schema map[string]any, expected bool) {
 	t.Helper()
+
 	actual, ok := schema["additionalProperties"].(bool)
 	require.True(t, ok)
 	assert.Equal(t, expected, actual)

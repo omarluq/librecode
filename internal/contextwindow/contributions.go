@@ -25,14 +25,18 @@ func AppendContributions(result *BuildResult, contributions []Contribution) {
 	builder := strings.Builder{}
 	builder.WriteString(result.SystemPrompt)
 	builder.WriteString("\n\n<extension_context>")
+
 	for index := range contributions {
 		contribution := contributions[index]
 		result.Contributions = append(result.Contributions, contribution)
+
 		builder.WriteString("\n<block")
+
 		if contribution.Name != "" {
 			builder.WriteString(" name=")
 			builder.WriteString(strconv.Quote(contribution.Name))
 		}
+
 		builder.WriteString(" source=")
 		builder.WriteString(strconv.Quote(contribution.Source))
 		builder.WriteString(" role=")
@@ -43,6 +47,7 @@ func AppendContributions(result *BuildResult, contributions []Contribution) {
 		builder.WriteString(contribution.Content)
 		builder.WriteString("\n</block>")
 	}
+
 	builder.WriteString("\n</extension_context>")
 	result.SystemPrompt = builder.String()
 }
@@ -73,6 +78,7 @@ func ContributionsFromPayload(payload map[string]any) ([]Contribution, error) {
 				Code("invalid_context_contribution").
 				Wrapf(err, "context contribution %d", index)
 		}
+
 		contributions = append(contributions, contribution)
 	}
 
@@ -88,6 +94,7 @@ func numericMapValues(values map[string]any) []any {
 		if !ok {
 			return []any{}
 		}
+
 		items = append(items, value)
 	}
 
@@ -99,10 +106,12 @@ func contributionFromValue(value any) (Contribution, error) {
 	if !ok {
 		return Contribution{}, errors.New("must be an object")
 	}
+
 	content := strings.TrimSpace(stringFromAny(object[jsonContentKey]))
 	if content == "" {
 		return Contribution{}, errors.New("content is required")
 	}
+
 	tokens := EstimateTokens(content)
 	if tokens > ContributionMaxTokens {
 		return Contribution{}, fmt.Errorf(
@@ -115,6 +124,7 @@ func contributionFromValue(value any) (Contribution, error) {
 	if source == "" {
 		source = ContributionSourceExtension
 	}
+
 	role := stringFromAny(object[jsonRoleKey])
 	if role == "" {
 		role = ContributionRoleSystem

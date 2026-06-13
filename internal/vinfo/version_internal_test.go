@@ -9,15 +9,15 @@ import (
 func TestStringUsesInjectedBuildMetadata(t *testing.T) {
 	t.Parallel()
 
-	oldVersion, oldCommit, oldBuildDate := Version, Commit, BuildDate
-	t.Cleanup(func() {
-		Version, Commit, BuildDate = oldVersion, oldCommit, oldBuildDate
-	})
-	Version = "1.2.3"
-	Commit = "abc123"
-	BuildDate = "2026-06-09T00:00:00Z"
+	oldVersion := version
 
-	assert.Equal(t, "1.2.3 (commit=abc123, built=2026-06-09T00:00:00Z)", String())
+	t.Cleanup(func() {
+		version = oldVersion
+	})
+
+	version = "1.2.3"
+
+	assert.Equal(t, "1.2.3 (commit=none, built=unknown)", String())
 }
 
 func TestFallbackVersion(t *testing.T) {

@@ -20,16 +20,21 @@ func TestAuthServicePrefersProjectLibrecodeAuth(t *testing.T) {
 
 	projectAuthPath := filepath.Join(cwd, ".librecode", "auth.json")
 	globalAuthPath := filepath.Join(home, ".librecode", "auth.json")
+
 	require.NoError(t, os.MkdirAll(filepath.Dir(projectAuthPath), 0o700))
 	require.NoError(t, os.MkdirAll(filepath.Dir(globalAuthPath), 0o700))
+
 	projectAuth := []byte(`{"project-provider":{"type":"api_key","key":"project-key"}}`)
 	globalAuth := []byte(`{"global-provider":{"type":"api_key","key":"global-key"}}`)
+
 	require.NoError(t, os.WriteFile(projectAuthPath, projectAuth, 0o600))
 	require.NoError(t, os.WriteFile(globalAuthPath, globalAuth, 0o600))
 
 	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
 	require.NoError(t, err)
-	storage := di.MustInvoke[*di.AuthService](container).Storage
+
+	storage := container.AuthService().Storage
+
 	t.Cleanup(func() { require.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
 
 	assert.True(t, storage.HasStored("project-provider"))
@@ -49,7 +54,9 @@ func TestDatabaseServicePrefersProjectLibrecodeDatabase(t *testing.T) {
 
 	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
 	require.NoError(t, err)
-	databaseService := di.MustInvoke[*di.DatabaseService](container)
+
+	databaseService := container.DatabaseService()
+
 	t.Cleanup(func() { _ = container.ShutdownWithContext(t.Context()).Succeed })
 
 	assert.Equal(t, projectPath, databaseService.Path())

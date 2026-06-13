@@ -231,12 +231,16 @@ func TestToolExecutorAdapterConvertsCallsEventsAndErrors(t *testing.T) {
 	_, err := errorExecutor(context.Background(), nil, nil)
 	require.ErrorIs(t, err, expectedErr)
 
-	var observedCall ToolCall
-	var observedEvent *llm.StreamChunk
+	var (
+		observedCall  ToolCall
+		observedEvent *llm.StreamChunk
+	)
+
 	executor := llmToolExecutor(
 		func(_ context.Context, calls []ToolCall, onEvent func(StreamEvent)) ([]ToolEvent, error) {
 			require.Len(t, calls, 1)
 			observedCall = calls[0]
+
 			onEvent(streamEvent(StreamEventToolResult, "", adapterToolEvent(), nil))
 
 			return []ToolEvent{{
@@ -298,6 +302,7 @@ func providerObserveAssertion(t *testing.T, observed *bool) func(context.Context
 
 	return func(_ context.Context, observedRequest *CompletionRequest, attempt int) {
 		*observed = true
+
 		assert.Equal(t, adapterSessionID, observedRequest.SessionID)
 		assert.Equal(t, "claude", observedRequest.Model.ID)
 		assert.Equal(t, adapterCWD, observedRequest.CWD)

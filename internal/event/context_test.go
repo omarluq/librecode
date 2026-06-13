@@ -2,6 +2,7 @@ package event_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -63,6 +64,7 @@ func TestContextStreams(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+
 			require.Equal(t, testCase.expected, values)
 		})
 	}
@@ -119,9 +121,18 @@ func collectContextValues(
 	t.Helper()
 
 	if subscriberCtx == nil {
-		return ro.Collect(source)
+		values, err := ro.Collect(source)
+		if err != nil {
+			return values, fmt.Errorf("collect observable: %w", err)
+		}
+
+		return values, nil
 	}
 
 	values, _, err := ro.CollectWithContext(subscriberCtx(t), source)
-	return values, err
+	if err != nil {
+		return values, fmt.Errorf("collect observable with context: %w", err)
+	}
+
+	return values, nil
 }
