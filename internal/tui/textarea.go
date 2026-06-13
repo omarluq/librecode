@@ -170,10 +170,12 @@ func RenderTextArea(value []rune, cursor, width, maxRows int, styles TextAreaSty
 	visibleLines, skippedRows := VisibleLines(bodyLines, maxRows, cursorRow)
 	lines := make([]Line, 0, len(visibleLines)+textAreaBorderRows)
 	lines = append(lines, NewLine(styles.Border, TopBorder(width, label)))
+
 	for _, bodyLine := range visibleLines {
 		bodyText := PadRight(bodyLine, innerWidth)
 		lines = append(lines, NewLine(styles.Body, "│ "+bodyText+" │"))
 	}
+
 	lines = append(lines, NewLine(styles.Border, BottomBorder(width)))
 
 	return TextAreaRender{
@@ -205,10 +207,12 @@ func TextAreaBodyLines(value []rune, width int) []string {
 func TextAreaCursorPosition(value []rune, cursor, width int) (row, column int) {
 	cursor = ClampCursor(cursor, len(value))
 	prefix := string(value[:cursor])
+
 	lines := WrapPreserveWhitespace(prefix, width)
 	if len(lines) == 0 {
 		return 0, 0
 	}
+
 	lastLine := lines[len(lines)-1]
 	if strings.HasSuffix(prefix, "\n") {
 		return len(lines) - 1, 0
@@ -249,6 +253,7 @@ func ClampCursor(cursor, runeCount int) int {
 	if cursor < 0 {
 		return 0
 	}
+
 	if cursor > runeCount {
 		return runeCount
 	}
@@ -270,74 +275,101 @@ func InsertRuneAt(value []rune, cursor int, char rune) (next []rune, nextCursor 
 	return next, cursor + 1
 }
 
+// MoveCursorLeft moves the cursor one rune left.
 func MoveCursorLeft(value []rune, cursor int) int {
 	cursor = ClampCursor(cursor, len(value))
 	if cursor > 0 {
 		return cursor - 1
 	}
+
 	return cursor
 }
+
+// MoveCursorRight moves the cursor one rune right.
 func MoveCursorRight(value []rune, cursor int) int {
 	cursor = ClampCursor(cursor, len(value))
 	if cursor < len(value) {
 		return cursor + 1
 	}
+
 	return cursor
 }
+
+// MoveCursorLineStart moves the cursor to the current line start.
 func MoveCursorLineStart(value []rune, cursor int) int { return CurrentLineStart(value, cursor) }
-func MoveCursorLineEnd(value []rune, cursor int) int   { return CurrentLineEnd(value, cursor) }
-func MoveCursorWordLeft(value []rune, cursor int) int  { return WordLeft(value, cursor) }
+
+// MoveCursorLineEnd moves the cursor to the current line end.
+func MoveCursorLineEnd(value []rune, cursor int) int { return CurrentLineEnd(value, cursor) }
+
+// MoveCursorWordLeft moves the cursor to the start of the previous word.
+func MoveCursorWordLeft(value []rune, cursor int) int { return WordLeft(value, cursor) }
+
+// MoveCursorWordRight moves the cursor to the end of the next word.
 func MoveCursorWordRight(value []rune, cursor int) int { return WordRight(value, cursor) }
 
+// DeleteBackwardAt deletes the rune before cursor.
 func DeleteBackwardAt(value []rune, cursor int) (next []rune, nextCursor int) {
 	cursor = ClampCursor(cursor, len(value))
 	if cursor == 0 {
 		return value, cursor
 	}
+
 	next = append([]rune{}, value[:cursor-1]...)
 	next = append(next, value[cursor:]...)
+
 	return next, cursor - 1
 }
 
+// DeleteForwardAt deletes the rune at cursor.
 func DeleteForwardAt(value []rune, cursor int) (next []rune, nextCursor int) {
 	cursor = ClampCursor(cursor, len(value))
 	if cursor >= len(value) {
 		return value, cursor
 	}
+
 	next = append([]rune{}, value[:cursor]...)
 	next = append(next, value[cursor+1:]...)
+
 	return next, cursor
 }
 
+// DeleteWordBackwardAt deletes from cursor to the previous word boundary.
 func DeleteWordBackwardAt(value []rune, cursor int) (next []rune, nextCursor int) {
 	cursor = ClampCursor(cursor, len(value))
 	start := WordLeft(value, cursor)
 	next = append([]rune{}, value[:start]...)
 	next = append(next, value[cursor:]...)
+
 	return next, start
 }
 
+// DeleteWordForwardAt deletes from cursor to the next word boundary.
 func DeleteWordForwardAt(value []rune, cursor int) (next []rune, nextCursor int) {
 	cursor = ClampCursor(cursor, len(value))
 	end := WordRight(value, cursor)
 	next = append([]rune{}, value[:cursor]...)
 	next = append(next, value[end:]...)
+
 	return next, cursor
 }
 
+// DeleteToLineStartAt deletes from cursor to the current line start.
 func DeleteToLineStartAt(value []rune, cursor int) (next []rune, nextCursor int) {
 	cursor = ClampCursor(cursor, len(value))
 	start := CurrentLineStart(value, cursor)
 	next = append([]rune{}, value[:start]...)
 	next = append(next, value[cursor:]...)
+
 	return next, start
 }
 
+// DeleteToLineEndAt deletes from cursor to the current line end.
 func DeleteToLineEndAt(value []rune, cursor int) (next []rune, nextCursor int) {
 	cursor = ClampCursor(cursor, len(value))
 	end := CurrentLineEnd(value, cursor)
 	next = append([]rune{}, value[:cursor]...)
 	next = append(next, value[end:]...)
+
 	return next, cursor
 }
 
@@ -371,6 +403,7 @@ func WordLeft(value []rune, cursor int) int {
 	for index > 0 && unicode.IsSpace(value[index-1]) {
 		index--
 	}
+
 	for index > 0 && !unicode.IsSpace(value[index-1]) {
 		index--
 	}
@@ -384,6 +417,7 @@ func WordRight(value []rune, cursor int) int {
 	for index < len(value) && unicode.IsSpace(value[index]) {
 		index++
 	}
+
 	for index < len(value) && !unicode.IsSpace(value[index]) {
 		index++
 	}

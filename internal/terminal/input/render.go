@@ -4,7 +4,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/terminal/rendertext"
-	"github.com/omarluq/librecode/tui"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 // Render describes rendered editor lines and cursor position.

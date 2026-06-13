@@ -71,18 +71,25 @@ func (metrics virtualListMetrics) empty() bool {
 	return metrics.WindowEnd <= metrics.WindowStart || metrics.TotalHeight == 0
 }
 
-func visibleVirtualListItems(heights []int, windowStart, windowEnd int) (items []VirtualListItem, startIndex, endIndex int) {
+func visibleVirtualListItems(
+	heights []int,
+	windowStart int,
+	windowEnd int,
+) (items []VirtualListItem, startIndex, endIndex int) {
 	items = []VirtualListItem{}
 	cursor := 0
 	startIndex = -1
 	endIndex = 0
+
 	for index, height := range heights {
 		height = max(0, height)
+
 		nextCursor := cursor + height
 		if height > 0 && nextCursor > windowStart && cursor < windowEnd {
 			if startIndex == -1 {
 				startIndex = index
 			}
+
 			endIndex = index + 1
 			items = append(items, VirtualListItem{
 				Index:     index,
@@ -96,6 +103,7 @@ func visibleVirtualListItems(heights []int, windowStart, windowEnd int) (items [
 			break
 		}
 	}
+
 	if startIndex == -1 {
 		startIndex = 0
 	}

@@ -20,15 +20,16 @@ type KeyEvent struct {
 // NewKeyEvent converts a tcell/v3 key event into a normalized key event.
 func NewKeyEvent(event *tcell.EventKey) (KeyEvent, bool) {
 	if event == nil {
-		return KeyEvent{}, false
+		return emptyKeyEvent(), false
 	}
+
 	if event.Key() == tcell.KeyRune {
 		return runeKeyEvent(event), true
 	}
 
 	key, ok := specialKeys()[event.Key()]
 	if !ok {
-		return KeyEvent{}, false
+		return emptyKeyEvent(), false
 	}
 
 	return KeyEvent{
@@ -40,9 +41,14 @@ func NewKeyEvent(event *tcell.EventKey) (KeyEvent, bool) {
 	}, true
 }
 
+func emptyKeyEvent() KeyEvent {
+	return KeyEvent{Key: "", Text: "", Ctrl: false, Alt: false, Shift: false}
+}
+
 func runeKeyEvent(event *tcell.EventKey) KeyEvent {
 	text := event.Str()
 	ctrl := event.Modifiers()&tcell.ModCtrl != 0
+
 	key := text
 	if ctrl {
 		key = "ctrl+" + strings.ToLower(text)

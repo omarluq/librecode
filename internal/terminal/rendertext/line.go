@@ -3,7 +3,7 @@ package rendertext
 import (
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/tui"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 // Span is a styled segment inside a line.

@@ -22,10 +22,10 @@ type CodeTheme struct {
 
 // CodeBlock renders syntax-highlighted code.
 type CodeBlock struct {
+	Style    tcell.Style
 	Language string
 	Text     string
 	Theme    CodeTheme
-	Style    tcell.Style
 }
 
 // Render returns highlighted code lines.
@@ -49,9 +49,9 @@ func (block *CodeBlock) Draw(screen ContentSetter, rect Rect) {
 
 // DiffView renders diff lines with add/delete coloring.
 type DiffView struct {
+	Style tcell.Style
 	Text  string
 	Theme CodeTheme
-	Style tcell.Style
 }
 
 // Render returns diff lines.
@@ -93,6 +93,7 @@ func codeTokenIterator(language, text string) (chroma.Iterator, bool) {
 	if lexer != nil {
 		return tokenizeCode(lexer, text)
 	}
+
 	if strings.TrimSpace(language) != "" {
 		return nil, false
 	}
@@ -111,7 +112,9 @@ func tokenizeCode(lexer chroma.Lexer, text string) (chroma.Iterator, bool) {
 
 func analyzedCodeIterator(text string) (chroma.Iterator, bool) {
 	var bestLexer chroma.Lexer
+
 	highest := float32(0)
+
 	for _, lexer := range lexers.GlobalLexerRegistry.Lexers {
 		weight := lexer.AnalyseText(text)
 		if weight > highest {
@@ -119,6 +122,7 @@ func analyzedCodeIterator(text string) (chroma.Iterator, bool) {
 			bestLexer = lexer
 		}
 	}
+
 	if highest > 0 && bestLexer != nil {
 		return tokenizeCode(bestLexer, text)
 	}
@@ -155,6 +159,7 @@ func DiffStyledLines(text string, theme CodeTheme, baseStyle tcell.Style) []Line
 		} else if strings.HasPrefix(part, "-") {
 			style = baseStyle.Foreground(theme.DiffDel)
 		}
+
 		lines = append(lines, NewLine(style, part))
 	}
 
@@ -163,20 +168,25 @@ func DiffStyledLines(text string, theme CodeTheme, baseStyle tcell.Style) []Line
 
 func codeLinesFromTokens(tokens []chroma.Token, theme CodeTheme, baseStyle tcell.Style) []Line {
 	lines := []Line{NewLine(baseStyle, "  ")}
+
 	for _, token := range tokens {
 		if token.Type == chroma.EOFType {
 			break
 		}
+
 		segments := strings.SplitAfter(token.Value, "\n")
 		for _, segment := range segments {
 			if segment == "" {
 				continue
 			}
+
 			if text, ok := strings.CutSuffix(segment, "\n"); ok {
 				appendCodeSegment(&lines, text, token.Type, theme, baseStyle)
 				lines = append(lines, NewLine(baseStyle, "  "))
+
 				continue
 			}
+
 			appendCodeSegment(&lines, segment, token.Type, theme, baseStyle)
 		}
 	}
@@ -184,7 +194,13 @@ func codeLinesFromTokens(tokens []chroma.Token, theme CodeTheme, baseStyle tcell
 	return trimTrailingEmptyCodeLine(lines, baseStyle)
 }
 
-func appendCodeSegment(lines *[]Line, segment string, tokenType chroma.TokenType, theme CodeTheme, baseStyle tcell.Style) {
+func appendCodeSegment(
+	lines *[]Line,
+	segment string,
+	tokenType chroma.TokenType,
+	theme CodeTheme,
+	baseStyle tcell.Style,
+) {
 	if segment == "" {
 		return
 	}
@@ -199,20 +215,20 @@ func appendCodeSegment(lines *[]Line, segment string, tokenType chroma.TokenType
 
 func styleForToken(tokenType chroma.TokenType, theme CodeTheme, baseStyle tcell.Style) tcell.Style {
 	category := tokenType.Category()
-	switch {
-	case category == chroma.Comment:
+	switch category { //nolint:exhaustive // Chroma token categories are extensible; unknown categories use Warning.
+	case chroma.Comment:
 		return baseStyle.Foreground(theme.Muted).Italic(true)
-	case category == chroma.Keyword:
+	case chroma.Keyword:
 		return baseStyle.Foreground(theme.Accent)
-	case category == chroma.Name:
+	case chroma.Name:
 		return baseStyle.Foreground(codeNameColor(tokenType, theme))
-	case category == chroma.LiteralString:
+	case chroma.LiteralString:
 		return baseStyle.Foreground(theme.Success)
-	case category == chroma.LiteralNumber:
+	case chroma.LiteralNumber:
 		return baseStyle.Foreground(theme.Text)
-	case category == chroma.Operator || category == chroma.Punctuation:
+	case chroma.Operator, chroma.Punctuation:
 		return baseStyle.Foreground(theme.Dim)
-	case category == chroma.Generic:
+	case chroma.Generic:
 		return baseStyle.Foreground(codeGenericColor(tokenType, theme))
 	default:
 		return baseStyle.Foreground(theme.Warning)
@@ -223,9 +239,11 @@ func codeNameColor(tokenType chroma.TokenType, theme CodeTheme) tcell.Color {
 	if tokenType == chroma.NameFunction {
 		return theme.Success
 	}
+
 	if tokenType == chroma.NameClass || tokenType == chroma.NameNamespace {
 		return theme.Warning
 	}
+
 	if tokenType == chroma.NameVariable || tokenType == chroma.NameBuiltin {
 		return theme.Text
 	}
@@ -237,9 +255,11 @@ func codeGenericColor(tokenType chroma.TokenType, theme CodeTheme) tcell.Color {
 	if tokenType == chroma.GenericInserted {
 		return theme.DiffAdd
 	}
+
 	if tokenType == chroma.GenericDeleted {
 		return theme.DiffDel
 	}
+
 	if tokenType == chroma.GenericHeading {
 		return theme.Accent
 	}
@@ -253,6 +273,7 @@ func trimTrailingEmptyCodeLine(lines []Line, baseStyle tcell.Style) []Line {
 		if last.Text != "  " || last.Style != baseStyle || len(last.Spans) > 0 {
 			break
 		}
+
 		lines = lines[:len(lines)-1]
 	}
 

@@ -47,7 +47,7 @@ func NewList(title, subtitle string, items []ListItem, searchable bool) *List {
 // SelectedItem returns the selected visible item.
 func (list *List) SelectedItem() (ListItem, bool) {
 	if list == nil || len(list.Filtered) == 0 {
-		return ListItem{}, false
+		return ListItem{Value: "", Title: "", Description: "", Meta: ""}, false
 	}
 
 	index := min(max(0, list.Selected), len(list.Filtered)-1)
@@ -70,8 +70,10 @@ func (list *List) SetSelectedIndex(index int) {
 	if list == nil {
 		return
 	}
+
 	if len(list.Filtered) == 0 {
 		list.Selected = 0
+
 		return
 	}
 
@@ -83,8 +85,10 @@ func (list *List) MoveSelection(delta int) {
 	if list == nil {
 		return
 	}
+
 	if len(list.Filtered) == 0 {
 		list.Selected = 0
+
 		return
 	}
 
@@ -92,6 +96,7 @@ func (list *List) MoveSelection(delta int) {
 	for list.Selected < 0 {
 		list.Selected += len(list.Filtered)
 	}
+
 	list.Selected %= len(list.Filtered)
 }
 
@@ -121,13 +126,16 @@ func (list *List) ApplyFilter() {
 	if list == nil {
 		return
 	}
+
 	if strings.TrimSpace(list.Query) == "" {
 		list.Filtered = slices.Clone(list.Items)
 		list.Selected = min(list.Selected, max(0, len(list.Filtered)-1))
+
 		return
 	}
 
 	query := strings.ToLower(strings.TrimSpace(list.Query))
+
 	filtered := make([]ListItem, 0, len(list.Items))
 	for _, item := range list.Items {
 		if listItemMatchesQuery(item, query) {
@@ -184,8 +192,12 @@ const (
 )
 
 // Render returns styled terminal lines for the current list state.
-func (list *List) Render(options ListRenderOptions) []Line {
+func (list *List) Render(options *ListRenderOptions) []Line {
 	if list == nil {
+		return []Line{}
+	}
+
+	if options == nil {
 		return []Line{}
 	}
 
@@ -194,6 +206,7 @@ func (list *List) Render(options ListRenderOptions) []Line {
 	contentWidth := max(1, width-listHorizontalPadding)
 	maxItems := max(1, height-listChromeRows)
 	lines := make([]Line, 0, min(height, maxItems+listChromeRows))
+
 	lines = append(lines,
 		NewLine(options.Styles.Border, TopBorder(width, "")),
 		NewLine(options.Styles.Accent.Bold(true), listRow(list.Title, contentWidth)),
@@ -201,14 +214,15 @@ func (list *List) Render(options ListRenderOptions) []Line {
 	if list.Subtitle != "" {
 		lines = append(lines, NewLine(options.Styles.Muted, listRow(list.Subtitle, contentWidth)))
 	}
+
 	if list.Searchable {
 		lines = append(lines, NewLine(options.Styles.Text, listRow("Search: "+list.Query, contentWidth)))
 	}
 
 	lines = append(lines, NewLine(options.Styles.Border, MiddleBorder(width)))
-	lines = append(lines, list.itemLines(contentWidth, maxItems, options.Styles)...)
+	lines = append(lines, list.itemLines(contentWidth, maxItems, &options.Styles)...)
 	lines = append(lines,
-		list.hintLine(contentWidth, width, options.Styles, options.Hints),
+		list.hintLine(contentWidth, width, &options.Styles, options.Hints),
 		NewLine(options.Styles.Border, BottomBorder(width)),
 	)
 
@@ -216,21 +230,38 @@ func (list *List) Render(options ListRenderOptions) []Line {
 }
 
 // Draw draws the list into rect.
-func (list *List) Draw(screen ContentSetter, rect Rect, styles ListStyles, hints ListHints) {
-	DrawLines(screen, rect, list.Render(ListRenderOptions{Styles: styles, Hints: hints, Width: rect.Width, Height: rect.Height}))
+func (list *List) Draw(screen ContentSetter, rect Rect, styles *ListStyles, hints ListHints) {
+	options := ListRenderOptions{Styles: safeListStyles(styles), Hints: hints, Width: rect.Width, Height: rect.Height}
+	DrawLines(screen, rect, list.Render(&options))
 }
 
 func listRow(text string, width int) string {
 	return "│ " + PadRight(text, width) + " │"
 }
 
-func (list *List) itemLines(contentWidth, maxItems int, styles ListStyles) []Line {
+func safeListStyles(styles *ListStyles) ListStyles {
+	if styles == nil {
+		return ListStyles{
+			Border:   tcell.Style{},
+			Accent:   tcell.Style{},
+			Muted:    tcell.Style{},
+			Text:     tcell.Style{},
+			Selected: tcell.Style{},
+			Dim:      tcell.Style{},
+		}
+	}
+
+	return *styles
+}
+
+func (list *List) itemLines(contentWidth, maxItems int, styles *ListStyles) []Line {
 	if len(list.Filtered) == 0 {
 		return []Line{NewLine(styles.Muted, listRow("No matches", contentWidth))}
 	}
 
 	startIndex := list.windowStart(maxItems)
 	endIndex := min(startIndex+maxItems, len(list.Filtered))
+
 	lines := make([]Line, 0, endIndex-startIndex)
 	for index := startIndex; index < endIndex; index++ {
 		lines = append(lines, list.itemLine(index, contentWidth, styles))
@@ -239,7 +270,7 @@ func (list *List) itemLines(contentWidth, maxItems int, styles ListStyles) []Lin
 	return lines
 }
 
-func (list *List) itemLine(index, width int, styles ListStyles) Line {
+func (list *List) itemLine(index, width int, styles *ListStyles) Line {
 	if index < 0 || index >= len(list.Filtered) {
 		return NewLine(styles.Muted, listRow("", width))
 	}
@@ -247,6 +278,7 @@ func (list *List) itemLine(index, width int, styles ListStyles) Line {
 	item := list.Filtered[index]
 	prefix := "  "
 	style := styles.Text
+
 	if index == list.Selected {
 		prefix = "→ "
 		style = styles.Selected
@@ -256,6 +288,7 @@ func (list *List) itemLine(index, width int, styles ListStyles) Line {
 	if item.Meta != "" {
 		text += " " + item.Meta
 	}
+
 	if list.ShowDetails && item.Description != "" {
 		text += " — " + item.Description
 	}
@@ -275,10 +308,12 @@ func (list *List) windowStart(maxItems int) int {
 	return startIndex
 }
 
-func (list *List) hintLine(contentWidth, width int, styles ListStyles, hints ListHints) Line {
+func (list *List) hintLine(contentWidth, width int, styles *ListStyles, hints ListHints) Line {
 	position := ""
+
 	if len(list.Filtered) > 0 {
-		position = " " + Truncate("("+Int(list.Selected+1)+"/"+Int(len(list.Filtered))+")", max(0, width/listPositionWidthDivisor))
+		counter := "(" + Int(list.Selected+1) + "/" + Int(len(list.Filtered)) + ")"
+		position = " " + Truncate(counter, max(0, width/listPositionWidthDivisor))
 	}
 
 	hint := hints.Up + "/" + hints.Down + " navigate · " +

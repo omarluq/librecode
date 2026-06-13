@@ -4,11 +4,11 @@ import "github.com/gdamore/tcell/v3"
 
 // Modal draws a centered boxed component.
 type Modal struct {
-	Title    string
+	BoxStyle tcell.Style
 	Child    Drawer
+	Title    string
 	Width    int
 	Height   int
-	BoxStyle tcell.Style
 }
 
 // Draw draws the modal.
@@ -21,18 +21,21 @@ func (modal *Modal) Draw(screen ContentSetter, rect Rect) {
 	if width <= 0 || width > rect.Width {
 		width = rect.Width
 	}
+
 	height := modal.Height
 	if height <= 0 || height > rect.Height {
 		height = rect.Height
 	}
+
 	modalRect := Rect{
 		X:      rect.X + (rect.Width-width)/2,
 		Y:      rect.Y + (rect.Height-height)/2,
 		Width:  width,
 		Height: height,
 	}
-	box := &Box{Title: modal.Title, Style: modal.BoxStyle, Border: RoundedBorder}
+	box := &Box{Title: modal.Title, Style: modal.BoxStyle, Border: RoundedBorder()}
 	box.Draw(screen, modalRect)
+
 	if modal.Child != nil {
 		modal.Child.Draw(screen, modalRect.Inner(1))
 	}
@@ -46,10 +49,10 @@ type FormField struct {
 
 // Form displays labeled fields. Editing behavior can be layered on top later.
 type Form struct {
-	Title      string
-	Fields     []FormField
 	Style      tcell.Style
 	LabelStyle tcell.Style
+	Title      string
+	Fields     []FormField
 }
 
 // Render returns form lines.
@@ -62,6 +65,7 @@ func (form *Form) Render(width, height int) []Line {
 	if form.Title != "" {
 		lines = append(lines, NewLine(form.LabelStyle.Bold(true), Truncate(form.Title, width)))
 	}
+
 	for _, field := range form.Fields {
 		text := field.Label + ": " + field.Value
 		lines = append(lines, NewLine(form.Style, Truncate(text, width)))

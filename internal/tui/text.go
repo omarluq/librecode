@@ -32,6 +32,7 @@ func Width(text string) int {
 // Segments splits text into terminal grapheme segments.
 func Segments(text string) []Segment {
 	segments := []Segment{}
+
 	iterator := displaywidth.StringGraphemes(text)
 	for iterator.Next() {
 		segments = append(segments, Segment{
@@ -50,12 +51,16 @@ func Fit(text string, width int) string {
 	}
 
 	var builder strings.Builder
+
 	used := 0
+
 	for _, segment := range Segments(text) {
 		if segment.Width == 0 {
 			builder.WriteString(segment.Text)
+
 			continue
 		}
+
 		if used+segment.Width > width {
 			break
 		}
@@ -72,9 +77,11 @@ func Truncate(text string, width int) string {
 	if width <= 0 || text == "" {
 		return ""
 	}
+
 	if Width(text) <= width {
 		return text
 	}
+
 	if width == 1 {
 		return "…"
 	}
@@ -89,6 +96,7 @@ func PadRight(text string, width int) string {
 	}
 
 	text = Fit(text, width)
+
 	padding := width - Width(text)
 	if padding <= 0 {
 		return text
@@ -113,6 +121,7 @@ func wrapWithMode(text string, width int, preserveWhitespace bool) []string {
 	}
 
 	logicalLines := strings.Split(text, "\n")
+
 	lines := make([]string, 0, len(logicalLines))
 	for _, logicalLine := range logicalLines {
 		lines = append(lines, wrapLogicalLineWithMode(logicalLine, width, preserveWhitespace)...)
@@ -128,14 +137,17 @@ func wrapLogicalLineWithMode(line string, width int, preserveWhitespace bool) []
 
 	segments := Segments(line)
 	lines := []string{}
+
 	for len(segments) > 0 {
 		breakIndex := WrapBreakIndex(segments, width)
+
 		wrapped := JoinSegments(segments[:breakIndex])
 		if !preserveWhitespace {
 			wrapped = strings.TrimRight(wrapped, " ")
 		}
 
 		lines = append(lines, wrapped)
+
 		segments = segments[breakIndex:]
 		if !preserveWhitespace {
 			segments = trimLeadingSpaces(segments)
@@ -151,30 +163,44 @@ func wrapLogicalLineWithMode(line string, width int, preserveWhitespace bool) []
 
 // WrapBreakIndex returns the segment boundary for one wrapped line.
 func WrapBreakIndex(segments []Segment, width int) int {
+	return wrapBreakIndex(len(segments), width, func(index int) (string, int) {
+		segment := segments[index]
+
+		return segment.Text, segment.Width
+	})
+}
+
+func wrapBreakIndex(length, width int, segmentAt func(index int) (string, int)) int {
 	used := 0
 	limit := 0
 	lastSpace := -1
-	for limit < len(segments) {
-		segment := segments[limit]
-		if segment.Width == 0 {
+
+	for limit < length {
+		text, segmentWidth := segmentAt(limit)
+		if segmentWidth == 0 {
 			limit++
+
 			continue
 		}
-		if used+segment.Width > width {
+
+		if used+segmentWidth > width {
 			break
 		}
 
-		used += segment.Width
-		if segment.Text == " " || segment.Text == "\t" {
+		used += segmentWidth
+
+		if text == " " || text == "\t" {
 			lastSpace = limit
 		}
+
 		limit++
 	}
 
 	if limit == 0 {
 		return 1
 	}
-	if limit < len(segments) && lastSpace > 0 {
+
+	if limit < length && lastSpace > 0 {
 		return lastSpace + 1
 	}
 
@@ -218,17 +244,21 @@ func DrawLine(screen ContentSetter, rect Rect, line Line) {
 	if screen == nil || rect.Empty() {
 		return
 	}
+
 	if len(line.Spans) == 0 {
 		drawTextAt(screen, rect.X, rect.Y, rect.Width, line.Style, line.Text)
+
 		return
 	}
 
 	column := rect.X
+
 	remaining := rect.Width
 	for _, span := range line.Spans {
 		if remaining <= 0 {
 			break
 		}
+
 		drawn := drawTextAt(screen, column, rect.Y, remaining, span.Style, span.Text)
 		column += drawn
 		remaining -= drawn
@@ -246,14 +276,14 @@ func DrawLines(screen ContentSetter, rect Rect, lines []Line) {
 	}
 }
 
-func drawTextAt(screen ContentSetter, x, y, width int, style tcell.Style, text string) int {
+func drawTextAt(screen ContentSetter, column, row, width int, style tcell.Style, text string) int {
 	used := 0
 	for _, segment := range Segments(text) {
 		if used+segment.Width > width {
 			break
 		}
 
-		used += WriteSegment(screen, x+used, y, width-used, segment, style)
+		used += WriteSegment(screen, column+used, row, width-used, segment, style)
 	}
 
 	return used
@@ -261,6 +291,10 @@ func drawTextAt(screen ContentSetter, x, y, width int, style tcell.Style, text s
 
 // WriteCells writes text into exactly width cells, filling remaining cells with spaces.
 func WriteCells(screen ContentSetter, column, row, width int, text string, style tcell.Style) int {
+	if screen == nil || row < 0 || column < 0 || width <= 0 {
+		return 0
+	}
+
 	used := WriteCellsNoFill(screen, column, row, width, text, style)
 	for used < width {
 		screen.SetContent(column+used, row, ' ', nil, style)
@@ -290,33 +324,50 @@ func WriteCellsNoFill(screen ContentSetter, column, row, width int, text string,
 
 // WriteSegment writes one terminal grapheme segment.
 func WriteSegment(screen ContentSetter, column, row, width int, segment Segment, style tcell.Style) int {
-	if screen == nil || width <= 0 || segment.Width > width {
+	if !canWriteAt(screen, column, row, width) {
 		return 0
 	}
+
 	if segment.Text == "\t" {
 		return WriteTabSegment(screen, column, row, width, style)
 	}
-	if segment.Width <= 0 {
+
+	if !canWriteSegment(width, segment) {
 		return 0
 	}
 
-	runes := []rune(segment.Text)
-	mainRune := ' '
-	if len(runes) > 0 {
-		mainRune = runes[0]
-	}
-
-	var combining []rune
-	if len(runes) > 1 {
-		combining = runes[1:]
-	}
-
+	mainRune, combining := segmentRunes(segment.Text)
 	screen.SetContent(column, row, mainRune, combining, style)
-	for offset := 1; offset < segment.Width; offset++ {
-		screen.SetContent(column+offset, row, 0, nil, style)
-	}
+	writeWideContinuationCells(screen, column, row, segment.Width, style)
 
 	return segment.Width
+}
+
+func canWriteAt(screen ContentSetter, column, row, width int) bool {
+	return screen != nil && row >= 0 && column >= 0 && width > 0
+}
+
+func canWriteSegment(width int, segment Segment) bool {
+	return segment.Width > 0 && segment.Width <= width
+}
+
+func segmentRunes(text string) (mainc rune, combc []rune) {
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return ' ', nil
+	}
+
+	if len(runes) == 1 {
+		return runes[0], nil
+	}
+
+	return runes[0], runes[1:]
+}
+
+func writeWideContinuationCells(screen ContentSetter, column, row, width int, style tcell.Style) {
+	for offset := 1; offset < width; offset++ {
+		screen.SetContent(column+offset, row, ' ', nil, style)
+	}
 }
 
 // WriteTabSegment writes a tab as up to four spaces.

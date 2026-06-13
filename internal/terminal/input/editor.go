@@ -1,6 +1,6 @@
 package input
 
-import "github.com/omarluq/librecode/tui"
+import "github.com/omarluq/librecode/internal/tui"
 
 // InsertRuneAt inserts char at cursor and returns the next value/cursor.
 func InsertRuneAt(value []rune, cursor int, char rune) (next []rune, nextCursor int) {
