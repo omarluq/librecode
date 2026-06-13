@@ -8,6 +8,8 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
+const minCodeBodyWidth = 12
+
 // CodeTheme maps Chroma token groups to tcell colors.
 type CodeTheme struct {
 	Text    tcell.Color
@@ -34,10 +36,7 @@ func (block *CodeBlock) Render(width, height int) []Line {
 		return []Line{}
 	}
 
-	lines := SyntaxHighlightedCodeLines(block.Language, block.Text, block.Theme, block.Style)
-	for index := range lines {
-		lines[index] = lines[index].Truncate(width)
-	}
+	lines := WrapCodeLines(SyntaxHighlightedCodeLines(block.Language, block.Text, block.Theme, block.Style), width)
 
 	return Tail(lines, height)
 }
@@ -60,10 +59,7 @@ func (view *DiffView) Render(width, height int) []Line {
 		return []Line{}
 	}
 
-	lines := DiffStyledLines(view.Text, view.Theme, view.Style)
-	for index := range lines {
-		lines[index] = lines[index].Truncate(width)
-	}
+	lines := WrapCodeLines(DiffStyledLines(view.Text, view.Theme, view.Style), width)
 
 	return Tail(lines, height)
 }
@@ -133,12 +129,12 @@ func analyzedCodeIterator(text string) (chroma.Iterator, bool) {
 func codeStyledLines(text string, baseStyle tcell.Style) []Line {
 	parts := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 	if len(parts) == 0 {
-		return []Line{NewLine(baseStyle, "  ")}
+		return []Line{NewLine(baseStyle, "")}
 	}
 
 	lines := make([]Line, 0, len(parts))
 	for _, part := range parts {
-		lines = append(lines, NewLine(baseStyle, "  "+part))
+		lines = append(lines, NewLine(baseStyle, part))
 	}
 
 	return lines
@@ -167,7 +163,7 @@ func DiffStyledLines(text string, theme CodeTheme, baseStyle tcell.Style) []Line
 }
 
 func codeLinesFromTokens(tokens []chroma.Token, theme CodeTheme, baseStyle tcell.Style) []Line {
-	lines := []Line{NewLine(baseStyle, "  ")}
+	lines := []Line{NewLine(baseStyle, "")}
 
 	for _, token := range tokens {
 		if token.Type == chroma.EOFType {
@@ -182,7 +178,7 @@ func codeLinesFromTokens(tokens []chroma.Token, theme CodeTheme, baseStyle tcell
 
 			if text, ok := strings.CutSuffix(segment, "\n"); ok {
 				appendCodeSegment(&lines, text, token.Type, theme, baseStyle)
-				lines = append(lines, NewLine(baseStyle, "  "))
+				lines = append(lines, NewLine(baseStyle, ""))
 
 				continue
 			}
@@ -214,36 +210,131 @@ func appendCodeSegment(
 }
 
 func styleForToken(tokenType chroma.TokenType, theme CodeTheme, baseStyle tcell.Style) tcell.Style {
-	category := tokenType.Category()
-	if category == chroma.Comment {
+	if tokenType.InCategory(chroma.Text) {
+		return baseStyle
+	}
+
+	if tokenType.InCategory(chroma.Comment) {
 		return baseStyle.Foreground(theme.Muted).Italic(true)
 	}
 
-	if category == chroma.Keyword {
+	if tokenType.InCategory(chroma.Keyword) {
 		return baseStyle.Foreground(theme.Accent)
 	}
 
-	if category == chroma.Name {
+	if tokenType.InCategory(chroma.Name) {
 		return baseStyle.Foreground(codeNameColor(tokenType, theme))
 	}
 
-	if category == chroma.LiteralString {
+	if tokenType.InSubCategory(chroma.LiteralString) {
 		return baseStyle.Foreground(theme.Success)
 	}
 
-	if category == chroma.LiteralNumber {
+	if tokenType.InSubCategory(chroma.LiteralNumber) {
 		return baseStyle.Foreground(theme.Text)
 	}
 
-	if category == chroma.Operator || category == chroma.Punctuation {
+	if tokenType.InCategory(chroma.Operator) || tokenType.InCategory(chroma.Punctuation) {
 		return baseStyle.Foreground(theme.Dim)
 	}
 
-	if category == chroma.Generic {
+	if tokenType.InCategory(chroma.Generic) {
 		return baseStyle.Foreground(codeGenericColor(tokenType, theme))
 	}
 
 	return baseStyle.Foreground(theme.Warning)
+}
+
+// WrapLines wraps rich lines to width cells, trimming wrapping whitespace.
+func WrapLines(lines []Line, width int) []Line {
+	return wrapLinesWithMode(lines, width, false)
+}
+
+// WrapCodeLines wraps code-like rich lines without letting indentation hide content.
+func WrapCodeLines(lines []Line, width int) []Line {
+	if width <= 0 {
+		return []Line{}
+	}
+
+	wrapped := []Line{}
+	for _, line := range lines {
+		wrapped = append(wrapped, wrapCodeLine(line, width)...)
+	}
+
+	return wrapped
+}
+
+func wrapCodeLine(line Line, width int) []Line {
+	indent, body := splitLeadingWhitespace(line.styledSegments())
+	if len(body) == 0 {
+		return line.Wrap(width)
+	}
+
+	indentWidth := codeIndentWidth(indent, width)
+	bodyWidth := max(1, width-indentWidth)
+
+	bodyLines := lineFromStyledSegments(body, line.Style).Wrap(bodyWidth)
+	if indentWidth == 0 {
+		return bodyLines
+	}
+
+	lines := make([]Line, 0, len(bodyLines))
+	for _, bodyLine := range bodyLines {
+		segments := appendCodeIndent(bodyLine.styledSegments(), indentWidth, line.Style)
+		lines = append(lines, lineFromStyledSegments(segments, line.Style))
+	}
+
+	return lines
+}
+
+func splitLeadingWhitespace(segments []styledSegment) (indent, body []styledSegment) {
+	for index, segment := range segments {
+		if segment.Text != " " && segment.Text != "\t" {
+			return segments[:index], segments[index:]
+		}
+	}
+
+	return segments, nil
+}
+
+func codeIndentWidth(indent []styledSegment, width int) int {
+	indentWidth := 0
+	for _, segment := range indent {
+		indentWidth += segment.Width
+	}
+
+	return min(indentWidth, max(0, width-minCodeBodyWidth))
+}
+
+func appendCodeIndent(segments []styledSegment, width int, style tcell.Style) []styledSegment {
+	if width <= 0 {
+		return segments
+	}
+
+	indented := make([]styledSegment, 0, len(segments)+1)
+	indented = append(indented, styledSegment{Text: strings.Repeat(" ", width), Width: width, Style: style})
+
+	return append(indented, segments...)
+}
+
+func wrapLinesWithMode(lines []Line, width int, preserveWhitespace bool) []Line {
+	if width <= 0 {
+		return []Line{}
+	}
+
+	wrapped := []Line{}
+
+	for _, line := range lines {
+		if preserveWhitespace {
+			wrapped = append(wrapped, line.WrapPreserveWhitespace(width)...)
+
+			continue
+		}
+
+		wrapped = append(wrapped, line.Wrap(width)...)
+	}
+
+	return wrapped
 }
 
 func codeNameColor(tokenType chroma.TokenType, theme CodeTheme) tcell.Color {
@@ -281,7 +372,7 @@ func codeGenericColor(tokenType chroma.TokenType, theme CodeTheme) tcell.Color {
 func trimTrailingEmptyCodeLine(lines []Line, baseStyle tcell.Style) []Line {
 	for len(lines) > 1 {
 		last := lines[len(lines)-1]
-		if last.Text != "  " || last.Style != baseStyle || len(last.Spans) > 0 {
+		if last.Text != "" || last.Style != baseStyle || len(last.Spans) > 0 {
 			break
 		}
 

@@ -57,19 +57,67 @@ func (line Line) Truncate(width int) Line {
 
 // Wrap returns display lines wrapped to width cells while preserving span styles.
 func (line Line) Wrap(width int) []Line {
+	return line.wrapWithMode(width, false)
+}
+
+// WrapPreserveWhitespace returns display lines wrapped to width cells without trimming wrapping whitespace.
+func (line Line) WrapPreserveWhitespace(width int) []Line {
+	return line.wrapWithMode(width, true)
+}
+
+// WrapCells returns display lines hard-wrapped to width cells while preserving span styles.
+func (line Line) WrapCells(width int) []Line {
+	return wrapStyledSegmentsCells(line.styledSegments(), line.Style, width)
+}
+
+func wrapStyledSegmentsCells(segments []styledSegment, style tcell.Style, width int) []Line {
+	if width <= 0 {
+		return []Line{NewLine(style, "")}
+	}
+
+	if len(segments) == 0 {
+		return []Line{NewLine(style, "")}
+	}
+
+	lines := make([]Line, 0, 1)
+	current := make([]styledSegment, 0, min(len(segments), width))
+	used := 0
+
+	for _, segment := range segments {
+		if segment.Width > 0 && used > 0 && used+segment.Width > width {
+			lines = append(lines, lineFromStyledSegments(current, style))
+			current = current[:0]
+			used = 0
+		}
+
+		current = append(current, segment)
+		used += segment.Width
+
+		if used >= width {
+			lines = append(lines, lineFromStyledSegments(current, style))
+			current = current[:0]
+			used = 0
+		}
+	}
+
+	if len(current) > 0 {
+		lines = append(lines, lineFromStyledSegments(current, style))
+	}
+
+	if len(lines) == 0 {
+		return []Line{NewLine(style, "")}
+	}
+
+	return lines
+}
+
+func (line Line) wrapWithMode(width int, preserveWhitespace bool) []Line {
 	if width <= 0 {
 		return []Line{NewLine(line.Style, "")}
 	}
 
 	if len(line.Spans) == 0 {
-		wrapped := Wrap(line.Text, width)
-
-		lines := make([]Line, 0, len(wrapped))
-		for _, text := range wrapped {
-			lines = append(lines, NewLine(line.Style, text))
-		}
-
-		return lines
+		return line.wrapPlainText(width, preserveWhitespace)
 	}
 
 	segments := line.styledSegments()
@@ -77,13 +125,36 @@ func (line Line) Wrap(width int) []Line {
 
 	for len(segments) > 0 {
 		breakIndex := styledWrapBreakIndex(segments, width)
-		wrapped := trimTrailingSpaceSegments(segments[:breakIndex])
+
+		wrapped := segments[:breakIndex]
+		if !preserveWhitespace {
+			wrapped = trimTrailingSpaceSegments(wrapped)
+		}
+
 		lines = append(lines, lineFromStyledSegments(wrapped, line.Style))
-		segments = trimLeadingSpaceSegments(segments[breakIndex:])
+
+		segments = segments[breakIndex:]
+		if !preserveWhitespace {
+			segments = trimLeadingSpaceSegments(segments)
+		}
 	}
 
 	if len(lines) == 0 {
 		return []Line{NewLine(line.Style, "")}
+	}
+
+	return lines
+}
+
+func (line Line) wrapPlainText(width int, preserveWhitespace bool) []Line {
+	wrapped := Wrap(line.Text, width)
+	if preserveWhitespace {
+		wrapped = WrapPreserveWhitespace(line.Text, width)
+	}
+
+	lines := make([]Line, 0, len(wrapped))
+	for _, text := range wrapped {
+		lines = append(lines, NewLine(line.Style, text))
 	}
 
 	return lines
