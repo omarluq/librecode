@@ -4,22 +4,22 @@ import "github.com/gdamore/tcell/v3"
 
 // TextView displays wrapped plain or styled text.
 type TextView struct {
-	Lines  []Line
-	Text   string
 	Style  tcell.Style
-	Wrap   bool
+	Text   string
+	Lines  []Line
 	Scroll int
+	Wrap   bool
 }
 
 // NewTextView returns a text view with plain text.
 func NewTextView(text string) *TextView {
-	return &TextView{Text: text, Wrap: true}
+	return &TextView{Text: text, Lines: nil, Style: tcell.Style{}, Wrap: true, Scroll: 0}
 }
 
 // SetLines replaces rich text lines.
 func (view *TextView) SetLines(lines []Line) *TextView {
 	if view == nil {
-		return view
+		return nil
 	}
 
 	view.Lines = append([]Line{}, lines...)
@@ -65,6 +65,7 @@ func (view *TextView) renderAll(width int) []Line {
 	}
 
 	wrapped := []Line{}
+
 	if view.Wrap {
 		for _, line := range Wrap(view.Text, width) {
 			wrapped = append(wrapped, NewLine(view.Style, line))
@@ -92,6 +93,6 @@ func NewRichText(lines []Line) RichText {
 
 // RichTextArea is a text area paired with rich preview lines.
 type RichTextArea struct {
-	TextArea
 	Preview []Line
+	TextArea
 }

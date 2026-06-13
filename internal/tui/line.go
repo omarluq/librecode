@@ -3,9 +3,9 @@ package tui
 import "github.com/gdamore/tcell/v3"
 
 type styledSegment struct {
+	Style tcell.Style
 	Text  string
 	Width int
-	Style tcell.Style
 }
 
 // Width returns the terminal display width of the line.
@@ -34,12 +34,15 @@ func (line Line) Truncate(width int) Line {
 	if width <= 0 {
 		return NewLine(line.Style, "")
 	}
+
 	if line.Width() <= width {
 		return line.Clone()
 	}
+
 	if len(line.Spans) == 0 {
 		return NewLine(line.Style, Truncate(line.Text, width))
 	}
+
 	ellipsisWidth := Width("…")
 	if width == ellipsisWidth {
 		return lineFromStyledSegments([]styledSegment{{Text: "…", Width: ellipsisWidth, Style: line.Style}}, line.Style)
@@ -57,8 +60,10 @@ func (line Line) Wrap(width int) []Line {
 	if width <= 0 {
 		return []Line{NewLine(line.Style, "")}
 	}
+
 	if len(line.Spans) == 0 {
 		wrapped := Wrap(line.Text, width)
+
 		lines := make([]Line, 0, len(wrapped))
 		for _, text := range wrapped {
 			lines = append(lines, NewLine(line.Style, text))
@@ -69,12 +74,14 @@ func (line Line) Wrap(width int) []Line {
 
 	segments := line.styledSegments()
 	lines := make([]Line, 0, 1)
+
 	for len(segments) > 0 {
 		breakIndex := styledWrapBreakIndex(segments, width)
 		wrapped := trimTrailingSpaceSegments(segments[:breakIndex])
 		lines = append(lines, lineFromStyledSegments(wrapped, line.Style))
 		segments = trimLeadingSpaceSegments(segments[breakIndex:])
 	}
+
 	if len(lines) == 0 {
 		return []Line{NewLine(line.Style, "")}
 	}
@@ -105,11 +112,14 @@ func (line Line) styledSegments() []styledSegment {
 func styledPrefix(segments []styledSegment, width int) []styledSegment {
 	prefix := make([]styledSegment, 0, len(segments))
 	used := 0
+
 	for _, segment := range segments {
 		if segment.Width == 0 {
 			prefix = append(prefix, segment)
+
 			continue
 		}
+
 		if used+segment.Width > width {
 			break
 		}
@@ -122,33 +132,11 @@ func styledPrefix(segments []styledSegment, width int) []styledSegment {
 }
 
 func styledWrapBreakIndex(segments []styledSegment, width int) int {
-	used := 0
-	limit := 0
-	lastSpace := -1
-	for limit < len(segments) {
-		segment := segments[limit]
-		if segment.Width == 0 {
-			limit++
-			continue
-		}
-		if used+segment.Width > width {
-			break
-		}
+	return wrapBreakIndex(len(segments), width, func(index int) (string, int) {
+		segment := segments[index]
 
-		used += segment.Width
-		if segment.Text == " " || segment.Text == "\t" {
-			lastSpace = limit
-		}
-		limit++
-	}
-	if limit == 0 {
-		return 1
-	}
-	if limit < len(segments) && lastSpace > 0 {
-		return lastSpace + 1
-	}
-
-	return limit
+		return segment.Text, segment.Width
+	})
 }
 
 func lineFromStyledSegments(segments []styledSegment, fallback tcell.Style) Line {
@@ -157,11 +145,13 @@ func lineFromStyledSegments(segments []styledSegment, fallback tcell.Style) Line
 		line.Text += segment.Text
 		if len(line.Spans) > 0 && line.Spans[len(line.Spans)-1].Style == segment.Style {
 			line.Spans[len(line.Spans)-1].Text += segment.Text
+
 			continue
 		}
 
 		line.Spans = append(line.Spans, Span{Text: segment.Text, Style: segment.Style})
 	}
+
 	if len(line.Spans) == 0 {
 		line.Spans = nil
 	}

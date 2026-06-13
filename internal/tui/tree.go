@@ -4,20 +4,20 @@ import "github.com/gdamore/tcell/v3"
 
 // TreeNode is one node in a tree view.
 type TreeNode struct {
+	Style    tcell.Style
 	Value    string
 	Text     string
 	Children []*TreeNode
 	Expanded bool
 	Selected bool
-	Style    tcell.Style
 }
 
 // TreeView renders a selectable tree as an indented list.
 type TreeView struct {
-	Root          *TreeNode
-	SelectedIndex int
 	Style         tcell.Style
 	SelectedStyle tcell.Style
+	Root          *TreeNode
+	SelectedIndex int
 }
 
 // Flatten returns visible tree rows.
@@ -27,7 +27,9 @@ func (view *TreeView) Flatten() []Line {
 	}
 
 	lines := []Line{}
+
 	var walk func(node *TreeNode, prefix string, root bool)
+
 	walk = func(node *TreeNode, prefix string, root bool) {
 		if node == nil {
 			return
@@ -35,6 +37,7 @@ func (view *TreeView) Flatten() []Line {
 
 		marker := computeMarker(node, root)
 		style := resolveTreeStyle(node, view.Style, view.SelectedStyle)
+
 		lines = append(lines, NewLine(style, prefix+marker+node.Text))
 		if node.Expanded || root {
 			for _, child := range node.Children {
@@ -51,9 +54,11 @@ func computeMarker(node *TreeNode, root bool) string {
 	if root {
 		return ""
 	}
+
 	if len(node.Children) == 0 {
 		return "  "
 	}
+
 	if node.Expanded {
 		return "▾ "
 	}
@@ -65,6 +70,7 @@ func resolveTreeStyle(node *TreeNode, defaultStyle, selectedStyle tcell.Style) t
 	if node.Selected {
 		return selectedStyle
 	}
+
 	if node.Style != (tcell.Style{}) {
 		return node.Style
 	}

@@ -4,7 +4,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/extension"
-	"github.com/omarluq/librecode/tui"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 // ComposerKeyEvent converts a terminal key event into an extension composer key event.

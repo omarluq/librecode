@@ -52,8 +52,8 @@ func (rect Rect) Inner(padding int) Rect {
 
 // Span is one styled segment inside a line.
 type Span struct {
-	Text  string
 	Style tcell.Style
+	Text  string
 }
 
 // Line is one terminal display line with optional per-span styles.

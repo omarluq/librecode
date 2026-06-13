@@ -1,6 +1,6 @@
 package input
 
-import "github.com/omarluq/librecode/tui"
+import "github.com/omarluq/librecode/internal/tui"
 
 // Buffer is the editable terminal composer state.
 type Buffer = tui.TextArea

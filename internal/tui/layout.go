@@ -4,7 +4,9 @@ package tui
 type FlexDirection int
 
 const (
+	// FlexRow lays out flex children from left to right.
 	FlexRow FlexDirection = iota
+	// FlexColumn lays out flex children from top to bottom.
 	FlexColumn
 )
 
@@ -17,14 +19,14 @@ type FlexItem struct {
 
 // Flex lays out children in a row or column.
 type Flex struct {
-	Direction FlexDirection
 	Items     []FlexItem
+	Direction FlexDirection
 }
 
 // AddItem appends a flex item.
 func (flex *Flex) AddItem(component Drawer, fixed, weight int) *Flex {
 	if flex == nil {
-		return flex
+		return nil
 	}
 
 	flex.Items = append(flex.Items, FlexItem{Drawer: component, Fixed: fixed, Weight: weight})
@@ -53,6 +55,7 @@ func (flex *Flex) rects(rect Rect) []Rect {
 
 	fixed := 0
 	weight := 0
+
 	for _, item := range flex.Items {
 		fixed += max(0, item.Fixed)
 		if item.Fixed <= 0 {
@@ -65,6 +68,7 @@ func (flex *Flex) rects(rect Rect) []Rect {
 	assignedFlexible := 0
 	flexibleSeen := 0
 	flexibleCount := flex.flexibleItemCount()
+
 	rects := make([]Rect, 0, len(flex.Items))
 	for _, item := range flex.Items {
 		size := max(0, item.Fixed)
@@ -86,7 +90,9 @@ func (flex *Flex) rects(rect Rect) []Rect {
 			childRect.X += cursor
 			childRect.Width = size
 		}
+
 		cursor += size
+
 		rects = append(rects, childRect)
 	}
 
@@ -95,6 +101,7 @@ func (flex *Flex) rects(rect Rect) []Rect {
 
 func (flex *Flex) flexibleItemCount() int {
 	count := 0
+
 	for _, item := range flex.Items {
 		if item.Fixed <= 0 {
 			count++
@@ -115,9 +122,9 @@ type GridCell struct {
 
 // Grid lays out children in equally sized cells.
 type Grid struct {
+	Cells   []GridCell
 	Rows    int
 	Columns int
-	Cells   []GridCell
 }
 
 // Draw draws all grid cells.
@@ -128,18 +135,33 @@ func (grid *Grid) Draw(screen ContentSetter, rect Rect) {
 
 	cellWidth := max(1, rect.Width/grid.Columns)
 	cellHeight := max(1, rect.Height/grid.Rows)
+
 	for _, cell := range grid.Cells {
-		if cell.Drawer == nil || cell.Row < 0 || cell.Row >= grid.Rows || cell.Column < 0 || cell.Column >= grid.Columns {
+		if !grid.validCell(cell) {
 			continue
 		}
-		rowSpan := max(1, cell.RowSpan)
-		colSpan := max(1, cell.ColSpan)
-		cell.Drawer.Draw(screen, Rect{
-			X:      rect.X + cell.Column*cellWidth,
-			Y:      rect.Y + cell.Row*cellHeight,
-			Width:  min(rect.Width-cell.Column*cellWidth, cellWidth*colSpan),
-			Height: min(rect.Height-cell.Row*cellHeight, cellHeight*rowSpan),
-		})
+
+		cell.Drawer.Draw(screen, grid.cellRect(rect, cell, cellWidth, cellHeight))
+	}
+}
+
+func (grid *Grid) validCell(cell GridCell) bool {
+	return cell.Drawer != nil &&
+		cell.Row >= 0 &&
+		cell.Row < grid.Rows &&
+		cell.Column >= 0 &&
+		cell.Column < grid.Columns
+}
+
+func (grid *Grid) cellRect(rect Rect, cell GridCell, cellWidth, cellHeight int) Rect {
+	rowSpan := max(1, cell.RowSpan)
+	colSpan := max(1, cell.ColSpan)
+
+	return Rect{
+		X:      rect.X + cell.Column*cellWidth,
+		Y:      rect.Y + cell.Row*cellHeight,
+		Width:  min(rect.Width-cell.Column*cellWidth, cellWidth*colSpan),
+		Height: min(rect.Height-cell.Row*cellHeight, cellHeight*rowSpan),
 	}
 }
 
@@ -163,6 +185,7 @@ func (pages *Pages) Draw(screen ContentSetter, rect Rect) {
 
 // Window describes a named rectangular component host.
 type Window struct {
+	Metadata  map[string]any
 	Name      string
 	Role      string
 	Buffer    string
@@ -171,7 +194,6 @@ type Window struct {
 	CursorRow int
 	CursorCol int
 	Visible   bool
-	Metadata  map[string]any
 }
 
 // Layout describes a named set of windows.

@@ -4,8 +4,8 @@ import "github.com/gdamore/tcell/v3"
 
 // Cell is one rendered terminal cell.
 type Cell struct {
-	Rune  rune
 	Style tcell.Style
+	Rune  rune
 }
 
 // CellBuffer is an in-memory terminal cell buffer.
@@ -54,6 +54,7 @@ func (buffer *CellBuffer) SetContent(column, row int, mainc rune, _ []rune, styl
 	if buffer == nil || column < 0 || row < 0 || column >= buffer.width || row >= buffer.height {
 		return
 	}
+
 	if mainc == 0 {
 		mainc = ' '
 	}

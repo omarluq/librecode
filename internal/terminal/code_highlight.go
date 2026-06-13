@@ -5,7 +5,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/terminal/rendertext"
-	"github.com/omarluq/librecode/tui"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func syntaxHighlightedCodeLines(language, text string, theme terminalTheme, baseStyle tcell.Style) []rendertext.Line {

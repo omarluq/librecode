@@ -51,8 +51,8 @@ func (view *MarkdownView) Render(width, height int) []Line {
 		lines:  []Line{},
 		width:  max(1, width),
 	}
-	parser := newMarkdownParser()
-	document := parser.Parser().Parse(goldtext.NewReader(renderer.source))
+	markdown := newMarkdownParser()
+	document := markdown.Parser().Parse(goldtext.NewReader(renderer.source))
 	renderer.renderChildren(document, markdownIndent)
 
 	return Tail(renderer.lines, height)
@@ -63,6 +63,7 @@ func (view *MarkdownView) Draw(screen ContentSetter, rect Rect) {
 	DrawLines(screen, rect, view.Render(rect.Width, rect.Height))
 }
 
+//nolint:ireturn // goldmark.New intentionally exposes its Markdown interface.
 func newMarkdownParser() goldmark.Markdown {
 	return goldmark.New(goldmark.WithParserOptions(
 		parser.WithParagraphTransformers(util.Prioritized(
@@ -76,9 +77,9 @@ func newMarkdownParser() goldmark.Markdown {
 }
 
 type markdownRenderer struct {
-	styles MarkdownStyles
 	source []byte
 	lines  []Line
+	styles MarkdownStyles
 	width  int
 }
 
@@ -112,7 +113,7 @@ func (renderer *markdownRenderer) renderNode(node ast.Node, indent string) {
 }
 
 func (renderer *markdownRenderer) renderThematicBreak(indent string) {
-	rule := strings.Repeat(markdownRule, max(1, renderer.width-len(indent)))
+	rule := strings.Repeat(markdownRule, max(1, renderer.width-Width(indent)))
 	renderer.lines = append(renderer.lines, NewLine(renderer.styles.Muted, indent+rule))
 }
 
@@ -127,6 +128,7 @@ func (renderer *markdownRenderer) renderCodeBlock(node *ast.FencedCodeBlock, ind
 	if node.Language(renderer.source) != nil {
 		language = string(node.Language(renderer.source))
 	}
+
 	renderer.appendCodeLines(language, renderer.codeBlockText(node), indent)
 }
 
@@ -145,6 +147,7 @@ func (renderer *markdownRenderer) prependIndentToLine(line *Line, indent string,
 	line.Text = indent + line.Text
 	if len(line.Spans) == 0 {
 		line.Spans = []Span{{Text: line.Text, Style: line.Style}}
+
 		return
 	}
 
@@ -153,6 +156,7 @@ func (renderer *markdownRenderer) prependIndentToLine(line *Line, indent string,
 
 func (renderer *markdownRenderer) renderList(node *ast.List, indent string) {
 	index := 1
+
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		item, ok := child.(*ast.ListItem)
 		if !ok {
@@ -163,54 +167,77 @@ func (renderer *markdownRenderer) renderList(node *ast.List, indent string) {
 		if node.IsOrdered() {
 			marker = fmt.Sprintf("%d. ", index)
 		}
+
 		renderer.renderListItem(item, indent, marker)
+
 		index++
 	}
 }
 
 func (renderer *markdownRenderer) renderListItem(item *ast.ListItem, indent, marker string) {
 	firstIndent := indent + marker
-	continuationIndent := indent + strings.Repeat(markdownIndent, len(marker))
+	continuationIndent := indent + strings.Repeat(markdownIndent, Width(marker))
 	firstBlock := true
+
 	for child := item.FirstChild(); child != nil; child = child.NextSibling() {
 		blockIndent := continuationIndent
 		if firstBlock {
 			blockIndent = firstIndent
 		}
+
 		switch typedChild := child.(type) {
 		case *ast.Paragraph:
-			renderer.appendWrappedLinesWithContinuation(renderer.inlineText(typedChild), blockIndent, continuationIndent, renderer.styles.Text.Bold(true))
+			renderer.appendListItemText(typedChild, blockIndent, continuationIndent)
 		case *ast.TextBlock:
-			renderer.appendWrappedLinesWithContinuation(renderer.inlineText(typedChild), blockIndent, continuationIndent, renderer.styles.Text.Bold(true))
+			renderer.appendListItemText(typedChild, blockIndent, continuationIndent)
 		default:
 			renderer.renderNode(typedChild, blockIndent)
 		}
+
 		firstBlock = false
 	}
+}
+
+func (renderer *markdownRenderer) appendListItemText(node ast.Node, blockIndent, continuationIndent string) {
+	renderer.appendWrappedLinesWithContinuation(
+		renderer.inlineText(node),
+		blockIndent,
+		continuationIndent,
+		renderer.styles.Text.Bold(true),
+	)
 }
 
 func (renderer *markdownRenderer) appendWrappedLines(text, indent string, style tcell.Style) {
 	renderer.appendWrappedLinesWithContinuation(text, indent, indent, style)
 }
 
-func (renderer *markdownRenderer) appendWrappedLinesWithContinuation(text, firstIndent, continuationIndent string, style tcell.Style) {
+func (renderer *markdownRenderer) appendWrappedLinesWithContinuation(
+	text string,
+	firstIndent string,
+	continuationIndent string,
+	style tcell.Style,
+) {
 	width := max(1, renderer.width-Width(firstIndent))
+
 	wrapped := Wrap(text, width)
 	for index, line := range wrapped {
 		indent := firstIndent
 		if index > 0 {
 			indent = continuationIndent
 		}
+
 		renderer.lines = append(renderer.lines, NewLine(style, indent+line))
 	}
 }
 
 func (renderer *markdownRenderer) inlineText(node ast.Node) string {
 	var builder strings.Builder
+
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch typedChild := child.(type) {
 		case *ast.Text:
 			builder.Write(typedChild.Segment.Value(renderer.source))
+
 			if typedChild.SoftLineBreak() || typedChild.HardLineBreak() {
 				builder.WriteString(" ")
 			}
@@ -223,6 +250,7 @@ func (renderer *markdownRenderer) inlineText(node ast.Node) string {
 		case *ast.Link:
 			label := renderer.inlineText(typedChild)
 			builder.WriteString(label)
+
 			if len(typedChild.Destination) > 0 {
 				builder.WriteString(" (")
 				builder.Write(typedChild.Destination)
@@ -238,6 +266,7 @@ func (renderer *markdownRenderer) inlineText(node ast.Node) string {
 
 func (renderer *markdownRenderer) codeBlockText(node ast.Node) string {
 	var builder strings.Builder
+
 	lines := node.Lines()
 	for index := 0; index < lines.Len(); index++ {
 		segment := lines.At(index)
@@ -279,11 +308,13 @@ func (adapter markdownTableAdapter) headers(node *extast.Table) []TableCell {
 
 func (adapter markdownTableAdapter) rows(node *extast.Table) [][]TableCell {
 	rows := [][]TableCell{}
+
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		row, ok := child.(*extast.TableRow)
 		if !ok {
 			continue
 		}
+
 		rows = append(rows, adapter.cells(row, adapter.renderer.styles.Text))
 	}
 
@@ -297,11 +328,13 @@ func (adapter markdownTableAdapter) alignments(node *extast.Table) []Alignment {
 	}
 
 	alignments := []Alignment{}
+
 	for child := header.FirstChild(); child != nil; child = child.NextSibling() {
 		cell, ok := child.(*extast.TableCell)
 		if !ok {
 			continue
 		}
+
 		alignments = append(alignments, markdownTableAlignment(cell.Alignment))
 	}
 
@@ -321,11 +354,13 @@ func (adapter markdownTableAdapter) headerNode(node *extast.Table) *extast.Table
 
 func (adapter markdownTableAdapter) cells(row ast.Node, style tcell.Style) []TableCell {
 	cells := []TableCell{}
+
 	for child := row.FirstChild(); child != nil; child = child.NextSibling() {
 		cell, ok := child.(*extast.TableCell)
 		if !ok {
 			continue
 		}
+
 		cells = append(cells, TableCell{Text: strings.TrimSpace(adapter.renderer.inlineText(cell)), Style: style})
 	}
 
@@ -334,6 +369,8 @@ func (adapter markdownTableAdapter) cells(row ast.Node, style tcell.Style) []Tab
 
 func markdownTableAlignment(alignment extast.Alignment) Alignment {
 	switch alignment {
+	case extast.AlignLeft, extast.AlignNone:
+		return AlignLeft
 	case extast.AlignRight:
 		return AlignRight
 	case extast.AlignCenter:
