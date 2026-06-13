@@ -6,7 +6,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/terminal/extui"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
@@ -43,7 +43,7 @@ func (app *App) draw(ctx context.Context) {
 	app.prepareScreenForFrame()
 	width, height := app.screenSize()
 
-	app.frame = rendertext.NewBuffer(width, height, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(width, height, tcell.StyleDefault)
 	if width < 20 || height < 8 {
 		app.drawTiny(width, height)
 		app.flushFrame()
@@ -110,11 +110,11 @@ func (app *App) flushFrame() {
 }
 
 func (app *App) drawTiny(width, height int) {
-	message := rendertext.Truncate("librecode: terminal too small", width)
+	message := tui.Truncate("librecode: terminal too small", width)
 	writeLine(app.frame, max(0, height/terminalHalf), width, message, app.theme.style(colorWarning))
 }
 
-func (app *App) writeStyledLine(row, width int, line rendertext.Line) {
+func (app *App) writeStyledLine(row, width int, line tui.Line) {
 	if isWorkingIndicatorText(line.Text) {
 		_, contentWidth := workingShimmerContentRange(line.Text)
 		writeShimmerLineWithVerticalBorders(

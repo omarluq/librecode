@@ -5,7 +5,23 @@ import "github.com/gdamore/tcell/v3"
 // Cell is one rendered terminal cell.
 type Cell struct {
 	Style tcell.Style
+	Comb  []rune
 	Rune  rune
+}
+
+// Equal reports whether two cells contain the same glyph and style.
+func (cell Cell) Equal(other Cell) bool {
+	if cell.Rune != other.Rune || cell.Style != other.Style || len(cell.Comb) != len(other.Comb) {
+		return false
+	}
+
+	for index, combiner := range cell.Comb {
+		if combiner != other.Comb[index] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // CellBuffer is an in-memory terminal cell buffer.
@@ -17,13 +33,16 @@ type CellBuffer struct {
 
 // NewCellBuffer returns a buffer initialized with spaces using style.
 func NewCellBuffer(width, height int, style tcell.Style) *CellBuffer {
+	width = max(0, width)
+	height = max(0, height)
+
 	buffer := &CellBuffer{
-		cells:  make([]Cell, max(0, width*height)),
-		width:  max(0, width),
-		height: max(0, height),
+		cells:  make([]Cell, width*height),
+		width:  width,
+		height: height,
 	}
 
-	fill := Cell{Rune: ' ', Style: style}
+	fill := Cell{Rune: ' ', Comb: nil, Style: style}
 	for index := range buffer.cells {
 		buffer.cells[index] = fill
 	}
@@ -50,7 +69,7 @@ func (buffer *CellBuffer) Height() int {
 }
 
 // SetContent implements ContentSetter.
-func (buffer *CellBuffer) SetContent(column, row int, mainc rune, _ []rune, style tcell.Style) {
+func (buffer *CellBuffer) SetContent(column, row int, mainc rune, combc []rune, style tcell.Style) {
 	if buffer == nil || column < 0 || row < 0 || column >= buffer.width || row >= buffer.height {
 		return
 	}
@@ -59,7 +78,11 @@ func (buffer *CellBuffer) SetContent(column, row int, mainc rune, _ []rune, styl
 		mainc = ' '
 	}
 
-	buffer.cells[buffer.offset(column, row)] = Cell{Rune: mainc, Style: style}
+	buffer.cells[buffer.offset(column, row)] = Cell{
+		Rune:  mainc,
+		Comb:  append([]rune(nil), combc...),
+		Style: style,
+	}
 }
 
 // Cell returns a rendered cell. Callers should pass in-bounds coordinates.
@@ -82,7 +105,13 @@ func (buffer *CellBuffer) Clone() *CellBuffer {
 		width:  buffer.width,
 		height: buffer.height,
 	}
-	copy(cloned.cells, buffer.cells)
+	for index, cell := range buffer.cells {
+		cloned.cells[index] = Cell{
+			Rune:  cell.Rune,
+			Comb:  append([]rune(nil), cell.Comb...),
+			Style: cell.Style,
+		}
+	}
 
 	return cloned
 }
@@ -110,8 +139,8 @@ func (renderer *Renderer) Flush(frame *CellBuffer) {
 	for y := range frame.height {
 		for x := range frame.width {
 			cell := frame.Cell(x, y)
-			if force || cell != renderer.previous.Cell(x, y) {
-				renderer.screen.SetContent(x, y, cell.Rune, nil, cell.Style)
+			if force || !cell.Equal(renderer.previous.Cell(x, y)) {
+				renderer.screen.SetContent(x, y, cell.Rune, cell.Comb, cell.Style)
 			}
 		}
 	}

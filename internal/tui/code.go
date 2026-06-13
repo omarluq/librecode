@@ -215,24 +215,35 @@ func appendCodeSegment(
 
 func styleForToken(tokenType chroma.TokenType, theme CodeTheme, baseStyle tcell.Style) tcell.Style {
 	category := tokenType.Category()
-	switch category { //nolint:exhaustive // Chroma token categories are extensible; unknown categories use Warning.
-	case chroma.Comment:
+	if category == chroma.Comment {
 		return baseStyle.Foreground(theme.Muted).Italic(true)
-	case chroma.Keyword:
-		return baseStyle.Foreground(theme.Accent)
-	case chroma.Name:
-		return baseStyle.Foreground(codeNameColor(tokenType, theme))
-	case chroma.LiteralString:
-		return baseStyle.Foreground(theme.Success)
-	case chroma.LiteralNumber:
-		return baseStyle.Foreground(theme.Text)
-	case chroma.Operator, chroma.Punctuation:
-		return baseStyle.Foreground(theme.Dim)
-	case chroma.Generic:
-		return baseStyle.Foreground(codeGenericColor(tokenType, theme))
-	default:
-		return baseStyle.Foreground(theme.Warning)
 	}
+
+	if category == chroma.Keyword {
+		return baseStyle.Foreground(theme.Accent)
+	}
+
+	if category == chroma.Name {
+		return baseStyle.Foreground(codeNameColor(tokenType, theme))
+	}
+
+	if category == chroma.LiteralString {
+		return baseStyle.Foreground(theme.Success)
+	}
+
+	if category == chroma.LiteralNumber {
+		return baseStyle.Foreground(theme.Text)
+	}
+
+	if category == chroma.Operator || category == chroma.Punctuation {
+		return baseStyle.Foreground(theme.Dim)
+	}
+
+	if category == chroma.Generic {
+		return baseStyle.Foreground(codeGenericColor(tokenType, theme))
+	}
+
+	return baseStyle.Foreground(theme.Warning)
 }
 
 func codeNameColor(tokenType chroma.TokenType, theme CodeTheme) tcell.Color {

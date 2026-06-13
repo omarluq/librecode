@@ -3,7 +3,7 @@ package panel
 import (
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/terminal/keyevent"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 // ActionID identifies one app-level keybinding action relevant to panels.
@@ -91,7 +91,7 @@ func (model *Model) selectedAction() Action {
 }
 
 func (model *Model) handleSearchKey(event *tcell.EventKey) {
-	if model == nil || event == nil || !model.searchable {
+	if model == nil || model.list == nil || event == nil || !model.list.Searchable() {
 		return
 	}
 
@@ -102,6 +102,6 @@ func (model *Model) handleSearchKey(event *tcell.EventKey) {
 	}
 
 	if event.Key() == tcell.KeyRune {
-		model.AppendQueryRune(keyevent.Rune(event))
+		model.AppendQueryRune(tui.EventRune(event))
 	}
 }

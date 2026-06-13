@@ -9,8 +9,8 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/terminal/extui"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
@@ -181,7 +181,7 @@ func transcriptBlockID(index int, streaming bool) string {
 		prefix = "streaming"
 	}
 
-	return prefix + ":" + rendertext.Int(index)
+	return prefix + ":" + tui.Int(index)
 }
 
 func transcriptBlockKind(streaming bool) string {
@@ -242,31 +242,15 @@ func (app *App) drawRuntimeTextBuffer(
 	style tcell.Style,
 ) {
 	lines := app.renderBufferTextLines(window.Width, buffer.Text, style)
-	for index, line := range app.visibleMessageLineGroups([][]rendertext.Line{lines}, window.Height) {
+	for index, line := range app.visibleMessageLineGroups([][]tui.Line{lines}, window.Height) {
 		app.writeStyledLine(window.Y+index, window.Width, line)
 	}
 }
 
-func (app *App) renderBufferTextLines(width int, text string, style tcell.Style) []rendertext.Line {
+func (app *App) renderBufferTextLines(width int, text string, style tcell.Style) []tui.Line {
 	if text == "" {
-		return []rendertext.Line{}
+		return []tui.Line{}
 	}
 
-	parts := strings.Split(text, "\n")
-
-	lines := make([]rendertext.Line, 0, len(parts))
-	for _, part := range parts {
-		wrapped := rendertext.Wrap(part, width)
-		if len(wrapped) == 0 {
-			lines = append(lines, rendertext.NewLine(style, ""))
-
-			continue
-		}
-
-		for _, line := range wrapped {
-			lines = append(lines, rendertext.NewLine(style, line))
-		}
-	}
-
-	return lines
+	return tui.PlainTextLines(text, style, width, true)
 }

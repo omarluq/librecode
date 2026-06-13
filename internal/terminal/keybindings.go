@@ -7,7 +7,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/terminal/keyevent"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 type actionID string
@@ -27,10 +27,10 @@ const (
 	actionDeleteWordForward          actionID = "tui.editor.deleteWordForward"
 	actionDeleteToLineStart          actionID = "tui.editor.deleteToLineStart"
 	actionDeleteToLineEnd            actionID = "tui.editor.deleteToLineEnd"
-	actionInputClear                 actionID = "tui.input.clear"
-	actionInputNewLine               actionID = "tui.input.newLine"
-	actionInputSubmit                actionID = "tui.input.submit"
-	actionInputTab                   actionID = "tui.input.tab"
+	actionInputClear                 actionID = "tui.tui.clear"
+	actionInputNewLine               actionID = "tui.tui.newLine"
+	actionInputSubmit                actionID = "tui.tui.submit"
+	actionInputTab                   actionID = "tui.tui.tab"
 	actionSelectUp                   actionID = "tui.select.up"
 	actionSelectDown                 actionID = "tui.select.down"
 	actionSelectPageUp               actionID = "tui.select.pageUp"
@@ -218,8 +218,8 @@ func normalizedEventKeys(event *tcell.EventKey) map[string]struct{} {
 		addKey(keys, keyShiftTab)
 	}
 
-	if event.Key() == tcell.KeyRune && unicode.IsUpper(keyevent.Rune(event)) {
-		addKey(keys, "shift+"+strings.ToLower(string(keyevent.Rune(event))))
+	if event.Key() == tcell.KeyRune && unicode.IsUpper(tui.EventRune(event)) {
+		addKey(keys, "shift+"+strings.ToLower(string(tui.EventRune(event))))
 	}
 
 	addControlKeyName(keys, event)
@@ -247,7 +247,7 @@ func addCtrlLetter(keys map[string]struct{}, offset tcell.Key) {
 func eventKeyName(event *tcell.EventKey) string {
 	name := event.Name()
 	if event.Key() == tcell.KeyRune {
-		name = string(unicode.ToLower(keyevent.Rune(event)))
+		name = string(unicode.ToLower(tui.EventRune(event)))
 		if event.Modifiers()&tcell.ModAlt != 0 {
 			name = "alt+" + name
 		}

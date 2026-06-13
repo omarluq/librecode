@@ -5,7 +5,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/terminal/panel"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func (app *App) openTreePanel(ctx context.Context) {
@@ -61,11 +61,11 @@ func appendTreeItems(items *[]panel.Item, nodes []database.TreeNodeEntity, prefi
 
 func treeDescription(entry *database.EntryEntity) string {
 	if entry.Message.Content != "" {
-		return rendertext.Truncate(entry.Message.Content, sessionTreePreviewWidth)
+		return tui.Truncate(entry.Message.Content, sessionTreePreviewWidth)
 	}
 
 	if entry.Summary != "" {
-		return rendertext.Truncate(entry.Summary, sessionTreePreviewWidth)
+		return tui.Truncate(entry.Summary, sessionTreePreviewWidth)
 	}
 
 	if entry.Message.Model != "" {

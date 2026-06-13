@@ -1,7 +1,7 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -31,9 +31,9 @@ func (app *App) addWelcomeMessage() {
 	app.addSystemMessage(welcomeMessagePrefix + strings.Join(welcomeBodyLines(app.cwd), "\n"))
 }
 
-func (app *App) renderWelcomeMessage(width int, content string) []rendertext.Line {
+func (app *App) renderWelcomeMessage(width int, content string) []tui.Line {
 	bodyLines := welcomeLinesFromContent(content)
-	lines := make([]rendertext.Line, 0, len(bodyLines)+(welcomePaddingY*welcomeDoublePadding))
+	lines := make([]tui.Line, 0, len(bodyLines)+(welcomePaddingY*welcomeDoublePadding))
 	app.appendWelcomePaddingLines(&lines, width, welcomePaddingY)
 
 	for index, line := range bodyLines {
@@ -81,15 +81,15 @@ func (app *App) writeWelcomeLine(row, width, lineIndex int, content string) {
 	writeLine(app.frame, row, width, line.Text, line.Style)
 }
 
-func (app *App) welcomeStyledLine(width, lineIndex int, content string) rendertext.Line {
+func (app *App) welcomeStyledLine(width, lineIndex int, content string) tui.Line {
 	style := app.welcomeBodyStyle(lineIndex, content)
 	innerWidth := max(1, width-(welcomePaddingX*welcomeDoublePadding))
-	centeredContent := centerText(rendertext.Truncate(content, innerWidth), innerWidth)
+	centeredContent := centerText(tui.Truncate(content, innerWidth), innerWidth)
 	paddedContent := strings.Repeat(" ", welcomePaddingX) +
 		centeredContent +
 		strings.Repeat(" ", welcomePaddingX)
 
-	return rendertext.NewLine(style, rendertext.Truncate(paddedContent, width))
+	return tui.NewLine(style, tui.Truncate(paddedContent, width))
 }
 
 func centerText(text string, width int) string {
@@ -97,25 +97,25 @@ func centerText(text string, width int) string {
 		return ""
 	}
 
-	text = rendertext.Truncate(text, width)
-	padding := max(0, width-rendertext.Width(text))
+	text = tui.Truncate(text, width)
+	padding := max(0, width-tui.Width(text))
 	leftPadding := padding / welcomeDoublePadding
 	rightPadding := padding - leftPadding
 
 	return strings.Repeat(" ", leftPadding) + text + strings.Repeat(" ", rightPadding)
 }
 
-func (app *App) appendWelcomePaddingLines(lines *[]rendertext.Line, width, count int) {
+func (app *App) appendWelcomePaddingLines(lines *[]tui.Line, width, count int) {
 	style := app.theme.background(colorCustomMessageBg)
 	for range count {
-		*lines = append(*lines, rendertext.NewLine(style, rendertext.PadRight("", width)))
+		*lines = append(*lines, tui.NewLine(style, tui.PadRight("", width)))
 	}
 }
 
 func (app *App) writeWelcomePaddingRows(row, width, count int) {
 	style := app.theme.background(colorCustomMessageBg)
 	for offset := range count {
-		writeLine(app.frame, row+offset, width, rendertext.PadRight("", width), style)
+		writeLine(app.frame, row+offset, width, tui.PadRight("", width), style)
 	}
 }
 

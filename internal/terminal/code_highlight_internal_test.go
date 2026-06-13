@@ -3,48 +3,40 @@ package terminal
 import (
 	"testing"
 
-	"github.com/alecthomas/chroma/v2"
 	"github.com/gdamore/tcell/v3"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCodeHighlightColorHelpersReturnThemeColors(t *testing.T) {
+func TestCodeThemeUsesTerminalThemeColors(t *testing.T) {
 	t.Parallel()
 
 	theme := darkTheme()
+	codeTheme := codeTheme(theme)
 
 	colors := []tcell.Color{
-		codeNameColor(chroma.NameFunction, theme),
-		codeNameColor(chroma.NameClass, theme),
-		codeNameColor(chroma.NameVariable, theme),
-		codeNameColor(chroma.Text, theme),
-		codeLiteralColor(chroma.LiteralString, theme),
-		codeLiteralColor(chroma.LiteralNumber, theme),
-		codeLiteralColor(chroma.Text, theme),
-		codeGenericColor(chroma.GenericInserted, theme),
-		codeGenericColor(chroma.GenericDeleted, theme),
-		codeGenericColor(chroma.GenericHeading, theme),
-		codeGenericColor(chroma.Text, theme),
-		codeOperatorColor(theme),
-		codeTypeColor(theme),
+		codeTheme.Text,
+		codeTheme.Accent,
+		codeTheme.Success,
+		codeTheme.Warning,
+		codeTheme.Dim,
+		codeTheme.Muted,
+		codeTheme.DiffAdd,
+		codeTheme.DiffDel,
 	}
 	for _, color := range colors {
 		assert.NotEqual(t, tcell.ColorDefault, color)
 	}
-
-	assert.Equal(t, codeVariableColor(theme), codeNumberColor(theme))
 }
 
-func TestLightThemeCodeColorsDifferFromDarkTheme(t *testing.T) {
+func TestLightThemeCodeThemeDiffersFromDarkTheme(t *testing.T) {
 	t.Parallel()
 
-	dark := darkTheme()
-	light := lightTheme()
+	dark := codeTheme(darkTheme())
+	light := codeTheme(lightTheme())
 
-	assert.NotEqual(t, codeKeywordColor(dark), codeKeywordColor(light))
-	assert.NotEqual(t, codeFunctionColor(dark), codeFunctionColor(light))
-	assert.NotEqual(t, codeTypeColor(dark), codeTypeColor(light))
-	assert.NotEqual(t, codeVariableColor(dark), codeVariableColor(light))
-	assert.NotEqual(t, codeStringColor(dark), codeStringColor(light))
-	assert.NotEqual(t, codeOperatorColor(dark), codeOperatorColor(light))
+	assert.NotEqual(t, dark.Accent, light.Accent)
+	assert.NotEqual(t, dark.Success, light.Success)
+	assert.NotEqual(t, dark.Warning, light.Warning)
+	assert.NotEqual(t, dark.Text, light.Text)
+	assert.NotEqual(t, dark.Dim, light.Dim)
 }

@@ -6,12 +6,18 @@ import (
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/extension"
-	"github.com/omarluq/librecode/internal/terminal/input"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func terminalKeyEvent(event *tcell.EventKey) extension.ComposerKeyEvent {
-	if keyEvent, ok := input.ComposerKeyEvent(event); ok {
-		return keyEvent
+	if keyEvent, ok := tui.NewKeyEvent(event); ok {
+		return extension.ComposerKeyEvent{
+			Key:   keyEvent.Key,
+			Text:  keyEvent.Text,
+			Ctrl:  keyEvent.Ctrl,
+			Alt:   keyEvent.Alt,
+			Shift: keyEvent.Shift,
+		}
 	}
 
 	keyName := strings.ToLower(event.Name())

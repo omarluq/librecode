@@ -1,57 +1,44 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
 )
 
-func writeStyled(screen rendertext.ContentSetter, row, width int, line rendertext.Line) {
-	if len(line.Spans) == 0 {
-		writeLine(screen, row, width, line.Text, line.Style)
+func writeStyled(screen tui.ContentSetter, row, width int, line tui.Line) {
+	tui.DrawLine(screen, tui.Rect{X: 0, Y: row, Width: width, Height: 1}, line)
+	fillStyledLineRemainder(screen, row, width, line)
+}
 
-		return
-	}
-
-	used := 0
-	for _, span := range line.Spans {
-		if used >= width {
-			break
-		}
-
-		used += rendertext.WriteCellsNoFill(screen, used, row, width-used, span.Text, span.Style)
-	}
-
+func fillStyledLineRemainder(screen tui.ContentSetter, row, width int, line tui.Line) {
+	used := min(width, line.Width())
 	for used < width {
 		screen.SetContent(used, row, ' ', nil, line.Style)
 		used++
 	}
 }
 
-func writeLine(screen rendertext.ContentSetter, row, width int, text string, style tcell.Style) {
-	writeTextAt(screen, 0, row, width, text, style)
+func writeLine(screen tui.ContentSetter, row, width int, text string, style tcell.Style) {
+	tui.WriteCells(screen, 0, row, width, text, style)
 }
 
 func writeLineWithVerticalBorders(
-	screen rendertext.ContentSetter,
+	screen tui.ContentSetter,
 	row int,
 	width int,
 	text string,
 	style tcell.Style,
 	borderColor tcell.Color,
 ) {
-	writeLineWithStyleFunc(screen, row, width, text, style, func(segment rendertext.Segment, used int) tcell.Style {
+	writeLineWithStyleFunc(screen, row, width, text, style, func(segment tui.Segment, used int) tcell.Style {
 		if segment.Text == "│" && (used == 0 || used == width-1) {
 			return style.Foreground(borderColor)
 		}
 
 		return style
 	})
-}
-
-func writeTextAt(screen rendertext.ContentSetter, column, row, width int, text string, style tcell.Style) {
-	rendertext.WriteCells(screen, column, row, width, text, style)
 }
 
 type shimmerLineOptions struct {
@@ -61,7 +48,7 @@ type shimmerLineOptions struct {
 }
 
 func writeShimmerLineWithVerticalBorders(
-	screen rendertext.ContentSetter,
+	screen tui.ContentSetter,
 	row int,
 	width int,
 	text string,
@@ -76,7 +63,7 @@ func writeShimmerLineWithVerticalBorders(
 		width,
 		text,
 		style,
-		func(segment rendertext.Segment, used int) tcell.Style {
+		func(segment tui.Segment, used int) tcell.Style {
 			if segment.Text == "│" && (used == 0 || used == width-1) {
 				return style.Foreground(options.borderColor)
 			}
@@ -109,7 +96,7 @@ func workingSpinnerRange(text string) (start, width int) {
 		return 0, 0
 	}
 
-	return parts.spinnerStart, rendertext.Width(parts.spinner)
+	return parts.spinnerStart, tui.Width(parts.spinner)
 }
 
 func workingShimmerContentRange(text string) (start, width int) {
@@ -118,7 +105,7 @@ func workingShimmerContentRange(text string) (start, width int) {
 		return 0, 0
 	}
 
-	return parts.labelStart, rendertext.Width(parts.label)
+	return parts.labelStart, tui.Width(parts.label)
 }
 
 type workingIndicatorPartsResult struct {
@@ -153,13 +140,13 @@ func workingIndicatorParts(text string) workingIndicatorPartsResult {
 	}
 
 	beforeLabel := text[:len(text)-len(afterSpinner)]
-	labelPadding := rendertext.Width(afterSpinner) - rendertext.Width(strings.TrimLeft(afterSpinner, " "))
+	labelPadding := tui.Width(afterSpinner) - tui.Width(strings.TrimLeft(afterSpinner, " "))
 
 	return workingIndicatorPartsResult{
 		spinner:      spinner,
 		label:        label,
-		spinnerStart: rendertext.Width(text) - rendertext.Width(trimmedLeft),
-		labelStart:   rendertext.Width(beforeLabel) + labelPadding,
+		spinnerStart: tui.Width(text) - tui.Width(trimmedLeft),
+		labelStart:   tui.Width(beforeLabel) + labelPadding,
 	}
 }
 
@@ -182,24 +169,24 @@ func isWorkingSpinner(text string) bool {
 }
 
 func writeLineWithStyleFunc(
-	screen rendertext.ContentSetter,
+	screen tui.ContentSetter,
 	row int,
 	width int,
 	text string,
 	defaultStyle tcell.Style,
-	styleFor func(segment rendertext.Segment, used int) tcell.Style,
+	styleFor func(segment tui.Segment, used int) tcell.Style,
 ) {
 	if row < 0 || width <= 0 {
 		return
 	}
 
 	used := 0
-	for _, segment := range rendertext.Segments(text) {
+	for _, segment := range tui.Segments(text) {
 		if used+segment.Width > width {
 			break
 		}
 
-		used += rendertext.WriteSegment(screen, used, row, width-used, segment, styleFor(segment, used))
+		used += tui.WriteSegment(screen, used, row, width-used, segment, styleFor(segment, used))
 	}
 
 	for used < width {
@@ -209,10 +196,10 @@ func writeLineWithStyleFunc(
 }
 
 func writeEditorLine(
-	screen rendertext.ContentSetter,
+	screen tui.ContentSetter,
 	row int,
 	width int,
-	line rendertext.Line,
+	line tui.Line,
 	lineIndex int,
 	lineCount int,
 	borderStyle tcell.Style,
@@ -232,10 +219,10 @@ func writeEditorLine(
 }
 
 func writeEditorLineText(
-	screen rendertext.ContentSetter,
+	screen tui.ContentSetter,
 	row int,
 	width int,
-	line rendertext.Line,
+	line tui.Line,
 	borderStyle tcell.Style,
 ) int {
 	if len(line.Spans) == 0 {
@@ -246,19 +233,19 @@ func writeEditorLineText(
 }
 
 func writeEditorLinePlainText(
-	screen rendertext.ContentSetter,
+	screen tui.ContentSetter,
 	row int,
 	width int,
-	line rendertext.Line,
+	line tui.Line,
 	borderStyle tcell.Style,
 ) int {
 	used := 0
-	for _, segment := range rendertext.Segments(line.Text) {
+	for _, segment := range tui.Segments(line.Text) {
 		if used+segment.Width > width {
 			break
 		}
 
-		used += rendertext.WriteSegment(
+		used += tui.WriteSegment(
 			screen,
 			used,
 			row,
@@ -272,16 +259,16 @@ func writeEditorLinePlainText(
 }
 
 func writeEditorLineSpans(
-	screen rendertext.ContentSetter,
+	screen tui.ContentSetter,
 	row int,
 	width int,
-	line rendertext.Line,
+	line tui.Line,
 	borderStyle tcell.Style,
 ) int {
 	used := 0
 
 	for _, span := range line.Spans {
-		for _, segment := range rendertext.Segments(span.Text) {
+		for _, segment := range tui.Segments(span.Text) {
 			if used+segment.Width > width {
 				return used
 			}
@@ -291,7 +278,7 @@ func writeEditorLineSpans(
 				style = borderStyle
 			}
 
-			used += rendertext.WriteSegment(screen, used, row, width-used, segment, style)
+			used += tui.WriteSegment(screen, used, row, width-used, segment, style)
 		}
 	}
 
@@ -299,11 +286,11 @@ func writeEditorLineSpans(
 }
 
 func writeEditorLinePadding(
-	screen rendertext.ContentSetter,
+	screen tui.ContentSetter,
 	row int,
 	width int,
 	used int,
-	line rendertext.Line,
+	line tui.Line,
 	borderStyle tcell.Style,
 ) {
 	for used < width {
@@ -312,7 +299,7 @@ func writeEditorLinePadding(
 	}
 }
 
-func editorLineStyle(position, width int, line rendertext.Line, borderStyle tcell.Style) tcell.Style {
+func editorLineStyle(position, width int, line tui.Line, borderStyle tcell.Style) tcell.Style {
 	if position < terminalMarkerMargin || position >= max(0, width-terminalMarkerMargin) {
 		return borderStyle
 	}

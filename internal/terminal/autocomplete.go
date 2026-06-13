@@ -2,7 +2,7 @@ package terminal
 
 import (
 	"fmt"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 	"time"
 
@@ -47,7 +47,7 @@ func slashSuggestions() []slashSuggestion {
 	}
 }
 
-func (app *App) autocompleteLines(width int) []rendertext.Line {
+func (app *App) autocompleteLines(width int) []tui.Line {
 	matches := app.autocompleteMatches()
 	if len(matches) == 0 {
 		return nil
@@ -56,10 +56,10 @@ func (app *App) autocompleteLines(width int) []rendertext.Line {
 	selected := app.selectedAutocompleteIndex(matches)
 	limit := min(maxAutocompleteMatches, len(matches))
 	start := autocompleteWindowStart(selected, limit, len(matches))
-	lines := make([]rendertext.Line, 0, limit+1)
-	lines = append(lines, rendertext.NewLine(
+	lines := make([]tui.Line, 0, limit+1)
+	lines = append(lines, tui.NewLine(
 		app.theme.background(colorCustomMessageBg).Bold(true),
-		rendertext.PadRight("  slash commands  tab/enter to complete", width),
+		tui.PadRight("  slash commands  tab/enter to complete", width),
 	))
 
 	for offset := range limit {
@@ -74,7 +74,7 @@ func (app *App) autocompleteLines(width int) []rendertext.Line {
 		}
 
 		text := fmt.Sprintf("%s/%-15s %s", prefix, match.Name, match.Description)
-		lines = append(lines, rendertext.NewLine(style, rendertext.PadRight(text, width)))
+		lines = append(lines, tui.NewLine(style, tui.PadRight(text, width)))
 	}
 
 	return lines

@@ -160,8 +160,8 @@ func (grid *Grid) cellRect(rect Rect, cell GridCell, cellWidth, cellHeight int) 
 	return Rect{
 		X:      rect.X + cell.Column*cellWidth,
 		Y:      rect.Y + cell.Row*cellHeight,
-		Width:  min(rect.Width-cell.Column*cellWidth, cellWidth*colSpan),
-		Height: min(rect.Height-cell.Row*cellHeight, cellHeight*rowSpan),
+		Width:  max(0, min(rect.Width-cell.Column*cellWidth, cellWidth*colSpan)),
+		Height: max(0, min(rect.Height-cell.Row*cellHeight, cellHeight*rowSpan)),
 	}
 }
 

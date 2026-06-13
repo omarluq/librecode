@@ -1,6 +1,6 @@
 package terminal
 
-import "github.com/omarluq/librecode/internal/terminal/rendertext"
+import "github.com/omarluq/librecode/internal/tui"
 
 const messageCacheWarmBatchSize = 16
 
@@ -65,7 +65,7 @@ func (cache *messageLineCache) truncate(length int) {
 	cache.queued = false
 }
 
-func (cache *messageLineCache) lines(app *App, width, index int) []rendertext.Line {
+func (cache *messageLineCache) lines(app *App, width, index int) []tui.Line {
 	cache.ensure(app, width, len(app.transcript.History))
 
 	if index < len(cache.items) && cache.items[index].Valid {

@@ -17,10 +17,9 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/terminal/extui"
-	"github.com/omarluq/librecode/internal/terminal/input"
 	"github.com/omarluq/librecode/internal/terminal/panel"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
@@ -76,7 +75,7 @@ type messageLineCacheState struct {
 }
 
 type cachedRenderedMessage struct {
-	Lines []rendertext.Line
+	Lines []tui.Line
 	Valid bool
 }
 
@@ -113,8 +112,8 @@ type App struct {
 	workStartedAt         time.Time
 	screen                terminalScreen
 	extensions            extension.TerminalEventRunner
-	renderer              *rendertext.Renderer
-	frame                 *rendertext.Buffer
+	renderer              *tui.Renderer
+	frame                 *tui.CellBuffer
 	lastResize            *tcell.EventResize
 	runtime               *assistant.Runtime
 	settings              *database.DocumentRepository
@@ -143,7 +142,7 @@ type App struct {
 	queuedMessages        []string
 	promptHistory         []string
 	scopedOrder           []string
-	composerBuffer        input.Buffer
+	composerBuffer        tui.TextArea
 	tokenUsage            model.TokenUsage
 	selection             mouseSelection
 	promptSequence        uint64
@@ -201,7 +200,7 @@ func Run(ctx context.Context, options *RunOptions) error {
 }
 
 type terminalScreen interface {
-	rendertext.ContentSetter
+	tui.ContentSetter
 	EventQ() chan tcell.Event
 	HideCursor()
 	Show()
@@ -219,7 +218,7 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 	resources := initialResourceSnapshot(options)
 	app := &App{
 		screen:           screen,
-		renderer:         rendertext.NewRenderer(screen),
+		renderer:         tui.NewRenderer(screen),
 		frame:            nil,
 		lastResize:       nil,
 		runtime:          options.Runtime,
@@ -254,7 +253,7 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 		promptHistoryDraft:    "",
 		autocompleteSelection: 0,
 		autocompleteClosed:    false,
-		composerBuffer:        input.NewBuffer(),
+		composerBuffer:        tui.NewTextArea(),
 		scopedOrder:           []string{},
 		scopedEnabled:         map[string]bool{},
 		sessionSortRecent:     true,

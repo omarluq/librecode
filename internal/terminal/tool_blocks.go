@@ -7,7 +7,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
@@ -27,7 +27,7 @@ type parsedToolEvent struct {
 	Output        string
 }
 
-func (app *App) renderToolBlock(width int, message chatMessage) []rendertext.Line {
+func (app *App) renderToolBlock(width int, message chatMessage) []tui.Line {
 	event := parseToolEventContent(message.Content, string(message.Role))
 
 	style := app.toolBlockStyle(&event)
@@ -46,43 +46,43 @@ func (app *App) toolBlockStyle(event *parsedToolEvent) tcell.Style {
 	return app.theme.background(colorToolSuccessBg)
 }
 
-func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []rendertext.Line {
+func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
 	label := fmt.Sprintf("%s  %s expand", toolTitle(event), app.keys.hint(actionToolsExpand))
-	lines := []rendertext.Line{
-		rendertext.NewLine(tcell.StyleDefault, ""),
-		rendertext.NewLine(style.Bold(true), rendertext.PadRight(label, width)),
+	lines := []tui.Line{
+		tui.NewLine(tcell.StyleDefault, ""),
+		tui.NewLine(style.Bold(true), tui.PadRight(label, width)),
 	}
 
 	preview, hiddenLines := tailIndentedLines(width, toolEventOutput(event), style, maxCollapsedToolOutputLines)
 	if hiddenLines > 0 {
-		lines = append(lines, rendertext.NewLine(
+		lines = append(lines, tui.NewLine(
 			style.Foreground(app.theme.colors[colorMuted]),
-			rendertext.PadRight(app.hiddenToolLinesText(hiddenLines), width),
+			tui.PadRight(app.hiddenToolLinesText(hiddenLines), width),
 		))
 	}
 
 	lines = append(lines, preview...)
-	lines = append(lines, rendertext.NewLine(tcell.StyleDefault, ""))
+	lines = append(lines, tui.NewLine(tcell.StyleDefault, ""))
 
 	return lines
 }
 
-func (app *App) renderExpandedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []rendertext.Line {
-	lines := make([]rendertext.Line, 0, initialToolBlockLines)
+func (app *App) renderExpandedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
+	lines := make([]tui.Line, 0, initialToolBlockLines)
 	label := fmt.Sprintf("%s  %s collapse", toolTitle(event), app.keys.hint(actionToolsExpand))
 	lines = append(lines,
-		rendertext.NewLine(tcell.StyleDefault, ""),
-		rendertext.NewLine(style.Bold(true), rendertext.PadRight(label, width)),
+		tui.NewLine(tcell.StyleDefault, ""),
+		tui.NewLine(style.Bold(true), tui.PadRight(label, width)),
 	)
 	lines = append(lines, app.toolArgumentLines(width, event, style)...)
 	lines = append(lines, app.toolDiffLines(width, event, style)...)
 	lines = append(lines, app.toolOutputLines(width, event, style)...)
-	lines = append(lines, rendertext.NewLine(tcell.StyleDefault, ""))
+	lines = append(lines, tui.NewLine(tcell.StyleDefault, ""))
 
 	return lines
 }
 
-func (app *App) toolArgumentLines(width int, event *parsedToolEvent, style tcell.Style) []rendertext.Line {
+func (app *App) toolArgumentLines(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
 	arguments := compactJSON(event.ArgumentsJSON)
 	if arguments == "" {
 		return nil
@@ -91,7 +91,7 @@ func (app *App) toolArgumentLines(width int, event *parsedToolEvent, style tcell
 	return plainSectionLines(width, "args", arguments, style)
 }
 
-func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Style) []rendertext.Line {
+func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
 	diff := diffFromToolDetails(event.DetailsJSON)
 	if diff == "" {
 		return nil
@@ -99,19 +99,19 @@ func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Sty
 
 	innerWidth := max(1, width-toolBlockBorderWidth)
 	baseStyle := app.theme.background(colorCodeBg).Foreground(app.theme.colors[colorCodeText])
-	content := diffStyledLines(diff, app.theme, baseStyle)
-	lines := []rendertext.Line{rendertext.NewLine(style.Bold(true), rendertext.PadRight("diff:", width))}
+	content := tui.DiffStyledLines(diff, codeTheme(app.theme), baseStyle)
+	lines := []tui.Line{tui.NewLine(style.Bold(true), tui.PadRight("diff:", width))}
 
 	for _, line := range content {
-		for _, wrapped := range rendertext.WrapPreserveWhitespace(line.Text, innerWidth) {
-			lines = append(lines, rendertext.NewLine(line.Style, rendertext.PadRight("  "+wrapped, width)))
+		for _, wrapped := range tui.WrapPreserveWhitespace(line.Text, innerWidth) {
+			lines = append(lines, tui.NewLine(line.Style, tui.PadRight("  "+wrapped, width)))
 		}
 	}
 
 	return lines
 }
 
-func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.Style) []rendertext.Line {
+func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
 	output := toolEventOutput(event)
 	if output == "" {
 		return nil
@@ -120,32 +120,32 @@ func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.S
 	return plainSectionLines(width, "output", output, style)
 }
 
-func plainSectionLines(width int, label, content string, style tcell.Style) []rendertext.Line {
+func plainSectionLines(width int, label, content string, style tcell.Style) []tui.Line {
 	contentLines := indentedLines(width, content, style)
-	lines := make([]rendertext.Line, 0, len(contentLines)+1)
-	lines = append(lines, rendertext.NewLine(style.Bold(true), rendertext.PadRight(label+":", width)))
+	lines := make([]tui.Line, 0, len(contentLines)+1)
+	lines = append(lines, tui.NewLine(style.Bold(true), tui.PadRight(label+":", width)))
 
 	return append(lines, contentLines...)
 }
 
-func indentedLines(width int, content string, style tcell.Style) []rendertext.Line {
+func indentedLines(width int, content string, style tcell.Style) []tui.Line {
 	if strings.TrimSpace(content) == "" {
 		return nil
 	}
 
 	innerWidth := max(1, width-toolBlockBorderWidth)
-	lines := []rendertext.Line{}
+	lines := []tui.Line{}
 
 	for line := range strings.SplitSeq(content, "\n") {
-		for _, wrapped := range rendertext.WrapPreserveWhitespace(line, innerWidth) {
-			lines = append(lines, rendertext.NewLine(style, rendertext.PadRight("  "+wrapped, width)))
+		for _, wrapped := range tui.WrapPreserveWhitespace(line, innerWidth) {
+			lines = append(lines, tui.NewLine(style, tui.PadRight("  "+wrapped, width)))
 		}
 	}
 
 	return lines
 }
 
-func tailIndentedLines(width int, content string, style tcell.Style, limit int) (tail []rendertext.Line, hidden int) {
+func tailIndentedLines(width int, content string, style tcell.Style, limit int) (tail []tui.Line, hidden int) {
 	lines := indentedLines(width, content, style)
 	if limit <= 0 || len(lines) <= limit {
 		return lines, 0
@@ -156,18 +156,18 @@ func tailIndentedLines(width int, content string, style tcell.Style, limit int) 
 	return lines[hiddenLines:], hiddenLines
 }
 
-func (app *App) renderToolMessageTail(width int, message chatMessage, rowsNeeded int) ([]rendertext.Line, bool) {
+func (app *App) renderToolMessageTail(width int, message chatMessage, rowsNeeded int) ([]tui.Line, bool) {
 	if rowsNeeded <= 0 {
 		return nil, true
 	}
 
 	event := parseToolEventContent(message.Content, string(message.Role))
 	style := app.toolBlockStyle(&event)
-	footer := rendertext.NewLine(tcell.StyleDefault, "")
+	footer := tui.NewLine(tcell.StyleDefault, "")
 
 	tailBudget := max(0, rowsNeeded-1)
 	if tailBudget == 0 {
-		return []rendertext.Line{footer}, false
+		return []tui.Line{footer}, false
 	}
 
 	tail, hidden := tailExpandedToolLines(width, &event, style, tailBudget)
@@ -176,7 +176,7 @@ func (app *App) renderToolMessageTail(width int, message chatMessage, rowsNeeded
 	}
 
 	prefix := app.expandedToolPrefixLines(width, &event, style)
-	lines := make([]rendertext.Line, 0, len(prefix)+len(tail)+1)
+	lines := make([]tui.Line, 0, len(prefix)+len(tail)+1)
 	lines = append(lines, prefix...)
 	lines = append(lines, tail...)
 
@@ -188,12 +188,12 @@ func (app *App) renderToolMessageTail(width int, message chatMessage, rowsNeeded
 	return lines[len(lines)-rowsNeeded:], false
 }
 
-func (app *App) expandedToolPrefixLines(width int, event *parsedToolEvent, style tcell.Style) []rendertext.Line {
+func (app *App) expandedToolPrefixLines(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
 	label := fmt.Sprintf("%s  %s collapse", toolTitle(event), app.keys.hint(actionToolsExpand))
-	lines := make([]rendertext.Line, 0, toolHeaderLines)
+	lines := make([]tui.Line, 0, toolHeaderLines)
 	lines = append(lines,
-		rendertext.NewLine(tcell.StyleDefault, ""),
-		rendertext.NewLine(style.Bold(true), rendertext.PadRight(label, width)),
+		tui.NewLine(tcell.StyleDefault, ""),
+		tui.NewLine(style.Bold(true), tui.PadRight(label, width)),
 	)
 	lines = append(lines, app.toolArgumentLines(width, event, style)...)
 	lines = append(lines, app.toolDiffLines(width, event, style)...)
@@ -206,7 +206,7 @@ func tailExpandedToolLines(
 	event *parsedToolEvent,
 	style tcell.Style,
 	rowsNeeded int,
-) ([]rendertext.Line, bool) {
+) ([]tui.Line, bool) {
 	if event.Output != "" {
 		return tailSectionLinesFromEnd(width, "output", event.Output, style, rowsNeeded)
 	}
@@ -232,31 +232,31 @@ func tailSectionLinesFromEnd(
 	content string,
 	style tcell.Style,
 	rowsNeeded int,
-) ([]rendertext.Line, bool) {
+) ([]tui.Line, bool) {
 	if rowsNeeded <= 0 || strings.TrimSpace(content) == "" {
 		return nil, false
 	}
 
 	if rowsNeeded == 1 {
-		return []rendertext.Line{rendertext.NewLine(style.Bold(true), rendertext.PadRight(label+":", width))}, true
+		return []tui.Line{tui.NewLine(style.Bold(true), tui.PadRight(label+":", width))}, true
 	}
 
 	tail, hidden := tailIndentedLinesFromEnd(width, content, style, rowsNeeded-1)
-	lines := make([]rendertext.Line, 0, len(tail)+1)
-	lines = append(lines, rendertext.NewLine(style.Bold(true), rendertext.PadRight(label+":", width)))
+	lines := make([]tui.Line, 0, len(tail)+1)
+	lines = append(lines, tui.NewLine(style.Bold(true), tui.PadRight(label+":", width)))
 	lines = append(lines, tail...)
 
 	return lines, hidden
 }
 
-func tailIndentedLinesFromEnd(width int, content string, style tcell.Style, limit int) ([]rendertext.Line, bool) {
+func tailIndentedLinesFromEnd(width int, content string, style tcell.Style, limit int) ([]tui.Line, bool) {
 	if limit <= 0 || strings.TrimSpace(content) == "" {
 		return nil, false
 	}
 
 	collector := tailLineCollector{
 		Style:  style,
-		Lines:  make([]rendertext.Line, 0, limit),
+		Lines:  make([]tui.Line, 0, limit),
 		Width:  width,
 		Limit:  limit,
 		Hidden: false,
@@ -269,7 +269,7 @@ func tailIndentedLinesFromEnd(width int, content string, style tcell.Style, limi
 
 type tailLineCollector struct {
 	Style  tcell.Style
-	Lines  []rendertext.Line
+	Lines  []tui.Line
 	Width  int
 	Limit  int
 	Hidden bool
@@ -291,13 +291,13 @@ func (collector *tailLineCollector) Collect(content string) {
 }
 
 func (collector *tailLineCollector) collectWrappedLine(line string) {
-	wrapped := rendertext.WrapPreserveWhitespace(line, max(1, collector.Width-toolBlockBorderWidth))
+	wrapped := tui.WrapPreserveWhitespace(line, max(1, collector.Width-toolBlockBorderWidth))
 	added := 0
 
 	for index := len(wrapped) - 1; index >= 0 && len(collector.Lines) < collector.Limit; index-- {
-		collector.Lines = append(collector.Lines, rendertext.NewLine(
+		collector.Lines = append(collector.Lines, tui.NewLine(
 			collector.Style,
-			rendertext.PadRight("  "+wrapped[index], collector.Width),
+			tui.PadRight("  "+wrapped[index], collector.Width),
 		))
 		added++
 	}
@@ -307,7 +307,7 @@ func (collector *tailLineCollector) collectWrappedLine(line string) {
 	}
 }
 
-func reverseStyledLines(lines []rendertext.Line) {
+func reverseStyledLines(lines []tui.Line) {
 	for left, right := 0, len(lines)-1; left < right; left, right = left+1, right-1 {
 		lines[left], lines[right] = lines[right], lines[left]
 	}
@@ -319,7 +319,7 @@ func (app *App) hiddenToolLinesText(hiddenLines int) string {
 		unit = "line"
 	}
 
-	return "  … " + rendertext.Int(hiddenLines) + " earlier output " + unit + " hidden; " +
+	return "  … " + tui.Int(hiddenLines) + " earlier output " + unit + " hidden; " +
 		app.keys.hint(actionToolsExpand) + " expand"
 }
 

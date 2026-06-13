@@ -45,25 +45,25 @@ func RoundedBorder() Border {
 	}
 }
 
-// TopBorder returns a rounded top border with an optional title.
+// TopBorder returns a rounded top border with an optional right-aligned label.
 func TopBorder(width int, title string) string {
 	border := RoundedBorder()
 
-	return borderLineWithBorder(width, title, border.TopLeft, border.TopRight, &border)
+	return borderLineWithBorder(width, title, border.TopLeft, border.TopRight, &border, borderTitleRight)
 }
 
 // MiddleBorder returns a rounded separator border.
 func MiddleBorder(width int) string {
 	border := RoundedBorder()
 
-	return borderLineWithBorder(width, "", border.MiddleLeft, border.MiddleRight, &border)
+	return borderLineWithBorder(width, "", border.MiddleLeft, border.MiddleRight, &border, borderTitleLeft)
 }
 
 // BottomBorder returns a rounded bottom border.
 func BottomBorder(width int) string {
 	border := RoundedBorder()
 
-	return borderLineWithBorder(width, "", border.BottomLeft, border.BottomRight, &border)
+	return borderLineWithBorder(width, "", border.BottomLeft, border.BottomRight, &border, borderTitleLeft)
 }
 
 // Box draws a border and optional title around a rectangle.
@@ -99,7 +99,7 @@ func (box *Box) drawTop(screen ContentSetter, rect Rect, border *Border) {
 		return
 	}
 
-	line := borderLineWithBorder(rect.Width, box.Title, border.TopLeft, border.TopRight, border)
+	line := borderLineWithBorder(rect.Width, box.Title, border.TopLeft, border.TopRight, border, borderTitleLeft)
 	DrawText(screen, Rect{X: rect.X, Y: rect.Y, Width: rect.Width, Height: 1}, box.Style, line)
 }
 
@@ -118,7 +118,7 @@ func (box *Box) drawBottom(screen ContentSetter, rect Rect, border *Border) {
 		return
 	}
 
-	line := borderLineWithBorder(rect.Width, "", border.BottomLeft, border.BottomRight, border)
+	line := borderLineWithBorder(rect.Width, "", border.BottomLeft, border.BottomRight, border, borderTitleLeft)
 	bottomRect := Rect{X: rect.X, Y: rect.Y + rect.Height - 1, Width: rect.Width, Height: 1}
 	DrawText(screen, bottomRect, box.Style, line)
 }
@@ -132,23 +132,64 @@ func (border *Border) complete() bool {
 		border.BottomRight != ""
 }
 
-func borderLineWithBorder(width int, title, left, right string, border *Border) string {
+type borderTitleAlign int
+
+const (
+	borderTitleLeft borderTitleAlign = iota
+	borderTitleRight
+)
+
+func borderLineWithBorder(
+	width int,
+	title string,
+	left string,
+	right string,
+	border *Border,
+	align borderTitleAlign,
+) string {
 	if width <= 0 {
 		return ""
 	}
 
-	if width == 1 {
-		return left
+	leftWidth := Width(left)
+	rightWidth := Width(right)
+
+	if width <= leftWidth {
+		return Truncate(left, width)
 	}
 
-	innerWidth := width - len(left) - len(right)
+	if width <= leftWidth+rightWidth {
+		return Truncate(left+right, width)
+	}
 
+	innerWidth := max(0, width-leftWidth-rightWidth)
 	inner := strings.Repeat(border.Horizontal, innerWidth)
-	if title != "" && innerWidth > 0 {
-		label := " " + title + " "
-		label = Truncate(label, innerWidth)
-		inner = label + strings.Repeat(border.Horizontal, max(0, innerWidth-Width(label)))
+
+	if title == "" {
+		return left + inner + right
+	}
+
+	label := borderTitleLabel(title, innerWidth, align)
+
+	fillWidth := max(0, innerWidth-Width(label))
+	if align == borderTitleRight {
+		inner = strings.Repeat(border.Horizontal, fillWidth) + label
+	} else {
+		inner = label + strings.Repeat(border.Horizontal, fillWidth)
 	}
 
 	return left + inner + right
+}
+
+func borderTitleLabel(title string, width int, align borderTitleAlign) string {
+	title = strings.TrimSpace(strings.ReplaceAll(title, "\n", " "))
+	if title == "" {
+		return ""
+	}
+
+	if align == borderTitleRight {
+		return Truncate(title+"──", width)
+	}
+
+	return Truncate(" "+title+" ", width)
 }

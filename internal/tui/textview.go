@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/gdamore/tcell/v3"
+import (
+	"strings"
+
+	"github.com/gdamore/tcell/v3"
+)
 
 // TextView displays wrapped plain or styled text.
 type TextView struct {
@@ -52,33 +56,48 @@ func (view *TextView) Draw(screen ContentSetter, rect Rect) {
 
 func (view *TextView) renderAll(width int) []Line {
 	if len(view.Lines) > 0 {
-		if !view.Wrap {
-			return append([]Line{}, view.Lines...)
-		}
-
-		lines := []Line{}
-		for _, line := range view.Lines {
-			lines = append(lines, line.Wrap(width)...)
-		}
-
-		return lines
+		return view.renderRichLines(width)
 	}
 
-	wrapped := []Line{}
+	return PlainTextLines(view.Text, view.Style, width, view.Wrap)
+}
 
-	if view.Wrap {
-		for _, line := range Wrap(view.Text, width) {
-			wrapped = append(wrapped, NewLine(view.Style, line))
-		}
-
-		return wrapped
+func (view *TextView) renderRichLines(width int) []Line {
+	if !view.Wrap {
+		return append([]Line{}, view.Lines...)
 	}
 
-	for _, line := range WrapPreserveWhitespace(view.Text, max(1, width)) {
-		wrapped = append(wrapped, NewLine(view.Style, line))
+	lines := make([]Line, 0, len(view.Lines))
+	for _, line := range view.Lines {
+		lines = append(lines, line.Wrap(width)...)
 	}
 
-	return wrapped
+	return lines
+}
+
+// PlainTextLines renders plain text as styled lines.
+func PlainTextLines(text string, style tcell.Style, width int, wrap bool) []Line {
+	lines := make([]Line, 0, strings.Count(text, "\n")+1)
+	for part := range strings.SplitSeq(text, "\n") {
+		lines = append(lines, plainTextPartLines(part, style, width, wrap)...)
+	}
+
+	return lines
+}
+
+func plainTextPartLines(text string, style tcell.Style, width int, wrap bool) []Line {
+	if !wrap {
+		return []Line{NewLine(style, Fit(text, width))}
+	}
+
+	wrapped := Wrap(text, width)
+
+	lines := make([]Line, 0, len(wrapped))
+	for _, line := range wrapped {
+		lines = append(lines, NewLine(style, line))
+	}
+
+	return lines
 }
 
 // RichText is a collection of styled lines.
