@@ -40,13 +40,14 @@ func (line Line) Truncate(width int) Line {
 	if len(line.Spans) == 0 {
 		return NewLine(line.Style, Truncate(line.Text, width))
 	}
-	if width == 1 {
-		return lineFromStyledSegments([]styledSegment{{Text: "…", Width: 1, Style: line.Style}}, line.Style)
+	ellipsisWidth := Width("…")
+	if width == ellipsisWidth {
+		return lineFromStyledSegments([]styledSegment{{Text: "…", Width: ellipsisWidth, Style: line.Style}}, line.Style)
 	}
 
 	segments := line.styledSegments()
-	prefix := styledPrefix(segments, width-1)
-	prefix = append(prefix, styledSegment{Text: "…", Width: 1, Style: lastSegmentStyle(prefix, line.Style)})
+	prefix := styledPrefix(segments, width-ellipsisWidth)
+	prefix = append(prefix, styledSegment{Text: "…", Width: ellipsisWidth, Style: lastSegmentStyle(prefix, line.Style)})
 
 	return lineFromStyledSegments(prefix, line.Style)
 }
@@ -185,7 +186,7 @@ func trimLeadingSpaceSegments(segments []styledSegment) []styledSegment {
 }
 
 func trimTrailingSpaceSegments(segments []styledSegment) []styledSegment {
-	for len(segments) > 0 && segments[len(segments)-1].Text == " " {
+	for len(segments) > 0 && (segments[len(segments)-1].Text == " " || segments[len(segments)-1].Text == "	") {
 		segments = segments[:len(segments)-1]
 	}
 

@@ -1,8 +1,6 @@
 package rendertext
 
-import "strconv"
+import "github.com/omarluq/librecode/tui"
 
 // Int formats an integer for terminal display.
-func Int(value int) string {
-	return strconv.Itoa(value)
-}
+func Int(value int) string { return tui.Int(value) }

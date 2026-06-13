@@ -43,36 +43,17 @@ var RoundedBorder = Border{
 
 // TopBorder returns a rounded top border with an optional title.
 func TopBorder(width int, title string) string {
-	return borderLine(width, title, RoundedBorder.TopLeft, RoundedBorder.TopRight)
+	return borderLineWithBorder(width, title, RoundedBorder.TopLeft, RoundedBorder.TopRight, RoundedBorder)
 }
 
 // MiddleBorder returns a rounded separator border.
 func MiddleBorder(width int) string {
-	return borderLine(width, "", RoundedBorder.MiddleLeft, RoundedBorder.MiddleRight)
+	return borderLineWithBorder(width, "", RoundedBorder.MiddleLeft, RoundedBorder.MiddleRight, RoundedBorder)
 }
 
 // BottomBorder returns a rounded bottom border.
 func BottomBorder(width int) string {
-	return borderLine(width, "", RoundedBorder.BottomLeft, RoundedBorder.BottomRight)
-}
-
-func borderLine(width int, title, left, right string) string {
-	if width <= 0 {
-		return ""
-	}
-	if width == 1 {
-		return left
-	}
-
-	innerWidth := width - 2
-	inner := strings.Repeat(RoundedBorder.Horizontal, innerWidth)
-	if title != "" && innerWidth > 0 {
-		label := " " + title + " "
-		label = Truncate(label, innerWidth)
-		inner = label + strings.Repeat(RoundedBorder.Horizontal, max(0, innerWidth-Width(label)))
-	}
-
-	return left + inner + right
+	return borderLineWithBorder(width, "", RoundedBorder.BottomLeft, RoundedBorder.BottomRight, RoundedBorder)
 }
 
 // Box draws a border and optional title around a rectangle.
@@ -94,7 +75,7 @@ func (box *Box) Draw(screen Screen, rect Rect) {
 	}
 
 	border := box.Border
-	if border.Horizontal == "" {
+	if !border.complete() {
 		border = RoundedBorder
 	}
 
@@ -108,6 +89,15 @@ func (box *Box) Draw(screen Screen, rect Rect) {
 	if rect.Height >= 2 {
 		DrawText(screen, Rect{X: rect.X, Y: rect.Y + rect.Height - 1, Width: rect.Width, Height: 1}, box.Style, borderLineWithBorder(rect.Width, "", border.BottomLeft, border.BottomRight, border))
 	}
+}
+
+func (border Border) complete() bool {
+	return border.Horizontal != "" &&
+		border.Vertical != "" &&
+		border.TopLeft != "" &&
+		border.TopRight != "" &&
+		border.BottomLeft != "" &&
+		border.BottomRight != ""
 }
 
 func borderLineWithBorder(width int, title, left, right string, border Border) string {

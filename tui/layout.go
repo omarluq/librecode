@@ -62,11 +62,20 @@ func (flex *Flex) rects(rect Rect) []Rect {
 
 	remaining := max(0, available-fixed)
 	cursor := 0
+	assignedFlexible := 0
+	flexibleSeen := 0
+	flexibleCount := flex.flexibleItemCount()
 	rects := make([]Rect, 0, len(flex.Items))
 	for _, item := range flex.Items {
 		size := max(0, item.Fixed)
 		if item.Fixed <= 0 {
-			size = remaining * max(1, item.Weight) / max(1, weight)
+			flexibleSeen++
+			if flexibleSeen == flexibleCount {
+				size = remaining - assignedFlexible
+			} else {
+				size = remaining * max(1, item.Weight) / max(1, weight)
+				assignedFlexible += size
+			}
 		}
 
 		childRect := rect
@@ -82,6 +91,17 @@ func (flex *Flex) rects(rect Rect) []Rect {
 	}
 
 	return rects
+}
+
+func (flex *Flex) flexibleItemCount() int {
+	count := 0
+	for _, item := range flex.Items {
+		if item.Fixed <= 0 {
+			count++
+		}
+	}
+
+	return count
 }
 
 // GridCell places a component in a grid.
@@ -109,7 +129,7 @@ func (grid *Grid) Draw(screen Screen, rect Rect) {
 	cellWidth := max(1, rect.Width/grid.Columns)
 	cellHeight := max(1, rect.Height/grid.Rows)
 	for _, cell := range grid.Cells {
-		if cell.Component == nil {
+		if cell.Component == nil || cell.Row < 0 || cell.Row >= grid.Rows || cell.Column < 0 || cell.Column >= grid.Columns {
 			continue
 		}
 		rowSpan := max(1, cell.RowSpan)
