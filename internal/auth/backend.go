@@ -32,24 +32,29 @@ func (backend *FileBackend) WithLock(ctx context.Context, callback func(current 
 	defer backend.lock.Unlock()
 
 	if err := ctx.Err(); err != nil {
-		return err
+		return authError(err, "check auth lock context")
 	}
+
 	if err := ensureAuthFile(backend.path); err != nil {
 		return err
 	}
+
 	current, err := readAuthFile(backend.path)
 	if err != nil {
-		return err
+		return authError(err, "check memory auth lock context")
 	}
+
 	result, err := callback(current)
 	if err != nil {
 		return err
 	}
+
 	if !result.Write {
-		return ctx.Err()
+		return authError(ctx.Err(), "check auth lock context")
 	}
+
 	if err := ctx.Err(); err != nil {
-		return err
+		return authError(err, "stat auth file")
 	}
 
 	return writeAuthFile(backend.path, result.Next)
@@ -65,7 +70,7 @@ type MemoryBackend struct {
 func NewMemoryBackend(credentials map[string]Credential) (*MemoryBackend, error) {
 	value, err := json.MarshalIndent(credentials, "", "  ")
 	if err != nil {
-		return nil, err
+		return nil, authError(err, "encode memory auth")
 	}
 
 	return &MemoryBackend{value: value, lock: sync.Mutex{}}, nil
@@ -77,28 +82,31 @@ func (backend *MemoryBackend) WithLock(ctx context.Context, callback func(curren
 	defer backend.lock.Unlock()
 
 	if err := ctx.Err(); err != nil {
-		return err
+		return authError(err, "check memory auth lock context")
 	}
+
 	result, err := callback(append([]byte{}, backend.value...))
 	if err != nil {
 		return err
 	}
+
 	if result.Write {
 		backend.value = append([]byte{}, result.Next...)
 	}
 
-	return ctx.Err()
+	return authError(ctx.Err(), "check memory auth lock context")
 }
 
 func ensureAuthFile(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, authDirMode); err != nil {
-		return err
+		return authError(err, "create auth directory")
 	}
+
 	if _, err := os.Stat(path); err == nil {
-		return os.Chmod(path, authFileMode)
+		return authError(os.Chmod(path, authFileMode), "chmod auth file")
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
+		return authError(err, "stat auth file")
 	}
 
 	return writeAuthFile(path, []byte("{}"))
@@ -107,28 +115,36 @@ func ensureAuthFile(path string) error {
 func readAuthFile(path string) ([]byte, error) {
 	cleanPath := filepath.Clean(path)
 
-	return fs.ReadFile(os.DirFS(filepath.Dir(cleanPath)), filepath.Base(cleanPath))
+	content, err := fs.ReadFile(os.DirFS(filepath.Dir(cleanPath)), filepath.Base(cleanPath))
+
+	return content, authError(err, "read auth file")
 }
 
 func writeAuthFile(path string, content []byte) error {
 	cleanPath := filepath.Clean(path)
 	dir := filepath.Dir(cleanPath)
+
 	file, err := os.CreateTemp(dir, ".auth-*.json")
 	if err != nil {
-		return err
+		return authError(err, "create temporary auth file")
 	}
+
 	tempPath := file.Name()
+
 	writeErr := writeAndClose(file, content)
 	if writeErr != nil {
 		removeErr := os.Remove(tempPath)
+
 		return errors.Join(writeErr, removeErr)
 	}
+
 	if err := os.Rename(tempPath, cleanPath); err != nil {
 		removeErr := os.Remove(tempPath)
+
 		return errors.Join(err, removeErr)
 	}
 
-	return os.Chmod(cleanPath, authFileMode)
+	return authError(os.Chmod(cleanPath, authFileMode), "chmod auth file")
 }
 
 func writeAndClose(file *os.File, content []byte) error {

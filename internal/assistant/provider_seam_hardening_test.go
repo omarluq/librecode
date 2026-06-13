@@ -86,6 +86,7 @@ func TestRuntime_ProviderErrorDiagnosticsIncludeRetryAndErrorMetadata(t *testing
 
 	require.Error(t, err)
 	require.Len(t, *errorDiagnostics, 3)
+
 	for _, diagnostic := range *errorDiagnostics {
 		assert.Equal(t, "test-provider", diagnostic["provider"])
 		assert.Equal(t, "test-model", diagnostic["model"])
@@ -119,6 +120,7 @@ end)
 
 	require.Error(t, err)
 	require.Len(t, *errorDiagnostics, 1)
+
 	for _, diagnostic := range *errorDiagnostics {
 		assert.Equal(t, 1, diagnostic["hook_count"])
 		hookErrors, ok := diagnostic["hook_errors"].([]string)

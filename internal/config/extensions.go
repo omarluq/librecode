@@ -13,6 +13,7 @@ const defaultLocalExtensionSource = "path:.librecode/extensions"
 
 func unmarshalConfig(viperInstance *viper.Viper, cfg *Config) error {
 	settings := viperInstance.AllSettings()
+
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			mapstructure.StringToTimeDurationHookFunc(),
@@ -24,6 +25,7 @@ func unmarshalConfig(viperInstance *viper.Viper, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("config: create decoder: %w", err)
 	}
+
 	if err := decoder.Decode(settings); err != nil {
 		return fmt.Errorf("config: unmarshal: %w", err)
 	}
@@ -46,6 +48,7 @@ func decodeExtensionUseHook(_, to reflect.Type, data any) (any, error) {
 		for key, mapValue := range value {
 			converted[fmt.Sprint(key)] = mapValue
 		}
+
 		return decodeExtensionUseMap(converted), nil
 	default:
 		return data, nil

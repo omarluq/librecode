@@ -22,14 +22,17 @@ func (app *App) currentRuntimeLayoutForSize(width, height int) extui.Layout {
 func (app *App) defaultRuntimeLayout(width, height int) extui.Layout {
 	statusLines := app.footerLines(width)
 	autocompleteLines := app.autocompleteLines(width)
-	maxComposerHeight := min(defaultEditorRows, max(3, height-len(statusLines)-len(autocompleteLines)-2))
-	maxComposerHeight = max(3, maxComposerHeight)
-	composerHeight := len(app.renderComposerEditor(width, max(1, maxComposerHeight-2)).Lines)
+	availableComposerRows := height - len(statusLines) - len(autocompleteLines) - composerBorderRows
+	maxComposerHeight := min(defaultEditorRows, max(minimumComposerHeight, availableComposerRows))
+	maxComposerHeight = max(minimumComposerHeight, maxComposerHeight)
+	composerHeight := len(app.renderComposerEditor(width, max(1, maxComposerHeight-composerBorderRows)).Lines)
+
 	reservedRows := len(statusLines) + len(autocompleteLines) + composerHeight
 	if reservedRows > height {
-		composerHeight = max(3, height-len(statusLines)-len(autocompleteLines))
+		composerHeight = max(minimumComposerHeight, height-len(statusLines)-len(autocompleteLines))
 		reservedRows = len(statusLines) + len(autocompleteLines) + composerHeight
 	}
+
 	transcriptHeight := max(0, height-reservedRows)
 	autocompleteStart := transcriptHeight
 	composerStart := autocompleteStart + len(autocompleteLines)
@@ -132,19 +135,23 @@ func (app *App) cloneRuntimeWindows(layout *extui.Layout) map[string]extension.W
 		layout.Composer.Name:     layout.Composer,
 		layout.Status.Name:       layout.Status,
 	}
+
 	if app.extensionUI.Layout != nil && len(app.extensionUI.Layout.Windows) > 0 {
 		for name := range app.extensionUI.Layout.Windows {
 			windows[name] = app.extensionUI.Layout.Windows[name]
 		}
 	}
+
 	for name := range app.extensionUI.Windows {
 		windows[name] = app.extensionUI.Windows[name]
 	}
+
 	for name := range windows {
 		window := windows[name]
 		if window.Name == "" {
 			window.Name = name
 		}
+
 		windows[name] = window
 	}
 

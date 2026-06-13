@@ -36,6 +36,7 @@ func TestRuntime_AutoCompactsOversizedRequestBeforeProviderCall(t *testing.T) {
 		database.RoleAssistant,
 		"tail",
 	)
+
 	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
 	request.SessionID = session.ID
 	events := []assistant.StreamEvent{}
@@ -58,15 +59,18 @@ func TestRuntime_AutoCompactsOversizedRequestBeforeProviderCall(t *testing.T) {
 				return true
 			}
 		}
+
 		return false
 	})
 
 	branch, err := harness.runtime.SessionRepository().Branch(ctx, session.ID, response.AssistantEntryID)
 	require.NoError(t, err)
+
 	roles := make([]database.EntryType, 0, len(branch))
 	for index := range branch {
 		roles = append(roles, branch[index].Type)
 	}
+
 	assert.Contains(t, roles, database.EntryTypeCompaction)
 }
 
@@ -97,7 +101,6 @@ func newAutoCompactionTestRuntime(
 
 	runtime := newTestRuntimeWithContextWindow(t, client, contextWindow)
 	runtimeConfig := testConfig()
-	runtimeConfig.Context.KeepRecentTokens = 1
 	runtimeConfig.Context.ProviderReserveTokens = 0
 	runtimeConfig.Context.SafetyMarginTokens = 0
 	// Reserve one token so post-response compaction tests keep a stable output headroom

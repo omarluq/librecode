@@ -31,6 +31,7 @@ func TestBuildContextTracksLatestProviderUsageAnchor(t *testing.T) {
 		"",
 	))
 	require.NoError(t, err)
+
 	modelFacing := true
 	assistantUsage := &database.EntryTokenUsageEntity{
 		ContextWindow: 1000,
@@ -69,6 +70,7 @@ func TestBuildContextClearsUsageAnchorAfterCompaction(t *testing.T) {
 		"",
 	))
 	require.NoError(t, err)
+
 	modelFacing := true
 	assistantEntry, err := repository.AppendMessageWithMetadata(ctx, session.ID, &userEntry.ID, newUsageTestMessage(
 		database.RoleAssistant,

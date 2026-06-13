@@ -14,12 +14,13 @@ func (manager *Manager) ExecuteCommand(ctx context.Context, name, args string) (
 	manager.lock.RLock()
 	command, ok := manager.commands[name]
 	manager.lock.RUnlock()
+
 	if !ok {
 		return "", fmt.Errorf("extension: command %q not found", name)
 	}
 
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return "", extensionError(err, "check extension context")
 	}
 
 	result, err := callLua(command.extension, command.function, lua.LString(args))
@@ -28,7 +29,7 @@ func (manager *Manager) ExecuteCommand(ctx context.Context, name, args string) (
 	}
 
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return "", extensionError(err, "check extension context")
 	}
 
 	return result.String(), nil
@@ -39,12 +40,13 @@ func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[s
 	manager.lock.RLock()
 	tool, ok := manager.tools[name]
 	manager.lock.RUnlock()
+
 	if !ok {
 		return ToolResult{Details: map[string]any{}, Content: ""}, fmt.Errorf("extension: tool %q not found", name)
 	}
 
 	if err := ctx.Err(); err != nil {
-		return ToolResult{Details: map[string]any{}, Content: ""}, err
+		return ToolResult{Details: map[string]any{}, Content: ""}, extensionError(err, "check extension context")
 	}
 
 	result, err := callLuaPrepared(tool.extension, nil, tool.function, func(state *lua.LState) []lua.LValue {
@@ -54,11 +56,12 @@ func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[s
 		return ToolResult{Details: map[string]any{}, Content: ""},
 			fmt.Errorf("extension: tool %q failed: %w", name, err)
 	}
+
 	if err := ctx.Err(); err != nil {
-		return ToolResult{Details: map[string]any{}, Content: ""}, err
+		return ToolResult{Details: map[string]any{}, Content: ""}, extensionError(err, "check extension context")
 	}
 
-	return luaToolResult(result), nil
+	return result.ToolResult(), nil
 }
 
 // HandleTerminalEvent runs registered low-level terminal runtime handlers.
@@ -67,10 +70,12 @@ func (manager *Manager) HandleTerminalEvent(ctx context.Context, event *Terminal
 	if err := manager.runDueTimers(ctx, hostEvent, time.Now()); err != nil {
 		return hostEvent.result(), err
 	}
+
 	if event.Name == luaFieldKey {
 		if err := manager.runKeymaps(ctx, hostEvent); err != nil {
 			return hostEvent.result(), err
 		}
+
 		if hostEvent.stopped {
 			return hostEvent.result(), nil
 		}
@@ -92,7 +97,9 @@ func (manager *Manager) HandleTerminalEvent(ctx context.Context, event *Terminal
 		if err != nil {
 			return hostEvent.result(), fmt.Errorf("extension: terminal event %q failed: %w", event.Name, err)
 		}
-		hostEvent.applyLuaResult(result)
+
+		result.ApplyTo(hostEvent)
+
 		if hostEvent.stopped {
 			break
 		}
@@ -105,7 +112,7 @@ func (manager *Manager) HandleTerminalEvent(ctx context.Context, event *Terminal
 func (manager *Manager) Emit(ctx context.Context, eventName string, payload map[string]any) error {
 	for _, handler := range manager.handlersFor(eventName) {
 		if err := ctx.Err(); err != nil {
-			return err
+			return extensionError(err, "check extension context")
 		}
 
 		_, err := callLuaPrepared(handler.extension, nil, handler.function, func(state *lua.LState) []lua.LValue {
@@ -133,6 +140,7 @@ func (manager *Manager) handlersFor(eventName string) []luaHookHandler {
 	manager.lock.RUnlock()
 	sort.SliceStable(handlers, func(leftIndex, rightIndex int) bool {
 		left := handlers[leftIndex]
+
 		right := handlers[rightIndex]
 		if left.priority == right.priority {
 			return left.order < right.order
@@ -144,7 +152,7 @@ func (manager *Manager) handlersFor(eventName string) []luaHookHandler {
 	return handlers
 }
 
-func callLua(extensionRuntime *luaExtension, function *lua.LFunction, args ...lua.LValue) (lua.LValue, error) {
+func callLua(extensionRuntime *luaExtension, function *lua.LFunction, args ...lua.LValue) (luaResult, error) {
 	return callLuaPrepared(extensionRuntime, nil, function, func(*lua.LState) []lua.LValue {
 		return args
 	})
@@ -155,31 +163,34 @@ func callLuaPrepared(
 	hostEvent *luaHostEvent,
 	function *lua.LFunction,
 	prepareArgs func(*lua.LState) []lua.LValue,
-) (lua.LValue, error) {
+) (luaResult, error) {
 	extensionRuntime.lock.Lock()
 	defer extensionRuntime.lock.Unlock()
 
 	previousEvent := extensionRuntime.activeEvent
+
 	extensionRuntime.activeEvent = hostEvent
 	defer func() {
 		extensionRuntime.activeEvent = previousEvent
 	}()
 
 	top := extensionRuntime.state.GetTop()
+
 	startedAt := time.Now()
 	defer recordLuaCallDuration(extensionRuntime, startedAt)
 
 	args := prepareArgs(extensionRuntime.state)
 	if err := extensionRuntime.state.CallByParam(lua.P{Fn: function, NRet: 1, Protect: true}, args...); err != nil {
 		extensionRuntime.state.SetTop(top)
-		return lua.LNil, err
+
+		return luaResult{}, extensionError(err, "call lua function")
 	}
 
 	result := extensionRuntime.state.Get(-1)
 	extensionRuntime.state.Pop(1)
 	extensionRuntime.state.SetTop(top)
 
-	return result, nil
+	return newLuaResult(result), nil
 }
 
 func recordLuaCallDuration(extensionRuntime *luaExtension, startedAt time.Time) {

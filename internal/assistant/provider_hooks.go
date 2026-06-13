@@ -12,12 +12,14 @@ import (
 	"github.com/omarluq/librecode/internal/llm"
 )
 
-var blockedProviderHeaderNames = map[string]struct{}{
-	"authorization":       {},
-	"cookie":              {},
-	"proxy-authorization": {},
-	"x-api-key":           {},
-	"api-key":             {},
+func blockedProviderHeaderNames() map[string]struct{} {
+	return map[string]struct{}{
+		"authorization":       {},
+		"cookie":              {},
+		"proxy-authorization": {},
+		"x-api-key":           {},
+		"api-key":             {},
+	}
 }
 
 func (runtime *Runtime) dispatchProviderRequestHook(
@@ -27,6 +29,7 @@ func (runtime *Runtime) dispatchProviderRequestHook(
 	if input == nil {
 		return llm.HookOutput{Payload: nil, Headers: nil}, nil
 	}
+
 	payload := providerRequestLifecyclePayload(input)
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleBeforeProviderRequest, payload)
 	output := llm.HookOutput{
@@ -39,11 +42,13 @@ func (runtime *Runtime) dispatchProviderRequestHook(
 		&result,
 		providerHookDiagnostics(input, output),
 	)
+
 	if err != nil {
 		return llm.HookOutput{}, oops.In("assistant").
 			Code("before_provider_request_dispatch_failed").
 			Wrapf(err, "dispatch before_provider_request lifecycle")
 	}
+
 	if err := validateProviderRequestMutation(result.ProviderRequest); err != nil {
 		return llm.HookOutput{}, oops.In("assistant").
 			Code("provider_request_mutation_invalid").
@@ -74,6 +79,7 @@ func providerPayloadFromLifecycle(payload, fallback map[string]any) map[string]a
 	if payload == nil {
 		return cloneAnyMap(fallback)
 	}
+
 	mutated, ok := payload[lifecyclepayload.ProviderPayloadKey].(map[string]any)
 	if !ok {
 		return cloneAnyMap(fallback)
@@ -91,7 +97,7 @@ func mergeProviderHeaders(headers, additions map[string]string) map[string]strin
 
 func validateProviderRequestMutation(mutation extension.ProviderRequestMutation) error {
 	for header := range mutation.Headers {
-		if _, blocked := blockedProviderHeaderNames[strings.ToLower(strings.TrimSpace(header))]; blocked {
+		if _, blocked := blockedProviderHeaderNames()[strings.ToLower(strings.TrimSpace(header))]; blocked {
 			return oops.In("assistant").
 				Code("provider_hook_header_blocked").
 				With("header", header).
@@ -105,10 +111,12 @@ func validateProviderRequestMutation(mutation extension.ProviderRequestMutation)
 func redactedHeaders(headers map[string]string) map[string]string {
 	redacted := make(map[string]string, len(headers))
 	for key, value := range headers {
-		if _, blocked := blockedProviderHeaderNames[strings.ToLower(strings.TrimSpace(key))]; blocked {
+		if _, blocked := blockedProviderHeaderNames()[strings.ToLower(strings.TrimSpace(key))]; blocked {
 			redacted[key] = "[redacted]"
+
 			continue
 		}
+
 		redacted[key] = value
 	}
 

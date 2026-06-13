@@ -52,6 +52,7 @@ func TestLogoutPanelAndSelectionRemoveCredential(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, modeChat, app.mode)
+
 	_, ok, err := storage.APIKeyContext(context.Background(), promptSendTestProvider)
 	require.NoError(t, err)
 	assert.False(t, ok)
@@ -128,6 +129,7 @@ func TestRunOAuthLoginPostsDoneAndErrorEvents(t *testing.T) {
 	app.runOAuthLogin(context.Background(), successConfig)
 	event := readAuthAsyncEvent(t, app)
 	require.Equal(t, asyncEventAuthDone, event.Kind)
+
 	_, ok, err := storage.APIKeyContext(context.Background(), "oauth-provider")
 	require.NoError(t, err)
 	assert.True(t, ok)
@@ -210,6 +212,7 @@ func readAuthAsyncEvent(t *testing.T, app *App) *asyncEvent {
 		return event
 	case <-time.After(time.Second):
 		require.FailNow(t, "timed out waiting for async event")
+
 		return nil
 	}
 }

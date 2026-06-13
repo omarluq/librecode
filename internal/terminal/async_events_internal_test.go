@@ -298,6 +298,7 @@ func TestHandleAuthAsyncEventTransitions(t *testing.T) {
 
 			assert.Equal(t, testCase.wantHandled, handled)
 			assert.Equal(t, testCase.wantAuthWorking, app.authWorking)
+
 			if testCase.wantLastMessage != "" {
 				require.NotEmpty(t, app.transcript.History)
 				last := app.transcript.History[len(app.transcript.History)-1].Content
@@ -379,6 +380,7 @@ func TestPromptAsyncEventHelpers(t *testing.T) {
 	} {
 		assert.True(t, isPromptAsyncEvent(kind), "kind %q", kind)
 	}
+
 	for _, kind := range []asyncEventKind{
 		asyncEventAuthURL,
 		asyncEventAuthDone,
@@ -423,6 +425,7 @@ func promptCompactionLifecycleEventCases() []promptLifecycleCase {
 			setup:   func(*App) {},
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
+
 				last := app.transcript.History[len(app.transcript.History)-1].Content
 				assert.Equal(t, asyncTestCompact, last)
 				assert.True(t, app.compacting)
@@ -568,6 +571,7 @@ func TestHandlePromptStreamEventAppliesStreamData(t *testing.T) {
 			if testCase.prepare != nil {
 				testCase.prepare(app)
 			}
+
 			if testCase.canceledActive {
 				app.activePrompt = newTestActivePrompt(nil)
 				app.activePrompt.Canceled = true

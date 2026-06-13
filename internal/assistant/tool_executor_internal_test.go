@@ -32,6 +32,7 @@ func TestExecuteProviderToolCallsRequiresRegistry(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Nil(t, events)
+
 	var coded oops.OopsError
 	require.ErrorAs(t, err, &coded)
 	assert.Equal(t, "tool_registry_missing", coded.Code())

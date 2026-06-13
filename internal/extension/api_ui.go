@@ -40,11 +40,11 @@ func (manager *Manager) luaUIClearWindow(extensionRuntime *luaExtension) lua.LGF
 func (manager *Manager) luaUIClearRegion(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		windowName := state.CheckString(1)
-		row := state.CheckInt(2)
-		col := state.CheckInt(3)
-		height := state.CheckInt(4)
-		width := state.CheckInt(5)
-		style := luaOptionalUIStyle(state, 6)
+		row := state.CheckInt(luaFirstArgument)
+		col := state.CheckInt(luaSecondArgument)
+		height := state.CheckInt(luaThirdArgument)
+		width := state.CheckInt(luaFourthArgument)
+		style := luaOptionalUIStyle(state, luaFifthArgument)
 		checkActiveEvent(state, extensionRuntime).appendUIDrawOp(&UIDrawOp{
 			Style:  style,
 			Spans:  []UISpan{},
@@ -72,7 +72,7 @@ func (manager *Manager) luaUIMeasure() lua.LGFunction {
 
 func (manager *Manager) luaUITruncate() lua.LGFunction {
 	return func(state *lua.LState) int {
-		state.Push(lua.LString(uiTextTruncate(state.CheckString(1), state.CheckInt(2))))
+		state.Push(lua.LString(uiTextTruncate(state.CheckString(1), state.CheckInt(luaFirstArgument))))
 
 		return 1
 	}
@@ -80,7 +80,7 @@ func (manager *Manager) luaUITruncate() lua.LGFunction {
 
 func (manager *Manager) luaUIPadRight() lua.LGFunction {
 	return func(state *lua.LState) int {
-		state.Push(lua.LString(uiTextPadRight(state.CheckString(1), state.CheckInt(2))))
+		state.Push(lua.LString(uiTextPadRight(state.CheckString(1), state.CheckInt(luaFirstArgument))))
 
 		return 1
 	}
@@ -88,7 +88,7 @@ func (manager *Manager) luaUIPadRight() lua.LGFunction {
 
 func (manager *Manager) luaUIWrap() lua.LGFunction {
 	return func(state *lua.LState) int {
-		state.Push(stringSliceToLuaTable(state, uiTextWrap(state.CheckString(1), state.CheckInt(2))))
+		state.Push(stringSliceToLuaTable(state, uiTextWrap(state.CheckString(1), state.CheckInt(luaFirstArgument))))
 
 		return 1
 	}
@@ -97,8 +97,8 @@ func (manager *Manager) luaUIWrap() lua.LGFunction {
 func (manager *Manager) luaUIViewport() lua.LGFunction {
 	return func(state *lua.LState) int {
 		lines := luaStringSlice(state.CheckTable(1))
-		height := state.CheckInt(2)
-		offset := state.OptInt(3, 0)
+		height := state.CheckInt(luaFirstArgument)
+		offset := state.OptInt(luaSecondArgument, 0)
 		visible, start, end, maxOffset := uiTextViewport(lines, height, offset)
 		state.Push(mapToLuaTable(state, map[string]any{
 			"lines":      visible,
@@ -116,8 +116,8 @@ func (manager *Manager) luaUIViewport() lua.LGFunction {
 func (manager *Manager) luaUIVirtualList() lua.LGFunction {
 	return func(state *lua.LState) int {
 		items := state.CheckTable(1)
-		height := state.CheckInt(2)
-		offset := state.OptInt(3, 0)
+		height := state.CheckInt(luaFirstArgument)
+		offset := state.OptInt(luaSecondArgument, 0)
 		result := uiVirtualList(luaVirtualListHeights(items), height, offset)
 		state.Push(mapToLuaTable(state, map[string]any{
 			"items":      uiVirtualListItemsForLua(result.Items),
@@ -143,10 +143,10 @@ func (manager *Manager) luaUIThemeTokens() lua.LGFunction {
 func (manager *Manager) luaUIDrawText(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		windowName := state.CheckString(1)
-		row := state.CheckInt(2)
-		col := state.CheckInt(3)
-		text := state.CheckString(4)
-		style := luaOptionalUIStyle(state, 5)
+		row := state.CheckInt(luaFirstArgument)
+		col := state.CheckInt(luaSecondArgument)
+		text := state.CheckString(luaThirdArgument)
+		style := luaOptionalUIStyle(state, luaFourthArgument)
 		checkActiveEvent(state, extensionRuntime).appendUIDrawOp(&UIDrawOp{
 			Style:  style,
 			Spans:  []UISpan{},
@@ -167,6 +167,7 @@ func (manager *Manager) luaUIDrawText(extensionRuntime *luaExtension) lua.LGFunc
 func (manager *Manager) luaUIDrawBatch(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		operations := state.CheckTable(1)
+
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		for operationIndex := 1; operationIndex <= operations.Len(); operationIndex++ {
 			hostEvent.appendUIDrawOp(luaUIDrawOp(operations.RawGetInt(operationIndex)))
@@ -179,10 +180,11 @@ func (manager *Manager) luaUIDrawBatch(extensionRuntime *luaExtension) lua.LGFun
 func (manager *Manager) luaUIDrawLines(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		windowName := state.CheckString(1)
-		row := state.CheckInt(2)
-		col := state.CheckInt(3)
-		lines := luaStringSlice(state.CheckTable(4))
-		style := luaOptionalUIStyle(state, 5)
+		row := state.CheckInt(luaFirstArgument)
+		col := state.CheckInt(luaSecondArgument)
+		lines := luaStringSlice(state.CheckTable(luaThirdArgument))
+		style := luaOptionalUIStyle(state, luaFourthArgument)
+
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		for index, line := range lines {
 			hostEvent.appendUIDrawOp(&UIDrawOp{
@@ -206,9 +208,9 @@ func (manager *Manager) luaUIDrawLines(extensionRuntime *luaExtension) lua.LGFun
 func (manager *Manager) luaUIDrawSpans(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		windowName := state.CheckString(1)
-		row := state.CheckInt(2)
-		col := state.CheckInt(3)
-		spans := luaUISpans(state.CheckTable(4))
+		row := state.CheckInt(luaFirstArgument)
+		col := state.CheckInt(luaSecondArgument)
+		spans := luaUISpans(state.CheckTable(luaThirdArgument))
 		checkActiveEvent(state, extensionRuntime).appendUIDrawOp(&UIDrawOp{
 			Style:  UIStyle{FG: "", BG: "", Bold: false, Italic: false},
 			Spans:  spans,
@@ -229,7 +231,7 @@ func (manager *Manager) luaUIDrawSpans(extensionRuntime *luaExtension) lua.LGFun
 func (manager *Manager) luaUIDrawBox(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		windowName := state.CheckString(1)
-		style := luaOptionalUIStyle(state, 2)
+		style := luaOptionalUIStyle(state, luaFirstArgument)
 		checkActiveEvent(state, extensionRuntime).appendUIDrawOp(&UIDrawOp{
 			Style:  style,
 			Spans:  []UISpan{},
@@ -250,8 +252,8 @@ func (manager *Manager) luaUIDrawBox(extensionRuntime *luaExtension) lua.LGFunct
 func (manager *Manager) luaUISetCursor(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		windowName := state.CheckString(1)
-		row := state.CheckInt(2)
-		col := state.CheckInt(3)
+		row := state.CheckInt(luaFirstArgument)
+		col := state.CheckInt(luaSecondArgument)
 		checkActiveEvent(state, extensionRuntime).setUICursor(&UICursor{Window: windowName, Row: row, Col: col})
 
 		return 0
@@ -271,6 +273,7 @@ func luaVirtualListItemHeight(value lua.LValue) int {
 	if number, ok := value.(lua.LNumber); ok {
 		return positiveInt(int(number))
 	}
+
 	if table, ok := value.(*lua.LTable); ok {
 		return positiveInt(luaTableIntValueWithDefault(table, luaFieldHeight, 1))
 	}
@@ -280,6 +283,7 @@ func luaVirtualListItemHeight(value lua.LValue) int {
 
 func luaOptionalUIStyle(state *lua.LState, index int) UIStyle {
 	value := state.Get(index)
+
 	table, ok := value.(*lua.LTable)
 	if !ok {
 		return UIStyle{FG: "", BG: "", Bold: false, Italic: false}

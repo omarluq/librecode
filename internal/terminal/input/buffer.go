@@ -163,6 +163,7 @@ func ClampCursor(cursor, runeCount int) int {
 	if cursor < 0 {
 		return 0
 	}
+
 	if cursor > runeCount {
 		return runeCount
 	}

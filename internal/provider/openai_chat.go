@@ -24,6 +24,7 @@ func (client *HTTPCompletionClient) completeOpenAIChat(
 		if err != nil {
 			return nil, err
 		}
+
 		if finished {
 			return state.result, nil
 		}
@@ -43,22 +44,27 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 ) (bool, error) {
 	payload := openAIChatPayload(request, state.messages)
 	headers := openAIHeaders(request)
+
 	providerRequest, err := applyProviderRequestHook(ctx, request, payload, headers)
 	if err != nil {
 		return false, err
 	}
+
 	content, err := client.postJSON(ctx, state.endpoint, providerRequest.Headers, providerRequest.Payload)
 	if err != nil {
 		return false, err
 	}
+
 	providerResult, err := parseOpenAIChatResult(content)
 	if err != nil {
 		return false, err
 	}
+
 	state.result.Usage = mergeUsage(state.result.Usage, providerResult.Usage)
 	if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
 		return false, validateErr
 	}
+
 	if len(providerResult.ToolCalls) == 0 {
 		if fallback := TextToolCallsFromText(providerResult.Text); len(fallback) > 0 {
 			providerResult.ToolCalls = fallback
@@ -66,11 +72,14 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 			return finishProviderResult(state.result, providerResult)
 		}
 	}
+
 	events, err := executeOpenAIChatToolCalls(ctx, request, providerResult.ToolCalls)
 	if err != nil {
 		return false, err
 	}
+
 	appendToolResults(state.result, events)
+
 	if err := appendOpenAIChatToolConversation(state, providerResult, events); err != nil {
 		return false, err
 	}
@@ -98,12 +107,15 @@ func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *provid
 			map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: result.Text},
 			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: TextToolResultPrompt(events)},
 		)
+
 		return nil
 	}
+
 	toolMessages, err := openAIChatToolMessages(result.ToolCalls, events)
 	if err != nil {
 		return err
 	}
+
 	state.messages = append(
 		state.messages,
 		openAIChatAssistantToolMessage(result),
@@ -113,12 +125,14 @@ func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *provid
 	return nil
 }
 
+const openAIChatDefaultTemperature = 0.2
+
 func openAIChatPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
 	payload := map[string]any{
 		jsonModelKey:      request.Request.Model.ID,
 		jsonMessagesKey:   messages,
 		"stream":          false,
-		"temperature":     0.2,
+		"temperature":     openAIChatDefaultTemperature,
 		"tools":           OpenAIChatTools(request),
 		jsonToolChoiceKey: "auto",
 	}
@@ -151,9 +165,11 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 	if err := json.Unmarshal(content, &response); err != nil {
 		return nil, oops.In("provider").Code("openai_chat_decode").Wrapf(err, "decode chat response")
 	}
+
 	if response.Error.Message != "" {
 		return nil, providerErrorToOops("openai_chat_error", &response.Error)
 	}
+
 	if len(response.Choices) == 0 {
 		return &providerResult{
 			FinishReason: llm.FinishReasonUnknown,
@@ -164,12 +180,15 @@ func parseOpenAIChatResult(content []byte) (*providerResult, error) {
 			Usage:        usageFromObject(response.Usage),
 		}, nil
 	}
+
 	message := response.Choices[0].Message
+
 	calls := make([]ToolCall, 0, len(message.ToolCalls))
 	for _, call := range message.ToolCalls {
 		if call.Type != "" && call.Type != functionToolType {
 			continue
 		}
+
 		calls = append(calls, ToolCall{
 			Arguments:     toolArgumentsFromJSON(call.Function.Arguments),
 			Metadata:      nil,
@@ -194,6 +213,7 @@ func openAIChatFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
 	if hasToolCalls {
 		return llm.FinishReasonToolCalls
 	}
+
 	switch reason {
 	case "stop":
 		return llm.FinishReasonStop
@@ -222,12 +242,15 @@ func openAIChatMessages(request *CompletionRequest) []map[string]any {
 			jsonContentKey: request.Request.SystemPrompt,
 		})
 	}
+
 	for _, message := range request.Request.Messages {
 		role, ok := openAIRole(message.Role)
+
 		content := messageText(message)
 		if !ok || content == "" {
 			continue
 		}
+
 		messages = append(messages, map[string]any{jsonRoleKey: role, jsonContentKey: content})
 	}
 
@@ -262,6 +285,7 @@ func openAIChatToolMessages(calls []ToolCall, events []ToolEvent) ([]map[string]
 			With("events", len(events)).
 			Errorf("build OpenAI chat tool messages: mismatched tool calls and results")
 	}
+
 	messages := make([]map[string]any, 0, len(events))
 	for index, event := range events {
 		messages = append(messages, map[string]any{

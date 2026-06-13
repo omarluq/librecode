@@ -6,7 +6,10 @@ import (
 	"strconv"
 
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/units"
 )
+
+const compactWholeThousandsThreshold = 10 * units.TokenThousand
 
 func (app *App) applyTokenUsage(usage *model.TokenUsage) {
 	app.applyTokenUsageEvent(usage, false)
@@ -16,10 +19,13 @@ func (app *App) applyTokenUsageEvent(usage *model.TokenUsage, snapshot bool) {
 	if usage == nil || !usage.HasAny() {
 		return
 	}
+
 	if snapshot {
 		app.tokenUsage = cloneTerminalUsage(*usage)
+
 		return
 	}
+
 	app.tokenUsage = mergeTerminalUsage(app.tokenUsage, *usage)
 }
 
@@ -34,12 +40,15 @@ func mergeTerminalUsage(current, next model.TokenUsage) model.TokenUsage {
 	if next.ContextWindow > 0 {
 		current.ContextWindow = next.ContextWindow
 	}
+
 	if next.ContextTokens > current.ContextTokens {
 		current.ContextTokens = next.ContextTokens
 	}
+
 	if len(next.Breakdown) > 0 {
 		current.Breakdown = cloneTokenBreakdown(next.Breakdown)
 	}
+
 	if len(next.TopContributors) > 0 {
 		current.TopContributors = model.CloneTokenContributors(next.TopContributors)
 	}
@@ -55,6 +64,7 @@ func formatTokenStatus(usage model.TokenUsage) string {
 	if !usage.HasAny() {
 		return ""
 	}
+
 	contextText := formatContextUsage(usage)
 	if contextText == "" {
 		return ""
@@ -87,7 +97,7 @@ func percentOf(tokens, budget int) int {
 		return 0
 	}
 
-	return tokens * 100 / budget
+	return tokens * units.PercentScale / budget
 }
 
 func cloneTokenBreakdown(values map[string]int) map[string]int {
@@ -98,14 +108,16 @@ func cloneTokenBreakdown(values map[string]int) map[string]int {
 }
 
 func compactCount(value int) string {
-	if value >= 1_000_000 {
-		return fmt.Sprintf("%.1fm", float64(value)/1_000_000)
+	if value >= units.TokenMillion {
+		return fmt.Sprintf("%.1fm", float64(value)/units.TokenMillion)
 	}
-	if value >= 10_000 {
-		return fmt.Sprintf("%dk", value/1_000)
+
+	if value >= compactWholeThousandsThreshold {
+		return fmt.Sprintf("%dk", value/units.TokenThousand)
 	}
-	if value >= 1_000 {
-		return fmt.Sprintf("%.1fk", float64(value)/1_000)
+
+	if value >= units.TokenThousand {
+		return fmt.Sprintf("%.1fk", float64(value)/units.TokenThousand)
 	}
 
 	return strconv.Itoa(value)

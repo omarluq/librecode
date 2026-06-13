@@ -29,6 +29,7 @@ type parsedToolEvent struct {
 
 func (app *App) renderToolBlock(width int, message chatMessage) []rendertext.Line {
 	event := parseToolEventContent(message.Content, string(message.Role))
+
 	style := app.toolBlockStyle(&event)
 	if !app.toolsExpanded {
 		return app.renderCollapsedToolBlock(width, &event, style)
@@ -51,6 +52,7 @@ func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, styl
 		rendertext.NewLine(tcell.StyleDefault, ""),
 		rendertext.NewLine(style.Bold(true), rendertext.PadRight(label, width)),
 	}
+
 	preview, hiddenLines := tailIndentedLines(width, toolEventOutput(event), style, maxCollapsedToolOutputLines)
 	if hiddenLines > 0 {
 		lines = append(lines, rendertext.NewLine(
@@ -58,6 +60,7 @@ func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, styl
 			rendertext.PadRight(app.hiddenToolLinesText(hiddenLines), width),
 		))
 	}
+
 	lines = append(lines, preview...)
 	lines = append(lines, rendertext.NewLine(tcell.StyleDefault, ""))
 
@@ -65,7 +68,7 @@ func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, styl
 }
 
 func (app *App) renderExpandedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []rendertext.Line {
-	lines := make([]rendertext.Line, 0, 10)
+	lines := make([]rendertext.Line, 0, initialToolBlockLines)
 	label := fmt.Sprintf("%s  %s collapse", toolTitle(event), app.keys.hint(actionToolsExpand))
 	lines = append(lines,
 		rendertext.NewLine(tcell.StyleDefault, ""),
@@ -93,10 +96,12 @@ func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Sty
 	if diff == "" {
 		return nil
 	}
-	innerWidth := max(1, width-2)
+
+	innerWidth := max(1, width-toolBlockBorderWidth)
 	baseStyle := app.theme.background(colorCodeBg).Foreground(app.theme.colors[colorCodeText])
 	content := diffStyledLines(diff, app.theme, baseStyle)
 	lines := []rendertext.Line{rendertext.NewLine(style.Bold(true), rendertext.PadRight("diff:", width))}
+
 	for _, line := range content {
 		for _, wrapped := range rendertext.WrapPreserveWhitespace(line.Text, innerWidth) {
 			lines = append(lines, rendertext.NewLine(line.Style, rendertext.PadRight("  "+wrapped, width)))
@@ -127,8 +132,10 @@ func indentedLines(width int, content string, style tcell.Style) []rendertext.Li
 	if strings.TrimSpace(content) == "" {
 		return nil
 	}
-	innerWidth := max(1, width-2)
+
+	innerWidth := max(1, width-toolBlockBorderWidth)
 	lines := []rendertext.Line{}
+
 	for line := range strings.SplitSeq(content, "\n") {
 		for _, wrapped := range rendertext.WrapPreserveWhitespace(line, innerWidth) {
 			lines = append(lines, rendertext.NewLine(style, rendertext.PadRight("  "+wrapped, width)))
@@ -143,6 +150,7 @@ func tailIndentedLines(width int, content string, style tcell.Style, limit int) 
 	if limit <= 0 || len(lines) <= limit {
 		return lines, 0
 	}
+
 	hiddenLines := len(lines) - limit
 
 	return lines[hiddenLines:], hiddenLines
@@ -152,21 +160,26 @@ func (app *App) renderToolMessageTail(width int, message chatMessage, rowsNeeded
 	if rowsNeeded <= 0 {
 		return nil, true
 	}
+
 	event := parseToolEventContent(message.Content, string(message.Role))
 	style := app.toolBlockStyle(&event)
 	footer := rendertext.NewLine(tcell.StyleDefault, "")
+
 	tailBudget := max(0, rowsNeeded-1)
 	if tailBudget == 0 {
 		return []rendertext.Line{footer}, false
 	}
+
 	tail, hidden := tailExpandedToolLines(width, &event, style, tailBudget)
 	if hidden {
 		return append(tail, footer), false
 	}
+
 	prefix := app.expandedToolPrefixLines(width, &event, style)
 	lines := make([]rendertext.Line, 0, len(prefix)+len(tail)+1)
 	lines = append(lines, prefix...)
 	lines = append(lines, tail...)
+
 	lines = append(lines, footer)
 	if len(lines) <= rowsNeeded {
 		return lines, true
@@ -177,7 +190,7 @@ func (app *App) renderToolMessageTail(width int, message chatMessage, rowsNeeded
 
 func (app *App) expandedToolPrefixLines(width int, event *parsedToolEvent, style tcell.Style) []rendertext.Line {
 	label := fmt.Sprintf("%s  %s collapse", toolTitle(event), app.keys.hint(actionToolsExpand))
-	lines := make([]rendertext.Line, 0, 2)
+	lines := make([]rendertext.Line, 0, toolHeaderLines)
 	lines = append(lines,
 		rendertext.NewLine(tcell.StyleDefault, ""),
 		rendertext.NewLine(style.Bold(true), rendertext.PadRight(label, width)),
@@ -197,12 +210,15 @@ func tailExpandedToolLines(
 	if event.Output != "" {
 		return tailSectionLinesFromEnd(width, "output", event.Output, style, rowsNeeded)
 	}
+
 	if event.Error != "" {
 		return tailSectionLinesFromEnd(width, "error", event.Error, style, rowsNeeded)
 	}
+
 	if event.DetailsJSON != "" {
 		return tailSectionLinesFromEnd(width, "details", compactJSON(event.DetailsJSON), style, rowsNeeded)
 	}
+
 	if event.ArgumentsJSON != "" {
 		return tailSectionLinesFromEnd(width, "args", compactJSON(event.ArgumentsJSON), style, rowsNeeded)
 	}
@@ -220,9 +236,11 @@ func tailSectionLinesFromEnd(
 	if rowsNeeded <= 0 || strings.TrimSpace(content) == "" {
 		return nil, false
 	}
+
 	if rowsNeeded == 1 {
 		return []rendertext.Line{rendertext.NewLine(style.Bold(true), rendertext.PadRight(label+":", width))}, true
 	}
+
 	tail, hidden := tailIndentedLinesFromEnd(width, content, style, rowsNeeded-1)
 	lines := make([]rendertext.Line, 0, len(tail)+1)
 	lines = append(lines, rendertext.NewLine(style.Bold(true), rendertext.PadRight(label+":", width)))
@@ -235,6 +253,7 @@ func tailIndentedLinesFromEnd(width int, content string, style tcell.Style, limi
 	if limit <= 0 || strings.TrimSpace(content) == "" {
 		return nil, false
 	}
+
 	collector := tailLineCollector{
 		Style:  style,
 		Lines:  make([]rendertext.Line, 0, limit),
@@ -260,17 +279,21 @@ func (collector *tailLineCollector) Collect(content string) {
 	for end := len(content); end >= 0 && len(collector.Lines) < collector.Limit; {
 		start := strings.LastIndexByte(content[:end], '\n') + 1
 		collector.collectWrappedLine(content[start:end])
+
 		if start == 0 {
 			return
 		}
+
 		end = start - 1
 	}
+
 	collector.Hidden = true
 }
 
 func (collector *tailLineCollector) collectWrappedLine(line string) {
-	wrapped := rendertext.WrapPreserveWhitespace(line, max(1, collector.Width-2))
+	wrapped := rendertext.WrapPreserveWhitespace(line, max(1, collector.Width-toolBlockBorderWidth))
 	added := 0
+
 	for index := len(wrapped) - 1; index >= 0 && len(collector.Lines) < collector.Limit; index-- {
 		collector.Lines = append(collector.Lines, rendertext.NewLine(
 			collector.Style,
@@ -278,6 +301,7 @@ func (collector *tailLineCollector) collectWrappedLine(line string) {
 		))
 		added++
 	}
+
 	if added < len(wrapped) {
 		collector.Hidden = true
 	}
@@ -299,6 +323,24 @@ func (app *App) hiddenToolLinesText(hiddenLines int) string {
 		app.keys.hint(actionToolsExpand) + " expand"
 }
 
+func compactJSON(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+
+	var data any
+	if err := json.Unmarshal([]byte(value), &data); err != nil {
+		return strings.TrimSpace(value)
+	}
+
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return strings.TrimSpace(value)
+	}
+
+	return string(payload)
+}
+
 func toolEventOutput(event *parsedToolEvent) string {
 	output := strings.Trim(event.Output, "\n")
 	if event.Error != "" {
@@ -318,23 +360,29 @@ func parseToolEventContent(content, fallback string) parsedToolEvent {
 	}
 	current := ""
 	sections := map[string][]string{}
+
 	for line := range strings.SplitSeq(content, "\n") {
 		if name, value, ok := parseToolSectionHeader(line); ok {
 			if name == toolSectionTool {
 				event.Name = value
 				current = ""
+
 				continue
 			}
+
 			current = name
 			if value != "" {
 				sections[current] = append(sections[current], value)
 			}
+
 			continue
 		}
+
 		if current != "" {
 			sections[current] = append(sections[current], line)
 		}
 	}
+
 	event.ArgumentsJSON = strings.TrimSpace(strings.Join(sections[toolSectionArguments], "\n"))
 	event.DetailsJSON = strings.TrimSpace(strings.Join(sections[toolSectionDetails], "\n"))
 	event.Error = strings.Trim(strings.Join(sections[toolSectionError], "\n"), "\n")
@@ -348,6 +396,7 @@ func parseToolSectionHeader(line string) (name, value string, ok bool) {
 	if !found {
 		return "", "", false
 	}
+
 	name = strings.TrimSpace(left)
 	switch name {
 	case toolSectionTool, toolSectionArguments, toolSectionDetails, toolSectionError, toolSectionOutput:
@@ -362,9 +411,11 @@ func toolTitle(event *parsedToolEvent) string {
 	if name == "" {
 		name = toolSectionTool
 	}
+
 	if event.Error != "" {
 		return "✗ " + name
 	}
+
 	if after, ok := strings.CutPrefix(name, "load skill: "); ok {
 		return "loaded skill " + strings.TrimSpace(after)
 	}
@@ -376,10 +427,12 @@ func diffFromToolDetails(detailsJSON string) string {
 	if strings.TrimSpace(detailsJSON) == "" {
 		return ""
 	}
+
 	var details map[string]any
 	if err := json.Unmarshal([]byte(detailsJSON), &details); err != nil {
 		return ""
 	}
+
 	diff, ok := details["diff"].(string)
 	if !ok {
 		return ""

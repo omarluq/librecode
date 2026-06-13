@@ -16,6 +16,7 @@ func astQuery(tree *gt.Tree, lang *gt.Language, source []byte, queryText string)
 			Code("ast_query_required").
 			Errorf("ast query mode requires a non-empty query")
 	}
+
 	query, err := gt.NewQuery(queryText, lang)
 	if err != nil {
 		return emptyToolResult(), oops.
@@ -46,16 +47,19 @@ func collectASTQueryOutput(tree *gt.Tree, lang *gt.Language, source []byte, quer
 		limitReached:        false,
 		captureLimitReached: false,
 	}
+
 	for {
 		match, ok := cursor.NextMatch()
 		if !ok {
 			break
 		}
+
 		output.matchCount++
 		if appendASTQueryCaptures(&output, match.Captures, source) {
 			break
 		}
 	}
+
 	output.limitReached = cursor.DidExceedMatchLimit()
 
 	return output
@@ -68,10 +72,12 @@ func appendASTQueryCaptures(output *astQueryOutput, captures []gt.QueryCapture, 
 
 			return true
 		}
+
 		node := capture.Node
 		if node == nil {
 			continue
 		}
+
 		output.lines = append(output.lines, astQueryCaptureLine(capture, source))
 	}
 
@@ -94,6 +100,7 @@ func astQueryCaptureLine(capture gt.QueryCapture, source []byte) string {
 
 func astQueryResult(output astQueryOutput) Result {
 	truncated := output.limitReached || output.captureLimitReached
+
 	details := map[string]any{
 		astDetailMatches:      output.matchCount,
 		astDetailCaptures:     len(output.lines),
@@ -107,10 +114,12 @@ func astQueryResult(output astQueryOutput) Result {
 	}
 
 	header := fmt.Sprintf("%d matches, %d captures:", output.matchCount, len(output.lines))
+
 	body := header + "\n" + strings.Join(output.lines, "\n")
 	if output.captureLimitReached {
 		body += fmt.Sprintf("\n  ... output truncated at %d captures (narrow the query)", maxASTQueryCaptures)
 	}
+
 	if output.limitReached {
 		body += fmt.Sprintf(
 			"\n  ... output truncated by the %d-match query limit (narrow the query)",
@@ -129,6 +138,7 @@ func astNode(tree *gt.Tree, lang *gt.Language, source []byte, line *int) (Result
 			Code("ast_line_required").
 			Errorf("ast node mode requires a line number")
 	}
+
 	if *line < 1 {
 		return emptyToolResult(), oopsInvalidLine()
 	}
@@ -142,12 +152,15 @@ func astNode(tree *gt.Tree, lang *gt.Language, source []byte, line *int) (Result
 	}
 
 	var chain []string
+
 	for node := target; node != nil; node = node.Parent() {
 		name := nodeName(node, lang, source)
+
 		entry := node.Type(lang)
 		if name != "" {
 			entry = fmt.Sprintf("%s %s", entry, name)
 		}
+
 		chain = append(chain, fmt.Sprintf("L%d %s", node.StartPoint().Row+1, entry))
 	}
 	// chain is innermost-first; reverse to render outermost-first.

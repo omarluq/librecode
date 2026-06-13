@@ -146,6 +146,7 @@ func findModel(t *testing.T, models []model.Model, provider, modelID string) mod
 			return candidate
 		}
 	}
+
 	require.Failf(t, "model not found", "%s/%s", provider, modelID)
 
 	return model.Model{
@@ -167,6 +168,7 @@ func findModel(t *testing.T, models []model.Model, provider, modelID string) mod
 
 func modelIDsForProvider(models []model.Model, provider string) []string {
 	ids := []string{}
+
 	for index := range models {
 		if models[index].Provider == provider {
 			ids = append(ids, models[index].ID)

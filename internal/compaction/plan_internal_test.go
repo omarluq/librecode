@@ -34,6 +34,7 @@ func TestPlanCompactionScenarios(t *testing.T) {
 
 				return
 			}
+
 			require.NoError(t, err)
 			testCase.assertFn(t, &plan)
 		})
@@ -45,7 +46,7 @@ func planCompactionCases() []planCompactionCase {
 		previousKeptBoundaryCase(),
 		turnBoundaryCase(),
 		splitTurnSummaryCase(),
-		invalidKeepRecentTokensCase(),
+		invalidRecentTailTokensCase(),
 		latestCompactionCase(),
 	}
 }
@@ -130,12 +131,13 @@ func assertSplitTurnSummaryPlan(t *testing.T, plan *Plan) {
 	assert.Equal(t, []string{"assistant-2"}, plan.KeptEntryIDs)
 	assert.Equal(t, "assistant-2", plan.FirstKeptEntryID)
 	assert.Contains(t, plan.SplitTurnSummary, "split user context")
+
 	for index := range plan.Messages {
 		assert.NotContains(t, plan.Messages[index].Content, "split user context")
 	}
 }
 
-func invalidKeepRecentTokensCase() planCompactionCase {
+func invalidRecentTailTokensCase() planCompactionCase {
 	return planCompactionCase{
 		assertFn: assertNoCompactionPlan,
 		entries: []database.EntryEntity{

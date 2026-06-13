@@ -23,7 +23,7 @@ func TestNewEventServiceExposesBus(t *testing.T) {
 		require.True(t, report.Succeed, report.Error())
 	})
 
-	service := di.MustInvoke[*di.EventService](container)
+	service := container.EventService()
 
 	require.True(t, di.EventBusAvailableForTest(service))
 }

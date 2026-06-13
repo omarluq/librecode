@@ -18,6 +18,7 @@ func (app *App) handleScopedModelKey(event *tcell.EventKey) bool {
 	for _, shortcut := range shortcuts {
 		if app.keys.matches(event, shortcut.action) {
 			shortcut.handler()
+
 			return true
 		}
 	}
@@ -33,20 +34,24 @@ func (app *App) saveScopedModels() {
 
 func (app *App) enableFilteredScopedModels() {
 	items := app.panel.FilteredItems()
+
 	values := make([]string, 0, len(items))
 	for _, item := range items {
 		values = append(values, item.Value)
 	}
+
 	app.setScopedModelsEnabled(values, true)
 	app.refreshScopedModelsPanel()
 }
 
 func (app *App) clearFilteredScopedModels() {
 	items := app.panel.FilteredItems()
+
 	values := make([]string, 0, len(items))
 	for _, item := range items {
 		values = append(values, item.Value)
 	}
+
 	app.clearScopedModels(values)
 	app.refreshScopedModelsPanel()
 }
@@ -56,15 +61,19 @@ func (app *App) toggleSelectedProviderModels() {
 	if !ok {
 		return
 	}
+
 	provider := providerFromModelValue(item.Value)
 	items := app.scopedModelItems()
 	allEnabled := true
+
 	for _, modelItem := range items {
 		if providerFromModelValue(modelItem.Value) == provider && !app.scopedEnabled[modelItem.Value] {
 			allEnabled = false
+
 			break
 		}
 	}
+
 	app.setScopedProviderEnabled(provider, !allEnabled)
 	app.refreshScopedModelsPanel()
 }
@@ -74,14 +83,17 @@ func (app *App) reorderSelectedScopedModel(delta int) {
 	if !ok {
 		return
 	}
+
 	if !app.moveScopedModel(value, delta) {
 		return
 	}
+
 	app.refreshScopedModelsPanel()
 }
 
 func (app *App) scopedCycleModels() []string {
 	app.ensureScopedOrder()
+
 	models := make([]string, 0, len(app.scopedEnabled))
 	for _, value := range app.scopedOrder {
 		if app.scopedEnabled[value] {

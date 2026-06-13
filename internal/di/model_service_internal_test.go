@@ -23,6 +23,7 @@ func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
 	documents := database.NewDocumentRepository(db)
 	storage, err := auth.NewInMemoryStorage(t.Context(), map[string]auth.Credential{})
 	require.NoError(t, err)
+
 	cfg := config.Load("").MustGet()
 	cfg.Models.Discovery = config.ModelDiscoveryConfig{
 		SourceURL:    "https://models.invalid/api.json",

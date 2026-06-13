@@ -24,6 +24,7 @@ func TestSessionRepositoryConcurrentWritersWaitForBusyDatabase(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping SQLite contention test in short mode")
 	}
+
 	t.Parallel()
 
 	ctx := context.Background()
@@ -34,7 +35,9 @@ func TestSessionRepositoryConcurrentWritersWaitForBusyDatabase(t *testing.T) {
 	require.NoError(t, err)
 
 	var waitGroup sync.WaitGroup
+
 	appendErrors := make(chan error, 40)
+
 	for writerIndex, repository := range []*database.SessionRepository{primaryRepository, secondaryRepository} {
 		waitGroup.Go(func() {
 			for entryIndex := range 20 {
@@ -49,8 +52,10 @@ func TestSessionRepositoryConcurrentWritersWaitForBusyDatabase(t *testing.T) {
 			}
 		})
 	}
+
 	waitGroup.Wait()
 	close(appendErrors)
+
 	for appendErr := range appendErrors {
 		require.NoError(t, appendErr)
 	}
@@ -64,12 +69,14 @@ func TestSQLiteBusyTimeoutWaitsForExternalWriter(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping SQLite lock contention test in short mode")
 	}
+
 	t.Parallel()
 
 	ctx := context.Background()
 	dbs := openMigratedSQLitePair(ctx, t, 2*time.Second)
 	withSessionsTableLock(ctx, t, dbs.primary, func(lock *sql.Tx) {
 		insertDone := make(chan error, 1)
+
 		go func() {
 			_, createErr := database.NewSessionRepository(dbs.secondary).CreateSession(ctx, t.TempDir(), "waiter", "")
 			insertDone <- createErr
@@ -90,6 +97,7 @@ func TestSQLiteShortBusyTimeoutStillReportsBusy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping SQLite lock contention test in short mode")
 	}
+
 	t.Parallel()
 
 	ctx := context.Background()
@@ -119,12 +127,14 @@ func withSessionsTableLock(ctx context.Context, t *testing.T, connection *sql.DB
 
 	lock, err := connection.BeginTx(ctx, nil)
 	require.NoError(t, err)
+
 	defer func() {
 		rollbackErr := lock.Rollback()
 		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
 			require.NoError(t, rollbackErr)
 		}
 	}()
+
 	_, err = lock.ExecContext(ctx, `UPDATE sessions SET updated_at = updated_at`)
 	require.NoError(t, err)
 

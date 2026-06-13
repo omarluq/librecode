@@ -48,6 +48,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHook(t *testing.T) {
 	result, err := NewHTTPCompletionClient().Complete(context.Background(), completionRequest)
 
 	require.NoError(t, err)
+
 	capture := <-captures
 	require.NoError(t, capture.Err)
 	assert.Equal(t, "ok", responseText(result))
@@ -78,6 +79,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHookToOpenAIResponses(t *test
 	result, err := NewHTTPCompletionClient().Complete(context.Background(), completionRequest)
 
 	require.NoError(t, err)
+
 	capture := <-captures
 	require.NoError(t, capture.Err)
 	assert.Equal(t, "ok", responseText(result))
@@ -151,11 +153,14 @@ func newProviderHookCaptureServer(
 		if err := json.NewDecoder(request.Body).Decode(&capture.Body); err != nil {
 			capture.Err = err
 			captures <- capture
+
 			return
 		}
+
 		if _, err := writer.Write([]byte(response)); err != nil {
 			capture.Err = err
 		}
+
 		captures <- capture
 	}))
 }

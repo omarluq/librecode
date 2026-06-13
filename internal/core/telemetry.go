@@ -12,6 +12,7 @@ func TruthyEnvFlag(value string) bool {
 	if value == "" {
 		return false
 	}
+
 	normalized := strings.ToLower(value)
 
 	return normalized == "1" || normalized == "true" || normalized == "yes"
@@ -22,6 +23,7 @@ func InstallTelemetryEnabled(settings InstallTelemetryEnabler, telemetryEnv stri
 	if envProvided {
 		return TruthyEnvFlag(telemetryEnv)
 	}
+
 	if settings == nil {
 		return true
 	}

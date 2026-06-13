@@ -45,7 +45,7 @@ func TestRegistry_ExecuteJSONRunsBuiltInFileTools(t *testing.T) {
 	editResult := executeTool(ctx, t, registry, "edit", map[string]any{
 		registryTestPathKey: testPath,
 		"edits": []map[string]any{
-			{"oldText": "hello", "newText": "hola"},
+			{"old_text": "hello", "new_text": "hola"},
 		},
 	})
 	assert.Contains(t, editResult.Text(), "Successfully replaced")

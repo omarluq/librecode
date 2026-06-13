@@ -111,10 +111,13 @@ func TestAnthropicPayloadThinkingWhenOff(t *testing.T) {
 			} else {
 				assert.Equal(t, test.wantThinking, payload[jsonThinkingKey])
 			}
+
 			if test.wantEffort == "" {
 				assert.NotContains(t, payload, "output_config")
+
 				return
 			}
+
 			assert.Equal(t, map[string]any{reasoningEffortKey: test.wantEffort}, payload["output_config"])
 		})
 	}
@@ -225,10 +228,12 @@ func encodeTestJSON(t *testing.T, value any) string {
 
 func testCompletionRequestAuth(args ...string) *CompletionRequest {
 	provider := "anthropic"
+
 	apiKey := ""
 	if len(args) == 1 {
 		apiKey = args[0]
 	}
+
 	if len(args) > 1 {
 		provider = args[0]
 		apiKey = args[1]

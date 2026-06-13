@@ -29,6 +29,7 @@ func TestClearWindowRespectsWindowOrigin(t *testing.T) {
 			buffer.SetContent(column, row, 'x', nil, tcell.StyleDefault)
 		}
 	}
+
 	window := extension.WindowState{
 		Metadata:  nil,
 		Name:      "window",
@@ -78,6 +79,7 @@ func TestRenderStreamingMessageUsesTextColor(t *testing.T) {
 	if got, want := content.Style.GetForeground(), app.theme.colors[colorText]; got != want {
 		t.Fatalf("streaming response foreground = %v, want %v", got, want)
 	}
+
 	if content.Style.HasItalic() {
 		t.Fatal("streaming response should not be italicized")
 	}
@@ -101,6 +103,7 @@ func TestRenderThinkingMessagePreservesMarkdownSpans(t *testing.T) {
 	content := lines[2]
 	require.NotEmpty(t, content.Spans)
 	assert.True(t, content.Style.HasItalic())
+
 	for _, span := range content.Spans {
 		assert.True(t, span.Style.HasItalic())
 	}
@@ -124,10 +127,12 @@ func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
 	app.handlePromptStreamEvent(context.Background(), newTestAsyncEvent(asyncEventPromptDelta, "answer"))
 
 	got := streamingBlockRoles(app.transcript.Streaming.Blocks)
+
 	want := []transcript.Role{transcript.RoleThinking, transcript.RoleAssistant}
 	if !rolesEqual(got, want) {
 		t.Fatalf("streaming block roles = %v, want %v", got, want)
 	}
+
 	if app.statusMessage == "streaming response" {
 		t.Fatal("response deltas should not set the streaming response status")
 	}
@@ -229,6 +234,7 @@ func TestRenderQueuedMessagesRendersHeadersAndBody(t *testing.T) {
 			app.queuedMessages = testCase.queuedMessages
 
 			lines := app.renderQueuedMessages(testCase.width)
+
 			texts := lineTexts(lines)
 			for _, expected := range testCase.expectedLines {
 				assert.Contains(t, texts, expected)
@@ -291,19 +297,24 @@ func TestRenderWelcomeMessageHasCardPadding(t *testing.T) {
 	app := newRenderTestApp(t)
 	lines := app.renderWelcomeMessage(90, welcomeMessagePrefix+strings.Join(welcomeBodyLines("/tmp/work"), "\n"))
 
-	if len(lines) < len(welcomeArt)+2 {
-		t.Fatalf("welcome lines = %d, want at least %d", len(lines), len(welcomeArt)+2)
+	art := welcomeArt()
+	if len(lines) < len(art)+2 {
+		t.Fatalf("welcome lines = %d, want at least %d", len(lines), len(art)+2)
 	}
+
 	if strings.TrimSpace(lines[0].Text) != "" || strings.TrimSpace(lines[len(lines)-1].Text) != "" {
 		t.Fatalf("welcome should have vertical padding, got first=%q last=%q", lines[0].Text, lines[len(lines)-1].Text)
 	}
+
 	artLine := lines[1].Text
 	if !strings.Contains(artLine, "██╗") {
 		t.Fatalf("welcome art should render logo content, got %q", artLine)
 	}
+
 	if got, want := rendertext.Width(artLine), 90; got != want {
 		t.Fatalf("welcome line width = %d, want %d", got, want)
 	}
+
 	leftPadding := len(artLine) - len(strings.TrimLeft(artLine, " "))
 	if leftPadding <= welcomePaddingX {
 		t.Fatalf("welcome art should be centered within padded card, got left padding %d in %q", leftPadding, artLine)
@@ -315,19 +326,24 @@ func TestRenderWorkingIndicatorHasMarginAndShimmer(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.workFrame = 0
+
 	lines := app.renderWorkingIndicator(40)
 	if len(lines) != 3 {
 		t.Fatalf("working indicator lines = %d, want 3", len(lines))
 	}
+
 	if lines[0].Text != "" || lines[2].Text != "" {
 		t.Fatalf("working indicator should have vertical margin, got %#v", lineTexts(lines))
 	}
+
 	if !isWorkingIndicatorText(lines[1].Text) {
 		t.Fatal("working indicator line should opt into shimmer rendering")
 	}
+
 	if !strings.HasPrefix(lines[1].Text, "⠋ Shenaniganing...") {
 		t.Fatalf("working indicator should align with page text: %q", lines[1].Text)
 	}
+
 	assertWorkingShimmerMotion(t, lines[1].Text)
 }
 
@@ -337,13 +353,16 @@ func TestRenderCompactingIndicatorUsesCompactionTextAndPalette(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.compacting = true
 	app.workFrame = 0
+
 	lines := app.renderWorkingIndicator(40)
 	if len(lines) != 3 {
 		t.Fatalf("compacting indicator lines = %d, want 3", len(lines))
 	}
+
 	if !strings.HasPrefix(lines[1].Text, "⠋ Compacting context...") {
 		t.Fatalf("compacting indicator text = %q", lines[1].Text)
 	}
+
 	palette := app.workingShimmerPalette()
 	if got, want := palette.bright, compactingShimmerBrightColor(); got != want {
 		t.Fatalf("compacting shimmer bright = %v, want %v", got, want)
@@ -351,11 +370,14 @@ func TestRenderCompactingIndicatorUsesCompactionTextAndPalette(t *testing.T) {
 
 	app.frame = rendertext.NewBuffer(40, len(lines), tcell.StyleDefault)
 	app.writeStyledLine(1, 40, lines[1])
+
 	if got, want := app.frame.Cell(0, 1).Style.GetForeground(), palette.bright; got != want {
 		t.Fatalf("spinner foreground = %v, want %v", got, want)
 	}
+
 	_, contentWidth := workingShimmerContentRange(lines[1].Text)
 	labelForeground := app.frame.Cell(2, 1).Style.GetForeground()
+
 	labelShimmer := workingShimmerColor(0, 0, contentWidth, palette)
 	if labelForeground != labelShimmer {
 		t.Fatalf("label foreground = %v, want %v", labelForeground, labelShimmer)
@@ -364,10 +386,12 @@ func TestRenderCompactingIndicatorUsesCompactionTextAndPalette(t *testing.T) {
 
 func assertWorkingShimmerMotion(t *testing.T, indicatorText string) {
 	t.Helper()
+
 	palette := defaultWorkingShimmerPalette()
 	bright := palette.bright
 	base := palette.base
 	_, contentWidth := workingShimmerContentRange(indicatorText)
+
 	checks := []struct {
 		name     string
 		position int
@@ -377,13 +401,14 @@ func assertWorkingShimmerMotion(t *testing.T, indicatorText string) {
 		{name: "starts at left", position: 0, column: 0, want: bright},
 		{name: "distant cell stays base", position: 0, column: 6, want: base},
 		{name: "moves right", position: 3, column: 3, want: bright},
-		{name: "leaves bright trail behind head", position: 3, column: 2, want: hexColor(0xa8f2e9)},
+		{name: "leaves bright trail behind head", position: 3, column: 2, want: hexColorFromString("#a8f2e9")},
 		{name: "reaches final cell", position: contentWidth - 1, column: contentWidth - 1, want: bright},
 		{name: "does not wrap trail", position: contentWidth - 1, column: 0, want: base},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
 			t.Parallel()
+
 			if got := workingShimmerColor(check.position, check.column, contentWidth, palette); got != check.want {
 				t.Fatalf("color = %v, want %v", got, check.want)
 			}
@@ -399,6 +424,7 @@ func TestWorkingShimmerUsesSweepDuration(t *testing.T) {
 	app.workStartedAt = time.Now().Add(-loaderShimmerSweepDuration / 2)
 	got := app.workingShimmerPosition(contentWidth)
 	wantMin := contentWidth/2 - 1
+
 	wantMax := contentWidth/2 + 1
 	if got < wantMin || got > wantMax {
 		t.Fatalf("shimmer position = %d, want between %d and %d", got, wantMin, wantMax)
@@ -413,17 +439,21 @@ func TestWriteStyledLineOnlyShimmersMarkedLines(t *testing.T) {
 	app.workFrame = 0
 	row := 0
 	app.writeStyledLine(row, 20, rendertext.NewLine(app.theme.style(colorText), "assistant working… text"))
+
 	if got, want := app.frame.Cell(0, row).Style.GetForeground(), app.theme.colors[colorText]; got != want {
 		t.Fatalf("plain line foreground = %v, want %v", got, want)
 	}
 
 	row = 1
 	app.writeStyledLine(row, 20, rendertext.NewLine(app.theme.style(colorText), "⠋ Shenaniganing..."))
+
 	if got, want := app.frame.Cell(0, row).Style.GetForeground(), defaultWorkingShimmerBrightColor(); got != want {
 		t.Fatalf("spinner foreground = %v, want %v", got, want)
 	}
+
 	textStart := 2
 	got := app.frame.Cell(textStart, row).Style.GetForeground()
+
 	want := workingShimmerColor(0, 0, len("Shenaniganing..."), defaultWorkingShimmerPalette())
 	if got != want {
 		t.Fatalf("shimmer text foreground = %v, want %v", got, want)
@@ -440,6 +470,7 @@ func TestScrollTranscriptDoesNotDrawImmediately(t *testing.T) {
 	if app.scrollOffset != 3 {
 		t.Fatalf("scroll offset = %d, want 3", app.scrollOffset)
 	}
+
 	if app.statusMessage != "" {
 		t.Fatalf("status = %q, want empty", app.statusMessage)
 	}
@@ -452,6 +483,7 @@ func TestMouseWheelScrollsTranscript(t *testing.T) {
 	app.addMessage(transcript.RoleAssistant, "scrollable content")
 
 	app.handleMouse(tcell.NewEventMouse(0, 0, tcell.WheelUp, tcell.ModNone))
+
 	if app.scrollOffset != mouseScrollRows {
 		t.Fatalf("scroll offset = %d, want %d", app.scrollOffset, mouseScrollRows)
 	}
@@ -484,6 +516,7 @@ func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
 	app.screen = screen
 	app.frame = rendertext.NewBuffer(16, 1, tcell.StyleDefault)
 	writeLine(app.frame, 0, 16, "hello world", tcell.StyleDefault)
+
 	firstClick := time.Now()
 
 	app.beginMouseSelection(7, 0, firstClick)
@@ -493,11 +526,13 @@ func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
 	if got, want := string(screen.clipboard), "world"; got != want {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
+
 	for column := 6; column < 11; column++ {
 		if !app.selection.contains(column, 0) {
 			t.Fatalf("column %d on selected word is not selected", column)
 		}
 	}
+
 	if app.selection.contains(5, 0) || app.selection.contains(11, 0) {
 		t.Fatal("word selection includes adjacent whitespace")
 	}
@@ -511,6 +546,7 @@ func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
 	app.screen = screen
 	app.frame = rendertext.NewBuffer(16, 1, tcell.StyleDefault)
 	writeLine(app.frame, 0, 16, "hello   world", tcell.StyleDefault)
+
 	firstClick := time.Now()
 
 	app.beginMouseSelection(6, 0, firstClick)
@@ -520,6 +556,7 @@ func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
 	if got, want := string(screen.clipboard), "   "; got != want {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
+
 	for column := 5; column < 8; column++ {
 		if !app.selection.contains(column, 0) {
 			t.Fatalf("column %d on selected whitespace is not selected", column)
@@ -536,6 +573,7 @@ func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
 	app.frame = rendertext.NewBuffer(16, 2, tcell.StyleDefault)
 	writeLine(app.frame, 0, 16, "hello", tcell.StyleDefault)
 	writeLine(app.frame, 1, 16, "hello world", tcell.StyleDefault)
+
 	firstClick := time.Now()
 
 	app.beginMouseSelection(7, 1, firstClick)
@@ -548,6 +586,7 @@ func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
 	if got, want := string(screen.clipboard), "hello world"; got != want {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
+
 	for column := range app.frame.Width() {
 		if !app.selection.contains(column, 1) {
 			t.Fatalf("column %d on selected line is not selected", column)
@@ -581,8 +620,10 @@ func TestFlushFrameHighlightsSelection(t *testing.T) {
 	if got := app.frame.Cell(0, 0).Style.GetBackground(); got != tcell.ColorDefault {
 		t.Fatalf("unselected background = %v, want default", got)
 	}
+
 	for column := 1; column < 4; column++ {
 		got := app.frame.Cell(column, 0).Style.GetBackground()
+
 		want := app.theme.colors[colorSelectedBg]
 		if got != want {
 			t.Fatalf("selected background at %d = %v, want %v", column, got, want)
@@ -635,6 +676,7 @@ func TestHighVolumeStreamEventsDoNotForceImmediateDraw(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
+
 	for _, kind := range []asyncEventKind{
 		asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -653,6 +695,7 @@ func TestPromptLifecycleEventsForceImmediateDraw(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
+
 	for _, kind := range []asyncEventKind{
 		asyncEventPromptDone,
 		asyncEventPromptError,
@@ -680,6 +723,7 @@ func TestScrolledMessageLinesCanReachFullHistory(t *testing.T) {
 
 	app.warmMessageLineCache()
 	app.scrollTranscript(100)
+
 	older := app.messageLines(80, 6)
 	if lineIndexContaining(older, "history message 0") == -1 {
 		t.Fatalf("expected older history after scrolling, got %v", lineTexts(older))
@@ -700,9 +744,11 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 	}
 
 	app.warmMessageLineCache()
+
 	if !app.transcript.LineCache.warm {
 		t.Fatal("expected history cache to be warm")
 	}
+
 	if len(app.transcript.LineCache.prefixes) != len(app.transcript.History)+1 {
 		t.Fatalf(
 			"row prefix length = %d, want %d",
@@ -743,6 +789,7 @@ func TestWarmMessageLineCacheStopsWhenNoProgressIsPossible(t *testing.T) {
 			testCase.setup(app)
 
 			app.warmMessageLineCache()
+
 			if app.transcript.LineCache.warm {
 				t.Fatal("cache should not warm when progress is blocked")
 			}
@@ -760,14 +807,17 @@ func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
 
 	_ = app.messageLines(80, 6)
 	app.warmMessageLineCacheStep()
+
 	if app.transcript.LineCache.warm {
 		t.Fatal("single warm step should not eagerly warm full history")
 	}
+
 	if app.transcript.LineCache.warmIndex != messageCacheWarmBatchSize {
 		t.Fatalf("warm index = %d, want %d", app.transcript.LineCache.warmIndex, messageCacheWarmBatchSize)
 	}
 
 	app.warmMessageLineCacheStep()
+
 	if !app.transcript.LineCache.warm {
 		t.Fatal("expected second warm step to finish cache")
 	}
@@ -785,11 +835,14 @@ func TestScrolledMessageLinesBeforeWarmCacheUsesVisibleTail(t *testing.T) {
 	if app.transcript.LineCache.warm {
 		t.Fatal("tail render should not warm full history")
 	}
+
 	app.scrollTranscript(3)
+
 	lines := app.messageLines(80, 6)
 	if app.transcript.LineCache.warm {
 		t.Fatal("scroll before cache warm should not synchronously warm full history")
 	}
+
 	if lineIndexContaining(lines, "history message 98") == -1 {
 		t.Fatalf("expected recent history while warm cache is pending, got %v", lineTexts(lines))
 	}
@@ -802,6 +855,7 @@ func TestScrolledMessageLinesRevalidatesWarmCacheAfterResize(t *testing.T) {
 	for index := range 20 {
 		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index)+" with enough text to wrap")
 	}
+
 	_ = app.messageLines(80, 6)
 	app.warmMessageLineCache()
 	require.True(t, app.transcript.LineCache.warm)
@@ -837,13 +891,16 @@ func TestBottomMessageLinesExpandedToolUsesTailWithoutFullRender(t *testing.T) {
 	}))
 
 	lines := app.messageLines(80, 4)
+
 	texts := lineTexts(lines)
 	if lineIndexContaining(lines, "line 5") == -1 {
 		t.Fatalf("expected latest tool output tail, got %v", texts)
 	}
+
 	if lineIndexContaining(lines, "line 0") != -1 {
 		t.Fatalf("expected old tool output to stay unrendered in bottom tail, got %v", texts)
 	}
+
 	if len(app.transcript.LineCache.items) > 0 && app.transcript.LineCache.items[0].Valid {
 		t.Fatal("bottom tail render should not populate full expanded tool cache")
 	}
@@ -861,10 +918,12 @@ func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
 	}
 
 	app.hideThinking = true
+
 	hidden := app.messageLines(80, 100)
 	if lineIndexContaining(hidden, "cached thought") != -1 {
 		t.Fatalf("expected hidden thinking content after hiding, got %v", lineTexts(hidden))
 	}
+
 	if lineIndexContaining(hidden, "thinking…") == -1 {
 		t.Fatalf("expected thinking placeholder after hiding, got %v", lineTexts(hidden))
 	}
@@ -885,6 +944,7 @@ func TestLoadInitialMessagesUsesTranscriptHistory(t *testing.T) {
 		Model:     "",
 	})
 	require.NoError(t, err)
+
 	app.sessionID = session.ID
 	app.resetMessages()
 
@@ -917,10 +977,12 @@ func TestStreamingBlocksRenderChronologically(t *testing.T) {
 	toolEvent := newTestAsyncEvent(asyncEventPromptToolResult, "")
 	toolEvent.ToolEvent = newTestToolEvent("read", "tool output")
 	app.handlePromptStreamEvent(context.Background(), toolEvent)
+
 	secondThought := newTestAsyncEvent(asyncEventPromptThinkingDelta, "second thought")
 	app.handlePromptStreamEvent(context.Background(), secondThought)
 
 	got := streamingBlockRoles(app.transcript.Streaming.Blocks)
+
 	want := []transcript.Role{
 		transcript.RoleThinking,
 		transcript.RoleToolResult,
@@ -933,10 +995,12 @@ func TestStreamingBlocksRenderChronologically(t *testing.T) {
 	lines := app.messageLines(80, 200)
 	first := lineIndexContaining(lines, "first thought")
 	tool := lineIndexContaining(lines, "read")
+
 	second := lineIndexContaining(lines, "second thought")
 	if first == -1 || tool == -1 || second == -1 {
 		t.Fatalf("expected rendered thinking/tool/thinking lines, got first=%d tool=%d second=%d", first, tool, second)
 	}
+
 	if first >= tool || tool >= second {
 		t.Fatalf("streaming lines not chronological: first=%d tool=%d second=%d", first, tool, second)
 	}
@@ -953,13 +1017,16 @@ func TestToolBlockPreservesFileContentIndentation(t *testing.T) {
 	if lineIndexContaining(lines, "  \tif ok {") == -1 {
 		t.Fatalf("expected tab-indented file line to be preserved, got %#v", texts)
 	}
+
 	if lineIndexContaining(lines, "          fmt.Println") == -1 {
 		t.Fatalf("expected space-indented file line to be preserved, got %#v", texts)
 	}
+
 	app.frame = rendertext.NewBuffer(80, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 80, line)
 	}
+
 	if !strings.Contains(frameText(app.frame), "      if ok {") {
 		t.Fatalf("expected rendered tab indentation to occupy cells, frame = %q", frameText(app.frame))
 	}
@@ -977,6 +1044,7 @@ func TestToolBlockWrapPreservesContinuationIndentation(t *testing.T) {
 	if lineIndexContaining(lines, "      word") == -1 {
 		t.Fatalf("expected first wrapped file line to preserve indentation, got %#v", texts)
 	}
+
 	if lineIndexContaining(lines, "  word") == -1 {
 		t.Fatalf("expected continuation line to keep block indent, got %#v", texts)
 	}
@@ -995,6 +1063,7 @@ func TestToolDiffPreservesIndentation(t *testing.T) {
 	if lineIndexContaining(lines, "+1     indented") == -1 {
 		t.Fatalf("expected space indentation in diff, got %#v", texts)
 	}
+
 	if lineIndexContaining(lines, "+2 \t tabbed") == -1 {
 		t.Fatalf("expected tab indentation in diff, got %#v", texts)
 	}
@@ -1051,11 +1120,14 @@ func TestUIRenderDrawsSpansWithoutClearingLaterSpans(t *testing.T) {
 	if !strings.Contains(text, "hot cold") {
 		t.Fatalf("expected span text, frame = %q", text)
 	}
+
 	first := app.frame.Cell(layout.Composer.X, layout.Composer.Y+1)
+
 	second := app.frame.Cell(layout.Composer.X+4, layout.Composer.Y+1)
 	if got, want := first.Style.GetForeground(), app.theme.colors[colorAccent]; got != want {
 		t.Fatalf("first span foreground = %v, want %v", got, want)
 	}
+
 	if got, want := second.Style.GetForeground(), app.theme.colors[colorDim]; got != want {
 		t.Fatalf("second span foreground = %v, want %v", got, want)
 	}
@@ -1091,9 +1163,11 @@ func TestUIRenderDrawsWideRunesByCellWidth(t *testing.T) {
 	if got, want := app.frame.Cell(layout.Composer.X, row).Rune, '語'; got != want {
 		t.Fatalf("first cell = %q, want %q", got, want)
 	}
+
 	if got, want := app.frame.Cell(layout.Composer.X+1, row).Rune, ' '; got != want {
 		t.Fatalf("wide continuation cell = %q, want space", got)
 	}
+
 	if got, want := app.frame.Cell(layout.Composer.X+2, row).Rune, 'x'; got != want {
 		t.Fatalf("third cell = %q, want %q", got, want)
 	}
@@ -1104,6 +1178,7 @@ func TestUIRenderClearRegionClipsToWindow(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	layout := app.defaultRuntimeLayout(40, 12)
+
 	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	for row := 0; row < layout.Composer.Height; row++ {
 		writeTextAt(
@@ -1115,6 +1190,7 @@ func TestUIRenderClearRegionClipsToWindow(t *testing.T) {
 			tcell.StyleDefault.Foreground(cellcolor.Red),
 		)
 	}
+
 	app.extensionUI.Overrides[extui.BufferComposer] = extui.WindowOverride{
 		DrawOps: []extension.UIDrawOp{
 			{
@@ -1137,15 +1213,19 @@ func TestUIRenderClearRegionClipsToWindow(t *testing.T) {
 
 	cleared := app.frame.Cell(layout.Composer.X+2, layout.Composer.Y+1)
 	untouched := app.frame.Cell(layout.Composer.X+1, layout.Composer.Y+1)
+
 	if got, want := cleared.Rune, ' '; got != want {
 		t.Fatalf("cleared cell = %q, want space", got)
 	}
+
 	if got, want := cleared.Style.GetForeground(), app.theme.colors[colorDim]; got != want {
 		t.Fatalf("cleared foreground = %v, want %v", got, want)
 	}
+
 	if got, want := untouched.Rune, 'x'; got != want {
 		t.Fatalf("untouched cell = %q, want x", got)
 	}
+
 	if got, want := untouched.Style.GetForeground(), cellcolor.Red; got != want {
 		t.Fatalf("untouched foreground = %v, want %v", got, want)
 	}
@@ -1171,6 +1251,7 @@ func TestDefaultLayoutComposerTouchesStatus(t *testing.T) {
 			app.composerBuffer.SetText(tt.prompt)
 
 			layout := app.defaultRuntimeLayout(80, 24)
+
 			composerBottom := layout.Composer.Y + layout.Composer.Height
 			if composerBottom != layout.Status.Y {
 				t.Fatalf("composer bottom = %d, status y = %d", composerBottom, layout.Status.Y)
@@ -1186,6 +1267,7 @@ func TestComposerLayoutReflowsAfterPromptAndTerminalResize(t *testing.T) {
 	app.composerBuffer.SetText(strings.Repeat("wide ", 24))
 
 	wide := app.defaultRuntimeLayout(80, 24)
+
 	narrow := app.defaultRuntimeLayout(32, 24)
 	if narrow.Composer.Height <= wide.Composer.Height {
 		t.Fatalf(
@@ -1194,6 +1276,7 @@ func TestComposerLayoutReflowsAfterPromptAndTerminalResize(t *testing.T) {
 			wide.Composer.Height,
 		)
 	}
+
 	if narrow.Composer.Y+narrow.Composer.Height != narrow.Status.Y {
 		t.Fatalf(
 			"narrow composer bottom = %d, status y = %d",
@@ -1203,6 +1286,7 @@ func TestComposerLayoutReflowsAfterPromptAndTerminalResize(t *testing.T) {
 	}
 
 	app.composerBuffer.SetText("")
+
 	empty := app.defaultRuntimeLayout(32, 24)
 	if empty.Composer.Height >= narrow.Composer.Height {
 		t.Fatalf(
@@ -1211,6 +1295,7 @@ func TestComposerLayoutReflowsAfterPromptAndTerminalResize(t *testing.T) {
 			narrow.Composer.Height,
 		)
 	}
+
 	if empty.Composer.Y+empty.Composer.Height != empty.Status.Y {
 		t.Fatalf(
 			"empty composer bottom = %d, status y = %d",
@@ -1229,6 +1314,7 @@ func TestDrawComposerDoesNotPersistDefaultWindowGeometry(t *testing.T) {
 	wideLayout := app.defaultRuntimeLayout(80, 24)
 	app.frame = rendertext.NewBuffer(wideLayout.Width, wideLayout.Height, tcell.StyleDefault)
 	app.drawComposerWindow(&wideLayout)
+
 	if _, ok := app.extensionUI.Windows[extui.BufferComposer]; ok {
 		t.Fatal("default composer draw should not persist runtime window geometry")
 	}
@@ -1247,11 +1333,14 @@ func frameText(frame *rendertext.Buffer) string {
 	if frame == nil {
 		return ""
 	}
+
 	var builder strings.Builder
+
 	for row := range frame.Height() {
 		for column := range frame.Width() {
 			builder.WriteRune(frame.Cell(column, row).Rune)
 		}
+
 		builder.WriteRune('\n')
 	}
 
@@ -1302,6 +1391,7 @@ func newTestToolEvent(name, result string) *assistant.ToolEvent {
 
 func assertThinkingLineDim(t *testing.T, app *App, lines []rendertext.Line) {
 	t.Helper()
+
 	if len(lines) < 3 {
 		t.Fatalf("expected thinking content line, got %d lines", len(lines))
 	}
@@ -1310,6 +1400,7 @@ func assertThinkingLineDim(t *testing.T, app *App, lines []rendertext.Line) {
 	if got, want := content.Style.GetForeground(), app.theme.colors[colorDim]; got != want {
 		t.Fatalf("thinking foreground = %v, want %v", got, want)
 	}
+
 	if !content.Style.HasItalic() {
 		t.Fatal("thinking text should remain italicized/dim")
 	}
@@ -1328,6 +1419,7 @@ func rolesEqual(left, right []transcript.Role) bool {
 	if len(left) != len(right) {
 		return false
 	}
+
 	for index := range left {
 		if left[index] != right[index] {
 			return false

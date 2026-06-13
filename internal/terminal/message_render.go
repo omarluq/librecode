@@ -11,13 +11,16 @@ import (
 
 func (app *App) cachedStreamingBlockLines(width, index int) []rendertext.Line {
 	app.ensureStreamingBlockLineCache(width)
+
 	if index < len(app.transcript.Streaming.LineCache) && app.transcript.Streaming.LineCache[index].Valid {
 		return app.transcript.Streaming.LineCache[index].Lines
 	}
+
 	lines := app.renderStreamingBlockMessage(width, app.transcript.Streaming.Blocks[index])
 	if index >= len(app.transcript.Streaming.LineCache) {
 		return lines
 	}
+
 	app.transcript.Streaming.LineCache[index] = cachedRenderedMessage{Lines: lines, Valid: true}
 
 	return lines
@@ -52,9 +55,10 @@ func (app *App) renderMessage(width int, message chatMessage) []rendertext.Line 
 }
 
 func (app *App) renderUserMessage(width int, content string) []rendertext.Line {
-	innerWidth := max(1, width-4)
+	innerWidth := max(1, width-messageBoxHorizontalPadding)
 	wrapped := rendertext.Wrap(content, innerWidth)
-	lines := make([]rendertext.Line, 0, len(wrapped)+4)
+	lines := make([]rendertext.Line, 0, len(wrapped)+defaultMessageExtraRows)
+
 	lines = append(lines,
 		rendertext.NewLine(app.theme.style(colorDim), ""),
 		rendertext.NewLine(app.theme.background(colorUserMessageBg), rendertext.PadRight("", width)),
@@ -63,6 +67,7 @@ func (app *App) renderUserMessage(width int, content string) []rendertext.Line {
 		text := "  " + rendertext.PadRight(line, innerWidth) + "  "
 		lines = append(lines, rendertext.NewLine(app.theme.background(colorUserMessageBg), text))
 	}
+
 	lines = append(lines,
 		rendertext.NewLine(app.theme.background(colorUserMessageBg), rendertext.PadRight("", width)),
 		rendertext.NewLine(app.theme.style(colorDim), ""),
@@ -73,15 +78,18 @@ func (app *App) renderUserMessage(width int, content string) []rendertext.Line {
 
 func (app *App) renderQueuedMessages(width int) []rendertext.Line {
 	style := app.theme.background(colorUserMessageBg).Foreground(app.theme.colors[colorMuted])
-	innerWidth := max(1, width-4)
+	innerWidth := max(1, width-messageBoxHorizontalPadding)
+
 	lines := []rendertext.Line{rendertext.NewLine(app.theme.style(colorDim), "")}
 	for index, message := range app.queuedMessages {
 		header := "queued follow-up " + rendertext.Int(index+1)
+
 		lines = append(lines, rendertext.NewLine(style.Bold(true), "  "+rendertext.PadRight(header, innerWidth)+"  "))
 		for _, line := range rendertext.Wrap(message, innerWidth) {
 			lines = append(lines, rendertext.NewLine(style, "  "+rendertext.PadRight(line, innerWidth)+"  "))
 		}
 	}
+
 	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
 
 	return lines
@@ -89,7 +97,7 @@ func (app *App) renderQueuedMessages(width int) []rendertext.Line {
 
 func (app *App) renderAssistantMessage(width int, content string) []rendertext.Line {
 	markdownLines := app.renderMarkdown(strings.TrimSpace(content), width)
-	lines := make([]rendertext.Line, 0, len(markdownLines)+2)
+	lines := make([]rendertext.Line, 0, len(markdownLines)+messageOuterRows)
 	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
 	lines = append(lines, markdownLines...)
 	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
@@ -100,11 +108,13 @@ func (app *App) renderAssistantMessage(width int, content string) []rendertext.L
 func (app *App) renderStreamingMessage(width int, content string) []rendertext.Line {
 	wrapped := rendertext.Wrap(strings.TrimSpace(content), width)
 	style := app.theme.style(colorText)
-	lines := make([]rendertext.Line, 0, len(wrapped)+2)
+	lines := make([]rendertext.Line, 0, len(wrapped)+messageOuterRows)
+
 	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
 	for _, line := range wrapped {
 		lines = append(lines, rendertext.NewLine(style, line))
 	}
+
 	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
 
 	return lines
@@ -147,7 +157,8 @@ func (app *App) renderThinkingMessage(width int, message chatMessage) []renderte
 	}
 
 	markdownLines := app.renderMarkdown(strings.TrimSpace(message.Content), width)
-	lines := make([]rendertext.Line, 0, len(markdownLines)+3)
+	lines := make([]rendertext.Line, 0, len(markdownLines)+messageMetadataRows)
+
 	lines = append(lines,
 		rendertext.NewLine(tcell.StyleDefault, ""),
 		rendertext.NewLine(style.Bold(true), settingThinking),
@@ -155,6 +166,7 @@ func (app *App) renderThinkingMessage(width int, message chatMessage) []renderte
 	for _, line := range markdownLines {
 		lines = append(lines, mergeLineStyle(line, style))
 	}
+
 	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
 
 	return lines
@@ -162,6 +174,7 @@ func (app *App) renderThinkingMessage(width int, message chatMessage) []renderte
 
 func mergeLineStyle(line rendertext.Line, style tcell.Style) rendertext.Line {
 	merged := line
+
 	merged.Style = mergeStyles(line.Style, style)
 	if len(line.Spans) > 0 {
 		merged.Spans = make([]rendertext.Span, len(line.Spans))
@@ -178,18 +191,23 @@ func mergeStyles(base, overlay tcell.Style) tcell.Style {
 	if overlay.HasBold() {
 		merged = merged.Bold(true)
 	}
+
 	if overlay.HasItalic() {
 		merged = merged.Italic(true)
 	}
+
 	if overlay.HasUnderline() {
 		merged = merged.Underline(true)
 	}
+
 	if overlay.HasReverse() {
 		merged = merged.Reverse(true)
 	}
+
 	if fg := overlay.GetForeground(); fg != tcell.ColorDefault {
 		merged = merged.Foreground(fg)
 	}
+
 	if bg := overlay.GetBackground(); bg != tcell.ColorDefault {
 		merged = merged.Background(bg)
 	}
@@ -210,9 +228,10 @@ func (app *App) renderSummaryMessage(width int, message chatMessage) []rendertex
 }
 
 func boxedLines(width int, label, content string, style tcell.Style) []rendertext.Line {
-	innerWidth := max(1, width-4)
+	innerWidth := max(1, width-messageBoxHorizontalPadding)
 	wrapped := rendertext.Wrap(content, innerWidth)
-	lines := make([]rendertext.Line, 0, len(wrapped)+5)
+	lines := make([]rendertext.Line, 0, len(wrapped)+assistantMessageExtraRows)
+
 	lines = append(lines,
 		rendertext.NewLine(tcell.StyleDefault, ""),
 		rendertext.NewLine(style, rendertext.PadRight("", width)),
@@ -221,6 +240,7 @@ func boxedLines(width int, label, content string, style tcell.Style) []rendertex
 	for _, line := range wrapped {
 		lines = append(lines, rendertext.NewLine(style, "  "+rendertext.PadRight(line, innerWidth)+"  "))
 	}
+
 	lines = append(lines,
 		rendertext.NewLine(style, rendertext.PadRight("", width)),
 		rendertext.NewLine(tcell.StyleDefault, ""),

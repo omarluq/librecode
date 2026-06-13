@@ -35,6 +35,7 @@ func TestPlatformOpenersReturnsCommands(t *testing.T) {
 
 	commands := platformOpeners()
 	require.NotEmpty(t, commands)
+
 	for _, command := range commands {
 		assert.NotEmpty(t, command.name)
 	}

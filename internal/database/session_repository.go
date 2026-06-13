@@ -50,6 +50,7 @@ func sessionFromRow(row *sessionRow) (*SessionEntity, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	updatedAt, err := parseTime(row.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -93,6 +94,7 @@ func (repository *SessionRepository) CreateSession(
 	const statement = `
 INSERT INTO sessions (id, cwd, name, parent_session, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?)`
+
 	if err := validateSessionEntity(&createdSession); err != nil {
 		return nil, oops.In("database").Code("validate_session").Wrapf(err, "validate session")
 	}
@@ -147,6 +149,7 @@ func (repository *SessionRepository) loadSession(
 		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
+
 		return nil, false, oops.In("database").Code(code).Wrapf(err, "%s", message)
 	}
 

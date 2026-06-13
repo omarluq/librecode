@@ -16,6 +16,7 @@ func TestTimingsDisabledDoesNotRecord(t *testing.T) {
 	current := time.Unix(0, 0)
 	timings := core.NewTimingsWithClock(false, func() time.Time { return current })
 	current = current.Add(time.Second)
+
 	timings.Mark("ignored")
 	timings.Reset()
 
@@ -29,6 +30,7 @@ func TestTimingsEntriesAreDefensiveCopy(t *testing.T) {
 	current := time.Unix(0, 0)
 	timings := core.NewTimingsWithClock(true, func() time.Time { return current })
 	current = current.Add(time.Second)
+
 	timings.Mark("load")
 
 	entries := timings.Entries()
@@ -46,9 +48,12 @@ func TestTimingsResetRestartsClock(t *testing.T) {
 	current := time.Unix(0, 0)
 	timings := core.NewTimingsWithClock(true, func() time.Time { return current })
 	current = current.Add(time.Second)
+
 	timings.Mark("before")
 	timings.Reset()
+
 	current = current.Add(250 * time.Millisecond)
+
 	timings.Mark("after")
 
 	entries := timings.Entries()

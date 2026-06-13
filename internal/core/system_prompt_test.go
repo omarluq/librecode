@@ -37,6 +37,7 @@ func TestBuildSystemPrompt(t *testing.T) {
 			for _, expected := range testCase.contains {
 				assert.Contains(t, prompt, expected)
 			}
+
 			for _, unexpected := range testCase.notContains {
 				assert.NotContains(t, prompt, unexpected)
 			}
@@ -156,6 +157,7 @@ func TestFormatSkillPrompts(t *testing.T) {
 			for _, expected := range testCase.contains {
 				assert.Contains(t, prompt, expected)
 			}
+
 			for _, unexpected := range testCase.notContains {
 				assert.NotContains(t, prompt, unexpected)
 			}

@@ -30,7 +30,9 @@ func newChatCmd() *cobra.Command {
 			if options.ResumeID != "" && len(args) > 0 {
 				options.ResumeID = args[0]
 			}
+
 			options.Resume = options.ResumeID != ""
+
 			return runChat(cmd, options)
 		},
 	}
@@ -50,16 +52,18 @@ func newChatCmd() *cobra.Command {
 
 func runChat(cmd *cobra.Command, options chatRunOptions) error {
 	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-		databaseService := di.MustInvoke[*di.DatabaseService](container)
-		runtime := di.MustInvoke[*di.AssistantService](container).Runtime
-		modelRegistry := di.MustInvoke[*di.ModelService](container).Registry
-		authStorage := di.MustInvoke[*di.AuthService](container).Storage
-		extensionManager := di.MustInvoke[*di.ExtensionService](container).Manager
-		cfg := di.MustInvoke[*di.ConfigService](container).Get()
+		databaseService := container.DatabaseService()
+		runtime := container.AssistantService().Runtime
+		modelRegistry := container.ModelService().Registry
+		authStorage := container.AuthService().Storage
+		extensionManager := container.ExtensionService().Manager
+		cfg := container.ConfigService().Get()
+
 		cwd, err := assistant.DefaultCWD("")
 		if err != nil {
-			return err
+			return cliError(err, "resolve working directory")
 		}
+
 		sessionID, err := resolveChatSessionID(cmd.Context(), runtime, cwd, options)
 		if err != nil {
 			return err
@@ -90,17 +94,20 @@ func resolveChatSessionID(
 	if options.SessionID != "" && options.Resume {
 		return "", errors.New("--resume cannot be used with --session")
 	}
+
 	if !options.Resume || runtime == nil {
 		return options.SessionID, nil
 	}
+
 	if options.ResumeID != "" && options.ResumeID != latestSessionFlagValue {
 		return options.ResumeID, nil
 	}
 
 	latestSession, found, err := runtime.SessionRepository().LatestSession(ctx, cwd)
 	if err != nil {
-		return "", err
+		return "", cliError(err, "load latest session")
 	}
+
 	if !found {
 		return "", nil
 	}

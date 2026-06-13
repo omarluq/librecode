@@ -20,6 +20,7 @@ func TestNewAnthropicFlowIncludesPKCE(t *testing.T) {
 	authURL := auth.NewAnthropicFlowURLForTest(t)
 	parsed, err := url.Parse(authURL)
 	require.NoError(t, err)
+
 	query := parsed.Query()
 
 	assert.Equal(t, auth.AnthropicClientIDForTest(), query.Get("client_id"))
@@ -63,9 +64,7 @@ func TestLoginAnthropicWithCode(t *testing.T) {
 	}))
 	defer server.Close()
 
-	auth.SetAnthropicTokenURLForTest(t, server.URL)
-
-	credential, err := auth.LoginAnthropicWithCodeForTest(t.Context(), "code#state")
+	credential, err := auth.LoginAnthropicWithCodeForTest(t.Context(), "code#state", server.URL)
 	require.NoError(t, err)
 	assert.Equal(t, auth.CredentialTypeOAuth, credential.Type)
 	assert.Equal(t, "sk-ant-oat-access", credential.Access)
@@ -93,9 +92,7 @@ func TestRequestAnthropicToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	auth.SetAnthropicTokenURLForTest(t, server.URL)
-
-	credential, err := auth.RefreshAnthropicForTest(t.Context(), "refresh")
+	credential, err := auth.RefreshAnthropicForTest(t.Context(), "refresh", server.URL)
 	require.NoError(t, err)
 	assert.Equal(t, auth.CredentialTypeOAuth, credential.Type)
 	assert.Equal(t, "sk-ant-oat-access", credential.Access)

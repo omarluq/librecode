@@ -25,7 +25,6 @@ func TestBudgetUsageWithReservesAndValidation(t *testing.T) {
 		OutputReserveTokens:   10,
 		ProviderReserveTokens: 5,
 		SafetyMarginTokens:    5,
-		KeepRecentTokens:      0,
 		PreflightEnabled:      true,
 	}, func() int { return 5 })
 
@@ -49,7 +48,6 @@ func TestBudgetDefaultsAndReconstruction(t *testing.T) {
 		OutputReserveTokens:   0,
 		ProviderReserveTokens: -1,
 		SafetyMarginTokens:    -1,
-		KeepRecentTokens:      0,
 		PreflightEnabled:      true,
 	}, nil)
 

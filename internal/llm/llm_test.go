@@ -16,6 +16,7 @@ func TestBoundaryInterfaces(t *testing.T) {
 	t.Parallel()
 
 	var generator llm.Generator = testGenerator{}
+
 	request := llm.Request{
 		ProviderOptions: nil,
 		Auth: llm.Auth{
@@ -45,7 +46,8 @@ func TestBoundaryInterfaces(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, llm.FinishReasonStop, response.FinishReason)
 
-	var streamer llm.Streamer = testStreamer{}
+	streamer := testStreamer{}
+
 	stream, err := streamer.Stream(context.Background(), llm.EmptyRequest())
 	require.NoError(t, err)
 	chunk, err := stream.Recv()
@@ -310,6 +312,7 @@ func TestProviderErrorFallbackMessages(t *testing.T) {
 			if test.err != nil {
 				got = test.err.Error()
 			}
+
 			assert.Equal(t, test.want, got)
 		})
 	}

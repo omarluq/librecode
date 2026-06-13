@@ -37,15 +37,16 @@ func newSessionNewCmd() *cobra.Command {
 			name := strings.TrimSpace(strings.Join(args, " "))
 
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				repository := di.MustInvoke[*di.DatabaseService](container).Sessions
+				repository := container.DatabaseService().Sessions
+
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
-					return err
+					return cliError(err, "resolve working directory")
 				}
 
 				createdSession, err := repository.CreateSession(cmd.Context(), cwd, name, "")
 				if err != nil {
-					return err
+					return cliError(err, "create session")
 				}
 
 				return printLine(cmd.OutOrStdout(), createdSession.ID)
@@ -61,15 +62,16 @@ func newSessionListCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				repository := di.MustInvoke[*di.DatabaseService](container).Sessions
+				repository := container.DatabaseService().Sessions
+
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
-					return err
+					return cliError(err, "resolve working directory")
 				}
 
 				sessions, err := repository.ListSessions(cmd.Context(), cwd)
 				if err != nil {
-					return err
+					return cliError(err, "list sessions")
 				}
 
 				for index := range sessions {
@@ -91,10 +93,11 @@ func newSessionShowCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				repository := di.MustInvoke[*di.DatabaseService](container).Sessions
+				repository := container.DatabaseService().Sessions
+
 				entries, err := repository.Entries(cmd.Context(), args[0])
 				if err != nil {
-					return err
+					return cliError(err, "load session entries")
 				}
 
 				for index := range entries {

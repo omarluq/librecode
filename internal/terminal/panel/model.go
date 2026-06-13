@@ -94,10 +94,13 @@ func (model *Model) SetSelectedIndex(index int) {
 	if model == nil {
 		return
 	}
+
 	if len(model.filtered) == 0 {
 		model.selected = 0
+
 		return
 	}
+
 	model.selected = min(max(0, index), len(model.filtered)-1)
 }
 
@@ -124,14 +127,18 @@ func (model *Model) MoveSelection(delta int) {
 	if model == nil {
 		return
 	}
+
 	if len(model.filtered) == 0 {
 		model.selected = 0
+
 		return
 	}
+
 	model.selected += delta
 	for model.selected < 0 {
 		model.selected += len(model.filtered)
 	}
+
 	model.selected %= len(model.filtered)
 }
 
@@ -140,6 +147,7 @@ func (model *Model) AppendQueryRune(char rune) {
 	if model == nil || !model.searchable || char == 0 {
 		return
 	}
+
 	model.query += string(char)
 	model.ApplyFilter()
 }
@@ -149,6 +157,7 @@ func (model *Model) BackspaceQuery() {
 	if model == nil || model.query == "" {
 		return
 	}
+
 	queryRunes := []rune(model.query)
 	model.query = string(queryRunes[:len(queryRunes)-1])
 	model.ApplyFilter()
@@ -159,11 +168,14 @@ func (model *Model) ApplyFilter() {
 	if model == nil {
 		return
 	}
+
 	if strings.TrimSpace(model.query) == "" {
 		model.filtered = slices.Clone(model.items)
 		model.selected = min(model.selected, max(0, len(model.filtered)-1))
+
 		return
 	}
+
 	query := strings.ToLower(strings.TrimSpace(model.query))
 	model.filtered = lo.Filter(model.items, func(item Item, _ int) bool {
 		return itemMatchesQuery(item, query)
@@ -173,6 +185,7 @@ func (model *Model) ApplyFilter() {
 
 func itemMatchesQuery(item Item, query string) bool {
 	haystack := strings.ToLower(strings.Join([]string{item.Title, item.Description, item.Meta, item.Value}, " "))
+
 	parts := strings.FieldsSeq(query)
 	for part := range parts {
 		if !strings.Contains(haystack, part) {
@@ -210,15 +223,25 @@ type RenderOptions struct {
 }
 
 // Render converts the model into styled terminal lines.
+const (
+	panelHorizontalPadding    = 4
+	panelChromeRows           = 8
+	panelCenterDivisor        = 2
+	panelPositionWidthDivisor = 4
+)
+
+// Render returns styled terminal lines for the current panel state.
 func (model *Model) Render(options *RenderOptions) []rendertext.Line {
 	if model == nil || options == nil {
 		return []rendertext.Line{}
 	}
+
 	width := max(1, options.Width)
 	height := max(1, options.Height)
-	contentWidth := max(1, width-4)
-	maxItems := max(1, height-8)
-	lines := make([]rendertext.Line, 0, min(height, maxItems+8))
+	contentWidth := max(1, width-panelHorizontalPadding)
+	maxItems := max(1, height-panelChromeRows)
+	lines := make([]rendertext.Line, 0, min(height, maxItems+panelChromeRows))
+
 	lines = append(lines,
 		rendertext.NewLine(options.Styles.Border, rendertext.TopBorder(width, "")),
 		rendertext.NewLine(options.Styles.Accent.Bold(true), panelRow(model.title, contentWidth)),
@@ -226,10 +249,12 @@ func (model *Model) Render(options *RenderOptions) []rendertext.Line {
 	if model.subtitle != "" {
 		lines = append(lines, rendertext.NewLine(options.Styles.Muted, panelRow(model.subtitle, contentWidth)))
 	}
+
 	if model.searchable {
 		query := "Search: " + model.query
 		lines = append(lines, rendertext.NewLine(options.Styles.Text, panelRow(query, contentWidth)))
 	}
+
 	lines = append(lines, rendertext.NewLine(options.Styles.Border, rendertext.MiddleBorder(width)))
 	lines = append(lines, model.itemLines(contentWidth, maxItems, &options.Styles)...)
 	lines = append(lines,
@@ -248,8 +273,10 @@ func (model *Model) itemLines(contentWidth, maxItems int, styles *Styles) []rend
 	if len(model.filtered) == 0 {
 		return []rendertext.Line{rendertext.NewLine(styles.Muted, panelRow("No matches", contentWidth))}
 	}
+
 	startIndex := model.windowStart(maxItems)
 	endIndex := min(startIndex+maxItems, len(model.filtered))
+
 	lines := make([]rendertext.Line, 0, endIndex-startIndex)
 	for index := startIndex; index < endIndex; index++ {
 		lines = append(lines, model.itemLine(index, contentWidth, styles))
@@ -262,14 +289,17 @@ func (model *Model) itemLine(index, width int, styles *Styles) rendertext.Line {
 	item := model.filtered[index]
 	prefix := "  "
 	style := styles.Text
+
 	if index == model.selected {
 		prefix = "→ "
 		style = styles.Selected
 	}
+
 	text := prefix + item.Title
 	if item.Meta != "" {
 		text += " " + item.Meta
 	}
+
 	if model.showDetails && item.Description != "" {
 		text += " — " + item.Description
 	}
@@ -281,7 +311,8 @@ func (model *Model) windowStart(maxItems int) int {
 	if len(model.filtered) <= maxItems {
 		return 0
 	}
-	startIndex := model.selected - maxItems/2
+
+	startIndex := model.selected - maxItems/panelCenterDivisor
 	startIndex = max(0, startIndex)
 	startIndex = min(startIndex, len(model.filtered)-maxItems)
 
@@ -291,8 +322,9 @@ func (model *Model) windowStart(maxItems int) int {
 func (model *Model) hintLine(contentWidth, width int, styles *Styles, hints *Hints) rendertext.Line {
 	position := ""
 	if len(model.filtered) > 0 {
-		position = " " + rendertext.Truncate(model.positionText(), max(0, width/4))
+		position = " " + rendertext.Truncate(model.positionText(), max(0, width/panelPositionWidthDivisor))
 	}
+
 	hint := hints.Up + "/" + hints.Down + " navigate · " +
 		hints.Confirm + " select · " + hints.Cancel + " cancel" + position
 

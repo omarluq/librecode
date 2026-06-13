@@ -9,13 +9,15 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-var nilableToolProviderKinds = map[reflect.Kind]struct{}{
-	reflect.Chan:      {},
-	reflect.Func:      {},
-	reflect.Interface: {},
-	reflect.Map:       {},
-	reflect.Pointer:   {},
-	reflect.Slice:     {},
+func nilableToolProviderKinds() map[reflect.Kind]struct{} {
+	return map[reflect.Kind]struct{}{
+		reflect.Chan:      {},
+		reflect.Func:      {},
+		reflect.Interface: {},
+		reflect.Map:       {},
+		reflect.Pointer:   {},
+		reflect.Slice:     {},
+	}
 }
 
 type toolProvider interface {
@@ -28,6 +30,7 @@ func newToolRegistry(cwd string, provider toolProvider) (*tool.Registry, error) 
 	if isNilToolProvider(provider) {
 		return registry, nil
 	}
+
 	if err := registry.RegisterExtensions(provider, provider.Tools()); err != nil {
 		return nil, oops.In("assistant").Code("register_extension_tools").Wrapf(err, "register extension tools")
 	}
@@ -39,12 +42,13 @@ func isNilToolProvider(provider toolProvider) bool {
 	if provider == nil {
 		return true
 	}
+
 	value := reflect.ValueOf(provider)
 	if !value.IsValid() {
 		return true
 	}
 
-	if _, ok := nilableToolProviderKinds[value.Kind()]; !ok {
+	if _, ok := nilableToolProviderKinds()[value.Kind()]; !ok {
 		return false
 	}
 

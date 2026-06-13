@@ -14,6 +14,7 @@ func resolveStoredKey(value string) string {
 	if trimmed == "" {
 		return ""
 	}
+
 	if envValue := strings.TrimSpace(os.Getenv(trimmed)); envValue != "" {
 		return envValue
 	}
@@ -22,18 +23,17 @@ func resolveStoredKey(value string) string {
 }
 
 func timeNowMillis() int64 {
-	return timeNow().UnixMilli()
+	return time.Now().UnixMilli()
 }
-
-var timeNow = time.Now
 
 func parseCredentials(content []byte) (map[string]Credential, error) {
 	if strings.TrimSpace(string(content)) == "" {
 		return map[string]Credential{}, nil
 	}
+
 	credentials := map[string]Credential{}
 	if err := json.Unmarshal(content, &credentials); err != nil {
-		return map[string]Credential{}, err
+		return map[string]Credential{}, authError(err, "parse credentials")
 	}
 
 	return credentials, nil
@@ -41,11 +41,13 @@ func parseCredentials(content []byte) (map[string]Credential, error) {
 
 func envAPIKey(provider string) (string, bool) {
 	value, _, found := resolveEnvKey(provider)
+
 	return value, found
 }
 
 func envKeyName(provider string) (string, bool) {
 	_, key, found := resolveEnvKey(provider)
+
 	return key, found
 }
 
@@ -63,10 +65,12 @@ func resolveEnvKey(provider string) (value, key string, found bool) {
 func envKeyCandidates(provider string) []string {
 	normalized := strings.ToUpper(provider)
 	normalized = strings.NewReplacer("-", "_", ".", "_", "/", "_").Replace(normalized)
+
 	candidates := []string{}
 	if envKeys, ok := wellKnownEnvKeys(provider); ok {
 		candidates = append(candidates, envKeys...)
 	}
+
 	candidates = append(candidates, normalized+apiKeyEnvSuffix())
 
 	return lo.Uniq(candidates)

@@ -34,6 +34,7 @@ func (runtime *Runtime) appendAssistantSideEffects(
 		if trimmed == "" {
 			continue
 		}
+
 		message := database.MessageEntity{
 			Timestamp: time.Now().UTC(),
 			Role:      database.RoleThinking,
@@ -41,13 +42,16 @@ func (runtime *Runtime) appendAssistantSideEffects(
 			Provider:  runtime.cfg.Assistant.Provider,
 			Model:     runtime.cfg.Assistant.Model,
 		}
+
 		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
 		if err != nil {
 			return nil, oops.In("assistant").Code("append_thinking").Wrapf(err, "append thinking message")
 		}
+
 		runtime.dispatchMessageAppend(ctx, entry)
 		parentID = &entry.ID
 	}
+
 	for _, event := range bundle.ToolEvents {
 		message := database.MessageEntity{
 			Timestamp: time.Now().UTC(),
@@ -56,10 +60,12 @@ func (runtime *Runtime) appendAssistantSideEffects(
 			Provider:  runtime.cfg.Assistant.Provider,
 			Model:     runtime.cfg.Assistant.Model,
 		}
+
 		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
 		if err != nil {
 			return nil, oops.In("assistant").Code("append_tool_result").Wrapf(err, "append tool result")
 		}
+
 		runtime.dispatchMessageAppend(ctx, entry)
 		parentID = &entry.ID
 	}
@@ -74,6 +80,7 @@ func (runtime *Runtime) respondWithPartialProgress(
 	request *PromptRequest,
 ) (*responseBundle, bool, error) {
 	progress := newPartialPromptProgress(request.OnEvent)
+
 	bundle, cached, err := runtime.respond(
 		ctx,
 		sessionID,
@@ -106,6 +113,7 @@ func (progress *partialPromptProgress) handle(streamEvent StreamEvent) {
 	if progress != nil {
 		progress.record(streamEvent)
 	}
+
 	if progress != nil && progress.forward != nil {
 		progress.forward(streamEvent)
 	}
@@ -139,6 +147,7 @@ func (progress *partialPromptProgress) retryHandler(forward RetryEventHandler) R
 		if retryEvent.Kind == RetryEventStart {
 			progress.reset()
 		}
+
 		if forward != nil {
 			forward(retryEvent)
 		}
@@ -149,9 +158,11 @@ func (progress *partialPromptProgress) reset() {
 	if progress == nil {
 		return
 	}
+
 	if len(progress.blocks) > 0 {
 		progress.fallbackBlocks = progressBlocks(progress.blocks)
 	}
+
 	progress.blocks = progress.blocks[:0]
 }
 
@@ -159,11 +170,14 @@ func (progress *partialPromptProgress) append(role transcript.Role, content stri
 	if progress == nil || content == "" {
 		return
 	}
+
 	lastIndex := len(progress.blocks) - 1
 	if lastIndex >= 0 && progress.blocks[lastIndex].Role == role && transcript.CanMergeStreamingRole(role) {
 		progress.blocks[lastIndex].Content += content
+
 		return
 	}
+
 	progress.blocks = append(progress.blocks, partialPromptBlock{Role: role, Content: content})
 }
 
@@ -175,6 +189,7 @@ func (runtime *Runtime) appendPartialPromptFailure(
 	promptErr error,
 ) error {
 	parentID := &userEntryID
+
 	for _, block := range progress.persistableBlocks() {
 		message := database.MessageEntity{
 			Timestamp: time.Now().UTC(),
@@ -183,13 +198,16 @@ func (runtime *Runtime) appendPartialPromptFailure(
 			Provider:  runtime.cfg.Assistant.Provider,
 			Model:     runtime.cfg.Assistant.Model,
 		}
+
 		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
 		if err != nil {
 			return oops.In("assistant").Code("append_partial_prompt").Wrapf(err, "append partial prompt progress")
 		}
+
 		runtime.dispatchMessageAppend(ctx, entry)
 		parentID = &entry.ID
 	}
+
 	message := database.MessageEntity{
 		Timestamp: time.Now().UTC(),
 		Role:      database.RoleCustom,
@@ -197,10 +215,12 @@ func (runtime *Runtime) appendPartialPromptFailure(
 		Provider:  runtime.cfg.Assistant.Provider,
 		Model:     runtime.cfg.Assistant.Model,
 	}
+
 	entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
 	if err != nil {
 		return oops.In("assistant").Code("append_prompt_error").Wrapf(err, "append prompt error")
 	}
+
 	runtime.dispatchMessageAppend(ctx, entry)
 
 	return nil
@@ -210,9 +230,11 @@ func (progress *partialPromptProgress) persistableBlocks() []partialPromptBlock 
 	if progress == nil {
 		return nil
 	}
+
 	if len(progress.blocks) > 0 {
 		return progressBlocks(progress.blocks)
 	}
+
 	return progressBlocks(progress.fallbackBlocks)
 }
 
@@ -220,6 +242,7 @@ func progressBlocks(blocks []partialPromptBlock) []partialPromptBlock {
 	if len(blocks) == 0 {
 		return nil
 	}
+
 	clone := make([]partialPromptBlock, len(blocks))
 	copy(clone, blocks)
 
@@ -230,6 +253,7 @@ func formatToolEvent(toolEvent *ToolEvent) string {
 	if toolEvent == nil {
 		return transcript.FormatToolEventPersistence(nil)
 	}
+
 	return transcript.FormatToolEventPersistence(&transcript.ToolEvent{
 		Name:          toolEvent.Name,
 		ArgumentsJSON: toolEvent.ArgumentsJSON,

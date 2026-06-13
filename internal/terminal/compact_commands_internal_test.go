@@ -18,10 +18,12 @@ func TestCompactSessionStartsAsyncWork(t *testing.T) {
 	client := newBlockingTerminalClient()
 	app := newPromptSendTestApp(t, client)
 	app.screen = newClipboardScreen()
+
 	session, err := app.runtime.SessionRepository().CreateSession(context.Background(), app.cwd, "compact", "")
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
+
 	first := appendTerminalCompactMessage(t, app, session.ID, nil, database.RoleUser, "old user goal")
 	second := appendTerminalCompactMessage(
 		t,
@@ -36,27 +38,32 @@ func TestCompactSessionStartsAsyncWork(t *testing.T) {
 	app.sessionID = session.ID
 
 	err = app.compactSession(context.Background())
-
 	if err != nil {
 		t.Fatalf("compactSession returned error: %v", err)
 	}
+
 	if !app.compacting {
 		t.Fatal("app should be marked compacting")
 	}
+
 	if app.activeCompaction == nil {
 		t.Fatal("activeCompaction should be set")
 	}
+
 	if got := app.workingLoaderText(); got != "Compacting context..." {
 		t.Fatalf("workingLoaderText = %q, want compacting label", got)
 	}
+
 	select {
 	case <-client.ready:
 	case <-time.After(3 * time.Second):
 		t.Fatal("compaction should start provider request asynchronously")
 	}
+
 	if !app.compacting {
 		t.Fatal("app should still be compacting while provider is blocked")
 	}
+
 	client.finish("summary of compacted work", nil)
 	assertCompactDoneEventHasUsage(t, readPromptAsyncEvent(t, app))
 }
@@ -89,9 +96,11 @@ func TestPostCompactDoneAllowsNilUsage(t *testing.T) {
 	if app.compacting {
 		t.Fatal("app should stop compacting")
 	}
+
 	if got := app.tokenUsage.ContextTokens; got != 42_000 {
 		t.Fatalf("tokenUsage.ContextTokens = %d, want previous usage preserved", got)
 	}
+
 	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != compactedStatusMessage {
 		t.Fatalf("last message = %q, want compacted message", got)
 	}
@@ -103,6 +112,7 @@ func assertCompactDoneEventHasUsage(t *testing.T, event *asyncEvent) {
 	if got := event.Kind; got != asyncEventCompactDone {
 		t.Fatalf("event.Kind = %q, want %q", got, asyncEventCompactDone)
 	}
+
 	if event.Usage == nil || event.Usage.ContextTokens <= 0 {
 		t.Fatalf("compact done usage = %v, want refreshed usage", event.Usage)
 	}
@@ -187,15 +197,19 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 	if !handled {
 		t.Fatal("compact event should be handled")
 	}
+
 	if app.compacting {
 		t.Fatal("app should stop compacting")
 	}
+
 	if app.activeCompaction != nil {
 		t.Fatal("activeCompaction should be cleared")
 	}
+
 	if app.pendingParentID == nil || *app.pendingParentID != compactTestEntryID {
 		t.Fatalf("pendingParentID = %v, want %s", app.pendingParentID, compactTestEntryID)
 	}
+
 	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != compactedStatusMessage {
 		t.Fatalf("last message = %q, want compacted message", got)
 	}
@@ -226,9 +240,11 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 	if got := request.Messages[len(request.Messages)-1].Content; got != "queued after compact" {
 		t.Fatalf("queued request text = %q", got)
 	}
+
 	if len(app.queuedMessages) != 0 {
 		t.Fatalf("queuedMessages length = %d, want 0", len(app.queuedMessages))
 	}
+
 	if got := app.tokenUsage.ContextTokens; got != 10_000 {
 		t.Fatalf("tokenUsage.ContextTokens = %d, want 10000", got)
 	}
@@ -253,9 +269,11 @@ func TestCompactCommandStateTransitions(t *testing.T) {
 			app := newRenderTestApp(t)
 			afterInvoke := testCase.setupApp(t, app)
 			testCase.invoke(t, app)
+
 			if afterInvoke != nil {
 				afterInvoke(t)
 			}
+
 			assertCompactTransition(t, app, &testCase)
 		})
 	}
@@ -334,6 +352,7 @@ func setupRunCompactErrorTransition(t *testing.T, app *App) func(t *testing.T) {
 		case <-time.After(3 * time.Second):
 			t.Fatal("compaction should start provider request")
 		}
+
 		client.finish("", errors.New("provider down"))
 	}
 }
@@ -345,6 +364,7 @@ func createCompactTestSession(t *testing.T, app *App) *database.SessionEntity {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
+
 	first := appendTerminalCompactMessage(t, app, session.ID, nil, database.RoleUser, "old user goal")
 	_ = appendTerminalCompactMessage(
 		t,
@@ -395,15 +415,19 @@ func assertCompactTransition(t *testing.T, app *App, testCase *compactTransition
 
 		return
 	}
+
 	if app.compacting {
 		t.Fatal("app should stop compacting")
 	}
+
 	if app.activeCompaction != nil {
 		t.Fatal("activeCompaction should be cleared")
 	}
+
 	if testCase.wantStatus != "" && app.statusMessage != testCase.wantStatus {
 		t.Fatalf("statusMessage = %q, want %q", app.statusMessage, testCase.wantStatus)
 	}
+
 	if testCase.wantLastMessage != "" {
 		got := app.transcript.History[len(app.transcript.History)-1].Content
 		if got != testCase.wantLastMessage {
@@ -419,6 +443,7 @@ func assertCompactAsyncEvent(t *testing.T, app *App, testCase *compactTransition
 	if got := event.Kind; got != testCase.wantEventKind {
 		t.Fatalf("event.Kind = %q, want %q", got, testCase.wantEventKind)
 	}
+
 	if !strings.Contains(event.Text, testCase.wantLastMessage) {
 		t.Fatalf("event.Text = %q, want %q", event.Text, testCase.wantLastMessage)
 	}
@@ -441,6 +466,7 @@ func appendTerminalCompactMessage(
 		Provider:  "",
 		Model:     "",
 	}
+
 	entry, err := app.runtime.SessionRepository().AppendMessage(context.Background(), sessionID, parentID, message)
 	if err != nil {
 		t.Fatalf("append message: %v", err)
@@ -475,6 +501,7 @@ func (client *blockingTerminalClient) Complete(
 	default:
 		close(client.ready)
 	}
+
 	result := <-client.finishC
 	if result.err != nil {
 		return nil, result.err
@@ -501,9 +528,11 @@ func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
 	if !handled {
 		t.Fatal("compact done event should be handled even when stale")
 	}
+
 	if !app.compacting {
 		t.Fatal("stale compaction event should not stop active compaction")
 	}
+
 	if app.pendingParentID != nil {
 		t.Fatalf("pendingParentID = %v, want nil", app.pendingParentID)
 	}
@@ -544,6 +573,7 @@ func TestHandleCompactAsyncEventPassesThroughAutoCompactionEvents(t *testing.T) 
 				t.Fatal("auto-compaction event should pass through prompt lifecycle " +
 					"when no manual compaction is active")
 			}
+
 			if app.compacting {
 				t.Fatal("pass-through should not update compaction state")
 			}
@@ -566,9 +596,11 @@ func TestApplyCompactErrorDefaultMessage(t *testing.T) {
 	if app.compacting {
 		t.Fatal("app should stop compacting")
 	}
+
 	if app.activeCompaction != nil {
 		t.Fatal("activeCompaction should be cleared")
 	}
+
 	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != "context compaction failed" {
 		t.Fatalf("last message = %q, want default failure", got)
 	}
@@ -590,6 +622,7 @@ func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
 	if got, want := app.composerBuffer.TextValue(), "during compaction"; got != want {
 		t.Fatalf("composer text = %q, want %q", got, want)
 	}
+
 	if got, want := app.queuedMessages, []string{"preexisting"}; len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("queuedMessages = %v, want %v", got, want)
 	}
@@ -601,11 +634,14 @@ func TestCompactFormattingHelpers(t *testing.T) {
 	app := newRenderTestApp(t)
 	parentID := compactTestParentID
 	app.pendingParentID = &parentID
+
 	cloned := app.compactionParentEntryID()
 	if cloned == nil || *cloned != parentID {
 		t.Fatalf("compactionParentEntryID = %v, want parent", cloned)
 	}
+
 	*cloned = "changed"
+
 	if *app.pendingParentID != parentID {
 		t.Fatal("compactionParentEntryID should clone pending parent")
 	}
@@ -613,9 +649,11 @@ func TestCompactFormattingHelpers(t *testing.T) {
 	if got := compactDoneText(nil); got != compactedStatusMessage {
 		t.Fatalf("compactDoneText(nil) = %q", got)
 	}
+
 	if got := compactionEntryID(nil); got != "" {
 		t.Fatalf("compactionEntryID(nil) = %q, want empty", got)
 	}
+
 	if got := nonEmptyStringPtr("   "); got != nil {
 		t.Fatalf("nonEmptyStringPtr(blank) = %v, want nil", got)
 	}

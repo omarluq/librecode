@@ -64,6 +64,7 @@ func (app *App) promptRetryHandler(ctx context.Context, promptID uint64) assista
 		if event.Kind == assistant.RetryEventStart {
 			text = "retrying model request in " + event.Delay.Round(time.Second).String()
 		}
+
 		app.postAsyncEvent(ctx, &asyncEvent{
 			Response:  nil,
 			ToolEvent: nil,
@@ -165,6 +166,7 @@ func (app *App) postAsyncEvent(ctx context.Context, event *asyncEvent) {
 			return
 		}
 	}()
+
 	select {
 	case app.screen.EventQ() <- tcell.NewEventInterrupt(event):
 	case <-ctx.Done():
@@ -176,12 +178,15 @@ func (app *App) handleInterrupt(ctx context.Context, event *tcell.EventInterrupt
 	if !ok {
 		return false, nil
 	}
+
 	if app.handleAuthAsyncEvent(payload) {
 		return false, nil
 	}
+
 	if app.handleCompactAsyncEvent(ctx, payload) {
 		return false, nil
 	}
+
 	app.handlePromptAsyncEvent(ctx, payload)
 
 	return false, nil
@@ -192,16 +197,19 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 	case asyncEventAuthURL:
 		app.addMessage(transcript.RoleCustom, payload.Text)
 		app.setStatus("complete browser login or keep coding")
+
 		return true
 	case asyncEventAuthDone:
 		app.authWorking = false
 		app.refreshModels()
 		app.selectProviderDefault(payload.Provider)
 		app.addSystemMessage("logged in to " + providerDisplayName(payload.Provider))
+
 		return true
 	case asyncEventAuthError:
 		app.authWorking = false
 		app.addSystemMessage(payload.Text)
+
 		return true
 	case asyncEventPromptDone,
 		asyncEventPromptUserEntry,
@@ -227,9 +235,11 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent)
 	if app.ignorePromptEvent(payload) {
 		return
 	}
+
 	if app.handlePromptLifecycleEvent(ctx, payload) {
 		return
 	}
+
 	app.handlePromptStreamEvent(ctx, payload)
 }
 
@@ -237,9 +247,11 @@ func (app *App) ignorePromptEvent(payload *asyncEvent) bool {
 	if !isPromptAsyncEvent(payload.Kind) {
 		return false
 	}
+
 	if app.activePrompt != nil && app.activePrompt.ID == payload.PromptID {
 		return false
 	}
+
 	_, waitingForCleanup := app.canceledPrompts[payload.PromptID]
 
 	return !waitingForCleanup
@@ -276,6 +288,7 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 	case asyncEventPromptDone:
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventPromptDone, promptDoneExtensionData(payload.Response))
 		app.applyPromptResponse(ctx, payload.Response, payload.PromptID)
+
 		return true
 	case asyncEventPromptUserEntry:
 		data := map[string]any{
@@ -285,19 +298,23 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 		}
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventPromptUser, data)
 		app.applyPromptUserEntry(ctx, payload.Provider, payload.Text, payload.PromptID)
+
 		return true
 	case asyncEventPromptRetry:
 		app.emitPromptRetryExtensionEvent(ctx, payload)
 		app.setStatus(payload.Text)
+
 		return true
 	case asyncEventPromptError:
 		app.applyPromptError(payload.Text, payload.PromptID)
+
 		return true
 	case asyncEventPromptContext,
 		asyncEventCompactStart,
 		asyncEventCompactDone,
 		asyncEventCompactError:
 		app.applyPromptContextEvent(payload)
+
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
@@ -342,11 +359,13 @@ func (app *App) applyPromptContextEvent(payload *asyncEvent) {
 	if payload.Text != "" {
 		app.addSystemMessage(payload.Text)
 	}
+
 	switch payload.Kind {
 	case asyncEventCompactStart:
 		app.startCompactionIndicator()
 	case asyncEventCompactDone:
 		app.stopCompactionIndicator()
+
 		if payload.Text != "" {
 			app.setStatus(compactedStatusMessage)
 		}
@@ -386,6 +405,7 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 	if app.activePrompt != nil && app.activePrompt.Canceled {
 		return
 	}
+
 	switch payload.Kind {
 	case asyncEventPromptDelta:
 		app.emitExtensionRuntimeEventOrMessage(
@@ -410,12 +430,15 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 			extensionEventToolStart,
 			map[string]any{extensionDataName: payload.Text},
 		)
+
 		return
 	case asyncEventPromptUsage:
 		app.applyTokenUsage(payload.Usage)
+
 		return
 	case asyncEventPromptUsageSnapshot:
 		app.applyTokenUsageEvent(payload.Usage, true)
+
 		return
 	case asyncEventPromptDone,
 		asyncEventPromptUserEntry,
@@ -437,6 +460,7 @@ func (app *App) emitPromptRetryExtensionEvent(ctx context.Context, payload *asyn
 	if payload.Provider == string(assistant.RetryEventEnd) {
 		eventName = extensionEventRetryEnd
 	}
+
 	app.emitExtensionRuntimeEventOrMessage(ctx, eventName, map[string]any{
 		extensionDataPromptID: payload.PromptID,
 		extensionDataText:     payload.Text,
@@ -476,12 +500,16 @@ func (app *App) applyPromptUserEntry(ctx context.Context, sessionID, entryID str
 		canceledPrompt.SessionID = sessionID
 		canceledPrompt.UserEntryID = entryID
 		app.deleteCanceledPromptBranch(ctx, canceledPrompt)
+
 		return
 	}
+
 	if app.activePrompt == nil || app.activePrompt.ID != promptID {
 		return
 	}
+
 	app.activePrompt.SessionID = sessionID
+
 	app.activePrompt.UserEntryID = entryID
 	if app.activePrompt.Canceled {
 		app.deleteCanceledPromptBranch(ctx, app.activePrompt)
@@ -491,19 +519,24 @@ func (app *App) applyPromptUserEntry(ctx context.Context, sessionID, entryID str
 func (app *App) applyPromptError(message string, promptID uint64) {
 	if app.consumeCanceledPrompt(promptID) {
 		app.setStatus("response canceled; conversation reverted")
+
 		return
 	}
+
 	streamingBlocks := append([]chatMessage(nil), app.transcript.Streaming.Blocks...)
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""
 	app.resetStreamingBlocks()
+
 	app.streamedToolEvents = 0
 	if app.activePrompt != nil && app.activePrompt.Canceled {
 		app.activePrompt = nil
 		app.setStatus("response canceled; conversation reverted")
+
 		return
 	}
+
 	app.activePrompt = nil
 	app.applyFailedPromptStreamedBlocks(streamingBlocks)
 	app.addMessage(transcript.RoleCustom, message)
@@ -514,6 +547,7 @@ func (app *App) applyFailedPromptStreamedBlocks(streamingBlocks []chatMessage) {
 		if block.Content == "" {
 			continue
 		}
+
 		switch block.Role {
 		case transcript.RoleAssistant,
 			transcript.RoleToolResult,
@@ -536,7 +570,9 @@ func (app *App) consumeCanceledPrompt(promptID uint64) bool {
 	if _, ok := app.canceledPrompts[promptID]; !ok {
 		return false
 	}
+
 	delete(app.canceledPrompts, promptID)
+
 	if app.activePrompt != nil && app.activePrompt.ID == promptID {
 		app.activePrompt = nil
 	}
@@ -548,6 +584,7 @@ func (app *App) applyStreamedToolEvent(event *assistant.ToolEvent) {
 	if event == nil {
 		return
 	}
+
 	app.appendStreamingBlock(transcript.RoleToolResult, formatToolEventForUI(event))
 	app.streamedToolEvents++
 }
@@ -556,14 +593,17 @@ func (app *App) appendStreamingBlock(role transcript.Role, content string) {
 	if content == "" {
 		return
 	}
+
 	lastIndex := len(app.transcript.Streaming.Blocks) - 1
 	if lastIndex >= 0 &&
 		transcript.CanMergeStreamingRole(role) &&
 		app.transcript.Streaming.Blocks[lastIndex].Role == role {
 		app.transcript.Streaming.Blocks[lastIndex].Content += content
 		app.invalidateStreamingBlockCache(lastIndex)
+
 		return
 	}
+
 	app.transcript.Streaming.Blocks = append(app.transcript.Streaming.Blocks, newChatMessage(role, content))
 	if len(app.transcript.Streaming.LineCache) > 0 {
 		app.transcript.Streaming.LineCache = append(

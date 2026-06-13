@@ -17,14 +17,17 @@ func (app *App) openScopedModelsPanel() {
 
 func (app *App) scopedModelItems() []panel.Item {
 	models := app.orderedAvailableModels()
+
 	items := make([]panel.Item, 0, len(models))
 	for index := range models {
 		knownModel := &models[index]
 		value := modelLabel(knownModel.Provider, knownModel.ID)
+
 		check := "☐"
 		if app.scopedEnabled[value] {
 			check = "☑"
 		}
+
 		items = append(items, panel.Item{
 			Value:       value,
 			Title:       check + " " + knownModel.ID,
@@ -41,12 +44,15 @@ func (app *App) orderedAvailableModels() []model.Model {
 	if len(app.scopedOrder) == 0 {
 		return models
 	}
+
 	byValue := make(map[string]model.Model, len(models))
 	for index := range models {
 		byValue[modelLabel(models[index].Provider, models[index].ID)] = models[index]
 	}
+
 	ordered := make([]model.Model, 0, len(models))
 	seen := map[string]bool{}
+
 	for _, value := range app.scopedOrder {
 		knownModel, ok := byValue[value]
 		if ok {
@@ -54,6 +60,7 @@ func (app *App) orderedAvailableModels() []model.Model {
 			seen[value] = true
 		}
 	}
+
 	for index := range models {
 		value := modelLabel(models[index].Provider, models[index].ID)
 		if !seen[value] {
@@ -73,7 +80,9 @@ func (app *App) ensureScopedOrder() {
 	if len(app.scopedOrder) > 0 {
 		return
 	}
+
 	models := app.availableModels()
+
 	app.scopedOrder = make([]string, 0, len(models))
 	for index := range models {
 		app.scopedOrder = append(app.scopedOrder, modelLabel(models[index].Provider, models[index].ID))
@@ -84,6 +93,7 @@ func (app *App) refreshScopedModelsPanel() {
 	if app.selectedPanelKind != panelScopedModels {
 		return
 	}
+
 	app.panel = panel.New(
 		panelScopedModels,
 		"Scoped Models",

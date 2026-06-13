@@ -20,7 +20,7 @@ func (testGenerator) Generate(context.Context, *llm.Request) (*llm.Response, err
 
 type testStreamer struct{}
 
-func (testStreamer) Stream(context.Context, llm.Request) (llm.Stream, error) {
+func (testStreamer) Stream(context.Context, llm.Request) (*testStream, error) {
 	return &testStream{sent: false}, nil
 }
 
@@ -32,6 +32,7 @@ func (stream *testStream) Recv() (*llm.StreamChunk, error) {
 	if stream.sent {
 		return nil, io.EOF
 	}
+
 	stream.sent = true
 
 	return &llm.StreamChunk{

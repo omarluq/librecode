@@ -34,9 +34,11 @@ func TestApplyStreamedSideEffectBlocks(t *testing.T) {
 	if got, want := thinkingBlocks, 1; got != want {
 		t.Fatalf("thinkingBlocks = %d, want %d", got, want)
 	}
+
 	if got, want := toolBlocks, 2; got != want {
 		t.Fatalf("toolBlocks = %d, want %d", got, want)
 	}
+
 	assertPromptResponseRoles(t, app, []transcript.Role{
 		transcript.RoleThinking,
 		transcript.RoleToolResult,
@@ -58,12 +60,15 @@ func TestApplyPromptResponseNilClearsStreamedToolEvents(t *testing.T) {
 	if got := app.streamedToolEvents; got != 0 {
 		t.Fatalf("streamedToolEvents = %d, want 0", got)
 	}
+
 	if app.activePrompt != nil {
 		t.Fatal("activePrompt should be cleared")
 	}
+
 	if app.working {
 		t.Fatal("working should be false")
 	}
+
 	assert.Empty(t, app.transcript.Streaming.Blocks)
 }
 
@@ -91,9 +96,11 @@ func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
 		transcript.RoleThinking,
 		transcript.RoleToolResult,
 	})
+
 	if got, want := app.transcript.History[0].Content, "remaining thinking"; got != want {
 		t.Fatalf("thinking content = %q, want %q", got, want)
 	}
+
 	if got := app.transcript.History[1].Content; !strings.Contains(got, "tool: write") {
 		t.Fatalf("tool content = %q, want write tool", got)
 	}
@@ -105,6 +112,7 @@ func assertPromptResponseRoles(t *testing.T, app *App, want []transcript.Role) {
 	if got := len(app.transcript.History); got != len(want) {
 		t.Fatalf("message count = %d, want %d", got, len(want))
 	}
+
 	for index, role := range want {
 		if got := app.transcript.History[index].Role; got != role {
 			t.Fatalf("message[%d].Role = %q, want %q", index, got, role)
@@ -125,6 +133,7 @@ func TestApplyPromptResponseIgnoresCanceledPrompt(t *testing.T) {
 	if got, want := len(app.transcript.History), 1; got != want {
 		t.Fatalf("messages length = %d, want %d", got, want)
 	}
+
 	if _, ok := app.canceledPrompts[42]; ok {
 		t.Fatal("canceled prompt should be consumed")
 	}
@@ -158,9 +167,11 @@ func TestApplyPromptResponseAddsAssistantAndProcessesQueue(t *testing.T) {
 	if got, want := app.transcript.History[0].Content, "assistant response"; got != want {
 		t.Fatalf("assistant message = %q, want %q", got, want)
 	}
+
 	if !app.working {
 		t.Fatal("queued prompt should start after response")
 	}
+
 	if got, want := app.queuedMessages, []string(nil); !slices.Equal(got, want) {
 		t.Fatalf("queuedMessages = %v, want empty", got)
 	}

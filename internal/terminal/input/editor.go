@@ -7,6 +7,7 @@ func InsertRuneAt(value []rune, cursor int, char rune) (next []rune, nextCursor 
 	if char == 0 {
 		return value, cursor
 	}
+
 	cursor = ClampCursor(cursor, len(value))
 	next = append([]rune{}, value[:cursor]...)
 	next = append(next, char)
@@ -61,6 +62,7 @@ func DeleteBackwardAt(value []rune, cursor int) (next []rune, nextCursor int) {
 	if cursor == 0 {
 		return value, cursor
 	}
+
 	next = append([]rune{}, value[:cursor-1]...)
 	next = append(next, value[cursor:]...)
 
@@ -73,6 +75,7 @@ func DeleteForwardAt(value []rune, cursor int) (next []rune, nextCursor int) {
 	if cursor >= len(value) {
 		return value, cursor
 	}
+
 	next = append([]rune{}, value[:cursor]...)
 	next = append(next, value[cursor+1:]...)
 
@@ -149,6 +152,7 @@ func WordLeft(value []rune, cursor int) int {
 	for index > 0 && unicode.IsSpace(value[index-1]) {
 		index--
 	}
+
 	for index > 0 && !unicode.IsSpace(value[index-1]) {
 		index--
 	}
@@ -162,6 +166,7 @@ func WordRight(value []rune, cursor int) int {
 	for index < len(value) && unicode.IsSpace(value[index]) {
 		index++
 	}
+
 	for index < len(value) && !unicode.IsSpace(value[index]) {
 		index++
 	}

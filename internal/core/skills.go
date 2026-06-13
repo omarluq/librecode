@@ -17,16 +17,16 @@ const (
 // Skill describes one Agent Skills compatible skill file.
 type Skill struct {
 	Metadata               map[string]any `json:"metadata,omitempty"`
-	SourceInfo             SourceInfo     `json:"sourceInfo"`
+	SourceInfo             SourceInfo     `json:"source_info"`
 	Name                   string         `json:"name"`
 	Description            string         `json:"description"`
-	FilePath               string         `json:"filePath"`
-	BaseDir                string         `json:"baseDir"`
+	FilePath               string         `json:"file_path"`
+	BaseDir                string         `json:"base_dir"`
 	License                string         `json:"license,omitempty"`
 	Compatibility          string         `json:"compatibility,omitempty"`
-	AllowedTools           []string       `json:"allowedTools,omitempty"`
-	UserInvocable          bool           `json:"userInvocable,omitempty"`
-	DisableModelInvocation bool           `json:"disableModelInvocation"`
+	AllowedTools           []string       `json:"allowed_tools,omitempty"`
+	UserInvocable          bool           `json:"user_invocable,omitempty"`
+	DisableModelInvocation bool           `json:"disable_model_invocation"`
 }
 
 // ActivatedSkill contains full skill content selected for the current prompt.
@@ -48,11 +48,13 @@ func LoadSkills(cwd string, skillPaths []string, includeDefaults bool) LoadSkill
 	if includeDefaults {
 		paths = append(paths, defaultSkillPaths(cwd)...)
 	}
+
 	paths = append(paths, skillPaths...)
 
 	result := LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
 	seenFiles := map[string]bool{}
 	skillsByName := map[string]Skill{}
+
 	for _, rawPath := range paths {
 		pathResult := loadSkillPath(rawPath, cwd)
 		result.Diagnostics = append(result.Diagnostics, pathResult.Diagnostics...)
@@ -91,15 +93,19 @@ func userSkillPaths() []string {
 func dedupeSkillPaths(paths []string) []string {
 	result := make([]string, 0, len(paths))
 	seen := map[string]bool{}
+
 	for _, rawPath := range paths {
 		if strings.TrimSpace(rawPath) == "" {
 			continue
 		}
+
 		canonicalPath := canonicalizeResourcePath(rawPath)
 		if seen[canonicalPath] {
 			continue
 		}
+
 		seen[canonicalPath] = true
+
 		result = append(result, rawPath)
 	}
 
@@ -109,16 +115,21 @@ func dedupeSkillPaths(paths []string) []string {
 func mergeSkills(result *LoadSkillsResult, skillsByName map[string]Skill, seenFiles map[string]bool, skills []Skill) {
 	for index := range skills {
 		skill := skills[index]
+
 		realPath := canonicalizeResourcePath(skill.FilePath)
 		if seenFiles[realPath] {
 			continue
 		}
+
 		if existing, ok := skillsByName[skill.Name]; ok {
 			result.Diagnostics = append(result.Diagnostics, collisionDiagnostic(&skill, &existing))
+
 			continue
 		}
+
 		skillsByName[skill.Name] = skill
 		seenFiles[realPath] = true
+
 		result.Skills = append(result.Skills, skill)
 	}
 }

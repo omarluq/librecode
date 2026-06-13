@@ -49,27 +49,33 @@ func BuildSystemPrompt(options *BuildSystemPromptOptions) string {
 			Skills:             nil,
 		}
 	}
+
 	promptDate := time.Now().Format(time.DateOnly)
 	promptCWD := filepath.ToSlash(options.CWD)
+
 	appendSection := ""
 	if options.AppendSystemPrompt != "" {
 		appendSection = "\n\n" + options.AppendSystemPrompt
 	}
+
 	if options.CustomPrompt != "" {
 		return buildCustomSystemPrompt(options, appendSection, promptDate, promptCWD)
 	}
 
 	selectedTools := selectedPromptTools(options.SelectedTools)
+
 	toolSnippets := options.ToolSnippets
 	if len(toolSnippets) == 0 {
 		toolSnippets = defaultToolSnippets()
 	}
 
 	prompt := defaultSystemPrompt(selectedTools, toolSnippets, options.PromptGuidelines) + appendSection
+
 	prompt += formatContextFiles(options.ContextFiles)
 	if lo.Contains(selectedTools, string(tool.NameRead)) && len(options.Skills) > 0 {
 		prompt += FormatSkillsForPrompt(options.Skills)
 	}
+
 	prompt += "\nCurrent date: " + promptDate
 	prompt += "\nCurrent working directory: " + promptCWD
 
@@ -96,10 +102,12 @@ func buildCustomSystemPrompt(
 	promptCWD string,
 ) string {
 	prompt := options.CustomPrompt + appendSection
+
 	prompt += formatContextFiles(options.ContextFiles)
 	if customPromptHasRead(options.SelectedTools) && len(options.Skills) > 0 {
 		prompt += FormatSkillsForPrompt(options.Skills)
 	}
+
 	prompt += "\nCurrent date: " + promptDate
 	prompt += "\nCurrent working directory: " + promptCWD
 
@@ -142,6 +150,7 @@ func formatToolsList(selectedTools []string, snippets map[string]string) string 
 	if len(visibleTools) == 0 {
 		return "(none)"
 	}
+
 	lines := lo.Map(visibleTools, func(name string, _ int) string {
 		return "- " + name + ": " + snippets[name]
 	})
@@ -154,6 +163,7 @@ func formatGuidelines(selectedTools, extraGuidelines []string) string {
 	guidelines = appendToolGuidelines(guidelines, selectedTools)
 	guidelines = append(guidelines, lo.FilterMap(extraGuidelines, func(guideline string, _ int) (string, bool) {
 		trimmed := strings.TrimSpace(guideline)
+
 		return trimmed, trimmed != ""
 	})...)
 	guidelines = append(guidelines,
@@ -169,6 +179,7 @@ func formatGuidelines(selectedTools, extraGuidelines []string) string {
 
 func appendToolGuidelines(guidelines, selectedTools []string) []string {
 	hasBash := lo.Contains(selectedTools, string(tool.NameBash))
+
 	hasReadOnlySearch := lo.SomeBy(selectedTools, func(name string) bool {
 		return lo.Contains([]string{string(tool.NameGrep), string(tool.NameFind), string(tool.NameLS)}, name)
 	})
@@ -188,8 +199,10 @@ func formatContextFiles(contextFiles []ContextFile) string {
 	if len(contextFiles) == 0 {
 		return ""
 	}
+
 	var builder strings.Builder
 	builder.WriteString("\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n")
+
 	for _, contextFile := range contextFiles {
 		builder.WriteString("## ")
 		builder.WriteString(contextFile.Path)

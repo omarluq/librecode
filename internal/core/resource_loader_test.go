@@ -16,6 +16,7 @@ func TestDefaultResourceLoaderReloadsPiResources(t *testing.T) {
 	home := newOutsideTempDir(t)
 	agentDir := newOutsideTempDir(t)
 	t.Setenv("HOME", home)
+
 	projectDir := filepath.Join(cwd, "project")
 	workDir := filepath.Join(projectDir, "pkg", "app")
 
@@ -70,11 +71,14 @@ func TestDefaultResourceLoaderExtendsResourcesWithSourceInfo(t *testing.T) {
 	home := newOutsideTempDir(t)
 	agentDir := newOutsideTempDir(t)
 	t.Setenv("HOME", home)
+
 	extensionDir := filepath.Join(cwd, "extension")
 	skillPath := filepath.Join(extensionDir, "skills", "from-extension", "SKILL.md")
 	promptPath := filepath.Join(extensionDir, "prompts", "explain.md")
+
 	writeTestFile(t, skillPath, skillMarkdown("from-extension"))
 	writeTestFile(t, promptPath, "Explain $ARGUMENTS")
+
 	sourceInfo := core.NewSourceInfo(extensionDir, core.SourceInfoOptions{
 		Scope:   core.SourceScopeTemporary,
 		Origin:  core.SourceOriginPackage,

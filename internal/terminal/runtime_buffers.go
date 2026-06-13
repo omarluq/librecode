@@ -32,6 +32,7 @@ func (app *App) statusBufferState() extension.BufferState {
 	if buffer, ok := app.runtimeBufferOverride(extui.BufferStatus); ok {
 		return buffer
 	}
+
 	buffer := textBufferState(extui.BufferStatus, app.defaultStatusText())
 	buffer.Metadata = map[string]any{extui.MetadataMessage: app.statusMessage}
 
@@ -42,6 +43,7 @@ func (app *App) transcriptBufferState() extension.BufferState {
 	if buffer, ok := app.runtimeBufferOverride(extui.BufferTranscript); ok {
 		return buffer
 	}
+
 	snapshot := app.transcriptBufferBlocks(maxTranscriptSnapshotBlocks)
 	buffer := textBufferState(extui.BufferTranscript, "")
 	buffer.Blocks = snapshot.Blocks
@@ -58,6 +60,7 @@ func (app *App) thinkingBufferState() extension.BufferState {
 	if buffer, ok := app.runtimeBufferOverride(extui.BufferThinking); ok {
 		return buffer
 	}
+
 	buffer := textBufferState(extui.BufferThinking, "")
 	buffer.Metadata = map[string]any{
 		extui.MetadataCount: app.countRuntimeMessages(func(role transcript.Role) bool {
@@ -72,6 +75,7 @@ func (app *App) toolsBufferState() extension.BufferState {
 	if buffer, ok := app.runtimeBufferOverride(extui.BufferTools); ok {
 		return buffer
 	}
+
 	buffer := textBufferState(extui.BufferTools, "")
 	buffer.Metadata = map[string]any{
 		extui.MetadataCount: app.countRuntimeMessages(func(role transcript.Role) bool {
@@ -94,6 +98,7 @@ func (app *App) transcriptBufferBlocks(limit int) transcriptBufferSnapshot {
 	count := len(app.transcript.History) + len(app.transcript.Streaming.Blocks)
 	limit = clampTranscriptLimit(limit, count)
 	start := max(0, count-limit)
+
 	blocks := make([]extension.BufferBlock, 0, limit)
 	for index := start; index < count; index++ {
 		blocks = append(blocks, app.transcriptBlock(index))
@@ -118,6 +123,7 @@ func clampTranscriptLimit(limit, count int) int {
 	if count <= 0 {
 		return 0
 	}
+
 	if limit <= 0 || limit > maxTranscriptSnapshotBlocks {
 		limit = maxTranscriptSnapshotBlocks
 	}
@@ -130,6 +136,7 @@ func (app *App) transcriptBlock(index int) extension.BufferBlock {
 	if index < messageCount {
 		return app.messageTranscriptBlock(index, app.transcript.History[index], false)
 	}
+
 	streamingIndex := index - messageCount
 
 	return app.messageTranscriptBlock(index, app.transcript.Streaming.Blocks[streamingIndex], true)
@@ -141,6 +148,7 @@ func (app *App) messageTranscriptBlock(
 	streaming bool,
 ) extension.BufferBlock {
 	text, truncated := transcriptBlockText(message.Content)
+
 	metadata := map[string]any{}
 	if truncated {
 		metadata["truncated"] = true
@@ -186,11 +194,13 @@ func transcriptBlockKind(streaming bool) string {
 
 func (app *App) countRuntimeMessages(matchesRole func(transcript.Role) bool) int {
 	count := 0
+
 	for _, message := range app.transcript.History {
 		if matchesRole(message.Role) {
 			count++
 		}
 	}
+
 	for _, message := range app.transcript.Streaming.Blocks {
 		if matchesRole(message.Role) {
 			count++
@@ -213,10 +223,12 @@ func (app *App) defaultStatusLineTexts() []string {
 	if app.sessionID != "" {
 		pathLine += " • " + app.sessionID
 	}
+
 	modelText := modelLabel(app.currentProvider(), app.currentModel())
 	if app.currentThinkingLevel() != "" {
 		modelText += " • " + app.currentThinkingLevel()
 	}
+
 	if tokenText := app.tokenStatusText(); tokenText != "" {
 		modelText += " • " + tokenText
 	}
@@ -239,14 +251,18 @@ func (app *App) renderBufferTextLines(width int, text string, style tcell.Style)
 	if text == "" {
 		return []rendertext.Line{}
 	}
+
 	parts := strings.Split(text, "\n")
+
 	lines := make([]rendertext.Line, 0, len(parts))
 	for _, part := range parts {
 		wrapped := rendertext.Wrap(part, width)
 		if len(wrapped) == 0 {
 			lines = append(lines, rendertext.NewLine(style, ""))
+
 			continue
 		}
+
 		for _, line := range wrapped {
 			lines = append(lines, rendertext.NewLine(style, line))
 		}

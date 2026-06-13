@@ -23,7 +23,7 @@ func TestRuntime_CompactionLifecycleCanProvideSummary(t *testing.T) {
 
 	client := &compactionCompleter{summary: autoCompactionTestUnused, requests: nil}
 	_, repository, manager := newTestRuntimeWithManager(t, client)
-	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
+	runtime := newCompactionRuntimeWithManagerWindow(t, repository, manager, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.on("session_before_compact", function(event)
@@ -35,6 +35,7 @@ lc.on("session_before_compact", function(event)
   }
 end)
 `)
+
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -46,11 +47,13 @@ end)
 	require.NoError(t, err)
 	assert.Empty(t, client.requests)
 	assert.Contains(t, entry.Summary, "extension summary")
+
 	data := map[string]any{}
 	require.NoError(t, json.Unmarshal([]byte(entry.DataJSON), &data))
-	fromHook, ok := data["fromHook"].(bool)
+	fromHook, ok := data["from_hook"].(bool)
 	require.True(t, ok)
 	assert.True(t, fromHook)
+
 	details, ok := data["details"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "extension", details["origin"])
@@ -61,13 +64,14 @@ func TestRuntime_CompactionLifecycleCanCancel(t *testing.T) {
 
 	client := &compactionCompleter{summary: autoCompactionTestUnused, requests: nil}
 	_, repository, manager := newTestRuntimeWithManager(t, client)
-	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
+	runtime := newCompactionRuntimeWithManagerWindow(t, repository, manager, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.on("session_before_compact", function()
   return { compaction = { cancel = true } }
 end)
 `)
+
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -87,7 +91,7 @@ func TestRuntime_CompactionLifecyclePublishesSavedEvent(t *testing.T) {
 
 	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
 	_, repository, manager := newTestRuntimeWithManager(t, client)
-	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
+	runtime := newCompactionRuntimeWithManagerWindow(t, repository, manager, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 local saved = ""
@@ -98,6 +102,7 @@ lc.register_command("saved_compaction", "saved_compaction", function()
   return saved
 end)
 `)
+
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -112,7 +117,7 @@ end)
 	assert.Equal(t, entry.ID+":core", saved)
 }
 
-func newCompactionRuntimeWithManager(
+func newCompactionRuntimeWithManagerWindow(
 	t *testing.T,
 	repository *database.SessionRepository,
 	manager *extension.Manager,
@@ -121,7 +126,6 @@ func newCompactionRuntimeWithManager(
 	t.Helper()
 
 	runtimeConfig := testConfig()
-	runtimeConfig.Context.KeepRecentTokens = 1
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 
@@ -131,7 +135,7 @@ func newCompactionRuntimeWithManager(
 		Extensions: manager,
 		Cache:      cache,
 		Events:     event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil))),
-		Models:     testRegistry(t),
+		Models:     newCompactionTestRegistry(t, 2),
 		Client:     client,
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})

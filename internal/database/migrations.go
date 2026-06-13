@@ -44,6 +44,7 @@ func Migrate(ctx context.Context, database *sql.DB) error {
 	if err != nil {
 		return err
 	}
+
 	provider, err := NewMigrationProvider(database, migrationRoot)
 	if err != nil {
 		return err

@@ -21,6 +21,7 @@ func (app *App) handleSessionPanelKey(ctx context.Context, event *tcell.EventKey
 	for _, shortcut := range shortcuts {
 		if app.keys.matches(event, shortcut.action) {
 			shortcut.handler()
+
 			return true
 		}
 	}
@@ -48,15 +49,19 @@ func (app *App) deleteSelectedSession(ctx context.Context) {
 	if !ok {
 		return
 	}
+
 	if err := app.runtime.SessionRepository().DeleteSession(ctx, value); err != nil {
 		app.setStatus(err.Error())
+
 		return
 	}
+
 	if app.sessionID == value {
 		app.sessionID = ""
 		app.resetMessages()
 		app.addSystemMessage("deleted active session")
 	}
+
 	app.setStatus("deleted session " + value)
 	app.refreshSessionPanel(ctx)
 }
@@ -65,8 +70,10 @@ func (app *App) refreshSessionPanel(ctx context.Context) {
 	items, err := app.sessionItems(ctx)
 	if err != nil {
 		app.setStatus(err.Error())
+
 		return
 	}
+
 	app.panel = panel.New(panelSessions, "Resume Session", app.sessionPanelSubtitle(), items, true)
 }
 
@@ -75,10 +82,12 @@ func (app *App) sessionPanelSubtitle() string {
 	if app.sessionSortRecent {
 		sortMode = "recent"
 	}
+
 	nameMode := "all"
 	if app.sessionNamedOnly {
 		nameMode = "named"
 	}
+
 	pathMode := "path off"
 	if app.sessionShowPath {
 		pathMode = "path on"
@@ -93,8 +102,10 @@ func (app *App) filteredSessionEntities(sessions []database.SessionEntity) []dat
 		if app.sessionNamedOnly && sessions[index].Name == "" {
 			continue
 		}
+
 		filtered = append(filtered, sessions[index])
 	}
+
 	if !app.sessionSortRecent {
 		sort.Slice(filtered, func(leftIndex, rightIndex int) bool {
 			return sessionTitle(&filtered[leftIndex]) < sessionTitle(&filtered[rightIndex])

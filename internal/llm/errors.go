@@ -44,12 +44,15 @@ func (err *ProviderError) Error() string {
 	if err == nil {
 		return ""
 	}
+
 	if err.Message != "" {
 		return err.Message
 	}
+
 	if err.Cause != nil {
 		return err.Cause.Error()
 	}
+
 	if err.Code != "" {
 		return "provider error: " + err.Code
 	}

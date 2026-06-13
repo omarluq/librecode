@@ -9,6 +9,7 @@ func (credential *Credential) apiKeyValue() (string, bool) {
 	switch credential.Type {
 	case CredentialTypeAPIKey:
 		resolved := resolveStoredKey(credential.Key)
+
 		return resolved, resolved != ""
 	case CredentialTypeOAuth:
 		access := credential.oauthAccess()
@@ -37,6 +38,7 @@ func (credential *Credential) oauthAccess() string {
 	if credential.Access != "" {
 		return credential.Access
 	}
+
 	if credential.OAuth != nil {
 		return credential.OAuth["access"]
 	}
@@ -48,6 +50,7 @@ func (credential *Credential) oauthRefresh() string {
 	if credential.Refresh != "" {
 		return credential.Refresh
 	}
+
 	if credential.OAuth != nil {
 		return credential.OAuth["refresh"]
 	}
@@ -60,6 +63,7 @@ func (credential *Credential) oauthExpired() bool {
 	if expires == 0 {
 		expires = credential.ExpiresAt
 	}
+
 	if expires == 0 || expires > timestampMillisThreshold {
 		return expires != 0 && timeNowMillis() >= expires
 	}

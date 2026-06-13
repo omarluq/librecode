@@ -29,7 +29,7 @@ func TestLoadSkillsDiscoversConfiguredRootsAndFormatsPrompt(t *testing.T) {
 		frontmatterDelimiter,
 		"name: " + hiddenSkillName,
 		"description: Hidden skill",
-		"disable-model-invocation: true",
+		"disable_model_invocation: true",
 		frontmatterDelimiter,
 		"Only explicit calls.",
 	}, "\n"))
@@ -85,6 +85,7 @@ func TestLoadSkillsDedupesByPriority(t *testing.T) {
 	require.Len(t, result.Skills, 1)
 	assert.Equal(t, winnerPath, result.Skills[0].FilePath)
 	require.Len(t, result.Diagnostics, 3)
+
 	for _, diagnostic := range result.Diagnostics {
 		require.NotNil(t, diagnostic.Collision)
 		assert.Equal(t, "same", diagnostic.Collision.Name)
@@ -100,13 +101,13 @@ func TestLoadSkillsParsesSpecFrontmatter(t *testing.T) {
 	}{
 		{
 			name:         "space separated allowed tools",
-			allowedTools: []string{"allowed-tools: Bash(git:*) Read"},
+			allowedTools: []string{"allowed_tools: Bash(git:*) Read"},
 			wantTools:    []string{"Bash(git:*)", "Read"},
 		},
 		{
 			name: "sequence allowed tools trims blank entries",
 			allowedTools: []string{
-				"allowed-tools:",
+				"allowed_tools:",
 				"  - Bash(git:*)",
 				"  - '  Read  '",
 				"  - ''",
@@ -130,7 +131,7 @@ func TestLoadSkillsParsesSpecFrontmatter(t *testing.T) {
 			}
 			frontmatter = append(frontmatter, testCase.allowedTools...)
 			frontmatter = append(frontmatter,
-				"user-invocable: true",
+				"user_invocable: true",
 				"metadata:",
 				"  author: omar",
 				frontmatterDelimiter,
@@ -163,6 +164,7 @@ func TestLoadSkillsHonorsIgnoreFiles(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+
 	skillsDir := filepath.Join(cwd, core.ConfigDirName, "skills")
 	writeTestFile(t, filepath.Join(skillsDir, ".ignore"), "ignored-skill\n")
 	writeTestFile(t, filepath.Join(skillsDir, "ignored-skill", "SKILL.md"), skillMarkdown("ignored-skill"))

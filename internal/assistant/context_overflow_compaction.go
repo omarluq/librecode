@@ -35,6 +35,7 @@ func (runtime *Runtime) completeWithProviderOverflowRecovery(
 	if err == nil {
 		return input.build, input.compactionEntry, result, nil
 	}
+
 	if !IsContextWindowError(err) {
 		return input.build, input.compactionEntry, nil, err
 	}
@@ -87,7 +88,9 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 			Code("context_overflow_rebuild").
 			Wrapf(err, "context: rebuild completion request after provider overflow compaction")
 	}
+
 	runtime.emitUsageSnapshot(ctx, input.preparation.onEvent, recoveredBuild.Context.Usage)
+
 	if runtime.cfg.Context.PreflightEnabled {
 		validationErr := recoveredBuild.Budget.Validate()
 		if validationErr != nil {
@@ -103,6 +106,7 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 				Wrapf(validationErr, "context: validate budget after provider overflow compaction")
 		}
 	}
+
 	runtime.emitContextCompactionEvent(
 		ctx,
 		input.preparation.onEvent,
@@ -130,6 +134,7 @@ func (runtime *Runtime) compactAfterProviderOverflow(
 		StreamEventContextCompactionStart,
 		"provider reported context overflow; attempting compaction before retry...",
 	)
+
 	entry, err := runtime.CompactSessionFrom(
 		ctx,
 		input.preparation.sessionID,
@@ -145,6 +150,7 @@ func (runtime *Runtime) compactAfterProviderOverflow(
 
 		return nil, providerErr
 	}
+
 	if err != nil {
 		runtime.emitContextCompactionError(
 			ctx,

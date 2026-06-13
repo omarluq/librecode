@@ -13,6 +13,7 @@ func (app *App) drawAutocompleteWindow(layout *extui.Layout) {
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
+
 	lines := app.autocompleteLines(window.Width)
 	for index, line := range lines {
 		writeLine(app.frame, window.Y+index, window.Width, line.Text, line.Style)
@@ -24,13 +25,17 @@ func (app *App) drawComposerWindow(layout *extui.Layout) {
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
-	editor := app.renderComposerEditor(window.Width, max(1, window.Height-2))
+
+	editor := app.renderComposerEditor(window.Width, max(1, window.Height-composerBorderRows))
+
 	borderStyle := app.theme.style(app.editorBorderColor())
 	for index, line := range editor.Lines {
 		writeEditorLine(app.frame, window.Y+index, window.Width, line, index, len(editor.Lines), borderStyle)
 	}
+
 	window.CursorRow = editor.CursorRow
 	window.CursorCol = editor.CursorCol
+
 	layout.Composer = window
 	if layout.Windows != nil {
 		layout.Windows[window.Name] = window
@@ -54,14 +59,17 @@ func (app *App) drawStatusWindow(layout *extui.Layout) {
 	if !window.Visible || window.Height <= 0 || app.extensionOwnsWindow(window.Name) {
 		return
 	}
+
 	lines := app.footerLines(window.Width)
 	if buffer, ok := app.runtimeBufferOverride(window.Buffer); ok {
 		lines = app.renderBufferTextLines(window.Width, buffer.Text, app.theme.style(colorDim))
 	}
+
 	for index, line := range lines {
 		if index >= window.Height {
 			return
 		}
+
 		writeLine(app.frame, window.Y+index, window.Width, line.Text, line.Style)
 	}
 }
@@ -71,13 +79,16 @@ func (app *App) drawEditorAndFooter(width, height, _ int) {
 	for index, line := range layout.autocompleteLines {
 		writeLine(app.frame, layout.startRow+index, width, line.Text, line.Style)
 	}
+
 	borderStyle := app.theme.style(app.editorBorderColor())
 	for index, line := range layout.editor.Lines {
 		writeEditorLine(app.frame, layout.editorStart+index, width, line, index, len(layout.editor.Lines), borderStyle)
 	}
+
 	for index, line := range layout.footerLines {
 		writeLine(app.frame, layout.footerStart+index, width, line.Text, line.Style)
 	}
+
 	app.screen.ShowCursor(layout.editor.CursorCol, layout.editorStart+layout.editor.CursorRow)
 }
 
@@ -98,15 +109,18 @@ type composerLayout struct {
 func (app *App) composerLayout(width, height int) composerLayout {
 	footerLines := app.footerLines(width)
 	autocompleteLines := app.autocompleteLines(width)
-	maxEditorRows := min(defaultEditorRows, max(3, height-len(footerLines)-len(autocompleteLines)-2))
-	maxEditorRows = max(3, maxEditorRows)
-	editor := app.renderComposerEditor(width, maxEditorRows-2)
+	availableRows := height - len(footerLines) - len(autocompleteLines) - composerBorderRows
+	maxEditorRows := min(defaultEditorRows, max(minimumComposerHeight, availableRows))
+	maxEditorRows = max(minimumComposerHeight, maxEditorRows)
+	editor := app.renderComposerEditor(width, maxEditorRows-composerBorderRows)
+
 	reserve := len(footerLines) + len(autocompleteLines) + len(editor.Lines)
 	if reserve > height {
-		bodyRows := max(1, height-len(footerLines)-len(autocompleteLines)-2)
+		bodyRows := max(1, height-len(footerLines)-len(autocompleteLines)-composerBorderRows)
 		editor = app.renderComposerEditor(width, bodyRows)
 		reserve = len(footerLines) + len(autocompleteLines) + len(editor.Lines)
 	}
+
 	startRow := max(0, height-reserve)
 	editorStart := startRow + len(autocompleteLines)
 	footerStart := height - len(footerLines)
@@ -126,6 +140,7 @@ func (app *App) editorBorderColor() colorToken {
 	if strings.HasPrefix(strings.TrimSpace(app.composerBuffer.TextValue()), "!") {
 		return colorBashMode
 	}
+
 	switch app.currentThinkingLevel() {
 	case "minimal", "low":
 		return colorBorderMuted
@@ -138,6 +153,7 @@ func (app *App) editorBorderColor() colorToken {
 
 func (app *App) footerLines(width int) []rendertext.Line {
 	lineTexts := app.defaultStatusLineTexts()
+
 	lines := make([]rendertext.Line, 0, len(lineTexts))
 	for _, lineText := range lineTexts {
 		lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), rendertext.Truncate(lineText, width)))

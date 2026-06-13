@@ -35,17 +35,21 @@ func applyProviderRequestHook(
 	if request == nil {
 		return HookOutput{Payload: input.Payload, Headers: input.Headers}, nil
 	}
+
 	output := HookOutput{Payload: input.Payload, Headers: input.Headers}
 	if request.OnProviderRequest != nil {
 		hookInput := hookInputToLLM(request, input.Payload, input.Headers, input.Attempt)
+
 		mutated, err := request.OnProviderRequest(ctx, hookInput)
 		if err != nil {
 			return HookOutput{}, oops.In("provider").
 				Code("provider_request_hook_failed").
 				Wrapf(err, "apply provider request hook")
 		}
+
 		output = HookOutput{Payload: mutated.Payload, Headers: mutated.Headers}
 	}
+
 	if request.OnProviderObserve != nil {
 		observeInput := hookInputToLLM(request, output.Payload, output.Headers, providerAttempt(request))
 		request.OnProviderObserve(ctx, observeInput)

@@ -1,6 +1,7 @@
 package extension_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -65,6 +66,7 @@ func invalidLockFileCase() lockFileCase {
 			t.Helper()
 			path := lockFilePath(t, dir)
 			require.NoError(t, os.WriteFile(path, []byte("extensions: ["), 0o600))
+
 			return path
 		},
 		run: extension.ReadLockFile,
@@ -82,6 +84,7 @@ func nilExtensionsLockFileCase() lockFileCase {
 			t.Helper()
 			path := lockFilePath(t, dir)
 			require.NoError(t, os.WriteFile(path, []byte("{}\n"), 0o600))
+
 			return path
 		},
 		run: extension.ReadLockFile,
@@ -99,6 +102,7 @@ func readErrorLockFileCase() lockFileCase {
 		name: "reports read errors",
 		setup: func(t *testing.T, dir string) string {
 			t.Helper()
+
 			return dir
 		},
 		run: extension.ReadLockFile,
@@ -115,8 +119,9 @@ func writeLockFileCase() lockFileCase {
 		setup: lockFilePath,
 		run: func(path string) (extension.LockFile, error) {
 			if err := extension.WriteLockFile(path, extension.LockFile{Extensions: nil}); err != nil {
-				return extension.LockFile{}, err
+				return extension.LockFile{}, fmt.Errorf("write lock file: %w", err)
 			}
+
 			return extension.ReadLockFile(path)
 		},
 		assert: func(t *testing.T, path string, lockFile extension.LockFile, err error) {
@@ -133,8 +138,10 @@ func writeParentFileLockFileCase() lockFileCase {
 		name: "write fails when parent is file",
 		setup: func(t *testing.T, dir string) string {
 			t.Helper()
+
 			parentPath := filepath.Join(dir, "not-a-dir")
 			require.NoError(t, os.WriteFile(parentPath, []byte("file"), 0o600))
+
 			return filepath.Join(parentPath, extension.LockFileName)
 		},
 		run: func(path string) (extension.LockFile, error) {
@@ -149,6 +156,7 @@ func writeParentFileLockFileCase() lockFileCase {
 
 func lockFilePath(t *testing.T, dir string) string {
 	t.Helper()
+
 	return filepath.Join(dir, extension.LockFileName)
 }
 
@@ -157,9 +165,12 @@ func assertLockFileMode(t *testing.T, path string) {
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
+
 	if runtime.GOOS != "windows" {
 		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
 		return
 	}
+
 	assert.False(t, info.IsDir())
 }

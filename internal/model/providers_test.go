@@ -30,9 +30,10 @@ func TestBuiltInProvidersAreSupportedAPIFamilies(t *testing.T) {
 			if builtIn.Provider != "azure-openai-responses" {
 				assert.NotEmpty(t, builtIn.BaseURL)
 			}
+
 			assert.True(t, supportedAPIs[builtIn.API], "unsupported api %q", builtIn.API)
-			assert.Contains(t, model.ProviderDisplayNames, builtIn.Provider)
-			assert.Contains(t, model.DefaultModelPerProvider, builtIn.Provider)
+			assert.Contains(t, model.ProviderDisplayNames(), builtIn.Provider)
+			assert.Contains(t, model.DefaultModelPerProvider(), builtIn.Provider)
 		})
 	}
 }
@@ -40,10 +41,10 @@ func TestBuiltInProvidersAreSupportedAPIFamilies(t *testing.T) {
 func TestAnthropicAPIAndSubscriptionProvidersAreSeparate(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "Anthropic API", model.ProviderDisplayNames["anthropic"])
-	assert.Equal(t, "Claude Pro/Max (Anthropic OAuth)", model.ProviderDisplayNames["anthropic-claude"])
-	assert.Equal(t, anthropicmodel.Fable5, model.DefaultModelPerProvider["anthropic"])
-	assert.Equal(t, anthropicmodel.Fable5, model.DefaultModelPerProvider["anthropic-claude"])
+	assert.Equal(t, "Anthropic API", model.ProviderDisplayNames()["anthropic"])
+	assert.Equal(t, "Claude Pro/Max (Anthropic OAuth)", model.ProviderDisplayNames()["anthropic-claude"])
+	assert.Equal(t, anthropicmodel.Fable5, model.DefaultModelPerProvider()["anthropic"])
+	assert.Equal(t, anthropicmodel.Fable5, model.DefaultModelPerProvider()["anthropic-claude"])
 }
 
 func TestAnthropicBuiltInDefaultsSupportFableAndMythos(t *testing.T) {
@@ -76,6 +77,7 @@ func findBuiltIn(t *testing.T, provider, modelID string) model.Model {
 			return builtIn
 		}
 	}
+
 	require.Failf(t, "built-in model not found", "%s/%s", provider, modelID)
 
 	return model.Model{
@@ -120,8 +122,8 @@ func TestBuiltInProviderCatalogIsTrimmedToImplementedProviders(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			t.Parallel()
 
-			assert.NotContains(t, model.ProviderDisplayNames, provider)
-			assert.NotContains(t, model.DefaultModelPerProvider, provider)
+			assert.NotContains(t, model.ProviderDisplayNames(), provider)
+			assert.NotContains(t, model.DefaultModelPerProvider(), provider)
 		})
 	}
 }

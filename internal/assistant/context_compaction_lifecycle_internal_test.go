@@ -40,8 +40,10 @@ func TestCompactionDecisionFromMutation(t *testing.T) {
 
 				return
 			}
+
 			if testCase.wantCode != "" {
 				require.Error(t, err)
+
 				var oopsErr oops.OopsError
 				require.ErrorAs(t, err, &oopsErr)
 				assert.Equal(t, testCase.wantCode, oopsErr.Code())
@@ -49,6 +51,7 @@ func TestCompactionDecisionFromMutation(t *testing.T) {
 
 				return
 			}
+
 			require.NoError(t, err)
 			require.NotNil(t, decision)
 			assert.Equal(t, "extension summary", decision.Summary)

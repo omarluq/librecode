@@ -1,21 +1,18 @@
 package terminal
 
 import (
+	"errors"
 	"strings"
-
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/gdamore/tcell/v3"
+
+	"github.com/omarluq/librecode/internal/terminal/rendertext"
 )
 
 func syntaxHighlightedCodeLines(language, text string, theme terminalTheme, baseStyle tcell.Style) []rendertext.Line {
-	lexer := codeLexer(language, text)
-	if lexer == nil {
-		return codeStyledLines(text, baseStyle)
-	}
-	iterator, err := lexer.Tokenise(nil, text)
+	iterator, err := codeTokenIterator(language, text)
 	if err != nil {
 		return codeStyledLines(text, baseStyle)
 	}
@@ -28,204 +25,248 @@ func syntaxHighlightedCodeLines(language, text string, theme terminalTheme, base
 	return lines
 }
 
-func codeLexer(language, text string) chroma.Lexer {
-	language = strings.TrimSpace(language)
-	if language != "" {
-		if lexer := lexers.Get(language); lexer != nil {
-			return chroma.Coalesce(lexer)
-		}
-	}
-	lexer := analyzeCode(text)
-	if lexer == nil {
-		return nil
+func codeTokenIterator(language, text string) (chroma.Iterator, error) {
+	lexer := lexers.Get(strings.TrimSpace(language))
+	if lexer != nil {
+		return tokenizeCode(lexer, text)
 	}
 
-	return chroma.Coalesce(lexer)
+	if strings.TrimSpace(language) != "" {
+		return nil, terminalError(errors.New("code lexer not found"), "find code lexer")
+	}
+
+	return analyzedCodeIterator(text)
 }
 
-func analyzeCode(text string) chroma.Lexer {
-	var picked chroma.Lexer
+func tokenizeCode(lexer chroma.Lexer, text string) (chroma.Iterator, error) {
+	iterator, err := chroma.Coalesce(lexer).Tokenise(nil, text)
+	if err != nil {
+		return nil, terminalError(err, "tokenize highlighted code")
+	}
+
+	return iterator, nil
+}
+
+func analyzedCodeIterator(text string) (chroma.Iterator, error) {
 	highest := float32(0)
+
 	for _, lexer := range lexers.GlobalLexerRegistry.Lexers {
-		analyzer, ok := lexer.(chroma.Analyser)
-		if !ok {
+		weight := lexer.AnalyseText(text)
+		if weight > highest {
+			highest = weight
+
 			continue
 		}
-		weight := analyzer.AnalyseText(text)
-		if weight > highest {
-			picked = lexer
-			highest = weight
+	}
+
+	for _, lexer := range lexers.GlobalLexerRegistry.Lexers {
+		if lexer.AnalyseText(text) == highest && highest > 0 {
+			return tokenizeCode(lexer, text)
 		}
 	}
 
-	return picked
+	return nil, terminalError(errors.New("code lexer not found"), "find code lexer")
 }
 
-func codeLinesFromTokens(tokens []chroma.Token, theme terminalTheme, baseStyle tcell.Style) []rendertext.Line {
-	lines := []rendertext.Line{rendertext.NewLine(baseStyle, markdownCodePrefix)}
-	for _, token := range tokens {
-		if token.Type == chroma.EOFType {
-			break
-		}
-		style := styleForToken(token.Type, theme, baseStyle)
-		appendTokenToCodeLines(&lines, token.Value, style, baseStyle)
+func codeStyledLines(text string, baseStyle tcell.Style) []rendertext.Line {
+	parts := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if len(parts) == 0 {
+		return []rendertext.Line{rendertext.NewLine(baseStyle, markdownCodePrefix)}
 	}
-	if len(lines) > 1 && strings.TrimPrefix(lines[len(lines)-1].Text, markdownCodePrefix) == "" {
-		lines = lines[:len(lines)-1]
+
+	lines := make([]rendertext.Line, 0, len(parts))
+	for _, part := range parts {
+		lines = append(lines, rendertext.NewLine(baseStyle, markdownCodePrefix+part))
 	}
 
 	return lines
 }
 
-func appendTokenToCodeLines(lines *[]rendertext.Line, value string, style, baseStyle tcell.Style) {
-	for {
-		before, after, found := strings.Cut(value, "\n")
-		appendStyledTextToLastLine(lines, before, style)
-		if !found {
-			return
-		}
-		*lines = append(*lines, rendertext.NewLine(baseStyle, markdownCodePrefix))
-		value = after
+func diffStyledLines(text string, theme terminalTheme, baseStyle tcell.Style) []rendertext.Line {
+	parts := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if len(parts) == 0 {
+		return nil
 	}
+
+	lines := make([]rendertext.Line, 0, len(parts))
+	for _, part := range parts {
+		style := baseStyle
+		if strings.HasPrefix(part, "+") {
+			style = baseStyle.Foreground(theme.colors[colorDiffAdd])
+		} else if strings.HasPrefix(part, "-") {
+			style = baseStyle.Foreground(theme.colors[colorDiffDelete])
+		}
+
+		lines = append(lines, rendertext.NewLine(style, part))
+	}
+
+	return lines
 }
 
-func appendStyledTextToLastLine(lines *[]rendertext.Line, text string, style tcell.Style) {
-	if text == "" {
+func codeLinesFromTokens(tokens []chroma.Token, theme terminalTheme, baseStyle tcell.Style) []rendertext.Line {
+	lines := []rendertext.Line{rendertext.NewLine(baseStyle, markdownCodePrefix)}
+
+	for _, token := range tokens {
+		if token.Type == chroma.EOFType {
+			break
+		}
+
+		segments := strings.SplitAfter(token.Value, "\n")
+		for _, segment := range segments {
+			if segment == "" {
+				continue
+			}
+
+			if text, ok := strings.CutSuffix(segment, "\n"); ok {
+				appendCodeSegment(&lines, text, token.Type, theme, baseStyle)
+				lines = append(lines, rendertext.NewLine(baseStyle, markdownCodePrefix))
+
+				continue
+			}
+
+			appendCodeSegment(&lines, segment, token.Type, theme, baseStyle)
+		}
+	}
+
+	return trimTrailingEmptyCodeLine(lines, baseStyle)
+}
+
+func appendCodeSegment(
+	lines *[]rendertext.Line,
+	segment string,
+	tokenType chroma.TokenType,
+	theme terminalTheme,
+	baseStyle tcell.Style,
+) {
+	if segment == "" {
 		return
 	}
-	index := len(*lines) - 1
-	line := (*lines)[index]
-	line.Spans = append(line.Spans, rendertext.Span{Style: style, Text: text})
-	line.Text += text
-	(*lines)[index] = line
+
+	lastIndex := len(*lines) - 1
+	line := (*lines)[lastIndex]
+	style := styleForToken(tokenType, theme, baseStyle)
+	line.Spans = append(line.Spans, rendertext.Span{Text: segment, Style: style})
+	line.Text += segment
+	(*lines)[lastIndex] = line
 }
 
-func styleForToken(token chroma.TokenType, theme terminalTheme, baseStyle tcell.Style) tcell.Style {
-	style := baseStyle.Foreground(colorForToken(token, theme))
-	category := token.Category()
-	if category == chroma.Keyword {
-		return style.Bold(true)
-	}
-	if category == chroma.Name && (token.InCategory(chroma.NameFunction) || token.InCategory(chroma.NameClass)) {
-		return style.Bold(true)
-	}
+func styleForToken(tokenType chroma.TokenType, theme terminalTheme, baseStyle tcell.Style) tcell.Style {
+	category := tokenType.Category()
+
 	if category == chroma.Comment {
-		return style.Italic(true)
+		return baseStyle.Foreground(codeCommentColor(theme)).Italic(true)
 	}
 
-	return style
-}
-
-func colorForToken(token chroma.TokenType, theme terminalTheme) tcell.Color {
-	category := token.Category()
 	if category == chroma.Keyword {
-		return codeKeywordColor(theme)
+		return baseStyle.Foreground(codeKeywordColor(theme))
 	}
+
 	if category == chroma.Name {
-		return codeNameColor(token, theme)
+		return baseStyle.Foreground(codeNameColor(tokenType, theme))
 	}
-	if category == chroma.Literal {
-		return codeLiteralColor(token, theme)
+
+	if category == chroma.LiteralString {
+		return baseStyle.Foreground(codeStringColor(theme))
 	}
-	if category == chroma.Operator {
-		return codeOperatorColor(theme)
+
+	if category == chroma.LiteralNumber {
+		return baseStyle.Foreground(codeNumberColor(theme))
 	}
-	if category == chroma.Comment {
-		return theme.colors[colorDim]
+
+	if category == chroma.Operator || category == chroma.Punctuation {
+		return baseStyle.Foreground(codeOperatorColor(theme))
 	}
+
 	if category == chroma.Generic {
-		return codeGenericColor(token, theme)
+		return baseStyle.Foreground(codeGenericColor(tokenType, theme))
+	}
+
+	return baseStyle.Foreground(codeTypeColor(theme))
+}
+
+func codeNameColor(tokenType chroma.TokenType, theme terminalTheme) tcell.Color {
+	if tokenType == chroma.NameFunction {
+		return codeFunctionColor(theme)
+	}
+
+	if tokenType == chroma.NameClass || tokenType == chroma.NameNamespace {
+		return codeTypeColor(theme)
+	}
+
+	if tokenType == chroma.NameVariable || tokenType == chroma.NameBuiltin {
+		return codeVariableColor(theme)
 	}
 
 	return theme.colors[colorCodeText]
 }
 
-func codeNameColor(token chroma.TokenType, theme terminalTheme) tcell.Color {
-	switch {
-	case token.InCategory(chroma.NameFunction):
-		return codeFunctionColor(theme)
-	case token.InCategory(chroma.NameClass), token.InCategory(chroma.NameBuiltin):
-		return codeTypeColor(theme)
-	case token.InCategory(chroma.NameVariable), token.InCategory(chroma.NameConstant):
-		return codeVariableColor(theme)
-	default:
-		return theme.colors[colorCodeText]
-	}
-}
-
-func codeLiteralColor(token chroma.TokenType, theme terminalTheme) tcell.Color {
-	switch {
-	case token.InCategory(chroma.LiteralString):
+func codeLiteralColor(tokenType chroma.TokenType, theme terminalTheme) tcell.Color {
+	if tokenType == chroma.LiteralString {
 		return codeStringColor(theme)
-	case token.InCategory(chroma.LiteralNumber):
-		return codeNumberColor(theme)
-	default:
-		return theme.colors[colorCodeText]
 	}
+
+	if tokenType == chroma.LiteralNumber {
+		return codeNumberColor(theme)
+	}
+
+	return theme.colors[colorCodeText]
 }
 
-func codeGenericColor(token chroma.TokenType, theme terminalTheme) tcell.Color {
-	switch {
-	case token.InCategory(chroma.GenericInserted):
+func codeGenericColor(tokenType chroma.TokenType, theme terminalTheme) tcell.Color {
+	if tokenType == chroma.GenericInserted {
 		return theme.colors[colorDiffAdd]
-	case token.InCategory(chroma.GenericDeleted):
-		return theme.colors[colorDiffDelete]
-	case token.InCategory(chroma.GenericHeading):
-		return theme.colors[colorAccent]
-	default:
-		return theme.colors[colorCodeText]
 	}
+
+	if tokenType == chroma.GenericDeleted {
+		return theme.colors[colorDiffDelete]
+	}
+
+	if tokenType == chroma.GenericHeading {
+		return theme.colors[colorAccent]
+	}
+
+	return theme.colors[colorCodeText]
 }
 
 func codeKeywordColor(theme terminalTheme) tcell.Color {
-	if theme.name == themeNameLight {
-		return hexColor(0xcf222e)
-	}
-
-	return hexColor(0xff7b72)
+	return theme.colors[colorAccent]
 }
 
 func codeFunctionColor(theme terminalTheme) tcell.Color {
-	if theme.name == themeNameLight {
-		return hexColor(0x8250df)
-	}
-
-	return hexColor(0xd2a8ff)
+	return theme.colors[colorSuccess]
 }
 
 func codeTypeColor(theme terminalTheme) tcell.Color {
-	if theme.name == themeNameLight {
-		return hexColor(0x953800)
-	}
-
-	return hexColor(0xffd8a8)
+	return theme.colors[colorWarning]
 }
 
 func codeVariableColor(theme terminalTheme) tcell.Color {
-	if theme.name == themeNameLight {
-		return hexColor(0x0550ae)
-	}
-
-	return hexColor(0x79c0ff)
-}
-
-func codeStringColor(theme terminalTheme) tcell.Color {
-	if theme.name == themeNameLight {
-		return hexColor(0x0a3069)
-	}
-
-	return hexColor(0xa5d6ff)
+	return theme.colors[colorCodeText]
 }
 
 func codeNumberColor(theme terminalTheme) tcell.Color {
-	// Numbers intentionally share GitHub's blue literal color with variables.
-	return codeVariableColor(theme)
+	return theme.colors[colorCodeText]
+}
+
+func codeStringColor(theme terminalTheme) tcell.Color {
+	return theme.colors[colorSuccess]
 }
 
 func codeOperatorColor(theme terminalTheme) tcell.Color {
-	if theme.name == themeNameLight {
-		return hexColor(0x116329)
+	return theme.colors[colorDim]
+}
+
+func codeCommentColor(theme terminalTheme) tcell.Color {
+	return theme.colors[colorMuted]
+}
+
+func trimTrailingEmptyCodeLine(lines []rendertext.Line, baseStyle tcell.Style) []rendertext.Line {
+	if len(lines) > 1 {
+		last := lines[len(lines)-1]
+		if last.Text == markdownCodePrefix && len(last.Spans) == 0 && last.Style == baseStyle {
+			return lines[:len(lines)-1]
+		}
 	}
 
-	return hexColor(0x7ee787)
+	return lines
 }

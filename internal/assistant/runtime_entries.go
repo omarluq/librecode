@@ -24,7 +24,9 @@ func (runtime *Runtime) appendUserPromptEntry(
 	}
 	modelFacing := promptModelFacing(prompt)
 
-	return runtime.sessions.AppendMessageWithModelFacing(ctx, sessionID, parentID, &message, &modelFacing)
+	entry, err := runtime.sessions.AppendMessageWithModelFacing(ctx, sessionID, parentID, &message, &modelFacing)
+
+	return entry, assistantError(err, "append model-facing message")
 }
 
 func (runtime *Runtime) appendAssistantResponseEntry(
@@ -41,7 +43,7 @@ func (runtime *Runtime) appendAssistantResponseEntry(
 		Model:     runtime.cfg.Assistant.Model,
 	}
 
-	return runtime.sessions.AppendMessageWithMetadata(
+	entry, err := runtime.sessions.AppendMessageWithMetadata(
 		ctx,
 		sessionID,
 		parentID,
@@ -49,4 +51,6 @@ func (runtime *Runtime) appendAssistantResponseEntry(
 		&bundle.ModelFacing,
 		contextwindow.ProviderUsageEntity(bundle.Usage),
 	)
+
+	return entry, assistantError(err, "append assistant response")
 }

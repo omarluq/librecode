@@ -44,6 +44,7 @@ func EstimateBuildUsage(
 	usageAnchor *database.ContextUsageAnchorEntity,
 ) model.TokenUsage {
 	inputTokens := EstimateUsageLedInputTokens(systemPrompt, messages, contributions, usageAnchor)
+
 	contextWindow := 0
 	if selectedModel != nil {
 		contextWindow = selectedModel.ContextWindow
@@ -90,6 +91,7 @@ func estimateTrailingInputTokens(
 	for index := startIndex; index < len(messages); index++ {
 		trailingTokens += EstimateTokens(messages[index].Content)
 	}
+
 	for index := range contributions {
 		trailingTokens += contributions[index].Tokens
 	}
@@ -107,6 +109,7 @@ func TopContributors(
 	if tokens := EstimateTokens(systemPrompt); tokens > 0 {
 		contributors = append(contributors, newTokenContributor("system prompt", BreakdownSystem, systemPrompt, tokens))
 	}
+
 	for index := range messages {
 		message := messages[index]
 		if tokens := EstimateTokens(message.Content); tokens > 0 {
@@ -115,18 +118,23 @@ func TopContributors(
 			contributors = append(contributors, contributor)
 		}
 	}
+
 	for index := range contributions {
 		contribution := contributions[index]
+
 		label := contribution.Name
 		if label == "" {
 			label = fmt.Sprintf("extension contribution %d", index+1)
 		}
+
 		contributor := newTokenContributor(label, contribution.Role, contribution.Content, contribution.Tokens)
 		contributors = append(contributors, contributor)
 	}
+
 	slices.SortFunc(contributors, func(left, right model.TokenContributor) int {
 		return right.Tokens - left.Tokens
 	})
+
 	if len(contributors) > MaxContributors {
 		contributors = contributors[:MaxContributors]
 	}
@@ -150,6 +158,7 @@ func ContributorPreview(content string) string {
 	if utf8.RuneCountInString(preview) <= previewRunes {
 		return preview
 	}
+
 	runes := []rune(preview)
 
 	return string(runes[:previewRunes]) + "…"

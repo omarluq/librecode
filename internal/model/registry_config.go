@@ -15,19 +15,19 @@ type modelsConfig struct {
 }
 
 type providerConfig struct {
-	ModelOverrides map[string]modelOverride `json:"modelOverrides"`
+	ModelOverrides map[string]modelOverride `json:"model_overrides"`
 	Headers        map[string]string        `json:"headers"`
 	Compat         map[string]any           `json:"compat"`
-	AuthHeader     *bool                    `json:"authHeader"`
+	AuthHeader     *bool                    `json:"auth_header"`
 	Name           string                   `json:"name"`
-	BaseURL        string                   `json:"baseUrl"`
-	APIKey         string                   `json:"apiKey"`
+	BaseURL        string                   `json:"base_url"`
+	APIKey         string                   `json:"api_key"`
 	API            string                   `json:"api"`
 	Models         []modelDefinition        `json:"models"`
 }
 
 type modelDefinition struct {
-	ThinkingLevelMap map[ThinkingLevel]*string `json:"thinkingLevelMap"`
+	ThinkingLevelMap map[ThinkingLevel]*string `json:"thinking_level_map"`
 	Headers          map[string]string         `json:"headers"`
 	Compat           map[string]any            `json:"compat"`
 	Cost             *Cost                     `json:"cost"`
@@ -35,20 +35,20 @@ type modelDefinition struct {
 	Name             string                    `json:"name"`
 	ID               string                    `json:"id"`
 	API              string                    `json:"api"`
-	BaseURL          string                    `json:"baseUrl"`
+	BaseURL          string                    `json:"base_url"`
 	Input            []InputMode               `json:"input"`
-	ContextWindow    int                       `json:"contextWindow"`
-	MaxTokens        int                       `json:"maxTokens"`
+	ContextWindow    int                       `json:"context_window"`
+	MaxTokens        int                       `json:"max_tokens"`
 }
 
 type modelOverride struct {
-	ThinkingLevelMap map[ThinkingLevel]*string `json:"thinkingLevelMap"`
+	ThinkingLevelMap map[ThinkingLevel]*string `json:"thinking_level_map"`
 	Headers          map[string]string         `json:"headers"`
 	Compat           map[string]any            `json:"compat"`
 	Cost             *partialCost              `json:"cost"`
 	Name             *string                   `json:"name"`
-	ContextWindow    *int                      `json:"contextWindow"`
-	MaxTokens        *int                      `json:"maxTokens"`
+	ContextWindow    *int                      `json:"context_window"`
+	MaxTokens        *int                      `json:"max_tokens"`
 	Reasoning        *bool                     `json:"reasoning"`
 	Input            []InputMode               `json:"input"`
 }
@@ -56,8 +56,8 @@ type modelOverride struct {
 type partialCost struct {
 	Input      *float64 `json:"input"`
 	Output     *float64 `json:"output"`
-	CacheRead  *float64 `json:"cacheRead"`
-	CacheWrite *float64 `json:"cacheWrite"`
+	CacheRead  *float64 `json:"cache_read"`
+	CacheWrite *float64 `json:"cache_write"`
 }
 
 type customModelsResult struct {
@@ -82,13 +82,16 @@ func (registry *Registry) loadCustomModels() customModelsResult {
 
 		return parseCustomModels(content, "database:models")
 	}
+
 	if registry.modelsPath == "" {
 		return emptyCustomModelsResult(nil)
 	}
+
 	content, err := readModelFile(registry.modelsPath)
 	if errorsIsNotExist(err) {
 		return emptyCustomModelsResult(nil)
 	}
+
 	if err != nil {
 		return emptyCustomModelsResult(err)
 	}
@@ -101,6 +104,7 @@ func parseCustomModels(content []byte, sourcePath string) customModelsResult {
 	if err := json.Unmarshal([]byte(stripJSONComments(string(content))), &config); err != nil {
 		return emptyCustomModelsResult(oops.In("model").Code("parse_models").Wrapf(err, "parse models.json"))
 	}
+
 	if config.Providers == nil {
 		return emptyCustomModelsResult(oops.In("model").Code("models_missing_providers").Errorf(
 			"models.json %s must contain providers",
@@ -109,14 +113,17 @@ func parseCustomModels(content []byte, sourcePath string) customModelsResult {
 	}
 
 	result := emptyCustomModelsResult(nil)
+
 	for providerName, providerCfg := range config.Providers {
 		if providerName == "" {
 			result.Err = oops.In("model").Code("models_empty_provider_name").Errorf(
 				"models.json %s contains an empty provider name",
 				sourcePath,
 			)
+
 			continue
 		}
+
 		result.ProviderConfigs[providerName] = requestConfig(&providerCfg)
 		if providerCfg.BaseURL != "" || providerCfg.Compat != nil {
 			result.ProviderPatches[providerName] = providerPatch{
@@ -124,9 +131,11 @@ func parseCustomModels(content []byte, sourcePath string) customModelsResult {
 				BaseURL: providerCfg.BaseURL,
 			}
 		}
+
 		for modelID, override := range providerCfg.ModelOverrides {
 			storeModelOverride(result.ModelOverrides, providerName, modelID, &override)
 		}
+
 		result.Models = append(result.Models, modelsFromProvider(providerName, &providerCfg)...)
 	}
 
@@ -161,22 +170,27 @@ func modelFromDefinition(providerName string, config *providerConfig, definition
 	if name == "" {
 		name = definition.ID
 	}
+
 	api := definition.API
 	if api == "" {
 		api = config.API
 	}
+
 	baseURL := definition.BaseURL
 	if baseURL == "" {
 		baseURL = config.BaseURL
 	}
+
 	input := definition.Input
 	if len(input) == 0 {
 		input = []InputMode{InputText}
 	}
+
 	reasoning := false
 	if definition.Reasoning != nil {
 		reasoning = *definition.Reasoning
 	}
+
 	cost := Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0}
 	if definition.Cost != nil {
 		cost = *definition.Cost
@@ -208,6 +222,7 @@ func storeModelOverride(
 	if overrides[providerName] == nil {
 		overrides[providerName] = map[string]modelOverride{}
 	}
+
 	overrides[providerName][modelID] = *override
 }
 
@@ -224,7 +239,9 @@ func emptyCustomModelsResult(err error) customModelsResult {
 func readModelFile(path string) ([]byte, error) {
 	cleanPath := filepath.Clean(path)
 
-	return fs.ReadFile(os.DirFS(filepath.Dir(cleanPath)), filepath.Base(cleanPath))
+	content, err := fs.ReadFile(os.DirFS(filepath.Dir(cleanPath)), filepath.Base(cleanPath))
+
+	return content, modelError(err, "read model file")
 }
 
 func errorsIsNotExist(err error) bool {

@@ -15,6 +15,7 @@ func (storage *Storage) Get(provider string) (Credential, bool) {
 	defer storage.lock.RUnlock()
 
 	credential, ok := storage.credentials[provider]
+
 	return credential, ok
 }
 
@@ -35,6 +36,7 @@ func (storage *Storage) HasStored(provider string) bool {
 	defer storage.lock.RUnlock()
 
 	_, ok := storage.credentials[provider]
+
 	return ok
 }
 
@@ -44,14 +46,18 @@ func (storage *Storage) HasAuth(provider string) bool {
 	if runtimeOK {
 		return true
 	}
+
 	if credentialOK && credential.hasSecretMaterial() {
 		return true
 	}
+
 	if _, ok := envAPIKey(provider); ok {
 		return true
 	}
+
 	if resolver != nil {
 		_, ok := resolver(provider)
+
 		return ok
 	}
 
@@ -64,14 +70,17 @@ func (storage *Storage) APIKey(provider string) (string, bool) {
 	if runtimeOK {
 		return apiKey, true
 	}
+
 	if credentialOK {
 		if apiKey, ok := credential.apiKeyValue(); ok {
 			return apiKey, true
 		}
 	}
+
 	if apiKey, ok := envAPIKey(provider); ok {
 		return apiKey, true
 	}
+
 	if resolver != nil {
 		return resolver(provider)
 	}
@@ -92,11 +101,14 @@ func (storage *Storage) APIKeyContext(ctx context.Context, provider string) (api
 			return apiKey, found, err
 		}
 	}
+
 	if apiKey, ok := envAPIKey(provider); ok {
 		return apiKey, true, nil
 	}
+
 	if resolver != nil {
 		apiKey, ok := resolver(provider)
+
 		return apiKey, ok, nil
 	}
 
@@ -127,19 +139,25 @@ func (storage *Storage) credentialAPIKeyContext(
 ) (apiKey string, found bool, err error) {
 	if credential.Type == CredentialTypeAPIKey {
 		value, ok := credential.apiKeyValue()
+
 		return value, ok, nil
 	}
+
 	if credential.Type != CredentialTypeOAuth {
 		value, ok := credential.apiKeyValue()
+
 		return value, ok, nil
 	}
+
 	refreshed, apiKey, err := refreshOAuthCredential(ctx, provider, credential)
 	if err != nil {
 		return "", false, err
 	}
+
 	if apiKey == "" {
 		return "", false, nil
 	}
+
 	if refreshed.oauthAccess() != credential.oauthAccess() {
 		if err := storage.Set(ctx, provider, refreshed); err != nil {
 			return "", false, err
@@ -157,6 +175,7 @@ func refreshOAuthCredential(ctx context.Context, provider string, credential *Cr
 		return anthropicAPIKey(ctx, credential)
 	default:
 		value, _ := credential.apiKeyValue()
+
 		return credential, value, nil
 	}
 }
@@ -167,12 +186,15 @@ func (storage *Storage) AuthStatus(provider string) Status {
 	if runtimeOK {
 		return Status{Source: SourceRuntime, Label: "--api-key", Configured: false}
 	}
+
 	if credentialOK && credential.hasSecretMaterial() {
 		return Status{Source: SourceStored, Label: "", Configured: true}
 	}
+
 	if envKey, ok := envKeyName(provider); ok {
 		return Status{Source: SourceEnvironment, Label: envKey, Configured: false}
 	}
+
 	if resolver != nil {
 		if _, ok := resolver(provider); ok {
 			return Status{Source: SourceFallback, Label: "custom provider config", Configured: false}
@@ -201,25 +223,29 @@ func (storage *Storage) persistProviderChange(
 	if err := storage.currentLoadError(); err != nil {
 		return oops.In("auth").Code("load_error").Wrapf(err, "persist credentials")
 	}
+
 	err := storage.backend.WithLock(ctx, func(current []byte) (LockResult, error) {
 		credentials, err := parseCredentials(current)
 		if err != nil {
 			return LockResult{Next: nil, Write: false}, err
 		}
+
 		if credential == nil {
 			delete(credentials, provider)
 		} else {
 			credentials[provider] = *credential
 		}
+
 		next, err := json.MarshalIndent(credentials, "", "  ")
 		if err != nil {
-			return LockResult{Next: nil, Write: false}, err
+			return LockResult{Next: nil, Write: false}, authError(err, "encode credentials")
 		}
 
 		return LockResult{Next: next, Write: true}, nil
 	})
 	if err != nil {
 		storage.recordError(err)
+
 		return oops.In("auth").Code("persist").Wrapf(err, "persist credentials")
 	}
 

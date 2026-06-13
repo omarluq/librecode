@@ -46,7 +46,9 @@ func (lsTool *LSTool) Definition() Definition {
 
 // Execute runs the ls tool.
 func (lsTool *LSTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
-	args, err := decodeInput[LSInput](input)
+	var args LSInput
+
+	err := decodeInput(input, &args)
 	if err != nil {
 		return emptyToolResult(), err
 	}
@@ -60,14 +62,17 @@ func (lsTool *LSTool) LS(ctx context.Context, input LSInput) (Result, error) {
 	if err != nil {
 		return emptyToolResult(), err
 	}
+
 	searchPath := input.Path
 	if searchPath == "" {
 		searchPath = "."
 	}
+
 	absolutePath, err := ResolveToCWD(searchPath, lsTool.cwd)
 	if err != nil {
 		return emptyToolResult(), err
 	}
+
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return emptyToolResult(), ctxErr
 	}
@@ -94,6 +99,7 @@ func readSortedDirectory(absolutePath string) ([]os.DirEntry, error) {
 	if err != nil {
 		return []os.DirEntry{}, fmt.Errorf("path not found: %s", absolutePath)
 	}
+
 	if !info.IsDir() {
 		return []os.DirEntry{}, fmt.Errorf("not a directory: %s", absolutePath)
 	}
@@ -102,9 +108,11 @@ func readSortedDirectory(absolutePath string) ([]os.DirEntry, error) {
 	if err != nil {
 		return []os.DirEntry{}, fmt.Errorf("cannot read directory: %w", err)
 	}
+
 	sort.Slice(entries, func(leftIndex, rightIndex int) bool {
 		leftName := strings.ToLower(entries[leftIndex].Name())
 		rightName := strings.ToLower(entries[rightIndex].Name())
+
 		return leftName < rightName
 	})
 
@@ -113,6 +121,7 @@ func readSortedDirectory(absolutePath string) ([]os.DirEntry, error) {
 
 func formatLSResults(absolutePath string, entries []os.DirEntry, limit int) Result {
 	limitedEntries := entries[:min(len(entries), limit)]
+
 	results := lo.FilterMap(limitedEntries, func(entry os.DirEntry, _ int) (string, bool) {
 		return directoryEntryDisplayName(absolutePath, entry)
 	})
@@ -121,16 +130,22 @@ func formatLSResults(absolutePath string, entries []os.DirEntry, limit int) Resu
 	}
 
 	entryLimitReached := len(entries) > limit
-	truncation := TruncateHead(strings.Join(results, "\n"), TruncationOptions{MaxLines: 1 << 30, MaxBytes: 0})
+	truncation := TruncateHead(
+		strings.Join(results, "\n"),
+		TruncationOptions{MaxLines: maxTruncationLines, MaxBytes: 0},
+	)
 	output := truncation.Content
 	details := map[string]any{}
+
 	notices := lsNotices(limit, entryLimitReached, &truncation)
 	if len(notices) > 0 {
 		output += "\n\n[" + strings.Join(notices, ". ") + "]"
 	}
+
 	if entryLimitReached {
 		details["entryLimitReached"] = limit
 	}
+
 	if truncation.Truncated {
 		details[detailTruncation] = truncation
 	}
@@ -140,10 +155,12 @@ func formatLSResults(absolutePath string, entries []os.DirEntry, limit int) Resu
 
 func directoryEntryDisplayName(absolutePath string, entry os.DirEntry) (string, bool) {
 	name := entry.Name()
+
 	info, err := entry.Info()
 	if err != nil {
 		return "", false
 	}
+
 	if info.IsDir() || isDirectorySymlink(filepath.Join(absolutePath, entry.Name())) {
 		name += "/"
 	}
@@ -153,14 +170,16 @@ func directoryEntryDisplayName(absolutePath string, entry os.DirEntry) (string, 
 
 func isDirectorySymlink(absolutePath string) bool {
 	info, err := filepathStat(absolutePath)
+
 	return err == nil && info.IsDir()
 }
 
 func lsNotices(limit int, entryLimitReached bool, truncation *TruncationResult) []string {
 	notices := []string{}
 	if entryLimitReached {
-		notices = append(notices, fmt.Sprintf("%d entries limit reached. Use limit=%d for more", limit, limit*2))
+		notices = append(notices, limitReachedNotice("entries", limit, ""))
 	}
+
 	if truncation.Truncated {
 		notices = append(notices, FormatSize(DefaultMaxBytes)+" limit reached")
 	}
@@ -172,6 +191,7 @@ func positiveLimit(limit *int, defaultLimit int, label string) (int, error) {
 	if limit == nil {
 		return defaultLimit, nil
 	}
+
 	if *limit < 1 {
 		return 0, fmt.Errorf("%s limit must be greater than zero", label)
 	}

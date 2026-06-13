@@ -126,6 +126,7 @@ end)
 	})
 
 	require.NoError(t, err)
+
 	payload, ok := result.Payload["payload"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "changed", payload["marker"])

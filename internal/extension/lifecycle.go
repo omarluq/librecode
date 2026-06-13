@@ -136,11 +136,13 @@ func (manager *Manager) DispatchLifecycle(ctx context.Context, event LifecycleEv
 	for _, handler := range manager.handlersFor(string(event.Name)) {
 		if err := ctx.Err(); err != nil {
 			result.Duration = time.Since(startedAt)
-			return result, err
+
+			return result, extensionError(err, "check lifecycle context")
 		}
 
 		result.HandlerCount++
-		luaResult, err := callLuaPrepared(
+
+		luaCallResult, err := callLuaPrepared(
 			handler.extension,
 			nil,
 			handler.function,
@@ -150,9 +152,12 @@ func (manager *Manager) DispatchLifecycle(ctx context.Context, event LifecycleEv
 		)
 		if err != nil {
 			result.Errors = append(result.Errors, err.Error())
+
 			continue
 		}
-		applyLifecycleLuaResult(&result, luaResult)
+
+		luaCallResult.ApplyLifecycleTo(&result)
+
 		if result.Stopped {
 			break
 		}
@@ -174,10 +179,11 @@ func lifecycleEventTable(state *lua.LState, name LifecycleEventName, payload map
 }
 
 func applyLifecycleLuaResult(result *LifecycleDispatchResult, value lua.LValue) {
-	table, ok := value.(*lua.LTable)
-	if !ok {
+	table, matched := value.(*lua.LTable)
+	if !matched {
 		return
 	}
+
 	applyLifecycleControlResult(result, table)
 	applyLifecyclePayloadResult(result, table)
 	applyLifecycleMutationResult(result, table)
@@ -187,6 +193,7 @@ func applyLifecycleControlResult(result *LifecycleDispatchResult, table *lua.LTa
 	if luaTableBool(table, "handled") || luaTableBool(table, "consumed") {
 		result.Consumed = true
 	}
+
 	if luaTableBool(table, "stop") || luaTableBool(table, "stopped") {
 		result.Consumed = true
 		result.Stopped = true
@@ -195,7 +202,7 @@ func applyLifecycleControlResult(result *LifecycleDispatchResult, table *lua.LTa
 
 func applyLifecyclePayloadResult(result *LifecycleDispatchResult, table *lua.LTable) {
 	payloadValue := table.RawGetString("payload")
-	if payload, ok := luaValueToGo(payloadValue).(map[string]any); ok {
+	if payload, matched := luaValueToGo(payloadValue).(map[string]any); matched {
 		result.Payload = payload
 	}
 }
@@ -205,14 +212,17 @@ func applyLifecycleMutationResult(result *LifecycleDispatchResult, table *lua.LT
 	if providerRequest, ok := providerRequestMutationFromLua(providerRequestValue); ok {
 		result.ProviderRequest = mergeProviderRequestMutation(result.ProviderRequest, providerRequest)
 	}
+
 	toolCallValue := table.RawGetString("tool_call")
 	if toolCall, ok := toolCallMutationFromLua(toolCallValue); ok {
 		result.ToolCall = mergeToolCallMutation(result.ToolCall, toolCall)
 	}
+
 	toolResultValue := table.RawGetString("tool_result")
 	if toolResult, ok := toolResultMutationFromLua(toolResultValue); ok {
 		result.ToolResult = mergeToolResultMutation(result.ToolResult, toolResult)
 	}
+
 	compactionValue := table.RawGetString("compaction")
 	if compaction, ok := compactionMutationFromLua(compactionValue); ok {
 		result.Compaction = mergeCompactionMutation(result.Compaction, compaction)
@@ -231,6 +241,7 @@ func mergeToolCallMutation(base, override ToolCallMutation) ToolCallMutation {
 	if len(override.Arguments) == 0 {
 		return base
 	}
+
 	arguments := cloneMap(base.Arguments)
 	maps.Copy(arguments, override.Arguments)
 
@@ -242,9 +253,11 @@ func mergeToolResultMutation(base, override ToolResultMutation) ToolResultMutati
 	if override.Result != nil {
 		merged.Result = override.Result
 	}
+
 	if override.DetailsJSON != nil {
 		merged.DetailsJSON = override.DetailsJSON
 	}
+
 	if override.Error != nil {
 		merged.Error = override.Error
 	}
@@ -257,13 +270,16 @@ func mergeCompactionMutation(base, override CompactionMutation) CompactionMutati
 	if override.Summary != nil {
 		merged.Summary = override.Summary
 	}
+
 	if override.FirstKeptEntryID != nil {
 		merged.FirstKeptEntryID = override.FirstKeptEntryID
 	}
+
 	if override.Details != nil {
 		merged.Details = cloneMap(base.Details)
 		maps.Copy(merged.Details, override.Details)
 	}
+
 	if override.Cancel {
 		merged.Cancel = true
 	}
@@ -272,12 +288,13 @@ func mergeCompactionMutation(base, override CompactionMutation) CompactionMutati
 }
 
 func toolCallMutationFromLua(value lua.LValue) (ToolCallMutation, bool) {
-	payload, ok := luaValueToGo(value).(map[string]any)
-	if !ok {
+	payload, matched := luaValueToGo(value).(map[string]any)
+	if !matched {
 		return ToolCallMutation{Arguments: nil}, false
 	}
-	arguments, ok := payload["arguments"].(map[string]any)
-	if !ok || len(arguments) == 0 {
+
+	arguments, matched := payload["arguments"].(map[string]any)
+	if !matched || len(arguments) == 0 {
 		return ToolCallMutation{Arguments: nil}, false
 	}
 
@@ -285,20 +302,24 @@ func toolCallMutationFromLua(value lua.LValue) (ToolCallMutation, bool) {
 }
 
 func toolResultMutationFromLua(value lua.LValue) (ToolResultMutation, bool) {
-	payload, ok := luaValueToGo(value).(map[string]any)
-	if !ok {
+	payload, matched := luaValueToGo(value).(map[string]any)
+	if !matched {
 		return ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil}, false
 	}
+
 	mutation := ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil}
 	if result, ok := payload["result"].(string); ok {
 		mutation.Result = &result
 	}
+
 	if detailsJSON, ok := payload["details_json"].(string); ok {
 		mutation.DetailsJSON = &detailsJSON
 	}
+
 	if errorText, ok := payload["error"].(string); ok {
 		mutation.Error = &errorText
 	}
+
 	if mutation.Result == nil && mutation.DetailsJSON == nil && mutation.Error == nil {
 		return ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil}, false
 	}
@@ -307,23 +328,28 @@ func toolResultMutationFromLua(value lua.LValue) (ToolResultMutation, bool) {
 }
 
 func compactionMutationFromLua(value lua.LValue) (CompactionMutation, bool) {
-	payload, ok := luaValueToGo(value).(map[string]any)
-	if !ok {
+	payload, matched := luaValueToGo(value).(map[string]any)
+	if !matched {
 		return CompactionMutation{Summary: nil, FirstKeptEntryID: nil, Details: nil, Cancel: false}, false
 	}
+
 	mutation := CompactionMutation{Summary: nil, FirstKeptEntryID: nil, Details: nil, Cancel: false}
 	if summary, ok := payload["summary"].(string); ok {
 		mutation.Summary = &summary
 	}
+
 	if firstKeptEntryID, ok := payload["first_kept_entry_id"].(string); ok {
 		mutation.FirstKeptEntryID = &firstKeptEntryID
 	}
+
 	if details, ok := payload["details"].(map[string]any); ok {
 		mutation.Details = details
 	}
+
 	if cancel, ok := payload["cancel"].(bool); ok {
 		mutation.Cancel = cancel
 	}
+
 	if mutation.Summary == nil && mutation.FirstKeptEntryID == nil && mutation.Details == nil && !mutation.Cancel {
 		return CompactionMutation{Summary: nil, FirstKeptEntryID: nil, Details: nil, Cancel: false}, false
 	}
@@ -332,8 +358,8 @@ func compactionMutationFromLua(value lua.LValue) (CompactionMutation, bool) {
 }
 
 func providerRequestMutationFromLua(value lua.LValue) (ProviderRequestMutation, bool) {
-	payload, ok := luaValueToGo(value).(map[string]any)
-	if !ok {
+	payload, matched := luaValueToGo(value).(map[string]any)
+	if !matched {
 		return ProviderRequestMutation{Headers: map[string]string{}}, false
 	}
 
@@ -341,16 +367,18 @@ func providerRequestMutationFromLua(value lua.LValue) (ProviderRequestMutation, 
 }
 
 func stringMapValue(value any) map[string]string {
-	object, ok := value.(map[string]any)
-	if !ok {
+	object, matched := value.(map[string]any)
+	if !matched {
 		return map[string]string{}
 	}
+
 	output := make(map[string]string, len(object))
 	for key, item := range object {
-		text, ok := item.(string)
-		if !ok {
+		text, matched := item.(string)
+		if !matched {
 			continue
 		}
+
 		output[key] = text
 	}
 

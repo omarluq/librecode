@@ -34,8 +34,9 @@ func newSkillListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := assistant.DefaultCWD("")
 			if err != nil {
-				return err
+				return cliError(err, "resolve working directory")
 			}
+
 			result := core.LoadSkills(cwd, nil, true)
 			for index := range result.Skills {
 				skill := &result.Skills[index]
@@ -63,15 +64,17 @@ func newSkillShowCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := assistant.DefaultCWD("")
 			if err != nil {
-				return err
+				return cliError(err, "resolve working directory")
 			}
+
 			skill, found := findSkillByName(cwd, args[0])
 			if !found {
 				return fmt.Errorf("skill %q not found", args[0])
 			}
+
 			content, err := core.SkillContent(&skill)
 			if err != nil {
-				return err
+				return cliError(err, "read skill content")
 			}
 
 			return printLine(cmd.OutOrStdout(), "%s", content)
@@ -87,8 +90,9 @@ func newSkillValidateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := assistant.DefaultCWD("")
 			if err != nil {
-				return err
+				return cliError(err, "resolve working directory")
 			}
+
 			result := core.LoadSkills(cwd, nil, true)
 			for index := range result.Diagnostics {
 				diagnostic := &result.Diagnostics[index]
@@ -102,6 +106,7 @@ func newSkillValidateCmd() *cobra.Command {
 					return err
 				}
 			}
+
 			if len(result.Diagnostics) > 0 {
 				return fmt.Errorf("skills validation reported %d diagnostic(s)", len(result.Diagnostics))
 			}

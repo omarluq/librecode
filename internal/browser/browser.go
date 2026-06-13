@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const openerStartTimeout = 3 * time.Second
+
 // ErrNoOpener indicates no browser opener command is available.
 var ErrNoOpener = errors.New("no browser opener available")
 
@@ -18,6 +20,7 @@ func Open(targetURL string) error {
 	if targetURL == "" {
 		return nil
 	}
+
 	for _, command := range openerCommands() {
 		if err := runOpener(command.name, append(command.args, targetURL)...); err == nil {
 			return nil
@@ -57,16 +60,19 @@ func platformOpeners() []openerCommand {
 func runOpener(name string, args ...string) error {
 	path, err := exec.LookPath(name)
 	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "")
-	cmd.Path = path
-	cmd.Args = append([]string{path}, args...)
-	if err := cmd.Start(); err != nil {
-		return err
+		return browserError(err, "find browser opener")
 	}
 
-	return cmd.Process.Release()
+	ctx, cancel := context.WithTimeout(context.Background(), openerStartTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "")
+	cmd.Path = path
+
+	cmd.Args = append([]string{path}, args...)
+	if err := cmd.Start(); err != nil {
+		return browserError(err, "start browser opener")
+	}
+
+	return browserError(cmd.Process.Release(), "release browser opener")
 }

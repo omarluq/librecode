@@ -101,6 +101,7 @@ func TestRegistryRequestAuthContextReturnsAuthErrors(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
+
 	resolved := registry.RequestAuthContext(ctx, "openai-codex")
 	assert.False(t, resolved.OK)
 }

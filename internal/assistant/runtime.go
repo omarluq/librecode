@@ -157,6 +157,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	if request == nil {
 		return nil, oops.In("assistant").Code("nil_prompt_request").Errorf("prompt request is nil")
 	}
+
 	promptPayload := lifecyclePromptRequest(request)
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleInput, lifecyclepayload.Prompt(promptPayload))
 	runtime.dispatchObservationalLifecycle(
@@ -169,21 +170,16 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	if err != nil {
 		return nil, err
 	}
+
 	runtime.dispatchObservationalLifecycle(ctx, sessionEvent, lifecyclepayload.Session(activeSession))
 
-	parentID, err := runtime.promptParentID(ctx, activeSession.ID, request.ParentEntryID)
+	userEntry, parentID, err := runtime.appendPromptUserEntry(ctx, activeSession, request)
 	if err != nil {
 		return nil, err
 	}
 
-	userEntry, err := runtime.appendUserPromptEntry(ctx, activeSession.ID, parentID, request.Text)
-	if err != nil {
-		return nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
-	}
-	request.SessionID = activeSession.ID
-	runtime.dispatchMessageAppend(ctx, userEntry)
-	runtime.notifyPromptUserEntry(request, activeSession.ID, userEntry.ID)
 	turnLifecycle := newPromptTurnLifecycle(runtime, activeSession.ID, userEntry.ID)
+
 	runtime.dispatchTurnStartLifecycle(ctx, activeSession.ID, request, userEntry.ID, parentID)
 	defer func() {
 		turnLifecycle.dispatchError(ctx, err)
@@ -195,18 +191,22 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	}
 
 	compactedBeforeRequest := bundle.ParentEntryID != nil
+
 	assistantParentID := bundle.ParentEntryID
 	if assistantParentID == nil {
 		assistantParentID = &userEntry.ID
 	}
+
 	assistantParentID, err = runtime.appendAssistantSideEffects(ctx, activeSession.ID, assistantParentID, bundle)
 	if err != nil {
 		return nil, err
 	}
+
 	assistantEntry, err := runtime.appendAssistantResponseEntry(ctx, activeSession.ID, assistantParentID, bundle)
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_assistant").Wrapf(err, "append assistant message")
 	}
+
 	runtime.dispatchMessageAppend(ctx, assistantEntry)
 	turnLifecycle.dispatchEnd(ctx, assistantEntry.ID, cached, bundle.Usage)
 	runtime.maybeAutoCompactAfterResponse(
@@ -230,6 +230,29 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	}, nil
 }
 
+func (runtime *Runtime) appendPromptUserEntry(
+	ctx context.Context,
+	activeSession *database.SessionEntity,
+	request *PromptRequest,
+) (*database.EntryEntity, *string, error) {
+	parentID, err := runtime.promptParentID(ctx, activeSession.ID, request.ParentEntryID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	userEntry, err := runtime.appendUserPromptEntry(ctx, activeSession.ID, parentID, request.Text)
+	if err != nil {
+		return nil, nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
+	}
+
+	request.SessionID = activeSession.ID
+
+	runtime.dispatchMessageAppend(ctx, userEntry)
+	runtime.notifyPromptUserEntry(request, activeSession.ID, userEntry.ID)
+
+	return userEntry, parentID, nil
+}
+
 func (runtime *Runtime) maybeAutoCompactAfterResponse(
 	ctx context.Context,
 	sessionID string,
@@ -241,6 +264,7 @@ func (runtime *Runtime) maybeAutoCompactAfterResponse(
 	if compactedBeforeRequest || request == nil || bundle == nil {
 		return
 	}
+
 	usage, compacted := runtime.autoCompactAfterResponse(ctx, &postResponseAutoCompactionInput{
 		onEvent:       request.OnEvent,
 		sessionID:     sessionID,
@@ -280,6 +304,7 @@ func splitSlashCommand(prompt string) (name, args string) {
 	if trimmedPrompt == "" {
 		return "", ""
 	}
+
 	if after, ok := strings.CutPrefix(trimmedPrompt, "skill:"); ok {
 		return "skill", after
 	}
@@ -295,8 +320,14 @@ func splitSlashCommand(prompt string) (name, args string) {
 // DefaultCWD returns an absolute working directory for prompt requests.
 func DefaultCWD(cwd string) (string, error) {
 	if cwd == "" {
-		return filepath.Abs(".")
+		return absolutePath(".")
 	}
 
-	return filepath.Abs(cwd)
+	return absolutePath(cwd)
+}
+
+func absolutePath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+
+	return absolute, assistantError(err, "resolve absolute path")
 }

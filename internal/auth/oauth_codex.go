@@ -20,6 +20,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/limitio"
+	"github.com/omarluq/librecode/internal/units"
 )
 
 const (
@@ -30,9 +31,17 @@ const (
 	openAICodexScope       = "openid profile email offline_access"
 	openAICodexJWTClaim    = "https://api.openai.com/auth"
 	openAICodexCallback    = "127.0.0.1:1455"
+
+	oauthStateBytes      = 16
+	oauthVerifierBytes   = 32
+	oauthCallbackTimeout = 5 * time.Second
+	oauthShutdownTimeout = 2 * time.Second
+	jwtSegmentCount      = 3
 )
 
-var openAICodexExchangeURL = "https://auth.openai.com/oauth/token"
+func openAICodexExchangeEndpoint() string {
+	return "https://auth.openai.com/oauth/token"
+}
 
 // OAuthAuthInfo describes a browser OAuth step.
 type OAuthAuthInfo struct {
@@ -46,6 +55,7 @@ func LoginOpenAICodex(ctx context.Context, onAuth func(OAuthAuthInfo)) (*Credent
 	if err != nil {
 		return nil, err
 	}
+
 	server, err := startOpenAICodexCallbackServer(flow.State)
 	if err != nil {
 		return nil, err
@@ -63,6 +73,7 @@ func LoginOpenAICodex(ctx context.Context, onAuth func(OAuthAuthInfo)) (*Credent
 	if err != nil {
 		return nil, err
 	}
+
 	credential, err := exchangeOpenAICodexCode(ctx, code, flow.Verifier)
 	if err != nil {
 		return nil, err
@@ -75,29 +86,37 @@ func openAICodexAPIKey(ctx context.Context, credential *Credential) (*Credential
 	if credential == nil || credential.Type != CredentialTypeOAuth {
 		return credential, "", nil
 	}
+
 	if access := credential.oauthAccess(); access != "" && !credential.oauthExpired() {
 		return credential, access, nil
 	}
+
 	refresh := credential.oauthRefresh()
 	if refresh == "" {
 		return credential, "", nil
 	}
+
 	refreshed, err := refreshOpenAICodex(ctx, refresh)
 	if err != nil {
 		return credential, "", err
 	}
+
 	access := refreshed.oauthAccess()
 
 	return refreshed, access, nil
 }
 
 func refreshOpenAICodex(ctx context.Context, refreshToken string) (*Credential, error) {
+	return refreshOpenAICodexWithTokenURL(ctx, refreshToken, openAICodexExchangeEndpoint())
+}
+
+func refreshOpenAICodexWithTokenURL(ctx context.Context, refreshToken, tokenURL string) (*Credential, error) {
 	values := url.Values{}
 	values.Set("grant_type", "refresh_token")
 	values.Set("refresh_token", refreshToken)
 	values.Set("client_id", openAICodexClientID)
 
-	return requestOpenAICodexToken(ctx, values)
+	return requestOpenAICodexToken(ctx, values, tokenURL)
 }
 
 type openAICodexFlow struct {
@@ -111,14 +130,17 @@ func newOpenAICodexFlow() (*openAICodexFlow, error) {
 	if err != nil {
 		return nil, err
 	}
-	state, err := randomHex(16)
+
+	state, err := randomHex(oauthStateBytes)
 	if err != nil {
 		return nil, err
 	}
+
 	authURL, err := url.Parse(openAICodexAuthorize)
 	if err != nil {
 		return nil, oops.In("auth").Code("codex_authorize_url").Wrapf(err, "parse authorize url")
 	}
+
 	query := authURL.Query()
 	query.Set("response_type", "code")
 	query.Set("client_id", openAICodexClientID)
@@ -152,16 +174,23 @@ func startOpenAICodexCallbackServer(state string) (*openAICodexCallbackServer, e
 		query := request.URL.Query()
 		if query.Get("state") != state {
 			writeOAuthHTML(writer, http.StatusBadRequest, "Authentication state mismatch.")
+
 			codes <- callbackResult{Code: "", Err: errors.New("state mismatch")}
+
 			return
 		}
+
 		code := query.Get("code")
 		if code == "" {
 			writeOAuthHTML(writer, http.StatusBadRequest, "Missing authorization code.")
+
 			codes <- callbackResult{Code: "", Err: errors.New("missing authorization code")}
+
 			return
 		}
+
 		writeOAuthHTML(writer, http.StatusOK, "librecode authentication complete. You can close this tab.")
+
 		codes <- callbackResult{Code: code, Err: nil}
 	})
 	mux.HandleFunc("/", func(writer http.ResponseWriter, _ *http.Request) {
@@ -171,12 +200,14 @@ func startOpenAICodexCallbackServer(state string) (*openAICodexCallbackServer, e
 	server := &http.Server{
 		Addr:              openAICodexCallback,
 		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadHeaderTimeout: oauthCallbackTimeout,
 	}
+
 	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", openAICodexCallback)
 	if err != nil {
 		return nil, oops.In("auth").Code("codex_callback_listen").Wrapf(err, "listen for oauth callback")
 	}
+
 	go func() {
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			codes <- callbackResult{Code: "", Err: err}
@@ -200,8 +231,9 @@ func (server *openAICodexCallbackServer) Wait(ctx context.Context) (string, erro
 }
 
 func (server *openAICodexCallbackServer) Close(ctx context.Context) {
-	shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(ctx, oauthShutdownTimeout)
 	defer cancel()
+
 	if err := server.server.Shutdown(shutdownCtx); err != nil {
 		return
 	}
@@ -210,6 +242,7 @@ func (server *openAICodexCallbackServer) Close(ctx context.Context) {
 func writeOAuthHTML(writer http.ResponseWriter, status int, message string) {
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.WriteHeader(status)
+
 	content := fmt.Sprintf(
 		"<!doctype html><title>librecode auth</title><main style='font-family:sans-serif'><h1>%s</h1></main>",
 		html.EscapeString(message),
@@ -226,6 +259,10 @@ func closeAuthBody(body io.Closer) {
 }
 
 func exchangeOpenAICodexCode(ctx context.Context, code, verifier string) (*Credential, error) {
+	return exchangeOpenAICodexCodeWithTokenURL(ctx, code, verifier, openAICodexExchangeEndpoint())
+}
+
+func exchangeOpenAICodexCodeWithTokenURL(ctx context.Context, code, verifier, tokenURL string) (*Credential, error) {
 	values := url.Values{}
 	values.Set("grant_type", "authorization_code")
 	values.Set("client_id", openAICodexClientID)
@@ -233,11 +270,11 @@ func exchangeOpenAICodexCode(ctx context.Context, code, verifier string) (*Crede
 	values.Set("code_verifier", verifier)
 	values.Set("redirect_uri", openAICodexRedirectURI)
 
-	return requestOpenAICodexToken(ctx, values)
+	return requestOpenAICodexToken(ctx, values, tokenURL)
 }
 
-func requestOpenAICodexToken(ctx context.Context, values url.Values) (*Credential, error) {
-	body, err := postOpenAICodexToken(ctx, values)
+func requestOpenAICodexToken(ctx context.Context, values url.Values, tokenURL string) (*Credential, error) {
+	body, err := postOpenAICodexToken(ctx, values, tokenURL)
 	if err != nil {
 		return nil, err
 	}
@@ -245,26 +282,30 @@ func requestOpenAICodexToken(ctx context.Context, values url.Values) (*Credentia
 	return decodeOpenAICodexToken(body)
 }
 
-func postOpenAICodexToken(ctx context.Context, values url.Values) ([]byte, error) {
+func postOpenAICodexToken(ctx context.Context, values url.Values, tokenURL string) ([]byte, error) {
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		openAICodexExchangeURL,
+		tokenURL,
 		strings.NewReader(values.Encode()),
 	)
 	if err != nil {
 		return nil, oops.In("auth").Code("codex_token_request").Wrapf(err, "create token request")
 	}
+
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, oops.In("auth").Code("codex_token_http").Wrapf(err, "request token")
 	}
 	defer closeAuthBody(response.Body)
-	body, err := limitio.ReadAll(response.Body, 1<<20, "codex token response")
+
+	body, err := limitio.ReadAll(response.Body, units.MiB, "codex token response")
 	if err != nil {
 		return nil, oops.In("auth").Code("codex_token_body").Wrapf(err, "read token response")
 	}
+
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, oops.In("auth").
 			Code("codex_token_status").
@@ -281,13 +322,16 @@ func decodeOpenAICodexToken(body []byte) (*Credential, error) {
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int64  `json:"expires_in"`
 	}
+
 	decodeErr := json.Unmarshal(body, &payload)
 	if decodeErr != nil {
 		return nil, oops.In("auth").Code("codex_token_decode").Wrapf(decodeErr, "decode token response")
 	}
+
 	if payload.AccessToken == "" || payload.RefreshToken == "" || payload.ExpiresIn <= 0 {
 		return nil, oops.In("auth").Code("codex_token_invalid").Errorf("token response is incomplete")
 	}
+
 	accountID, err := accountIDFromJWT(payload.AccessToken)
 	if err != nil {
 		return nil, err
@@ -306,10 +350,11 @@ func decodeOpenAICodexToken(body []byte) (*Credential, error) {
 }
 
 func generatePKCE() (verifier, challenge string, err error) {
-	verifierBytes := make([]byte, 32)
+	verifierBytes := make([]byte, oauthVerifierBytes)
 	if _, err := rand.Read(verifierBytes); err != nil {
 		return "", "", oops.In("auth").Code("pkce_random").Wrapf(err, "generate pkce verifier")
 	}
+
 	verifier = base64.RawURLEncoding.EncodeToString(verifierBytes)
 	hash := sha256.Sum256([]byte(verifier))
 	challenge = base64.RawURLEncoding.EncodeToString(hash[:])
@@ -331,12 +376,14 @@ func accountIDFromJWT(token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	authClaims, ok := payload[openAICodexJWTClaim].(map[string]any)
-	if !ok {
+
+	authClaims, matched := payload[openAICodexJWTClaim].(map[string]any)
+	if !matched {
 		return "", oops.In("auth").Code("codex_account_claim").Errorf("account claim missing")
 	}
-	accountID, ok := authClaims["chatgpt_account_id"].(string)
-	if !ok || accountID == "" {
+
+	accountID, matched := authClaims["chatgpt_account_id"].(string)
+	if !matched || accountID == "" {
 		return "", oops.In("auth").Code("codex_account_id").Errorf("account id missing")
 	}
 
@@ -345,14 +392,17 @@ func accountIDFromJWT(token string) (string, error) {
 
 func jwtPayload(token string) (map[string]any, error) {
 	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
+	if len(parts) != jwtSegmentCount {
 		return nil, oops.In("auth").Code("jwt_parts").Errorf("invalid jwt")
 	}
+
 	decoded, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		return nil, oops.In("auth").Code("jwt_decode").Wrapf(err, "decode jwt payload")
 	}
+
 	var payload map[string]any
+
 	decodeErr := json.Unmarshal(decoded, &payload)
 	if decodeErr != nil {
 		return nil, oops.In("auth").Code("jwt_json").Wrapf(decodeErr, "parse jwt payload")

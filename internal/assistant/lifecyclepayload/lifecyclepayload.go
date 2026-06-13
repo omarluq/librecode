@@ -13,6 +13,7 @@ import (
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/units"
 )
 
 // Lifecycle payload keys define the stable extension-facing lifecycle payload schema.
@@ -141,6 +142,7 @@ func Prompt(request *PromptRequest) map[string]any {
 	if request == nil {
 		return map[string]any{}
 	}
+
 	return map[string]any{
 		CWDKey:           request.CWD,
 		ToolNameKey:      request.Name,
@@ -183,6 +185,7 @@ func TurnEndPayload(turn *TurnEnd) map[string]any {
 	if turn == nil {
 		return map[string]any{}
 	}
+
 	payload := map[string]any{
 		AssistantEntryIDKey: turn.AssistantEntryID,
 		"cached":            turn.Cached,
@@ -219,6 +222,7 @@ func ContextBuild(sessionID, cwd string, base *contextwindow.Base, result *conte
 // ModelFacingRoleCounts counts model-facing roles for lifecycle diagnostics.
 func ModelFacingRoleCounts(messages []database.MessageEntity) map[string]int {
 	counts := map[string]int{}
+
 	for index := range messages {
 		role := string(messages[index].Role)
 		counts[role]++
@@ -283,6 +287,7 @@ func ProviderRequestPayload(request *ProviderRequest) map[string]any {
 	if request == nil {
 		return map[string]any{}
 	}
+
 	return map[string]any{
 		APIKey:             request.API,
 		AttemptKey:         request.Attempt,
@@ -300,6 +305,7 @@ func ProviderResponsePayload(response *ProviderResponse) map[string]any {
 	if response == nil {
 		return map[string]any{}
 	}
+
 	return map[string]any{
 		APIKey:             response.API,
 		AttemptKey:         response.Attempt,
@@ -319,6 +325,7 @@ func ProviderErrorPayload(providerErr *ProviderError) map[string]any {
 	if providerErr == nil {
 		return map[string]any{}
 	}
+
 	payload := map[string]any{
 		APIKey:       providerErr.API,
 		AttemptKey:   providerErr.Attempt,
@@ -349,6 +356,7 @@ func ToolResultPayload(event *ToolResult) map[string]any {
 	if event == nil {
 		return map[string]any{}
 	}
+
 	return map[string]any{
 		ToolNameKey:      event.Name,
 		"arguments_json": event.ArgumentsJSON,
@@ -392,6 +400,7 @@ func CompactionSavedPayload(saved CompactionSaved) map[string]any {
 	payload := CompactionPreparation(saved.SessionID, saved.CWD, saved.Plan)
 	payload[EntryIDKey] = ""
 	payload[SummaryKey] = ""
+
 	payload["source"] = saved.Source
 	if saved.Entry != nil {
 		payload[EntryIDKey] = saved.Entry.ID
@@ -447,6 +456,7 @@ func Diagnostic(
 	if len(hookErrors) > 0 {
 		payload[ErrorsKey] = append([]string{}, hookErrors...)
 	}
+
 	maps.Copy(payload, extra)
 
 	return payload
@@ -454,7 +464,7 @@ func Diagnostic(
 
 // DurationMilliseconds converts a duration to millisecond precision for lifecycle payloads.
 func DurationMilliseconds(duration time.Duration) float64 {
-	return float64(duration.Microseconds()) / 1000
+	return float64(duration.Microseconds()) / units.TokenThousand
 }
 
 // StringSlice converts a string slice to an extension-friendly any slice.

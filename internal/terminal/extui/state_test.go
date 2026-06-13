@@ -56,6 +56,7 @@ func TestState_DeleteWindowRemovesLayoutOverrideAndCursor(t *testing.T) {
 	_, hasWindow := state.Windows[testWindowName]
 	_, hasLayoutWindow := state.Layout.Windows[testWindowName]
 	_, hasOverride := state.Overrides[testWindowName]
+
 	assert.False(t, hasWindow)
 	assert.False(t, hasLayoutWindow)
 	assert.False(t, hasOverride)

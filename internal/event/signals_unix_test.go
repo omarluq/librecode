@@ -21,7 +21,9 @@ func TestSignalStreamEmitsSignals(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	var count atomic.Int64
+
 	subscription := event.SignalStream(syscall.SIGUSR1).SubscribeWithContext(ctx, ro.NewObserverWithContext(
 		func(_ context.Context, _ os.Signal) {
 			count.Add(1)

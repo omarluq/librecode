@@ -80,6 +80,7 @@ WHERE session_id = ? AND entry_id = ?`
 		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
+
 		return nil, false, oops.In("database").Code("get_message").Wrapf(err, "load session message")
 	}
 
@@ -99,6 +100,7 @@ func (repository *SessionRepository) appendEntryMessage(
 	if !entryCarriesMessage(entry) {
 		return nil
 	}
+
 	message := sessionMessageFromEntry(entry)
 	if err := validateSessionMessageEntity(&message); err != nil {
 		return oops.In("database").Code("validate_message").Wrapf(err, "validate session message")
@@ -107,6 +109,7 @@ func (repository *SessionRepository) appendEntryMessage(
 	const insertMessage = `
 INSERT INTO session_messages (id, session_id, entry_id, sender, role, content, provider, model, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
 	_, err := transaction.Exec(
 		ctx,
 		insertMessage,

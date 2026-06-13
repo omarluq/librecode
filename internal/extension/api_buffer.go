@@ -48,11 +48,13 @@ func (manager *Manager) luaBufferList(extensionRuntime *luaExtension) lua.LGFunc
 func (manager *Manager) luaBufferCreate(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		value := state.Get(2)
+		value := state.Get(luaFirstArgument)
+
 		buffer := newBufferState(name, "")
 		if value != lua.LNil {
 			buffer = luaBufferState(name, value)
 		}
+
 		checkActiveEvent(state, extensionRuntime).setBuffer(name, &buffer)
 		state.Push(bufferStateTable(state, &buffer))
 
@@ -101,8 +103,8 @@ func (manager *Manager) luaBufferGetCursor(extensionRuntime *luaExtension) lua.L
 func (manager *Manager) luaBufferGetLines(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		start := state.OptInt(2, 0)
-		end := state.OptInt(3, -1)
+		start := state.OptInt(luaFirstArgument, 0)
+		end := state.OptInt(luaSecondArgument, -1)
 		buffer := checkActiveEvent(state, extensionRuntime).buffer(name)
 		state.Push(stringSliceToLuaTable(state, bufferLineRange(buffer.Text, start, end)))
 
@@ -113,7 +115,7 @@ func (manager *Manager) luaBufferGetLines(extensionRuntime *luaExtension) lua.LG
 func (manager *Manager) luaBufferSet(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		value := state.CheckAny(2)
+		value := state.CheckAny(luaFirstArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		buffer := luaBufferState(name, value)
 		hostEvent.setBuffer(name, &buffer)
@@ -125,7 +127,7 @@ func (manager *Manager) luaBufferSet(extensionRuntime *luaExtension) lua.LGFunct
 func (manager *Manager) luaBufferSetText(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		text := state.CheckString(2)
+		text := state.CheckString(luaFirstArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		buffer := hostEvent.buffer(name)
 		buffer.Text = text
@@ -155,8 +157,8 @@ func (manager *Manager) luaBufferClear(extensionRuntime *luaExtension) lua.LGFun
 func (manager *Manager) luaBufferInsert(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		position := state.CheckInt(2)
-		text := state.CheckString(3)
+		position := state.CheckInt(luaFirstArgument)
+		text := state.CheckString(luaSecondArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		buffer := hostEvent.buffer(name)
 		buffer.Text = spliceBufferText(buffer.Text, position, position, text)
@@ -171,8 +173,8 @@ func (manager *Manager) luaBufferInsert(extensionRuntime *luaExtension) lua.LGFu
 func (manager *Manager) luaBufferDeleteRange(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		start := state.CheckInt(2)
-		end := state.CheckInt(3)
+		start := state.CheckInt(luaFirstArgument)
+		end := state.CheckInt(luaSecondArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		buffer := hostEvent.buffer(name)
 		buffer.Text = spliceBufferText(buffer.Text, start, end, "")
@@ -187,9 +189,9 @@ func (manager *Manager) luaBufferDeleteRange(extensionRuntime *luaExtension) lua
 func (manager *Manager) luaBufferReplace(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		start := state.CheckInt(2)
-		end := state.CheckInt(3)
-		replacement := state.CheckString(4)
+		start := state.CheckInt(luaFirstArgument)
+		end := state.CheckInt(luaSecondArgument)
+		replacement := state.CheckString(luaThirdArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		buffer := hostEvent.buffer(name)
 		buffer.Text = spliceBufferText(buffer.Text, start, end, replacement)
@@ -204,8 +206,9 @@ func (manager *Manager) luaBufferReplace(extensionRuntime *luaExtension) lua.LGF
 func (manager *Manager) luaBufferAppend(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		value := state.CheckAny(2)
+		value := state.CheckAny(luaFirstArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
+
 		buffer := hostEvent.buffer(name)
 		if table, ok := value.(*lua.LTable); ok && isBufferBlockTable(table) {
 			buffer.Blocks = append(buffer.Blocks, luaBufferBlock(table, len(buffer.Blocks)))
@@ -214,6 +217,7 @@ func (manager *Manager) luaBufferAppend(extensionRuntime *luaExtension) lua.LGFu
 			buffer.Chars = stringChars(buffer.Text)
 			buffer.Cursor = len([]rune(buffer.Text))
 		}
+
 		hostEvent.setBuffer(name, &buffer)
 
 		return 0
@@ -223,7 +227,7 @@ func (manager *Manager) luaBufferAppend(extensionRuntime *luaExtension) lua.LGFu
 func (manager *Manager) luaBufferSetCursor(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		cursor := state.CheckInt(2)
+		cursor := state.CheckInt(luaFirstArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		buffer := hostEvent.buffer(name)
 		buffer.Cursor = cursor
@@ -236,9 +240,9 @@ func (manager *Manager) luaBufferSetCursor(extensionRuntime *luaExtension) lua.L
 func (manager *Manager) luaBufferSetLines(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		start := state.CheckInt(2)
-		end := state.CheckInt(3)
-		replacement := luaStringSlice(state.CheckTable(4))
+		start := state.CheckInt(luaFirstArgument)
+		end := state.CheckInt(luaSecondArgument)
+		replacement := luaStringSlice(state.CheckTable(luaThirdArgument))
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		buffer := hostEvent.buffer(name)
 		buffer.Text = replaceBufferLines(buffer.Text, start, end, replacement)
@@ -253,8 +257,8 @@ func (manager *Manager) luaBufferSetLines(extensionRuntime *luaExtension) lua.LG
 func (manager *Manager) luaBufferGetBlocks(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		start := state.OptInt(2, 0)
-		end := state.OptInt(3, -1)
+		start := state.OptInt(luaFirstArgument, 0)
+		end := state.OptInt(luaSecondArgument, -1)
 		buffer := checkActiveEvent(state, extensionRuntime).buffer(name)
 		state.Push(bufferBlocksTable(state, bufferBlockRange(buffer.Blocks, start, end)))
 
@@ -265,9 +269,9 @@ func (manager *Manager) luaBufferGetBlocks(extensionRuntime *luaExtension) lua.L
 func (manager *Manager) luaBufferSetBlocks(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		start := state.CheckInt(2)
-		end := state.CheckInt(3)
-		replacement := luaBufferBlocks(state.CheckTable(4))
+		start := state.CheckInt(luaFirstArgument)
+		end := state.CheckInt(luaSecondArgument)
+		replacement := luaBufferBlocks(state.CheckTable(luaThirdArgument))
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		buffer := hostEvent.buffer(name)
 		buffer.Blocks = replaceBufferBlocks(buffer.Blocks, start, end, replacement)
@@ -280,8 +284,8 @@ func (manager *Manager) luaBufferSetBlocks(extensionRuntime *luaExtension) lua.L
 func (manager *Manager) luaBufferDeleteBlocks(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		start := state.CheckInt(2)
-		end := state.CheckInt(3)
+		start := state.CheckInt(luaFirstArgument)
+		end := state.CheckInt(luaSecondArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		buffer := hostEvent.buffer(name)
 		buffer.Blocks = replaceBufferBlocks(buffer.Blocks, start, end, []BufferBlock{})
@@ -294,9 +298,9 @@ func (manager *Manager) luaBufferDeleteBlocks(extensionRuntime *luaExtension) lu
 func (manager *Manager) luaBufferGetVar(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		key := state.CheckString(2)
+		key := state.CheckString(luaFirstArgument)
 		buffer := checkActiveEvent(state, extensionRuntime).buffer(name)
-		state.Push(goValueToLua(state, buffer.Metadata[key]))
+		newLuaValue(state, buffer.Metadata[key]).Push(state)
 
 		return 1
 	}
@@ -305,13 +309,15 @@ func (manager *Manager) luaBufferGetVar(extensionRuntime *luaExtension) lua.LGFu
 func (manager *Manager) luaBufferSetVar(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		key := state.CheckString(2)
-		value := state.CheckAny(3)
+		key := state.CheckString(luaFirstArgument)
+		value := state.CheckAny(luaSecondArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
+
 		buffer := hostEvent.buffer(name)
 		if buffer.Metadata == nil {
 			buffer.Metadata = map[string]any{}
 		}
+
 		buffer.Metadata[key] = luaValueToGo(value)
 		hostEvent.setBuffer(name, &buffer)
 
@@ -343,6 +349,7 @@ func replaceBufferLines(text string, start, end int, replacement []string) strin
 
 func bufferBlockRange(blocks []BufferBlock, start, end int) []BufferBlock {
 	start, end = normalizeLineRange(len(blocks), start, end)
+
 	return cloneBufferBlocks(blocks[start:end])
 }
 
@@ -356,6 +363,7 @@ func replaceBufferBlocks(
 	nextBlocks := make([]BufferBlock, 0, len(blocks)-end+start+len(replacement))
 	nextBlocks = append(nextBlocks, blocks[:start]...)
 	nextBlocks = append(nextBlocks, replacement...)
+
 	nextBlocks = append(nextBlocks, blocks[end:]...)
 	for index := range nextBlocks {
 		nextBlocks[index].Index = index
@@ -377,10 +385,12 @@ func spliceBufferText(text string, start, end int, replacement string) string {
 
 func normalizeLineRange(lineCount, start, end int) (normalizedStart, normalizedEnd int) {
 	normalizedStart = clampInt(start, 0, lineCount)
+
 	normalizedEnd = end
 	if normalizedEnd < 0 || normalizedEnd > lineCount {
 		normalizedEnd = lineCount
 	}
+
 	normalizedEnd = clampInt(normalizedEnd, normalizedStart, lineCount)
 
 	return normalizedStart, normalizedEnd
@@ -388,6 +398,7 @@ func normalizeLineRange(lineCount, start, end int) (normalizedStart, normalizedE
 
 func normalizeRuneRange(runeCount, start, end int) (normalizedStart, normalizedEnd int) {
 	normalizedStart = clampRuneIndex(start, runeCount)
+
 	normalizedEnd = clampRuneIndex(end, runeCount)
 	if normalizedEnd < normalizedStart {
 		normalizedStart, normalizedEnd = normalizedEnd, normalizedStart
@@ -400,6 +411,7 @@ func clampRuneIndex(index, runeCount int) int {
 	if index < 0 {
 		return 0
 	}
+
 	if index > runeCount {
 		return runeCount
 	}
@@ -411,6 +423,7 @@ func clampInt(value, low, high int) int {
 	if value < low {
 		return low
 	}
+
 	if value > high {
 		return high
 	}

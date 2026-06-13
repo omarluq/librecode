@@ -72,6 +72,7 @@ func assertPanelFiltering(t *testing.T) {
 	items := model.FilteredItems()
 	require.Len(t, items, 1)
 	assert.Equal(t, "second", items[0].Value)
+
 	value, ok := model.SelectedValue()
 	require.True(t, ok)
 	assert.Equal(t, "second", value)
@@ -134,6 +135,7 @@ func renderPanelTexts(model *panel.Model) []string {
 		Width:  40,
 		Height: 8,
 	})
+
 	texts := make([]string, 0, len(lines))
 	for _, line := range lines {
 		texts = append(texts, line.Text)

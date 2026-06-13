@@ -12,6 +12,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/di"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/units"
 )
 
 func newModelCmd() *cobra.Command {
@@ -30,15 +31,17 @@ func newModelCmd() *cobra.Command {
 
 func newModelListCmd() *cobra.Command {
 	var all bool
+
 	cmd := &cobra.Command{
 		Use:   "list [search]",
 		Short: "List models for authorized providers",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options := commandOptionsFromCommand(cmd)
+
 			container, err := di.NewContainer(options.configFile, options.configOverrides())
 			if err != nil {
-				return err
+				return cliError(err, "initialize model services")
 			}
 			defer func() {
 				if report := container.ShutdownWithContext(cmd.Context()); report != nil && !report.Succeed {
@@ -48,7 +51,8 @@ func newModelListCmd() *cobra.Command {
 				}
 			}()
 
-			registry := di.MustInvoke[*di.ModelService](container).Registry
+			registry := container.ModelService().Registry
+
 			models := listedModels(registry, all)
 			if len(args) == 1 {
 				models = filterModelList(models, args[0])
@@ -78,6 +82,7 @@ func filterModelList(models []model.Model, query string) []model.Model {
 
 	return lo.Filter(models, func(candidate model.Model, _ int) bool {
 		haystack := strings.ToLower(candidate.Provider + " " + candidate.ID + " " + candidate.Name)
+
 		return strings.Contains(haystack, query)
 	})
 }
@@ -99,6 +104,7 @@ func printModels(writer io.Writer, models []model.Model) error {
 			Images:    yesNo(modelSupportsImage(&candidate)),
 		}
 	})
+
 	widths := computeModelListWidths(rows)
 	if _, err := fmt.Fprintf(
 		writer,
@@ -116,8 +122,9 @@ func printModels(writer io.Writer, models []model.Model) error {
 		widths.Images,
 		"images",
 	); err != nil {
-		return err
+		return cliError(err, "write model list header")
 	}
+
 	for _, row := range rows {
 		if _, err := fmt.Fprintf(
 			writer,
@@ -135,7 +142,7 @@ func printModels(writer io.Writer, models []model.Model) error {
 			widths.Images,
 			row.Images,
 		); err != nil {
-			return err
+			return cliError(err, "write model list row")
 		}
 	}
 
@@ -182,17 +189,18 @@ func computeModelListWidths(rows []modelListRow) modelListWidths {
 }
 
 func formatTokenCount(count int) string {
-	if count >= 1_000_000 {
-		millions := float64(count) / 1_000_000
-		if count%1_000_000 == 0 {
+	if count >= units.TokenMillion {
+		millions := float64(count) / units.TokenMillion
+		if count%units.TokenMillion == 0 {
 			return fmt.Sprintf("%.0fM", millions)
 		}
 
 		return fmt.Sprintf("%.1fM", millions)
 	}
-	if count >= 1_000 {
-		thousands := float64(count) / 1_000
-		if count%1_000 == 0 {
+
+	if count >= units.TokenThousand {
+		thousands := float64(count) / units.TokenThousand
+		if count%units.TokenThousand == 0 {
 			return fmt.Sprintf("%.0fK", thousands)
 		}
 

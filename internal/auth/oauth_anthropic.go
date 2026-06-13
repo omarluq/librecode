@@ -12,6 +12,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/limitio"
+	"github.com/omarluq/librecode/internal/units"
 )
 
 const (
@@ -22,11 +23,6 @@ const (
 
 const anthropicScope = "org:create_api_key user:profile user:inference " +
 	"user:sessions:claude_code user:mcp_servers user:file_upload"
-
-var (
-	anthropicRedirectURI = anthropicRedirectEndpoint()
-	anthropicTokenURL    = anthropicTokenEndpoint()
-)
 
 func anthropicRedirectEndpoint() string {
 	return "http://localhost:53692/callback"
@@ -52,6 +48,7 @@ func LoginAnthropic(_ context.Context, onAuth func(OAuthAuthInfo)) (*Credential,
 	if err != nil {
 		return nil, err
 	}
+
 	if onAuth != nil {
 		onAuth(OAuthAuthInfo{
 			URL: flowURL,
@@ -67,6 +64,10 @@ func LoginAnthropic(_ context.Context, onAuth func(OAuthAuthInfo)) (*Credential,
 
 // LoginAnthropicWithCode completes Claude Pro/Max OAuth using the pasted code from Claude.
 func LoginAnthropicWithCode(ctx context.Context, authCode string) (*Credential, error) {
+	return loginAnthropicWithCode(ctx, authCode, anthropicTokenEndpoint())
+}
+
+func loginAnthropicWithCode(ctx context.Context, authCode, tokenURL string) (*Credential, error) {
 	code, state, ok := strings.Cut(strings.TrimSpace(authCode), "#")
 	if !ok || code == "" || state == "" {
 		return nil, oops.In("auth").
@@ -74,7 +75,7 @@ func LoginAnthropicWithCode(ctx context.Context, authCode string) (*Credential, 
 			Errorf("paste the full Anthropic authorization code in the form code#state")
 	}
 
-	credential, err := exchangeAnthropicCode(ctx, code, state, state)
+	credential, err := exchangeAnthropicCode(ctx, code, state, state, tokenURL)
 	if err != nil {
 		return nil, err
 	}
@@ -86,24 +87,32 @@ func anthropicAPIKey(ctx context.Context, credential *Credential) (*Credential, 
 	if credential == nil || credential.Type != CredentialTypeOAuth {
 		return credential, "", nil
 	}
+
 	if access := credential.oauthAccess(); access != "" && !credential.oauthExpired() {
 		return credential, access, nil
 	}
+
 	refresh := credential.oauthRefresh()
 	if refresh == "" {
 		return credential, "", nil
 	}
+
 	refreshed, err := refreshAnthropic(ctx, refresh)
 	if err != nil {
 		return credential, "", err
 	}
+
 	access := refreshed.oauthAccess()
 
 	return refreshed, access, nil
 }
 
 func refreshAnthropic(ctx context.Context, refreshToken string) (*Credential, error) {
-	return requestAnthropicToken(ctx, map[string]string{
+	return refreshAnthropicWithTokenURL(ctx, refreshToken, anthropicTokenEndpoint())
+}
+
+func refreshAnthropicWithTokenURL(ctx context.Context, refreshToken, tokenURL string) (*Credential, error) {
+	return requestAnthropicToken(ctx, tokenURL, map[string]string{
 		"grant_type":    "refresh_token",
 		"client_id":     anthropicClientID,
 		"refresh_token": refreshToken,
@@ -121,15 +130,17 @@ func newAnthropicFlow() (*anthropicFlow, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	authURL, err := url.Parse(anthropicAuthorize)
 	if err != nil {
 		return nil, oops.In("auth").Code("anthropic_authorize_url").Wrapf(err, "parse authorize url")
 	}
+
 	query := authURL.Query()
 	query.Set("code", "true")
 	query.Set("client_id", anthropicClientID)
 	query.Set("response_type", "code")
-	query.Set("redirect_uri", anthropicRedirectURI)
+	query.Set("redirect_uri", anthropicRedirectEndpoint())
 	query.Set("scope", anthropicScope)
 	query.Set("code_challenge", challenge)
 	query.Set("code_challenge_method", "S256")
@@ -139,19 +150,19 @@ func newAnthropicFlow() (*anthropicFlow, error) {
 	return &anthropicFlow{Verifier: verifier, State: verifier, URL: authURL.String()}, nil
 }
 
-func exchangeAnthropicCode(ctx context.Context, code, state, verifier string) (*Credential, error) {
-	return requestAnthropicToken(ctx, map[string]string{
+func exchangeAnthropicCode(ctx context.Context, code, state, verifier, tokenURL string) (*Credential, error) {
+	return requestAnthropicToken(ctx, tokenURL, map[string]string{
 		"grant_type":    "authorization_code",
 		"client_id":     anthropicClientID,
 		"code":          code,
 		"state":         state,
-		"redirect_uri":  anthropicRedirectURI,
+		"redirect_uri":  anthropicRedirectEndpoint(),
 		"code_verifier": verifier,
 	})
 }
 
-func requestAnthropicToken(ctx context.Context, payload map[string]string) (*Credential, error) {
-	body, err := postAnthropicToken(ctx, payload)
+func requestAnthropicToken(ctx context.Context, tokenURL string, payload map[string]string) (*Credential, error) {
+	body, err := postAnthropicToken(ctx, tokenURL, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -159,26 +170,31 @@ func requestAnthropicToken(ctx context.Context, payload map[string]string) (*Cre
 	return decodeAnthropicToken(body)
 }
 
-func postAnthropicToken(ctx context.Context, payload map[string]string) ([]byte, error) {
+func postAnthropicToken(ctx context.Context, tokenURL string, payload map[string]string) ([]byte, error) {
 	content, err := json.Marshal(payload)
 	if err != nil {
 		return nil, oops.In("auth").Code("anthropic_token_payload").Wrapf(err, "encode token payload")
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, anthropicTokenURL, bytes.NewReader(content))
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, bytes.NewReader(content))
 	if err != nil {
 		return nil, oops.In("auth").Code("anthropic_token_request").Wrapf(err, "create token request")
 	}
+
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
+
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, oops.In("auth").Code("anthropic_token_http").Wrapf(err, "request token")
 	}
 	defer closeAuthBody(response.Body)
-	body, err := limitio.ReadAll(response.Body, 1<<20, "anthropic token response")
+
+	body, err := limitio.ReadAll(response.Body, units.MiB, "anthropic token response")
 	if err != nil {
 		return nil, oops.In("auth").Code("anthropic_token_body").Wrapf(err, "read token response")
 	}
+
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, oops.In("auth").
 			Code("anthropic_token_status").
@@ -198,6 +214,7 @@ func decodeAnthropicToken(body []byte) (*Credential, error) {
 	if err := json.Unmarshal(body, &tokenData); err != nil {
 		return nil, oops.In("auth").Code("anthropic_token_decode").Wrapf(err, "decode token response")
 	}
+
 	if tokenData.AccessToken == "" || tokenData.RefreshToken == "" || tokenData.ExpiresIn <= 0 {
 		return nil, oops.In("auth").Code("anthropic_token_invalid").Errorf("token response is incomplete")
 	}

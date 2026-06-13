@@ -24,6 +24,7 @@ func BenchmarkDrawMessagesSameWidth(b *testing.B) {
 		SessionID:  "",
 	})
 	app.resetMessages()
+
 	for i := range 200 {
 		app.addMessage(transcript.RoleUser, fmt.Sprintf("message %d %s", i, strings.Repeat("hello world ", 20)))
 		app.addMessage(
@@ -31,10 +32,12 @@ func BenchmarkDrawMessagesSameWidth(b *testing.B) {
 			fmt.Sprintf("answer %d %s", i, strings.Repeat("lorem ipsum dolor sit amet ", 30)),
 		)
 	}
+
 	app.frame = rendertext.NewBuffer(120, 50, tcell.StyleDefault)
 	app.drawMessages(120, 50, 0)
 
 	b.ReportAllocs()
+
 	for b.Loop() {
 		app.frame = rendertext.NewBuffer(120, 50, tcell.StyleDefault)
 		app.drawMessages(120, 50, 0)

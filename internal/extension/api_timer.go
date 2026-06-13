@@ -20,7 +20,7 @@ func (manager *Manager) luaTimerAPI(extensionRuntime *luaExtension) *lua.LTable 
 func (manager *Manager) luaTimerDefer(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		delay := luaDurationMillis(state.CheckNumber(1))
-		function := state.CheckFunction(2)
+		function := state.CheckFunction(luaFirstArgument)
 		id := manager.registerTimer(extensionRuntime, delay, 0, function)
 		state.Push(lua.LNumber(id))
 
@@ -31,7 +31,7 @@ func (manager *Manager) luaTimerDefer(extensionRuntime *luaExtension) lua.LGFunc
 func (manager *Manager) luaTimerInterval(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		interval := luaDurationMillis(state.CheckNumber(1))
-		function := state.CheckFunction(2)
+		function := state.CheckFunction(luaFirstArgument)
 		id := manager.registerTimer(extensionRuntime, interval, interval, function)
 		state.Push(lua.LNumber(id))
 

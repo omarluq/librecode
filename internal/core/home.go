@@ -20,7 +20,7 @@ func LibrecodeHome() (string, error) {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", coreError(err, "resolve user home directory")
 	}
 
 	return filepath.Join(home, ConfigDirName), nil

@@ -16,6 +16,7 @@ func shellConfig(command string) (shellPath string, shellArgs []string, err erro
 	if shellPath := os.Getenv("SHELL"); shellPath != "" {
 		return shellPath, []string{shellLoginArg, command}, nil
 	}
+
 	if _, err := os.Stat("/bin/bash"); err == nil {
 		return "/bin/bash", []string{shellLoginArg, command}, nil
 	}
@@ -39,9 +40,10 @@ func killProcessGroup(pid int) error {
 	if pid <= 0 {
 		return nil
 	}
+
 	err := syscall.Kill(-pid, syscall.SIGKILL)
 	if err != nil && !errors.Is(err, syscall.ESRCH) {
-		return err
+		return toolWrap(err, "terminate process group")
 	}
 
 	return nil

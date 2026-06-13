@@ -90,6 +90,7 @@ func TestCollectCompactionFileOperations(t *testing.T) {
 	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "internal/**/*.go", "find")
 	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "go.mod", "bash")
 	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "internal/app.go", "bash")
+
 	mutatingBash := bashFileOperations(
 		compactFileOperationToolEntry("bash-2", "bash", `{"command":"sed -i 's/a/b/' internal/app.go"}`),
 		map[string]any{"command": "sed -i 's/a/b/' internal/app.go"},
@@ -207,6 +208,7 @@ func compactFileOperationCompactionEntry(
 	data := entryData{Details: map[string]any{FileOperationsKey: operations}}
 	encoded, err := json.Marshal(data)
 	require.NoError(t, err)
+
 	entry.DataJSON = string(encoded)
 
 	return entry
@@ -248,5 +250,6 @@ func assertCompactionFileOperation(
 			return
 		}
 	}
+
 	t.Fatalf("missing file operation action=%q path=%q tool=%q in %#v", action, path, tool, operations)
 }

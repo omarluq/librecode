@@ -16,7 +16,7 @@ type ReadInput struct {
 	Offset       *int   `json:"offset,omitempty"`
 	Limit        *int   `json:"limit,omitempty"`
 	Path         string `json:"path"`
-	AllowIgnored bool   `json:"allowIgnored,omitempty"`
+	AllowIgnored bool   `json:"allow_ignored,omitempty"`
 }
 
 // ReadTool reads text and image files from disk.
@@ -47,7 +47,9 @@ func (readTool *ReadTool) Definition() Definition {
 
 // Execute runs the read tool.
 func (readTool *ReadTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
-	args, err := decodeInput[ReadInput](input)
+	var args ReadInput
+
+	err := decodeInput(input, &args)
 	if err != nil {
 		return emptyToolResult(), err
 	}
@@ -60,13 +62,16 @@ func (readTool *ReadTool) Read(ctx context.Context, input ReadInput) (Result, er
 	if err := validateReadInput(input); err != nil {
 		return emptyToolResult(), err
 	}
+
 	absolutePath, err := ResolveReadPath(input.Path, readTool.cwd)
 	if err != nil {
 		return emptyToolResult(), oops.In("tool").Code("read_resolve_path").Wrapf(err, "resolve read path")
 	}
+
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return emptyToolResult(), ctxErr
 	}
+
 	if ignored, reason := ignoredReadPath(absolutePath, readTool.cwd); ignored && !input.AllowIgnored {
 		return ignoredReadResult(input.Path, reason), nil
 	}
@@ -79,6 +84,7 @@ func (readTool *ReadTool) Read(ctx context.Context, input ReadInput) (Result, er
 			With("path", input.Path).
 			Wrapf(err, "read file")
 	}
+
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return emptyToolResult(), ctxErr
 	}
@@ -95,9 +101,11 @@ func validateReadInput(input ReadInput) error {
 	if strings.TrimSpace(input.Path) == "" {
 		return oops.In("tool").Code("read_path_required").Errorf("read path is required")
 	}
+
 	if input.Offset != nil && *input.Offset < 1 {
 		return oops.In("tool").Code("read_invalid_offset").Errorf("read offset must be greater than zero")
 	}
+
 	if input.Limit != nil && *input.Limit < 1 {
 		return oops.In("tool").Code("read_invalid_limit").Errorf("read limit must be greater than zero")
 	}
@@ -108,7 +116,7 @@ func validateReadInput(input ReadInput) error {
 func readDescription() string {
 	return fmt.Sprintf(
 		"Read the contents of a file. Supports text files and images (jpg, png, gif, webp). "+
-			"Respects workspace .gitignore/default ignored paths unless allowIgnored is true. "+
+			"Respects workspace .gitignore/default ignored paths unless allow_ignored is true. "+
 			"For text files, output is truncated to %d lines or %s (whichever is hit first). "+
 			"Use offset/limit for large files.",
 		DefaultMaxLines,
@@ -119,7 +127,7 @@ func readDescription() string {
 func ignoredReadResult(filePath, reason string) Result {
 	message := fmt.Sprintf(
 		"Refusing to read ignored path %q (%s). "+
-			"Ignored paths are skipped by default; retry with allowIgnored=true "+
+			"Ignored paths are skipped by default; retry with allow_ignored=true "+
 			"only when this content is explicitly needed.",
 		filePath,
 		strings.TrimSpace(reason),
@@ -140,10 +148,12 @@ func imageReadResult(mimeType string, data []byte) Result {
 
 func textReadResult(input ReadInput, content string) (Result, error) {
 	lines := strings.Split(content, "\n")
+
 	startLine := 0
 	if input.Offset != nil {
 		startLine = *input.Offset - 1
 	}
+
 	if startLine >= len(lines) {
 		return emptyToolResult(), oops.
 			In("tool").
@@ -181,6 +191,7 @@ func formatReadOutput(
 	startLineDisplay := startLine + 1
 	if truncation.FirstLineExceedsLimit {
 		firstLineSize := FormatSize(len([]byte(allLines[startLine])))
+
 		return fmt.Sprintf(
 			"[Line %d is %s, exceeds %s limit. Use bash: sed -n '%dp' %s | head -c %d]",
 			startLineDisplay,
@@ -191,12 +202,15 @@ func formatReadOutput(
 			DefaultMaxBytes,
 		), map[string]any{detailTruncation: *truncation}
 	}
+
 	if truncation.Truncated {
 		return truncatedReadOutput(truncation, startLineDisplay, len(allLines))
 	}
+
 	if userLimitedLines != nil && startLine+*userLimitedLines < len(allLines) {
 		remainingLines := len(allLines) - (startLine + *userLimitedLines)
 		nextOffset := startLine + *userLimitedLines + 1
+
 		return fmt.Sprintf(
 			"%s\n\n[%d more lines in file. Use offset=%d to continue.]",
 			truncation.Content,
@@ -214,6 +228,7 @@ func truncatedReadOutput(
 	totalFileLines int,
 ) (output string, details map[string]any) {
 	endLineDisplay := startLineDisplay + truncation.OutputLines - 1
+
 	nextOffset := endLineDisplay + 1
 	if truncation.TruncatedBy == TruncatedByLines {
 		return fmt.Sprintf(

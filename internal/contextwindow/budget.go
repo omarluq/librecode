@@ -5,6 +5,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/units"
 )
 
 const (
@@ -43,6 +44,7 @@ func NewBudget(
 	if contextWindow <= 0 && selectedModel != nil {
 		contextWindow = selectedModel.ContextWindow
 	}
+
 	budget := Budget{
 		InputTokens:       usage.ContextTokens,
 		ContextWindow:     contextWindow,
@@ -74,10 +76,12 @@ func (budget Budget) TotalReserve() int {
 func (budget Budget) UsageWithBudget(usage model.TokenUsage) model.TokenUsage {
 	usage.ContextWindow = budget.ContextWindow
 	usage.ContextTokens = budget.InputTokens
+
 	usage.InputTokens = budget.InputTokens
 	if usage.Breakdown == nil {
 		usage.Breakdown = map[string]int{}
 	}
+
 	usage.Breakdown["reserve_output"] = budget.OutputReserve
 	usage.Breakdown["reserve_tools"] = budget.ToolSchemaReserve
 	usage.Breakdown["reserve_provider"] = budget.ProviderReserve
@@ -111,9 +115,10 @@ func OutputReserve(_ *model.Model, contextWindow int, policy config.ContextConfi
 	if policy.OutputReserveTokens > 0 {
 		return policy.OutputReserveTokens
 	}
+
 	reserve := DefaultOutputReserve
 	if contextWindow > 0 {
-		reserve = min(reserve, max(1, contextWindow*ReservePercent/100))
+		reserve = min(reserve, max(1, contextWindow*ReservePercent/units.PercentScale))
 	}
 
 	return reserve

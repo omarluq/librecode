@@ -43,11 +43,16 @@ func (runtime *Runtime) dispatchBeforeCompaction(
 		&result,
 		lifecyclepayload.CompactionDiagnostics(plan, "before"),
 	)
+
 	if err != nil {
 		return nil, oops.In("assistant").Code("compact_before_hook").Wrapf(err, "dispatch before compact lifecycle")
 	}
+
 	if result.Compaction.Cancel || result.Stopped {
-		return nil, compaction.NothingToDoError("context compaction was canceled by an extension")
+		return nil, assistantError(
+			compaction.NothingToDoError("context compaction was canceled by an extension"),
+			"cancel compaction",
+		)
 	}
 
 	decision, err := compactionDecisionFromMutation(result.Compaction, plan)
@@ -70,6 +75,7 @@ func (runtime *Runtime) dispatchAfterCompaction(
 	if fromHook {
 		source = compactionSourceExtension
 	}
+
 	payload := lifecyclepayload.CompactionSavedPayload(lifecyclepayload.CompactionSaved{
 		Entry:     entry,
 		Plan:      plan,
@@ -84,6 +90,7 @@ func (runtime *Runtime) dispatchAfterCompaction(
 		&result,
 		lifecyclepayload.CompactionDiagnostics(plan, "after"),
 	)
+
 	if err != nil {
 		return
 	}
@@ -96,6 +103,7 @@ func compactionDecisionFromMutation(
 	if mutation.Summary == nil && mutation.FirstKeptEntryID == nil && len(mutation.Details) == 0 {
 		return nil, errNoCompactionDecision
 	}
+
 	decision := &compactionLifecycleDecision{
 		Details:          cloneAnyMap(mutation.Details),
 		Summary:          "",
@@ -110,6 +118,7 @@ func compactionDecisionFromMutation(
 				Errorf("extension compaction summary was empty")
 		}
 	}
+
 	if mutation.FirstKeptEntryID != nil {
 		decision.FirstKeptEntryID = strings.TrimSpace(*mutation.FirstKeptEntryID)
 		if !slices.Contains(plan.KeptEntryIDs, decision.FirstKeptEntryID) {

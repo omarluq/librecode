@@ -43,7 +43,7 @@ type Credential struct {
 	Key       string            `json:"key,omitempty"`
 	Access    string            `json:"access,omitempty"`
 	Refresh   string            `json:"refresh,omitempty"`
-	AccountID string            `json:"accountId,omitempty"`
+	AccountID string            `json:"account_id,omitempty"`
 	Expires   int64             `json:"expires,omitempty"`
 	ExpiresAt int64             `json:"expires_at,omitempty"`
 }
@@ -113,22 +113,29 @@ func NewInMemoryStorage(ctx context.Context, credentials map[string]Credential) 
 // Reload refreshes credentials from the backend.
 func (storage *Storage) Reload(ctx context.Context) error {
 	var content []byte
+
 	if err := storage.backend.WithLock(ctx, func(current []byte) (LockResult, error) {
 		content = append([]byte{}, current...)
+
 		return LockResult{Next: nil, Write: false}, nil
 	}); err != nil {
 		storage.recordError(err)
+
 		return oops.In("auth").Code("reload").Wrapf(err, "reload credentials")
 	}
 
 	credentials, err := parseCredentials(content)
+
 	storage.lock.Lock()
 	defer storage.lock.Unlock()
+
 	if err != nil {
 		storage.loadError = err
 		storage.errors = append(storage.errors, err)
+
 		return oops.In("auth").Code("parse").Wrapf(err, "parse credentials")
 	}
+
 	storage.credentials = credentials
 	storage.loadError = nil
 
@@ -164,12 +171,14 @@ func (storage *Storage) Set(ctx context.Context, provider string, credential *Cr
 	if credential == nil {
 		return oops.In("auth").Code("nil_credential").Errorf("credential is required")
 	}
+
 	if err := storage.persistProviderChange(ctx, provider, credential); err != nil {
 		return err
 	}
 
 	storage.lock.Lock()
 	defer storage.lock.Unlock()
+
 	storage.credentials[provider] = *credential
 
 	return nil
@@ -183,6 +192,7 @@ func (storage *Storage) Remove(ctx context.Context, provider string) error {
 
 	storage.lock.Lock()
 	defer storage.lock.Unlock()
+
 	delete(storage.credentials, provider)
 
 	return nil

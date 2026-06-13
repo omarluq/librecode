@@ -18,9 +18,12 @@ func TestFileWatchStreamEmitsFileEvents(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	var count atomic.Int64
+
 	errCh := make(chan error, 1)
 	subscription := event.FileWatchStream(dir).SubscribeWithContext(ctx, ro.NewObserverWithContext(
 		func(_ context.Context, _ event.FileEvent) {
@@ -40,8 +43,10 @@ func TestFileWatchStreamEmitsFileEvents(t *testing.T) {
 	t.Cleanup(subscription.Unsubscribe)
 
 	watchedFile := filepath.Join(dir, "config.yaml")
+
 	require.Eventually(t, func() bool {
 		writeErr := os.WriteFile(watchedFile, []byte("updated"), 0o600)
+
 		return writeErr == nil && count.Load() > 0
 	}, 2*time.Second, 10*time.Millisecond)
 
@@ -57,6 +62,7 @@ func TestFileWatchStreamReportsAddErrors(t *testing.T) {
 	t.Parallel()
 
 	var count atomic.Int64
+
 	subscription := event.FileWatchStream(filepath.Join(t.TempDir(), "missing")).Subscribe(ro.NewObserver(
 		func(event.FileEvent) {},
 		func(error) {

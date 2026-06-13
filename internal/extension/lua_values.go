@@ -35,54 +35,70 @@ const (
 func mapToLuaTable(state *lua.LState, values map[string]any) *lua.LTable {
 	table := state.NewTable()
 	for key, value := range values {
-		state.SetField(table, key, goValueToLua(state, value))
+		newLuaValue(state, value).SetField(table, key)
 	}
 
 	return table
 }
 
-func goValueToLua(state *lua.LState, value any) lua.LValue {
-	if luaValue, ok := scalarGoValueToLua(value); ok {
-		return luaValue
+type luaValue struct {
+	value lua.LValue
+}
+
+func newLuaValue(state *lua.LState, value any) luaValue {
+	if scalar, ok := scalarLuaValue(value); ok {
+		return scalar
 	}
 
 	switch typedValue := value.(type) {
 	case map[string]any:
-		return mapToLuaTable(state, typedValue)
+		return luaValue{value: mapToLuaTable(state, typedValue)}
 	case map[string]string:
-		return stringMapToLuaTable(state, typedValue)
+		return luaValue{value: stringMapToLuaTable(state, typedValue)}
 	case []any:
-		return sliceToLuaTable(state, typedValue)
+		return luaValue{value: sliceToLuaTable(state, typedValue)}
 	case []string:
-		return stringSliceToLuaTable(state, typedValue)
+		return luaValue{value: stringSliceToLuaTable(state, typedValue)}
 	default:
-		return lua.LString(fmt.Sprint(typedValue))
+		return luaValue{value: lua.LString(fmt.Sprint(typedValue))}
 	}
 }
 
-func scalarGoValueToLua(value any) (lua.LValue, bool) {
+func scalarLuaValue(value any) (luaValue, bool) {
 	switch typedValue := value.(type) {
 	case nil:
-		return lua.LNil, true
+		return luaValue{value: lua.LNil}, true
 	case string:
-		return lua.LString(typedValue), true
+		return luaValue{value: lua.LString(typedValue)}, true
 	case bool:
-		return lua.LBool(typedValue), true
+		return luaValue{value: lua.LBool(typedValue)}, true
 	case int:
-		return lua.LNumber(typedValue), true
+		return luaValue{value: lua.LNumber(typedValue)}, true
 	case int64:
-		return lua.LNumber(typedValue), true
+		return luaValue{value: lua.LNumber(typedValue)}, true
 	case float64:
-		return lua.LNumber(typedValue), true
+		return luaValue{value: lua.LNumber(typedValue)}, true
 	default:
-		return lua.LNil, false
+		return luaValue{value: nil}, false
 	}
+}
+
+func (value luaValue) SetField(table *lua.LTable, key string) {
+	table.RawSetString(key, value.value)
+}
+
+func (value luaValue) RawSetInt(table *lua.LTable, index int) {
+	table.RawSetInt(index, value.value)
+}
+
+func (value luaValue) Push(state *lua.LState) {
+	state.Push(value.value)
 }
 
 func sliceToLuaTable(state *lua.LState, values []any) *lua.LTable {
 	table := state.NewTable()
 	for valueIndex, value := range values {
-		state.RawSetInt(table, valueIndex+1, goValueToLua(state, value))
+		newLuaValue(state, value).RawSetInt(table, valueIndex+1)
 	}
 
 	return table
@@ -123,6 +139,7 @@ func luaValueToGo(value lua.LValue) any {
 
 func luaTableToMap(table *lua.LTable) map[string]any {
 	values := map[string]any{}
+
 	table.ForEach(func(key, value lua.LValue) {
 		values[key.String()] = luaValueToGo(value)
 	})
@@ -134,6 +151,7 @@ func luaToolResult(value lua.LValue) ToolResult {
 	if table, ok := value.(*lua.LTable); ok {
 		contentValue := table.RawGetString("content")
 		detailsValue := table.RawGetString("details")
+
 		return ToolResult{
 			Content: contentValue.String(),
 			Details: luaDetails(detailsValue),
@@ -186,6 +204,7 @@ func luaTableInt(table *lua.LTable, key string, fallback int) (int, bool) {
 	if value == lua.LNil {
 		return fallback, false
 	}
+
 	if numberValue, ok := value.(lua.LNumber); ok {
 		return int(numberValue), true
 	}
@@ -195,6 +214,7 @@ func luaTableInt(table *lua.LTable, key string, fallback int) (int, bool) {
 
 func luaTableFunction(table *lua.LTable, key string) *lua.LFunction {
 	value := table.RawGetString(key)
+
 	function, ok := value.(*lua.LFunction)
 	if !ok {
 		return nil
@@ -333,6 +353,7 @@ func luaBufferState(name string, value lua.LValue) BufferState {
 		if !hasText {
 			text = ""
 		}
+
 		cursor, hasCursor := luaTableInt(table, "cursor", len([]rune(text)))
 		if !hasCursor {
 			cursor = len([]rune(text))
@@ -489,7 +510,9 @@ func luaLayoutState(value lua.LValue) *LayoutState {
 	if !ok {
 		return nil
 	}
+
 	windows := map[string]WindowState{}
+
 	windowsValue := table.RawGetString(luaFieldWindows)
 	if windowsTable, ok := windowsValue.(*lua.LTable); ok {
 		windowsTable.ForEach(func(key, windowValue lua.LValue) {
@@ -520,6 +543,7 @@ func luaTableBoolValue(table *lua.LTable, key string) (value, ok bool) {
 	if luaValue == lua.LNil {
 		return false, false
 	}
+
 	boolValue, ok := luaValue.(lua.LBool)
 	if !ok {
 		return false, false

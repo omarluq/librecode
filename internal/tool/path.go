@@ -12,34 +12,39 @@ import (
 
 const narrowNoBreakSpace = "\u202F"
 
-var unicodeSpaceReplacer = strings.NewReplacer(
-	"\u00A0", " ",
-	"\u2000", " ",
-	"\u2001", " ",
-	"\u2002", " ",
-	"\u2003", " ",
-	"\u2004", " ",
-	"\u2005", " ",
-	"\u2006", " ",
-	"\u2007", " ",
-	"\u2008", " ",
-	"\u2009", " ",
-	"\u200A", " ",
-	"\u202F", " ",
-	"\u205F", " ",
-	"\u3000", " ",
-)
+func unicodeSpaceReplacer() *strings.Replacer {
+	return strings.NewReplacer(
+		"\u00A0", " ",
+		"\u2000", " ",
+		"\u2001", " ",
+		"\u2002", " ",
+		"\u2003", " ",
+		"\u2004", " ",
+		"\u2005", " ",
+		"\u2006", " ",
+		"\u2007", " ",
+		"\u2008", " ",
+		"\u2009", " ",
+		"\u200A", " ",
+		"\u202F", " ",
+		"\u205F", " ",
+		"\u3000", " ",
+	)
+}
 
 // ExpandPath normalizes model-supplied path shorthands.
 func ExpandPath(filePath string) string {
-	normalizedPath := normalizeAtPrefix(unicodeSpaceReplacer.Replace(filePath))
+	normalizedPath := normalizeAtPrefix(unicodeSpaceReplacer().Replace(filePath))
+
 	homeDirectory, err := os.UserHomeDir()
 	if err != nil {
 		return normalizedPath
 	}
+
 	if normalizedPath == "~" {
 		return homeDirectory
 	}
+
 	if strings.HasPrefix(normalizedPath, "~/") {
 		return filepath.Join(homeDirectory, normalizedPath[2:])
 	}
@@ -53,8 +58,9 @@ func ResolveToCWD(filePath, cwd string) (string, error) {
 	if workingDirectory == "" {
 		absoluteCWD, err := filepath.Abs(".")
 		if err != nil {
-			return "", err
+			return "", toolWrap(err, "resolve cwd")
 		}
+
 		workingDirectory = absoluteCWD
 	}
 
@@ -72,6 +78,7 @@ func ResolveReadPath(filePath, cwd string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	if fileExists(resolvedPath) {
 		return resolvedPath, nil
 	}
@@ -91,6 +98,7 @@ func normalizeAtPrefix(filePath string) string {
 
 func fileExists(filePath string) bool {
 	_, err := statResolvedPath(filePath)
+
 	return err == nil || !errors.Is(err, os.ErrNotExist)
 }
 
@@ -108,6 +116,7 @@ func readPathVariants(filePath string) []string {
 
 func tryMacOSScreenshotPath(filePath string) string {
 	replacer := strings.NewReplacer(" AM.", narrowNoBreakSpace+"AM.", " PM.", narrowNoBreakSpace+"PM.")
+
 	return replacer.Replace(filePath)
 }
 
@@ -118,37 +127,41 @@ func normNFD(value string) string {
 func statResolvedPath(filePath string) (os.FileInfo, error) {
 	root, err := os.OpenRoot(filepath.Dir(filePath))
 	if err != nil {
-		return nil, err
+		return nil, toolWrap(err, "open path root")
 	}
 	defer closeFile(root)
 
-	return root.Stat(filepath.Base(filePath))
+	info, err := root.Stat(filepath.Base(filePath))
+
+	return info, toolWrap(err, "stat resolved path")
 }
 
 func readResolvedPath(filePath string) ([]byte, error) {
 	root, err := os.OpenRoot(filepath.Dir(filePath))
 	if err != nil {
-		return nil, err
+		return nil, toolWrap(err, "open path root")
 	}
 	defer closeFile(root)
 
 	file, err := root.Open(filepath.Base(filePath))
 	if err != nil {
-		return nil, err
+		return nil, toolWrap(err, "open resolved path")
 	}
 	defer closeFile(file)
 
-	return io.ReadAll(file)
+	content, err := io.ReadAll(file)
+
+	return content, toolWrap(err, "read resolved path")
 }
 
 func writeResolvedPath(filePath string, data []byte, perm os.FileMode) error {
 	root, err := os.OpenRoot(filepath.Dir(filePath))
 	if err != nil {
-		return err
+		return toolWrap(err, "open path root")
 	}
 	defer closeFile(root)
 
-	return root.WriteFile(filepath.Base(filePath), data, perm)
+	return toolWrap(root.WriteFile(filepath.Base(filePath), data, perm), "write resolved path")
 }
 
 func closeFile(file interface{ Close() error }) {

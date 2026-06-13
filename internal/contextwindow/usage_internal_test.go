@@ -82,13 +82,16 @@ func TestTopContributorsRankingAndFallbacks(t *testing.T) {
 	assert.Contains(t, contributors[0].Preview, "extension context")
 
 	var foundMessage bool
+
 	for _, contributor := range contributors {
 		if contributor.Label == "message 2" {
 			foundMessage = true
+
 			assert.Equal(t, string(database.RoleAssistant), contributor.Role)
 			assert.Positive(t, contributor.Tokens)
 		}
 	}
+
 	assert.True(t, foundMessage, "expected large assistant message contributor")
 }
 

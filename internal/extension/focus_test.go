@@ -39,6 +39,7 @@ func TestManager_KeymapsUseFocusedTargetsOnly(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, testCase.wantConsumed, result.Consumed)
+
 			if testCase.wantConsumed {
 				require.Contains(t, result.Buffers, testBufferComposer)
 				assert.Equal(t, testCase.wantText, result.Buffers[testBufferComposer].Text)

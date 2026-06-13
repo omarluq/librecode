@@ -22,6 +22,7 @@ func NewBuffer(width, height int, style tcell.Style) *Buffer {
 		width:  max(0, width),
 		height: max(0, height),
 	}
+
 	fill := Cell{Style: style, Rune: ' '}
 	for index := range buffer.cells {
 		buffer.cells[index] = fill
@@ -53,9 +54,11 @@ func (buffer *Buffer) SetContent(column, row int, mainc rune, _ []rune, style tc
 	if buffer == nil || column < 0 || row < 0 || column >= buffer.width || row >= buffer.height {
 		return
 	}
+
 	if mainc == 0 {
 		mainc = ' '
 	}
+
 	buffer.cells[buffer.offset(column, row)] = Cell{Style: style, Rune: mainc}
 }
 
@@ -80,14 +83,19 @@ func (buffer *Buffer) Clone() *Buffer {
 	return cloned
 }
 
-// Renderer flushes changed cells to a tcell screen.
+// ContentScreen receives terminal cell updates.
+type ContentScreen interface {
+	SetContent(column, row int, mainc rune, combc []rune, style tcell.Style)
+}
+
+// Renderer flushes changed cells to a screen.
 type Renderer struct {
-	screen   tcell.Screen
+	screen   ContentScreen
 	previous *Buffer
 }
 
 // NewRenderer returns a screen renderer.
-func NewRenderer(screen tcell.Screen) *Renderer {
+func NewRenderer(screen ContentScreen) *Renderer {
 	return &Renderer{screen: screen, previous: nil}
 }
 
@@ -96,6 +104,7 @@ func (renderer *Renderer) Flush(frame *Buffer) {
 	if renderer == nil || renderer.screen == nil || frame == nil {
 		return
 	}
+
 	force := renderer.previous == nil ||
 		renderer.previous.width != frame.width ||
 		renderer.previous.height != frame.height
@@ -107,5 +116,6 @@ func (renderer *Renderer) Flush(frame *Buffer) {
 			}
 		}
 	}
+
 	renderer.previous = frame.Clone()
 }

@@ -58,6 +58,7 @@ func (screen *clipboardScreen) Get(_, _ int) (text string, style tcell.Style, wi
 func (screen *clipboardScreen) SetContent(x, y int, primary rune, _ []rune, style tcell.Style) {
 	screen.mu.Lock()
 	defer screen.mu.Unlock()
+
 	screen.content[[2]int{x, y}] = rendertext.Cell{Style: style, Rune: primary}
 }
 
@@ -89,7 +90,6 @@ func (screen *clipboardScreen) Resume() error                     { return nil }
 func (screen *clipboardScreen) Beep() error                       { return nil }
 func (screen *clipboardScreen) SetSize(width, height int)         { screen.size = [2]int{width, height} }
 func (screen *clipboardScreen) SetTitle(string)                   {}
-func (screen *clipboardScreen) Tty() (tcell.Tty, bool)            { return nil, false }
 func (screen *clipboardScreen) SetClipboard(data []byte) {
 	screen.clipboard = append(screen.clipboard[:0], data...)
 }

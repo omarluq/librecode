@@ -61,6 +61,7 @@ func TestState_ApplyWindowMirrorsActiveLayout(t *testing.T) {
 
 	state := extui.NewState()
 	state.ApplyLayout(&extension.LayoutState{Windows: map[string]extension.WindowState{}, Width: 80, Height: 24})
+
 	window := testWindowState("", 30)
 
 	state.ApplyWindow(testWindowName, &window)

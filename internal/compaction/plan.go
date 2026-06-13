@@ -58,24 +58,28 @@ type Plan struct {
 // PlanBranch selects model-facing branch history for compaction while preserving a recent tail.
 func PlanBranch(
 	branch []database.EntryEntity,
-	keepRecentTokens int,
+	recentTailTokens int,
 	countTokens TokenCounter,
 ) (Plan, error) {
 	if len(branch) == 0 {
 		return Plan{}, NothingToDoError("not enough model-facing history to compact")
 	}
+
 	if branch[len(branch)-1].Type == database.EntryTypeCompaction {
 		return Plan{}, NothingToDoError("no new history to compact after the latest compaction")
 	}
-	if keepRecentTokens <= 0 {
+
+	if recentTailTokens <= 0 {
 		return Plan{}, NothingToDoError("recent tail token target must be greater than zero")
 	}
+
 	if countTokens == nil {
 		countTokens = countRunesAsTokens
 	}
 
 	previousSummary, boundaryStart := previousCompactionBoundary(branch)
-	cutPoint := findCutPoint(branch, boundaryStart, len(branch), keepRecentTokens, countTokens)
+
+	cutPoint := findCutPoint(branch, boundaryStart, len(branch), recentTailTokens, countTokens)
 	if cutPoint.firstKeptEntryIndex <= boundaryStart || cutPoint.firstKeptEntryIndex >= len(branch) {
 		return Plan{}, NothingToDoError("not enough old history to compact while preserving the recent tail")
 	}
@@ -95,7 +99,7 @@ func PlanBranch(
 		KeptEntryIDs:        keptEntryIDs(branch[cutPoint.firstKeptEntryIndex:]),
 		FileOperations:      nil,
 		FirstKeptEntryID:    firstKeptEntryID,
-		TokensBefore:        branchTokens(branch, countTokens),
+		TokensBefore:        BranchTokens(branch, countTokens),
 		FirstKeptEntryIndex: cutPoint.firstKeptEntryIndex,
 	}, nil
 }
@@ -109,10 +113,12 @@ func PlanBranchFromFirstKept(
 	if countTokens == nil {
 		countTokens = countRunesAsTokens
 	}
+
 	firstKeptEntryIndex := entryIndexByID(branch, firstKeptEntryID)
 	if firstKeptEntryIndex < 0 {
 		return Plan{}, NothingToDoError("selected first kept entry was not found")
 	}
+
 	previousSummary, boundaryStart := previousCompactionBoundary(branch)
 	if firstKeptEntryIndex <= boundaryStart || firstKeptEntryIndex >= len(branch) {
 		return Plan{}, NothingToDoError("selected first kept entry leaves no old history to compact")
@@ -124,6 +130,7 @@ func PlanBranchFromFirstKept(
 		cutPoint.turnStartIndex = turnStartIndex
 		cutPoint.isSplitTurn = turnStartIndex >= 0
 	}
+
 	messages, summarizedIDs, splitTurnSummary := summaryPayload(branch, boundaryStart, cutPoint)
 	if len(messages) == 0 && strings.TrimSpace(splitTurnSummary) == "" {
 		return Plan{}, NothingToDoError("no model-facing history was selected for compaction")
@@ -137,7 +144,7 @@ func PlanBranchFromFirstKept(
 		SummarizedEntryIDs:  summarizedIDs,
 		KeptEntryIDs:        keptEntryIDs(branch[firstKeptEntryIndex:]),
 		FileOperations:      CollectFileOperations(branch[:firstKeptEntryIndex]),
-		TokensBefore:        branchTokens(branch, countTokens),
+		TokensBefore:        BranchTokens(branch, countTokens),
 		FirstKeptEntryIndex: firstKeptEntryIndex,
 	}, nil
 }
@@ -156,6 +163,7 @@ func summaryPayload(
 	if cutPoint.isSplitTurn {
 		summarizeEnd = cutPoint.turnStartIndex
 	}
+
 	messages, summarizedIDs = messagesInRange(branch, boundaryStart, summarizeEnd)
 	if !cutPoint.isSplitTurn {
 		return messages, summarizedIDs, ""
@@ -166,6 +174,7 @@ func summaryPayload(
 		cutPoint.turnStartIndex,
 		cutPoint.firstKeptEntryIndex,
 	)
+
 	summarizedIDs = append(summarizedIDs, turnPrefixIDs...)
 	if len(messages) == 0 {
 		return append(messages, turnPrefixMessages...), summarizedIDs, ""
@@ -177,10 +186,12 @@ func summaryPayload(
 func previousCompactionBoundary(branch []database.EntryEntity) (summary string, boundaryStart int) {
 	for offset := range len(branch) {
 		index := len(branch) - 1 - offset
+
 		entry := &branch[index]
 		if entry.Type != database.EntryTypeCompaction {
 			continue
 		}
+
 		firstKeptIndex := entryIndexByID(branch, entry.CompactionFirstKeptEntryID)
 		if firstKeptIndex < 0 {
 			firstKeptIndex = index + 1
@@ -212,7 +223,7 @@ func findCutPoint(
 	entries []database.EntryEntity,
 	startIndex int,
 	endIndex int,
-	keepRecentTokens int,
+	recentTailTokens int,
 	countTokens TokenCounter,
 ) cutPoint {
 	cutPoints := validCutPoints(entries, startIndex, endIndex)
@@ -222,17 +233,25 @@ func findCutPoint(
 
 	accumulatedTokens := 0
 	cutIndex := cutPoints[0]
+
 	for index := endIndex - 1; index >= startIndex; index-- {
 		message, ok := messageForSummary(&entries[index])
 		if !ok {
 			continue
 		}
+
 		accumulatedTokens += countTokens(message.Content)
-		if accumulatedTokens < keepRecentTokens {
+		if accumulatedTokens < recentTailTokens {
 			continue
 		}
+
 		cutIndex = firstCutPointAtOrAfter(cutPoints, index)
+
 		break
+	}
+
+	if cutIndex <= startIndex {
+		cutIndex = firstCutPointAfter(cutPoints, startIndex)
 	}
 
 	turnStartIndex := -1
@@ -249,6 +268,7 @@ func findCutPoint(
 
 func validCutPoints(entries []database.EntryEntity, startIndex, endIndex int) []int {
 	cutPoints := []int{}
+
 	for index := startIndex; index < endIndex; index++ {
 		if isValidCutPoint(&entries[index]) {
 			cutPoints = append(cutPoints, index)
@@ -267,6 +287,16 @@ func isValidCutPoint(entry *database.EntryEntity) bool {
 func firstCutPointAtOrAfter(cutPoints []int, entryIndex int) int {
 	for index := range cutPoints {
 		if cutPoints[index] >= entryIndex {
+			return cutPoints[index]
+		}
+	}
+
+	return cutPoints[len(cutPoints)-1]
+}
+
+func firstCutPointAfter(cutPoints []int, entryIndex int) int {
+	for index := range cutPoints {
+		if cutPoints[index] > entryIndex {
 			return cutPoints[index]
 		}
 	}
@@ -299,12 +329,14 @@ func messagesInRange(
 	endIndex int,
 ) (messages []database.MessageEntity, entryIDs []string) {
 	messages = make([]database.MessageEntity, 0, endIndex-startIndex)
+
 	entryIDs = make([]string, 0, endIndex-startIndex)
 	for index := startIndex; index < endIndex; index++ {
 		message, ok := messageForSummary(&entries[index])
 		if !ok {
 			continue
 		}
+
 		messages = append(messages, model.FacingMessage(&message))
 		entryIDs = append(entryIDs, entries[index].ID)
 	}
@@ -316,15 +348,19 @@ func formatSplitTurnSummary(messages []database.MessageEntity) string {
 	if len(messages) == 0 {
 		return ""
 	}
+
 	builder := strings.Builder{}
 	builder.WriteString("The compaction boundary split an in-progress turn. ")
 	builder.WriteString("The following earlier messages from that turn were compacted:\n")
+
 	for index := range messages {
 		message := messages[index]
+
 		content := strings.TrimSpace(message.Content)
 		if content == "" {
 			continue
 		}
+
 		builder.WriteString("\n[")
 		builder.WriteString(string(message.Role))
 		builder.WriteString("]\n")
@@ -346,14 +382,17 @@ func keptEntryIDs(entries []database.EntryEntity) []string {
 	return entryIDs
 }
 
-func branchTokens(branch []database.EntryEntity, countTokens TokenCounter) int {
+// BranchTokens returns the estimated model-facing token count for the effective branch.
+func BranchTokens(branch []database.EntryEntity, countTokens TokenCounter) int {
 	effective := effectiveModelFacingEntries(branch)
+
 	messages := make([]database.MessageEntity, 0, len(effective))
 	for index := range effective {
 		message, ok := messageForContext(&effective[index])
 		if !ok {
 			continue
 		}
+
 		messages = append(messages, model.FacingMessage(&message))
 	}
 
@@ -362,11 +401,13 @@ func branchTokens(branch []database.EntryEntity, countTokens TokenCounter) int {
 
 func effectiveModelFacingEntries(branch []database.EntryEntity) []database.EntryEntity {
 	entries := modelFacingEntries(branch)
+
 	effective := make([]database.EntryEntity, 0, len(entries))
 	for index := range entries {
 		entry := entries[index]
 		if entry.Type != database.EntryTypeCompaction {
 			effective = append(effective, entry)
+
 			continue
 		}
 
@@ -374,9 +415,11 @@ func effectiveModelFacingEntries(branch []database.EntryEntity) []database.Entry
 		for effectiveIndex := range effective {
 			if effective[effectiveIndex].ID == entry.CompactionFirstKeptEntryID {
 				firstKeptIndex = effectiveIndex
+
 				break
 			}
 		}
+
 		compacted := make([]database.EntryEntity, 0, 1+len(effective)-firstKeptIndex)
 		compacted = append(compacted, entry)
 		compacted = append(compacted, effective[firstKeptIndex:]...)
@@ -390,10 +433,12 @@ func modelFacingEntries(branch []database.EntryEntity) []database.EntryEntity {
 	entries := make([]database.EntryEntity, 0, len(branch))
 	for index := range branch {
 		entry := branch[index]
+
 		message, ok := messageForContext(&entry)
 		if !ok {
 			continue
 		}
+
 		entry.Message = message
 		entries = append(entries, entry)
 	}

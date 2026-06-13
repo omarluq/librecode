@@ -60,6 +60,7 @@ WHERE namespace = ? AND document_key = ?`
 		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
+
 		return nil, false, oops.In("database").Code("get_document").Wrapf(err, "load runtime document")
 	}
 
@@ -81,12 +82,14 @@ func (repository *DocumentRepository) Put(ctx context.Context, document *Documen
 	if updatedAt.IsZero() {
 		updatedAt = repository.now().UTC()
 	}
+
 	const statement = `
 INSERT INTO runtime_documents (namespace, document_key, value_json, updated_at)
 VALUES (?, ?, ?, ?)
 ON CONFLICT(namespace, document_key) DO UPDATE SET
     value_json = excluded.value_json,
     updated_at = excluded.updated_at`
+
 	_, err := repository.sql.Exec(
 		ctx,
 		statement,
@@ -105,6 +108,7 @@ ON CONFLICT(namespace, document_key) DO UPDATE SET
 // Delete removes one runtime document.
 func (repository *DocumentRepository) Delete(ctx context.Context, namespace, key string) error {
 	const statement = `DELETE FROM runtime_documents WHERE namespace = ? AND document_key = ?`
+
 	_, err := repository.sql.Exec(ctx, statement, namespace, key)
 	if err != nil {
 		return oops.In("database").Code("delete_document").Wrapf(err, "delete runtime document")

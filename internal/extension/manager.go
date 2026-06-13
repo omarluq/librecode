@@ -130,6 +130,7 @@ func (manager *Manager) Commands() []Command {
 	for _, command := range manager.commands {
 		commands = append(commands, command.definition)
 	}
+
 	sort.Slice(commands, func(leftIndex, rightIndex int) bool {
 		return commands[leftIndex].Name < commands[rightIndex].Name
 	})
@@ -146,6 +147,7 @@ func (manager *Manager) Tools() []Tool {
 	for _, tool := range manager.tools {
 		tools = append(tools, tool.definition)
 	}
+
 	sort.Slice(tools, func(leftIndex, rightIndex int) bool {
 		return tools[leftIndex].Name < tools[rightIndex].Name
 	})
@@ -161,6 +163,7 @@ func (manager *Manager) Shutdown() {
 	for _, extensionRuntime := range manager.extensions {
 		extensionRuntime.state.Close()
 	}
+
 	manager.extensions = []*luaExtension{}
 	manager.commands = map[string]luaCommand{}
 	manager.tools = map[string]luaTool{}
@@ -212,8 +215,10 @@ func (manager *Manager) unregisterHandlersLocked(extensionRuntime *luaExtension)
 		filtered := keepHandlersFromOtherRuntimes(handlers, extensionRuntime)
 		if len(filtered) == 0 {
 			delete(manager.handlers, eventName)
+
 			continue
 		}
+
 		manager.handlers[eventName] = filtered
 	}
 }
@@ -236,6 +241,7 @@ func (manager *Manager) unregisterKeymapsLocked(extensionRuntime *luaExtension) 
 			filtered = append(filtered, keymap)
 		}
 	}
+
 	manager.keymaps = filtered
 }
 
@@ -244,10 +250,13 @@ func (manager *Manager) unregisterTimersLocked(extensionRuntime *luaExtension) {
 	for _, timer := range manager.timers {
 		if timer.extension != extensionRuntime {
 			filtered = append(filtered, timer)
+
 			continue
 		}
+
 		manager.canceledTimers[timer.id] = struct{}{}
 	}
+
 	manager.timers = filtered
 }
 
@@ -258,5 +267,6 @@ func (manager *Manager) unregisterExtensionLocked(extensionRuntime *luaExtension
 			filtered = append(filtered, loadedRuntime)
 		}
 	}
+
 	manager.extensions = filtered
 }

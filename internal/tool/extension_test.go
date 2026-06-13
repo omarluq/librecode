@@ -61,6 +61,7 @@ func TestExtensionExecutor_Execute(t *testing.T) {
 				require.True(t, ok)
 				assert.Equal(t, testCase.expectedCode, oopsErr.Code())
 				assert.Empty(t, result.Text())
+
 				return
 			}
 

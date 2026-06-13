@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/omarluq/librecode/internal/units"
 )
 
 const (
 	// DefaultMaxLines is the default line limit for tool outputs.
 	DefaultMaxLines = 2000
 	// DefaultMaxBytes is the default byte limit for tool outputs.
-	DefaultMaxBytes = 50 * 1024
+	DefaultMaxBytes = 50 * units.KiB
 	// GrepMaxLineLength is the maximum displayed length for one grep match line.
 	GrepMaxLineLength = 500
 )
@@ -50,24 +52,27 @@ type TruncationResult struct {
 
 // FormatSize formats bytes for user-facing truncation notices.
 func FormatSize(byteCount int) string {
-	if byteCount < 1024 {
+	if byteCount < units.KiB {
 		return fmt.Sprintf("%dB", byteCount)
 	}
-	if byteCount < 1024*1024 {
-		return fmt.Sprintf("%.1fKB", float64(byteCount)/1024)
+
+	if byteCount < units.KiB*units.KiB {
+		return fmt.Sprintf("%.1fKB", float64(byteCount)/units.KiB)
 	}
 
-	return fmt.Sprintf("%.1fMB", float64(byteCount)/(1024*1024))
+	return fmt.Sprintf("%.1fMB", float64(byteCount)/(units.KiB*units.KiB))
 }
 
 // TruncateHead keeps the first complete lines that fit within both limits.
 func TruncateHead(content string, options TruncationOptions) TruncationResult {
 	limits := normalizeTruncationOptions(options)
 	lines := strings.Split(content, "\n")
+
 	totalBytes := len([]byte(content))
 	if len(lines) <= limits.MaxLines && totalBytes <= limits.MaxBytes {
 		return newTruncationResult(content, false, TruncatedByNone, false, false, lines, limits)
 	}
+
 	if len([]byte(lines[0])) > limits.MaxBytes {
 		return TruncationResult{
 			Truncated:             true,
@@ -106,6 +111,7 @@ func TruncateHead(content string, options TruncationOptions) TruncationResult {
 func TruncateTail(content string, options TruncationOptions) TruncationResult {
 	limits := normalizeTruncationOptions(options)
 	lines := strings.Split(content, "\n")
+
 	totalBytes := len([]byte(content))
 	if len(lines) <= limits.MaxLines && totalBytes <= limits.MaxBytes {
 		return newTruncationResult(content, false, TruncatedByNone, false, false, lines, limits)
@@ -134,6 +140,7 @@ func TruncateLine(line string, maxCharacters int) (text string, wasTruncated boo
 	if maxCharacters <= 0 {
 		maxCharacters = GrepMaxLineLength
 	}
+
 	runes := []rune(line)
 	if len(runes) <= maxCharacters {
 		return line, false
@@ -147,6 +154,7 @@ func normalizeTruncationOptions(options TruncationOptions) TruncationOptions {
 	if limits.MaxLines <= 0 {
 		limits.MaxLines = DefaultMaxLines
 	}
+
 	if limits.MaxBytes <= 0 {
 		limits.MaxBytes = DefaultMaxBytes
 	}
@@ -158,15 +166,19 @@ func collectHeadLines(lines []string, limits TruncationOptions) ([]string, Trunc
 	outputLines := make([]string, 0, min(len(lines), limits.MaxLines))
 	outputBytes := 0
 	truncatedBy := TruncatedByLines
+
 	for lineIndex := 0; lineIndex < len(lines) && lineIndex < limits.MaxLines; lineIndex++ {
 		lineBytes := len([]byte(lines[lineIndex]))
 		if lineIndex > 0 {
 			lineBytes++
 		}
+
 		if outputBytes+lineBytes > limits.MaxBytes {
 			truncatedBy = TruncatedByBytes
+
 			break
 		}
+
 		outputLines = append(outputLines, lines[lineIndex])
 		outputBytes += lineBytes
 	}
@@ -179,22 +191,28 @@ func collectTailLines(lines []string, limits TruncationOptions) ([]string, Trunc
 	outputBytes := 0
 	truncatedBy := TruncatedByLines
 	lastLinePartial := false
+
 	for lineIndex := len(lines) - 1; lineIndex >= 0 && len(outputLines) < limits.MaxLines; lineIndex-- {
 		lineBytes := len([]byte(lines[lineIndex]))
 		if len(outputLines) > 0 {
 			lineBytes++
 		}
+
 		if outputBytes+lineBytes > limits.MaxBytes {
 			truncatedBy = TruncatedByBytes
+
 			if len(outputLines) == 0 {
 				outputLines = append(outputLines, truncateStringFromEnd(lines[lineIndex], limits.MaxBytes))
 				lastLinePartial = true
 			}
+
 			break
 		}
+
 		outputLines = append(outputLines, lines[lineIndex])
 		outputBytes += lineBytes
 	}
+
 	reverseStrings(outputLines)
 
 	return outputLines, truncatedBy, lastLinePartial

@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -77,12 +78,8 @@ func invalidUUIDCases() []invalidUUIDCase {
 func invalidEntityCases() []invalidEntityCase {
 	return []invalidEntityCase{
 		{
-			name: "blank session cwd",
-			run: func(ctx context.Context, repository *database.SessionRepository, _ *database.SessionEntity) error {
-				_, err := repository.CreateSession(ctx, "", "invalid", "")
-
-				return err
-			},
+			name:      "blank session cwd",
+			run:       createSessionWithBlankCWD,
 			wantError: "session.cwd is required",
 		},
 		{
@@ -93,6 +90,16 @@ func invalidEntityCases() []invalidEntityCase {
 	}
 }
 
+func createSessionWithBlankCWD(
+	ctx context.Context,
+	repository *database.SessionRepository,
+	_ *database.SessionEntity,
+) error {
+	_, err := repository.CreateSession(ctx, "", "invalid", "")
+
+	return fmt.Errorf("create invalid session: %w", err)
+}
+
 func appendBlankCustomMessage(
 	ctx context.Context,
 	repository *database.SessionRepository,
@@ -100,7 +107,7 @@ func appendBlankCustomMessage(
 ) error {
 	_, err := repository.AppendCustomMessage(ctx, session.ID, nil, " ", "hello", true, nil)
 
-	return err
+	return fmt.Errorf("append invalid custom message: %w", err)
 }
 
 func TestDocumentRepositoryRejectsInvalidEntities(t *testing.T) {

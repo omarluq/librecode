@@ -1,5 +1,7 @@
 package model
 
+import "github.com/omarluq/librecode/internal/units"
+
 // TokenContributor describes a large piece of model-facing context.
 type TokenContributor struct {
 	Label   string `json:"label"`
@@ -12,7 +14,7 @@ type TokenContributor struct {
 // TokenUsage tracks model context and request/response token counts.
 type TokenUsage struct {
 	Breakdown       map[string]int     `json:"breakdown,omitempty"`
-	TopContributors []TokenContributor `json:"topContributors,omitempty"`
+	TopContributors []TokenContributor `json:"top_contributors,omitempty"`
 	ContextWindow   int                `json:"context_window,omitempty"`
 	ContextTokens   int                `json:"context_tokens,omitempty"`
 	InputTokens     int                `json:"input_tokens,omitempty"`
@@ -46,9 +48,10 @@ func (usage TokenUsage) ContextPercent() int {
 	if usage.ContextWindow <= 0 || usage.ContextTokens <= 0 {
 		return 0
 	}
-	percent := usage.ContextTokens * 100 / usage.ContextWindow
-	if percent > 100 {
-		return 100
+
+	percent := usage.ContextTokens * units.PercentScale / usage.ContextWindow
+	if percent > units.PercentScale {
+		return units.PercentScale
 	}
 
 	return percent

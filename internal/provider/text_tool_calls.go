@@ -31,10 +31,12 @@ func TextToolCallsFromText(text string) []ToolCall {
 	calls := make([]ToolCall, 0, len(matches))
 	for index, match := range matches {
 		fields := textToolFields(match[1])
+
 		name := NormalizeTextToolName(firstTextToolField(fields, textToolNameField, jsonToolNameKey, jsonToolRole))
 		if name == "" {
 			continue
 		}
+
 		arguments := textToolArguments(name, fields)
 		argumentsJSON := EncodeToolArguments(arguments)
 		calls = append(calls, ToolCall{
@@ -53,25 +55,32 @@ func TextToolCallsFromText(text string) []ToolCall {
 func textToolFields(content string) map[string]string {
 	fields := map[string]string{}
 	searchOffset := 0
+
 	lowerContent := asciiLower(content)
 	for searchOffset < len(content) {
 		match := textToolOpeningPattern.FindStringSubmatchIndex(content[searchOffset:])
 		if match == nil {
 			break
 		}
+
 		openStart := searchOffset + match[0]
 		openEnd := searchOffset + match[1]
 		tag := content[searchOffset+match[2] : searchOffset+match[3]]
+
 		key := normalizeTextToolKey(tag)
 		if key == "" || key == anthropicToolUseType {
 			searchOffset = openEnd
+
 			continue
 		}
+
 		closeStart, closeEnd, ok := findTextToolClosingTag(lowerContent, tag, openEnd)
 		if !ok {
 			searchOffset = openEnd
+
 			continue
 		}
+
 		value := html.UnescapeString(content[openEnd:closeStart])
 		if isTextToolContainerKey(key) {
 			mergeTextToolFields(fields, textToolFields(value))
@@ -79,6 +88,7 @@ func textToolFields(content string) map[string]string {
 		} else {
 			fields[key] = value
 		}
+
 		searchOffset = max(closeEnd, openStart+1)
 	}
 
@@ -87,10 +97,12 @@ func textToolFields(content string) map[string]string {
 
 func findTextToolClosingTag(lowerContent, tag string, after int) (closeStart, closeEnd int, ok bool) {
 	closingTag := "</" + asciiLower(tag) + ">"
+
 	closeStart = strings.Index(lowerContent[after:], closingTag)
 	if closeStart == -1 {
 		return 0, 0, false
 	}
+
 	closeStart += after
 
 	return closeStart, closeStart + len(closingTag), true
@@ -109,6 +121,7 @@ func textToolJSONFields(value string) map[string]string {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(value)), &payload); err != nil {
 		return nil
 	}
+
 	fields := make(map[string]string, len(payload))
 	for key, fieldValue := range payload {
 		fields[normalizeTextToolKey(key)] = textToolJSONFieldValue(fieldValue)
@@ -176,12 +189,15 @@ func normalizeTextToolKey(value string) string {
 
 func textToolArguments(name string, fields map[string]string) map[string]any {
 	arguments := map[string]any{}
+
 	for key, value := range fields {
 		if key == textToolNameField || key == jsonToolNameKey || key == jsonToolRole {
 			continue
 		}
+
 		arguments[textToolArgumentName(name, key)] = strings.TrimSpace(value)
 	}
+
 	applyTextToolAliases(name, fields, arguments)
 
 	return arguments
@@ -208,6 +224,7 @@ func applyTextToolAliases(name string, fields map[string]string, arguments map[s
 	case jsonEditToolName:
 		oldText, hasOldText := firstRawTextToolField(fields, textToolOldTextKey, "old-text", "old")
 		newText, hasNewText := firstRawTextToolField(fields, textToolNewTextKey, "new-text", "new")
+
 		applyTextToolAlias(arguments, jsonOldTextKey, oldText, hasOldText)
 		applyTextToolAlias(arguments, jsonNewTextKey, newText, hasNewText)
 	case jsonBashToolName:
@@ -220,6 +237,7 @@ func applyTextToolAlias(arguments map[string]any, key, value string, exists bool
 	if !exists {
 		return
 	}
+
 	arguments[key] = value
 }
 
@@ -231,14 +249,15 @@ func textToolArgumentName(toolName, fieldName string) string {
 		return jsonOldTextKey
 	case textToolNewTextKey:
 		return jsonNewTextKey
-	case "allow_ignored":
+	case jsonAllowIgnoredKey:
 		return jsonAllowIgnoredKey
-	case "ignore_case":
-		return "ignoreCase"
+	case jsonIgnoreCaseKey:
+		return jsonIgnoreCaseKey
 	default:
 		if toolName == jsonBashToolName && fieldName == "cmd" {
 			return jsonCommandKey
 		}
+
 		return fieldName
 	}
 }
@@ -269,6 +288,7 @@ func EncodeToolArguments(arguments map[string]any) string {
 	if len(arguments) == 0 {
 		return "{}"
 	}
+
 	encoded, err := json.Marshal(arguments)
 	if err != nil {
 		return "{}"
@@ -297,13 +317,16 @@ func TextToolResultPrompt(events []ToolEvent) string {
 	parts := make([]string, 0, len(events))
 	for _, event := range events {
 		label := "Tool result for " + event.Name
+
 		body := strings.TrimSpace(event.Result)
 		if event.Error != "" {
 			body = strings.TrimSpace(event.Error)
 		}
+
 		if body == "" {
 			body = "(tool returned no text output)"
 		}
+
 		parts = append(parts, label+":\n"+body)
 	}
 

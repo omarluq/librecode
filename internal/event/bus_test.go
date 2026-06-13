@@ -20,12 +20,15 @@ func TestBus_EmitCallsHandlers(t *testing.T) {
 
 	bus := event.NewBus(testLogger())
 	calls := []string{}
+
 	bus.On("agent", func(_ context.Context, data any) error {
 		calls = append(calls, "first:"+fmt.Sprint(data))
+
 		return nil
 	})
 	bus.On("agent", func(_ context.Context, data any) error {
 		calls = append(calls, "second:"+fmt.Sprint(data))
+
 		return nil
 	})
 
@@ -41,6 +44,7 @@ func TestBus_UnsubscribeAndClear(t *testing.T) {
 	calls := 0
 	unsubscribe := bus.On("agent", func(context.Context, any) error {
 		calls++
+
 		return nil
 	})
 	unsubscribe()
@@ -48,6 +52,7 @@ func TestBus_UnsubscribeAndClear(t *testing.T) {
 
 	bus.On("agent", func(context.Context, any) error {
 		calls++
+
 		return nil
 	})
 	bus.Clear()
@@ -61,11 +66,13 @@ func TestBus_EmitLogsHandlerErrorsAndContinues(t *testing.T) {
 
 	bus := event.NewBus(testLogger())
 	calls := 0
+
 	bus.On("agent", func(context.Context, any) error {
 		return errors.New("boom")
 	})
 	bus.On("agent", func(context.Context, any) error {
 		calls++
+
 		return nil
 	})
 
@@ -102,6 +109,7 @@ func TestBus_ReactiveStreams(t *testing.T) {
 					func(error) {},
 					func() {},
 				))
+
 				return subscription.Unsubscribe
 			},
 			emit: []event.Envelope{
@@ -120,6 +128,7 @@ func TestBus_ReactiveStreams(t *testing.T) {
 					func(error) {},
 					func() {},
 				))
+
 				return subscription.Unsubscribe
 			},
 			emit: []event.Envelope{
@@ -133,6 +142,7 @@ func TestBus_ReactiveStreams(t *testing.T) {
 			subscribe: func(bus *event.Bus, got *[]string) event.Unsubscribe {
 				return bus.OnEnvelope(func(_ context.Context, envelope event.Envelope) error {
 					*got = append(*got, envelope.Channel+":"+fmt.Sprint(envelope.Data))
+
 					return nil
 				})
 			},
@@ -162,6 +172,7 @@ func runReactiveStreamCase(
 
 	bus := event.NewBus(testLogger())
 	got := []string{}
+
 	unsubscribe := subscribe(bus, &got)
 	defer unsubscribe()
 
@@ -179,8 +190,10 @@ func TestBus_OnSubscribesToCurrentSubject(t *testing.T) {
 	bus.Clear()
 
 	calls := 0
+
 	unsubscribe := bus.On("agent", func(context.Context, any) error {
 		calls++
+
 		return nil
 	})
 	defer unsubscribe()

@@ -18,6 +18,7 @@ func TestApplyPanelSelectionUnknownKindReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("applyPanelSelection should return error for unknown panel kind")
 	}
+
 	if !strings.Contains(err.Error(), "unknown panel kind") {
 		t.Fatalf("error = %q, want unknown panel kind", err.Error())
 	}

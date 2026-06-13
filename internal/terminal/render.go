@@ -18,18 +18,21 @@ func (app *App) screenSize() (width, height int) {
 	if app.lastResize != nil {
 		return app.lastResize.Size()
 	}
+
 	if app.screen != nil {
 		return app.screen.Size()
 	}
 
-	return 80, 24
+	return defaultTerminalWidth, defaultTerminalHeight
 }
 
 func (app *App) prepareScreenForFrame() {
 	if app.screen == nil || app.lastResize == nil {
 		return
 	}
+
 	targetWidth, targetHeight := app.lastResize.Size()
+
 	currentWidth, currentHeight := app.screen.Size()
 	if currentWidth != targetWidth || currentHeight != targetHeight {
 		app.screen.Show()
@@ -39,15 +42,18 @@ func (app *App) prepareScreenForFrame() {
 func (app *App) draw(ctx context.Context) {
 	app.prepareScreenForFrame()
 	width, height := app.screenSize()
+
 	app.frame = rendertext.NewBuffer(width, height, tcell.StyleDefault)
 	if width < 20 || height < 8 {
 		app.drawTiny(width, height)
 		app.flushFrame()
+
 		return
 	}
 
 	if app.needsRuntimeRenderPath() {
 		app.drawRuntime(ctx)
+
 		return
 	}
 
@@ -57,6 +63,7 @@ func (app *App) draw(ctx context.Context) {
 	} else {
 		row = app.drawMessages(width, height, row)
 	}
+
 	app.drawEditorAndFooter(width, height, row)
 	app.flushFrame()
 }
@@ -64,12 +71,14 @@ func (app *App) draw(ctx context.Context) {
 func (app *App) drawRuntime(ctx context.Context) {
 	layout := app.currentRuntimeLayout()
 	app.runRenderExtensions(ctx, &layout)
+
 	layout = app.currentRuntimeLayout()
 	if app.mode == modePanel && app.panel != nil {
 		app.drawPanelWindow(&layout)
 	} else {
 		app.drawTranscriptWindow(&layout)
 	}
+
 	app.drawAutocompleteWindow(&layout)
 	app.drawComposerWindow(&layout)
 	app.drawStatusWindow(&layout)
@@ -84,9 +93,11 @@ func (app *App) needsRuntimeRenderPath() bool {
 		len(app.extensionUI.Windows) > 0 {
 		return true
 	}
+
 	if len(app.extensionUI.Overrides) > 0 || app.extensionUI.Cursor != nil {
 		return true
 	}
+
 	_, transcriptOverridden := app.extensionUI.Buffers[extui.BufferTranscript]
 
 	return transcriptOverridden
@@ -100,7 +111,7 @@ func (app *App) flushFrame() {
 
 func (app *App) drawTiny(width, height int) {
 	message := rendertext.Truncate("librecode: terminal too small", width)
-	writeLine(app.frame, max(0, height/2), width, message, app.theme.style(colorWarning))
+	writeLine(app.frame, max(0, height/terminalHalf), width, message, app.theme.style(colorWarning))
 }
 
 func (app *App) writeStyledLine(row, width int, line rendertext.Line) {
@@ -118,11 +129,13 @@ func (app *App) writeStyledLine(row, width int, line rendertext.Line) {
 				palette:         app.workingShimmerPalette(),
 			},
 		)
+
 		return
 	}
 
 	if len(line.Spans) > 0 {
 		writeStyled(app.frame, row, width, line)
+
 		return
 	}
 

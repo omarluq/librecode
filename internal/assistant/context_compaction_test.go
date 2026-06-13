@@ -25,7 +25,7 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	t.Parallel()
 
 	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
-	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 10)
+	runtime, repository := newCompactionRuntimeForTailPolicy(t, client, 1_000)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -80,30 +80,19 @@ func TestRuntime_CompactSessionUsesDynamicModelContextTail(t *testing.T) {
 	testCases := []struct {
 		name                    string
 		messageTokens           []int
-		keepRecentTokens        int
 		contextWindow           int
 		wantFirstKeptEntryIndex int
 		wantSummaryMessageCount int
 	}{
 		{
-			name:                    "dynamic keeps newest third of model context window",
-			keepRecentTokens:        0,
+			name:                    "dynamic keeps newest third capped by current branch",
 			contextWindow:           100_000,
 			messageTokens:           []int{10_000, 10_000, 15_000, 15_000},
-			wantFirstKeptEntryIndex: 1,
-			wantSummaryMessageCount: 1,
-		},
-		{
-			name:                    "explicit override wins over model context window",
-			keepRecentTokens:        10,
-			contextWindow:           100_000,
-			messageTokens:           []int{10_000, 10_000, 15_000, 15_000},
-			wantFirstKeptEntryIndex: 3,
+			wantFirstKeptEntryIndex: 2,
 			wantSummaryMessageCount: 2,
 		},
 		{
-			name:                    "unknown context window uses fixed fallback tail",
-			keepRecentTokens:        0,
+			name:                    "unknown context window uses fallback capped by current branch",
 			contextWindow:           0,
 			messageTokens:           []int{10_000, 10_000, 15_000, 15_000},
 			wantFirstKeptEntryIndex: 2,
@@ -111,7 +100,6 @@ func TestRuntime_CompactSessionUsesDynamicModelContextTail(t *testing.T) {
 		},
 		{
 			name:                    "tiny context window still keeps a positive recent tail",
-			keepRecentTokens:        0,
 			contextWindow:           2,
 			messageTokens:           []int{10_000, 10_000, 15_000, 15_000},
 			wantFirstKeptEntryIndex: 3,
@@ -127,7 +115,6 @@ func TestRuntime_CompactSessionUsesDynamicModelContextTail(t *testing.T) {
 			runtime, repository := newCompactionRuntimeForTailPolicy(
 				t,
 				client,
-				testCase.keepRecentTokens,
 				testCase.contextWindow,
 			)
 			ctx := context.Background()
@@ -144,6 +131,7 @@ func TestRuntime_CompactSessionUsesDynamicModelContextTail(t *testing.T) {
 			assert.Equal(t, entries[len(entries)-1].ID, *entry.ParentID)
 			require.Len(t, client.requests, 1)
 			require.Len(t, client.requests[0].Messages, testCase.wantSummaryMessageCount)
+
 			for index := range client.requests[0].Messages {
 				assert.Equal(t, entries[index].Message.Content, client.requests[0].Messages[index].Content)
 			}
@@ -155,7 +143,7 @@ func TestRuntime_CompactSessionChainsNextPromptFromCompactionEntry(t *testing.T)
 	t.Parallel()
 
 	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
-	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
+	runtime, repository := newCompactionRuntimeForTailPolicy(t, client, 2)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -197,7 +185,7 @@ func TestRuntime_CompactSessionFromUsesExplicitParent(t *testing.T) {
 	t.Parallel()
 
 	client := &compactionCompleter{summary: "summary of selected branch", requests: nil}
-	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
+	runtime, repository := newCompactionRuntimeForTailPolicy(t, client, 2)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -235,7 +223,7 @@ func TestRuntime_CompactSessionReplansHookSelectedFirstKeptEntry(t *testing.T) {
 
 	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
 	_, repository, manager := newTestRuntimeWithManager(t, client)
-	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
+	runtime := newCompactionRuntimeWithManagerWindow(t, repository, manager, client)
 	loadRuntimeExtension(t, manager, `
 local lc = require("librecode")
 lc.on("session_before_compact", function(event)
@@ -246,6 +234,7 @@ lc.on("session_before_compact", function(event)
   }
 end)
 `)
+
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -275,7 +264,7 @@ func TestRuntime_CompactSessionReplansHookFileOperations(t *testing.T) {
 
 	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
 	_, repository, manager := newTestRuntimeWithManager(t, client)
-	runtime := newCompactionRuntimeWithManager(t, repository, manager, client)
+	runtime := newCompactionRuntimeWithManagerWindow(t, repository, manager, client)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -331,7 +320,7 @@ func TestRuntime_CompactSessionRejectsEmptySummary(t *testing.T) {
 	t.Parallel()
 
 	client := &compactionCompleter{summary: "   ", requests: nil}
-	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
+	runtime, repository := newCompactionRuntimeForTailPolicy(t, client, 2)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -349,7 +338,7 @@ func TestRuntime_CompactSessionPreservesFileOperations(t *testing.T) {
 	t.Parallel()
 
 	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
-	runtime, repository := newCompactionRuntimeWithKeepRecentTokens(t, client, 1)
+	runtime, repository := newCompactionRuntimeForTailPolicy(t, client, 2)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -397,6 +386,7 @@ func TestRuntime_CompactSessionPreservesFileOperations(t *testing.T) {
 	assert.Contains(t, entry.Summary, "read: internal/assistant/runtime.go")
 	assert.Contains(t, entry.Summary, "modified: internal/assistant/new_file.go")
 	assert.Contains(t, entry.Summary, "modified: internal/assistant/runtime.go")
+
 	data := map[string]any{}
 	require.NoError(t, json.Unmarshal([]byte(entry.DataJSON), &data))
 	details, ok := data["details"].(map[string]any)
@@ -410,27 +400,15 @@ func repeatedTokenEstimate(tokens int) string {
 	return strings.Repeat("x", tokens*4)
 }
 
-func newCompactionRuntimeWithKeepRecentTokens(
-	t *testing.T,
-	client assistant.Completer,
-	keepRecentTokens int,
-) (*assistant.Runtime, *database.SessionRepository) {
-	t.Helper()
-
-	return newCompactionRuntimeForTailPolicy(t, client, keepRecentTokens, 100_000)
-}
-
 func newCompactionRuntimeForTailPolicy(
 	t *testing.T,
 	client assistant.Completer,
-	keepRecentTokens int,
 	contextWindow int,
 ) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
 
 	_, repository := newTestRuntimeWithClient(t, client)
 	runtimeConfig := testConfig()
-	runtimeConfig.Context.KeepRecentTokens = keepRecentTokens
 
 	return assistant.NewRuntime(&assistant.RuntimeOptions{
 		Config:     runtimeConfig,
@@ -454,6 +432,7 @@ func appendRuntimeTestTokenMessages(
 
 	entries := make([]*database.EntryEntity, 0, len(messageTokens))
 	roles := []database.Role{database.RoleUser, database.RoleAssistant}
+
 	var parentID *string
 	for index, tokens := range messageTokens {
 		entry := appendRuntimeTestMessage(
@@ -541,6 +520,7 @@ func (client *compactionCompleter) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	client.requests = append(client.requests, request)
+
 	text := client.summary
 	if text == "" {
 		text = "summary: " + strings.TrimSpace(request.Messages[0].Content)

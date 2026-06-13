@@ -3,6 +3,7 @@ package assistant_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -116,7 +117,7 @@ func (toolCallbackClient) Complete(
 			ArgumentsJSON: testToolArgsJSON,
 		}}, request.OnEvent)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("execute test tools: %w", err)
 		}
 	}
 

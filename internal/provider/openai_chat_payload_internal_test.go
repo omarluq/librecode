@@ -38,6 +38,7 @@ func TestOpenAIChatMessagesAndRoles(t *testing.T) {
 	assert.JSONEq(t, jsonString(jsonSystemRole), jsonString(messages[0][jsonRoleKey]))
 	assert.JSONEq(t, jsonString(jsonUserRole), jsonString(messages[1][jsonRoleKey]))
 	assert.JSONEq(t, jsonString(jsonAssistantRole), jsonString(messages[2][jsonRoleKey]))
+
 	mapped, ok := openAIRole(llm.RoleTool)
 	assert.False(t, ok)
 	assert.Empty(t, mapped)

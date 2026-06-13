@@ -4,33 +4,25 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/core"
 )
 
-type testFrontmatter struct {
-	Description string `yaml:"description"`
-	Name        string `yaml:"name"`
-}
-
-func TestParseFrontmatterExtractsYAMLMetadata(t *testing.T) {
+func TestFrontmatterExtractsYAMLMetadata(t *testing.T) {
 	t.Parallel()
 
 	content := frontmatterDelimiter + "\nname: fix\ndescription: Fix bugs\n" + frontmatterDelimiter + "\nBody\n"
-	metadata, body, err := core.ParseFrontmatter[testFrontmatter](content)
-	require.NoError(t, err)
+	metadata, body := core.Frontmatter(content)
 
-	assert.Equal(t, testFrontmatter{Description: "Fix bugs", Name: "fix"}, metadata)
+	assert.Equal(t, "name: fix\ndescription: Fix bugs", string(metadata))
 	assert.Equal(t, "Body\n", body)
 }
 
-func TestParseFrontmatterKeepsPlainMarkdown(t *testing.T) {
+func TestFrontmatterKeepsPlainMarkdown(t *testing.T) {
 	t.Parallel()
 
-	metadata, body, err := core.ParseFrontmatter[testFrontmatter]("plain body")
-	require.NoError(t, err)
+	metadata, body := core.Frontmatter("plain body")
 
-	assert.Equal(t, testFrontmatter{Description: "", Name: ""}, metadata)
+	assert.Empty(t, metadata)
 	assert.Equal(t, "plain body", body)
 }

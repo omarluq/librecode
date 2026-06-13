@@ -3,6 +3,7 @@ package assistant_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -87,11 +88,14 @@ func (client *extensionToolCompleter) Complete(
 	if request.ToolRegistry == nil {
 		return nil, errors.New("missing tool registry")
 	}
+
 	*client.definitions = request.ToolRegistry.Definitions()
+
 	result, err := request.ToolRegistry.Execute(ctx, "echo", map[string]any{"text": "hello"})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("execute echo tool: %w", err)
 	}
+
 	*client.toolResult = result.Text()
 	*client.toolDetails = result.Details
 
@@ -136,6 +140,7 @@ func findToolDefinition(t *testing.T, definitions []tool.Definition, name string
 			return definition
 		}
 	}
+
 	require.Failf(t, "tool definition not found", "name=%s", name)
 
 	return tool.Definition{

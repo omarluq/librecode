@@ -39,12 +39,14 @@ func (renderer *markdownRenderer) renderTable(table *extast.Table, indent string
 	if len(rows) == 0 {
 		return
 	}
+
 	columnWidths := markdownTableColumnWidths(rows)
 	if len(columnWidths) == 0 {
 		return
 	}
 
 	borderStyle := renderer.theme.style(colorBorderMuted)
+
 	renderer.lines = append(renderer.lines, rendertext.NewLine(borderStyle, indent+markdownTableBorderLine(
 		markdownTableTopLeft,
 		markdownTableTopJoin,
@@ -62,6 +64,7 @@ func (renderer *markdownRenderer) renderTable(table *extast.Table, indent string
 			)))
 		}
 	}
+
 	renderer.lines = append(renderer.lines, rendertext.NewLine(borderStyle, indent+markdownTableBorderLine(
 		markdownTableBottomLeft,
 		markdownTableBottomJoin,
@@ -72,6 +75,7 @@ func (renderer *markdownRenderer) renderTable(table *extast.Table, indent string
 
 func (renderer *markdownRenderer) markdownTableRows(table *extast.Table) []markdownTableRow {
 	rows := []markdownTableRow{}
+
 	for child := table.FirstChild(); child != nil; child = child.NextSibling() {
 		switch typed := child.(type) {
 		case *extast.TableHeader:
@@ -86,11 +90,13 @@ func (renderer *markdownRenderer) markdownTableRows(table *extast.Table) []markd
 
 func (renderer *markdownRenderer) markdownTableRow(row ast.Node, header bool) markdownTableRow {
 	cells := []markdownTableCell{}
+
 	for child := row.FirstChild(); child != nil; child = child.NextSibling() {
 		cell, ok := child.(*extast.TableCell)
 		if !ok {
 			continue
 		}
+
 		cells = append(cells, markdownTableCell{
 			text:      strings.TrimSpace(renderer.inlineText(cell)),
 			alignment: cell.Alignment,
@@ -106,12 +112,15 @@ func markdownTableColumnWidths(rows []markdownTableRow) []int {
 	for _, row := range rows {
 		columnCount = max(columnCount, len(row.cells))
 	}
+
 	widths := make([]int, columnCount)
+
 	for _, row := range rows {
 		for index, cell := range row.cells {
 			widths[index] = max(widths[index], rendertext.Width(cell.text))
 		}
 	}
+
 	for index := range widths {
 		widths[index] = max(1, widths[index])
 	}
@@ -122,7 +131,7 @@ func markdownTableColumnWidths(rows []markdownTableRow) []int {
 func markdownTableBorderLine(left, join, right string, widths []int) string {
 	parts := make([]string, 0, len(widths))
 	for _, width := range widths {
-		parts = append(parts, strings.Repeat(markdownTableHorizontal, width+2))
+		parts = append(parts, strings.Repeat(markdownTableHorizontal, width+tableCellHorizontalPadding))
 	}
 
 	return left + strings.Join(parts, join) + right
@@ -134,16 +143,20 @@ func (renderer *markdownRenderer) markdownTableStyledRow(
 	widths []int,
 ) rendertext.Line {
 	borderStyle := renderer.theme.style(colorBorderMuted)
+
 	line := rendertext.NewLine(borderStyle, "")
 	if indent != "" {
 		appendMarkdownTableSpan(&line, indent, borderStyle)
 	}
+
 	appendMarkdownTableSpan(&line, markdownTableVertical, borderStyle)
+
 	for index, width := range widths {
 		cell := emptyMarkdownTableCell()
 		if index < len(row.cells) {
 			cell = row.cells[index]
 		}
+
 		style := renderer.markdownTableCellStyle(cell)
 		appendMarkdownTableSpan(&line, " ", style)
 		appendMarkdownTableSpan(&line, markdownTableAlignedText(cell.text, width, cell.alignment), style)
@@ -179,11 +192,13 @@ func emptyMarkdownTableCell() markdownTableCell {
 func markdownTableAlignedText(text string, width int, alignment extast.Alignment) string {
 	text = rendertext.Fit(text, width)
 	padding := max(0, width-rendertext.Width(text))
+
 	switch alignment {
 	case extast.AlignRight:
 		return strings.Repeat(" ", padding) + text
 	case extast.AlignCenter:
-		left := padding / 2
+		left := padding / tableCellHorizontalPadding
+
 		return strings.Repeat(" ", left) + text + strings.Repeat(" ", padding-left)
 	case extast.AlignLeft, extast.AlignNone:
 		return text + strings.Repeat(" ", padding)

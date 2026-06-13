@@ -81,13 +81,16 @@ func visibleVirtualListItems(
 	cursor := 0
 	startIndex = -1
 	endIndex = 0
+
 	for index, height := range heights {
 		height = positiveInt(height)
+
 		nextCursor := cursor + height
 		if virtualListItemVisible(height, cursor, nextCursor, windowStart, windowEnd) {
 			if startIndex == -1 {
 				startIndex = index
 			}
+
 			endIndex = index + 1
 			items = append(items, uiVirtualListItem{
 				Index:     index,
@@ -95,11 +98,13 @@ func visibleVirtualListItems(
 				Height:    height,
 			})
 		}
+
 		cursor = nextCursor
 		if cursor >= windowEnd {
 			break
 		}
 	}
+
 	if startIndex == -1 {
 		startIndex = 0
 	}

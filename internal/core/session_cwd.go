@@ -29,6 +29,7 @@ func MissingSessionCWDIssueFor(source SessionCWDSource, fallbackCWD string) (Ses
 	if sessionFile == "" {
 		return SessionCWDIssue{SessionFile: "", SessionCWD: "", FallbackCWD: ""}, false
 	}
+
 	sessionCWD := source.CWD()
 	if sessionCWD == "" || resourcePathExists(sessionCWD) {
 		return SessionCWDIssue{SessionFile: "", SessionCWD: "", FallbackCWD: ""}, false

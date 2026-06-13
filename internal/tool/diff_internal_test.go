@@ -89,6 +89,7 @@ func TestGenerateDiffStringInternalBranches(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, testCase.wantFirstLine, details.FirstChangedLine)
 			assert.Equal(t, testCase.wantTruncated, details.Truncated)
+
 			if testCase.wantDiffContains != "" {
 				assert.Contains(t, details.Diff, testCase.wantDiffContains)
 			} else {

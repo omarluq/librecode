@@ -17,12 +17,12 @@ var positionArgumentPattern = regexp.MustCompile(`\$(\d+)`)
 
 // PromptTemplate is a markdown-backed slash prompt.
 type PromptTemplate struct {
-	SourceInfo   SourceInfo `json:"sourceInfo"`
+	SourceInfo   SourceInfo `json:"source_info"`
 	Name         string     `json:"name"`
 	Description  string     `json:"description"`
-	ArgumentHint string     `json:"argumentHint,omitempty"`
+	ArgumentHint string     `json:"argument_hint,omitempty"`
 	Content      string     `json:"content"`
-	FilePath     string     `json:"filePath"`
+	FilePath     string     `json:"file_path"`
 }
 
 // LoadPromptTemplatesOptions controls prompt discovery.
@@ -41,14 +41,18 @@ type LoadPromptTemplatesResult struct {
 
 type promptFrontmatter struct {
 	Description  string `yaml:"description"`
-	ArgumentHint string `yaml:"argument-hint"`
+	ArgumentHint string `yaml:"argument_hint"`
 }
 
 // ParseCommandArgs parses bash-style quoted command arguments.
 func ParseCommandArgs(argsString string) []string {
 	args := []string{}
-	var current strings.Builder
-	var quote rune
+
+	var (
+		current strings.Builder
+		quote   rune
+	)
+
 	for _, character := range argsString {
 		switch {
 		case quote != 0 && character == quote:
@@ -83,6 +87,7 @@ func LoadPromptTemplates(options *LoadPromptTemplatesOptions) LoadPromptTemplate
 	resolvedOptions := promptTemplateOptions(options)
 	paths := promptTemplatePaths(resolvedOptions)
 	result := LoadPromptTemplatesResult{Prompts: []PromptTemplate{}, Diagnostics: []ResourceDiagnostic{}}
+
 	for _, rawPath := range paths {
 		templates, diagnostics := loadPromptTemplatePath(rawPath, resolvedOptions.CWD, resolvedOptions.AgentDir)
 		result.Prompts = append(result.Prompts, templates...)
@@ -96,6 +101,7 @@ func LoadPromptTemplates(options *LoadPromptTemplatesOptions) LoadPromptTemplate
 func DedupePromptTemplates(prompts []PromptTemplate) LoadPromptTemplatesResult {
 	result := LoadPromptTemplatesResult{Prompts: []PromptTemplate{}, Diagnostics: []ResourceDiagnostic{}}
 	seen := map[string]PromptTemplate{}
+
 	for index := range prompts {
 		prompt := prompts[index]
 		if existing, ok := seen[prompt.Name]; ok {
@@ -103,8 +109,10 @@ func DedupePromptTemplates(prompts []PromptTemplate) LoadPromptTemplatesResult {
 			result.Diagnostics = append(result.Diagnostics,
 				collisionResourceDiagnostic(resourceTypePrompt, name, existing.FilePath, prompt.FilePath),
 			)
+
 			continue
 		}
+
 		seen[prompt.Name] = prompt
 		result.Prompts = append(result.Prompts, prompt)
 	}
@@ -117,10 +125,12 @@ func ExpandPromptTemplate(text string, templates []PromptTemplate) string {
 	if !strings.HasPrefix(text, "/") {
 		return text
 	}
+
 	templateName, argsString, found := strings.Cut(strings.TrimPrefix(text, "/"), " ")
 	if !found {
 		argsString = ""
 	}
+
 	template, ok := lo.Find(templates, func(template PromptTemplate) bool {
 		return template.Name == templateName
 	})
@@ -161,6 +171,7 @@ func appendCurrentArg(args []string, current *strings.Builder) []string {
 	if current.Len() == 0 {
 		return args
 	}
+
 	args = append(args, current.String())
 	current.Reset()
 
@@ -180,8 +191,10 @@ func substitutePositionalArgs(content string, args []string) string {
 
 func substituteSlicedArgs(content string, args []string) string {
 	result := content
+
 	for start := 1; start <= len(args); start++ {
 		placeholder := "${@:" + strconv.Itoa(start) + "}"
+
 		result = strings.ReplaceAll(result, placeholder, strings.Join(args[start-1:], " "))
 		for length := 1; length <= len(args)-start+1; length++ {
 			sliced := args[start-1 : start-1+length]
@@ -198,15 +211,19 @@ func loadPromptTemplatePath(rawPath, cwd, agentDir string) ([]PromptTemplate, []
 	if !resourcePathExists(resolvedPath) {
 		return []PromptTemplate{}, []ResourceDiagnostic{}
 	}
+
 	info, err := statResource(resolvedPath)
 	if err != nil {
 		return []PromptTemplate{}, []ResourceDiagnostic{warningDiagnostic(err.Error(), resolvedPath)}
 	}
+
 	if info.IsDir() {
 		return loadPromptTemplatesFromDir(resolvedPath, cwd, agentDir)
 	}
+
 	if info.Mode().IsRegular() && strings.HasSuffix(resolvedPath, ".md") {
 		sourceInfo := sourceInfoForPrompt(resolvedPath, cwd, agentDir)
+
 		template, err := loadPromptTemplateFromFile(resolvedPath, &sourceInfo)
 		if err != nil {
 			return []PromptTemplate{}, []ResourceDiagnostic{warningDiagnostic(err.Error(), resolvedPath)}
@@ -223,19 +240,24 @@ func loadPromptTemplatesFromDir(dir, cwd, agentDir string) ([]PromptTemplate, []
 	if err != nil {
 		return []PromptTemplate{}, []ResourceDiagnostic{warningDiagnostic(err.Error(), dir)}
 	}
+
 	markdownFiles := lo.Filter(entries, func(entry os.DirEntry, _ int) bool {
 		return !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md")
 	})
 
 	result := LoadPromptTemplatesResult{Prompts: []PromptTemplate{}, Diagnostics: []ResourceDiagnostic{}}
+
 	for _, entry := range markdownFiles {
 		filePath := filepath.Join(dir, entry.Name())
 		sourceInfo := sourceInfoForPrompt(filePath, cwd, agentDir)
+
 		template, err := loadPromptTemplateFromFile(filePath, &sourceInfo)
 		if err != nil {
 			result.Diagnostics = append(result.Diagnostics, warningDiagnostic(err.Error(), filePath))
+
 			continue
 		}
+
 		result.Prompts = append(result.Prompts, template)
 	}
 
@@ -247,10 +269,12 @@ func loadPromptTemplateFromFile(filePath string, sourceInfo *SourceInfo) (Prompt
 	if err != nil {
 		return PromptTemplate{}, err
 	}
-	frontmatter, body, err := ParseFrontmatter[promptFrontmatter](content)
+
+	frontmatter, body, err := parsePromptFrontmatter(content)
 	if err != nil {
 		return PromptTemplate{}, oops.In("core").Code("prompt_frontmatter").Wrapf(err, "parse prompt frontmatter")
 	}
+
 	description := frontmatter.Description
 	if description == "" {
 		description = firstDescriptionLine(body)
@@ -270,6 +294,7 @@ func sourceInfoForPrompt(filePath, cwd, agentDir string) SourceInfo {
 	globalPromptsDir := filepath.Join(agentDir, promptDirName)
 	projectPromptsDir := filepath.Join(cwd, ConfigDirName, promptDirName)
 	scope := SourceScopeTemporary
+
 	baseDir := filepath.Dir(filePath)
 	if isUnderPath(filePath, globalPromptsDir) {
 		scope = SourceScopeUser
@@ -294,6 +319,7 @@ func firstDescriptionLine(content string) string {
 	if !ok {
 		return ""
 	}
+
 	trimmed := strings.TrimSpace(line)
 	if len(trimmed) > maxPromptDescriptionLength {
 		return trimmed[:maxPromptDescriptionLength] + "..."

@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 )
 
 var errNoClipboardWriter = errors.New("no clipboard writer available")
@@ -17,20 +16,25 @@ func writeSystemClipboard(text string) error {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
+
 	if os.Getenv("WAYLAND_DISPLAY") != "" {
 		if err := writeClipboardCommand(text, "wl-copy"); err == nil {
 			return nil
 		}
 	}
+
 	if err := writeClipboardCommand(text, "xclip", "-selection", "clipboard"); err == nil {
 		return nil
 	}
+
 	if err := writeClipboardCommand(text, "xsel", "--clipboard", "--input"); err == nil {
 		return nil
 	}
+
 	if err := writeClipboardCommand(text, "wl-copy"); err == nil {
 		return nil
 	}
+
 	if err := writeClipboardCommand(text, "termux-clipboard-set"); err == nil {
 		return nil
 	}
@@ -41,14 +45,16 @@ func writeSystemClipboard(text string) error {
 func writeClipboardCommand(text, name string, args ...string) error {
 	path, err := exec.LookPath(name)
 	if err != nil {
-		return err
+		return terminalError(err, "find clipboard command")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
 	defer cancel()
+
 	cmd := exec.CommandContext(ctx, "")
 	cmd.Path = path
 	cmd.Args = append([]string{path}, args...)
 	cmd.Stdin = strings.NewReader(text)
 
-	return cmd.Run()
+	return terminalError(cmd.Run(), "run clipboard command")
 }

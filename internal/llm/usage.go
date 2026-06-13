@@ -1,5 +1,7 @@
 package llm
 
+import "github.com/omarluq/librecode/internal/units"
+
 // TokenContributor describes a large piece of model-facing context.
 type TokenContributor struct {
 	Label   string `json:"label"`
@@ -47,9 +49,10 @@ func (usage Usage) ContextPercent() int {
 	if usage.ContextWindow <= 0 || usage.ContextTokens <= 0 {
 		return 0
 	}
-	percent := usage.ContextTokens * 100 / usage.ContextWindow
-	if percent > 100 {
-		return 100
+
+	percent := usage.ContextTokens * units.PercentScale / usage.ContextWindow
+	if percent > units.PercentScale {
+		return units.PercentScale
 	}
 
 	return percent

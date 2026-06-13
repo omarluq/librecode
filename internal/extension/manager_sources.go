@@ -27,6 +27,7 @@ func discoverLuaSources(extensionPath string) ([]luaSource, error) {
 		if os.IsNotExist(err) {
 			return []luaSource{}, nil
 		}
+
 		return nil, fmt.Errorf("extension: stat %s: %w", extensionPath, err)
 	}
 
@@ -34,6 +35,7 @@ func discoverLuaSources(extensionPath string) ([]luaSource, error) {
 		if strings.HasSuffix(extensionPath, ".lua") {
 			return []luaSource{{Path: extensionPath, Manifest: false}}, nil
 		}
+
 		return []luaSource{}, nil
 	}
 
@@ -47,12 +49,14 @@ func discoverLuaDir(root string) ([]luaSource, error) {
 	}
 
 	sources := []luaSource{}
+
 	walkErr := filepath.WalkDir(root, func(currentPath string, dirEntry os.DirEntry, walkErr error) error {
 		return collectLuaSource(root, currentPath, dirEntry, walkErr, &sources)
 	})
 	if walkErr != nil {
 		return nil, fmt.Errorf("extension: walk %s: %w", root, walkErr)
 	}
+
 	sort.Slice(sources, func(i, j int) bool { return sources[i].Path < sources[j].Path })
 
 	return sources, nil
@@ -62,9 +66,11 @@ func collectLuaSource(root, currentPath string, dirEntry os.DirEntry, walkErr er
 	if walkErr != nil {
 		return walkErr
 	}
+
 	if isExtensionDir(root, currentPath, dirEntry) {
 		return collectLuaSourceDir(root, currentPath, sources)
 	}
+
 	if strings.HasSuffix(currentPath, ".lua") {
 		*sources = append(*sources, luaSource{Path: currentPath, Manifest: false})
 	}
@@ -76,9 +82,11 @@ func isExtensionDir(root, currentPath string, dirEntry os.DirEntry) bool {
 	if dirEntry.IsDir() {
 		return true
 	}
+
 	if currentPath == root || dirEntry.Type()&os.ModeSymlink == 0 {
 		return false
 	}
+
 	info, err := os.Stat(currentPath)
 
 	return err == nil && info.IsDir()
@@ -88,12 +96,15 @@ func collectLuaSourceDir(root, currentPath string, sources *[]luaSource) error {
 	if currentPath == root {
 		return nil
 	}
+
 	if filepath.Base(currentPath) == "lua" {
 		return filepath.SkipDir
 	}
+
 	manifestPath := filepath.Join(currentPath, luaManifestFile)
 	if info, err := os.Stat(manifestPath); err == nil && !info.IsDir() {
 		*sources = append(*sources, luaSource{Path: manifestPath, Manifest: true})
+
 		return filepath.SkipDir
 	}
 
@@ -104,10 +115,12 @@ func (manager *Manager) addModuleRootsForPath(extensionPath string) {
 	if strings.TrimSpace(extensionPath) == "" {
 		return
 	}
+
 	absolutePath, err := filepath.Abs(extensionPath)
 	if err != nil {
 		absolutePath = extensionPath
 	}
+
 	roots := moduleRootsForPath(absolutePath)
 
 	manager.lock.Lock()
@@ -117,10 +130,12 @@ func (manager *Manager) addModuleRootsForPath(extensionPath string) {
 	for _, root := range manager.moduleRoots {
 		seen[root] = struct{}{}
 	}
+
 	for _, root := range roots {
 		if _, ok := seen[root]; ok {
 			continue
 		}
+
 		manager.moduleRoots = append(manager.moduleRoots, root)
 		seen[root] = struct{}{}
 	}
@@ -140,6 +155,7 @@ func (manager *Manager) configurePackagePath(state *lua.LState) {
 	if !ok {
 		return
 	}
+
 	patterns := []string{packageTable.RawGetString("path").String()}
 	for _, root := range manager.moduleRootsSnapshot() {
 		patterns = append(patterns,
@@ -147,6 +163,7 @@ func (manager *Manager) configurePackagePath(state *lua.LState) {
 			filepath.ToSlash(filepath.Join(root, "?", luaManifestFile)),
 		)
 	}
+
 	packageTable.RawSetString("path", lua.LString(strings.Join(patterns, ";")))
 }
 

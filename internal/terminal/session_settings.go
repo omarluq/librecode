@@ -35,9 +35,10 @@ func (app *App) loadLatestSessionSettings(ctx context.Context) error {
 	if app.sessionID != "" || app.runtime == nil {
 		return nil
 	}
+
 	latestSession, found, err := app.runtime.SessionRepository().LatestSession(ctx, app.cwd)
 	if err != nil || !found {
-		return err
+		return terminalError(err, "load latest session")
 	}
 
 	return app.loadSettingsForSession(ctx, latestSession.ID)
@@ -47,10 +48,12 @@ func (app *App) loadSettingsForSession(ctx context.Context, sessionID string) er
 	if app.settings == nil || sessionID == "" {
 		return nil
 	}
+
 	document, found, err := app.settings.Get(ctx, sessionSettingsNamespace, sessionID)
 	if err != nil || !found {
-		return err
+		return terminalError(err, "load session settings")
 	}
+
 	settings := sessionSettingsDocument{
 		Provider:      "",
 		Model:         "",
@@ -62,8 +65,9 @@ func (app *App) loadSettingsForSession(ctx context.Context, sessionID string) er
 		ToolsExpanded: false,
 	}
 	if err := json.Unmarshal([]byte(document.ValueJSON), &settings); err != nil {
-		return err
+		return terminalError(err, "decode session settings")
 	}
+
 	app.applySessionSettings(&settings)
 
 	return nil
@@ -73,17 +77,20 @@ func (app *App) saveSessionSettings(ctx context.Context) error {
 	if app.settings == nil || app.sessionID == "" {
 		return nil
 	}
+
 	encoded, err := json.Marshal(app.currentSessionSettings())
 	if err != nil {
-		return err
+		return terminalError(err, "encode session settings")
 	}
 
-	return app.settings.Put(ctx, &database.DocumentEntity{
+	err = app.settings.Put(ctx, &database.DocumentEntity{
 		UpdatedAt: time.Now().UTC(),
 		Namespace: sessionSettingsNamespace,
 		Key:       app.sessionID,
 		ValueJSON: string(encoded),
 	})
+
+	return terminalError(err, "save session settings")
 }
 
 func (app *App) persistSessionSettings() {
@@ -136,6 +143,7 @@ func (app *App) scopedEnabledValues() []string {
 			values = append(values, value)
 		}
 	}
+
 	sort.Strings(values)
 
 	return values
@@ -146,19 +154,24 @@ func (app *App) applySessionSettings(settings *sessionSettingsDocument) {
 		if settings.Provider != "" {
 			app.cfg.Assistant.Provider = settings.Provider
 		}
+
 		if settings.Model != "" {
 			app.cfg.Assistant.Model = settings.Model
 		}
+
 		if settings.ThinkingLevel != "" {
 			app.cfg.Assistant.ThinkingLevel = settings.ThinkingLevel
 		}
 	}
+
 	if settings.Theme != "" {
 		app.theme = themeByName(settings.Theme)
 	}
+
 	app.hideThinking = settings.HideThinking
 	app.toolsExpanded = settings.ToolsExpanded
 	app.scopedOrder = append([]string{}, settings.ScopedOrder...)
+
 	app.scopedEnabled = map[string]bool{}
 	for _, value := range settings.ScopedEnabled {
 		app.scopedEnabled[value] = true
@@ -170,6 +183,7 @@ func (app *App) setModelSelection(provider, modelID string) {
 		app.cfg.Assistant.Provider = provider
 		app.cfg.Assistant.Model = modelID
 	}
+
 	app.persistSessionSettings()
 }
 
@@ -177,5 +191,6 @@ func (app *App) setThinkingLevelValue(level string) {
 	if app.cfg != nil {
 		app.cfg.Assistant.ThinkingLevel = level
 	}
+
 	app.persistSessionSettings()
 }

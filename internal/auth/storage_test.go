@@ -86,6 +86,7 @@ func TestStoragePersistsFileCredentials(t *testing.T) {
 
 	reloaded, err := auth.NewStorage(ctx, auth.NewFileBackend(authPath))
 	require.NoError(t, err)
+
 	apiKey, found := reloaded.APIKey("openai")
 	require.True(t, found)
 	assert.Equal(t, testStoredKey, apiKey)
@@ -112,6 +113,7 @@ func TestStoragePersistsMemoryCredentials(t *testing.T) {
 
 	reloaded, err := auth.NewStorage(ctx, backend)
 	require.NoError(t, err)
+
 	storedCredential, found := reloaded.Get("openai")
 	require.True(t, found)
 	assert.Equal(t, credential, storedCredential)
@@ -205,6 +207,7 @@ func TestStorageFallbackResolverDoesNotRunUnderLock(t *testing.T) {
 
 	storage.SetFallbackResolver(func(provider string) (string, bool) {
 		storage.SetRuntimeAPIKey(provider, "runtime-from-resolver")
+
 		return "fallback-" + provider, true
 	})
 
@@ -333,6 +336,7 @@ func (backend *failingBackend) WithLock(
 	if err != nil {
 		return err
 	}
+
 	if result.Write {
 		return backend.err
 	}
@@ -347,5 +351,6 @@ func (backend *invalidJSONBackend) WithLock(
 	callback func(current []byte) (auth.LockResult, error),
 ) error {
 	_, err := callback([]byte("{"))
+
 	return err
 }

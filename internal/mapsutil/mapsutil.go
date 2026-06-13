@@ -3,17 +3,17 @@ package mapsutil
 
 import "maps"
 
-// CloneOrEmpty returns a copy of values, or an initialized empty map for nil input.
-func CloneOrEmpty[M ~map[K]V, K comparable, V any](values M) M {
+// CloneOrEmpty returns a copy of string values, or an initialized empty map for nil input.
+func CloneOrEmpty[V any](values map[string]V) map[string]V {
 	if values == nil {
-		return M{}
+		return map[string]V{}
 	}
 
 	return maps.Clone(values)
 }
 
-// ClonePreserveNil returns a copy of values, or nil for nil input.
-func ClonePreserveNil[M ~map[K]V, K comparable, V any](values M) M {
+// ClonePreserveNil returns a copy of string values, or nil for nil input.
+func ClonePreserveNil[V any](values map[string]V) map[string]V {
 	if values == nil {
 		return nil
 	}
@@ -21,8 +21,8 @@ func ClonePreserveNil[M ~map[K]V, K comparable, V any](values M) M {
 	return maps.Clone(values)
 }
 
-// CloneOrNil returns a copy of values, or nil for nil or empty input.
-func CloneOrNil[M ~map[K]V, K comparable, V any](values M) M {
+// CloneOrNil returns a copy of string values, or nil for nil or empty input.
+func CloneOrNil[V any](values map[string]V) map[string]V {
 	if len(values) == 0 {
 		return nil
 	}

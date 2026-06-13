@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/samber/mo"
 	"github.com/spf13/viper"
@@ -43,6 +42,7 @@ func LoadResolved(path string) (LoadedConfig, error) {
 	} else {
 		viperInstance.SetConfigName("config")
 		viperInstance.SetConfigType("yaml")
+
 		for _, configPath := range defaultConfigPaths() {
 			viperInstance.AddConfigPath(configPath)
 		}
@@ -86,27 +86,26 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("database.apply_migrations", true)
 	viperInstance.SetDefault("database.max_open_conns", 1)
 	viperInstance.SetDefault("database.max_idle_conns", 1)
-	viperInstance.SetDefault("database.conn_max_lifetime", 30*time.Minute)
-	viperInstance.SetDefault("database.busy_timeout", 15*time.Second)
+	viperInstance.SetDefault("database.conn_max_lifetime", defaultDatabaseConnMaxLifetime)
+	viperInstance.SetDefault("database.busy_timeout", defaultDatabaseBusyTimeout)
 	viperInstance.SetDefault("extensions.enabled", true)
 	viperInstance.SetDefault("extensions.use", []string{defaultLocalExtensionSource})
 	viperInstance.SetDefault("assistant.provider", "openai-codex")
 	viperInstance.SetDefault("assistant.model", "gpt-5.5")
 	viperInstance.SetDefault("assistant.thinking_level", "off")
 	viperInstance.SetDefault("assistant.retry.enabled", true)
-	viperInstance.SetDefault("assistant.retry.max_attempts", 3)
-	viperInstance.SetDefault("assistant.retry.base_delay", 2*time.Second)
-	viperInstance.SetDefault("assistant.retry.max_delay", 30*time.Second)
+	viperInstance.SetDefault("assistant.retry.max_attempts", defaultRetryMaxAttempts)
+	viperInstance.SetDefault("assistant.retry.base_delay", defaultRetryBaseDelay)
+	viperInstance.SetDefault("assistant.retry.max_delay", defaultRetryMaxDelay)
 	viperInstance.SetDefault("context.preflight_enabled", true)
 	viperInstance.SetDefault("context.output_reserve_tokens", 0)
-	viperInstance.SetDefault("context.provider_reserve_tokens", 2048)
-	viperInstance.SetDefault("context.safety_margin_tokens", 8192)
-	viperInstance.SetDefault("context.keep_recent_tokens", 0)
+	viperInstance.SetDefault("context.provider_reserve_tokens", defaultProviderReserveTokens)
+	viperInstance.SetDefault("context.safety_margin_tokens", defaultSafetyMarginTokens)
 	viperInstance.SetDefault("models.discovery.enabled", true)
 	viperInstance.SetDefault("models.discovery.source_url", "https://models.dev/api.json")
-	viperInstance.SetDefault("models.discovery.cache_ttl", 24*time.Hour)
-	viperInstance.SetDefault("models.discovery.fetch_timeout", 10*time.Second)
+	viperInstance.SetDefault("models.discovery.cache_ttl", defaultDiscoveryCacheTTL)
+	viperInstance.SetDefault("models.discovery.fetch_timeout", defaultDiscoveryFetchTimeout)
 	viperInstance.SetDefault("cache.enabled", true)
-	viperInstance.SetDefault("cache.capacity", 512)
-	viperInstance.SetDefault("cache.ttl", 10*time.Minute)
+	viperInstance.SetDefault("cache.capacity", defaultCacheCapacity)
+	viperInstance.SetDefault("cache.ttl", defaultCacheTTL)
 }

@@ -30,6 +30,7 @@ func (app *App) openHotkeysPanel() {
 			Meta:        row.Action,
 		})
 	}
+
 	app.openPanel(panel.New(panelHotkeys, "Hotkeys", "librecode default keybindings", items, true))
 }
 
@@ -86,6 +87,7 @@ func (app *App) applySettingSelection(value string) {
 	case "tools-expanded":
 		app.setToolsExpanded(!app.toolsExpanded)
 	}
+
 	app.panel = panel.New(
 		panelSettings,
 		"Settings",
@@ -98,7 +100,9 @@ func (app *App) applySettingSelection(value string) {
 func (app *App) toggleTheme() {
 	if app.theme.name == themeNameDark {
 		app.setTheme(lightTheme())
+
 		return
 	}
+
 	app.setTheme(darkTheme())
 }

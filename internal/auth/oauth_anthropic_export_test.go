@@ -11,6 +11,7 @@ func AnthropicClientIDForTest() string {
 
 func NewAnthropicFlowURLForTest(t *testing.T) string {
 	t.Helper()
+
 	flow, err := newAnthropicFlow()
 	if err != nil {
 		t.Fatal(err)
@@ -23,23 +24,12 @@ func AnthropicLoginURLForTest() (string, error) {
 	return AnthropicLoginURL()
 }
 
-func LoginAnthropicWithCodeForTest(ctx context.Context, code string) (*Credential, error) {
-	return LoginAnthropicWithCode(ctx, code)
+func LoginAnthropicWithCodeForTest(ctx context.Context, code, tokenURL string) (*Credential, error) {
+	return loginAnthropicWithCode(ctx, code, tokenURL)
 }
 
-func RefreshAnthropicForTest(ctx context.Context, refreshToken string) (*Credential, error) {
-	return refreshAnthropic(ctx, refreshToken)
-}
-
-func SetAnthropicTokenURLForTest(t *testing.T, url string) {
-	t.Helper()
-	oauthTokenURLTestMu.Lock()
-	oldURL := anthropicTokenURL
-	anthropicTokenURL = url
-	t.Cleanup(func() {
-		anthropicTokenURL = oldURL
-		oauthTokenURLTestMu.Unlock()
-	})
+func RefreshAnthropicForTest(ctx context.Context, refreshToken, tokenURL string) (*Credential, error) {
+	return refreshAnthropicWithTokenURL(ctx, refreshToken, tokenURL)
 }
 
 func IsAnthropicOAuthAccessTokenForTest(token string) bool {

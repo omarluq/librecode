@@ -151,7 +151,6 @@ func TestLoadRejectsNegativeContextBudget(t *testing.T) {
 		OutputReserveTokens:   0,
 		ProviderReserveTokens: 0,
 		SafetyMarginTokens:    -1,
-		KeepRecentTokens:      20_000,
 		PreflightEnabled:      true,
 	}
 
@@ -183,6 +182,7 @@ func newTestRuntimeWithContextWindowAndMaxTokens(
 		testRuntimeProvider: testProviderCredential(),
 	})
 	require.NoError(t, err)
+
 	registry := model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
@@ -193,6 +193,7 @@ func newTestRuntimeWithContextWindowAndMaxTokens(
 	runtimeConfig := testConfig()
 	manager := extension.NewManager(nil)
 	t.Cleanup(manager.Shutdown)
+
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 	_, repository := newTestRuntime(t)

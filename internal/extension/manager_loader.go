@@ -17,10 +17,11 @@ import (
 func (manager *Manager) LoadPaths(ctx context.Context, paths []string) error {
 	for _, extensionPath := range paths {
 		if err := ctx.Err(); err != nil {
-			return err
+			return extensionError(err, "check extension context")
 		}
+
 		if err := manager.loadPath(ctx, extensionPath); err != nil {
-			return err
+			return extensionError(err, "check extension context")
 		}
 	}
 
@@ -30,12 +31,12 @@ func (manager *Manager) LoadPaths(ctx context.Context, paths []string) error {
 func (manager *Manager) loadPath(ctx context.Context, extensionPath string) error {
 	sources, err := discoverLuaSources(extensionPath)
 	if err != nil {
-		return err
+		return extensionError(err, "check extension context")
 	}
 
 	for _, source := range sources {
 		if err := manager.loadSource(ctx, source); err != nil {
-			return err
+			return extensionError(err, "check extension context")
 		}
 	}
 
@@ -59,18 +60,20 @@ func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) erro
 func (manager *Manager) LoadManifest(ctx context.Context, manifestPath string) error {
 	manifest, err := manager.ReadManifest(manifestPath)
 	if err != nil {
-		return err
+		return extensionError(err, "check extension context")
 	}
 
 	entry := strings.TrimSpace(manifest.Entry)
 	if entry == "" {
 		entry = "main.lua"
 	}
+
 	if filepath.IsAbs(entry) || strings.Contains(entry, "..") {
 		return fmt.Errorf("extension: invalid entry %q", manifest.Entry)
 	}
 
 	entryPath := filepath.Join(filepath.Dir(manifestPath), entry)
+
 	name := strings.TrimSpace(manifest.Name)
 	if name == "" {
 		name = extensionName(filepath.Dir(manifestPath))
@@ -88,11 +91,13 @@ func (manager *Manager) ReadManifest(manifestPath string) (Manifest, error) {
 
 	state := lua.NewState(lua.Options{SkipOpenLibs: true})
 	defer state.Close()
+
 	openExtensionLibs(state)
 
 	if err := state.DoFile(absolutePath); err != nil {
 		return Manifest{}, fmt.Errorf("extension: load manifest %s: %w", absolutePath, err)
 	}
+
 	table, ok := state.Get(-1).(*lua.LTable)
 	if !ok {
 		return Manifest{}, fmt.Errorf("extension: manifest %s must return a table", absolutePath)
@@ -114,7 +119,7 @@ func (manager *Manager) ReadManifest(manifestPath string) (Manifest, error) {
 
 func (manager *Manager) loadLuaFile(ctx context.Context, extensionPath, name, displayPath string) error {
 	if err := ctx.Err(); err != nil {
-		return err
+		return extensionError(err, "check extension context")
 	}
 
 	absolutePath, err := filepath.Abs(extensionPath)
@@ -123,6 +128,7 @@ func (manager *Manager) loadLuaFile(ctx context.Context, extensionPath, name, di
 	}
 
 	manager.addModuleRootsForPath(absolutePath)
+
 	extensionRuntime := &luaExtension{
 		activeEvent:   nil,
 		state:         lua.NewState(lua.Options{SkipOpenLibs: true}),
@@ -140,20 +146,26 @@ func (manager *Manager) loadLuaFile(ctx context.Context, extensionPath, name, di
 	manager.installAPI(extensionRuntime)
 
 	startedAt := time.Now()
+
 	if err := extensionRuntime.state.DoFile(absolutePath); err != nil {
 		manager.unregisterRuntime(extensionRuntime)
 		extensionRuntime.state.Close()
+
 		return fmt.Errorf("extension: load %s: %w", absolutePath, err)
 	}
+
 	if setupFn, ok := extensionRuntime.state.Get(-1).(*lua.LFunction); ok {
 		extensionRuntime.state.Push(setupFn)
 		extensionRuntime.state.Push(extensionRuntime.state.GetGlobal("librecode"))
+
 		if err := extensionRuntime.state.PCall(1, 0, nil); err != nil {
 			manager.unregisterRuntime(extensionRuntime)
 			extensionRuntime.state.Close()
+
 			return fmt.Errorf("extension: setup %s: %w", absolutePath, err)
 		}
 	}
+
 	recordLuaCallDuration(extensionRuntime, startedAt)
 
 	manager.lock.Lock()
@@ -209,7 +221,7 @@ func (manager *Manager) luaRegisterTool(extensionRuntime *luaExtension) lua.LGFu
 	return func(state *lua.LState) int {
 		name, description, function := luaRegistrationArgs(state)
 		definition := Tool{
-			InputSchema: luaOptionalSchema(state, 4),
+			InputSchema: luaOptionalSchema(state, luaThirdArgument),
 			Name:        name,
 			Description: description,
 			Extension:   extensionRuntime.name,
@@ -248,13 +260,14 @@ func (manager *Manager) luaLog(extensionRuntime *luaExtension) lua.LGFunction {
 }
 
 func luaRegistrationArgs(state *lua.LState) (name, description string, function *lua.LFunction) {
-	return state.CheckString(1), state.OptString(2, ""), state.CheckFunction(3)
+	return state.CheckString(1), state.OptString(luaFirstArgument, ""), state.CheckFunction(luaSecondArgument)
 }
 
 func luaOptionalSchema(state *lua.LState, index int) map[string]any {
 	if state.GetTop() < index {
 		return map[string]any{}
 	}
+
 	if table, ok := state.Get(index).(*lua.LTable); ok {
 		return luaTableToMap(table)
 	}
@@ -263,13 +276,13 @@ func luaOptionalSchema(state *lua.LState, index int) map[string]any {
 }
 
 func luaEventHandlerArgs(state *lua.LState) (priority int, function *lua.LFunction) {
-	if handler, ok := state.Get(2).(*lua.LFunction); ok {
+	if handler, ok := state.Get(luaFirstArgument).(*lua.LFunction); ok {
 		return 0, handler
 	}
 
-	options := state.CheckTable(2)
+	options := state.CheckTable(luaFirstArgument)
 
-	return int(lua.LVAsNumber(options.RawGetString("priority"))), state.CheckFunction(3)
+	return int(lua.LVAsNumber(options.RawGetString("priority"))), state.CheckFunction(luaSecondArgument)
 }
 
 func openExtensionLibs(state *lua.LState) {
@@ -296,5 +309,6 @@ func openExtensionLibs(state *lua.LState) {
 
 func extensionName(extensionPath string) string {
 	baseName := filepath.Base(extensionPath)
+
 	return strings.TrimSuffix(baseName, filepath.Ext(baseName))
 }

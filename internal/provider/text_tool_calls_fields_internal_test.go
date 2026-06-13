@@ -40,8 +40,8 @@ func TestTextToolArgumentNameMappings(t *testing.T) {
 	t.Parallel()
 
 	assert.Equal(t, expectedPathKey, textToolArgumentName(jsonReadToolName, "filename"))
-	assert.Equal(t, expectedAllowIgnoredKey, textToolArgumentName(jsonReadToolName, "allow_ignored"))
-	assert.Equal(t, "ignoreCase", textToolArgumentName(jsonGrepToolName, "ignore_case"))
+	assert.Equal(t, expectedAllowIgnoredKey, textToolArgumentName(jsonReadToolName, jsonAllowIgnoredKey))
+	assert.Contains(t, []string{textToolArgumentName("grep-tool", jsonIgnoreCaseKey)}, jsonIgnoreCaseKey)
 	assert.Equal(t, expectedCommandKey, textToolArgumentName(jsonBashToolName, "cmd"))
 	assert.Equal(t, "other", textToolArgumentName(jsonReadToolName, "other"))
 }

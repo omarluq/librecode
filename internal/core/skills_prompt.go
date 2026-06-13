@@ -25,6 +25,7 @@ func FormatSkillsForPrompt(skills []Skill) string {
 		"",
 		"<available_skills>",
 	}
+
 	for index := range visibleSkills {
 		skill := &visibleSkills[index]
 		lines = append(lines,
@@ -35,6 +36,7 @@ func FormatSkillsForPrompt(skills []Skill) string {
 			"  </skill>",
 		)
 	}
+
 	lines = append(lines, "</available_skills>")
 
 	return strings.Join(lines, "\n")
@@ -52,8 +54,10 @@ func FormatActiveSkillsForPrompt(skills []ActivatedSkill) string {
 		"",
 		"<active_skills>",
 	}
+
 	for index := range skills {
 		activation := &skills[index]
+
 		lines = append(lines,
 			"  <skill>",
 			fmt.Sprintf("    <name>%s</name>", html.EscapeString(activation.Skill.Name)),
@@ -62,6 +66,7 @@ func FormatActiveSkillsForPrompt(skills []ActivatedSkill) string {
 		if activation.Truncated {
 			lines = append(lines, "    <truncated>true</truncated>")
 		}
+
 		lines = append(lines,
 			"    <content>",
 			html.EscapeString(activation.Content),
@@ -69,6 +74,7 @@ func FormatActiveSkillsForPrompt(skills []ActivatedSkill) string {
 			"  </skill>",
 		)
 	}
+
 	lines = append(lines, "</active_skills>")
 
 	return strings.Join(lines, "\n")

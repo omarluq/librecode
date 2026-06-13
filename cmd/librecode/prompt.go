@@ -44,6 +44,7 @@ func runPrompt(cmd *cobra.Command, args []string, options promptRunOptions) erro
 	if err := validatePromptRunOptions(options); err != nil {
 		return err
 	}
+
 	message, err := promptMessage(cmd, args)
 	if err != nil {
 		return err
@@ -58,6 +59,7 @@ func validatePromptRunOptions(options promptRunOptions) error {
 	if options.Resume && options.SessionID != "" {
 		return errors.New("--resume cannot be used with --session")
 	}
+
 	if options.Resume && options.SessionName != "" {
 		return errors.New("--resume cannot be used with --name")
 	}
@@ -71,10 +73,11 @@ func runPromptWithContainer(
 	options promptRunOptions,
 	message string,
 ) error {
-	runtime := di.MustInvoke[*di.AssistantService](container).Runtime
+	runtime := container.AssistantService().Runtime
+
 	cwd, err := assistant.DefaultCWD("")
 	if err != nil {
-		return err
+		return cliError(err, "resolve working directory")
 	}
 
 	response, err := runtime.Prompt(cmd.Context(), &assistant.PromptRequest{
@@ -89,7 +92,7 @@ func runPromptWithContainer(
 		ResumeLatest:  options.Resume,
 	})
 	if err != nil {
-		return err
+		return cliError(err, "run prompt")
 	}
 
 	if _, err := fmt.Fprintln(cmd.OutOrStdout(), response.Text); err != nil {
@@ -109,6 +112,7 @@ func promptMessage(cmd *cobra.Command, args []string) (string, error) {
 	if err != nil {
 		return "", oops.Wrapf(err, "read stdin")
 	}
+
 	message = strings.TrimSpace(string(stdin))
 	if message == "" {
 		return "", errors.New("prompt message is required")

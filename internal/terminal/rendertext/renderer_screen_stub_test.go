@@ -48,7 +48,6 @@ func (screen *recordingScreen) Resume() error                                   
 func (screen *recordingScreen) Beep() error                                          { return nil }
 func (screen *recordingScreen) SetSize(int, int)                                     {}
 func (screen *recordingScreen) LockRegion(int, int, int, int, bool)                  {}
-func (screen *recordingScreen) Tty() (tcell.Tty, bool)                               { return nil, false }
 func (screen *recordingScreen) SetTitle(string)                                      {}
 func (screen *recordingScreen) SetClipboard([]byte)                                  {}
 func (screen *recordingScreen) GetClipboard()                                        {}

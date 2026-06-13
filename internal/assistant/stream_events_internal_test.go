@@ -18,6 +18,7 @@ func TestEmitStreamEventCallsHandler(t *testing.T) {
 	t.Parallel()
 
 	var got StreamEvent
+
 	emitStreamEvent(func(event StreamEvent) { got = event }, StreamEvent{
 		ToolEvent: nil,
 		Usage:     nil,

@@ -31,7 +31,9 @@ func (cache *ResponseCache) Get(key string) (value string, found bool, err error
 		return "", false, nil
 	}
 
-	return cache.cache.Get(key)
+	value, found, err = cache.cache.Get(key)
+
+	return value, found, assistantError(err, "read response cache")
 }
 
 // Set stores a response when caching is enabled.

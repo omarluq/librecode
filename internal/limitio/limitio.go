@@ -14,8 +14,9 @@ func ReadAll(reader io.Reader, limit int64, label string) ([]byte, error) {
 
 	content, err := io.ReadAll(io.LimitReader(reader, limit+1))
 	if err != nil {
-		return nil, err
+		return nil, limitError(err, "read limited input")
 	}
+
 	if int64(len(content)) > limit {
 		return nil, fmt.Errorf("%s exceeds limit of %d bytes", label, limit)
 	}

@@ -10,15 +10,17 @@ import (
 
 const gitignoreFileName = ".gitignore"
 
-var defaultReadIgnorePatterns = []string{
-	".git/",
-	"node_modules/",
-	".env",
-	".gocache/",
-	".gomodcache/",
-	".tmp/",
-	"bin/",
-	"/skills/",
+func defaultReadIgnorePatterns() []string {
+	return []string{
+		".git/",
+		"node_modules/",
+		".env",
+		".gocache/",
+		".gomodcache/",
+		".tmp/",
+		"bin/",
+		"/skills/",
+	}
 }
 
 type ignoreRule struct {
@@ -34,14 +36,17 @@ func ignoredReadPath(absolutePath, cwd string) (ignored bool, reason string) {
 	if err != nil {
 		return false, ""
 	}
+
 	targetPath, err := filepath.Abs(absolutePath)
 	if err != nil {
 		return false, ""
 	}
+
 	relativePath, err := filepath.Rel(workspaceRoot, targetPath)
 	if err != nil || pathEscapesRoot(relativePath) {
 		return false, ""
 	}
+
 	relativePath = filepath.ToSlash(relativePath)
 	if relativePath == "." || relativePath == "" {
 		return false, ""
@@ -49,10 +54,12 @@ func ignoredReadPath(absolutePath, cwd string) (ignored bool, reason string) {
 
 	ignored = false
 	reason = ""
+
 	for _, rule := range readIgnoreRules(workspaceRoot) {
 		if !rule.matches(relativePath) {
 			continue
 		}
+
 		ignored = !rule.negated
 		reason = rule.source
 	}
@@ -65,12 +72,15 @@ func workspaceRoot(cwd string) (string, error) {
 	if root == "" {
 		root = "."
 	}
+
 	resolvedRoot, err := ResolveToCWD(root, "")
 	if err != nil {
 		return "", err
 	}
 
-	return filepath.Abs(resolvedRoot)
+	absolute, err := filepath.Abs(resolvedRoot)
+
+	return absolute, toolWrap(err, "resolve ignore root")
 }
 
 func pathEscapesRoot(relativePath string) bool {
@@ -78,8 +88,9 @@ func pathEscapesRoot(relativePath string) bool {
 }
 
 func readIgnoreRules(workspaceRoot string) []ignoreRule {
-	patterns := append([]string{}, defaultReadIgnorePatterns...)
+	patterns := defaultReadIgnorePatterns()
 	patterns = append(patterns, workspaceGitignorePatterns(workspaceRoot)...)
+
 	rules := make([]ignoreRule, 0, len(patterns))
 	for _, pattern := range patterns {
 		rule, ok := parseIgnoreRule(pattern)
@@ -105,18 +116,22 @@ func parseIgnoreRule(line string) (ignoreRule, bool) {
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 		return emptyIgnoreRule(), false
 	}
+
 	negated := false
 	if strings.HasPrefix(trimmed, "!") {
 		negated = true
 		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "!"))
 	}
+
 	if trimmed == "" {
 		return emptyIgnoreRule(), false
 	}
+
 	directoryOnly := strings.HasSuffix(trimmed, "/")
 	trimmed = strings.TrimSuffix(trimmed, "/")
 	anchored := strings.HasPrefix(trimmed, "/")
 	trimmed = strings.TrimPrefix(trimmed, "/")
+
 	trimmed = path.Clean(filepath.ToSlash(trimmed))
 	if trimmed == "." || trimmed == "" {
 		return emptyIgnoreRule(), false
@@ -139,9 +154,11 @@ func (rule ignoreRule) matches(relativePath string) bool {
 	if rule.directoryOnly {
 		return rule.matchesDirectory(relativePath)
 	}
+
 	if rule.anchored {
 		return matchAnchoredIgnoreGlob(rule.pattern, relativePath)
 	}
+
 	if strings.Contains(rule.pattern, "/") {
 		return matchIgnoreGlob(rule.pattern, relativePath)
 	}
@@ -155,14 +172,18 @@ func (rule ignoreRule) matchesDirectory(relativePath string) bool {
 			if matchAnchoredIgnoreGlob(rule.pattern, directory) {
 				return true
 			}
+
 			continue
 		}
+
 		if strings.Contains(rule.pattern, "/") {
 			if matchIgnoreGlob(rule.pattern, directory) {
 				return true
 			}
+
 			continue
 		}
+
 		if matchIgnoreGlob(rule.pattern, path.Base(directory)) {
 			return true
 		}
@@ -176,6 +197,7 @@ func ancestorDirectories(relativePath string) []string {
 	if len(parts) <= 1 {
 		return []string{relativePath}
 	}
+
 	directories := make([]string, 0, len(parts)-1)
 	for index := 1; index < len(parts); index++ {
 		directories = append(directories, strings.Join(parts[:index], "/"))
@@ -197,6 +219,7 @@ func matchAnchoredIgnoreGlob(pattern, value string) bool {
 	if strings.Contains(pattern, "**") {
 		return matchIgnoreGlob(pattern, value)
 	}
+
 	matched, err := path.Match(pattern, value)
 
 	return err == nil && matched

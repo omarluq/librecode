@@ -107,8 +107,7 @@ func TestRuntime_PromptEmitsOrderedSessionTurnLifecycleEvents(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			client := lifecycleTestClient(testCase.expectError)
-			runtime, _, manager := newTestRuntimeWithManager(t, client)
+			runtime, _, manager := newTestRuntimeWithManager(t, lifecycleTestClient(testCase.expectError))
 			loadRuntimeExtension(t, manager, lifecycleRecorderExtension)
 
 			_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(testRuntimeCWD, testCase.prompt, ""))
@@ -125,17 +124,19 @@ func TestRuntime_PromptEmitsOrderedSessionTurnLifecycleEvents(t *testing.T) {
 	}
 }
 
-func lifecycleTestClient(fails bool) assistant.Completer {
-	if !fails {
-		return testCompleter{}
-	}
-
-	return &retryCompleter{
-		err:               errors.New("bad request"),
+func lifecycleTestClient(fails bool) *retryCompleter {
+	client := &retryCompleter{
+		err:               nil,
 		response:          "unused",
 		attempts:          0,
-		failuresRemaining: 1,
+		failuresRemaining: 0,
 	}
+	if fails {
+		client.err = errors.New("bad request")
+		client.failuresRemaining = 1
+	}
+
+	return client
 }
 
 func TestRuntime_PromptLifecyclePublishesReactiveEventStream(t *testing.T) {
@@ -143,6 +144,7 @@ func TestRuntime_PromptLifecyclePublishesReactiveEventStream(t *testing.T) {
 
 	runtime, _, _ := newTestRuntimeWithManager(t, testCompleter{})
 	events := []string{}
+
 	subscription := runtimeEventStream(t, runtime).Channel("turn_start").Subscribe(ro.NewObserver(
 		func(envelope event.Envelope) {
 			events = append(events, envelope.Channel)
@@ -266,6 +268,7 @@ func (client staticCompleter) Complete(
 	if request.OnProviderObserve != nil {
 		request.OnProviderObserve(ctx, request, request.ProviderAttempt)
 	}
+
 	if client.err != nil {
 		return nil, client.err
 	}

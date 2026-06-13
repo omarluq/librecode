@@ -62,6 +62,7 @@ func TestWriteToolAllowsIntentionalEmptyContent(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Contains(t, result.Text(), "Successfully wrote 0 bytes")
+
 	outputPath := filepath.Join(cwd, "nested", writeTestEmptyPath)
 	written, err := os.ReadFile(filepath.Clean(outputPath))
 	require.NoError(t, err)

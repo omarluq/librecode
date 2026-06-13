@@ -51,6 +51,7 @@ func errorMessage(value any) string {
 		if message, ok := typed["message"].(string); ok {
 			return message
 		}
+
 		if nested, ok := typed["error"]; ok {
 			return errorMessage(nested)
 		}

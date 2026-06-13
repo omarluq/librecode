@@ -12,6 +12,7 @@ func composerBufferFromExtension(buffer *extension.BufferState) input.Buffer {
 	if buffer == nil {
 		return nextBuffer
 	}
+
 	nextBuffer.Metadata = mapsutil.CloneOrEmpty(buffer.Metadata)
 	nextBuffer.Text = buffer.Text
 	nextBuffer.Chars = input.StringChars(buffer.Text)

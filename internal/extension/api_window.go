@@ -38,7 +38,8 @@ func (manager *Manager) luaWindowList(extensionRuntime *luaExtension) lua.LGFunc
 func (manager *Manager) luaWindowCreate(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		value := state.Get(2)
+		value := state.Get(luaFirstArgument)
+
 		window := WindowState{
 			Metadata:  map[string]any{},
 			Name:      name,
@@ -56,6 +57,7 @@ func (manager *Manager) luaWindowCreate(extensionRuntime *luaExtension) lua.LGFu
 		if value != lua.LNil {
 			window = luaWindowState(name, value)
 		}
+
 		checkActiveEvent(state, extensionRuntime).setWindow(name, &window)
 		state.Push(mapToLuaTable(state, windowForLua(&window)))
 
@@ -75,11 +77,14 @@ func (manager *Manager) luaWindowDelete(extensionRuntime *luaExtension) lua.LGFu
 func (manager *Manager) luaWindowGet(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
+
 		window, ok := checkActiveEvent(state, extensionRuntime).window(name)
 		if !ok {
 			state.Push(lua.LNil)
+
 			return 1
 		}
+
 		state.Push(mapToLuaTable(state, windowForLua(&window)))
 
 		return 1
@@ -89,7 +94,7 @@ func (manager *Manager) luaWindowGet(extensionRuntime *luaExtension) lua.LGFunct
 func (manager *Manager) luaWindowSet(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		window := luaWindowState(name, state.CheckAny(2))
+		window := luaWindowState(name, state.CheckAny(luaFirstArgument))
 		checkActiveEvent(state, extensionRuntime).setWindow(name, &window)
 
 		return 0
@@ -102,21 +107,27 @@ func (manager *Manager) luaWindowFind(extensionRuntime *luaExtension) lua.LGFunc
 		name := luaTableString(opts, "name", "")
 		role := luaTableString(opts, "role", "")
 		buffer := luaTableString(opts, "buffer", "")
+
 		windows := checkActiveEvent(state, extensionRuntime).windows
 		for windowName := range windows {
 			window := windows[windowName]
 			if name != "" && windowName != name {
 				continue
 			}
+
 			if role != "" && window.Role != role {
 				continue
 			}
+
 			if buffer != "" && window.Buffer != buffer {
 				continue
 			}
+
 			state.Push(lua.LString(windowName))
+
 			return 1
 		}
+
 		state.Push(lua.LNil)
 
 		return 1
@@ -126,11 +137,14 @@ func (manager *Manager) luaWindowFind(extensionRuntime *luaExtension) lua.LGFunc
 func (manager *Manager) luaWindowGetBuffer(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
+
 		window, ok := checkActiveEvent(state, extensionRuntime).window(name)
 		if !ok {
 			state.Push(lua.LNil)
+
 			return 1
 		}
+
 		state.Push(lua.LString(window.Buffer))
 
 		return 1
@@ -140,7 +154,7 @@ func (manager *Manager) luaWindowGetBuffer(extensionRuntime *luaExtension) lua.L
 func (manager *Manager) luaWindowSetBuffer(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		bufferName := state.CheckString(2)
+		bufferName := state.CheckString(luaFirstArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		window := hostEventWindow(hostEvent, name)
 		window.Buffer = bufferName
@@ -153,7 +167,7 @@ func (manager *Manager) luaWindowSetBuffer(extensionRuntime *luaExtension) lua.L
 func (manager *Manager) luaWindowSetRenderer(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		renderer := state.CheckString(2)
+		renderer := state.CheckString(luaFirstArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
 		window := hostEventWindow(hostEvent, name)
 		window.Renderer = renderer
@@ -166,13 +180,16 @@ func (manager *Manager) luaWindowSetRenderer(extensionRuntime *luaExtension) lua
 func (manager *Manager) luaWindowGetVar(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		key := state.CheckString(2)
+		key := state.CheckString(luaFirstArgument)
+
 		window, ok := checkActiveEvent(state, extensionRuntime).window(name)
 		if !ok {
 			state.Push(lua.LNil)
+
 			return 1
 		}
-		state.Push(goValueToLua(state, window.Metadata[key]))
+
+		newLuaValue(state, window.Metadata[key]).Push(state)
 
 		return 1
 	}
@@ -181,13 +198,15 @@ func (manager *Manager) luaWindowGetVar(extensionRuntime *luaExtension) lua.LGFu
 func (manager *Manager) luaWindowSetVar(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name := state.CheckString(1)
-		key := state.CheckString(2)
-		value := state.CheckAny(3)
+		key := state.CheckString(luaFirstArgument)
+		value := state.CheckAny(luaSecondArgument)
 		hostEvent := checkActiveEvent(state, extensionRuntime)
+
 		window := hostEventWindow(hostEvent, name)
 		if window.Metadata == nil {
 			window.Metadata = map[string]any{}
 		}
+
 		window.Metadata[key] = luaValueToGo(value)
 		hostEvent.setWindow(name, &window)
 

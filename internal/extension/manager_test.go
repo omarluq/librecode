@@ -2,6 +2,7 @@ package extension_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -65,6 +66,7 @@ func testComposerWindow() extension.WindowState {
 
 func testTerminalEventWithComposerWindow(text, key string) extension.TerminalEvent {
 	window := testComposerWindow()
+
 	return extension.TerminalEvent{
 		Buffers: map[string]extension.BufferState{
 			testBufferComposer:   testTextBuffer(testBufferComposer, text),
@@ -141,6 +143,7 @@ func TestManager_LoadsLuaCommandsToolsAndKeymaps(t *testing.T) {
 	t.Parallel()
 
 	const helloExtension = "hello"
+
 	extensionPath := filepath.Join(t.TempDir(), helloExtension+".lua")
 	source := `
 local lc = require("librecode")
@@ -472,6 +475,7 @@ func TestLocalLoadPaths(t *testing.T) {
 			paths, err := extension.LocalLoadPaths(testCase.sources)
 			if testCase.err != "" {
 				assert.ErrorContains(t, err, testCase.err)
+
 				return
 			}
 
@@ -525,6 +529,7 @@ func TestManager_LoadsSymlinkedDirectoryManifest(t *testing.T) {
 	extensionRoot := t.TempDir()
 	realExtension := filepath.Join(extensionRoot, "real")
 	linkedExtension := filepath.Join(extensionRoot, "linked")
+
 	require.NoError(t, os.MkdirAll(realExtension, 0o750))
 	require.NoError(t, writeTestFile(
 		filepath.Join(realExtension, "init.lua"),
@@ -570,6 +575,7 @@ end)
 
 	_, commandErr := manager.ExecuteCommand(ctx, "touch", "")
 	require.ErrorIs(t, commandErr, context.Canceled)
+
 	_, toolErr := manager.ExecuteTool(ctx, "touch", map[string]any{})
 	require.ErrorIs(t, toolErr, context.Canceled)
 }
@@ -695,6 +701,7 @@ end` + testCase.schemaArg + `)
 `
 			extensionPath := filepath.Join(t.TempDir(), "tool.lua")
 			require.NoError(t, writeTestFile(extensionPath, source))
+
 			manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
 			t.Cleanup(manager.Shutdown)
 
@@ -721,6 +728,7 @@ func TestManager_HasTerminalEventHandlers(t *testing.T) {
 
 	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(manager.Shutdown)
+
 	script := `
 librecode.on("startup", function() end)
 librecode.keymap.set({ focus = "composer" }, "x", function() end)
@@ -811,9 +819,16 @@ func createManagerSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping symlink test on Windows: symlinks require elevated privileges")
 	}
+
 	require.NoError(t, os.Symlink(oldname, newname))
 }
 
+const extensionTestFileMode = 0o600
+
 func writeTestFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0o600)
+	if err := os.WriteFile(path, []byte(content), extensionTestFileMode); err != nil {
+		return fmt.Errorf("write extension test file: %w", err)
+	}
+
+	return nil
 }

@@ -34,6 +34,7 @@ func TestQueueFollowUpText(t *testing.T) {
 			if got, want := app.statusMessage, "ready"; got != want {
 				t.Fatalf("statusMessage = %q, want %q", got, want)
 			}
+
 			if got := app.queuedMessages; !slices.Equal(got, testCase.want) {
 				t.Fatalf("queuedMessages = %v, want %v", got, testCase.want)
 			}
@@ -50,6 +51,7 @@ func TestQueueFollowUpRequiresText(t *testing.T) {
 	if got, want := app.statusMessage, "no follow-up text to queue"; got != want {
 		t.Fatalf("statusMessage = %q, want %q", got, want)
 	}
+
 	if len(app.queuedMessages) != 0 {
 		t.Fatalf("queuedMessages length = %d, want 0", len(app.queuedMessages))
 	}
@@ -66,9 +68,11 @@ func TestQueueFollowUpRecordsAndClearsComposer(t *testing.T) {
 	if got, want := app.composerBuffer.TextValue(), ""; got != want {
 		t.Fatalf("composer text = %q, want empty", got)
 	}
+
 	if got, want := app.queuedMessages, []string{"follow me"}; !slices.Equal(got, want) {
 		t.Fatalf("queuedMessages = %v, want %v", got, want)
 	}
+
 	if got, want := app.promptHistory, []string{"follow me"}; !slices.Equal(got, want) {
 		t.Fatalf("promptHistory = %v, want %v", got, want)
 	}
@@ -86,9 +90,11 @@ func TestDequeueFollowUpRestoresLastMessage(t *testing.T) {
 	if got, want := app.composerBuffer.TextValue(), "second"; got != want {
 		t.Fatalf("composer text = %q, want %q", got, want)
 	}
+
 	if got, want := app.queuedMessages, []string{"first"}; !slices.Equal(got, want) {
 		t.Fatalf("queuedMessages = %v, want %v", got, want)
 	}
+
 	if got, want := app.statusMessage, "restored queued message"; got != want {
 		t.Fatalf("statusMessage = %q, want %q", got, want)
 	}
@@ -172,13 +178,16 @@ func TestProcessQueuedPrompt(t *testing.T) {
 			t.Parallel()
 
 			client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
+
 			app := newPromptSendTestApp(t, client)
 			if testCase.name == sendFirstQueuedPrompt {
 				app.screen = newClipboardScreen()
 			}
+
 			testCase.setup(app)
 
 			app.processQueuedPrompt(context.Background())
+
 			if testCase.name == sendFirstQueuedPrompt {
 				_ = readPromptAsyncEvent(t, app)
 			}
@@ -186,6 +195,7 @@ func TestProcessQueuedPrompt(t *testing.T) {
 			if !slices.Equal(app.queuedMessages, testCase.wantQueued) {
 				t.Fatalf("queuedMessages = %v, want %v", app.queuedMessages, testCase.wantQueued)
 			}
+
 			if app.working != testCase.wantWorking {
 				t.Fatalf("working = %v, want %v", app.working, testCase.wantWorking)
 			}

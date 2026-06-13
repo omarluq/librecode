@@ -94,9 +94,11 @@ func (state *State) ApplyWindow(name string, window *extension.WindowState) {
 	if window == nil {
 		return
 	}
+
 	if window.Name == "" {
 		window.Name = name
 	}
+
 	state.Windows[name] = *window
 	state.ensureLayoutWindow(name, window)
 }
@@ -106,6 +108,7 @@ func (state *State) ApplyLayout(layout *extension.LayoutState) {
 	if layout == nil {
 		return
 	}
+
 	cloned := extension.LayoutState{
 		Windows: map[string]extension.WindowState{},
 		Width:   layout.Width,
@@ -116,11 +119,14 @@ func (state *State) ApplyLayout(layout *extension.LayoutState) {
 		if window.Name == "" {
 			window.Name = name
 		}
+
 		if window.Metadata == nil {
 			window.Metadata = map[string]any{}
 		}
+
 		cloned.Windows[name] = window
 	}
+
 	state.Layout = &cloned
 	state.Windows = map[string]extension.WindowState{}
 	maps.Copy(state.Windows, cloned.Windows)
@@ -129,10 +135,13 @@ func (state *State) ApplyLayout(layout *extension.LayoutState) {
 // DeleteWindow removes a runtime window, its overrides, and any cursor targeting it.
 func (state *State) DeleteWindow(name string) {
 	delete(state.Windows, name)
+
 	if state.Layout != nil {
 		delete(state.Layout.Windows, name)
 	}
+
 	delete(state.Overrides, name)
+
 	if state.Cursor != nil && state.Cursor.Window == name {
 		state.Cursor = nil
 	}
@@ -143,9 +152,11 @@ func (state *State) ResetWindowOverride(name string) {
 	if name == "" {
 		return
 	}
+
 	override := state.Overrides[name]
 	override.Reset = true
 	override.DrawOps = nil
+
 	state.Overrides[name] = override
 	if state.Cursor != nil && state.Cursor.Window == name {
 		state.Cursor = nil
@@ -157,6 +168,7 @@ func (state *State) AppendDrawOp(drawOp *extension.UIDrawOp) {
 	if drawOp == nil || drawOp.Window == "" {
 		return
 	}
+
 	override := state.Overrides[drawOp.Window]
 	override.DrawOps = append(override.DrawOps, *drawOp)
 	state.Overrides[drawOp.Window] = override
@@ -167,6 +179,7 @@ func (state *State) SetCursor(cursor *extension.UICursor) {
 	if cursor == nil {
 		return
 	}
+
 	cloned := *cursor
 	state.Cursor = &cloned
 }
@@ -175,9 +188,11 @@ func (state *State) ensureLayoutWindow(name string, window *extension.WindowStat
 	if state.Layout == nil || window == nil {
 		return
 	}
+
 	if state.Layout.Windows == nil {
 		state.Layout.Windows = map[string]extension.WindowState{}
 	}
+
 	state.Layout.Windows[name] = *window
 }
 
@@ -194,16 +209,20 @@ func CloneBuffer(name string, buffer *extension.BufferState) extension.BufferSta
 			Cursor:   0,
 		}
 	}
+
 	cloned := *buffer
 	if cloned.Name == "" {
 		cloned.Name = name
 	}
+
 	cloned.Metadata = mapsutil.CloneOrEmpty(cloned.Metadata)
 	cloned.Blocks = slices.Clone(cloned.Blocks)
+
 	cloned.Chars = slices.Clone(cloned.Chars)
 	if len(cloned.Chars) == 0 && cloned.Text != "" {
 		cloned.Chars = input.StringChars(cloned.Text)
 	}
+
 	cloned.Cursor = input.ClampCursor(cloned.Cursor, len([]rune(cloned.Text)))
 
 	return cloned

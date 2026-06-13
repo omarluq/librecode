@@ -29,6 +29,7 @@ func (runtime *Runtime) respond(
 ) {
 	if strings.HasPrefix(prompt, slashPrefix) {
 		slashResponse, slashToolEvents, slashErr := runtime.respondToSlashCommand(ctx, cwd, prompt, onEvent)
+
 		return &responseBundle{
 			ParentEntryID: nil,
 			Text:          slashResponse,
@@ -40,10 +41,12 @@ func (runtime *Runtime) respond(
 	}
 
 	cacheKey := runtime.cacheKey(sessionID, prompt)
+
 	cachedResponse, found, err := runtime.cache.Get(cacheKey)
 	if err != nil {
 		return nil, false, oops.In("assistant").Code("cache_get").Wrapf(err, "read response cache")
 	}
+
 	if found {
 		return &responseBundle{
 			ParentEntryID: nil,
@@ -59,6 +62,7 @@ func (runtime *Runtime) respond(
 	if err != nil {
 		return nil, false, err
 	}
+
 	runtime.cache.Set(cacheKey, bundle.Text)
 
 	return bundle, false, nil
@@ -76,10 +80,12 @@ func (runtime *Runtime) modelResponse(
 	if runtime.models == nil {
 		return nil, oops.In("assistant").Code("models_unavailable").Errorf("model registry is not configured")
 	}
+
 	selectedModel, err := runtime.selectedModel()
 	if err != nil {
 		return nil, err
 	}
+
 	auth := runtime.models.RequestAuthContext(ctx, selectedModel.Provider)
 	if !auth.OK {
 		return nil, oops.In("assistant").
@@ -87,6 +93,7 @@ func (runtime *Runtime) modelResponse(
 			With("provider", selectedModel.Provider).
 			Wrapf(fmt.Errorf("%s", auth.Error), "resolve model auth")
 	}
+
 	preparation := &completionRequestPreparationInput{
 		sessionID:     sessionID,
 		cwd:           cwd,
@@ -96,10 +103,12 @@ func (runtime *Runtime) modelResponse(
 		auth:          &auth,
 		onEvent:       onEvent,
 	}
+
 	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(ctx, preparation)
 	if err != nil {
 		return nil, err
 	}
+
 	build, compactionEntry, result, err := runtime.completeWithProviderOverflowRecovery(
 		ctx,
 		&providerOverflowRecoveryInput{
@@ -112,6 +121,7 @@ func (runtime *Runtime) modelResponse(
 	if err != nil {
 		return nil, err
 	}
+
 	usage := contextwindow.MergeUsage(build.Context.Usage, result.Usage)
 	runtime.emitUsage(ctx, onEvent, usage)
 
@@ -170,21 +180,28 @@ func (runtime *Runtime) completeWithRetry(
 	retry := retryConfig(runtime.cfg)
 	if !retry.Enabled || retry.MaxAttempts <= 1 {
 		request.ProviderAttempt = 1
+
 		result, err := runtime.client.Complete(ctx, request)
 		if err != nil {
 			runtime.emitProviderError(ctx, request, 1, err)
-			return nil, err
+
+			return nil, assistantError(err, "complete model request")
 		}
+
 		runtime.emitProviderResponse(ctx, request, 1, result)
+
 		return result, nil
 	}
 
 	var lastErr error
+
 	for attempt := 1; attempt <= retry.MaxAttempts; attempt++ {
 		request.ProviderAttempt = attempt
+
 		result, err := runtime.client.Complete(ctx, request)
 		if err == nil {
 			runtime.emitProviderResponse(ctx, request, attempt, result)
+
 			if attempt > 1 {
 				runtime.emitRetryEvent(ctx, onRetry, RetryEvent{
 					Kind:        RetryEventEnd,
@@ -194,13 +211,17 @@ func (runtime *Runtime) completeWithRetry(
 					Delay:       0,
 				})
 			}
+
 			return result, nil
 		}
+
 		lastErr = err
 		runtime.emitProviderError(ctx, request, attempt, err)
+
 		if attempt == retry.MaxAttempts || !ShouldRetryModelError(err) {
-			return nil, err
+			return nil, assistantError(err, "complete model request")
 		}
+
 		delay := retryDelay(attempt, retry)
 		runtime.emitRetryEvent(ctx, onRetry, RetryEvent{
 			Kind:        RetryEventStart,
@@ -209,6 +230,7 @@ func (runtime *Runtime) completeWithRetry(
 			Delay:       delay,
 			Error:       err.Error(),
 		})
+
 		if waitErr := waitForRetry(ctx, delay); waitErr != nil {
 			return nil, oops.In("assistant").Code("retry_canceled").Wrapf(waitErr, "wait before retry")
 		}
@@ -221,10 +243,13 @@ func (runtime *Runtime) emitRetryEvent(ctx context.Context, handler RetryEventHa
 	if handler != nil {
 		handler(retryEvent)
 	}
+
 	runtime.emit(ctx, string(retryEvent.Kind), retryEvent)
+
 	if runtime.extensions == nil {
 		return
 	}
+
 	if err := runtime.extensions.Emit(ctx, string(retryEvent.Kind), map[string]any{
 		"attempt":      retryEvent.Attempt,
 		"max_attempts": retryEvent.MaxAttempts,
@@ -238,6 +263,7 @@ func (runtime *Runtime) emitRetryEvent(ctx context.Context, handler RetryEventHa
 func (runtime *Runtime) selectedModel() (model.Model, error) {
 	provider := runtime.cfg.Assistant.Provider
 	modelID := runtime.cfg.Assistant.Model
+
 	models := runtime.models.All()
 	for index := range models {
 		candidate := &models[index]
@@ -245,6 +271,7 @@ func (runtime *Runtime) selectedModel() (model.Model, error) {
 			return *candidate, nil
 		}
 	}
+
 	if provider == "" || modelID == "" {
 		return model.Model{}, oops.In("assistant").Code("model_missing").Errorf("select a model with /model or /login")
 	}

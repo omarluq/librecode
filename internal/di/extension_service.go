@@ -30,12 +30,14 @@ func NewExtensionService(injector do.Injector) (*ExtensionService, error) {
 		if err != nil {
 			return nil, oops.In("extension").Code("extension_sources").Wrapf(err, "resolve extension sources")
 		}
+
 		state.Configured = resolvedSources
 
 		paths := extensionLoadPaths(resolvedSources)
 		if err := manager.LoadPaths(context.Background(), paths); err != nil {
 			return nil, oops.In("extension").Code("load_extensions").Wrapf(err, "load lua extensions")
 		}
+
 		state.Loaded = manager.Extensions()
 	}
 
@@ -53,16 +55,21 @@ func resolveExtensionSources(
 ) ([]extension.ResolvedSource, error) {
 	home, err := core.LibrecodeHome()
 	if err != nil {
-		return nil, err
+		return nil, serviceError(err, "resolve librecode home")
 	}
+
 	lockPath := extensionLockPath(configPath, home)
+
 	lockFile, err := extension.ReadLockFile(lockPath)
 	if err != nil {
-		return nil, err
+		return nil, serviceError(err, "read extension lockfile")
 	}
+
 	installRoot := filepath.Join(home, "extensions", "store")
 
-	return extension.ResolveConfiguredSources(configuredSources, lockFile, installRoot)
+	sources, err := extension.ResolveConfiguredSources(configuredSources, lockFile, installRoot)
+
+	return sources, serviceError(err, "resolve extension sources")
 }
 
 func extensionLockPath(configPath, home string) string {
@@ -76,16 +83,20 @@ func extensionLockPath(configPath, home string) string {
 func extensionLoadPaths(resolvedSources []extension.ResolvedSource) []string {
 	paths := make([]string, 0, len(resolvedSources))
 	seen := map[string]struct{}{}
+
 	for index := range resolvedSources {
 		path := resolvedSources[index].LoadPath
 		if path == "" {
 			continue
 		}
+
 		key := extensionLoadPathKey(path)
 		if _, ok := seen[key]; ok {
 			continue
 		}
+
 		seen[key] = struct{}{}
+
 		paths = append(paths, path)
 	}
 
@@ -94,10 +105,12 @@ func extensionLoadPaths(resolvedSources []extension.ResolvedSource) []string {
 
 func extensionLoadPathKey(path string) string {
 	cleanPath := filepath.Clean(path)
+
 	absolutePath, err := filepath.Abs(cleanPath)
 	if err != nil {
 		return cleanPath
 	}
+
 	if realPath, err := filepath.EvalSymlinks(absolutePath); err == nil {
 		return realPath
 	}

@@ -63,7 +63,12 @@ func newASTRegistry(t *testing.T) *tool.Registry {
 func runAST(t *testing.T, registry *tool.Registry, input map[string]any) (tool.Result, error) {
 	t.Helper()
 
-	return registry.Execute(context.Background(), "ast", input)
+	result, err := registry.Execute(context.Background(), "ast", input)
+	if err != nil {
+		return result, fmt.Errorf("execute ast test tool: %w", err)
+	}
+
+	return result, nil
 }
 
 func TestASTTool_OutlineListsTopLevelDeclarations(t *testing.T) {
@@ -83,6 +88,7 @@ func TestASTTool_OutlineListsTopLevelDeclarations(t *testing.T) {
 	} {
 		assert.Contains(t, text, want, "outline should mention %q", want)
 	}
+
 	assert.Equal(t, "go", result.Details["language"])
 }
 
@@ -146,6 +152,7 @@ func TestASTTool_ModeParameterValidation(t *testing.T) {
 			registry := newASTRegistry(t)
 			_, err := runAST(t, registry, testCase.input)
 			require.Error(t, err)
+
 			if testCase.wantErr != "" {
 				assert.Contains(t, err.Error(), testCase.wantErr)
 			}
@@ -287,8 +294,8 @@ func TestASTTool_AllowIgnoredReadsIgnoredPath(t *testing.T) {
 	require.NoError(t, err)
 
 	result, err := runAST(t, registry, map[string]any{
-		astPathKey:     astIgnoredPath,
-		"allowIgnored": true,
+		astPathKey:      astIgnoredPath,
+		"allow_ignored": true,
 	})
 	require.NoError(t, err)
 	assert.Nil(t, result.Details["ignored"])
@@ -315,10 +322,12 @@ func TestASTTool_RegisteredInRegistry(t *testing.T) {
 
 	registry := tool.NewRegistry(t.TempDir())
 	definitions := registry.Definitions()
+
 	names := make([]string, 0, len(definitions))
 	for _, def := range definitions {
 		names = append(names, string(def.Name))
 	}
+
 	assert.Contains(t, names, "ast")
 }
 
@@ -354,12 +363,15 @@ func TestASTTool_QueryOutputIsExplicitlyBounded(t *testing.T) {
 	t.Parallel()
 
 	registry := tool.NewRegistry(t.TempDir())
+
 	var builder strings.Builder
 	builder.WriteString("package sample\n\n")
+
 	for index := range 260 {
 		_, err := fmt.Fprintf(&builder, "func Func%d() {}\n", index)
 		require.NoError(t, err)
 	}
+
 	_, err := registry.Execute(context.Background(), "write", map[string]any{
 		astPathKey:    astSamplePath,
 		astContentKey: builder.String(),
@@ -383,12 +395,15 @@ func TestASTTool_OutlineOutputIsBounded(t *testing.T) {
 	t.Parallel()
 
 	registry := tool.NewRegistry(t.TempDir())
+
 	var builder strings.Builder
 	builder.WriteString("package sample\n\n")
+
 	for index := range 430 {
 		_, err := fmt.Fprintf(&builder, "func Func%d() {}\n", index)
 		require.NoError(t, err)
 	}
+
 	_, err := registry.Execute(context.Background(), "write", map[string]any{
 		astPathKey:    astSamplePath,
 		astContentKey: builder.String(),

@@ -21,6 +21,7 @@ func requestToolDefinitions(request *CompletionRequest) []llm.ToolDefinition {
 	if request != nil && request.Request.DisableTools {
 		return nil
 	}
+
 	if request != nil && len(request.Request.Tools) > 0 {
 		return request.Request.Tools
 	}
@@ -29,8 +30,10 @@ func requestToolDefinitions(request *CompletionRequest) []llm.ToolDefinition {
 }
 
 func builtinToolDefinitions() []llm.ToolDefinition {
-	definitions := make([]llm.ToolDefinition, 0, len(builtinToolSchemas))
-	for name := range builtinToolSchemas {
+	schemas := builtinToolSchemas()
+
+	definitions := make([]llm.ToolDefinition, 0, len(schemas))
+	for name := range schemas {
 		definitions = append(definitions, llm.ToolDefinition{
 			Schema:      nil,
 			Name:        name,
@@ -105,6 +108,7 @@ func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
 	if argumentsJSON == "" {
 		return arguments
 	}
+
 	if err := json.Unmarshal([]byte(argumentsJSON), &arguments); err != nil {
 		return map[string]any{}
 	}
@@ -112,15 +116,17 @@ func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
 	return arguments
 }
 
-var builtinToolSchemas = map[string]func() map[string]any{
-	jsonReadToolName:  readToolSchema,
-	jsonBashToolName:  bashToolSchema,
-	jsonEditToolName:  editToolSchema,
-	jsonWriteToolName: writeToolSchema,
-	jsonGrepToolName:  grepToolSchema,
-	jsonFindToolName:  findToolSchema,
-	jsonLSToolName:    lsToolSchema,
-	jsonASTToolName:   astToolSchema,
+func builtinToolSchemas() map[string]func() map[string]any {
+	return map[string]func() map[string]any{
+		jsonReadToolName:  readToolSchema,
+		jsonBashToolName:  bashToolSchema,
+		jsonEditToolName:  editToolSchema,
+		jsonWriteToolName: writeToolSchema,
+		jsonGrepToolName:  grepToolSchema,
+		jsonFindToolName:  findToolSchema,
+		jsonLSToolName:    lsToolSchema,
+		jsonASTToolName:   astToolSchema,
+	}
 }
 
 // ToolParameterSchema returns the JSON parameter schema for a local tool definition.
@@ -128,14 +134,16 @@ func ToolParameterSchema(definition *llm.ToolDefinition) map[string]any {
 	if definition != nil && len(definition.Schema) > 0 {
 		return cloneToolSchema(definition.Schema)
 	}
+
 	if definition == nil {
 		return freeformToolSchema()
 	}
 
-	factory, ok := builtinToolSchemas[definition.Name]
+	factory, ok := builtinToolSchemas()[definition.Name]
 	if !ok {
 		return freeformToolSchema()
 	}
+
 	schema := factory()
 	schema["additionalProperties"] = false
 
@@ -216,13 +224,13 @@ func grepToolSchema() map[string]any {
 	return map[string]any{
 		jsonTypeKey: jsonObjectType,
 		jsonPropertiesKey: map[string]any{
-			jsonPatternKey: stringSchema("Regular expression or literal string to search for."),
-			jsonPathKey:    stringSchema("Optional file or directory to search under."),
-			"glob":         stringSchema("Optional glob filter such as **/*.go."),
-			jsonLimitKey:   integerSchema("Optional maximum number of matches."),
-			"context":      integerSchema("Optional number of context lines around each match."),
-			"ignoreCase":   booleanSchema("Whether to match case-insensitively."),
-			"literal":      booleanSchema("Whether pattern should be treated as literal text."),
+			jsonPatternKey:    stringSchema("Regular expression or literal string to search for."),
+			jsonPathKey:       stringSchema("Optional file or directory to search under."),
+			"glob":            stringSchema("Optional glob filter such as **/*.go."),
+			jsonLimitKey:      integerSchema("Optional maximum number of matches."),
+			"context":         integerSchema("Optional number of context lines around each match."),
+			jsonIgnoreCaseKey: booleanSchema("Whether to match case-insensitively."),
+			"literal":         booleanSchema("Whether pattern should be treated as literal text."),
 		},
 		jsonRequiredKey: []string{jsonPatternKey},
 	}
@@ -297,6 +305,7 @@ func booleanSchema(description string) map[string]any {
 
 func enumStringSchema(description string, values []string) map[string]any {
 	schema := stringSchema(description)
+
 	schema["enum"] = append([]string{}, values...)
 
 	return schema

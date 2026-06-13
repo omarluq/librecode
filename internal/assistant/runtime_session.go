@@ -17,6 +17,7 @@ func (runtime *Runtime) resolveSession(
 	if request.SessionID != "" {
 		return runtime.resolveRequestedSession(ctx, request)
 	}
+
 	if request.ResumeLatest {
 		return runtime.resolveLatestOrNewSession(ctx, request)
 	}
@@ -34,6 +35,7 @@ func (runtime *Runtime) resolveRequestedSession(
 			Code("session_selection_conflict").
 			Errorf("resume latest cannot be used with an explicit session")
 	}
+
 	loadedSession, found, err := runtime.sessions.GetSession(ctx, request.SessionID)
 	if err != nil {
 		return nil, "", oops.
@@ -42,6 +44,7 @@ func (runtime *Runtime) resolveRequestedSession(
 			With("session_id", request.SessionID).
 			Wrapf(err, "load requested session")
 	}
+
 	if !found {
 		return nil, "", oops.
 			In("assistant").
@@ -63,6 +66,7 @@ func (runtime *Runtime) resolveLatestOrNewSession(
 			Code("session_selection_conflict").
 			Errorf("resume latest cannot be used with a new session name")
 	}
+
 	latestSession, found, err := runtime.sessions.LatestSession(ctx, request.CWD)
 	if err != nil {
 		return nil, "", oops.
@@ -71,6 +75,7 @@ func (runtime *Runtime) resolveLatestOrNewSession(
 			With("cwd", request.CWD).
 			Wrapf(err, "load latest session")
 	}
+
 	if found {
 		return latestSession, extension.LifecycleSessionLoad, nil
 	}
@@ -112,6 +117,7 @@ func (runtime *Runtime) notifyPromptUserEntry(request *PromptRequest, sessionID,
 	if request.OnUserEntry == nil {
 		return
 	}
+
 	request.OnUserEntry(PromptUserEntryEvent{SessionID: sessionID, EntryID: entryID})
 }
 
@@ -122,7 +128,7 @@ func (runtime *Runtime) promptParentID(ctx context.Context, sessionID string, ex
 
 	leaf, _, err := runtime.sessions.LeafEntry(ctx, sessionID)
 	if err != nil {
-		return nil, err
+		return nil, assistantError(err, "load session leaf")
 	}
 
 	return parentIDFromEntry(leaf), nil

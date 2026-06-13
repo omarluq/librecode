@@ -8,18 +8,21 @@ import (
 	"github.com/omarluq/librecode/internal/llm"
 )
 
+const charsPerEstimatedToken = 4
+
 func estimateTokens(text string) int {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return 0
 	}
+
 	runes := utf8.RuneCountInString(trimmed)
 	if runes == 0 {
 		return 0
 	}
 
 	// Rough cross-provider estimate used until provider usage arrives.
-	return max(1, (runes+3)/4)
+	return max(1, (runes+charsPerEstimatedToken-1)/charsPerEstimatedToken)
 }
 
 func mergeUsage(estimated, reported llm.Usage) llm.Usage {
@@ -27,15 +30,19 @@ func mergeUsage(estimated, reported llm.Usage) llm.Usage {
 	if reported.ContextWindow > 0 {
 		usage.ContextWindow = reported.ContextWindow
 	}
+
 	if reported.ContextTokens > 0 {
 		usage.ContextTokens = reported.ContextTokens
 	}
+
 	if reported.InputTokens > 0 {
 		usage.InputTokens = reported.InputTokens
 	}
+
 	if reported.OutputTokens > 0 {
 		usage.OutputTokens = reported.OutputTokens
 	}
+
 	return llm.MergeUsage(usage, reported)
 }
 
@@ -44,6 +51,7 @@ func usageFromObject(value any) llm.Usage {
 	if !ok {
 		return llm.EmptyUsage()
 	}
+
 	input := usageInputTokens(object)
 	output := intFromAny(firstPresent(object, jsonOutputTokensKey, "completion_tokens"))
 
@@ -62,6 +70,7 @@ func usageInputTokens(object map[string]any) int {
 	if input > 0 {
 		return input
 	}
+
 	if total := intFromAny(object["total_tokens"]); total > 0 {
 		output := intFromAny(firstPresent(object, jsonOutputTokensKey, "completion_tokens"))
 		if output > 0 && total > output {

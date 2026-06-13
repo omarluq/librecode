@@ -15,42 +15,58 @@ func TestRecentTailTarget(t *testing.T) {
 		want  int
 	}{
 		{
-			name: "explicit override wins",
-			input: RecentTailInput{
-				ExplicitKeepRecentTokens: 12_345,
-				ContextWindow:            272_000,
-			},
-			want: 12_345,
-		},
-		{
 			name: "codex sized context keeps newest third",
 			input: RecentTailInput{
-				ExplicitKeepRecentTokens: 0,
-				ContextWindow:            272_000,
+				ContextWindow: 272_000,
+				CurrentTokens: 0,
 			},
 			want: 90_666,
 		},
 		{
+			name: "current branch tokens cap model context tail",
+			input: RecentTailInput{
+				ContextWindow: 272_000,
+				CurrentTokens: 75_000,
+			},
+			want: 25_000,
+		},
+		{
+			name: "current branch token cap rounds up",
+			input: RecentTailInput{
+				ContextWindow: 272_000,
+				CurrentTokens: 2,
+			},
+			want: 1,
+		},
+		{
 			name: "million token context keeps newest third",
 			input: RecentTailInput{
-				ExplicitKeepRecentTokens: 0,
-				ContextWindow:            1_000_000,
+				ContextWindow: 1_000_000,
+				CurrentTokens: 0,
 			},
 			want: 333_333,
 		},
 		{
 			name: "unknown context falls back to fixed tail",
 			input: RecentTailInput{
-				ExplicitKeepRecentTokens: 0,
-				ContextWindow:            0,
+				ContextWindow: 0,
+				CurrentTokens: 0,
 			},
-			want: defaultKeepRecentTokens,
+			want: defaultRecentTailTokens,
+		},
+		{
+			name: "current branch tokens cap unknown context fallback",
+			input: RecentTailInput{
+				ContextWindow: 0,
+				CurrentTokens: 15_000,
+			},
+			want: 5_000,
 		},
 		{
 			name: "tiny positive context keeps at least one token",
 			input: RecentTailInput{
-				ExplicitKeepRecentTokens: 0,
-				ContextWindow:            2,
+				ContextWindow: 2,
+				CurrentTokens: 0,
 			},
 			want: 1,
 		},

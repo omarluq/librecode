@@ -35,13 +35,16 @@ func (app *App) openLogoutPanel() {
 	items := app.logoutProviderItems()
 	if len(items) == 0 {
 		app.addSystemMessage("no stored credentials to remove")
+
 		return
 	}
+
 	app.openPanel(panel.New(panelAuthLogout, "Logout", "Select stored credential to remove", items, true))
 }
 
 func (app *App) loginProviderItems() []panel.Item {
 	providers := app.authProviderIDs()
+
 	items := make([]panel.Item, 0, len(providers))
 	for _, provider := range providers {
 		items = append(items, panel.Item{
@@ -60,6 +63,7 @@ func (app *App) logoutProviderItems() []panel.Item {
 	if app.auth != nil {
 		providers = app.auth.List()
 	}
+
 	items := make([]panel.Item, 0, len(providers))
 	for _, provider := range providers {
 		items = append(items, panel.Item{
@@ -77,6 +81,7 @@ func (app *App) authProviderIDs() []string {
 	seen := map[string]bool{}
 	providers := []string{openAICodexProviderID}
 	seen[openAICodexProviderID] = true
+
 	if app.models != nil {
 		models := app.models.All()
 		for index := range models {
@@ -95,10 +100,12 @@ func (app *App) authStatusLabel(provider string) string {
 	if app.auth == nil {
 		return "unavailable"
 	}
+
 	status := app.auth.AuthStatus(provider)
 	if status.Configured {
 		return "✓ " + string(status.Source)
 	}
+
 	if status.Source != "" {
 		return string(status.Source) + " " + status.Label
 	}
@@ -120,7 +127,7 @@ func authDescription(provider string) string {
 }
 
 func providerDisplayName(provider string) string {
-	if displayName, ok := model.ProviderDisplayNames[provider]; ok {
+	if displayName, ok := model.ProviderDisplayNames()[provider]; ok {
 		return displayName
 	}
 
@@ -131,8 +138,10 @@ func (app *App) loginCommand(ctx context.Context, args string) error {
 	fields := strings.Fields(args)
 	if len(fields) == 0 {
 		app.openLoginPanel()
+
 		return nil
 	}
+
 	provider := fields[0]
 	if len(fields) == 1 {
 		switch provider {
@@ -142,19 +151,24 @@ func (app *App) loginCommand(ctx context.Context, args string) error {
 			return app.loginOpenAICodex(ctx)
 		}
 	}
+
 	if provider == anthropicClaudeProviderID {
 		return app.completeAnthropicClaudeLogin(ctx, strings.TrimSpace(strings.TrimPrefix(args, provider)))
 	}
-	if len(fields) < 2 {
+
+	if len(fields) < minimumAuthCommandFields {
 		app.resetPromptHistoryNavigation()
 		app.composerBuffer.SetText("/login " + provider + " ")
 		app.setStatus("paste API key after provider and press Enter")
+
 		return nil
 	}
+
 	apiKey := strings.TrimSpace(strings.TrimPrefix(args, provider))
 	if apiKey == "" {
 		return errors.New("api key is required")
 	}
+
 	credential := auth.Credential{
 		OAuth:     nil,
 		Type:      auth.CredentialTypeAPIKey,
@@ -166,8 +180,9 @@ func (app *App) loginCommand(ctx context.Context, args string) error {
 		ExpiresAt: 0,
 	}
 	if err := app.auth.Set(ctx, provider, &credential); err != nil {
-		return err
+		return terminalError(err, "save api key")
 	}
+
 	app.refreshModels()
 	app.selectProviderDefault(provider)
 	app.addSystemMessage("saved API key for " + providerDisplayName(provider))
@@ -179,14 +194,18 @@ func (app *App) logoutCommand(ctx context.Context, args string) error {
 	provider := strings.TrimSpace(args)
 	if provider == "" {
 		app.openLogoutPanel()
+
 		return nil
 	}
+
 	if app.auth == nil {
 		return errors.New(authStorageUnavailableMessage)
 	}
+
 	if err := app.auth.Remove(ctx, provider); err != nil {
-		return err
+		return terminalError(err, "remove api key")
 	}
+
 	app.refreshModels()
 	app.addSystemMessage("removed credentials for " + providerDisplayName(provider))
 
@@ -197,9 +216,11 @@ func (app *App) applyAuthSelection(ctx context.Context, value string) error {
 	switch app.selectedPanelKind {
 	case panelAuthLogin:
 		app.closePanel()
+
 		return app.loginCommand(ctx, value)
 	case panelAuthLogout:
 		app.closePanel()
+
 		return app.logoutCommand(ctx, value)
 	case panelModel, panelScopedModels, panelSettings, panelHotkeys, panelChangelog, panelSessions, panelTree:
 		return nil
@@ -220,10 +241,12 @@ func (app *App) startAnthropicClaudeLogin(_ context.Context) error {
 	if app.auth == nil {
 		return errors.New(authStorageUnavailableMessage)
 	}
+
 	flowURL, err := auth.AnthropicLoginURL()
 	if err != nil {
-		return err
+		return terminalError(err, "build anthropic login url")
 	}
+
 	text := authInfoText("Claude", auth.OAuthAuthInfo{
 		URL: flowURL,
 		Instructions: "Complete login in your browser, then paste the authorization code with: /login " +
@@ -240,13 +263,16 @@ func (app *App) completeAnthropicClaudeLogin(ctx context.Context, code string) e
 	if app.auth == nil {
 		return errors.New(authStorageUnavailableMessage)
 	}
+
 	credential, err := auth.LoginAnthropicWithCode(ctx, code)
 	if err != nil {
-		return err
+		return terminalError(err, "complete anthropic login")
 	}
+
 	if err := app.auth.Set(ctx, anthropicClaudeProviderID, credential); err != nil {
-		return err
+		return terminalError(err, "complete anthropic login")
 	}
+
 	app.refreshModels()
 	app.selectProviderDefault(anthropicClaudeProviderID)
 	app.addSystemMessage("logged in to " + providerDisplayName(anthropicClaudeProviderID))
@@ -268,17 +294,20 @@ func (app *App) loginOAuthProvider(ctx context.Context, config oauthLoginConfig)
 	if app.auth == nil {
 		return errors.New(authStorageUnavailableMessage)
 	}
+
 	if _, ok, err := app.auth.APIKeyContext(ctx, config.Provider); err != nil {
-		return err
+		return terminalError(err, "save anthropic credential")
 	} else if ok {
 		app.refreshModels()
-		app.setModel(config.Provider, model.DefaultModelPerProvider[config.Provider])
+		app.setModel(config.Provider, model.DefaultModelPerProvider()[config.Provider])
 		app.addSystemMessage(config.AlreadyMessage)
+
 		return nil
 	}
 
 	app.authWorking = true
 	app.workStartedAt = time.Now()
+
 	app.workFrame = 0
 	go app.runOAuthLogin(ctx, config)
 
@@ -299,12 +328,16 @@ func (app *App) runOAuthLogin(ctx context.Context, config oauthLoginConfig) {
 	})
 	if err != nil {
 		app.postOAuthLoginError(ctx, config, err)
+
 		return
 	}
+
 	if err := app.auth.Set(ctx, config.Provider, credential); err != nil {
 		app.postOAuthLoginError(ctx, config, err)
+
 		return
 	}
+
 	app.postAsyncEvent(ctx, &asyncEvent{
 		Response:  nil,
 		ToolEvent: nil,
@@ -338,6 +371,7 @@ func authInfoText(provider string, info auth.OAuthAuthInfo) string {
 	} else {
 		lines = append(lines, "Open the URL above in your browser to continue.")
 	}
+
 	if strings.TrimSpace(info.Instructions) != "" {
 		lines = append(lines, info.Instructions)
 	}
@@ -352,29 +386,33 @@ func (app *App) refreshModels() {
 }
 
 func (app *App) selectProviderDefault(provider string) {
-	modelID := model.DefaultModelPerProvider[provider]
+	modelID := model.DefaultModelPerProvider()[provider]
 	if modelID == "" {
 		return
 	}
+
 	app.setModel(provider, modelID)
 }
 
 func (app *App) showAuthInfo() {
 	providers := app.authProviderIDs()
 	lines := make([]string, 0, len(providers)+1)
+
 	lines = append(lines, "auth status:")
 	for _, provider := range providers {
 		lines = append(lines, provider+": "+app.authStatusLabel(provider))
 	}
+
 	app.addMessage(transcript.RoleCustom, strings.Join(lines, "\n"))
 }
 
 func (app *App) reloadRuntime(ctx context.Context) error {
 	if app.auth != nil {
 		if err := app.auth.Reload(ctx); err != nil {
-			return err
+			return terminalError(err, "reload auth storage")
 		}
 	}
+
 	app.refreshModels()
 	app.addSystemMessage("reloaded auth and models")
 

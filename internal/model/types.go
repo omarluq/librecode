@@ -35,24 +35,24 @@ const (
 type Cost struct {
 	Input      float64 `json:"input"`
 	Output     float64 `json:"output"`
-	CacheRead  float64 `json:"cacheRead"`
-	CacheWrite float64 `json:"cacheWrite"`
+	CacheRead  float64 `json:"cache_read"`
+	CacheWrite float64 `json:"cache_write"`
 }
 
 // Model describes a provider model.
 type Model struct {
-	ThinkingLevelMap map[ThinkingLevel]*string `json:"thinkingLevelMap,omitempty"`
+	ThinkingLevelMap map[ThinkingLevel]*string `json:"thinking_level_map,omitempty"`
 	Headers          map[string]string         `json:"headers,omitempty"`
 	Compat           map[string]any            `json:"compat,omitempty"`
 	Provider         string                    `json:"provider"`
 	ID               string                    `json:"id"`
 	Name             string                    `json:"name"`
 	API              string                    `json:"api,omitempty"`
-	BaseURL          string                    `json:"baseUrl,omitempty"`
+	BaseURL          string                    `json:"base_url,omitempty"`
 	Input            []InputMode               `json:"input,omitempty"`
 	Cost             Cost                      `json:"cost"`
-	ContextWindow    int                       `json:"contextWindow,omitempty"`
-	MaxTokens        int                       `json:"maxTokens,omitempty"`
+	ContextWindow    int                       `json:"context_window,omitempty"`
+	MaxTokens        int                       `json:"max_tokens,omitempty"`
 	Reasoning        bool                      `json:"reasoning"`
 }
 
@@ -120,6 +120,7 @@ func cloneStringMap(input map[string]string) map[string]string {
 	if input == nil {
 		return nil
 	}
+
 	output := make(map[string]string, len(input))
 	maps.Copy(output, input)
 
@@ -130,6 +131,7 @@ func cloneAnyMap(input map[string]any) map[string]any {
 	if input == nil {
 		return nil
 	}
+
 	output := make(map[string]any, len(input))
 	maps.Copy(output, input)
 
@@ -140,12 +142,15 @@ func cloneThinkingMap(input map[ThinkingLevel]*string) map[ThinkingLevel]*string
 	if input == nil {
 		return nil
 	}
+
 	output := make(map[ThinkingLevel]*string, len(input))
 	for key, value := range input {
 		if value == nil {
 			output[key] = nil
+
 			continue
 		}
+
 		copied := *value
 		output[key] = &copied
 	}

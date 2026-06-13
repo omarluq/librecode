@@ -23,6 +23,7 @@ func TestModelHandleKeyNavigationCancelAndSearch(t *testing.T) {
 
 	action := model.HandleKey(tcell.NewEventKey(tcell.KeyRune, "g", tcell.ModNone), testBindings{})
 	assert.Equal(t, panel.ActionNone, action.Type)
+
 	filtered := model.FilteredItems()
 	require.Len(t, filtered, 1)
 	assert.Equal(t, "g", filtered[0].Value)
@@ -141,5 +142,6 @@ func TestModelAccessorsAndWindowStart(t *testing.T) {
 	for _, line := range lines {
 		texts = append(texts, line.Text)
 	}
+
 	assert.Contains(t, texts, "│ → Three          │")
 }

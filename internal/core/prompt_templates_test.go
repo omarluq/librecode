@@ -46,7 +46,7 @@ func TestLoadPromptTemplatesLoadsMarkdownAndReportsCollisions(t *testing.T) {
 	writeTestFile(t, filepath.Join(globalPrompts, "fix.md"), strings.Join([]string{
 		frontmatterDelimiter,
 		"description: Global fix",
-		"argument-hint: BUG",
+		"argument_hint: BUG",
 		frontmatterDelimiter,
 		"fix $1",
 	}, "\n"))

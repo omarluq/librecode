@@ -89,6 +89,7 @@ func setTestRequestCWD(request *CompletionRequest, cwd string) {
 	if request.Request.ProviderOptions == nil {
 		request.Request.ProviderOptions = map[string]any{}
 	}
+
 	request.Request.ProviderOptions["cwd"] = cwd
 }
 
@@ -96,6 +97,7 @@ func testRequestCWD(request *CompletionRequest) string {
 	if request == nil || request.Request.ProviderOptions == nil {
 		return ""
 	}
+
 	cwd, ok := request.Request.ProviderOptions["cwd"].(string)
 	if !ok {
 		return ""
@@ -114,6 +116,7 @@ func installTestToolExecutor(request *CompletionRequest) {
 		if registry == nil {
 			return nil, oops.In("provider").Code("tool_registry_missing").Errorf("tool registry is not configured")
 		}
+
 		results := make([]llm.ToolResult, 0, len(calls))
 		for _, call := range calls {
 			emitLLMToolStart(onEvent, call.Name)
@@ -131,6 +134,7 @@ func emitLLMToolStart(onEvent func(*llm.StreamChunk), name string) {
 	if onEvent == nil {
 		return
 	}
+
 	part := llm.TextPart(name)
 	onEvent(&llm.StreamChunk{
 		Part:         &part,
@@ -144,6 +148,7 @@ func emitLLMToolResult(onEvent func(*llm.StreamChunk), result *llm.ToolResult) {
 	if onEvent == nil {
 		return
 	}
+
 	part := llm.Part{
 		Metadata:   nil,
 		ToolCall:   nil,
@@ -164,17 +169,21 @@ func emitLLMToolResult(onEvent func(*llm.StreamChunk), result *llm.ToolResult) {
 func llmToolResultFromExecution(call llm.ToolCall, result tool.Result, err error) llm.ToolResult {
 	text := result.Text()
 	errorText := ""
+
 	if err != nil {
 		text = err.Error()
 		errorText = err.Error()
 	}
+
 	if strings.TrimSpace(text) == "" {
 		text = "(tool returned no text output)"
 	}
+
 	metadata := map[string]any{}
 	if details := encodeToolDetails(result.Details); details != "" {
 		metadata["details_json"] = details
 	}
+
 	if len(metadata) == 0 {
 		metadata = nil
 	}
@@ -194,6 +203,7 @@ func setTestThinkingMap(request *CompletionRequest, level, value string) {
 	if request.Request.Model.ThinkingLevelMap == nil {
 		request.Request.Model.ThinkingLevelMap = map[string]*string{}
 	}
+
 	trimmed := strings.TrimSpace(value)
 	request.Request.Model.ThinkingLevelMap[level] = &trimmed
 }
@@ -207,7 +217,7 @@ func jsonString(value any) string {
 	return string(bytes)
 }
 
-var (
+const (
 	expectedReadToolName    = string(jsonReadToolName)
 	expectedWriteToolName   = string(jsonWriteToolName)
 	expectedBashToolName    = string(jsonBashToolName)

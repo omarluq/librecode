@@ -29,9 +29,11 @@ func NewConfigService(injector do.Injector) (*ConfigService, error) {
 
 	loaded, err := config.LoadResolved(path)
 	if err != nil {
-		return nil, err
+		return nil, serviceError(err, "load config")
 	}
+
 	cfg := loaded.Config
+
 	overrides := do.MustInvokeNamed[ConfigOverrides](injector, ConfigOverridesKey)
 	if overrides.DisableExtensions {
 		cfg.Extensions.Enabled = false

@@ -53,7 +53,7 @@ type ASTInput struct {
 	Path         string `json:"path"`
 	Mode         string `json:"mode,omitempty"`
 	Query        string `json:"query,omitempty"`
-	AllowIgnored bool   `json:"allowIgnored,omitempty"`
+	AllowIgnored bool   `json:"allow_ignored,omitempty"`
 }
 
 // ASTTool inspects a source file's syntax tree via a pure-Go tree-sitter.
@@ -87,7 +87,9 @@ func (astTool *ASTTool) Definition() Definition {
 
 // Execute runs the ast tool.
 func (astTool *ASTTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
-	args, err := decodeInput[ASTInput](input)
+	var args ASTInput
+
+	err := decodeInput(input, &args)
 	if err != nil {
 		return emptyToolResult(), err
 	}
@@ -100,10 +102,12 @@ func (astTool *ASTTool) Inspect(ctx context.Context, input ASTInput) (Result, er
 	if strings.TrimSpace(input.Path) == "" {
 		return emptyToolResult(), oops.In("tool").Code("ast_path_required").Errorf("ast path is required")
 	}
+
 	parsed, special, err := astTool.parse(ctx, input.Path, input.AllowIgnored)
 	if err != nil {
 		return emptyToolResult(), err
 	}
+
 	if special != nil {
 		return *special, nil
 	}
@@ -154,9 +158,11 @@ func (astTool *ASTTool) parse(ctx context.Context, path string, allowIgnored boo
 	if err != nil {
 		return nil, nil, oops.In("tool").Code("ast_resolve_path").Wrapf(err, "resolve ast path")
 	}
+
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return nil, nil, ctxErr
+		return nil, nil, toolWrap(ctxErr, "parse ast query")
 	}
+
 	if ignored, reason := ignoredReadPath(absolutePath, astTool.cwd); ignored && !allowIgnored {
 		skipped := ignoredReadResult(path, reason)
 
@@ -179,6 +185,7 @@ func (astTool *ASTTool) parse(ctx context.Context, path string, allowIgnored boo
 	}
 
 	lang := entry.Language()
+
 	tree, err := gt.NewParser(lang).Parse(source)
 	if err != nil {
 		return nil, nil, oops.In("tool").Code("ast_parse").Wrapf(err, "parse ast file")
@@ -194,6 +201,6 @@ func astDescription() string {
 		"'query' runs a tree-sitter S-expression and returns matched nodes; " +
 		"'node' returns the named-node ancestry enclosing a given line; " +
 		"'tree' dumps the raw S-expression for the file, or one line's subtree when 'line' is set. " +
-		"Respects workspace .gitignore/default ignored paths unless allowIgnored is true. " +
+		"Respects workspace .gitignore/default ignored paths unless allow_ignored is true. " +
 		"Read-only and structural — use it to navigate code by construct rather than by text."
 }
