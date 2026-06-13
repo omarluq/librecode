@@ -107,22 +107,22 @@ func (area *TextArea) MoveRight() {
 
 // MoveWordLeft moves the cursor to the beginning of the previous word.
 func (area *TextArea) MoveWordLeft() {
-	area.Update(func(value []rune, cursor int) ([]rune, int) { return value, MoveCursorWordLeft(value, cursor) })
+	area.Update(func(value []rune, cursor int) ([]rune, int) { return value, WordLeft(value, cursor) })
 }
 
 // MoveWordRight moves the cursor to the end of the next word.
 func (area *TextArea) MoveWordRight() {
-	area.Update(func(value []rune, cursor int) ([]rune, int) { return value, MoveCursorWordRight(value, cursor) })
+	area.Update(func(value []rune, cursor int) ([]rune, int) { return value, WordRight(value, cursor) })
 }
 
 // MoveLineStart moves the cursor to the start of the current line.
 func (area *TextArea) MoveLineStart() {
-	area.Update(func(value []rune, cursor int) ([]rune, int) { return value, MoveCursorLineStart(value, cursor) })
+	area.Update(func(value []rune, cursor int) ([]rune, int) { return value, CurrentLineStart(value, cursor) })
 }
 
 // MoveLineEnd moves the cursor to the end of the current line.
 func (area *TextArea) MoveLineEnd() {
-	area.Update(func(value []rune, cursor int) ([]rune, int) { return value, MoveCursorLineEnd(value, cursor) })
+	area.Update(func(value []rune, cursor int) ([]rune, int) { return value, CurrentLineEnd(value, cursor) })
 }
 
 // DeleteBackward deletes one rune before the cursor.
@@ -245,7 +245,14 @@ func Chars(value []rune) []string {
 }
 
 // StringChars converts text into string cells.
-func StringChars(text string) []string { return Chars([]rune(text)) }
+func StringChars(text string) []string {
+	chars := make([]string, 0, len([]rune(text)))
+	for _, char := range text {
+		chars = append(chars, string(char))
+	}
+
+	return chars
+}
 
 // ClampCursor clamps a rune cursor to the text length.
 func ClampCursor(cursor, runeCount int) int {
@@ -293,18 +300,6 @@ func MoveCursorRight(value []rune, cursor int) int {
 
 	return cursor
 }
-
-// MoveCursorLineStart moves the cursor to the current line start.
-func MoveCursorLineStart(value []rune, cursor int) int { return CurrentLineStart(value, cursor) }
-
-// MoveCursorLineEnd moves the cursor to the current line end.
-func MoveCursorLineEnd(value []rune, cursor int) int { return CurrentLineEnd(value, cursor) }
-
-// MoveCursorWordLeft moves the cursor to the start of the previous word.
-func MoveCursorWordLeft(value []rune, cursor int) int { return WordLeft(value, cursor) }
-
-// MoveCursorWordRight moves the cursor to the end of the next word.
-func MoveCursorWordRight(value []rune, cursor int) int { return WordRight(value, cursor) }
 
 // DeleteBackwardAt deletes the rune before cursor.
 func DeleteBackwardAt(value []rune, cursor int) (next []rune, nextCursor int) {

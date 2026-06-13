@@ -133,7 +133,10 @@ func (renderer *markdownRenderer) renderIndentedCodeBlock(node *ast.CodeBlock, i
 }
 
 func (renderer *markdownRenderer) appendCodeLines(language, text, indent string) {
-	for _, line := range SyntaxHighlightedCodeLines(language, text, renderer.styles.CodeTheme, renderer.styles.Code) {
+	width := max(1, renderer.width-Width(indent))
+
+	lines := SyntaxHighlightedCodeLines(language, text, renderer.styles.CodeTheme, renderer.styles.Code)
+	for _, line := range WrapCodeLines(lines, width) {
 		renderer.prependIndentToLine(&line, indent, line.Style)
 		renderer.lines = append(renderer.lines, line)
 	}

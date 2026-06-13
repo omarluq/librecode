@@ -116,10 +116,10 @@ func TestTextAreaPrimitivesClampAndHandleBoundaries(t *testing.T) {
 
 	require.Equal(t, 0, tui.MoveCursorLeft(value, -1))
 	require.Equal(t, len(value), tui.MoveCursorRight(value, 99))
-	require.Equal(t, 6, tui.MoveCursorLineStart(value, len(value)))
-	require.Equal(t, len(value), tui.MoveCursorLineEnd(value, 6))
-	require.Equal(t, 6, tui.MoveCursorWordLeft(value, len(value)))
-	require.Equal(t, 5, tui.MoveCursorWordRight(value, 0))
+	require.Equal(t, 6, tui.CurrentLineStart(value, len(value)))
+	require.Equal(t, len(value), tui.CurrentLineEnd(value, 6))
+	require.Equal(t, 6, tui.WordLeft(value, len(value)))
+	require.Equal(t, 5, tui.WordRight(value, 0))
 
 	next, cursor = tui.DeleteBackwardAt(value, 0)
 	require.Equal(t, string(value), string(next))
