@@ -59,7 +59,7 @@ func (view *MarkdownView) Render(width, height int) []Line {
 }
 
 // Draw draws markdown into rect.
-func (view *MarkdownView) Draw(screen Screen, rect Rect) {
+func (view *MarkdownView) Draw(screen ContentSetter, rect Rect) {
 	DrawLines(screen, rect, view.Render(rect.Width, rect.Height))
 }
 

@@ -69,7 +69,7 @@ func NewBox(title string) *Box {
 }
 
 // Draw draws the box border into rect.
-func (box *Box) Draw(screen Screen, rect Rect) {
+func (box *Box) Draw(screen ContentSetter, rect Rect) {
 	if screen == nil || rect.Empty() || box == nil {
 		return
 	}

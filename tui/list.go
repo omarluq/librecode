@@ -216,7 +216,7 @@ func (list *List) Render(options ListRenderOptions) []Line {
 }
 
 // Draw draws the list into rect.
-func (list *List) Draw(screen Screen, rect Rect, styles ListStyles, hints ListHints) {
+func (list *List) Draw(screen ContentSetter, rect Rect, styles ListStyles, hints ListHints) {
 	DrawLines(screen, rect, list.Render(ListRenderOptions{Styles: styles, Hints: hints, Width: rect.Width, Height: rect.Height}))
 }
 

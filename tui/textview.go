@@ -46,7 +46,7 @@ func (view *TextView) Render(width, height int) []Line {
 }
 
 // Draw draws the visible text view.
-func (view *TextView) Draw(screen Screen, rect Rect) {
+func (view *TextView) Draw(screen ContentSetter, rect Rect) {
 	DrawLines(screen, rect, view.Render(rect.Width, rect.Height))
 }
 

@@ -43,7 +43,7 @@ func (block *CodeBlock) Render(width, height int) []Line {
 }
 
 // Draw draws highlighted code.
-func (block *CodeBlock) Draw(screen Screen, rect Rect) {
+func (block *CodeBlock) Draw(screen ContentSetter, rect Rect) {
 	DrawLines(screen, rect, block.Render(rect.Width, rect.Height))
 }
 
@@ -69,7 +69,7 @@ func (view *DiffView) Render(width, height int) []Line {
 }
 
 // Draw draws diff lines.
-func (view *DiffView) Draw(screen Screen, rect Rect) {
+func (view *DiffView) Draw(screen ContentSetter, rect Rect) {
 	DrawLines(screen, rect, view.Render(rect.Width, rect.Height))
 }
 

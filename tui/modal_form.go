@@ -5,14 +5,14 @@ import "github.com/gdamore/tcell/v3"
 // Modal draws a centered boxed component.
 type Modal struct {
 	Title    string
-	Child    Component
+	Child    Drawer
 	Width    int
 	Height   int
 	BoxStyle tcell.Style
 }
 
 // Draw draws the modal.
-func (modal *Modal) Draw(screen Screen, rect Rect) {
+func (modal *Modal) Draw(screen ContentSetter, rect Rect) {
 	if modal == nil || screen == nil || rect.Empty() {
 		return
 	}
@@ -71,6 +71,6 @@ func (form *Form) Render(width, height int) []Line {
 }
 
 // Draw draws the form.
-func (form *Form) Draw(screen Screen, rect Rect) {
+func (form *Form) Draw(screen ContentSetter, rect Rect) {
 	DrawLines(screen, rect, form.Render(rect.Width, rect.Height))
 }

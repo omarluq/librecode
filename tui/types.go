@@ -13,18 +13,14 @@ type Style = tcell.Style
 // Color aliases the tcell/v3 color type used throughout the package.
 type Color = tcell.Color
 
-// Screen is the subset of tcell.Screen required by draw helpers.
-// The name intentionally follows terminal UI conventions instead of the Go
-// single-method interface "-er" suffix convention.
-type Screen interface {
+// ContentSetter is the subset of tcell.ContentSetter required by draw helpers.
+type ContentSetter interface {
 	SetContent(column, row int, mainc rune, combc []rune, style tcell.Style)
 }
 
-// Component is the minimal drawable component contract.
-// The name intentionally follows terminal UI conventions instead of the Go
-// single-method interface "-er" suffix convention.
-type Component interface {
-	Draw(screen Screen, rect Rect)
+// Drawer is the minimal drawable component contract.
+type Drawer interface {
+	Draw(screen ContentSetter, rect Rect)
 }
 
 // Rect describes a terminal rectangle.
