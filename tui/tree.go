@@ -87,7 +87,7 @@ func (view *TreeView) Render(width, height int) []Line {
 }
 
 // Draw draws the tree into rect.
-func (view *TreeView) Draw(screen Screen, rect Rect) {
+func (view *TreeView) Draw(screen ContentSetter, rect Rect) {
 	DrawLines(screen, rect, view.Render(rect.Width, rect.Height))
 }
 

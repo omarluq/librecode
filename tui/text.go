@@ -205,7 +205,7 @@ func Int(value int) string {
 }
 
 // DrawText draws text clipped to rect width.
-func DrawText(screen Screen, rect Rect, style tcell.Style, text string) {
+func DrawText(screen ContentSetter, rect Rect, style tcell.Style, text string) {
 	if screen == nil || rect.Empty() {
 		return
 	}
@@ -214,7 +214,7 @@ func DrawText(screen Screen, rect Rect, style tcell.Style, text string) {
 }
 
 // DrawLine draws a styled line clipped to rect width.
-func DrawLine(screen Screen, rect Rect, line Line) {
+func DrawLine(screen ContentSetter, rect Rect, line Line) {
 	if screen == nil || rect.Empty() {
 		return
 	}
@@ -236,7 +236,7 @@ func DrawLine(screen Screen, rect Rect, line Line) {
 }
 
 // DrawLines draws lines clipped to rect.
-func DrawLines(screen Screen, rect Rect, lines []Line) {
+func DrawLines(screen ContentSetter, rect Rect, lines []Line) {
 	if screen == nil || rect.Empty() {
 		return
 	}
@@ -246,7 +246,7 @@ func DrawLines(screen Screen, rect Rect, lines []Line) {
 	}
 }
 
-func drawTextAt(screen Screen, x, y, width int, style tcell.Style, text string) int {
+func drawTextAt(screen ContentSetter, x, y, width int, style tcell.Style, text string) int {
 	used := 0
 	for _, segment := range Segments(text) {
 		if used+segment.Width > width {
@@ -260,7 +260,7 @@ func drawTextAt(screen Screen, x, y, width int, style tcell.Style, text string) 
 }
 
 // WriteCells writes text into exactly width cells, filling remaining cells with spaces.
-func WriteCells(screen Screen, column, row, width int, text string, style tcell.Style) int {
+func WriteCells(screen ContentSetter, column, row, width int, text string, style tcell.Style) int {
 	used := WriteCellsNoFill(screen, column, row, width, text, style)
 	for used < width {
 		screen.SetContent(column+used, row, ' ', nil, style)
@@ -271,7 +271,7 @@ func WriteCells(screen Screen, column, row, width int, text string, style tcell.
 }
 
 // WriteCellsNoFill writes as much text as fits in width cells without filling remaining cells.
-func WriteCellsNoFill(screen Screen, column, row, width int, text string, style tcell.Style) int {
+func WriteCellsNoFill(screen ContentSetter, column, row, width int, text string, style tcell.Style) int {
 	if screen == nil || row < 0 || column < 0 || width <= 0 {
 		return 0
 	}
@@ -289,7 +289,7 @@ func WriteCellsNoFill(screen Screen, column, row, width int, text string, style 
 }
 
 // WriteSegment writes one terminal grapheme segment.
-func WriteSegment(screen Screen, column, row, width int, segment Segment, style tcell.Style) int {
+func WriteSegment(screen ContentSetter, column, row, width int, segment Segment, style tcell.Style) int {
 	if screen == nil || width <= 0 || segment.Width > width {
 		return 0
 	}
@@ -320,7 +320,7 @@ func WriteSegment(screen Screen, column, row, width int, segment Segment, style 
 }
 
 // WriteTabSegment writes a tab as up to four spaces.
-func WriteTabSegment(screen Screen, column, row, width int, style tcell.Style) int {
+func WriteTabSegment(screen ContentSetter, column, row, width int, style tcell.Style) int {
 	const tabWidth = 4
 
 	spaces := min(tabWidth, width)

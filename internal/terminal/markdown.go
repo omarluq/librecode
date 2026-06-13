@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	markdownIndent     = " "
-	markdownBullet     = "• "
-	markdownCodePrefix = "  "
+	markdownIndent          = " "
+	markdownBullet          = "• "
+	markdownCodePrefix      = "  "
+	markdownRenderMaxHeight = 1_000_000
 )
 
 func (app *App) renderMarkdown(content string, width int) []rendertext.Line {
@@ -25,7 +26,7 @@ func (app *App) renderMarkdown(content string, width int) []rendertext.Line {
 		},
 	}
 
-	return view.Render(width, 1_000_000)
+	return view.Render(width, markdownRenderMaxHeight)
 }
 
 func markdownCodeStyle(theme terminalTheme) tcell.Style {

@@ -11,7 +11,13 @@ import (
 func ComposerKeyEvent(event *tcell.EventKey) (extension.ComposerKeyEvent, bool) {
 	keyEvent, ok := tui.NewKeyEvent(event)
 	if !ok {
-		return extension.ComposerKeyEvent{}, false
+		return extension.ComposerKeyEvent{
+			Key:   "",
+			Text:  "",
+			Ctrl:  false,
+			Alt:   false,
+			Shift: false,
+		}, false
 	}
 
 	return extension.ComposerKeyEvent{

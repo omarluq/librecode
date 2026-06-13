@@ -12,7 +12,7 @@ import (
 type Segment = tui.Segment
 
 // ContentSetter is the subset of tcell.Screen used by text rendering helpers.
-type ContentSetter = tui.Screen
+type ContentSetter = tui.ContentSetter
 
 // RuneLen returns the number of UTF-8 runes in text.
 func RuneLen(text string) int { return tui.RuneLen(text) }

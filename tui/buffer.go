@@ -49,7 +49,7 @@ func (buffer *CellBuffer) Height() int {
 	return buffer.height
 }
 
-// SetContent implements Screen.
+// SetContent implements ContentSetter.
 func (buffer *CellBuffer) SetContent(column, row int, mainc rune, _ []rune, style tcell.Style) {
 	if buffer == nil || column < 0 || row < 0 || column >= buffer.width || row >= buffer.height {
 		return
@@ -88,12 +88,12 @@ func (buffer *CellBuffer) Clone() *CellBuffer {
 
 // Renderer flushes changed cells to a screen.
 type Renderer struct {
-	screen   Screen
+	screen   ContentSetter
 	previous *CellBuffer
 }
 
 // NewRenderer returns a screen renderer.
-func NewRenderer(screen Screen) *Renderer {
+func NewRenderer(screen ContentSetter) *Renderer {
 	return &Renderer{screen: screen, previous: nil}
 }
 

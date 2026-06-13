@@ -1,8 +1,6 @@
 package terminal
 
 import (
-	"strings"
-
 	"github.com/alecthomas/chroma/v2"
 	"github.com/gdamore/tcell/v3"
 
@@ -32,21 +30,21 @@ func codeTheme(theme terminalTheme) tui.CodeTheme {
 }
 
 func styleForToken(tokenType chroma.TokenType, theme terminalTheme, baseStyle tcell.Style) tcell.Style {
-	category := tokenType.Category()
-	switch {
-	case category == chroma.Comment:
+	//nolint:exhaustive // Chroma token categories are open-ended; the default style handles all remaining token types.
+	switch tokenType.Category() {
+	case chroma.Comment:
 		return baseStyle.Foreground(codeCommentColor(theme)).Italic(true)
-	case category == chroma.Keyword:
+	case chroma.Keyword:
 		return baseStyle.Foreground(codeKeywordColor(theme))
-	case category == chroma.Name:
+	case chroma.Name:
 		return baseStyle.Foreground(codeNameColor(tokenType, theme))
-	case category == chroma.LiteralString:
+	case chroma.LiteralString:
 		return baseStyle.Foreground(codeStringColor(theme))
-	case category == chroma.LiteralNumber:
+	case chroma.LiteralNumber:
 		return baseStyle.Foreground(codeNumberColor(theme))
-	case category == chroma.Operator || category == chroma.Punctuation:
+	case chroma.Operator, chroma.Punctuation:
 		return baseStyle.Foreground(codeOperatorColor(theme))
-	case category == chroma.Generic:
+	case chroma.Generic:
 		return baseStyle.Foreground(codeGenericColor(tokenType, theme))
 	default:
 		return baseStyle.Foreground(codeTypeColor(theme))
@@ -112,15 +110,3 @@ func codeStringColor(theme terminalTheme) tcell.Color { return theme.colors[colo
 func codeOperatorColor(theme terminalTheme) tcell.Color { return theme.colors[colorDim] }
 
 func codeCommentColor(theme terminalTheme) tcell.Color { return theme.colors[colorMuted] }
-
-func trimTrailingEmptyCodeLine(lines []rendertext.Line, baseStyle tcell.Style) []rendertext.Line {
-	for len(lines) > 1 {
-		last := lines[len(lines)-1]
-		if last.Text != strings.Repeat(" ", 2) || last.Style != baseStyle || len(last.Spans) > 0 {
-			break
-		}
-		lines = lines[:len(lines)-1]
-	}
-
-	return lines
-}

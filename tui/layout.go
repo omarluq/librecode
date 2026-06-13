@@ -10,9 +10,9 @@ const (
 
 // FlexItem is one flex child.
 type FlexItem struct {
-	Component Component
-	Fixed     int
-	Weight    int
+	Drawer Drawer
+	Fixed  int
+	Weight int
 }
 
 // Flex lays out children in a row or column.
@@ -22,25 +22,25 @@ type Flex struct {
 }
 
 // AddItem appends a flex item.
-func (flex *Flex) AddItem(component Component, fixed, weight int) *Flex {
+func (flex *Flex) AddItem(component Drawer, fixed, weight int) *Flex {
 	if flex == nil {
 		return flex
 	}
 
-	flex.Items = append(flex.Items, FlexItem{Component: component, Fixed: fixed, Weight: weight})
+	flex.Items = append(flex.Items, FlexItem{Drawer: component, Fixed: fixed, Weight: weight})
 
 	return flex
 }
 
 // Draw draws all flex children.
-func (flex *Flex) Draw(screen Screen, rect Rect) {
+func (flex *Flex) Draw(screen ContentSetter, rect Rect) {
 	if flex == nil || screen == nil || rect.Empty() {
 		return
 	}
 
 	for index, childRect := range flex.rects(rect) {
-		if index < len(flex.Items) && flex.Items[index].Component != nil {
-			flex.Items[index].Component.Draw(screen, childRect)
+		if index < len(flex.Items) && flex.Items[index].Drawer != nil {
+			flex.Items[index].Drawer.Draw(screen, childRect)
 		}
 	}
 }
@@ -106,11 +106,11 @@ func (flex *Flex) flexibleItemCount() int {
 
 // GridCell places a component in a grid.
 type GridCell struct {
-	Component Component
-	Row       int
-	Column    int
-	RowSpan   int
-	ColSpan   int
+	Drawer  Drawer
+	Row     int
+	Column  int
+	RowSpan int
+	ColSpan int
 }
 
 // Grid lays out children in equally sized cells.
@@ -121,7 +121,7 @@ type Grid struct {
 }
 
 // Draw draws all grid cells.
-func (grid *Grid) Draw(screen Screen, rect Rect) {
+func (grid *Grid) Draw(screen ContentSetter, rect Rect) {
 	if grid == nil || screen == nil || rect.Empty() || grid.Rows <= 0 || grid.Columns <= 0 {
 		return
 	}
@@ -129,12 +129,12 @@ func (grid *Grid) Draw(screen Screen, rect Rect) {
 	cellWidth := max(1, rect.Width/grid.Columns)
 	cellHeight := max(1, rect.Height/grid.Rows)
 	for _, cell := range grid.Cells {
-		if cell.Component == nil || cell.Row < 0 || cell.Row >= grid.Rows || cell.Column < 0 || cell.Column >= grid.Columns {
+		if cell.Drawer == nil || cell.Row < 0 || cell.Row >= grid.Rows || cell.Column < 0 || cell.Column >= grid.Columns {
 			continue
 		}
 		rowSpan := max(1, cell.RowSpan)
 		colSpan := max(1, cell.ColSpan)
-		cell.Component.Draw(screen, Rect{
+		cell.Drawer.Draw(screen, Rect{
 			X:      rect.X + cell.Column*cellWidth,
 			Y:      rect.Y + cell.Row*cellHeight,
 			Width:  min(rect.Width-cell.Column*cellWidth, cellWidth*colSpan),
@@ -145,12 +145,12 @@ func (grid *Grid) Draw(screen Screen, rect Rect) {
 
 // Pages draws one named component at a time.
 type Pages struct {
-	Pages   map[string]Component
+	Pages   map[string]Drawer
 	Current string
 }
 
 // Draw draws the current page.
-func (pages *Pages) Draw(screen Screen, rect Rect) {
+func (pages *Pages) Draw(screen ContentSetter, rect Rect) {
 	if pages == nil || pages.Pages == nil {
 		return
 	}
