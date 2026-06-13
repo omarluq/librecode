@@ -47,7 +47,8 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 				t.Helper()
 				appendAutoCompactionOldTurn(t, repository, sessionID)
 			},
-			wantCode: testContextWindowExceededOopsCode,
+			wantCode:      testContextWindowExceededOopsCode,
+			wantOuterCode: false,
 		},
 	}
 
