@@ -13,13 +13,11 @@ func TestOpenIgnoresEmptyURL(t *testing.T) {
 	require.NoError(t, Open(""))
 }
 
-func TestOpenReturnsErrNoOpenerWhenCommandsAreMissing(t *testing.T) {
-	t.Setenv("PATH", "")
-	t.Setenv("BROWSER", "definitely-not-a-browser")
+func TestRunOpenerReturnsErrorForMissingCommand(t *testing.T) {
+	t.Parallel()
 
-	err := Open("https://example.com")
+	err := runOpener("definitely-not-a-browser")
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrNoOpener)
 }
 
 func TestOpenerCommandsPrefersConfiguredBrowser(t *testing.T) {

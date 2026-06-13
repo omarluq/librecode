@@ -6,8 +6,9 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"strings"
+
+	"github.com/omarluq/librecode/internal/execpath"
 )
 
 var errNoClipboardWriter = errors.New("no clipboard writer available")
@@ -43,17 +44,14 @@ func writeSystemClipboard(text string) error {
 }
 
 func writeClipboardCommand(text, name string, args ...string) error {
-	path, err := exec.LookPath(name)
+	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
+	defer cancel()
+
+	cmd, err := execpath.CommandContext(ctx, name, args...)
 	if err != nil {
 		return terminalError(err, "find clipboard command")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "")
-	cmd.Path = path
-	cmd.Args = append([]string{path}, args...)
 	cmd.Stdin = strings.NewReader(text)
 
 	return terminalError(cmd.Run(), "run clipboard command")

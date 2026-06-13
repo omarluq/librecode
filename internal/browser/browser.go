@@ -5,9 +5,10 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"runtime"
 	"time"
+
+	"github.com/omarluq/librecode/internal/execpath"
 )
 
 const openerStartTimeout = 3 * time.Second
@@ -58,18 +59,14 @@ func platformOpeners() []openerCommand {
 }
 
 func runOpener(name string, args ...string) error {
-	path, err := exec.LookPath(name)
+	ctx, cancel := context.WithTimeout(context.Background(), openerStartTimeout)
+	defer cancel()
+
+	cmd, err := execpath.CommandContext(ctx, name, args...)
 	if err != nil {
 		return browserError(err, "find browser opener")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), openerStartTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "")
-	cmd.Path = path
-
-	cmd.Args = append([]string{path}, args...)
 	if err := cmd.Start(); err != nil {
 		return browserError(err, "start browser opener")
 	}
