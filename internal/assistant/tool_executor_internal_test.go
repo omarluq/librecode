@@ -3,6 +3,8 @@ package assistant
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/samber/oops"
@@ -14,7 +16,11 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-const toolExecutorReadArgs = `{"path":"README.md"}`
+const (
+	toolExecutorCallID   = "call_1"
+	toolExecutorReadPath = "README.md"
+	toolExecutorReadArgs = `{"path":"README.md"}`
+)
 
 func TestExecuteProviderToolCallsRequiresRegistry(t *testing.T) {
 	t.Parallel()
@@ -51,7 +57,7 @@ func TestExecuteProviderToolCallEmitsResultForUnknownTool(t *testing.T) {
 		ToolCall{
 			Metadata:      nil,
 			Arguments:     map[string]any{},
-			ID:            "call_1",
+			ID:            toolExecutorCallID,
 			Name:          "missing",
 			ArgumentsJSON: `{}`,
 		},
@@ -79,8 +85,8 @@ func TestExecuteProviderToolCallReturnsLifecycleErrorEvent(t *testing.T) {
 		tool.NewRegistry(t.TempDir()),
 		ToolCall{
 			Metadata:      nil,
-			Arguments:     map[string]any{jsonPathKey: "README.md"},
-			ID:            "call_1",
+			Arguments:     map[string]any{jsonPathKey: toolExecutorReadPath},
+			ID:            toolExecutorCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: toolExecutorReadArgs,
 		},
@@ -91,6 +97,37 @@ func TestExecuteProviderToolCallReturnsLifecycleErrorEvent(t *testing.T) {
 	assert.Contains(t, event.Error, "blocked")
 	require.Len(t, streamEvents, 2)
 	assert.Equal(t, StreamEventToolResult, streamEvents[1].Kind)
+}
+
+func TestExecuteProviderToolCallPreservesResultOnLifecycleError(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	writeToolExecutorReadFixture(t, directory)
+
+	runtime := newToolExecutorTestRuntime(failingToolResultLifecycle{})
+	registry := tool.NewRegistry(directory)
+	events := []StreamEvent{}
+
+	event := runtime.executeProviderToolCall(
+		context.Background(),
+		registry,
+		ToolCall{
+			Metadata:      nil,
+			Arguments:     map[string]any{jsonPathKey: toolExecutorReadPath},
+			ID:            toolExecutorCallID,
+			Name:          jsonReadToolName,
+			ArgumentsJSON: toolExecutorReadArgs,
+		},
+		func(event StreamEvent) { events = append(events, event) },
+	)
+
+	assert.False(t, event.IsError)
+	assert.Empty(t, event.Error)
+	assert.NotContains(t, event.Result, "result hook failed")
+	require.Len(t, events, 2)
+	require.NotNil(t, events[1].ToolEvent)
+	assert.Equal(t, event.Result, events[1].ToolEvent.Result)
 }
 
 func TestToolEventFromResultFormatsEmptyOutput(t *testing.T) {
@@ -136,6 +173,12 @@ func TestLLMToolResultFromToolEvent(t *testing.T) {
 	assert.Equal(t, "contents", result.Content[0].Text)
 }
 
+func writeToolExecutorReadFixture(t *testing.T, directory string) {
+	t.Helper()
+
+	require.NoError(t, os.WriteFile(filepath.Join(directory, toolExecutorReadPath), []byte("contents"), 0o600))
+}
+
 func newToolExecutorTestRuntime(extensions runtimeExtensions) *Runtime {
 	return NewRuntime(&RuntimeOptions{
 		Config:     nil,
@@ -151,7 +194,13 @@ func newToolExecutorTestRuntime(extensions runtimeExtensions) *Runtime {
 
 type failingToolCallLifecycle struct{}
 
+type failingToolResultLifecycle struct{}
+
 func (failingToolCallLifecycle) ExecuteCommand(context.Context, string, string) (string, error) {
+	return "", nil
+}
+
+func (failingToolResultLifecycle) ExecuteCommand(context.Context, string, string) (string, error) {
 	return "", nil
 }
 
@@ -159,11 +208,23 @@ func (failingToolCallLifecycle) Emit(context.Context, string, map[string]any) er
 	return nil
 }
 
+func (failingToolResultLifecycle) Emit(context.Context, string, map[string]any) error {
+	return nil
+}
+
 func (failingToolCallLifecycle) ExecuteTool(context.Context, string, map[string]any) (extension.ToolResult, error) {
 	return extension.ToolResult{Details: nil, Content: ""}, nil
 }
 
+func (failingToolResultLifecycle) ExecuteTool(context.Context, string, map[string]any) (extension.ToolResult, error) {
+	return extension.ToolResult{Details: nil, Content: ""}, nil
+}
+
 func (failingToolCallLifecycle) Tools() []extension.Tool {
+	return nil
+}
+
+func (failingToolResultLifecycle) Tools() []extension.Tool {
 	return nil
 }
 
@@ -173,6 +234,17 @@ func (failingToolCallLifecycle) DispatchLifecycle(
 ) (extension.LifecycleDispatchResult, error) {
 	if event.Name == extension.LifecycleToolCall {
 		return emptyTestLifecycleDispatchResult(event), errors.New("blocked")
+	}
+
+	return emptyTestLifecycleDispatchResult(event), nil
+}
+
+func (failingToolResultLifecycle) DispatchLifecycle(
+	_ context.Context,
+	event extension.LifecycleEvent,
+) (extension.LifecycleDispatchResult, error) {
+	if event.Name == extension.LifecycleToolResult {
+		return emptyTestLifecycleDispatchResult(event), errors.New("result hook failed")
 	}
 
 	return emptyTestLifecycleDispatchResult(event), nil

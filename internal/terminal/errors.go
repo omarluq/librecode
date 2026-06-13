@@ -7,5 +7,5 @@ func terminalError(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("terminal").Wrapf(err, "%s", action)
+	return oops.In("terminal").Code("terminal_error").Wrapf(err, "%s", action)
 }

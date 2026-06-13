@@ -7,5 +7,5 @@ func browserError(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("browser").Wrapf(err, "%s", action)
+	return oops.In("browser").Code("browser_error").Wrapf(err, "%s", action)
 }

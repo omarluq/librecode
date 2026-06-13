@@ -385,6 +385,10 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 		return true, false
 	}
 
+	if resize, ok := event.(*tcell.EventResize); ok {
+		return app.drawLatestResize(ctx, resize)
+	}
+
 	shouldQuit, err := app.handleEvent(ctx, event)
 	if err != nil {
 		app.addMessage(transcript.RoleCustom, err.Error())
@@ -392,10 +396,6 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 
 	if shouldQuit {
 		return true, false
-	}
-
-	if resize, ok := event.(*tcell.EventResize); ok {
-		return app.drawLatestResize(ctx, resize)
 	}
 
 	if app.shouldDrawImmediately(event) {

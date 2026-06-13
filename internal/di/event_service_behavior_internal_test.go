@@ -1,4 +1,4 @@
-package di_test
+package di
 
 import (
 	"context"
@@ -6,14 +6,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/omarluq/librecode/internal/di"
 )
 
 func TestNewEventServiceExposesBus(t *testing.T) {
 	t.Parallel()
 
-	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
+	container, err := NewContainer("", ConfigOverrides{DisableExtensions: false})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -25,5 +23,5 @@ func TestNewEventServiceExposesBus(t *testing.T) {
 
 	service := container.EventService()
 
-	require.True(t, di.EventBusAvailableForTest(service))
+	require.True(t, service != nil && service.Bus != nil)
 }

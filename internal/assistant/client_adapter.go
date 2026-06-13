@@ -186,7 +186,14 @@ func toolEventsFromLLMParts(parts []llm.Part) []ToolEvent {
 }
 
 func emptyToolEvent() ToolEvent {
-	return ToolEvent{Name: "", ArgumentsJSON: "", DetailsJSON: "", Result: "", Error: "", IsError: false}
+	return ToolEvent{
+		Name:          "",
+		ArgumentsJSON: "",
+		DetailsJSON:   "",
+		Result:        "",
+		Error:         "",
+		IsError:       false,
+	}
 }
 
 func toolEventFromLLMToolResult(result *llm.ToolResult) ToolEvent {

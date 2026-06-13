@@ -68,10 +68,10 @@ type AssistantConfig struct {
 
 // ContextConfig controls local context-window budgeting before provider requests.
 type ContextConfig struct {
-	OutputReserveTokens   int  `mapstructure:"output_reserve_tokens"`
-	ProviderReserveTokens int  `mapstructure:"provider_reserve_tokens"`
-	SafetyMarginTokens    int  `mapstructure:"safety_margin_tokens"`
-	PreflightEnabled      bool `mapstructure:"preflight_enabled"`
+	OutputReserveTokens   int  `yaml:"output_reserve_tokens"`
+	ProviderReserveTokens int  `yaml:"provider_reserve_tokens"`
+	SafetyMarginTokens    int  `yaml:"safety_margin_tokens"`
+	PreflightEnabled      bool `yaml:"preflight_enabled"`
 }
 
 // ModelsConfig controls model catalog discovery.

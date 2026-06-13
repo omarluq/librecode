@@ -20,7 +20,7 @@ func unmarshalConfig(viperInstance *viper.Viper, cfg *Config) error {
 			decodeExtensionUseHook,
 		),
 		Result:  cfg,
-		TagName: "mapstructure",
+		TagName: "yaml",
 	})
 	if err != nil {
 		return fmt.Errorf("config: create decoder: %w", err)

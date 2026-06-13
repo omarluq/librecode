@@ -1,4 +1,4 @@
-package main_test
+package main
 
 import (
 	"bytes"
@@ -6,14 +6,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	main "github.com/omarluq/librecode/cmd/librecode"
 )
 
 func TestRootCmd_HelpFlagShowsHelp(t *testing.T) {
 	t.Parallel()
 
-	cmd := main.NewRootCmdForTest()
+	cmd := newRootCmd()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetArgs([]string{"--help"})
@@ -26,7 +24,7 @@ func TestRootCmd_HelpFlagShowsHelp(t *testing.T) {
 func TestRootCmd_VersionFlagShowsVersion(t *testing.T) {
 	t.Parallel()
 
-	cmd := main.NewRootCmdForTest()
+	cmd := newRootCmd()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetArgs([]string{"version"})

@@ -1,4 +1,4 @@
-package terminal_test
+package terminal
 
 import (
 	"testing"
@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/terminal"
 )
 
 const testContextContributorRole = "person"
@@ -14,7 +13,7 @@ const testContextContributorRole = "person"
 func TestContextContributorLinesSkipEmptyAndTokenlessEntries(t *testing.T) {
 	t.Parallel()
 
-	lines := terminal.ContextContributorLinesForTest([]model.TokenContributor{
+	lines := contextContributorLines([]model.TokenContributor{
 		{Label: "empty", Role: testContextContributorRole, Preview: "ignored", Tokens: 0, Chars: 0},
 		{Label: "message", Role: "", Preview: "", Tokens: 42, Chars: 168},
 	})
@@ -25,10 +24,10 @@ func TestContextContributorLinesSkipEmptyAndTokenlessEntries(t *testing.T) {
 func TestApplyTokenUsageAndFormattingVariants(t *testing.T) {
 	t.Parallel()
 
-	app := terminal.NewAppForTest()
-	app.ApplyTokenUsageForTest(nil)
-	assert.Equal(t, model.EmptyTokenUsage(), app.TokenUsageForTest())
-	assert.Empty(t, app.TokenStatusTextForTest())
+	app := newTestApp()
+	app.applyTokenUsage(nil)
+	assert.Equal(t, model.EmptyTokenUsage(), app.tokenUsage)
+	assert.Empty(t, app.tokenStatusText())
 
 	usage := model.TokenUsage{
 		Breakdown:       nil,
@@ -38,11 +37,11 @@ func TestApplyTokenUsageAndFormattingVariants(t *testing.T) {
 		InputTokens:     0,
 		OutputTokens:    0,
 	}
-	app.ApplyTokenUsageForTest(&usage)
-	assert.Empty(t, app.TokenStatusTextForTest())
-	assert.Empty(t, terminal.FormatTokenStatusForTest(usage))
+	app.applyTokenUsage(&usage)
+	assert.Empty(t, app.tokenStatusText())
+	assert.Empty(t, formatTokenStatus(usage))
 
-	assert.Equal(t, "ctx 42", terminal.FormatContextUsageForTest(model.TokenUsage{
+	assert.Equal(t, "ctx 42", formatContextUsage(model.TokenUsage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -50,7 +49,7 @@ func TestApplyTokenUsageAndFormattingVariants(t *testing.T) {
 		InputTokens:     0,
 		OutputTokens:    0,
 	}))
-	assert.Empty(t, terminal.FormatTokenStatusForTest(model.TokenUsage{
+	assert.Empty(t, formatTokenStatus(model.TokenUsage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,

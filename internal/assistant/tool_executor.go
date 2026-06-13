@@ -57,9 +57,7 @@ func (runtime *Runtime) executeProviderToolCall(
 
 	event := toolEventFromResult(callEvent, result, err)
 	if lifecycleErr := runtime.dispatchToolResultLifecycle(ctx, &event); lifecycleErr != nil {
-		event.Error = lifecycleErr.Error()
-		event.Result = lifecycleErr.Error()
-		event.IsError = true
+		runtime.emitToolLifecycleError(ctx, &event, lifecycleErr)
 	}
 
 	emitProviderToolResult(onEvent, &event)

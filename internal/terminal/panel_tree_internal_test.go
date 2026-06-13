@@ -13,15 +13,15 @@ func TestTreeDescription(t *testing.T) {
 
 	entry := testEntryEntity()
 
-	entry.Message.Content = "hello"
-	if got, want := treeDescription(&entry), "hello"; got != want {
+	entry.Message.Content = terminalTestGreeting
+	if got, want := treeDescription(&entry), terminalTestGreeting; got != want {
 		t.Fatalf("treeDescription(content) = %q, want %q", got, want)
 	}
 
 	entry = testEntryEntity()
 
-	entry.Summary = "summary"
-	if got, want := treeDescription(&entry), "summary"; got != want {
+	entry.Summary = terminalTestSummary
+	if got, want := treeDescription(&entry), terminalTestSummary; got != want {
 		t.Fatalf("treeDescription(summary) = %q, want %q", got, want)
 	}
 

@@ -7,5 +7,5 @@ func assistantError(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("assistant").Wrapf(err, "%s", action)
+	return oops.In("assistant").Code("assistant_error").Wrapf(err, "%s", action)
 }

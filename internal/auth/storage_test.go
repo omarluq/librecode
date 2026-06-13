@@ -178,6 +178,21 @@ func TestStorageReportsAuthAvailabilityBySource(t *testing.T) {
 	}
 }
 
+func TestStorageReadsLegacyAccountID(t *testing.T) {
+	t.Parallel()
+
+	authPath := filepath.Join(t.TempDir(), "auth.json")
+	content := []byte(`{"openai":{"type":"oauth","access":"token","accountId":"acct_legacy"}}`)
+	require.NoError(t, os.WriteFile(authPath, content, 0o600))
+
+	storage, err := auth.NewStorage(t.Context(), auth.NewFileBackend(authPath))
+	require.NoError(t, err)
+
+	credential, found := storage.Get("openai")
+	require.True(t, found)
+	assert.Equal(t, "acct_legacy", credential.AccountID)
+}
+
 func TestStorageDrainsErrors(t *testing.T) {
 	t.Parallel()
 

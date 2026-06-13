@@ -7,5 +7,5 @@ func modelError(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("model").Wrapf(err, "%s", action)
+	return oops.In("model").Code("model_error").Wrapf(err, "%s", action)
 }

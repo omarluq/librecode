@@ -646,7 +646,7 @@ func TestApplyPromptResponsePreservesLargerStreamedContextUsage(t *testing.T) {
 
 	app.applyPromptResponse(context.Background(), &assistant.PromptResponse{
 		SessionID:        "test-session",
-		UserEntryID:      "user",
+		UserEntryID:      terminalTestUserID,
 		AssistantEntryID: "assistant",
 		Text:             "ok",
 		Thinking:         nil,

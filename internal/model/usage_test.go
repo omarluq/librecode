@@ -1,9 +1,11 @@
 package model_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -38,6 +40,17 @@ func TestTokenUsageContextPercentCapsAtHundred(t *testing.T) {
 	}
 
 	assert.Equal(t, 100, usage.ContextPercent())
+}
+
+func TestTokenUsageReadsLegacyTopContributors(t *testing.T) {
+	t.Parallel()
+
+	var usage model.TokenUsage
+
+	err := json.Unmarshal([]byte(`{"topContributors":[{"label":"history","tokens":12,"chars":40}]}`), &usage)
+	require.NoError(t, err)
+	require.Len(t, usage.TopContributors, 1)
+	assert.Equal(t, "history", usage.TopContributors[0].Label)
 }
 
 func TestEmptyTokenUsageHasNoUsage(t *testing.T) {
