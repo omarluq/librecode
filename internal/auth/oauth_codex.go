@@ -18,9 +18,6 @@ import (
 	"time"
 
 	"github.com/samber/oops"
-
-	"github.com/omarluq/librecode/internal/limitio"
-	"github.com/omarluq/librecode/internal/units"
 )
 
 const (
@@ -299,25 +296,7 @@ func postOpenAICodexToken(ctx context.Context, values url.Values, tokenURL strin
 
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, oops.In("auth").Code("codex_token_http").Wrapf(err, "request token")
-	}
-	defer closeAuthBody(response.Body)
-
-	body, err := limitio.ReadAll(response.Body, units.MiB, "codex token response")
-	if err != nil {
-		return nil, oops.In("auth").Code("codex_token_body").Wrapf(err, "read token response")
-	}
-
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, oops.In("auth").
-			Code("codex_token_status").
-			With("status", response.StatusCode).
-			Errorf("token request failed: %s", strings.TrimSpace(string(body)))
-	}
-
-	return body, nil
+	return doOAuthTokenRequest(request, "codex token response", "codex_token")
 }
 
 func decodeOpenAICodexToken(body []byte) (*Credential, error) {

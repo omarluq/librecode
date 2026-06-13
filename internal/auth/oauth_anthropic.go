@@ -10,9 +10,6 @@ import (
 	"time"
 
 	"github.com/samber/oops"
-
-	"github.com/omarluq/librecode/internal/limitio"
-	"github.com/omarluq/librecode/internal/units"
 )
 
 const (
@@ -184,25 +181,7 @@ func postAnthropicToken(ctx context.Context, tokenURL string, payload map[string
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, oops.In("auth").Code("anthropic_token_http").Wrapf(err, "request token")
-	}
-	defer closeAuthBody(response.Body)
-
-	body, err := limitio.ReadAll(response.Body, units.MiB, "anthropic token response")
-	if err != nil {
-		return nil, oops.In("auth").Code("anthropic_token_body").Wrapf(err, "read token response")
-	}
-
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, oops.In("auth").
-			Code("anthropic_token_status").
-			With("status", response.StatusCode).
-			Errorf("token request failed: %s", strings.TrimSpace(string(body)))
-	}
-
-	return body, nil
+	return doOAuthTokenRequest(request, "anthropic token response", "anthropic_token")
 }
 
 func decodeAnthropicToken(body []byte) (*Credential, error) {
