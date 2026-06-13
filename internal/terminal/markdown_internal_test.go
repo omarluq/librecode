@@ -1,12 +1,17 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"strings"
 	"testing"
 
-	"github.com/alecthomas/chroma/v2"
 	"github.com/gdamore/tcell/v3"
+
+	"github.com/omarluq/librecode/internal/tui"
+)
+
+const (
+	testMarkdownIndent = " "
+	testMarkdownBullet = "• "
 )
 
 func TestRenderMarkdownCodeBlockHighlightsSyntax(t *testing.T) {
@@ -20,11 +25,11 @@ func TestRenderMarkdownCodeBlockHighlightsSyntax(t *testing.T) {
 		t.Fatalf("code line has no styled spans: %#v", content)
 	}
 
-	if !lineHasForeground(content, codeKeywordColor(app.theme)) {
+	if !lineHasForeground(content, codeTheme(app.theme).Accent) {
 		t.Fatalf("code line does not include keyword color; spans = %#v", content.Spans)
 	}
 
-	if !lineHasForeground(content, codeFunctionColor(app.theme)) {
+	if !lineHasForeground(content, codeTheme(app.theme).Success) {
 		t.Fatalf("code line does not include function color; spans = %#v", content.Spans)
 	}
 }
@@ -47,7 +52,7 @@ func TestSyntaxHighlightFallsBackForUnknownLanguage(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	style := app.theme.background(colorCodeBg).Foreground(app.theme.colors[colorCodeText])
-	lines := syntaxHighlightedCodeLines("not-a-real-language", "plain text", app.theme, style)
+	lines := tui.SyntaxHighlightedCodeLines("not-a-real-language", "plain text", codeTheme(app.theme), style)
 
 	if len(lines) != 1 {
 		t.Fatalf("highlighted lines = %d, want 1", len(lines))
@@ -55,17 +60,6 @@ func TestSyntaxHighlightFallsBackForUnknownLanguage(t *testing.T) {
 
 	if len(lines[0].Spans) != 0 {
 		t.Fatalf("unknown language should not create spans: %#v", lines[0].Spans)
-	}
-}
-
-func TestStyleForTokenUsesItalicComments(t *testing.T) {
-	t.Parallel()
-
-	app := newRenderTestApp(t)
-
-	style := styleForToken(chroma.CommentSingle, app.theme, app.theme.style(colorCodeText))
-	if !style.HasItalic() {
-		t.Fatal("comment style should be italic")
 	}
 }
 
@@ -78,7 +72,7 @@ func TestRenderMarkdownListContinuationDoesNotRepeatBullet(t *testing.T) {
 	bulletLines := 0
 
 	for _, line := range lines {
-		if strings.Contains(line.Text, markdownBullet) {
+		if strings.Contains(line.Text, testMarkdownBullet) {
 			bulletLines++
 		}
 	}
@@ -91,7 +85,7 @@ func TestRenderMarkdownListContinuationDoesNotRepeatBullet(t *testing.T) {
 		t.Fatalf("expected wrapped list item, got lines = %#v", lineTexts(lines))
 	}
 
-	if strings.Contains(lines[1].Text, markdownBullet) {
+	if strings.Contains(lines[1].Text, testMarkdownBullet) {
 		t.Fatalf("continuation line repeated bullet: %q", lines[1].Text)
 	}
 }
@@ -121,7 +115,7 @@ func TestRenderMarkdownTableStylesHeaderAndBorders(t *testing.T) {
 		t.Fatalf("table header has no styled spans: %#v", header)
 	}
 
-	if header.Spans[0].Text != markdownIndent ||
+	if header.Spans[0].Text != testMarkdownIndent ||
 		header.Spans[0].Style.GetForeground() != app.theme.colors[colorBorderMuted] {
 		t.Fatalf("indent span = %#v, want muted border", header.Spans[0])
 	}
@@ -141,7 +135,7 @@ func TestRenderMarkdownTableBordersAlignWithWideCells(t *testing.T) {
 	app := newRenderTestApp(t)
 	lines := app.renderMarkdown("| 项目 | Count |\n| :--- | ---: |\n| apples | 12 |", 80)
 
-	app.frame = rendertext.NewBuffer(80, len(lines), tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(80, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 80, line)
 	}
@@ -165,7 +159,7 @@ func assertLineContains(t *testing.T, lines []string, needle string) {
 	t.Fatalf("line containing %q not found in %#v", needle, lines)
 }
 
-func findLineContaining(t *testing.T, lines []rendertext.Line, needle string) rendertext.Line {
+func findLineContaining(t *testing.T, lines []tui.Line, needle string) tui.Line {
 	t.Helper()
 
 	for _, line := range lines {
@@ -176,10 +170,10 @@ func findLineContaining(t *testing.T, lines []rendertext.Line, needle string) re
 
 	t.Fatalf("line containing %q not found in %#v", needle, lineTexts(lines))
 
-	return rendertext.NewLine(tcell.StyleDefault, "")
+	return tui.NewLine(tcell.StyleDefault, "")
 }
 
-func lineHasForeground(line rendertext.Line, color tcell.Color) bool {
+func lineHasForeground(line tui.Line, color tcell.Color) bool {
 	for _, span := range line.Spans {
 		if span.Style.GetForeground() == color {
 			return true

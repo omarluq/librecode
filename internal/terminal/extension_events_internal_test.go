@@ -16,8 +16,8 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/terminal/extui"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func TestExtensionKeyCanMutateComposerAndConsumeDefault(t *testing.T) {
@@ -187,7 +187,7 @@ func TestExtensionCanOverrideTranscriptBufferRendering(t *testing.T) {
 		Cursor:   14,
 	})
 	layout := app.defaultRuntimeLayout(40, 12)
-	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 
 	app.drawTranscriptWindow(&layout)
 

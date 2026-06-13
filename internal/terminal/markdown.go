@@ -3,18 +3,12 @@ package terminal
 import (
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/tui"
 )
 
-const (
-	markdownIndent          = " "
-	markdownBullet          = "• "
-	markdownCodePrefix      = "  "
-	markdownRenderMaxHeight = 1_000_000
-)
+const markdownRenderMaxHeight = 1_000_000
 
-func (app *App) renderMarkdown(content string, width int) []rendertext.Line {
+func (app *App) renderMarkdown(content string, width int) []tui.Line {
 	view := tui.MarkdownView{
 		Text: content,
 		Styles: tui.MarkdownStyles{

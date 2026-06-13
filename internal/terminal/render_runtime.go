@@ -7,7 +7,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/terminal/extui"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func (app *App) applyUIOverrides(layout *extui.Layout) {
@@ -39,7 +39,7 @@ func (app *App) drawUIWindowText(window *extension.WindowState, drawOp *extensio
 		app.drawUIWindowSpans(window, drawOp)
 	default:
 		style := app.uiStyle(drawOp.Style)
-		writeTextAt(
+		tui.WriteCells(
 			app.frame,
 			window.X+drawOp.Col,
 			window.Y+drawOp.Row,
@@ -69,7 +69,7 @@ func (app *App) drawUIWindowClear(window *extension.WindowState, drawOp *extensi
 
 	style := app.uiStyle(drawOp.Style)
 	for row := startRow; row < endRow; row++ {
-		writeTextAt(
+		tui.WriteCells(
 			app.frame,
 			window.X+startCol,
 			window.Y+row,
@@ -89,7 +89,7 @@ func (app *App) drawUIWindowBox(window *extension.WindowState, style extension.U
 
 	if window.Width == 1 {
 		for row := 0; row < window.Height; row++ {
-			writeTextAt(app.frame, window.X, window.Y+row, 1, "│", resolved)
+			tui.WriteCells(app.frame, window.X, window.Y+row, 1, "│", resolved)
 		}
 
 		return
@@ -97,15 +97,15 @@ func (app *App) drawUIWindowBox(window *extension.WindowState, style extension.U
 
 	top := "╭" + strings.Repeat("─", max(0, window.Width-runtimeBorderWidth)) + "╮"
 	bottom := "╰" + strings.Repeat("─", max(0, window.Width-runtimeBorderWidth)) + "╯"
-	writeTextAt(app.frame, window.X, window.Y, window.Width, top, resolved)
+	tui.WriteCells(app.frame, window.X, window.Y, window.Width, top, resolved)
 
 	for row := 1; row < window.Height-1; row++ {
-		writeTextAt(app.frame, window.X, window.Y+row, 1, "│", resolved)
-		writeTextAt(app.frame, window.X+window.Width-1, window.Y+row, 1, "│", resolved)
+		tui.WriteCells(app.frame, window.X, window.Y+row, 1, "│", resolved)
+		tui.WriteCells(app.frame, window.X+window.Width-1, window.Y+row, 1, "│", resolved)
 	}
 
 	if window.Height > 1 {
-		writeTextAt(app.frame, window.X, window.Y+window.Height-1, window.Width, bottom, resolved)
+		tui.WriteCells(app.frame, window.X, window.Y+window.Height-1, window.Width, bottom, resolved)
 	}
 }
 
@@ -116,8 +116,8 @@ func (app *App) drawUIWindowSpans(window *extension.WindowState, drawOp *extensi
 			return
 		}
 
-		text := rendertext.Fit(span.Text, window.Width-column)
-		column += rendertext.WriteCellsNoFill(
+		text := tui.Fit(span.Text, window.Width-column)
+		column += tui.WriteCellsNoFill(
 			app.frame,
 			window.X+column,
 			window.Y+drawOp.Row,
@@ -128,10 +128,10 @@ func (app *App) drawUIWindowSpans(window *extension.WindowState, drawOp *extensi
 	}
 }
 
-func clearWindow(target rendertext.ContentSetter, window *extension.WindowState) {
+func clearWindow(target tui.ContentSetter, window *extension.WindowState) {
 	style := tcell.StyleDefault
 	for row := 0; row < window.Height; row++ {
-		writeTextAt(target, window.X, window.Y+row, window.Width, "", style)
+		tui.WriteCells(target, window.X, window.Y+row, window.Width, "", style)
 	}
 }
 

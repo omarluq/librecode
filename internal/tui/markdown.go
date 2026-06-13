@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	markdownIndent                   = " "
-	markdownBullet                   = "• "
+	markdownIndent = " "
+	markdownBullet = "• "
+
 	markdownQuote                    = "┃ "
 	markdownRule                     = "─"
 	markdownTableTransformerPriority = 200
@@ -51,21 +52,7 @@ func (view *MarkdownView) Render(width, height int) []Line {
 		lines:  []Line{},
 		width:  max(1, width),
 	}
-	markdown := newMarkdownParser()
-	document := markdown.Parser().Parse(goldtext.NewReader(renderer.source))
-	renderer.renderChildren(document, markdownIndent)
-
-	return Tail(renderer.lines, height)
-}
-
-// Draw draws markdown into rect.
-func (view *MarkdownView) Draw(screen ContentSetter, rect Rect) {
-	DrawLines(screen, rect, view.Render(rect.Width, rect.Height))
-}
-
-//nolint:ireturn // goldmark.New intentionally exposes its Markdown interface.
-func newMarkdownParser() goldmark.Markdown {
-	return goldmark.New(goldmark.WithParserOptions(
+	markdownParser := goldmark.New(goldmark.WithParserOptions(
 		parser.WithParagraphTransformers(util.Prioritized(
 			extension.NewTableParagraphTransformer(),
 			markdownTableTransformerPriority,
@@ -74,6 +61,15 @@ func newMarkdownParser() goldmark.Markdown {
 		parser.WithInlineParsers(util.Prioritized(extension.NewStrikethroughParser(), markdownStrikePriority)),
 		parser.WithInlineParsers(util.Prioritized(extension.NewTaskCheckBoxParser(), 0)),
 	))
+	document := markdownParser.Parser().Parse(goldtext.NewReader(renderer.source))
+	renderer.renderChildren(document, markdownIndent)
+
+	return Tail(renderer.lines, height)
+}
+
+// Draw draws markdown into rect.
+func (view *MarkdownView) Draw(screen ContentSetter, rect Rect) {
+	DrawLines(screen, rect, view.Render(rect.Width, rect.Height))
 }
 
 type markdownRenderer struct {
@@ -94,7 +90,7 @@ func (renderer *markdownRenderer) renderNode(node ast.Node, indent string) {
 	case *ast.Heading:
 		renderer.renderHeading(typedNode, indent)
 	case *ast.Paragraph:
-		renderer.appendWrappedLines(renderer.inlineText(typedNode), indent, renderer.styles.Text.Bold(true))
+		renderer.appendWrappedLines(renderer.inlineText(typedNode), indent, renderer.styles.Text)
 	case *ast.FencedCodeBlock:
 		renderer.renderCodeBlock(typedNode, indent)
 	case *ast.CodeBlock:
@@ -203,7 +199,7 @@ func (renderer *markdownRenderer) appendListItemText(node ast.Node, blockIndent,
 		renderer.inlineText(node),
 		blockIndent,
 		continuationIndent,
-		renderer.styles.Text.Bold(true),
+		renderer.styles.Text,
 	)
 }
 

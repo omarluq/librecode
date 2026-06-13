@@ -2,7 +2,7 @@ package terminal
 
 import (
 	"github.com/omarluq/librecode/internal/terminal/extui"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func (app *App) drawMessages(width, height, row int) int {
@@ -46,7 +46,7 @@ func (app *App) drawTranscriptWindow(layout *extui.Layout) {
 	}
 }
 
-func (app *App) messageLines(width, maxRows int) []rendertext.Line {
+func (app *App) messageLines(width, maxRows int) []tui.Line {
 	app.transcript.LastMaxRows = maxRows
 
 	dynamicGroups := app.dynamicMessageLineGroups(width)
@@ -61,7 +61,7 @@ func (app *App) messageLines(width, maxRows int) []rendertext.Line {
 	return app.scrolledMessageLines(width, maxRows, dynamicGroups)
 }
 
-func (app *App) cachedMessageLines(width, index int) []rendertext.Line {
+func (app *App) cachedMessageLines(width, index int) []tui.Line {
 	return app.transcript.LineCache.lines(app, width, index)
 }
 

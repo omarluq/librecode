@@ -136,7 +136,7 @@ func SliceViewport[T any](items []T, offset, height int) []T {
 		return []T{}
 	}
 
-	start := min(max(0, offset), max(0, len(items)-1))
+	start := min(max(0, offset), max(0, len(items)-height))
 	end := min(start+height, len(items))
 
 	return items[start:end]

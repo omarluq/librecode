@@ -2,7 +2,7 @@ package terminal
 
 import (
 	"fmt"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 	"testing"
 
@@ -33,13 +33,13 @@ func BenchmarkDrawMessagesSameWidth(b *testing.B) {
 		)
 	}
 
-	app.frame = rendertext.NewBuffer(120, 50, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(120, 50, tcell.StyleDefault)
 	app.drawMessages(120, 50, 0)
 
 	b.ReportAllocs()
 
 	for b.Loop() {
-		app.frame = rendertext.NewBuffer(120, 50, tcell.StyleDefault)
+		app.frame = tui.NewCellBuffer(120, 50, tcell.StyleDefault)
 		app.drawMessages(120, 50, 0)
 	}
 }

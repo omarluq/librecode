@@ -13,7 +13,8 @@ type Style = tcell.Style
 // Color aliases the tcell/v3 color type used throughout the package.
 type Color = tcell.Color
 
-// ContentSetter is the subset of tcell.ContentSetter required by draw helpers.
+// ContentSetter is the subset of tcell.Screen required by draw helpers.
+// It only requires SetContent so tests and buffers can provide lightweight sinks.
 type ContentSetter interface {
 	SetContent(column, row int, mainc rune, combc []rune, style tcell.Style)
 }

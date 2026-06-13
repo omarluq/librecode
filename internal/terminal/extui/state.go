@@ -6,7 +6,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/mapsutil"
-	"github.com/omarluq/librecode/internal/terminal/input"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 // Reserved buffer names exposed to terminal extensions.
@@ -220,10 +220,10 @@ func CloneBuffer(name string, buffer *extension.BufferState) extension.BufferSta
 
 	cloned.Chars = slices.Clone(cloned.Chars)
 	if len(cloned.Chars) == 0 && cloned.Text != "" {
-		cloned.Chars = input.StringChars(cloned.Text)
+		cloned.Chars = tui.StringChars(cloned.Text)
 	}
 
-	cloned.Cursor = input.ClampCursor(cloned.Cursor, len([]rune(cloned.Text)))
+	cloned.Cursor = tui.ClampCursor(cloned.Cursor, len([]rune(cloned.Text)))
 
 	return cloned
 }

@@ -4,8 +4,7 @@ import (
 	"strings"
 
 	"github.com/omarluq/librecode/internal/terminal/extui"
-	"github.com/omarluq/librecode/internal/terminal/input"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func (app *App) drawAutocompleteWindow(layout *extui.Layout) {
@@ -42,16 +41,11 @@ func (app *App) drawComposerWindow(layout *extui.Layout) {
 	}
 }
 
-func (app *App) renderComposerEditor(width, bodyRows int) input.Render {
-	return input.RenderEditor(
-		[]rune(app.composerBuffer.TextValue()),
-		app.composerBuffer.CursorValue(),
-		width,
-		bodyRows,
-		app.theme.style(app.editorBorderColor()),
-		app.theme.style(colorText),
-		app.composerBuffer.Label,
-	)
+func (app *App) renderComposerEditor(width, bodyRows int) tui.TextAreaRender {
+	return app.composerBuffer.Render(width, bodyRows, tui.TextAreaStyles{
+		Border: app.theme.style(app.editorBorderColor()),
+		Body:   app.theme.style(colorText),
+	})
 }
 
 func (app *App) drawStatusWindow(layout *extui.Layout) {
@@ -97,9 +91,9 @@ func (app *App) composerReserve(width, height int) int {
 }
 
 type composerLayout struct {
-	footerLines       []rendertext.Line
-	autocompleteLines []rendertext.Line
-	editor            input.Render
+	footerLines       []tui.Line
+	autocompleteLines []tui.Line
+	editor            tui.TextAreaRender
 	startRow          int
 	editorStart       int
 	footerStart       int
@@ -151,12 +145,12 @@ func (app *App) editorBorderColor() colorToken {
 	}
 }
 
-func (app *App) footerLines(width int) []rendertext.Line {
+func (app *App) footerLines(width int) []tui.Line {
 	lineTexts := app.defaultStatusLineTexts()
 
-	lines := make([]rendertext.Line, 0, len(lineTexts))
+	lines := make([]tui.Line, 0, len(lineTexts))
 	for _, lineText := range lineTexts {
-		lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), rendertext.Truncate(lineText, width)))
+		lines = append(lines, tui.NewLine(app.theme.style(colorDim), tui.Truncate(lineText, width)))
 	}
 
 	return lines

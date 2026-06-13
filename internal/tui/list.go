@@ -19,12 +19,12 @@ type ListItem struct {
 type List struct {
 	Title       string
 	Subtitle    string
-	Query       string
-	Items       []ListItem
-	Filtered    []ListItem
-	Selected    int
-	Searchable  bool
+	query       string
+	items       []ListItem
+	filtered    []ListItem
+	selected    int
 	ShowDetails bool
+	searchable  bool
 }
 
 // NewList returns a searchable selection list.
@@ -32,27 +32,68 @@ func NewList(title, subtitle string, items []ListItem, searchable bool) *List {
 	list := &List{
 		Title:       title,
 		Subtitle:    subtitle,
-		Query:       "",
-		Items:       slices.Clone(items),
-		Filtered:    []ListItem{},
-		Selected:    0,
-		Searchable:  searchable,
 		ShowDetails: true,
+		searchable:  searchable,
+		query:       "",
+		items:       slices.Clone(items),
+		filtered:    []ListItem{},
+		selected:    0,
 	}
 	list.ApplyFilter()
 
 	return list
 }
 
+// Items returns a copy of the full item list.
+func (list *List) Items() []ListItem {
+	if list == nil {
+		return []ListItem{}
+	}
+
+	return slices.Clone(list.items)
+}
+
+// FilteredItems returns a copy of the visible item list.
+func (list *List) FilteredItems() []ListItem {
+	if list == nil {
+		return []ListItem{}
+	}
+
+	return slices.Clone(list.filtered)
+}
+
+// SelectedIndex returns the selected visible row index.
+func (list *List) SelectedIndex() int {
+	if list == nil {
+		return 0
+	}
+
+	return list.selected
+}
+
+// Searchable reports whether query editing is enabled.
+func (list *List) Searchable() bool {
+	return list != nil && list.searchable
+}
+
+// Query returns the current search query.
+func (list *List) Query() string {
+	if list == nil {
+		return ""
+	}
+
+	return list.query
+}
+
 // SelectedItem returns the selected visible item.
 func (list *List) SelectedItem() (ListItem, bool) {
-	if list == nil || len(list.Filtered) == 0 {
+	if list == nil || len(list.filtered) == 0 {
 		return ListItem{Value: "", Title: "", Description: "", Meta: ""}, false
 	}
 
-	index := min(max(0, list.Selected), len(list.Filtered)-1)
+	index := min(max(0, list.selected), len(list.filtered)-1)
 
-	return list.Filtered[index], true
+	return list.filtered[index], true
 }
 
 // SelectedValue returns the selected item's value.
@@ -71,13 +112,13 @@ func (list *List) SetSelectedIndex(index int) {
 		return
 	}
 
-	if len(list.Filtered) == 0 {
-		list.Selected = 0
+	if len(list.filtered) == 0 {
+		list.selected = 0
 
 		return
 	}
 
-	list.Selected = min(max(0, index), len(list.Filtered)-1)
+	list.selected = min(max(0, index), len(list.filtered)-1)
 }
 
 // MoveSelection moves the selected row by delta, wrapping around the visible list.
@@ -86,38 +127,38 @@ func (list *List) MoveSelection(delta int) {
 		return
 	}
 
-	if len(list.Filtered) == 0 {
-		list.Selected = 0
+	if len(list.filtered) == 0 {
+		list.selected = 0
 
 		return
 	}
 
-	list.Selected += delta
-	for list.Selected < 0 {
-		list.Selected += len(list.Filtered)
+	list.selected += delta
+	for list.selected < 0 {
+		list.selected += len(list.filtered)
 	}
 
-	list.Selected %= len(list.Filtered)
+	list.selected %= len(list.filtered)
 }
 
 // AppendQueryRune appends a searchable rune to the query.
 func (list *List) AppendQueryRune(char rune) {
-	if list == nil || !list.Searchable || char == 0 {
+	if list == nil || !list.searchable || char == 0 {
 		return
 	}
 
-	list.Query += string(char)
+	list.query += string(char)
 	list.ApplyFilter()
 }
 
 // BackspaceQuery removes one rune from the query.
 func (list *List) BackspaceQuery() {
-	if list == nil || list.Query == "" {
+	if list == nil || list.query == "" {
 		return
 	}
 
-	queryRunes := []rune(list.Query)
-	list.Query = string(queryRunes[:len(queryRunes)-1])
+	queryRunes := []rune(list.query)
+	list.query = string(queryRunes[:len(queryRunes)-1])
 	list.ApplyFilter()
 }
 
@@ -127,24 +168,24 @@ func (list *List) ApplyFilter() {
 		return
 	}
 
-	if strings.TrimSpace(list.Query) == "" {
-		list.Filtered = slices.Clone(list.Items)
-		list.Selected = min(list.Selected, max(0, len(list.Filtered)-1))
+	if strings.TrimSpace(list.query) == "" {
+		list.filtered = slices.Clone(list.items)
+		list.selected = min(list.selected, max(0, len(list.filtered)-1))
 
 		return
 	}
 
-	query := strings.ToLower(strings.TrimSpace(list.Query))
+	query := strings.ToLower(strings.TrimSpace(list.query))
 
-	filtered := make([]ListItem, 0, len(list.Items))
-	for _, item := range list.Items {
+	filtered := make([]ListItem, 0, len(list.items))
+	for _, item := range list.items {
 		if listItemMatchesQuery(item, query) {
 			filtered = append(filtered, item)
 		}
 	}
 
-	list.Filtered = filtered
-	list.Selected = min(list.Selected, max(0, len(list.Filtered)-1))
+	list.filtered = filtered
+	list.selected = min(list.selected, max(0, len(list.filtered)-1))
 }
 
 func listItemMatchesQuery(item ListItem, query string) bool {
@@ -193,11 +234,7 @@ const (
 
 // Render returns styled terminal lines for the current list state.
 func (list *List) Render(options *ListRenderOptions) []Line {
-	if list == nil {
-		return []Line{}
-	}
-
-	if options == nil {
+	if list == nil || options == nil {
 		return []Line{}
 	}
 
@@ -215,8 +252,8 @@ func (list *List) Render(options *ListRenderOptions) []Line {
 		lines = append(lines, NewLine(options.Styles.Muted, listRow(list.Subtitle, contentWidth)))
 	}
 
-	if list.Searchable {
-		lines = append(lines, NewLine(options.Styles.Text, listRow("Search: "+list.Query, contentWidth)))
+	if list.searchable {
+		lines = append(lines, NewLine(options.Styles.Text, listRow("Search: "+list.query, contentWidth)))
 	}
 
 	lines = append(lines, NewLine(options.Styles.Border, MiddleBorder(width)))
@@ -255,12 +292,12 @@ func safeListStyles(styles *ListStyles) ListStyles {
 }
 
 func (list *List) itemLines(contentWidth, maxItems int, styles *ListStyles) []Line {
-	if len(list.Filtered) == 0 {
+	if len(list.filtered) == 0 {
 		return []Line{NewLine(styles.Muted, listRow("No matches", contentWidth))}
 	}
 
 	startIndex := list.windowStart(maxItems)
-	endIndex := min(startIndex+maxItems, len(list.Filtered))
+	endIndex := min(startIndex+maxItems, len(list.filtered))
 
 	lines := make([]Line, 0, endIndex-startIndex)
 	for index := startIndex; index < endIndex; index++ {
@@ -271,15 +308,15 @@ func (list *List) itemLines(contentWidth, maxItems int, styles *ListStyles) []Li
 }
 
 func (list *List) itemLine(index, width int, styles *ListStyles) Line {
-	if index < 0 || index >= len(list.Filtered) {
+	if index < 0 || index >= len(list.filtered) {
 		return NewLine(styles.Muted, listRow("", width))
 	}
 
-	item := list.Filtered[index]
+	item := list.filtered[index]
 	prefix := "  "
 	style := styles.Text
 
-	if index == list.Selected {
+	if index == list.selected {
 		prefix = "→ "
 		style = styles.Selected
 	}
@@ -297,13 +334,13 @@ func (list *List) itemLine(index, width int, styles *ListStyles) Line {
 }
 
 func (list *List) windowStart(maxItems int) int {
-	if len(list.Filtered) <= maxItems {
+	if len(list.filtered) <= maxItems {
 		return 0
 	}
 
-	startIndex := list.Selected - maxItems/listCenterDivisor
+	startIndex := list.selected - maxItems/listCenterDivisor
 	startIndex = max(0, startIndex)
-	startIndex = min(startIndex, len(list.Filtered)-maxItems)
+	startIndex = min(startIndex, len(list.filtered)-maxItems)
 
 	return startIndex
 }
@@ -311,8 +348,8 @@ func (list *List) windowStart(maxItems int) int {
 func (list *List) hintLine(contentWidth, width int, styles *ListStyles, hints ListHints) Line {
 	position := ""
 
-	if len(list.Filtered) > 0 {
-		counter := "(" + Int(list.Selected+1) + "/" + Int(len(list.Filtered)) + ")"
+	if len(list.filtered) > 0 {
+		counter := "(" + Int(list.selected+1) + "/" + Int(len(list.filtered)) + ")"
 		position = " " + Truncate(counter, max(0, width/listPositionWidthDivisor))
 	}
 

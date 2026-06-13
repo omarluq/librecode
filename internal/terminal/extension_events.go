@@ -10,7 +10,7 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/terminal/extui"
-	"github.com/omarluq/librecode/internal/terminal/input"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
@@ -284,7 +284,7 @@ func textBufferState(name, text string) extension.BufferState {
 		Blocks:   []extension.BufferBlock{},
 		Name:     name,
 		Text:     text,
-		Chars:    input.StringChars(text),
+		Chars:    tui.StringChars(text),
 		Label:    "",
 		Cursor:   len([]rune(text)),
 	}
@@ -392,7 +392,7 @@ func (app *App) applyExtensionBufferDelete(name string) {
 
 	switch name {
 	case extui.BufferComposer:
-		app.composerBuffer = input.NewBuffer()
+		app.composerBuffer = tui.NewTextArea()
 		app.resetPromptHistoryNavigation()
 	case extui.BufferStatus:
 		app.statusMessage = ""

@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
@@ -161,8 +161,8 @@ func (app *App) showSessionInfo(ctx context.Context) {
 	content := strings.Join([]string{
 		"session: " + app.sessionID,
 		"cwd: " + app.cwd,
-		"entries: " + rendertext.Int(len(entries)),
-		"messages: " + rendertext.Int(len(messages)),
+		"entries: " + tui.Int(len(entries)),
+		"messages: " + tui.Int(len(messages)),
 		"model: " + modelLabel(app.currentProvider(), app.currentModel()),
 	}, "\n")
 	app.addMessage(transcript.RoleCustom, content)

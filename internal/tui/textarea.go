@@ -162,8 +162,16 @@ const (
 	textAreaCursorColumnOffset = 2
 )
 
-// RenderTextArea renders an editable text area with a border.
-func RenderTextArea(value []rune, cursor, width, maxRows int, styles TextAreaStyles, label string) TextAreaRender {
+// Render renders this text area with a border.
+func (area *TextArea) Render(width, maxRows int, styles TextAreaStyles) TextAreaRender {
+	if area == nil {
+		return renderTextArea(nil, 0, width, maxRows, styles, "")
+	}
+
+	return renderTextArea([]rune(area.Text), area.Cursor, width, maxRows, styles, area.Label)
+}
+
+func renderTextArea(value []rune, cursor, width, maxRows int, styles TextAreaStyles, label string) TextAreaRender {
 	innerWidth := max(1, width-textAreaBorderPadding)
 	bodyLines := TextAreaBodyLines(value, innerWidth)
 	cursorRow, cursorColumn := TextAreaCursorPosition(value, cursor, innerWidth)
@@ -183,15 +191,6 @@ func RenderTextArea(value []rune, cursor, width, maxRows int, styles TextAreaSty
 		CursorCol: textAreaCursorColumnOffset + cursorColumn,
 		CursorRow: 1 + cursorRow - skippedRows,
 	}
-}
-
-// Render renders this text area with a border.
-func (area *TextArea) Render(width, maxRows int, styles TextAreaStyles) TextAreaRender {
-	if area == nil {
-		return RenderTextArea(nil, 0, width, maxRows, styles, "")
-	}
-
-	return RenderTextArea([]rune(area.Text), area.Cursor, width, maxRows, styles, area.Label)
 }
 
 // TextAreaBodyLines wraps the body text into display lines.

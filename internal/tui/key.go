@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v3"
 )
@@ -17,6 +18,17 @@ type KeyEvent struct {
 	Shift bool
 }
 
+// EventRune returns the first rune carried by a tcell rune key event.
+func EventRune(event *tcell.EventKey) rune {
+	if event == nil || event.Str() == "" {
+		return 0
+	}
+
+	value, _ := utf8.DecodeRuneInString(event.Str())
+
+	return value
+}
+
 // NewKeyEvent converts a tcell/v3 key event into a normalized key event.
 func NewKeyEvent(event *tcell.EventKey) (KeyEvent, bool) {
 	if event == nil {
@@ -27,7 +39,7 @@ func NewKeyEvent(event *tcell.EventKey) (KeyEvent, bool) {
 		return runeKeyEvent(event), true
 	}
 
-	key, ok := specialKeys()[event.Key()]
+	key, ok := specialKeyName(event.Key())
 	if !ok {
 		return emptyKeyEvent(), false
 	}
@@ -37,7 +49,7 @@ func NewKeyEvent(event *tcell.EventKey) (KeyEvent, bool) {
 		Text:  "",
 		Ctrl:  strings.HasPrefix(key, "ctrl+"),
 		Alt:   event.Modifiers()&tcell.ModAlt != 0,
-		Shift: event.Modifiers()&tcell.ModShift != 0,
+		Shift: strings.HasPrefix(key, "shift+") || event.Modifiers()&tcell.ModShift != 0,
 	}, true
 }
 
@@ -63,8 +75,8 @@ func runeKeyEvent(event *tcell.EventKey) KeyEvent {
 	}
 }
 
-func specialKeys() map[tcell.Key]string {
-	return map[tcell.Key]string{
+func specialKeyName(key tcell.Key) (string, bool) {
+	keyNames := map[tcell.Key]string{
 		tcell.KeyEscape:     "escape",
 		tcell.KeyEnter:      "enter",
 		tcell.KeyTab:        "tab",
@@ -88,4 +100,7 @@ func specialKeys() map[tcell.Key]string {
 		tcell.KeyCtrlU:      "ctrl+u",
 		tcell.KeyCtrlW:      "ctrl+w",
 	}
+	name, ok := keyNames[key]
+
+	return name, ok
 }

@@ -5,11 +5,11 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
-func (app *App) cachedStreamingBlockLines(width, index int) []rendertext.Line {
+func (app *App) cachedStreamingBlockLines(width, index int) []tui.Line {
 	app.ensureStreamingBlockLineCache(width)
 
 	if index < len(app.transcript.Streaming.LineCache) && app.transcript.Streaming.LineCache[index].Valid {
@@ -35,7 +35,7 @@ func (app *App) ensureStreamingBlockLineCache(width int) {
 	)
 }
 
-func (app *App) renderMessage(width int, message chatMessage) []rendertext.Line {
+func (app *App) renderMessage(width int, message chatMessage) []tui.Line {
 	switch message.Role {
 	case transcript.RoleUser:
 		return app.renderUserMessage(width, message.Content)
@@ -54,77 +54,77 @@ func (app *App) renderMessage(width int, message chatMessage) []rendertext.Line 
 	return app.renderCustomMessage(width, message.Content)
 }
 
-func (app *App) renderUserMessage(width int, content string) []rendertext.Line {
+func (app *App) renderUserMessage(width int, content string) []tui.Line {
 	innerWidth := max(1, width-messageBoxHorizontalPadding)
-	wrapped := rendertext.Wrap(content, innerWidth)
-	lines := make([]rendertext.Line, 0, len(wrapped)+defaultMessageExtraRows)
+	wrapped := tui.Wrap(content, innerWidth)
+	lines := make([]tui.Line, 0, len(wrapped)+defaultMessageExtraRows)
 
 	lines = append(lines,
-		rendertext.NewLine(app.theme.style(colorDim), ""),
-		rendertext.NewLine(app.theme.background(colorUserMessageBg), rendertext.PadRight("", width)),
+		tui.NewLine(app.theme.style(colorDim), ""),
+		tui.NewLine(app.theme.background(colorUserMessageBg), tui.PadRight("", width)),
 	)
 	for _, line := range wrapped {
-		text := "  " + rendertext.PadRight(line, innerWidth) + "  "
-		lines = append(lines, rendertext.NewLine(app.theme.background(colorUserMessageBg), text))
+		text := "  " + tui.PadRight(line, innerWidth) + "  "
+		lines = append(lines, tui.NewLine(app.theme.background(colorUserMessageBg), text))
 	}
 
 	lines = append(lines,
-		rendertext.NewLine(app.theme.background(colorUserMessageBg), rendertext.PadRight("", width)),
-		rendertext.NewLine(app.theme.style(colorDim), ""),
+		tui.NewLine(app.theme.background(colorUserMessageBg), tui.PadRight("", width)),
+		tui.NewLine(app.theme.style(colorDim), ""),
 	)
 
 	return lines
 }
 
-func (app *App) renderQueuedMessages(width int) []rendertext.Line {
+func (app *App) renderQueuedMessages(width int) []tui.Line {
 	style := app.theme.background(colorUserMessageBg).Foreground(app.theme.colors[colorMuted])
 	innerWidth := max(1, width-messageBoxHorizontalPadding)
 
-	lines := []rendertext.Line{rendertext.NewLine(app.theme.style(colorDim), "")}
+	lines := []tui.Line{tui.NewLine(app.theme.style(colorDim), "")}
 	for index, message := range app.queuedMessages {
-		header := "queued follow-up " + rendertext.Int(index+1)
+		header := "queued follow-up " + tui.Int(index+1)
 
-		lines = append(lines, rendertext.NewLine(style.Bold(true), "  "+rendertext.PadRight(header, innerWidth)+"  "))
-		for _, line := range rendertext.Wrap(message, innerWidth) {
-			lines = append(lines, rendertext.NewLine(style, "  "+rendertext.PadRight(line, innerWidth)+"  "))
+		lines = append(lines, tui.NewLine(style.Bold(true), "  "+tui.PadRight(header, innerWidth)+"  "))
+		for _, line := range tui.Wrap(message, innerWidth) {
+			lines = append(lines, tui.NewLine(style, "  "+tui.PadRight(line, innerWidth)+"  "))
 		}
 	}
 
-	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
+	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
 
 	return lines
 }
 
-func (app *App) renderAssistantMessage(width int, content string) []rendertext.Line {
+func (app *App) renderAssistantMessage(width int, content string) []tui.Line {
 	markdownLines := app.renderMarkdown(strings.TrimSpace(content), width)
-	lines := make([]rendertext.Line, 0, len(markdownLines)+messageOuterRows)
-	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
+	lines := make([]tui.Line, 0, len(markdownLines)+messageOuterRows)
+	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
 	lines = append(lines, markdownLines...)
-	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
+	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
 
 	return lines
 }
 
-func (app *App) renderStreamingMessage(width int, content string) []rendertext.Line {
-	wrapped := rendertext.Wrap(strings.TrimSpace(content), width)
+func (app *App) renderStreamingMessage(width int, content string) []tui.Line {
+	wrapped := tui.Wrap(strings.TrimSpace(content), width)
 	style := app.theme.style(colorText)
-	lines := make([]rendertext.Line, 0, len(wrapped)+messageOuterRows)
+	lines := make([]tui.Line, 0, len(wrapped)+messageOuterRows)
 
-	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
+	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
 	for _, line := range wrapped {
-		lines = append(lines, rendertext.NewLine(style, line))
+		lines = append(lines, tui.NewLine(style, line))
 	}
 
-	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
+	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
 
 	return lines
 }
 
-func (app *App) renderStreamingThinkingMessage(width int, content string) []rendertext.Line {
+func (app *App) renderStreamingThinkingMessage(width int, content string) []tui.Line {
 	return app.renderThinkingMessage(width, newChatMessage(transcript.RoleThinking, content))
 }
 
-func (app *App) renderStreamingBlockMessage(width int, message chatMessage) []rendertext.Line {
+func (app *App) renderStreamingBlockMessage(width int, message chatMessage) []tui.Line {
 	switch message.Role {
 	case transcript.RoleAssistant:
 		return app.renderStreamingMessage(width, message.Content)
@@ -142,44 +142,44 @@ func (app *App) renderStreamingBlockMessage(width int, message chatMessage) []re
 	return app.renderMessage(width, message)
 }
 
-func (app *App) renderToolMessage(width int, message chatMessage) []rendertext.Line {
+func (app *App) renderToolMessage(width int, message chatMessage) []tui.Line {
 	return app.renderToolBlock(width, message)
 }
 
-func (app *App) renderThinkingMessage(width int, message chatMessage) []rendertext.Line {
+func (app *App) renderThinkingMessage(width int, message chatMessage) []tui.Line {
 	style := app.theme.style(colorDim).Italic(true)
 	if app.hideThinking {
-		return []rendertext.Line{
-			rendertext.NewLine(tcell.StyleDefault, ""),
-			rendertext.NewLine(style, "thinking…"),
-			rendertext.NewLine(tcell.StyleDefault, ""),
+		return []tui.Line{
+			tui.NewLine(tcell.StyleDefault, ""),
+			tui.NewLine(style, "thinking…"),
+			tui.NewLine(tcell.StyleDefault, ""),
 		}
 	}
 
 	markdownLines := app.renderMarkdown(strings.TrimSpace(message.Content), width)
-	lines := make([]rendertext.Line, 0, len(markdownLines)+messageMetadataRows)
+	lines := make([]tui.Line, 0, len(markdownLines)+messageMetadataRows)
 
 	lines = append(lines,
-		rendertext.NewLine(tcell.StyleDefault, ""),
-		rendertext.NewLine(style.Bold(true), settingThinking),
+		tui.NewLine(tcell.StyleDefault, ""),
+		tui.NewLine(style.Bold(true), settingThinking),
 	)
 	for _, line := range markdownLines {
 		lines = append(lines, mergeLineStyle(line, style))
 	}
 
-	lines = append(lines, rendertext.NewLine(app.theme.style(colorDim), ""))
+	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
 
 	return lines
 }
 
-func mergeLineStyle(line rendertext.Line, style tcell.Style) rendertext.Line {
+func mergeLineStyle(line tui.Line, style tcell.Style) tui.Line {
 	merged := line
 
 	merged.Style = mergeStyles(line.Style, style)
 	if len(line.Spans) > 0 {
-		merged.Spans = make([]rendertext.Span, len(line.Spans))
+		merged.Spans = make([]tui.Span, len(line.Spans))
 		for index, span := range line.Spans {
-			merged.Spans[index] = rendertext.Span{Style: mergeStyles(span.Style, style), Text: span.Text}
+			merged.Spans[index] = tui.Span{Style: mergeStyles(span.Style, style), Text: span.Text}
 		}
 	}
 
@@ -215,7 +215,7 @@ func mergeStyles(base, overlay tcell.Style) tcell.Style {
 	return merged
 }
 
-func (app *App) renderCustomMessage(width int, content string) []rendertext.Line {
+func (app *App) renderCustomMessage(width int, content string) []tui.Line {
 	if isWelcomeMessage(content) {
 		return app.renderWelcomeMessage(width, content)
 	}
@@ -223,27 +223,27 @@ func (app *App) renderCustomMessage(width int, content string) []rendertext.Line
 	return boxedLines(width, "system", content, app.theme.background(colorCustomMessageBg))
 }
 
-func (app *App) renderSummaryMessage(width int, message chatMessage) []rendertext.Line {
+func (app *App) renderSummaryMessage(width int, message chatMessage) []tui.Line {
 	return boxedLines(width, string(message.Role), message.Content, app.theme.style(colorMuted))
 }
 
-func boxedLines(width int, label, content string, style tcell.Style) []rendertext.Line {
+func boxedLines(width int, label, content string, style tcell.Style) []tui.Line {
 	innerWidth := max(1, width-messageBoxHorizontalPadding)
-	wrapped := rendertext.Wrap(content, innerWidth)
-	lines := make([]rendertext.Line, 0, len(wrapped)+assistantMessageExtraRows)
+	wrapped := tui.Wrap(content, innerWidth)
+	lines := make([]tui.Line, 0, len(wrapped)+assistantMessageExtraRows)
 
 	lines = append(lines,
-		rendertext.NewLine(tcell.StyleDefault, ""),
-		rendertext.NewLine(style, rendertext.PadRight("", width)),
-		rendertext.NewLine(style.Bold(true), rendertext.PadRight("  ["+label+"]", width)),
+		tui.NewLine(tcell.StyleDefault, ""),
+		tui.NewLine(style, tui.PadRight("", width)),
+		tui.NewLine(style.Bold(true), tui.PadRight("  ["+label+"]", width)),
 	)
 	for _, line := range wrapped {
-		lines = append(lines, rendertext.NewLine(style, "  "+rendertext.PadRight(line, innerWidth)+"  "))
+		lines = append(lines, tui.NewLine(style, "  "+tui.PadRight(line, innerWidth)+"  "))
 	}
 
 	lines = append(lines,
-		rendertext.NewLine(style, rendertext.PadRight("", width)),
-		rendertext.NewLine(tcell.StyleDefault, ""),
+		tui.NewLine(style, tui.PadRight("", width)),
+		tui.NewLine(tcell.StyleDefault, ""),
 	)
 
 	return lines

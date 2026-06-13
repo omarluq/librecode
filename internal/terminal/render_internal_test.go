@@ -16,14 +16,14 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/terminal/extui"
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
 	"github.com/omarluq/librecode/internal/transcript"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func TestClearWindowRespectsWindowOrigin(t *testing.T) {
 	t.Parallel()
 
-	buffer := rendertext.NewBuffer(5, 2, tcell.StyleDefault)
+	buffer := tui.NewCellBuffer(5, 2, tcell.StyleDefault)
 	for row := 0; row < buffer.Height(); row++ {
 		for column := 0; column < buffer.Width(); column++ {
 			buffer.SetContent(column, row, 'x', nil, tcell.StyleDefault)
@@ -57,7 +57,7 @@ func TestAllMessageLinesFlattensStaticAndDynamicGroups(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.transcript.History = []chatMessage{newChatMessage(transcript.RoleAssistant, "hello")}
-	dynamic := [][]rendertext.Line{{rendertext.NewLine(app.theme.style(colorText), "dynamic")}}
+	dynamic := [][]tui.Line{{tui.NewLine(app.theme.style(colorText), "dynamic")}}
 
 	lines := app.allMessageLines(40, dynamic)
 	texts := lineTexts(lines)
@@ -248,19 +248,19 @@ func TestRenderBoxedMessagesUseBoxedLayout(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		render   func(app *App) []rendertext.Line
+		render   func(app *App) []tui.Line
 		expected string
 	}{
 		{
 			name: "custom message",
-			render: func(app *App) []rendertext.Line {
+			render: func(app *App) []tui.Line {
 				return app.renderCustomMessage(30, "system note")
 			},
 			expected: "  [system]                    ",
 		},
 		{
 			name: "summary message",
-			render: func(app *App) []rendertext.Line {
+			render: func(app *App) []tui.Line {
 				return app.renderSummaryMessage(30, newChatMessage(transcript.RoleCompactionSummary, "summary note"))
 			},
 			expected: "  [compactionSummary]         ",
@@ -283,7 +283,7 @@ func TestVisibleMessageLineGroupsDoesNotMutateScrollOffset(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.scrollOffset = 5
-	groups := [][]rendertext.Line{{rendertext.NewLine(app.theme.style(colorText), "one")}}
+	groups := [][]tui.Line{{tui.NewLine(app.theme.style(colorText), "one")}}
 
 	lines := app.visibleMessageLineGroups(groups, 10)
 
@@ -311,7 +311,7 @@ func TestRenderWelcomeMessageHasCardPadding(t *testing.T) {
 		t.Fatalf("welcome art should render logo content, got %q", artLine)
 	}
 
-	if got, want := rendertext.Width(artLine), 90; got != want {
+	if got, want := tui.Width(artLine), 90; got != want {
 		t.Fatalf("welcome line width = %d, want %d", got, want)
 	}
 
@@ -368,7 +368,7 @@ func TestRenderCompactingIndicatorUsesCompactionTextAndPalette(t *testing.T) {
 		t.Fatalf("compacting shimmer bright = %v, want %v", got, want)
 	}
 
-	app.frame = rendertext.NewBuffer(40, len(lines), tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(40, len(lines), tcell.StyleDefault)
 	app.writeStyledLine(1, 40, lines[1])
 
 	if got, want := app.frame.Cell(0, 1).Style.GetForeground(), palette.bright; got != want {
@@ -435,17 +435,17 @@ func TestWriteStyledLineOnlyShimmersMarkedLines(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.frame = rendertext.NewBuffer(20, 2, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(20, 2, tcell.StyleDefault)
 	app.workFrame = 0
 	row := 0
-	app.writeStyledLine(row, 20, rendertext.NewLine(app.theme.style(colorText), "assistant working… text"))
+	app.writeStyledLine(row, 20, tui.NewLine(app.theme.style(colorText), "assistant working… text"))
 
 	if got, want := app.frame.Cell(0, row).Style.GetForeground(), app.theme.colors[colorText]; got != want {
 		t.Fatalf("plain line foreground = %v, want %v", got, want)
 	}
 
 	row = 1
-	app.writeStyledLine(row, 20, rendertext.NewLine(app.theme.style(colorText), "⠋ Shenaniganing..."))
+	app.writeStyledLine(row, 20, tui.NewLine(app.theme.style(colorText), "⠋ Shenaniganing..."))
 
 	if got, want := app.frame.Cell(0, row).Style.GetForeground(), defaultWorkingShimmerBrightColor(); got != want {
 		t.Fatalf("spinner foreground = %v, want %v", got, want)
@@ -495,7 +495,7 @@ func TestMouseSelectionCopiesFrameText(t *testing.T) {
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
 	app.screen = screen
-	app.frame = rendertext.NewBuffer(8, 2, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(8, 2, tcell.StyleDefault)
 	writeLine(app.frame, 0, 8, "hello", tcell.StyleDefault)
 	writeLine(app.frame, 1, 8, "world", tcell.StyleDefault)
 
@@ -514,7 +514,7 @@ func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
 	app.screen = screen
-	app.frame = rendertext.NewBuffer(16, 1, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(16, 1, tcell.StyleDefault)
 	writeLine(app.frame, 0, 16, "hello world", tcell.StyleDefault)
 
 	firstClick := time.Now()
@@ -544,7 +544,7 @@ func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
 	app.screen = screen
-	app.frame = rendertext.NewBuffer(16, 1, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(16, 1, tcell.StyleDefault)
 	writeLine(app.frame, 0, 16, "hello   world", tcell.StyleDefault)
 
 	firstClick := time.Now()
@@ -570,7 +570,7 @@ func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
 	app.screen = screen
-	app.frame = rendertext.NewBuffer(16, 2, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(16, 2, tcell.StyleDefault)
 	writeLine(app.frame, 0, 16, "hello", tcell.StyleDefault)
 	writeLine(app.frame, 1, 16, "hello world", tcell.StyleDefault)
 
@@ -600,8 +600,8 @@ func TestFlushFrameHighlightsSelection(t *testing.T) {
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
 	app.screen = screen
-	app.renderer = rendertext.NewRenderer(screen)
-	app.frame = rendertext.NewBuffer(6, 1, tcell.StyleDefault)
+	app.renderer = tui.NewRenderer(screen)
+	app.frame = tui.NewCellBuffer(6, 1, tcell.StyleDefault)
 	writeLine(app.frame, 0, 6, "abcdef", app.theme.style(colorText))
 	app.selection = mouseSelection{
 		lastClickUnixNano: 0,
@@ -713,7 +713,7 @@ func TestScrolledMessageLinesCanReachFullHistory(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range 20 {
-		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+tui.Int(index))
 	}
 
 	bottom := app.messageLines(80, 6)
@@ -735,7 +735,7 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 
 	app := newRenderTestApp(t)
 	for index := range 20 {
-		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+tui.Int(index))
 	}
 
 	_ = app.messageLines(80, 6)
@@ -802,7 +802,7 @@ func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range messageCacheWarmBatchSize + 1 {
-		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+tui.Int(index))
 	}
 
 	_ = app.messageLines(80, 6)
@@ -828,7 +828,7 @@ func TestScrolledMessageLinesBeforeWarmCacheUsesVisibleTail(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range 100 {
-		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index))
+		app.addMessage(transcript.RoleAssistant, "history message "+tui.Int(index))
 	}
 
 	_ = app.messageLines(80, 6)
@@ -853,7 +853,7 @@ func TestScrolledMessageLinesRevalidatesWarmCacheAfterResize(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	for index := range 20 {
-		app.addMessage(transcript.RoleAssistant, "history message "+rendertext.Int(index)+" with enough text to wrap")
+		app.addMessage(transcript.RoleAssistant, "history message "+tui.Int(index)+" with enough text to wrap")
 	}
 
 	_ = app.messageLines(80, 6)
@@ -1022,7 +1022,7 @@ func TestToolBlockPreservesFileContentIndentation(t *testing.T) {
 		t.Fatalf("expected space-indented file line to be preserved, got %#v", texts)
 	}
 
-	app.frame = rendertext.NewBuffer(80, len(lines), tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(80, len(lines), tcell.StyleDefault)
 	for row, line := range lines {
 		app.writeStyledLine(row, 80, line)
 	}
@@ -1075,7 +1075,7 @@ func TestExtensionRendererSkipsDefaultComposerDraw(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.composerBuffer.SetText("host text")
 	layout := app.defaultRuntimeLayout(40, 12)
-	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	window := layout.Composer
 	window.Renderer = "extension"
 	app.extensionUI.Windows[window.Name] = window
@@ -1092,7 +1092,7 @@ func TestUIRenderDrawsSpansWithoutClearingLaterSpans(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	layout := app.defaultRuntimeLayout(40, 12)
-	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	app.extensionUI.Overrides[extui.BufferComposer] = extui.WindowOverride{
 		DrawOps: []extension.UIDrawOp{
 			{
@@ -1138,7 +1138,7 @@ func TestUIRenderDrawsWideRunesByCellWidth(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	layout := app.defaultRuntimeLayout(40, 12)
-	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	app.extensionUI.Overrides[extui.BufferComposer] = extui.WindowOverride{
 		DrawOps: []extension.UIDrawOp{
 			{
@@ -1179,9 +1179,9 @@ func TestUIRenderClearRegionClipsToWindow(t *testing.T) {
 	app := newRenderTestApp(t)
 	layout := app.defaultRuntimeLayout(40, 12)
 
-	app.frame = rendertext.NewBuffer(layout.Width, layout.Height, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(layout.Width, layout.Height, tcell.StyleDefault)
 	for row := 0; row < layout.Composer.Height; row++ {
-		writeTextAt(
+		tui.WriteCells(
 			app.frame,
 			layout.Composer.X,
 			layout.Composer.Y+row,
@@ -1312,7 +1312,7 @@ func TestDrawComposerDoesNotPersistDefaultWindowGeometry(t *testing.T) {
 	app.composerBuffer.SetText(strings.Repeat("wide ", 24))
 
 	wideLayout := app.defaultRuntimeLayout(80, 24)
-	app.frame = rendertext.NewBuffer(wideLayout.Width, wideLayout.Height, tcell.StyleDefault)
+	app.frame = tui.NewCellBuffer(wideLayout.Width, wideLayout.Height, tcell.StyleDefault)
 	app.drawComposerWindow(&wideLayout)
 
 	if _, ok := app.extensionUI.Windows[extui.BufferComposer]; ok {
@@ -1329,7 +1329,7 @@ func TestDrawComposerDoesNotPersistDefaultWindowGeometry(t *testing.T) {
 	}
 }
 
-func frameText(frame *rendertext.Buffer) string {
+func frameText(frame *tui.CellBuffer) string {
 	if frame == nil {
 		return ""
 	}
@@ -1389,7 +1389,7 @@ func newTestToolEvent(name, result string) *assistant.ToolEvent {
 	}
 }
 
-func assertThinkingLineDim(t *testing.T, app *App, lines []rendertext.Line) {
+func assertThinkingLineDim(t *testing.T, app *App, lines []tui.Line) {
 	t.Helper()
 
 	if len(lines) < 3 {
@@ -1429,7 +1429,7 @@ func rolesEqual(left, right []transcript.Role) bool {
 	return true
 }
 
-func lineIndexContaining(lines []rendertext.Line, text string) int {
+func lineIndexContaining(lines []tui.Line, text string) int {
 	for index, line := range lines {
 		if strings.Contains(line.Text, text) {
 			return index
@@ -1439,7 +1439,7 @@ func lineIndexContaining(lines []rendertext.Line, text string) int {
 	return -1
 }
 
-func lineTexts(lines []rendertext.Line) []string {
+func lineTexts(lines []tui.Line) []string {
 	texts := make([]string, 0, len(lines))
 	for _, line := range lines {
 		texts = append(texts, line.Text)

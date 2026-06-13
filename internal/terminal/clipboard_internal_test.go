@@ -1,7 +1,7 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 	"sync"
 
 	"github.com/gdamore/tcell/v3"
@@ -12,7 +12,7 @@ const clipboardTestTerminal = "clipboard-test"
 
 type clipboardScreen struct {
 	cells     *tcell.CellBuffer
-	content   map[[2]int]rendertext.Cell
+	content   map[[2]int]tui.Cell
 	events    chan tcell.Event
 	stop      chan struct{}
 	clipboard []byte
@@ -23,7 +23,7 @@ type clipboardScreen struct {
 func newClipboardScreen() *clipboardScreen {
 	return &clipboardScreen{
 		cells:     newTcellBuffer(80, 24),
-		content:   map[[2]int]rendertext.Cell{},
+		content:   map[[2]int]tui.Cell{},
 		events:    make(chan tcell.Event, 8),
 		stop:      make(chan struct{}),
 		clipboard: nil,
@@ -55,11 +55,11 @@ func (screen *clipboardScreen) Get(_, _ int) (text string, style tcell.Style, wi
 	return "", tcell.StyleDefault, 1
 }
 
-func (screen *clipboardScreen) SetContent(x, y int, primary rune, _ []rune, style tcell.Style) {
+func (screen *clipboardScreen) SetContent(x, y int, primary rune, combiner []rune, style tcell.Style) {
 	screen.mu.Lock()
 	defer screen.mu.Unlock()
 
-	screen.content[[2]int{x, y}] = rendertext.Cell{Style: style, Rune: primary}
+	screen.content[[2]int{x, y}] = tui.Cell{Style: style, Comb: append([]rune(nil), combiner...), Rune: primary}
 }
 
 func (screen *clipboardScreen) SetStyle(tcell.Style)                                 {}

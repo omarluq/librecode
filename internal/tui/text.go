@@ -15,6 +15,8 @@ type Segment struct {
 	Width int
 }
 
+const tabDisplayWidth = 4
+
 // RuneLen returns the number of UTF-8 runes in text.
 func RuneLen(text string) int {
 	return utf8.RuneCountInString(text)
@@ -35,13 +37,22 @@ func Segments(text string) []Segment {
 
 	iterator := displaywidth.StringGraphemes(text)
 	for iterator.Next() {
+		text := iterator.Value()
 		segments = append(segments, Segment{
-			Text:  iterator.Value(),
-			Width: max(0, iterator.Width()),
+			Text:  text,
+			Width: segmentDisplayWidth(text, iterator.Width()),
 		})
 	}
 
 	return segments
+}
+
+func segmentDisplayWidth(text string, width int) int {
+	if text == "\t" {
+		return tabDisplayWidth
+	}
+
+	return max(0, width)
 }
 
 // Fit returns the longest prefix of text that fits into width terminal cells.
@@ -372,9 +383,7 @@ func writeWideContinuationCells(screen ContentSetter, column, row, width int, st
 
 // WriteTabSegment writes a tab as up to four spaces.
 func WriteTabSegment(screen ContentSetter, column, row, width int, style tcell.Style) int {
-	const tabWidth = 4
-
-	spaces := min(tabWidth, width)
+	spaces := min(tabDisplayWidth, width)
 	for offset := range spaces {
 		screen.SetContent(column+offset, row, ' ', nil, style)
 	}

@@ -1,7 +1,7 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/terminal/rendertext"
+	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 	"time"
 
@@ -77,7 +77,7 @@ func (selection *mouseSelection) contains(column, row int) bool {
 	return true
 }
 
-func (selection *mouseSelection) textFrom(frame *rendertext.Buffer) string {
+func (selection *mouseSelection) textFrom(frame *tui.CellBuffer) string {
 	if frame == nil || selection.empty() {
 		return ""
 	}
@@ -123,7 +123,7 @@ func selectionRowBounds(row, startX, startY, endX, endY, width int) (from, to in
 	return from, to
 }
 
-func selectedFrameLine(frame *rendertext.Buffer, row, from, limit int) string {
+func selectedFrameLine(frame *tui.CellBuffer, row, from, limit int) string {
 	var builder strings.Builder
 	for column := from; column < limit; column++ {
 		builder.WriteRune(frame.Cell(column, row).Rune)
