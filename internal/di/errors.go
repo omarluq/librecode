@@ -7,5 +7,5 @@ func serviceError(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("di").Wrapf(err, "%s", action)
+	return oops.In("di").Code("di_error").Wrapf(err, "%s", action)
 }

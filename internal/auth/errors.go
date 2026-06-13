@@ -7,5 +7,5 @@ func authError(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("auth").Wrapf(err, "%s", action)
+	return oops.In("auth").Code("auth_error").Wrapf(err, "%s", action)
 }

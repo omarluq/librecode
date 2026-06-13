@@ -17,16 +17,18 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		client   assistant.Completer
-		seed     func(t *testing.T, repository *database.SessionRepository, sessionID string)
-		name     string
-		wantCode string
+		client        assistant.Completer
+		seed          func(t *testing.T, repository *database.SessionRepository, sessionID string)
+		name          string
+		wantCode      string
+		wantOuterCode bool
 	}{
 		{
-			name:     "preserves validation error when nothing can be compacted",
-			client:   newSequencedCompleter(autoCompactionTestUnused),
-			seed:     nil,
-			wantCode: testContextWindowExceededOopsCode,
+			name:          "preserves validation error when nothing can be compacted",
+			client:        newSequencedCompleter(autoCompactionTestUnused),
+			seed:          nil,
+			wantCode:      testContextWindowExceededOopsCode,
+			wantOuterCode: false,
 		},
 		{
 			name:   "wraps summarization failure",
@@ -35,7 +37,8 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 				t.Helper()
 				appendAutoCompactionOldTurn(t, repository, sessionID)
 			},
-			wantCode: "compact_summarize",
+			wantCode:      "assistant_error",
+			wantOuterCode: false,
 		},
 		{
 			name:   "wraps rebuilt budget failure",
@@ -67,6 +70,13 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 			response, err := runtime.Prompt(context.Background(), request)
 
 			require.Nil(t, response)
+
+			if testCase.wantOuterCode {
+				requireOuterOopsCode(t, err, testCase.wantCode)
+
+				return
+			}
+
 			requireOopsCode(t, err, testCase.wantCode)
 		})
 	}

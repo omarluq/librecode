@@ -7,5 +7,5 @@ func extensionError(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("extension").Wrapf(err, "%s", action)
+	return oops.In("extension").Code("extension_error").Wrapf(err, "%s", action)
 }

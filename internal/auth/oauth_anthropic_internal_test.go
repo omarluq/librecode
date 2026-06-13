@@ -1,4 +1,4 @@
-package auth_test
+package auth
 
 import (
 	"encoding/json"
@@ -10,20 +10,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/omarluq/librecode/internal/auth"
 )
 
 func TestNewAnthropicFlowIncludesPKCE(t *testing.T) {
 	t.Parallel()
 
-	authURL := auth.NewAnthropicFlowURLForTest(t)
+	authURL := newAnthropicFlowURLForTest(t)
 	parsed, err := url.Parse(authURL)
 	require.NoError(t, err)
 
 	query := parsed.Query()
 
-	assert.Equal(t, auth.AnthropicClientIDForTest(), query.Get("client_id"))
+	assert.Equal(t, anthropicClientID, query.Get("client_id"))
 	assert.Equal(t, "code", query.Get("response_type"))
 	assert.Equal(t, "http://localhost:53692/callback", query.Get("redirect_uri"))
 	assert.Equal(t, "S256", query.Get("code_challenge_method"))
@@ -34,7 +32,7 @@ func TestNewAnthropicFlowIncludesPKCE(t *testing.T) {
 func TestAnthropicLoginURL(t *testing.T) {
 	t.Parallel()
 
-	loginURL, err := auth.AnthropicLoginURLForTest()
+	loginURL, err := AnthropicLoginURL()
 	require.NoError(t, err)
 	assert.Contains(t, loginURL, "code_challenge=")
 }
@@ -64,9 +62,9 @@ func TestLoginAnthropicWithCode(t *testing.T) {
 	}))
 	defer server.Close()
 
-	credential, err := auth.LoginAnthropicWithCodeForTest(t.Context(), "code#state", server.URL)
+	credential, err := loginAnthropicWithCode(t.Context(), "code#state", server.URL)
 	require.NoError(t, err)
-	assert.Equal(t, auth.CredentialTypeOAuth, credential.Type)
+	assert.Equal(t, CredentialTypeOAuth, credential.Type)
 	assert.Equal(t, "sk-ant-oat-access", credential.Access)
 }
 
@@ -80,7 +78,7 @@ func TestRequestAnthropicToken(t *testing.T) {
 		var payload map[string]string
 		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		assert.Equal(t, "refresh_token", payload["grant_type"])
-		assert.Equal(t, auth.AnthropicClientIDForTest(), payload["client_id"])
+		assert.Equal(t, anthropicClientID, payload["client_id"])
 
 		writer.Header().Set("Content-Type", "application/json")
 		_, err := writer.Write([]byte(`{
@@ -92,9 +90,9 @@ func TestRequestAnthropicToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	credential, err := auth.RefreshAnthropicForTest(t.Context(), "refresh", server.URL)
+	credential, err := refreshAnthropicWithTokenURL(t.Context(), "refresh", server.URL)
 	require.NoError(t, err)
-	assert.Equal(t, auth.CredentialTypeOAuth, credential.Type)
+	assert.Equal(t, CredentialTypeOAuth, credential.Type)
 	assert.Equal(t, "sk-ant-oat-access", credential.Access)
 	assert.Equal(t, "refresh", credential.Refresh)
 	assert.Greater(t, credential.Expires, time.Now().UnixMilli())
@@ -103,6 +101,15 @@ func TestRequestAnthropicToken(t *testing.T) {
 func TestIsAnthropicOAuthAccessToken(t *testing.T) {
 	t.Parallel()
 
-	assert.True(t, auth.IsAnthropicOAuthAccessTokenForTest("sk-ant-oat-access"))
-	assert.False(t, auth.IsAnthropicOAuthAccessTokenForTest("sk-ant-api03-access"))
+	assert.True(t, isAnthropicOAuthAccessToken("sk-ant-oat-access"))
+	assert.False(t, isAnthropicOAuthAccessToken("sk-ant-api03-access"))
+}
+
+func newAnthropicFlowURLForTest(t *testing.T) string {
+	t.Helper()
+
+	flow, err := newAnthropicFlow()
+	require.NoError(t, err)
+
+	return flow.URL
 }

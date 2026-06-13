@@ -7,5 +7,5 @@ func providerWrap(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("provider").Wrapf(err, "%s", action)
+	return oops.In("provider").Code("provider_error").Wrapf(err, "%s", action)
 }

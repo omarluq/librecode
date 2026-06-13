@@ -3,6 +3,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 
 	"github.com/samber/oops"
@@ -46,6 +47,37 @@ type Credential struct {
 	AccountID string            `json:"account_id,omitempty"`
 	Expires   int64             `json:"expires,omitempty"`
 	ExpiresAt int64             `json:"expires_at,omitempty"`
+}
+
+// UnmarshalJSON accepts the current account_id key and legacy accountId auth files.
+func (credential *Credential) UnmarshalJSON(data []byte) error {
+	type credentialJSON Credential
+
+	var decoded credentialJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return authError(err, "decode credential")
+	}
+
+	*credential = Credential(decoded)
+	if credential.AccountID == "" {
+		credential.AccountID = legacyStringField(data, "accountId")
+	}
+
+	return nil
+}
+
+func legacyStringField(data []byte, key string) string {
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return ""
+	}
+
+	var value string
+	if err := json.Unmarshal(fields[key], &value); err != nil {
+		return ""
+	}
+
+	return value
 }
 
 // Status reports whether auth exists without revealing secrets.

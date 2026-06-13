@@ -7,5 +7,5 @@ func coreError(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("core").Wrapf(err, "%s", action)
+	return oops.In("core").Code("core_error").Wrapf(err, "%s", action)
 }

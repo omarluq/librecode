@@ -1,6 +1,10 @@
 package model
 
-import "github.com/omarluq/librecode/internal/units"
+import (
+	"encoding/json"
+
+	"github.com/omarluq/librecode/internal/units"
+)
 
 // TokenContributor describes a large piece of model-facing context.
 type TokenContributor struct {
@@ -19,6 +23,37 @@ type TokenUsage struct {
 	ContextTokens   int                `json:"context_tokens,omitempty"`
 	InputTokens     int                `json:"input_tokens,omitempty"`
 	OutputTokens    int                `json:"output_tokens,omitempty"`
+}
+
+// UnmarshalJSON accepts current snake_case usage and legacy topContributors payloads.
+func (usage *TokenUsage) UnmarshalJSON(content []byte) error {
+	type tokenUsageJSON TokenUsage
+
+	var decoded tokenUsageJSON
+	if err := json.Unmarshal(content, &decoded); err != nil {
+		return modelDecodeTokenUsageError(err)
+	}
+
+	*usage = TokenUsage(decoded)
+	if len(usage.TopContributors) == 0 {
+		usage.TopContributors = legacyTopContributors(content)
+	}
+
+	return nil
+}
+
+func legacyTopContributors(content []byte) []TokenContributor {
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(content, &fields); err != nil {
+		return nil
+	}
+
+	contributors := []TokenContributor{}
+	if err := json.Unmarshal(fields["topContributors"], &contributors); err != nil {
+		return nil
+	}
+
+	return contributors
 }
 
 // EmptyTokenUsage returns a zero-value token usage with explicit fields.

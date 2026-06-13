@@ -7,5 +7,5 @@ func limitError(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("limitio").Wrapf(err, "%s", action)
+	return oops.In("limitio").Code("limitio_error").Wrapf(err, "%s", action)
 }

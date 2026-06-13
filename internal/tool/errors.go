@@ -7,5 +7,5 @@ func toolWrap(err error, action string) error {
 		return nil
 	}
 
-	return oops.In("tool").Wrapf(err, "%s", action)
+	return oops.In("tool").Code("tool_error").Wrapf(err, "%s", action)
 }

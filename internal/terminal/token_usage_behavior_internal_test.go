@@ -1,13 +1,14 @@
-package terminal_test
+package terminal
 
 import (
 	"testing"
+
+	"github.com/omarluq/librecode/internal/transcript"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/terminal"
 )
 
 const (
@@ -43,7 +44,7 @@ func TestMergeTerminalUsageIgnoresInputOutputTokens(t *testing.T) {
 		ContextTokens:   0,
 		InputTokens:     0,
 		OutputTokens:    0,
-	}, terminal.MergeTerminalUsageForTest(current, next))
+	}, mergeTerminalUsage(current, next))
 }
 
 func TestMergeTerminalUsagePreservesEstimatedContext(t *testing.T) {
@@ -73,14 +74,14 @@ func TestMergeTerminalUsagePreservesEstimatedContext(t *testing.T) {
 		ContextTokens:   17_000,
 		InputTokens:     17_000,
 		OutputTokens:    0,
-	}, terminal.MergeTerminalUsageForTest(current, next))
+	}, mergeTerminalUsage(current, next))
 }
 
 func TestApplyTokenUsageSnapshotAllowsContextDecrease(t *testing.T) {
 	t.Parallel()
 
-	app := terminal.NewAppForTest()
-	app.ApplyTokenUsageForTest(&model.TokenUsage{
+	app := newTestApp()
+	app.applyTokenUsage(&model.TokenUsage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
@@ -91,7 +92,7 @@ func TestApplyTokenUsageSnapshotAllowsContextDecrease(t *testing.T) {
 	usage := model.TokenUsage{
 		Breakdown: map[string]int{testBreakdownHistory: 5_000},
 		TopContributors: []model.TokenContributor{
-			{Label: "summary", Role: "", Preview: "", Tokens: 5_000, Chars: 20_000},
+			{Label: terminalTestSummary, Role: "", Preview: "", Tokens: 5_000, Chars: 20_000},
 		},
 		ContextWindow: 100_000,
 		ContextTokens: 12_000,
@@ -99,20 +100,20 @@ func TestApplyTokenUsageSnapshotAllowsContextDecrease(t *testing.T) {
 		OutputTokens:  0,
 	}
 
-	app.ApplyTokenUsageSnapshotForTest(&usage)
+	app.applyTokenUsageSnapshotForTest(&usage)
 	usage.Breakdown[testBreakdownHistory] = 99
 	usage.TopContributors[0].Label = "mutated"
 
 	assert.Equal(t, model.TokenUsage{
 		Breakdown: map[string]int{testBreakdownHistory: 5_000},
 		TopContributors: []model.TokenContributor{
-			{Label: "summary", Role: "", Preview: "", Tokens: 5_000, Chars: 20_000},
+			{Label: terminalTestSummary, Role: "", Preview: "", Tokens: 5_000, Chars: 20_000},
 		},
 		ContextWindow: 100_000,
 		ContextTokens: 12_000,
 		InputTokens:   12_000,
 		OutputTokens:  0,
-	}, app.TokenUsageForTest())
+	}, app.tokenUsage)
 }
 
 func TestFormatTokenStatusHidesWindowOnlyUsage(t *testing.T) {
@@ -127,14 +128,14 @@ func TestFormatTokenStatusHidesWindowOnlyUsage(t *testing.T) {
 		OutputTokens:    0,
 	}
 
-	assert.Empty(t, terminal.FormatTokenStatusForTest(usage))
+	assert.Empty(t, formatTokenStatus(usage))
 }
 
 func TestResetMessagesClearsTokenUsage(t *testing.T) {
 	t.Parallel()
 
-	app := terminal.NewAppForTest()
-	app.SetTokenUsageForTest(model.TokenUsage{
+	app := newTestApp()
+	app.setTokenUsageForTest(model.TokenUsage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1000,
@@ -143,16 +144,16 @@ func TestResetMessagesClearsTokenUsage(t *testing.T) {
 		OutputTokens:    0,
 	})
 
-	app.ResetMessagesForTest()
+	app.resetMessages()
 
-	assert.Equal(t, model.EmptyTokenUsage(), app.TokenUsageForTest())
+	assert.Equal(t, model.EmptyTokenUsage(), app.tokenUsage)
 }
 
 func TestTruncateMessagesClearsTokenUsage(t *testing.T) {
 	t.Parallel()
 
-	app := terminal.NewAppForTest()
-	app.SetTokenUsageForTest(model.TokenUsage{
+	app := newTestApp()
+	app.setTokenUsageForTest(model.TokenUsage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1000,
@@ -160,11 +161,11 @@ func TestTruncateMessagesClearsTokenUsage(t *testing.T) {
 		InputTokens:     0,
 		OutputTokens:    0,
 	})
-	app.AddMessageForTest("user", "hello")
+	app.addMessageForTest("user", "hello")
 
-	app.TruncateMessagesForTest(0)
+	app.truncateMessages(0)
 
-	assert.Equal(t, model.EmptyTokenUsage(), app.TokenUsageForTest())
+	assert.Equal(t, model.EmptyTokenUsage(), app.tokenUsage)
 }
 
 func TestMergeTerminalUsageKeepsBreakdownAndContributors(t *testing.T) {
@@ -185,7 +186,7 @@ func TestMergeTerminalUsageKeepsBreakdownAndContributors(t *testing.T) {
 			testBreakdownSystem:     10,
 		},
 		TopContributors: []model.TokenContributor{
-			{Label: "message 1", Role: "user", Preview: "hello", Tokens: 30, Chars: 120},
+			{Label: "message 1", Role: "user", Preview: terminalTestGreeting, Tokens: 30, Chars: 120},
 		},
 		ContextWindow: 0,
 		ContextTokens: 30,
@@ -193,7 +194,7 @@ func TestMergeTerminalUsageKeepsBreakdownAndContributors(t *testing.T) {
 		OutputTokens:  0,
 	}
 
-	merged := terminal.MergeTerminalUsageForTest(current, next)
+	merged := mergeTerminalUsage(current, next)
 	next.TopContributors[0].Label = "mutated"
 
 	assert.Equal(t, map[string]int{
@@ -207,7 +208,7 @@ func TestMergeTerminalUsageKeepsBreakdownAndContributors(t *testing.T) {
 func TestContextBreakdownLinesSortsAndSkipsEmptyValues(t *testing.T) {
 	t.Parallel()
 
-	lines := terminal.ContextBreakdownLinesForTest(map[string]int{
+	lines := contextBreakdownLines(map[string]int{
 		testBreakdownExtensions: 0,
 		testBreakdownHistory:    1200,
 		testBreakdownSystem:     50,
@@ -219,7 +220,7 @@ func TestContextBreakdownLinesSortsAndSkipsEmptyValues(t *testing.T) {
 func TestContextContributorLinesFormatsTopContributors(t *testing.T) {
 	t.Parallel()
 
-	lines := terminal.ContextContributorLinesForTest([]model.TokenContributor{
+	lines := contextContributorLines([]model.TokenContributor{
 		{Label: "message 1", Role: "user", Preview: "long pasted traceback", Tokens: 18000, Chars: 72000},
 	})
 
@@ -229,7 +230,7 @@ func TestContextContributorLinesFormatsTopContributors(t *testing.T) {
 func TestCompactCountFormatsMillionValues(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "ctx 1.2m", terminal.FormatContextUsageForTest(model.TokenUsage{
+	assert.Equal(t, "ctx 1.2m", formatContextUsage(model.TokenUsage{
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -242,11 +243,11 @@ func TestCompactCountFormatsMillionValues(t *testing.T) {
 func TestShowContextInfoHandlesContextCommandWithoutUsage(t *testing.T) {
 	t.Parallel()
 
-	app := terminal.NewAppForTest()
+	app := newTestApp()
 
-	require.NoError(t, app.ShowContextInfoForTest("/context"))
+	require.NoError(t, app.showContextInfo(t.Context(), "/context"))
 
-	messages := app.MessageContentsForTest()
+	messages := app.messageContentsForTest()
 	require.NotEmpty(t, messages)
 	assert.Equal(t, "context:", messages[len(messages)-1])
 }
@@ -254,8 +255,8 @@ func TestShowContextInfoHandlesContextCommandWithoutUsage(t *testing.T) {
 func TestShowContextInfoDisplaysSummaryAndBreakdown(t *testing.T) {
 	t.Parallel()
 
-	app := terminal.NewAppForTest()
-	app.SetTokenUsageForTest(model.TokenUsage{
+	app := newTestApp()
+	app.setTokenUsageForTest(model.TokenUsage{
 		Breakdown: map[string]int{
 			testBreakdownExtensions: 0,
 			testBreakdownHistory:    1200,
@@ -270,9 +271,9 @@ func TestShowContextInfoDisplaysSummaryAndBreakdown(t *testing.T) {
 		OutputTokens:  0,
 	})
 
-	require.NoError(t, app.ShowContextInfoForTest("/context now"))
+	require.NoError(t, app.showContextInfo(t.Context(), "/context now"))
 
-	messages := app.MessageContentsForTest()
+	messages := app.messageContentsForTest()
 	require.NotEmpty(t, messages)
 	message := messages[len(messages)-1]
 	assert.Contains(t, message, "context:")
@@ -296,5 +297,40 @@ func TestFormatContextUsageUsesModelWindow(t *testing.T) {
 		OutputTokens:    0,
 	}
 
-	assert.Equal(t, "ctx 156k/272k 57%", terminal.FormatContextUsageForTest(usage))
+	assert.Equal(t, "ctx 156k/272k 57%", formatContextUsage(usage))
+}
+
+func newTestApp() *App {
+	return newApp(nil, &RunOptions{
+		Extensions: nil,
+		Resources:  nil,
+		Runtime:    nil,
+		Settings:   nil,
+		Models:     nil,
+		Auth:       nil,
+		Config:     nil,
+		CWD:        "",
+		SessionID:  "",
+	})
+}
+
+func (app *App) setTokenUsageForTest(usage model.TokenUsage) {
+	app.tokenUsage = usage
+}
+
+func (app *App) applyTokenUsageSnapshotForTest(usage *model.TokenUsage) {
+	app.applyTokenUsageEvent(usage, true)
+}
+
+func (app *App) addMessageForTest(role, content string) {
+	app.addMessage(transcript.Role(role), content)
+}
+
+func (app *App) messageContentsForTest() []string {
+	contents := make([]string, 0, len(app.transcript.History))
+	for _, message := range app.transcript.History {
+		contents = append(contents, message.Content)
+	}
+
+	return contents
 }

@@ -125,6 +125,21 @@ type EntryDataEntity struct {
 	FromHook                   bool                   `json:"from_hook,omitempty"`
 }
 
+// UnmarshalJSON accepts current snake_case keys and legacy camelCase data_json rows.
+func (data *EntryDataEntity) UnmarshalJSON(content []byte) error {
+	type entryDataJSON EntryDataEntity
+
+	var decoded entryDataJSON
+	if err := decodeEntryJSON(content, &decoded); err != nil {
+		return databaseDecodeEntryDataError(err)
+	}
+
+	*data = EntryDataEntity(decoded)
+	data.applyLegacyFields(content)
+
+	return nil
+}
+
 // TreeNodeEntity is an entry and its direct descendants.
 type TreeNodeEntity struct {
 	Children []TreeNodeEntity `json:"children"`
@@ -137,6 +152,21 @@ type EntryTokenUsageEntity struct {
 	ContextTokens int `json:"context_tokens,omitempty"`
 	InputTokens   int `json:"input_tokens,omitempty"`
 	OutputTokens  int `json:"output_tokens,omitempty"`
+}
+
+// UnmarshalJSON accepts current snake_case keys and legacy camelCase usage rows.
+func (usage *EntryTokenUsageEntity) UnmarshalJSON(content []byte) error {
+	type entryTokenUsageJSON EntryTokenUsageEntity
+
+	var decoded entryTokenUsageJSON
+	if err := decodeEntryJSON(content, &decoded); err != nil {
+		return databaseDecodeEntryUsageError(err)
+	}
+
+	*usage = EntryTokenUsageEntity(decoded)
+	legacyUsage(content, usage)
+
+	return nil
 }
 
 // HasAny reports whether the usage entity has any provider-reported values.

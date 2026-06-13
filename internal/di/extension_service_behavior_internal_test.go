@@ -1,4 +1,4 @@
-package di_test
+package di
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/di"
 	"github.com/omarluq/librecode/internal/extension"
 )
 
@@ -31,7 +30,7 @@ func TestExtensionServiceUsesProjectLockfile(t *testing.T) {
 	}}
 	require.NoError(t, extension.WriteLockFile(projectLock, lockFile))
 
-	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false})
+	container, err := NewContainer("", ConfigOverrides{DisableExtensions: false})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		report := container.ShutdownWithContext(context.Background())
@@ -48,7 +47,7 @@ func TestExtensionLockPathUsesGlobalPathWhenConfigPathIsEmpty(t *testing.T) {
 
 	home := t.TempDir()
 
-	path := di.ExtensionLockPathForTest("", home)
+	path := extensionLockPath("", home)
 
 	assert.Equal(t, filepath.Join(home, extension.LockFileName), path)
 }
@@ -60,7 +59,7 @@ func TestExtensionLoadPathsDeduplicatesCanonicalPaths(t *testing.T) {
 	symlinkPath := filepath.Join(t.TempDir(), "extension")
 	createSymlinkOrSkip(t, extensionDir, symlinkPath)
 
-	paths := di.ExtensionLoadPathsForTest([]extension.ResolvedSource{
+	paths := extensionLoadPaths([]extension.ResolvedSource{
 		newResolvedSourceForTest(extensionDir),
 		newResolvedSourceForTest(symlinkPath),
 		newResolvedSourceForTest(extensionDir),

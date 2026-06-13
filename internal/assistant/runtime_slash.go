@@ -3,7 +3,6 @@ package assistant
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -144,7 +143,7 @@ func skillReadArgumentsJSON(path string, limit *int) string {
 func (runtime *Runtime) respondToToolCommand(ctx context.Context, cwd, args string) (string, error) {
 	toolName, payload, found := strings.Cut(strings.TrimSpace(args), " ")
 	if toolName == "" {
-		return "", errors.New("assistant: tool command requires a tool name")
+		return "", oops.In("assistant").Code("tool_command_missing_name").Errorf("tool command requires a tool name")
 	}
 
 	if !found || strings.TrimSpace(payload) == "" {

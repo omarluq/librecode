@@ -36,6 +36,7 @@ const (
 	oauthVerifierBytes   = 32
 	oauthCallbackTimeout = 5 * time.Second
 	oauthShutdownTimeout = 2 * time.Second
+	oauthTokenTimeout    = 30 * time.Second
 	jwtSegmentCount      = 3
 )
 
@@ -283,8 +284,11 @@ func requestOpenAICodexToken(ctx context.Context, values url.Values, tokenURL st
 }
 
 func postOpenAICodexToken(ctx context.Context, values url.Values, tokenURL string) ([]byte, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, oauthTokenTimeout)
+	defer cancel()
+
 	request, err := http.NewRequestWithContext(
-		ctx,
+		requestCtx,
 		http.MethodPost,
 		tokenURL,
 		strings.NewReader(values.Encode()),
