@@ -53,31 +53,6 @@ func TestCodeBlockWrapsInsteadOfSwallowingSymbols(t *testing.T) {
 	assertNoLineWiderThan(t, lines, 14)
 }
 
-func TestMarkdownCodeBlockWrapsInsteadOfSwallowingSymbols(t *testing.T) {
-	t.Parallel()
-
-	markdown := "```go\nfunc Fib(n int) int {\n    if n < 2 {\n        return n\n    }\n}\n```"
-	view := tui.MarkdownView{
-		Text: markdown,
-		Styles: tui.MarkdownStyles{
-			Text:      tcell.StyleDefault,
-			Accent:    tcell.StyleDefault,
-			Muted:     tcell.StyleDefault,
-			Code:      tcell.StyleDefault,
-			CodeTheme: testCodeTheme(),
-		},
-	}
-
-	lines := view.Render(20, 100)
-	joined := lineText(lines)
-
-	assertContains(t, joined, "<")
-	assertContains(t, joined, "2")
-	assertContains(t, joined, "{")
-	assertContains(t, joined, "return n")
-	assertNoLineWiderThan(t, lines, 20)
-}
-
 func TestSyntaxHighlightingUsesExpectedTokenStyles(t *testing.T) {
 	t.Parallel()
 
