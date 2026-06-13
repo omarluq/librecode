@@ -17,11 +17,11 @@ import (
 func (manager *Manager) LoadPaths(ctx context.Context, paths []string) error {
 	for _, extensionPath := range paths {
 		if err := ctx.Err(); err != nil {
-			return extensionError(err, "check extension context")
+			return extensionError(err, extensionCheckContextStep)
 		}
 
 		if err := manager.loadPath(ctx, extensionPath); err != nil {
-			return extensionError(err, "check extension context")
+			return extensionError(err, extensionCheckContextStep)
 		}
 	}
 
@@ -31,12 +31,12 @@ func (manager *Manager) LoadPaths(ctx context.Context, paths []string) error {
 func (manager *Manager) loadPath(ctx context.Context, extensionPath string) error {
 	sources, err := discoverLuaSources(extensionPath)
 	if err != nil {
-		return extensionError(err, "check extension context")
+		return extensionError(err, extensionCheckContextStep)
 	}
 
 	for _, source := range sources {
 		if err := manager.loadSource(ctx, source); err != nil {
-			return extensionError(err, "check extension context")
+			return extensionError(err, extensionCheckContextStep)
 		}
 	}
 
@@ -60,7 +60,7 @@ func (manager *Manager) LoadFile(ctx context.Context, extensionPath string) erro
 func (manager *Manager) LoadManifest(ctx context.Context, manifestPath string) error {
 	manifest, err := manager.ReadManifest(manifestPath)
 	if err != nil {
-		return extensionError(err, "check extension context")
+		return extensionError(err, extensionCheckContextStep)
 	}
 
 	entry := strings.TrimSpace(manifest.Entry)
@@ -119,7 +119,7 @@ func (manager *Manager) ReadManifest(manifestPath string) (Manifest, error) {
 
 func (manager *Manager) loadLuaFile(ctx context.Context, extensionPath, name, displayPath string) error {
 	if err := ctx.Err(); err != nil {
-		return extensionError(err, "check extension context")
+		return extensionError(err, extensionCheckContextStep)
 	}
 
 	absolutePath, err := filepath.Abs(extensionPath)

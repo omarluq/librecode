@@ -12,6 +12,12 @@ const (
 )
 
 const (
+	colorDarkSuccess  = "#b5bd68"
+	colorLightSuccess = "#22863a"
+	colorLightMuted   = "#666666"
+)
+
+const (
 	colorAccent          colorToken = "accent"
 	colorBorder          colorToken = "border"
 	colorBorderAccent    colorToken = "borderAccent"
@@ -53,24 +59,36 @@ func piThemeColors() []themeColor {
 		{token: colorBorder, dark: hexColorFromString("#5f87ff"), light: hexColorFromString("#0066cc")},
 		{token: colorBorderAccent, dark: hexColorFromString("#00d7ff"), light: hexColorFromString("#0088cc")},
 		{token: colorBorderMuted, dark: hexColorFromString("#505050"), light: hexColorFromString("#999999")},
-		{token: colorSuccess, dark: hexColorFromString("#b5bd68"), light: hexColorFromString("#22863a")},
+		{
+			token: colorSuccess,
+			dark:  hexColorFromString(colorDarkSuccess),
+			light: hexColorFromString(colorLightSuccess),
+		},
 		{token: colorError, dark: hexColorFromString("#cc6666"), light: hexColorFromString("#cb2431")},
 		{token: colorWarning, dark: hexColorFromString("#ffff00"), light: hexColorFromString("#b08800")},
-		{token: colorMuted, dark: hexColorFromString("#808080"), light: hexColorFromString("#666666")},
-		{token: colorDim, dark: hexColorFromString("#666666"), light: hexColorFromString("#999999")},
+		{token: colorMuted, dark: hexColorFromString("#808080"), light: hexColorFromString(colorLightMuted)},
+		{token: colorDim, dark: hexColorFromString(colorLightMuted), light: hexColorFromString("#999999")},
 		{token: colorText, dark: cellcolor.Default, light: cellcolor.Black},
 		{token: colorCodeBg, dark: hexColorFromString("#1f2330"), light: hexColorFromString("#f6f8fa")},
 		{token: colorCodeText, dark: hexColorFromString("#d7d7d7"), light: hexColorFromString("#24292f")},
-		{token: colorDiffAdd, dark: hexColorFromString("#b5bd68"), light: hexColorFromString("#22863a")},
+		{
+			token: colorDiffAdd,
+			dark:  hexColorFromString(colorDarkSuccess),
+			light: hexColorFromString(colorLightSuccess),
+		},
 		{token: colorDiffDelete, dark: hexColorFromString("#cc6666"), light: hexColorFromString("#cb2431")},
-		{token: colorThinkingText, dark: hexColorFromString("#808080"), light: hexColorFromString("#666666")},
+		{token: colorThinkingText, dark: hexColorFromString("#808080"), light: hexColorFromString(colorLightMuted)},
 		{token: colorSelectedBg, dark: hexColorFromString("#3a3a4a"), light: hexColorFromString("#e8f0fe")},
 		{token: colorUserMessageBg, dark: hexColorFromString("#343541"), light: hexColorFromString("#f3f4f6")},
 		{token: colorCustomMessageBg, dark: hexColorFromString("#2d2838"), light: hexColorFromString("#f3efff")},
 		{token: colorToolPendingBg, dark: hexColorFromString("#282832"), light: hexColorFromString("#f4f4ff")},
 		{token: colorToolSuccessBg, dark: hexColorFromString("#283228"), light: hexColorFromString("#f0fff4")},
 		{token: colorToolErrorBg, dark: hexColorFromString("#3c2828"), light: hexColorFromString("#fff0f0")},
-		{token: colorBashMode, dark: hexColorFromString("#b5bd68"), light: hexColorFromString("#22863a")},
+		{
+			token: colorBashMode,
+			dark:  hexColorFromString(colorDarkSuccess),
+			light: hexColorFromString(colorLightSuccess),
+		},
 	}
 }
 

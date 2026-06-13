@@ -201,7 +201,7 @@ func Run(ctx context.Context, options *RunOptions) error {
 }
 
 type terminalScreen interface {
-	rendertext.ContentScreen
+	rendertext.ContentSetter
 	EventQ() chan tcell.Event
 	HideCursor()
 	Show()

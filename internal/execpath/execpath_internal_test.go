@@ -1,16 +1,22 @@
 package execpath
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-const executableTestMode = 0o700
+const (
+	executableTestMode = 0o700
+	timeoutTestDelay   = 10 * time.Millisecond
+)
 
 func TestFindRejectsWhitespaceOnlyName(t *testing.T) {
 	t.Parallel()
@@ -49,6 +55,23 @@ func TestCommandReportsMissingExecutable(t *testing.T) {
 	cmd, err := Command("definitely-not-a-real-tool")
 	require.Error(t, err)
 	assert.Nil(t, cmd)
+}
+
+func TestRunWithTimeoutReportsDeadlineExceeded(t *testing.T) {
+	t.Parallel()
+
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", "sleep 1")
+	err := RunWithTimeout(cmd, timeoutTestDelay)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestRunWithTimeoutWrapsRunFailure(t *testing.T) {
+	t.Parallel()
+
+	err := RunWithTimeout(exec.CommandContext(t.Context(), "definitely-not-a-command"), 0)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestFindRejectsAbsoluteExecutableOutsideFixedDirs(t *testing.T) {

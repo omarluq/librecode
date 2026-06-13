@@ -61,7 +61,7 @@ func runChat(cmd *cobra.Command, options chatRunOptions) error {
 
 		cwd, err := assistant.DefaultCWD("")
 		if err != nil {
-			return cliError(err, "resolve working directory")
+			return cliError(err, cliResolveWorkingDirectory)
 		}
 
 		sessionID, err := resolveChatSessionID(cmd.Context(), runtime, cwd, options)

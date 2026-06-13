@@ -4,7 +4,6 @@ package execpath
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -12,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/samber/oops"
 )
 
 const (
@@ -23,7 +24,7 @@ const (
 func Command(name string, args ...string) (*exec.Cmd, error) {
 	path, err := Find(name)
 	if err != nil {
-		return nil, err
+		return nil, oops.In("execpath").Code("command_find").Wrapf(err, "resolve executable")
 	}
 
 	cmd := &exec.Cmd{
@@ -38,14 +39,14 @@ func Command(name string, args ...string) (*exec.Cmd, error) {
 func RunWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {
 	if timeout <= 0 {
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("run command: %w", err)
+			return oops.In("execpath").Code("run_failed").Wrapf(err, "run command")
 		}
 
 		return nil
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start command: %w", err)
+		return oops.In("execpath").Code("start_failed").Wrapf(err, "start command")
 	}
 
 	done := make(chan error, 1)
@@ -60,13 +61,17 @@ func RunWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {
 	case err := <-done:
 		return err
 	case <-timer.C:
-		killErr := cmd.Process.Kill()
+		var killErr error
+		if cmd.Process != nil {
+			killErr = cmd.Process.Kill()
+		}
+
 		waitErr := <-done
 
-		return errors.Join(
-			fmt.Errorf("command timed out after %s: %w", timeout, context.DeadlineExceeded),
-			killErr,
-			waitErr,
+		return oops.In("execpath").Code("timeout").Wrapf(
+			errors.Join(context.DeadlineExceeded, killErr, waitErr),
+			"command timed out after %s",
+			timeout,
 		)
 	}
 }
@@ -75,7 +80,7 @@ func RunWithTimeout(cmd *exec.Cmd, timeout time.Duration) error {
 func Find(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", errors.New("executable name is empty")
+		return "", oops.In("execpath").Code("empty_name").Errorf("executable name is empty")
 	}
 
 	if filepath.IsAbs(name) {
@@ -83,7 +88,8 @@ func Find(name string) (string, error) {
 	}
 
 	if filepath.Base(name) != name {
-		return "", fmt.Errorf("executable %q must be an absolute path or bare command name", name)
+		return "", oops.In("execpath").Code("invalid_name").With("name", name).
+			Errorf("executable must be an absolute path or bare command name")
 	}
 
 	for _, dir := range fixedDirs() {
@@ -95,13 +101,15 @@ func Find(name string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("executable %q not found in fixed system directories", name)
+	return "", oops.In("execpath").Code("not_found").With("name", name).
+		Errorf("executable not found in fixed system directories")
 }
 
 func validateFixedExecutable(path string) (string, error) {
 	path = filepath.Clean(path)
 	if !isInFixedDir(path) {
-		return "", fmt.Errorf("executable %q is outside fixed system directories", path)
+		return "", oops.In("execpath").Code("outside_fixed_dirs").With("path", path).
+			Errorf("executable is outside fixed system directories")
 	}
 
 	return validateExecutable(path)
@@ -110,15 +118,18 @@ func validateFixedExecutable(path string) (string, error) {
 func validateExecutable(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", fmt.Errorf("inspect executable %q: %w", path, err)
+		return "", oops.In("execpath").Code("inspect_failed").With("path", path).
+			Wrapf(err, "inspect executable")
 	}
 
 	if info.IsDir() {
-		return "", fmt.Errorf("executable %q is a directory", path)
+		return "", oops.In("execpath").Code("is_directory").With("path", path).
+			Errorf("executable is a directory")
 	}
 
 	if runtime.GOOS != windowsOS && info.Mode().Perm()&executableBits == 0 {
-		return "", fmt.Errorf("executable %q is not executable", path)
+		return "", oops.In("execpath").Code("not_executable").With("path", path).
+			Errorf("executable is not executable")
 	}
 
 	return path, nil

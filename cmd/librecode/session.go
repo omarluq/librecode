@@ -41,7 +41,7 @@ func newSessionNewCmd() *cobra.Command {
 
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
-					return cliError(err, "resolve working directory")
+					return cliError(err, cliResolveWorkingDirectory)
 				}
 
 				createdSession, err := repository.CreateSession(cmd.Context(), cwd, name, "")
@@ -66,7 +66,7 @@ func newSessionListCmd() *cobra.Command {
 
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
-					return cliError(err, "resolve working directory")
+					return cliError(err, cliResolveWorkingDirectory)
 				}
 
 				sessions, err := repository.ListSessions(cmd.Context(), cwd)

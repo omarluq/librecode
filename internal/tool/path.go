@@ -127,7 +127,7 @@ func normNFD(value string) string {
 func statResolvedPath(filePath string) (os.FileInfo, error) {
 	root, err := os.OpenRoot(filepath.Dir(filePath))
 	if err != nil {
-		return nil, toolWrap(err, "open path root")
+		return nil, toolWrap(err, toolOpenPathRootStep)
 	}
 	defer closeFile(root)
 
@@ -139,7 +139,7 @@ func statResolvedPath(filePath string) (os.FileInfo, error) {
 func readResolvedPath(filePath string) ([]byte, error) {
 	root, err := os.OpenRoot(filepath.Dir(filePath))
 	if err != nil {
-		return nil, toolWrap(err, "open path root")
+		return nil, toolWrap(err, toolOpenPathRootStep)
 	}
 	defer closeFile(root)
 
@@ -157,7 +157,7 @@ func readResolvedPath(filePath string) ([]byte, error) {
 func writeResolvedPath(filePath string, data []byte, perm os.FileMode) error {
 	root, err := os.OpenRoot(filepath.Dir(filePath))
 	if err != nil {
-		return toolWrap(err, "open path root")
+		return toolWrap(err, toolOpenPathRootStep)
 	}
 	defer closeFile(root)
 

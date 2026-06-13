@@ -228,7 +228,7 @@ func (manager *Manager) registerKeymap(
 func (manager *Manager) runKeymaps(ctx context.Context, event *luaHostEvent) error {
 	for _, keymap := range manager.keymapsFor(event) {
 		if err := ctx.Err(); err != nil {
-			return extensionError(err, "check extension context")
+			return extensionError(err, extensionCheckContextStep)
 		}
 
 		result, err := callLuaPrepared(

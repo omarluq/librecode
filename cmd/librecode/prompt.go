@@ -77,7 +77,7 @@ func runPromptWithContainer(
 
 	cwd, err := assistant.DefaultCWD("")
 	if err != nil {
-		return cliError(err, "resolve working directory")
+		return cliError(err, cliResolveWorkingDirectory)
 	}
 
 	response, err := runtime.Prompt(cmd.Context(), &assistant.PromptRequest{
