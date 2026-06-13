@@ -247,22 +247,86 @@ func DrawLines(screen Screen, rect Rect, lines []Line) {
 }
 
 func drawTextAt(screen Screen, x, y, width int, style tcell.Style, text string) int {
-	drawn := 0
+	used := 0
 	for _, segment := range Segments(text) {
-		if segment.Width == 0 {
-			continue
-		}
-		if drawn+segment.Width > width {
+		if used+segment.Width > width {
 			break
 		}
 
-		runes := []rune(segment.Text)
-		if len(runes) == 0 {
-			continue
-		}
-		screen.SetContent(x+drawn, y, runes[0], runes[1:], style)
-		drawn += segment.Width
+		used += WriteSegment(screen, x+used, y, width-used, segment, style)
 	}
 
-	return drawn
+	return used
+}
+
+// WriteCells writes text into exactly width cells, filling remaining cells with spaces.
+func WriteCells(screen Screen, column, row, width int, text string, style tcell.Style) int {
+	used := WriteCellsNoFill(screen, column, row, width, text, style)
+	for used < width {
+		screen.SetContent(column+used, row, ' ', nil, style)
+		used++
+	}
+
+	return used
+}
+
+// WriteCellsNoFill writes as much text as fits in width cells without filling remaining cells.
+func WriteCellsNoFill(screen Screen, column, row, width int, text string, style tcell.Style) int {
+	if screen == nil || row < 0 || column < 0 || width <= 0 {
+		return 0
+	}
+
+	used := 0
+	for _, segment := range Segments(text) {
+		if used+segment.Width > width {
+			break
+		}
+
+		used += WriteSegment(screen, column+used, row, width-used, segment, style)
+	}
+
+	return used
+}
+
+// WriteSegment writes one terminal grapheme segment.
+func WriteSegment(screen Screen, column, row, width int, segment Segment, style tcell.Style) int {
+	if screen == nil || width <= 0 || segment.Width > width {
+		return 0
+	}
+	if segment.Text == "\t" {
+		return WriteTabSegment(screen, column, row, width, style)
+	}
+	if segment.Width <= 0 {
+		return 0
+	}
+
+	runes := []rune(segment.Text)
+	mainRune := ' '
+	if len(runes) > 0 {
+		mainRune = runes[0]
+	}
+
+	var combining []rune
+	if len(runes) > 1 {
+		combining = runes[1:]
+	}
+
+	screen.SetContent(column, row, mainRune, combining, style)
+	for offset := 1; offset < segment.Width; offset++ {
+		screen.SetContent(column+offset, row, 0, nil, style)
+	}
+
+	return segment.Width
+}
+
+// WriteTabSegment writes a tab as up to four spaces.
+func WriteTabSegment(screen Screen, column, row, width int, style tcell.Style) int {
+	const tabWidth = 4
+
+	spaces := min(tabWidth, width)
+	for offset := range spaces {
+		screen.SetContent(column+offset, row, ' ', nil, style)
+	}
+
+	return spaces
 }

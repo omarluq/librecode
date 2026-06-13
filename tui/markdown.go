@@ -21,6 +21,7 @@ const (
 	markdownRule                     = "─"
 	markdownTableTransformerPriority = 200
 	markdownStrikePriority           = 500
+	markdownTableMaxHeight           = 10_000
 )
 
 // MarkdownStyles configures MarkdownView rendering.
@@ -135,14 +136,19 @@ func (renderer *markdownRenderer) renderIndentedCodeBlock(node *ast.CodeBlock, i
 
 func (renderer *markdownRenderer) appendCodeLines(language, text, indent string) {
 	for _, line := range SyntaxHighlightedCodeLines(language, text, renderer.styles.CodeTheme, renderer.styles.Code) {
-		line.Text = indent + line.Text
-		if len(line.Spans) == 0 {
-			line.Spans = []Span{{Text: line.Text, Style: line.Style}}
-		} else {
-			line.Spans = append([]Span{{Text: indent, Style: line.Style}}, line.Spans...)
-		}
+		renderer.prependIndentToLine(&line, indent, line.Style)
 		renderer.lines = append(renderer.lines, line)
 	}
+}
+
+func (renderer *markdownRenderer) prependIndentToLine(line *Line, indent string, indentStyle tcell.Style) {
+	line.Text = indent + line.Text
+	if len(line.Spans) == 0 {
+		line.Spans = []Span{{Text: line.Text, Style: line.Style}}
+		return
+	}
+
+	line.Spans = append([]Span{{Text: indent, Style: indentStyle}}, line.Spans...)
 }
 
 func (renderer *markdownRenderer) renderList(node *ast.List, indent string) {
@@ -242,37 +248,97 @@ func (renderer *markdownRenderer) codeBlockText(node ast.Node) string {
 }
 
 func (renderer *markdownRenderer) renderTable(node *extast.Table, indent string) {
-	rows := [][]TableCell{}
-	var headers []TableCell
-	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		rowNode, ok := child.(*extast.TableRow)
-		if !ok {
-			continue
-		}
-
-		row := []TableCell{}
-		for cell := rowNode.FirstChild(); cell != nil; cell = cell.NextSibling() {
-			row = append(row, TableCell{Text: renderer.inlineText(cell), Style: renderer.styles.Text})
-		}
-		if headers == nil {
-			headers = row
-			continue
-		}
-		rows = append(rows, row)
-	}
-
+	adapter := markdownTableAdapter{renderer: renderer}
 	table := &Table{
-		Headers:     headers,
-		Rows:        rows,
+		Headers:     adapter.headers(node),
+		Rows:        adapter.rows(node),
+		Alignments:  adapter.alignments(node),
 		Style:       renderer.styles.Text,
 		HeaderStyle: renderer.styles.Accent.Bold(true),
 		BorderStyle: renderer.styles.Muted,
 	}
-	for _, line := range table.Render(max(1, renderer.width-Width(indent)), 10_000) {
-		line.Text = indent + line.Text
-		if len(line.Spans) > 0 {
-			line.Spans = append([]Span{{Text: indent, Style: line.Style}}, line.Spans...)
-		}
+
+	for _, line := range table.Render(max(1, renderer.width-Width(indent)), markdownTableMaxHeight) {
+		renderer.prependIndentToLine(&line, indent, renderer.styles.Muted)
 		renderer.lines = append(renderer.lines, line)
+	}
+}
+
+type markdownTableAdapter struct {
+	renderer *markdownRenderer
+}
+
+func (adapter markdownTableAdapter) headers(node *extast.Table) []TableCell {
+	header := adapter.headerNode(node)
+	if header == nil {
+		return nil
+	}
+
+	return adapter.cells(header, adapter.renderer.styles.Accent.Bold(true))
+}
+
+func (adapter markdownTableAdapter) rows(node *extast.Table) [][]TableCell {
+	rows := [][]TableCell{}
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		row, ok := child.(*extast.TableRow)
+		if !ok {
+			continue
+		}
+		rows = append(rows, adapter.cells(row, adapter.renderer.styles.Text))
+	}
+
+	return rows
+}
+
+func (adapter markdownTableAdapter) alignments(node *extast.Table) []Alignment {
+	header := adapter.headerNode(node)
+	if header == nil {
+		return nil
+	}
+
+	alignments := []Alignment{}
+	for child := header.FirstChild(); child != nil; child = child.NextSibling() {
+		cell, ok := child.(*extast.TableCell)
+		if !ok {
+			continue
+		}
+		alignments = append(alignments, markdownTableAlignment(cell.Alignment))
+	}
+
+	return alignments
+}
+
+func (adapter markdownTableAdapter) headerNode(node *extast.Table) *extast.TableHeader {
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		header, ok := child.(*extast.TableHeader)
+		if ok {
+			return header
+		}
+	}
+
+	return nil
+}
+
+func (adapter markdownTableAdapter) cells(row ast.Node, style tcell.Style) []TableCell {
+	cells := []TableCell{}
+	for child := row.FirstChild(); child != nil; child = child.NextSibling() {
+		cell, ok := child.(*extast.TableCell)
+		if !ok {
+			continue
+		}
+		cells = append(cells, TableCell{Text: strings.TrimSpace(adapter.renderer.inlineText(cell)), Style: style})
+	}
+
+	return cells
+}
+
+func markdownTableAlignment(alignment extast.Alignment) Alignment {
+	switch alignment {
+	case extast.AlignRight:
+		return AlignRight
+	case extast.AlignCenter:
+		return AlignCenter
+	default:
+		return AlignLeft
 	}
 }

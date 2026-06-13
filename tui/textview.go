@@ -73,7 +73,7 @@ func (view *TextView) renderAll(width int) []Line {
 		return wrapped
 	}
 
-	for _, line := range WrapPreserveWhitespace(view.Text, max(1, Width(view.Text))) {
+	for _, line := range WrapPreserveWhitespace(view.Text, max(1, width)) {
 		wrapped = append(wrapped, NewLine(view.Style, line))
 	}
 

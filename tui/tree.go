@@ -33,24 +33,8 @@ func (view *TreeView) Flatten() []Line {
 			return
 		}
 
-		marker := "  "
-		if len(node.Children) > 0 {
-			marker = "▸ "
-			if node.Expanded {
-				marker = "▾ "
-			}
-		}
-		if root {
-			marker = ""
-		}
-
-		style := node.Style
-		if style == (tcell.Style{}) {
-			style = view.Style
-		}
-		if node.Selected {
-			style = view.SelectedStyle
-		}
+		marker := computeMarker(node, root)
+		style := resolveTreeStyle(node, view.Style, view.SelectedStyle)
 		lines = append(lines, NewLine(style, prefix+marker+node.Text))
 		if node.Expanded || root {
 			for _, child := range node.Children {
@@ -61,6 +45,31 @@ func (view *TreeView) Flatten() []Line {
 	walk(view.Root, "", true)
 
 	return lines
+}
+
+func computeMarker(node *TreeNode, root bool) string {
+	if root {
+		return ""
+	}
+	if len(node.Children) == 0 {
+		return "  "
+	}
+	if node.Expanded {
+		return "▾ "
+	}
+
+	return "▸ "
+}
+
+func resolveTreeStyle(node *TreeNode, defaultStyle, selectedStyle tcell.Style) tcell.Style {
+	if node.Selected {
+		return selectedStyle
+	}
+	if node.Style != (tcell.Style{}) {
+		return node.Style
+	}
+
+	return defaultStyle
 }
 
 // Render returns visible tree lines.

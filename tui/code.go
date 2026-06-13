@@ -110,17 +110,17 @@ func tokenizeCode(lexer chroma.Lexer, text string) (chroma.Iterator, bool) {
 }
 
 func analyzedCodeIterator(text string) (chroma.Iterator, bool) {
+	var bestLexer chroma.Lexer
 	highest := float32(0)
 	for _, lexer := range lexers.GlobalLexerRegistry.Lexers {
 		weight := lexer.AnalyseText(text)
 		if weight > highest {
 			highest = weight
+			bestLexer = lexer
 		}
 	}
-	for _, lexer := range lexers.GlobalLexerRegistry.Lexers {
-		if lexer.AnalyseText(text) == highest && highest > 0 {
-			return tokenizeCode(lexer, text)
-		}
+	if highest > 0 && bestLexer != nil {
+		return tokenizeCode(bestLexer, text)
 	}
 
 	return nil, false
