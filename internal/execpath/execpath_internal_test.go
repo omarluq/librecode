@@ -12,7 +12,7 @@ import (
 
 const executableTestMode = 0o700
 
-func TestFindRejectsEmptyName(t *testing.T) {
+func TestFindRejectsWhitespaceOnlyName(t *testing.T) {
 	t.Parallel()
 
 	path, err := Find(" ")
@@ -43,10 +43,10 @@ func TestFindDoesNotUsePATH(t *testing.T) {
 	assert.Empty(t, found)
 }
 
-func TestCommandContextSetsResolvedPathAsArgZero(t *testing.T) {
+func TestCommandReportsMissingExecutable(t *testing.T) {
 	t.Parallel()
 
-	cmd, err := CommandContext(t.Context(), "definitely-not-a-real-tool")
+	cmd, err := Command("definitely-not-a-real-tool")
 	require.Error(t, err)
 	assert.Nil(t, cmd)
 }

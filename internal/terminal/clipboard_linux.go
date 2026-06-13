@@ -3,7 +3,6 @@
 package terminal
 
 import (
-	"context"
 	"errors"
 	"os"
 	"strings"
@@ -44,15 +43,12 @@ func writeSystemClipboard(text string) error {
 }
 
 func writeClipboardCommand(text, name string, args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
-	defer cancel()
-
-	cmd, err := execpath.CommandContext(ctx, name, args...)
+	cmd, err := execpath.Command(name, args...)
 	if err != nil {
 		return terminalError(err, "find clipboard command")
 	}
 
 	cmd.Stdin = strings.NewReader(text)
 
-	return terminalError(cmd.Run(), "run clipboard command")
+	return terminalError(execpath.RunWithTimeout(cmd, clipboardTimeout), "run clipboard command")
 }
