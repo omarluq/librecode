@@ -2,6 +2,8 @@ package extension
 
 import "github.com/samber/oops"
 
+const extensionCheckContextStep = "check extension context"
+
 func extensionError(err error, action string) error {
 	if err == nil {
 		return nil

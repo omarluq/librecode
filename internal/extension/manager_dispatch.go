@@ -20,7 +20,7 @@ func (manager *Manager) ExecuteCommand(ctx context.Context, name, args string) (
 	}
 
 	if err := ctx.Err(); err != nil {
-		return "", extensionError(err, "check extension context")
+		return "", extensionError(err, extensionCheckContextStep)
 	}
 
 	result, err := callLua(command.extension, command.function, lua.LString(args))
@@ -29,7 +29,7 @@ func (manager *Manager) ExecuteCommand(ctx context.Context, name, args string) (
 	}
 
 	if err := ctx.Err(); err != nil {
-		return "", extensionError(err, "check extension context")
+		return "", extensionError(err, extensionCheckContextStep)
 	}
 
 	return result.String(), nil
@@ -46,7 +46,7 @@ func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[s
 	}
 
 	if err := ctx.Err(); err != nil {
-		return ToolResult{Details: map[string]any{}, Content: ""}, extensionError(err, "check extension context")
+		return ToolResult{Details: map[string]any{}, Content: ""}, extensionError(err, extensionCheckContextStep)
 	}
 
 	result, err := callLuaPrepared(tool.extension, nil, tool.function, func(state *lua.LState) []lua.LValue {
@@ -58,7 +58,7 @@ func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[s
 	}
 
 	if err := ctx.Err(); err != nil {
-		return ToolResult{Details: map[string]any{}, Content: ""}, extensionError(err, "check extension context")
+		return ToolResult{Details: map[string]any{}, Content: ""}, extensionError(err, extensionCheckContextStep)
 	}
 
 	return result.ToolResult(), nil
@@ -112,7 +112,7 @@ func (manager *Manager) HandleTerminalEvent(ctx context.Context, event *Terminal
 func (manager *Manager) Emit(ctx context.Context, eventName string, payload map[string]any) error {
 	for _, handler := range manager.handlersFor(eventName) {
 		if err := ctx.Err(); err != nil {
-			return extensionError(err, "check extension context")
+			return extensionError(err, extensionCheckContextStep)
 		}
 
 		_, err := callLuaPrepared(handler.extension, nil, handler.function, func(state *lua.LState) []lua.LValue {

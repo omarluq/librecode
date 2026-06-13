@@ -83,19 +83,14 @@ func (buffer *Buffer) Clone() *Buffer {
 	return cloned
 }
 
-// ContentScreen receives terminal cell updates.
-type ContentScreen interface {
-	SetContent(column, row int, mainc rune, combc []rune, style tcell.Style)
-}
-
 // Renderer flushes changed cells to a screen.
 type Renderer struct {
-	screen   ContentScreen
+	screen   ContentSetter
 	previous *Buffer
 }
 
 // NewRenderer returns a screen renderer.
-func NewRenderer(screen ContentScreen) *Renderer {
+func NewRenderer(screen ContentSetter) *Renderer {
 	return &Renderer{screen: screen, previous: nil}
 }
 

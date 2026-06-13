@@ -23,5 +23,6 @@ func TestNewEventServiceExposesBus(t *testing.T) {
 
 	service := container.EventService()
 
-	require.True(t, service != nil && service.Bus != nil)
+	require.NotNil(t, service)
+	require.NotNil(t, service.Bus)
 }

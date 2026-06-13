@@ -34,7 +34,7 @@ func newSkillListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := assistant.DefaultCWD("")
 			if err != nil {
-				return cliError(err, "resolve working directory")
+				return cliError(err, cliResolveWorkingDirectory)
 			}
 
 			result := core.LoadSkills(cwd, nil, true)
@@ -64,7 +64,7 @@ func newSkillShowCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := assistant.DefaultCWD("")
 			if err != nil {
-				return cliError(err, "resolve working directory")
+				return cliError(err, cliResolveWorkingDirectory)
 			}
 
 			skill, found := findSkillByName(cwd, args[0])
@@ -90,7 +90,7 @@ func newSkillValidateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := assistant.DefaultCWD("")
 			if err != nil {
-				return cliError(err, "resolve working directory")
+				return cliError(err, cliResolveWorkingDirectory)
 			}
 
 			result := core.LoadSkills(cwd, nil, true)

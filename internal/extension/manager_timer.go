@@ -101,11 +101,11 @@ func (manager *Manager) runDueTimers(ctx context.Context, event *luaHostEvent, n
 	due := manager.takeDueTimers(now)
 	for _, timer := range due {
 		if err := ctx.Err(); err != nil {
-			return extensionError(err, "check extension context")
+			return extensionError(err, extensionCheckContextStep)
 		}
 
 		if err := manager.runTimer(ctx, event, timer); err != nil {
-			return extensionError(err, "check extension context")
+			return extensionError(err, extensionCheckContextStep)
 		}
 	}
 
@@ -165,7 +165,7 @@ func (manager *Manager) runTimer(ctx context.Context, event *luaHostEvent, timer
 		manager.rescheduleTimer(timer)
 	}
 
-	return extensionError(ctx.Err(), "check extension context")
+	return extensionError(ctx.Err(), extensionCheckContextStep)
 }
 
 func (manager *Manager) timerCanceled(timerID uint64) bool {

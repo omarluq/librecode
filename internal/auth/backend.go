@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	authFileMode = 0o600
-	authDirMode  = 0o700
+	authFileMode                   = 0o600
+	authDirMode                    = 0o700
+	authCheckMemoryLockContextStep = "check memory auth lock context"
 )
 
 // FileBackend stores credentials in auth.json with process-local locking and atomic writes.
@@ -41,7 +42,7 @@ func (backend *FileBackend) WithLock(ctx context.Context, callback func(current 
 
 	current, err := readAuthFile(backend.path)
 	if err != nil {
-		return authError(err, "check memory auth lock context")
+		return authError(err, authCheckMemoryLockContextStep)
 	}
 
 	result, err := callback(current)
@@ -82,7 +83,7 @@ func (backend *MemoryBackend) WithLock(ctx context.Context, callback func(curren
 	defer backend.lock.Unlock()
 
 	if err := ctx.Err(); err != nil {
-		return authError(err, "check memory auth lock context")
+		return authError(err, authCheckMemoryLockContextStep)
 	}
 
 	result, err := callback(append([]byte{}, backend.value...))
@@ -94,7 +95,7 @@ func (backend *MemoryBackend) WithLock(ctx context.Context, callback func(curren
 		backend.value = append([]byte{}, result.Next...)
 	}
 
-	return authError(ctx.Err(), "check memory auth lock context")
+	return authError(ctx.Err(), authCheckMemoryLockContextStep)
 }
 
 func ensureAuthFile(path string) error {

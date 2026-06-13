@@ -169,7 +169,7 @@ func (state *findWalkState) visit(ctx context.Context, currentPath string, dirEn
 	}
 
 	if err := ctx.Err(); err != nil {
-		return toolWrap(err, "walk filesystem")
+		return toolWrap(err, toolWalkFilesystemStep)
 	}
 
 	if shouldSkipSearchEntry(dirEntry) {
@@ -190,7 +190,7 @@ func (state *findWalkState) visit(ctx context.Context, currentPath string, dirEn
 func (state *findWalkState) addMatch(currentPath string) error {
 	relativePath, err := filepath.Rel(state.searchRoot, currentPath)
 	if err != nil {
-		return toolWrap(err, "walk filesystem")
+		return toolWrap(err, toolWalkFilesystemStep)
 	}
 
 	relativePath = filepath.ToSlash(relativePath)
@@ -274,7 +274,7 @@ func simpleGlobMatcher(pattern string) globMatcher {
 
 		matched, err := path.Match(pattern, candidate)
 
-		return toolWrap(err, "walk filesystem") == nil && matched
+		return toolWrap(err, toolWalkFilesystemStep) == nil && matched
 	}
 }
 

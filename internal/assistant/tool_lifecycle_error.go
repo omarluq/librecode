@@ -12,24 +12,10 @@ func (runtime *Runtime) emitToolLifecycleError(ctx context.Context, event *ToolE
 		return
 	}
 
-	result := extension.LifecycleDispatchResult{
-		Payload:         nil,
-		ProviderRequest: extension.ProviderRequestMutation{Headers: nil},
-		ToolCall:        extension.ToolCallMutation{Arguments: nil},
-		ToolResult:      extension.ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil},
-		Compaction: extension.CompactionMutation{
-			Summary:          nil,
-			FirstKeptEntryID: nil,
-			Details:          nil,
-			Cancel:           false,
-		},
-		Name:         string(extension.LifecycleToolResult),
-		Errors:       []string{err.Error()},
-		Duration:     0,
-		HandlerCount: 0,
-		Consumed:     false,
-		Stopped:      false,
-	}
+	var result extension.LifecycleDispatchResult
+
+	result.Name = string(extension.LifecycleToolResult)
+	result.Errors = []string{err.Error()}
 	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolResult, &result, map[string]any{
 		lifecyclepayload.ToolNameKey: event.Name,
 		"lifecycle_error":            err.Error(),

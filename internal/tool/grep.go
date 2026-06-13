@@ -229,7 +229,7 @@ func grepDirectoryTargets(root, glob string) ([]grepTarget, error) {
 
 		relativePath, err := filepath.Rel(root, currentPath)
 		if err != nil {
-			return toolWrap(err, "walk filesystem")
+			return toolWrap(err, toolWalkFilesystemStep)
 		}
 
 		displayPath := filepath.ToSlash(relativePath)
