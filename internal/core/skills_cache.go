@@ -180,8 +180,8 @@ func (c *SkillsCache) watchSkillDirs(cwd string, skills []Skill) {
 	watched := make(map[string]struct{})
 
 	for _, path := range defaultSkillPaths(cwd) {
-		dir := filepath.Clean(path)
-		if _, seen := watched[dir]; seen || !resourcePathExists(dir) {
+		dir := nearestExistingDir(path)
+		if _, seen := watched[dir]; seen {
 			continue
 		}
 
@@ -206,4 +206,25 @@ func (c *SkillsCache) addWatch(dir string) {
 	if err := c.watcher.Add(dir); err != nil {
 		slog.Debug("skills cache watcher add error", slog.String("dir", dir), slog.Any("error", err))
 	}
+}
+
+// nearestExistingDir walks up from path until it finds a directory that exists.
+// This ensures fsnotify can watch a parent directory when a skill root doesn't
+// exist yet, so that creating it later triggers cache invalidation.
+// If nothing exists up to the filesystem root, the original path is returned
+// so the caller still attempts the watch (fsnotify will report an error but
+// that is handled gracefully).
+func nearestExistingDir(path string) string {
+	dir := filepath.Clean(path)
+
+	for !resourcePathExists(dir) {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return filepath.Clean(path)
+		}
+
+		dir = parent
+	}
+
+	return dir
 }

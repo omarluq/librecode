@@ -39,16 +39,13 @@ func TestRuntime_ContextPreflightCanBeDisabled(t *testing.T) {
 	runtime := newTestRuntimeWithContextWindow(t, client, 512)
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.PreflightEnabled = false
-	runtime = assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:      runtimeConfig,
-		Sessions:    runtime.SessionRepository(),
-		Extensions:  nil,
-		Cache:       assistant.NewResponseCache(false, 1, time.Minute),
-		Events:      runtime.EventBus(),
-		Models:      runtime.ModelRegistry(),
-		Client:      client,
-		Logger:      nil,
-		SkillsCache: nil,
+	runtime = assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
+		opts.Config = runtimeConfig
+		opts.Sessions = runtime.SessionRepository()
+		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+		opts.Events = runtime.EventBus()
+		opts.Models = runtime.ModelRegistry()
+		opts.Client = client
 	})
 
 	request := newRuntimePromptRequest(testRuntimeCWD, strings.Repeat("overflow ", 2600), "")
@@ -87,16 +84,13 @@ func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.ProviderReserveTokens = 0
 	runtimeConfig.Context.SafetyMarginTokens = 0
-	runtime = assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:      runtimeConfig,
-		Sessions:    runtime.SessionRepository(),
-		Extensions:  nil,
-		Cache:       assistant.NewResponseCache(false, 1, time.Minute),
-		Events:      runtime.EventBus(),
-		Models:      runtime.ModelRegistry(),
-		Client:      client,
-		Logger:      nil,
-		SkillsCache: nil,
+	runtime = assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
+		opts.Config = runtimeConfig
+		opts.Sessions = runtime.SessionRepository()
+		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+		opts.Events = runtime.EventBus()
+		opts.Models = runtime.ModelRegistry()
+		opts.Client = client
 	})
 
 	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
@@ -128,16 +122,13 @@ func TestRuntime_ContextUsageUsesExplicitOutputReserve(t *testing.T) {
 	runtime := newTestRuntimeWithContextWindowAndMaxTokens(t, client, 100_000, 128_000)
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.OutputReserveTokens = 1234
-	runtime = assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:      runtimeConfig,
-		Sessions:    runtime.SessionRepository(),
-		Extensions:  nil,
-		Cache:       assistant.NewResponseCache(false, 1, time.Minute),
-		Events:      runtime.EventBus(),
-		Models:      runtime.ModelRegistry(),
-		Client:      client,
-		Logger:      nil,
-		SkillsCache: nil,
+	runtime = assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
+		opts.Config = runtimeConfig
+		opts.Sessions = runtime.SessionRepository()
+		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+		opts.Events = runtime.EventBus()
+		opts.Models = runtime.ModelRegistry()
+		opts.Client = client
 	})
 
 	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
@@ -200,16 +191,14 @@ func newTestRuntimeWithContextWindowAndMaxTokens(
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 	_, repository := newTestRuntime(t)
-	runtime := assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:      runtimeConfig,
-		Sessions:    repository,
-		Extensions:  manager,
-		Cache:       cache,
-		Events:      event.NewBus(nil),
-		Models:      registry,
-		Client:      client,
-		Logger:      nil,
-		SkillsCache: nil,
+	runtime := assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
+		opts.Config = runtimeConfig
+		opts.Sessions = repository
+		opts.Extensions = manager
+		opts.Cache = cache
+		opts.Events = event.NewBus(nil)
+		opts.Models = registry
+		opts.Client = client
 	})
 
 	return runtime

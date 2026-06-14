@@ -107,16 +107,13 @@ func newAutoCompactionTestRuntime(
 	// and do not depend on off-by-one budget boundaries.
 	runtimeConfig.Context.OutputReserveTokens = 1
 
-	return assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:      runtimeConfig,
-		Sessions:    runtime.SessionRepository(),
-		Extensions:  nil,
-		Cache:       assistant.NewResponseCache(false, 1, time.Minute),
-		Events:      runtime.EventBus(),
-		Models:      runtime.ModelRegistry(),
-		Client:      client,
-		Logger:      nil,
-		SkillsCache: nil,
+	return assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
+		opts.Config = runtimeConfig
+		opts.Sessions = runtime.SessionRepository()
+		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+		opts.Events = runtime.EventBus()
+		opts.Models = runtime.ModelRegistry()
+		opts.Client = client
 	})
 }
 

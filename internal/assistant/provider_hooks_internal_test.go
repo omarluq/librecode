@@ -107,17 +107,12 @@ lc.register_command("seen_auth", "seen_auth", function()
   return seen
 end)
 `)
-	runtime := &Runtime{
-		cfg:         nil,
-		sessions:    nil,
-		extensions:  manager,
-		cache:       nil,
-		events:      nil,
-		models:      nil,
-		client:      nil,
-		logger:      testProviderHookLogger(),
-		skillsCache: nil,
-	}
+
+	runtime := newRuntimeFromDeps(func(deps *runtimeDeps) {
+		deps.Extensions = manager
+		deps.Logger = testProviderHookLogger()
+	})
+
 	input := providerHookTestInput(map[string]any{}, map[string]string{"authorization": "Bearer secret"}, 1)
 
 	_, err := runtime.dispatchProviderRequestHook(context.Background(), input)
@@ -136,17 +131,11 @@ func newProviderHookTestRuntime(t *testing.T, source string) *Runtime {
 	t.Cleanup(manager.Shutdown)
 	loadProviderHookTestExtension(t, manager, source)
 
-	return &Runtime{
-		cfg:         nil,
-		sessions:    nil,
-		extensions:  manager,
-		cache:       nil,
-		events:      event.NewBus(testProviderHookLogger()),
-		models:      nil,
-		client:      nil,
-		logger:      testProviderHookLogger(),
-		skillsCache: nil,
-	}
+	return newRuntimeFromDeps(func(deps *runtimeDeps) {
+		deps.Extensions = manager
+		deps.Events = event.NewBus(testProviderHookLogger())
+		deps.Logger = testProviderHookLogger()
+	})
 }
 
 func loadProviderHookTestExtension(t *testing.T, manager *extension.Manager, source string) {

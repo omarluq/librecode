@@ -168,6 +168,30 @@ func TestSkillsCacheReturnsEmptyForCwdWithNoSkills(t *testing.T) {
 	assert.Empty(t, result.Skills)
 }
 
+func TestSkillsCacheInvalidatesWhenSkillRootCreatedLater(t *testing.T) {
+	cwd := newOutsideTempDir(t)
+	home := newOutsideTempDir(t)
+	t.Setenv("HOME", home)
+
+	// First Get with no skill directories — loads empty and watches ancestor.
+	cache := core.NewSkillsCache()
+	t.Cleanup(cache.Close)
+
+	first := cache.Get(cwd)
+	assert.Empty(t, first.Skills)
+
+	// Create the skill root and a skill file after the initial load.
+	skillPath := filepath.Join(cwd, core.ConfigDirName, "skills", "alpha", "SKILL.md")
+	writeTestFile(t, skillPath, skillMarkdown("alpha"))
+
+	// The ancestor watch should fire and invalidate the cache.
+	require.Eventually(t, func() bool {
+		refreshed := cache.Get(cwd)
+
+		return len(refreshed.Skills) == 1 && refreshed.Skills[0].Name == "alpha"
+	}, 3*time.Second, 50*time.Millisecond, "cache should invalidate when skill root is created")
+}
+
 func TestSkillsCacheGetIsSafeAfterClose(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()

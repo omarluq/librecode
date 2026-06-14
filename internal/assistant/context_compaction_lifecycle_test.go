@@ -129,15 +129,14 @@ func newCompactionRuntimeWithManagerWindow(
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 
-	return assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:      runtimeConfig,
-		Sessions:    repository,
-		Extensions:  manager,
-		Cache:       cache,
-		Events:      event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil))),
-		Models:      newCompactionTestRegistry(t, 2),
-		Client:      client,
-		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-		SkillsCache: nil,
+	return assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
+		opts.Config = runtimeConfig
+		opts.Sessions = repository
+		opts.Extensions = manager
+		opts.Cache = cache
+		opts.Events = event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil)))
+		opts.Models = newCompactionTestRegistry(t, 2)
+		opts.Client = client
+		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	})
 }
