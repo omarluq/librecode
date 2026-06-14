@@ -117,9 +117,9 @@ func responsesBasePayload(request *CompletionRequest, input []any, stream bool) 
 		payload["prompt_cache_key"] = request.Request.SessionID
 	}
 
-	if shouldIncludeReasoningEffort(request) {
+	if effort, ok := reasoningEffort(request); ok {
 		payload["reasoning"] = map[string]any{
-			reasoningEffortKey: request.Request.ThinkingLevel,
+			reasoningEffortKey: effort,
 			jsonSummaryKey:     reasoningSummaryAuto,
 		}
 	} else if stream {
@@ -399,9 +399,9 @@ func extractText(value any) string {
 }
 
 func codexReasoning(request *CompletionRequest) map[string]string {
-	if request.Request.ThinkingLevel == "" || request.Request.ThinkingLevel == thinkingOff {
-		return map[string]string{reasoningEffortKey: reasoningEffortNone, jsonSummaryKey: reasoningSummaryAuto}
+	if effort, ok := reasoningEffort(request); ok {
+		return map[string]string{reasoningEffortKey: effort, jsonSummaryKey: reasoningSummaryAuto}
 	}
 
-	return map[string]string{reasoningEffortKey: request.Request.ThinkingLevel, jsonSummaryKey: reasoningSummaryAuto}
+	return map[string]string{reasoningEffortKey: reasoningEffortNone, jsonSummaryKey: reasoningSummaryAuto}
 }

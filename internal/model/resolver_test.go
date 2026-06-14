@@ -53,7 +53,7 @@ func TestResolveCLIModelInfersProviderAndRejectsUnknownProvider(t *testing.T) {
 		ModelsPath:   "",
 		BuiltIns: []model.Model{
 			testModel("openai", "gpt-5.4", "GPT"),
-			testModel("zai", "glm-5.1", "GLM"),
+			testModel("zai", "glm-5.2", "GLM"),
 		},
 		Discovery: disabledDiscovery(),
 	})

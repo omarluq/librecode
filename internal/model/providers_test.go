@@ -47,6 +47,27 @@ func TestAnthropicAPIAndSubscriptionProvidersAreSeparate(t *testing.T) {
 	assert.Equal(t, anthropicmodel.Fable5, model.DefaultModelPerProvider()["anthropic-claude"])
 }
 
+func TestZAIBuiltInDefaultUsesGLM52Metadata(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "glm-5.2", model.DefaultModelPerProvider()["zai"])
+
+	builtIn := findBuiltIn(t, "zai", "glm-5.2")
+	assert.Equal(t, "https://api.z.ai/api/coding/paas/v4", builtIn.BaseURL)
+	assert.Equal(t, 1_000_000, builtIn.ContextWindow)
+	assert.Equal(t, 131_072, builtIn.MaxTokens)
+	assert.True(t, builtIn.Reasoning)
+	assert.Equal(t, []model.InputMode{model.InputText}, builtIn.Input)
+
+	high := builtIn.ThinkingLevelMap[model.ThinkingHigh]
+	xhigh := builtIn.ThinkingLevelMap[model.ThinkingXHigh]
+
+	require.NotNil(t, high)
+	require.NotNil(t, xhigh)
+	assert.Equal(t, "high", *high)
+	assert.Equal(t, "max", *xhigh)
+}
+
 func TestAnthropicBuiltInDefaultsSupportFableAndMythos(t *testing.T) {
 	t.Parallel()
 

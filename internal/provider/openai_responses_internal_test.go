@@ -141,6 +141,14 @@ func TestResponsesPayloadReasoningModes(t *testing.T) {
 		jsonSummaryKey:     reasoningSummaryAuto,
 	}, payload["reasoning"])
 
+	setTestRequestThinkingLevel(request, thinkingXHigh)
+	setTestThinkingMap(request, thinkingXHigh, "max")
+	payload = responsesBasePayload(request, nil, false)
+	assert.Equal(t, map[string]any{
+		reasoningEffortKey: "max",
+		jsonSummaryKey:     reasoningSummaryAuto,
+	}, payload["reasoning"])
+
 	setTestRequestReasoning(request, false)
 	setTestRequestThinkingLevel(request, "")
 	payload = responsesBasePayload(request, nil, true)
