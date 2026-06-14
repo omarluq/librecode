@@ -136,8 +136,8 @@ func openAIChatPayload(request *CompletionRequest, messages []map[string]any) ma
 		"tools":           OpenAIChatTools(request),
 		jsonToolChoiceKey: "auto",
 	}
-	if shouldIncludeReasoningEffort(request) {
-		payload["reasoning_effort"] = request.Request.ThinkingLevel
+	if effort, ok := reasoningEffort(request); ok {
+		payload["reasoning_effort"] = effort
 	}
 
 	return payload
@@ -228,10 +228,18 @@ func openAIChatFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
 	}
 }
 
-func shouldIncludeReasoningEffort(request *CompletionRequest) bool {
-	return request.Request.Model.Reasoning &&
-		request.Request.ThinkingLevel != "" &&
-		request.Request.ThinkingLevel != thinkingOff
+func reasoningEffort(request *CompletionRequest) (string, bool) {
+	if !request.Request.Model.Reasoning ||
+		request.Request.ThinkingLevel == "" ||
+		request.Request.ThinkingLevel == thinkingOff {
+		return "", false
+	}
+
+	if mapped := request.Request.Model.ThinkingLevelMap[request.Request.ThinkingLevel]; mapped != nil {
+		return *mapped, true
+	}
+
+	return request.Request.ThinkingLevel, true
 }
 
 func openAIChatMessages(request *CompletionRequest) []map[string]any {

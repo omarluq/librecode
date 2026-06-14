@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -377,6 +378,7 @@ func thinkingLevelsForDiscoveredModel(provider, modelID string) map[ThinkingLeve
 	addOpenAIThinkingOff(levels, provider, modelID)
 	addOpenAIThinkingNone(levels, provider, modelID)
 	addOpenAIXHigh(levels, modelID)
+	addZAIThinkingLevels(levels, provider, modelID)
 
 	if len(levels) == 0 {
 		return nil
@@ -422,6 +424,14 @@ func addOpenAIXHigh(levels map[ThinkingLevel]*string, modelID string) {
 
 	xhigh := string(ThinkingXHigh)
 	levels[ThinkingXHigh] = &xhigh
+}
+
+func addZAIThinkingLevels(levels map[ThinkingLevel]*string, provider, modelID string) {
+	if provider != providerZAI || !strings.HasPrefix(modelID, glm52) {
+		return
+	}
+
+	maps.Copy(levels, zaiThinkingLevelMap())
 }
 
 func openAISupportsXHigh(modelID string) bool {

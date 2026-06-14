@@ -19,7 +19,50 @@ const (
 func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 	t.Parallel()
 
-	content := []byte(`{
+	models, err := ParseDiscoveredModels(supportedProvidersDiscoveryFixture())
+	require.NoError(t, err)
+	openAIModel := findModel(t, models, testDiscoveryOpenAI, testDiscoveryGPT54)
+	assert.Equal(t, testDiscoveryOpenAIResponsesAPI, openAIModel.API)
+	assert.Equal(t, "https://api.openai.com/v1", openAIModel.BaseURL)
+	assert.Equal(t, 272000, openAIModel.ContextWindow)
+	assert.Equal(t, 128000, openAIModel.MaxTokens)
+	assert.Equal(t, []InputMode{InputText, InputImage}, openAIModel.Input)
+	assert.True(t, openAIModel.Reasoning)
+	assert.InDelta(t, 2.5, openAIModel.Cost.Input, 0)
+	assert.InDelta(t, 15.0, openAIModel.Cost.Output, 0)
+	assert.NotNil(t, openAIModel.ThinkingLevelMap[ThinkingOff])
+
+	openCodeModel := findModel(t, models, "opencode", testDiscoveryGPT55)
+	assert.Equal(t, "openai-completions", openCodeModel.API)
+	assert.Equal(t, "https://opencode.ai/zen/v1", openCodeModel.BaseURL)
+	assert.Equal(t, []InputMode{InputText}, openCodeModel.Input)
+	assert.NotContains(t, modelIDsForProvider(models, testDiscoveryOpenAI), "text-only")
+
+	anthropicOAuthModel := findModel(t, models, "anthropic-claude", anthropicmodel.Fable5)
+	assert.Equal(t, "anthropic-messages", anthropicOAuthModel.API)
+	assert.Equal(t, "https://api.anthropic.com", anthropicOAuthModel.BaseURL)
+	assert.Contains(t, anthropicOAuthModel.ThinkingLevelMap, ThinkingOff)
+	xhighLevel := anthropicOAuthModel.ThinkingLevelMap[ThinkingXHigh]
+	require.NotNil(t, xhighLevel)
+	assert.Equal(t, string(ThinkingXHigh), *xhighLevel)
+
+	codexModel := findModel(t, models, "openai-codex", testDiscoveryGPT55)
+	assert.Equal(t, "openai-codex-responses", codexModel.API)
+	assert.Equal(t, "https://chatgpt.com/backend-api", codexModel.BaseURL)
+	assert.Equal(t, 272000, codexModel.ContextWindow)
+
+	zaiModel := findModel(t, models, "zai", "glm-5.2")
+	assert.Equal(t, "openai-completions", zaiModel.API)
+	assert.Equal(t, "https://api.z.ai/api/coding/paas/v4", zaiModel.BaseURL)
+	assert.Equal(t, 1_000_000, zaiModel.ContextWindow)
+	assert.Equal(t, 131_072, zaiModel.MaxTokens)
+	assert.True(t, zaiModel.Reasoning)
+	require.NotNil(t, zaiModel.ThinkingLevelMap[ThinkingXHigh])
+	assert.Equal(t, "max", *zaiModel.ThinkingLevelMap[ThinkingXHigh])
+}
+
+func supportedProvidersDiscoveryFixture() []byte {
+	return []byte(`{
 		"openai": {
 			"models": {
 				"gpt-5.4": {
@@ -55,40 +98,19 @@ func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 					"limit": {"context": 272000, "output": 128000}
 				}
 			}
+		},
+		"zai-coding-plan": {
+			"models": {
+				"glm-5.2": {
+					"name": "GLM-5.2",
+					"tool_call": true,
+					"reasoning": true,
+					"modalities": {"input": ["text"]},
+					"limit": {"context": 1000000, "output": 131072}
+				}
+			}
 		}
 	}`)
-
-	models, err := ParseDiscoveredModels(content)
-	require.NoError(t, err)
-	openAIModel := findModel(t, models, testDiscoveryOpenAI, testDiscoveryGPT54)
-	assert.Equal(t, testDiscoveryOpenAIResponsesAPI, openAIModel.API)
-	assert.Equal(t, "https://api.openai.com/v1", openAIModel.BaseURL)
-	assert.Equal(t, 272000, openAIModel.ContextWindow)
-	assert.Equal(t, 128000, openAIModel.MaxTokens)
-	assert.Equal(t, []InputMode{InputText, InputImage}, openAIModel.Input)
-	assert.True(t, openAIModel.Reasoning)
-	assert.InDelta(t, 2.5, openAIModel.Cost.Input, 0)
-	assert.InDelta(t, 15.0, openAIModel.Cost.Output, 0)
-	assert.NotNil(t, openAIModel.ThinkingLevelMap[ThinkingOff])
-
-	openCodeModel := findModel(t, models, "opencode", testDiscoveryGPT55)
-	assert.Equal(t, "openai-completions", openCodeModel.API)
-	assert.Equal(t, "https://opencode.ai/zen/v1", openCodeModel.BaseURL)
-	assert.Equal(t, []InputMode{InputText}, openCodeModel.Input)
-	assert.NotContains(t, modelIDsForProvider(models, testDiscoveryOpenAI), "text-only")
-
-	anthropicOAuthModel := findModel(t, models, "anthropic-claude", anthropicmodel.Fable5)
-	assert.Equal(t, "anthropic-messages", anthropicOAuthModel.API)
-	assert.Equal(t, "https://api.anthropic.com", anthropicOAuthModel.BaseURL)
-	assert.Contains(t, anthropicOAuthModel.ThinkingLevelMap, ThinkingOff)
-	xhighLevel := anthropicOAuthModel.ThinkingLevelMap[ThinkingXHigh]
-	require.NotNil(t, xhighLevel)
-	assert.Equal(t, string(ThinkingXHigh), *xhighLevel)
-
-	codexModel := findModel(t, models, "openai-codex", testDiscoveryGPT55)
-	assert.Equal(t, "openai-codex-responses", codexModel.API)
-	assert.Equal(t, "https://chatgpt.com/backend-api", codexModel.BaseURL)
-	assert.Equal(t, 272000, codexModel.ContextWindow)
 }
 
 func TestRegistryDiscoveryMergesBeforeCustomOverrides(t *testing.T) {

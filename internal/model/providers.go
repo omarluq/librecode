@@ -28,6 +28,7 @@ const (
 	apiOpenAIResponses           = "openai-responses"
 	gpt54                        = "gpt-5.4"
 	gpt55                        = "gpt-5.5"
+	glm52                        = "glm-5.2"
 	kimiK26                      = "kimi-k2.6"
 )
 
@@ -130,7 +131,7 @@ func defaultProviderMetadata() map[string]providerMetadata {
 		providerOpenRouter:           openAICompatibleMetadata("https://openrouter.ai/api/v1", false),
 		providerVercelAIGateway:      openAICompatibleMetadata("https://ai-gateway.vercel.sh/v1", true),
 		providerXAI:                  openAICompatibleMetadata("https://api.x.ai/v1", true),
-		providerZAI:                  openAICompatibleMetadata("https://api.z.ai/api/coding/paas/v4", true),
+		providerZAI:                  zaiMetadata(),
 	}
 }
 
@@ -150,8 +151,36 @@ func openAICompatibleMetadata(baseURL string, reasoning bool) providerMetadata {
 const (
 	openAICodexContextWindow = 272_000
 	anthropicContextWindow   = 1_000_000
+	zaiContextWindow         = 1_000_000
+	zaiMaxOutputTokens       = 131_072
 	largeMaxOutputTokens     = 128_000
 )
+
+func zaiMetadata() providerMetadata {
+	return providerMetadata{
+		ThinkingLevelMap: zaiThinkingLevelMap(),
+		Headers:          nil,
+		Compat:           nil,
+		API:              apiOpenAICompletions,
+		BaseURL:          "https://api.z.ai/api/coding/paas/v4",
+		ContextWindow:    zaiContextWindow,
+		MaxTokens:        zaiMaxOutputTokens,
+		Reasoning:        true,
+	}
+}
+
+func zaiThinkingLevelMap() map[ThinkingLevel]*string {
+	high := string(ThinkingHigh)
+	maxEffort := "max"
+
+	return map[ThinkingLevel]*string{
+		ThinkingLow:     &high,
+		ThinkingMedium:  &high,
+		ThinkingHigh:    &high,
+		ThinkingXHigh:   &maxEffort,
+		ThinkingMinimal: &high,
+	}
+}
 
 func openAIResponsesMetadata() providerMetadata {
 	return providerMetadata{
@@ -249,7 +278,7 @@ func defaultModelMap() map[string]string {
 		{Provider: providerOpenRouter, ModelID: "moonshotai/kimi-k2.6"},
 		{Provider: providerVercelAIGateway, ModelID: "zai/glm-5.1"},
 		{Provider: providerXAI, ModelID: "grok-4.20-0309-reasoning"},
-		{Provider: providerZAI, ModelID: "glm-5.1"},
+		{Provider: providerZAI, ModelID: glm52},
 	}
 
 	return modelPairsToMap(pairs)

@@ -25,6 +25,19 @@ func TestOpenAIChatPayloadAndRoles(t *testing.T) {
 	assert.NotEmpty(t, payload["tools"])
 }
 
+func TestOpenAIChatPayloadMapsReasoningEffort(t *testing.T) {
+	t.Parallel()
+
+	request := testCompletionRequestAuth(testOpenAIProvider, "sk-test")
+	setTestRequestReasoning(request, true)
+	setTestRequestThinkingLevel(request, thinkingXHigh)
+	setTestThinkingMap(request, thinkingXHigh, "max")
+
+	payload := openAIChatPayload(request, nil)
+
+	assert.Equal(t, "max", payload["reasoning_effort"])
+}
+
 func TestOpenAIChatMessagesAndRoles(t *testing.T) {
 	t.Parallel()
 
