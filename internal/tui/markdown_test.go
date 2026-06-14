@@ -41,7 +41,7 @@ func TestMarkdownViewRendersCommonBlocks(t *testing.T) {
 		Code:      tcell.StyleDefault,
 		CodeTheme: testCodeTheme(),
 	}
-	view := &tui.MarkdownView{Text: markdown, Styles: styles}
+	view := &tui.MarkdownView{Text: markdown, Styles: styles, Engine: nil}
 
 	lines := view.Render(40, 100)
 	text := strings.Join(lineTexts(lines), "\n")
@@ -57,7 +57,7 @@ func TestMarkdownViewRendersCommonBlocks(t *testing.T) {
 	require.Contains(t, text, "Alpha")
 
 	buffer := tui.NewCellBuffer(40, 2, tcell.StyleDefault)
-	(&tui.MarkdownView{Text: "# Heading", Styles: styles}).Draw(buffer, testRect(0, 0, 40, 2))
+	(&tui.MarkdownView{Text: "# Heading", Styles: styles, Engine: nil}).Draw(buffer, testRect(0, 0, 40, 2))
 	require.Equal(t, '#', buffer.Cell(1, 0).Rune)
 }
 
@@ -65,15 +65,17 @@ func TestMarkdownCodeBlockWrapsInsteadOfSwallowingSymbols(t *testing.T) {
 	t.Parallel()
 
 	markdown := "```go\nfunc Fib(n int) int {\n    if n < 2 {\n        return n\n    }\n}\n```"
+	styles := tui.MarkdownStyles{
+		Text:      tcell.StyleDefault,
+		Accent:    tcell.StyleDefault,
+		Muted:     tcell.StyleDefault,
+		Code:      tcell.StyleDefault,
+		CodeTheme: testCodeTheme(),
+	}
 	view := tui.MarkdownView{
-		Text: markdown,
-		Styles: tui.MarkdownStyles{
-			Text:      tcell.StyleDefault,
-			Accent:    tcell.StyleDefault,
-			Muted:     tcell.StyleDefault,
-			Code:      tcell.StyleDefault,
-			CodeTheme: testCodeTheme(),
-		},
+		Text:   markdown,
+		Styles: styles,
+		Engine: nil,
 	}
 
 	lines := view.Render(20, 100)
