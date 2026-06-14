@@ -289,14 +289,15 @@ func newRenderParityRuntimeWithSession(
 	appendRenderParityMessage(ctx, t, repository, session.ID, &second.ID, database.RoleAssistant, "assistant history")
 
 	runtime = assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:     renderParityConfig(),
-		Sessions:   repository,
-		Extensions: nil,
-		Cache:      nil,
-		Events:     nil,
-		Models:     nil,
-		Client:     nil,
-		Logger:     nil,
+		Config:      renderParityConfig(),
+		Sessions:    repository,
+		Extensions:  nil,
+		Cache:       nil,
+		Events:      nil,
+		Models:      nil,
+		Client:      nil,
+		Logger:      nil,
+		SkillsCache: nil,
 	})
 
 	return runtime, session.ID

@@ -11,6 +11,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/config"
+	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
@@ -26,14 +27,15 @@ type runtimeExtensions interface {
 
 // Runtime coordinates prompt handling and durable sessions.
 type Runtime struct {
-	cfg        *config.Config
-	sessions   *database.SessionRepository
-	extensions runtimeExtensions
-	cache      *ResponseCache
-	events     *event.Bus
-	models     *model.Registry
-	client     Completer
-	logger     *slog.Logger
+	cfg         *config.Config
+	sessions    *database.SessionRepository
+	extensions  runtimeExtensions
+	cache       *ResponseCache
+	events      *event.Bus
+	models      *model.Registry
+	client      Completer
+	logger      *slog.Logger
+	skillsCache *core.SkillsCache
 }
 
 // PromptRequest contains one user prompt invocation.
@@ -119,14 +121,15 @@ type responseBundle struct {
 
 // RuntimeOptions contains dependencies for an assistant runtime.
 type RuntimeOptions struct {
-	Config     *config.Config
-	Sessions   *database.SessionRepository
-	Extensions runtimeExtensions
-	Cache      *ResponseCache
-	Events     *event.Bus
-	Models     *model.Registry
-	Client     Completer
-	Logger     *slog.Logger
+	Config      *config.Config
+	Sessions    *database.SessionRepository
+	Extensions  runtimeExtensions
+	Cache       *ResponseCache
+	Events      *event.Bus
+	Models      *model.Registry
+	Client      Completer
+	Logger      *slog.Logger
+	SkillsCache *core.SkillsCache
 }
 
 // NewRuntime creates an assistant runtime.
@@ -141,14 +144,15 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 	}
 
 	return &Runtime{
-		cfg:        options.Config,
-		sessions:   options.Sessions,
-		extensions: options.Extensions,
-		cache:      options.Cache,
-		events:     options.Events,
-		models:     options.Models,
-		client:     client,
-		logger:     options.Logger,
+		cfg:         options.Config,
+		sessions:    options.Sessions,
+		extensions:  options.Extensions,
+		cache:       options.Cache,
+		events:      options.Events,
+		models:      options.Models,
+		client:      client,
+		logger:      options.Logger,
+		skillsCache: options.SkillsCache,
 	}
 }
 
@@ -279,6 +283,16 @@ func (runtime *Runtime) maybeAutoCompactAfterResponse(
 // SessionRepository returns the underlying session repository for command and UI layers.
 func (runtime *Runtime) SessionRepository() *database.SessionRepository {
 	return runtime.sessions
+}
+
+// loadSkills returns skills from the runtime cache when available, falling back
+// to a direct disk scan. This avoids redundant filesystem I/O on every prompt.
+func (runtime *Runtime) loadSkills(cwd string) []core.Skill {
+	if runtime.skillsCache != nil {
+		return runtime.skillsCache.Get(cwd).Skills
+	}
+
+	return core.LoadSkills(cwd, nil, true).Skills
 }
 
 // ModelRegistry returns the model registry used by the runtime.

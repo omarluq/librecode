@@ -411,14 +411,15 @@ func newCompactionRuntimeForTailPolicy(
 	runtimeConfig := testConfig()
 
 	return assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:     runtimeConfig,
-		Sessions:   repository,
-		Extensions: nil,
-		Cache:      assistant.NewResponseCache(false, 1, time.Minute),
-		Events:     event.NewBus(nil),
-		Models:     newCompactionTestRegistry(t, contextWindow),
-		Client:     client,
-		Logger:     nil,
+		Config:      runtimeConfig,
+		Sessions:    repository,
+		Extensions:  nil,
+		Cache:       assistant.NewResponseCache(false, 1, time.Minute),
+		Events:      event.NewBus(nil),
+		Models:      newCompactionTestRegistry(t, contextWindow),
+		Client:      client,
+		Logger:      nil,
+		SkillsCache: nil,
 	}), repository
 }
 

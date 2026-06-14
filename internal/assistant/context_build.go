@@ -64,7 +64,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 	basePrompt := baseSystemPrompt(cwd)
 
 	skillPrompt := ""
-	if skills := core.LoadSkills(cwd, nil, true).Skills; len(skills) > 0 {
+	if skills := runtime.loadSkills(cwd); len(skills) > 0 {
 		skillPrompt = core.FormatSkillsForPrompt(skills)
 	}
 
@@ -146,7 +146,7 @@ func (runtime *Runtime) modelContextBase(
 	onEvent func(StreamEvent),
 ) (contextwindow.Base, error) {
 	basePrompt := baseSystemPrompt(cwd)
-	skills := core.LoadSkills(cwd, nil, true).Skills
+	skills := runtime.loadSkills(cwd)
 
 	availableSkillsPrompt := ""
 	if len(skills) > 0 {
