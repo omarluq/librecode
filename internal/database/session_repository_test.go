@@ -177,7 +177,8 @@ func TestSessionRepository_DeleteSessionRemovesSessionRows(t *testing.T) {
 	ctx := context.Background()
 	createdSession, err := repository.CreateSession(ctx, "/work", "delete-me", "")
 	require.NoError(t, err)
-	entry := appendTestMessage(ctx, t, repository, createdSession.ID, nil, database.RoleUser, "hello")
+	helper := sessionTestHelper{ctx, t, repository}
+	entry := helper.appendMessage(createdSession.ID, nil, database.RoleUser, "hello")
 
 	require.NoError(t, repository.DeleteSession(ctx, createdSession.ID))
 
@@ -199,12 +200,10 @@ func TestSessionRepository_DeleteEntryBranchRemovesDescendants(t *testing.T) {
 	repository := newTestSessionRepository(t)
 	createdSession, err := repository.CreateSession(ctx, "/work", "", "")
 	require.NoError(t, err)
-	rootEntry := appendTestMessage(ctx, t, repository, createdSession.ID, nil, database.RoleUser, "root")
-	branchEntry := appendTestMessage(ctx, t, repository, createdSession.ID, &rootEntry.ID, database.RoleUser, "branch")
-	childEntry := appendTestMessage(
-		ctx,
-		t,
-		repository,
+	helper := sessionTestHelper{ctx, t, repository}
+	rootEntry := helper.appendMessage(createdSession.ID, nil, database.RoleUser, "root")
+	branchEntry := helper.appendMessage(createdSession.ID, &rootEntry.ID, database.RoleUser, "branch")
+	childEntry := helper.appendMessage(
 		createdSession.ID,
 		&branchEntry.ID,
 		database.RoleAssistant,
@@ -232,12 +231,13 @@ func TestSessionRepository_BranchLoadsOnlyActiveChain(t *testing.T) {
 	session, err := repository.CreateSession(ctx, "/work", "", "")
 	require.NoError(t, err)
 
-	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
-	child := appendTestMessage(ctx, t, repository, session.ID, &root.ID, database.RoleAssistant, "child")
-	grandchild := appendTestMessage(ctx, t, repository, session.ID, &child.ID, database.RoleUser, "grandchild")
+	helper := sessionTestHelper{ctx, t, repository}
+	root := helper.appendMessage(session.ID, nil, database.RoleUser, "root")
+	child := helper.appendMessage(session.ID, &root.ID, database.RoleAssistant, "child")
+	grandchild := helper.appendMessage(session.ID, &child.ID, database.RoleUser, "grandchild")
 
 	// Sibling branch off root — should NOT appear in the active chain.
-	sibling := appendTestMessage(ctx, t, repository, session.ID, &root.ID, database.RoleAssistant, "sibling")
+	sibling := helper.appendMessage(session.ID, &root.ID, database.RoleAssistant, "sibling")
 
 	// Explicit entry ID returns root-to-entry chain, excluding siblings.
 	branch, err := repository.Branch(ctx, session.ID, grandchild.ID)
@@ -281,21 +281,22 @@ func TestSessionRepository_BranchResolvesLeafNotLatestByTimestamp(t *testing.T) 
 	session, err := repository.CreateSession(ctx, "/work", "", "")
 	require.NoError(t, err)
 
+	helper := sessionTestHelper{ctx, t, repository}
+
 	// root has two children: "child" (a leaf, created first) and
 	// "backdated-parent" (a non-leaf with a child of its own).
-	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
-	leafA := appendTestMessage(ctx, t, repository, session.ID, &root.ID, database.RoleAssistant, "leaf-a")
+	root := helper.appendMessage(session.ID, nil, database.RoleUser, "root")
+	leafA := helper.appendMessage(session.ID, &root.ID, database.RoleAssistant, "leaf-a")
 
 	// This entry is a non-leaf (has a child) but is backdated to be older
 	// than leafA. The old ORDER BY created_at logic would have picked leafA
 	// as the starting point since it's newer. The leaf-aware query must
 	// select the actual leaf with no children.
-	backdatedParent := appendTestMessageAt(
-		ctx, t, repository, session.ID, &root.ID, database.RoleAssistant, "backdated-parent",
+	backdatedParent := helper.appendMessageAt(
+		session.ID, &root.ID, database.RoleAssistant, "backdated-parent",
 		time.Now().Add(-1*time.Hour),
 	)
-	backdatedLeaf := appendTestMessage(
-		ctx, t, repository,
+	backdatedLeaf := helper.appendMessage(
 		session.ID, &backdatedParent.ID, database.RoleUser, "backdated-leaf",
 	)
 
@@ -392,15 +393,14 @@ func newMetadataFixture(ctx context.Context, t *testing.T) metadataFixture {
 	createdSession, err := repository.CreateSession(ctx, "/work", "", "")
 	require.NoError(t, err)
 
-	userEntry := appendTestMessage(ctx, t, repository, createdSession.ID, nil, database.RoleUser, testUserPrompt)
+	helper := sessionTestHelper{ctx, t, repository}
+	userEntry := helper.appendMessage(createdSession.ID, nil, database.RoleUser, testUserPrompt)
 	modelEntry, err := repository.AppendModelChange(ctx, createdSession.ID, &userEntry.ID, "anthropic", "sonnet")
 	require.NoError(t, err)
 	thinkingEntry, err := repository.AppendThinkingLevelChange(ctx, createdSession.ID, &modelEntry.ID, "high")
 	require.NoError(t, err)
-	assistantEntry := appendTestMessage(
-		ctx,
-		t,
-		repository,
+
+	assistantEntry := helper.appendMessage(
 		createdSession.ID,
 		&thinkingEntry.ID,
 		database.RoleAssistant,
@@ -420,13 +420,12 @@ func newMetadataFixture(ctx context.Context, t *testing.T) metadataFixture {
 		nil,
 	)
 	require.NoError(t, err)
-	compactionEntry := appendTestCompactionSimple(
-		ctx, t, repository,
+
+	compactionEntry := helper.appendCompactionSimple(
 		createdSession.ID, &customEntry.ID,
 		"summary of earlier work", assistantEntry.ID, 1200,
 	)
-	branchEntry := appendTestBranchSummary(
-		ctx, t, repository,
+	branchEntry := helper.appendBranchSummary(
 		createdSession.ID, &userEntry.ID,
 		compactionEntry.ID, "branch",
 	)
@@ -440,20 +439,6 @@ func newMetadataFixture(ctx context.Context, t *testing.T) metadataFixture {
 		sessionID:          createdSession.ID,
 		label:              label,
 	}
-}
-
-func appendTestMessage(
-	ctx context.Context,
-	t *testing.T,
-	repository *database.SessionRepository,
-	sessionID string,
-	parentID *string,
-	role database.Role,
-	content string,
-) *database.EntryEntity {
-	t.Helper()
-
-	return appendTestMessageAt(ctx, t, repository, sessionID, parentID, role, content, time.Now().UTC())
 }
 
 func newTestSessionRepository(t *testing.T) *database.SessionRepository {
@@ -507,7 +492,8 @@ func TestSessionRepository_AppendCustomAndCustomEntry(t *testing.T) {
 	session, err := repository.CreateSession(ctx, "/work", "", "")
 	require.NoError(t, err)
 
-	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
+	helper := sessionTestHelper{ctx, t, repository}
+	root := helper.appendMessage(session.ID, nil, database.RoleUser, "root")
 
 	// AppendCustom delegates to AppendCustomEntry with nil parent.
 	customEntry, err := repository.AppendCustom(ctx, session.ID, "note", `{"key":"value"}`)
@@ -533,9 +519,9 @@ func TestSessionRepository_BuildContextIncludesBranchSummary(t *testing.T) {
 	session, err := repository.CreateSession(ctx, "/work", "", "")
 	require.NoError(t, err)
 
-	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
-	branchSummary := appendTestBranchSummary(
-		ctx, t, repository,
+	helper := sessionTestHelper{ctx, t, repository}
+	root := helper.appendMessage(session.ID, nil, database.RoleUser, "root")
+	branchSummary := helper.appendBranchSummary(
 		session.ID, &root.ID,
 		root.ID, "work from the other branch",
 	)
@@ -556,15 +542,16 @@ func TestSessionRepository_BuildContextWithCompactionTailBranchSummary(t *testin
 	session, err := repository.CreateSession(ctx, "/work", "", "")
 	require.NoError(t, err)
 
-	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
-	branchSummary := appendTestBranchSummary(
-		ctx, t, repository,
+	require.NoError(t, err)
+
+	helper := sessionTestHelper{ctx, t, repository}
+	root := helper.appendMessage(session.ID, nil, database.RoleUser, "root")
+	branchSummary := helper.appendBranchSummary(
 		session.ID, &root.ID,
 		root.ID, "prior branch work",
 	)
 
-	compactionEntry := appendTestCompactionSimple(
-		ctx, t, repository,
+	compactionEntry := helper.appendCompactionSimple(
 		session.ID, &branchSummary.ID,
 		"compacted", root.ID, 500,
 	)
@@ -587,7 +574,8 @@ func TestSessionRepository_LabelClearsWhenNil(t *testing.T) {
 	session, err := repository.CreateSession(ctx, "/work", "", "")
 	require.NoError(t, err)
 
-	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
+	helper := sessionTestHelper{ctx, t, repository}
+	root := helper.appendMessage(session.ID, nil, database.RoleUser, "root")
 
 	// Set a label.
 	label := "checkpoint"

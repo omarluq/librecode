@@ -84,8 +84,8 @@ func TestBuildContextClearsUsageAnchorAfterCompaction(t *testing.T) {
 		OutputTokens:  0,
 	})
 	require.NoError(t, err)
-	compactionEntry := appendTestCompactionSimple(
-		ctx, t, repository,
+	helper := sessionTestHelper{ctx, t, repository}
+	compactionEntry := helper.appendCompactionSimple(
 		session.ID, &assistantEntry.ID,
 		"summary", userEntry.ID, 100,
 	)

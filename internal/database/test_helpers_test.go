@@ -10,22 +10,27 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
-// appendTestBranchSummary creates a branch summary entry with sensible
+// sessionTestHelper bundles the common test dependencies so helper
+// methods stay under SonarCloud's 7-parameter limit.
+type sessionTestHelper struct {
+	ctx        context.Context
+	t          *testing.T
+	repository *database.SessionRepository
+}
+
+// appendBranchSummary creates a branch summary entry with sensible
 // defaults so call sites don't repeat the 7-argument AppendBranchSummary
 // signature.
-func appendTestBranchSummary(
-	ctx context.Context,
-	t *testing.T,
-	repository *database.SessionRepository,
+func (h sessionTestHelper) appendBranchSummary(
 	sessionID string,
 	parentID *string,
 	sourceEntryID string,
 	summary string,
 ) *database.EntryEntity {
-	t.Helper()
+	h.t.Helper()
 
-	entry, err := repository.AppendBranchSummary(
-		ctx,
+	entry, err := h.repository.AppendBranchSummary(
+		h.ctx,
 		sessionID,
 		parentID,
 		sourceEntryID,
@@ -33,43 +38,37 @@ func appendTestBranchSummary(
 		nil,
 		false,
 	)
-	require.NoError(t, err)
+	require.NoError(h.t, err)
 
 	return entry
 }
 
-// appendTestCompaction creates a compaction entry from a fully-specified
+// appendCompaction creates a compaction entry from a fully-specified
 // input so call sites don't repeat the 7-field struct literal.
-func appendTestCompaction(
-	ctx context.Context,
-	t *testing.T,
-	repository *database.SessionRepository,
+func (h sessionTestHelper) appendCompaction(
 	input *database.AppendCompactionInput,
 ) *database.EntryEntity {
-	t.Helper()
+	h.t.Helper()
 
-	entry, err := repository.AppendCompaction(ctx, input)
-	require.NoError(t, err)
+	entry, err := h.repository.AppendCompaction(h.ctx, input)
+	require.NoError(h.t, err)
 
 	return entry
 }
 
-// appendTestCompactionSimple is a convenience wrapper for the most common
+// appendCompactionSimple is a convenience wrapper for the most common
 // test compaction shape: a parent, a session, a summary, and a first-kept
 // entry, with no details or hook.
-func appendTestCompactionSimple(
-	ctx context.Context,
-	t *testing.T,
-	repository *database.SessionRepository,
+func (h sessionTestHelper) appendCompactionSimple(
 	sessionID string,
 	parentID *string,
 	summary string,
 	firstKeptEntryID string,
 	tokensBefore int,
 ) *database.EntryEntity {
-	t.Helper()
+	h.t.Helper()
 
-	return appendTestCompaction(ctx, t, repository, &database.AppendCompactionInput{
+	return h.appendCompaction(&database.AppendCompactionInput{
 		ParentID:         parentID,
 		Details:          nil,
 		SessionID:        sessionID,
@@ -80,28 +79,37 @@ func appendTestCompactionSimple(
 	})
 }
 
-// appendTestMessageAt is a time-aware variant of appendTestMessage so the
+// appendMessage appends a message with the current time.
+func (h sessionTestHelper) appendMessage(
+	sessionID string,
+	parentID *string,
+	role database.Role,
+	content string,
+) *database.EntryEntity {
+	h.t.Helper()
+
+	return h.appendMessageAt(sessionID, parentID, role, content, time.Now().UTC())
+}
+
+// appendMessageAt is a time-aware variant of appendMessage so the
 // two helpers don't duplicate their message-building logic.
-func appendTestMessageAt(
-	ctx context.Context,
-	t *testing.T,
-	repository *database.SessionRepository,
+func (h sessionTestHelper) appendMessageAt(
 	sessionID string,
 	parentID *string,
 	role database.Role,
 	content string,
 	timestamp time.Time,
 ) *database.EntryEntity {
-	t.Helper()
+	h.t.Helper()
 
-	entry, err := repository.AppendMessage(ctx, sessionID, parentID, &database.MessageEntity{
+	entry, err := h.repository.AppendMessage(h.ctx, sessionID, parentID, &database.MessageEntity{
 		Timestamp: timestamp,
 		Role:      role,
 		Content:   content,
 		Provider:  "",
 		Model:     "",
 	})
-	require.NoError(t, err)
+	require.NoError(h.t, err)
 
 	return entry
 }
