@@ -18,16 +18,14 @@ func TestSessionRepository_EnrichesEntryMetadata(t *testing.T) {
 	session, err := repository.CreateSession(ctx, "/work", "metadata", "")
 	require.NoError(t, err)
 
-	userEntry := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "hello world")
+	helper := sessionTestHelper{ctx, t, repository}
+	userEntry := helper.appendMessage(session.ID, nil, database.RoleUser, "hello world")
 	assert.True(t, userEntry.ModelFacing)
 	assert.True(t, userEntry.Display)
 	assert.Positive(t, userEntry.TokenEstimate)
 	assert.Empty(t, userEntry.ToolName)
 
-	toolEntry := appendTestMessage(
-		ctx,
-		t,
-		repository,
+	toolEntry := helper.appendMessage(
 		session.ID,
 		&userEntry.ID,
 		database.RoleToolResult,
@@ -58,10 +56,10 @@ func TestSessionRepository_EnrichesCompactionMetadata(t *testing.T) {
 	repository := newTestSessionRepository(t)
 	session, err := repository.CreateSession(ctx, "/work", "compaction", "")
 	require.NoError(t, err)
-	rootEntry := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "hello")
+	helper := sessionTestHelper{ctx, t, repository}
+	rootEntry := helper.appendMessage(session.ID, nil, database.RoleUser, "hello")
 
-	compactionEntry := appendTestCompactionSimple(
-		ctx, t, repository,
+	compactionEntry := helper.appendCompactionSimple(
 		session.ID, &rootEntry.ID,
 		"summary", rootEntry.ID, 1234,
 	)

@@ -39,7 +39,8 @@ func TestRepositoryRejectsInvalidUUIDs(t *testing.T) {
 			session, err := repository.CreateSession(ctx, "/work", "uuid", "")
 			require.NoError(t, err)
 
-			entry := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "hello")
+			helper := sessionTestHelper{ctx, t, repository}
+			entry := helper.appendMessage(session.ID, nil, database.RoleUser, "hello")
 			_, err = connection.ExecContext(ctx, test.query, test.args(t, session, entry)...)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.wantError)
