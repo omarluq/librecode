@@ -290,7 +290,7 @@ func TestSessionRepository_BranchResolvesLeafNotLatestByTimestamp(t *testing.T) 
 	// than leafA. The old ORDER BY created_at logic would have picked leafA
 	// as the starting point since it's newer. The leaf-aware query must
 	// select the actual leaf with no children.
-	backdatedParent := appendTestMessageWithTimestamp(
+	backdatedParent := appendTestMessageAt(
 		ctx, t, repository, session.ID, &root.ID, database.RoleAssistant, "backdated-parent",
 		time.Now().Add(-1*time.Hour),
 	)
@@ -420,26 +420,16 @@ func newMetadataFixture(ctx context.Context, t *testing.T) metadataFixture {
 		nil,
 	)
 	require.NoError(t, err)
-	compactionEntry, err := repository.AppendCompaction(ctx, &database.AppendCompactionInput{
-		ParentID:         &customEntry.ID,
-		Details:          nil,
-		SessionID:        createdSession.ID,
-		Summary:          "summary of earlier work",
-		FirstKeptEntryID: assistantEntry.ID,
-		TokensBefore:     1200,
-		FromHook:         false,
-	})
-	require.NoError(t, err)
-	branchEntry, err := repository.AppendBranchSummary(
-		ctx,
-		createdSession.ID,
-		&userEntry.ID,
-		compactionEntry.ID,
-		"branch",
-		nil,
-		false,
+	compactionEntry := appendTestCompactionSimple(
+		ctx, t, repository,
+		createdSession.ID, &customEntry.ID,
+		"summary of earlier work", assistantEntry.ID, 1200,
 	)
-	require.NoError(t, err)
+	branchEntry := appendTestBranchSummary(
+		ctx, t, repository,
+		createdSession.ID, &userEntry.ID,
+		compactionEntry.ID, "branch",
+	)
 
 	return metadataFixture{
 		repository:         repository,
@@ -463,42 +453,7 @@ func appendTestMessage(
 ) *database.EntryEntity {
 	t.Helper()
 
-	message := database.MessageEntity{
-		Timestamp: time.Now().UTC(),
-		Role:      role,
-		Content:   content,
-		Provider:  "",
-		Model:     "",
-	}
-	entry, err := repository.AppendMessage(ctx, sessionID, parentID, &message)
-	require.NoError(t, err)
-
-	return entry
-}
-
-func appendTestMessageWithTimestamp(
-	ctx context.Context,
-	t *testing.T,
-	repository *database.SessionRepository,
-	sessionID string,
-	parentID *string,
-	role database.Role,
-	content string,
-	timestamp time.Time,
-) *database.EntryEntity {
-	t.Helper()
-
-	message := database.MessageEntity{
-		Timestamp: timestamp,
-		Role:      role,
-		Content:   content,
-		Provider:  "",
-		Model:     "",
-	}
-	entry, err := repository.AppendMessage(ctx, sessionID, parentID, &message)
-	require.NoError(t, err)
-
-	return entry
+	return appendTestMessageAt(ctx, t, repository, sessionID, parentID, role, content, time.Now().UTC())
 }
 
 func newTestSessionRepository(t *testing.T) *database.SessionRepository {
@@ -579,16 +534,11 @@ func TestSessionRepository_BuildContextIncludesBranchSummary(t *testing.T) {
 	require.NoError(t, err)
 
 	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
-	branchSummary, err := repository.AppendBranchSummary(
-		ctx,
-		session.ID,
-		&root.ID,
-		root.ID,
-		"work from the other branch",
-		nil,
-		false,
+	branchSummary := appendTestBranchSummary(
+		ctx, t, repository,
+		session.ID, &root.ID,
+		root.ID, "work from the other branch",
 	)
-	require.NoError(t, err)
 
 	contextEntity, err := repository.BuildContext(ctx, session.ID, branchSummary.ID)
 	require.NoError(t, err)
@@ -607,27 +557,17 @@ func TestSessionRepository_BuildContextWithCompactionTailBranchSummary(t *testin
 	require.NoError(t, err)
 
 	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
-	branchSummary, err := repository.AppendBranchSummary(
-		ctx,
-		session.ID,
-		&root.ID,
-		root.ID,
-		"prior branch work",
-		nil,
-		false,
+	branchSummary := appendTestBranchSummary(
+		ctx, t, repository,
+		session.ID, &root.ID,
+		root.ID, "prior branch work",
 	)
-	require.NoError(t, err)
 
-	compactionEntry, err := repository.AppendCompaction(ctx, &database.AppendCompactionInput{
-		Details:          nil,
-		FromHook:         false,
-		ParentID:         &branchSummary.ID,
-		SessionID:        session.ID,
-		Summary:          "compacted",
-		FirstKeptEntryID: root.ID,
-		TokensBefore:     500,
-	})
-	require.NoError(t, err)
+	compactionEntry := appendTestCompactionSimple(
+		ctx, t, repository,
+		session.ID, &branchSummary.ID,
+		"compacted", root.ID, 500,
+	)
 
 	// BuildContext from compaction: summary + tail (root + branchSummary).
 	contextEntity, err := repository.BuildContext(ctx, session.ID, compactionEntry.ID)
