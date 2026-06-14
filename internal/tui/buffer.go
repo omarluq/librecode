@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/gdamore/tcell/v3"
+import (
+	"sync"
+
+	"github.com/gdamore/tcell/v3"
+)
 
 // Cell is one rendered terminal cell.
 type Cell struct {
@@ -120,11 +124,12 @@ func (buffer *CellBuffer) Clone() *CellBuffer {
 type Renderer struct {
 	screen   ContentSetter
 	previous *CellBuffer
+	Markdown MarkdownEngine
 }
 
 // NewRenderer returns a screen renderer.
 func NewRenderer(screen ContentSetter) *Renderer {
-	return &Renderer{screen: screen, previous: nil}
+	return &Renderer{screen: screen, previous: nil, Markdown: MarkdownEngine{parser: nil, once: sync.Once{}}}
 }
 
 // Flush writes changed cells from frame to the screen.

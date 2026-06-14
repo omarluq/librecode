@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/yuin/goldmark"
@@ -25,6 +26,37 @@ const (
 	markdownTableMaxHeight           = 10_000
 )
 
+// MarkdownEngine lazily initializes and caches a goldmark parser.
+// The zero value is ready to use. The parser is stateless and safe for
+// concurrent use — each Parse call creates its own reader and AST context.
+type MarkdownEngine struct {
+	parser parser.Parser
+	once   sync.Once
+}
+
+// render parses source and invokes the visitor for each top-level AST child.
+// The parser is initialized on first call and reused for all subsequent calls.
+func (engine *MarkdownEngine) render(source []byte, visitor func(ast.Node)) {
+	engine.once.Do(func() {
+		engine.parser = goldmark.New(
+			goldmark.WithParserOptions(
+				parser.WithParagraphTransformers(util.Prioritized(
+					extension.NewTableParagraphTransformer(),
+					markdownTableTransformerPriority,
+				)),
+				parser.WithASTTransformers(util.Prioritized(extension.NewTableASTTransformer(), 0)),
+				parser.WithInlineParsers(util.Prioritized(extension.NewStrikethroughParser(), markdownStrikePriority)),
+				parser.WithInlineParsers(util.Prioritized(extension.NewTaskCheckBoxParser(), 0)),
+			),
+		).Parser()
+	})
+
+	document := engine.parser.Parse(goldtext.NewReader(source))
+	for child := document.FirstChild(); child != nil; child = child.NextSibling() {
+		visitor(child)
+	}
+}
+
 // MarkdownStyles configures MarkdownView rendering.
 type MarkdownStyles struct {
 	Text      tcell.Style
@@ -35,8 +67,11 @@ type MarkdownStyles struct {
 }
 
 // MarkdownView renders markdown into terminal lines.
+// When Engine is non-nil the cached parser is reused; otherwise a throwaway
+// parser is created per call (backward-compatible behavior).
 type MarkdownView struct {
 	Text   string
+	Engine *MarkdownEngine
 	Styles MarkdownStyles
 }
 
@@ -52,19 +87,22 @@ func (view *MarkdownView) Render(width, height int) []Line {
 		lines:  []Line{},
 		width:  max(1, width),
 	}
-	markdownParser := goldmark.New(goldmark.WithParserOptions(
-		parser.WithParagraphTransformers(util.Prioritized(
-			extension.NewTableParagraphTransformer(),
-			markdownTableTransformerPriority,
-		)),
-		parser.WithASTTransformers(util.Prioritized(extension.NewTableASTTransformer(), 0)),
-		parser.WithInlineParsers(util.Prioritized(extension.NewStrikethroughParser(), markdownStrikePriority)),
-		parser.WithInlineParsers(util.Prioritized(extension.NewTaskCheckBoxParser(), 0)),
-	))
-	document := markdownParser.Parser().Parse(goldtext.NewReader(renderer.source))
-	renderer.renderChildren(document, markdownIndent)
+
+	engine := view.engine()
+	engine.render(renderer.source, func(child ast.Node) {
+		renderer.renderNode(child, markdownIndent)
+	})
 
 	return Tail(renderer.lines, height)
+}
+
+// engine returns the cached parser engine, falling back to a throwaway one.
+func (view *MarkdownView) engine() *MarkdownEngine {
+	if view.Engine != nil {
+		return view.Engine
+	}
+
+	return &MarkdownEngine{parser: nil, once: sync.Once{}}
 }
 
 // Draw draws markdown into rect.

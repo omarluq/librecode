@@ -18,6 +18,7 @@ func (app *App) renderMarkdown(content string, width int) []tui.Line {
 			Code:      markdownCodeStyle(app.theme),
 			CodeTheme: codeTheme(app.theme),
 		},
+		Engine: &app.renderer.Markdown,
 	}
 
 	return view.Render(width, markdownRenderMaxHeight)
