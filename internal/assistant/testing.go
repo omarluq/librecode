@@ -26,7 +26,16 @@ type RuntimeTestOptions struct {
 // struct literals across test files (which triggers SonarCloud duplication
 // warnings when exhaustruct forces every field to be listed).
 func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
-	opts := &RuntimeTestOptions{} //nolint:exhaustruct // intentional zero-init
+	opts := &RuntimeTestOptions{
+		Config:     nil,
+		Sessions:   nil,
+		Extensions: nil,
+		Cache:      nil,
+		Events:     nil,
+		Models:     nil,
+		Client:     nil,
+		Logger:     nil,
+	}
 	if setup != nil {
 		setup(opts)
 	}

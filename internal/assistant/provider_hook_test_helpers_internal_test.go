@@ -25,7 +25,16 @@ type runtimeDeps struct {
 // newRuntimeFromDeps builds a Runtime with every field explicitly set, satisfying
 // exhaustruct while centralizing the struct literal in a single place.
 func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
-	deps := &runtimeDeps{} //nolint:exhaustruct // intentional zero-init
+	deps := &runtimeDeps{
+		Config:     nil,
+		Sessions:   nil,
+		Extensions: nil,
+		Cache:      nil,
+		Events:     nil,
+		Models:     nil,
+		Client:     nil,
+		Logger:     nil,
+	}
 	if setup != nil {
 		setup(deps)
 	}

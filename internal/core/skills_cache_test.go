@@ -3,222 +3,188 @@ package core_test
 import (
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
 
 	"github.com/omarluq/librecode/internal/core"
 )
 
-func TestSkillsCacheReturnsSameResultAsLoadSkills(t *testing.T) {
-	cwd := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+// --- helpers --------------------------------------------------------
 
-	writeTestFile(t, filepath.Join(
-		cwd,
-		core.ConfigDirName,
-		"skills",
-		"alpha",
-		"SKILL.md",
-	), skillMarkdown("alpha"))
+func writeSkill(t *testing.T, cwd, name string) {
+	t.Helper()
 
-	direct := core.LoadSkills(cwd, nil, true)
-
-	cache := core.NewSkillsCache()
-	t.Cleanup(cache.Close)
-
-	cached := cache.Get(cwd)
-
-	require.Len(t, cached.Skills, len(direct.Skills))
-	assert.Equal(t, direct.Skills[0].Name, cached.Skills[0].Name)
-	assert.Equal(t, direct.Skills[0].FilePath, cached.Skills[0].FilePath)
+	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", name, "SKILL.md"), skillMarkdown(name))
 }
 
-func TestSkillsCacheReturnsCachedResultOnSecondCall(t *testing.T) {
-	cwd := newOutsideTempDir(t)
-	home := newOutsideTempDir(t)
-	t.Setenv("HOME", home)
+func writeAlphaSkill(t *testing.T, cwd string) string {
+	t.Helper()
 
 	skillPath := filepath.Join(cwd, core.ConfigDirName, "skills", "alpha", "SKILL.md")
 	writeTestFile(t, skillPath, skillMarkdown("alpha"))
 
-	cache := core.NewSkillsCache()
-	t.Cleanup(cache.Close)
-
-	first := cache.Get(cwd)
-	require.Len(t, first.Skills, 1)
-
-	// Overwrite the skill with a different name. The cached result should still
-	// have the original name because the loader has not been re-invoked yet.
-	writeTestFile(t, skillPath, skillMarkdown("alpha-renamed"))
-
-	// Give fsnotify no chance to process: call immediately.
-	second := cache.Get(cwd)
-	require.Len(t, second.Skills, 1)
-	assert.Equal(t, first.Skills[0].Name, second.Skills[0].Name,
-		"cache should serve the original result before invalidation")
+	return skillPath
 }
 
-func TestSkillsCacheInvalidatesOnFileChange(t *testing.T) {
-	cwd := newOutsideTempDir(t)
-	home := newOutsideTempDir(t)
-	t.Setenv("HOME", home)
+// --- suite ----------------------------------------------------------
 
-	skillPath := filepath.Join(cwd, core.ConfigDirName, "skills", "alpha", "SKILL.md")
-	writeTestFile(t, skillPath, skillMarkdown("alpha"))
+type SkillsCacheSuite struct {
+	suite.Suite
+	cache     *core.SkillsCache
+	cwd       string
+	skillPath string
+}
 
-	cache := core.NewSkillsCache()
-	t.Cleanup(cache.Close)
+func TestSkillsCacheSuite(t *testing.T) {
+	t.Setenv("HOME", newOutsideTempDir(t))
+	suite.Run(t, new(SkillsCacheSuite))
+}
 
-	first := cache.Get(cwd)
-	require.Len(t, first.Skills, 1)
-	assert.Equal(t, "alpha", first.Skills[0].Name)
+func (s *SkillsCacheSuite) SetupTest() {
+	s.cwd = newOutsideTempDir(s.T())
+	s.cache = core.NewSkillsCache()
+	s.T().Cleanup(s.cache.Close)
+}
 
-	// Add a new skill and write to the existing skill file to trigger fsnotify.
-	newSkillPath := filepath.Join(cwd, core.ConfigDirName, "skills", "beta", "SKILL.md")
-	writeTestFile(t, newSkillPath, skillMarkdown("beta"))
+func (s *SkillsCacheSuite) writeAlpha() {
+	s.skillPath = writeAlphaSkill(s.T(), s.cwd)
+}
 
-	writeTestFile(t, skillPath, skillMarkdown("alpha-updated"))
+// --- basic Get ------------------------------------------------------
 
-	require.Eventually(t, func() bool {
-		refreshed := cache.Get(cwd)
+func (s *SkillsCacheSuite) TestReturnsEmptyForCWDWithNoSkills() {
+	result := s.cache.Get(s.cwd)
+
+	s.Empty(result.Skills)
+}
+
+func (s *SkillsCacheSuite) TestReturnsSkillFromCWD() {
+	s.writeAlpha()
+
+	result := s.cache.Get(s.cwd)
+
+	s.Require().Len(result.Skills, 1)
+	s.Equal("alpha", result.Skills[0].Name)
+}
+
+func (s *SkillsCacheSuite) TestServesCachedResultBeforeInvalidation() {
+	s.writeAlpha()
+	first := s.cache.Get(s.cwd)
+	s.Require().Len(first.Skills, 1)
+
+	// Overwrite with a different name; cache should still have the original.
+	writeTestFile(s.T(), s.skillPath, skillMarkdown("alpha-renamed"))
+
+	second := s.cache.Get(s.cwd)
+
+	s.Require().Len(second.Skills, 1)
+	s.Equal(first.Skills[0].Name, second.Skills[0].Name)
+}
+
+func (s *SkillsCacheSuite) TestParityWithDirectLoad() {
+	s.writeAlpha()
+
+	direct := core.LoadSkills(s.cwd, nil, true)
+	cached := s.cache.Get(s.cwd)
+
+	s.Require().Len(cached.Skills, len(direct.Skills))
+	s.Equal(direct.Skills[0].Name, cached.Skills[0].Name)
+	s.Equal(direct.Skills[0].FilePath, cached.Skills[0].FilePath)
+}
+
+// --- lifecycle ------------------------------------------------------
+
+func (s *SkillsCacheSuite) TestCloseIsIdempotent() {
+	s.cache.Close()
+	s.cache.Close()
+
+	s.NotPanics(func() { s.cache.Close() })
+}
+
+func (s *SkillsCacheSuite) TestGetIsSafeAfterClose() {
+	s.writeAlpha()
+
+	first := s.cache.Get(s.cwd)
+	s.Require().Len(first.Skills, 1)
+
+	s.cache.Close()
+
+	// After Close, Get should still work — it just does a direct load.
+	second := s.cache.Get(s.cwd)
+
+	s.Len(second.Skills, 1)
+}
+
+// --- isolation ------------------------------------------------------
+
+func (s *SkillsCacheSuite) TestCWDIsolation() {
+	writeSkill(s.T(), s.cwd, "a")
+
+	cwdB := newOutsideTempDir(s.T())
+	writeSkill(s.T(), cwdB, "b")
+
+	resultA := s.cache.Get(s.cwd)
+	resultB := s.cache.Get(cwdB)
+
+	s.Require().Len(resultA.Skills, 1)
+	s.Equal("a", resultA.Skills[0].Name)
+
+	s.Require().Len(resultB.Skills, 1)
+	s.Equal("b", resultB.Skills[0].Name)
+}
+
+// --- fsnotify invalidation ------------------------------------------
+
+func (s *SkillsCacheSuite) TestInvalidatesOnFileChange() {
+	s.writeAlpha()
+
+	first := s.cache.Get(s.cwd)
+	s.Require().Len(first.Skills, 1)
+	s.Equal("alpha", first.Skills[0].Name)
+
+	// Add a new skill and touch the existing file to trigger fsnotify.
+	writeSkill(s.T(), s.cwd, "beta")
+	writeTestFile(s.T(), s.skillPath, skillMarkdown("alpha-updated"))
+
+	s.Require().Eventually(func() bool {
+		refreshed := s.cache.Get(s.cwd)
 
 		return len(refreshed.Skills) == 2
-	}, 3*time.Second, 50*time.Millisecond, "cache should invalidate after file change")
+	}, 3*time.Second, 50*time.Millisecond)
 }
 
-func TestSkillsCacheDebouncesBurstEvents(t *testing.T) {
-	cwd := newOutsideTempDir(t)
-	home := newOutsideTempDir(t)
-	t.Setenv("HOME", home)
+func (s *SkillsCacheSuite) TestInvalidatesWhenSkillRootCreatedLater() {
+	first := s.cache.Get(s.cwd)
 
-	skillPath := filepath.Join(cwd, core.ConfigDirName, "skills", "alpha", "SKILL.md")
-	writeTestFile(t, skillPath, skillMarkdown("alpha"))
+	s.Empty(first.Skills)
 
-	cache := core.NewSkillsCache()
-	t.Cleanup(cache.Close)
+	// Create the skill root after the initial empty load.
+	writeSkill(s.T(), s.cwd, "alpha")
 
-	first := cache.Get(cwd)
-	require.Len(t, first.Skills, 1)
-	assert.Equal(t, "alpha", first.Skills[0].Name)
+	s.Require().Eventually(func() bool {
+		refreshed := s.cache.Get(s.cwd)
+
+		return len(refreshed.Skills) == 1 && refreshed.Skills[0].Name == "alpha"
+	}, 3*time.Second, 50*time.Millisecond)
+}
+
+func (s *SkillsCacheSuite) TestDebouncesBurstEvents() {
+	s.writeAlpha()
+
+	first := s.cache.Get(s.cwd)
+	s.Require().Len(first.Skills, 1)
+	s.Equal("alpha", first.Skills[0].Name)
 
 	// Simulate a burst of writes to the same file (e.g. editor save + git checkout).
 	for i := range 10 {
-		writeTestFile(t, skillPath, skillMarkdown("burst-"+strconv.Itoa(i)))
+		writeTestFile(s.T(), s.skillPath, skillMarkdown("burst-"+strconv.Itoa(i)))
 	}
 
-	// After the debounce window, the cache should reflect the final write.
-	require.Eventually(t, func() bool {
-		refreshed := cache.Get(cwd)
+	s.Require().Eventually(func() bool {
+		refreshed := s.cache.Get(s.cwd)
 
 		return len(refreshed.Skills) == 1 && refreshed.Skills[0].Name == "burst-9"
-	}, 3*time.Second, 50*time.Millisecond, "cache should reflect final write after debounce")
-}
-
-func TestSkillsCacheIsolatesByCWD(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	cwdA := t.TempDir()
-	cwdB := t.TempDir()
-
-	writeTestFile(t, filepath.Join(cwdA, core.ConfigDirName, "skills", "a", "SKILL.md"), skillMarkdown("a"))
-	writeTestFile(t, filepath.Join(cwdB, core.ConfigDirName, "skills", "b", "SKILL.md"), skillMarkdown("b"))
-
-	cache := core.NewSkillsCache()
-	t.Cleanup(cache.Close)
-
-	resultA := cache.Get(cwdA)
-	resultB := cache.Get(cwdB)
-
-	require.Len(t, resultA.Skills, 1)
-	assert.Equal(t, "a", resultA.Skills[0].Name)
-
-	require.Len(t, resultB.Skills, 1)
-	assert.Equal(t, "b", resultB.Skills[0].Name)
-}
-
-func TestSkillsCacheCloseIsIdempotent(t *testing.T) {
-	t.Parallel()
-
-	cache := core.NewSkillsCache()
-
-	cache.Close()
-	cache.Close()
-
-	assert.NotPanics(t, func() {
-		cache.Close()
-	})
-}
-
-func TestSkillsCacheReturnsEmptyForCwdWithNoSkills(t *testing.T) {
-	cwd := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	cache := core.NewSkillsCache()
-	t.Cleanup(cache.Close)
-
-	result := cache.Get(cwd)
-
-	assert.Empty(t, result.Skills)
-}
-
-func TestSkillsCacheInvalidatesWhenSkillRootCreatedLater(t *testing.T) {
-	cwd := newOutsideTempDir(t)
-	home := newOutsideTempDir(t)
-	t.Setenv("HOME", home)
-
-	// First Get with no skill directories — loads empty and watches ancestor.
-	cache := core.NewSkillsCache()
-	t.Cleanup(cache.Close)
-
-	first := cache.Get(cwd)
-	assert.Empty(t, first.Skills)
-
-	// Create the skill root and a skill file after the initial load.
-	skillPath := filepath.Join(cwd, core.ConfigDirName, "skills", "alpha", "SKILL.md")
-	writeTestFile(t, skillPath, skillMarkdown("alpha"))
-
-	// The ancestor watch should fire and invalidate the cache.
-	require.Eventually(t, func() bool {
-		refreshed := cache.Get(cwd)
-
-		return len(refreshed.Skills) == 1 && refreshed.Skills[0].Name == "alpha"
-	}, 3*time.Second, 50*time.Millisecond, "cache should invalidate when skill root is created")
-}
-
-func TestSkillsCacheGetIsSafeAfterClose(t *testing.T) {
-	cwd := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	writeTestFile(t, filepath.Join(
-		cwd,
-		core.ConfigDirName,
-		"skills",
-		"alpha",
-		"SKILL.md",
-	), strings.Join([]string{
-		frontmatterDelimiter,
-		"name: alpha",
-		"description: Alpha skill",
-		frontmatterDelimiter,
-		"Body.",
-	}, "\n"))
-
-	cache := core.NewSkillsCache()
-
-	first := cache.Get(cwd)
-	require.Len(t, first.Skills, 1)
-
-	cache.Close()
-
-	// After Close, Get should still work — it just does a direct load.
-	second := cache.Get(cwd)
-	assert.Len(t, second.Skills, 1)
+	}, 3*time.Second, 50*time.Millisecond)
 }
