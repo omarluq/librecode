@@ -224,6 +224,42 @@ func TestSessionRepository_DeleteEntryBranchRemovesDescendants(t *testing.T) {
 	assert.False(t, found)
 }
 
+func TestSessionRepository_BranchLoadsOnlyActiveChain(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "", "")
+	require.NoError(t, err)
+
+	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
+	child := appendTestMessage(ctx, t, repository, session.ID, &root.ID, database.RoleAssistant, "child")
+	grandchild := appendTestMessage(ctx, t, repository, session.ID, &child.ID, database.RoleUser, "grandchild")
+
+	// Sibling branch off root — should NOT appear in the active chain.
+	sibling := appendTestMessage(ctx, t, repository, session.ID, &root.ID, database.RoleAssistant, "sibling")
+
+	// Explicit entry ID returns root-to-entry chain, excluding siblings.
+	branch, err := repository.Branch(ctx, session.ID, grandchild.ID)
+	require.NoError(t, err)
+	require.Len(t, branch, 3)
+	assert.Equal(t, root.ID, branch[0].ID)
+	assert.Equal(t, child.ID, branch[1].ID)
+	assert.Equal(t, grandchild.ID, branch[2].ID)
+
+	// Empty entry ID auto-resolves to the latest leaf (sibling, created last).
+	branch, err = repository.Branch(ctx, session.ID, "")
+	require.NoError(t, err)
+	require.Len(t, branch, 2)
+	assert.Equal(t, root.ID, branch[0].ID)
+	assert.Equal(t, sibling.ID, branch[1].ID)
+
+	// Grandchild must not appear in the sibling's chain.
+	for index := range branch {
+		assert.NotEqual(t, grandchild.ID, branch[index].ID, "grandchild leaked into sibling chain")
+	}
+}
+
 func TestSessionRepository_SupportsLibrecodeStyleTreeMetadata(t *testing.T) {
 	t.Parallel()
 

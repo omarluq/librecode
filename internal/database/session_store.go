@@ -12,55 +12,54 @@ import (
 
 const appendCompactionNilInputCode = "append_compaction_nil_input"
 
-// Branch returns the path from root to the requested entry or current leaf.
+// branchChainSQL walks the session entry tree from a starting entry back to the
+// root using a recursive CTE. When entryID is empty the most recent entry
+// (leaf) is used as the starting point. Rows are ordered root-to-leaf by
+// created_at to match the convention callers expect.
+const branchChainSQL = `
+WITH RECURSIVE chain(id) AS (
+    SELECT id FROM session_entries
+    WHERE session_id = ? AND id = COALESCE(NULLIF(?, ''), (
+        SELECT id FROM session_entries
+        WHERE session_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+    ))
+    UNION ALL
+    SELECT parent.id
+    FROM session_entries parent
+    JOIN chain ON parent.id = (
+        SELECT child.parent_id FROM session_entries child WHERE child.id = chain.id
+    )
+    WHERE parent.session_id = ?
+)
+SELECT
+    e.id, e.session_id, e.parent_id, e.entry_type, e.role, e.content,
+    e.provider, e.model, e.custom_type, e.data_json, e.summary, e.created_at,
+    e.tool_name, e.tool_status, e.tool_args_json, e.token_estimate,
+    e.model_facing, e.display,
+    e.compaction_first_kept_entry_id, e.compaction_tokens_before, e.branch_from_entry_id
+FROM session_entries e
+JOIN chain ON e.id = chain.id
+WHERE e.session_id = ?
+ORDER BY e.created_at ASC`
+
+// Branch returns the entries along the path from root to the requested entry
+// (or the current leaf when entryID is empty).
 func (repository *SessionRepository) Branch(ctx context.Context, sessionID, entryID string) ([]EntryEntity, error) {
-	entries, err := repository.Entries(ctx, sessionID)
+	rows := []entryRow{}
+	if err := repository.sql.Query(ctx, &rows, branchChainSQL,
+		sessionID, entryID, sessionID, sessionID, sessionID,
+	); err != nil {
+		return nil, oops.In("database").Code("branch_chain").Wrapf(err, "query session branch")
+	}
+
+	entries, err := entriesFromRows(rows)
 	if err != nil {
-		return nil, err
+		return nil, oops.In("database").Code("scan_entry").Wrapf(err, "scan session branch")
 	}
 
-	if len(entries) == 0 {
-		return []EntryEntity{}, nil
-	}
-
-	entryByID := make(map[string]EntryEntity, len(entries))
-	for index := range entries {
-		entryByID[entries[index].ID] = entries[index]
-	}
-
-	currentID := entryID
-	if currentID == "" {
-		currentID = entries[len(entries)-1].ID
-	}
-
-	branch := []EntryEntity{}
-
-	seen := map[string]bool{}
-	for currentID != "" {
-		if seen[currentID] {
-			return nil, fmt.Errorf("database: session tree contains cycle at %s", currentID)
-		}
-
-		seen[currentID] = true
-
-		entry, ok := entryByID[currentID]
-		if !ok {
-			return nil, fmt.Errorf("database: entry %s not found", currentID)
-		}
-
-		branch = append(branch, entry)
-		if entry.ParentID == nil {
-			break
-		}
-
-		currentID = *entry.ParentID
-	}
-
-	for left, right := 0, len(branch)-1; left < right; left, right = left+1, right-1 {
-		branch[left], branch[right] = branch[right], branch[left]
-	}
-
-	return branch, nil
+	return entries, nil
 }
 
 // Tree returns the full session entry tree.
