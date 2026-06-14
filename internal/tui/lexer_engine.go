@@ -27,8 +27,8 @@ func NewLexerEngine() LexerEngine {
 // IteratorFor returns a token iterator for untagged code by looking up the
 // cached lexer, or running full analysis on the first encounter.
 func (engine *LexerEngine) IteratorFor(text string) (chroma.Iterator, bool) {
-	cached, found, err := engine.cache.Get(text)
-	if err == nil && found {
+	cached, found := engine.cache.MustGet(text)
+	if found {
 		return tokenizeCode(cached, text)
 	}
 
