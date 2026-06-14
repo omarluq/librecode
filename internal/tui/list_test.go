@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	cellcolor "github.com/gdamore/tcell/v3/color"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/tui"
@@ -47,20 +48,68 @@ func TestListModelFilteringSelectionRenderingAndDraw(t *testing.T) {
 
 	list.ShowDetails = false
 	list.AppendQueryRune('w')
-	lines := list.Render(listOptions(28, 8, tui.ListHints{Up: "↑", Down: "↓", Confirm: "enter", Cancel: "esc"}))
+	lines := list.Render(listOptions(28, 8, tui.ListHints{Up: "↑", Down: "↓", Confirm: testEnter, Cancel: testEsc}))
 	rendered := strings.Join(lineTexts(lines), "\n")
 	require.Contains(t, rendered, "Pick")
 	require.Contains(t, rendered, "Search: tw")
 	require.Contains(t, rendered, "→ Beta two")
 
 	buffer := tui.NewCellBuffer(28, 8, tcell.StyleDefault)
-	list.Draw(buffer, testRect(0, 0, 28, 8), nil, tui.ListHints{Up: "k", Down: "j", Confirm: "enter", Cancel: "esc"})
+	list.Draw(
+		buffer,
+		testRect(0, 0, 28, 8),
+		nil,
+		tui.ListHints{Up: "k", Down: "j", Confirm: testEnter, Cancel: testEsc},
+	)
 	require.Equal(t, '╭', buffer.Cell(0, 0).Rune)
 
 	empty := tui.NewList("Empty", "", []tui.ListItem{testListItem("", "Hidden", "", "")}, true)
 	empty.AppendQueryRune('z')
 	emptyLines := strings.Join(lineTexts(empty.Render(listOptions(20, 6, emptyListHints()))), "\n")
 	require.Contains(t, emptyLines, "No matches")
+}
+
+func TestListRowsKeepBorderStyleSeparateFromContentStyle(t *testing.T) {
+	t.Parallel()
+
+	border := tcell.StyleDefault.Foreground(cellcolor.Blue)
+	accent := tcell.StyleDefault.Foreground(cellcolor.Red)
+	selected := tcell.StyleDefault.Foreground(cellcolor.Green)
+	list := tui.NewList("Pick", "", []tui.ListItem{testListItem("a", "Alpha", "", "")}, false)
+
+	lines := list.Render(&tui.ListRenderOptions{
+		Styles: tui.ListStyles{
+			Border:   border,
+			Accent:   accent,
+			Muted:    tcell.StyleDefault,
+			Text:     tcell.StyleDefault,
+			Selected: selected,
+			Dim:      tcell.StyleDefault,
+		},
+		Hints:  tui.ListHints{Up: "up", Down: "down", Confirm: testEnter, Cancel: testEsc},
+		Width:  16,
+		Height: 6,
+	})
+	require.Equal(t, "│", lines[1].Spans[0].Text)
+	require.Equal(t, cellcolor.Blue, lines[1].Spans[0].Style.GetForeground())
+	require.Equal(t, cellcolor.Red, lines[1].Spans[1].Style.GetForeground())
+	require.Equal(t, cellcolor.Blue, lines[1].Spans[2].Style.GetForeground())
+
+	buffer := tui.NewCellBuffer(16, 6, tcell.StyleDefault)
+	list.Draw(buffer, testRect(0, 0, 16, 6), &tui.ListStyles{
+		Border:   border,
+		Accent:   accent,
+		Muted:    tcell.StyleDefault,
+		Text:     tcell.StyleDefault,
+		Selected: selected,
+		Dim:      tcell.StyleDefault,
+	}, tui.ListHints{Up: "up", Down: "down", Confirm: testEnter, Cancel: testEsc})
+	require.Equal(t, cellcolor.Blue, buffer.Cell(0, 1).Style.GetForeground())
+	require.Equal(t, cellcolor.Red, buffer.Cell(2, 1).Style.GetForeground())
+	require.Equal(t, cellcolor.Blue, buffer.Cell(15, 1).Style.GetForeground())
+	require.Equal(t, cellcolor.Blue, buffer.Cell(0, 3).Style.GetForeground())
+	require.Equal(t, cellcolor.Green, buffer.Cell(2, 3).Style.GetForeground())
+	require.Equal(t, cellcolor.Blue, buffer.Cell(15, 3).Style.GetForeground())
 }
 
 func TestAutocompleteCreatesList(t *testing.T) {

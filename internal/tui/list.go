@@ -246,14 +246,14 @@ func (list *List) Render(options *ListRenderOptions) []Line {
 
 	lines = append(lines,
 		NewLine(options.Styles.Border, TopBorder(width, "")),
-		NewLine(options.Styles.Accent.Bold(true), listRow(list.Title, contentWidth)),
+		listRow(list.Title, contentWidth, options.Styles.Accent.Bold(true), options.Styles.Border),
 	)
 	if list.Subtitle != "" {
-		lines = append(lines, NewLine(options.Styles.Muted, listRow(list.Subtitle, contentWidth)))
+		lines = append(lines, listRow(list.Subtitle, contentWidth, options.Styles.Muted, options.Styles.Border))
 	}
 
 	if list.searchable {
-		lines = append(lines, NewLine(options.Styles.Text, listRow("Search: "+list.query, contentWidth)))
+		lines = append(lines, listRow("Search: "+list.query, contentWidth, options.Styles.Text, options.Styles.Border))
 	}
 
 	lines = append(lines, NewLine(options.Styles.Border, MiddleBorder(width)))
@@ -272,8 +272,16 @@ func (list *List) Draw(screen ContentSetter, rect Rect, styles *ListStyles, hint
 	DrawLines(screen, rect, list.Render(&options))
 }
 
-func listRow(text string, width int) string {
-	return "│ " + PadRight(text, width) + " │"
+func listRow(text string, width int, contentStyle, borderStyle tcell.Style) Line {
+	return Line{
+		Text:  "│ " + PadRight(text, width) + " │",
+		Style: contentStyle,
+		Spans: []Span{
+			{Text: "│", Style: borderStyle},
+			{Text: " " + PadRight(text, width) + " ", Style: contentStyle},
+			{Text: "│", Style: borderStyle},
+		},
+	}
 }
 
 func safeListStyles(styles *ListStyles) ListStyles {
@@ -293,7 +301,7 @@ func safeListStyles(styles *ListStyles) ListStyles {
 
 func (list *List) itemLines(contentWidth, maxItems int, styles *ListStyles) []Line {
 	if len(list.filtered) == 0 {
-		return []Line{NewLine(styles.Muted, listRow("No matches", contentWidth))}
+		return []Line{listRow("No matches", contentWidth, styles.Muted, styles.Border)}
 	}
 
 	startIndex := list.windowStart(maxItems)
@@ -309,7 +317,7 @@ func (list *List) itemLines(contentWidth, maxItems int, styles *ListStyles) []Li
 
 func (list *List) itemLine(index, width int, styles *ListStyles) Line {
 	if index < 0 || index >= len(list.filtered) {
-		return NewLine(styles.Muted, listRow("", width))
+		return listRow("", width, styles.Muted, styles.Border)
 	}
 
 	item := list.filtered[index]
@@ -330,7 +338,7 @@ func (list *List) itemLine(index, width int, styles *ListStyles) Line {
 		text += " — " + item.Description
 	}
 
-	return NewLine(style, listRow(text, width))
+	return listRow(text, width, style, styles.Border)
 }
 
 func (list *List) windowStart(maxItems int) int {
@@ -356,7 +364,7 @@ func (list *List) hintLine(contentWidth, width int, styles *ListStyles, hints Li
 	hint := hints.Up + "/" + hints.Down + " navigate · " +
 		hints.Confirm + " select · " + hints.Cancel + " cancel" + position
 
-	return NewLine(styles.Dim, listRow(hint, contentWidth))
+	return listRow(hint, contentWidth, styles.Dim, styles.Border)
 }
 
 // SelectList is an alias for List when used as a picker.

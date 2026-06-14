@@ -11,6 +11,8 @@ import (
 const (
 	testAlpha = "alpha"
 	testBeta  = "beta"
+	testEnter = "enter"
+	testEsc   = "esc"
 	testHello = "hello"
 	testOne   = "one"
 )
