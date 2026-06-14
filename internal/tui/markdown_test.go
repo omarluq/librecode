@@ -41,7 +41,7 @@ func TestMarkdownViewRendersCommonBlocks(t *testing.T) {
 		Code:      tcell.StyleDefault,
 		CodeTheme: testCodeTheme(),
 	}
-	view := &tui.MarkdownView{Text: markdown, Styles: styles, Engine: nil}
+	view := &tui.MarkdownView{Text: markdown, Styles: styles, Engine: nil, Lexer: nil}
 
 	lines := view.Render(40, 100)
 	text := strings.Join(lineTexts(lines), "\n")
@@ -57,7 +57,7 @@ func TestMarkdownViewRendersCommonBlocks(t *testing.T) {
 	require.Contains(t, text, "Alpha")
 
 	buffer := tui.NewCellBuffer(40, 2, tcell.StyleDefault)
-	(&tui.MarkdownView{Text: "# Heading", Styles: styles, Engine: nil}).Draw(buffer, testRect(0, 0, 40, 2))
+	(&tui.MarkdownView{Text: "# Heading", Styles: styles, Engine: nil, Lexer: nil}).Draw(buffer, testRect(0, 0, 40, 2))
 	require.Equal(t, '#', buffer.Cell(1, 0).Rune)
 }
 
@@ -76,6 +76,7 @@ func TestMarkdownCodeBlockWrapsInsteadOfSwallowingSymbols(t *testing.T) {
 		Text:   markdown,
 		Styles: styles,
 		Engine: nil,
+		Lexer:  nil,
 	}
 
 	lines := view.Render(20, 100)

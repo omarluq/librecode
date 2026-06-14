@@ -37,6 +37,7 @@ func TestCodeBlockWrapsInsteadOfSwallowingSymbols(t *testing.T) {
 		Text:     text,
 		Theme:    testCodeTheme(),
 		Style:    tcell.StyleDefault,
+		Engine:   nil,
 	}
 
 	lines := block.Render(14, 100)

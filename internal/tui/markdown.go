@@ -72,6 +72,7 @@ type MarkdownStyles struct {
 type MarkdownView struct {
 	Text   string
 	Engine *MarkdownEngine
+	Lexer  *LexerEngine
 	Styles MarkdownStyles
 }
 
@@ -86,6 +87,7 @@ func (view *MarkdownView) Render(width, height int) []Line {
 		source: []byte(view.Text),
 		lines:  []Line{},
 		width:  max(1, width),
+		lexer:  view.Lexer,
 	}
 
 	engine := view.engine()
@@ -111,6 +113,7 @@ func (view *MarkdownView) Draw(screen ContentSetter, rect Rect) {
 }
 
 type markdownRenderer struct {
+	lexer  *LexerEngine
 	source []byte
 	lines  []Line
 	styles MarkdownStyles
@@ -173,8 +176,10 @@ func (renderer *markdownRenderer) renderIndentedCodeBlock(node *ast.CodeBlock, i
 func (renderer *markdownRenderer) appendCodeLines(language, text, indent string) {
 	width := max(1, renderer.width-Width(indent))
 
-	lines := SyntaxHighlightedCodeLines(language, text, renderer.styles.CodeTheme, renderer.styles.Code)
-	for _, line := range WrapCodeLines(lines, width) {
+	rendered := newLexerCodeRenderer(renderer.lexer).
+		render(language, text, renderer.styles.CodeTheme, renderer.styles.Code)
+
+	for _, line := range WrapCodeLines(rendered, width) {
 		renderer.prependIndentToLine(&line, indent, line.Style)
 		renderer.lines = append(renderer.lines, line)
 	}
