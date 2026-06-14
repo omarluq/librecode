@@ -464,6 +464,129 @@ func assertUUIDV7(t *testing.T, value string) {
 	assert.Equal(t, byte(7), parsed.Version())
 }
 
+func TestSessionRepository_AppendCustomAndCustomEntry(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "", "")
+	require.NoError(t, err)
+
+	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
+
+	// AppendCustom delegates to AppendCustomEntry with nil parent.
+	customEntry, err := repository.AppendCustom(ctx, session.ID, "note", `{"key":"value"}`)
+	require.NoError(t, err)
+	assert.Equal(t, database.EntryTypeCustom, customEntry.Type)
+	assert.Equal(t, "note", customEntry.CustomType)
+	assert.Nil(t, customEntry.ParentID)
+
+	// AppendCustomEntry with explicit parent.
+	customChild, err := repository.AppendCustomEntry(ctx, session.ID, &root.ID, "checkpoint", `{"step":1}`)
+	require.NoError(t, err)
+	assert.Equal(t, database.EntryTypeCustom, customChild.Type)
+	assert.Equal(t, "checkpoint", customChild.CustomType)
+	require.NotNil(t, customChild.ParentID)
+	assert.Equal(t, root.ID, *customChild.ParentID)
+}
+
+func TestSessionRepository_BuildContextIncludesBranchSummary(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "", "")
+	require.NoError(t, err)
+
+	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
+	branchSummary, err := repository.AppendBranchSummary(
+		ctx,
+		session.ID,
+		&root.ID,
+		root.ID,
+		"work from the other branch",
+		nil,
+		false,
+	)
+	require.NoError(t, err)
+
+	contextEntity, err := repository.BuildContext(ctx, session.ID, branchSummary.ID)
+	require.NoError(t, err)
+	require.Len(t, contextEntity.Messages, 2)
+	assert.Equal(t, database.RoleUser, contextEntity.Messages[0].Role)
+	assert.Equal(t, database.RoleBranchSummary, contextEntity.Messages[1].Role)
+	assert.Equal(t, "work from the other branch", contextEntity.Messages[1].Content)
+}
+
+func TestSessionRepository_BuildContextWithCompactionTailBranchSummary(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "", "")
+	require.NoError(t, err)
+
+	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
+	branchSummary, err := repository.AppendBranchSummary(
+		ctx,
+		session.ID,
+		&root.ID,
+		root.ID,
+		"prior branch work",
+		nil,
+		false,
+	)
+	require.NoError(t, err)
+
+	compactionEntry, err := repository.AppendCompaction(ctx, &database.AppendCompactionInput{
+		Details:          nil,
+		FromHook:         false,
+		ParentID:         &branchSummary.ID,
+		SessionID:        session.ID,
+		Summary:          "compacted",
+		FirstKeptEntryID: root.ID,
+		TokensBefore:     500,
+	})
+	require.NoError(t, err)
+
+	// BuildContext from compaction: summary + tail (root + branchSummary).
+	contextEntity, err := repository.BuildContext(ctx, session.ID, compactionEntry.ID)
+	require.NoError(t, err)
+	require.Len(t, contextEntity.Messages, 3)
+	assert.Equal(t, database.RoleCompactionSummary, contextEntity.Messages[0].Role)
+	assert.Equal(t, database.RoleUser, contextEntity.Messages[1].Role)
+	assert.Equal(t, database.RoleBranchSummary, contextEntity.Messages[2].Role)
+	assert.Equal(t, "prior branch work", contextEntity.Messages[2].Content)
+}
+
+func TestSessionRepository_LabelClearsWhenNil(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "", "")
+	require.NoError(t, err)
+
+	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
+
+	// Set a label.
+	label := "checkpoint"
+	_, err = repository.AppendLabelChange(ctx, session.ID, &root.ID, root.ID, &label)
+	require.NoError(t, err)
+	foundLabel, found, err := repository.Label(ctx, session.ID, root.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "checkpoint", foundLabel)
+
+	// Clear the label by passing nil.
+	_, err = repository.AppendLabelChange(ctx, session.ID, &root.ID, root.ID, nil)
+	require.NoError(t, err)
+	clearedLabel, found, err := repository.Label(ctx, session.ID, root.ID)
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Empty(t, clearedLabel)
+}
+
 func sqliteDriver() string {
 	return "sqlite"
 }
