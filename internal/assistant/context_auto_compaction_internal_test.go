@@ -44,14 +44,15 @@ func TestRuntime_PrepareCompletionRequestWithAutoCompactionInputValidation(t *te
 
 func runtimeWithoutDependencies() Runtime {
 	return Runtime{
-		cfg:        nil,
-		sessions:   nil,
-		extensions: nil,
-		cache:      nil,
-		events:     nil,
-		models:     nil,
-		client:     nil,
-		logger:     nil,
+		cfg:         nil,
+		sessions:    nil,
+		extensions:  nil,
+		cache:       nil,
+		events:      nil,
+		models:      nil,
+		client:      nil,
+		logger:      nil,
+		skillsCache: nil,
 	}
 }
 

@@ -57,7 +57,7 @@ func (runtime *Runtime) respondToSkillCommand(
 	args string,
 	onEvent func(StreamEvent),
 ) (response string, toolEvents []ToolEvent, err error) {
-	skills := core.LoadSkills(cwd, nil, true).Skills
+	skills := runtime.loadSkills(cwd)
 
 	name := strings.TrimSpace(args)
 	if name == "" {

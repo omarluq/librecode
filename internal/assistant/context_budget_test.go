@@ -40,14 +40,15 @@ func TestRuntime_ContextPreflightCanBeDisabled(t *testing.T) {
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.PreflightEnabled = false
 	runtime = assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:     runtimeConfig,
-		Sessions:   runtime.SessionRepository(),
-		Extensions: nil,
-		Cache:      assistant.NewResponseCache(false, 1, time.Minute),
-		Events:     runtime.EventBus(),
-		Models:     runtime.ModelRegistry(),
-		Client:     client,
-		Logger:     nil,
+		Config:      runtimeConfig,
+		Sessions:    runtime.SessionRepository(),
+		Extensions:  nil,
+		Cache:       assistant.NewResponseCache(false, 1, time.Minute),
+		Events:      runtime.EventBus(),
+		Models:      runtime.ModelRegistry(),
+		Client:      client,
+		Logger:      nil,
+		SkillsCache: nil,
 	})
 
 	request := newRuntimePromptRequest(testRuntimeCWD, strings.Repeat("overflow ", 2600), "")
@@ -87,14 +88,15 @@ func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
 	runtimeConfig.Context.ProviderReserveTokens = 0
 	runtimeConfig.Context.SafetyMarginTokens = 0
 	runtime = assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:     runtimeConfig,
-		Sessions:   runtime.SessionRepository(),
-		Extensions: nil,
-		Cache:      assistant.NewResponseCache(false, 1, time.Minute),
-		Events:     runtime.EventBus(),
-		Models:     runtime.ModelRegistry(),
-		Client:     client,
-		Logger:     nil,
+		Config:      runtimeConfig,
+		Sessions:    runtime.SessionRepository(),
+		Extensions:  nil,
+		Cache:       assistant.NewResponseCache(false, 1, time.Minute),
+		Events:      runtime.EventBus(),
+		Models:      runtime.ModelRegistry(),
+		Client:      client,
+		Logger:      nil,
+		SkillsCache: nil,
 	})
 
 	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
@@ -127,14 +129,15 @@ func TestRuntime_ContextUsageUsesExplicitOutputReserve(t *testing.T) {
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.OutputReserveTokens = 1234
 	runtime = assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:     runtimeConfig,
-		Sessions:   runtime.SessionRepository(),
-		Extensions: nil,
-		Cache:      assistant.NewResponseCache(false, 1, time.Minute),
-		Events:     runtime.EventBus(),
-		Models:     runtime.ModelRegistry(),
-		Client:     client,
-		Logger:     nil,
+		Config:      runtimeConfig,
+		Sessions:    runtime.SessionRepository(),
+		Extensions:  nil,
+		Cache:       assistant.NewResponseCache(false, 1, time.Minute),
+		Events:      runtime.EventBus(),
+		Models:      runtime.ModelRegistry(),
+		Client:      client,
+		Logger:      nil,
+		SkillsCache: nil,
 	})
 
 	usage, err := runtime.ContextUsage(context.Background(), "", testRuntimeCWD)
@@ -198,14 +201,15 @@ func newTestRuntimeWithContextWindowAndMaxTokens(
 	t.Cleanup(cache.Shutdown)
 	_, repository := newTestRuntime(t)
 	runtime := assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:     runtimeConfig,
-		Sessions:   repository,
-		Extensions: manager,
-		Cache:      cache,
-		Events:     event.NewBus(nil),
-		Models:     registry,
-		Client:     client,
-		Logger:     nil,
+		Config:      runtimeConfig,
+		Sessions:    repository,
+		Extensions:  manager,
+		Cache:       cache,
+		Events:      event.NewBus(nil),
+		Models:      registry,
+		Client:      client,
+		Logger:      nil,
+		SkillsCache: nil,
 	})
 
 	return runtime

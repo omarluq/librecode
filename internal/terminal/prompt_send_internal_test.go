@@ -355,14 +355,15 @@ func newPromptSendTestAppWithConfig(
 	sessionRepository := database.NewSessionRepository(connection)
 	settingsRepository := database.NewDocumentRepository(connection)
 	runtime := assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:     runtimeConfig,
-		Sessions:   sessionRepository,
-		Extensions: manager,
-		Cache:      cache,
-		Events:     event.NewBus(slog.Default()),
-		Models:     registry,
-		Client:     client,
-		Logger:     slog.Default(),
+		Config:      runtimeConfig,
+		Sessions:    sessionRepository,
+		Extensions:  manager,
+		Cache:       cache,
+		Events:      event.NewBus(slog.Default()),
+		Models:      registry,
+		Client:      client,
+		Logger:      slog.Default(),
+		SkillsCache: nil,
 	})
 	app := newRenderTestApp(t)
 	app.runtime = runtime

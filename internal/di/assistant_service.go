@@ -20,17 +20,19 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 	events := do.MustInvoke[*EventService](injector)
 	models := do.MustInvoke[*ModelService](injector)
 	logger := do.MustInvoke[*LoggerService](injector).SlogLogger
+	skills := do.MustInvoke[*SkillsService](injector)
 
 	return &AssistantService{
 		Runtime: assistant.NewRuntime(&assistant.RuntimeOptions{
-			Config:     cfg,
-			Sessions:   databaseService.Sessions,
-			Extensions: extensionService.Manager,
-			Cache:      cache.Responses,
-			Events:     events.Bus,
-			Models:     models.Registry,
-			Client:     nil,
-			Logger:     logger,
+			Config:      cfg,
+			Sessions:    databaseService.Sessions,
+			Extensions:  extensionService.Manager,
+			Cache:       cache.Responses,
+			Events:      events.Bus,
+			Models:      models.Registry,
+			Client:      nil,
+			Logger:      logger,
+			SkillsCache: skills.Cache,
 		}),
 	}, nil
 }

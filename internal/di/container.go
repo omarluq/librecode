@@ -74,3 +74,8 @@ func (c *Container) AssistantService() *AssistantService {
 func (c *Container) ToolService() *ToolService {
 	return do.MustInvoke[*ToolService](c.injector)
 }
+
+// SkillsService resolves the skills cache service.
+func (c *Container) SkillsService() *SkillsService {
+	return do.MustInvoke[*SkillsService](c.injector)
+}
