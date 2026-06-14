@@ -289,7 +289,7 @@ func wrapCodeLine(line Line, width int) []Line {
 
 func splitLeadingWhitespace(segments []styledSegment) (indent, body []styledSegment) {
 	for index, segment := range segments {
-		if segment.Text != " " && segment.Text != "\t" {
+		if strings.Trim(segment.Text, " \t") != "" {
 			return segments[:index], segments[index:]
 		}
 	}
