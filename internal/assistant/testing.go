@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/omarluq/librecode/internal/config"
+	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/model"
@@ -11,14 +12,15 @@ import (
 
 // RuntimeTestOptions holds optional Runtime dependencies for test factories.
 type RuntimeTestOptions struct {
-	Config     *config.Config
-	Sessions   *database.SessionRepository
-	Extensions runtimeExtensions
-	Cache      *ResponseCache
-	Events     *event.Bus
-	Models     *model.Registry
-	Client     Completer
-	Logger     *slog.Logger
+	Config      *config.Config
+	Sessions    *database.SessionRepository
+	Extensions  runtimeExtensions
+	Cache       *ResponseCache
+	Events      *event.Bus
+	Models      *model.Registry
+	Client      Completer
+	Logger      *slog.Logger
+	SkillsCache *core.SkillsCache
 }
 
 // NewRuntimeForTest builds a Runtime from the given setup closure, setting every
@@ -27,14 +29,15 @@ type RuntimeTestOptions struct {
 // warnings when exhaustruct forces every field to be listed).
 func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
 	opts := &RuntimeTestOptions{
-		Config:     nil,
-		Sessions:   nil,
-		Extensions: nil,
-		Cache:      nil,
-		Events:     nil,
-		Models:     nil,
-		Client:     nil,
-		Logger:     nil,
+		Config:      nil,
+		Sessions:    nil,
+		Extensions:  nil,
+		Cache:       nil,
+		Events:      nil,
+		Models:      nil,
+		Client:      nil,
+		Logger:      nil,
+		SkillsCache: nil,
 	}
 	if setup != nil {
 		setup(opts)
@@ -49,6 +52,6 @@ func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
 		Models:      opts.Models,
 		Client:      opts.Client,
 		Logger:      opts.Logger,
-		SkillsCache: nil,
+		SkillsCache: opts.SkillsCache,
 	})
 }
