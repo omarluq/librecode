@@ -260,6 +260,61 @@ func TestSessionRepository_BranchLoadsOnlyActiveChain(t *testing.T) {
 	}
 }
 
+func TestSessionRepository_BranchReturnsErrorForMissingEntryID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "", "")
+	require.NoError(t, err)
+
+	_, err = repository.Branch(ctx, session.ID, "nonexistent")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+}
+
+func TestSessionRepository_BranchResolvesLeafNotLatestByTimestamp(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "", "")
+	require.NoError(t, err)
+
+	// root has two children: "child" (a leaf, created first) and
+	// "backdated-parent" (a non-leaf with a child of its own).
+	root := appendTestMessage(ctx, t, repository, session.ID, nil, database.RoleUser, "root")
+	leafA := appendTestMessage(ctx, t, repository, session.ID, &root.ID, database.RoleAssistant, "leaf-a")
+
+	// This entry is a non-leaf (has a child) but is backdated to be older
+	// than leafA. The old ORDER BY created_at logic would have picked leafA
+	// as the starting point since it's newer. The leaf-aware query must
+	// select the actual leaf with no children.
+	backdatedParent := appendTestMessageWithTimestamp(
+		ctx, t, repository, session.ID, &root.ID, database.RoleAssistant, "backdated-parent",
+		time.Now().Add(-1*time.Hour),
+	)
+	backdatedLeaf := appendTestMessage(
+		ctx, t, repository,
+		session.ID, &backdatedParent.ID, database.RoleUser, "backdated-leaf",
+	)
+
+	// Empty entryID must resolve to an actual leaf. There are two leaves:
+	// leafA and backdatedLeaf. The most recently created leaf is
+	// backdatedLeaf (created last even though its parent is backdated).
+	branch, err := repository.Branch(ctx, session.ID, "")
+	require.NoError(t, err)
+	require.Len(t, branch, 3)
+	assert.Equal(t, root.ID, branch[0].ID)
+	assert.Equal(t, backdatedParent.ID, branch[1].ID)
+	assert.Equal(t, backdatedLeaf.ID, branch[2].ID)
+
+	// leafA must NOT appear — it's not on this branch.
+	for index := range branch {
+		assert.NotEqual(t, leafA.ID, branch[index].ID, "leaf-a leaked into backdated branch")
+	}
+}
+
 func TestSessionRepository_SupportsLibrecodeStyleTreeMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -410,6 +465,31 @@ func appendTestMessage(
 
 	message := database.MessageEntity{
 		Timestamp: time.Now().UTC(),
+		Role:      role,
+		Content:   content,
+		Provider:  "",
+		Model:     "",
+	}
+	entry, err := repository.AppendMessage(ctx, sessionID, parentID, &message)
+	require.NoError(t, err)
+
+	return entry
+}
+
+func appendTestMessageWithTimestamp(
+	ctx context.Context,
+	t *testing.T,
+	repository *database.SessionRepository,
+	sessionID string,
+	parentID *string,
+	role database.Role,
+	content string,
+	timestamp time.Time,
+) *database.EntryEntity {
+	t.Helper()
+
+	message := database.MessageEntity{
+		Timestamp: timestamp,
 		Role:      role,
 		Content:   content,
 		Provider:  "",
