@@ -180,16 +180,8 @@ func writeToolExecutorReadFixture(t *testing.T, directory string) {
 }
 
 func newToolExecutorTestRuntime(extensions runtimeExtensions) *Runtime {
-	return NewRuntime(&RuntimeOptions{
-		Config:      nil,
-		Sessions:    nil,
-		Extensions:  extensions,
-		Cache:       nil,
-		Events:      nil,
-		Models:      nil,
-		Client:      nil,
-		Logger:      nil,
-		SkillsCache: nil,
+	return newRuntimeFromDeps(func(deps *runtimeDeps) {
+		deps.Extensions = extensions
 	})
 }
 

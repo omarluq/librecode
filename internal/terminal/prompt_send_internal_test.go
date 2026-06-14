@@ -354,16 +354,15 @@ func newPromptSendTestAppWithConfig(
 	registry := newPromptSendTestModelRegistry(t)
 	sessionRepository := database.NewSessionRepository(connection)
 	settingsRepository := database.NewDocumentRepository(connection)
-	runtime := assistant.NewRuntime(&assistant.RuntimeOptions{
-		Config:      runtimeConfig,
-		Sessions:    sessionRepository,
-		Extensions:  manager,
-		Cache:       cache,
-		Events:      event.NewBus(slog.Default()),
-		Models:      registry,
-		Client:      client,
-		Logger:      slog.Default(),
-		SkillsCache: nil,
+	runtime := assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
+		opts.Config = runtimeConfig
+		opts.Sessions = sessionRepository
+		opts.Extensions = manager
+		opts.Cache = cache
+		opts.Events = event.NewBus(slog.Default())
+		opts.Models = registry
+		opts.Client = client
+		opts.Logger = slog.Default()
 	})
 	app := newRenderTestApp(t)
 	app.runtime = runtime
