@@ -15,6 +15,7 @@
   <a href="https://codecov.io/gh/omarluq/librecode"><img src="https://img.shields.io/codecov/c/github/omarluq/librecode?style=flat&labelColor=24292e&logo=codecov&logoColor=white" alt="Codecov"></a>
   <a href="https://coderabbit.ai"><img src="https://img.shields.io/coderabbit/prs/github/omarluq/librecode?utm_source=oss&utm_medium=github&utm_campaign=omarluq%2Flibrecode&style=flat&labelColor=24292e&color=FF570A&label=CodeRabbit+Reviews" alt="CodeRabbit Reviews"></a>
   <a href="https://deepwiki.com/omarluq/librecode"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+  <a herf="https://mise.jdx.dev"> <img src="https://mise-versions.jdx.dev/badge.svg?style=flat&labelColor=24292ee" alt="mise-en-place"></a>
 </p>
 
 <p align="center">
