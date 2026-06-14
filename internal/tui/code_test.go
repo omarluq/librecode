@@ -50,6 +50,8 @@ func TestCodeBlockWrapsInsteadOfSwallowingSymbols(t *testing.T) {
 	assertContains(t, reconstructed, "i < n")
 	assertContains(t, reconstructed, "seq[i-1] + seq[i-2]")
 	assertContains(t, reconstructed, "return seq")
+	assertLinePrefix(t, lines, "return nil", "  ")
+	assertLinePrefix(t, lines, "return seq", "  ")
 	assertNoLineWiderThan(t, lines, 14)
 }
 
@@ -88,6 +90,22 @@ func assertContains(t *testing.T, text, want string) {
 	if !strings.Contains(text, want) {
 		t.Fatalf("rendered text missing %q:\n%s", want, text)
 	}
+}
+
+func assertLinePrefix(t *testing.T, lines []tui.Line, text, wantPrefix string) {
+	t.Helper()
+
+	for _, line := range lines {
+		if strings.Contains(line.Text, text) {
+			if !strings.HasPrefix(line.Text, wantPrefix) {
+				t.Fatalf("line %q does not have prefix %q", line.Text, wantPrefix)
+			}
+
+			return
+		}
+	}
+
+	t.Fatalf("line containing %q not found in lines:\n%s", text, lineText(lines))
 }
 
 func assertSpanForeground(t *testing.T, lines []tui.Line, text string, want tcell.Color) {

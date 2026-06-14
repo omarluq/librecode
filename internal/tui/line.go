@@ -147,9 +147,11 @@ func (line Line) wrapWithMode(width int, preserveWhitespace bool) []Line {
 }
 
 func (line Line) wrapPlainText(width int, preserveWhitespace bool) []Line {
-	wrapped := Wrap(line.Text, width)
+	var wrapped []string
 	if preserveWhitespace {
 		wrapped = WrapPreserveWhitespace(line.Text, width)
+	} else {
+		wrapped = Wrap(line.Text, width)
 	}
 
 	lines := make([]Line, 0, len(wrapped))
