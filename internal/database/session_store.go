@@ -12,21 +12,30 @@ import (
 
 const appendCompactionNilInputCode = "append_compaction_nil_input"
 
-// branchChainSQL walks the session entry tree from a starting entry back to the
-// root using a recursive CTE. When entryID is empty the most recent entry
-// (leaf) is used as the starting point. Rows are ordered root-to-leaf by
-// created_at to match the convention callers expect.
+// branchChainSQL walks the session entry tree from a starting entry back to
+// the root using a recursive CTE. When entryID is empty the most recent leaf
+// (a node with no children) is used as the starting point. Rows are ordered
+// root-to-leaf by recursion depth to guarantee topological order regardless
+// of timestamp values. UNION (not UNION ALL) guards against cyclic parent_id
+// links by deduplicating visited IDs.
 const branchChainSQL = `
-WITH RECURSIVE chain(id) AS (
-    SELECT id FROM session_entries
-    WHERE session_id = ? AND id = COALESCE(NULLIF(?, ''), (
-        SELECT id FROM session_entries
-        WHERE session_id = ?
-        ORDER BY created_at DESC
+WITH RECURSIVE chain(id, depth) AS (
+    SELECT leaf.id, 0
+    FROM session_entries leaf
+    WHERE leaf.session_id = ? AND leaf.id = COALESCE(NULLIF(?, ''), (
+        SELECT leaf2.id
+        FROM session_entries leaf2
+        WHERE leaf2.session_id = ?
+          AND NOT EXISTS (
+              SELECT 1 FROM session_entries child
+              WHERE child.session_id = leaf2.session_id
+                AND child.parent_id = leaf2.id
+          )
+        ORDER BY leaf2.created_at DESC, leaf2.id DESC
         LIMIT 1
     ))
-    UNION ALL
-    SELECT parent.id
+    UNION
+    SELECT parent.id, chain.depth + 1
     FROM session_entries parent
     JOIN chain ON parent.id = (
         SELECT child.parent_id FROM session_entries child WHERE child.id = chain.id
@@ -40,9 +49,9 @@ SELECT
     e.model_facing, e.display,
     e.compaction_first_kept_entry_id, e.compaction_tokens_before, e.branch_from_entry_id
 FROM session_entries e
-JOIN chain ON e.id = chain.id
+JOIN chain c ON e.id = c.id
 WHERE e.session_id = ?
-ORDER BY e.created_at ASC`
+ORDER BY c.depth DESC`
 
 // Branch returns the entries along the path from root to the requested entry
 // (or the current leaf when entryID is empty).
@@ -57,6 +66,12 @@ func (repository *SessionRepository) Branch(ctx context.Context, sessionID, entr
 	entries, err := entriesFromRows(rows)
 	if err != nil {
 		return nil, oops.In("database").Code("scan_entry").Wrapf(err, "scan session branch")
+	}
+
+	if entryID != "" && len(entries) == 0 {
+		return nil, oops.In("database").
+			Code("branch_entry_missing").
+			Errorf("entry %q not found in session %q", entryID, sessionID)
 	}
 
 	return entries, nil
