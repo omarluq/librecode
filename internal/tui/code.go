@@ -25,6 +25,7 @@ type CodeTheme struct {
 // CodeBlock renders syntax-highlighted code.
 type CodeBlock struct {
 	Style    tcell.Style
+	Engine   *LexerEngine
 	Language string
 	Text     string
 	Theme    CodeTheme
@@ -36,7 +37,8 @@ func (block *CodeBlock) Render(width, height int) []Line {
 		return []Line{}
 	}
 
-	lines := WrapCodeLines(SyntaxHighlightedCodeLines(block.Language, block.Text, block.Theme, block.Style), width)
+	rendered := newLexerCodeRenderer(block.Engine).render(block.Language, block.Text, block.Theme, block.Style)
+	lines := WrapCodeLines(rendered, width)
 
 	return Tail(lines, height)
 }
@@ -71,7 +73,21 @@ func (view *DiffView) Draw(screen ContentSetter, rect Rect) {
 
 // SyntaxHighlightedCodeLines returns syntax-highlighted code lines.
 func SyntaxHighlightedCodeLines(language, text string, theme CodeTheme, baseStyle tcell.Style) []Line {
-	iterator, ok := codeTokenIterator(language, text)
+	return newLexerCodeRenderer(nil).render(language, text, theme, baseStyle)
+}
+
+// lexerCodeRenderer owns a cache-backed lexer engine and renders
+// syntax-highlighted code lines for code blocks.
+type lexerCodeRenderer struct {
+	engine *LexerEngine
+}
+
+func newLexerCodeRenderer(engine *LexerEngine) lexerCodeRenderer {
+	return lexerCodeRenderer{engine: engine}
+}
+
+func (r lexerCodeRenderer) render(language, text string, theme CodeTheme, baseStyle tcell.Style) []Line {
+	iterator, ok := r.iterator(language, text)
 	if !ok {
 		return codeStyledLines(text, baseStyle)
 	}
@@ -84,7 +100,7 @@ func SyntaxHighlightedCodeLines(language, text string, theme CodeTheme, baseStyl
 	return lines
 }
 
-func codeTokenIterator(language, text string) (chroma.Iterator, bool) {
+func (r lexerCodeRenderer) iterator(language, text string) (chroma.Iterator, bool) {
 	lexer := lexers.Get(strings.TrimSpace(language))
 	if lexer != nil {
 		return tokenizeCode(lexer, text)
@@ -92,6 +108,10 @@ func codeTokenIterator(language, text string) (chroma.Iterator, bool) {
 
 	if strings.TrimSpace(language) != "" {
 		return nil, false
+	}
+
+	if r.engine != nil {
+		return r.engine.IteratorFor(text)
 	}
 
 	return analyzedCodeIterator(text)

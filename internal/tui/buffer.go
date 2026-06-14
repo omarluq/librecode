@@ -124,12 +124,18 @@ func (buffer *CellBuffer) Clone() *CellBuffer {
 type Renderer struct {
 	screen   ContentSetter
 	previous *CellBuffer
+	Lexer    LexerEngine
 	Markdown MarkdownEngine
 }
 
 // NewRenderer returns a screen renderer.
 func NewRenderer(screen ContentSetter) *Renderer {
-	return &Renderer{screen: screen, previous: nil, Markdown: MarkdownEngine{parser: nil, once: sync.Once{}}}
+	return &Renderer{
+		screen:   screen,
+		previous: nil,
+		Markdown: MarkdownEngine{parser: nil, once: sync.Once{}},
+		Lexer:    NewLexerEngine(),
+	}
 }
 
 // Flush writes changed cells from frame to the screen.
