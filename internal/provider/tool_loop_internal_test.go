@@ -32,7 +32,6 @@ func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 				ID:            "",
 				Name:          jsonReadToolName,
 				ArgumentsJSON: "",
-				TextFallback:  false,
 			},
 		},
 		{
@@ -43,7 +42,6 @@ func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 				ID:            testCallID,
 				Name:          "",
 				ArgumentsJSON: "",
-				TextFallback:  false,
 			},
 		},
 	}
@@ -130,15 +128,15 @@ func TestExecuteToolCallsUsesInjectedExecutorAndHandlesMissingEvents(t *testing.
 	}, outputs[0])
 }
 
-func TestToolCallMetadataMarksTextFallback(t *testing.T) {
+func TestToolCallMetadataClonesMetadata(t *testing.T) {
 	t.Parallel()
 
 	call := readToolCall(testCallID)
 	call.Metadata = map[string]any{testExistingKey: true}
-	call.TextFallback = true
 	metadata := toolCallMetadata(call)
+	metadata[testExistingKey] = false
 
-	assert.Equal(t, map[string]any{testExistingKey: true, "text_fallback": true}, metadata)
+	assert.Equal(t, true, call.Metadata[testExistingKey])
 }
 
 func TestToolOutputTextIncludesDetailsForEmptyResult(t *testing.T) {
@@ -195,6 +193,5 @@ func readToolCall(callID string) ToolCall {
 		ID:            callID,
 		Name:          jsonReadToolName,
 		ArgumentsJSON: `{}`,
-		TextFallback:  false,
 	}
 }

@@ -58,11 +58,7 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 	}
 
 	if len(providerResult.ToolCalls) == 0 {
-		if fallback := TextToolCallsFromText(providerResult.Text); len(fallback) > 0 {
-			providerResult.ToolCalls = fallback
-		} else {
-			return finishProviderResult(state.result, providerResult)
-		}
+		return finishProviderResult(state.result, providerResult)
 	}
 
 	events, err := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)
@@ -98,16 +94,6 @@ func appendAnthropicToolConversation(
 	providerResult *providerResult,
 	events []ToolEvent,
 ) error {
-	if HasTextFallbackToolCalls(providerResult.ToolCalls) {
-		state.messages = append(
-			state.messages,
-			map[string]any{jsonRoleKey: jsonAssistantRole, jsonContentKey: providerResult.Text},
-			map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: TextToolResultPrompt(events)},
-		)
-
-		return nil
-	}
-
 	toolResultMessage, err := anthropicToolResultMessage(providerResult.ToolCalls, events)
 	if err != nil {
 		return err
@@ -381,7 +367,6 @@ func anthropicToolCall(callID, name string, input any) ToolCall {
 		ID:            callID,
 		Name:          anthropicLocalToolName(name),
 		ArgumentsJSON: argumentsJSON,
-		TextFallback:  false,
 	}
 }
 
@@ -523,7 +508,7 @@ func anthropicLocalToolName(name string) string {
 	case anthropicLSToolName, "List":
 		return jsonLSToolName
 	default:
-		return NormalizeTextToolName(name)
+		return name
 	}
 }
 

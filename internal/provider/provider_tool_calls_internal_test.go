@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -144,48 +143,6 @@ type providerResponseHookCapture struct {
 	Header string
 }
 
-func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
-	t.Parallel()
-
-	var requests []map[string]any
-
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		var payload map[string]any
-		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
-		requests = append(requests, payload)
-
-		writer.Header().Set("Content-Type", "text/event-stream")
-
-		if len(requests) == 1 {
-			writeTestProviderResponse(t, writer, anthropicTextReadToolResponse())
-
-			return
-		}
-
-		writeTestProviderResponse(t, writer, anthropicTextStream("done", "end_turn"))
-	}))
-	defer server.Close()
-
-	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	setTestRequestCWD(request, testToolWorkspace(t))
-	setTestRequestBaseURL(request, server.URL)
-	installTestToolExecutor(request)
-
-	result, err := (&HTTPCompletionClient{client: server.Client()}).completeAnthropic(context.Background(), request)
-	require.NoError(t, err)
-
-	response := providerResponseView(result)
-	require.Equal(t, "done", response.Text)
-	require.Len(t, response.ToolEvents, 1)
-	assert.Equal(t, expectedReadToolName, response.ToolEvents[0].Name)
-	assert.Contains(t, response.ToolEvents[0].Result, "librecode")
-	require.Len(t, requests, 2)
-	messages, ok := requests[1]["messages"].([]any)
-	require.True(t, ok)
-	assert.True(t, containsAssistantTextToolUsePrompt(messages))
-	assert.True(t, containsUserToolResultPrompt(messages))
-}
-
 func completeOpenAIChatWithResponses(
 	t *testing.T,
 	firstResponse string,
@@ -260,62 +217,10 @@ func openAIChatTextStream(text string) string {
 	)
 }
 
-func anthropicTextReadToolResponse() string {
-	return anthropicTextStream(anthropicTextReadToolMarkup(), "end_turn")
-}
-
-func anthropicTextStream(text, stopReason string) string {
-	lines := make([]string, 0, 9)
-	lines = append(lines,
-		anthropicEventContentBlockDelta,
-		"data: "+anthropicContentDeltaJSON(0, anthropicTextDelta, jsonTextKey, text),
-		"",
-	)
-	lines = append(lines, anthropicMessageDeltaLines(stopReason, nil)...)
-
-	return strings.Join(lines, "\n")
-}
-
-func anthropicTextReadToolMarkup() string {
-	return "<tool_use><tool_name>Read</tool_name><file_path>README.md</file_path></tool_use>"
-}
-
 func containsRoleMessage(messages []any, role string) bool {
 	for _, message := range messages {
 		object, matched := message.(map[string]any)
 		if matched && object[jsonRoleKey] == role {
-			return true
-		}
-	}
-
-	return false
-}
-
-func containsAssistantTextToolUsePrompt(messages []any) bool {
-	for _, message := range messages {
-		object, matched := message.(map[string]any)
-		if !matched || object[jsonRoleKey] != jsonAssistantRole {
-			continue
-		}
-
-		content, ok := object[jsonContentKey].(string)
-		if ok && strings.Contains(content, "<tool_use>") {
-			return true
-		}
-	}
-
-	return false
-}
-
-func containsUserToolResultPrompt(messages []any) bool {
-	for _, message := range messages {
-		object, matched := message.(map[string]any)
-		if !matched || object[jsonRoleKey] != jsonUserRole {
-			continue
-		}
-
-		content, ok := object[jsonContentKey].(string)
-		if ok && strings.HasPrefix(content, "Tool result for read") {
 			return true
 		}
 	}
@@ -337,23 +242,4 @@ func testToolWorkspace(t *testing.T) string {
 	require.NoError(t, os.WriteFile(readmePath, []byte("# librecode\n"), 0o600))
 
 	return workspace
-}
-
-func TestCompleteOpenAIChatExecutesTextToolUseFallback(t *testing.T) {
-	t.Parallel()
-
-	requests, result := completeOpenAIChatWithResponses(
-		t,
-		openAIChatTextStream(anthropicTextReadToolMarkup()),
-		openAIChatTextStream("done"),
-	)
-
-	require.Equal(t, "done", result.Text)
-	require.Len(t, result.ToolEvents, 1)
-	assert.Equal(t, expectedReadToolName, result.ToolEvents[0].Name)
-	require.Len(t, requests, 2)
-	messages, ok := requests[1]["messages"].([]any)
-	require.True(t, ok)
-	assert.True(t, containsAssistantTextToolUsePrompt(messages))
-	assert.True(t, containsUserToolResultPrompt(messages))
 }

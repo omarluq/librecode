@@ -104,7 +104,6 @@ func TestOpenAIChatAssistantToolMessage(t *testing.T) {
 			ID:            testCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: testToolArgumentsJSON,
-			TextFallback:  false,
 		}},
 		Usage: llm.EmptyUsage(),
 	})

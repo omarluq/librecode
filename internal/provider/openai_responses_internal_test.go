@@ -97,7 +97,7 @@ func TestParseOpenAIResponseStreamMapsIncompleteFinishReasons(t *testing.T) {
 	}
 }
 
-func TestParseOpenAIResponseStreamUsesOutputTextFallbackAndErrors(t *testing.T) {
+func TestParseOpenAIResponseStreamUsesOutputTextAndErrors(t *testing.T) {
 	t.Parallel()
 
 	result, err := parseSSEResult(
@@ -126,7 +126,7 @@ func TestParseOpenAIResponseStreamStopsAtDoneMarker(t *testing.T) {
 	assert.Equal(t, "ok", result.Text)
 }
 
-func TestProviderResultFromOutputItemsUsesFallbackAndInvalidArguments(t *testing.T) {
+func TestProviderResultFromOutputItemsUsesOutputTextAndInvalidArguments(t *testing.T) {
 	t.Parallel()
 
 	result := providerResultFromOutputItems([]any{
