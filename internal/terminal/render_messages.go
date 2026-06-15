@@ -77,15 +77,3 @@ func (app *App) currentLineCacheState(width int) messageLineCacheState {
 func (app *App) rebuildMessageRowPrefixSums(width int) {
 	app.transcript.LineCache.rebuildPrefixes(app, width)
 }
-
-func (app *App) warmMessageLineCache() {
-	for !app.transcript.LineCache.warm {
-		if !app.warmMessageLineCacheStep() {
-			return
-		}
-	}
-}
-
-func (app *App) warmMessageLineCacheStep() bool {
-	return app.transcript.LineCache.warmStep(app)
-}
