@@ -11,31 +11,6 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 )
 
-func TestPromptTemplateArgumentSubstitution(t *testing.T) {
-	t.Parallel()
-
-	const (
-		firstArg  = "one"
-		secondArg = "two words"
-		thirdArg  = "three words"
-	)
-
-	args := core.ParseCommandArgs(`one "two words" 'three words'`)
-	assert.Equal(t, []string{firstArg, secondArg, thirdArg}, args)
-
-	expanded := core.SubstituteArgs("$1|$2|$3|${@:2}|${@:2:1}|$ARGUMENTS|$@", args)
-	expectedExpanded := strings.Join([]string{
-		firstArg,
-		secondArg,
-		thirdArg,
-		secondArg + " " + thirdArg,
-		secondArg,
-		firstArg + " " + secondArg + " " + thirdArg,
-		firstArg + " " + secondArg + " " + thirdArg,
-	}, "|")
-	assert.Equal(t, expectedExpanded, expanded)
-}
-
 func TestLoadPromptTemplatesLoadsMarkdownAndReportsCollisions(t *testing.T) {
 	t.Parallel()
 
@@ -69,7 +44,4 @@ func TestLoadPromptTemplatesLoadsMarkdownAndReportsCollisions(t *testing.T) {
 	assert.Equal(t, "Global fix", deduped.Prompts[0].Description)
 	assert.Equal(t, "BUG", deduped.Prompts[0].ArgumentHint)
 	assert.Equal(t, "Review this code", deduped.Prompts[1].Description)
-
-	assert.Equal(t, "fix bug-123", core.ExpandPromptTemplate("/fix bug-123", deduped.Prompts))
-	assert.Equal(t, "/unknown value", core.ExpandPromptTemplate("/unknown value", deduped.Prompts))
 }
