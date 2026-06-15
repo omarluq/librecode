@@ -141,6 +141,8 @@ github.com/samber/ro/plugins/fsnotify v0.0.0-20260614233124-f3806d4dff10 h1:4/QQ
 github.com/samber/ro/plugins/fsnotify v0.0.0-20260614233124-f3806d4dff10/go.mod h1:QtQE2XaB1KYIWnUotePRq36qZi7goPjtR/pm7gy2XWU=
 github.com/samber/ro/plugins/signal v0.0.0-20260522200928-fb86b5fc464e h1:ehkGCX5UBJoGHHN3KMbAjt/bJLBe5asb0gY0KibWSmU=
 github.com/samber/ro/plugins/signal v0.0.0-20260522200928-fb86b5fc464e/go.mod h1:qZvrMezFzFNkX7V/Qh01B79tVW/Nw8TIGLjsrSdccy0=
+github.com/samber/ro/plugins/signal v0.0.0-20260614233124-f3806d4dff10 h1:JMWiFRSsrA8ipuOdYNHJUQ0xVUjzONHjqSPvszhPdec=
+github.com/samber/ro/plugins/signal v0.0.0-20260614233124-f3806d4dff10/go.mod h1:qZvrMezFzFNkX7V/Qh01B79tVW/Nw8TIGLjsrSdccy0=
 github.com/samber/slog-common v0.21.0 h1:Wo2hTly1Br5RjYqX/BTWJJeDnTE85oWk/7vqlpZuAUc=
 github.com/samber/slog-common v0.21.0/go.mod h1:d/6OaSlzdkl9PFpfRLgn8FwY1OW6EFmPtBpsHX4MrU0=
 github.com/samber/slog-zerolog/v2 v2.9.2 h1:DIFzfzDTxHeRyGlfg/D7b2by7VVzcsBTybRPrzjWF4c=
