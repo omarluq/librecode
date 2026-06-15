@@ -3,8 +3,6 @@ package core
 import (
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/samber/lo"
@@ -12,8 +10,6 @@ import (
 )
 
 const maxPromptDescriptionLength = 60
-
-var positionArgumentPattern = regexp.MustCompile(`\$(\d+)`)
 
 // PromptTemplate is a markdown-backed slash prompt.
 type PromptTemplate struct {
@@ -42,44 +38,6 @@ type LoadPromptTemplatesResult struct {
 type promptFrontmatter struct {
 	Description  string `yaml:"description"`
 	ArgumentHint string `yaml:"argument_hint"`
-}
-
-// ParseCommandArgs parses bash-style quoted command arguments.
-func ParseCommandArgs(argsString string) []string {
-	args := []string{}
-
-	var (
-		current strings.Builder
-		quote   rune
-	)
-
-	for _, character := range argsString {
-		switch {
-		case quote != 0 && character == quote:
-			quote = 0
-		case quote != 0:
-			current.WriteRune(character)
-		case character == '\'' || character == '"':
-			quote = character
-		case character == ' ' || character == '\t':
-			args = appendCurrentArg(args, &current)
-		default:
-			current.WriteRune(character)
-		}
-	}
-
-	return appendCurrentArg(args, &current)
-}
-
-// SubstituteArgs replaces positional/Claude-style argument placeholders in prompt content.
-func SubstituteArgs(content string, args []string) string {
-	result := substitutePositionalArgs(content, args)
-	result = substituteSlicedArgs(result, args)
-	allArgs := strings.Join(args, " ")
-	result = strings.ReplaceAll(result, "$ARGUMENTS", allArgs)
-	result = strings.ReplaceAll(result, "$@", allArgs)
-
-	return result
 }
 
 // LoadPromptTemplates loads prompt templates from defaults and explicit paths.
@@ -120,27 +78,6 @@ func DedupePromptTemplates(prompts []PromptTemplate) LoadPromptTemplatesResult {
 	return result
 }
 
-// ExpandPromptTemplate expands /name args when name matches a template.
-func ExpandPromptTemplate(text string, templates []PromptTemplate) string {
-	if !strings.HasPrefix(text, "/") {
-		return text
-	}
-
-	templateName, argsString, found := strings.Cut(strings.TrimPrefix(text, "/"), " ")
-	if !found {
-		argsString = ""
-	}
-
-	template, ok := lo.Find(templates, func(template PromptTemplate) bool {
-		return template.Name == templateName
-	})
-	if !ok {
-		return text
-	}
-
-	return SubstituteArgs(template.Content, ParseCommandArgs(argsString))
-}
-
 func promptTemplateOptions(options *LoadPromptTemplatesOptions) *LoadPromptTemplatesOptions {
 	if options != nil {
 		return options
@@ -165,45 +102,6 @@ func promptTemplatePaths(options *LoadPromptTemplatesOptions) []string {
 	}
 
 	return append(paths, options.PromptPaths...)
-}
-
-func appendCurrentArg(args []string, current *strings.Builder) []string {
-	if current.Len() == 0 {
-		return args
-	}
-
-	args = append(args, current.String())
-	current.Reset()
-
-	return args
-}
-
-func substitutePositionalArgs(content string, args []string) string {
-	return positionArgumentPattern.ReplaceAllStringFunc(content, func(match string) string {
-		position, err := strconv.Atoi(strings.TrimPrefix(match, "$"))
-		if err != nil || position < 1 || position > len(args) {
-			return ""
-		}
-
-		return args[position-1]
-	})
-}
-
-func substituteSlicedArgs(content string, args []string) string {
-	result := content
-
-	for start := 1; start <= len(args); start++ {
-		placeholder := "${@:" + strconv.Itoa(start) + "}"
-
-		result = strings.ReplaceAll(result, placeholder, strings.Join(args[start-1:], " "))
-		for length := 1; length <= len(args)-start+1; length++ {
-			sliced := args[start-1 : start-1+length]
-			placeholder = "${@:" + strconv.Itoa(start) + ":" + strconv.Itoa(length) + "}"
-			result = strings.ReplaceAll(result, placeholder, strings.Join(sliced, " "))
-		}
-	}
-
-	return result
 }
 
 func loadPromptTemplatePath(rawPath, cwd, agentDir string) ([]PromptTemplate, []ResourceDiagnostic) {
