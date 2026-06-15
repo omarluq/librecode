@@ -67,6 +67,7 @@ func (runtime *Runtime) estimateToolSchemaTokens(request *CompletionRequest) int
 	registry := request.ToolRegistry
 	if registry == nil {
 		registry = tool.NewRegistry(request.CWD)
+		request.ToolRegistry = registry
 	}
 
 	oauth := requestUsesAnthropicOAuth(request)

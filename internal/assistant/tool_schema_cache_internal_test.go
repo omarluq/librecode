@@ -32,38 +32,69 @@ func TestToolSchemaCacheMissReturnsFalse(t *testing.T) {
 	assert.False(t, found)
 }
 
-func TestToolSchemaCacheKeyDifferentiatesAPI(t *testing.T) {
+func TestToolSchemaCacheKeyDifferentiatesInputs(t *testing.T) {
 	t.Parallel()
 
 	registry := tool.NewRegistry(t.TempDir())
 
-	key1 := toolSchemaCacheKey(registry, apiOpenAICompletions, false, false)
-	key2 := toolSchemaCacheKey(registry, apiOpenAIResponses, false, false)
+	type cacheKeyCase struct {
+		name     string
+		wantB    string
+		apiA     string
+		apiB     string
+		oauthA   bool
+		oauthB   bool
+		disableA bool
+		disableB bool
+	}
 
-	assert.NotEqual(t, key1, key2)
-}
+	tests := []cacheKeyCase{
+		{
+			name:     "api",
+			apiA:     apiOpenAICompletions,
+			apiB:     apiOpenAIResponses,
+			oauthA:   false,
+			disableA: false,
+			oauthB:   false,
+			disableB: false,
+			wantB:    "",
+		},
+		{
+			name:     "oauth",
+			apiA:     apiAnthropicMessages,
+			apiB:     apiAnthropicMessages,
+			oauthA:   false,
+			disableA: false,
+			oauthB:   true,
+			disableB: false,
+			wantB:    "",
+		},
+		{
+			name:     "disable_tools",
+			apiA:     apiOpenAIResponses,
+			apiB:     apiOpenAIResponses,
+			oauthA:   false,
+			disableA: false,
+			oauthB:   false,
+			disableB: true,
+			wantB:    "disabled",
+		},
+	}
 
-func TestToolSchemaCacheKeyDifferentiatesOAuth(t *testing.T) {
-	t.Parallel()
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	registry := tool.NewRegistry(t.TempDir())
+			keyA := toolSchemaCacheKey(registry, testCase.apiA, testCase.oauthA, testCase.disableA)
+			keyB := toolSchemaCacheKey(registry, testCase.apiB, testCase.oauthB, testCase.disableB)
 
-	key1 := toolSchemaCacheKey(registry, apiAnthropicMessages, false, false)
-	key2 := toolSchemaCacheKey(registry, apiAnthropicMessages, true, false)
+			assert.NotEqual(t, keyA, keyB)
 
-	assert.NotEqual(t, key1, key2)
-}
-
-func TestToolSchemaCacheKeyDifferentiatesDisableTools(t *testing.T) {
-	t.Parallel()
-
-	registry := tool.NewRegistry(t.TempDir())
-
-	enabled := toolSchemaCacheKey(registry, apiOpenAIResponses, false, false)
-	disabled := toolSchemaCacheKey(registry, apiOpenAIResponses, false, true)
-
-	assert.NotEqual(t, enabled, disabled)
-	assert.Equal(t, "disabled", disabled)
+			if testCase.wantB != "" {
+				assert.Equal(t, testCase.wantB, keyB)
+			}
+		})
+	}
 }
 
 func TestToolSchemaCacheKeySameRegistryProducesSameKey(t *testing.T) {
