@@ -8,8 +8,11 @@ import (
 	"github.com/omarluq/librecode/internal/provider"
 )
 
-func estimateToolSchemaTokens(request *CompletionRequest) int {
-	if request == nil {
+// computeToolSchemaTokens marshals API-specific tool declarations to JSON
+// and estimates tokens from the resulting string. This is the uncached
+// computation; callers should use Runtime.estimateToolSchemaTokens instead.
+func computeToolSchemaTokens(request *CompletionRequest) int {
+	if request == nil || request.DisableTools {
 		return 0
 	}
 

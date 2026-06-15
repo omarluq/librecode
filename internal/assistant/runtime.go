@@ -27,15 +27,16 @@ type runtimeExtensions interface {
 
 // Runtime coordinates prompt handling and durable sessions.
 type Runtime struct {
-	cfg         *config.Config
-	sessions    *database.SessionRepository
-	extensions  runtimeExtensions
-	cache       *ResponseCache
-	events      *event.Bus
-	models      *model.Registry
-	client      Completer
-	logger      *slog.Logger
-	skillsCache *core.SkillsCache
+	cfg             *config.Config
+	sessions        *database.SessionRepository
+	extensions      runtimeExtensions
+	cache           *ResponseCache
+	events          *event.Bus
+	models          *model.Registry
+	client          Completer
+	logger          *slog.Logger
+	skillsCache     *core.SkillsCache
+	toolSchemaCache *toolSchemaCache
 }
 
 // PromptRequest contains one user prompt invocation.
@@ -144,15 +145,16 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 	}
 
 	return &Runtime{
-		cfg:         options.Config,
-		sessions:    options.Sessions,
-		extensions:  options.Extensions,
-		cache:       options.Cache,
-		events:      options.Events,
-		models:      options.Models,
-		client:      client,
-		logger:      options.Logger,
-		skillsCache: options.SkillsCache,
+		cfg:             options.Config,
+		sessions:        options.Sessions,
+		extensions:      options.Extensions,
+		cache:           options.Cache,
+		events:          options.Events,
+		models:          options.Models,
+		client:          client,
+		logger:          options.Logger,
+		skillsCache:     options.SkillsCache,
+		toolSchemaCache: newToolSchemaCache(),
 	}
 }
 

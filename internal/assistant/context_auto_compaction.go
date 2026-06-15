@@ -60,7 +60,7 @@ func (runtime *Runtime) buildCompletionRequest(
 		contextResult.Usage,
 		selectedModel,
 		runtime.cfg.Context,
-		func() int { return estimateToolSchemaTokens(request) },
+		func() int { return runtime.estimateToolSchemaTokens(request) },
 	)
 	contextResult.Usage = budget.UsageWithBudget(contextResult.Usage)
 	request.Usage = contextResult.Usage
