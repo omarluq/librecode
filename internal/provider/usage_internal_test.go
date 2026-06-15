@@ -130,12 +130,6 @@ func TestMergeUsageClonesReportedContributors(t *testing.T) {
 	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
 }
 
-func TestEstimateTokensHandlesEmptyText(t *testing.T) {
-	t.Parallel()
-
-	assert.Zero(t, estimateTokens(" \n\t "))
-}
-
 func TestIntFromAnyIgnoresInvalidJSONNumber(t *testing.T) {
 	t.Parallel()
 

@@ -2,28 +2,9 @@ package provider
 
 import (
 	"encoding/json"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/omarluq/librecode/internal/llm"
 )
-
-const charsPerEstimatedToken = 4
-
-func estimateTokens(text string) int {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
-		return 0
-	}
-
-	runes := utf8.RuneCountInString(trimmed)
-	if runes == 0 {
-		return 0
-	}
-
-	// Rough cross-provider estimate used until provider usage arrives.
-	return max(1, (runes+charsPerEstimatedToken-1)/charsPerEstimatedToken)
-}
 
 func mergeUsage(estimated, reported llm.Usage) llm.Usage {
 	usage := estimated
