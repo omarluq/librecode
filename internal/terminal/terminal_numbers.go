@@ -5,6 +5,7 @@ import "time"
 const (
 	minimumAuthCommandFields    = 2
 	maxAutocompleteMatches      = 6
+	slashAutocompleteLabelWidth = 16
 	compactStageNear            = 2
 	compactStageFar             = 3
 	clipboardTimeout            = 2 * time.Second

@@ -112,9 +112,42 @@ func TestListRowsKeepBorderStyleSeparateFromContentStyle(t *testing.T) {
 	require.Equal(t, cellcolor.Blue, buffer.Cell(15, 3).Style.GetForeground())
 }
 
-func TestAutocompleteCreatesList(t *testing.T) {
+func TestAutocompleteSelectionAndRendering(t *testing.T) {
 	t.Parallel()
 
-	autocomplete := tui.NewAutocomplete([]tui.ListItem{testListItem("", "Command", "", "")})
-	require.NotNil(t, autocomplete.List)
+	items := []tui.ListItem{
+		testListItem("auth", "/auth", "show auth status", ""),
+		testListItem("session", "/session", "show session", ""),
+		testListItem("settings", "/settings", "open settings", ""),
+	}
+	autocomplete := tui.NewAutocomplete(items)
+	items[0].Title = "mutated"
+
+	require.Equal(t, "/auth", autocomplete.Items()[0].Title)
+	autocomplete.MoveSelection(-1)
+	require.Equal(t, 2, autocomplete.SelectedIndex())
+
+	selected, ok := autocomplete.SelectedItem()
+	require.True(t, ok)
+	require.Equal(t, "settings", selected.Value)
+
+	autocomplete.SetItems(autocomplete.Items()[:1])
+	require.Equal(t, 0, autocomplete.SelectedIndex())
+
+	lines := autocomplete.Render(&tui.AutocompleteRenderOptions{
+		Styles: tui.AutocompleteStyles{
+			Header:   tcell.StyleDefault,
+			Text:     tcell.StyleDefault,
+			Selected: tcell.StyleDefault.Bold(true),
+		},
+		Header:         "  slash commands",
+		ItemPrefix:     "  ",
+		SelectedPrefix: "› ",
+		Width:          32,
+		MaxItems:       2,
+		LabelWidth:     12,
+	})
+	require.Len(t, lines, 2)
+	require.Equal(t, "  slash commands                ", lines[0].Text)
+	require.Contains(t, lines[1].Text, "› /auth")
 }
