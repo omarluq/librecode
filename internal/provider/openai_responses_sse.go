@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"errors"
 	"io"
 	"strings"
 
@@ -230,8 +231,12 @@ func scanResponsesSSE(
 	accumulator *sseAccumulator,
 	onEvent func(*llm.StreamChunk),
 ) error {
-	return scanSSEDataLines(reader, func(data string) error {
-		if data == sseDoneData || strings.TrimSpace(data) == "" {
+	err := scanSSEDataLines(reader, func(data string) error {
+		if data == sseDoneData {
+			return errSSEDone
+		}
+
+		if strings.TrimSpace(data) == "" {
 			return nil
 		}
 
@@ -244,6 +249,11 @@ func scanResponsesSSE(
 
 		return nil
 	})
+	if errors.Is(err, errSSEDone) {
+		return nil
+	}
+
+	return err
 }
 
 func providerResultFromSSEAccumulator(accumulator *sseAccumulator, fallbackText string) *providerResult {

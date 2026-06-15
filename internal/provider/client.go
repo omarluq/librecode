@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -205,7 +204,10 @@ func (transport h2OnlyTransport) RoundTrip(request *http.Request) (*http.Respons
 
 	closeBody(response.Body)
 
-	return nil, fmt.Errorf("provider endpoint negotiated %s; HTTP/2 is required", response.Proto)
+	return nil, oops.In("provider").
+		Code("provider_http2_required").
+		With("proto", response.Proto).
+		Errorf("provider endpoint negotiated non-http2 protocol; HTTP/2 is required")
 }
 
 // Generate sends a provider-neutral request without runtime callbacks.
