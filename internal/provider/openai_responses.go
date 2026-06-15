@@ -282,7 +282,6 @@ func toolCallsFromOutput(output []any) []ToolCall {
 			ID:            firstNonEmptyString(object[jsonCallIDKey], object["id"]),
 			Name:          firstNonEmptyString(object[jsonToolNameKey], object["function"]),
 			ArgumentsJSON: argumentsJSON,
-			TextFallback:  false,
 		})
 	}
 

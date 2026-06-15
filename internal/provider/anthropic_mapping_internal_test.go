@@ -151,7 +151,6 @@ func TestAnthropicAssistantToolMessageMapsProviderNames(t *testing.T) {
 		ID:            testAnthropicToolUseID,
 		Name:          jsonReadToolName,
 		ArgumentsJSON: testToolArgumentsJSON,
-		TextFallback:  false,
 	}})
 
 	blocks, ok := message[jsonContentKey].([]map[string]any)
@@ -193,7 +192,7 @@ func TestAnthropicLocalToolNameFallbacks(t *testing.T) {
 		{name: "find", input: anthropicFindToolName, want: jsonFindToolName},
 		{name: "ls", input: anthropicLSToolName, want: jsonLSToolName},
 		{name: "list alias", input: "List", want: jsonLSToolName},
-		{name: "unknown", input: "Unknown", want: ""},
+		{name: "unknown", input: "Unknown", want: "Unknown"},
 	}
 
 	for _, test := range tests {

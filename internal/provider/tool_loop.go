@@ -83,18 +83,7 @@ func toolCallsToLLM(calls []ToolCall) []llm.ToolCall {
 }
 
 func toolCallMetadata(call ToolCall) map[string]any {
-	metadata := cloneAnyMap(call.Metadata)
-	if !call.TextFallback {
-		return metadata
-	}
-
-	if metadata == nil {
-		metadata = map[string]any{}
-	}
-
-	metadata["text_fallback"] = true
-
-	return metadata
+	return cloneAnyMap(call.Metadata)
 }
 
 func toolEventsFromLLM(results []llm.ToolResult) []ToolEvent {

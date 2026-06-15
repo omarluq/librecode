@@ -2,15 +2,18 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
+
+	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/provider"
 )
 
 type promptTurnLifecycle struct {
@@ -212,7 +215,12 @@ func (runtime *Runtime) dispatchToolCallLifecycle(ctx context.Context, call *Too
 		return err
 	}
 
-	applyToolCallMutation(call, result.ToolCall)
+	if err := applyToolCallMutation(call, result.ToolCall); err != nil {
+		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
+
+		return err
+	}
+
 	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
 
 	return nil
@@ -256,13 +264,33 @@ func (runtime *Runtime) dispatchToolErrorLifecycle(ctx context.Context, event *T
 	}
 }
 
-func applyToolCallMutation(call *ToolCallEvent, mutation extension.ToolCallMutation) {
+func applyToolCallMutation(call *ToolCallEvent, mutation extension.ToolCallMutation) error {
 	if len(mutation.Arguments) == 0 {
-		return
+		return nil
+	}
+
+	argumentsJSON, err := encodeToolArguments(mutation.Arguments)
+	if err != nil {
+		return oops.In("assistant").Code("tool_call_arguments").Wrapf(err, "encode mutated tool arguments")
 	}
 
 	call.Arguments = mutation.Arguments
-	call.ArgumentsJSON = provider.EncodeToolArguments(call.Arguments)
+	call.ArgumentsJSON = argumentsJSON
+
+	return nil
+}
+
+func encodeToolArguments(arguments map[string]any) (string, error) {
+	if len(arguments) == 0 {
+		return "{}", nil
+	}
+
+	encoded, err := json.Marshal(arguments)
+	if err != nil {
+		return "", fmt.Errorf("marshal tool arguments: %w", err)
+	}
+
+	return string(encoded), nil
 }
 
 func applyToolResultMutation(event *ToolEvent, mutation extension.ToolResultMutation) {

@@ -95,7 +95,6 @@ func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
-			TextFallback:  false,
 		}},
 		[]ToolEvent{{
 			Name:          jsonReadToolName,
@@ -127,7 +126,6 @@ func TestAnthropicToolResultMessageMarksToolErrors(t *testing.T) {
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
-			TextFallback:  false,
 		}},
 		[]ToolEvent{{
 			Name:          jsonReadToolName,
@@ -157,7 +155,6 @@ func TestAnthropicToolResultMessageRejectsMismatchedCallsAndEvents(t *testing.T)
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
-			TextFallback:  false,
 		}},
 		nil,
 	)
@@ -182,7 +179,6 @@ func TestAppendAnthropicToolConversationRejectsMismatchedNativeResults(t *testin
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
-			TextFallback:  false,
 		}},
 		Usage: llm.EmptyUsage(),
 	}

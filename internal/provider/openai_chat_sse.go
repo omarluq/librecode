@@ -253,7 +253,6 @@ func (accumulator *openAIChatStreamAccumulator) completedToolCalls() []ToolCall 
 			ID:            call.ID,
 			Name:          call.Name,
 			ArgumentsJSON: argumentsJSON,
-			TextFallback:  false,
 		})
 	}
 

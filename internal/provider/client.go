@@ -123,14 +123,13 @@ type Completer interface {
 	Complete(ctx context.Context, request *CompletionRequest) (*llm.Response, error)
 }
 
-// ToolCall is a provider-returned or text-fallback local tool invocation.
+// ToolCall is a provider-returned local tool invocation.
 type ToolCall struct {
 	Arguments     map[string]any
 	Metadata      map[string]any
 	ID            string
 	Name          string
 	ArgumentsJSON string
-	TextFallback  bool
 }
 
 // ToolEvent captures one tool result for provider follow-up messages.
