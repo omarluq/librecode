@@ -1,8 +1,6 @@
 package terminal
 
 import (
-	"fmt"
-	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 	"time"
 
@@ -10,91 +8,71 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/transcript"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
-type slashSuggestion struct {
-	Name        string
-	Description string
+func slashSuggestions() []tui.ListItem {
+	return []tui.ListItem{
+		autocompleteSuggestion("auth", "show auth status"),
+		autocompleteSuggestion(changelogCommandName, "open changelog"),
+		autocompleteSuggestion("clone", "clone current session"),
+		autocompleteSuggestion("compact", "compact conversation context"),
+		autocompleteSuggestion("context", "show context token breakdown"),
+		autocompleteSuggestion("copy", "copy the last assistant message"),
+		autocompleteSuggestion("export", "export current session"),
+		autocompleteSuggestion("fork", "fork current session"),
+		autocompleteSuggestion(hotkeysCommandName, "show keybindings"),
+		autocompleteSuggestion("import", "import a session"),
+		autocompleteSuggestion(commandLogin, "authenticate a provider"),
+		autocompleteSuggestion(commandLogout, "clear provider auth"),
+		autocompleteSuggestion("model", "select provider/model"),
+		autocompleteSuggestion("name", "rename current session"),
+		autocompleteSuggestion("new", "start a new session"),
+		autocompleteSuggestion("quit", "exit librecode"),
+		autocompleteSuggestion("reload", "reload auth/model runtime state"),
+		autocompleteSuggestion("resume", "open session picker"),
+		autocompleteSuggestion("scoped-models", "select scoped model set"),
+		autocompleteSuggestion("session", "show current session details"),
+		autocompleteSuggestion("settings", "open settings"),
+		autocompleteSuggestion("share", "share current session"),
+		autocompleteSuggestion("skill", "list or load an Agent Skill"),
+		autocompleteSuggestion(toolSectionTool, "run a built-in tool with JSON arguments"),
+		autocompleteSuggestion("tree", "open session tree"),
+	}
 }
 
-func slashSuggestions() []slashSuggestion {
-	return []slashSuggestion{
-		{Name: "auth", Description: "show auth status"},
-		{Name: changelogCommandName, Description: "open changelog"},
-		{Name: "clone", Description: "clone current session"},
-		{Name: "compact", Description: "compact conversation context"},
-		{Name: "context", Description: "show context token breakdown"},
-		{Name: "copy", Description: "copy the last assistant message"},
-		{Name: "export", Description: "export current session"},
-		{Name: "fork", Description: "fork current session"},
-		{Name: hotkeysCommandName, Description: "show keybindings"},
-		{Name: "import", Description: "import a session"},
-		{Name: commandLogin, Description: "authenticate a provider"},
-		{Name: commandLogout, Description: "clear provider auth"},
-		{Name: "model", Description: "select provider/model"},
-		{Name: "name", Description: "rename current session"},
-		{Name: "new", Description: "start a new session"},
-		{Name: "quit", Description: "exit librecode"},
-		{Name: "reload", Description: "reload auth/model runtime state"},
-		{Name: "resume", Description: "open session picker"},
-		{Name: "scoped-models", Description: "select scoped model set"},
-		{Name: "session", Description: "show current session details"},
-		{Name: "settings", Description: "open settings"},
-		{Name: "share", Description: "share current session"},
-		{Name: "skill", Description: "list or load an Agent Skill"},
-		{Name: toolSectionTool, Description: "run a built-in tool with JSON arguments"},
-		{Name: "tree", Description: "open session tree"},
+func autocompleteSuggestion(value, description string) tui.ListItem {
+	return tui.ListItem{
+		Value:       value,
+		Title:       "/" + value,
+		Description: description,
+		Meta:        "",
 	}
 }
 
 func (app *App) autocompleteLines(width int) []tui.Line {
-	matches := app.autocompleteMatches()
-	if len(matches) == 0 {
+	completion := app.autocomplete()
+	if completion == nil {
 		return nil
 	}
 
-	selected := app.selectedAutocompleteIndex(matches)
-	limit := min(maxAutocompleteMatches, len(matches))
-	start := autocompleteWindowStart(selected, limit, len(matches))
-	lines := make([]tui.Line, 0, limit+1)
-	lines = append(lines, tui.NewLine(
-		app.theme.background(colorCustomMessageBg).Bold(true),
-		tui.PadRight("  slash commands  tab/enter to complete", width),
-	))
-
-	for offset := range limit {
-		index := start + offset
-		match := matches[index]
-		prefix := "  "
-		style := app.theme.background(colorCustomMessageBg)
-
-		if index == selected {
-			prefix = "› "
-			style = style.Bold(true)
-		}
-
-		text := fmt.Sprintf("%s/%-15s %s", prefix, match.Name, match.Description)
-		lines = append(lines, tui.NewLine(style, tui.PadRight(text, width)))
-	}
-
-	return lines
-}
-
-func autocompleteWindowStart(selected, limit, total int) int {
-	if total <= limit || selected < limit {
-		return 0
-	}
-
-	start := selected - limit + 1
-	if start+limit > total {
-		return max(0, total-limit)
-	}
-
-	return start
+	return completion.Render(&tui.AutocompleteRenderOptions{
+		Styles: tui.AutocompleteStyles{
+			Header:   app.theme.background(colorCustomMessageBg).Bold(true),
+			Text:     app.theme.background(colorCustomMessageBg),
+			Selected: app.theme.background(colorCustomMessageBg).Bold(true),
+		},
+		Header:         "  slash commands  tab/enter to complete",
+		ItemPrefix:     "  ",
+		SelectedPrefix: "› ",
+		Width:          width,
+		MaxItems:       maxAutocompleteMatches,
+		LabelWidth:     slashAutocompleteLabelWidth,
+	})
 }
 
 func (app *App) autocompleteActive() bool {
-	return len(app.autocompleteMatches()) > 0
+	return app.autocomplete() != nil
 }
 
 func (app *App) handleAutocompleteKey(event *tcell.EventKey) bool {
@@ -120,29 +98,34 @@ func (app *App) handleAutocompleteKey(event *tcell.EventKey) bool {
 }
 
 func (app *App) acceptAutocomplete() bool {
-	matches := app.autocompleteMatches()
-	if len(matches) == 0 {
+	completion := app.autocomplete()
+	if completion == nil {
 		return false
 	}
 
-	selected := app.selectedAutocompleteIndex(matches)
+	item, ok := completion.SelectedItem()
+	if !ok {
+		return false
+	}
+
 	app.resetPromptHistoryNavigation()
-	app.composerBuffer.SetText("/" + matches[selected].Name + " ")
-	app.setStatus("completed /" + matches[selected].Name)
+	app.composerBuffer.SetText("/" + item.Value + " ")
+	app.setStatus("completed /" + item.Value)
 	app.resetAutocompleteSelection()
 
 	return true
 }
 
 func (app *App) moveAutocompleteSelection(delta int) bool {
-	matches := app.autocompleteMatches()
-	if len(matches) == 0 {
+	completion := app.autocomplete()
+	if completion == nil {
 		app.resetAutocompleteSelection()
 
 		return false
 	}
 
-	app.autocompleteSelection = (app.selectedAutocompleteIndex(matches) + delta + len(matches)) % len(matches)
+	completion.MoveSelection(delta)
+	app.autocompleteSelection = completion.SelectedIndex()
 
 	return true
 }
@@ -157,51 +140,60 @@ func (app *App) closeAutocomplete() {
 	app.autocompleteClosed = true
 }
 
-func (app *App) selectedAutocompleteIndex(matches []slashSuggestion) int {
-	if len(matches) == 0 || app.autocompleteSelection < 0 || app.autocompleteSelection >= len(matches) {
-		return 0
+func (app *App) autocomplete() *tui.Autocomplete {
+	items := app.autocompleteItems()
+	if len(items) == 0 {
+		return nil
 	}
 
-	return app.autocompleteSelection
+	completion := tui.NewAutocomplete(items)
+	completion.SetSelectedIndex(app.autocompleteSelection)
+	app.autocompleteSelection = completion.SelectedIndex()
+
+	return completion
 }
 
-func (app *App) autocompleteMatches() []slashSuggestion {
+func (app *App) autocompleteItems() []tui.ListItem {
+	query, ok := app.autocompleteQuery()
+	if !ok {
+		return nil
+	}
+
+	items := []tui.ListItem{}
+
+	for _, suggestion := range app.allSlashSuggestions() {
+		if strings.HasPrefix(suggestion.Value, query) {
+			items = append(items, suggestion)
+		}
+	}
+
+	return items
+}
+
+func (app *App) autocompleteQuery() (string, bool) {
 	text := app.composerBuffer.TextValue()
 	if app.autocompleteClosed {
-		return nil
+		return "", false
 	}
 
 	if strings.Contains(text, "\n") {
 		app.resetAutocompleteSelection()
 
-		return nil
+		return "", false
 	}
 
 	trimmed := strings.TrimLeft(text, " \t")
 	if !strings.HasPrefix(trimmed, "/") || strings.Contains(trimmed, " ") {
 		app.resetAutocompleteSelection()
 
-		return nil
+		return "", false
 	}
 
-	query := strings.TrimPrefix(trimmed, "/")
-	matches := []slashSuggestion{}
-
-	for _, suggestion := range app.allSlashSuggestions() {
-		if strings.HasPrefix(suggestion.Name, query) {
-			matches = append(matches, suggestion)
-		}
-	}
-
-	if app.autocompleteSelection >= len(matches) {
-		app.resetAutocompleteSelection()
-	}
-
-	return matches
+	return strings.TrimPrefix(trimmed, "/"), true
 }
 
-func (app *App) allSlashSuggestions() []slashSuggestion {
-	suggestions := append([]slashSuggestion{}, slashSuggestions()...)
+func (app *App) allSlashSuggestions() []tui.ListItem {
+	suggestions := append([]tui.ListItem{}, slashSuggestions()...)
 
 	for index := range app.resources.Skills {
 		skill := &app.resources.Skills[index]
@@ -209,9 +201,12 @@ func (app *App) allSlashSuggestions() []slashSuggestion {
 			continue
 		}
 
-		suggestions = append(suggestions, slashSuggestion{
-			Name:        "skill:" + skill.Name,
+		name := "skill:" + skill.Name
+		suggestions = append(suggestions, tui.ListItem{
+			Value:       name,
+			Title:       "/" + name,
 			Description: skill.Description,
+			Meta:        "",
 		})
 	}
 

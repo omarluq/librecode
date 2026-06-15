@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/omarluq/librecode/internal/core"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func TestSlashSuggestionsIncludesSkill(t *testing.T) {
@@ -14,7 +15,7 @@ func TestSlashSuggestionsIncludesSkill(t *testing.T) {
 
 	names := make([]string, 0, len(slashSuggestions()))
 	for _, suggestion := range slashSuggestions() {
-		names = append(names, suggestion.Name)
+		names = append(names, suggestion.Value)
 	}
 
 	assert.Contains(t, names, "skill")
@@ -30,10 +31,24 @@ func TestAutocompleteMatchesIncludesUserInvocableSkills(t *testing.T) {
 	}
 	app.composerBuffer.SetText("/skill:f")
 
-	matches := app.autocompleteMatches()
+	matches := app.autocompleteItems()
 
 	requireSuggestion(t, matches, "skill:fix-bug")
 	assert.NotContains(t, suggestionNames(matches), "skill:hidden")
+}
+
+func TestAutocompleteRendersWithReusableComponent(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.composerBuffer.SetText("/s")
+
+	lines := app.autocompleteLines(48)
+
+	assert.NotEmpty(t, lines)
+	assert.Contains(t, lines[0].Text, "slash commands")
+	assert.Contains(t, lines[1].Text, "› /scoped-models")
+	assert.Contains(t, lines[1].Text, "select scoped model set")
 }
 
 func TestAutocompleteArrowSelectionAcceptsSelectedSuggestion(t *testing.T) {
@@ -118,16 +133,16 @@ func testAutocompleteSkill(name, description string, userInvocable bool) core.Sk
 	}
 }
 
-func requireSuggestion(t *testing.T, suggestions []slashSuggestion, name string) {
+func requireSuggestion(t *testing.T, suggestions []tui.ListItem, name string) {
 	t.Helper()
 
 	assert.Contains(t, suggestionNames(suggestions), name)
 }
 
-func suggestionNames(suggestions []slashSuggestion) []string {
+func suggestionNames(suggestions []tui.ListItem) []string {
 	names := make([]string, 0, len(suggestions))
 	for _, suggestion := range suggestions {
-		names = append(names, suggestion.Name)
+		names = append(names, suggestion.Value)
 	}
 
 	return names

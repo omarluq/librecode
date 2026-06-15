@@ -15,7 +15,7 @@ func (app *App) drawAutocompleteWindow(layout *extui.Layout) {
 
 	lines := app.autocompleteLines(window.Width)
 	for index, line := range lines {
-		writeLine(app.frame, window.Y+index, window.Width, line.Text, line.Style)
+		writeStyled(app.frame, window.Y+index, window.Width, line)
 	}
 }
 
@@ -71,7 +71,7 @@ func (app *App) drawStatusWindow(layout *extui.Layout) {
 func (app *App) drawEditorAndFooter(width, height, _ int) {
 	layout := app.composerLayout(width, height)
 	for index, line := range layout.autocompleteLines {
-		writeLine(app.frame, layout.startRow+index, width, line.Text, line.Style)
+		writeStyled(app.frame, layout.startRow+index, width, line)
 	}
 
 	borderStyle := app.theme.style(app.editorBorderColor())
