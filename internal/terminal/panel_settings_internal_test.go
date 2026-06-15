@@ -58,7 +58,7 @@ func TestApplySettingSelectionRefreshesPanel(t *testing.T) {
 		t.Fatal("render test app should not persist theme settings without a session")
 	}
 
-	if app.panel == nil || app.panel.Kind() != panelSettings {
+	if app.panel == nil || app.panel.Kind != panelSettings {
 		t.Fatal("settings panel should be rebuilt after selection")
 	}
 
@@ -68,7 +68,7 @@ func TestApplySettingSelectionRefreshesPanel(t *testing.T) {
 		t.Fatal("toolsExpanded should toggle on selection")
 	}
 
-	if app.panel == nil || app.panel.Kind() != panelSettings {
+	if app.panel == nil || app.panel.Kind != panelSettings {
 		t.Fatal("settings panel should remain open after tools toggle")
 	}
 }

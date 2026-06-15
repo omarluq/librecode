@@ -49,7 +49,7 @@ func TestTreePanelFlow(t *testing.T) {
 		t.Fatalf("selectedPanelKind = %q, want %q", got, want)
 	}
 
-	if app.panel == nil || app.panel.Kind() != panelTree {
+	if app.panel == nil || app.panel.Kind != panelTree {
 		t.Fatal("tree panel should be open")
 	}
 

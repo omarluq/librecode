@@ -117,7 +117,7 @@ func TestModelAccessorsAndWindowStart(t *testing.T) {
 		true,
 	)
 
-	assert.Equal(t, panel.Kind("kind"), model.Kind())
+	assert.Equal(t, panel.Kind("kind"), model.Kind)
 	assert.Len(t, model.Items(), 4)
 	model.SetSelectedIndex(3)
 	selected, ok := model.SelectedItem()

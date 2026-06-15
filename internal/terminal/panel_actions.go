@@ -15,7 +15,7 @@ func (app *App) closePanel() {
 
 func (app *App) openPanel(panelModel *panel.Model) {
 	app.mode = modePanel
-	app.selectedPanelKind = panelModel.Kind()
+	app.selectedPanelKind = panelModel.Kind
 	app.panel = panelModel
 }
 
