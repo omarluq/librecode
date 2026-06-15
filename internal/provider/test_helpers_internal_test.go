@@ -19,6 +19,8 @@ const (
 	testThinkingDelta       = "thinking"
 	testOpenAIProvider      = "openai"
 	testProviderMessageType = jsonMessageType
+	testProviderPartialText = "partial"
+	testProviderDeclined    = "declined"
 	testToolArgumentsJSON   = `{"path":"README.md"}`
 )
 
@@ -211,7 +213,7 @@ func setTestThinkingMap(request *CompletionRequest, level, value string) {
 func jsonString(value any) string {
 	bytes, err := json.Marshal(value)
 	if err != nil {
-		return ""
+		panic("jsonString: failed to marshal test value: " + err.Error())
 	}
 
 	return string(bytes)

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"maps"
 	"strings"
 
@@ -131,6 +132,7 @@ func anthropicPayload(request *CompletionRequest, messages []map[string]any) map
 		jsonModelKey:          request.Request.Model.ID,
 		finishReasonMaxTokens: minPositive(request.Request.Model.MaxTokens, anthropicDefaultMaxTokens),
 		jsonMessagesKey:       messages,
+		jsonStreamKey:         true,
 		"tools":               AnthropicTools(request),
 	}
 	if usesAnthropicOAuth(request) {
@@ -203,7 +205,7 @@ func anthropicThinkingConfig(request *CompletionRequest) map[string]any {
 			return map[string]any{}
 		}
 
-		return map[string]any{jsonThinkingKey: map[string]any{jsonTypeKey: "disabled"}}
+		return map[string]any{jsonThinkingKey: map[string]any{jsonTypeKey: thinkingDisabled}}
 	}
 
 	if anthropicmodel.SupportsAdaptiveThinking(request.Request.Model.ID) {
@@ -226,7 +228,7 @@ func anthropicAdaptiveThinkingConfig(request *CompletionRequest) map[string]any 
 
 func anthropicBudgetThinking(level string) map[string]any {
 	return map[string]any{
-		jsonTypeKey:     "enabled",
+		jsonTypeKey:     thinkingEnabled,
 		"budget_tokens": anthropicThinkingBudget(level),
 		jsonDisplayKey:  thinkingDisplaySummary,
 	}
@@ -311,86 +313,21 @@ func (client *HTTPCompletionClient) requestAnthropic(
 		return nil, err
 	}
 
-	content, err := client.postJSON(ctx, endpoint, providerRequest.Headers, providerRequest.Payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return parseAnthropicResult(content)
-}
-
-func parseAnthropicResult(content []byte) (*providerResult, error) {
-	var response struct {
-		Error       providerError         `json:"error"`
-		Usage       map[string]any        `json:"usage"`
-		StopDetails *anthropicStopDetails `json:"stop_details"`
-		StopReason  string                `json:"stop_reason"`
-		Content     []struct {
-			Type  string `json:"type"`
-			Text  string `json:"text"`
-			Input any    `json:"input"`
-			ID    string `json:"id"`
-			Name  string `json:"name"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(content, &response); err != nil {
-		return nil, oops.In("provider").Code("anthropic_decode").Wrapf(err, "decode anthropic response")
-	}
-
-	if response.Error.Message != "" {
-		return nil, providerErrorToOops("anthropic_error", &response.Error)
-	}
-
-	parts, calls := anthropicContentParts(response.Content)
-	finishReason := anthropicFinishReason(response.StopReason, len(calls) > 0)
-
-	text := strings.TrimSpace(strings.Join(parts, "\n"))
-	if finishReason == llm.FinishReasonRefusal {
-		if text == "" {
-			text = anthropicRefusalText(response.StopDetails)
-		}
-
-		calls = nil
-	}
-
-	return &providerResult{
-		FinishReason: finishReason,
-		Text:         text,
-		OutputItems:  nil,
-		Thinking:     nil,
-		ToolCalls:    calls,
-		Usage:        usageFromObject(response.Usage),
-	}, nil
+	return client.requestProviderStream(
+		ctx,
+		endpoint,
+		providerRequest.Headers,
+		providerRequest.Payload,
+		func(reader io.Reader) (*providerResult, error) {
+			return parseAnthropicStream(reader, request.OnEvent)
+		},
+	)
 }
 
 type anthropicStopDetails struct {
 	Type        string `json:"type"`
 	Category    string `json:"category"`
 	Explanation string `json:"explanation"`
-}
-
-func anthropicContentParts(content []struct {
-	Type  string `json:"type"`
-	Text  string `json:"text"`
-	Input any    `json:"input"`
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-}) ([]string, []ToolCall) {
-	parts := make([]string, 0, len(content))
-
-	calls := make([]ToolCall, 0, len(content))
-	for _, block := range content {
-		switch block.Type {
-		case jsonTextKey:
-			if block.Text != "" {
-				parts = append(parts, block.Text)
-			}
-		case anthropicToolUseType:
-			calls = append(calls, anthropicToolCall(block.ID, block.Name, block.Input))
-		}
-	}
-
-	return parts, calls
 }
 
 func anthropicRefusalText(details *anthropicStopDetails) string {
@@ -424,7 +361,7 @@ func anthropicFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
 		return llm.FinishReasonLength
 	case "tool_use":
 		return llm.FinishReasonToolCalls
-	case "refusal":
+	case anthropicRefusalReason:
 		return llm.FinishReasonRefusal
 	default:
 		if hasToolCalls {

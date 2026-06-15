@@ -14,13 +14,13 @@ type providerError struct {
 	Code    string `json:"code"`
 }
 
-func providerStatusError(code string, status int, content []byte) error {
+func providerStatusError(status int, content []byte) error {
 	message := errorMessageFromBytes(content)
 	if message == "" {
 		message = fmt.Sprintf("provider returned HTTP %d", status)
 	}
 
-	return oops.In("provider").Code(code).With("status", status).Errorf("%s", message)
+	return oops.In("provider").Code("provider_status").With("status", status).Errorf("%s", message)
 }
 
 func providerErrorToOops(code string, providerError *providerError) error {

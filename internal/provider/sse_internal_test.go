@@ -1,9 +1,6 @@
 package provider
 
 import (
-	"bufio"
-	"errors"
-	"io"
 	"strings"
 	"testing"
 
@@ -87,15 +84,6 @@ func TestParseSSEResultUsesFallbackDeltasWhenFinalResponseHasNoText(t *testing.T
 	assert.Equal(t, "hello", result.Text)
 }
 
-func TestScanSSEResponseReportsScannerErrors(t *testing.T) {
-	t.Parallel()
-
-	_, err := scanSSEResponse(bufio.NewScanner(errorReader{}), nil)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "read provider stream")
-}
-
 func TestDeltaTextFromSSEEventAcceptsTextField(t *testing.T) {
 	t.Parallel()
 
@@ -104,23 +92,3 @@ func TestDeltaTextFromSSEEventAcceptsTextField(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "delta text", text)
 }
-
-func TestSSELineAndDecodeIgnoreInvalidInput(t *testing.T) {
-	t.Parallel()
-
-	event, found := eventFromSSELine("event: ping")
-	assert.False(t, found)
-	assert.Nil(t, event)
-	event, found = eventFromSSELine("data: [DONE]")
-	assert.False(t, found)
-	assert.Nil(t, event)
-	event, found = decodeEvent([]byte(`{"type":`))
-	assert.False(t, found)
-	assert.Nil(t, event)
-}
-
-type errorReader struct{}
-
-func (errorReader) Read([]byte) (int, error) { return 0, errors.New("boom") }
-
-var _ io.Reader = errorReader{}

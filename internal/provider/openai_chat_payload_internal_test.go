@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,6 +21,8 @@ func TestOpenAIChatPayloadAndRoles(t *testing.T) {
 	assert.Equal(t, "gpt-test", payload[jsonModelKey])
 	assert.Equal(t, thinkingHigh, payload["reasoning_effort"])
 	assert.Equal(t, "auto", payload[jsonToolChoiceKey])
+	assert.Equal(t, true, payload[jsonStreamKey])
+	assert.Equal(t, map[string]any{"include_usage": true}, payload["stream_options"])
 	assert.NotEmpty(t, payload["tools"])
 }
 
@@ -57,45 +58,36 @@ func TestOpenAIChatMessagesAndRoles(t *testing.T) {
 	assert.Empty(t, mapped)
 }
 
-func TestParseOpenAIChatResultHandlesErrorsAndToolFiltering(t *testing.T) {
+func TestOpenAIChatPayloadAddsZAIStreamingOptions(t *testing.T) {
 	t.Parallel()
 
-	_, err := parseOpenAIChatResult([]byte(`{"error":{"message":"bad chat"}}`))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "bad chat")
+	request := testCompletionRequestAuth("zai", "sk-test")
+	setTestRequestModelID(request, "glm-5.2")
+	setTestRequestReasoning(request, true)
+	setTestRequestThinkingLevel(request, thinkingXHigh)
+	setTestThinkingMap(request, thinkingXHigh, "max")
 
-	body := strings.ReplaceAll(`{
-		"choices":[{"message":{"content":" answer ","tool_calls":[
-			{"id":"call_skip","type":"not_function","function":{"name":"read","arguments":"{}"}},
-			{"id":"$CALL_ID","type":"function","function":{"name":"read","arguments":"{\"path\":\"$PATH\"}"}}
-		]}}],
-		"usage":{"prompt_tokens":8,"completion_tokens":2}
-	}`, "$CALL_ID", testCallID)
-	body = strings.ReplaceAll(body, "$PATH", testToolPath)
-	result, err := parseOpenAIChatResult([]byte(body))
+	payload := openAIChatPayload(request, nil)
 
-	require.NoError(t, err)
-	assert.Equal(t, "answer", result.Text)
-	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
-	require.Len(t, result.ToolCalls, 1)
-	assert.Equal(t, testCallID, result.ToolCalls[0].ID)
-	assert.Equal(t, testToolPath, result.ToolCalls[0].Arguments[jsonPathKey])
-	assert.Equal(t, llm.Usage{
-		Breakdown: nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
-		InputTokens: 8, OutputTokens: 2,
-	}, result.Usage)
+	assert.Equal(t, true, payload[jsonStreamKey])
+	assert.Equal(t, "max", payload["reasoning_effort"])
+	assert.Equal(t, map[string]any{jsonTypeKey: thinkingEnabled}, payload[jsonThinkingKey])
+	assert.Equal(t, true, payload["tool_stream"])
 }
 
-func TestParseOpenAIChatResultMapsFinishReasonLength(t *testing.T) {
+func TestOpenAIChatPayloadDisablesZAIThinkingAndOmitsToolStreamWithoutTools(t *testing.T) {
 	t.Parallel()
 
-	result, err := parseOpenAIChatResult([]byte(
-		`{"choices":[{"finish_reason":"length","message":{"content":"partial"}}]}`,
-	))
+	request := testCompletionRequestAuth("zai", "sk-test")
+	setTestRequestReasoning(request, true)
+	setTestRequestThinkingLevel(request, thinkingOff)
+	request.Request.DisableTools = true
 
-	require.NoError(t, err)
-	assert.Equal(t, "partial", result.Text)
-	assert.Equal(t, llm.FinishReasonLength, result.FinishReason)
+	payload := openAIChatPayload(request, nil)
+
+	assert.Equal(t, map[string]any{jsonTypeKey: thinkingDisabled}, payload[jsonThinkingKey])
+	assert.NotContains(t, payload, "tool_stream")
+	assert.NotContains(t, payload, "reasoning_effort")
 }
 
 func TestOpenAIChatAssistantToolMessage(t *testing.T) {
@@ -119,7 +111,7 @@ func TestOpenAIChatAssistantToolMessage(t *testing.T) {
 
 	assert.JSONEq(t, jsonString(jsonAssistantRole), jsonString(message[jsonRoleKey]))
 	assert.Equal(t, "using tool", message[jsonContentKey])
-	calls, ok := message["tool_calls"].([]map[string]any)
+	calls, ok := message[jsonToolCallsKey].([]map[string]any)
 	require.True(t, ok)
 	require.Len(t, calls, 1)
 	assert.Equal(t, testCallID, calls[0]["id"])

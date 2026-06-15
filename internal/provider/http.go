@@ -22,12 +22,37 @@ const (
 	jwtSegmentCount                  = 3
 )
 
-func (client *HTTPCompletionClient) postJSON(
+func (client *HTTPCompletionClient) requestProviderStream(
 	ctx context.Context,
 	endpoint string,
 	headers map[string]string,
 	payload map[string]any,
-) ([]byte, error) {
+	parse func(io.Reader) (*providerResult, error),
+) (*providerResult, error) {
+	response, err := client.doProviderRequest(ctx, endpoint, headers, payload)
+	if err != nil {
+		return nil, err
+	}
+	defer closeBody(response.Body)
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		content, readErr := readProviderBody(response.Body)
+		if readErr != nil {
+			return nil, oops.In("provider").Code("provider_error_read").Wrapf(readErr, "read provider error")
+		}
+
+		return nil, providerStatusError(response.StatusCode, content)
+	}
+
+	return parse(response.Body)
+}
+
+func (client *HTTPCompletionClient) doProviderRequest(
+	ctx context.Context,
+	endpoint string,
+	headers map[string]string,
+	payload map[string]any,
+) (*http.Response, error) {
 	request, err := jsonRequest(ctx, endpoint, headers, payload)
 	if err != nil {
 		return nil, err
@@ -37,18 +62,8 @@ func (client *HTTPCompletionClient) postJSON(
 	if err != nil {
 		return nil, oops.In("provider").Code("provider_http").Wrapf(err, "request provider response")
 	}
-	defer closeBody(response.Body)
 
-	content, err := readProviderBody(response.Body)
-	if err != nil {
-		return nil, oops.In("provider").Code("provider_read").Wrapf(err, "read provider response")
-	}
-
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, providerStatusError("provider_status", response.StatusCode, content)
-	}
-
-	return content, nil
+	return response, nil
 }
 
 func readProviderBody(reader io.Reader) ([]byte, error) {
@@ -80,6 +95,7 @@ func jsonRequest(
 	}
 
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "text/event-stream")
 
 	for key, value := range headers {
 		request.Header.Set(key, value)

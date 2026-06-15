@@ -29,7 +29,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHook(t *testing.T) {
 		t,
 		captures,
 		"X-Test-Header",
-		`{"choices":[{"message":{"content":"ok"}}]}`,
+		openAIChatTextStream("ok"),
 	)
 	t.Cleanup(server.Close)
 	completionRequest := providerPayloadHookRequest(server.URL)
@@ -45,7 +45,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHook(t *testing.T) {
 		return llm.HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
-	result, err := NewHTTPCompletionClient().Complete(context.Background(), completionRequest)
+	result, err := (&HTTPCompletionClient{client: server.Client()}).Complete(context.Background(), completionRequest)
 
 	require.NoError(t, err)
 
@@ -60,7 +60,12 @@ func TestHTTPCompletionClientAppliesProviderRequestHookToOpenAIResponses(t *test
 	t.Parallel()
 
 	captures := make(chan providerHookCapture, 1)
-	server := newProviderHookCaptureServer(t, captures, "X-Responses-Hook", `{"output_text":"ok"}`)
+	server := newProviderHookCaptureServer(
+		t,
+		captures,
+		"X-Responses-Hook",
+		openAIResponseCompletedStream(`{"output_text":"ok"}`),
+	)
 	t.Cleanup(server.Close)
 	completionRequest := providerPayloadHookRequest(server.URL)
 	setTestRequestAPI(completionRequest, apiOpenAIResponses)
@@ -76,7 +81,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHookToOpenAIResponses(t *test
 		return llm.HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
-	result, err := NewHTTPCompletionClient().Complete(context.Background(), completionRequest)
+	result, err := (&HTTPCompletionClient{client: server.Client()}).Complete(context.Background(), completionRequest)
 
 	require.NoError(t, err)
 
@@ -156,6 +161,8 @@ func newProviderHookCaptureServer(
 
 			return
 		}
+
+		writer.Header().Set("Content-Type", "text/event-stream")
 
 		if _, err := writer.Write([]byte(response)); err != nil {
 			capture.Err = err

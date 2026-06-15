@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -48,7 +50,9 @@ const (
 	jsonToolRole            = "tool"
 	jsonSystemRole          = "system"
 	jsonMessagesKey         = "messages"
+	jsonMessageKey          = "message"
 	jsonMessageType         = "message"
+	jsonUsageKey            = "usage"
 	jsonCommandKey          = "command"
 	jsonReadToolName        = "read"
 	jsonBashToolName        = "bash"
@@ -87,6 +91,22 @@ const (
 	finishReasonMaxTokens   = "max_tokens"
 	sseItemIDKey            = "item_id"
 	sseOutputItemIDKey      = "output_item_id"
+	jsonStreamKey           = "stream"
+	sseDoneData             = "[DONE]"
+	thinkingEnabled         = "enabled"
+	thinkingDisabled        = "disabled"
+	anthropicErrorEvent     = "error"
+	anthropicDeltaKey       = "delta"
+	jsonChoicesKey          = "choices"
+	jsonFinishReasonKey     = "finish_reason"
+	jsonToolCallsKey        = "tool_calls"
+	jsonIndexKey            = "index"
+	jsonInputTokensKey      = "input_tokens"
+	openAIStopReason        = "stop"
+	openAIToolCallsReason   = jsonToolCallsKey
+	anthropicStopReasonKey  = "stop_reason"
+	anthropicRefusalReason  = "refusal"
+	http2ProtoMajor         = 2
 )
 
 // CompletionRequest describes one provider-neutral generation request plus runtime callbacks.
@@ -141,28 +161,51 @@ type HTTPCompletionClient struct {
 const providerHTTPTimeout = 10 * time.Minute
 
 const (
-	providerMaxIdleConns          = 100
-	providerMaxIdleConnsPerHost   = 10
-	providerIdleConnTimeout       = 90 * time.Second
-	providerTLSHandshakeTimeout   = 10 * time.Second
-	providerResponseHeaderTimeout = 120 * time.Second
+	providerMaxIdleConns        = 100
+	providerMaxIdleConnsPerHost = 10
+	providerIdleConnTimeout     = 90 * time.Second
+	providerTLSHandshakeTimeout = 10 * time.Second
 )
 
 // NewHTTPCompletionClient creates an HTTP-backed completion client.
 func NewHTTPCompletionClient() *HTTPCompletionClient {
-	return &HTTPCompletionClient{client: &http.Client{
-		Timeout: providerHTTPTimeout,
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyFromEnvironment,
-			MaxIdleConns:          providerMaxIdleConns,
-			MaxIdleConnsPerHost:   providerMaxIdleConnsPerHost,
-			IdleConnTimeout:       providerIdleConnTimeout,
-			TLSHandshakeTimeout:   providerTLSHandshakeTimeout,
-			ExpectContinueTimeout: 1 * time.Second,
-			ResponseHeaderTimeout: providerResponseHeaderTimeout,
-			ForceAttemptHTTP2:     true,
+	transport := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		MaxIdleConns:          providerMaxIdleConns,
+		MaxIdleConnsPerHost:   providerMaxIdleConnsPerHost,
+		IdleConnTimeout:       providerIdleConnTimeout,
+		TLSHandshakeTimeout:   providerTLSHandshakeTimeout,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     true,
+		TLSClientConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			NextProtos: []string{"h2"},
 		},
+	}
+
+	return &HTTPCompletionClient{client: &http.Client{
+		Timeout:   providerHTTPTimeout,
+		Transport: h2OnlyTransport{base: transport},
 	}}
+}
+
+type h2OnlyTransport struct {
+	base http.RoundTripper
+}
+
+func (transport h2OnlyTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := transport.base.RoundTrip(request)
+	if err != nil {
+		return nil, oops.In("provider").Code("provider_http2_roundtrip").Wrapf(err, "request provider response")
+	}
+
+	if response.ProtoMajor == http2ProtoMajor {
+		return response, nil
+	}
+
+	closeBody(response.Body)
+
+	return nil, fmt.Errorf("provider endpoint negotiated %s; HTTP/2 is required", response.Proto)
 }
 
 // Generate sends a provider-neutral request without runtime callbacks.
