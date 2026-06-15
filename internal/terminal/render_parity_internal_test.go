@@ -203,7 +203,8 @@ func TestRenderParityResumedHistoryViewport(t *testing.T) {
 		t.Fatalf("expected latest assistant history, got %#v", lineTexts(bottom))
 	}
 
-	app.warmMessageLineCache()
+	warmMessageLineCache(app)
+
 	app.scrollTranscript(100)
 
 	scrolled := app.messageLines(60, 8)

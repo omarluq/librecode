@@ -721,7 +721,8 @@ func TestScrolledMessageLinesCanReachFullHistory(t *testing.T) {
 		t.Fatalf("expected latest history at bottom, got %v", lineTexts(bottom))
 	}
 
-	app.warmMessageLineCache()
+	warmMessageLineCache(app)
+
 	app.scrollTranscript(100)
 
 	older := app.messageLines(80, 6)
@@ -730,7 +731,7 @@ func TestScrolledMessageLinesCanReachFullHistory(t *testing.T) {
 	}
 }
 
-func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T) {
+func TestWarmMessageLineCacheStepPrebuildsFullHistoryAfterInitialRender(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
@@ -743,7 +744,7 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 		t.Fatal("tail render should not eagerly warm full history")
 	}
 
-	app.warmMessageLineCache()
+	warmMessageLineCache(app)
 
 	if !app.transcript.LineCache.warm {
 		t.Fatal("expected history cache to be warm")
@@ -758,7 +759,7 @@ func TestWarmMessageLineCachePrebuildsFullHistoryAfterInitialRender(t *testing.T
 	}
 }
 
-func TestWarmMessageLineCacheStopsWhenNoProgressIsPossible(t *testing.T) {
+func TestWarmMessageLineCacheStepStopsWhenNoProgressIsPossible(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -788,7 +789,9 @@ func TestWarmMessageLineCacheStopsWhenNoProgressIsPossible(t *testing.T) {
 			app.addMessage(transcript.RoleAssistant, "history message")
 			testCase.setup(app)
 
-			app.warmMessageLineCache()
+			if app.transcript.LineCache.warmStep(app) {
+				t.Fatal("cache warm step should not report progress when blocked")
+			}
 
 			if app.transcript.LineCache.warm {
 				t.Fatal("cache should not warm when progress is blocked")
@@ -806,7 +809,7 @@ func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
 	}
 
 	_ = app.messageLines(80, 6)
-	app.warmMessageLineCacheStep()
+	app.transcript.LineCache.warmStep(app)
 
 	if app.transcript.LineCache.warm {
 		t.Fatal("single warm step should not eagerly warm full history")
@@ -816,7 +819,7 @@ func TestWarmMessageLineCacheStepPrebuildsIncrementally(t *testing.T) {
 		t.Fatalf("warm index = %d, want %d", app.transcript.LineCache.warmIndex, messageCacheWarmBatchSize)
 	}
 
-	app.warmMessageLineCacheStep()
+	app.transcript.LineCache.warmStep(app)
 
 	if !app.transcript.LineCache.warm {
 		t.Fatal("expected second warm step to finish cache")
@@ -857,7 +860,8 @@ func TestScrolledMessageLinesRevalidatesWarmCacheAfterResize(t *testing.T) {
 	}
 
 	_ = app.messageLines(80, 6)
-	app.warmMessageLineCache()
+	warmMessageLineCache(app)
+
 	require.True(t, app.transcript.LineCache.warm)
 	require.Equal(t, 80, app.transcript.LineCache.state.Width)
 
@@ -1446,4 +1450,12 @@ func lineTexts(lines []tui.Line) []string {
 	}
 
 	return texts
+}
+
+func warmMessageLineCache(app *App) {
+	for {
+		if !app.transcript.LineCache.warmStep(app) {
+			return
+		}
+	}
 }

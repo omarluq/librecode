@@ -373,7 +373,7 @@ func (app *App) runLoopStep(
 		return false, true
 	case <-app.messageCacheWarmTick(messageWarmTimer):
 		app.transcript.LineCache.queued = false
-		app.warmMessageLineCacheStep()
+		app.transcript.LineCache.warmStep(app)
 
 		return false, true
 	}
