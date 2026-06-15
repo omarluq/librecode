@@ -87,7 +87,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		usage,
 		&selectedModel,
 		runtime.cfg.Context,
-		func() int { return estimateToolSchemaTokens(request) },
+		func() int { return runtime.estimateToolSchemaTokens(request) },
 	)
 
 	return budget.UsageWithBudget(usage), nil

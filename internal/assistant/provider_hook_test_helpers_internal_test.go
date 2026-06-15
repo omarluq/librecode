@@ -45,15 +45,16 @@ func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
 	}
 
 	return &Runtime{
-		cfg:         deps.Config,
-		sessions:    deps.Sessions,
-		extensions:  deps.Extensions,
-		cache:       deps.Cache,
-		events:      deps.Events,
-		models:      deps.Models,
-		client:      client,
-		logger:      deps.Logger,
-		skillsCache: nil,
+		cfg:             deps.Config,
+		sessions:        deps.Sessions,
+		extensions:      deps.Extensions,
+		cache:           deps.Cache,
+		events:          deps.Events,
+		models:          deps.Models,
+		client:          client,
+		logger:          deps.Logger,
+		skillsCache:     nil,
+		toolSchemaCache: newToolSchemaCache(),
 	}
 }
 
