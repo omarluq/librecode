@@ -140,9 +140,29 @@ type HTTPCompletionClient struct {
 
 const providerHTTPTimeout = 10 * time.Minute
 
+const (
+	providerMaxIdleConns          = 100
+	providerMaxIdleConnsPerHost   = 10
+	providerIdleConnTimeout       = 90 * time.Second
+	providerTLSHandshakeTimeout   = 10 * time.Second
+	providerResponseHeaderTimeout = 120 * time.Second
+)
+
 // NewHTTPCompletionClient creates an HTTP-backed completion client.
 func NewHTTPCompletionClient() *HTTPCompletionClient {
-	return &HTTPCompletionClient{client: &http.Client{Timeout: providerHTTPTimeout}}
+	return &HTTPCompletionClient{client: &http.Client{
+		Timeout: providerHTTPTimeout,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			MaxIdleConns:          providerMaxIdleConns,
+			MaxIdleConnsPerHost:   providerMaxIdleConnsPerHost,
+			IdleConnTimeout:       providerIdleConnTimeout,
+			TLSHandshakeTimeout:   providerTLSHandshakeTimeout,
+			ExpectContinueTimeout: 1 * time.Second,
+			ResponseHeaderTimeout: providerResponseHeaderTimeout,
+			ForceAttemptHTTP2:     true,
+		},
+	}}
 }
 
 // Generate sends a provider-neutral request without runtime callbacks.
