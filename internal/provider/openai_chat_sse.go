@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"errors"
 	"io"
 	"sort"
 	"strings"
@@ -78,7 +79,7 @@ func parseOpenAIChatStream(reader io.Reader, onEvent func(*llm.StreamChunk)) (*p
 		if trimmed == sseDoneData {
 			accumulator.terminal = true
 
-			return nil
+			return errSSEDone
 		}
 
 		var chunk openAIChatStreamChunk
@@ -88,17 +89,29 @@ func parseOpenAIChatStream(reader io.Reader, onEvent func(*llm.StreamChunk)) (*p
 
 		return accumulator.add(&chunk, onEvent)
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errSSEDone) {
 		return nil, err
 	}
 
-	if !accumulator.terminal && accumulator.finishReason == "" {
+	result := accumulator.result()
+	if !accumulator.completeWithContent(result) {
 		return nil, oops.In("provider").
 			Code("openai_chat_stream_incomplete").
 			Errorf("provider stream closed before completion")
 	}
 
-	return accumulator.result(), nil
+	return result, nil
+}
+
+func (accumulator *openAIChatStreamAccumulator) completeWithContent(result *providerResult) bool {
+	if !accumulator.terminal && accumulator.finishReason == "" {
+		return false
+	}
+
+	return strings.TrimSpace(result.Text) != "" ||
+		len(result.Thinking) > 0 ||
+		len(result.ToolCalls) > 0 ||
+		result.FinishReason != llm.FinishReasonUnknown
 }
 
 func (accumulator *openAIChatStreamAccumulator) add(

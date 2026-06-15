@@ -77,6 +77,11 @@ func TestParseOpenAIChatStreamHandlesErrorsAndIncompleteStreams(t *testing.T) {
 	_, err = parseOpenAIChatStream(strings.NewReader(incompleteStream), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "closed before completion")
+
+	doneOnlyStream := openAIChatStream(openAIChatDoneLine)
+	_, err = parseOpenAIChatStream(strings.NewReader(doneOnlyStream), nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "closed before completion")
 }
 
 func TestParseOpenAIChatStreamMapsFinishReasonLength(t *testing.T) {

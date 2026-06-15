@@ -3,6 +3,7 @@ package provider
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 
@@ -15,6 +16,8 @@ const (
 	sseInitialBufferSize = 64 * units.KiB
 	sseMaxBufferSize     = 8 * units.MiB
 )
+
+var errSSEDone = errors.New("sse done")
 
 type sseEvent struct {
 	Name string

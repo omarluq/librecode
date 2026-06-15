@@ -113,7 +113,7 @@ func TestParseAnthropicStreamHandlesErrorsRefusalsAndIncompleteStreams(t *testin
 func anthropicDataLine(value map[string]any) string {
 	encoded, err := json.Marshal(value)
 	if err != nil {
-		return "data: {}"
+		panic("anthropicDataLine: failed to marshal test payload: " + err.Error())
 	}
 
 	return "data: " + string(encoded)

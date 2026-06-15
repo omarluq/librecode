@@ -114,6 +114,18 @@ func TestParseOpenAIResponseStreamUsesOutputTextFallbackAndErrors(t *testing.T) 
 	assert.Contains(t, err.Error(), "bad request")
 }
 
+func TestParseOpenAIResponseStreamStopsAtDoneMarker(t *testing.T) {
+	t.Parallel()
+
+	stream := openAIResponseCompletedStream(`{"output_text":"ok"}`) +
+		"data: " + sseDoneData + "\n\n" +
+		"data: invalid-json\n\n"
+	result, err := parseSSEResult(strings.NewReader(stream), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "ok", result.Text)
+}
+
 func TestProviderResultFromOutputItemsUsesFallbackAndInvalidArguments(t *testing.T) {
 	t.Parallel()
 
