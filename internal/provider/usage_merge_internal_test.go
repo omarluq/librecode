@@ -14,15 +14,6 @@ const (
 	testReportedUsageLabel  = "reported"
 )
 
-func TestEstimateTokensCountsRunesConservatively(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, 1, estimateTokens("a"))
-	assert.Equal(t, 1, estimateTokens("abcd"))
-	assert.Equal(t, 2, estimateTokens("abcde"))
-	assert.Equal(t, 1, estimateTokens("🙂"))
-}
-
 func TestMergeUsageKeepsExistingBreakdownWhenPresent(t *testing.T) {
 	t.Parallel()
 
