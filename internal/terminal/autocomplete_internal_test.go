@@ -10,7 +10,7 @@ import (
 	"github.com/omarluq/librecode/internal/tui"
 )
 
-func TestSlashSuggestionsIncludesSkill(t *testing.T) {
+func TestSlashSuggestionsOnlyIncludesImplementedCommands(t *testing.T) {
 	t.Parallel()
 
 	names := make([]string, 0, len(slashSuggestions()))
@@ -19,6 +19,9 @@ func TestSlashSuggestionsIncludesSkill(t *testing.T) {
 	}
 
 	assert.Contains(t, names, "skill")
+	assert.NotContains(t, names, "export")
+	assert.NotContains(t, names, "import")
+	assert.NotContains(t, names, "share")
 }
 
 func TestAutocompleteMatchesIncludesUserInvocableSkills(t *testing.T) {

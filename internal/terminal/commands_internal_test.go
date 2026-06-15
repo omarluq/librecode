@@ -14,12 +14,12 @@ func TestRunSessionCommandDispatchesNotification(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	quit, err := app.runSessionCommand(context.Background(), "share", "", "/share")
+	quit, err := app.runSessionCommand(context.Background(), "auth", "", "/auth")
 
 	require.NoError(t, err)
 	assert.False(t, quit)
 	require.NotEmpty(t, app.transcript.History)
-	assert.Equal(t, "/share"+commandNotImplemented, app.transcript.History[len(app.transcript.History)-1].Content)
+	assert.Contains(t, app.transcript.History[len(app.transcript.History)-1].Content, "auth status:")
 }
 
 func TestOpenCommandPanelKnownAndUnknownCommands(t *testing.T) {
@@ -42,17 +42,15 @@ func TestRenameSessionValidation(t *testing.T) {
 	require.EqualError(t, app.renameSession(context.Background(), ""), "name is required")
 }
 
-func TestSessionCommandNotificationsUseSharedPlaceholder(t *testing.T) {
+func TestRemovedPlaceholderSlashCommandsFallThroughToPrompt(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	handler, ok := app.sessionCommandNotifications(context.Background(), "export")
-	require.True(t, ok)
 
-	handler()
-
-	require.NotEmpty(t, app.transcript.History)
-	assert.Equal(t, "/export"+commandNotImplemented, app.transcript.History[len(app.transcript.History)-1].Content)
+	for _, command := range []string{"export", "import", "share"} {
+		_, ok := app.sessionCommandNotifications(context.Background(), command)
+		assert.False(t, ok)
+	}
 }
 
 func TestShowSessionInfoWithoutActiveSession(t *testing.T) {
