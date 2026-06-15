@@ -66,7 +66,7 @@ func usageFromObject(value any) llm.Usage {
 }
 
 func usageInputTokens(object map[string]any) int {
-	input := intFromAny(firstPresent(object, "input_tokens", "prompt_tokens"))
+	input := intFromAny(firstPresent(object, jsonInputTokensKey, "prompt_tokens"))
 	if input > 0 {
 		return input
 	}

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -88,36 +89,33 @@ func TestParseAnthropicResultMapsFinishReason(t *testing.T) {
 	}{
 		{
 			name:     "max tokens",
-			body:     `{"stop_reason":"max_tokens","content":[{"type":"text","text":"partial"}]}`,
+			body:     anthropicResponseJSON("max_tokens", testProviderPartialText, nil),
 			want:     llm.FinishReasonLength,
 			wantText: "",
 		},
 		{
 			name:     "context exceeded",
-			body:     `{"stop_reason":"model_context_window_exceeded","content":[{"type":"text","text":"partial"}]}`,
+			body:     anthropicResponseJSON("model_context_window_exceeded", testProviderPartialText, nil),
 			want:     llm.FinishReasonLength,
 			wantText: "",
 		},
 		{
 			name: "refusal keeps provider text and drops tool calls",
-			body: `{
-				"stop_reason":"refusal",
-				"stop_details":{"type":"refusal","category":"cyber","explanation":"declined"},
-				"content":[
-					{"type":"text","text":"partial"},
-					{"type":"tool_use","id":"toolu_1","name":"read","input":{"path":"README.md"}}
-				]
-			}`,
+			body: anthropicResponseJSON(anthropicRefusalReason, testProviderPartialText, &anthropicStopDetails{
+				Type:        anthropicRefusalReason,
+				Category:    "cyber",
+				Explanation: testProviderDeclined,
+			}),
 			want:     llm.FinishReasonRefusal,
-			wantText: "partial",
+			wantText: testProviderPartialText,
 		},
 		{
 			name: "refusal without provider text uses stop details",
-			body: `{
-				"stop_reason":"refusal",
-				"stop_details":{"type":"refusal","category":"cyber","explanation":"declined"},
-				"content":[]
-			}`,
+			body: anthropicResponseJSON(anthropicRefusalReason, "", &anthropicStopDetails{
+				Type:        anthropicRefusalReason,
+				Category:    "cyber",
+				Explanation: testProviderDeclined,
+			}),
 			want:     llm.FinishReasonRefusal,
 			wantText: "The model refused the request (cyber): declined",
 		},
@@ -127,7 +125,7 @@ func TestParseAnthropicResultMapsFinishReason(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			result, err := parseAnthropicResult([]byte(test.body))
+			result, err := parseAnthropicStream(strings.NewReader(anthropicResponseStream(test.body)), nil)
 
 			require.NoError(t, err)
 			assert.Equal(t, test.want, result.FinishReason)

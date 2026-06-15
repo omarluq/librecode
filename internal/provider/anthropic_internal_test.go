@@ -61,7 +61,7 @@ func TestAnthropicPayloadAddsBudgetThinking(t *testing.T) {
 	payload := anthropicPayload(request, nil)
 
 	assert.Equal(t, map[string]any{
-		jsonTypeKey:     "enabled",
+		jsonTypeKey:     thinkingEnabled,
 		"budget_tokens": 4096,
 		jsonDisplayKey:  thinkingDisplaySummary,
 	}, payload[jsonThinkingKey])
@@ -79,7 +79,7 @@ func TestAnthropicPayloadThinkingWhenOff(t *testing.T) {
 		{
 			name:         "adaptive capable model can disable thinking",
 			modelID:      testAdaptiveAnthropicModelID,
-			wantThinking: map[string]any{jsonTypeKey: "disabled"},
+			wantThinking: map[string]any{jsonTypeKey: thinkingDisabled},
 			wantEffort:   "",
 		},
 		{

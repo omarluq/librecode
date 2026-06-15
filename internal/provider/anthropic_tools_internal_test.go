@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,7 +16,7 @@ const (
 	missingFileToolError   = "missing file"
 )
 
-func TestParseAnthropicResultExtractsNativeToolUse(t *testing.T) {
+func TestParseAnthropicStreamExtractsNativeToolUse(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -30,14 +31,33 @@ func TestParseAnthropicResultExtractsNativeToolUse(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			content := []byte(`{
-				"content": [
-					{"type":"tool_use","id":"toolu_1","name":"` + testCase.toolName + `","input":{"path":"README.md"}}
-				],
-				"usage": {"input_tokens": 12, "output_tokens": 3}
-			}`)
+			stream := strings.Join([]string{
+				anthropicEventMessageStart,
+				anthropicDataLine(map[string]any{
+					jsonTypeKey:    anthropicMessageStartEvent,
+					jsonMessageKey: map[string]any{jsonUsageKey: map[string]any{jsonInputTokensKey: 12}},
+				}),
+				"",
+				"event: content_block_start",
+				anthropicToolUseBlockData(0, testAnthropicToolUseID, testCase.toolName, map[string]any{
+					jsonPathKey: testToolPath,
+				}),
+				"",
+				anthropicEventMessageDelta,
+				anthropicDataLine(map[string]any{
+					jsonTypeKey: anthropicMessageDeltaEvent,
+					anthropicDeltaKey: map[string]any{
+						anthropicStopReasonKey: anthropicToolUseType,
+					},
+					jsonUsageKey: map[string]any{jsonOutputTokensKey: 3},
+				}),
+				"",
+				anthropicEventMessageStop,
+				anthropicMessageStopData,
+				"",
+			}, "\n")
 
-			result, err := parseAnthropicResult(content)
+			result, err := parseAnthropicStream(strings.NewReader(stream), nil)
 			require.NoError(t, err)
 			require.Len(t, result.ToolCalls, 1)
 			assert.Equal(t, testAnthropicToolUseID, result.ToolCalls[0].ID)

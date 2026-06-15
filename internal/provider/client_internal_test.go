@@ -24,8 +24,8 @@ func TestSSEAccumulatorEmitsOutputTextDelta(t *testing.T) {
 	events := []llm.StreamChunk{}
 
 	accumulator.add(map[string]any{
-		jsonTypeKey: "response.output_text.delta",
-		"delta":     answerDelta,
+		jsonTypeKey:       "response.output_text.delta",
+		anthropicDeltaKey: answerDelta,
 	}, func(event *llm.StreamChunk) {
 		require.NotNil(t, event)
 		events = append(events, *event)
@@ -45,8 +45,8 @@ func TestSSEAccumulatorEmitsReasoningDeltaSeparately(t *testing.T) {
 	events := []llm.StreamChunk{}
 
 	accumulator.add(map[string]any{
-		jsonTypeKey: "response.reasoning_summary_text.delta",
-		"delta":     testThinkingDelta,
+		jsonTypeKey:       "response.reasoning_summary_text.delta",
+		anthropicDeltaKey: testThinkingDelta,
 	}, func(event *llm.StreamChunk) {
 		require.NotNil(t, event)
 		events = append(events, *event)

@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -35,33 +34,50 @@ func TestFinishProviderResultAllowsEmptyText(t *testing.T) {
 	assert.Empty(t, responseText(result))
 }
 
-func TestProviderParsersAllowSuccessfulEmptyResponses(t *testing.T) {
+func TestStreamingParsersAllowSuccessfulEmptyResponses(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		parse func([]byte) (*providerResult, error)
+		parse func() (*providerResult, error)
 		name  string
-		body  string
 	}{
 		{
-			name:  "openai chat no choices",
-			body:  `{"usage":{"prompt_tokens":7,"completion_tokens":0,"total_tokens":7}}`,
-			parse: parseOpenAIChatResult,
+			name: "openai chat blank content",
+			parse: func() (*providerResult, error) {
+				return parseOpenAIChatStream(strings.NewReader(openAIChatStream(openAIChatChunk(map[string]any{
+					jsonChoicesKey: []any{map[string]any{
+						anthropicDeltaKey:   map[string]any{jsonContentKey: strings.Repeat(" ", 3)},
+						jsonFinishReasonKey: "stop",
+					}},
+				}))), nil)
+			},
 		},
 		{
-			name:  "openai chat blank content",
-			body:  `{"choices":[{"message":{"content":"   "}}]}`,
-			parse: parseOpenAIChatResult,
+			name: "openai responses blank output",
+			parse: func() (*providerResult, error) {
+				return parseSSEResult(strings.NewReader(openAIResponseCompletedStream(`{
+					"output": [],
+					"usage": {"input_tokens": 5, "output_tokens": 0, "total_tokens": 5}
+				}`)), nil)
+			},
 		},
 		{
-			name:  "openai responses blank output",
-			body:  `{"output":[],"usage":{"input_tokens":5,"output_tokens":0,"total_tokens":5}}`,
-			parse: parseOpenAIResponseResult,
-		},
-		{
-			name:  "anthropic empty content",
-			body:  `{"content":[],"usage":{"input_tokens":3,"output_tokens":0}}`,
-			parse: parseAnthropicResult,
+			name: "anthropic empty content",
+			parse: func() (*providerResult, error) {
+				return parseAnthropicStream(strings.NewReader(strings.Join([]string{
+					anthropicEventMessageStart,
+					anthropicDataLine(map[string]any{
+						jsonTypeKey: anthropicMessageStartEvent,
+						jsonMessageKey: map[string]any{
+							jsonUsageKey: map[string]any{jsonInputTokensKey: 3, jsonOutputTokensKey: 0},
+						},
+					}),
+					"",
+					anthropicEventMessageStop,
+					anthropicMessageStopData,
+					"",
+				}, "\n")), nil)
+			},
 		},
 	}
 
@@ -69,7 +85,7 @@ func TestProviderParsersAllowSuccessfulEmptyResponses(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			result, err := testCase.parse(json.RawMessage(testCase.body))
+			result, err := testCase.parse()
 
 			require.NoError(t, err)
 			require.NotNil(t, result)

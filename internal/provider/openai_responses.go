@@ -3,9 +3,8 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"strings"
-
-	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/llm"
 )
@@ -17,7 +16,7 @@ func (client *HTTPCompletionClient) completeOpenAIResponses(
 	input := openAIResponseInput(request.Request.Messages)
 	endpoint := joinEndpoint(request.Request.Model.BaseURL, "/responses")
 
-	return client.completeResponsesLoop(ctx, request, endpoint, openAIHeaders(request), input, false)
+	return client.completeResponsesLoop(ctx, request, endpoint, openAIHeaders(request), input)
 }
 
 func (client *HTTPCompletionClient) completeOpenAICodex(
@@ -27,7 +26,7 @@ func (client *HTTPCompletionClient) completeOpenAICodex(
 	input := openAIResponseInput(compactResponseMessages(request.Request.Messages))
 	endpoint := joinEndpoint(request.Request.Model.BaseURL, "/codex/responses")
 
-	return client.completeResponsesLoop(ctx, request, endpoint, codexHeaders(request), input, true)
+	return client.completeResponsesLoop(ctx, request, endpoint, codexHeaders(request), input)
 }
 
 func (client *HTTPCompletionClient) completeResponsesLoop(
@@ -36,12 +35,11 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	endpoint string,
 	headers map[string]string,
 	input []any,
-	stream bool,
 ) (*llm.Response, error) {
 	result := newResponse()
 
 	for {
-		payload := responsesPayload(request, input, stream)
+		payload := responsesPayload(request, input)
 
 		providerRequest, err := applyProviderRequestHook(ctx, request, payload, cloneStringMap(headers))
 		if err != nil {
@@ -53,7 +51,6 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			endpoint,
 			providerRequest.Headers,
 			providerRequest.Payload,
-			stream,
 			request.OnEvent,
 		)
 		if err != nil {
@@ -91,8 +88,8 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	}
 }
 
-func responsesPayload(request *CompletionRequest, input []any, stream bool) map[string]any {
-	payload := responsesBasePayload(request, input, stream)
+func responsesPayload(request *CompletionRequest, input []any) map[string]any {
+	payload := responsesBasePayload(request, input)
 	payload["tools"] = ResponseTools(request)
 	payload[jsonToolChoiceKey] = "auto"
 	payload["parallel_tool_calls"] = true
@@ -100,29 +97,27 @@ func responsesPayload(request *CompletionRequest, input []any, stream bool) map[
 	return payload
 }
 
-func responsesBasePayload(request *CompletionRequest, input []any, stream bool) map[string]any {
+func responsesBasePayload(request *CompletionRequest, input []any) map[string]any {
 	payload := map[string]any{
-		jsonModelKey: request.Request.Model.ID,
-		"store":      false,
-		"stream":     stream,
-		"input":      input,
+		jsonModelKey:  request.Request.Model.ID,
+		"store":       false,
+		jsonStreamKey: true,
+		"input":       input,
 	}
 	if request.Request.SystemPrompt != "" {
 		payload["instructions"] = request.Request.SystemPrompt
 	}
 
-	if stream {
-		payload["text"] = map[string]string{"verbosity": "low"}
-		payload["include"] = []string{"reasoning.encrypted_content"}
-		payload["prompt_cache_key"] = request.Request.SessionID
-	}
+	payload["text"] = map[string]string{"verbosity": "low"}
+	payload["include"] = []string{"reasoning.encrypted_content"}
+	payload["prompt_cache_key"] = request.Request.SessionID
 
 	if effort, ok := reasoningEffort(request); ok {
 		payload["reasoning"] = map[string]any{
 			reasoningEffortKey: effort,
 			jsonSummaryKey:     reasoningSummaryAuto,
 		}
-	} else if stream {
+	} else {
 		payload["reasoning"] = codexReasoning(request)
 	}
 
@@ -134,39 +129,17 @@ func (client *HTTPCompletionClient) requestResponses(
 	endpoint string,
 	headers map[string]string,
 	payload map[string]any,
-	stream bool,
 	onEvent func(*llm.StreamChunk),
 ) (*providerResult, error) {
-	httpRequest, err := jsonRequest(ctx, endpoint, headers, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := client.client.Do(httpRequest)
-	if err != nil {
-		return nil, oops.In("provider").Code("responses_http").Wrapf(err, "request provider response")
-	}
-	defer closeBody(response.Body)
-
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		content, readErr := readProviderBody(response.Body)
-		if readErr != nil {
-			return nil, oops.In("provider").Code("responses_error_read").Wrapf(readErr, "read provider error")
-		}
-
-		return nil, providerStatusError("responses_status", response.StatusCode, content)
-	}
-
-	if stream {
-		return parseSSEResult(response.Body, onEvent)
-	}
-
-	content, err := readProviderBody(response.Body)
-	if err != nil {
-		return nil, oops.In("provider").Code("responses_read").Wrapf(err, "read provider response")
-	}
-
-	return parseOpenAIResponseResult(content)
+	return client.requestProviderStream(
+		ctx,
+		endpoint,
+		headers,
+		payload,
+		func(reader io.Reader) (*providerResult, error) {
+			return parseSSEResult(reader, onEvent)
+		},
+	)
 }
 
 func statelessResponseOutputItems(items []any) []any {
@@ -187,22 +160,6 @@ func statelessResponseOutputItems(items []any) []any {
 	}
 
 	return stateless
-}
-
-func parseOpenAIResponseResult(content []byte) (*providerResult, error) {
-	var response map[string]any
-	if err := json.Unmarshal(content, &response); err != nil {
-		return nil, oops.In("provider").Code("openai_response_decode").Wrapf(err, "decode response")
-	}
-
-	if errorValue, ok := response["error"]; ok {
-		message := errorMessage(errorValue)
-		if message != "" {
-			return nil, oops.In("provider").Code("openai_response_error").Errorf("%s", message)
-		}
-	}
-
-	return providerResultFromResponse(response), nil
 }
 
 func providerResultFromResponse(response map[string]any) *providerResult {
@@ -386,7 +343,7 @@ func extractText(value any) string {
 			return text
 		}
 
-		if content, ok := typed["content"]; ok {
+		if content, ok := typed[jsonContentKey]; ok {
 			return extractText(content)
 		}
 

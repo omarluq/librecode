@@ -3,6 +3,7 @@ package provider
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,17 +36,17 @@ func TestStatelessResponseOutputItemsFiltersFunctionCalls(t *testing.T) {
 	assert.Equal(t, "completed", call["status"])
 }
 
-func TestParseOpenAIResponseResultExtractsTextThinkingAndToolCalls(t *testing.T) {
+func TestParseOpenAIResponseStreamExtractsTextThinkingAndToolCalls(t *testing.T) {
 	t.Parallel()
 
-	result, err := parseOpenAIResponseResult([]byte(`{
+	result, err := parseSSEResult(strings.NewReader(openAIResponseCompletedStream(`{
 		"output": [
 			{"type":"reasoning","summary":[{"text":"thought one"},"thought two"]},
 			{"type":"message","content":[{"type":"output_text","text":"hello"}]},
 			{"type":"function_call","call_id":"call_1","name":"read","arguments":"{\"path\":\"README.md\"}"}
 		],
 		"usage":{"input_tokens":12,"output_tokens":3}
-	}`))
+	}`)), nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "hello", result.Text)
@@ -59,7 +60,7 @@ func TestParseOpenAIResponseResultExtractsTextThinkingAndToolCalls(t *testing.T)
 	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
 }
 
-func TestParseOpenAIResponseResultMapsIncompleteFinishReasons(t *testing.T) {
+func TestParseOpenAIResponseStreamMapsIncompleteFinishReasons(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -88,7 +89,7 @@ func TestParseOpenAIResponseResultMapsIncompleteFinishReasons(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			result, err := parseOpenAIResponseResult([]byte(testCase.body))
+			result, err := parseSSEResult(strings.NewReader(openAIResponseCompletedStream(testCase.body)), nil)
 
 			require.NoError(t, err)
 			assert.Equal(t, testCase.want, result.FinishReason)
@@ -96,14 +97,19 @@ func TestParseOpenAIResponseResultMapsIncompleteFinishReasons(t *testing.T) {
 	}
 }
 
-func TestParseOpenAIResponseResultUsesOutputTextFallbackAndErrors(t *testing.T) {
+func TestParseOpenAIResponseStreamUsesOutputTextFallbackAndErrors(t *testing.T) {
 	t.Parallel()
 
-	result, err := parseOpenAIResponseResult([]byte(`{"output_text":"fallback text"}`))
+	result, err := parseSSEResult(
+		strings.NewReader(openAIResponseCompletedStream(`{"output_text":"fallback text"}`)),
+		nil,
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "fallback text", result.Text)
 
-	_, err = parseOpenAIResponseResult([]byte(`{"error":{"message":"bad request"}}`))
+	_, err = parseSSEResult(strings.NewReader(`data: {"type":"response.failed","error":{"message":"bad request"}}
+
+`), nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bad request")
 }
@@ -135,7 +141,10 @@ func TestResponsesPayloadReasoningModes(t *testing.T) {
 	setTestRequestModelID(request, "gpt-test")
 	setTestRequestReasoning(request, true)
 	setTestRequestThinkingLevel(request, thinkingHigh)
-	payload := responsesBasePayload(request, nil, false)
+	payload := responsesBasePayload(request, nil)
+	assert.Equal(t, true, payload[jsonStreamKey])
+	assert.Equal(t, map[string]string{"verbosity": "low"}, payload["text"])
+	assert.Equal(t, []string{"reasoning.encrypted_content"}, payload["include"])
 	assert.Equal(t, map[string]any{
 		reasoningEffortKey: thinkingHigh,
 		jsonSummaryKey:     reasoningSummaryAuto,
@@ -143,7 +152,7 @@ func TestResponsesPayloadReasoningModes(t *testing.T) {
 
 	setTestRequestThinkingLevel(request, thinkingXHigh)
 	setTestThinkingMap(request, thinkingXHigh, "max")
-	payload = responsesBasePayload(request, nil, false)
+	payload = responsesBasePayload(request, nil)
 	assert.Equal(t, map[string]any{
 		reasoningEffortKey: "max",
 		jsonSummaryKey:     reasoningSummaryAuto,
@@ -151,7 +160,7 @@ func TestResponsesPayloadReasoningModes(t *testing.T) {
 
 	setTestRequestReasoning(request, false)
 	setTestRequestThinkingLevel(request, "")
-	payload = responsesBasePayload(request, nil, true)
+	payload = responsesBasePayload(request, nil)
 	assert.Equal(t, map[string]string{
 		reasoningEffortKey: reasoningEffortNone,
 		jsonSummaryKey:     reasoningSummaryAuto,
@@ -161,17 +170,17 @@ func TestResponsesPayloadReasoningModes(t *testing.T) {
 func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
 	t.Parallel()
 
-	t.Run("non streaming success", func(t *testing.T) {
+	t.Run("streaming success", func(t *testing.T) {
 		t.Parallel()
 
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-			_, err := writer.Write([]byte(`{"output_text":"ok"}`))
+			_, err := writer.Write([]byte(openAIResponseCompletedStream(`{"output_text":"ok"}`)))
 			assert.NoError(t, err)
 		}))
 		t.Cleanup(server.Close)
 
 		client := &HTTPCompletionClient{client: server.Client()}
-		result, err := client.requestResponses(t.Context(), server.URL, nil, map[string]any{}, false, nil)
+		result, err := client.requestResponses(t.Context(), server.URL, nil, map[string]any{}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "ok", result.Text)
 	})
@@ -187,7 +196,7 @@ func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
 		t.Cleanup(server.Close)
 
 		client := &HTTPCompletionClient{client: server.Client()}
-		_, err := client.requestResponses(t.Context(), server.URL, nil, map[string]any{}, false, nil)
+		_, err := client.requestResponses(t.Context(), server.URL, nil, map[string]any{}, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "bad status")
 	})

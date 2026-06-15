@@ -18,7 +18,7 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 		{
 			name: "openai responses",
 			usage: map[string]any{
-				"input_tokens":      float64(123),
+				jsonInputTokensKey:  float64(123),
 				jsonOutputTokensKey: float64(45),
 			},
 			expected: llm.Usage{

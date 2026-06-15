@@ -11,7 +11,7 @@ import (
 func TestProviderStatusErrorUsesStructuredMessage(t *testing.T) {
 	t.Parallel()
 
-	err := providerStatusError("provider_status", 429, []byte(`{"error":{"message":"rate limited"}}`))
+	err := providerStatusError(429, []byte(`{"error":{"message":"rate limited"}}`))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "rate limited")
@@ -25,7 +25,7 @@ func TestProviderStatusErrorUsesStructuredMessage(t *testing.T) {
 func TestProviderStatusErrorFallsBackToHTTPStatus(t *testing.T) {
 	t.Parallel()
 
-	err := providerStatusError("provider_status", 503, []byte(`{"error":{}}`))
+	err := providerStatusError(503, []byte(`{"error":{}}`))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "provider returned HTTP 503")
@@ -57,7 +57,7 @@ func TestErrorMessageFromBytesFallbacks(t *testing.T) {
 	assert.Equal(t, "plain error", errorMessageFromBytes([]byte(" plain error ")))
 	assert.Equal(t, "top-level", errorMessage(map[string]any{jsonMessageType: "top-level"}))
 	assert.Equal(t, "nested", errorMessage(map[string]any{
-		"error": map[string]any{jsonMessageType: "nested"},
+		anthropicErrorEvent: map[string]any{jsonMessageType: "nested"},
 	}))
 	assert.Equal(t, "string error", errorMessage("string error"))
 	assert.Empty(t, errorMessage(123))

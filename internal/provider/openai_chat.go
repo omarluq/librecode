@@ -2,8 +2,7 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
-	"strings"
+	"io"
 
 	"github.com/samber/oops"
 
@@ -50,12 +49,15 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 		return false, err
 	}
 
-	content, err := client.postJSON(ctx, state.endpoint, providerRequest.Headers, providerRequest.Payload)
-	if err != nil {
-		return false, err
-	}
-
-	providerResult, err := parseOpenAIChatResult(content)
+	providerResult, err := client.requestProviderStream(
+		ctx,
+		state.endpoint,
+		providerRequest.Headers,
+		providerRequest.Payload,
+		func(reader io.Reader) (*providerResult, error) {
+			return parseOpenAIChatStream(reader, request.OnEvent)
+		},
+	)
 	if err != nil {
 		return false, err
 	}
@@ -128,85 +130,26 @@ func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *provid
 const openAIChatDefaultTemperature = 0.2
 
 func openAIChatPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
+	tools := OpenAIChatTools(request)
+
 	payload := map[string]any{
-		jsonModelKey:      request.Request.Model.ID,
-		jsonMessagesKey:   messages,
-		"stream":          false,
+		jsonModelKey:    request.Request.Model.ID,
+		jsonMessagesKey: messages,
+		jsonStreamKey:   true,
+		"stream_options": map[string]any{
+			"include_usage": true,
+		},
 		"temperature":     openAIChatDefaultTemperature,
-		"tools":           OpenAIChatTools(request),
+		"tools":           tools,
 		jsonToolChoiceKey: "auto",
 	}
 	if effort, ok := reasoningEffort(request); ok {
 		payload["reasoning_effort"] = effort
 	}
 
+	addZAIChatPayloadOptions(payload, request, len(tools) > 0)
+
 	return payload
-}
-
-func parseOpenAIChatResult(content []byte) (*providerResult, error) {
-	var response struct {
-		Error   providerError  `json:"error"`
-		Usage   map[string]any `json:"usage"`
-		Choices []struct {
-			FinishReason string `json:"finish_reason"`
-			Message      struct {
-				Content   string `json:"content"`
-				ToolCalls []struct {
-					ID       string `json:"id"`
-					Type     string `json:"type"`
-					Function struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					} `json:"function"`
-				} `json:"tool_calls"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(content, &response); err != nil {
-		return nil, oops.In("provider").Code("openai_chat_decode").Wrapf(err, "decode chat response")
-	}
-
-	if response.Error.Message != "" {
-		return nil, providerErrorToOops("openai_chat_error", &response.Error)
-	}
-
-	if len(response.Choices) == 0 {
-		return &providerResult{
-			FinishReason: llm.FinishReasonUnknown,
-			Text:         "",
-			OutputItems:  nil,
-			Thinking:     nil,
-			ToolCalls:    nil,
-			Usage:        usageFromObject(response.Usage),
-		}, nil
-	}
-
-	message := response.Choices[0].Message
-
-	calls := make([]ToolCall, 0, len(message.ToolCalls))
-	for _, call := range message.ToolCalls {
-		if call.Type != "" && call.Type != functionToolType {
-			continue
-		}
-
-		calls = append(calls, ToolCall{
-			Arguments:     toolArgumentsFromJSON(call.Function.Arguments),
-			Metadata:      nil,
-			ID:            call.ID,
-			Name:          call.Function.Name,
-			ArgumentsJSON: call.Function.Arguments,
-			TextFallback:  false,
-		})
-	}
-
-	return &providerResult{
-		FinishReason: openAIChatFinishReason(response.Choices[0].FinishReason, len(calls) > 0),
-		Text:         strings.TrimSpace(message.Content),
-		OutputItems:  nil,
-		Thinking:     nil,
-		ToolCalls:    calls,
-		Usage:        usageFromObject(response.Usage),
-	}, nil
 }
 
 func openAIChatFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
@@ -215,11 +158,11 @@ func openAIChatFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
 	}
 
 	switch reason {
-	case "stop":
+	case openAIStopReason:
 		return llm.FinishReasonStop
 	case "length":
 		return llm.FinishReasonLength
-	case "tool_calls", "function_call":
+	case openAIToolCallsReason, "function_call":
 		return llm.FinishReasonToolCalls
 	case "content_filter":
 		return llm.FinishReasonContentFilter
@@ -279,9 +222,9 @@ func openAIChatAssistantToolMessage(result *providerResult) map[string]any {
 	}
 
 	return map[string]any{
-		jsonRoleKey:    jsonAssistantRole,
-		jsonContentKey: result.Text,
-		"tool_calls":   toolCalls,
+		jsonRoleKey:      jsonAssistantRole,
+		jsonContentKey:   result.Text,
+		jsonToolCallsKey: toolCalls,
 	}
 }
 
@@ -295,11 +238,11 @@ func openAIChatToolMessages(calls []ToolCall, events []ToolEvent) ([]map[string]
 	}
 
 	messages := make([]map[string]any, 0, len(events))
-	for index, event := range events {
+	for index := range events {
 		messages = append(messages, map[string]any{
 			jsonRoleKey:    jsonToolRole,
 			"tool_call_id": calls[index].ID,
-			jsonContentKey: toolOutputText(event.Result, event.DetailsJSON),
+			jsonContentKey: toolOutputText(events[index].Result, events[index].DetailsJSON),
 		})
 	}
 

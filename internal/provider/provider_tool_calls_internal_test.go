@@ -23,7 +23,7 @@ func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
 	requests, result := completeOpenAIChatWithResponses(
 		t,
 		openAIChatReadToolResponse(),
-		`{"choices":[{"message":{"content":"done"}}]}`,
+		openAIChatTextStream("done"),
 	)
 
 	require.Equal(t, "done", result.Text)
@@ -77,7 +77,8 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 		return llm.HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
-	result, err := NewHTTPCompletionClient().completeOpenAIResponses(context.Background(), request)
+	client := &HTTPCompletionClient{client: server.Client()}
+	result, err := client.completeOpenAIResponses(context.Background(), request)
 	require.NoError(t, err)
 
 	response := providerResponseView(result)
@@ -120,8 +121,10 @@ func captureProviderHookRequest(
 func writeProviderHookIterationResponse(t *testing.T, writer http.ResponseWriter, requestCount int) {
 	t.Helper()
 
+	writer.Header().Set("Content-Type", "text/event-stream")
+
 	if requestCount != 1 {
-		writeTestProviderResponse(t, writer, `{"output_text":"done"}`)
+		writeTestProviderResponse(t, writer, openAIResponseCompletedStream(`{"output_text":"done"}`))
 
 		return
 	}
@@ -131,9 +134,7 @@ func writeProviderHookIterationResponse(t *testing.T, writer http.ResponseWriter
 	writeTestProviderResponse(
 		t,
 		writer,
-		`{"output":[{"type":"function_call","call_id":"call_1","name":"read","arguments":`+
-			strconv.Quote(string(arguments))+
-			`}]}`,
+		openAIResponseCompletedStream(responseFunctionCallJSON("call_1", jsonReadToolName, string(arguments))),
 	)
 }
 
@@ -153,7 +154,7 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		requests = append(requests, payload)
 
-		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Content-Type", "text/event-stream")
 
 		if len(requests) == 1 {
 			writeTestProviderResponse(t, writer, anthropicTextReadToolResponse())
@@ -161,7 +162,7 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 			return
 		}
 
-		writeTestProviderResponse(t, writer, `{"content":[{"type":"text","text":"done"}]}`)
+		writeTestProviderResponse(t, writer, anthropicTextStream("done", "end_turn"))
 	}))
 	defer server.Close()
 
@@ -170,7 +171,7 @@ func TestCompleteAnthropicExecutesTextToolUseFallback(t *testing.T) {
 	setTestRequestBaseURL(request, server.URL)
 	installTestToolExecutor(request)
 
-	result, err := NewHTTPCompletionClient().completeAnthropic(context.Background(), request)
+	result, err := (&HTTPCompletionClient{client: server.Client()}).completeAnthropic(context.Background(), request)
 	require.NoError(t, err)
 
 	response := providerResponseView(result)
@@ -199,7 +200,7 @@ func completeOpenAIChatWithResponses(
 		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
 		requests = append(requests, payload)
 
-		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Content-Type", "text/event-stream")
 
 		if len(requests) == 1 {
 			writeTestProviderResponse(t, writer, firstResponse)
@@ -216,7 +217,7 @@ func completeOpenAIChatWithResponses(
 	setTestRequestBaseURL(request, server.URL)
 	installTestToolExecutor(request)
 
-	result, err := NewHTTPCompletionClient().completeOpenAIChat(context.Background(), request)
+	result, err := (&HTTPCompletionClient{client: server.Client()}).completeOpenAIChat(context.Background(), request)
 	require.NoError(t, err)
 
 	return requests, providerResponseView(result)
@@ -228,21 +229,51 @@ func openAIChatReadToolResponse() string {
 		panic(err)
 	}
 
-	encodedArguments, err := json.Marshal(string(arguments))
-	if err != nil {
-		panic(err)
-	}
+	return openAIChatToolCallStream("call_1", jsonReadToolName, string(arguments))
+}
 
-	return `{
-		"choices":[{"message":{"tool_calls":[{"id":"call_1","type":"function","function":{
-			"name":"read",
-			"arguments":` + string(encodedArguments) + `
-		}}]}}]
-	}`
+func openAIChatToolCallStream(callID, name, arguments string) string {
+	return openAIChatStream(
+		openAIChatChunk(map[string]any{jsonChoicesKey: []any{map[string]any{
+			anthropicDeltaKey: map[string]any{jsonToolCallsKey: []any{map[string]any{
+				jsonIndexKey: 0,
+				"id":         callID,
+				"type":       functionToolType,
+				jsonFunctionKey: map[string]any{
+					jsonToolNameKey:  name,
+					jsonArgumentsKey: arguments,
+				},
+			}}},
+			jsonFinishReasonKey: jsonToolCallsKey,
+		}}}),
+		openAIChatDoneLine,
+	)
+}
+
+func openAIChatTextStream(text string) string {
+	return openAIChatStream(
+		openAIChatChunk(map[string]any{jsonChoicesKey: []any{map[string]any{
+			anthropicDeltaKey:   map[string]any{jsonContentKey: text},
+			jsonFinishReasonKey: "stop",
+		}}}),
+		openAIChatDoneLine,
+	)
 }
 
 func anthropicTextReadToolResponse() string {
-	return `{ "content":[{"type":"text","text":"` + anthropicTextReadToolMarkup() + `"}] }`
+	return anthropicTextStream(anthropicTextReadToolMarkup(), "end_turn")
+}
+
+func anthropicTextStream(text, stopReason string) string {
+	lines := make([]string, 0, 9)
+	lines = append(lines,
+		anthropicEventContentBlockDelta,
+		"data: "+anthropicContentDeltaJSON(0, anthropicTextDelta, jsonTextKey, text),
+		"",
+	)
+	lines = append(lines, anthropicMessageDeltaLines(stopReason, nil)...)
+
+	return strings.Join(lines, "\n")
 }
 
 func anthropicTextReadToolMarkup() string {
@@ -311,12 +342,10 @@ func testToolWorkspace(t *testing.T) string {
 func TestCompleteOpenAIChatExecutesTextToolUseFallback(t *testing.T) {
 	t.Parallel()
 
-	content, err := json.Marshal(anthropicTextReadToolMarkup())
-	require.NoError(t, err)
 	requests, result := completeOpenAIChatWithResponses(
 		t,
-		`{"choices":[{"message":{"content":`+string(content)+`}}]}`,
-		`{"choices":[{"message":{"content":"done"}}]}`,
+		openAIChatTextStream(anthropicTextReadToolMarkup()),
+		openAIChatTextStream("done"),
 	)
 
 	require.Equal(t, "done", result.Text)
