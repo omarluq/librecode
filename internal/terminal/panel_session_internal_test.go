@@ -83,7 +83,7 @@ func TestSessionPanelOpenAndItems(t *testing.T) {
 		t.Fatalf("selectedPanelKind = %q, want %q", got, want)
 	}
 
-	if app.panel == nil || app.panel.Kind() != panelSessions {
+	if app.panel == nil || app.panel.Kind != panelSessions {
 		t.Fatal("session panel should be open")
 	}
 

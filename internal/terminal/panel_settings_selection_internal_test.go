@@ -13,7 +13,7 @@ func TestOpenAuxPanelsUseDedicatedKinds(t *testing.T) {
 		t.Fatalf("hotkeys selectedPanelKind = %q, want %q", got, want)
 	}
 
-	if app.panel == nil || app.panel.Kind() != panelHotkeys {
+	if app.panel == nil || app.panel.Kind != panelHotkeys {
 		t.Fatal("hotkeys panel should use panelHotkeys kind")
 	}
 
@@ -23,7 +23,7 @@ func TestOpenAuxPanelsUseDedicatedKinds(t *testing.T) {
 		t.Fatalf("changelog selectedPanelKind = %q, want %q", got, want)
 	}
 
-	if app.panel == nil || app.panel.Kind() != panelChangelog {
+	if app.panel == nil || app.panel.Kind != panelChangelog {
 		t.Fatal("changelog panel should use panelChangelog kind")
 	}
 }

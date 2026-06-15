@@ -83,6 +83,10 @@ func (model *Model) HandleKey(event *tcell.EventKey, bindings KeyMatcher) Action
 }
 
 func (model *Model) selectedAction() Action {
+	if model == nil || model.List == nil {
+		return Action{Type: ActionNone, Value: ""}
+	}
+
 	if value, ok := model.SelectedValue(); ok {
 		return Action{Type: ActionSelect, Value: value}
 	}
@@ -91,7 +95,7 @@ func (model *Model) selectedAction() Action {
 }
 
 func (model *Model) handleSearchKey(event *tcell.EventKey) {
-	if model == nil || model.list == nil || event == nil || !model.list.Searchable() {
+	if model == nil || model.List == nil || event == nil || !model.Searchable() {
 		return
 	}
 

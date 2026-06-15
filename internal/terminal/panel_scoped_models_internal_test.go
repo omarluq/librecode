@@ -39,7 +39,7 @@ func TestScopedModelPanelBehavior(t *testing.T) {
 		t.Fatalf("selectedPanelKind = %q, want %q", got, want)
 	}
 
-	if app.panel == nil || app.panel.Kind() != panelScopedModels {
+	if app.panel == nil || app.panel.Kind != panelScopedModels {
 		t.Fatal("scoped models panel should be open")
 	}
 
@@ -59,7 +59,7 @@ func TestScopedModelPanelBehavior(t *testing.T) {
 		t.Fatal("render test app should not persist scoped model settings without a session")
 	}
 
-	if app.panel == nil || app.panel.Kind() != panelScopedModels {
+	if app.panel == nil || app.panel.Kind != panelScopedModels {
 		t.Fatal("scoped models panel should remain open after toggle")
 	}
 

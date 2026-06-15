@@ -66,7 +66,7 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 		t.Fatalf("selectedPanelKind = %q, want %q", got, want)
 	}
 
-	if app.panel == nil || app.panel.Kind() != panelModel {
+	if app.panel == nil || app.panel.Kind != panelModel {
 		t.Fatal("model panel should be open")
 	}
 
