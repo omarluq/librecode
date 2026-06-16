@@ -87,7 +87,7 @@ func TestAnthropicAPIKey(t *testing.T) {
 	assert.Equal(t, &validCredential, credential)
 	assert.Equal(t, "sk-ant-oat-valid", apiKey)
 
-	apiCredential := apiKeyCredential("sk-ant-api03-key")
+	apiCredential := apiKeyCredential("ANTHROPIC_API_KEY")
 	credential, apiKey, err = anthropicAPIKey(t.Context(), &apiCredential)
 	require.NoError(t, err)
 	assert.Equal(t, &apiCredential, credential)

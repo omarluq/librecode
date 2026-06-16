@@ -302,25 +302,7 @@ func TestFormatActiveSkillsForPrompt(t *testing.T) {
 
 	prompt := core.FormatActiveSkillsForPrompt([]core.ActivatedSkill{
 		{
-			Skill: core.Skill{
-				Metadata: nil,
-				SourceInfo: core.SourceInfo{
-					Path:    "",
-					Source:  "",
-					Scope:   "",
-					Origin:  "",
-					BaseDir: "",
-				},
-				Name:                   "fix<&>",
-				Description:            "",
-				FilePath:               "/tmp/SKILL.md",
-				BaseDir:                "",
-				License:                "",
-				Compatibility:          "",
-				AllowedTools:           nil,
-				UserInvocable:          false,
-				DisableModelInvocation: false,
-			},
+			Skill:     activePromptSkill("fix<&>", "/tmp/SKILL.md"),
 			Content:   "Use <unsafe> & carefully",
 			Truncated: true,
 		},
@@ -330,4 +312,26 @@ func TestFormatActiveSkillsForPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "<name>fix&lt;&amp;&gt;</name>")
 	assert.Contains(t, prompt, "<truncated>true</truncated>")
 	assert.Contains(t, prompt, "Use &lt;unsafe&gt; &amp; carefully")
+}
+
+func activePromptSkill(name, filePath string) core.Skill {
+	return core.Skill{
+		Metadata: nil,
+		SourceInfo: core.SourceInfo{
+			Path:    "",
+			Source:  "",
+			Scope:   "",
+			Origin:  "",
+			BaseDir: "",
+		},
+		Name:                   name,
+		Description:            "",
+		FilePath:               filePath,
+		BaseDir:                "",
+		License:                "",
+		Compatibility:          "",
+		AllowedTools:           nil,
+		UserInvocable:          false,
+		DisableModelInvocation: false,
+	}
 }
