@@ -18,8 +18,12 @@ const (
 	anthropicAuthorize      = "https://claude.ai/oauth/authorize"
 )
 
-const anthropicScope = "org:create_api_key user:profile user:inference " +
-	"user:sessions:claude_code user:mcp_servers user:file_upload"
+const (
+	anthropicScope = "org:create_api_key user:profile user:inference " +
+		"user:sessions:claude_code user:mcp_servers user:file_upload"
+	grantTypeKey          = "grant_type"
+	grantTypeRefreshToken = "refresh_token"
+)
 
 func anthropicRedirectEndpoint() string {
 	return "http://localhost:53692/callback"
@@ -90,9 +94,9 @@ func refreshAnthropic(ctx context.Context, refreshToken string) (*Credential, er
 
 func refreshAnthropicWithTokenURL(ctx context.Context, refreshToken, tokenURL string) (*Credential, error) {
 	return requestAnthropicToken(ctx, tokenURL, map[string]string{
-		"grant_type":    "refresh_token",
-		"client_id":     anthropicClientID,
-		"refresh_token": refreshToken,
+		grantTypeKey:          grantTypeRefreshToken,
+		"client_id":           anthropicClientID,
+		grantTypeRefreshToken: refreshToken,
 	})
 }
 
@@ -129,7 +133,7 @@ func newAnthropicFlow() (*anthropicFlow, error) {
 
 func exchangeAnthropicCode(ctx context.Context, code, state, verifier, tokenURL string) (*Credential, error) {
 	return requestAnthropicToken(ctx, tokenURL, map[string]string{
-		"grant_type":    "authorization_code",
+		grantTypeKey:    "authorization_code",
 		"client_id":     anthropicClientID,
 		"code":          code,
 		"state":         state,

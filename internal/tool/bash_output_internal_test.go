@@ -37,3 +37,19 @@ func TestBashOutputFSErrorPreservesCause(t *testing.T) {
 	require.ErrorIs(t, err, cause)
 	assert.Contains(t, err.Error(), "write full bash output")
 }
+
+func TestBashOutputFormattingHelpers(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, bashOutputCleanupError(nil, "cleanup"))
+
+	cause := errors.New("cleanup failed")
+	err := bashOutputCleanupError(cause, "cleanup")
+	require.Error(t, err)
+	require.ErrorIs(t, err, cause)
+
+	assert.Equal(t, 3, lastLineByteCount("one\ntwo"))
+	assert.Equal(t, 3, lastLineByteCount("two"))
+	assert.Equal(t, "status", appendStatus("", "status"))
+	assert.Equal(t, "output\n\nstatus", appendStatus("output", "status"))
+}

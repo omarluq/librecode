@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/di"
+	builtintool "github.com/omarluq/librecode/internal/tool"
 )
 
 func TestToolPayload(t *testing.T) {
@@ -47,4 +52,41 @@ func TestToolPayloadRejectsStdinAboveLimit(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, payload)
 	assert.Contains(t, err.Error(), "tool JSON stdin exceeds limit")
+}
+
+func TestPrintToolDefinition(t *testing.T) {
+	t.Parallel()
+
+	cmd := &cobra.Command{}
+	output := new(bytes.Buffer)
+	cmd.SetOut(output)
+
+	definition := toolRegistryForTest(t).Definitions()[0]
+
+	require.NoError(t, printToolDefinition(cmd, &definition))
+
+	assert.Contains(t, output.String(), definition.Name)
+	assert.Contains(t, output.String(), definition.Description)
+}
+
+func TestToolRegistryForCWD(t *testing.T) {
+	t.Parallel()
+
+	service := &di.ToolService{Registry: toolRegistryForTest(t)}
+
+	defaultRegistry, err := toolRegistryForCWD(service, "")
+	require.NoError(t, err)
+	assert.Same(t, service.Registry, defaultRegistry)
+
+	cwd := t.TempDir()
+	registry, err := toolRegistryForCWD(service, filepath.Join(cwd, "."))
+	require.NoError(t, err)
+	require.NotNil(t, registry)
+	assert.NotSame(t, service.Registry, registry)
+}
+
+func toolRegistryForTest(t *testing.T) *builtintool.Registry {
+	t.Helper()
+
+	return builtintool.NewRegistry(t.TempDir())
 }
