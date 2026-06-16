@@ -10,9 +10,9 @@ func loadTerminalResources(ctx context.Context, cwd string) core.ResourceSnapsho
 	loader := core.NewDefaultResourceLoader(cwd)
 	if err := loader.Reload(ctx); err != nil {
 		return core.ResourceSnapshot{
-			SkillDiagnostics:  nil,
+			SkillDiagnostics:  []core.ResourceDiagnostic{},
 			AgentInstructions: "",
-			Skills:            nil,
+			Skills:            []core.Skill{},
 		}
 	}
 

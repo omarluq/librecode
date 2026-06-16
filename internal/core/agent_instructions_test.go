@@ -81,3 +81,16 @@ func TestLoadAgentInstructionsTruncatesAtUTF8Boundary(t *testing.T) {
 
 	assert.Equal(t, strings.Repeat("a", 32*1024-1), core.LoadAgentInstructions(cwd))
 }
+
+func TestLoadAgentInstructionsCountsSeparatorsTowardSizeCap(t *testing.T) {
+	home := newOutsideTempDir(t)
+	cwd := filepath.Join(newOutsideTempDir(t), "repo")
+	writeTestFile(t, filepath.Join(cwd, ".keep"), "")
+	t.Setenv("LIBRECODE_HOME", filepath.Join(home, core.ConfigDirName))
+
+	writeTestFile(t, filepath.Join(home, core.ConfigDirName, "AGENTS.md"), strings.Repeat("g", 32*1024-1))
+	writeTestFile(t, filepath.Join(cwd, ".git"), "gitdir: .git")
+	writeTestFile(t, filepath.Join(cwd, "AGENTS.md"), "local")
+
+	assert.Len(t, core.LoadAgentInstructions(cwd), 32*1024-1)
+}

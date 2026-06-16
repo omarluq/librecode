@@ -31,6 +31,26 @@ func TestApplyToolCallMutationRejectsInvalidJSONArguments(t *testing.T) {
 	assert.Empty(t, call.Arguments)
 }
 
+func TestApplyToolCallMutationAppliesEmptyArguments(t *testing.T) {
+	t.Parallel()
+
+	call := &ToolCallEvent{
+		Arguments:     map[string]any{"path": "old.txt"},
+		ArgumentsJSON: `{"path":"old.txt"}`,
+		ID:            "",
+		Name:          "",
+	}
+	mutation := extension.ToolCallMutation{
+		Arguments: map[string]any{},
+	}
+
+	err := applyToolCallMutation(call, mutation)
+
+	require.NoError(t, err)
+	assert.Empty(t, call.Arguments)
+	assert.JSONEq(t, `{}`, call.ArgumentsJSON)
+}
+
 func TestEncodeToolArguments(t *testing.T) {
 	t.Parallel()
 

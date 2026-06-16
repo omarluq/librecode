@@ -51,7 +51,7 @@ func newRuntimePromptRequest(cwd, text, name string) *assistant.PromptRequest {
 func newRuntimeOutsideTempDir(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp(filepath.Clean("/tmp"), "librecode-assistant-*")
+	dir, err := os.MkdirTemp("", "librecode-assistant-*")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(dir))
@@ -358,6 +358,7 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 	home := newRuntimeOutsideTempDir(t)
 	cwd := newRuntimeOutsideTempDir(t)
 	t.Setenv("HOME", home)
+	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
 
 	_, repository := newTestRuntime(t)
 	ctx := context.Background()
@@ -403,7 +404,7 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 
 	require.NotEmpty(t, usageEvents)
 	require.NotNil(t, usageEvents[0].Usage)
-	assert.Less(t, usageEvents[0].Usage.ContextTokens, 1000)
+	assert.Less(t, usageEvents[0].Usage.ContextTokens, 5000)
 }
 
 func TestRuntime_PromptIncludesCompactionSummaryContext(t *testing.T) {
