@@ -1,7 +1,9 @@
 package terminal
 
-import "github.com/omarluq/librecode/internal/tui"
-import "github.com/omarluq/librecode/internal/terminal/panel"
+import (
+	"github.com/omarluq/librecode/internal/terminal/panel"
+	"github.com/omarluq/librecode/internal/tui"
+)
 
 const (
 	settingTheme    = "theme"
