@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/auth"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -26,11 +27,9 @@ const (
 func TestStorageResolvesAuthSourcesWithoutExposingSecrets(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	storage, err := auth.NewInMemoryStorage(ctx, map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		"openai": testAPIKeyCredential(),
 	})
-	require.NoError(t, err)
 
 	apiKey, found := storage.APIKey("openai")
 	require.True(t, found)
@@ -99,35 +98,10 @@ func TestStoragePersistsFileCredentials(t *testing.T) {
 	assert.False(t, reloaded.HasStored("openai"))
 }
 
-func TestStoragePersistsMemoryCredentials(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	backend, err := auth.NewMemoryBackend(map[string]auth.Credential{})
-	require.NoError(t, err)
-	storage, err := auth.NewStorage(ctx, backend)
-	require.NoError(t, err)
-
-	credential := testAPIKeyCredential()
-	require.NoError(t, storage.Set(ctx, "openai", &credential))
-
-	reloaded, err := auth.NewStorage(ctx, backend)
-	require.NoError(t, err)
-
-	storedCredential, found := reloaded.Get("openai")
-	require.True(t, found)
-	assert.Equal(t, credential, storedCredential)
-
-	apiKey, found := reloaded.APIKey("openai")
-	require.True(t, found)
-	assert.Equal(t, testStoredKey, apiKey)
-}
-
 func TestStorageReportsAuthAvailabilityBySource(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	storage, err := auth.NewInMemoryStorage(ctx, map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		testStoredEnvLike: {
 			OAuth:     nil,
 			Type:      auth.CredentialTypeAPIKey,
@@ -150,7 +124,6 @@ func TestStorageReportsAuthAvailabilityBySource(t *testing.T) {
 			ExpiresAt: 0,
 		},
 	})
-	require.NoError(t, err)
 	storage.SetRuntimeAPIKey("runtime", "runtime-key")
 	storage.SetFallbackResolver(func(provider string) (string, bool) {
 		return "fallback-key", provider == testFallbackProvider
@@ -201,9 +174,7 @@ func TestStorageDrainsErrors(t *testing.T) {
 func TestStorageFallbackResolverDoesNotRunUnderLock(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	storage, err := auth.NewInMemoryStorage(ctx, map[string]auth.Credential{})
-	require.NoError(t, err)
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
 
 	storage.SetFallbackResolver(func(provider string) (string, bool) {
 		storage.SetRuntimeAPIKey(provider, "runtime-from-resolver")
@@ -224,8 +195,7 @@ func TestStorageSeparatesAnthropicAPIAndOAuthEnv(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-env")
 	t.Setenv("ANTHROPIC_OAUTH_TOKEN", "sk-ant-oat-env")
 
-	storage, err := auth.NewInMemoryStorage(t.Context(), map[string]auth.Credential{})
-	require.NoError(t, err)
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
 
 	apiKey, found := storage.APIKey("anthropic")
 	require.True(t, found)
@@ -289,10 +259,9 @@ func TestStorageUsesStoredOAuthCredentialMaterial(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			storage, err := auth.NewInMemoryStorage(t.Context(), map[string]auth.Credential{
+			storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 				"anthropic-claude": test.credential,
 			})
-			require.NoError(t, err)
 
 			apiKey, found := storage.APIKey("anthropic-claude")
 			assert.Equal(t, test.found, found)

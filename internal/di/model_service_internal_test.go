@@ -14,6 +14,7 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
@@ -21,8 +22,7 @@ func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
 	t.Setenv("LIBRECODE_HOME", home)
 	db := newModelServiceTestDB(t)
 	documents := database.NewDocumentRepository(db)
-	storage, err := auth.NewInMemoryStorage(t.Context(), map[string]auth.Credential{})
-	require.NoError(t, err)
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
 
 	cfg := config.Load("").MustGet()
 	cfg.Models.Discovery = config.ModelDiscoveryConfig{

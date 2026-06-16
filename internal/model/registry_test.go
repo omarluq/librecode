@@ -1,7 +1,6 @@
 package model_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestRegistryLoadsCustomModelsAndProviderOverrides(t *testing.T) {
@@ -81,10 +81,9 @@ func TestRegistryAvailableIncludesOAuthProviderDiscoveredModels(t *testing.T) {
 func assertRegistryAvailableProvider(t *testing.T, expectedProvider string, models []model.Model) {
 	t.Helper()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		expectedProvider: testCredential(),
 	})
-	require.NoError(t, err)
 
 	registry := model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,
