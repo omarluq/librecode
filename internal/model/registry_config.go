@@ -158,7 +158,7 @@ func requestConfig(config *providerConfig) providerRequestConfig {
 func modelsFromProvider(providerName string, config *providerConfig) []Model {
 	return lo.FilterMap(config.Models, func(definition modelDefinition, _ int) (Model, bool) {
 		if definition.ID == "" {
-			return zeroModel(), false
+			return emptyModel(), false
 		}
 
 		return modelFromDefinition(providerName, config, &definition), true

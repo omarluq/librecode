@@ -64,22 +64,12 @@ type RequestAuth struct {
 	OK      bool              `json:"ok"`
 }
 
-// IsValidThinkingLevel reports whether value is a known thinking level.
-func IsValidThinkingLevel(value string) bool {
-	switch ThinkingLevel(value) {
-	case ThinkingOff, ThinkingMinimal, ThinkingLow, ThinkingMedium, ThinkingHigh, ThinkingXHigh:
-		return true
-	default:
-		return false
-	}
-}
-
 // ModelsAreEqual compares provider and model ID.
 func ModelsAreEqual(left, right *Model) bool {
 	return left.Provider == right.Provider && left.ID == right.ID
 }
 
-func zeroModel() Model {
+func emptyModel() Model {
 	return Model{
 		ThinkingLevelMap: nil,
 		Headers:          nil,
