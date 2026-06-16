@@ -36,10 +36,11 @@ type ActivatedSkill struct {
 	Truncated bool   `json:"truncated"`
 }
 
-// LoadSkillsResult returns loaded skills plus validation diagnostics.
+// LoadSkillsResult returns loaded skills, agent instructions, and validation diagnostics.
 type LoadSkillsResult struct {
-	Skills      []Skill              `json:"skills"`
-	Diagnostics []ResourceDiagnostic `json:"diagnostics"`
+	Skills            []Skill              `json:"skills"`
+	AgentInstructions string               `json:"agent_instructions"`
+	Diagnostics       []ResourceDiagnostic `json:"diagnostics"`
 }
 
 // LoadSkills loads skills from the four supported default roots and explicit paths.
@@ -51,7 +52,7 @@ func LoadSkills(cwd string, skillPaths []string, includeDefaults bool) LoadSkill
 
 	paths = append(paths, skillPaths...)
 
-	result := LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
+	result := LoadSkillsResult{Skills: []Skill{}, AgentInstructions: "", Diagnostics: []ResourceDiagnostic{}}
 	seenFiles := map[string]bool{}
 	skillsByName := map[string]Skill{}
 

@@ -18,7 +18,7 @@ func loadSkillPath(rawPath, cwd string) LoadSkillsResult {
 
 	info, err := statResource(resolvedPath)
 	if err != nil {
-		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
+		return emptyLoadSkillsResult()
 	}
 
 	if info.IsDir() {
@@ -26,8 +26,9 @@ func loadSkillPath(rawPath, cwd string) LoadSkillsResult {
 	}
 
 	return LoadSkillsResult{
-		Skills:      []Skill{},
-		Diagnostics: []ResourceDiagnostic{warningDiagnostic("skill path is not a directory", resolvedPath)},
+		Skills:            []Skill{},
+		AgentInstructions: "",
+		Diagnostics:       []ResourceDiagnostic{warningDiagnostic("skill path is not a directory", resolvedPath)},
 	}
 }
 
@@ -40,7 +41,7 @@ func loadSkillsFromDir(dir, cwd string) LoadSkillsResult {
 func loadSkillsFromDirWithState(dir, cwd string, state *skillDiscoveryState) LoadSkillsResult {
 	canonicalDir := canonicalizeResourcePath(dir)
 	if state.seenDirs[canonicalDir] {
-		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
+		return emptyLoadSkillsResult()
 	}
 
 	state.seenDirs[canonicalDir] = true
@@ -48,8 +49,9 @@ func loadSkillsFromDirWithState(dir, cwd string, state *skillDiscoveryState) Loa
 	entries, err := readResourceDir(dir)
 	if err != nil {
 		return LoadSkillsResult{
-			Skills:      []Skill{},
-			Diagnostics: []ResourceDiagnostic{warningDiagnostic(err.Error(), dir)},
+			Skills:            []Skill{},
+			AgentInstructions: "",
+			Diagnostics:       []ResourceDiagnostic{warningDiagnostic(err.Error(), dir)},
 		}
 	}
 
@@ -65,21 +67,21 @@ func loadSkillRoot(entries []os.DirEntry, dir, cwd string) (LoadSkillsResult, bo
 		return entry.Name() == skillFileName && !entry.IsDir()
 	})
 	if !found {
-		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}, false
+		return emptyLoadSkillsResult(), false
 	}
 
 	skillPath := filepath.Join(dir, entry.Name())
 
 	skill, diagnostics := loadSkillFromFile(skillPath, cwd)
 	if skill == nil {
-		return LoadSkillsResult{Skills: []Skill{}, Diagnostics: diagnostics}, true
+		return LoadSkillsResult{Skills: []Skill{}, AgentInstructions: "", Diagnostics: diagnostics}, true
 	}
 
-	return LoadSkillsResult{Skills: []Skill{*skill}, Diagnostics: diagnostics}, true
+	return LoadSkillsResult{Skills: []Skill{*skill}, AgentInstructions: "", Diagnostics: diagnostics}, true
 }
 
 func loadNestedSkills(entries []os.DirEntry, dir, cwd string, state *skillDiscoveryState) LoadSkillsResult {
-	result := LoadSkillsResult{Skills: []Skill{}, Diagnostics: []ResourceDiagnostic{}}
+	result := emptyLoadSkillsResult()
 
 	ignorePatterns := readSkillIgnorePatterns(dir)
 	for _, entry := range entries {
@@ -138,4 +140,8 @@ func loadSkillFromFile(filePath, cwd string) (*Skill, []ResourceDiagnostic) {
 		UserInvocable:          frontmatter.UserInvocable,
 		DisableModelInvocation: frontmatter.DisableModelInvocation,
 	}, diagnostics
+}
+
+func emptyLoadSkillsResult() LoadSkillsResult {
+	return LoadSkillsResult{Skills: []Skill{}, AgentInstructions: "", Diagnostics: []ResourceDiagnostic{}}
 }

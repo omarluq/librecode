@@ -2,6 +2,7 @@ package assistant_test
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,21 @@ import (
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 )
+
+func TestRuntime_ContextBuildIncludesAgentInstructions(t *testing.T) {
+	t.Parallel()
+
+	cwd := t.TempDir()
+	writeRuntimeTestFile(t, filepath.Join(cwd, "AGENTS.md"), "Always follow project instructions.")
+
+	client := &capturingCompleter{request: nil}
+	runtime, _, _ := newTestRuntimeWithManager(t, client)
+	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(cwd, "hello", ""))
+
+	require.NoError(t, err)
+	require.NotNil(t, client.request)
+	assert.Contains(t, client.request.SystemPrompt, "Always follow project instructions.")
+}
 
 func TestRuntime_ContextBuildAcceptsBoundedExtensionContributions(t *testing.T) {
 	t.Parallel()

@@ -23,6 +23,13 @@ const (
 	skillsCacheDebounce = 500 * time.Millisecond
 )
 
+func loadCachedResources(cwd string) LoadSkillsResult {
+	result := LoadSkills(cwd, nil, true)
+	result.AgentInstructions = LoadAgentInstructions(cwd)
+
+	return result
+}
+
 // SkillsCache memoizes LoadSkills results per working directory using samber/hot.
 // Cached entries are invalidated automatically when underlying files change
 // via fsnotify so that new or edited skills are picked up without a restart.
@@ -51,7 +58,7 @@ func newSkillsCache(ttl time.Duration) *SkillsCache {
 			results := make(map[string]LoadSkillsResult, len(cwds))
 
 			for _, cwd := range cwds {
-				results[cwd] = LoadSkills(cwd, nil, true)
+				results[cwd] = loadCachedResources(cwd)
 			}
 
 			return results, nil
@@ -91,10 +98,11 @@ func (c *SkillsCache) Get(cwd string) LoadSkillsResult {
 	if err != nil {
 		slog.Debug("skills cache loader error, falling back to direct load", slog.Any("error", err))
 
-		return LoadSkills(cwd, nil, true)
+		return loadCachedResources(cwd)
 	}
 
 	c.watchSkillDirs(cwd, result.Skills)
+	c.watchAgentInstructionDirs(cwd)
 
 	return result
 }
@@ -199,6 +207,20 @@ func (c *SkillsCache) watchSkillDirs(cwd string, skills []Skill) {
 		watched[dir] = struct{}{}
 
 		c.addWatch(dir)
+	}
+}
+
+func (c *SkillsCache) watchAgentInstructionDirs(cwd string) {
+	if c.watcher == nil {
+		return
+	}
+
+	for _, dir := range agentInstructionDirs(cwd) {
+		c.addWatch(nearestExistingDir(dir))
+	}
+
+	if home, err := LibrecodeHome(); err == nil {
+		c.addWatch(nearestExistingDir(home))
 	}
 }
 

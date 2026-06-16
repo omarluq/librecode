@@ -70,8 +70,8 @@ func remapUsageAnchor(
 	return &remapped
 }
 
-func baseSystemPrompt(cwd string) string {
-	return strings.Join([]string{
+func (runtime *Runtime) baseSystemPrompt(cwd string) string {
+	sections := []string{strings.Join([]string{
 		"You are librecode, an AI coding assistant. Be concise, helpful, and accurate.",
 		"You are running inside a local filesystem workspace.",
 		"Current working directory: " + cwd,
@@ -80,5 +80,11 @@ func baseSystemPrompt(cwd string) string {
 		"Do not claim you cannot access files; inspect them with tools instead.",
 		"Respect .gitignore and default ignored paths; avoid ignored files unless explicitly needed.",
 		"Use the fewest tool calls needed; once you have enough evidence, stop using tools and answer.",
-	}, "\n")
+	}, "\n")}
+
+	if instructions := runtime.loadAgentInstructions(cwd); instructions != "" {
+		sections = append(sections, instructions)
+	}
+
+	return strings.Join(sections, "\n\n")
 }
