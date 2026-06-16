@@ -25,9 +25,9 @@ const (
 	sessionTreePreviewWidth     = 80
 	minimumComposerHeight       = 3
 	composerBorderRows          = 2
-	runtimeBorderWidth          = 2
 	terminalMarkerMargin        = 2
 	initialToolBlockLines       = 10
+	maxToolBlockRenderLines     = 10_000
 	toolBlockBorderWidth        = 2
 	toolHeaderLines             = 2
 	welcomeDoublePadding        = 2

@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"github.com/omarluq/librecode/internal/tui"
 
 	"github.com/omarluq/librecode/internal/terminal/panel"
 )
@@ -18,13 +19,13 @@ func (app *App) openSessionPanel(ctx context.Context) {
 	app.openPanel(model)
 }
 
-func (app *App) sessionItems(ctx context.Context) ([]panel.Item, error) {
+func (app *App) sessionItems(ctx context.Context) ([]tui.ListItem, error) {
 	sessions, err := app.runtime.SessionRepository().ListSessions(ctx, app.cwd)
 	if err != nil {
 		return nil, terminalError(err, "list sessions")
 	}
 
-	items := make([]panel.Item, 0, len(sessions))
+	items := make([]tui.ListItem, 0, len(sessions))
 
 	filteredSessions := app.filteredSessionEntities(sessions)
 	for index := range filteredSessions {
@@ -37,7 +38,7 @@ func (app *App) sessionItems(ctx context.Context) ([]panel.Item, error) {
 		}
 
 		meta := session.UpdatedAt.Format("2006-01-02 15:04")
-		items = append(items, panel.Item{
+		items = append(items, tui.ListItem{
 			Value:       session.ID,
 			Title:       title,
 			Description: description,

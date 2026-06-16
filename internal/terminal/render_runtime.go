@@ -81,32 +81,9 @@ func (app *App) drawUIWindowClear(window *extension.WindowState, drawOp *extensi
 }
 
 func (app *App) drawUIWindowBox(window *extension.WindowState, style extension.UIStyle) {
-	if window.Width <= 0 || window.Height <= 0 {
-		return
-	}
-
-	resolved := app.uiStyle(style)
-
-	if window.Width == 1 {
-		for row := 0; row < window.Height; row++ {
-			tui.WriteCells(app.frame, window.X, window.Y+row, 1, "│", resolved)
-		}
-
-		return
-	}
-
-	top := "╭" + strings.Repeat("─", max(0, window.Width-runtimeBorderWidth)) + "╮"
-	bottom := "╰" + strings.Repeat("─", max(0, window.Width-runtimeBorderWidth)) + "╯"
-	tui.WriteCells(app.frame, window.X, window.Y, window.Width, top, resolved)
-
-	for row := 1; row < window.Height-1; row++ {
-		tui.WriteCells(app.frame, window.X, window.Y+row, 1, "│", resolved)
-		tui.WriteCells(app.frame, window.X+window.Width-1, window.Y+row, 1, "│", resolved)
-	}
-
-	if window.Height > 1 {
-		tui.WriteCells(app.frame, window.X, window.Y+window.Height-1, window.Width, bottom, resolved)
-	}
+	box := tui.NewBox("")
+	box.Style = app.uiStyle(style)
+	box.Draw(app.frame, tui.Rect{X: window.X, Y: window.Y, Width: window.Width, Height: window.Height})
 }
 
 func (app *App) drawUIWindowSpans(window *extension.WindowState, drawOp *extension.UIDrawOp) {

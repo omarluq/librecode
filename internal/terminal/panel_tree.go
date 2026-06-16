@@ -19,9 +19,9 @@ func (app *App) openTreePanel(ctx context.Context) {
 	app.openPanel(panel.New(panelTree, "Session Tree", "select any entry to branch from it", items, true))
 }
 
-func (app *App) treeItems(ctx context.Context) ([]panel.Item, error) {
+func (app *App) treeItems(ctx context.Context) ([]tui.ListItem, error) {
 	if app.sessionID == "" {
-		return []panel.Item{}, nil
+		return []tui.ListItem{}, nil
 	}
 
 	tree, err := app.runtime.SessionRepository().Tree(ctx, app.sessionID)
@@ -29,13 +29,13 @@ func (app *App) treeItems(ctx context.Context) ([]panel.Item, error) {
 		return nil, terminalError(err, "load session tree")
 	}
 
-	items := []panel.Item{}
+	items := []tui.ListItem{}
 	appendTreeItems(&items, tree, "")
 
 	return items, nil
 }
 
-func appendTreeItems(items *[]panel.Item, nodes []database.TreeNodeEntity, prefix string) {
+func appendTreeItems(items *[]tui.ListItem, nodes []database.TreeNodeEntity, prefix string) {
 	for index := range nodes {
 		node := &nodes[index]
 		branch := "├─ "
@@ -49,7 +49,7 @@ func appendTreeItems(items *[]panel.Item, nodes []database.TreeNodeEntity, prefi
 		entry := &node.Entry
 		title := prefix + branch + string(entry.Type)
 		description := treeDescription(entry)
-		*items = append(*items, panel.Item{
+		*items = append(*items, tui.ListItem{
 			Value:       entry.ID,
 			Title:       title,
 			Description: description,

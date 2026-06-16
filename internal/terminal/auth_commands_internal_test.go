@@ -2,7 +2,6 @@ package terminal
 
 import (
 	"context"
-	"github.com/omarluq/librecode/internal/terminal/panel"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/testutil"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func TestAuthPanelItemsReflectProviderStatus(t *testing.T) {
@@ -214,7 +214,7 @@ func readAuthAsyncEvent(t *testing.T, app *App) *asyncEvent {
 	}
 }
 
-func panelItemValues(items []panel.Item) []string {
+func panelItemValues(items []tui.ListItem) []string {
 	values := make([]string, 0, len(items))
 	for _, item := range items {
 		values = append(values, item.Value)

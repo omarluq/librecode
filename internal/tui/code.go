@@ -61,9 +61,10 @@ func (view *DiffView) Render(width, height int) []Line {
 		return []Line{}
 	}
 
-	lines := WrapCodeLines(DiffStyledLines(view.Text, view.Theme, view.Style), width)
+	styled := DiffStyledLines(view.Text, view.Theme, view.Style)
+	wrapped := WrapCodeLines(styled, width)
 
-	return Tail(lines, height)
+	return Tail(wrapped, height)
 }
 
 // Draw draws diff lines.
@@ -74,6 +75,20 @@ func (view *DiffView) Draw(screen ContentSetter, rect Rect) {
 // SyntaxHighlightedCodeLines returns syntax-highlighted code lines.
 func SyntaxHighlightedCodeLines(language, text string, theme CodeTheme, baseStyle tcell.Style) []Line {
 	return newLexerCodeRenderer(nil).render(language, text, theme, baseStyle)
+}
+
+// PrefixLines prepends prefix to each rich line while preserving existing span styles.
+func PrefixLines(lines []Line, prefix string, prefixStyle tcell.Style) []Line {
+	if prefix == "" || len(lines) == 0 {
+		return lines
+	}
+
+	prefixed := make([]Line, 0, len(lines))
+	for _, line := range lines {
+		prefixed = append(prefixed, line.WithPrefix(prefix, prefixStyle))
+	}
+
+	return prefixed
 }
 
 // lexerCodeRenderer owns a cache-backed lexer engine and renders

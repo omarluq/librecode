@@ -29,6 +29,26 @@ func (line Line) Clone() Line {
 	return line
 }
 
+// WithPrefix returns a copy of the line with prefix prepended using prefixStyle.
+func (line Line) WithPrefix(prefix string, prefixStyle tcell.Style) Line {
+	if prefix == "" {
+		return line.Clone()
+	}
+
+	text := line.Text
+
+	line.Text = prefix + text
+	if len(line.Spans) == 0 {
+		line.Spans = []Span{{Text: prefix, Style: prefixStyle}, {Text: text, Style: line.Style}}
+
+		return line
+	}
+
+	line.Spans = append([]Span{{Text: prefix, Style: prefixStyle}}, line.Spans...)
+
+	return line
+}
+
 // Truncate returns a copy of the line clipped to width cells.
 func (line Line) Truncate(width int) Line {
 	if width <= 0 {

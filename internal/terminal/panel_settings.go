@@ -1,5 +1,6 @@
 package terminal
 
+import "github.com/omarluq/librecode/internal/tui"
 import "github.com/omarluq/librecode/internal/terminal/panel"
 
 const (
@@ -21,9 +22,9 @@ func (app *App) openSettingsPanel() {
 }
 
 func (app *App) openHotkeysPanel() {
-	items := make([]panel.Item, 0, len(app.keys.rows()))
+	items := make([]tui.ListItem, 0, len(app.keys.rows()))
 	for _, row := range app.keys.rows() {
-		items = append(items, panel.Item{
+		items = append(items, tui.ListItem{
 			Value:       row.Action,
 			Title:       row.Keys,
 			Description: row.Description,
@@ -35,7 +36,7 @@ func (app *App) openHotkeysPanel() {
 }
 
 func (app *App) openChangelogPanel() {
-	items := []panel.Item{
+	items := []tui.ListItem{
 		{
 			Value:       "tui",
 			Title:       "TUI parity",
@@ -52,8 +53,8 @@ func (app *App) openChangelogPanel() {
 	app.openPanel(panel.New(panelChangelog, "Changelog", "recent runtime work", items, false))
 }
 
-func (app *App) settingsItems() []panel.Item {
-	return []panel.Item{
+func (app *App) settingsItems() []tui.ListItem {
+	return []tui.ListItem{
 		{Value: settingTheme, Title: "Theme", Description: "dark/light visual palette", Meta: app.theme.name},
 		{
 			Value:       settingThinking,

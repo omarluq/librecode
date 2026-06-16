@@ -67,12 +67,11 @@ type MarkdownStyles struct {
 }
 
 // MarkdownView renders markdown into terminal lines.
-// When Engine is non-nil the cached parser is reused; otherwise a throwaway
-// parser is created per call (backward-compatible behavior).
+// When Engine is nil, Render reuses the view-local parser across calls.
 type MarkdownView struct {
-	Text   string
 	Engine *MarkdownEngine
 	Lexer  *LexerEngine
+	Text   string
 	Styles MarkdownStyles
 }
 
@@ -98,13 +97,15 @@ func (view *MarkdownView) Render(width, height int) []Line {
 	return Tail(renderer.lines, height)
 }
 
-// engine returns the cached parser engine, falling back to a throwaway one.
+// engine returns the injected parser engine or a new lazily initialized engine.
 func (view *MarkdownView) engine() *MarkdownEngine {
 	if view.Engine != nil {
 		return view.Engine
 	}
 
-	return &MarkdownEngine{parser: nil, once: sync.Once{}}
+	view.Engine = &MarkdownEngine{parser: nil, once: sync.Once{}}
+
+	return view.Engine
 }
 
 // Draw draws markdown into rect.
@@ -186,14 +187,7 @@ func (renderer *markdownRenderer) appendCodeLines(language, text, indent string)
 }
 
 func (renderer *markdownRenderer) prependIndentToLine(line *Line, indent string, indentStyle tcell.Style) {
-	line.Text = indent + line.Text
-	if len(line.Spans) == 0 {
-		line.Spans = []Span{{Text: line.Text, Style: line.Style}}
-
-		return
-	}
-
-	line.Spans = append([]Span{{Text: indent, Style: indentStyle}}, line.Spans...)
+	*line = line.WithPrefix(indent, indentStyle)
 }
 
 func (renderer *markdownRenderer) renderList(node *ast.List, indent string) {
