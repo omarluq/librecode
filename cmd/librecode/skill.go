@@ -10,34 +10,53 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 )
 
+type skillCommandLoader func(cwd string) core.LoadSkillsResult
+
 func newSkillCmd() *cobra.Command {
+	return newSkillCmdWithDeps(defaultSkillCommandCWD, defaultSkillCommandLoader)
+}
+
+func defaultSkillCommandCWD() (string, error) {
+	cwd, err := assistant.DefaultCWD("")
+	if err != nil {
+		return "", cliError(err, cliResolveWorkingDirectory)
+	}
+
+	return cwd, nil
+}
+
+func defaultSkillCommandLoader(cwd string) core.LoadSkillsResult {
+	return core.LoadSkills(cwd, nil, true)
+}
+
+func newSkillCmdWithDeps(resolveCWD func() (string, error), loadSkills skillCommandLoader) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "skill",
 		Short: "List and inspect Agent Skills",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return newSkillListCmd().RunE(cmd, nil)
+			return newSkillListCmd(resolveCWD, loadSkills).RunE(cmd, nil)
 		},
 	}
 
-	cmd.AddCommand(newSkillListCmd())
-	cmd.AddCommand(newSkillShowCmd())
-	cmd.AddCommand(newSkillValidateCmd())
+	cmd.AddCommand(newSkillListCmd(resolveCWD, loadSkills))
+	cmd.AddCommand(newSkillShowCmd(resolveCWD, loadSkills))
+	cmd.AddCommand(newSkillValidateCmd(resolveCWD, loadSkills))
 
 	return cmd
 }
 
-func newSkillListCmd() *cobra.Command {
+func newSkillListCmd(resolveCWD func() (string, error), loadSkills skillCommandLoader) *cobra.Command {
 	return &cobra.Command{
 		Use:   listUse,
 		Short: "List discovered Agent Skills",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cwd, err := assistant.DefaultCWD("")
+			cwd, err := resolveCWD()
 			if err != nil {
 				return cliError(err, cliResolveWorkingDirectory)
 			}
 
-			result := core.LoadSkills(cwd, nil, true)
+			result := loadSkills(cwd)
 			for index := range result.Skills {
 				skill := &result.Skills[index]
 				if err := printLine(
@@ -56,18 +75,20 @@ func newSkillListCmd() *cobra.Command {
 	}
 }
 
-func newSkillShowCmd() *cobra.Command {
+func newSkillShowCmd(resolveCWD func() (string, error), loadSkills skillCommandLoader) *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <name>",
 		Short: "Print one skill's SKILL.md content",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cwd, err := assistant.DefaultCWD("")
+			cwd, err := resolveCWD()
 			if err != nil {
 				return cliError(err, cliResolveWorkingDirectory)
 			}
 
-			skill, found := findSkillByName(cwd, args[0])
+			result := loadSkills(cwd)
+
+			skill, found := findSkillByName(result.Skills, args[0])
 			if !found {
 				return fmt.Errorf("skill %q not found", args[0])
 			}
@@ -82,18 +103,18 @@ func newSkillShowCmd() *cobra.Command {
 	}
 }
 
-func newSkillValidateCmd() *cobra.Command {
+func newSkillValidateCmd(resolveCWD func() (string, error), loadSkills skillCommandLoader) *cobra.Command {
 	return &cobra.Command{
 		Use:   "validate",
 		Short: "Validate discovered Agent Skills",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cwd, err := assistant.DefaultCWD("")
+			cwd, err := resolveCWD()
 			if err != nil {
 				return cliError(err, cliResolveWorkingDirectory)
 			}
 
-			result := core.LoadSkills(cwd, nil, true)
+			result := loadSkills(cwd)
 			for index := range result.Diagnostics {
 				diagnostic := &result.Diagnostics[index]
 				if err := printLine(
@@ -116,10 +137,9 @@ func newSkillValidateCmd() *cobra.Command {
 	}
 }
 
-func findSkillByName(cwd, name string) (core.Skill, bool) {
-	result := core.LoadSkills(cwd, nil, true)
-	for index := range result.Skills {
-		skill := result.Skills[index]
+func findSkillByName(skills []core.Skill, name string) (core.Skill, bool) {
+	for index := range skills {
+		skill := skills[index]
 		if strings.EqualFold(skill.Name, name) {
 			return skill, true
 		}
