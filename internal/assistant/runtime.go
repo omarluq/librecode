@@ -297,6 +297,14 @@ func (runtime *Runtime) loadSkills(cwd string) []core.Skill {
 	return core.LoadSkills(cwd, nil, true).Skills
 }
 
+func (runtime *Runtime) loadAgentInstructions(cwd string) string {
+	if runtime.skillsCache != nil {
+		return runtime.skillsCache.Get(cwd).AgentInstructions
+	}
+
+	return core.LoadAgentInstructions(cwd)
+}
+
 // ModelRegistry returns the model registry used by the runtime.
 func (runtime *Runtime) ModelRegistry() *model.Registry {
 	return runtime.models

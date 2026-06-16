@@ -288,13 +288,9 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 
 func initialResourceSnapshot(options *RunOptions) core.ResourceSnapshot {
 	resources := core.ResourceSnapshot{
-		SkillDiagnostics:   nil,
-		PromptDiagnostics:  nil,
-		AppendSystemPrompt: nil,
-		ContextFiles:       nil,
-		SystemPrompt:       "",
-		Skills:             nil,
-		Prompts:            nil,
+		SkillDiagnostics:  nil,
+		AgentInstructions: "",
+		Skills:            nil,
 	}
 	if options.Resources != nil {
 		resources = *options.Resources

@@ -8,8 +8,6 @@ const (
 	diagnosticCollision = "collision"
 	resourceSourceLocal = "local"
 	resourceTypeSkill   = "skill"
-	resourceTypePrompt  = "prompt"
-	promptDirName       = "prompts"
 	skillDirName        = "skills"
 	skillFileName       = "SKILL.md"
 )

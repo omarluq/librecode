@@ -15,7 +15,6 @@ func TestLoadTerminalResourcesReturnsSnapshot(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("LIBRECODE_HOME", home)
-	writeCLIFile(t, filepath.Join(cwd, "AGENTS.md"), "project context")
 	writeCLIFile(
 		t,
 		filepath.Join(cwd, core.ConfigDirName, "skills", "terminal", "SKILL.md"),
@@ -24,9 +23,6 @@ func TestLoadTerminalResourcesReturnsSnapshot(t *testing.T) {
 
 	snapshot := loadTerminalResources(context.Background(), cwd)
 
-	assert.Contains(t, lo.Map(snapshot.ContextFiles, func(contextFile core.ContextFile, _ int) string {
-		return contextFile.Path
-	}), filepath.Join(cwd, "AGENTS.md"))
 	skillNames := lo.Map(snapshot.Skills, func(skill core.Skill, _ int) string { return skill.Name })
 	assert.Contains(t, skillNames, "terminal")
 }
@@ -39,15 +35,5 @@ func TestLoadTerminalResourcesReturnsEmptySnapshotOnCanceledContext(t *testing.T
 
 	snapshot := loadTerminalResources(ctx, t.TempDir())
 
-	assert.Empty(t, snapshot.ContextFiles)
 	assert.Empty(t, snapshot.Skills)
-	assert.Empty(t, snapshot.Prompts)
-}
-
-func TestTerminalAgentDirFallsBackWhenHomeCannotBeResolved(t *testing.T) {
-	t.Setenv("LIBRECODE_HOME", "")
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
-
-	assert.Equal(t, filepath.Join(".", core.ConfigDirName), terminalAgentDir())
 }

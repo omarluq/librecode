@@ -61,7 +61,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		usageAnchor = remapUsageAnchor(contextEntity.UsageAnchor, contextEntity.Messages, messages)
 	}
 
-	basePrompt := baseSystemPrompt(cwd)
+	basePrompt := runtime.baseSystemPrompt(cwd)
 
 	skillPrompt := ""
 	if skills := runtime.loadSkills(cwd); len(skills) > 0 {
@@ -145,7 +145,7 @@ func (runtime *Runtime) modelContextBase(
 	usageAnchor *database.ContextUsageAnchorEntity,
 	onEvent func(StreamEvent),
 ) (contextwindow.Base, error) {
-	basePrompt := baseSystemPrompt(cwd)
+	basePrompt := runtime.baseSystemPrompt(cwd)
 	skills := runtime.loadSkills(cwd)
 
 	availableSkillsPrompt := ""

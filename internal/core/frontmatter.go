@@ -32,21 +32,6 @@ func Frontmatter(content string) (data []byte, body string) {
 	return []byte(frontmatter), content[endIndex+separatorLength:]
 }
 
-func parsePromptFrontmatter(content string) (promptFrontmatter, string, error) {
-	var metadata promptFrontmatter
-
-	frontmatter, body := Frontmatter(content)
-	if strings.TrimSpace(string(frontmatter)) == "" {
-		return metadata, body, nil
-	}
-
-	if err := yaml.Unmarshal(frontmatter, &metadata); err != nil {
-		return metadata, body, coreError(err, "parse frontmatter")
-	}
-
-	return metadata, body, nil
-}
-
 func parseSkillFrontmatter(content string) (skillFrontmatter, string, error) {
 	var metadata skillFrontmatter
 
