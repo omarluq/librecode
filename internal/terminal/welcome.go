@@ -78,7 +78,7 @@ func (app *App) drawWelcomeOnly(width, height, row int) int {
 
 func (app *App) writeWelcomeLine(row, width, lineIndex int, content string) {
 	line := app.welcomeStyledLine(width, lineIndex, content)
-	writeLine(app.frame, row, width, line.Text, line.Style)
+	tui.WriteCells(app.frame, 0, row, width, line.Text, line.Style)
 }
 
 func (app *App) welcomeStyledLine(width, lineIndex int, content string) tui.Line {
@@ -115,7 +115,7 @@ func (app *App) appendWelcomePaddingLines(lines *[]tui.Line, width, count int) {
 func (app *App) writeWelcomePaddingRows(row, width, count int) {
 	style := app.theme.background(colorCustomMessageBg)
 	for offset := range count {
-		writeLine(app.frame, row+offset, width, tui.PadRight("", width), style)
+		tui.WriteCells(app.frame, 0, row+offset, width, tui.PadRight("", width), style)
 	}
 }
 

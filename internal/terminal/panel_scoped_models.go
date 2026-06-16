@@ -3,6 +3,7 @@ package terminal
 import (
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/terminal/panel"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func (app *App) openScopedModelsPanel() {
@@ -15,10 +16,10 @@ func (app *App) openScopedModelsPanel() {
 	))
 }
 
-func (app *App) scopedModelItems() []panel.Item {
+func (app *App) scopedModelItems() []tui.ListItem {
 	models := app.orderedAvailableModels()
 
-	items := make([]panel.Item, 0, len(models))
+	items := make([]tui.ListItem, 0, len(models))
 	for index := range models {
 		knownModel := &models[index]
 		value := modelLabel(knownModel.Provider, knownModel.ID)
@@ -28,7 +29,7 @@ func (app *App) scopedModelItems() []panel.Item {
 			check = "☑"
 		}
 
-		items = append(items, panel.Item{
+		items = append(items, tui.ListItem{
 			Value:       value,
 			Title:       check + " " + knownModel.ID,
 			Description: knownModel.Name,

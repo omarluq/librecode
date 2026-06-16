@@ -111,7 +111,7 @@ func (app *App) flushFrame() {
 
 func (app *App) drawTiny(width, height int) {
 	message := tui.Truncate("librecode: terminal too small", width)
-	writeLine(app.frame, max(0, height/terminalHalf), width, message, app.theme.style(colorWarning))
+	tui.WriteCells(app.frame, 0, max(0, height/terminalHalf), width, message, app.theme.style(colorWarning))
 }
 
 func (app *App) writeStyledLine(row, width int, line tui.Line) {

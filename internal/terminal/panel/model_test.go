@@ -1,6 +1,7 @@
 package panel_test
 
 import (
+	"github.com/omarluq/librecode/internal/tui"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -61,7 +62,7 @@ func runPanelScenario(t *testing.T, scenario panelScenario) {
 func assertPanelFiltering(t *testing.T) {
 	t.Helper()
 
-	model := newTestPanelModel([]panel.Item{
+	model := newTestPanelModel([]tui.ListItem{
 		{Value: "first", Title: testPanelTitleAlpha, Description: "primary", Meta: "[one]"},
 		{Value: "second", Title: testPanelTitleBeta, Description: "secondary", Meta: "[two]"},
 	})
@@ -81,7 +82,7 @@ func assertPanelFiltering(t *testing.T) {
 func assertPanelSelection(t *testing.T) {
 	t.Helper()
 
-	model := newTestPanelModel([]panel.Item{
+	model := newTestPanelModel([]tui.ListItem{
 		{Value: "a", Title: testPanelTitleAlpha, Description: "", Meta: ""},
 		{Value: "b", Title: testPanelTitleBeta, Description: "", Meta: ""},
 	})
@@ -100,7 +101,7 @@ func assertPanelSelection(t *testing.T) {
 func assertPanelKeyBinding(t *testing.T) {
 	t.Helper()
 
-	model := newTestPanelModel([]panel.Item{{Value: "a", Title: testPanelTitleAlpha, Description: "", Meta: ""}})
+	model := newTestPanelModel([]tui.ListItem{{Value: "a", Title: testPanelTitleAlpha, Description: "", Meta: ""}})
 	action := model.HandleKey(tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone), testBindings{
 		panel.ActionSelectConfirm: true,
 	})
@@ -112,7 +113,7 @@ func assertPanelKeyBinding(t *testing.T) {
 func assertPanelRendering(t *testing.T) {
 	t.Helper()
 
-	model := newTestPanelModel([]panel.Item{
+	model := newTestPanelModel([]tui.ListItem{
 		{Value: "a", Title: testPanelTitleAlpha, Description: "first", Meta: "[one]"},
 	})
 	texts := renderPanelTexts(model)
@@ -122,8 +123,8 @@ func assertPanelRendering(t *testing.T) {
 }
 
 func renderPanelTexts(model *panel.Model) []string {
-	lines := model.Render(&panel.RenderOptions{
-		Styles: panel.Styles{
+	lines := model.Render(&tui.ListRenderOptions{
+		Styles: tui.ListStyles{
 			Border:   tcell.StyleDefault,
 			Accent:   tcell.StyleDefault,
 			Muted:    tcell.StyleDefault,
@@ -131,7 +132,7 @@ func renderPanelTexts(model *panel.Model) []string {
 			Selected: tcell.StyleDefault.Bold(true),
 			Dim:      tcell.StyleDefault,
 		},
-		Hints:  panel.Hints{Up: "up", Down: "down", Confirm: "enter", Cancel: "esc"},
+		Hints:  tui.ListHints{Up: "up", Down: "down", Confirm: "enter", Cancel: "esc"},
 		Width:  40,
 		Height: 8,
 	})
@@ -144,7 +145,7 @@ func renderPanelTexts(model *panel.Model) []string {
 	return texts
 }
 
-func newTestPanelModel(items []panel.Item) *panel.Model {
+func newTestPanelModel(items []tui.ListItem) *panel.Model {
 	return panel.New(panel.Kind("test"), "Pick", "type to filter", items, true)
 }
 

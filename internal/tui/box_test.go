@@ -23,3 +23,14 @@ func TestBoxDrawsBorderAndFallsBackToRoundedBorder(t *testing.T) {
 	require.Equal(t, "│      │", bufferLine(buffer, 2))
 	require.Equal(t, "╰──────╯", bufferLine(buffer, 3))
 }
+
+func TestBoxDrawsNarrowBorders(t *testing.T) {
+	t.Parallel()
+
+	buffer := tui.NewCellBuffer(1, 3, tcell.StyleDefault)
+	tui.NewBox("").Draw(buffer, testRect(0, 0, 1, 3))
+
+	require.Equal(t, "╭", bufferLine(buffer, 0))
+	require.Equal(t, "│", bufferLine(buffer, 1))
+	require.Equal(t, "╰", bufferLine(buffer, 2))
+}

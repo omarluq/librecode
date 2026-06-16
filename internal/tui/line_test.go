@@ -33,6 +33,11 @@ func TestLineStyledOperationsPreserveSpans(t *testing.T) {
 	require.Equal(t, []string{testHello, "world"}, lineTexts(line.Wrap(6)))
 	require.Equal(t, []string{"hello ", "world"}, lineTexts(line.WrapPreserveWhitespace(6)))
 	require.Equal(t, []string{testHello, " worl", "d"}, lineTexts(line.WrapCells(5)))
+
+	prefixed := line.WithPrefix("› ", red)
+	require.Equal(t, "› hello world", prefixed.Text)
+	require.Equal(t, "› ", prefixed.Spans[0].Text)
+	require.Equal(t, red, prefixed.Spans[0].Style)
 }
 
 func TestLinePlainTextAndEdgeCases(t *testing.T) {

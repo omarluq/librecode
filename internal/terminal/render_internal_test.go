@@ -496,8 +496,8 @@ func TestMouseSelectionCopiesFrameText(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.screen = screen
 	app.frame = tui.NewCellBuffer(8, 2, tcell.StyleDefault)
-	writeLine(app.frame, 0, 8, "hello", tcell.StyleDefault)
-	writeLine(app.frame, 1, 8, "world", tcell.StyleDefault)
+	tui.WriteCells(app.frame, 0, 0, 8, "hello", tcell.StyleDefault)
+	tui.WriteCells(app.frame, 0, 1, 8, "world", tcell.StyleDefault)
 
 	app.handleMouse(tcell.NewEventMouse(1, 0, tcell.ButtonPrimary, tcell.ModNone))
 	app.handleMouse(tcell.NewEventMouse(3, 1, tcell.ButtonPrimary, tcell.ModNone))
@@ -515,7 +515,7 @@ func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.screen = screen
 	app.frame = tui.NewCellBuffer(16, 1, tcell.StyleDefault)
-	writeLine(app.frame, 0, 16, "hello world", tcell.StyleDefault)
+	tui.WriteCells(app.frame, 0, 0, 16, "hello world", tcell.StyleDefault)
 
 	firstClick := time.Now()
 
@@ -545,7 +545,7 @@ func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.screen = screen
 	app.frame = tui.NewCellBuffer(16, 1, tcell.StyleDefault)
-	writeLine(app.frame, 0, 16, "hello   world", tcell.StyleDefault)
+	tui.WriteCells(app.frame, 0, 0, 16, "hello   world", tcell.StyleDefault)
 
 	firstClick := time.Now()
 
@@ -571,8 +571,8 @@ func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.screen = screen
 	app.frame = tui.NewCellBuffer(16, 2, tcell.StyleDefault)
-	writeLine(app.frame, 0, 16, "hello", tcell.StyleDefault)
-	writeLine(app.frame, 1, 16, "hello world", tcell.StyleDefault)
+	tui.WriteCells(app.frame, 0, 0, 16, "hello", tcell.StyleDefault)
+	tui.WriteCells(app.frame, 0, 1, 16, "hello world", tcell.StyleDefault)
 
 	firstClick := time.Now()
 
@@ -602,7 +602,7 @@ func TestFlushFrameHighlightsSelection(t *testing.T) {
 	app.screen = screen
 	app.renderer = tui.NewRenderer(screen)
 	app.frame = tui.NewCellBuffer(6, 1, tcell.StyleDefault)
-	writeLine(app.frame, 0, 6, "abcdef", app.theme.style(colorText))
+	tui.WriteCells(app.frame, 0, 0, 6, "abcdef", app.theme.style(colorText))
 	app.selection = mouseSelection{
 		lastClickUnixNano: 0,
 		startX:            1,

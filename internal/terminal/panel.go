@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"github.com/omarluq/librecode/internal/terminal/panel"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
@@ -19,9 +20,9 @@ const (
 	changelogCommandName = "changelog"
 )
 
-func panelRenderOptions(width, height int, theme terminalTheme, bindings *keybindings) panel.RenderOptions {
-	return panel.RenderOptions{
-		Styles: panel.Styles{
+func panelRenderOptions(width, height int, theme terminalTheme, bindings *keybindings) tui.ListRenderOptions {
+	return tui.ListRenderOptions{
+		Styles: tui.ListStyles{
 			Border:   theme.style(colorBorder),
 			Accent:   theme.style(colorAccent),
 			Muted:    theme.style(colorMuted),
@@ -29,7 +30,7 @@ func panelRenderOptions(width, height int, theme terminalTheme, bindings *keybin
 			Selected: theme.selected(),
 			Dim:      theme.style(colorDim),
 		},
-		Hints: panel.Hints{
+		Hints: tui.ListHints{
 			Up:      bindings.hint(actionSelectUp),
 			Down:    bindings.hint(actionSelectDown),
 			Confirm: bindings.hint(actionSelectConfirm),

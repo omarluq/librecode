@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"errors"
+	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 	"time"
 
@@ -42,12 +43,12 @@ func (app *App) openLogoutPanel() {
 	app.openPanel(panel.New(panelAuthLogout, "Logout", "Select stored credential to remove", items, true))
 }
 
-func (app *App) loginProviderItems() []panel.Item {
+func (app *App) loginProviderItems() []tui.ListItem {
 	providers := app.authProviderIDs()
 
-	items := make([]panel.Item, 0, len(providers))
+	items := make([]tui.ListItem, 0, len(providers))
 	for _, provider := range providers {
-		items = append(items, panel.Item{
+		items = append(items, tui.ListItem{
 			Value:       provider,
 			Title:       providerDisplayName(provider),
 			Description: authDescription(provider),
@@ -58,15 +59,15 @@ func (app *App) loginProviderItems() []panel.Item {
 	return items
 }
 
-func (app *App) logoutProviderItems() []panel.Item {
+func (app *App) logoutProviderItems() []tui.ListItem {
 	providers := []string{}
 	if app.auth != nil {
 		providers = app.auth.List()
 	}
 
-	items := make([]panel.Item, 0, len(providers))
+	items := make([]tui.ListItem, 0, len(providers))
 	for _, provider := range providers {
-		items = append(items, panel.Item{
+		items = append(items, tui.ListItem{
 			Value:       provider,
 			Title:       providerDisplayName(provider),
 			Description: authDescription(provider),

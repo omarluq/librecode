@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"github.com/omarluq/librecode/internal/tui"
 	"sort"
 	"strings"
 
@@ -13,9 +14,9 @@ func (app *App) openModelPanel() {
 	app.openPanel(panel.New(panelModel, "Select Model", "type to filter; Enter selects", items, true))
 }
 
-func (app *App) modelItems() []panel.Item {
+func (app *App) modelItems() []tui.ListItem {
 	models := app.availableModels()
-	items := make([]panel.Item, 0, len(models))
+	items := make([]tui.ListItem, 0, len(models))
 	current := modelLabel(app.currentProvider(), app.currentModel())
 
 	for index := range models {
@@ -27,7 +28,12 @@ func (app *App) modelItems() []panel.Item {
 			meta += " ✓"
 		}
 
-		items = append(items, panel.Item{Value: value, Title: knownModel.ID, Description: knownModel.Name, Meta: meta})
+		items = append(items, tui.ListItem{
+			Value:       value,
+			Title:       knownModel.ID,
+			Description: knownModel.Name,
+			Meta:        meta,
+		})
 	}
 
 	return items

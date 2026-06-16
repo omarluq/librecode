@@ -97,16 +97,16 @@ func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Sty
 		return nil
 	}
 
-	innerWidth := max(1, width-toolBlockBorderWidth)
 	baseStyle := app.theme.background(colorCodeBg).Foreground(app.theme.colors[colorCodeText])
-	content := tui.DiffStyledLines(diff, codeTheme(app.theme), baseStyle)
-	lines := []tui.Line{tui.NewLine(style.Bold(true), tui.PadRight("diff:", width))}
-
-	for _, line := range content {
-		for _, wrapped := range tui.WrapPreserveWhitespace(line.Text, innerWidth) {
-			lines = append(lines, tui.NewLine(line.Style, tui.PadRight("  "+wrapped, width)))
-		}
-	}
+	view := tui.DiffView{Style: baseStyle, Text: diff, Theme: codeTheme(app.theme)}
+	content := tui.PrefixLines(
+		view.Render(max(1, width-toolBlockBorderWidth), maxToolBlockRenderLines),
+		"  ",
+		baseStyle,
+	)
+	lines := make([]tui.Line, 0, len(content)+1)
+	lines = append(lines, tui.NewLine(style.Bold(true), tui.PadRight("diff:", width)))
+	lines = append(lines, padLinesRight(content, width)...)
 
 	return lines
 }
@@ -126,6 +126,16 @@ func plainSectionLines(width int, label, content string, style tcell.Style) []tu
 	lines = append(lines, tui.NewLine(style.Bold(true), tui.PadRight(label+":", width)))
 
 	return append(lines, contentLines...)
+}
+
+func padLinesRight(lines []tui.Line, width int) []tui.Line {
+	padded := make([]tui.Line, 0, len(lines))
+	for _, line := range lines {
+		line.Text = tui.PadRight(line.Text, width)
+		padded = append(padded, line)
+	}
+
+	return padded
 }
 
 func indentedLines(width int, content string, style tcell.Style) []tui.Line {

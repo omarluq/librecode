@@ -1,6 +1,7 @@
 package panel_test
 
 import (
+	"github.com/omarluq/librecode/internal/tui"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -13,7 +14,7 @@ import (
 func TestModelHandleKeyNavigationCancelAndSearch(t *testing.T) {
 	t.Parallel()
 
-	items := []panel.Item{
+	items := []tui.ListItem{
 		{Value: "a", Title: "Alpha", Description: "", Meta: ""},
 		{Value: "b", Title: testPanelTitleBeta, Description: "", Meta: ""},
 		{Value: "g", Title: "Gamma", Description: "", Meta: ""},
@@ -91,7 +92,7 @@ func TestModelHandleKeyIgnoresSearchWhenDisabledOrEventNil(t *testing.T) {
 				panel.Kind("test"),
 				"Pick",
 				"",
-				[]panel.Item{{Value: "a", Title: "Alpha", Description: "", Meta: ""}},
+				[]tui.ListItem{{Value: "a", Title: "Alpha", Description: "", Meta: ""}},
 				testCase.searchable,
 			)
 
@@ -108,7 +109,7 @@ func TestModelAccessorsAndWindowStart(t *testing.T) {
 		panel.Kind("kind"),
 		"Pick",
 		"",
-		[]panel.Item{
+		[]tui.ListItem{
 			{Value: "0", Title: "Zero", Description: "", Meta: ""},
 			{Value: "1", Title: "One", Description: "", Meta: ""},
 			{Value: "2", Title: "Two", Description: "", Meta: ""},
@@ -124,8 +125,8 @@ func TestModelAccessorsAndWindowStart(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "3", selected.Value)
 
-	lines := model.Render(&panel.RenderOptions{
-		Styles: panel.Styles{
+	lines := model.Render(&tui.ListRenderOptions{
+		Styles: tui.ListStyles{
 			Border:   tcell.StyleDefault,
 			Accent:   tcell.StyleDefault,
 			Muted:    tcell.StyleDefault,
@@ -133,7 +134,7 @@ func TestModelAccessorsAndWindowStart(t *testing.T) {
 			Selected: tcell.StyleDefault,
 			Dim:      tcell.StyleDefault,
 		},
-		Hints:  panel.Hints{Up: "up", Down: "down", Confirm: "enter", Cancel: "esc"},
+		Hints:  tui.ListHints{Up: "up", Down: "down", Confirm: "enter", Cancel: "esc"},
 		Width:  20,
 		Height: 5,
 	})

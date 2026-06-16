@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/terminal/panel"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func TestPanelRenderOptionsUsesThemeAndKeybindingHints(t *testing.T) {
@@ -25,7 +25,7 @@ func TestPanelRenderOptionsUsesThemeAndKeybindingHints(t *testing.T) {
 
 	assert.Equal(t, 42, options.Width)
 	assert.Equal(t, 9, options.Height)
-	assert.Equal(t, panel.Hints{Up: "k", Down: "j", Confirm: "enter", Cancel: "esc"}, options.Hints)
+	assert.Equal(t, tui.ListHints{Up: "k", Down: "j", Confirm: "enter", Cancel: "esc"}, options.Hints)
 	assert.Equal(t, theme.colors[colorBorder], foreground(t, options.Styles.Border))
 	assert.Equal(t, theme.colors[colorAccent], foreground(t, options.Styles.Accent))
 	assert.Equal(t, theme.colors[colorMuted], foreground(t, options.Styles.Muted))

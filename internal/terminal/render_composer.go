@@ -64,7 +64,7 @@ func (app *App) drawStatusWindow(layout *extui.Layout) {
 			return
 		}
 
-		writeLine(app.frame, window.Y+index, window.Width, line.Text, line.Style)
+		tui.WriteCells(app.frame, 0, window.Y+index, window.Width, line.Text, line.Style)
 	}
 }
 
@@ -80,7 +80,7 @@ func (app *App) drawEditorAndFooter(width, height, _ int) {
 	}
 
 	for index, line := range layout.footerLines {
-		writeLine(app.frame, layout.footerStart+index, width, line.Text, line.Style)
+		tui.WriteCells(app.frame, 0, layout.footerStart+index, width, line.Text, line.Style)
 	}
 
 	app.screen.ShowCursor(layout.editor.CursorCol, layout.editorStart+layout.editor.CursorRow)

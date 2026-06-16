@@ -1,10 +1,11 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func writeStyled(screen tui.ContentSetter, row, width int, line tui.Line) {
@@ -18,10 +19,6 @@ func fillStyledLineRemainder(screen tui.ContentSetter, row, width int, line tui.
 		screen.SetContent(used, row, ' ', nil, line.Style)
 		used++
 	}
-}
-
-func writeLine(screen tui.ContentSetter, row, width int, text string, style tcell.Style) {
-	tui.WriteCells(screen, 0, row, width, text, style)
 }
 
 func writeLineWithVerticalBorders(

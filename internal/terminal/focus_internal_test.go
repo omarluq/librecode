@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"github.com/omarluq/librecode/internal/terminal/panel"
+	"github.com/omarluq/librecode/internal/tui"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
@@ -45,7 +46,7 @@ librecode.keymap.set({ focus = "composer" }, "down", function()
   librecode.event.consume()
 end)
 `)
-	app.openPanel(panel.New(panelModel, "Models", "", []panel.Item{
+	app.openPanel(panel.New(panelModel, "Models", "", []tui.ListItem{
 		{Value: firstPanelItem, Title: firstPanelItem, Description: "", Meta: ""},
 		{Value: secondPanelItem, Title: secondPanelItem, Description: "", Meta: ""},
 	}, true))
