@@ -57,15 +57,6 @@ func (source SourceRef) Key() string {
 	return source.Scheme + ":" + source.Value
 }
 
-// LocalPath returns the local path for path source refs.
-func (source SourceRef) LocalPath() (string, bool) {
-	if source.Scheme == sourceSchemePath {
-		return source.Value, true
-	}
-
-	return "", false
-}
-
 func (source SourceRef) validate() error {
 	switch source.Scheme {
 	case sourceSchemeOfficial:

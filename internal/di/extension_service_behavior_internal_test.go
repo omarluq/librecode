@@ -25,10 +25,7 @@ func TestExtensionServiceUsesProjectLockfile(t *testing.T) {
 
 	writeDIFile(t, projectConfig, []byte("extensions:\n  use:\n    - github:owner/repo\n"))
 
-	lockFile := extension.LockFile{Extensions: map[string]extension.LockedExtension{
-		"github:owner/repo": {Resolved: "", Version: "v9.9.9"},
-	}}
-	require.NoError(t, extension.WriteLockFile(projectLock, lockFile))
+	writeDIFile(t, projectLock, []byte("extensions:\n  github:owner/repo:\n    version: v9.9.9\n"))
 
 	container, err := NewContainer("", ConfigOverrides{DisableExtensions: false})
 	require.NoError(t, err)

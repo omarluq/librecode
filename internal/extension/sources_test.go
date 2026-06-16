@@ -91,21 +91,3 @@ func TestResolveConfiguredSourcesResolvesPathAndOfficialSources(t *testing.T) {
 	assert.Equal(t, "github:omarluq/librecode//extensions/vim-mode", resolved[1].Lock.Resolved)
 	assert.Equal(t, "v0.1.0", resolved[1].Lock.Version)
 }
-
-func TestLockFileRoundTrip(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), extension.LockFileName)
-	lockFile := extension.LockFile{Extensions: map[string]extension.LockedExtension{
-		testVimModeSource: {
-			Resolved: "github:omarluq/librecode//extensions/vim-mode",
-			Version:  "v0.1.0",
-		},
-	}}
-
-	require.NoError(t, extension.WriteLockFile(path, lockFile))
-	loaded, err := extension.ReadLockFile(path)
-
-	require.NoError(t, err)
-	assert.Equal(t, lockFile, loaded)
-}
