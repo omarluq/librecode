@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestPrintModelsIncludesCapabilityColumns(t *testing.T) {
@@ -46,10 +46,9 @@ func TestPrintModelsIncludesCapabilityColumns(t *testing.T) {
 func TestListedModelsDefaultsToAuthorizedProviders(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		"anthropic-claude": testCLIAuthCredential(),
 	})
-	require.NoError(t, err)
 
 	registry := model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,

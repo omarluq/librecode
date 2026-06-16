@@ -39,26 +39,6 @@ func AnthropicLoginURL() (string, error) {
 	return flow.URL, nil
 }
 
-// LoginAnthropic starts the Claude Pro/Max OAuth browser flow.
-func LoginAnthropic(_ context.Context, onAuth func(OAuthAuthInfo)) (*Credential, error) {
-	flowURL, err := AnthropicLoginURL()
-	if err != nil {
-		return nil, err
-	}
-
-	if onAuth != nil {
-		onAuth(OAuthAuthInfo{
-			URL: flowURL,
-			Instructions: "Complete Anthropic login in your browser, then paste the authorization code " +
-				"shown by Claude.",
-		})
-	}
-
-	return nil, oops.In("auth").
-		Code("anthropic_code_required").
-		Errorf("anthropic oauth requires pasted authorization code")
-}
-
 // LoginAnthropicWithCode completes Claude Pro/Max OAuth using the pasted code from Claude.
 func LoginAnthropicWithCode(ctx context.Context, authCode string) (*Credential, error) {
 	return loginAnthropicWithCode(ctx, authCode, anthropicTokenEndpoint())

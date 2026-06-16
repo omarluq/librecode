@@ -9,6 +9,7 @@ import (
 	"github.com/gdamore/tcell/v3"
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestToggleFlags(t *testing.T) {
@@ -298,12 +299,9 @@ func newScopedModelTestApp(t *testing.T) *App {
 
 	app := newRenderTestApp(t)
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		promptSendTestProvider: testPanelAuthCredential(),
 	})
-	if err != nil {
-		t.Fatalf("create auth storage: %v", err)
-	}
 
 	app.models = model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,

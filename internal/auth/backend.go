@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -11,9 +10,8 @@ import (
 )
 
 const (
-	authFileMode                   = 0o600
-	authDirMode                    = 0o700
-	authCheckMemoryLockContextStep = "check memory auth lock context"
+	authFileMode = 0o600
+	authDirMode  = 0o700
 )
 
 // FileBackend stores credentials in auth.json with process-local locking and atomic writes.
@@ -42,7 +40,7 @@ func (backend *FileBackend) WithLock(ctx context.Context, callback func(current 
 
 	current, err := readAuthFile(backend.path)
 	if err != nil {
-		return authError(err, authCheckMemoryLockContextStep)
+		return authError(err, "read auth file")
 	}
 
 	result, err := callback(current)
@@ -59,43 +57,6 @@ func (backend *FileBackend) WithLock(ctx context.Context, callback func(current 
 	}
 
 	return writeAuthFile(backend.path, result.Next)
-}
-
-// MemoryBackend stores auth JSON in process memory.
-type MemoryBackend struct {
-	value []byte
-	lock  sync.Mutex
-}
-
-// NewMemoryBackend creates an in-memory backend from credentials.
-func NewMemoryBackend(credentials map[string]Credential) (*MemoryBackend, error) {
-	value, err := json.MarshalIndent(credentials, "", "  ")
-	if err != nil {
-		return nil, authError(err, "encode memory auth")
-	}
-
-	return &MemoryBackend{value: value, lock: sync.Mutex{}}, nil
-}
-
-// WithLock serializes access to in-memory auth JSON.
-func (backend *MemoryBackend) WithLock(ctx context.Context, callback func(current []byte) (LockResult, error)) error {
-	backend.lock.Lock()
-	defer backend.lock.Unlock()
-
-	if err := ctx.Err(); err != nil {
-		return authError(err, authCheckMemoryLockContextStep)
-	}
-
-	result, err := callback(append([]byte{}, backend.value...))
-	if err != nil {
-		return err
-	}
-
-	if result.Write {
-		backend.value = append([]byte{}, result.Next...)
-	}
-
-	return authError(ctx.Err(), authCheckMemoryLockContextStep)
 }
 
 func ensureAuthFile(path string) error {

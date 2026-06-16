@@ -24,6 +24,7 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -735,10 +736,9 @@ func (testCompleter) Complete(
 func testRegistry(t *testing.T) *model.Registry {
 	t.Helper()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		testRuntimeProvider: testProviderCredential(),
 	})
-	require.NoError(t, err)
 
 	return model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,

@@ -100,16 +100,6 @@ func NewStorage(ctx context.Context, backend Locker) (*Storage, error) {
 	return storage, nil
 }
 
-// NewInMemoryStorage creates storage backed by in-memory JSON data.
-func NewInMemoryStorage(ctx context.Context, credentials map[string]Credential) (*Storage, error) {
-	backend, err := NewMemoryBackend(credentials)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewStorage(ctx, backend)
-}
-
 // Reload refreshes credentials from the backend.
 func (storage *Storage) Reload(ctx context.Context) error {
 	var content []byte

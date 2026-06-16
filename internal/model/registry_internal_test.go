@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/auth"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -54,8 +55,7 @@ func TestRegistryRequestAuthBranches(t *testing.T) {
 func TestRegistryRequestAuthContext(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{})
-	require.NoError(t, err)
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
 	storage.SetRuntimeAPIKey("stored", "runtime-key")
 	registry := NewRegistry(&RegistryOptions{
 		ConfigReader: nil,
@@ -85,8 +85,7 @@ func TestRegistryRequestAuthContext(t *testing.T) {
 func TestRegistryRequestAuthContextReturnsAuthErrors(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{})
-	require.NoError(t, err)
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
 	storage.SetFallbackResolver(func(string) (string, bool) {
 		return "", false
 	})

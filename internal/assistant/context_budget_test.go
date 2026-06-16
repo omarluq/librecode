@@ -15,6 +15,7 @@ import (
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestRuntime_ContextPreflightRejectsOversizedRequest(t *testing.T) {
@@ -172,10 +173,9 @@ func newTestRuntimeWithContextWindowAndMaxTokens(
 ) *assistant.Runtime {
 	t.Helper()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		testRuntimeProvider: testProviderCredential(),
 	})
-	require.NoError(t, err)
 
 	registry := model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,

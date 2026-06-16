@@ -1,7 +1,6 @@
 package model_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestParseModelPatternHandlesThinkingSuffixes(t *testing.T) {
@@ -78,10 +78,9 @@ func TestResolveCLIModelInfersProviderAndRejectsUnknownProvider(t *testing.T) {
 func TestResolveModelScopeSupportsGlobsAndDeduplicates(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		"openai": testAuthCredential(),
 	})
-	require.NoError(t, err)
 
 	registry := model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,

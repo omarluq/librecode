@@ -1,11 +1,11 @@
 package terminal
 
 import (
-	"context"
 	"testing"
 
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestEnsureCurrentModel(t *testing.T) {
@@ -42,12 +42,9 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.cfg = promptSendTestConfig()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		promptSendTestProvider: testPanelAuthCredential(),
 	})
-	if err != nil {
-		t.Fatalf("create auth storage: %v", err)
-	}
 
 	app.models = model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,

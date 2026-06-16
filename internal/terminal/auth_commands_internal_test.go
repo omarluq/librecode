@@ -13,6 +13,7 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestAuthPanelItemsReflectProviderStatus(t *testing.T) {
@@ -35,10 +36,9 @@ func TestAuthPanelItemsReflectProviderStatus(t *testing.T) {
 func TestLogoutPanelAndSelectionRemoveCredential(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		promptSendTestProvider: testPanelAuthCredential(),
 	})
-	require.NoError(t, err)
 	app := newRenderTestApp(t)
 	app.auth = storage
 
@@ -48,7 +48,7 @@ func TestLogoutPanelAndSelectionRemoveCredential(t *testing.T) {
 	assert.Equal(t, panelAuthLogout, app.selectedPanelKind)
 	assert.Contains(t, panelItemValues(app.panel.Items()), promptSendTestProvider)
 
-	err = app.applyAuthSelection(context.Background(), promptSendTestProvider)
+	err := app.applyAuthSelection(context.Background(), promptSendTestProvider)
 
 	require.NoError(t, err)
 	assert.Equal(t, modeChat, app.mode)
@@ -61,8 +61,7 @@ func TestLogoutPanelAndSelectionRemoveCredential(t *testing.T) {
 func TestOpenLogoutPanelWithoutCredentialsReportsStatus(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{})
-	require.NoError(t, err)
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
 	app := newRenderTestApp(t)
 	app.auth = storage
 
@@ -102,8 +101,7 @@ func TestShowAuthInfoAndReloadRuntime(t *testing.T) {
 func TestRunOAuthLoginPostsDoneAndErrorEvents(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{})
-	require.NoError(t, err)
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
 	app := newRenderTestApp(t)
 	app.auth = storage
 	successConfig := oauthLoginConfig{
@@ -182,10 +180,9 @@ func TestParentIDFromEntry(t *testing.T) {
 func newAuthPanelTestApp(t *testing.T) *App {
 	t.Helper()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		promptSendTestProvider: testPanelAuthCredential(),
 	})
-	require.NoError(t, err)
 	app := newRenderTestApp(t)
 	app.auth = storage
 	app.models = model.NewRegistry(&model.RegistryOptions{
@@ -255,13 +252,12 @@ func TestAuthStorageUnavailablePathsReturnSharedError(t *testing.T) {
 func TestLoginCommandSavesAPIKeyCredential(t *testing.T) {
 	t.Parallel()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{})
-	require.NoError(t, err)
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
 	app := newRenderTestApp(t)
 	app.auth = storage
 	app.cfg = promptSendTestConfig()
 
-	err = app.loginCommand(context.Background(), "anthropic test-key")
+	err := app.loginCommand(context.Background(), "anthropic test-key")
 
 	require.NoError(t, err)
 	credential, ok, err := storage.APIKeyContext(context.Background(), anthropicAPIProviderID)

@@ -18,6 +18,7 @@ import (
 	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestNewAssistantServiceWiresRuntimeOptions(t *testing.T) {
@@ -76,7 +77,7 @@ func newTestDatabaseService(t *testing.T) *DatabaseService {
 func newTestModelRegistry(t *testing.T) *model.Registry {
 	t.Helper()
 
-	storage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		"test-provider": {
 			OAuth:     nil,
 			Type:      auth.CredentialTypeAPIKey,
@@ -88,7 +89,6 @@ func newTestModelRegistry(t *testing.T) *model.Registry {
 			ExpiresAt: 0,
 		},
 	})
-	require.NoError(t, err)
 
 	return model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,

@@ -22,6 +22,7 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -399,7 +400,7 @@ func newPromptSendTestConnection(t *testing.T) *sql.DB {
 func newPromptSendTestModelRegistry(t *testing.T) *model.Registry {
 	t.Helper()
 
-	authStorage, err := auth.NewInMemoryStorage(context.Background(), map[string]auth.Credential{
+	authStorage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		promptSendTestProvider: {
 			OAuth:     nil,
 			Type:      auth.CredentialTypeAPIKey,
@@ -411,9 +412,6 @@ func newPromptSendTestModelRegistry(t *testing.T) *model.Registry {
 			ExpiresAt: 0,
 		},
 	})
-	if err != nil {
-		t.Fatalf("create auth storage: %v", err)
-	}
 
 	return model.NewRegistry(&model.RegistryOptions{
 		ConfigReader: nil,
