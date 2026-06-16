@@ -62,13 +62,21 @@ func TestSkillCommands(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			cmd := newSkillCmdWithDeps(skillCommandCWDResolver(cwd), skillCommandTestLoader(cwd, skillPath))
+			loader := &skillCommandTestLoader{
+				cwd:       cwd,
+				skillPath: skillPath,
+				loadedCWD: "",
+			}
+			cmd := newSkillCmdWithDeps(skillCommandCWDResolver(cwd), loader.load)
 			output := new(bytes.Buffer)
 			cmd.SetOut(output)
 			cmd.SetErr(output)
 			cmd.SetArgs(test.args)
 
 			err := cmd.Execute()
+
+			assert.Equal(t, cwd, loader.loadedCWD)
+
 			if test.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), test.wantErr)
@@ -97,13 +105,19 @@ func skillCommandCWDResolver(cwd string) func() (string, error) {
 	}
 }
 
-func skillCommandTestLoader(cwd, skillPath string) skillCommandLoader {
-	return func(string) core.LoadSkillsResult {
-		return core.LoadSkillsResult{
-			Skills:            []core.Skill{skillCommandTestSkill(cwd, skillPath)},
-			AgentInstructions: "",
-			Diagnostics:       []core.ResourceDiagnostic{},
-		}
+type skillCommandTestLoader struct {
+	cwd       string
+	skillPath string
+	loadedCWD string
+}
+
+func (loader *skillCommandTestLoader) load(cwd string) core.LoadSkillsResult {
+	loader.loadedCWD = cwd
+
+	return core.LoadSkillsResult{
+		Skills:            []core.Skill{skillCommandTestSkill(loader.cwd, loader.skillPath)},
+		AgentInstructions: "",
+		Diagnostics:       []core.ResourceDiagnostic{},
 	}
 }
 

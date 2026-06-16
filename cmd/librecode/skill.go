@@ -53,7 +53,7 @@ func newSkillListCmd(resolveCWD func() (string, error), loadSkills skillCommandL
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := resolveCWD()
 			if err != nil {
-				return cliError(err, cliResolveWorkingDirectory)
+				return err
 			}
 
 			result := loadSkills(cwd)
@@ -83,7 +83,7 @@ func newSkillShowCmd(resolveCWD func() (string, error), loadSkills skillCommandL
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := resolveCWD()
 			if err != nil {
-				return cliError(err, cliResolveWorkingDirectory)
+				return err
 			}
 
 			result := loadSkills(cwd)
@@ -111,7 +111,7 @@ func newSkillValidateCmd(resolveCWD func() (string, error), loadSkills skillComm
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := resolveCWD()
 			if err != nil {
-				return cliError(err, cliResolveWorkingDirectory)
+				return err
 			}
 
 			result := loadSkills(cwd)
