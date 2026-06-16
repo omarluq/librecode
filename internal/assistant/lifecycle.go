@@ -265,7 +265,7 @@ func (runtime *Runtime) dispatchToolErrorLifecycle(ctx context.Context, event *T
 }
 
 func applyToolCallMutation(call *ToolCallEvent, mutation extension.ToolCallMutation) error {
-	if len(mutation.Arguments) == 0 {
+	if mutation.Arguments == nil {
 		return nil
 	}
 

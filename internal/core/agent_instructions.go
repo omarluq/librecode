@@ -55,11 +55,21 @@ func appendAgentInstructionSection(
 		return sections, remaining
 	}
 
-	if len(content) > remaining {
-		content = truncateAgentInstruction(content, remaining)
+	separatorBytes := 0
+	if len(sections) > 0 {
+		separatorBytes = len("\n\n")
+	}
+
+	if separatorBytes >= remaining {
+		return sections, 0
+	}
+
+	allowed := remaining - separatorBytes
+	if len(content) > allowed {
+		content = truncateAgentInstruction(content, allowed)
 		remaining = 0
 	} else {
-		remaining -= len(content)
+		remaining -= separatorBytes + len(content)
 	}
 
 	if content == "" {

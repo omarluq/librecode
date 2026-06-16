@@ -16,7 +16,8 @@ import (
 )
 
 func TestRuntime_ContextBuildIncludesAgentInstructions(t *testing.T) {
-	t.Parallel()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LIBRECODE_HOME", filepath.Join(t.TempDir(), ".librecode"))
 
 	cwd := t.TempDir()
 	writeRuntimeTestFile(t, filepath.Join(cwd, "AGENTS.md"), "Always follow project instructions.")
