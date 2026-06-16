@@ -68,6 +68,39 @@ func TestLoginAnthropicWithCode(t *testing.T) {
 	assert.Equal(t, "sk-ant-oat-access", credential.Access)
 }
 
+func TestLoginAnthropicWithCodeRejectsInvalidCode(t *testing.T) {
+	t.Parallel()
+
+	credential, err := loginAnthropicWithCode(t.Context(), "code-only", "https://example.invalid/token")
+
+	require.Error(t, err)
+	assert.Nil(t, credential)
+	assert.Contains(t, err.Error(), "code#state")
+}
+
+func TestAnthropicAPIKey(t *testing.T) {
+	t.Parallel()
+
+	validCredential := oauthCredential("sk-ant-oat-valid", nil, time.Now().Add(time.Hour).UnixMilli())
+	credential, apiKey, err := anthropicAPIKey(t.Context(), &validCredential)
+	require.NoError(t, err)
+	assert.Equal(t, &validCredential, credential)
+	assert.Equal(t, "sk-ant-oat-valid", apiKey)
+
+	apiCredential := apiKeyCredential("sk-ant-api03-key")
+	credential, apiKey, err = anthropicAPIKey(t.Context(), &apiCredential)
+	require.NoError(t, err)
+	assert.Equal(t, &apiCredential, credential)
+	assert.Empty(t, apiKey)
+
+	refreshOnly := oauthCredential("", nil, 0)
+	refreshOnly.Refresh = ""
+	credential, apiKey, err = anthropicAPIKey(t.Context(), &refreshOnly)
+	require.NoError(t, err)
+	assert.Equal(t, &refreshOnly, credential)
+	assert.Empty(t, apiKey)
+}
+
 func TestRequestAnthropicToken(t *testing.T) {
 	t.Parallel()
 

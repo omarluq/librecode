@@ -135,3 +135,25 @@ func testModel(provider, modelID, name string) model.Model {
 		Reasoning:        false,
 	}
 }
+
+func TestRegistryAccessorsCloneInternalState(t *testing.T) {
+	t.Parallel()
+
+	registry := model.NewRegistry(&model.RegistryOptions{
+		ConfigReader: nil,
+		Auth:         nil,
+		ModelsPath:   "",
+		BuiltIns:     []model.Model{testModel("openai", "gpt", "GPT")},
+		Discovery:    disabledDiscovery(),
+	})
+
+	discovery := registry.DiscoveryOptions()
+	assert.False(t, discovery.Enabled)
+	assert.False(t, registry.DiscoveryOptions().Enabled)
+
+	models := registry.All()
+	require.Len(t, models, 1)
+	models[0].Provider = "mutated"
+
+	assert.Equal(t, "openai", registry.All()[0].Provider)
+}

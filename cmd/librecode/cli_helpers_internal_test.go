@@ -14,7 +14,11 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 )
 
-const extensionLoadPath = "/ext"
+const (
+	extensionLoadPath = "/ext"
+	testSessionID     = "session-1"
+	testHelloCommand  = "hello"
+)
 
 func TestConfigFormattingHelpers(t *testing.T) {
 	t.Parallel()
@@ -91,12 +95,12 @@ func TestPrintSessionSummaryAndEntry(t *testing.T) {
 	require.NoError(t, printSessionSummary(cmd, &database.SessionEntity{
 		CreatedAt:     time.Time{},
 		UpdatedAt:     updatedAt,
-		ID:            "session-1",
+		ID:            testSessionID,
 		CWD:           "/work",
 		Name:          "",
 		ParentSession: "",
 	}))
-	assert.Contains(t, output.String(), "session-1\t2026-06-09 01:02:03\t(unnamed)")
+	assert.Contains(t, output.String(), testSessionID+"\t2026-06-09 01:02:03\t(unnamed)")
 
 	output.Reset()
 	require.NoError(t, printSessionEntry(cmd, &database.EntryEntity{
@@ -116,7 +120,7 @@ func TestPrintSessionSummaryAndEntry(t *testing.T) {
 		DataJSON:                   "",
 		ID:                         "entry-1",
 		ToolName:                   "",
-		SessionID:                  "session-1",
+		SessionID:                  testSessionID,
 		ToolArgsJSON:               "",
 		BranchFromEntryID:          "",
 		CompactionFirstKeptEntryID: "",
@@ -134,7 +138,7 @@ func TestExtensionFormattingHelpers(t *testing.T) {
 	loaded := []extension.LoadedExtension{{
 		Name:          "ext",
 		Path:          extensionLoadPath,
-		Commands:      []string{"hello"},
+		Commands:      []string{testHelloCommand},
 		Tools:         []string{"tool"},
 		Keymaps:       []string{"ctrl+x"},
 		Handlers:      []string{"event"},
@@ -155,7 +159,7 @@ func TestExtensionFormattingHelpers(t *testing.T) {
 		Status:     "configured",
 	}, loadedExtensionsByPath(loaded)))
 	assert.Contains(t, output.String(), "ext\tlocal:/ext\tloaded\tversion=v1")
-	assert.Contains(t, output.String(), "commands=hello")
+	assert.Contains(t, output.String(), "commands="+testHelloCommand)
 }
 
 type failingWriter struct{}

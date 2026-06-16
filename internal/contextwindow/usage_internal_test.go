@@ -166,6 +166,18 @@ func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
 	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
 }
 
+func TestEstimateMessageTokens(t *testing.T) {
+	t.Parallel()
+
+	messages := []database.MessageEntity{
+		testMessageEntity(database.RoleUser, "   "),
+		testMessageEntity(database.RoleAssistant, "abcd"),
+		testMessageEntity(database.RoleUser, "abcde"),
+	}
+
+	assert.Equal(t, 3, EstimateMessageTokens(messages))
+}
+
 func testMessageEntity(role database.Role, content string) database.MessageEntity {
 	return database.MessageEntity{
 		Timestamp: time.Time{},

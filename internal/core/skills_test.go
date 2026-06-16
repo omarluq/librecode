@@ -296,3 +296,38 @@ func hasDiagnosticMessage(diagnostics []core.ResourceDiagnostic, message string)
 
 	return false
 }
+
+func TestFormatActiveSkillsForPrompt(t *testing.T) {
+	t.Parallel()
+
+	prompt := core.FormatActiveSkillsForPrompt([]core.ActivatedSkill{
+		{
+			Skill: core.Skill{
+				Metadata: nil,
+				SourceInfo: core.SourceInfo{
+					Path:    "",
+					Source:  "",
+					Scope:   "",
+					Origin:  "",
+					BaseDir: "",
+				},
+				Name:                   "fix<&>",
+				Description:            "",
+				FilePath:               "/tmp/SKILL.md",
+				BaseDir:                "",
+				License:                "",
+				Compatibility:          "",
+				AllowedTools:           nil,
+				UserInvocable:          false,
+				DisableModelInvocation: false,
+			},
+			Content:   "Use <unsafe> & carefully",
+			Truncated: true,
+		},
+	})
+
+	assert.Contains(t, prompt, "<active_skills>")
+	assert.Contains(t, prompt, "<name>fix&lt;&amp;&gt;</name>")
+	assert.Contains(t, prompt, "<truncated>true</truncated>")
+	assert.Contains(t, prompt, "Use &lt;unsafe&gt; &amp; carefully")
+}

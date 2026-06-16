@@ -89,9 +89,55 @@ func TestFindRejectsAbsoluteExecutableOutsideFixedDirs(t *testing.T) {
 	assert.Empty(t, found)
 }
 
+func TestValidateExecutableRejectsDirectoryAndNonExecutable(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == windowsOS {
+		t.Skip("test relies on Unix executable mode")
+	}
+
+	dir := t.TempDir()
+
+	found, err := validateExecutable(dir)
+	require.Error(t, err)
+	assert.Empty(t, found)
+
+	path := filepath.Join(dir, "tool")
+	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"), 0o600))
+
+	found, err = validateExecutable(path)
+	require.Error(t, err)
+	assert.Empty(t, found)
+}
+
+func TestCandidateNames(t *testing.T) {
+	t.Parallel()
+
+	candidates := candidateNames("tool")
+	if runtime.GOOS == windowsOS {
+		assert.Equal(t, []string{"tool.exe", "tool.cmd", "tool.bat"}, candidates)
+
+		return
+	}
+
+	assert.Equal(t, []string{"tool"}, candidates)
+}
+
+func TestFixedDirs(t *testing.T) {
+	t.Parallel()
+
+	dirs := fixedDirs()
+	require.NotEmpty(t, dirs)
+
+	for _, dir := range dirs {
+		assert.NotEmpty(t, dir)
+	}
+}
+
 func TestIsPathInDir(t *testing.T) {
 	t.Parallel()
 
 	assert.True(t, isPathInDir(filepath.Join("root", "bin", "tool"), filepath.Join("root", "bin")))
 	assert.False(t, isPathInDir(filepath.Join("root", "binary", "tool"), filepath.Join("root", "bin")))
+	assert.False(t, isPathInDir(filepath.Join("root", "bin2"), filepath.Join("root", "bin")))
 }

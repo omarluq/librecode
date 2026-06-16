@@ -86,6 +86,10 @@ func TestStoragePersistsFileCredentials(t *testing.T) {
 	reloaded, err := auth.NewStorage(ctx, auth.NewFileBackend(authPath))
 	require.NoError(t, err)
 
+	stored, hasStoredCredential := reloaded.Get("openai")
+	require.True(t, hasStoredCredential)
+	assert.Equal(t, credential, stored)
+
 	apiKey, found := reloaded.APIKey("openai")
 	require.True(t, found)
 	assert.Equal(t, testStoredKey, apiKey)
@@ -96,6 +100,8 @@ func TestStoragePersistsFileCredentials(t *testing.T) {
 
 	require.NoError(t, reloaded.Remove(ctx, "openai"))
 	assert.False(t, reloaded.HasStored("openai"))
+	_, hasStoredCredential = reloaded.Get("openai")
+	assert.False(t, hasStoredCredential)
 }
 
 func TestStorageReportsAuthAvailabilityBySource(t *testing.T) {
@@ -214,6 +220,92 @@ func TestStorageSeparatesAnthropicAPIAndOAuthEnv(t *testing.T) {
 	)
 }
 
+func TestStorageReloadKeepsPreviousCredentialsWhenParseFails(t *testing.T) {
+	t.Parallel()
+
+	backend := &mutableBackend{content: []byte(`{"openai":{"type":"api_key","key":"stored-key"}}`)}
+	storage, err := auth.NewStorage(t.Context(), backend)
+	require.NoError(t, err)
+	assert.True(t, storage.HasStored("openai"))
+
+	backend.content = []byte(`{`)
+	err = storage.Reload(t.Context())
+	require.Error(t, err)
+	assert.True(t, storage.HasStored("openai"))
+	require.Len(t, storage.DrainErrors(), 1)
+}
+
+func TestStorageSetRejectsNilCredential(t *testing.T) {
+	t.Parallel()
+
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
+
+	err := storage.Set(t.Context(), "openai", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "credential is required")
+}
+
+func TestStorageAPIKeyContextUsesRuntimeEnvFallbackAndUnknownOAuth(t *testing.T) {
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
+		"unknown-oauth": {
+			OAuth:     nil,
+			Type:      auth.CredentialTypeOAuth,
+			Key:       "",
+			Access:    "unknown-access",
+			Refresh:   "",
+			AccountID: "",
+			Expires:   time.Now().Add(time.Hour).UnixMilli(),
+			ExpiresAt: 0,
+		},
+	})
+
+	storage.SetRuntimeAPIKey("runtime", "runtime-key")
+	apiKey, found, err := storage.APIKeyContext(t.Context(), "runtime")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "runtime-key", apiKey)
+
+	t.Setenv("OPENAI_API_KEY", "env-key")
+	apiKey, found, err = storage.APIKeyContext(t.Context(), "openai")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "env-key", apiKey)
+
+	storage.SetFallbackResolver(func(provider string) (string, bool) {
+		return "fallback-key", provider == "fallback-provider"
+	})
+	apiKey, found, err = storage.APIKeyContext(t.Context(), "fallback-provider")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "fallback-key", apiKey)
+
+	apiKey, found, err = storage.APIKeyContext(t.Context(), "unknown-oauth")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "unknown-access", apiKey)
+}
+
+func TestStorageAPIKeyContextReturnsUnknownProviderOAuthAccess(t *testing.T) {
+	t.Parallel()
+
+	credential := auth.Credential{
+		OAuth:     nil,
+		Type:      auth.CredentialTypeOAuth,
+		Key:       "",
+		Access:    "custom-access",
+		Refresh:   "",
+		AccountID: "",
+		Expires:   time.Now().Add(time.Hour).UnixMilli(),
+		ExpiresAt: 0,
+	}
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{"custom-oauth": credential})
+
+	apiKey, found, err := storage.APIKeyContext(t.Context(), "custom-oauth")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "custom-access", apiKey)
+}
+
 func TestStorageUsesStoredOAuthCredentialMaterial(t *testing.T) {
 	t.Parallel()
 
@@ -291,6 +383,26 @@ func TestStorageSetRemoveDoNotMutateMemoryWhenPersistFails(t *testing.T) {
 	err = storage.Remove(ctx, "openai")
 	require.Error(t, err)
 	assert.False(t, storage.HasStored("openai"))
+}
+
+type mutableBackend struct {
+	content []byte
+}
+
+func (backend *mutableBackend) WithLock(
+	_ context.Context,
+	callback func(current []byte) (auth.LockResult, error),
+) error {
+	result, err := callback(backend.content)
+	if err != nil {
+		return err
+	}
+
+	if result.Write {
+		backend.content = append([]byte{}, result.Next...)
+	}
+
+	return nil
 }
 
 type failingBackend struct {

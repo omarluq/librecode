@@ -1,6 +1,7 @@
 package di
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -43,4 +44,24 @@ func testServiceConfig() *config.Config {
 	cfg.Cache.TTL = time.Minute
 
 	return cfg
+}
+
+func TestContainerServiceAccessors(t *testing.T) {
+	t.Parallel()
+
+	container, err := NewContainer("", ConfigOverrides{DisableExtensions: false})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		report := container.ShutdownWithContext(context.Background())
+		assert.Empty(t, report.Errors)
+	})
+
+	require.NotNil(t, container.ConfigService())
+	require.NotNil(t, container.AuthService())
+	require.NotNil(t, container.DatabaseService())
+	require.NotNil(t, container.ExtensionService())
+	require.NotNil(t, container.ModelService())
+	require.NotNil(t, container.AssistantService())
+	require.NotNil(t, container.ToolService())
+	require.NotNil(t, container.SkillsService())
 }

@@ -27,12 +27,15 @@ func TestRunOpenerReturnsErrorForMissingCommand(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestOpenerCommandsPrefersConfiguredBrowser(t *testing.T) {
+func TestOpenerCommands(t *testing.T) {
 	t.Setenv("BROWSER", "custom-browser")
 
 	commands := openerCommands()
 	require.NotEmpty(t, commands)
 	assert.Equal(t, "custom-browser", commands[0].name)
+
+	t.Setenv("BROWSER", "")
+	assert.Equal(t, platformOpeners(), openerCommands())
 }
 
 func TestPlatformOpenersReturnsCommands(t *testing.T) {
