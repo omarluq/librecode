@@ -36,12 +36,6 @@ func (runtime *Runtime) dispatchProviderRequestHook(
 		Payload: providerPayloadFromLifecycle(result.Payload, input.Payload),
 		Headers: mergeProviderHeaders(input.Headers, result.ProviderRequest.Headers),
 	}
-	runtime.emitLifecycleDiagnostics(
-		ctx,
-		extension.LifecycleBeforeProviderRequest,
-		&result,
-		providerHookDiagnostics(input, output),
-	)
 
 	if err != nil {
 		return llm.HookOutput{}, oops.In("assistant").

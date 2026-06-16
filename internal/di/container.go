@@ -50,11 +50,6 @@ func (c *Container) DatabaseService() *DatabaseService {
 	return do.MustInvoke[*DatabaseService](c.injector)
 }
 
-// EventService resolves the event service.
-func (c *Container) EventService() *EventService {
-	return do.MustInvoke[*EventService](c.injector)
-}
-
 // ExtensionService resolves the extension service.
 func (c *Container) ExtensionService() *ExtensionService {
 	return do.MustInvoke[*ExtensionService](c.injector)

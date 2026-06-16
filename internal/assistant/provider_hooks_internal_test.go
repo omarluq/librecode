@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -133,7 +132,6 @@ func newProviderHookTestRuntime(t *testing.T, source string) *Runtime {
 
 	return newRuntimeFromDeps(func(deps *runtimeDeps) {
 		deps.Extensions = manager
-		deps.Events = event.NewBus(testProviderHookLogger())
 		deps.Logger = testProviderHookLogger()
 	})
 }

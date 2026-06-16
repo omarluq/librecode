@@ -20,7 +20,6 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
@@ -32,6 +31,12 @@ const (
 	testRuntimeModel    = "test-model"
 	testRuntimeCWD      = "/work"
 	testSkillDelimiter  = "---"
+	testToolName        = "read"
+	testToolPath        = "README.md"
+	testToolPathKey     = "path"
+	testToolCallID      = "call-1"
+	testToolArgsJSON    = `{"path":"README.md"}`
+	testToolResult      = "contents"
 )
 
 func newRuntimePromptRequest(cwd, text, name string) *assistant.PromptRequest {
@@ -557,7 +562,6 @@ func newTestRuntimeWithRepositoryClientAndManager(
 		opts.Sessions = repository
 		opts.Extensions = manager
 		opts.Cache = cache
-		opts.Events = event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil)))
 		opts.Models = testRegistry(t)
 		opts.Client = client
 		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))

@@ -150,7 +150,7 @@ func TestProviderResponseErrorAndNilPayloads(t *testing.T) {
 	assert.Empty(t, lifecyclepayload.ToolResultPayload(nil))
 }
 
-func TestCompactionSavedAndDiagnosticsPayloads(t *testing.T) {
+func TestCompactionSavedPayload(t *testing.T) {
 	t.Parallel()
 
 	plan := lifecycleCompactionPlan()
@@ -174,14 +174,6 @@ func TestCompactionSavedAndDiagnosticsPayloads(t *testing.T) {
 	})
 	assert.Empty(t, savedWithoutEntry[lifecyclepayload.EntryIDKey])
 	assert.Empty(t, savedWithoutEntry[lifecyclepayload.SummaryKey])
-
-	diagnostic := lifecyclepayload.CompactionDiagnostics(plan, "after")
-	assert.Equal(t, "after", diagnostic[lifecyclepayload.PhaseKey])
-	assert.Equal(t, 1, diagnostic["summarized_entries"])
-	assert.Equal(t, false, diagnostic["has_split_turn_summary"])
-
-	nilDiagnostic := lifecyclepayload.CompactionDiagnostics(nil, "before")
-	assert.Equal(t, map[string]any{lifecyclepayload.PhaseKey: "before"}, nilDiagnostic)
 }
 
 func TestTokenContributorAndUtilityPayloads(t *testing.T) {
@@ -200,7 +192,6 @@ func TestTokenContributorAndUtilityPayloads(t *testing.T) {
 	assert.Equal(t, 10, contributor["tokens"])
 
 	assert.Equal(t, []any{"a", "b"}, lifecyclepayload.StringSlice([]string{"a", "b"}))
-	assert.InDelta(t, 1.5, lifecyclepayload.DurationMilliseconds(1500*time.Microsecond), 0)
 }
 
 func messageEntity(role database.Role, content string) database.MessageEntity {

@@ -6,7 +6,6 @@ import (
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -16,7 +15,6 @@ type RuntimeTestOptions struct {
 	Sessions    *database.SessionRepository
 	Extensions  runtimeExtensions
 	Cache       *ResponseCache
-	Events      *event.Bus
 	Models      *model.Registry
 	Client      Completer
 	Logger      *slog.Logger
@@ -33,7 +31,6 @@ func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
 		Sessions:    nil,
 		Extensions:  nil,
 		Cache:       nil,
-		Events:      nil,
 		Models:      nil,
 		Client:      nil,
 		Logger:      nil,
@@ -48,7 +45,6 @@ func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
 		Sessions:    opts.Sessions,
 		Extensions:  opts.Extensions,
 		Cache:       opts.Cache,
-		Events:      opts.Events,
 		Models:      opts.Models,
 		Client:      opts.Client,
 		Logger:      opts.Logger,

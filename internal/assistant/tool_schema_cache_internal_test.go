@@ -164,7 +164,6 @@ func newTestRuntimeWithSchemaCache() *Runtime {
 		sessions:        nil,
 		extensions:      nil,
 		cache:           nil,
-		events:          nil,
 		models:          nil,
 		client:          nil,
 		logger:          nil,

@@ -217,13 +217,12 @@ func isCompactNothingToDoError(err error) bool {
 }
 
 func (runtime *Runtime) emitContextCompactionEvent(
-	ctx context.Context,
+	_ context.Context,
 	onEvent func(StreamEvent),
 	kind StreamEventKind,
 	message string,
 ) {
 	emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Usage: nil, Kind: kind, Text: message})
-	runtime.emit(ctx, string(kind), map[string]any{"message": message})
 }
 
 func (runtime *Runtime) emitContextCompactionError(

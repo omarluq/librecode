@@ -14,7 +14,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 )
 
@@ -134,7 +133,6 @@ func newCompactionRuntimeWithManagerWindow(
 		opts.Sessions = repository
 		opts.Extensions = manager
 		opts.Cache = cache
-		opts.Events = event.NewBus(slog.New(slog.NewTextHandler(io.Discard, nil)))
 		opts.Models = newCompactionTestRegistry(t, 2)
 		opts.Client = client
 		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))

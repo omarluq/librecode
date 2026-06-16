@@ -12,7 +12,6 @@ import (
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/config"
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/testutil"
@@ -44,7 +43,6 @@ func TestRuntime_ContextPreflightCanBeDisabled(t *testing.T) {
 		opts.Config = runtimeConfig
 		opts.Sessions = runtime.SessionRepository()
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
-		opts.Events = runtime.EventBus()
 		opts.Models = runtime.ModelRegistry()
 		opts.Client = client
 	})
@@ -89,7 +87,6 @@ func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
 		opts.Config = runtimeConfig
 		opts.Sessions = runtime.SessionRepository()
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
-		opts.Events = runtime.EventBus()
 		opts.Models = runtime.ModelRegistry()
 		opts.Client = client
 	})
@@ -127,7 +124,6 @@ func TestRuntime_ContextUsageUsesExplicitOutputReserve(t *testing.T) {
 		opts.Config = runtimeConfig
 		opts.Sessions = runtime.SessionRepository()
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
-		opts.Events = runtime.EventBus()
 		opts.Models = runtime.ModelRegistry()
 		opts.Client = client
 	})
@@ -196,7 +192,6 @@ func newTestRuntimeWithContextWindowAndMaxTokens(
 		opts.Sessions = repository
 		opts.Extensions = manager
 		opts.Cache = cache
-		opts.Events = event.NewBus(nil)
 		opts.Models = registry
 		opts.Client = client
 	})
