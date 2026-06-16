@@ -37,8 +37,6 @@ func (runtime *Runtime) emitUsageEvent(
 		payload["snapshot"] = true
 	}
 
-	runtime.emit(ctx, lifecyclepayload.UsageKey, payload)
-
 	if runtime.extensions != nil {
 		if err := runtime.extensions.Emit(ctx, lifecyclepayload.UsageKey, payload); err != nil {
 			runtime.logger.Debug("emit usage extension event failed", "error", err)

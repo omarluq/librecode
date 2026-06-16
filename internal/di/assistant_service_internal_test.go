@@ -15,7 +15,6 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/testutil"
@@ -34,7 +33,6 @@ func TestNewAssistantServiceWiresRuntimeOptions(t *testing.T) {
 		State:   extension.ManagerState{Configured: nil, Loaded: nil},
 	})
 	do.ProvideValue(injector, &CacheService{Responses: nil})
-	do.ProvideValue(injector, &EventService{Bus: event.NewBus(logger)})
 	do.ProvideValue(injector, &ModelService{Registry: newTestModelRegistry(t)})
 	do.ProvideValue(injector, &SkillsService{Cache: core.NewSkillsCache()})
 	do.ProvideValue(injector, &LoggerService{
@@ -48,7 +46,6 @@ func TestNewAssistantServiceWiresRuntimeOptions(t *testing.T) {
 	require.NotNil(t, service.Runtime)
 	require.NotNil(t, service.Runtime.SessionRepository())
 	require.NotNil(t, service.Runtime.ModelRegistry())
-	require.NotNil(t, service.Runtime.EventBus())
 
 	t.Cleanup(func() {
 		if skills := do.MustInvoke[*SkillsService](injector); skills.Cache != nil {

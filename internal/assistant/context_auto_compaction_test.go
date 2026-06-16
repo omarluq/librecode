@@ -111,7 +111,6 @@ func newAutoCompactionTestRuntime(
 		opts.Config = runtimeConfig
 		opts.Sessions = runtime.SessionRepository()
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
-		opts.Events = runtime.EventBus()
 		opts.Models = runtime.ModelRegistry()
 		opts.Client = client
 	})

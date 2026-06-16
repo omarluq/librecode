@@ -7,11 +7,9 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -128,11 +126,6 @@ func (runtime *Runtime) buildModelContext(
 
 	contextwindow.AppendContributions(result, contributions)
 	recalculateContextBuildResult(result, &base, selectedModel)
-	runtime.emit(
-		ctx,
-		string(extension.LifecycleContextBuild),
-		lifecyclepayload.ContextBuild(sessionID, cwd, &base, result),
-	)
 
 	return result, nil
 }
@@ -182,7 +175,6 @@ func (runtime *Runtime) modelContextBase(
 			"skills":  activeSkillEventPayload(activeSkills),
 			"matches": activeSkillMatchPayload(skillActivation.Matches),
 		}
-		runtime.emit(ctx, "skill_auto_activate", payload)
 
 		if runtime.extensions != nil {
 			if emitErr := runtime.extensions.Emit(ctx, "skill_auto_activate", payload); emitErr != nil {

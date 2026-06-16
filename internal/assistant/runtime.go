@@ -13,7 +13,6 @@ import (
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -31,7 +30,6 @@ type Runtime struct {
 	sessions        *database.SessionRepository
 	extensions      runtimeExtensions
 	cache           *ResponseCache
-	events          *event.Bus
 	models          *model.Registry
 	client          Completer
 	logger          *slog.Logger
@@ -126,7 +124,6 @@ type RuntimeOptions struct {
 	Sessions    *database.SessionRepository
 	Extensions  runtimeExtensions
 	Cache       *ResponseCache
-	Events      *event.Bus
 	Models      *model.Registry
 	Client      Completer
 	Logger      *slog.Logger
@@ -149,7 +146,6 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 		sessions:        options.Sessions,
 		extensions:      options.Extensions,
 		cache:           options.Cache,
-		events:          options.Events,
 		models:          options.Models,
 		client:          client,
 		logger:          options.Logger,
@@ -308,19 +304,6 @@ func (runtime *Runtime) loadAgentInstructions(cwd string) string {
 // ModelRegistry returns the model registry used by the runtime.
 func (runtime *Runtime) ModelRegistry() *model.Registry {
 	return runtime.models
-}
-
-// EventBus returns the observational reactive event stream for this runtime.
-func (runtime *Runtime) EventBus() *event.Bus {
-	return runtime.events
-}
-
-func (runtime *Runtime) emit(ctx context.Context, channel string, data any) {
-	if runtime.events == nil {
-		return
-	}
-
-	runtime.events.Emit(ctx, channel, data)
 }
 
 func splitSlashCommand(prompt string) (name, args string) {

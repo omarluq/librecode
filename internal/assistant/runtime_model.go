@@ -244,8 +244,6 @@ func (runtime *Runtime) emitRetryEvent(ctx context.Context, handler RetryEventHa
 		handler(retryEvent)
 	}
 
-	runtime.emit(ctx, string(retryEvent.Kind), retryEvent)
-
 	if runtime.extensions == nil {
 		return
 	}

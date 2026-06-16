@@ -2,9 +2,6 @@
 package lifecyclepayload
 
 import (
-	"maps"
-	"time"
-
 	"github.com/samber/lo"
 
 	"github.com/omarluq/librecode/internal/compaction"
@@ -13,7 +10,6 @@ import (
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/units"
 )
 
 // Lifecycle payload keys define the stable extension-facing lifecycle payload schema.
@@ -26,11 +22,8 @@ const (
 	ContextWindowKey      = "context_window"
 	CreatedAtKey          = "created_at"
 	CWDKey                = "cwd"
-	DurationMsKey         = "duration_ms"
 	EntryIDKey            = "entry_id"
 	ErrorKey              = "error"
-	ErrorsKey             = "hook_errors"
-	HookCountKey          = "hook_count"
 	InputTokensKey        = "input_tokens"
 	ModelKey              = "model"
 	OutputTokensKey       = "output_tokens"
@@ -410,23 +403,6 @@ func CompactionSavedPayload(saved CompactionSaved) map[string]any {
 	return payload
 }
 
-// CompactionDiagnostics builds compaction lifecycle diagnostic payloads.
-func CompactionDiagnostics(plan *compaction.Plan, phase string) map[string]any {
-	if plan == nil {
-		return map[string]any{PhaseKey: phase}
-	}
-
-	return map[string]any{
-		PhaseKey:                 phase,
-		"summarized_entries":     len(plan.SummarizedEntryIDs),
-		"kept_entries":           len(plan.KeptEntryIDs),
-		"file_operation_count":   len(plan.FileOperations),
-		"has_split_turn_summary": plan.SplitTurnSummary != "",
-		TokensBeforeKey:          plan.TokensBefore,
-		"first_kept_entry_id":    plan.FirstKeptEntryID,
-	}
-}
-
 // CompactionFileOperations builds compaction file-operation lifecycle payloads.
 func CompactionFileOperations(operations []compaction.FileOperation) []any {
 	return lo.Map(operations, func(operation compaction.FileOperation, _ int) any {
@@ -438,33 +414,6 @@ func CompactionFileOperations(operations []compaction.FileOperation) []any {
 			"command":  operation.Command,
 		}
 	})
-}
-
-// Diagnostic builds a lifecycle diagnostic payload.
-func Diagnostic(
-	event string,
-	hookCount int,
-	duration time.Duration,
-	hookErrors []string,
-	extra map[string]any,
-) map[string]any {
-	payload := map[string]any{
-		"event":       event,
-		HookCountKey:  hookCount,
-		DurationMsKey: DurationMilliseconds(duration),
-	}
-	if len(hookErrors) > 0 {
-		payload[ErrorsKey] = append([]string{}, hookErrors...)
-	}
-
-	maps.Copy(payload, extra)
-
-	return payload
-}
-
-// DurationMilliseconds converts a duration to millisecond precision for lifecycle payloads.
-func DurationMilliseconds(duration time.Duration) float64 {
-	return float64(duration.Microseconds()) / units.TokenThousand
 }
 
 // StringSlice converts a string slice to an extension-friendly any slice.

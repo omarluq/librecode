@@ -17,7 +17,6 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 	databaseService := do.MustInvoke[*DatabaseService](injector)
 	extensionService := do.MustInvoke[*ExtensionService](injector)
 	cache := do.MustInvoke[*CacheService](injector)
-	events := do.MustInvoke[*EventService](injector)
 	models := do.MustInvoke[*ModelService](injector)
 	logger := do.MustInvoke[*LoggerService](injector).SlogLogger
 	skills := do.MustInvoke[*SkillsService](injector)
@@ -28,7 +27,6 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 			Sessions:    databaseService.Sessions,
 			Extensions:  extensionService.Manager,
 			Cache:       cache.Responses,
-			Events:      events.Bus,
 			Models:      models.Registry,
 			Client:      nil,
 			Logger:      logger,

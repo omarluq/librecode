@@ -36,14 +36,8 @@ func (runtime *Runtime) dispatchBeforeCompaction(
 	plan *compaction.Plan,
 ) (*compactionLifecycleDecision, error) {
 	payload := lifecyclepayload.CompactionPreparation(sessionID, cwd, plan)
-	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleSessionBeforeCompact, payload)
-	runtime.emitLifecycleDiagnostics(
-		ctx,
-		extension.LifecycleSessionBeforeCompact,
-		&result,
-		lifecyclepayload.CompactionDiagnostics(plan, "before"),
-	)
 
+	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleSessionBeforeCompact, payload)
 	if err != nil {
 		return nil, oops.In("assistant").Code("compact_before_hook").Wrapf(err, "dispatch before compact lifecycle")
 	}
@@ -83,14 +77,8 @@ func (runtime *Runtime) dispatchAfterCompaction(
 		CWD:       cwd,
 		Source:    source,
 	})
-	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleSessionCompact, payload)
-	runtime.emitLifecycleDiagnostics(
-		ctx,
-		extension.LifecycleSessionCompact,
-		&result,
-		lifecyclepayload.CompactionDiagnostics(plan, "after"),
-	)
 
+	_, err := runtime.dispatchLifecycle(ctx, extension.LifecycleSessionCompact, payload)
 	if err != nil {
 		return
 	}

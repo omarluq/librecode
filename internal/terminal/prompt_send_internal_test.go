@@ -18,7 +18,6 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
@@ -360,7 +359,6 @@ func newPromptSendTestAppWithConfig(
 		opts.Sessions = sessionRepository
 		opts.Extensions = manager
 		opts.Cache = cache
-		opts.Events = event.NewBus(slog.Default())
 		opts.Models = registry
 		opts.Client = client
 		opts.Logger = slog.Default()

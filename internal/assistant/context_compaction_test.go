@@ -14,7 +14,6 @@ import (
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/testutil"
@@ -415,7 +414,6 @@ func newCompactionRuntimeForTailPolicy(
 		opts.Config = runtimeConfig
 		opts.Sessions = repository
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
-		opts.Events = event.NewBus(nil)
 		opts.Models = newCompactionTestRegistry(t, contextWindow)
 		opts.Client = client
 	}), repository

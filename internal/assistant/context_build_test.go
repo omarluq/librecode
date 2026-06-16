@@ -8,11 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/samber/ro"
-
-	"github.com/omarluq/librecode/internal/event"
-	"github.com/omarluq/librecode/internal/extension"
 )
 
 func TestRuntime_ContextBuildIncludesAgentInstructions(t *testing.T) {
@@ -112,48 +107,4 @@ end)
 	seen, err := manager.ExecuteCommand(context.Background(), "context_seen", "")
 	require.NoError(t, err)
 	assert.Equal(t, "true:true:true:true:true", seen)
-}
-
-func TestRuntime_ContextBuildPublishesContributionBreakdown(t *testing.T) {
-	t.Parallel()
-
-	client := &capturingCompleter{request: nil}
-	runtime, _, manager := newTestRuntimeWithManager(t, client)
-	loadRuntimeExtension(t, manager, `
-local lc = require("librecode")
-lc.on("context_build", function(event)
-  event.payload.contributions = {
-    { name = "note", content = "extra context" },
-  }
-  return { payload = event.payload }
-end)
-`)
-
-	var payload map[string]any
-
-	subscription := runtime.EventBus().Channel(string(extension.LifecycleContextBuild)).Subscribe(ro.NewObserver(
-		func(envelope event.Envelope) {
-			data, ok := envelope.Data.(map[string]any)
-			if ok {
-				payload = data
-			}
-		},
-		func(err error) {
-			t.Errorf("unexpected context_build stream error: %v", err)
-		},
-		func() {
-			// Test subscription should not complete before cleanup.
-		},
-	))
-	defer subscription.Unsubscribe()
-
-	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(testRuntimeCWD, "context", ""))
-
-	require.NoError(t, err)
-	require.NotNil(t, payload)
-	breakdown, ok := payload["breakdown"].(map[string]any)
-	require.True(t, ok)
-	extensionTokens, ok := breakdown["extensions"].(int)
-	require.True(t, ok)
-	assert.Positive(t, extensionTokens)
 }

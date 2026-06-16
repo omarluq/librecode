@@ -179,16 +179,4 @@ func TestCompactionAndDiagnosticPayloads(t *testing.T) {
 	assert.Empty(t, nilPlanPayload["first_kept_entry_id"])
 	assert.Equal(t, []any{}, nilPlanPayload["summarized_entry_ids"])
 	assert.Equal(t, []any{}, nilPlanPayload[compaction.FileOperationsKey])
-
-	diagnostic := lifecyclepayload.Diagnostic(
-		"event",
-		2,
-		1500*time.Microsecond,
-		[]string{"oops"},
-		map[string]any{"extra": true},
-	)
-	assert.Equal(t, 2, diagnostic[lifecyclepayload.HookCountKey])
-	assert.InDelta(t, 1.5, diagnostic[lifecyclepayload.DurationMsKey], 0)
-	assert.Equal(t, []string{"oops"}, diagnostic[lifecyclepayload.ErrorsKey])
-	assert.Equal(t, true, diagnostic["extra"])
 }

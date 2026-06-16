@@ -21,11 +21,17 @@ func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *Comple
 	payload.ThinkingLevel = request.ThinkingLevel
 	payload.Attempt = attempt
 
-	runtime.emit(
+	if runtime.extensions == nil {
+		return
+	}
+
+	if err := runtime.extensions.Emit(
 		ctx,
 		string(extension.LifecycleBeforeProviderRequest),
 		lifecyclepayload.ProviderRequestPayload(payload),
-	)
+	); err != nil && runtime.logger != nil {
+		runtime.logger.Debug("provider request event failed", "error", err)
+	}
 }
 
 func (runtime *Runtime) emitProviderResponse(
@@ -51,17 +57,10 @@ func (runtime *Runtime) emitProviderResponse(
 		ToolEventCount: len(result.ToolEvents),
 	})
 
-	dispatchResult, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleAfterProviderResponse, payload)
+	_, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleAfterProviderResponse, payload)
 	if dispatchErr != nil && runtime.logger != nil {
 		runtime.logger.Debug("provider response lifecycle failed", "error", dispatchErr)
 	}
-
-	runtime.emitLifecycleDiagnostics(
-		ctx,
-		extension.LifecycleAfterProviderResponse,
-		&dispatchResult,
-		providerResponseDiagnostics(request, attempt, result),
-	)
 }
 
 func (runtime *Runtime) emitProviderError(ctx context.Context, request *CompletionRequest, attempt int, err error) {
@@ -78,15 +77,8 @@ func (runtime *Runtime) emitProviderError(ctx context.Context, request *Completi
 		Attempt:   attempt,
 	})
 
-	dispatchResult, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleProviderError, payload)
+	_, dispatchErr := runtime.dispatchLifecycle(ctx, extension.LifecycleProviderError, payload)
 	if dispatchErr != nil && runtime.logger != nil {
 		runtime.logger.Debug("provider error lifecycle failed", "error", dispatchErr)
 	}
-
-	runtime.emitLifecycleDiagnostics(
-		ctx,
-		extension.LifecycleProviderError,
-		&dispatchResult,
-		providerErrorDiagnostics(request, attempt, err),
-	)
 }

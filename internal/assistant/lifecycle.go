@@ -71,8 +71,6 @@ func (runtime *Runtime) dispatchLifecycle(
 	name extension.LifecycleEventName,
 	payload map[string]any,
 ) (extension.LifecycleDispatchResult, error) {
-	runtime.emit(ctx, string(name), payload)
-
 	if runtime.extensions == nil {
 		return emptyLifecycleDispatchResult(name, payload), nil
 	}
@@ -210,20 +208,10 @@ func (runtime *Runtime) dispatchToolCallLifecycle(ctx context.Context, call *Too
 
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolCall, payload)
 	if err != nil {
-		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
-
 		return err
 	}
 
-	if err := applyToolCallMutation(call, result.ToolCall); err != nil {
-		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
-
-		return err
-	}
-
-	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolCall, &result, toolCallDiagnostics(call))
-
-	return nil
+	return applyToolCallMutation(call, result.ToolCall)
 }
 
 func (runtime *Runtime) dispatchToolResultLifecycle(ctx context.Context, event *ToolEvent) error {
@@ -235,13 +223,10 @@ func (runtime *Runtime) dispatchToolResultLifecycle(ctx context.Context, event *
 
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolResult, payload)
 	if err != nil {
-		runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolResult, &result, toolResultDiagnostics(event))
-
 		return err
 	}
 
 	applyToolResultMutation(event, result.ToolResult)
-	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolResult, &result, toolResultDiagnostics(event))
 
 	if event.Error != "" {
 		runtime.dispatchToolErrorLifecycle(ctx, event)
@@ -256,10 +241,7 @@ func (runtime *Runtime) dispatchToolErrorLifecycle(ctx context.Context, event *T
 	}
 
 	payload := lifecyclepayload.ToolResultPayload(lifecycleToolResult(event))
-	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolError, payload)
-	runtime.emitLifecycleDiagnostics(ctx, extension.LifecycleToolError, &result, toolResultDiagnostics(event))
-
-	if err != nil {
+	if _, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolError, payload); err != nil {
 		return
 	}
 }

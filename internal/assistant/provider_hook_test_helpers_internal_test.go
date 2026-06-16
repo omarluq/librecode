@@ -3,7 +3,6 @@ package assistant
 import (
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/event"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 	"log/slog"
@@ -16,7 +15,6 @@ type runtimeDeps struct {
 	Sessions   *database.SessionRepository
 	Extensions runtimeExtensions
 	Cache      *ResponseCache
-	Events     *event.Bus
 	Models     *model.Registry
 	Client     Completer
 	Logger     *slog.Logger
@@ -30,7 +28,6 @@ func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
 		Sessions:   nil,
 		Extensions: nil,
 		Cache:      nil,
-		Events:     nil,
 		Models:     nil,
 		Client:     nil,
 		Logger:     nil,
@@ -49,7 +46,6 @@ func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
 		sessions:        deps.Sessions,
 		extensions:      deps.Extensions,
 		cache:           deps.Cache,
-		events:          deps.Events,
 		models:          deps.Models,
 		client:          client,
 		logger:          deps.Logger,

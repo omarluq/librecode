@@ -56,8 +56,8 @@ func (runtime *Runtime) executeProviderToolCall(
 	result, err := registry.Execute(ctx, callEvent.Name, callEvent.Arguments)
 
 	event := toolEventFromResult(callEvent, result, err)
-	if lifecycleErr := runtime.dispatchToolResultLifecycle(ctx, &event); lifecycleErr != nil {
-		runtime.emitToolLifecycleError(ctx, &event, lifecycleErr)
+	if lifecycleErr := runtime.dispatchToolResultLifecycle(ctx, &event); lifecycleErr != nil && runtime.logger != nil {
+		runtime.logger.Debug("tool result lifecycle failed", "error", lifecycleErr)
 	}
 
 	emitProviderToolResult(onEvent, &event)
