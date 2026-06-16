@@ -56,4 +56,3 @@ func TestSessionCWDReportsMissingStoredDirectory(t *testing.T) {
 	}, fallbackCWD)
 	assert.False(t, found)
 }
-

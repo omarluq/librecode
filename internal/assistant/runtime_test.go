@@ -47,6 +47,18 @@ func newRuntimePromptRequest(cwd, text, name string) *assistant.PromptRequest {
 	}
 }
 
+func newRuntimeOutsideTempDir(t *testing.T) string {
+	t.Helper()
+
+	dir, err := os.MkdirTemp(filepath.Clean("/tmp"), "librecode-assistant-*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(dir))
+	})
+
+	return dir
+}
+
 func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	t.Parallel()
 
@@ -342,8 +354,8 @@ func TestRuntime_SlashSkillShowsContent(t *testing.T) {
 }
 
 func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
-	home := t.TempDir()
-	cwd := t.TempDir()
+	home := newRuntimeOutsideTempDir(t)
+	cwd := newRuntimeOutsideTempDir(t)
 	t.Setenv("HOME", home)
 
 	_, repository := newTestRuntime(t)

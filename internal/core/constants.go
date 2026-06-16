@@ -4,7 +4,6 @@ const (
 	roleUser            = "user"
 	contentTypeText     = "text"
 	diagnosticWarning   = "warning"
-	diagnosticError     = "error"
 	diagnosticCollision = "collision"
 	resourceSourceLocal = "local"
 	resourceTypeSkill   = "skill"

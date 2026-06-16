@@ -20,10 +20,6 @@ func warningDiagnostic(message, path string) ResourceDiagnostic {
 	return ResourceDiagnostic{Collision: nil, Type: diagnosticWarning, Message: message, Path: path}
 }
 
-func errorDiagnostic(message, path string) ResourceDiagnostic {
-	return ResourceDiagnostic{Collision: nil, Type: diagnosticError, Message: message, Path: path}
-}
-
 func collisionResourceDiagnostic(resourceType, name, winnerPath, loserPath string) ResourceDiagnostic {
 	return ResourceDiagnostic{
 		Collision: &ResourceCollision{
