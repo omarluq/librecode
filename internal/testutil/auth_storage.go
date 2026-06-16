@@ -12,7 +12,7 @@ import (
 	"github.com/omarluq/librecode/internal/auth"
 )
 
-// NewAuthStorage creates file-backed auth storage seeded with credentials.
+// authFileMode is the file permission for auth credential files.
 const authFileMode = 0o600
 
 // NewAuthStorage creates file-backed auth storage seeded with credentials.
