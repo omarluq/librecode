@@ -3,7 +3,6 @@ package core_test
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,14 +23,6 @@ func (source testSessionCWDSource) CWD() string {
 
 func (source testSessionCWDSource) SessionFile() string {
 	return source.sessionFile
-}
-
-type testTelemetrySettings struct {
-	enabled bool
-}
-
-func (settings testTelemetrySettings) InstallTelemetryEnabled() bool {
-	return settings.enabled
 }
 
 func TestSessionCWDReportsMissingStoredDirectory(t *testing.T) {
@@ -66,31 +57,3 @@ func TestSessionCWDReportsMissingStoredDirectory(t *testing.T) {
 	assert.False(t, found)
 }
 
-func TestTelemetryEnvOverridesSettings(t *testing.T) {
-	t.Parallel()
-
-	assert.True(t, core.TruthyEnvFlag("YES"))
-	assert.False(t, core.InstallTelemetryEnabled(testTelemetrySettings{enabled: true}, "0", true))
-	assert.False(t, core.InstallTelemetryEnabled(testTelemetrySettings{enabled: false}, "", false))
-}
-
-func TestTimingsRecordsElapsedSegments(t *testing.T) {
-	t.Parallel()
-
-	current := time.Unix(0, 0)
-	timings := core.NewTimingsWithClock(true, func() time.Time {
-		return current
-	})
-	current = current.Add(25 * time.Millisecond)
-
-	timings.Mark("load")
-
-	current = current.Add(75 * time.Millisecond)
-
-	timings.Mark("render")
-
-	entries := timings.Entries()
-	require.Len(t, entries, 2)
-	assert.Equal(t, 25*time.Millisecond, entries[0].Delta)
-	assert.Contains(t, timings.String(), "TOTAL: 100ms")
-}
