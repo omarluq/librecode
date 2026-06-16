@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -79,7 +78,7 @@ func TestToolRegistryForCWD(t *testing.T) {
 	assert.Same(t, service.Registry, defaultRegistry)
 
 	cwd := t.TempDir()
-	registry, err := toolRegistryForCWD(service, filepath.Join(cwd, "."))
+	registry, err := toolRegistryForCWD(service, cwd)
 	require.NoError(t, err)
 	require.NotNil(t, registry)
 	assert.NotSame(t, service.Registry, registry)

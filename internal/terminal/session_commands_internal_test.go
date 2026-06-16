@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -27,7 +26,7 @@ func TestCloneSessionRequiresActiveSession(t *testing.T) {
 func TestCloneSessionCreatesChildSession(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
 	session, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, "source", "")
 	require.NoError(t, err)
@@ -50,7 +49,7 @@ func TestCloneSessionCreatesChildSession(t *testing.T) {
 func TestLastAssistantMessage(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
 
 	message, found, err := app.lastAssistantMessage(ctx)
@@ -77,7 +76,7 @@ func TestLastAssistantMessage(t *testing.T) {
 func TestCopyLastAssistantMessage(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
 	clipboard := newClipboardScreen()
 	app.screen = clipboard

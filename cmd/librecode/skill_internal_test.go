@@ -29,56 +29,31 @@ func TestSkillCommands(t *testing.T) {
 	)
 	t.Chdir(cwd)
 
-	tests := []struct {
-		name    string
-		want    string
-		wantErr string
-		args    []string
-	}{
-		{
-			name:    listUse,
-			want:    skillCommandName,
-			wantErr: "",
-			args:    []string{listUse},
-		},
-		{
-			name:    skillCommandShow,
-			want:    "description: alpha skill",
-			wantErr: "",
-			args:    []string{skillCommandShow, "ALPHA"},
-		},
-		{
-			name:    skillCommandValidate,
-			want:    "ok",
-			wantErr: "",
-			args:    []string{skillCommandValidate},
-		},
-		{
-			name:    "show missing",
-			want:    "",
-			wantErr: `skill "missing" not found`,
-			args:    []string{skillCommandShow, "missing"},
-		},
+	runSkillCommandCase := func(name string, args []string, want, wantErr string) {
+		t.Run(name, func(t *testing.T) {
+			cmd := newSkillCmd()
+			output := new(bytes.Buffer)
+			cmd.SetOut(output)
+			cmd.SetErr(output)
+			cmd.SetArgs(args)
+
+			err := cmd.Execute()
+			if wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), wantErr)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Contains(t, output.String(), want)
+		})
 	}
 
-	for _, testCase := range tests {
-		cmd := newSkillCmd()
-		output := new(bytes.Buffer)
-		cmd.SetOut(output)
-		cmd.SetErr(output)
-		cmd.SetArgs(testCase.args)
-
-		err := cmd.Execute()
-		if testCase.wantErr != "" {
-			require.Error(t, err, testCase.name)
-			assert.Contains(t, err.Error(), testCase.wantErr, testCase.name)
-
-			continue
-		}
-
-		require.NoError(t, err, testCase.name)
-		assert.Contains(t, output.String(), testCase.want, testCase.name)
-	}
+	runSkillCommandCase(listUse, []string{listUse}, skillCommandName, "")
+	runSkillCommandCase(skillCommandShow, []string{skillCommandShow, "ALPHA"}, "description: alpha skill", "")
+	runSkillCommandCase(skillCommandValidate, []string{skillCommandValidate}, "ok", "")
+	runSkillCommandCase("show missing", []string{skillCommandShow, "missing"}, "", `skill "missing" not found`)
 }
 
 func TestFindSkillByNameReturnsMissingSkill(t *testing.T) {
