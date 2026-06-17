@@ -130,6 +130,8 @@ func asyncEventFromStreamEvent(event assistant.StreamEvent, promptID uint64) (*a
 		payload.Kind = asyncContextEventKind(event.Kind)
 	case assistant.StreamEventUnknown:
 		return nil, false
+	default:
+		return nil, false
 	}
 
 	return payload, true
@@ -577,6 +579,10 @@ func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackNa
 			Name:          fallbackName,
 			ArgumentsJSON: "",
 		}
+	}
+
+	if strings.TrimSpace(call.Name) == "" {
+		call.Name = fallbackName
 	}
 
 	if strings.TrimSpace(call.Name) == "" {

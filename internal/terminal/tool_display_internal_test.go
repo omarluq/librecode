@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gdamore/tcell/v3"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/omarluq/librecode/internal/assistant"
@@ -160,6 +161,21 @@ func TestRenderEditToolDisplayFallsBackToArgumentDiffWhenExpanded(t *testing.T) 
 	assert.NotEqual(t, -1, lineIndexContaining(lines, "diff:"))
 	assert.NotEqual(t, -1, lineIndexContaining(lines, "-old"))
 	assert.NotEqual(t, -1, lineIndexContaining(lines, "+new"))
+}
+
+func TestTailExpandedToolLinesIncludesErrorWithOutput(t *testing.T) {
+	t.Parallel()
+
+	display := testToolDisplay("$ command", toolDisplayError)
+	display.Output = "stdout"
+	display.Error = "stderr"
+
+	lines, hidden := tailExpandedToolLines(80, &display, tcell.StyleDefault, 10)
+
+	assert.False(t, hidden)
+	assert.NotEqual(t, -1, lineIndexContaining(lines, "output:"))
+	assert.NotEqual(t, -1, lineIndexContaining(lines, "stderr"))
+	assert.NotEqual(t, -1, lineIndexContaining(lines, "stdout"))
 }
 
 func TestRenderExpandedToolDisplayPrettyPrintsArguments(t *testing.T) {

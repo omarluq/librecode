@@ -286,12 +286,8 @@ func tailExpandedToolLines(
 	style tcell.Style,
 	rowsNeeded int,
 ) ([]tui.Line, bool) {
-	if display.Output != "" {
-		return tailSectionLinesFromEnd(width, "output", display.Output, style, rowsNeeded)
-	}
-
-	if display.Error != "" {
-		return tailSectionLinesFromEnd(width, "error", display.Error, style, rowsNeeded)
+	if output := toolDisplayOutput(display); output != "" {
+		return tailSectionLinesFromEnd(width, "output", output, style, rowsNeeded)
 	}
 
 	if display.DetailsJSON != "" {
