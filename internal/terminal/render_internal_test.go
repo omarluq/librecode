@@ -493,7 +493,7 @@ func TestMouseSelectionCopiesFrameText(t *testing.T) {
 	t.Parallel()
 
 	screen := newClipboardScreen()
-	systemClipboard := newFakeSystemClipboard()
+	systemClipboard := newMockSystemClipboard()
 	expectClipboardWrite(t, systemClipboard, "ello\nwor")
 	app := newRenderTestApp(t)
 	app.screen = screen
@@ -517,7 +517,7 @@ func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
 	t.Parallel()
 
 	screen := newClipboardScreen()
-	systemClipboard := newFakeSystemClipboard()
+	systemClipboard := newMockSystemClipboard()
 	expectClipboardWrite(t, systemClipboard, clipboardWorldText)
 	app := newRenderTestApp(t)
 	app.screen = screen
@@ -552,7 +552,7 @@ func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
 	t.Parallel()
 
 	screen := newClipboardScreen()
-	systemClipboard := newFakeSystemClipboard()
+	systemClipboard := newMockSystemClipboard()
 	expectClipboardWrite(t, systemClipboard, "   ")
 	app := newRenderTestApp(t)
 	app.screen = screen
@@ -583,7 +583,7 @@ func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
 	t.Parallel()
 
 	screen := newClipboardScreen()
-	systemClipboard := newFakeSystemClipboard()
+	systemClipboard := newMockSystemClipboard()
 	expectClipboardWrite(t, systemClipboard, clipboardWorldText)
 	expectClipboardWrite(t, systemClipboard, "hello world")
 	app := newRenderTestApp(t)

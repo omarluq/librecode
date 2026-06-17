@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -23,6 +24,9 @@ const (
 	clipboardTestTerminal = "clipboard-test"
 	clipboardCopyText     = "copy me"
 	clipboardWorldText    = "world"
+	waylandDisplayEnv     = "WAYLAND_DISPLAY"
+	runtimeDirEnv         = "XDG_RUNTIME_DIR"
+	clipboardRuntimeDir   = "/run/user/1000"
 )
 
 type mockFileInfo struct {
@@ -52,36 +56,36 @@ func (info *mockFileInfo) ModTime() time.Time { return time.Time{} }
 func (info *mockFileInfo) IsDir() bool        { return false }
 func (info *mockFileInfo) Sys() any           { return nil }
 
-type fakeSystemClipboard struct {
+type mockSystemClipboard struct {
 	mock.Mock
 }
 
-func newFakeSystemClipboard() *fakeSystemClipboard {
-	return &fakeSystemClipboard{Mock: mock.Mock{}}
+func newMockSystemClipboard() *mockSystemClipboard {
+	return &mockSystemClipboard{Mock: mock.Mock{}}
 }
 
-func (writer *fakeSystemClipboard) WriteText(text string) error {
+func (writer *mockSystemClipboard) WriteText(text string) error {
 	args := writer.Called(text)
 	if err := args.Error(0); err != nil {
-		return fmt.Errorf("fake system clipboard write: %w", err)
+		return fmt.Errorf("mock system clipboard write: %w", err)
 	}
 
 	return nil
 }
 
-func expectClipboardWrite(t *testing.T, writer *fakeSystemClipboard, text string) {
+func expectClipboardWrite(t *testing.T, writer *mockSystemClipboard, text string) {
 	t.Helper()
 
 	writer.On("WriteText", text).Return(nil).Once()
 }
 
-func assertClipboardExpectations(t *testing.T, writer *fakeSystemClipboard) {
+func assertClipboardExpectations(t *testing.T, writer *mockSystemClipboard) {
 	t.Helper()
 
 	writer.AssertExpectations(t)
 }
 
-func assertNoClipboardWrite(t *testing.T, writer *fakeSystemClipboard) {
+func assertNoClipboardWrite(t *testing.T, writer *mockSystemClipboard) {
 	t.Helper()
 
 	writer.AssertNotCalled(t, "WriteText", mock.Anything)
@@ -185,36 +189,143 @@ func (screen *clipboardScreen) GetCells() *tcell.CellBuffer         { return scr
 func (screen *clipboardScreen) StopQ() <-chan struct{}              { return screen.stop }
 func (screen *clipboardScreen) LockRegion(int, int, int, int, bool) {}
 
+func TestDefaultPrepareDesktopClipboardEnvironment(t *testing.T) {
+	t.Setenv(waylandDisplayEnv, "wayland-existing")
+	t.Setenv(runtimeDirEnv, t.TempDir())
+
+	require.NoError(t, defaultPrepareDesktopClipboardEnvironment())
+	assert.Equal(t, "wayland-existing", os.Getenv(waylandDisplayEnv))
+}
+
+func TestPrepareDesktopClipboardEnvironment(t *testing.T) {
+	t.Parallel()
+
+	t.Run("skips when wayland display is already set", func(t *testing.T) {
+		t.Parallel()
+
+		vars := map[string]string{
+			waylandDisplayEnv: "wayland-existing",
+			runtimeDirEnv:     clipboardRuntimeDir,
+		}
+
+		err := prepareDesktopClipboardEnvironment(mapGetenv(vars), mapSetenv(vars), filepath.Glob, os.Stat)
+
+		require.NoError(t, err)
+		assert.Equal(t, "wayland-existing", vars[waylandDisplayEnv])
+	})
+
+	t.Run("skips when runtime directory is missing", func(t *testing.T) {
+		t.Parallel()
+
+		vars := map[string]string{waylandDisplayEnv: "", runtimeDirEnv: ""}
+
+		err := prepareDesktopClipboardEnvironment(mapGetenv(vars), mapSetenv(vars), filepath.Glob, os.Stat)
+
+		require.NoError(t, err)
+		assert.Empty(t, vars[waylandDisplayEnv])
+	})
+
+	t.Run("skips when no wayland socket is detected", func(t *testing.T) {
+		t.Parallel()
+
+		vars := map[string]string{waylandDisplayEnv: "", runtimeDirEnv: clipboardRuntimeDir}
+
+		err := prepareDesktopClipboardEnvironment(
+			mapGetenv(vars),
+			mapSetenv(vars),
+			func(string) ([]string, error) {
+				return []string{filepath.Join(clipboardRuntimeDir, "wayland-0.lock")}, nil
+			},
+			func(string) (fs.FileInfo, error) { return newMockFileInfo(t, 0), nil },
+		)
+
+		require.NoError(t, err)
+		assert.Empty(t, vars[waylandDisplayEnv])
+	})
+
+	t.Run("sets detected wayland socket", func(t *testing.T) {
+		t.Parallel()
+
+		vars := map[string]string{waylandDisplayEnv: "", runtimeDirEnv: clipboardRuntimeDir}
+
+		err := prepareDesktopClipboardEnvironment(
+			mapGetenv(vars),
+			mapSetenv(vars),
+			func(string) ([]string, error) { return []string{filepath.Join(clipboardRuntimeDir, "wayland-0")}, nil },
+			func(string) (fs.FileInfo, error) { return newMockFileInfo(t, fs.ModeSocket), nil },
+		)
+
+		require.NoError(t, err)
+		assert.Equal(t, "wayland-0", vars[waylandDisplayEnv])
+	})
+
+	t.Run("returns setenv errors", func(t *testing.T) {
+		t.Parallel()
+
+		setenvErr := errors.New("setenv failed")
+		vars := map[string]string{waylandDisplayEnv: "", runtimeDirEnv: clipboardRuntimeDir}
+
+		err := prepareDesktopClipboardEnvironment(
+			mapGetenv(vars),
+			func(string, string) error { return setenvErr },
+			func(string) ([]string, error) { return []string{filepath.Join(clipboardRuntimeDir, "wayland-0")}, nil },
+			func(string) (fs.FileInfo, error) { return newMockFileInfo(t, fs.ModeSocket), nil },
+		)
+
+		require.Error(t, err)
+		require.ErrorIs(t, err, setenvErr)
+	})
+}
+
+func mapGetenv(vars map[string]string) func(string) string {
+	return func(key string) string { return vars[key] }
+}
+
+func mapSetenv(vars map[string]string) func(string, string) error {
+	return func(key, value string) error {
+		vars[key] = value
+
+		return nil
+	}
+}
+
 func TestCandidateWaylandDisplay(t *testing.T) {
 	t.Parallel()
 
-	const runtimeDir = "/run/user/1000"
-
 	files := map[string]fs.FileMode{
-		filepath.Join(runtimeDir, "wayland-0"):      fs.ModeSocket,
-		filepath.Join(runtimeDir, "wayland-0.lock"): 0,
-		filepath.Join(runtimeDir, "wayland-1"):      0,
+		filepath.Join(clipboardRuntimeDir, "wayland-0"):      fs.ModeSocket,
+		filepath.Join(clipboardRuntimeDir, "wayland-0.lock"): 0,
+		filepath.Join(clipboardRuntimeDir, "wayland-1"):      0,
 	}
 	tests := []struct {
+		globErr error
 		name    string
 		want    string
 		matches []string
 	}{
 		{
-			name: "uses first socket display",
+			globErr: nil,
+			name:    "uses first socket display",
 			matches: []string{
-				filepath.Join(runtimeDir, "wayland-0"),
-				filepath.Join(runtimeDir, "wayland-0.lock"),
+				filepath.Join(clipboardRuntimeDir, "wayland-0"),
+				filepath.Join(clipboardRuntimeDir, "wayland-0.lock"),
 			},
 			want: "wayland-0",
 		},
 		{
-			name: "skips lock and regular files",
+			globErr: nil,
+			name:    "skips lock and regular files",
 			matches: []string{
-				filepath.Join(runtimeDir, "wayland-0.lock"),
-				filepath.Join(runtimeDir, "wayland-1"),
+				filepath.Join(clipboardRuntimeDir, "wayland-0.lock"),
+				filepath.Join(clipboardRuntimeDir, "wayland-1"),
 			},
 			want: "",
+		},
+		{
+			globErr: filepath.ErrBadPattern,
+			name:    "ignores glob errors",
+			matches: nil,
+			want:    "",
 		},
 	}
 
@@ -224,8 +335,8 @@ func TestCandidateWaylandDisplay(t *testing.T) {
 
 			statCalls := make([]*mockFileInfo, 0, len(testCase.matches))
 			got := candidateWaylandDisplay(
-				runtimeDir,
-				func(string) ([]string, error) { return testCase.matches, nil },
+				clipboardRuntimeDir,
+				func(string) ([]string, error) { return testCase.matches, testCase.globErr },
 				func(path string) (fs.FileInfo, error) {
 					mode, ok := files[path]
 					if !ok {
@@ -446,14 +557,14 @@ func newClipboardScreenForTest(enabled bool) *clipboardScreen {
 	return newClipboardScreen()
 }
 
-func newSystemClipboardForTest(t *testing.T, testCase *copyClipboardTestCase) *fakeSystemClipboard {
+func newSystemClipboardForTest(t *testing.T, testCase *copyClipboardTestCase) *mockSystemClipboard {
 	t.Helper()
 
 	if !testCase.withSystemClipboard {
 		return nil
 	}
 
-	system := newFakeSystemClipboard()
+	system := newMockSystemClipboard()
 
 	if testCase.wantSystemWrite {
 		if testCase.wantSystemErr {
@@ -466,7 +577,7 @@ func newSystemClipboardForTest(t *testing.T, testCase *copyClipboardTestCase) *f
 	return system
 }
 
-func assertSystemClipboardWrite(t *testing.T, system *fakeSystemClipboard, wantWrite bool) {
+func assertSystemClipboardWrite(t *testing.T, system *mockSystemClipboard, wantWrite bool) {
 	t.Helper()
 
 	if wantWrite {
