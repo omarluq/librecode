@@ -80,6 +80,8 @@ func TestCopyLastAssistantMessage(t *testing.T) {
 	app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
 	clipboard := newClipboardScreen()
 	systemClipboard := newFakeSystemClipboard()
+	expectClipboardWrite(t, systemClipboard, "answer")
+
 	app.screen = clipboard
 	app.systemClipboard = systemClipboard
 	session, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, "copy", "")
@@ -92,7 +94,7 @@ func TestCopyLastAssistantMessage(t *testing.T) {
 	require.NoError(t, app.copyLastAssistantMessage(ctx))
 
 	assert.Equal(t, "answer", string(clipboard.clipboard))
-	assert.Equal(t, []string{"answer"}, systemClipboard.writes)
+	assertClipboardExpectations(t, systemClipboard)
 	assert.Equal(t, "copied last assistant message", app.statusMessage)
 }
 
