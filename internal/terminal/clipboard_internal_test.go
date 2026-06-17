@@ -308,8 +308,10 @@ type desktopClipboardCallResult struct {
 func callDesktopClipboard(text string, initErr error, changed <-chan struct{}) desktopClipboardCallResult {
 	result := desktopClipboardCallResult{err: nil, writes: make([][]byte, 0, 1), prepared: false, initialized: false}
 	writer := desktopClipboard{
-		prepare: func() {
+		prepare: func() error {
 			result.prepared = true
+
+			return nil
 		},
 		init: func() error {
 			result.initialized = true
@@ -328,63 +330,150 @@ func callDesktopClipboard(text string, initErr error, changed <-chan struct{}) d
 	return result
 }
 
-func TestCopyTextToClipboardWritesScreenAndSystemClipboards(t *testing.T) {
-	t.Parallel()
-
-	screen := newClipboardScreen()
-	system := newFakeSystemClipboard()
-	expectClipboardWrite(t, system, clipboardCopyText)
-
-	require.NoError(t, copyTextToClipboard(screen, system, clipboardCopyText))
-
-	assert.Equal(t, clipboardCopyText, string(screen.clipboard))
-	assertClipboardExpectations(t, system)
+type copyClipboardTestCase struct {
+	name                string
+	text                string
+	wantScreenClipboard string
+	wantErrContains     string
+	withScreen          bool
+	withSystemClipboard bool
+	wantSystemWrite     bool
+	wantSystemErr       bool
 }
 
-func TestCopyTextToClipboardReturnsSystemClipboardErrors(t *testing.T) {
+func TestCopyTextToClipboard(t *testing.T) {
 	t.Parallel()
 
-	screen := newClipboardScreen()
-	system := newFakeSystemClipboard()
-	systemErr := errors.New("clipboard unavailable")
-	system.On("WriteText", clipboardCopyText).Return(systemErr).Once()
+	tests := []copyClipboardTestCase{
+		{
+			name:                "writes screen and system clipboards",
+			text:                clipboardCopyText,
+			wantScreenClipboard: clipboardCopyText,
+			wantErrContains:     "",
+			withScreen:          true,
+			withSystemClipboard: true,
+			wantSystemWrite:     true,
+			wantSystemErr:       false,
+		},
+		{
+			name:                "returns system clipboard errors after screen write",
+			text:                clipboardCopyText,
+			wantScreenClipboard: clipboardCopyText,
+			wantErrContains:     "write system clipboard",
+			withScreen:          true,
+			withSystemClipboard: true,
+			wantSystemWrite:     true,
+			wantSystemErr:       true,
+		},
+		{
+			name:                "handles missing system clipboard",
+			text:                clipboardCopyText,
+			wantScreenClipboard: clipboardCopyText,
+			wantErrContains:     "",
+			withScreen:          true,
+			withSystemClipboard: false,
+			wantSystemWrite:     false,
+			wantSystemErr:       false,
+		},
+		{
+			name:                "ignores empty text",
+			text:                "",
+			wantScreenClipboard: "",
+			wantErrContains:     "",
+			withScreen:          true,
+			withSystemClipboard: true,
+			wantSystemWrite:     false,
+			wantSystemErr:       false,
+		},
+		{
+			name:                "handles missing screen",
+			text:                clipboardCopyText,
+			wantScreenClipboard: "",
+			wantErrContains:     "",
+			withScreen:          false,
+			withSystemClipboard: true,
+			wantSystemWrite:     false,
+			wantSystemErr:       false,
+		},
+	}
 
-	err := copyTextToClipboard(screen, system, clipboardCopyText)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "write system clipboard")
-	assert.Equal(t, clipboardCopyText, string(screen.clipboard))
-	assertClipboardExpectations(t, system)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			runCopyTextToClipboardTest(t, &testCase)
+		})
+	}
 }
 
-func TestCopyTextToClipboardHandlesMissingSystemClipboard(t *testing.T) {
-	t.Parallel()
+func runCopyTextToClipboardTest(t *testing.T, testCase *copyClipboardTestCase) {
+	t.Helper()
 
-	screen := newClipboardScreen()
+	screen := newClipboardScreenForTest(testCase.withScreen)
+	system := newSystemClipboardForTest(t, testCase)
 
-	require.NoError(t, copyTextToClipboard(screen, nil, clipboardCopyText))
+	var screenArg clipboardWriter
+	if screen != nil {
+		screenArg = screen
+	}
 
-	assert.Equal(t, clipboardCopyText, string(screen.clipboard))
+	var systemArg systemClipboardWriter
+	if system != nil {
+		systemArg = system
+	}
+
+	err := copyTextToClipboard(screenArg, systemArg, testCase.text)
+	if testCase.wantErrContains != "" {
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), testCase.wantErrContains)
+	} else {
+		require.NoError(t, err)
+	}
+
+	if screen != nil {
+		assert.Equal(t, testCase.wantScreenClipboard, string(screen.clipboard))
+	}
+
+	if system != nil {
+		assertSystemClipboardWrite(t, system, testCase.wantSystemWrite)
+	}
 }
 
-func TestCopyTextToClipboardIgnoresEmptyText(t *testing.T) {
-	t.Parallel()
+func newClipboardScreenForTest(enabled bool) *clipboardScreen {
+	if !enabled {
+		return nil
+	}
 
-	screen := newClipboardScreen()
-	system := newFakeSystemClipboard()
-
-	require.NoError(t, copyTextToClipboard(screen, system, ""))
-
-	assert.Empty(t, screen.clipboard)
-	assertNoClipboardWrite(t, system)
+	return newClipboardScreen()
 }
 
-func TestCopyTextToClipboardHandlesMissingScreen(t *testing.T) {
-	t.Parallel()
+func newSystemClipboardForTest(t *testing.T, testCase *copyClipboardTestCase) *fakeSystemClipboard {
+	t.Helper()
+
+	if !testCase.withSystemClipboard {
+		return nil
+	}
 
 	system := newFakeSystemClipboard()
 
-	require.NoError(t, copyTextToClipboard(nil, system, clipboardCopyText))
+	if testCase.wantSystemWrite {
+		if testCase.wantSystemErr {
+			system.On("WriteText", testCase.text).Return(errors.New("clipboard unavailable")).Once()
+		} else {
+			expectClipboardWrite(t, system, testCase.text)
+		}
+	}
+
+	return system
+}
+
+func assertSystemClipboardWrite(t *testing.T, system *fakeSystemClipboard, wantWrite bool) {
+	t.Helper()
+
+	if wantWrite {
+		assertClipboardExpectations(t, system)
+
+		return
+	}
 
 	assertNoClipboardWrite(t, system)
 }
