@@ -17,7 +17,7 @@ type systemClipboardWriter interface {
 }
 
 type desktopClipboard struct {
-	prepare func()
+	prepare func() error
 	init    func() error
 	write   func(clipboard.Format, []byte) <-chan struct{}
 }
@@ -30,19 +30,21 @@ func newDesktopClipboard() desktopClipboard {
 	}
 }
 
-func prepareDesktopClipboardEnvironment() {
+func prepareDesktopClipboardEnvironment() error {
 	if os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("XDG_RUNTIME_DIR") == "" {
-		return
+		return nil
 	}
 
 	display := candidateWaylandDisplay(os.Getenv("XDG_RUNTIME_DIR"), filepath.Glob, os.Stat)
 	if display == "" {
-		return
+		return nil
 	}
 
 	if err := os.Setenv("WAYLAND_DISPLAY", display); err != nil {
-		return
+		return terminalError(err, "set wayland display")
 	}
+
+	return nil
 }
 
 func candidateWaylandDisplay(
@@ -77,7 +79,9 @@ func (writer desktopClipboard) WriteText(text string) error {
 	}
 
 	if writer.prepare != nil {
-		writer.prepare()
+		if err := writer.prepare(); err != nil {
+			return terminalError(err, "prepare system clipboard")
+		}
 	}
 
 	if err := writer.init(); err != nil {
