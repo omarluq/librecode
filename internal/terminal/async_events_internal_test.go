@@ -140,6 +140,29 @@ func TestPromptStreamHandlerPostsEvents(t *testing.T) {
 	}
 }
 
+func TestAsyncEventFromStreamEventRejectsUnknownKinds(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		kind assistant.StreamEventKind
+		name string
+	}{
+		{name: "explicit unknown", kind: assistant.StreamEventUnknown},
+		{name: "future unknown", kind: assistant.StreamEventKind("future")},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			event, ok := asyncEventFromStreamEvent(asyncTestStreamEvent(testCase.kind, asyncTestIgnored, nil, nil), 1)
+
+			assert.False(t, ok)
+			assert.Nil(t, event)
+		})
+	}
+}
+
 func promptStreamHandlerPostCases() []streamHandlerPostCase {
 	return append(promptStreamContentEventCases(), promptStreamContextEventCases()...)
 }

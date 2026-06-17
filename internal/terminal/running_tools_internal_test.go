@@ -35,6 +35,41 @@ func TestRunningToolBlocksAppendRenderAndRemove(t *testing.T) {
 	assert.Empty(t, app.runningToolBlocks)
 }
 
+func TestApplyStreamedToolStartUsesFallbackForBlankName(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	call := testToolCallEvent("", `{"command":"go test"}`)
+
+	app.applyStreamedToolStart(&call, testToolBash)
+
+	require.Len(t, app.runningToolBlocks, 1)
+	assert.Equal(t, testToolBash, app.runningToolBlocks[0].Call.Name)
+}
+
+func TestRemoveRunningToolBlockMatchesNameAndArguments(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	sharedArguments := `{"path":"same.go"}`
+	app.runningToolBlocks = []runningToolBlock{
+		testRunningToolBlock(testToolRead, sharedArguments),
+		testRunningToolBlock(testToolWrite, sharedArguments),
+	}
+
+	app.removeRunningToolBlock(&assistant.ToolEvent{
+		Name:          testToolWrite,
+		ArgumentsJSON: sharedArguments,
+		DetailsJSON:   "",
+		Result:        "",
+		Error:         "",
+		IsError:       false,
+	})
+
+	require.Len(t, app.runningToolBlocks, 1)
+	assert.Equal(t, testToolRead, app.runningToolBlocks[0].Call.Name)
+}
+
 func TestRemoveRunningToolBlockFallsBackToName(t *testing.T) {
 	t.Parallel()
 
