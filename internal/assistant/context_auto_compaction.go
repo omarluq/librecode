@@ -222,7 +222,7 @@ func (runtime *Runtime) emitContextCompactionEvent(
 	kind StreamEventKind,
 	message string,
 ) {
-	emitStreamEvent(onEvent, StreamEvent{ToolEvent: nil, Usage: nil, Kind: kind, Text: message})
+	emitStreamEvent(onEvent, StreamEvent{ToolCallEvent: nil, ToolEvent: nil, Usage: nil, Kind: kind, Text: message})
 }
 
 func (runtime *Runtime) emitContextCompactionError(

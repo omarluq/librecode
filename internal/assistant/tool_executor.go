@@ -38,8 +38,6 @@ func (runtime *Runtime) executeProviderToolCall(
 	call ToolCall,
 	onEvent func(StreamEvent),
 ) ToolEvent {
-	emitProviderToolStart(onEvent, call.Name)
-
 	callEvent := ToolCallEvent{
 		Arguments:     call.Arguments,
 		ID:            call.ID,
@@ -52,6 +50,8 @@ func (runtime *Runtime) executeProviderToolCall(
 
 		return event
 	}
+
+	emitProviderToolStart(onEvent, &callEvent)
 
 	result, err := registry.Execute(ctx, callEvent.Name, callEvent.Arguments)
 
@@ -117,12 +117,18 @@ func encodeToolDetails(details map[string]any) string {
 	return string(encoded)
 }
 
-func emitProviderToolStart(onEvent func(StreamEvent), name string) {
-	if onEvent == nil {
+func emitProviderToolStart(onEvent func(StreamEvent), call *ToolCallEvent) {
+	if onEvent == nil || call == nil {
 		return
 	}
 
-	onEvent(StreamEvent{ToolEvent: nil, Usage: nil, Kind: StreamEventToolStart, Text: name})
+	onEvent(StreamEvent{
+		ToolCallEvent: call,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          StreamEventToolStart,
+		Text:          call.Name,
+	})
 }
 
 func emitProviderToolResult(onEvent func(StreamEvent), event *ToolEvent) {
@@ -130,7 +136,7 @@ func emitProviderToolResult(onEvent func(StreamEvent), event *ToolEvent) {
 		return
 	}
 
-	onEvent(StreamEvent{ToolEvent: event, Usage: nil, Kind: StreamEventToolResult, Text: ""})
+	onEvent(StreamEvent{ToolCallEvent: nil, ToolEvent: event, Usage: nil, Kind: StreamEventToolResult, Text: ""})
 }
 
 func llmToolResultFromToolEvent(event *ToolEvent) llm.ToolResult {
@@ -147,7 +153,7 @@ func llmToolResultFromToolEvent(event *ToolEvent) llm.ToolResult {
 	}
 
 	return llm.ToolResult{
-		Metadata:      nil,
+		Metadata:      toolResultMetadataFromToolEvent(event),
 		ToolCallID:    "",
 		ArgumentsJSON: event.ArgumentsJSON,
 		Name:          event.Name,
@@ -155,4 +161,12 @@ func llmToolResultFromToolEvent(event *ToolEvent) llm.ToolResult {
 		Content:       []llm.Part{llm.TextPart(event.Result)},
 		IsError:       event.IsError,
 	}
+}
+
+func toolResultMetadataFromToolEvent(event *ToolEvent) map[string]any {
+	if event == nil || strings.TrimSpace(event.DetailsJSON) == "" {
+		return nil
+	}
+
+	return map[string]any{"details_json": event.DetailsJSON}
 }

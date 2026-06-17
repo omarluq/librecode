@@ -105,7 +105,7 @@ func TestRenderParityToolBlockFrame(t *testing.T) {
 
 	frame := frameText(app.frame)
 	assertFrameContainsAll(t, frame,
-		"✓ read",
+		"read",
 		"output:",
 		"func main() {",
 		"      fmt.Println",

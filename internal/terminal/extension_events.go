@@ -26,6 +26,7 @@ const (
 	extensionDataSessionID        = "session_id"
 	extensionDataText             = "text"
 	extensionDataToolArgsJSON     = "arguments_json"
+	extensionDataToolCallID       = "tool_call_id"
 	extensionDataUserEntryID      = "user_entry_id"
 	extensionDataWidth            = "width"
 	extensionEventKey             = "key"

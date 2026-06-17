@@ -78,25 +78,27 @@ func (app *App) postCompactDone(
 	usage *model.TokenUsage,
 ) {
 	app.postAsyncEvent(ctx, &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     usage,
-		Kind:      asyncEventCompactDone,
-		Provider:  compactionEntryID(entry),
-		Text:      compactDoneText(entry),
-		PromptID:  compactID,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         usage,
+		Kind:          asyncEventCompactDone,
+		Provider:      compactionEntryID(entry),
+		Text:          compactDoneText(entry),
+		PromptID:      compactID,
 	})
 }
 
 func (app *App) postCompactError(ctx context.Context, compactID uint64, err error) {
 	app.postAsyncEvent(ctx, &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      asyncEventCompactError,
-		Provider:  "",
-		Text:      err.Error(),
-		PromptID:  compactID,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventCompactError,
+		Provider:      "",
+		Text:          err.Error(),
+		PromptID:      compactID,
 	})
 }
 

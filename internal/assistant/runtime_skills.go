@@ -36,10 +36,11 @@ func (runtime *Runtime) emitActivatedSkillReads(
 		}
 
 		emitStreamEvent(onEvent, StreamEvent{
-			ToolEvent: &toolEvent,
-			Usage:     nil,
-			Kind:      StreamEventSkillLoaded,
-			Text:      skill.Name,
+			ToolCallEvent: nil,
+			ToolEvent:     &toolEvent,
+			Usage:         nil,
+			Kind:          StreamEventSkillLoaded,
+			Text:          skill.Name,
 		})
 		toolEvents = append(toolEvents, toolEvent)
 	}

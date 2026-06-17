@@ -35,25 +35,27 @@ const (
 )
 
 type asyncEvent struct {
-	Response  *assistant.PromptResponse
-	ToolEvent *assistant.ToolEvent
-	Usage     *model.TokenUsage
-	Kind      asyncEventKind
-	Provider  string
-	Text      string
-	PromptID  uint64
+	Response      *assistant.PromptResponse
+	ToolCallEvent *assistant.ToolCallEvent
+	ToolEvent     *assistant.ToolEvent
+	Usage         *model.TokenUsage
+	Kind          asyncEventKind
+	Provider      string
+	Text          string
+	PromptID      uint64
 }
 
 func (app *App) promptUserEntryHandler(ctx context.Context, promptID uint64) func(assistant.PromptUserEntryEvent) {
 	return func(event assistant.PromptUserEntryEvent) {
 		app.postAsyncEvent(ctx, &asyncEvent{
-			Response:  nil,
-			ToolEvent: nil,
-			Usage:     nil,
-			Kind:      asyncEventPromptUserEntry,
-			Provider:  event.SessionID,
-			Text:      event.EntryID,
-			PromptID:  promptID,
+			Response:      nil,
+			ToolCallEvent: nil,
+			ToolEvent:     nil,
+			Usage:         nil,
+			Kind:          asyncEventPromptUserEntry,
+			Provider:      event.SessionID,
+			Text:          event.EntryID,
+			PromptID:      promptID,
 		})
 	}
 }
@@ -66,97 +68,71 @@ func (app *App) promptRetryHandler(ctx context.Context, promptID uint64) assista
 		}
 
 		app.postAsyncEvent(ctx, &asyncEvent{
-			Response:  nil,
-			ToolEvent: nil,
-			Usage:     nil,
-			Kind:      asyncEventPromptRetry,
-			Provider:  string(event.Kind),
-			Text:      text,
-			PromptID:  promptID,
+			Response:      nil,
+			ToolCallEvent: nil,
+			ToolEvent:     nil,
+			Usage:         nil,
+			Kind:          asyncEventPromptRetry,
+			Provider:      string(event.Kind),
+			Text:          text,
+			PromptID:      promptID,
 		})
 	}
 }
 
 func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(assistant.StreamEvent) {
 	return func(event assistant.StreamEvent) {
-		switch event.Kind {
-		case assistant.StreamEventTextDelta:
-			app.postAsyncEvent(ctx, &asyncEvent{
-				Response:  nil,
-				ToolEvent: nil,
-				Usage:     nil,
-				Kind:      asyncEventPromptDelta,
-				Provider:  "",
-				Text:      event.Text,
-				PromptID:  promptID,
-			})
-		case assistant.StreamEventThinkingDelta:
-			app.postAsyncEvent(ctx, &asyncEvent{
-				Response:  nil,
-				ToolEvent: nil,
-				Usage:     nil,
-				Kind:      asyncEventPromptThinkingDelta,
-				Provider:  "",
-				Text:      event.Text,
-				PromptID:  promptID,
-			})
-		case assistant.StreamEventToolStart:
-			app.postAsyncEvent(ctx, &asyncEvent{
-				Response:  nil,
-				ToolEvent: nil,
-				Usage:     nil,
-				Kind:      asyncEventPromptToolStart,
-				Provider:  "",
-				Text:      event.Text,
-				PromptID:  promptID,
-			})
-		case assistant.StreamEventToolResult, assistant.StreamEventSkillLoaded:
-			app.postAsyncEvent(ctx, &asyncEvent{
-				Response:  nil,
-				ToolEvent: event.ToolEvent,
-				Usage:     nil,
-				Kind:      asyncEventPromptToolResult,
-				Provider:  "",
-				Text:      "",
-				PromptID:  promptID,
-			})
-		case assistant.StreamEventUsage:
-			app.postAsyncEvent(ctx, &asyncEvent{
-				Response:  nil,
-				ToolEvent: nil,
-				Usage:     event.Usage,
-				Kind:      asyncEventPromptUsage,
-				Provider:  "",
-				Text:      "",
-				PromptID:  promptID,
-			})
-		case assistant.StreamEventUsageSnapshot:
-			app.postAsyncEvent(ctx, &asyncEvent{
-				Response:  nil,
-				ToolEvent: nil,
-				Usage:     event.Usage,
-				Kind:      asyncEventPromptUsageSnapshot,
-				Provider:  "",
-				Text:      "",
-				PromptID:  promptID,
-			})
-		case assistant.StreamEventContextCompaction,
-			assistant.StreamEventContextCompactionStart,
-			assistant.StreamEventContextCompactionDone,
-			assistant.StreamEventContextCompactionError:
-			app.postAsyncEvent(ctx, &asyncEvent{
-				Response:  nil,
-				ToolEvent: nil,
-				Usage:     nil,
-				Kind:      asyncContextEventKind(event.Kind),
-				Provider:  "",
-				Text:      event.Text,
-				PromptID:  promptID,
-			})
-		case assistant.StreamEventUnknown:
+		payload, ok := asyncEventFromStreamEvent(event, promptID)
+		if !ok {
 			return
 		}
+
+		app.postAsyncEvent(ctx, payload)
 	}
+}
+
+func asyncEventFromStreamEvent(event assistant.StreamEvent, promptID uint64) (*asyncEvent, bool) {
+	payload := &asyncEvent{
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventPromptDelta,
+		Provider:      "",
+		Text:          event.Text,
+		PromptID:      promptID,
+	}
+
+	switch event.Kind {
+	case assistant.StreamEventTextDelta:
+		payload.Kind = asyncEventPromptDelta
+	case assistant.StreamEventThinkingDelta:
+		payload.Kind = asyncEventPromptThinkingDelta
+	case assistant.StreamEventToolStart:
+		payload.ToolCallEvent = event.ToolCallEvent
+		payload.Kind = asyncEventPromptToolStart
+	case assistant.StreamEventToolResult, assistant.StreamEventSkillLoaded:
+		payload.ToolEvent = event.ToolEvent
+		payload.Text = ""
+		payload.Kind = asyncEventPromptToolResult
+	case assistant.StreamEventUsage:
+		payload.Usage = event.Usage
+		payload.Text = ""
+		payload.Kind = asyncEventPromptUsage
+	case assistant.StreamEventUsageSnapshot:
+		payload.Usage = event.Usage
+		payload.Text = ""
+		payload.Kind = asyncEventPromptUsageSnapshot
+	case assistant.StreamEventContextCompaction,
+		assistant.StreamEventContextCompactionStart,
+		assistant.StreamEventContextCompactionDone,
+		assistant.StreamEventContextCompactionError:
+		payload.Kind = asyncContextEventKind(event.Kind)
+	case assistant.StreamEventUnknown:
+		return nil, false
+	}
+
+	return payload, true
 }
 
 func (app *App) postAsyncEvent(ctx context.Context, event *asyncEvent) {
@@ -425,11 +401,8 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventToolEnd, toolExtensionData(payload.ToolEvent))
 		app.applyStreamedToolEvent(payload.ToolEvent)
 	case asyncEventPromptToolStart:
-		app.emitExtensionRuntimeEventOrMessage(
-			ctx,
-			extensionEventToolStart,
-			map[string]any{extensionDataName: payload.Text},
-		)
+		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventToolStart, toolCallExtensionData(payload))
+		app.applyStreamedToolStart(payload.ToolCallEvent, payload.Text)
 
 		return
 	case asyncEventPromptUsage:
@@ -478,6 +451,22 @@ func promptDoneExtensionData(response *assistant.PromptResponse) map[string]any 
 		extensionDataAssistantEntryID: response.AssistantEntryID,
 		extensionDataText:             response.Text,
 		extensionDataCached:           response.Cached,
+	}
+}
+
+func toolCallExtensionData(payload *asyncEvent) map[string]any {
+	if payload == nil {
+		return map[string]any{}
+	}
+
+	if payload.ToolCallEvent == nil {
+		return map[string]any{extensionDataName: payload.Text}
+	}
+
+	return map[string]any{
+		extensionDataName:         payload.ToolCallEvent.Name,
+		extensionDataToolArgsJSON: payload.ToolCallEvent.ArgumentsJSON,
+		extensionDataToolCallID:   payload.ToolCallEvent.ID,
 	}
 }
 
@@ -580,11 +569,29 @@ func (app *App) consumeCanceledPrompt(promptID uint64) bool {
 	return true
 }
 
+func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackName string) {
+	if call == nil {
+		call = &assistant.ToolCallEvent{
+			Arguments:     nil,
+			ID:            "",
+			Name:          fallbackName,
+			ArgumentsJSON: "",
+		}
+	}
+
+	if strings.TrimSpace(call.Name) == "" {
+		return
+	}
+
+	app.runningToolBlocks = append(app.runningToolBlocks, runningToolBlock{Call: *call, StartedAt: time.Now()})
+}
+
 func (app *App) applyStreamedToolEvent(event *assistant.ToolEvent) {
 	if event == nil {
 		return
 	}
 
+	app.removeRunningToolBlock(event)
 	app.appendStreamingBlock(transcript.RoleToolResult, formatToolEventForUI(event))
 	app.streamedToolEvents++
 }

@@ -1393,13 +1393,14 @@ func newRenderTestApp(t *testing.T) *App {
 
 func newTestAsyncEvent(kind asyncEventKind, text string) *asyncEvent {
 	return &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      kind,
-		Provider:  "",
-		Text:      text,
-		PromptID:  0,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          kind,
+		Provider:      "",
+		Text:          text,
+		PromptID:      0,
 	}
 }
 

@@ -223,10 +223,11 @@ func llmStreamEventHandler(onEvent func(StreamEvent)) func(*llm.StreamChunk) {
 
 func streamEventFromLLMChunk(chunk *llm.StreamChunk) StreamEvent {
 	return StreamEvent{
-		ToolEvent: toolEventPointerFromLLMPart(chunkPart(chunk)),
-		Usage:     usagePointerFromLLMUsage(chunkUsage(chunk)),
-		Kind:      streamEventKindFromLLMChunk(chunk),
-		Text:      textFromLLMChunk(chunk),
+		ToolCallEvent: toolCallEventPointerFromLLMPart(chunkPart(chunk)),
+		ToolEvent:     toolEventPointerFromLLMPart(chunkPart(chunk)),
+		Usage:         usagePointerFromLLMUsage(chunkUsage(chunk)),
+		Kind:          streamEventKindFromLLMChunk(chunk),
+		Text:          textFromLLMChunk(chunk),
 	}
 }
 
@@ -280,6 +281,43 @@ func chunkUsage(chunk *llm.StreamChunk) llm.Usage {
 	}
 
 	return chunk.Usage
+}
+
+func toolCallEventPointerFromLLMPart(part *llm.Part) *ToolCallEvent {
+	if part == nil || part.ToolCall == nil {
+		return nil
+	}
+
+	call := toolCallEventFromLLMToolCall(part.ToolCall)
+
+	return &call
+}
+
+func toolCallEventFromLLMToolCall(call *llm.ToolCall) ToolCallEvent {
+	if call == nil {
+		return ToolCallEvent{Arguments: nil, ID: "", Name: "", ArgumentsJSON: ""}
+	}
+
+	return ToolCallEvent{
+		Arguments:     mapsutil.CloneOrNil(call.Arguments),
+		ID:            call.ID,
+		Name:          call.Name,
+		ArgumentsJSON: call.ArgumentsJSON,
+	}
+}
+
+func llmToolCallFromToolCallEvent(event *ToolCallEvent, fallbackName string) llm.ToolCall {
+	if event == nil {
+		return llm.ToolCall{Metadata: nil, Arguments: nil, ID: "", Name: fallbackName, ArgumentsJSON: ""}
+	}
+
+	return llm.ToolCall{
+		Metadata:      nil,
+		Arguments:     mapsutil.CloneOrNil(event.Arguments),
+		ID:            event.ID,
+		Name:          event.Name,
+		ArgumentsJSON: event.ArgumentsJSON,
+	}
 }
 
 func toolEventPointerFromLLMPart(part *llm.Part) *ToolEvent {
@@ -369,13 +407,7 @@ func llmPartFromStreamEvent(event StreamEvent) *llm.Part {
 
 		return &part
 	case StreamEventToolStart:
-		call := llm.ToolCall{
-			Metadata:      nil,
-			Arguments:     nil,
-			ID:            "",
-			Name:          event.Text,
-			ArgumentsJSON: "",
-		}
+		call := llmToolCallFromToolCallEvent(event.ToolCallEvent, event.Text)
 		part := llm.Part{
 			Metadata:   nil,
 			ToolCall:   &call,
