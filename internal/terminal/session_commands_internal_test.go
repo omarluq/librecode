@@ -79,7 +79,7 @@ func TestCopyLastAssistantMessage(t *testing.T) {
 	ctx := t.Context()
 	app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
 	clipboard := newClipboardScreen()
-	systemClipboard := newFakeSystemClipboard()
+	systemClipboard := newMockSystemClipboard()
 	expectClipboardWrite(t, systemClipboard, "answer")
 
 	app.screen = clipboard

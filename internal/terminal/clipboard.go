@@ -24,23 +24,32 @@ type desktopClipboard struct {
 
 func newDesktopClipboard() desktopClipboard {
 	return desktopClipboard{
-		prepare: prepareDesktopClipboardEnvironment,
+		prepare: defaultPrepareDesktopClipboardEnvironment,
 		init:    clipboard.Init,
 		write:   clipboard.Write,
 	}
 }
 
-func prepareDesktopClipboardEnvironment() error {
-	if os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("XDG_RUNTIME_DIR") == "" {
+func defaultPrepareDesktopClipboardEnvironment() error {
+	return prepareDesktopClipboardEnvironment(os.Getenv, os.Setenv, filepath.Glob, os.Stat)
+}
+
+func prepareDesktopClipboardEnvironment(
+	getenv func(string) string,
+	setenv func(string, string) error,
+	glob func(string) ([]string, error),
+	stat func(string) (fs.FileInfo, error),
+) error {
+	if getenv("WAYLAND_DISPLAY") != "" || getenv("XDG_RUNTIME_DIR") == "" {
 		return nil
 	}
 
-	display := candidateWaylandDisplay(os.Getenv("XDG_RUNTIME_DIR"), filepath.Glob, os.Stat)
+	display := candidateWaylandDisplay(getenv("XDG_RUNTIME_DIR"), glob, stat)
 	if display == "" {
 		return nil
 	}
 
-	if err := os.Setenv("WAYLAND_DISPLAY", display); err != nil {
+	if err := setenv("WAYLAND_DISPLAY", display); err != nil {
 		return terminalError(err, "set wayland display")
 	}
 
@@ -88,7 +97,7 @@ func (writer desktopClipboard) WriteText(text string) error {
 		return terminalError(err, "init system clipboard")
 	}
 
-	if changed := writer.write(clipboard.FmtText, []byte(text)); changed == nil {
+	if writer.write(clipboard.FmtText, []byte(text)) == nil {
 		return errSystemClipboardWriteFailed
 	}
 
