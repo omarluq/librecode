@@ -64,5 +64,5 @@ func (app *App) lastAssistantMessage(ctx context.Context) (*database.SessionMess
 }
 
 func (app *App) copyTextToClipboard(text string) {
-	copyTextToClipboard(app.screen, text)
+	copyTextToClipboard(app.screen, app.systemClipboard, text)
 }

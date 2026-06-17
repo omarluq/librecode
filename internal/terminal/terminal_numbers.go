@@ -1,14 +1,11 @@
 package terminal
 
-import "time"
-
 const (
 	minimumAuthCommandFields    = 2
 	maxAutocompleteMatches      = 6
 	slashAutocompleteLabelWidth = 16
 	compactStageNear            = 2
 	compactStageFar             = 3
-	clipboardTimeout            = 2 * time.Second
 	minimumRuleWidth            = 3
 	maxMarkdownHeadingLevel     = 6
 	tableCellHorizontalPadding  = 2

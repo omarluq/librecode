@@ -493,8 +493,10 @@ func TestMouseSelectionCopiesFrameText(t *testing.T) {
 	t.Parallel()
 
 	screen := newClipboardScreen()
+	systemClipboard := newFakeSystemClipboard()
 	app := newRenderTestApp(t)
 	app.screen = screen
+	app.systemClipboard = systemClipboard
 	app.frame = tui.NewCellBuffer(8, 2, tcell.StyleDefault)
 	tui.WriteCells(app.frame, 0, 0, 8, "hello", tcell.StyleDefault)
 	tui.WriteCells(app.frame, 0, 1, 8, "world", tcell.StyleDefault)
@@ -506,14 +508,18 @@ func TestMouseSelectionCopiesFrameText(t *testing.T) {
 	if got, want := string(screen.clipboard), "ello\nwor"; got != want {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
+
+	assert.Equal(t, []string{"ello\nwor"}, systemClipboard.writes)
 }
 
 func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
 	t.Parallel()
 
 	screen := newClipboardScreen()
+	systemClipboard := newFakeSystemClipboard()
 	app := newRenderTestApp(t)
 	app.screen = screen
+	app.systemClipboard = systemClipboard
 	app.frame = tui.NewCellBuffer(16, 1, tcell.StyleDefault)
 	tui.WriteCells(app.frame, 0, 0, 16, "hello world", tcell.StyleDefault)
 
@@ -523,9 +529,11 @@ func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
 	app.finishMouseSelection(7, 0)
 	app.beginMouseSelection(7, 0, firstClick.Add(doubleClickDelay/2))
 
-	if got, want := string(screen.clipboard), "world"; got != want {
+	if got, want := string(screen.clipboard), clipboardWorldText; got != want {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
+
+	assert.Equal(t, []string{clipboardWorldText}, systemClipboard.writes)
 
 	for column := 6; column < 11; column++ {
 		if !app.selection.contains(column, 0) {
@@ -542,8 +550,10 @@ func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
 	t.Parallel()
 
 	screen := newClipboardScreen()
+	systemClipboard := newFakeSystemClipboard()
 	app := newRenderTestApp(t)
 	app.screen = screen
+	app.systemClipboard = systemClipboard
 	app.frame = tui.NewCellBuffer(16, 1, tcell.StyleDefault)
 	tui.WriteCells(app.frame, 0, 0, 16, "hello   world", tcell.StyleDefault)
 
@@ -557,6 +567,8 @@ func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
 
+	assert.Equal(t, []string{"   "}, systemClipboard.writes)
+
 	for column := 5; column < 8; column++ {
 		if !app.selection.contains(column, 0) {
 			t.Fatalf("column %d on selected whitespace is not selected", column)
@@ -568,8 +580,10 @@ func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
 	t.Parallel()
 
 	screen := newClipboardScreen()
+	systemClipboard := newFakeSystemClipboard()
 	app := newRenderTestApp(t)
 	app.screen = screen
+	app.systemClipboard = systemClipboard
 	app.frame = tui.NewCellBuffer(16, 2, tcell.StyleDefault)
 	tui.WriteCells(app.frame, 0, 0, 16, "hello", tcell.StyleDefault)
 	tui.WriteCells(app.frame, 0, 1, 16, "hello world", tcell.StyleDefault)
@@ -586,6 +600,8 @@ func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
 	if got, want := string(screen.clipboard), "hello world"; got != want {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
+
+	assert.Equal(t, []string{clipboardWorldText, "hello world"}, systemClipboard.writes)
 
 	for column := range app.frame.Width() {
 		if !app.selection.contains(column, 1) {

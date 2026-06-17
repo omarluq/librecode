@@ -1,14 +1,37 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/tui"
+	"errors"
 	"sync"
+	"testing"
 
 	"github.com/gdamore/tcell/v3"
 	cellcolor "github.com/gdamore/tcell/v3/color"
+	"github.com/stretchr/testify/assert"
+
+	"github.com/omarluq/librecode/internal/tui"
 )
 
-const clipboardTestTerminal = "clipboard-test"
+const (
+	clipboardTestTerminal = "clipboard-test"
+	clipboardCopyText     = "copy me"
+	clipboardWorldText    = "world"
+)
+
+type fakeSystemClipboard struct {
+	err    error
+	writes []string
+}
+
+func newFakeSystemClipboard() *fakeSystemClipboard {
+	return &fakeSystemClipboard{err: nil, writes: nil}
+}
+
+func (clipboard *fakeSystemClipboard) WriteText(text string) error {
+	clipboard.writes = append(clipboard.writes, text)
+
+	return clipboard.err
+}
 
 type clipboardScreen struct {
 	cells     *tcell.CellBuffer
@@ -107,3 +130,59 @@ func (screen *clipboardScreen) Unlock()                             { screen.mu.
 func (screen *clipboardScreen) GetCells() *tcell.CellBuffer         { return screen.cells }
 func (screen *clipboardScreen) StopQ() <-chan struct{}              { return screen.stop }
 func (screen *clipboardScreen) LockRegion(int, int, int, int, bool) {}
+
+func TestCopyTextToClipboardWritesScreenAndSystemClipboards(t *testing.T) {
+	t.Parallel()
+
+	screen := newClipboardScreen()
+	system := newFakeSystemClipboard()
+
+	copyTextToClipboard(screen, system, clipboardCopyText)
+
+	assert.Equal(t, clipboardCopyText, string(screen.clipboard))
+	assert.Equal(t, []string{clipboardCopyText}, system.writes)
+}
+
+func TestCopyTextToClipboardIgnoresSystemClipboardErrors(t *testing.T) {
+	t.Parallel()
+
+	screen := newClipboardScreen()
+	system := &fakeSystemClipboard{err: errors.New("clipboard unavailable"), writes: nil}
+
+	copyTextToClipboard(screen, system, clipboardCopyText)
+
+	assert.Equal(t, clipboardCopyText, string(screen.clipboard))
+	assert.Equal(t, []string{clipboardCopyText}, system.writes)
+}
+
+func TestCopyTextToClipboardHandlesMissingSystemClipboard(t *testing.T) {
+	t.Parallel()
+
+	screen := newClipboardScreen()
+
+	copyTextToClipboard(screen, nil, clipboardCopyText)
+
+	assert.Equal(t, clipboardCopyText, string(screen.clipboard))
+}
+
+func TestCopyTextToClipboardIgnoresEmptyText(t *testing.T) {
+	t.Parallel()
+
+	screen := newClipboardScreen()
+	system := newFakeSystemClipboard()
+
+	copyTextToClipboard(screen, system, "")
+
+	assert.Empty(t, screen.clipboard)
+	assert.Empty(t, system.writes)
+}
+
+func TestCopyTextToClipboardHandlesMissingScreen(t *testing.T) {
+	t.Parallel()
+
+	system := newFakeSystemClipboard()
+
+	copyTextToClipboard(nil, system, clipboardCopyText)
+
+	assert.Empty(t, system.writes)
+}

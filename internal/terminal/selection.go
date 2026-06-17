@@ -1,11 +1,12 @@
 package terminal
 
 import (
-	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 const doubleClickDelay = 500 * time.Millisecond
@@ -286,22 +287,24 @@ func (app *App) copySelectionToClipboard() {
 		return
 	}
 
-	copyTextToClipboard(app.screen, text)
+	copyTextToClipboard(app.screen, app.systemClipboard, text)
 }
 
 type clipboardWriter interface {
 	SetClipboard(data []byte)
 }
 
-func copyTextToClipboard(screen clipboardWriter, text string) {
+func copyTextToClipboard(screen clipboardWriter, system systemClipboard, text string) {
 	if screen == nil || text == "" {
 		return
 	}
 
 	screen.SetClipboard([]byte(text))
 
-	if err := writeSystemClipboard(text); err != nil {
-		return
+	if system != nil {
+		if err := system.WriteText(text); err != nil {
+			return
+		}
 	}
 }
 
