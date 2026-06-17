@@ -35,7 +35,10 @@ func (app *App) copyLastAssistantMessage(ctx context.Context) error {
 		return errors.New("no assistant message to copy")
 	}
 
-	app.copyTextToClipboard(message.Content)
+	if err := app.copyTextToClipboard(message.Content); err != nil {
+		return err
+	}
+
 	app.setStatus("copied last assistant message")
 
 	return nil
@@ -63,6 +66,6 @@ func (app *App) lastAssistantMessage(ctx context.Context) (*database.SessionMess
 	return nil, false, nil
 }
 
-func (app *App) copyTextToClipboard(text string) {
-	copyTextToClipboard(app.screen, app.systemClipboard, text)
+func (app *App) copyTextToClipboard(text string) error {
+	return copyTextToClipboard(app.screen, app.systemClipboard, text)
 }

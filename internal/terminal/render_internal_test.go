@@ -494,6 +494,7 @@ func TestMouseSelectionCopiesFrameText(t *testing.T) {
 
 	screen := newClipboardScreen()
 	systemClipboard := newFakeSystemClipboard()
+	expectClipboardWrite(t, systemClipboard, "ello\nwor")
 	app := newRenderTestApp(t)
 	app.screen = screen
 	app.systemClipboard = systemClipboard
@@ -509,7 +510,7 @@ func TestMouseSelectionCopiesFrameText(t *testing.T) {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
 
-	assert.Equal(t, []string{"ello\nwor"}, systemClipboard.writes)
+	assertClipboardExpectations(t, systemClipboard)
 }
 
 func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
@@ -517,6 +518,7 @@ func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
 
 	screen := newClipboardScreen()
 	systemClipboard := newFakeSystemClipboard()
+	expectClipboardWrite(t, systemClipboard, clipboardWorldText)
 	app := newRenderTestApp(t)
 	app.screen = screen
 	app.systemClipboard = systemClipboard
@@ -533,7 +535,7 @@ func TestMouseDoubleClickSelectsAndCopiesWord(t *testing.T) {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
 
-	assert.Equal(t, []string{clipboardWorldText}, systemClipboard.writes)
+	assertClipboardExpectations(t, systemClipboard)
 
 	for column := 6; column < 11; column++ {
 		if !app.selection.contains(column, 0) {
@@ -551,6 +553,7 @@ func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
 
 	screen := newClipboardScreen()
 	systemClipboard := newFakeSystemClipboard()
+	expectClipboardWrite(t, systemClipboard, "   ")
 	app := newRenderTestApp(t)
 	app.screen = screen
 	app.systemClipboard = systemClipboard
@@ -567,7 +570,7 @@ func TestMouseDoubleClickSelectsWhitespace(t *testing.T) {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
 
-	assert.Equal(t, []string{"   "}, systemClipboard.writes)
+	assertClipboardExpectations(t, systemClipboard)
 
 	for column := 5; column < 8; column++ {
 		if !app.selection.contains(column, 0) {
@@ -581,6 +584,8 @@ func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
 
 	screen := newClipboardScreen()
 	systemClipboard := newFakeSystemClipboard()
+	expectClipboardWrite(t, systemClipboard, clipboardWorldText)
+	expectClipboardWrite(t, systemClipboard, "hello world")
 	app := newRenderTestApp(t)
 	app.screen = screen
 	app.systemClipboard = systemClipboard
@@ -601,7 +606,7 @@ func TestMouseFourthClickSelectsAndCopiesLine(t *testing.T) {
 		t.Fatalf("clipboard = %q, want %q", got, want)
 	}
 
-	assert.Equal(t, []string{clipboardWorldText, "hello world"}, systemClipboard.writes)
+	assertClipboardExpectations(t, systemClipboard)
 
 	for column := range app.frame.Width() {
 		if !app.selection.contains(column, 1) {

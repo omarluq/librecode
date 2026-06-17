@@ -115,7 +115,7 @@ type App struct {
 	renderer              *tui.Renderer
 	frame                 *tui.CellBuffer
 	lastResize            *tcell.EventResize
-	systemClipboard       systemClipboard
+	systemClipboard       systemClipboardWriter
 	runtime               *assistant.Runtime
 	settings              *database.DocumentRepository
 	models                *model.Registry
@@ -222,7 +222,7 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 		renderer:         tui.NewRenderer(screen),
 		frame:            nil,
 		lastResize:       nil,
-		systemClipboard:  desktopClipboard{},
+		systemClipboard:  newDesktopClipboard(),
 		runtime:          options.Runtime,
 		extensions:       options.Extensions,
 		settings:         options.Settings,

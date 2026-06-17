@@ -287,25 +287,29 @@ func (app *App) copySelectionToClipboard() {
 		return
 	}
 
-	copyTextToClipboard(app.screen, app.systemClipboard, text)
+	if err := copyTextToClipboard(app.screen, app.systemClipboard, text); err != nil {
+		app.setStatus(err.Error())
+	}
 }
 
 type clipboardWriter interface {
 	SetClipboard(data []byte)
 }
 
-func copyTextToClipboard(screen clipboardWriter, system systemClipboard, text string) {
+func copyTextToClipboard(screen clipboardWriter, system systemClipboardWriter, text string) error {
 	if screen == nil || text == "" {
-		return
+		return nil
 	}
 
 	screen.SetClipboard([]byte(text))
 
 	if system != nil {
 		if err := system.WriteText(text); err != nil {
-			return
+			return terminalError(err, "write system clipboard")
 		}
 	}
+
+	return nil
 }
 
 func (app *App) applySelectionHighlight() {
