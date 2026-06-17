@@ -171,7 +171,7 @@ func (app *App) staticMessageLinesForRows(width, startRow, endRow int) []tui.Lin
 }
 
 func (app *App) dynamicMessageLineGroups(width int) [][]tui.Line {
-	groups := make([][]tui.Line, 0, len(app.transcript.Streaming.Blocks)+messageMetadataRows)
+	groups := make([][]tui.Line, 0, len(app.transcript.Streaming.Blocks)+len(app.runningToolBlocks)+messageMetadataRows)
 	if len(app.transcript.Streaming.Blocks) > 0 {
 		for index := range app.transcript.Streaming.Blocks {
 			groups = append(groups, app.cachedStreamingBlockLines(width, index))
@@ -184,6 +184,10 @@ func (app *App) dynamicMessageLineGroups(width int) [][]tui.Line {
 		if app.streamingText != "" {
 			groups = append(groups, app.renderStreamingMessage(width, app.streamingText))
 		}
+	}
+
+	for index := range app.runningToolBlocks {
+		groups = append(groups, app.renderRunningToolBlock(width, app.runningToolBlocks[index].Call))
 	}
 
 	if app.busy() {

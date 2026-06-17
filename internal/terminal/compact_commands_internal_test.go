@@ -84,13 +84,14 @@ func TestPostCompactDoneAllowsNilUsage(t *testing.T) {
 	}
 
 	app.applyCompactDone(context.Background(), &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      asyncEventCompactDone,
-		Provider:  compactTestEntryID,
-		Text:      compactedStatusMessage,
-		PromptID:  9,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventCompactDone,
+		Provider:      compactTestEntryID,
+		Text:          compactedStatusMessage,
+		PromptID:      9,
 	})
 
 	if app.compacting {
@@ -185,13 +186,14 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
 
 	handled := app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      asyncEventCompactDone,
-		Provider:  compactTestEntryID,
-		Text:      compactedStatusMessage,
-		PromptID:  9,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventCompactDone,
+		Provider:      compactTestEntryID,
+		Text:          compactedStatusMessage,
+		PromptID:      9,
 	})
 
 	if !handled {
@@ -225,7 +227,7 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 	app.queuedMessages = []string{"queued after compact"}
 
 	app.applyCompactDone(context.Background(), &asyncEvent{
-		Response: nil, ToolEvent: nil, Usage: &model.TokenUsage{
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: &model.TokenUsage{
 			Breakdown:       nil,
 			TopContributors: nil,
 			ContextWindow:   100_000,
@@ -321,13 +323,14 @@ func invokeCompactErrorTransition(t *testing.T, app *App) {
 	t.Helper()
 
 	handled := app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      asyncEventCompactError,
-		Provider:  "",
-		Text:      compactTestFailed,
-		PromptID:  9,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventCompactError,
+		Provider:      "",
+		Text:          compactTestFailed,
+		PromptID:      9,
 	})
 	if !handled {
 		t.Fatal("compact error event should be handled")
@@ -522,7 +525,7 @@ func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
 
 	handled := app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
-		Response: nil, ToolEvent: nil, Usage: nil,
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
 		Kind: asyncEventCompactDone, Provider: "stale", Text: compactTestIgnored, PromptID: 10,
 	})
 	if !handled {
@@ -538,7 +541,7 @@ func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
 	}
 
 	handled = app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
-		Response: nil, ToolEvent: nil, Usage: nil,
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
 		Kind: asyncEventPromptUsageSnapshot, Provider: "", Text: "not compact", PromptID: 9,
 	})
 	if handled {
@@ -565,7 +568,7 @@ func TestHandleCompactAsyncEventPassesThroughAutoCompactionEvents(t *testing.T) 
 			app := newRenderTestApp(t)
 
 			handled := app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
-				Response: nil, ToolEvent: nil, Usage: nil,
+				Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
 				Kind: testCase.kind, Provider: "", Text: "auto compact", PromptID: 9,
 			})
 
@@ -589,7 +592,7 @@ func TestApplyCompactErrorDefaultMessage(t *testing.T) {
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
 
 	app.applyCompactError(&asyncEvent{
-		Response: nil, ToolEvent: nil, Usage: nil,
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
 		Kind: asyncEventCompactError, Provider: "", Text: "", PromptID: 9,
 	})
 
@@ -615,7 +618,7 @@ func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 1}
 
 	app.applyCompactError(&asyncEvent{
-		Response: nil, ToolEvent: nil, Usage: nil,
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
 		Kind: asyncEventCompactError, Provider: "", Text: compactTestFailed, PromptID: 9,
 	})
 

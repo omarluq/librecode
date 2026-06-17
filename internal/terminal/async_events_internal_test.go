@@ -256,13 +256,14 @@ func TestHandleInterruptRoutesAsyncEvents(t *testing.T) {
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 12, QueuedStart: 0}
 
 	handled, err := app.handleInterrupt(context.Background(), tcell.NewEventInterrupt(&asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      asyncEventCompactDone,
-		Provider:  "compact-entry",
-		Text:      compactedStatusMessage,
-		PromptID:  12,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventCompactDone,
+		Provider:      "compact-entry",
+		Text:          compactedStatusMessage,
+		PromptID:      12,
 	}))
 
 	require.NoError(t, err)
@@ -287,13 +288,14 @@ func TestHandleAuthAsyncEventTransitions(t *testing.T) {
 			app.authWorking = true
 
 			handled := app.handleAuthAsyncEvent(&asyncEvent{
-				Response:  nil,
-				ToolEvent: nil,
-				Usage:     nil,
-				Kind:      testCase.kind,
-				Provider:  testCase.provider,
-				Text:      testCase.text,
-				PromptID:  0,
+				Response:      nil,
+				ToolCallEvent: nil,
+				ToolEvent:     nil,
+				Usage:         nil,
+				Kind:          testCase.kind,
+				Provider:      testCase.provider,
+				Text:          testCase.text,
+				PromptID:      0,
 			})
 
 			assert.Equal(t, testCase.wantHandled, handled)
@@ -718,18 +720,25 @@ func asyncTestStreamEvent(
 	toolEvent *assistant.ToolEvent,
 	usage *model.TokenUsage,
 ) assistant.StreamEvent {
-	return assistant.StreamEvent{ToolEvent: toolEvent, Usage: usage, Kind: kind, Text: text}
+	return assistant.StreamEvent{
+		ToolCallEvent: nil,
+		ToolEvent:     toolEvent,
+		Usage:         usage,
+		Kind:          kind,
+		Text:          text,
+	}
 }
 
 func asyncTestEvent(kind asyncEventKind, provider, text string, promptID uint64) *asyncEvent {
 	return &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      kind,
-		Provider:  provider,
-		Text:      text,
-		PromptID:  promptID,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          kind,
+		Provider:      provider,
+		Text:          text,
+		PromptID:      promptID,
 	}
 }
 

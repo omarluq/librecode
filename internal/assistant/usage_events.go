@@ -26,10 +26,11 @@ func (runtime *Runtime) emitUsageEvent(
 	}
 
 	emitStreamEvent(onEvent, StreamEvent{
-		ToolEvent: nil,
-		Usage:     &usage,
-		Kind:      kind,
-		Text:      "",
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         &usage,
+		Kind:          kind,
+		Text:          "",
 	})
 
 	payload := lifecyclepayload.TokenUsage(usage)

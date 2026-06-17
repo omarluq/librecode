@@ -75,24 +75,26 @@ func (app *App) runPrompt(
 
 func (app *App) postPromptError(ctx context.Context, promptID uint64, err error) {
 	app.postAsyncEvent(ctx, &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      asyncEventPromptError,
-		Provider:  "",
-		Text:      err.Error(),
-		PromptID:  promptID,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventPromptError,
+		Provider:      "",
+		Text:          err.Error(),
+		PromptID:      promptID,
 	})
 }
 
 func (app *App) postPromptDone(ctx context.Context, promptID uint64, response *assistant.PromptResponse) {
 	app.postAsyncEvent(ctx, &asyncEvent{
-		Response:  response,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      asyncEventPromptDone,
-		Provider:  "",
-		Text:      "",
-		PromptID:  promptID,
+		Response:      response,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventPromptDone,
+		Provider:      "",
+		Text:          "",
+		PromptID:      promptID,
 	})
 }

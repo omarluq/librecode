@@ -358,7 +358,7 @@ func toolResultPart(result *llm.ToolResult) llm.Part {
 }
 
 func streamEvent(kind StreamEventKind, text string, event *ToolEvent, usage *model.TokenUsage) StreamEvent {
-	return StreamEvent{ToolEvent: event, Usage: usage, Kind: kind, Text: text}
+	return StreamEvent{ToolCallEvent: nil, ToolEvent: event, Usage: usage, Kind: kind, Text: text}
 }
 
 func adapterToolEvent() *ToolEvent {

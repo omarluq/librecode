@@ -85,10 +85,11 @@ func (runtime *Runtime) respondToSkillCommand(
 		}
 
 		emitStreamEvent(onEvent, StreamEvent{
-			ToolEvent: &toolEvent,
-			Usage:     nil,
-			Kind:      StreamEventSkillLoaded,
-			Text:      skill.Name,
+			ToolCallEvent: nil,
+			ToolEvent:     &toolEvent,
+			Usage:         nil,
+			Kind:          StreamEventSkillLoaded,
+			Text:          skill.Name,
 		})
 
 		return result, []ToolEvent{toolEvent}, nil

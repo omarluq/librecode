@@ -92,6 +92,11 @@ type transcriptState struct {
 	LastMaxRows int
 }
 
+type runningToolBlock struct {
+	StartedAt time.Time
+	Call      assistant.ToolCallEvent
+}
+
 // RunOptions configures the terminal app.
 type RunOptions struct {
 	Extensions extension.TerminalEventRunner `json:"-"`
@@ -140,6 +145,7 @@ type App struct {
 	mode                  appMode
 	resources             core.ResourceSnapshot
 	transcript            transcriptState
+	runningToolBlocks     []runningToolBlock
 	queuedMessages        []string
 	promptHistory         []string
 	scopedOrder           []string
@@ -250,6 +256,7 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 			LineCache:   emptyMessageLineCache(),
 			LastMaxRows: 0,
 		},
+		runningToolBlocks:     []runningToolBlock{},
 		queuedMessages:        []string{},
 		promptHistory:         []string{},
 		promptHistoryDraft:    "",
@@ -643,6 +650,7 @@ func (app *App) truncateMessages(length int) {
 func (app *App) resetStreamingBlocks() {
 	app.transcript.Streaming.Blocks = nil
 	app.transcript.Streaming.LineCache = nil
+	app.runningToolBlocks = nil
 }
 
 func (app *App) setStatus(message string) {

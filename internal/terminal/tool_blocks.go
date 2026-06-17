@@ -1,12 +1,13 @@
 package terminal
 
 import (
+	"bytes"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
 
+	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/tui"
 )
 
@@ -17,6 +18,7 @@ const (
 	toolSectionDetails          = "details"
 	toolSectionError            = "error"
 	toolSectionOutput           = "output"
+	toolNameEdit                = "edit"
 )
 
 type parsedToolEvent struct {
@@ -29,61 +31,80 @@ type parsedToolEvent struct {
 
 func (app *App) renderToolBlock(width int, message chatMessage) []tui.Line {
 	event := parseToolEventContent(message.Content, string(message.Role))
+	display := toolDisplayFromParsedEvent(&event)
 
-	style := app.toolBlockStyle(&event)
-	if !app.toolsExpanded {
-		return app.renderCollapsedToolBlock(width, &event, style)
-	}
-
-	return app.renderExpandedToolBlock(width, &event, style)
+	return app.renderToolDisplayBlock(width, &display)
 }
 
-func (app *App) toolBlockStyle(event *parsedToolEvent) tcell.Style {
-	if event.Error != "" {
+func (app *App) renderRunningToolBlock(width int, call assistant.ToolCallEvent) []tui.Line {
+	display := toolDisplayFromCall(call)
+
+	return app.renderToolDisplayBlock(width, &display)
+}
+
+func (app *App) renderToolDisplayBlock(width int, display *toolDisplay) []tui.Line {
+	style := app.toolDisplayStyle(display)
+	if display.Status == toolDisplayPending {
+		return app.renderPendingToolDisplay(width, display, style)
+	}
+
+	if !app.toolsExpanded {
+		return app.renderCollapsedToolDisplay(width, display, style)
+	}
+
+	return app.renderExpandedToolDisplay(width, display, style)
+}
+
+func (app *App) toolDisplayStyle(display *toolDisplay) tcell.Style {
+	if display.Status == toolDisplayError {
 		return app.theme.background(colorToolErrorBg)
 	}
 
 	return app.theme.background(colorToolSuccessBg)
 }
 
-func (app *App) renderCollapsedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
-	label := fmt.Sprintf("%s  %s expand", toolTitle(event), app.keys.hint(actionToolsExpand))
-	lines := []tui.Line{
-		tui.NewLine(tcell.StyleDefault, ""),
-		tui.NewLine(style.Bold(true), tui.PadRight(label, width)),
-	}
+func (app *App) renderPendingToolDisplay(width int, display *toolDisplay, style tcell.Style) []tui.Line {
+	lines := toolBlockStart(width, style)
+	lines = append(lines, app.toolHeaderDisplayLines(width, display, style)...)
+	lines = append(lines, toolBlockEnd(width, style)...)
 
-	preview, hiddenLines := tailIndentedLines(width, toolEventOutput(event), style, maxCollapsedToolOutputLines)
+	return lines
+}
+
+func (app *App) renderCollapsedToolDisplay(width int, display *toolDisplay, style tcell.Style) []tui.Line {
+	lines := toolBlockStart(width, style)
+	lines = append(lines, app.toolHeaderDisplayLines(width, display, style)...)
+
+	preview, hiddenLines := tailIndentedLines(width, toolDisplayOutput(display), style, maxCollapsedToolOutputLines)
 	if hiddenLines > 0 {
-		lines = append(lines, tui.NewLine(
+		lines = append(lines, paddedContentLine(
+			width,
+			hiddenToolLinesText(hiddenLines, app.keys.hint(actionToolsExpand)),
 			style.Foreground(app.theme.colors[colorMuted]),
-			tui.PadRight(app.hiddenToolLinesText(hiddenLines), width),
 		))
 	}
 
 	lines = append(lines, preview...)
-	lines = append(lines, tui.NewLine(tcell.StyleDefault, ""))
+	lines = append(lines, toolBlockEnd(width, style)...)
 
 	return lines
 }
 
-func (app *App) renderExpandedToolBlock(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
+func (app *App) renderExpandedToolDisplay(width int, display *toolDisplay, style tcell.Style) []tui.Line {
 	lines := make([]tui.Line, 0, initialToolBlockLines)
-	label := fmt.Sprintf("%s  %s collapse", toolTitle(event), app.keys.hint(actionToolsExpand))
-	lines = append(lines,
-		tui.NewLine(tcell.StyleDefault, ""),
-		tui.NewLine(style.Bold(true), tui.PadRight(label, width)),
-	)
-	lines = append(lines, app.toolArgumentLines(width, event, style)...)
-	lines = append(lines, app.toolDiffLines(width, event, style)...)
-	lines = append(lines, app.toolOutputLines(width, event, style)...)
-	lines = append(lines, tui.NewLine(tcell.StyleDefault, ""))
+	lines = append(lines, toolBlockStart(width, style)...)
+	lines = append(lines, app.toolHeaderDisplayLines(width, display, style)...)
+	lines = append(lines, app.toolExpandHintLines(width, style)...)
+	lines = append(lines, app.toolArgumentLines(width, display, style)...)
+	lines = append(lines, app.toolDiffLines(width, display, style)...)
+	lines = append(lines, app.toolOutputLines(width, display, style)...)
+	lines = append(lines, toolBlockEnd(width, style)...)
 
 	return lines
 }
 
-func (app *App) toolArgumentLines(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
-	arguments := compactJSON(event.ArgumentsJSON)
+func (app *App) toolArgumentLines(width int, display *toolDisplay, style tcell.Style) []tui.Line {
+	arguments := prettyJSON(display.ArgumentsJSON)
 	if arguments == "" {
 		return nil
 	}
@@ -91,8 +112,8 @@ func (app *App) toolArgumentLines(width int, event *parsedToolEvent, style tcell
 	return plainSectionLines(width, "args", arguments, style)
 }
 
-func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
-	diff := diffFromToolDetails(event.DetailsJSON)
+func (app *App) toolDiffLines(width int, display *toolDisplay, style tcell.Style) []tui.Line {
+	diff := toolDisplayDiff(display)
 	if diff == "" {
 		return nil
 	}
@@ -100,19 +121,19 @@ func (app *App) toolDiffLines(width int, event *parsedToolEvent, style tcell.Sty
 	baseStyle := app.theme.background(colorCodeBg).Foreground(app.theme.colors[colorCodeText])
 	view := tui.DiffView{Style: baseStyle, Text: diff, Theme: codeTheme(app.theme)}
 	content := tui.PrefixLines(
-		view.Render(max(1, width-toolBlockBorderWidth), maxToolBlockRenderLines),
+		view.Render(max(1, toolContentWidth(width)), maxToolBlockRenderLines),
 		"  ",
 		baseStyle,
 	)
 	lines := make([]tui.Line, 0, len(content)+1)
-	lines = append(lines, tui.NewLine(style.Bold(true), tui.PadRight("diff:", width)))
+	lines = append(lines, paddedContentLine(width, "diff:", style.Bold(true)))
 	lines = append(lines, padLinesRight(content, width)...)
 
 	return lines
 }
 
-func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
-	output := toolEventOutput(event)
+func (app *App) toolOutputLines(width int, display *toolDisplay, style tcell.Style) []tui.Line {
+	output := toolDisplayOutput(display)
 	if output == "" {
 		return nil
 	}
@@ -120,10 +141,37 @@ func (app *App) toolOutputLines(width int, event *parsedToolEvent, style tcell.S
 	return plainSectionLines(width, "output", output, style)
 }
 
+func toolBlockStart(width int, style tcell.Style) []tui.Line {
+	return []tui.Line{
+		tui.NewLine(tcell.StyleDefault, ""),
+		paddedContentLine(width, "", style),
+	}
+}
+
+func toolBlockEnd(width int, style tcell.Style) []tui.Line {
+	return []tui.Line{
+		paddedContentLine(width, "", style),
+		tui.NewLine(tcell.StyleDefault, ""),
+	}
+}
+
+func (app *App) toolHeaderDisplayLines(width int, display *toolDisplay, style tcell.Style) []tui.Line {
+	return paddedContentLines(width, app.toolDisplayTitle(display), style.Bold(true), false)
+}
+
+func (app *App) toolExpandHintLines(width int, style tcell.Style) []tui.Line {
+	hint := app.keys.hint(actionToolsExpand)
+	if hint == "" {
+		return nil
+	}
+
+	return paddedContentLines(width, hint+" collapse", style.Foreground(app.theme.colors[colorMuted]), false)
+}
+
 func plainSectionLines(width int, label, content string, style tcell.Style) []tui.Line {
 	contentLines := indentedLines(width, content, style)
 	lines := make([]tui.Line, 0, len(contentLines)+1)
-	lines = append(lines, tui.NewLine(style.Bold(true), tui.PadRight(label+":", width)))
+	lines = append(lines, paddedContentLine(width, label+":", style.Bold(true)))
 
 	return append(lines, contentLines...)
 }
@@ -139,20 +187,43 @@ func padLinesRight(lines []tui.Line, width int) []tui.Line {
 }
 
 func indentedLines(width int, content string, style tcell.Style) []tui.Line {
+	return contentLines(width, content, style, true)
+}
+
+func paddedContentLines(width int, content string, style tcell.Style, preserveWhitespace bool) []tui.Line {
+	return contentLines(width, content, style, preserveWhitespace)
+}
+
+func contentLines(width int, content string, style tcell.Style, preserveWhitespace bool) []tui.Line {
 	if strings.TrimSpace(content) == "" {
 		return nil
 	}
 
-	innerWidth := max(1, width-toolBlockBorderWidth)
+	contentWidth := toolContentWidth(width)
 	lines := []tui.Line{}
 
 	for line := range strings.SplitSeq(content, "\n") {
-		for _, wrapped := range tui.WrapPreserveWhitespace(line, innerWidth) {
-			lines = append(lines, tui.NewLine(style, tui.PadRight("  "+wrapped, width)))
+		wrappedLines := tui.Wrap(line, contentWidth)
+		if preserveWhitespace {
+			wrappedLines = tui.WrapPreserveWhitespace(line, contentWidth)
+		}
+
+		for _, wrapped := range wrappedLines {
+			lines = append(lines, paddedContentLine(width, wrapped, style))
 		}
 	}
 
 	return lines
+}
+
+func paddedContentLine(width int, content string, style tcell.Style) tui.Line {
+	padding := strings.Repeat(" ", messageHorizontalPadding)
+
+	return tui.NewLine(style, padding+tui.PadRight(content, toolContentWidth(width))+padding)
+}
+
+func toolContentWidth(width int) int {
+	return max(1, width-messageBoxHorizontalPadding)
 }
 
 func tailIndentedLines(width int, content string, style tcell.Style, limit int) (tail []tui.Line, hidden int) {
@@ -172,25 +243,25 @@ func (app *App) renderToolMessageTail(width int, message chatMessage, rowsNeeded
 	}
 
 	event := parseToolEventContent(message.Content, string(message.Role))
-	style := app.toolBlockStyle(&event)
-	footer := tui.NewLine(tcell.StyleDefault, "")
+	display := toolDisplayFromParsedEvent(&event)
+	style := app.toolDisplayStyle(&display)
 
-	tailBudget := max(0, rowsNeeded-1)
+	tailBudget := max(0, rowsNeeded-messageOuterRows)
 	if tailBudget == 0 {
-		return []tui.Line{footer}, false
+		return []tui.Line{tui.NewLine(tcell.StyleDefault, "")}, false
 	}
 
-	tail, hidden := tailExpandedToolLines(width, &event, style, tailBudget)
+	tail, hidden := tailExpandedToolLines(width, &display, style, tailBudget)
 	if hidden {
-		return append(tail, footer), false
+		return append(tail, toolBlockEnd(width, style)...), false
 	}
 
-	prefix := app.expandedToolPrefixLines(width, &event, style)
-	lines := make([]tui.Line, 0, len(prefix)+len(tail)+1)
+	prefix := app.expandedToolPrefixLines(width, &display, style)
+	lines := make([]tui.Line, 0, len(prefix)+len(tail)+messageOuterRows)
 	lines = append(lines, prefix...)
 	lines = append(lines, tail...)
+	lines = append(lines, toolBlockEnd(width, style)...)
 
-	lines = append(lines, footer)
 	if len(lines) <= rowsNeeded {
 		return lines, true
 	}
@@ -198,39 +269,37 @@ func (app *App) renderToolMessageTail(width int, message chatMessage, rowsNeeded
 	return lines[len(lines)-rowsNeeded:], false
 }
 
-func (app *App) expandedToolPrefixLines(width int, event *parsedToolEvent, style tcell.Style) []tui.Line {
-	label := fmt.Sprintf("%s  %s collapse", toolTitle(event), app.keys.hint(actionToolsExpand))
+func (app *App) expandedToolPrefixLines(width int, display *toolDisplay, style tcell.Style) []tui.Line {
 	lines := make([]tui.Line, 0, toolHeaderLines)
-	lines = append(lines,
-		tui.NewLine(tcell.StyleDefault, ""),
-		tui.NewLine(style.Bold(true), tui.PadRight(label, width)),
-	)
-	lines = append(lines, app.toolArgumentLines(width, event, style)...)
-	lines = append(lines, app.toolDiffLines(width, event, style)...)
+	lines = append(lines, toolBlockStart(width, style)...)
+	lines = append(lines, app.toolHeaderDisplayLines(width, display, style)...)
+	lines = append(lines, app.toolExpandHintLines(width, style)...)
+	lines = append(lines, app.toolArgumentLines(width, display, style)...)
+	lines = append(lines, app.toolDiffLines(width, display, style)...)
 
 	return lines
 }
 
 func tailExpandedToolLines(
 	width int,
-	event *parsedToolEvent,
+	display *toolDisplay,
 	style tcell.Style,
 	rowsNeeded int,
 ) ([]tui.Line, bool) {
-	if event.Output != "" {
-		return tailSectionLinesFromEnd(width, "output", event.Output, style, rowsNeeded)
+	if display.Output != "" {
+		return tailSectionLinesFromEnd(width, "output", display.Output, style, rowsNeeded)
 	}
 
-	if event.Error != "" {
-		return tailSectionLinesFromEnd(width, "error", event.Error, style, rowsNeeded)
+	if display.Error != "" {
+		return tailSectionLinesFromEnd(width, "error", display.Error, style, rowsNeeded)
 	}
 
-	if event.DetailsJSON != "" {
-		return tailSectionLinesFromEnd(width, "details", compactJSON(event.DetailsJSON), style, rowsNeeded)
+	if display.DetailsJSON != "" {
+		return tailSectionLinesFromEnd(width, "details", compactJSON(display.DetailsJSON), style, rowsNeeded)
 	}
 
-	if event.ArgumentsJSON != "" {
-		return tailSectionLinesFromEnd(width, "args", compactJSON(event.ArgumentsJSON), style, rowsNeeded)
+	if display.ArgumentsJSON != "" {
+		return tailSectionLinesFromEnd(width, "args", prettyJSON(display.ArgumentsJSON), style, rowsNeeded)
 	}
 
 	return nil, false
@@ -248,12 +317,12 @@ func tailSectionLinesFromEnd(
 	}
 
 	if rowsNeeded == 1 {
-		return []tui.Line{tui.NewLine(style.Bold(true), tui.PadRight(label+":", width))}, true
+		return []tui.Line{paddedContentLine(width, label+":", style.Bold(true))}, true
 	}
 
 	tail, hidden := tailIndentedLinesFromEnd(width, content, style, rowsNeeded-1)
 	lines := make([]tui.Line, 0, len(tail)+1)
-	lines = append(lines, tui.NewLine(style.Bold(true), tui.PadRight(label+":", width)))
+	lines = append(lines, paddedContentLine(width, label+":", style.Bold(true)))
 	lines = append(lines, tail...)
 
 	return lines, hidden
@@ -301,14 +370,11 @@ func (collector *tailLineCollector) Collect(content string) {
 }
 
 func (collector *tailLineCollector) collectWrappedLine(line string) {
-	wrapped := tui.WrapPreserveWhitespace(line, max(1, collector.Width-toolBlockBorderWidth))
+	wrapped := tui.WrapPreserveWhitespace(line, max(1, toolContentWidth(collector.Width)))
 	added := 0
 
 	for index := len(wrapped) - 1; index >= 0 && len(collector.Lines) < collector.Limit; index-- {
-		collector.Lines = append(collector.Lines, tui.NewLine(
-			collector.Style,
-			tui.PadRight("  "+wrapped[index], collector.Width),
-		))
+		collector.Lines = append(collector.Lines, paddedContentLine(collector.Width, wrapped[index], collector.Style))
 		added++
 	}
 
@@ -323,14 +389,18 @@ func reverseStyledLines(lines []tui.Line) {
 	}
 }
 
-func (app *App) hiddenToolLinesText(hiddenLines int) string {
+func hiddenToolLinesText(hiddenLines int, expandHint string) string {
 	unit := "lines"
 	if hiddenLines == 1 {
 		unit = "line"
 	}
 
-	return "  … " + tui.Int(hiddenLines) + " earlier output " + unit + " hidden; " +
-		app.keys.hint(actionToolsExpand) + " expand"
+	text := "… " + tui.Int(hiddenLines) + " earlier output " + unit + " hidden"
+	if expandHint != "" {
+		text += "  " + expandHint + " expand"
+	}
+
+	return text
 }
 
 func compactJSON(value string) string {
@@ -351,10 +421,23 @@ func compactJSON(value string) string {
 	return string(payload)
 }
 
-func toolEventOutput(event *parsedToolEvent) string {
-	output := strings.Trim(event.Output, "\n")
-	if event.Error != "" {
-		output = strings.Trim(event.Error+"\n"+output, "\n")
+func prettyJSON(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+
+	var buffer bytes.Buffer
+	if err := json.Indent(&buffer, []byte(value), "", "  "); err != nil {
+		return strings.TrimSpace(value)
+	}
+
+	return strings.TrimSpace(buffer.String())
+}
+
+func toolDisplayOutput(display *toolDisplay) string {
+	output := strings.Trim(display.Output, "\n")
+	if display.Error != "" {
+		output = strings.Trim(display.Error+"\n"+output, "\n")
 	}
 
 	return output
@@ -416,21 +499,28 @@ func parseToolSectionHeader(line string) (name, value string, ok bool) {
 	}
 }
 
-func toolTitle(event *parsedToolEvent) string {
-	name := strings.TrimSpace(event.Name)
-	if name == "" {
-		name = toolSectionTool
+func (app *App) toolDisplayTitle(display *toolDisplay) string {
+	if display.Status == toolDisplayPending {
+		return "◌ " + fallbackToolName(display.Title)
 	}
 
-	if event.Error != "" {
-		return "✗ " + name
+	return fallbackToolName(display.Title)
+}
+
+func toolDisplayDiff(display *toolDisplay) string {
+	if display == nil {
+		return ""
 	}
 
-	if after, ok := strings.CutPrefix(name, "load skill: "); ok {
-		return "loaded skill " + strings.TrimSpace(after)
+	if diff := diffFromToolDetails(display.DetailsJSON); diff != "" {
+		return diff
 	}
 
-	return "✓ " + name
+	if strings.TrimSpace(display.Name) != toolNameEdit {
+		return ""
+	}
+
+	return diffFromEditArguments(display.ArgumentsJSON)
 }
 
 func diffFromToolDetails(detailsJSON string) string {
@@ -449,4 +539,67 @@ func diffFromToolDetails(detailsJSON string) string {
 	}
 
 	return strings.TrimSpace(diff)
+}
+
+func diffFromEditArguments(argumentsJSON string) string {
+	args := decodeToolArgs(argumentsJSON)
+
+	rawEdits, ok := args["edits"].([]any)
+	if !ok || len(rawEdits) == 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+
+	for index, rawEdit := range rawEdits {
+		editArgs, ok := rawEdit.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		oldText := rawTextArg(editArgs, "old_text", "oldText")
+		newText := rawTextArg(editArgs, "new_text", "newText")
+
+		if oldText == "" && newText == "" {
+			continue
+		}
+
+		if builder.Len() > 0 {
+			builder.WriteByte('\n')
+		}
+
+		if len(rawEdits) > 1 {
+			builder.WriteString("@@ edit ")
+			builder.WriteString(tui.Int(index + 1))
+			builder.WriteString(" @@\n")
+		}
+
+		writePrefixedDiffLines(&builder, "-", oldText)
+		writePrefixedDiffLines(&builder, "+", newText)
+	}
+
+	return strings.TrimSpace(builder.String())
+}
+
+func rawTextArg(args map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, ok := args[key].(string)
+		if ok {
+			return value
+		}
+	}
+
+	return ""
+}
+
+func writePrefixedDiffLines(builder *strings.Builder, prefix, text string) {
+	if text == "" {
+		return
+	}
+
+	for line := range strings.SplitSeq(strings.TrimSuffix(text, "\n"), "\n") {
+		builder.WriteString(prefix)
+		builder.WriteString(line)
+		builder.WriteByte('\n')
+	}
 }

@@ -25,7 +25,7 @@ const (
 	terminalMarkerMargin        = 2
 	initialToolBlockLines       = 10
 	maxToolBlockRenderLines     = 10_000
-	toolBlockBorderWidth        = 2
+	toolSectionIndentWidth      = 2
 	toolHeaderLines             = 2
 	welcomeDoublePadding        = 2
 	welcomeArtExtraLines        = 8

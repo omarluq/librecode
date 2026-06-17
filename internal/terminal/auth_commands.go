@@ -318,13 +318,14 @@ func (app *App) loginOAuthProvider(ctx context.Context, config oauthLoginConfig)
 func (app *App) runOAuthLogin(ctx context.Context, config oauthLoginConfig) {
 	credential, err := config.LoginFunc(ctx, func(info auth.OAuthAuthInfo) {
 		app.postAsyncEvent(ctx, &asyncEvent{
-			Response:  nil,
-			ToolEvent: nil,
-			Usage:     nil,
-			Kind:      asyncEventAuthURL,
-			Provider:  config.Provider,
-			Text:      authInfoText(config.DisplayName, info),
-			PromptID:  0,
+			Response:      nil,
+			ToolCallEvent: nil,
+			ToolEvent:     nil,
+			Usage:         nil,
+			Kind:          asyncEventAuthURL,
+			Provider:      config.Provider,
+			Text:          authInfoText(config.DisplayName, info),
+			PromptID:      0,
 		})
 	})
 	if err != nil {
@@ -340,25 +341,27 @@ func (app *App) runOAuthLogin(ctx context.Context, config oauthLoginConfig) {
 	}
 
 	app.postAsyncEvent(ctx, &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      asyncEventAuthDone,
-		Provider:  config.Provider,
-		Text:      "",
-		PromptID:  0,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventAuthDone,
+		Provider:      config.Provider,
+		Text:          "",
+		PromptID:      0,
 	})
 }
 
 func (app *App) postOAuthLoginError(ctx context.Context, config oauthLoginConfig, err error) {
 	app.postAsyncEvent(ctx, &asyncEvent{
-		Response:  nil,
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      asyncEventAuthError,
-		Provider:  config.Provider,
-		Text:      config.LoginFailed + err.Error(),
-		PromptID:  0,
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          asyncEventAuthError,
+		Provider:      config.Provider,
+		Text:          config.LoginFailed + err.Error(),
+		PromptID:      0,
 	})
 }
 

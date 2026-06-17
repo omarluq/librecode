@@ -95,8 +95,8 @@ func TestExecuteProviderToolCallReturnsLifecycleErrorEvent(t *testing.T) {
 
 	assert.True(t, event.IsError)
 	assert.Contains(t, event.Error, "blocked")
-	require.Len(t, streamEvents, 2)
-	assert.Equal(t, StreamEventToolResult, streamEvents[1].Kind)
+	require.Len(t, streamEvents, 1)
+	assert.Equal(t, StreamEventToolResult, streamEvents[0].Kind)
 }
 
 func TestExecuteProviderToolCallPreservesResultOnLifecycleError(t *testing.T) {
@@ -158,7 +158,7 @@ func TestLLMToolResultFromToolEvent(t *testing.T) {
 	result := llmToolResultFromToolEvent(&ToolEvent{
 		Name:          jsonReadToolName,
 		ArgumentsJSON: toolExecutorReadArgs,
-		DetailsJSON:   "",
+		DetailsJSON:   `{"diff":"+added"}`,
 		Result:        "contents",
 		Error:         "boom",
 		IsError:       true,
@@ -166,6 +166,9 @@ func TestLLMToolResultFromToolEvent(t *testing.T) {
 
 	assert.Equal(t, expectedReadToolName, result.Name)
 	assert.JSONEq(t, toolExecutorReadArgs, result.ArgumentsJSON)
+	detailsJSON, ok := result.Metadata["details_json"].(string)
+	require.True(t, ok)
+	assert.JSONEq(t, `{"diff":"+added"}`, detailsJSON)
 	assert.Equal(t, "boom", result.Error)
 	assert.True(t, result.IsError)
 	require.Len(t, result.Content, 1)

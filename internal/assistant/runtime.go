@@ -91,10 +91,11 @@ const (
 
 // StreamEvent is emitted during prompt execution before final persistence.
 type StreamEvent struct {
-	ToolEvent *ToolEvent        `json:"tool_event,omitempty"`
-	Usage     *model.TokenUsage `json:"usage,omitempty"`
-	Kind      StreamEventKind   `json:"kind"`
-	Text      string            `json:"text,omitempty"`
+	ToolCallEvent *ToolCallEvent    `json:"tool_call_event,omitempty"`
+	ToolEvent     *ToolEvent        `json:"tool_event,omitempty"`
+	Usage         *model.TokenUsage `json:"usage,omitempty"`
+	Kind          StreamEventKind   `json:"kind"`
+	Text          string            `json:"text,omitempty"`
 }
 
 // PromptResponse describes persisted prompt output.

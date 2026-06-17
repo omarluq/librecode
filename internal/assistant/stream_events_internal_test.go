@@ -10,7 +10,13 @@ func TestEmitStreamEventSkipsNilHandler(t *testing.T) {
 	t.Parallel()
 
 	require.NotPanics(t, func() {
-		emitStreamEvent(nil, StreamEvent{ToolEvent: nil, Usage: nil, Kind: StreamEventUnknown, Text: "ignored"})
+		emitStreamEvent(nil, StreamEvent{
+			ToolCallEvent: nil,
+			ToolEvent:     nil,
+			Usage:         nil,
+			Kind:          StreamEventUnknown,
+			Text:          "ignored",
+		})
 	})
 }
 
@@ -20,10 +26,11 @@ func TestEmitStreamEventCallsHandler(t *testing.T) {
 	var got StreamEvent
 
 	emitStreamEvent(func(event StreamEvent) { got = event }, StreamEvent{
-		ToolEvent: nil,
-		Usage:     nil,
-		Kind:      StreamEventTextDelta,
-		Text:      "hello",
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage:         nil,
+		Kind:          StreamEventTextDelta,
+		Text:          "hello",
 	})
 
 	require.Equal(t, StreamEventTextDelta, got.Kind)
