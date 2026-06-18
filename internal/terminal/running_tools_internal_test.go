@@ -10,97 +10,144 @@ import (
 	"github.com/omarluq/librecode/internal/assistant"
 )
 
-func TestRunningToolBlocksAppendRenderAndRemove(t *testing.T) {
-	t.Parallel()
-
-	app := newRenderTestApp(t)
-	call := testToolCallEvent(testToolBash, `{"command":"go test ./..."}`)
-	call.Arguments = map[string]any{"command": "go test ./..."}
-
-	app.applyStreamedToolStart(&call, "")
-
-	require.Len(t, app.runningToolBlocks, 1)
-	lines := app.renderRunningToolBlock(80, app.runningToolBlocks[0].Call)
-	assert.NotEqual(t, -1, lineIndexContaining(lines, "◌ $ go test ./..."))
-
-	app.applyStreamedToolEvent(&assistant.ToolEvent{
-		Name:          testToolBash,
-		ArgumentsJSON: `{"command":"go test ./..."}`,
-		DetailsJSON:   "",
-		Result:        "ok",
-		Error:         "",
-		IsError:       false,
-	})
-
-	assert.Empty(t, app.runningToolBlocks)
+type runningToolBlockTestCase struct {
+	run  func(t *testing.T, app *App)
+	name string
+	want []string
 }
 
-func TestApplyStreamedToolStartUsesFallbackForBlankName(t *testing.T) {
+func TestRunningToolBlocks(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
-	call := testToolCallEvent("", `{"command":"go test"}`)
-
-	app.applyStreamedToolStart(&call, testToolBash)
-
-	require.Len(t, app.runningToolBlocks, 1)
-	assert.Equal(t, testToolBash, app.runningToolBlocks[0].Call.Name)
+	for _, tt := range runningToolBlockTestCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			runRunningToolBlockCase(t, tt)
+		})
+	}
 }
 
-func TestRemoveRunningToolBlockMatchesNameAndArguments(t *testing.T) {
-	t.Parallel()
+func runningToolBlockTestCases() []runningToolBlockTestCase {
+	return []runningToolBlockTestCase{
+		runningToolAppendRenderRemoveCase(),
+		runningToolFallbackNameCase(),
+		runningToolRemoveByNameAndArgumentsCase(),
+		runningToolRemoveByNameFallbackCase(),
+		runningToolResetCase(),
+	}
+}
 
-	app := newRenderTestApp(t)
+func runningToolAppendRenderRemoveCase() runningToolBlockTestCase {
+	bashTestArguments := `{"command":"go test ./..."}`
+
+	return runningToolBlockTestCase{
+		run: func(t *testing.T, app *App) {
+			t.Helper()
+
+			call := testToolCallEvent(testToolBash, bashTestArguments)
+			call.Arguments = map[string]any{"command": "go test ./..."}
+
+			app.applyStreamedToolStart(&call, "")
+			require.NotEmpty(t, app.runningToolBlocks)
+
+			lines := app.renderRunningToolBlock(80, app.runningToolBlocks[0].Call)
+			assert.NotEqual(t, -1, lineIndexContaining(lines, "◌ $ go test ./..."))
+
+			app.applyStreamedToolEvent(&assistant.ToolEvent{
+				Name:          testToolBash,
+				ArgumentsJSON: bashTestArguments,
+				DetailsJSON:   "",
+				Result:        "ok",
+				Error:         "",
+				IsError:       false,
+			})
+		},
+		name: "append render and remove completed tool",
+		want: []string{},
+	}
+}
+
+func runningToolFallbackNameCase() runningToolBlockTestCase {
+	return runningToolBlockTestCase{
+		run: func(t *testing.T, app *App) {
+			t.Helper()
+
+			call := testToolCallEvent("", `{"command":"go test"}`)
+			app.applyStreamedToolStart(&call, testToolBash)
+		},
+		name: "use fallback for blank streamed tool name",
+		want: []string{testToolBash},
+	}
+}
+
+func runningToolRemoveByNameAndArgumentsCase() runningToolBlockTestCase {
 	sharedArguments := `{"path":"same.go"}`
-	app.runningToolBlocks = []runningToolBlock{
-		testRunningToolBlock(testToolRead, sharedArguments),
-		testRunningToolBlock(testToolWrite, sharedArguments),
+
+	return runningToolBlockTestCase{
+		run: func(t *testing.T, app *App) {
+			t.Helper()
+
+			app.runningToolBlocks = []runningToolBlock{
+				testRunningToolBlock(testToolRead, sharedArguments),
+				testRunningToolBlock(testToolWrite, sharedArguments),
+			}
+			app.removeRunningToolBlock(&assistant.ToolEvent{
+				Name:          testToolWrite,
+				ArgumentsJSON: sharedArguments,
+				DetailsJSON:   "",
+				Result:        "",
+				Error:         "",
+				IsError:       false,
+			})
+		},
+		name: "remove by matching name and arguments",
+		want: []string{testToolRead},
 	}
-
-	app.removeRunningToolBlock(&assistant.ToolEvent{
-		Name:          testToolWrite,
-		ArgumentsJSON: sharedArguments,
-		DetailsJSON:   "",
-		Result:        "",
-		Error:         "",
-		IsError:       false,
-	})
-
-	require.Len(t, app.runningToolBlocks, 1)
-	assert.Equal(t, testToolRead, app.runningToolBlocks[0].Call.Name)
 }
 
-func TestRemoveRunningToolBlockFallsBackToName(t *testing.T) {
-	t.Parallel()
+func runningToolRemoveByNameFallbackCase() runningToolBlockTestCase {
+	return runningToolBlockTestCase{
+		run: func(t *testing.T, app *App) {
+			t.Helper()
 
-	app := newRenderTestApp(t)
-	app.runningToolBlocks = []runningToolBlock{
-		testRunningToolBlock(testToolRead, `{"path":"a.go"}`),
-		testRunningToolBlock(testToolBash, `{"command":"go test"}`),
+			app.runningToolBlocks = []runningToolBlock{
+				testRunningToolBlock(testToolRead, `{"path":"a.go"}`),
+				testRunningToolBlock(testToolBash, `{"command":"go test"}`),
+			}
+			app.removeRunningToolBlock(&assistant.ToolEvent{
+				Name:          testToolBash,
+				ArgumentsJSON: "",
+				DetailsJSON:   "",
+				Result:        "",
+				Error:         "",
+				IsError:       false,
+			})
+		},
+		name: "remove falls back to name when arguments are missing",
+		want: []string{testToolRead},
 	}
-
-	app.removeRunningToolBlock(&assistant.ToolEvent{
-		Name:          testToolBash,
-		ArgumentsJSON: "",
-		DetailsJSON:   "",
-		Result:        "",
-		Error:         "",
-		IsError:       false,
-	})
-
-	require.Len(t, app.runningToolBlocks, 1)
-	assert.Equal(t, testToolRead, app.runningToolBlocks[0].Call.Name)
 }
 
-func TestResetStreamingBlocksClearsRunningTools(t *testing.T) {
-	t.Parallel()
+func runningToolResetCase() runningToolBlockTestCase {
+	return runningToolBlockTestCase{
+		run: func(t *testing.T, app *App) {
+			t.Helper()
+
+			app.runningToolBlocks = []runningToolBlock{testRunningToolBlock(testToolBash, "")}
+			app.resetStreamingBlocks()
+		},
+		name: "reset clears running tools",
+		want: []string{},
+	}
+}
+
+func runRunningToolBlockCase(t *testing.T, testCase runningToolBlockTestCase) {
+	t.Helper()
 
 	app := newRenderTestApp(t)
-	app.runningToolBlocks = []runningToolBlock{testRunningToolBlock(testToolBash, "")}
+	testCase.run(t, app)
 
-	app.resetStreamingBlocks()
-
-	assert.Empty(t, app.runningToolBlocks)
+	assert.Equal(t, testCase.want, runningToolBlockNames(app.runningToolBlocks))
 }
 
 func testRunningToolBlock(name, argumentsJSON string) runningToolBlock {
@@ -117,4 +164,13 @@ func testToolCallEvent(name, argumentsJSON string) assistant.ToolCallEvent {
 		Name:          name,
 		ArgumentsJSON: argumentsJSON,
 	}
+}
+
+func runningToolBlockNames(blocks []runningToolBlock) []string {
+	names := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		names = append(names, block.Call.Name)
+	}
+
+	return names
 }
