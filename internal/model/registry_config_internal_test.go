@@ -11,9 +11,9 @@ func TestParseCustomModelsUsesHuJSON(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
+		assert func(t *testing.T, result customModelsResult)
 		name   string
 		input  string
-		assert func(t *testing.T, result customModelsResult)
 	}{
 		{
 			name: "accepts comments trailing commas and strings containing slashes",
@@ -67,13 +67,13 @@ func TestParseCustomModelsUsesHuJSON(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			result := parseCustomModels([]byte(tt.input), "models.json")
+			result := parseCustomModels([]byte(testCase.input), "models.json")
 
-			tt.assert(t, result)
+			testCase.assert(t, result)
 		})
 	}
 }
