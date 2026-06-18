@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/samber/oops"
+	"github.com/tailscale/hujson"
 )
 
 type modelsConfig struct {
@@ -100,8 +101,13 @@ func (registry *Registry) loadCustomModels() customModelsResult {
 }
 
 func parseCustomModels(content []byte, sourcePath string) customModelsResult {
+	standardJSON, err := hujson.Standardize(content)
+	if err != nil {
+		return emptyCustomModelsResult(oops.In("model").Code("parse_models").Wrapf(err, "parse models.json"))
+	}
+
 	var config modelsConfig
-	if err := json.Unmarshal([]byte(stripJSONComments(string(content))), &config); err != nil {
+	if err := json.Unmarshal(standardJSON, &config); err != nil {
 		return emptyCustomModelsResult(oops.In("model").Code("parse_models").Wrapf(err, "parse models.json"))
 	}
 
