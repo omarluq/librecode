@@ -19,6 +19,7 @@ const (
 	compactFileOperationTestSourcePath = "cmd/app/main.go"
 	compactFileOperationTestSummary    = "summary"
 	compactFileOperationTestOrigin     = "test"
+	compactFileOperationTestGuidePath  = "docs/user guide.md"
 )
 
 func TestCollectCompactionFileOperations(t *testing.T) {
@@ -88,8 +89,8 @@ func TestCollectCompactionFileOperations(t *testing.T) {
 	)
 	assertCompactionFileOperation(t, operations, fileActionModified, "internal/app.go", "write")
 	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "internal/**/*.go", "find")
-	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "go.mod", "bash")
-	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "internal/app.go", "bash")
+	assertCompactionFileOperation(t, operations, fileActionModified, "go.mod", "bash")
+	assertCompactionFileOperation(t, operations, fileActionModified, "internal/app.go", "bash")
 
 	mutatingBash := bashFileOperations(
 		compactFileOperationToolEntry("bash-2", "bash", `{"command":"sed -i 's/a/b/' internal/app.go"}`),
@@ -145,30 +146,118 @@ func TestAppendUniqueCompactionFileOperation(t *testing.T) {
 	}, operations[0])
 }
 
-func TestShellCommandLooksMutating(t *testing.T) {
+func TestShellCommandParsing(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		command string
-		name    string
-		want    bool
-	}{
-		{name: "redirection", command: "echo ok > out.txt", want: true},
-		{name: "copy command", command: "cp a.txt b.txt", want: true},
-		{name: "sed in place", command: "sed -i 's/a/b/' file.go", want: true},
-		{name: "perl in place with suffix", command: "perl -i.bak -pe s/a/b/ file.go", want: true},
-		{name: "quoted rm is not command", command: "echo remove this README.md", want: false},
-		{name: "sed text without in place", command: "echo 'sed -i example' README.md", want: false},
-		{name: "empty command", command: compactFileOperationTestBlank, want: false},
-		{name: "read command", command: compactFileOperationTestCommand, want: false},
-	}
-
+	tests := append(shellCommandParsingTestCases(), shellCommandParsingExtraTestCases()...)
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, testCase.want, shellCommandLooksMutating(testCase.command))
+			assert.Equal(t, testCase.wantPaths, shellCommandPathTokens(testCase.command))
+			assert.Equal(t, testCase.wantWrite, shellCommandLooksMutating(testCase.command))
 		})
+	}
+}
+
+type shellCommandParsingTestCase struct {
+	command   string
+	name      string
+	wantPaths []string
+	wantWrite bool
+}
+
+func shellCommandParsingTestCases() []shellCommandParsingTestCase {
+	return []shellCommandParsingTestCase{
+		{
+			name:      "redirection",
+			command:   "echo ok > out.txt",
+			wantPaths: []string{"out.txt"},
+			wantWrite: true,
+		},
+		{
+			name:      "copy command",
+			command:   "cp a.txt b.txt",
+			wantPaths: []string{"a.txt", "b.txt"},
+			wantWrite: true,
+		},
+		{
+			name:      "sed in place",
+			command:   "sed -i 's/a/b/' internal/app.go",
+			wantPaths: []string{"internal/app.go"},
+			wantWrite: true,
+		},
+		{
+			name:      "perl in place with suffix",
+			command:   "perl -i.bak -pe s/a/b/ file.go",
+			wantPaths: []string{"file.go"},
+			wantWrite: true,
+		},
+		{
+			name:      "quoted path",
+			command:   `cat "docs/user guide.md" './internal/app.go'`,
+			wantPaths: []string{compactFileOperationTestGuidePath, "./internal/app.go"},
+			wantWrite: false,
+		},
+		{
+			name:      "escaped space path",
+			command:   `cat docs/user\ guide.md`,
+			wantPaths: []string{compactFileOperationTestGuidePath},
+			wantWrite: false,
+		},
+		{
+			name:      "pipe commands",
+			command:   `cat go.mod | grep librecode > result.txt`,
+			wantPaths: []string{"go.mod", "result.txt"},
+			wantWrite: true,
+		},
+		{
+			name:      "dynamic path skipped",
+			command:   `cat "$HOME/go.mod" ./static.go`,
+			wantPaths: []string{"./static.go"},
+			wantWrite: false,
+		},
+		{
+			name:      "quoted command name is not command",
+			command:   `echo 'sed -i example' README.md`,
+			wantPaths: []string{"README.md"},
+			wantWrite: false,
+		},
+		{
+			name:      "empty command",
+			command:   compactFileOperationTestBlank,
+			wantPaths: []string{},
+			wantWrite: false,
+		},
+		{
+			name:      "invalid command",
+			command:   `cat 'unterminated`,
+			wantPaths: []string{},
+			wantWrite: false,
+		},
+		{
+			name:      "read command",
+			command:   compactFileOperationTestCommand,
+			wantPaths: []string{compactFileOperationTestPath},
+			wantWrite: false,
+		},
+	}
+}
+
+func shellCommandParsingExtraTestCases() []shellCommandParsingTestCase {
+	return []shellCommandParsingTestCase{
+		{
+			name:      "single quoted path",
+			command:   `cat 'docs/user guide.md'`,
+			wantPaths: []string{compactFileOperationTestGuidePath},
+			wantWrite: false,
+		},
+		{
+			name:      "shell expansion skipped",
+			command:   `cat $TARGET ./static.go`,
+			wantPaths: []string{"./static.go"},
+			wantWrite: false,
+		},
 	}
 }
 
