@@ -66,6 +66,10 @@ func matchesSkillIgnore(name, path string, patterns []string) bool {
 			return true
 		}
 
+		if !doublestar.ValidatePattern(trimmed) {
+			continue
+		}
+
 		if doublestar.MatchUnvalidated(trimmed, name) {
 			return true
 		}
