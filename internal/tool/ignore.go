@@ -6,6 +6,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 const gitignoreFileName = ".gitignore"
@@ -216,11 +218,7 @@ func matchIgnoreGlob(pattern, value string) bool {
 }
 
 func matchAnchoredIgnoreGlob(pattern, value string) bool {
-	if strings.Contains(pattern, "**") {
-		return matchIgnoreGlob(pattern, value)
-	}
-
-	matched, err := path.Match(pattern, value)
+	matched, err := doublestar.Match(pattern, value)
 
 	return err == nil && matched
 }

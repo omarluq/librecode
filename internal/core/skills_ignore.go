@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 func shouldSkipSkillEntry(entry os.DirEntry, path string, ignorePatterns []string) bool {
@@ -64,11 +66,11 @@ func matchesSkillIgnore(name, path string, patterns []string) bool {
 			return true
 		}
 
-		if matched, err := filepath.Match(trimmed, name); err == nil && matched {
+		if doublestar.MatchUnvalidated(trimmed, name) {
 			return true
 		}
 
-		if matched, err := filepath.Match(trimmed, slashPath); err == nil && matched {
+		if doublestar.MatchUnvalidated(trimmed, slashPath) {
 			return true
 		}
 	}

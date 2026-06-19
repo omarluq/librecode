@@ -6,6 +6,7 @@ require (
 	github.com/Oudwins/zog v0.22.2
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/aymanbagabas/go-udiff v0.4.1
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gdamore/tcell/v3 v3.4.0
