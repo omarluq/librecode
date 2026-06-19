@@ -283,7 +283,7 @@ func commandUsesInPlaceEdit(command string, args []*syntax.Word) bool {
 		}
 
 		return slices.ContainsFunc(values, func(value string) bool {
-			return value == "-i" || strings.HasPrefix(value, "-i.")
+			return strings.HasPrefix(value, "-i")
 		})
 	})
 }

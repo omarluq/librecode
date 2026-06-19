@@ -194,6 +194,12 @@ func shellCommandParsingTestCases() []shellCommandParsingTestCase {
 			wantWrite: true,
 		},
 		{
+			name:      "sed in place with attached suffix",
+			command:   "sed -ibak 's/a/b/' file.go",
+			wantPaths: []string{"file.go"},
+			wantWrite: true,
+		},
+		{
 			name:      "quoted path",
 			command:   `cat "docs/user guide.md" './internal/app.go'`,
 			wantPaths: []string{compactFileOperationTestGuidePath, "./internal/app.go"},
