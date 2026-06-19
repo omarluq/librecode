@@ -2,9 +2,11 @@ package compaction
 
 import (
 	"encoding/json"
-	"regexp"
 	"slices"
 	"strings"
+
+	"mvdan.cc/sh/v3/expand"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/tool"
@@ -18,8 +20,6 @@ const (
 	fileActionModified   = "modified"
 	maxFileOperations    = 64
 )
-
-var shellPathTokenPattern = regexp.MustCompile(`^[./A-Za-z0-9_@~][A-Za-z0-9_@~./+%:=,-]*$`)
 
 // FileOperation records file activity that should survive compaction summaries.
 type FileOperation struct {
@@ -200,73 +200,204 @@ func stringArgument(args map[string]any, key string) (string, bool) {
 }
 
 func shellCommandLooksMutating(command string) bool {
-	lower := strings.ToLower(command)
-	if strings.Contains(lower, ">") {
-		return true
-	}
-
-	fields := strings.Fields(lower)
-	if len(fields) == 0 {
+	file, ok := parseShellCommand(command)
+	if !ok {
 		return false
 	}
 
-	mutatingCommands := []string{"cp", "mv", "rm", "mkdir", "touch", "tee"}
-	if slices.Contains(mutatingCommands, fields[0]) {
-		return true
-	}
+	mutating := false
 
-	return commandUsesInPlaceEdit(fields)
+	syntax.Walk(file, func(node syntax.Node) bool {
+		if mutating || node == nil {
+			return false
+		}
+
+		switch typedNode := node.(type) {
+		case *syntax.Stmt:
+			mutating = statementHasOutputRedirect(typedNode)
+		case *syntax.CallExpr:
+			mutating = shellCallLooksMutating(typedNode)
+		}
+
+		return !mutating
+	})
+
+	return mutating
 }
 
-func commandUsesInPlaceEdit(fields []string) bool {
-	if len(fields) == 0 || (fields[0] != "sed" && fields[0] != "perl") {
+func statementHasOutputRedirect(statement *syntax.Stmt) bool {
+	return slices.ContainsFunc(statement.Redirs, func(redirect *syntax.Redirect) bool {
+		return redirect != nil && shellRedirectWrites(redirect.Op)
+	})
+}
+
+func shellRedirectWrites(operator syntax.RedirOperator) bool {
+	switch operator {
+	case syntax.RdrOut, syntax.AppOut, syntax.RdrInOut, syntax.RdrClob, syntax.AppClob,
+		syntax.RdrAll, syntax.RdrAllClob, syntax.AppAll, syntax.AppAllClob:
+		return true
+	case syntax.RdrIn, syntax.DplIn, syntax.DplOut, syntax.Hdoc, syntax.DashHdoc, syntax.WordHdoc:
 		return false
 	}
 
-	return slices.ContainsFunc(fields[1:], func(field string) bool {
-		return field == "-i" || strings.HasPrefix(field, "-i.") || strings.HasPrefix(field, "-i'") ||
-			strings.HasPrefix(field, "-i\"")
+	return false
+}
+
+func shellCallLooksMutating(call *syntax.CallExpr) bool {
+	if len(call.Args) == 0 {
+		return false
+	}
+
+	command, ok := singleShellStaticField(call.Args[0])
+	if !ok {
+		return false
+	}
+
+	command = strings.ToLower(command)
+
+	if shellCommandMutates(command) {
+		return true
+	}
+
+	return commandUsesInPlaceEdit(command, call.Args[1:])
+}
+
+func shellCommandMutates(command string) bool {
+	switch command {
+	case "cp", "mv", "rm", "mkdir", "touch", "tee":
+		return true
+	default:
+		return false
+	}
+}
+
+func commandUsesInPlaceEdit(command string, args []*syntax.Word) bool {
+	if command != "sed" && command != "perl" {
+		return false
+	}
+
+	return slices.ContainsFunc(args, func(arg *syntax.Word) bool {
+		values, ok := shellStaticFields(arg)
+		if !ok {
+			return false
+		}
+
+		return slices.ContainsFunc(values, func(value string) bool {
+			return value == "-i" || strings.HasPrefix(value, "-i.")
+		})
 	})
 }
 
 func shellCommandPathTokens(command string) []string {
-	fields := strings.Fields(command)
+	file, ok := parseShellCommand(command)
+	if !ok {
+		return []string{}
+	}
+
 	paths := []string{}
 
-	for index, field := range fields {
-		if index == 0 || shellTokenIsIgnored(field) {
+	syntax.Walk(file, func(node syntax.Node) bool {
+		if node == nil {
+			return false
+		}
+
+		switch typedNode := node.(type) {
+		case *syntax.CallExpr:
+			paths = appendShellCallPaths(paths, typedNode)
+		case *syntax.Stmt:
+			paths = appendShellRedirectPaths(paths, typedNode)
+		}
+
+		return true
+	})
+
+	return paths
+}
+
+func parseShellCommand(command string) (*syntax.File, bool) {
+	parser := syntax.NewParser(syntax.Variant(syntax.LangBash))
+	file, err := parser.Parse(strings.NewReader(command), "")
+
+	return file, err == nil
+}
+
+func appendShellCallPaths(paths []string, call *syntax.CallExpr) []string {
+	for index, arg := range call.Args {
+		if index == 0 {
 			continue
 		}
 
-		path := cleanShellPathToken(field)
-		if !looksLikeShellPath(path) || slices.Contains(paths, path) {
-			continue
-		}
+		for _, path := range shellPathFields(arg) {
+			if slices.Contains(paths, path) {
+				continue
+			}
 
-		paths = append(paths, path)
+			paths = append(paths, path)
+		}
 	}
 
 	return paths
 }
 
-func shellTokenIsIgnored(token string) bool {
-	trimmed := strings.TrimSpace(token)
+func appendShellRedirectPaths(paths []string, statement *syntax.Stmt) []string {
+	for _, redirect := range statement.Redirs {
+		if redirect == nil || redirect.Word == nil {
+			continue
+		}
 
-	return trimmed == "" || strings.HasPrefix(trimmed, "-") || trimmed == "|" || trimmed == "&&" ||
-		trimmed == "||" || trimmed == ";" || trimmed == ">" || trimmed == ">>" || trimmed == "<"
-}
+		for _, path := range shellPathFields(redirect.Word) {
+			if slices.Contains(paths, path) {
+				continue
+			}
 
-func cleanShellPathToken(token string) string {
-	trimmed := strings.Trim(token, "'\"`(){}[],:;")
-	if strings.HasPrefix(trimmed, "s/") {
-		return ""
+			paths = append(paths, path)
+		}
 	}
 
-	return trimmed
+	return paths
+}
+
+func singleShellStaticField(word *syntax.Word) (string, bool) {
+	fields, ok := shellStaticFields(word)
+	if !ok || len(fields) != 1 {
+		return "", false
+	}
+
+	return fields[0], true
+}
+
+func shellPathFields(word *syntax.Word) []string {
+	fields, ok := shellStaticFields(word)
+	if !ok {
+		return nil
+	}
+
+	paths := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if looksLikeShellPath(field) {
+			paths = append(paths, field)
+		}
+	}
+
+	return paths
+}
+
+func shellStaticFields(word *syntax.Word) ([]string, bool) {
+	if word == nil || len(word.Parts) == 0 {
+		return nil, false
+	}
+
+	fields, err := expand.Fields(&expand.Config{NoUnset: true}, word)
+	if err != nil {
+		return nil, false
+	}
+
+	return fields, true
 }
 
 func looksLikeShellPath(path string) bool {
-	if path == "" || strings.HasPrefix(path, "-") || !shellPathTokenPattern.MatchString(path) {
+	path = strings.TrimSpace(path)
+	if path == "" || strings.HasPrefix(path, "-") || strings.HasPrefix(path, "s/") {
 		return false
 	}
 
