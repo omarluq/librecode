@@ -58,12 +58,13 @@ type ASTInput struct {
 
 // ASTTool inspects a source file's syntax tree via a pure-Go tree-sitter.
 type ASTTool struct {
-	cwd string
+	ignoreCache *readIgnoreCache
+	cwd         string
 }
 
 // NewASTTool creates the ast tool for cwd.
 func NewASTTool(cwd string) *ASTTool {
-	return &ASTTool{cwd: cwd}
+	return &ASTTool{cwd: cwd, ignoreCache: newReadIgnoreCache()}
 }
 
 // Definition returns ast tool metadata.
@@ -163,7 +164,7 @@ func (astTool *ASTTool) parse(ctx context.Context, path string, allowIgnored boo
 		return nil, nil, toolWrap(ctxErr, "parse ast query")
 	}
 
-	if ignored, reason := ignoredReadPath(absolutePath, astTool.cwd); ignored && !allowIgnored {
+	if ignored, reason := ignoredReadPath(absolutePath, astTool.cwd, astTool.ignoreCache); ignored && !allowIgnored {
 		skipped := ignoredReadResult(path, reason)
 
 		return nil, &skipped, nil
