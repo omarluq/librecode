@@ -18,27 +18,74 @@ func TestReadToolRespectsGitignoreByDefault(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
-	ignoreContent := []byte("secret/\n*.log\n!important.log\n")
+	ignoreContent := []byte("secret/\n*.log\n!important.log\nnested/.env\n")
 	require.NoError(t, os.WriteFile(filepath.Join(workspace, ".gitignore"), ignoreContent, 0o600))
 	require.NoError(t, os.MkdirAll(filepath.Join(workspace, "secret"), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(workspace, "nested"), 0o700))
 	secretPath := filepath.Join(workspace, "secret", "credentials.txt")
 	require.NoError(t, os.WriteFile(secretPath, []byte("super-secret-value"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(workspace, "debug.log"), []byte("debug"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(workspace, "important.log"), []byte("important"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(workspace, "nested", ".env"), []byte("nested secret"), 0o600))
 
 	reader := tool.NewReadTool(workspace)
-	secretResult, err := reader.Execute(context.Background(), map[string]any{readTestPathKey: "secret/credentials.txt"})
-	require.NoError(t, err)
-	assert.Contains(t, secretResult.Text(), "Refusing to read ignored path")
-	assert.NotContains(t, secretResult.Text(), "super-secret-value")
+	tests := []struct {
+		name         string
+		path         string
+		wantText     string
+		wantRedacted string
+		wantRefusal  bool
+	}{
+		{
+			name:         "directory pattern blocks descendant",
+			path:         "secret/credentials.txt",
+			wantText:     "",
+			wantRedacted: "super-secret-value",
+			wantRefusal:  true,
+		},
+		{
+			name:         "glob pattern blocks file",
+			path:         "debug.log",
+			wantText:     "",
+			wantRedacted: "",
+			wantRefusal:  true,
+		},
+		{
+			name:         "negated pattern allows file",
+			path:         "important.log",
+			wantText:     "important",
+			wantRedacted: "",
+			wantRefusal:  false,
+		},
+		{
+			name:         "slash pattern matches from root",
+			path:         "nested/.env",
+			wantText:     "",
+			wantRedacted: "",
+			wantRefusal:  true,
+		},
+	}
 
-	logResult, err := reader.Execute(context.Background(), map[string]any{readTestPathKey: "debug.log"})
-	require.NoError(t, err)
-	assert.Contains(t, logResult.Text(), "Refusing to read ignored path")
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	unignoredResult, err := reader.Execute(context.Background(), map[string]any{readTestPathKey: "important.log"})
-	require.NoError(t, err)
-	assert.Equal(t, "important", unignoredResult.Text())
+			result, err := reader.Execute(context.Background(), map[string]any{readTestPathKey: testCase.path})
+			require.NoError(t, err)
+
+			if testCase.wantRefusal {
+				assert.Contains(t, result.Text(), "Refusing to read ignored path")
+
+				if testCase.wantRedacted != "" {
+					assert.NotContains(t, result.Text(), testCase.wantRedacted)
+				}
+
+				return
+			}
+
+			assert.Equal(t, testCase.wantText, result.Text())
+		})
+	}
 }
 
 func TestReadToolAllowsExplicitIgnoredReads(t *testing.T) {

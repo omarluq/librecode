@@ -1,13 +1,13 @@
 package tool
 
 import (
-	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
-	"github.com/bmatcuk/doublestar/v4"
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
 
 const gitignoreFileName = ".gitignore"
@@ -25,12 +25,9 @@ func defaultReadIgnorePatterns() []string {
 	}
 }
 
-type ignoreRule struct {
-	pattern       string
-	source        string
-	anchored      bool
-	directoryOnly bool
-	negated       bool
+type ignorePattern struct {
+	pattern gitignore.Pattern
+	source  string
 }
 
 func ignoredReadPath(absolutePath, cwd string) (ignored bool, reason string) {
@@ -54,19 +51,16 @@ func ignoredReadPath(absolutePath, cwd string) (ignored bool, reason string) {
 		return false, ""
 	}
 
-	ignored = false
-	reason = ""
+	pathParts := strings.Split(relativePath, "/")
+	isDir := targetIsDirectory(targetPath, workspaceRoot)
+	patterns := readIgnorePatterns(workspaceRoot)
 
-	for _, rule := range readIgnoreRules(workspaceRoot) {
-		if !rule.matches(relativePath) {
-			continue
-		}
-
-		ignored = !rule.negated
-		reason = rule.source
+	matcher := gitignore.NewMatcher(extractGitignorePatterns(patterns))
+	if !matcher.Match(pathParts, isDir) {
+		return false, ""
 	}
 
-	return ignored, reason
+	return true, matchingIgnoreReason(patterns, pathParts, isDir)
 }
 
 func workspaceRoot(cwd string) (string, error) {
@@ -89,136 +83,55 @@ func pathEscapesRoot(relativePath string) bool {
 	return relativePath == ".." || strings.HasPrefix(relativePath, "../") || filepath.IsAbs(relativePath)
 }
 
-func readIgnoreRules(workspaceRoot string) []ignoreRule {
-	patterns := defaultReadIgnorePatterns()
-	patterns = append(patterns, workspaceGitignorePatterns(workspaceRoot)...)
-
-	rules := make([]ignoreRule, 0, len(patterns))
-	for _, pattern := range patterns {
-		rule, ok := parseIgnoreRule(pattern)
-		if ok {
-			rules = append(rules, rule)
-		}
+func readIgnorePatterns(workspaceRoot string) []ignorePattern {
+	patterns := make([]ignorePattern, 0, len(defaultReadIgnorePatterns()))
+	for _, pattern := range defaultReadIgnorePatterns() {
+		patterns = append(patterns, ignorePattern{
+			pattern: gitignore.ParsePattern(pattern, nil),
+			source:  pattern,
+		})
 	}
 
-	return rules
-}
-
-func workspaceGitignorePatterns(workspaceRoot string) []string {
-	content, err := fs.ReadFile(os.DirFS(workspaceRoot), gitignoreFileName)
+	repositoryPatterns, err := gitignore.ReadPatterns(osfs.New(workspaceRoot), nil)
 	if err != nil {
-		return nil
+		return patterns
 	}
 
-	return strings.Split(string(content), "\n")
+	for _, pattern := range repositoryPatterns {
+		patterns = append(patterns, ignorePattern{
+			pattern: pattern,
+			source:  gitignoreFileName,
+		})
+	}
+
+	return patterns
 }
 
-func parseIgnoreRule(line string) (ignoreRule, bool) {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-		return emptyIgnoreRule(), false
+func extractGitignorePatterns(patterns []ignorePattern) []gitignore.Pattern {
+	gitignorePatterns := make([]gitignore.Pattern, 0, len(patterns))
+	for _, ignorePattern := range patterns {
+		gitignorePatterns = append(gitignorePatterns, ignorePattern.pattern)
 	}
 
-	negated := false
-	if strings.HasPrefix(trimmed, "!") {
-		negated = true
-		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "!"))
-	}
-
-	if trimmed == "" {
-		return emptyIgnoreRule(), false
-	}
-
-	directoryOnly := strings.HasSuffix(trimmed, "/")
-	trimmed = strings.TrimSuffix(trimmed, "/")
-	anchored := strings.HasPrefix(trimmed, "/")
-	trimmed = strings.TrimPrefix(trimmed, "/")
-
-	trimmed = path.Clean(filepath.ToSlash(trimmed))
-	if trimmed == "." || trimmed == "" {
-		return emptyIgnoreRule(), false
-	}
-
-	return ignoreRule{
-		pattern:       trimmed,
-		source:        line,
-		anchored:      anchored,
-		directoryOnly: directoryOnly,
-		negated:       negated,
-	}, true
+	return gitignorePatterns
 }
 
-func emptyIgnoreRule() ignoreRule {
-	return ignoreRule{pattern: "", source: "", anchored: false, directoryOnly: false, negated: false}
-}
-
-func (rule ignoreRule) matches(relativePath string) bool {
-	if rule.directoryOnly {
-		return rule.matchesDirectory(relativePath)
-	}
-
-	if rule.anchored {
-		return matchAnchoredIgnoreGlob(rule.pattern, relativePath)
-	}
-
-	if strings.Contains(rule.pattern, "/") {
-		return matchIgnoreGlob(rule.pattern, relativePath)
-	}
-
-	return matchIgnoreGlob(rule.pattern, path.Base(relativePath))
-}
-
-func (rule ignoreRule) matchesDirectory(relativePath string) bool {
-	for _, directory := range ancestorDirectories(relativePath) {
-		if rule.anchored {
-			if matchAnchoredIgnoreGlob(rule.pattern, directory) {
-				return true
-			}
-
-			continue
-		}
-
-		if strings.Contains(rule.pattern, "/") {
-			if matchIgnoreGlob(rule.pattern, directory) {
-				return true
-			}
-
-			continue
-		}
-
-		if matchIgnoreGlob(rule.pattern, path.Base(directory)) {
-			return true
+func matchingIgnoreReason(patterns []ignorePattern, pathParts []string, isDir bool) string {
+	for _, ignorePattern := range slices.Backward(patterns) {
+		if ignorePattern.pattern.Match(pathParts, isDir) == gitignore.Exclude {
+			return ignorePattern.source
 		}
 	}
 
-	return false
+	return ""
 }
 
-func ancestorDirectories(relativePath string) []string {
-	parts := strings.Split(relativePath, "/")
-	if len(parts) <= 1 {
-		return []string{relativePath}
-	}
-
-	directories := make([]string, 0, len(parts)-1)
-	for index := 1; index < len(parts); index++ {
-		directories = append(directories, strings.Join(parts[:index], "/"))
-	}
-
-	return directories
-}
-
-func matchIgnoreGlob(pattern, value string) bool {
-	matcher, err := newGlobMatcher(pattern)
-	if err != nil {
+func targetIsDirectory(targetPath, workspaceRoot string) bool {
+	if !strings.HasPrefix(targetPath, workspaceRoot+string(filepath.Separator)) && targetPath != workspaceRoot {
 		return false
 	}
 
-	return matcher(value)
-}
+	info, err := os.Stat(targetPath)
 
-func matchAnchoredIgnoreGlob(pattern, value string) bool {
-	matched, err := doublestar.Match(pattern, value)
-
-	return err == nil && matched
+	return err == nil && info.IsDir()
 }
