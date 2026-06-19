@@ -125,8 +125,13 @@ func (app *App) toolDiffLines(width int, display *toolDisplay, style tcell.Style
 		"  ",
 		baseStyle,
 	)
+
+	return app.styledSectionLines(width, "diff", content, style)
+}
+
+func (app *App) styledSectionLines(width int, label string, content []tui.Line, style tcell.Style) []tui.Line {
 	lines := make([]tui.Line, 0, len(content)+1)
-	lines = append(lines, paddedContentLine(width, "diff:", style.Bold(true)))
+	lines = append(lines, paddedContentLine(width, label+":", style.Bold(true)))
 	lines = append(lines, padLinesRight(content, width)...)
 
 	return lines
