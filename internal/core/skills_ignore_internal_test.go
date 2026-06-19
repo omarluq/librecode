@@ -9,6 +9,8 @@ import (
 func TestMatchesSkillIgnoreUsesDoublestarPatterns(t *testing.T) {
 	t.Parallel()
 
+	const scratchTmp = "scratch.tmp"
+
 	testCases := []struct {
 		pattern   string
 		name      string
@@ -25,16 +27,23 @@ func TestMatchesSkillIgnoreUsesDoublestarPatterns(t *testing.T) {
 		},
 		{
 			pattern:   "*.tmp",
-			name:      "scratch.tmp",
+			name:      scratchTmp,
 			skillName: "matches basename glob",
 			path:      "skills/scratch.tmp",
 			want:      true,
 		},
 		{
 			pattern:   "skills/*.tmp",
-			name:      "scratch.tmp",
+			name:      scratchTmp,
 			skillName: "path glob does not match different directory",
 			path:      "archive/scratch.tmp",
+			want:      false,
+		},
+		{
+			pattern:   "[",
+			name:      scratchTmp,
+			skillName: "ignores malformed glob patterns",
+			path:      "skills/scratch.tmp",
 			want:      false,
 		},
 	}
