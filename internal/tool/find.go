@@ -6,10 +6,10 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 )
@@ -248,23 +248,14 @@ type globMatcher func(relativePath string) bool
 func newGlobMatcher(pattern string) (globMatcher, error) {
 	normalizedPattern := path.Clean(filepath.ToSlash(pattern))
 	if normalizedPattern == "." {
-		normalizedPattern = pattern
+		normalizedPattern = filepath.ToSlash(pattern)
 	}
 
-	if !strings.Contains(normalizedPattern, "**") {
-		return simpleGlobMatcher(normalizedPattern), nil
+	if !doublestar.ValidatePattern(normalizedPattern) {
+		return nil, toolWrap(doublestar.ErrBadPattern, "compile pattern")
 	}
 
-	compiled, err := regexp.Compile("^" + globToRegex(normalizedPattern) + "$")
-	if err != nil {
-		return nil, toolWrap(err, "compile pattern")
-	}
-
-	return compiled.MatchString, nil
-}
-
-func simpleGlobMatcher(pattern string) globMatcher {
-	matchPath := strings.Contains(pattern, "/")
+	matchPath := strings.Contains(normalizedPattern, "/")
 
 	return func(relativePath string) bool {
 		candidate := relativePath
@@ -272,37 +263,6 @@ func simpleGlobMatcher(pattern string) globMatcher {
 			candidate = path.Base(relativePath)
 		}
 
-		matched, err := path.Match(pattern, candidate)
-
-		return toolWrap(err, toolWalkFilesystemStep) == nil && matched
-	}
-}
-
-func globToRegex(pattern string) string {
-	var builder strings.Builder
-
-	for index := 0; index < len(pattern); index++ {
-		character := pattern[index]
-		switch character {
-		case '*':
-			if index+1 < len(pattern) && pattern[index+1] == '*' {
-				builder.WriteString(".*")
-
-				index++
-
-				continue
-			}
-
-			builder.WriteString("[^/]*")
-		case '?':
-			builder.WriteString("[^/]")
-		case '.', '+', '(', ')', '|', '^', '$', '{', '}', '[', ']', '\\':
-			builder.WriteByte('\\')
-			builder.WriteByte(character)
-		default:
-			builder.WriteByte(character)
-		}
-	}
-
-	return builder.String()
+		return doublestar.MatchUnvalidated(normalizedPattern, candidate)
+	}, nil
 }
