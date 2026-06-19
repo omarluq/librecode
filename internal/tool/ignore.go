@@ -35,22 +35,39 @@ type ignorePattern struct {
 }
 
 type readIgnoreCache struct {
-	patterns *hot.HotCache[string, []gitignore.Pattern]
+	patterns *hot.HotCache[string, repositoryIgnorePatterns]
+}
+
+type repositoryIgnorePatterns struct {
+	signature repositoryIgnoreSignature
+	patterns  []gitignore.Pattern
+}
+
+type repositoryIgnoreSignature struct {
+	paths []ignorePathState
+}
+
+type ignorePathState struct {
+	path    string
+	modTime int64
+	size    int64
+	exists  bool
+	dir     bool
 }
 
 func newReadIgnoreCache() *readIgnoreCache {
 	return &readIgnoreCache{
-		patterns: hot.NewHotCache[string, []gitignore.Pattern](hot.WTinyLFU, readIgnoreCacheCapacity).
-			WithLoaders(func(workspaceRoots []string) (map[string][]gitignore.Pattern, error) {
-				patterns := make(map[string][]gitignore.Pattern, len(workspaceRoots))
+		patterns: hot.NewHotCache[string, repositoryIgnorePatterns](hot.WTinyLFU, readIgnoreCacheCapacity).
+			WithLoaders(func(workspaceRoots []string) (map[string]repositoryIgnorePatterns, error) {
+				patterns := make(map[string]repositoryIgnorePatterns, len(workspaceRoots))
 				for _, workspaceRoot := range workspaceRoots {
 					patterns[workspaceRoot] = readRepositoryIgnorePatterns(workspaceRoot)
 				}
 
 				return patterns, nil
 			}).
-			WithCopyOnRead(slices.Clone[[]gitignore.Pattern]).
-			WithCopyOnWrite(slices.Clone[[]gitignore.Pattern]).
+			WithCopyOnRead(copyRepositoryIgnorePatterns).
+			WithCopyOnWrite(copyRepositoryIgnorePatterns).
 			Build(),
 	}
 }
@@ -130,24 +147,100 @@ func readIgnorePatterns(workspaceRoot string, cache *readIgnoreCache) []ignorePa
 
 func (cache *readIgnoreCache) repositoryPatterns(workspaceRoot string) []gitignore.Pattern {
 	if cache == nil {
-		return readRepositoryIgnorePatterns(workspaceRoot)
+		return readRepositoryIgnorePatterns(workspaceRoot).patterns
 	}
 
 	patterns, found, err := cache.patterns.Get(workspaceRoot)
 	if err != nil || !found {
-		return readRepositoryIgnorePatterns(workspaceRoot)
+		return readRepositoryIgnorePatterns(workspaceRoot).patterns
 	}
+
+	if !patterns.signature.isFresh() {
+		patterns = readRepositoryIgnorePatterns(workspaceRoot)
+		cache.patterns.Set(workspaceRoot, patterns)
+	}
+
+	return patterns.patterns
+}
+
+func readRepositoryIgnorePatterns(workspaceRoot string) repositoryIgnorePatterns {
+	signature := readRepositoryIgnoreSignature(workspaceRoot)
+
+	repositoryPatterns, err := gitignore.ReadPatterns(osfs.New(workspaceRoot), nil)
+	if err != nil {
+		return repositoryIgnorePatterns{signature: signature, patterns: nil}
+	}
+
+	return repositoryIgnorePatterns{signature: signature, patterns: repositoryPatterns}
+}
+
+func copyRepositoryIgnorePatterns(patterns repositoryIgnorePatterns) repositoryIgnorePatterns {
+	patterns.patterns = slices.Clone(patterns.patterns)
+	patterns.signature.paths = slices.Clone(patterns.signature.paths)
 
 	return patterns
 }
 
-func readRepositoryIgnorePatterns(workspaceRoot string) []gitignore.Pattern {
-	repositoryPatterns, err := gitignore.ReadPatterns(osfs.New(workspaceRoot), nil)
-	if err != nil {
+func readRepositoryIgnoreSignature(workspaceRoot string) repositoryIgnoreSignature {
+	paths := []ignorePathState{readIgnorePathState(filepath.Join(workspaceRoot, ".git", "info", "exclude"))}
+
+	walkErr := filepath.WalkDir(workspaceRoot, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		if entry.IsDir() {
+			paths = append(paths, readIgnorePathState(path))
+
+			if entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		if entry.Name() == gitignoreFileName {
+			paths = append(paths, readIgnorePathState(path))
+		}
+
 		return nil
+	})
+	if walkErr != nil {
+		return repositoryIgnoreSignature{paths: paths}
 	}
 
-	return repositoryPatterns
+	return repositoryIgnoreSignature{paths: paths}
+}
+
+func readIgnorePathState(path string) ignorePathState {
+	cleanPath := filepath.Clean(path)
+
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		return ignorePathState{path: cleanPath, modTime: 0, size: 0, exists: false, dir: false}
+	}
+
+	return ignorePathState{
+		path:    cleanPath,
+		modTime: info.ModTime().UnixNano(),
+		size:    info.Size(),
+		exists:  true,
+		dir:     info.IsDir(),
+	}
+}
+
+func (signature repositoryIgnoreSignature) isFresh() bool {
+	for _, path := range signature.paths {
+		if readIgnorePathState(path.path) != path {
+			return false
+		}
+	}
+
+	return true
 }
 
 func extractGitignorePatterns(patterns []ignorePattern) []gitignore.Pattern {

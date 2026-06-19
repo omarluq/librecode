@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -86,6 +87,91 @@ func TestReadToolRespectsGitignoreByDefault(t *testing.T) {
 			assert.Equal(t, testCase.wantText, result.Text())
 		})
 	}
+}
+
+func TestReadToolInvalidatesGitignoreCache(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		setup  func(t *testing.T, workspace string)
+		change func(t *testing.T, workspace string)
+		name   string
+	}{
+		{
+			name: "when existing gitignore changes",
+			setup: func(t *testing.T, workspace string) {
+				t.Helper()
+				writeReadTestFile(t, filepath.Join(workspace, ".gitignore"), "")
+			},
+			change: func(t *testing.T, workspace string) {
+				t.Helper()
+				writeReadTestFile(t, filepath.Join(workspace, ".gitignore"), "*.secret\n")
+			},
+		},
+		{
+			name: "when nested gitignore is added",
+			setup: func(t *testing.T, workspace string) {
+				t.Helper()
+				require.NoError(t, os.MkdirAll(filepath.Join(workspace, "nested"), 0o700))
+			},
+			change: func(t *testing.T, workspace string) {
+				t.Helper()
+				writeReadTestFile(t, filepath.Join(workspace, "nested", ".gitignore"), "*.secret\n")
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			workspace := t.TempDir()
+			referenceTime := time.Now().Add(time.Hour)
+			relativePath := filepath.ToSlash(filepath.Join("nested", "later.secret"))
+			ignoredPath := filepath.Join(workspace, "nested", "later.secret")
+			require.NoError(t, os.MkdirAll(filepath.Dir(ignoredPath), 0o700))
+			writeReadTestFile(t, ignoredPath, "secret")
+			testCase.setup(t, workspace)
+			setReadTestModTime(t, workspace, referenceTime)
+
+			reader := tool.NewReadTool(workspace)
+			initialResult, err := reader.Execute(t.Context(), map[string]any{readTestPathKey: relativePath})
+			require.NoError(t, err)
+			assert.Equal(t, "secret", initialResult.Text())
+
+			testCase.change(t, workspace)
+			setReadTestModTime(t, workspace, referenceTime.Add(time.Hour))
+
+			changedResult, err := reader.Execute(t.Context(), map[string]any{readTestPathKey: relativePath})
+			require.NoError(t, err)
+			assert.Contains(t, changedResult.Text(), "Refusing to read ignored path")
+		})
+	}
+}
+
+func writeReadTestFile(t *testing.T, path, content string) {
+	t.Helper()
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+}
+
+func setReadTestModTime(t *testing.T, root string, modTime time.Time) {
+	t.Helper()
+
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		require.NoError(t, os.Chtimes(path, modTime, modTime))
+
+		if entry.IsDir() {
+			setReadTestModTime(t, path, modTime)
+		}
+	}
+
+	require.NoError(t, os.Chtimes(root, modTime, modTime))
 }
 
 func TestReadToolAllowsExplicitIgnoredReads(t *testing.T) {
