@@ -184,6 +184,7 @@ func TestRenderExpandedToolDisplayPrettyPrintsArguments(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.toolsExpanded = true
 	display := testToolDisplay("$ go test", toolDisplaySuccess)
+	display.Name = testToolBash
 	display.ArgumentsJSON = `{"command":"go test ./...","timeout":30}`
 
 	lines := app.renderToolDisplayBlock(80, &display)
