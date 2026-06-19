@@ -21,12 +21,13 @@ type ReadInput struct {
 
 // ReadTool reads text and image files from disk.
 type ReadTool struct {
-	cwd string
+	ignoreCache *readIgnoreCache
+	cwd         string
 }
 
 // NewReadTool creates the read tool for cwd.
 func NewReadTool(cwd string) *ReadTool {
-	return &ReadTool{cwd: cwd}
+	return &ReadTool{cwd: cwd, ignoreCache: newReadIgnoreCache()}
 }
 
 // Definition returns read tool metadata.
@@ -72,7 +73,8 @@ func (readTool *ReadTool) Read(ctx context.Context, input ReadInput) (Result, er
 		return emptyToolResult(), ctxErr
 	}
 
-	if ignored, reason := ignoredReadPath(absolutePath, readTool.cwd); ignored && !input.AllowIgnored {
+	ignored, reason := ignoredReadPath(absolutePath, readTool.cwd, readTool.ignoreCache)
+	if ignored && !input.AllowIgnored {
 		return ignoredReadResult(input.Path, reason), nil
 	}
 
