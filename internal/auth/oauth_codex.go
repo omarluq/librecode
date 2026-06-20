@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/jwtclaim"
 )
 
 const (
@@ -34,7 +36,6 @@ const (
 	oauthCallbackTimeout = 5 * time.Second
 	oauthShutdownTimeout = 2 * time.Second
 	oauthTokenTimeout    = 30 * time.Second
-	jwtSegmentCount      = 3
 )
 
 func openAICodexExchangeEndpoint() string {
@@ -355,9 +356,9 @@ func randomHex(size int) (string, error) {
 }
 
 func accountIDFromJWT(token string) (string, error) {
-	payload, err := jwtPayload(token)
+	payload, err := jwtclaim.ParseUnverifiedClaims(token)
 	if err != nil {
-		return "", err
+		return "", oops.In("auth").Code("jwt_parse").Wrapf(err, "parse jwt payload")
 	}
 
 	authClaims, matched := payload[openAICodexJWTClaim].(map[string]any)
@@ -371,25 +372,4 @@ func accountIDFromJWT(token string) (string, error) {
 	}
 
 	return accountID, nil
-}
-
-func jwtPayload(token string) (map[string]any, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != jwtSegmentCount {
-		return nil, oops.In("auth").Code("jwt_parts").Errorf("invalid jwt")
-	}
-
-	decoded, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil, oops.In("auth").Code("jwt_decode").Wrapf(err, "decode jwt payload")
-	}
-
-	var payload map[string]any
-
-	decodeErr := json.Unmarshal(decoded, &payload)
-	if decodeErr != nil {
-		return nil, oops.In("auth").Code("jwt_json").Wrapf(decodeErr, "parse jwt payload")
-	}
-
-	return payload, nil
 }

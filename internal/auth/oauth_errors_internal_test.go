@@ -277,8 +277,11 @@ func apiKeyFromCredentialForTest(credential *Credential, fallback string) string
 func jwtForPayload(t *testing.T, payload map[string]any) string {
 	t.Helper()
 
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
 	encoded, err := json.Marshal(payload)
 	require.NoError(t, err)
 
-	return "header." + base64.RawURLEncoding.EncodeToString(encoded) + ".signature"
+	signature := base64.RawURLEncoding.EncodeToString([]byte("signature"))
+
+	return header + "." + base64.RawURLEncoding.EncodeToString(encoded) + "." + signature
 }
