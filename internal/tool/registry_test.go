@@ -133,7 +133,7 @@ func TestRegistry_ExecuteJSONAllowsIntentionalEmptyWriteContent(t *testing.T) {
 		registryTestContentKey: "",
 	})
 
-	assert.Contains(t, result.Text(), "Successfully wrote 0 bytes")
+	assert.Contains(t, result.Text(), "Successfully wrote 0B")
 }
 
 func TestRegistry_ExecuteValidatesNilInput(t *testing.T) {

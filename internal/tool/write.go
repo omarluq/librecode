@@ -95,7 +95,7 @@ func (writeTool *WriteTool) Write(ctx context.Context, input WriteInput) (Result
 		}
 
 		return TextResult(
-			fmt.Sprintf("Successfully wrote %d bytes to %s", len([]byte(content)), input.Path),
+			fmt.Sprintf("Successfully wrote %s to %s", FormatSize(len([]byte(content))), input.Path),
 			map[string]any{},
 		), nil
 	})

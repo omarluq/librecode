@@ -4,6 +4,8 @@ package limitio
 import (
 	"fmt"
 	"io"
+
+	"github.com/omarluq/librecode/internal/bytefmt"
 )
 
 // ReadAll reads up to limit bytes from reader and fails if more data is present.
@@ -18,7 +20,7 @@ func ReadAll(reader io.Reader, limit int64, label string) ([]byte, error) {
 	}
 
 	if int64(len(content)) > limit {
-		return nil, fmt.Errorf("%s exceeds limit of %d bytes", label, limit)
+		return nil, fmt.Errorf("%s exceeds limit of %s", label, bytefmt.Format(limit))
 	}
 
 	return content, nil
