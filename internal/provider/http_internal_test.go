@@ -59,5 +59,5 @@ func TestCodexHeadersHandlesNilAuthHeaders(t *testing.T) {
 	headers := codexHeaders(request)
 
 	assert.Equal(t, "Bearer access-token", headers["Authorization"])
-	assert.Empty(t, headers["chatgpt-account-id"])
+	assert.NotContains(t, headers, "chatgpt-account-id")
 }
