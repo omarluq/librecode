@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"io"
 	"maps"
@@ -13,14 +12,12 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/jwtclaim"
 	"github.com/omarluq/librecode/internal/limitio"
 	"github.com/omarluq/librecode/internal/units"
 )
 
-const (
-	providerResponseLimitBytes int64 = 16 * units.MiB
-	jwtSegmentCount                  = 3
-)
+const providerResponseLimitBytes int64 = 16 * units.MiB
 
 func (client *HTTPCompletionClient) requestProviderStream(
 	ctx context.Context,
@@ -154,18 +151,8 @@ func cloneHeaders(headers map[string]string) map[string]string {
 }
 
 func accountIDFromToken(token string) string {
-	parts := strings.Split(token, ".")
-	if len(parts) != jwtSegmentCount {
-		return ""
-	}
-
-	decoded, err := base64URLDecode(parts[1])
+	payload, err := jwtclaim.ParseUnverifiedClaims(token)
 	if err != nil {
-		return ""
-	}
-
-	var payload map[string]any
-	if err := json.Unmarshal(decoded, &payload); err != nil {
 		return ""
 	}
 
@@ -180,12 +167,6 @@ func accountIDFromToken(token string) string {
 	}
 
 	return accountID
-}
-
-func base64URLDecode(value string) ([]byte, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(value)
-
-	return decoded, providerWrap(err, "decode base64 url")
 }
 
 func minPositive(value, fallback int) int {

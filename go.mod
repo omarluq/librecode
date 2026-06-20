@@ -16,6 +16,7 @@ require (
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/gofrs/uuid/v5 v5.4.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/odvcencio/gotreesitter v0.20.2
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/rs/zerolog v1.35.1

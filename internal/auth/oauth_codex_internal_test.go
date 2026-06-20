@@ -119,7 +119,9 @@ func testOpenAICodexJWT(t *testing.T, accountID string) string {
 
 	payload := base64.RawURLEncoding.EncodeToString(payloadBytes)
 
-	return strings.Join([]string{header, payload, "signature"}, ".")
+	signature := base64.RawURLEncoding.EncodeToString([]byte("signature"))
+
+	return strings.Join([]string{header, payload, signature}, ".")
 }
 
 func newOpenAICodexFlowURLForTest(t *testing.T) string {
