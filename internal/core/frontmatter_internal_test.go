@@ -76,7 +76,7 @@ func TestParseSkillFrontmatter(t *testing.T) {
 	}
 }
 
-func TestLoadSkillsParsesFrontmatterWithoutExportedExtractor(t *testing.T) {
+func TestParseSkillFrontmatterParsesNameDescriptionAndBody(t *testing.T) {
 	t.Parallel()
 
 	content := strings.Join([]string{
