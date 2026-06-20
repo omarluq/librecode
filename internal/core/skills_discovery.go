@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 )
@@ -34,11 +35,18 @@ func loadSkillPath(rawPath, cwd string) LoadSkillsResult {
 
 func loadSkillsFromDir(dir, cwd string) LoadSkillsResult {
 	state := &skillDiscoveryState{seenDirs: map[string]bool{}}
+	root := filepath.Dir(dir)
 
-	return loadSkillsFromDirWithState(dir, cwd, state)
+	return loadSkillsFromDirWithState(dir, cwd, root, nil, state)
 }
 
-func loadSkillsFromDirWithState(dir, cwd string, state *skillDiscoveryState) LoadSkillsResult {
+func loadSkillsFromDirWithState(
+	dir string,
+	cwd string,
+	root string,
+	parentIgnorePatterns []gitignore.Pattern,
+	state *skillDiscoveryState,
+) LoadSkillsResult {
 	canonicalDir := canonicalizeResourcePath(dir)
 	if state.seenDirs[canonicalDir] {
 		return emptyLoadSkillsResult()
@@ -59,7 +67,7 @@ func loadSkillsFromDirWithState(dir, cwd string, state *skillDiscoveryState) Loa
 		return skillResult
 	}
 
-	return loadNestedSkills(entries, dir, cwd, state)
+	return loadNestedSkills(entries, dir, cwd, root, parentIgnorePatterns, state)
 }
 
 func loadSkillRoot(entries []os.DirEntry, dir, cwd string) (LoadSkillsResult, bool) {
@@ -80,18 +88,27 @@ func loadSkillRoot(entries []os.DirEntry, dir, cwd string) (LoadSkillsResult, bo
 	return LoadSkillsResult{Skills: []Skill{*skill}, AgentInstructions: "", Diagnostics: diagnostics}, true
 }
 
-func loadNestedSkills(entries []os.DirEntry, dir, cwd string, state *skillDiscoveryState) LoadSkillsResult {
+func loadNestedSkills(
+	entries []os.DirEntry,
+	dir string,
+	cwd string,
+	root string,
+	parentIgnorePatterns []gitignore.Pattern,
+	state *skillDiscoveryState,
+) LoadSkillsResult {
 	result := emptyLoadSkillsResult()
 
-	ignorePatterns := readSkillIgnorePatterns(dir)
+	ignorePatterns := append([]gitignore.Pattern{}, parentIgnorePatterns...)
+	ignorePatterns = append(ignorePatterns, readSkillIgnorePatterns(dir, root)...)
+
 	for _, entry := range entries {
 		entryPath := filepath.Join(dir, entry.Name())
-		if shouldSkipSkillEntry(entry, entryPath, ignorePatterns) {
+		if shouldSkipSkillEntry(entry, entryPath, root, ignorePatterns) {
 			continue
 		}
 
 		if isSkillDirEntry(entry, entryPath) {
-			nested := loadSkillsFromDirWithState(entryPath, cwd, state)
+			nested := loadSkillsFromDirWithState(entryPath, cwd, root, ignorePatterns, state)
 			result.Skills = append(result.Skills, nested.Skills...)
 			result.Diagnostics = append(result.Diagnostics, nested.Diagnostics...)
 

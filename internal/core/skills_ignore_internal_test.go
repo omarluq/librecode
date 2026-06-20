@@ -1,58 +1,66 @@
 package core
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestMatchesSkillIgnoreUsesDoublestarPatterns(t *testing.T) {
+func TestMatchesSkillIgnoreUsesGitignorePatterns(t *testing.T) {
 	t.Parallel()
 
 	const scratchTmp = "scratch.tmp"
 
 	testCases := []struct {
-		pattern   string
-		name      string
-		path      string
-		skillName string
-		want      bool
+		pattern string
+		name    string
+		path    string
+		want    bool
 	}{
 		{
-			pattern:   "**/generated/**",
-			name:      "SKILL.md",
-			skillName: "matches nested doublestar directory",
-			path:      "teams/generated/fix/SKILL.md",
-			want:      true,
+			pattern: "**/generated/**",
+			name:    "matches nested generated directory",
+			path:    filepath.Join("skills", "teams", "generated", "fix", "SKILL.md"),
+			want:    true,
 		},
 		{
-			pattern:   "*.tmp",
-			name:      scratchTmp,
-			skillName: "matches basename glob",
-			path:      "skills/scratch.tmp",
-			want:      true,
+			pattern: "*.tmp",
+			name:    "matches basename glob",
+			path:    filepath.Join("skills", scratchTmp),
+			want:    true,
 		},
 		{
-			pattern:   "skills/*.tmp",
-			name:      scratchTmp,
-			skillName: "path glob does not match different directory",
-			path:      "archive/scratch.tmp",
-			want:      false,
+			pattern: "skills/*.tmp",
+			name:    "path glob does not match different directory",
+			path:    filepath.Join("archive", scratchTmp),
+			want:    false,
 		},
 		{
-			pattern:   "[",
-			name:      scratchTmp,
-			skillName: "ignores malformed glob patterns",
-			path:      "skills/scratch.tmp",
-			want:      false,
+			pattern: "ignored/",
+			name:    "matches directories",
+			path:    filepath.Join("skills", "ignored"),
+			want:    true,
+		},
+		{
+			pattern: "!kept/",
+			name:    "supports negation",
+			path:    filepath.Join("skills", "kept"),
+			want:    false,
 		},
 	}
 
 	for _, testCase := range testCases {
-		t.Run(testCase.skillName, func(t *testing.T) {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			matched := matchesSkillIgnore(testCase.name, testCase.path, []string{testCase.pattern})
+			root := t.TempDir()
+			path := filepath.Join(root, testCase.path)
+			patterns := []gitignore.Pattern{gitignore.ParsePattern(testCase.pattern, nil)}
+			isDir := testCase.pattern == "ignored/" || testCase.pattern == "!kept/"
+
+			matched := matchesSkillIgnore(path, root, isDir, patterns)
 
 			assert.Equal(t, testCase.want, matched)
 		})

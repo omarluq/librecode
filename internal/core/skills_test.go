@@ -11,7 +11,10 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 )
 
-const hiddenSkillName = "hidden"
+const (
+	hiddenSkillName = "hidden"
+	keptSkillName   = "kept-skill"
+)
 
 func TestLoadSkillsDiscoversConfiguredRootsAndFormatsPrompt(t *testing.T) {
 	cwd := t.TempDir()
@@ -161,19 +164,62 @@ func TestLoadSkillsParsesSpecFrontmatter(t *testing.T) {
 }
 
 func TestLoadSkillsHonorsIgnoreFiles(t *testing.T) {
-	cwd := t.TempDir()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testCases := []struct {
+		name        string
+		ignoreFile  string
+		want        []string
+		writeDirect bool
+		writeNested bool
+	}{
+		{
+			name:        "ignores skill directory",
+			ignoreFile:  "ignored-skill\n",
+			want:        []string{keptSkillName},
+			writeDirect: true,
+			writeNested: false,
+		},
+		{
+			name:        "carries parent patterns into nested directories",
+			ignoreFile:  "nested/ignored-skill\n",
+			want:        []string{keptSkillName},
+			writeDirect: false,
+			writeNested: true,
+		},
+		{
+			name:        "supports negated patterns",
+			ignoreFile:  "ignored-skill\nnested/*\n!nested/ignored-skill/\n",
+			want:        []string{keptSkillName, "ignored-skill"},
+			writeDirect: true,
+			writeNested: true,
+		},
+	}
 
-	skillsDir := filepath.Join(cwd, core.ConfigDirName, "skills")
-	writeTestFile(t, filepath.Join(skillsDir, ".ignore"), "ignored-skill\n")
-	writeTestFile(t, filepath.Join(skillsDir, "ignored-skill", "SKILL.md"), skillMarkdown("ignored-skill"))
-	writeTestFile(t, filepath.Join(skillsDir, "kept-skill", "SKILL.md"), skillMarkdown("kept-skill"))
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cwd := t.TempDir()
+			home := t.TempDir()
+			t.Setenv("HOME", home)
 
-	result := core.LoadSkills(cwd, nil, true)
+			skillsDir := filepath.Join(cwd, core.ConfigDirName, "skills")
+			writeTestFile(t, filepath.Join(skillsDir, ".ignore"), testCase.ignoreFile)
 
-	require.Empty(t, result.Diagnostics)
-	assert.Equal(t, []string{"kept-skill"}, skillNames(result.Skills))
+			if testCase.writeDirect {
+				writeTestFile(t, filepath.Join(skillsDir, "ignored-skill", "SKILL.md"), skillMarkdown("ignored-skill"))
+			}
+
+			if testCase.writeNested {
+				nestedPath := filepath.Join(skillsDir, "nested", "ignored-skill", "SKILL.md")
+				writeTestFile(t, nestedPath, skillMarkdown("ignored-skill"))
+			}
+
+			writeTestFile(t, filepath.Join(skillsDir, keptSkillName, "SKILL.md"), skillMarkdown(keptSkillName))
+
+			result := core.LoadSkills(cwd, nil, true)
+
+			require.Empty(t, result.Diagnostics)
+			assert.Equal(t, testCase.want, skillNames(result.Skills))
+		})
+	}
 }
 
 func TestAutoActivateSkillsSelectsMatchingSkill(t *testing.T) {
