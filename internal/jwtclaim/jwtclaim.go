@@ -1,4 +1,4 @@
-// Package jwtclaim parses unverified JWT claims for provider token metadata.
+// Package jwtclaim parses verified JWT claims for provider token metadata.
 package jwtclaim
 
 import (
@@ -6,14 +6,19 @@ import (
 	"github.com/samber/oops"
 )
 
-// ParseUnverifiedClaims parses JWT claims without validating the token signature.
-// Use it only for metadata from provider-issued tokens, never for authorization.
-func ParseUnverifiedClaims(token string) (map[string]any, error) {
+// ParseClaims parses JWT claims after validating the token signature.
+func ParseClaims(token string, keyFunc jwt.Keyfunc) (map[string]any, error) {
 	claims := jwt.MapClaims{}
 
-	_, _, err := jwt.NewParser().ParseUnverified(token, claims)
+	parsed, err := jwt.NewParser(
+		jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
+	).ParseWithClaims(token, claims, keyFunc)
 	if err != nil {
-		return nil, oops.In("jwtclaim").Code("parse_unverified").Wrapf(err, "parse unverified jwt claims")
+		return nil, oops.In("jwtclaim").Code("parse").Wrapf(err, "parse jwt claims")
+	}
+
+	if !parsed.Valid {
+		return nil, oops.In("jwtclaim").Code("invalid").Errorf("jwt is invalid")
 	}
 
 	return claims, nil

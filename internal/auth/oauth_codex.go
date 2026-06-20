@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MicahParks/jwkset"
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/jwtclaim"
@@ -26,6 +28,7 @@ const (
 	openAICodexProvider    = "openai-codex"
 	openAICodexClientID    = "app_EMoamEEZ73f0CkXaXp7hrann"
 	openAICodexAuthorize   = "https://auth.openai.com/oauth/authorize"
+	openAICodexJWKSetURL   = "https://auth.openai.com/.well-known/jwks.json"
 	openAICodexRedirectURI = "http://localhost:1455/auth/callback"
 	openAICodexScope       = "openid profile email offline_access"
 	openAICodexJWTClaim    = "https://api.openai.com/auth"
@@ -110,12 +113,21 @@ func refreshOpenAICodex(ctx context.Context, refreshToken string) (*Credential, 
 }
 
 func refreshOpenAICodexWithTokenURL(ctx context.Context, refreshToken, tokenURL string) (*Credential, error) {
+	return refreshOpenAICodexWithTokenURLAndParser(ctx, refreshToken, tokenURL, parseOpenAICodexJWT)
+}
+
+func refreshOpenAICodexWithTokenURLAndParser(
+	ctx context.Context,
+	refreshToken string,
+	tokenURL string,
+	parseJWT openAICodexJWTParser,
+) (*Credential, error) {
 	values := url.Values{}
 	values.Set("grant_type", "refresh_token")
 	values.Set("refresh_token", refreshToken)
 	values.Set("client_id", openAICodexClientID)
 
-	return requestOpenAICodexToken(ctx, values, tokenURL)
+	return requestOpenAICodexToken(ctx, values, tokenURL, parseJWT)
 }
 
 type openAICodexFlow struct {
@@ -262,6 +274,16 @@ func exchangeOpenAICodexCode(ctx context.Context, code, verifier string) (*Crede
 }
 
 func exchangeOpenAICodexCodeWithTokenURL(ctx context.Context, code, verifier, tokenURL string) (*Credential, error) {
+	return exchangeOpenAICodexCodeWithTokenURLAndParser(ctx, code, verifier, tokenURL, parseOpenAICodexJWT)
+}
+
+func exchangeOpenAICodexCodeWithTokenURLAndParser(
+	ctx context.Context,
+	code string,
+	verifier string,
+	tokenURL string,
+	parseJWT openAICodexJWTParser,
+) (*Credential, error) {
 	values := url.Values{}
 	values.Set("grant_type", "authorization_code")
 	values.Set("client_id", openAICodexClientID)
@@ -269,16 +291,23 @@ func exchangeOpenAICodexCodeWithTokenURL(ctx context.Context, code, verifier, to
 	values.Set("code_verifier", verifier)
 	values.Set("redirect_uri", openAICodexRedirectURI)
 
-	return requestOpenAICodexToken(ctx, values, tokenURL)
+	return requestOpenAICodexToken(ctx, values, tokenURL, parseJWT)
 }
 
-func requestOpenAICodexToken(ctx context.Context, values url.Values, tokenURL string) (*Credential, error) {
+type openAICodexJWTParser func(ctx context.Context, token string) (map[string]any, error)
+
+func requestOpenAICodexToken(
+	ctx context.Context,
+	values url.Values,
+	tokenURL string,
+	parseJWT openAICodexJWTParser,
+) (*Credential, error) {
 	body, err := postOpenAICodexToken(ctx, values, tokenURL)
 	if err != nil {
 		return nil, err
 	}
 
-	return decodeOpenAICodexToken(body)
+	return decodeOpenAICodexToken(ctx, body, parseJWT)
 }
 
 func postOpenAICodexToken(ctx context.Context, values url.Values, tokenURL string) ([]byte, error) {
@@ -300,7 +329,7 @@ func postOpenAICodexToken(ctx context.Context, values url.Values, tokenURL strin
 	return doOAuthTokenRequest(request, "codex token response", "codex_token")
 }
 
-func decodeOpenAICodexToken(body []byte) (*Credential, error) {
+func decodeOpenAICodexToken(ctx context.Context, body []byte, parseJWT openAICodexJWTParser) (*Credential, error) {
 	var payload struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
@@ -316,7 +345,7 @@ func decodeOpenAICodexToken(body []byte) (*Credential, error) {
 		return nil, oops.In("auth").Code("codex_token_invalid").Errorf("token response is incomplete")
 	}
 
-	accountID, err := accountIDFromJWT(payload.AccessToken)
+	accountID, err := accountIDFromJWT(ctx, payload.AccessToken, parseJWT)
 	if err != nil {
 		return nil, err
 	}
@@ -355,13 +384,13 @@ func randomHex(size int) (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-func accountIDFromJWT(token string) (string, error) {
-	payload, err := jwtclaim.ParseUnverifiedClaims(token)
+func accountIDFromJWT(ctx context.Context, token string, parseJWT openAICodexJWTParser) (string, error) {
+	claims, err := parseJWT(ctx, token)
 	if err != nil {
-		return "", oops.In("auth").Code("jwt_parse").Wrapf(err, "parse jwt payload")
+		return "", err
 	}
 
-	authClaims, matched := payload[openAICodexJWTClaim].(map[string]any)
+	authClaims, matched := claims[openAICodexJWTClaim].(map[string]any)
 	if !matched {
 		return "", oops.In("auth").Code("codex_account_claim").Errorf("account claim missing")
 	}
@@ -372,4 +401,35 @@ func accountIDFromJWT(token string) (string, error) {
 	}
 
 	return accountID, nil
+}
+
+func parseOpenAICodexJWT(ctx context.Context, token string) (map[string]any, error) {
+	return parseOpenAICodexJWTWithJWKSetURL(ctx, token, openAICodexJWKSetURL)
+}
+
+func parseOpenAICodexJWTWithJWKSetURL(ctx context.Context, token, jwkSetURL string) (map[string]any, error) {
+	storage, err := jwkset.NewStorageFromHTTP(jwkSetURL, jwkset.HTTPClientStorageOptions{
+		Ctx: ctx,
+		ValidateOptions: jwkset.JWKValidateOptions{
+			SkipAll: true,
+		},
+	})
+	if err != nil {
+		return nil, oops.In("auth").Code("jwt_keys").Wrapf(err, "load jwt verification keys")
+	}
+
+	keyFunc, err := keyfunc.New(keyfunc.Options{
+		Storage:      storage,
+		UseWhitelist: []jwkset.USE{jwkset.UseSig},
+	})
+	if err != nil {
+		return nil, oops.In("auth").Code("jwt_keys").Wrapf(err, "load jwt verification keys")
+	}
+
+	claims, err := jwtclaim.ParseClaims(token, keyFunc.Keyfunc)
+	if err != nil {
+		return nil, oops.In("auth").Code("jwt_parse").Wrapf(err, "parse jwt payload")
+	}
+
+	return claims, nil
 }

@@ -152,28 +152,39 @@ func (registry *Registry) RequestAuthContext(ctx context.Context, provider strin
 	registry.lock.RUnlock()
 
 	apiKey := config.APIKey
+	headers := cloneStringMap(config.Headers)
 
 	if registry.auth != nil {
+		credential, hasCredential := registry.auth.Get(provider)
+
 		resolvedAPIKey, ok, err := registry.auth.APIKeyContext(ctx, provider)
 		if err != nil {
-			return RequestAuth{Headers: cloneStringMap(config.Headers), APIKey: "", Error: err.Error(), OK: false}
+			return RequestAuth{Headers: headers, APIKey: "", Error: err.Error(), OK: false}
 		}
 
 		if ok {
 			apiKey = resolvedAPIKey
 		}
+
+		if hasCredential && credential.AccountID != "" {
+			if headers == nil {
+				headers = map[string]string{}
+			}
+
+			headers["chatgpt-account-id"] = credential.AccountID
+		}
 	}
 
 	if apiKey == "" {
 		return RequestAuth{
-			Headers: cloneStringMap(config.Headers),
+			Headers: headers,
 			APIKey:  "",
 			Error:   "missing API key for provider " + provider,
 			OK:      false,
 		}
 	}
 
-	return RequestAuth{Headers: cloneStringMap(config.Headers), APIKey: apiKey, Error: "", OK: true}
+	return RequestAuth{Headers: headers, APIKey: apiKey, Error: "", OK: true}
 }
 
 func registryOptions(options *RegistryOptions) *RegistryOptions {

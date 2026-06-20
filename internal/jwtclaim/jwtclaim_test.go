@@ -1,45 +1,75 @@
 package jwtclaim_test
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"crypto/rand"
+	"crypto/rsa"
 	"testing"
 
+	"github.com/MicahParks/jwkset"
+	"github.com/MicahParks/keyfunc/v3"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/jwtclaim"
 )
 
-func TestParseUnverifiedClaims(t *testing.T) {
+func TestParseClaims(t *testing.T) {
 	t.Parallel()
 
-	token := jwtForClaims(t, map[string]any{"sub": "user-123"})
+	validToken, keyFunc := signedJWTForTest(t, map[string]any{"sub": "user-123"})
 
-	claims, err := jwtclaim.ParseUnverifiedClaims(token)
+	tests := []struct {
+		name    string
+		token   string
+		wantSub string
+		wantErr bool
+	}{
+		{name: "valid token", token: validToken, wantSub: "user-123", wantErr: false},
+		{name: "malformed token", token: "not-a-jwt", wantSub: "", wantErr: true},
+	}
 
-	require.NoError(t, err)
-	assert.Equal(t, "user-123", claims["sub"])
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			claims, err := jwtclaim.ParseClaims(testCase.token, keyFunc)
+			if testCase.wantErr {
+				require.Error(t, err)
+				assert.Nil(t, claims)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, testCase.wantSub, claims["sub"])
+		})
+	}
 }
 
-func TestParseUnverifiedClaimsRejectsMalformedToken(t *testing.T) {
-	t.Parallel()
-
-	claims, err := jwtclaim.ParseUnverifiedClaims("not-a-jwt")
-
-	require.Error(t, err)
-	assert.Nil(t, claims)
-}
-
-func jwtForClaims(t *testing.T, claims map[string]any) string {
+func signedJWTForTest(t *testing.T, claims map[string]any) (string, jwt.Keyfunc) {
 	t.Helper()
 
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
-	payloadBytes, err := json.Marshal(claims)
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
-	payload := base64.RawURLEncoding.EncodeToString(payloadBytes)
-	signature := base64.RawURLEncoding.EncodeToString([]byte("signature"))
+	keyID := "test-key"
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims(claims))
+	token.Header["kid"] = keyID
+	tokenString, err := token.SignedString(privateKey)
+	require.NoError(t, err)
 
-	return header + "." + payload + "." + signature
+	jwk, err := jwkset.NewJWKFromKey(
+		privateKey.Public(),
+		jwkset.JWKOptions{Metadata: jwkset.JWKMetadataOptions{KID: keyID, USE: jwkset.UseSig}},
+	)
+	require.NoError(t, err)
+
+	store := jwkset.NewMemoryStorage()
+	require.NoError(t, store.KeyWrite(t.Context(), jwk))
+
+	keyFunc, err := keyfunc.New(keyfunc.Options{Storage: store})
+	require.NoError(t, err)
+
+	return tokenString, keyFunc.Keyfunc
 }

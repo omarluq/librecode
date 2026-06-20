@@ -12,7 +12,6 @@ import (
 
 	"github.com/samber/oops"
 
-	"github.com/omarluq/librecode/internal/jwtclaim"
 	"github.com/omarluq/librecode/internal/limitio"
 	"github.com/omarluq/librecode/internal/units"
 )
@@ -110,13 +109,7 @@ func openAIHeaders(request *CompletionRequest) map[string]string {
 
 func codexHeaders(request *CompletionRequest) map[string]string {
 	headers := openAIHeaders(request)
-
-	accountID := request.Request.Auth.Headers["chatgpt-account-id"]
-	if accountID == "" {
-		accountID = accountIDFromToken(request.Request.Auth.APIKey)
-	}
-
-	headers["chatgpt-account-id"] = accountID
+	headers["chatgpt-account-id"] = request.Request.Auth.Headers["chatgpt-account-id"]
 	headers["originator"] = "librecode"
 	headers["User-Agent"] = "librecode"
 	headers["OpenAI-Beta"] = "responses=experimental"
@@ -148,25 +141,6 @@ func cloneHeaders(headers map[string]string) map[string]string {
 	maps.Copy(cloned, headers)
 
 	return cloned
-}
-
-func accountIDFromToken(token string) string {
-	payload, err := jwtclaim.ParseUnverifiedClaims(token)
-	if err != nil {
-		return ""
-	}
-
-	authClaims, matched := payload["https://api.openai.com/auth"].(map[string]any)
-	if !matched {
-		return ""
-	}
-
-	accountID, matched := authClaims["chatgpt_account_id"].(string)
-	if !matched {
-		return ""
-	}
-
-	return accountID
 }
 
 func minPositive(value, fallback int) int {

@@ -55,8 +55,30 @@ func TestRegistryRequestAuthBranches(t *testing.T) {
 func TestRegistryRequestAuthContext(t *testing.T) {
 	t.Parallel()
 
-	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
+	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
+		"stored": {
+			OAuth:     nil,
+			Type:      auth.CredentialTypeOAuth,
+			Key:       "",
+			Access:    "stored-access",
+			Refresh:   "stored-refresh",
+			AccountID: "account-123",
+			Expires:   1,
+			ExpiresAt: 0,
+		},
+		"without-config": {
+			OAuth:     nil,
+			Type:      auth.CredentialTypeOAuth,
+			Key:       "",
+			Access:    "stored-access",
+			Refresh:   "stored-refresh",
+			AccountID: "account-456",
+			Expires:   1,
+			ExpiresAt: 0,
+		},
+	})
 	storage.SetRuntimeAPIKey("stored", "runtime-key")
+	storage.SetRuntimeAPIKey("without-config", "runtime-key")
 	registry := NewRegistry(&RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
@@ -75,7 +97,15 @@ func TestRegistryRequestAuthContext(t *testing.T) {
 	resolved := registry.RequestAuthContext(t.Context(), "stored")
 	require.True(t, resolved.OK)
 	assert.Equal(t, "runtime-key", resolved.APIKey)
-	assert.Equal(t, map[string]string{registryTestHeader: registryTestHeaderValue}, resolved.Headers)
+	assert.Equal(t, map[string]string{
+		registryTestHeader:   registryTestHeaderValue,
+		"chatgpt-account-id": "account-123",
+	}, resolved.Headers)
+
+	withoutConfig := registry.RequestAuthContext(t.Context(), "without-config")
+	require.True(t, withoutConfig.OK)
+	assert.Equal(t, "runtime-key", withoutConfig.APIKey)
+	assert.Equal(t, map[string]string{"chatgpt-account-id": "account-456"}, withoutConfig.Headers)
 
 	missing := registry.RequestAuthContext(t.Context(), "missing")
 	assert.False(t, missing.OK)
