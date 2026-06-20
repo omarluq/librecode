@@ -8,13 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type unifiedHunkStartCase struct {
-	name   string
-	header string
-	want   int
-	ok     bool
-}
-
 type generateDiffInternalCase struct {
 	name             string
 	oldContent       string
@@ -22,32 +15,6 @@ type generateDiffInternalCase struct {
 	wantDiffContains string
 	wantFirstLine    int
 	wantTruncated    bool
-}
-
-func TestParseUnifiedHunkStart(t *testing.T) {
-	t.Parallel()
-
-	tests := []unifiedHunkStartCase{
-		{name: "standard hunk", header: "@@ -23,8 +23,8 @@", want: 23, ok: true},
-		{name: "single line range", header: "@@ -7 +8 @@", want: 7, ok: true},
-		{name: "zero old start normalizes to one", header: "@@ -0,0 +1,3 @@", want: 1, ok: true},
-		{name: "insertion only uses new range start", header: "@@ -9,0 +10,3 @@", want: 10, ok: true},
-		{name: "missing new range", header: "@@ -1,2 @@", want: 0, ok: false},
-		{name: "invalid old range", header: "@@ -x,2 +1,2 @@", want: 0, ok: false},
-		{name: "invalid new range", header: "@@ -1,0 +x,2 @@", want: 0, ok: false},
-		{name: "invalid old length", header: "@@ -1,x +1,2 @@", want: 0, ok: false},
-	}
-
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, ok := parseUnifiedHunkStart(testCase.header)
-
-			assert.Equal(t, testCase.ok, ok)
-			assert.Equal(t, testCase.want, got)
-		})
-	}
 }
 
 func TestGenerateDiffStringInternalBranches(t *testing.T) {
@@ -67,6 +34,14 @@ func TestGenerateDiffStringInternalBranches(t *testing.T) {
 			oldContent:       "one\ntwo\nthree\n",
 			newContent:       "one\nthree\n",
 			wantDiffContains: "-two",
+			wantFirstLine:    2,
+			wantTruncated:    false,
+		},
+		{
+			name:             "insertion reports inserted line",
+			oldContent:       "one\nthree\n",
+			newContent:       "one\ntwo\nthree\n",
+			wantDiffContains: "+two",
 			wantFirstLine:    2,
 			wantTruncated:    false,
 		},

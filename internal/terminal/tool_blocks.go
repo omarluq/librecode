@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	udiff "github.com/aymanbagabas/go-udiff"
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/assistant"
@@ -13,6 +14,7 @@ import (
 
 const (
 	maxCollapsedToolOutputLines = 5
+	toolArgumentDiffContext     = 3
 	toolSectionTool             = "tool"
 	toolSectionArguments        = "arguments"
 	toolSectionDetails          = "details"
@@ -552,16 +554,17 @@ func diffFromEditArguments(argumentsJSON string) string {
 
 	var builder strings.Builder
 
-	for index, rawEdit := range rawEdits {
+	for _, rawEdit := range rawEdits {
 		editArgs, ok := rawEdit.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		oldText := rawTextArg(editArgs, "old_text", "oldText")
-		newText := rawTextArg(editArgs, "new_text", "newText")
-
-		if oldText == "" && newText == "" {
+		diff := diffFromEditArgumentTexts(
+			rawTextArg(editArgs, "old_text", "oldText"),
+			rawTextArg(editArgs, "new_text", "newText"),
+		)
+		if diff == "" {
 			continue
 		}
 
@@ -569,17 +572,28 @@ func diffFromEditArguments(argumentsJSON string) string {
 			builder.WriteByte('\n')
 		}
 
-		if len(rawEdits) > 1 {
-			builder.WriteString("@@ edit ")
-			builder.WriteString(tui.Int(index + 1))
-			builder.WriteString(" @@\n")
-		}
-
-		writePrefixedDiffLines(&builder, "-", oldText)
-		writePrefixedDiffLines(&builder, "+", newText)
+		builder.WriteString(diff)
 	}
 
 	return strings.TrimSpace(builder.String())
+}
+
+func diffFromEditArgumentTexts(oldText, newText string) string {
+	if oldText == "" && newText == "" {
+		return ""
+	}
+
+	edits := udiff.Lines(oldText, newText)
+	if len(edits) == 0 {
+		return ""
+	}
+
+	diff, err := udiff.ToUnifiedDiff("old_text", "new_text", oldText, edits, toolArgumentDiffContext)
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(diff.String())
 }
 
 func rawTextArg(args map[string]any, keys ...string) string {
@@ -591,16 +605,4 @@ func rawTextArg(args map[string]any, keys ...string) string {
 	}
 
 	return ""
-}
-
-func writePrefixedDiffLines(builder *strings.Builder, prefix, text string) {
-	if text == "" {
-		return
-	}
-
-	for line := range strings.SplitSeq(strings.TrimSuffix(text, "\n"), "\n") {
-		builder.WriteString(prefix)
-		builder.WriteString(line)
-		builder.WriteByte('\n')
-	}
 }
