@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bmatcuk/doublestar/v4"
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 )
 
-func shouldSkipSkillEntry(entry os.DirEntry, path string, ignorePatterns []string) bool {
+func shouldSkipSkillEntry(entry os.DirEntry, path, root string, patterns []gitignore.Pattern) bool {
 	name := entry.Name()
 	if strings.HasPrefix(name, ".") && !isSkillIgnoreFile(name) {
 		return true
@@ -18,7 +18,7 @@ func shouldSkipSkillEntry(entry os.DirEntry, path string, ignorePatterns []strin
 		return true
 	}
 
-	return matchesSkillIgnore(name, path, ignorePatterns)
+	return matchesSkillIgnore(path, root, isSkillDirEntry(entry, path), patterns)
 }
 
 func isSkillDirEntry(entry os.DirEntry, path string) bool {
@@ -31,8 +31,9 @@ func isSkillDirEntry(entry os.DirEntry, path string) bool {
 	return err == nil && info.IsDir()
 }
 
-func readSkillIgnorePatterns(dir string) []string {
-	patterns := []string{}
+func readSkillIgnorePatterns(dir, root string) []gitignore.Pattern {
+	domain := skillIgnoreDomain(dir, root)
+	patterns := []gitignore.Pattern{}
 
 	for _, filename := range []string{".gitignore", ".ignore", ".fdignore"} {
 		content, err := readResourceFile(filepath.Join(dir, filename))
@@ -42,44 +43,53 @@ func readSkillIgnorePatterns(dir string) []string {
 
 		for line := range strings.SplitSeq(content, "\n") {
 			pattern := strings.TrimSpace(line)
-			if pattern == "" || strings.HasPrefix(pattern, "#") || strings.HasPrefix(pattern, "!") {
+			if pattern == "" || strings.HasPrefix(pattern, "#") {
 				continue
 			}
 
-			patterns = append(patterns, pattern)
+			patterns = append(patterns, gitignore.ParsePattern(pattern, domain))
 		}
 	}
 
 	return patterns
 }
 
-func matchesSkillIgnore(name, path string, patterns []string) bool {
-	slashPath := filepath.ToSlash(path)
-
-	for _, pattern := range patterns {
-		trimmed := strings.Trim(pattern, "/")
-		if trimmed == "" {
-			continue
-		}
-
-		if trimmed == name || strings.HasSuffix(slashPath, "/"+trimmed) {
-			return true
-		}
-
-		if !doublestar.ValidatePattern(trimmed) {
-			continue
-		}
-
-		if doublestar.MatchUnvalidated(trimmed, name) {
-			return true
-		}
-
-		if doublestar.MatchUnvalidated(trimmed, slashPath) {
-			return true
-		}
+func skillIgnoreDomain(dir, root string) []string {
+	relativePath, err := filepath.Rel(root, dir)
+	if err != nil || relativePath == "." || relativePath == "" {
+		return nil
 	}
 
-	return false
+	return strings.Split(filepath.ToSlash(relativePath), "/")
+}
+
+func matchesSkillIgnore(path, root string, isDir bool, patterns []gitignore.Pattern) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+
+	pathParts := skillIgnorePathParts(path, root)
+	if len(pathParts) == 0 {
+		return false
+	}
+
+	return gitignore.NewMatcher(patterns).Match(pathParts, isDir)
+}
+
+func skillIgnorePathParts(path, root string) []string {
+	relativePath, err := filepath.Rel(root, path)
+	if err != nil || skillIgnorePathEscapesRoot(relativePath) {
+		return nil
+	}
+
+	return strings.Split(filepath.ToSlash(relativePath), "/")
+}
+
+func skillIgnorePathEscapesRoot(relativePath string) bool {
+	return relativePath == "." ||
+		relativePath == "" ||
+		strings.HasPrefix(relativePath, "..") ||
+		filepath.IsAbs(relativePath)
 }
 
 func isSkillIgnoreFile(name string) bool {
