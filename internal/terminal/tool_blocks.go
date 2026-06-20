@@ -552,8 +552,7 @@ func diffFromEditArguments(argumentsJSON string) string {
 		return ""
 	}
 
-	var builder strings.Builder
-
+	diffs := make([]string, 0, len(rawEdits))
 	for _, rawEdit := range rawEdits {
 		editArgs, ok := rawEdit.(map[string]any)
 		if !ok {
@@ -564,18 +563,12 @@ func diffFromEditArguments(argumentsJSON string) string {
 			rawTextArg(editArgs, "old_text", "oldText"),
 			rawTextArg(editArgs, "new_text", "newText"),
 		)
-		if diff == "" {
-			continue
+		if diff != "" {
+			diffs = append(diffs, diff)
 		}
-
-		if builder.Len() > 0 {
-			builder.WriteByte('\n')
-		}
-
-		builder.WriteString(diff)
 	}
 
-	return strings.TrimSpace(builder.String())
+	return strings.TrimSpace(strings.Join(diffs, "\n"))
 }
 
 func diffFromEditArgumentTexts(oldText, newText string) string {
