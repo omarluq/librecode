@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+	retrylib "github.com/sethvargo/go-retry"
 
 	"github.com/omarluq/librecode/internal/config"
 )
@@ -18,6 +19,25 @@ const (
 	defaultRetryBaseDelay   = 2 * time.Second
 	defaultRetryMaxDelay    = 30 * time.Second
 )
+
+type retryFailedError struct {
+	err error
+}
+
+func (err *retryFailedError) Error() string {
+	return err.err.Error()
+}
+
+func (err *retryFailedError) Unwrap() error {
+	return err.err
+}
+
+func retryableProviderError(err error) error {
+	return oops.In("assistant").Code("retryable_provider_error").Wrapf(
+		retrylib.RetryableError(&retryFailedError{err: err}),
+		"retry provider error",
+	)
+}
 
 // RetryEventKind identifies model retry lifecycle events.
 type RetryEventKind string
@@ -55,42 +75,31 @@ func defaultRetryConfig() config.RetryConfig {
 	}
 }
 
-func retryDelay(attempt int, retry config.RetryConfig) time.Duration {
+func retryBackoff(retry config.RetryConfig, onDelay func(time.Duration)) retrylib.BackoffFunc {
 	retry = retry.Normalized()
 
-	if attempt < 1 {
-		attempt = 1
-	}
+	backoff := retrylib.NewExponential(retry.BaseDelay)
+	capped := retrylib.WithCappedDuration(retry.MaxDelay, backoff)
+	limited := retrylib.WithMaxRetries(maxRetryDelays(retry), capped)
 
-	delay := retry.BaseDelay
-	for range attempt - 1 {
-		delay *= 2
-		if delay >= retry.MaxDelay {
-			return retry.MaxDelay
+	return retrylib.BackoffFunc(func() (time.Duration, bool) {
+		delay, stop := limited.Next()
+		if stop {
+			return 0, true
 		}
-	}
 
-	if delay > retry.MaxDelay {
-		return retry.MaxDelay
-	}
+		onDelay(delay)
 
-	return delay
+		return delay, false
+	})
 }
 
-func waitForRetry(ctx context.Context, delay time.Duration) error {
-	if delay <= 0 {
-		return nil
+func maxRetryDelays(retry config.RetryConfig) uint64 {
+	if retry.MaxAttempts <= 1 {
+		return 0
 	}
 
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return assistantError(ctx.Err(), "wait before retry")
-	}
+	return uint64(retry.MaxAttempts - 1)
 }
 
 // ShouldRetryModelError reports whether a model/provider error is transient.

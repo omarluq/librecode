@@ -24,6 +24,7 @@ require (
 	github.com/samber/mo v1.17.0
 	github.com/samber/oops v1.22.0
 	github.com/samber/slog-zerolog/v2 v2.9.2
+	github.com/sethvargo/go-retry v0.3.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
@@ -73,7 +74,6 @@ require (
 	github.com/samber/go-singleflightx v0.3.2 // indirect
 	github.com/samber/go-type-to-string v1.8.0 // indirect
 	github.com/samber/slog-common v0.21.0 // indirect
-	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
