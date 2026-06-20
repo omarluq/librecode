@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/librecode-introduce-yourself.gif" alt="librecode terminal demo" width="820">
+  <img src="docs/assets/librecode-fibonacci-demo.gif" alt="librecode terminal demo" width="820">
 </p>
 
 > [!IMPORTANT]
