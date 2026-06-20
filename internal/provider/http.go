@@ -109,7 +109,10 @@ func openAIHeaders(request *CompletionRequest) map[string]string {
 
 func codexHeaders(request *CompletionRequest) map[string]string {
 	headers := openAIHeaders(request)
-	headers["chatgpt-account-id"] = request.Request.Auth.Headers["chatgpt-account-id"]
+	if accountID := request.Request.Auth.Headers["chatgpt-account-id"]; accountID != "" {
+		headers["chatgpt-account-id"] = accountID
+	}
+
 	headers["originator"] = "librecode"
 	headers["User-Agent"] = "librecode"
 	headers["OpenAI-Beta"] = "responses=experimental"
