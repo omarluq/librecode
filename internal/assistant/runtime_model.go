@@ -3,10 +3,13 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/samber/oops"
+	retrylib "github.com/sethvargo/go-retry"
 
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
@@ -179,64 +182,121 @@ func (runtime *Runtime) completeWithRetry(
 ) (*CompletionResult, error) {
 	retry := retryConfig(runtime.cfg)
 	if !retry.Enabled || retry.MaxAttempts <= 1 {
-		request.ProviderAttempt = 1
+		return runtime.completeAttempt(ctx, request, 1)
+	}
 
-		result, err := runtime.client.Complete(ctx, request)
-		if err != nil {
-			runtime.emitProviderError(ctx, request, 1, err)
+	attempt := 0
 
-			return nil, assistantError(err, "complete model request")
+	var result *CompletionResult
+
+	var retryErr error
+
+	backoff := retryBackoff(retry, func(delay time.Duration) {
+		retryEvent := RetryEvent{
+			Kind:        RetryEventStart,
+			Error:       "",
+			Attempt:     attempt + 1,
+			MaxAttempts: retry.MaxAttempts,
+			Delay:       delay,
+		}
+		if retryErr != nil {
+			retryEvent.Error = retryErr.Error()
 		}
 
-		runtime.emitProviderResponse(ctx, request, 1, result)
+		runtime.emitRetryEvent(ctx, onRetry, retryEvent)
+	})
+
+	err := retrylib.Do(ctx, backoff, func(ctx context.Context) error {
+		attempt++
+
+		var err error
+
+		result, err = runtime.retryAttempt(ctx, request, retry.MaxAttempts, attempt, onRetry)
+		retryErr = retryError(err)
+
+		return err
+	})
+	if err != nil {
+		retryCanceled := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+		retryCanceled = retryCanceled && (attempt == 0 || retryErr != nil && attempt < retry.MaxAttempts)
+
+		return nil, retryResultError(err, retryCanceled)
+	}
+
+	return result, nil
+}
+
+func (runtime *Runtime) retryAttempt(
+	ctx context.Context,
+	request *CompletionRequest,
+	maxAttempts int,
+	attempt int,
+	onRetry RetryEventHandler,
+) (*CompletionResult, error) {
+	result, err := runtime.completeAttempt(ctx, request, attempt)
+	if err == nil {
+		if attempt > 1 {
+			runtime.emitRetryEvent(ctx, onRetry, RetryEvent{
+				Kind:        RetryEventEnd,
+				Error:       "",
+				Attempt:     attempt,
+				MaxAttempts: maxAttempts,
+				Delay:       0,
+			})
+		}
 
 		return result, nil
 	}
 
-	var lastErr error
-
-	for attempt := 1; attempt <= retry.MaxAttempts; attempt++ {
-		request.ProviderAttempt = attempt
-
-		result, err := runtime.client.Complete(ctx, request)
-		if err == nil {
-			runtime.emitProviderResponse(ctx, request, attempt, result)
-
-			if attempt > 1 {
-				runtime.emitRetryEvent(ctx, onRetry, RetryEvent{
-					Kind:        RetryEventEnd,
-					Error:       "",
-					Attempt:     attempt,
-					MaxAttempts: retry.MaxAttempts,
-					Delay:       0,
-				})
-			}
-
-			return result, nil
-		}
-
-		lastErr = err
-		runtime.emitProviderError(ctx, request, attempt, err)
-
-		if attempt == retry.MaxAttempts || !ShouldRetryModelError(err) {
-			return nil, assistantError(err, "complete model request")
-		}
-
-		delay := retryDelay(attempt, retry)
-		runtime.emitRetryEvent(ctx, onRetry, RetryEvent{
-			Kind:        RetryEventStart,
-			Attempt:     attempt + 1,
-			MaxAttempts: retry.MaxAttempts,
-			Delay:       delay,
-			Error:       err.Error(),
-		})
-
-		if waitErr := waitForRetry(ctx, delay); waitErr != nil {
-			return nil, oops.In("assistant").Code("retry_canceled").Wrapf(waitErr, "wait before retry")
-		}
+	if !ShouldRetryModelError(err) {
+		return nil, err
 	}
 
-	return nil, lastErr
+	return nil, retryableProviderError(err)
+}
+
+func retryError(err error) error {
+	var retryFailed *retryFailedError
+	if errors.As(err, &retryFailed) {
+		return retryFailed.Unwrap()
+	}
+
+	if err == nil || !ShouldRetryModelError(err) {
+		return nil
+	}
+
+	return err
+}
+
+func retryResultError(err error, retryCanceled bool) error {
+	if retryCanceled {
+		return oops.In("assistant").Code("retry_canceled").Wrapf(err, "wait before retry")
+	}
+
+	if retryErr := retryError(err); retryErr != nil {
+		return retryErr
+	}
+
+	return err
+}
+
+func (runtime *Runtime) completeAttempt(
+	ctx context.Context,
+	request *CompletionRequest,
+	attempt int,
+) (*CompletionResult, error) {
+	request.ProviderAttempt = attempt
+
+	result, err := runtime.client.Complete(ctx, request)
+	if err != nil {
+		runtime.emitProviderError(ctx, request, attempt, err)
+
+		return nil, assistantError(err, "complete model request")
+	}
+
+	runtime.emitProviderResponse(ctx, request, attempt, result)
+
+	return result, nil
 }
 
 func (runtime *Runtime) emitRetryEvent(ctx context.Context, handler RetryEventHandler, retryEvent RetryEvent) {

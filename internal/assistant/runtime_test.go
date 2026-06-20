@@ -299,8 +299,10 @@ func TestRuntime_PromptReportsPersistenceFailureWhenFailedProgressCannotPersist(
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	request.OnEvent = func(assistant.StreamEvent) {
-		cancel()
+	request.OnEvent = func(streamEvent assistant.StreamEvent) {
+		if streamEvent.Kind == assistant.StreamEventToolResult {
+			cancel()
+		}
 	}
 
 	_, err := runtime.Prompt(ctx, request)

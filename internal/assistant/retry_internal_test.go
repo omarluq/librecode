@@ -1,7 +1,6 @@
 package assistant
 
 import (
-	"context"
 	"errors"
 	"testing"
 	"time"
@@ -12,30 +11,30 @@ import (
 	"github.com/omarluq/librecode/internal/config"
 )
 
-func TestRetryDelayIsCapped(t *testing.T) {
+func TestRetryBackoffUsesCappedExponentialDelays(t *testing.T) {
 	t.Parallel()
 
 	retry := config.RetryConfig{
 		BaseDelay:   10 * time.Millisecond,
 		MaxDelay:    15 * time.Millisecond,
-		MaxAttempts: 3,
+		MaxAttempts: 4,
 		Enabled:     true,
 	}
+	delays := []time.Duration{}
+	backoff := retryBackoff(retry, func(delay time.Duration) {
+		delays = append(delays, delay)
+	})
 
-	delay := retryDelay(3, retry)
+	for range retry.MaxAttempts - 1 {
+		delay, stop := backoff.Next()
 
-	assert.LessOrEqual(t, delay, retry.MaxDelay)
-}
+		require.False(t, stop)
+		assert.LessOrEqual(t, delay, retry.MaxDelay)
+	}
 
-func TestWaitForRetryRespectsCancellation(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := waitForRetry(ctx, time.Hour)
-
-	require.ErrorIs(t, err, context.Canceled)
+	_, stop := backoff.Next()
+	require.True(t, stop)
+	assert.Equal(t, []time.Duration{10 * time.Millisecond, 15 * time.Millisecond, 15 * time.Millisecond}, delays)
 }
 
 func TestShouldRetryModelErrorTreatsHTTP2StreamErrorsAsTransient(t *testing.T) {
