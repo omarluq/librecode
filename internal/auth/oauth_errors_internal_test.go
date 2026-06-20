@@ -2,8 +2,8 @@ package auth
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -179,19 +179,13 @@ func TestDecodeOpenAICodexTokenRejectsInvalidResponses(t *testing.T) {
 	}{
 		{name: testInvalidJSON, body: `{`},
 		{name: "missing refresh", body: `{"access_token":"access","expires_in":3600}`},
-		{name: "invalid jwt", body: `{"access_token":"not-a-jwt","refresh_token":"refresh","expires_in":3600}`},
-		{
-			name: "missing account claim",
-			body: `{"access_token":"` + jwtForPayload(t, map[string]any{}) + `",` +
-				`"refresh_token":"refresh","expires_in":3600}`,
-		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			credential, err := decodeOpenAICodexToken([]byte(testCase.body))
+			credential, err := decodeOpenAICodexToken(t.Context(), []byte(testCase.body), testOpenAICodexParser("acct"))
 			require.Error(t, err)
 			assert.Nil(t, credential)
 		})
@@ -219,21 +213,26 @@ func TestAccountIDFromJWTErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name  string
-		token string
+		parseJWT openAICodexJWTParser
+		name     string
+		token    string
 	}{
-		{name: "invalid segments", token: "one.two"},
-		{name: "invalid base64", token: "one.%%%.three"},
-		{name: testInvalidJSON, token: "one.e30.three"},
-		{name: "missing auth claim", token: jwtForPayload(t, map[string]any{})},
-		{name: "missing account id", token: jwtForPayload(t, map[string]any{openAICodexJWTClaim: map[string]any{}})},
+		{name: "invalid segments", token: "one.two", parseJWT: testFailingOpenAICodexParser},
+		{name: "invalid base64", token: "one.%%%.three", parseJWT: testFailingOpenAICodexParser},
+		{name: testInvalidJSON, token: "one.e30.three", parseJWT: testFailingOpenAICodexParser},
+		{name: "missing auth claim", token: "token", parseJWT: testOpenAICodexClaimsParser(map[string]any{})},
+		{
+			name:     "missing account id",
+			token:    "token",
+			parseJWT: testOpenAICodexClaimsParser(map[string]any{openAICodexJWTClaim: map[string]any{}}),
+		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			accountID, err := accountIDFromJWT(testCase.token)
+			accountID, err := accountIDFromJWT(t.Context(), testCase.token, testCase.parseJWT)
 			require.Error(t, err)
 			assert.Empty(t, accountID)
 		})
@@ -274,14 +273,12 @@ func apiKeyFromCredentialForTest(credential *Credential, fallback string) string
 	return fallback
 }
 
-func jwtForPayload(t *testing.T, payload map[string]any) string {
-	t.Helper()
+func testOpenAICodexClaimsParser(claims map[string]any) openAICodexJWTParser {
+	return func(context.Context, string) (map[string]any, error) {
+		return claims, nil
+	}
+}
 
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
-	encoded, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	signature := base64.RawURLEncoding.EncodeToString([]byte("signature"))
-
-	return header + "." + base64.RawURLEncoding.EncodeToString(encoded) + "." + signature
+func testFailingOpenAICodexParser(context.Context, string) (map[string]any, error) {
+	return nil, errors.New("invalid jwt")
 }

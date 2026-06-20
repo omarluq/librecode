@@ -1,15 +1,17 @@
 package auth
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/MicahParks/jwkset"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +52,7 @@ func TestExchangeOpenAICodexCodeSendsPKCEForm(t *testing.T) {
 
 		writer.Header().Set("Content-Type", "application/json")
 		_, err := writer.Write([]byte(`{
-			"access_token": "` + testOpenAICodexJWT(t, "acct_123") + `",
+			"access_token": "access-token",
 			"refresh_token": "refresh-token",
 			"expires_in": 3600
 		}`))
@@ -58,7 +60,13 @@ func TestExchangeOpenAICodexCodeSendsPKCEForm(t *testing.T) {
 	}))
 	defer server.Close()
 
-	credential, err := exchangeOpenAICodexCodeWithTokenURL(t.Context(), "auth-code", "verifier", server.URL)
+	credential, err := exchangeOpenAICodexCodeWithTokenURLAndParser(
+		t.Context(),
+		"auth-code",
+		"verifier",
+		server.URL,
+		testOpenAICodexParser("acct_123"),
+	)
 	require.NoError(t, err)
 	assert.Equal(t, CredentialTypeOAuth, credential.Type)
 	assert.Equal(t, "acct_123", credential.AccountID)
@@ -76,7 +84,7 @@ func TestRefreshOpenAICodexSendsRefreshForm(t *testing.T) {
 		assert.Equal(t, openAICodexClientID, request.Form.Get("client_id"))
 
 		_, err := writer.Write([]byte(`{
-			"access_token": "` + testOpenAICodexJWT(t, "acct_refresh") + `",
+			"access_token": "access-token",
 			"refresh_token": "new-refresh",
 			"expires_in": 3600
 		}`))
@@ -84,7 +92,12 @@ func TestRefreshOpenAICodexSendsRefreshForm(t *testing.T) {
 	}))
 	defer server.Close()
 
-	credential, err := refreshOpenAICodexWithTokenURL(t.Context(), "old-refresh", server.URL)
+	credential, err := refreshOpenAICodexWithTokenURLAndParser(
+		t.Context(),
+		"old-refresh",
+		server.URL,
+		testOpenAICodexParser("acct_refresh"),
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "acct_refresh", credential.AccountID)
 	assert.Equal(t, "new-refresh", credential.Refresh)
@@ -106,22 +119,52 @@ func TestOpenAICodexTokenErrorIncludesBody(t *testing.T) {
 	assert.Contains(t, err.Error(), "blocked")
 }
 
-func testOpenAICodexJWT(t *testing.T, accountID string) string {
-	t.Helper()
+func TestParseOpenAICodexJWTWithJWKSetURL(t *testing.T) {
+	t.Parallel()
 
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`))
-	payloadBytes, err := json.Marshal(map[string]any{
-		"https://api.openai.com/auth": map[string]any{
-			"chatgpt_account_id": accountID,
-		},
-	})
+	token, jwkSetJSON := signedOpenAICodexJWTForTest(t, "acct_signed")
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, err := writer.Write(jwkSetJSON)
+		assert.NoError(t, err)
+	}))
+	defer server.Close()
+
+	claims, err := parseOpenAICodexJWTWithJWKSetURL(t.Context(), token, server.URL)
+
 	require.NoError(t, err)
 
-	payload := base64.RawURLEncoding.EncodeToString(payloadBytes)
+	authClaims, ok := claims[openAICodexJWTClaim].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "acct_signed", authClaims["chatgpt_account_id"])
+}
 
-	signature := base64.RawURLEncoding.EncodeToString([]byte("signature"))
+func TestParseOpenAICodexJWTWithJWKSetURLRejectsInvalidToken(t *testing.T) {
+	t.Parallel()
 
-	return strings.Join([]string{header, payload, signature}, ".")
+	_, jwkSetJSON := signedOpenAICodexJWTForTest(t, "acct_signed")
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, err := writer.Write(jwkSetJSON)
+		assert.NoError(t, err)
+	}))
+	defer server.Close()
+
+	claims, err := parseOpenAICodexJWTWithJWKSetURL(t.Context(), "not-a-jwt", server.URL)
+
+	require.Error(t, err)
+	assert.Nil(t, claims)
+}
+
+func testOpenAICodexParser(accountID string) openAICodexJWTParser {
+	return func(context.Context, string) (map[string]any, error) {
+		return map[string]any{
+			openAICodexJWTClaim: map[string]any{
+				"chatgpt_account_id": accountID,
+			},
+		}, nil
+	}
 }
 
 func newOpenAICodexFlowURLForTest(t *testing.T) string {
@@ -131,4 +174,35 @@ func newOpenAICodexFlowURLForTest(t *testing.T) string {
 	require.NoError(t, err)
 
 	return flow.URL
+}
+
+func signedOpenAICodexJWTForTest(t *testing.T, accountID string) (tokenString string, jwkSetJSON []byte) {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	keyID := "openai-codex-test-key"
+	claims := jwt.MapClaims{
+		openAICodexJWTClaim: map[string]any{
+			"chatgpt_account_id": accountID,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = keyID
+	tokenString, err = token.SignedString(privateKey)
+	require.NoError(t, err)
+
+	jwk, err := jwkset.NewJWKFromKey(
+		privateKey.Public(),
+		jwkset.JWKOptions{Metadata: jwkset.JWKMetadataOptions{KID: keyID, USE: jwkset.UseSig}},
+	)
+	require.NoError(t, err)
+
+	store := jwkset.NewMemoryStorage()
+	require.NoError(t, store.KeyWrite(t.Context(), jwk))
+	jwkSetJSON, err = store.JSONPublic(t.Context())
+	require.NoError(t, err)
+
+	return tokenString, jwkSetJSON
 }
