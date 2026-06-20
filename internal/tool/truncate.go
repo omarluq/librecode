@@ -4,8 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/dustin/go-humanize"
-
+	"github.com/omarluq/librecode/internal/bytefmt"
 	"github.com/omarluq/librecode/internal/units"
 )
 
@@ -53,11 +52,7 @@ type TruncationResult struct {
 
 // FormatSize formats bytes for user-facing truncation notices.
 func FormatSize(byteCount int) string {
-	if byteCount <= 0 {
-		return "0B"
-	}
-
-	return strings.ReplaceAll(humanize.IBytes(uint64(byteCount)), " ", "")
+	return bytefmt.Format(int64(byteCount))
 }
 
 // TruncateHead keeps the first complete lines that fit within both limits.
