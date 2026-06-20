@@ -15,9 +15,11 @@ func TestFormatSize(t *testing.T) {
 		name     string
 		bytes    int
 	}{
+		{name: "negative", bytes: -1, expected: "0B"},
+		{name: "zero", bytes: 0, expected: "0B"},
 		{name: "bytes", bytes: 512, expected: "512B"},
-		{name: "kilobytes", bytes: 1536, expected: "1.5KB"},
-		{name: "megabytes", bytes: 2 * 1024 * 1024, expected: "2.0MB"},
+		{name: "kilobytes", bytes: 1536, expected: "1.5KiB"},
+		{name: "megabytes", bytes: 2 * 1024 * 1024, expected: "2.0MiB"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

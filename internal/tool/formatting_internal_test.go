@@ -183,7 +183,7 @@ func TestFormatReadOutputBranches(t *testing.T) {
 		FirstLineExceedsLimit: true,
 	}
 	got, details := formatReadOutput(input, []string{strings.Repeat("x", DefaultMaxBytes+1)}, &firstLineTooLong, 0, nil)
-	assert.Contains(t, got, "exceeds 50.0KB limit")
+	assert.Contains(t, got, "exceeds 50KiB limit")
 	assert.Contains(t, details, detailTruncation)
 
 	truncatedByLines := TruncationResult{
@@ -214,7 +214,7 @@ func TestFormatReadOutputBranches(t *testing.T) {
 	truncatedByBytes.Content = testLineOne
 	truncatedByBytes.OutputLines = 1
 	got, details = formatReadOutput(input, []string{testLineOne, "two", "three", "four"}, &truncatedByBytes, 0, nil)
-	assert.Contains(t, got, "(50.0KB limit). Use offset=2 to continue.")
+	assert.Contains(t, got, "(50KiB limit). Use offset=2 to continue.")
 	assert.Contains(t, details, detailTruncation)
 }
 
