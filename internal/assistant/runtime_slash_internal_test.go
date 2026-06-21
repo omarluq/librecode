@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -182,9 +183,18 @@ func TestLoadSkillWithReadToolUsesLimit(t *testing.T) {
 	)
 
 	require.NoError(t, err)
+	expectedArguments, err := json.Marshal(struct {
+		Path  string `json:"path"`
+		Limit int    `json:"limit"`
+	}{
+		Path:  skillPath,
+		Limit: limit,
+	})
+	require.NoError(t, err)
+
 	assert.Contains(t, content, "Use offset=2 to continue")
 	assert.NotContains(t, content, "two")
-	assert.JSONEq(t, `{"limit":1,"path":"`+skillPath+`"}`, event.ArgumentsJSON)
+	assert.JSONEq(t, string(expectedArguments), event.ArgumentsJSON)
 }
 
 func TestRespondToToolCommand(t *testing.T) {

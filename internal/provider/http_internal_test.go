@@ -24,15 +24,15 @@ func TestCodexHeadersUseStoredAccountID(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("openai-codex", "access-token")
-	request.Request.Auth.Headers = map[string]string{"chatgpt-account-id": "acct_123"}
+	request.Request.Auth.Headers = map[string]string{codexAccountIDHeader: "acct_123"}
 
 	headers := codexHeaders(request)
 
 	assert.Equal(t, "Bearer access-token", headers["Authorization"])
-	assert.Equal(t, "acct_123", headers["chatgpt-account-id"])
-	assert.Equal(t, "librecode", headers["originator"])
-	assert.Equal(t, "librecode", headers["User-Agent"])
-	assert.Equal(t, "responses=experimental", headers["OpenAI-Beta"])
+	assert.Equal(t, "acct_123", headers[codexAccountIDHeader])
+	assert.Equal(t, codexClientHeaderValue, headers[codexOriginatorHeader])
+	assert.Equal(t, codexClientHeaderValue, headers[codexUserAgentHeader])
+	assert.Equal(t, codexResponsesBetaValue, headers[codexBetaHeader])
 	assert.Equal(t, "text/event-stream", headers["Accept"])
 }
 
@@ -41,7 +41,7 @@ func TestCodexHeadersPreserveExtraHeaders(t *testing.T) {
 
 	request := testCompletionRequestAuth("openai-codex", "access-token")
 	request.Request.Auth.Headers = map[string]string{
-		"chatgpt-account-id": "acct_123",
+		codexAccountIDHeader: "acct_123",
 		"x-extra":            "value",
 	}
 
@@ -59,5 +59,5 @@ func TestCodexHeadersHandlesNilAuthHeaders(t *testing.T) {
 	headers := codexHeaders(request)
 
 	assert.Equal(t, "Bearer access-token", headers["Authorization"])
-	assert.NotContains(t, headers, "chatgpt-account-id")
+	assert.NotContains(t, headers, codexAccountIDHeader)
 }
