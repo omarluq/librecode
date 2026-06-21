@@ -127,12 +127,36 @@ func newToolDefinitionForSchemaTest(name string, schema map[string]any) *llm.Too
 	}
 }
 
-func TestSchemaPrimitiveHelpers(t *testing.T) {
+func schemaStringValues(t *testing.T, value any) []string {
+	t.Helper()
+
+	values, ok := value.([]any)
+	require.True(t, ok)
+
+	strings := make([]string, 0, len(values))
+	for _, item := range values {
+		text, ok := item.(string)
+		require.True(t, ok)
+
+		strings = append(strings, text)
+	}
+
+	return strings
+}
+
+func TestBuiltinToolSchemaUsesGeneratedStructMetadata(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, map[string]any{
-		jsonTypeKey:        jsonStringType,
-		jsonDescriptionKey: "description",
-		"enum":             []string{"a", "b"},
-	}, enumStringSchema("description", []string{"a", "b"}))
+	schema := ToolParameterSchema(newToolDefinitionForSchemaTest(jsonASTToolName, nil))
+	properties, ok := schema[jsonPropertiesKey].(map[string]any)
+	require.True(t, ok)
+
+	mode, ok := properties["mode"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, []string{"outline", "symbols", "query", "node", "tree"}, schemaStringValues(t, mode["enum"]))
+	assert.Equal(
+		t,
+		"Inspection mode: 'outline' (default), 'symbols', 'query', 'node', or 'tree'.",
+		mode[jsonDescriptionKey],
+	)
 }

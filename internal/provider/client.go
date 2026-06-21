@@ -31,7 +31,6 @@ const (
 	jsonIgnoreCaseKey       = "ignore_case"
 	jsonPatternKey          = "pattern"
 	jsonObjectType          = "object"
-	jsonStringType          = "string"
 	jsonToolNameKey         = "name"
 	jsonToolParamsKey       = "parameters"
 	jsonInputSchemaKey      = "input_schema"

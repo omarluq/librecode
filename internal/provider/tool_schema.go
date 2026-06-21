@@ -3,9 +3,28 @@ package provider
 import (
 	"encoding/json"
 	"maps"
+	"reflect"
+
+	"github.com/invopop/jsonschema"
+	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
 )
+
+const (
+	toolSchemaPathField         = "Path"
+	toolSchemaLimitField        = "Limit"
+	toolSchemaAllowIgnoredField = "AllowIgnored"
+)
+
+func toolSchemaAllowIgnoredDescription() string {
+	return "Set true only when an ignored file is explicitly needed despite .gitignore/default ignores."
+}
+
+func astToolPathDescription() string {
+	return "Path to the source file to inspect, relative to the current workspace or absolute."
+}
 
 // ResponseTools returns OpenAI Responses API tool declarations for a completion request.
 func ResponseTools(request *CompletionRequest) []map[string]any {
@@ -30,10 +49,10 @@ func requestToolDefinitions(request *CompletionRequest) []llm.ToolDefinition {
 }
 
 func builtinToolDefinitions() []llm.ToolDefinition {
-	schemas := builtinToolSchemas()
+	names := builtinToolNames()
 
-	definitions := make([]llm.ToolDefinition, 0, len(schemas))
-	for name := range schemas {
+	definitions := make([]llm.ToolDefinition, 0, len(names))
+	for _, name := range names {
 		definitions = append(definitions, llm.ToolDefinition{
 			Schema:      nil,
 			Name:        name,
@@ -43,6 +62,19 @@ func builtinToolDefinitions() []llm.ToolDefinition {
 	}
 
 	return definitions
+}
+
+func builtinToolNames() []string {
+	return []string{
+		jsonReadToolName,
+		jsonBashToolName,
+		jsonEditToolName,
+		jsonWriteToolName,
+		jsonGrepToolName,
+		jsonFindToolName,
+		jsonLSToolName,
+		jsonASTToolName,
+	}
 }
 
 func builtinToolDescription(name string) string {
@@ -116,17 +148,24 @@ func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
 	return arguments
 }
 
-func builtinToolSchemas() map[string]func() map[string]any {
-	return map[string]func() map[string]any{
-		jsonReadToolName:  readToolSchema,
-		jsonBashToolName:  bashToolSchema,
-		jsonEditToolName:  editToolSchema,
-		jsonWriteToolName: writeToolSchema,
-		jsonGrepToolName:  grepToolSchema,
-		jsonFindToolName:  findToolSchema,
-		jsonLSToolName:    lsToolSchema,
-		jsonASTToolName:   astToolSchema,
+func builtinToolSchemaForName(name string) (map[string]any, bool) {
+	inputTypes := map[string]reflect.Type{
+		jsonReadToolName:  reflect.TypeFor[tool.ReadInput](),
+		jsonBashToolName:  reflect.TypeFor[tool.BashInput](),
+		jsonEditToolName:  reflect.TypeFor[tool.EditInput](),
+		jsonWriteToolName: reflect.TypeFor[tool.WriteInput](),
+		jsonGrepToolName:  reflect.TypeFor[tool.GrepInput](),
+		jsonFindToolName:  reflect.TypeFor[tool.FindInput](),
+		jsonLSToolName:    reflect.TypeFor[tool.LSInput](),
+		jsonASTToolName:   reflect.TypeFor[tool.ASTInput](),
 	}
+
+	inputType, ok := inputTypes[name]
+	if !ok {
+		return nil, false
+	}
+
+	return builtinToolSchema(inputType), true
 }
 
 // ToolParameterSchema returns the JSON parameter schema for a local tool definition.
@@ -139,144 +178,102 @@ func ToolParameterSchema(definition *llm.ToolDefinition) map[string]any {
 		return freeformToolSchema()
 	}
 
-	factory, ok := builtinToolSchemas()[definition.Name]
+	schema, ok := builtinToolSchemaForName(definition.Name)
 	if !ok {
 		return freeformToolSchema()
 	}
 
-	schema := factory()
-	schema["additionalProperties"] = false
-
-	return schema
+	return cloneToolSchema(schema)
 }
 
 func freeformToolSchema() map[string]any {
 	return map[string]any{jsonTypeKey: jsonObjectType, "additionalProperties": true}
 }
 
-func readToolSchema() map[string]any {
-	return map[string]any{
-		jsonTypeKey: jsonObjectType,
-		jsonPropertiesKey: map[string]any{
-			jsonPathKey:  stringSchema("Path to the file to read, relative to the current workspace or absolute."),
-			"offset":     integerSchema("Optional 1-indexed line number to start reading from."),
-			jsonLimitKey: integerSchema("Optional maximum number of lines to return."),
-			jsonAllowIgnoredKey: booleanSchema(
-				"Set true only when an ignored file is explicitly needed despite .gitignore/default ignores.",
-			),
-		},
-		jsonRequiredKey: []string{jsonPathKey},
+func builtinToolSchema(inputType reflect.Type) map[string]any {
+	reflector := jsonschema.Reflector{
+		Anonymous:      true,
+		DoNotReference: true,
+		LookupComment:  lookupToolSchemaComment,
 	}
+	schema := reflector.ReflectFromType(inputType)
+	schema.Version = ""
+
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		panic(oops.In("provider").Code("tool_schema_marshal").Wrapf(err, "marshal generated tool schema"))
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		panic(oops.In("provider").Code("tool_schema_unmarshal").Wrapf(err, "decode generated tool schema"))
+	}
+
+	return decoded
 }
 
-func bashToolSchema() map[string]any {
-	return map[string]any{
-		jsonTypeKey: jsonObjectType,
-		jsonPropertiesKey: map[string]any{
-			jsonCommandKey: stringSchema("Bash command to execute in the current workspace."),
-			"timeout":      numberSchema("Optional timeout in seconds."),
-		},
-		jsonRequiredKey: []string{jsonCommandKey},
+func lookupToolSchemaComment(inputType reflect.Type, fieldName string) string {
+	if fieldName == "" {
+		return ""
 	}
+
+	comments, ok := toolSchemaFieldComments()[inputType]
+	if !ok {
+		return ""
+	}
+
+	return comments[fieldName]
 }
 
-func editToolSchema() map[string]any {
-	return map[string]any{
-		jsonTypeKey: jsonObjectType,
-		jsonPropertiesKey: map[string]any{
-			jsonPathKey: stringSchema("Path to the file to edit, relative to the current workspace or absolute."),
-			"edits":     editItemsSchema(),
+func toolSchemaFieldComments() map[reflect.Type]map[string]string {
+	return map[reflect.Type]map[string]string{
+		reflect.TypeFor[tool.ASTInput](): {
+			"Line":                      "One-based line number for mode=node or mode=tree.",
+			"Depth":                     "Optional recursion depth for mode=symbols.",
+			toolSchemaPathField:         astToolPathDescription(),
+			"Mode":                      "Inspection mode: 'outline' (default), 'symbols', 'query', 'node', or 'tree'.",
+			"Query":                     "Tree-sitter S-expression query for mode=query.",
+			toolSchemaAllowIgnoredField: toolSchemaAllowIgnoredDescription(),
 		},
-		jsonRequiredKey: []string{jsonPathKey, "edits"},
-	}
-}
-
-func editItemsSchema() map[string]any {
-	return map[string]any{
-		jsonTypeKey: "array",
-		"items": map[string]any{
-			jsonTypeKey: jsonObjectType,
-			jsonPropertiesKey: map[string]any{
-				jsonOldTextKey: stringSchema(
-					"Exact text to replace. Must match a unique, non-overlapping region.",
-				),
-				jsonNewTextKey: stringSchema("Replacement text."),
-			},
-			jsonRequiredKey: []string{jsonOldTextKey, jsonNewTextKey},
+		reflect.TypeFor[tool.BashInput](): {
+			"Timeout": "Optional timeout in seconds.",
+			"Command": "Bash command to execute in the current workspace.",
 		},
-	}
-}
-
-func writeToolSchema() map[string]any {
-	return map[string]any{
-		jsonTypeKey: jsonObjectType,
-		jsonPropertiesKey: map[string]any{
-			jsonPathKey: stringSchema(
-				"Path to create or overwrite, relative to the current workspace or absolute.",
-			),
-			jsonContentKey: stringSchema("Complete file content to write."),
+		reflect.TypeFor[tool.EditInput](): {
+			toolSchemaPathField: "Path to the file to edit, relative to the current workspace or absolute.",
 		},
-		jsonRequiredKey: []string{jsonPathKey, jsonContentKey},
-	}
-}
-
-func grepToolSchema() map[string]any {
-	return map[string]any{
-		jsonTypeKey: jsonObjectType,
-		jsonPropertiesKey: map[string]any{
-			jsonPatternKey:    stringSchema("Regular expression or literal string to search for."),
-			jsonPathKey:       stringSchema("Optional file or directory to search under."),
-			"glob":            stringSchema("Optional glob filter such as **/*.go."),
-			jsonLimitKey:      integerSchema("Optional maximum number of matches."),
-			"context":         integerSchema("Optional number of context lines around each match."),
-			jsonIgnoreCaseKey: booleanSchema("Whether to match case-insensitively."),
-			"literal":         booleanSchema("Whether pattern should be treated as literal text."),
+		reflect.TypeFor[tool.FindInput](): {
+			toolSchemaLimitField: "Optional maximum number of paths.",
+			"Pattern":            "Glob pattern for file paths, such as **/*.go.",
+			toolSchemaPathField:  "Optional directory to search under.",
 		},
-		jsonRequiredKey: []string{jsonPatternKey},
-	}
-}
-
-func findToolSchema() map[string]any {
-	return map[string]any{
-		jsonTypeKey: jsonObjectType,
-		jsonPropertiesKey: map[string]any{
-			jsonPatternKey: stringSchema("Glob pattern for file paths, such as **/*.go."),
-			jsonPathKey:    stringSchema("Optional directory to search under."),
-			jsonLimitKey:   integerSchema("Optional maximum number of paths."),
+		reflect.TypeFor[tool.GrepInput](): {
+			"Context":            "Optional number of context lines around each match.",
+			toolSchemaLimitField: "Optional maximum number of matches.",
+			"Pattern":            "Regular expression or literal string to search for.",
+			toolSchemaPathField:  "Optional file or directory to search under.",
+			"Glob":               "Optional glob filter such as **/*.go.",
+			"IgnoreCase":         "Whether to match case-insensitively.",
+			"Literal":            "Whether pattern should be treated as literal text.",
 		},
-		jsonRequiredKey: []string{jsonPatternKey},
-	}
-}
-
-func lsToolSchema() map[string]any {
-	return map[string]any{
-		jsonTypeKey: jsonObjectType,
-		jsonPropertiesKey: map[string]any{
-			jsonPathKey:  stringSchema("Optional directory to list."),
-			jsonLimitKey: integerSchema("Optional maximum number of entries."),
+		reflect.TypeFor[tool.LSInput](): {
+			toolSchemaLimitField: "Optional maximum number of entries.",
+			toolSchemaPathField:  "Optional directory to list.",
 		},
-	}
-}
-
-func astToolSchema() map[string]any {
-	return map[string]any{
-		jsonTypeKey: jsonObjectType,
-		jsonPropertiesKey: map[string]any{
-			jsonPathKey: stringSchema(
-				"Path to the source file to inspect, relative to the current workspace or absolute.",
-			),
-			"mode": enumStringSchema(
-				"Inspection mode: 'outline' (default), 'symbols', 'query', 'node', or 'tree'.",
-				[]string{"outline", "symbols", "query", "node", "tree"},
-			),
-			jsonQueryKey: stringSchema("Tree-sitter S-expression query for mode=query."),
-			"line":       integerSchema("One-based line number for mode=node or mode=tree."),
-			"depth":      integerSchema("Optional recursion depth for mode=symbols."),
-			jsonAllowIgnoredKey: booleanSchema(
-				"Set true only when an ignored file is explicitly needed despite .gitignore/default ignores.",
-			),
+		reflect.TypeFor[tool.ReadInput](): {
+			"Offset":                    "Optional 1-indexed line number to start reading from.",
+			toolSchemaLimitField:        "Optional maximum number of lines to return.",
+			toolSchemaPathField:         "Path to the file to read, relative to the current workspace or absolute.",
+			toolSchemaAllowIgnoredField: toolSchemaAllowIgnoredDescription(),
 		},
-		jsonRequiredKey: []string{jsonPathKey},
+		reflect.TypeFor[tool.Replacement](): {
+			"OldText": "Exact text to replace. Must match a unique, non-overlapping region.",
+			"NewText": "Replacement text.",
+		},
+		reflect.TypeFor[tool.WriteInput](): {
+			"Content":           "Complete file content to write.",
+			toolSchemaPathField: "Path to create or overwrite, relative to the current workspace or absolute.",
+		},
 	}
 }
 
@@ -285,28 +282,4 @@ func cloneToolSchema(schema map[string]any) map[string]any {
 	maps.Copy(clone, schema)
 
 	return clone
-}
-
-func stringSchema(description string) map[string]any {
-	return map[string]any{jsonTypeKey: jsonStringType, jsonDescriptionKey: description}
-}
-
-func integerSchema(description string) map[string]any {
-	return map[string]any{jsonTypeKey: "integer", jsonDescriptionKey: description}
-}
-
-func numberSchema(description string) map[string]any {
-	return map[string]any{jsonTypeKey: "number", jsonDescriptionKey: description}
-}
-
-func booleanSchema(description string) map[string]any {
-	return map[string]any{jsonTypeKey: "boolean", jsonDescriptionKey: description}
-}
-
-func enumStringSchema(description string, values []string) map[string]any {
-	schema := stringSchema(description)
-
-	schema["enum"] = append([]string{}, values...)
-
-	return schema
 }
