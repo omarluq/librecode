@@ -21,6 +21,7 @@ const (
 	testProviderMessageType = jsonMessageType
 	testProviderPartialText = "partial"
 	testProviderDeclined    = "declined"
+	testProviderHello       = "hello"
 	testToolArgumentsJSON   = `{"path":"README.md"}`
 )
 
