@@ -105,7 +105,7 @@ func normalizeToolInputForValidation(definition *Definition, input Arguments) Ar
 	}
 
 	var mode string
-	if unmarshalErr := json.Unmarshal(fields["mode"], &mode); unmarshalErr != nil {
+	if json.Unmarshal(fields["mode"], &mode) != nil {
 		return input
 	}
 
