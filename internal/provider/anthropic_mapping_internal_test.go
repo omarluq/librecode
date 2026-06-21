@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestAnthropicThinkingEffortMappings(t *testing.T) {
@@ -70,11 +71,11 @@ func TestAnthropicToolArgumentsHandlesMalformedAndScalarInput(t *testing.T) {
 	t.Parallel()
 
 	arguments, argumentsJSON := anthropicToolArguments(func() {})
-	assert.Equal(t, map[string]any{}, testToolArgumentFields(arguments))
+	assert.Equal(t, map[string]any{}, testutil.ToolArgumentFields(arguments))
 	assert.JSONEq(t, "{}", argumentsJSON)
 
 	arguments, argumentsJSON = anthropicToolArguments("plain")
-	assert.Equal(t, map[string]any{}, testToolArgumentFields(arguments))
+	assert.Equal(t, map[string]any{}, testutil.ToolArgumentFields(arguments))
 	assert.JSONEq(t, `"plain"`, argumentsJSON)
 }
 
@@ -146,7 +147,7 @@ func TestAnthropicAssistantToolMessageMapsProviderNames(t *testing.T) {
 
 	request := testCompletionRequestAuth("anthropic-claude", "subscription-access-token")
 	message := anthropicAssistantToolMessage(request, []ToolCall{{
-		Arguments:     testToolArguments(map[string]any{jsonPathKey: testToolPath}),
+		Arguments:     testutil.ToolArguments(map[string]any{jsonPathKey: testToolPath}),
 		Metadata:      nil,
 		ID:            testAnthropicToolUseID,
 		Name:          jsonReadToolName,

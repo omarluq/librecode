@@ -9,6 +9,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/anthropicmodel"
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestAnthropicPayloadOmitsTemperature(t *testing.T) {
@@ -169,8 +170,8 @@ func assertAnthropicToolCallMapsClaudeCodeName(t *testing.T) {
 	})
 
 	assert.Equal(t, expectedWriteToolName, call.Name)
-	assert.Equal(t, "hello.txt", testToolArgumentFields(call.Arguments)[jsonPathKey])
-	assert.Equal(t, "hello", testToolArgumentFields(call.Arguments)[jsonContentKey])
+	assert.Equal(t, "hello.txt", testutil.ToolArgumentFields(call.Arguments)[jsonPathKey])
+	assert.Equal(t, "hello", testutil.ToolArgumentFields(call.Arguments)[jsonContentKey])
 }
 
 func TestAnthropicPayloadAddsAdaptiveThinking(t *testing.T) {

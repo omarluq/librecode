@@ -11,6 +11,7 @@ import (
 	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const lifecycleTestSessionID = "session-1"
@@ -122,7 +123,7 @@ func TestProviderAndToolPayloads(t *testing.T) {
 	assert.Equal(t, map[string]string{"X-Test": "yes"}, providerRequest[lifecyclepayload.ProviderHeadersKey])
 
 	toolCall := lifecyclepayload.ToolCallPayload(lifecyclepayload.ToolCall{
-		Arguments:     testToolArguments(map[string]any{"path": "README.md"}),
+		Arguments:     testutil.ToolArguments(map[string]any{"path": "README.md"}),
 		ID:            "call-1",
 		Name:          "read",
 		ArgumentsJSON: `{"path":"README.md"}`,

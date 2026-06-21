@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -51,7 +52,7 @@ func Build(n int) *Widget {
 func newASTRegistry(t *testing.T) *tool.Registry {
 	t.Helper()
 	registry := tool.NewRegistry(t.TempDir())
-	_, err := registry.Execute(context.Background(), "write", testToolArguments(map[string]any{
+	_, err := registry.Execute(context.Background(), "write", testutil.ToolArguments(map[string]any{
 		astPathKey:    astSamplePath,
 		astContentKey: astFixture,
 	}))
@@ -63,7 +64,7 @@ func newASTRegistry(t *testing.T) *tool.Registry {
 func runAST(t *testing.T, registry *tool.Registry, input map[string]any) (tool.Result, error) {
 	t.Helper()
 
-	result, err := registry.Execute(context.Background(), "ast", testToolArguments(input))
+	result, err := registry.Execute(context.Background(), "ast", testutil.ToolArguments(input))
 	if err != nil {
 		return result, fmt.Errorf("execute ast test tool: %w", err)
 	}
@@ -256,7 +257,7 @@ func TestASTTool_UnsupportedLanguageIsGraceful(t *testing.T) {
 	t.Parallel()
 
 	registry := tool.NewRegistry(t.TempDir())
-	_, err := registry.Execute(context.Background(), "write", testToolArguments(map[string]any{
+	_, err := registry.Execute(context.Background(), "write", testutil.ToolArguments(map[string]any{
 		astPathKey:    "data.unknownext",
 		astContentKey: "noop",
 	}))
@@ -271,7 +272,7 @@ func TestASTTool_RefusesIgnoredPathByDefault(t *testing.T) {
 	t.Parallel()
 
 	registry := tool.NewRegistry(t.TempDir())
-	_, err := registry.Execute(context.Background(), "write", testToolArguments(map[string]any{
+	_, err := registry.Execute(context.Background(), "write", testutil.ToolArguments(map[string]any{
 		astPathKey:    astIgnoredPath,
 		astContentKey: astFixture,
 	}))
@@ -287,7 +288,7 @@ func TestASTTool_AllowIgnoredReadsIgnoredPath(t *testing.T) {
 	t.Parallel()
 
 	registry := tool.NewRegistry(t.TempDir())
-	_, err := registry.Execute(context.Background(), "write", testToolArguments(map[string]any{
+	_, err := registry.Execute(context.Background(), "write", testutil.ToolArguments(map[string]any{
 		astPathKey:    astIgnoredPath,
 		astContentKey: astFixture,
 	}))
@@ -372,7 +373,7 @@ func TestASTTool_QueryOutputIsExplicitlyBounded(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	_, err := registry.Execute(context.Background(), "write", testToolArguments(map[string]any{
+	_, err := registry.Execute(context.Background(), "write", testutil.ToolArguments(map[string]any{
 		astPathKey:    astSamplePath,
 		astContentKey: builder.String(),
 	}))
@@ -404,7 +405,7 @@ func TestASTTool_OutlineOutputIsBounded(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	_, err := registry.Execute(context.Background(), "write", testToolArguments(map[string]any{
+	_, err := registry.Execute(context.Background(), "write", testutil.ToolArguments(map[string]any{
 		astPathKey:    astSamplePath,
 		astContentKey: builder.String(),
 	}))

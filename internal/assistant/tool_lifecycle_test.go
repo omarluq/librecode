@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -25,7 +26,7 @@ func TestRuntime_ToolCallLifecycleAppliesArgumentMutation(t *testing.T) {
 	}{
 		{
 			name:             "rewrites path and adds limit",
-			initialArguments: testToolArguments(map[string]any{testToolPathKey: testToolPath}),
+			initialArguments: testutil.ToolArguments(map[string]any{testToolPathKey: testToolPath}),
 			lua: `
 local lc = require("librecode")
 lc.on("tool_call", function(event)
@@ -39,7 +40,7 @@ lc.on("tool_call", function(event)
   }
 end)
 `,
-			expectedArguments: testToolArguments(map[string]any{
+			expectedArguments: testutil.ToolArguments(map[string]any{
 				testToolPathKey: "changed.txt",
 				"limit":         float64(3),
 			}),
@@ -63,7 +64,11 @@ end)
 			err := runtime.DispatchToolCallLifecycleForTest(context.Background(), &call)
 
 			require.NoError(t, err)
-			assert.Equal(t, testToolArgumentFields(testCase.expectedArguments), testToolArgumentFields(call.Arguments))
+			assert.Equal(
+				t,
+				testutil.ToolArgumentFields(testCase.expectedArguments),
+				testutil.ToolArgumentFields(call.Arguments),
+			)
 			assert.JSONEq(t, testCase.expectedArgumentsJSON, call.ArgumentsJSON)
 		})
 	}
@@ -140,7 +145,7 @@ end)
 `)
 
 	call := assistant.ToolCallEvent{
-		Arguments:     testToolArguments(map[string]any{testToolPathKey: testToolPath}),
+		Arguments:     testutil.ToolArguments(map[string]any{testToolPathKey: testToolPath}),
 		ID:            testToolCallID,
 		Name:          testToolName,
 		ArgumentsJSON: testToolArgsJSON,

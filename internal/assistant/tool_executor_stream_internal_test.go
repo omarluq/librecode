@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -28,7 +29,7 @@ func TestExecuteProviderToolCallEmitsStructuredStartAfterMutation(t *testing.T) 
 		registry,
 		&ToolCall{
 			Metadata:      nil,
-			Arguments:     testToolArguments(map[string]any{jsonPathKey: "stale.md"}),
+			Arguments:     testutil.ToolArguments(map[string]any{jsonPathKey: "stale.md"}),
 			ID:            toolExecutorCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{"path":"stale.md"}`,
@@ -41,7 +42,7 @@ func TestExecuteProviderToolCallEmitsStructuredStartAfterMutation(t *testing.T) 
 	require.Equal(t, StreamEventToolStart, events[0].Kind)
 	require.NotNil(t, events[0].ToolCallEvent)
 	assert.JSONEq(t, toolExecutorReadArgs, events[0].ToolCallEvent.ArgumentsJSON)
-	assert.Equal(t, toolExecutorReadPath, testToolArgumentFields(events[0].ToolCallEvent.Arguments)[jsonPathKey])
+	assert.Equal(t, toolExecutorReadPath, testutil.ToolArgumentFields(events[0].ToolCallEvent.Arguments)[jsonPathKey])
 	assert.Equal(t, StreamEventToolResult, events[1].Kind)
 }
 
@@ -56,7 +57,7 @@ func TestExecuteProviderToolCallDoesNotEmitStartWhenLifecycleRejects(t *testing.
 		tool.NewRegistry(t.TempDir()),
 		&ToolCall{
 			Metadata:      nil,
-			Arguments:     testToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
+			Arguments:     testutil.ToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
 			ID:            toolExecutorCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: toolExecutorReadArgs,
@@ -80,7 +81,7 @@ func (mutatingToolCallLifecycle) DispatchLifecycle(
 	result := emptyTestLifecycleDispatchResult(event)
 	if event.Name == extension.LifecycleToolCall {
 		result.ToolCall = extension.ToolCallMutation{
-			Arguments: testToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
+			Arguments: testutil.ToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
 			HasArgs:   true,
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -14,7 +15,7 @@ func TestApplyToolCallMutationAppliesEmptyArguments(t *testing.T) {
 	t.Parallel()
 
 	call := &ToolCallEvent{
-		Arguments:     testToolArguments(map[string]any{"path": "old.txt"}),
+		Arguments:     testutil.ToolArguments(map[string]any{"path": "old.txt"}),
 		ArgumentsJSON: `{"path":"old.txt"}`,
 		ID:            "",
 		Name:          "",
@@ -27,6 +28,6 @@ func TestApplyToolCallMutationAppliesEmptyArguments(t *testing.T) {
 	err := applyToolCallMutation(call, mutation)
 
 	require.NoError(t, err)
-	assert.Empty(t, testToolArgumentFields(call.Arguments))
+	assert.Empty(t, testutil.ToolArgumentFields(call.Arguments))
 	assert.JSONEq(t, `{}`, call.ArgumentsJSON)
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -63,7 +64,7 @@ func TestParseAnthropicStreamExtractsNativeToolUse(t *testing.T) {
 			require.Len(t, result.ToolCalls, 1)
 			assert.Equal(t, testAnthropicToolUseID, result.ToolCalls[0].ID)
 			assert.Equal(t, testCase.wantName, result.ToolCalls[0].Name)
-			assert.Equal(t, "README.md", testToolArgumentFields(result.ToolCalls[0].Arguments)[jsonPathKey])
+			assert.Equal(t, "README.md", testutil.ToolArgumentFields(result.ToolCalls[0].Arguments)[jsonPathKey])
 			assert.Equal(t, 12, result.Usage.InputTokens)
 			assert.Equal(t, 3, result.Usage.OutputTokens)
 		})
