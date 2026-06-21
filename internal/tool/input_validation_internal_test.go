@@ -25,7 +25,7 @@ func TestRequiredToolArguments(t *testing.T) {
 		{
 			name: "schema required string slice wins",
 			definition: &Definition{
-				Schema:           map[string]any{schemaRequiredKey: []string{"alpha", "beta"}},
+				Schema:           MustSchemaFromMap(map[string]any{schemaRequiredKey: []string{"alpha", "beta"}}),
 				Name:             NameRead,
 				Label:            string(NameRead),
 				Description:      "",
@@ -36,9 +36,11 @@ func TestRequiredToolArguments(t *testing.T) {
 			want: []string{"alpha", "beta"},
 		},
 		{
-			name: "schema required any slice filters invalid names",
+			name: "schema required slice ignores invalid names during JSON decode",
 			definition: &Definition{
-				Schema:           map[string]any{schemaRequiredKey: []any{toolInputPathKey, " ", 42, "limit"}},
+				Schema: MustSchemaFromMap(map[string]any{
+					schemaRequiredKey: []any{toolInputPathKey, " ", 42, "limit"},
+				}),
 				Name:             NameRead,
 				Label:            string(NameRead),
 				Description:      "",
@@ -46,12 +48,12 @@ func TestRequiredToolArguments(t *testing.T) {
 				PromptGuidelines: nil,
 				ReadOnly:         true,
 			},
-			want: []string{toolInputPathKey, "limit"},
+			want: []string{toolInputPathKey},
 		},
 		{
 			name: "builtin fallback",
 			definition: &Definition{
-				Schema:           nil,
+				Schema:           EmptySchema(),
 				Name:             NameWrite,
 				Label:            string(NameWrite),
 				Description:      "",
@@ -64,7 +66,7 @@ func TestRequiredToolArguments(t *testing.T) {
 		{
 			name: "unknown tool has no required arguments",
 			definition: &Definition{
-				Schema:           nil,
+				Schema:           EmptySchema(),
 				Name:             Name("custom"),
 				Label:            "custom",
 				Description:      "",
@@ -88,30 +90,37 @@ func TestSchemaRequiredArguments(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		schema map[string]any
+		schema Schema
 		name   string
 		want   []string
 		found  bool
 	}{
-		{name: "empty schema", schema: nil, want: nil, found: false},
-		{name: "missing required", schema: map[string]any{"type": "object"}, want: nil, found: false},
+		{name: "empty schema", schema: EmptySchema(), want: nil, found: false},
+		{
+			name:   "missing required",
+			schema: MustSchemaFromMap(map[string]any{"type": "object"}),
+			want:   nil,
+			found:  false,
+		},
 		{
 			name:   "invalid required",
-			schema: map[string]any{schemaRequiredKey: toolInputPathKey},
+			schema: MustSchemaFromMap(map[string]any{schemaRequiredKey: toolInputPathKey}),
 			want:   nil,
 			found:  false,
 		},
 		{
 			name:   "string slice",
-			schema: map[string]any{schemaRequiredKey: []string{toolInputPathKey}},
+			schema: MustSchemaFromMap(map[string]any{schemaRequiredKey: []string{toolInputPathKey}}),
 			want:   []string{toolInputPathKey},
 			found:  true,
 		},
 		{
-			name:   "any slice",
-			schema: map[string]any{schemaRequiredKey: []any{toolInputPathKey, "", false, toolInputContentKey}},
-			want:   []string{toolInputPathKey, toolInputContentKey},
-			found:  true,
+			name: "mixed required array is ignored",
+			schema: MustSchemaFromMap(map[string]any{
+				schemaRequiredKey: []any{toolInputPathKey, "", false, toolInputContentKey},
+			}),
+			want:  nil,
+			found: false,
 		},
 	}
 	for _, testCase := range tests {
@@ -129,7 +138,9 @@ func TestValidateToolInput(t *testing.T) {
 	t.Parallel()
 
 	definition := Definition{
-		Schema:           map[string]any{schemaRequiredKey: []string{toolInputPathKey, toolInputContentKey}},
+		Schema: MustSchemaFromMap(map[string]any{
+			schemaRequiredKey: []string{toolInputPathKey, toolInputContentKey},
+		}),
 		Name:             NameWrite,
 		Label:            string(NameWrite),
 		Description:      "",

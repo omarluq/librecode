@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
@@ -120,7 +121,7 @@ func assertAdditionalProperties(t *testing.T, schema map[string]any, expected bo
 
 func newToolDefinitionForSchemaTest(name string, schema map[string]any) *llm.ToolDefinition {
 	return &llm.ToolDefinition{
-		Schema:      schema,
+		Schema:      tool.MustSchemaFromMap(schema),
 		Name:        name,
 		Description: "description",
 		ReadOnly:    false,

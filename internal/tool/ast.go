@@ -70,7 +70,7 @@ func NewASTTool(cwd string) *ASTTool {
 // Definition returns ast tool metadata.
 func (astTool *ASTTool) Definition() Definition {
 	return Definition{
-		Schema:        nil,
+		Schema:        EmptySchema(),
 		Name:          NameAST,
 		Label:         "ast",
 		Description:   astDescription(),

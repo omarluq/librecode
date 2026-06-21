@@ -152,7 +152,8 @@ type providerResult struct {
 
 // HTTPCompletionClient is a small provider client for built-in API families.
 type HTTPCompletionClient struct {
-	client *http.Client
+	client      *http.Client
+	toolSchemas builtinToolSchemaCache
 }
 
 const providerHTTPTimeout = 10 * time.Minute
@@ -180,10 +181,13 @@ func NewHTTPCompletionClient() *HTTPCompletionClient {
 		},
 	}
 
-	return &HTTPCompletionClient{client: &http.Client{
-		Timeout:   providerHTTPTimeout,
-		Transport: h2OnlyTransport{base: transport},
-	}}
+	return &HTTPCompletionClient{
+		toolSchemas: newBuiltinToolSchemaCache(),
+		client: &http.Client{
+			Timeout:   providerHTTPTimeout,
+			Transport: h2OnlyTransport{base: transport},
+		},
+	}
 }
 
 type h2OnlyTransport struct {

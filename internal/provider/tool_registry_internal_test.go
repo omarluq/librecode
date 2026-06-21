@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 func TestRequestToolDefinitionsUsesLLMDefinitions(t *testing.T) {
@@ -24,7 +25,7 @@ func TestRequestToolDefinitionsUsesLLMDefinitions(t *testing.T) {
 			SessionID:       "",
 			Messages:        nil,
 			Tools: []llm.ToolDefinition{{
-				Schema:      map[string]any{jsonTypeKey: jsonObjectType},
+				Schema:      tool.MustSchemaFromMap(map[string]any{jsonTypeKey: jsonObjectType}),
 				Name:        "custom",
 				Description: "custom tool",
 				ReadOnly:    true,

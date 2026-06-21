@@ -2,10 +2,10 @@ package provider
 
 import (
 	"encoding/json"
-	"maps"
 	"reflect"
 
 	"github.com/invopop/jsonschema"
+	"github.com/samber/hot"
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/llm"
@@ -16,6 +16,7 @@ const (
 	toolSchemaPathField         = "Path"
 	toolSchemaLimitField        = "Limit"
 	toolSchemaAllowIgnoredField = "AllowIgnored"
+	builtinToolSchemaCacheSize  = 8
 )
 
 func toolSchemaAllowIgnoredDescription() string {
@@ -28,12 +29,16 @@ func astToolPathDescription() string {
 
 // ResponseTools returns OpenAI Responses API tool declarations for a completion request.
 func ResponseTools(request *CompletionRequest) []map[string]any {
-	return ResponseToolsFromDefinitions(requestToolDefinitions(request))
+	cache := newBuiltinToolSchemaCache()
+
+	return cache.responseTools(requestToolDefinitions(request))
 }
 
 // OpenAIChatTools returns OpenAI Chat Completions tool declarations for a completion request.
 func OpenAIChatTools(request *CompletionRequest) []map[string]any {
-	return OpenAIChatToolsFromDefinitions(requestToolDefinitions(request))
+	cache := newBuiltinToolSchemaCache()
+
+	return cache.openAIChatTools(requestToolDefinitions(request))
 }
 
 func requestToolDefinitions(request *CompletionRequest) []llm.ToolDefinition {
@@ -54,7 +59,7 @@ func builtinToolDefinitions() []llm.ToolDefinition {
 	definitions := make([]llm.ToolDefinition, 0, len(names))
 	for _, name := range names {
 		definitions = append(definitions, llm.ToolDefinition{
-			Schema:      nil,
+			Schema:      tool.EmptySchema(),
 			Name:        name,
 			Description: builtinToolDescription(name),
 			ReadOnly:    name != jsonBashToolName && name != jsonEditToolName && name != jsonWriteToolName,
@@ -100,8 +105,28 @@ func builtinToolDescription(name string) string {
 	}
 }
 
+type builtinToolSchemaCache struct {
+	schemas *hot.HotCache[string, *jsonschema.Schema]
+}
+
+func newBuiltinToolSchemaCache() builtinToolSchemaCache {
+	return builtinToolSchemaCache{
+		schemas: hot.NewHotCache[string, *jsonschema.Schema](hot.WTinyLFU, builtinToolSchemaCacheSize).
+			WithLoaders(loadBuiltinToolSchemas).
+			WithCopyOnRead(cloneGeneratedToolSchema).
+			WithCopyOnWrite(cloneGeneratedToolSchema).
+			Build(),
+	}
+}
+
 // ResponseToolsFromDefinitions returns OpenAI Responses API tool declarations for definitions.
 func ResponseToolsFromDefinitions(definitions []llm.ToolDefinition) []map[string]any {
+	cache := newBuiltinToolSchemaCache()
+
+	return cache.responseTools(definitions)
+}
+
+func (cache *builtinToolSchemaCache) responseTools(definitions []llm.ToolDefinition) []map[string]any {
 	tools := make([]map[string]any, 0, len(definitions))
 	for index := range definitions {
 		definition := &definitions[index]
@@ -109,7 +134,7 @@ func ResponseToolsFromDefinitions(definitions []llm.ToolDefinition) []map[string
 			jsonTypeKey:        functionToolType,
 			jsonToolNameKey:    definition.Name,
 			jsonDescriptionKey: definition.Description,
-			jsonToolParamsKey:  ToolParameterSchema(definition),
+			jsonToolParamsKey:  cache.parameterSchema(definition),
 			"strict":           false,
 		})
 	}
@@ -119,6 +144,12 @@ func ResponseToolsFromDefinitions(definitions []llm.ToolDefinition) []map[string
 
 // OpenAIChatToolsFromDefinitions returns OpenAI Chat Completions tool declarations for definitions.
 func OpenAIChatToolsFromDefinitions(definitions []llm.ToolDefinition) []map[string]any {
+	cache := newBuiltinToolSchemaCache()
+
+	return cache.openAIChatTools(definitions)
+}
+
+func (cache *builtinToolSchemaCache) openAIChatTools(definitions []llm.ToolDefinition) []map[string]any {
 	tools := make([]map[string]any, 0, len(definitions))
 	for index := range definitions {
 		definition := &definitions[index]
@@ -127,7 +158,7 @@ func OpenAIChatToolsFromDefinitions(definitions []llm.ToolDefinition) []map[stri
 			jsonFunctionKey: map[string]any{
 				jsonToolNameKey:    definition.Name,
 				jsonDescriptionKey: definition.Description,
-				jsonToolParamsKey:  ToolParameterSchema(definition),
+				jsonToolParamsKey:  cache.parameterSchema(definition),
 			},
 		})
 	}
@@ -148,8 +179,85 @@ func toolArgumentsFromJSON(argumentsJSON string) map[string]any {
 	return arguments
 }
 
-func builtinToolSchemaForName(name string) (map[string]any, bool) {
-	inputTypes := map[string]reflect.Type{
+type toolParameterSchema struct {
+	generated *jsonschema.Schema
+	raw       tool.Schema
+}
+
+func (schema toolParameterSchema) MarshalJSON() ([]byte, error) {
+	if schema.generated != nil {
+		return marshalGeneratedToolSchema(schema.generated), nil
+	}
+
+	encoded := schema.raw.RawMessage()
+	if len(encoded) == 0 {
+		return []byte("null"), nil
+	}
+
+	return encoded, nil
+}
+
+func rawToolParameterSchema(schema tool.Schema) toolParameterSchema {
+	return toolParameterSchema{generated: nil, raw: schema}
+}
+
+func generatedToolParameterSchema(schema *jsonschema.Schema) toolParameterSchema {
+	return toolParameterSchema{generated: schema, raw: tool.EmptySchema()}
+}
+
+func (cache *builtinToolSchemaCache) parameterSchema(definition *llm.ToolDefinition) toolParameterSchema {
+	if definition != nil && !definition.Schema.IsEmpty() {
+		return rawToolParameterSchema(definition.Schema)
+	}
+
+	if definition == nil {
+		return rawToolParameterSchema(freeformToolSchema())
+	}
+
+	schema, ok := cache.schemaForName(definition.Name)
+	if !ok {
+		return rawToolParameterSchema(freeformToolSchema())
+	}
+
+	return generatedToolParameterSchema(schema)
+}
+
+func (schema toolParameterSchema) payloadMap() map[string]any {
+	wrapped, err := tool.SchemaFromRaw(mustMarshalToolParameterSchema(schema))
+	if err != nil {
+		panic(oops.In("provider").Code("tool_schema_payload").Wrapf(err, "build tool schema payload"))
+	}
+
+	return wrapped.MustToMap()
+}
+
+func (cache *builtinToolSchemaCache) schemaForName(name string) (*jsonschema.Schema, bool) {
+	schema, found, err := cache.schemas.Get(name)
+	if err != nil || !found {
+		return nil, false
+	}
+
+	return schema, true
+}
+
+func loadBuiltinToolSchemas(names []string) (map[string]*jsonschema.Schema, error) {
+	inputTypes := builtinToolInputTypes()
+
+	schemas := make(map[string]*jsonschema.Schema, len(names))
+	for _, name := range names {
+		inputType, ok := inputTypes[name]
+		if !ok {
+			continue
+		}
+
+		schemas[name] = builtinToolSchema(inputType)
+	}
+
+	return schemas, nil
+}
+
+func builtinToolInputTypes() map[string]reflect.Type {
+	return map[string]reflect.Type{
 		jsonReadToolName:  reflect.TypeFor[tool.ReadInput](),
 		jsonBashToolName:  reflect.TypeFor[tool.BashInput](),
 		jsonEditToolName:  reflect.TypeFor[tool.EditInput](),
@@ -159,38 +267,25 @@ func builtinToolSchemaForName(name string) (map[string]any, bool) {
 		jsonLSToolName:    reflect.TypeFor[tool.LSInput](),
 		jsonASTToolName:   reflect.TypeFor[tool.ASTInput](),
 	}
-
-	inputType, ok := inputTypes[name]
-	if !ok {
-		return nil, false
-	}
-
-	return builtinToolSchema(inputType), true
 }
 
 // ToolParameterSchema returns the JSON parameter schema for a local tool definition.
 func ToolParameterSchema(definition *llm.ToolDefinition) map[string]any {
-	if definition != nil && len(definition.Schema) > 0 {
-		return cloneToolSchema(definition.Schema)
-	}
+	cache := newBuiltinToolSchemaCache()
 
-	if definition == nil {
-		return freeformToolSchema()
-	}
-
-	schema, ok := builtinToolSchemaForName(definition.Name)
-	if !ok {
-		return freeformToolSchema()
-	}
-
-	return cloneToolSchema(schema)
+	return cache.parameterSchema(definition).payloadMap()
 }
 
-func freeformToolSchema() map[string]any {
-	return map[string]any{jsonTypeKey: jsonObjectType, "additionalProperties": true}
+func freeformToolSchema() tool.Schema {
+	schema, err := tool.SchemaFromRaw([]byte(`{"type":"object","additionalProperties":true}`))
+	if err != nil {
+		panic(oops.In("provider").Code("tool_schema_freeform").Wrapf(err, "build freeform tool schema"))
+	}
+
+	return schema
 }
 
-func builtinToolSchema(inputType reflect.Type) map[string]any {
+func builtinToolSchema(inputType reflect.Type) *jsonschema.Schema {
 	reflector := jsonschema.Reflector{
 		Anonymous:      true,
 		DoNotReference: true,
@@ -199,17 +294,7 @@ func builtinToolSchema(inputType reflect.Type) map[string]any {
 	schema := reflector.ReflectFromType(inputType)
 	schema.Version = ""
 
-	encoded, err := json.Marshal(schema)
-	if err != nil {
-		panic(oops.In("provider").Code("tool_schema_marshal").Wrapf(err, "marshal generated tool schema"))
-	}
-
-	var decoded map[string]any
-	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		panic(oops.In("provider").Code("tool_schema_unmarshal").Wrapf(err, "decode generated tool schema"))
-	}
-
-	return decoded
+	return schema
 }
 
 func lookupToolSchemaComment(inputType reflect.Type, fieldName string) string {
@@ -277,9 +362,33 @@ func toolSchemaFieldComments() map[reflect.Type]map[string]string {
 	}
 }
 
-func cloneToolSchema(schema map[string]any) map[string]any {
-	clone := make(map[string]any, len(schema))
-	maps.Copy(clone, schema)
+func cloneGeneratedToolSchema(schema *jsonschema.Schema) *jsonschema.Schema {
+	if schema == nil {
+		return nil
+	}
 
-	return clone
+	var clone jsonschema.Schema
+	if err := json.Unmarshal(marshalGeneratedToolSchema(schema), &clone); err != nil {
+		panic(oops.In("provider").Code("tool_schema_clone").Wrapf(err, "clone generated tool schema"))
+	}
+
+	return &clone
+}
+
+func marshalGeneratedToolSchema(schema *jsonschema.Schema) []byte {
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		panic(oops.In("provider").Code("tool_schema_marshal").Wrapf(err, "marshal generated tool schema"))
+	}
+
+	return encoded
+}
+
+func mustMarshalToolParameterSchema(schema toolParameterSchema) []byte {
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		panic(oops.In("provider").Code("tool_schema_marshal").Wrapf(err, "marshal tool schema"))
+	}
+
+	return encoded
 }

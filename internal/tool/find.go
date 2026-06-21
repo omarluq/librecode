@@ -40,7 +40,7 @@ func NewFindTool(cwd string) *FindTool {
 // Definition returns find tool metadata.
 func (findTool *FindTool) Definition() Definition {
 	return Definition{
-		Schema:        nil,
+		Schema:        EmptySchema(),
 		Name:          NameFind,
 		Label:         "find",
 		Description:   findDescription(),

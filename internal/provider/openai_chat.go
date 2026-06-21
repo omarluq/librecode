@@ -41,7 +41,7 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 	request *CompletionRequest,
 	state *openAIChatLoopState,
 ) (bool, error) {
-	payload := openAIChatPayload(request, state.messages)
+	payload := client.openAIChatPayload(request, state.messages)
 	headers := openAIHeaders(request)
 
 	providerRequest, err := applyProviderRequestHook(ctx, request, payload, headers)
@@ -115,8 +115,24 @@ func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *provid
 
 const openAIChatDefaultTemperature = 0.2
 
-func openAIChatPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
-	tools := OpenAIChatTools(request)
+func openAIChatPayload(request *CompletionRequest) map[string]any {
+	cache := newBuiltinToolSchemaCache()
+
+	return cache.openAIChatPayload(request, nil)
+}
+
+func (client *HTTPCompletionClient) openAIChatPayload(
+	request *CompletionRequest,
+	messages []map[string]any,
+) map[string]any {
+	return client.toolSchemas.openAIChatPayload(request, messages)
+}
+
+func (cache *builtinToolSchemaCache) openAIChatPayload(
+	request *CompletionRequest,
+	messages []map[string]any,
+) map[string]any {
+	tools := cache.openAIChatTools(requestToolDefinitions(request))
 
 	payload := map[string]any{
 		jsonModelKey:    request.Request.Model.ID,

@@ -32,7 +32,7 @@ func NewLSTool(cwd string) *LSTool {
 // Definition returns ls tool metadata.
 func (lsTool *LSTool) Definition() Definition {
 	return Definition{
-		Schema:        nil,
+		Schema:        EmptySchema(),
 		Name:          NameLS,
 		Label:         "ls",
 		Description:   lsDescription(),

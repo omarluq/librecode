@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/omarluq/librecode/internal/tool"
+
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -263,16 +265,16 @@ func luaRegistrationArgs(state *lua.LState) (name, description string, function 
 	return state.CheckString(1), state.OptString(luaFirstArgument, ""), state.CheckFunction(luaSecondArgument)
 }
 
-func luaOptionalSchema(state *lua.LState, index int) map[string]any {
+func luaOptionalSchema(state *lua.LState, index int) tool.Schema {
 	if state.GetTop() < index {
-		return map[string]any{}
+		return tool.EmptySchema()
 	}
 
 	if table, ok := state.Get(index).(*lua.LTable); ok {
-		return luaTableToMap(table)
+		return tool.MustSchemaFromMap(luaTableToMap(table))
 	}
 
-	return map[string]any{}
+	return tool.EmptySchema()
 }
 
 func luaEventHandlerArgs(state *lua.LState) (priority int, function *lua.LFunction) {

@@ -213,11 +213,11 @@ func llmAuthFromModel(auth model.RequestAuth) llm.Auth {
 
 func llmToolDefinitionFromTool(definition *tool.Definition) llm.ToolDefinition {
 	if definition == nil {
-		return llm.ToolDefinition{Schema: nil, Name: "", Description: "", ReadOnly: false}
+		return llm.ToolDefinition{Schema: tool.EmptySchema(), Name: "", Description: "", ReadOnly: false}
 	}
 
 	return llm.ToolDefinition{
-		Schema:      cloneAnyMapNil(definition.Schema),
+		Schema:      definition.Schema,
 		Name:        string(definition.Name),
 		Description: definition.Description,
 		ReadOnly:    definition.ReadOnly,

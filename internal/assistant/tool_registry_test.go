@@ -58,7 +58,8 @@ func TestExtensionToolSchemaIsVisibleInRegistryDefinitions(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := findToolDefinition(t, *client.definitions, "echo")
-	properties, ok := definition.Schema["properties"].(map[string]any)
+	schema := definition.Schema.MustToMap()
+	properties, ok := schema["properties"].(map[string]any)
 	require.True(t, ok)
 	assert.Contains(t, properties, "text")
 }
@@ -144,7 +145,7 @@ func findToolDefinition(t *testing.T, definitions []tool.Definition, name string
 	require.Failf(t, "tool definition not found", "name=%s", name)
 
 	return tool.Definition{
-		Schema:           nil,
+		Schema:           tool.EmptySchema(),
 		Name:             "",
 		Label:            "",
 		Description:      "",

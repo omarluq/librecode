@@ -59,7 +59,7 @@ func NewGrepTool(cwd string) *GrepTool {
 // Definition returns grep tool metadata.
 func (grepTool *GrepTool) Definition() Definition {
 	return Definition{
-		Schema:        nil,
+		Schema:        EmptySchema(),
 		Name:          NameGrep,
 		Label:         "grep",
 		Description:   grepDescription(),

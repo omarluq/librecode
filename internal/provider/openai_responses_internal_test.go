@@ -191,7 +191,7 @@ func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		client := &HTTPCompletionClient{client: server.Client()}
+		client := &HTTPCompletionClient{toolSchemas: newBuiltinToolSchemaCache(), client: server.Client()}
 		result, err := client.requestResponses(t.Context(), server.URL, nil, map[string]any{}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "ok", result.Text)
@@ -207,7 +207,7 @@ func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		client := &HTTPCompletionClient{client: server.Client()}
+		client := &HTTPCompletionClient{toolSchemas: newBuiltinToolSchemaCache(), client: server.Client()}
 		_, err := client.requestResponses(t.Context(), server.URL, nil, map[string]any{}, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "bad status")
