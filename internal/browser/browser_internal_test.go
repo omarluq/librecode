@@ -19,16 +19,25 @@ func TestOpen(t *testing.T) {
 		openErr error
 		wantErr error
 		name    string
+		target  string
 	}{
 		{
 			openErr: nil,
 			wantErr: nil,
 			name:    "opens url",
+			target:  testURL,
 		},
 		{
 			openErr: openErr,
 			wantErr: openErr,
 			name:    "wraps opener errors",
+			target:  testURL,
+		},
+		{
+			openErr: nil,
+			wantErr: nil,
+			name:    "passes empty url to opener",
+			target:  "",
 		},
 	}
 
@@ -41,7 +50,7 @@ func TestOpen(t *testing.T) {
 				urls: nil,
 			}
 
-			err := open(testURL, opener.openURL)
+			err := open(test.target, opener.openURL)
 
 			if test.wantErr == nil {
 				require.NoError(t, err)
@@ -49,7 +58,7 @@ func TestOpen(t *testing.T) {
 				require.ErrorIs(t, err, test.wantErr)
 			}
 
-			assert.Equal(t, []string{testURL}, opener.urls)
+			assert.Equal(t, []string{test.target}, opener.urls)
 		})
 	}
 }
