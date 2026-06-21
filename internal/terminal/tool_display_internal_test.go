@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -132,11 +133,45 @@ func TestToolSummaryArgumentTypeFallbacks(t *testing.T) {
 	}
 }
 
+func TestToolDisplayAdditionalFallbackBranches(t *testing.T) {
+	t.Parallel()
+
+	errorDisplay := toolDisplayFromParsedEvent(&parsedToolEvent{
+		Name:          testToolBash,
+		ArgumentsJSON: `{"command":"false"}`,
+		DetailsJSON:   "",
+		Output:        "",
+		Error:         "boom",
+	})
+	assert.Equal(t, toolDisplayError, errorDisplay.Status)
+	assert.Equal(t, "$ false", errorDisplay.Title)
+
+	assert.Equal(t, testToolBash, bashToolSummary(nil, testToolBash))
+	assert.Equal(t, "grep", grepToolSummary(map[string]any{}, "grep"))
+	assert.Equal(t, "ast", astToolSummary(map[string]any{"mode": "query"}, "ast"))
+	assert.Equal(t, "ast outline main.go", astToolSummary(map[string]any{"path": "main.go"}, "ast"))
+	assert.Contains(t, unknownToolSummary("custom", map[string]any{"nested": make(chan int)}, ""), "custom nested=")
+	assert.Equal(t, "7.25", formatNumber(7.25))
+	assert.False(t, boolArg(map[string]any{}, "literal"))
+	assert.Zero(t, arrayLenArg(map[string]any{"items": "nope"}, "items"))
+}
+
+func TestToolSummaryNumericArgumentTypes(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "$ sleep (timeout 2.5s)", bashSummaryForTest(float32(2.5)))
+	assert.Equal(t, "$ sleep (timeout 2s)", bashSummaryForTest(2))
+	assert.Equal(t, "$ sleep (timeout 3s)", bashSummaryForTest(int64(3)))
+	assert.Equal(t, "$ sleep (timeout 4s)", bashSummaryForTest(int32(4)))
+	assert.Equal(t, "$ sleep (timeout 5s)", bashSummaryForTest(json.Number("5")))
+	assert.Equal(t, "$ sleep", bashSummaryForTest(json.Number("NaN-ish")))
+}
+
 func TestToolDisplayFromCallUsesStructuredArguments(t *testing.T) {
 	t.Parallel()
 
 	display := toolDisplayFromCall(assistant.ToolCallEvent{
-		Arguments:     testutil.ToolArguments(map[string]any{"command": "go test ./..."}),
+		Arguments:     testutil.ToolArguments(map[string]any{testToolCommandKey: "go test ./..."}),
 		ID:            "call_1",
 		Name:          testToolBash,
 		ArgumentsJSON: `{"command":"stale"}`,
@@ -281,4 +316,8 @@ func testToolDisplay(title string, status toolDisplayStatus) toolDisplay {
 		Error:         "",
 		Status:        status,
 	}
+}
+
+func bashSummaryForTest(timeout any) string {
+	return bashToolSummary(map[string]any{testToolCommandKey: "sleep", "timeout": timeout}, testToolBash)
 }

@@ -47,7 +47,7 @@ func runningToolAppendRenderRemoveCase() runningToolBlockTestCase {
 			t.Helper()
 
 			call := testToolCallEvent(testToolBash, bashTestArguments)
-			call.Arguments = testutil.ToolArguments(map[string]any{"command": "go test ./..."})
+			call.Arguments = testutil.ToolArguments(map[string]any{testToolCommandKey: "go test ./..."})
 
 			app.applyStreamedToolStart(&call, "")
 			require.NotEmpty(t, app.runningToolBlocks)

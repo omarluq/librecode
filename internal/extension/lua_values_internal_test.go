@@ -1,12 +1,15 @@
 package extension
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	lua "github.com/yuin/gopher-lua"
 )
+
+const luaFieldWorkingForTest = "working"
 
 func TestLuaToolResultFromScalarUsesStringContent(t *testing.T) {
 	t.Parallel()
@@ -15,6 +18,32 @@ func TestLuaToolResultFromScalarUsesStringContent(t *testing.T) {
 
 	assert.Equal(t, "ok", result.Content)
 	assert.Empty(t, result.Details)
+}
+
+func TestJSONRawToLuaValue(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
+		raw  json.RawMessage
+		name string
+		want lua.LValue
+	}{
+		{name: "valid string", raw: json.RawMessage(`"ok"`), want: lua.LString("ok")},
+		{name: "invalid JSON", raw: json.RawMessage(`{`), want: lua.LNil},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			state := lua.NewState()
+			t.Cleanup(state.Close)
+
+			got := jsonRawToLuaValue(state, testCase.raw)
+
+			assert.Equal(t, testCase.want, got.value)
+		})
+	}
 }
 
 func TestStringMapToLuaTable(t *testing.T) {
@@ -54,7 +83,7 @@ func TestLuaScalarAndContextFallbacks(t *testing.T) {
 		})
 	}
 
-	assert.False(t, luaContextBool(map[string]any{"working": "yes"}, "working"))
+	assert.False(t, luaContextBool(map[string]any{luaFieldWorkingForTest: "y"}, luaFieldWorkingForTest))
 }
 
 func TestLuaBufferStateVariants(t *testing.T) {
@@ -150,4 +179,78 @@ func TestLuaTableBoolValue(t *testing.T) {
 			assert.Equal(t, testCase.wantValue, value)
 		})
 	}
+}
+
+func TestNewLuaValueCoversCollectionAndFallbackTypes(t *testing.T) {
+	t.Parallel()
+
+	state := lua.NewState()
+	t.Cleanup(state.Close)
+
+	stringMap := newLuaValue(state, map[string]string{"one": "1"}).value
+	stringMapTable, matched := stringMap.(*lua.LTable)
+	require.True(t, matched)
+	assert.Equal(t, "1", stringMapTable.RawGetString("one").String())
+
+	stringSlice := newLuaValue(state, []string{"a", "b"}).value
+	stringSliceTable, matched := stringSlice.(*lua.LTable)
+	require.True(t, matched)
+	assert.Equal(t, "b", stringSliceTable.RawGetInt(2).String())
+
+	assert.Equal(t, lua.LString("7"), newLuaValue(state, uint(7)).value)
+
+	int64Value, ok := scalarLuaValue(int64(9))
+	require.True(t, ok)
+
+	numberValue, matched := int64Value.value.(lua.LNumber)
+	require.True(t, matched)
+	assert.InDelta(t, 9, float64(numberValue), 0)
+}
+
+func TestLuaValueFallbackBranches(t *testing.T) {
+	t.Parallel()
+
+	state := lua.NewState()
+	t.Cleanup(state.Close)
+
+	table := state.NewTable()
+	state.SetField(table, "text", lua.LString("x"))
+	assert.Equal(t, 3, firstLuaTableIntValue(table, "missing", 3))
+	assert.Nil(t, luaTableFunction(table, "missing"))
+	assert.False(t, luaContextBool(map[string]any{}, luaFieldWorkingForTest))
+	assert.True(t, luaContextBool(map[string]any{luaFieldWorkingForTest: true}, luaFieldWorkingForTest))
+
+	text, ok := luaBufferText(state.NewTable())
+	assert.False(t, ok)
+	assert.Empty(t, text)
+
+	buffer := luaBufferState("empty", state.NewTable())
+	assert.Empty(t, buffer.Text)
+	assert.Equal(t, 0, buffer.Cursor)
+}
+
+func TestLuaUIDrawOpReadsSpans(t *testing.T) {
+	t.Parallel()
+
+	state := lua.NewState()
+	t.Cleanup(state.Close)
+
+	table := state.NewTable()
+	spans := state.NewTable()
+	span := state.NewTable()
+	state.SetField(span, luaFieldText, lua.LString("hello"))
+	state.RawSetInt(spans, 1, span)
+	state.SetField(table, "spans", spans)
+
+	op := luaUIDrawOp(table)
+
+	require.NotNil(t, op)
+	require.Len(t, op.Spans, 1)
+	assert.Equal(t, "hello", op.Spans[0].Text)
+}
+
+func firstLuaTableIntValue(table *lua.LTable, key string, fallback int) int {
+	value, _ := luaTableInt(table, key, fallback)
+
+	return value
 }

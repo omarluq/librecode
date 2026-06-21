@@ -198,3 +198,29 @@ func executeTool(
 
 	return result
 }
+
+func TestRegistry_ExecuteErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
+		name        string
+		toolName    string
+		payload     []byte
+		wantErrText string
+	}{
+		{name: "unknown tool", toolName: "missing", payload: []byte(`{}`), wantErrText: "unknown tool"},
+		{name: "invalid json", toolName: "read", payload: []byte(`{`), wantErrText: "decode tool arguments"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			registry := tool.NewRegistry(t.TempDir())
+			_, err := registry.ExecuteJSON(context.Background(), testCase.toolName, testCase.payload)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.wantErrText)
+		})
+	}
+}

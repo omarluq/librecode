@@ -11,4 +11,5 @@ const (
 	testToolEdit         = "edit"
 	testToolFind         = "find"
 	testToolWrite        = "write"
+	testToolCommandKey   = "command"
 )

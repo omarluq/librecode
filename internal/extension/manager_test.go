@@ -682,21 +682,41 @@ end` + testCase.schemaArg + `)
 func TestManager_RegisterToolRejectsInvalidInputSchema(t *testing.T) {
 	t.Parallel()
 
-	extensionPath := filepath.Join(t.TempDir(), "tool.lua")
-	require.NoError(t, writeTestFile(extensionPath, `
+	tests := []struct {
+		name      string
+		schemaArg string
+	}{
+		{
+			name:      "non finite number",
+			schemaArg: `{ type = "object", invalid = 0 / 0 }`,
+		},
+		{
+			name:      "array schema",
+			schemaArg: `{ "not", "an", "object" }`,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			extensionPath := filepath.Join(t.TempDir(), "tool.lua")
+			require.NoError(t, writeTestFile(extensionPath, `
 local lc = require("librecode")
 lc.register_tool("echo", "Echo text", function(args)
   return { content = args.foo or "" }
-end, { type = "object", invalid = 0 / 0 })
+end, `+testCase.schemaArg+`)
 `))
 
-	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(manager.Shutdown)
+			manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+			t.Cleanup(manager.Shutdown)
 
-	err := manager.LoadFile(context.Background(), extensionPath)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid tool schema")
-	assert.Empty(t, manager.Tools())
+			err := manager.LoadFile(context.Background(), extensionPath)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid tool schema")
+			assert.Empty(t, manager.Tools())
+		})
+	}
 }
 
 func assertLoadedExtension(t *testing.T, loaded []extension.LoadedExtension) {

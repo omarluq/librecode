@@ -55,3 +55,15 @@ func TestSchemaRejectsInvalidRawJSON(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "valid JSON")
 }
+
+func TestSchemaFromRawCopiesInput(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{"type":"object"}`)
+	schema, err := tool.SchemaFromRaw(raw)
+	require.NoError(t, err)
+
+	raw[0] = '['
+
+	assert.JSONEq(t, `{"type":"object"}`, string(schema.RawMessage()))
+}

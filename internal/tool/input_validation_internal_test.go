@@ -7,6 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	validationTestCompileSchemaErr = "compile tool input schema"
+	validationTestValidateInputErr = "validate tool input"
+)
+
 func TestRequiredToolArguments(t *testing.T) {
 	t.Parallel()
 
@@ -165,12 +170,12 @@ func TestValidateToolInput(t *testing.T) {
 		{
 			name:        "invalid type uses schema validation",
 			inputJSON:   `{"path":42,"content":"x"}`,
-			wantErrText: "validate tool input",
+			wantErrText: validationTestValidateInputErr,
 		},
 		{
 			name:        "unknown property uses schema validation",
 			inputJSON:   `{"path":"x","content":"","extra":true}`,
-			wantErrText: "validate tool input",
+			wantErrText: validationTestValidateInputErr,
 		},
 	}
 
@@ -233,27 +238,102 @@ func TestValidateToolInputNormalizesASTMode(t *testing.T) {
 		PromptGuidelines: nil,
 		ReadOnly:         true,
 	}
-	input := testArguments(`{"path":"main.go","mode":" SYMBOLS "}`)
 
-	require.NoError(t, validateToolInput(&definition, input, nil))
-}
-
-func TestValidateToolInputRejectsInvalidSchemas(t *testing.T) {
-	t.Parallel()
-
-	definition := Definition{
-		Schema:           testSchema(`{"type":"not-a-json-schema-type"}`),
-		Name:             NameRead,
-		Label:            string(NameRead),
-		Description:      "",
-		PromptSnippet:    "",
-		PromptGuidelines: nil,
-		ReadOnly:         true,
+	tests := []struct {
+		inputJSON   string
+		name        string
+		wantErrText string
+	}{
+		{name: "trims and lowercases mode", inputJSON: `{"path":"main.go","mode":" SYMBOLS "}`, wantErrText: ""},
+		{name: "keeps already normalized mode", inputJSON: `{"path":"main.go","mode":"symbols"}`, wantErrText: ""},
+		{
+			name:        "ignores non-string mode before schema validation",
+			inputJSON:   `{"path":"main.go","mode":42}`,
+			wantErrText: validationTestValidateInputErr,
+		},
+		{name: "ignores missing mode", inputJSON: `{"path":"main.go"}`, wantErrText: ""},
 	}
 
-	err := validateToolInput(&definition, EmptyArguments(), nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "compile tool input schema")
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateToolInput(&definition, testArguments(testCase.inputJSON), nil)
+			if testCase.wantErrText == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.wantErrText)
+		})
+	}
+}
+
+func TestValidateToolInputSchemaErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
+		schema      Schema
+		input       Arguments
+		name        string
+		wantErrText string
+	}{
+		{
+			name:        "invalid schema type",
+			schema:      testSchema(`{"type":"not-a-json-schema-type"}`),
+			input:       EmptyArguments(),
+			wantErrText: validationTestCompileSchemaErr,
+		},
+		{
+			name:        "invalid schema JSON",
+			schema:      Schema{raw: []byte(`{`)},
+			input:       EmptyArguments(),
+			wantErrText: validationTestCompileSchemaErr,
+		},
+		{
+			name:        "unresolvable schema reference",
+			schema:      testSchema(`{"$ref":"#/missing"}`),
+			input:       EmptyArguments(),
+			wantErrText: validationTestCompileSchemaErr,
+		},
+		{
+			name:        "invalid input JSON",
+			schema:      testSchema(`{"type":"object"}`),
+			input:       Arguments{raw: []byte(`{`)},
+			wantErrText: "decode tool input",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			definition := Definition{
+				Schema:           testCase.schema,
+				Name:             NameRead,
+				Label:            string(NameRead),
+				Description:      "",
+				PromptSnippet:    "",
+				PromptGuidelines: nil,
+				ReadOnly:         true,
+			}
+
+			err := validateToolInput(&definition, testCase.input, nil)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.wantErrText)
+		})
+	}
+}
+
+func TestSchemaRequiredArgumentsRejectsInvalidRawSchema(t *testing.T) {
+	t.Parallel()
+
+	required, found := schemaRequiredArguments(Schema{raw: []byte(`{`)})
+
+	assert.False(t, found)
+	assert.Nil(t, required)
 }
 
 func TestExpectedToolInputShape(t *testing.T) {
@@ -281,4 +361,49 @@ func testSchema(raw string) Schema {
 	}
 
 	return schema
+}
+
+func TestCompiledToolInputSchemaWithCacheReturnsCompileError(t *testing.T) {
+	t.Parallel()
+
+	_, err := compiledToolInputSchema(testSchema(`{"type":"not-a-json-schema-type"}`), newSchemaValidatorCache())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "compile tool schema")
+}
+
+func TestNormalizeToolInputForValidationFallbacks(t *testing.T) {
+	t.Parallel()
+
+	nonASTDefinition := Definition{
+		Schema:           EmptySchema(),
+		Name:             NameRead,
+		Label:            string(NameRead),
+		Description:      "",
+		PromptSnippet:    "",
+		PromptGuidelines: nil,
+		ReadOnly:         true,
+	}
+	astDefinition := Definition{
+		Schema:           inputSchemaForName(NameAST),
+		Name:             NameAST,
+		Label:            string(NameAST),
+		Description:      "",
+		PromptSnippet:    "",
+		PromptGuidelines: nil,
+		ReadOnly:         true,
+	}
+
+	invalid := Arguments{raw: []byte(`{`)}
+	assert.Equal(t, invalid.String(), normalizeToolInputForValidation(&nonASTDefinition, invalid).String())
+	assert.Equal(t, invalid.String(), normalizeToolInputForValidation(&astDefinition, invalid).String())
+}
+
+func TestSchemaRequiredArgumentsReturnsNotFoundWhenAllNamesInvalid(t *testing.T) {
+	t.Parallel()
+
+	required, found := schemaRequiredArguments(testSchema(`{"required":["",42,false]}`))
+
+	assert.False(t, found)
+	assert.Nil(t, required)
 }

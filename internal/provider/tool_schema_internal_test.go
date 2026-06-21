@@ -224,6 +224,15 @@ func schemaPayloadForDefinition(t *testing.T, definition *llm.ToolDefinition) ma
 	return schema
 }
 
+func TestToolParameterSchemaMarshalJSONEmptySchema(t *testing.T) {
+	t.Parallel()
+
+	encoded, err := json.Marshal(rawToolParameterSchema(tool.EmptySchema()))
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `null`, string(encoded))
+}
+
 func TestBuiltinToolSchemaUsesGeneratedStructMetadata(t *testing.T) {
 	t.Parallel()
 
