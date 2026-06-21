@@ -32,6 +32,20 @@ func TestSchemaEmptyAndMarshal(t *testing.T) {
 	encoded, err := json.Marshal(schema)
 	require.NoError(t, err)
 	assert.JSONEq(t, `null`, string(encoded))
+
+	schema, err = tool.SchemaFromRaw([]byte(`{"type":"object"}`))
+	require.NoError(t, err)
+	encoded, err = json.Marshal(schema)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"type":"object"}`, string(encoded))
+}
+
+func TestSchemaFromRawHandlesEmptyRaw(t *testing.T) {
+	t.Parallel()
+
+	schema, err := tool.SchemaFromRaw(nil)
+	require.NoError(t, err)
+	assert.True(t, schema.IsEmpty())
 }
 
 func TestSchemaRejectsInvalidRawJSON(t *testing.T) {

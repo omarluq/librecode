@@ -24,6 +24,15 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 		assertAdditionalProperties(t, schema, true)
 	})
 
+	t.Run("nil definition is freeform", func(t *testing.T) {
+		t.Parallel()
+
+		schema := schemaPayloadForDefinition(t, nil)
+
+		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(schema[jsonTypeKey]))
+		assertAdditionalProperties(t, schema, true)
+	})
+
 	t.Run("custom schema is cloned", func(t *testing.T) {
 		t.Parallel()
 
@@ -43,6 +52,55 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(schema[jsonTypeKey]))
 		assertAdditionalProperties(t, schema, false)
 	})
+}
+
+func TestToolDeclarationsFromDefinitions(t *testing.T) {
+	t.Parallel()
+
+	definition := llm.ToolDefinition{
+		Schema:      tool.EmptySchema(),
+		Name:        "custom",
+		Description: "custom description",
+		ReadOnly:    false,
+	}
+
+	tests := []struct {
+		declare func([]llm.ToolDefinition) []map[string]any
+		assert  func(*testing.T, map[string]any)
+		name    string
+	}{
+		{
+			name:    "responses",
+			declare: ResponseToolsFromDefinitions,
+			assert: func(t *testing.T, declaration map[string]any) {
+				t.Helper()
+
+				assert.Equal(t, functionToolType, declaration[jsonTypeKey])
+				assert.Equal(t, "custom", declaration[jsonToolNameKey])
+			},
+		},
+		{
+			name:    "chat",
+			declare: OpenAIChatToolsFromDefinitions,
+			assert: func(t *testing.T, declaration map[string]any) {
+				t.Helper()
+
+				function, ok := declaration[jsonFunctionKey].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "custom", function[jsonToolNameKey])
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			declarations := testCase.declare([]llm.ToolDefinition{definition})
+			require.Len(t, declarations, 1)
+			testCase.assert(t, declarations[0])
+		})
+	}
 }
 
 func TestRequestToolDefinitions(t *testing.T) {

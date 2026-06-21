@@ -2,6 +2,7 @@ package provider
 
 import (
 	"crypto/tls"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -29,6 +30,26 @@ func TestNewHTTPCompletionClientTunedTransport(t *testing.T) {
 	require.NotNil(t, transport.TLSClientConfig)
 	assert.Equal(t, uint16(tls.VersionTLS12), transport.TLSClientConfig.MinVersion)
 	assert.Equal(t, []string{"h2"}, transport.TLSClientConfig.NextProtos)
+}
+
+func TestH2OnlyTransportWrapsBaseErrors(t *testing.T) {
+	t.Parallel()
+
+	transport := h2OnlyTransport{base: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return nil, errors.New("boom")
+	})}
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.test", http.NoBody)
+	require.NoError(t, err)
+
+	response, err := transport.RoundTrip(request)
+	if response != nil {
+		defer closeBody(response.Body)
+	}
+
+	require.Error(t, err)
+	assert.Nil(t, response)
+	assert.Contains(t, err.Error(), "request provider response")
 }
 
 func TestH2OnlyTransportRejectsHTTP1Responses(t *testing.T) {

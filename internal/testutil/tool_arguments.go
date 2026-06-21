@@ -13,7 +13,12 @@ func ToolArguments(input map[string]any) tool.Arguments {
 		panic(err)
 	}
 
-	arguments, err := tool.ArgumentsFromRaw(payload)
+	return ToolArgumentsJSON(string(payload))
+}
+
+// ToolArgumentsJSON converts raw test JSON into validated tool arguments.
+func ToolArgumentsJSON(input string) tool.Arguments {
+	arguments, err := tool.ArgumentsFromRaw([]byte(input))
 	if err != nil {
 		panic(err)
 	}
