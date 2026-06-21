@@ -89,11 +89,9 @@ func TestRespondToSlashCommand(t *testing.T) {
 }
 
 func TestRespondToSkillCommand(t *testing.T) {
-	t.Parallel()
-
 	t.Run("lists skills", func(t *testing.T) {
-		t.Parallel()
-
+		home := t.TempDir()
+		t.Setenv("HOME", home)
 		root := t.TempDir()
 		skillPath := writeSlashTestSkill(t, root, "one", "First skill", "skill body")
 		runtime := newRuntimeFromDeps(nil)
@@ -108,8 +106,8 @@ func TestRespondToSkillCommand(t *testing.T) {
 	})
 
 	t.Run("loads named skill and emits event", func(t *testing.T) {
-		t.Parallel()
-
+		home := t.TempDir()
+		t.Setenv("HOME", home)
 		root := t.TempDir()
 		writeSlashTestSkill(t, root, "one", "First skill", "skill body")
 
@@ -132,8 +130,8 @@ func TestRespondToSkillCommand(t *testing.T) {
 	})
 
 	t.Run("unknown skill", func(t *testing.T) {
-		t.Parallel()
-
+		home := t.TempDir()
+		t.Setenv("HOME", home)
 		root := t.TempDir()
 		writeSlashTestSkill(t, root, "one", "First skill", "skill body")
 
@@ -146,33 +144,47 @@ func TestRespondToSkillCommand(t *testing.T) {
 	})
 }
 
+func TestRespondToSkillCommandWithNoSkills(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	response, events, err := newRuntimeFromDeps(nil).respondToSkillCommand(context.Background(), t.TempDir(), "", nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "No skills found.", response)
+	assert.Empty(t, events)
+}
+
 func TestLoadSkillWithReadToolReportsReadErrors(t *testing.T) {
 	t.Parallel()
 
-	skill := &core.Skill{
-		Metadata: nil,
-		SourceInfo: core.NewSourceInfo("", core.SourceInfoOptions{
-			Scope:   "",
-			Origin:  "",
-			BaseDir: "",
-			Source:  "",
-		}),
-		Name:                   runtimeSlashMissing,
-		Description:            "",
-		FilePath:               filepath.Join(t.TempDir(), runtimeSlashMissing, "SKILL.md"),
-		BaseDir:                "",
-		License:                "",
-		Compatibility:          "",
-		AllowedTools:           nil,
-		UserInvocable:          false,
-		DisableModelInvocation: false,
-	}
+	skill := runtimeSlashSkill(filepath.Join(t.TempDir(), runtimeSlashMissing, "SKILL.md"))
 
 	_, toolEvent, err := newRuntimeFromDeps(nil).loadSkillWithReadTool(context.Background(), t.TempDir(), skill, nil)
 
 	require.Error(t, err)
 	assert.True(t, toolEvent.IsError)
 	assert.Contains(t, toolEvent.Error, "read file")
+}
+
+func TestLoadSkillWithReadToolUsesLimit(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	skillPath := writeSlashTestSkill(t, root, "limited", "Limited skill", "one\ntwo")
+	limit := 1
+
+	content, event, err := newRuntimeFromDeps(nil).loadSkillWithReadTool(
+		context.Background(),
+		root,
+		runtimeSlashSkill(skillPath),
+		&limit,
+	)
+
+	require.NoError(t, err)
+	assert.Contains(t, content, "Use offset=2 to continue")
+	assert.NotContains(t, content, "two")
+	assert.JSONEq(t, `{"limit":1,"path":"`+skillPath+`"}`, event.ArgumentsJSON)
 }
 
 func TestRespondToToolCommand(t *testing.T) {
@@ -229,13 +241,14 @@ func TestRespondToToolCommand(t *testing.T) {
 func TestSkillReadArgumentsJSON(t *testing.T) {
 	t.Parallel()
 
+	limit := 5
 	tests := []struct {
 		limit *int
 		name  string
 		want  string
 	}{
 		{limit: nil, name: "without limit", want: `{"path":"/tmp/SKILL.md"}`},
-		{limit: new(5), name: "with limit", want: `{"limit":5,"path":"/tmp/SKILL.md"}`},
+		{limit: &limit, name: "with limit", want: `{"limit":5,"path":"/tmp/SKILL.md"}`},
 	}
 
 	for _, testCase := range tests {
@@ -260,6 +273,27 @@ func writeSlashTestSkill(t *testing.T, root, name, description, body string) str
 	require.NoError(t, os.WriteFile(skillPath, []byte(content), 0o600))
 
 	return skillPath
+}
+
+func runtimeSlashSkill(path string) *core.Skill {
+	return &core.Skill{
+		Metadata: nil,
+		SourceInfo: core.NewSourceInfo("", core.SourceInfoOptions{
+			Scope:   "",
+			Origin:  "",
+			BaseDir: "",
+			Source:  "",
+		}),
+		Name:                   runtimeSlashMissing,
+		Description:            "",
+		FilePath:               path,
+		BaseDir:                "",
+		License:                "",
+		Compatibility:          "",
+		AllowedTools:           nil,
+		UserInvocable:          false,
+		DisableModelInvocation: false,
+	}
 }
 
 type slashCommandExtensions struct {

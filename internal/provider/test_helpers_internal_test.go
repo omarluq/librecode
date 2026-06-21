@@ -18,6 +18,8 @@ const (
 	testExistingKey         = "existing"
 	testThinkingDelta       = "thinking"
 	testOpenAIProvider      = "openai"
+	testProviderAPIKey      = "sk-test"
+	testProviderBaseURL     = "https://provider.test"
 	testProviderMessageType = jsonMessageType
 	testProviderPartialText = "partial"
 	testProviderDeclined    = "declined"

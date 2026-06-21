@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -151,4 +152,55 @@ schema[2] = "second"
 			assert.JSONEq(t, testCase.want, string(rawSchema))
 		})
 	}
+}
+
+func TestLuaSchemaRawEncodesArraySeparatorsAndMixedKeys(t *testing.T) {
+	t.Parallel()
+
+	state := lua.NewState()
+	t.Cleanup(state.Close)
+
+	table := state.NewTable()
+	state.RawSetInt(table, 1, lua.LString("first"))
+	state.RawSetInt(table, 2, lua.LString("second"))
+
+	rawSchema, err := luaSchemaRaw(table)
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `["first","second"]`, string(rawSchema))
+
+	table.RawSetString("extra", lua.LString("value"))
+	assert.False(t, luaTableIsArray(table))
+}
+
+func TestLuaSchemaRawReturnsFirstNestedArrayError(t *testing.T) {
+	t.Parallel()
+
+	state := lua.NewState()
+	t.Cleanup(state.Close)
+
+	table := state.NewTable()
+	state.RawSetInt(table, 1, lua.LNumber(1))
+	state.RawSetInt(table, 2, lua.LNumber(math.NaN()))
+
+	_, err := luaSchemaRaw(table)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-finite number")
+}
+
+func TestLuaSchemaObjectStopsAfterFirstEncodeError(t *testing.T) {
+	t.Parallel()
+
+	state := lua.NewState()
+	t.Cleanup(state.Close)
+
+	table := state.NewTable()
+	table.RawSetString("bad", lua.LNumber(math.NaN()))
+	table.RawSetString("later", lua.LString("ignored"))
+
+	_, err := luaSchemaRaw(table)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-finite number")
 }

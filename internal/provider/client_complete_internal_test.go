@@ -23,10 +23,10 @@ func TestHTTPCompletionClientGenerate(t *testing.T) {
 		{
 			name: "uses request",
 			configure: func(request *llm.Request) {
-				request.Auth = llm.Auth{Headers: nil, APIKey: "sk-test"}
+				request.Auth = llm.Auth{Headers: nil, APIKey: testProviderAPIKey}
 				request.Model.ID = "gpt-test"
 				request.Model.API = apiOpenAICompletions
-				request.Model.BaseURL = "https://provider.test"
+				request.Model.BaseURL = testProviderBaseURL
 			},
 		},
 		{name: "uses default request", configure: nil},
@@ -90,6 +90,50 @@ func TestHTTPCompletionClientCompleteRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
+func TestHTTPCompletionClientCompleteDispatchesProviderAPIs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		body string
+		api  string
+		name string
+	}{
+		{
+			name: "openai responses",
+			api:  apiOpenAIResponses,
+			body: openAIResponseCompletedStream(`{"output_text":"ok"}`),
+		},
+		{
+			name: "openai codex responses",
+			api:  apiOpenAICodexResponses,
+			body: openAIResponseCompletedStream(`{"output_text":"ok"}`),
+		},
+		{
+			name: "anthropic messages",
+			api:  apiAnthropicMessages,
+			body: anthropicResponseStream(anthropicResponseJSON("end_turn", "ok", nil)),
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := &HTTPCompletionClient{client: testProviderHTTPClient(t, testCase.body)}
+			request := emptyCompletionRequest()
+			request.Request.Auth.APIKey = testProviderAPIKey
+			request.Request.Model.ID = "model-test"
+			request.Request.Model.BaseURL = testProviderBaseURL
+			setTestRequestAPI(request, testCase.api)
+
+			response, err := client.Complete(context.Background(), request)
+
+			require.NoError(t, err)
+			assert.Equal(t, "ok", responseText(response))
+		})
+	}
+}
+
 func TestHTTPCompletionClientCompleteDefaultsToOpenAIChat(t *testing.T) {
 	t.Parallel()
 
@@ -97,9 +141,9 @@ func TestHTTPCompletionClientCompleteDefaultsToOpenAIChat(t *testing.T) {
 	client := &HTTPCompletionClient{client: testProviderHTTPClient(t, requestBody)}
 
 	request := emptyCompletionRequest()
-	request.Request.Auth.APIKey = "sk-test"
+	request.Request.Auth.APIKey = testProviderAPIKey
 	request.Request.Model.ID = "gpt-test"
-	request.Request.Model.BaseURL = "https://provider.test"
+	request.Request.Model.BaseURL = testProviderBaseURL
 
 	response, err := client.Complete(context.Background(), request)
 
