@@ -22,7 +22,7 @@ func nilableToolProviderKinds() map[reflect.Kind]struct{} {
 
 type toolProvider interface {
 	Tools() []extension.Tool
-	tool.ExtensionToolRunner
+	extensionToolRunner
 }
 
 func newToolRegistry(cwd string, provider toolProvider) (*tool.Registry, error) {
@@ -31,7 +31,7 @@ func newToolRegistry(cwd string, provider toolProvider) (*tool.Registry, error) 
 		return registry, nil
 	}
 
-	if err := registry.RegisterExtensions(provider, provider.Tools()); err != nil {
+	if err := registerExtensionTools(registry, provider, provider.Tools()); err != nil {
 		return nil, oops.In("assistant").Code("register_extension_tools").Wrapf(err, "register extension tools")
 	}
 

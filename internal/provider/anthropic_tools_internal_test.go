@@ -73,7 +73,7 @@ func TestAnthropicPayloadIncludesTools(t *testing.T) {
 	t.Parallel()
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
-	payload := anthropicPayload(request, nil)
+	payload := anthropicPayload(request)
 
 	tools, ok := payload["tools"].([]map[string]any)
 	require.True(t, ok)

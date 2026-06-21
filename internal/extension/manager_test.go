@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 const (
@@ -609,7 +610,7 @@ func assertLoadedTool(t *testing.T, tools []extension.Tool, extensionName string
 
 	require.Len(t, tools, 1)
 	assert.Equal(t, extension.Tool{
-		InputSchema: map[string]any{},
+		InputSchema: tool.EmptySchema(),
 		Name:        "echo",
 		Description: "Echo text",
 		Extension:   extensionName,
@@ -661,7 +662,7 @@ end` + testCase.schemaArg + `)
 
 			tools := manager.Tools()
 			require.Len(t, tools, 1)
-			assert.Equal(t, testCase.expectedSchema, tools[0].InputSchema)
+			assert.Equal(t, testCase.expectedSchema, tools[0].InputSchema.MustToMap())
 		})
 	}
 }

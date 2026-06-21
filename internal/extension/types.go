@@ -4,6 +4,8 @@ package extension
 import (
 	"context"
 	"time"
+
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 // Command describes a Lua slash command.
@@ -15,10 +17,10 @@ type Command struct {
 
 // Tool describes an extension-provided tool callable by the runtime.
 type Tool struct {
-	InputSchema map[string]any `json:"input_schema"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Extension   string         `json:"extension"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Extension   string      `json:"extension"`
+	InputSchema tool.Schema `json:"input_schema"`
 }
 
 // ToolResult is returned from Lua tool handlers.

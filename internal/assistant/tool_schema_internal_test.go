@@ -9,6 +9,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/provider"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 type toolSchemaCase struct {
@@ -81,7 +82,7 @@ func strictReadToolSchemaCase() toolSchemaCase {
 			assert.Contains(t, properties, jsonPathKey)
 		},
 		definition: &llm.ToolDefinition{
-			Schema:      nil,
+			Schema:      tool.EmptySchema(),
 			Name:        jsonReadToolName,
 			Description: "Read file",
 			ReadOnly:    true,
@@ -106,7 +107,7 @@ func strictASTToolSchemaCase() toolSchemaCase {
 			)
 		},
 		definition: &llm.ToolDefinition{
-			Schema:      nil,
+			Schema:      tool.EmptySchema(),
 			Name:        "ast",
 			Description: "Inspect syntax trees",
 			ReadOnly:    true,
@@ -117,7 +118,7 @@ func strictASTToolSchemaCase() toolSchemaCase {
 
 func echoToolDefinition(schema map[string]any) *llm.ToolDefinition {
 	return &llm.ToolDefinition{
-		Schema:      schema,
+		Schema:      tool.MustSchemaFromMap(schema),
 		Name:        "echo",
 		Description: "Echo",
 		ReadOnly:    false,

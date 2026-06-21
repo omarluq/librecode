@@ -1,4 +1,4 @@
-package tool_test
+package assistant
 
 import (
 	"context"
@@ -45,14 +45,14 @@ func TestExtensionExecutor_Execute(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			executor := tool.NewExtensionExecutor(extension.Tool{
-				InputSchema: map[string]any{},
+			executor := newExtensionToolExecutor(extension.Tool{
+				InputSchema: tool.EmptySchema(),
 				Name:        "echo",
 				Description: "Echo text",
 				Extension:   "test",
 			}, testCase.runner)
 
-			result, err := executor.Execute(context.Background(), map[string]any{"text": "hello"})
+			result, err := executor.Execute(context.Background(), map[string]any{"text": adapterHello})
 
 			if testCase.expectedErr != "" {
 				require.Error(t, err)

@@ -1,11 +1,13 @@
 package llm
 
+import "github.com/omarluq/librecode/internal/tool"
+
 // ToolDefinition describes a callable model tool.
 type ToolDefinition struct {
-	Schema      map[string]any `json:"schema"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	ReadOnly    bool           `json:"read_only,omitempty"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Schema      tool.Schema `json:"schema"`
+	ReadOnly    bool        `json:"read_only,omitempty"`
 }
 
 // ToolCall is a provider-neutral request to invoke a tool.

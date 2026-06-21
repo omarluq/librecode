@@ -81,7 +81,7 @@ func TestLLMModelAndToolDefinitionNilPaths(t *testing.T) {
 
 	definition := llmToolDefinitionFromTool(nil)
 	assert.Empty(t, definition.Name)
-	assert.Nil(t, definition.Schema)
+	assert.True(t, definition.Schema.IsEmpty())
 }
 
 func TestLLMTokenContributorConversionsCloneAndRoundTrip(t *testing.T) {
@@ -147,7 +147,7 @@ func TestLLMToolDefinitionClonesSchema(t *testing.T) {
 
 	schema := map[string]any{"type": "object"}
 	definition := llmToolDefinitionFromTool(&tool.Definition{
-		Schema:           schema,
+		Schema:           tool.MustSchemaFromMap(schema),
 		Name:             tool.NameRead,
 		Label:            jsonReadToolName,
 		Description:      "read files",
@@ -156,7 +156,8 @@ func TestLLMToolDefinitionClonesSchema(t *testing.T) {
 		ReadOnly:         true,
 	})
 
-	definition.Schema["type"] = testLLMMutatedLabel
+	decoded := definition.Schema.MustToMap()
+	decoded["type"] = testLLMMutatedLabel
 
 	assert.Equal(t, "object", schema["type"])
 	assert.True(t, definition.ReadOnly)

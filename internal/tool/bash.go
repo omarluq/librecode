@@ -39,7 +39,7 @@ func NewBashTool(cwd string) *BashTool {
 // Definition returns bash tool metadata.
 func (bashTool *BashTool) Definition() Definition {
 	return Definition{
-		Schema:        nil,
+		Schema:        EmptySchema(),
 		Name:          NameBash,
 		Label:         "bash",
 		Description:   bashDescription(),

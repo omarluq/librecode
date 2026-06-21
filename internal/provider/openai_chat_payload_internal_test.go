@@ -16,7 +16,7 @@ func TestOpenAIChatPayloadAndRoles(t *testing.T) {
 	setTestRequestModelID(request, "gpt-test")
 	setTestRequestReasoning(request, true)
 	setTestRequestThinkingLevel(request, thinkingHigh)
-	payload := openAIChatPayload(request, nil)
+	payload := openAIChatPayload(request)
 
 	assert.Equal(t, "gpt-test", payload[jsonModelKey])
 	assert.Equal(t, thinkingHigh, payload["reasoning_effort"])
@@ -34,7 +34,7 @@ func TestOpenAIChatPayloadMapsReasoningEffort(t *testing.T) {
 	setTestRequestThinkingLevel(request, thinkingXHigh)
 	setTestThinkingMap(request, thinkingXHigh, "max")
 
-	payload := openAIChatPayload(request, nil)
+	payload := openAIChatPayload(request)
 
 	assert.Equal(t, "max", payload["reasoning_effort"])
 }
@@ -67,7 +67,7 @@ func TestOpenAIChatPayloadAddsZAIStreamingOptions(t *testing.T) {
 	setTestRequestThinkingLevel(request, thinkingXHigh)
 	setTestThinkingMap(request, thinkingXHigh, "max")
 
-	payload := openAIChatPayload(request, nil)
+	payload := openAIChatPayload(request)
 
 	assert.Equal(t, true, payload[jsonStreamKey])
 	assert.Equal(t, "max", payload["reasoning_effort"])
@@ -83,7 +83,7 @@ func TestOpenAIChatPayloadDisablesZAIThinkingAndOmitsToolStreamWithoutTools(t *t
 	setTestRequestThinkingLevel(request, thinkingOff)
 	request.Request.DisableTools = true
 
-	payload := openAIChatPayload(request, nil)
+	payload := openAIChatPayload(request)
 
 	assert.Equal(t, map[string]any{jsonTypeKey: thinkingDisabled}, payload[jsonThinkingKey])
 	assert.NotContains(t, payload, "tool_stream")

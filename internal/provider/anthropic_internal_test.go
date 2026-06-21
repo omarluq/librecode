@@ -14,7 +14,7 @@ import (
 func TestAnthropicPayloadOmitsTemperature(t *testing.T) {
 	t.Parallel()
 
-	payload := anthropicPayload(testCompletionRequestAuth("anthropic-claude", "subscription-access-token"), nil)
+	payload := anthropicPayload(testCompletionRequestAuth("anthropic-claude", "subscription-access-token"))
 
 	assert.NotContains(t, payload, "temperature")
 	assert.Empty(t, payload[jsonModelKey])
@@ -28,7 +28,7 @@ func TestAnthropicPayloadUsesStructuredSystemPrompt(t *testing.T) {
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
 	setTestRequestSystemPrompt(request, anthropicTestSystemPrompt)
-	payload := anthropicPayload(request, nil)
+	payload := anthropicPayload(request)
 
 	assert.Equal(t, []map[string]any{anthropicSystemText(anthropicTestSystemPrompt)}, payload["system"])
 }
@@ -38,7 +38,7 @@ func TestAnthropicOAuthPayloadAddsClaudeCodeIdentity(t *testing.T) {
 
 	request := testCompletionRequestAuth("anthropic-claude", "sk-ant-oat-secret")
 	setTestRequestSystemPrompt(request, anthropicTestSystemPrompt)
-	payload := anthropicPayload(request, nil)
+	payload := anthropicPayload(request)
 
 	systemBlocks, ok := payload["system"].([]map[string]any)
 	assert.True(t, ok)
@@ -58,7 +58,7 @@ func TestAnthropicPayloadAddsBudgetThinking(t *testing.T) {
 	setTestRequestModelID(request, "claude-sonnet-4-5")
 	setTestRequestReasoning(request, true)
 	setTestRequestThinkingLevel(request, thinkingLow)
-	payload := anthropicPayload(request, nil)
+	payload := anthropicPayload(request)
 
 	assert.Equal(t, map[string]any{
 		jsonTypeKey:     thinkingEnabled,
@@ -104,7 +104,7 @@ func TestAnthropicPayloadThinkingWhenOff(t *testing.T) {
 			setTestRequestModelID(request, test.modelID)
 			setTestRequestReasoning(request, true)
 			setTestRequestThinkingLevel(request, thinkingOff)
-			payload := anthropicPayload(request, nil)
+			payload := anthropicPayload(request)
 
 			if test.wantThinking == nil {
 				assert.NotContains(t, payload, jsonThinkingKey)
@@ -152,7 +152,7 @@ func TestAnthropicToolNameMapping(t *testing.T) {
 func assertAnthropicPayloadKeepsLocalToolNames(t *testing.T) {
 	t.Helper()
 
-	payload := anthropicPayload(testCompletionRequestAuth("sk-ant-api03-secret"), nil)
+	payload := anthropicPayload(testCompletionRequestAuth("sk-ant-api03-secret"))
 
 	encodedTools := encodeTestJSON(t, payload["tools"])
 	assert.Contains(t, encodedTools, `"name":"`+jsonReadToolName+`"`)
@@ -180,7 +180,7 @@ func TestAnthropicPayloadAddsAdaptiveThinking(t *testing.T) {
 	setTestRequestModelID(request, testAdaptiveAnthropicModelID)
 	setTestRequestReasoning(request, true)
 	setTestRequestThinkingLevel(request, thinkingXHigh)
-	payload := anthropicPayload(request, nil)
+	payload := anthropicPayload(request)
 
 	assert.Equal(t, map[string]any{
 		jsonTypeKey:    "adaptive",

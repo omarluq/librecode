@@ -39,7 +39,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	result := newResponse()
 
 	for {
-		payload := responsesPayload(request, input)
+		payload := client.responsesPayload(request, input)
 
 		providerRequest, err := applyProviderRequestHook(ctx, request, payload, cloneStringMap(headers))
 		if err != nil {
@@ -88,9 +88,13 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 	}
 }
 
-func responsesPayload(request *CompletionRequest, input []any) map[string]any {
+func (client *HTTPCompletionClient) responsesPayload(request *CompletionRequest, input []any) map[string]any {
+	return client.toolSchemas.responsesPayload(request, input)
+}
+
+func (cache *builtinToolSchemaCache) responsesPayload(request *CompletionRequest, input []any) map[string]any {
 	payload := responsesBasePayload(request, input)
-	payload["tools"] = ResponseTools(request)
+	payload["tools"] = cache.responseTools(requestToolDefinitions(request))
 	payload[jsonToolChoiceKey] = "auto"
 	payload["parallel_tool_calls"] = true
 
