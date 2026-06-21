@@ -94,24 +94,49 @@ func TestHTTPCompletionClientCompleteDispatchesProviderAPIs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		body string
-		api  string
-		name string
+		body        string
+		api         string
+		name        string
+		authHeaders map[string]string
+		wantHeaders map[string]string
+		wantPath    string
 	}{
 		{
-			name: "openai responses",
-			api:  apiOpenAIResponses,
-			body: openAIResponseCompletedStream(`{"output_text":"ok"}`),
+			body:        openAIResponseCompletedStream(`{"output_text":"ok"}`),
+			api:         apiOpenAIResponses,
+			name:        "openai responses",
+			authHeaders: nil,
+			wantHeaders: map[string]string{
+				"Authorization": "Bearer " + testProviderAPIKey,
+			},
+			wantPath: "/responses",
 		},
 		{
-			name: "openai codex responses",
+			body: openAIResponseCompletedStream(`{"output_text":"ok"}`),
 			api:  apiOpenAICodexResponses,
-			body: openAIResponseCompletedStream(`{"output_text":"ok"}`),
+			name: "openai codex responses",
+			authHeaders: map[string]string{
+				codexAccountIDHeader: testProviderAccountID,
+			},
+			wantHeaders: map[string]string{
+				"Authorization":       "Bearer " + testProviderAPIKey,
+				codexBetaHeader:       codexResponsesBetaValue,
+				codexOriginatorHeader: codexClientHeaderValue,
+				codexUserAgentHeader:  codexClientHeaderValue,
+				codexAccountIDHeader:  testProviderAccountID,
+			},
+			wantPath: "/codex/responses",
 		},
 		{
-			name: "anthropic messages",
-			api:  apiAnthropicMessages,
-			body: anthropicResponseStream(anthropicResponseJSON("end_turn", "ok", nil)),
+			body:        anthropicResponseStream(anthropicResponseJSON("end_turn", "ok", nil)),
+			api:         apiAnthropicMessages,
+			name:        "anthropic messages",
+			authHeaders: nil,
+			wantHeaders: map[string]string{
+				"x-api-key":         testProviderAPIKey,
+				"anthropic-version": "2023-06-01",
+			},
+			wantPath: "/v1/messages",
 		},
 	}
 
@@ -119,8 +144,10 @@ func TestHTTPCompletionClientCompleteDispatchesProviderAPIs(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			client := &HTTPCompletionClient{client: testProviderHTTPClient(t, testCase.body)}
+			httpClient, capturedRequest := testProviderHTTPClientWithCapture(t, testCase.body)
+			client := &HTTPCompletionClient{client: httpClient}
 			request := emptyCompletionRequest()
+			request.Request.Auth.Headers = testCase.authHeaders
 			request.Request.Auth.APIKey = testProviderAPIKey
 			request.Request.Model.ID = "model-test"
 			request.Request.Model.BaseURL = testProviderBaseURL
@@ -130,6 +157,13 @@ func TestHTTPCompletionClientCompleteDispatchesProviderAPIs(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, "ok", responseText(response))
+
+			assert.Equal(t, http.MethodPost, capturedRequest.Method)
+			assert.Equal(t, testCase.wantPath, capturedRequest.Path)
+
+			for key, wantValue := range testCase.wantHeaders {
+				assert.Equal(t, wantValue, capturedRequest.Headers.Get(key), key)
+			}
 		})
 	}
 }
@@ -151,11 +185,34 @@ func TestHTTPCompletionClientCompleteDefaultsToOpenAIChat(t *testing.T) {
 	assert.Equal(t, "ok", responseText(response))
 }
 
+type testProviderCapturedRequest struct {
+	Headers http.Header
+	Method  string
+	Path    string
+}
+
 func testProviderHTTPClient(t *testing.T, body string) *http.Client {
 	t.Helper()
 
-	return &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		assert.Equal(t, "POST", request.Method)
+	client, _ := testProviderHTTPClientWithCapture(t, body)
+
+	return client
+}
+
+func testProviderHTTPClientWithCapture(t *testing.T, body string) (*http.Client, *testProviderCapturedRequest) {
+	t.Helper()
+
+	capturedRequest := &testProviderCapturedRequest{
+		Headers: nil,
+		Method:  "",
+		Path:    "",
+	}
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		capturedRequest.Headers = request.Header.Clone()
+		capturedRequest.Method = request.Method
+		capturedRequest.Path = request.URL.Path
+
+		assert.Equal(t, http.MethodPost, request.Method)
 
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -164,4 +221,6 @@ func testProviderHTTPClient(t *testing.T, body string) *http.Client {
 			Request:    request,
 		}, nil
 	})}
+
+	return client, capturedRequest
 }

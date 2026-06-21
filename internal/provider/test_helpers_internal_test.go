@@ -19,6 +19,7 @@ const (
 	testThinkingDelta       = "thinking"
 	testOpenAIProvider      = "openai"
 	testProviderAPIKey      = "sk-test"
+	testProviderAccountID   = "account-test"
 	testProviderBaseURL     = "https://provider.test"
 	testProviderMessageType = jsonMessageType
 	testProviderPartialText = "partial"

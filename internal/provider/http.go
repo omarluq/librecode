@@ -16,7 +16,15 @@ import (
 	"github.com/omarluq/librecode/internal/units"
 )
 
-const providerResponseLimitBytes int64 = 16 * units.MiB
+const (
+	providerResponseLimitBytes int64 = 16 * units.MiB
+	codexAccountIDHeader             = "chatgpt-account-id"
+	codexOriginatorHeader            = "originator"
+	codexUserAgentHeader             = "User-Agent"
+	codexBetaHeader                  = "OpenAI-Beta"
+	codexClientHeaderValue           = "librecode"
+	codexResponsesBetaValue          = "responses=experimental"
+)
 
 func (client *HTTPCompletionClient) requestProviderStream(
 	ctx context.Context,
@@ -109,13 +117,13 @@ func openAIHeaders(request *CompletionRequest) map[string]string {
 
 func codexHeaders(request *CompletionRequest) map[string]string {
 	headers := openAIHeaders(request)
-	if accountID := request.Request.Auth.Headers["chatgpt-account-id"]; accountID != "" {
-		headers["chatgpt-account-id"] = accountID
+	if accountID := request.Request.Auth.Headers[codexAccountIDHeader]; accountID != "" {
+		headers[codexAccountIDHeader] = accountID
 	}
 
-	headers["originator"] = "librecode"
-	headers["User-Agent"] = "librecode"
-	headers["OpenAI-Beta"] = "responses=experimental"
+	headers[codexOriginatorHeader] = codexClientHeaderValue
+	headers[codexUserAgentHeader] = codexClientHeaderValue
+	headers[codexBetaHeader] = codexResponsesBetaValue
 	headers["Accept"] = "text/event-stream"
 
 	return headers
