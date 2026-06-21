@@ -40,4 +40,12 @@ func TestToolArgumentHelpers(t *testing.T) {
 			testutil.ToolArguments(map[string]any{"bad": func() {}})
 		})
 	})
+
+	t.Run("panic on invalid JSON input", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Panics(t, func() {
+			testutil.ToolArgumentsJSON(`{`)
+		})
+	})
 }

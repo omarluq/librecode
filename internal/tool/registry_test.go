@@ -69,15 +69,32 @@ func TestRegistry_ExecuteJSONRunsBashInWorkingDirectory(t *testing.T) {
 	assert.Contains(t, result.Text(), "ok")
 }
 
-func TestRegistry_RegisterRejectsDuplicateTool(t *testing.T) {
+func TestRegistry_Register(t *testing.T) {
 	t.Parallel()
 
-	registry := tool.NewRegistry(t.TempDir())
+	t.Run("rejects duplicate tool", func(t *testing.T) {
+		t.Parallel()
 
-	err := registry.Register(tool.NewReadTool(t.TempDir()))
+		registry := tool.NewRegistry(t.TempDir())
 
-	require.Error(t, err)
-	assert.ErrorIs(t, err, tool.ErrDuplicateTool)
+		err := registry.Register(tool.NewReadTool(t.TempDir()))
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, tool.ErrDuplicateTool)
+	})
+
+	t.Run("adds new tool", func(t *testing.T) {
+		t.Parallel()
+
+		registry := tool.NewRegistry(t.TempDir())
+		custom := registryTestExecutor{name: "custom"}
+
+		require.NoError(t, registry.Register(custom))
+		result, err := registry.Execute(context.Background(), "custom", tool.EmptyArguments())
+
+		require.NoError(t, err)
+		assert.Equal(t, "custom ok", result.Text())
+	})
 }
 
 func TestRegistry_Metadata(t *testing.T) {
@@ -142,6 +159,26 @@ func TestRegistry_ExecuteValidatesEmptyInput(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bash command is required")
+}
+
+type registryTestExecutor struct {
+	name tool.Name
+}
+
+func (executor registryTestExecutor) Definition() tool.Definition {
+	return tool.Definition{
+		Schema:           tool.EmptySchema(),
+		Name:             executor.name,
+		Label:            string(executor.name),
+		Description:      "test tool",
+		PromptSnippet:    "",
+		PromptGuidelines: nil,
+		ReadOnly:         true,
+	}
+}
+
+func (executor registryTestExecutor) Execute(context.Context, tool.Arguments) (tool.Result, error) {
+	return tool.TextResult(string(executor.name)+" ok", nil), nil
 }
 
 func executeTool(

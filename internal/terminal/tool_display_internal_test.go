@@ -52,8 +52,8 @@ func TestToolSummaryHumanizesKnownTools(t *testing.T) {
 			want: `grep "StreamEventToolStart" in internal (glob **/*.go, literal, ignore case)`,
 		},
 		{
-			name: "find",
-			tool: "find",
+			name: testToolFind,
+			tool: testToolFind,
 			args: `{"pattern":"**/*.go","path":"internal/terminal"}`,
 			want: "find **/*.go under internal/terminal",
 		},
@@ -81,7 +81,55 @@ func TestToolSummaryFallsBackForUnknownAndBadJSON(t *testing.T) {
 
 	assert.Equal(t, `custom {bad`, toolSummary("custom", `{bad`, nil))
 	assert.Equal(t, `custom alpha="one" beta=2`, toolSummary("custom", `{"beta":2,"alpha":"one"}`, nil))
+	assert.Equal(t, `custom array=["a"] bool=true nil=null`, toolSummary(
+		"custom",
+		`{"nil":null,"object":{"nested":true},"array":["a"],"bool":true}`,
+		nil,
+	))
 	assert.Equal(t, "tool", toolSummary("", "", nil))
+}
+
+func TestToolSummaryArgumentTypeFallbacks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		tool string
+		args string
+		want string
+	}{
+		{name: "find defaults path", tool: testToolFind, args: `{"pattern":"**/*.go"}`, want: "find **/*.go under ."},
+		{name: "find missing pattern", tool: testToolFind, args: `{"path":"internal"}`, want: "find"},
+		{
+			name: "bash fractional timeout",
+			tool: testToolBash,
+			args: `{"command":"sleep","timeout":1.5}`,
+			want: "$ sleep (timeout 1.5s)",
+		},
+		{name: "read offset", tool: testToolRead, args: `{"path":"file.go","offset":7}`, want: "read file.go:7"},
+		{
+			name: "read zero limit",
+			tool: testToolRead,
+			args: `{"path":"file.go","offset":7,"limit":0}`,
+			want: "read file.go:7",
+		},
+		{name: "read invalid path", tool: testToolRead, args: `{"path":42}`, want: testToolRead},
+		{
+			name: "read invalid range",
+			tool: testToolRead,
+			args: `{"path":"file.go","offset":"7","limit":"2"}`,
+			want: "read file.go",
+		},
+		{name: "bash invalid timeout", tool: testToolBash, args: `{"command":"echo","timeout":"soon"}`, want: "$ echo"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, testCase.want, toolSummary(testCase.tool, testCase.args, nil))
+		})
+	}
 }
 
 func TestToolDisplayFromCallUsesStructuredArguments(t *testing.T) {

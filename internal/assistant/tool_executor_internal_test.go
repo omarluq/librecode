@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	toolExecutorCallID   = "call_1"
-	toolExecutorReadPath = "README.md"
-	toolExecutorReadArgs = `{"path":"README.md"}`
+	toolExecutorCallID      = "call_1"
+	toolExecutorMissingTool = "missing"
+	toolExecutorReadPath    = "README.md"
+	toolExecutorReadArgs    = `{"path":"README.md"}`
 )
 
 func TestExecuteProviderToolCallsRequiresRegistry(t *testing.T) {
@@ -45,6 +46,38 @@ func TestExecuteProviderToolCallsRequiresRegistry(t *testing.T) {
 	assert.Equal(t, "tool_registry_missing", coded.Code())
 }
 
+func TestExecuteProviderToolCallsRunsAllCalls(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	writeToolExecutorReadFixture(t, directory)
+
+	runtime := newToolExecutorTestRuntime(nil)
+	executor := runtime.executeProviderToolCalls(tool.NewRegistry(directory))
+
+	events, err := executor(context.Background(), []ToolCall{
+		{
+			Metadata:      nil,
+			Arguments:     testutil.ToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
+			ID:            toolExecutorCallID,
+			Name:          jsonReadToolName,
+			ArgumentsJSON: toolExecutorReadArgs,
+		},
+		{
+			Metadata:      nil,
+			Arguments:     tool.EmptyArguments(),
+			ID:            "call_2",
+			Name:          toolExecutorMissingTool,
+			ArgumentsJSON: `{}`,
+		},
+	}, nil)
+
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+	assert.False(t, events[0].IsError)
+	assert.True(t, events[1].IsError)
+}
+
 func TestExecuteProviderToolCallEmitsResultForUnknownTool(t *testing.T) {
 	t.Parallel()
 
@@ -59,7 +92,7 @@ func TestExecuteProviderToolCallEmitsResultForUnknownTool(t *testing.T) {
 			Metadata:      nil,
 			Arguments:     tool.EmptyArguments(),
 			ID:            toolExecutorCallID,
-			Name:          "missing",
+			Name:          toolExecutorMissingTool,
 			ArgumentsJSON: `{}`,
 		},
 		func(event StreamEvent) { streamEvents = append(streamEvents, event) },
@@ -129,6 +162,14 @@ func TestExecuteProviderToolCallPreservesResultOnLifecycleError(t *testing.T) {
 	require.Len(t, events, 2)
 	require.NotNil(t, events[1].ToolEvent)
 	assert.Equal(t, event.Result, events[1].ToolEvent.Result)
+}
+
+func TestEncodeToolDetails(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, encodeToolDetails(nil))
+	assert.JSONEq(t, `{"count":1}`, encodeToolDetails(map[string]any{"count": 1}))
+	assert.Empty(t, encodeToolDetails(map[string]any{"bad": func() {}}))
 }
 
 func TestToolEventFromResultFormatsEmptyOutput(t *testing.T) {

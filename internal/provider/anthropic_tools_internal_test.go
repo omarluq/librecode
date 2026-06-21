@@ -87,6 +87,23 @@ func TestAnthropicPayloadIncludesTools(t *testing.T) {
 	assert.Contains(t, string(encoded), `"eager_input_streaming":true`)
 }
 
+func TestAnthropicToolsFromDefinitions(t *testing.T) {
+	t.Parallel()
+
+	definitions := []llm.ToolDefinition{{
+		Schema:      tool.EmptySchema(),
+		Name:        jsonReadToolName,
+		Description: "read files",
+		ReadOnly:    true,
+	}}
+
+	tools := AnthropicToolsFromDefinitions(definitions, true)
+
+	require.Len(t, tools, 1)
+	assert.Equal(t, anthropicReadToolName, tools[0][jsonToolNameKey])
+	assert.Equal(t, "read files", tools[0][jsonDescriptionKey])
+}
+
 func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
 	t.Parallel()
 
