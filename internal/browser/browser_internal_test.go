@@ -1,50 +1,66 @@
 package browser
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestOpenIgnoresEmptyURL(t *testing.T) {
+const testURL = "https://example.com"
+
+func TestOpen(t *testing.T) {
 	t.Parallel()
 
-	require.NoError(t, Open(""))
-}
+	openErr := errors.New("open failed")
 
-func TestOpenReturnsErrNoOpenerWhenCommandsAreMissing(t *testing.T) {
-	t.Parallel()
-
-	err := openWithCommands("https://example.com", []openerCommand{{name: "definitely-not-a-browser", args: nil}})
-	require.ErrorIs(t, err, ErrNoOpener)
-}
-
-func TestRunOpenerReturnsErrorForMissingCommand(t *testing.T) {
-	t.Parallel()
-
-	err := runOpener("definitely-not-a-browser")
-	require.Error(t, err)
-}
-
-func TestOpenerCommands(t *testing.T) {
-	t.Setenv("BROWSER", "custom-browser")
-
-	commands := openerCommands()
-	require.NotEmpty(t, commands)
-	assert.Equal(t, "custom-browser", commands[0].name)
-
-	t.Setenv("BROWSER", "")
-	assert.Equal(t, platformOpeners(), openerCommands())
-}
-
-func TestPlatformOpenersReturnsCommands(t *testing.T) {
-	t.Parallel()
-
-	commands := platformOpeners()
-	require.NotEmpty(t, commands)
-
-	for _, command := range commands {
-		assert.NotEmpty(t, command.name)
+	tests := []struct {
+		openErr error
+		wantErr error
+		name    string
+	}{
+		{
+			openErr: nil,
+			wantErr: nil,
+			name:    "opens url",
+		},
+		{
+			openErr: openErr,
+			wantErr: openErr,
+			name:    "wraps opener errors",
+		},
 	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			opener := &recordingOpener{
+				err:  test.openErr,
+				urls: nil,
+			}
+
+			err := open(testURL, opener.openURL)
+
+			if test.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, test.wantErr)
+			}
+
+			assert.Equal(t, []string{testURL}, opener.urls)
+		})
+	}
+}
+
+type recordingOpener struct {
+	err  error
+	urls []string
+}
+
+func (r *recordingOpener) openURL(url string) error {
+	r.urls = append(r.urls, url)
+
+	return r.err
 }
