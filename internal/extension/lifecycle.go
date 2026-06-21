@@ -246,6 +246,10 @@ func mergeToolCallMutation(base, override ToolCallMutation) ToolCallMutation {
 		return base
 	}
 
+	if override.Arguments.IsEmpty() {
+		return override
+	}
+
 	baseFields, err := base.Arguments.Fields()
 	if err != nil {
 		return base
@@ -316,8 +320,13 @@ func toolCallMutationFromLua(value lua.LValue) (ToolCallMutation, bool) {
 		return ToolCallMutation{Arguments: tool.EmptyArguments(), HasArgs: false}, false
 	}
 
-	arguments, matched := payload["arguments"].(map[string]any)
-	if !matched || len(arguments) == 0 {
+	rawArguments, exists := payload["arguments"]
+	if !exists {
+		return ToolCallMutation{Arguments: tool.EmptyArguments(), HasArgs: false}, false
+	}
+
+	arguments, matched := rawArguments.(map[string]any)
+	if !matched {
 		return ToolCallMutation{Arguments: tool.EmptyArguments(), HasArgs: false}, false
 	}
 
