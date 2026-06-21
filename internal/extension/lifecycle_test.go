@@ -178,11 +178,7 @@ end)
 		},
 	})
 	require.NoError(t, err)
-	assert.Equal(
-		t,
-		map[string]any{"limit": float64(5), testLifecyclePathKey: "changed.txt"},
-		callResult.ToolCall.Arguments,
-	)
+	assert.JSONEq(t, `{"limit":5,"path":"changed.txt"}`, callResult.ToolCall.Arguments.String())
 
 	resultResult, err := manager.DispatchLifecycle(context.Background(), extension.LifecycleEvent{
 		Name: extension.LifecycleToolResult,

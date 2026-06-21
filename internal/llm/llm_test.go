@@ -107,7 +107,7 @@ func TestPartKinds(t *testing.T) {
 			Metadata: nil,
 			ToolCall: &llm.ToolCall{
 				Metadata:      nil,
-				Arguments:     map[string]any{"path": "README.md"},
+				Arguments:     testToolArguments(map[string]any{"path": "README.md"}),
 				ID:            "call_1",
 				Name:          "read",
 				ArgumentsJSON: `{"path":"README.md"}`,

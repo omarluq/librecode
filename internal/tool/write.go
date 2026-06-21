@@ -33,7 +33,7 @@ func NewWriteTool(cwd string) *WriteTool {
 // Definition returns write tool metadata.
 func (writeTool *WriteTool) Definition() Definition {
 	return Definition{
-		Schema:        EmptySchema(),
+		Schema:        inputSchemaForName(NameWrite),
 		Name:          NameWrite,
 		Label:         "write",
 		Description:   "Write content to a file. Creates parent directories and overwrites existing files.",
@@ -46,7 +46,7 @@ func (writeTool *WriteTool) Definition() Definition {
 }
 
 // Execute runs the write tool.
-func (writeTool *WriteTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
+func (writeTool *WriteTool) Execute(ctx context.Context, input Arguments) (Result, error) {
 	var args WriteInput
 
 	err := decodeInput(input, &args)

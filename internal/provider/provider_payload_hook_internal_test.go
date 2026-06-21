@@ -45,7 +45,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHook(t *testing.T) {
 		return llm.HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
-	client := &HTTPCompletionClient{toolSchemas: newBuiltinToolSchemaCache(), client: server.Client()}
+	client := &HTTPCompletionClient{client: server.Client()}
 	result, err := client.Complete(context.Background(), completionRequest)
 
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestHTTPCompletionClientAppliesProviderRequestHookToOpenAIResponses(t *test
 		return llm.HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
-	client := &HTTPCompletionClient{toolSchemas: newBuiltinToolSchemaCache(), client: server.Client()}
+	client := &HTTPCompletionClient{client: server.Client()}
 	result, err := client.Complete(context.Background(), completionRequest)
 
 	require.NoError(t, err)

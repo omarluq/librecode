@@ -55,7 +55,7 @@ func TestParseOpenAIChatStreamTextThinkingToolCallsAndUsage(t *testing.T) {
 	assert.Equal(t, "call_1", result.ToolCalls[0].ID)
 	assert.Equal(t, expectedReadToolName, result.ToolCalls[0].Name)
 	assert.JSONEq(t, testToolArgumentsJSON, result.ToolCalls[0].ArgumentsJSON)
-	assert.Equal(t, testToolPath, result.ToolCalls[0].Arguments[jsonPathKey])
+	assert.Equal(t, testToolPath, testToolArgumentFields(result.ToolCalls[0].Arguments)[jsonPathKey])
 	require.Len(t, events, 4)
 	assert.Equal(t, llm.PartReasoning, events[0].Type)
 	assert.Equal(t, llm.PartText, events[1].Type)

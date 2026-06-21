@@ -40,7 +40,7 @@ type toolDisplay struct {
 
 func toolDisplayFromCall(call assistant.ToolCallEvent) toolDisplay {
 	return toolDisplay{
-		Title:         toolSummary(call.Name, call.ArgumentsJSON, call.Arguments),
+		Title:         toolSummary(call.Name, call.ArgumentsJSON, toolArgumentsMap(call.Arguments)),
 		Name:          call.Name,
 		ArgumentsJSON: call.ArgumentsJSON,
 		DetailsJSON:   "",
@@ -107,6 +107,10 @@ func toolSummaryRendererFor(name string) (toolSummaryRenderer, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func toolArgumentsMap(arguments tool.Arguments) map[string]any {
+	return decodeToolArgs(arguments.String())
 }
 
 func decodeToolArgs(raw string) map[string]any {

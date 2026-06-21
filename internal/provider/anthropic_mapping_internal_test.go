@@ -70,11 +70,11 @@ func TestAnthropicToolArgumentsHandlesMalformedAndScalarInput(t *testing.T) {
 	t.Parallel()
 
 	arguments, argumentsJSON := anthropicToolArguments(func() {})
-	assert.Equal(t, map[string]any{}, arguments)
+	assert.Equal(t, map[string]any{}, testToolArgumentFields(arguments))
 	assert.JSONEq(t, "{}", argumentsJSON)
 
 	arguments, argumentsJSON = anthropicToolArguments("plain")
-	assert.Equal(t, map[string]any{}, arguments)
+	assert.Equal(t, map[string]any{}, testToolArgumentFields(arguments))
 	assert.JSONEq(t, `"plain"`, argumentsJSON)
 }
 
@@ -146,7 +146,7 @@ func TestAnthropicAssistantToolMessageMapsProviderNames(t *testing.T) {
 
 	request := testCompletionRequestAuth("anthropic-claude", "subscription-access-token")
 	message := anthropicAssistantToolMessage(request, []ToolCall{{
-		Arguments:     map[string]any{jsonPathKey: testToolPath},
+		Arguments:     testToolArguments(map[string]any{jsonPathKey: testToolPath}),
 		Metadata:      nil,
 		ID:            testAnthropicToolUseID,
 		Name:          jsonReadToolName,

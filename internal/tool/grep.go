@@ -59,7 +59,7 @@ func NewGrepTool(cwd string) *GrepTool {
 // Definition returns grep tool metadata.
 func (grepTool *GrepTool) Definition() Definition {
 	return Definition{
-		Schema:        EmptySchema(),
+		Schema:        inputSchemaForName(NameGrep),
 		Name:          NameGrep,
 		Label:         "grep",
 		Description:   grepDescription(),
@@ -72,7 +72,7 @@ func (grepTool *GrepTool) Definition() Definition {
 }
 
 // Execute runs the grep tool.
-func (grepTool *GrepTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
+func (grepTool *GrepTool) Execute(ctx context.Context, input Arguments) (Result, error) {
 	var args GrepInput
 
 	err := decodeInput(input, &args)

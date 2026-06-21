@@ -259,7 +259,7 @@ func TestToolExecutorAdapterConvertsCallsEventsAndErrors(t *testing.T) {
 		context.Background(),
 		[]llm.ToolCall{{
 			Metadata:      map[string]any{"m": true},
-			Arguments:     map[string]any{jsonPathKey: adapterReadPath},
+			Arguments:     testToolArguments(map[string]any{jsonPathKey: adapterReadPath}),
 			ID:            "call-1",
 			Name:          jsonReadToolName,
 			ArgumentsJSON: adapterReadArgs,
@@ -268,7 +268,7 @@ func TestToolExecutorAdapterConvertsCallsEventsAndErrors(t *testing.T) {
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "call-1", observedCall.ID)
-	assert.Equal(t, adapterReadPath, observedCall.Arguments[jsonPathKey])
+	assert.Equal(t, adapterReadPath, testToolArgumentFields(observedCall.Arguments)[jsonPathKey])
 	require.NotNil(t, observedEvent)
 	require.NotNil(t, observedEvent.Part)
 	assert.Equal(t, llm.PartToolResult, observedEvent.Part.Type)

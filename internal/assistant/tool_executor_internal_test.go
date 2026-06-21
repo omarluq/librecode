@@ -30,7 +30,7 @@ func TestExecuteProviderToolCallsRequiresRegistry(t *testing.T) {
 
 	events, err := executor(context.Background(), []ToolCall{{
 		Metadata:      nil,
-		Arguments:     nil,
+		Arguments:     tool.EmptyArguments(),
 		ID:            "",
 		Name:          jsonReadToolName,
 		ArgumentsJSON: "",
@@ -54,9 +54,9 @@ func TestExecuteProviderToolCallEmitsResultForUnknownTool(t *testing.T) {
 	event := runtime.executeProviderToolCall(
 		context.Background(),
 		registry,
-		ToolCall{
+		&ToolCall{
 			Metadata:      nil,
-			Arguments:     map[string]any{},
+			Arguments:     tool.EmptyArguments(),
 			ID:            toolExecutorCallID,
 			Name:          "missing",
 			ArgumentsJSON: `{}`,
@@ -83,9 +83,9 @@ func TestExecuteProviderToolCallReturnsLifecycleErrorEvent(t *testing.T) {
 	event := runtime.executeProviderToolCall(
 		context.Background(),
 		tool.NewRegistry(t.TempDir()),
-		ToolCall{
+		&ToolCall{
 			Metadata:      nil,
-			Arguments:     map[string]any{jsonPathKey: toolExecutorReadPath},
+			Arguments:     testToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
 			ID:            toolExecutorCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: toolExecutorReadArgs,
@@ -112,9 +112,9 @@ func TestExecuteProviderToolCallPreservesResultOnLifecycleError(t *testing.T) {
 	event := runtime.executeProviderToolCall(
 		context.Background(),
 		registry,
-		ToolCall{
+		&ToolCall{
 			Metadata:      nil,
-			Arguments:     map[string]any{jsonPathKey: toolExecutorReadPath},
+			Arguments:     testToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
 			ID:            toolExecutorCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: toolExecutorReadArgs,
@@ -135,7 +135,7 @@ func TestToolEventFromResultFormatsEmptyOutput(t *testing.T) {
 
 	event := toolEventFromResult(
 		ToolCallEvent{
-			Arguments:     nil,
+			Arguments:     tool.EmptyArguments(),
 			ID:            "",
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{}`,
@@ -208,11 +208,11 @@ func (failingToolResultLifecycle) Emit(context.Context, string, map[string]any) 
 	return nil
 }
 
-func (failingToolCallLifecycle) ExecuteTool(context.Context, string, map[string]any) (extension.ToolResult, error) {
+func (failingToolCallLifecycle) ExecuteTool(context.Context, string, tool.Arguments) (extension.ToolResult, error) {
 	return extension.ToolResult{Details: nil, Content: ""}, nil
 }
 
-func (failingToolResultLifecycle) ExecuteTool(context.Context, string, map[string]any) (extension.ToolResult, error) {
+func (failingToolResultLifecycle) ExecuteTool(context.Context, string, tool.Arguments) (extension.ToolResult, error) {
 	return extension.ToolResult{Details: nil, Content: ""}, nil
 }
 
@@ -250,7 +250,7 @@ func emptyTestLifecycleDispatchResult(event extension.LifecycleEvent) extension.
 	return extension.LifecycleDispatchResult{
 		Payload:         event.Payload,
 		ProviderRequest: extension.ProviderRequestMutation{Headers: nil},
-		ToolCall:        extension.ToolCallMutation{Arguments: nil},
+		ToolCall:        extension.ToolCallMutation{Arguments: tool.EmptyArguments(), HasArgs: false},
 		ToolResult:      extension.ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil},
 		Compaction: extension.CompactionMutation{
 			Summary:          nil,

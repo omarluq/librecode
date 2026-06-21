@@ -2,6 +2,7 @@ package extension_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -529,7 +530,7 @@ end)
 	_, commandErr := manager.ExecuteCommand(ctx, "touch", "")
 	require.ErrorIs(t, commandErr, context.Canceled)
 
-	_, toolErr := manager.ExecuteTool(ctx, "touch", map[string]any{})
+	_, toolErr := manager.ExecuteTool(ctx, "touch", tool.EmptyArguments())
 	require.ErrorIs(t, toolErr, context.Canceled)
 }
 
@@ -636,9 +637,10 @@ func TestManager_RegisterToolPreservesInputSchema(t *testing.T) {
 				"properties": map[string]any{
 					"foo": map[string]any{"type": "string"},
 				},
+				"required": []any{"foo"},
 			},
 			name:      "non-empty schema",
-			schemaArg: `, { type = "object", properties = { foo = { type = "string" } } }`,
+			schemaArg: `, { type = "object", properties = { foo = { type = "string" } }, required = { "foo" } }`,
 		},
 	}
 
@@ -662,7 +664,16 @@ end` + testCase.schemaArg + `)
 
 			tools := manager.Tools()
 			require.Len(t, tools, 1)
-			assert.Equal(t, testCase.expectedSchema, tools[0].InputSchema.MustToMap())
+
+			if tools[0].InputSchema.IsEmpty() {
+				assert.Empty(t, testCase.expectedSchema)
+
+				return
+			}
+
+			var schema map[string]any
+			require.NoError(t, json.Unmarshal(tools[0].InputSchema.RawMessage(), &schema))
+			assert.Equal(t, testCase.expectedSchema, schema)
 		})
 	}
 }
@@ -726,7 +737,11 @@ func assertCommandExecution(t *testing.T, manager *extension.Manager) {
 func assertToolExecution(t *testing.T, manager *extension.Manager) {
 	t.Helper()
 
-	toolResult, err := manager.ExecuteTool(context.Background(), "echo", map[string]any{"text": "ok"})
+	toolResult, err := manager.ExecuteTool(
+		context.Background(),
+		"echo",
+		testToolArguments(map[string]any{"text": "ok"}),
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", toolResult.Content)
 	assert.Equal(t, true, toolResult.Details["seen"])

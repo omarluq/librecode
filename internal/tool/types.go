@@ -62,10 +62,10 @@ type Result struct {
 	Content []ContentBlock `json:"content"`
 }
 
-// Executor runs a built-in tool with decoded input.
+// Executor runs a built-in tool with raw JSON object input.
 type Executor interface {
 	Definition() Definition
-	Execute(ctx context.Context, input map[string]any) (Result, error)
+	Execute(ctx context.Context, input Arguments) (Result, error)
 }
 
 // TextResult creates a text-only tool result.

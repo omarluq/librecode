@@ -116,23 +116,18 @@ func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *provid
 const openAIChatDefaultTemperature = 0.2
 
 func openAIChatPayload(request *CompletionRequest) map[string]any {
-	cache := newBuiltinToolSchemaCache()
-
-	return cache.openAIChatPayload(request, nil)
+	return buildOpenAIChatPayload(request, nil)
 }
 
 func (client *HTTPCompletionClient) openAIChatPayload(
 	request *CompletionRequest,
 	messages []map[string]any,
 ) map[string]any {
-	return client.toolSchemas.openAIChatPayload(request, messages)
+	return buildOpenAIChatPayload(request, messages)
 }
 
-func (cache *builtinToolSchemaCache) openAIChatPayload(
-	request *CompletionRequest,
-	messages []map[string]any,
-) map[string]any {
-	tools := cache.openAIChatTools(requestToolDefinitions(request))
+func buildOpenAIChatPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
+	tools := openAIChatTools(requestToolDefinitions(request))
 
 	payload := map[string]any{
 		jsonModelKey:    request.Request.Model.ID,

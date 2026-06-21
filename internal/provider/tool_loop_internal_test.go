@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 const (
@@ -27,7 +28,7 @@ func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 		{
 			name: "missing id",
 			call: ToolCall{
-				Arguments:     nil,
+				Arguments:     tool.EmptyArguments(),
 				Metadata:      nil,
 				ID:            "",
 				Name:          jsonReadToolName,
@@ -37,7 +38,7 @@ func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 		{
 			name: "missing name",
 			call: ToolCall{
-				Arguments:     nil,
+				Arguments:     tool.EmptyArguments(),
 				Metadata:      nil,
 				ID:            testCallID,
 				Name:          "",
@@ -133,7 +134,7 @@ func TestToolCallMetadataClonesMetadata(t *testing.T) {
 
 	call := readToolCall(testCallID)
 	call.Metadata = map[string]any{testExistingKey: true}
-	metadata := toolCallMetadata(call)
+	metadata := toolCallMetadata(&call)
 	metadata[testExistingKey] = false
 
 	assert.Equal(t, true, call.Metadata[testExistingKey])
@@ -188,7 +189,7 @@ func TestOpenAIChatToolMessagesUsesCallIDs(t *testing.T) {
 
 func readToolCall(callID string) ToolCall {
 	return ToolCall{
-		Arguments:     nil,
+		Arguments:     tool.EmptyArguments(),
 		Metadata:      nil,
 		ID:            callID,
 		Name:          jsonReadToolName,

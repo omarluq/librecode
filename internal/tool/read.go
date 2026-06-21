@@ -33,7 +33,7 @@ func NewReadTool(cwd string) *ReadTool {
 // Definition returns read tool metadata.
 func (readTool *ReadTool) Definition() Definition {
 	return Definition{
-		Schema:        EmptySchema(),
+		Schema:        inputSchemaForName(NameRead),
 		Name:          NameRead,
 		Label:         "read",
 		Description:   readDescription(),
@@ -47,7 +47,7 @@ func (readTool *ReadTool) Definition() Definition {
 }
 
 // Execute runs the read tool.
-func (readTool *ReadTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
+func (readTool *ReadTool) Execute(ctx context.Context, input Arguments) (Result, error) {
 	var args ReadInput
 
 	err := decodeInput(input, &args)

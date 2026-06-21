@@ -11,6 +11,7 @@ import (
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/provider"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 func providerRequestFromCompletionRequest(request *CompletionRequest) *provider.CompletionRequest {
@@ -295,11 +296,11 @@ func toolCallEventPointerFromLLMPart(part *llm.Part) *ToolCallEvent {
 
 func toolCallEventFromLLMToolCall(call *llm.ToolCall) ToolCallEvent {
 	if call == nil {
-		return ToolCallEvent{Arguments: nil, ID: "", Name: "", ArgumentsJSON: ""}
+		return ToolCallEvent{Arguments: tool.EmptyArguments(), ID: "", Name: "", ArgumentsJSON: ""}
 	}
 
 	return ToolCallEvent{
-		Arguments:     mapsutil.CloneOrNil(call.Arguments),
+		Arguments:     call.Arguments,
 		ID:            call.ID,
 		Name:          call.Name,
 		ArgumentsJSON: call.ArgumentsJSON,
@@ -308,12 +309,18 @@ func toolCallEventFromLLMToolCall(call *llm.ToolCall) ToolCallEvent {
 
 func llmToolCallFromToolCallEvent(event *ToolCallEvent, fallbackName string) llm.ToolCall {
 	if event == nil {
-		return llm.ToolCall{Metadata: nil, Arguments: nil, ID: "", Name: fallbackName, ArgumentsJSON: ""}
+		return llm.ToolCall{
+			Metadata:      nil,
+			Arguments:     tool.EmptyArguments(),
+			ArgumentsJSON: "",
+			ID:            "",
+			Name:          fallbackName,
+		}
 	}
 
 	return llm.ToolCall{
 		Metadata:      nil,
-		Arguments:     mapsutil.CloneOrNil(event.Arguments),
+		Arguments:     event.Arguments,
 		ID:            event.ID,
 		Name:          event.Name,
 		ArgumentsJSON: event.ArgumentsJSON,
@@ -365,7 +372,7 @@ func assistantToolCallsFromLLM(calls []llm.ToolCall) []ToolCall {
 	return lo.Map(calls, func(call llm.ToolCall, _ int) ToolCall {
 		return ToolCall{
 			Metadata:      mapsutil.CloneOrNil(call.Metadata),
-			Arguments:     mapsutil.CloneOrNil(call.Arguments),
+			Arguments:     call.Arguments,
 			ID:            call.ID,
 			Name:          call.Name,
 			ArgumentsJSON: call.ArgumentsJSON,

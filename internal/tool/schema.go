@@ -2,7 +2,9 @@ package tool
 
 import (
 	"encoding/json"
+	"reflect"
 
+	invopopjsonschema "github.com/invopop/jsonschema"
 	"github.com/samber/oops"
 )
 
@@ -16,52 +18,22 @@ func EmptySchema() Schema {
 	return Schema{raw: nil}
 }
 
-// SchemaFromMap converts a generic JSON object into a typed schema blob.
-func SchemaFromMap(value map[string]any) (Schema, error) {
-	if len(value) == 0 {
-		return EmptySchema(), nil
+// schemaFromType generates a strict JSON Schema document from a Go type.
+func schemaFromType(inputType reflect.Type, lookupComment func(reflect.Type, string) string) (Schema, error) {
+	reflector := invopopjsonschema.Reflector{
+		Anonymous:      true,
+		DoNotReference: true,
+		LookupComment:  lookupComment,
 	}
+	schema := reflector.ReflectFromType(inputType)
+	schema.Version = ""
 
-	encoded, err := json.Marshal(value)
+	encoded, err := json.Marshal(schema)
 	if err != nil {
-		return EmptySchema(), oops.In("tool").Code("tool_schema_marshal").Wrapf(err, "marshal tool schema")
+		return EmptySchema(), oops.In("tool").Code("tool_schema_marshal").Wrapf(err, "marshal generated tool schema")
 	}
 
 	return SchemaFromRaw(encoded)
-}
-
-// ToMap decodes the schema into a generic JSON object.
-func (schema Schema) ToMap() (map[string]any, error) {
-	if schema.IsEmpty() {
-		return map[string]any{}, nil
-	}
-
-	var decoded map[string]any
-	if err := json.Unmarshal(schema.RawMessage(), &decoded); err != nil {
-		return nil, oops.In("tool").Code("tool_schema_unmarshal").Wrapf(err, "decode tool schema")
-	}
-
-	return decoded, nil
-}
-
-// MustToMap decodes the schema into a generic JSON object and panics on failure.
-func (schema Schema) MustToMap() map[string]any {
-	decoded, err := schema.ToMap()
-	if err != nil {
-		panic(err)
-	}
-
-	return decoded
-}
-
-// MustSchemaFromMap converts a generic JSON object into a typed schema blob and panics on failure.
-func MustSchemaFromMap(value map[string]any) Schema {
-	schema, err := SchemaFromMap(value)
-	if err != nil {
-		panic(err)
-	}
-
-	return schema
 }
 
 // SchemaFromRaw validates and stores a raw JSON Schema document.

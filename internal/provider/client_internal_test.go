@@ -72,7 +72,7 @@ func TestParseSSEResultExtractsToolCallFromOutputItems(t *testing.T) {
 	assert.Equal(t, "call_1", result.ToolCalls[0].ID)
 	assert.Equal(t, "read", result.ToolCalls[0].Name)
 	assert.JSONEq(t, `{"path":"README.md"}`, result.ToolCalls[0].ArgumentsJSON)
-	assert.Equal(t, "README.md", result.ToolCalls[0].Arguments["path"])
+	assert.Equal(t, "README.md", testToolArgumentFields(result.ToolCalls[0].Arguments)["path"])
 }
 
 func TestParseSSEResultFailureCases(t *testing.T) {

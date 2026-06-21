@@ -2,9 +2,12 @@ package extension
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"time"
+
+	"github.com/omarluq/librecode/internal/tool"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -69,13 +72,13 @@ type LifecycleEvent struct {
 
 // LifecycleDispatchResult describes the outcome of lifecycle handler dispatch.
 type LifecycleDispatchResult struct {
+	ToolResult      ToolResultMutation      `json:"tool_result"`
 	Payload         map[string]any          `json:"payload"`
 	ProviderRequest ProviderRequestMutation `json:"provider_request"`
-	ToolCall        ToolCallMutation        `json:"tool_call"`
-	ToolResult      ToolResultMutation      `json:"tool_result"`
 	Compaction      CompactionMutation      `json:"compaction"`
 	Name            string                  `json:"name"`
 	Errors          []string                `json:"errors"`
+	ToolCall        ToolCallMutation        `json:"tool_call"`
 	Duration        time.Duration           `json:"duration"`
 	HandlerCount    int                     `json:"handler_count"`
 	Consumed        bool                    `json:"consumed"`
@@ -89,7 +92,8 @@ type ProviderRequestMutation struct {
 
 // ToolCallMutation contains tool call argument changes returned by lifecycle handlers.
 type ToolCallMutation struct {
-	Arguments map[string]any `json:"arguments"`
+	Arguments tool.Arguments `json:"arguments"`
+	HasArgs   bool           `json:"-"`
 }
 
 // ToolResultMutation contains tool result changes returned by lifecycle handlers.
@@ -121,7 +125,7 @@ func (manager *Manager) DispatchLifecycle(ctx context.Context, event LifecycleEv
 	result := LifecycleDispatchResult{
 		Payload:         cloneMap(event.Payload),
 		ProviderRequest: ProviderRequestMutation{Headers: map[string]string{}},
-		ToolCall:        ToolCallMutation{Arguments: nil},
+		ToolCall:        ToolCallMutation{Arguments: tool.EmptyArguments(), HasArgs: false},
 		ToolResult:      ToolResultMutation{Result: nil, DetailsJSON: nil, Error: nil},
 		Compaction:      CompactionMutation{Summary: nil, FirstKeptEntryID: nil, Details: nil, Cancel: false},
 		Name:            string(event.Name),
@@ -238,14 +242,33 @@ func mergeProviderRequestMutation(base, override ProviderRequestMutation) Provid
 }
 
 func mergeToolCallMutation(base, override ToolCallMutation) ToolCallMutation {
-	if len(override.Arguments) == 0 {
+	if !override.HasArgs {
 		return base
 	}
 
-	arguments := cloneMap(base.Arguments)
-	maps.Copy(arguments, override.Arguments)
+	baseFields, err := base.Arguments.Fields()
+	if err != nil {
+		return base
+	}
 
-	return ToolCallMutation{Arguments: arguments}
+	overrideFields, err := override.Arguments.Fields()
+	if err != nil {
+		return base
+	}
+
+	maps.Copy(baseFields, overrideFields)
+
+	encoded, err := json.Marshal(baseFields)
+	if err != nil {
+		return base
+	}
+
+	arguments, err := tool.ArgumentsFromRaw(encoded)
+	if err != nil {
+		return base
+	}
+
+	return ToolCallMutation{Arguments: arguments, HasArgs: true}
 }
 
 func mergeToolResultMutation(base, override ToolResultMutation) ToolResultMutation {
@@ -290,15 +313,25 @@ func mergeCompactionMutation(base, override CompactionMutation) CompactionMutati
 func toolCallMutationFromLua(value lua.LValue) (ToolCallMutation, bool) {
 	payload, matched := luaValueToGo(value).(map[string]any)
 	if !matched {
-		return ToolCallMutation{Arguments: nil}, false
+		return ToolCallMutation{Arguments: tool.EmptyArguments(), HasArgs: false}, false
 	}
 
 	arguments, matched := payload["arguments"].(map[string]any)
 	if !matched || len(arguments) == 0 {
-		return ToolCallMutation{Arguments: nil}, false
+		return ToolCallMutation{Arguments: tool.EmptyArguments(), HasArgs: false}, false
 	}
 
-	return ToolCallMutation{Arguments: arguments}, true
+	encoded, err := json.Marshal(arguments)
+	if err != nil {
+		return ToolCallMutation{Arguments: tool.EmptyArguments(), HasArgs: false}, false
+	}
+
+	parsed, err := tool.ArgumentsFromRaw(encoded)
+	if err != nil {
+		return ToolCallMutation{Arguments: tool.EmptyArguments(), HasArgs: false}, false
+	}
+
+	return ToolCallMutation{Arguments: parsed, HasArgs: true}, true
 }
 
 func toolResultMutationFromLua(value lua.LValue) (ToolResultMutation, bool) {

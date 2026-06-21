@@ -71,7 +71,10 @@ func TestReadToolRespectsGitignoreByDefault(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			result, err := reader.Execute(context.Background(), map[string]any{readTestPathKey: testCase.path})
+			result, err := reader.Execute(
+				context.Background(),
+				testToolArguments(map[string]any{readTestPathKey: testCase.path}),
+			)
 			require.NoError(t, err)
 
 			if testCase.wantRefusal {
@@ -135,14 +138,20 @@ func TestReadToolInvalidatesGitignoreCache(t *testing.T) {
 			setReadTestModTime(t, workspace, referenceTime)
 
 			reader := tool.NewReadTool(workspace)
-			initialResult, err := reader.Execute(t.Context(), map[string]any{readTestPathKey: relativePath})
+			initialResult, err := reader.Execute(
+				t.Context(),
+				testToolArguments(map[string]any{readTestPathKey: relativePath}),
+			)
 			require.NoError(t, err)
 			assert.Equal(t, "secret", initialResult.Text())
 
 			testCase.change(t, workspace)
 			setReadTestModTime(t, workspace, referenceTime.Add(time.Hour))
 
-			changedResult, err := reader.Execute(t.Context(), map[string]any{readTestPathKey: relativePath})
+			changedResult, err := reader.Execute(
+				t.Context(),
+				testToolArguments(map[string]any{readTestPathKey: relativePath}),
+			)
 			require.NoError(t, err)
 			assert.Contains(t, changedResult.Text(), "Refusing to read ignored path")
 		})
@@ -181,14 +190,17 @@ func TestReadToolAllowsExplicitIgnoredReads(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(workspace, ".env"), []byte("SECRET=value"), 0o600))
 
 	reader := tool.NewReadTool(workspace)
-	blockedResult, err := reader.Execute(context.Background(), map[string]any{readTestPathKey: ".env"})
+	blockedResult, err := reader.Execute(
+		context.Background(),
+		testToolArguments(map[string]any{readTestPathKey: ".env"}),
+	)
 	require.NoError(t, err)
 	assert.Contains(t, blockedResult.Text(), "Refusing to read ignored path")
 
-	allowedResult, err := reader.Execute(context.Background(), map[string]any{
+	allowedResult, err := reader.Execute(context.Background(), testToolArguments(map[string]any{
 		"allow_ignored": true,
 		readTestPathKey: ".env",
-	})
+	}))
 	require.NoError(t, err)
 	assert.Equal(t, "SECRET=value", allowedResult.Text())
 }
@@ -202,9 +214,9 @@ func TestReadToolAllowsAgentSkillFilesByDefault(t *testing.T) {
 	require.NoError(t, os.WriteFile(skillPath, []byte("skill body"), 0o600))
 
 	reader := tool.NewReadTool(workspace)
-	result, err := reader.Execute(context.Background(), map[string]any{
+	result, err := reader.Execute(context.Background(), testToolArguments(map[string]any{
 		readTestPathKey: filepath.Join(".agents", "skills", "fix-bug", "SKILL.md"),
-	})
+	}))
 	require.NoError(t, err)
 	assert.Equal(t, "skill body", result.Text())
 }

@@ -24,8 +24,8 @@ func (runtime *Runtime) executeProviderToolCalls(
 		}
 
 		events := make([]ToolEvent, 0, len(calls))
-		for _, call := range calls {
-			events = append(events, runtime.executeProviderToolCall(ctx, registry, call, onEvent))
+		for index := range calls {
+			events = append(events, runtime.executeProviderToolCall(ctx, registry, &calls[index], onEvent))
 		}
 
 		return events, nil
@@ -35,15 +35,22 @@ func (runtime *Runtime) executeProviderToolCalls(
 func (runtime *Runtime) executeProviderToolCall(
 	ctx context.Context,
 	registry *tool.Registry,
-	call ToolCall,
+	call *ToolCall,
 	onEvent func(StreamEvent),
 ) ToolEvent {
 	callEvent := ToolCallEvent{
-		Arguments:     call.Arguments,
-		ID:            call.ID,
-		Name:          call.Name,
-		ArgumentsJSON: call.ArgumentsJSON,
+		Arguments:     tool.EmptyArguments(),
+		ArgumentsJSON: "",
+		ID:            "",
+		Name:          "",
 	}
+	if call != nil {
+		callEvent.Arguments = call.Arguments
+		callEvent.ID = call.ID
+		callEvent.Name = call.Name
+		callEvent.ArgumentsJSON = call.ArgumentsJSON
+	}
+
 	if err := runtime.dispatchToolCallLifecycle(ctx, &callEvent); err != nil {
 		event := toolLifecycleErrorEvent(callEvent, err)
 		emitProviderToolResult(onEvent, &event)

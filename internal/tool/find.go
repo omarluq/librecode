@@ -40,7 +40,7 @@ func NewFindTool(cwd string) *FindTool {
 // Definition returns find tool metadata.
 func (findTool *FindTool) Definition() Definition {
 	return Definition{
-		Schema:        EmptySchema(),
+		Schema:        inputSchemaForName(NameFind),
 		Name:          NameFind,
 		Label:         "find",
 		Description:   findDescription(),
@@ -53,7 +53,7 @@ func (findTool *FindTool) Definition() Definition {
 }
 
 // Execute runs the find tool.
-func (findTool *FindTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
+func (findTool *FindTool) Execute(ctx context.Context, input Arguments) (Result, error) {
 	var args FindInput
 
 	err := decodeInput(input, &args)

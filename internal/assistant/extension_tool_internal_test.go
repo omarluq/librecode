@@ -13,7 +13,7 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-type extensionRunnerFunc func(context.Context, string, map[string]any) (extension.ToolResult, error)
+type extensionRunnerFunc func(context.Context, string, tool.Arguments) (extension.ToolResult, error)
 
 type extensionExecutorCase struct {
 	runner         extensionRunnerFunc
@@ -27,7 +27,7 @@ type extensionExecutorCase struct {
 func (runner extensionRunnerFunc) ExecuteTool(
 	ctx context.Context,
 	name string,
-	args map[string]any,
+	args tool.Arguments,
 ) (extension.ToolResult, error) {
 	return runner(ctx, name, args)
 }
@@ -52,7 +52,10 @@ func TestExtensionExecutor_Execute(t *testing.T) {
 				Extension:   "test",
 			}, testCase.runner)
 
-			result, err := executor.Execute(context.Background(), map[string]any{"text": adapterHello})
+			result, err := executor.Execute(
+				context.Background(),
+				testToolArguments(map[string]any{"text": adapterHello}),
+			)
 
 			if testCase.expectedErr != "" {
 				require.Error(t, err)
@@ -75,7 +78,7 @@ func TestExtensionExecutor_Execute(t *testing.T) {
 
 func successfulExtensionExecutorCase() extensionExecutorCase {
 	return extensionExecutorCase{
-		runner: func(context.Context, string, map[string]any) (extension.ToolResult, error) {
+		runner: func(context.Context, string, tool.Arguments) (extension.ToolResult, error) {
 			return extension.ToolResult{
 				Details: map[string]any{"ok": true},
 				Content: "done",
@@ -91,7 +94,7 @@ func successfulExtensionExecutorCase() extensionExecutorCase {
 
 func failingExtensionExecutorCase(err error) extensionExecutorCase {
 	return extensionExecutorCase{
-		runner: func(context.Context, string, map[string]any) (extension.ToolResult, error) {
+		runner: func(context.Context, string, tool.Arguments) (extension.ToolResult, error) {
 			return extension.ToolResult{Details: nil, Content: ""}, err
 		},
 		expectedDetail: nil,

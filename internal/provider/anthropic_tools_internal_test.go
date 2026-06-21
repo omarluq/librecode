@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 const (
@@ -62,7 +63,7 @@ func TestParseAnthropicStreamExtractsNativeToolUse(t *testing.T) {
 			require.Len(t, result.ToolCalls, 1)
 			assert.Equal(t, testAnthropicToolUseID, result.ToolCalls[0].ID)
 			assert.Equal(t, testCase.wantName, result.ToolCalls[0].Name)
-			assert.Equal(t, "README.md", result.ToolCalls[0].Arguments[jsonPathKey])
+			assert.Equal(t, "README.md", testToolArgumentFields(result.ToolCalls[0].Arguments)[jsonPathKey])
 			assert.Equal(t, 12, result.Usage.InputTokens)
 			assert.Equal(t, 3, result.Usage.OutputTokens)
 		})
@@ -90,7 +91,7 @@ func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
 
 	message, err := anthropicToolResultMessage(
 		[]ToolCall{{
-			Arguments:     nil,
+			Arguments:     tool.EmptyArguments(),
 			Metadata:      nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
@@ -121,7 +122,7 @@ func TestAnthropicToolResultMessageMarksToolErrors(t *testing.T) {
 
 	message, err := anthropicToolResultMessage(
 		[]ToolCall{{
-			Arguments:     nil,
+			Arguments:     tool.EmptyArguments(),
 			Metadata:      nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
@@ -150,7 +151,7 @@ func TestAnthropicToolResultMessageRejectsMismatchedCallsAndEvents(t *testing.T)
 
 	message, err := anthropicToolResultMessage(
 		[]ToolCall{{
-			Arguments:     nil,
+			Arguments:     tool.EmptyArguments(),
 			Metadata:      nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,
@@ -174,7 +175,7 @@ func TestAppendAnthropicToolConversationRejectsMismatchedNativeResults(t *testin
 		OutputItems:  nil,
 		Thinking:     nil,
 		ToolCalls: []ToolCall{{
-			Arguments:     nil,
+			Arguments:     tool.EmptyArguments(),
 			Metadata:      nil,
 			ID:            testAnthropicToolUseID,
 			Name:          jsonReadToolName,

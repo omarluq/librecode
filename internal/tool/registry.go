@@ -2,7 +2,6 @@ package tool
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"sort"
 
@@ -18,8 +17,9 @@ var ErrDuplicateTool = errors.New("tool: duplicate tool")
 
 // Registry owns built-in tool executors for a working directory.
 type Registry struct {
-	executors map[Name]Executor
-	cwd       string
+	schemaValidators *schemaValidatorCache
+	executors        map[Name]Executor
+	cwd              string
 }
 
 // NewRegistry creates a registry with every built-in tool enabled.
@@ -35,12 +35,17 @@ func NewRegistry(cwd string) *Registry {
 		NewASTTool(cwd),
 	}
 
-	return &Registry{
-		executors: lo.SliceToMap(executors, func(executor Executor) (Name, Executor) {
-			return executor.Definition().Name, executor
-		}),
-		cwd: cwd,
+	registry := &Registry{
+		schemaValidators: newSchemaValidatorCache(),
+		executors:        make(map[Name]Executor, len(executors)),
+		cwd:              cwd,
 	}
+	for _, executor := range executors {
+		definition := executor.Definition()
+		registry.executors[definition.Name] = executor
+	}
+
+	return registry
 }
 
 // CWD returns the registry working directory.
@@ -76,8 +81,8 @@ func (registry *Registry) Definitions() []Definition {
 	return definitions
 }
 
-// Execute runs a named tool with map-shaped JSON arguments.
-func (registry *Registry) Execute(ctx context.Context, name string, input map[string]any) (Result, error) {
+// Execute runs a named tool with raw JSON object arguments.
+func (registry *Registry) Execute(ctx context.Context, name string, input Arguments) (Result, error) {
 	executor, ok := registry.executors[Name(name)]
 	if !ok {
 		return emptyToolResult(), oops.
@@ -87,12 +92,8 @@ func (registry *Registry) Execute(ctx context.Context, name string, input map[st
 			Wrapf(ErrUnknownTool, "resolve tool")
 	}
 
-	if input == nil {
-		input = map[string]any{}
-	}
-
 	definition := executor.Definition()
-	if err := validateToolInput(&definition, input); err != nil {
+	if err := validateToolInput(&definition, input, registry.schemaValidators); err != nil {
 		return emptyToolResult(), err
 	}
 
@@ -103,11 +104,9 @@ func (registry *Registry) Execute(ctx context.Context, name string, input map[st
 
 // ExecuteJSON runs a named tool with raw JSON object arguments.
 func (registry *Registry) ExecuteJSON(ctx context.Context, name string, payload []byte) (Result, error) {
-	input := map[string]any{}
-	if len(payload) > 0 {
-		if err := json.Unmarshal(payload, &input); err != nil {
-			return emptyToolResult(), oops.In("tool").Code("decode_json_input").Wrapf(err, "decode tool input")
-		}
+	input, err := ArgumentsFromRaw(payload)
+	if err != nil {
+		return emptyToolResult(), err
 	}
 
 	return registry.Execute(ctx, name, input)
@@ -118,15 +117,6 @@ func AllDefinitions() []Definition {
 	return NewRegistry("").Definitions()
 }
 
-func decodeInput(input map[string]any, decoded any) error {
-	payload, err := json.Marshal(input)
-	if err != nil {
-		return oops.In("tool").Code("encode_input").Wrapf(err, "encode tool input")
-	}
-
-	if err := json.Unmarshal(payload, decoded); err != nil {
-		return oops.In("tool").Code("decode_input").Wrapf(err, "decode tool input")
-	}
-
-	return nil
+func decodeInput(input Arguments, decoded any) error {
+	return input.Decode(decoded)
 }

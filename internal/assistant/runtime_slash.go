@@ -106,12 +106,14 @@ func (runtime *Runtime) loadSkillWithReadTool(
 ) (content string, toolEvent ToolEvent, err error) {
 	registry := tool.NewRegistry(cwd)
 
-	input := map[string]any{jsonPathKey: skill.FilePath}
-	if limit != nil {
-		input["limit"] = *limit
+	payload := skillReadArgumentsJSON(skill.FilePath, limit)
+
+	arguments, err := tool.ArgumentsFromRaw([]byte(payload))
+	if err != nil {
+		return "", ToolEvent{}, assistantError(err, "build skill read arguments")
 	}
 
-	result, err := registry.Execute(ctx, string(tool.NameRead), input)
+	result, err := registry.Execute(ctx, string(tool.NameRead), arguments)
 
 	toolEvent = ToolEvent{
 		Name:          "load skill: " + skill.Name,

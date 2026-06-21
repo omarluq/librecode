@@ -76,7 +76,7 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 		return llm.HookOutput{Payload: payload, Headers: headers}, nil
 	}
 
-	client := &HTTPCompletionClient{toolSchemas: newBuiltinToolSchemaCache(), client: server.Client()}
+	client := &HTTPCompletionClient{client: server.Client()}
 	result, err := client.completeOpenAIResponses(context.Background(), request)
 	require.NoError(t, err)
 
@@ -174,7 +174,7 @@ func completeOpenAIChatWithResponses(
 	setTestRequestBaseURL(request, server.URL)
 	installTestToolExecutor(request)
 
-	client := &HTTPCompletionClient{toolSchemas: newBuiltinToolSchemaCache(), client: server.Client()}
+	client := &HTTPCompletionClient{client: server.Client()}
 	result, err := client.completeOpenAIChat(context.Background(), request)
 	require.NoError(t, err)
 

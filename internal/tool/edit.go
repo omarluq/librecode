@@ -31,7 +31,7 @@ func NewEditTool(cwd string) *EditTool {
 // Definition returns edit tool metadata.
 func (editTool *EditTool) Definition() Definition {
 	return Definition{
-		Schema:        EmptySchema(),
+		Schema:        inputSchemaForName(NameEdit),
 		Name:          NameEdit,
 		Label:         "edit",
 		Description:   editDescription(),
@@ -46,7 +46,7 @@ func (editTool *EditTool) Definition() Definition {
 }
 
 // Execute runs the edit tool.
-func (editTool *EditTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
+func (editTool *EditTool) Execute(ctx context.Context, input Arguments) (Result, error) {
 	var args EditInput
 
 	err := decodeInput(input, &args)

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/omarluq/librecode/internal/tool"
+
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -36,9 +38,9 @@ func (manager *Manager) ExecuteCommand(ctx context.Context, name, args string) (
 }
 
 // ExecuteTool runs a registered extension tool.
-func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[string]any) (ToolResult, error) {
+func (manager *Manager) ExecuteTool(ctx context.Context, name string, args tool.Arguments) (ToolResult, error) {
 	manager.lock.RLock()
-	tool, ok := manager.tools[name]
+	registeredTool, ok := manager.tools[name]
 	manager.lock.RUnlock()
 
 	if !ok {
@@ -49,9 +51,14 @@ func (manager *Manager) ExecuteTool(ctx context.Context, name string, args map[s
 		return ToolResult{Details: map[string]any{}, Content: ""}, extensionError(err, extensionCheckContextStep)
 	}
 
-	result, err := callLuaPrepared(tool.extension, nil, tool.function, func(state *lua.LState) []lua.LValue {
-		return []lua.LValue{mapToLuaTable(state, args)}
-	})
+	result, err := callLuaPrepared(
+		registeredTool.extension,
+		nil,
+		registeredTool.function,
+		func(state *lua.LState) []lua.LValue {
+			return []lua.LValue{toolArgumentsTable(state, args)}
+		},
+	)
 	if err != nil {
 		return ToolResult{Details: map[string]any{}, Content: ""},
 			fmt.Errorf("extension: tool %q failed: %w", name, err)

@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 func TestOpenAIChatPayloadAndRoles(t *testing.T) {
@@ -99,7 +100,7 @@ func TestOpenAIChatAssistantToolMessage(t *testing.T) {
 		OutputItems:  nil,
 		Thinking:     nil,
 		ToolCalls: []ToolCall{{
-			Arguments:     nil,
+			Arguments:     tool.EmptyArguments(),
 			Metadata:      nil,
 			ID:            testCallID,
 			Name:          jsonReadToolName,

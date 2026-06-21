@@ -1,6 +1,9 @@
 package provider
 
-import "github.com/omarluq/librecode/internal/llm"
+import (
+	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
+)
 
 // StreamEventKind identifies incremental provider/client activity.
 type StreamEventKind string
@@ -42,7 +45,7 @@ func streamPartToLLM(event StreamEvent) *llm.Part {
 	case StreamEventToolStart:
 		call := llm.ToolCall{
 			Metadata:      nil,
-			Arguments:     nil,
+			Arguments:     tool.EmptyArguments(),
 			ID:            "",
 			Name:          event.Text,
 			ArgumentsJSON: "",

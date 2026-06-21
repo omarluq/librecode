@@ -281,7 +281,20 @@ func luaOptionalSchema(state *lua.LState, index int) (tool.Schema, error) {
 	}
 
 	if table, ok := state.Get(index).(*lua.LTable); ok {
-		schema, err := tool.SchemaFromMap(luaTableToMap(table))
+		if luaTableIsArray(table) {
+			return tool.EmptySchema(), oops.In("extension").
+				Code("invalid_tool_schema").
+				Errorf("tool schema must be a JSON object")
+		}
+
+		rawSchema, err := luaSchemaRaw(table)
+		if err != nil {
+			return tool.EmptySchema(), oops.In("extension").
+				Code("invalid_tool_schema").
+				Wrapf(err, "convert lua tool schema")
+		}
+
+		schema, err := tool.SchemaFromRaw(rawSchema)
 		if err != nil {
 			return tool.EmptySchema(), oops.In("extension").
 				Code("invalid_tool_schema").

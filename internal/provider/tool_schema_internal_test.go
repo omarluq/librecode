@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,19 +14,10 @@ import (
 func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 	t.Parallel()
 
-	t.Run("nil definition is freeform", func(t *testing.T) {
-		t.Parallel()
-
-		schema := ToolParameterSchema(nil)
-
-		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(schema[jsonTypeKey]))
-		assertAdditionalProperties(t, schema, true)
-	})
-
 	t.Run("unknown definition is freeform", func(t *testing.T) {
 		t.Parallel()
 
-		schema := ToolParameterSchema(newToolDefinitionForSchemaTest("custom", nil))
+		schema := schemaPayloadForDefinition(t, newToolDefinitionForSchemaTest("custom", nil))
 
 		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(schema[jsonTypeKey]))
 		assertAdditionalProperties(t, schema, true)
@@ -35,7 +27,7 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 		t.Parallel()
 
 		original := map[string]any{jsonTypeKey: jsonObjectType}
-		schema := ToolParameterSchema(newToolDefinitionForSchemaTest("custom", original))
+		schema := schemaPayloadForDefinition(t, newToolDefinitionForSchemaTest("custom", original))
 
 		schema[jsonTypeKey] = "changed"
 		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(original[jsonTypeKey]))
@@ -44,7 +36,8 @@ func TestToolParameterSchemaFallbacksAndCloning(t *testing.T) {
 	t.Run("builtin schema is strict", func(t *testing.T) {
 		t.Parallel()
 
-		schema := ToolParameterSchema(newToolDefinitionForSchemaTest(jsonReadToolName, nil))
+		definition := builtinDefinitionForSchemaTest(t, jsonReadToolName)
+		schema := schemaPayloadForDefinition(t, &definition)
 
 		assert.JSONEq(t, jsonString(jsonObjectType), jsonString(schema[jsonTypeKey]))
 		assertAdditionalProperties(t, schema, false)
@@ -106,7 +99,7 @@ func TestToolArgumentsFromJSON(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, test.want, toolArgumentsFromJSON(test.json))
+			assert.Equal(t, test.want, testToolArgumentFields(toolArgumentsFromJSON(test.json)))
 		})
 	}
 }
@@ -121,40 +114,68 @@ func assertAdditionalProperties(t *testing.T, schema map[string]any, expected bo
 
 func newToolDefinitionForSchemaTest(name string, schema map[string]any) *llm.ToolDefinition {
 	return &llm.ToolDefinition{
-		Schema:      tool.MustSchemaFromMap(schema),
+		Schema:      schemaFromTestMap(schema),
 		Name:        name,
 		Description: "description",
 		ReadOnly:    false,
 	}
 }
 
-func schemaStringValues(t *testing.T, value any) []string {
+func builtinDefinitionForSchemaTest(t *testing.T, name string) llm.ToolDefinition {
 	t.Helper()
 
-	values, ok := value.([]any)
-	require.True(t, ok)
-
-	strings := make([]string, 0, len(values))
-	for _, item := range values {
-		text, ok := item.(string)
-		require.True(t, ok)
-
-		strings = append(strings, text)
+	for _, definition := range builtinToolDefinitions() {
+		if definition.Name == name {
+			return definition
+		}
 	}
 
-	return strings
+	t.Fatalf("builtin definition %q not found", name)
+
+	return llm.ToolDefinition{Schema: tool.EmptySchema(), Name: "", Description: "", ReadOnly: false}
+}
+
+func schemaFromTestMap(value map[string]any) tool.Schema {
+	if value == nil {
+		return tool.EmptySchema()
+	}
+
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+
+	schema, err := tool.SchemaFromRaw(encoded)
+	if err != nil {
+		panic(err)
+	}
+
+	return schema
+}
+
+func schemaPayloadForDefinition(t *testing.T, definition *llm.ToolDefinition) map[string]any {
+	t.Helper()
+
+	encoded, err := json.Marshal(toolParameterSchemaForDefinition(definition))
+	require.NoError(t, err)
+
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &schema))
+
+	return schema
 }
 
 func TestBuiltinToolSchemaUsesGeneratedStructMetadata(t *testing.T) {
 	t.Parallel()
 
-	schema := ToolParameterSchema(newToolDefinitionForSchemaTest(jsonASTToolName, nil))
+	definition := builtinDefinitionForSchemaTest(t, jsonASTToolName)
+	schema := schemaPayloadForDefinition(t, &definition)
 	properties, ok := schema[jsonPropertiesKey].(map[string]any)
 	require.True(t, ok)
 
 	mode, ok := properties["mode"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, []string{"outline", "symbols", "query", "node", "tree"}, schemaStringValues(t, mode["enum"]))
+	assert.JSONEq(t, `["outline","symbols","query","node","tree"]`, jsonString(mode["enum"]))
 	assert.Equal(
 		t,
 		"Inspection mode: 'outline' (default), 'symbols', 'query', 'node', or 'tree'.",

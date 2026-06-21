@@ -9,6 +9,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 const (
@@ -124,11 +125,11 @@ type Completer interface {
 
 // ToolCall is a provider-returned local tool invocation.
 type ToolCall struct {
-	Arguments     map[string]any
 	Metadata      map[string]any
+	ArgumentsJSON string
 	ID            string
 	Name          string
-	ArgumentsJSON string
+	Arguments     tool.Arguments
 }
 
 // ToolEvent captures one tool result for provider follow-up messages.
@@ -152,8 +153,7 @@ type providerResult struct {
 
 // HTTPCompletionClient is a small provider client for built-in API families.
 type HTTPCompletionClient struct {
-	client      *http.Client
-	toolSchemas builtinToolSchemaCache
+	client *http.Client
 }
 
 const providerHTTPTimeout = 10 * time.Minute
@@ -182,7 +182,6 @@ func NewHTTPCompletionClient() *HTTPCompletionClient {
 	}
 
 	return &HTTPCompletionClient{
-		toolSchemas: newBuiltinToolSchemaCache(),
 		client: &http.Client{
 			Timeout:   providerHTTPTimeout,
 			Transport: h2OnlyTransport{base: transport},
