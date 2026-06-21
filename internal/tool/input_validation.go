@@ -3,6 +3,7 @@ package tool
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/samber/oops"
 )
@@ -64,13 +65,32 @@ func schemaRequiredArguments(schema Schema) ([]string, bool) {
 	}
 
 	var document struct {
-		Required []string `json:"required"`
+		Required []json.RawMessage `json:"required"`
 	}
 	if err := json.Unmarshal(schema.RawMessage(), &document); err != nil || len(document.Required) == 0 {
 		return nil, false
 	}
 
-	return document.Required, true
+	required := make([]string, 0, len(document.Required))
+	for _, rawName := range document.Required {
+		var name string
+		if err := json.Unmarshal(rawName, &name); err != nil {
+			continue
+		}
+
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+
+		required = append(required, name)
+	}
+
+	if len(required) == 0 {
+		return nil, false
+	}
+
+	return required, true
 }
 
 func missingToolArgumentError(name Name, field string, required []string) error {

@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samber/oops"
+
 	"github.com/omarluq/librecode/internal/tool"
 
 	lua "github.com/yuin/gopher-lua"
@@ -222,8 +224,16 @@ func (manager *Manager) luaRegisterCommand(extensionRuntime *luaExtension) lua.L
 func (manager *Manager) luaRegisterTool(extensionRuntime *luaExtension) lua.LGFunction {
 	return func(state *lua.LState) int {
 		name, description, function := luaRegistrationArgs(state)
+
+		schema, err := luaOptionalSchema(state, luaThirdArgument)
+		if err != nil {
+			state.ArgError(luaThirdArgument, "invalid tool schema")
+
+			return 0
+		}
+
 		definition := Tool{
-			InputSchema: luaOptionalSchema(state, luaThirdArgument),
+			InputSchema: schema,
 			Name:        name,
 			Description: description,
 			Extension:   extensionRuntime.name,
@@ -265,16 +275,23 @@ func luaRegistrationArgs(state *lua.LState) (name, description string, function 
 	return state.CheckString(1), state.OptString(luaFirstArgument, ""), state.CheckFunction(luaSecondArgument)
 }
 
-func luaOptionalSchema(state *lua.LState, index int) tool.Schema {
+func luaOptionalSchema(state *lua.LState, index int) (tool.Schema, error) {
 	if state.GetTop() < index {
-		return tool.EmptySchema()
+		return tool.EmptySchema(), nil
 	}
 
 	if table, ok := state.Get(index).(*lua.LTable); ok {
-		return tool.MustSchemaFromMap(luaTableToMap(table))
+		schema, err := tool.SchemaFromMap(luaTableToMap(table))
+		if err != nil {
+			return tool.EmptySchema(), oops.In("extension").
+				Code("invalid_tool_schema").
+				Wrapf(err, "convert lua tool schema")
+		}
+
+		return schema, nil
 	}
 
-	return tool.EmptySchema()
+	return tool.EmptySchema(), nil
 }
 
 func luaEventHandlerArgs(state *lua.LState) (priority int, function *lua.LFunction) {

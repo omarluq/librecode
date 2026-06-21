@@ -667,6 +667,26 @@ end` + testCase.schemaArg + `)
 	}
 }
 
+func TestManager_RegisterToolRejectsInvalidInputSchema(t *testing.T) {
+	t.Parallel()
+
+	extensionPath := filepath.Join(t.TempDir(), "tool.lua")
+	require.NoError(t, writeTestFile(extensionPath, `
+local lc = require("librecode")
+lc.register_tool("echo", "Echo text", function(args)
+  return { content = args.foo or "" }
+end, { type = "object", invalid = 0 / 0 })
+`))
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+
+	err := manager.LoadFile(context.Background(), extensionPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid tool schema")
+	assert.Empty(t, manager.Tools())
+}
+
 func assertLoadedExtension(t *testing.T, loaded []extension.LoadedExtension) {
 	t.Helper()
 

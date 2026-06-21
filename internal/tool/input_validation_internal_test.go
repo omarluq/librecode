@@ -36,7 +36,7 @@ func TestRequiredToolArguments(t *testing.T) {
 			want: []string{"alpha", "beta"},
 		},
 		{
-			name: "schema required slice ignores invalid names during JSON decode",
+			name: "schema required slice filters invalid names",
 			definition: &Definition{
 				Schema: MustSchemaFromMap(map[string]any{
 					schemaRequiredKey: []any{toolInputPathKey, " ", 42, "limit"},
@@ -48,7 +48,7 @@ func TestRequiredToolArguments(t *testing.T) {
 				PromptGuidelines: nil,
 				ReadOnly:         true,
 			},
-			want: []string{toolInputPathKey},
+			want: []string{toolInputPathKey, "limit"},
 		},
 		{
 			name: "builtin fallback",
@@ -115,12 +115,12 @@ func TestSchemaRequiredArguments(t *testing.T) {
 			found:  true,
 		},
 		{
-			name: "mixed required array is ignored",
+			name: "mixed required array filters invalid names",
 			schema: MustSchemaFromMap(map[string]any{
 				schemaRequiredKey: []any{toolInputPathKey, "", false, toolInputContentKey},
 			}),
-			want:  nil,
-			found: false,
+			want:  []string{toolInputPathKey, toolInputContentKey},
+			found: true,
 		},
 	}
 	for _, testCase := range tests {
