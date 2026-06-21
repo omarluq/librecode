@@ -9,5 +9,6 @@ const (
 	testToolBash         = "bash"
 	testToolRead         = "read"
 	testToolEdit         = "edit"
+	testToolFind         = "find"
 	testToolWrite        = "write"
 )

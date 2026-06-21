@@ -12,64 +12,7 @@ import (
 func TestStreamChunkToLLMMapsEventKinds(t *testing.T) {
 	t.Parallel()
 
-	usage := streamEventTestUsage()
-	tests := []streamEventMappingCase{
-		{
-			usage: nil,
-			name:  "text",
-			event: StreamEvent{
-				ToolEvent: nil,
-				Usage:     nil,
-				Kind:      StreamEventTextDelta,
-				Text:      testProviderHello,
-			},
-			wantPart: llm.PartText,
-			wantText: testProviderHello,
-		},
-		{
-			usage: nil,
-			name:  "thinking",
-			event: StreamEvent{
-				ToolEvent: nil,
-				Usage:     nil,
-				Kind:      StreamEventThinkingDelta,
-				Text:      testThinkingDelta,
-			},
-			wantPart: llm.PartReasoning,
-			wantText: testThinkingDelta,
-		},
-		{
-			usage: nil,
-			name:  "tool start",
-			event: StreamEvent{
-				ToolEvent: nil,
-				Usage:     nil,
-				Kind:      StreamEventToolStart,
-				Text:      jsonBashToolName,
-			},
-			wantPart: llm.PartToolCall,
-			wantText: "",
-		},
-		{
-			name: "tool result",
-			event: StreamEvent{
-				ToolEvent: &ToolEvent{
-					Name:          jsonBashToolName,
-					ArgumentsJSON: `{}`,
-					DetailsJSON:   "",
-					Result:        "ok",
-					Error:         "",
-					IsError:       false,
-				},
-				Usage: nil,
-				Kind:  StreamEventToolResult,
-				Text:  "",
-			},
-			usage:    usage,
-			wantPart: llm.PartToolResult,
-			wantText: "",
-		},
-	}
+	tests := streamEventMappingCases(streamEventTestUsage())
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -83,6 +26,11 @@ func TestStreamChunkToLLMMapsEventKinds(t *testing.T) {
 			assert.Equal(t, testCase.wantPart, chunk.Part.Type)
 			assert.Equal(t, testCase.wantText, chunk.Part.Text)
 
+			if testCase.wantToolName != "" {
+				require.NotNil(t, chunk.Part.ToolCall)
+				assert.Equal(t, testCase.wantToolName, chunk.Part.ToolCall.Name)
+			}
+
 			if testCase.usage != nil {
 				assert.Equal(t, 3, chunk.Usage.InputTokens)
 			}
@@ -90,12 +38,77 @@ func TestStreamChunkToLLMMapsEventKinds(t *testing.T) {
 	}
 }
 
+func streamEventMappingCases(usage *llm.Usage) []streamEventMappingCase {
+	return []streamEventMappingCase{
+		{
+			usage: nil,
+			name:  "text",
+			event: StreamEvent{
+				ToolEvent: nil,
+				Usage:     nil,
+				Kind:      StreamEventTextDelta,
+				Text:      testProviderHello,
+			},
+			wantText:     testProviderHello,
+			wantToolName: "",
+			wantPart:     llm.PartText,
+		},
+		{
+			usage: nil,
+			name:  "thinking",
+			event: StreamEvent{
+				ToolEvent: nil,
+				Usage:     nil,
+				Kind:      StreamEventThinkingDelta,
+				Text:      testThinkingDelta,
+			},
+			wantText:     testThinkingDelta,
+			wantToolName: "",
+			wantPart:     llm.PartReasoning,
+		},
+		{
+			usage: nil,
+			name:  "tool start",
+			event: StreamEvent{
+				ToolEvent: nil,
+				Usage:     nil,
+				Kind:      StreamEventToolStart,
+				Text:      jsonBashToolName,
+			},
+			wantText:     "",
+			wantToolName: jsonBashToolName,
+			wantPart:     llm.PartToolCall,
+		},
+		{
+			usage: usage,
+			name:  "tool result",
+			event: StreamEvent{
+				ToolEvent: &ToolEvent{
+					Name:          jsonBashToolName,
+					ArgumentsJSON: `{}`,
+					DetailsJSON:   "",
+					Result:        "ok",
+					Error:         "",
+					IsError:       false,
+				},
+				Usage: nil,
+				Kind:  StreamEventToolResult,
+				Text:  "",
+			},
+			wantText:     "",
+			wantToolName: "",
+			wantPart:     llm.PartToolResult,
+		},
+	}
+}
+
 type streamEventMappingCase struct {
-	usage    *llm.Usage
-	event    StreamEvent
-	name     string
-	wantText string
-	wantPart llm.PartType
+	usage        *llm.Usage
+	event        StreamEvent
+	name         string
+	wantText     string
+	wantToolName string
+	wantPart     llm.PartType
 }
 
 func streamEventTestUsage() *llm.Usage {
