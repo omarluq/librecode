@@ -60,10 +60,10 @@ type CompletionResult struct {
 
 // ToolCallEvent captures one requested tool call before execution.
 type ToolCallEvent struct {
-	Arguments     map[string]any `json:"arguments,omitempty"`
+	ArgumentsJSON string         `json:"arguments_json"`
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
-	ArgumentsJSON string         `json:"arguments_json"`
+	Arguments     tool.Arguments `json:"arguments,omitzero"`
 }
 
 // ToolEvent captures one tool call for persistence and TUI rendering.
@@ -79,10 +79,10 @@ type ToolEvent struct {
 // ToolCall is an assistant-local tool invocation requested by the model.
 type ToolCall struct {
 	Metadata      map[string]any `json:"metadata,omitempty"`
-	Arguments     map[string]any `json:"arguments,omitempty"`
+	ArgumentsJSON string         `json:"arguments_json,omitempty"`
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
-	ArgumentsJSON string         `json:"arguments_json,omitempty"`
+	Arguments     tool.Arguments `json:"arguments,omitzero"`
 }
 
 // Completer talks to provider APIs through assistant-owned request/result types.

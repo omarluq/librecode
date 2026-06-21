@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 type runningToolBlockTestCase struct {
@@ -45,7 +46,7 @@ func runningToolAppendRenderRemoveCase() runningToolBlockTestCase {
 			t.Helper()
 
 			call := testToolCallEvent(testToolBash, bashTestArguments)
-			call.Arguments = map[string]any{"command": "go test ./..."}
+			call.Arguments = testToolArguments(map[string]any{"command": "go test ./..."})
 
 			app.applyStreamedToolStart(&call, "")
 			require.NotEmpty(t, app.runningToolBlocks)
@@ -159,7 +160,7 @@ func testRunningToolBlock(name, argumentsJSON string) runningToolBlock {
 
 func testToolCallEvent(name, argumentsJSON string) assistant.ToolCallEvent {
 	return assistant.ToolCallEvent{
-		Arguments:     nil,
+		Arguments:     tool.EmptyArguments(),
 		ID:            "",
 		Name:          name,
 		ArgumentsJSON: argumentsJSON,

@@ -70,7 +70,7 @@ func NewASTTool(cwd string) *ASTTool {
 // Definition returns ast tool metadata.
 func (astTool *ASTTool) Definition() Definition {
 	return Definition{
-		Schema:        EmptySchema(),
+		Schema:        inputSchemaForName(NameAST),
 		Name:          NameAST,
 		Label:         "ast",
 		Description:   astDescription(),
@@ -87,7 +87,7 @@ func (astTool *ASTTool) Definition() Definition {
 }
 
 // Execute runs the ast tool.
-func (astTool *ASTTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
+func (astTool *ASTTool) Execute(ctx context.Context, input Arguments) (Result, error) {
 	var args ASTInput
 
 	err := decodeInput(input, &args)

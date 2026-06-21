@@ -26,9 +26,9 @@ func TestExecuteProviderToolCallEmitsStructuredStartAfterMutation(t *testing.T) 
 	result := runtime.executeProviderToolCall(
 		context.Background(),
 		registry,
-		ToolCall{
+		&ToolCall{
 			Metadata:      nil,
-			Arguments:     map[string]any{jsonPathKey: "stale.md"},
+			Arguments:     testToolArguments(map[string]any{jsonPathKey: "stale.md"}),
 			ID:            toolExecutorCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: `{"path":"stale.md"}`,
@@ -41,7 +41,7 @@ func TestExecuteProviderToolCallEmitsStructuredStartAfterMutation(t *testing.T) 
 	require.Equal(t, StreamEventToolStart, events[0].Kind)
 	require.NotNil(t, events[0].ToolCallEvent)
 	assert.JSONEq(t, toolExecutorReadArgs, events[0].ToolCallEvent.ArgumentsJSON)
-	assert.Equal(t, toolExecutorReadPath, events[0].ToolCallEvent.Arguments[jsonPathKey])
+	assert.Equal(t, toolExecutorReadPath, testToolArgumentFields(events[0].ToolCallEvent.Arguments)[jsonPathKey])
 	assert.Equal(t, StreamEventToolResult, events[1].Kind)
 }
 
@@ -54,9 +54,9 @@ func TestExecuteProviderToolCallDoesNotEmitStartWhenLifecycleRejects(t *testing.
 	result := runtime.executeProviderToolCall(
 		context.Background(),
 		tool.NewRegistry(t.TempDir()),
-		ToolCall{
+		&ToolCall{
 			Metadata:      nil,
-			Arguments:     map[string]any{jsonPathKey: toolExecutorReadPath},
+			Arguments:     testToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
 			ID:            toolExecutorCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: toolExecutorReadArgs,
@@ -79,7 +79,10 @@ func (mutatingToolCallLifecycle) DispatchLifecycle(
 ) (extension.LifecycleDispatchResult, error) {
 	result := emptyTestLifecycleDispatchResult(event)
 	if event.Name == extension.LifecycleToolCall {
-		result.ToolCall = extension.ToolCallMutation{Arguments: map[string]any{jsonPathKey: toolExecutorReadPath}}
+		result.ToolCall = extension.ToolCallMutation{
+			Arguments: testToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
+			HasArgs:   true,
+		}
 	}
 
 	return result, nil

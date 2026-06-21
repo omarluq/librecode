@@ -10,19 +10,11 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-func TestSchemaMapAndRawRoundTrip(t *testing.T) {
+func TestSchemaRawRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	original := map[string]any{
-		"type":     "object",
-		"required": []string{"path"},
-	}
-	schema := tool.MustSchemaFromMap(original)
-	original["type"] = "mutated"
-
-	decoded := schema.MustToMap()
-	assert.Equal(t, "object", decoded["type"])
-	assert.Equal(t, []any{"path"}, decoded["required"])
+	schema, err := tool.SchemaFromRaw([]byte(`{"type":"object","required":["path"]}`))
+	require.NoError(t, err)
 
 	raw := schema.RawMessage()
 	raw[0] = '['
@@ -40,9 +32,6 @@ func TestSchemaEmptyAndMarshal(t *testing.T) {
 	encoded, err := json.Marshal(schema)
 	require.NoError(t, err)
 	assert.JSONEq(t, `null`, string(encoded))
-
-	decoded := schema.MustToMap()
-	assert.Empty(t, decoded)
 }
 
 func TestSchemaRejectsInvalidRawJSON(t *testing.T) {

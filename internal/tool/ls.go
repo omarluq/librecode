@@ -32,7 +32,7 @@ func NewLSTool(cwd string) *LSTool {
 // Definition returns ls tool metadata.
 func (lsTool *LSTool) Definition() Definition {
 	return Definition{
-		Schema:        EmptySchema(),
+		Schema:        inputSchemaForName(NameLS),
 		Name:          NameLS,
 		Label:         "ls",
 		Description:   lsDescription(),
@@ -45,7 +45,7 @@ func (lsTool *LSTool) Definition() Definition {
 }
 
 // Execute runs the ls tool.
-func (lsTool *LSTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
+func (lsTool *LSTool) Execute(ctx context.Context, input Arguments) (Result, error) {
 	var args LSInput
 
 	err := decodeInput(input, &args)

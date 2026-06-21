@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"strings"
 
@@ -89,12 +88,12 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 }
 
 func (client *HTTPCompletionClient) responsesPayload(request *CompletionRequest, input []any) map[string]any {
-	return client.toolSchemas.responsesPayload(request, input)
+	return responsesPayload(request, input)
 }
 
-func (cache *builtinToolSchemaCache) responsesPayload(request *CompletionRequest, input []any) map[string]any {
+func responsesPayload(request *CompletionRequest, input []any) map[string]any {
 	payload := responsesBasePayload(request, input)
-	payload["tools"] = cache.responseTools(requestToolDefinitions(request))
+	payload["tools"] = responseTools(requestToolDefinitions(request))
 	payload[jsonToolChoiceKey] = "auto"
 	payload["parallel_tool_calls"] = true
 
@@ -273,12 +272,7 @@ func toolCallsFromOutput(output []any) []ToolCall {
 
 		argumentsJSON := stringValue(object[jsonArgumentsKey])
 
-		arguments := map[string]any{}
-		if strings.TrimSpace(argumentsJSON) != "" {
-			if err := json.Unmarshal([]byte(argumentsJSON), &arguments); err != nil {
-				arguments = map[string]any{}
-			}
-		}
+		arguments := toolArgumentsFromJSON(argumentsJSON)
 
 		calls = append(calls, ToolCall{
 			Arguments:     arguments,

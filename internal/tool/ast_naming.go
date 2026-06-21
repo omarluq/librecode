@@ -35,9 +35,11 @@ func nodeName(node *gt.Node, lang *gt.Language, source []byte) string {
 	return identifierChildName(node, lang, source)
 }
 
+const astNodeTypeField = "type"
+
 // fieldName returns the first matching name-like field directly on node.
 func fieldName(node *gt.Node, lang *gt.Language, source []byte) string {
-	for _, field := range []string{"name", "declarator", "type"} {
+	for _, field := range []string{"name", "declarator", astNodeTypeField} {
 		if named := node.ChildByFieldName(field, lang); named != nil {
 			return firstLine(named.Text(source))
 		}

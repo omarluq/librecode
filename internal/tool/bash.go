@@ -39,7 +39,7 @@ func NewBashTool(cwd string) *BashTool {
 // Definition returns bash tool metadata.
 func (bashTool *BashTool) Definition() Definition {
 	return Definition{
-		Schema:        EmptySchema(),
+		Schema:        inputSchemaForName(NameBash),
 		Name:          NameBash,
 		Label:         "bash",
 		Description:   bashDescription(),
@@ -52,7 +52,7 @@ func (bashTool *BashTool) Definition() Definition {
 }
 
 // Execute runs the bash tool.
-func (bashTool *BashTool) Execute(ctx context.Context, input map[string]any) (Result, error) {
+func (bashTool *BashTool) Execute(ctx context.Context, input Arguments) (Result, error) {
 	var args BashInput
 
 	err := decodeInput(input, &args)

@@ -171,7 +171,7 @@ func installTestToolExecutor(request *CompletionRequest) {
 		for _, call := range calls {
 			emitLLMToolStart(onEvent, call.Name)
 			result, err := registry.Execute(ctx, call.Name, call.Arguments)
-			toolResult := llmToolResultFromExecution(call, result, err)
+			toolResult := llmToolResultFromExecution(&call, result, err)
 			emitLLMToolResult(onEvent, &toolResult)
 			results = append(results, toolResult)
 		}
@@ -216,7 +216,7 @@ func emitLLMToolResult(onEvent func(*llm.StreamChunk), result *llm.ToolResult) {
 	})
 }
 
-func llmToolResultFromExecution(call llm.ToolCall, result tool.Result, err error) llm.ToolResult {
+func llmToolResultFromExecution(call *llm.ToolCall, result tool.Result, err error) llm.ToolResult {
 	text := result.Text()
 	errorText := ""
 
@@ -238,11 +238,21 @@ func llmToolResultFromExecution(call llm.ToolCall, result tool.Result, err error
 		metadata = nil
 	}
 
+	toolCallID := ""
+	argumentsJSON := ""
+	name := ""
+
+	if call != nil {
+		toolCallID = call.ID
+		argumentsJSON = call.ArgumentsJSON
+		name = call.Name
+	}
+
 	return llm.ToolResult{
 		Metadata:      metadata,
-		ToolCallID:    call.ID,
-		ArgumentsJSON: call.ArgumentsJSON,
-		Name:          call.Name,
+		ToolCallID:    toolCallID,
+		ArgumentsJSON: argumentsJSON,
+		Name:          name,
 		Error:         errorText,
 		Content:       []llm.Part{llm.TextPart(text)},
 		IsError:       err != nil,

@@ -29,6 +29,7 @@ require (
 	github.com/samber/mo v1.17.0
 	github.com/samber/oops v1.22.0
 	github.com/samber/slog-zerolog/v2 v2.9.2
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/sethvargo/go-retry v0.3.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0

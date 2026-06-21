@@ -122,7 +122,7 @@ func TestProviderAndToolPayloads(t *testing.T) {
 	assert.Equal(t, map[string]string{"X-Test": "yes"}, providerRequest[lifecyclepayload.ProviderHeadersKey])
 
 	toolCall := lifecyclepayload.ToolCallPayload(lifecyclepayload.ToolCall{
-		Arguments:     map[string]any{"path": "README.md"},
+		Arguments:     testToolArguments(map[string]any{"path": "README.md"}),
 		ID:            "call-1",
 		Name:          "read",
 		ArgumentsJSON: `{"path":"README.md"}`,

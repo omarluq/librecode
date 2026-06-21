@@ -10,6 +10,7 @@ import (
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 // Lifecycle payload keys define the stable extension-facing lifecycle payload schema.
@@ -105,10 +106,10 @@ type ProviderError struct {
 
 // ToolCall describes a tool-call lifecycle payload.
 type ToolCall struct {
-	Arguments     map[string]any
+	ArgumentsJSON string
 	ID            string
 	Name          string
-	ArgumentsJSON string
+	Arguments     tool.Arguments
 }
 
 // ToolResult describes a tool-result lifecycle payload.

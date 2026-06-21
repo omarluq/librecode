@@ -1,8 +1,11 @@
 package extension
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/omarluq/librecode/internal/tool"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -31,6 +34,29 @@ const (
 	luaFieldWidth    = "width"
 	luaFieldWindows  = "windows"
 )
+
+func toolArgumentsTable(state *lua.LState, arguments tool.Arguments) *lua.LTable {
+	fields, err := arguments.Fields()
+	if err != nil {
+		return state.NewTable()
+	}
+
+	table := state.NewTable()
+	for key, raw := range fields {
+		jsonRawToLuaValue(state, raw).SetField(table, key)
+	}
+
+	return table
+}
+
+func jsonRawToLuaValue(state *lua.LState, raw json.RawMessage) luaValue {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return luaValue{value: lua.LNil}
+	}
+
+	return newLuaValue(state, value)
+}
 
 func mapToLuaTable(state *lua.LState, values map[string]any) *lua.LTable {
 	table := state.NewTable()

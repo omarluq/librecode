@@ -87,7 +87,7 @@ func TestToolDisplayFromCallUsesStructuredArguments(t *testing.T) {
 	t.Parallel()
 
 	display := toolDisplayFromCall(assistant.ToolCallEvent{
-		Arguments:     map[string]any{"command": "go test ./..."},
+		Arguments:     testToolArguments(map[string]any{"command": "go test ./..."}),
 		ID:            "call_1",
 		Name:          testToolBash,
 		ArgumentsJSON: `{"command":"stale"}`,

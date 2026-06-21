@@ -25,7 +25,7 @@ func TestRequestToolDefinitionsUsesLLMDefinitions(t *testing.T) {
 			SessionID:       "",
 			Messages:        nil,
 			Tools: []llm.ToolDefinition{{
-				Schema:      tool.MustSchemaFromMap(map[string]any{jsonTypeKey: jsonObjectType}),
+				Schema:      testRawToolSchema(`{"type":"object"}`),
 				Name:        "custom",
 				Description: "custom tool",
 				ReadOnly:    true,
@@ -42,4 +42,13 @@ func TestRequestToolDefinitionsUsesLLMDefinitions(t *testing.T) {
 	assert.Len(t, definitions, 1)
 	assert.Equal(t, "custom", definitions[0].Name)
 	assert.True(t, definitions[0].ReadOnly)
+}
+
+func testRawToolSchema(raw string) tool.Schema {
+	schema, err := tool.SchemaFromRaw([]byte(raw))
+	if err != nil {
+		panic(err)
+	}
+
+	return schema
 }

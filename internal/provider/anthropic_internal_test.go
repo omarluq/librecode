@@ -169,8 +169,8 @@ func assertAnthropicToolCallMapsClaudeCodeName(t *testing.T) {
 	})
 
 	assert.Equal(t, expectedWriteToolName, call.Name)
-	assert.Equal(t, "hello.txt", call.Arguments[jsonPathKey])
-	assert.Equal(t, "hello", call.Arguments[jsonContentKey])
+	assert.Equal(t, "hello.txt", testToolArgumentFields(call.Arguments)[jsonPathKey])
+	assert.Equal(t, "hello", testToolArgumentFields(call.Arguments)[jsonContentKey])
 }
 
 func TestAnthropicPayloadAddsAdaptiveThinking(t *testing.T) {

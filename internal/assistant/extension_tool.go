@@ -10,7 +10,7 @@ import (
 )
 
 type extensionToolRunner interface {
-	ExecuteTool(ctx context.Context, name string, args map[string]any) (extension.ToolResult, error)
+	ExecuteTool(ctx context.Context, name string, args tool.Arguments) (extension.ToolResult, error)
 }
 
 type extensionToolExecutor struct {
@@ -37,7 +37,7 @@ func (executor *extensionToolExecutor) Definition() tool.Definition {
 	return executor.definition
 }
 
-func (executor *extensionToolExecutor) Execute(ctx context.Context, input map[string]any) (tool.Result, error) {
+func (executor *extensionToolExecutor) Execute(ctx context.Context, input tool.Arguments) (tool.Result, error) {
 	result, err := executor.runner.ExecuteTool(ctx, string(executor.definition.Name), input)
 	if err != nil {
 		return tool.Result{Details: map[string]any{}, Content: []tool.ContentBlock{}}, oops.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/anthropicmodel"
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 func (client *HTTPCompletionClient) completeAnthropic(
@@ -111,22 +112,17 @@ func appendAnthropicToolConversation(
 const anthropicDefaultMaxTokens = 4_096
 
 func anthropicPayload(request *CompletionRequest) map[string]any {
-	cache := newBuiltinToolSchemaCache()
-
-	return cache.anthropicPayload(request, nil)
+	return buildAnthropicPayload(request, nil)
 }
 
 func (client *HTTPCompletionClient) anthropicPayload(
 	request *CompletionRequest,
 	messages []map[string]any,
 ) map[string]any {
-	return client.toolSchemas.anthropicPayload(request, messages)
+	return buildAnthropicPayload(request, messages)
 }
 
-func (cache *builtinToolSchemaCache) anthropicPayload(
-	request *CompletionRequest,
-	messages []map[string]any,
-) map[string]any {
+func buildAnthropicPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
 	// Anthropic's recent Claude models reject temperature when thinking/adaptive
 	// reasoning is available. Match production agent clients by omitting
 	// temperature unless/until librecode exposes an explicit user setting.
@@ -135,7 +131,7 @@ func (cache *builtinToolSchemaCache) anthropicPayload(
 		finishReasonMaxTokens: minPositive(request.Request.Model.MaxTokens, anthropicDefaultMaxTokens),
 		jsonMessagesKey:       messages,
 		jsonStreamKey:         true,
-		"tools":               cache.anthropicTools(requestToolDefinitions(request), usesAnthropicOAuth(request)),
+		"tools":               anthropicTools(requestToolDefinitions(request), usesAnthropicOAuth(request)),
 	}
 	if usesAnthropicOAuth(request) {
 		payload["system"] = anthropicOAuthSystemPrompt(request.Request.SystemPrompt)
@@ -386,20 +382,15 @@ func anthropicToolCall(callID, name string, input any) ToolCall {
 	}
 }
 
-func anthropicToolArguments(input any) (arguments map[string]any, argumentsJSON string) {
-	arguments = map[string]any{}
-
+func anthropicToolArguments(input any) (arguments tool.Arguments, argumentsJSON string) {
 	payload, err := json.Marshal(input)
+	if err != nil || len(payload) == 0 || string(payload) == "null" {
+		return tool.EmptyArguments(), "{}"
+	}
+
+	arguments, err = tool.ArgumentsFromRaw(payload)
 	if err != nil {
-		return arguments, "{}"
-	}
-
-	if len(payload) == 0 || string(payload) == "null" {
-		return arguments, "{}"
-	}
-
-	if err := json.Unmarshal(payload, &arguments); err != nil {
-		return map[string]any{}, string(payload)
+		return tool.EmptyArguments(), string(payload)
 	}
 
 	return arguments, string(payload)
@@ -462,27 +453,18 @@ func anthropicMessages(messages []llm.Message) []map[string]any {
 	return output
 }
 
-// AnthropicTools converts local tool definitions into Anthropic tool schemas.
-func AnthropicTools(request *CompletionRequest) []map[string]any {
-	cache := newBuiltinToolSchemaCache()
-
-	return cache.anthropicTools(requestToolDefinitions(request), usesAnthropicOAuth(request))
-}
-
 // AnthropicToolsFromDefinitions returns Anthropic tool declarations for definitions.
 func AnthropicToolsFromDefinitions(definitions []llm.ToolDefinition, oauth bool) []map[string]any {
-	cache := newBuiltinToolSchemaCache()
-
-	return cache.anthropicTools(definitions, oauth)
+	return anthropicTools(definitions, oauth)
 }
 
-func (cache *builtinToolSchemaCache) anthropicTools(definitions []llm.ToolDefinition, oauth bool) []map[string]any {
+func anthropicTools(definitions []llm.ToolDefinition, oauth bool) []map[string]any {
 	tools := make([]map[string]any, 0, len(definitions))
 	for _, definition := range definitions {
 		tools = append(tools, map[string]any{
 			jsonToolNameKey:         anthropicProviderToolName(definition.Name, oauth),
 			jsonDescriptionKey:      definition.Description,
-			jsonInputSchemaKey:      cache.parameterSchema(&definition),
+			jsonInputSchemaKey:      toolParameterSchemaForDefinition(&definition),
 			"eager_input_streaming": true,
 		})
 	}

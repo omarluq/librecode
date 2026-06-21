@@ -54,7 +54,7 @@ func TestParseOpenAIResponseStreamExtractsTextThinkingAndToolCalls(t *testing.T)
 	require.Len(t, result.ToolCalls, 1)
 	assert.Equal(t, "call_1", result.ToolCalls[0].ID)
 	assert.Equal(t, expectedReadToolName, result.ToolCalls[0].Name)
-	assert.Equal(t, testToolPath, result.ToolCalls[0].Arguments[jsonPathKey])
+	assert.Equal(t, testToolPath, testToolArgumentFields(result.ToolCalls[0].Arguments)[jsonPathKey])
 	assert.Equal(t, 12, result.Usage.InputTokens)
 	assert.Equal(t, 3, result.Usage.OutputTokens)
 	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
@@ -142,7 +142,7 @@ func TestProviderResultFromOutputItemsUsesOutputTextAndInvalidArguments(t *testi
 	require.Len(t, result.ToolCalls, 1)
 	assert.Equal(t, "item_1", result.ToolCalls[0].ID)
 	assert.Equal(t, expectedBashToolName, result.ToolCalls[0].Name)
-	assert.Empty(t, result.ToolCalls[0].Arguments)
+	assert.Empty(t, testToolArgumentFields(result.ToolCalls[0].Arguments))
 }
 
 func TestResponsesPayloadReasoningModes(t *testing.T) {
@@ -191,7 +191,7 @@ func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		client := &HTTPCompletionClient{toolSchemas: newBuiltinToolSchemaCache(), client: server.Client()}
+		client := &HTTPCompletionClient{client: server.Client()}
 		result, err := client.requestResponses(t.Context(), server.URL, nil, map[string]any{}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "ok", result.Text)
@@ -207,7 +207,7 @@ func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
 		}))
 		t.Cleanup(server.Close)
 
-		client := &HTTPCompletionClient{toolSchemas: newBuiltinToolSchemaCache(), client: server.Client()}
+		client := &HTTPCompletionClient{client: server.Client()}
 		_, err := client.requestResponses(t.Context(), server.URL, nil, map[string]any{}, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "bad status")

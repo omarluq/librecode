@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -145,9 +146,8 @@ func TestLLMToolDefinitionsUseBuiltinsWhenRegistryNil(t *testing.T) {
 func TestLLMToolDefinitionClonesSchema(t *testing.T) {
 	t.Parallel()
 
-	schema := map[string]any{"type": "object"}
 	definition := llmToolDefinitionFromTool(&tool.Definition{
-		Schema:           tool.MustSchemaFromMap(schema),
+		Schema:           testToolSchema(`{"type":"object"}`),
 		Name:             tool.NameRead,
 		Label:            jsonReadToolName,
 		Description:      "read files",
@@ -156,9 +156,19 @@ func TestLLMToolDefinitionClonesSchema(t *testing.T) {
 		ReadOnly:         true,
 	})
 
-	decoded := definition.Schema.MustToMap()
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(definition.Schema.RawMessage(), &decoded))
 	decoded["type"] = testLLMMutatedLabel
 
-	assert.Equal(t, "object", schema["type"])
+	assert.JSONEq(t, `{"type":"object"}`, string(definition.Schema.RawMessage()))
 	assert.True(t, definition.ReadOnly)
+}
+
+func testToolSchema(raw string) tool.Schema {
+	schema, err := tool.SchemaFromRaw([]byte(raw))
+	if err != nil {
+		panic(err)
+	}
+
+	return schema
 }

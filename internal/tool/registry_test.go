@@ -91,21 +91,21 @@ func TestRegistry_Metadata(t *testing.T) {
 	assert.Len(t, tool.AllDefinitions(), len(registry.Definitions()))
 }
 
-func TestRegistry_ExecuteJSONValidatesRequiredArgumentsBeforeExecution(t *testing.T) {
+func TestRegistry_ExecuteJSONValidatesInputsBeforeExecution(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		input   map[string]any
-		name    string
-		tool    string
-		missing string
+		input       map[string]any
+		name        string
+		tool        string
+		wantErrText string
 	}{
-		{name: "bash command", tool: "bash", input: map[string]any{}, missing: "command"},
+		{name: "bash command", tool: "bash", input: map[string]any{}, wantErrText: "command is required"},
 		{
-			name:    "write content",
-			tool:    "write",
-			input:   map[string]any{registryTestPathKey: registryTestEmptyPath},
-			missing: registryTestContentKey,
+			name:        "write content",
+			tool:        "write",
+			input:       map[string]any{registryTestPathKey: registryTestEmptyPath},
+			wantErrText: registryTestContentKey + " is required",
 		},
 	}
 	for _, testCase := range tests {
@@ -118,8 +118,7 @@ func TestRegistry_ExecuteJSONValidatesRequiredArgumentsBeforeExecution(t *testin
 			_, err = tool.NewRegistry(t.TempDir()).ExecuteJSON(context.Background(), testCase.tool, payload)
 
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), testCase.missing+" is required")
-			assert.Contains(t, err.Error(), "call "+testCase.tool+" with")
+			assert.Contains(t, err.Error(), testCase.wantErrText)
 		})
 	}
 }
@@ -136,10 +135,10 @@ func TestRegistry_ExecuteJSONAllowsIntentionalEmptyWriteContent(t *testing.T) {
 	assert.Contains(t, result.Text(), "Successfully wrote 0B")
 }
 
-func TestRegistry_ExecuteValidatesNilInput(t *testing.T) {
+func TestRegistry_ExecuteValidatesEmptyInput(t *testing.T) {
 	t.Parallel()
 
-	_, err := tool.NewRegistry(t.TempDir()).Execute(context.Background(), "bash", nil)
+	_, err := tool.NewRegistry(t.TempDir()).Execute(context.Background(), "bash", tool.EmptyArguments())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bash command is required")

@@ -9,6 +9,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/tool"
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
@@ -574,7 +575,7 @@ func (app *App) consumeCanceledPrompt(promptID uint64) bool {
 func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackName string) {
 	if call == nil {
 		call = &assistant.ToolCallEvent{
-			Arguments:     nil,
+			Arguments:     tool.EmptyArguments(),
 			ID:            "",
 			Name:          fallbackName,
 			ArgumentsJSON: "",

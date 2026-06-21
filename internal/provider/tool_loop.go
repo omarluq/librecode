@@ -71,8 +71,8 @@ func toolCallsToLLM(calls []ToolCall) []llm.ToolCall {
 	results := make([]llm.ToolCall, 0, len(calls))
 	for _, call := range calls {
 		results = append(results, llm.ToolCall{
-			Metadata:      toolCallMetadata(call),
-			Arguments:     cloneAnyMap(call.Arguments),
+			Metadata:      toolCallMetadata(&call),
+			Arguments:     call.Arguments,
 			ID:            call.ID,
 			Name:          call.Name,
 			ArgumentsJSON: call.ArgumentsJSON,
@@ -82,7 +82,11 @@ func toolCallsToLLM(calls []ToolCall) []llm.ToolCall {
 	return results
 }
 
-func toolCallMetadata(call ToolCall) map[string]any {
+func toolCallMetadata(call *ToolCall) map[string]any {
+	if call == nil {
+		return map[string]any{}
+	}
+
 	return cloneAnyMap(call.Metadata)
 }
 

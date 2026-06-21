@@ -2,6 +2,7 @@ package assistant_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -58,7 +59,9 @@ func TestExtensionToolSchemaIsVisibleInRegistryDefinitions(t *testing.T) {
 	require.NoError(t, err)
 
 	definition := findToolDefinition(t, *client.definitions, "echo")
-	schema := definition.Schema.MustToMap()
+
+	var schema map[string]any
+	require.NoError(t, json.Unmarshal(definition.Schema.RawMessage(), &schema))
 	properties, ok := schema["properties"].(map[string]any)
 	require.True(t, ok)
 	assert.Contains(t, properties, "text")
@@ -92,7 +95,7 @@ func (client *extensionToolCompleter) Complete(
 
 	*client.definitions = request.ToolRegistry.Definitions()
 
-	result, err := request.ToolRegistry.Execute(ctx, "echo", map[string]any{"text": "hello"})
+	result, err := request.ToolRegistry.Execute(ctx, "echo", testToolArguments(map[string]any{"text": "hello"}))
 	if err != nil {
 		return nil, fmt.Errorf("execute echo tool: %w", err)
 	}
