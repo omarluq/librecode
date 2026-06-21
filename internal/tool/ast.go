@@ -51,7 +51,7 @@ type ASTInput struct {
 	Line         *int   `json:"line,omitempty"`
 	Depth        *int   `json:"depth,omitempty"`
 	Path         string `json:"path"`
-	Mode         string `json:"mode,omitempty"`
+	Mode         string `json:"mode,omitempty" jsonschema:"enum=outline,enum=symbols,enum=query,enum=node,enum=tree"`
 	Query        string `json:"query,omitempty"`
 	AllowIgnored bool   `json:"allow_ignored,omitempty"`
 }

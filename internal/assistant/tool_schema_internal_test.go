@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -98,7 +99,11 @@ func strictASTToolSchemaCase() toolSchemaCase {
 			require.True(t, ok)
 			mode, ok := properties["mode"].(map[string]any)
 			require.True(t, ok)
-			assert.Equal(t, []string{"outline", "symbols", "query", "node", "tree"}, mode["enum"])
+			assert.JSONEq(
+				t,
+				`["outline","symbols","query","node","tree"]`,
+				mustMarshalToolSchemaTestValue(t, mode["enum"]),
+			)
 		},
 		definition: &llm.ToolDefinition{
 			Schema:      nil,
@@ -117,4 +122,13 @@ func echoToolDefinition(schema map[string]any) *llm.ToolDefinition {
 		Description: "Echo",
 		ReadOnly:    false,
 	}
+}
+
+func mustMarshalToolSchemaTestValue(t *testing.T, value any) string {
+	t.Helper()
+
+	encoded, err := json.Marshal(value)
+	require.NoError(t, err)
+
+	return string(encoded)
 }
