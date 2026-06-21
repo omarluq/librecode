@@ -13,6 +13,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -85,7 +86,7 @@ func TestExecuteProviderToolCallReturnsLifecycleErrorEvent(t *testing.T) {
 		tool.NewRegistry(t.TempDir()),
 		&ToolCall{
 			Metadata:      nil,
-			Arguments:     testToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
+			Arguments:     testutil.ToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
 			ID:            toolExecutorCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: toolExecutorReadArgs,
@@ -114,7 +115,7 @@ func TestExecuteProviderToolCallPreservesResultOnLifecycleError(t *testing.T) {
 		registry,
 		&ToolCall{
 			Metadata:      nil,
-			Arguments:     testToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
+			Arguments:     testutil.ToolArguments(map[string]any{jsonPathKey: toolExecutorReadPath}),
 			ID:            toolExecutorCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: toolExecutorReadArgs,

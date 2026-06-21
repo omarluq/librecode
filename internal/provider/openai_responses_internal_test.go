@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestStatelessResponseOutputItemsFiltersFunctionCalls(t *testing.T) {
@@ -54,7 +55,7 @@ func TestParseOpenAIResponseStreamExtractsTextThinkingAndToolCalls(t *testing.T)
 	require.Len(t, result.ToolCalls, 1)
 	assert.Equal(t, "call_1", result.ToolCalls[0].ID)
 	assert.Equal(t, expectedReadToolName, result.ToolCalls[0].Name)
-	assert.Equal(t, testToolPath, testToolArgumentFields(result.ToolCalls[0].Arguments)[jsonPathKey])
+	assert.Equal(t, testToolPath, testutil.ToolArgumentFields(result.ToolCalls[0].Arguments)[jsonPathKey])
 	assert.Equal(t, 12, result.Usage.InputTokens)
 	assert.Equal(t, 3, result.Usage.OutputTokens)
 	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
@@ -142,7 +143,7 @@ func TestProviderResultFromOutputItemsUsesOutputTextAndInvalidArguments(t *testi
 	require.Len(t, result.ToolCalls, 1)
 	assert.Equal(t, "item_1", result.ToolCalls[0].ID)
 	assert.Equal(t, expectedBashToolName, result.ToolCalls[0].Name)
-	assert.Empty(t, testToolArgumentFields(result.ToolCalls[0].Arguments))
+	assert.Empty(t, testutil.ToolArgumentFields(result.ToolCalls[0].Arguments))
 }
 
 func TestResponsesPayloadReasoningModes(t *testing.T) {

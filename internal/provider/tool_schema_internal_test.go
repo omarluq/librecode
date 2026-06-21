@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -99,7 +100,7 @@ func TestToolArgumentsFromJSON(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, test.want, testToolArgumentFields(toolArgumentsFromJSON(test.json)))
+			assert.Equal(t, test.want, testutil.ToolArgumentFields(toolArgumentsFromJSON(test.json)))
 		})
 	}
 }

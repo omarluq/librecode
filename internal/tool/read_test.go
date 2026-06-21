@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -73,7 +74,7 @@ func TestReadToolRespectsGitignoreByDefault(t *testing.T) {
 
 			result, err := reader.Execute(
 				context.Background(),
-				testToolArguments(map[string]any{readTestPathKey: testCase.path}),
+				testutil.ToolArguments(map[string]any{readTestPathKey: testCase.path}),
 			)
 			require.NoError(t, err)
 
@@ -140,7 +141,7 @@ func TestReadToolInvalidatesGitignoreCache(t *testing.T) {
 			reader := tool.NewReadTool(workspace)
 			initialResult, err := reader.Execute(
 				t.Context(),
-				testToolArguments(map[string]any{readTestPathKey: relativePath}),
+				testutil.ToolArguments(map[string]any{readTestPathKey: relativePath}),
 			)
 			require.NoError(t, err)
 			assert.Equal(t, "secret", initialResult.Text())
@@ -150,7 +151,7 @@ func TestReadToolInvalidatesGitignoreCache(t *testing.T) {
 
 			changedResult, err := reader.Execute(
 				t.Context(),
-				testToolArguments(map[string]any{readTestPathKey: relativePath}),
+				testutil.ToolArguments(map[string]any{readTestPathKey: relativePath}),
 			)
 			require.NoError(t, err)
 			assert.Contains(t, changedResult.Text(), "Refusing to read ignored path")
@@ -192,12 +193,12 @@ func TestReadToolAllowsExplicitIgnoredReads(t *testing.T) {
 	reader := tool.NewReadTool(workspace)
 	blockedResult, err := reader.Execute(
 		context.Background(),
-		testToolArguments(map[string]any{readTestPathKey: ".env"}),
+		testutil.ToolArguments(map[string]any{readTestPathKey: ".env"}),
 	)
 	require.NoError(t, err)
 	assert.Contains(t, blockedResult.Text(), "Refusing to read ignored path")
 
-	allowedResult, err := reader.Execute(context.Background(), testToolArguments(map[string]any{
+	allowedResult, err := reader.Execute(context.Background(), testutil.ToolArguments(map[string]any{
 		"allow_ignored": true,
 		readTestPathKey: ".env",
 	}))
@@ -214,7 +215,7 @@ func TestReadToolAllowsAgentSkillFilesByDefault(t *testing.T) {
 	require.NoError(t, os.WriteFile(skillPath, []byte("skill body"), 0o600))
 
 	reader := tool.NewReadTool(workspace)
-	result, err := reader.Execute(context.Background(), testToolArguments(map[string]any{
+	result, err := reader.Execute(context.Background(), testutil.ToolArguments(map[string]any{
 		readTestPathKey: filepath.Join(".agents", "skills", "fix-bug", "SKILL.md"),
 	}))
 	require.NoError(t, err)

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -54,7 +55,7 @@ func TestExtensionExecutor_Execute(t *testing.T) {
 
 			result, err := executor.Execute(
 				context.Background(),
-				testToolArguments(map[string]any{"text": adapterHello}),
+				testutil.ToolArguments(map[string]any{"text": adapterHello}),
 			)
 
 			if testCase.expectedErr != "" {

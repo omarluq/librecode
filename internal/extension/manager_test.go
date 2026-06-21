@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -740,7 +741,7 @@ func assertToolExecution(t *testing.T, manager *extension.Manager) {
 	toolResult, err := manager.ExecuteTool(
 		context.Background(),
 		"echo",
-		testToolArguments(map[string]any{"text": "ok"}),
+		testutil.ToolArguments(map[string]any{"text": "ok"}),
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", toolResult.Content)

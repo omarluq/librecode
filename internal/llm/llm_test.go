@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestBoundaryInterfaces(t *testing.T) {
@@ -107,7 +108,7 @@ func TestPartKinds(t *testing.T) {
 			Metadata: nil,
 			ToolCall: &llm.ToolCall{
 				Metadata:      nil,
-				Arguments:     testToolArguments(map[string]any{"path": "README.md"}),
+				Arguments:     testutil.ToolArguments(map[string]any{"path": "README.md"}),
 				ID:            "call_1",
 				Name:          "read",
 				ArgumentsJSON: `{"path":"README.md"}`,

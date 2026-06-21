@@ -13,6 +13,7 @@ import (
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -95,7 +96,7 @@ func (client *extensionToolCompleter) Complete(
 
 	*client.definitions = request.ToolRegistry.Definitions()
 
-	result, err := request.ToolRegistry.Execute(ctx, "echo", testToolArguments(map[string]any{"text": "hello"}))
+	result, err := request.ToolRegistry.Execute(ctx, "echo", testutil.ToolArguments(map[string]any{"text": "hello"}))
 	if err != nil {
 		return nil, fmt.Errorf("execute echo tool: %w", err)
 	}

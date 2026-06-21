@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -46,7 +47,7 @@ func runningToolAppendRenderRemoveCase() runningToolBlockTestCase {
 			t.Helper()
 
 			call := testToolCallEvent(testToolBash, bashTestArguments)
-			call.Arguments = testToolArguments(map[string]any{"command": "go test ./..."})
+			call.Arguments = testutil.ToolArguments(map[string]any{"command": "go test ./..."})
 
 			app.applyStreamedToolStart(&call, "")
 			require.NotEmpty(t, app.runningToolBlocks)

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestToolSummaryHumanizesKnownTools(t *testing.T) {
@@ -87,7 +88,7 @@ func TestToolDisplayFromCallUsesStructuredArguments(t *testing.T) {
 	t.Parallel()
 
 	display := toolDisplayFromCall(assistant.ToolCallEvent{
-		Arguments:     testToolArguments(map[string]any{"command": "go test ./..."}),
+		Arguments:     testutil.ToolArguments(map[string]any{"command": "go test ./..."}),
 		ID:            "call_1",
 		Name:          testToolBash,
 		ArgumentsJSON: `{"command":"stale"}`,

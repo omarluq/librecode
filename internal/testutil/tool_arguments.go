@@ -1,4 +1,4 @@
-package provider
+package testutil
 
 import (
 	"encoding/json"
@@ -6,7 +6,8 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-func testToolArguments(input map[string]any) tool.Arguments {
+// ToolArguments converts a generic test argument map into validated tool arguments.
+func ToolArguments(input map[string]any) tool.Arguments {
 	payload, err := json.Marshal(input)
 	if err != nil {
 		panic(err)
@@ -20,7 +21,8 @@ func testToolArguments(input map[string]any) tool.Arguments {
 	return arguments
 }
 
-func testToolArgumentFields(input tool.Arguments) map[string]any {
+// ToolArgumentFields decodes tool arguments into generic fields for assertions.
+func ToolArgumentFields(input tool.Arguments) map[string]any {
 	fields := map[string]any{}
 	if err := json.Unmarshal(input.RawMessage(), &fields); err != nil {
 		panic(err)
