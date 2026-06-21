@@ -22,6 +22,10 @@ func luaSchemaRaw(table *lua.LTable) ([]byte, error) {
 }
 
 func luaSchemaJSON(value lua.LValue) ([]byte, error) {
+	return luaSchemaJSONWithSeen(value, map[*lua.LTable]struct{}{})
+}
+
+func luaSchemaJSONWithSeen(value lua.LValue, seen map[*lua.LTable]struct{}) ([]byte, error) {
 	switch typedValue := value.(type) {
 	case lua.LBool:
 		if bool(typedValue) {
@@ -41,18 +45,28 @@ func luaSchemaJSON(value lua.LValue) ([]byte, error) {
 	case lua.LString:
 		return []byte(strconv.Quote(string(typedValue))), nil
 	case *lua.LTable:
-		return luaSchemaTableJSON(typedValue)
+		if _, ok := seen[typedValue]; ok {
+			return nil, oops.In("extension").
+				Code("invalid_tool_schema").
+				Errorf("tool schema contains cyclic table reference")
+		}
+
+		seen[typedValue] = struct{}{}
+		encoded, err := luaSchemaTableJSON(typedValue, seen)
+		delete(seen, typedValue)
+
+		return encoded, err
 	default:
 		return []byte("null"), nil
 	}
 }
 
-func luaSchemaTableJSON(table *lua.LTable) ([]byte, error) {
+func luaSchemaTableJSON(table *lua.LTable, seen map[*lua.LTable]struct{}) ([]byte, error) {
 	if luaTableIsArray(table) {
-		return luaSchemaArrayJSON(table)
+		return luaSchemaArrayJSON(table, seen)
 	}
 
-	return luaSchemaObjectJSON(table)
+	return luaSchemaObjectJSON(table, seen)
 }
 
 func luaTableIsArray(table *lua.LTable) bool {
@@ -62,17 +76,32 @@ func luaTableIsArray(table *lua.LTable) bool {
 	}
 
 	isArray := true
+	keyCount := 0
 
 	table.ForEach(func(key, _ lua.LValue) {
-		if _, ok := key.(lua.LNumber); !ok {
+		number, ok := key.(lua.LNumber)
+		if !ok {
 			isArray = false
+
+			return
 		}
+
+		floatIndex := float64(number)
+		intIndex := int(floatIndex)
+
+		if float64(intIndex) != floatIndex || intIndex < 1 || intIndex > length {
+			isArray = false
+
+			return
+		}
+
+		keyCount++
 	})
 
-	return isArray
+	return isArray && keyCount == length
 }
 
-func luaSchemaArrayJSON(table *lua.LTable) ([]byte, error) {
+func luaSchemaArrayJSON(table *lua.LTable, seen map[*lua.LTable]struct{}) ([]byte, error) {
 	encodedArray := []byte{'['}
 
 	for index := 1; index <= table.Len(); index++ {
@@ -80,7 +109,7 @@ func luaSchemaArrayJSON(table *lua.LTable) ([]byte, error) {
 			encodedArray = append(encodedArray, ',')
 		}
 
-		encoded, err := luaSchemaJSON(table.RawGetInt(index))
+		encoded, err := luaSchemaJSONWithSeen(table.RawGetInt(index), seen)
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +122,7 @@ func luaSchemaArrayJSON(table *lua.LTable) ([]byte, error) {
 	return encodedArray, nil
 }
 
-func luaSchemaObjectJSON(table *lua.LTable) ([]byte, error) {
+func luaSchemaObjectJSON(table *lua.LTable, seen map[*lua.LTable]struct{}) ([]byte, error) {
 	encodedObject := []byte{'{'}
 
 	first := true
@@ -105,7 +134,7 @@ func luaSchemaObjectJSON(table *lua.LTable) ([]byte, error) {
 			return
 		}
 
-		encoded, err := luaSchemaJSON(value)
+		encoded, err := luaSchemaJSONWithSeen(value, seen)
 		if err != nil {
 			encodeErr = err
 

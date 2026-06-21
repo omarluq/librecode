@@ -3,6 +3,7 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -106,9 +107,12 @@ func (runtime *Runtime) loadSkillWithReadTool(
 ) (content string, toolEvent ToolEvent, err error) {
 	registry := tool.NewRegistry(cwd)
 
-	payload := skillReadArgumentsJSON(skill.FilePath, limit)
+	payload, err := skillReadArgumentsJSON(skill.FilePath, limit)
+	if err != nil {
+		return "", ToolEvent{}, assistantError(err, "build skill read arguments")
+	}
 
-	arguments, err := tool.ArgumentsFromRaw([]byte(payload))
+	arguments, err := tool.ArgumentsFromRaw(payload)
 	if err != nil {
 		return "", ToolEvent{}, assistantError(err, "build skill read arguments")
 	}
@@ -117,7 +121,7 @@ func (runtime *Runtime) loadSkillWithReadTool(
 
 	toolEvent = ToolEvent{
 		Name:          "load skill: " + skill.Name,
-		ArgumentsJSON: skillReadArgumentsJSON(skill.FilePath, limit),
+		ArgumentsJSON: string(payload),
 		DetailsJSON:   "",
 		Result:        "",
 		Error:         "",
@@ -135,12 +139,20 @@ func (runtime *Runtime) loadSkillWithReadTool(
 	return toolEvent.Result, toolEvent, nil
 }
 
-func skillReadArgumentsJSON(path string, limit *int) string {
-	if limit == nil {
-		return fmt.Sprintf(`{"path":%q}`, path)
+func skillReadArgumentsJSON(path string, limit *int) ([]byte, error) {
+	input := skillReadInput{Limit: limit, Path: path}
+
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return nil, assistantError(err, "encode skill read arguments")
 	}
 
-	return fmt.Sprintf(`{"path":%q,"limit":%d}`, path, *limit)
+	return encoded, nil
+}
+
+type skillReadInput struct {
+	Limit *int   `json:"limit,omitempty"`
+	Path  string `json:"path"`
 }
 
 func (runtime *Runtime) respondToToolCommand(ctx context.Context, cwd, args string) (string, error) {

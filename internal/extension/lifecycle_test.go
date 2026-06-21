@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	testLifecyclePathKey = "path"
-	testLifecycleYes     = "yes"
+	testLifecycleNameKey  = "name"
+	testLifecyclePathKey  = "path"
+	testLifecycleReadName = "read"
+	testLifecycleYes      = "yes"
 )
 
 func TestManager_DispatchLifecycleRunsHandlersInPriorityOrder(t *testing.T) {
@@ -173,8 +175,8 @@ end)
 	callResult, err := manager.DispatchLifecycle(context.Background(), extension.LifecycleEvent{
 		Name: extension.LifecycleToolCall,
 		Payload: map[string]any{
-			"name":      "read",
-			"arguments": map[string]any{testLifecyclePathKey: "README.md"},
+			testLifecycleNameKey: testLifecycleReadName,
+			"arguments":          map[string]any{testLifecyclePathKey: "README.md"},
 		},
 	})
 	require.NoError(t, err)
@@ -183,8 +185,8 @@ end)
 	resultResult, err := manager.DispatchLifecycle(context.Background(), extension.LifecycleEvent{
 		Name: extension.LifecycleToolResult,
 		Payload: map[string]any{
-			"name":   "read",
-			"result": "contents",
+			testLifecycleNameKey: testLifecycleReadName,
+			"result":             "contents",
 		},
 	})
 	require.NoError(t, err)
@@ -194,6 +196,31 @@ end)
 	assert.Equal(t, "filtered", *resultResult.ToolResult.Result)
 	assert.JSONEq(t, `{"filtered":true}`, *resultResult.ToolResult.DetailsJSON)
 	assert.Empty(t, *resultResult.ToolResult.Error)
+}
+
+func TestManager_DispatchLifecycleAllowsEmptyToolArgumentsMutation(t *testing.T) {
+	t.Parallel()
+
+	manager := loadTestExtension(t, `
+local lc = require("librecode")
+lc.on("tool_call", function(event)
+  return {
+    tool_call = {
+      arguments = {},
+    },
+  }
+end)
+`)
+	result, err := manager.DispatchLifecycle(context.Background(), extension.LifecycleEvent{
+		Name: extension.LifecycleToolCall,
+		Payload: map[string]any{
+			testLifecycleNameKey: testLifecycleReadName,
+			"arguments":          map[string]any{testLifecyclePathKey: "README.md"},
+		},
+	})
+	require.NoError(t, err)
+	assert.True(t, result.ToolCall.HasArgs)
+	assert.JSONEq(t, `{}`, result.ToolCall.Arguments.String())
 }
 
 func TestManager_DispatchLifecycleCollectsCompactionMutations(t *testing.T) {
