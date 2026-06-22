@@ -131,6 +131,13 @@ func TestFetchTool_FetchNonHTMLFormats(t *testing.T) {
 			want:        "```text\nplain text\n```",
 		},
 		{
+			name:        "plain markdown with backticks",
+			contentType: fetchTestTextPlain,
+			body:        "contains ``` fenced content",
+			format:      fetchFormatMarkdown,
+			want:        "````text\ncontains ``` fenced content\n````",
+		},
+		{
 			name:        "plain html format",
 			contentType: fetchTestTextPlain,
 			body:        fetchTestPlainText,
@@ -445,6 +452,29 @@ func TestFetchTool_HTTPClientErrors(t *testing.T) {
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), testCase.wantErrText)
+		})
+	}
+}
+
+func TestFetchTool_FencedCodeBlockUsesSafeFence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		content  string
+		expected string
+	}{
+		{name: "no backticks", content: "plain", expected: "```text\nplain\n```"},
+		{name: "short run", content: "`code`", expected: "```text\n`code`\n```"},
+		{name: "triple run", content: "```code```", expected: "````text\n```code```\n````"},
+		{name: "longer run", content: "````code````", expected: "`````text\n````code````\n`````"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, testCase.expected, fencedCodeBlock("text", testCase.content))
 		})
 	}
 }
