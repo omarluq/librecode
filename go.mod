@@ -25,7 +25,7 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/pressly/goose/v3 v3.27.1
 	github.com/rs/zerolog v1.35.1
-	github.com/sahilm/fuzzy v0.1.2
+	github.com/sahilm/fuzzy v0.1.3
 	github.com/samber/do/v2 v2.0.0
 	github.com/samber/hot v0.13.0
 	github.com/samber/lo v1.53.0
