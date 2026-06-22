@@ -26,17 +26,18 @@ const (
 	fetchFormatText     = "text"
 	fetchFormatHTML     = "html"
 
-	fetchDefaultTimeout   = 30 * time.Second
-	fetchMaxTimeout       = 120 * time.Second
-	fetchMaxRedirects     = 10
-	fetchReadLimitBytes   = 5 * units.MiB
-	fetchTextWrapWidth    = 120
-	fetchUserAgent        = "librecode/1.0 (+https://github.com/omarluq/librecode)"
-	fetchAcceptHeader     = "text/html,application/xhtml+xml,application/json,text/plain,*/*;q=0.8"
-	fetchNoiseSelector    = "script,style,noscript,template,nav,header,footer,aside,iframe,svg,form"
-	fetchJSONContentType  = "application/json"
-	fetchHTMLContentType  = "text/html"
-	fetchXHTMLContentType = "application/xhtml+xml"
+	fetchDefaultTimeout    = 30 * time.Second
+	fetchMaxTimeout        = 120 * time.Second
+	fetchMaxRedirects      = 10
+	fetchReadLimitBytes    = 5 * units.MiB
+	fetchTextWrapWidth     = 120
+	fetchUserAgent         = "librecode/1.0 (+https://github.com/omarluq/librecode)"
+	fetchAcceptHeader      = "text/html,application/xhtml+xml,application/json,text/plain,*/*;q=0.8"
+	fetchNoiseSelector     = "script,style,noscript,template,nav,header,footer,aside,iframe,svg,form"
+	fetchJSONContentType   = "application/json"
+	fetchHTMLContentType   = "text/html"
+	fetchXHTMLContentType  = "application/xhtml+xml"
+	fetchMinCodeFenceWidth = 3
 )
 
 // FetchInput contains arguments for the fetch tool.
@@ -597,7 +598,27 @@ func readableFetchedNonHTML(bodyText, contentType string) (content, fenceLanguag
 }
 
 func fencedCodeBlock(language, content string) string {
-	return "```" + language + "\n" + content + "\n```"
+	fence := strings.Repeat("`", max(fetchMinCodeFenceWidth, longestBacktickRun(content)+1))
+
+	return fence + language + "\n" + content + "\n" + fence
+}
+
+func longestBacktickRun(content string) int {
+	longest := 0
+	current := 0
+
+	for _, char := range content {
+		if char == '`' {
+			current++
+			longest = max(longest, current)
+
+			continue
+		}
+
+		current = 0
+	}
+
+	return longest
 }
 
 func isFetchHTML(contentType string) bool {
