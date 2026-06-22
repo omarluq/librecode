@@ -36,6 +36,7 @@ func inputTypesByName() map[Name]reflect.Type {
 		NameFind:  reflect.TypeFor[FindInput](),
 		NameLS:    reflect.TypeFor[LSInput](),
 		NameAST:   reflect.TypeFor[ASTInput](),
+		NameFetch: reflect.TypeFor[FetchInput](),
 	}
 }
 
@@ -68,6 +69,11 @@ func schemaFieldComments() map[reflect.Type]map[string]string {
 		},
 		reflect.TypeFor[EditInput](): {
 			schemaPathField: "Path to the file to edit, relative to the current workspace or absolute.",
+		},
+		reflect.TypeFor[FetchInput](): {
+			"Timeout": "Optional timeout in seconds, clamped to 120 seconds.",
+			"URL":     "Explicit http:// or https:// URL to fetch.",
+			"Format":  "Output format: 'markdown' (default), 'text', or 'html'.",
 		},
 		reflect.TypeFor[FindInput](): {
 			schemaLimitField: "Optional maximum number of paths.",

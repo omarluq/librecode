@@ -28,6 +28,8 @@ const (
 	NameLS Name = "ls"
 	// NameAST inspects a file's syntax tree structure.
 	NameAST Name = "ast"
+	// NameFetch fetches explicit HTTP(S) URLs.
+	NameFetch Name = "fetch"
 )
 
 const (

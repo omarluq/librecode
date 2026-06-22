@@ -61,6 +61,7 @@ const (
 	jsonFindToolName        = "find"
 	jsonLSToolName          = "ls"
 	jsonASTToolName         = "ast"
+	jsonFetchToolName       = "fetch"
 	anthropicReadToolName   = "Read"
 	anthropicBashToolName   = "Bash"
 	anthropicEditToolName   = "Edit"

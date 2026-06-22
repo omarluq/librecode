@@ -87,25 +87,22 @@ func toolSummary(name, argumentsJSON string, arguments map[string]any) string {
 }
 
 func toolSummaryRendererFor(name string) (toolSummaryRenderer, bool) {
-	switch name {
-	case string(tool.NameBash):
-		return bashToolSummary, true
-	case string(tool.NameRead):
-		return readToolSummary, true
-	case string(tool.NameEdit):
-		return editToolSummary, true
-	case string(tool.NameWrite):
-		return writeToolSummary, true
-	case string(tool.NameGrep):
-		return grepToolSummary, true
-	case string(tool.NameFind):
-		return findToolSummary, true
-	case string(tool.NameLS):
-		return lsToolSummary, true
-	case string(tool.NameAST):
-		return astToolSummary, true
-	default:
-		return nil, false
+	render, matched := toolSummaryRenderers()[name]
+
+	return render, matched
+}
+
+func toolSummaryRenderers() map[string]toolSummaryRenderer {
+	return map[string]toolSummaryRenderer{
+		string(tool.NameBash):  bashToolSummary,
+		string(tool.NameRead):  readToolSummary,
+		string(tool.NameEdit):  editToolSummary,
+		string(tool.NameWrite): writeToolSummary,
+		string(tool.NameGrep):  grepToolSummary,
+		string(tool.NameFind):  findToolSummary,
+		string(tool.NameLS):    lsToolSummary,
+		string(tool.NameAST):   astToolSummary,
+		string(tool.NameFetch): fetchToolSummary,
 	}
 }
 
@@ -229,6 +226,20 @@ func lsToolSummary(args map[string]any, _ string) string {
 	}
 
 	return "ls " + path
+}
+
+func fetchToolSummary(args map[string]any, fallback string) string {
+	url := stringArg(args, "url")
+	if url == "" {
+		return fallbackToolName(fallback)
+	}
+
+	format := stringArg(args, "format")
+	if format == "" || format == "markdown" {
+		return "fetch " + url
+	}
+
+	return "fetch " + format + " " + url
 }
 
 func astToolSummary(args map[string]any, fallback string) string {
