@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,6 +28,7 @@ const (
 
 	fetchDefaultTimeout   = 30 * time.Second
 	fetchMaxTimeout       = 120 * time.Second
+	fetchMaxRedirects     = 10
 	fetchReadLimitBytes   = 5 * units.MiB
 	fetchTextWrapWidth    = 120
 	fetchUserAgent        = "librecode/1.0 (+https://github.com/omarluq/librecode)"
@@ -46,12 +48,18 @@ type FetchInput struct {
 
 // FetchTool fetches explicit HTTP(S) URLs.
 type FetchTool struct {
-	client *http.Client
+	client               *http.Client
+	lookupIPAddrs        func(context.Context, string) ([]net.IPAddr, error)
+	allowPrivateNetworks bool
 }
 
 // NewFetchTool creates the fetch tool.
 func NewFetchTool() *FetchTool {
-	return &FetchTool{client: http.DefaultClient}
+	return &FetchTool{
+		client:               http.DefaultClient,
+		lookupIPAddrs:        nil,
+		allowPrivateNetworks: false,
+	}
 }
 
 // Definition returns fetch tool metadata.
@@ -177,12 +185,12 @@ func normalizeFetchTimeout(timeout *int) (time.Duration, error) {
 		return 0, oops.In("tool").Code("fetch_invalid_timeout").Errorf("fetch timeout must be greater than zero")
 	}
 
-	requestedTimeout := time.Duration(*timeout) * time.Second
-	if requestedTimeout > fetchMaxTimeout {
+	maxTimeoutSeconds := int(fetchMaxTimeout / time.Second)
+	if *timeout > maxTimeoutSeconds {
 		return fetchMaxTimeout, nil
 	}
 
-	return requestedTimeout, nil
+	return time.Duration(*timeout) * time.Second, nil
 }
 
 type fetchResponseInfo struct {
@@ -202,6 +210,10 @@ func (fetchTool *FetchTool) fetchURL(
 	requestCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	if err := fetchTool.validatePublicFetchURL(requestCtx, requestURL); err != nil {
+		return nil, fetchResponseInfo{}, err
+	}
+
 	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, requestURL.String(), http.NoBody)
 	if err != nil {
 		return nil, fetchResponseInfo{}, oops.In("tool").Code("fetch_build_request").Wrapf(err, "build fetch request")
@@ -209,7 +221,7 @@ func (fetchTool *FetchTool) fetchURL(
 
 	setFetchHeaders(request)
 
-	response, err := fetchTool.httpClient().Do(request)
+	response, err := fetchTool.httpClientWithRedirectValidation(requestCtx).Do(request)
 	if err != nil {
 		return nil, fetchResponseInfo{}, oops.In("tool").Code("fetch_request").Wrapf(err, "fetch url")
 	}
@@ -257,6 +269,113 @@ func (fetchTool *FetchTool) httpClient() *http.Client {
 	}
 
 	return http.DefaultClient
+}
+
+func (fetchTool *FetchTool) httpClientWithRedirectValidation(ctx context.Context) *http.Client {
+	baseClient := fetchTool.httpClient()
+	client := *baseClient
+	baseCheckRedirect := baseClient.CheckRedirect
+	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+		if baseCheckRedirect != nil {
+			if err := baseCheckRedirect(request, via); err != nil {
+				return err
+			}
+		} else if len(via) >= fetchMaxRedirects {
+			return oops.In("tool").Code("fetch_too_many_redirects").Errorf("fetch url stopped after 10 redirects")
+		}
+
+		return fetchTool.validatePublicFetchURL(ctx, request.URL)
+	}
+
+	return &client
+}
+
+func (fetchTool *FetchTool) validatePublicFetchURL(ctx context.Context, requestURL *url.URL) error {
+	if fetchTool.allowPrivateNetworks {
+		return nil
+	}
+
+	host := normalizedFetchHost(requestURL.Hostname())
+	if host == "" {
+		return oops.In("tool").Code("fetch_missing_host").Errorf("fetch url host is required")
+	}
+
+	if isLocalhostFetchHost(host) {
+		return privateFetchNetworkError()
+	}
+
+	if ip := parseFetchHostIP(host); ip != nil {
+		return validatePublicFetchIP(ip)
+	}
+
+	addrs, err := fetchTool.lookupFetchIPAddrs(ctx, host)
+	if err != nil {
+		return err
+	}
+
+	if len(addrs) == 0 {
+		return oops.In("tool").Code("fetch_resolve_host").Errorf("resolve fetch url host returned no addresses")
+	}
+
+	for _, addr := range addrs {
+		if err := validatePublicFetchIP(addr.IP); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (fetchTool *FetchTool) lookupFetchIPAddrs(ctx context.Context, host string) ([]net.IPAddr, error) {
+	if fetchTool.lookupIPAddrs != nil {
+		return fetchTool.lookupIPAddrs(ctx, host)
+	}
+
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, oops.In("tool").Code("fetch_resolve_host").Wrapf(err, "resolve fetch url host")
+	}
+
+	return addrs, nil
+}
+
+func normalizedFetchHost(host string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+}
+
+func isLocalhostFetchHost(host string) bool {
+	return host == "localhost" || strings.HasSuffix(host, ".localhost")
+}
+
+func parseFetchHostIP(host string) net.IP {
+	if zoneIndex := strings.LastIndexByte(host, '%'); zoneIndex >= 0 {
+		host = host[:zoneIndex]
+	}
+
+	return net.ParseIP(host)
+}
+
+func validatePublicFetchIP(ipAddress net.IP) error {
+	if ipAddress == nil || isPrivateFetchIP(ipAddress) {
+		return privateFetchNetworkError()
+	}
+
+	return nil
+}
+
+func isPrivateFetchIP(ipAddress net.IP) bool {
+	return ipAddress.IsLoopback() ||
+		ipAddress.IsPrivate() ||
+		ipAddress.IsLinkLocalUnicast() ||
+		ipAddress.IsLinkLocalMulticast() ||
+		ipAddress.IsUnspecified() ||
+		ipAddress.IsMulticast()
+}
+
+func privateFetchNetworkError() error {
+	return oops.In("tool").
+		Code("fetch_private_network").
+		Errorf("fetch url must not target private or local networks")
 }
 
 func setFetchHeaders(request *http.Request) {
