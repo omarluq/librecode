@@ -238,7 +238,13 @@ func fetchToolSummary(args map[string]any, fallback string) string {
 		return "fetch " + url
 	}
 
-	return "fetch " + format + " " + url
+	var summary strings.Builder
+	summary.WriteString("fetch ")
+	summary.WriteString(format)
+	summary.WriteString(" ")
+	summary.WriteString(url)
+
+	return summary.String()
 }
 
 func astToolSummary(args map[string]any, fallback string) string {
