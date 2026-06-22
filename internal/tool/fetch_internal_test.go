@@ -3,7 +3,10 @@ package tool
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -78,7 +81,7 @@ func TestFetchTool_FetchHTMLFormats(t *testing.T) {
 
 			wantContains := replaceFetchServerURL(testCase.wantContains, server.URL)
 			input := fetchInputForTest(server.URL, testCase.format)
-			result, err := NewFetchTool().Fetch(context.Background(), input)
+			result, err := fetchTestPrivateNetworkTool().Fetch(context.Background(), input)
 
 			require.NoError(t, err)
 
@@ -143,7 +146,10 @@ func TestFetchTool_FetchNonHTMLFormats(t *testing.T) {
 			server := fetchTestContentServer(t, testCase.contentType, []byte(testCase.body), http.StatusOK)
 			defer server.Close()
 
-			result, err := NewFetchTool().Fetch(context.Background(), fetchInputForTest(server.URL, testCase.format))
+			result, err := fetchTestPrivateNetworkTool().Fetch(
+				context.Background(),
+				fetchInputForTest(server.URL, testCase.format),
+			)
 
 			require.NoError(t, err)
 			assert.Equal(t, testCase.want, result.Text())
@@ -197,7 +203,7 @@ func TestFetchTool_HTTPErrorAndInvalidUTF8(t *testing.T) {
 		server := fetchTestContentServer(t, fetchTestTextPlain, []byte("teapot"), http.StatusTeapot)
 		defer server.Close()
 
-		_, err := NewFetchTool().Fetch(context.Background(), fetchInputForTest(server.URL, ""))
+		_, err := fetchTestPrivateNetworkTool().Fetch(context.Background(), fetchInputForTest(server.URL, ""))
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "418")
@@ -209,7 +215,7 @@ func TestFetchTool_HTTPErrorAndInvalidUTF8(t *testing.T) {
 		server := fetchTestContentServer(t, fetchTestTextPlain, []byte{0xff, 0xfe}, http.StatusOK)
 		defer server.Close()
 
-		_, err := NewFetchTool().Fetch(context.Background(), fetchInputForTest(server.URL, ""))
+		_, err := fetchTestPrivateNetworkTool().Fetch(context.Background(), fetchInputForTest(server.URL, ""))
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not valid UTF-8")
@@ -227,7 +233,10 @@ func TestFetchTool_TextOutputWrapsLongHTMLText(t *testing.T) {
 	)
 	defer server.Close()
 
-	result, err := NewFetchTool().Fetch(context.Background(), fetchInputForTest(server.URL, fetchFormatText))
+	result, err := fetchTestPrivateNetworkTool().Fetch(
+		context.Background(),
+		fetchInputForTest(server.URL, fetchFormatText),
+	)
 
 	require.NoError(t, err)
 	assert.Contains(t, result.Text(), "\n")
@@ -237,7 +246,7 @@ func TestFetchTool_TextOutputWrapsLongHTMLText(t *testing.T) {
 func TestFetchTool_RedirectAndTruncationDetails(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server := fetchTestPrivateNetworkServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/start" {
 			http.Redirect(writer, request, "/final", http.StatusFound)
 
@@ -253,7 +262,7 @@ func TestFetchTool_RedirectAndTruncationDetails(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := NewFetchTool().Fetch(
+	result, err := fetchTestPrivateNetworkTool().Fetch(
 		context.Background(),
 		fetchInputForTest(server.URL+"/start", fetchFormatText),
 	)
@@ -277,7 +286,10 @@ func TestFetchTool_TruncatesSingleLongLine(t *testing.T) {
 	)
 	defer server.Close()
 
-	result, err := NewFetchTool().Fetch(context.Background(), fetchInputForTest(server.URL, fetchFormatText))
+	result, err := fetchTestPrivateNetworkTool().Fetch(
+		context.Background(),
+		fetchInputForTest(server.URL, fetchFormatText),
+	)
 
 	require.NoError(t, err)
 	assert.Len(t, result.Text(), DefaultMaxBytes+len("\n\n[Showing first 1 lines of 1 (50KiB limit).]"))
@@ -298,12 +310,86 @@ func TestFetchTool_ReadLimitDetails(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := NewFetchTool().Fetch(context.Background(), fetchInputForTest(server.URL, fetchFormatText))
+	result, err := fetchTestPrivateNetworkTool().Fetch(
+		context.Background(),
+		fetchInputForTest(server.URL, fetchFormatText),
+	)
 
 	require.NoError(t, err)
 	assert.Equal(t, fetchReadLimitBytes, result.Details["bytes_read"])
 	assert.True(t, fetchDetailBoolForTest(t, result, "read_limit_reached"))
 	assert.True(t, fetchDetailBoolForTest(t, result, "truncated"))
+}
+
+func TestFetchTool_RejectsPrivateNetworkTargets(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		lookups map[string][]net.IPAddr
+		name    string
+		rawURL  string
+	}{
+		{
+			lookups: nil,
+			name:    "localhost hostname",
+			rawURL:  "http://localhost",
+		},
+		{
+			lookups: nil,
+			name:    "loopback ip",
+			rawURL:  "http://127.0.0.1",
+		},
+		{
+			lookups: nil,
+			name:    "private ip",
+			rawURL:  "http://10.0.0.1",
+		},
+		{
+			lookups: nil,
+			name:    "link local ip",
+			rawURL:  "http://169.254.1.1",
+		},
+		{
+			lookups: map[string][]net.IPAddr{
+				"example.test": {{IP: net.ParseIP("192.168.1.10")}},
+			},
+			name:   "private dns result",
+			rawURL: "http://example.test",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			fetchTool := fetchTestLookupTool(testCase.lookups)
+			_, err := fetchTool.Fetch(context.Background(), fetchInputForTest(testCase.rawURL, ""))
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "private or local networks")
+		})
+	}
+}
+
+func TestFetchTool_RejectsPrivateNetworkRedirect(t *testing.T) {
+	t.Parallel()
+
+	fetchTool := fetchTestLookupTool(map[string][]net.IPAddr{
+		"example.test": {{IP: net.ParseIP("93.184.216.34")}},
+	})
+	fetchTool.client = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		response := fetchTestHTTPResponse(request, io.NopCloser(strings.NewReader("redirect")))
+		response.StatusCode = http.StatusFound
+		response.Status = "302 Found"
+		response.Header.Set("Location", "http://127.0.0.1/final")
+
+		return response, nil
+	})}
+
+	_, err := fetchTool.Fetch(context.Background(), fetchInputForTest("http://example.test/start", ""))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "private or local networks")
 }
 
 func TestFetchTool_HTTPClientErrors(t *testing.T) {
@@ -353,7 +439,8 @@ func TestFetchTool_HTTPClientErrors(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			fetchTool := &FetchTool{client: &http.Client{Transport: testCase.transport}}
+			fetchTool := fetchTestPrivateNetworkTool()
+			fetchTool.client = &http.Client{Transport: testCase.transport}
 			_, err := fetchTool.Fetch(context.Background(), fetchInputForTest(fetchTestExampleURL, ""))
 
 			require.Error(t, err)
@@ -432,28 +519,50 @@ func TestFetchTool_ContentTypeDetection(t *testing.T) {
 func TestFetchTool_ExecuteAndTimeoutClamp(t *testing.T) {
 	t.Parallel()
 
-	args, err := ArgumentsFromRaw([]byte(`{"url":"https://example.com","timeout":999}`))
-	require.NoError(t, err)
+	tests := []struct {
+		name        string
+		timeout     int
+		wantTimeout time.Duration
+	}{
+		{name: "within range", timeout: 2, wantTimeout: 2 * time.Second},
+		{name: "above max", timeout: 999, wantTimeout: fetchMaxTimeout},
+		{name: "max int", timeout: math.MaxInt, wantTimeout: fetchMaxTimeout},
+	}
 
-	tool := NewFetchTool()
-	tool.client = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		deadline, ok := request.Context().Deadline()
-		require.True(t, ok)
-		assert.LessOrEqual(t, time.Until(deadline), fetchMaxTimeout)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-		return fetchTestHTTPResponse(request, io.NopCloser(strings.NewReader("ok"))), nil
-	})}
+			args, err := ArgumentsFromRaw(fmt.Appendf(
+				nil,
+				`{"url":"https://example.com","timeout":%d}`,
+				testCase.timeout,
+			))
+			require.NoError(t, err)
 
-	result, err := tool.Execute(context.Background(), args)
+			tool := fetchTestLookupTool(map[string][]net.IPAddr{
+				"example.com": {{IP: net.ParseIP("93.184.216.34")}},
+			})
+			tool.client = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				deadline, ok := request.Context().Deadline()
+				require.True(t, ok)
+				assert.LessOrEqual(t, time.Until(deadline), testCase.wantTimeout)
 
-	require.NoError(t, err)
-	assert.Equal(t, "```text\nok\n```", result.Text())
+				return fetchTestHTTPResponse(request, io.NopCloser(strings.NewReader("ok"))), nil
+			})}
+
+			result, err := tool.Execute(context.Background(), args)
+
+			require.NoError(t, err)
+			assert.Equal(t, "```text\nok\n```", result.Text())
+		})
+	}
 }
 
 func fetchTestHTMLServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	return fetchTestPrivateNetworkServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, fetchUserAgent, request.Header.Get("User-Agent"))
 		assert.NotEmpty(t, request.Header.Get("Accept"))
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -475,7 +584,7 @@ func fetchTestHTMLServer(t *testing.T) *httptest.Server {
 func fetchTestContentServer(t *testing.T, contentType string, body []byte, status int) *httptest.Server {
 	t.Helper()
 
-	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+	return fetchTestPrivateNetworkServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", contentType)
 		writer.WriteHeader(status)
 
@@ -484,6 +593,32 @@ func fetchTestContentServer(t *testing.T, contentType string, body []byte, statu
 			panic(err)
 		}
 	}))
+}
+
+func fetchTestPrivateNetworkServer(handler http.Handler) *httptest.Server {
+	server := httptest.NewServer(handler)
+
+	return server
+}
+
+func fetchTestPrivateNetworkTool() *FetchTool {
+	fetchTool := NewFetchTool()
+	fetchTool.allowPrivateNetworks = true
+
+	return fetchTool
+}
+
+func fetchTestLookupTool(lookups map[string][]net.IPAddr) *FetchTool {
+	fetchTool := NewFetchTool()
+	fetchTool.lookupIPAddrs = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		if addrs, ok := lookups[host]; ok {
+			return addrs, nil
+		}
+
+		return []net.IPAddr{{IP: net.ParseIP("93.184.216.34")}}, nil
+	}
+
+	return fetchTool
 }
 
 func assertFetchTextContains(t *testing.T, result Result, expectedValues []string) {
