@@ -6,11 +6,16 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
+	"github.com/omarluq/librecode/internal/fswalk"
 	lua "github.com/yuin/gopher-lua"
 )
 
-const luaManifestFile = "init.lua"
+const (
+	luaManifestFile        = "init.lua"
+	minLuaSourcesForDedupe = 2
+)
 
 type luaSource struct {
 	Path     string
@@ -50,8 +55,10 @@ func discoverLuaDir(root string) ([]luaSource, error) {
 
 	sources := []luaSource{}
 
-	walkErr := filepath.WalkDir(root, func(currentPath string, dirEntry os.DirEntry, walkErr error) error {
-		return collectLuaSource(root, currentPath, dirEntry, walkErr, &sources)
+	var sourcesLock sync.Mutex
+
+	walkErr := fswalk.Walk(root, func(currentPath string, dirEntry os.DirEntry, walkErr error) error {
+		return collectLuaSource(root, currentPath, dirEntry, walkErr, &sources, &sourcesLock)
 	})
 	if walkErr != nil {
 		return nil, fmt.Errorf("extension: walk %s: %w", root, walkErr)
@@ -59,20 +66,31 @@ func discoverLuaDir(root string) ([]luaSource, error) {
 
 	sort.Slice(sources, func(i, j int) bool { return sources[i].Path < sources[j].Path })
 
-	return sources, nil
+	return dedupeLuaSourcesByTarget(sources), nil
 }
 
-func collectLuaSource(root, currentPath string, dirEntry os.DirEntry, walkErr error, sources *[]luaSource) error {
+func collectLuaSource(
+	root string,
+	currentPath string,
+	dirEntry os.DirEntry,
+	walkErr error,
+	sources *[]luaSource,
+	sourcesLock *sync.Mutex,
+) error {
 	if walkErr != nil {
 		return walkErr
 	}
 
 	if isExtensionDir(root, currentPath, dirEntry) {
-		return collectLuaSourceDir(root, currentPath, sources)
+		return collectLuaSourceDir(root, currentPath, sources, sourcesLock)
+	}
+
+	if dirEntry.Type()&os.ModeSymlink != 0 && symlinkTargetsDirectory(currentPath) {
+		return filepath.SkipDir
 	}
 
 	if strings.HasSuffix(currentPath, ".lua") {
-		*sources = append(*sources, luaSource{Path: currentPath, Manifest: false})
+		appendLuaSource(sources, sourcesLock, luaSource{Path: currentPath, Manifest: false})
 	}
 
 	return nil
@@ -83,16 +101,16 @@ func isExtensionDir(root, currentPath string, dirEntry os.DirEntry) bool {
 		return true
 	}
 
-	if currentPath == root || dirEntry.Type()&os.ModeSymlink == 0 {
-		return false
-	}
+	return currentPath != root && dirEntry.Type()&os.ModeSymlink != 0 && symlinkTargetsDirectory(currentPath)
+}
 
+func symlinkTargetsDirectory(currentPath string) bool {
 	info, err := os.Stat(currentPath)
 
 	return err == nil && info.IsDir()
 }
 
-func collectLuaSourceDir(root, currentPath string, sources *[]luaSource) error {
+func collectLuaSourceDir(root, currentPath string, sources *[]luaSource, sourcesLock *sync.Mutex) error {
 	if currentPath == root {
 		return nil
 	}
@@ -103,12 +121,45 @@ func collectLuaSourceDir(root, currentPath string, sources *[]luaSource) error {
 
 	manifestPath := filepath.Join(currentPath, luaManifestFile)
 	if info, err := os.Stat(manifestPath); err == nil && !info.IsDir() {
-		*sources = append(*sources, luaSource{Path: manifestPath, Manifest: true})
+		appendLuaSource(sources, sourcesLock, luaSource{Path: manifestPath, Manifest: true})
 
 		return filepath.SkipDir
 	}
 
 	return nil
+}
+
+func appendLuaSource(sources *[]luaSource, sourcesLock *sync.Mutex, source luaSource) {
+	sourcesLock.Lock()
+	defer sourcesLock.Unlock()
+
+	*sources = append(*sources, source)
+}
+
+func dedupeLuaSourcesByTarget(sources []luaSource) []luaSource {
+	if len(sources) < minLuaSourcesForDedupe {
+		return sources
+	}
+
+	deduped := make([]luaSource, 0, len(sources))
+	seen := map[string]struct{}{}
+
+	for _, source := range sources {
+		targetPath, err := filepath.EvalSymlinks(source.Path)
+		if err != nil {
+			targetPath = source.Path
+		}
+
+		if _, ok := seen[targetPath]; ok {
+			continue
+		}
+
+		seen[targetPath] = struct{}{}
+
+		deduped = append(deduped, source)
+	}
+
+	return deduped
 }
 
 func (manager *Manager) addModuleRootsForPath(extensionPath string) {

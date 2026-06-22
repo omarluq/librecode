@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+	"github.com/omarluq/librecode/internal/fswalk"
 	"github.com/samber/hot"
 )
 
@@ -184,7 +186,16 @@ func copyRepositoryIgnorePatterns(patterns repositoryIgnorePatterns) repositoryI
 func readRepositoryIgnoreSignature(workspaceRoot string) repositoryIgnoreSignature {
 	paths := []ignorePathState{readIgnorePathState(filepath.Join(workspaceRoot, ".git", "info", "exclude"))}
 
-	walkErr := filepath.WalkDir(workspaceRoot, func(path string, entry os.DirEntry, err error) error {
+	var pathsLock sync.Mutex
+
+	appendPath := func(path string) {
+		pathsLock.Lock()
+		defer pathsLock.Unlock()
+
+		paths = append(paths, readIgnorePathState(path))
+	}
+
+	walkErr := fswalk.Walk(workspaceRoot, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			if entry != nil && entry.IsDir() {
 				return filepath.SkipDir
@@ -194,7 +205,7 @@ func readRepositoryIgnoreSignature(workspaceRoot string) repositoryIgnoreSignatu
 		}
 
 		if entry.IsDir() {
-			paths = append(paths, readIgnorePathState(path))
+			appendPath(path)
 
 			if entry.Name() == ".git" {
 				return filepath.SkipDir
@@ -204,14 +215,12 @@ func readRepositoryIgnoreSignature(workspaceRoot string) repositoryIgnoreSignatu
 		}
 
 		if entry.Name() == gitignoreFileName {
-			paths = append(paths, readIgnorePathState(path))
+			appendPath(path)
 		}
 
 		return nil
 	})
-	if walkErr != nil {
-		return repositoryIgnoreSignature{paths: paths}
-	}
+	_ = walkErr // Best-effort signature collection; return partial paths if walking fails.
 
 	return repositoryIgnoreSignature{paths: paths}
 }

@@ -10,6 +10,7 @@ require (
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/charlievieth/fastwalk v1.0.14
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fsnotify/fsnotify v1.10.1
