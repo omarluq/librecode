@@ -10,6 +10,7 @@ const (
 	testToolRead         = "read"
 	testToolEdit         = "edit"
 	testToolFind         = "find"
+	testToolFetch        = "fetch"
 	testToolWrite        = "write"
 	testToolCommandKey   = "command"
 )

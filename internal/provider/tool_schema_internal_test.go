@@ -236,17 +236,42 @@ func TestToolParameterSchemaMarshalJSONEmptySchema(t *testing.T) {
 func TestBuiltinToolSchemaUsesGeneratedStructMetadata(t *testing.T) {
 	t.Parallel()
 
-	definition := builtinDefinitionForSchemaTest(t, jsonASTToolName)
-	schema := schemaPayloadForDefinition(t, &definition)
-	properties, ok := schema[jsonPropertiesKey].(map[string]any)
-	require.True(t, ok)
+	tests := []struct {
+		name            string
+		toolName        string
+		field           string
+		wantEnum        string
+		wantDescription string
+	}{
+		{
+			name:            "ast mode",
+			toolName:        jsonASTToolName,
+			field:           "mode",
+			wantEnum:        `["outline","symbols","query","node","tree"]`,
+			wantDescription: "Inspection mode: 'outline' (default), 'symbols', 'query', 'node', or 'tree'.",
+		},
+		{
+			name:            "fetch format",
+			toolName:        jsonFetchToolName,
+			field:           "format",
+			wantEnum:        `["markdown","text","html"]`,
+			wantDescription: "Output format: 'markdown' (default), 'text', or 'html'.",
+		},
+	}
 
-	mode, ok := properties["mode"].(map[string]any)
-	require.True(t, ok)
-	assert.JSONEq(t, `["outline","symbols","query","node","tree"]`, jsonString(mode["enum"]))
-	assert.Equal(
-		t,
-		"Inspection mode: 'outline' (default), 'symbols', 'query', 'node', or 'tree'.",
-		mode[jsonDescriptionKey],
-	)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			definition := builtinDefinitionForSchemaTest(t, testCase.toolName)
+			schema := schemaPayloadForDefinition(t, &definition)
+			properties, ok := schema[jsonPropertiesKey].(map[string]any)
+			require.True(t, ok)
+
+			field, ok := properties[testCase.field].(map[string]any)
+			require.True(t, ok)
+			assert.JSONEq(t, testCase.wantEnum, jsonString(field["enum"]))
+			assert.Equal(t, testCase.wantDescription, field[jsonDescriptionKey])
+		})
+	}
 }

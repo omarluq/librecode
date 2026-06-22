@@ -33,6 +33,7 @@ func NewRegistry(cwd string) *Registry {
 		NewFindTool(cwd),
 		NewLSTool(cwd),
 		NewASTTool(cwd),
+		NewFetchTool(),
 	}
 
 	registry := &Registry{

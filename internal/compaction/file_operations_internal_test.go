@@ -51,6 +51,7 @@ func TestCollectCompactionFileOperations(t *testing.T) {
 	)
 	write := compactFileOperationToolEntry("write-1", "write", `{"path":"internal/app.go"}`)
 	find := compactFileOperationToolEntry("find-1", "find", `{"pattern":"internal/**/*.go"}`)
+	fetch := compactFileOperationToolEntry("fetch-1", "fetch", `{"url":"https://example.com/docs"}`)
 	bash := compactFileOperationToolEntry(
 		"bash-1",
 		"bash",
@@ -67,6 +68,7 @@ func TestCollectCompactionFileOperations(t *testing.T) {
 		*duplicateRead,
 		*write,
 		*find,
+		*fetch,
 		*bash,
 		*unknown,
 		*badArgs,
@@ -89,6 +91,7 @@ func TestCollectCompactionFileOperations(t *testing.T) {
 	)
 	assertCompactionFileOperation(t, operations, fileActionModified, "internal/app.go", "write")
 	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "internal/**/*.go", "find")
+	assertCompactionFileOperation(t, operations, compactFileOperationTestReadTool, "https://example.com/docs", "fetch")
 	assertCompactionFileOperation(t, operations, fileActionModified, "go.mod", "bash")
 	assertCompactionFileOperation(t, operations, fileActionModified, "internal/app.go", "bash")
 
@@ -98,7 +101,7 @@ func TestCollectCompactionFileOperations(t *testing.T) {
 	)
 	require.Len(t, mutatingBash, 1)
 	assert.Equal(t, fileActionModified, mutatingBash[0].Action)
-	assert.Len(t, operations, 6)
+	assert.Len(t, operations, 7)
 }
 
 func TestAppendUniqueCompactionFileOperation(t *testing.T) {

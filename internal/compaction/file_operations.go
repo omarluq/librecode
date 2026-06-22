@@ -130,9 +130,26 @@ func fileOperationsFromToolEntry(entry *database.EntryEntity) []FileOperation {
 		return bashFileOperations(entry, args)
 	case tool.NameFind, tool.NameGrep, tool.NameLS, tool.NameAST:
 		return pathArgumentFileOperation(entry, args, fileActionRead)
+	case tool.NameFetch:
+		return urlArgumentFileOperation(entry, args)
 	}
 
 	return nil
+}
+
+func urlArgumentFileOperation(entry *database.EntryEntity, args map[string]any) []FileOperation {
+	url, ok := stringArgument(args, "url")
+	if !ok {
+		return nil
+	}
+
+	return []FileOperation{{
+		EntryID: entry.ID,
+		Action:  fileActionRead,
+		Path:    url,
+		Tool:    entry.ToolName,
+		Command: "",
+	}}
 }
 
 func pathArgumentFileOperation(

@@ -60,6 +60,18 @@ func TestToolSummaryHumanizesKnownTools(t *testing.T) {
 		},
 		{name: "ls default", tool: "ls", args: `{}`, want: "ls ."},
 		{
+			name: "fetch default markdown",
+			tool: testToolFetch,
+			args: `{"url":"https://example.com/docs"}`,
+			want: "fetch https://example.com/docs",
+		},
+		{
+			name: "fetch explicit format",
+			tool: testToolFetch,
+			args: `{"url":"https://example.com/docs","format":"text"}`,
+			want: "fetch text https://example.com/docs",
+		},
+		{
 			name: "ast",
 			tool: "ast",
 			args: `{"mode":"query","path":"main.go","line":12,"depth":2,"query":"(function_declaration)"}`,
@@ -122,6 +134,13 @@ func TestToolSummaryArgumentTypeFallbacks(t *testing.T) {
 			want: "read file.go",
 		},
 		{name: "bash invalid timeout", tool: testToolBash, args: `{"command":"echo","timeout":"soon"}`, want: "$ echo"},
+		{name: "fetch missing url", tool: testToolFetch, args: `{"format":"text"}`, want: testToolFetch},
+		{
+			name: "fetch markdown omitted",
+			tool: testToolFetch,
+			args: `{"url":"https://example.com","format":"markdown"}`,
+			want: "fetch https://example.com",
+		},
 	}
 
 	for _, testCase := range tests {
