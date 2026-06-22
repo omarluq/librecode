@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/sahilm/fuzzy"
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/transcript"
@@ -156,15 +157,49 @@ func (app *App) autocompleteItems() []tui.ListItem {
 		return nil
 	}
 
-	items := []tui.ListItem{}
+	return slashAutocompleteMatches(query, app.allSlashSuggestions())
+}
 
-	for _, suggestion := range app.allSlashSuggestions() {
+func slashAutocompleteMatches(query string, suggestions []tui.ListItem) []tui.ListItem {
+	if query == "" {
+		return suggestions
+	}
+
+	prefixMatches := make([]tui.ListItem, 0, len(suggestions))
+	seen := make([]bool, len(suggestions))
+
+	for index, suggestion := range suggestions {
 		if strings.HasPrefix(suggestion.Value, query) {
-			items = append(items, suggestion)
+			prefixMatches = append(prefixMatches, suggestion)
+			seen[index] = true
+		}
+	}
+
+	if len([]rune(query)) <= 1 {
+		return prefixMatches
+	}
+
+	matches := fuzzy.FindFrom(query, slashSuggestionSource(suggestions))
+	items := make([]tui.ListItem, 0, len(prefixMatches)+len(matches))
+	items = append(items, prefixMatches...)
+
+	for _, match := range matches {
+		if !seen[match.Index] {
+			items = append(items, suggestions[match.Index])
 		}
 	}
 
 	return items
+}
+
+type slashSuggestionSource []tui.ListItem
+
+func (source slashSuggestionSource) Len() int {
+	return len(source)
+}
+
+func (source slashSuggestionSource) String(index int) string {
+	return source[index].Value
 }
 
 func (app *App) autocompleteQuery() (string, bool) {
