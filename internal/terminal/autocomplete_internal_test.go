@@ -5,6 +5,7 @@ import (
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/tui"
@@ -24,36 +25,122 @@ func TestSlashSuggestionsOnlyIncludesImplementedCommands(t *testing.T) {
 	assert.NotContains(t, names, "share")
 }
 
-func TestAutocompleteMatchesIncludesUserInvocableSkills(t *testing.T) {
+const (
+	testSlashResume       = "resume"
+	testSlashScopedModels = "scoped-models"
+	testSlashSession      = "session"
+	testSlashSettings     = "settings"
+	testSlashSkill        = "skill"
+)
+
+func TestAutocompleteMatchesSlashQueries(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
-	app.resources.Skills = []core.Skill{
+	testSkills := []core.Skill{
 		testAutocompleteSkill("fix-bug", "Fix bugs safely", true),
 		testAutocompleteSkill("hidden", "Hidden skill", false),
 	}
-	app.composerBuffer.SetText("/skf")
 
-	matches := app.autocompleteItems()
+	tests := []struct {
+		name       string
+		input      string
+		skills     []core.Skill
+		want       []string
+		wantAbsent []string
+	}{
+		{
+			name:       "empty query returns slash commands",
+			input:      "/",
+			skills:     nil,
+			want:       []string{"auth", testSlashSkill},
+			wantAbsent: nil,
+		},
+		{
+			name:       "single rune query stays prefix only",
+			input:      "/s",
+			skills:     nil,
+			want:       []string{testSlashScopedModels, testSlashSession, testSlashSettings, testSlashSkill},
+			wantAbsent: []string{testSlashResume},
+		},
+		{
+			name:       "multi rune query includes fuzzy skill matches",
+			input:      "/skf",
+			skills:     testSkills,
+			want:       []string{"skill:fix-bug"},
+			wantAbsent: []string{"skill:hidden"},
+		},
+	}
 
-	requireSuggestion(t, matches, "skill:fix-bug")
-	assert.NotContains(t, suggestionNames(matches), "skill:hidden")
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			app.resources.Skills = testCase.skills
+			app.composerBuffer.SetText(testCase.input)
+
+			matches := app.autocompleteItems()
+
+			for _, want := range testCase.want {
+				requireSuggestion(t, matches, want)
+			}
+
+			names := suggestionNames(matches)
+			for _, absent := range testCase.wantAbsent {
+				assert.NotContains(t, names, absent)
+			}
+		})
+	}
 }
 
 func TestSlashAutocompleteMatchesKeepsPrefixMatchesFirst(t *testing.T) {
 	t.Parallel()
 
 	suggestions := []tui.ListItem{
-		autocompleteSuggestion("resume", "open session picker"),
-		autocompleteSuggestion("scoped-models", "select scoped model set"),
-		autocompleteSuggestion("session", "show current session details"),
-		autocompleteSuggestion("settings", "open settings"),
-		autocompleteSuggestion("skill", "list or load an Agent Skill"),
+		autocompleteSuggestion(testSlashResume, "open session picker"),
+		autocompleteSuggestion(testSlashScopedModels, "select scoped model set"),
+		autocompleteSuggestion(testSlashSession, "show current session details"),
+		autocompleteSuggestion(testSlashSettings, "open settings"),
+		autocompleteSuggestion(testSlashSkill, "list or load an Agent Skill"),
 	}
 
-	matches := slashAutocompleteMatches("se", suggestions)
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{
+			name:  "empty query keeps source order",
+			query: "",
+			want: []string{
+				testSlashResume,
+				testSlashScopedModels,
+				testSlashSession,
+				testSlashSettings,
+				testSlashSkill,
+			},
+		},
+		{
+			name:  "single rune query returns prefix matches only",
+			query: "s",
+			want:  []string{testSlashScopedModels, testSlashSession, testSlashSettings, testSlashSkill},
+		},
+		{
+			name:  "multi rune query keeps prefix matches before fuzzy matches",
+			query: "se",
+			want:  []string{testSlashSession, testSlashSettings, testSlashScopedModels, testSlashResume},
+		},
+	}
 
-	assert.Equal(t, []string{"session", "settings", "scoped-models", "resume"}, suggestionNames(matches))
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			matches := slashAutocompleteMatches(testCase.query, suggestions)
+
+			assert.Equal(t, testCase.want, suggestionNames(matches))
+		})
+	}
 }
 
 func TestAutocompleteRendersWithReusableComponent(t *testing.T) {
@@ -155,7 +242,7 @@ func testAutocompleteSkill(name, description string, userInvocable bool) core.Sk
 func requireSuggestion(t *testing.T, suggestions []tui.ListItem, name string) {
 	t.Helper()
 
-	assert.Contains(t, suggestionNames(suggestions), name)
+	require.Contains(t, suggestionNames(suggestions), name)
 }
 
 func suggestionNames(suggestions []tui.ListItem) []string {

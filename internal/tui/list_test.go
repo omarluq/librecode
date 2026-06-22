@@ -11,7 +11,7 @@ import (
 	"github.com/omarluq/librecode/internal/tui"
 )
 
-func TestListModelFilteringSelectionRenderingAndDraw(t *testing.T) {
+func TestListModelSelectionRenderingAndDraw(t *testing.T) {
 	t.Parallel()
 
 	items := []tui.ListItem{
@@ -31,19 +31,6 @@ func TestListModelFilteringSelectionRenderingAndDraw(t *testing.T) {
 	require.Equal(t, 0, list.SelectedIndex())
 	list.MoveSelection(-1)
 	require.Equal(t, 2, list.SelectedIndex())
-
-	list.AppendQueryRune('g')
-	require.Equal(t, "g", list.Query())
-	require.Len(t, list.FilteredItems(), 1)
-	selected, ok := list.SelectedItem()
-	require.True(t, ok)
-	require.Equal(t, "Gamma", selected.Title)
-
-	value, ok := list.SelectedValue()
-	require.True(t, ok)
-	require.Equal(t, "g", value)
-	list.BackspaceQuery()
-	require.Empty(t, list.Query())
 
 	list.ShowDetails = false
 	list.AppendQueryRune('b')
@@ -68,21 +55,105 @@ func TestListModelFilteringSelectionRenderingAndDraw(t *testing.T) {
 	require.Contains(t, emptyLines, "No matches")
 }
 
-func TestListFuzzyFilterMatchesNonContiguousRunes(t *testing.T) {
+func TestListFilteringSelectionAndBackspace(t *testing.T) {
 	t.Parallel()
 
-	list := tui.NewList("Pick", "", []tui.ListItem{
+	items := []tui.ListItem{
+		testListItem("a", "Alpha", "first", testOne),
+		testListItem("b", "Beta", "second", "two"),
+		testListItem("g", "Gamma", "third", "three"),
+	}
+	tests := []struct {
+		name      string
+		query     string
+		wantTitle string
+		wantValue string
+		wantCount int
+	}{
+		{
+			name:      "title match",
+			query:     "g",
+			wantTitle: "Gamma",
+			wantValue: "g",
+			wantCount: 1,
+		},
+		{
+			name:      "description match",
+			query:     "second",
+			wantTitle: "Beta",
+			wantValue: "b",
+			wantCount: 1,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			listModel := tui.NewList("Pick", "Choose wisely", items, true)
+			for _, char := range testCase.query {
+				listModel.AppendQueryRune(char)
+			}
+
+			require.Equal(t, testCase.query, listModel.Query())
+			require.Len(t, listModel.FilteredItems(), testCase.wantCount)
+			selected, ok := listModel.SelectedItem()
+			require.True(t, ok)
+			require.Equal(t, testCase.wantTitle, selected.Title)
+
+			value, ok := listModel.SelectedValue()
+			require.True(t, ok)
+			require.Equal(t, testCase.wantValue, value)
+			listModel.BackspaceQuery()
+			require.Equal(t, testCase.query[:len(testCase.query)-1], listModel.Query())
+		})
+	}
+}
+
+func TestListFuzzyFilterMatchesQueries(t *testing.T) {
+	t.Parallel()
+
+	items := []tui.ListItem{
 		testListItem("session", "Session", "open session picker", ""),
 		testListItem("scoped-models", "Scoped Models", "select scoped model set", ""),
 		testListItem("settings", "Settings", "open settings", ""),
-	}, true)
+	}
+	tests := []struct {
+		name           string
+		query          string
+		wantFirstValue string
+	}{
+		{
+			name:           "title prefix",
+			query:          "sess",
+			wantFirstValue: "session",
+		},
+		{
+			name:           "non-contiguous runes",
+			query:          "sm",
+			wantFirstValue: "scoped-models",
+		},
+		{
+			name:           "description match",
+			query:          "picker",
+			wantFirstValue: "session",
+		},
+	}
 
-	list.AppendQueryRune('s')
-	list.AppendQueryRune('m')
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	items := list.FilteredItems()
-	require.NotEmpty(t, items)
-	require.Equal(t, "scoped-models", items[0].Value)
+			list := tui.NewList("Pick", "", items, true)
+			for _, char := range testCase.query {
+				list.AppendQueryRune(char)
+			}
+
+			filtered := list.FilteredItems()
+			require.NotEmpty(t, filtered)
+			require.Equal(t, testCase.wantFirstValue, filtered[0].Value)
+		})
+	}
 }
 
 func TestListRowsKeepBorderStyleSeparateFromContentStyle(t *testing.T) {
