@@ -41,12 +41,13 @@ type readIgnoreCache struct {
 }
 
 type repositoryIgnorePatterns struct {
-	signature repositoryIgnoreSignature
 	patterns  []gitignore.Pattern
+	signature repositoryIgnoreSignature
 }
 
 type repositoryIgnoreSignature struct {
-	paths []ignorePathState
+	paths    []ignorePathState
+	complete bool
 }
 
 type ignorePathState struct {
@@ -184,45 +185,77 @@ func copyRepositoryIgnorePatterns(patterns repositoryIgnorePatterns) repositoryI
 }
 
 func readRepositoryIgnoreSignature(workspaceRoot string) repositoryIgnoreSignature {
-	paths := []ignorePathState{readIgnorePathState(filepath.Join(workspaceRoot, ".git", "info", "exclude"))}
+	collector := newIgnoreSignatureCollector(workspaceRoot)
+	err := fswalk.Walk(workspaceRoot, collector.visit)
 
-	var pathsLock sync.Mutex
+	return collector.signature(err == nil)
+}
 
-	appendPath := func(path string) {
-		pathsLock.Lock()
-		defer pathsLock.Unlock()
+type ignoreSignatureCollector struct {
+	paths []ignorePathState
+	lock  sync.Mutex
+}
 
-		paths = append(paths, readIgnorePathState(path))
+func newIgnoreSignatureCollector(workspaceRoot string) *ignoreSignatureCollector {
+	return &ignoreSignatureCollector{
+		paths: []ignorePathState{readIgnorePathState(filepath.Join(workspaceRoot, ".git", "info", "exclude"))},
+		lock:  sync.Mutex{},
+	}
+}
+
+func (collector *ignoreSignatureCollector) visit(path string, entry os.DirEntry, err error) error {
+	if err != nil {
+		return ignoreSignatureWalkError(entry)
 	}
 
-	walkErr := fswalk.Walk(workspaceRoot, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			if entry != nil && entry.IsDir() {
-				return filepath.SkipDir
-			}
+	if entry.IsDir() {
+		return collector.visitDirectory(path, entry.Name())
+	}
 
-			return nil
-		}
+	collector.visitFile(path, entry.Name())
 
-		if entry.IsDir() {
-			appendPath(path)
+	return nil
+}
 
-			if entry.Name() == ".git" {
-				return filepath.SkipDir
-			}
+func ignoreSignatureWalkError(entry os.DirEntry) error {
+	if entry != nil && entry.IsDir() {
+		return filepath.SkipDir
+	}
 
-			return nil
-		}
+	return nil
+}
 
-		if entry.Name() == gitignoreFileName {
-			appendPath(path)
-		}
+func (collector *ignoreSignatureCollector) visitDirectory(path, name string) error {
+	collector.append(path)
 
-		return nil
-	})
-	_ = walkErr // Best-effort signature collection; return partial paths if walking fails.
+	if name == ".git" {
+		return filepath.SkipDir
+	}
 
-	return repositoryIgnoreSignature{paths: paths}
+	return nil
+}
+
+func (collector *ignoreSignatureCollector) visitFile(path, name string) {
+	if name == gitignoreFileName {
+		collector.append(path)
+	}
+}
+
+func (collector *ignoreSignatureCollector) append(path string) {
+	collector.lock.Lock()
+	defer collector.lock.Unlock()
+
+	collector.paths = append(collector.paths, readIgnorePathState(path))
+}
+
+func (collector *ignoreSignatureCollector) signature(complete bool) repositoryIgnoreSignature {
+	collector.lock.Lock()
+	defer collector.lock.Unlock()
+
+	return repositoryIgnoreSignature{
+		paths:    slices.Clone(collector.paths),
+		complete: complete,
+	}
 }
 
 func readIgnorePathState(path string) ignorePathState {
@@ -243,6 +276,10 @@ func readIgnorePathState(path string) ignorePathState {
 }
 
 func (signature repositoryIgnoreSignature) isFresh() bool {
+	if !signature.complete {
+		return false
+	}
+
 	for _, path := range signature.paths {
 		if readIgnorePathState(path.path) != path {
 			return false
