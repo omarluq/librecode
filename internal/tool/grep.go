@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
 
+	"github.com/omarluq/librecode/internal/fswalk"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 )
@@ -214,7 +217,9 @@ func grepDirectoryTargets(root, glob string) ([]grepTarget, error) {
 
 	targets := []grepTarget{}
 
-	walkErr := filepath.WalkDir(root, func(currentPath string, dirEntry fs.DirEntry, walkErr error) error {
+	var targetsLock sync.Mutex
+
+	walkErr := fswalk.Walk(root, func(currentPath string, dirEntry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -234,6 +239,9 @@ func grepDirectoryTargets(root, glob string) ([]grepTarget, error) {
 
 		displayPath := filepath.ToSlash(relativePath)
 		if matcher(displayPath) {
+			targetsLock.Lock()
+			defer targetsLock.Unlock()
+
 			targets = append(targets, grepTarget{absolutePath: currentPath, displayPath: displayPath})
 		}
 
@@ -242,6 +250,10 @@ func grepDirectoryTargets(root, glob string) ([]grepTarget, error) {
 	if walkErr != nil {
 		return []grepTarget{}, oops.In("tool").Code("grep_walk").Wrapf(walkErr, "walk grep path")
 	}
+
+	sort.Slice(targets, func(leftIndex, rightIndex int) bool {
+		return targets[leftIndex].displayPath < targets[rightIndex].displayPath
+	})
 
 	return targets, nil
 }

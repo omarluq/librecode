@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/omarluq/librecode/internal/fswalk"
 	"github.com/samber/lo"
 	"github.com/samber/oops"
 )
@@ -141,13 +143,14 @@ func collectFindResults(ctx context.Context, searchRoot, pattern string, limit i
 		matcher:    matcher,
 		results:    []string{},
 		searchRoot: searchRoot,
+		lock:       sync.Mutex{},
 		limit:      limit,
 	}
 
 	visitor := func(currentPath string, dirEntry fs.DirEntry, walkErr error) error {
 		return state.visit(ctx, currentPath, dirEntry, walkErr)
 	}
-	if walkErr := filepath.WalkDir(searchRoot, visitor); walkErr != nil {
+	if walkErr := fswalk.Walk(searchRoot, visitor); walkErr != nil {
 		return []string{}, oops.In("tool").Code("find_walk").Wrapf(walkErr, "walk find path")
 	}
 
@@ -160,6 +163,7 @@ type findWalkState struct {
 	matcher    globMatcher
 	searchRoot string
 	results    []string
+	lock       sync.Mutex
 	limit      int
 }
 
@@ -180,11 +184,18 @@ func (state *findWalkState) visit(ctx context.Context, currentPath string, dirEn
 		return nil
 	}
 
-	if len(state.results) >= state.limit {
+	if state.limitReached() {
 		return filepath.SkipAll
 	}
 
 	return state.addMatch(currentPath)
+}
+
+func (state *findWalkState) limitReached() bool {
+	state.lock.Lock()
+	defer state.lock.Unlock()
+
+	return len(state.results) >= state.limit
 }
 
 func (state *findWalkState) addMatch(currentPath string) error {
@@ -194,9 +205,18 @@ func (state *findWalkState) addMatch(currentPath string) error {
 	}
 
 	relativePath = filepath.ToSlash(relativePath)
-	if state.matcher(relativePath) {
-		state.results = append(state.results, relativePath)
+	if !state.matcher(relativePath) {
+		return nil
 	}
+
+	state.lock.Lock()
+	defer state.lock.Unlock()
+
+	if len(state.results) >= state.limit {
+		return filepath.SkipAll
+	}
+
+	state.results = append(state.results, relativePath)
 
 	return nil
 }
