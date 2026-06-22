@@ -32,26 +32,25 @@ func TestListModelFilteringSelectionRenderingAndDraw(t *testing.T) {
 	list.MoveSelection(-1)
 	require.Equal(t, 2, list.SelectedIndex())
 
-	list.AppendQueryRune('t')
-	list.AppendQueryRune('w')
-	require.Equal(t, "tw", list.Query())
+	list.AppendQueryRune('g')
+	require.Equal(t, "g", list.Query())
 	require.Len(t, list.FilteredItems(), 1)
 	selected, ok := list.SelectedItem()
 	require.True(t, ok)
-	require.Equal(t, "Beta", selected.Title)
+	require.Equal(t, "Gamma", selected.Title)
 
 	value, ok := list.SelectedValue()
 	require.True(t, ok)
-	require.Equal(t, "b", value)
+	require.Equal(t, "g", value)
 	list.BackspaceQuery()
-	require.Equal(t, "t", list.Query())
+	require.Empty(t, list.Query())
 
 	list.ShowDetails = false
-	list.AppendQueryRune('w')
+	list.AppendQueryRune('b')
 	lines := list.Render(listOptions(28, 8, tui.ListHints{Up: "↑", Down: "↓", Confirm: testEnter, Cancel: testEsc}))
 	rendered := strings.Join(lineTexts(lines), "\n")
 	require.Contains(t, rendered, "Pick")
-	require.Contains(t, rendered, "Search: tw")
+	require.Contains(t, rendered, "Search: b")
 	require.Contains(t, rendered, "→ Beta two")
 
 	buffer := tui.NewCellBuffer(28, 8, tcell.StyleDefault)
@@ -67,6 +66,23 @@ func TestListModelFilteringSelectionRenderingAndDraw(t *testing.T) {
 	empty.AppendQueryRune('z')
 	emptyLines := strings.Join(lineTexts(empty.Render(listOptions(20, 6, emptyListHints()))), "\n")
 	require.Contains(t, emptyLines, "No matches")
+}
+
+func TestListFuzzyFilterMatchesNonContiguousRunes(t *testing.T) {
+	t.Parallel()
+
+	list := tui.NewList("Pick", "", []tui.ListItem{
+		testListItem("session", "Session", "open session picker", ""),
+		testListItem("scoped-models", "Scoped Models", "select scoped model set", ""),
+		testListItem("settings", "Settings", "open settings", ""),
+	}, true)
+
+	list.AppendQueryRune('s')
+	list.AppendQueryRune('m')
+
+	items := list.FilteredItems()
+	require.NotEmpty(t, items)
+	require.Equal(t, "scoped-models", items[0].Value)
 }
 
 func TestListRowsKeepBorderStyleSeparateFromContentStyle(t *testing.T) {

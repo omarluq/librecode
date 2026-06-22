@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/sahilm/fuzzy"
 )
 
 // ListItem is one selectable row in a list.
@@ -151,23 +152,15 @@ func (list *List) ApplyFilter() {
 		return
 	}
 
-	if strings.TrimSpace(list.query) == "" {
+	query := strings.TrimSpace(list.query)
+	if query == "" {
 		list.filtered = slices.Clone(list.items)
 		list.selected = clampSelection(list.selected, len(list.filtered))
 
 		return
 	}
 
-	query := strings.ToLower(strings.TrimSpace(list.query))
-
-	filtered := make([]ListItem, 0, len(list.items))
-	for _, item := range list.items {
-		if listItemMatchesQuery(item, query) {
-			filtered = append(filtered, item)
-		}
-	}
-
-	list.filtered = filtered
+	list.filtered = fuzzyListItems(query, list.items)
 	list.selected = clampSelection(list.selected, len(list.filtered))
 }
 
@@ -192,15 +185,30 @@ func moveSelection(index, delta, count int) int {
 	return index % count
 }
 
-func listItemMatchesQuery(item ListItem, query string) bool {
-	haystack := strings.ToLower(strings.Join([]string{item.Title, item.Description, item.Meta, item.Value}, " "))
-	for part := range strings.FieldsSeq(query) {
-		if !strings.Contains(haystack, part) {
-			return false
-		}
+func fuzzyListItems(query string, items []ListItem) []ListItem {
+	matches := fuzzy.FindFrom(query, listItemSource(items))
+	filtered := make([]ListItem, 0, len(matches))
+
+	for _, match := range matches {
+		filtered = append(filtered, items[match.Index])
 	}
 
-	return true
+	return filtered
+}
+
+type listItemSource []ListItem
+
+func (source listItemSource) Len() int {
+	return len(source)
+}
+
+func (source listItemSource) String(index int) string {
+	return strings.Join([]string{
+		source[index].Title,
+		source[index].Description,
+		source[index].Meta,
+		source[index].Value,
+	}, " ")
 }
 
 // ListStyles is the style set used to render a list.

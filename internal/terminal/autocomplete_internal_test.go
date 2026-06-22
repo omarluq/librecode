@@ -32,12 +32,28 @@ func TestAutocompleteMatchesIncludesUserInvocableSkills(t *testing.T) {
 		testAutocompleteSkill("fix-bug", "Fix bugs safely", true),
 		testAutocompleteSkill("hidden", "Hidden skill", false),
 	}
-	app.composerBuffer.SetText("/skill:f")
+	app.composerBuffer.SetText("/skf")
 
 	matches := app.autocompleteItems()
 
 	requireSuggestion(t, matches, "skill:fix-bug")
 	assert.NotContains(t, suggestionNames(matches), "skill:hidden")
+}
+
+func TestSlashAutocompleteMatchesKeepsPrefixMatchesFirst(t *testing.T) {
+	t.Parallel()
+
+	suggestions := []tui.ListItem{
+		autocompleteSuggestion("resume", "open session picker"),
+		autocompleteSuggestion("scoped-models", "select scoped model set"),
+		autocompleteSuggestion("session", "show current session details"),
+		autocompleteSuggestion("settings", "open settings"),
+		autocompleteSuggestion("skill", "list or load an Agent Skill"),
+	}
+
+	matches := slashAutocompleteMatches("se", suggestions)
+
+	assert.Equal(t, []string{"session", "settings", "scoped-models", "resume"}, suggestionNames(matches))
 }
 
 func TestAutocompleteRendersWithReusableComponent(t *testing.T) {
