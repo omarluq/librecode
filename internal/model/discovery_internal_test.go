@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	discoveryCatalogSourceURL = "https://models.invalid/api.json"
-	discoveryNetworkDown      = "network down"
+	discoveryCatalogSourceURL   = "https://models.invalid/api.json"
+	discoveryNetworkDown        = "network down"
+	discoveryCacheWriteErrorMsg = "write model discovery cache"
 )
 
 const discoveryCatalogFixture = `{
@@ -148,32 +149,233 @@ type discoveryErrorCase struct {
 func TestFetchDiscoveryCatalogErrors(t *testing.T) {
 	t.Parallel()
 
-	statusServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		http.Error(writer, "nope", http.StatusTeapot)
+	testCases := []struct {
+		name    string
+		client  *http.Client
+		server  func(t *testing.T) *httptest.Server
+		source  string
+		wantErr string
+	}{
+		{
+			name:   "unexpected status",
+			client: nil,
+			server: func(t *testing.T) *httptest.Server {
+				t.Helper()
+
+				return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+					http.Error(writer, "nope", http.StatusTeapot)
+				}))
+			},
+			source:  "",
+			wantErr: "unexpected status",
+		},
+		{
+			name:    "read error",
+			client:  newReadErrorHTTPClient(),
+			server:  nil,
+			source:  discoveryCatalogSourceURL,
+			wantErr: "read model discovery catalog",
+		},
+		{
+			name:   "not modified without cache",
+			client: nil,
+			server: func(t *testing.T) *httptest.Server {
+				t.Helper()
+
+				return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+					writer.WriteHeader(http.StatusNotModified)
+				}))
+			},
+			source:  "",
+			wantErr: "unexpected not modified response",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := testCase.client
+			source := testCase.source
+
+			if testCase.server != nil {
+				server := testCase.server(t)
+				t.Cleanup(server.Close)
+				client = server.Client()
+				source = server.URL
+			}
+
+			_, err := fetchDiscoveryCatalog(t.Context(), DiscoveryOptions{
+				Client:       client,
+				CachePath:    "",
+				SourceURL:    source,
+				CacheTTL:     0,
+				FetchTimeout: 0,
+				Enabled:      true,
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.wantErr)
+		})
+	}
+}
+
+func TestDiscoverModelsUsesCachePath(t *testing.T) {
+	t.Parallel()
+
+	cachePath := filepath.Join(t.TempDir(), "models.json")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, err := writer.Write([]byte(discoveryCatalogFixture))
+		assert.NoError(t, err)
 	}))
-	t.Cleanup(statusServer.Close)
+	t.Cleanup(server.Close)
 
-	_, err := fetchDiscoveryCatalog(t.Context(), DiscoveryOptions{
-		Client:       statusServer.Client(),
-		CachePath:    "",
-		SourceURL:    statusServer.URL,
-		CacheTTL:     0,
+	models, err := DiscoverModels(t.Context(), DiscoveryOptions{
+		Client:       server.Client(),
+		CachePath:    cachePath,
+		SourceURL:    server.URL,
+		CacheTTL:     time.Hour,
 		FetchTimeout: 0,
 		Enabled:      true,
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unexpected status")
+	require.NoError(t, err)
+	assert.Contains(t, discoveredModelIDs(models), "openai/gpt-5.2")
+	assert.FileExists(t, cachePath)
+}
 
-	_, err = fetchDiscoveryCatalog(t.Context(), DiscoveryOptions{
-		Client:       newReadErrorHTTPClient(),
-		CachePath:    "",
-		SourceURL:    discoveryCatalogSourceURL,
-		CacheTTL:     0,
-		FetchTimeout: 0,
-		Enabled:      true,
-	})
+func TestParseDiscoveredModelsErrors(t *testing.T) {
+	t.Parallel()
+
+	models, err := ParseDiscoveredModels([]byte(`{`))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "read model discovery catalog")
+	assert.Contains(t, err.Error(), "decode model discovery catalog")
+	assert.Empty(t, models)
+}
+
+func TestDiscoveryCacheNotModifiedErrors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name         string
+		wantErr      string
+		etag         string
+		content      []byte
+		hasContent   bool
+		touchFailure bool
+	}{
+		{
+			content:      nil,
+			name:         "missing cache",
+			etag:         "",
+			wantErr:      "cache was not available",
+			hasContent:   false,
+			touchFailure: false,
+		},
+		{
+			content:      []byte(`{`),
+			name:         "invalid cached catalog",
+			etag:         "",
+			wantErr:      "decode model discovery catalog",
+			hasContent:   true,
+			touchFailure: false,
+		},
+		{
+			content:      []byte(discoveryCatalogFixture),
+			name:         "touch failure",
+			etag:         "",
+			wantErr:      "refresh model discovery cache",
+			hasContent:   true,
+			touchFailure: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			cachePath := tempDiscoveryCachePath(t)
+			if testCase.touchFailure {
+				cachePath = filepath.Join(t.TempDir(), "missing", "models.json")
+			}
+
+			models, err := discoveredModelsFromNotModifiedCache(
+				cachePath,
+				testCase.content,
+				testCase.hasContent,
+				testCase.etag,
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.wantErr)
+			assert.Empty(t, models)
+		})
+	}
+}
+
+func TestDiscoveryCacheStaleFallbackReturnsFetchErrorWhenParseFails(t *testing.T) {
+	t.Parallel()
+
+	fetchErr := errors.New("fetch failed")
+	models, err := staleDiscoveredModelsOrError([]byte(`{`), true, fetchErr)
+	require.ErrorIs(t, err, fetchErr)
+	assert.Empty(t, models)
+}
+
+func TestDiscoveryCacheNotModifiedWritesReturnedETag(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		etag string
+	}{
+		{name: "writes returned etag", etag: "catalog-v2"},
+		{name: "keeps existing etag when response has none", etag: ""},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			cachePath := filepath.Join(t.TempDir(), "models.json")
+			require.NoError(t, writeDiscoveryCache(cachePath, []byte(discoveryCatalogFixture)))
+			require.NoError(t, writeDiscoveryCacheETag(cachePath, "catalog-v1"))
+
+			models, err := discoveredModelsFromNotModifiedCache(
+				cachePath,
+				[]byte(discoveryCatalogFixture),
+				true,
+				testCase.etag,
+			)
+			require.NoError(t, err)
+			assert.Contains(t, discoveredModelIDs(models), "openai/gpt-5.2")
+
+			cachedETag, etagExists := readDiscoveryCacheETag(cachePath)
+			require.True(t, etagExists)
+
+			if testCase.etag == "" {
+				assert.Equal(t, "catalog-v1", cachedETag)
+
+				return
+			}
+
+			assert.Equal(t, testCase.etag, cachedETag)
+		})
+	}
+}
+
+func TestDiscoveryCacheHelperEdgeCases(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, discoveryCachedETag("", false))
+	assert.Empty(t, discoveryCachedETag(filepath.Join(t.TempDir(), "missing.json"), true))
+	require.NoError(t, touchDiscoveryCache(""))
+	require.Error(t, touchDiscoveryCache(filepath.Join(t.TempDir(), "missing", "models.json")))
+
+	content, ok := readFreshDiscoveryCache("", time.Hour)
+	assert.False(t, ok)
+	assert.Nil(t, content)
+
+	content, ok = readFreshDiscoveryCache(filepath.Join(t.TempDir(), "cache.json"), 0)
+	assert.False(t, ok)
+	assert.Nil(t, content)
 }
 
 func TestDiscoveryCacheFreshFetchAndStaleFallback(t *testing.T) {
@@ -210,33 +412,168 @@ func TestDiscoveryCacheFreshFetchAndStaleFallback(t *testing.T) {
 func TestDiscoveryCacheFetchWritesCatalog(t *testing.T) {
 	t.Parallel()
 
-	serverETag := "catalog-v2"
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.Header().Set("ETag", `"`+serverETag+`"`)
-		_, err := writer.Write([]byte(discoveryCatalogFixture))
-		assert.NoError(t, err)
-	}))
-	t.Cleanup(server.Close)
-	cachePath := filepath.Join(t.TempDir(), "nested", "models.json")
+	testCases := []struct {
+		name       string
+		serverETag string
+		wantETag   string
+	}{
+		{name: "stores strong etag", serverETag: `"catalog-v2"`, wantETag: "catalog-v2"},
+		{name: "removes stale etag without response etag", serverETag: "", wantETag: ""},
+	}
 
-	models, err := DiscoverModelsCached(t.Context(), CachedDiscoveryOptions{
-		Client:       server.Client(),
-		CachePath:    cachePath,
-		SourceURL:    server.URL,
-		CacheTTL:     time.Hour,
-		FetchTimeout: 0,
-		Enabled:      true,
-	})
-	require.NoError(t, err)
-	assert.Contains(t, discoveredModelIDs(models), "openai/gpt-5.2")
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	content, err := os.ReadFile(filepath.Clean(cachePath))
-	require.NoError(t, err)
-	assert.JSONEq(t, discoveryCatalogFixture, string(content))
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				if testCase.serverETag != "" {
+					writer.Header().Set("ETag", testCase.serverETag)
+				}
 
-	cachedETag, ok := readDiscoveryCacheETag(cachePath)
-	require.True(t, ok)
-	assert.Equal(t, serverETag, cachedETag)
+				_, err := writer.Write([]byte(discoveryCatalogFixture))
+				assert.NoError(t, err)
+			}))
+			t.Cleanup(server.Close)
+			cachePath := filepath.Join(t.TempDir(), "nested", "models.json")
+			require.NoError(t, writeDiscoveryCacheETag(cachePath, "stale-etag"))
+
+			models, err := DiscoverModelsCached(t.Context(), CachedDiscoveryOptions{
+				Client:       server.Client(),
+				CachePath:    cachePath,
+				SourceURL:    server.URL,
+				CacheTTL:     time.Hour,
+				FetchTimeout: 0,
+				Enabled:      true,
+			})
+			require.NoError(t, err)
+			assert.Contains(t, discoveredModelIDs(models), "openai/gpt-5.2")
+
+			content, err := os.ReadFile(filepath.Clean(cachePath))
+			require.NoError(t, err)
+			assert.JSONEq(t, discoveryCatalogFixture, string(content))
+
+			cachedETag, etagExists := readDiscoveryCacheETag(cachePath)
+			if testCase.wantETag == "" {
+				assert.False(t, etagExists)
+				assert.Empty(t, cachedETag)
+
+				return
+			}
+
+			require.True(t, etagExists)
+			assert.Equal(t, testCase.wantETag, cachedETag)
+		})
+	}
+}
+
+func TestDiscoveryCacheWriteErrors(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		setup   func(t *testing.T) string
+		name    string
+		wantErr string
+	}{
+		{
+			setup: func(t *testing.T) string {
+				t.Helper()
+
+				return t.TempDir()
+			},
+			name:    "catalog write error",
+			wantErr: discoveryCacheWriteErrorMsg,
+		},
+		{
+			setup: func(t *testing.T) string {
+				t.Helper()
+
+				cachePath := filepath.Join(t.TempDir(), "models.json")
+				makeNonEmptyDir(t, discoveryCacheETagPath(cachePath))
+
+				return cachePath
+			},
+			name:    "etag write error",
+			wantErr: discoveryCacheWriteErrorMsg,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("ETag", `"catalog-v2"`)
+				_, err := writer.Write([]byte(discoveryCatalogFixture))
+				assert.NoError(t, err)
+			}))
+			t.Cleanup(server.Close)
+
+			models, err := DiscoverModelsCached(t.Context(), CachedDiscoveryOptions{
+				Client:       server.Client(),
+				CachePath:    testCase.setup(t),
+				SourceURL:    server.URL,
+				CacheTTL:     time.Hour,
+				FetchTimeout: 0,
+				Enabled:      true,
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.wantErr)
+			assert.Empty(t, models)
+		})
+	}
+}
+
+func TestDiscoveryCacheETagErrorPaths(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		run     func(t *testing.T) error
+		name    string
+		wantErr string
+	}{
+		{
+			run: func(t *testing.T) error {
+				t.Helper()
+
+				cachePath := filepath.Join(t.TempDir(), "models.json")
+				makeNonEmptyDir(t, discoveryCacheETagPath(cachePath))
+
+				return writeDiscoveryCacheETag(cachePath, "")
+			},
+			name:    "remove stale etag fails",
+			wantErr: "remove model discovery cache etag",
+		},
+		{
+			run: func(t *testing.T) error {
+				t.Helper()
+
+				cachePath := filepath.Join(t.TempDir(), "models.json")
+				require.NoError(t, writeDiscoveryCache(cachePath, []byte(discoveryCatalogFixture)))
+				makeNonEmptyDir(t, discoveryCacheETagPath(cachePath))
+
+				_, err := discoveredModelsFromNotModifiedCache(
+					cachePath,
+					[]byte(discoveryCatalogFixture),
+					true,
+					"catalog-v2",
+				)
+
+				return err
+			},
+			name:    "not modified etag write fails",
+			wantErr: discoveryCacheWriteErrorMsg,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := testCase.run(t)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.wantErr)
+		})
+	}
 }
 
 func TestDiscoveryCacheETagNotModifiedReusesStaleCatalog(t *testing.T) {
@@ -352,6 +689,31 @@ func TestOpenAIThinkingHelpers(t *testing.T) {
 	assert.True(t, openAISupportsXHigh("gpt-5.3-codex"))
 	assert.True(t, openAIResponsesNoReasoningModel("gpt-5.1"))
 	assert.False(t, openAIResponsesNoReasoningModel("gpt-4.1"))
+
+	levels := map[ThinkingLevel]*string{}
+	addAnthropicThinkingLevels(levels, providerAnthropic, "claude-basic")
+	assert.Contains(t, levels, ThinkingOff)
+	assert.NotContains(t, levels, ThinkingXHigh)
+}
+
+func TestCloseResponseBodyIgnoresCloseErrors(t *testing.T) {
+	t.Parallel()
+
+	closeResponseBody(errorReadCloser{})
+	closeResponseBody(errorCloseReadCloser{})
+}
+
+func tempDiscoveryCachePath(t *testing.T) string {
+	t.Helper()
+
+	return filepath.Join(t.TempDir(), "models.json")
+}
+
+func makeNonEmptyDir(t *testing.T, path string) {
+	t.Helper()
+
+	require.NoError(t, os.MkdirAll(filepath.Clean(path), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(path, "entry"), []byte("x"), 0o600))
 }
 
 func discoveredModelIDs(models []Model) []string {
@@ -396,4 +758,17 @@ func (errorReadCloser) Close() error {
 	return nil
 }
 
-var _ io.ReadCloser = errorReadCloser{}
+type errorCloseReadCloser struct{}
+
+func (errorCloseReadCloser) Read([]byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (errorCloseReadCloser) Close() error {
+	return errors.New("close failed")
+}
+
+var (
+	_ io.ReadCloser = errorReadCloser{}
+	_ io.ReadCloser = errorCloseReadCloser{}
+)
