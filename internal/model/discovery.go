@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	xetag "github.com/charmbracelet/x/etag"
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/anthropicmodel"
@@ -92,6 +93,13 @@ type discoveredCodexDefinition struct {
 	Window int
 }
 
+type discoveryCatalogFetch struct {
+	ETag    string
+	Content []byte
+	// NotModified reports that the server returned 304 and Content should come from cache.
+	NotModified bool
+}
+
 // DiscoverModels fetches model metadata from a models.dev-compatible API.
 func DiscoverModels(ctx context.Context, options DiscoveryOptions) ([]Model, error) {
 	if !options.Enabled {
@@ -150,6 +158,25 @@ func ParseDiscoveredModels(content []byte) ([]Model, error) {
 }
 
 func fetchDiscoveryCatalog(ctx context.Context, options DiscoveryOptions) ([]byte, error) {
+	fetched, err := fetchDiscoveryCatalogConditional(ctx, options, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if fetched.NotModified {
+		return nil, oops.In("model").Code("model_discovery_not_modified").Errorf(
+			"fetch model discovery catalog: unexpected not modified response",
+		)
+	}
+
+	return fetched.Content, nil
+}
+
+func fetchDiscoveryCatalogConditional(
+	ctx context.Context,
+	options DiscoveryOptions,
+	cachedETag string,
+) (discoveryCatalogFetch, error) {
 	client := options.Client
 	if client == nil {
 		client = http.DefaultClient
@@ -164,20 +191,36 @@ func fetchDiscoveryCatalog(ctx context.Context, options DiscoveryOptions) ([]byt
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, options.SourceURL, http.NoBody)
 	if err != nil {
-		return nil, oops.In("model").Code("model_discovery_request").Wrapf(err, "create model discovery request")
+		return discoveryCatalogFetch{}, oops.In("model").Code("model_discovery_request").Wrapf(
+			err,
+			"create model discovery request",
+		)
 	}
 
 	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept-Encoding", "identity")
 	request.Header.Set("User-Agent", "librecode model discovery")
+	xetag.Request(request, normalizeDiscoveryETag(cachedETag))
 
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, oops.In("model").Code("model_discovery_fetch").Wrapf(err, "fetch model discovery catalog")
+		return discoveryCatalogFetch{}, oops.In("model").Code("model_discovery_fetch").Wrapf(
+			err,
+			"fetch model discovery catalog",
+		)
 	}
 	defer closeResponseBody(response.Body)
 
+	if response.StatusCode == http.StatusNotModified {
+		return discoveryCatalogFetch{
+			Content:     nil,
+			ETag:        normalizeDiscoveryETag(response.Header.Get("ETag")),
+			NotModified: true,
+		}, nil
+	}
+
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, oops.In("model").Code("model_discovery_status").Errorf(
+		return discoveryCatalogFetch{}, oops.In("model").Code("model_discovery_status").Errorf(
 			"fetch model discovery catalog: unexpected status %s",
 			response.Status,
 		)
@@ -185,10 +228,17 @@ func fetchDiscoveryCatalog(ctx context.Context, options DiscoveryOptions) ([]byt
 
 	content, err := io.ReadAll(io.LimitReader(response.Body, discoveryCatalogMaxBytes))
 	if err != nil {
-		return nil, oops.In("model").Code("model_discovery_read").Wrapf(err, "read model discovery catalog")
+		return discoveryCatalogFetch{}, oops.In("model").Code("model_discovery_read").Wrapf(
+			err,
+			"read model discovery catalog",
+		)
 	}
 
-	return content, nil
+	return discoveryCatalogFetch{
+		Content:     content,
+		ETag:        normalizeDiscoveryETag(response.Header.Get("ETag")),
+		NotModified: false,
+	}, nil
 }
 
 func discoveryProviderMappings() []discoveryProviderMapping {
