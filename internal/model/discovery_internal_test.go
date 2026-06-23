@@ -478,6 +478,7 @@ func TestDiscoveryCacheWriteErrors(t *testing.T) {
 			setup: func(t *testing.T) string {
 				t.Helper()
 
+				// Return a directory path where a file path is expected to force catalog writes to fail.
 				return t.TempDir()
 			},
 			name:    "catalog write error",
@@ -712,6 +713,7 @@ func tempDiscoveryCachePath(t *testing.T) string {
 func makeNonEmptyDir(t *testing.T, path string) {
 	t.Helper()
 
+	// Create a non-empty directory to force write/remove operations to fail.
 	require.NoError(t, os.MkdirAll(filepath.Clean(path), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(path, "entry"), []byte("x"), 0o600))
 }
