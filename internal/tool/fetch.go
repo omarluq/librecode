@@ -38,6 +38,7 @@ const (
 	fetchJSONContentType   = "application/json"
 	fetchHTMLContentType   = "text/html"
 	fetchXHTMLContentType  = "application/xhtml+xml"
+	fetchRenderHTMLContext = "render fetched html"
 	fetchMinCodeFenceWidth = 3
 )
 
@@ -490,7 +491,7 @@ func fetchedHTMLForMarkdown(doc *goquery.Document) (string, error) {
 	if bodySelection.Length() == 0 {
 		htmlContent, err := doc.Html()
 		if err != nil {
-			return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, "render fetched html")
+			return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
 		}
 
 		return htmlContent, nil
@@ -498,7 +499,7 @@ func fetchedHTMLForMarkdown(doc *goquery.Document) (string, error) {
 
 	bodyHTML, err := bodySelection.Html()
 	if err != nil {
-		return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, "render fetched html")
+		return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
 	}
 
 	return bodyHTML, nil
@@ -509,7 +510,7 @@ func fetchedHTMLBody(doc *goquery.Document) (string, error) {
 	if bodySelection.Length() == 0 {
 		htmlContent, err := doc.Html()
 		if err != nil {
-			return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, "render fetched html")
+			return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
 		}
 
 		return htmlContent, nil
@@ -517,7 +518,7 @@ func fetchedHTMLBody(doc *goquery.Document) (string, error) {
 
 	bodyHTML, err := bodySelection.Html()
 	if err != nil {
-		return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, "render fetched html")
+		return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
 	}
 
 	return "<html>\n<body>\n" + strings.TrimSpace(bodyHTML) + "\n</body>\n</html>", nil
