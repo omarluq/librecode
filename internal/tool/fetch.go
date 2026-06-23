@@ -473,7 +473,7 @@ func cleanFetchDocument(doc *goquery.Document) {
 }
 
 func fetchedHTMLMarkdown(doc *goquery.Document, finalURL string) (string, error) {
-	htmlContent, err := fetchedHTMLForMarkdown(doc)
+	htmlContent, _, err := fetchedDocumentHTML(doc)
 	if err != nil {
 		return "", err
 	}
@@ -486,42 +486,36 @@ func fetchedHTMLMarkdown(doc *goquery.Document, finalURL string) (string, error)
 	return normalizeFetchedMarkdown(markdown), nil
 }
 
-func fetchedHTMLForMarkdown(doc *goquery.Document) (string, error) {
+func fetchedDocumentHTML(doc *goquery.Document) (htmlContent string, foundBody bool, err error) {
 	bodySelection := doc.Find("body").First()
-	if bodySelection.Length() == 0 {
-		htmlContent, err := doc.Html()
+	if bodySelection.Length() > 0 {
+		htmlContent, err = bodySelection.Html()
 		if err != nil {
-			return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
+			return "", false, oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
 		}
 
-		return htmlContent, nil
+		return htmlContent, true, nil
 	}
 
-	bodyHTML, err := bodySelection.Html()
+	htmlContent, err = doc.Html()
 	if err != nil {
-		return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
+		return "", false, oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
 	}
 
-	return bodyHTML, nil
+	return htmlContent, false, nil
 }
 
 func fetchedHTMLBody(doc *goquery.Document) (string, error) {
-	bodySelection := doc.Find("body").First()
-	if bodySelection.Length() == 0 {
-		htmlContent, err := doc.Html()
-		if err != nil {
-			return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
-		}
+	htmlContent, foundBody, err := fetchedDocumentHTML(doc)
+	if err != nil {
+		return "", err
+	}
 
+	if !foundBody {
 		return htmlContent, nil
 	}
 
-	bodyHTML, err := bodySelection.Html()
-	if err != nil {
-		return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, fetchRenderHTMLContext)
-	}
-
-	return "<html>\n<body>\n" + strings.TrimSpace(bodyHTML) + "\n</body>\n</html>", nil
+	return "<html>\n<body>\n" + strings.TrimSpace(htmlContent) + "\n</body>\n</html>", nil
 }
 
 func normalizeFetchedMarkdown(markdown string) string {
