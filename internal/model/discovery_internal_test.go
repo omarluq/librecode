@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	xetag "github.com/charmbracelet/x/etag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,6 +40,7 @@ func TestDiscoverModelsFetchesCatalog(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		assert.Equal(t, http.MethodGet, request.Method)
 		assert.Equal(t, "application/json", request.Header.Get("Accept"))
+		assert.Equal(t, "identity", request.Header.Get("Accept-Encoding"))
 
 		_, err := writer.Write([]byte(discoveryCatalogFixture))
 		assert.NoError(t, err)
@@ -208,7 +210,9 @@ func TestDiscoveryCacheFreshFetchAndStaleFallback(t *testing.T) {
 func TestDiscoveryCacheFetchWritesCatalog(t *testing.T) {
 	t.Parallel()
 
+	serverETag := "catalog-v2"
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("ETag", `"`+serverETag+`"`)
 		_, err := writer.Write([]byte(discoveryCatalogFixture))
 		assert.NoError(t, err)
 	}))
@@ -229,19 +233,83 @@ func TestDiscoveryCacheFetchWritesCatalog(t *testing.T) {
 	content, err := os.ReadFile(filepath.Clean(cachePath))
 	require.NoError(t, err)
 	assert.JSONEq(t, discoveryCatalogFixture, string(content))
+
+	cachedETag, ok := readDiscoveryCacheETag(cachePath)
+	require.True(t, ok)
+	assert.Equal(t, serverETag, cachedETag)
+}
+
+func TestDiscoveryCacheETagNotModifiedReusesStaleCatalog(t *testing.T) {
+	t.Parallel()
+
+	cachePath := filepath.Join(t.TempDir(), "models.json")
+	require.NoError(t, writeDiscoveryCache(cachePath, []byte(discoveryCatalogFixture)))
+	require.NoError(t, writeDiscoveryCacheETag(cachePath, "catalog-v1"))
+
+	oldTime := time.Now().Add(-2 * time.Hour)
+	require.NoError(t, os.Chtimes(cachePath, oldTime, oldTime))
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		assert.True(t, xetag.Matches(request, "catalog-v1"))
+		assert.Equal(t, "identity", request.Header.Get("Accept-Encoding"))
+		writer.WriteHeader(http.StatusNotModified)
+	}))
+	t.Cleanup(server.Close)
+
+	models, err := DiscoverModelsCached(t.Context(), CachedDiscoveryOptions{
+		Client:       server.Client(),
+		CachePath:    cachePath,
+		SourceURL:    server.URL,
+		CacheTTL:     time.Hour,
+		FetchTimeout: 0,
+		Enabled:      true,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, discoveredModelIDs(models), "openai/gpt-5.2")
+
+	stat, err := os.Stat(filepath.Clean(cachePath))
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now(), stat.ModTime(), time.Second)
+}
+
+func TestDiscoveryCacheETagHelpers(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "quoted", in: `"abc"`, want: "abc"},
+		{name: "plain", in: "abc\n", want: "abc"},
+		{name: "weak ignored", in: `W/"abc"`, want: ""},
+		{name: "multi ignored", in: `"abc", "def"`, want: ""},
+		{name: "empty", in: "  ", want: ""},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, testCase.want, normalizeDiscoveryETag(testCase.in))
+		})
+	}
 }
 
 func TestDiscoveryCacheHelpers(t *testing.T) {
 	t.Parallel()
 
 	require.NoError(t, writeDiscoveryCache("", []byte("{}")))
+	require.NoError(t, writeDiscoveryCacheETag("", "etag"))
 
-	content, ok := readDiscoveryCache("")
-	assert.False(t, ok)
+	content, cacheExists := readDiscoveryCache("")
+	assert.False(t, cacheExists)
 	assert.Nil(t, content)
-	content, ok = readFreshDiscoveryCache(filepath.Join(t.TempDir(), "missing.json"), time.Hour)
-	assert.False(t, ok)
+	content, cacheExists = readFreshDiscoveryCache(filepath.Join(t.TempDir(), "missing.json"), time.Hour)
+	assert.False(t, cacheExists)
 	assert.Nil(t, content)
+	etag, etagExists := readDiscoveryCacheETag(filepath.Join(t.TempDir(), "missing.json"))
+	assert.False(t, etagExists)
+	assert.Empty(t, etag)
 
 	models, err := DiscoverModelsCached(t.Context(), CachedDiscoveryOptions{
 		Client:       nil,
