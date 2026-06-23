@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	github.com/JohannesKaufmann/html-to-markdown v1.6.0
+	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/MicahParks/jwkset v0.11.0
 	github.com/MicahParks/keyfunc/v3 v3.8.0
 	github.com/Oudwins/zog v0.22.2
@@ -55,7 +56,7 @@ require (
 require (
 	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/DmitriyVTitov/size v1.5.0 // indirect
-	github.com/andybalholm/cascadia v1.3.3 // indirect
+	github.com/andybalholm/cascadia v1.3.4 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
@@ -72,7 +73,7 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.21 // indirect
+	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
@@ -105,9 +106,9 @@ require (
 	golang.org/x/exp/shiny v0.0.0-20250606033433-dcc06ee1d476 // indirect
 	golang.org/x/image v0.28.0 // indirect
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
-	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
