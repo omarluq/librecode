@@ -9,12 +9,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/html"
 )
 
 const (
@@ -540,6 +543,86 @@ func TestFetchTool_HTTPClientErrors(t *testing.T) {
 	}
 }
 
+func TestFetchTool_FetchFormattingErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		mutate      func(*goquery.Document)
+		name        string
+		format      string
+		wantErr     string
+		wantContent string
+	}{
+		{
+			mutate: func(doc *goquery.Document) {
+				doc.Find("body").First().AppendNodes(fetchTestErrorNode())
+			},
+			name:        "markdown body render error",
+			format:      fetchFormatMarkdown,
+			wantErr:     fetchRenderHTMLContext,
+			wantContent: "",
+		},
+		{
+			mutate: func(doc *goquery.Document) {
+				doc.Find("body").Remove()
+				doc.Selection.Nodes[0].AppendChild(fetchTestErrorNode())
+			},
+			name:        "markdown document render error",
+			format:      fetchFormatMarkdown,
+			wantErr:     fetchRenderHTMLContext,
+			wantContent: "",
+		},
+		{
+			mutate: func(doc *goquery.Document) {
+				doc.Find("body").Remove()
+				doc.Selection.Nodes[0].AppendChild(fetchTestErrorNode())
+			},
+			name:        "html document render error",
+			format:      fetchFormatHTML,
+			wantErr:     fetchRenderHTMLContext,
+			wantContent: "",
+		},
+		{
+			mutate: func(doc *goquery.Document) {
+				doc.Find("body").Remove()
+			},
+			name:        "html document fallback",
+			format:      fetchFormatHTML,
+			wantErr:     "",
+			wantContent: "<html><head></head></html>",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			doc := fetchTestDocument(t, "<html><head></head><body><main>ok</main></body></html>")
+			testCase.mutate(doc)
+
+			var (
+				content string
+				err     error
+			)
+			if testCase.format == fetchFormatMarkdown {
+				content, err = fetchedHTMLMarkdown(doc, fetchTestExampleURL)
+			} else {
+				content, err = fetchedHTMLBody(doc)
+			}
+
+			if testCase.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), testCase.wantErr)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, testCase.wantContent, content)
+		})
+	}
+}
+
 func TestFetchTool_FencedCodeBlockUsesSafeFence(t *testing.T) {
 	t.Parallel()
 
@@ -745,6 +828,28 @@ func TestFetchTool_NetworkValidationEdges(t *testing.T) {
 		assert.Same(t, http.DefaultClient, fetchTool.httpClient())
 	})
 
+	t.Run("build request error", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := fetchTestPrivateNetworkTool().fetchURL(
+			context.Background(),
+			&url.URL{Scheme: "http", Host: "exa mple.com"},
+			time.Second,
+		)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "build fetch request")
+	})
+
+	t.Run("missing host validation", func(t *testing.T) {
+		t.Parallel()
+
+		err := NewFetchTool().validatePublicFetchURL(context.Background(), &url.URL{Scheme: "https"})
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "host is required")
+	})
+
 	t.Run("lookup error", func(t *testing.T) {
 		t.Parallel()
 
@@ -759,6 +864,15 @@ func TestFetchTool_NetworkValidationEdges(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "dns unavailable")
+	})
+
+	t.Run("default resolver error", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := NewFetchTool().lookupFetchIPAddrs(context.Background(), "bad host name")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "resolve fetch url host")
 	})
 
 	t.Run("lookup has no addresses", func(t *testing.T) {
@@ -814,9 +928,11 @@ func TestFetchTool_URLAndRenderingHelpers(t *testing.T) {
 		assert.Empty(t, wrapFetchedText(" \n\t "))
 	})
 
-	t.Run("utf8 prefix keeps valid boundary", func(t *testing.T) {
+	t.Run("utf8 prefix", func(t *testing.T) {
 		t.Parallel()
 
+		assert.Equal(t, "content", validUTF8Prefix("content", 0))
+		assert.Equal(t, "short", validUTF8Prefix("short", len("short")))
 		assert.Empty(t, validUTF8Prefix("éclair", 1))
 		assert.Equal(t, "é", validUTF8Prefix("éclair", len("é")))
 	})
@@ -832,6 +948,19 @@ func TestFetchTool_URLAndRenderingHelpers(t *testing.T) {
 
 		assert.Contains(t, output, "Response read limit reached")
 	})
+}
+
+func fetchTestDocument(t *testing.T, source string) *goquery.Document {
+	t.Helper()
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(source))
+	require.NoError(t, err)
+
+	return doc
+}
+
+func fetchTestErrorNode() *html.Node {
+	return &html.Node{Type: html.ErrorNode}
 }
 
 func fetchTestHTMLServer(t *testing.T) *httptest.Server {
