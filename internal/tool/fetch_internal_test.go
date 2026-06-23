@@ -23,6 +23,7 @@ const (
 	fetchTestIgnoredHeader = "Ignore header"
 	fetchTestPlainText     = "plain text"
 	fetchTestTextPlain     = "text/plain"
+	fetchTestInvalidLimit  = "invalid limit"
 	serverURLPlaceholder   = "{server_url}"
 )
 
@@ -168,6 +169,8 @@ func TestFetchTool_ValidationErrors(t *testing.T) {
 	t.Parallel()
 
 	timeoutZero := 0
+	offsetZero := 0
+	limitZero := 0
 	tests := []struct {
 		name    string
 		input   FetchInput
@@ -183,9 +186,37 @@ func TestFetchTool_ValidationErrors(t *testing.T) {
 			wantErr: "format must be markdown",
 		},
 		{
-			name:    "invalid timeout",
-			input:   FetchInput{Timeout: &timeoutZero, URL: fetchTestExampleURL, Format: ""},
+			name: "invalid timeout",
+			input: FetchInput{
+				Timeout: &timeoutZero,
+				Offset:  nil,
+				Limit:   nil,
+				URL:     fetchTestExampleURL,
+				Format:  "",
+			},
 			wantErr: "timeout must be greater",
+		},
+		{
+			name: "invalid offset",
+			input: FetchInput{
+				Timeout: nil,
+				Offset:  &offsetZero,
+				Limit:   nil,
+				URL:     fetchTestExampleURL,
+				Format:  "",
+			},
+			wantErr: "offset must be greater",
+		},
+		{
+			name: fetchTestInvalidLimit,
+			input: FetchInput{
+				Timeout: nil,
+				Offset:  nil,
+				Limit:   &limitZero,
+				URL:     fetchTestExampleURL,
+				Format:  "",
+			},
+			wantErr: "limit must be greater",
 		},
 	}
 
@@ -250,6 +281,56 @@ func TestFetchTool_TextOutputWrapsLongHTMLText(t *testing.T) {
 	assert.LessOrEqual(t, len(strings.Split(result.Text(), "\n")[0]), fetchTextWrapWidth)
 }
 
+func TestFetchTool_OffsetAndLimit(t *testing.T) {
+	t.Parallel()
+
+	lineOffset := 2
+	lineLimit := 2
+
+	server := fetchTestContentServer(t, fetchTestTextPlain, []byte("one\ntwo\nthree\nfour"), http.StatusOK)
+	defer server.Close()
+
+	result, err := fetchTestPrivateNetworkTool().Fetch(
+		context.Background(),
+		FetchInput{
+			Timeout: nil,
+			Offset:  &lineOffset,
+			Limit:   &lineLimit,
+			URL:     server.URL,
+			Format:  fetchFormatText,
+		},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, "two\nthree\n\n[1 more lines in fetched output. Use offset=4 to continue.]", result.Text())
+	assert.Equal(t, 2, result.Details["offset"])
+	assert.Equal(t, 2, result.Details["limit"])
+	assert.Equal(t, 4, result.Details["total_lines"])
+}
+
+func TestFetchTool_OffsetBeyondOutput(t *testing.T) {
+	t.Parallel()
+
+	lineOffset := 3
+
+	server := fetchTestContentServer(t, fetchTestTextPlain, []byte("one\ntwo"), http.StatusOK)
+	defer server.Close()
+
+	_, err := fetchTestPrivateNetworkTool().Fetch(
+		context.Background(),
+		FetchInput{
+			Timeout: nil,
+			Offset:  &lineOffset,
+			Limit:   nil,
+			URL:     server.URL,
+			Format:  fetchFormatText,
+		},
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "offset is beyond fetched output")
+}
+
 func TestFetchTool_RedirectAndTruncationDetails(t *testing.T) {
 	t.Parallel()
 
@@ -279,7 +360,8 @@ func TestFetchTool_RedirectAndTruncationDetails(t *testing.T) {
 	assert.Equal(t, server.URL+"/final", result.Details["final_url"])
 	assert.True(t, fetchDetailBoolForTest(t, result, "truncated"))
 	assert.Contains(t, result.Details, detailTruncation)
-	assert.Contains(t, result.Text(), "Showing first")
+	assert.Contains(t, result.Text(), "Showing lines 1-2000")
+	assert.Contains(t, result.Text(), "Use offset=2001 to continue")
 }
 
 func TestFetchTool_TruncatesSingleLongLine(t *testing.T) {
@@ -299,9 +381,11 @@ func TestFetchTool_TruncatesSingleLongLine(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	assert.Len(t, result.Text(), DefaultMaxBytes+len("\n\n[Showing first 1 lines of 1 (50KiB limit).]"))
+
+	truncationNotice := "\n\n[Showing lines 1-1 of 1 (50KiB limit). Use offset=2 to continue.]"
+	assert.Len(t, result.Text(), DefaultMaxBytes+len(truncationNotice))
 	assert.True(t, fetchDetailBoolForTest(t, result, "truncated"))
-	assert.Contains(t, result.Text(), "Showing first 1 lines")
+	assert.Contains(t, result.Text(), "Showing lines 1-1")
 }
 
 func TestFetchTool_ReadLimitDetails(t *testing.T) {
@@ -677,7 +761,7 @@ func replaceFetchServerURL(values []string, serverURL string) []string {
 }
 
 func fetchInputForTest(rawURL, format string) FetchInput {
-	return FetchInput{Timeout: nil, URL: rawURL, Format: format}
+	return FetchInput{Timeout: nil, Offset: nil, Limit: nil, URL: rawURL, Format: format}
 }
 
 func fetchDetailBoolForTest(t *testing.T, result Result, key string) bool {
