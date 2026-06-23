@@ -14,7 +14,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	md "github.com/JohannesKaufmann/html-to-markdown"
+	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
+	"github.com/JohannesKaufmann/html-to-markdown/v2/converter"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/omarluq/librecode/internal/units"
 	"github.com/samber/oops"
@@ -453,7 +454,7 @@ func formatFetchedHTML(bodyText, finalURL, format string) (content, title string
 
 	switch format {
 	case fetchFormatMarkdown:
-		content = fetchedHTMLMarkdown(doc, finalURL)
+		content, err = fetchedHTMLMarkdown(doc, finalURL)
 	case fetchFormatText:
 		content = wrapFetchedText(doc.Find("body").Text())
 	case fetchFormatHTML:
@@ -470,33 +471,37 @@ func cleanFetchDocument(doc *goquery.Document) {
 	doc.Find(fetchNoiseSelector).Remove()
 }
 
-func fetchedHTMLMarkdown(doc *goquery.Document, finalURL string) string {
-	converter := md.NewConverter(fetchMarkdownDomain(finalURL), true, fetchMarkdownOptions(finalURL))
-	markdown := converter.Convert(doc.Selection)
-
-	return normalizeFetchedMarkdown(markdown)
-}
-
-func fetchMarkdownOptions(finalURL string) *md.Options {
-	return &md.Options{
-		GetAbsoluteURL: func(_ *goquery.Selection, rawURL, _ string) string {
-			return resolveFetchURL(finalURL, rawURL)
-		},
-	}
-}
-
-func resolveFetchURL(baseURL, rawURL string) string {
-	parsedURL, err := url.Parse(rawURL)
-	if err != nil || parsedURL.IsAbs() {
-		return rawURL
-	}
-
-	parsedBaseURL, err := url.Parse(baseURL)
+func fetchedHTMLMarkdown(doc *goquery.Document, finalURL string) (string, error) {
+	htmlContent, err := fetchedHTMLForMarkdown(doc)
 	if err != nil {
-		return rawURL
+		return "", err
 	}
 
-	return parsedBaseURL.ResolveReference(parsedURL).String()
+	markdown, err := htmltomarkdown.ConvertString(htmlContent, converter.WithDomain(finalURL))
+	if err != nil {
+		return "", oops.In("tool").Code("fetch_convert_markdown").Wrapf(err, "convert fetched html to markdown")
+	}
+
+	return normalizeFetchedMarkdown(markdown), nil
+}
+
+func fetchedHTMLForMarkdown(doc *goquery.Document) (string, error) {
+	bodySelection := doc.Find("body").First()
+	if bodySelection.Length() == 0 {
+		htmlContent, err := doc.Html()
+		if err != nil {
+			return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, "render fetched html")
+		}
+
+		return htmlContent, nil
+	}
+
+	bodyHTML, err := bodySelection.Html()
+	if err != nil {
+		return "", oops.In("tool").Code("fetch_render_html").Wrapf(err, "render fetched html")
+	}
+
+	return bodyHTML, nil
 }
 
 func fetchedHTMLBody(doc *goquery.Document) (string, error) {
@@ -516,15 +521,6 @@ func fetchedHTMLBody(doc *goquery.Document) (string, error) {
 	}
 
 	return "<html>\n<body>\n" + strings.TrimSpace(bodyHTML) + "\n</body>\n</html>", nil
-}
-
-func fetchMarkdownDomain(finalURL string) string {
-	parsedURL, err := url.Parse(finalURL)
-	if err != nil {
-		return ""
-	}
-
-	return parsedURL.Host
 }
 
 func normalizeFetchedMarkdown(markdown string) string {
