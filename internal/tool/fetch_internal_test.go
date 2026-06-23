@@ -673,6 +673,167 @@ func TestFetchTool_ExecuteAndTimeoutClamp(t *testing.T) {
 	}
 }
 
+func TestFetchTool_ExecuteDecodeError(t *testing.T) {
+	t.Parallel()
+
+	args, err := ArgumentsFromRaw([]byte(`{"url":123}`))
+	require.NoError(t, err)
+
+	result, err := NewFetchTool().Execute(context.Background(), args)
+
+	require.Error(t, err)
+	assert.Empty(t, result.Text())
+}
+
+func TestFetchTool_RedirectValidation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		baseCheckRedirect func(*http.Request, []*http.Request) error
+		name              string
+		wantErr           string
+		via               []*http.Request
+	}{
+		{
+			baseCheckRedirect: func(*http.Request, []*http.Request) error {
+				return errors.New("custom redirect denied")
+			},
+			name:    "base redirect policy error",
+			via:     nil,
+			wantErr: "custom redirect denied",
+		},
+		{
+			baseCheckRedirect: nil,
+			name:              "too many redirects",
+			via:               make([]*http.Request, fetchMaxRedirects),
+			wantErr:           "stopped after 10 redirects",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			fetchTool := fetchTestPrivateNetworkTool()
+			fetchTool.client = &http.Client{CheckRedirect: testCase.baseCheckRedirect}
+			client := fetchTool.httpClientWithRedirectValidation(context.Background())
+			request, err := http.NewRequestWithContext(
+				context.Background(),
+				http.MethodGet,
+				fetchTestExampleURL,
+				http.NoBody,
+			)
+			require.NoError(t, err)
+
+			err = client.CheckRedirect(request, testCase.via)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.wantErr)
+		})
+	}
+}
+
+func TestFetchTool_NetworkValidationEdges(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil client falls back to default", func(t *testing.T) {
+		t.Parallel()
+
+		fetchTool := NewFetchTool()
+		fetchTool.client = nil
+
+		assert.Same(t, http.DefaultClient, fetchTool.httpClient())
+	})
+
+	t.Run("lookup error", func(t *testing.T) {
+		t.Parallel()
+
+		fetchTool := NewFetchTool()
+		fetchTool.lookupIPAddrs = func(context.Context, string) ([]net.IPAddr, error) {
+			return nil, errors.New("dns unavailable")
+		}
+		requestURL, err := parseFetchURL(fetchTestExampleURL)
+		require.NoError(t, err)
+
+		err = fetchTool.validatePublicFetchURL(context.Background(), requestURL)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "dns unavailable")
+	})
+
+	t.Run("lookup has no addresses", func(t *testing.T) {
+		t.Parallel()
+
+		fetchTool := fetchTestLookupTool(map[string][]net.IPAddr{"example.com": {}})
+		requestURL, err := parseFetchURL(fetchTestExampleURL)
+		require.NoError(t, err)
+
+		err = fetchTool.validatePublicFetchURL(context.Background(), requestURL)
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "returned no addresses")
+	})
+
+	t.Run("default resolver", func(t *testing.T) {
+		t.Parallel()
+
+		addrs, err := NewFetchTool().lookupFetchIPAddrs(context.Background(), "localhost")
+
+		require.NoError(t, err)
+		assert.NotEmpty(t, addrs)
+	})
+}
+
+func TestFetchTool_URLAndRenderingHelpers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ip host zone is ignored", func(t *testing.T) {
+		t.Parallel()
+
+		assert.True(t, parseFetchHostIP("fe80::1%eth0").IsLinkLocalUnicast())
+	})
+
+	t.Run("invalid html format", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := formatFetchedHTML("<html><body>ok</body></html>", fetchTestExampleURL, "xml")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "format must be markdown")
+	})
+
+	t.Run("blank lines collapse", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, "one\n\ntwo", collapseBlankLines("one\n\n\n\ntwo"))
+	})
+
+	t.Run("empty text wraps to empty", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Empty(t, wrapFetchedText(" \n\t "))
+	})
+
+	t.Run("utf8 prefix keeps valid boundary", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Empty(t, validUTF8Prefix("éclair", 1))
+		assert.Equal(t, "é", validUTF8Prefix("éclair", len("é")))
+	})
+
+	t.Run("read limit notice without output truncation", func(t *testing.T) {
+		t.Parallel()
+
+		output := fetchOutputText(
+			fetchTestTruncation("small"),
+			fetchTestSelection(0, 1, nil),
+			true,
+		)
+
+		assert.Contains(t, output, "Response read limit reached")
+	})
+}
+
 func fetchTestHTMLServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
@@ -713,6 +874,30 @@ func fetchTestPrivateNetworkServer(handler http.Handler) *httptest.Server {
 	server := httptest.NewServer(handler)
 
 	return server
+}
+
+func fetchTestTruncation(content string) *TruncationResult {
+	return &TruncationResult{
+		Content:               content,
+		TruncatedBy:           "",
+		TotalLines:            0,
+		TotalBytes:            0,
+		OutputLines:           0,
+		OutputBytes:           0,
+		MaxLines:              0,
+		MaxBytes:              0,
+		Truncated:             false,
+		LastLinePartial:       false,
+		FirstLineExceedsLimit: false,
+	}
+}
+
+func fetchTestSelection(startLine, totalLines int, userLimitedLines *int) fetchSelection {
+	return fetchSelection{
+		userLimitedLines: userLimitedLines,
+		startLine:        startLine,
+		totalLines:       totalLines,
+	}
 }
 
 func fetchTestPrivateNetworkTool() *FetchTool {
