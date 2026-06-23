@@ -71,9 +71,11 @@ func schemaFieldComments() map[reflect.Type]map[string]string {
 			schemaPathField: "Path to the file to edit, relative to the current workspace or absolute.",
 		},
 		reflect.TypeFor[FetchInput](): {
-			"Timeout": "Optional timeout in seconds, clamped to 120 seconds.",
-			"URL":     "Explicit http:// or https:// URL to fetch.",
-			"Format":  "Output format: 'markdown' (default), 'text', or 'html'.",
+			"Timeout":        "Optional timeout in seconds, clamped to 120 seconds.",
+			"Offset":         "Optional 1-indexed formatted output line to start from.",
+			schemaLimitField: "Optional maximum number of formatted output lines to return.",
+			"URL":            "Explicit http:// or https:// URL to fetch.",
+			"Format":         "Output format: 'markdown' (default), 'text', or 'html'.",
 		},
 		reflect.TypeFor[FindInput](): {
 			schemaLimitField: "Optional maximum number of paths.",

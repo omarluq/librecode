@@ -43,6 +43,8 @@ const (
 // FetchInput contains arguments for the fetch tool.
 type FetchInput struct {
 	Timeout *int   `json:"timeout,omitempty"`
+	Offset  *int   `json:"offset,omitempty"`
+	Limit   *int   `json:"limit,omitempty"`
 	URL     string `json:"url"`
 	Format  string `json:"format,omitempty" jsonschema:"enum=markdown,enum=text,enum=html"`
 }
@@ -108,16 +110,22 @@ func (fetchTool *FetchTool) Fetch(ctx context.Context, input FetchInput) (Result
 		return emptyToolResult(), err
 	}
 
-	truncation := truncateFetchedContent(content)
-	details := fetchDetails(input.URL, responseInfo, format, &truncation, title)
+	selectedContent, selection, err := selectFetchedContent(content, input.Offset, input.Limit)
+	if err != nil {
+		return emptyToolResult(), err
+	}
 
-	return TextResult(fetchOutputText(&truncation), details), nil
+	truncation := truncateFetchedContent(selectedContent)
+	details := fetchDetails(input.URL, responseInfo, format, &truncation, title, selection)
+
+	return TextResult(fetchOutputText(&truncation, selection, responseInfo.readLimitReached), details), nil
 }
 
 func fetchDescription() string {
 	return fmt.Sprintf(
 		"Fetch an explicit HTTP(S) URL and return markdown, text, or HTML. "+
-			"Default format is markdown. Response reads are capped at %s and output is truncated to %d lines or %s.",
+			"Default format is markdown. Response reads are capped at %s and output is truncated to %d lines or %s. "+
+			"Use offset/limit for large fetched output.",
 		FormatSize(fetchReadLimitBytes),
 		DefaultMaxLines,
 		FormatSize(DefaultMaxBytes),
@@ -137,6 +145,10 @@ func validateFetchInput(input FetchInput) (*url.URL, string, time.Duration, erro
 
 	timeout, err := normalizeFetchTimeout(input.Timeout)
 	if err != nil {
+		return nil, "", 0, err
+	}
+
+	if err := validateFetchPagination(input); err != nil {
 		return nil, "", 0, err
 	}
 
@@ -192,6 +204,18 @@ func normalizeFetchTimeout(timeout *int) (time.Duration, error) {
 	}
 
 	return time.Duration(*timeout) * time.Second, nil
+}
+
+func validateFetchPagination(input FetchInput) error {
+	if input.Offset != nil && *input.Offset < 1 {
+		return oops.In("tool").Code("fetch_invalid_offset").Errorf("fetch offset must be greater than zero")
+	}
+
+	if input.Limit != nil && *input.Limit < 1 {
+		return oops.In("tool").Code("fetch_invalid_limit").Errorf("fetch limit must be greater than zero")
+	}
+
+	return nil
 }
 
 type fetchResponseInfo struct {
@@ -631,6 +655,49 @@ func isFetchJSON(contentType string) bool {
 	return contentType == fetchJSONContentType || strings.HasSuffix(contentType, "+json")
 }
 
+type fetchSelection struct {
+	userLimitedLines *int
+	startLine        int
+	totalLines       int
+}
+
+func selectFetchedContent(content string, offset, limit *int) (string, fetchSelection, error) {
+	lines := strings.Split(content, "\n")
+
+	startLine := 0
+	if offset != nil {
+		startLine = *offset - 1
+	}
+
+	if startLine >= len(lines) {
+		return "", fetchSelection{}, oops.
+			In("tool").
+			Code("fetch_offset_beyond_output").
+			With("offset", offset).
+			With("total_lines", len(lines)).
+			Errorf("fetch offset is beyond fetched output")
+	}
+
+	selectedContent, userLimitedLines := selectFetchLines(lines, startLine, limit)
+
+	return selectedContent, fetchSelection{
+		startLine:        startLine,
+		totalLines:       len(lines),
+		userLimitedLines: userLimitedLines,
+	}, nil
+}
+
+func selectFetchLines(lines []string, startLine int, limit *int) (selectedContent string, userLimitedLines *int) {
+	if limit == nil {
+		return strings.Join(lines[startLine:], "\n"), nil
+	}
+
+	endLine := min(startLine+*limit, len(lines))
+	selectedLines := endLine - startLine
+
+	return strings.Join(lines[startLine:endLine], "\n"), &selectedLines
+}
+
 func truncateFetchedContent(content string) TruncationResult {
 	truncation := TruncateHead(content, TruncationOptions{MaxLines: 0, MaxBytes: 0})
 	if !truncation.FirstLineExceedsLimit {
@@ -664,6 +731,7 @@ func fetchDetails(
 	format string,
 	truncation *TruncationResult,
 	title string,
+	selection fetchSelection,
 ) map[string]any {
 	details := map[string]any{
 		"url":                requestedURL,
@@ -675,6 +743,12 @@ func fetchDetails(
 		"truncated":          truncation.Truncated || responseInfo.readLimitReached,
 		"bytes_read":         responseInfo.bytesRead,
 		"read_limit_reached": responseInfo.readLimitReached,
+		"offset":             selection.startLine + 1,
+		"total_lines":        selection.totalLines,
+	}
+
+	if selection.userLimitedLines != nil {
+		details["limit"] = *selection.userLimitedLines
 	}
 
 	if title != "" {
@@ -688,16 +762,53 @@ func fetchDetails(
 	return details
 }
 
-func fetchOutputText(truncation *TruncationResult) string {
-	if !truncation.Truncated {
-		return truncation.Content
+func fetchOutputText(truncation *TruncationResult, selection fetchSelection, readLimitReached bool) string {
+	if truncation.Truncated {
+		return truncatedFetchOutput(truncation, selection)
+	}
+
+	if selection.userLimitedLines != nil && selection.startLine+*selection.userLimitedLines < selection.totalLines {
+		remainingLines := selection.totalLines - (selection.startLine + *selection.userLimitedLines)
+		nextOffset := selection.startLine + *selection.userLimitedLines + 1
+
+		return fmt.Sprintf(
+			"%s\n\n[%d more lines in fetched output. Use offset=%d to continue.]",
+			truncation.Content,
+			remainingLines,
+			nextOffset,
+		)
+	}
+
+	if readLimitReached {
+		return truncation.Content + "\n\n[Response read limit reached; remaining remote content was not downloaded.]"
+	}
+
+	return truncation.Content
+}
+
+func truncatedFetchOutput(truncation *TruncationResult, selection fetchSelection) string {
+	startLineDisplay := selection.startLine + 1
+	endLineDisplay := startLineDisplay + truncation.OutputLines - 1
+	nextOffset := endLineDisplay + 1
+
+	if truncation.TruncatedBy == TruncatedByLines {
+		return fmt.Sprintf(
+			"%s\n\n[Showing lines %d-%d of %d. Use offset=%d to continue.]",
+			truncation.Content,
+			startLineDisplay,
+			endLineDisplay,
+			selection.totalLines,
+			nextOffset,
+		)
 	}
 
 	return fmt.Sprintf(
-		"%s\n\n[Showing first %d lines of %d (%s limit).]",
+		"%s\n\n[Showing lines %d-%d of %d (%s limit). Use offset=%d to continue.]",
 		truncation.Content,
-		truncation.OutputLines,
-		truncation.TotalLines,
+		startLineDisplay,
+		endLineDisplay,
+		selection.totalLines,
 		FormatSize(truncation.MaxBytes),
+		nextOffset,
 	)
 }
