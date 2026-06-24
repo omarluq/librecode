@@ -298,20 +298,21 @@ func normalizeSkillToken(token string) string {
 }
 
 func isSkillStopWord(token string) bool {
-	stopWords := map[string]bool{
-		"about": true, "after": true, "agent": true, "also": true, "and": true,
-		"any": true, "apply": true, "are": true, "build": true, "can": true,
-		"code": true, "coding": true, "cover": true, "covers": true, "debug": true,
-		"designed": true, "especially": true, "for": true, "from": true, "guide": true,
-		"helps": true, "implement": true, "into": true, "not": true, "only": true,
-		"project": true, "provides": true, "review": true, "similar": true, "skill": true,
-		"task": true, "tasks": true, "that": true, "the": true, "their": true, "these": true,
-		"this": true, "tool": true, "tools": true, "trigger": true, "use": true,
-		"when": true, "whenever": true, "with": true, "work": true, "working": true,
-		"write": true, "you": true,
+	switch token {
+	case "about", "after", "agent", "also", "and",
+		"any", "apply", "are", "build", "can",
+		"code", "coding", "cover", "covers", "debug",
+		"designed", "especially", "for", "from", "guide",
+		"helps", "implement", "into", "not", "only",
+		"project", "provides", "review", "similar", "skill",
+		"task", "tasks", "that", "the", "their", "these",
+		"this", "tool", "tools", "trigger", "use",
+		"when", "whenever", "with", "work", "working",
+		"write", "you":
+		return true
+	default:
+		return false
 	}
-
-	return stopWords[token]
 }
 
 func truncateSkillContent(content string) (string, bool) {
