@@ -41,10 +41,9 @@ tasks:
         sh: git rev-parse --short HEAD 2>/dev/null || printf none
       BUILD_DATE:
         sh: date -u +"%Y-%m-%dT%H:%M:%SZ"
+      BUILD_METADATA: '{{.VERSION}}|{{.COMMIT}}|{{.BUILD_DATE}}'
       LDFLAGS: >-
-        -X github.com/omarluq/librecode/internal/vinfo.version={{.VERSION}}
-       
-       
+        -X github.com/omarluq/librecode/internal/vinfo.version={{.BUILD_METADATA}}
     cmds:
       - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} {{.MAIN_PACKAGE}}
 
