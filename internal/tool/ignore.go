@@ -18,26 +18,14 @@ const (
 	readIgnoreCacheCapacity = 16
 )
 
-func defaultReadIgnorePatterns() []string {
-	return []string{
-		".git/",
-		"node_modules/",
-		".env",
-		".gocache/",
-		".gomodcache/",
-		".tmp/",
-		"bin/",
-		"/skills/",
-	}
-}
-
 type ignorePattern struct {
 	pattern gitignore.Pattern
 	source  string
 }
 
 type readIgnoreCache struct {
-	patterns *hot.HotCache[string, repositoryIgnorePatterns]
+	patterns        *hot.HotCache[string, repositoryIgnorePatterns]
+	defaultPatterns []ignorePattern
 }
 
 type repositoryIgnorePatterns struct {
@@ -60,6 +48,7 @@ type ignorePathState struct {
 
 func newReadIgnoreCache() *readIgnoreCache {
 	return &readIgnoreCache{
+		defaultPatterns: newDefaultReadIgnorePatterns(),
 		patterns: hot.NewHotCache[string, repositoryIgnorePatterns](hot.WTinyLFU, readIgnoreCacheCapacity).
 			WithLoaders(func(workspaceRoots []string) (map[string]repositoryIgnorePatterns, error) {
 				patterns := make(map[string]repositoryIgnorePatterns, len(workspaceRoots))
@@ -129,19 +118,46 @@ func pathEscapesRoot(relativePath string) bool {
 }
 
 func readIgnorePatterns(workspaceRoot string, cache *readIgnoreCache) []ignorePattern {
-	patterns := make([]ignorePattern, 0, len(defaultReadIgnorePatterns()))
-	for _, pattern := range defaultReadIgnorePatterns() {
-		patterns = append(patterns, ignorePattern{
-			pattern: gitignore.ParsePattern(pattern, nil),
-			source:  pattern,
-		})
-	}
-
+	defaults := readDefaultIgnorePatterns(cache)
 	repositoryPatterns := cache.repositoryPatterns(workspaceRoot)
+	patterns := make([]ignorePattern, 0, len(defaults)+len(repositoryPatterns))
+	patterns = append(patterns, defaults...)
+
 	for _, pattern := range repositoryPatterns {
 		patterns = append(patterns, ignorePattern{
 			pattern: pattern,
 			source:  gitignoreFileName,
+		})
+	}
+
+	return patterns
+}
+
+func readDefaultIgnorePatterns(cache *readIgnoreCache) []ignorePattern {
+	if cache != nil {
+		return cache.defaultPatterns
+	}
+
+	return newDefaultReadIgnorePatterns()
+}
+
+func newDefaultReadIgnorePatterns() []ignorePattern {
+	patternSources := [...]string{
+		".git/",
+		"node_modules/",
+		".env",
+		".gocache/",
+		".gomodcache/",
+		".tmp/",
+		"bin/",
+		"/skills/",
+	}
+	patterns := make([]ignorePattern, 0, len(patternSources))
+
+	for _, source := range patternSources {
+		patterns = append(patterns, ignorePattern{
+			pattern: gitignore.ParsePattern(source, nil),
+			source:  source,
 		})
 	}
 
