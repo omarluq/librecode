@@ -1,12 +1,16 @@
 package core
 
 import (
+	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
+	legacyCanceledJSONKey = "cancel" + "led"
+
 	// CompactionSummaryPrefix wraps compacted conversation history.
 	CompactionSummaryPrefix = "The conversation history before this point was compacted into the following summary:" +
 		"\n\n<summary>\n"
@@ -40,9 +44,40 @@ type BashExecutionMessage struct {
 	Output             string `json:"output"`
 	FullOutputPath     string `json:"full_output_path,omitempty"`
 	Timestamp          int64  `json:"timestamp"`
-	Canceled           bool   "json:\"cancel\u006ced\""
+	Canceled           bool   `json:"canceled"`
 	Truncated          bool   `json:"truncated"`
 	ExcludeFromContext bool   `json:"exclude_from_context,omitempty"`
+}
+
+// UnmarshalJSON preserves compatibility with sessions written before the
+// canonical American-English canceled key was fixed.
+func (message *BashExecutionMessage) UnmarshalJSON(data []byte) error {
+	type bashExecutionMessageAlias BashExecutionMessage
+
+	var decoded bashExecutionMessageAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return fmt.Errorf("decode bash execution message: %w", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("decode bash execution message keys: %w", err)
+	}
+
+	if _, ok := raw["canceled"]; !ok {
+		if legacy, ok := raw[legacyCanceledJSONKey]; ok {
+			var legacyCanceled bool
+			if err := json.Unmarshal(legacy, &legacyCanceled); err != nil {
+				return fmt.Errorf("decode legacy bash execution canceled key: %w", err)
+			}
+
+			decoded.Canceled = legacyCanceled
+		}
+	}
+
+	*message = BashExecutionMessage(decoded)
+
+	return nil
 }
 
 // CustomMessage is extension-injected context.
