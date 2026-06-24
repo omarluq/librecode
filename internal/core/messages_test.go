@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -106,6 +107,57 @@ func TestMessageConstructorsAndLLMConversions(t *testing.T) {
 	require.Len(t, compactionLLM.Content, 1)
 	assert.Contains(t, compactionLLM.Content[0].Text, core.CompactionSummaryPrefix)
 	assert.Contains(t, compactionLLM.Content[0].Text, "compact summary")
+}
+
+func TestBashExecutionMessageJSON(t *testing.T) {
+	t.Parallel()
+
+	encoded, err := json.Marshal(core.BashExecutionMessage{
+		ExitCode:           nil,
+		Command:            "sleep 10",
+		Output:             "",
+		FullOutputPath:     "",
+		Timestamp:          123,
+		Canceled:           true,
+		Truncated:          false,
+		ExcludeFromContext: false,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"canceled":true`)
+	assert.NotContains(t, string(encoded), "cancel"+"led")
+
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{
+			name: "canonical canceled key",
+			raw:  `{"command":"sleep 10","canceled":true}`,
+			want: true,
+		},
+		{
+			name: "legacy British-English key",
+			raw:  `{"command":"sleep 10","cancel` + `led":true}`,
+			want: true,
+		},
+		{
+			name: "canonical key wins over legacy key",
+			raw:  `{"command":"sleep 10","canceled":false,"cancel` + `led":true}`,
+			want: false,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			var decoded core.BashExecutionMessage
+			require.NoError(t, json.Unmarshal([]byte(testCase.raw), &decoded))
+
+			assert.Equal(t, testCase.want, decoded.Canceled)
+			assert.Equal(t, "sleep 10", decoded.Command)
+		})
+	}
 }
 
 func TestBashExecutionToLLM(t *testing.T) {
