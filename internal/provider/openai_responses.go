@@ -93,7 +93,7 @@ func (client *HTTPCompletionClient) responsesPayload(request *CompletionRequest,
 
 func responsesPayload(request *CompletionRequest, input []any) map[string]any {
 	payload := responsesBasePayload(request, input)
-	payload["tools"] = responseTools(requestToolDefinitions(request))
+	payload[jsonToolsKey] = responseTools(requestToolDefinitions(request))
 	payload[jsonToolChoiceKey] = "auto"
 	payload["parallel_tool_calls"] = true
 
@@ -105,23 +105,23 @@ func responsesBasePayload(request *CompletionRequest, input []any) map[string]an
 		jsonModelKey:  request.Request.Model.ID,
 		"store":       false,
 		jsonStreamKey: true,
-		"input":       input,
+		jsonInputKey:  input,
 	}
 	if request.Request.SystemPrompt != "" {
 		payload["instructions"] = request.Request.SystemPrompt
 	}
 
 	payload["text"] = map[string]string{"verbosity": "low"}
-	payload["include"] = []string{"reasoning.encrypted_content"}
+	payload["include"] = []string{reasoningContentKey}
 	payload["prompt_cache_key"] = request.Request.SessionID
 
 	if effort, ok := reasoningEffort(request); ok {
-		payload["reasoning"] = map[string]any{
+		payload[jsonReasoningKey] = map[string]any{
 			reasoningEffortKey: effort,
 			jsonSummaryKey:     reasoningSummaryAuto,
 		}
 	} else {
-		payload["reasoning"] = codexReasoning(request)
+		payload[jsonReasoningKey] = codexReasoning(request)
 	}
 
 	return payload
@@ -277,8 +277,8 @@ func toolCallsFromOutput(output []any) []ToolCall {
 		calls = append(calls, ToolCall{
 			Arguments:     arguments,
 			Metadata:      nil,
-			ID:            firstNonEmptyString(object[jsonCallIDKey], object["id"]),
-			Name:          firstNonEmptyString(object[jsonToolNameKey], object["function"]),
+			ID:            firstNonEmptyString(stringValue(object[jsonCallIDKey]), stringValue(object["id"])),
+			Name:          firstNonEmptyString(stringValue(object[jsonToolNameKey]), stringValue(object["function"])),
 			ArgumentsJSON: argumentsJSON,
 		})
 	}
@@ -291,7 +291,7 @@ func thinkingFromOutput(output []any) []string {
 
 	for _, item := range output {
 		object, ok := item.(map[string]any)
-		if !ok || stringValue(object[jsonTypeKey]) != "reasoning" {
+		if !ok || stringValue(object[jsonTypeKey]) != jsonReasoningKey {
 			continue
 		}
 

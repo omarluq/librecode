@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/oops"
+
 	"github.com/stretchr/testify/assert"
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
@@ -14,7 +16,12 @@ import (
 	"github.com/omarluq/librecode/internal/testutil"
 )
 
-const lifecycleTestSessionID = "session-1"
+const (
+	lifecycleTestSessionID = "session-1"
+	lifecycleTestAPI       = "openai-responses"
+	lifecycleTestModel     = "model-1"
+	lifecycleTestProvider  = "openai"
+)
 
 func TestPromptAndTurnPayloads(t *testing.T) {
 	t.Parallel()
@@ -82,7 +89,7 @@ func TestSessionEntryAndContextPayloads(t *testing.T) {
 			Role:      database.RoleAssistant,
 			Content:   "answer",
 			Provider:  "provider-1",
-			Model:     "model-1",
+			Model:     lifecycleTestModel,
 		},
 		Summary:                    "summary",
 		ToolStatus:                 "",
@@ -111,16 +118,42 @@ func TestProviderAndToolPayloads(t *testing.T) {
 	providerRequest := lifecyclepayload.ProviderRequestPayload(&lifecyclepayload.ProviderRequest{
 		Payload:       map[string]any{"messages": 1},
 		Headers:       map[string]string{"X-Test": "yes"},
-		API:           "openai-responses",
-		ModelID:       "model-1",
-		Provider:      "openai",
+		API:           lifecycleTestAPI,
+		ModelID:       lifecycleTestModel,
+		Provider:      lifecycleTestProvider,
 		SessionID:     lifecycleTestSessionID,
 		ThinkingLevel: "off",
 		Attempt:       2,
 	})
-	assert.Equal(t, "openai-responses", providerRequest[lifecyclepayload.APIKey])
+	assert.Equal(t, lifecycleTestAPI, providerRequest[lifecyclepayload.APIKey])
 	assert.Equal(t, 2, providerRequest[lifecyclepayload.AttemptKey])
 	assert.Equal(t, map[string]string{"X-Test": "yes"}, providerRequest[lifecyclepayload.ProviderHeadersKey])
+
+	providerErr := lifecyclepayload.ProviderErrorPayload(&lifecyclepayload.ProviderError{
+		Err: oops.In("provider").Code("provider_status").
+			With(lifecyclepayload.ProviderStatusKey, 400).
+			With(lifecyclepayload.ProviderCodeKey, "bad_request").
+			With(lifecyclepayload.ProviderParamKey, "input").
+			With(lifecyclepayload.ProviderTypeKey, "invalid_request_error").
+			With(lifecyclepayload.ProviderBodyPreviewKey, `{"error":"bad"}`).
+			With(lifecyclepayload.ProviderBodyTruncatedKey, true).
+			With(lifecyclepayload.ProviderRequestShapeKey, map[string]any{"input_count": 2}).
+			Errorf("provider failed"),
+		API:       lifecycleTestAPI,
+		ModelID:   lifecycleTestModel,
+		Provider:  lifecycleTestProvider,
+		SessionID: lifecycleTestSessionID,
+		Attempt:   3,
+	})
+	assert.Equal(t, 400, providerErr[lifecyclepayload.ProviderStatusKey])
+	assert.Equal(t, "bad_request", providerErr[lifecyclepayload.ProviderCodeKey])
+	assert.Equal(t, "input", providerErr[lifecyclepayload.ProviderParamKey])
+	assert.Equal(t, "invalid_request_error", providerErr[lifecyclepayload.ProviderTypeKey])
+	preview, ok := providerErr[lifecyclepayload.ProviderBodyPreviewKey].(string)
+	assert.True(t, ok)
+	assert.JSONEq(t, `{"error":"bad"}`, preview)
+	assert.Equal(t, true, providerErr[lifecyclepayload.ProviderBodyTruncatedKey])
+	assert.Equal(t, map[string]any{"input_count": 2}, providerErr[lifecyclepayload.ProviderRequestShapeKey])
 
 	toolCall := lifecyclepayload.ToolCallPayload(lifecyclepayload.ToolCall{
 		Arguments:     testutil.ToolArguments(map[string]any{"path": "README.md"}),

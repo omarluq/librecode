@@ -12,6 +12,7 @@ import (
 	retrylib "github.com/sethvargo/go-retry"
 
 	"github.com/omarluq/librecode/internal/config"
+	"github.com/omarluq/librecode/internal/provider"
 )
 
 const (
@@ -198,6 +199,11 @@ func providerErrorCode(err error) (string, bool) {
 }
 
 func providerErrorStatus(err error) (int, bool) {
+	var statusErr *provider.StatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.Status, true
+	}
+
 	oopsErr, matched := oops.AsOops(err)
 	if !matched {
 		return 0, false

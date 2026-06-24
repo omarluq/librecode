@@ -131,7 +131,7 @@ func buildAnthropicPayload(request *CompletionRequest, messages []map[string]any
 		finishReasonMaxTokens: minPositive(request.Request.Model.MaxTokens, anthropicDefaultMaxTokens),
 		jsonMessagesKey:       messages,
 		jsonStreamKey:         true,
-		"tools":               anthropicTools(requestToolDefinitions(request), usesAnthropicOAuth(request)),
+		jsonToolsKey:          anthropicTools(requestToolDefinitions(request), usesAnthropicOAuth(request)),
 	}
 	if usesAnthropicOAuth(request) {
 		payload["system"] = anthropicOAuthSystemPrompt(request.Request.SystemPrompt)
@@ -403,7 +403,7 @@ func anthropicAssistantToolMessage(request *CompletionRequest, calls []ToolCall)
 			jsonTypeKey:     anthropicToolUseType,
 			"id":            call.ID,
 			jsonToolNameKey: anthropicProviderToolName(call.Name, usesAnthropicOAuth(request)),
-			"input":         call.Arguments,
+			jsonInputKey:    call.Arguments,
 		})
 	}
 
