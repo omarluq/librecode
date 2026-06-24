@@ -45,7 +45,7 @@ func (client *HTTPCompletionClient) requestProviderStream(
 			return nil, oops.In("provider").Code("provider_error_read").Wrapf(readErr, "read provider error")
 		}
 
-		return nil, providerStatusError(response.StatusCode, content)
+		return nil, providerStatusError(response.StatusCode, content, providerRequestShape(payload))
 	}
 
 	return parse(response.Body)

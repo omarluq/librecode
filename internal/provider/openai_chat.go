@@ -137,7 +137,7 @@ func buildOpenAIChatPayload(request *CompletionRequest, messages []map[string]an
 			"include_usage": true,
 		},
 		"temperature":     openAIChatDefaultTemperature,
-		"tools":           tools,
+		jsonToolsKey:      tools,
 		jsonToolChoiceKey: "auto",
 	}
 	if effort, ok := reasoningEffort(request); ok {

@@ -311,15 +311,10 @@ func sseProviderError(code string, event map[string]any, fallback string) error 
 	return oops.In("provider").Code(code).Errorf("%s", message)
 }
 
-func sseErrorMessage(value any) string {
-	message := errorMessage(value)
+func sseErrorMessage(object map[string]any) string {
+	message := errorMessageFromMap(object)
 	if message != "" {
 		return message
-	}
-
-	object, ok := value.(map[string]any)
-	if !ok {
-		return ""
 	}
 
 	if details, ok := object["incomplete_details"].(map[string]any); ok {

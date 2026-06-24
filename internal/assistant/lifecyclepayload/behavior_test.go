@@ -27,6 +27,8 @@ const (
 	lifecycleMainGoPath    = "main.go"
 	lifecycleHistoryLabel  = "history"
 	lifecycleProviderModel = "gpt-test"
+	lifecycleProviderAPI   = "openai-responses"
+	lifecycleProviderName  = "openai"
 )
 
 func TestTurnStartAndContextBuildPayloads(t *testing.T) {
@@ -111,9 +113,9 @@ func TestProviderResponseErrorAndNilPayloads(t *testing.T) {
 	}
 	response := lifecyclepayload.ProviderResponsePayload(&lifecyclepayload.ProviderResponse{
 		FinishReason:   llm.FinishReasonLength,
-		API:            "openai-responses",
+		API:            lifecycleProviderAPI,
 		ModelID:        lifecycleProviderModel,
-		Provider:       "openai",
+		Provider:       lifecycleProviderName,
 		SessionID:      lifecycleTestSessionID,
 		Text:           lifecycleAnswer,
 		Usage:          usage,

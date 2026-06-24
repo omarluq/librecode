@@ -2,6 +2,8 @@
 package lifecyclepayload
 
 import (
+	"maps"
+
 	"github.com/samber/lo"
 
 	"github.com/omarluq/librecode/internal/compaction"
@@ -330,6 +332,7 @@ func ProviderErrorPayload(providerErr *ProviderError) map[string]any {
 	}
 	if providerErr.Err != nil {
 		payload[ErrorKey] = providerErr.Err.Error()
+		maps.Copy(payload, ProviderErrorDetails(providerErr.Err))
 	}
 
 	return payload

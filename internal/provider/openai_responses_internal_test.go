@@ -157,11 +157,11 @@ func TestResponsesPayloadReasoningModes(t *testing.T) {
 	payload := responsesBasePayload(request, nil)
 	assert.Equal(t, true, payload[jsonStreamKey])
 	assert.Equal(t, map[string]string{"verbosity": "low"}, payload["text"])
-	assert.Equal(t, []string{"reasoning.encrypted_content"}, payload["include"])
+	assert.Equal(t, []string{reasoningContentKey}, payload["include"])
 	assert.Equal(t, map[string]any{
 		reasoningEffortKey: thinkingHigh,
 		jsonSummaryKey:     reasoningSummaryAuto,
-	}, payload["reasoning"])
+	}, payload[jsonReasoningKey])
 
 	setTestRequestThinkingLevel(request, thinkingXHigh)
 	setTestThinkingMap(request, thinkingXHigh, "max")
@@ -169,7 +169,7 @@ func TestResponsesPayloadReasoningModes(t *testing.T) {
 	assert.Equal(t, map[string]any{
 		reasoningEffortKey: "max",
 		jsonSummaryKey:     reasoningSummaryAuto,
-	}, payload["reasoning"])
+	}, payload[jsonReasoningKey])
 
 	setTestRequestReasoning(request, false)
 	setTestRequestThinkingLevel(request, "")
@@ -177,7 +177,7 @@ func TestResponsesPayloadReasoningModes(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		reasoningEffortKey: reasoningEffortNone,
 		jsonSummaryKey:     reasoningSummaryAuto,
-	}, payload["reasoning"])
+	}, payload[jsonReasoningKey])
 }
 
 func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
