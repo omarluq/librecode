@@ -243,6 +243,25 @@ func TestAutoActivateSkillsSelectsMatchingSkill(t *testing.T) {
 	assert.Contains(t, activated[0].Content, "Run tests")
 }
 
+func TestAutoActivateSkillsIgnoresActivationStopWords(t *testing.T) {
+	cwd := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "loud", "SKILL.md"), strings.Join([]string{
+		frontmatterDelimiter,
+		"name: loud",
+		"description: Use when the agent and any task",
+		frontmatterDelimiter,
+		"Loud instructions.",
+	}, "\n"))
+
+	result := core.LoadSkills(cwd, nil, true)
+	detail := core.AutoActivateSkillsDetailed("the agent and any task", result.Skills)
+
+	require.Empty(t, detail.Diagnostics)
+	assert.Empty(t, detail.Activated)
+}
+
 func TestAutoActivateSkillsRequiresStrongIntent(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
