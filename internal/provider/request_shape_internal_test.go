@@ -40,13 +40,13 @@ func TestProviderRequestShapeCapturesSafeMetadata(t *testing.T) {
 			t.Parallel()
 
 			shape := providerRequestShape(map[string]any{
-				"include":             []string{reasoningContentKey},
-				jsonInputKey:          test.input,
-				jsonMessagesKey:       test.messages,
-				"parallel_tool_calls": true,
-				"prompt_cache_key":    "session-1",
-				jsonReasoningKey:      map[string]any{reasoningEffortKey: thinkingLow},
-				jsonToolsKey:          test.tools,
+				requestShapeIncludeKey:           []string{reasoningContentKey},
+				jsonInputKey:                     test.input,
+				jsonMessagesKey:                  test.messages,
+				requestShapeParallelToolCallsKey: true,
+				requestShapePromptCacheKey:       "session-1",
+				jsonReasoningKey:                 map[string]any{reasoningEffortKey: thinkingLow},
+				jsonToolsKey:                     test.tools,
 			})
 
 			assert.True(t, shape.HasInclude)
@@ -60,11 +60,11 @@ func TestProviderRequestShapeCapturesSafeMetadata(t *testing.T) {
 			assert.Equal(t, 1, shape.ToolCount)
 			assert.NotZero(t, shape.ByteSize)
 			assert.Equal(t, []string{
-				"include",
+				requestShapeIncludeKey,
 				jsonInputKey,
 				jsonMessagesKey,
-				"parallel_tool_calls",
-				"prompt_cache_key",
+				requestShapeParallelToolCallsKey,
+				requestShapePromptCacheKey,
 				jsonReasoningKey,
 				jsonToolsKey,
 			}, shape.Keys)
@@ -72,6 +72,53 @@ func TestProviderRequestShapeCapturesSafeMetadata(t *testing.T) {
 			payload := shape.Payload()
 			assert.Equal(t, true, payload["has_include"])
 			assert.Equal(t, 2, payload[requestShapeInputCountKey])
+		})
+	}
+}
+
+func TestProviderRequestShapeReportsFalsyOptionalFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		payload map[string]any
+		name    string
+	}{
+		{
+			name: "disabled parallel tool calls",
+			payload: map[string]any{
+				requestShapeParallelToolCallsKey: false,
+			},
+		},
+		{
+			name: "blank prompt cache key",
+			payload: map[string]any{
+				requestShapePromptCacheKey: "  ",
+			},
+		},
+		{
+			name: "empty include list",
+			payload: map[string]any{
+				requestShapeIncludeKey: []string{},
+			},
+		},
+		{
+			name: "empty reasoning object",
+			payload: map[string]any{
+				jsonReasoningKey: map[string]any{},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			shape := providerRequestShape(test.payload)
+
+			assert.False(t, shape.HasParallelToolCalls)
+			assert.False(t, shape.HasPromptCacheKey)
+			assert.False(t, shape.HasInclude)
+			assert.False(t, shape.HasReasoning)
 		})
 	}
 }

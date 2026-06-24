@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 )
 
 const (
@@ -12,6 +13,9 @@ const (
 	requestShapeInputCountKey              = "input_count"
 	requestShapeMessageCountKey            = "message_count"
 	requestShapeToolCountKey               = "tool_count"
+	requestShapeIncludeKey                 = "include"
+	requestShapeParallelToolCallsKey       = "parallel_tool_calls"
+	requestShapePromptCacheKey             = "prompt_cache_key"
 )
 
 // RequestShape contains safe, content-free metadata about an outbound provider request.
@@ -31,13 +35,13 @@ type RequestShape struct {
 }
 
 type providerPayloadShape struct {
-	Input             []providerTypedItem `json:"input"`
-	Messages          []providerTypedItem `json:"messages"`
-	Tools             []providerTypedItem `json:"tools"`
-	Include           json.RawMessage     `json:"include"`
-	ParallelToolCalls json.RawMessage     `json:"parallel_tool_calls"`
-	PromptCacheKey    json.RawMessage     `json:"prompt_cache_key"`
-	Reasoning         json.RawMessage     `json:"reasoning"`
+	Input             []providerTypedItem        `json:"input"`
+	Messages          []providerTypedItem        `json:"messages"`
+	Tools             []providerTypedItem        `json:"tools"`
+	Reasoning         map[string]json.RawMessage `json:"reasoning"`
+	PromptCacheKey    string                     `json:"prompt_cache_key"`
+	Include           []json.RawMessage          `json:"include"`
+	ParallelToolCalls bool                       `json:"parallel_tool_calls"`
 }
 
 type providerTypedItem struct {
@@ -81,8 +85,8 @@ func providerRequestShape(payload map[string]any) *RequestShape {
 	shape.ToolCount = len(typed.Tools)
 	shape.FunctionCallCount, shape.FunctionCallOutputCount = countResponseFunctionItems(typed.Input)
 	shape.HasInclude = len(typed.Include) > 0
-	shape.HasParallelToolCalls = len(typed.ParallelToolCalls) > 0
-	shape.HasPromptCacheKey = len(typed.PromptCacheKey) > 0
+	shape.HasParallelToolCalls = typed.ParallelToolCalls
+	shape.HasPromptCacheKey = strings.TrimSpace(typed.PromptCacheKey) != ""
 	shape.HasReasoning = len(typed.Reasoning) > 0
 
 	return shape
