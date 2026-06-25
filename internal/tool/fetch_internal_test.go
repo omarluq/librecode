@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	fetchTestExampleHost   = "example.test"
 	fetchTestExampleURL    = "https://example.com"
 	fetchTestIgnoredFooter = "Ignore footer"
 	fetchTestIgnoredHeader = "Ignore header"
@@ -445,10 +446,10 @@ func TestFetchTool_RejectsPrivateNetworkTargets(t *testing.T) {
 		},
 		{
 			lookups: map[string][]net.IPAddr{
-				"example.test": {{IP: net.ParseIP("192.168.1.10")}},
+				fetchTestExampleHost: {{IP: net.ParseIP("192.168.1.10")}},
 			},
 			name:   "private dns result",
-			rawURL: "http://example.test",
+			rawURL: "http://" + fetchTestExampleHost,
 		},
 	}
 
@@ -469,7 +470,7 @@ func TestFetchTool_RejectsPrivateNetworkRedirect(t *testing.T) {
 	t.Parallel()
 
 	fetchTool := fetchTestLookupTool(map[string][]net.IPAddr{
-		"example.test": {{IP: net.ParseIP("93.184.216.34")}},
+		fetchTestExampleHost: {{IP: net.ParseIP("93.184.216.34")}},
 	})
 	fetchTool.client = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		response := fetchTestHTTPResponse(request, io.NopCloser(strings.NewReader("redirect")))
@@ -480,7 +481,37 @@ func TestFetchTool_RejectsPrivateNetworkRedirect(t *testing.T) {
 		return response, nil
 	})}
 
-	_, err := fetchTool.Fetch(context.Background(), fetchInputForTest("http://example.test/start", ""))
+	_, err := fetchTool.Fetch(context.Background(), fetchInputForTest("http://"+fetchTestExampleHost+"/start", ""))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "private or local networks")
+}
+
+func TestFetchTool_RejectsPrivateDialedAddress(t *testing.T) {
+	t.Parallel()
+
+	server := fetchTestPrivateNetworkServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		if _, err := writer.Write([]byte("unexpected private target")); err != nil {
+			return
+		}
+	}))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	fetchTool := fetchTestLookupTool(map[string][]net.IPAddr{
+		fetchTestExampleHost: {{IP: net.ParseIP("93.184.216.34")}},
+	})
+	fetchTool.client = &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var dialer net.Dialer
+
+			return dialer.DialContext(ctx, network, serverURL.Host)
+		},
+	}}
+
+	_, err = fetchTool.Fetch(context.Background(), fetchInputForTest("http://"+fetchTestExampleHost, ""))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "private or local networks")
@@ -799,7 +830,10 @@ func TestFetchTool_RedirectValidation(t *testing.T) {
 
 			fetchTool := fetchTestPrivateNetworkTool()
 			fetchTool.client = &http.Client{CheckRedirect: testCase.baseCheckRedirect}
-			client := fetchTool.httpClientWithRedirectValidation(context.Background())
+
+			client, closeIdleConnections := fetchTool.httpClientWithRedirectValidation(context.Background())
+			defer closeIdleConnections()
+
 			request, err := http.NewRequestWithContext(
 				context.Background(),
 				http.MethodGet,

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -248,7 +249,10 @@ func (fetchTool *FetchTool) fetchURL(
 
 	setFetchHeaders(request)
 
-	response, err := fetchTool.httpClientWithRedirectValidation(requestCtx).Do(request)
+	client, closeIdleConnections := fetchTool.httpClientWithRedirectValidation(requestCtx)
+	defer closeIdleConnections()
+
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, fetchResponseInfo{}, oops.In("tool").Code("fetch_request").Wrapf(err, "fetch url")
 	}
@@ -298,11 +302,17 @@ func (fetchTool *FetchTool) httpClient() *http.Client {
 	return http.DefaultClient
 }
 
-func (fetchTool *FetchTool) httpClientWithRedirectValidation(ctx context.Context) *http.Client {
+func (fetchTool *FetchTool) httpClientWithRedirectValidation(
+	ctx context.Context,
+) (client *http.Client, closeIdleConnections func()) {
 	baseClient := fetchTool.httpClient()
-	client := *baseClient
+	clonedClient := *baseClient
+
+	transport, closeIdleConnections := fetchTool.transportWithNetworkValidation(baseClient.Transport)
+	clonedClient.Transport = transport
+
 	baseCheckRedirect := baseClient.CheckRedirect
-	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+	clonedClient.CheckRedirect = func(request *http.Request, via []*http.Request) error {
 		if baseCheckRedirect != nil {
 			if err := baseCheckRedirect(request, via); err != nil {
 				return err
@@ -314,7 +324,86 @@ func (fetchTool *FetchTool) httpClientWithRedirectValidation(ctx context.Context
 		return fetchTool.validatePublicFetchURL(ctx, request.URL)
 	}
 
-	return &client
+	return &clonedClient, closeIdleConnections
+}
+
+func (fetchTool *FetchTool) transportWithNetworkValidation(
+	baseTransport http.RoundTripper,
+) (roundTripper http.RoundTripper, closeIdleConnections func()) {
+	if fetchTool.allowPrivateNetworks {
+		return baseTransport, func() {}
+	}
+
+	transport, ok := cloneFetchHTTPTransport(baseTransport)
+	if !ok {
+		return baseTransport, func() {}
+	}
+
+	transport.Proxy = nil
+	transport.DialContext = validatingFetchDialContext(fetchDialContext(transport))
+
+	if transport.DialTLSContext != nil {
+		transport.DialTLSContext = validatingFetchDialContext(transport.DialTLSContext)
+	}
+
+	return transport, transport.CloseIdleConnections
+}
+
+func cloneFetchHTTPTransport(baseTransport http.RoundTripper) (*http.Transport, bool) {
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
+	}
+
+	transport, ok := baseTransport.(*http.Transport)
+	if !ok {
+		return nil, false
+	}
+
+	return transport.Clone(), true
+}
+
+func fetchDialContext(transport *http.Transport) func(context.Context, string, string) (net.Conn, error) {
+	if transport.DialContext != nil {
+		return transport.DialContext
+	}
+
+	dialer := &net.Dialer{}
+
+	return dialer.DialContext
+}
+
+func validatingFetchDialContext(
+	dialContext func(context.Context, string, string) (net.Conn, error),
+) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		return validateFetchDialedConnection(dialContext(ctx, network, address))
+	}
+}
+
+func validateFetchDialedConnection(conn net.Conn, dialErr error) (net.Conn, error) {
+	if dialErr != nil {
+		return nil, dialErr
+	}
+
+	if conn == nil {
+		return nil, oops.In("tool").Code("fetch_nil_connection").Errorf("fetch dial returned nil connection")
+	}
+
+	if err := validatePublicFetchRemoteAddr(conn.RemoteAddr()); err != nil {
+		if closeErr := conn.Close(); closeErr != nil {
+			return nil, errors.Join(
+				err,
+				oops.In("tool").Code("fetch_close_rejected_connection").Wrapf(
+					closeErr,
+					"close rejected fetch connection",
+				),
+			)
+		}
+
+		return nil, err
+	}
+
+	return conn, nil
 }
 
 func (fetchTool *FetchTool) validatePublicFetchURL(ctx context.Context, requestURL *url.URL) error {
@@ -388,6 +477,37 @@ func validatePublicFetchIP(ipAddress net.IP) error {
 	}
 
 	return nil
+}
+
+func validatePublicFetchRemoteAddr(remoteAddr net.Addr) error {
+	ipAddress := fetchRemoteAddrIP(remoteAddr)
+	if ipAddress == nil {
+		return oops.In("tool").Code("fetch_invalid_remote_address").Errorf("fetch remote address is not an IP")
+	}
+
+	return validatePublicFetchIP(ipAddress)
+}
+
+func fetchRemoteAddrIP(remoteAddr net.Addr) net.IP {
+	if remoteAddr == nil {
+		return nil
+	}
+
+	switch addr := remoteAddr.(type) {
+	case *net.TCPAddr:
+		return addr.IP
+	case *net.UDPAddr:
+		return addr.IP
+	case *net.IPAddr:
+		return addr.IP
+	}
+
+	host, _, err := net.SplitHostPort(remoteAddr.String())
+	if err != nil {
+		host = remoteAddr.String()
+	}
+
+	return parseFetchHostIP(normalizedFetchHost(host))
 }
 
 func isPrivateFetchIP(ipAddress net.IP) bool {
