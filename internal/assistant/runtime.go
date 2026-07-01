@@ -169,14 +169,17 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		lifecyclepayload.Prompt(promptPayload),
 	)
 
-	activeSession, sessionEvent, err := runtime.resolveSession(ctx, request)
+	persistCtx, persistCancel := promptPersistenceContext(ctx)
+	defer persistCancel()
+
+	activeSession, sessionEvent, err := runtime.resolveSession(persistCtx, request)
 	if err != nil {
 		return nil, err
 	}
 
 	runtime.dispatchObservationalLifecycle(ctx, sessionEvent, lifecyclepayload.Session(activeSession))
 
-	userEntry, parentID, err := runtime.appendPromptUserEntry(ctx, activeSession, request)
+	userEntry, parentID, err := runtime.appendPromptUserEntry(persistCtx, activeSession, request)
 	if err != nil {
 		return nil, err
 	}
