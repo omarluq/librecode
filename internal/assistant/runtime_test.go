@@ -289,12 +289,12 @@ func TestRuntime_PromptPersistsPartialProgressOnProviderFailure(t *testing.T) {
 	assertPersistedPartialFailure(t, repository, request.SessionID)
 }
 
-func TestRuntime_PromptReportsPersistenceFailureWhenFailedProgressCannotPersist(t *testing.T) {
+func TestRuntime_PromptPersistsPartialProgressWhenRequestContextIsCanceled(t *testing.T) {
 	t.Parallel()
 
 	client := partialFailureCompleter{}
-	runtime, _ := newTestRuntimeWithClient(t, client)
-	request := newRuntimePromptRequest(testRuntimeCWD, "fail persistence", "")
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "fail after cancel", "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -308,8 +308,82 @@ func TestRuntime_PromptReportsPersistenceFailureWhenFailedProgressCannotPersist(
 	_, err := runtime.Prompt(ctx, request)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "persist failed prompt progress")
-	assert.Contains(t, err.Error(), "append partial prompt progress")
+	require.EqualError(t, err, "complete model request: provider returned an empty response")
+	assertPersistedPartialFailure(t, repository, request.SessionID)
+}
+
+func TestRuntime_PromptPersistsFriendlyCancellationMarker(t *testing.T) {
+	t.Parallel()
+
+	client := canceledPartialFailureCompleter{}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "cancel after progress", "")
+
+	_, err := runtime.Prompt(context.Background(), request)
+
+	require.Error(t, err)
+	messages, err := repository.Messages(context.Background(), request.SessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 4)
+	assert.Equal(t, database.RoleCustom, messages[3].Role)
+	assert.Equal(t, "[system] response canceled by user", messages[3].Content)
+}
+
+func TestRuntime_PromptSynthesizesIncompleteResultForPendingToolOnError(t *testing.T) {
+	t.Parallel()
+
+	client := pendingToolFailureCompleter{}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "pending tool", "")
+
+	_, err := runtime.Prompt(context.Background(), request)
+
+	require.Error(t, err)
+	messages, err := repository.Messages(context.Background(), request.SessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 4)
+	assert.Equal(t, database.RoleToolResult, messages[2].Role)
+	assert.Contains(t, messages[2].Content, "tool call did not complete")
+	assert.Contains(t, messages[2].Content, "is_error: true")
+	assert.Equal(t, database.RoleCustom, messages[3].Role)
+}
+
+func TestRuntime_PromptSynthesizesCanceledResultForPendingToolOnCancel(t *testing.T) {
+	t.Parallel()
+
+	client := pendingCanceledToolFailureCompleter{}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "pending canceled tool", "")
+
+	_, err := runtime.Prompt(context.Background(), request)
+
+	require.Error(t, err)
+	messages, err := repository.Messages(context.Background(), request.SessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 4)
+	assert.Equal(t, database.RoleToolResult, messages[2].Role)
+	assert.Contains(t, messages[2].Content, "tool call canceled by user")
+	assert.Contains(t, messages[2].Content, "is_error: true")
+	assert.Equal(t, database.RoleCustom, messages[3].Role)
+	assert.Equal(t, "[system] response canceled by user", messages[3].Content)
+}
+
+func TestRuntime_PromptDoesNotDuplicateCanceledResultForCompletedTool(t *testing.T) {
+	t.Parallel()
+
+	client := completedToolFailureCompleter{}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	request := newRuntimePromptRequest(testRuntimeCWD, "completed tool", "")
+
+	_, err := runtime.Prompt(context.Background(), request)
+
+	require.Error(t, err)
+	messages, err := repository.Messages(context.Background(), request.SessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 4)
+	assert.Equal(t, database.RoleToolResult, messages[2].Role)
+	assert.Contains(t, messages[2].Content, "file content")
+	assert.NotContains(t, messages[2].Content, "tool call canceled by user")
 }
 
 func TestRuntime_PromptDoesNotRetryNonTransientModelErrors(t *testing.T) {
@@ -599,6 +673,14 @@ type retryCompleter struct {
 
 type partialFailureCompleter struct{}
 
+type canceledPartialFailureCompleter struct{}
+
+type pendingToolFailureCompleter struct{}
+
+type pendingCanceledToolFailureCompleter struct{}
+
+type completedToolFailureCompleter struct{}
+
 type emptyCompleter struct {
 	attempts int
 }
@@ -654,6 +736,54 @@ func (partialFailureCompleter) Complete(
 	_ context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
+	emitPartialFailureProgress(request)
+
+	return nil, errors.New("provider returned an empty response")
+}
+
+func (canceledPartialFailureCompleter) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	emitPartialFailureProgress(request)
+
+	return nil, context.Canceled
+}
+
+func (pendingToolFailureCompleter) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	emitPendingToolStart(request)
+
+	return nil, errors.New("provider returned an empty response")
+}
+
+func (pendingCanceledToolFailureCompleter) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	emitPendingToolStart(request)
+
+	return nil, context.Canceled
+}
+
+func (completedToolFailureCompleter) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	emitPendingToolStart(request)
+	emitPartialToolResult(request)
+
+	return nil, errors.New("provider returned an empty response")
+}
+
+func emitPartialFailureProgress(request *assistant.CompletionRequest) {
+	emitPartialText(request)
+	emitPartialToolResult(request)
+}
+
+func emitPartialText(request *assistant.CompletionRequest) {
 	request.OnEvent(assistant.StreamEvent{
 		ToolCallEvent: nil,
 		ToolEvent:     nil,
@@ -675,6 +805,25 @@ func (partialFailureCompleter) Complete(
 		Kind:          assistant.StreamEventTextDelta,
 		Text:          "with whitespace",
 	})
+}
+
+func emitPendingToolStart(request *assistant.CompletionRequest) {
+	emitPartialText(request)
+	request.OnEvent(assistant.StreamEvent{
+		ToolCallEvent: &assistant.ToolCallEvent{
+			ArgumentsJSON: testToolArgsJSON,
+			ID:            testToolCallID,
+			Name:          testToolName,
+			Arguments:     testutil.ToolArguments(map[string]any{testToolPathKey: testToolPath}),
+		},
+		ToolEvent: nil,
+		Usage:     nil,
+		Kind:      assistant.StreamEventToolStart,
+		Text:      testToolName,
+	})
+}
+
+func emitPartialToolResult(request *assistant.CompletionRequest) {
 	request.OnEvent(assistant.StreamEvent{
 		ToolCallEvent: nil,
 		ToolEvent: &assistant.ToolEvent{
@@ -689,8 +838,6 @@ func (partialFailureCompleter) Complete(
 		Kind:  assistant.StreamEventToolResult,
 		Text:  "",
 	})
-
-	return nil, errors.New("provider returned an empty response")
 }
 
 func assertPersistedPartialFailure(
