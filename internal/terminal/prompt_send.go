@@ -22,7 +22,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	request := &assistant.PromptRequest{
 		OnEvent:       app.promptStreamHandler(promptCtx, promptID),
 		OnRetry:       app.promptRetryHandler(promptCtx, promptID),
-		OnUserEntry:   app.promptUserEntryHandler(promptCtx, promptID),
+		OnUserEntry:   app.promptUserEntryHandler(ctx, promptID),
 		ParentEntryID: parentEntryID,
 		SessionID:     app.sessionID,
 		CWD:           app.cwd,
@@ -37,14 +37,13 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.resetStreamingBlocks()
 	app.streamedToolEvents = 0
 	app.activePrompt = &activePromptState{
-		Cancel:           cancel,
-		ParentEntryID:    cloneStringPtr(parentEntryID),
-		ID:               promptID,
-		SessionID:        app.sessionID,
-		UserEntryID:      "",
-		Prompt:           text,
-		BaselineMessages: len(app.transcript.History),
-		Canceled:         false,
+		Cancel:        cancel,
+		ParentEntryID: cloneStringPtr(parentEntryID),
+		ID:            promptID,
+		SessionID:     app.sessionID,
+		UserEntryID:   "",
+		Prompt:        text,
+		Canceled:      false,
 	}
 	app.addMessage(transcript.RoleUser, text)
 	app.working = true

@@ -157,12 +157,16 @@ func assertPromptCanceled(t *testing.T, app *App, canceled bool) {
 		t.Fatal("expected active prompt cancellation")
 	}
 
-	if app.working {
-		t.Fatal("cancellation should stop working state")
+	if !app.working {
+		t.Fatal("cancellation should keep prompt active until cleanup finishes")
 	}
 
-	if got := app.composerBuffer.TextValue(); got != interruptTestPrompt {
-		t.Fatalf("composer text = %q, want restored prompt", got)
+	if got := app.composerBuffer.TextValue(); got != "" {
+		t.Fatalf("composer text = %q, want empty", got)
+	}
+
+	if got, want := app.statusMessage, "canceling response..."; got != want {
+		t.Fatalf("statusMessage = %q, want %q", got, want)
 	}
 }
 
@@ -179,13 +183,12 @@ func newInterruptTestApp(t *testing.T, cancel context.CancelFunc) *App {
 
 func newTestActivePrompt(cancel context.CancelFunc) *activePromptState {
 	return &activePromptState{
-		Cancel:           cancel,
-		ParentEntryID:    nil,
-		SessionID:        "",
-		UserEntryID:      "",
-		Prompt:           interruptTestPrompt,
-		ID:               1,
-		BaselineMessages: 0,
-		Canceled:         false,
+		Cancel:        cancel,
+		ParentEntryID: nil,
+		SessionID:     "",
+		UserEntryID:   "",
+		Prompt:        interruptTestPrompt,
+		ID:            1,
+		Canceled:      false,
 	}
 }

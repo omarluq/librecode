@@ -672,11 +672,12 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 			canceledActive: false,
 		},
 		{
-			name:    "canceled prompt ignores stream",
+			name:    "canceled prompt still records late stream for preservation",
 			payload: asyncTestEvent(asyncEventPromptDelta, "", asyncTestIgnored, 1),
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
-				assert.Empty(t, app.transcript.Streaming.Blocks)
+				require.Len(t, app.transcript.Streaming.Blocks, 1)
+				assert.Equal(t, asyncTestIgnored, app.transcript.Streaming.Blocks[0].Content)
 			},
 			prepare:        nil,
 			canceledActive: true,

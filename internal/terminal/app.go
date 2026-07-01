@@ -46,14 +46,13 @@ type chatMessage struct {
 }
 
 type activePromptState struct {
-	Cancel           context.CancelFunc
-	ParentEntryID    *string
-	SessionID        string
-	UserEntryID      string
-	Prompt           string
-	ID               uint64
-	BaselineMessages int
-	Canceled         bool
+	Cancel        context.CancelFunc
+	ParentEntryID *string
+	SessionID     string
+	UserEntryID   string
+	Prompt        string
+	ID            uint64
+	Canceled      bool
 }
 
 type resizeCoalescedEvent struct {
@@ -131,7 +130,6 @@ type App struct {
 	pendingParentID       *string
 	activePrompt          *activePromptState
 	activeCompaction      *activeCompactionState
-	canceledPrompts       map[uint64]*activePromptState
 	scopedEnabled         map[string]bool
 	extensionUI           extui.State
 	theme                 terminalTheme
@@ -245,7 +243,6 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 		pendingParentID:  nil,
 		activePrompt:     nil,
 		activeCompaction: nil,
-		canceledPrompts:  map[uint64]*activePromptState{},
 		transcript: transcriptState{
 			History: []chatMessage{},
 			Streaming: transcriptStreamingState{

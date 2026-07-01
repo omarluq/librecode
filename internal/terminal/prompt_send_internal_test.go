@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"sync"
@@ -53,7 +54,7 @@ func newTerminalPromptClient(response *assistant.CompletionResult, err error) *t
 }
 
 func (client *terminalPromptClient) Complete(
-	_ context.Context,
+	ctx context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	client.lock.Lock()
@@ -68,6 +69,12 @@ func (client *terminalPromptClient) Complete(
 
 	if client.err != nil {
 		return nil, client.err
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("completion canceled: %w", ctx.Err())
+	default:
 	}
 
 	return client.response, nil
