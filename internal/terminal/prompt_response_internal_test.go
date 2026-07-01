@@ -120,40 +120,6 @@ func assertPromptResponseRoles(t *testing.T, app *App, want []transcript.Role) {
 	}
 }
 
-func TestApplyPromptResponseIgnoresCanceledPrompt(t *testing.T) {
-	t.Parallel()
-
-	app := newRenderTestApp(t)
-	app.addMessage(transcript.RoleUser, "kept")
-	app.canceledPrompts[42] = newTestActivePrompt(nil)
-	app.working = true
-
-	app.applyPromptResponse(context.Background(), newTestPromptResponse("ignored"), 42)
-
-	if got, want := len(app.transcript.History), 1; got != want {
-		t.Fatalf("messages length = %d, want %d", got, want)
-	}
-
-	if _, ok := app.canceledPrompts[42]; ok {
-		t.Fatal("canceled prompt should be consumed")
-	}
-}
-
-func TestApplyPromptResponseClearsCanceledActivePrompt(t *testing.T) {
-	t.Parallel()
-
-	app := newRenderTestApp(t)
-	app.activePrompt = newTestActivePrompt(nil)
-	app.activePrompt.Canceled = true
-	app.appendStreamingBlock(transcript.RoleAssistant, "ignored stream")
-
-	app.applyPromptResponse(context.Background(), newTestPromptResponse("ignored"), app.activePrompt.ID)
-
-	if app.activePrompt != nil {
-		t.Fatal("activePrompt should be cleared")
-	}
-}
-
 func TestApplyPromptResponseAddsAssistantAndProcessesQueue(t *testing.T) {
 	t.Parallel()
 

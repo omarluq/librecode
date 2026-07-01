@@ -28,7 +28,7 @@ func (app *App) cancelActiveCompaction() {
 	app.setStatus("context compaction canceled")
 }
 
-func (app *App) cancelActivePrompt(ctx context.Context) {
+func (app *App) cancelActivePrompt(_ context.Context) {
 	if app.activePrompt == nil {
 		app.working = false
 		app.streamingText = ""
@@ -40,55 +40,15 @@ func (app *App) cancelActivePrompt(ctx context.Context) {
 		return
 	}
 
-	activePrompt := app.activePrompt
-	app.activePrompt = nil
-	activePrompt.Canceled = true
-	app.canceledPrompts[activePrompt.ID] = activePrompt
-	activePrompt.Cancel()
-	app.revertActivePromptUI(activePrompt)
+	if app.activePrompt.Canceled {
+		app.setStatus("canceling response...")
 
-	if app.deleteCanceledPromptBranch(ctx, activePrompt) {
-		app.setStatus("response canceled; conversation reverted")
-	}
-}
-
-func (app *App) revertActivePromptUI(activePrompt *activePromptState) {
-	if activePrompt.BaselineMessages >= 0 && activePrompt.BaselineMessages <= len(app.transcript.History) {
-		app.truncateMessages(activePrompt.BaselineMessages)
+		return
 	}
 
-	app.pendingParentID = cloneStringPtr(activePrompt.ParentEntryID)
-	app.streamingText = ""
-	app.streamingThinkingText = ""
-	app.resetStreamingBlocks()
-	app.streamedToolEvents = 0
-	app.working = false
-
-	app.scrollOffset = 0
-	if app.composerBuffer.Empty() {
-		app.composerBuffer.SetText(activePrompt.Prompt)
-	}
-}
-
-func (app *App) deleteCanceledPromptBranch(ctx context.Context, activePrompt *activePromptState) bool {
-	if activePrompt.SessionID == "" || activePrompt.UserEntryID == "" {
-		return true
-	}
-
-	err := app.runtime.SessionRepository().DeleteEntryBranch(
-		ctx,
-		activePrompt.SessionID,
-		activePrompt.UserEntryID,
-	)
-	if err != nil {
-		app.setStatus("canceled response; failed to revert persisted branch: " + err.Error())
-
-		return false
-	}
-
-	delete(app.canceledPrompts, activePrompt.ID)
-
-	return true
+	app.activePrompt.Canceled = true
+	app.activePrompt.Cancel()
+	app.setStatus("canceling response...")
 }
 
 func cloneStringPtr(value *string) *string {

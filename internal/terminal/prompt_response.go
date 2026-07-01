@@ -8,17 +8,7 @@ import (
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
-func (app *App) applyPromptResponse(ctx context.Context, response *assistant.PromptResponse, promptID uint64) {
-	if app.consumeCanceledPrompt(promptID) {
-		return
-	}
-
-	if app.activePrompt != nil && app.activePrompt.Canceled {
-		app.activePrompt = nil
-
-		return
-	}
-
+func (app *App) applyPromptResponse(ctx context.Context, response *assistant.PromptResponse, _ uint64) {
 	streamingBlocks := append([]chatMessage(nil), app.transcript.Streaming.Blocks...)
 	app.working = false
 	app.streamingText = ""

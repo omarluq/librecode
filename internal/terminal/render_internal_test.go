@@ -141,6 +141,30 @@ func TestPromptThinkingDeltaUsesSeparateStreamingBuffer(t *testing.T) {
 func TestApplyPromptErrorKeepsStreamedProgressVisible(t *testing.T) {
 	t.Parallel()
 
+	app := newPromptErrorProgressTestApp(t)
+
+	app.applyPromptError("provider returned an empty response", app.activePrompt.ID)
+
+	assertPromptErrorMessages(t, app, true)
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+}
+
+func TestApplyPromptErrorFinalizesCanceledProgressWithoutErrorMessage(t *testing.T) {
+	t.Parallel()
+
+	app := newPromptErrorProgressTestApp(t)
+	app.activePrompt.Canceled = true
+
+	app.applyPromptError("context canceled", app.activePrompt.ID)
+
+	assertPromptErrorMessages(t, app, false)
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+	assert.Equal(t, "response canceled; progress saved", app.statusMessage)
+}
+
+func newPromptErrorProgressTestApp(t *testing.T) *App {
+	t.Helper()
+
 	app := newRenderTestApp(t)
 	app.working = true
 	app.activePrompt = newTestActivePrompt(nil)
@@ -157,17 +181,20 @@ func TestApplyPromptErrorKeepsStreamedProgressVisible(t *testing.T) {
 	toolEvent.ToolEvent = newTestToolEvent("read", "file content")
 	app.handlePromptStreamEvent(context.Background(), toolEvent)
 
-	app.applyPromptError("provider returned an empty response", app.activePrompt.ID)
-
-	assertPromptErrorMessages(t, app)
-	assert.Empty(t, app.transcript.Streaming.Blocks)
+	return app
 }
 
-func assertPromptErrorMessages(t *testing.T, app *App) {
+func assertPromptErrorMessages(t *testing.T, app *App, wantErrorMessage bool) {
 	t.Helper()
 
 	assert.False(t, app.working)
-	require.Len(t, app.transcript.History, 5)
+
+	wantLen := 4
+	if wantErrorMessage {
+		wantLen = 5
+	}
+
+	require.Len(t, app.transcript.History, wantLen)
 	assert.Equal(t, transcript.RoleAssistant, app.transcript.History[0].Role)
 	assert.Equal(t, "partial", app.transcript.History[0].Content)
 	assert.Equal(t, transcript.RoleBashExecution, app.transcript.History[1].Role)
@@ -176,8 +203,11 @@ func assertPromptErrorMessages(t *testing.T, app *App) {
 	assert.Equal(t, "custom progress", app.transcript.History[2].Content)
 	assert.Equal(t, transcript.RoleToolResult, app.transcript.History[3].Role)
 	assert.Contains(t, app.transcript.History[3].Content, "tool: read")
-	assert.Equal(t, transcript.RoleCustom, app.transcript.History[4].Role)
-	assert.Equal(t, "provider returned an empty response", app.transcript.History[4].Content)
+
+	if wantErrorMessage {
+		assert.Equal(t, transcript.RoleCustom, app.transcript.History[4].Role)
+		assert.Equal(t, "provider returned an empty response", app.transcript.History[4].Content)
+	}
 }
 
 func TestFooterLinesIgnoreTransientStatus(t *testing.T) {

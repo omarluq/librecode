@@ -227,13 +227,7 @@ func (app *App) ignorePromptEvent(payload *asyncEvent) bool {
 		return false
 	}
 
-	if app.activePrompt != nil && app.activePrompt.ID == payload.PromptID {
-		return false
-	}
-
-	_, waitingForCleanup := app.canceledPrompts[payload.PromptID]
-
-	return !waitingForCleanup
+	return app.activePrompt == nil || app.activePrompt.ID != payload.PromptID
 }
 
 func isPromptAsyncEvent(kind asyncEventKind) bool {
@@ -381,10 +375,6 @@ func (app *App) stopCompactionIndicator() {
 }
 
 func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent) {
-	if app.activePrompt != nil && app.activePrompt.Canceled {
-		return
-	}
-
 	switch payload.Kind {
 	case asyncEventPromptDelta:
 		app.emitExtensionRuntimeEventOrMessage(
@@ -487,50 +477,33 @@ func toolExtensionData(event *assistant.ToolEvent) map[string]any {
 	}
 }
 
-func (app *App) applyPromptUserEntry(ctx context.Context, sessionID, entryID string, promptID uint64) {
-	if canceledPrompt, ok := app.canceledPrompts[promptID]; ok {
-		canceledPrompt.SessionID = sessionID
-		canceledPrompt.UserEntryID = entryID
-		app.deleteCanceledPromptBranch(ctx, canceledPrompt)
-
-		return
-	}
-
+func (app *App) applyPromptUserEntry(_ context.Context, sessionID, entryID string, promptID uint64) {
 	if app.activePrompt == nil || app.activePrompt.ID != promptID {
 		return
 	}
 
 	app.activePrompt.SessionID = sessionID
-
 	app.activePrompt.UserEntryID = entryID
-	if app.activePrompt.Canceled {
-		app.deleteCanceledPromptBranch(ctx, app.activePrompt)
-	}
 }
 
 func (app *App) applyPromptError(message string, promptID uint64) {
-	if app.consumeCanceledPrompt(promptID) {
-		app.setStatus("response canceled; conversation reverted")
-
-		return
-	}
-
 	streamingBlocks := append([]chatMessage(nil), app.transcript.Streaming.Blocks...)
+	canceled := app.activePrompt != nil && app.activePrompt.ID == promptID && app.activePrompt.Canceled
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""
 	app.resetStreamingBlocks()
-
 	app.streamedToolEvents = 0
-	if app.activePrompt != nil && app.activePrompt.Canceled {
-		app.activePrompt = nil
-		app.setStatus("response canceled; conversation reverted")
+	app.activePrompt = nil
+
+	app.applyFailedPromptStreamedBlocks(streamingBlocks)
+
+	if canceled {
+		app.setStatus("response canceled; progress saved")
 
 		return
 	}
 
-	app.activePrompt = nil
-	app.applyFailedPromptStreamedBlocks(streamingBlocks)
 	app.addMessage(transcript.RoleCustom, message)
 }
 
@@ -556,20 +529,6 @@ func (app *App) applyFailedPromptStreamedBlocks(streamingBlocks []chatMessage) {
 			continue
 		}
 	}
-}
-
-func (app *App) consumeCanceledPrompt(promptID uint64) bool {
-	if _, ok := app.canceledPrompts[promptID]; !ok {
-		return false
-	}
-
-	delete(app.canceledPrompts, promptID)
-
-	if app.activePrompt != nil && app.activePrompt.ID == promptID {
-		app.activePrompt = nil
-	}
-
-	return true
 }
 
 func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackName string) {
