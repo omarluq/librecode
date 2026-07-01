@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	testBuildInfoTimeKey = "vcs.time"
 	testBuildDate        = "2026-06-24T00:00:00Z"
 	testCommit           = "abc1234"
 	testDirtyVersion     = testShortRevision + dirtySuffix
@@ -73,73 +74,86 @@ func TestParseBuildMetadata(t *testing.T) {
 	}
 }
 
-func TestBuildMetadataFallsBackToBuildInfo(t *testing.T) {
+func TestBuildMetadataWithBuildInfoFallback(t *testing.T) {
 	t.Parallel()
 
-	metadata := buildMetadata{
-		version:   devVersion,
-		commit:    defaultCommit,
-		buildDate: defaultBuildDate,
-	}.withBuildInfoFallback(&debug.BuildInfo{
-		Main: debug.Module{},
-		Settings: []debug.BuildSetting{
-			{Key: buildInfoRevisionKey, Value: testFullRevision},
-			{Key: buildInfoModifiedKey, Value: trueValue},
-			{Key: buildInfoTimeKey, Value: testBuildDate},
+	tests := []struct {
+		main     debug.Module
+		input    buildMetadata
+		expected buildMetadata
+		name     string
+		settings []debug.BuildSetting
+	}{
+		{
+			input: buildMetadata{
+				version:   devVersion,
+				commit:    defaultCommit,
+				buildDate: defaultBuildDate,
+			},
+			expected: buildMetadata{
+				version:   testDirtyVersion,
+				commit:    testShortRevision,
+				buildDate: defaultBuildDate,
+			},
+			main: debug.Module{},
+			settings: []debug.BuildSetting{
+				{Key: buildInfoRevisionKey, Value: testFullRevision},
+				{Key: buildInfoModifiedKey, Value: trueValue},
+				{Key: testBuildInfoTimeKey, Value: testBuildDate},
+			},
+			name: "vcs revision fallback",
 		},
-	})
-
-	assert.Equal(t, buildMetadata{
-		version:   testDirtyVersion,
-		commit:    testShortRevision,
-		buildDate: testBuildDate,
-	}, metadata)
-}
-
-func TestBuildMetadataUsesModuleVersion(t *testing.T) {
-	t.Parallel()
-
-	metadata := buildMetadata{
-		version:   devVersion,
-		commit:    defaultCommit,
-		buildDate: defaultBuildDate,
-	}.withBuildInfoFallback(&debug.BuildInfo{
-		Main: debug.Module{Version: testVersion},
-		Settings: []debug.BuildSetting{
-			{Key: buildInfoRevisionKey, Value: testFullRevision},
-			{Key: buildInfoModifiedKey, Value: trueValue},
-			{Key: buildInfoTimeKey, Value: testBuildDate},
+		{
+			input: buildMetadata{
+				version:   devVersion,
+				commit:    defaultCommit,
+				buildDate: defaultBuildDate,
+			},
+			expected: buildMetadata{
+				version:   testVersion,
+				commit:    testShortRevision,
+				buildDate: defaultBuildDate,
+			},
+			main: debug.Module{Version: testVersion},
+			settings: []debug.BuildSetting{
+				{Key: buildInfoRevisionKey, Value: testFullRevision},
+				{Key: buildInfoModifiedKey, Value: trueValue},
+				{Key: testBuildInfoTimeKey, Value: testBuildDate},
+			},
+			name: "module version fallback",
 		},
-	})
-
-	assert.Equal(t, buildMetadata{
-		version:   testVersion,
-		commit:    testShortRevision,
-		buildDate: testBuildDate,
-	}, metadata)
-}
-
-func TestBuildMetadataPreservesInjectedValues(t *testing.T) {
-	t.Parallel()
-
-	metadata := buildMetadata{
-		version:   testVersion,
-		commit:    testCommit,
-		buildDate: testBuildDate,
-	}.withBuildInfoFallback(&debug.BuildInfo{
-		Main: debug.Module{},
-		Settings: []debug.BuildSetting{
-			{Key: buildInfoRevisionKey, Value: testFullRevision},
-			{Key: buildInfoModifiedKey, Value: trueValue},
-			{Key: buildInfoTimeKey, Value: testUpdatedBuildDate},
+		{
+			input: buildMetadata{
+				version:   testVersion,
+				commit:    testCommit,
+				buildDate: testBuildDate,
+			},
+			expected: buildMetadata{
+				version:   testVersion,
+				commit:    testCommit,
+				buildDate: testBuildDate,
+			},
+			main: debug.Module{},
+			settings: []debug.BuildSetting{
+				{Key: buildInfoRevisionKey, Value: testFullRevision},
+				{Key: buildInfoModifiedKey, Value: trueValue},
+				{Key: testBuildInfoTimeKey, Value: testUpdatedBuildDate},
+			},
+			name: "injected values preserved",
 		},
-	})
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	assert.Equal(t, buildMetadata{
-		version:   testVersion,
-		commit:    testCommit,
-		buildDate: testBuildDate,
-	}, metadata)
+			metadata := testCase.input.withBuildInfoFallback(&debug.BuildInfo{
+				Main:     testCase.main,
+				Settings: testCase.settings,
+			})
+
+			assert.Equal(t, testCase.expected, metadata)
+		})
+	}
 }
 
 func TestBuildInfoSetting(t *testing.T) {
