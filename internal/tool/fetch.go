@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -249,7 +250,10 @@ func (fetchTool *FetchTool) fetchURL(
 
 	setFetchHeaders(request)
 
-	client, closeIdleConnections := fetchTool.httpClientWithRedirectValidation(requestCtx)
+	client, closeIdleConnections, err := fetchTool.httpClientWithRedirectValidation(requestCtx)
+	if err != nil {
+		return nil, fetchResponseInfo{}, err
+	}
 	defer closeIdleConnections()
 
 	response, err := client.Do(request)
@@ -304,11 +308,15 @@ func (fetchTool *FetchTool) httpClient() *http.Client {
 
 func (fetchTool *FetchTool) httpClientWithRedirectValidation(
 	ctx context.Context,
-) (client *http.Client, closeIdleConnections func()) {
+) (client *http.Client, closeIdleConnections func(), err error) {
 	baseClient := fetchTool.httpClient()
 	clonedClient := *baseClient
 
-	transport, closeIdleConnections := fetchTool.transportWithNetworkValidation(baseClient.Transport)
+	transport, closeIdleConnections, err := fetchTool.transportWithNetworkValidation(baseClient.Transport)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	clonedClient.Transport = transport
 
 	baseCheckRedirect := baseClient.CheckRedirect
@@ -324,29 +332,33 @@ func (fetchTool *FetchTool) httpClientWithRedirectValidation(
 		return fetchTool.validatePublicFetchURL(ctx, request.URL)
 	}
 
-	return &clonedClient, closeIdleConnections
+	return &clonedClient, closeIdleConnections, nil
 }
 
 func (fetchTool *FetchTool) transportWithNetworkValidation(
 	baseTransport http.RoundTripper,
-) (roundTripper http.RoundTripper, closeIdleConnections func()) {
+) (roundTripper http.RoundTripper, closeIdleConnections func(), err error) {
 	if fetchTool.allowPrivateNetworks {
-		return baseTransport, func() {}
+		return baseTransport, func() {
+			// Network validation is disabled, so this wrapper has no cloned transport to clean up.
+		}, nil
 	}
 
 	transport, ok := cloneFetchHTTPTransport(baseTransport)
+
 	if !ok {
-		return baseTransport, func() {}
+		return baseTransport, func() {
+			// Non-transport round trippers own their cleanup; this wrapper did not allocate resources.
+		}, nil
 	}
 
 	transport.Proxy = nil
-	transport.DialContext = validatingFetchDialContext(fetchDialContext(transport))
 
-	if transport.DialTLSContext != nil {
-		transport.DialTLSContext = validatingFetchDialContext(transport.DialTLSContext)
+	if err := wrapFetchTransportDialHooks(transport); err != nil {
+		return nil, nil, err
 	}
 
-	return transport, transport.CloseIdleConnections
+	return transport, transport.CloseIdleConnections, nil
 }
 
 func cloneFetchHTTPTransport(baseTransport http.RoundTripper) (*http.Transport, bool) {
@@ -362,6 +374,22 @@ func cloneFetchHTTPTransport(baseTransport http.RoundTripper) (*http.Transport, 
 	return transport.Clone(), true
 }
 
+func wrapFetchTransportDialHooks(transport *http.Transport) error {
+	if hasFetchDeprecatedDialHook(transport, "Dial") || hasFetchDeprecatedDialHook(transport, "DialTLS") {
+		return oops.In("tool").Code("fetch_legacy_dial_hook").Errorf(
+			"fetch transport uses deprecated legacy dial hooks that cannot be safely validated",
+		)
+	}
+
+	transport.DialContext = validatingFetchDialContext(fetchDialContext(transport))
+
+	if transport.DialTLSContext != nil {
+		transport.DialTLSContext = validatingFetchDialContext(transport.DialTLSContext)
+	}
+
+	return nil
+}
+
 func fetchDialContext(transport *http.Transport) func(context.Context, string, string) (net.Conn, error) {
 	if transport.DialContext != nil {
 		return transport.DialContext
@@ -370,6 +398,12 @@ func fetchDialContext(transport *http.Transport) func(context.Context, string, s
 	dialer := &net.Dialer{}
 
 	return dialer.DialContext
+}
+
+func hasFetchDeprecatedDialHook(transport *http.Transport, name string) bool {
+	field := reflect.ValueOf(transport).Elem().FieldByName(name)
+
+	return field.IsValid() && !field.IsNil()
 }
 
 func validatingFetchDialContext(

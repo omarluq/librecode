@@ -831,7 +831,9 @@ func TestFetchTool_RedirectValidation(t *testing.T) {
 			fetchTool := fetchTestPrivateNetworkTool()
 			fetchTool.client = &http.Client{CheckRedirect: testCase.baseCheckRedirect}
 
-			client, closeIdleConnections := fetchTool.httpClientWithRedirectValidation(context.Background())
+			client, closeIdleConnections, err := fetchTool.httpClientWithRedirectValidation(context.Background())
+			require.NoError(t, err)
+
 			defer closeIdleConnections()
 
 			request, err := http.NewRequestWithContext(
@@ -846,6 +848,32 @@ func TestFetchTool_RedirectValidation(t *testing.T) {
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), testCase.wantErr)
+		})
+	}
+}
+
+func TestFetchTool_RejectsLegacyTransportDialHooks(t *testing.T) {
+	t.Parallel()
+
+	legacyDial := func(string, string) (net.Conn, error) {
+		return nil, errors.New("legacy dial should not run")
+	}
+
+	tests := []struct {
+		transport *http.Transport
+		name      string
+	}{
+		{name: "legacy dial", transport: &http.Transport{Dial: legacyDial}},
+		{name: "legacy dial tls", transport: &http.Transport{DialTLS: legacyDial}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, _, err := NewFetchTool().transportWithNetworkValidation(testCase.transport)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "deprecated legacy dial hooks")
 		})
 	}
 }
