@@ -10,7 +10,6 @@ import (
 const (
 	buildInfoModifiedKey = "vcs.modified"
 	buildInfoRevisionKey = "vcs.revision"
-	buildInfoTimeKey     = "vcs.time"
 	devVersion           = "dev"
 	dirtySuffix          = "-dirty"
 	defaultCommit        = "none"
@@ -82,10 +81,6 @@ func (metadata buildMetadata) withBuildInfoFallback(info *debug.BuildInfo) build
 	if metadata.commit == defaultCommit {
 		revision := shortRevision(buildInfoSetting(info.Settings, buildInfoRevisionKey))
 		metadata.commit = metadataPart(revision, defaultCommit)
-	}
-
-	if metadata.buildDate == defaultBuildDate {
-		metadata.buildDate = metadataPart(buildInfoSetting(info.Settings, buildInfoTimeKey), defaultBuildDate)
 	}
 
 	return metadata
