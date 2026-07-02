@@ -795,11 +795,12 @@ func TestDrawDirtyFrame(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		name  string
-		dirty bool
+		name     string
+		dirty    bool
+		wantDraw bool
 	}{
-		{name: "clean frame skips draw", dirty: false},
-		{name: "dirty frame draws", dirty: true},
+		{name: "clean frame skips draw", dirty: false, wantDraw: false},
+		{name: "dirty frame draws", dirty: true, wantDraw: true},
 	}
 
 	for _, testCase := range testCases {
@@ -807,8 +808,11 @@ func TestDrawDirtyFrame(t *testing.T) {
 			t.Parallel()
 
 			app := newScrollableRenderTestApp(t)
+			screen, ok := app.screen.(*clipboardScreen)
+			require.True(t, ok)
 
 			assert.False(t, app.drawDirtyFrame(context.Background(), testCase.dirty))
+			assert.Equal(t, testCase.wantDraw, len(screen.content) > 0)
 		})
 	}
 }
