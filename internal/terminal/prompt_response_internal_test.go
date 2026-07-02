@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/model"
@@ -57,18 +58,9 @@ func TestApplyPromptResponseNilClearsStreamedToolEvents(t *testing.T) {
 
 	app.applyPromptResponse(context.Background(), nil, app.activePrompt.ID)
 
-	if got := app.streamedToolEvents; got != 0 {
-		t.Fatalf("streamedToolEvents = %d, want 0", got)
-	}
-
-	if app.activePrompt != nil {
-		t.Fatal("activePrompt should be cleared")
-	}
-
-	if app.working {
-		t.Fatal("working should be false")
-	}
-
+	assert.Equal(t, 0, app.streamedToolEvents)
+	assert.Nil(t, app.activePrompt)
+	assert.False(t, app.working)
 	assert.Empty(t, app.transcript.Streaming.Blocks)
 }
 
@@ -126,21 +118,60 @@ func TestApplyPromptResponseAddsAssistantAndProcessesQueue(t *testing.T) {
 	client := newTerminalPromptClient(newTerminalCompletionResult("queued response"), nil)
 	app := newPromptSendTestApp(t, client)
 	app.activePrompt = newTestActivePrompt(nil)
-	app.queuedMessages = []string{"queued"}
+	app.queuedMessages = []string{asyncTestQueuedText}
 
 	app.applyPromptResponse(context.Background(), newTestPromptResponse("assistant response"), app.activePrompt.ID)
 
-	if got, want := app.transcript.History[0].Content, "assistant response"; got != want {
-		t.Fatalf("assistant message = %q, want %q", got, want)
+	waitForPromptRequest(t, client)
+	require.NotEmpty(t, app.transcript.History)
+	assert.Equal(t, "assistant response", app.transcript.History[0].Content)
+	assert.True(t, app.working)
+	assert.True(t, slices.Equal(app.queuedMessages, []string(nil)))
+}
+
+func TestApplyPromptResponseIgnoresStalePrompt(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.activePrompt = newTestActivePrompt(nil)
+	app.working = true
+
+	app.applyPromptResponse(context.Background(), newTestPromptResponse("stale response"), app.activePrompt.ID+1)
+
+	assert.Empty(t, app.transcript.History)
+	assert.True(t, app.working)
+	assert.NotNil(t, app.activePrompt)
+}
+
+func TestApplyPromptResponsePreservesCanceledProgress(t *testing.T) {
+	t.Parallel()
+
+	client := newTerminalPromptClient(newTerminalCompletionResult("queued response"), nil)
+	app := newPromptSendTestApp(t, client)
+	app.activePrompt = newTestActivePrompt(nil)
+	app.activePrompt.Canceled = true
+	app.working = true
+	app.queuedMessages = []string{asyncTestQueuedText}
+	app.appendStreamingBlock(transcript.RoleAssistant, "partial")
+
+	app.applyPromptResponse(context.Background(), newTestPromptResponse("late response"), app.activePrompt.ID)
+
+	waitForPromptRequest(t, client)
+	require.NotEmpty(t, app.transcript.History)
+	assert.Equal(t, "partial", app.transcript.History[0].Content)
+	assert.NotContains(t, transcriptContents(app.transcript.History), "late response")
+	assert.Equal(t, "response canceled; progress saved", app.statusMessage)
+	assert.True(t, app.working)
+	assert.True(t, slices.Equal(app.queuedMessages, []string(nil)))
+}
+
+func transcriptContents(messages []chatMessage) []string {
+	contents := make([]string, 0, len(messages))
+	for _, message := range messages {
+		contents = append(contents, message.Content)
 	}
 
-	if !app.working {
-		t.Fatal("queued prompt should start after response")
-	}
-
-	if got, want := app.queuedMessages, []string(nil); !slices.Equal(got, want) {
-		t.Fatalf("queuedMessages = %v, want empty", got)
-	}
+	return contents
 }
 
 func newTestPromptResponse(text string) *assistant.PromptResponse {

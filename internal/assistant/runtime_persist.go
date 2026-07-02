@@ -4,6 +4,7 @@ package assistant
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -28,6 +29,11 @@ type partialPromptBlock struct {
 type pendingToolCall struct {
 	Name          string
 	ArgumentsJSON string
+}
+
+type partialPromptMessage struct {
+	Role    database.Role
+	Content string
 }
 
 type partialPromptProgress struct {
@@ -217,60 +223,68 @@ func (runtime *Runtime) appendPartialPromptFailure(
 	persistCtx, cancel := promptPersistenceContext(ctx)
 	defer cancel()
 
-	parentID := &userEntryID
+	_, err := runtime.appendPartialPromptMessages(
+		persistCtx,
+		sessionID,
+		&userEntryID,
+		progress.failureMessages(promptErr),
+	)
 
-	for _, block := range progress.persistableBlocks() {
+	return err
+}
+
+func (runtime *Runtime) appendPartialPromptMessages(
+	ctx context.Context,
+	sessionID string,
+	parentID *string,
+	messages []partialPromptMessage,
+) (*string, error) {
+	for _, partial := range messages {
 		message := database.MessageEntity{
 			Timestamp: time.Now().UTC(),
-			Role:      transcript.ToDatabaseRole(block.Role),
-			Content:   block.Content,
+			Role:      partial.Role,
+			Content:   partial.Content,
 			Provider:  runtime.cfg.Assistant.Provider,
 			Model:     runtime.cfg.Assistant.Model,
 		}
 
-		entry, err := runtime.sessions.AppendMessage(persistCtx, sessionID, parentID, &message)
+		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
 		if err != nil {
-			return oops.In("assistant").Code("append_partial_prompt").Wrapf(err, "append partial prompt progress")
+			return nil, oops.In("assistant").Code("append_partial_prompt").Wrapf(err, "append partial prompt progress")
 		}
 
-		runtime.dispatchMessageAppend(persistCtx, entry)
+		runtime.dispatchMessageAppend(ctx, entry)
 		parentID = &entry.ID
 	}
 
-	for _, event := range progress.syntheticToolFailureEvents(promptErr) {
-		message := database.MessageEntity{
-			Timestamp: time.Now().UTC(),
-			Role:      database.RoleToolResult,
-			Content:   formatToolEvent(&event),
-			Provider:  runtime.cfg.Assistant.Provider,
-			Model:     runtime.cfg.Assistant.Model,
-		}
+	return parentID, nil
+}
 
-		entry, err := runtime.sessions.AppendMessage(persistCtx, sessionID, parentID, &message)
-		if err != nil {
-			return oops.In("assistant").Code("append_partial_prompt").Wrapf(err, "append canceled tool result")
-		}
+func (progress *partialPromptProgress) failureMessages(promptErr error) []partialPromptMessage {
+	blocks := progress.persistableBlocks()
+	toolEvents := progress.syntheticToolFailureEvents(promptErr)
+	messages := make([]partialPromptMessage, 0, len(blocks)+len(toolEvents)+1)
 
-		runtime.dispatchMessageAppend(persistCtx, entry)
-		parentID = &entry.ID
+	for _, block := range blocks {
+		messages = append(messages, partialPromptMessage{
+			Role:    transcript.ToDatabaseRole(block.Role),
+			Content: block.Content,
+		})
 	}
 
-	message := database.MessageEntity{
-		Timestamp: time.Now().UTC(),
-		Role:      database.RoleCustom,
-		Content:   partialPromptErrorMessage(promptErr),
-		Provider:  runtime.cfg.Assistant.Provider,
-		Model:     runtime.cfg.Assistant.Model,
+	for _, event := range toolEvents {
+		messages = append(messages, partialPromptMessage{
+			Role:    database.RoleToolResult,
+			Content: formatToolEvent(&event),
+		})
 	}
 
-	entry, err := runtime.sessions.AppendMessage(persistCtx, sessionID, parentID, &message)
-	if err != nil {
-		return oops.In("assistant").Code("append_prompt_error").Wrapf(err, "append prompt error")
-	}
+	messages = append(messages, partialPromptMessage{
+		Role:    database.RoleCustom,
+		Content: partialPromptErrorMessage(promptErr),
+	})
 
-	runtime.dispatchMessageAppend(persistCtx, entry)
-
-	return nil
+	return messages
 }
 
 func (progress *partialPromptProgress) trackPendingTool(call *ToolCallEvent, fallbackName string) {
@@ -288,6 +302,10 @@ func (progress *partialPromptProgress) trackPendingTool(call *ToolCallEvent, fal
 		pending.Name = fallbackName
 	}
 
+	if pending.Name == "" {
+		return
+	}
+
 	progress.pendingTools = append(progress.pendingTools, pending)
 }
 
@@ -301,8 +319,7 @@ func (progress *partialPromptProgress) removePendingTool(event *ToolEvent) {
 		return
 	}
 
-	copy(progress.pendingTools[index:], progress.pendingTools[index+1:])
-	progress.pendingTools = progress.pendingTools[:len(progress.pendingTools)-1]
+	progress.pendingTools = slices.Delete(progress.pendingTools, index, index+1)
 }
 
 func (progress *partialPromptProgress) pendingToolIndex(name, argumentsJSON string) (int, bool) {
@@ -376,10 +393,7 @@ func progressBlocks(blocks []partialPromptBlock) []partialPromptBlock {
 		return nil
 	}
 
-	clone := make([]partialPromptBlock, len(blocks))
-	copy(clone, blocks)
-
-	return clone
+	return slices.Clone(blocks)
 }
 
 func formatToolEvent(toolEvent *ToolEvent) string {

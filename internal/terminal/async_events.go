@@ -227,7 +227,37 @@ func (app *App) ignorePromptEvent(payload *asyncEvent) bool {
 		return false
 	}
 
+	if isCompactionAsyncEvent(payload.Kind) {
+		return false
+	}
+
 	return app.activePrompt == nil || app.activePrompt.ID != payload.PromptID
+}
+
+func isCompactionAsyncEvent(kind asyncEventKind) bool {
+	switch kind {
+	case asyncEventCompactStart,
+		asyncEventCompactDone,
+		asyncEventCompactError:
+		return true
+	case asyncEventAuthURL,
+		asyncEventAuthDone,
+		asyncEventAuthError,
+		asyncEventPromptDone,
+		asyncEventPromptUserEntry,
+		asyncEventPromptDelta,
+		asyncEventPromptThinkingDelta,
+		asyncEventPromptToolStart,
+		asyncEventPromptToolResult,
+		asyncEventPromptRetry,
+		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot,
+		asyncEventPromptError,
+		asyncEventPromptContext:
+		return false
+	}
+
+	return false
 }
 
 func isPromptAsyncEvent(kind asyncEventKind) bool {
@@ -279,7 +309,7 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 
 		return true
 	case asyncEventPromptError:
-		app.applyPromptError(payload.Text, payload.PromptID)
+		app.applyPromptError(ctx, payload.Text, payload.PromptID)
 
 		return true
 	case asyncEventPromptContext,
@@ -486,25 +516,31 @@ func (app *App) applyPromptUserEntry(_ context.Context, sessionID, entryID strin
 	app.activePrompt.UserEntryID = entryID
 }
 
-func (app *App) applyPromptError(message string, promptID uint64) {
+func (app *App) applyPromptError(ctx context.Context, message string, promptID uint64) {
 	streamingBlocks := append([]chatMessage(nil), app.transcript.Streaming.Blocks...)
 	canceled := app.activePrompt != nil && app.activePrompt.ID == promptID && app.activePrompt.Canceled
+	app.finishPrompt()
+
+	app.applyFailedPromptStreamedBlocks(streamingBlocks)
+
+	if canceled {
+		app.setStatus("response canceled; progress saved")
+		app.processQueuedPrompt(ctx)
+
+		return
+	}
+
+	app.addMessage(transcript.RoleCustom, message)
+	app.processQueuedPrompt(ctx)
+}
+
+func (app *App) finishPrompt() {
 	app.working = false
 	app.streamingText = ""
 	app.streamingThinkingText = ""
 	app.resetStreamingBlocks()
 	app.streamedToolEvents = 0
 	app.activePrompt = nil
-
-	app.applyFailedPromptStreamedBlocks(streamingBlocks)
-
-	if canceled {
-		app.setStatus("response canceled; progress saved")
-
-		return
-	}
-
-	app.addMessage(transcript.RoleCustom, message)
 }
 
 func (app *App) applyFailedPromptStreamedBlocks(streamingBlocks []chatMessage) {

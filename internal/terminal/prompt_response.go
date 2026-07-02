@@ -8,16 +8,24 @@ import (
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
-func (app *App) applyPromptResponse(ctx context.Context, response *assistant.PromptResponse, _ uint64) {
+func (app *App) applyPromptResponse(ctx context.Context, response *assistant.PromptResponse, promptID uint64) {
 	streamingBlocks := append([]chatMessage(nil), app.transcript.Streaming.Blocks...)
-	app.working = false
-	app.streamingText = ""
-	app.streamingThinkingText = ""
-	app.resetStreamingBlocks()
+	if app.activePrompt == nil || app.activePrompt.ID != promptID {
+		return
+	}
+
+	if app.activePrompt.Canceled {
+		app.finishPrompt()
+		app.applyFailedPromptStreamedBlocks(streamingBlocks)
+		app.setStatus("response canceled; progress saved")
+		app.processQueuedPrompt(ctx)
+
+		return
+	}
+
+	app.finishPrompt()
 
 	if response == nil {
-		app.activePrompt = nil
-		app.streamedToolEvents = 0
 		app.processQueuedPrompt(ctx)
 
 		return
@@ -26,9 +34,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	app.sessionID = response.SessionID
 	app.applyTokenUsage(&response.Usage)
 	app.applyPromptResponseSideEffects(response, streamingBlocks)
-	app.streamedToolEvents = 0
 	app.addMessage(transcript.RoleAssistant, response.Text)
-	app.activePrompt = nil
 	app.persistSessionSettings()
 	app.processQueuedPrompt(ctx)
 }
