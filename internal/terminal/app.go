@@ -390,6 +390,10 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 		return app.drawLatestResize(ctx, resize)
 	}
 
+	if delta, ok := app.scrollDeltaForEvent(event); ok {
+		return app.handleScrollLoopEvent(ctx, delta)
+	}
+
 	shouldQuit, err := app.handleEvent(ctx, event)
 	if err != nil {
 		app.addMessage(transcript.RoleCustom, err.Error())
@@ -406,6 +410,21 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 	}
 
 	return false, true
+}
+
+func (app *App) handleScrollLoopEvent(ctx context.Context, delta int) (shouldQuit, dirty bool) {
+	coalesced := app.coalesceScrollEvents(delta)
+	app.scrollTranscript(coalesced.Delta)
+	app.draw(ctx)
+
+	if coalesced.Pending != nil {
+		shouldQuit, _ = app.handleLoopEvent(ctx, coalesced.Pending)
+		if shouldQuit {
+			return true, false
+		}
+	}
+
+	return false, false
 }
 
 func (app *App) drawLatestResize(ctx context.Context, resize *tcell.EventResize) (shouldQuit, dirty bool) {
