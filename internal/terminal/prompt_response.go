@@ -17,6 +17,12 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	if app.activePrompt.Canceled {
 		app.finishPrompt()
 		app.applyFailedPromptStreamedBlocks(streamingBlocks)
+
+		if response != nil {
+			app.sessionID = response.SessionID
+			app.applyTokenUsage(&response.Usage)
+		}
+
 		app.setStatus("response canceled; progress saved")
 		app.processQueuedPrompt(ctx)
 

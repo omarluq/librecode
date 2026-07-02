@@ -146,23 +146,56 @@ func TestApplyPromptResponseIgnoresStalePrompt(t *testing.T) {
 func TestApplyPromptResponsePreservesCanceledProgress(t *testing.T) {
 	t.Parallel()
 
-	client := newTerminalPromptClient(newTerminalCompletionResult("queued response"), nil)
-	app := newPromptSendTestApp(t, client)
-	app.activePrompt = newTestActivePrompt(nil)
-	app.activePrompt.Canceled = true
-	app.working = true
-	app.queuedMessages = []string{asyncTestQueuedText}
-	app.appendStreamingBlock(transcript.RoleAssistant, "partial")
+	tests := []struct {
+		name          string
+		response      *assistant.PromptResponse
+		wantSessionID string
+		wantUsage     model.TokenUsage
+	}{
+		{
+			name:          "late response preserves bookkeeping",
+			response:      newTestPromptResponseWithBookkeeping("late response"),
+			wantSessionID: "response-session",
+			wantUsage: model.TokenUsage{
+				Breakdown:       nil,
+				TopContributors: nil,
+				ContextWindow:   100,
+				ContextTokens:   25,
+				InputTokens:     0,
+				OutputTokens:    0,
+			},
+		},
+		{
+			name:          "nil response preserves progress",
+			response:      nil,
+			wantSessionID: "existing-session",
+			wantUsage:     model.EmptyTokenUsage(),
+		},
+	}
 
-	app.applyPromptResponse(context.Background(), newTestPromptResponse("late response"), app.activePrompt.ID)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	waitForPromptRequest(t, client)
-	require.NotEmpty(t, app.transcript.History)
-	assert.Equal(t, "partial", app.transcript.History[0].Content)
-	assert.NotContains(t, transcriptContents(app.transcript.History), "late response")
-	assert.Equal(t, "response canceled; progress saved", app.statusMessage)
-	assert.True(t, app.working)
-	assert.True(t, slices.Equal(app.queuedMessages, []string(nil)))
+			app := newRenderTestApp(t)
+			app.sessionID = "existing-session"
+			app.activePrompt = newTestActivePrompt(nil)
+			app.activePrompt.Canceled = true
+			app.working = true
+			app.appendStreamingBlock(transcript.RoleAssistant, "partial")
+			promptID := app.activePrompt.ID
+
+			app.applyPromptResponse(context.Background(), test.response, promptID)
+			require.NotEmpty(t, app.transcript.History)
+			assert.Equal(t, "partial", app.transcript.History[0].Content)
+			assert.NotContains(t, transcriptContents(app.transcript.History), "late response")
+			assert.Equal(t, "response canceled; progress saved", app.statusMessage)
+			assert.Equal(t, test.wantSessionID, app.sessionID)
+			assert.Equal(t, test.wantUsage, app.tokenUsage)
+			assert.False(t, app.working)
+			assert.True(t, slices.Equal(app.queuedMessages, []string(nil)))
+		})
+	}
 }
 
 func transcriptContents(messages []chatMessage) []string {
@@ -185,4 +218,19 @@ func newTestPromptResponse(text string) *assistant.PromptResponse {
 		Usage:            model.EmptyTokenUsage(),
 		Cached:           false,
 	}
+}
+
+func newTestPromptResponseWithBookkeeping(text string) *assistant.PromptResponse {
+	response := newTestPromptResponse(text)
+	response.SessionID = "response-session"
+	response.Usage = model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   100,
+		ContextTokens:   25,
+		InputTokens:     10,
+		OutputTokens:    5,
+	}
+
+	return response
 }
