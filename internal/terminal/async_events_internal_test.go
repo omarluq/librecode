@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -15,14 +16,15 @@ import (
 )
 
 const (
-	asyncTestSessionID = "async-session"
-	asyncTestEntryID   = "async-entry"
-	asyncTestToolName  = "async-read"
-	asyncTestGreeting  = "async-hello"
-	asyncTestThinking  = "async-thinking"
-	asyncTestToolStart = "async-bash"
-	asyncTestCompact   = "async context auto-compacted"
-	asyncTestIgnored   = "async-ignored"
+	asyncTestQueuedText = "queued"
+	asyncTestSessionID  = "async-session"
+	asyncTestEntryID    = "async-entry"
+	asyncTestToolName   = "async-read"
+	asyncTestGreeting   = "async-hello"
+	asyncTestThinking   = "async-thinking"
+	asyncTestToolStart  = "async-bash"
+	asyncTestCompact    = "async context auto-compacted"
+	asyncTestIgnored    = "async-ignored"
 )
 
 type promptHandlerCase struct {
@@ -575,6 +577,38 @@ func TestHandlePromptAsyncEventIgnoresStalePromptEvents(t *testing.T) {
 	app.handlePromptAsyncEvent(context.Background(), asyncTestEvent(asyncEventPromptDelta, "", "stale", 2))
 
 	assert.Empty(t, app.transcript.Streaming.Blocks)
+}
+
+func TestHandlePromptAsyncEventAppliesCompactionWithoutActivePrompt(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.compacting = true
+
+	app.handlePromptAsyncEvent(
+		context.Background(),
+		asyncTestEvent(asyncEventCompactDone, "", compactedStatusMessage, 2),
+	)
+
+	assert.False(t, app.compacting)
+	assert.Equal(t, compactedStatusMessage, app.statusMessage)
+}
+
+func TestApplyPromptErrorProcessesQueuedPrompt(t *testing.T) {
+	t.Parallel()
+
+	client := newTerminalPromptClient(newTerminalCompletionResult("queued response"), nil)
+	app := newPromptSendTestApp(t, client)
+	app.activePrompt = newTestActivePrompt(nil)
+	app.activePrompt.ID = 4
+	app.working = true
+	app.queuedMessages = []string{asyncTestQueuedText}
+
+	app.applyPromptError(context.Background(), "provider failed", app.activePrompt.ID)
+
+	waitForPromptRequest(t, client)
+	assert.True(t, app.working)
+	assert.True(t, slices.Equal(app.queuedMessages, []string(nil)))
 }
 
 type streamEventApplyCase struct {

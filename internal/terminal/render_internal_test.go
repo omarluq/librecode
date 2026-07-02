@@ -143,7 +143,7 @@ func TestApplyPromptErrorKeepsStreamedProgressVisible(t *testing.T) {
 
 	app := newPromptErrorProgressTestApp(t)
 
-	app.applyPromptError("provider returned an empty response", app.activePrompt.ID)
+	app.applyPromptError(context.Background(), "provider returned an empty response", app.activePrompt.ID)
 
 	assertPromptErrorMessages(t, app, true)
 	assert.Empty(t, app.transcript.Streaming.Blocks)
@@ -155,7 +155,7 @@ func TestApplyPromptErrorFinalizesCanceledProgressWithoutErrorMessage(t *testing
 	app := newPromptErrorProgressTestApp(t)
 	app.activePrompt.Canceled = true
 
-	app.applyPromptError("context canceled", app.activePrompt.ID)
+	app.applyPromptError(context.Background(), "context canceled", app.activePrompt.ID)
 
 	assertPromptErrorMessages(t, app, false)
 	assert.Empty(t, app.transcript.Streaming.Blocks)
