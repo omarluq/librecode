@@ -514,8 +514,57 @@ func TestMouseWheelScrollsTranscript(t *testing.T) {
 
 	app.handleMouse(tcell.NewEventMouse(0, 0, tcell.WheelUp, tcell.ModNone))
 
-	if app.scrollOffset != mouseScrollRows {
-		t.Fatalf("scroll offset = %d, want %d", app.scrollOffset, mouseScrollRows)
+	assert.Equal(t, mouseScrollRows, app.scrollOffset)
+}
+
+func TestScrollLoopEventCoalescesQueuedScrolls(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name         string
+		wantComposer string
+		queuedEvents []tcell.Event
+		wantOffset   int
+	}{
+		{
+			name:         "folds queued scroll events into one draw",
+			wantComposer: "",
+			queuedEvents: []tcell.Event{
+				tcell.NewEventMouse(0, 0, tcell.WheelUp, tcell.ModNone),
+				tcell.NewEventMouse(0, 0, tcell.WheelDown, tcell.ModNone),
+			},
+			wantOffset: mouseScrollRows,
+		},
+		{
+			name:         "stops at first non-scroll event and handles it",
+			wantComposer: "x",
+			queuedEvents: []tcell.Event{
+				tcell.NewEventMouse(0, 0, tcell.WheelUp, tcell.ModNone),
+				tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone),
+			},
+			wantOffset: mouseScrollRows * 2,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			must := require.New(t)
+			app := newScrollableRenderTestApp(t)
+
+			events := app.screen.EventQ()
+			for _, event := range testCase.queuedEvents {
+				events <- event
+			}
+
+			shouldQuit, dirty := app.handleScrollLoopEvent(context.Background(), mouseScrollRows)
+
+			must.False(shouldQuit)
+			must.False(dirty)
+			assert.Equal(t, testCase.wantOffset, app.scrollOffset)
+			assert.Equal(t, testCase.wantComposer, app.composerBuffer.TextValue())
+		})
 	}
 }
 
@@ -1417,6 +1466,23 @@ func newRenderTestApp(t *testing.T) *App {
 		SessionID:  "",
 	})
 	app.resetMessages()
+
+	return app
+}
+
+func newScrollableRenderTestApp(t *testing.T) *App {
+	t.Helper()
+
+	screen := newClipboardScreen()
+	screen.SetSize(40, 8)
+
+	app := newRenderTestApp(t)
+	app.screen = screen
+	app.renderer = tui.NewRenderer(screen)
+
+	for range 20 {
+		app.addMessage(transcript.RoleAssistant, "scrollable content")
+	}
 
 	return app
 }
