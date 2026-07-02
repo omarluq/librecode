@@ -506,6 +506,49 @@ func TestScrollTranscriptDoesNotDrawImmediately(t *testing.T) {
 	}
 }
 
+func TestHandleTranscriptScroll(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		event      *tcell.EventKey
+		name       string
+		wantOffset int
+		wantOK     bool
+	}{
+		{
+			name:       "page up scrolls up",
+			event:      tcell.NewEventKey(tcell.KeyPgUp, "", tcell.ModNone),
+			wantOffset: keyboardScrollRows,
+			wantOK:     true,
+		},
+		{
+			name:       "page down scrolls down but clamps at top",
+			event:      tcell.NewEventKey(tcell.KeyPgDn, "", tcell.ModNone),
+			wantOffset: 0,
+			wantOK:     true,
+		},
+		{
+			name:       "non-scroll key is ignored",
+			event:      tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone),
+			wantOffset: 0,
+			wantOK:     false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+
+			ok := app.handleTranscriptScroll(testCase.event)
+
+			assert.Equal(t, testCase.wantOK, ok)
+			assert.Equal(t, testCase.wantOffset, app.scrollOffset)
+		})
+	}
+}
+
 func TestMouseWheelScrollsTranscript(t *testing.T) {
 	t.Parallel()
 
@@ -517,6 +560,82 @@ func TestMouseWheelScrollsTranscript(t *testing.T) {
 	assert.Equal(t, mouseScrollRows, app.scrollOffset)
 }
 
+func TestScrollDeltaForEvent(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		event     tcell.Event
+		name      string
+		mode      appMode
+		wantDelta int
+		wantOK    bool
+	}{
+		{
+			name:      "mouse wheel up in chat mode",
+			event:     tcell.NewEventMouse(0, 0, tcell.WheelUp, tcell.ModNone),
+			mode:      modeChat,
+			wantDelta: mouseScrollRows,
+			wantOK:    true,
+		},
+		{
+			name:      "mouse wheel down in chat mode",
+			event:     tcell.NewEventMouse(0, 0, tcell.WheelDown, tcell.ModNone),
+			mode:      modeChat,
+			wantDelta: -mouseScrollRows,
+			wantOK:    true,
+		},
+		{
+			name:      "page up key in chat mode",
+			event:     tcell.NewEventKey(tcell.KeyPgUp, "", tcell.ModNone),
+			mode:      modeChat,
+			wantDelta: keyboardScrollRows,
+			wantOK:    true,
+		},
+		{
+			name:      "page down key in chat mode",
+			event:     tcell.NewEventKey(tcell.KeyPgDn, "", tcell.ModNone),
+			mode:      modeChat,
+			wantDelta: -keyboardScrollRows,
+			wantOK:    true,
+		},
+		{
+			name:      "non-scroll key in chat mode",
+			event:     tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone),
+			mode:      modeChat,
+			wantDelta: 0,
+			wantOK:    false,
+		},
+		{
+			name:      "mouse wheel outside chat mode",
+			event:     tcell.NewEventMouse(0, 0, tcell.WheelUp, tcell.ModNone),
+			mode:      modePanel,
+			wantDelta: 0,
+			wantOK:    false,
+		},
+		{
+			name:      "page up key outside chat mode",
+			event:     tcell.NewEventKey(tcell.KeyPgUp, "", tcell.ModNone),
+			mode:      modePanel,
+			wantDelta: 0,
+			wantOK:    false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			app.mode = testCase.mode
+
+			delta, ok := app.scrollDeltaForEvent(testCase.event)
+
+			assert.Equal(t, testCase.wantDelta, delta)
+			assert.Equal(t, testCase.wantOK, ok)
+		})
+	}
+}
+
 func TestScrollLoopEventCoalescesQueuedScrolls(t *testing.T) {
 	t.Parallel()
 
@@ -525,6 +644,7 @@ func TestScrollLoopEventCoalescesQueuedScrolls(t *testing.T) {
 		wantComposer string
 		queuedEvents []tcell.Event
 		wantOffset   int
+		wantDirty    bool
 	}{
 		{
 			name:         "folds queued scroll events into one draw",
@@ -534,6 +654,7 @@ func TestScrollLoopEventCoalescesQueuedScrolls(t *testing.T) {
 				tcell.NewEventMouse(0, 0, tcell.WheelDown, tcell.ModNone),
 			},
 			wantOffset: mouseScrollRows,
+			wantDirty:  false,
 		},
 		{
 			name:         "stops at first non-scroll event and handles it",
@@ -543,6 +664,16 @@ func TestScrollLoopEventCoalescesQueuedScrolls(t *testing.T) {
 				tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone),
 			},
 			wantOffset: mouseScrollRows * 2,
+			wantDirty:  false,
+		},
+		{
+			name:         "propagates pending event dirty state",
+			wantComposer: "",
+			queuedEvents: []tcell.Event{
+				tcell.NewEventInterrupt(asyncTestEvent(asyncEventPromptDelta, "", "chunk", 1)),
+			},
+			wantOffset: mouseScrollRows,
+			wantDirty:  true,
 		},
 	}
 
@@ -552,6 +683,8 @@ func TestScrollLoopEventCoalescesQueuedScrolls(t *testing.T) {
 
 			must := require.New(t)
 			app := newScrollableRenderTestApp(t)
+			app.activePrompt = newTestActivePrompt(nil)
+			app.activePrompt.ID = 1
 
 			events := app.screen.EventQ()
 			for _, event := range testCase.queuedEvents {
@@ -561,9 +694,171 @@ func TestScrollLoopEventCoalescesQueuedScrolls(t *testing.T) {
 			shouldQuit, dirty := app.handleScrollLoopEvent(context.Background(), mouseScrollRows)
 
 			must.False(shouldQuit)
-			must.False(dirty)
+			assert.Equal(t, testCase.wantDirty, dirty)
 			assert.Equal(t, testCase.wantOffset, app.scrollOffset)
 			assert.Equal(t, testCase.wantComposer, app.composerBuffer.TextValue())
+		})
+	}
+}
+
+func TestRunLoopStepHandlesQueuedEvents(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name         string
+		event        tcell.Event
+		wantComposer string
+		wantOffset   int
+		wantQuit     bool
+		wantDirty    bool
+	}{
+		{
+			name:         "nil event quits",
+			event:        nil,
+			wantComposer: "",
+			wantOffset:   0,
+			wantQuit:     true,
+			wantDirty:    false,
+		},
+		{
+			name:         "key event draws immediately",
+			event:        tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone),
+			wantComposer: "x",
+			wantOffset:   0,
+			wantQuit:     false,
+			wantDirty:    false,
+		},
+		{
+			name:         "high-volume async event returns dirty",
+			event:        tcell.NewEventInterrupt(asyncTestEvent(asyncEventPromptDelta, "", "chunk", 1)),
+			wantComposer: "",
+			wantOffset:   0,
+			wantQuit:     false,
+			wantDirty:    true,
+		},
+		{
+			name:         "scroll event draws immediately",
+			event:        tcell.NewEventMouse(0, 0, tcell.WheelUp, tcell.ModNone),
+			wantComposer: "",
+			wantOffset:   mouseScrollRows,
+			wantQuit:     false,
+			wantDirty:    false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newScrollableRenderTestApp(t)
+			app.activePrompt = newTestActivePrompt(nil)
+			app.activePrompt.ID = 1
+
+			app.screen.EventQ() <- testCase.event
+
+			shouldQuit, dirty := runLoopStepWithDormantTimers(t, app)
+
+			assert.Equal(t, testCase.wantQuit, shouldQuit)
+			assert.Equal(t, testCase.wantDirty, dirty)
+			assert.Equal(t, testCase.wantOffset, app.scrollOffset)
+			assert.Equal(t, testCase.wantComposer, app.composerBuffer.TextValue())
+		})
+	}
+}
+
+func runLoopStepWithDormantTimers(t *testing.T, app *App) (shouldQuit, dirty bool) {
+	t.Helper()
+
+	workTicker := time.NewTicker(time.Hour)
+	frameTicker := time.NewTicker(time.Hour)
+	extensionTimer := time.NewTimer(time.Hour)
+	messageWarmTimer := time.NewTimer(time.Hour)
+
+	t.Cleanup(func() {
+		workTicker.Stop()
+		frameTicker.Stop()
+		stopTimer(extensionTimer)
+		stopTimer(messageWarmTimer)
+	})
+
+	return app.runLoopStep(
+		context.Background(),
+		workTicker,
+		frameTicker,
+		extensionTimer,
+		messageWarmTimer,
+		false,
+	)
+}
+
+func TestDrawDirtyFrame(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name  string
+		dirty bool
+	}{
+		{name: "clean frame skips draw", dirty: false},
+		{name: "dirty frame draws", dirty: true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newScrollableRenderTestApp(t)
+
+			assert.False(t, app.drawDirtyFrame(context.Background(), testCase.dirty))
+		})
+	}
+}
+
+func TestDrawLatestResize(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		queuedEvent    tcell.Event
+		name           string
+		wantComposer   string
+		wantLastWidth  int
+		wantLastHeight int
+	}{
+		{
+			name:           "uses latest queued resize",
+			queuedEvent:    tcell.NewEventResize(100, 40),
+			wantComposer:   "",
+			wantLastWidth:  100,
+			wantLastHeight: 40,
+		},
+		{
+			name:           "stops at pending non-resize event",
+			queuedEvent:    tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone),
+			wantComposer:   "x",
+			wantLastWidth:  80,
+			wantLastHeight: 24,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			screen := newClipboardScreen()
+			app.screen = screen
+			app.renderer = tui.NewRenderer(screen)
+
+			app.screen.EventQ() <- testCase.queuedEvent
+
+			shouldQuit, dirty := app.drawLatestResize(context.Background(), tcell.NewEventResize(80, 24))
+
+			lastWidth, lastHeight := app.lastResize.Size()
+
+			assert.False(t, shouldQuit)
+			assert.False(t, dirty)
+			assert.Equal(t, testCase.wantComposer, app.composerBuffer.TextValue())
+			assert.Equal(t, testCase.wantLastWidth, lastWidth)
+			assert.Equal(t, testCase.wantLastHeight, lastHeight)
 		})
 	}
 }

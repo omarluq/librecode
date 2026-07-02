@@ -53,14 +53,14 @@ func (app *App) handleMouse(event *tcell.EventMouse) {
 }
 
 func (app *App) scrollDeltaForEvent(event tcell.Event) (int, bool) {
+	if app.mode != modeChat {
+		return 0, false
+	}
+
 	switch typedEvent := event.(type) {
 	case *tcell.EventKey:
 		return app.keyScrollDelta(typedEvent)
 	case *tcell.EventMouse:
-		if app.mode != modeChat {
-			return 0, false
-		}
-
 		return app.mouseScrollDelta(typedEvent)
 	default:
 		return 0, false
