@@ -418,10 +418,7 @@ func (app *App) handleScrollLoopEvent(ctx context.Context, delta int) (shouldQui
 	app.draw(ctx)
 
 	if coalesced.Pending != nil {
-		shouldQuit, _ = app.handleLoopEvent(ctx, coalesced.Pending)
-		if shouldQuit {
-			return true, false
-		}
+		return app.handleLoopEvent(ctx, coalesced.Pending)
 	}
 
 	return false, false
