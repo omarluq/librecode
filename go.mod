@@ -48,7 +48,7 @@ require (
 	github.com/yuin/gopher-lua v1.1.2
 	golang.design/x/clipboard v0.8.0
 	golang.org/x/net v0.56.0
-	golang.org/x/text v0.38.0
+	golang.org/x/text v0.39.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.53.0
 	mvdan.cc/sh/v3 v3.13.1
