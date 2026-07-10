@@ -138,7 +138,7 @@ func (app *App) editorBorderColor() colorToken {
 	switch app.currentThinkingLevel() {
 	case "minimal", "low":
 		return colorBorderMuted
-	case "medium", "high", "xhigh":
+	case "medium", "high", "xhigh", "max":
 		return colorBorderAccent
 	default:
 		return colorBorder

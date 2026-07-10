@@ -21,6 +21,17 @@ func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 
 	models, err := ParseDiscoveredModels(supportedProvidersDiscoveryFixture())
 	require.NoError(t, err)
+
+	assertDiscoveredOpenAIModels(t, models)
+	assertDiscoveredOpenCodeModel(t, models)
+	assertDiscoveredAnthropicOAuthModel(t, models)
+	assertDiscoveredCodexModels(t, models)
+	assertDiscoveredZAIModel(t, models)
+}
+
+func assertDiscoveredOpenAIModels(t *testing.T, models []Model) {
+	t.Helper()
+
 	openAIModel := findModel(t, models, testDiscoveryOpenAI, testDiscoveryGPT54)
 	assert.Equal(t, testDiscoveryOpenAIResponsesAPI, openAIModel.API)
 	assert.Equal(t, "https://api.openai.com/v1", openAIModel.BaseURL)
@@ -31,12 +42,28 @@ func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 	assert.InDelta(t, 2.5, openAIModel.Cost.Input, 0)
 	assert.InDelta(t, 15.0, openAIModel.Cost.Output, 0)
 	assert.NotNil(t, openAIModel.ThinkingLevelMap[ThinkingOff])
+	assert.NotContains(t, modelIDsForProvider(models, testDiscoveryOpenAI), "gpt-5.6")
+	assert.NotContains(t, modelIDsForProvider(models, testDiscoveryOpenAI), "text-only")
+
+	openAIGPT56Model := findModel(t, models, testDiscoveryOpenAI, gpt56Sol)
+	assert.Equal(t, "GPT-5.6 Sol", openAIGPT56Model.Name)
+	assert.Equal(t, openAIResponsesContextWindow, openAIGPT56Model.ContextWindow)
+	assert.Equal(t, largeMaxOutputTokens, openAIGPT56Model.MaxTokens)
+	assert.Equal(t, Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25}, openAIGPT56Model.Cost)
+	assertDiscoveredThinkingLevelMapping(t, &openAIGPT56Model, ThinkingMax, "max")
+}
+
+func assertDiscoveredOpenCodeModel(t *testing.T, models []Model) {
+	t.Helper()
 
 	openCodeModel := findModel(t, models, "opencode", testDiscoveryGPT55)
 	assert.Equal(t, "openai-completions", openCodeModel.API)
 	assert.Equal(t, "https://opencode.ai/zen/v1", openCodeModel.BaseURL)
 	assert.Equal(t, []InputMode{InputText}, openCodeModel.Input)
-	assert.NotContains(t, modelIDsForProvider(models, testDiscoveryOpenAI), "text-only")
+}
+
+func assertDiscoveredAnthropicOAuthModel(t *testing.T, models []Model) {
+	t.Helper()
 
 	anthropicOAuthModel := findModel(t, models, "anthropic-claude", anthropicmodel.Fable5)
 	assert.Equal(t, "anthropic-messages", anthropicOAuthModel.API)
@@ -45,11 +72,27 @@ func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 	xhighLevel := anthropicOAuthModel.ThinkingLevelMap[ThinkingXHigh]
 	require.NotNil(t, xhighLevel)
 	assert.Equal(t, string(ThinkingXHigh), *xhighLevel)
+}
+
+func assertDiscoveredCodexModels(t *testing.T, models []Model) {
+	t.Helper()
 
 	codexModel := findModel(t, models, "openai-codex", testDiscoveryGPT55)
 	assert.Equal(t, "openai-codex-responses", codexModel.API)
 	assert.Equal(t, "https://chatgpt.com/backend-api", codexModel.BaseURL)
 	assert.Equal(t, 272000, codexModel.ContextWindow)
+
+	codexGPT56Model := findModel(t, models, "openai-codex", gpt56Sol)
+	assert.Equal(t, "GPT-5.6 Sol", codexGPT56Model.Name)
+	assert.Equal(t, 372000, codexGPT56Model.ContextWindow)
+	assert.Equal(t, 128000, codexGPT56Model.MaxTokens)
+	assert.Equal(t, Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25}, codexGPT56Model.Cost)
+	assertDiscoveredThinkingLevelMapping(t, &codexGPT56Model, ThinkingMax, "max")
+	assertDiscoveredThinkingLevelMapping(t, &codexGPT56Model, ThinkingMinimal, "low")
+}
+
+func assertDiscoveredZAIModel(t *testing.T, models []Model) {
+	t.Helper()
 
 	zaiModel := findModel(t, models, "zai", "glm-5.2")
 	assert.Equal(t, "openai-completions", zaiModel.API)
@@ -57,8 +100,15 @@ func TestParseDiscoveredModelsMapsSupportedProviders(t *testing.T) {
 	assert.Equal(t, 1_000_000, zaiModel.ContextWindow)
 	assert.Equal(t, 131_072, zaiModel.MaxTokens)
 	assert.True(t, zaiModel.Reasoning)
-	require.NotNil(t, zaiModel.ThinkingLevelMap[ThinkingXHigh])
-	assert.Equal(t, "max", *zaiModel.ThinkingLevelMap[ThinkingXHigh])
+	assertDiscoveredThinkingLevelMapping(t, &zaiModel, ThinkingXHigh, "max")
+}
+
+func assertDiscoveredThinkingLevelMapping(t *testing.T, discovered *Model, level ThinkingLevel, expected string) {
+	t.Helper()
+
+	mapped := discovered.ThinkingLevelMap[level]
+	require.NotNil(t, mapped)
+	assert.Equal(t, expected, *mapped)
 }
 
 func supportedProvidersDiscoveryFixture() []byte {
@@ -74,7 +124,8 @@ func supportedProvidersDiscoveryFixture() []byte {
 					"limit": {"context": 272000, "output": 128000},
 					"cost": {"input": 2.5, "output": 15, "cache_read": 0.25, "cache_write": 0}
 				},
-				"text-only": {"tool_call": false}
+				"text-only": {"tool_call": false},
+				"gpt-5.6": {"id":"gpt-5.6", "name":"GPT-5.6", "tool_call": true, "reasoning": true}
 			}
 		},
 		"anthropic": {

@@ -18,21 +18,35 @@ import (
 )
 
 const (
-	apiAnthropicMessages   = "anthropic-messages"
-	apiOpenAICodexResponse = "openai-codex-responses"
-	gpt52                  = "gpt-5.2"
-	gpt52InputCost         = 1.75
-	gpt52OutputCost        = 14
-	gpt52CacheCost         = 0.175
-	gpt54InputCost         = 2.5
-	gpt54OutputCost        = 15
-	gpt54CacheCost         = 0.25
-	gpt54MiniInput         = 0.75
-	gpt54MiniOutput        = 4.5
-	gpt54MiniCache         = 0.075
-	gpt55InputCost         = 5
-	gpt55OutputCost        = 30
-	gpt55CacheCost         = 0.5
+	apiAnthropicMessages = "anthropic-messages"
+	gpt52                = "gpt-5.2"
+	gpt52InputCost       = 1.75
+	gpt52OutputCost      = 14
+	gpt52CacheCost       = 0.175
+	gpt54InputCost       = 2.5
+	gpt54OutputCost      = 15
+	gpt54CacheCost       = 0.25
+	gpt54MiniInput       = 0.75
+	gpt54MiniOutput      = 4.5
+	gpt54MiniCache       = 0.075
+	gpt55InputCost       = 5
+	gpt55OutputCost      = 30
+	gpt55CacheCost       = 0.5
+	gpt56Sol             = "gpt-5.6-sol"
+	gpt56Terra           = "gpt-5.6-terra"
+	gpt56Luna            = "gpt-5.6-luna"
+	gpt56SolInputCost    = 5
+	gpt56SolOutputCost   = 30
+	gpt56SolCacheCost    = 0.5
+	gpt56SolCacheWrite   = 6.25
+	gpt56TerraInputCost  = 2.5
+	gpt56TerraOutputCost = 15
+	gpt56TerraCacheCost  = 0.25
+	gpt56TerraCacheWrite = 3.125
+	gpt56LunaInputCost   = 1
+	gpt56LunaOutputCost  = 6
+	gpt56LunaCacheCost   = 0.1
+	gpt56LunaCacheWrite  = 1.25
 )
 
 // DiscoveryOptions configures remote model catalog discovery.
@@ -85,12 +99,13 @@ type discoveryProviderMapping struct {
 	BaseURL  string
 }
 
-type discoveredCodexDefinition struct {
-	ID     string
-	Name   string
-	Input  []InputMode
-	Cost   Cost
-	Window int
+type staticModelDefinition struct {
+	ID        string
+	Name      string
+	Input     []InputMode
+	Cost      Cost
+	Window    int
+	MaxTokens int
 }
 
 type discoveryCatalogFetch struct {
@@ -152,6 +167,7 @@ func ParseDiscoveredModels(content []byte) ([]Model, error) {
 		models = append(models, discoveredProviderModels(provider.Models, mapping)...)
 	}
 
+	models = append(models, discoveredOpenAIResponsesModels(catalog)...)
 	models = append(models, discoveredCodexModels()...)
 
 	return models, nil
@@ -268,7 +284,7 @@ func mapping(provider, source, api, baseURL string) discoveryProviderMapping {
 func discoveredProviderModels(definitions map[string]discoveryModel, mapping discoveryProviderMapping) []Model {
 	models := make([]Model, 0, len(definitions))
 	for modelID, definition := range definitions {
-		if !definition.ToolCall {
+		if !definition.ToolCall || openAIUnsupportedDiscoveredModel(mapping.Provider, modelID, &definition) {
 			continue
 		}
 
@@ -276,6 +292,19 @@ func discoveredProviderModels(definitions map[string]discoveryModel, mapping dis
 	}
 
 	return models
+}
+
+func openAIUnsupportedDiscoveredModel(provider, fallbackModelID string, definition *discoveryModel) bool {
+	if provider != providerOpenAI {
+		return false
+	}
+
+	modelID := fallbackModelID
+	if definition.ID != "" {
+		modelID = definition.ID
+	}
+
+	return modelID == "gpt-5.6"
 }
 
 func modelFromDiscovery(modelID string, definition *discoveryModel, mapping discoveryProviderMapping) Model {
@@ -289,8 +318,8 @@ func modelFromDiscovery(modelID string, definition *discoveryModel, mapping disc
 		name = discoveryModelID
 	}
 
-	return Model{
-		ThinkingLevelMap: thinkingLevelsForDiscoveredModel(mapping.Provider, discoveryModelID),
+	model := Model{
+		ThinkingLevelMap: thinkingLevelsForModel(mapping.Provider, discoveryModelID),
 		Headers:          nil,
 		Compat:           nil,
 		Provider:         mapping.Provider,
@@ -303,6 +332,20 @@ func modelFromDiscovery(modelID string, definition *discoveryModel, mapping disc
 		ContextWindow:    discoveryContextWindow(definition.Limit),
 		MaxTokens:        discoveryMaxTokens(definition.Limit),
 		Reasoning:        definition.Reasoning,
+	}
+	patchOpenAIResponsesDiscoveredModel(&model)
+
+	return model
+}
+
+func patchOpenAIResponsesDiscoveredModel(discovered *Model) {
+	if discovered.Provider != providerOpenAI || !openAIResponsesShortContextModel(discovered.ID) {
+		return
+	}
+
+	discovered.ContextWindow = openAIResponsesContextWindow
+	if discovered.MaxTokens == 0 {
+		discovered.MaxTokens = largeMaxOutputTokens
 	}
 }
 
@@ -343,30 +386,65 @@ func discoveryMaxTokens(limit *discoveryLimit) int {
 	return limit.Output
 }
 
-func discoveredCodexModels() []Model {
-	metadata := openAICodexMetadata()
-	definitions := discoveredCodexDefinitions(metadata.ContextWindow)
+func discoveredOpenAIResponsesModels(catalog map[string]discoveryProvider) []Model {
+	openAIProvider, ok := catalog["openai"]
+	if !ok {
+		return []Model{}
+	}
 
+	metadata := openAIResponsesMetadata()
+	definitions := discoveredOpenAIResponsesDefinitions()
 	models := make([]Model, 0, len(definitions))
-	for _, definition := range definitions {
-		models = append(models, Model{
-			ThinkingLevelMap: thinkingLevelsForDiscoveredModel(providerOpenAICodex, definition.ID),
-			Headers:          nil,
-			Compat:           cloneAnyMap(metadata.Compat),
-			Provider:         providerOpenAICodex,
-			ID:               definition.ID,
-			Name:             definition.Name,
-			API:              metadata.API,
-			BaseURL:          metadata.BaseURL,
-			Input:            append([]InputMode{}, definition.Input...),
-			Cost:             definition.Cost,
-			ContextWindow:    definition.Window,
-			MaxTokens:        metadata.MaxTokens,
-			Reasoning:        metadata.Reasoning,
-		})
+
+	for index := range definitions {
+		definition := definitions[index]
+		if _, ok := openAIProvider.Models[definition.ID]; ok {
+			continue
+		}
+
+		models = append(models, modelFromStaticDefinition(providerOpenAI, &metadata, &definition))
 	}
 
 	return models
+}
+
+func discoveredCodexModels() []Model {
+	metadata := openAICodexMetadata()
+	definitions := discoveredCodexDefinitions()
+
+	models := make([]Model, 0, len(definitions))
+	for index := range definitions {
+		models = append(models, modelFromStaticDefinition(providerOpenAICodex, &metadata, &definitions[index]))
+	}
+
+	return models
+}
+
+func modelFromStaticDefinition(
+	provider string,
+	metadata *providerMetadata,
+	definition *staticModelDefinition,
+) Model {
+	maxTokens := definition.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = metadata.MaxTokens
+	}
+
+	return Model{
+		ThinkingLevelMap: thinkingLevelsForModel(provider, definition.ID),
+		Headers:          cloneStringMap(metadata.Headers),
+		Compat:           cloneAnyMap(metadata.Compat),
+		Provider:         provider,
+		ID:               definition.ID,
+		Name:             definition.Name,
+		API:              metadata.API,
+		BaseURL:          metadata.BaseURL,
+		Input:            append([]InputMode{}, definition.Input...),
+		Cost:             definition.Cost,
+		ContextWindow:    definition.Window,
+		MaxTokens:        maxTokens,
+		Reasoning:        metadata.Reasoning,
+	}
 }
 
 const discoveryCatalogMaxBytes = 16 * units.MiB
@@ -387,47 +465,111 @@ func codexGPT55Cost() Cost {
 	return Cost{Input: gpt55InputCost, Output: gpt55OutputCost, CacheRead: gpt55CacheCost, CacheWrite: 0}
 }
 
-func discoveredCodexDefinitions(defaultWindow int) []discoveredCodexDefinition {
-	textImage := []InputMode{InputText, InputImage}
-
-	return []discoveredCodexDefinition{
-		codexDefinition(gpt52, "GPT-5.2", textImage, defaultWindow, codexGPT52Cost()),
-		codexDefinition("gpt-5.3-codex", "GPT-5.3 Codex", textImage, defaultWindow, codexGPT52Cost()),
-		codexDefinition(
-			"gpt-5.3-codex-spark",
-			"GPT-5.3 Codex Spark",
-			[]InputMode{InputText},
-			largeMaxOutputTokens,
-			codexGPT52Cost(),
-		),
-		codexDefinition(gpt54, "GPT-5.4", textImage, defaultWindow, codexGPT54Cost()),
-		codexDefinition("gpt-5.4-mini", "GPT-5.4 mini", textImage, defaultWindow, codexGPT54MiniCost()),
-		codexDefinition(gpt55, "GPT-5.5", textImage, defaultWindow, codexGPT55Cost()),
+func gpt56SolCost() Cost {
+	return Cost{
+		Input:      gpt56SolInputCost,
+		Output:     gpt56SolOutputCost,
+		CacheRead:  gpt56SolCacheCost,
+		CacheWrite: gpt56SolCacheWrite,
 	}
 }
 
-func codexDefinition(
+func gpt56TerraCost() Cost {
+	return Cost{
+		Input:      gpt56TerraInputCost,
+		Output:     gpt56TerraOutputCost,
+		CacheRead:  gpt56TerraCacheCost,
+		CacheWrite: gpt56TerraCacheWrite,
+	}
+}
+
+func gpt56LunaCost() Cost {
+	return Cost{
+		Input:      gpt56LunaInputCost,
+		Output:     gpt56LunaOutputCost,
+		CacheRead:  gpt56LunaCacheCost,
+		CacheWrite: gpt56LunaCacheWrite,
+	}
+}
+
+func discoveredOpenAIResponsesDefinitions() []staticModelDefinition {
+	return gpt56ModelDefinitions(openAIResponsesContextWindow, largeMaxOutputTokens)
+}
+
+func gpt56ModelDefinitions(window, maxTokens int) []staticModelDefinition {
+	textImage := []InputMode{InputText, InputImage}
+
+	return []staticModelDefinition{
+		newModelDefinition(gpt56Sol, "GPT-5.6 Sol", textImage, window, maxTokens, gpt56SolCost()),
+		newModelDefinition(gpt56Terra, "GPT-5.6 Terra", textImage, window, maxTokens, gpt56TerraCost()),
+		newModelDefinition(gpt56Luna, "GPT-5.6 Luna", textImage, window, maxTokens, gpt56LunaCost()),
+	}
+}
+
+const codexExplicitModelCount = 9
+
+func discoveredCodexDefinitions() []staticModelDefinition {
+	textImage := []InputMode{InputText, InputImage}
+	definitions := make([]staticModelDefinition, 0, codexExplicitModelCount)
+	definitions = append(definitions,
+		newModelDefinition(gpt52, "GPT-5.2", textImage, openAICodexContextWindow, 0, codexGPT52Cost()),
+		newModelDefinition(
+			"gpt-5.3-codex",
+			"GPT-5.3 Codex",
+			textImage,
+			openAICodexContextWindow,
+			0,
+			codexGPT52Cost(),
+		),
+		newModelDefinition(
+			"gpt-5.3-codex-spark",
+			"GPT-5.3 Codex Spark",
+			[]InputMode{InputText},
+			openAICodexSparkContextWindow,
+			0,
+			codexGPT52Cost(),
+		),
+		newModelDefinition(gpt54, "GPT-5.4", textImage, openAICodexContextWindow, 0, codexGPT54Cost()),
+		newModelDefinition(
+			"gpt-5.4-mini",
+			"GPT-5.4 mini",
+			textImage,
+			openAICodexContextWindow,
+			0,
+			codexGPT54MiniCost(),
+		),
+		newModelDefinition(gpt55, "GPT-5.5", textImage, openAICodexContextWindow, 0, codexGPT55Cost()),
+	)
+
+	return append(definitions, gpt56ModelDefinitions(openAICodexGPT56ContextWindow, 0)...)
+}
+
+func newModelDefinition(
 	modelID string,
 	name string,
 	input []InputMode,
 	window int,
+	maxTokens int,
 	cost Cost,
-) discoveredCodexDefinition {
-	return discoveredCodexDefinition{
-		Cost:   cost,
-		Input:  append([]InputMode{}, input...),
-		ID:     modelID,
-		Name:   name,
-		Window: window,
+) staticModelDefinition {
+	return staticModelDefinition{
+		ID:        modelID,
+		Name:      name,
+		Input:     append([]InputMode{}, input...),
+		Cost:      cost,
+		Window:    window,
+		MaxTokens: maxTokens,
 	}
 }
 
-func thinkingLevelsForDiscoveredModel(provider, modelID string) map[ThinkingLevel]*string {
+func thinkingLevelsForModel(provider, modelID string) map[ThinkingLevel]*string {
 	levels := map[ThinkingLevel]*string{}
 	addAnthropicThinkingLevels(levels, provider, modelID)
 	addOpenAIThinkingOff(levels, provider, modelID)
 	addOpenAIThinkingNone(levels, provider, modelID)
 	addOpenAIXHigh(levels, modelID)
+	addOpenAIMax(levels, modelID)
+	addOpenAIMinimal(levels, provider, modelID)
 	addZAIThinkingLevels(levels, provider, modelID)
 
 	if len(levels) == 0 {
@@ -453,9 +595,15 @@ func addAnthropicThinkingLevels(levels map[ThinkingLevel]*string, provider, mode
 }
 
 func addOpenAIThinkingOff(levels map[ThinkingLevel]*string, provider, modelID string) {
-	if (provider == providerOpenAI || provider == providerOpenAICodex) && strings.HasPrefix(modelID, "gpt-5") {
-		levels[ThinkingOff] = nil
+	if !openAIProviderSupportsThinkingOff(provider) || !strings.HasPrefix(modelID, "gpt-5") {
+		return
 	}
+
+	levels[ThinkingOff] = nil
+}
+
+func openAIProviderSupportsThinkingOff(provider string) bool {
+	return provider == providerOpenAI || provider == providerAzureOpenAIResponses || provider == providerOpenAICodex
 }
 
 func addOpenAIThinkingNone(levels map[ThinkingLevel]*string, provider, modelID string) {
@@ -476,6 +624,24 @@ func addOpenAIXHigh(levels map[ThinkingLevel]*string, modelID string) {
 	levels[ThinkingXHigh] = &xhigh
 }
 
+func addOpenAIMax(levels map[ThinkingLevel]*string, modelID string) {
+	if !openAISupportsMax(modelID) {
+		return
+	}
+
+	maxEffort := string(ThinkingMax)
+	levels[ThinkingMax] = &maxEffort
+}
+
+func addOpenAIMinimal(levels map[ThinkingLevel]*string, provider, modelID string) {
+	if provider != providerOpenAICodex || !openAICodexMapsMinimalToLow(modelID) {
+		return
+	}
+
+	low := string(ThinkingLow)
+	levels[ThinkingMinimal] = &low
+}
+
 func addZAIThinkingLevels(levels map[ThinkingLevel]*string, provider, modelID string) {
 	if provider != providerZAI || !strings.HasPrefix(modelID, glm52) {
 		return
@@ -488,7 +654,16 @@ func openAISupportsXHigh(modelID string) bool {
 	return strings.Contains(modelID, gpt52) ||
 		strings.Contains(modelID, "gpt-5.3") ||
 		strings.Contains(modelID, "gpt-5.4") ||
-		strings.Contains(modelID, gpt55)
+		strings.Contains(modelID, gpt55) ||
+		strings.Contains(modelID, "gpt-5.6")
+}
+
+func openAISupportsMax(modelID string) bool {
+	return strings.Contains(modelID, "gpt-5.6")
+}
+
+func openAICodexMapsMinimalToLow(modelID string) bool {
+	return strings.HasPrefix(modelID, "gpt-5.")
 }
 
 func closeResponseBody(body io.Closer) {
@@ -499,7 +674,17 @@ func closeResponseBody(body io.Closer) {
 
 func openAIResponsesNoReasoningModel(modelID string) bool {
 	switch modelID {
-	case "gpt-5.1", gpt52, "gpt-5.3-codex", gpt54, "gpt-5.4-mini", "gpt-5.4-nano", gpt55:
+	case "gpt-5.1", gpt52, "gpt-5.3-codex", gpt54, "gpt-5.4-mini", "gpt-5.4-nano", gpt55,
+		gpt56Sol, gpt56Terra, gpt56Luna:
+		return true
+	default:
+		return false
+	}
+}
+
+func openAIResponsesShortContextModel(modelID string) bool {
+	switch modelID {
+	case gpt54, gpt55, gpt56Sol, gpt56Terra, gpt56Luna:
 		return true
 	default:
 		return false

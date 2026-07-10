@@ -30,14 +30,40 @@ func TestOpenAIChatPayloadAndRoles(t *testing.T) {
 func TestOpenAIChatPayloadMapsReasoningEffort(t *testing.T) {
 	t.Parallel()
 
-	request := testCompletionRequestAuth(testOpenAIProvider, "sk-test")
-	setTestRequestReasoning(request, true)
-	setTestRequestThinkingLevel(request, thinkingXHigh)
-	setTestThinkingMap(request, thinkingXHigh, "max")
+	tests := []struct {
+		name        string
+		level       string
+		mappedLevel string
+		want        string
+	}{
+		{
+			name:        "xhigh maps to max",
+			level:       thinkingXHigh,
+			mappedLevel: thinkingMax,
+			want:        thinkingMax,
+		},
+		{
+			name:        "max maps directly",
+			level:       thinkingMax,
+			mappedLevel: thinkingMax,
+			want:        thinkingMax,
+		},
+	}
 
-	payload := openAIChatPayload(request)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	assert.Equal(t, "max", payload["reasoning_effort"])
+			request := testCompletionRequestAuth(testOpenAIProvider, "sk-test")
+			setTestRequestReasoning(request, true)
+			setTestRequestThinkingLevel(request, test.level)
+			setTestThinkingMap(request, test.level, test.mappedLevel)
+
+			payload := openAIChatPayload(request)
+
+			assert.Equal(t, test.want, payload["reasoning_effort"])
+		})
+	}
 }
 
 func TestOpenAIChatMessagesAndRoles(t *testing.T) {

@@ -91,7 +91,7 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("extensions.enabled", true)
 	viperInstance.SetDefault("extensions.use", []string{defaultLocalExtensionSource})
 	viperInstance.SetDefault("assistant.provider", "openai-codex")
-	viperInstance.SetDefault("assistant.model", "gpt-5.5")
+	viperInstance.SetDefault("assistant.model", "gpt-5.6-sol")
 	viperInstance.SetDefault("assistant.thinking_level", "off")
 	viperInstance.SetDefault("assistant.retry.enabled", true)
 	viperInstance.SetDefault("assistant.retry.max_attempts", defaultRetryMaxAttempts)

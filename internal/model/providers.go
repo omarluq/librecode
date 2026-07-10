@@ -79,16 +79,25 @@ func additionalBuiltInModels() []providerModelPair {
 	return []providerModelPair{
 		{Provider: providerAnthropic, ModelID: anthropicmodel.Mythos5},
 		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Mythos5},
+		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Terra},
+		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Luna},
+		{Provider: providerOpenAI, ModelID: gpt56Terra},
+		{Provider: providerOpenAI, ModelID: gpt56Luna},
+		{Provider: providerOpenAICodex, ModelID: gpt56Terra},
+		{Provider: providerOpenAICodex, ModelID: gpt56Luna},
 	}
 }
 
 func builtInDefaultModel(provider, modelID string) Model {
 	metadata := defaultProviderMetadata()[provider]
+	if definition, ok := builtInModelDefinition(provider, modelID); ok {
+		return modelFromStaticDefinition(provider, &metadata, &definition)
+	}
 
 	return Model{
-		ThinkingLevelMap: metadata.ThinkingLevelMap,
-		Headers:          metadata.Headers,
-		Compat:           metadata.Compat,
+		ThinkingLevelMap: thinkingLevelsForModel(provider, modelID),
+		Headers:          cloneStringMap(metadata.Headers),
+		Compat:           cloneAnyMap(metadata.Compat),
 		Provider:         provider,
 		ID:               modelID,
 		Name:             modelID,
@@ -102,15 +111,44 @@ func builtInDefaultModel(provider, modelID string) Model {
 	}
 }
 
+func builtInModelDefinition(provider, modelID string) (staticModelDefinition, bool) {
+	for _, definition := range builtInModelDefinitions(provider) {
+		if definition.ID == modelID {
+			return definition, true
+		}
+	}
+
+	return staticModelDefinition{
+		ID:        "",
+		Name:      "",
+		Input:     nil,
+		Cost:      Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
+		Window:    0,
+		MaxTokens: 0,
+	}, false
+}
+
+func builtInModelDefinitions(provider string) []staticModelDefinition {
+	switch provider {
+	case providerOpenAI:
+		return gpt56ModelDefinitions(openAIResponsesContextWindow, largeMaxOutputTokens)
+	case providerAzureOpenAIResponses:
+		return gpt56ModelDefinitions(azureOpenAIResponsesContextWindow, largeMaxOutputTokens)
+	case providerOpenAICodex:
+		return gpt56ModelDefinitions(openAICodexGPT56ContextWindow, largeMaxOutputTokens)
+	default:
+		return nil
+	}
+}
+
 type providerMetadata struct {
-	ThinkingLevelMap map[ThinkingLevel]*string
-	Headers          map[string]string
-	Compat           map[string]any
-	API              string
-	BaseURL          string
-	ContextWindow    int
-	MaxTokens        int
-	Reasoning        bool
+	Headers       map[string]string
+	Compat        map[string]any
+	API           string
+	BaseURL       string
+	ContextWindow int
+	MaxTokens     int
+	Reasoning     bool
 }
 
 func defaultProviderMetadata() map[string]providerMetadata {
@@ -137,35 +175,37 @@ func defaultProviderMetadata() map[string]providerMetadata {
 
 func openAICompatibleMetadata(baseURL string, reasoning bool) providerMetadata {
 	return providerMetadata{
-		ThinkingLevelMap: nil,
-		Headers:          nil,
-		Compat:           nil,
-		API:              apiOpenAICompletions,
-		BaseURL:          baseURL,
-		ContextWindow:    0,
-		MaxTokens:        0,
-		Reasoning:        reasoning,
+		Headers:       nil,
+		Compat:        nil,
+		API:           apiOpenAICompletions,
+		BaseURL:       baseURL,
+		ContextWindow: 0,
+		MaxTokens:     0,
+		Reasoning:     reasoning,
 	}
 }
 
 const (
-	openAICodexContextWindow = 272_000
-	anthropicContextWindow   = 1_000_000
-	zaiContextWindow         = 1_000_000
-	zaiMaxOutputTokens       = 131_072
-	largeMaxOutputTokens     = 128_000
+	openAIResponsesContextWindow      = 272_000
+	openAICodexContextWindow          = 272_000
+	openAICodexGPT56ContextWindow     = 372_000
+	openAICodexSparkContextWindow     = 128_000
+	azureOpenAIResponsesContextWindow = 1_050_000
+	anthropicContextWindow            = 1_000_000
+	zaiContextWindow                  = 1_000_000
+	zaiMaxOutputTokens                = 131_072
+	largeMaxOutputTokens              = 128_000
 )
 
 func zaiMetadata() providerMetadata {
 	return providerMetadata{
-		ThinkingLevelMap: zaiThinkingLevelMap(),
-		Headers:          nil,
-		Compat:           nil,
-		API:              apiOpenAICompletions,
-		BaseURL:          "https://api.z.ai/api/coding/paas/v4",
-		ContextWindow:    zaiContextWindow,
-		MaxTokens:        zaiMaxOutputTokens,
-		Reasoning:        true,
+		Headers:       nil,
+		Compat:        nil,
+		API:           apiOpenAICompletions,
+		BaseURL:       "https://api.z.ai/api/coding/paas/v4",
+		ContextWindow: zaiContextWindow,
+		MaxTokens:     zaiMaxOutputTokens,
+		Reasoning:     true,
 	}
 }
 
@@ -184,55 +224,49 @@ func zaiThinkingLevelMap() map[ThinkingLevel]*string {
 
 func openAIResponsesMetadata() providerMetadata {
 	return providerMetadata{
-		ThinkingLevelMap: nil,
-		Headers:          nil,
-		Compat:           nil,
-		API:              apiOpenAIResponses,
-		BaseURL:          "https://api.openai.com/v1",
-		ContextWindow:    0,
-		MaxTokens:        0,
-		Reasoning:        true,
+		Headers:       nil,
+		Compat:        nil,
+		API:           apiOpenAIResponses,
+		BaseURL:       "https://api.openai.com/v1",
+		ContextWindow: openAIResponsesContextWindow,
+		MaxTokens:     largeMaxOutputTokens,
+		Reasoning:     true,
 	}
 }
 
 func openAICodexMetadata() providerMetadata {
 	return providerMetadata{
-		ThinkingLevelMap: nil,
-		Headers:          nil,
-		Compat:           nil,
-		API:              "openai-codex-responses",
-		BaseURL:          "https://chatgpt.com/backend-api",
-		ContextWindow:    openAICodexContextWindow,
-		MaxTokens:        largeMaxOutputTokens,
-		Reasoning:        true,
+		Headers:       nil,
+		Compat:        nil,
+		API:           "openai-codex-responses",
+		BaseURL:       "https://chatgpt.com/backend-api",
+		ContextWindow: openAICodexContextWindow,
+		MaxTokens:     largeMaxOutputTokens,
+		Reasoning:     true,
 	}
 }
 
 func anthropicMetadata() providerMetadata {
-	xhigh := string(ThinkingXHigh)
-
 	return providerMetadata{
-		ThinkingLevelMap: map[ThinkingLevel]*string{ThinkingOff: nil, ThinkingXHigh: &xhigh},
-		Headers:          nil,
-		Compat:           nil,
-		API:              "anthropic-messages",
-		BaseURL:          "https://api.anthropic.com",
-		ContextWindow:    anthropicContextWindow,
-		MaxTokens:        largeMaxOutputTokens,
-		Reasoning:        true,
+		Headers:       nil,
+		Compat:        nil,
+		API:           "anthropic-messages",
+		BaseURL:       "https://api.anthropic.com",
+		ContextWindow: anthropicContextWindow,
+		MaxTokens:     largeMaxOutputTokens,
+		Reasoning:     true,
 	}
 }
 
 func azureOpenAIMetadata() providerMetadata {
 	return providerMetadata{
-		ThinkingLevelMap: nil,
-		Headers:          nil,
-		Compat:           nil,
-		API:              apiOpenAIResponses,
-		BaseURL:          "",
-		ContextWindow:    0,
-		MaxTokens:        0,
-		Reasoning:        true,
+		Headers:       nil,
+		Compat:        nil,
+		API:           apiOpenAIResponses,
+		BaseURL:       "",
+		ContextWindow: azureOpenAIResponsesContextWindow,
+		MaxTokens:     largeMaxOutputTokens,
+		Reasoning:     true,
 	}
 }
 
@@ -264,15 +298,15 @@ func defaultModelMap() map[string]string {
 	pairs := []providerModelPair{
 		{Provider: providerAnthropic, ModelID: anthropicmodel.Fable5},
 		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Fable5},
-		{Provider: providerAzureOpenAIResponses, ModelID: gpt54},
+		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Sol},
 		{Provider: providerCerebras, ModelID: "zai-glm-4.7"},
 		{Provider: providerDeepSeek, ModelID: "deepseek-v4-pro"},
 		{Provider: providerGroq, ModelID: "openai/gpt-oss-120b"},
 		{Provider: providerMistral, ModelID: "devstral-medium-latest"},
 		{Provider: providerMoonshotAI, ModelID: kimiK26},
 		{Provider: providerMoonshotAICN, ModelID: kimiK26},
-		{Provider: providerOpenAI, ModelID: gpt54},
-		{Provider: providerOpenAICodex, ModelID: gpt55},
+		{Provider: providerOpenAI, ModelID: gpt56Sol},
+		{Provider: providerOpenAICodex, ModelID: gpt56Sol},
 		{Provider: providerOpenCode, ModelID: gpt55},
 		{Provider: providerOpenCodeGo, ModelID: kimiK26},
 		{Provider: providerOpenRouter, ModelID: "moonshotai/kimi-k2.6"},

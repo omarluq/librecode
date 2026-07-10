@@ -146,38 +146,114 @@ func TestProviderResultFromOutputItemsUsesOutputTextAndInvalidArguments(t *testi
 	assert.Empty(t, testutil.ToolArgumentFields(result.ToolCalls[0].Arguments))
 }
 
+type responsesPayloadReasoningTest struct {
+	name       string
+	provider   string
+	modelID    string
+	level      string
+	mapped     string
+	wantEffort string
+	reasoning  bool
+	mapLevel   bool
+}
+
 func TestResponsesPayloadReasoningModes(t *testing.T) {
 	t.Parallel()
 
+	tests := []responsesPayloadReasoningTest{
+		{
+			name:       "openai high",
+			provider:   testOpenAIProvider,
+			modelID:    providerHookTestModelID,
+			level:      thinkingHigh,
+			mapped:     "",
+			wantEffort: thinkingHigh,
+			reasoning:  true,
+			mapLevel:   false,
+		},
+		{
+			name:       "openai xhigh maps to max",
+			provider:   testOpenAIProvider,
+			modelID:    providerHookTestModelID,
+			level:      thinkingXHigh,
+			mapped:     thinkingMax,
+			wantEffort: thinkingMax,
+			reasoning:  true,
+			mapLevel:   true,
+		},
+		{
+			name:       "openai max maps directly",
+			provider:   testOpenAIProvider,
+			modelID:    "gpt-5.6-sol",
+			level:      thinkingMax,
+			mapped:     thinkingMax,
+			wantEffort: thinkingMax,
+			reasoning:  true,
+			mapLevel:   true,
+		},
+		{
+			name:       "openai no reasoning falls back to codex none",
+			provider:   testOpenAIProvider,
+			modelID:    providerHookTestModelID,
+			level:      "",
+			mapped:     "",
+			wantEffort: reasoningEffortNone,
+			reasoning:  false,
+			mapLevel:   false,
+		},
+		{
+			name:       "codex medium passes through",
+			provider:   "openai-codex",
+			modelID:    "gpt-5.6-sol",
+			level:      thinkingMedium,
+			mapped:     "",
+			wantEffort: thinkingMedium,
+			reasoning:  true,
+			mapLevel:   false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			payload := responsesPayloadForReasoningTest(&test)
+
+			assertIsTrue(t, payload[jsonStreamKey])
+			assert.Equal(t, map[string]string{"verbosity": "low"}, payload["text"])
+			assert.Equal(t, []string{reasoningContentKey}, payload["include"])
+			assertReasoningPayload(t, payload[jsonReasoningKey], test.wantEffort)
+		})
+	}
+}
+
+func responsesPayloadForReasoningTest(test *responsesPayloadReasoningTest) map[string]any {
 	request := testCompletionRequestAuth("sk-test")
-	setTestRequestProvider(request, testOpenAIProvider)
-	setTestRequestModelID(request, "gpt-test")
-	setTestRequestReasoning(request, true)
-	setTestRequestThinkingLevel(request, thinkingHigh)
-	payload := responsesBasePayload(request, nil)
-	assert.Equal(t, true, payload[jsonStreamKey])
-	assert.Equal(t, map[string]string{"verbosity": "low"}, payload["text"])
-	assert.Equal(t, []string{reasoningContentKey}, payload["include"])
-	assert.Equal(t, map[string]any{
-		reasoningEffortKey: thinkingHigh,
-		jsonSummaryKey:     reasoningSummaryAuto,
-	}, payload[jsonReasoningKey])
+	setTestRequestProvider(request, test.provider)
+	setTestRequestModelID(request, test.modelID)
+	setTestRequestReasoning(request, test.reasoning)
+	setTestRequestThinkingLevel(request, test.level)
 
-	setTestRequestThinkingLevel(request, thinkingXHigh)
-	setTestThinkingMap(request, thinkingXHigh, "max")
-	payload = responsesBasePayload(request, nil)
-	assert.Equal(t, map[string]any{
-		reasoningEffortKey: "max",
-		jsonSummaryKey:     reasoningSummaryAuto,
-	}, payload[jsonReasoningKey])
+	if test.mapLevel {
+		setTestThinkingMap(request, test.level, test.mapped)
+	}
 
-	setTestRequestReasoning(request, false)
-	setTestRequestThinkingLevel(request, "")
-	payload = responsesBasePayload(request, nil)
-	assert.Equal(t, map[string]string{
-		reasoningEffortKey: reasoningEffortNone,
-		jsonSummaryKey:     reasoningSummaryAuto,
-	}, payload[jsonReasoningKey])
+	return responsesBasePayload(request, nil)
+}
+
+func assertReasoningPayload(t *testing.T, payload any, wantEffort string) {
+	t.Helper()
+
+	switch typed := payload.(type) {
+	case map[string]any:
+		assert.Equal(t, wantEffort, typed[reasoningEffortKey])
+		assert.Equal(t, reasoningSummaryAuto, typed[jsonSummaryKey])
+	case map[string]string:
+		assert.Equal(t, wantEffort, typed[reasoningEffortKey])
+		assert.Equal(t, reasoningSummaryAuto, typed[jsonSummaryKey])
+	default:
+		require.Failf(t, "unexpected reasoning payload", "%T", payload)
+	}
 }
 
 func TestRequestResponsesHandlesStatusReadAndParsePaths(t *testing.T) {
@@ -221,6 +297,7 @@ func TestCompleteOpenAICodexCompactsAssistantMessages(t *testing.T) {
 	request := testCompletionRequestAuth("openai-codex", "codex-token")
 	setTestRequestAPI(request, apiOpenAICodexResponses)
 	setTestRequestBaseURL(request, "https://example.test")
+	setTestRequestThinkingLevel(request, thinkingOff)
 	setTestRequestMessages(request, nil)
 
 	assert.Equal(t, map[string]string{
