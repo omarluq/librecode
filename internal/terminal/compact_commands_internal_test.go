@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
@@ -20,9 +23,7 @@ func TestCompactSessionStartsAsyncWork(t *testing.T) {
 	app.screen = newClipboardScreen()
 
 	session, err := app.runtime.SessionRepository().CreateSession(context.Background(), app.cwd, "compact", "")
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
+	require.NoError(t, err)
 
 	first := appendTerminalCompactMessage(t, app, session.ID, nil, database.RoleUser, "old user goal")
 	second := appendTerminalCompactMessage(
@@ -37,32 +38,12 @@ func TestCompactSessionStartsAsyncWork(t *testing.T) {
 	_ = appendTerminalCompactMessage(t, app, session.ID, &third.ID, database.RoleAssistant, "recent assistant tail")
 	app.sessionID = session.ID
 
-	err = app.compactSession(context.Background())
-	if err != nil {
-		t.Fatalf("compactSession returned error: %v", err)
-	}
-
-	if !app.compacting {
-		t.Fatal("app should be marked compacting")
-	}
-
-	if app.activeCompaction == nil {
-		t.Fatal("activeCompaction should be set")
-	}
-
-	if got := app.workingLoaderText(); got != "Compacting context..." {
-		t.Fatalf("workingLoaderText = %q, want compacting label", got)
-	}
-
-	select {
-	case <-client.ready:
-	case <-time.After(3 * time.Second):
-		t.Fatal("compaction should start provider request asynchronously")
-	}
-
-	if !app.compacting {
-		t.Fatal("app should still be compacting while provider is blocked")
-	}
+	require.NoError(t, app.compactSession(context.Background()))
+	assert.True(t, app.compacting)
+	assert.NotNil(t, app.activeCompaction)
+	assert.Equal(t, "Compacting context...", app.workingLoaderText())
+	require.Eventually(t, client.readyClosed, 3*time.Second, 10*time.Millisecond)
+	assert.True(t, app.compacting)
 
 	client.finish("summary of compacted work", nil)
 	assertCompactDoneEventHasUsage(t, readPromptAsyncEvent(t, app))
@@ -94,29 +75,18 @@ func TestPostCompactDoneAllowsNilUsage(t *testing.T) {
 		PromptID:      9,
 	})
 
-	if app.compacting {
-		t.Fatal("app should stop compacting")
-	}
-
-	if got := app.tokenUsage.ContextTokens; got != 42_000 {
-		t.Fatalf("tokenUsage.ContextTokens = %d, want previous usage preserved", got)
-	}
-
-	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != compactedStatusMessage {
-		t.Fatalf("last message = %q, want compacted message", got)
-	}
+	assert.False(t, app.compacting)
+	assert.Equal(t, 42_000, app.tokenUsage.ContextTokens)
+	require.NotEmpty(t, app.transcript.History)
+	assert.Equal(t, compactedStatusMessage, app.transcript.History[len(app.transcript.History)-1].Content)
 }
 
 func assertCompactDoneEventHasUsage(t *testing.T, event *asyncEvent) {
 	t.Helper()
 
-	if got := event.Kind; got != asyncEventCompactDone {
-		t.Fatalf("event.Kind = %q, want %q", got, asyncEventCompactDone)
-	}
-
-	if event.Usage == nil || event.Usage.ContextTokens <= 0 {
-		t.Fatalf("compact done usage = %v, want refreshed usage", event.Usage)
-	}
+	assert.Equal(t, asyncEventCompactDone, event.Kind)
+	require.NotNil(t, event.Usage)
+	assert.Positive(t, event.Usage.ContextTokens)
 }
 
 const (
@@ -171,9 +141,8 @@ func TestCompactSessionValidation(t *testing.T) {
 
 			err := app.compactSession(context.Background())
 
-			if err == nil || !strings.Contains(err.Error(), testCase.wantErr) {
-				t.Fatalf("compactSession error = %v, want %q", err, testCase.wantErr)
-			}
+			require.Error(t, err)
+			assert.ErrorContains(t, err, testCase.wantErr)
 		})
 	}
 }
@@ -196,25 +165,13 @@ func TestHandleCompactDoneUpdatesState(t *testing.T) {
 		PromptID:      9,
 	})
 
-	if !handled {
-		t.Fatal("compact event should be handled")
-	}
-
-	if app.compacting {
-		t.Fatal("app should stop compacting")
-	}
-
-	if app.activeCompaction != nil {
-		t.Fatal("activeCompaction should be cleared")
-	}
-
-	if app.pendingParentID == nil || *app.pendingParentID != compactTestEntryID {
-		t.Fatalf("pendingParentID = %v, want %s", app.pendingParentID, compactTestEntryID)
-	}
-
-	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != compactedStatusMessage {
-		t.Fatalf("last message = %q, want compacted message", got)
-	}
+	assert.True(t, handled)
+	assert.False(t, app.compacting)
+	assert.Nil(t, app.activeCompaction)
+	require.NotNil(t, app.pendingParentID)
+	assert.Equal(t, compactTestEntryID, *app.pendingParentID)
+	require.NotEmpty(t, app.transcript.History)
+	assert.Equal(t, compactedStatusMessage, app.transcript.History[len(app.transcript.History)-1].Content)
 }
 
 func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
@@ -239,17 +196,9 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 	})
 
 	request := waitForPromptRequest(t, client)
-	if got := request.Messages[len(request.Messages)-1].Content; got != "queued after compact" {
-		t.Fatalf("queued request text = %q", got)
-	}
-
-	if len(app.queuedMessages) != 0 {
-		t.Fatalf("queuedMessages length = %d, want 0", len(app.queuedMessages))
-	}
-
-	if got := app.tokenUsage.ContextTokens; got != 10_000 {
-		t.Fatalf("tokenUsage.ContextTokens = %d, want 10000", got)
-	}
+	assert.Equal(t, "queued after compact", request.Messages[len(request.Messages)-1].Content)
+	assert.Empty(t, app.queuedMessages)
+	assert.Equal(t, 10_000, app.tokenUsage.ContextTokens)
 }
 
 type compactTransitionCase struct {
@@ -332,9 +281,7 @@ func invokeCompactErrorTransition(t *testing.T, app *App) {
 		Text:          compactTestFailed,
 		PromptID:      9,
 	})
-	if !handled {
-		t.Fatal("compact error event should be handled")
-	}
+	assert.True(t, handled)
 }
 
 func setupRunCompactErrorTransition(t *testing.T, app *App) func(t *testing.T) {
@@ -350,12 +297,7 @@ func setupRunCompactErrorTransition(t *testing.T, app *App) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Helper()
 
-		select {
-		case <-client.ready:
-		case <-time.After(3 * time.Second):
-			t.Fatal("compaction should start provider request")
-		}
-
+		require.Eventually(t, client.readyClosed, 3*time.Second, 10*time.Millisecond)
 		client.finish("", errors.New("provider down"))
 	}
 }
@@ -364,9 +306,7 @@ func createCompactTestSession(t *testing.T, app *App) *database.SessionEntity {
 	t.Helper()
 
 	session, err := app.runtime.SessionRepository().CreateSession(context.Background(), app.cwd, "compact", "")
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
+	require.NoError(t, err)
 
 	first := appendTerminalCompactMessage(t, app, session.ID, nil, database.RoleUser, "old user goal")
 	_ = appendTerminalCompactMessage(
@@ -398,9 +338,7 @@ func setupCancelCompactTransition(t *testing.T, app *App) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Helper()
 
-		if !canceled {
-			t.Fatal("active compaction cancel should be called")
-		}
+		assert.True(t, canceled)
 	}
 }
 
@@ -419,23 +357,16 @@ func assertCompactTransition(t *testing.T, app *App, testCase *compactTransition
 		return
 	}
 
-	if app.compacting {
-		t.Fatal("app should stop compacting")
-	}
+	assert.False(t, app.compacting)
+	assert.Nil(t, app.activeCompaction)
 
-	if app.activeCompaction != nil {
-		t.Fatal("activeCompaction should be cleared")
-	}
-
-	if testCase.wantStatus != "" && app.statusMessage != testCase.wantStatus {
-		t.Fatalf("statusMessage = %q, want %q", app.statusMessage, testCase.wantStatus)
+	if testCase.wantStatus != "" {
+		assert.Equal(t, testCase.wantStatus, app.statusMessage)
 	}
 
 	if testCase.wantLastMessage != "" {
-		got := app.transcript.History[len(app.transcript.History)-1].Content
-		if got != testCase.wantLastMessage {
-			t.Fatalf("last message = %q, want %q", got, testCase.wantLastMessage)
-		}
+		require.NotEmpty(t, app.transcript.History)
+		assert.Equal(t, testCase.wantLastMessage, app.transcript.History[len(app.transcript.History)-1].Content)
 	}
 }
 
@@ -443,13 +374,8 @@ func assertCompactAsyncEvent(t *testing.T, app *App, testCase *compactTransition
 	t.Helper()
 
 	event := readPromptAsyncEvent(t, app)
-	if got := event.Kind; got != testCase.wantEventKind {
-		t.Fatalf("event.Kind = %q, want %q", got, testCase.wantEventKind)
-	}
-
-	if !strings.Contains(event.Text, testCase.wantLastMessage) {
-		t.Fatalf("event.Text = %q, want %q", event.Text, testCase.wantLastMessage)
-	}
+	assert.Equal(t, testCase.wantEventKind, event.Kind)
+	assert.Contains(t, event.Text, testCase.wantLastMessage)
 }
 
 func appendTerminalCompactMessage(
@@ -471,9 +397,7 @@ func appendTerminalCompactMessage(
 	}
 
 	entry, err := app.runtime.SessionRepository().AppendMessage(context.Background(), sessionID, parentID, message)
-	if err != nil {
-		t.Fatalf("append message: %v", err)
-	}
+	require.NoError(t, err)
 
 	return entry
 }
@@ -517,6 +441,15 @@ func (client *blockingTerminalClient) finish(summary string, err error) {
 	client.finishC <- blockingTerminalResult{err: err, summary: summary}
 }
 
+func (client *blockingTerminalClient) readyClosed() bool {
+	select {
+	case <-client.ready:
+		return true
+	default:
+		return false
+	}
+}
+
 func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
 	t.Parallel()
 
@@ -528,25 +461,15 @@ func TestHandleCompactAsyncEventIgnoresStaleAndNonCompactEvents(t *testing.T) {
 		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
 		Kind: asyncEventCompactDone, Provider: "stale", Text: compactTestIgnored, PromptID: 10,
 	})
-	if !handled {
-		t.Fatal("compact done event should be handled even when stale")
-	}
-
-	if !app.compacting {
-		t.Fatal("stale compaction event should not stop active compaction")
-	}
-
-	if app.pendingParentID != nil {
-		t.Fatalf("pendingParentID = %v, want nil", app.pendingParentID)
-	}
+	assert.True(t, handled)
+	assert.True(t, app.compacting)
+	assert.Nil(t, app.pendingParentID)
 
 	handled = app.handleCompactAsyncEvent(context.Background(), &asyncEvent{
 		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
 		Kind: asyncEventPromptUsageSnapshot, Provider: "", Text: "not compact", PromptID: 9,
 	})
-	if handled {
-		t.Fatal("non-compact event should not be handled")
-	}
+	assert.False(t, handled)
 }
 
 func TestHandleCompactAsyncEventPassesThroughAutoCompactionEvents(t *testing.T) {
@@ -572,14 +495,9 @@ func TestHandleCompactAsyncEventPassesThroughAutoCompactionEvents(t *testing.T) 
 				Kind: testCase.kind, Provider: "", Text: "auto compact", PromptID: 9,
 			})
 
-			if handled {
-				t.Fatal("auto-compaction event should pass through prompt lifecycle " +
-					"when no manual compaction is active")
-			}
-
-			if app.compacting {
-				t.Fatal("pass-through should not update compaction state")
-			}
+			assert.False(t, handled,
+				"auto-compaction event should pass through prompt lifecycle when no manual compaction is active")
+			assert.False(t, app.compacting)
 		})
 	}
 }
@@ -596,17 +514,10 @@ func TestApplyCompactErrorDefaultMessage(t *testing.T) {
 		Kind: asyncEventCompactError, Provider: "", Text: "", PromptID: 9,
 	})
 
-	if app.compacting {
-		t.Fatal("app should stop compacting")
-	}
-
-	if app.activeCompaction != nil {
-		t.Fatal("activeCompaction should be cleared")
-	}
-
-	if got := app.transcript.History[len(app.transcript.History)-1].Content; got != "context compaction failed" {
-		t.Fatalf("last message = %q, want default failure", got)
-	}
+	assert.False(t, app.compacting)
+	assert.Nil(t, app.activeCompaction)
+	require.NotEmpty(t, app.transcript.History)
+	assert.Equal(t, "context compaction failed", app.transcript.History[len(app.transcript.History)-1].Content)
 }
 
 func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
@@ -622,13 +533,8 @@ func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
 		Kind: asyncEventCompactError, Provider: "", Text: compactTestFailed, PromptID: 9,
 	})
 
-	if got, want := app.composerBuffer.TextValue(), "during compaction"; got != want {
-		t.Fatalf("composer text = %q, want %q", got, want)
-	}
-
-	if got, want := app.queuedMessages, []string{"preexisting"}; len(got) != len(want) || got[0] != want[0] {
-		t.Fatalf("queuedMessages = %v, want %v", got, want)
-	}
+	assert.Equal(t, "during compaction", app.composerBuffer.TextValue())
+	assert.Equal(t, []string{"preexisting"}, app.queuedMessages)
 }
 
 func TestCompactFormattingHelpers(t *testing.T) {
@@ -639,25 +545,14 @@ func TestCompactFormattingHelpers(t *testing.T) {
 	app.pendingParentID = &parentID
 
 	cloned := app.compactionParentEntryID()
-	if cloned == nil || *cloned != parentID {
-		t.Fatalf("compactionParentEntryID = %v, want parent", cloned)
-	}
+	require.NotNil(t, cloned)
+	assert.Equal(t, parentID, *cloned)
 
 	*cloned = "changed"
 
-	if *app.pendingParentID != parentID {
-		t.Fatal("compactionParentEntryID should clone pending parent")
-	}
-
-	if got := compactDoneText(nil); got != compactedStatusMessage {
-		t.Fatalf("compactDoneText(nil) = %q", got)
-	}
-
-	if got := compactionEntryID(nil); got != "" {
-		t.Fatalf("compactionEntryID(nil) = %q, want empty", got)
-	}
-
-	if got := nonEmptyStringPtr("   "); got != nil {
-		t.Fatalf("nonEmptyStringPtr(blank) = %v, want nil", got)
-	}
+	require.NotNil(t, app.pendingParentID)
+	assert.Equal(t, parentID, *app.pendingParentID)
+	assert.Equal(t, compactedStatusMessage, compactDoneText(nil))
+	assert.Empty(t, compactionEntryID(nil))
+	assert.Nil(t, nonEmptyStringPtr("   "))
 }

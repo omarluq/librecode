@@ -735,7 +735,9 @@ func TestAsyncEventDataHelpers(t *testing.T) {
 	})
 	assert.Equal(t, asyncTestSessionID, responseData[extensionDataSessionID])
 	assert.Equal(t, "answer", responseData[extensionDataText])
-	assert.Equal(t, true, responseData[extensionDataCached])
+	cached, ok := responseData[extensionDataCached].(bool)
+	require.True(t, ok)
+	assert.True(t, cached)
 
 	assert.Empty(t, toolExtensionData(nil))
 	toolData := toolExtensionData(&assistant.ToolEvent{

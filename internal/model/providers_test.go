@@ -195,13 +195,8 @@ func TestZAIBuiltInDefaultUsesGLM52Metadata(t *testing.T) {
 	assert.True(t, builtIn.Reasoning)
 	assert.Equal(t, []model.InputMode{model.InputText}, builtIn.Input)
 
-	high := builtIn.ThinkingLevelMap[model.ThinkingHigh]
-	xhigh := builtIn.ThinkingLevelMap[model.ThinkingXHigh]
-
-	require.NotNil(t, high)
-	require.NotNil(t, xhigh)
-	assert.Equal(t, "high", *high)
-	assert.Equal(t, "max", *xhigh)
+	assertThinkingLevelMapping(t, &builtIn, model.ThinkingHigh, "high")
+	assertThinkingLevelMapping(t, &builtIn, model.ThinkingXHigh, "max")
 }
 
 func TestAnthropicBuiltInDefaultsSupportFableAndMythos(t *testing.T) {
@@ -235,7 +230,7 @@ func findBuiltIn(t *testing.T, provider, modelID string) model.Model {
 		}
 	}
 
-	require.Failf(t, "built-in model not found", "%s/%s", provider, modelID)
+	require.FailNowf(t, "built-in model not found", "%s/%s", provider, modelID)
 
 	return model.Model{
 		ThinkingLevelMap: nil,

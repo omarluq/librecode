@@ -161,7 +161,7 @@ func TestAnthropicToolResultMessageMarksToolErrors(t *testing.T) {
 	blocks, ok := message[jsonContentKey].([]map[string]any)
 	require.True(t, ok)
 	require.Len(t, blocks, 1)
-	assert.Equal(t, true, blocks[0]["is_error"])
+	assertIsTrue(t, blocks[0]["is_error"])
 }
 
 func TestAnthropicToolResultMessageRejectsMismatchedCallsAndEvents(t *testing.T) {

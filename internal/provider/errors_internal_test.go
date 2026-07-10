@@ -109,7 +109,7 @@ func TestProviderStatusErrorBoundsBodyPreview(t *testing.T) {
 			require.True(t, ok)
 			assert.LessOrEqual(t, len(preview), providerBodyPreviewBytes)
 			assert.True(t, utf8.ValidString(preview))
-			assert.Equal(t, true, context[providerBodyTruncatedContextKey])
+			assertIsTrue(t, context[providerBodyTruncatedContextKey])
 		})
 	}
 }
