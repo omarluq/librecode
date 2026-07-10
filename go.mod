@@ -47,7 +47,7 @@ require (
 	github.com/yuin/goldmark v1.8.2
 	github.com/yuin/gopher-lua v1.1.2
 	golang.design/x/clipboard v0.8.0
-	golang.org/x/net v0.56.0
+	golang.org/x/net v0.57.0
 	golang.org/x/text v0.40.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.53.0
@@ -109,8 +109,8 @@ require (
 	golang.org/x/image v0.28.0 // indirect
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/term v0.44.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
