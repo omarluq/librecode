@@ -19,6 +19,8 @@ const (
 	ThinkingHigh ThinkingLevel = "high"
 	// ThinkingXHigh selects extra-high reasoning.
 	ThinkingXHigh ThinkingLevel = "xhigh"
+	// ThinkingMax selects maximum reasoning.
+	ThinkingMax ThinkingLevel = "max"
 )
 
 // InputMode describes a model input modality.

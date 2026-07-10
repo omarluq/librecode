@@ -87,6 +87,7 @@ const (
 	thinkingMedium          = "medium"
 	thinkingHigh            = "high"
 	thinkingXHigh           = "xhigh"
+	thinkingMax             = "max"
 	thinkingDisplaySummary  = "summarized"
 	reasoningSummaryAuto    = "auto"
 	reasoningEffortNone     = "none"

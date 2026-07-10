@@ -686,10 +686,43 @@ func TestModelFromDiscoveryDefaults(t *testing.T) {
 func TestOpenAIThinkingHelpers(t *testing.T) {
 	t.Parallel()
 
-	assert.True(t, openAISupportsXHigh(gpt52))
-	assert.True(t, openAISupportsXHigh("gpt-5.3-codex"))
-	assert.True(t, openAIResponsesNoReasoningModel("gpt-5.1"))
-	assert.False(t, openAIResponsesNoReasoningModel("gpt-4.1"))
+	tests := []struct {
+		assertFn func(string) bool
+		name     string
+		modelID  string
+		want     bool
+	}{
+		{name: "gpt 5.2 supports xhigh", modelID: gpt52, assertFn: openAISupportsXHigh, want: true},
+		{name: "gpt 5.3 codex supports xhigh", modelID: "gpt-5.3-codex", assertFn: openAISupportsXHigh, want: true},
+		{name: "gpt 5.6 supports xhigh", modelID: gpt56Sol, assertFn: openAISupportsXHigh, want: true},
+		{name: "gpt 5.6 supports max", modelID: gpt56Sol, assertFn: openAISupportsMax, want: true},
+		{
+			name:     "gpt 5.1 maps off to none",
+			modelID:  "gpt-5.1",
+			assertFn: openAIResponsesNoReasoningModel,
+			want:     true,
+		},
+		{
+			name:     "gpt 5.6 terra maps off to none",
+			modelID:  gpt56Terra,
+			assertFn: openAIResponsesNoReasoningModel,
+			want:     true,
+		},
+		{
+			name:     "gpt 4.1 does not map off to none",
+			modelID:  "gpt-4.1",
+			assertFn: openAIResponsesNoReasoningModel,
+			want:     false,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, testCase.want, testCase.assertFn(testCase.modelID))
+		})
+	}
 
 	levels := map[ThinkingLevel]*string{}
 	addAnthropicThinkingLevels(levels, providerAnthropic, "claude-basic")

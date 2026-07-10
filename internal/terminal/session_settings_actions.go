@@ -90,6 +90,7 @@ func (app *App) cycleThinking() {
 		model.ThinkingMedium,
 		model.ThinkingHigh,
 		model.ThinkingXHigh,
+		model.ThinkingMax,
 	}
 
 	current := app.currentThinkingLevel()

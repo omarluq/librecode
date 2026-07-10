@@ -10,6 +10,13 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
+const (
+	testOpenAIProvider     = "openai"
+	testOpenAIBaseURL      = "https://api.openai.com/v1"
+	testOpenAIResponsesAPI = "openai-responses"
+	testGPT56Sol           = "gpt-5.6-sol"
+)
+
 func TestBuiltInProvidersAreSupportedAPIFamilies(t *testing.T) {
 	t.Parallel()
 
@@ -17,7 +24,7 @@ func TestBuiltInProvidersAreSupportedAPIFamilies(t *testing.T) {
 		"anthropic-messages":     true,
 		"openai-codex-responses": true,
 		"openai-completions":     true,
-		"openai-responses":       true,
+		testOpenAIResponsesAPI:   true,
 	}
 
 	builtIns := model.BuiltInModels()
@@ -45,6 +52,135 @@ func TestAnthropicAPIAndSubscriptionProvidersAreSeparate(t *testing.T) {
 	assert.Equal(t, "Claude Pro/Max (Anthropic OAuth)", model.ProviderDisplayNames()["anthropic-claude"])
 	assert.Equal(t, anthropicmodel.Fable5, model.DefaultModelPerProvider()["anthropic"])
 	assert.Equal(t, anthropicmodel.Fable5, model.DefaultModelPerProvider()["anthropic-claude"])
+}
+
+func TestOpenAIBuiltInDefaultsUseGPT56Sol(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, testGPT56Sol, model.DefaultModelPerProvider()[testOpenAIProvider])
+	assert.Equal(t, testGPT56Sol, model.DefaultModelPerProvider()["openai-codex"])
+
+	for _, testCase := range gpt56BuiltInTests() {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			builtIn := findBuiltIn(t, testCase.provider, testCase.modelID)
+			assertGPT56BuiltIn(t, &builtIn, &testCase)
+		})
+	}
+}
+
+type gpt56BuiltInTest struct {
+	name              string
+	provider          string
+	api               string
+	baseURL           string
+	modelID           string
+	contextWindow     int
+	cost              model.Cost
+	requireMinimalLow bool
+}
+
+func gpt56BuiltInTests() []gpt56BuiltInTest {
+	return []gpt56BuiltInTest{
+		gpt56BuiltInTestCase(
+			"openai responses sol",
+			testOpenAIProvider,
+			testOpenAIResponsesAPI,
+			testOpenAIBaseURL,
+			testGPT56Sol,
+			272_000,
+			model.Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25},
+			false,
+		),
+		gpt56BuiltInTestCase(
+			"openai responses terra",
+			testOpenAIProvider,
+			testOpenAIResponsesAPI,
+			testOpenAIBaseURL,
+			"gpt-5.6-terra",
+			272_000,
+			model.Cost{Input: 2.5, Output: 15, CacheRead: 0.25, CacheWrite: 3.125},
+			false,
+		),
+		gpt56BuiltInTestCase(
+			"openai responses luna",
+			testOpenAIProvider,
+			testOpenAIResponsesAPI,
+			testOpenAIBaseURL,
+			"gpt-5.6-luna",
+			272_000,
+			model.Cost{Input: 1, Output: 6, CacheRead: 0.1, CacheWrite: 1.25},
+			false,
+		),
+		gpt56BuiltInTestCase(
+			"azure openai responses sol",
+			"azure-openai-responses",
+			testOpenAIResponsesAPI,
+			"",
+			testGPT56Sol,
+			1_050_000,
+			model.Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25},
+			false,
+		),
+		gpt56BuiltInTestCase(
+			"codex responses sol",
+			"openai-codex",
+			"openai-codex-responses",
+			"https://chatgpt.com/backend-api",
+			testGPT56Sol,
+			372_000,
+			model.Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25},
+			true,
+		),
+	}
+}
+
+func gpt56BuiltInTestCase(
+	name string,
+	provider string,
+	api string,
+	baseURL string,
+	modelID string,
+	contextWindow int,
+	cost model.Cost,
+	requireMinimalLow bool,
+) gpt56BuiltInTest {
+	return gpt56BuiltInTest{
+		name:              name,
+		provider:          provider,
+		api:               api,
+		baseURL:           baseURL,
+		modelID:           modelID,
+		contextWindow:     contextWindow,
+		cost:              cost,
+		requireMinimalLow: requireMinimalLow,
+	}
+}
+
+func assertGPT56BuiltIn(t *testing.T, builtIn *model.Model, test *gpt56BuiltInTest) {
+	t.Helper()
+
+	assert.Equal(t, test.api, builtIn.API)
+	assert.Equal(t, test.baseURL, builtIn.BaseURL)
+	assert.Equal(t, test.contextWindow, builtIn.ContextWindow)
+	assert.Equal(t, 128_000, builtIn.MaxTokens)
+	assert.Equal(t, test.cost, builtIn.Cost)
+	assert.True(t, builtIn.Reasoning)
+	assertThinkingLevelMapping(t, builtIn, model.ThinkingXHigh, "xhigh")
+	assertThinkingLevelMapping(t, builtIn, model.ThinkingMax, "max")
+
+	if test.requireMinimalLow {
+		assertThinkingLevelMapping(t, builtIn, model.ThinkingMinimal, "low")
+	}
+}
+
+func assertThinkingLevelMapping(t *testing.T, builtIn *model.Model, level model.ThinkingLevel, expected string) {
+	t.Helper()
+
+	mapped := builtIn.ThinkingLevelMap[level]
+	require.NotNil(t, mapped)
+	assert.Equal(t, expected, *mapped)
 }
 
 func TestZAIBuiltInDefaultUsesGLM52Metadata(t *testing.T) {

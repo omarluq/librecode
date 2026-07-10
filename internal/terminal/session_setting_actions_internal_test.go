@@ -70,28 +70,29 @@ func TestToggleFlags(t *testing.T) {
 func TestCycleThinking(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
-	app.cfg = renderParityConfig()
-	app.cfg.Assistant.ThinkingLevel = ""
-
-	app.cycleThinking()
-
-	if got, want := app.currentThinkingLevel(), string(model.ThinkingMinimal); got != want {
-		t.Fatalf("thinking level = %q, want %q", got, want)
+	tests := []struct {
+		name    string
+		current string
+		want    model.ThinkingLevel
+	}{
+		{name: "empty uses next after off", current: "", want: model.ThinkingMinimal},
+		{name: "xhigh advances to max", current: string(model.ThinkingXHigh), want: model.ThinkingMax},
+		{name: "max wraps to off", current: string(model.ThinkingMax), want: model.ThinkingOff},
+		{name: "unknown resets to off", current: "mystery", want: model.ThinkingOff},
 	}
 
-	app.setThinkingLevel(string(model.ThinkingXHigh))
-	app.cycleThinking()
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	if got, want := app.currentThinkingLevel(), string(model.ThinkingOff); got != want {
-		t.Fatalf("thinking level = %q, want %q", got, want)
-	}
+			app := newRenderTestApp(t)
+			app.cfg = renderParityConfig()
+			app.cfg.Assistant.ThinkingLevel = testCase.current
 
-	app.setThinkingLevel("mystery")
-	app.cycleThinking()
+			app.cycleThinking()
 
-	if got, want := app.currentThinkingLevel(), string(model.ThinkingOff); got != want {
-		t.Fatalf("thinking level after fallback = %q, want %q", got, want)
+			assert.Equal(t, string(testCase.want), app.currentThinkingLevel())
+		})
 	}
 }
 
