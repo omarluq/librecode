@@ -32,6 +32,8 @@ const (
 	gpt55InputCost       = 5
 	gpt55OutputCost      = 30
 	gpt55CacheCost       = 0.5
+	gpt56                = "gpt-5.6"
+	gpt56DisplayName     = "GPT-5.6"
 	gpt56Sol             = "gpt-5.6-sol"
 	gpt56Terra           = "gpt-5.6-terra"
 	gpt56Luna            = "gpt-5.6-luna"
@@ -97,6 +99,12 @@ type discoveryProviderMapping struct {
 	Source   string
 	API      string
 	BaseURL  string
+}
+
+type gpt56Definition struct {
+	id   string
+	name string
+	cost Cost
 }
 
 type staticModelDefinition struct {
@@ -304,7 +312,7 @@ func openAIUnsupportedDiscoveredModel(provider, fallbackModelID string, definiti
 		modelID = definition.ID
 	}
 
-	return modelID == "gpt-5.6"
+	return modelID == gpt56
 }
 
 func modelFromDiscovery(modelID string, definition *discoveryModel, mapping discoveryProviderMapping) Model {
@@ -389,7 +397,7 @@ func discoveryMaxTokens(limit *discoveryLimit) int {
 func discoveredOpenAIResponsesModels(catalog map[string]discoveryProvider) []Model {
 	openAIProvider, ok := catalog["openai"]
 	if !ok {
-		return []Model{}
+		return nil
 	}
 
 	metadata := openAIResponsesMetadata()
@@ -497,13 +505,27 @@ func discoveredOpenAIResponsesDefinitions() []staticModelDefinition {
 }
 
 func gpt56ModelDefinitions(window, maxTokens int) []staticModelDefinition {
-	textImage := []InputMode{InputText, InputImage}
-
-	return []staticModelDefinition{
-		newModelDefinition(gpt56Sol, "GPT-5.6 Sol", textImage, window, maxTokens, gpt56SolCost()),
-		newModelDefinition(gpt56Terra, "GPT-5.6 Terra", textImage, window, maxTokens, gpt56TerraCost()),
-		newModelDefinition(gpt56Luna, "GPT-5.6 Luna", textImage, window, maxTokens, gpt56LunaCost()),
+	definitions := []gpt56Definition{
+		{id: gpt56Sol, name: gpt56DisplayName + " Sol", cost: gpt56SolCost()},
+		{id: gpt56Terra, name: gpt56DisplayName + " Terra", cost: gpt56TerraCost()},
+		{id: gpt56Luna, name: gpt56DisplayName + " Luna", cost: gpt56LunaCost()},
 	}
+
+	textImage := []InputMode{InputText, InputImage}
+	models := make([]staticModelDefinition, 0, len(definitions))
+
+	for _, definition := range definitions {
+		models = append(models, newModelDefinition(
+			definition.id,
+			definition.name,
+			textImage,
+			window,
+			maxTokens,
+			definition.cost,
+		))
+	}
+
+	return models
 }
 
 const codexExplicitModelCount = 9
@@ -655,11 +677,20 @@ func openAISupportsXHigh(modelID string) bool {
 		strings.Contains(modelID, "gpt-5.3") ||
 		strings.Contains(modelID, "gpt-5.4") ||
 		strings.Contains(modelID, gpt55) ||
-		strings.Contains(modelID, "gpt-5.6")
+		isGPT56Model(modelID)
 }
 
 func openAISupportsMax(modelID string) bool {
-	return strings.Contains(modelID, "gpt-5.6")
+	return isGPT56Model(modelID)
+}
+
+func isGPT56Model(modelID string) bool {
+	switch modelID {
+	case gpt56Sol, gpt56Terra, gpt56Luna:
+		return true
+	default:
+		return false
+	}
 }
 
 func openAICodexMapsMinimalToLow(modelID string) bool {

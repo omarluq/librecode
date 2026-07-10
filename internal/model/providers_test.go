@@ -83,78 +83,36 @@ type gpt56BuiltInTest struct {
 
 func gpt56BuiltInTests() []gpt56BuiltInTest {
 	return []gpt56BuiltInTest{
-		gpt56BuiltInTestCase(
-			"openai responses sol",
-			testOpenAIProvider,
-			testOpenAIResponsesAPI,
-			testOpenAIBaseURL,
-			testGPT56Sol,
-			272_000,
-			model.Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25},
-			false,
-		),
-		gpt56BuiltInTestCase(
-			"openai responses terra",
-			testOpenAIProvider,
-			testOpenAIResponsesAPI,
-			testOpenAIBaseURL,
-			"gpt-5.6-terra",
-			272_000,
-			model.Cost{Input: 2.5, Output: 15, CacheRead: 0.25, CacheWrite: 3.125},
-			false,
-		),
-		gpt56BuiltInTestCase(
-			"openai responses luna",
-			testOpenAIProvider,
-			testOpenAIResponsesAPI,
-			testOpenAIBaseURL,
-			"gpt-5.6-luna",
-			272_000,
-			model.Cost{Input: 1, Output: 6, CacheRead: 0.1, CacheWrite: 1.25},
-			false,
-		),
-		gpt56BuiltInTestCase(
-			"azure openai responses sol",
-			"azure-openai-responses",
-			testOpenAIResponsesAPI,
-			"",
-			testGPT56Sol,
-			1_050_000,
-			model.Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25},
-			false,
-		),
-		gpt56BuiltInTestCase(
-			"codex responses sol",
-			"openai-codex",
-			"openai-codex-responses",
-			"https://chatgpt.com/backend-api",
-			testGPT56Sol,
-			372_000,
-			model.Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25},
-			true,
-		),
-	}
-}
-
-func gpt56BuiltInTestCase(
-	name string,
-	provider string,
-	api string,
-	baseURL string,
-	modelID string,
-	contextWindow int,
-	cost model.Cost,
-	requireMinimalLow bool,
-) gpt56BuiltInTest {
-	return gpt56BuiltInTest{
-		name:              name,
-		provider:          provider,
-		api:               api,
-		baseURL:           baseURL,
-		modelID:           modelID,
-		contextWindow:     contextWindow,
-		cost:              cost,
-		requireMinimalLow: requireMinimalLow,
+		{
+			name: "openai responses sol", provider: testOpenAIProvider,
+			api: testOpenAIResponsesAPI, baseURL: testOpenAIBaseURL, modelID: testGPT56Sol,
+			contextWindow: 272_000, cost: model.Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25},
+			requireMinimalLow: false,
+		},
+		{
+			name: "openai responses terra", provider: testOpenAIProvider,
+			api: testOpenAIResponsesAPI, baseURL: testOpenAIBaseURL, modelID: "gpt-5.6-terra",
+			contextWindow: 272_000, cost: model.Cost{Input: 2.5, Output: 15, CacheRead: 0.25, CacheWrite: 3.125},
+			requireMinimalLow: false,
+		},
+		{
+			name: "openai responses luna", provider: testOpenAIProvider,
+			api: testOpenAIResponsesAPI, baseURL: testOpenAIBaseURL, modelID: "gpt-5.6-luna",
+			contextWindow: 272_000, cost: model.Cost{Input: 1, Output: 6, CacheRead: 0.1, CacheWrite: 1.25},
+			requireMinimalLow: false,
+		},
+		{
+			name: "azure openai responses sol", provider: "azure-openai-responses",
+			api: testOpenAIResponsesAPI, baseURL: "", modelID: testGPT56Sol,
+			contextWindow: 1_050_000, cost: model.Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25},
+			requireMinimalLow: false,
+		},
+		{
+			name: "codex responses sol", provider: "openai-codex",
+			api: "openai-codex-responses", baseURL: "https://chatgpt.com/backend-api", modelID: testGPT56Sol,
+			contextWindow: 372_000, cost: model.Cost{Input: 5, Output: 30, CacheRead: 0.5, CacheWrite: 6.25},
+			requireMinimalLow: true,
+		},
 	}
 }
 

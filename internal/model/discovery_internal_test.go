@@ -661,6 +661,31 @@ func TestDiscoveryCacheHelpers(t *testing.T) {
 	assert.Empty(t, models)
 }
 
+func TestGPT56CapabilityMatching(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		modelID string
+		want    bool
+	}{
+		{name: "sol", modelID: gpt56Sol, want: true},
+		{name: "terra", modelID: gpt56Terra, want: true},
+		{name: "luna", modelID: gpt56Luna, want: true},
+		{name: "bare alias", modelID: gpt56, want: false},
+		{name: "unknown variant", modelID: "gpt-5.6-custom", want: false},
+		{name: "embedded name", modelID: "vendor/gpt-5.6-sol", want: false},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, testCase.want, openAISupportsMax(testCase.modelID))
+		})
+	}
+}
+
 func TestModelFromDiscoveryDefaults(t *testing.T) {
 	t.Parallel()
 
