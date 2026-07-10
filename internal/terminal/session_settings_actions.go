@@ -90,7 +90,9 @@ func (app *App) cycleThinking() {
 		model.ThinkingMedium,
 		model.ThinkingHigh,
 		model.ThinkingXHigh,
-		model.ThinkingMax,
+	}
+	if app.currentModelSupportsThinking(model.ThinkingMax) {
+		levels = append(levels, model.ThinkingMax)
 	}
 
 	current := app.currentThinkingLevel()
@@ -103,6 +105,29 @@ func (app *App) cycleThinking() {
 	}
 
 	app.setThinkingLevel(string(model.ThinkingOff))
+}
+
+func (app *App) currentModelSupportsThinking(level model.ThinkingLevel) bool {
+	provider := app.currentProvider()
+	modelID := app.currentModel()
+
+	if app.models == nil {
+		return false
+	}
+
+	models := app.models.All()
+	for index := range models {
+		available := &models[index]
+		if available.Provider != provider || available.ID != modelID {
+			continue
+		}
+
+		_, supported := available.ThinkingLevelMap[level]
+
+		return supported
+	}
+
+	return false
 }
 
 const boolTextOff = "off"

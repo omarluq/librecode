@@ -63,14 +63,22 @@ func TestCycleThinking(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		current string
-		want    model.ThinkingLevel
+		name        string
+		current     string
+		want        model.ThinkingLevel
+		supportsMax bool
 	}{
-		{name: "empty uses next after off", current: "", want: model.ThinkingMinimal},
-		{name: "xhigh advances to max", current: string(model.ThinkingXHigh), want: model.ThinkingMax},
-		{name: "max wraps to off", current: string(model.ThinkingMax), want: model.ThinkingOff},
-		{name: "unknown resets to off", current: "mystery", want: model.ThinkingOff},
+		{name: "empty uses next after off", current: "", want: model.ThinkingMinimal, supportsMax: false},
+		{
+			name: "xhigh wraps without max support", current: string(model.ThinkingXHigh),
+			want: model.ThinkingOff, supportsMax: false,
+		},
+		{
+			name: "xhigh advances to supported max", current: string(model.ThinkingXHigh),
+			want: model.ThinkingMax, supportsMax: true,
+		},
+		{name: "max wraps to off", current: string(model.ThinkingMax), want: model.ThinkingOff, supportsMax: true},
+		{name: "unknown resets to off", current: "mystery", want: model.ThinkingOff, supportsMax: false},
 	}
 
 	for _, testCase := range tests {
@@ -80,6 +88,17 @@ func TestCycleThinking(t *testing.T) {
 			app := newRenderTestApp(t)
 			app.cfg = renderParityConfig()
 			app.cfg.Assistant.ThinkingLevel = testCase.current
+
+			if testCase.supportsMax {
+				app.cfg.Assistant.Model = "gpt-5.6-sol"
+				app.models = model.NewRegistry(&model.RegistryOptions{
+					ConfigReader: nil,
+					Auth:         nil,
+					ModelsPath:   "",
+					BuiltIns:     model.BuiltInModels(),
+					Discovery:    disabledModelDiscovery(),
+				})
+			}
 
 			app.cycleThinking()
 

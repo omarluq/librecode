@@ -43,9 +43,9 @@ func TestOpenAIChatPayloadMapsReasoningEffort(t *testing.T) {
 			want:        thinkingMax,
 		},
 		{
-			name:        "max maps directly",
+			name:        "max falls back without a map entry",
 			level:       thinkingMax,
-			mappedLevel: thinkingMax,
+			mappedLevel: "",
 			want:        thinkingMax,
 		},
 	}
@@ -57,7 +57,10 @@ func TestOpenAIChatPayloadMapsReasoningEffort(t *testing.T) {
 			request := testCompletionRequestAuth(testOpenAIProvider, "sk-test")
 			setTestRequestReasoning(request, true)
 			setTestRequestThinkingLevel(request, test.level)
-			setTestThinkingMap(request, test.level, test.mappedLevel)
+
+			if test.mappedLevel != "" {
+				setTestThinkingMap(request, test.level, test.mappedLevel)
+			}
 
 			payload := openAIChatPayload(request)
 
