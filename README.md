@@ -149,7 +149,7 @@ The default assistant config is:
 ```yaml
 assistant:
   provider: openai-codex
-  model: gpt-5.5
+  model: gpt-5.6-sol
   thinking_level: off
   retry:
     enabled: true
