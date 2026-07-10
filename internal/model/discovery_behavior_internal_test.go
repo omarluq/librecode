@@ -219,7 +219,7 @@ func findModel(t *testing.T, models []Model, provider, modelID string) Model {
 		}
 	}
 
-	require.Failf(t, "model not found", "%s/%s", provider, modelID)
+	require.FailNowf(t, "model not found", "%s/%s", provider, modelID)
 
 	return Model{
 		ThinkingLevelMap: nil,

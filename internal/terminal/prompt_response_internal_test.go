@@ -2,8 +2,6 @@ package terminal
 
 import (
 	"context"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,13 +30,8 @@ func TestApplyStreamedSideEffectBlocks(t *testing.T) {
 
 	thinkingBlocks, toolBlocks := app.applyStreamedSideEffectBlocks(blocks)
 
-	if got, want := thinkingBlocks, 1; got != want {
-		t.Fatalf("thinkingBlocks = %d, want %d", got, want)
-	}
-
-	if got, want := toolBlocks, 2; got != want {
-		t.Fatalf("toolBlocks = %d, want %d", got, want)
-	}
+	assert.Equal(t, 1, thinkingBlocks)
+	assert.Equal(t, 2, toolBlocks)
 
 	assertPromptResponseRoles(t, app, []transcript.Role{
 		transcript.RoleThinking,
@@ -89,26 +82,17 @@ func TestApplyRemainingSideEffectsSkipsStreamedBlocks(t *testing.T) {
 		transcript.RoleToolResult,
 	})
 
-	if got, want := app.transcript.History[0].Content, "remaining thinking"; got != want {
-		t.Fatalf("thinking content = %q, want %q", got, want)
-	}
-
-	if got := app.transcript.History[1].Content; !strings.Contains(got, "tool: write") {
-		t.Fatalf("tool content = %q, want write tool", got)
-	}
+	assert.Equal(t, "remaining thinking", app.transcript.History[0].Content)
+	assert.Contains(t, app.transcript.History[1].Content, "tool: write")
 }
 
 func assertPromptResponseRoles(t *testing.T, app *App, want []transcript.Role) {
 	t.Helper()
 
-	if got := len(app.transcript.History); got != len(want) {
-		t.Fatalf("message count = %d, want %d", got, len(want))
-	}
+	require.Len(t, app.transcript.History, len(want))
 
 	for index, role := range want {
-		if got := app.transcript.History[index].Role; got != role {
-			t.Fatalf("message[%d].Role = %q, want %q", index, got, role)
-		}
+		assert.Equal(t, role, app.transcript.History[index].Role)
 	}
 }
 
@@ -126,7 +110,7 @@ func TestApplyPromptResponseAddsAssistantAndProcessesQueue(t *testing.T) {
 	require.NotEmpty(t, app.transcript.History)
 	assert.Equal(t, "assistant response", app.transcript.History[0].Content)
 	assert.True(t, app.working)
-	assert.True(t, slices.Equal(app.queuedMessages, []string(nil)))
+	assert.Empty(t, app.queuedMessages)
 }
 
 func TestApplyPromptResponseIgnoresStalePrompt(t *testing.T) {
@@ -193,7 +177,7 @@ func TestApplyPromptResponsePreservesCanceledProgress(t *testing.T) {
 			assert.Equal(t, test.wantSessionID, app.sessionID)
 			assert.Equal(t, test.wantUsage, app.tokenUsage)
 			assert.False(t, app.working)
-			assert.True(t, slices.Equal(app.queuedMessages, []string(nil)))
+			assert.Empty(t, app.queuedMessages)
 		})
 	}
 }

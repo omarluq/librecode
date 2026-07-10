@@ -70,7 +70,7 @@ func TestProviderRequestShapeCapturesSafeMetadata(t *testing.T) {
 			}, shape.Keys)
 
 			payload := shape.Payload()
-			assert.Equal(t, true, payload["has_include"])
+			assertIsTrue(t, payload["has_include"])
 			assert.Equal(t, 2, payload[requestShapeInputCountKey])
 		})
 	}

@@ -3,10 +3,12 @@ package terminal
 import (
 	"context"
 	"encoding/json"
-	"slices"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/testutil"
@@ -46,23 +48,13 @@ func TestToggleFlags(t *testing.T) {
 
 			testCase.run(app)
 
-			if !testCase.flag(app) {
-				t.Fatal("flag should be true after first toggle")
-			}
-
-			if got := app.statusMessage; got != testCase.wantOnStatus {
-				t.Fatalf("statusMessage = %q, want %q", got, testCase.wantOnStatus)
-			}
+			assert.True(t, testCase.flag(app))
+			assert.Equal(t, testCase.wantOnStatus, app.statusMessage)
 
 			testCase.run(app)
 
-			if testCase.flag(app) {
-				t.Fatal("flag should be false after second toggle")
-			}
-
-			if got := app.statusMessage; got != testCase.wantOffStatus {
-				t.Fatalf("statusMessage = %q, want %q", got, testCase.wantOffStatus)
-			}
+			assert.False(t, testCase.flag(app))
+			assert.Equal(t, testCase.wantOffStatus, app.statusMessage)
 		})
 	}
 }
@@ -109,9 +101,7 @@ func TestSessionSettingMutatorsPersist(t *testing.T) {
 	app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
 
 	session, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, "persist", "")
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
+	require.NoError(t, err)
 
 	app.sessionID = session.ID
 	app.cfg = renderParityConfig()
@@ -126,9 +116,7 @@ func TestSessionSettingMutatorsPersist(t *testing.T) {
 	app.scopedOrder = []string{testOpenAIGPT5, testAnthropicClaudeID}
 	app.setScopedProviderEnabled(testProviderOpenAI, false)
 
-	if !app.moveScopedModel(testAnthropicClaudeID, -1) {
-		t.Fatal("moveScopedModel should succeed")
-	}
+	require.True(t, app.moveScopedModel(testAnthropicClaudeID, -1))
 
 	app.clearScopedModels([]string{testAnthropicClaudeID})
 
@@ -145,18 +133,11 @@ func persistedSessionSettings(
 	t.Helper()
 
 	document, found, err := app.settings.Get(ctx, sessionSettingsNamespace, sessionID)
-	if err != nil {
-		t.Fatalf("get settings: %v", err)
-	}
-
-	if !found {
-		t.Fatal("expected persisted session settings")
-	}
+	require.NoError(t, err)
+	require.True(t, found)
 
 	var settings sessionSettingsDocument
-	if err := json.Unmarshal([]byte(document.ValueJSON), &settings); err != nil {
-		t.Fatalf("unmarshal settings: %v", err)
-	}
+	require.NoError(t, json.Unmarshal([]byte(document.ValueJSON), &settings))
 
 	return settings
 }
@@ -164,31 +145,13 @@ func persistedSessionSettings(
 func assertPersistedSessionSettings(t *testing.T, settings *sessionSettingsDocument) {
 	t.Helper()
 
-	if !settings.ToolsExpanded || !settings.HideThinking {
-		t.Fatalf("persisted booleans = %+v", settings)
-	}
-
-	if settings.Theme != themeNameLight {
-		t.Fatalf("theme = %q, want %s", settings.Theme, themeNameLight)
-	}
-
-	if settings.Provider != testProviderOpenAI || settings.Model != testGPT5ModelID {
-		t.Fatalf(
-			"model selection = %q/%q, want %s/%s",
-			settings.Provider,
-			settings.Model,
-			testProviderOpenAI,
-			testGPT5ModelID,
-		)
-	}
-
-	if settings.ThinkingLevel != string(model.ThinkingHigh) {
-		t.Fatalf("thinking level = %q, want %q", settings.ThinkingLevel, model.ThinkingHigh)
-	}
-
-	if !slices.Equal(settings.ScopedEnabled, []string{}) {
-		t.Fatalf("scoped enabled = %v, want []", settings.ScopedEnabled)
-	}
+	assert.True(t, settings.ToolsExpanded)
+	assert.True(t, settings.HideThinking)
+	assert.Equal(t, themeNameLight, settings.Theme)
+	assert.Equal(t, testProviderOpenAI, settings.Provider)
+	assert.Equal(t, testGPT5ModelID, settings.Model)
+	assert.Equal(t, string(model.ThinkingHigh), settings.ThinkingLevel)
+	assert.Empty(t, settings.ScopedEnabled)
 }
 
 func TestMoveScopedModelGuards(t *testing.T) {
@@ -197,27 +160,18 @@ func TestMoveScopedModelGuards(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.scopedOrder = []string{"a", "b"}
 
-	if app.moveScopedModel("missing", 1) {
-		t.Fatal("moveScopedModel should fail for missing value")
-	}
-
-	if app.moveScopedModel("a", -1) {
-		t.Fatal("moveScopedModel should fail when target index is out of bounds")
-	}
+	assert.False(t, app.moveScopedModel("missing", 1))
+	assert.False(t, app.moveScopedModel("a", -1))
 }
 
 func TestHandleScopedModelKeyEnableAll(t *testing.T) {
 	t.Parallel()
 
 	app := newScopedModelTestApp(t)
-	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlA, "", tcell.ModNone)) {
-		t.Fatal("ctrl+a should be handled")
-	}
+	require.True(t, app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlA, "", tcell.ModNone)))
 
 	for _, item := range app.panel.FilteredItems() {
-		if !app.scopedEnabled[item.Value] {
-			t.Fatalf("expected scoped model %q to be enabled", item.Value)
-		}
+		assert.True(t, app.scopedEnabled[item.Value], "expected scoped model %q to be enabled", item.Value)
 	}
 }
 
@@ -229,14 +183,10 @@ func TestHandleScopedModelKeyClearAll(t *testing.T) {
 		app.scopedEnabled[item.Value] = true
 	}
 
-	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlX, "", tcell.ModNone)) {
-		t.Fatal("ctrl+x should be handled")
-	}
+	require.True(t, app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlX, "", tcell.ModNone)))
 
 	for _, item := range app.panel.FilteredItems() {
-		if app.scopedEnabled[item.Value] {
-			t.Fatalf("expected scoped model %q to be cleared", item.Value)
-		}
+		assert.False(t, app.scopedEnabled[item.Value], "expected scoped model %q to be cleared", item.Value)
 	}
 }
 
@@ -244,16 +194,14 @@ func TestHandleScopedModelKeyToggleProvider(t *testing.T) {
 	t.Parallel()
 
 	app := newScopedModelTestApp(t)
-	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlP, "", tcell.ModNone)) {
-		t.Fatal("ctrl+p should be handled")
-	}
+	require.True(t, app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlP, "", tcell.ModNone)))
 
 	items := app.panel.FilteredItems()
 
 	provider := providerFromModelValue(items[0].Value)
 	for _, item := range items {
-		if providerFromModelValue(item.Value) == provider && !app.scopedEnabled[item.Value] {
-			t.Fatalf("expected provider-scoped model %q to be enabled", item.Value)
+		if providerFromModelValue(item.Value) == provider {
+			assert.True(t, app.scopedEnabled[item.Value], "expected provider-scoped model %q to be enabled", item.Value)
 		}
 	}
 }
@@ -273,26 +221,18 @@ func TestHandleScopedModelKeyReorderUp(t *testing.T) {
 
 	selected := items[1].Value
 
-	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyUp, "", tcell.ModAlt)) {
-		t.Fatal("alt+up should be handled")
-	}
-
-	if got := app.scopedOrder[0]; got != selected {
-		t.Fatalf("scoped order[0] = %q, want %q after reorder", got, selected)
-	}
+	require.True(t, app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyUp, "", tcell.ModAlt)))
+	assert.Equal(t, selected, app.scopedOrder[0])
 }
 
 func TestHandleScopedModelKeySave(t *testing.T) {
 	t.Parallel()
 
 	app := newScopedModelTestApp(t)
-	if !app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlS, "", tcell.ModNone)) {
-		t.Fatal("ctrl+s should be handled")
-	}
+	require.True(t, app.handleScopedModelKey(tcell.NewEventKey(tcell.KeyCtrlS, "", tcell.ModNone)))
 
-	if app.selectedPanelKind != "" || app.panel != nil {
-		t.Fatal("save should close scoped models panel")
-	}
+	assert.Empty(t, app.selectedPanelKind)
+	assert.Nil(t, app.panel)
 }
 
 func newScopedModelTestApp(t *testing.T) *App {
@@ -317,9 +257,7 @@ func newScopedModelTestApp(t *testing.T) *App {
 	app.scopedEnabled = map[string]bool{}
 	app.openScopedModelsPanel()
 
-	if len(app.panel.FilteredItems()) < 2 {
-		t.Fatal("expected at least two scoped model items")
-	}
+	require.GreaterOrEqual(t, len(app.panel.FilteredItems()), 2)
 
 	return app
 }

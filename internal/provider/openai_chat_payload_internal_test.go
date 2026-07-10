@@ -22,7 +22,7 @@ func TestOpenAIChatPayloadAndRoles(t *testing.T) {
 	assert.Equal(t, "gpt-test", payload[jsonModelKey])
 	assert.Equal(t, thinkingHigh, payload["reasoning_effort"])
 	assert.Equal(t, "auto", payload[jsonToolChoiceKey])
-	assert.Equal(t, true, payload[jsonStreamKey])
+	assertIsTrue(t, payload[jsonStreamKey])
 	assert.Equal(t, map[string]any{"include_usage": true}, payload["stream_options"])
 	assert.NotEmpty(t, payload["tools"])
 }
@@ -96,10 +96,10 @@ func TestOpenAIChatPayloadAddsZAIStreamingOptions(t *testing.T) {
 
 	payload := openAIChatPayload(request)
 
-	assert.Equal(t, true, payload[jsonStreamKey])
+	assertIsTrue(t, payload[jsonStreamKey])
 	assert.Equal(t, "max", payload["reasoning_effort"])
 	assert.Equal(t, map[string]any{jsonTypeKey: thinkingEnabled}, payload[jsonThinkingKey])
-	assert.Equal(t, true, payload["tool_stream"])
+	assertIsTrue(t, payload["tool_stream"])
 }
 
 func TestOpenAIChatPayloadDisablesZAIThinkingAndOmitsToolStreamWithoutTools(t *testing.T) {

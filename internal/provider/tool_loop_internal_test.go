@@ -137,7 +137,7 @@ func TestToolCallMetadataClonesMetadata(t *testing.T) {
 	metadata := toolCallMetadata(&call)
 	metadata[testExistingKey] = false
 
-	assert.Equal(t, true, call.Metadata[testExistingKey])
+	assertIsTrue(t, call.Metadata[testExistingKey])
 }
 
 func TestToolOutputTextIncludesDetailsForEmptyResult(t *testing.T) {

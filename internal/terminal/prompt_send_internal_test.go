@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/gdamore/tcell/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	// Register the sqlite driver used by prompt-send integration-style tests.
 	_ "modernc.org/sqlite"
 
@@ -187,33 +188,25 @@ func assertSubmitCase(
 ) {
 	t.Helper()
 
-	if err != nil {
-		t.Fatalf("submit returned error: %v", err)
+	require.NoError(t, err)
+	assert.Equal(t, testCase.wantConsumed, consumed)
+	assert.Equal(t, testCase.wantMode, app.mode)
+	assert.Equal(t, testCase.wantComposerText, app.composerBuffer.TextValue())
+	assert.Len(t, app.promptHistory, testCase.wantPromptHistory)
+	assertQueuedMessages(t, testCase.wantQueued, app.queuedMessages)
+	assert.Equal(t, testCase.wantRequest, client.request != nil)
+}
+
+func assertQueuedMessages(t *testing.T, expected, actual []string) {
+	t.Helper()
+
+	if len(expected) == 0 {
+		assert.Empty(t, actual)
+
+		return
 	}
 
-	if got := consumed; got != testCase.wantConsumed {
-		t.Fatalf("consumed = %v, want %v", got, testCase.wantConsumed)
-	}
-
-	if got := app.mode; got != testCase.wantMode {
-		t.Fatalf("mode = %q, want %q", got, testCase.wantMode)
-	}
-
-	if got := app.composerBuffer.TextValue(); got != testCase.wantComposerText {
-		t.Fatalf("composer text = %q, want %q", got, testCase.wantComposerText)
-	}
-
-	if got := len(app.promptHistory); got != testCase.wantPromptHistory {
-		t.Fatalf("promptHistory length = %d, want %d", got, testCase.wantPromptHistory)
-	}
-
-	if !slices.Equal(app.queuedMessages, testCase.wantQueued) {
-		t.Fatalf("queuedMessages = %v, want %v", app.queuedMessages, testCase.wantQueued)
-	}
-
-	if got := client.request != nil; got != testCase.wantRequest {
-		t.Fatalf("request captured = %v, want %v", got, testCase.wantRequest)
-	}
+	assert.Equal(t, expected, actual)
 }
 
 func TestSendPromptQueuesWhenWorking(t *testing.T) {
@@ -224,13 +217,8 @@ func TestSendPromptQueuesWhenWorking(t *testing.T) {
 
 	app.sendPrompt(context.Background(), testQueuedPromptText)
 
-	if got, want := app.queuedMessages, []string{testQueuedPromptText}; !slices.Equal(got, want) {
-		t.Fatalf("queuedMessages = %v, want %v", got, want)
-	}
-
-	if app.activePrompt != nil {
-		t.Fatal("activePrompt should not be set when queuing follow-up")
-	}
+	assert.Equal(t, []string{testQueuedPromptText}, app.queuedMessages)
+	assert.Nil(t, app.activePrompt)
 }
 
 func TestSendPromptInitializesPromptState(t *testing.T) {
@@ -253,30 +241,14 @@ func TestSendPromptInitializesPromptState(t *testing.T) {
 	app.sendPrompt(context.Background(), promptSendTestText)
 	_ = readPromptAsyncEvent(t, app)
 
-	if got := app.tokenUsage.ContextTokens; got != 25_000 {
-		t.Fatalf("tokenUsage.ContextTokens = %d, want 25000", got)
-	}
+	assert.Equal(t, 25_000, app.tokenUsage.ContextTokens)
 
 	request := waitForPromptRequest(t, client)
-	if got := request.Messages[len(request.Messages)-1].Content; got != promptSendTestText {
-		t.Fatalf("last request message = %q, want hello", got)
-	}
-
-	if app.pendingParentID != nil {
-		t.Fatal("pendingParentID should be cleared")
-	}
-
-	if !app.working {
-		t.Fatal("app should be marked working after send")
-	}
-
-	if app.activePrompt == nil {
-		t.Fatal("activePrompt should be initialized")
-	}
-
-	if got, want := app.activePrompt.Prompt, promptSendTestText; got != want {
-		t.Fatalf("activePrompt.Prompt = %q, want %q", got, want)
-	}
+	assert.Equal(t, promptSendTestText, request.Messages[len(request.Messages)-1].Content)
+	assert.Nil(t, app.pendingParentID)
+	assert.True(t, app.working)
+	require.NotNil(t, app.activePrompt)
+	assert.Equal(t, promptSendTestText, app.activePrompt.Prompt)
 }
 
 func TestRunPromptPostsDoneAndError(t *testing.T) {
@@ -324,17 +296,9 @@ func TestRunPromptPostsDoneAndError(t *testing.T) {
 			app.runPrompt(context.Background(), promptCtx, cancel, request, 7)
 
 			promptEvent := readPromptAsyncEvent(t, app)
-			if got := promptEvent.Kind; got != testCase.wantKind {
-				t.Fatalf("promptEvent.Kind = %q, want %q", got, testCase.wantKind)
-			}
-
-			if got := promptEvent.Text; got != testCase.wantText {
-				t.Fatalf("promptEvent.Text = %q, want %q", got, testCase.wantText)
-			}
-
-			if got := promptEvent.PromptID; got != 7 {
-				t.Fatalf("promptEvent.PromptID = %d, want 7", got)
-			}
+			assert.Equal(t, testCase.wantKind, promptEvent.Kind)
+			assert.Equal(t, testCase.wantText, promptEvent.Text)
+			assert.Equal(t, uint64(7), promptEvent.PromptID)
 		})
 	}
 }
@@ -383,21 +347,14 @@ func newPromptSendTestConnection(t *testing.T) *sql.DB {
 	t.Helper()
 
 	connection, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		if closeErr := connection.Close(); closeErr != nil {
-			t.Fatalf("close sqlite: %v", closeErr)
-		}
+		require.NoError(t, connection.Close())
 	})
 	connection.SetMaxOpenConns(1)
 
-	migrateErr := database.Migrate(context.Background(), connection)
-	if migrateErr != nil {
-		t.Fatalf("migrate sqlite: %v", migrateErr)
-	}
+	require.NoError(t, database.Migrate(context.Background(), connection))
 
 	return connection
 }
@@ -504,14 +461,19 @@ func newTerminalCompletionResult(text string) *assistant.CompletionResult {
 func waitForPromptRequest(t *testing.T, client *terminalPromptClient) *assistant.CompletionRequest {
 	t.Helper()
 
-	select {
-	case <-client.ready:
-	case <-time.After(time.Second):
-		t.Fatal("runtime request should be captured")
-	}
+	require.Eventually(t, func() bool {
+		select {
+		case <-client.ready:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond, "runtime request should be captured")
 
 	client.lock.Lock()
 	defer client.lock.Unlock()
+
+	require.NotNil(t, client.request)
 
 	return client.request
 }
@@ -519,22 +481,22 @@ func waitForPromptRequest(t *testing.T, client *terminalPromptClient) *assistant
 func readPromptAsyncEvent(t *testing.T, app *App) *asyncEvent {
 	t.Helper()
 
-	select {
-	case raw := <-app.screen.EventQ():
-		interrupt, matched := raw.(*tcell.EventInterrupt)
-		if !matched {
-			t.Fatalf("event = %T, want *tcell.EventInterrupt", raw)
+	var raw tcell.Event
+
+	require.Eventually(t, func() bool {
+		select {
+		case raw = <-app.screen.EventQ():
+			return true
+		default:
+			return false
 		}
+	}, time.Second, 10*time.Millisecond, "timed out waiting for async event")
 
-		promptEvent, matched := interrupt.Data().(*asyncEvent)
-		if !matched {
-			t.Fatalf("interrupt data = %T, want *asyncEvent", interrupt.Data())
-		}
+	interrupt, matched := raw.(*tcell.EventInterrupt)
+	require.Truef(t, matched, "event = %T, want *tcell.EventInterrupt", raw)
 
-		return promptEvent
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for async event")
+	promptEvent, matched := interrupt.Data().(*asyncEvent)
+	require.Truef(t, matched, "interrupt data = %T, want *asyncEvent", interrupt.Data())
 
-		return nil
-	}
+	return promptEvent
 }
