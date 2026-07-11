@@ -115,12 +115,12 @@ VALUES (?, ?, ?, ?, ?, ?)`
 	return &createdSession, nil
 }
 
-// LatestSession returns the newest session for cwd.
+// LatestSession returns the newest top-level session for cwd.
 func (repository *SessionRepository) LatestSession(ctx context.Context, cwd string) (*SessionEntity, bool, error) {
 	const query = `
 SELECT id, cwd, name, parent_session, created_at, updated_at
 FROM sessions
-WHERE cwd = ?
+WHERE cwd = ? AND parent_session = ''
 ORDER BY updated_at DESC
 LIMIT 1`
 
@@ -161,12 +161,12 @@ func (repository *SessionRepository) loadSession(
 	return foundSession, true, nil
 }
 
-// ListSessions returns sessions for cwd ordered by newest first.
+// ListSessions returns top-level sessions for cwd ordered by newest first.
 func (repository *SessionRepository) ListSessions(ctx context.Context, cwd string) ([]SessionEntity, error) {
 	const query = `
 SELECT id, cwd, name, parent_session, created_at, updated_at
 FROM sessions
-WHERE cwd = ?
+WHERE cwd = ? AND parent_session = ''
 ORDER BY updated_at DESC`
 
 	rows := []sessionRow{}
@@ -177,6 +177,30 @@ ORDER BY updated_at DESC`
 	sessions, err := sessionsFromRows(rows)
 	if err != nil {
 		return nil, oops.In("database").Code("scan_session").Wrapf(err, "scan sessions")
+	}
+
+	return sessions, nil
+}
+
+// ListChildSessions returns direct child sessions ordered by newest first.
+func (repository *SessionRepository) ListChildSessions(
+	ctx context.Context,
+	parentSessionID string,
+) ([]SessionEntity, error) {
+	const query = `
+SELECT id, cwd, name, parent_session, created_at, updated_at
+FROM sessions
+WHERE parent_session = ?
+ORDER BY updated_at DESC`
+
+	rows := []sessionRow{}
+	if err := repository.sql.Query(ctx, &rows, query, parentSessionID); err != nil {
+		return nil, oops.In("database").Code("list_child_sessions").Wrapf(err, "query child sessions")
+	}
+
+	sessions, err := sessionsFromRows(rows)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_session").Wrapf(err, "scan child sessions")
 	}
 
 	return sessions, nil

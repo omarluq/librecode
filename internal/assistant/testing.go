@@ -3,6 +3,7 @@ package assistant
 import (
 	"log/slog"
 
+	"github.com/omarluq/librecode/internal/agent"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
@@ -19,6 +20,7 @@ type RuntimeTestOptions struct {
 	Client      Completer
 	Logger      *slog.Logger
 	SkillsCache *core.SkillsCache
+	Agents      *agent.Catalog
 }
 
 // NewRuntimeForTest builds a Runtime from the given setup closure, setting every
@@ -35,6 +37,7 @@ func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
 		Client:      nil,
 		Logger:      nil,
 		SkillsCache: nil,
+		Agents:      nil,
 	}
 	if setup != nil {
 		setup(opts)
@@ -49,5 +52,6 @@ func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
 		Client:      opts.Client,
 		Logger:      opts.Logger,
 		SkillsCache: opts.SkillsCache,
+		Agents:      opts.Agents,
 	})
 }

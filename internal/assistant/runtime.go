@@ -9,6 +9,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/agent"
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/core"
@@ -35,6 +36,8 @@ type Runtime struct {
 	logger          *slog.Logger
 	skillsCache     *core.SkillsCache
 	toolSchemaCache *toolSchemaCache
+	agents          *agent.Catalog
+	childDefinition *agent.Definition
 }
 
 // PromptRequest contains one user prompt invocation.
@@ -129,6 +132,7 @@ type RuntimeOptions struct {
 	Client      Completer
 	Logger      *slog.Logger
 	SkillsCache *core.SkillsCache
+	Agents      *agent.Catalog
 }
 
 // NewRuntime creates an assistant runtime.
@@ -152,6 +156,8 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 		logger:          options.Logger,
 		skillsCache:     options.SkillsCache,
 		toolSchemaCache: newToolSchemaCache(),
+		agents:          options.Agents,
+		childDefinition: nil,
 	}
 }
 
@@ -295,6 +301,14 @@ func (runtime *Runtime) loadSkills(cwd string) []core.Skill {
 	}
 
 	return core.LoadSkills(cwd, nil, true).Skills
+}
+
+func (runtime *Runtime) childRuntime(definition *agent.Definition) *Runtime {
+	return &Runtime{
+		cfg: runtime.cfg, sessions: runtime.sessions, extensions: nil, cache: runtime.cache,
+		models: runtime.models, client: runtime.client, logger: runtime.logger, skillsCache: runtime.skillsCache,
+		toolSchemaCache: runtime.toolSchemaCache, agents: runtime.agents, childDefinition: definition,
+	}
 }
 
 func (runtime *Runtime) loadAgentInstructions(cwd string) string {
