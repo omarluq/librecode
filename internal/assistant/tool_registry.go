@@ -38,6 +38,33 @@ func newToolRegistry(cwd string, provider toolProvider) (*tool.Registry, error) 
 	return registry, nil
 }
 
+func (runtime *Runtime) promptToolRegistry(cwd, sessionID string) (*tool.Registry, error) {
+	if runtime.childDefinition != nil {
+		registry, err := tool.NewRegistryWithTools(cwd, runtime.childDefinition.Tools)
+		if err != nil {
+			return nil, oops.In("assistant").Code("create_child_tool_registry").Wrapf(err, "create child tool registry")
+		}
+
+		return registry, nil
+	}
+
+	registry, err := newToolRegistry(cwd, runtime.extensions)
+	if err != nil {
+		return nil, err
+	}
+
+	if runtime.agents != nil && len(runtime.agents.Definitions()) > 0 {
+		executor := &agentToolExecutor{
+			runtime: runtime, catalog: runtime.agents, parentSessionID: sessionID, cwd: cwd,
+		}
+		if err := registry.Register(executor); err != nil {
+			return nil, oops.In("assistant").Code("register_agent_tool").Wrapf(err, "register agent tool")
+		}
+	}
+
+	return registry, nil
+}
+
 func isNilToolProvider(provider toolProvider) bool {
 	if provider == nil {
 		return true

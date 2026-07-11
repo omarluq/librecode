@@ -169,6 +169,8 @@ func newTestRuntimeWithSchemaCache() *Runtime {
 		logger:          nil,
 		skillsCache:     nil,
 		toolSchemaCache: newToolSchemaCache(),
+		agents:          nil,
+		childDefinition: nil,
 	}
 }
 

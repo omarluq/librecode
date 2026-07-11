@@ -51,6 +51,8 @@ func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
 		logger:          deps.Logger,
 		skillsCache:     nil,
 		toolSchemaCache: newToolSchemaCache(),
+		agents:          nil,
+		childDefinition: nil,
 	}
 }
 

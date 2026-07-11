@@ -17,6 +17,52 @@ const (
 	registryTestPathKey    = "path"
 )
 
+func TestNewRegistryWithTools(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		wantError error
+		name      string
+		tools     []tool.Name
+		wantNames []tool.Name
+	}{
+		{
+			wantError: nil, name: "allowlist",
+			tools: []tool.Name{tool.NameRead, tool.NameGrep}, wantNames: []tool.Name{tool.NameGrep, tool.NameRead},
+		},
+		{
+			wantError: nil, name: "deduplicates",
+			tools: []tool.Name{tool.NameRead, tool.NameRead}, wantNames: []tool.Name{tool.NameRead},
+		},
+		{wantError: tool.ErrUnknownTool, name: "unknown", tools: []tool.Name{"missing"}, wantNames: nil},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			registry, err := tool.NewRegistryWithTools(t.TempDir(), testCase.tools)
+			if testCase.wantError != nil {
+				require.ErrorIs(t, err, testCase.wantError)
+				assert.Nil(t, registry)
+
+				return
+			}
+
+			require.NoError(t, err)
+
+			definitions := registry.Definitions()
+
+			names := make([]tool.Name, len(definitions))
+			for index := range definitions {
+				names[index] = definitions[index].Name
+			}
+
+			assert.Equal(t, testCase.wantNames, names)
+		})
+	}
+}
+
 func TestRegistry_ExecuteJSONRunsBuiltInFileTools(t *testing.T) {
 	t.Parallel()
 

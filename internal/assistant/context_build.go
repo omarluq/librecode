@@ -114,6 +114,10 @@ func (runtime *Runtime) buildModelContext(
 
 	result := initialContextBuildResult(&base, selectedModel)
 
+	if runtime.childDefinition != nil {
+		return result, nil
+	}
+
 	dispatchResult, err := runtime.dispatchContextBuild(ctx, sessionID, cwd, &base, result)
 	if err != nil {
 		return nil, err
@@ -139,7 +143,11 @@ func (runtime *Runtime) modelContextBase(
 	onEvent func(StreamEvent),
 ) (contextwindow.Base, error) {
 	basePrompt := runtime.baseSystemPrompt(cwd)
+
 	skills := runtime.loadSkills(cwd)
+	if runtime.childDefinition != nil {
+		skills = nil
+	}
 
 	availableSkillsPrompt := ""
 	if len(skills) > 0 {

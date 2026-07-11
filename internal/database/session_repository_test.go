@@ -165,9 +165,18 @@ func TestSessionRepository_LoadsAndListsSessions(t *testing.T) {
 
 	sessions, err := repository.ListSessions(ctx, "/work")
 	require.NoError(t, err)
-	require.Len(t, sessions, 2)
-	assert.Equal(t, newSession.ID, sessions[0].ID)
-	assert.Equal(t, oldSession.ID, sessions[1].ID)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, oldSession.ID, sessions[0].ID)
+
+	children, err := repository.ListChildSessions(ctx, oldSession.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+	assert.Equal(t, newSession.ID, children[0].ID)
+
+	latest, found, err := repository.LatestSession(ctx, "/work")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, oldSession.ID, latest.ID)
 }
 
 func TestSessionRepository_DeleteSessionRemovesSessionRows(t *testing.T) {

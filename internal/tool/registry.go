@@ -24,29 +24,55 @@ type Registry struct {
 
 // NewRegistry creates a registry with every built-in tool enabled.
 func NewRegistry(cwd string) *Registry {
-	executors := []Executor{
-		NewReadTool(cwd),
-		NewBashTool(cwd),
-		NewEditTool(cwd),
-		NewWriteTool(cwd),
-		NewGrepTool(cwd),
-		NewFindTool(cwd),
-		NewLSTool(cwd),
-		NewASTTool(cwd),
-		NewFetchTool(),
-	}
-
-	registry := &Registry{
-		schemaValidators: newSchemaValidatorCache(),
-		executors:        make(map[Name]Executor, len(executors)),
-		cwd:              cwd,
-	}
-	for _, executor := range executors {
-		definition := executor.Definition()
-		registry.executors[definition.Name] = executor
+	registry, err := NewRegistryWithTools(cwd, builtInToolNames())
+	if err != nil {
+		panic(err)
 	}
 
 	return registry
+}
+
+// NewRegistryWithTools creates a registry containing only the named built-in tools.
+func NewRegistryWithTools(cwd string, names []Name) (*Registry, error) {
+	factories := builtInToolFactories(cwd)
+	registry := &Registry{
+		schemaValidators: newSchemaValidatorCache(),
+		executors:        make(map[Name]Executor, len(names)),
+		cwd:              cwd,
+	}
+
+	for _, name := range names {
+		if _, exists := registry.executors[name]; exists {
+			continue
+		}
+
+		factory, ok := factories[name]
+		if !ok {
+			return nil, oops.In("tool").Code("unknown_tool").With("tool", name).Wrapf(ErrUnknownTool, "create registry")
+		}
+
+		registry.executors[name] = factory()
+	}
+
+	return registry, nil
+}
+
+func builtInToolNames() []Name {
+	return []Name{NameRead, NameBash, NameEdit, NameWrite, NameGrep, NameFind, NameLS, NameAST, NameFetch}
+}
+
+func builtInToolFactories(cwd string) map[Name]func() Executor {
+	return map[Name]func() Executor{
+		NameRead:  func() Executor { return NewReadTool(cwd) },
+		NameBash:  func() Executor { return NewBashTool(cwd) },
+		NameEdit:  func() Executor { return NewEditTool(cwd) },
+		NameWrite: func() Executor { return NewWriteTool(cwd) },
+		NameGrep:  func() Executor { return NewGrepTool(cwd) },
+		NameFind:  func() Executor { return NewFindTool(cwd) },
+		NameLS:    func() Executor { return NewLSTool(cwd) },
+		NameAST:   func() Executor { return NewASTTool(cwd) },
+		NameFetch: func() Executor { return NewFetchTool() },
+	}
 }
 
 // CWD returns the registry working directory.

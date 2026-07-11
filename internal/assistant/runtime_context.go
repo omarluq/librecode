@@ -71,12 +71,27 @@ func remapUsageAnchor(
 }
 
 func (runtime *Runtime) baseSystemPrompt(cwd string) string {
+	identity := "You are librecode, an AI coding assistant. Be concise, helpful, and accurate."
+	toolGuidance := "Use built-in tools (ls, find, grep, read, bash, edit, write) " +
+		"to inspect or change workspace files when needed."
+
+	if runtime.childDefinition != nil {
+		identity = runtime.childDefinition.SystemPrompt
+
+		names := make([]string, 0, len(runtime.childDefinition.Tools))
+		for _, name := range runtime.childDefinition.Tools {
+			names = append(names, string(name))
+		}
+
+		toolGuidance = "Use only the available read-only tools (" + strings.Join(names, ", ") +
+			") to investigate the task."
+	}
+
 	sections := []string{strings.Join([]string{
-		"You are librecode, an AI coding assistant. Be concise, helpful, and accurate.",
+		identity,
 		"You are running inside a local filesystem workspace.",
 		"Current working directory: " + cwd,
-		"Use built-in tools (ls, find, grep, read, bash, edit, write) " +
-			"to inspect or change workspace files when needed.",
+		toolGuidance,
 		"Do not claim you cannot access files; inspect them with tools instead.",
 		"Respect .gitignore and default ignored paths; avoid ignored files unless explicitly needed.",
 		"Use the fewest tool calls needed; once you have enough evidence, stop using tools and answer.",
