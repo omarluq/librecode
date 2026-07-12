@@ -44,7 +44,7 @@ require (
 	github.com/tmaxmax/go-sse v0.11.0
 	github.com/vingarcia/ksql v1.14.0
 	github.com/vingarcia/ksql/adapters/modernc-ksqlite v1.14.0
-	github.com/yuin/goldmark v1.8.2
+	github.com/yuin/goldmark v1.8.4
 	github.com/yuin/gopher-lua v1.1.2
 	golang.design/x/clipboard v0.8.0
 	golang.org/x/net v0.57.0
