@@ -5,6 +5,8 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/agent"
+
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -39,27 +41,55 @@ func newToolRegistry(cwd string, provider toolProvider) (*tool.Registry, error) 
 }
 
 func (runtime *Runtime) promptToolRegistry(cwd, sessionID string) (*tool.Registry, error) {
-	if runtime.childDefinition != nil {
-		registry, err := tool.NewRegistryWithTools(cwd, runtime.childDefinition.Tools)
-		if err != nil {
-			return nil, oops.In("assistant").Code("create_child_tool_registry").Wrapf(err, "create child tool registry")
-		}
-
-		return registry, nil
+	if runtime.profile.Kind != ExecutionTopLevel {
+		return runtime.profileToolRegistry(cwd)
 	}
 
-	registry, err := newToolRegistry(cwd, runtime.extensions)
+	provider := runtime.extensions
+	if !runtime.profile.EnableExtensions {
+		provider = nil
+	}
+
+	registry, err := newToolRegistry(cwd, provider)
 	if err != nil {
 		return nil, err
 	}
 
-	if runtime.agents != nil && len(runtime.agents.Definitions()) > 0 {
-		executor := &agentToolExecutor{
-			runtime: runtime, catalog: runtime.agents, parentSessionID: sessionID, cwd: cwd,
+	if runtime.agents != nil && runtime.agentTasks != nil && len(runtime.agents.Definitions()) > 0 {
+		for _, name := range []tool.Name{
+			agentStartToolName,
+			agentStatusToolName,
+			agentWaitToolName,
+			agentCancelToolName,
+			agentListToolName,
+		} {
+			executor := &agentToolExecutor{
+				controller:      runtime.agentTasks,
+				sessions:        runtime.sessions,
+				catalog:         runtime.agents,
+				name:            name,
+				parentSessionID: sessionID,
+				cwd:             cwd,
+			}
+			if err := registry.Register(executor); err != nil {
+				return nil, oops.In("assistant").Code("register_agent_tool").Wrapf(err, "register agent tool")
+			}
 		}
-		if err := registry.Register(executor); err != nil {
-			return nil, oops.In("assistant").Code("register_agent_tool").Wrapf(err, "register agent tool")
-		}
+	}
+
+	return registry, nil
+}
+
+func (runtime *Runtime) profileToolRegistry(cwd string) (*tool.Registry, error) {
+	registry, err := tool.NewRegistryWithTools(cwd, runtime.profile.Tools)
+	if err != nil {
+		return nil, oops.In("assistant").Code("create_child_tool_registry").Wrapf(err, "create child tool registry")
+	}
+
+	// Background tasks have no interactive approval channel. Inherit and ask
+	// therefore fail closed; only an explicit allow policy enables mutations.
+	if runtime.profile.PermissionMode != agent.PermissionAllow {
+		registry.DenyMutations()
 	}
 
 	return registry, nil

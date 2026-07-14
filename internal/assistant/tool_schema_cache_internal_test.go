@@ -170,7 +170,8 @@ func newTestRuntimeWithSchemaCache() *Runtime {
 		skillsCache:     nil,
 		toolSchemaCache: newToolSchemaCache(),
 		agents:          nil,
-		childDefinition: nil,
+		agentTasks:      nil,
+		profile:         topLevelExecutionProfile(),
 	}
 }
 

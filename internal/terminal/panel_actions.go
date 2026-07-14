@@ -42,6 +42,8 @@ func (app *App) applyPanelSelection(ctx context.Context, value string) error {
 		return app.applySessionSelection(ctx, value)
 	case panelTree:
 		return app.applyTreeSelection(ctx, value)
+	case panelAgentTasks:
+		return app.inspectAgentTask(ctx, value)
 	default:
 		return fmt.Errorf("unknown panel kind: %q", app.selectedPanelKind)
 	}

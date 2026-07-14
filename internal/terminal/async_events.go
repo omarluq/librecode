@@ -33,6 +33,8 @@ const (
 	asyncEventCompactStart        asyncEventKind = "compact_start"
 	asyncEventCompactDone         asyncEventKind = "compact_done"
 	asyncEventCompactError        asyncEventKind = "compact_error"
+	asyncEventAgentTaskChanged    asyncEventKind = "agent_task_changed"
+	asyncEventAgentTaskCompleted  asyncEventKind = "agent_task_completed"
 )
 
 type asyncEvent struct {
@@ -201,6 +203,8 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 		asyncEventPromptUsageSnapshot,
 		asyncEventPromptError,
 		asyncEventPromptContext,
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskCompleted,
 		asyncEventCompactStart,
 		asyncEventCompactDone,
 		asyncEventCompactError:
@@ -211,6 +215,34 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 }
 
 func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent) {
+	switch payload.Kind {
+	case asyncEventAgentTaskChanged:
+		app.refreshVisibleAgentTasks(ctx)
+
+		return
+	case asyncEventAgentTaskCompleted:
+		app.deliverAgentTaskCompletionText(ctx, payload.Provider, payload.Text)
+
+		return
+	case asyncEventAuthURL,
+		asyncEventAuthDone,
+		asyncEventAuthError,
+		asyncEventPromptDone,
+		asyncEventPromptUserEntry,
+		asyncEventPromptDelta,
+		asyncEventPromptThinkingDelta,
+		asyncEventPromptToolStart,
+		asyncEventPromptToolResult,
+		asyncEventPromptRetry,
+		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot,
+		asyncEventPromptError,
+		asyncEventPromptContext,
+		asyncEventCompactStart,
+		asyncEventCompactDone,
+		asyncEventCompactError:
+	}
+
 	if app.ignorePromptEvent(payload) {
 		return
 	}
@@ -253,7 +285,9 @@ func isCompactionAsyncEvent(kind asyncEventKind) bool {
 		asyncEventPromptUsage,
 		asyncEventPromptUsageSnapshot,
 		asyncEventPromptError,
-		asyncEventPromptContext:
+		asyncEventPromptContext,
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskCompleted:
 		return false
 	}
 
@@ -279,7 +313,9 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
-		asyncEventAuthError:
+		asyncEventAuthError,
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskCompleted:
 		return false
 	}
 
@@ -321,7 +357,9 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
-		asyncEventAuthError:
+		asyncEventAuthError,
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskCompleted:
 		return true
 	case asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -379,6 +417,8 @@ func (app *App) applyPromptContextEvent(payload *asyncEvent) {
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskCompleted,
 		asyncEventPromptDone,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
@@ -444,6 +484,8 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 		asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskCompleted,
 		asyncEventCompactStart,
 		asyncEventCompactDone,
 		asyncEventCompactError:
@@ -522,6 +564,7 @@ func (app *App) applyPromptError(ctx context.Context, message string, promptID u
 	app.finishPrompt()
 
 	app.applyFailedPromptStreamedBlocks(streamingBlocks)
+	app.commitLiveAgentCompletions()
 
 	if canceled {
 		app.setStatus("response canceled; progress saved")
@@ -568,6 +611,10 @@ func (app *App) applyFailedPromptStreamedBlocks(streamingBlocks []chatMessage) {
 }
 
 func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackName string) {
+	if call != nil && isAgentManagementTool(call.Name) {
+		return
+	}
+
 	if call == nil {
 		call = &assistant.ToolCallEvent{
 			Arguments:     tool.EmptyArguments(),
@@ -590,6 +637,12 @@ func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackNa
 
 func (app *App) applyStreamedToolEvent(event *assistant.ToolEvent) {
 	if event == nil {
+		return
+	}
+
+	if isAgentManagementTool(event.Name) {
+		app.applyAgentToolEvent(event)
+
 		return
 	}
 

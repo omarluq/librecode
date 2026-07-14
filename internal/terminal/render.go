@@ -115,6 +115,12 @@ func (app *App) drawTiny(width, height int) {
 }
 
 func (app *App) writeStyledLine(row, width int, line tui.Line) {
+	if len(line.Spans) > 0 {
+		writeStyled(app.frame, row, width, line)
+
+		return
+	}
+
 	if isWorkingIndicatorText(line.Text) {
 		_, contentWidth := workingShimmerContentRange(line.Text)
 		writeShimmerLineWithVerticalBorders(
@@ -129,12 +135,6 @@ func (app *App) writeStyledLine(row, width int, line tui.Line) {
 				palette:         app.workingShimmerPalette(),
 			},
 		)
-
-		return
-	}
-
-	if len(line.Spans) > 0 {
-		writeStyled(app.frame, row, width, line)
 
 		return
 	}

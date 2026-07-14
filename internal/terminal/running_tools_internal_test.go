@@ -1,6 +1,8 @@
 package terminal
 
 import (
+	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -8,14 +10,253 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 type runningToolBlockTestCase struct {
 	run  func(t *testing.T, app *App)
 	name string
 	want []string
+}
+
+func TestAgentManagementToolsUseTaskSummaryInsteadOfToolBlocks(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	call := testToolCallEvent(agentStartToolName, `{"agent":"explore","prompt":"review"}`)
+
+	app.applyStreamedToolStart(&call, "")
+	app.applyStreamedToolEvent(&assistant.ToolEvent{
+		Name: agentStartToolName, ArgumentsJSON: call.ArgumentsJSON, DetailsJSON: "",
+		Result: "started", Error: "", IsError: false,
+	})
+
+	assert.Empty(t, app.runningToolBlocks)
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+}
+
+func TestRenderAgentTaskSummary(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	task := testAgentTask(database.TaskRunning)
+	task.Prompt = "review the code\nfor concurrency issues"
+	app.agentTasks = []database.AgentTaskEntity{task}
+
+	lines := app.renderAgentTaskSummary(80)
+	require.Len(t, lines, 2)
+	assert.Equal(t, "● explore(review the code for concurrency issues)", lines[0].Text)
+	require.Len(t, lines[0].Spans, 2)
+	assert.Equal(t, "●", lines[0].Spans[0].Text)
+	assert.Equal(t, " explore(review the code for concurrency issues)", lines[0].Spans[1].Text)
+	assert.Equal(t, defaultWorkingShimmerBrightColor(), lines[0].Spans[0].Style.GetForeground())
+	assert.Equal(t, app.theme.colors[colorMuted], lines[0].Spans[1].Style.GetForeground())
+	assert.Empty(t, lines[len(lines)-1].Text)
+}
+
+func TestRenderAgentTaskSummaryTruncatesPromptToOneLine(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	task := testAgentTask(database.TaskRunning)
+	task.Prompt = strings.Repeat("investigate ", 10)
+	app.agentTasks = []database.AgentTaskEntity{task}
+
+	lines := app.renderAgentTaskSummary(30)
+	require.Len(t, lines, 2)
+	assert.Equal(t, "● explore(investigate investi…", lines[0].Text)
+	assert.NotContains(t, lines[0].Text, "\n")
+}
+
+func TestAgentTaskSummaryRendersBelowComposer(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.agentTasks = []database.AgentTaskEntity{testAgentTask(database.TaskRunning)}
+
+	layout := app.composerLayout(80, 24)
+	require.GreaterOrEqual(t, len(layout.footerLines), 2)
+	assert.Contains(t, layout.footerLines[0].Text, "explore")
+	assert.Equal(t, layout.editorStart+len(layout.editor.Lines), layout.footerStart)
+
+	dynamicLines := flattenStyledLineGroups(app.dynamicMessageLineGroups(80), 100)
+	assert.NotContains(t, strings.Join(lineTexts(dynamicLines), "\n"), "explore(")
+}
+
+func TestRenderAgentTaskSummaryUsesStaticIndicator(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.agentTasks = []database.AgentTaskEntity{testAgentTask(database.TaskRunning)}
+
+	app.workFrame = 0
+	first := app.renderAgentTaskSummary(80)
+	app.workFrame = 3
+	later := app.renderAgentTaskSummary(80)
+
+	require.NotEmpty(t, first)
+	require.NotEmpty(t, later)
+	assert.Equal(t, "●", first[0].Spans[0].Text)
+	assert.Equal(t, first[0].Text, later[0].Text)
+}
+
+func TestAgentTaskCompletion(t *testing.T) {
+	t.Parallel()
+
+	const taskID = "task-1"
+
+	task := testAgentTask(database.TaskSucceeded)
+	task.Task.ID = taskID
+	task.Task.Result = "review complete"
+
+	completion, completed := agentTaskCompletion(database.TaskRunning, &task)
+
+	require.True(t, completed)
+	assert.Contains(t, completion, "Agent explore (task-1) finished with state succeeded")
+	assert.Contains(t, completion, "review complete")
+}
+
+func TestAgentTaskCompletionIgnoresAlreadyTerminalTask(t *testing.T) {
+	t.Parallel()
+
+	const taskID = "task-1"
+
+	task := testAgentTask(database.TaskSucceeded)
+	task.Task.ID = taskID
+
+	completion, completed := agentTaskCompletion(database.TaskSucceeded, &task)
+
+	assert.False(t, completed)
+	assert.Empty(t, completion)
+}
+
+func TestAgentTaskCompletionEventDrawsCollapsedExpandableToolResult(t *testing.T) {
+	t.Parallel()
+
+	const taskID = "task-1"
+
+	app := newRenderTestApp(t)
+	app.working = true
+	app.activePrompt = &activePromptState{
+		Cancel: func() {}, ParentEntryID: nil, SessionID: "", UserEntryID: "", Prompt: "", ID: 1, Canceled: false,
+	}
+	app.scrollOffset = 10
+	app.agentTasks = []database.AgentTaskEntity{testAgentTask(database.TaskRunning)}
+	app.agentTasks[0].Task.ID = taskID
+	completion := "Agent explore finished.\n\n" + strings.Repeat("result line\n", 10)
+
+	app.handlePromptAsyncEvent(context.Background(), &asyncEvent{
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventAgentTaskCompleted, Provider: taskID, Text: completion, PromptID: 0,
+	})
+
+	require.Len(t, app.liveAgentCompletions, 1)
+	message := app.liveAgentCompletions[0]
+	assert.Equal(t, transcript.RoleToolResult, message.Role)
+	assert.Equal(t, 10, app.scrollOffset)
+	assert.Empty(t, app.agentTasks)
+
+	collapsed := app.renderToolMessage(80, message)
+	assert.NotEqual(t, -1, lineIndexContaining(collapsed, "earlier output"))
+	assert.Equal(t, -1, lineIndexContaining(collapsed, "Agent explore finished."))
+
+	app.toolsExpanded = true
+	expanded := app.renderToolMessage(80, message)
+	assert.NotEqual(t, -1, lineIndexContaining(expanded, "Agent explore finished."))
+
+	app.handlePromptAsyncEvent(context.Background(), &asyncEvent{
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventAgentTaskCompleted, Provider: taskID, Text: completion, PromptID: 0,
+	})
+	assert.Len(t, app.liveAgentCompletions, 1)
+}
+
+func TestAgentCompletionRendersCollapsedInLiveTail(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	content := formatAgentCompletionForUI("Agent explore finished.\n\n" + strings.Repeat("result line\n", 10))
+	app.addAgentCompletionMessage(content)
+
+	collapsed := strings.Join(lineTexts(flattenStyledLineGroups(app.dynamicMessageLineGroups(80), 100)), "\n")
+	assert.Contains(t, collapsed, "earlier output")
+	assert.NotContains(t, collapsed, "Agent explore finished.")
+
+	app.toolsExpanded = true
+	expanded := strings.Join(lineTexts(flattenStyledLineGroups(app.dynamicMessageLineGroups(80), 100)), "\n")
+	assert.Contains(t, expanded, "Agent explore finished.")
+}
+
+func TestAddAgentCompletionMessageUsesLiveTailWhenIdle(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	content := formatAgentCompletionForUI("Agent explore finished.\n\nreview complete")
+
+	app.addAgentCompletionMessage(content)
+
+	require.Len(t, app.liveAgentCompletions, 1)
+	assert.Equal(t, transcript.RoleToolResult, app.liveAgentCompletions[0].Role)
+	assert.Empty(t, app.transcript.History)
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+}
+
+func TestAgentCompletionSurvivesPromptStreamingReset(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.activePrompt = &activePromptState{
+		Cancel: func() {}, ParentEntryID: nil, SessionID: "", UserEntryID: "", Prompt: "", ID: 1, Canceled: false,
+	}
+	content := formatAgentCompletionForUI("Agent explore finished.\n\nreview complete")
+	app.addAgentCompletionMessage(content)
+	app.appendStreamingBlock(transcript.RoleAssistant, "parent response")
+
+	app.applyPromptResponse(context.Background(), &assistant.PromptResponse{
+		Usage: model.EmptyTokenUsage(), SessionID: "session-1", UserEntryID: "", AssistantEntryID: "",
+		Text: "parent response", Thinking: nil, ToolEvents: nil, Cached: false,
+	}, 1)
+
+	assert.Empty(t, app.liveAgentCompletions)
+	require.Len(t, app.transcript.History, 2)
+	assert.Equal(t, transcript.RoleToolResult, app.transcript.History[0].Role)
+	assert.Equal(t, content, app.transcript.History[0].Content)
+	assert.Equal(t, transcript.RoleAssistant, app.transcript.History[1].Role)
+}
+
+func TestAgentCompletionStaysLiveAcrossQueuedContinuation(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.activePrompt = &activePromptState{
+		Cancel: func() {}, ParentEntryID: nil, SessionID: "", UserEntryID: "", Prompt: "", ID: 1, Canceled: false,
+	}
+	content := formatAgentCompletionForUI("Agent explore finished.\n\nreview complete")
+	app.addAgentCompletionMessage(content)
+	app.queuePrompt("continue with the agent result", false)
+
+	app.finishPrompt()
+	app.commitLiveAgentCompletions()
+
+	require.Len(t, app.liveAgentCompletions, 1)
+	assert.Equal(t, content, app.liveAgentCompletions[0].Content)
+	assert.Equal(t, transcript.RoleToolResult, app.liveAgentCompletions[0].Role)
+}
+
+func testAgentTask(state database.TaskState) database.AgentTaskEntity {
+	return database.AgentTaskEntity{
+		Task: database.TaskEntity{
+			CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{},
+			ID: "", Kind: database.TaskKindAgent, ParentTaskID: "", OwnerSessionID: "", ConcurrencyKey: "",
+			State: state, Result: "", ErrorCode: "", ErrorMessage: "",
+		},
+		ChildSessionID: "", AgentName: "explore", Prompt: "", Model: "", Provider: "",
+		PolicyJSON: "{}", UsageJSON: "{}", Depth: 0,
+	}
 }
 
 func TestRunningToolBlocks(t *testing.T) {

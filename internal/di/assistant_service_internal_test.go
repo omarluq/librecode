@@ -64,10 +64,12 @@ func newTestDatabaseService(t *testing.T) *DatabaseService {
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
 	return &DatabaseService{
-		DB:        connection,
-		Sessions:  database.NewSessionRepository(connection),
-		Documents: database.NewDocumentRepository(connection),
-		path:      "",
+		DB:         connection,
+		Sessions:   database.NewSessionRepository(connection),
+		Documents:  database.NewDocumentRepository(connection),
+		Tasks:      database.NewTaskRepository(connection),
+		AgentTasks: database.NewAgentTaskRepository(connection),
+		path:       "",
 	}
 }
 

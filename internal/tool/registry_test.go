@@ -63,6 +63,22 @@ func TestNewRegistryWithTools(t *testing.T) {
 	}
 }
 
+func TestRegistry_DenyMutations(t *testing.T) {
+	t.Parallel()
+
+	registry, err := tool.NewRegistryWithTools(t.TempDir(), []tool.Name{tool.NameRead, tool.NameWrite})
+	require.NoError(t, err)
+	registry.DenyMutations()
+
+	_, err = registry.ExecuteJSON(t.Context(), "write", []byte(`{"path":"denied.txt","content":"no"}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutating tool is denied")
+
+	_, err = registry.ExecuteJSON(t.Context(), "read", []byte(`{"path":"missing.txt"}`))
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "mutating tool is denied")
+}
+
 func TestRegistry_ExecuteJSONRunsBuiltInFileTools(t *testing.T) {
 	t.Parallel()
 

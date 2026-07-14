@@ -114,7 +114,7 @@ func (runtime *Runtime) buildModelContext(
 
 	result := initialContextBuildResult(&base, selectedModel)
 
-	if runtime.childDefinition != nil {
+	if !runtime.profile.EnableExtensions {
 		return result, nil
 	}
 
@@ -144,9 +144,9 @@ func (runtime *Runtime) modelContextBase(
 ) (contextwindow.Base, error) {
 	basePrompt := runtime.baseSystemPrompt(cwd)
 
-	skills := runtime.loadSkills(cwd)
-	if runtime.childDefinition != nil {
-		skills = nil
+	var skills []core.Skill
+	if runtime.profile.EnableSkills {
+		skills = runtime.loadSkills(cwd)
 	}
 
 	availableSkillsPrompt := ""

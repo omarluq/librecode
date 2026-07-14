@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/tool"
 	"github.com/omarluq/librecode/internal/transcript"
 	"github.com/omarluq/librecode/internal/tui"
 )
@@ -58,6 +59,19 @@ func (app *App) runSessionCommand(ctx context.Context, command, args, original s
 		return false, handler()
 	}
 
+	if command == "agents" {
+		switch args {
+		case "profiles":
+			app.showAgentProfiles()
+		case "back":
+			return false, app.leaveAgentTaskSession(ctx)
+		default:
+			app.openAgentTasksPanel(ctx)
+		}
+
+		return false, nil
+	}
+
 	if handler, ok := app.sessionCommandNotifications(ctx, command); ok {
 		handler()
 
@@ -92,6 +106,45 @@ func (app *App) sessionCommandNotifications(ctx context.Context, command string)
 	handler, ok := handlers[command]
 
 	return handler, ok
+}
+
+func (app *App) showAgentProfiles() {
+	definitions := app.runtime.AgentDefinitions()
+	if len(definitions) == 0 {
+		app.addSystemMessage("agents: none")
+
+		return
+	}
+
+	lines := make([]string, 0, len(definitions)+len(app.runtime.AgentDiagnostics()))
+	for index := range definitions {
+		definition := &definitions[index]
+		lines = append(lines, strings.Join([]string{
+			definition.Name + ": " + definition.Description,
+			"  source: " + definition.SourceInfo.Path,
+			"  tools: " + agentToolNames(definition.Tools),
+			"  permissions: " + string(definition.Permissions),
+		}, "\n"))
+	}
+
+	for _, diagnostic := range app.runtime.AgentDiagnostics() {
+		lines = append(lines, "warning: "+diagnostic.Path+": "+diagnostic.Message)
+	}
+
+	app.addMessage(transcript.RoleCustom, strings.Join(lines, "\n"))
+}
+
+func agentToolNames(names []tool.Name) string {
+	if len(names) == 0 {
+		return "none"
+	}
+
+	values := make([]string, len(names))
+	for index := range names {
+		values[index] = string(names[index])
+	}
+
+	return strings.Join(values, ", ")
 }
 
 func (app *App) newSession(ctx context.Context, name string) error {

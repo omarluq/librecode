@@ -72,19 +72,27 @@ func remapUsageAnchor(
 
 func (runtime *Runtime) baseSystemPrompt(cwd string) string {
 	identity := "You are librecode, an AI coding assistant. Be concise, helpful, and accurate."
-	toolGuidance := "Use built-in tools (ls, find, grep, read, bash, edit, write) " +
-		"to inspect or change workspace files when needed."
+	toolGuidance := strings.Join([]string{
+		"Use built-in tools (ls, find, grep, ast, read, fetch, bash, edit, write) " +
+			"to inspect or change workspace files when needed.",
+		"Use agent_start for focused independent work that can run concurrently; " +
+			"it returns immediately with a task ID.",
+		"Use agent_status or agent_wait to check progress without blocking, agent_list to inspect tasks, " +
+			"and agent_cancel to stop work.",
+		"Start independent agents before checking results so they run in parallel; " +
+			"do not repeatedly poll running agents.",
+	}, "\n")
 
-	if runtime.childDefinition != nil {
-		identity = runtime.childDefinition.SystemPrompt
+	if runtime.profile.Kind != ExecutionTopLevel {
+		identity = runtime.profile.SystemPrompt
 
-		names := make([]string, 0, len(runtime.childDefinition.Tools))
-		for _, name := range runtime.childDefinition.Tools {
+		names := make([]string, 0, len(runtime.profile.Tools))
+		for _, name := range runtime.profile.Tools {
 			names = append(names, string(name))
 		}
 
-		toolGuidance = "Use only the available read-only tools (" + strings.Join(names, ", ") +
-			") to investigate the task."
+		toolGuidance = "Use only the available tools (" + strings.Join(names, ", ") +
+			") to complete the task."
 	}
 
 	sections := []string{strings.Join([]string{

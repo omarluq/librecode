@@ -14,6 +14,7 @@ func (runtime *Runtime) appendUserPromptEntry(
 	sessionID string,
 	parentID *string,
 	prompt string,
+	display bool,
 ) (*database.EntryEntity, error) {
 	message := database.MessageEntity{
 		Timestamp: time.Now().UTC(),
@@ -24,7 +25,14 @@ func (runtime *Runtime) appendUserPromptEntry(
 	}
 	modelFacing := promptModelFacing(prompt)
 
-	entry, err := runtime.sessions.AppendMessageWithModelFacing(ctx, sessionID, parentID, &message, &modelFacing)
+	entry, err := runtime.sessions.AppendMessageWithDisplay(
+		ctx,
+		sessionID,
+		parentID,
+		&message,
+		&modelFacing,
+		&display,
+	)
 
 	return entry, assistantError(err, "append model-facing message")
 }

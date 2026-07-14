@@ -17,6 +17,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	if app.activePrompt.Canceled {
 		app.finishPrompt()
 		app.applyFailedPromptStreamedBlocks(streamingBlocks)
+		app.commitLiveAgentCompletions()
 
 		if response != nil {
 			app.sessionID = response.SessionID
@@ -32,6 +33,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	app.finishPrompt()
 
 	if response == nil {
+		app.commitLiveAgentCompletions()
 		app.processQueuedPrompt(ctx)
 
 		return
@@ -40,6 +42,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	app.sessionID = response.SessionID
 	app.applyTokenUsage(&response.Usage)
 	app.applyPromptResponseSideEffects(response, streamingBlocks)
+	app.commitLiveAgentCompletions()
 	app.addMessage(transcript.RoleAssistant, response.Text)
 	app.persistSessionSettings()
 	app.processQueuedPrompt(ctx)

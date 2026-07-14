@@ -111,61 +111,68 @@ type RunOptions struct {
 
 // App is the terminal chat UI.
 type App struct {
-	lastEscape            time.Time
-	lastControlC          time.Time
-	workStartedAt         time.Time
-	screen                terminalScreen
-	extensions            extension.TerminalEventRunner
-	renderer              *tui.Renderer
-	frame                 *tui.CellBuffer
-	lastResize            *tcell.EventResize
-	systemClipboard       systemClipboardWriter
-	runtime               *assistant.Runtime
-	settings              *database.DocumentRepository
-	models                *model.Registry
-	auth                  *auth.Storage
-	cfg                   *config.Config
-	keys                  *keybindings
-	panel                 *panel.Model
-	pendingParentID       *string
-	activePrompt          *activePromptState
-	activeCompaction      *activeCompactionState
-	scopedEnabled         map[string]bool
-	extensionUI           extui.State
-	theme                 terminalTheme
-	selectedPanelKind     panel.Kind
-	sessionID             string
-	statusMessage         string
-	streamingText         string
-	streamingThinkingText string
-	cwd                   string
-	promptHistoryDraft    string
-	mode                  appMode
-	resources             core.ResourceSnapshot
-	transcript            transcriptState
-	runningToolBlocks     []runningToolBlock
-	queuedMessages        []string
-	promptHistory         []string
-	scopedOrder           []string
-	composerBuffer        tui.TextArea
-	tokenUsage            model.TokenUsage
-	selection             mouseSelection
-	promptSequence        uint64
-	workFrame             int
-	streamedToolEvents    int
-	escapePresses         int
-	promptHistoryIndex    int
-	scrollOffset          int
-	autocompleteSelection int
-	autocompleteClosed    bool
-	sessionNamedOnly      bool
-	hideThinking          bool
-	working               bool
-	compacting            bool
-	toolsExpanded         bool
-	authWorking           bool
-	sessionShowPath       bool
-	sessionSortRecent     bool
+	lastEscape             time.Time
+	lastControlC           time.Time
+	workStartedAt          time.Time
+	screen                 terminalScreen
+	extensions             extension.TerminalEventRunner
+	renderer               *tui.Renderer
+	frame                  *tui.CellBuffer
+	lastResize             *tcell.EventResize
+	systemClipboard        systemClipboardWriter
+	runtime                *assistant.Runtime
+	settings               *database.DocumentRepository
+	models                 *model.Registry
+	auth                   *auth.Storage
+	cfg                    *config.Config
+	keys                   *keybindings
+	panel                  *panel.Model
+	pendingParentID        *string
+	activePrompt           *activePromptState
+	activeCompaction       *activeCompactionState
+	scopedEnabled          map[string]bool
+	extensionUI            extui.State
+	theme                  terminalTheme
+	selectedPanelKind      panel.Kind
+	sessionID              string
+	agentTaskParentSession string
+	statusMessage          string
+	streamingText          string
+	streamingThinkingText  string
+	cwd                    string
+	promptHistoryDraft     string
+	mode                   appMode
+	resources              core.ResourceSnapshot
+	transcript             transcriptState
+	runningToolBlocks      []runningToolBlock
+	liveAgentCompletions   []chatMessage
+	agentTasks             []database.AgentTaskEntity
+	agentTasksRefreshedAt  time.Time
+	agentTaskWatches       map[string]context.CancelFunc
+	deliveredAgentTasks    map[string]struct{}
+	queuedMessages         []string
+	hiddenQueuedMessages   []string
+	promptHistory          []string
+	scopedOrder            []string
+	composerBuffer         tui.TextArea
+	tokenUsage             model.TokenUsage
+	selection              mouseSelection
+	promptSequence         uint64
+	workFrame              int
+	streamedToolEvents     int
+	escapePresses          int
+	promptHistoryIndex     int
+	scrollOffset           int
+	autocompleteSelection  int
+	autocompleteClosed     bool
+	sessionNamedOnly       bool
+	hideThinking           bool
+	working                bool
+	compacting             bool
+	toolsExpanded          bool
+	authWorking            bool
+	sessionShowPath        bool
+	sessionSortRecent      bool
 }
 
 // Run starts an interactive tcell chat loop.
@@ -199,6 +206,7 @@ func Run(ctx context.Context, options *RunOptions) error {
 		app.addSystemMessage(err.Error())
 	}
 
+	app.discoverActiveAgentTasks(ctx)
 	app.loop(ctx)
 
 	return nil
@@ -215,34 +223,31 @@ type terminalScreen interface {
 }
 
 func newApp(screen terminalScreen, options *RunOptions) *App {
-	appTheme := themeByName("dark")
-	if options.Config != nil && options.Config.App.Env == "test" {
-		appTheme = darkTheme()
-	}
-
+	appTheme := initialAppTheme(options)
 	resources := initialResourceSnapshot(options)
 	app := &App{
-		screen:           screen,
-		renderer:         tui.NewRenderer(screen),
-		frame:            nil,
-		lastResize:       nil,
-		systemClipboard:  newDesktopClipboard(),
-		runtime:          options.Runtime,
-		extensions:       options.Extensions,
-		settings:         options.Settings,
-		models:           options.Models,
-		auth:             options.Auth,
-		cfg:              options.Config,
-		keys:             newDefaultKeybindings(),
-		theme:            appTheme,
-		resources:        resources,
-		mode:             modeChat,
-		panel:            nil,
-		cwd:              options.CWD,
-		sessionID:        options.SessionID,
-		pendingParentID:  nil,
-		activePrompt:     nil,
-		activeCompaction: nil,
+		screen:                 screen,
+		renderer:               tui.NewRenderer(screen),
+		frame:                  nil,
+		lastResize:             nil,
+		systemClipboard:        newDesktopClipboard(),
+		runtime:                options.Runtime,
+		extensions:             options.Extensions,
+		settings:               options.Settings,
+		models:                 options.Models,
+		auth:                   options.Auth,
+		cfg:                    options.Config,
+		keys:                   newDefaultKeybindings(),
+		theme:                  appTheme,
+		resources:              resources,
+		mode:                   modeChat,
+		panel:                  nil,
+		cwd:                    options.CWD,
+		sessionID:              options.SessionID,
+		agentTaskParentSession: "",
+		pendingParentID:        nil,
+		activePrompt:           nil,
+		activeCompaction:       nil,
 		transcript: transcriptState{
 			History: []chatMessage{},
 			Streaming: transcriptStreamingState{
@@ -254,7 +259,13 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 			LastMaxRows: 0,
 		},
 		runningToolBlocks:     []runningToolBlock{},
+		liveAgentCompletions:  []chatMessage{},
+		agentTasks:            []database.AgentTaskEntity{},
+		agentTasksRefreshedAt: time.Time{},
+		agentTaskWatches:      map[string]context.CancelFunc{},
+		deliveredAgentTasks:   map[string]struct{}{},
 		queuedMessages:        []string{},
+		hiddenQueuedMessages:  []string{},
 		promptHistory:         []string{},
 		promptHistoryDraft:    "",
 		autocompleteSelection: 0,
@@ -292,6 +303,14 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 	return app
 }
 
+func initialAppTheme(options *RunOptions) terminalTheme {
+	if options.Config != nil && options.Config.App.Env == "test" {
+		return darkTheme()
+	}
+
+	return themeByName("dark")
+}
+
 func initialResourceSnapshot(options *RunOptions) core.ResourceSnapshot {
 	resources := core.ResourceSnapshot{
 		SkillDiagnostics:  nil,
@@ -306,6 +325,8 @@ func initialResourceSnapshot(options *RunOptions) core.ResourceSnapshot {
 }
 
 func (app *App) loop(ctx context.Context) {
+	defer app.stopAgentTaskWatches()
+
 	workTicker := time.NewTicker(workFrameInterval)
 	defer workTicker.Stop()
 
@@ -358,6 +379,11 @@ func (app *App) runLoopStep(
 		return app.handleLoopEvent(ctx, event)
 	case <-app.workTick(workTicker):
 		app.workFrame++
+		if time.Since(app.agentTasksRefreshedAt) >= agentTaskRefreshInterval {
+			app.refreshVisibleAgentTasks(ctx)
+			app.refreshAgentTasksPanel(ctx)
+		}
+
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
 
 		return false, true
@@ -465,7 +491,7 @@ func (app *App) coalesceResizeEvents(resize *tcell.EventResize) resizeCoalescedE
 }
 
 func (app *App) workTick(ticker *time.Ticker) <-chan time.Time {
-	if app.busy() {
+	if app.busy() || app.hasRunningAgentTasks() || app.selectedPanelKind == panelAgentTasks {
 		return ticker.C
 	}
 
@@ -584,6 +610,7 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
+		asyncEventAgentTaskCompleted,
 		asyncEventCompactStart,
 		asyncEventCompactDone,
 		asyncEventCompactError,
@@ -591,7 +618,8 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 		asyncEventPromptUserEntry,
 		asyncEventPromptRetry,
 		asyncEventPromptError,
-		asyncEventPromptContext:
+		asyncEventPromptContext,
+		asyncEventAgentTaskChanged:
 		return false
 	}
 
@@ -603,7 +631,7 @@ func (app *App) loadInitialMessages(ctx context.Context) error {
 		return nil
 	}
 
-	messages, err := app.runtime.SessionRepository().Messages(ctx, app.sessionID)
+	messages, err := app.runtime.SessionRepository().TranscriptMessages(ctx, app.sessionID)
 	if err != nil {
 		return terminalError(err, "load initial messages")
 	}

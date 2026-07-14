@@ -48,15 +48,16 @@ const (
 
 func newRuntimePromptRequest(cwd, text, name string) *assistant.PromptRequest {
 	return &assistant.PromptRequest{
-		OnEvent:       nil,
-		OnRetry:       nil,
-		OnUserEntry:   nil,
-		ParentEntryID: nil,
-		SessionID:     "",
-		CWD:           cwd,
-		Text:          text,
-		Name:          name,
-		ResumeLatest:  false,
+		OnEvent:        nil,
+		OnRetry:        nil,
+		OnUserEntry:    nil,
+		ParentEntryID:  nil,
+		SessionID:      "",
+		CWD:            cwd,
+		Text:           text,
+		Name:           name,
+		ResumeLatest:   false,
+		HideUserPrompt: false,
 	}
 }
 
@@ -89,6 +90,28 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	require.Len(t, entries, 2)
 	assert.Equal(t, database.RoleUser, entries[0].Message.Role)
 	assert.Equal(t, database.RoleAssistant, entries[1].Message.Role)
+}
+
+func TestRuntime_HiddenPromptDoesNotAppearInTranscript(t *testing.T) {
+	t.Parallel()
+
+	runtime, repository := newTestRuntime(t)
+	request := newRuntimePromptRequest(testRuntimeCWD, "hidden continuation", "test")
+	request.HideUserPrompt = true
+
+	response, err := runtime.Prompt(context.Background(), request)
+	require.NoError(t, err)
+
+	entries, err := repository.Entries(context.Background(), response.SessionID)
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	assert.False(t, entries[0].Display)
+	assert.True(t, entries[0].ModelFacing)
+
+	messages, err := repository.TranscriptMessages(context.Background(), response.SessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	assert.Equal(t, database.RoleAssistant, messages[0].Role)
 }
 
 func TestRuntime_PromptNotifiesUserEntry(t *testing.T) {

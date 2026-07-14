@@ -81,15 +81,16 @@ func runPromptWithContainer(
 	}
 
 	response, err := runtime.Prompt(cmd.Context(), &assistant.PromptRequest{
-		OnEvent:       nil,
-		OnRetry:       nil,
-		OnUserEntry:   nil,
-		ParentEntryID: nil,
-		SessionID:     options.SessionID,
-		CWD:           cwd,
-		Text:          message,
-		Name:          options.SessionName,
-		ResumeLatest:  options.Resume,
+		OnEvent:        nil,
+		OnRetry:        nil,
+		OnUserEntry:    nil,
+		ParentEntryID:  nil,
+		SessionID:      options.SessionID,
+		CWD:            cwd,
+		Text:           message,
+		Name:           options.SessionName,
+		ResumeLatest:   options.Resume,
+		HideUserPrompt: false,
 	})
 	if err != nil {
 		return cliError(err, "run prompt")

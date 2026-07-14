@@ -15,6 +15,7 @@ const (
 	panelChangelog    panel.Kind = changelogCommandName
 	panelSessions     panel.Kind = "sessions"
 	panelTree         panel.Kind = "tree"
+	panelAgentTasks   panel.Kind = "agent_tasks"
 
 	hotkeysCommandName   = "hotkeys"
 	changelogCommandName = "changelog"

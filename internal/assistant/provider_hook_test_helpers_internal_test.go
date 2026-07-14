@@ -52,7 +52,8 @@ func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
 		skillsCache:     nil,
 		toolSchemaCache: newToolSchemaCache(),
 		agents:          nil,
-		childDefinition: nil,
+		agentTasks:      nil,
+		profile:         topLevelExecutionProfile(),
 	}
 }
 

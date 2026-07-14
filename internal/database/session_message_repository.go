@@ -64,6 +64,37 @@ ORDER BY created_at ASC`
 	return messages, nil
 }
 
+// TranscriptMessages returns displayable normalized messages for a session in creation order.
+func (repository *SessionRepository) TranscriptMessages(
+	ctx context.Context,
+	sessionID string,
+) ([]SessionMessageEntity, error) {
+	const query = `
+SELECT m.id, m.session_id, m.entry_id, m.sender, m.role, m.content, m.provider, m.model, m.created_at
+FROM session_messages AS m
+JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
+WHERE m.session_id = ? AND e.display = 1
+ORDER BY m.created_at ASC`
+
+	rows := []sessionMessageRow{}
+	if err := repository.sql.Query(ctx, &rows, query, sessionID); err != nil {
+		return nil, oops.In("database").Code("list_transcript_messages").Wrapf(
+			err,
+			"query transcript messages",
+		)
+	}
+
+	messages, err := sessionMessagesFromRows(rows)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_transcript_message").Wrapf(
+			err,
+			"scan transcript messages",
+		)
+	}
+
+	return messages, nil
+}
+
 // MessageForEntry returns the normalized message for an entry.
 func (repository *SessionRepository) MessageForEntry(
 	ctx context.Context,

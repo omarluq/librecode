@@ -37,20 +37,22 @@ type Runtime struct {
 	skillsCache     *core.SkillsCache
 	toolSchemaCache *toolSchemaCache
 	agents          *agent.Catalog
-	childDefinition *agent.Definition
+	agentTasks      AgentTaskController
+	profile         ExecutionProfile
 }
 
 // PromptRequest contains one user prompt invocation.
 type PromptRequest struct {
-	OnEvent       func(StreamEvent)          `json:"-"`
-	OnRetry       RetryEventHandler          `json:"-"`
-	OnUserEntry   func(PromptUserEntryEvent) `json:"-"`
-	ParentEntryID *string                    `json:"parent_entry_id,omitempty"`
-	SessionID     string                     `json:"session_id"`
-	CWD           string                     `json:"cwd"`
-	Text          string                     `json:"text"`
-	Name          string                     `json:"name"`
-	ResumeLatest  bool                       `json:"resume_latest,omitempty"`
+	OnEvent        func(StreamEvent)          `json:"-"`
+	OnRetry        RetryEventHandler          `json:"-"`
+	OnUserEntry    func(PromptUserEntryEvent) `json:"-"`
+	ParentEntryID  *string                    `json:"parent_entry_id,omitempty"`
+	SessionID      string                     `json:"session_id"`
+	CWD            string                     `json:"cwd"`
+	Text           string                     `json:"text"`
+	Name           string                     `json:"name"`
+	ResumeLatest   bool                       `json:"resume_latest,omitempty"`
+	HideUserPrompt bool                       `json:"-"`
 }
 
 // PromptUserEntryEvent identifies the persisted user entry for an active prompt.
@@ -157,8 +159,15 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 		skillsCache:     options.SkillsCache,
 		toolSchemaCache: newToolSchemaCache(),
 		agents:          options.Agents,
-		childDefinition: nil,
+		agentTasks:      nil,
+		profile:         topLevelExecutionProfile(),
 	}
+}
+
+// SetAgentTaskController enables asynchronous subagent tools.
+// It must be called during application startup, before Prompt is used.
+func (runtime *Runtime) SetAgentTaskController(controller AgentTaskController) {
+	runtime.agentTasks = controller
 }
 
 // Prompt appends a user prompt and an assistant response to the selected session.
@@ -252,7 +261,13 @@ func (runtime *Runtime) appendPromptUserEntry(
 		return nil, nil, err
 	}
 
-	userEntry, err := runtime.appendUserPromptEntry(ctx, activeSession.ID, parentID, request.Text)
+	userEntry, err := runtime.appendUserPromptEntry(
+		ctx,
+		activeSession.ID,
+		parentID,
+		request.Text,
+		!request.HideUserPrompt,
+	)
 	if err != nil {
 		return nil, nil, oops.In("assistant").Code("append_user").Wrapf(err, "append user message")
 	}
@@ -288,6 +303,91 @@ func (runtime *Runtime) maybeAutoCompactAfterResponse(
 	}
 }
 
+// AgentDefinitions returns immutable copies of discovered agent profiles.
+func (runtime *Runtime) AgentDefinitions() []agent.Definition {
+	if runtime == nil || runtime.agents == nil {
+		return nil
+	}
+
+	return runtime.agents.Definitions()
+}
+
+// AgentTasks returns durable agent tasks owned by a session.
+func (runtime *Runtime) AgentTasks(
+	ctx context.Context,
+	ownerSessionID string,
+	limit int,
+) ([]database.TaskEntity, error) {
+	if runtime == nil || runtime.agentTasks == nil {
+		return nil, nil
+	}
+
+	tasks, err := runtime.agentTasks.List(ctx, ownerSessionID, limit)
+	if err != nil {
+		return nil, oops.In("assistant").Code("list_agent_tasks").Wrapf(err, "list agent tasks")
+	}
+
+	return tasks, nil
+}
+
+// AgentTask returns one durable agent task.
+func (runtime *Runtime) AgentTask(
+	ctx context.Context,
+	taskID string,
+) (*database.AgentTaskEntity, bool, error) {
+	if runtime == nil || runtime.agentTasks == nil {
+		return nil, false, nil
+	}
+
+	task, found, err := runtime.agentTasks.Get(ctx, taskID)
+	if err != nil {
+		return nil, false, oops.In("assistant").Code("get_agent_task").Wrapf(err, "get agent task")
+	}
+
+	return task, found, nil
+}
+
+// SubscribeAgentTask follows persisted events for one agent task.
+func (runtime *Runtime) SubscribeAgentTask(
+	taskID string,
+) (events <-chan database.TaskEventEntity, cancel func()) {
+	if runtime == nil || runtime.agentTasks == nil {
+		channel := make(chan database.TaskEventEntity)
+		close(channel)
+
+		return channel, func() {}
+	}
+
+	return runtime.agentTasks.SubscribeAgentTask(taskID)
+}
+
+// CancelAgentTask requests cancellation of one durable agent task.
+func (runtime *Runtime) CancelAgentTask(
+	ctx context.Context,
+	ownerSessionID string,
+	taskID string,
+) (*database.TaskEntity, bool, error) {
+	if runtime == nil || runtime.agentTasks == nil {
+		return nil, false, nil
+	}
+
+	task, found, err := runtime.agentTasks.Cancel(ctx, ownerSessionID, taskID)
+	if err != nil {
+		return nil, false, oops.In("assistant").Code("cancel_agent_task").Wrapf(err, "cancel agent task")
+	}
+
+	return task, found, nil
+}
+
+// AgentDiagnostics returns profile discovery and validation diagnostics.
+func (runtime *Runtime) AgentDiagnostics() []agent.Diagnostic {
+	if runtime == nil || runtime.agents == nil {
+		return nil
+	}
+
+	return runtime.agents.Diagnostics()
+}
+
 // SessionRepository returns the underlying session repository for command and UI layers.
 func (runtime *Runtime) SessionRepository() *database.SessionRepository {
 	return runtime.sessions
@@ -303,11 +403,16 @@ func (runtime *Runtime) loadSkills(cwd string) []core.Skill {
 	return core.LoadSkills(cwd, nil, true).Skills
 }
 
-func (runtime *Runtime) childRuntime(definition *agent.Definition) *Runtime {
+// WithExecutionProfile returns a runtime view with an immutable execution profile.
+// Runtime dependencies remain shared and safe for concurrent prompt execution.
+func (runtime *Runtime) WithExecutionProfile(profile *ExecutionProfile) *Runtime {
+	clonedProfile := cloneExecutionProfile(profile)
+
 	return &Runtime{
-		cfg: runtime.cfg, sessions: runtime.sessions, extensions: nil, cache: runtime.cache,
+		cfg: runtime.cfg, sessions: runtime.sessions, extensions: runtime.extensions, cache: runtime.cache,
 		models: runtime.models, client: runtime.client, logger: runtime.logger, skillsCache: runtime.skillsCache,
-		toolSchemaCache: runtime.toolSchemaCache, agents: runtime.agents, childDefinition: definition,
+		toolSchemaCache: runtime.toolSchemaCache, agents: runtime.agents,
+		agentTasks: runtime.agentTasks, profile: clonedProfile,
 	}
 }
 
