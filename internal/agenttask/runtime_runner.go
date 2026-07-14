@@ -3,7 +3,6 @@ package agenttask
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/samber/oops"
 
@@ -26,7 +25,8 @@ func NewRuntimeRunner(
 	sessions *database.SessionRepository,
 ) (*RuntimeRunner, error) {
 	if runtime == nil || catalog == nil || sessions == nil {
-		return nil, errors.New("agenttask: runtime, agent catalog, and sessions are required")
+		return nil, oops.In("agenttask").Code("invalid_dependencies").
+			Errorf("runtime, agent catalog, and sessions are required")
 	}
 
 	return &RuntimeRunner{runtime: runtime, catalog: catalog, sessions: sessions}, nil

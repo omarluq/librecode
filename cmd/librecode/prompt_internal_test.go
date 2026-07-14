@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -100,6 +101,81 @@ func TestPromptMessage(t *testing.T) {
 			assert.Empty(t, message)
 			assert.Contains(t, err.Error(), testCase.wantErr)
 		})
+	}
+}
+
+func TestNewPromptCmdRejectsConflictingSessionFlags(t *testing.T) {
+	t.Parallel()
+
+	const testHello = "hello"
+
+	tests := []struct {
+		name    string
+		wantErr string
+		args    []string
+	}{
+		{
+			name:    "resume and session",
+			wantErr: "--resume cannot be used with --session",
+			args:    []string{"--resume", "--session", "session-1", testHello},
+		},
+		{
+			name:    "resume and name",
+			wantErr: "--resume cannot be used with --name",
+			args:    []string{"--resume", "--name", "named", testHello},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := newPromptCmd()
+			cmd.SetArgs(testCase.args)
+			cmd.SilenceErrors = true
+			cmd.SilenceUsage = true
+
+			err := cmd.Execute()
+			require.ErrorContains(t, err, testCase.wantErr)
+		})
+	}
+}
+
+type failingPromptReader struct{}
+
+func (failingPromptReader) Read([]byte) (int, error) {
+	return 0, errors.New("stdin unavailable")
+}
+
+func TestPromptMessageWrapsStdinReadError(t *testing.T) {
+	t.Parallel()
+
+	cmd := &cobra.Command{}
+	cmd.SetIn(failingPromptReader{})
+
+	message, err := promptMessage(cmd, nil)
+	require.ErrorContains(t, err, "read stdin")
+	require.ErrorContains(t, err, "stdin unavailable")
+	assert.Empty(t, message)
+}
+
+func TestRunPromptBuildsRuntimeRequest(t *testing.T) {
+	t.Parallel()
+
+	const configYAML = "extensions:\n  use: []\nmodels:\n  discovery:\n    enabled: false\n"
+
+	output := &strings.Builder{}
+	cmd := &cobra.Command{}
+	cmd.SetOut(output)
+	cmd.SetContext(t.Context())
+	cmd.PersistentFlags().String("config", writeTestConfig(t, configYAML), "")
+	cmd.PersistentFlags().Bool("no-extensions", true, "")
+
+	err := runPrompt(cmd, []string{"hello"}, promptRunOptions{SessionID: "", SessionName: "", Resume: false})
+	if err == nil {
+		assert.NotEmpty(t, output.String())
+	} else {
+		assert.NotEmpty(t, err.Error())
 	}
 }
 

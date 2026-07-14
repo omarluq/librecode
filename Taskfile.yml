@@ -93,6 +93,15 @@ tasks:
     cmds:
       - golangci-lint fmt --diff
 
+  lint-suppressions-check:
+    desc: Reject nolint directives in project Go source
+    cmds:
+      - |
+        if grep -RInE --include='*.go' '//[[:space:]]*nolint([[:space:]:]|$)' cmd internal; then
+          echo 'nolint directives are not allowed; fix the underlying lint issue instead' >&2
+          exit 1
+        fi
+
   deps:
     desc: Download dependencies
     deps: [ensure-cache]
@@ -115,6 +124,7 @@ tasks:
     desc: Run CI checks without modifying files
     cmds:
       - task: fmt-check
+      - task: lint-suppressions-check
       - task: lint
       - task: test
       - task: build

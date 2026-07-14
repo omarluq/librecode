@@ -21,6 +21,7 @@ const (
 	toolSectionError            = "error"
 	toolSectionOutput           = "output"
 	toolNameEdit                = "edit"
+	pendingToolIndicator        = "◌"
 )
 
 type parsedToolEvent struct {
@@ -504,7 +505,7 @@ func parseToolSectionHeader(line string) (name, value string, ok bool) {
 
 func (app *App) toolDisplayTitle(display *toolDisplay) string {
 	if display.Status == toolDisplayPending {
-		return "◌ " + fallbackToolName(display.Title)
+		return pendingToolIndicator + " " + fallbackToolName(display.Title)
 	}
 
 	return fallbackToolName(display.Title)

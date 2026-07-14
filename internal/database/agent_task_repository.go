@@ -103,15 +103,8 @@ INSERT INTO agent_tasks (
 // Finish atomically records agent usage, terminal task state, and its event.
 func (repository *AgentTaskRepository) Finish(
 	ctx context.Context,
-	taskID string,
-	from []TaskState,
-	targetState TaskState,
-	kind string,
-	result string,
+	finish *TaskFinish,
 	usageJSON string,
-	errorCode string,
-	errorMessage string,
-	payloadJSON string,
 ) (bool, error) {
 	if !json.Valid([]byte(usageJSON)) {
 		return false, errors.New("agent_task.usage_json must be valid JSON")
@@ -120,16 +113,13 @@ func (repository *AgentTaskRepository) Finish(
 	changed := false
 
 	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		transitioned, err := repository.tasks.finishTransaction(
-			ctx, transaction, taskID, from, targetState, kind,
-			result, errorCode, errorMessage, payloadJSON,
-		)
+		transitioned, err := repository.tasks.finishTransaction(ctx, transaction, finish)
 		if err != nil || !transitioned {
 			return err
 		}
 
 		const statement = `UPDATE agent_tasks SET usage_json = ? WHERE task_id = ?`
-		if _, err = transaction.Exec(ctx, statement, usageJSON, taskID); err != nil {
+		if _, err = transaction.Exec(ctx, statement, usageJSON, finish.TaskID); err != nil {
 			return oops.In("database").Code("update_agent_usage").Wrapf(err, "update agent usage")
 		}
 
@@ -149,7 +139,8 @@ func (repository *AgentTaskRepository) Get(ctx context.Context, taskID string) (
 	const query = `
 SELECT ` + "t." + `id, t.kind, t.parent_task_id, t.owner_session_id, t.concurrency_key,
        t.state, t.result, t.error_code, t.error_message, t.created_at, t.started_at,
-       t.finished_at, t.updated_at, a.child_session_id, a.agent_name, a.prompt,
+       t.finished_at, t.updated_at, t.lease_owner, t.lease_expires_at,
+       a.child_session_id, a.agent_name, a.prompt,
        a.model, a.provider, a.policy_json, a.usage_json, a.depth
 FROM tasks t JOIN agent_tasks a ON a.task_id = t.id WHERE t.id = ? AND t.kind = ?`
 
@@ -184,6 +175,8 @@ type agentTaskRow struct {
 	StartedAt      *string `ksql:"started_at"`
 	FinishedAt     *string `ksql:"finished_at"`
 	UpdatedAt      string  `ksql:"updated_at"`
+	LeaseOwner     *string `ksql:"lease_owner"`
+	LeaseExpiresAt *string `ksql:"lease_expires_at"`
 	ChildSessionID string  `ksql:"child_session_id"`
 	AgentName      string  `ksql:"agent_name"`
 	Prompt         string  `ksql:"prompt"`
@@ -201,6 +194,7 @@ func agentTaskFromRow(row *agentTaskRow) (*AgentTaskEntity, error) {
 		State: row.State, Result: row.Result, ErrorCode: row.ErrorCode,
 		ErrorMessage: row.ErrorMessage, CreatedAt: row.CreatedAt,
 		StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, UpdatedAt: row.UpdatedAt,
+		LeaseOwner: row.LeaseOwner, LeaseExpiresAt: row.LeaseExpiresAt,
 	})
 	if err != nil {
 		return nil, err

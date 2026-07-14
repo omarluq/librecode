@@ -86,23 +86,45 @@ func toolSummary(name, argumentsJSON string, arguments map[string]any) string {
 	return render(args, trimmedName)
 }
 
-//nolint:gochecknoglobals // Static renderer dispatch table avoids hot-path per-call map allocation.
-var toolSummaryRendererByName = map[string]toolSummaryRenderer{
-	string(tool.NameBash):  bashToolSummary,
-	string(tool.NameRead):  readToolSummary,
-	string(tool.NameEdit):  editToolSummary,
-	string(tool.NameWrite): writeToolSummary,
-	string(tool.NameGrep):  grepToolSummary,
-	string(tool.NameFind):  findToolSummary,
-	string(tool.NameLS):    lsToolSummary,
-	string(tool.NameAST):   astToolSummary,
-	string(tool.NameFetch): fetchToolSummary,
+func toolSummaryRendererFor(name string) (toolSummaryRenderer, bool) {
+	toolName := tool.Name(name)
+	if render, matched := fileToolSummaryRenderer(toolName); matched {
+		return render, true
+	}
+
+	return otherToolSummaryRenderer(toolName)
 }
 
-func toolSummaryRendererFor(name string) (toolSummaryRenderer, bool) {
-	render, matched := toolSummaryRendererByName[name]
+func fileToolSummaryRenderer(name tool.Name) (toolSummaryRenderer, bool) {
+	switch string(name) {
+	case string(tool.NameRead):
+		return readToolSummary, true
+	case string(tool.NameEdit):
+		return editToolSummary, true
+	case string(tool.NameWrite):
+		return writeToolSummary, true
+	case string(tool.NameGrep):
+		return grepToolSummary, true
+	case string(tool.NameFind):
+		return findToolSummary, true
+	default:
+		return nil, false
+	}
+}
 
-	return render, matched
+func otherToolSummaryRenderer(name tool.Name) (toolSummaryRenderer, bool) {
+	switch string(name) {
+	case string(tool.NameBash):
+		return bashToolSummary, true
+	case string(tool.NameLS):
+		return lsToolSummary, true
+	case string(tool.NameAST):
+		return astToolSummary, true
+	case string(tool.NameFetch):
+		return fetchToolSummary, true
+	default:
+		return nil, false
+	}
 }
 
 func toolArgumentsMap(arguments tool.Arguments) map[string]any {

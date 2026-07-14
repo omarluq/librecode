@@ -611,10 +611,6 @@ func (app *App) applyFailedPromptStreamedBlocks(streamingBlocks []chatMessage) {
 }
 
 func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackName string) {
-	if call != nil && isAgentManagementTool(call.Name) {
-		return
-	}
-
 	if call == nil {
 		call = &assistant.ToolCallEvent{
 			Arguments:     tool.EmptyArguments(),
@@ -628,7 +624,7 @@ func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackNa
 		call.Name = fallbackName
 	}
 
-	if strings.TrimSpace(call.Name) == "" {
+	if strings.TrimSpace(call.Name) == "" || isAgentManagementTool(call.Name) {
 		return
 	}
 

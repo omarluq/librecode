@@ -22,10 +22,10 @@ func TestMergeToolCallMutationBranches(t *testing.T) {
 		HasArgs:   true,
 	}
 
-	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
+	tests := []struct {
 		name     string
-		override ToolCallMutation
 		wantJSON string
+		override ToolCallMutation
 		wantArgs bool
 	}{
 		{

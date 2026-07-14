@@ -274,11 +274,11 @@ func TestValidateToolInputNormalizesASTMode(t *testing.T) {
 func TestValidateToolInputSchemaErrors(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
-		schema      Schema
-		input       Arguments
+	tests := []struct {
 		name        string
 		wantErrText string
+		schema      Schema
+		input       Arguments
 	}{
 		{
 			name:        "invalid schema type",

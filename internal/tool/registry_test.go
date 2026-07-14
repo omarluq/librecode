@@ -264,11 +264,11 @@ func executeTool(
 func TestRegistry_ExecuteErrors(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
+	tests := []struct {
 		name        string
 		toolName    string
-		payload     []byte
 		wantErrText string
+		payload     []byte
 	}{
 		{name: "unknown tool", toolName: "missing", payload: []byte(`{}`), wantErrText: "unknown tool"},
 		{name: "invalid json", toolName: "read", payload: []byte(`{`), wantErrText: "decode tool arguments"},

@@ -46,6 +46,58 @@ func testServiceConfig() *config.Config {
 	return cfg
 }
 
+func TestNewAgentTaskServiceRejectsIncompleteWiring(t *testing.T) {
+	t.Parallel()
+
+	injector := do.New()
+	do.ProvideValue(injector, &DatabaseService{
+		DB: nil, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, path: "",
+	})
+	do.ProvideValue(injector, &AssistantService{Runtime: nil, Agents: nil})
+
+	service, err := NewAgentTaskService(injector)
+	require.ErrorContains(t, err, "create agent task runner")
+	assert.Nil(t, service)
+}
+
+func TestNewAgentTaskServiceWrapsSchedulerError(t *testing.T) {
+	t.Parallel()
+
+	injector := do.New()
+	databaseService := newTestDatabaseService(t)
+	databaseService.Tasks = nil
+	do.ProvideValue(injector, databaseService)
+	do.ProvideValue(injector, newTestAssistantService(t, injector))
+
+	service, err := NewAgentTaskService(injector)
+	require.ErrorContains(t, err, "create agent task service")
+	assert.Nil(t, service)
+}
+
+func TestAgentTaskServiceWiresAndShutsDown(t *testing.T) {
+	t.Parallel()
+
+	injector := do.New()
+	do.ProvideValue(injector, newTestDatabaseService(t))
+	assistant := newTestAssistantService(t, injector)
+	do.ProvideValue(injector, assistant)
+
+	service, err := NewAgentTaskService(injector)
+	require.NoError(t, err)
+	require.NotNil(t, service.Tasks)
+	require.NoError(t, service.Shutdown(context.Background()))
+}
+
+func newTestAssistantService(t *testing.T, injector do.Injector) *AssistantService {
+	t.Helper()
+
+	provideTestAssistantDependencies(t, injector)
+	service, err := NewAssistantService(injector)
+	require.NoError(t, err)
+
+	return service
+}
+
 func TestContainerServiceAccessors(t *testing.T) {
 	t.Parallel()
 
