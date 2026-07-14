@@ -153,6 +153,8 @@ github.com/odvcencio/gotreesitter v0.34.0 h1:SKL8e+uz62WhkBTYmAcWZQP1pdX2+KFR/9T
 github.com/odvcencio/gotreesitter v0.34.0/go.mod h1:hBVkghd0paaYAVwd2087vfwdeU984bQbMo9LvpE0moo=
 github.com/odvcencio/gotreesitter v0.36.0 h1:WN9pMlzIEOcDoeWDSSeNHC9zpPi7kcZ66sYmf7eknDY=
 github.com/odvcencio/gotreesitter v0.36.0/go.mod h1:hBVkghd0paaYAVwd2087vfwdeU984bQbMo9LvpE0moo=
+github.com/odvcencio/gotreesitter v0.37.0 h1:9LO82hxtUJKIzDSfqhCZggCYTaxdX4JwXqydbbQi+iE=
+github.com/odvcencio/gotreesitter v0.37.0/go.mod h1:hBVkghd0paaYAVwd2087vfwdeU984bQbMo9LvpE0moo=
 github.com/oklog/ulid/v2 v2.1.1 h1:suPZ4ARWLOJLegGFiZZ1dFAkqzhMjL3J1TzI+5wHz8s=
 github.com/oklog/ulid/v2 v2.1.1/go.mod h1:rcEKHmBBKfef9DhnvX7y1HZBYxjXb0cP5ExxNsTT1QQ=
 github.com/onsi/gomega v1.34.1 h1:EUMJIKUjM8sKjYbtxQI9A4z2o+rruxnzNvpknOXie6k=
