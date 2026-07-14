@@ -81,6 +81,72 @@ func validateSessionMessageEntity(entity *SessionMessageEntity) error {
 	return validateRequiredTime("message.created_at", entity.CreatedAt)
 }
 
+func validateTaskEntity(entity *TaskEntity) error {
+	if err := validateUUIDv7("task.id", entity.ID); err != nil {
+		return err
+	}
+
+	if entity.ParentTaskID != "" {
+		if err := validateUUIDv7("task.parent_task_id", entity.ParentTaskID); err != nil {
+			return err
+		}
+	}
+
+	if err := validateUUIDv7("task.owner_session_id", entity.OwnerSessionID); err != nil {
+		return err
+	}
+
+	if err := validateRequiredText("task.kind", entity.Kind); err != nil {
+		return err
+	}
+
+	if err := validateRequiredText("task.state", string(entity.State)); err != nil {
+		return err
+	}
+
+	if err := validateRequiredTime("task.created_at", entity.CreatedAt); err != nil {
+		return err
+	}
+
+	return validateRequiredTime("task.updated_at", entity.UpdatedAt)
+}
+
+func validateAgentTaskEntity(entity *AgentTaskEntity) error {
+	if err := validateTaskEntity(&entity.Task); err != nil {
+		return err
+	}
+
+	if entity.Task.Kind != "agent" {
+		return errors.New("agent_task.task.kind must be agent")
+	}
+
+	if err := validateUUIDv7("agent_task.child_session_id", entity.ChildSessionID); err != nil {
+		return err
+	}
+
+	if err := validateRequiredText("agent_task.agent_name", entity.AgentName); err != nil {
+		return err
+	}
+
+	if err := validateRequiredText("agent_task.prompt", entity.Prompt); err != nil {
+		return err
+	}
+
+	if entity.Depth < 1 {
+		return errors.New("agent_task.depth must be positive")
+	}
+
+	if !json.Valid([]byte(entity.PolicyJSON)) {
+		return errors.New("agent_task.policy_json must be valid JSON")
+	}
+
+	if !json.Valid([]byte(entity.UsageJSON)) {
+		return errors.New("agent_task.usage_json must be valid JSON")
+	}
+
+	return nil
+}
+
 func validateDocumentEntity(entity *DocumentEntity) error {
 	if err := validateRequiredText("document.namespace", entity.Namespace); err != nil {
 		return err

@@ -230,6 +230,7 @@ func newEntryData() EntryDataEntity {
 
 type appendEntryOptions struct {
 	modelFacing *bool
+	display     *bool
 	timestamp   time.Time
 	usage       *EntryTokenUsageEntity
 	content     string
@@ -298,7 +299,7 @@ func (repository *SessionRepository) entryFromAppendOptions(
 }
 
 func applyAppendEntryMetadata(entry *EntryEntity, options *appendEntryOptions) error {
-	if options.modelFacing == nil && options.usage == nil {
+	if options.modelFacing == nil && options.display == nil && options.usage == nil {
 		return nil
 	}
 
@@ -311,6 +312,10 @@ func applyAppendEntryMetadata(entry *EntryEntity, options *appendEntryOptions) e
 
 	if options.modelFacing != nil {
 		data.ModelFacing = options.modelFacing
+	}
+
+	if options.display != nil {
+		data.Display = options.display
 	}
 
 	if options.usage != nil {
@@ -348,6 +353,27 @@ func (repository *SessionRepository) AppendMessageWithModelFacing(
 	modelFacing *bool,
 ) (*EntryEntity, error) {
 	return repository.AppendMessageWithMetadata(ctx, sessionID, parentID, message, modelFacing, nil)
+}
+
+// AppendMessageWithDisplay appends a message with optional model-facing and transcript visibility overrides.
+func (repository *SessionRepository) AppendMessageWithDisplay(
+	ctx context.Context,
+	sessionID string,
+	parentID *string,
+	message *MessageEntity,
+	modelFacing *bool,
+	display *bool,
+) (*EntryEntity, error) {
+	options := newAppendEntryOptions()
+	options.content = message.Content
+	options.model = message.Model
+	options.provider = message.Provider
+	options.role = message.Role
+	options.timestamp = message.Timestamp
+	options.modelFacing = modelFacing
+	options.display = display
+
+	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeMessage, options)
 }
 
 // AppendMessageWithMetadata appends a message with optional model-facing and token usage metadata.

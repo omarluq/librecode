@@ -18,16 +18,38 @@ func (app *App) queueFollowUp() {
 }
 
 func (app *App) queueFollowUpText(text string) {
+	app.queuePrompt(text, true)
+}
+
+func (app *App) queuePrompt(text string, visible bool) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return
 	}
 
-	app.queuedMessages = append(app.queuedMessages, text)
+	if visible {
+		app.queuedMessages = append(app.queuedMessages, text)
+
+		return
+	}
+
+	app.hiddenQueuedMessages = append(app.hiddenQueuedMessages, text)
 }
 
 func (app *App) processQueuedPrompt(ctx context.Context) {
-	if app.busy() || len(app.queuedMessages) == 0 {
+	if app.busy() {
+		return
+	}
+
+	if len(app.hiddenQueuedMessages) > 0 {
+		text := app.hiddenQueuedMessages[0]
+		app.hiddenQueuedMessages = app.hiddenQueuedMessages[1:]
+		app.sendPromptHidden(ctx, text)
+
+		return
+	}
+
+	if len(app.queuedMessages) == 0 {
 		return
 	}
 

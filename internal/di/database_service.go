@@ -25,10 +25,12 @@ const (
 
 // DatabaseService owns the session database connection and schema lifecycle.
 type DatabaseService struct {
-	DB        *sql.DB
-	Sessions  *database.SessionRepository
-	Documents *database.DocumentRepository
-	path      string
+	DB         *sql.DB
+	Sessions   *database.SessionRepository
+	Documents  *database.DocumentRepository
+	Tasks      *database.TaskRepository
+	AgentTasks *database.AgentTaskRepository
+	path       string
 }
 
 // NewDatabaseService opens the session database and applies embedded migrations.
@@ -56,10 +58,12 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 	}
 
 	return &DatabaseService{
-		DB:        connection,
-		Sessions:  database.NewSessionRepositoryWithProvider(sqlProvider),
-		Documents: database.NewDocumentRepositoryWithProvider(sqlProvider),
-		path:      databasePath,
+		DB:         connection,
+		Sessions:   database.NewSessionRepositoryWithProvider(sqlProvider),
+		Documents:  database.NewDocumentRepositoryWithProvider(sqlProvider),
+		Tasks:      database.NewTaskRepositoryWithProvider(sqlProvider),
+		AgentTasks: database.NewAgentTaskRepositoryWithProvider(sqlProvider),
+		path:       databasePath,
 	}, nil
 }
 

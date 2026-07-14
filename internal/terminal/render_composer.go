@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/omarluq/librecode/internal/terminal/extui"
@@ -64,7 +65,7 @@ func (app *App) drawStatusWindow(layout *extui.Layout) {
 			return
 		}
 
-		tui.WriteCells(app.frame, 0, window.Y+index, window.Width, line.Text, line.Style)
+		app.writeStyledLine(window.Y+index, window.Width, line)
 	}
 }
 
@@ -80,7 +81,7 @@ func (app *App) drawEditorAndFooter(width, height, _ int) {
 	}
 
 	for index, line := range layout.footerLines {
-		tui.WriteCells(app.frame, 0, layout.footerStart+index, width, line.Text, line.Style)
+		app.writeStyledLine(layout.footerStart+index, width, line)
 	}
 
 	app.screen.ShowCursor(layout.editor.CursorCol, layout.editorStart+layout.editor.CursorRow)
@@ -148,7 +149,9 @@ func (app *App) editorBorderColor() colorToken {
 func (app *App) footerLines(width int) []tui.Line {
 	lineTexts := app.defaultStatusLineTexts()
 
-	lines := make([]tui.Line, 0, len(lineTexts))
+	lines := app.renderAgentTaskSummary(width)
+	lines = slices.Grow(lines, len(lineTexts))
+
 	for _, lineText := range lineTexts {
 		lines = append(lines, tui.NewLine(app.theme.style(colorDim), tui.Truncate(lineText, width)))
 	}

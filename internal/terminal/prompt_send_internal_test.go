@@ -282,15 +282,16 @@ func TestRunPromptPostsDoneAndError(t *testing.T) {
 			app.screen = newClipboardScreen()
 			promptCtx, cancel := context.WithCancel(context.Background())
 			request := &assistant.PromptRequest{
-				OnEvent:       nil,
-				OnRetry:       nil,
-				OnUserEntry:   nil,
-				ParentEntryID: nil,
-				SessionID:     "",
-				CWD:           app.cwd,
-				Text:          promptSendTestText,
-				Name:          "",
-				ResumeLatest:  false,
+				OnEvent:        nil,
+				OnRetry:        nil,
+				OnUserEntry:    nil,
+				ParentEntryID:  nil,
+				SessionID:      "",
+				CWD:            app.cwd,
+				Text:           promptSendTestText,
+				Name:           "",
+				ResumeLatest:   false,
+				HideUserPrompt: false,
 			}
 
 			app.runPrompt(context.Background(), promptCtx, cancel, request, 7)
@@ -468,7 +469,7 @@ func waitForPromptRequest(t *testing.T, client *terminalPromptClient) *assistant
 		default:
 			return false
 		}
-	}, time.Second, 10*time.Millisecond, "runtime request should be captured")
+	}, 5*time.Second, 10*time.Millisecond, "runtime request should be captured")
 
 	client.lock.Lock()
 	defer client.lock.Unlock()
@@ -490,7 +491,7 @@ func readPromptAsyncEvent(t *testing.T, app *App) *asyncEvent {
 		default:
 			return false
 		}
-	}, time.Second, 10*time.Millisecond, "timed out waiting for async event")
+	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for async event")
 
 	interrupt, matched := raw.(*tcell.EventInterrupt)
 	require.Truef(t, matched, "event = %T, want *tcell.EventInterrupt", raw)

@@ -20,6 +20,7 @@ type Registry struct {
 	schemaValidators *schemaValidatorCache
 	executors        map[Name]Executor
 	cwd              string
+	allowMutations   bool
 }
 
 // NewRegistry creates a registry with every built-in tool enabled.
@@ -39,6 +40,7 @@ func NewRegistryWithTools(cwd string, names []Name) (*Registry, error) {
 		schemaValidators: newSchemaValidatorCache(),
 		executors:        make(map[Name]Executor, len(names)),
 		cwd:              cwd,
+		allowMutations:   true,
 	}
 
 	for _, name := range names {
@@ -73,6 +75,12 @@ func builtInToolFactories(cwd string) map[Name]func() Executor {
 		NameAST:   func() Executor { return NewASTTool(cwd) },
 		NameFetch: func() Executor { return NewFetchTool() },
 	}
+}
+
+// DenyMutations makes the registry reject tools not marked read-only.
+// It is intended for non-interactive background executions that cannot ask for approval.
+func (registry *Registry) DenyMutations() {
+	registry.allowMutations = false
 }
 
 // CWD returns the registry working directory.
@@ -120,6 +128,11 @@ func (registry *Registry) Execute(ctx context.Context, name string, input Argume
 	}
 
 	definition := executor.Definition()
+	if !registry.allowMutations && !definition.ReadOnly {
+		return emptyToolResult(), oops.In("tool").Code("mutation_denied").
+			With("tool", name).Errorf("mutating tool is denied by execution policy")
+	}
+
 	if err := validateToolInput(&definition, input, registry.schemaValidators); err != nil {
 		return emptyToolResult(), err
 	}

@@ -230,12 +230,9 @@ func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) error
 		return nil
 	}
 
-	if app.selectedPanelKind == panelSessions && app.handleSessionPanelKey(ctx, event) {
-		return nil
-	}
-
-	if app.selectedPanelKind == panelScopedModels && app.handleScopedModelKey(event) {
-		return nil
+	handled, err := app.handleSpecialPanelKey(ctx, event)
+	if handled || err != nil {
+		return err
 	}
 
 	action := app.panel.HandleKey(event, panelKeybindings{keys: app.keys})
@@ -249,4 +246,20 @@ func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) error
 	}
 
 	return nil
+}
+
+func (app *App) handleSpecialPanelKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
+	switch app.selectedPanelKind {
+	case panelSessions:
+		return app.handleSessionPanelKey(ctx, event), nil
+	case panelScopedModels:
+		return app.handleScopedModelKey(event), nil
+	case panelAgentTasks:
+		return app.handleAgentTasksPanelKey(ctx, event)
+	case panelModel, panelAuthLogin, panelAuthLogout, panelSettings,
+		panelHotkeys, panelChangelog, panelTree:
+		return false, nil
+	default:
+		return false, nil
+	}
 }

@@ -219,6 +219,7 @@ func (repository *SessionRepository) DeleteSession(ctx context.Context, sessionI
 
 func deleteSessionRows(ctx context.Context, transaction ksql.Provider, sessionID string) error {
 	statements := []string{
+		`DELETE FROM tasks WHERE id IN (SELECT task_id FROM agent_tasks WHERE child_session_id = ?)`,
 		`DELETE FROM session_messages WHERE session_id = ?`,
 		`DELETE FROM session_entries WHERE session_id = ?`,
 		`DELETE FROM sessions WHERE id = ?`,

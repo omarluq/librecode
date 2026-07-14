@@ -62,6 +62,7 @@ func TestContainerServiceAccessors(t *testing.T) {
 	require.NotNil(t, container.ExtensionService())
 	require.NotNil(t, container.ModelService())
 	require.NotNil(t, container.AssistantService())
+	require.NotNil(t, container.AgentTaskService())
 	require.NotNil(t, container.ToolService())
 	require.NotNil(t, container.SkillsService())
 }

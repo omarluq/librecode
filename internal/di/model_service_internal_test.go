@@ -34,10 +34,12 @@ func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
 	injector := do.New()
 	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: ""})
 	do.ProvideValue(injector, &DatabaseService{
-		DB:        nil,
-		Sessions:  nil,
-		Documents: documents,
-		path:      "",
+		DB:         nil,
+		Sessions:   nil,
+		Documents:  documents,
+		Tasks:      nil,
+		AgentTasks: nil,
+		path:       "",
 	})
 	do.ProvideValue(injector, &AuthService{Storage: storage})
 

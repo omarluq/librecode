@@ -60,9 +60,17 @@ func (c *Container) ModelService() *ModelService {
 	return do.MustInvoke[*ModelService](c.injector)
 }
 
-// AssistantService resolves the assistant service.
+// AssistantService resolves the assistant runtime and initializes background agents.
 func (c *Container) AssistantService() *AssistantService {
-	return do.MustInvoke[*AssistantService](c.injector)
+	service := do.MustInvoke[*AssistantService](c.injector)
+	do.MustInvoke[*AgentTaskService](c.injector)
+
+	return service
+}
+
+// AgentTaskService resolves the durable background agent service.
+func (c *Container) AgentTaskService() *AgentTaskService {
+	return do.MustInvoke[*AgentTaskService](c.injector)
 }
 
 // ToolService resolves the tool service.

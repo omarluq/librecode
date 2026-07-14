@@ -10,8 +10,16 @@ import (
 )
 
 func (app *App) sendPrompt(ctx context.Context, text string) {
+	app.sendPromptWithVisibility(ctx, text, true)
+}
+
+func (app *App) sendPromptHidden(ctx context.Context, text string) {
+	app.sendPromptWithVisibility(ctx, text, false)
+}
+
+func (app *App) sendPromptWithVisibility(ctx context.Context, text string, visible bool) {
 	if app.busy() {
-		app.queueFollowUpText(text)
+		app.queuePrompt(text, visible)
 
 		return
 	}
@@ -20,15 +28,16 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	parentEntryID := cloneStringPtr(app.pendingParentID)
 	promptID := app.nextPromptID()
 	request := &assistant.PromptRequest{
-		OnEvent:       app.promptStreamHandler(promptCtx, promptID),
-		OnRetry:       app.promptRetryHandler(promptCtx, promptID),
-		OnUserEntry:   app.promptUserEntryHandler(ctx, promptID),
-		ParentEntryID: parentEntryID,
-		SessionID:     app.sessionID,
-		CWD:           app.cwd,
-		Text:          text,
-		Name:          "",
-		ResumeLatest:  false,
+		OnEvent:        app.promptStreamHandler(promptCtx, promptID),
+		OnRetry:        app.promptRetryHandler(promptCtx, promptID),
+		OnUserEntry:    app.promptUserEntryHandler(ctx, promptID),
+		ParentEntryID:  parentEntryID,
+		SessionID:      app.sessionID,
+		CWD:            app.cwd,
+		Text:           text,
+		Name:           "",
+		ResumeLatest:   false,
+		HideUserPrompt: !visible,
 	}
 	app.pendingParentID = nil
 	app.scrollOffset = 0
@@ -36,6 +45,7 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 	app.streamingThinkingText = ""
 	app.resetStreamingBlocks()
 	app.streamedToolEvents = 0
+
 	app.activePrompt = &activePromptState{
 		Cancel:        cancel,
 		ParentEntryID: cloneStringPtr(parentEntryID),
@@ -45,7 +55,10 @@ func (app *App) sendPrompt(ctx context.Context, text string) {
 		Prompt:        text,
 		Canceled:      false,
 	}
-	app.addMessage(transcript.RoleUser, text)
+	if visible {
+		app.addMessage(transcript.RoleUser, text)
+	}
+
 	app.working = true
 	app.workStartedAt = time.Now()
 

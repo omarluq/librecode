@@ -164,7 +164,7 @@ func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInpu
 		ExecuteTools:      runtime.executeProviderToolCalls(input.registry),
 		SessionID:         input.sessionID,
 		SystemPrompt:      input.systemPrompt,
-		ThinkingLevel:     runtime.cfg.Assistant.ThinkingLevel,
+		ThinkingLevel:     runtime.thinkingLevel(),
 		CWD:               input.cwd,
 		Auth:              input.auth,
 		Messages:          input.messages,
@@ -319,8 +319,15 @@ func (runtime *Runtime) emitRetryEvent(ctx context.Context, handler RetryEventHa
 }
 
 func (runtime *Runtime) selectedModel() (model.Model, error) {
-	provider := runtime.cfg.Assistant.Provider
-	modelID := runtime.cfg.Assistant.Model
+	provider := runtime.profile.Provider
+	if provider == "" {
+		provider = runtime.cfg.Assistant.Provider
+	}
+
+	modelID := runtime.profile.Model
+	if modelID == "" {
+		modelID = runtime.cfg.Assistant.Model
+	}
 
 	models := runtime.models.All()
 	for index := range models {
@@ -351,9 +358,21 @@ func (runtime *Runtime) selectedModel() (model.Model, error) {
 	}, nil
 }
 
+func (runtime *Runtime) thinkingLevel() string {
+	if runtime.profile.ThinkingLevel != "" {
+		return string(runtime.profile.ThinkingLevel)
+	}
+
+	return runtime.cfg.Assistant.ThinkingLevel
+}
+
 func (runtime *Runtime) cacheKey(sessionID, prompt string) string {
-	return strings.Join(
-		[]string{runtime.cfg.Assistant.Provider, runtime.cfg.Assistant.Model, sessionID, prompt},
-		"\x00",
-	)
+	selected, err := runtime.selectedModel()
+	if err != nil {
+		parts := []string{runtime.cfg.Assistant.Provider, runtime.cfg.Assistant.Model, sessionID, prompt}
+
+		return strings.Join(parts, "\x00")
+	}
+
+	return strings.Join([]string{selected.Provider, selected.ID, sessionID, prompt}, "\x00")
 }

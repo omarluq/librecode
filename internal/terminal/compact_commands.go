@@ -123,6 +123,8 @@ func (app *App) handleCompactAsyncEvent(ctx context.Context, payload *asyncEvent
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskCompleted,
 		asyncEventCompactStart,
 		asyncEventPromptDone,
 		asyncEventPromptUserEntry,

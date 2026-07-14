@@ -12,6 +12,7 @@ import (
 // AssistantService exposes the assistant runtime.
 type AssistantService struct {
 	Runtime *assistant.Runtime
+	Agents  *agent.Catalog
 }
 
 // NewAssistantService wires the assistant runtime.
@@ -29,6 +30,8 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 		return nil, serviceError(err, "resolve agent working directory")
 	}
 
+	agents := agent.Load(cwd)
+
 	return &AssistantService{
 		Runtime: assistant.NewRuntime(&assistant.RuntimeOptions{
 			Config:      cfg,
@@ -39,7 +42,8 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 			Client:      nil,
 			Logger:      logger,
 			SkillsCache: skills.Cache,
-			Agents:      agent.Load(cwd),
+			Agents:      agents,
 		}),
+		Agents: agents,
 	}, nil
 }

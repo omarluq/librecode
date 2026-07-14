@@ -14,6 +14,7 @@ import (
 
 func slashSuggestions() []tui.ListItem {
 	return []tui.ListItem{
+		autocompleteSuggestion("agents", "open asynchronous agent tasks"),
 		autocompleteSuggestion("auth", "show auth status"),
 		autocompleteSuggestion(changelogCommandName, "open changelog"),
 		autocompleteSuggestion("clone", "clone current session"),
@@ -246,10 +247,13 @@ func (app *App) allSlashSuggestions() []tui.ListItem {
 }
 
 func (app *App) workingIndicator() string {
-	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	frame := frames[app.workFrame%len(frames)]
+	return app.spinnerFrame() + " " + app.workingLoaderText()
+}
 
-	return frame + " " + app.workingLoaderText()
+func (app *App) spinnerFrame() string {
+	frames := [...]string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+	return frames[app.workFrame%len(frames)]
 }
 
 func (app *App) workingLoaderText() string {
