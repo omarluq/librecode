@@ -15,7 +15,7 @@ CREATE TABLE tasks (
     updated_at TEXT NOT NULL,
     FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
     FOREIGN KEY (owner_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-    CHECK (kind <> ''),
+    CHECK (length(kind) > 0),
     CHECK (state IN ('queued', 'running', 'canceling', 'succeeded', 'failed', 'canceled', 'interrupted'))
 );
 
@@ -24,7 +24,7 @@ CREATE TABLE events (
     kind TEXT NOT NULL,
     payload_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
-    CHECK (kind <> ''),
+    CHECK (length(kind) > 0),
     CHECK (json_valid(payload_json))
 );
 
@@ -51,8 +51,8 @@ CREATE TABLE agent_tasks (
     depth INTEGER NOT NULL,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
     FOREIGN KEY (child_session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-    CHECK (agent_name <> ''),
-    CHECK (prompt <> ''),
+    CHECK (length(agent_name) > 0),
+    CHECK (length(prompt) > 0),
     CHECK (json_valid(policy_json)),
     CHECK (json_valid(usage_json)),
     CHECK (depth >= 1)

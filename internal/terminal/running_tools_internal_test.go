@@ -49,9 +49,9 @@ func TestRenderAgentTaskSummary(t *testing.T) {
 
 	lines := app.renderAgentTaskSummary(80)
 	require.Len(t, lines, 2)
-	assert.Equal(t, "● explore(review the code for concurrency issues)", lines[0].Text)
+	assert.Equal(t, "◌ explore(review the code for concurrency issues)", lines[0].Text)
 	require.Len(t, lines[0].Spans, 2)
-	assert.Equal(t, "●", lines[0].Spans[0].Text)
+	assert.Equal(t, pendingToolIndicator, lines[0].Spans[0].Text)
 	assert.Equal(t, " explore(review the code for concurrency issues)", lines[0].Spans[1].Text)
 	assert.Equal(t, defaultWorkingShimmerBrightColor(), lines[0].Spans[0].Style.GetForeground())
 	assert.Equal(t, app.theme.colors[colorMuted], lines[0].Spans[1].Style.GetForeground())
@@ -68,7 +68,7 @@ func TestRenderAgentTaskSummaryTruncatesPromptToOneLine(t *testing.T) {
 
 	lines := app.renderAgentTaskSummary(30)
 	require.Len(t, lines, 2)
-	assert.Equal(t, "● explore(investigate investi…", lines[0].Text)
+	assert.Equal(t, "◌ explore(investigate investi…", lines[0].Text)
 	assert.NotContains(t, lines[0].Text, "\n")
 }
 
@@ -100,7 +100,7 @@ func TestRenderAgentTaskSummaryUsesStaticIndicator(t *testing.T) {
 
 	require.NotEmpty(t, first)
 	require.NotEmpty(t, later)
-	assert.Equal(t, "●", first[0].Spans[0].Text)
+	assert.Equal(t, pendingToolIndicator, first[0].Spans[0].Text)
 	assert.Equal(t, first[0].Text, later[0].Text)
 }
 
@@ -251,7 +251,8 @@ func testAgentTask(state database.TaskState) database.AgentTaskEntity {
 	return database.AgentTaskEntity{
 		Task: database.TaskEntity{
 			CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{},
-			ID: "", Kind: database.TaskKindAgent, ParentTaskID: "", OwnerSessionID: "", ConcurrencyKey: "",
+			LeaseExpiresAt: nil, ID: "", Kind: database.TaskKindAgent, ParentTaskID: "",
+			OwnerSessionID: "", ConcurrencyKey: "", LeaseOwner: "",
 			State: state, Result: "", ErrorCode: "", ErrorMessage: "",
 		},
 		ChildSessionID: "", AgentName: "explore", Prompt: "", Model: "", Provider: "",
@@ -321,6 +322,15 @@ func runningToolFallbackNameCase() runningToolBlockTestCase {
 		name: "use fallback for blank streamed tool name",
 		want: []string{testToolBash},
 	}
+}
+
+func TestApplyStreamedToolStartSkipsAgentFallbackName(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.applyStreamedToolStart(nil, agentStartToolName)
+
+	assert.Empty(t, app.runningToolBlocks)
 }
 
 func runningToolRemoveByNameAndArgumentsCase() runningToolBlockTestCase {

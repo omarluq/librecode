@@ -3,9 +3,12 @@ package agenttask
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -16,14 +19,19 @@ import (
 )
 
 const (
-	defaultConcurrency        = 4
-	defaultSessionConcurrency = 2
-	defaultTimeout            = 30 * time.Minute
-	defaultQueueCapacity      = 256
-	awaitPollInterval         = 50 * time.Millisecond
-	dispatchRetryInterval     = 10 * time.Millisecond
-	finalizeTimeout           = 10 * time.Second
-	eventBuffer               = 64
+	defaultConcurrency         = 4
+	defaultSessionConcurrency  = 2
+	defaultTimeout             = 30 * time.Minute
+	defaultQueueCapacity       = 256
+	awaitPollInterval          = time.Second
+	dispatchRetryInterval      = 10 * time.Millisecond
+	finalizeTimeout            = 10 * time.Second
+	leaseDuration              = 30 * time.Second
+	leaseHeartbeatInterval     = 10 * time.Second
+	leaseRenewalRetryInterval  = 250 * time.Millisecond
+	leaseRenewalAttemptTimeout = 2 * time.Second
+	leaseRenewalAttempts       = 3
+	eventBuffer                = 64
 )
 
 // Runner executes one persisted agent task.
@@ -63,31 +71,41 @@ type SubmitRequest struct {
 
 // Options configures the task service.
 type Options struct {
-	Tasks              *database.TaskRepository
-	AgentTasks         *database.AgentTaskRepository
-	Runner             Runner
+	Tasks      *database.TaskRepository
+	AgentTasks *database.AgentTaskRepository
+	Runner     Runner
+	Logger     *slog.Logger
+	Timeout    time.Duration
+
 	Concurrency        int
 	SessionConcurrency int
 	QueueCapacity      int
-	Timeout            time.Duration
 }
 
 // Service schedules and owns durable agent tasks.
 type Service struct {
-	runner             Runner
-	ctx                context.Context
-	tasks              *database.TaskRepository
-	agentTasks         *database.AgentTaskRepository
-	queue              chan string
-	cancel             context.CancelFunc
-	active             map[string]context.CancelFunc
-	sessionSlots       map[string]chan struct{}
-	subscribers        map[string]map[uint64]chan database.TaskEventEntity
-	nextSubscriber     uint64
-	wg                 sync.WaitGroup
-	timeout            time.Duration
-	sessionConcurrency int
-	mu                 sync.Mutex
+	runner                     Runner
+	renewLeaseFn               func(context.Context, string, string, time.Time) (bool, error)
+	active                     map[string]context.CancelFunc
+	subscribers                map[string]map[uint64]chan database.TaskEventEntity
+	agentTasks                 *database.AgentTaskRepository
+	queue                      chan string
+	cancel                     context.CancelFunc
+	done                       <-chan struct{}
+	sessionSlots               map[string]chan struct{}
+	tasks                      *database.TaskRepository
+	logger                     *slog.Logger
+	leaseOwner                 string
+	wg                         sync.WaitGroup
+	nextSubscriber             uint64
+	timeout                    time.Duration
+	sessionConcurrency         int
+	leaseDuration              time.Duration
+	leaseHeartbeatInterval     time.Duration
+	leaseRenewalRetryInterval  time.Duration
+	leaseRenewalAttemptTimeout time.Duration
+	leaseRenewalAttempts       int
+	mu                         sync.Mutex
 }
 
 // New creates and starts a task service.
@@ -102,16 +120,33 @@ func New(ctx context.Context, options Options) (*Service, error) {
 
 	concurrency, sessionConcurrency, queueCapacity, timeout := optionDefaults(options)
 
+	logger := options.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	serviceCtx, cancel := context.WithCancel(ctx)
 
+	leaseOwner, err := newLeaseOwner()
+	if err != nil {
+		cancel()
+
+		return nil, oops.In("agenttask").Code("worker_identity").Wrapf(err, "create worker identity")
+	}
+
 	service := &Service{
-		runner: options.Runner, ctx: serviceCtx, tasks: options.Tasks,
+		runner: options.Runner, done: serviceCtx.Done(), tasks: options.Tasks,
 		agentTasks: options.AgentTasks, queue: make(chan string, queueCapacity),
 		cancel: cancel, active: make(map[string]context.CancelFunc),
 		sessionSlots:   make(map[string]chan struct{}),
 		subscribers:    make(map[string]map[uint64]chan database.TaskEventEntity),
 		nextSubscriber: 0, wg: sync.WaitGroup{}, timeout: timeout,
-		sessionConcurrency: sessionConcurrency, mu: sync.Mutex{},
+		sessionConcurrency: sessionConcurrency, logger: logger, leaseOwner: leaseOwner,
+		renewLeaseFn: options.Tasks.RenewLease, leaseDuration: leaseDuration,
+		leaseHeartbeatInterval:     leaseHeartbeatInterval,
+		leaseRenewalRetryInterval:  leaseRenewalRetryInterval,
+		leaseRenewalAttemptTimeout: leaseRenewalAttemptTimeout,
+		leaseRenewalAttempts:       leaseRenewalAttempts, mu: sync.Mutex{},
 	}
 	if err := service.recoverInterrupted(ctx); err != nil {
 		cancel()
@@ -121,10 +156,10 @@ func New(ctx context.Context, options Options) (*Service, error) {
 
 	for range concurrency {
 		service.wg.Add(1)
-		go service.worker()
+		go service.worker(serviceCtx)
 	}
 
-	if err := service.enqueueRecovered(ctx); err != nil {
+	if err := service.enqueueRecovered(ctx, serviceCtx); err != nil {
 		cancel()
 		service.wg.Wait()
 
@@ -188,8 +223,9 @@ func (service *Service) Submit(ctx context.Context, request *SubmitRequest) (*da
 		Task: database.TaskEntity{
 			ID: "", Kind: "", ParentTaskID: request.ParentTaskID,
 			OwnerSessionID: request.OwnerSessionID, ConcurrencyKey: request.ConcurrencyKey,
-			State: "", Result: "", ErrorCode: "", ErrorMessage: "",
+			State: "", Result: "", ErrorCode: "", ErrorMessage: "", LeaseOwner: "",
 			CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{},
+			LeaseExpiresAt: nil,
 		},
 		ChildSessionID: request.ChildSessionID, AgentName: request.AgentName,
 		Prompt: request.Prompt, Model: request.Model, Provider: request.Provider,
@@ -202,8 +238,8 @@ func (service *Service) Submit(ctx context.Context, request *SubmitRequest) (*da
 	select {
 	case service.queue <- created.Task.ID:
 		return created, nil
-	case <-service.ctx.Done():
-		return created, oops.In("agenttask").Code("service_stopped").Wrapf(service.ctx.Err(), "enqueue task")
+	case <-service.done:
+		return created, oops.In("agenttask").Code("service_stopped").Wrapf(context.Canceled, "enqueue task")
 	case <-ctx.Done():
 		service.rejectQueuedTask(
 			created.Task.ID, "enqueue_canceled", "task submission was canceled before queue admission",
@@ -359,8 +395,13 @@ func (service *Service) ownsTask(ctx context.Context, ownerSessionID, taskID str
 
 // Await waits until a task is terminal or the caller context ends.
 func (service *Service) Await(ctx context.Context, taskID string) (*database.AgentTaskEntity, error) {
+	subscription := service.Subscribe(taskID)
+	defer subscription.Cancel()
+
 	ticker := time.NewTicker(awaitPollInterval)
 	defer ticker.Stop()
+
+	events := subscription.Events
 
 	for {
 		task, found, err := service.agentTasks.Get(ctx, taskID)
@@ -379,6 +420,10 @@ func (service *Service) Await(ctx context.Context, taskID string) (*database.Age
 		select {
 		case <-ctx.Done():
 			return nil, oops.In("agenttask").Code("await_canceled").Wrapf(ctx.Err(), "await agent task")
+		case _, open := <-events:
+			if !open {
+				events = nil
+			}
 		case <-ticker.C:
 		}
 	}
@@ -404,54 +449,71 @@ func (service *Service) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (service *Service) worker() {
+func (service *Service) worker(ctx context.Context) {
 	defer service.wg.Done()
 
 	for {
 		select {
-		case <-service.ctx.Done():
+		case <-ctx.Done():
 			return
 		case taskID := <-service.queue:
-			service.run(taskID)
+			service.run(ctx, taskID)
 		}
 	}
 }
 
-func (service *Service) run(taskID string) {
-	task, found, err := service.agentTasks.Get(service.ctx, taskID)
-	if err != nil || !found {
+func (service *Service) run(ctx context.Context, taskID string) {
+	task, found, err := service.agentTasks.Get(ctx, taskID)
+	if err != nil {
+		service.logError(ctx, "load queued agent task", "task_id", taskID, "error", err)
+
+		return
+	}
+
+	if !found {
 		return
 	}
 
 	release, acquired := service.acquireSessionSlot(task.Task.ConcurrencyKey)
 	if !acquired {
-		service.requeue(taskID)
+		service.requeue(ctx, taskID)
 
 		return
 	}
 	defer release()
 
-	changed, err := service.tasks.Transition(
-		service.ctx, taskID, []database.TaskState{database.TaskQueued}, database.TaskRunning, "task_started",
-	)
-	if err != nil || !changed {
+	changed, err := service.tasks.ClaimQueued(ctx, &database.TaskClaim{
+		TaskID: taskID, LeaseOwner: service.leaseOwner, EventKind: "task_started",
+		LeaseExpiresAt: time.Now().Add(service.leaseDuration),
+	})
+	if err != nil {
+		service.logError(ctx, "claim queued agent task", "task_id", taskID, "error", err)
+
 		return
 	}
 
-	service.publishLatest(service.ctx, taskID)
+	if !changed {
+		return
+	}
 
-	task, found, err = service.agentTasks.Get(service.ctx, taskID)
+	service.publishLatest(ctx, taskID)
+
+	task, found, err = service.agentTasks.Get(ctx, taskID)
+	if err != nil {
+		service.logError(ctx, "load claimed agent task", "task_id", taskID, "error", err)
+	}
+
 	if err != nil || !found {
 		service.finish(
-			taskID, database.TaskFailed, "task_failed",
+			ctx, taskID, database.TaskFailed, "task_failed",
 			Result{Text: "", UsageJSON: ""}, "load_task", "load agent task",
 		)
 
 		return
 	}
 
-	result, runErr := service.execute(taskID, task)
-	service.finalizeRun(taskID, result, runErr)
+	result, runErr := service.execute(ctx, taskID, task)
+	service.finalizeRun(ctx, taskID, result, runErr)
 }
 
 func (service *Service) acquireSessionSlot(key string) (func(), bool) {
@@ -468,53 +530,67 @@ func (service *Service) acquireSessionSlot(key string) (func(), bool) {
 	case slots <- struct{}{}:
 		return func() { <-slots }, true
 	default:
-		return func() {}, false
+		return func() {
+			// No slot was acquired, so there is nothing to release.
+		}, false
 	}
 }
 
-func (service *Service) requeue(taskID string) {
-	timer := time.NewTimer(dispatchRetryInterval)
-	defer timer.Stop()
-
-	select {
-	case <-service.ctx.Done():
-		return
-	case <-timer.C:
-	}
-
-	select {
-	case service.queue <- taskID:
-	case <-service.ctx.Done():
-	}
+func (service *Service) requeue(ctx context.Context, taskID string) {
+	time.AfterFunc(dispatchRetryInterval, func() {
+		select {
+		case service.queue <- taskID:
+		case <-ctx.Done():
+		}
+	})
 }
 
 func (service *Service) rejectQueuedTask(taskID, errorCode, errorMessage string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(service.ctx), finalizeTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), finalizeTimeout)
 	defer cancel()
 
-	changed, err := service.tasks.Finish(
-		ctx, taskID, []database.TaskState{database.TaskQueued}, database.TaskFailed,
-		"task_failed", "", errorCode, errorMessage, `{"error_code":"`+errorCode+`"}`,
-	)
-	if err == nil && changed {
+	payload, err := json.Marshal(map[string]string{"error_code": errorCode})
+	if err != nil {
+		service.logError(ctx, "marshal queued task rejection", "task_id", taskID, "error", err)
+
+		return
+	}
+
+	changed, err := service.tasks.Finish(ctx, &database.TaskFinish{
+		TaskID: taskID, From: []database.TaskState{database.TaskQueued},
+		TargetState: database.TaskFailed, EventKind: "task_failed", Result: "",
+		ErrorCode: errorCode, ErrorMessage: errorMessage, LeaseOwner: "",
+		PayloadJSON: string(payload),
+	})
+	if err != nil {
+		service.logError(ctx, "reject queued agent task", "task_id", taskID, "error", err)
+
+		return
+	}
+
+	if changed {
 		service.publishLatest(ctx, taskID)
 	}
 }
 
-func (service *Service) execute(taskID string, task *database.AgentTaskEntity) (Result, error) {
+func (service *Service) execute(ctx context.Context, taskID string, task *database.AgentTaskEntity) (Result, error) {
 	timeout := service.timeout
 	if taskTimeout := persistedTimeout(task.PolicyJSON); taskTimeout > 0 {
 		timeout = taskTimeout
 	}
 
-	runCtx, cancel := context.WithTimeout(service.ctx, timeout)
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+
+	heartbeatDone := make(chan struct{})
+	go service.renewLease(runCtx, cancel, taskID, heartbeatDone)
+
 	service.mu.Lock()
 	service.active[taskID] = cancel
 	service.mu.Unlock()
 
 	// Cancellation can race with registration in active. Re-read durable state
 	// after registration so a canceling task never starts model or tool work.
-	current, found, err := service.tasks.Get(context.WithoutCancel(service.ctx), taskID)
+	current, found, err := service.tasks.Get(context.WithoutCancel(ctx), taskID)
 	if err == nil && found && current.State == database.TaskCanceling {
 		cancel()
 	}
@@ -522,6 +598,7 @@ func (service *Service) execute(taskID string, task *database.AgentTaskEntity) (
 	result, runErr := service.runner.Run(runCtx, task, service.eventSink(taskID))
 
 	cancel()
+	<-heartbeatDone
 
 	service.mu.Lock()
 	delete(service.active, taskID)
@@ -534,35 +611,129 @@ func (service *Service) execute(taskID string, task *database.AgentTaskEntity) (
 	return result, nil
 }
 
-func (service *Service) finalizeRun(taskID string, result Result, runErr error) {
-	current, found, err := service.tasks.Get(context.WithoutCancel(service.ctx), taskID)
+func (service *Service) renewLease(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	taskID string,
+	done chan<- struct{},
+) {
+	defer close(done)
+
+	ticker := time.NewTicker(service.leaseHeartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !service.renewLeaseWithRetry(ctx, taskID) {
+				cancel()
+
+				return
+			}
+		}
+	}
+}
+
+func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string) bool {
+	for attempt := 1; attempt <= service.leaseRenewalAttempts; attempt++ {
+		renewed, err := service.attemptLeaseRenewal(ctx, taskID)
+		if err == nil {
+			return service.handleLeaseRenewal(ctx, taskID, attempt, renewed)
+		}
+
+		if ctx.Err() != nil {
+			return false
+		}
+
+		if attempt == service.leaseRenewalAttempts {
+			service.logError(ctx, "renew agent task lease after retries", "task_id", taskID,
+				"lease_owner", service.leaseOwner, "attempts", attempt, "error", err)
+
+			return false
+		}
+
+		service.logWarn(ctx, "retry agent task lease renewal", "task_id", taskID,
+			"lease_owner", service.leaseOwner, "attempt", attempt,
+			"max_attempts", service.leaseRenewalAttempts,
+			"retry_after", service.leaseRenewalRetryInterval, "error", err)
+
+		if !waitForLeaseRenewalRetry(ctx, service.leaseRenewalRetryInterval) {
+			return false
+		}
+	}
+
+	return false
+}
+
+func (service *Service) attemptLeaseRenewal(ctx context.Context, taskID string) (bool, error) {
+	attemptCtx, cancel := context.WithTimeout(ctx, service.leaseRenewalAttemptTimeout)
+	defer cancel()
+
+	return service.renewLeaseFn(
+		attemptCtx, taskID, service.leaseOwner, time.Now().Add(service.leaseDuration),
+	)
+}
+
+func (service *Service) handleLeaseRenewal(
+	ctx context.Context,
+	taskID string,
+	attempt int,
+	renewed bool,
+) bool {
+	if !renewed {
+		service.logWarn(ctx, "agent task lease ownership lost", "task_id", taskID,
+			"lease_owner", service.leaseOwner)
+	} else if attempt > 1 {
+		service.logger.DebugContext(ctx, "agent task lease renewal recovered", "task_id", taskID,
+			"lease_owner", service.leaseOwner, "attempt", attempt)
+	}
+
+	return renewed
+}
+
+func waitForLeaseRenewalRetry(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func (service *Service) finalizeRun(ctx context.Context, taskID string, result Result, runErr error) {
+	current, found, err := service.tasks.Get(context.WithoutCancel(ctx), taskID)
 	if err == nil && found && current.State == database.TaskCanceling {
 		message := "task canceled"
 		if runErr != nil {
 			message = runErr.Error()
 		}
 
-		service.finish(taskID, database.TaskCanceled, "task_canceled", result, "canceled", message)
+		service.finish(ctx, taskID, database.TaskCanceled, "task_canceled", result, "canceled", message)
 
 		return
 	}
 
 	if runErr == nil {
-		service.finish(taskID, database.TaskSucceeded, "task_succeeded", result, "", "")
+		service.finish(ctx, taskID, database.TaskSucceeded, "task_succeeded", result, "", "")
 
 		return
 	}
 
-	if service.ctx.Err() != nil {
+	if ctx.Err() != nil {
 		service.finish(
-			taskID, database.TaskInterrupted, "task_interrupted", result,
+			ctx, taskID, database.TaskInterrupted, "task_interrupted", result,
 			"service_stopped", "task interrupted by service shutdown",
 		)
 
 		return
 	}
 
-	service.finish(taskID, database.TaskFailed, "task_failed", result, "run_failed", runErr.Error())
+	service.finish(ctx, taskID, database.TaskFailed, "task_failed", result, "run_failed", runErr.Error())
 }
 
 func (service *Service) eventSink(taskID string) EventSink {
@@ -610,6 +781,7 @@ func (service *Service) closeSubscriptions() {
 }
 
 func (service *Service) finish(
+	serviceCtx context.Context,
 	taskID string,
 	state database.TaskState,
 	kind string,
@@ -619,10 +791,12 @@ func (service *Service) finish(
 ) {
 	payload, err := json.Marshal(map[string]string{"error_code": errorCode})
 	if err != nil {
+		service.logError(serviceCtx, "marshal agent task outcome", "task_id", taskID, "error", err)
+
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(service.ctx), finalizeTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(serviceCtx), finalizeTimeout)
 	defer cancel()
 
 	usageJSON := result.UsageJSON
@@ -630,16 +804,40 @@ func (service *Service) finish(
 		usageJSON = "{}"
 	}
 
-	changed, err := service.agentTasks.Finish(
-		ctx, taskID,
-		[]database.TaskState{database.TaskRunning, database.TaskCanceling},
-		state, kind, result.Text, usageJSON, errorCode, errorMessage, string(payload),
-	)
-	if err != nil || !changed {
+	changed, err := service.agentTasks.Finish(ctx, &database.TaskFinish{
+		TaskID: taskID, From: []database.TaskState{database.TaskRunning, database.TaskCanceling},
+		TargetState: state, EventKind: kind, Result: result.Text, LeaseOwner: service.leaseOwner,
+		ErrorCode: errorCode, ErrorMessage: errorMessage, PayloadJSON: string(payload),
+	}, usageJSON)
+	if err != nil {
+		service.logError(ctx, "finish agent task", "task_id", taskID, "error", err)
+
+		return
+	}
+
+	if !changed {
 		return
 	}
 
 	service.publishLatest(ctx, taskID)
+}
+
+func (service *Service) logError(ctx context.Context, message string, args ...any) {
+	logger := service.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	logger.ErrorContext(ctx, message, args...)
+}
+
+func (service *Service) logWarn(ctx context.Context, message string, args ...any) {
+	logger := service.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	logger.WarnContext(ctx, message, args...)
 }
 
 func (service *Service) publishLatest(ctx context.Context, taskID string) {
@@ -652,28 +850,20 @@ func (service *Service) publishLatest(ctx context.Context, taskID string) {
 }
 
 func (service *Service) recoverInterrupted(ctx context.Context) error {
-	interrupted, err := service.tasks.ListByStates(
-		ctx, database.TaskKindAgent, []database.TaskState{database.TaskRunning, database.TaskCanceling}, 0,
-	)
+	_, err := service.tasks.RecoverExpired(ctx, &database.TaskRecovery{
+		Kind: database.TaskKindAgent, TargetState: database.TaskInterrupted,
+		EventKind: "task_interrupted", ErrorCode: "process_restart",
+		ErrorMessage: "task interrupted after its worker lease expired",
+		PayloadJSON:  `{"error_code":"process_restart"}`, ExpiresBefore: time.Now(),
+	})
 	if err != nil {
-		return oops.In("agenttask").Code("recover_tasks").Wrapf(err, "list interrupted tasks")
-	}
-
-	for index := range interrupted {
-		if _, finishErr := service.tasks.Finish(
-			ctx, interrupted[index].ID,
-			[]database.TaskState{database.TaskRunning, database.TaskCanceling},
-			database.TaskInterrupted, "task_interrupted", "", "process_restart",
-			"task interrupted by process restart", `{"error_code":"process_restart"}`,
-		); finishErr != nil {
-			return oops.In("agenttask").Code("recover_task").Wrapf(finishErr, "interrupt task")
-		}
+		return oops.In("agenttask").Code("recover_tasks").Wrapf(err, "recover expired tasks")
 	}
 
 	return nil
 }
 
-func (service *Service) enqueueRecovered(ctx context.Context) error {
+func (service *Service) enqueueRecovered(ctx, serviceCtx context.Context) error {
 	queued, err := service.tasks.ListByStates(ctx, database.TaskKindAgent, []database.TaskState{database.TaskQueued}, 0)
 	if err != nil {
 		return oops.In("agenttask").Code("recover_tasks").Wrapf(err, "list queued tasks")
@@ -684,12 +874,21 @@ func (service *Service) enqueueRecovered(ctx context.Context) error {
 		case service.queue <- queued[index].ID:
 		case <-ctx.Done():
 			return oops.In("agenttask").Code("recover_canceled").Wrapf(ctx.Err(), "enqueue recovered tasks")
-		case <-service.ctx.Done():
-			return oops.In("agenttask").Code("service_stopped").Wrapf(service.ctx.Err(), "enqueue recovered tasks")
+		case <-serviceCtx.Done():
+			return oops.In("agenttask").Code("service_stopped").Wrapf(serviceCtx.Err(), "enqueue recovered tasks")
 		}
 	}
 
 	return nil
+}
+
+func newLeaseOwner() (string, error) {
+	var identity [16]byte
+	if _, err := rand.Read(identity[:]); err != nil {
+		return "", oops.In("agenttask").Code("random_identity").Wrapf(err, "read random identity")
+	}
+
+	return hex.EncodeToString(identity[:]), nil
 }
 
 func persistedTimeout(policyJSON string) time.Duration {

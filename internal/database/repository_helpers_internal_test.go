@@ -111,9 +111,11 @@ func TestRowConvertersReturnTimestampErrors(t *testing.T) {
 }
 
 func validSessionRow() sessionRow {
+	const testCWD = "/work"
+
 	return sessionRow{
 		ID:            testRowSessionID,
-		CWD:           "/work",
+		CWD:           testCWD,
 		Name:          "session",
 		ParentSession: "",
 		CreatedAt:     testRowCreatedAt,

@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -34,18 +35,17 @@ func TestWatchAgentTaskPostsTerminalChange(t *testing.T) {
 		Sequence: 4,
 	}
 
-	go app.watchAgentTask(t.Context(), taskID, events, func() { cancelCalled <- struct{}{} })
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+
+	go app.watchAgentTask(ctx, taskID, events, func() { cancelCalled <- struct{}{} })
 
 	var event tcell.Event
-
-	require.Eventually(t, func() bool {
-		select {
-		case event = <-screen.EventQ():
-			return true
-		default:
-			return false
-		}
-	}, time.Second, time.Millisecond)
+	select {
+	case event = <-screen.EventQ():
+	case <-ctx.Done():
+		require.FailNow(t, "watch did not post terminal task event")
+	}
 
 	interrupt, ok := event.(*tcell.EventInterrupt)
 	require.True(t, ok)
@@ -54,12 +54,9 @@ func TestWatchAgentTaskPostsTerminalChange(t *testing.T) {
 	assert.Equal(t, asyncEventAgentTaskChanged, payload.Kind)
 	assert.Equal(t, taskID, payload.Text)
 
-	require.Eventually(t, func() bool {
-		select {
-		case <-cancelCalled:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, time.Millisecond)
+	select {
+	case <-cancelCalled:
+	case <-ctx.Done():
+		require.FailNow(t, "watch did not cancel its subscription")
+	}
 }

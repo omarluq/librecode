@@ -55,7 +55,7 @@ func (runtime *Runtime) promptToolRegistry(cwd, sessionID string) (*tool.Registr
 		return nil, err
 	}
 
-	if runtime.agents != nil && runtime.agentTasks != nil && len(runtime.agents.Definitions()) > 0 {
+	if runtime.agents != nil && runtime.agentTasks != nil && runtime.agents.Len() > 0 {
 		for _, name := range []tool.Name{
 			agentStartToolName,
 			agentStatusToolName,
@@ -70,6 +70,7 @@ func (runtime *Runtime) promptToolRegistry(cwd, sessionID string) (*tool.Registr
 				name:            name,
 				parentSessionID: sessionID,
 				cwd:             cwd,
+				definition:      nil,
 			}
 			if err := registry.Register(executor); err != nil {
 				return nil, oops.In("assistant").Code("register_agent_tool").Wrapf(err, "register agent tool")

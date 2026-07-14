@@ -91,8 +91,12 @@ func (runtime *Runtime) baseSystemPrompt(cwd string) string {
 			names = append(names, string(name))
 		}
 
-		toolGuidance = "Use only the available tools (" + strings.Join(names, ", ") +
-			") to complete the task."
+		if len(names) > 0 {
+			toolGuidance = "Use only the available tools (" + strings.Join(names, ", ") +
+				") to complete the task."
+		} else {
+			toolGuidance = ""
+		}
 	}
 
 	sections := []string{strings.Join([]string{

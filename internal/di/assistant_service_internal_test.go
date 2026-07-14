@@ -24,10 +24,24 @@ func TestNewAssistantServiceWiresRuntimeOptions(t *testing.T) {
 	t.Parallel()
 
 	injector := do.New()
-	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: ""})
 	do.ProvideValue(injector, newTestDatabaseService(t))
+	provideTestAssistantDependencies(t, injector)
+
+	service, err := NewAssistantService(injector)
+
+	require.NoError(t, err)
+	require.NotNil(t, service.Runtime)
+	require.NotNil(t, service.Agents)
+	require.NotNil(t, service.Runtime.SessionRepository())
+	require.NotNil(t, service.Runtime.ModelRegistry())
+}
+
+func provideTestAssistantDependencies(t *testing.T, injector do.Injector) {
+	t.Helper()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: ""})
 	do.ProvideValue(injector, &ExtensionService{
 		Manager: extension.NewManager(logger),
 		State:   extension.ManagerState{Configured: nil, Loaded: nil},
@@ -39,14 +53,6 @@ func TestNewAssistantServiceWiresRuntimeOptions(t *testing.T) {
 		SlogLogger:    logger,
 		ZerologLogger: newZerologLogger(testServiceConfig()),
 	})
-
-	service, err := NewAssistantService(injector)
-
-	require.NoError(t, err)
-	require.NotNil(t, service.Runtime)
-	require.NotNil(t, service.Runtime.SessionRepository())
-	require.NotNil(t, service.Runtime.ModelRegistry())
-
 	t.Cleanup(func() {
 		if skills := do.MustInvoke[*SkillsService](injector); skills.Cache != nil {
 			skills.Cache.Close()

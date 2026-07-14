@@ -8,11 +8,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
-	"sync"
 	"testing"
 	"time"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -79,7 +78,7 @@ func TestDatabaseServiceShutdownReturnsContextError(t *testing.T) {
 func TestCloseAfterSetupErrorPreservesSetupAndCloseErrors(t *testing.T) {
 	t.Parallel()
 
-	connection, err := sql.Open(closeDriverRegistry().registerCloseErrorDriver(), "")
+	connection, err := sql.Open(registerCloseErrorDriver(), "")
 	require.NoError(t, err)
 	connection.SetMaxIdleConns(1)
 	require.NoError(t, connection.PingContext(context.Background()))
@@ -146,21 +145,8 @@ func errCloseFailed() error {
 	return errors.New("close failed")
 }
 
-func closeDriverRegistry() *driverRegistry {
-	return &driverRegistry{index: 0, mu: sync.Mutex{}}
-}
-
-type driverRegistry struct {
-	index int
-	mu    sync.Mutex
-}
-
-func (registry *driverRegistry) registerCloseErrorDriver() string {
-	registry.mu.Lock()
-	defer registry.mu.Unlock()
-
-	registry.index++
-	driverName := "close-error-sqlite-test-" + strconv.Itoa(registry.index)
+func registerCloseErrorDriver() string {
+	driverName := "close-error-sqlite-test-" + uuid.Must(uuid.NewV7()).String()
 	sql.Register(driverName, closeErrorDriver{})
 
 	return driverName

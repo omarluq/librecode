@@ -355,7 +355,9 @@ func (runtime *Runtime) SubscribeAgentTask(
 		channel := make(chan database.TaskEventEntity)
 		close(channel)
 
-		return channel, func() {}
+		return channel, func() {
+			// The closed channel has no live subscription to cancel.
+		}
 	}
 
 	return runtime.agentTasks.SubscribeAgentTask(taskID)

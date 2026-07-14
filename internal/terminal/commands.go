@@ -116,7 +116,9 @@ func (app *App) showAgentProfiles() {
 		return
 	}
 
-	lines := make([]string, 0, len(definitions)+len(app.runtime.AgentDiagnostics()))
+	diagnostics := app.runtime.AgentDiagnostics()
+	lines := make([]string, 0, len(definitions)+len(diagnostics))
+
 	for index := range definitions {
 		definition := &definitions[index]
 		lines = append(lines, strings.Join([]string{
@@ -127,7 +129,7 @@ func (app *App) showAgentProfiles() {
 		}, "\n"))
 	}
 
-	for _, diagnostic := range app.runtime.AgentDiagnostics() {
+	for _, diagnostic := range diagnostics {
 		lines = append(lines, "warning: "+diagnostic.Path+": "+diagnostic.Message)
 	}
 

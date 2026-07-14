@@ -43,11 +43,13 @@ type TaskEntity struct {
 	StartedAt      *time.Time
 	FinishedAt     *time.Time
 	UpdatedAt      time.Time
+	LeaseExpiresAt *time.Time
 	ID             string
 	Kind           string
 	ParentTaskID   string
 	OwnerSessionID string
 	ConcurrencyKey string
+	LeaseOwner     string
 	State          TaskState
 	Result         string
 	ErrorCode      string
@@ -67,6 +69,38 @@ type TaskEventEntity struct {
 	Event    EventEntity
 	TaskID   string
 	Sequence int64
+}
+
+// TaskFinish describes a conditional terminal task transition.
+type TaskFinish struct {
+	TaskID       string
+	EventKind    string
+	Result       string
+	ErrorCode    string
+	ErrorMessage string
+	PayloadJSON  string
+	LeaseOwner   string
+	TargetState  TaskState
+	From         []TaskState
+}
+
+// TaskClaim describes a queued task lease acquired by one worker.
+type TaskClaim struct {
+	LeaseExpiresAt time.Time
+	TaskID         string
+	LeaseOwner     string
+	EventKind      string
+}
+
+// TaskRecovery describes the terminal outcome for abandoned leased work.
+type TaskRecovery struct {
+	ExpiresBefore time.Time
+	Kind          string
+	EventKind     string
+	ErrorCode     string
+	ErrorMessage  string
+	PayloadJSON   string
+	TargetState   TaskState
 }
 
 // TaskRepository persists generic task lifecycle state and ordered events.
@@ -116,6 +150,86 @@ func (repository *TaskRepository) Create(ctx context.Context, task *TaskEntity) 
 	}
 
 	return &created, nil
+}
+
+// ClaimQueued atomically moves a queued task to running, assigns its lease, and appends an event.
+func (repository *TaskRepository) ClaimQueued(ctx context.Context, claim *TaskClaim) (bool, error) {
+	if claim == nil || strings.TrimSpace(claim.LeaseOwner) == "" || claim.LeaseExpiresAt.IsZero() {
+		return false, errors.New("database: task claim requires an owner and expiry")
+	}
+
+	if err := validateRequiredText("event.kind", claim.EventKind); err != nil {
+		return false, err
+	}
+
+	changed := false
+
+	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+		now := repository.now().UTC()
+
+		const update = `UPDATE tasks SET state = ?, started_at = COALESCE(started_at, ?),
+updated_at = ?, lease_owner = ?, lease_expires_at = ? WHERE id = ? AND state = ?`
+
+		result, err := transaction.Exec(ctx, update, TaskRunning, formatTime(now), formatTime(now),
+			claim.LeaseOwner, formatTime(claim.LeaseExpiresAt.UTC()), claim.TaskID, TaskQueued)
+		if err != nil {
+			return oops.In("database").Code("claim_task").Wrapf(err, "claim queued task")
+		}
+
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return oops.In("database").Code("task_rows_affected").Wrapf(err, "read affected task rows")
+		}
+
+		if rows != 1 {
+			return nil
+		}
+
+		sequence, err := nextTaskEventSequence(ctx, transaction, claim.TaskID)
+		if err != nil {
+			return err
+		}
+
+		_, err = insertTaskEvent(ctx, transaction, claim.TaskID, sequence, claim.EventKind, "{}", now)
+		changed = err == nil
+
+		return err
+	})
+	if err != nil {
+		return false, oops.In("database").Code("claim_task").Wrapf(err, "claim queued task")
+	}
+
+	return changed, nil
+}
+
+// RenewLease extends a lease only while the same owner still runs or cancels the task.
+func (repository *TaskRepository) RenewLease(
+	ctx context.Context,
+	taskID string,
+	leaseOwner string,
+	leaseExpiresAt time.Time,
+) (bool, error) {
+	if strings.TrimSpace(leaseOwner) == "" || leaseExpiresAt.IsZero() {
+		return false, errors.New("database: lease renewal requires an owner and expiry")
+	}
+
+	const update = `UPDATE tasks SET lease_expires_at = ?, updated_at = ?
+WHERE id = ? AND lease_owner = ? AND state IN (?, ?)`
+
+	now := repository.now().UTC()
+
+	result, err := repository.sql.Exec(ctx, update, formatTime(leaseExpiresAt.UTC()), formatTime(now),
+		taskID, leaseOwner, TaskRunning, TaskCanceling)
+	if err != nil {
+		return false, oops.In("database").Code("renew_task_lease").Wrapf(err, "renew task lease")
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, "read affected task rows")
+	}
+
+	return rows == 1, nil
 }
 
 // Get loads one task by ID.
@@ -177,12 +291,16 @@ func (repository *TaskRepository) transition(
 
 	const update = `
 UPDATE tasks
-SET state = ?, started_at = ?, finished_at = ?, updated_at = ?
+SET state = ?, started_at = ?, finished_at = ?, updated_at = ?,
+    lease_owner = CASE WHEN ? THEN NULL ELSE lease_owner END,
+    lease_expires_at = CASE WHEN ? THEN NULL ELSE lease_expires_at END
 WHERE id = ? AND state = ?`
+
+	terminal := isTerminalTaskState(targetState)
 
 	result, err := transaction.Exec(
 		ctx, update, targetState, nullableTime(startedAt), nullableTime(finishedAt),
-		formatTime(now), taskID, current.State,
+		formatTime(now), terminal, terminal, taskID, current.State,
 	)
 	if err != nil {
 		return false, oops.In("database").Code("update_task_state").Wrapf(err, "update task state")
@@ -227,22 +345,12 @@ func transitionTimes(
 }
 
 // Finish conditionally records a terminal outcome and appends its event atomically.
-func (repository *TaskRepository) Finish(
-	ctx context.Context,
-	taskID string,
-	from []TaskState,
-	targetState TaskState,
-	kind string,
-	result string,
-	errorCode string,
-	errorMessage string,
-	payloadJSON string,
-) (bool, error) {
-	if len(from) == 0 || !isTerminalTaskState(targetState) {
+func (repository *TaskRepository) Finish(ctx context.Context, finish *TaskFinish) (bool, error) {
+	if len(finish.From) == 0 || !isTerminalTaskState(finish.TargetState) {
 		return false, errors.New("database: task finish requires source states and a terminal target")
 	}
 
-	if err := validateEvent(kind, payloadJSON); err != nil {
+	if err := validateEvent(finish.EventKind, finish.PayloadJSON); err != nil {
 		return false, oops.In("database").Code("validate_event").Wrapf(err, "validate terminal event")
 	}
 
@@ -251,10 +359,7 @@ func (repository *TaskRepository) Finish(
 	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
 		var transactionErr error
 
-		changed, transactionErr = repository.finishTransaction(
-			ctx, transaction, taskID, from, targetState, kind,
-			result, errorCode, errorMessage, payloadJSON,
-		)
+		changed, transactionErr = repository.finishTransaction(ctx, transaction, finish)
 
 		return transactionErr
 	})
@@ -268,32 +373,26 @@ func (repository *TaskRepository) Finish(
 func (repository *TaskRepository) finishTransaction(
 	ctx context.Context,
 	transaction ksql.Provider,
-	taskID string,
-	from []TaskState,
-	targetState TaskState,
-	kind string,
-	result string,
-	errorCode string,
-	errorMessage string,
-	payloadJSON string,
+	finish *TaskFinish,
 ) (bool, error) {
-	current, found, err := loadTask(ctx, transaction, taskID)
-	if err != nil || !found || !slices.Contains(from, current.State) {
+	current, found, err := loadTask(ctx, transaction, finish.TaskID)
+	if err != nil || !found || !slices.Contains(finish.From, current.State) {
 		return false, err
 	}
 
 	now := repository.now().UTC()
-	startedAt, finishedAt := transitionTimes(current, targetState, now)
+	startedAt, finishedAt := transitionTimes(current, finish.TargetState, now)
 
 	const update = `
 UPDATE tasks
 SET state = ?, result = ?, error_code = ?, error_message = ?,
-    started_at = ?, finished_at = ?, updated_at = ?
-WHERE id = ? AND state = ?`
+    started_at = ?, finished_at = ?, updated_at = ?, lease_owner = NULL, lease_expires_at = NULL
+WHERE id = ? AND state = ? AND (? = '' OR lease_owner = ?)`
 
 	updateResult, err := transaction.Exec(
-		ctx, update, targetState, result, errorCode, errorMessage,
-		nullableTime(startedAt), nullableTime(finishedAt), formatTime(now), taskID, current.State,
+		ctx, update, finish.TargetState, finish.Result, finish.ErrorCode, finish.ErrorMessage,
+		nullableTime(startedAt), nullableTime(finishedAt), formatTime(now), finish.TaskID, current.State,
+		finish.LeaseOwner, finish.LeaseOwner,
 	)
 	if err != nil {
 		return false, oops.In("database").Code("finish_task").Wrapf(err, "finish task")
@@ -308,12 +407,102 @@ WHERE id = ? AND state = ?`
 		return false, nil
 	}
 
+	sequence, err := nextTaskEventSequence(ctx, transaction, finish.TaskID)
+	if err != nil {
+		return false, err
+	}
+
+	if _, err := insertTaskEvent(
+		ctx, transaction, finish.TaskID, sequence, finish.EventKind, finish.PayloadJSON, now,
+	); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// RecoverExpired atomically finishes running or canceling tasks whose leases are absent or expired.
+// It returns the IDs that were recovered.
+func (repository *TaskRepository) RecoverExpired(ctx context.Context, recovery *TaskRecovery) ([]string, error) {
+	if recovery == nil || !isTerminalTaskState(recovery.TargetState) {
+		return nil, errors.New("database: task recovery requires a terminal target")
+	}
+
+	if err := validateEvent(recovery.EventKind, recovery.PayloadJSON); err != nil {
+		return nil, oops.In("database").Code("validate_event").Wrapf(err, "validate recovery event")
+	}
+
+	recovered := []string{}
+
+	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+		var rows []struct {
+			ID string `ksql:"id"`
+		}
+
+		const query = `SELECT id FROM tasks WHERE kind = ? AND state IN (?, ?)
+AND (lease_expires_at IS NULL OR lease_expires_at <= ?) ORDER BY created_at, id`
+		if err := transaction.Query(ctx, &rows, query, recovery.Kind, TaskRunning, TaskCanceling,
+			formatTime(recovery.ExpiresBefore.UTC())); err != nil {
+			return oops.In("database").Code("query_expired_tasks").Wrapf(err, "query expired tasks")
+		}
+
+		now := repository.now().UTC()
+
+		const update = `UPDATE tasks SET state = ?, error_code = ?, error_message = ?, finished_at = ?,
+updated_at = ?, lease_owner = NULL, lease_expires_at = NULL WHERE id = ? AND state IN (?, ?)
+AND (lease_expires_at IS NULL OR lease_expires_at <= ?)`
+		for _, row := range rows {
+			wasRecovered, err := recoverExpiredTask(ctx, transaction, update, row.ID, recovery, now)
+			if err != nil {
+				return err
+			}
+
+			if wasRecovered {
+				recovered = append(recovered, row.ID)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, oops.In("database").Code("recover_tasks").Wrapf(err, "recover expired tasks")
+	}
+
+	return recovered, nil
+}
+
+func recoverExpiredTask(
+	ctx context.Context,
+	transaction ksql.Provider,
+	update string,
+	taskID string,
+	recovery *TaskRecovery,
+	now time.Time,
+) (bool, error) {
+	result, err := transaction.Exec(ctx, update, recovery.TargetState, recovery.ErrorCode,
+		recovery.ErrorMessage, formatTime(now), formatTime(now), taskID, TaskRunning,
+		TaskCanceling, formatTime(recovery.ExpiresBefore.UTC()))
+	if err != nil {
+		return false, oops.In("database").Code("recover_task").Wrapf(err, "recover expired task")
+	}
+
+	count, err := result.RowsAffected()
+	if err != nil {
+		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, "read affected task rows")
+	}
+
+	if count != 1 {
+		return false, nil
+	}
+
 	sequence, err := nextTaskEventSequence(ctx, transaction, taskID)
 	if err != nil {
 		return false, err
 	}
 
-	if _, err := insertTaskEvent(ctx, transaction, taskID, sequence, kind, payloadJSON, now); err != nil {
+	if _, err = insertTaskEvent(
+		ctx, transaction, taskID, sequence, recovery.EventKind, recovery.PayloadJSON, now,
+	); err != nil {
 		return false, err
 	}
 
@@ -490,22 +679,25 @@ ORDER BY te.sequence ASC LIMIT ?`
 
 const taskColumns = `
 id, kind, parent_task_id, owner_session_id, concurrency_key, state, result,
-error_code, error_message, created_at, started_at, finished_at, updated_at`
+error_code, error_message, created_at, started_at, finished_at, updated_at,
+lease_owner, lease_expires_at`
 
 type taskRow struct {
-	ID             string  `ksql:"id"`
-	Kind           string  `ksql:"kind"`
+	StartedAt      *string `ksql:"started_at"`
+	LeaseExpiresAt *string `ksql:"lease_expires_at"`
 	ParentTaskID   *string `ksql:"parent_task_id"`
-	OwnerSessionID string  `ksql:"owner_session_id"`
-	ConcurrencyKey string  `ksql:"concurrency_key"`
-	State          string  `ksql:"state"`
+	LeaseOwner     *string `ksql:"lease_owner"`
+	FinishedAt     *string `ksql:"finished_at"`
 	Result         string  `ksql:"result"`
+	ID             string  `ksql:"id"`
 	ErrorCode      string  `ksql:"error_code"`
 	ErrorMessage   string  `ksql:"error_message"`
 	CreatedAt      string  `ksql:"created_at"`
-	StartedAt      *string `ksql:"started_at"`
-	FinishedAt     *string `ksql:"finished_at"`
+	State          string  `ksql:"state"`
+	ConcurrencyKey string  `ksql:"concurrency_key"`
 	UpdatedAt      string  `ksql:"updated_at"`
+	OwnerSessionID string  `ksql:"owner_session_id"`
+	Kind           string  `ksql:"kind"`
 }
 type taskEventRow struct {
 	TaskID      string `ksql:"task_id"`
@@ -518,13 +710,14 @@ type taskEventRow struct {
 
 func insertTask(ctx context.Context, provider ksql.Provider, task *TaskEntity) error {
 	const statement = `INSERT INTO tasks (` + taskColumns + `)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := provider.Exec(
 		ctx, statement, task.ID, task.Kind, nullableString(task.ParentTaskID),
 		task.OwnerSessionID, task.ConcurrencyKey, task.State, task.Result,
 		task.ErrorCode, task.ErrorMessage, formatTime(task.CreatedAt),
 		nullableTime(task.StartedAt), nullableTime(task.FinishedAt), formatTime(task.UpdatedAt),
+		nullableString(task.LeaseOwner), nullableTime(task.LeaseExpiresAt),
 	)
 	if err != nil {
 		return oops.In("database").Code("insert_task").Wrapf(err, "insert task")
@@ -569,10 +762,16 @@ func taskFromRow(row *taskRow) (*TaskEntity, error) {
 		return nil, err
 	}
 
+	leaseExpiresAt, err := parseOptionalTime(row.LeaseExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+
 	return &TaskEntity{
 		CreatedAt: createdAt, StartedAt: startedAt, FinishedAt: finishedAt, UpdatedAt: updatedAt,
-		ID: row.ID, Kind: row.Kind, ParentTaskID: stringValue(row.ParentTaskID),
-		OwnerSessionID: row.OwnerSessionID, ConcurrencyKey: row.ConcurrencyKey,
+		LeaseExpiresAt: leaseExpiresAt, ID: row.ID, Kind: row.Kind,
+		ParentTaskID: stringValue(row.ParentTaskID), OwnerSessionID: row.OwnerSessionID,
+		ConcurrencyKey: row.ConcurrencyKey, LeaseOwner: stringValue(row.LeaseOwner),
 		State: TaskState(row.State), Result: row.Result, ErrorCode: row.ErrorCode,
 		ErrorMessage: row.ErrorMessage,
 	}, nil

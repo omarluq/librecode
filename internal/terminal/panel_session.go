@@ -50,6 +50,8 @@ func (app *App) sessionItems(ctx context.Context) ([]tui.ListItem, error) {
 }
 
 func (app *App) applySessionSelection(ctx context.Context, value string) error {
+	app.resetAgentTaskTracking()
+	app.agentTaskSessionStack = nil
 	app.sessionID = value
 	app.pendingParentID = nil
 	app.resetMessages()

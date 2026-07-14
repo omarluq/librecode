@@ -2,6 +2,7 @@ package di
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/samber/do/v2"
 
@@ -18,6 +19,11 @@ func NewAgentTaskService(injector do.Injector) (*AgentTaskService, error) {
 	databaseService := do.MustInvoke[*DatabaseService](injector)
 	assistantService := do.MustInvoke[*AssistantService](injector)
 
+	var logger *slog.Logger
+	if loggerService, loggerErr := do.Invoke[*LoggerService](injector); loggerErr == nil {
+		logger = loggerService.SlogLogger
+	}
+
 	runner, err := agenttask.NewRuntimeRunner(
 		assistantService.Runtime,
 		assistantService.Agents,
@@ -30,6 +36,7 @@ func NewAgentTaskService(injector do.Injector) (*AgentTaskService, error) {
 	tasks, err := agenttask.New(context.Background(), agenttask.Options{
 		Tasks: databaseService.Tasks, AgentTasks: databaseService.AgentTasks,
 		Runner: runner, Concurrency: 0, SessionConcurrency: 0, QueueCapacity: 0, Timeout: 0,
+		Logger: logger,
 	})
 	if err != nil {
 		return nil, serviceError(err, "create agent task service")

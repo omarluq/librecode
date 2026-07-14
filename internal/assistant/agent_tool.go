@@ -53,6 +53,7 @@ type agentToolExecutor struct {
 	controller      AgentTaskController
 	sessions        *database.SessionRepository
 	catalog         *agent.Catalog
+	definition      *tool.Definition
 	name            tool.Name
 	parentSessionID string
 	cwd             string
@@ -75,8 +76,11 @@ type agentListInput struct {
 	Limit int `json:"limit,omitempty"`
 }
 
-//nolint:lll // JSON schemas are kept as single validated literals.
 func (executor *agentToolExecutor) Definition() tool.Definition {
+	if executor.definition != nil {
+		return *executor.definition
+	}
+
 	definitions := map[tool.Name]tool.Definition{
 		agentStartToolName: {
 			Schema: schemaForAgentStart(executor.catalog), Name: agentStartToolName, Label: "Start agent",
@@ -85,35 +89,60 @@ func (executor *agentToolExecutor) Definition() tool.Definition {
 				"Delegate focused independent work, then use agent_wait or agent_status to collect it.",
 			}, ReadOnly: false,
 		},
-		agentStatusToolName: taskToolDefinition(agentStatusToolName, "Get agent task status", "Inspect an asynchronous agent task."),
+		agentStatusToolName: taskToolDefinition(
+			agentStatusToolName,
+			"Get agent task status",
+			"Inspect an asynchronous agent task.",
+		),
 		agentWaitToolName: {
-			Schema: mustToolSchema(`{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string"}},"required":["task_id"]}`),
-			Name:   agentWaitToolName, Label: "Check agent", Description: "Check an agent task without blocking the parent conversation.",
-			PromptSnippet: "Check an asynchronous agent", PromptGuidelines: []string{
-				"This check returns immediately. Do not poll repeatedly; continue other work or let the user interact while the agent runs.",
-			}, ReadOnly: true,
+			Schema: mustToolSchema(
+				`{"type":"object","additionalProperties":false,"properties":` +
+					`{"task_id":{"type":"string"}},"required":["task_id"]}`,
+			),
+			Name:          agentWaitToolName,
+			Label:         "Check agent",
+			Description:   "Check an agent task without blocking the parent conversation.",
+			PromptSnippet: "Check an asynchronous agent",
+			PromptGuidelines: []string{
+				"This check returns immediately. Do not poll repeatedly; continue other work " +
+					"or let the user interact while the agent runs.",
+			},
+			ReadOnly: true,
 		},
-		agentCancelToolName: taskToolDefinition(agentCancelToolName, "Cancel agent task", "Cancel a queued or running agent task."),
+		agentCancelToolName: taskToolDefinition(
+			agentCancelToolName,
+			"Cancel agent task",
+			"Cancel a queued or running agent task.",
+		),
 		agentListToolName: {
-			Schema: mustToolSchema(`{"type":"object","additionalProperties":false,"properties":{"limit":{"type":"integer","minimum":1,"maximum":100}}}`),
-			Name:   agentListToolName, Label: "List agents", Description: "List asynchronous agent tasks owned by this session.",
+			Schema: mustToolSchema(
+				`{"type":"object","additionalProperties":false,"properties":` +
+					`{"limit":{"type":"integer","minimum":1,"maximum":100}}}`,
+			),
+			Name:          agentListToolName,
+			Label:         "List agents",
+			Description:   "List asynchronous agent tasks owned by this session.",
 			PromptSnippet: "List asynchronous agents", PromptGuidelines: []string{}, ReadOnly: true,
 		},
 	}
 
-	return definitions[executor.name]
+	definition := definitions[executor.name]
+	executor.definition = &definition
+
+	return definition
 }
 
-//nolint:lll // JSON schemas are kept as single validated literals.
 func taskToolDefinition(name tool.Name, label, description string) tool.Definition {
 	return tool.Definition{
-		Schema: mustToolSchema(`{"type":"object","additionalProperties":false,"properties":{"task_id":{"type":"string"}},"required":["task_id"]}`),
-		Name:   name, Label: label, Description: description, PromptSnippet: description,
+		Schema: mustToolSchema(
+			`{"type":"object","additionalProperties":false,"properties":` +
+				`{"task_id":{"type":"string"}},"required":["task_id"]}`,
+		),
+		Name: name, Label: label, Description: description, PromptSnippet: description,
 		PromptGuidelines: []string{}, ReadOnly: name != agentCancelToolName,
 	}
 }
 
-//nolint:lll // The generated JSON schema remains readable as one format string.
 func schemaForAgentStart(catalog *agent.Catalog) tool.Schema {
 	definitions := catalog.Definitions()
 
@@ -124,7 +153,12 @@ func schemaForAgentStart(catalog *agent.Catalog) tool.Schema {
 
 	description := "Name of the subagent. Available agents: " + strings.Join(descriptions, "; ")
 
-	return mustToolSchema(fmt.Sprintf(`{"type":"object","additionalProperties":false,"properties":{"agent":{"type":"string","description":%q},"prompt":{"type":"string","description":"Focused task for the subagent."}},"required":["agent","prompt"]}`, description))
+	const schemaTemplate = `{"type":"object","additionalProperties":false,"properties":` +
+		`{"agent":{"type":"string","description":%q},` +
+		`"prompt":{"type":"string","description":"Focused task for the subagent."}},` +
+		`"required":["agent","prompt"]}`
+
+	return mustToolSchema(fmt.Sprintf(schemaTemplate, description))
 }
 
 func mustToolSchema(raw string) tool.Schema {
@@ -137,23 +171,23 @@ func mustToolSchema(raw string) tool.Schema {
 }
 
 func (executor *agentToolExecutor) Execute(ctx context.Context, input tool.Arguments) (tool.Result, error) {
-	switch executor.name { //nolint:exhaustive // This executor only handles dynamically registered agent tool names.
-	case agentStartToolName:
+	// Agent tool names share tool.Name's representation but are outside the built-in name set.
+	switch string(executor.name) {
+	case string(agentStartToolName):
 		return executor.start(ctx, input)
-	case agentStatusToolName:
+	case string(agentStatusToolName):
 		return executor.status(ctx, input)
-	case agentWaitToolName:
+	case string(agentWaitToolName):
 		return executor.wait(ctx, input)
-	case agentCancelToolName:
+	case string(agentCancelToolName):
 		return executor.cancel(ctx, input)
-	case agentListToolName:
+	case string(agentListToolName):
 		return executor.list(ctx, input)
 	default:
 		return tool.TextResult("", nil), fmt.Errorf("unknown agent tool %q", executor.name)
 	}
 }
 
-//nolint:lll // Error and constructor expressions are clearer without artificial wrapping.
 func (executor *agentToolExecutor) start(ctx context.Context, input tool.Arguments) (tool.Result, error) {
 	var args agentStartInput
 	if err := input.Decode(&args); err != nil {
@@ -166,7 +200,10 @@ func (executor *agentToolExecutor) start(ctx context.Context, input tool.Argumen
 	}
 
 	if len(args.Prompt) > maxAgentPromptBytes || !utf8.ValidString(args.Prompt) {
-		return tool.TextResult("", nil), fmt.Errorf("agent prompt must be valid UTF-8 and at most %d bytes", maxAgentPromptBytes)
+		return tool.TextResult("", nil), fmt.Errorf(
+			"agent prompt must be valid UTF-8 and at most %d bytes",
+			maxAgentPromptBytes,
+		)
 	}
 
 	definition, found := executor.catalog.Get(args.Agent)
@@ -176,6 +213,10 @@ func (executor *agentToolExecutor) start(ctx context.Context, input tool.Argumen
 
 	task, err := executor.submit(ctx, &definition, args.Prompt)
 	if err != nil {
+		if task != nil {
+			return tool.TextResult("", agentTaskDetails(task)), err
+		}
+
 		return tool.TextResult("", nil), err
 	}
 

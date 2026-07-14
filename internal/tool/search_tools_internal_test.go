@@ -92,10 +92,10 @@ func TestFindToolExecuteRejectsWrongJSONType(t *testing.T) {
 func TestGrepToolGrepValidation(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
-		input       GrepInput
+	tests := []struct {
 		name        string
 		wantErrText string
+		input       GrepInput
 	}{
 		{
 			input:       grepInput(" "),
@@ -127,11 +127,11 @@ func TestGrepToolGrepValidation(t *testing.T) {
 func TestGrepToolGrepResults(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
+	tests := []struct {
 		setup    func(t *testing.T, root string)
-		input    GrepInput
 		name     string
 		wantText string
+		input    GrepInput
 	}{
 		{
 			setup: func(t *testing.T, root string) {

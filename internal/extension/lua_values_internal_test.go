@@ -23,10 +23,10 @@ func TestLuaToolResultFromScalarUsesStringContent(t *testing.T) {
 func TestJSONRawToLuaValue(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
-		raw  json.RawMessage
-		name string
+	tests := []struct {
 		want lua.LValue
+		name string
+		raw  json.RawMessage
 	}{
 		{name: "valid string", raw: json.RawMessage(`"ok"`), want: lua.LString("ok")},
 		{name: "invalid JSON", raw: json.RawMessage(`{`), want: lua.LNil},

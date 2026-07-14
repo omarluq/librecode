@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -116,6 +117,15 @@ func (catalog *Catalog) Get(name string) (Definition, bool) {
 	return definition, true
 }
 
+// Len returns the number of discovered definitions.
+func (catalog *Catalog) Len() int {
+	if catalog == nil {
+		return 0
+	}
+
+	return len(catalog.definitions)
+}
+
 // Definitions returns definitions sorted by name.
 func (catalog *Catalog) Definitions() []Definition {
 	if catalog == nil {
@@ -162,18 +172,22 @@ func (catalog *Catalog) loadFS(files fs.FS, root string, scope core.SourceScope)
 			continue
 		}
 
-		path := filepath.Join(root, entry.Name())
+		definitionPath := pathpkg.Join(root, entry.Name())
 
-		content, readErr := fs.ReadFile(files, path)
+		content, readErr := fs.ReadFile(files, definitionPath)
 		if readErr != nil {
-			catalog.diagnostics = append(catalog.diagnostics, Diagnostic{Path: path, Message: readErr.Error()})
+			catalog.diagnostics = append(catalog.diagnostics, Diagnostic{
+				Path: definitionPath, Message: readErr.Error(),
+			})
 
 			continue
 		}
 
-		definition, parseErr := parseDefinition(string(content), path, scope)
+		definition, parseErr := parseDefinition(string(content), definitionPath, scope)
 		if parseErr != nil {
-			catalog.diagnostics = append(catalog.diagnostics, Diagnostic{Path: path, Message: parseErr.Error()})
+			catalog.diagnostics = append(catalog.diagnostics, Diagnostic{
+				Path: definitionPath, Message: parseErr.Error(),
+			})
 
 			continue
 		}
@@ -181,7 +195,7 @@ func (catalog *Catalog) loadFS(files fs.FS, root string, scope core.SourceScope)
 		key := normalizeName(definition.Name)
 		if existing, exists := catalog.definitions[key]; exists {
 			catalog.diagnostics = append(catalog.diagnostics, Diagnostic{
-				Path: path,
+				Path: definitionPath,
 				Message: fmt.Sprintf(
 					"agent %q is shadowed by %s",
 					definition.Name,

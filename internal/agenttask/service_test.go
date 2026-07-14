@@ -10,13 +10,17 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Register the SQLite database/sql driver used by test repositories.
 
 	"github.com/omarluq/librecode/internal/agenttask"
+	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
 )
 
-const completedResult = "done"
+const (
+	completedResult  = "done"
+	generalAgentName = "general"
+)
 
 type fakeRunner struct {
 	err          error
@@ -65,6 +69,69 @@ func (runner *fakeRunner) unblock() {
 	}
 }
 
+func TestNewServiceValidatesOptionsAndUsesDefaults(t *testing.T) {
+	t.Parallel()
+
+	_, err := agenttask.New(context.Background(), agenttask.Options{
+		Tasks: nil, AgentTasks: nil, Runner: nil, Logger: nil, Timeout: 0,
+		Concurrency: 0, SessionConcurrency: 0, QueueCapacity: 0,
+	})
+	require.ErrorContains(t, err, "required")
+
+	tasks, agentTasks, _ := repositories(t)
+
+	var nilContext context.Context
+
+	_, err = agenttask.New(nilContext, agenttask.Options{
+		Tasks: tasks, AgentTasks: agentTasks, Runner: new(fakeRunner), Logger: nil, Concurrency: 0,
+		SessionConcurrency: 0, QueueCapacity: 0, Timeout: 0,
+	})
+	require.ErrorContains(t, err, "process context")
+}
+
+func TestServiceAgentTaskAdaptersAndSubscriptionCancellation(t *testing.T) {
+	t.Parallel()
+
+	tasks, agentTasks, sessions := repositories(t)
+	parent := createSession(t, sessions, "parent", "")
+	child := createSession(t, sessions, "child", parent.ID)
+	service := newService(t, tasks, agentTasks, &fakeRunner{
+		err: nil, result: agenttask.Result{Text: completedResult, UsageJSON: `{}`},
+		started: nil, release: nil, eventRelease: nil, once: sync.Once{},
+	})
+
+	created, err := service.SubmitAgentTask(t.Context(), &assistant.AgentTaskRequest{
+		OwnerSessionID: parent.ID, ChildSessionID: child.ID, AgentName: generalAgentName,
+		Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, Depth: 1,
+	})
+	require.NoError(t, err)
+
+	events, cancel := service.SubscribeAgentTask(created.Task.ID)
+	cancel()
+	cancel() // Cancellation is intentionally idempotent.
+	requireChannelClosed(t, events)
+
+	completed, err := service.Await(t.Context(), created.Task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.TaskSucceeded, completed.Task.State)
+}
+
+func TestServiceAwaitMissingAndCanceled(t *testing.T) {
+	t.Parallel()
+
+	tasks, agentTasks, _ := repositories(t)
+	service := newService(t, tasks, agentTasks, new(fakeRunner))
+
+	_, err := service.Await(t.Context(), "missing")
+	require.ErrorContains(t, err, "not found")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err = service.Await(ctx, "missing")
+	assert.Error(t, err)
+}
+
 func TestServiceSubmitRunsAndPersistsResult(t *testing.T) {
 	t.Parallel()
 
@@ -105,24 +172,14 @@ func TestServicePublishesPersistedEvents(t *testing.T) {
 
 	created, err := service.Submit(t.Context(), submitRequest(parent.ID, child.ID))
 	require.NoError(t, err)
-	require.Equal(t, created.Task.ID, <-runner.started)
+	require.Equal(t, created.Task.ID, awaitStarted(t, runner.started))
 
 	subscription := service.Subscribe(created.Task.ID)
 	t.Cleanup(subscription.Cancel)
 	close(runner.eventRelease)
 	runner.unblock()
 
-	var live database.TaskEventEntity
-
-	require.Eventually(t, func() bool {
-		select {
-		case live = <-subscription.Events:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond)
-
+	live := awaitEvent(t, subscription.Events)
 	assert.Equal(t, "tool_started", live.Event.Kind)
 
 	replayed, err := service.Events(t.Context(), created.Task.ID, live.Sequence-1, 10)
@@ -145,7 +202,7 @@ func TestServiceCancelRunningTask(t *testing.T) {
 
 	created, err := service.Submit(t.Context(), submitRequest(parent.ID, child.ID))
 	require.NoError(t, err)
-	require.Equal(t, created.Task.ID, <-runner.started)
+	require.Equal(t, created.Task.ID, awaitStarted(t, runner.started))
 
 	canceled, found, err := service.Cancel(t.Context(), parent.ID, created.Task.ID)
 	require.NoError(t, err)
@@ -192,7 +249,7 @@ func TestServiceRecoversQueuedAndInterruptedTasks(t *testing.T) {
 			wantState: database.TaskSucceeded,
 		},
 		{
-			name: "running task becomes interrupted",
+			name: "unleased running task becomes interrupted",
 			prepare: func(
 				t *testing.T,
 				tasks *database.TaskRepository,
@@ -241,6 +298,39 @@ func TestServiceRecoversQueuedAndInterruptedTasks(t *testing.T) {
 	}
 }
 
+func TestSecondServiceDoesNotInterruptLiveTask(t *testing.T) {
+	t.Parallel()
+
+	tasks, agentTasks, sessions := repositories(t)
+	parent := createSession(t, sessions, "parent", "")
+	child := createSession(t, sessions, "child", parent.ID)
+	firstRunner := &fakeRunner{
+		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
+	}
+	first := newService(t, tasks, agentTasks, firstRunner)
+	created, err := first.Submit(t.Context(), &agenttask.SubmitRequest{
+		ParentTaskID: "", OwnerSessionID: parent.ID, ChildSessionID: child.ID, ConcurrencyKey: parent.ID,
+		AgentName: generalAgentName, Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, Depth: 1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, created.Task.ID, awaitStarted(t, firstRunner.started))
+
+	second := newService(t, tasks, agentTasks, new(fakeRunner))
+	running, found, err := second.Get(t.Context(), created.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, database.TaskRunning, running.Task.State)
+	assert.NotEmpty(t, running.Task.LeaseOwner)
+	assert.NotNil(t, running.Task.LeaseExpiresAt)
+
+	firstRunner.unblock()
+
+	completed, err := first.Await(t.Context(), created.Task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.TaskSucceeded, completed.Task.State)
+}
+
 func TestServiceEnforcesSessionConcurrency(t *testing.T) {
 	t.Parallel()
 
@@ -248,12 +338,14 @@ func TestServiceEnforcesSessionConcurrency(t *testing.T) {
 	parent := createSession(t, sessions, "parent", "")
 	firstChild := createSession(t, sessions, "first", parent.ID)
 	secondChild := createSession(t, sessions, "second", parent.ID)
+	probeParent := createSession(t, sessions, "probe-parent", "")
+	probeChild := createSession(t, sessions, "probe-child", probeParent.ID)
 	runner := &fakeRunner{
 		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
-		started: make(chan string, 2), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
+		started: make(chan string, 3), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
 	}
 	service, err := agenttask.New(context.Background(), agenttask.Options{
-		Tasks: tasks, AgentTasks: agentTasks, Runner: runner, Concurrency: 2,
+		Tasks: tasks, AgentTasks: agentTasks, Runner: runner, Logger: nil, Concurrency: 2,
 		SessionConcurrency: 1, QueueCapacity: 4, Timeout: time.Minute,
 	})
 	require.NoError(t, err)
@@ -264,24 +356,22 @@ func TestServiceEnforcesSessionConcurrency(t *testing.T) {
 
 	first, err := service.Submit(t.Context(), submitRequest(parent.ID, firstChild.ID))
 	require.NoError(t, err)
+	require.Equal(t, first.Task.ID, awaitStarted(t, runner.started))
+
 	second, err := service.Submit(t.Context(), submitRequest(parent.ID, secondChild.ID))
 	require.NoError(t, err)
+	probe, err := service.Submit(t.Context(), submitRequest(probeParent.ID, probeChild.ID))
+	require.NoError(t, err)
 
-	startedID := <-runner.started
-
-	assert.Contains(t, []string{first.Task.ID, second.Task.ID}, startedID)
-	assert.Never(t, func() bool {
-		select {
-		case <-runner.started:
-			return true
-		default:
-			return false
-		}
-	}, 50*time.Millisecond, 5*time.Millisecond)
+	require.Equal(t, probe.Task.ID, awaitStarted(t, runner.started))
+	queued, found, err := service.Get(t.Context(), second.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, database.TaskQueued, queued.Task.State)
 
 	runner.unblock()
 
-	for _, taskID := range []string{first.Task.ID, second.Task.ID} {
+	for _, taskID := range []string{first.Task.ID, second.Task.ID, probe.Task.ID} {
 		completed, awaitErr := service.Await(t.Context(), taskID)
 		require.NoError(t, awaitErr)
 		assert.Equal(t, database.TaskSucceeded, completed.Task.State)
@@ -298,7 +388,7 @@ func TestServiceRejectsWorkWhenQueueIsFull(t *testing.T) {
 		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
 	}
 	service, err := agenttask.New(context.Background(), agenttask.Options{
-		Tasks: tasks, AgentTasks: agentTasks, Runner: runner, Concurrency: 1,
+		Tasks: tasks, AgentTasks: agentTasks, Runner: runner, Logger: nil, Concurrency: 1,
 		SessionConcurrency: 1, QueueCapacity: 1, Timeout: time.Minute,
 	})
 	require.NoError(t, err)
@@ -310,7 +400,7 @@ func TestServiceRejectsWorkWhenQueueIsFull(t *testing.T) {
 	firstChild := createSession(t, sessions, "first", parent.ID)
 	_, err = service.Submit(t.Context(), submitRequest(parent.ID, firstChild.ID))
 	require.NoError(t, err)
-	require.NotEmpty(t, <-runner.started)
+	require.NotEmpty(t, awaitStarted(t, runner.started))
 
 	secondChild := createSession(t, sessions, "second", parent.ID)
 	_, err = service.Submit(t.Context(), submitRequest(parent.ID, secondChild.ID))
@@ -361,7 +451,7 @@ func newService(
 	t.Helper()
 
 	service, err := agenttask.New(context.Background(), agenttask.Options{
-		Tasks: tasks, AgentTasks: agentTasks, Runner: runner, Concurrency: 1,
+		Tasks: tasks, AgentTasks: agentTasks, Runner: runner, Logger: nil, Concurrency: 1,
 		SessionConcurrency: 0, QueueCapacity: 0, Timeout: time.Minute,
 	})
 	require.NoError(t, err)
@@ -409,11 +499,11 @@ func createSession(
 func agentTaskEntity(parentSessionID, childSessionID string) *database.AgentTaskEntity {
 	return &database.AgentTaskEntity{
 		Task: database.TaskEntity{
-			ID: "", Kind: "", ParentTaskID: "", OwnerSessionID: parentSessionID,
+			LeaseExpiresAt: nil, LeaseOwner: "", ID: "", Kind: "", ParentTaskID: "", OwnerSessionID: parentSessionID,
 			ConcurrencyKey: parentSessionID, State: "", Result: "", ErrorCode: "",
 			ErrorMessage: "", CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{},
 		},
-		ChildSessionID: childSessionID, AgentName: "general", Prompt: "do work",
+		ChildSessionID: childSessionID, AgentName: generalAgentName, Prompt: "do work",
 		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`, Depth: 1,
 	}
 }
@@ -421,8 +511,50 @@ func agentTaskEntity(parentSessionID, childSessionID string) *database.AgentTask
 func submitRequest(parentSessionID, childSessionID string) *agenttask.SubmitRequest {
 	return &agenttask.SubmitRequest{
 		ParentTaskID: "", OwnerSessionID: parentSessionID, ChildSessionID: childSessionID,
-		ConcurrencyKey: parentSessionID, AgentName: "general", Prompt: "do work",
+		ConcurrencyKey: parentSessionID, AgentName: generalAgentName, Prompt: "do work",
 		Model: "", Provider: "", PolicyJSON: `{}`, Depth: 1,
+	}
+}
+
+func requireChannelClosed[T any](t *testing.T, channel <-chan T) {
+	t.Helper()
+
+	select {
+	case _, open := <-channel:
+		require.False(t, open, "channel remained open")
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for channel to close")
+	}
+}
+
+func awaitStarted(t *testing.T, started <-chan string) string {
+	t.Helper()
+
+	select {
+	case taskID := <-started:
+		return taskID
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for runner to start")
+
+		return ""
+	}
+}
+
+func awaitEvent(t *testing.T, events <-chan database.TaskEventEntity) database.TaskEventEntity {
+	t.Helper()
+
+	select {
+	case event, open := <-events:
+		require.True(t, open, "event subscription closed unexpectedly")
+
+		return event
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for task event")
+
+		return database.TaskEventEntity{
+			Event:  database.EventEntity{CreatedAt: time.Time{}, ID: "", Kind: "", PayloadJSON: ""},
+			TaskID: "", Sequence: 0,
+		}
 	}
 }
 

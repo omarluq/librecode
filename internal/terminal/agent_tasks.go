@@ -99,6 +99,13 @@ func agentTaskIDFromDetails(detailsJSON string) string {
 	return strings.TrimSpace(details.TaskID)
 }
 
+func (app *App) resetAgentTaskTracking() {
+	app.stopAgentTaskWatches()
+	app.agentTasks = nil
+	app.agentTasksRefreshedAt = time.Time{}
+	app.deliveredAgentTasks = map[string]struct{}{}
+}
+
 func (app *App) refreshVisibleAgentTasks(ctx context.Context) {
 	if app.runtime == nil || app.sessionID == "" {
 		app.agentTasks = nil
@@ -127,10 +134,7 @@ func (app *App) discoverActiveAgentTasks(ctx context.Context) {
 			continue
 		}
 
-		task, found, loadErr := app.runtime.AgentTask(ctx, tasks[index].ID)
-		if loadErr == nil && found && !isTerminalAgentTaskState(task.Task.State) {
-			active = append(active, *task)
-		}
+		active = append(active, agentTaskSummary(&tasks[index]))
 	}
 
 	app.agentTasks = active
@@ -216,35 +220,86 @@ func (app *App) stopAgentTaskWatches() {
 }
 
 func (app *App) refreshActiveAgentTasks(ctx context.Context) {
-	active := make([]database.AgentTaskEntity, 0, len(app.agentTasks))
-	completions := make([]string, 0, len(app.agentTasks))
+	tasks, err := app.runtime.AgentTasks(ctx, app.sessionID, agentTaskInlineLimit)
+	if err != nil {
+		return
+	}
+
+	activeByID := make(map[string]database.TaskEntity, len(tasks))
+	for index := range tasks {
+		if !isTerminalAgentTaskState(tasks[index].State) {
+			activeByID[tasks[index].ID] = tasks[index]
+		}
+	}
+
+	active := make([]database.AgentTaskEntity, 0, len(activeByID))
+	completed := make([]database.AgentTaskEntity, 0)
 
 	for index := range app.agentTasks {
 		previous := app.agentTasks[index]
 
-		task, found, err := app.runtime.AgentTask(ctx, previous.Task.ID)
-		if err != nil || !found {
-			active = append(active, previous)
+		task, found := activeByID[previous.Task.ID]
+		if !found {
+			retained, finished := app.reconcileMissingAgentTask(ctx, &previous)
+			if retained != nil {
+				active = append(active, *retained)
+			}
 
-			continue
-		}
-
-		if isTerminalAgentTaskState(task.Task.State) {
-			app.stopAgentTaskWatch(task.Task.ID)
-
-			if completion, completed := agentTaskCompletion(previous.Task.State, task); completed {
-				completions = append(completions, completion)
+			if finished != nil {
+				completed = append(completed, *finished)
 			}
 
 			continue
 		}
 
-		active = append(active, *task)
+		previous.Task = task
+		active = append(active, previous)
+
+		delete(activeByID, task.ID)
+	}
+
+	for taskID := range activeByID {
+		task := activeByID[taskID]
+		active = append(active, agentTaskSummary(&task))
 	}
 
 	app.agentTasks = active
 	app.watchActiveAgentTasks(ctx)
-	app.deliverAgentTaskCompletions(ctx, completions)
+
+	for index := range completed {
+		app.deliverAgentTaskCompletion(ctx, &completed[index])
+	}
+}
+
+func (app *App) reconcileMissingAgentTask(
+	ctx context.Context,
+	previous *database.AgentTaskEntity,
+) (retained, completed *database.AgentTaskEntity) {
+	latest, found, err := app.runtime.AgentTask(ctx, previous.Task.ID)
+	if err != nil {
+		// Keep the last snapshot when reconciliation fails transiently.
+		return previous, nil
+	}
+
+	if !found {
+		app.stopAgentTaskWatch(previous.Task.ID)
+
+		return nil, nil
+	}
+
+	if isTerminalAgentTaskState(latest.Task.State) {
+		return nil, latest
+	}
+
+	// The bounded list can omit older active tasks.
+	return latest, nil
+}
+
+func agentTaskSummary(task *database.TaskEntity) database.AgentTaskEntity {
+	return database.AgentTaskEntity{
+		Task: *task, ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "",
+		PolicyJSON: "", UsageJSON: "", Depth: 0,
+	}
 }
 
 func agentTaskCompletion(
@@ -416,8 +471,6 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 		return nil
 	}
 
-	const runningIndicator = "●"
-
 	indicatorStyle := tcell.StyleDefault.Foreground(defaultWorkingShimmerBrightColor()).Bold(true)
 	labelStyle := tcell.StyleDefault.Foreground(app.theme.colors[colorMuted])
 
@@ -426,10 +479,10 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 		task := &app.agentTasks[index]
 		label := agentTaskSummaryLabel(task)
 		line := tui.Line{
-			Text:  runningIndicator + " " + label,
+			Text:  pendingToolIndicator + " " + label,
 			Style: labelStyle,
 			Spans: []tui.Span{
-				{Text: runningIndicator, Style: indicatorStyle},
+				{Text: pendingToolIndicator, Style: indicatorStyle},
 				{Text: " " + label, Style: labelStyle},
 			},
 		}
@@ -578,7 +631,8 @@ func (app *App) inspectAgentTask(ctx context.Context, taskID string) error {
 		return fmt.Errorf("agent task %q not found", taskID)
 	}
 
-	app.agentTaskParentSession = app.sessionID
+	app.agentTaskSessionStack = append(app.agentTaskSessionStack, app.sessionID)
+	app.resetAgentTaskTracking()
 	app.sessionID = task.ChildSessionID
 	app.pendingParentID = nil
 	app.resetMessages()
@@ -598,12 +652,14 @@ func (app *App) inspectAgentTask(ctx context.Context, taskID string) error {
 }
 
 func (app *App) leaveAgentTaskSession(ctx context.Context) error {
-	if app.agentTaskParentSession == "" {
+	if len(app.agentTaskSessionStack) == 0 {
 		return errors.New("not inspecting an agent task")
 	}
 
-	app.sessionID = app.agentTaskParentSession
-	app.agentTaskParentSession = ""
+	last := len(app.agentTaskSessionStack) - 1
+	app.resetAgentTaskTracking()
+	app.sessionID = app.agentTaskSessionStack[last]
+	app.agentTaskSessionStack = app.agentTaskSessionStack[:last]
 	app.pendingParentID = nil
 	app.resetMessages()
 

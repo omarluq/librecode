@@ -15,6 +15,8 @@ import (
 )
 
 const (
+	testHello              = "hello"
+	testVisible            = "visible"
 	testUserPrompt         = "pick a path"
 	testAssistantReply     = "path A"
 	testCustomMessageType  = "test-extension"
@@ -34,7 +36,7 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 	firstMessage := database.MessageEntity{
 		Timestamp: time.Now().UTC(),
 		Role:      database.RoleUser,
-		Content:   "hello",
+		Content:   testHello,
 		Provider:  "",
 		Model:     "",
 	}
@@ -96,6 +98,123 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 	assert.Equal(t, "librecode", message.Model)
 }
 
+func TestSessionRepository_TranscriptMessagesHonorsDisplayMetadata(t *testing.T) {
+	t.Parallel()
+
+	repository := newTestSessionRepository(t)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, "/work", "transcript", "")
+	require.NoError(t, err)
+
+	visible := true
+	hidden := false
+	modelFacing := true
+	first, err := repository.AppendMessageWithDisplay(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
+		Role:      database.RoleUser,
+		Content:   testVisible,
+		Provider:  "",
+		Model:     "",
+	}, &modelFacing, &visible)
+	require.NoError(t, err)
+	second, err := repository.AppendMessageWithDisplay(ctx, session.ID, &first.ID, &database.MessageEntity{
+		Timestamp: time.Date(2026, time.January, 2, 3, 4, 6, 0, time.UTC),
+		Role:      database.RoleAssistant,
+		Content:   "hidden",
+		Provider:  "",
+		Model:     "",
+	}, &modelFacing, &hidden)
+	require.NoError(t, err)
+	_, err = repository.AppendMessage(ctx, session.ID, &second.ID, &database.MessageEntity{
+		Timestamp: time.Date(2026, time.January, 2, 3, 4, 7, 0, time.UTC),
+		Role:      database.RoleAssistant,
+		Content:   "default visible",
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+
+	all, err := repository.Messages(ctx, session.ID)
+	require.NoError(t, err)
+	require.Len(t, all, 3)
+
+	transcript, err := repository.TranscriptMessages(ctx, session.ID)
+	require.NoError(t, err)
+	require.Len(t, transcript, 2)
+	assert.Equal(t, []string{testVisible, "default visible"}, []string{transcript[0].Content, transcript[1].Content})
+
+	entries, err := repository.Entries(ctx, session.ID)
+	require.NoError(t, err)
+	require.Len(t, entries, 3)
+	assert.True(t, entries[0].Display)
+	assert.False(t, entries[1].Display)
+	assert.True(t, entries[2].Display)
+}
+
+func TestSessionRepository_AppendMessageWithDisplayDefaultsIndependently(t *testing.T) {
+	t.Parallel()
+
+	repository := newTestSessionRepository(t)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, "/work", "display defaults", "")
+	require.NoError(t, err)
+
+	hidden := false
+	entry, err := repository.AppendMessageWithDisplay(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Time{}, Role: database.RoleUser, Content: "hidden but model-facing by role default",
+		Provider: "", Model: "",
+	}, nil, &hidden)
+	require.NoError(t, err)
+	assert.False(t, entry.Display)
+	assert.True(t, entry.ModelFacing)
+
+	visible := true
+	entry, err = repository.AppendMessageWithDisplay(ctx, session.ID, &entry.ID, &database.MessageEntity{
+		Timestamp: time.Time{}, Role: database.RoleAssistant, Content: "shown",
+		Provider: "", Model: "",
+	}, nil, &visible)
+	require.NoError(t, err)
+	assert.True(t, entry.Display)
+	assert.True(t, entry.ModelFacing)
+}
+
+func TestSessionRepository_TranscriptMessagesWrapsMalformedRows(t *testing.T) {
+	t.Parallel()
+
+	connection, err := sql.Open(sqliteDriver(), ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+	connection.SetMaxOpenConns(1)
+	require.NoError(t, database.Migrate(context.Background(), connection))
+
+	repository := database.NewSessionRepository(connection)
+	session, err := repository.CreateSession(context.Background(), "/work", "malformed transcript", "")
+	require.NoError(t, err)
+	_, err = repository.AppendMessage(context.Background(), session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Time{}, Role: database.RoleUser, Content: "malformed",
+		Provider: "", Model: "",
+	})
+	require.NoError(t, err)
+	_, err = connection.ExecContext(context.Background(), `UPDATE session_messages SET created_at = 'invalid'`)
+	require.NoError(t, err)
+
+	messages, err := repository.TranscriptMessages(context.Background(), session.ID)
+	require.ErrorContains(t, err, "scan transcript messages")
+	assert.Nil(t, messages)
+}
+
+func TestSessionRepository_TranscriptMessagesReturnsContextError(t *testing.T) {
+	t.Parallel()
+
+	repository := newTestSessionRepository(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	messages, err := repository.TranscriptMessages(ctx, "session")
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, messages)
+}
+
 func TestSessionRepository_AppendMessagePreservesInputTimestamp(t *testing.T) {
 	t.Parallel()
 
@@ -126,7 +245,7 @@ func TestSessionRepository_AppendMessagePreservesInputTimestamp(t *testing.T) {
 			message := database.MessageEntity{
 				Timestamp: testCase.timestamp,
 				Role:      database.RoleUser,
-				Content:   "hello",
+				Content:   testHello,
 				Provider:  "",
 				Model:     "",
 			}
@@ -187,7 +306,7 @@ func TestSessionRepository_DeleteSessionRemovesSessionRows(t *testing.T) {
 	createdSession, err := repository.CreateSession(ctx, "/work", "delete-me", "")
 	require.NoError(t, err)
 	helper := sessionTestHelper{ctx, t, repository}
-	entry := helper.appendMessage(createdSession.ID, nil, database.RoleUser, "hello")
+	entry := helper.appendMessage(createdSession.ID, nil, database.RoleUser, testHello)
 
 	require.NoError(t, repository.DeleteSession(ctx, createdSession.ID))
 

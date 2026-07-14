@@ -141,13 +141,13 @@ func TestWriteToolExecuteAndContext(t *testing.T) {
 func TestEditToolEdit(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct { //nolint:govet // Table-driven tests prefer readable field order over fieldalignment.
+	tests := []struct {
 		setup       func(t *testing.T, root string)
-		input       EditInput
 		name        string
 		wantText    string
 		wantFile    string
 		wantErrText string
+		input       EditInput
 	}{
 		{
 			setup:       func(t *testing.T, _ string) { t.Helper() },
@@ -232,10 +232,20 @@ func assertToolResult(t *testing.T, result Result, err error, wantText, wantErrT
 }
 
 func readFileToolsTestOutput(root string) ([]byte, error) {
-	//nolint:gosec // Test fixture path is a fixed filename under t.TempDir().
-	content, err := os.ReadFile(filepath.Join(root, fileToolsTestFile))
+	directory, err := os.OpenRoot(root)
 	if err != nil {
-		return nil, fmt.Errorf("read file tools test output: %w", err)
+		return nil, fmt.Errorf("open file tools test root: %w", err)
+	}
+
+	content, readErr := directory.ReadFile(fileToolsTestFile)
+	closeErr := directory.Close()
+
+	if readErr != nil {
+		return nil, fmt.Errorf("read file tools test output: %w", readErr)
+	}
+
+	if closeErr != nil {
+		return nil, fmt.Errorf("close file tools test root: %w", closeErr)
 	}
 
 	return content, nil
