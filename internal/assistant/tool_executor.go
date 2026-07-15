@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/llm"
@@ -36,7 +37,6 @@ func (runtime *Runtime) executeProviderToolCalls(
 
 type toolInvocationScope struct {
 	onEvent      func(StreamEvent)
-	trace        func(name, argumentsJSON string, result *tool.Result, event *ToolEvent)
 	parentCallID string
 	nextSequence int
 	mu           sync.Mutex
@@ -50,9 +50,6 @@ func (scope *toolInvocationScope) nextCall(name string) ToolCallEvent {
 	sequence := scope.nextSequence
 
 	callID := fmt.Sprintf("%s/%d", scope.parentCallID, sequence)
-	if scope.parentCallID == "" {
-		callID = fmt.Sprintf("nested/%d", sequence)
-	}
 
 	return ToolCallEvent{
 		ArgumentsJSON: "",
@@ -87,6 +84,10 @@ func (runtime *Runtime) executeProviderToolCall(
 		callEvent.ArgumentsJSON = call.ArgumentsJSON
 	}
 
+	if callEvent.ID == "" {
+		callEvent.ID = uuid.Must(uuid.NewV7()).String()
+	}
+
 	event, _ := runtime.invokeToolResult(ctx, registry, &callEvent, onEvent)
 
 	return event
@@ -108,7 +109,7 @@ func (runtime *Runtime) invokeToolResult(
 	emitProviderToolStart(onEvent, callEvent)
 
 	scope := &toolInvocationScope{
-		onEvent: onEvent, trace: nil, parentCallID: callEvent.ID, nextSequence: 0, mu: sync.Mutex{},
+		onEvent: onEvent, parentCallID: callEvent.ID, nextSequence: 0, mu: sync.Mutex{},
 	}
 	nestedCtx := context.WithValue(ctx, toolInvocationContextKey{}, scope)
 	result, err := registry.Execute(nestedCtx, callEvent.Name, callEvent.Arguments)
@@ -119,6 +120,7 @@ func (runtime *Runtime) invokeToolResult(
 	}
 
 	emitProviderToolResult(onEvent, &event)
+	result = canonicalToolResult(result, &event)
 
 	return event, result
 }
@@ -151,9 +153,6 @@ func (runtime *Runtime) invokeNestedTool(
 	}
 
 	event, result := runtime.invokeToolResult(ctx, registry, &call, onEvent)
-	if scope != nil && scope.trace != nil {
-		scope.trace(name, argumentsJSON, &result, &event)
-	}
 
 	return result, event
 }
@@ -210,6 +209,29 @@ func toolEventFromResult(call *ToolCallEvent, result tool.Result, err error) Too
 	}
 
 	return event
+}
+
+func canonicalToolResult(result tool.Result, event *ToolEvent) tool.Result {
+	if event == nil {
+		return result
+	}
+
+	if event.Result != result.Text() {
+		result.Content = []tool.ContentBlock{{Type: tool.ContentTypeText, Text: event.Result, Data: "", MIMEType: ""}}
+	}
+
+	if strings.TrimSpace(event.DetailsJSON) == "" {
+		result.Details = nil
+
+		return result
+	}
+
+	var details map[string]any
+	if err := json.Unmarshal([]byte(event.DetailsJSON), &details); err == nil {
+		result.Details = details
+	}
+
+	return result
 }
 
 func encodeToolDetails(details map[string]any) string {

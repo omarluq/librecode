@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"math"
 	"strings"
 
 	"github.com/samber/lo"
@@ -12,6 +13,11 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/provider"
 	"github.com/omarluq/librecode/internal/tool"
+)
+
+const (
+	toolParentCallIDMetadataKey = "parent_call_id"
+	toolSequenceMetadataKey     = "sequence"
 )
 
 func providerRequestFromCompletionRequest(request *CompletionRequest) *provider.CompletionRequest {
@@ -207,13 +213,13 @@ func toolEventFromLLMToolResult(result *llm.ToolResult) ToolEvent {
 
 	return ToolEvent{
 		CallID:        result.ToolCallID,
-		ParentCallID:  stringFromOptions(result.Metadata, "parent_call_id"),
+		ParentCallID:  stringFromOptions(result.Metadata, toolParentCallIDMetadataKey),
 		Name:          result.Name,
 		ArgumentsJSON: result.ArgumentsJSON,
 		DetailsJSON:   stringFromOptions(result.Metadata, "details_json"),
 		Result:        textFromLLMParts(result.Content),
 		Error:         result.Error,
-		Sequence:      intFromOptions(result.Metadata, "sequence"),
+		Sequence:      sequenceFromOptions(result.Metadata),
 		IsError:       result.IsError,
 	}
 }
@@ -315,10 +321,10 @@ func toolCallEventFromLLMToolCall(call *llm.ToolCall) ToolCallEvent {
 	return ToolCallEvent{
 		Arguments:     call.Arguments,
 		ID:            call.ID,
-		ParentCallID:  stringFromOptions(call.Metadata, "parent_call_id"),
+		ParentCallID:  stringFromOptions(call.Metadata, toolParentCallIDMetadataKey),
 		Name:          call.Name,
 		ArgumentsJSON: call.ArgumentsJSON,
-		Sequence:      intFromOptions(call.Metadata, "sequence"),
+		Sequence:      sequenceFromOptions(call.Metadata),
 	}
 }
 
@@ -494,18 +500,31 @@ func stringFromOptions(options map[string]any, key string) string {
 	return value
 }
 
-func intFromOptions(options map[string]any, key string) int {
-	switch value := options[key].(type) {
-	case int:
-		return value
-	case int32:
-		return int(value)
-	case int64:
-		return int(value)
-	case float64:
-		return int(value)
-	default:
+func sequenceFromOptions(options map[string]any) int {
+	value, ok := optionInt64(options[toolSequenceMetadataKey])
+	if !ok || value < 0 || uint64(value) > uint64(^uint(0)>>1) {
 		return 0
+	}
+
+	return int(value)
+}
+
+func optionInt64(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed), true
+	case int32:
+		return int64(typed), true
+	case int64:
+		return typed, true
+	case float64:
+		if typed < math.MinInt64 || typed >= float64(math.MaxInt64) || math.Trunc(typed) != typed {
+			return 0, false
+		}
+
+		return int64(typed), true
+	default:
+		return 0, false
 	}
 }
 
@@ -515,8 +534,8 @@ func toolIdentityMetadata(parentCallID string, sequence int) map[string]any {
 	}
 
 	return map[string]any{
-		"parent_call_id": parentCallID,
-		"sequence":       sequence,
+		toolParentCallIDMetadataKey: parentCallID,
+		toolSequenceMetadataKey:     sequence,
 	}
 }
 

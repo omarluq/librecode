@@ -121,14 +121,16 @@ func finalizeResult(result Result, value reflect.Value) (Result, error) {
 		return result, nil
 	}
 
-	result.Value = value.Interface()
-	if hostErr, ok := result.Value.(error); ok && hostErr != nil {
+	hostValue := value.Interface()
+	if hostErr, ok := hostValue.(error); ok && hostErr != nil {
 		return result, evalError(ErrorKindRuntime, 0, hostErr)
 	}
 
 	if err := validateValue(value, "result"); err != nil {
 		return result, evalError(ErrorKindRuntime, 0, err)
 	}
+
+	result.Value = hostValue
 
 	return result, nil
 }
@@ -206,49 +208,123 @@ func validateBinding(value reflect.Value, name string) error {
 	return validateValue(value, "binding "+name)
 }
 
+type valueVisit struct {
+	typeOfValue reflect.Type
+	pointer     uintptr
+	length      int
+	capacity    int
+}
+
+type valueValidator struct {
+	active map[valueVisit]string
+}
+
+type valueCategory uint8
+
+const (
+	valueUnsupported valueCategory = iota
+	valueScalar
+	valueInterface
+	valuePointer
+	valueArray
+	valueSlice
+	valueMap
+	valueStruct
+)
+
 func validateValue(value reflect.Value, path string) error {
+	validator := valueValidator{active: make(map[valueVisit]string)}
+
+	return validator.validate(value, path)
+}
+
+func (v *valueValidator) validate(value reflect.Value, path string) error {
 	if !value.IsValid() {
 		return &valueError{message: path + " is invalid"}
 	}
 
-	switch value.Kind() {
-	case reflect.Bool,
-		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64,
-		reflect.String:
+	switch categorizeValue(value.Kind()) {
+	case valueScalar:
 		return nil
-	case reflect.Interface, reflect.Pointer:
-		return validateIndirect(value, path)
-	case reflect.Array, reflect.Slice:
-		return validateSequence(value, path)
-	case reflect.Map:
-		return validateMap(value, path)
-	case reflect.Struct:
-		return validateStruct(value, path)
-	case reflect.Invalid, reflect.Uintptr, reflect.Complex64, reflect.Complex128,
-		reflect.Chan, reflect.Func, reflect.UnsafePointer:
-		return &valueError{message: fmt.Sprintf("%s has unsupported type %s", path, value.Type())}
-	}
+	case valueInterface:
+		return v.validateIndirect(value, path)
+	case valuePointer, valueSlice, valueMap:
+		if value.IsNil() {
+			return nil
+		}
 
-	return &valueError{message: fmt.Sprintf("%s has unsupported type %s", path, value.Type())}
+		return v.validateReference(value, path)
+	case valueArray:
+		return v.validateSequence(value, path)
+	case valueStruct:
+		return v.validateStruct(value, path)
+	case valueUnsupported:
+		return &valueError{message: fmt.Sprintf("%s has unsupported type %s", path, value.Type())}
+	default:
+		return &valueError{message: fmt.Sprintf("%s has unknown type %s", path, value.Type())}
+	}
 }
 
-func validateIndirect(value reflect.Value, path string) error {
+func (v *valueValidator) validateReference(value reflect.Value, path string) error {
+	visit := valueVisit{typeOfValue: value.Type(), pointer: value.Pointer(), length: 0, capacity: 0}
+	if value.Kind() == reflect.Slice {
+		visit.length = value.Len()
+		visit.capacity = value.Cap()
+	}
+
+	if previousPath, ok := v.active[visit]; ok {
+		return &valueError{message: fmt.Sprintf("%s contains a cycle through %s", path, previousPath)}
+	}
+
+	v.active[visit] = path
+	defer delete(v.active, visit)
+
+	if value.Kind() == reflect.Pointer {
+		return v.validate(value.Elem(), path)
+	}
+
+	if value.Kind() == reflect.Slice {
+		return v.validateSequence(value, path)
+	}
+
+	if value.Kind() == reflect.Map {
+		return v.validateMap(value, path)
+	}
+
+	return &valueError{message: fmt.Sprintf("%s has unsupported reference type %s", path, value.Type())}
+}
+
+func categorizeValue(kind reflect.Kind) valueCategory {
+	if kind == reflect.Bool || kind == reflect.String ||
+		(kind >= reflect.Int && kind <= reflect.Int64) ||
+		(kind >= reflect.Uint && kind <= reflect.Uint64 && kind != reflect.Uintptr) ||
+		(kind >= reflect.Float32 && kind <= reflect.Float64) {
+		return valueScalar
+	}
+
+	categories := map[reflect.Kind]valueCategory{
+		reflect.Interface: valueInterface,
+		reflect.Pointer:   valuePointer,
+		reflect.Array:     valueArray,
+		reflect.Slice:     valueSlice,
+		reflect.Map:       valueMap,
+		reflect.Struct:    valueStruct,
+	}
+
+	return categories[kind]
+}
+
+func (v *valueValidator) validateIndirect(value reflect.Value, path string) error {
 	if value.IsNil() {
 		return nil
 	}
 
-	return validateValue(value.Elem(), path)
+	return v.validate(value.Elem(), path)
 }
 
-func validateSequence(value reflect.Value, path string) error {
-	if value.Kind() == reflect.Slice && value.IsNil() {
-		return nil
-	}
-
+func (v *valueValidator) validateSequence(value reflect.Value, path string) error {
 	for index := range value.Len() {
-		if err := validateValue(value.Index(index), fmt.Sprintf("%s[%d]", path, index)); err != nil {
+		if err := v.validate(value.Index(index), fmt.Sprintf("%s[%d]", path, index)); err != nil {
 			return err
 		}
 	}
@@ -256,18 +332,14 @@ func validateSequence(value reflect.Value, path string) error {
 	return nil
 }
 
-func validateMap(value reflect.Value, path string) error {
-	if value.IsNil() {
-		return nil
-	}
-
+func (v *valueValidator) validateMap(value reflect.Value, path string) error {
 	iterator := value.MapRange()
 	for iterator.Next() {
-		if err := validateValue(iterator.Key(), path+" map key"); err != nil {
+		if err := v.validate(iterator.Key(), path+" map key"); err != nil {
 			return err
 		}
 
-		if err := validateValue(iterator.Value(), path+" map value"); err != nil {
+		if err := v.validate(iterator.Value(), path+" map value"); err != nil {
 			return err
 		}
 	}
@@ -275,7 +347,7 @@ func validateMap(value reflect.Value, path string) error {
 	return nil
 }
 
-func validateStruct(value reflect.Value, path string) error {
+func (v *valueValidator) validateStruct(value reflect.Value, path string) error {
 	typeOfValue := value.Type()
 	for index := range value.NumField() {
 		field := typeOfValue.Field(index)
@@ -283,7 +355,7 @@ func validateStruct(value reflect.Value, path string) error {
 			continue
 		}
 
-		if err := validateValue(value.Field(index), path+"."+field.Name); err != nil {
+		if err := v.validate(value.Field(index), path+"."+field.Name); err != nil {
 			return err
 		}
 	}

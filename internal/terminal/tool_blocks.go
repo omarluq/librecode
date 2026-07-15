@@ -16,6 +16,7 @@ const (
 	maxCollapsedToolOutputLines = 5
 	toolArgumentDiffContext     = 3
 	toolSectionTool             = "tool"
+	toolSectionParentCallID     = "parent_call_id"
 	toolSectionArguments        = "arguments"
 	toolSectionDetails          = "details"
 	toolSectionError            = "error"
@@ -26,6 +27,7 @@ const (
 
 type parsedToolEvent struct {
 	Name          string
+	ParentCallID  string
 	ArgumentsJSON string
 	DetailsJSON   string
 	Error         string
@@ -164,7 +166,12 @@ func toolBlockEnd(width int, style tcell.Style) []tui.Line {
 }
 
 func (app *App) toolHeaderDisplayLines(width int, display *toolDisplay, style tcell.Style) []tui.Line {
-	return paddedContentLines(width, app.toolDisplayTitle(display), style.Bold(true), false)
+	title := app.toolDisplayTitle(display)
+	if display.Nested {
+		title = "  ↳ " + title
+	}
+
+	return paddedContentLines(width, title, style.Bold(true), false)
 }
 
 func (app *App) toolExpandHintLines(width int, style tcell.Style) []tui.Line {
@@ -450,6 +457,7 @@ func toolDisplayOutput(display *toolDisplay) string {
 func parseToolEventContent(content, fallback string) parsedToolEvent {
 	event := parsedToolEvent{
 		Name:          fallback,
+		ParentCallID:  "",
 		ArgumentsJSON: "",
 		DetailsJSON:   "",
 		Error:         "",
@@ -480,6 +488,7 @@ func parseToolEventContent(content, fallback string) parsedToolEvent {
 		}
 	}
 
+	event.ParentCallID = strings.TrimSpace(strings.Join(sections[toolSectionParentCallID], "\n"))
 	event.ArgumentsJSON = strings.TrimSpace(strings.Join(sections[toolSectionArguments], "\n"))
 	event.DetailsJSON = strings.TrimSpace(strings.Join(sections[toolSectionDetails], "\n"))
 	event.Error = strings.Trim(strings.Join(sections[toolSectionError], "\n"), "\n")
@@ -496,7 +505,8 @@ func parseToolSectionHeader(line string) (name, value string, ok bool) {
 
 	name = strings.TrimSpace(left)
 	switch name {
-	case toolSectionTool, toolSectionArguments, toolSectionDetails, toolSectionError, toolSectionOutput:
+	case toolSectionTool, toolSectionParentCallID, toolSectionArguments, toolSectionDetails,
+		toolSectionError, toolSectionOutput:
 		return name, strings.TrimSpace(right), true
 	default:
 		return "", "", false

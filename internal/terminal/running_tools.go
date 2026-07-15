@@ -7,6 +7,12 @@ func (app *App) removeRunningToolBlock(event *assistant.ToolEvent) {
 		return
 	}
 
+	if index, ok := app.runningToolBlockIndexByCallID(event.CallID); ok {
+		app.deleteRunningToolBlock(index)
+
+		return
+	}
+
 	if index, ok := app.runningToolBlockIndexByArguments(event.Name, event.ArgumentsJSON); ok {
 		app.deleteRunningToolBlock(index)
 
@@ -16,6 +22,20 @@ func (app *App) removeRunningToolBlock(event *assistant.ToolEvent) {
 	if index, ok := app.runningToolBlockIndexByName(event.Name); ok {
 		app.deleteRunningToolBlock(index)
 	}
+}
+
+func (app *App) runningToolBlockIndexByCallID(callID string) (int, bool) {
+	if callID == "" {
+		return 0, false
+	}
+
+	for index, block := range app.runningToolBlocks {
+		if block.Call.ID == callID {
+			return index, true
+		}
+	}
+
+	return 0, false
 }
 
 func (app *App) runningToolBlockIndexByArguments(name, argumentsJSON string) (int, bool) {

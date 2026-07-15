@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"context"
 	"reflect"
 
 	"github.com/samber/oops"
@@ -78,7 +79,15 @@ func (runtime *Runtime) promptToolRegistry(cwd, sessionID string) (*tool.Registr
 		}
 	}
 
-	if err := registry.Register(newExecuteTool(runtime, registry)); err != nil {
+	invoke := func(
+		ctx context.Context,
+		name string,
+		arguments tool.Arguments,
+		argumentsJSON string,
+	) (tool.Result, ToolEvent) {
+		return runtime.invokeNestedTool(ctx, registry, name, arguments, argumentsJSON)
+	}
+	if err := registry.Register(newExecuteTool(registry, invoke)); err != nil {
 		return nil, oops.In("assistant").Code("register_execute_tool").Wrapf(err, "register execute tool")
 	}
 

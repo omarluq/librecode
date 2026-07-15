@@ -374,6 +374,9 @@ func formatToolEventForUI(event *assistant.ToolEvent) string {
 	}
 
 	return transcript.FormatToolEventDisplay(&transcript.ToolEvent{
+		CallID:        event.CallID,
+		ParentCallID:  event.ParentCallID,
+		Sequence:      event.Sequence,
 		Name:          event.Name,
 		ArgumentsJSON: event.ArgumentsJSON,
 		DetailsJSON:   event.DetailsJSON,

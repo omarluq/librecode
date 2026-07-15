@@ -15,39 +15,27 @@ import (
 const executeToolName tool.Name = "execute"
 
 const (
-	executeNameKey        = "name"
-	executeResultValueKey = "result_value"
+	defaultExecuteResultLimit = 1 << 20
+	executeNameKey            = "name"
+	executeResultValueKey     = "result_value"
+	executeCallMethod         = "call"
 )
 
+type nestedToolInvoker func(context.Context, string, tool.Arguments, string) (tool.Result, ToolEvent)
+
 type executeToolExecutor struct {
-	registry  *tool.Registry
-	evaluator *mvmhost.Evaluator
-	invoke    func(context.Context, string, tool.Arguments, string) (tool.Result, ToolEvent)
-	onNested  func(name, argumentsJSON string, result *tool.Result, event *ToolEvent)
+	registry *tool.Registry
+	invoke   nestedToolInvoker
 }
 
 type executeToolInput struct {
 	Source string `json:"source"`
 }
 
-type executeToolCallResult struct {
-	Details map[string]any      `json:"details"`
-	Error   string              `json:"error,omitempty"`
-	Content []tool.ContentBlock `json:"content"`
-	IsError bool                `json:"is_error"`
-}
+type executeToolCallResult = executeworker.ToolCallResult
 
-func newExecuteTool(runtime *Runtime, registry *tool.Registry) *executeToolExecutor {
-	executor := &executeToolExecutor{registry: registry, evaluator: mvmhost.New(), invoke: nil, onNested: nil}
-	if runtime != nil {
-		executor.invoke = func(
-			ctx context.Context, name string, arguments tool.Arguments, argumentsJSON string,
-		) (tool.Result, ToolEvent) {
-			return runtime.invokeNestedTool(ctx, registry, name, arguments, argumentsJSON)
-		}
-	}
-
-	return executor
+func newExecuteTool(registry *tool.Registry, invoke nestedToolInvoker) *executeToolExecutor {
+	return &executeToolExecutor{registry: registry, invoke: invoke}
 }
 
 func (executor *executeToolExecutor) Definition() tool.Definition {
@@ -80,36 +68,25 @@ func (executor *executeToolExecutor) Execute(ctx context.Context, input tool.Arg
 		return tool.Result{}, oops.In("assistant").Code("execute_input").Wrapf(err, "decode execute input")
 	}
 
-	if scope := toolInvocationScopeFromContext(ctx); scope != nil {
-		scope.trace = executor.onNested
-	}
+	client := executeworker.Client{Executable: "", Handler: executor.handleWorkerMessage}
 
-	bindings := mvmhost.Bindings{"tools": {
-		"Search":   executor.search,
-		"Describe": executor.describe,
-		"Call": func(name string, input any) executeToolCallResult {
-			return executor.call(ctx, name, input)
-		},
-	}}
-
-	result, err := executor.evaluator.Eval(ctx, mvmhost.Request{
-		Bindings: bindings, Name: "execute.go", Source: args.Source, SourceLimit: 0, OutputLimit: 0,
-	})
+	result, err := client.Eval(ctx, args.Source)
 	if err != nil {
 		wrapped := oops.In("assistant").Code("execute_source").Wrapf(err, "execute MVM source")
 
 		return tool.TextResult("", executeResultDetails(result)), wrapped
 	}
 
-	if nested, ok := result.Value.(tool.Result); ok {
-		if nested.Details == nil {
-			nested.Details = map[string]any{}
+	if nested, ok := result.Value.(executeworker.ToolCallResult); ok && !nested.IsError {
+		toolResult := tool.Result{Details: nested.Details, Content: nested.Content}
+		if toolResult.Details == nil {
+			toolResult.Details = map[string]any{}
 		}
 
-		nested.Details["execute_stdout"] = result.Stdout
-		nested.Details["execute_stderr"] = result.Stderr
+		toolResult.Details["execute_stdout"] = result.Stdout
+		toolResult.Details["execute_stderr"] = result.Stderr
 
-		return nested, nil
+		return toolResult, nil
 	}
 
 	text, err := executeResultText(result)
@@ -229,6 +206,14 @@ func executeResultText(result mvmhost.Result) (string, error) {
 	encoded, err := json.Marshal(result.Value)
 	if err != nil {
 		return "", oops.In("assistant").Code("execute_result_encode").Wrapf(err, "encode execute result")
+	}
+
+	if len(encoded) > defaultExecuteResultLimit {
+		return "", oops.In("assistant").Code("execute_result_limit").Errorf(
+			"encoded execute result is %d bytes; limit is %d",
+			len(encoded),
+			defaultExecuteResultLimit,
+		)
 	}
 
 	return string(encoded), nil
