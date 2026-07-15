@@ -47,10 +47,8 @@ type EventSink func(context.Context, Event) error
 type AgentOptions struct {
 	NodeKey        string `json:"node_key"`
 	AgentName      string `json:"agent_name"`
-	ChildSessionID string `json:"child_session_id"`
 	Model          string `json:"model"`
 	Provider       string `json:"provider"`
-	PolicyJSON     string `json:"policy_json"`
 	ConcurrencyKey string `json:"concurrency_key"`
 	Depth          int    `json:"depth"`
 }
@@ -448,8 +446,7 @@ func oneAgentOptions(options []AgentOptions) (AgentOptions, error) {
 	switch len(options) {
 	case 0:
 		return AgentOptions{
-			NodeKey: "", AgentName: "", ChildSessionID: "", Model: "", Provider: "", PolicyJSON: "",
-			ConcurrencyKey: "", Depth: 0,
+			NodeKey: "", AgentName: "", Model: "", Provider: "", ConcurrencyKey: "", Depth: 0,
 		}, nil
 	case 1:
 		return options[0], nil
