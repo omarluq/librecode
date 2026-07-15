@@ -297,13 +297,13 @@ UPDATE tasks
 SET state = ?, started_at = ?, finished_at = ?, updated_at = ?,
     lease_owner = CASE WHEN ? THEN NULL ELSE lease_owner END,
     lease_expires_at = CASE WHEN ? THEN NULL ELSE lease_expires_at END
-WHERE id = ? AND state = ?`
+WHERE id = ? AND state = ? AND (? = FALSE OR lease_owner IS NULL)`
 
 	terminal := isTerminalTaskState(targetState)
 
 	result, err := transaction.Exec(
 		ctx, update, targetState, nullableTime(startedAt), nullableTime(finishedAt),
-		formatTime(now), terminal, terminal, taskID, current.State,
+		formatTime(now), terminal, terminal, taskID, current.State, terminal,
 	)
 	if err != nil {
 		return false, oops.In("database").Code("update_task_state").Wrapf(err, "update task state")
@@ -349,7 +349,7 @@ func transitionTimes(
 
 // Finish conditionally records a terminal outcome and appends its event atomically.
 func (repository *TaskRepository) Finish(ctx context.Context, finish *TaskFinish) (bool, error) {
-	if len(finish.From) == 0 || !isTerminalTaskState(finish.TargetState) {
+	if finish == nil || len(finish.From) == 0 || !isTerminalTaskState(finish.TargetState) {
 		return false, errors.New("database: task finish requires source states and a terminal target")
 	}
 
@@ -390,7 +390,8 @@ func (repository *TaskRepository) finishTransaction(
 UPDATE tasks
 SET state = ?, result = ?, error_code = ?, error_message = ?,
     started_at = ?, finished_at = ?, updated_at = ?, lease_owner = NULL, lease_expires_at = NULL
-WHERE id = ? AND state = ? AND (? = '' OR lease_owner = ?)`
+WHERE id = ? AND state = ?
+  AND ((? = '' AND lease_owner IS NULL) OR lease_owner = ?)`
 
 	updateResult, err := transaction.Exec(
 		ctx, update, finish.TargetState, finish.Result, finish.ErrorCode, finish.ErrorMessage,

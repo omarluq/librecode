@@ -22,7 +22,7 @@ const workerName = "worker"
 
 func emptyService() *Service {
 	return &Service{
-		runner: nil, renewLeaseFn: nil, active: nil, subscribers: nil, agentTasks: nil, queue: nil,
+		runner: nil, getTaskFn: nil, renewLeaseFn: nil, active: nil, subscribers: nil, agentTasks: nil, queue: nil,
 		cancel: nil, done: nil, sessionSlots: nil, tasks: nil, logger: nil, leaseOwner: "", wg: sync.WaitGroup{},
 		nextSubscriber: 0, timeout: 0, sessionConcurrency: 0, leaseDuration: 0,
 		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0, leaseRenewalAttemptTimeout: 0,
@@ -30,9 +30,56 @@ func emptyService() *Service {
 	}
 }
 
+type serviceRepositoryFixture struct {
+	tasks      *database.TaskRepository
+	agentTasks *database.AgentTaskRepository
+	sessions   *database.SessionRepository
+}
+
+func newServiceRepositoryFixture(t *testing.T) serviceRepositoryFixture {
+	t.Helper()
+
+	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+	require.NoError(t, database.Migrate(t.Context(), connection))
+
+	return serviceRepositoryFixture{
+		tasks:      database.NewTaskRepository(connection),
+		agentTasks: database.NewAgentTaskRepository(connection),
+		sessions:   database.NewSessionRepository(connection),
+	}
+}
+
+func (fixture serviceRepositoryFixture) createQueuedAgentTask(
+	t *testing.T,
+) (*database.SessionEntity, *database.AgentTaskEntity) {
+	t.Helper()
+
+	owner, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
+	require.NoError(t, err)
+	child, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), "child", owner.ID)
+	require.NoError(t, err)
+
+	entity := emptyAgentTask()
+	entity.Task.OwnerSessionID = owner.ID
+	entity.Task.ConcurrencyKey = owner.ID
+	entity.ChildSessionID = child.ID
+	entity.AgentName = generalAgent
+	entity.Prompt = workPrompt
+	entity.PolicyJSON = `{}`
+	entity.UsageJSON = `{}`
+	entity.Depth = 1
+	created, err := fixture.agentTasks.Create(t.Context(), entity)
+	require.NoError(t, err)
+
+	return owner, created
+}
+
 func serviceWithRepositories(tasks *database.TaskRepository, agentTasks *database.AgentTaskRepository) *Service {
 	service := emptyService()
 	service.tasks = tasks
+	service.getTaskFn = tasks.Get
 	service.agentTasks = agentTasks
 	service.subscribers = make(map[string]map[uint64]chan database.TaskEventEntity)
 
@@ -148,29 +195,9 @@ func TestServiceInternalClosesAllSubscriptions(t *testing.T) {
 func TestServiceInternalFinalizeInterruptedRun(t *testing.T) {
 	t.Parallel()
 
-	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, connection.Close()) })
-	require.NoError(t, database.Migrate(t.Context(), connection))
-	tasks := database.NewTaskRepository(connection)
-	agentTasks := database.NewAgentTaskRepository(connection)
-	sessions := database.NewSessionRepository(connection)
-	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
-	require.NoError(t, err)
-	child, err := sessions.CreateSession(t.Context(), t.TempDir(), "child", owner.ID)
-	require.NoError(t, err)
-
-	entity := emptyAgentTask()
-	entity.Task.OwnerSessionID = owner.ID
-	entity.Task.ConcurrencyKey = owner.ID
-	entity.ChildSessionID = child.ID
-	entity.AgentName = generalAgent
-	entity.Prompt = workPrompt
-	entity.PolicyJSON = `{}`
-	entity.UsageJSON = `{}`
-	entity.Depth = 1
-	created, err := agentTasks.Create(t.Context(), entity)
-	require.NoError(t, err)
+	fixture := newServiceRepositoryFixture(t)
+	tasks, agentTasks := fixture.tasks, fixture.agentTasks
+	_, created := fixture.createQueuedAgentTask(t)
 	changed, err := tasks.Transition(
 		t.Context(), created.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskRunning, "started",
 	)
@@ -193,14 +220,8 @@ func TestServiceInternalFinalizeInterruptedRun(t *testing.T) {
 func TestServiceInternalCancelsQueuedTask(t *testing.T) {
 	t.Parallel()
 
-	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, connection.Close()) })
-	require.NoError(t, database.Migrate(t.Context(), connection))
-	tasks := database.NewTaskRepository(connection)
-	agentTasks := database.NewAgentTaskRepository(connection)
-	sessions := database.NewSessionRepository(connection)
-	testQueuedTaskCancellation(t, tasks, agentTasks, sessions)
+	fixture := newServiceRepositoryFixture(t)
+	testQueuedTaskCancellation(t, fixture.tasks, fixture.agentTasks, fixture.sessions)
 }
 
 func testQueuedTaskCancellation(
@@ -323,6 +344,8 @@ func testCancelingTaskFinalization(
 func TestServiceInternalSubmitRejectsBeforeWritableQueue(t *testing.T) {
 	t.Parallel()
 
+	const expectedOperation = "enqueue task"
+
 	tests := []struct {
 		name      string
 		wantCode  string
@@ -331,11 +354,11 @@ func TestServiceInternalSubmitRejectsBeforeWritableQueue(t *testing.T) {
 		cancel    bool
 	}{
 		{
-			name: "canceled context", wantCode: "enqueue_canceled", wantError: "enqueue task",
+			name: "canceled context", wantCode: "enqueue_canceled", wantError: expectedOperation,
 			stop: false, cancel: true,
 		},
 		{
-			name: "stopped service", wantCode: "service_stopped", wantError: "enqueue task",
+			name: "stopped service", wantCode: "service_stopped", wantError: expectedOperation,
 			stop: true, cancel: false,
 		},
 	}
@@ -344,29 +367,9 @@ func TestServiceInternalSubmitRejectsBeforeWritableQueue(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, connection.Close()) })
-			require.NoError(t, database.Migrate(t.Context(), connection))
-			tasks := database.NewTaskRepository(connection)
-			agentTasks := database.NewAgentTaskRepository(connection)
-			sessions := database.NewSessionRepository(connection)
-			owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
-			require.NoError(t, err)
-			child, err := sessions.CreateSession(t.Context(), t.TempDir(), "child", owner.ID)
-			require.NoError(t, err)
-
-			entity := emptyAgentTask()
-			entity.Task.OwnerSessionID = owner.ID
-			entity.Task.ConcurrencyKey = owner.ID
-			entity.ChildSessionID = child.ID
-			entity.AgentName = generalAgent
-			entity.Prompt = workPrompt
-			entity.PolicyJSON = `{}`
-			entity.UsageJSON = `{}`
-			entity.Depth = 1
-			created, err := agentTasks.Create(t.Context(), entity)
-			require.NoError(t, err)
+			fixture := newServiceRepositoryFixture(t)
+			tasks, agentTasks := fixture.tasks, fixture.agentTasks
+			_, created := fixture.createQueuedAgentTask(t)
 
 			done := make(chan struct{})
 			if test.stop {
@@ -398,57 +401,64 @@ func TestServiceInternalSubmitRejectsBeforeWritableQueue(t *testing.T) {
 	}
 }
 
-func TestServiceInternalExecuteSkipsDurablyCancelingTask(t *testing.T) {
+func TestServiceInternalExecuteSkipsUnavailableTask(t *testing.T) {
 	t.Parallel()
 
-	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, connection.Close()) })
-	require.NoError(t, database.Migrate(t.Context(), connection))
-	tasks := database.NewTaskRepository(connection)
-	agentTasks := database.NewAgentTaskRepository(connection)
-	sessions := database.NewSessionRepository(connection)
-	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
-	require.NoError(t, err)
-	child, err := sessions.CreateSession(t.Context(), t.TempDir(), "child", owner.ID)
-	require.NoError(t, err)
+	lookupErr := errors.New("lookup failed")
+	tests := []struct {
+		getTask  func(context.Context, string) (*database.TaskEntity, bool, error)
+		wantErr  error
+		name     string
+		wantText string
+	}{
+		{
+			name: "lookup error", wantErr: lookupErr, wantText: "",
+			getTask: func(context.Context, string) (*database.TaskEntity, bool, error) {
+				return nil, false, lookupErr
+			},
+		},
+		{
+			name: "missing task", wantErr: nil, wantText: "task not found before execution",
+			getTask: func(context.Context, string) (*database.TaskEntity, bool, error) {
+				return nil, false, nil
+			},
+		},
+		{
+			name: "canceling task", wantErr: context.Canceled, wantText: "",
+			getTask: func(context.Context, string) (*database.TaskEntity, bool, error) {
+				return &database.TaskEntity{
+					ID: "", Kind: "", ParentTaskID: "", OwnerSessionID: "", ConcurrencyKey: "",
+					State: database.TaskCanceling, Result: "", ErrorCode: "", ErrorMessage: "",
+					LeaseOwner: "", CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil,
+					UpdatedAt: time.Time{}, LeaseExpiresAt: nil,
+				}, true, nil
+			},
+		},
+	}
 
-	entity := emptyAgentTask()
-	entity.Task.OwnerSessionID = owner.ID
-	entity.Task.ConcurrencyKey = owner.ID
-	entity.ChildSessionID = child.ID
-	entity.AgentName = generalAgent
-	entity.Prompt = workPrompt
-	entity.PolicyJSON = `{}`
-	entity.UsageJSON = `{}`
-	entity.Depth = 1
-	created, err := agentTasks.Create(t.Context(), entity)
-	require.NoError(t, err)
-	changed, err := tasks.Transition(
-		t.Context(), created.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskRunning, "started",
-	)
-	require.NoError(t, err)
-	require.True(t, changed)
-	changed, err = tasks.Transition(
-		t.Context(), created.Task.ID, []database.TaskState{database.TaskRunning}, database.TaskCanceling, "canceling",
-	)
-	require.NoError(t, err)
-	require.True(t, changed)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	runner := new(countingRunner)
-	service := serviceWithRepositories(tasks, agentTasks)
-	service.runner = runner
-	service.active = make(map[string]context.CancelFunc)
-	service.timeout = time.Minute
-	service.leaseHeartbeatInterval = time.Minute
-	service.leaseDuration = time.Minute
-	service.leaseOwner = workerName
-	service.renewLeaseFn = tasks.RenewLease
+			runner := new(countingRunner)
+			service := emptyService()
+			service.runner = runner
+			service.getTaskFn = test.getTask
+			service.active = make(map[string]context.CancelFunc)
+			service.timeout = time.Minute
+			service.leaseHeartbeatInterval = time.Minute
 
-	_, err = service.execute(t.Context(), created.Task.ID, created)
-	require.ErrorIs(t, err, context.Canceled)
-	assert.Zero(t, runner.calls.Load())
-	assert.NotContains(t, service.active, created.Task.ID)
+			_, err := service.execute(t.Context(), "task", emptyAgentTask())
+			if test.wantErr != nil {
+				require.ErrorIs(t, err, test.wantErr)
+			} else {
+				require.ErrorContains(t, err, test.wantText)
+			}
+
+			assert.Zero(t, runner.calls.Load())
+			assert.NotContains(t, service.active, "task")
+		})
+	}
 }
 
 func TestServiceInternalShutdownCancellation(t *testing.T) {

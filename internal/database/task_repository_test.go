@@ -238,6 +238,8 @@ func TestTaskRepositoryFinishBehavior(t *testing.T) {
 		finish      database.TaskFinish
 		wantChanged bool
 	}{
+		{name: "nil finish", wantError: "source states and a terminal target",
+			finish: newTaskFinish("", nil, database.TaskSucceeded, taskSucceededEvent), wantChanged: false},
 		{name: "succeeds", finish: successfulTaskFinish(), wantError: "", wantChanged: true},
 		{name: "fails with details", finish: failedTaskFinish(), wantError: "", wantChanged: true},
 		{name: "stale source", finish: newTaskFinish("", []database.TaskState{database.TaskRunning},
@@ -258,9 +260,13 @@ func TestTaskRepositoryFinishBehavior(t *testing.T) {
 			created, err := tasks.Create(ctx, newTask(owner.ID))
 			require.NoError(t, err)
 
-			test.finish.TaskID = created.ID
+			var finish *database.TaskFinish
+			if test.name != "nil finish" {
+				test.finish.TaskID = created.ID
+				finish = &test.finish
+			}
 
-			changed, err := tasks.Finish(ctx, &test.finish)
+			changed, err := tasks.Finish(ctx, finish)
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)
 

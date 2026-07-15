@@ -43,7 +43,7 @@ type AgentTaskRequest struct {
 type AgentTaskController interface {
 	SubmitAgentTask(context.Context, *AgentTaskRequest) (*database.AgentTaskEntity, error)
 	Get(context.Context, string) (*database.AgentTaskEntity, bool, error)
-	List(context.Context, string, int) ([]database.TaskEntity, error)
+	List(context.Context, string, int) ([]database.AgentTaskEntity, error)
 	Cancel(context.Context, string, string) (*database.TaskEntity, bool, error)
 	Await(context.Context, string) (*database.AgentTaskEntity, error)
 	SubscribeAgentTask(string) (events <-chan database.TaskEventEntity, cancel func())
@@ -341,7 +341,7 @@ func (executor *agentToolExecutor) list(ctx context.Context, input tool.Argument
 
 	lines := make([]string, 0, len(tasks))
 	for i := range tasks {
-		lines = append(lines, fmt.Sprintf("%s %s", tasks[i].ID, tasks[i].State))
+		lines = append(lines, fmt.Sprintf("%s %s", tasks[i].Task.ID, tasks[i].Task.State))
 	}
 
 	return tool.TextResult(strings.Join(lines, "\n"), map[string]any{"count": len(tasks)}), nil

@@ -32,6 +32,11 @@ const (
 	leaseRenewalAttemptTimeout = 2 * time.Second
 	leaseRenewalAttempts       = 3
 	eventBuffer                = 64
+	enqueueTaskOperation       = "enqueue task"
+	enqueueCanceledCode        = "enqueue_canceled"
+	enqueueCanceledMessage     = "task submission was canceled before queue admission"
+	serviceStoppedCode         = "service_stopped"
+	serviceStoppedMessage      = "task service stopped before queue admission"
 )
 
 // Runner executes one persisted agent task.
@@ -85,6 +90,7 @@ type Options struct {
 // Service schedules and owns durable agent tasks.
 type Service struct {
 	runner                     Runner
+	getTaskFn                  func(context.Context, string) (*database.TaskEntity, bool, error)
 	renewLeaseFn               func(context.Context, string, string, time.Time) (bool, error)
 	active                     map[string]context.CancelFunc
 	subscribers                map[string]map[uint64]chan database.TaskEventEntity
@@ -142,7 +148,7 @@ func New(ctx context.Context, options Options) (*Service, error) {
 		subscribers:    make(map[string]map[uint64]chan database.TaskEventEntity),
 		nextSubscriber: 0, wg: sync.WaitGroup{}, timeout: timeout,
 		sessionConcurrency: sessionConcurrency, logger: logger, leaseOwner: leaseOwner,
-		renewLeaseFn: options.Tasks.RenewLease, leaseDuration: leaseDuration,
+		getTaskFn: options.Tasks.Get, renewLeaseFn: options.Tasks.RenewLease, leaseDuration: leaseDuration,
 		leaseHeartbeatInterval:     leaseHeartbeatInterval,
 		leaseRenewalRetryInterval:  leaseRenewalRetryInterval,
 		leaseRenewalAttemptTimeout: leaseRenewalAttemptTimeout,
@@ -243,20 +249,12 @@ func (service *Service) enqueueCreated(
 	created *database.AgentTaskEntity,
 ) (*database.AgentTaskEntity, error) {
 	if err := ctx.Err(); err != nil {
-		service.rejectQueuedTask(
-			created.Task.ID, "enqueue_canceled", "task submission was canceled before queue admission",
-		)
-
-		return created, oops.In("agenttask").Code("enqueue_canceled").Wrapf(err, "enqueue task")
+		return service.rejectCreatedTask(created, enqueueCanceledCode, enqueueCanceledMessage, err)
 	}
 
 	select {
 	case <-service.done:
-		service.rejectQueuedTask(
-			created.Task.ID, "service_stopped", "task service stopped before queue admission",
-		)
-
-		return created, oops.In("agenttask").Code("service_stopped").Wrapf(context.Canceled, "enqueue task")
+		return service.rejectCreatedTask(created, serviceStoppedCode, serviceStoppedMessage, context.Canceled)
 	default:
 	}
 
@@ -264,22 +262,25 @@ func (service *Service) enqueueCreated(
 	case service.queue <- created.Task.ID:
 		return created, nil
 	case <-service.done:
-		service.rejectQueuedTask(
-			created.Task.ID, "service_stopped", "task service stopped before queue admission",
-		)
-
-		return created, oops.In("agenttask").Code("service_stopped").Wrapf(context.Canceled, "enqueue task")
+		return service.rejectCreatedTask(created, serviceStoppedCode, serviceStoppedMessage, context.Canceled)
 	case <-ctx.Done():
-		service.rejectQueuedTask(
-			created.Task.ID, "enqueue_canceled", "task submission was canceled before queue admission",
-		)
-
-		return created, oops.In("agenttask").Code("enqueue_canceled").Wrapf(ctx.Err(), "enqueue task")
+		return service.rejectCreatedTask(created, enqueueCanceledCode, enqueueCanceledMessage, ctx.Err())
 	default:
 		service.rejectQueuedTask(created.Task.ID, "queue_full", "agent task queue is full")
 
 		return created, oops.In("agenttask").Code("queue_full").Errorf("agent task queue is full")
 	}
+}
+
+func (service *Service) rejectCreatedTask(
+	created *database.AgentTaskEntity,
+	code string,
+	message string,
+	cause error,
+) (*database.AgentTaskEntity, error) {
+	service.rejectQueuedTask(created.Task.ID, code, message)
+
+	return created, oops.In("agenttask").Code(code).Wrapf(cause, enqueueTaskOperation)
 }
 
 // Get returns an agent task by ID.
@@ -293,8 +294,12 @@ func (service *Service) Get(ctx context.Context, taskID string) (*database.Agent
 }
 
 // List returns tasks owned by a session.
-func (service *Service) List(ctx context.Context, ownerSessionID string, limit int) ([]database.TaskEntity, error) {
-	tasks, err := service.tasks.ListByOwner(ctx, database.TaskKindAgent, ownerSessionID, limit)
+func (service *Service) List(
+	ctx context.Context,
+	ownerSessionID string,
+	limit int,
+) ([]database.AgentTaskEntity, error) {
+	tasks, err := service.agentTasks.ListByOwner(ctx, ownerSessionID, limit)
 	if err != nil {
 		return nil, oops.In("agenttask").Code("list_tasks").Wrapf(err, "list agent tasks")
 	}
@@ -495,11 +500,14 @@ func (service *Service) run(ctx context.Context, taskID string) {
 	task, found, err := service.agentTasks.Get(ctx, taskID)
 	if err != nil {
 		service.logError(ctx, "load queued agent task", "task_id", taskID, "error", err)
+		service.requeue(ctx, taskID)
 
 		return
 	}
 
 	if !found {
+		service.logWarn(ctx, "queued agent task not found", "task_id", taskID)
+
 		return
 	}
 
@@ -628,8 +636,20 @@ func (service *Service) execute(ctx context.Context, taskID string, task *databa
 
 	// Cancellation can race with registration in active. Re-read durable state
 	// after registration so a canceling task never starts model or tool work.
-	current, found, err := service.tasks.Get(context.WithoutCancel(ctx), taskID)
-	if err == nil && found && current.State == database.TaskCanceling {
+	current, found, err := service.getTaskFn(context.WithoutCancel(ctx), taskID)
+	if err != nil {
+		return Result{Text: "", UsageJSON: ""}, oops.In("agenttask").Code("get_task_state").Wrapf(
+			err, "get task state before execution",
+		)
+	}
+
+	if !found {
+		return Result{Text: "", UsageJSON: ""}, oops.In("agenttask").Code("task_not_found").Errorf(
+			"task not found before execution",
+		)
+	}
+
+	if current.State == database.TaskCanceling {
 		return Result{Text: "", UsageJSON: ""}, context.Canceled
 	}
 

@@ -97,7 +97,7 @@ tasks:
     desc: Reject nolint directives in project Go source
     cmds:
       - |
-        if grep -RInE --include='*.go' '//[[:space:]]*nolint([[:space:]:]|$)' cmd internal; then
+        if git grep -nE '//[[:space:]]*nolint([[:space:]:]|$)' -- '*.go'; then
           echo 'nolint directives are not allowed; fix the underlying lint issue instead' >&2
           exit 1
         fi

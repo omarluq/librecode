@@ -134,14 +134,15 @@ func (repository *AgentTaskRepository) Finish(
 	return changed, nil
 }
 
-// Get loads an agent task and its generic lifecycle by task ID.
-func (repository *AgentTaskRepository) Get(ctx context.Context, taskID string) (*AgentTaskEntity, bool, error) {
-	const query = `
-SELECT ` + "t." + `id, t.kind, t.parent_task_id, t.owner_session_id, t.concurrency_key,
+const agentTaskColumns = `t.id, t.kind, t.parent_task_id, t.owner_session_id, t.concurrency_key,
        t.state, t.result, t.error_code, t.error_message, t.created_at, t.started_at,
        t.finished_at, t.updated_at, t.lease_owner, t.lease_expires_at,
        a.child_session_id, a.agent_name, a.prompt,
-       a.model, a.provider, a.policy_json, a.usage_json, a.depth
+       a.model, a.provider, a.policy_json, a.usage_json, a.depth`
+
+// Get loads an agent task and its generic lifecycle by task ID.
+func (repository *AgentTaskRepository) Get(ctx context.Context, taskID string) (*AgentTaskEntity, bool, error) {
+	const query = `SELECT ` + agentTaskColumns + `
 FROM tasks t JOIN agent_tasks a ON a.task_id = t.id WHERE t.id = ? AND t.kind = ?`
 
 	var row agentTaskRow
@@ -159,6 +160,34 @@ FROM tasks t JOIN agent_tasks a ON a.task_id = t.id WHERE t.id = ? AND t.kind = 
 	}
 
 	return entity, true, nil
+}
+
+// ListByOwner returns complete agent tasks belonging to a session, newest first.
+func (repository *AgentTaskRepository) ListByOwner(
+	ctx context.Context,
+	ownerSessionID string,
+	limit int,
+) ([]AgentTaskEntity, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	const query = `SELECT ` + agentTaskColumns + `
+FROM tasks t JOIN agent_tasks a ON a.task_id = t.id
+WHERE t.kind = ? AND t.owner_session_id = ?
+ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`
+
+	rows := []agentTaskRow{}
+	if err := repository.sql.Query(ctx, &rows, query, TaskKindAgent, ownerSessionID, limit); err != nil {
+		return nil, oops.In("database").Code("list_agent_tasks").Wrapf(err, "list agent tasks")
+	}
+
+	entities, err := collectSQLRows(rows, agentTaskFromRow)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_agent_task").Wrapf(err, "scan agent task")
+	}
+
+	return entities, nil
 }
 
 type agentTaskRow struct {

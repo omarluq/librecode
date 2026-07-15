@@ -27,7 +27,7 @@ type agentControllerStub struct {
 	cancelFound   *bool
 	lastSubmit    *AgentTaskRequest
 	task          *database.AgentTaskEntity
-	listed        []database.TaskEntity
+	listed        []database.AgentTaskEntity
 	lastLimit     int
 	getCalls      int
 	subscriptions int
@@ -53,7 +53,7 @@ func (stub *agentControllerStub) Get(context.Context, string) (*database.AgentTa
 
 	return stub.task, stub.found, stub.getErr
 }
-func (stub *agentControllerStub) List(_ context.Context, _ string, limit int) ([]database.TaskEntity, error) {
+func (stub *agentControllerStub) List(_ context.Context, _ string, limit int) ([]database.AgentTaskEntity, error) {
 	stub.lastLimit = limit
 
 	return stub.listed, stub.listErr
@@ -174,7 +174,11 @@ func TestAgentTaskOperationsAreOwnerScoped(t *testing.T) {
 
 	stub := newAgentControllerStub(
 		agentToolTask("task-1", "owner", database.TaskRunning),
-		[]database.TaskEntity{agentToolTaskEntity("task-1", "owner", database.TaskRunning)},
+		[]database.AgentTaskEntity{{
+			Task:           agentToolTaskEntity("task-1", "owner", database.TaskRunning),
+			ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "",
+			PolicyJSON: "", UsageJSON: "", Depth: 0,
+		}},
 		true,
 	)
 	catalog := isolatedAgentCatalog(t)
@@ -387,7 +391,7 @@ func agentToolSessionsWithDB(t *testing.T) (*database.SessionRepository, *sql.DB
 
 func newAgentControllerStub(
 	task *database.AgentTaskEntity,
-	listed []database.TaskEntity,
+	listed []database.AgentTaskEntity,
 	found bool,
 ) *agentControllerStub {
 	stub := new(agentControllerStub)
