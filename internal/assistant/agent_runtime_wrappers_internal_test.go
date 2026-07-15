@@ -98,7 +98,7 @@ func TestRuntimeAgentWrappersDelegateAndWrapErrors(t *testing.T) {
 
 	stub := new(agentControllerStub)
 	stub.task = agentToolTask("id", "owner", database.TaskQueued)
-	stub.listed = []database.TaskEntity{}
+	stub.listed = []database.AgentTaskEntity{}
 	stub.found = true
 	runtime := new(Runtime)
 	runtime.agentTasks = stub

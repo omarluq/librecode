@@ -317,7 +317,7 @@ func (runtime *Runtime) AgentTasks(
 	ctx context.Context,
 	ownerSessionID string,
 	limit int,
-) ([]database.TaskEntity, error) {
+) ([]database.AgentTaskEntity, error) {
 	if runtime == nil || runtime.agentTasks == nil {
 		return nil, nil
 	}

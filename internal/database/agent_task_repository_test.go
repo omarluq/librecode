@@ -46,6 +46,16 @@ func TestAgentTaskRepositoryLifecycle(t *testing.T) {
 	require.True(t, found)
 	assert.Equal(t, database.TaskSucceeded, loaded.Task.State)
 	assert.Equal(t, child.ID, loaded.ChildSessionID)
+	assert.Equal(t, created.AgentName, loaded.AgentName)
+	assert.Equal(t, created.Prompt, loaded.Prompt)
+	assert.Equal(t, created.PolicyJSON, loaded.PolicyJSON)
+	assert.Equal(t, created.Depth, loaded.Depth)
+
+	listed, err := agents.ListByOwner(ctx, parent.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	assert.Equal(t, *loaded, listed[0])
+
 	require.NotNil(t, loaded.Task.StartedAt)
 	require.NotNil(t, loaded.Task.FinishedAt)
 

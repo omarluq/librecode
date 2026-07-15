@@ -439,7 +439,7 @@ func TestServiceFailureAndOwnerScoping(t *testing.T) {
 	listed, err := service.List(t.Context(), parent.ID, 10)
 	require.NoError(t, err)
 	require.Len(t, listed, 1)
-	assert.Equal(t, created.Task.ID, listed[0].ID)
+	assert.Equal(t, created.Task.ID, listed[0].Task.ID)
 }
 
 func newService(

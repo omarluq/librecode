@@ -48,7 +48,20 @@ func TestTaskRepositoryLeasesFenceWorkersAndRecovery(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, recovered)
 
+	transitioned, err := tasks.Transition(
+		ctx, created.ID, []database.TaskState{database.TaskRunning}, database.TaskFailed, taskFailedEvent,
+	)
+	require.NoError(t, err)
+	assert.False(t, transitioned)
+
 	finished, err := tasks.Finish(ctx, &database.TaskFinish{
+		TaskID: created.ID, From: []database.TaskState{database.TaskRunning},
+		TargetState: database.TaskSucceeded, EventKind: taskSucceededEvent, Result: "", ErrorCode: "",
+		ErrorMessage: "", PayloadJSON: `{}`, LeaseOwner: "",
+	})
+	require.NoError(t, err)
+	assert.False(t, finished)
+	finished, err = tasks.Finish(ctx, &database.TaskFinish{
 		TaskID: created.ID, From: []database.TaskState{database.TaskRunning},
 		TargetState: database.TaskSucceeded, EventKind: taskSucceededEvent, Result: "", ErrorCode: "",
 		ErrorMessage: "", PayloadJSON: `{}`, LeaseOwner: "worker-two",

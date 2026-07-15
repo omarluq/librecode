@@ -34,7 +34,7 @@ type agentTaskControllerStub struct {
 	tasks       map[string]*database.AgentTaskEntity
 	subscribe   map[string]chan database.TaskEventEntity
 	canceled    map[string]bool
-	list        []database.TaskEntity
+	list        []database.AgentTaskEntity
 	cancelCalls []string
 	mu          sync.Mutex
 }
@@ -48,7 +48,7 @@ func (stub *agentTaskControllerStub) SubmitAgentTask(
 
 func newAgentTaskControllerStub(
 	tasks map[string]*database.AgentTaskEntity,
-	list []database.TaskEntity,
+	list []database.AgentTaskEntity,
 ) *agentTaskControllerStub {
 	return &agentTaskControllerStub{
 		listErr:     nil,
@@ -84,7 +84,7 @@ func (stub *agentTaskControllerStub) Get(_ context.Context, taskID string) (*dat
 	return task, found, nil
 }
 
-func (stub *agentTaskControllerStub) List(context.Context, string, int) ([]database.TaskEntity, error) {
+func (stub *agentTaskControllerStub) List(context.Context, string, int) ([]database.AgentTaskEntity, error) {
 	return stub.list, stub.listErr
 }
 
@@ -269,15 +269,17 @@ func TestDiscoverRefreshAndTrackAgentTasks(t *testing.T) {
 	done := behaviorAgentTask("done", database.TaskSucceeded)
 	stub := newAgentTaskControllerStub(
 		map[string]*database.AgentTaskEntity{behaviorRunning: &running, "done": &done},
-		[]database.TaskEntity{running.Task, done.Task},
+		[]database.AgentTaskEntity{running, done},
 	)
 	app := newAgentTaskBehaviorApp(t, stub)
 	app.discoverActiveAgentTasks(t.Context())
 	require.Len(t, app.agentTasks, 1)
 	assert.Equal(t, behaviorRunning, app.agentTasks[0].Task.ID)
+	assert.Equal(t, running.AgentName, app.agentTasks[0].AgentName)
+	assert.Equal(t, running.Prompt, app.agentTasks[0].Prompt)
 	assert.Contains(t, app.agentTaskWatches, behaviorRunning)
 
-	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":behaviorRunning}`, false))
+	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":"running"}`, false))
 	assert.Len(t, app.agentTasks, 1)
 
 	stub.tasks[behaviorRunning] = &done
@@ -343,7 +345,7 @@ func TestApplyAgentToolEventAndWatchCleanup(t *testing.T) {
 	running := behaviorAgentTask(behaviorRunning, database.TaskRunning)
 	stub := newAgentTaskControllerStub(
 		map[string]*database.AgentTaskEntity{behaviorRunning: &running},
-		[]database.TaskEntity{running.Task},
+		[]database.AgentTaskEntity{running},
 	)
 	app := newAgentTaskBehaviorApp(t, stub)
 
@@ -351,13 +353,13 @@ func TestApplyAgentToolEventAndWatchCleanup(t *testing.T) {
 	app.applyAgentToolEvent(agentToolEvent(agentStartToolName, "", true))
 	assert.Empty(t, app.agentTasks)
 
-	app.applyAgentToolEvent(agentToolEvent(agentStartToolName, `{"task_id":behaviorRunning}`, false))
+	app.applyAgentToolEvent(agentToolEvent(agentStartToolName, `{"task_id":"running"}`, false))
 	require.Len(t, app.agentTasks, 1)
 	assert.False(t, app.agentTasksRefreshedAt.IsZero())
 
 	updated := running
 	updated.Task.UpdatedAt = updated.Task.UpdatedAt.Add(time.Second)
-	stub.list = []database.TaskEntity{updated.Task}
+	stub.list = []database.AgentTaskEntity{updated}
 
 	app.applyAgentToolEvent(agentToolEvent(agentStatusToolName, "", false))
 	assert.Equal(t, updated.Task.UpdatedAt, app.agentTasks[0].Task.UpdatedAt)
@@ -443,7 +445,7 @@ func TestAgentTaskPanelItemsRefreshAndCancellation(t *testing.T) {
 	task.Task.Result = "working result"
 	stub := newAgentTaskControllerStub(
 		map[string]*database.AgentTaskEntity{behaviorTaskID: &task},
-		[]database.TaskEntity{task.Task},
+		[]database.AgentTaskEntity{task},
 	)
 	app := newAgentTaskBehaviorApp(t, stub)
 
@@ -537,7 +539,7 @@ func TestRefreshAgentTasksPanelPreservesSelection(t *testing.T) {
 	second := behaviorAgentTask("bravo-task", database.TaskQueued)
 	stub := newAgentTaskControllerStub(
 		map[string]*database.AgentTaskEntity{"alpha-task": &first, "bravo-task": &second},
-		[]database.TaskEntity{first.Task, second.Task},
+		[]database.AgentTaskEntity{first, second},
 	)
 	app := newAgentTaskBehaviorApp(t, stub)
 	app.panel = panel.New(panelAgentTasks, "Agent Tasks", "", []tui.ListItem{}, true)
@@ -558,7 +560,7 @@ func TestAgentTaskRefreshAndCompletionBranchPaths(t *testing.T) {
 	other := behaviorAgentTask("other", database.TaskQueued)
 	stub := newAgentTaskControllerStub(
 		map[string]*database.AgentTaskEntity{behaviorRunning: &running, "other": &other},
-		[]database.TaskEntity{running.Task},
+		[]database.AgentTaskEntity{running},
 	)
 	app := newAgentTaskBehaviorApp(t, stub)
 
@@ -568,7 +570,7 @@ func TestAgentTaskRefreshAndCompletionBranchPaths(t *testing.T) {
 
 	updated := running
 	updated.Task.UpdatedAt = updated.Task.UpdatedAt.Add(time.Second)
-	stub.list = []database.TaskEntity{updated.Task}
+	stub.list = []database.AgentTaskEntity{updated}
 
 	app.refreshVisibleAgentTasks(t.Context())
 	assert.Equal(t, updated.Task.UpdatedAt, app.agentTasks[0].Task.UpdatedAt)
@@ -587,7 +589,7 @@ func TestAgentTaskAsyncChangedRefreshesVisibleTasks(t *testing.T) {
 	running := behaviorAgentTask(behaviorRunning, database.TaskRunning)
 	stub := newAgentTaskControllerStub(
 		map[string]*database.AgentTaskEntity{behaviorRunning: &running},
-		[]database.TaskEntity{running.Task},
+		[]database.AgentTaskEntity{running},
 	)
 	app := newAgentTaskBehaviorApp(t, stub)
 
@@ -622,7 +624,7 @@ func TestAgentTaskFallbackAndErrorPaths(t *testing.T) {
 	running := behaviorAgentTask(behaviorRunning, database.TaskRunning)
 	stub := newAgentTaskControllerStub(
 		map[string]*database.AgentTaskEntity{behaviorRunning: &running},
-		[]database.TaskEntity{running.Task},
+		[]database.AgentTaskEntity{running},
 	)
 	app := newAgentTaskBehaviorApp(t, stub)
 

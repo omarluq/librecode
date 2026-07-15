@@ -130,11 +130,11 @@ func (app *App) discoverActiveAgentTasks(ctx context.Context) {
 
 	active := make([]database.AgentTaskEntity, 0, len(tasks))
 	for index := range tasks {
-		if isTerminalAgentTaskState(tasks[index].State) {
+		if isTerminalAgentTaskState(tasks[index].Task.State) {
 			continue
 		}
 
-		active = append(active, agentTaskSummary(&tasks[index]))
+		active = append(active, tasks[index])
 	}
 
 	app.agentTasks = active
@@ -225,10 +225,10 @@ func (app *App) refreshActiveAgentTasks(ctx context.Context) {
 		return
 	}
 
-	activeByID := make(map[string]database.TaskEntity, len(tasks))
+	activeByID := make(map[string]database.AgentTaskEntity, len(tasks))
 	for index := range tasks {
-		if !isTerminalAgentTaskState(tasks[index].State) {
-			activeByID[tasks[index].ID] = tasks[index]
+		if !isTerminalAgentTaskState(tasks[index].Task.State) {
+			activeByID[tasks[index].Task.ID] = tasks[index]
 		}
 	}
 
@@ -252,15 +252,13 @@ func (app *App) refreshActiveAgentTasks(ctx context.Context) {
 			continue
 		}
 
-		previous.Task = task
-		active = append(active, previous)
+		active = append(active, task)
 
-		delete(activeByID, task.ID)
+		delete(activeByID, task.Task.ID)
 	}
 
 	for taskID := range activeByID {
-		task := activeByID[taskID]
-		active = append(active, agentTaskSummary(&task))
+		active = append(active, activeByID[taskID])
 	}
 
 	app.agentTasks = active
@@ -293,13 +291,6 @@ func (app *App) reconcileMissingAgentTask(
 
 	// The bounded list can omit older active tasks.
 	return latest, nil
-}
-
-func agentTaskSummary(task *database.TaskEntity) database.AgentTaskEntity {
-	return database.AgentTaskEntity{
-		Task: *task, ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "",
-		PolicyJSON: "", UsageJSON: "", Depth: 0,
-	}
 }
 
 func agentTaskCompletion(
@@ -573,7 +564,7 @@ func (app *App) agentTaskItems(ctx context.Context) ([]tui.ListItem, error) {
 
 	items := make([]tui.ListItem, 0, len(tasks))
 	for index := range tasks {
-		task := &tasks[index]
+		task := &tasks[index].Task
 		items = append(items, tui.ListItem{
 			Value:       task.ID,
 			Title:       taskTitle(task),
