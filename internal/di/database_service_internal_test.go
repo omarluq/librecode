@@ -54,7 +54,9 @@ func TestDatabaseServiceHealthCheckAndShutdown(t *testing.T) {
 	connection, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "librecode.db"))
 	require.NoError(t, err)
 
-	service := &DatabaseService{DB: connection, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, path: ""}
+	service := &DatabaseService{
+		DB: connection, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, Workflows: nil, path: "",
+	}
 
 	require.NoError(t, service.HealthCheck(context.Background()))
 	require.NoError(t, service.Shutdown(context.Background()))
@@ -68,7 +70,9 @@ func TestDatabaseServiceShutdownReturnsContextError(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 
-	service := &DatabaseService{DB: connection, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, path: ""}
+	service := &DatabaseService{
+		DB: connection, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, Workflows: nil, path: "",
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 

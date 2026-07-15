@@ -22,7 +22,8 @@ const workerName = "worker"
 
 func emptyService() *Service {
 	return &Service{
-		runner: nil, getTaskFn: nil, renewLeaseFn: nil, active: nil, subscribers: nil, agentTasks: nil, queue: nil,
+		runner: nil, getTaskFn: nil, renewLeaseFn: nil, active: nil, subscribers: nil,
+		agentTasks: nil, workflows: nil, queue: nil,
 		cancel: nil, done: nil, sessionSlots: nil, tasks: nil, logger: nil, leaseOwner: "", wg: sync.WaitGroup{},
 		nextSubscriber: 0, timeout: 0, sessionConcurrency: 0, leaseDuration: 0,
 		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0, leaseRenewalAttemptTimeout: 0,
@@ -134,8 +135,8 @@ func leaseRenewalService(
 func TestServiceInternalDefaultsAndTimeoutParsing(t *testing.T) {
 	t.Parallel()
 
-	concurrency, sessionConcurrency, capacity, timeout := optionDefaults(Options{
-		Tasks: nil, AgentTasks: nil, Runner: nil, Logger: nil, Concurrency: 7,
+	concurrency, sessionConcurrency, capacity, timeout := optionDefaults(&Options{
+		Tasks: nil, AgentTasks: nil, Workflows: nil, Runner: nil, Logger: nil, Concurrency: 7,
 		SessionConcurrency: 3, QueueCapacity: 9, Timeout: time.Second,
 	})
 	assert.Equal(t, 7, concurrency)

@@ -282,6 +282,10 @@ func (progress *partialPromptProgress) record(streamEvent StreamEvent) {
 		if streamEvent.ToolEvent != nil {
 			progress.removePendingTool(streamEvent.ToolEvent)
 			progress.append(transcript.RoleToolResult, formatToolEvent(streamEvent.ToolEvent))
+
+			if streamEvent.ToolEvent.ParentCallID != "" {
+				progress.completedNestedTools = append(progress.completedNestedTools, *streamEvent.ToolEvent)
+			}
 		}
 	case StreamEventToolStart:
 		progress.trackPendingTool(streamEvent.ToolCallEvent, streamEvent.Text)
@@ -320,6 +324,7 @@ func (progress *partialPromptProgress) reset() {
 
 	progress.blocks = progress.blocks[:0]
 	progress.pendingTools = progress.pendingTools[:0]
+	progress.completedNestedTools = progress.completedNestedTools[:0]
 }
 
 func (progress *partialPromptProgress) append(role transcript.Role, content string) {
@@ -420,10 +425,15 @@ func (progress *partialPromptProgress) trackPendingTool(call *ToolCallEvent, fal
 		return
 	}
 
-	pending := pendingToolCall{Name: fallbackName, ArgumentsJSON: ""}
+	pending := pendingToolCall{
+		CallID: "", ParentCallID: "", Name: fallbackName, ArgumentsJSON: "", Sequence: 0,
+	}
 	if call != nil {
+		pending.CallID = call.ID
+		pending.ParentCallID = call.ParentCallID
 		pending.Name = call.Name
 		pending.ArgumentsJSON = call.ArgumentsJSON
+		pending.Sequence = call.Sequence
 	}
 
 	if pending.Name == "" {
@@ -442,7 +452,7 @@ func (progress *partialPromptProgress) removePendingTool(event *ToolEvent) {
 		return
 	}
 
-	index, found := progress.pendingToolIndex(event.Name, event.ArgumentsJSON)
+	index, found := progress.pendingToolIndex(event.CallID, event.Name, event.ArgumentsJSON)
 	if !found {
 		return
 	}
@@ -450,7 +460,15 @@ func (progress *partialPromptProgress) removePendingTool(event *ToolEvent) {
 	progress.pendingTools = slices.Delete(progress.pendingTools, index, index+1)
 }
 
-func (progress *partialPromptProgress) pendingToolIndex(name, argumentsJSON string) (int, bool) {
+func (progress *partialPromptProgress) pendingToolIndex(callID, name, argumentsJSON string) (int, bool) {
+	if callID != "" {
+		for index, pending := range progress.pendingTools {
+			if pending.CallID == callID {
+				return index, true
+			}
+		}
+	}
+
 	for index, pending := range progress.pendingTools {
 		if pending.Name == name && pending.ArgumentsJSON == argumentsJSON {
 			return index, true
@@ -476,9 +494,9 @@ func (progress *partialPromptProgress) syntheticToolFailureEvents(promptErr erro
 	events := make([]ToolEvent, 0, len(progress.pendingTools))
 	for _, pending := range progress.pendingTools {
 		events = append(events, ToolEvent{
-			CallID:       "",
-			ParentCallID: "",
-			Sequence:     0,
+			CallID:       pending.CallID,
+			ParentCallID: pending.ParentCallID,
+			Sequence:     pending.Sequence,
 
 			Name:          pending.Name,
 			ArgumentsJSON: pending.ArgumentsJSON,
@@ -534,6 +552,9 @@ func formatToolEvent(toolEvent *ToolEvent) string {
 	}
 
 	return transcript.FormatToolEventPersistence(&transcript.ToolEvent{
+		CallID:        toolEvent.CallID,
+		ParentCallID:  toolEvent.ParentCallID,
+		Sequence:      toolEvent.Sequence,
 		Name:          toolEvent.Name,
 		ArgumentsJSON: toolEvent.ArgumentsJSON,
 		DetailsJSON:   toolEvent.DetailsJSON,

@@ -13,6 +13,7 @@ import (
 const (
 	runtimePersistTestArgsJSON = `{"path":"a.go"}`
 	runtimePersistToolCallID   = "call-1"
+	runtimePersistParentID     = "outer"
 )
 
 func TestFormatToolEventIncludesErrorMarker(t *testing.T) {
@@ -172,6 +173,22 @@ func TestPartialPromptProgressResetClearsPendingTools(t *testing.T) {
 	progress.reset()
 
 	assert.Empty(t, progress.syntheticToolFailureEvents(context.Canceled))
+}
+
+func toolEventCallIDs(events []ToolEvent) []string {
+	callIDs := make([]string, 0, len(events))
+	for index := range events {
+		callIDs = append(callIDs, events[index].CallID)
+	}
+
+	return callIDs
+}
+
+func runtimePersistIdentityEvent(callID, parentCallID, name string, sequence int) ToolEvent {
+	return ToolEvent{
+		CallID: callID, ParentCallID: parentCallID, Sequence: sequence,
+		Name: name, ArgumentsJSON: "", DetailsJSON: "", Result: "", Error: "", IsError: false,
+	}
 }
 
 func runtimePersistTestToolCall() *ToolCallEvent {

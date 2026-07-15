@@ -30,6 +30,7 @@ type DatabaseService struct {
 	Documents  *database.DocumentRepository
 	Tasks      *database.TaskRepository
 	AgentTasks *database.AgentTaskRepository
+	Workflows  *database.WorkflowRepository
 	path       string
 }
 
@@ -63,6 +64,7 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 		Documents:  database.NewDocumentRepositoryWithProvider(sqlProvider),
 		Tasks:      database.NewTaskRepositoryWithProvider(sqlProvider),
 		AgentTasks: database.NewAgentTaskRepositoryWithProvider(sqlProvider),
+		Workflows:  database.NewWorkflowRepositoryWithProvider(sqlProvider),
 		path:       databasePath,
 	}, nil
 }

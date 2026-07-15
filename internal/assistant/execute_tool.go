@@ -8,6 +8,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/executeworker"
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -95,6 +96,30 @@ func (executor *executeToolExecutor) Execute(ctx context.Context, input tool.Arg
 	}
 
 	return tool.TextResult(text, executeResultDetails(result)), nil
+}
+
+func (executor *executeToolExecutor) handleWorkerMessage(
+	ctx context.Context,
+	message *executeworker.Message,
+) (any, error) {
+	switch message.Method {
+	case "search":
+		return executor.search(message.Query), nil
+	case "describe":
+		return executor.describe(message.Name), nil
+	case executeCallMethod:
+		var nestedInput any
+		if err := json.Unmarshal(message.Input, &nestedInput); err != nil {
+			return nil, oops.In("assistant").Code("execute_rpc_input").Wrapf(err, "decode nested tool input")
+		}
+
+		return executor.call(ctx, message.Name, nestedInput), nil
+	default:
+		return nil, oops.In("assistant").Code("execute_rpc_method").Errorf(
+			"unknown execute worker RPC method %q",
+			message.Method,
+		)
+	}
 }
 
 func (executor *executeToolExecutor) search(query string) []map[string]any {
@@ -200,7 +225,11 @@ func executeDefinitionMap(definition *tool.Definition) map[string]any {
 
 func executeResultText(result mvmhost.Result) (string, error) {
 	if result.Value == nil {
-		return result.Stdout, nil
+		if result.Stdout != "" {
+			return result.Stdout, nil
+		}
+
+		return "null", nil
 	}
 
 	encoded, err := json.Marshal(result.Value)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
@@ -50,14 +51,29 @@ func (repository *AgentTaskRepository) Create(
 	ctx context.Context,
 	agentTask *AgentTaskEntity,
 ) (*AgentTaskEntity, error) {
+	created, now, err := repository.prepareCreate(agentTask)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+		return insertAgentTask(ctx, transaction, created, now)
+	}); err != nil {
+		return nil, oops.In("database").Code("create_agent_task").Wrapf(err, "create agent task")
+	}
+
+	return created, nil
+}
+
+func (repository *AgentTaskRepository) prepareCreate(agentTask *AgentTaskEntity) (*AgentTaskEntity, time.Time, error) {
 	now := repository.tasks.now().UTC()
 	created := *agentTask
 	created.Task.ID = newUUIDv7()
 	created.Task.Kind = TaskKindAgent
 	created.Task.State = TaskQueued
 	created.Task.CreatedAt = now
-
 	created.Task.UpdatedAt = now
+
 	if created.PolicyJSON == "" {
 		created.PolicyJSON = "{}"
 	}
@@ -67,37 +83,30 @@ func (repository *AgentTaskRepository) Create(
 	}
 
 	if err := validateAgentTaskEntity(&created); err != nil {
-		return nil, oops.In("database").Code("validate_agent_task").Wrapf(err, "validate agent task")
+		return nil, time.Time{}, oops.In("database").Code("validate_agent_task").Wrapf(err, "validate agent task")
 	}
 
-	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		if err := insertTask(ctx, transaction, &created.Task); err != nil {
-			return err
-		}
+	return &created, now, nil
+}
 
-		const statement = `
-INSERT INTO agent_tasks (
+func insertAgentTask(ctx context.Context, transaction ksql.Provider, created *AgentTaskEntity, now time.Time) error {
+	if err := insertTask(ctx, transaction, &created.Task); err != nil {
+		return err
+	}
+
+	const statement = `INSERT INTO agent_tasks (
     task_id, child_session_id, agent_name, prompt, model,
     provider, policy_json, usage_json, depth
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-
-		_, err := transaction.Exec(
-			ctx, statement, created.Task.ID, created.ChildSessionID,
-			created.AgentName, created.Prompt, created.Model, created.Provider,
-			created.PolicyJSON, created.UsageJSON, created.Depth,
-		)
-		if err != nil {
-			return oops.In("database").Code("insert_agent_task").Wrapf(err, "insert agent task")
-		}
-
-		_, err = insertTaskEvent(ctx, transaction, created.Task.ID, 1, "task_queued", "{}", now)
-
-		return err
-	}); err != nil {
-		return nil, oops.In("database").Code("create_agent_task").Wrapf(err, "create agent task")
+	if _, err := transaction.Exec(ctx, statement, created.Task.ID, created.ChildSessionID,
+		created.AgentName, created.Prompt, created.Model, created.Provider,
+		created.PolicyJSON, created.UsageJSON, created.Depth); err != nil {
+		return oops.In("database").Code("insert_agent_task").Wrapf(err, "insert agent task")
 	}
 
-	return &created, nil
+	_, err := insertTaskEvent(ctx, transaction, created.Task.ID, 1, "task_queued", "{}", now)
+
+	return err
 }
 
 // Finish atomically records agent usage, terminal task state, and its event.

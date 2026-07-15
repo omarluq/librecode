@@ -72,8 +72,8 @@ func (runner *fakeRunner) unblock() {
 func TestNewServiceValidatesOptionsAndUsesDefaults(t *testing.T) {
 	t.Parallel()
 
-	_, err := agenttask.New(context.Background(), agenttask.Options{
-		Tasks: nil, AgentTasks: nil, Runner: nil, Logger: nil, Timeout: 0,
+	_, err := agenttask.New(context.Background(), &agenttask.Options{
+		Tasks: nil, AgentTasks: nil, Workflows: nil, Runner: nil, Logger: nil, Timeout: 0,
 		Concurrency: 0, SessionConcurrency: 0, QueueCapacity: 0,
 	})
 	require.ErrorContains(t, err, "required")
@@ -82,8 +82,8 @@ func TestNewServiceValidatesOptionsAndUsesDefaults(t *testing.T) {
 
 	var nilContext context.Context
 
-	_, err = agenttask.New(nilContext, agenttask.Options{
-		Tasks: tasks, AgentTasks: agentTasks, Runner: new(fakeRunner), Logger: nil, Concurrency: 0,
+	_, err = agenttask.New(nilContext, &agenttask.Options{
+		Tasks: tasks, AgentTasks: agentTasks, Workflows: nil, Runner: new(fakeRunner), Logger: nil, Concurrency: 0,
 		SessionConcurrency: 0, QueueCapacity: 0, Timeout: 0,
 	})
 	require.ErrorContains(t, err, "process context")
@@ -101,8 +101,10 @@ func TestServiceAgentTaskAdaptersAndSubscriptionCancellation(t *testing.T) {
 	})
 
 	created, err := service.SubmitAgentTask(t.Context(), &assistant.AgentTaskRequest{
+		ParentTaskID:   "",
 		OwnerSessionID: parent.ID, ChildSessionID: child.ID, AgentName: generalAgentName,
-		Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, Depth: 1,
+		Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: parent.ID,
+		NodeKey: "", InvocationIndex: 0, Depth: 1,
 	})
 	require.NoError(t, err)
 
@@ -344,8 +346,8 @@ func TestServiceEnforcesSessionConcurrency(t *testing.T) {
 		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
 		started: make(chan string, 3), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
 	}
-	service, err := agenttask.New(context.Background(), agenttask.Options{
-		Tasks: tasks, AgentTasks: agentTasks, Runner: runner, Logger: nil, Concurrency: 2,
+	service, err := agenttask.New(context.Background(), &agenttask.Options{
+		Tasks: tasks, AgentTasks: agentTasks, Workflows: nil, Runner: runner, Logger: nil, Concurrency: 2,
 		SessionConcurrency: 1, QueueCapacity: 4, Timeout: time.Minute,
 	})
 	require.NoError(t, err)
@@ -387,8 +389,8 @@ func TestServiceRejectsWorkWhenQueueIsFull(t *testing.T) {
 		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
 		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
 	}
-	service, err := agenttask.New(context.Background(), agenttask.Options{
-		Tasks: tasks, AgentTasks: agentTasks, Runner: runner, Logger: nil, Concurrency: 1,
+	service, err := agenttask.New(context.Background(), &agenttask.Options{
+		Tasks: tasks, AgentTasks: agentTasks, Workflows: nil, Runner: runner, Logger: nil, Concurrency: 1,
 		SessionConcurrency: 1, QueueCapacity: 1, Timeout: time.Minute,
 	})
 	require.NoError(t, err)
@@ -450,8 +452,8 @@ func newService(
 ) *agenttask.Service {
 	t.Helper()
 
-	service, err := agenttask.New(context.Background(), agenttask.Options{
-		Tasks: tasks, AgentTasks: agentTasks, Runner: runner, Logger: nil, Concurrency: 1,
+	service, err := agenttask.New(context.Background(), &agenttask.Options{
+		Tasks: tasks, AgentTasks: agentTasks, Workflows: nil, Runner: runner, Logger: nil, Concurrency: 1,
 		SessionConcurrency: 0, QueueCapacity: 0, Timeout: time.Minute,
 	})
 	require.NoError(t, err)

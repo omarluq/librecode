@@ -38,7 +38,7 @@ func TestRenameSessionValidation(t *testing.T) {
 	app := newRenderTestApp(t)
 
 	require.EqualError(t, app.renameSession(context.Background(), "name"), "no active session")
-	app.sessionID = "session-1"
+	app.sessionID = workflowTestSessionID
 	require.EqualError(t, app.renameSession(context.Background(), ""), "name is required")
 }
 

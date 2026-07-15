@@ -188,6 +188,7 @@ func TestRenderParityResumedHistoryViewport(t *testing.T) {
 		Extensions: nil,
 		Resources:  nil,
 		Runtime:    runtime,
+		Workflows:  nil,
 		Settings:   nil,
 		Models:     nil,
 		Auth:       nil,

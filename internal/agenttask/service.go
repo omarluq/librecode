@@ -78,6 +78,7 @@ type SubmitRequest struct {
 type Options struct {
 	Tasks      *database.TaskRepository
 	AgentTasks *database.AgentTaskRepository
+	Workflows  *database.WorkflowRepository
 	Runner     Runner
 	Logger     *slog.Logger
 	Timeout    time.Duration
@@ -95,6 +96,7 @@ type Service struct {
 	active                     map[string]context.CancelFunc
 	subscribers                map[string]map[uint64]chan database.TaskEventEntity
 	agentTasks                 *database.AgentTaskRepository
+	workflows                  *database.WorkflowRepository
 	queue                      chan string
 	cancel                     context.CancelFunc
 	done                       <-chan struct{}
@@ -115,7 +117,7 @@ type Service struct {
 }
 
 // New creates and starts a task service.
-func New(ctx context.Context, options Options) (*Service, error) {
+func New(ctx context.Context, options *Options) (*Service, error) {
 	if options.Tasks == nil || options.AgentTasks == nil || options.Runner == nil {
 		return nil, errors.New("agenttask: tasks, agent tasks, and runner are required")
 	}
@@ -142,7 +144,7 @@ func New(ctx context.Context, options Options) (*Service, error) {
 
 	service := &Service{
 		runner: options.Runner, done: serviceCtx.Done(), tasks: options.Tasks,
-		agentTasks: options.AgentTasks, queue: make(chan string, queueCapacity),
+		agentTasks: options.AgentTasks, workflows: options.Workflows, queue: make(chan string, queueCapacity),
 		cancel: cancel, active: make(map[string]context.CancelFunc),
 		sessionSlots:   make(map[string]chan struct{}),
 		subscribers:    make(map[string]map[uint64]chan database.TaskEventEntity),
@@ -175,7 +177,7 @@ func New(ctx context.Context, options Options) (*Service, error) {
 	return service, nil
 }
 
-func optionDefaults(options Options) (
+func optionDefaults(options *Options) (
 	concurrency int,
 	sessionConcurrency int,
 	queueCapacity int,
@@ -209,23 +211,38 @@ func (service *Service) SubmitAgentTask(
 	ctx context.Context,
 	request *assistant.AgentTaskRequest,
 ) (*database.AgentTaskEntity, error) {
-	return service.Submit(ctx, &SubmitRequest{
-		ParentTaskID:   "",
-		OwnerSessionID: request.OwnerSessionID,
-		ChildSessionID: request.ChildSessionID,
-		ConcurrencyKey: request.OwnerSessionID,
-		AgentName:      request.AgentName,
-		Prompt:         request.Prompt,
-		Model:          request.Model,
-		Provider:       request.Provider,
-		PolicyJSON:     request.PolicyJSON,
-		Depth:          request.Depth,
-	})
+	submit := &SubmitRequest{
+		ParentTaskID: request.ParentTaskID, OwnerSessionID: request.OwnerSessionID,
+		ChildSessionID: request.ChildSessionID, ConcurrencyKey: request.ConcurrencyKey,
+		AgentName: request.AgentName, Prompt: request.Prompt, Model: request.Model,
+		Provider: request.Provider, PolicyJSON: request.PolicyJSON, Depth: request.Depth,
+	}
+	if request.ParentTaskID != "" && service.workflows != nil {
+		created, err := service.workflows.CreateAgentTask(
+			ctx, request.ParentTaskID, agentTaskEntity(submit), request.NodeKey, request.InvocationIndex,
+		)
+		if err != nil {
+			return nil, oops.In("agenttask").Code("create_workflow_task").Wrapf(err, "create workflow agent task")
+		}
+
+		return service.enqueueCreated(ctx, created)
+	}
+
+	return service.Submit(ctx, submit)
 }
 
 // Submit durably accepts a task before making it available to workers.
 func (service *Service) Submit(ctx context.Context, request *SubmitRequest) (*database.AgentTaskEntity, error) {
-	created, err := service.agentTasks.Create(ctx, &database.AgentTaskEntity{
+	created, err := service.agentTasks.Create(ctx, agentTaskEntity(request))
+	if err != nil {
+		return nil, oops.In("agenttask").Code("create_task").Wrapf(err, "create agent task")
+	}
+
+	return service.enqueueCreated(ctx, created)
+}
+
+func agentTaskEntity(request *SubmitRequest) *database.AgentTaskEntity {
+	return &database.AgentTaskEntity{
 		Task: database.TaskEntity{
 			ID: "", Kind: "", ParentTaskID: request.ParentTaskID,
 			OwnerSessionID: request.OwnerSessionID, ConcurrencyKey: request.ConcurrencyKey,
@@ -236,12 +253,7 @@ func (service *Service) Submit(ctx context.Context, request *SubmitRequest) (*da
 		ChildSessionID: request.ChildSessionID, AgentName: request.AgentName,
 		Prompt: request.Prompt, Model: request.Model, Provider: request.Provider,
 		PolicyJSON: request.PolicyJSON, UsageJSON: "{}", Depth: request.Depth,
-	})
-	if err != nil {
-		return nil, oops.In("agenttask").Code("create_task").Wrapf(err, "create agent task")
 	}
-
-	return service.enqueueCreated(ctx, created)
 }
 
 func (service *Service) enqueueCreated(

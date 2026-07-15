@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // register sqlite driver for assistant runtime tests
@@ -71,6 +72,38 @@ func newRuntimeOutsideTempDir(t *testing.T) string {
 	})
 
 	return dir
+}
+
+func TestRuntime_PromptPersistsSuccessfulNestedToolsInExecutionGroups(t *testing.T) {
+	t.Parallel()
+
+	cwd := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(cwd, "one.txt"), []byte("one"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(cwd, "two.txt"), []byte("two"), 0o600))
+
+	runtime, repository := newTestRuntimeWithClient(t, nestedExecuteCompleter{})
+	request := newRuntimePromptRequest(cwd, "nested persistence", "")
+	response, err := runtime.Prompt(context.Background(), request)
+	require.NoError(t, err)
+
+	require.Len(t, response.ToolEvents, 3)
+	assert.Equal(t, []string{"execute-call/1", "execute-call/2", "execute-call"}, []string{
+		response.ToolEvents[0].CallID,
+		response.ToolEvents[1].CallID,
+		response.ToolEvents[2].CallID,
+	})
+
+	messages := requireRuntimeMessages(t, repository, response.SessionID, 5)
+	assert.Equal(t, database.RoleToolResult, messages[1].Role)
+	assert.Contains(t, messages[1].Content, "call_id: execute-call/1")
+	assert.Contains(t, messages[1].Content, "parent_call_id: execute-call")
+	assert.Equal(t, database.RoleToolResult, messages[2].Role)
+	assert.Contains(t, messages[2].Content, "call_id: execute-call/2")
+	assert.Contains(t, messages[2].Content, "parent_call_id: execute-call")
+	assert.Equal(t, database.RoleToolResult, messages[3].Role)
+	assert.Contains(t, messages[3].Content, "call_id: execute-call")
+	assert.NotContains(t, messages[3].Content, "parent_call_id:")
+	assert.Equal(t, database.RoleAssistant, messages[4].Role)
 }
 
 func TestRuntime_PromptPersistsConversation(t *testing.T) {
@@ -969,6 +1002,33 @@ func assertRuntimeMessage(
 	for _, unexpected := range want.excludes {
 		assert.NotContains(t, message.Content, unexpected, "message[%d].Content", index)
 	}
+}
+
+type nestedExecuteCompleter struct{}
+
+func (nestedExecuteCompleter) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	source := `import "tools"
+tools.Call("read", map[string]interface{}{"path": "one.txt"})
+tools.Call("read", map[string]interface{}{"path": "two.txt"})`
+	arguments := testutil.ToolArguments(map[string]any{"source": source})
+
+	events, err := request.ExecuteTools(ctx, []assistant.ToolCall{{
+		Metadata: nil, ArgumentsJSON: arguments.String(), ID: "execute-call", Name: "execute", Arguments: arguments,
+	}}, request.OnEvent)
+	if err != nil {
+		return nil, oops.In("assistant_test").Code("execute_nested_tools").Wrapf(err, "execute nested tools")
+	}
+
+	return &assistant.CompletionResult{
+		FinishReason: llm.FinishReasonStop,
+		Text:         "done",
+		Thinking:     nil,
+		ToolEvents:   events,
+		Usage:        model.EmptyTokenUsage(),
+	}, nil
 }
 
 type testCompleter struct{}

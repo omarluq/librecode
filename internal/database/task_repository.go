@@ -157,6 +157,15 @@ func (repository *TaskRepository) Create(ctx context.Context, task *TaskEntity) 
 
 // ClaimQueued atomically moves a queued task to running, assigns its lease, and appends an event.
 func (repository *TaskRepository) ClaimQueued(ctx context.Context, claim *TaskClaim) (bool, error) {
+	return repository.claim(ctx, claim, TaskQueued)
+}
+
+// ClaimInterrupted atomically resumes an interrupted task as running with a new lease.
+func (repository *TaskRepository) ClaimInterrupted(ctx context.Context, claim *TaskClaim) (bool, error) {
+	return repository.claim(ctx, claim, TaskInterrupted)
+}
+
+func (repository *TaskRepository) claim(ctx context.Context, claim *TaskClaim, from TaskState) (bool, error) {
 	if claim == nil || strings.TrimSpace(claim.LeaseOwner) == "" || claim.LeaseExpiresAt.IsZero() {
 		return false, errors.New("database: task claim requires an owner and expiry")
 	}
@@ -170,13 +179,14 @@ func (repository *TaskRepository) ClaimQueued(ctx context.Context, claim *TaskCl
 	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
 		now := repository.now().UTC()
 
-		const update = `UPDATE tasks SET state = ?, started_at = COALESCE(started_at, ?),
-updated_at = ?, lease_owner = ?, lease_expires_at = ? WHERE id = ? AND state = ?`
+		const update = `UPDATE tasks SET state = ?, started_at = COALESCE(started_at, ?), finished_at = NULL,
+updated_at = ?, lease_owner = ?, lease_expires_at = ?, result = '', error_code = '', error_message = ''
+WHERE id = ? AND state = ?`
 
 		result, err := transaction.Exec(ctx, update, TaskRunning, formatTime(now), formatTime(now),
-			claim.LeaseOwner, formatTime(claim.LeaseExpiresAt.UTC()), claim.TaskID, TaskQueued)
+			claim.LeaseOwner, formatTime(claim.LeaseExpiresAt.UTC()), claim.TaskID, from)
 		if err != nil {
-			return oops.In("database").Code("claim_task").Wrapf(err, "claim queued task")
+			return oops.In("database").Code("claim_task").Wrapf(err, "claim task")
 		}
 
 		rows, err := result.RowsAffected()
@@ -199,7 +209,7 @@ updated_at = ?, lease_owner = ?, lease_expires_at = ? WHERE id = ? AND state = ?
 		return err
 	})
 	if err != nil {
-		return false, oops.In("database").Code("claim_task").Wrapf(err, "claim queued task")
+		return false, oops.In("database").Code("claim_task").Wrapf(err, "claim task")
 	}
 
 	return changed, nil

@@ -218,7 +218,7 @@ func TestAgentCompletionSurvivesPromptStreamingReset(t *testing.T) {
 	app.appendStreamingBlock(transcript.RoleAssistant, "parent response")
 
 	app.applyPromptResponse(context.Background(), &assistant.PromptResponse{
-		Usage: model.EmptyTokenUsage(), SessionID: "session-1", UserEntryID: "", AssistantEntryID: "",
+		Usage: model.EmptyTokenUsage(), SessionID: workflowTestSessionID, UserEntryID: "", AssistantEntryID: "",
 		Text: "parent response", Thinking: nil, ToolEvents: nil, Cached: false,
 	}, 1)
 

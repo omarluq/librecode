@@ -73,6 +73,11 @@ func (c *Container) AgentTaskService() *AgentTaskService {
 	return do.MustInvoke[*AgentTaskService](c.injector)
 }
 
+// WorkflowService resolves script-driven durable agent orchestration.
+func (c *Container) WorkflowService() *WorkflowService {
+	return do.MustInvoke[*WorkflowService](c.injector)
+}
+
 // ToolService resolves the tool service.
 func (c *Container) ToolService() *ToolService {
 	return do.MustInvoke[*ToolService](c.injector)

@@ -75,6 +75,7 @@ func runChat(cmd *cobra.Command, options chatRunOptions) error {
 			Extensions: extensionManager,
 			Resources:  &resources,
 			Runtime:    runtime,
+			Workflows:  container.WorkflowService().Runs,
 			Settings:   databaseService.Documents,
 			Models:     modelRegistry,
 			Auth:       authStorage,
