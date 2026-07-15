@@ -741,6 +741,9 @@ func TestAsyncEventDataHelpers(t *testing.T) {
 
 	assert.Empty(t, toolExtensionData(nil))
 	toolData := toolExtensionData(&assistant.ToolEvent{
+		CallID:        "",
+		ParentCallID:  "",
+		Sequence:      0,
 		Name:          asyncTestToolStart,
 		ArgumentsJSON: "{}",
 		DetailsJSON:   "details",
@@ -765,6 +768,9 @@ func asyncTestUsage() *model.TokenUsage {
 
 func asyncTestToolEvent() *assistant.ToolEvent {
 	return &assistant.ToolEvent{
+		CallID:        "",
+		ParentCallID:  "",
+		Sequence:      0,
 		Name:          asyncTestToolName,
 		ArgumentsJSON: "{}",
 		DetailsJSON:   "",

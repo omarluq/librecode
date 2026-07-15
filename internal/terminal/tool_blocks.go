@@ -39,7 +39,7 @@ func (app *App) renderToolBlock(width int, message chatMessage) []tui.Line {
 	return app.renderToolDisplayBlock(width, &display)
 }
 
-func (app *App) renderRunningToolBlock(width int, call assistant.ToolCallEvent) []tui.Line {
+func (app *App) renderRunningToolBlock(width int, call *assistant.ToolCallEvent) []tui.Line {
 	display := toolDisplayFromCall(call)
 
 	return app.renderToolDisplayBlock(width, &display)

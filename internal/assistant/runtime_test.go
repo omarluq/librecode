@@ -861,6 +861,9 @@ func emitPendingToolStart(request *assistant.CompletionRequest) {
 	emitPartialText(request)
 	request.OnEvent(assistant.StreamEvent{
 		ToolCallEvent: &assistant.ToolCallEvent{
+			ParentCallID: "",
+			Sequence:     0,
+
 			ArgumentsJSON: testToolArgsJSON,
 			ID:            testToolCallID,
 			Name:          testToolName,
@@ -882,6 +885,10 @@ func emitPartialToolResult(request *assistant.CompletionRequest) {
 	request.OnEvent(assistant.StreamEvent{
 		ToolCallEvent: nil,
 		ToolEvent: &assistant.ToolEvent{
+			CallID:       "",
+			ParentCallID: "",
+			Sequence:     0,
+
 			Name:          testToolName,
 			ArgumentsJSON: testToolArgsJSON,
 			DetailsJSON:   "",

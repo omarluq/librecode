@@ -15,6 +15,9 @@ func TestApplyToolCallMutationAppliesEmptyArguments(t *testing.T) {
 	t.Parallel()
 
 	call := &ToolCallEvent{
+		ParentCallID: "",
+		Sequence:     0,
+
 		Arguments:     testutil.ToolArguments(map[string]any{"path": "old.txt"}),
 		ArgumentsJSON: `{"path":"old.txt"}`,
 		ID:            "",

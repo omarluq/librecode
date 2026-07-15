@@ -65,6 +65,9 @@ func newAgentTaskControllerStub(
 
 func agentToolEvent(name, details string, isError bool) *assistant.ToolEvent {
 	return &assistant.ToolEvent{
+		CallID:        "",
+		ParentCallID:  "",
+		Sequence:      0,
 		Name:          name,
 		ArgumentsJSON: "",
 		DetailsJSON:   details,

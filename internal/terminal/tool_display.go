@@ -38,7 +38,7 @@ type toolDisplay struct {
 	Status        toolDisplayStatus
 }
 
-func toolDisplayFromCall(call assistant.ToolCallEvent) toolDisplay {
+func toolDisplayFromCall(call *assistant.ToolCallEvent) toolDisplay {
 	return toolDisplay{
 		Title:         toolSummary(call.Name, call.ArgumentsJSON, toolArgumentsMap(call.Arguments)),
 		Name:          call.Name,

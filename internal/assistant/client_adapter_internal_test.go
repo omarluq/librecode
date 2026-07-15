@@ -21,6 +21,8 @@ const (
 	adapterHeaderKey     = "x-test"
 	adapterBaseURL       = "https://example.test"
 	adapterHeaderValue   = "enabled"
+	adapterToolCallID    = "call-1"
+	adapterParentCallID  = "outer"
 	adapterThought       = " thought "
 	adapterBlankThought  = "   "
 	adapterReadPath      = "README.md"
@@ -243,38 +245,55 @@ func TestToolExecutorAdapterConvertsCallsEventsAndErrors(t *testing.T) {
 			require.Len(t, calls, 1)
 			observedCall = calls[0]
 
-			onEvent(streamEvent(StreamEventToolResult, "", adapterToolEvent(), nil))
+			event := ToolEvent{
+				DetailsJSON: "",
+				Error:       "",
+				IsError:     false,
 
-			return []ToolEvent{{
+				CallID:        adapterToolCallID,
+				ParentCallID:  adapterParentCallID,
 				Name:          jsonReadToolName,
 				ArgumentsJSON: adapterReadArgs,
-				DetailsJSON:   "",
 				Result:        "ok",
-				Error:         "",
-				IsError:       false,
-			}}, nil
+				Sequence:      2,
+			}
+			onEvent(streamEvent(StreamEventToolResult, "", &event, nil))
+
+			return []ToolEvent{event}, nil
 		},
 	)
 
 	results, err := executor(
 		context.Background(),
 		[]llm.ToolCall{{
-			Metadata:      map[string]any{"m": true},
+			Metadata: map[string]any{
+				"m":              true,
+				"parent_call_id": adapterParentCallID,
+				"sequence":       float64(2),
+			},
 			Arguments:     testutil.ToolArguments(map[string]any{jsonPathKey: adapterReadPath}),
-			ID:            "call-1",
+			ID:            adapterToolCallID,
 			Name:          jsonReadToolName,
 			ArgumentsJSON: adapterReadArgs,
 		}},
 		func(chunk *llm.StreamChunk) { observedEvent = chunk },
 	)
 	require.NoError(t, err)
-	assert.Equal(t, "call-1", observedCall.ID)
+	assert.Equal(t, adapterToolCallID, observedCall.ID)
+	assert.Equal(t, adapterParentCallID, observedCall.Metadata["parent_call_id"])
 	assert.Equal(t, adapterReadPath, testutil.ToolArgumentFields(observedCall.Arguments)[jsonPathKey])
 	require.NotNil(t, observedEvent)
 	require.NotNil(t, observedEvent.Part)
 	assert.Equal(t, llm.PartToolResult, observedEvent.Part.Type)
+	require.NotNil(t, observedEvent.Part.ToolResult)
+	assert.Equal(t, adapterToolCallID, observedEvent.Part.ToolResult.ToolCallID)
+	assert.Equal(t, adapterParentCallID, observedEvent.Part.ToolResult.Metadata["parent_call_id"])
+	assert.Equal(t, 2, observedEvent.Part.ToolResult.Metadata["sequence"])
 	require.Len(t, results, 1)
 	assert.Equal(t, expectedReadToolName, results[0].Name)
+	assert.Equal(t, adapterToolCallID, results[0].ToolCallID)
+	assert.Equal(t, adapterParentCallID, results[0].Metadata["parent_call_id"])
+	assert.Equal(t, 2, results[0].Metadata["sequence"])
 
 	assert.Nil(t, llmToolExecutor(nil))
 	assert.Nil(t, assistantStreamEventHandler(nil))
@@ -364,6 +383,10 @@ func streamEvent(kind StreamEventKind, text string, event *ToolEvent, usage *mod
 
 func adapterToolEvent() *ToolEvent {
 	return &ToolEvent{
+		CallID:       "",
+		ParentCallID: "",
+		Sequence:     0,
+
 		Name:          jsonReadToolName,
 		ArgumentsJSON: "",
 		DetailsJSON:   "",

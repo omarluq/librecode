@@ -194,7 +194,7 @@ func (app *App) dynamicMessageLineGroups(width int) [][]tui.Line {
 	}
 
 	for index := range app.runningToolBlocks {
-		groups = append(groups, app.renderRunningToolBlock(width, app.runningToolBlocks[index].Call))
+		groups = append(groups, app.renderRunningToolBlock(width, &app.runningToolBlocks[index].Call))
 	}
 
 	if app.busy() {

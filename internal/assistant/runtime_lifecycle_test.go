@@ -175,6 +175,9 @@ func TestRuntime_PromptEmitsSideEffectMessageAppendEvents(t *testing.T) {
 			Thinking:     []string{"reasoning"},
 			ToolEvents: []assistant.ToolEvent{
 				{
+					CallID:        "",
+					ParentCallID:  "",
+					Sequence:      0,
 					Name:          testToolName,
 					ArgumentsJSON: testToolArgsJSON,
 					DetailsJSON:   "",

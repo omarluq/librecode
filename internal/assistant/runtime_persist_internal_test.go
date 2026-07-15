@@ -9,12 +9,19 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-const runtimePersistTestArgsJSON = `{"path":"a.go"}`
+const (
+	runtimePersistTestArgsJSON = `{"path":"a.go"}`
+	runtimePersistToolCallID   = "call-1"
+)
 
 func TestFormatToolEventIncludesErrorMarker(t *testing.T) {
 	t.Parallel()
 
 	formatted := formatToolEvent(&ToolEvent{
+		CallID:       "",
+		ParentCallID: "",
+		Sequence:     0,
+
 		Name:          jsonBashToolName,
 		ArgumentsJSON: `{"command":"false"}`,
 		DetailsJSON:   `{"exit_code":1}`,
@@ -71,8 +78,11 @@ func TestPartialPromptProgressResetClearsPendingTools(t *testing.T) {
 
 func runtimePersistTestToolCall() *ToolCallEvent {
 	return &ToolCallEvent{
+		ParentCallID: "",
+		Sequence:     0,
+
 		ArgumentsJSON: runtimePersistTestArgsJSON,
-		ID:            "call-1",
+		ID:            runtimePersistToolCallID,
 		Name:          jsonReadToolName,
 		Arguments:     tool.EmptyArguments(),
 	}
@@ -80,6 +90,10 @@ func runtimePersistTestToolCall() *ToolCallEvent {
 
 func runtimePersistTestToolResult() *ToolEvent {
 	return &ToolEvent{
+		CallID:       "",
+		ParentCallID: "",
+		Sequence:     0,
+
 		Name:          jsonReadToolName,
 		ArgumentsJSON: runtimePersistTestArgsJSON,
 		DetailsJSON:   "",

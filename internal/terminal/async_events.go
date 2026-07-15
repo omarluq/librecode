@@ -615,8 +615,10 @@ func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackNa
 		call = &assistant.ToolCallEvent{
 			Arguments:     tool.EmptyArguments(),
 			ID:            "",
+			ParentCallID:  "",
 			Name:          fallbackName,
 			ArgumentsJSON: "",
+			Sequence:      0,
 		}
 	}
 

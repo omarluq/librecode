@@ -78,6 +78,10 @@ func (runtime *Runtime) promptToolRegistry(cwd, sessionID string) (*tool.Registr
 		}
 	}
 
+	if err := registry.Register(newExecuteTool(runtime, registry)); err != nil {
+		return nil, oops.In("assistant").Code("register_execute_tool").Wrapf(err, "register execute tool")
+	}
+
 	return registry, nil
 }
 

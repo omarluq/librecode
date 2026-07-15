@@ -31,6 +31,7 @@ func TestAgentManagementToolsUseTaskSummaryInsteadOfToolBlocks(t *testing.T) {
 
 	app.applyStreamedToolStart(&call, "")
 	app.applyStreamedToolEvent(&assistant.ToolEvent{
+		CallID: "", ParentCallID: "", Sequence: 0,
 		Name: agentStartToolName, ArgumentsJSON: call.ArgumentsJSON, DetailsJSON: "",
 		Result: "started", Error: "", IsError: false,
 	})
@@ -294,10 +295,13 @@ func runningToolAppendRenderRemoveCase() runningToolBlockTestCase {
 			app.applyStreamedToolStart(&call, "")
 			require.NotEmpty(t, app.runningToolBlocks)
 
-			lines := app.renderRunningToolBlock(80, app.runningToolBlocks[0].Call)
+			lines := app.renderRunningToolBlock(80, &app.runningToolBlocks[0].Call)
 			assert.NotEqual(t, -1, lineIndexContaining(lines, "◌ $ go test ./..."))
 
 			app.applyStreamedToolEvent(&assistant.ToolEvent{
+				CallID:        "",
+				ParentCallID:  "",
+				Sequence:      0,
 				Name:          testToolBash,
 				ArgumentsJSON: bashTestArguments,
 				DetailsJSON:   "",
@@ -345,6 +349,9 @@ func runningToolRemoveByNameAndArgumentsCase() runningToolBlockTestCase {
 				testRunningToolBlock(testToolWrite, sharedArguments),
 			}
 			app.removeRunningToolBlock(&assistant.ToolEvent{
+				CallID:        "",
+				ParentCallID:  "",
+				Sequence:      0,
 				Name:          testToolWrite,
 				ArgumentsJSON: sharedArguments,
 				DetailsJSON:   "",
@@ -368,6 +375,9 @@ func runningToolRemoveByNameFallbackCase() runningToolBlockTestCase {
 				testRunningToolBlock(testToolBash, `{"command":"go test"}`),
 			}
 			app.removeRunningToolBlock(&assistant.ToolEvent{
+				CallID:        "",
+				ParentCallID:  "",
+				Sequence:      0,
 				Name:          testToolBash,
 				ArgumentsJSON: "",
 				DetailsJSON:   "",
@@ -414,8 +424,10 @@ func testToolCallEvent(name, argumentsJSON string) assistant.ToolCallEvent {
 	return assistant.ToolCallEvent{
 		Arguments:     tool.EmptyArguments(),
 		ID:            "",
+		ParentCallID:  "",
 		Name:          name,
 		ArgumentsJSON: argumentsJSON,
+		Sequence:      0,
 	}
 }
 
