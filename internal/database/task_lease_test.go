@@ -54,25 +54,20 @@ func TestTaskRepositoryLeasesFenceWorkersAndRecovery(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, transitioned)
 
-	finished, err := tasks.Finish(ctx, &database.TaskFinish{
-		TaskID: created.ID, From: []database.TaskState{database.TaskRunning},
-		TargetState: database.TaskSucceeded, EventKind: taskSucceededEvent, Result: "", ErrorCode: "",
-		ErrorMessage: "", PayloadJSON: `{}`, LeaseOwner: "",
-	})
+	finish := func(leaseOwner string) (bool, error) {
+		return tasks.Finish(ctx, &database.TaskFinish{
+			TaskID: created.ID, From: []database.TaskState{database.TaskRunning},
+			TargetState: database.TaskSucceeded, EventKind: taskSucceededEvent, Result: "", ErrorCode: "",
+			ErrorMessage: "", PayloadJSON: `{}`, LeaseOwner: leaseOwner,
+		})
+	}
+	finished, err := finish("")
 	require.NoError(t, err)
 	assert.False(t, finished)
-	finished, err = tasks.Finish(ctx, &database.TaskFinish{
-		TaskID: created.ID, From: []database.TaskState{database.TaskRunning},
-		TargetState: database.TaskSucceeded, EventKind: taskSucceededEvent, Result: "", ErrorCode: "",
-		ErrorMessage: "", PayloadJSON: `{}`, LeaseOwner: "worker-two",
-	})
+	finished, err = finish("worker-two")
 	require.NoError(t, err)
 	assert.False(t, finished)
-	finished, err = tasks.Finish(ctx, &database.TaskFinish{
-		TaskID: created.ID, From: []database.TaskState{database.TaskRunning},
-		TargetState: database.TaskSucceeded, EventKind: taskSucceededEvent, Result: "", ErrorCode: "",
-		ErrorMessage: "", PayloadJSON: `{}`, LeaseOwner: "worker-one",
-	})
+	finished, err = finish("worker-one")
 	require.NoError(t, err)
 	assert.True(t, finished)
 
