@@ -155,21 +155,26 @@ func TestProviderAndToolPayloads(t *testing.T) {
 	assert.Equal(t, true, providerErr[lifecyclepayload.ProviderBodyTruncatedKey])
 	assert.Equal(t, map[string]any{"input_count": 2}, providerErr[lifecyclepayload.ProviderRequestShapeKey])
 
-	toolCall := lifecyclepayload.ToolCallPayload(lifecyclepayload.ToolCall{
+	toolCall := lifecyclepayload.ToolCallPayload(&lifecyclepayload.ToolCall{
 		Arguments:     testutil.ToolArguments(map[string]any{"path": "README.md"}),
 		ID:            "call-1",
+		ParentCallID:  "",
 		Name:          "read",
 		ArgumentsJSON: `{"path":"README.md"}`,
+		Sequence:      0,
 	})
 	assert.Equal(t, "call-1", toolCall["call_id"])
 	assert.Equal(t, "read", toolCall[lifecyclepayload.ToolNameKey])
 
 	toolResult := lifecyclepayload.ToolResultPayload(&lifecyclepayload.ToolResult{
+		CallID:        "",
+		ParentCallID:  "",
 		Name:          "read",
 		ArgumentsJSON: "{}",
 		DetailsJSON:   "{}",
 		Result:        "ok",
 		Error:         "failed",
+		Sequence:      0,
 		IsError:       true,
 	})
 	assert.Equal(t, true, toolResult["is_error"])

@@ -1285,6 +1285,9 @@ func TestBottomMessageLinesExpandedToolUsesTailWithoutFullRender(t *testing.T) {
 		"line 5",
 	}, "\n")
 	app.addMessage(transcript.RoleToolResult, formatToolEventForUI(&assistant.ToolEvent{
+		CallID:        "",
+		ParentCallID:  "",
+		Sequence:      0,
 		Name:          "read",
 		ArgumentsJSON: "{}",
 		DetailsJSON:   "",
@@ -1801,6 +1804,9 @@ func newTestAsyncEvent(kind asyncEventKind, text string) *asyncEvent {
 
 func newTestToolEvent(name, result string) *assistant.ToolEvent {
 	return &assistant.ToolEvent{
+		CallID:        "",
+		ParentCallID:  "",
+		Sequence:      0,
 		Name:          name,
 		ArgumentsJSON: "",
 		DetailsJSON:   "",

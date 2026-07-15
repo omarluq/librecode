@@ -55,6 +55,9 @@ end)
 			runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 			loadRuntimeExtension(t, manager, testCase.lua)
 			call := assistant.ToolCallEvent{
+				ParentCallID: "",
+				Sequence:     0,
+
 				Arguments:     testCase.initialArguments,
 				ID:            testToolCallID,
 				Name:          testToolName,
@@ -88,6 +91,10 @@ func TestRuntime_ToolResultLifecycleAppliesResultMutation(t *testing.T) {
 		{
 			name: "redacts result and clears error",
 			initialEvent: &assistant.ToolEvent{
+				CallID:       "",
+				ParentCallID: "",
+				Sequence:     0,
+
 				Name:          testToolName,
 				ArgumentsJSON: testToolArgsJSON,
 				DetailsJSON:   "{}",
@@ -145,12 +152,19 @@ end)
 `)
 
 	call := assistant.ToolCallEvent{
+		ParentCallID: "",
+		Sequence:     0,
+
 		Arguments:     testutil.ToolArguments(map[string]any{testToolPathKey: testToolPath}),
 		ID:            testToolCallID,
 		Name:          testToolName,
 		ArgumentsJSON: testToolArgsJSON,
 	}
 	event := &assistant.ToolEvent{
+		CallID:       "",
+		ParentCallID: "",
+		Sequence:     0,
+
 		Name:          testToolName,
 		ArgumentsJSON: testToolArgsJSON,
 		DetailsJSON:   "{}",
@@ -184,6 +198,10 @@ end)
 `)
 
 	event := &assistant.ToolEvent{
+		CallID:       "",
+		ParentCallID: "",
+		Sequence:     0,
+
 		Name:          testToolName,
 		ArgumentsJSON: testToolArgsJSON,
 		DetailsJSON:   "",

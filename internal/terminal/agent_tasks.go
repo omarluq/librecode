@@ -427,6 +427,9 @@ func (app *App) persistAgentCompletion(ctx context.Context, content string) {
 
 func formatAgentCompletionForUI(completion string) string {
 	return formatToolEventForUI(&assistant.ToolEvent{
+		CallID:        "",
+		ParentCallID:  "",
+		Sequence:      0,
 		Name:          "agent_result",
 		ArgumentsJSON: "",
 		DetailsJSON:   "",

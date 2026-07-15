@@ -109,22 +109,45 @@ func (runtime *Runtime) loadSkillWithReadTool(
 
 	payload, err := skillReadArgumentsJSON(skill.FilePath, limit)
 	if err != nil {
-		return "", ToolEvent{}, assistantError(err, "build skill read arguments")
+		return "", ToolEvent{
+			CallID:        "",
+			ParentCallID:  "",
+			Name:          "",
+			ArgumentsJSON: "",
+			DetailsJSON:   "",
+			Result:        "",
+			Error:         "",
+			Sequence:      0,
+			IsError:       false,
+		}, assistantError(err, "build skill read arguments")
 	}
 
 	arguments, err := tool.ArgumentsFromRaw(payload)
 	if err != nil {
-		return "", ToolEvent{}, assistantError(err, "build skill read arguments")
+		return "", ToolEvent{
+			CallID:        "",
+			ParentCallID:  "",
+			Name:          "",
+			ArgumentsJSON: "",
+			DetailsJSON:   "",
+			Result:        "",
+			Error:         "",
+			Sequence:      0,
+			IsError:       false,
+		}, assistantError(err, "build skill read arguments")
 	}
 
 	result, err := registry.Execute(ctx, string(tool.NameRead), arguments)
 
 	toolEvent = ToolEvent{
+		CallID:        "",
+		ParentCallID:  "",
 		Name:          "load skill: " + skill.Name,
 		ArgumentsJSON: string(payload),
 		DetailsJSON:   "",
 		Result:        "",
 		Error:         "",
+		Sequence:      0,
 		IsError:       false,
 	}
 	if err != nil {

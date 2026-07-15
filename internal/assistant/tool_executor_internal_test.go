@@ -176,7 +176,10 @@ func TestToolEventFromResultFormatsEmptyOutput(t *testing.T) {
 	t.Parallel()
 
 	event := toolEventFromResult(
-		ToolCallEvent{
+		&ToolCallEvent{
+			ParentCallID: "",
+			Sequence:     0,
+
 			Arguments:     tool.EmptyArguments(),
 			ID:            "",
 			Name:          jsonReadToolName,
@@ -198,6 +201,10 @@ func TestLLMToolResultFromToolEvent(t *testing.T) {
 	assert.False(t, empty.IsError)
 
 	result := llmToolResultFromToolEvent(&ToolEvent{
+		CallID:       "",
+		ParentCallID: "",
+		Sequence:     0,
+
 		Name:          jsonReadToolName,
 		ArgumentsJSON: toolExecutorReadArgs,
 		DetailsJSON:   `{"diff":"+added"}`,

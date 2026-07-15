@@ -110,17 +110,22 @@ type ProviderError struct {
 type ToolCall struct {
 	ArgumentsJSON string
 	ID            string
+	ParentCallID  string
 	Name          string
 	Arguments     tool.Arguments
+	Sequence      int
 }
 
 // ToolResult describes a tool-result lifecycle payload.
 type ToolResult struct {
+	CallID        string
+	ParentCallID  string
 	Name          string
 	ArgumentsJSON string
 	DetailsJSON   string
 	Result        string
 	Error         string
+	Sequence      int
 	IsError       bool
 }
 
@@ -339,9 +344,15 @@ func ProviderErrorPayload(providerErr *ProviderError) map[string]any {
 }
 
 // ToolCallPayload builds tool-call lifecycle payloads.
-func ToolCallPayload(call ToolCall) map[string]any {
+func ToolCallPayload(call *ToolCall) map[string]any {
+	if call == nil {
+		return map[string]any{}
+	}
+
 	return map[string]any{
 		"call_id":        call.ID,
+		"parent_call_id": call.ParentCallID,
+		"sequence":       call.Sequence,
 		ToolNameKey:      call.Name,
 		"arguments_json": call.ArgumentsJSON,
 		"arguments":      call.Arguments,
@@ -355,6 +366,9 @@ func ToolResultPayload(event *ToolResult) map[string]any {
 	}
 
 	return map[string]any{
+		"call_id":        event.CallID,
+		"parent_call_id": event.ParentCallID,
+		"sequence":       event.Sequence,
 		ToolNameKey:      event.Name,
 		"arguments_json": event.ArgumentsJSON,
 		"details_json":   event.DetailsJSON,

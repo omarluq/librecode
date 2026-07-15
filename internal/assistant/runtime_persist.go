@@ -72,11 +72,12 @@ func (runtime *Runtime) appendAssistantSideEffects(
 		parentID = &entry.ID
 	}
 
-	for _, event := range bundle.ToolEvents {
+	for index := range bundle.ToolEvents {
+		event := &bundle.ToolEvents[index]
 		message := database.MessageEntity{
 			Timestamp: time.Now().UTC(),
 			Role:      database.RoleToolResult,
-			Content:   formatToolEvent(&event),
+			Content:   formatToolEvent(event),
 			Provider:  runtime.cfg.Assistant.Provider,
 			Model:     runtime.cfg.Assistant.Model,
 		}
@@ -272,10 +273,10 @@ func (progress *partialPromptProgress) failureMessages(promptErr error) []partia
 		})
 	}
 
-	for _, event := range toolEvents {
+	for index := range toolEvents {
 		messages = append(messages, partialPromptMessage{
 			Role:    database.RoleToolResult,
-			Content: formatToolEvent(&event),
+			Content: formatToolEvent(&toolEvents[index]),
 		})
 	}
 
@@ -348,6 +349,10 @@ func (progress *partialPromptProgress) syntheticToolFailureEvents(promptErr erro
 	events := make([]ToolEvent, 0, len(progress.pendingTools))
 	for _, pending := range progress.pendingTools {
 		events = append(events, ToolEvent{
+			CallID:       "",
+			ParentCallID: "",
+			Sequence:     0,
+
 			Name:          pending.Name,
 			ArgumentsJSON: pending.ArgumentsJSON,
 			DetailsJSON:   "",

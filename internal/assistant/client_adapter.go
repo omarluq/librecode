@@ -188,11 +188,14 @@ func toolEventsFromLLMParts(parts []llm.Part) []ToolEvent {
 
 func emptyToolEvent() ToolEvent {
 	return ToolEvent{
+		CallID:        "",
+		ParentCallID:  "",
 		Name:          "",
 		ArgumentsJSON: "",
 		DetailsJSON:   "",
 		Result:        "",
 		Error:         "",
+		Sequence:      0,
 		IsError:       false,
 	}
 }
@@ -203,11 +206,14 @@ func toolEventFromLLMToolResult(result *llm.ToolResult) ToolEvent {
 	}
 
 	return ToolEvent{
+		CallID:        result.ToolCallID,
+		ParentCallID:  stringFromOptions(result.Metadata, "parent_call_id"),
 		Name:          result.Name,
 		ArgumentsJSON: result.ArgumentsJSON,
 		DetailsJSON:   stringFromOptions(result.Metadata, "details_json"),
 		Result:        textFromLLMParts(result.Content),
 		Error:         result.Error,
+		Sequence:      intFromOptions(result.Metadata, "sequence"),
 		IsError:       result.IsError,
 	}
 }
@@ -296,14 +302,23 @@ func toolCallEventPointerFromLLMPart(part *llm.Part) *ToolCallEvent {
 
 func toolCallEventFromLLMToolCall(call *llm.ToolCall) ToolCallEvent {
 	if call == nil {
-		return ToolCallEvent{Arguments: tool.EmptyArguments(), ID: "", Name: "", ArgumentsJSON: ""}
+		return ToolCallEvent{
+			ArgumentsJSON: "",
+			ID:            "",
+			ParentCallID:  "",
+			Name:          "",
+			Arguments:     tool.EmptyArguments(),
+			Sequence:      0,
+		}
 	}
 
 	return ToolCallEvent{
 		Arguments:     call.Arguments,
 		ID:            call.ID,
+		ParentCallID:  stringFromOptions(call.Metadata, "parent_call_id"),
 		Name:          call.Name,
 		ArgumentsJSON: call.ArgumentsJSON,
+		Sequence:      intFromOptions(call.Metadata, "sequence"),
 	}
 }
 
@@ -319,7 +334,7 @@ func llmToolCallFromToolCallEvent(event *ToolCallEvent, fallbackName string) llm
 	}
 
 	return llm.ToolCall{
-		Metadata:      nil,
+		Metadata:      toolIdentityMetadata(event.ParentCallID, event.Sequence),
 		Arguments:     event.Arguments,
 		ID:            event.ID,
 		Name:          event.Name,
@@ -477,6 +492,32 @@ func stringFromOptions(options map[string]any, key string) string {
 	}
 
 	return value
+}
+
+func intFromOptions(options map[string]any, key string) int {
+	switch value := options[key].(type) {
+	case int:
+		return value
+	case int32:
+		return int(value)
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	default:
+		return 0
+	}
+}
+
+func toolIdentityMetadata(parentCallID string, sequence int) map[string]any {
+	if parentCallID == "" && sequence == 0 {
+		return nil
+	}
+
+	return map[string]any{
+		"parent_call_id": parentCallID,
+		"sequence":       sequence,
+	}
 }
 
 func hookAttempt(input *llm.HookInput) int {

@@ -62,17 +62,22 @@ type CompletionResult struct {
 type ToolCallEvent struct {
 	ArgumentsJSON string         `json:"arguments_json"`
 	ID            string         `json:"id"`
+	ParentCallID  string         `json:"parent_call_id,omitempty"`
 	Name          string         `json:"name"`
 	Arguments     tool.Arguments `json:"arguments,omitzero"`
+	Sequence      int            `json:"sequence,omitempty"`
 }
 
 // ToolEvent captures one tool call for persistence and TUI rendering.
 type ToolEvent struct {
+	CallID        string `json:"call_id,omitempty"`
+	ParentCallID  string `json:"parent_call_id,omitempty"`
 	Name          string `json:"name"`
 	ArgumentsJSON string `json:"arguments_json"`
 	DetailsJSON   string `json:"details_json,omitempty"`
 	Result        string `json:"result"`
 	Error         string `json:"error,omitempty"`
+	Sequence      int    `json:"sequence,omitempty"`
 	IsError       bool   `json:"is_error,omitempty"`
 }
 

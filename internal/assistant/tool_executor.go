@@ -3,7 +3,9 @@ package assistant
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/samber/oops"
 
@@ -32,6 +34,38 @@ func (runtime *Runtime) executeProviderToolCalls(
 	}
 }
 
+type toolInvocationScope struct {
+	onEvent      func(StreamEvent)
+	trace        func(name, argumentsJSON string, result *tool.Result, event *ToolEvent)
+	parentCallID string
+	nextSequence int
+	mu           sync.Mutex
+}
+
+func (scope *toolInvocationScope) nextCall(name string) ToolCallEvent {
+	scope.mu.Lock()
+	defer scope.mu.Unlock()
+
+	scope.nextSequence++
+	sequence := scope.nextSequence
+
+	callID := fmt.Sprintf("%s/%d", scope.parentCallID, sequence)
+	if scope.parentCallID == "" {
+		callID = fmt.Sprintf("nested/%d", sequence)
+	}
+
+	return ToolCallEvent{
+		ArgumentsJSON: "",
+		ID:            callID,
+		ParentCallID:  scope.parentCallID,
+		Name:          name,
+		Arguments:     tool.EmptyArguments(),
+		Sequence:      sequence,
+	}
+}
+
+type toolInvocationContextKey struct{}
+
 func (runtime *Runtime) executeProviderToolCall(
 	ctx context.Context,
 	registry *tool.Registry,
@@ -39,10 +73,12 @@ func (runtime *Runtime) executeProviderToolCall(
 	onEvent func(StreamEvent),
 ) ToolEvent {
 	callEvent := ToolCallEvent{
-		Arguments:     tool.EmptyArguments(),
 		ArgumentsJSON: "",
 		ID:            "",
+		ParentCallID:  "",
 		Name:          "",
+		Arguments:     tool.EmptyArguments(),
+		Sequence:      0,
 	}
 	if call != nil {
 		callEvent.Arguments = call.Arguments
@@ -51,16 +87,31 @@ func (runtime *Runtime) executeProviderToolCall(
 		callEvent.ArgumentsJSON = call.ArgumentsJSON
 	}
 
-	if err := runtime.dispatchToolCallLifecycle(ctx, &callEvent); err != nil {
+	event, _ := runtime.invokeToolResult(ctx, registry, &callEvent, onEvent)
+
+	return event
+}
+
+func (runtime *Runtime) invokeToolResult(
+	ctx context.Context,
+	registry *tool.Registry,
+	callEvent *ToolCallEvent,
+	onEvent func(StreamEvent),
+) (ToolEvent, tool.Result) {
+	if err := runtime.dispatchToolCallLifecycle(ctx, callEvent); err != nil {
 		event := toolLifecycleErrorEvent(callEvent, err)
 		emitProviderToolResult(onEvent, &event)
 
-		return event
+		return event, tool.Result{Content: nil, Details: nil}
 	}
 
-	emitProviderToolStart(onEvent, &callEvent)
+	emitProviderToolStart(onEvent, callEvent)
 
-	result, err := registry.Execute(ctx, callEvent.Name, callEvent.Arguments)
+	scope := &toolInvocationScope{
+		onEvent: onEvent, trace: nil, parentCallID: callEvent.ID, nextSequence: 0, mu: sync.Mutex{},
+	}
+	nestedCtx := context.WithValue(ctx, toolInvocationContextKey{}, scope)
+	result, err := registry.Execute(nestedCtx, callEvent.Name, callEvent.Arguments)
 
 	event := toolEventFromResult(callEvent, result, err)
 	if lifecycleErr := runtime.dispatchToolResultLifecycle(ctx, &event); lifecycleErr != nil && runtime.logger != nil {
@@ -69,21 +120,68 @@ func (runtime *Runtime) executeProviderToolCall(
 
 	emitProviderToolResult(onEvent, &event)
 
-	return event
+	return event, result
 }
 
-func toolLifecycleErrorEvent(call ToolCallEvent, err error) ToolEvent {
+func (runtime *Runtime) invokeNestedTool(
+	ctx context.Context,
+	registry *tool.Registry,
+	name string,
+	arguments tool.Arguments,
+	argumentsJSON string,
+) (tool.Result, ToolEvent) {
+	scope := toolInvocationScopeFromContext(ctx)
+	call := ToolCallEvent{
+		ArgumentsJSON: argumentsJSON,
+		ID:            "",
+		ParentCallID:  "",
+		Name:          name,
+		Arguments:     arguments,
+		Sequence:      0,
+	}
+
+	var onEvent func(StreamEvent)
+
+	if scope != nil {
+		identity := scope.nextCall(name)
+		call.ID = identity.ID
+		call.ParentCallID = identity.ParentCallID
+		call.Sequence = identity.Sequence
+		onEvent = scope.onEvent
+	}
+
+	event, result := runtime.invokeToolResult(ctx, registry, &call, onEvent)
+	if scope != nil && scope.trace != nil {
+		scope.trace(name, argumentsJSON, &result, &event)
+	}
+
+	return result, event
+}
+
+func toolInvocationScopeFromContext(ctx context.Context) *toolInvocationScope {
+	scope, ok := ctx.Value(toolInvocationContextKey{}).(*toolInvocationScope)
+	if !ok {
+		return nil
+	}
+
+	return scope
+}
+
+func toolLifecycleErrorEvent(call *ToolCallEvent, err error) ToolEvent {
 	return ToolEvent{
+		CallID:        call.ID,
+		ParentCallID:  call.ParentCallID,
 		Name:          call.Name,
 		ArgumentsJSON: call.ArgumentsJSON,
 		DetailsJSON:   "",
 		Result:        err.Error(),
 		Error:         err.Error(),
+		Sequence:      call.Sequence,
 		IsError:       true,
 	}
 }
 
-func toolEventFromResult(call ToolCallEvent, result tool.Result, err error) ToolEvent {
+func toolEventFromResult(call *ToolCallEvent, result tool.Result, err error) ToolEvent {
 	resultText := result.Text()
 	detailsJSON := encodeToolDetails(result.Details)
 
@@ -96,11 +194,14 @@ func toolEventFromResult(call ToolCallEvent, result tool.Result, err error) Tool
 	}
 
 	event := ToolEvent{
+		CallID:        call.ID,
+		ParentCallID:  call.ParentCallID,
 		Name:          call.Name,
 		ArgumentsJSON: call.ArgumentsJSON,
 		DetailsJSON:   detailsJSON,
 		Result:        resultText,
 		Error:         "",
+		Sequence:      call.Sequence,
 		IsError:       false,
 	}
 	if err != nil {
@@ -161,7 +262,7 @@ func llmToolResultFromToolEvent(event *ToolEvent) llm.ToolResult {
 
 	return llm.ToolResult{
 		Metadata:      toolResultMetadataFromToolEvent(event),
-		ToolCallID:    "",
+		ToolCallID:    event.CallID,
 		ArgumentsJSON: event.ArgumentsJSON,
 		Name:          event.Name,
 		Error:         event.Error,
@@ -171,9 +272,20 @@ func llmToolResultFromToolEvent(event *ToolEvent) llm.ToolResult {
 }
 
 func toolResultMetadataFromToolEvent(event *ToolEvent) map[string]any {
-	if event == nil || strings.TrimSpace(event.DetailsJSON) == "" {
+	if event == nil {
 		return nil
 	}
 
-	return map[string]any{"details_json": event.DetailsJSON}
+	metadata := toolIdentityMetadata(event.ParentCallID, event.Sequence)
+	if strings.TrimSpace(event.DetailsJSON) == "" {
+		return metadata
+	}
+
+	if metadata == nil {
+		metadata = make(map[string]any, 1)
+	}
+
+	metadata["details_json"] = event.DetailsJSON
+
+	return metadata
 }

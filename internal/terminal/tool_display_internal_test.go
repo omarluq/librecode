@@ -189,11 +189,13 @@ func TestToolSummaryNumericArgumentTypes(t *testing.T) {
 func TestToolDisplayFromCallUsesStructuredArguments(t *testing.T) {
 	t.Parallel()
 
-	display := toolDisplayFromCall(assistant.ToolCallEvent{
+	display := toolDisplayFromCall(&assistant.ToolCallEvent{
 		Arguments:     testutil.ToolArguments(map[string]any{testToolCommandKey: "go test ./..."}),
 		ID:            "call_1",
+		ParentCallID:  "",
 		Name:          testToolBash,
 		ArgumentsJSON: `{"command":"stale"}`,
+		Sequence:      0,
 	})
 
 	assert.Equal(t, "$ go test ./...", display.Title)

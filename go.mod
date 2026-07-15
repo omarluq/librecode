@@ -24,7 +24,14 @@ require (
 	github.com/gofrs/uuid/v5 v5.4.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/invopop/jsonschema v0.14.0
+<<<<<<< New base: fix(deps): update module github.com/odvcencio/gotreesitter to v0.38.0
 	github.com/odvcencio/gotreesitter v0.38.0
+||||||| Common ancestor
+	github.com/odvcencio/gotreesitter v0.37.0
+=======
+	github.com/mvm-sh/mvm v0.5.0
+	github.com/odvcencio/gotreesitter v0.37.0
+>>>>>>> Current commit: feat(assistant): add MVM execute tool
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/pressly/goose/v3 v3.27.2
 	github.com/rs/zerolog v1.35.1

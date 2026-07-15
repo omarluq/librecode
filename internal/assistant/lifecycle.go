@@ -201,7 +201,7 @@ func (runtime *Runtime) dispatchToolCallLifecycle(ctx context.Context, call *Too
 		return nil
 	}
 
-	payload := lifecyclepayload.ToolCallPayload(lifecycleToolCall(*call))
+	payload := lifecyclepayload.ToolCallPayload(lifecycleToolCall(call))
 
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolCall, payload)
 	if err != nil {
@@ -291,22 +291,27 @@ func lifecyclePromptRequest(request *PromptRequest) *lifecyclepayload.PromptRequ
 	}
 }
 
-func lifecycleToolCall(call ToolCallEvent) lifecyclepayload.ToolCall {
-	return lifecyclepayload.ToolCall{
+func lifecycleToolCall(call *ToolCallEvent) *lifecyclepayload.ToolCall {
+	return &lifecyclepayload.ToolCall{
 		Arguments:     call.Arguments,
 		ID:            call.ID,
+		ParentCallID:  call.ParentCallID,
 		Name:          call.Name,
 		ArgumentsJSON: call.ArgumentsJSON,
+		Sequence:      call.Sequence,
 	}
 }
 
 func lifecycleToolResult(event *ToolEvent) *lifecyclepayload.ToolResult {
 	return &lifecyclepayload.ToolResult{
+		CallID:        event.CallID,
+		ParentCallID:  event.ParentCallID,
 		Name:          event.Name,
 		ArgumentsJSON: event.ArgumentsJSON,
 		DetailsJSON:   event.DetailsJSON,
 		Result:        event.Result,
 		Error:         event.Error,
+		Sequence:      event.Sequence,
 		IsError:       event.IsError,
 	}
 }
