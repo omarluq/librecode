@@ -2,9 +2,9 @@ package terminal
 
 import (
 	"context"
-	"github.com/omarluq/librecode/internal/tui"
 
 	"github.com/omarluq/librecode/internal/terminal/panel"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func (app *App) openSessionPanel(ctx context.Context) {
@@ -50,20 +50,27 @@ func (app *App) sessionItems(ctx context.Context) ([]tui.ListItem, error) {
 }
 
 func (app *App) applySessionSelection(ctx context.Context, value string) error {
+	settings, settingsFound, err := app.sessionSettings(ctx, value)
+	if err != nil {
+		return terminalError(err, "load session")
+	}
+
+	messages, err := app.sessionMessages(ctx, value)
+	if err != nil {
+		return terminalError(err, "load session")
+	}
+
 	app.resetAgentTaskTracking()
 	app.agentTaskSessionStack = nil
 	app.sessionID = value
 	app.pendingParentID = nil
 	app.resetMessages()
 
-	if err := app.loadSessionSettings(ctx); err != nil {
-		return terminalError(err, "load session")
+	if settingsFound {
+		app.applySessionSettings(&settings)
 	}
 
-	if err := app.loadInitialMessages(ctx); err != nil {
-		return terminalError(err, "load session")
-	}
-
+	app.appendSessionMessages(messages)
 	app.addSystemMessage("resumed session: " + value)
 	app.closePanel()
 

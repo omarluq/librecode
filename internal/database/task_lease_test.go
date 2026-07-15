@@ -16,8 +16,8 @@ func TestTaskRepositoryLeasesFenceWorkersAndRecovery(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, tasks := fixture.ctx, fixture.tasks
-	owner := fixture.createOwner()
+	ctx, tasks := t.Context(), fixture.tasks
+	owner := fixture.createOwner(t.Context())
 	created, err := tasks.Create(ctx, newTask(owner.ID))
 	require.NoError(t, err)
 
@@ -75,8 +75,8 @@ func TestTaskRepositoryRecoversExpiredLease(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, tasks := fixture.ctx, fixture.tasks
-	owner := fixture.createOwner()
+	ctx, tasks := t.Context(), fixture.tasks
+	owner := fixture.createOwner(t.Context())
 	created, err := tasks.Create(ctx, newTask(owner.ID))
 	require.NoError(t, err)
 
@@ -107,7 +107,7 @@ func TestTaskRepositoryLeaseValidation(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	task := fixture.createOwner()
+	task := fixture.createOwner(t.Context())
 	expires := time.Now().Add(time.Minute)
 	tests := []struct {
 		run       func() error
@@ -115,41 +115,41 @@ func TestTaskRepositoryLeaseValidation(t *testing.T) {
 		wantError string
 	}{
 		{name: "nil claim", wantError: leaseOwnerExpiryRequired, run: func() error {
-			_, err := fixture.tasks.ClaimQueued(fixture.ctx, nil)
+			_, err := fixture.tasks.ClaimQueued(t.Context(), nil)
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},
 		{name: "claim without owner", wantError: leaseOwnerExpiryRequired, run: func() error {
-			_, err := fixture.tasks.ClaimQueued(fixture.ctx, &database.TaskClaim{LeaseExpiresAt: expires, TaskID: "",
+			_, err := fixture.tasks.ClaimQueued(t.Context(), &database.TaskClaim{LeaseExpiresAt: expires, TaskID: "",
 				LeaseOwner: "", EventKind: ""})
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},
 		{name: "claim without event", wantError: eventKindRequired, run: func() error {
-			_, err := fixture.tasks.ClaimQueued(fixture.ctx, &database.TaskClaim{LeaseExpiresAt: expires, TaskID: "",
+			_, err := fixture.tasks.ClaimQueued(t.Context(), &database.TaskClaim{LeaseExpiresAt: expires, TaskID: "",
 				LeaseOwner: "worker", EventKind: ""})
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},
 		{name: "renew without owner", wantError: leaseOwnerExpiryRequired, run: func() error {
-			_, err := fixture.tasks.RenewLease(fixture.ctx, task.ID, "", expires)
+			_, err := fixture.tasks.RenewLease(t.Context(), task.ID, "", expires)
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},
 		{name: "nil recovery", wantError: "requires a terminal target", run: func() error {
-			_, err := fixture.tasks.RecoverExpired(fixture.ctx, nil)
+			_, err := fixture.tasks.RecoverExpired(t.Context(), nil)
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},
 		{name: "nonterminal recovery", wantError: "requires a terminal target", run: func() error {
-			_, err := fixture.tasks.RecoverExpired(fixture.ctx, &database.TaskRecovery{ExpiresBefore: time.Time{},
+			_, err := fixture.tasks.RecoverExpired(t.Context(), &database.TaskRecovery{ExpiresBefore: time.Time{},
 				Kind: "", EventKind: "", ErrorCode: "", ErrorMessage: "", PayloadJSON: "",
 				TargetState: database.TaskRunning})
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},
 		{name: "recovery with invalid event", wantError: eventKindRequired, run: func() error {
-			_, err := fixture.tasks.RecoverExpired(fixture.ctx, &database.TaskRecovery{ExpiresBefore: time.Time{},
+			_, err := fixture.tasks.RecoverExpired(t.Context(), &database.TaskRecovery{ExpiresBefore: time.Time{},
 				Kind: "", EventKind: "", ErrorCode: "", ErrorMessage: "", PayloadJSON: `{}`,
 				TargetState: database.TaskInterrupted})
 
@@ -169,8 +169,8 @@ func TestTaskRepositoryLeaseOperationsPropagateContextErrors(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	created := fixture.createOwner()
-	canceled, cancel := context.WithCancel(fixture.ctx)
+	created := fixture.createOwner(t.Context())
+	canceled, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	expires := time.Now().Add(time.Minute)

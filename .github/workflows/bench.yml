@@ -126,7 +126,6 @@ jobs:
           LIBRECODE_BENCH_SHARD_INDEX: ${{ matrix.shard }}
           LIBRECODE_BENCH_SHARD_TOTAL: ${{ github.event.inputs.shards || '64' }}
           LIBRECODE_BENCH_N_TASKS: ${{ github.event.inputs.n_tasks || '' }}
-          LIBRECODE_BENCH_TASK_LIST_FILE: bench/terminal-bench-2-1-tasks.txt
           LIBRECODE_BENCH_JOBS_DIR: jobs/shard-${{ matrix.shard }}
           LIBRECODE_BENCH_JOB_NAME: ${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
           LIBRECODE_BENCH_DEBUG: "true"

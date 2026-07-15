@@ -18,6 +18,9 @@ import (
 type TaskState string
 
 const (
+	eventKindField              = "event.kind"
+	readAffectedTaskRowsMessage = "read affected task rows"
+
 	// TaskKindAgent identifies asynchronous subagent work.
 	TaskKindAgent = "agent"
 
@@ -158,7 +161,7 @@ func (repository *TaskRepository) ClaimQueued(ctx context.Context, claim *TaskCl
 		return false, errors.New("database: task claim requires an owner and expiry")
 	}
 
-	if err := validateRequiredText("event.kind", claim.EventKind); err != nil {
+	if err := validateRequiredText(eventKindField, claim.EventKind); err != nil {
 		return false, err
 	}
 
@@ -178,7 +181,7 @@ updated_at = ?, lease_owner = ?, lease_expires_at = ? WHERE id = ? AND state = ?
 
 		rows, err := result.RowsAffected()
 		if err != nil {
-			return oops.In("database").Code("task_rows_affected").Wrapf(err, "read affected task rows")
+			return oops.In("database").Code("task_rows_affected").Wrapf(err, readAffectedTaskRowsMessage)
 		}
 
 		if rows != 1 {
@@ -226,7 +229,7 @@ WHERE id = ? AND lease_owner = ? AND state IN (?, ?)`
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, "read affected task rows")
+		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, readAffectedTaskRowsMessage)
 	}
 
 	return rows == 1, nil
@@ -254,7 +257,7 @@ func (repository *TaskRepository) Transition(
 		return false, errors.New("database: task transition requires a source state")
 	}
 
-	if err := validateRequiredText("event.kind", kind); err != nil {
+	if err := validateRequiredText(eventKindField, kind); err != nil {
 		return false, err
 	}
 
@@ -308,7 +311,7 @@ WHERE id = ? AND state = ?`
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, "read affected task rows")
+		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, readAffectedTaskRowsMessage)
 	}
 
 	if rows != 1 {
@@ -400,7 +403,7 @@ WHERE id = ? AND state = ? AND (? = '' OR lease_owner = ?)`
 
 	rows, err := updateResult.RowsAffected()
 	if err != nil {
-		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, "read affected task rows")
+		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, readAffectedTaskRowsMessage)
 	}
 
 	if rows != 1 {
@@ -488,7 +491,7 @@ func recoverExpiredTask(
 
 	count, err := result.RowsAffected()
 	if err != nil {
-		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, "read affected task rows")
+		return false, oops.In("database").Code("task_rows_affected").Wrapf(err, readAffectedTaskRowsMessage)
 	}
 
 	if count != 1 {
@@ -869,7 +872,7 @@ func nullableTime(value *time.Time) any {
 }
 
 func validateEvent(kind, payload string) error {
-	if err := validateRequiredText("event.kind", kind); err != nil {
+	if err := validateRequiredText(eventKindField, kind); err != nil {
 		return err
 	}
 

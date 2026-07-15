@@ -54,6 +54,36 @@ func serviceWithQueue() *Service {
 	return service
 }
 
+type countingRunner struct {
+	calls atomic.Int32
+}
+
+func (runner *countingRunner) Run(
+	context.Context,
+	*database.AgentTaskEntity,
+	EventSink,
+) (Result, error) {
+	runner.calls.Add(1)
+
+	return Result{Text: "", UsageJSON: ""}, nil
+}
+
+func leaseRenewalService(
+	logs *bytes.Buffer,
+	renewLease func(context.Context, string, string, time.Time) (bool, error),
+) *Service {
+	service := emptyService()
+	service.leaseOwner = workerName
+	service.leaseDuration = time.Minute
+	service.leaseRenewalRetryInterval = time.Millisecond
+	service.leaseRenewalAttemptTimeout = time.Second
+	service.leaseRenewalAttempts = 3
+	service.logger = slog.New(slog.NewTextHandler(logs, nil))
+	service.renewLeaseFn = renewLease
+
+	return service
+}
+
 func TestServiceInternalDefaultsAndTimeoutParsing(t *testing.T) {
 	t.Parallel()
 
@@ -290,6 +320,137 @@ func testCancelingTaskFinalization(
 	service.finalizeRun(t.Context(), canceling.Task.ID, Result{Text: "", UsageJSON: ""}, context.Canceled)
 }
 
+func TestServiceInternalSubmitRejectsBeforeWritableQueue(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		wantCode  string
+		wantError string
+		stop      bool
+		cancel    bool
+	}{
+		{
+			name: "canceled context", wantCode: "enqueue_canceled", wantError: "enqueue task",
+			stop: false, cancel: true,
+		},
+		{
+			name: "stopped service", wantCode: "service_stopped", wantError: "enqueue task",
+			stop: true, cancel: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, connection.Close()) })
+			require.NoError(t, database.Migrate(t.Context(), connection))
+			tasks := database.NewTaskRepository(connection)
+			agentTasks := database.NewAgentTaskRepository(connection)
+			sessions := database.NewSessionRepository(connection)
+			owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
+			require.NoError(t, err)
+			child, err := sessions.CreateSession(t.Context(), t.TempDir(), "child", owner.ID)
+			require.NoError(t, err)
+
+			entity := emptyAgentTask()
+			entity.Task.OwnerSessionID = owner.ID
+			entity.Task.ConcurrencyKey = owner.ID
+			entity.ChildSessionID = child.ID
+			entity.AgentName = generalAgent
+			entity.Prompt = workPrompt
+			entity.PolicyJSON = `{}`
+			entity.UsageJSON = `{}`
+			entity.Depth = 1
+			created, err := agentTasks.Create(t.Context(), entity)
+			require.NoError(t, err)
+
+			done := make(chan struct{})
+			if test.stop {
+				close(done)
+			}
+
+			service := serviceWithRepositories(tasks, agentTasks)
+			service.queue = make(chan string, 1)
+			service.done = done
+
+			ctx, cancel := context.WithCancel(t.Context())
+			if test.cancel {
+				cancel()
+			} else {
+				t.Cleanup(cancel)
+			}
+
+			returned, err := service.enqueueCreated(ctx, created)
+			require.ErrorContains(t, err, test.wantError)
+			require.Same(t, created, returned)
+			assert.Empty(t, service.queue)
+
+			stored, found, err := agentTasks.Get(t.Context(), created.Task.ID)
+			require.NoError(t, err)
+			require.True(t, found)
+			assert.Equal(t, database.TaskFailed, stored.Task.State)
+			assert.Equal(t, test.wantCode, stored.Task.ErrorCode)
+		})
+	}
+}
+
+func TestServiceInternalExecuteSkipsDurablyCancelingTask(t *testing.T) {
+	t.Parallel()
+
+	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+	require.NoError(t, database.Migrate(t.Context(), connection))
+	tasks := database.NewTaskRepository(connection)
+	agentTasks := database.NewAgentTaskRepository(connection)
+	sessions := database.NewSessionRepository(connection)
+	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
+	require.NoError(t, err)
+	child, err := sessions.CreateSession(t.Context(), t.TempDir(), "child", owner.ID)
+	require.NoError(t, err)
+
+	entity := emptyAgentTask()
+	entity.Task.OwnerSessionID = owner.ID
+	entity.Task.ConcurrencyKey = owner.ID
+	entity.ChildSessionID = child.ID
+	entity.AgentName = generalAgent
+	entity.Prompt = workPrompt
+	entity.PolicyJSON = `{}`
+	entity.UsageJSON = `{}`
+	entity.Depth = 1
+	created, err := agentTasks.Create(t.Context(), entity)
+	require.NoError(t, err)
+	changed, err := tasks.Transition(
+		t.Context(), created.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskRunning, "started",
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+	changed, err = tasks.Transition(
+		t.Context(), created.Task.ID, []database.TaskState{database.TaskRunning}, database.TaskCanceling, "canceling",
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	runner := new(countingRunner)
+	service := serviceWithRepositories(tasks, agentTasks)
+	service.runner = runner
+	service.active = make(map[string]context.CancelFunc)
+	service.timeout = time.Minute
+	service.leaseHeartbeatInterval = time.Minute
+	service.leaseDuration = time.Minute
+	service.leaseOwner = workerName
+	service.renewLeaseFn = tasks.RenewLease
+
+	_, err = service.execute(t.Context(), created.Task.ID, created)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Zero(t, runner.calls.Load())
+	assert.NotContains(t, service.active, created.Task.ID)
+}
+
 func TestServiceInternalShutdownCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -323,22 +484,13 @@ func TestServiceInternalLeaseRenewalRetriesTransientDatabaseErrors(t *testing.T)
 		logs     bytes.Buffer
 	)
 
-	service := &Service{
-		runner: nil, active: nil, subscribers: nil, agentTasks: nil, queue: nil, cancel: nil, done: nil,
-		sessionSlots: nil, tasks: nil, wg: sync.WaitGroup{}, nextSubscriber: 0, timeout: 0, sessionConcurrency: 0,
-		mu:         sync.Mutex{},
-		leaseOwner: workerName, leaseDuration: time.Minute,
-		leaseRenewalAttempts: 3, leaseRenewalRetryInterval: time.Millisecond,
-		leaseRenewalAttemptTimeout: time.Second, leaseHeartbeatInterval: 0,
-		logger: slog.New(slog.NewTextHandler(&logs, nil)),
-		renewLeaseFn: func(context.Context, string, string, time.Time) (bool, error) {
-			if attempts.Add(1) < 3 {
-				return false, errors.New("database is locked")
-			}
+	service := leaseRenewalService(&logs, func(context.Context, string, string, time.Time) (bool, error) {
+		if attempts.Add(1) < 3 {
+			return false, errors.New("database is locked")
+		}
 
-			return true, nil
-		},
-	}
+		return true, nil
+	})
 
 	assert.True(t, service.renewLeaseWithRetry(t.Context(), "task"))
 	assert.EqualValues(t, 3, attempts.Load())
@@ -354,20 +506,12 @@ func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 		logs     bytes.Buffer
 	)
 
-	service := &Service{
-		runner: nil, active: nil, subscribers: nil, agentTasks: nil, queue: nil, cancel: nil, done: nil,
-		sessionSlots: nil, tasks: nil, wg: sync.WaitGroup{}, nextSubscriber: 0, timeout: 0, sessionConcurrency: 0,
-		mu:         sync.Mutex{},
-		leaseOwner: workerName, leaseDuration: time.Minute,
-		leaseHeartbeatInterval: time.Millisecond, leaseRenewalRetryInterval: time.Millisecond,
-		leaseRenewalAttemptTimeout: time.Second, leaseRenewalAttempts: 3,
-		logger: slog.New(slog.NewTextHandler(&logs, nil)),
-		renewLeaseFn: func(context.Context, string, string, time.Time) (bool, error) {
-			attempts.Add(1)
+	service := leaseRenewalService(&logs, func(context.Context, string, string, time.Time) (bool, error) {
+		attempts.Add(1)
 
-			return false, errors.New("database is locked")
-		},
-	}
+		return false, errors.New("database is locked")
+	})
+	service.leaseHeartbeatInterval = time.Millisecond
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	service.renewLease(ctx, cancel, "task", done)
@@ -391,22 +535,14 @@ func TestServiceInternalLeaseRenewsThroughoutLongRun(t *testing.T) {
 	var renewals atomic.Int32
 
 	renewed := make(chan struct{}, wantedRenewals)
-	service := &Service{
-		runner: nil, active: nil, subscribers: nil, agentTasks: nil, queue: nil, cancel: nil, done: nil,
-		sessionSlots: nil, tasks: nil, wg: sync.WaitGroup{}, nextSubscriber: 0, timeout: 0, sessionConcurrency: 0,
-		mu:         sync.Mutex{},
-		leaseOwner: workerName, leaseDuration: time.Minute,
-		leaseHeartbeatInterval: time.Millisecond, leaseRenewalRetryInterval: time.Millisecond,
-		leaseRenewalAttemptTimeout: time.Second, leaseRenewalAttempts: 3,
-		logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)),
-		renewLeaseFn: func(context.Context, string, string, time.Time) (bool, error) {
-			renewals.Add(1)
+	service := leaseRenewalService(&bytes.Buffer{}, func(context.Context, string, string, time.Time) (bool, error) {
+		renewals.Add(1)
 
-			renewed <- struct{}{}
+		renewed <- struct{}{}
 
-			return true, nil
-		},
-	}
+		return true, nil
+	})
+	service.leaseHeartbeatInterval = time.Millisecond
 	ctx, cancel := context.WithCancel(t.Context())
 
 	done := make(chan struct{})

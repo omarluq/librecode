@@ -627,15 +627,30 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 }
 
 func (app *App) loadInitialMessages(ctx context.Context) error {
-	if app.sessionID == "" || app.runtime == nil {
-		return nil
-	}
-
-	messages, err := app.runtime.SessionRepository().TranscriptMessages(ctx, app.sessionID)
+	messages, err := app.sessionMessages(ctx, app.sessionID)
 	if err != nil {
-		return terminalError(err, "load initial messages")
+		return err
 	}
 
+	app.appendSessionMessages(messages)
+
+	return nil
+}
+
+func (app *App) sessionMessages(ctx context.Context, sessionID string) ([]database.SessionMessageEntity, error) {
+	if sessionID == "" || app.runtime == nil {
+		return nil, nil
+	}
+
+	messages, err := app.runtime.SessionRepository().TranscriptMessages(ctx, sessionID)
+	if err != nil {
+		return nil, terminalError(err, "load initial messages")
+	}
+
+	return messages, nil
+}
+
+func (app *App) appendSessionMessages(messages []database.SessionMessageEntity) {
 	for index := range messages {
 		message := &messages[index]
 		app.appendMessage(chatMessage{
@@ -648,8 +663,6 @@ func (app *App) loadInitialMessages(ctx context.Context) error {
 			app.recordPromptHistory(message.Content)
 		}
 	}
-
-	return nil
 }
 
 func (app *App) addSystemMessage(content string) {

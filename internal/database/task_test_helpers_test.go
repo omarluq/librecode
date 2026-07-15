@@ -23,7 +23,6 @@ const (
 )
 
 type taskTestFixture struct {
-	ctx      context.Context
 	t        *testing.T
 	agents   *database.AgentTaskRepository
 	tasks    *database.TaskRepository
@@ -37,7 +36,6 @@ func newTaskTestFixture(t *testing.T) *taskTestFixture {
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
 	return &taskTestFixture{
-		ctx:      t.Context(),
 		t:        t,
 		agents:   database.NewAgentTaskRepository(connection),
 		tasks:    database.NewTaskRepository(connection),
@@ -45,21 +43,23 @@ func newTaskTestFixture(t *testing.T) *taskTestFixture {
 	}
 }
 
-func (fixture *taskTestFixture) createOwner() *database.SessionEntity {
+func (fixture *taskTestFixture) createOwner(ctx context.Context) *database.SessionEntity {
 	fixture.t.Helper()
 
-	owner, err := fixture.sessions.CreateSession(fixture.ctx, fixture.t.TempDir(), "owner", "")
+	owner, err := fixture.sessions.CreateSession(ctx, fixture.t.TempDir(), "owner", "")
 	require.NoError(fixture.t, err)
 
 	return owner
 }
 
-func (fixture *taskTestFixture) createAgentTaskSessions() (parent, child *database.SessionEntity) {
+func (fixture *taskTestFixture) createAgentTaskSessions(
+	ctx context.Context,
+) (parent, child *database.SessionEntity) {
 	fixture.t.Helper()
 
-	parent, err := fixture.sessions.CreateSession(fixture.ctx, fixture.t.TempDir(), "parent", "")
+	parent, err := fixture.sessions.CreateSession(ctx, fixture.t.TempDir(), "parent", "")
 	require.NoError(fixture.t, err)
-	child, err = fixture.sessions.CreateSession(fixture.ctx, parent.CWD, "child", parent.ID)
+	child, err = fixture.sessions.CreateSession(ctx, parent.CWD, "child", parent.ID)
 	require.NoError(fixture.t, err)
 
 	return parent, child
