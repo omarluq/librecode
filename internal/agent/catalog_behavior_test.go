@@ -70,6 +70,12 @@ func TestCatalogResultsAreSortedAndDefensive(t *testing.T) {
 		)
 	}
 
+	writeDefinition(
+		t,
+		filepath.Join(cwd, core.ConfigDirName, "agents", "broken.md"),
+		"---\nname: broken\n---\nprompt",
+	)
+
 	catalog := agent.Load(cwd)
 	definitions := catalog.Definitions()
 	require.GreaterOrEqual(t, len(definitions), 2)
@@ -83,8 +89,10 @@ func TestCatalogResultsAreSortedAndDefensive(t *testing.T) {
 	assert.Equal(t, tool.NameRead, again.Tools[0])
 
 	diagnostics := catalog.Diagnostics()
-	diagnostics = append(diagnostics, agent.Diagnostic{Path: "", Message: "mutation"})
-	assert.NotEqual(t, diagnostics, catalog.Diagnostics())
+	require.NotEmpty(t, diagnostics)
+	originalMessage := diagnostics[0].Message
+	diagnostics[0].Message = "mutation"
+	assert.Equal(t, originalMessage, catalog.Diagnostics()[0].Message)
 }
 
 func TestCatalogReportsDiscoveryErrors(t *testing.T) {

@@ -45,13 +45,28 @@ func (app *App) loadLatestSessionSettings(ctx context.Context) error {
 }
 
 func (app *App) loadSettingsForSession(ctx context.Context, sessionID string) error {
+	settings, found, err := app.sessionSettings(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+
+	if found {
+		app.applySessionSettings(&settings)
+	}
+
+	return nil
+}
+
+func (app *App) sessionSettings(ctx context.Context, sessionID string) (sessionSettingsDocument, bool, error) {
+	var empty sessionSettingsDocument
+
 	if app.settings == nil || sessionID == "" {
-		return nil
+		return empty, false, nil
 	}
 
 	document, found, err := app.settings.Get(ctx, sessionSettingsNamespace, sessionID)
 	if err != nil || !found {
-		return terminalError(err, "load session settings")
+		return empty, false, terminalError(err, "load session settings")
 	}
 
 	settings := sessionSettingsDocument{
@@ -65,12 +80,10 @@ func (app *App) loadSettingsForSession(ctx context.Context, sessionID string) er
 		ToolsExpanded: false,
 	}
 	if err := json.Unmarshal([]byte(document.ValueJSON), &settings); err != nil {
-		return terminalError(err, "decode session settings")
+		return empty, false, terminalError(err, "decode session settings")
 	}
 
-	app.applySessionSettings(&settings)
-
-	return nil
+	return settings, true, nil
 }
 
 func (app *App) saveSessionSettings(ctx context.Context) error {

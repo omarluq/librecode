@@ -92,7 +92,12 @@ func TestSessionPanelOpenAndItems(t *testing.T) {
 		t.Fatalf("len(panel.items) = %d, want 2", len(items))
 	}
 
-	if items[0].Value != firstSession.ID && items[0].Value != secondSession.ID {
-		t.Fatalf("unexpected first session item value %q", items[0].Value)
+	itemIDs := map[string]bool{}
+	for _, item := range items {
+		itemIDs[item.Value] = true
+	}
+
+	if !itemIDs[firstSession.ID] || !itemIDs[secondSession.ID] {
+		t.Fatalf("session item IDs = %v, want %q and %q", itemIDs, firstSession.ID, secondSession.ID)
 	}
 }

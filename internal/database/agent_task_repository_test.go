@@ -15,8 +15,8 @@ func TestAgentTaskRepositoryLifecycle(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, agents, tasks := fixture.ctx, fixture.agents, fixture.tasks
-	parent, child := fixture.createAgentTaskSessions()
+	ctx, agents, tasks := t.Context(), fixture.agents, fixture.tasks
+	parent, child := fixture.createAgentTaskSessions(ctx)
 
 	created, err := agents.Create(ctx, newAgentTask(parent.ID, child.ID))
 	require.NoError(t, err)
@@ -81,8 +81,8 @@ func TestAgentTaskRepositoryFinishBehavior(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			fixture := newTaskTestFixture(t)
-			ctx, agents := fixture.ctx, fixture.agents
-			parent, child := fixture.createAgentTaskSessions()
+			ctx, agents := t.Context(), fixture.agents
+			parent, child := fixture.createAgentTaskSessions(ctx)
 			created, err := agents.Create(ctx, newAgentTask(parent.ID, child.ID))
 			require.NoError(t, err)
 
@@ -146,8 +146,8 @@ func TestAgentTaskRepositoryCreateValidationAndDefaults(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			fixture := newTaskTestFixture(t)
-			ctx, agents := fixture.ctx, fixture.agents
-			parent, child := fixture.createAgentTaskSessions()
+			ctx, agents := t.Context(), fixture.agents
+			parent, child := fixture.createAgentTaskSessions(ctx)
 			candidate := newAgentTask(parent.ID, child.ID)
 			test.mutate(candidate)
 
@@ -170,8 +170,8 @@ func TestAgentTaskRepositoryPropagatesContextErrors(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, agents := fixture.ctx, fixture.agents
-	parent, child := fixture.createAgentTaskSessions()
+	ctx, agents := t.Context(), fixture.agents
+	parent, child := fixture.createAgentTaskSessions(ctx)
 	created, err := agents.Create(ctx, newAgentTask(parent.ID, child.ID))
 	require.NoError(t, err)
 
@@ -211,7 +211,7 @@ func TestAgentTaskRepositoryGetMissing(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	entity, found, err := fixture.agents.Get(fixture.ctx, testUUIDV7(t))
+	entity, found, err := fixture.agents.Get(t.Context(), testUUIDV7(t))
 	require.NoError(t, err)
 	assert.False(t, found)
 	assert.Nil(t, entity)
@@ -221,8 +221,8 @@ func TestSessionDeleteRemovesChildAgentTaskAndEvents(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, agents, tasks, sessions := fixture.ctx, fixture.agents, fixture.tasks, fixture.sessions
-	parent, child := fixture.createAgentTaskSessions()
+	ctx, agents, tasks, sessions := t.Context(), fixture.agents, fixture.tasks, fixture.sessions
+	parent, child := fixture.createAgentTaskSessions(ctx)
 	created, err := agents.Create(ctx, newAgentTask(parent.ID, child.ID))
 	require.NoError(t, err)
 	require.NoError(t, sessions.DeleteSession(ctx, child.ID))
@@ -247,8 +247,8 @@ func TestTaskRepositoryAppendsPolymorphicEvents(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, agents, tasks := fixture.ctx, fixture.agents, fixture.tasks
-	parent, child := fixture.createAgentTaskSessions()
+	ctx, agents, tasks := t.Context(), fixture.agents, fixture.tasks
+	parent, child := fixture.createAgentTaskSessions(ctx)
 	created, err := agents.Create(ctx, newAgentTask(parent.ID, child.ID))
 	require.NoError(t, err)
 

@@ -28,8 +28,8 @@ func TestSessionDeletionTaskCascadeBehavior(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			fixture := newTaskTestFixture(t)
-			ctx, agents, tasks, sessions := fixture.ctx, fixture.agents, fixture.tasks, fixture.sessions
-			parent, child := fixture.createAgentTaskSessions()
+			ctx, agents, tasks, sessions := t.Context(), fixture.agents, fixture.tasks, fixture.sessions
+			parent, child := fixture.createAgentTaskSessions(ctx)
 			created, err := agents.Create(ctx, newAgentTask(parent.ID, child.ID))
 			require.NoError(t, err)
 			_, err = tasks.AppendEvent(ctx, created.Task.ID, "progress", `{}`)

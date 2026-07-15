@@ -15,8 +15,8 @@ func TestTaskRepositoryCreateGetAndList(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, tasks := fixture.ctx, fixture.tasks
-	owner := fixture.createOwner()
+	ctx, tasks := t.Context(), fixture.tasks
+	owner := fixture.createOwner(t.Context())
 
 	firstTask := newTask(owner.ID)
 	firstTask.ConcurrencyKey = "one"
@@ -84,8 +84,8 @@ func TestTaskRepositoryCreateValidation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			fixture := newTaskTestFixture(t)
-			ctx, tasks := fixture.ctx, fixture.tasks
-			owner := fixture.createOwner()
+			ctx, tasks := t.Context(), fixture.tasks
+			owner := fixture.createOwner(t.Context())
 			candidate := newTask(owner.ID)
 			test.mutate(candidate)
 
@@ -100,8 +100,8 @@ func TestTaskRepositoryPropagatesContextErrors(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, tasks := fixture.ctx, fixture.tasks
-	owner := fixture.createOwner()
+	ctx, tasks := t.Context(), fixture.tasks
+	owner := fixture.createOwner(t.Context())
 	created, err := tasks.Create(ctx, newTask(owner.ID))
 	require.NoError(t, err)
 
@@ -205,8 +205,8 @@ func TestTaskRepositoryTransitionBehavior(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			fixture := newTaskTestFixture(t)
-			ctx, tasks := fixture.ctx, fixture.tasks
-			owner := fixture.createOwner()
+			ctx, tasks := t.Context(), fixture.tasks
+			owner := fixture.createOwner(t.Context())
 			created, err := tasks.Create(ctx, newTask(owner.ID))
 			require.NoError(t, err)
 
@@ -253,8 +253,8 @@ func TestTaskRepositoryFinishBehavior(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			fixture := newTaskTestFixture(t)
-			ctx, tasks := fixture.ctx, fixture.tasks
-			owner := fixture.createOwner()
+			ctx, tasks := t.Context(), fixture.tasks
+			owner := fixture.createOwner(t.Context())
 			created, err := tasks.Create(ctx, newTask(owner.ID))
 			require.NoError(t, err)
 
@@ -289,8 +289,8 @@ func TestTaskRepositoryEventBehavior(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, tasks := fixture.ctx, fixture.tasks
-	owner := fixture.createOwner()
+	ctx, tasks := t.Context(), fixture.tasks
+	owner := fixture.createOwner(t.Context())
 	created, err := tasks.Create(ctx, newTask(owner.ID))
 	require.NoError(t, err)
 

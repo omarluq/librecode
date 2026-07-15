@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testSessionName = "named"
+
 func TestValidatePromptRunOptions(t *testing.T) {
 	t.Parallel()
 
@@ -41,7 +43,7 @@ func TestValidatePromptRunOptions(t *testing.T) {
 			wantErr: "--resume cannot be used with --session",
 		},
 		{
-			options: promptRunOptions{SessionID: "", SessionName: "named", Resume: true},
+			options: promptRunOptions{SessionID: "", SessionName: testSessionName, Resume: true},
 			name:    "resume with name",
 			wantErr: "--resume cannot be used with --name",
 		},
@@ -122,7 +124,7 @@ func TestNewPromptCmdRejectsConflictingSessionFlags(t *testing.T) {
 		{
 			name:    "resume and name",
 			wantErr: "--resume cannot be used with --name",
-			args:    []string{"--resume", "--name", "named", testHello},
+			args:    []string{"--resume", "--name", testSessionName, testHello},
 		},
 	}
 
@@ -159,24 +161,26 @@ func TestPromptMessageWrapsStdinReadError(t *testing.T) {
 	assert.Empty(t, message)
 }
 
-func TestRunPromptBuildsRuntimeRequest(t *testing.T) {
+func TestBuildPromptRequest(t *testing.T) {
 	t.Parallel()
 
-	const configYAML = "extensions:\n  use: []\nmodels:\n  discovery:\n    enabled: false\n"
+	request := buildPromptRequest("/workspace", "hello", promptRunOptions{
+		SessionID:   "session-1",
+		SessionName: testSessionName,
+		Resume:      true,
+	})
 
-	output := &strings.Builder{}
-	cmd := &cobra.Command{}
-	cmd.SetOut(output)
-	cmd.SetContext(t.Context())
-	cmd.PersistentFlags().String("config", writeTestConfig(t, configYAML), "")
-	cmd.PersistentFlags().Bool("no-extensions", true, "")
-
-	err := runPrompt(cmd, []string{"hello"}, promptRunOptions{SessionID: "", SessionName: "", Resume: false})
-	if err == nil {
-		assert.NotEmpty(t, output.String())
-	} else {
-		assert.NotEmpty(t, err.Error())
-	}
+	require.NotNil(t, request)
+	assert.Equal(t, "session-1", request.SessionID)
+	assert.Equal(t, "/workspace", request.CWD)
+	assert.Equal(t, "hello", request.Text)
+	assert.Equal(t, testSessionName, request.Name)
+	assert.True(t, request.ResumeLatest)
+	assert.Nil(t, request.OnEvent)
+	assert.Nil(t, request.OnRetry)
+	assert.Nil(t, request.OnUserEntry)
+	assert.Nil(t, request.ParentEntryID)
+	assert.False(t, request.HideUserPrompt)
 }
 
 func TestPromptMessageRejectsStdinAboveLimit(t *testing.T) {

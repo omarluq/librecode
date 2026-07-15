@@ -235,10 +235,39 @@ func (service *Service) Submit(ctx context.Context, request *SubmitRequest) (*da
 		return nil, oops.In("agenttask").Code("create_task").Wrapf(err, "create agent task")
 	}
 
+	return service.enqueueCreated(ctx, created)
+}
+
+func (service *Service) enqueueCreated(
+	ctx context.Context,
+	created *database.AgentTaskEntity,
+) (*database.AgentTaskEntity, error) {
+	if err := ctx.Err(); err != nil {
+		service.rejectQueuedTask(
+			created.Task.ID, "enqueue_canceled", "task submission was canceled before queue admission",
+		)
+
+		return created, oops.In("agenttask").Code("enqueue_canceled").Wrapf(err, "enqueue task")
+	}
+
+	select {
+	case <-service.done:
+		service.rejectQueuedTask(
+			created.Task.ID, "service_stopped", "task service stopped before queue admission",
+		)
+
+		return created, oops.In("agenttask").Code("service_stopped").Wrapf(context.Canceled, "enqueue task")
+	default:
+	}
+
 	select {
 	case service.queue <- created.Task.ID:
 		return created, nil
 	case <-service.done:
+		service.rejectQueuedTask(
+			created.Task.ID, "service_stopped", "task service stopped before queue admission",
+		)
+
 		return created, oops.In("agenttask").Code("service_stopped").Wrapf(context.Canceled, "enqueue task")
 	case <-ctx.Done():
 		service.rejectQueuedTask(
@@ -588,22 +617,23 @@ func (service *Service) execute(ctx context.Context, taskID string, task *databa
 	service.active[taskID] = cancel
 	service.mu.Unlock()
 
+	defer func() {
+		cancel()
+		<-heartbeatDone
+
+		service.mu.Lock()
+		delete(service.active, taskID)
+		service.mu.Unlock()
+	}()
+
 	// Cancellation can race with registration in active. Re-read durable state
 	// after registration so a canceling task never starts model or tool work.
 	current, found, err := service.tasks.Get(context.WithoutCancel(ctx), taskID)
 	if err == nil && found && current.State == database.TaskCanceling {
-		cancel()
+		return Result{Text: "", UsageJSON: ""}, context.Canceled
 	}
 
 	result, runErr := service.runner.Run(runCtx, task, service.eventSink(taskID))
-
-	cancel()
-	<-heartbeatDone
-
-	service.mu.Lock()
-	delete(service.active, taskID)
-	service.mu.Unlock()
-
 	if runErr != nil {
 		return result, oops.In("agenttask").Code("execute_task").Wrapf(runErr, "execute agent task")
 	}

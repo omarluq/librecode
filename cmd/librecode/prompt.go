@@ -80,7 +80,20 @@ func runPromptWithContainer(
 		return cliError(err, cliResolveWorkingDirectory)
 	}
 
-	response, err := runtime.Prompt(cmd.Context(), &assistant.PromptRequest{
+	response, err := runtime.Prompt(cmd.Context(), buildPromptRequest(cwd, message, options))
+	if err != nil {
+		return cliError(err, "run prompt")
+	}
+
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), response.Text); err != nil {
+		return oops.Wrapf(err, "write prompt response")
+	}
+
+	return nil
+}
+
+func buildPromptRequest(cwd, message string, options promptRunOptions) *assistant.PromptRequest {
+	return &assistant.PromptRequest{
 		OnEvent:        nil,
 		OnRetry:        nil,
 		OnUserEntry:    nil,
@@ -91,16 +104,7 @@ func runPromptWithContainer(
 		Name:           options.SessionName,
 		ResumeLatest:   options.Resume,
 		HideUserPrompt: false,
-	})
-	if err != nil {
-		return cliError(err, "run prompt")
 	}
-
-	if _, err := fmt.Fprintln(cmd.OutOrStdout(), response.Text); err != nil {
-		return oops.Wrapf(err, "write prompt response")
-	}
-
-	return nil
 }
 
 func promptMessage(cmd *cobra.Command, args []string) (string, error) {
