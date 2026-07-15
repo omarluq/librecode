@@ -38,8 +38,8 @@ func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
 		Sessions:   nil,
 		Documents:  documents,
 		Tasks:      nil,
-		AgentTasks: nil,
-		path:       "",
+		AgentTasks: nil, Workflows: nil,
+		path: "",
 	})
 	do.ProvideValue(injector, &AuthService{Storage: storage})
 

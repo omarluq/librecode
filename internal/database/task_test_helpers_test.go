@@ -23,10 +23,11 @@ const (
 )
 
 type taskTestFixture struct {
-	t        *testing.T
-	agents   *database.AgentTaskRepository
-	tasks    *database.TaskRepository
-	sessions *database.SessionRepository
+	t         *testing.T
+	agents    *database.AgentTaskRepository
+	tasks     *database.TaskRepository
+	workflows *database.WorkflowRepository
+	sessions  *database.SessionRepository
 }
 
 func newTaskTestFixture(t *testing.T) *taskTestFixture {
@@ -36,10 +37,11 @@ func newTaskTestFixture(t *testing.T) *taskTestFixture {
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
 	return &taskTestFixture{
-		t:        t,
-		agents:   database.NewAgentTaskRepository(connection),
-		tasks:    database.NewTaskRepository(connection),
-		sessions: database.NewSessionRepository(connection),
+		t:         t,
+		agents:    database.NewAgentTaskRepository(connection),
+		tasks:     database.NewTaskRepository(connection),
+		workflows: database.NewWorkflowRepository(connection),
+		sessions:  database.NewSessionRepository(connection),
 	}
 }
 

@@ -111,6 +111,30 @@ func validateTaskEntity(entity *TaskEntity) error {
 	return validateRequiredTime("task.updated_at", entity.UpdatedAt)
 }
 
+func validateWorkflowRunEntity(entity *WorkflowRunEntity) error {
+	if err := validateTaskEntity(&entity.Task); err != nil {
+		return err
+	}
+
+	if entity.Task.Kind != TaskKindWorkflow {
+		return errors.New("workflow_run.task.kind must be workflow")
+	}
+
+	if err := validateRequiredText("workflow_run.source", entity.Source); err != nil {
+		return err
+	}
+
+	if err := validateRequiredText("workflow_run.source_hash", entity.SourceHash); err != nil {
+		return err
+	}
+
+	if !json.Valid([]byte(entity.ArgumentsJSON)) {
+		return errors.New("workflow_run.arguments_json must be valid JSON")
+	}
+
+	return nil
+}
+
 func validateAgentTaskEntity(entity *AgentTaskEntity) error {
 	if err := validateTaskEntity(&entity.Task); err != nil {
 		return err

@@ -305,6 +305,7 @@ func newTestApp() *App {
 		Extensions: nil,
 		Resources:  nil,
 		Runtime:    nil,
+		Workflows:  nil,
 		Settings:   nil,
 		Models:     nil,
 		Auth:       nil,

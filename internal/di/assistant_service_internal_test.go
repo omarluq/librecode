@@ -75,6 +75,7 @@ func newTestDatabaseService(t *testing.T) *DatabaseService {
 		Documents:  database.NewDocumentRepository(connection),
 		Tasks:      database.NewTaskRepository(connection),
 		AgentTasks: database.NewAgentTaskRepository(connection),
+		Workflows:  database.NewWorkflowRepository(connection),
 		path:       "",
 	}
 }

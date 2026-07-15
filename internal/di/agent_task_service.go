@@ -33,8 +33,8 @@ func NewAgentTaskService(injector do.Injector) (*AgentTaskService, error) {
 		return nil, serviceError(err, "create agent task runner")
 	}
 
-	tasks, err := agenttask.New(context.Background(), agenttask.Options{
-		Tasks: databaseService.Tasks, AgentTasks: databaseService.AgentTasks,
+	tasks, err := agenttask.New(context.Background(), &agenttask.Options{
+		Tasks: databaseService.Tasks, AgentTasks: databaseService.AgentTasks, Workflows: databaseService.Workflows,
 		Runner: runner, Concurrency: 0, SessionConcurrency: 0, QueueCapacity: 0, Timeout: 0,
 		Logger: logger,
 	})

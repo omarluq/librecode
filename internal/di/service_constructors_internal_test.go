@@ -51,7 +51,7 @@ func TestNewAgentTaskServiceRejectsIncompleteWiring(t *testing.T) {
 
 	injector := do.New()
 	do.ProvideValue(injector, &DatabaseService{
-		DB: nil, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, path: "",
+		DB: nil, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, Workflows: nil, path: "",
 	})
 	do.ProvideValue(injector, &AssistantService{Runtime: nil, Agents: nil})
 

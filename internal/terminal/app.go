@@ -101,6 +101,7 @@ type RunOptions struct {
 	Extensions extension.TerminalEventRunner `json:"-"`
 	Resources  *core.ResourceSnapshot        `json:"resources"`
 	Runtime    *assistant.Runtime            `json:"-"`
+	Workflows  workflowInspector             `json:"-"`
 	Settings   *database.DocumentRepository  `json:"-"`
 	Models     *model.Registry               `json:"-"`
 	Auth       *auth.Storage                 `json:"-"`
@@ -121,6 +122,7 @@ type App struct {
 	lastResize            *tcell.EventResize
 	systemClipboard       systemClipboardWriter
 	runtime               *assistant.Runtime
+	workflows             workflowInspector
 	settings              *database.DocumentRepository
 	models                *model.Registry
 	auth                  *auth.Storage
@@ -232,6 +234,7 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 		lastResize:            nil,
 		systemClipboard:       newDesktopClipboard(),
 		runtime:               options.Runtime,
+		workflows:             options.Workflows,
 		extensions:            options.Extensions,
 		settings:              options.Settings,
 		models:                options.Models,

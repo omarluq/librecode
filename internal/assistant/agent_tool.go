@@ -2,7 +2,6 @@ package assistant
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,14 +28,18 @@ const (
 
 // AgentTaskRequest describes one asynchronous agent submission.
 type AgentTaskRequest struct {
-	OwnerSessionID string
-	ChildSessionID string
-	AgentName      string
-	Prompt         string
-	Model          string
-	Provider       string
-	PolicyJSON     string
-	Depth          int
+	ParentTaskID    string
+	OwnerSessionID  string
+	ChildSessionID  string
+	AgentName       string
+	Prompt          string
+	Model           string
+	Provider        string
+	PolicyJSON      string
+	ConcurrencyKey  string
+	NodeKey         string
+	InvocationIndex int
+	Depth           int
 }
 
 // AgentTaskController is the runtime-facing boundary for durable agent work.
@@ -230,36 +233,23 @@ func (executor *agentToolExecutor) submit(
 	definition *agent.Definition,
 	prompt string,
 ) (*database.AgentTaskEntity, error) {
-	policy, err := json.Marshal(definition)
+	submitter, err := NewAgentSubmitter(executor.controller, executor.sessions, executor.catalog)
 	if err != nil {
-		return nil, oops.In("assistant").Code("encode_agent_profile").Wrapf(err, "encode agent profile")
+		return nil, err
 	}
 
-	child, err := executor.sessions.CreateSession(
-		ctx, executor.cwd, childSessionName(definition.Name, prompt), executor.parentSessionID,
-	)
-	if err != nil {
-		return nil, oops.In("assistant").Code("create_agent_session").Wrapf(err, "create child agent session")
-	}
-
-	task, err := executor.controller.SubmitAgentTask(ctx, &AgentTaskRequest{
-		OwnerSessionID: executor.parentSessionID, ChildSessionID: child.ID, AgentName: definition.Name,
-		Prompt: prompt, Model: definition.Model.Model, Provider: definition.Model.Provider,
-		PolicyJSON: string(policy), Depth: 1,
+	return submitter.SubmitAgent(ctx, &AgentSubmitRequest{
+		ParentTaskID: "", OwnerSessionID: executor.parentSessionID,
+		CWD:             executor.cwd,
+		AgentName:       definition.Name,
+		Prompt:          prompt,
+		Model:           definition.Model.Model,
+		Provider:        definition.Model.Provider,
+		ConcurrencyKey:  executor.parentSessionID,
+		NodeKey:         "",
+		InvocationIndex: 0,
+		Depth:           1,
 	})
-	if err == nil {
-		return task, nil
-	}
-
-	if task != nil {
-		return task, oops.In("assistant").Code("submit_agent_task").Wrapf(err, "submit agent task")
-	}
-
-	if deleteErr := executor.sessions.DeleteSession(context.WithoutCancel(ctx), child.ID); deleteErr != nil {
-		return nil, errors.Join(err, deleteErr)
-	}
-
-	return nil, oops.In("assistant").Code("submit_agent_task").Wrapf(err, "submit agent task")
 }
 
 func (executor *agentToolExecutor) status(ctx context.Context, input tool.Arguments) (tool.Result, error) {

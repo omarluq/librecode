@@ -95,6 +95,7 @@ func (app *App) sessionCommandHandlers(ctx context.Context, args, original strin
 		"name":        func() error { return app.renameSession(ctx, args) },
 		"new":         func() error { return app.newSession(ctx, args) },
 		"reload":      func() error { return app.reloadRuntime(ctx) },
+		"workflows":   func() error { return app.showWorkflows(ctx, args) },
 	}
 }
 
