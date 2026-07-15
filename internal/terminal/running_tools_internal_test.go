@@ -337,6 +337,25 @@ func TestApplyStreamedToolStartSkipsAgentFallbackName(t *testing.T) {
 	assert.Empty(t, app.runningToolBlocks)
 }
 
+func TestRemoveRunningToolBlockPrefersCallID(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	first := testRunningToolBlock(testToolRead, `{"path":"same.go"}`)
+	first.Call.ID = "call-alpha"
+	second := testRunningToolBlock(testToolRead, `{"path":"same.go"}`)
+	second.Call.ID = "call-beta"
+	app.runningToolBlocks = []runningToolBlock{first, second}
+
+	app.removeRunningToolBlock(&assistant.ToolEvent{
+		CallID: "call-beta", ParentCallID: "outer", Name: testToolRead, ArgumentsJSON: `{"path":"same.go"}`,
+		DetailsJSON: "", Result: "ok", Error: "", Sequence: 2, IsError: false,
+	})
+
+	require.Len(t, app.runningToolBlocks, 1)
+	assert.Equal(t, "call-alpha", app.runningToolBlocks[0].Call.ID)
+}
+
 func runningToolRemoveByNameAndArgumentsCase() runningToolBlockTestCase {
 	sharedArguments := `{"path":"same.go"}`
 

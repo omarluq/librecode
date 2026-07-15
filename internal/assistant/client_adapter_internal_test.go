@@ -3,6 +3,8 @@ package assistant
 import (
 	"context"
 	"errors"
+	"math"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -267,9 +269,9 @@ func TestToolExecutorAdapterConvertsCallsEventsAndErrors(t *testing.T) {
 		context.Background(),
 		[]llm.ToolCall{{
 			Metadata: map[string]any{
-				"m":              true,
-				"parent_call_id": adapterParentCallID,
-				"sequence":       float64(2),
+				"m":                     true,
+				"parent_call_id":        adapterParentCallID,
+				toolSequenceMetadataKey: float64(2),
 			},
 			Arguments:     testutil.ToolArguments(map[string]any{jsonPathKey: adapterReadPath}),
 			ID:            adapterToolCallID,
@@ -288,17 +290,61 @@ func TestToolExecutorAdapterConvertsCallsEventsAndErrors(t *testing.T) {
 	require.NotNil(t, observedEvent.Part.ToolResult)
 	assert.Equal(t, adapterToolCallID, observedEvent.Part.ToolResult.ToolCallID)
 	assert.Equal(t, adapterParentCallID, observedEvent.Part.ToolResult.Metadata["parent_call_id"])
-	assert.Equal(t, 2, observedEvent.Part.ToolResult.Metadata["sequence"])
+	assert.Equal(t, 2, observedEvent.Part.ToolResult.Metadata[toolSequenceMetadataKey])
 	require.Len(t, results, 1)
 	assert.Equal(t, expectedReadToolName, results[0].Name)
 	assert.Equal(t, adapterToolCallID, results[0].ToolCallID)
 	assert.Equal(t, adapterParentCallID, results[0].Metadata["parent_call_id"])
-	assert.Equal(t, 2, results[0].Metadata["sequence"])
+	assert.Equal(t, 2, results[0].Metadata[toolSequenceMetadataKey])
 
 	assert.Nil(t, llmToolExecutor(nil))
 	assert.Nil(t, assistantStreamEventHandler(nil))
 	assert.Nil(t, llmStreamEventHandler(nil))
 	assert.Nil(t, assistantToolCallsFromLLM(nil))
+}
+
+func TestIntFromOptionsStrictSequenceConversion(t *testing.T) {
+	t.Parallel()
+
+	maxInt := int(^uint(0) >> 1)
+
+	tests := []struct {
+		value any
+		name  string
+		want  int
+	}{
+		{name: "int", value: maxInt, want: maxInt},
+		{name: "int32", value: int32(math.MaxInt32), want: int(math.MaxInt32)},
+		{name: "int64 in platform range", value: int64(maxInt), want: maxInt},
+		{name: "integral float64", value: float64(42), want: 42},
+		{name: "fractional float64", value: 1.5, want: 0},
+		{name: "negative int", value: -1, want: 0},
+		{name: "negative int32", value: int32(-1), want: 0},
+		{name: "negative int64", value: int64(-1), want: 0},
+		{name: "negative float64", value: float64(-1), want: 0},
+		{name: "platform overflow float64", value: math.Ldexp(1, strconv.IntSize-1), want: 0},
+		{name: "positive infinity", value: math.Inf(1), want: 0},
+		{name: "not a number", value: math.NaN(), want: 0},
+		{name: "unsupported type", value: "1", want: 0},
+	}
+	if strconv.IntSize == 32 {
+		tests = append(tests, struct {
+			value any
+			name  string
+			want  int
+		}{name: "int64 outside platform range", value: int64(math.MaxInt32) + 1, want: 0})
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			options := map[string]any{toolSequenceMetadataKey: test.value}
+			assert.Equal(t, test.want, sequenceFromOptions(options))
+		})
+	}
+
+	assert.Zero(t, sequenceFromOptions(nil))
 }
 
 func TestAdapterNilAndFallbackHelpers(t *testing.T) {

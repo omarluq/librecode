@@ -157,6 +157,7 @@ func TestToolDisplayAdditionalFallbackBranches(t *testing.T) {
 
 	errorDisplay := toolDisplayFromParsedEvent(&parsedToolEvent{
 		Name:          testToolBash,
+		ParentCallID:  "",
 		ArgumentsJSON: `{"command":"false"}`,
 		DetailsJSON:   "",
 		Output:        "",
@@ -336,6 +337,7 @@ func testToolDisplay(title string, status toolDisplayStatus) toolDisplay {
 		Output:        "",
 		Error:         "",
 		Status:        status,
+		Nested:        false,
 	}
 }
 

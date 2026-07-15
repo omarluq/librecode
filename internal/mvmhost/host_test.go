@@ -24,6 +24,15 @@ type testDTO struct {
 	Count int
 }
 
+type graphNode struct {
+	Next *graphNode
+}
+
+type sharedGraph struct {
+	Left  *graphNode
+	Right *graphNode
+}
+
 type evalTestCase struct {
 	wantValue    any
 	wantCause    error
@@ -227,6 +236,82 @@ func TestEvaluator_Eval(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEvaluator_EvalRejectsCyclicValueGraphs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		request func() mvmhost.Request
+		name    string
+	}{
+		{
+			name: "pointer binding",
+			request: func() mvmhost.Request {
+				node := &graphNode{Next: nil}
+				node.Next = node
+
+				return requestWithBindings(`1`, map[string]any{hostValueBinding: node})
+			},
+		},
+		{
+			name: "map binding",
+			request: func() mvmhost.Request {
+				value := make(map[string]any)
+				value["self"] = value
+
+				return requestWithBindings(`1`, map[string]any{hostValueBinding: value})
+			},
+		},
+		{
+			name: "slice binding",
+			request: func() mvmhost.Request {
+				value := make([]any, 1)
+				value[0] = value
+
+				return requestWithBindings(`1`, map[string]any{hostValueBinding: value})
+			},
+		},
+		{
+			name: "host result",
+			request: func() mvmhost.Request {
+				return requestWithBindings(`import "host"; host.Value()`, map[string]any{
+					hostValueBinding: func() any {
+						value := make(map[string]any)
+						value["self"] = value
+
+						return value
+					},
+				})
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := mvmhost.New().Eval(context.Background(), test.request())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "cycle")
+
+			var evalErr *mvmhost.EvalError
+			require.ErrorAs(t, err, &evalErr)
+			assert.Equal(t, mvmhost.ErrorKindRuntime, evalErr.Kind)
+		})
+	}
+}
+
+func TestEvaluator_EvalAllowsSharedAcyclicValues(t *testing.T) {
+	t.Parallel()
+
+	leaf := &graphNode{Next: nil}
+	value := sharedGraph{Left: leaf, Right: leaf}
+	request := requestWithBindings(`1`, map[string]any{hostValueBinding: value})
+
+	result, err := mvmhost.New().Eval(context.Background(), request)
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.Value)
 }
 
 func TestEvaluator_EvalCancellation(t *testing.T) {

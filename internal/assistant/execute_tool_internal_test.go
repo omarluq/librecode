@@ -4,11 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -46,7 +52,7 @@ func TestExecuteToolUsesCompletedPromptRegistry(t *testing.T) {
 
 	echo := new(executeTestTool)
 	require.NoError(t, registry.Register(echo))
-	execute := newExecuteTool(nil, registry)
+	execute := newExecuteTool(registry, nil)
 	require.NoError(t, registry.Register(execute))
 
 	tests := []struct {
@@ -103,7 +109,7 @@ func TestExecuteToolRejectsRecursionAndInvalidNestedInput(t *testing.T) {
 	registry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
 	require.NoError(t, err)
 
-	execute := newExecuteTool(nil, registry)
+	execute := newExecuteTool(registry, nil)
 	require.NoError(t, registry.Register(execute))
 
 	tests := []struct {
@@ -141,7 +147,16 @@ func TestExecuteNestedCallsUseSharedInvocationBoundary(t *testing.T) {
 	registry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
 	require.NoError(t, err)
 	require.NoError(t, registry.Register(new(executeTestTool)))
-	execute := newExecuteTool(runtime, registry)
+
+	invoke := func(
+		ctx context.Context,
+		name string,
+		arguments tool.Arguments,
+		argumentsJSON string,
+	) (tool.Result, ToolEvent) {
+		return runtime.invokeNestedTool(ctx, registry, name, arguments, argumentsJSON)
+	}
+	execute := newExecuteTool(registry, invoke)
 	require.NoError(t, registry.Register(execute))
 
 	events := []StreamEvent{}
@@ -178,6 +193,172 @@ func TestExecuteNestedCallsUseSharedInvocationBoundary(t *testing.T) {
 	assert.Equal(t, 2, events[4].ToolEvent.Sequence)
 	assert.Equal(t, StreamEventToolResult, events[5].Kind)
 	assert.Equal(t, executeOuterCallID, events[5].ToolEvent.CallID)
+}
+
+func TestExecuteToolHardCancelsHungProgram(t *testing.T) {
+	t.Parallel()
+
+	registry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	execute := newExecuteTool(registry, nil)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+
+	started := time.Now()
+	_, err = execute.Execute(ctx, executeArguments(t, `for {}; 1`))
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Less(t, time.Since(started), 3*time.Second)
+}
+
+func TestExecuteNestedCallsPreserveMixedResultsAndLifecycleOrder(t *testing.T) {
+	t.Parallel()
+
+	recorder := &executeLifecycleRecorder{runtimeExtensions: nil, events: nil, mu: sync.Mutex{}}
+	runtime := newToolExecutorTestRuntime(recorder)
+	registry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
+	require.NoError(t, err)
+	require.NoError(t, registry.Register(new(executeTestTool)))
+	execute := newExecuteTool(registry, func(
+		ctx context.Context,
+		name string,
+		arguments tool.Arguments,
+		argumentsJSON string,
+	) (tool.Result, ToolEvent) {
+		return runtime.invokeNestedTool(ctx, registry, name, arguments, argumentsJSON)
+	})
+	require.NoError(t, registry.Register(execute))
+
+	events := []StreamEvent{}
+	outer := runtime.executeProviderToolCall(t.Context(), registry, &ToolCall{
+		Metadata: nil,
+		Arguments: executeArguments(t, `import "tools"
+[]interface{}{
+	tools.Call("echo", map[string]interface{}{"text": "ok"}),
+	tools.Call("missing", map[string]interface{}{}),
+}`),
+		ID: executeOuterCallID, Name: string(executeToolName), ArgumentsJSON: `{}`,
+	}, func(event StreamEvent) { events = append(events, event) })
+
+	require.False(t, outer.IsError)
+	require.Len(t, events, 6)
+	assert.Equal(t, "ok", events[2].ToolEvent.Result)
+	assert.False(t, events[2].ToolEvent.IsError)
+	assert.Contains(t, events[4].ToolEvent.Error, "unknown tool")
+	assert.True(t, events[4].ToolEvent.IsError)
+	assert.Equal(t, []string{
+		string(extension.LifecycleToolCall),
+		string(extension.LifecycleToolCall),
+		string(extension.LifecycleToolResult),
+		string(extension.LifecycleToolCall),
+		string(extension.LifecycleToolResult),
+		string(extension.LifecycleToolError),
+		string(extension.LifecycleToolResult),
+	}, recorder.eventNames())
+}
+
+func TestExecuteNestedCallCancellationEmitsCompletedBoundaries(t *testing.T) {
+	t.Parallel()
+
+	runtime := newToolExecutorTestRuntime(nil)
+	registry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	blocking := &executeBlockingTool{started: make(chan struct{})}
+	require.NoError(t, registry.Register(blocking))
+	execute := newExecuteTool(registry, func(
+		ctx context.Context,
+		name string,
+		arguments tool.Arguments,
+		argumentsJSON string,
+	) (tool.Result, ToolEvent) {
+		return runtime.invokeNestedTool(ctx, registry, name, arguments, argumentsJSON)
+	})
+	require.NoError(t, registry.Register(execute))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	events := []StreamEvent{}
+
+	done := make(chan ToolEvent, 1)
+	arguments := executeArguments(t, `import "tools"; tools.Call("block", map[string]interface{}{})`)
+
+	go func() {
+		done <- runtime.executeProviderToolCall(ctx, registry, &ToolCall{
+			Metadata:  nil,
+			Arguments: arguments,
+			ID:        executeOuterCallID, Name: string(executeToolName), ArgumentsJSON: `{}`,
+		}, func(event StreamEvent) { events = append(events, event) })
+	}()
+
+	<-blocking.started
+	cancel()
+
+	outer := <-done
+
+	assert.True(t, outer.IsError)
+	require.Len(t, events, 4)
+	assert.Equal(t, []StreamEventKind{
+		StreamEventToolStart, StreamEventToolStart, StreamEventToolResult, StreamEventToolResult,
+	}, []StreamEventKind{events[0].Kind, events[1].Kind, events[2].Kind, events[3].Kind})
+	assert.Equal(t, executeOuterCallID, events[2].ToolEvent.ParentCallID)
+	assert.True(t, events[2].ToolEvent.IsError)
+}
+
+func TestExecuteResultTextRejectsOversizedResult(t *testing.T) {
+	t.Parallel()
+
+	_, err := executeResultText(mvmhost.Result{
+		Value: strings.Repeat("x", defaultExecuteResultLimit), Stdout: "", Stderr: "",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "execute result")
+	assert.Contains(t, err.Error(), "limit")
+}
+
+type executeBlockingTool struct {
+	started chan struct{}
+}
+
+func (executor *executeBlockingTool) Definition() tool.Definition {
+	return tool.Definition{
+		Schema: mustToolSchema(`{"type":"object","additionalProperties":false}`),
+		Name:   "block", Label: "Block", Description: "Block until canceled", PromptSnippet: "Block",
+		PromptGuidelines: nil, ReadOnly: true,
+	}
+}
+
+func (executor *executeBlockingTool) Execute(ctx context.Context, _ tool.Arguments) (tool.Result, error) {
+	close(executor.started)
+	<-ctx.Done()
+
+	return tool.Result{}, oops.In("assistant").Code("blocking_tool_canceled").Wrapf(ctx.Err(), "wait for cancellation")
+}
+
+type executeLifecycleRecorder struct {
+	runtimeExtensions
+	events []string
+	mu     sync.Mutex
+}
+
+func (recorder *executeLifecycleRecorder) DispatchLifecycle(
+	_ context.Context,
+	event extension.LifecycleEvent,
+) (extension.LifecycleDispatchResult, error) {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+
+	recorder.events = append(recorder.events, string(event.Name))
+
+	return emptyTestLifecycleDispatchResult(event), nil
+}
+
+func (recorder *executeLifecycleRecorder) eventNames() []string {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+
+	return append([]string(nil), recorder.events...)
 }
 
 func TestPromptRegistryRegistersExecuteAfterPromptLocalTools(t *testing.T) {

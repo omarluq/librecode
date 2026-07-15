@@ -27,8 +27,11 @@ type partialPromptBlock struct {
 }
 
 type pendingToolCall struct {
+	CallID        string
+	ParentCallID  string
 	Name          string
 	ArgumentsJSON string
+	Sequence      int
 }
 
 type partialPromptMessage struct {
@@ -37,10 +40,11 @@ type partialPromptMessage struct {
 }
 
 type partialPromptProgress struct {
-	forward        func(StreamEvent)
-	blocks         []partialPromptBlock
-	fallbackBlocks []partialPromptBlock
-	pendingTools   []pendingToolCall
+	forward              func(StreamEvent)
+	blocks               []partialPromptBlock
+	fallbackBlocks       []partialPromptBlock
+	pendingTools         []pendingToolCall
+	completedNestedTools []ToolEvent
 }
 
 func (runtime *Runtime) appendAssistantSideEffects(
@@ -123,15 +127,138 @@ func (runtime *Runtime) respondWithPartialProgress(
 		return nil, false, err
 	}
 
+	bundle.ToolEvents = mergeNestedToolEvents(bundle.ToolEvents, progress.completedNestedTools)
+
 	return bundle, cached, nil
+}
+
+type nestedToolEventMerger struct {
+	childrenByParent map[string][]*ToolEvent
+	nestedCallIDs    map[string]struct{}
+	outerCallIDs     map[string]struct{}
+	appended         map[*ToolEvent]bool
+	visiting         map[*ToolEvent]bool
+	merged           []ToolEvent
+}
+
+func mergeNestedToolEvents(outer, nested []ToolEvent) []ToolEvent {
+	if len(nested) == 0 {
+		return outer
+	}
+
+	merger := newNestedToolEventMerger(outer, nested)
+	for index := range outer {
+		merger.appendChildren(outer[index].CallID)
+		merger.merged = append(merger.merged, outer[index])
+	}
+
+	for index := range nested {
+		if merger.isRootOrOrphan(&nested[index]) {
+			merger.appendNested(&nested[index])
+		}
+	}
+
+	for index := range nested {
+		merger.appendNested(&nested[index])
+	}
+
+	return merger.merged
+}
+
+func newNestedToolEventMerger(outer, nested []ToolEvent) *nestedToolEventMerger {
+	merger := &nestedToolEventMerger{
+		childrenByParent: make(map[string][]*ToolEvent),
+		nestedCallIDs:    make(map[string]struct{}, len(nested)),
+		outerCallIDs:     make(map[string]struct{}, len(outer)),
+		appended:         make(map[*ToolEvent]bool, len(nested)),
+		visiting:         make(map[*ToolEvent]bool, len(nested)),
+		merged:           make([]ToolEvent, 0, len(outer)+len(nested)),
+	}
+
+	for index := range outer {
+		merger.addOuter(&outer[index])
+	}
+
+	for index := range nested {
+		merger.addNested(&nested[index])
+	}
+
+	for parentID := range merger.childrenByParent {
+		slices.SortStableFunc(merger.childrenByParent[parentID], compareToolEventSequence)
+	}
+
+	return merger
+}
+
+func (merger *nestedToolEventMerger) addOuter(event *ToolEvent) {
+	if event.CallID != "" {
+		merger.outerCallIDs[event.CallID] = struct{}{}
+	}
+}
+
+func (merger *nestedToolEventMerger) addNested(event *ToolEvent) {
+	if event.CallID != "" {
+		merger.nestedCallIDs[event.CallID] = struct{}{}
+	}
+
+	if event.ParentCallID != "" {
+		merger.childrenByParent[event.ParentCallID] = append(merger.childrenByParent[event.ParentCallID], event)
+	}
+}
+
+func compareToolEventSequence(left, right *ToolEvent) int {
+	switch {
+	case left.Sequence <= 0 && right.Sequence <= 0:
+		return 0
+	case left.Sequence <= 0:
+		return 1
+	case right.Sequence <= 0:
+		return -1
+	case left.Sequence < right.Sequence:
+		return -1
+	case left.Sequence > right.Sequence:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func (merger *nestedToolEventMerger) isRootOrOrphan(event *ToolEvent) bool {
+	if event.ParentCallID == "" {
+		return true
+	}
+
+	_, parentIsNested := merger.nestedCallIDs[event.ParentCallID]
+	_, parentIsOuter := merger.outerCallIDs[event.ParentCallID]
+
+	return !parentIsNested && !parentIsOuter
+}
+
+func (merger *nestedToolEventMerger) appendChildren(parentCallID string) {
+	for _, child := range merger.childrenByParent[parentCallID] {
+		merger.appendNested(child)
+	}
+}
+
+func (merger *nestedToolEventMerger) appendNested(event *ToolEvent) {
+	if merger.appended[event] || merger.visiting[event] {
+		return
+	}
+
+	merger.visiting[event] = true
+	merger.appendChildren(event.CallID)
+	delete(merger.visiting, event)
+	merger.appended[event] = true
+	merger.merged = append(merger.merged, *event)
 }
 
 func newPartialPromptProgress(forward func(StreamEvent)) *partialPromptProgress {
 	return &partialPromptProgress{
-		forward:        forward,
-		blocks:         []partialPromptBlock{},
-		fallbackBlocks: nil,
-		pendingTools:   []pendingToolCall{},
+		forward:              forward,
+		blocks:               []partialPromptBlock{},
+		fallbackBlocks:       nil,
+		pendingTools:         []pendingToolCall{},
+		completedNestedTools: []ToolEvent{},
 	}
 }
 

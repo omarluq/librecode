@@ -164,6 +164,20 @@ func TestExecuteProviderToolCallPreservesResultOnLifecycleError(t *testing.T) {
 	assert.Equal(t, event.Result, events[1].ToolEvent.Result)
 }
 
+func TestCanonicalToolResultUsesLifecycleMutation(t *testing.T) {
+	t.Parallel()
+
+	result := tool.TextResult("original", map[string]any{"old": true})
+	event := ToolEvent{
+		CallID: "call", ParentCallID: "", Name: jsonReadToolName, ArgumentsJSON: "{}",
+		DetailsJSON: `{"redacted":true}`, Result: "redacted", Error: "", Sequence: 0, IsError: false,
+	}
+
+	canonical := canonicalToolResult(result, &event)
+	assert.Equal(t, "redacted", canonical.Text())
+	assert.Equal(t, map[string]any{"redacted": true}, canonical.Details)
+}
+
 func TestEncodeToolDetails(t *testing.T) {
 	t.Parallel()
 

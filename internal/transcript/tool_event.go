@@ -2,15 +2,21 @@
 // assistant persistence and terminal presentation.
 package transcript
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // ToolEvent captures the display/persistence fields of a completed tool call.
 type ToolEvent struct {
+	CallID        string
+	ParentCallID  string
 	Name          string
 	ArgumentsJSON string
 	DetailsJSON   string
 	Result        string
 	Error         string
+	Sequence      int
 	IsError       bool
 }
 
@@ -29,7 +35,7 @@ func formatToolEvent(event *ToolEvent, includeStructuredError bool) string {
 		return "tool: "
 	}
 
-	parts := []string{"tool: " + event.Name}
+	parts := toolIdentityParts(event)
 	if strings.TrimSpace(event.ArgumentsJSON) != "" {
 		parts = append(parts, "arguments:", event.ArgumentsJSON)
 	}
@@ -51,4 +57,21 @@ func formatToolEvent(event *ToolEvent, includeStructuredError bool) string {
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+func toolIdentityParts(event *ToolEvent) []string {
+	parts := []string{"tool: " + event.Name}
+	if event.CallID != "" {
+		parts = append(parts, "call_id: "+event.CallID)
+	}
+
+	if event.ParentCallID != "" {
+		parts = append(parts, "parent_call_id: "+event.ParentCallID)
+	}
+
+	if event.Sequence > 0 {
+		parts = append(parts, "sequence: "+strconv.Itoa(event.Sequence))
+	}
+
+	return parts
 }

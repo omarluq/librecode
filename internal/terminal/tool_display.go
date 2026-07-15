@@ -36,12 +36,14 @@ type toolDisplay struct {
 	Output        string
 	Error         string
 	Status        toolDisplayStatus
+	Nested        bool
 }
 
 func toolDisplayFromCall(call *assistant.ToolCallEvent) toolDisplay {
 	return toolDisplay{
 		Title:         toolSummary(call.Name, call.ArgumentsJSON, toolArgumentsMap(call.Arguments)),
 		Name:          call.Name,
+		Nested:        call.ParentCallID != "",
 		ArgumentsJSON: call.ArgumentsJSON,
 		DetailsJSON:   "",
 		Output:        "",
@@ -59,6 +61,7 @@ func toolDisplayFromParsedEvent(event *parsedToolEvent) toolDisplay {
 	return toolDisplay{
 		Title:         toolSummary(event.Name, event.ArgumentsJSON, nil),
 		Name:          event.Name,
+		Nested:        event.ParentCallID != "",
 		ArgumentsJSON: event.ArgumentsJSON,
 		DetailsJSON:   event.DetailsJSON,
 		Output:        event.Output,
