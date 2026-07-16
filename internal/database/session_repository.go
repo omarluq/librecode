@@ -12,6 +12,13 @@ import (
 	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 )
 
+// ChildSessionRequest describes a child session created with durable agent work.
+type ChildSessionRequest struct {
+	CWD             string
+	Name            string
+	ParentSessionID string
+}
+
 // SessionRepository provides persistence for sessions and tree entries.
 type SessionRepository struct {
 	sql ksql.Provider
@@ -74,6 +81,43 @@ func newSessionID() string {
 	return newUUIDv7()
 }
 
+func prepareSession(now time.Time, cwd, name, parentSession string) (*SessionEntity, error) {
+	created := &SessionEntity{
+		CreatedAt:     now.UTC(),
+		UpdatedAt:     now.UTC(),
+		ID:            newSessionID(),
+		CWD:           cwd,
+		Name:          name,
+		ParentSession: parentSession,
+	}
+	if err := validateSessionEntity(created); err != nil {
+		return nil, oops.In("database").Code("validate_session").Wrapf(err, "validate session")
+	}
+
+	return created, nil
+}
+
+func insertSession(ctx context.Context, provider ksql.Provider, session *SessionEntity) error {
+	const statement = `
+INSERT INTO sessions (id, cwd, name, parent_session, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?)`
+
+	if _, err := provider.Exec(
+		ctx,
+		statement,
+		session.ID,
+		session.CWD,
+		session.Name,
+		session.ParentSession,
+		formatTime(session.CreatedAt),
+		formatTime(session.UpdatedAt),
+	); err != nil {
+		return oops.In("database").Code("create_session").Wrapf(err, "create session")
+	}
+
+	return nil
+}
+
 // CreateSession creates a new persisted session for a working directory.
 func (repository *SessionRepository) CreateSession(
 	ctx context.Context,
@@ -81,38 +125,16 @@ func (repository *SessionRepository) CreateSession(
 	name string,
 	parentSession string,
 ) (*SessionEntity, error) {
-	timestamp := repository.now().UTC()
-	createdSession := SessionEntity{
-		CreatedAt:     timestamp,
-		UpdatedAt:     timestamp,
-		ID:            newSessionID(),
-		CWD:           cwd,
-		Name:          name,
-		ParentSession: parentSession,
+	created, err := prepareSession(repository.now(), cwd, name, parentSession)
+	if err != nil {
+		return nil, err
 	}
 
-	const statement = `
-INSERT INTO sessions (id, cwd, name, parent_session, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?)`
-
-	if err := validateSessionEntity(&createdSession); err != nil {
-		return nil, oops.In("database").Code("validate_session").Wrapf(err, "validate session")
+	if err := insertSession(ctx, repository.sql, created); err != nil {
+		return nil, err
 	}
 
-	if _, err := repository.sql.Exec(
-		ctx,
-		statement,
-		createdSession.ID,
-		createdSession.CWD,
-		createdSession.Name,
-		createdSession.ParentSession,
-		formatTime(createdSession.CreatedAt),
-		formatTime(createdSession.UpdatedAt),
-	); err != nil {
-		return nil, oops.In("database").Code("create_session").Wrapf(err, "create session")
-	}
-
-	return &createdSession, nil
+	return created, nil
 }
 
 // LatestSession returns the newest top-level session for cwd.

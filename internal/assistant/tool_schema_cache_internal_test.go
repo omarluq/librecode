@@ -160,18 +160,19 @@ func TestRuntimeEstimateToolSchemaTokensCreatesRegistryWhenNil(t *testing.T) {
 
 func newTestRuntimeWithSchemaCache() *Runtime {
 	return &Runtime{
-		cfg:             nil,
-		sessions:        nil,
-		extensions:      nil,
-		cache:           nil,
-		models:          nil,
-		client:          nil,
-		logger:          nil,
-		skillsCache:     nil,
-		toolSchemaCache: newToolSchemaCache(),
-		agents:          nil,
-		agentTasks:      nil,
-		profile:         topLevelExecutionProfile(),
+		cfg:               nil,
+		sessions:          nil,
+		extensions:        nil,
+		cache:             nil,
+		models:            nil,
+		client:            nil,
+		logger:            nil,
+		skillsCache:       nil,
+		toolSchemaCache:   newToolSchemaCache(),
+		agents:            nil,
+		agentTasks:        nil,
+		workflowSubmitter: nil,
+		profile:           topLevelExecutionProfile(),
 	}
 }
 

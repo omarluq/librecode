@@ -3,7 +3,6 @@ package assistant
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 
 	"github.com/samber/oops"
@@ -33,22 +32,20 @@ type AgentSubmitRequest struct {
 // submitting durable work.
 type AgentSubmitter struct {
 	controller AgentTaskController
-	sessions   *database.SessionRepository
 	catalog    *agent.Catalog
 }
 
 // NewAgentSubmitter creates the shared high-level agent submission boundary.
 func NewAgentSubmitter(
 	controller AgentTaskController,
-	sessions *database.SessionRepository,
 	catalog *agent.Catalog,
 ) (*AgentSubmitter, error) {
-	if controller == nil || sessions == nil || catalog == nil {
+	if controller == nil || catalog == nil {
 		return nil, oops.In("assistant").Code("invalid_agent_submitter_dependencies").
-			Errorf("agent task controller, sessions, and catalog are required")
+			Errorf("agent task controller and catalog are required")
 	}
 
-	return &AgentSubmitter{controller: controller, sessions: sessions, catalog: catalog}, nil
+	return &AgentSubmitter{controller: controller, catalog: catalog}, nil
 }
 
 // SubmitAgent resolves policy, creates a child session, and durably submits work.
@@ -70,16 +67,6 @@ func (submitter *AgentSubmitter) SubmitAgent(
 		return nil, oops.In("assistant").Code("encode_agent_profile").Wrapf(err, "encode agent profile")
 	}
 
-	child, err := submitter.sessions.CreateSession(
-		ctx,
-		request.CWD,
-		childSessionName(definition.Name, request.Prompt),
-		request.OwnerSessionID,
-	)
-	if err != nil {
-		return nil, oops.In("assistant").Code("create_agent_session").Wrapf(err, "create child agent session")
-	}
-
 	concurrencyKey := request.ConcurrencyKey
 	if concurrencyKey == "" {
 		concurrencyKey = request.OwnerSessionID
@@ -92,24 +79,17 @@ func (submitter *AgentSubmitter) SubmitAgent(
 
 	task, err := submitter.controller.SubmitAgentTask(ctx, &AgentTaskRequest{
 		ParentTaskID: request.ParentTaskID, OwnerSessionID: request.OwnerSessionID,
-		ChildSessionID: child.ID, AgentName: definition.Name,
+		ChildSessionID: "", ChildSessionCWD: request.CWD,
+		ChildSessionName: childSessionName(definition.Name, request.Prompt), AgentName: definition.Name,
 		Prompt: request.Prompt, Model: definition.Model.Model, Provider: definition.Model.Provider,
 		PolicyJSON: string(policy), ConcurrencyKey: concurrencyKey,
 		NodeKey: request.NodeKey, InvocationIndex: request.InvocationIndex, Depth: depth,
 	})
-	if err == nil {
-		return task, nil
-	}
-
-	if task != nil {
+	if err != nil {
 		return task, oops.In("assistant").Code("submit_agent_task").Wrapf(err, "submit agent task")
 	}
 
-	if deleteErr := submitter.sessions.DeleteSession(context.WithoutCancel(ctx), child.ID); deleteErr != nil {
-		return nil, errors.Join(err, deleteErr)
-	}
-
-	return nil, oops.In("assistant").Code("submit_agent_task").Wrapf(err, "submit agent task")
+	return task, nil
 }
 
 func (submitter *AgentSubmitter) resolveDefinition(request *AgentSubmitRequest) (agent.Definition, error) {

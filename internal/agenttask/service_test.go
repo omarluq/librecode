@@ -20,6 +20,7 @@ import (
 const (
 	completedResult  = "done"
 	generalAgentName = "general"
+	testAgentPrompt  = "work"
 )
 
 type fakeRunner struct {
@@ -101,9 +102,9 @@ func TestServiceAgentTaskAdaptersAndSubscriptionCancellation(t *testing.T) {
 	})
 
 	created, err := service.SubmitAgentTask(t.Context(), &assistant.AgentTaskRequest{
-		ParentTaskID:   "",
-		OwnerSessionID: parent.ID, ChildSessionID: child.ID, AgentName: generalAgentName,
-		Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: parent.ID,
+		ParentTaskID: "", OwnerSessionID: parent.ID, ChildSessionID: child.ID,
+		ChildSessionCWD: "", ChildSessionName: "", AgentName: generalAgentName,
+		Prompt: testAgentPrompt, Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: parent.ID,
 		NodeKey: "", InvocationIndex: 0, Depth: 1,
 	})
 	require.NoError(t, err)
@@ -116,6 +117,27 @@ func TestServiceAgentTaskAdaptersAndSubscriptionCancellation(t *testing.T) {
 	completed, err := service.Await(t.Context(), created.Task.ID)
 	require.NoError(t, err)
 	assert.Equal(t, database.TaskSucceeded, completed.Task.State)
+}
+
+func TestServiceRejectsWorkflowSubmissionWithoutRepository(t *testing.T) {
+	t.Parallel()
+
+	tasks, agentTasks, sessions := repositories(t)
+	owner := createSession(t, sessions, "owner", "")
+	service := newService(t, tasks, agentTasks, new(fakeRunner))
+
+	created, err := service.SubmitAgentTask(t.Context(), &assistant.AgentTaskRequest{
+		ParentTaskID: "019f6830-8622-7b1a-a810-55cdac44de22", OwnerSessionID: owner.ID, ChildSessionID: "",
+		ChildSessionCWD: owner.CWD, ChildSessionName: "child", AgentName: generalAgentName,
+		Prompt: testAgentPrompt, Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: owner.ID,
+		NodeKey: "node", InvocationIndex: 0, Depth: 1,
+	})
+	require.ErrorContains(t, err, "workflow repository is required")
+	assert.Nil(t, created)
+
+	children, listErr := sessions.ListChildSessions(t.Context(), owner.ID)
+	require.NoError(t, listErr)
+	assert.Empty(t, children)
 }
 
 func TestServiceAwaitMissingAndCanceled(t *testing.T) {
@@ -313,7 +335,7 @@ func TestSecondServiceDoesNotInterruptLiveTask(t *testing.T) {
 	first := newService(t, tasks, agentTasks, firstRunner)
 	created, err := first.Submit(t.Context(), &agenttask.SubmitRequest{
 		ParentTaskID: "", OwnerSessionID: parent.ID, ChildSessionID: child.ID, ConcurrencyKey: parent.ID,
-		AgentName: generalAgentName, Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, Depth: 1,
+		AgentName: generalAgentName, Prompt: testAgentPrompt, Model: "", Provider: "", PolicyJSON: `{}`, Depth: 1,
 	})
 	require.NoError(t, err)
 	require.Equal(t, created.Task.ID, awaitStarted(t, firstRunner.started))

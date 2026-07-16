@@ -16,6 +16,8 @@ const (
 	toolDisplayDefaultPath = "."
 	toolDisplayMaxArgs     = 3
 	toolDisplayGrepOptions = 3
+	toolDisplayExecute     = "execute"
+	toolDisplayWorkflow    = "workflow"
 )
 
 type toolSummaryRenderer func(map[string]any, string) string
@@ -125,6 +127,10 @@ func otherToolSummaryRenderer(name tool.Name) (toolSummaryRenderer, bool) {
 		return astToolSummary, true
 	case string(tool.NameFetch):
 		return fetchToolSummary, true
+	case toolDisplayExecute:
+		return executeToolSummary, true
+	case toolDisplayWorkflow:
+		return workflowToolSummary, true
 	default:
 		return nil, false
 	}
@@ -145,6 +151,14 @@ func decodeToolArgs(raw string) map[string]any {
 	}
 
 	return args
+}
+
+func executeToolSummary(_ map[string]any, _ string) string {
+	return "execute Go"
+}
+
+func workflowToolSummary(_ map[string]any, _ string) string {
+	return "workflow Go"
 }
 
 func bashToolSummary(args map[string]any, fallback string) string {

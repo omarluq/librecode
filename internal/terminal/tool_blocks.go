@@ -71,6 +71,14 @@ func (app *App) toolDisplayStyle(display *toolDisplay) tcell.Style {
 func (app *App) renderPendingToolDisplay(width int, display *toolDisplay, style tcell.Style) []tui.Line {
 	lines := toolBlockStart(width, style)
 	lines = append(lines, app.toolHeaderDisplayLines(width, display, style)...)
+
+	if app.toolsExpanded {
+		if source := executeSource(display); source != "" {
+			lines = append(lines, app.toolExpandHintLines(width, style)...)
+			lines = append(lines, app.toolCodeLines(width, source, style)...)
+		}
+	}
+
 	lines = append(lines, toolBlockEnd(width, style)...)
 
 	return lines
@@ -109,12 +117,46 @@ func (app *App) renderExpandedToolDisplay(width int, display *toolDisplay, style
 }
 
 func (app *App) toolArgumentLines(width int, display *toolDisplay, style tcell.Style) []tui.Line {
+	if source := executeSource(display); source != "" {
+		return app.toolCodeLines(width, source, style)
+	}
+
 	arguments := prettyJSON(display.ArgumentsJSON)
 	if arguments == "" {
 		return nil
 	}
 
 	return plainSectionLines(width, "args", arguments, style)
+}
+
+func (app *App) toolCodeLines(width int, source string, style tcell.Style) []tui.Line {
+	view := tui.CodeBlock{
+		Style:    style,
+		Engine:   &app.renderer.Lexer,
+		Language: "go",
+		Text:     source,
+		Theme:    codeTheme(app.theme),
+	}
+	content := tui.PrefixLines(
+		view.Render(max(1, toolContentWidth(width)), maxToolBlockRenderLines),
+		"  ",
+		style,
+	)
+
+	return app.styledSectionLines(width, "code", content, style)
+}
+
+func executeSource(display *toolDisplay) string {
+	if display == nil {
+		return ""
+	}
+
+	name := strings.TrimSpace(display.Name)
+	if name != toolDisplayExecute && name != toolDisplayWorkflow {
+		return ""
+	}
+
+	return rawTextArg(decodeToolArgs(display.ArgumentsJSON), "source")
 }
 
 func (app *App) toolDiffLines(width int, display *toolDisplay, style tcell.Style) []tui.Line {
@@ -194,7 +236,13 @@ func plainSectionLines(width int, label, content string, style tcell.Style) []tu
 func padLinesRight(lines []tui.Line, width int) []tui.Line {
 	padded := make([]tui.Line, 0, len(lines))
 	for _, line := range lines {
-		line.Text = tui.PadRight(line.Text, width)
+		padding := max(0, width-line.Width())
+
+		line.Text += strings.Repeat(" ", padding)
+		if len(line.Spans) > 0 && padding > 0 {
+			line.Spans = append(line.Spans, tui.Span{Style: line.Style, Text: strings.Repeat(" ", padding)})
+		}
+
 		padded = append(padded, line)
 	}
 

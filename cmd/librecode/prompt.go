@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/samber/oops"
 	"github.com/spf13/cobra"
@@ -13,12 +16,17 @@ import (
 	"github.com/omarluq/librecode/internal/limitio"
 )
 
-const promptStdinLimitBytes int64 = 1 << 20
+const (
+	promptStdinLimitBytes int64 = 1 << 20
+	promptMetricsMode           = 0o600
+)
 
 type promptRunOptions struct {
-	SessionID   string
-	SessionName string
-	Resume      bool
+	SessionID    string
+	SessionName  string
+	ToolStrategy string
+	MetricsJSON  string
+	Resume       bool
 }
 
 func newPromptCmd() *cobra.Command {
@@ -35,6 +43,9 @@ func newPromptCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&options.SessionID, "session", "", "session id to append to")
 	cmd.Flags().StringVar(&options.SessionName, "name", "", "create a named session")
+	cmd.Flags().StringVar(&options.ToolStrategy, "tool-strategy", string(assistant.ToolStrategyHybrid),
+		"tool strategy: hybrid or direct")
+	cmd.Flags().StringVar(&options.MetricsJSON, "metrics-json", "", "write prompt metrics as JSON")
 	cmd.Flags().BoolVar(&options.Resume, "resume", false, "resume the latest session for this working directory")
 
 	return cmd
@@ -56,6 +67,15 @@ func runPrompt(cmd *cobra.Command, args []string, options promptRunOptions) erro
 }
 
 func validatePromptRunOptions(options promptRunOptions) error {
+	strategy := assistant.ToolStrategy(options.ToolStrategy)
+	if strategy == "" {
+		strategy = assistant.ToolStrategyHybrid
+	}
+
+	if strategy != assistant.ToolStrategyHybrid && strategy != assistant.ToolStrategyDirect {
+		return fmt.Errorf("invalid --tool-strategy %q: use hybrid or direct", options.ToolStrategy)
+	}
+
 	if options.Resume && options.SessionID != "" {
 		return errors.New("--resume cannot be used with --session")
 	}
@@ -80,13 +100,83 @@ func runPromptWithContainer(
 		return cliError(err, cliResolveWorkingDirectory)
 	}
 
-	response, err := runtime.Prompt(cmd.Context(), buildPromptRequest(cwd, message, options))
-	if err != nil {
-		return cliError(err, "run prompt")
+	strategy := normalizedToolStrategy(options.ToolStrategy)
+	metrics := new(assistant.RunMetrics)
+	ctx := assistant.WithToolStrategy(cmd.Context(), strategy)
+	ctx = assistant.WithRunMetrics(ctx, metrics)
+	request := buildPromptRequest(cwd, message, options)
+	request.OnEvent = metrics.ObserveStreamEvent
+	started := time.Now()
+	response, promptErr := runtime.Prompt(ctx, request)
+	elapsed := time.Since(started)
+
+	snapshot := metrics.Snapshot()
+	measured := &promptMetrics{
+		Strategy: string(strategy), Error: errorText(promptErr),
+		ProviderRoundTrips: snapshot.ProviderRoundTrips, ElapsedMilliseconds: elapsed.Milliseconds(),
+		InputTokens: snapshot.InputTokens, OutputTokens: snapshot.OutputTokens,
+		ToolCalls: snapshot.ToolCalls, NestedToolCalls: snapshot.NestedToolCalls,
+		TraceComplete: snapshot.TraceComplete, Success: promptErr == nil,
+	}
+
+	if metricsErr := writePromptMetrics(options.MetricsJSON, measured); metricsErr != nil {
+		return metricsErr
+	}
+
+	if promptErr != nil {
+		return cliError(promptErr, "run prompt")
 	}
 
 	if _, err := fmt.Fprintln(cmd.OutOrStdout(), response.Text); err != nil {
 		return oops.Wrapf(err, "write prompt response")
+	}
+
+	return nil
+}
+
+type promptMetrics struct {
+	Strategy            string `json:"strategy"`
+	Error               string `json:"error"`
+	ProviderRoundTrips  int    `json:"provider_round_trips"`
+	ElapsedMilliseconds int64  `json:"elapsed_ms"`
+	InputTokens         int    `json:"input_tokens"`
+	OutputTokens        int    `json:"output_tokens"`
+	ToolCalls           int    `json:"tool_calls"`
+	NestedToolCalls     int    `json:"nested_tool_calls"`
+	TraceComplete       bool   `json:"trace_complete"`
+	Success             bool   `json:"success"`
+}
+
+func normalizedToolStrategy(value string) assistant.ToolStrategy {
+	strategy := assistant.ToolStrategy(value)
+	if strategy == "" {
+		return assistant.ToolStrategyHybrid
+	}
+
+	return strategy
+}
+
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	return err.Error()
+}
+
+func writePromptMetrics(path string, metrics *promptMetrics) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+
+	encoded, err := json.MarshalIndent(metrics, "", "  ")
+	if err != nil {
+		return oops.Wrapf(err, "encode prompt metrics")
+	}
+
+	encoded = append(encoded, '\n')
+	if err := os.WriteFile(path, encoded, promptMetricsMode); err != nil {
+		return oops.Wrapf(err, "write prompt metrics")
 	}
 
 	return nil

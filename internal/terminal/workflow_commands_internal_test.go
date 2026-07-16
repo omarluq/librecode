@@ -82,7 +82,7 @@ func TestShowWorkflowsListsCurrentSessionRuns(t *testing.T) {
 				OwnerSessionID: workflowTestSessionID, ConcurrencyKey: "", LeaseOwner: "",
 				State: database.TaskRunning, Result: "", ErrorCode: "", ErrorMessage: "",
 			},
-			Source: "source", SourceHash: "hash", SourceVersion: "v1", ArgumentsJSON: "{}",
+			Name: "review", Source: "source", SourceHash: "hash", SourceVersion: "v1", ArgumentsJSON: "{}",
 		}},
 	}
 
@@ -90,7 +90,10 @@ func TestShowWorkflowsListsCurrentSessionRuns(t *testing.T) {
 
 	require.Len(t, app.transcript.History, 1)
 	assert.Equal(t, transcript.RoleCustom, app.transcript.History[0].Role)
-	assert.Equal(t, "run-1\n  state: running\n  updated: 2026-03-05 12:30:00", app.transcript.History[0].Content)
+	assert.Equal(t,
+		"run-1\n  name: review\n  state: running\n  updated: 2026-03-05 12:30:00",
+		app.transcript.History[0].Content,
+	)
 }
 
 func TestShowWorkflowsInspectsOwnedRun(t *testing.T) {
@@ -118,7 +121,7 @@ func TestShowWorkflowsInspectsOwnedRun(t *testing.T) {
 				State: database.TaskSucceeded, Result: `{"value":{"answer":42},"stdout":"done","stderr":""}`,
 				ErrorCode: "", ErrorMessage: "",
 			},
-			Source: "source", SourceHash: "hash", SourceVersion: "v1", ArgumentsJSON: "{}",
+			Name: "review", Source: "source", SourceHash: "hash", SourceVersion: "v1", ArgumentsJSON: "{}",
 		},
 	}
 
@@ -126,6 +129,7 @@ func TestShowWorkflowsInspectsOwnedRun(t *testing.T) {
 	require.Len(t, app.transcript.History, 1)
 	assert.Equal(t, strings.Join([]string{
 		workflowTestRunID,
+		"  name: review",
 		"  state: succeeded",
 		"  updated: 2026-03-05 12:30:00",
 		"  source version: v1",

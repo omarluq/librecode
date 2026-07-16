@@ -58,6 +58,7 @@ func runChat(cmd *cobra.Command, options chatRunOptions) error {
 		authStorage := container.AuthService().Storage
 		extensionManager := container.ExtensionService().Manager
 		cfg := container.ConfigService().Get()
+		chatWorkflows := container.ChatWorkflowService()
 
 		cwd, err := assistant.DefaultCWD("")
 		if err != nil {
@@ -75,7 +76,7 @@ func runChat(cmd *cobra.Command, options chatRunOptions) error {
 			Extensions: extensionManager,
 			Resources:  &resources,
 			Runtime:    runtime,
-			Workflows:  container.WorkflowService().Runs,
+			Workflows:  chatWorkflows.Runs,
 			Settings:   databaseService.Documents,
 			Models:     modelRegistry,
 			Auth:       authStorage,

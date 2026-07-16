@@ -115,9 +115,16 @@ func (service *Service) ExecuteQueued(ctx context.Context, runID string) (bool, 
 		return false, err
 	}
 
-	_, _, err = service.executeExisting(ctx, run, run, arguments, "", 0, 0, nil, false)
+	completed, _, err := service.executeExisting(ctx, run, run, arguments, run.Name, 0, 0, nil, false)
 	if err != nil && errors.Is(err, errRunClaimConflict) {
 		return false, nil
+	}
+
+	// Execution failures are durable workflow outcomes, not dispatcher failures.
+	// Once the terminal state has been persisted, callers can inspect the run
+	// without the background worker also writing the source error to the TUI.
+	if err != nil && completed != nil && workflowTerminal(completed.Task.State) {
+		return true, nil
 	}
 
 	return true, err
@@ -170,7 +177,7 @@ func (service *Service) Resume(
 		return run, nil, oops.In("workflow").Code("load_agent_links").Wrapf(err, "load workflow agent links")
 	}
 
-	return service.executeExisting(ctx, run, run, arguments, "", 0, 0, links, true)
+	return service.executeExisting(ctx, run, run, arguments, run.Name, 0, 0, links, true)
 }
 
 func (service *Service) executeExisting(
@@ -366,6 +373,16 @@ func (service *Service) Events(
 	return events, nil
 }
 
+// AgentTask returns one agent task linked from a workflow.
+func (service *Service) AgentTask(ctx context.Context, taskID string) (*database.AgentTaskEntity, bool, error) {
+	task, found, err := service.runs.AgentTasks().Get(ctx, taskID)
+	if err != nil {
+		return nil, false, oops.In("workflow").Code("get_agent_task").Wrapf(err, "get workflow agent task")
+	}
+
+	return task, found, nil
+}
+
 // AgentTasks returns workflow child links in launch order.
 func (service *Service) AgentTasks(
 	ctx context.Context,
@@ -402,8 +419,8 @@ func (service *Service) createRun(
 			ConcurrencyKey: request.OwnerSessionID, LeaseOwner: "", State: "", Result: "",
 			ErrorCode: "", ErrorMessage: "",
 		},
-		Source: request.Source, SourceHash: hex.EncodeToString(hash[:]), SourceVersion: sourceVersion,
-		ArgumentsJSON: argumentsJSON,
+		Name: request.Name, Source: request.Source, SourceHash: hex.EncodeToString(hash[:]),
+		SourceVersion: sourceVersion, ArgumentsJSON: argumentsJSON,
 	})
 	if err != nil {
 		return nil, oops.In("workflow").Code("create_run").Wrapf(err, "create workflow run")

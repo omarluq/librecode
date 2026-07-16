@@ -62,6 +62,28 @@ func TestServicePersistsFailedRun(t *testing.T) {
 	assert.Equal(t, "workflow_failed", stored.Task.ErrorCode)
 }
 
+func TestServiceExecuteQueuedPersistsEvaluationFailureWithoutReturningIt(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
+		Name: "invalid", Source: `func {`, SourceVersion: "v1", ArgumentsJSON: "{}",
+		OwnerSessionID: owner, SourceLimit: 0, OutputLimit: 0,
+	})
+	require.NoError(t, err)
+
+	claimed, err := service.ExecuteQueued(t.Context(), run.Task.ID)
+	require.NoError(t, err)
+	assert.True(t, claimed)
+
+	stored, found, err := service.Get(t.Context(), run.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, database.TaskFailed, stored.Task.State)
+	assert.Equal(t, "workflow_failed", stored.Task.ErrorCode)
+	assert.Contains(t, stored.Task.ErrorMessage, "evaluate workflow source")
+}
+
 func TestServiceResumesInterruptedRun(t *testing.T) {
 	t.Parallel()
 
@@ -229,7 +251,7 @@ func workflowRunEntity(owner string) *database.WorkflowRunEntity {
 			LeaseExpiresAt: nil, ID: "", Kind: "", ParentTaskID: "", OwnerSessionID: owner,
 			ConcurrencyKey: owner, LeaseOwner: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
 		},
-		Source: "1", SourceHash: "hash", SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: "test workflow", Source: "1", SourceHash: "hash", SourceVersion: "v1", ArgumentsJSON: "{}",
 	}
 }
 
@@ -306,7 +328,7 @@ func newWorkflowIntegration(t *testing.T) *workflowIntegration {
 		require.NoError(t, taskService.Shutdown(context.Background()))
 	})
 
-	submitter, err := assistant.NewAgentSubmitter(taskService, sessions, agent.Load(t.TempDir()))
+	submitter, err := assistant.NewAgentSubmitter(taskService, agent.Load(t.TempDir()))
 	require.NoError(t, err)
 	controller, err := assistant.NewWorkflowController(submitter, taskService, sessions)
 	require.NoError(t, err)

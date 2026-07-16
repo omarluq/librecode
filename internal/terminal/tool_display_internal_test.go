@@ -10,6 +10,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/testutil"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 func TestToolSummaryHumanizesKnownTools(t *testing.T) {
@@ -282,6 +283,54 @@ func TestTailExpandedToolLinesIncludesErrorWithOutput(t *testing.T) {
 	assert.NotEqual(t, -1, lineIndexContaining(lines, "output:"))
 	assert.NotEqual(t, -1, lineIndexContaining(lines, "stderr"))
 	assert.NotEqual(t, -1, lineIndexContaining(lines, "stdout"))
+}
+
+func TestRenderExpandedExecuteToolHighlightsGoSource(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.toolsExpanded = true
+	display := testToolDisplay("execute", toolDisplaySuccess)
+	display.Name = toolDisplayExecute
+	display.ArgumentsJSON = `{"source":"import \"tools\"\nfunc main() { tools.Call(\"read\", map[string]any{}) }"}`
+
+	lines := app.renderToolDisplayBlock(80, &display)
+
+	assertExecuteSourceHighlighted(t, lines)
+}
+
+func TestRenderPendingExpandedExecuteToolHighlightsGoSource(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.toolsExpanded = true
+	display := testToolDisplay("execute Go", toolDisplayPending)
+	display.Name = toolDisplayExecute
+	display.ArgumentsJSON = `{"source":"import \"tools\"\nfunc main() { tools.Call(\"read\", map[string]any{}) }"}`
+
+	lines := app.renderToolDisplayBlock(80, &display)
+
+	assertExecuteSourceHighlighted(t, lines)
+	assert.NotEqual(t, -1, lineIndexContaining(lines, pendingToolIndicator+" execute Go"))
+}
+
+func assertExecuteSourceHighlighted(t *testing.T, lines []tui.Line) {
+	t.Helper()
+
+	assert.NotEqual(t, -1, lineIndexContaining(lines, "code:"))
+	assert.NotEqual(t, -1, lineIndexContaining(lines, `import "tools"`))
+	assert.Equal(t, -1, lineIndexContaining(lines, `"source":`))
+	assert.True(t, hasStyledToolLine(lines, "tools.Call"), "execute source should retain syntax-highlighted spans")
+}
+
+func hasStyledToolLine(lines []tui.Line, text string) bool {
+	for _, line := range lines {
+		if strings.Contains(line.Text, text) && len(line.Spans) > 1 {
+			return true
+		}
+	}
+
+	return false
 }
 
 func TestRenderExpandedToolDisplayPrettyPrintsArguments(t *testing.T) {

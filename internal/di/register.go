@@ -16,4 +16,5 @@ func RegisterServices(injector do.Injector) {
 	do.Provide(injector, NewAssistantService)
 	do.Provide(injector, NewAgentTaskService)
 	do.Provide(injector, NewWorkflowService)
+	do.Provide(injector, NewChatWorkflowService)
 }

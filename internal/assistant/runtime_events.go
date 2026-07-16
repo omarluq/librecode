@@ -12,6 +12,8 @@ func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *Comple
 		return
 	}
 
+	observeProviderRoundTrip(ctx)
+
 	payload := new(lifecyclepayload.ProviderRequest)
 	payload.Headers = redactedHeaders(request.Auth.Headers)
 	payload.API = request.Model.API
@@ -43,6 +45,8 @@ func (runtime *Runtime) emitProviderResponse(
 	if request == nil || result == nil {
 		return
 	}
+
+	observeProviderUsage(ctx, result.Usage)
 
 	payload := lifecyclepayload.ProviderResponsePayload(&lifecyclepayload.ProviderResponse{
 		FinishReason:   result.FinishReason,

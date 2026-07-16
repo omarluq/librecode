@@ -18,6 +18,7 @@ const TaskKindWorkflow = "workflow"
 // WorkflowRunEntity contains workflow-specific data for a generic task.
 type WorkflowRunEntity struct {
 	Task          TaskEntity
+	Name          string
 	Source        string
 	SourceHash    string
 	SourceVersion string
@@ -36,8 +37,9 @@ type WorkflowAgentTaskEntity struct {
 
 // WorkflowRepository persists workflow metadata and composes generic lifecycle operations.
 type WorkflowRepository struct {
-	sql   ksql.Provider
-	tasks *TaskRepository
+	sql        ksql.Provider
+	tasks      *TaskRepository
+	agentTasks *AgentTaskRepository
 }
 
 // NewWorkflowRepository creates a workflow repository.
@@ -52,12 +54,20 @@ func NewWorkflowRepository(connection *sql.DB) *WorkflowRepository {
 
 // NewWorkflowRepositoryWithProvider creates a workflow repository with an explicit SQL provider.
 func NewWorkflowRepositoryWithProvider(provider ksql.Provider) *WorkflowRepository {
-	return &WorkflowRepository{sql: provider, tasks: NewTaskRepositoryWithProvider(provider)}
+	return &WorkflowRepository{
+		sql: provider, tasks: NewTaskRepositoryWithProvider(provider),
+		agentTasks: NewAgentTaskRepositoryWithProvider(provider),
+	}
 }
 
 // Tasks returns the generic task repository used for workflow lifecycle and events.
 func (repository *WorkflowRepository) Tasks() *TaskRepository {
 	return repository.tasks
+}
+
+// AgentTasks returns the agent-task repository sharing this repository's transaction provider.
+func (repository *WorkflowRepository) AgentTasks() *AgentTaskRepository {
+	return repository.agentTasks
 }
 
 // Create persists a queued workflow task, metadata, and initial event atomically.
@@ -91,8 +101,8 @@ func (repository *WorkflowRepository) Create(
 		}
 
 		const statement = `INSERT INTO workflow_runs
-(task_id, source, source_hash, source_version, arguments_json) VALUES (?, ?, ?, ?, ?)`
-		if _, err := transaction.Exec(ctx, statement, created.Task.ID, created.Source, created.SourceHash,
+(task_id, name, source, source_hash, source_version, arguments_json) VALUES (?, ?, ?, ?, ?, ?)`
+		if _, err := transaction.Exec(ctx, statement, created.Task.ID, created.Name, created.Source, created.SourceHash,
 			created.SourceVersion, created.ArgumentsJSON); err != nil {
 			return oops.In("database").Code("insert_workflow_run").Wrapf(err, "insert workflow run")
 		}
@@ -138,11 +148,59 @@ ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`
 	)
 }
 
+// CreateAgentTaskWithChildSession atomically creates a child session, queued agent task, and workflow link.
+func (repository *WorkflowRepository) CreateAgentTaskWithChildSession(
+	ctx context.Context,
+	workflowTaskID string,
+	agentTask *AgentTaskEntity,
+	childRequest *ChildSessionRequest,
+	nodeKey string,
+	invocationIndex int,
+) (*AgentTaskEntity, error) {
+	if agentTask == nil {
+		return nil, errors.New("database: agent task is required")
+	}
+
+	if childRequest == nil {
+		return nil, errors.New("database: child session request is required")
+	}
+
+	if agentTask.Task.OwnerSessionID != childRequest.ParentSessionID {
+		return nil, errors.New("database: child session parent differs from agent task owner")
+	}
+
+	child, err := prepareSession(
+		repository.tasks.now(),
+		childRequest.CWD,
+		childRequest.Name,
+		childRequest.ParentSessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	candidate := *agentTask
+	candidate.ChildSessionID = child.ID
+
+	return repository.createAgentTask(ctx, workflowTaskID, &candidate, child, nodeKey, invocationIndex)
+}
+
 // CreateAgentTask atomically persists a queued agent task and its workflow link.
 func (repository *WorkflowRepository) CreateAgentTask(
 	ctx context.Context,
 	workflowTaskID string,
 	agentTask *AgentTaskEntity,
+	nodeKey string,
+	invocationIndex int,
+) (*AgentTaskEntity, error) {
+	return repository.createAgentTask(ctx, workflowTaskID, agentTask, nil, nodeKey, invocationIndex)
+}
+
+func (repository *WorkflowRepository) createAgentTask(
+	ctx context.Context,
+	workflowTaskID string,
+	agentTask *AgentTaskEntity,
+	child *SessionEntity,
 	nodeKey string,
 	invocationIndex int,
 ) (*AgentTaskEntity, error) {
@@ -176,6 +234,12 @@ JOIN workflow_runs w ON w.task_id = t.id WHERE t.id = ?`
 		if workflow.OwnerSessionID != created.Task.OwnerSessionID {
 			return oops.In("database").Code("workflow_agent_owner_mismatch").
 				Errorf("agent task owner differs from workflow owner")
+		}
+
+		if child != nil {
+			if err := insertSession(ctx, transaction, child); err != nil {
+				return err
+			}
 		}
 
 		if err := insertAgentTask(ctx, transaction, created, now); err != nil {
@@ -315,7 +379,7 @@ FROM workflow_agent_tasks WHERE workflow_task_id = ? ORDER BY sequence ASC`
 const workflowRunColumns = `t.id, t.kind, t.parent_task_id, t.owner_session_id, t.concurrency_key,
 t.state, t.result, t.error_code, t.error_message, t.created_at, t.started_at, t.finished_at,
 t.updated_at, t.lease_owner, t.lease_expires_at,
-w.source, w.source_hash, w.source_version, w.arguments_json`
+w.name, w.source, w.source_hash, w.source_version, w.arguments_json`
 
 type workflowRunRow struct {
 	ID             string  `ksql:"id"`
@@ -333,6 +397,7 @@ type workflowRunRow struct {
 	UpdatedAt      string  `ksql:"updated_at"`
 	LeaseOwner     *string `ksql:"lease_owner"`
 	LeaseExpiresAt *string `ksql:"lease_expires_at"`
+	Name           string  `ksql:"name"`
 	Source         string  `ksql:"source"`
 	SourceHash     string  `ksql:"source_hash"`
 	SourceVersion  string  `ksql:"source_version"`
@@ -351,7 +416,7 @@ func workflowRunFromRow(row *workflowRunRow) (*WorkflowRunEntity, error) {
 		return nil, err
 	}
 
-	return &WorkflowRunEntity{Task: *task, Source: row.Source, SourceHash: row.SourceHash,
+	return &WorkflowRunEntity{Task: *task, Name: row.Name, Source: row.Source, SourceHash: row.SourceHash,
 		SourceVersion: row.SourceVersion, ArgumentsJSON: row.ArgumentsJSON}, nil
 }
 

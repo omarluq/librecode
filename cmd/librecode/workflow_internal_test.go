@@ -2,9 +2,12 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/database"
 )
 
 func TestWorkflowCommandRegistersSubmit(t *testing.T) {
@@ -25,6 +28,29 @@ func TestWorkflowCommandRegistersWorker(t *testing.T) {
 	assert.Equal(t, "worker", worker.Use)
 	require.NoError(t, worker.Args(worker, nil))
 	require.Error(t, worker.Args(worker, []string{"unexpected"}))
+}
+
+func TestWorkflowCommandRegistersMetrics(t *testing.T) {
+	t.Parallel()
+
+	metrics, _, err := newWorkflowCmd().Find([]string{"metrics"})
+	require.NoError(t, err)
+	assert.Equal(t, "metrics <run-id>", metrics.Use)
+	require.Error(t, metrics.Args(metrics, nil))
+	require.NoError(t, metrics.Args(metrics, []string{"run-id"}))
+}
+
+func TestTaskElapsed(t *testing.T) {
+	t.Parallel()
+
+	created := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+	started := created.Add(time.Second)
+	finished := started.Add(3 * time.Second)
+	assert.Equal(t, 3*time.Second, taskElapsed(&database.TaskEntity{
+		LeaseExpiresAt: nil, ID: "", Kind: "", ParentTaskID: "", OwnerSessionID: "", ConcurrencyKey: "",
+		LeaseOwner: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
+		CreatedAt: created, StartedAt: &started, FinishedAt: &finished, UpdatedAt: finished,
+	}))
 }
 
 func TestWorkflowCommandRegistersResume(t *testing.T) {

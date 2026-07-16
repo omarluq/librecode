@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,29 +26,42 @@ func TestValidatePromptRunOptions(t *testing.T) {
 		options promptRunOptions
 	}{
 		{
-			options: promptRunOptions{SessionID: "", SessionName: "", Resume: false},
+			options: promptRunOptions{SessionID: "", SessionName: "", ToolStrategy: "", MetricsJSON: "", Resume: false},
 			name:    "default",
 			wantErr: "",
 		},
 		{
-			options: promptRunOptions{SessionID: testSessionID, SessionName: "", Resume: false},
+			options: promptRunOptions{
+				SessionID: testSessionID, SessionName: "", ToolStrategy: "", MetricsJSON: "", Resume: false,
+			},
 			name:    "session only",
 			wantErr: "",
 		},
 		{
-			options: promptRunOptions{SessionID: "", SessionName: "", Resume: true},
+			options: promptRunOptions{SessionID: "", SessionName: "", ToolStrategy: "", MetricsJSON: "", Resume: true},
 			name:    "resume only",
 			wantErr: "",
 		},
 		{
-			options: promptRunOptions{SessionID: testSessionID, SessionName: "", Resume: true},
+			options: promptRunOptions{
+				SessionID: testSessionID, SessionName: "", ToolStrategy: "", MetricsJSON: "", Resume: true,
+			},
 			name:    "resume with session",
 			wantErr: "--resume cannot be used with --session",
 		},
 		{
-			options: promptRunOptions{SessionID: "", SessionName: testSessionName, Resume: true},
+			options: promptRunOptions{
+				SessionID: "", SessionName: testSessionName, ToolStrategy: "hybrid", MetricsJSON: "", Resume: true,
+			},
 			name:    "resume with name",
 			wantErr: "--resume cannot be used with --name",
+		},
+		{
+			options: promptRunOptions{
+				SessionID: "", SessionName: "", ToolStrategy: "invalid", MetricsJSON: "", Resume: false,
+			},
+			name:    "invalid strategy",
+			wantErr: "invalid --tool-strategy",
 		},
 	}
 
@@ -165,9 +181,7 @@ func TestBuildPromptRequest(t *testing.T) {
 	t.Parallel()
 
 	request := buildPromptRequest("/workspace", "hello", promptRunOptions{
-		SessionID:   "session-1",
-		SessionName: testSessionName,
-		Resume:      true,
+		SessionID: "session-1", SessionName: testSessionName, ToolStrategy: "", MetricsJSON: "", Resume: true,
 	})
 
 	require.NotNil(t, request)
@@ -181,6 +195,32 @@ func TestBuildPromptRequest(t *testing.T) {
 	assert.Nil(t, request.OnUserEntry)
 	assert.Nil(t, request.ParentEntryID)
 	assert.False(t, request.HideUserPrompt)
+}
+
+func TestWritePromptMetrics(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "metrics.json")
+	metrics := &promptMetrics{
+		Strategy: "direct", Error: "", ProviderRoundTrips: 2, ElapsedMilliseconds: 12,
+		InputTokens: 10, OutputTokens: 4, ToolCalls: 1, NestedToolCalls: 0,
+		TraceComplete: true, Success: true,
+	}
+	require.NoError(t, writePromptMetrics(path, metrics))
+
+	encoded, err := os.ReadFile(filepath.Clean(path))
+	require.NoError(t, err)
+
+	var decoded promptMetrics
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	assert.Equal(t, *metrics, decoded)
+}
+
+func TestNormalizedToolStrategyDefaultsToHybrid(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "hybrid", string(normalizedToolStrategy("")))
+	assert.Equal(t, "direct", string(normalizedToolStrategy("direct")))
 }
 
 func TestPromptMessageRejectsStdinAboveLimit(t *testing.T) {

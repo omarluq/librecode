@@ -57,7 +57,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		}
 
 		appendThinking(result, providerResult.Thinking)
-		result.Usage = mergeUsage(result.Usage, providerResult.Usage)
+		result.Usage = accumulateUsage(result.Usage, providerResult.Usage)
 
 		result.FinishReason = providerResult.FinishReason
 		if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
