@@ -127,7 +127,7 @@ func (executor *executeToolExecutor) search(query string) []map[string]any {
 	matches := make([]map[string]any, 0)
 
 	for _, definition := range executor.registry.Definitions() {
-		if definition.Name == executeToolName {
+		if definition.Name == executeToolName || definition.Name == workflowToolName {
 			continue
 		}
 
@@ -144,7 +144,7 @@ func (executor *executeToolExecutor) search(query string) []map[string]any {
 
 func (executor *executeToolExecutor) describe(name string) map[string]any {
 	for _, definition := range executor.registry.Definitions() {
-		if definition.Name == executeToolName {
+		if definition.Name == executeToolName || definition.Name == workflowToolName {
 			continue
 		}
 
@@ -160,6 +160,12 @@ func (executor *executeToolExecutor) call(ctx context.Context, name string, inpu
 	if tool.Name(name) == executeToolName {
 		return executeToolCallResult{
 			Details: map[string]any{}, Content: nil, Error: "execute cannot call itself", IsError: true,
+		}
+	}
+
+	if tool.Name(name) == workflowToolName {
+		return executeToolCallResult{
+			Details: map[string]any{}, Content: nil, Error: "execute cannot call workflow", IsError: true,
 		}
 	}
 

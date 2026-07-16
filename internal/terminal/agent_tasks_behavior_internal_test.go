@@ -265,6 +265,43 @@ func TestAgentTaskCompletionFallbacksAndDelivery(t *testing.T) {
 	app.deliverAgentTaskCompletion(t.Context(), nil)
 }
 
+func TestWorkflowChildAgentTasksAreHiddenAndNotDelivered(t *testing.T) {
+	t.Parallel()
+
+	child := behaviorAgentTask("workflow-child", database.TaskRunning)
+	child.Task.ParentTaskID = "workflow-run"
+	stub := newAgentTaskControllerStub(
+		map[string]*database.AgentTaskEntity{child.Task.ID: &child},
+		[]database.AgentTaskEntity{child},
+	)
+	app := newAgentTaskBehaviorApp(t, stub)
+	app.working = true
+
+	app.discoverActiveAgentTasks(t.Context())
+	assert.Empty(t, app.agentTasks)
+	app.activeWorkflows = []database.WorkflowRunEntity{
+		workflowSummaryRun("workflow-run", database.TaskRunning),
+	}
+	lines := app.renderAgentTaskSummary(80)
+	require.Len(t, lines, 2)
+	assert.Equal(t, "◌ workflow(active review)", lines[0].Text)
+	assert.True(t, app.hasRunningAgentTasks())
+
+	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":"workflow-child"}`, false))
+	assert.Empty(t, app.agentTasks)
+
+	completed := child
+	completed.Task.State = database.TaskSucceeded
+	completed.Task.Result = "workflow-owned result"
+	stub.tasks[child.Task.ID] = &completed
+	app.deliverAgentTaskCompletionText(t.Context(), child.Task.ID, "workflow-owned result")
+	app.deliverAgentTaskCompletion(t.Context(), &completed)
+
+	assert.Empty(t, app.liveAgentCompletions)
+	assert.Empty(t, app.hiddenQueuedMessages)
+	assert.Contains(t, app.deliveredAgentTasks, child.Task.ID)
+}
+
 func TestDiscoverRefreshAndTrackAgentTasks(t *testing.T) {
 	t.Parallel()
 

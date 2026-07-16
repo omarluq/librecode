@@ -116,6 +116,17 @@ func (registry *Registry) Definitions() []Definition {
 	return definitions
 }
 
+// Has reports whether a tool is registered under name.
+func (registry *Registry) Has(name Name) bool {
+	if registry == nil {
+		return false
+	}
+
+	_, exists := registry.executors[name]
+
+	return exists
+}
+
 // Execute runs a named tool with raw JSON object arguments.
 func (registry *Registry) Execute(ctx context.Context, name string, input Arguments) (Result, error) {
 	executor, ok := registry.executors[Name(name)]

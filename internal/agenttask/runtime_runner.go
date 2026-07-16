@@ -9,6 +9,7 @@ import (
 	"github.com/omarluq/librecode/internal/agent"
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 // RuntimeRunner executes durable tasks through the shared assistant runtime.
@@ -59,16 +60,22 @@ func (runner *RuntimeRunner) Run(
 
 	var eventErr error
 
-	response, err := runtime.Prompt(ctx, &assistant.PromptRequest{
+	metrics := new(assistant.RunMetrics)
+	runCtx := assistant.WithRunMetrics(ctx, metrics)
+	response, err := runtime.Prompt(runCtx, &assistant.PromptRequest{
 		OnEvent: func(event assistant.StreamEvent) {
+			metrics.ObserveStreamEvent(event)
+
 			if eventErr == nil {
-				eventErr = sink(ctx, string(event.Kind), event)
+				eventErr = sink(runCtx, string(event.Kind), event)
 			}
 		},
 		OnRetry: nil, OnUserEntry: nil, ParentEntryID: nil,
 		SessionID: task.ChildSessionID, CWD: session.CWD, Text: task.Prompt,
 		Name: "", ResumeLatest: false, HideUserPrompt: false,
 	})
+	usageJSON, usageErr := agentUsageJSON(response, metrics.Snapshot())
+
 	if err != nil {
 		return Result{Text: "", UsageJSON: "{}"}, oops.In("agenttask").Code("run_prompt").Wrapf(err, "run agent prompt")
 	}
@@ -77,13 +84,33 @@ func (runner *RuntimeRunner) Run(
 		return Result{Text: response.Text, UsageJSON: "{}"}, eventErr
 	}
 
-	usage, err := json.Marshal(response.Usage)
-	if err != nil {
-		return Result{Text: response.Text, UsageJSON: "{}"}, oops.In("agenttask").Code("marshal_usage").
-			Wrapf(err, "marshal agent usage")
+	if usageErr != nil {
+		return Result{Text: response.Text, UsageJSON: "{}"}, usageErr
 	}
 
-	return Result{Text: response.Text, UsageJSON: string(usage)}, nil
+	return Result{Text: response.Text, UsageJSON: usageJSON}, nil
+}
+
+type agentUsage struct {
+	model.TokenUsage
+	ProviderRoundTrips int `json:"provider_round_trips,omitempty"`
+}
+
+func agentUsageJSON(response *assistant.PromptResponse, metrics assistant.RunMetricsSnapshot) (string, error) {
+	usage := model.EmptyTokenUsage()
+	if response != nil {
+		usage = response.Usage
+	} else {
+		usage.InputTokens = metrics.InputTokens
+		usage.OutputTokens = metrics.OutputTokens
+	}
+
+	encoded, err := json.Marshal(agentUsage{TokenUsage: usage, ProviderRoundTrips: metrics.ProviderRoundTrips})
+	if err != nil {
+		return "{}", oops.In("agenttask").Code("marshal_usage").Wrapf(err, "marshal agent usage")
+	}
+
+	return string(encoded), nil
 }
 
 func (runner *RuntimeRunner) taskDefinition(task *database.AgentTaskEntity) (*agent.Definition, error) {

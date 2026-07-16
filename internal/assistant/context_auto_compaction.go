@@ -40,7 +40,7 @@ func (runtime *Runtime) buildCompletionRequest(
 		return nil, oops.In("assistant").Code("context_build_model").Wrapf(err, "context: build model context")
 	}
 
-	registry, err := runtime.promptToolRegistry(cwd, sessionID)
+	registry, err := runtime.promptToolRegistry(ctx, cwd, sessionID)
 	if err != nil {
 		return nil, oops.In("assistant").Code("context_tool_registry").Wrapf(err, "context: create tool registry")
 	}

@@ -23,7 +23,6 @@ func NewWorkflowService(injector do.Injector) (*WorkflowService, error) {
 
 	submitter, err := assistant.NewAgentSubmitter(
 		agentTaskService.Tasks,
-		databaseService.Sessions,
 		assistantService.Agents,
 	)
 	if err != nil {

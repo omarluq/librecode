@@ -41,7 +41,11 @@ func newToolRegistry(cwd string, provider toolProvider) (*tool.Registry, error) 
 	return registry, nil
 }
 
-func (runtime *Runtime) promptToolRegistry(cwd, sessionID string) (*tool.Registry, error) {
+func (runtime *Runtime) promptToolRegistry(
+	ctx context.Context,
+	cwd string,
+	sessionID string,
+) (*tool.Registry, error) {
 	if runtime.profile.Kind != ExecutionTopLevel {
 		return runtime.profileToolRegistry(cwd)
 	}
@@ -56,27 +60,59 @@ func (runtime *Runtime) promptToolRegistry(cwd, sessionID string) (*tool.Registr
 		return nil, err
 	}
 
-	if runtime.agents != nil && runtime.agentTasks != nil && runtime.agents.Len() > 0 {
-		for _, name := range []tool.Name{
-			agentStartToolName,
-			agentStatusToolName,
-			agentWaitToolName,
-			agentCancelToolName,
-			agentListToolName,
-		} {
-			executor := &agentToolExecutor{
-				controller:      runtime.agentTasks,
-				sessions:        runtime.sessions,
-				catalog:         runtime.agents,
-				name:            name,
-				parentSessionID: sessionID,
-				cwd:             cwd,
-				definition:      nil,
-			}
-			if err := registry.Register(executor); err != nil {
-				return nil, oops.In("assistant").Code("register_agent_tool").Wrapf(err, "register agent tool")
-			}
+	if err := runtime.registerAgentTools(registry, sessionID, cwd); err != nil {
+		return nil, err
+	}
+
+	if err := runtime.registerWorkflowTool(registry, sessionID); err != nil {
+		return nil, err
+	}
+
+	if err := runtime.registerExecuteTool(ctx, registry); err != nil {
+		return nil, err
+	}
+
+	return registry, nil
+}
+
+func (runtime *Runtime) registerAgentTools(registry *tool.Registry, sessionID, cwd string) error {
+	if runtime.agents == nil || runtime.agentTasks == nil || runtime.agents.Len() == 0 {
+		return nil
+	}
+
+	for _, name := range []tool.Name{
+		agentStartToolName, agentStatusToolName, agentWaitToolName, agentCancelToolName, agentListToolName,
+	} {
+		executor := &agentToolExecutor{
+			controller: runtime.agentTasks, sessions: runtime.sessions, catalog: runtime.agents, name: name,
+			parentSessionID: sessionID, cwd: cwd, definition: nil,
 		}
+		if err := registry.Register(executor); err != nil {
+			return oops.In("assistant").Code("register_agent_tool").Wrapf(err, "register agent tool")
+		}
+	}
+
+	return nil
+}
+
+func (runtime *Runtime) registerWorkflowTool(registry *tool.Registry, sessionID string) error {
+	if runtime.workflowSubmitter == nil {
+		return nil
+	}
+
+	executor := &workflowToolExecutor{
+		submitter: runtime.workflowSubmitter, ownerSessionID: sessionID,
+	}
+	if err := registry.Register(executor); err != nil {
+		return oops.In("assistant").Code("register_workflow_tool").Wrapf(err, "register workflow tool")
+	}
+
+	return nil
+}
+
+func (runtime *Runtime) registerExecuteTool(ctx context.Context, registry *tool.Registry) error {
+	if toolStrategyFromContext(ctx) == ToolStrategyDirect {
+		return nil
 	}
 
 	invoke := func(
@@ -88,10 +124,10 @@ func (runtime *Runtime) promptToolRegistry(cwd, sessionID string) (*tool.Registr
 		return runtime.invokeNestedTool(ctx, registry, name, arguments, argumentsJSON)
 	}
 	if err := registry.Register(newExecuteTool(registry, invoke)); err != nil {
-		return nil, oops.In("assistant").Code("register_execute_tool").Wrapf(err, "register execute tool")
+		return oops.In("assistant").Code("register_execute_tool").Wrapf(err, "register execute tool")
 	}
 
-	return registry, nil
+	return nil
 }
 
 func (runtime *Runtime) profileToolRegistry(cwd string) (*tool.Registry, error) {

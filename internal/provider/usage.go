@@ -7,24 +7,15 @@ import (
 )
 
 func mergeUsage(estimated, reported llm.Usage) llm.Usage {
-	usage := estimated
-	if reported.ContextWindow > 0 {
-		usage.ContextWindow = reported.ContextWindow
-	}
+	return llm.MergeUsage(estimated, reported)
+}
 
-	if reported.ContextTokens > 0 {
-		usage.ContextTokens = reported.ContextTokens
-	}
+func accumulateUsage(aggregate, reported llm.Usage) llm.Usage {
+	usage := llm.MergeUsage(aggregate, reported)
+	usage.InputTokens = aggregate.InputTokens + reported.InputTokens
+	usage.OutputTokens = aggregate.OutputTokens + reported.OutputTokens
 
-	if reported.InputTokens > 0 {
-		usage.InputTokens = reported.InputTokens
-	}
-
-	if reported.OutputTokens > 0 {
-		usage.OutputTokens = reported.OutputTokens
-	}
-
-	return llm.MergeUsage(usage, reported)
+	return usage
 }
 
 func usageFromObject(value any) llm.Usage {

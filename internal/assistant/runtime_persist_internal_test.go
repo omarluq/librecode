@@ -14,6 +14,7 @@ const (
 	runtimePersistTestArgsJSON = `{"path":"a.go"}`
 	runtimePersistToolCallID   = "call-1"
 	runtimePersistParentID     = "outer"
+	runtimePersistChildOneID   = "outer/1"
 )
 
 func TestFormatToolEventIncludesErrorMarker(t *testing.T) {
@@ -117,7 +118,7 @@ func TestMergeNestedToolEventsOrdersSiblingsBySequence(t *testing.T) {
 	outer := []ToolEvent{runtimePersistIdentityEvent(runtimePersistParentID, "", "execute", 0)}
 	nested := []ToolEvent{
 		runtimePersistIdentityEvent("outer/3", runtimePersistParentID, "write", 3),
-		runtimePersistIdentityEvent("outer/1", runtimePersistParentID, "read", 1),
+		runtimePersistIdentityEvent(runtimePersistChildOneID, runtimePersistParentID, "read", 1),
 		runtimePersistIdentityEvent("outer/unknown", runtimePersistParentID, "grep", 0),
 		runtimePersistIdentityEvent("outer/2", runtimePersistParentID, "find", 2),
 	}
@@ -125,7 +126,7 @@ func TestMergeNestedToolEventsOrdersSiblingsBySequence(t *testing.T) {
 	merged := mergeNestedToolEvents(outer, nested)
 
 	wantCallIDs := []string{
-		"outer/1", "outer/2", "outer/3", "outer/unknown", runtimePersistParentID,
+		runtimePersistChildOneID, "outer/2", "outer/3", "outer/unknown", runtimePersistParentID,
 	}
 	assert.Equal(t, wantCallIDs, toolEventCallIDs(merged))
 }

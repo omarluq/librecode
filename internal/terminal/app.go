@@ -149,6 +149,7 @@ type App struct {
 	runningToolBlocks     []runningToolBlock
 	liveAgentCompletions  []chatMessage
 	agentTasks            []database.AgentTaskEntity
+	activeWorkflows       []database.WorkflowRunEntity
 	agentTasksRefreshedAt time.Time
 	agentTaskWatches      map[string]context.CancelFunc
 	deliveredAgentTasks   map[string]struct{}
@@ -264,6 +265,7 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 		runningToolBlocks:     []runningToolBlock{},
 		liveAgentCompletions:  []chatMessage{},
 		agentTasks:            []database.AgentTaskEntity{},
+		activeWorkflows:       []database.WorkflowRunEntity{},
 		agentTasksRefreshedAt: time.Time{},
 		agentTaskWatches:      map[string]context.CancelFunc{},
 		deliveredAgentTasks:   map[string]struct{}{},

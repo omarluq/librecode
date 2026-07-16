@@ -69,6 +69,42 @@ func TestAgentTaskRepositoryLifecycle(t *testing.T) {
 	assert.NotEmpty(t, events[2].Event.ID)
 }
 
+func TestAgentTaskRepositoryCreatesChildSessionAtomically(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner := fixture.createOwner(ctx)
+
+	candidate := newAgentTask(owner.ID, "")
+	created, err := fixture.agents.CreateWithChildSession(ctx, candidate, &database.ChildSessionRequest{
+		CWD: owner.CWD, Name: "child", ParentSessionID: owner.ID,
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, created.ChildSessionID)
+
+	child, found, err := fixture.sessions.GetSession(ctx, created.ChildSessionID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, owner.ID, child.ParentSession)
+
+	invalid := newAgentTask("missing-owner", "")
+	_, err = fixture.agents.CreateWithChildSession(ctx, invalid, &database.ChildSessionRequest{
+		CWD: owner.CWD, Name: "orphan", ParentSessionID: "missing-owner",
+	})
+	require.Error(t, err)
+
+	mismatched := newAgentTask(owner.ID, "")
+	_, err = fixture.agents.CreateWithChildSession(ctx, mismatched, &database.ChildSessionRequest{
+		CWD: owner.CWD, Name: "wrong-parent", ParentSessionID: testUUIDV7(t),
+	})
+	require.ErrorContains(t, err, "parent differs from agent task owner")
+
+	children, err := fixture.sessions.ListChildSessions(ctx, owner.ID)
+	require.NoError(t, err)
+	assert.Len(t, children, 1, "failed task creation must roll back its child session")
+}
+
 func TestAgentTaskRepositoryFinishBehavior(t *testing.T) {
 	t.Parallel()
 

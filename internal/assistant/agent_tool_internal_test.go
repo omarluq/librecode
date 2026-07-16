@@ -119,10 +119,9 @@ func TestAgentStartCreatesChildAndSubmitsSnapshot(t *testing.T) {
 	assert.Equal(t, "inspect code", stub.lastSubmit.Prompt)
 	assert.Equal(t, parent.ID, stub.lastSubmit.OwnerSessionID)
 	assert.Contains(t, stub.lastSubmit.PolicyJSON, `"name":"general"`)
-	child, found, getErr := sessions.GetSession(t.Context(), stub.lastSubmit.ChildSessionID)
-	require.NoError(t, getErr)
-	require.True(t, found)
-	assert.Equal(t, parent.ID, child.ParentSession)
+	assert.Empty(t, stub.lastSubmit.ChildSessionID)
+	assert.Equal(t, parent.CWD, stub.lastSubmit.ChildSessionCWD)
+	assert.NotEmpty(t, stub.lastSubmit.ChildSessionName)
 }
 
 func TestAgentStartValidationAndSubmissionCleanup(t *testing.T) {
@@ -164,9 +163,8 @@ func TestAgentStartValidationAndSubmissionCleanup(t *testing.T) {
 	executor := newAgentToolExecutor(stub, sessions, catalog, agentStartToolName, parent.ID, parent.CWD)
 	_, err = executor.Execute(t.Context(), agentArguments(t, `{"agent":"general","prompt":"work"}`))
 	require.ErrorContains(t, err, "submit agent task")
-	_, found, getErr := sessions.GetSession(t.Context(), stub.lastSubmit.ChildSessionID)
-	require.NoError(t, getErr)
-	assert.False(t, found)
+	assert.Empty(t, stub.lastSubmit.ChildSessionID)
+	assert.NotEmpty(t, stub.lastSubmit.ChildSessionName)
 }
 
 func TestAgentTaskOperationsAreOwnerScoped(t *testing.T) {
@@ -319,28 +317,11 @@ func TestAgentSubmitFailureBranches(t *testing.T) {
 	assert.Empty(t, result.Text())
 	assert.Equal(t, "accepted", result.Details["task_id"])
 
-	closedSessions, databaseConnection := agentToolSessionsWithDB(t)
-	parent, err = closedSessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
-	require.NoError(t, err)
-
 	stub = new(agentControllerStub)
 	stub.submitErr = errors.New("submit failed")
-	stub.submitFunc = func() (*database.AgentTaskEntity, error) {
-		require.NoError(t, databaseConnection.Close())
-
-		return nil, stub.submitErr
-	}
-	executor = newAgentToolExecutor(stub, closedSessions, catalog, agentStartToolName, parent.ID, parent.CWD)
+	executor = newAgentToolExecutor(stub, sessions, catalog, agentStartToolName, parent.ID, parent.CWD)
 	_, err = executor.Execute(t.Context(), agentArguments(t, `{"agent":"general","prompt":"work"}`))
 	require.ErrorContains(t, err, "submit failed")
-	require.ErrorContains(t, err, "database is closed")
-
-	closedSessions, databaseConnection = agentToolSessionsWithDB(t)
-	require.NoError(t, databaseConnection.Close())
-
-	executor.sessions = closedSessions
-	_, err = executor.Execute(t.Context(), agentArguments(t, `{"agent":"general","prompt":"work"}`))
-	require.ErrorContains(t, err, "create child agent session")
 }
 
 func TestChildSessionNameNormalizesAndTruncates(t *testing.T) {

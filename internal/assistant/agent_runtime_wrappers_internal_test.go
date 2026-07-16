@@ -145,7 +145,7 @@ func TestAsyncAgentPromptAndToolRegistries(t *testing.T) {
 	assert.Contains(t, prompt, "Use agent_start")
 	assert.Contains(t, prompt, "agent_cancel")
 
-	registry, err := runtime.promptToolRegistry(cwd, "owner")
+	registry, err := runtime.promptToolRegistry(t.Context(), cwd, "owner")
 	require.NoError(t, err)
 
 	names := make([]tool.Name, 0, len(registry.Definitions()))
@@ -160,11 +160,40 @@ func TestAsyncAgentPromptAndToolRegistries(t *testing.T) {
 	}
 
 	runtime.agentTasks = nil
-	registry, err = runtime.promptToolRegistry(cwd, "owner")
+	registry, err = runtime.promptToolRegistry(t.Context(), cwd, "owner")
 	require.NoError(t, err)
 
 	for _, definition := range registry.Definitions() {
 		assert.False(t, strings.HasPrefix(string(definition.Name), "agent_"))
+	}
+}
+
+func TestPromptToolRegistryHonorsToolStrategy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		strategy    ToolStrategy
+		name        string
+		wantExecute bool
+	}{
+		{name: "default hybrid", strategy: "", wantExecute: true},
+		{name: "hybrid", strategy: ToolStrategyHybrid, wantExecute: true},
+		{name: "direct", strategy: ToolStrategyDirect, wantExecute: false},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			runtime := new(Runtime)
+			runtime.profile = topLevelExecutionProfile()
+			registry, err := runtime.promptToolRegistry(
+				WithToolStrategy(t.Context(), testCase.strategy), t.TempDir(), "owner",
+			)
+			require.NoError(t, err)
+
+			assert.Equal(t, testCase.wantExecute, registry.Has(executeToolName))
+		})
 	}
 }
 
@@ -182,7 +211,7 @@ func TestAgentExecutionProfileRegistryAndPrompt(t *testing.T) {
 	assert.Contains(t, prompt, "Use only the available tools (read, write)")
 	assert.NotContains(t, prompt, "Use agent_start")
 
-	registry, err := runtime.promptToolRegistry(cwd, "ignored")
+	registry, err := runtime.promptToolRegistry(t.Context(), cwd, "ignored")
 	require.NoError(t, err)
 	_, err = registry.Execute(t.Context(), string(tool.NameWrite), agentArguments(t, `{"path":"x","content":"y"}`))
 	require.ErrorContains(t, err, "mutating tool is denied")
@@ -219,7 +248,7 @@ func TestToolRegistryProviderAndCollisionBranches(t *testing.T) {
 	assert.Equal(t, "ok", result.Text())
 
 	provider.tools = []extension.Tool{{
-		Name: "read", Description: "collision", Extension: "", InputSchema: tool.EmptySchema(),
+		Name: jsonReadToolName, Description: "collision", Extension: "", InputSchema: tool.EmptySchema(),
 	}}
 	_, err = newToolRegistry(t.TempDir(), provider)
 	require.ErrorContains(t, err, "register extension tools")
@@ -232,7 +261,7 @@ func TestToolRegistryProviderAndCollisionBranches(t *testing.T) {
 	runtime.extensions = testToolProvider{tools: []extension.Tool{{
 		Name: string(agentStartToolName), Description: "collision", Extension: "", InputSchema: tool.EmptySchema(),
 	}}}
-	_, err = runtime.promptToolRegistry(t.TempDir(), "owner")
+	_, err = runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
 	require.ErrorContains(t, err, "register agent tool")
 }
 
@@ -245,7 +274,7 @@ func TestPromptRegistryHonorsDisabledExtensions(t *testing.T) {
 	}}}
 	runtime.profile = topLevelExecutionProfile()
 	runtime.profile.EnableExtensions = false
-	registry, err := runtime.promptToolRegistry(t.TempDir(), "owner")
+	registry, err := runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
 	require.NoError(t, err)
 
 	for _, definition := range registry.Definitions() {

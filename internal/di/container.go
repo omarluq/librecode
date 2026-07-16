@@ -78,6 +78,11 @@ func (c *Container) WorkflowService() *WorkflowService {
 	return do.MustInvoke[*WorkflowService](c.injector)
 }
 
+// ChatWorkflowService resolves the interactive workflow dispatcher.
+func (c *Container) ChatWorkflowService() *ChatWorkflowService {
+	return do.MustInvoke[*ChatWorkflowService](c.injector)
+}
+
 // ToolService resolves the tool service.
 func (c *Container) ToolService() *ToolService {
 	return do.MustInvoke[*ToolService](c.injector)

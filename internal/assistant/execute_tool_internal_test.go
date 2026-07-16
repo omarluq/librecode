@@ -118,7 +118,7 @@ func TestExecuteToolRejectsRecursionAndInvalidNestedInput(t *testing.T) {
 		want   string
 	}{
 		{
-			name: "call", source: `import "tools"; tools.Call("execute", map[string]interface{}{})`,
+			name: executeCallMethod, source: `import "tools"; tools.Call("execute", map[string]interface{}{})`,
 			want: "execute cannot call itself",
 		},
 		{name: "describe", source: `import "tools"; tools.Describe("execute")`, want: "null"},
@@ -366,7 +366,7 @@ func TestPromptRegistryRegistersExecuteAfterPromptLocalTools(t *testing.T) {
 
 	runtime := new(Runtime)
 	runtime.profile = topLevelExecutionProfile()
-	registry, err := runtime.promptToolRegistry(t.TempDir(), "owner")
+	registry, err := runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
 	require.NoError(t, err)
 
 	definitions := registry.Definitions()

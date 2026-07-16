@@ -88,6 +88,7 @@ func (app *App) showWorkflow(ctx context.Context, runID string) error {
 func formatWorkflowRun(run *database.WorkflowRunEntity) string {
 	return strings.Join([]string{
 		run.Task.ID,
+		"  name: " + run.Name,
 		"  state: " + string(run.Task.State),
 		"  updated: " + run.Task.UpdatedAt.Format("2006-01-02 15:04:05"),
 	}, "\n")

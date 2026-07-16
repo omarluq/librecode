@@ -43,6 +43,25 @@ func TestMergeUsageKeepsExistingBreakdownWhenPresent(t *testing.T) {
 	assert.Equal(t, 5, merged.OutputTokens)
 }
 
+func TestMergeUsageAccumulatesRequestTokens(t *testing.T) {
+	t.Parallel()
+
+	merged := accumulateUsage(
+		llm.Usage{
+			Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 20,
+			InputTokens: 7, OutputTokens: 3,
+		},
+		llm.Usage{
+			Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 30,
+			InputTokens: 11, OutputTokens: 5,
+		},
+	)
+
+	assert.Equal(t, 18, merged.InputTokens)
+	assert.Equal(t, 8, merged.OutputTokens)
+	assert.Equal(t, 30, merged.ContextTokens)
+}
+
 func TestUsageFromObjectIgnoresNonObjectsAndMissingValues(t *testing.T) {
 	t.Parallel()
 

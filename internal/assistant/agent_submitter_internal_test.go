@@ -12,21 +12,19 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
-func TestAgentSubmitterCreatesChildAndSnapshotsPolicy(t *testing.T) {
+const agentSubmitterOwnerID = "owner"
+
+func TestAgentSubmitterBuildsAtomicChildSubmissionAndSnapshotsPolicy(t *testing.T) {
 	t.Parallel()
 
 	controller := newAgentControllerStub(agentToolTask("task-1", "owner", database.TaskQueued), nil, true)
-	sessions := agentToolSessions(t)
 	cwd := t.TempDir()
-	parent, err := sessions.CreateSession(t.Context(), cwd, "parent", "")
-	require.NoError(t, err)
-	submitter, err := NewAgentSubmitter(controller, sessions, isolatedAgentCatalog(t))
+	submitter, err := NewAgentSubmitter(controller, isolatedAgentCatalog(t))
 	require.NoError(t, err)
 
 	task, err := submitter.SubmitAgent(t.Context(), &AgentSubmitRequest{
-		ParentTaskID:   "",
-		OwnerSessionID: parent.ID, CWD: cwd, AgentName: "", Prompt: "inspect code",
-		Model: "model-override", Provider: "provider-override", ConcurrencyKey: parent.ID,
+		ParentTaskID: "", OwnerSessionID: agentSubmitterOwnerID, CWD: cwd, AgentName: "", Prompt: "inspect code",
+		Model: "model-override", Provider: "provider-override", ConcurrencyKey: agentSubmitterOwnerID,
 		NodeKey: "", InvocationIndex: 0, Depth: 2,
 	})
 	require.NoError(t, err)
@@ -36,12 +34,9 @@ func TestAgentSubmitterCreatesChildAndSnapshotsPolicy(t *testing.T) {
 	assert.Equal(t, "model-override", controller.lastSubmit.Model)
 	assert.Equal(t, "provider-override", controller.lastSubmit.Provider)
 	assert.Equal(t, 2, controller.lastSubmit.Depth)
-	assert.NotEmpty(t, controller.lastSubmit.ChildSessionID)
-
-	child, found, err := sessions.GetSession(t.Context(), controller.lastSubmit.ChildSessionID)
-	require.NoError(t, err)
-	require.True(t, found)
-	assert.Equal(t, parent.ID, child.ParentSession)
+	assert.Empty(t, controller.lastSubmit.ChildSessionID)
+	assert.Equal(t, cwd, controller.lastSubmit.ChildSessionCWD)
+	assert.NotEmpty(t, controller.lastSubmit.ChildSessionName)
 
 	var definition agent.Definition
 	require.NoError(t, json.Unmarshal([]byte(controller.lastSubmit.PolicyJSON), &definition))
@@ -50,27 +45,21 @@ func TestAgentSubmitterCreatesChildAndSnapshotsPolicy(t *testing.T) {
 	assert.Equal(t, "provider-override", definition.Model.Provider)
 }
 
-func TestAgentSubmitterCleansChildAfterRejectedSubmission(t *testing.T) {
+func TestAgentSubmitterReturnsRejectedAtomicSubmission(t *testing.T) {
 	t.Parallel()
 
 	controller := newAgentControllerStub(nil, nil, false)
 	controller.submitErr = errors.New("rejected")
-	sessions := agentToolSessions(t)
-	cwd := t.TempDir()
-	parent, err := sessions.CreateSession(t.Context(), cwd, "parent", "")
-	require.NoError(t, err)
-	submitter, err := NewAgentSubmitter(controller, sessions, isolatedAgentCatalog(t))
+	submitter, err := NewAgentSubmitter(controller, isolatedAgentCatalog(t))
 	require.NoError(t, err)
 
 	_, err = submitter.SubmitAgent(t.Context(), &AgentSubmitRequest{
-		ParentTaskID:   "",
-		OwnerSessionID: parent.ID, CWD: cwd, AgentName: defaultWorkflowAgentName, Prompt: "inspect",
-		Model: "", Provider: "", ConcurrencyKey: parent.ID, NodeKey: "", InvocationIndex: 0, Depth: 1,
+		ParentTaskID: "", OwnerSessionID: agentSubmitterOwnerID, CWD: t.TempDir(),
+		AgentName: defaultWorkflowAgentName, Prompt: "inspect", Model: "", Provider: "",
+		ConcurrencyKey: agentSubmitterOwnerID, NodeKey: "", InvocationIndex: 0, Depth: 1,
 	})
 	require.Error(t, err)
 	require.NotNil(t, controller.lastSubmit)
-
-	_, found, getErr := sessions.GetSession(t.Context(), controller.lastSubmit.ChildSessionID)
-	require.NoError(t, getErr)
-	assert.False(t, found)
+	assert.Empty(t, controller.lastSubmit.ChildSessionID)
+	assert.NotEmpty(t, controller.lastSubmit.ChildSessionName)
 }

@@ -46,6 +46,56 @@ func NewAgentTaskRepositoryWithProvider(provider ksql.Provider) *AgentTaskReposi
 	return &AgentTaskRepository{sql: provider, tasks: NewTaskRepositoryWithProvider(provider)}
 }
 
+// CreateWithChildSession atomically creates a child session and its queued agent task.
+func (repository *AgentTaskRepository) CreateWithChildSession(
+	ctx context.Context,
+	agentTask *AgentTaskEntity,
+	childRequest *ChildSessionRequest,
+) (*AgentTaskEntity, error) {
+	if agentTask == nil {
+		return nil, errors.New("database: agent task is required")
+	}
+
+	if childRequest == nil {
+		return nil, errors.New("database: child session request is required")
+	}
+
+	if agentTask.Task.OwnerSessionID != childRequest.ParentSessionID {
+		return nil, errors.New("database: child session parent differs from agent task owner")
+	}
+
+	child, err := prepareSession(
+		repository.tasks.now(),
+		childRequest.CWD,
+		childRequest.Name,
+		childRequest.ParentSessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	candidate := *agentTask
+	candidate.ChildSessionID = child.ID
+
+	created, now, err := repository.prepareCreate(&candidate)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+		if err := insertSession(ctx, transaction, child); err != nil {
+			return err
+		}
+
+		return insertAgentTask(ctx, transaction, created, now)
+	}); err != nil {
+		return nil, oops.In("database").Code("create_agent_task_with_session").
+			Wrapf(err, "create agent task with child session")
+	}
+
+	return created, nil
+}
+
 // Create persists a generic queued task, its initial event, and agent extension atomically.
 func (repository *AgentTaskRepository) Create(
 	ctx context.Context,

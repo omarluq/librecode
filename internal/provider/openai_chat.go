@@ -62,7 +62,7 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 		return false, err
 	}
 
-	state.result.Usage = mergeUsage(state.result.Usage, providerResult.Usage)
+	state.result.Usage = accumulateUsage(state.result.Usage, providerResult.Usage)
 	if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
 		return false, validateErr
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -38,6 +39,7 @@ func newWorkflowCmd() *cobra.Command {
 	cmd.AddCommand(newWorkflowListCmd())
 	cmd.AddCommand(newWorkflowGetCmd())
 	cmd.AddCommand(newWorkflowEventsCmd())
+	cmd.AddCommand(newWorkflowMetricsCmd())
 	cmd.AddCommand(newWorkflowCancelCmd())
 
 	return cmd
@@ -299,6 +301,29 @@ func newWorkflowEventsCmd() *cobra.Command {
 	return cmd
 }
 
+func newWorkflowMetricsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "metrics <run-id>",
+		Short: "Write machine-readable workflow comparison metrics",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withWorkflowService(cmd, func(service *workflow.Service) error {
+				metrics, err := workflowComparisonMetrics(cmd.Context(), service, args[0])
+				if err != nil {
+					return cliError(err, "collect workflow metrics")
+				}
+
+				encoded, err := json.MarshalIndent(metrics, "", "  ")
+				if err != nil {
+					return cliError(err, "encode workflow metrics")
+				}
+
+				return printLine(cmd.OutOrStdout(), "%s", encoded)
+			})
+		},
+	}
+}
+
 func newWorkflowCancelCmd() *cobra.Command {
 	var ownerSessionID string
 
@@ -335,6 +360,96 @@ func withWorkflowService(cmd *cobra.Command, run func(*workflow.Service) error) 
 	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 		return run(container.WorkflowService().Runs)
 	})
+}
+
+type workflowMetrics struct {
+	Strategy            string `json:"strategy"`
+	RunID               string `json:"run_id"`
+	State               string `json:"state"`
+	Error               string `json:"error"`
+	ElapsedMilliseconds int64  `json:"elapsed_ms"`
+	InputTokens         int    `json:"input_tokens"`
+	OutputTokens        int    `json:"output_tokens"`
+	ProviderRoundTrips  int    `json:"provider_round_trips"`
+	AgentTasks          int    `json:"agent_tasks"`
+	TraceComplete       bool   `json:"trace_complete"`
+	Success             bool   `json:"success"`
+}
+
+type workflowAgentUsage struct {
+	InputTokens        int `json:"input_tokens"`
+	OutputTokens       int `json:"output_tokens"`
+	ProviderRoundTrips int `json:"provider_round_trips"`
+}
+
+func workflowComparisonMetrics(
+	ctx context.Context,
+	service *workflow.Service,
+	runID string,
+) (*workflowMetrics, error) {
+	run, found, err := service.Get(ctx, runID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "load workflow run metrics")
+	}
+
+	if !found {
+		return nil, fmt.Errorf("workflow run %q not found", runID)
+	}
+
+	links, err := service.AgentTasks(ctx, runID)
+	if err != nil {
+		return nil, oops.Wrapf(err, "load workflow child links")
+	}
+
+	metrics := &workflowMetrics{
+		Strategy: "workflow", RunID: runID, State: string(run.Task.State), Error: run.Task.ErrorMessage,
+		ElapsedMilliseconds: taskElapsed(&run.Task).Milliseconds(), InputTokens: 0, OutputTokens: 0,
+		ProviderRoundTrips: 0, AgentTasks: len(links), TraceComplete: true,
+		Success: run.Task.State == database.TaskSucceeded,
+	}
+	for _, link := range links {
+		task, taskFound, taskErr := service.AgentTask(ctx, link.AgentTaskID)
+		if taskErr != nil {
+			return nil, oops.Wrapf(taskErr, "load workflow child task")
+		}
+
+		if !taskFound {
+			metrics.TraceComplete = false
+
+			continue
+		}
+
+		var usage workflowAgentUsage
+		if err := json.Unmarshal([]byte(task.UsageJSON), &usage); err != nil {
+			metrics.TraceComplete = false
+
+			continue
+		}
+
+		metrics.InputTokens += usage.InputTokens
+		metrics.OutputTokens += usage.OutputTokens
+		metrics.ProviderRoundTrips += usage.ProviderRoundTrips
+	}
+
+	return metrics, nil
+}
+
+func taskElapsed(task *database.TaskEntity) time.Duration {
+	start := task.CreatedAt
+	if task.StartedAt != nil {
+		start = *task.StartedAt
+	}
+
+	end := task.UpdatedAt
+	if task.FinishedAt != nil {
+		end = *task.FinishedAt
+	}
+
+	if end.Before(start) {
+		return 0
+	}
+
+	return end.Sub(start)
 }
 
 func requireWorkflowOwner(ownerSessionID string) error {

@@ -27,6 +27,7 @@ func TestWorkflowRepositoryLifecycleAndAgentLinks(t *testing.T) {
 	loaded, found, err := repository.Get(ctx, created.Task.ID)
 	require.NoError(t, err)
 	require.True(t, found)
+	assert.Equal(t, created.Name, loaded.Name)
 	assert.Equal(t, created.Source, loaded.Source)
 	assert.Equal(t, created.ArgumentsJSON, loaded.ArgumentsJSON)
 
@@ -103,6 +104,58 @@ func TestWorkflowRepositoryCreateAgentTaskAtomicallyLinks(t *testing.T) {
 	assert.Len(t, listed, 1, "failed workflow links must roll back agent task creation")
 }
 
+func TestWorkflowRepositoryCreatesChildSessionAtomically(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner := fixture.createOwner(ctx)
+	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+
+	create := func(nodeKey string) (*database.AgentTaskEntity, error) {
+		task := newAgentTask(owner.ID, "")
+		task.Task.ParentTaskID = run.Task.ID
+
+		return fixture.workflows.CreateAgentTaskWithChildSession(
+			ctx,
+			run.Task.ID,
+			task,
+			&database.ChildSessionRequest{CWD: owner.CWD, Name: nodeKey, ParentSessionID: owner.ID},
+			"inspect",
+			0,
+		)
+	}
+
+	created, err := create("child")
+	require.NoError(t, err)
+	assert.NotEmpty(t, created.ChildSessionID)
+
+	_, err = create("orphan")
+	require.Error(t, err)
+
+	children, err := fixture.sessions.ListChildSessions(ctx, owner.ID)
+	require.NoError(t, err)
+	assert.Len(t, children, 1, "link conflicts must roll back their child session")
+
+	agentTasks, err := fixture.agents.ListByOwner(ctx, owner.ID, 10)
+	require.NoError(t, err)
+	assert.Len(t, agentTasks, 1, "link conflicts must roll back their agent task")
+
+	links, err := fixture.workflows.ListAgentTasks(ctx, run.Task.ID)
+	require.NoError(t, err)
+	assert.Len(t, links, 1, "link conflicts must not add another workflow link")
+
+	mismatched := newAgentTask(owner.ID, "")
+	mismatched.Task.ParentTaskID = run.Task.ID
+	_, err = fixture.workflows.CreateAgentTaskWithChildSession(
+		ctx, run.Task.ID, mismatched,
+		&database.ChildSessionRequest{CWD: owner.CWD, Name: "wrong-parent", ParentSessionID: testUUIDV7(t)},
+		"other", 0,
+	)
+	require.ErrorContains(t, err, "parent differs from agent task owner")
+}
+
 func TestWorkflowRepositoryValidation(t *testing.T) {
 	t.Parallel()
 
@@ -144,14 +197,14 @@ func TestWorkflowRepositoryValidation(t *testing.T) {
 
 func newWorkflowRun(ownerSessionID string) *database.WorkflowRunEntity {
 	return &database.WorkflowRunEntity{
-		Task: *newTask(ownerSessionID), Source: "return agent('inspect')", SourceHash: "sha256:first",
-		SourceVersion: "v1", ArgumentsJSON: `{"scope":"database"}`,
+		Task: *newTask(ownerSessionID), Name: "inspect database", Source: "return agent('inspect')",
+		SourceHash: "sha256:first", SourceVersion: "v1", ArgumentsJSON: `{"scope":"database"}`,
 	}
 }
 
 func workflowRunForValidation(ownerSessionID, source, hash, arguments string) *database.WorkflowRunEntity {
 	return &database.WorkflowRunEntity{
-		Task: *newTask(ownerSessionID), Source: source, SourceHash: hash, SourceVersion: "",
+		Task: *newTask(ownerSessionID), Name: "validation", Source: source, SourceHash: hash, SourceVersion: "",
 		ArgumentsJSON: arguments,
 	}
 }

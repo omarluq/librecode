@@ -42,18 +42,19 @@ func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
 	}
 
 	return &Runtime{
-		cfg:             deps.Config,
-		sessions:        deps.Sessions,
-		extensions:      deps.Extensions,
-		cache:           deps.Cache,
-		models:          deps.Models,
-		client:          client,
-		logger:          deps.Logger,
-		skillsCache:     nil,
-		toolSchemaCache: newToolSchemaCache(),
-		agents:          nil,
-		agentTasks:      nil,
-		profile:         topLevelExecutionProfile(),
+		cfg:               deps.Config,
+		sessions:          deps.Sessions,
+		extensions:        deps.Extensions,
+		cache:             deps.Cache,
+		models:            deps.Models,
+		client:            client,
+		logger:            deps.Logger,
+		skillsCache:       nil,
+		toolSchemaCache:   newToolSchemaCache(),
+		agents:            nil,
+		agentTasks:        nil,
+		workflowSubmitter: nil,
+		profile:           topLevelExecutionProfile(),
 	}
 }
 

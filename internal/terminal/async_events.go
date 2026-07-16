@@ -638,6 +638,10 @@ func (app *App) applyStreamedToolEvent(event *assistant.ToolEvent) {
 		return
 	}
 
+	if event.Name == workflowToolName && !event.IsError {
+		app.trackStartedWorkflow(context.Background(), event)
+	}
+
 	if isAgentManagementTool(event.Name) {
 		app.applyAgentToolEvent(event)
 

@@ -27,18 +27,19 @@ type runtimeExtensions interface {
 
 // Runtime coordinates prompt handling and durable sessions.
 type Runtime struct {
-	cfg             *config.Config
-	sessions        *database.SessionRepository
-	extensions      runtimeExtensions
-	cache           *ResponseCache
-	models          *model.Registry
-	client          Completer
-	logger          *slog.Logger
-	skillsCache     *core.SkillsCache
-	toolSchemaCache *toolSchemaCache
-	agents          *agent.Catalog
-	agentTasks      AgentTaskController
-	profile         ExecutionProfile
+	cfg               *config.Config
+	sessions          *database.SessionRepository
+	extensions        runtimeExtensions
+	cache             *ResponseCache
+	models            *model.Registry
+	client            Completer
+	logger            *slog.Logger
+	skillsCache       *core.SkillsCache
+	toolSchemaCache   *toolSchemaCache
+	agents            *agent.Catalog
+	agentTasks        AgentTaskController
+	workflowSubmitter workflowSubmitter
+	profile           ExecutionProfile
 }
 
 // PromptRequest contains one user prompt invocation.
@@ -149,18 +150,19 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 	}
 
 	return &Runtime{
-		cfg:             options.Config,
-		sessions:        options.Sessions,
-		extensions:      options.Extensions,
-		cache:           options.Cache,
-		models:          options.Models,
-		client:          client,
-		logger:          options.Logger,
-		skillsCache:     options.SkillsCache,
-		toolSchemaCache: newToolSchemaCache(),
-		agents:          options.Agents,
-		agentTasks:      nil,
-		profile:         topLevelExecutionProfile(),
+		cfg:               options.Config,
+		sessions:          options.Sessions,
+		extensions:        options.Extensions,
+		cache:             options.Cache,
+		models:            options.Models,
+		client:            client,
+		logger:            options.Logger,
+		skillsCache:       options.SkillsCache,
+		toolSchemaCache:   newToolSchemaCache(),
+		agents:            options.Agents,
+		agentTasks:        nil,
+		workflowSubmitter: nil,
+		profile:           topLevelExecutionProfile(),
 	}
 }
 
@@ -168,6 +170,12 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 // It must be called during application startup, before Prompt is used.
 func (runtime *Runtime) SetAgentTaskController(controller AgentTaskController) {
 	runtime.agentTasks = controller
+}
+
+// SetWorkflowSubmitter enables model-authored durable workflows.
+// It must be called during application startup, before Prompt is used.
+func (runtime *Runtime) SetWorkflowSubmitter(submitter workflowSubmitter) {
+	runtime.workflowSubmitter = submitter
 }
 
 // Prompt appends a user prompt and an assistant response to the selected session.
@@ -414,7 +422,7 @@ func (runtime *Runtime) WithExecutionProfile(profile *ExecutionProfile) *Runtime
 		cfg: runtime.cfg, sessions: runtime.sessions, extensions: runtime.extensions, cache: runtime.cache,
 		models: runtime.models, client: runtime.client, logger: runtime.logger, skillsCache: runtime.skillsCache,
 		toolSchemaCache: runtime.toolSchemaCache, agents: runtime.agents,
-		agentTasks: runtime.agentTasks, profile: clonedProfile,
+		agentTasks: runtime.agentTasks, workflowSubmitter: runtime.workflowSubmitter, profile: clonedProfile,
 	}
 }
 

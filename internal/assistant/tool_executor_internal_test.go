@@ -169,7 +169,7 @@ func TestCanonicalToolResultUsesLifecycleMutation(t *testing.T) {
 
 	result := tool.TextResult("original", map[string]any{"old": true})
 	event := ToolEvent{
-		CallID: "call", ParentCallID: "", Name: jsonReadToolName, ArgumentsJSON: "{}",
+		CallID: executeCallMethod, ParentCallID: "", Name: jsonReadToolName, ArgumentsJSON: "{}",
 		DetailsJSON: `{"redacted":true}`, Result: "redacted", Error: "", Sequence: 0, IsError: false,
 	}
 

@@ -166,6 +166,9 @@ func TestRegistry_Metadata(t *testing.T) {
 	registry := tool.NewRegistry(cwd)
 
 	assert.Equal(t, cwd, registry.CWD())
+	assert.True(t, registry.Has(tool.NameRead))
+	assert.False(t, registry.Has("missing"))
+	assert.False(t, (*tool.Registry)(nil).Has(tool.NameRead))
 	assert.NotEmpty(t, registry.Definitions())
 	assert.Len(t, tool.AllDefinitions(), len(registry.Definitions()))
 }

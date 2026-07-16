@@ -26,6 +26,7 @@ const (
 )
 
 const (
+	workflowToolName    = "workflow"
 	agentStartToolName  = "agent_start"
 	agentStatusToolName = "agent_status"
 	agentWaitToolName   = "agent_wait"
@@ -78,6 +79,10 @@ func (app *App) trackStartedAgentTask(ctx context.Context, event *assistant.Tool
 		return
 	}
 
+	if task.Task.ParentTaskID != "" {
+		return
+	}
+
 	if isTerminalAgentTaskState(task.Task.State) {
 		app.deliverAgentTaskCompletion(ctx, task)
 
@@ -102,6 +107,7 @@ func agentTaskIDFromDetails(detailsJSON string) string {
 func (app *App) resetAgentTaskTracking() {
 	app.stopAgentTaskWatches()
 	app.agentTasks = nil
+	app.activeWorkflows = nil
 	app.agentTasksRefreshedAt = time.Time{}
 	app.deliveredAgentTasks = map[string]struct{}{}
 }
@@ -109,6 +115,7 @@ func (app *App) resetAgentTaskTracking() {
 func (app *App) refreshVisibleAgentTasks(ctx context.Context) {
 	if app.runtime == nil || app.sessionID == "" {
 		app.agentTasks = nil
+		app.activeWorkflows = nil
 
 		return
 	}
@@ -119,7 +126,166 @@ func (app *App) refreshVisibleAgentTasks(ctx context.Context) {
 		app.refreshActiveAgentTasks(ctx)
 	}
 
+	app.refreshActiveWorkflows(ctx)
+
 	app.agentTasksRefreshedAt = time.Now()
+}
+
+func (app *App) refreshActiveWorkflows(ctx context.Context) {
+	if app.workflows == nil {
+		app.activeWorkflows = nil
+
+		return
+	}
+
+	runs, err := app.workflows.List(ctx, app.sessionID, agentTaskInlineLimit)
+	if err != nil {
+		return
+	}
+
+	listed := make(map[string]database.WorkflowRunEntity, len(runs))
+	for index := range runs {
+		listed[runs[index].Task.ID] = runs[index]
+	}
+
+	active := make([]database.WorkflowRunEntity, 0, len(runs))
+
+	for index := range app.activeWorkflows {
+		previous := app.activeWorkflows[index]
+
+		latest, keep := app.reconcileActiveWorkflow(ctx, &previous, listed)
+		delete(listed, previous.Task.ID)
+
+		if !keep {
+			continue
+		}
+
+		if isTerminalAgentTaskState(latest.Task.State) {
+			app.deliverWorkflowFailure(ctx, &latest)
+
+			continue
+		}
+
+		active = append(active, latest)
+	}
+
+	for index := range runs {
+		run, found := listed[runs[index].Task.ID]
+		if found && !isTerminalAgentTaskState(run.Task.State) {
+			active = append(active, run)
+		}
+	}
+
+	app.activeWorkflows = active
+}
+
+func (app *App) reconcileActiveWorkflow(
+	ctx context.Context,
+	previous *database.WorkflowRunEntity,
+	listed map[string]database.WorkflowRunEntity,
+) (database.WorkflowRunEntity, bool) {
+	if latest, found := listed[previous.Task.ID]; found {
+		return latest, true
+	}
+
+	loaded, found, err := app.workflows.Get(ctx, previous.Task.ID)
+	if err != nil {
+		return *previous, true
+	}
+
+	if !found {
+		return *previous, false
+	}
+
+	return *loaded, true
+}
+
+func (app *App) trackStartedWorkflow(ctx context.Context, event *assistant.ToolEvent) {
+	runID := workflowRunIDFromDetails(event.DetailsJSON)
+	if runID == "" || app.workflows == nil {
+		app.refreshActiveWorkflows(ctx)
+
+		return
+	}
+
+	for index := range app.activeWorkflows {
+		if app.activeWorkflows[index].Task.ID == runID {
+			return
+		}
+	}
+
+	run, found, err := app.workflows.Get(ctx, runID)
+	if err != nil || !found || run.Task.OwnerSessionID != app.sessionID {
+		app.refreshActiveWorkflows(ctx)
+
+		return
+	}
+
+	if isTerminalAgentTaskState(run.Task.State) {
+		app.deliverWorkflowFailure(ctx, run)
+
+		return
+	}
+
+	app.activeWorkflows = append(app.activeWorkflows, *run)
+}
+
+func workflowRunIDFromDetails(detailsJSON string) string {
+	var details struct {
+		RunID string `json:"run_id"`
+	}
+	if json.Unmarshal([]byte(detailsJSON), &details) != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(details.RunID)
+}
+
+func (app *App) deliverWorkflowFailure(ctx context.Context, run *database.WorkflowRunEntity) {
+	if run == nil || run.Task.State != database.TaskFailed {
+		return
+	}
+
+	runID := run.Task.ID
+	if _, delivered := app.deliveredAgentTasks[runID]; delivered {
+		return
+	}
+
+	app.deliveredAgentTasks[runID] = struct{}{}
+
+	detail := strings.TrimSpace(run.Task.ErrorMessage)
+	if detail == "" {
+		detail = "No error detail was returned."
+	}
+
+	name := strings.TrimSpace(run.Name)
+	if name == "" {
+		name = toolDisplayWorkflow
+	}
+
+	completion := fmt.Sprintf(
+		"Workflow %q (%s) failed.\n\n%s\n\nUse /workflow %s for full details.",
+		name, runID, detail, runID,
+	)
+
+	app.setStatus("workflow failed")
+
+	content := formatToolEventForUI(&assistant.ToolEvent{
+		CallID: "", ParentCallID: "", Sequence: 0, Name: "workflow_result",
+		ArgumentsJSON: "", DetailsJSON: "", Result: completion, Error: detail, IsError: true,
+	})
+	app.addAgentCompletionMessage(content)
+	app.persistAgentCompletion(ctx, content)
+
+	prompt := completion + "\n\nA background workflow failed after it was submitted. " +
+		"Report the failure and relevant next step to the user."
+	if app.busy() {
+		app.queuePrompt(prompt, false)
+
+		return
+	}
+
+	app.sendPromptHidden(ctx, prompt)
 }
 
 func (app *App) discoverActiveAgentTasks(ctx context.Context) {
@@ -130,7 +296,7 @@ func (app *App) discoverActiveAgentTasks(ctx context.Context) {
 
 	active := make([]database.AgentTaskEntity, 0, len(tasks))
 	for index := range tasks {
-		if isTerminalAgentTaskState(tasks[index].Task.State) {
+		if tasks[index].Task.ParentTaskID != "" || isTerminalAgentTaskState(tasks[index].Task.State) {
 			continue
 		}
 
@@ -225,18 +391,18 @@ func (app *App) refreshActiveAgentTasks(ctx context.Context) {
 		return
 	}
 
-	activeByID := make(map[string]database.AgentTaskEntity, len(tasks))
-	for index := range tasks {
-		if !isTerminalAgentTaskState(tasks[index].Task.State) {
-			activeByID[tasks[index].Task.ID] = tasks[index]
-		}
-	}
+	activeByID := activeIndependentAgentTasksByID(tasks)
 
 	active := make([]database.AgentTaskEntity, 0, len(activeByID))
 	completed := make([]database.AgentTaskEntity, 0)
 
 	for index := range app.agentTasks {
 		previous := app.agentTasks[index]
+		if previous.Task.ParentTaskID != "" {
+			app.stopAgentTaskWatch(previous.Task.ID)
+
+			continue
+		}
 
 		task, found := activeByID[previous.Task.ID]
 		if !found {
@@ -267,6 +433,20 @@ func (app *App) refreshActiveAgentTasks(ctx context.Context) {
 	for index := range completed {
 		app.deliverAgentTaskCompletion(ctx, &completed[index])
 	}
+}
+
+func activeIndependentAgentTasksByID(
+	tasks []database.AgentTaskEntity,
+) map[string]database.AgentTaskEntity {
+	activeByID := make(map[string]database.AgentTaskEntity, len(tasks))
+	for index := range tasks {
+		task := tasks[index]
+		if task.Task.ParentTaskID == "" && !isTerminalAgentTaskState(task.Task.State) {
+			activeByID[task.Task.ID] = task
+		}
+	}
+
+	return activeByID
 }
 
 func (app *App) reconcileMissingAgentTask(
@@ -324,6 +504,12 @@ func (app *App) deliverAgentTaskCompletion(ctx context.Context, task *database.A
 		return
 	}
 
+	if task.Task.ParentTaskID != "" {
+		app.discardAgentTaskCompletion(task.Task.ID)
+
+		return
+	}
+
 	completion, completed := agentTaskCompletion(database.TaskQueued, task)
 	if !completed {
 		return
@@ -341,6 +527,37 @@ func (app *App) deliverAgentTaskCompletionText(ctx context.Context, taskID, comp
 		return
 	}
 
+	workflowChild := app.isTrackedWorkflowChild(taskID) || app.isPersistedWorkflowChild(ctx, taskID)
+	app.discardAgentTaskCompletion(taskID)
+
+	if workflowChild {
+		return
+	}
+
+	app.deliverAgentTaskCompletions(ctx, []string{completion})
+}
+
+func (app *App) isTrackedWorkflowChild(taskID string) bool {
+	for index := range app.agentTasks {
+		if app.agentTasks[index].Task.ID == taskID {
+			return app.agentTasks[index].Task.ParentTaskID != ""
+		}
+	}
+
+	return false
+}
+
+func (app *App) isPersistedWorkflowChild(ctx context.Context, taskID string) bool {
+	if app.runtime == nil {
+		return false
+	}
+
+	task, found, err := app.runtime.AgentTask(ctx, taskID)
+
+	return err == nil && found && task.Task.ParentTaskID != ""
+}
+
+func (app *App) discardAgentTaskCompletion(taskID string) {
 	app.deliveredAgentTasks[taskID] = struct{}{}
 	app.stopAgentTaskWatch(taskID)
 
@@ -352,8 +569,6 @@ func (app *App) deliverAgentTaskCompletionText(ctx context.Context, taskID, comp
 	}
 
 	app.agentTasks = active
-
-	app.deliverAgentTaskCompletions(ctx, []string{completion})
 }
 
 func (app *App) deliverAgentTaskCompletions(ctx context.Context, completions []string) {
@@ -440,8 +655,15 @@ func formatAgentCompletionForUI(completion string) string {
 }
 
 func (app *App) hasRunningAgentTasks() bool {
+	for index := range app.activeWorkflows {
+		if !isTerminalAgentTaskState(app.activeWorkflows[index].Task.State) {
+			return true
+		}
+	}
+
 	for index := range app.agentTasks {
-		if !isTerminalAgentTaskState(app.agentTasks[index].Task.State) {
+		if app.agentTasks[index].Task.ParentTaskID == "" &&
+			!isTerminalAgentTaskState(app.agentTasks[index].Task.State) {
 			return true
 		}
 	}
@@ -461,16 +683,32 @@ func isTerminalAgentTaskState(state database.TaskState) bool {
 }
 
 func (app *App) renderAgentTaskSummary(width int) []tui.Line {
-	if len(app.agentTasks) == 0 {
+	if len(app.agentTasks) == 0 && len(app.activeWorkflows) == 0 {
 		return nil
 	}
 
 	indicatorStyle := tcell.StyleDefault.Foreground(defaultWorkingShimmerBrightColor()).Bold(true)
 	labelStyle := tcell.StyleDefault.Foreground(app.theme.colors[colorMuted])
 
-	lines := make([]tui.Line, 0, len(app.agentTasks)+1)
+	lines := make([]tui.Line, 0, len(app.activeWorkflows)+len(app.agentTasks)+1)
+	for index := range app.activeWorkflows {
+		label := workflowSummaryLabel(&app.activeWorkflows[index])
+		line := tui.Line{
+			Text: pendingToolIndicator + " " + label, Style: labelStyle,
+			Spans: []tui.Span{
+				{Text: pendingToolIndicator, Style: indicatorStyle},
+				{Text: " " + label, Style: labelStyle},
+			},
+		}
+		lines = append(lines, line.Truncate(max(1, width)))
+	}
+
 	for index := range app.agentTasks {
 		task := &app.agentTasks[index]
+		if task.Task.ParentTaskID != "" {
+			continue
+		}
+
 		label := agentTaskSummaryLabel(task)
 		line := tui.Line{
 			Text:  pendingToolIndicator + " " + label,
@@ -483,9 +721,26 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 		lines = append(lines, line.Truncate(max(1, width)))
 	}
 
+	if len(lines) == 0 {
+		return nil
+	}
+
 	lines = append(lines, tui.NewLine(tcell.StyleDefault, ""))
 
 	return lines
+}
+
+func workflowSummaryLabel(run *database.WorkflowRunEntity) string {
+	if run == nil {
+		return "workflow"
+	}
+
+	name := strings.Join(strings.Fields(run.Name), " ")
+	if name == "" {
+		return "workflow"
+	}
+
+	return "workflow(" + name + ")"
 }
 
 func agentTaskSummaryLabel(task *database.AgentTaskEntity) string {

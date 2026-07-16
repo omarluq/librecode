@@ -217,18 +217,37 @@ func (service *Service) SubmitAgentTask(
 		AgentName: request.AgentName, Prompt: request.Prompt, Model: request.Model,
 		Provider: request.Provider, PolicyJSON: request.PolicyJSON, Depth: request.Depth,
 	}
-	if request.ParentTaskID != "" && service.workflows != nil {
-		created, err := service.workflows.CreateAgentTask(
-			ctx, request.ParentTaskID, agentTaskEntity(submit), request.NodeKey, request.InvocationIndex,
-		)
-		if err != nil {
-			return nil, oops.In("agenttask").Code("create_workflow_task").Wrapf(err, "create workflow agent task")
-		}
-
-		return service.enqueueCreated(ctx, created)
+	childRequest := &database.ChildSessionRequest{
+		CWD: request.ChildSessionCWD, Name: request.ChildSessionName,
+		ParentSessionID: request.OwnerSessionID,
 	}
 
-	return service.Submit(ctx, submit)
+	var created *database.AgentTaskEntity
+
+	var err error
+
+	if request.ParentTaskID != "" && service.workflows == nil {
+		return nil, oops.In("agenttask").Code("workflow_repository_missing").
+			Errorf("workflow repository is required for workflow agent tasks")
+	}
+
+	switch {
+	case request.ParentTaskID != "":
+		created, err = service.workflows.CreateAgentTaskWithChildSession(
+			ctx, request.ParentTaskID, agentTaskEntity(submit), childRequest,
+			request.NodeKey, request.InvocationIndex,
+		)
+	case request.ChildSessionID == "":
+		created, err = service.agentTasks.CreateWithChildSession(ctx, agentTaskEntity(submit), childRequest)
+	default:
+		return service.Submit(ctx, submit)
+	}
+
+	if err != nil {
+		return nil, oops.In("agenttask").Code("create_agent_task").Wrapf(err, "create agent task with child session")
+	}
+
+	return service.enqueueCreated(ctx, created)
 }
 
 // Submit durably accepts a task before making it available to workers.
