@@ -98,12 +98,19 @@ func (client Client) startWorker() (*workerProcess, io.WriteCloser, io.ReadClose
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("open execute worker stdout: %w", err)
+		return nil, nil, nil, errors.Join(
+			fmt.Errorf("open execute worker stdout: %w", err),
+			stdin.Close(),
+		)
 	}
 
 	cmd.Stderr = os.Stderr
 	if err = cmd.Start(); err != nil {
-		return nil, nil, nil, fmt.Errorf("start execute worker: %w", err)
+		return nil, nil, nil, errors.Join(
+			fmt.Errorf("start execute worker: %w", err),
+			stdin.Close(),
+			stdout.Close(),
+		)
 	}
 
 	return &workerProcess{cmd: cmd, killOnce: sync.Once{}, killErr: nil}, stdin, stdout, nil
@@ -166,7 +173,7 @@ func (client Client) readMessages(
 				writes.Lock()
 				defer writes.Unlock()
 
-				if replyErr := Write(stdin, &response); replyErr != nil {
+				if Write(stdin, &response) != nil {
 					worker.kill()
 				}
 			}(message)

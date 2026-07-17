@@ -203,40 +203,56 @@ func (repository *WorkflowRepository) createAgentTask(
 	}
 
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		var workflow struct {
-			OwnerSessionID string `ksql:"owner_session_id"`
-		}
-
-		const workflowQuery = `SELECT t.owner_session_id FROM tasks t
-JOIN workflow_runs w ON w.task_id = t.id WHERE t.id = ?`
-		if err := transaction.QueryOne(ctx, &workflow, workflowQuery, workflowTaskID); err != nil {
-			return oops.In("database").Code("load_workflow_agent_parent").Wrapf(err, "load workflow agent parent")
-		}
-
-		if workflow.OwnerSessionID != created.Task.OwnerSessionID {
-			return oops.In("database").Code("workflow_agent_owner_mismatch").
-				Errorf("agent task owner differs from workflow owner")
-		}
-
-		if child != nil {
-			if err := insertSession(ctx, transaction, child); err != nil {
-				return err
-			}
-		}
-
-		if err := insertAgentTask(ctx, transaction, created, now); err != nil {
-			return err
-		}
-
-		_, err := insertWorkflowAgentTask(ctx, transaction, workflowTaskID, created.Task.ID,
-			strings.TrimSpace(nodeKey), invocationIndex, now)
-
-		return err
+		return persistWorkflowAgentTask(
+			ctx, transaction, workflowTaskID, created, child, strings.TrimSpace(nodeKey), invocationIndex, now,
+		)
 	}); err != nil {
 		return nil, oops.In("database").Code("create_workflow_agent_task").Wrapf(err, "create workflow agent task")
 	}
 
 	return created, nil
+}
+
+func persistWorkflowAgentTask(
+	ctx context.Context,
+	transaction ksql.Provider,
+	workflowTaskID string,
+	agentTask *AgentTaskEntity,
+	child *SessionEntity,
+	nodeKey string,
+	invocationIndex int,
+	now time.Time,
+) error {
+	var workflow struct {
+		OwnerSessionID string `ksql:"owner_session_id"`
+	}
+
+	const workflowQuery = `SELECT t.owner_session_id FROM tasks t
+JOIN workflow_runs w ON w.task_id = t.id WHERE t.id = ?`
+	if err := transaction.QueryOne(ctx, &workflow, workflowQuery, workflowTaskID); err != nil {
+		return oops.In("database").Code("load_workflow_agent_parent").Wrapf(err, "load workflow agent parent")
+	}
+
+	if workflow.OwnerSessionID != agentTask.Task.OwnerSessionID {
+		return oops.In("database").Code("workflow_agent_owner_mismatch").
+			Errorf("agent task owner differs from workflow owner")
+	}
+
+	if child != nil {
+		if err := insertSession(ctx, transaction, child); err != nil {
+			return err
+		}
+	}
+
+	if err := insertAgentTask(ctx, transaction, agentTask, now); err != nil {
+		return err
+	}
+
+	_, err := insertWorkflowAgentTask(
+		ctx, transaction, workflowTaskID, agentTask.Task.ID, nodeKey, invocationIndex, now,
+	)
+
+	return err
 }
 
 // LinkAgentTask appends an agent task to a workflow's launch order. Repeating

@@ -127,7 +127,7 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 	}
 
 	run := &runHost{
-		ctx: ctx, runID: request.RunID, ownerSessionID: request.OwnerSessionID, controller: runner.controller,
+		runID: request.RunID, ownerSessionID: request.OwnerSessionID, controller: runner.controller,
 		onEvent: request.OnEvent, launched: make(map[string]struct{}), taskIDs: make([]string, 0),
 		invocations: make(map[string]int), persisted: make(map[invocationKey]persistedInvocation),
 		mu: sync.Mutex{}, launchMu: sync.Mutex{}, eventMu: sync.Mutex{},
@@ -153,10 +153,10 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 
 	if err != nil {
 		runErr = errors.Join(runErr, oops.In("workflow").Code("evaluate_source").Wrapf(err, "evaluate workflow source"))
-		runErr = errors.Join(runErr, run.cancelActive())
+		runErr = errors.Join(runErr, run.cancelActive(ctx))
 	}
 
-	taskResults, snapshotErr := run.taskResults()
+	taskResults, snapshotErr := run.taskResults(ctx)
 	runResult = RunResult{
 		Value: value, Stdout: result.Stdout, Stderr: result.Stderr,
 		LaunchedTaskIDs: run.launchedTaskIDs(), TaskResults: taskResults,
@@ -166,7 +166,7 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 		runErr = errors.Join(runErr, oops.In("workflow").Code("snapshot_tasks").
 			Wrapf(snapshotErr, "snapshot workflow tasks"))
 		if err == nil {
-			runErr = errors.Join(runErr, run.cancelActive())
+			runErr = errors.Join(runErr, run.cancelActive(ctx))
 		}
 	}
 
@@ -276,7 +276,6 @@ type workflowAgentRPCInput struct {
 }
 
 type runHost struct {
-	ctx            context.Context
 	controller     Controller
 	runID          string
 	onEvent        EventSink
@@ -290,7 +289,7 @@ type runHost struct {
 	eventMu        sync.Mutex
 }
 
-func (host *runHost) handleRPC(_ context.Context, message *executeworker.Message) (any, error) {
+func (host *runHost) handleRPC(ctx context.Context, message *executeworker.Message) (any, error) {
 	switch message.Method {
 	case "workflow_agent":
 		var input workflowAgentRPCInput
@@ -298,26 +297,26 @@ func (host *runHost) handleRPC(_ context.Context, message *executeworker.Message
 			return nil, oops.In("workflow").Code("invalid_agent_rpc").Wrapf(err, "decode agent request")
 		}
 
-		return host.agent(input.Prompt, input.Options...)
+		return host.agent(ctx, input.Prompt, input.Options...)
 	case "workflow_wait":
-		return host.wait(message.Name)
+		return host.wait(ctx, message.Name)
 	case "workflow_list":
-		return host.list()
+		return host.list(ctx)
 	case "workflow_cancel":
-		return host.cancel(message.Name)
+		return host.cancel(ctx, message.Name)
 	default:
 		return nil, oops.In("workflow").Code("invalid_rpc_method").Errorf("unknown workflow RPC %q", message.Method)
 	}
 }
 
-func (host *runHost) agent(prompt string, options ...AgentOptions) (string, error) {
+func (host *runHost) agent(ctx context.Context, prompt string, options ...AgentOptions) (string, error) {
 	// A pipeline may invoke Agent concurrently. Keep invocation allocation,
 	// persisted-link replay, submission, and launch publication in one stable
 	// order so a later invocation cannot be persisted before an earlier one.
 	host.launchMu.Lock()
 	defer host.launchMu.Unlock()
 
-	if err := host.ctx.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return "", oops.In("workflow").Code("run_canceled").Wrapf(err, "launch agent")
 	}
 
@@ -331,11 +330,11 @@ func (host *runHost) agent(prompt string, options ...AgentOptions) (string, erro
 	host.invocations[nodeKey] = invocationIndex + 1
 	host.mu.Unlock()
 
-	if reusedTaskID, reused, reuseErr := host.persistedTask(nodeKey, invocationIndex); reuseErr != nil || reused {
+	if reusedTaskID, reused, reuseErr := host.persistedTask(ctx, nodeKey, invocationIndex); reuseErr != nil || reused {
 		return reusedTaskID, reuseErr
 	}
 
-	task, err := host.controller.Submit(host.ctx, &AgentRequest{
+	task, err := host.controller.Submit(ctx, &AgentRequest{
 		ParentTaskID:    host.runID,
 		OwnerSessionID:  host.ownerSessionID,
 		NodeKey:         nodeKey,
@@ -361,7 +360,7 @@ func (host *runHost) agent(prompt string, options ...AgentOptions) (string, erro
 	host.taskIDs = append(host.taskIDs, task.Task.ID)
 	host.mu.Unlock()
 
-	if err := host.emit(&Event{
+	if err := host.emit(ctx, &Event{
 		Kind: EventTaskLaunched, TaskID: task.Task.ID, NodeKey: nodeKey,
 		InvocationIndex: invocationIndex, Task: taskResult(task),
 	}); err != nil {
@@ -371,12 +370,12 @@ func (host *runHost) agent(prompt string, options ...AgentOptions) (string, erro
 	return task.Task.ID, nil
 }
 
-func (host *runHost) wait(taskID string) (TaskResult, error) {
+func (host *runHost) wait(ctx context.Context, taskID string) (TaskResult, error) {
 	if !host.owns(taskID) {
 		return TaskResult{}, oops.In("workflow").Code("task_not_owned").Errorf("task was not launched by this workflow")
 	}
 
-	task, found, err := host.controller.Get(host.ctx, taskID)
+	task, found, err := host.controller.Get(ctx, taskID)
 	if err != nil {
 		return TaskResult{}, oops.In("workflow").Code("get_task").Wrapf(err, "get agent task")
 	}
@@ -386,7 +385,7 @@ func (host *runHost) wait(taskID string) (TaskResult, error) {
 			Errorf(taskNotOwnedBySession)
 	}
 
-	task, err = host.controller.Await(host.ctx, taskID)
+	task, err = host.controller.Await(ctx, taskID)
 	if err != nil {
 		return TaskResult{}, oops.In("workflow").Code("await_task").Wrapf(err, "await agent task")
 	}
@@ -397,7 +396,7 @@ func (host *runHost) wait(taskID string) (TaskResult, error) {
 	}
 
 	result := taskResult(task)
-	if err := host.emit(&Event{
+	if err := host.emit(ctx, &Event{
 		Task: result, Kind: EventTaskCompleted, TaskID: taskID, NodeKey: "", InvocationIndex: 0,
 	}); err != nil {
 		return TaskResult{}, err
@@ -406,11 +405,7 @@ func (host *runHost) wait(taskID string) (TaskResult, error) {
 	return result, nil
 }
 
-func (host *runHost) list() ([]TaskResult, error) {
-	return host.listWithContext(host.ctx)
-}
-
-func (host *runHost) listWithContext(ctx context.Context) ([]TaskResult, error) {
+func (host *runHost) list(ctx context.Context) ([]TaskResult, error) {
 	taskIDs := host.launchedTaskIDs()
 
 	results := make([]TaskResult, 0, len(taskIDs))
@@ -431,13 +426,13 @@ func (host *runHost) listWithContext(ctx context.Context) ([]TaskResult, error) 
 	return results, nil
 }
 
-func (host *runHost) cancel(taskID string) (TaskResult, error) {
+func (host *runHost) cancel(ctx context.Context, taskID string) (TaskResult, error) {
 	if !host.owns(taskID) {
 		return TaskResult{}, oops.In("workflow").Code("task_not_owned").
 			Errorf("task was not launched by this workflow")
 	}
 
-	task, found, err := host.controller.Get(host.ctx, taskID)
+	task, found, err := host.controller.Get(ctx, taskID)
 	if err != nil {
 		return TaskResult{}, oops.In("workflow").Code("get_task").Wrapf(err, "get agent task")
 	}
@@ -447,7 +442,7 @@ func (host *runHost) cancel(taskID string) (TaskResult, error) {
 			Errorf(taskNotOwnedBySession)
 	}
 
-	canceled, found, err := host.controller.Cancel(host.ctx, host.ownerSessionID, taskID)
+	canceled, found, err := host.controller.Cancel(ctx, host.ownerSessionID, taskID)
 	if err != nil {
 		return TaskResult{}, oops.In("workflow").Code("cancel_task").Wrapf(err, "cancel agent task")
 	}
@@ -497,18 +492,22 @@ func oneAgentOptions(options []AgentOptions) (AgentOptions, error) {
 	}
 }
 
-func (host *runHost) persistedTask(nodeKey string, invocationIndex int) (taskID string, found bool, err error) {
-	host.mu.Lock()
-	defer host.mu.Unlock()
-
+func (host *runHost) persistedTask(
+	ctx context.Context,
+	nodeKey string,
+	invocationIndex int,
+) (taskID string, found bool, err error) {
 	key := invocationKey{nodeKey: normalizeNodeKey(nodeKey), index: invocationIndex}
 
+	host.mu.Lock()
 	invocation, persisted := host.persisted[key]
+	host.mu.Unlock()
+
 	if !persisted {
 		return "", false, nil
 	}
 
-	task, found, err := host.controller.Get(host.ctx, invocation.taskID)
+	task, found, err := host.controller.Get(ctx, invocation.taskID)
 	if err != nil {
 		return "", false, oops.In("workflow").Code("get_persisted_task").
 			Wrapf(err, "get persisted agent task")
@@ -518,7 +517,17 @@ func (host *runHost) persistedTask(nodeKey string, invocationIndex int) (taskID 
 		return "", false, nil
 	}
 
+	host.mu.Lock()
+	current, persisted := host.persisted[key]
+
+	if !persisted || current != invocation {
+		host.mu.Unlock()
+
+		return "", false, nil
+	}
+
 	delete(host.persisted, key)
+	host.mu.Unlock()
 
 	return invocation.taskID, true, nil
 }
@@ -539,11 +548,11 @@ func (host *runHost) launchedTaskIDs() []string {
 	return append([]string(nil), host.taskIDs...)
 }
 
-func (host *runHost) taskResults() ([]TaskResult, error) {
-	return host.listWithContext(context.WithoutCancel(host.ctx))
+func (host *runHost) taskResults(ctx context.Context) ([]TaskResult, error) {
+	return host.list(context.WithoutCancel(ctx))
 }
 
-func (host *runHost) emit(event *Event) error {
+func (host *runHost) emit(ctx context.Context, event *Event) error {
 	if host.onEvent == nil {
 		return nil
 	}
@@ -551,15 +560,15 @@ func (host *runHost) emit(event *Event) error {
 	host.eventMu.Lock()
 	defer host.eventMu.Unlock()
 
-	if err := host.onEvent(host.ctx, *event); err != nil {
+	if err := host.onEvent(ctx, *event); err != nil {
 		return oops.In("workflow").Code("emit_event").Wrapf(err, "emit workflow event")
 	}
 
 	return nil
 }
 
-func (host *runHost) cancelActive() error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(host.ctx), cancelTimeout)
+func (host *runHost) cancelActive(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cancelTimeout)
 	defer cancel()
 
 	var cancelErr error

@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Register the sqlite database/sql driver used by service tests.
 
 	"github.com/omarluq/librecode/internal/agent"
 	"github.com/omarluq/librecode/internal/agenttask"

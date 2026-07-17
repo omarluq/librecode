@@ -113,8 +113,11 @@ func Write(writer io.Writer, message *Message) error {
 		return fmt.Errorf("execute worker frame size %d exceeds uint32", len(payload))
 	}
 
+	var encodedSize [8]byte
+	binary.BigEndian.PutUint64(encodedSize[:], uint64(len(payload)))
+
 	var size [4]byte
-	binary.BigEndian.PutUint32(size[:], uint32(len(payload)&math.MaxUint32))
+	copy(size[:], encodedSize[4:])
 
 	if err := writeFull(writer, size[:]); err != nil {
 		return fmt.Errorf("write execute worker frame size: %w", err)

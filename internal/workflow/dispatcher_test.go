@@ -21,20 +21,20 @@ func TestDispatcherDependencyDefaultsAndShutdownBoundaries(t *testing.T) {
 	service, repository, _ := newWorkflowService(t, newFakeController())
 
 	tests := []struct {
-		ctx     context.Context
+		ctx     func() context.Context
 		service *workflow.Service
 		tasks   *database.TaskRepository
 		name    string
 	}{
-		{name: "nil context", ctx: nil, service: service, tasks: repository.Tasks()},
-		{name: "nil service", ctx: t.Context(), service: nil, tasks: repository.Tasks()},
-		{name: "nil tasks", ctx: t.Context(), service: service, tasks: nil},
+		{name: "nil context", ctx: func() context.Context { return nil }, service: service, tasks: repository.Tasks()},
+		{name: "nil service", ctx: t.Context, service: nil, tasks: repository.Tasks()},
+		{name: "nil tasks", ctx: t.Context, service: service, tasks: nil},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			dispatcher, err := workflow.NewDispatcher(test.ctx, workflow.DispatcherOptions{
+			dispatcher, err := workflow.NewDispatcher(test.ctx(), workflow.DispatcherOptions{
 				Service:     test.service,
 				Tasks:       test.tasks,
 				Logger:      nil,
@@ -98,6 +98,7 @@ func TestDispatcherShutdownDoesNotHoldLifecycleLockAcrossSubmitIO(t *testing.T) 
 	require.NoError(t, err)
 
 	submitDone := make(chan error, 1)
+	initialWaitCount := connection.Stats().WaitCount
 
 	go func() {
 		_, submitErr := dispatcher.Submit(context.Background(), &workflow.ServiceRequest{
@@ -106,8 +107,9 @@ func TestDispatcherShutdownDoesNotHoldLifecycleLockAcrossSubmitIO(t *testing.T) 
 		submitDone <- submitErr
 	}()
 
-	// Give Submit time to pass the lifecycle check and block waiting for the only DB connection.
-	time.Sleep(20 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return connection.Stats().WaitCount > initialWaitCount
+	}, 5*time.Second, time.Millisecond, "Submit did not block waiting for the database connection")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()

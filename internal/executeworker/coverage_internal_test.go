@@ -57,7 +57,7 @@ func TestProtocolErrorBranches(t *testing.T) {
 
 	var truncated bytes.Buffer
 	require.NoError(t, binary.Write(&truncated, binary.BigEndian, uint32(2)))
-	truncated.WriteByte('{')
+	require.NoError(t, truncated.WriteByte('{'))
 	_, err = Read(&truncated)
 	require.ErrorContains(t, err, "read execute worker frame")
 
@@ -70,7 +70,9 @@ func TestProtocolErrorBranches(t *testing.T) {
 	} {
 		var input bytes.Buffer
 		require.NoError(t, binary.Write(&input, binary.BigEndian, payload.size))
-		input.WriteString(payload.value)
+		_, writeErr := input.WriteString(payload.value)
+		require.NoError(t, writeErr)
+
 		_, err = Read(&input)
 		require.Error(t, err)
 	}
