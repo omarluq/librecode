@@ -192,7 +192,7 @@ func (repository *WorkflowRepository) createAgentTask(
 
 	agents := NewAgentTaskRepositoryWithProvider(repository.sql)
 
-	created, now, err := agents.prepareCreate(agentTask)
+	created, _, err := agents.prepareCreate(agentTask)
 	if err != nil {
 		return nil, err
 	}
@@ -202,10 +202,16 @@ func (repository *WorkflowRepository) createAgentTask(
 			Errorf("agent task parent must be workflow %q", workflowTaskID)
 	}
 
+	request := workflowAgentTaskCreate{
+		workflowTaskID:  workflowTaskID,
+		agentTask:       created,
+		child:           child,
+		nodeKey:         strings.TrimSpace(nodeKey),
+		invocationIndex: invocationIndex,
+	}
+
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		return persistWorkflowAgentTask(
-			ctx, transaction, workflowTaskID, created, child, strings.TrimSpace(nodeKey), invocationIndex, now,
-		)
+		return persistWorkflowAgentTask(ctx, transaction, &request)
 	}); err != nil {
 		return nil, oops.In("database").Code("create_workflow_agent_task").Wrapf(err, "create workflow agent task")
 	}
@@ -213,15 +219,19 @@ func (repository *WorkflowRepository) createAgentTask(
 	return created, nil
 }
 
+type workflowAgentTaskCreate struct {
+	agentTask      *AgentTaskEntity
+	child          *SessionEntity
+	workflowTaskID string
+	nodeKey        string
+
+	invocationIndex int
+}
+
 func persistWorkflowAgentTask(
 	ctx context.Context,
 	transaction ksql.Provider,
-	workflowTaskID string,
-	agentTask *AgentTaskEntity,
-	child *SessionEntity,
-	nodeKey string,
-	invocationIndex int,
-	now time.Time,
+	request *workflowAgentTaskCreate,
 ) error {
 	var workflow struct {
 		OwnerSessionID string `ksql:"owner_session_id"`
@@ -229,27 +239,33 @@ func persistWorkflowAgentTask(
 
 	const workflowQuery = `SELECT t.owner_session_id FROM tasks t
 JOIN workflow_runs w ON w.task_id = t.id WHERE t.id = ?`
-	if err := transaction.QueryOne(ctx, &workflow, workflowQuery, workflowTaskID); err != nil {
+	if err := transaction.QueryOne(ctx, &workflow, workflowQuery, request.workflowTaskID); err != nil {
 		return oops.In("database").Code("load_workflow_agent_parent").Wrapf(err, "load workflow agent parent")
 	}
 
-	if workflow.OwnerSessionID != agentTask.Task.OwnerSessionID {
+	if workflow.OwnerSessionID != request.agentTask.Task.OwnerSessionID {
 		return oops.In("database").Code("workflow_agent_owner_mismatch").
 			Errorf("agent task owner differs from workflow owner")
 	}
 
-	if child != nil {
-		if err := insertSession(ctx, transaction, child); err != nil {
+	if request.child != nil {
+		if err := insertSession(ctx, transaction, request.child); err != nil {
 			return err
 		}
 	}
 
-	if err := insertAgentTask(ctx, transaction, agentTask, now); err != nil {
+	if err := insertAgentTask(ctx, transaction, request.agentTask, request.agentTask.Task.CreatedAt); err != nil {
 		return err
 	}
 
 	_, err := insertWorkflowAgentTask(
-		ctx, transaction, workflowTaskID, agentTask.Task.ID, nodeKey, invocationIndex, now,
+		ctx,
+		transaction,
+		request.workflowTaskID,
+		request.agentTask.Task.ID,
+		request.nodeKey,
+		request.invocationIndex,
+		request.agentTask.Task.CreatedAt,
 	)
 
 	return err
