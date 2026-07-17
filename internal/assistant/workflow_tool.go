@@ -47,9 +47,13 @@ func (executor *workflowToolExecutor) Definition() tool.Definition {
 
 	return tool.Definition{
 		Schema: mustToolSchema(rawSchema), Name: workflowToolName, Label: "Start workflow",
-		Description:   "Start a durable asynchronous workflow authored as MVM Go code and return its run ID.",
-		PromptSnippet: "Use workflow for durable multi-agent orchestration",
+		Description: "Launch a dynamic, durable asynchronous workflow authored as MVM Go code and return its run ID. " +
+			"Use this tool when the user asks to launch, start, run, or create a dynamic workflow " +
+			"or requests durable multi-agent orchestration.",
+		PromptSnippet: "Launch dynamic workflows and durable multi-agent orchestration",
 		PromptGuidelines: []string{
+			"Treat requests to launch, start, run, or create a dynamic workflow as explicit instructions " +
+				"to call this tool.",
 			`Write MVM Go source that imports "librecode/workflow".`,
 			"Use workflow.Agent, workflow.Wait, workflow.List, workflow.Cancel, or workflow.Pipeline.",
 			"Use workflows for staged or parallel subagent work; the run continues independently of the model turn.",

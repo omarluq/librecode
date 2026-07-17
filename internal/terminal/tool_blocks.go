@@ -495,8 +495,10 @@ func prettyJSON(value string) string {
 
 func toolDisplayOutput(display *toolDisplay) string {
 	output := strings.Trim(display.Output, "\n")
-	if display.Error != "" {
-		output = strings.Trim(display.Error+"\n"+output, "\n")
+
+	errorText := strings.Trim(display.Error, "\n")
+	if errorText != "" && errorText != output {
+		output = strings.Trim(errorText+"\n"+output, "\n")
 	}
 
 	return output

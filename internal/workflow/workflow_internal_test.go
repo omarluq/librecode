@@ -142,7 +142,7 @@ func TestRunHostAgentFailureBranches(t *testing.T) {
 			t.Parallel()
 
 			host := newBranchHost(test.controller)
-			_, err := host.agent("prompt")
+			_, err := host.agent(t.Context(), "prompt")
 			require.ErrorContains(t, err, test.want)
 		})
 	}
@@ -151,17 +151,16 @@ func TestRunHostAgentFailureBranches(t *testing.T) {
 	cancel()
 
 	host := newBranchHost(newBranchController())
-	host.ctx = ctx
-	_, err := host.agent("prompt")
+	_, err := host.agent(ctx, "prompt")
 	require.ErrorContains(t, err, "launch agent")
 
-	_, err = newBranchHost(newBranchController()).agent("")
+	_, err = newBranchHost(newBranchController()).agent(t.Context(), "")
 	require.ErrorContains(t, err, "prompt is required")
 
 	options := AgentOptions{
 		NodeKey: "", AgentName: "", Model: "", Provider: "", ConcurrencyKey: "", Depth: 0,
 	}
-	_, err = newBranchHost(newBranchController()).agent("prompt", options, options)
+	_, err = newBranchHost(newBranchController()).agent(t.Context(), "prompt", options, options)
 	require.ErrorContains(t, err, "at most one")
 }
 
@@ -224,7 +223,7 @@ func TestRunHostWaitFailureBranches(t *testing.T) {
 
 			host := newBranchHost(test.controller)
 			host.launched["task"] = struct{}{}
-			_, err := host.wait("task")
+			_, err := host.wait(t.Context(), "task")
 			require.ErrorContains(t, err, test.want)
 		})
 	}
@@ -241,7 +240,7 @@ func TestRunHostListAndCancelFailureBranches(t *testing.T) {
 	host := newBranchHost(controller)
 	host.launched["task"] = struct{}{}
 	host.taskIDs = []string{"task"}
-	_, err := host.list()
+	_, err := host.list(t.Context())
 	require.ErrorContains(t, err, "get launched task")
 
 	controller = newBranchController()
@@ -250,7 +249,7 @@ func TestRunHostListAndCancelFailureBranches(t *testing.T) {
 		return nil, false, failure
 	}
 	host.controller = controller
-	_, err = host.cancel("task")
+	_, err = host.cancel(t.Context(), "task")
 	require.ErrorContains(t, err, "cancel agent task")
 
 	controller = newBranchController()
@@ -259,7 +258,7 @@ func TestRunHostListAndCancelFailureBranches(t *testing.T) {
 		return nil, false, nil
 	}
 	host.controller = controller
-	_, err = host.cancel("task")
+	_, err = host.cancel(t.Context(), "task")
 	require.ErrorContains(t, err, taskNotOwnedBySession)
 }
 
@@ -273,7 +272,7 @@ func TestRunHostPersistedAndCleanupFailures(t *testing.T) {
 	}
 	host := newBranchHost(controller)
 	host.persisted[invocationKey{nodeKey: "agent", index: 0}] = persistedInvocation{taskID: "task"}
-	_, _, err := host.persistedTask("agent", 0)
+	_, _, err := host.persistedTask(t.Context(), "agent", 0)
 	require.ErrorContains(t, err, "get persisted agent task")
 
 	cancelCalls := 0
@@ -299,7 +298,7 @@ func TestRunHostPersistedAndCleanupFailures(t *testing.T) {
 		},
 	})
 	host.taskIDs = []string{"get-error", "terminal", "running"}
-	err = host.cancelActive()
+	err = host.cancelActive(t.Context())
 	require.ErrorContains(t, err, "get launched task get-error")
 	require.ErrorContains(t, err, "cancel launched task running")
 	assert.Equal(t, 1, cancelCalls)
@@ -337,7 +336,7 @@ func branchMessage(method string) *executeworker.Message {
 
 func newBranchHost(controller Controller) *runHost {
 	return &runHost{
-		ctx: context.Background(), controller: controller, runID: "", onEvent: nil,
+		controller: controller, runID: "", onEvent: nil,
 		ownerSessionID: testBranchOwner, launched: make(map[string]struct{}),
 		invocations: make(map[string]int), persisted: make(map[invocationKey]persistedInvocation),
 		taskIDs: make([]string, 0), mu: sync.Mutex{}, launchMu: sync.Mutex{}, eventMu: sync.Mutex{},

@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Register the sqlite database/sql driver used by internal service tests.
 
 	"github.com/omarluq/librecode/internal/database"
 )
@@ -45,7 +45,7 @@ func TestServiceDefaultsAndHelperBoundaries(t *testing.T) {
 	assert.Equal(t, defaultSourceVersion, run.SourceVersion)
 	assert.Equal(t, "{}", run.ArgumentsJSON)
 
-	assert.False(t, workflowTerminal(database.TaskState("unknown")))
+	assert.False(t, terminal(database.TaskState("unknown")))
 	assert.Empty(t, errorString(nil))
 }
 
@@ -77,11 +77,10 @@ func TestServiceRenewLeaseStateBoundaries(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 }
 
-//nolint:paralleltest,tparallel // Subtests intentionally share one in-memory repository.
 func TestServiceRejectsMissingAndMalformedPersistedRuns(t *testing.T) {
 	t.Parallel()
 
-	service, repository, owner, connection := newInternalWorkflowService(t)
+	service, _, _, _ := newInternalWorkflowService(t)
 
 	_, err := service.ExecuteQueued(t.Context(), "missing")
 	require.ErrorContains(t, err, "was not found")
@@ -96,6 +95,9 @@ func TestServiceRejectsMissingAndMalformedPersistedRuns(t *testing.T) {
 		{name: "resume interrupted", resume: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service, repository, owner, connection := newInternalWorkflowService(t)
 			run, createErr := service.Submit(t.Context(), serviceTestRequest(test.name, owner))
 			require.NoError(t, createErr)
 			_, updateErr := connection.ExecContext(t.Context(),

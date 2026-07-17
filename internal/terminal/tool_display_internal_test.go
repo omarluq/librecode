@@ -285,6 +285,18 @@ func TestTailExpandedToolLinesIncludesErrorWithOutput(t *testing.T) {
 	assert.NotEqual(t, -1, lineIndexContaining(lines, "stdout"))
 }
 
+func TestToolDisplayOutputDoesNotDuplicateErrorAsOutput(t *testing.T) {
+	t.Parallel()
+
+	const compileError = "compile failed"
+
+	display := testToolDisplay("execute", toolDisplayError)
+	display.Error = compileError
+	display.Output = compileError
+
+	assert.Equal(t, compileError, toolDisplayOutput(&display))
+}
+
 func TestRenderExpandedExecuteToolHighlightsGoSource(t *testing.T) {
 	t.Parallel()
 

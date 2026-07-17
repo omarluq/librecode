@@ -125,7 +125,7 @@ func (service *Service) ExecuteQueued(ctx context.Context, runID string) (bool, 
 	// Execution failures are durable workflow outcomes, not dispatcher failures.
 	// Once the terminal state has been persisted, callers can inspect the run
 	// without the background worker also writing the source error to the TUI.
-	if err != nil && completed != nil && workflowTerminal(completed.Task.State) {
+	if err != nil && completed != nil && terminal(completed.Task.State) {
 		return true, nil
 	}
 
@@ -147,7 +147,7 @@ func (service *Service) Await(ctx context.Context, runID string) (*database.Work
 			return nil, oops.In("workflow").Code("missing_run").Errorf("workflow run was not found")
 		}
 
-		if workflowTerminal(run.Task.State) {
+		if terminal(run.Task.State) {
 			return run, nil
 		}
 
@@ -524,17 +524,6 @@ func workflowOutcome(
 	return database.TaskSucceeded, workflowSucceeded, "", ""
 }
 
-func workflowTerminal(state database.TaskState) bool {
-	switch state {
-	case database.TaskSucceeded, database.TaskFailed, database.TaskCanceled, database.TaskInterrupted:
-		return true
-	case database.TaskQueued, database.TaskRunning, database.TaskCanceling:
-		return false
-	default:
-		return false
-	}
-}
-
 func errorString(err error) string {
 	if err == nil {
 		return ""
@@ -563,7 +552,14 @@ func (service *Service) monitorLease(
 
 				return
 			case <-ticker.C:
-				if err := service.renewLease(ctx, runID); err != nil {
+				stopped, err := service.monitorLeaseTick(ctx, runID)
+				if stopped {
+					result <- nil
+
+					return
+				}
+
+				if err != nil {
 					cancel()
 
 					result <- err
@@ -575,6 +571,25 @@ func (service *Service) monitorLease(
 	}()
 
 	return result
+}
+
+func (service *Service) monitorLeaseTick(ctx context.Context, runID string) (stopped bool, err error) {
+	if contextDone(ctx) {
+		return true, nil
+	}
+
+	err = service.renewLease(ctx, runID)
+
+	return contextDone(ctx), err
+}
+
+func contextDone(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 func (service *Service) renewLease(ctx context.Context, runID string) error {

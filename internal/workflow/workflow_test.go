@@ -53,7 +53,7 @@ func (fake *fakeController) Submit(
 		fake.submitCh <- taskID
 	}
 
-	return task, nil
+	return cloneAgentTask(task), nil
 }
 
 func (fake *fakeController) Get(_ context.Context, taskID string) (*database.AgentTaskEntity, bool, error) {
@@ -61,8 +61,11 @@ func (fake *fakeController) Get(_ context.Context, taskID string) (*database.Age
 	defer fake.mu.Unlock()
 
 	task, found := fake.tasks[taskID]
+	if !found {
+		return nil, false, nil
+	}
 
-	return task, found, nil
+	return cloneAgentTask(task), true, nil
 }
 
 func (fake *fakeController) Await(ctx context.Context, taskID string) (*database.AgentTaskEntity, error) {
@@ -77,7 +80,7 @@ func (fake *fakeController) Await(ctx context.Context, taskID string) (*database
 	task.Task.State = database.TaskSucceeded
 	task.Task.Result = "done"
 
-	return task, nil
+	return cloneAgentTask(task), nil
 }
 
 func (fake *fakeController) Cancel(_ context.Context, owner, taskID string) (*database.TaskEntity, bool, error) {
@@ -88,7 +91,15 @@ func (fake *fakeController) Cancel(_ context.Context, owner, taskID string) (*da
 	task := fake.tasks[taskID]
 	task.Task.State = database.TaskCanceled
 
-	return &task.Task, true, nil
+	result := task.Task
+
+	return &result, true, nil
+}
+
+func cloneAgentTask(task *database.AgentTaskEntity) *database.AgentTaskEntity {
+	clone := *task
+
+	return &clone
 }
 
 func TestRunnerSingleTask(t *testing.T) {

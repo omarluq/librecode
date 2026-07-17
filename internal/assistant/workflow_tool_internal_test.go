@@ -31,6 +31,18 @@ func (stub *workflowSubmitterStub) Submit(
 	return stub.run, stub.err
 }
 
+func TestWorkflowToolDefinitionSignalsDynamicWorkflowIntent(t *testing.T) {
+	t.Parallel()
+
+	executor := &workflowToolExecutor{submitter: nil, ownerSessionID: ""}
+	definition := executor.Definition()
+
+	assert.Contains(t, definition.Description, "launch, start, run, or create a dynamic workflow")
+	assert.Contains(t, definition.PromptSnippet, "dynamic workflows")
+	require.NotEmpty(t, definition.PromptGuidelines)
+	assert.Contains(t, definition.PromptGuidelines[0], "explicit instructions to call this tool")
+}
+
 func TestWorkflowToolSubmitsModelAuthoredSource(t *testing.T) {
 	t.Parallel()
 
