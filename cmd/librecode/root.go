@@ -74,7 +74,6 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newSessionCmd())
 	cmd.AddCommand(newSkillCmd())
 	cmd.AddCommand(newToolCmd())
-	cmd.AddCommand(newWorkflowCmd())
 	cmd.AddCommand(newVersionCmd())
 
 	return cmd

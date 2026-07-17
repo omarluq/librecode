@@ -10,14 +10,15 @@ import (
 	"io"
 	"math"
 
+	"github.com/omarluq/librecode/internal/executionlimits"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
 const (
 	// MaxFrameSize is the largest encoded protocol message accepted by a worker.
-	MaxFrameSize = 2 << 20
+	MaxFrameSize = executionlimits.MaxFrameSize
 	// MaxResultSize is the largest encoded evaluation value accepted across the protocol.
-	MaxResultSize = 1 << 20
+	MaxResultSize = executionlimits.MaxResultSize
 )
 
 // ToolCallResult is the typed result of a tools.Call callback. Keeping this
@@ -32,28 +33,27 @@ type ToolCallResult struct {
 
 // Message is a framed request or response exchanged with an execute worker.
 type Message struct {
-	Stderr      string          `json:"stderr,omitempty"`
-	Source      string          `json:"source,omitempty"`
-	Method      string          `json:"method,omitempty"`
-	Mode        string          `json:"mode,omitempty"`
-	Name        string          `json:"name,omitempty"`
-	Query       string          `json:"query,omitempty"`
-	Stdout      string          `json:"stdout,omitempty"`
-	Type        string          `json:"type"`
-	Error       string          `json:"error,omitempty"`
-	ErrorKind   string          `json:"error_kind,omitempty"`
-	ValueKind   string          `json:"value_kind,omitempty"`
-	Input       json.RawMessage `json:"input,omitempty"`
-	Value       json.RawMessage `json:"value,omitempty"`
-	Arguments   json.RawMessage `json:"arguments,omitempty"`
-	ID          uint64          `json:"id,omitempty"`
-	ExitCode    int             `json:"exit_code,omitempty"`
-	SourceLimit int             `json:"source_limit,omitempty"`
-	OutputLimit int             `json:"output_limit,omitempty"`
+	Stderr    string          `json:"stderr,omitempty"`
+	Source    string          `json:"source,omitempty"`
+	Method    string          `json:"method,omitempty"`
+	Mode      string          `json:"mode,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Query     string          `json:"query,omitempty"`
+	Stdout    string          `json:"stdout,omitempty"`
+	Type      string          `json:"type"`
+	Error     string          `json:"error,omitempty"`
+	ErrorKind string          `json:"error_kind,omitempty"`
+	ValueKind string          `json:"value_kind,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	Value     json.RawMessage `json:"value,omitempty"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+	ID        uint64          `json:"id,omitempty"`
+	ExitCode  int             `json:"exit_code,omitempty"`
 }
 
 const (
 	toolCallResultKind = "tool_call_result"
+	pipelineResultKind = "pipeline_result"
 	jsonNullValue      = "null"
 )
 
@@ -61,7 +61,7 @@ func newMessage(messageType string) Message {
 	return Message{
 		Stderr: "", Source: "", Method: "", Mode: "", Name: "", Query: "", Stdout: "",
 		Type: messageType, Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil,
-		Arguments: nil, ID: 0, ExitCode: 0, SourceLimit: 0, OutputLimit: 0,
+		Arguments: nil, ID: 0, ExitCode: 0,
 	}
 }
 

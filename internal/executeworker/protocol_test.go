@@ -56,10 +56,27 @@ func TestProtocolRejectsOversizedMessagesOnReadAndWrite(t *testing.T) {
 	assert.Contains(t, err.Error(), "frame size")
 }
 
+func TestProtocolResponseBudgetsCompose(t *testing.T) {
+	t.Parallel()
+
+	message := protocolMessage("result", []byte(`"`+strings.Repeat("v", executeworker.MaxResultSize-2)+`"`))
+	message.Stdout = strings.Repeat("\\", (executeworker.MaxFrameSize-executeworker.MaxResultSize)/(2*6))
+	message.Stderr = message.Stdout
+
+	var buffer bytes.Buffer
+	require.NoError(t, executeworker.Write(&buffer, message))
+	got, err := executeworker.Read(&buffer)
+	require.NoError(t, err)
+	assert.Equal(t, message.Type, got.Type)
+	assert.Equal(t, message.Value, got.Value)
+	assert.Equal(t, message.Stdout, got.Stdout)
+	assert.Equal(t, message.Stderr, got.Stderr)
+}
+
 func protocolMessage(messageType string, value []byte) *executeworker.Message {
 	return &executeworker.Message{
 		Stderr: "", Source: "", Method: "", Mode: "", Name: "", Query: "", Stdout: "", Type: messageType,
 		Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: value, Arguments: nil,
-		ID: 0, ExitCode: 0, SourceLimit: 0, OutputLimit: 0,
+		ID: 0, ExitCode: 0,
 	}
 }

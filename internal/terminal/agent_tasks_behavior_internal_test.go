@@ -645,7 +645,7 @@ func TestAgentTaskPanelRejectsTaskOwnedByAnotherSession(t *testing.T) {
 	t.Parallel()
 
 	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
-	task.Task.OwnerSessionID = "another-session"
+	task.Task.OwnerSessionID = workflowTestForeignSession
 	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{behaviorTaskID: &task}, nil)
 	app := newAgentTaskBehaviorApp(t, stub)
 	items := []tui.ListItem{{Value: behaviorTaskID, Title: "task", Description: "", Meta: ""}}

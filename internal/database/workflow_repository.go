@@ -10,6 +10,8 @@ import (
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
 	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // TaskKindWorkflow identifies durable workflow execution.
@@ -157,32 +159,12 @@ func (repository *WorkflowRepository) CreateAgentTaskWithChildSession(
 	nodeKey string,
 	invocationIndex int,
 ) (*AgentTaskEntity, error) {
-	if agentTask == nil {
-		return nil, errors.New("database: agent task is required")
-	}
-
-	if childRequest == nil {
-		return nil, errors.New("database: child session request is required")
-	}
-
-	if agentTask.Task.OwnerSessionID != childRequest.ParentSessionID {
-		return nil, errors.New("database: child session parent differs from agent task owner")
-	}
-
-	child, err := prepareSession(
-		repository.tasks.now(),
-		childRequest.CWD,
-		childRequest.Name,
-		childRequest.ParentSessionID,
-	)
+	candidate, child, err := prepareAgentTaskChild(repository.tasks.now(), agentTask, childRequest)
 	if err != nil {
 		return nil, err
 	}
 
-	candidate := *agentTask
-	candidate.ChildSessionID = child.ID
-
-	return repository.createAgentTask(ctx, workflowTaskID, &candidate, child, nodeKey, invocationIndex)
+	return repository.createAgentTask(ctx, workflowTaskID, candidate, child, nodeKey, invocationIndex)
 }
 
 // CreateAgentTask atomically persists a queued agent task and its workflow link.
@@ -279,35 +261,52 @@ func (repository *WorkflowRepository) LinkAgentTask(
 	nodeKey = strings.TrimSpace(nodeKey)
 
 	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		existing, found, err := querySQLRow(ctx, transaction, workflowAgentTaskFromRow,
-			`SELECT workflow_task_id, agent_task_id, sequence, node_key, invocation_index, created_at
-FROM workflow_agent_tasks WHERE workflow_task_id = ? AND node_key = ? AND invocation_index = ?`,
-			"workflow_agent_task", workflowTaskID, nodeKey, invocationIndex)
-		if err != nil {
-			return err
-		}
-
-		if found {
-			if existing.AgentTaskID != agentTaskID {
-				return oops.In("database").Code("workflow_agent_invocation_conflict").
-					Errorf("workflow invocation is already linked to agent task %q", existing.AgentTaskID)
-			}
-
-			link = existing
+		created, err := insertWorkflowAgentTask(ctx, transaction, workflowTaskID, agentTaskID,
+			nodeKey, invocationIndex, repository.tasks.now().UTC())
+		if err == nil {
+			link = created
 
 			return nil
 		}
 
-		link, err = insertWorkflowAgentTask(ctx, transaction, workflowTaskID, agentTaskID,
-			nodeKey, invocationIndex, repository.tasks.now().UTC())
+		if !isWorkflowInvocationUniqueConstraint(err) {
+			return err
+		}
 
-		return err
+		existing, found, queryErr := querySQLRow(ctx, transaction, workflowAgentTaskFromRow,
+			`SELECT workflow_task_id, agent_task_id, sequence, node_key, invocation_index, created_at
+FROM workflow_agent_tasks WHERE workflow_task_id = ? AND node_key = ? AND invocation_index = ?`,
+			"workflow_agent_task", workflowTaskID, nodeKey, invocationIndex)
+		if queryErr != nil || !found {
+			return err
+		}
+
+		if existing.AgentTaskID != agentTaskID {
+			return oops.In("database").Code("workflow_agent_invocation_conflict").
+				Errorf("workflow invocation is already linked to agent task %q", existing.AgentTaskID)
+		}
+
+		link = existing
+
+		return nil
 	})
 	if err != nil {
 		return nil, oops.In("database").Code("create_workflow_agent_link").Wrapf(err, "create workflow agent link")
 	}
 
 	return link, nil
+}
+
+func isWorkflowInvocationUniqueConstraint(err error) bool {
+	var sqliteErr *sqlite.Error
+	if !errors.As(err, &sqliteErr) || sqliteErr.Code() != sqlite3.SQLITE_CONSTRAINT_UNIQUE {
+		return false
+	}
+
+	const constraint = "UNIQUE constraint failed: workflow_agent_tasks.workflow_task_id, " +
+		"workflow_agent_tasks.node_key, workflow_agent_tasks.invocation_index"
+
+	return strings.Contains(sqliteErr.Error(), constraint)
 }
 
 func insertWorkflowAgentTask(
@@ -323,17 +322,13 @@ func insertWorkflowAgentTask(
 		Sequence int64 `ksql:"sequence"`
 	}
 
-	const sequenceQuery = `SELECT COALESCE(MAX(sequence), 0) + 1 AS sequence
-FROM workflow_agent_tasks WHERE workflow_task_id = ?`
-	if err := transaction.QueryOne(ctx, &row, sequenceQuery, workflowTaskID); err != nil {
-		return nil, oops.In("database").Code("next_workflow_agent_sequence").
-			Wrapf(err, "read next workflow agent sequence")
-	}
-
 	const statement = `INSERT INTO workflow_agent_tasks
-(workflow_task_id, agent_task_id, sequence, node_key, invocation_index, created_at) VALUES (?, ?, ?, ?, ?, ?)`
-	if _, err := transaction.Exec(ctx, statement, workflowTaskID, agentTaskID, row.Sequence,
-		nodeKey, invocationIndex, formatTime(now)); err != nil {
+(workflow_task_id, agent_task_id, sequence, node_key, invocation_index, created_at)
+SELECT ?, ?, COALESCE(MAX(sequence), 0) + 1, ?, ?, ?
+FROM workflow_agent_tasks WHERE workflow_task_id = ?
+RETURNING sequence`
+	if err := transaction.QueryOne(ctx, &row, statement, workflowTaskID, agentTaskID,
+		nodeKey, invocationIndex, formatTime(now), workflowTaskID); err != nil {
 		return nil, oops.In("database").Code("link_workflow_agent_task").Wrapf(err, "link workflow agent task")
 	}
 

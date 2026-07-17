@@ -128,8 +128,9 @@ func validateWorkflowRunEntity(entity *WorkflowRunEntity) error {
 		return err
 	}
 
-	if !json.Valid([]byte(entity.ArgumentsJSON)) {
-		return errors.New("workflow_run.arguments_json must be valid JSON")
+	var arguments map[string]any
+	if err := json.Unmarshal([]byte(entity.ArgumentsJSON), &arguments); err != nil || arguments == nil {
+		return errors.New("workflow_run.arguments_json must be a JSON object")
 	}
 
 	return nil

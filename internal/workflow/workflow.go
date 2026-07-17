@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	workflowImport = "librecode/workflow"
-	cancelTimeout  = 5 * time.Second
+	cancelTimeout         = 5 * time.Second
+	pipelineResultKind    = "pipeline_result"
+	taskNotOwnedBySession = "task is not owned by this workflow session"
 )
 
 // EventKind identifies workflow progress.
@@ -80,8 +81,6 @@ type RunRequest struct {
 	OnEvent        EventSink
 	Arguments      map[string]any
 	PersistedLinks []database.WorkflowAgentTaskEntity
-	SourceLimit    int
-	OutputLimit    int
 }
 
 // RunResult contains script output and the tasks launched by this run.
@@ -130,39 +129,49 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 	run := &runHost{
 		ctx: ctx, runID: request.RunID, ownerSessionID: request.OwnerSessionID, controller: runner.controller,
 		onEvent: request.OnEvent, launched: make(map[string]struct{}), taskIDs: make([]string, 0),
-		invocations: make(map[string]int), persisted: make(map[invocationKey]string),
-		mu: sync.Mutex{}, eventMu: sync.Mutex{},
+		invocations: make(map[string]int), persisted: make(map[invocationKey]persistedInvocation),
+		mu: sync.Mutex{}, launchMu: sync.Mutex{}, eventMu: sync.Mutex{},
 	}
 	for _, link := range request.PersistedLinks {
 		key := invocationKey{nodeKey: normalizeNodeKey(link.NodeKey), index: link.InvocationIndex}
-		run.persisted[key] = link.AgentTaskID
+
+		run.persisted[key] = persistedInvocation{taskID: link.AgentTaskID}
+
 		run.launched[link.AgentTaskID] = struct{}{}
 		run.taskIDs = append(run.taskIDs, link.AgentTaskID)
 	}
 
-	defer func() {
-		if runErr != nil {
-			runErr = errors.Join(runErr, run.cancelActive())
-		}
-	}()
-
 	client := executeworker.Client{Executable: runner.executable, Handler: run.handleRPC}
 	result, err := client.EvalRequest(ctx, &executeworker.Request{
 		Mode: "workflow", Name: request.Name, Source: request.Source, Arguments: request.Arguments,
-		SourceLimit: request.SourceLimit, OutputLimit: request.OutputLimit,
 	})
 
 	value := normalizeWorkflowValue(result.Value)
-	if strings.Contains(request.Source, "workflow.Pipeline") {
+	if result.ValueKind == pipelineResultKind {
 		value = normalizePipelineResults(value)
 	}
 
+	if err != nil {
+		runErr = errors.Join(runErr, oops.In("workflow").Code("evaluate_source").Wrapf(err, "evaluate workflow source"))
+		runErr = errors.Join(runErr, run.cancelActive())
+	}
+
+	taskResults, snapshotErr := run.taskResults()
 	runResult = RunResult{
 		Value: value, Stdout: result.Stdout, Stderr: result.Stderr,
-		LaunchedTaskIDs: run.launchedTaskIDs(), TaskResults: run.taskResults(),
+		LaunchedTaskIDs: run.launchedTaskIDs(), TaskResults: taskResults,
 	}
-	if err != nil {
-		return runResult, oops.In("workflow").Code("evaluate_source").Wrapf(err, "evaluate workflow source")
+
+	if snapshotErr != nil {
+		runErr = errors.Join(runErr, oops.In("workflow").Code("snapshot_tasks").
+			Wrapf(snapshotErr, "snapshot workflow tasks"))
+		if err == nil {
+			runErr = errors.Join(runErr, run.cancelActive())
+		}
+	}
+
+	if runErr != nil {
+		return runResult, runErr
 	}
 
 	return runResult, nil
@@ -191,21 +200,23 @@ func normalizePipelineResults(value any) any {
 		return value
 	}
 
+	if len(items) == 0 {
+		return []PipelineResult{}
+	}
+
 	results := make([]PipelineResult, len(items))
 	for index, item := range items {
-		fields, ok := item.(map[string]any)
+		fields, fieldsOK := item.(map[string]any)
+		if !fieldsOK || len(fields) != 3 {
+			return value
+		}
+
+		result, ok := pipelineResultFromFields(fields)
 		if !ok {
 			return value
 		}
 
-		itemIndex, indexOK := fields["index"].(int)
-
-		itemError, errorOK := fields["error"].(string)
-		if !indexOK || !errorOK {
-			return value
-		}
-
-		results[index] = PipelineResult{Index: itemIndex, Value: fields["value"], Error: itemError}
+		results[index] = result
 		if results[index].Value == nil && results[index].Error != pipelineNotScheduled {
 			results[index].Value = TaskResult{
 				ID: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
@@ -214,6 +225,14 @@ func normalizePipelineResults(value any) any {
 	}
 
 	return results
+}
+
+func pipelineResultFromFields(fields map[string]any) (PipelineResult, bool) {
+	itemIndex, indexOK := fields["index"].(int)
+	itemValue, valueOK := fields["value"]
+	itemError, errorOK := fields["error"].(string)
+
+	return PipelineResult{Index: itemIndex, Value: itemValue, Error: itemError}, indexOK && valueOK && errorOK
 }
 
 func normalizeNumbers(value any) any {
@@ -247,6 +266,10 @@ type invocationKey struct {
 	index   int
 }
 
+type persistedInvocation struct {
+	taskID string
+}
+
 type workflowAgentRPCInput struct {
 	Prompt  string         `json:"prompt"`
 	Options []AgentOptions `json:"options"`
@@ -260,9 +283,10 @@ type runHost struct {
 	ownerSessionID string
 	launched       map[string]struct{}
 	invocations    map[string]int
-	persisted      map[invocationKey]string
+	persisted      map[invocationKey]persistedInvocation
 	taskIDs        []string
 	mu             sync.Mutex
+	launchMu       sync.Mutex
 	eventMu        sync.Mutex
 }
 
@@ -287,29 +311,28 @@ func (host *runHost) handleRPC(_ context.Context, message *executeworker.Message
 }
 
 func (host *runHost) agent(prompt string, options ...AgentOptions) (string, error) {
+	// A pipeline may invoke Agent concurrently. Keep invocation allocation,
+	// persisted-link replay, submission, and launch publication in one stable
+	// order so a later invocation cannot be persisted before an earlier one.
+	host.launchMu.Lock()
+	defer host.launchMu.Unlock()
+
 	if err := host.ctx.Err(); err != nil {
 		return "", oops.In("workflow").Code("run_canceled").Wrapf(err, "launch agent")
 	}
 
-	if prompt == "" {
-		return "", errors.New("workflow: agent prompt is required")
-	}
-
-	agentOptions, err := oneAgentOptions(options)
+	agentOptions, nodeKey, err := validatedAgentInput(prompt, options)
 	if err != nil {
 		return "", err
 	}
 
-	nodeKey := normalizeNodeKey(agentOptions.NodeKey)
-
 	host.mu.Lock()
 	invocationIndex := host.invocations[nodeKey]
 	host.invocations[nodeKey] = invocationIndex + 1
-	reusedTaskID, reused := host.persisted[invocationKey{nodeKey: nodeKey, index: invocationIndex}]
 	host.mu.Unlock()
 
-	if reused {
-		return reusedTaskID, nil
+	if reusedTaskID, reused, reuseErr := host.persistedTask(nodeKey, invocationIndex); reuseErr != nil || reused {
+		return reusedTaskID, reuseErr
 	}
 
 	task, err := host.controller.Submit(host.ctx, &AgentRequest{
@@ -360,7 +383,7 @@ func (host *runHost) wait(taskID string) (TaskResult, error) {
 
 	if !found || task.Task.OwnerSessionID != host.ownerSessionID {
 		return TaskResult{}, oops.In("workflow").Code("task_not_owned").
-			Errorf("task is not owned by this workflow session")
+			Errorf(taskNotOwnedBySession)
 	}
 
 	task, err = host.controller.Await(host.ctx, taskID)
@@ -384,18 +407,22 @@ func (host *runHost) wait(taskID string) (TaskResult, error) {
 }
 
 func (host *runHost) list() ([]TaskResult, error) {
+	return host.listWithContext(host.ctx)
+}
+
+func (host *runHost) listWithContext(ctx context.Context) ([]TaskResult, error) {
 	taskIDs := host.launchedTaskIDs()
 
 	results := make([]TaskResult, 0, len(taskIDs))
 	for _, taskID := range taskIDs {
-		task, found, err := host.controller.Get(host.ctx, taskID)
+		task, found, err := host.controller.Get(ctx, taskID)
 		if err != nil {
 			return nil, oops.In("workflow").Code("list_task").Wrapf(err, "get launched task %s", taskID)
 		}
 
 		if !found || task == nil || task.Task.OwnerSessionID != host.ownerSessionID {
 			return nil, oops.In("workflow").Code("task_not_owned").
-				Errorf("task is not owned by this workflow session")
+				Errorf(taskNotOwnedBySession)
 		}
 
 		results = append(results, taskResult(task))
@@ -417,7 +444,7 @@ func (host *runHost) cancel(taskID string) (TaskResult, error) {
 
 	if !found || task == nil || task.Task.OwnerSessionID != host.ownerSessionID {
 		return TaskResult{}, oops.In("workflow").Code("task_not_owned").
-			Errorf("task is not owned by this workflow session")
+			Errorf(taskNotOwnedBySession)
 	}
 
 	canceled, found, err := host.controller.Cancel(host.ctx, host.ownerSessionID, taskID)
@@ -427,10 +454,24 @@ func (host *runHost) cancel(taskID string) (TaskResult, error) {
 
 	if !found || canceled == nil || canceled.OwnerSessionID != host.ownerSessionID {
 		return TaskResult{}, oops.In("workflow").Code("task_not_owned").
-			Errorf("task is not owned by this workflow session")
+			Errorf(taskNotOwnedBySession)
 	}
 
 	return taskResultFromTask(canceled), nil
+}
+
+func validatedAgentInput(prompt string, options []AgentOptions) (AgentOptions, string, error) {
+	if prompt == "" {
+		return AgentOptions{}, "", oops.In("workflow").Code("invalid_agent_prompt").
+			Errorf("agent prompt is required")
+	}
+
+	agentOptions, err := oneAgentOptions(options)
+	if err != nil {
+		return AgentOptions{}, "", err
+	}
+
+	return agentOptions, normalizeNodeKey(agentOptions.NodeKey), nil
 }
 
 func normalizeNodeKey(nodeKey string) string {
@@ -451,8 +492,35 @@ func oneAgentOptions(options []AgentOptions) (AgentOptions, error) {
 	case 1:
 		return options[0], nil
 	default:
-		return AgentOptions{}, errors.New("workflow: agent accepts at most one options value")
+		return AgentOptions{}, oops.In("workflow").Code("invalid_agent_options").
+			Errorf("agent accepts at most one options value")
 	}
+}
+
+func (host *runHost) persistedTask(nodeKey string, invocationIndex int) (taskID string, found bool, err error) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+
+	key := invocationKey{nodeKey: normalizeNodeKey(nodeKey), index: invocationIndex}
+
+	invocation, persisted := host.persisted[key]
+	if !persisted {
+		return "", false, nil
+	}
+
+	task, found, err := host.controller.Get(host.ctx, invocation.taskID)
+	if err != nil {
+		return "", false, oops.In("workflow").Code("get_persisted_task").
+			Wrapf(err, "get persisted agent task")
+	}
+
+	if !found || task == nil {
+		return "", false, nil
+	}
+
+	delete(host.persisted, key)
+
+	return invocation.taskID, true, nil
 }
 
 func (host *runHost) owns(taskID string) bool {
@@ -471,13 +539,8 @@ func (host *runHost) launchedTaskIDs() []string {
 	return append([]string(nil), host.taskIDs...)
 }
 
-func (host *runHost) taskResults() []TaskResult {
-	results, err := host.list()
-	if err != nil {
-		return []TaskResult{}
-	}
-
-	return results
+func (host *runHost) taskResults() ([]TaskResult, error) {
+	return host.listWithContext(context.WithoutCancel(host.ctx))
 }
 
 func (host *runHost) emit(event *Event) error {

@@ -3,7 +3,6 @@ package assistant
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/samber/oops"
@@ -108,12 +107,11 @@ func (executor *executeToolExecutor) handleWorkerMessage(
 	case "describe":
 		return executor.describe(message.Name), nil
 	case executeCallMethod:
-		var nestedInput any
-		if err := json.Unmarshal(message.Input, &nestedInput); err != nil {
+		if _, err := tool.ArgumentsFromRaw(message.Input); err != nil {
 			return nil, oops.In("assistant").Code("execute_rpc_input").Wrapf(err, "decode nested tool input")
 		}
 
-		return executor.call(ctx, message.Name, nestedInput), nil
+		return executor.call(ctx, message.Name, message.Input), nil
 	default:
 		return nil, oops.In("assistant").Code("execute_rpc_method").Errorf(
 			"unknown execute worker RPC method %q",
@@ -156,7 +154,11 @@ func (executor *executeToolExecutor) describe(name string) map[string]any {
 	return nil
 }
 
-func (executor *executeToolExecutor) call(ctx context.Context, name string, input any) executeToolCallResult {
+func (executor *executeToolExecutor) call(
+	ctx context.Context,
+	name string,
+	encoded json.RawMessage,
+) executeToolCallResult {
 	if tool.Name(name) == executeToolName {
 		return executeToolCallResult{
 			Details: map[string]any{}, Content: nil, Error: "execute cannot call itself", IsError: true,
@@ -166,13 +168,6 @@ func (executor *executeToolExecutor) call(ctx context.Context, name string, inpu
 	if tool.Name(name) == workflowToolName {
 		return executeToolCallResult{
 			Details: map[string]any{}, Content: nil, Error: "execute cannot call workflow", IsError: true,
-		}
-	}
-
-	encoded, err := json.Marshal(input)
-	if err != nil {
-		return executeToolCallResult{
-			Details: map[string]any{}, Content: nil, Error: fmt.Sprintf("encode tool input: %v", err), IsError: true,
 		}
 	}
 

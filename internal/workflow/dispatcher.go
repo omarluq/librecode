@@ -37,7 +37,10 @@ type Dispatcher struct {
 	cancel   context.CancelFunc
 	done     <-chan struct{}
 	wg       sync.WaitGroup
+	submits  sync.WaitGroup
 	interval time.Duration
+	mu       sync.Mutex
+	closed   bool
 }
 
 // NewDispatcher starts durable workflow workers.
@@ -71,7 +74,7 @@ func NewDispatcher(ctx context.Context, options DispatcherOptions) (*Dispatcher,
 	dispatcher := &Dispatcher{
 		service: options.Service, tasks: options.Tasks, logger: logger,
 		queue: make(chan string, buffer), cancel: cancel, done: dispatchCtx.Done(),
-		wg: sync.WaitGroup{}, interval: interval,
+		wg: sync.WaitGroup{}, submits: sync.WaitGroup{}, interval: interval, mu: sync.Mutex{}, closed: false,
 	}
 
 	for range concurrency {
@@ -90,6 +93,18 @@ func (dispatcher *Dispatcher) Submit(
 	ctx context.Context,
 	request *ServiceRequest,
 ) (*database.WorkflowRunEntity, error) {
+	dispatcher.mu.Lock()
+	if dispatcher.closed {
+		dispatcher.mu.Unlock()
+
+		return nil, oops.In("workflow").Code("dispatcher_shutdown").Errorf("workflow dispatcher is shut down")
+	}
+
+	dispatcher.submits.Add(1)
+	dispatcher.mu.Unlock()
+
+	defer dispatcher.submits.Done()
+
 	run, err := dispatcher.service.Submit(ctx, request)
 	if err != nil {
 		return nil, err
@@ -107,11 +122,15 @@ func (dispatcher *Dispatcher) Await(ctx context.Context, runID string) (*databas
 
 // Shutdown stops polling and waits for workers.
 func (dispatcher *Dispatcher) Shutdown(ctx context.Context) error {
+	dispatcher.mu.Lock()
+	dispatcher.closed = true
 	dispatcher.cancel()
+	dispatcher.mu.Unlock()
 
 	done := make(chan struct{})
 
 	go func() {
+		dispatcher.submits.Wait()
 		dispatcher.wg.Wait()
 		close(done)
 	}()

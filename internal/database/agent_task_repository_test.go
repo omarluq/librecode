@@ -88,12 +88,6 @@ func TestAgentTaskRepositoryCreatesChildSessionAtomically(t *testing.T) {
 	require.True(t, found)
 	assert.Equal(t, owner.ID, child.ParentSession)
 
-	invalid := newAgentTask("missing-owner", "")
-	_, err = fixture.agents.CreateWithChildSession(ctx, invalid, &database.ChildSessionRequest{
-		CWD: owner.CWD, Name: "orphan", ParentSessionID: "missing-owner",
-	})
-	require.Error(t, err)
-
 	mismatched := newAgentTask(owner.ID, "")
 	_, err = fixture.agents.CreateWithChildSession(ctx, mismatched, &database.ChildSessionRequest{
 		CWD: owner.CWD, Name: "wrong-parent", ParentSessionID: testUUIDV7(t),
@@ -102,7 +96,27 @@ func TestAgentTaskRepositoryCreatesChildSessionAtomically(t *testing.T) {
 
 	children, err := fixture.sessions.ListChildSessions(ctx, owner.ID)
 	require.NoError(t, err)
-	assert.Len(t, children, 1, "failed task creation must roll back its child session")
+	assert.Len(t, children, 1)
+}
+
+func TestAgentTaskRepositoryRollsBackChildSessionWhenTaskInsertFails(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner := fixture.createOwner(ctx)
+	candidate := newAgentTask(owner.ID, "")
+	candidate.Task.ParentTaskID = testUUIDV7(t)
+
+	created, err := fixture.agents.CreateWithChildSession(ctx, candidate, &database.ChildSessionRequest{
+		CWD: owner.CWD, Name: "rolled-back-child", ParentSessionID: owner.ID,
+	})
+	require.ErrorContains(t, err, "insert task")
+	assert.Nil(t, created)
+
+	children, err := fixture.sessions.ListChildSessions(ctx, owner.ID)
+	require.NoError(t, err)
+	assert.Empty(t, children, "task insertion failure must roll back the previously inserted child session")
 }
 
 func TestAgentTaskRepositoryFinishBehavior(t *testing.T) {
@@ -158,6 +172,11 @@ func TestAgentTaskRepositoryFinishBehavior(t *testing.T) {
 
 func TestAgentTaskRepositoryCreateValidationAndDefaults(t *testing.T) {
 	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	created, err := fixture.agents.Create(t.Context(), nil)
+	require.ErrorContains(t, err, "agent task is required")
+	assert.Nil(t, created)
 
 	tests := []struct {
 		name      string

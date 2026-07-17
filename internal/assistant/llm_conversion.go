@@ -179,8 +179,8 @@ func llmToolResultFromEvent(event *ToolEvent) *llm.ToolResult {
 	}
 
 	return &llm.ToolResult{
-		Metadata:      nil,
-		ToolCallID:    "",
+		Metadata:      toolIdentityMetadata(event.ParentCallID, event.Sequence),
+		ToolCallID:    event.CallID,
 		ArgumentsJSON: event.ArgumentsJSON,
 		Name:          event.Name,
 		Error:         event.Error,

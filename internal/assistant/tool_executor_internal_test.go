@@ -167,15 +167,30 @@ func TestExecuteProviderToolCallPreservesResultOnLifecycleError(t *testing.T) {
 func TestCanonicalToolResultUsesLifecycleMutation(t *testing.T) {
 	t.Parallel()
 
-	result := tool.TextResult("original", map[string]any{"old": true})
-	event := ToolEvent{
-		CallID: executeCallMethod, ParentCallID: "", Name: jsonReadToolName, ArgumentsJSON: "{}",
-		DetailsJSON: `{"redacted":true}`, Result: "redacted", Error: "", Sequence: 0, IsError: false,
+	tests := []struct {
+		wantDetails map[string]any
+		name        string
+		detailsJSON string
+	}{
+		{name: "valid details", detailsJSON: `{"redacted":true}`, wantDetails: map[string]any{"redacted": true}},
+		{name: "malformed details fail closed", detailsJSON: `{"redacted":`, wantDetails: nil},
 	}
 
-	canonical := canonicalToolResult(result, &event)
-	assert.Equal(t, "redacted", canonical.Text())
-	assert.Equal(t, map[string]any{"redacted": true}, canonical.Details)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := tool.TextResult("original", map[string]any{"old": true})
+			event := ToolEvent{
+				CallID: executeCallMethod, ParentCallID: "", Name: jsonReadToolName, ArgumentsJSON: "{}",
+				DetailsJSON: testCase.detailsJSON, Result: "redacted", Error: "", Sequence: 0, IsError: false,
+			}
+
+			canonical := canonicalToolResult(result, &event)
+			assert.Equal(t, "redacted", canonical.Text())
+			assert.Equal(t, testCase.wantDetails, canonical.Details)
+		})
+	}
 }
 
 func TestEncodeToolDetails(t *testing.T) {

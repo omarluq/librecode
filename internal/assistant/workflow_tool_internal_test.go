@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -89,6 +90,60 @@ func TestWorkflowToolReturnsWithoutAwaitingCompletion(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, `Started workflow "background review" with run ID run-queued.`, result.Text())
 	assert.Equal(t, database.TaskQueued, result.Details["state"])
+}
+
+func TestWorkflowToolRejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	validStub := &workflowSubmitterStub{request: nil, run: nil, err: nil}
+
+	tests := []struct {
+		executor *workflowToolExecutor
+		raw      string
+		name     string
+		want     string
+	}{
+		{
+			name: "missing submitter", executor: &workflowToolExecutor{submitter: nil, ownerSessionID: ""},
+			raw: `{}`, want: "workflow service is unavailable",
+		},
+		{
+			name: "invalid shape", executor: &workflowToolExecutor{submitter: validStub, ownerSessionID: ""},
+			raw: `{"name":1}`, want: "decode workflow input",
+		},
+		{
+			name: "blank name", executor: &workflowToolExecutor{submitter: validStub, ownerSessionID: ""},
+			raw: `{"name":" ","source":"1"}`, want: "workflow name is required",
+		},
+		{
+			name: "blank source", executor: &workflowToolExecutor{submitter: validStub, ownerSessionID: ""},
+			raw: `{"name":"run","source":" "}`, want: "workflow source is required",
+		},
+		{
+			name: "submit failure",
+			executor: &workflowToolExecutor{
+				submitter:      &workflowSubmitterStub{request: nil, run: nil, err: errors.New("down")},
+				ownerSessionID: "",
+			},
+			raw: `{"name":"run","source":"1"}`, want: "submit workflow",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			input, err := tool.ArgumentsFromRaw([]byte(test.raw))
+			require.NoError(t, err)
+			_, err = test.executor.Execute(t.Context(), input)
+			require.ErrorContains(t, err, test.want)
+		})
+	}
+}
+
+func TestWorkflowResultDetailsHandlesNil(t *testing.T) {
+	t.Parallel()
+
+	assert.Empty(t, workflowResultDetails(nil))
 }
 
 func TestPromptRegistryIncludesWorkflowWhenConfigured(t *testing.T) {

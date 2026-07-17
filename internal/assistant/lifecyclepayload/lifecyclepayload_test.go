@@ -18,6 +18,7 @@ import (
 
 const (
 	lifecycleTestSessionID = "session-1"
+	lifecycleTestParentID  = "parent-1"
 	lifecycleTestAPI       = "openai-responses"
 	lifecycleTestModel     = "model-1"
 	lifecycleTestProvider  = "openai"
@@ -26,7 +27,7 @@ const (
 func TestPromptAndTurnPayloads(t *testing.T) {
 	t.Parallel()
 
-	parentID := "parent-1"
+	parentID := lifecycleTestParentID
 	prompt := lifecyclepayload.Prompt(&lifecyclepayload.PromptRequest{
 		ParentEntryID: &parentID,
 		CWD:           "/work",
@@ -158,25 +159,30 @@ func TestProviderAndToolPayloads(t *testing.T) {
 	toolCall := lifecyclepayload.ToolCallPayload(&lifecyclepayload.ToolCall{
 		Arguments:     testutil.ToolArguments(map[string]any{"path": "README.md"}),
 		ID:            "call-1",
-		ParentCallID:  "",
+		ParentCallID:  lifecycleTestParentID,
 		Name:          "read",
 		ArgumentsJSON: `{"path":"README.md"}`,
-		Sequence:      0,
+		Sequence:      2,
 	})
 	assert.Equal(t, "call-1", toolCall["call_id"])
+	assert.Equal(t, lifecycleTestParentID, toolCall["parent_call_id"])
+	assert.Equal(t, 2, toolCall["sequence"])
 	assert.Equal(t, "read", toolCall[lifecyclepayload.ToolNameKey])
 
 	toolResult := lifecyclepayload.ToolResultPayload(&lifecyclepayload.ToolResult{
-		CallID:        "",
-		ParentCallID:  "",
+		CallID:        "call-1",
+		ParentCallID:  lifecycleTestParentID,
 		Name:          "read",
 		ArgumentsJSON: "{}",
 		DetailsJSON:   "{}",
 		Result:        "ok",
 		Error:         "failed",
-		Sequence:      0,
+		Sequence:      2,
 		IsError:       true,
 	})
+	assert.Equal(t, "call-1", toolResult["call_id"])
+	assert.Equal(t, lifecycleTestParentID, toolResult["parent_call_id"])
+	assert.Equal(t, 2, toolResult["sequence"])
 	assert.Equal(t, true, toolResult["is_error"])
 	assert.Equal(t, "failed", toolResult[lifecyclepayload.ToolErrorKey])
 }

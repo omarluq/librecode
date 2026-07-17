@@ -3,10 +3,11 @@ package assistant
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/tool"
@@ -59,27 +60,31 @@ func (executor *workflowToolExecutor) Definition() tool.Definition {
 
 func (executor *workflowToolExecutor) Execute(ctx context.Context, input tool.Arguments) (tool.Result, error) {
 	if executor.submitter == nil {
-		return tool.TextResult("", nil), errors.New("workflow service is unavailable")
+		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_service_unavailable").
+			Errorf("workflow service is unavailable")
 	}
 
 	var args workflowToolInput
 	if err := input.Decode(&args); err != nil {
-		return tool.TextResult("", nil), err
+		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_input").Wrapf(err, "decode workflow input")
 	}
 
 	args.Name = strings.TrimSpace(args.Name)
 	args.Source = strings.TrimSpace(args.Source)
 
 	if args.Name == "" {
-		return tool.TextResult("", nil), errors.New("workflow name is required")
+		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_name_required").
+			Errorf("workflow name is required")
 	}
 
 	if args.Source == "" {
-		return tool.TextResult("", nil), errors.New("workflow source is required")
+		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_source_required").
+			Errorf("workflow source is required")
 	}
 
 	if !utf8.ValidString(args.Source) {
-		return tool.TextResult("", nil), errors.New("workflow source must be valid UTF-8")
+		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_source_invalid_utf8").
+			Errorf("workflow source must be valid UTF-8")
 	}
 
 	arguments := args.Arguments
@@ -89,16 +94,16 @@ func (executor *workflowToolExecutor) Execute(ctx context.Context, input tool.Ar
 
 	argumentsJSON, err := json.Marshal(arguments)
 	if err != nil {
-		return tool.TextResult("", nil), fmt.Errorf("encode workflow arguments: %w", err)
+		return tool.TextResult("", nil), oops.In("assistant").Code("encode_workflow_arguments").
+			Wrapf(err, "encode workflow arguments")
 	}
 
 	run, err := executor.submitter.Submit(ctx, &workflow.ServiceRequest{
 		Name: args.Name, Source: args.Source, SourceVersion: "v1",
 		ArgumentsJSON: string(argumentsJSON), OwnerSessionID: executor.ownerSessionID,
-		SourceLimit: 0, OutputLimit: 0,
 	})
 	if err != nil {
-		return tool.TextResult("", nil), err
+		return tool.TextResult("", nil), oops.In("assistant").Code("submit_workflow").Wrapf(err, "submit workflow")
 	}
 
 	return tool.TextResult(

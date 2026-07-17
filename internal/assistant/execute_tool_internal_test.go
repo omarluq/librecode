@@ -3,7 +3,6 @@ package assistant
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -13,12 +12,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/executeworker"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-const executeOuterCallID = "outer"
+const (
+	executeOuterCallID  = "outer"
+	executeTestToolName = "echo"
+)
 
 type executeTestTool struct{}
 
@@ -28,7 +31,8 @@ func (executor *executeTestTool) Definition() tool.Definition {
 			`{"type":"object","additionalProperties":false,"properties":` +
 				`{"text":{"type":"string"}},"required":["text"]}`,
 		),
-		Name: "echo", Label: "Echo", Description: "Echo supplied text", PromptSnippet: "Return supplied text",
+		Name: executeTestToolName, Label: "Echo", Description: "Echo supplied text",
+		PromptSnippet:    "Return supplied text",
 		PromptGuidelines: []string{"Pass text."}, ReadOnly: true,
 	}
 }
@@ -38,7 +42,8 @@ func (executor *executeTestTool) Execute(_ context.Context, input tool.Arguments
 		Text string `json:"text"`
 	}
 	if err := input.Decode(&args); err != nil {
-		return tool.Result{}, fmt.Errorf("decode echo input: %w", err)
+		return tool.Result{}, oops.In("assistant").Code("execute_test_echo_input").
+			Wrapf(err, "decode echo input")
 	}
 
 	return tool.TextResult(args.Text, map[string]any{"length": len(args.Text)}), nil
@@ -310,11 +315,108 @@ func TestExecuteResultTextRejectsOversizedResult(t *testing.T) {
 	t.Parallel()
 
 	_, err := executeResultText(mvmhost.Result{
-		Value: strings.Repeat("x", defaultExecuteResultLimit), Stdout: "", Stderr: "",
+		Value: strings.Repeat("x", defaultExecuteResultLimit), ValueKind: "", Stdout: "", Stderr: "",
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "execute result")
 	assert.Contains(t, err.Error(), "limit")
+}
+
+func TestExecuteToolValidationAndWorkerErrors(t *testing.T) {
+	t.Parallel()
+
+	missingRegistry := newExecuteTool(nil, nil)
+	_, err := missingRegistry.Execute(t.Context(), tool.EmptyArguments())
+	require.ErrorContains(t, err, "registry is not configured")
+
+	registry, registryErr := tool.NewRegistryWithTools(t.TempDir(), nil)
+	require.NoError(t, registryErr)
+
+	execute := newExecuteTool(registry, nil)
+
+	invalidInput, inputErr := tool.ArgumentsFromRaw([]byte(`{"source":42}`))
+	require.NoError(t, inputErr)
+	_, err = execute.Execute(t.Context(), invalidInput)
+	require.ErrorContains(t, err, "decode execute input")
+
+	_, err = execute.handleWorkerMessage(t.Context(), executeTestWorkerMessage("unknown", "", nil))
+	require.ErrorContains(t, err, "unknown execute worker RPC method")
+
+	_, err = execute.handleWorkerMessage(
+		t.Context(),
+		executeTestWorkerMessage(executeCallMethod, executeTestToolName, json.RawMessage(`[]`)),
+	)
+	require.ErrorContains(t, err, "decode nested tool input")
+}
+
+func executeTestWorkerMessage(method, name string, input json.RawMessage) *executeworker.Message {
+	return &executeworker.Message{
+		Stderr: "", Source: "", Method: method, Mode: "", Name: name, Query: "", Stdout: "", Type: "",
+		Error: "", ErrorKind: "", ValueKind: "", Input: input, Value: nil, Arguments: nil, ID: 0,
+		ExitCode: 0,
+	}
+}
+
+func TestExecuteCallHandlesProtectedToolsAndInvocationError(t *testing.T) {
+	t.Parallel()
+
+	registry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	execute := newExecuteTool(registry, func(
+		context.Context,
+		string,
+		tool.Arguments,
+		string,
+	) (tool.Result, ToolEvent) {
+		return tool.Result{Details: nil, Content: nil}, ToolEvent{
+			CallID: "", ParentCallID: "", Name: executeTestToolName, ArgumentsJSON: "", DetailsJSON: "",
+			Result: "", Error: "nested failure", Sequence: 0, IsError: true,
+		}
+	})
+
+	workflowResult := execute.call(t.Context(), string(workflowToolName), json.RawMessage(`{}`))
+	assert.True(t, workflowResult.IsError)
+	assert.Equal(t, "execute cannot call workflow", workflowResult.Error)
+
+	invalidResult := execute.call(t.Context(), executeTestToolName, json.RawMessage(`[]`))
+	assert.True(t, invalidResult.IsError)
+	assert.Contains(t, invalidResult.Error, "decode tool arguments")
+
+	invocationResult := execute.call(t.Context(), executeTestToolName, json.RawMessage(`{}`))
+	assert.True(t, invocationResult.IsError)
+	assert.Equal(t, "nested failure", invocationResult.Error)
+}
+
+func TestExecuteResultTextVariants(t *testing.T) {
+	t.Parallel()
+
+	text, err := executeResultText(mvmhost.Result{
+		Value: nil, ValueKind: "", Stdout: "printed", Stderr: "",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "printed", text)
+
+	text, err = executeResultText(mvmhost.Result{Value: nil, ValueKind: "", Stdout: "", Stderr: ""})
+	require.NoError(t, err)
+	assert.Equal(t, "null", text)
+
+	text, err = executeResultText(mvmhost.Result{
+		Value: map[string]any{"ok": true}, ValueKind: "", Stdout: "", Stderr: "",
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"ok":true}`, text)
+
+	_, err = executeResultText(mvmhost.Result{
+		Value: make(chan struct{}), ValueKind: "", Stdout: "", Stderr: "",
+	})
+	require.ErrorContains(t, err, "encode execute result")
+
+	definition := tool.Definition{
+		Schema: tool.EmptySchema(), Name: "empty", Label: "", Description: "", PromptSnippet: "",
+		PromptGuidelines: nil, ReadOnly: false,
+	}
+	assert.Nil(t, executeDefinitionMap(&definition)["schema"])
 }
 
 type executeBlockingTool struct {

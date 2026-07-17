@@ -200,7 +200,10 @@ func runPromptScenarios(
 		t.Context(), task, func(context.Context, string, any) error { return nil },
 	)
 	require.ErrorContains(t, err, "run agent prompt")
-	assert.JSONEq(t, `{}`, result.UsageJSON)
+
+	var failedUsage agentUsage
+	require.NoError(t, json.Unmarshal([]byte(result.UsageJSON), &failedUsage))
+	assert.Equal(t, 3, failedUsage.InputTokens)
 
 	sinkErr := errors.New("persist event")
 	result, err = newRunner(runnerCompleter{err: nil}).Run(

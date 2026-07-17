@@ -22,6 +22,11 @@ import (
 	"github.com/omarluq/librecode/internal/tui"
 )
 
+type workflowInspector interface {
+	Get(context.Context, string) (*database.WorkflowRunEntity, bool, error)
+	List(context.Context, string, int) ([]database.WorkflowRunEntity, error)
+}
+
 const (
 	defaultEditorRows          = 6
 	workFrameInterval          = 120 * time.Millisecond

@@ -45,11 +45,9 @@ type evalTestCase struct {
 
 func newRequest(source string) mvmhost.Request {
 	return mvmhost.Request{
-		Bindings:    nil,
-		Name:        "",
-		Source:      source,
-		SourceLimit: 0,
-		OutputLimit: 0,
+		Bindings: nil,
+		Name:     "",
+		Source:   source,
 	}
 }
 
@@ -154,13 +152,6 @@ func errorTestCases(hostCause error) []evalTestCase {
 	)
 	exitCase.wantExitCode = 7
 
-	sourceLimitRequest := newRequest(`12345`)
-	sourceLimitRequest.SourceLimit = 4
-	outputLimitRequest := newRequest(`println("too long")`)
-	outputLimitRequest.OutputLimit = 3
-	outputLimitCase := errorCase("output limit", outputLimitRequest, mvmhost.ErrorKindOutputLimit)
-	outputLimitCase.wantStdout = "too"
-
 	unsupportedBinding := errorCase(
 		"unsupported binding",
 		requestWithBindings(`1`, map[string]any{"Values": make(chan int)}),
@@ -189,8 +180,6 @@ func errorTestCases(hostCause error) []evalTestCase {
 		unsupportedBinding,
 		nilBinding,
 		nilFunctionBinding,
-		errorCase("source limit", sourceLimitRequest, mvmhost.ErrorKindSourceLimit),
-		outputLimitCase,
 		errorCase(
 			"ambient import denied",
 			newRequest(`import "example.invalid/ambient"; 1`),

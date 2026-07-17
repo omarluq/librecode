@@ -77,7 +77,12 @@ func (runner *RuntimeRunner) Run(
 	usageJSON, usageErr := agentUsageJSON(response, metrics.Snapshot())
 
 	if err != nil {
-		return Result{Text: "", UsageJSON: "{}"}, oops.In("agenttask").Code("run_prompt").Wrapf(err, "run agent prompt")
+		if usageErr != nil {
+			usageJSON = "{}"
+		}
+
+		return Result{Text: "", UsageJSON: usageJSON},
+			oops.In("agenttask").Code("run_prompt").Wrapf(err, "run agent prompt")
 	}
 
 	if eventErr != nil {

@@ -7,10 +7,12 @@ func (app *App) removeRunningToolBlock(event *assistant.ToolEvent) {
 		return
 	}
 
-	if index, ok := app.runningToolBlockIndexByCallID(event.CallID); ok {
-		app.deleteRunningToolBlock(index)
+	if event.CallID != "" {
+		if index, ok := app.runningToolBlockIndexByCallID(event.CallID); ok {
+			app.deleteRunningToolBlock(index)
 
-		return
+			return
+		}
 	}
 
 	if index, ok := app.runningToolBlockIndexByArguments(event.Name, event.ArgumentsJSON); ok {

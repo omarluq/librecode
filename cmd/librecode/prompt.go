@@ -119,12 +119,8 @@ func runPromptWithContainer(
 		TraceComplete: snapshot.TraceComplete, Success: promptErr == nil,
 	}
 
-	if metricsErr := writePromptMetrics(options.MetricsJSON, measured); metricsErr != nil {
-		return metricsErr
-	}
-
-	if promptErr != nil {
-		return cliError(promptErr, "run prompt")
+	if err := promptExecutionError(promptErr, writePromptMetrics(options.MetricsJSON, measured)); err != nil {
+		return err
 	}
 
 	if _, err := fmt.Fprintln(cmd.OutOrStdout(), response.Text); err != nil {
@@ -132,6 +128,19 @@ func runPromptWithContainer(
 	}
 
 	return nil
+}
+
+func promptExecutionError(promptErr, metricsErr error) error {
+	if promptErr == nil {
+		return metricsErr
+	}
+
+	promptErr = cliError(promptErr, "run prompt")
+	if metricsErr != nil {
+		return errors.Join(promptErr, metricsErr)
+	}
+
+	return promptErr
 }
 
 type promptMetrics struct {
@@ -171,12 +180,12 @@ func writePromptMetrics(path string, metrics *promptMetrics) error {
 
 	encoded, err := json.MarshalIndent(metrics, "", "  ")
 	if err != nil {
-		return oops.Wrapf(err, "encode prompt metrics")
+		return oops.In("cli").Code("encode_prompt_metrics").Wrapf(err, "encode prompt metrics")
 	}
 
 	encoded = append(encoded, '\n')
 	if err := os.WriteFile(path, encoded, promptMetricsMode); err != nil {
-		return oops.Wrapf(err, "write prompt metrics")
+		return oops.In("cli").Code("write_prompt_metrics").Wrapf(err, "write prompt metrics")
 	}
 
 	return nil

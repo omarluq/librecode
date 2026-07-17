@@ -80,8 +80,10 @@ func (runtime *Runtime) executeProviderToolCall(
 	if call != nil {
 		callEvent.Arguments = call.Arguments
 		callEvent.ID = call.ID
+		callEvent.ParentCallID = stringFromOptions(call.Metadata, toolParentCallIDMetadataKey)
 		callEvent.Name = call.Name
 		callEvent.ArgumentsJSON = call.ArgumentsJSON
+		callEvent.Sequence = sequenceFromOptions(call.Metadata)
 	}
 
 	if callEvent.ID == "" {
@@ -225,6 +227,8 @@ func canonicalToolResult(result tool.Result, event *ToolEvent) tool.Result {
 
 		return result
 	}
+
+	result.Details = nil
 
 	var details map[string]any
 	if err := json.Unmarshal([]byte(event.DetailsJSON), &details); err == nil {

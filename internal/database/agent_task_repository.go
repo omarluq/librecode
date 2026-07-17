@@ -52,32 +52,12 @@ func (repository *AgentTaskRepository) CreateWithChildSession(
 	agentTask *AgentTaskEntity,
 	childRequest *ChildSessionRequest,
 ) (*AgentTaskEntity, error) {
-	if agentTask == nil {
-		return nil, errors.New("database: agent task is required")
-	}
-
-	if childRequest == nil {
-		return nil, errors.New("database: child session request is required")
-	}
-
-	if agentTask.Task.OwnerSessionID != childRequest.ParentSessionID {
-		return nil, errors.New("database: child session parent differs from agent task owner")
-	}
-
-	child, err := prepareSession(
-		repository.tasks.now(),
-		childRequest.CWD,
-		childRequest.Name,
-		childRequest.ParentSessionID,
-	)
+	candidate, child, err := prepareAgentTaskChild(repository.tasks.now(), agentTask, childRequest)
 	if err != nil {
 		return nil, err
 	}
 
-	candidate := *agentTask
-	candidate.ChildSessionID = child.ID
-
-	created, now, err := repository.prepareCreate(&candidate)
+	created, now, err := repository.prepareCreate(candidate)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +95,41 @@ func (repository *AgentTaskRepository) Create(
 	return created, nil
 }
 
+func prepareAgentTaskChild(
+	now time.Time,
+	agentTask *AgentTaskEntity,
+	childRequest *ChildSessionRequest,
+) (*AgentTaskEntity, *SessionEntity, error) {
+	if agentTask == nil {
+		return nil, nil, oops.In("database").Code("nil_agent_task").
+			Errorf("agent task is required")
+	}
+
+	if childRequest == nil {
+		return nil, nil, errors.New("database: child session request is required")
+	}
+
+	if agentTask.Task.OwnerSessionID != childRequest.ParentSessionID {
+		return nil, nil, errors.New("database: child session parent differs from agent task owner")
+	}
+
+	child, err := prepareSession(now, childRequest.CWD, childRequest.Name, childRequest.ParentSessionID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	candidate := *agentTask
+	candidate.ChildSessionID = child.ID
+
+	return &candidate, child, nil
+}
+
 func (repository *AgentTaskRepository) prepareCreate(agentTask *AgentTaskEntity) (*AgentTaskEntity, time.Time, error) {
+	if agentTask == nil {
+		return nil, time.Time{}, oops.In("database").Code("nil_agent_task").
+			Errorf("agent task is required")
+	}
+
 	now := repository.tasks.now().UTC()
 	created := *agentTask
 	created.Task.ID = newUUIDv7()

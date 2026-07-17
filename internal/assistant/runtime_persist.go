@@ -461,22 +461,39 @@ func (progress *partialPromptProgress) removePendingTool(event *ToolEvent) {
 }
 
 func (progress *partialPromptProgress) pendingToolIndex(callID, name, argumentsJSON string) (int, bool) {
-	if callID != "" {
-		for index, pending := range progress.pendingTools {
-			if pending.CallID == callID {
-				return index, true
-			}
-		}
+	if index, found := pendingToolIndexByCallID(progress.pendingTools, callID); found {
+		return index, true
 	}
 
-	for index, pending := range progress.pendingTools {
-		if pending.Name == name && pending.ArgumentsJSON == argumentsJSON {
+	if index, found := pendingToolIndexByName(progress.pendingTools, callID, name, argumentsJSON); found {
+		return index, true
+	}
+
+	return pendingToolIndexByName(progress.pendingTools, callID, name, "")
+}
+
+func pendingToolIndexByCallID(pendingTools []pendingToolCall, callID string) (int, bool) {
+	if callID == "" {
+		return 0, false
+	}
+
+	for index, pending := range pendingTools {
+		if pending.CallID == callID {
 			return index, true
 		}
 	}
 
-	for index, pending := range progress.pendingTools {
-		if pending.Name == name {
+	return 0, false
+}
+
+func pendingToolIndexByName(pendingTools []pendingToolCall, callID, name, argumentsJSON string) (int, bool) {
+	for index, pending := range pendingTools {
+		if callID != "" && pending.CallID != "" {
+			continue
+		}
+
+		argumentsMatch := argumentsJSON == "" || pending.ArgumentsJSON == argumentsJSON
+		if pending.Name == name && argumentsMatch {
 			return index, true
 		}
 	}

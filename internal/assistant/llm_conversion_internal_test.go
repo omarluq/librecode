@@ -121,9 +121,9 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 		Thinking:     []string{" thought ", "   "},
 		ToolEvents: []ToolEvent{
 			{
-				CallID:        "",
-				ParentCallID:  "",
-				Sequence:      0,
+				CallID:        "conversion-call-1",
+				ParentCallID:  "conversion-parent",
+				Sequence:      1,
 				Name:          jsonReadToolName,
 				ArgumentsJSON: `{"path":"README.md"}`,
 				DetailsJSON:   "",
@@ -131,9 +131,9 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 				Error:         "",
 				IsError:       false,
 			}, {
-				CallID:        "",
-				ParentCallID:  "",
-				Sequence:      0,
+				CallID:        "conversion-call-2",
+				ParentCallID:  "conversion-parent",
+				Sequence:      2,
 				Name:          "bash",
 				ArgumentsJSON: `{"command":"false"}`,
 				DetailsJSON:   "",
@@ -162,8 +162,14 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 	assert.Equal(t, "final answer", converted.Content[1].Text)
 	assert.Equal(t, llm.PartToolResult, converted.Content[2].Type)
 	assert.False(t, converted.Content[2].ToolResult.IsError)
+	assert.Equal(t, "conversion-call-1", converted.Content[2].ToolResult.ToolCallID)
+	assert.Equal(t, "conversion-parent", converted.Content[2].ToolResult.Metadata[toolParentCallIDMetadataKey])
+	assert.Equal(t, 1, converted.Content[2].ToolResult.Metadata[toolSequenceMetadataKey])
 	assert.Equal(t, llm.PartToolResult, converted.Content[3].Type)
 	assert.True(t, converted.Content[3].ToolResult.IsError)
+	assert.Equal(t, "conversion-call-2", converted.Content[3].ToolResult.ToolCallID)
+	assert.Equal(t, "conversion-parent", converted.Content[3].ToolResult.Metadata[toolParentCallIDMetadataKey])
+	assert.Equal(t, 2, converted.Content[3].ToolResult.Metadata[toolSequenceMetadataKey])
 	assert.Equal(t, "exit status 1", converted.Content[3].ToolResult.Error)
 }
 
