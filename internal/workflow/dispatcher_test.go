@@ -89,16 +89,17 @@ func TestDispatcherShutdownDoesNotHoldLifecycleLockAcrossSubmitIO(t *testing.T) 
 	require.NoError(t, err)
 	service, err := workflow.NewService(repository, runner)
 	require.NoError(t, err)
+	transaction, err := connection.BeginTx(t.Context(), nil)
+	require.NoError(t, err)
+
+	initialWaitCount := connection.Stats().WaitCount
+
 	dispatcher, err := workflow.NewDispatcher(context.Background(), workflow.DispatcherOptions{
 		Service: service, Tasks: repository.Tasks(), Logger: nil, Concurrency: 1, Buffer: 1, Interval: time.Hour,
 	})
 	require.NoError(t, err)
 
-	transaction, err := connection.BeginTx(t.Context(), nil)
-	require.NoError(t, err)
-
 	submitDone := make(chan error, 1)
-	initialWaitCount := connection.Stats().WaitCount
 
 	go func() {
 		_, submitErr := dispatcher.Submit(context.Background(), &workflow.ServiceRequest{
@@ -108,7 +109,8 @@ func TestDispatcherShutdownDoesNotHoldLifecycleLockAcrossSubmitIO(t *testing.T) 
 	}()
 
 	require.Eventually(t, func() bool {
-		return connection.Stats().WaitCount > initialWaitCount
+		// The dispatcher poller and Submit must both be waiting behind the transaction.
+		return connection.Stats().WaitCount >= initialWaitCount+2
 	}, 5*time.Second, time.Millisecond, "Submit did not block waiting for the database connection")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
