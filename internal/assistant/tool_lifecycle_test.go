@@ -12,7 +12,11 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
-const testToolLifecycleError = "boom"
+const (
+	testToolLifecycleError    = "boom"
+	testToolLifecycleParentID = "parent-call"
+	testToolLifecycleSequence = 7
+)
 
 func TestRuntime_ToolCallLifecycleAppliesArgumentMutation(t *testing.T) {
 	t.Parallel()
@@ -30,6 +34,9 @@ func TestRuntime_ToolCallLifecycleAppliesArgumentMutation(t *testing.T) {
 			lua: `
 local lc = require("librecode")
 lc.on("tool_call", function(event)
+  assert(event.payload.call_id == "call-1")
+  assert(event.payload.parent_call_id == "parent-call")
+  assert(event.payload.sequence == 7)
   return {
     tool_call = {
       arguments = {
@@ -55,8 +62,8 @@ end)
 			runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
 			loadRuntimeExtension(t, manager, testCase.lua)
 			call := assistant.ToolCallEvent{
-				ParentCallID: "",
-				Sequence:     0,
+				ParentCallID: testToolLifecycleParentID,
+				Sequence:     testToolLifecycleSequence,
 
 				Arguments:     testCase.initialArguments,
 				ID:            testToolCallID,
@@ -73,6 +80,9 @@ end)
 				testutil.ToolArgumentFields(call.Arguments),
 			)
 			assert.JSONEq(t, testCase.expectedArgumentsJSON, call.ArgumentsJSON)
+			assert.Equal(t, testToolCallID, call.ID)
+			assert.Equal(t, testToolLifecycleParentID, call.ParentCallID)
+			assert.Equal(t, testToolLifecycleSequence, call.Sequence)
 		})
 	}
 }
@@ -91,9 +101,9 @@ func TestRuntime_ToolResultLifecycleAppliesResultMutation(t *testing.T) {
 		{
 			name: "redacts result and clears error",
 			initialEvent: &assistant.ToolEvent{
-				CallID:       "",
-				ParentCallID: "",
-				Sequence:     0,
+				CallID:       testToolCallID,
+				ParentCallID: testToolLifecycleParentID,
+				Sequence:     testToolLifecycleSequence,
 
 				Name:          testToolName,
 				ArgumentsJSON: testToolArgsJSON,
@@ -105,6 +115,9 @@ func TestRuntime_ToolResultLifecycleAppliesResultMutation(t *testing.T) {
 			lua: `
 local lc = require("librecode")
 lc.on("tool_result", function(event)
+  assert(event.payload.call_id == "call-1")
+  assert(event.payload.parent_call_id == "parent-call")
+  assert(event.payload.sequence == 7)
   return {
     tool_result = {
       result = "redacted",
@@ -133,6 +146,9 @@ end)
 			assert.Equal(t, testCase.expectedResult, testCase.initialEvent.Result)
 			assert.JSONEq(t, testCase.expectedDetailsJSON, testCase.initialEvent.DetailsJSON)
 			assert.Equal(t, testCase.expectedError, testCase.initialEvent.Error)
+			assert.Equal(t, testToolCallID, testCase.initialEvent.CallID)
+			assert.Equal(t, testToolLifecycleParentID, testCase.initialEvent.ParentCallID)
+			assert.Equal(t, testToolLifecycleSequence, testCase.initialEvent.Sequence)
 		})
 	}
 }

@@ -31,18 +31,16 @@ type workerProcess struct {
 
 // Request describes one isolated MVM evaluation.
 type Request struct {
-	Arguments   any
-	Mode        string
-	Name        string
-	Source      string
-	SourceLimit int
-	OutputLimit int
+	Arguments any
+	Mode      string
+	Name      string
+	Source    string
 }
 
 // Eval evaluates provider-facing source, forwarding callback requests to Handler.
 func (client Client) Eval(ctx context.Context, source string) (mvmhost.Result, error) {
 	return client.EvalRequest(ctx, &Request{
-		Arguments: nil, Mode: "execute", Name: "execute.go", Source: source, SourceLimit: 0, OutputLimit: 0,
+		Arguments: nil, Mode: "execute", Name: "execute.go", Source: source,
 	})
 }
 
@@ -72,7 +70,6 @@ func (client Client) EvalRequest(ctx context.Context, eval *Request) (mvmhost.Re
 	request := newMessage("eval")
 	request.Mode, request.Name, request.Source = eval.Mode, eval.Name, eval.Source
 
-	request.SourceLimit, request.OutputLimit = eval.SourceLimit, eval.OutputLimit
 	if request.Arguments, err = json.Marshal(eval.Arguments); err != nil {
 		return mvmhost.Result{}, worker.abort(fmt.Errorf("encode worker arguments: %w", err))
 	}
@@ -147,7 +144,7 @@ func (client Client) readMessages(
 ) (mvmhost.Result, error) {
 	var (
 		writes    sync.Mutex
-		callbacks sync.WaitGroup
+		callbacks []<-chan struct{}
 	)
 
 	for {
@@ -158,9 +155,11 @@ func (client Client) readMessages(
 
 		switch message.Type {
 		case "rpc":
-			callbacks.Add(1)
+			callbackDone := make(chan struct{})
+
+			callbacks = append(callbacks, callbackDone)
 			go func(rpc Message) {
-				defer callbacks.Done()
+				defer close(callbackDone)
 
 				response := client.rpcResponse(ctx, &rpc)
 
@@ -172,15 +171,29 @@ func (client Client) readMessages(
 				}
 			}(message)
 		case "result":
-			callbacks.Wait()
+			if err := waitForCallbacks(ctx, callbacks); err != nil {
+				return mvmhost.Result{}, worker.abort(err)
+			}
 
-			return finishResult(worker, stdin, &message)
+			return finishResult(ctx, worker, stdin, &message)
 		default:
 			return mvmhost.Result{}, worker.abort(
 				fmt.Errorf("unexpected execute worker message %q", message.Type),
 			)
 		}
 	}
+}
+
+func waitForCallbacks(ctx context.Context, callbacks []<-chan struct{}) error {
+	for _, callbackDone := range callbacks {
+		select {
+		case <-callbackDone:
+		case <-ctx.Done():
+			return canceledError(ctx.Err())
+		}
+	}
+
+	return nil
 }
 
 func (client Client) rpcResponse(ctx context.Context, message *Message) Message {
@@ -212,16 +225,19 @@ func (client Client) rpcResponse(ctx context.Context, message *Message) Message 
 	return response
 }
 
-func finishResult(worker *workerProcess, stdin io.Closer, message *Message) (mvmhost.Result, error) {
+func finishResult(ctx context.Context,
+	worker *workerProcess, stdin io.Closer, message *Message) (mvmhost.Result, error) {
 	if err := stdin.Close(); err != nil {
 		return mvmhost.Result{}, worker.abort(fmt.Errorf("close execute worker stdin: %w", err))
 	}
 
-	if err := worker.cmd.Wait(); err != nil {
-		return mvmhost.Result{}, fmt.Errorf("wait for execute worker: %w", err)
+	if err := waitForWorker(ctx, worker); err != nil {
+		return mvmhost.Result{}, err
 	}
 
-	result := mvmhost.Result{Stdout: message.Stdout, Stderr: message.Stderr, Value: nil}
+	result := mvmhost.Result{
+		Value: nil, ValueKind: message.ValueKind, Stdout: message.Stdout, Stderr: message.Stderr,
+	}
 	if len(message.Value) > 0 {
 		switch {
 		case string(message.Value) == jsonNullValue:
@@ -249,6 +265,18 @@ func finishResult(worker *workerProcess, stdin io.Closer, message *Message) (mvm
 	}
 }
 
+func waitForWorker(ctx context.Context, worker *workerProcess) error {
+	if err := worker.cmd.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return canceledError(ctx.Err())
+		}
+
+		return fmt.Errorf("wait for execute worker: %w", err)
+	}
+
+	return nil
+}
+
 func (worker *workerProcess) kill() {
 	worker.killOnce.Do(func() {
 		worker.killErr = worker.cmd.Process.Kill()
@@ -267,18 +295,25 @@ func (worker *workerProcess) abort(cause error) error {
 }
 
 func (worker *workerProcess) readError(ctx context.Context, readErr error) error {
-	worker.kill()
+	if !errors.Is(readErr, io.EOF) || ctx.Err() != nil {
+		worker.kill()
+	}
+
 	waitErr := worker.cmd.Wait()
 
 	if ctx.Err() != nil {
 		return canceledError(ctx.Err())
 	}
 
-	if waitErr != nil && !errors.Is(readErr, io.EOF) {
-		return fmt.Errorf("read execute worker: %w", readErr)
+	if !errors.Is(readErr, io.EOF) {
+		return errors.Join(fmt.Errorf("read execute worker: %w", readErr), waitErr)
 	}
 
-	return fmt.Errorf("execute worker exited without result: %w", waitErr)
+	if waitErr != nil {
+		return fmt.Errorf("execute worker exited without result: %w", waitErr)
+	}
+
+	return errors.New("execute worker exited without result")
 }
 
 func canceledError(err error) error {

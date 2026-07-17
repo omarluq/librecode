@@ -14,12 +14,13 @@ import (
 const errorKey = "error"
 
 type rpcCaller struct {
-	in      io.Reader
-	out     io.Writer
-	pending map[uint64]chan Message
-	nextID  uint64
-	mu      sync.Mutex
-	writeMu sync.Mutex
+	in          io.Reader
+	out         io.Writer
+	terminalErr error
+	pending     map[uint64]chan Message
+	nextID      uint64
+	mu          sync.Mutex
+	writeMu     sync.Mutex
 }
 
 // Serve runs one evaluation. Tool bindings are synchronous callback RPCs to the
@@ -35,7 +36,7 @@ func Serve(input io.Reader, output io.Writer) error {
 	}
 
 	caller := &rpcCaller{
-		in: input, out: output, pending: make(map[uint64]chan Message), nextID: 0,
+		in: input, out: output, pending: make(map[uint64]chan Message), nextID: 0, terminalErr: nil,
 		mu: sync.Mutex{}, writeMu: sync.Mutex{},
 	}
 	go caller.readResponses()
@@ -47,7 +48,6 @@ func Serve(input io.Reader, output io.Writer) error {
 
 	result, evalErr := mvmhost.New().Eval(context.Background(), mvmhost.Request{
 		Bindings: bindings, Name: request.Name, Source: request.Source,
-		SourceLimit: request.SourceLimit, OutputLimit: request.OutputLimit,
 	})
 
 	response := resultMessage(result, evalErr)
@@ -87,9 +87,15 @@ func workerBindings(request *Message, caller *rpcCaller) (mvmhost.Bindings, erro
 		"Cancel": func(taskID string) (any, error) {
 			return caller.callResult("workflow_cancel", taskID, "", nil)
 		},
-		"Pipeline": workerPipeline,
+		"Pipeline": func(items []any, callback func(any) (any, error), concurrency int) (any, error) {
+			results, err := workerPipeline(items, callback, concurrency)
+
+			return pipelineValue(results), err
+		},
 	}}, nil
 }
+
+type pipelineValue []map[string]any
 
 func workerPipeline(items []any, callback func(any) (any, error), concurrency int) ([]map[string]any, error) {
 	if concurrency <= 0 {
@@ -196,6 +202,13 @@ func (caller *rpcCaller) callResult(method, name, query string, input any) (any,
 
 func (caller *rpcCaller) exchange(method, name, query string, input json.RawMessage) (*Message, error) {
 	caller.mu.Lock()
+	if caller.terminalErr != nil {
+		err := caller.terminalErr
+		caller.mu.Unlock()
+
+		return nil, err
+	}
+
 	caller.nextID++
 	requestID := caller.nextID
 	responseCh := make(chan Message, 1)
@@ -211,6 +224,10 @@ func (caller *rpcCaller) exchange(method, name, query string, input json.RawMess
 	caller.writeMu.Unlock()
 
 	if err != nil {
+		caller.mu.Lock()
+		delete(caller.pending, requestID)
+		caller.mu.Unlock()
+
 		return nil, err
 	}
 
@@ -226,6 +243,8 @@ func (caller *rpcCaller) readResponses() {
 	for {
 		response, err := Read(caller.in)
 		if err != nil {
+			caller.failPending(err)
+
 			return
 		}
 
@@ -241,6 +260,24 @@ func (caller *rpcCaller) readResponses() {
 		if responseCh != nil {
 			responseCh <- response
 		}
+	}
+}
+
+func (caller *rpcCaller) failPending(err error) {
+	caller.mu.Lock()
+	if caller.terminalErr == nil {
+		caller.terminalErr = err
+	}
+
+	pending := caller.pending
+	caller.pending = make(map[uint64]chan Message)
+	caller.mu.Unlock()
+
+	for _, responseCh := range pending {
+		response := newMessage("rpc_result")
+
+		response.Error = err.Error()
+		responseCh <- response
 	}
 }
 
@@ -274,6 +311,11 @@ func resultMessage(result mvmhost.Result, evalErr error) Message {
 	response := newMessage("result")
 
 	response.Stdout, response.Stderr = result.Stdout, result.Stderr
+	if pipeline, ok := result.Value.(pipelineValue); ok {
+		result.Value = []map[string]any(pipeline)
+		response.ValueKind = pipelineResultKind
+	}
+
 	if evalErr != nil {
 		response.Error = evalErr.Error()
 

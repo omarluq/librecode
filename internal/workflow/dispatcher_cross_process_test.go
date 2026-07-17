@@ -17,14 +17,19 @@ import (
 func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 	t.Parallel()
 
-	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared&_pragma=foreign_keys(1)")
+	databasePath := t.TempDir() + "/workflow.db"
+	dsn := database.SQLiteDSN(databasePath, database.SQLiteOptions{BusyTimeout: time.Second})
+	submitterDB, err := sql.Open("sqlite", dsn)
 	require.NoError(t, err)
-	connection.SetMaxOpenConns(1)
-	t.Cleanup(func() { require.NoError(t, connection.Close()) })
-	require.NoError(t, database.Migrate(t.Context(), connection))
+	t.Cleanup(func() { require.NoError(t, submitterDB.Close()) })
+	require.NoError(t, database.Migrate(t.Context(), submitterDB))
 
-	repository := database.NewWorkflowRepository(connection)
-	sessions := database.NewSessionRepository(connection)
+	workerDB, err := sql.Open("sqlite", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, workerDB.Close()) })
+
+	repository := database.NewWorkflowRepository(submitterDB)
+	sessions := database.NewSessionRepository(submitterDB)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "cross-process workflow", "")
 	require.NoError(t, err)
 
@@ -35,18 +40,18 @@ func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 
 	workerRunner, err := workflow.NewRunner(newFakeController())
 	require.NoError(t, err)
-	worker, err := workflow.NewService(database.NewWorkflowRepository(connection), workerRunner)
+	worker, err := workflow.NewService(database.NewWorkflowRepository(workerDB), workerRunner)
 	require.NoError(t, err)
 
 	run, err := submitter.Submit(t.Context(), &workflow.ServiceRequest{
 		Name: "cross-process", Source: "21 * 2", SourceVersion: "v1", ArgumentsJSON: "{}",
-		OwnerSessionID: owner.ID, SourceLimit: 0, OutputLimit: 0,
+		OwnerSessionID: owner.ID,
 	})
 	require.NoError(t, err)
 
 	dispatcher, err := workflow.NewDispatcher(context.Background(), workflow.DispatcherOptions{
 		Service:     worker,
-		Tasks:       database.NewTaskRepository(connection),
+		Tasks:       database.NewTaskRepository(workerDB),
 		Logger:      nil,
 		Concurrency: 1,
 		Buffer:      4,

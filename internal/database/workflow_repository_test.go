@@ -1,6 +1,9 @@
 package database_test
 
 import (
+	"fmt"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -160,8 +163,9 @@ func TestWorkflowRepositoryValidation(t *testing.T) {
 	t.Parallel()
 
 	const (
-		testSource = "source"
-		testHash   = "hash"
+		testSource             = "source"
+		testHash               = "hash"
+		argumentsObjectMessage = "arguments_json must be a JSON object"
 	)
 
 	fixture := newTaskTestFixture(t)
@@ -178,8 +182,12 @@ func TestWorkflowRepositoryValidation(t *testing.T) {
 			wantError: "source is required"},
 		{name: "hash", run: workflowRunForValidation(owner.ID, testSource, "", "{}"),
 			wantError: "source_hash is required"},
-		{name: "arguments", run: workflowRunForValidation(owner.ID, testSource, testHash, "{"),
-			wantError: "arguments_json must be valid JSON"},
+		{name: "arguments syntax", run: workflowRunForValidation(owner.ID, testSource, testHash, "{"),
+			wantError: argumentsObjectMessage},
+		{name: "arguments array", run: workflowRunForValidation(owner.ID, testSource, testHash, "[]"),
+			wantError: argumentsObjectMessage},
+		{name: "arguments null", run: workflowRunForValidation(owner.ID, testSource, testHash, "null"),
+			wantError: argumentsObjectMessage},
 	}
 
 	for _, test := range tests {
@@ -193,6 +201,292 @@ func TestWorkflowRepositoryValidation(t *testing.T) {
 
 	_, err := repository.LinkAgentTask(t.Context(), "bad", "bad", "", 0)
 	require.ErrorContains(t, err, "workflow_task_id must be a UUIDv7")
+
+	_, err = repository.CreateAgentTask(t.Context(), testUUIDV7(t), nil, "node", 0)
+	require.ErrorContains(t, err, "agent task is required")
+}
+
+func TestWorkflowRepositoryLinkAgentTaskOnlyRecoversInvocationUniqueness(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	connection := openTestSQLite(t, filepath.Join(t.TempDir(), "workflow.db"), 0)
+	require.NoError(t, database.Migrate(ctx, connection))
+	sessions := database.NewSessionRepository(connection)
+	workflows := database.NewWorkflowRepository(connection)
+	agents := database.NewAgentTaskRepository(connection)
+
+	owner, err := sessions.CreateSession(ctx, t.TempDir(), "owner", "")
+	require.NoError(t, err)
+	child, err := sessions.CreateSession(ctx, owner.CWD, "child", owner.ID)
+	require.NoError(t, err)
+	run, err := workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+	task, err := agents.Create(ctx, newAgentTask(owner.ID, child.ID))
+	require.NoError(t, err)
+	_, err = workflows.LinkAgentTask(ctx, run.Task.ID, task.Task.ID, "node", 0)
+	require.NoError(t, err)
+
+	_, err = connection.ExecContext(ctx, `CREATE TRIGGER reject_workflow_link BEFORE INSERT ON workflow_agent_tasks
+BEGIN SELECT RAISE(ABORT, 'reject workflow link'); END`)
+	require.NoError(t, err)
+
+	_, err = workflows.LinkAgentTask(ctx, run.Task.ID, task.Task.ID, "node", 0)
+	require.ErrorContains(t, err, "reject workflow link")
+}
+
+func TestWorkflowRepositoryLinkAgentTaskAssignsConcurrentUniqueSequences(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner := fixture.createOwner(ctx)
+	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+
+	const count = 8
+
+	taskIDs := make([]string, count)
+	for index := range count {
+		child, createErr := fixture.sessions.CreateSession(ctx, owner.CWD, "child", owner.ID)
+		require.NoError(t, createErr)
+		task, createErr := fixture.agents.Create(ctx, newAgentTask(owner.ID, child.ID))
+		require.NoError(t, createErr)
+
+		taskIDs[index] = task.Task.ID
+	}
+
+	var wait sync.WaitGroup
+
+	errors := make(chan error, count)
+	for index := range count {
+		wait.Go(func() {
+			_, linkErr := fixture.workflows.LinkAgentTask(ctx, run.Task.ID, taskIDs[index], "node", index)
+			errors <- linkErr
+		})
+	}
+
+	wait.Wait()
+	close(errors)
+
+	for linkErr := range errors {
+		require.NoError(t, linkErr)
+	}
+
+	links, err := fixture.workflows.ListAgentTasks(ctx, run.Task.ID)
+	require.NoError(t, err)
+	require.Len(t, links, count)
+
+	for index := range links {
+		assert.Equal(t, int64(index+1), links[index].Sequence)
+	}
+}
+
+func TestWorkflowRepositoryBoundariesAndIdempotentLinks(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner, child := fixture.createAgentTaskSessions(ctx)
+	run := newWorkflowRun(owner.ID)
+	run.ArgumentsJSON = ""
+	created, err := fixture.workflows.Create(ctx, run)
+	require.NoError(t, err)
+	assert.Equal(t, "{}", created.ArgumentsJSON)
+	assert.NotNil(t, fixture.workflows.AgentTasks())
+
+	task, err := fixture.agents.Create(ctx, newAgentTask(owner.ID, child.ID))
+	require.NoError(t, err)
+	first, err := fixture.workflows.LinkAgentTask(ctx, created.Task.ID, task.Task.ID, " node ", 0)
+	require.NoError(t, err)
+	repeated, err := fixture.workflows.LinkAgentTask(ctx, created.Task.ID, task.Task.ID, "node", 0)
+	require.NoError(t, err)
+	assert.Equal(t, first, repeated)
+
+	otherChild, err := fixture.sessions.CreateSession(ctx, owner.CWD, "other", owner.ID)
+	require.NoError(t, err)
+	other, err := fixture.agents.Create(ctx, newAgentTask(owner.ID, otherChild.ID))
+	require.NoError(t, err)
+	_, err = fixture.workflows.LinkAgentTask(ctx, created.Task.ID, other.Task.ID, "node", 0)
+	require.ErrorContains(t, err, "already linked")
+
+	_, err = fixture.workflows.LinkAgentTask(ctx, created.Task.ID, "bad", "node", 1)
+	require.ErrorContains(t, err, "agent_task_id must be a UUIDv7")
+}
+
+func TestWorkflowRepositoryCreateRollsBackEveryWriteOnFailure(t *testing.T) {
+	t.Parallel()
+
+	const workflowRunsTable = "workflow_runs"
+
+	tests := []struct {
+		name    string
+		trigger string
+	}{
+		{
+			name: "workflow metadata insert",
+			trigger: `CREATE TRIGGER reject_workflow BEFORE INSERT ON workflow_runs
+BEGIN SELECT RAISE(ABORT, 'reject workflow'); END`,
+		},
+		{
+			name: "initial event insert",
+			trigger: `CREATE TRIGGER reject_workflow_event BEFORE INSERT ON task_events
+WHEN NEW.kind = 'task_queued'
+BEGIN SELECT RAISE(ABORT, 'reject workflow event'); END`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			connection := openTestSQLite(t, filepath.Join(t.TempDir(), "workflow.db"), 0)
+			require.NoError(t, database.Migrate(ctx, connection))
+			sessions := database.NewSessionRepository(connection)
+			owner, err := sessions.CreateSession(ctx, t.TempDir(), "owner", "")
+			require.NoError(t, err)
+			_, err = connection.ExecContext(ctx, test.trigger)
+			require.NoError(t, err)
+
+			_, err = database.NewWorkflowRepository(connection).Create(ctx, newWorkflowRun(owner.ID))
+			require.Error(t, err)
+
+			for _, table := range []string{"tasks", workflowRunsTable, "task_events"} {
+				var count int
+
+				err = connection.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count)
+				require.NoError(t, err)
+				assert.Zero(t, count, "%s write must be rolled back", table)
+			}
+		})
+	}
+}
+
+func TestWorkflowRepositoryReportsStorageAndCorruptRowErrors(t *testing.T) {
+	t.Parallel()
+
+	const workflowRunsTable = "workflow_runs"
+
+	t.Run("corrupt workflow timestamp", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+		connection := openTestSQLite(t, filepath.Join(t.TempDir(), "workflow.db"), 0)
+		require.NoError(t, database.Migrate(ctx, connection))
+
+		sessions := database.NewSessionRepository(connection)
+		owner, err := sessions.CreateSession(ctx, t.TempDir(), "owner", "")
+		require.NoError(t, err)
+
+		repository := database.NewWorkflowRepository(connection)
+		run, err := repository.Create(ctx, newWorkflowRun(owner.ID))
+		require.NoError(t, err)
+		_, err = connection.ExecContext(ctx, `UPDATE tasks SET created_at = 'not-time' WHERE id = ?`, run.Task.ID)
+		require.NoError(t, err)
+
+		_, found, err := repository.Get(ctx, run.Task.ID)
+		assert.False(t, found)
+		require.ErrorContains(t, err, "parse timestamp")
+	})
+
+	tests := []struct {
+		call  func(*database.WorkflowRepository) error
+		name  string
+		table string
+	}{
+		{call: func(repository *database.WorkflowRepository) error {
+			_, _, err := repository.Get(t.Context(), testUUIDV7(t))
+
+			return fmt.Errorf("get workflow: %w", err)
+		}, name: "load one", table: workflowRunsTable},
+		{call: func(repository *database.WorkflowRepository) error {
+			_, err := repository.ListByOwner(t.Context(), testUUIDV7(t), 0)
+
+			return fmt.Errorf("list workflows: %w", err)
+		}, name: "list runs", table: workflowRunsTable},
+		{call: func(repository *database.WorkflowRepository) error {
+			_, err := repository.ListAgentTasks(t.Context(), testUUIDV7(t))
+
+			return fmt.Errorf("list workflow links: %w", err)
+		}, name: "list links", table: "workflow_agent_tasks"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			connection := openTestSQLite(t, filepath.Join(t.TempDir(), "workflow.db"), 0)
+			require.NoError(t, database.Migrate(ctx, connection))
+			_, err := connection.ExecContext(ctx, "DROP TABLE "+test.table)
+			require.NoError(t, err)
+
+			require.Error(t, test.call(database.NewWorkflowRepository(connection)))
+		})
+	}
+}
+
+func TestWorkflowRepositoryConcurrentIdenticalLinkIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner, child := fixture.createAgentTaskSessions(ctx)
+	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+	agent, err := fixture.agents.Create(ctx, newAgentTask(owner.ID, child.ID))
+	require.NoError(t, err)
+
+	const count = 8
+
+	var wait sync.WaitGroup
+
+	errors := make(chan error, count)
+	for range count {
+		wait.Go(func() {
+			_, linkErr := fixture.workflows.LinkAgentTask(ctx, run.Task.ID, agent.Task.ID, " same ", 3)
+			errors <- linkErr
+		})
+	}
+
+	wait.Wait()
+	close(errors)
+
+	for linkErr := range errors {
+		require.NoError(t, linkErr)
+	}
+
+	links, err := fixture.workflows.ListAgentTasks(ctx, run.Task.ID)
+	require.NoError(t, err)
+	require.Len(t, links, 1)
+	assert.Equal(t, int64(1), links[0].Sequence)
+	assert.Equal(t, "same", links[0].NodeKey)
+	assert.Equal(t, 3, links[0].InvocationIndex)
+}
+
+func TestWorkflowRepositoryRejectsAgentParentAndOwnerMismatch(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner, child := fixture.createAgentTaskSessions(ctx)
+	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+
+	wrongParent := newAgentTask(owner.ID, child.ID)
+	wrongParent.Task.ParentTaskID = testUUIDV7(t)
+	_, err = fixture.workflows.CreateAgentTask(ctx, run.Task.ID, wrongParent, "node", 0)
+	require.ErrorContains(t, err, "agent task parent")
+
+	otherOwner := fixture.createOwner(ctx)
+	otherChild, err := fixture.sessions.CreateSession(ctx, otherOwner.CWD, "child", otherOwner.ID)
+	require.NoError(t, err)
+
+	wrongOwner := newAgentTask(otherOwner.ID, otherChild.ID)
+	wrongOwner.Task.ParentTaskID = run.Task.ID
+	_, err = fixture.workflows.CreateAgentTask(ctx, run.Task.ID, wrongOwner, "node", 0)
+	require.ErrorContains(t, err, "owner differs")
 }
 
 func newWorkflowRun(ownerSessionID string) *database.WorkflowRunEntity {

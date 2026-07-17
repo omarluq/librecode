@@ -149,6 +149,90 @@ func TestTrackStartedWorkflowDeliversImmediateFailureOnce(t *testing.T) {
 	require.Len(t, app.hiddenQueuedMessages, 1)
 }
 
+func TestWorkflowFailureNotificationFallbacksAndBusyBranches(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		makeBusy func(*App)
+		name     string
+	}{
+		{name: workflowTestWorking, makeBusy: func(app *App) { app.working = true }},
+		{name: "auth working", makeBusy: func(app *App) { app.authWorking = true }},
+		{name: workflowTestCompacting, makeBusy: func(app *App) { app.compacting = true }},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			failed := workflowSummaryRun("fallback-failure", database.TaskFailed)
+			failed.Name = " "
+			failed.Task.ErrorMessage = " "
+			app := newRenderTestApp(t)
+			testCase.makeBusy(app)
+
+			app.deliverWorkflowFailure(t.Context(), nil)
+
+			nonfailure := failed
+			nonfailure.Task.State = database.TaskSucceeded
+			app.deliverWorkflowFailure(t.Context(), &nonfailure)
+			app.deliverWorkflowFailure(t.Context(), &failed)
+
+			assert.Equal(t, "workflow failed", app.statusMessage)
+			require.Len(t, app.liveAgentCompletions, 1)
+			assert.Contains(t, app.liveAgentCompletions[0].Content, toolDisplayWorkflow)
+			assert.Contains(t, app.liveAgentCompletions[0].Content, "No error detail was returned.")
+			require.Len(t, app.hiddenQueuedMessages, 1)
+			assert.Contains(t, app.hiddenQueuedMessages[0], "background workflow failed")
+		})
+	}
+}
+
+func TestTrackStartedWorkflowRejectsForeignRunAndInspectorError(t *testing.T) {
+	t.Parallel()
+
+	foreign := workflowSummaryRun("foreign-run", database.TaskRunning)
+	foreign.Task.OwnerSessionID = workflowTestForeignSession
+
+	tests := []struct {
+		inspector *workflowInspectorStub
+		name      string
+	}{
+		{
+			name: "foreign session",
+			inspector: &workflowInspectorStub{
+				listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil,
+				getRun: &foreign, runs: nil, events: nil, children: nil, found: true,
+			},
+		},
+		{
+			name: "get error",
+			inspector: &workflowInspectorStub{
+				listErr: nil, getErr: assert.AnError, eventsErr: nil, agentTasksErr: nil,
+				getRun: nil, runs: nil, events: nil, children: nil, found: false,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			app.sessionID = workflowTestSessionID
+			app.workflows = testCase.inspector
+			app.trackStartedWorkflow(t.Context(), &assistant.ToolEvent{
+				CallID: "", ParentCallID: "", Sequence: 0, Name: workflowToolName,
+				ArgumentsJSON: "", DetailsJSON: `{"run_id":"foreign-run"}`,
+				Result: "", Error: "", IsError: false,
+			})
+
+			assert.Empty(t, app.activeWorkflows)
+			assert.Empty(t, app.liveAgentCompletions)
+		})
+	}
+}
+
 func TestTrackStartedWorkflowUsesToolResultRunID(t *testing.T) {
 	t.Parallel()
 

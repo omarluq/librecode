@@ -38,8 +38,6 @@ type ServiceRequest struct {
 	SourceVersion  string
 	ArgumentsJSON  string
 	OwnerSessionID string
-	SourceLimit    int
-	OutputLimit    int
 }
 
 type eventPayload struct {
@@ -74,9 +72,14 @@ func NewService(runs *database.WorkflowRepository, runner *Runner) (*Service, er
 			Errorf("workflow repository and runner are required")
 	}
 
+	leaseOwner, err := uuid.NewV7()
+	if err != nil {
+		return nil, oops.In("workflow").Code("create_lease_owner").Wrapf(err, "create workflow lease owner")
+	}
+
 	return &Service{
 		runs: runs, runner: runner, active: make(map[string]context.CancelFunc),
-		leaseOwner: uuid.Must(uuid.NewV7()).String(), mu: sync.Mutex{},
+		leaseOwner: leaseOwner.String(), mu: sync.Mutex{},
 	}, nil
 }
 
@@ -98,8 +101,7 @@ func (service *Service) Run(
 		return run, nil, err
 	}
 
-	return service.executeExisting(ctx, run, persisted, arguments, request.Name,
-		request.SourceLimit, request.OutputLimit, nil, false)
+	return service.executeExisting(ctx, run, persisted, arguments, request.Name, nil, false)
 }
 
 // ExecuteQueued claims and executes a previously submitted workflow run.
@@ -115,7 +117,7 @@ func (service *Service) ExecuteQueued(ctx context.Context, runID string) (bool, 
 		return false, err
 	}
 
-	completed, _, err := service.executeExisting(ctx, run, run, arguments, run.Name, 0, 0, nil, false)
+	completed, _, err := service.executeExisting(ctx, run, run, arguments, run.Name, nil, false)
 	if err != nil && errors.Is(err, errRunClaimConflict) {
 		return false, nil
 	}
@@ -177,7 +179,7 @@ func (service *Service) Resume(
 		return run, nil, oops.In("workflow").Code("load_agent_links").Wrapf(err, "load workflow agent links")
 	}
 
-	return service.executeExisting(ctx, run, run, arguments, run.Name, 0, 0, links, true)
+	return service.executeExisting(ctx, run, run, arguments, run.Name, links, true)
 }
 
 func (service *Service) executeExisting(
@@ -186,8 +188,6 @@ func (service *Service) executeExisting(
 	persisted *database.WorkflowRunEntity,
 	arguments map[string]any,
 	name string,
-	sourceLimit int,
-	outputLimit int,
 	links []database.WorkflowAgentTaskEntity,
 	resume bool,
 ) (*database.WorkflowRunEntity, *RunResult, error) {
@@ -225,7 +225,7 @@ func (service *Service) executeExisting(
 	result, runErr := service.runner.Run(runCtx, &RunRequest{
 		RunID: persisted.Task.ID, OnEvent: service.eventSink(persisted.Task.ID), Name: name,
 		Source: persisted.Source, OwnerSessionID: persisted.Task.OwnerSessionID, Arguments: arguments,
-		SourceLimit: sourceLimit, OutputLimit: outputLimit, PersistedLinks: links,
+		PersistedLinks: links,
 	})
 
 	stopHeartbeat()
@@ -400,6 +400,10 @@ func (service *Service) createRun(
 	ctx context.Context,
 	request *ServiceRequest,
 ) (*database.WorkflowRunEntity, error) {
+	if request == nil {
+		return nil, oops.In("workflow").Code("invalid_service_request").Errorf("request is required")
+	}
+
 	sourceVersion := request.SourceVersion
 	if sourceVersion == "" {
 		sourceVersion = defaultSourceVersion

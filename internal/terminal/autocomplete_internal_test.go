@@ -20,7 +20,7 @@ func TestSlashSuggestionsOnlyIncludesImplementedCommands(t *testing.T) {
 	}
 
 	assert.Contains(t, names, "skill")
-	assert.Contains(t, names, "workflows")
+	assert.NotContains(t, names, "workflows")
 	assert.NotContains(t, names, "export")
 	assert.NotContains(t, names, "import")
 	assert.NotContains(t, names, "share")

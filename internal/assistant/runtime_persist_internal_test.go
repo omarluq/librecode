@@ -62,6 +62,21 @@ func TestPartialPromptProgressReplacesPendingToolWithResult(t *testing.T) {
 	assert.Empty(t, progress.syntheticToolFailureEvents(context.Canceled))
 }
 
+func TestPartialPromptProgressFallsBackWhenResultHasGeneratedCallID(t *testing.T) {
+	t.Parallel()
+
+	progress := newPartialPromptProgress(nil)
+	call := runtimePersistTestToolCall()
+	call.ID = ""
+	progress.trackPendingTool(call, "")
+
+	result := runtimePersistTestToolResult()
+	result.CallID = "generated-call-id"
+	progress.removePendingTool(result)
+
+	assert.Empty(t, progress.pendingTools)
+}
+
 func TestPartialPromptProgressCollectsNestedToolsAndMatchesByCallID(t *testing.T) {
 	t.Parallel()
 

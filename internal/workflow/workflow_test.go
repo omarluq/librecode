@@ -106,7 +106,7 @@ func TestRunnerSingleTask(t *testing.T) {
 
 			return nil
 		},
-		Name: "", Source: agentSource, OwnerSessionID: testOwner, SourceLimit: 0, OutputLimit: 0,
+		Name: "", Source: agentSource, OwnerSessionID: testOwner,
 		PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -137,12 +137,46 @@ func TestRunnerReusesPersistedInvocationByNormalizedNodeKey(t *testing.T) {
 			CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: firstTask,
 			NodeKey: " agent ", InvocationIndex: 0, Sequence: 1,
 		}},
-		Arguments: nil, OnEvent: nil, SourceLimit: 0, OutputLimit: 0,
+		Arguments: nil, OnEvent: nil,
 	})
 	require.NoError(t, err)
 	assert.Empty(t, fake.submits)
 	assert.Equal(t, []string{firstTask}, result.LaunchedTaskIDs)
 	assert.Equal(t, "done", result.TaskResults[0].Result)
+}
+
+func TestRunnerReusesPersistedInvocationsByNormalizedNodeKeyAndIndex(t *testing.T) {
+	t.Parallel()
+
+	fake := newFakeController()
+	fake.tasks[firstTask] = agentTask(firstTask, testOwner, database.TaskSucceeded, "first")
+	fake.tasks[firstTask].Prompt = "does not match first call"
+	fake.tasks[secondTask] = agentTask(secondTask, testOwner, database.TaskSucceeded, "second")
+	fake.tasks[secondTask].Prompt = "does not match second call"
+	runner, err := workflow.NewRunner(fake)
+	require.NoError(t, err)
+
+	const source = `import "librecode/workflow"
+	first, _ := workflow.Agent("alpha", map[string]any{"node_key": "review"})
+	second, _ := workflow.Agent("beta", map[string]any{"node_key": " review "})
+	[]any{first, second}`
+
+	result, err := runner.Run(t.Context(), &workflow.RunRequest{
+		RunID: "", Name: "", Source: source, OwnerSessionID: testOwner, OnEvent: nil, Arguments: nil,
+		PersistedLinks: []database.WorkflowAgentTaskEntity{
+			{
+				CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: secondTask,
+				NodeKey: " review ", InvocationIndex: 1, Sequence: 0,
+			},
+			{
+				CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: firstTask,
+				NodeKey: "review", InvocationIndex: 0, Sequence: 0,
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, fake.submits)
+	assert.Equal(t, []any{firstTask, secondTask}, result.Value)
 }
 
 func TestRunnerScopesWaitToLaunchedOwnedTasks(t *testing.T) {
@@ -185,7 +219,6 @@ func TestRunnerScopesWaitToLaunchedOwnedTasks(t *testing.T) {
 
 			_, err = runner.Run(context.Background(), &workflow.RunRequest{
 				Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: test.source, OwnerSessionID: testOwner,
-				SourceLimit: 0, OutputLimit: 0,
 				PersistedLinks: nil,
 			})
 			require.Error(t, err)
@@ -210,7 +243,6 @@ canceled, _ := workflow.Cancel(second)
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		SourceLimit: 0, OutputLimit: 0,
 		PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -239,7 +271,6 @@ results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		SourceLimit: 0, OutputLimit: 0,
 		PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -264,11 +295,26 @@ results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		SourceLimit: 0, OutputLimit: 0,
 		PersistedLinks: nil,
 	})
 	require.NoError(t, err)
-	assert.Empty(t, result.Value)
+	assert.Equal(t, []workflow.PipelineResult{}, result.Value)
+}
+
+func TestRunnerDoesNotInferPipelineResultFromValueShape(t *testing.T) {
+	t.Parallel()
+
+	runner, err := workflow.NewRunner(newFakeController())
+	require.NoError(t, err)
+
+	result, err := runner.Run(t.Context(), &workflow.RunRequest{
+		RunID: "", Name: "", Source: `[]map[string]any{{"index": 0, "value": "ordinary", "error": ""}}`,
+		OwnerSessionID: testOwner, OnEvent: nil, Arguments: nil, PersistedLinks: nil,
+	})
+	require.NoError(t, err)
+
+	assert.IsType(t, []any{}, result.Value)
+	assert.NotEqual(t, []workflow.PipelineResult{{Value: "ordinary", Error: "", Index: 0}}, result.Value)
 }
 
 func TestRunnerPipelineBoundsConcurrency(t *testing.T) {
@@ -304,7 +350,6 @@ results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		SourceLimit: 0, OutputLimit: 0,
 		PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -330,7 +375,6 @@ results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		SourceLimit: 0, OutputLimit: 0,
 		PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -360,7 +404,6 @@ err`
 
 	_, err = runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		SourceLimit: 0, OutputLimit: 0,
 		PersistedLinks: nil,
 	})
 	require.Error(t, err)
@@ -378,7 +421,7 @@ func TestRunnerRejectsCancelForUnlaunchedTask(t *testing.T) {
 	_, err = runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "",
 		Source:         `import "librecode/workflow"; workflow.Cancel("other")`,
-		OwnerSessionID: testOwner, SourceLimit: 0, OutputLimit: 0,
+		OwnerSessionID: testOwner,
 		PersistedLinks: nil,
 	})
 	require.Error(t, err)
@@ -392,16 +435,18 @@ func TestRunnerEventFailureCancelsActiveLaunchedTasks(t *testing.T) {
 	runner, err := workflow.NewRunner(fake)
 	require.NoError(t, err)
 
-	_, err = runner.Run(context.Background(), &workflow.RunRequest{
+	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: func(_ context.Context, _ workflow.Event) error {
 			return assert.AnError
 		},
 		Name: "", Source: `import "librecode/workflow"; workflow.Agent("inspect")`,
-		OwnerSessionID: testOwner, SourceLimit: 0, OutputLimit: 0,
+		OwnerSessionID: testOwner,
 		PersistedLinks: nil,
 	})
 	require.Error(t, err)
 	assert.Equal(t, [][2]string{{testOwner, firstTask}}, fake.cancels)
+	require.Len(t, result.TaskResults, 1)
+	assert.Equal(t, string(database.TaskCanceled), result.TaskResults[0].State)
 }
 
 func TestRunnerCancellationCancelsActiveLaunchedTasks(t *testing.T) {
@@ -424,7 +469,6 @@ func TestRunnerCancellationCancelsActiveLaunchedTasks(t *testing.T) {
 	go func() {
 		_, runErr := runner.Run(ctx, &workflow.RunRequest{
 			Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: agentSource, OwnerSessionID: testOwner,
-			SourceLimit: 0, OutputLimit: 0,
 			PersistedLinks: nil,
 		})
 		done <- runErr

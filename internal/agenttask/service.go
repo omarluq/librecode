@@ -116,9 +116,13 @@ type Service struct {
 	mu                         sync.Mutex
 }
 
+func invalidOptions(options *Options) bool {
+	return options == nil || options.Tasks == nil || options.AgentTasks == nil || options.Runner == nil
+}
+
 // New creates and starts a task service.
 func New(ctx context.Context, options *Options) (*Service, error) {
-	if options.Tasks == nil || options.AgentTasks == nil || options.Runner == nil {
+	if invalidOptions(options) {
 		return nil, errors.New("agenttask: tasks, agent tasks, and runner are required")
 	}
 

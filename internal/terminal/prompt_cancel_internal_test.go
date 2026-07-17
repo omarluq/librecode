@@ -69,8 +69,11 @@ func TestCancelActivePromptPreservesPersistedProgress(t *testing.T) {
 	require.Equal(t, asyncEventPromptUserEntry, userEntryEvent.Kind)
 	app.handlePromptAsyncEvent(context.Background(), userEntryEvent)
 
-	request := client.waitForRequest(t)
-	client.waitForPromptEntry(t)
+	waitCtx, cancelWait := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelWait()
+
+	request := client.waitForRequest(waitCtx, t)
+	client.waitForPromptEntry(waitCtx, t)
 	request.OnEvent(assistant.StreamEvent{
 		ToolCallEvent: nil,
 		ToolEvent:     nil,
@@ -93,16 +96,18 @@ func TestCancelActivePromptPreservesPersistedProgress(t *testing.T) {
 }
 
 type cancelPreserveCompleter struct {
-	request *assistant.CompletionRequest
-	ready   chan struct{}
-	once    sync.Once
+	request     *assistant.CompletionRequest
+	ready       chan struct{}
+	promptReady chan struct{}
+	once        sync.Once
 }
 
 func newCancelPreserveCompleter() *cancelPreserveCompleter {
 	return &cancelPreserveCompleter{
-		request: nil,
-		ready:   make(chan struct{}),
-		once:    sync.Once{},
+		request:     nil,
+		ready:       make(chan struct{}),
+		promptReady: make(chan struct{}),
+		once:        sync.Once{},
 	}
 }
 
@@ -111,39 +116,44 @@ func (completer *cancelPreserveCompleter) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	completer.request = request
-	completer.once.Do(func() { close(completer.ready) })
+	completer.once.Do(func() {
+		close(completer.ready)
+
+		if len(request.Messages) > 0 && request.Messages[len(request.Messages)-1].Content == "keep progress" {
+			close(completer.promptReady)
+		}
+	})
 	<-ctx.Done()
 
 	return nil, fmt.Errorf("completion canceled: %w", ctx.Err())
 }
 
-func (completer *cancelPreserveCompleter) waitForRequest(t *testing.T) *assistant.CompletionRequest {
+func (completer *cancelPreserveCompleter) waitForRequest(
+	ctx context.Context,
+	t *testing.T,
+) *assistant.CompletionRequest {
 	t.Helper()
 
 	select {
 	case <-completer.ready:
+		require.NotNil(t, completer.request)
+
 		return completer.request
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for completion request")
+	case <-ctx.Done():
+		require.FailNow(t, "timed out waiting for completion request", ctx.Err().Error())
 
 		return nil
 	}
 }
 
-func (completer *cancelPreserveCompleter) waitForPromptEntry(t *testing.T) {
+func (completer *cancelPreserveCompleter) waitForPromptEntry(ctx context.Context, t *testing.T) {
 	t.Helper()
 
-	for {
-		request := completer.request
-		if request != nil && request.Messages[len(request.Messages)-1].Content == "keep progress" {
-			return
-		}
-
-		select {
-		case <-time.After(10 * time.Millisecond):
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for prompt entry in completion request")
-		}
+	select {
+	case <-completer.promptReady:
+		return
+	case <-ctx.Done():
+		require.FailNow(t, "timed out waiting for prompt entry in completion request", ctx.Err().Error())
 	}
 }
 

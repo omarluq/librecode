@@ -73,7 +73,11 @@ func (runner *fakeRunner) unblock() {
 func TestNewServiceValidatesOptionsAndUsesDefaults(t *testing.T) {
 	t.Parallel()
 
-	_, err := agenttask.New(context.Background(), &agenttask.Options{
+	service, err := agenttask.New(context.Background(), nil)
+	require.ErrorContains(t, err, "required")
+	assert.Nil(t, service)
+
+	_, err = agenttask.New(context.Background(), &agenttask.Options{
 		Tasks: nil, AgentTasks: nil, Workflows: nil, Runner: nil, Logger: nil, Timeout: 0,
 		Concurrency: 0, SessionConcurrency: 0, QueueCapacity: 0,
 	})

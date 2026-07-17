@@ -356,6 +356,25 @@ func TestRemoveRunningToolBlockPrefersCallID(t *testing.T) {
 	assert.Equal(t, "call-alpha", app.runningToolBlocks[0].Call.ID)
 }
 
+func TestRemoveRunningToolBlockFallsBackWhenResultHasGeneratedCallID(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.runningToolBlocks = []runningToolBlock{
+		testRunningToolBlock(testToolRead, `{"path":"a.go"}`),
+		testRunningToolBlock(testToolWrite, `{"path":"b.go"}`),
+	}
+
+	app.removeRunningToolBlock(&assistant.ToolEvent{
+		Result: "", Error: "", CallID: "generated-call-id", ParentCallID: "",
+		Name: testToolWrite, ArgumentsJSON: `{"path":"b.go"}`, DetailsJSON: "",
+		Sequence: 0, IsError: false,
+	})
+
+	require.Len(t, app.runningToolBlocks, 1)
+	assert.Equal(t, testToolRead, app.runningToolBlocks[0].Call.Name)
+}
+
 func runningToolRemoveByNameAndArgumentsCase() runningToolBlockTestCase {
 	sharedArguments := `{"path":"same.go"}`
 

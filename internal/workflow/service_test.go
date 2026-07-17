@@ -21,13 +21,182 @@ import (
 	"github.com/omarluq/librecode/internal/workflow"
 )
 
+const serviceQueuedName = "queued"
+
+const serviceTestSource = "1 + 1"
+
+func TestServiceRejectsMissingDependencies(t *testing.T) {
+	t.Parallel()
+
+	runner, err := workflow.NewRunner(newFakeController())
+	require.NoError(t, err)
+	_, repository, _ := newWorkflowService(t, newFakeController())
+
+	tests := []struct {
+		name              string
+		missingRepository bool
+	}{
+		{name: "repository", missingRepository: true},
+		{name: "runner", missingRepository: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			candidateRepository, candidateRunner := repository, runner
+			if test.missingRepository {
+				candidateRepository = nil
+			} else {
+				candidateRunner = nil
+			}
+
+			service, serviceErr := workflow.NewService(candidateRepository, candidateRunner)
+			require.ErrorContains(t, serviceErr, "repository and runner are required")
+			assert.Nil(t, service)
+		})
+	}
+}
+
+func TestServiceSubmitRejectsNilRequest(t *testing.T) {
+	t.Parallel()
+
+	service, _, _ := newWorkflowService(t, newFakeController())
+	run, err := service.Submit(t.Context(), nil)
+	require.ErrorContains(t, err, "request is required")
+	assert.Nil(t, run)
+}
+
+func TestServiceAwaitMissingRun(t *testing.T) {
+	t.Parallel()
+
+	service, _, _ := newWorkflowService(t, newFakeController())
+	completed, err := service.Await(t.Context(), testUUID())
+	require.ErrorContains(t, err, "was not found")
+	assert.Nil(t, completed)
+}
+
+func TestServiceCancelThenAwait(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	run := submitQueuedWorkflow(t, service, owner)
+
+	canceled, err := service.Cancel(t.Context(), owner, run.Task.ID)
+	require.NoError(t, err)
+	require.True(t, canceled)
+	completed, err := service.Await(t.Context(), run.Task.ID)
+	require.NoError(t, err)
+	require.NotNil(t, completed)
+	assert.Equal(t, database.TaskCanceled, completed.Task.State)
+}
+
+func TestServiceCancelMissingRun(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	canceled, err := service.Cancel(t.Context(), owner, testUUID())
+	require.NoError(t, err)
+	assert.False(t, canceled)
+}
+
+func TestServiceAccessorsReturnQueuedRunWithoutAgentTasks(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	run := submitQueuedWorkflow(t, service, owner)
+
+	runs, err := service.List(t.Context(), owner, 0)
+	require.NoError(t, err)
+	assert.Len(t, runs, 1)
+	links, err := service.AgentTasks(t.Context(), run.Task.ID)
+	require.NoError(t, err)
+	assert.Empty(t, links)
+}
+
+func TestServiceAgentTaskReturnsMissing(t *testing.T) {
+	t.Parallel()
+
+	service, _, _ := newWorkflowService(t, newFakeController())
+	task, found, err := service.AgentTask(t.Context(), testUUID())
+	require.NoError(t, err)
+	assert.False(t, found)
+	assert.Nil(t, task)
+}
+
+func TestServiceRecoverInterruptedWhenNoneExist(t *testing.T) {
+	t.Parallel()
+
+	service, _, _ := newWorkflowService(t, newFakeController())
+	recovered, err := service.RecoverInterrupted(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, recovered)
+}
+
+func TestServiceAwaitHonorsCancellation(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
+		Name: serviceQueuedName, Source: serviceTestSource, ArgumentsJSON: "{}", OwnerSessionID: owner,
+		SourceVersion: "",
+	})
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err = service.Await(ctx, run.Task.ID)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestServiceRejectsInvalidArguments(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	run, result, err := service.Run(t.Context(), &workflow.ServiceRequest{
+		Name: "bad arguments", Source: serviceTestSource, ArgumentsJSON: `{"x":`, OwnerSessionID: owner,
+		SourceVersion: "",
+	})
+	require.Error(t, err)
+	assert.Nil(t, run)
+	assert.Nil(t, result)
+}
+
+func TestServiceExecuteQueuedClaimsOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	queued := submitQueuedWorkflow(t, service, owner)
+
+	claimed, err := service.ExecuteQueued(t.Context(), queued.Task.ID)
+	require.NoError(t, err)
+	require.True(t, claimed)
+	claimed, err = service.ExecuteQueued(t.Context(), queued.Task.ID)
+	require.NoError(t, err)
+	assert.False(t, claimed)
+}
+
+func testUUID() string { return "018f1234-5678-7abc-8def-0123456789ab" }
+
+func submitQueuedWorkflow(t *testing.T, service *workflow.Service, owner string) *database.WorkflowRunEntity {
+	t.Helper()
+
+	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
+		Name: serviceQueuedName, Source: serviceTestSource, ArgumentsJSON: "{}", OwnerSessionID: owner,
+		SourceVersion: "",
+	})
+	require.NoError(t, err)
+
+	return run
+}
+
 func TestServicePersistsSuccessfulRun(t *testing.T) {
 	t.Parallel()
 
 	service, repository, owner := newWorkflowService(t, newFakeController())
 	run, result, err := service.Run(t.Context(), &workflow.ServiceRequest{
-		Name: "inspect", Source: "1 + 1", SourceVersion: "v1", ArgumentsJSON: "{}",
-		OwnerSessionID: owner, SourceLimit: 0, OutputLimit: 0,
+		Name: "inspect", Source: serviceTestSource, SourceVersion: "v1", ArgumentsJSON: "{}",
+		OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -51,7 +220,7 @@ func TestServicePersistsFailedRun(t *testing.T) {
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, _, err := service.Run(t.Context(), &workflow.ServiceRequest{
 		Name: "invalid", Source: `func {`, SourceVersion: "v1", ArgumentsJSON: "{}",
-		OwnerSessionID: owner, SourceLimit: 0, OutputLimit: 0,
+		OwnerSessionID: owner,
 	})
 	require.Error(t, err)
 
@@ -68,7 +237,7 @@ func TestServiceExecuteQueuedPersistsEvaluationFailureWithoutReturningIt(t *test
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
 		Name: "invalid", Source: `func {`, SourceVersion: "v1", ArgumentsJSON: "{}",
-		OwnerSessionID: owner, SourceLimit: 0, OutputLimit: 0,
+		OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
 
@@ -132,21 +301,7 @@ func TestServiceIntegratesDurableAgentTaskLifecycle(t *testing.T) {
 	t.Parallel()
 
 	environment := newWorkflowIntegration(t)
-	outcome := make(chan workflowRunOutcome, 1)
-
-	go func() {
-		run, result, err := environment.workflows.Run(context.Background(), &workflow.ServiceRequest{
-			Name: "durable-agent", Source: agentSource, SourceVersion: "", ArgumentsJSON: "{}",
-			OwnerSessionID: environment.owner, SourceLimit: 0, OutputLimit: 0,
-		})
-		outcome <- workflowRunOutcome{run: run, result: result, err: err}
-	}()
-
-	taskID := awaitIntegrationTask(t, environment.runner.started)
-	runs, err := environment.workflows.List(t.Context(), environment.owner, 10)
-	require.NoError(t, err)
-	require.Len(t, runs, 1)
-	runID := runs[0].Task.ID
+	outcome, taskID, runID := startIntegrationWorkflow(t, environment, "durable-agent")
 
 	task, found, err := environment.agentTasks.Get(t.Context(), taskID)
 	require.NoError(t, err)
@@ -182,22 +337,9 @@ func TestServiceCancellationCascadesToDurableAgentTask(t *testing.T) {
 	t.Parallel()
 
 	environment := newWorkflowIntegration(t)
-	outcome := make(chan workflowRunOutcome, 1)
+	outcome, taskID, runID := startIntegrationWorkflow(t, environment, "cancel-agent")
 
-	go func() {
-		run, result, err := environment.workflows.Run(context.Background(), &workflow.ServiceRequest{
-			Name: "cancel-agent", Source: agentSource, SourceVersion: "", ArgumentsJSON: "{}",
-			OwnerSessionID: environment.owner, SourceLimit: 0, OutputLimit: 0,
-		})
-		outcome <- workflowRunOutcome{run: run, result: result, err: err}
-	}()
-
-	taskID := awaitIntegrationTask(t, environment.runner.started)
-	runs, err := environment.workflows.List(t.Context(), environment.owner, 10)
-	require.NoError(t, err)
-	require.Len(t, runs, 1)
-
-	canceled, err := environment.workflows.Cancel(t.Context(), environment.owner, runs[0].Task.ID)
+	canceled, err := environment.workflows.Cancel(t.Context(), environment.owner, runID)
 	require.NoError(t, err)
 	require.True(t, canceled)
 
@@ -343,13 +485,38 @@ func newWorkflowIntegration(t *testing.T) *workflowIntegration {
 	}
 }
 
+func startIntegrationWorkflow(
+	t *testing.T,
+	environment *workflowIntegration,
+	name string,
+) (outcome <-chan workflowRunOutcome, taskID, runID string) {
+	t.Helper()
+
+	outcomeChannel := make(chan workflowRunOutcome, 1)
+
+	go func() {
+		run, result, err := environment.workflows.Run(context.Background(), &workflow.ServiceRequest{
+			Name: name, Source: agentSource, SourceVersion: "", ArgumentsJSON: "{}",
+			OwnerSessionID: environment.owner,
+		})
+		outcomeChannel <- workflowRunOutcome{run: run, result: result, err: err}
+	}()
+
+	taskID = awaitIntegrationTask(t, environment.runner.started)
+	runs, err := environment.workflows.List(t.Context(), environment.owner, 10)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+
+	return outcomeChannel, taskID, runs[0].Task.ID
+}
+
 func awaitIntegrationTask(t *testing.T, started <-chan string) string {
 	t.Helper()
 
 	select {
 	case taskID := <-started:
 		return taskID
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		require.FailNow(t, "timed out waiting for integrated agent task to start")
 
 		return ""

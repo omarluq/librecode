@@ -16,11 +16,13 @@ import (
 	"github.com/mvm-sh/mvm/lang/golang"
 	"github.com/mvm-sh/mvm/vm"
 	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/executionlimits"
 )
 
 const (
 	defaultSourceLimit = 256 << 10
-	defaultOutputLimit = 1 << 20
+	defaultOutputLimit = executionlimits.MaxOutputSize
 )
 
 // Bindings maps an import path to the Go values available to interpreted code.
@@ -28,18 +30,17 @@ type Bindings map[string]map[string]any
 
 // Request describes one isolated MVM evaluation.
 type Request struct {
-	Bindings    Bindings
-	Name        string
-	Source      string
-	SourceLimit int
-	OutputLimit int
+	Bindings Bindings
+	Name     string
+	Source   string
 }
 
 // Result contains the evaluated value and separately captured diagnostics.
 type Result struct {
-	Value  any
-	Stdout string
-	Stderr string
+	Value     any
+	ValueKind string
+	Stdout    string
+	Stderr    string
 }
 
 // ErrorKind classifies an evaluation failure.
@@ -87,19 +88,17 @@ func (e *Evaluator) Eval(ctx context.Context, request Request) (Result, error) {
 		return Result{}, evalError(ErrorKindCanceled, 0, err)
 	}
 
-	sourceLimit := effectiveLimit(request.SourceLimit, defaultSourceLimit)
-	if len(request.Source) > sourceLimit {
-		err := fmt.Errorf("source is %d bytes; limit is %d", len(request.Source), sourceLimit)
+	if len(request.Source) > defaultSourceLimit {
+		err := fmt.Errorf("source is %d bytes; limit is %d", len(request.Source), defaultSourceLimit)
 
 		return Result{}, evalError(ErrorKindSourceLimit, 0, err)
 	}
 
-	outputLimit := effectiveLimit(request.OutputLimit, defaultOutputLimit)
-	outputBudget := &limitedOutputBudget{remaining: outputLimit, overflow: false}
+	outputBudget := &limitedOutputBudget{remaining: defaultOutputLimit, overflow: false}
 	stdout := newLimitedBuffer(outputBudget)
 	stderr := newLimitedBuffer(outputBudget)
 	value, evalErr := evaluate(request, stdout, stderr)
-	result := Result{Value: nil, Stdout: stdout.String(), Stderr: stderr.String()}
+	result := Result{Value: nil, ValueKind: "", Stdout: stdout.String(), Stderr: stderr.String()}
 
 	if stdout.Overflowed() || stderr.Overflowed() {
 		return result, evalError(ErrorKindOutputLimit, 0, errOutputLimit)
@@ -135,14 +134,6 @@ func finalizeResult(result Result, value reflect.Value) (Result, error) {
 	return result, nil
 }
 
-func effectiveLimit(configured, fallback int) int {
-	if configured > 0 {
-		return configured
-	}
-
-	return fallback
-}
-
 func evaluate(request Request, stdout, stderr io.Writer) (reflect.Value, error) {
 	machine := interp.NewInterpreter(golang.GoSpec)
 	machine.SetIO(bytes.NewReader(nil), stdout, stderr)
@@ -167,7 +158,7 @@ func evaluate(request Request, stdout, stderr io.Writer) (reflect.Value, error) 
 
 	value, err := machine.Eval(name, request.Source)
 	if err != nil {
-		return value, oops.In("mvmhost").Wrapf(err, "run MVM source")
+		return value, oops.In("mvmhost").Code("mvm_eval").Wrapf(err, "run MVM source")
 	}
 
 	return value, nil
@@ -426,7 +417,7 @@ func (w *limitedBuffer) Write(data []byte) (int, error) {
 		w.budget.remaining -= written
 
 		if err != nil {
-			return written, oops.In("mvmhost").Wrapf(err, "capture MVM output")
+			return written, oops.In("mvmhost").Code("output_capture").Wrapf(err, "capture MVM output")
 		}
 
 		return written, nil
@@ -438,7 +429,7 @@ func (w *limitedBuffer) Write(data []byte) (int, error) {
 		w.budget.remaining -= written
 
 		if err != nil {
-			return written, oops.In("mvmhost").Wrapf(err, "capture bounded MVM output")
+			return written, oops.In("mvmhost").Code("output_capture").Wrapf(err, "capture bounded MVM output")
 		}
 
 		allowed = written

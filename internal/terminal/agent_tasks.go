@@ -263,10 +263,7 @@ func (app *App) deliverWorkflowFailure(ctx context.Context, run *database.Workfl
 		name = toolDisplayWorkflow
 	}
 
-	completion := fmt.Sprintf(
-		"Workflow %q (%s) failed.\n\n%s\n\nUse /workflow %s for full details.",
-		name, runID, detail, runID,
-	)
+	completion := fmt.Sprintf("Workflow %q (%s) failed.\n\n%s", name, runID, detail)
 
 	app.setStatus("workflow failed")
 
