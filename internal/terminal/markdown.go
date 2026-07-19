@@ -9,6 +9,10 @@ import (
 const markdownRenderMaxHeight = 1_000_000
 
 func (app *App) renderMarkdown(content string, width int) []tui.Line {
+	return app.renderMarkdownDetailed(content, width).Lines
+}
+
+func (app *App) renderMarkdownDetailed(content string, width int) tui.MarkdownRender {
 	view := tui.MarkdownView{
 		Text: content,
 		Styles: tui.MarkdownStyles{
@@ -22,7 +26,7 @@ func (app *App) renderMarkdown(content string, width int) []tui.Line {
 		Lexer:  &app.renderer.Lexer,
 	}
 
-	return view.Render(width, markdownRenderMaxHeight)
+	return view.RenderDetailed(width, markdownRenderMaxHeight)
 }
 
 func markdownCodeStyle(theme terminalTheme) tcell.Style {

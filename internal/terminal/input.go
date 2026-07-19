@@ -52,8 +52,12 @@ func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) ke
 		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 	}
 
-	if app.keys.matches(event, actionForceExit) && app.composerBuffer.Empty() {
-		return keyHandlingResult{err: nil, shouldQuit: app.handleForceExit(), handled: true}
+	if handled, shouldQuit := app.handleForceExitKey(event); handled {
+		return keyHandlingResult{err: nil, shouldQuit: shouldQuit, handled: true}
+	}
+
+	if app.handleAgentTaskSessionEscape(ctx, event) {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 	}
 
 	if result := app.handlePanelPriorityKey(ctx, event); result.handled || result.err != nil {
@@ -64,8 +68,8 @@ func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) ke
 		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 	}
 
-	if handled, err := app.handleExtensionKey(ctx, event); handled || err != nil {
-		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
+	if result := app.handleInlineListsAndExtensionKey(ctx, event); result.handled || result.err != nil {
+		return result
 	}
 
 	if app.handlePreEditorKey(ctx, event) {
@@ -73,6 +77,47 @@ func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) ke
 	}
 
 	return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
+}
+
+func (app *App) handleInlineListsAndExtensionKey(
+	ctx context.Context,
+	event *tcell.EventKey,
+) keyHandlingResult {
+	if handled, err := app.handleAgentTaskSummaryPriorityKey(ctx, event); handled || err != nil {
+		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
+	}
+
+	if app.agentTaskSummaryFocused() {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
+	}
+
+	if app.handleTranscriptListPriorityKey(event) {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
+	}
+
+	if handled, err := app.handleExtensionKey(ctx, event); handled || err != nil {
+		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
+	}
+
+	return keyHandlingResult{err: nil, shouldQuit: false, handled: app.transcriptListFocused()}
+}
+
+func (app *App) handleForceExitKey(event *tcell.EventKey) (handled, shouldQuit bool) {
+	if !app.keys.matches(event, actionForceExit) || !app.composerBuffer.Empty() {
+		return false, false
+	}
+
+	return true, app.handleForceExit()
+}
+
+func (app *App) handleAgentTaskSessionEscape(ctx context.Context, event *tcell.EventKey) bool {
+	if len(app.agentTaskSessionStack) == 0 || !isEscapeKey(event) {
+		return false
+	}
+
+	app.handleEscapePresses(ctx, escapePressCount(event))
+
+	return true
 }
 
 func (app *App) handlePanelPriorityKey(ctx context.Context, event *tcell.EventKey) keyHandlingResult {

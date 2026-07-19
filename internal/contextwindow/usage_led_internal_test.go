@@ -19,27 +19,55 @@ func TestEstimateUsageLedInputTokensUsesProviderAnchorAndTrailingEstimate(t *tes
 		newUsageLedTestMessage(database.RoleAssistant, repeatedTokenText(100)),
 		newUsageLedTestMessage(database.RoleUser, repeatedTokenText(40)),
 	}
-	anchor := &database.ContextUsageAnchorEntity{
-		EntryID:  "assistant-entry",
-		Provider: "",
-		Model:    "",
-		Usage: database.EntryTokenUsageEntity{
-			ContextWindow: 0,
-			ContextTokens: 0,
-			InputTokens:   500,
-			OutputTokens:  0,
+	tests := []struct {
+		name       string
+		usage      database.EntryTokenUsageEntity
+		wantTokens int
+	}{
+		{
+			name: "prefers latest request context over cumulative billed input",
+			usage: database.EntryTokenUsageEntity{
+				ContextWindow: 0,
+				ContextTokens: 300,
+				InputTokens:   1_200,
+				OutputTokens:  0,
+			},
+			wantTokens: 340,
 		},
-		MessageIndex: 1,
+		{
+			name: "locally estimates legacy anchors without context tokens",
+			usage: database.EntryTokenUsageEntity{
+				ContextWindow: 0,
+				ContextTokens: 0,
+				InputTokens:   500,
+				OutputTokens:  0,
+			},
+			wantTokens: 255,
+		},
 	}
 
-	tokens := EstimateUsageLedInputTokens(
-		"large system prompt that should be covered by provider usage",
-		messages,
-		nil,
-		anchor,
-	)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	assert.Equal(t, 540, tokens)
+			anchor := &database.ContextUsageAnchorEntity{
+				EntryID:      "assistant-entry",
+				Provider:     "",
+				Model:        "",
+				Usage:        test.usage,
+				MessageIndex: 1,
+			}
+
+			tokens := EstimateUsageLedInputTokens(
+				"large system prompt that should be covered by provider usage",
+				messages,
+				nil,
+				anchor,
+			)
+
+			assert.Equal(t, test.wantTokens, tokens)
+		})
+	}
 }
 
 func TestEstimateUsageLedInputTokensFallsBackWhenAnchorMissing(t *testing.T) {

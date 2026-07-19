@@ -84,6 +84,12 @@ func (app *App) drawEditorAndFooter(width, height, _ int) {
 		app.writeStyledLine(layout.footerStart+index, width, line)
 	}
 
+	if app.transcriptListFocused() || app.agentTaskSummaryFocused() {
+		app.screen.HideCursor()
+
+		return
+	}
+
 	app.screen.ShowCursor(layout.editor.CursorCol, layout.editorStart+layout.editor.CursorRow)
 }
 

@@ -36,8 +36,8 @@ func TestBuildContextTracksLatestProviderUsageAnchor(t *testing.T) {
 	assistantUsage := &database.EntryTokenUsageEntity{
 		ContextWindow: 1000,
 		ContextTokens: 42,
-		InputTokens:   40,
-		OutputTokens:  2,
+		InputTokens:   120,
+		OutputTokens:  8,
 	}
 	assistantEntry, err := repository.AppendMessageWithMetadata(ctx, session.ID, &userEntry.ID, newUsageTestMessage(
 		database.RoleAssistant,
@@ -52,7 +52,9 @@ func TestBuildContextTracksLatestProviderUsageAnchor(t *testing.T) {
 	require.NotNil(t, contextEntity.UsageAnchor)
 	assert.Equal(t, assistantEntry.ID, contextEntity.UsageAnchor.EntryID)
 	assert.Equal(t, 1, contextEntity.UsageAnchor.MessageIndex)
-	assert.Equal(t, 40, contextEntity.UsageAnchor.Usage.InputTokens)
+	assert.Equal(t, 42, contextEntity.UsageAnchor.Usage.ContextTokens)
+	assert.Equal(t, 120, contextEntity.UsageAnchor.Usage.InputTokens)
+	assert.Equal(t, 8, contextEntity.UsageAnchor.Usage.OutputTokens)
 }
 
 func TestBuildContextClearsUsageAnchorAfterCompaction(t *testing.T) {

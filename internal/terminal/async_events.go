@@ -16,25 +16,27 @@ import (
 type asyncEventKind string
 
 const (
-	asyncEventAuthURL             asyncEventKind = "auth_url"
-	asyncEventAuthDone            asyncEventKind = "auth_done"
-	asyncEventAuthError           asyncEventKind = "auth_error"
-	asyncEventPromptDone          asyncEventKind = "prompt_done"
-	asyncEventPromptUserEntry     asyncEventKind = "prompt_user_entry"
-	asyncEventPromptDelta         asyncEventKind = "prompt_delta"
-	asyncEventPromptThinkingDelta asyncEventKind = "prompt_thinking_delta"
-	asyncEventPromptToolStart     asyncEventKind = "prompt_tool_start"
-	asyncEventPromptToolResult    asyncEventKind = "prompt_tool_result"
-	asyncEventPromptRetry         asyncEventKind = "prompt_retry"
-	asyncEventPromptUsage         asyncEventKind = "prompt_usage"
-	asyncEventPromptUsageSnapshot asyncEventKind = "prompt_usage_snapshot"
-	asyncEventPromptError         asyncEventKind = "prompt_error"
-	asyncEventPromptContext       asyncEventKind = "prompt_context"
-	asyncEventCompactStart        asyncEventKind = "compact_start"
-	asyncEventCompactDone         asyncEventKind = "compact_done"
-	asyncEventCompactError        asyncEventKind = "compact_error"
-	asyncEventAgentTaskChanged    asyncEventKind = "agent_task_changed"
-	asyncEventAgentTaskCompleted  asyncEventKind = "agent_task_completed"
+	asyncEventAuthURL              asyncEventKind = "auth_url"
+	asyncEventAuthDone             asyncEventKind = "auth_done"
+	asyncEventAuthError            asyncEventKind = "auth_error"
+	asyncEventPromptDone           asyncEventKind = "prompt_done"
+	asyncEventPromptUserEntry      asyncEventKind = "prompt_user_entry"
+	asyncEventPromptDelta          asyncEventKind = "prompt_delta"
+	asyncEventPromptThinkingDelta  asyncEventKind = "prompt_thinking_delta"
+	asyncEventPromptToolStart      asyncEventKind = "prompt_tool_start"
+	asyncEventPromptToolResult     asyncEventKind = "prompt_tool_result"
+	asyncEventPromptRetry          asyncEventKind = "prompt_retry"
+	asyncEventPromptUsage          asyncEventKind = "prompt_usage"
+	asyncEventPromptUsageSnapshot  asyncEventKind = "prompt_usage_snapshot"
+	asyncEventPromptError          asyncEventKind = "prompt_error"
+	asyncEventPromptContext        asyncEventKind = "prompt_context"
+	asyncEventCompactStart         asyncEventKind = "compact_start"
+	asyncEventCompactDone          asyncEventKind = "compact_done"
+	asyncEventCompactError         asyncEventKind = "compact_error"
+	asyncEventAgentTaskChanged     asyncEventKind = "agent_task_changed"
+	asyncEventAgentTaskStream      asyncEventKind = "agent_task_stream"
+	asyncEventAgentTaskReplayError asyncEventKind = "agent_task_replay_error"
+	asyncEventAgentTaskCompleted   asyncEventKind = "agent_task_completed"
 )
 
 type asyncEvent struct {
@@ -204,6 +206,8 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 		asyncEventPromptError,
 		asyncEventPromptContext,
 		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError,
 		asyncEventAgentTaskCompleted,
 		asyncEventCompactStart,
 		asyncEventCompactDone,
@@ -217,7 +221,15 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent) {
 	switch payload.Kind {
 	case asyncEventAgentTaskChanged:
-		app.refreshVisibleAgentTasks(ctx)
+		app.handleAgentTaskTerminalEvent(ctx, payload.Text)
+
+		return
+	case asyncEventAgentTaskStream:
+		app.applyInspectedAgentTaskEvent(ctx, payload.Provider, payload.Text)
+
+		return
+	case asyncEventAgentTaskReplayError:
+		app.handleAgentTaskWatchError(ctx, payload.Provider, payload.Text)
 
 		return
 	case asyncEventAgentTaskCompleted:
@@ -287,6 +299,8 @@ func isCompactionAsyncEvent(kind asyncEventKind) bool {
 		asyncEventPromptError,
 		asyncEventPromptContext,
 		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError,
 		asyncEventAgentTaskCompleted:
 		return false
 	}
@@ -315,6 +329,8 @@ func isPromptAsyncEvent(kind asyncEventKind) bool {
 		asyncEventAuthDone,
 		asyncEventAuthError,
 		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError,
 		asyncEventAgentTaskCompleted:
 		return false
 	}
@@ -359,6 +375,8 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 		asyncEventAuthDone,
 		asyncEventAuthError,
 		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError,
 		asyncEventAgentTaskCompleted:
 		return true
 	case asyncEventPromptDelta,
@@ -418,6 +436,8 @@ func (app *App) applyPromptContextEvent(payload *asyncEvent) {
 		asyncEventAuthDone,
 		asyncEventAuthError,
 		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError,
 		asyncEventAgentTaskCompleted,
 		asyncEventPromptDone,
 		asyncEventPromptUserEntry,
@@ -485,6 +505,8 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 		asyncEventAuthDone,
 		asyncEventAuthError,
 		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError,
 		asyncEventAgentTaskCompleted,
 		asyncEventCompactStart,
 		asyncEventCompactDone,

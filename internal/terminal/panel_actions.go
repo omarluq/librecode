@@ -14,6 +14,8 @@ func (app *App) closePanel() {
 }
 
 func (app *App) openPanel(panelModel *panel.Model) {
+	app.blurAgentTaskSummary()
+	app.blurTranscriptList()
 	app.mode = modePanel
 	app.selectedPanelKind = panelModel.Kind
 	app.panel = panelModel

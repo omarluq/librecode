@@ -2,6 +2,7 @@ package compaction
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -65,7 +66,12 @@ func PlanBranch(
 		return Plan{}, NothingToDoError("not enough model-facing history to compact")
 	}
 
-	if branch[len(branch)-1].Type == database.EntryTypeCompaction {
+	latestModelFacingIndex := lastModelFacingEntryIndex(branch)
+	if latestModelFacingIndex < 0 {
+		return Plan{}, NothingToDoError("not enough model-facing history to compact")
+	}
+
+	if branch[latestModelFacingIndex].Type == database.EntryTypeCompaction {
 		return Plan{}, NothingToDoError("no new history to compact after the latest compaction")
 	}
 
@@ -80,7 +86,8 @@ func PlanBranch(
 	previousSummary, boundaryStart := previousCompactionBoundary(branch)
 
 	cutPoint := findCutPoint(branch, boundaryStart, len(branch), recentTailTokens, countTokens)
-	if cutPoint.firstKeptEntryIndex <= boundaryStart || cutPoint.firstKeptEntryIndex >= len(branch) {
+	if cutPoint.firstKeptEntryIndex >= len(branch) ||
+		!hasModelFacingSummary(branch, boundaryStart, cutPoint.firstKeptEntryIndex) {
 		return Plan{}, NothingToDoError("not enough old history to compact while preserving the recent tail")
 	}
 
@@ -120,8 +127,13 @@ func PlanBranchFromFirstKept(
 	}
 
 	previousSummary, boundaryStart := previousCompactionBoundary(branch)
-	if firstKeptEntryIndex <= boundaryStart || firstKeptEntryIndex >= len(branch) {
+	if firstKeptEntryIndex >= len(branch) ||
+		!hasModelFacingSummary(branch, boundaryStart, firstKeptEntryIndex) {
 		return Plan{}, NothingToDoError("selected first kept entry leaves no old history to compact")
+	}
+
+	if _, ok := messageForContext(&branch[firstKeptEntryIndex]); !ok {
+		return Plan{}, NothingToDoError("selected first kept entry is not model-facing")
 	}
 
 	cutPoint := cutPoint{firstKeptEntryIndex: firstKeptEntryIndex, turnStartIndex: -1, isSplitTurn: false}
@@ -323,6 +335,16 @@ func isTurnStartEntry(entry *database.EntryEntity) bool {
 	return message.Role == database.RoleUser || message.Role == database.RoleCustom
 }
 
+func hasModelFacingSummary(entries []database.EntryEntity, startIndex, endIndex int) bool {
+	for index := startIndex; index < endIndex; index++ {
+		if _, ok := messageForSummary(&entries[index]); ok {
+			return true
+		}
+	}
+
+	return false
+}
+
 func messagesInRange(
 	entries []database.EntryEntity,
 	startIndex int,
@@ -427,6 +449,16 @@ func effectiveModelFacingEntries(branch []database.EntryEntity) []database.Entry
 	}
 
 	return effective
+}
+
+func lastModelFacingEntryIndex(branch []database.EntryEntity) int {
+	for index := range slices.Backward(branch) {
+		if _, ok := messageForContext(&branch[index]); ok {
+			return index
+		}
+	}
+
+	return -1
 }
 
 func modelFacingEntries(branch []database.EntryEntity) []database.EntryEntity {

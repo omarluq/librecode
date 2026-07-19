@@ -75,18 +75,36 @@ type MarkdownView struct {
 	Styles MarkdownStyles
 }
 
+// MarkdownListItem identifies the rendered lines directly owned by a list item.
+type MarkdownListItem struct {
+	StartLine int
+	EndLine   int
+}
+
+// MarkdownRender contains rendered lines and list item metadata.
+type MarkdownRender struct {
+	Lines     []Line
+	ListItems []MarkdownListItem
+}
+
 // Render parses and renders markdown.
 func (view *MarkdownView) Render(width, height int) []Line {
+	return view.RenderDetailed(width, height).Lines
+}
+
+// RenderDetailed parses markdown and preserves rendered list item ranges.
+func (view *MarkdownView) RenderDetailed(width, height int) MarkdownRender {
 	if view == nil || width <= 0 || height <= 0 {
-		return []Line{}
+		return MarkdownRender{Lines: []Line{}, ListItems: []MarkdownListItem{}}
 	}
 
 	renderer := markdownRenderer{
-		styles: view.Styles,
-		source: []byte(view.Text),
-		lines:  []Line{},
-		width:  max(1, width),
-		lexer:  view.Lexer,
+		styles:    view.Styles,
+		source:    []byte(view.Text),
+		lines:     []Line{},
+		listItems: []MarkdownListItem{},
+		width:     max(1, width),
+		lexer:     view.Lexer,
 	}
 
 	engine := view.engine()
@@ -94,7 +112,21 @@ func (view *MarkdownView) Render(width, height int) []Line {
 		renderer.renderNode(child, markdownIndent)
 	})
 
-	return Tail(renderer.lines, height)
+	firstLine := max(0, len(renderer.lines)-height)
+
+	items := make([]MarkdownListItem, 0, len(renderer.listItems))
+	for _, item := range renderer.listItems {
+		if item.EndLine <= firstLine {
+			continue
+		}
+
+		items = append(items, MarkdownListItem{
+			StartLine: max(0, item.StartLine-firstLine),
+			EndLine:   item.EndLine - firstLine,
+		})
+	}
+
+	return MarkdownRender{Lines: Tail(renderer.lines, height), ListItems: items}
 }
 
 // engine returns the injected parser engine or a new lazily initialized engine.
@@ -114,11 +146,12 @@ func (view *MarkdownView) Draw(screen ContentSetter, rect Rect) {
 }
 
 type markdownRenderer struct {
-	lexer  *LexerEngine
-	source []byte
-	lines  []Line
-	styles MarkdownStyles
-	width  int
+	lexer     *LexerEngine
+	source    []byte
+	lines     []Line
+	listItems []MarkdownListItem
+	styles    MarkdownStyles
+	width     int
 }
 
 func (renderer *markdownRenderer) renderChildren(parent ast.Node, indent string) {
@@ -214,12 +247,15 @@ func (renderer *markdownRenderer) renderListItem(item *ast.ListItem, indent, mar
 	firstIndent := indent + marker
 	continuationIndent := indent + strings.Repeat(markdownIndent, Width(marker))
 	firstBlock := true
+	itemRecorded := false
 
 	for child := item.FirstChild(); child != nil; child = child.NextSibling() {
 		blockIndent := continuationIndent
 		if firstBlock {
 			blockIndent = firstIndent
 		}
+
+		startLine := len(renderer.lines)
 
 		switch typedChild := child.(type) {
 		case *ast.Paragraph:
@@ -228,6 +264,17 @@ func (renderer *markdownRenderer) renderListItem(item *ast.ListItem, indent, mar
 			renderer.appendListItemText(typedChild, blockIndent, continuationIndent)
 		default:
 			renderer.renderNode(typedChild, blockIndent)
+		}
+
+		if !itemRecorded && len(renderer.lines) > startLine {
+			switch child.(type) {
+			case *ast.Paragraph, *ast.TextBlock:
+				renderer.listItems = append(renderer.listItems, MarkdownListItem{
+					StartLine: startLine,
+					EndLine:   len(renderer.lines),
+				})
+				itemRecorded = true
+			}
 		}
 
 		firstBlock = false

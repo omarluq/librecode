@@ -203,7 +203,7 @@ func runPromptScenarios(
 
 	var failedUsage agentUsage
 	require.NoError(t, json.Unmarshal([]byte(result.UsageJSON), &failedUsage))
-	assert.Equal(t, 3, failedUsage.InputTokens)
+	assert.Equal(t, 4, failedUsage.InputTokens)
 
 	sinkErr := errors.New("persist event")
 	result, err = newRunner(runnerCompleter{err: nil}).Run(

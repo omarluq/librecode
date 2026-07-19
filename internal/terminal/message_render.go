@@ -21,7 +21,11 @@ func (app *App) cachedStreamingBlockLines(width, index int) []tui.Line {
 		return lines
 	}
 
-	app.transcript.Streaming.LineCache[index] = cachedRenderedMessage{Lines: lines, Valid: true}
+	app.transcript.Streaming.LineCache[index] = cachedRenderedMessage{
+		Lines:     lines,
+		ListItems: []markdownListItemRange{},
+		Valid:     true,
+	}
 
 	return lines
 }
@@ -36,22 +40,48 @@ func (app *App) ensureStreamingBlockLineCache(width int) {
 }
 
 func (app *App) renderMessage(width int, message chatMessage) []tui.Line {
-	switch message.Role {
-	case transcript.RoleUser:
-		return app.renderUserMessage(width, message.Content)
-	case transcript.RoleAssistant:
-		return app.renderAssistantMessage(width, message.Content)
-	case transcript.RoleToolResult, transcript.RoleBashExecution:
-		return app.renderToolMessage(width, message)
-	case transcript.RoleThinking:
-		return app.renderThinkingMessage(width, message)
-	case transcript.RoleCustom:
-		return app.renderCustomMessage(width, message.Content)
-	case transcript.RoleBranchSummary, transcript.RoleCompactionSummary:
-		return app.renderSummaryMessage(width, message)
+	return app.renderMessageDetailed(width, message).Lines
+}
+
+func (app *App) renderMessageDetailed(width int, message chatMessage) cachedRenderedMessage {
+	if message.Role == transcript.RoleAssistant {
+		markdown := app.renderMarkdownDetailed(strings.TrimSpace(message.Content), width)
+		lines := make([]tui.Line, 0, len(markdown.Lines)+messageOuterRows)
+		lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
+		lines = append(lines, markdown.Lines...)
+		lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
+
+		items := make([]markdownListItemRange, 0, len(markdown.ListItems))
+		for _, item := range markdown.ListItems {
+			items = append(items, markdownListItemRange{
+				StartLine: item.StartLine + 1,
+				EndLine:   item.EndLine + 1,
+			})
+		}
+
+		return cachedRenderedMessage{Lines: lines, ListItems: items, Valid: true}
 	}
 
-	return app.renderCustomMessage(width, message.Content)
+	var lines []tui.Line
+
+	switch message.Role {
+	case transcript.RoleAssistant:
+		panic("assistant message handled before role switch")
+	case transcript.RoleUser:
+		lines = app.renderUserMessage(width, message.Content)
+	case transcript.RoleToolResult, transcript.RoleBashExecution:
+		lines = app.renderToolMessage(width, message)
+	case transcript.RoleThinking:
+		lines = app.renderThinkingMessage(width, message)
+	case transcript.RoleCustom:
+		lines = app.renderCustomMessage(width, message.Content)
+	case transcript.RoleBranchSummary, transcript.RoleCompactionSummary:
+		lines = app.renderSummaryMessage(width, message)
+	default:
+		lines = app.renderCustomMessage(width, message.Content)
+	}
+
+	return cachedRenderedMessage{Lines: lines, ListItems: []markdownListItemRange{}, Valid: true}
 }
 
 func (app *App) renderUserMessage(width int, content string) []tui.Line {
@@ -90,16 +120,6 @@ func (app *App) renderQueuedMessages(width int) []tui.Line {
 		}
 	}
 
-	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
-
-	return lines
-}
-
-func (app *App) renderAssistantMessage(width int, content string) []tui.Line {
-	markdownLines := app.renderMarkdown(strings.TrimSpace(content), width)
-	lines := make([]tui.Line, 0, len(markdownLines)+messageOuterRows)
-	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
-	lines = append(lines, markdownLines...)
 	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
 
 	return lines

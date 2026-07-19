@@ -124,6 +124,8 @@ func (app *App) handleCompactAsyncEvent(ctx context.Context, payload *asyncEvent
 		asyncEventAuthDone,
 		asyncEventAuthError,
 		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError,
 		asyncEventAgentTaskCompleted,
 		asyncEventCompactStart,
 		asyncEventPromptDone,

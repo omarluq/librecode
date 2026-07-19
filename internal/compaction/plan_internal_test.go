@@ -167,14 +167,33 @@ func latestCompactionCase() planCompactionCase {
 		"already compacted",
 	)
 	latestSummary.CompactionFirstKeptEntryID = firstUser.ID
+	metadata := testEntry("metadata", database.EntryTypeCustom, database.RoleCustom, "extension state")
+	metadata.ModelFacing = false
 
 	return planCompactionCase{
 		assertFn: assertNoCompactionPlan,
-		entries:  []database.EntryEntity{firstUser, latestSummary},
+		entries:  []database.EntryEntity{firstUser, latestSummary, metadata},
 		name:     "rejects latest compaction",
 		wantErr:  "no new history to compact",
 		keep:     1,
 	}
+}
+
+func TestPlanBranchRejectsRawRangeWithoutModelFacingHistory(t *testing.T) {
+	t.Parallel()
+
+	nonModelFacing := testEntry("metadata", database.EntryTypeCustom, database.RoleCustom, "extension state")
+	nonModelFacing.ModelFacing = false
+	branch := []database.EntryEntity{
+		nonModelFacing,
+		messageEntry("tail", database.RoleUser, "model-facing tail"),
+	}
+
+	_, err := PlanBranch(branch, 1, estimateTokens)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not enough old history to compact")
+	assert.NotContains(t, err.Error(), "no model-facing history was selected")
 }
 
 func TestPlanBranchFromFirstKeptUsesSelectedBoundary(t *testing.T) {
@@ -194,6 +213,23 @@ func TestPlanBranchFromFirstKeptUsesSelectedBoundary(t *testing.T) {
 	assert.Equal(t, []string{"selected", "tail"}, plan.KeptEntryIDs)
 	assert.Equal(t, "old context", plan.Messages[0].Content)
 	assert.Positive(t, plan.TokensBefore)
+}
+
+func TestPlanBranchFromFirstKeptRejectsNonModelFacingBoundary(t *testing.T) {
+	t.Parallel()
+
+	nonModelFacing := testEntry("metadata", database.EntryTypeCustom, database.RoleCustom, "extension state")
+	nonModelFacing.ModelFacing = false
+	branch := []database.EntryEntity{
+		messageEntry("old", database.RoleUser, "old context"),
+		nonModelFacing,
+		messageEntry("tail", database.RoleAssistant, "tail context"),
+	}
+
+	_, err := PlanBranchFromFirstKept(branch, "metadata", nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "selected first kept entry is not model-facing")
 }
 
 func TestPlanBranchCountsRunesByDefault(t *testing.T) {

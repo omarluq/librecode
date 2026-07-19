@@ -6,9 +6,11 @@ import (
 )
 
 const (
-	focusKindAutocomplete = "autocomplete"
-	focusKindComposer     = "composer"
-	focusKindPanel        = "panel"
+	focusKindAgentTaskSummary = "agent_task_summary"
+	focusKindAutocomplete     = "autocomplete"
+	focusKindComposer         = "composer"
+	focusKindPanel            = "panel"
+	focusKindTranscriptList   = "transcript_list"
 )
 
 func (app *App) focusState() extension.FocusState {
@@ -29,6 +31,28 @@ func (app *App) focusState() extension.FocusState {
 			Window:    focusKindAutocomplete,
 			Buffer:    extui.BufferStatus,
 			Role:      focusKindAutocomplete,
+			PanelKind: "",
+			Exclusive: true,
+		}
+	}
+
+	if app.agentTaskSummaryFocused() {
+		return extension.FocusState{
+			Kind:      focusKindAgentTaskSummary,
+			Window:    extui.BufferStatus,
+			Buffer:    extui.BufferStatus,
+			Role:      focusKindAgentTaskSummary,
+			PanelKind: "",
+			Exclusive: true,
+		}
+	}
+
+	if app.transcriptListFocused() {
+		return extension.FocusState{
+			Kind:      focusKindTranscriptList,
+			Window:    extui.BufferTranscript,
+			Buffer:    extui.BufferTranscript,
+			Role:      focusKindTranscriptList,
 			PanelKind: "",
 			Exclusive: true,
 		}

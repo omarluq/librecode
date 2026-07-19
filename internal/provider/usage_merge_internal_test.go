@@ -46,20 +46,46 @@ func TestMergeUsageKeepsExistingBreakdownWhenPresent(t *testing.T) {
 func TestMergeUsageAccumulatesRequestTokens(t *testing.T) {
 	t.Parallel()
 
-	merged := accumulateUsage(
-		llm.Usage{
-			Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 20,
-			InputTokens: 7, OutputTokens: 3,
+	tests := []struct {
+		name              string
+		reported          llm.Usage
+		wantContextTokens int
+	}{
+		{
+			name: "uses explicit provider context tokens",
+			reported: llm.Usage{
+				Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 30,
+				InputTokens: 11, OutputTokens: 5,
+			},
+			wantContextTokens: 30,
 		},
-		llm.Usage{
-			Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 30,
-			InputTokens: 11, OutputTokens: 5,
+		{
+			name: "uses latest request input when context tokens are absent",
+			reported: llm.Usage{
+				Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 0,
+				InputTokens: 11, OutputTokens: 5,
+			},
+			wantContextTokens: 11,
 		},
-	)
+	}
 
-	assert.Equal(t, 18, merged.InputTokens)
-	assert.Equal(t, 8, merged.OutputTokens)
-	assert.Equal(t, 30, merged.ContextTokens)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			merged := accumulateUsage(
+				llm.Usage{
+					Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 20,
+					InputTokens: 7, OutputTokens: 3,
+				},
+				test.reported,
+			)
+
+			assert.Equal(t, 18, merged.InputTokens)
+			assert.Equal(t, 8, merged.OutputTokens)
+			assert.Equal(t, test.wantContextTokens, merged.ContextTokens)
+		})
+	}
 }
 
 func TestUsageFromObjectIgnoresNonObjectsAndMissingValues(t *testing.T) {

@@ -17,14 +17,17 @@ import (
 	"github.com/omarluq/librecode/internal/agent"
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/terminal/panel"
 	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/transcript"
 	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
-	behaviorTaskID  = "task-1"
-	behaviorRunning = "running"
+	behaviorTaskID   = "task-1"
+	behaviorRunning  = "running"
+	parentScopeValue = "parent-scope"
 )
 
 type agentTaskControllerStub struct {
@@ -517,6 +520,64 @@ func TestAgentTaskPanelItemsRefreshAndCancellation(t *testing.T) {
 	assert.Contains(t, app.transcript.History[len(app.transcript.History)-1].Content, "list agent tasks")
 }
 
+func TestAgentTaskSummaryEnterInspectsSelectedSubagent(t *testing.T) {
+	t.Parallel()
+
+	connection := newPromptSendTestConnection(t)
+	sessions := database.NewSessionRepository(connection)
+	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
+	require.NoError(t, err)
+	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
+	require.NoError(t, err)
+
+	first := behaviorAgentTask("task-first", database.TaskRunning)
+	first.Task.OwnerSessionID = parent.ID
+	selected := behaviorAgentTask("task-selected", database.TaskRunning)
+	selected.Task.OwnerSessionID = parent.ID
+	selected.ChildSessionID = child.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{
+		first.Task.ID:    &first,
+		selected.Task.ID: &selected,
+	}, nil)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
+	runtime.SetAgentTaskController(stub)
+
+	app := newRenderTestApp(t)
+	app.runtime = runtime
+	app.sessionID = parent.ID
+	app.activeWorkflows = []database.WorkflowRunEntity{
+		workflowSummaryRun("workflow before tasks", database.TaskRunning),
+	}
+	app.agentTasks = []database.AgentTaskEntity{first, selected}
+
+	pressTerminalKey(t, app, tcell.KeyTab, "")
+	require.True(t, app.agentTaskSummaryFocused())
+	pressTerminalKey(t, app, tcell.KeyDown, "")
+	pressTerminalKey(t, app, tcell.KeyDown, "")
+	pressTerminalKey(t, app, tcell.KeyEnter, "")
+
+	assert.Equal(t, child.ID, app.sessionID)
+	assert.Equal(t, []string{parent.ID}, app.agentTaskSessionStack)
+	assert.False(t, app.agentTaskSummaryFocused())
+	assert.Contains(t, app.transcript.History[len(app.transcript.History)-1].Content, "task-selected")
+}
+
+func TestInspectAgentTaskWithoutRuntimeDoesNotMutateState(t *testing.T) {
+	t.Parallel()
+
+	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	app := newRenderTestApp(t)
+	app.sessionID = task.Task.OwnerSessionID
+	snapshot := seedInspectFailureState(app, &task)
+
+	err := app.inspectAgentTask(t.Context(), behaviorTaskID)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "load agent task")
+	assert.Contains(t, err.Error(), "runtime is not configured")
+	snapshot(t)
+}
+
 func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	t.Parallel()
 
@@ -534,16 +595,53 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
 	runtime.SetAgentTaskController(stub)
 
+	_, err = sessions.AppendMessage(t.Context(), child.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleAssistant,
+		Content:   "loaded child transcript",
+		Provider:  "child-provider",
+		Model:     "child-model",
+	})
+	require.NoError(t, err)
+
+	settings := database.NewDocumentRepository(connection)
+	require.NoError(t, settings.Put(t.Context(), &database.DocumentEntity{
+		UpdatedAt: time.Now().UTC(),
+		Namespace: sessionSettingsNamespace,
+		Key:       child.ID,
+		ValueJSON: `{"provider":"child-provider","model":"child-model","theme":"light",` +
+			`"scoped_enabled":["child-scope"],"scoped_order":["child-scope"],` +
+			`"hide_thinking":true,"tools_expanded":true}`,
+	}))
+
 	app := newRenderTestApp(t)
 	app.runtime = runtime
+	app.settings = settings
+	app.cfg = promptSendTestConfig()
+	app.cfg.Assistant.Provider = "parent-provider"
+	app.cfg.Assistant.Model = "parent-model"
 	app.sessionID = parent.ID
+	app.addSystemMessage("parent transcript")
 
+	app.agentTasks = []database.AgentTaskEntity{task}
+	app.scrollOffset = 12
+	app.transcript.Streaming.Blocks = []chatMessage{newChatMessage(transcript.RoleAssistant, "stale stream")}
+	app.runningToolBlocks = []runningToolBlock{testRunningToolBlock(testToolRead, "")}
 	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
-	assert.Equal(t, child.ID, app.sessionID)
-	assert.Equal(t, []string{parent.ID}, app.agentTaskSessionStack)
-	assert.Contains(t, app.transcript.History[len(app.transcript.History)-1].Content, "inspecting agent task")
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+	assert.Empty(t, app.runningToolBlocks)
+	assertLoadedChildAgentSession(t, app, parent.ID, child.ID, &task)
 
+	app.refreshVisibleAgentTasks(t.Context())
+	assert.Equal(t, []database.AgentTaskEntity{task}, app.agentTasks)
+
+	app.scrollOffset = 8
+	app.transcript.Streaming.Blocks = []chatMessage{newChatMessage(transcript.RoleAssistant, "child stream")}
+	app.runningToolBlocks = []runningToolBlock{testRunningToolBlock(testToolRead, "")}
 	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+	assert.Empty(t, app.runningToolBlocks)
+	assert.Zero(t, app.scrollOffset)
 	assert.Equal(t, parent.ID, app.sessionID)
 	assert.Empty(t, app.agentTaskSessionStack)
 	assert.Contains(t, app.transcript.History[len(app.transcript.History)-1].Content, "returned to parent")
@@ -552,7 +650,459 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	app.sessionID = "other"
 	err = app.inspectAgentTask(t.Context(), behaviorTaskID)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	assert.Contains(t, err.Error(), "outside the current inspection path")
+}
+
+func TestInspectAgentTaskSwitchesBetweenSiblingSessions(t *testing.T) {
+	t.Parallel()
+
+	connection := newPromptSendTestConnection(t)
+	sessions := database.NewSessionRepository(connection)
+	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
+	require.NoError(t, err)
+	firstChild, err := sessions.CreateSession(t.Context(), parent.CWD, "first child", parent.ID)
+	require.NoError(t, err)
+	secondChild, err := sessions.CreateSession(t.Context(), parent.CWD, "second child", parent.ID)
+	require.NoError(t, err)
+
+	first := behaviorAgentTask("task-first", database.TaskRunning)
+	first.Task.OwnerSessionID = parent.ID
+	first.ChildSessionID = firstChild.ID
+	second := behaviorAgentTask("task-second", database.TaskRunning)
+	second.Task.OwnerSessionID = parent.ID
+	second.ChildSessionID = secondChild.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{
+		first.Task.ID:  &first,
+		second.Task.ID: &second,
+	}, nil)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
+	runtime.SetAgentTaskController(stub)
+
+	app := newRenderTestApp(t)
+	app.runtime = runtime
+	app.sessionID = parent.ID
+	app.agentTasks = []database.AgentTaskEntity{first, second}
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), first.Task.ID))
+	assert.Equal(t, firstChild.ID, app.sessionID)
+	assert.Equal(t, []string{parent.ID}, app.agentTaskSessionStack)
+
+	pressTerminalKey(t, app, tcell.KeyTab, "")
+	require.True(t, app.agentTaskSummaryFocused())
+	pressTerminalKey(t, app, tcell.KeyDown, "")
+	pressTerminalKey(t, app, tcell.KeyEnter, "")
+	assert.Equal(t, secondChild.ID, app.sessionID)
+	assert.Equal(t, []string{parent.ID}, app.agentTaskSessionStack)
+	assert.Contains(t, app.transcript.History[len(app.transcript.History)-1].Content, second.Task.ID)
+
+	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+	assert.Equal(t, parent.ID, app.sessionID)
+	assert.Empty(t, app.agentTaskSessionStack)
+}
+
+func TestInspectAgentTaskRecoversRetainedSummaryOwner(t *testing.T) {
+	t.Parallel()
+
+	connection := newPromptSendTestConnection(t)
+	sessions := database.NewSessionRepository(connection)
+	root, err := sessions.CreateSession(t.Context(), t.TempDir(), "root", "")
+	require.NoError(t, err)
+	parent, err := sessions.CreateSession(t.Context(), root.CWD, "parent", root.ID)
+	require.NoError(t, err)
+	firstChild, err := sessions.CreateSession(t.Context(), root.CWD, "first child", parent.ID)
+	require.NoError(t, err)
+	secondChild, err := sessions.CreateSession(t.Context(), root.CWD, "second child", parent.ID)
+	require.NoError(t, err)
+
+	second := behaviorAgentTask("task-second", database.TaskRunning)
+	second.Task.OwnerSessionID = parent.ID
+	second.ChildSessionID = secondChild.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{second.Task.ID: &second}, nil)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
+	runtime.SetAgentTaskController(stub)
+
+	app := newRenderTestApp(t)
+	app.runtime = runtime
+	app.sessionID = firstChild.ID
+	app.agentTaskSessionStack = []string{root.ID}
+	app.agentTaskSummaryOwnerID = parent.ID
+	app.agentTasks = []database.AgentTaskEntity{second}
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), second.Task.ID))
+	assert.Equal(t, secondChild.ID, app.sessionID)
+	assert.Equal(t, []string{root.ID, parent.ID}, app.agentTaskSessionStack)
+
+	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+	assert.Equal(t, parent.ID, app.sessionID)
+	assert.Equal(t, []string{root.ID}, app.agentTaskSessionStack)
+}
+
+func assertLoadedChildAgentSession(
+	t *testing.T,
+	app *App,
+	parentID string,
+	childID string,
+	task *database.AgentTaskEntity,
+) {
+	t.Helper()
+	assert.Equal(t, childID, app.sessionID)
+	assert.Zero(t, app.scrollOffset)
+	assert.Equal(t, []string{parentID}, app.agentTaskSessionStack)
+	assert.Equal(t, []database.AgentTaskEntity{*task}, app.agentTasks)
+	assert.NotNil(t, app.renderAgentTaskSummary(80))
+	require.Len(t, app.transcript.History, 2)
+	assert.Equal(t, "loaded child transcript", app.transcript.History[0].Content)
+	assert.Contains(t, app.transcript.History[1].Content, "inspecting agent task")
+	assert.Equal(t, "child-provider", app.currentProvider())
+	assert.Equal(t, "child-model", app.currentModel())
+	assert.Equal(t, themeNameLight, app.theme.name)
+	assert.True(t, app.hideThinking)
+	assert.True(t, app.toolsExpanded)
+	assert.Equal(t, []string{"child-scope"}, app.scopedOrder)
+	assert.True(t, app.scopedEnabled["child-scope"])
+}
+
+func TestDoubleEscapeLeavesAgentTaskSession(t *testing.T) {
+	t.Parallel()
+
+	connection := newPromptSendTestConnection(t)
+	sessions := database.NewSessionRepository(connection)
+	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
+	require.NoError(t, err)
+	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
+	require.NoError(t, err)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = sessions
+	})
+	app.sessionID = child.ID
+	app.agentTaskSessionStack = []string{parent.ID}
+	app.agentTasks = []database.AgentTaskEntity{behaviorAgentTask(behaviorTaskID, database.TaskRunning)}
+	require.True(t, app.focusAgentTaskSummary())
+
+	pressTerminalKey(t, app, tcell.KeyEscape, "")
+	assert.Equal(t, child.ID, app.sessionID)
+	assert.Contains(t, app.statusMessage, "return to parent session")
+
+	pressTerminalKey(t, app, tcell.KeyEscape, "")
+	assert.Equal(t, parent.ID, app.sessionID)
+	assert.Empty(t, app.agentTaskSessionStack)
+}
+
+func TestAltEscapeLeavesAgentTaskSession(t *testing.T) {
+	t.Parallel()
+
+	connection := newPromptSendTestConnection(t)
+	sessions := database.NewSessionRepository(connection)
+	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
+	require.NoError(t, err)
+	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
+	require.NoError(t, err)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = sessions
+	})
+	app.sessionID = child.ID
+	app.agentTaskSessionStack = []string{parent.ID}
+
+	shouldQuit, err := app.handleKey(
+		t.Context(),
+		tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModAlt),
+	)
+	require.NoError(t, err)
+	assert.False(t, shouldQuit)
+	assert.Equal(t, parent.ID, app.sessionID)
+	assert.Empty(t, app.agentTaskSessionStack)
+}
+
+func TestInspectAgentTaskRejectsActivePrompt(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.sessionID = sessionCommandsParentID
+	app.activePrompt = newTestActivePrompt(nil)
+	app.agentTasks = []database.AgentTaskEntity{behaviorAgentTask(behaviorTaskID, database.TaskRunning)}
+
+	err := app.inspectAgentTask(t.Context(), behaviorTaskID)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "prompt is active")
+	assert.Equal(t, sessionCommandsParentID, app.sessionID)
+	assert.Empty(t, app.agentTaskSessionStack)
+	assert.Len(t, app.agentTasks, 1)
+}
+
+func TestInspectedAgentTaskCompletionUpdatesRetainedSummary(t *testing.T) {
+	t.Parallel()
+
+	running := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	finished := running
+	finished.Task.State = database.TaskSucceeded
+	now := time.Now().UTC()
+	finished.Task.FinishedAt = &now
+
+	stub := newAgentTaskControllerStub(
+		map[string]*database.AgentTaskEntity{behaviorTaskID: &finished},
+		nil,
+	)
+	app := newAgentTaskBehaviorApp(t, stub)
+	app.agentTasks = []database.AgentTaskEntity{running}
+	app.agentTaskSessionStack = []string{sessionCommandsParentID}
+	watchCanceled := false
+	app.agentTaskWatches[behaviorTaskID] = func() { watchCanceled = true }
+
+	app.handlePromptAsyncEvent(t.Context(), asyncTestEvent(
+		asyncEventAgentTaskChanged,
+		"",
+		behaviorTaskID,
+		0,
+	))
+
+	require.Len(t, app.agentTasks, 1)
+	assert.Equal(t, database.TaskSucceeded, app.agentTasks[0].Task.State)
+	assert.True(t, watchCanceled)
+	assert.NotContains(t, app.agentTaskWatches, behaviorTaskID)
+	assert.NotContains(t, app.deliveredAgentTasks, behaviorTaskID)
+}
+
+func seedInspectFailureState(app *App, task *database.AgentTaskEntity) func(*testing.T) {
+	app.agentTaskSessionStack = []string{"root-session"}
+	app.agentTasks = []database.AgentTaskEntity{*task}
+	app.activeWorkflows = []database.WorkflowRunEntity{
+		workflowSummaryRun("retained workflow", database.TaskRunning),
+	}
+	app.agentTasksRefreshedAt = time.Now().Add(-time.Minute)
+	app.deliveredAgentTasks["delivered-task"] = struct{}{}
+	watchCanceled := false
+	app.agentTaskWatches[behaviorTaskID] = func() { watchCanceled = true }
+	pendingParentID := "pending-parent"
+	app.pendingParentID = &pendingParentID
+	app.promptHistory = []string{"parent prompt"}
+	app.scrollOffset = 7
+	app.cfg = promptSendTestConfig()
+	app.cfg.Assistant.Provider = "parent-provider"
+	app.cfg.Assistant.Model = "parent-model"
+	app.cfg.Assistant.ThinkingLevel = "high"
+	app.theme = lightTheme()
+	app.hideThinking = true
+	app.toolsExpanded = true
+	app.scopedEnabled = map[string]bool{parentScopeValue: true}
+	app.scopedOrder = []string{parentScopeValue}
+	app.tokenUsage = model.TokenUsage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   128,
+		ContextTokens:   41,
+		InputTokens:     23,
+		OutputTokens:    17,
+	}
+	app.selection = mouseSelection{
+		lastClickUnixNano: 1,
+		startX:            1,
+		startY:            2,
+		endX:              3,
+		endY:              4,
+		lastClickX:        3,
+		lastClickY:        4,
+		clickCount:        1,
+		active:            true,
+	}
+	app.addSystemMessage("parent transcript")
+	_ = app.transcript.LineCache.lines(app, 40, 0)
+	app.transcriptList = transcriptListSelection{MessageIndex: 0, ItemIndex: 1, Active: true}
+	app.panel = panel.New(panelAgentTasks, "Agent Tasks", "", nil, true)
+	app.selectedPanelKind = panelAgentTasks
+	app.mode = modePanel
+
+	return inspectFailureSnapshotWithWatch(app, task, &watchCanceled)
+}
+
+func inspectFailureSnapshotWithWatch(
+	app *App,
+	task *database.AgentTaskEntity,
+	watchCanceled *bool,
+) func(*testing.T) {
+	openPanel := app.panel
+	refreshedAt := app.agentTasksRefreshedAt
+	pendingParentID := *app.pendingParentID
+	promptHistory := append([]string{}, app.promptHistory...)
+	history := append([]chatMessage{}, app.transcript.History...)
+	tokenUsage := app.tokenUsage
+	selection := app.selection
+	transcriptList := app.transcriptList
+	summarySelection := app.agentTaskSummarySelection
+	lineCacheItems := append([]cachedRenderedMessage{}, app.transcript.LineCache.items...)
+	lineCacheState := app.transcript.LineCache.state
+	provider, modelID, thinkingLevel := app.currentProvider(), app.currentModel(), app.currentThinkingLevel()
+	themeName := app.theme.name
+
+	return func(t *testing.T) {
+		t.Helper()
+		assert.Equal(t, []string{"root-session"}, app.agentTaskSessionStack)
+		assert.Equal(t, []database.AgentTaskEntity{*task}, app.agentTasks)
+		assert.Len(t, app.activeWorkflows, 1)
+		assert.Equal(t, refreshedAt, app.agentTasksRefreshedAt)
+		assert.Contains(t, app.deliveredAgentTasks, "delivered-task")
+		assert.Contains(t, app.agentTaskWatches, behaviorTaskID)
+		assert.False(t, *watchCanceled)
+		require.NotNil(t, app.pendingParentID)
+		assert.Equal(t, pendingParentID, *app.pendingParentID)
+		assert.Equal(t, promptHistory, app.promptHistory)
+		assert.Equal(t, 7, app.scrollOffset)
+		assert.Equal(t, provider, app.currentProvider())
+		assert.Equal(t, modelID, app.currentModel())
+		assert.Equal(t, thinkingLevel, app.currentThinkingLevel())
+		assert.Equal(t, themeName, app.theme.name)
+		assert.True(t, app.hideThinking)
+		assert.True(t, app.toolsExpanded)
+		assert.Equal(t, []string{parentScopeValue}, app.scopedOrder)
+		assert.True(t, app.scopedEnabled[parentScopeValue])
+		assert.Equal(t, tokenUsage, app.tokenUsage)
+		assert.Equal(t, selection, app.selection)
+		assert.Equal(t, transcriptList, app.transcriptList)
+		assert.Equal(t, summarySelection, app.agentTaskSummarySelection)
+		assert.Equal(t, lineCacheItems, app.transcript.LineCache.items)
+		assert.Equal(t, lineCacheState, app.transcript.LineCache.state)
+		assert.Same(t, openPanel, app.panel)
+		assert.Equal(t, panelAgentTasks, app.selectedPanelKind)
+		assert.Equal(t, modePanel, app.mode)
+		assert.Equal(t, history, app.transcript.History)
+	}
+}
+
+func TestInspectAgentTaskLookupFailureDoesNotMutateState(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name    string
+		getErr  error
+		mutate  func(*database.AgentTaskEntity)
+		wantErr string
+	}{
+		{
+			name:    "controller error",
+			getErr:  errors.New("controller failed"),
+			mutate:  func(*database.AgentTaskEntity) {},
+			wantErr: "controller failed",
+		},
+		{
+			name:   "wrong owner",
+			getErr: nil,
+			mutate: func(task *database.AgentTaskEntity) {
+				task.Task.OwnerSessionID = "another-session"
+			},
+			wantErr: "outside the current inspection path",
+		},
+		{
+			name:   "missing task",
+			getErr: nil,
+			mutate: func(task *database.AgentTaskEntity) {
+				task.Task.ID = "missing-task"
+			},
+			wantErr: "not found",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+			app := newRenderTestApp(t)
+			app.sessionID = task.Task.OwnerSessionID
+			snapshot := seedInspectFailureState(app, &task)
+
+			controllerTask := task
+			testCase.mutate(&controllerTask)
+			stub := newAgentTaskControllerStub(
+				map[string]*database.AgentTaskEntity{controllerTask.Task.ID: &controllerTask},
+				nil,
+			)
+			stub.getErr = testCase.getErr
+			app.runtime = assistant.NewRuntimeForTest(nil)
+			app.runtime.SetAgentTaskController(stub)
+
+			err := app.inspectAgentTask(t.Context(), behaviorTaskID)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), testCase.wantErr)
+			assert.Equal(t, task.Task.OwnerSessionID, app.sessionID)
+			snapshot(t)
+		})
+	}
+}
+
+func TestInspectAgentTaskLoadFailureDoesNotSwitchSession(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		arrangeFail func(*testing.T, *App, *database.SessionRepository, string)
+		name        string
+	}{
+		{
+			name: "settings load",
+			arrangeFail: func(t *testing.T, app *App, _ *database.SessionRepository, childID string) {
+				t.Helper()
+				require.NoError(t, app.settings.Put(t.Context(), &database.DocumentEntity{
+					UpdatedAt: time.Now().UTC(), Namespace: sessionSettingsNamespace,
+					Key: childID, ValueJSON: "[]",
+				}))
+			},
+		},
+		{
+			name: "messages load",
+			arrangeFail: func(t *testing.T, _ *App, sessions *database.SessionRepository, childID string) {
+				t.Helper()
+				_, err := sessions.AppendMessage(t.Context(), childID, nil, &database.MessageEntity{
+					Timestamp: time.Now().UTC(),
+					Role:      database.RoleUser,
+					Content:   "child message",
+					Provider:  "",
+					Model:     "",
+				})
+				require.NoError(t, err)
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			connection := newPromptSendTestConnection(t)
+			sessions := database.NewSessionRepository(connection)
+			parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
+			require.NoError(t, err)
+			child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
+			require.NoError(t, err)
+
+			task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+			task.Task.OwnerSessionID = parent.ID
+			task.ChildSessionID = child.ID
+			stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{behaviorTaskID: &task}, nil)
+			runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+				options.Sessions = sessions
+			})
+			runtime.SetAgentTaskController(stub)
+
+			app := newRenderTestApp(t)
+			app.runtime = runtime
+			app.settings = database.NewDocumentRepository(connection)
+			app.sessionID = parent.ID
+			snapshot := seedInspectFailureState(app, &task)
+
+			testCase.arrangeFail(t, app, sessions, child.ID)
+
+			if testCase.name == "messages load" {
+				_, err = connection.ExecContext(t.Context(),
+					`UPDATE session_messages SET created_at = 'invalid' WHERE session_id = ?`, child.ID)
+				require.NoError(t, err)
+			}
+
+			err = app.inspectAgentTask(t.Context(), behaviorTaskID)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "load agent session")
+			assert.Equal(t, parent.ID, app.sessionID)
+			snapshot(t)
+		})
+	}
 }
 
 func TestAgentTaskCommandPaths(t *testing.T) {
