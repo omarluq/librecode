@@ -12,6 +12,7 @@ const (
 	providerAzureOpenAIResponses = "azure-openai-responses"
 	providerCerebras             = "cerebras"
 	providerDeepSeek             = "deepseek"
+	providerFireworks            = "fireworks"
 	providerGroq                 = "groq"
 	providerMistral              = "mistral"
 	providerMoonshotAI           = "moonshotai"
@@ -79,6 +80,18 @@ func additionalBuiltInModels() []providerModelPair {
 	return []providerModelPair{
 		{Provider: providerAnthropic, ModelID: anthropicmodel.Mythos5},
 		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Mythos5},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v4-flash"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v4-pro"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/kimi-k2p7-code"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/kimi-k2p6"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/glm-5p2"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/glm-5p1"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/qwen3p7-plus"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/minimax-m3"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/minimax-m2p7"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/gpt-oss-120b"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/gpt-oss-20b"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/nemotron-3-ultra-nvfp4"},
 		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Terra},
 		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Luna},
 		{Provider: providerOpenAI, ModelID: gpt56Terra},
@@ -158,6 +171,7 @@ func defaultProviderMetadata() map[string]providerMetadata {
 		providerAzureOpenAIResponses: azureOpenAIMetadata(),
 		providerCerebras:             openAICompatibleMetadata("https://api.cerebras.ai/v1", true),
 		providerDeepSeek:             openAICompatibleMetadata("https://api.deepseek.com", true),
+		providerFireworks:            openAICompatibleMetadata("https://api.fireworks.ai/inference/v1", false),
 		providerGroq:                 openAICompatibleMetadata("https://api.groq.com/openai/v1", false),
 		providerMistral:              openAICompatibleMetadata("https://api.mistral.ai/v1", false),
 		providerMoonshotAI:           openAICompatibleMetadata("https://api.moonshot.ai/v1", false),
@@ -277,6 +291,7 @@ func providerDisplayNameMap() map[string]string {
 		{Provider: providerAzureOpenAIResponses, Display: "Azure OpenAI Responses"},
 		{Provider: providerCerebras, Display: "Cerebras"},
 		{Provider: providerDeepSeek, Display: "DeepSeek"},
+		{Provider: providerFireworks, Display: "Fireworks AI"},
 		{Provider: providerGroq, Display: "Groq"},
 		{Provider: providerMistral, Display: "Mistral"},
 		{Provider: providerMoonshotAI, Display: "Moonshot AI"},
@@ -301,6 +316,7 @@ func defaultModelMap() map[string]string {
 		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Sol},
 		{Provider: providerCerebras, ModelID: "zai-glm-4.7"},
 		{Provider: providerDeepSeek, ModelID: "deepseek-v4-pro"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v3p1"},
 		{Provider: providerGroq, ModelID: "openai/gpt-oss-120b"},
 		{Provider: providerMistral, ModelID: "devstral-medium-latest"},
 		{Provider: providerMoonshotAI, ModelID: kimiK26},

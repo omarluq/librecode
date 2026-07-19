@@ -141,6 +141,27 @@ func assertThinkingLevelMapping(t *testing.T, builtIn *model.Model, level model.
 	assert.Equal(t, expected, *mapped)
 }
 
+func TestFireworksBuiltInModelsUseOpenAICompatibleMetadata(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "Fireworks AI", model.ProviderDisplayNames()["fireworks"])
+	assert.Equal(t, "accounts/fireworks/models/deepseek-v3p1", model.DefaultModelPerProvider()["fireworks"])
+
+	for _, modelID := range []string{
+		"accounts/fireworks/models/deepseek-v3p1",
+		"accounts/fireworks/models/deepseek-v4-flash",
+		"accounts/fireworks/models/deepseek-v4-pro",
+	} {
+		t.Run(modelID, func(t *testing.T) {
+			t.Parallel()
+
+			builtIn := findBuiltIn(t, "fireworks", modelID)
+			assert.Equal(t, "openai-completions", builtIn.API)
+			assert.Equal(t, "https://api.fireworks.ai/inference/v1", builtIn.BaseURL)
+		})
+	}
+}
+
 func TestZAIBuiltInDefaultUsesGLM52Metadata(t *testing.T) {
 	t.Parallel()
 
@@ -214,7 +235,6 @@ func TestBuiltInProviderCatalogIsTrimmedToImplementedProviders(t *testing.T) {
 		"amazon-bedrock",
 		"cloudflare-ai-gateway",
 		"cloudflare-workers-ai",
-		"fireworks",
 		"github-copilot",
 		"google",
 		"google-vertex",
