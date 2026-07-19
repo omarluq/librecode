@@ -151,6 +151,12 @@ func (app *App) showRuntimeCursor(layout *extui.Layout) {
 		}
 	}
 
+	if app.transcriptListFocused() || app.agentTaskSummaryFocused() {
+		app.screen.HideCursor()
+
+		return
+	}
+
 	composer, ok := windows[extui.BufferComposer]
 	if !ok {
 		app.screen.HideCursor()

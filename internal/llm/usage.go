@@ -12,6 +12,8 @@ type TokenContributor struct {
 }
 
 // Usage tracks model context and request/response token counts.
+// InputTokens and OutputTokens are cumulative across provider rounds in one completion.
+// ContextTokens is the input size of the latest provider request.
 type Usage struct {
 	Breakdown       map[string]int     `json:"breakdown,omitempty"`
 	TopContributors []TokenContributor `json:"top_contributors,omitempty"`

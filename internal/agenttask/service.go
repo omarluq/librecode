@@ -843,11 +843,34 @@ func (service *Service) publish(event *database.TaskEventEntity) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 
+	terminal := isTerminalEventKind(event.Event.Kind)
 	for _, subscriber := range service.subscribers[event.TaskID] {
 		select {
 		case subscriber <- *event:
 		default:
+			if !terminal {
+				continue
+			}
+
+			// Preserve terminal state even when stream deltas have filled the
+			// best-effort subscriber buffer. Evicting one older event is safe:
+			// durable replay repairs the resulting sequence gap.
+			select {
+			case <-subscriber:
+			default:
+			}
+
+			subscriber <- *event
 		}
+	}
+}
+
+func isTerminalEventKind(kind string) bool {
+	switch kind {
+	case "task_succeeded", "task_failed", "task_canceled", "task_interrupted":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -174,6 +174,44 @@ func TestServiceInternalRepositoryAndEventErrors(t *testing.T) {
 	require.ErrorContains(t, err, "get agent task")
 }
 
+func TestServiceInternalTerminalEventSurvivesFullSubscriberBuffer(t *testing.T) {
+	t.Parallel()
+
+	const taskID = "full-buffer-task"
+
+	service := emptyService()
+	service.subscribers = make(map[string]map[uint64]chan database.TaskEventEntity)
+
+	subscription := service.Subscribe(taskID)
+	defer subscription.Cancel()
+
+	events := subscription.Events
+
+	for sequence := int64(1); sequence <= eventBuffer; sequence++ {
+		service.publish(&database.TaskEventEntity{
+			TaskID: taskID, Sequence: sequence,
+			Event: database.EventEntity{
+				CreatedAt: time.Time{}, ID: "", Kind: "text_delta", PayloadJSON: "",
+			},
+		})
+	}
+
+	service.publish(&database.TaskEventEntity{
+		TaskID: taskID, Sequence: eventBuffer + 1,
+		Event: database.EventEntity{
+			CreatedAt: time.Time{}, ID: "", Kind: "task_succeeded", PayloadJSON: "",
+		},
+	})
+
+	received := make([]database.TaskEventEntity, 0, eventBuffer)
+	for range eventBuffer {
+		received = append(received, <-events)
+	}
+
+	assert.Equal(t, int64(2), received[0].Sequence, "oldest stream event should be evicted")
+	assert.Equal(t, "task_succeeded", received[len(received)-1].Event.Kind)
+}
+
 func TestServiceInternalClosesAllSubscriptions(t *testing.T) {
 	t.Parallel()
 

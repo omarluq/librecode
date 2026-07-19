@@ -62,7 +62,20 @@ func (app *App) messageLines(width, maxRows int) []tui.Line {
 }
 
 func (app *App) cachedMessageLines(width, index int) []tui.Line {
-	return app.transcript.LineCache.lines(app, width, index)
+	lines := app.transcript.LineCache.lines(app, width, index)
+	if !app.transcriptListFocused() || app.transcriptList.MessageIndex != index ||
+		!app.validateTranscriptListSelection() {
+		return lines
+	}
+
+	item := app.transcript.LineCache.items[index].ListItems[app.transcriptList.ItemIndex]
+
+	styled := append([]tui.Line{}, lines...)
+	for lineIndex := item.StartLine; lineIndex < item.EndLine && lineIndex < len(styled); lineIndex++ {
+		styled[lineIndex] = applyLineStyle(styled[lineIndex], app.theme.selected())
+	}
+
+	return styled
 }
 
 func (app *App) currentLineCacheState(width int) messageLineCacheState {

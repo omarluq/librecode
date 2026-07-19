@@ -11,7 +11,10 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
-const selectionTaskID = "selection-task"
+const (
+	selectionTaskID   = "selection-task"
+	selectionParentID = "parent-session"
+)
 
 func TestApplySessionSelectionPreservesStateWhenLoadFails(t *testing.T) {
 	t.Parallel()
@@ -25,7 +28,7 @@ func TestApplySessionSelectionPreservesStateWhenLoadFails(t *testing.T) {
 	openPanel := app.panel
 	app.sessionID = "current-session"
 	app.addSystemMessage("existing transcript")
-	app.agentTaskSessionStack = []string{"parent-session"}
+	app.agentTaskSessionStack = []string{selectionParentID}
 	app.agentTasks = make([]database.AgentTaskEntity, 1)
 	app.deliveredAgentTasks = map[string]struct{}{selectionTaskID: {}}
 	watchCanceled := false
@@ -39,7 +42,7 @@ func TestApplySessionSelectionPreservesStateWhenLoadFails(t *testing.T) {
 	assert.Equal(t, "current-session", app.sessionID)
 	require.Len(t, app.transcript.History, 1)
 	assert.Equal(t, "existing transcript", app.transcript.History[0].Content)
-	assert.Equal(t, []string{"parent-session"}, app.agentTaskSessionStack)
+	assert.Equal(t, []string{selectionParentID}, app.agentTaskSessionStack)
 	assert.Len(t, app.agentTasks, 1)
 	assert.Contains(t, app.deliveredAgentTasks, selectionTaskID)
 	assert.Contains(t, app.agentTaskWatches, selectionTaskID)

@@ -78,9 +78,21 @@ type messageLineCacheState struct {
 	ToolsExpanded bool
 }
 
+type markdownListItemRange struct {
+	StartLine int
+	EndLine   int
+}
+
 type cachedRenderedMessage struct {
-	Lines []tui.Line
-	Valid bool
+	Lines     []tui.Line
+	ListItems []markdownListItemRange
+	Valid     bool
+}
+
+type transcriptListSelection struct {
+	MessageIndex int
+	ItemIndex    int
+	Active       bool
 }
 
 type transcriptStreamingState struct {
@@ -117,70 +129,73 @@ type RunOptions struct {
 
 // App is the terminal chat UI.
 type App struct {
-	lastEscape            time.Time
-	lastControlC          time.Time
-	workStartedAt         time.Time
-	screen                terminalScreen
-	extensions            extension.TerminalEventRunner
-	renderer              *tui.Renderer
-	frame                 *tui.CellBuffer
-	lastResize            *tcell.EventResize
-	systemClipboard       systemClipboardWriter
-	runtime               *assistant.Runtime
-	workflows             workflowInspector
-	settings              *database.DocumentRepository
-	models                *model.Registry
-	auth                  *auth.Storage
-	cfg                   *config.Config
-	keys                  *keybindings
-	panel                 *panel.Model
-	pendingParentID       *string
-	activePrompt          *activePromptState
-	activeCompaction      *activeCompactionState
-	scopedEnabled         map[string]bool
-	extensionUI           extui.State
-	theme                 terminalTheme
-	selectedPanelKind     panel.Kind
-	sessionID             string
-	agentTaskSessionStack []string
-	statusMessage         string
-	streamingText         string
-	streamingThinkingText string
-	cwd                   string
-	promptHistoryDraft    string
-	mode                  appMode
-	resources             core.ResourceSnapshot
-	transcript            transcriptState
-	runningToolBlocks     []runningToolBlock
-	liveAgentCompletions  []chatMessage
-	agentTasks            []database.AgentTaskEntity
-	activeWorkflows       []database.WorkflowRunEntity
-	agentTasksRefreshedAt time.Time
-	agentTaskWatches      map[string]context.CancelFunc
-	deliveredAgentTasks   map[string]struct{}
-	queuedMessages        []string
-	hiddenQueuedMessages  []string
-	promptHistory         []string
-	scopedOrder           []string
-	composerBuffer        tui.TextArea
-	tokenUsage            model.TokenUsage
-	selection             mouseSelection
-	promptSequence        uint64
-	workFrame             int
-	streamedToolEvents    int
-	escapePresses         int
-	promptHistoryIndex    int
-	scrollOffset          int
-	autocompleteSelection int
-	autocompleteClosed    bool
-	sessionNamedOnly      bool
-	hideThinking          bool
-	working               bool
-	compacting            bool
-	toolsExpanded         bool
-	authWorking           bool
-	sessionShowPath       bool
-	sessionSortRecent     bool
+	lastEscape                time.Time
+	lastControlC              time.Time
+	workStartedAt             time.Time
+	screen                    terminalScreen
+	extensions                extension.TerminalEventRunner
+	renderer                  *tui.Renderer
+	frame                     *tui.CellBuffer
+	lastResize                *tcell.EventResize
+	systemClipboard           systemClipboardWriter
+	runtime                   *assistant.Runtime
+	workflows                 workflowInspector
+	settings                  *database.DocumentRepository
+	models                    *model.Registry
+	auth                      *auth.Storage
+	cfg                       *config.Config
+	keys                      *keybindings
+	panel                     *panel.Model
+	pendingParentID           *string
+	activePrompt              *activePromptState
+	activeCompaction          *activeCompactionState
+	scopedEnabled             map[string]bool
+	extensionUI               extui.State
+	theme                     terminalTheme
+	selectedPanelKind         panel.Kind
+	sessionID                 string
+	agentTaskSessionStack     []string
+	agentTaskSummaryOwnerID   string
+	statusMessage             string
+	streamingText             string
+	streamingThinkingText     string
+	cwd                       string
+	promptHistoryDraft        string
+	mode                      appMode
+	resources                 core.ResourceSnapshot
+	transcript                transcriptState
+	runningToolBlocks         []runningToolBlock
+	liveAgentCompletions      []chatMessage
+	agentTasks                []database.AgentTaskEntity
+	activeWorkflows           []database.WorkflowRunEntity
+	agentTasksRefreshedAt     time.Time
+	agentTaskWatches          map[string]context.CancelFunc
+	deliveredAgentTasks       map[string]struct{}
+	queuedMessages            []string
+	hiddenQueuedMessages      []string
+	promptHistory             []string
+	scopedOrder               []string
+	composerBuffer            tui.TextArea
+	tokenUsage                model.TokenUsage
+	selection                 mouseSelection
+	transcriptList            transcriptListSelection
+	agentTaskSummarySelection agentTaskSummarySelection
+	promptSequence            uint64
+	workFrame                 int
+	streamedToolEvents        int
+	escapePresses             int
+	promptHistoryIndex        int
+	scrollOffset              int
+	autocompleteSelection     int
+	autocompleteClosed        bool
+	sessionNamedOnly          bool
+	hideThinking              bool
+	working                   bool
+	compacting                bool
+	toolsExpanded             bool
+	authWorking               bool
+	sessionShowPath           bool
+	sessionSortRecent         bool
 }
 
 // Run starts an interactive tcell chat loop.
@@ -231,86 +246,91 @@ type terminalScreen interface {
 }
 
 func newApp(screen terminalScreen, options *RunOptions) *App {
-	appTheme := initialAppTheme(options)
-	resources := initialResourceSnapshot(options)
 	app := &App{
-		screen:                screen,
-		renderer:              tui.NewRenderer(screen),
-		frame:                 nil,
-		lastResize:            nil,
-		systemClipboard:       newDesktopClipboard(),
-		runtime:               options.Runtime,
-		workflows:             options.Workflows,
-		extensions:            options.Extensions,
-		settings:              options.Settings,
-		models:                options.Models,
-		auth:                  options.Auth,
-		cfg:                   options.Config,
-		keys:                  newDefaultKeybindings(),
-		theme:                 appTheme,
-		resources:             resources,
-		mode:                  modeChat,
-		panel:                 nil,
-		cwd:                   options.CWD,
-		sessionID:             options.SessionID,
-		agentTaskSessionStack: []string{},
-		pendingParentID:       nil,
-		activePrompt:          nil,
-		activeCompaction:      nil,
-		transcript: transcriptState{
-			History: []chatMessage{},
-			Streaming: transcriptStreamingState{
-				Blocks:     []chatMessage{},
-				LineCache:  nil,
-				CacheState: emptyMessageLineCacheState(),
-			},
-			LineCache:   emptyMessageLineCache(),
-			LastMaxRows: 0,
-		},
-		runningToolBlocks:     []runningToolBlock{},
-		liveAgentCompletions:  []chatMessage{},
-		agentTasks:            []database.AgentTaskEntity{},
-		activeWorkflows:       []database.WorkflowRunEntity{},
-		agentTasksRefreshedAt: time.Time{},
-		agentTaskWatches:      map[string]context.CancelFunc{},
-		deliveredAgentTasks:   map[string]struct{}{},
-		queuedMessages:        []string{},
-		hiddenQueuedMessages:  []string{},
-		promptHistory:         []string{},
-		promptHistoryDraft:    "",
-		autocompleteSelection: 0,
-		autocompleteClosed:    false,
-		composerBuffer:        tui.NewTextArea(),
-		scopedOrder:           []string{},
-		scopedEnabled:         map[string]bool{},
-		sessionSortRecent:     true,
-		sessionNamedOnly:      false,
-		sessionShowPath:       false,
-		authWorking:           false,
-		toolsExpanded:         false,
-		hideThinking:          false,
-		lastEscape:            time.Time{},
-		lastControlC:          time.Time{},
-		escapePresses:         0,
-		working:               false,
-		compacting:            false,
-		workStartedAt:         time.Time{},
-		workFrame:             0,
-		scrollOffset:          0,
-		selection:             emptyMouseSelection(),
-		streamedToolEvents:    0,
-		promptHistoryIndex:    0,
-		promptSequence:        0,
-		statusMessage:         "",
-		tokenUsage:            model.EmptyTokenUsage(),
-		selectedPanelKind:     "",
-		streamingText:         "",
-		streamingThinkingText: "",
-		extensionUI:           extui.NewState(),
+		screen:                    screen,
+		renderer:                  tui.NewRenderer(screen),
+		frame:                     nil,
+		lastResize:                nil,
+		systemClipboard:           newDesktopClipboard(),
+		runtime:                   options.Runtime,
+		workflows:                 options.Workflows,
+		extensions:                options.Extensions,
+		settings:                  options.Settings,
+		models:                    options.Models,
+		auth:                      options.Auth,
+		cfg:                       options.Config,
+		keys:                      newDefaultKeybindings(),
+		theme:                     initialAppTheme(options),
+		resources:                 initialResourceSnapshot(options),
+		mode:                      modeChat,
+		panel:                     nil,
+		cwd:                       options.CWD,
+		sessionID:                 options.SessionID,
+		agentTaskSessionStack:     []string{},
+		pendingParentID:           nil,
+		activePrompt:              nil,
+		activeCompaction:          nil,
+		transcript:                initialTranscriptState(),
+		runningToolBlocks:         []runningToolBlock{},
+		liveAgentCompletions:      []chatMessage{},
+		agentTasks:                []database.AgentTaskEntity{},
+		activeWorkflows:           []database.WorkflowRunEntity{},
+		agentTaskSummaryOwnerID:   "",
+		agentTasksRefreshedAt:     time.Time{},
+		agentTaskWatches:          map[string]context.CancelFunc{},
+		deliveredAgentTasks:       map[string]struct{}{},
+		queuedMessages:            []string{},
+		hiddenQueuedMessages:      []string{},
+		promptHistory:             []string{},
+		promptHistoryDraft:        "",
+		autocompleteSelection:     0,
+		autocompleteClosed:        false,
+		composerBuffer:            tui.NewTextArea(),
+		scopedOrder:               []string{},
+		scopedEnabled:             map[string]bool{},
+		sessionSortRecent:         true,
+		sessionNamedOnly:          false,
+		sessionShowPath:           false,
+		authWorking:               false,
+		toolsExpanded:             false,
+		hideThinking:              false,
+		lastEscape:                time.Time{},
+		lastControlC:              time.Time{},
+		escapePresses:             0,
+		working:                   false,
+		compacting:                false,
+		workStartedAt:             time.Time{},
+		workFrame:                 0,
+		scrollOffset:              0,
+		selection:                 emptyMouseSelection(),
+		transcriptList:            emptyTranscriptListSelection(),
+		agentTaskSummarySelection: agentTaskSummarySelection{ItemIndex: 0, Active: false},
+		streamedToolEvents:        0,
+		promptHistoryIndex:        0,
+		promptSequence:            0,
+		statusMessage:             "",
+		tokenUsage:                model.EmptyTokenUsage(),
+		selectedPanelKind:         "",
+		streamingText:             "",
+		streamingThinkingText:     "",
+		extensionUI:               extui.NewState(),
 	}
 	app.addWelcomeMessage()
 
 	return app
+}
+
+func initialTranscriptState() transcriptState {
+	return transcriptState{
+		History: []chatMessage{},
+		Streaming: transcriptStreamingState{
+			Blocks:     []chatMessage{},
+			LineCache:  nil,
+			CacheState: emptyMessageLineCacheState(),
+		},
+		LineCache:   emptyMessageLineCache(),
+		LastMaxRows: 0,
+	}
 }
 
 func initialAppTheme(options *RunOptions) terminalTheme {
@@ -629,7 +649,9 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 		asyncEventPromptRetry,
 		asyncEventPromptError,
 		asyncEventPromptContext,
-		asyncEventAgentTaskChanged:
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError:
 		return false
 	}
 
@@ -694,11 +716,14 @@ func emptyCachedRenderedMessage() cachedRenderedMessage {
 }
 
 func (app *App) appendMessage(message chatMessage) {
+	app.blurTranscriptList()
 	app.transcript.History = append(app.transcript.History, message)
 	app.transcript.LineCache.appendInvalidation()
 }
 
 func (app *App) resetMessages() {
+	app.blurTranscriptList()
+	app.scrollOffset = 0
 	app.transcript.History = []chatMessage{}
 	app.transcript.LineCache.reset()
 	app.tokenUsage = model.EmptyTokenUsage()
@@ -706,6 +731,7 @@ func (app *App) resetMessages() {
 }
 
 func (app *App) truncateMessages(length int) {
+	app.blurTranscriptList()
 	app.transcript.History = app.transcript.History[:length]
 	app.transcript.LineCache.truncate(length)
 	app.tokenUsage = model.EmptyTokenUsage()

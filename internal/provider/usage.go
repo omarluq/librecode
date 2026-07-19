@@ -15,6 +15,10 @@ func accumulateUsage(aggregate, reported llm.Usage) llm.Usage {
 	usage.InputTokens = aggregate.InputTokens + reported.InputTokens
 	usage.OutputTokens = aggregate.OutputTokens + reported.OutputTokens
 
+	if reported.ContextTokens <= 0 && reported.InputTokens > 0 {
+		usage.ContextTokens = reported.InputTokens
+	}
+
 	return usage
 }
 

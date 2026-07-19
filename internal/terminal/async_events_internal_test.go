@@ -673,7 +673,7 @@ func promptStreamEventApplyCases() []streamEventApplyCase {
 		},
 		{
 			name:    "tool result appends tool block",
-			payload: asyncTestEventWithTool(asyncEventPromptToolResult, toolEvent),
+			payload: asyncTestEventWithTool(toolEvent),
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
 				require.Len(t, app.transcript.Streaming.Blocks, 1)
@@ -808,8 +808,8 @@ func asyncTestEvent(kind asyncEventKind, provider, text string, promptID uint64)
 	}
 }
 
-func asyncTestEventWithTool(kind asyncEventKind, toolEvent *assistant.ToolEvent) *asyncEvent {
-	event := asyncTestEvent(kind, "", "", 1)
+func asyncTestEventWithTool(toolEvent *assistant.ToolEvent) *asyncEvent {
+	event := asyncTestEvent(asyncEventPromptToolResult, "", "", 1)
 	event.ToolEvent = toolEvent
 
 	return event

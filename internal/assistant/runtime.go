@@ -355,6 +355,35 @@ func (runtime *Runtime) AgentTask(
 	return task, found, nil
 }
 
+type agentTaskEventReader interface {
+	Events(context.Context, string, int64, int) ([]database.TaskEventEntity, error)
+}
+
+// AgentTaskEvents returns durable stream events for one agent task after a sequence.
+func (runtime *Runtime) AgentTaskEvents(
+	ctx context.Context,
+	taskID string,
+	after int64,
+	limit int,
+) ([]database.TaskEventEntity, error) {
+	if runtime == nil || runtime.agentTasks == nil {
+		return nil, nil
+	}
+
+	reader, ok := runtime.agentTasks.(agentTaskEventReader)
+	if !ok {
+		return nil, nil
+	}
+
+	events, err := reader.Events(ctx, taskID, after, limit)
+	if err != nil {
+		return nil, oops.In("assistant").Code("list_agent_task_events").
+			Wrapf(err, "list agent task events")
+	}
+
+	return events, nil
+}
+
 // SubscribeAgentTask follows persisted events for one agent task.
 func (runtime *Runtime) SubscribeAgentTask(
 	taskID string,

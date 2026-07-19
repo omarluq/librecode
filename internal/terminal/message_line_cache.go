@@ -72,15 +72,15 @@ func (cache *messageLineCache) lines(app *App, width, index int) []tui.Line {
 		return cache.items[index].Lines
 	}
 
-	lines := app.renderMessage(width, app.transcript.History[index])
+	rendered := app.renderMessageDetailed(width, app.transcript.History[index])
 	if index >= len(cache.items) {
-		return lines
+		return rendered.Lines
 	}
 
-	cache.items[index] = cachedRenderedMessage{Lines: lines, Valid: true}
+	cache.items[index] = rendered
 	cache.prefixes = nil
 
-	return lines
+	return rendered.Lines
 }
 
 func (cache *messageLineCache) rebuildPrefixes(app *App, width int) {
@@ -89,10 +89,7 @@ func (cache *messageLineCache) rebuildPrefixes(app *App, width int) {
 	prefixes := make([]int, len(cache.items)+1)
 	for index := range cache.items {
 		if !cache.items[index].Valid {
-			cache.items[index] = cachedRenderedMessage{
-				Lines: app.renderMessage(width, app.transcript.History[index]),
-				Valid: true,
-			}
+			cache.items[index] = app.renderMessageDetailed(width, app.transcript.History[index])
 		}
 
 		prefixes[index+1] = prefixes[index] + len(cache.items[index].Lines)
@@ -126,10 +123,7 @@ func (cache *messageLineCache) warmStep(app *App) bool {
 
 	for index := start; index < end; index++ {
 		if !cache.items[index].Valid {
-			cache.items[index] = cachedRenderedMessage{
-				Lines: app.renderMessage(width, app.transcript.History[index]),
-				Valid: true,
-			}
+			cache.items[index] = app.renderMessageDetailed(width, app.transcript.History[index])
 		}
 	}
 

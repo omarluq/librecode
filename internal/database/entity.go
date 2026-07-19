@@ -132,6 +132,8 @@ type TreeNodeEntity struct {
 }
 
 // EntryTokenUsageEntity stores provider-reported token usage on a durable entry.
+// InputTokens and OutputTokens are cumulative across provider rounds in one completion.
+// ContextTokens is the input size of the latest provider request.
 type EntryTokenUsageEntity struct {
 	ContextWindow int `json:"context_window,omitempty"`
 	ContextTokens int `json:"context_tokens,omitempty"`

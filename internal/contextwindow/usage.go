@@ -67,11 +67,11 @@ func EstimateUsageLedInputTokens(
 	contributions []Contribution,
 	usageAnchor *database.ContextUsageAnchorEntity,
 ) int {
-	if usageAnchor != nil && usageAnchor.Usage.InputTokens > 0 && usageAnchor.MessageIndex >= 0 &&
+	if usageAnchor != nil && usageAnchor.Usage.ContextTokens > 0 && usageAnchor.MessageIndex >= 0 &&
 		usageAnchor.MessageIndex < len(messages) {
 		trailingTokens := estimateTrailingInputTokens(messages, contributions, usageAnchor.MessageIndex+1)
 
-		return usageAnchor.Usage.InputTokens + trailingTokens
+		return usageAnchor.Usage.ContextTokens + trailingTokens
 	}
 
 	inputTokens := EstimateInputTokens(systemPrompt, messages)

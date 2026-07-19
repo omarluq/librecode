@@ -19,8 +19,12 @@ func (app *App) handleForceExit() bool {
 }
 
 func (app *App) handleEscape(ctx context.Context) {
+	app.handleEscapePresses(ctx, 1)
+}
+
+func (app *App) handleEscapePresses(ctx context.Context, presses int) {
 	if app.working || app.compacting {
-		app.handleWorkingEscape(ctx, 1)
+		app.handleWorkingEscape(ctx, presses)
 
 		return
 	}
@@ -34,14 +38,28 @@ func (app *App) handleEscape(ctx context.Context) {
 		return
 	}
 
-	if time.Since(app.lastEscape) <= doubleEscapeDelay {
-		app.openTreePanel(ctx)
+	if presses >= interruptEscapePresses || time.Since(app.lastEscape) <= doubleEscapeDelay {
 		app.lastEscape = time.Time{}
+		if len(app.agentTaskSessionStack) > 0 {
+			if err := app.leaveAgentTaskSession(ctx); err != nil {
+				app.setStatus(err.Error())
+			}
+
+			return
+		}
+
+		app.openTreePanel(ctx)
 
 		return
 	}
 
 	app.lastEscape = time.Now()
+	if len(app.agentTaskSessionStack) > 0 {
+		app.setStatus("escape again to return to parent session")
+
+		return
+	}
+
 	app.setStatus("escape again to open /tree")
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -90,6 +91,7 @@ func (app *App) trackStartedAgentTask(ctx context.Context, event *assistant.Tool
 	}
 
 	app.agentTasks = append(app.agentTasks, *task)
+	app.agentTaskSummaryOwnerID = task.Task.OwnerSessionID
 	app.watchActiveAgentTasks(ctx)
 }
 
@@ -108,17 +110,27 @@ func (app *App) resetAgentTaskTracking() {
 	app.stopAgentTaskWatches()
 	app.agentTasks = nil
 	app.activeWorkflows = nil
+	app.agentTaskSummaryOwnerID = ""
 	app.agentTasksRefreshedAt = time.Time{}
 	app.deliveredAgentTasks = map[string]struct{}{}
 }
 
 func (app *App) refreshVisibleAgentTasks(ctx context.Context) {
+	// Keep the parent's task summary stable while its child transcript is open.
+	// Returning to the parent refreshes the retained summary.
+	if len(app.agentTaskSessionStack) > 0 {
+		return
+	}
+
 	if app.runtime == nil || app.sessionID == "" {
 		app.agentTasks = nil
 		app.activeWorkflows = nil
+		app.agentTaskSummaryOwnerID = ""
 
 		return
 	}
+
+	app.agentTaskSummaryOwnerID = app.sessionID
 
 	if len(app.agentTasks) == 0 {
 		app.discoverActiveAgentTasks(ctx)
@@ -301,6 +313,7 @@ func (app *App) discoverActiveAgentTasks(ctx context.Context) {
 	}
 
 	app.agentTasks = active
+	app.agentTaskSummaryOwnerID = app.sessionID
 	app.watchActiveAgentTasks(ctx)
 }
 
@@ -312,9 +325,15 @@ func (app *App) watchActiveAgentTasks(ctx context.Context) {
 		}
 
 		events, cancelSubscription := app.runtime.SubscribeAgentTask(taskID)
-		app.agentTaskWatches[taskID] = cancelSubscription
+		watchCtx, cancelWatch := context.WithCancel(ctx)
+		app.agentTaskWatches[taskID] = func() {
+			cancelWatch()
+			cancelSubscription()
+		}
 
-		go app.watchAgentTask(ctx, taskID, events, cancelSubscription)
+		go app.watchAgentTaskEventsWithRuntime(
+			watchCtx, app.runtime, taskID, events, cancelSubscription, true,
+		)
 	}
 }
 
@@ -324,42 +343,414 @@ func (app *App) watchAgentTask(
 	events <-chan database.TaskEventEntity,
 	cancelSubscription func(),
 ) {
+	app.watchAgentTaskEvents(ctx, taskID, events, cancelSubscription, false)
+}
+
+func (app *App) watchAgentTaskEvents(
+	ctx context.Context,
+	taskID string,
+	events <-chan database.TaskEventEntity,
+	cancelSubscription func(),
+	replay bool,
+) {
+	app.watchAgentTaskEventsWithRuntime(ctx, app.runtime, taskID, events, cancelSubscription, replay)
+}
+
+func (app *App) watchAgentTaskEventsWithRuntime(
+	ctx context.Context,
+	runtime *assistant.Runtime,
+	taskID string,
+	events <-chan database.TaskEventEntity,
+	cancelSubscription func(),
+	replay bool,
+) {
 	defer cancelSubscription()
 
+	var (
+		sequence int64
+		terminal bool
+	)
+
+	if replay {
+		var err error
+
+		sequence, terminal, err = app.replayAgentTaskEventsWithRuntime(ctx, runtime, taskID, 0)
+		if err != nil {
+			app.postAgentTaskReplayError(ctx, taskID, err)
+
+			return
+		}
+
+		if terminal {
+			return
+		}
+	}
+
 	for {
-		select {
-		case event, open := <-events:
-			if !open {
-				return
-			}
+		event, open := nextAgentTaskEvent(ctx, events)
+		if !open {
+			app.reconcileClosedAgentTaskWatch(ctx, runtime, taskID, sequence)
 
-			if isTerminalAgentTaskEvent(event.Event.Kind) {
-				app.postAgentTaskChanged(ctx, taskID)
+			return
+		}
 
-				return
-			}
-		case <-ctx.Done():
+		sequence, terminal = app.forwardAgentTaskEventWithRuntime(
+			ctx, runtime, taskID, &event, sequence, replay,
+		)
+		if terminal {
 			return
 		}
 	}
 }
 
+func (app *App) reconcileClosedAgentTaskWatch(
+	ctx context.Context,
+	runtime *assistant.Runtime,
+	taskID string,
+	sequence int64,
+) {
+	if ctx.Err() != nil || runtime == nil {
+		return
+	}
+
+	_, reachedTerminal, err := app.replayAgentTaskEventsWithRuntime(ctx, runtime, taskID, sequence)
+	if err != nil {
+		app.postAgentTaskReplayError(ctx, taskID, err)
+	} else if !reachedTerminal {
+		app.postAgentTaskWatchClosed(ctx, taskID)
+	}
+}
+
+func nextAgentTaskEvent(
+	ctx context.Context,
+	events <-chan database.TaskEventEntity,
+) (database.TaskEventEntity, bool) {
+	select {
+	case event, open := <-events:
+		return event, open
+	case <-ctx.Done():
+		return database.TaskEventEntity{
+			Event:  database.EventEntity{CreatedAt: time.Time{}, ID: "", Kind: "", PayloadJSON: ""},
+			TaskID: "", Sequence: 0,
+		}, false
+	}
+}
+
+func (app *App) forwardAgentTaskEvent(
+	ctx context.Context,
+	taskID string,
+	event *database.TaskEventEntity,
+	sequence int64,
+	replay bool,
+) (int64, bool) {
+	return app.forwardAgentTaskEventWithRuntime(ctx, app.runtime, taskID, event, sequence, replay)
+}
+
+func (app *App) forwardAgentTaskEventWithRuntime(
+	ctx context.Context,
+	runtime *assistant.Runtime,
+	taskID string,
+	event *database.TaskEventEntity,
+	sequence int64,
+	replay bool,
+) (int64, bool) {
+	if event.Sequence <= sequence {
+		return sequence, false
+	}
+
+	if replay && event.Sequence > sequence+1 {
+		var (
+			terminal bool
+			err      error
+		)
+
+		sequence, terminal, err = app.replayAgentTaskEventsWithRuntime(
+			ctx, runtime, taskID, sequence,
+		)
+		if err != nil {
+			app.postAgentTaskReplayError(ctx, taskID, err)
+
+			return sequence, true
+		}
+
+		if terminal || event.Sequence <= sequence {
+			return sequence, terminal
+		}
+
+		if event.Sequence != sequence+1 {
+			app.postAgentTaskReplayError(ctx, taskID, fmt.Errorf(
+				"durable replay ended at sequence %d before live sequence %d",
+				sequence,
+				event.Sequence,
+			))
+
+			return sequence, true
+		}
+	}
+
+	sequence = event.Sequence
+	if isTerminalAgentTaskEvent(event.Event.Kind) {
+		app.postAgentTaskChanged(ctx, taskID)
+
+		return sequence, true
+	}
+
+	app.postAgentTaskStreamEvent(ctx, event)
+
+	return sequence, false
+}
+
+func (app *App) watchInspectedAgentTask(ctx context.Context, taskID string) {
+	app.stopAgentTaskWatch(taskID)
+
+	events, cancelSubscription := app.runtime.SubscribeAgentTask(taskID)
+	watchCtx, cancelWatch := context.WithCancel(ctx)
+	app.agentTaskWatches[taskID] = func() {
+		cancelWatch()
+		cancelSubscription()
+	}
+
+	go app.watchAgentTaskEventsWithRuntime(
+		watchCtx, app.runtime, taskID, events, cancelSubscription, true,
+	)
+}
+
+func (app *App) replayAgentTaskEventsWithRuntime(
+	ctx context.Context,
+	runtime *assistant.Runtime,
+	taskID string,
+	after int64,
+) (sequence int64, terminal bool, err error) {
+	const replayLimit = 256
+
+	for {
+		events, err := runtime.AgentTaskEvents(ctx, taskID, after, replayLimit)
+		if err != nil {
+			return after, false, fmt.Errorf("replay agent task events: %w", err)
+		}
+
+		var terminal bool
+
+		after, terminal, err = app.applyReplayedAgentTaskEvents(ctx, taskID, events, after)
+		if err != nil || terminal {
+			return after, terminal, err
+		}
+
+		if len(events) < replayLimit {
+			return after, false, nil
+		}
+	}
+}
+
+func (app *App) applyReplayedAgentTaskEvents(
+	ctx context.Context,
+	taskID string,
+	events []database.TaskEventEntity,
+	after int64,
+) (sequence int64, terminal bool, err error) {
+	for index := range events {
+		event := &events[index]
+		if event.Sequence <= after {
+			continue
+		}
+
+		if event.Sequence != after+1 {
+			return after, false, fmt.Errorf(
+				"replay agent task events: expected sequence %d, got %d",
+				after+1,
+				event.Sequence,
+			)
+		}
+
+		after = event.Sequence
+		if isTerminalAgentTaskEvent(event.Event.Kind) {
+			app.postAgentTaskChanged(ctx, taskID)
+
+			return after, true, nil
+		}
+
+		app.postAgentTaskStreamEvent(ctx, event)
+	}
+
+	return after, false, nil
+}
+
 func (app *App) postAgentTaskChanged(ctx context.Context, taskID string) {
 	app.postAsyncEvent(ctx, &asyncEvent{
-		Response:      nil,
-		ToolCallEvent: nil,
-		ToolEvent:     nil,
-		Usage:         nil,
-		Kind:          asyncEventAgentTaskChanged,
-		Provider:      "",
-		Text:          taskID,
-		PromptID:      0,
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventAgentTaskChanged, Provider: "", Text: taskID, PromptID: 0,
 	})
 }
 
+func (app *App) postAgentTaskWatchClosed(ctx context.Context, taskID string) {
+	app.postAsyncEvent(ctx, &asyncEvent{
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventAgentTaskReplayError, Provider: taskID,
+		Text: "agent task event stream closed; refreshed durable state", PromptID: 0,
+	})
+}
+
+func (app *App) postAgentTaskReplayError(ctx context.Context, taskID string, err error) {
+	app.postAsyncEvent(ctx, &asyncEvent{
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventAgentTaskReplayError, Provider: taskID,
+		Text: "failed to replay agent task activity: " + err.Error(), PromptID: 0,
+	})
+}
+
+func (app *App) handleAgentTaskWatchError(ctx context.Context, taskID, message string) {
+	app.addSystemMessage(message)
+
+	if len(app.agentTaskSessionStack) > 0 {
+		app.stopAgentTaskWatch(taskID)
+		app.reloadInspectedAgentTaskTranscript(ctx, taskID)
+
+		return
+	}
+
+	// Refresh while the failed watch is still registered so the refresh cannot
+	// immediately create another watcher that repeats the same replay failure.
+	app.refreshVisibleAgentTasks(ctx)
+	app.stopAgentTaskWatch(taskID)
+}
+
+func (app *App) postAgentTaskStreamEvent(ctx context.Context, event *database.TaskEventEntity) {
+	app.postAsyncEvent(ctx, &asyncEvent{
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventAgentTaskStream, Provider: event.TaskID, Text: event.Event.PayloadJSON, PromptID: 0,
+	})
+}
+
+func (app *App) handleAgentTaskTerminalEvent(ctx context.Context, taskID string) {
+	if len(app.agentTaskSessionStack) == 0 {
+		app.refreshVisibleAgentTasks(ctx)
+
+		return
+	}
+
+	app.refreshInspectedParentAgentTask(ctx, taskID)
+	app.reloadInspectedAgentTaskTranscript(ctx, taskID)
+}
+
+func (app *App) applyInspectedAgentTaskEvent(ctx context.Context, taskID, payloadJSON string) {
+	if taskID == "" || len(app.agentTaskSessionStack) == 0 || app.runtime == nil {
+		return
+	}
+
+	task, found, err := app.runtime.AgentTask(ctx, taskID)
+	if err != nil || !found || task.ChildSessionID != app.sessionID {
+		return
+	}
+
+	var streamEvent assistant.StreamEvent
+	if err := json.Unmarshal([]byte(payloadJSON), &streamEvent); err != nil {
+		return
+	}
+
+	payload, ok := asyncEventFromStreamEvent(streamEvent, 0)
+	if !ok {
+		return
+	}
+
+	app.renderInspectedAgentTaskEvent(payload)
+}
+
+func (app *App) renderInspectedAgentTaskEvent(payload *asyncEvent) {
+	if payload == nil {
+		return
+	}
+
+	switch payload.Kind {
+	case asyncEventPromptDelta:
+		app.appendStreamingBlock(transcript.RoleAssistant, payload.Text)
+	case asyncEventPromptThinkingDelta:
+		app.appendStreamingBlock(transcript.RoleThinking, payload.Text)
+	case asyncEventPromptToolStart:
+		app.applyStreamedToolStart(payload.ToolCallEvent, payload.Text)
+	case asyncEventPromptToolResult:
+		app.renderInspectedToolResult(payload.ToolEvent)
+	case asyncEventPromptContext,
+		asyncEventCompactStart,
+		asyncEventCompactDone,
+		asyncEventCompactError:
+		if payload.Text != "" {
+			app.addSystemMessage(payload.Text)
+		}
+	case asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot,
+		asyncEventPromptDone,
+		asyncEventPromptUserEntry,
+		asyncEventPromptRetry,
+		asyncEventPromptError,
+		asyncEventAuthURL,
+		asyncEventAuthDone,
+		asyncEventAuthError,
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError,
+		asyncEventAgentTaskCompleted:
+		return
+	}
+}
+
+func (app *App) renderInspectedToolResult(event *assistant.ToolEvent) {
+	if event == nil || isAgentManagementTool(event.Name) {
+		return
+	}
+
+	app.removeRunningToolBlock(event)
+	app.appendStreamingBlock(transcript.RoleToolResult, formatToolEventForUI(event))
+	app.streamedToolEvents++
+}
+
+func (app *App) reloadInspectedAgentTaskTranscript(ctx context.Context, taskID string) {
+	task, found, err := app.runtime.AgentTask(ctx, taskID)
+	if err != nil || !found || task.ChildSessionID != app.sessionID {
+		return
+	}
+
+	messages, err := app.sessionMessages(ctx, task.ChildSessionID)
+	if err != nil {
+		app.addSystemMessage(err.Error())
+
+		return
+	}
+
+	app.resetMessages()
+	app.resetStreamingBlocks()
+	app.appendSessionMessages(messages)
+	app.addSystemMessage("inspecting agent task: " + taskID + "; use /agents back to return")
+}
+
+func (app *App) refreshInspectedParentAgentTask(ctx context.Context, taskID string) {
+	if app.runtime == nil || taskID == "" {
+		return
+	}
+
+	latest, found, err := app.runtime.AgentTask(ctx, taskID)
+	if err != nil || !found {
+		return
+	}
+
+	for index := range app.agentTasks {
+		if app.agentTasks[index].Task.ID != taskID {
+			continue
+		}
+
+		app.agentTasks[index] = *latest
+		if isTerminalAgentTaskState(latest.Task.State) {
+			app.stopAgentTaskWatch(taskID)
+		}
+
+		return
+	}
+}
+
+const agentTaskSucceededEvent = "task_succeeded"
+
 func isTerminalAgentTaskEvent(kind string) bool {
 	switch kind {
-	case "task_succeeded", "task_failed", "task_canceled", "task_interrupted":
+	case agentTaskSucceededEvent, "task_failed", "task_canceled", "task_interrupted":
 		return true
 	default:
 		return false
@@ -425,6 +816,7 @@ func (app *App) refreshActiveAgentTasks(ctx context.Context) {
 	}
 
 	app.agentTasks = active
+	app.agentTaskSummaryOwnerID = app.sessionID
 	app.watchActiveAgentTasks(ctx)
 
 	for index := range completed {
@@ -688,6 +1080,8 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 	labelStyle := tcell.StyleDefault.Foreground(app.theme.colors[colorMuted])
 
 	lines := make([]tui.Line, 0, len(app.activeWorkflows)+len(app.agentTasks)+1)
+	selectedIndex := app.selectedAgentTaskSummaryIndex()
+
 	for index := range app.activeWorkflows {
 		label := workflowSummaryLabel(&app.activeWorkflows[index])
 		line := tui.Line{
@@ -697,7 +1091,7 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 				{Text: " " + label, Style: labelStyle},
 			},
 		}
-		lines = append(lines, line.Truncate(max(1, width)))
+		lines = append(lines, app.styleAgentTaskSummaryLine(line, width, len(lines) == selectedIndex))
 	}
 
 	for index := range app.agentTasks {
@@ -715,7 +1109,7 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 				{Text: " " + label, Style: labelStyle},
 			},
 		}
-		lines = append(lines, line.Truncate(max(1, width)))
+		lines = append(lines, app.styleAgentTaskSummaryLine(line, width, len(lines) == selectedIndex))
 	}
 
 	if len(lines) == 0 {
@@ -727,17 +1121,34 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 	return lines
 }
 
+func (app *App) selectedAgentTaskSummaryIndex() int {
+	if app.validateAgentTaskSummarySelection() {
+		return app.agentTaskSummarySelection.ItemIndex
+	}
+
+	return -1
+}
+
+func (app *App) styleAgentTaskSummaryLine(line tui.Line, width int, selected bool) tui.Line {
+	line = line.Truncate(max(1, width))
+	if selected {
+		return applyLineStyle(line, app.theme.selected())
+	}
+
+	return line
+}
+
 func workflowSummaryLabel(run *database.WorkflowRunEntity) string {
 	if run == nil {
-		return "workflow"
+		return toolDisplayWorkflow
 	}
 
 	name := strings.Join(strings.Fields(run.Name), " ")
 	if name == "" {
-		return "workflow"
+		return toolDisplayWorkflow
 	}
 
-	return "workflow(" + name + ")"
+	return toolDisplayWorkflow + "(" + name + ")"
 }
 
 func agentTaskSummaryLabel(task *database.AgentTaskEntity) string {
@@ -868,33 +1279,93 @@ func taskMeta(task *database.TaskEntity, now time.Time) string {
 }
 
 func (app *App) inspectAgentTask(ctx context.Context, taskID string) error {
+	if app.busy() || app.activePrompt != nil {
+		return errors.New("cannot inspect an agent task while a prompt is active")
+	}
+
+	if app.runtime == nil {
+		return terminalError(errors.New("runtime is not configured"), "load agent task")
+	}
+
 	task, found, err := app.runtime.AgentTask(ctx, taskID)
 	if err != nil {
 		return terminalError(err, "load agent task")
 	}
 
-	if !found || task.Task.OwnerSessionID != app.sessionID {
+	if !found {
 		return fmt.Errorf("agent task %q not found", taskID)
 	}
 
-	app.agentTaskSessionStack = append(app.agentTaskSessionStack, app.sessionID)
-	app.resetAgentTaskTracking()
+	nextSessionStack, ownerFound := app.agentTaskInspectionStack(task.Task.OwnerSessionID)
+	if !ownerFound {
+		return fmt.Errorf(
+			"agent task %q belongs to session %q outside the current inspection path",
+			taskID,
+			task.Task.OwnerSessionID,
+		)
+	}
+
+	settings, settingsFound, err := app.sessionSettings(ctx, task.ChildSessionID)
+	if err != nil {
+		return terminalError(err, "load agent session")
+	}
+
+	messages, err := app.sessionMessages(ctx, task.ChildSessionID)
+	if err != nil {
+		return terminalError(err, "load agent session")
+	}
+
+	app.stopAgentTaskWatches()
+	app.agentTaskSessionStack = nextSessionStack
 	app.sessionID = task.ChildSessionID
 	app.pendingParentID = nil
 	app.resetMessages()
+	app.resetStreamingBlocks()
 
-	if err := app.loadSessionSettings(ctx); err != nil {
-		return terminalError(err, "load agent session")
+	if settingsFound {
+		app.applySessionSettings(&settings)
 	}
 
-	if err := app.loadInitialMessages(ctx); err != nil {
-		return terminalError(err, "load agent session")
-	}
+	app.appendSessionMessages(messages)
+
+	app.watchInspectedTaskIfRunning(ctx, task)
 
 	app.closePanel()
 	app.addSystemMessage("inspecting agent task: " + taskID + "; use /agents back to return")
 
 	return nil
+}
+
+func (app *App) watchInspectedTaskIfRunning(ctx context.Context, task *database.AgentTaskEntity) {
+	if task != nil && !isTerminalAgentTaskState(task.Task.State) {
+		app.watchInspectedAgentTask(ctx, task.Task.ID)
+	}
+}
+
+func (app *App) agentTaskInspectionStack(ownerSessionID string) ([]string, bool) {
+	if ownerSessionID == app.sessionID {
+		stack := slices.Clone(app.agentTaskSessionStack)
+
+		return append(stack, app.sessionID), true
+	}
+
+	for index, sessionID := range slices.Backward(app.agentTaskSessionStack) {
+		if sessionID == ownerSessionID {
+			return slices.Clone(app.agentTaskSessionStack[:index+1]), true
+		}
+	}
+
+	if len(app.agentTaskSessionStack) > 0 &&
+		ownerSessionID != "" && ownerSessionID == app.agentTaskSummaryOwnerID {
+		stack := slices.Clone(app.agentTaskSessionStack)
+		if len(stack) == 0 || stack[len(stack)-1] != ownerSessionID {
+			stack = append(stack, ownerSessionID)
+		}
+
+		return stack, true
+	}
+
+	return nil, false
 }
 
 func (app *App) leaveAgentTaskSession(ctx context.Context) error {
@@ -903,23 +1374,58 @@ func (app *App) leaveAgentTaskSession(ctx context.Context) error {
 	}
 
 	last := len(app.agentTaskSessionStack) - 1
-	app.resetAgentTaskTracking()
-	app.sessionID = app.agentTaskSessionStack[last]
+	parentSessionID := app.agentTaskSessionStack[last]
+
+	settings, settingsFound, err := app.sessionSettings(ctx, parentSessionID)
+	if err != nil {
+		return terminalError(err, "load parent session")
+	}
+
+	messages, err := app.sessionMessages(ctx, parentSessionID)
+	if err != nil {
+		return terminalError(err, "load parent session")
+	}
+
+	app.stopAgentTaskWatches()
+	app.sessionID = parentSessionID
 	app.agentTaskSessionStack = app.agentTaskSessionStack[:last]
 	app.pendingParentID = nil
 	app.resetMessages()
+	app.resetStreamingBlocks()
 
-	if err := app.loadSessionSettings(ctx); err != nil {
-		return terminalError(err, "load parent session")
+	if settingsFound {
+		app.applySessionSettings(&settings)
 	}
 
-	if err := app.loadInitialMessages(ctx); err != nil {
-		return terminalError(err, "load parent session")
-	}
-
+	app.appendSessionMessages(messages)
 	app.addSystemMessage("returned to parent session")
 
+	if len(app.agentTaskSessionStack) == 0 {
+		app.refreshVisibleAgentTasks(ctx)
+	} else {
+		app.resumeInspectedAgentTask(ctx, parentSessionID)
+	}
+
 	return nil
+}
+
+func (app *App) resumeInspectedAgentTask(ctx context.Context, childSessionID string) {
+	ownerSessionID := app.agentTaskSessionStack[len(app.agentTaskSessionStack)-1]
+
+	tasks, err := app.runtime.AgentTasks(ctx, ownerSessionID, agentTaskInlineLimit)
+	if err != nil {
+		app.addSystemMessage("failed to resume agent task activity: " + err.Error())
+
+		return
+	}
+
+	for index := range tasks {
+		if tasks[index].ChildSessionID == childSessionID {
+			app.watchInspectedTaskIfRunning(ctx, &tasks[index])
+
+			return
+		}
+	}
 }
 
 func (app *App) handleAgentTasksPanelKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
