@@ -28,12 +28,8 @@ const (
 func TestInspectedAgentTaskRendersLiveStreamAndReloadsOnCompletion(t *testing.T) {
 	t.Parallel()
 
-	connection := newPromptSendTestConnection(t)
-	sessions := database.NewSessionRepository(connection)
-	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
-	require.NoError(t, err)
-	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
-	require.NoError(t, err)
+	fixture := newAgentTaskSessionPair(t)
+	sessions, parent, child := fixture.sessions, fixture.parent, fixture.child
 
 	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
 	task.Task.OwnerSessionID = parent.ID
@@ -62,7 +58,7 @@ func TestInspectedAgentTaskRendersLiveStreamAndReloadsOnCompletion(t *testing.T)
 	assert.Equal(t, transcript.RoleThinking, app.transcript.Streaming.Blocks[0].Role)
 	assert.Equal(t, "working on it", app.transcript.Streaming.Blocks[1].Content)
 
-	_, err = sessions.AppendMessage(t.Context(), child.ID, nil, &database.MessageEntity{
+	_, err := sessions.AppendMessage(t.Context(), child.ID, nil, &database.MessageEntity{
 		Timestamp: time.Now().UTC(), Role: database.RoleAssistant, Content: "finished result",
 		Provider: "provider", Model: "model",
 	})
@@ -166,12 +162,8 @@ func TestInspectedAgentTaskToolResultsHaveNoOperationalSideEffects(t *testing.T)
 func TestInspectRunningAgentTaskReplaysActivityEmittedBeforeSubscription(t *testing.T) {
 	t.Parallel()
 
-	connection := newPromptSendTestConnection(t)
-	sessions := database.NewSessionRepository(connection)
-	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
-	require.NoError(t, err)
-	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
-	require.NoError(t, err)
+	fixture := newAgentTaskSessionPair(t)
+	sessions, parent, child := fixture.sessions, fixture.parent, fixture.child
 
 	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
 	task.Task.OwnerSessionID = parent.ID
@@ -216,8 +208,8 @@ func TestInspectRunningAgentTaskReplaysActivityEmittedBeforeSubscription(t *test
 		case event := <-screen.EventQ():
 			interrupt, ok := event.(*tcell.EventInterrupt)
 			require.True(t, ok)
-			_, err = app.handleInterrupt(t.Context(), interrupt)
-			require.NoError(t, err)
+			_, handleErr := app.handleInterrupt(t.Context(), interrupt)
+			require.NoError(t, handleErr)
 		case <-time.After(time.Second):
 			require.FailNow(t, "timed out waiting for replayed task activity")
 		}
