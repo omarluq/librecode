@@ -112,7 +112,9 @@ func builtInDefaultModel(provider, modelID string) Model {
 	for _, pair := range additionalBuiltInModels() {
 		if pair.Provider == provider && pair.ModelID == modelID {
 			model := builtInDefaultModelWithMetadata(provider, modelID, metadata)
-			model.Name = pair.Name
+			if pair.Name != "" {
+				model.Name = pair.Name
+			}
 			return model
 		}
 	}
