@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -76,6 +77,66 @@ func TestLoginAnthropicWithCodeRejectsInvalidCode(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, credential)
 	assert.Contains(t, err.Error(), "code#state")
+}
+
+func TestAnthropicCallbackReceivesCodeAndHandlesContext(t *testing.T) {
+	t.Parallel()
+
+	server, err := startAnthropicCallbackServer("state")
+	if err != nil {
+		t.Skipf("callback port unavailable: %v", err)
+	}
+	defer server.Close(context.Background())
+
+	request, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		anthropicRedirectEndpoint()+"?state=state&code=auth-code",
+		http.NoBody,
+	)
+	require.NoError(t, err)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	require.NoError(t, response.Body.Close())
+
+	code, err := server.Wait(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "auth-code", code)
+
+	waiting := &anthropicCallbackServer{
+		server:     &http.Server{ReadHeaderTimeout: oauthCallbackTimeout},
+		codes:      make(chan callbackResult),
+		codePrefix: "anthropic",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	code, err = waiting.Wait(ctx)
+	require.Error(t, err)
+	assert.Empty(t, code)
+}
+
+func TestAnthropicCallbackRejectsStateMismatch(t *testing.T) {
+	t.Parallel()
+
+	codes := make(chan callbackResult, 1)
+	handler := oauthCallbackHandler("expected-state", codes)
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		anthropicRedirectEndpoint()+"?state=wrong&code=auth-code",
+		nil,
+	)
+	response := httptest.NewRecorder()
+
+	handler(response, request)
+
+	assert.Equal(t, http.StatusBadRequest, response.Code)
+
+	result := <-codes
+	require.Error(t, result.Err)
+	assert.Contains(t, result.Err.Error(), "state mismatch")
 }
 
 func TestAnthropicAPIKey(t *testing.T) {

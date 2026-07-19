@@ -168,10 +168,13 @@ func newOpenAICodexFlow() (*openAICodexFlow, error) {
 	return &openAICodexFlow{Verifier: verifier, State: state, URL: authURL.String()}, nil
 }
 
-type openAICodexCallbackServer struct {
-	server *http.Server
-	codes  chan callbackResult
+type oauthCallbackServer struct {
+	server     *http.Server
+	codes      chan callbackResult
+	codePrefix string
 }
+
+type openAICodexCallbackServer = oauthCallbackServer
 
 type callbackResult struct {
 	Err  error
@@ -179,9 +182,39 @@ type callbackResult struct {
 }
 
 func startOpenAICodexCallbackServer(state string) (*openAICodexCallbackServer, error) {
+	return startOAuthCallbackServer(openAICodexCallback, "/auth/callback", state, "codex")
+}
+
+func startOAuthCallbackServer(address, callbackPath, state, codePrefix string) (*oauthCallbackServer, error) {
 	codes := make(chan callbackResult, 1)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/auth/callback", func(writer http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc(callbackPath, oauthCallbackHandler(state, codes))
+	mux.HandleFunc("/", func(writer http.ResponseWriter, _ *http.Request) {
+		writeOAuthHTML(writer, http.StatusNotFound, "Callback route not found.")
+	})
+
+	server := &http.Server{
+		Addr:              address,
+		Handler:           mux,
+		ReadHeaderTimeout: oauthCallbackTimeout,
+	}
+
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", address)
+	if err != nil {
+		return nil, oops.In("auth").Code(codePrefix+"_callback_listen").Wrapf(err, "listen for oauth callback")
+	}
+
+	go func() {
+		if serveErr := server.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
+			codes <- callbackResult{Code: "", Err: serveErr}
+		}
+	}()
+
+	return &oauthCallbackServer{server: server, codes: codes, codePrefix: codePrefix}, nil
+}
+
+func oauthCallbackHandler(state string, codes chan<- callbackResult) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
 		query := request.URL.Query()
 		if query.Get("state") != state {
 			writeOAuthHTML(writer, http.StatusBadRequest, "Authentication state mismatch.")
@@ -203,45 +236,26 @@ func startOpenAICodexCallbackServer(state string) (*openAICodexCallbackServer, e
 		writeOAuthHTML(writer, http.StatusOK, "librecode authentication complete. You can close this tab.")
 
 		codes <- callbackResult{Code: code, Err: nil}
-	})
-	mux.HandleFunc("/", func(writer http.ResponseWriter, _ *http.Request) {
-		writeOAuthHTML(writer, http.StatusNotFound, "Callback route not found.")
-	})
-
-	server := &http.Server{
-		Addr:              openAICodexCallback,
-		Handler:           mux,
-		ReadHeaderTimeout: oauthCallbackTimeout,
 	}
-
-	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", openAICodexCallback)
-	if err != nil {
-		return nil, oops.In("auth").Code("codex_callback_listen").Wrapf(err, "listen for oauth callback")
-	}
-
-	go func() {
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			codes <- callbackResult{Code: "", Err: err}
-		}
-	}()
-
-	return &openAICodexCallbackServer{server: server, codes: codes}, nil
 }
 
-func (server *openAICodexCallbackServer) Wait(ctx context.Context) (string, error) {
+func (server *oauthCallbackServer) Wait(ctx context.Context) (string, error) {
 	select {
 	case result := <-server.codes:
 		if result.Err != nil {
-			return "", oops.In("auth").Code("codex_callback").Wrapf(result.Err, "receive oauth callback")
+			return "", oops.In("auth").Code(server.codePrefix+"_callback").Wrapf(result.Err, "receive oauth callback")
 		}
 
 		return result.Code, nil
 	case <-ctx.Done():
-		return "", oops.In("auth").Code("codex_callback_canceled").Wrapf(ctx.Err(), "wait for oauth callback")
+		return "", oops.In("auth").Code(server.codePrefix+"_callback_canceled").Wrapf(
+			ctx.Err(),
+			"wait for oauth callback",
+		)
 	}
 }
 
-func (server *openAICodexCallbackServer) Close(ctx context.Context) {
+func (server *oauthCallbackServer) Close(ctx context.Context) {
 	shutdownCtx, cancel := context.WithTimeout(ctx, oauthShutdownTimeout)
 	defer cancel()
 
