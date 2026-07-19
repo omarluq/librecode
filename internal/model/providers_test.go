@@ -147,15 +147,16 @@ func TestFireworksBuiltInModelsUseOpenAICompatibleMetadata(t *testing.T) {
 	assert.Equal(t, "Fireworks AI", model.ProviderDisplayNames()["fireworks"])
 	assert.Equal(t, "accounts/fireworks/models/deepseek-v3p1", model.DefaultModelPerProvider()["fireworks"])
 
-	for _, modelID := range []string{
-		"accounts/fireworks/models/deepseek-v3p1",
-		"accounts/fireworks/models/deepseek-v4-flash",
-		"accounts/fireworks/models/deepseek-v4-pro",
+	for modelID, expectedName := range map[string]string{
+		"accounts/fireworks/models/deepseek-v3p1":     "DeepSeek V3.1",
+		"accounts/fireworks/models/deepseek-v4-flash": "DeepSeek V4 Flash",
+		"accounts/fireworks/models/deepseek-v4-pro":   "DeepSeek V4 Pro",
 	} {
 		t.Run(modelID, func(t *testing.T) {
 			t.Parallel()
 
 			builtIn := findBuiltIn(t, "fireworks", modelID)
+			assert.Equal(t, expectedName, builtIn.Name)
 			assert.Equal(t, "openai-completions", builtIn.API)
 			assert.Equal(t, "https://api.fireworks.ai/inference/v1", builtIn.BaseURL)
 		})

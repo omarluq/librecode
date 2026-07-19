@@ -41,6 +41,7 @@ type providerDisplayPair struct {
 type providerModelPair struct {
 	Provider string
 	ModelID  string
+	Name     string
 }
 
 // ProviderDisplayNames maps built-in provider IDs to user-facing names.
@@ -80,18 +81,19 @@ func additionalBuiltInModels() []providerModelPair {
 	return []providerModelPair{
 		{Provider: providerAnthropic, ModelID: anthropicmodel.Mythos5},
 		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Mythos5},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v4-flash"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v4-pro"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/kimi-k2p7-code"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/kimi-k2p6"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/glm-5p2"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/glm-5p1"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/qwen3p7-plus"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/minimax-m3"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/minimax-m2p7"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/gpt-oss-120b"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/gpt-oss-20b"},
-		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/nemotron-3-ultra-nvfp4"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v3p1", Name: "DeepSeek V3.1"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v4-flash", Name: "DeepSeek V4 Flash"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v4-pro", Name: "DeepSeek V4 Pro"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/kimi-k2p7-code", Name: "Kimi K2.7 Code"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/kimi-k2p6", Name: "Kimi K2.6"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/glm-5p2", Name: "GLM 5.2"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/glm-5p1", Name: "GLM 5.1"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/qwen3p7-plus", Name: "Qwen3.7 Plus"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/minimax-m3", Name: "MiniMax M3"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/minimax-m2p7", Name: "MiniMax M2.7"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/gpt-oss-120b", Name: "GPT OSS 120B"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/gpt-oss-20b", Name: "GPT OSS 20B"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/nemotron-3-ultra-nvfp4", Name: "Nemotron 3 Ultra"},
 		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Terra},
 		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Luna},
 		{Provider: providerOpenAI, ModelID: gpt56Terra},
@@ -107,6 +109,18 @@ func builtInDefaultModel(provider, modelID string) Model {
 		return modelFromStaticDefinition(provider, &metadata, &definition)
 	}
 
+	for _, pair := range additionalBuiltInModels() {
+		if pair.Provider == provider && pair.ModelID == modelID {
+			model := builtInDefaultModelWithMetadata(provider, modelID, metadata)
+			model.Name = pair.Name
+			return model
+		}
+	}
+
+	return builtInDefaultModelWithMetadata(provider, modelID, metadata)
+}
+
+func builtInDefaultModelWithMetadata(provider, modelID string, metadata providerMetadata) Model {
 	return Model{
 		ThinkingLevelMap: thinkingLevelsForModel(provider, modelID),
 		Headers:          cloneStringMap(metadata.Headers),
