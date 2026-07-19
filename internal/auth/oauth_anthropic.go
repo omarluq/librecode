@@ -16,6 +16,7 @@ const (
 	anthropicClaudeProvider = "anthropic-claude"
 	anthropicClientID       = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	anthropicAuthorize      = "https://claude.ai/oauth/authorize"
+	anthropicCallback       = "127.0.0.1:53692"
 )
 
 const (
@@ -41,6 +42,34 @@ func AnthropicLoginURL() (string, error) {
 	}
 
 	return flow.URL, nil
+}
+
+// LoginAnthropic runs the Claude Pro/Max OAuth browser flow.
+func LoginAnthropic(ctx context.Context, onAuth func(OAuthAuthInfo)) (*Credential, error) {
+	flow, err := newAnthropicFlow()
+	if err != nil {
+		return nil, err
+	}
+
+	server, err := startAnthropicCallbackServer(flow.State)
+	if err != nil {
+		return nil, err
+	}
+	defer server.Close(ctx)
+
+	if onAuth != nil {
+		onAuth(OAuthAuthInfo{
+			URL:          flow.URL,
+			Instructions: "Complete login in your browser to finish authentication.",
+		})
+	}
+
+	code, err := server.Wait(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return exchangeAnthropicCode(ctx, code, flow.State, flow.Verifier, anthropicTokenEndpoint())
 }
 
 // LoginAnthropicWithCode completes Claude Pro/Max OAuth using the pasted code from Claude.
@@ -104,6 +133,12 @@ type anthropicFlow struct {
 	Verifier string
 	State    string
 	URL      string
+}
+
+type anthropicCallbackServer = oauthCallbackServer
+
+func startAnthropicCallbackServer(state string) (*anthropicCallbackServer, error) {
+	return startOAuthCallbackServer(anthropicCallback, "/callback", state, "anthropic")
 }
 
 func newAnthropicFlow() (*anthropicFlow, error) {

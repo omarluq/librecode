@@ -238,26 +238,14 @@ type oauthLoginConfig struct {
 	LoginFailed    string
 }
 
-func (app *App) startAnthropicClaudeLogin(_ context.Context) error {
-	if app.auth == nil {
-		return errors.New(authStorageUnavailableMessage)
-	}
-
-	flowURL, err := auth.AnthropicLoginURL()
-	if err != nil {
-		return terminalError(err, "build anthropic login url")
-	}
-
-	text := authInfoText("Claude", auth.OAuthAuthInfo{
-		URL: flowURL,
-		Instructions: "Complete login in your browser, then paste the authorization code with: /login " +
-			anthropicClaudeProviderID + " <code#state>",
+func (app *App) startAnthropicClaudeLogin(ctx context.Context) error {
+	return app.loginOAuthProvider(ctx, oauthLoginConfig{
+		Provider:       anthropicClaudeProviderID,
+		DisplayName:    "Claude",
+		AlreadyMessage: "Claude auth is already configured",
+		LoginFailed:    "Claude login failed: ",
+		LoginFunc:      auth.LoginAnthropic,
 	})
-	app.addMessage(transcript.RoleCustom, text)
-	app.resetPromptHistoryNavigation()
-	app.composerBuffer.SetText("/login " + anthropicClaudeProviderID + " ")
-
-	return nil
 }
 
 func (app *App) completeAnthropicClaudeLogin(ctx context.Context, code string) error {
@@ -296,9 +284,8 @@ func (app *App) loginOAuthProvider(ctx context.Context, config oauthLoginConfig)
 		return errors.New(authStorageUnavailableMessage)
 	}
 
-	if _, ok, err := app.auth.APIKeyContext(ctx, config.Provider); err != nil {
-		return terminalError(err, "save anthropic credential")
-	} else if ok {
+	_, ok, err := app.auth.APIKeyContext(ctx, config.Provider)
+	if oauthCredentialIsReady(ok, err) {
 		app.refreshModels()
 		app.setModel(config.Provider, model.DefaultModelPerProvider()[config.Provider])
 		app.addSystemMessage(config.AlreadyMessage)
@@ -313,6 +300,10 @@ func (app *App) loginOAuthProvider(ctx context.Context, config oauthLoginConfig)
 	go app.runOAuthLogin(ctx, config)
 
 	return nil
+}
+
+func oauthCredentialIsReady(found bool, err error) bool {
+	return err == nil && found
 }
 
 func (app *App) runOAuthLogin(ctx context.Context, config oauthLoginConfig) {

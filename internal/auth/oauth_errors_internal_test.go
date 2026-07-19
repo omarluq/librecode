@@ -147,8 +147,9 @@ func TestOpenAICodexCallbackReceivesCodeAndHandlesContext(t *testing.T) {
 	assert.Equal(t, "auth-code", code)
 
 	waiting := &openAICodexCallbackServer{
-		server: &http.Server{ReadHeaderTimeout: oauthCallbackTimeout},
-		codes:  make(chan callbackResult),
+		server:     &http.Server{ReadHeaderTimeout: oauthCallbackTimeout},
+		codes:      make(chan callbackResult),
+		codePrefix: "codex",
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

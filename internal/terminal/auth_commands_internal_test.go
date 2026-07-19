@@ -98,6 +98,28 @@ func TestShowAuthInfoAndReloadRuntime(t *testing.T) {
 	assert.Contains(t, app.transcript.History[len(app.transcript.History)-1].Content, "reloaded auth and models")
 }
 
+func TestOAuthCredentialIsReady(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		err   error
+		name  string
+		found bool
+		want  bool
+	}{
+		{name: "valid credential", found: true, err: nil, want: true},
+		{name: "missing credential", found: false, err: nil, want: false},
+		{name: "expired refresh token", found: false, err: assert.AnError, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, test.want, oauthCredentialIsReady(test.found, test.err))
+		})
+	}
+}
+
 func TestRunOAuthLoginPostsDoneAndErrorEvents(t *testing.T) {
 	t.Parallel()
 
