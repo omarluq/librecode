@@ -138,6 +138,12 @@ func (app *App) showRuntimeCursor(layout *extui.Layout) {
 		return
 	}
 
+	if app.transcriptListFocused() || app.agentTaskSummaryFocused() {
+		app.screen.HideCursor()
+
+		return
+	}
+
 	windows := layout.Windows
 	if len(windows) == 0 {
 		windows = app.cloneRuntimeWindows(layout)
@@ -149,12 +155,6 @@ func (app *App) showRuntimeCursor(layout *extui.Layout) {
 
 			return
 		}
-	}
-
-	if app.transcriptListFocused() || app.agentTaskSummaryFocused() {
-		app.screen.HideCursor()
-
-		return
 	}
 
 	composer, ok := windows[extui.BufferComposer]

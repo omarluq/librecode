@@ -24,6 +24,7 @@ const (
 	agentTaskDescriptionLimit = 160
 	agentTaskInlineLimit      = 20
 	agentTaskRefreshInterval  = time.Second
+	agentTaskLoadOperation    = "load agent task"
 )
 
 const (
@@ -1284,12 +1285,12 @@ func (app *App) inspectAgentTask(ctx context.Context, taskID string) error {
 	}
 
 	if app.runtime == nil {
-		return terminalError(errors.New("runtime is not configured"), "load agent task")
+		return terminalError(errors.New("runtime is not configured"), agentTaskLoadOperation)
 	}
 
 	task, found, err := app.runtime.AgentTask(ctx, taskID)
 	if err != nil {
-		return terminalError(err, "load agent task")
+		return terminalError(err, agentTaskLoadOperation)
 	}
 
 	if !found {
@@ -1440,7 +1441,7 @@ func (app *App) handleAgentTasksPanelKey(ctx context.Context, event *tcell.Event
 
 	agentTask, found, err := app.runtime.AgentTask(ctx, taskID)
 	if err != nil {
-		return true, terminalError(err, "load agent task")
+		return true, terminalError(err, agentTaskLoadOperation)
 	}
 
 	if !found || agentTask.Task.OwnerSessionID != app.sessionID {
