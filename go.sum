@@ -72,6 +72,8 @@ github.com/gdamore/encoding v1.0.1 h1:YzKZckdBL6jVt2Gc+5p82qhrGiqMdG/eNs6Wy0u3Uh
 github.com/gdamore/encoding v1.0.1/go.mod h1:0Z0cMFinngz9kS1QfMjCP8TY7em3bZYeeklsSDPivEo=
 github.com/gdamore/tcell/v3 v3.4.0 h1:VUym1HQZiYodA5PGQrqLxF7QwqQndcAUwQD7G7XUy5E=
 github.com/gdamore/tcell/v3 v3.4.0/go.mod h1:fjKxNiIFwbzTxDU+i+AAMz+xPOgXVaZq5tbShsKseHc=
+github.com/gdamore/tcell/v3 v3.4.1 h1:22227t1EUwqxTlmCX9vw0RUE2IEPGw6oYcNan+bPe4w=
+github.com/gdamore/tcell/v3 v3.4.1/go.mod h1:YWwuxZNi14VGQC5g2VGNEDRXpBraTwvVjMovRH6G6hw=
 github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 h1:+zs/tPmkDkHx3U66DAb0lQFJrpS6731Oaa12ikc+DiI=
 github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376/go.mod h1:an3vInlBmSxCcxctByoQdvwPiA7DTK7jaaFDBTtu0ic=
 github.com/go-git/go-billy/v5 v5.9.0 h1:jItGXszUDRtR/AlferWPTMN4j38BQ88XnXKbilmmBPA=
