@@ -52,7 +52,7 @@ type OAuthAuthInfo struct {
 }
 
 // LoginOpenAICodex runs the ChatGPT/Codex OAuth browser flow.
-func LoginOpenAICodex(ctx context.Context, onAuth func(OAuthAuthInfo)) (*Credential, error) {
+func LoginOpenAICodex(ctx context.Context, onAuth func(OAuthAuthInfo)) (credential *Credential, err error) {
 	flow, err := newOpenAICodexFlow()
 	if err != nil {
 		return nil, err
@@ -62,7 +62,9 @@ func LoginOpenAICodex(ctx context.Context, onAuth func(OAuthAuthInfo)) (*Credent
 	if err != nil {
 		return nil, err
 	}
-	defer server.Close(ctx)
+	defer func() {
+		err = errors.Join(err, server.Close(ctx))
+	}()
 
 	if onAuth != nil {
 		onAuth(OAuthAuthInfo{
@@ -76,7 +78,7 @@ func LoginOpenAICodex(ctx context.Context, onAuth func(OAuthAuthInfo)) (*Credent
 		return nil, err
 	}
 
-	credential, err := exchangeOpenAICodexCode(ctx, code, flow.Verifier)
+	credential, err = exchangeOpenAICodexCode(ctx, code, flow.Verifier)
 	if err != nil {
 		return nil, err
 	}
@@ -255,13 +257,21 @@ func (server *oauthCallbackServer) Wait(ctx context.Context) (string, error) {
 	}
 }
 
-func (server *oauthCallbackServer) Close(ctx context.Context) {
+func (server *oauthCallbackServer) Close(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, oauthShutdownTimeout)
 	defer cancel()
 
-	if err := server.server.Shutdown(shutdownCtx); err != nil {
-		return
+	shutdownErr := server.server.Shutdown(shutdownCtx)
+	if shutdownErr == nil {
+		return nil
 	}
+
+	closeErr := server.server.Close()
+
+	return oops.In("auth").Code(server.codePrefix+"_callback_shutdown").Wrapf(
+		errors.Join(shutdownErr, closeErr),
+		"shut down oauth callback server",
+	)
 }
 
 func writeOAuthHTML(writer http.ResponseWriter, status int, message string) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -45,7 +46,7 @@ func AnthropicLoginURL() (string, error) {
 }
 
 // LoginAnthropic runs the Claude Pro/Max OAuth browser flow.
-func LoginAnthropic(ctx context.Context, onAuth func(OAuthAuthInfo)) (*Credential, error) {
+func LoginAnthropic(ctx context.Context, onAuth func(OAuthAuthInfo)) (credential *Credential, err error) {
 	flow, err := newAnthropicFlow()
 	if err != nil {
 		return nil, err
@@ -55,7 +56,9 @@ func LoginAnthropic(ctx context.Context, onAuth func(OAuthAuthInfo)) (*Credentia
 	if err != nil {
 		return nil, err
 	}
-	defer server.Close(ctx)
+	defer func() {
+		err = errors.Join(err, server.Close(ctx))
+	}()
 
 	if onAuth != nil {
 		onAuth(OAuthAuthInfo{

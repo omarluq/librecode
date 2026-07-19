@@ -120,7 +120,10 @@ func TestOpenAICodexOAuthTopLevelAndCallback(t *testing.T) {
 	if err != nil {
 		t.Skipf("callback port unavailable: %v", err)
 	}
-	defer server.Close(context.Background())
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close(context.Background()))
+	})
 
 	status := getCallbackStatusForTest(t, "/auth/callback?state=wrong&code=abc")
 	assert.Equal(t, http.StatusBadRequest, status)
@@ -137,7 +140,10 @@ func TestOpenAICodexCallbackReceivesCodeAndHandlesContext(t *testing.T) {
 	if err != nil {
 		t.Skipf("callback port unavailable: %v", err)
 	}
-	defer server.Close(context.Background())
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close(context.Background()))
+	})
 
 	status := getCallbackStatusForTest(t, "/auth/callback?state=state&code=auth-code")
 	assert.Equal(t, http.StatusOK, status)
@@ -157,6 +163,64 @@ func TestOpenAICodexCallbackReceivesCodeAndHandlesContext(t *testing.T) {
 	code, err = waiting.Wait(ctx)
 	require.Error(t, err)
 	assert.Empty(t, code)
+}
+
+func TestOAuthCallbackServerCloseForceClosesAfterCanceledShutdown(t *testing.T) {
+	t.Parallel()
+
+	requestStarted := make(chan struct{})
+	requestCanceled := make(chan struct{})
+	httpServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		close(requestStarted)
+		<-request.Context().Done()
+		close(requestCanceled)
+	}))
+
+	requestDone := make(chan error, 1)
+
+	go func() {
+		request, requestErr := http.NewRequestWithContext(t.Context(), http.MethodGet, httpServer.URL, http.NoBody)
+		if requestErr != nil {
+			requestDone <- requestErr
+
+			return
+		}
+
+		response, requestErr := http.DefaultClient.Do(request)
+		if requestErr != nil {
+			requestDone <- nil
+
+			return
+		}
+
+		requestDone <- response.Body.Close()
+	}()
+
+	<-requestStarted
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	server := &oauthCallbackServer{server: httpServer.Config, codes: nil, codePrefix: "test"}
+	err := server.Close(ctx)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Contains(t, err.Error(), "shut down oauth callback server")
+
+	select {
+	case <-requestCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("active callback request was not canceled")
+	}
+
+	select {
+	case requestErr := <-requestDone:
+		require.NoError(t, requestErr)
+	case <-time.After(time.Second):
+		t.Fatal("callback client did not return after force close")
+	}
+
+	httpServer.Close()
 }
 
 func TestWriteOAuthHTML(t *testing.T) {
