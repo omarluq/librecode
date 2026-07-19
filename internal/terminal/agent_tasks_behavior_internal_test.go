@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -163,6 +164,26 @@ func behaviorAgentTask(id string, state database.TaskState) database.AgentTaskEn
 	task.Prompt = "inspect code"
 
 	return task
+}
+
+type agentTaskSessionPair struct {
+	connection *sql.DB
+	sessions   *database.SessionRepository
+	parent     *database.SessionEntity
+	child      *database.SessionEntity
+}
+
+func newAgentTaskSessionPair(t *testing.T) agentTaskSessionPair {
+	t.Helper()
+
+	connection := newPromptSendTestConnection(t)
+	sessions := database.NewSessionRepository(connection)
+	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
+	require.NoError(t, err)
+	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
+	require.NoError(t, err)
+
+	return agentTaskSessionPair{connection: connection, sessions: sessions, parent: parent, child: child}
 }
 
 func TestAgentTaskPureBehavior(t *testing.T) {
@@ -523,12 +544,8 @@ func TestAgentTaskPanelItemsRefreshAndCancellation(t *testing.T) {
 func TestAgentTaskSummaryEnterInspectsSelectedSubagent(t *testing.T) {
 	t.Parallel()
 
-	connection := newPromptSendTestConnection(t)
-	sessions := database.NewSessionRepository(connection)
-	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
-	require.NoError(t, err)
-	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
-	require.NoError(t, err)
+	fixture := newAgentTaskSessionPair(t)
+	sessions, parent, child := fixture.sessions, fixture.parent, fixture.child
 
 	first := behaviorAgentTask("task-first", database.TaskRunning)
 	first.Task.OwnerSessionID = parent.ID
@@ -581,12 +598,8 @@ func TestInspectAgentTaskWithoutRuntimeDoesNotMutateState(t *testing.T) {
 func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	t.Parallel()
 
-	connection := newPromptSendTestConnection(t)
-	sessions := database.NewSessionRepository(connection)
-	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
-	require.NoError(t, err)
-	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
-	require.NoError(t, err)
+	fixture := newAgentTaskSessionPair(t)
+	connection, sessions, parent, child := fixture.connection, fixture.sessions, fixture.parent, fixture.child
 
 	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
 	task.Task.OwnerSessionID = parent.ID
@@ -595,7 +608,7 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
 	runtime.SetAgentTaskController(stub)
 
-	_, err = sessions.AppendMessage(t.Context(), child.ID, nil, &database.MessageEntity{
+	_, err := sessions.AppendMessage(t.Context(), child.ID, nil, &database.MessageEntity{
 		Timestamp: time.Now().UTC(),
 		Role:      database.RoleAssistant,
 		Content:   "loaded child transcript",
@@ -765,12 +778,8 @@ func assertLoadedChildAgentSession(
 func TestDoubleEscapeLeavesAgentTaskSession(t *testing.T) {
 	t.Parallel()
 
-	connection := newPromptSendTestConnection(t)
-	sessions := database.NewSessionRepository(connection)
-	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
-	require.NoError(t, err)
-	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
-	require.NoError(t, err)
+	fixture := newAgentTaskSessionPair(t)
+	sessions, parent, child := fixture.sessions, fixture.parent, fixture.child
 
 	app := newRenderTestApp(t)
 	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
@@ -793,12 +802,8 @@ func TestDoubleEscapeLeavesAgentTaskSession(t *testing.T) {
 func TestAltEscapeLeavesAgentTaskSession(t *testing.T) {
 	t.Parallel()
 
-	connection := newPromptSendTestConnection(t)
-	sessions := database.NewSessionRepository(connection)
-	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
-	require.NoError(t, err)
-	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
-	require.NoError(t, err)
+	fixture := newAgentTaskSessionPair(t)
+	sessions, parent, child := fixture.sessions, fixture.parent, fixture.child
 
 	app := newRenderTestApp(t)
 	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
@@ -1066,12 +1071,8 @@ func TestInspectAgentTaskLoadFailureDoesNotSwitchSession(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			connection := newPromptSendTestConnection(t)
-			sessions := database.NewSessionRepository(connection)
-			parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
-			require.NoError(t, err)
-			child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
-			require.NoError(t, err)
+			fixture := newAgentTaskSessionPair(t)
+			connection, sessions, parent, child := fixture.connection, fixture.sessions, fixture.parent, fixture.child
 
 			task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
 			task.Task.OwnerSessionID = parent.ID
@@ -1091,12 +1092,12 @@ func TestInspectAgentTaskLoadFailureDoesNotSwitchSession(t *testing.T) {
 			testCase.arrangeFail(t, app, sessions, child.ID)
 
 			if testCase.name == "messages load" {
-				_, err = connection.ExecContext(t.Context(),
+				_, err := connection.ExecContext(t.Context(),
 					`UPDATE session_messages SET created_at = 'invalid' WHERE session_id = ?`, child.ID)
 				require.NoError(t, err)
 			}
 
-			err = app.inspectAgentTask(t.Context(), behaviorTaskID)
+			err := app.inspectAgentTask(t.Context(), behaviorTaskID)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "load agent session")
 			assert.Equal(t, parent.ID, app.sessionID)
