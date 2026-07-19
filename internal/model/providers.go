@@ -12,6 +12,7 @@ const (
 	providerAzureOpenAIResponses = "azure-openai-responses"
 	providerCerebras             = "cerebras"
 	providerDeepSeek             = "deepseek"
+	providerFireworks            = "fireworks"
 	providerGroq                 = "groq"
 	providerMistral              = "mistral"
 	providerMoonshotAI           = "moonshotai"
@@ -40,6 +41,7 @@ type providerDisplayPair struct {
 type providerModelPair struct {
 	Provider string
 	ModelID  string
+	Name     string
 }
 
 // ProviderDisplayNames maps built-in provider IDs to user-facing names.
@@ -77,14 +79,35 @@ func BuiltInModels() []Model {
 
 func additionalBuiltInModels() []providerModelPair {
 	return []providerModelPair{
-		{Provider: providerAnthropic, ModelID: anthropicmodel.Mythos5},
-		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Mythos5},
-		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Terra},
-		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Luna},
-		{Provider: providerOpenAI, ModelID: gpt56Terra},
-		{Provider: providerOpenAI, ModelID: gpt56Luna},
-		{Provider: providerOpenAICodex, ModelID: gpt56Terra},
-		{Provider: providerOpenAICodex, ModelID: gpt56Luna},
+		{Provider: providerAnthropic, ModelID: anthropicmodel.Mythos5, Name: ""},
+		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Mythos5, Name: ""},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v3p1", Name: "DeepSeek V3.1"},
+		{
+			Provider: providerFireworks,
+			ModelID:  "accounts/fireworks/models/deepseek-v4-flash",
+			Name:     "DeepSeek V4 Flash",
+		},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v4-pro", Name: "DeepSeek V4 Pro"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/kimi-k2p7-code", Name: "Kimi K2.7 Code"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/kimi-k2p6", Name: "Kimi K2.6"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/glm-5p2", Name: "GLM 5.2"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/glm-5p1", Name: "GLM 5.1"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/qwen3p7-plus", Name: "Qwen3.7 Plus"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/minimax-m3", Name: "MiniMax M3"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/minimax-m2p7", Name: "MiniMax M2.7"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/gpt-oss-120b", Name: "GPT OSS 120B"},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/gpt-oss-20b", Name: "GPT OSS 20B"},
+		{
+			Provider: providerFireworks,
+			ModelID:  "accounts/fireworks/models/nemotron-3-ultra-nvfp4",
+			Name:     "Nemotron 3 Ultra",
+		},
+		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Terra, Name: ""},
+		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Luna, Name: ""},
+		{Provider: providerOpenAI, ModelID: gpt56Terra, Name: ""},
+		{Provider: providerOpenAI, ModelID: gpt56Luna, Name: ""},
+		{Provider: providerOpenAICodex, ModelID: gpt56Terra, Name: ""},
+		{Provider: providerOpenAICodex, ModelID: gpt56Luna, Name: ""},
 	}
 }
 
@@ -94,6 +117,21 @@ func builtInDefaultModel(provider, modelID string) Model {
 		return modelFromStaticDefinition(provider, &metadata, &definition)
 	}
 
+	for _, pair := range additionalBuiltInModels() {
+		if pair.Provider == provider && pair.ModelID == modelID {
+			model := builtInDefaultModelWithMetadata(provider, modelID, metadata)
+			if pair.Name != "" {
+				model.Name = pair.Name
+			}
+
+			return model
+		}
+	}
+
+	return builtInDefaultModelWithMetadata(provider, modelID, metadata)
+}
+
+func builtInDefaultModelWithMetadata(provider, modelID string, metadata providerMetadata) Model {
 	return Model{
 		ThinkingLevelMap: thinkingLevelsForModel(provider, modelID),
 		Headers:          cloneStringMap(metadata.Headers),
@@ -158,6 +196,7 @@ func defaultProviderMetadata() map[string]providerMetadata {
 		providerAzureOpenAIResponses: azureOpenAIMetadata(),
 		providerCerebras:             openAICompatibleMetadata("https://api.cerebras.ai/v1", true),
 		providerDeepSeek:             openAICompatibleMetadata("https://api.deepseek.com", true),
+		providerFireworks:            openAICompatibleMetadata("https://api.fireworks.ai/inference/v1", false),
 		providerGroq:                 openAICompatibleMetadata("https://api.groq.com/openai/v1", false),
 		providerMistral:              openAICompatibleMetadata("https://api.mistral.ai/v1", false),
 		providerMoonshotAI:           openAICompatibleMetadata("https://api.moonshot.ai/v1", false),
@@ -277,6 +316,7 @@ func providerDisplayNameMap() map[string]string {
 		{Provider: providerAzureOpenAIResponses, Display: "Azure OpenAI Responses"},
 		{Provider: providerCerebras, Display: "Cerebras"},
 		{Provider: providerDeepSeek, Display: "DeepSeek"},
+		{Provider: providerFireworks, Display: "Fireworks AI"},
 		{Provider: providerGroq, Display: "Groq"},
 		{Provider: providerMistral, Display: "Mistral"},
 		{Provider: providerMoonshotAI, Display: "Moonshot AI"},
@@ -296,23 +336,24 @@ func providerDisplayNameMap() map[string]string {
 
 func defaultModelMap() map[string]string {
 	pairs := []providerModelPair{
-		{Provider: providerAnthropic, ModelID: anthropicmodel.Fable5},
-		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Fable5},
-		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Sol},
-		{Provider: providerCerebras, ModelID: "zai-glm-4.7"},
-		{Provider: providerDeepSeek, ModelID: "deepseek-v4-pro"},
-		{Provider: providerGroq, ModelID: "openai/gpt-oss-120b"},
-		{Provider: providerMistral, ModelID: "devstral-medium-latest"},
-		{Provider: providerMoonshotAI, ModelID: kimiK26},
-		{Provider: providerMoonshotAICN, ModelID: kimiK26},
-		{Provider: providerOpenAI, ModelID: gpt56Sol},
-		{Provider: providerOpenAICodex, ModelID: gpt56Sol},
-		{Provider: providerOpenCode, ModelID: gpt55},
-		{Provider: providerOpenCodeGo, ModelID: kimiK26},
-		{Provider: providerOpenRouter, ModelID: "moonshotai/kimi-k2.6"},
-		{Provider: providerVercelAIGateway, ModelID: "zai/glm-5.1"},
-		{Provider: providerXAI, ModelID: "grok-4.20-0309-reasoning"},
-		{Provider: providerZAI, ModelID: glm52},
+		{Provider: providerAnthropic, ModelID: anthropicmodel.Fable5, Name: ""},
+		{Provider: providerAnthropicClaude, ModelID: anthropicmodel.Fable5, Name: ""},
+		{Provider: providerAzureOpenAIResponses, ModelID: gpt56Sol, Name: ""},
+		{Provider: providerCerebras, ModelID: "zai-glm-4.7", Name: ""},
+		{Provider: providerDeepSeek, ModelID: "deepseek-v4-pro", Name: ""},
+		{Provider: providerFireworks, ModelID: "accounts/fireworks/models/deepseek-v3p1", Name: ""},
+		{Provider: providerGroq, ModelID: "openai/gpt-oss-120b", Name: ""},
+		{Provider: providerMistral, ModelID: "devstral-medium-latest", Name: ""},
+		{Provider: providerMoonshotAI, ModelID: kimiK26, Name: ""},
+		{Provider: providerMoonshotAICN, ModelID: kimiK26, Name: ""},
+		{Provider: providerOpenAI, ModelID: gpt56Sol, Name: ""},
+		{Provider: providerOpenAICodex, ModelID: gpt56Sol, Name: ""},
+		{Provider: providerOpenCode, ModelID: gpt55, Name: ""},
+		{Provider: providerOpenCodeGo, ModelID: kimiK26, Name: ""},
+		{Provider: providerOpenRouter, ModelID: "moonshotai/kimi-k2.6", Name: ""},
+		{Provider: providerVercelAIGateway, ModelID: "zai/glm-5.1", Name: ""},
+		{Provider: providerXAI, ModelID: "grok-4.20-0309-reasoning", Name: ""},
+		{Provider: providerZAI, ModelID: glm52, Name: ""},
 	}
 
 	return modelPairsToMap(pairs)

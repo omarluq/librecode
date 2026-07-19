@@ -83,6 +83,7 @@ func wellKnownEnvKeys(provider string) ([]string, bool) {
 		"azure-openai-responses": {"AZURE_OPENAI" + apiKeyEnvSuffix()},
 		"cerebras":               {"CEREBRAS" + apiKeyEnvSuffix()},
 		"deepseek":               {"DEEPSEEK" + apiKeyEnvSuffix()},
+		"fireworks":              {"FIREWORKS" + apiKeyEnvSuffix()},
 		"groq":                   {"GROQ" + apiKeyEnvSuffix()},
 		"mistral":                {"MISTRAL" + apiKeyEnvSuffix()},
 		"openai":                 {"OPENAI" + apiKeyEnvSuffix()},
