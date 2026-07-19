@@ -38,6 +38,27 @@ func TestAnthropicLoginURL(t *testing.T) {
 	assert.Contains(t, loginURL, "code_challenge=")
 }
 
+func TestLoginAnthropicPublishesBrowserFlowAndHandlesCancellation(t *testing.T) {
+	t.Setenv("LIBRECODE_AUTH_TEST", "browser-flow")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var authInfo OAuthAuthInfo
+
+	credential, err := LoginAnthropic(ctx, func(info OAuthAuthInfo) {
+		authInfo = info
+
+		cancel()
+	})
+
+	require.Error(t, err)
+	assert.Nil(t, credential)
+	assert.Contains(t, err.Error(), "wait for oauth callback")
+	assert.Contains(t, authInfo.Instructions, "browser")
+	assert.Contains(t, authInfo.URL, "code_challenge=")
+}
+
 func TestLoginAnthropicWithCode(t *testing.T) {
 	t.Parallel()
 
@@ -86,7 +107,10 @@ func TestAnthropicCallbackReceivesCodeAndHandlesContext(t *testing.T) {
 	if err != nil {
 		t.Skipf("callback port unavailable: %v", err)
 	}
-	defer server.Close(context.Background())
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close(context.Background()))
+	})
 
 	request, err := http.NewRequestWithContext(
 		t.Context(),
