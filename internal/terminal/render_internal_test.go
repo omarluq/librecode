@@ -1082,6 +1082,7 @@ func TestHighVolumeStreamEventsDoNotForceImmediateDraw(t *testing.T) {
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
 		asyncEventPromptUsage,
+		asyncEventAgentTaskStream,
 	} {
 		event := tcell.NewEventInterrupt(newTestAsyncEvent(kind, ""))
 		if app.shouldDrawImmediately(event) {
@@ -1099,6 +1100,9 @@ func TestPromptLifecycleEventsForceImmediateDraw(t *testing.T) {
 		asyncEventPromptDone,
 		asyncEventPromptError,
 		asyncEventAuthDone,
+		asyncEventAgentTaskChanged,
+		asyncEventAgentTaskCompleted,
+		asyncEventAgentTaskReplayError,
 	} {
 		event := tcell.NewEventInterrupt(newTestAsyncEvent(kind, ""))
 		if !app.shouldDrawImmediately(event) {

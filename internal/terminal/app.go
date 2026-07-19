@@ -635,7 +635,8 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 		asyncEventPromptToolStart,
 		asyncEventPromptToolResult,
 		asyncEventPromptUsage,
-		asyncEventPromptUsageSnapshot:
+		asyncEventPromptUsageSnapshot,
+		asyncEventAgentTaskStream:
 		return true
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
@@ -650,7 +651,6 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 		asyncEventPromptError,
 		asyncEventPromptContext,
 		asyncEventAgentTaskChanged,
-		asyncEventAgentTaskStream,
 		asyncEventAgentTaskReplayError:
 		return false
 	}
