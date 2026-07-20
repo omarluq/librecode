@@ -515,6 +515,42 @@ func TestServiceInternalShutdownCancellation(t *testing.T) {
 	service.wg.Done()
 }
 
+func TestServiceInternalWorkerStopsBeforeQueuedWorkAfterCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	service := emptyService()
+
+	service.queue = make(chan string, 1)
+
+	service.queue <- "task"
+
+	service.wg.Add(1)
+	service.worker(ctx)
+
+	assert.Len(t, service.queue, 1)
+}
+
+func TestServiceInternalRunIgnoresCanceledContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	var logs bytes.Buffer
+
+	service := emptyService()
+	service.logger = slog.New(slog.NewTextHandler(&logs, nil))
+	service.queue = make(chan string, 1)
+
+	service.run(ctx, "task")
+
+	assert.Empty(t, logs.String())
+	assert.Empty(t, service.queue)
+}
+
 func TestServiceInternalRequeueStopsWithContext(t *testing.T) {
 	t.Parallel()
 
