@@ -35,42 +35,13 @@ func emptyService() *Service {
 	}
 }
 
-func receiveString(t *testing.T, channel <-chan string) string {
+func receive[T any](t *testing.T, channel <-chan T, destination *T, timeoutMessage string) {
 	t.Helper()
 
 	select {
-	case value := <-channel:
-		return value
+	case *destination = <-channel:
 	case <-time.After(time.Second):
-		require.FailNow(t, "timed out waiting for string")
-
-		return ""
-	}
-}
-
-func receiveEvent(t *testing.T, channel <-chan database.TaskEventEntity) database.TaskEventEntity {
-	t.Helper()
-
-	select {
-	case value := <-channel:
-		return value
-	case <-time.After(time.Second):
-		require.FailNow(t, "timed out waiting for task event")
-
-		return database.TaskEventEntity{
-			Event:  database.EventEntity{CreatedAt: time.Time{}, ID: "", Kind: "", PayloadJSON: ""},
-			TaskID: "", Sequence: 0,
-		}
-	}
-}
-
-func waitForSignal(t *testing.T, channel <-chan struct{}) {
-	t.Helper()
-
-	select {
-	case <-channel:
-	case <-time.After(time.Second):
-		require.FailNow(t, "timed out waiting for signal")
+		require.FailNow(t, timeoutMessage)
 	}
 }
 
@@ -95,9 +66,7 @@ func newServiceRepositoryFixture(t *testing.T) serviceRepositoryFixture {
 	}
 }
 
-func (fixture serviceRepositoryFixture) createQueuedAgentTask(
-	t *testing.T,
-) (*database.SessionEntity, *database.AgentTaskEntity) {
+func (fixture serviceRepositoryFixture) createQueuedAgentTask(t *testing.T) *database.AgentTaskEntity {
 	t.Helper()
 
 	owner, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
@@ -105,19 +74,30 @@ func (fixture serviceRepositoryFixture) createQueuedAgentTask(
 	child, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), childSessionName, owner.ID)
 	require.NoError(t, err)
 
+	return createQueuedAgentTask(t, fixture.agentTasks, owner.ID, child.ID)
+}
+
+func createQueuedAgentTask(
+	t *testing.T,
+	repository *database.AgentTaskRepository,
+	ownerID string,
+	childSessionID string,
+) *database.AgentTaskEntity {
+	t.Helper()
+
 	entity := emptyAgentTask()
-	entity.Task.OwnerSessionID = owner.ID
-	entity.Task.ConcurrencyKey = owner.ID
-	entity.ChildSessionID = child.ID
+	entity.Task.OwnerSessionID = ownerID
+	entity.Task.ConcurrencyKey = ownerID
+	entity.ChildSessionID = childSessionID
 	entity.AgentName = generalAgent
 	entity.Prompt = workPrompt
 	entity.PolicyJSON = `{}`
 	entity.UsageJSON = `{}`
 	entity.Depth = 1
-	created, err := fixture.agentTasks.Create(t.Context(), entity)
+	created, err := repository.Create(t.Context(), entity)
 	require.NoError(t, err)
 
-	return owner, created
+	return created
 }
 
 func serviceWithRepositories(tasks *database.TaskRepository, agentTasks *database.AgentTaskRepository) *Service {
@@ -126,6 +106,22 @@ func serviceWithRepositories(tasks *database.TaskRepository, agentTasks *databas
 	service.getTaskFn = tasks.Get
 	service.agentTasks = agentTasks
 	service.subscribers = make(map[string]map[uint64]chan database.TaskEventEntity)
+
+	return service
+}
+
+func serviceWithClosedRepositories(t *testing.T) *Service {
+	t.Helper()
+
+	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	require.NoError(t, err)
+	require.NoError(t, database.Migrate(t.Context(), connection))
+
+	service := serviceWithRepositories(
+		database.NewTaskRepository(connection),
+		database.NewAgentTaskRepository(connection),
+	)
+	require.NoError(t, connection.Close())
 
 	return service
 }
@@ -253,14 +249,8 @@ func TestServiceInternalPersistedTimeout(t *testing.T) {
 
 func TestServiceInternalRepositoryErrors(t *testing.T) {
 	t.Parallel()
-	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	require.NoError(t, database.Migrate(t.Context(), connection))
-	tasks := database.NewTaskRepository(connection)
-	agentTasks := database.NewAgentTaskRepository(connection)
-	require.NoError(t, connection.Close())
 
-	service := serviceWithRepositories(tasks, agentTasks)
+	service := serviceWithClosedRepositories(t)
 	tests := append(repositoryWriteErrorCases(service), repositoryReadErrorCases(service)...)
 
 	for _, test := range tests {
@@ -362,16 +352,9 @@ func TestServiceInternalEventMarshalError(t *testing.T) {
 func TestServiceInternalTerminalUpdateErrorsAreLogged(t *testing.T) {
 	t.Parallel()
 
-	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	require.NoError(t, database.Migrate(t.Context(), connection))
-	tasks := database.NewTaskRepository(connection)
-	agentTasks := database.NewAgentTaskRepository(connection)
-	require.NoError(t, connection.Close())
-
 	var logs bytes.Buffer
 
-	service := serviceWithRepositories(tasks, agentTasks)
+	service := serviceWithClosedRepositories(t)
 	service.logger = slog.New(slog.NewTextHandler(&logs, nil))
 
 	service.rejectQueuedTask("id", "rejected", "rejected")
@@ -411,7 +394,10 @@ func TestServiceInternalSubmitAgentTaskCreatesChildSession(t *testing.T) {
 	})
 	must.NoError(err)
 	assertions.NotEmpty(created.ChildSessionID)
-	assertions.Equal(created.Task.ID, receiveString(t, service.queue))
+
+	var queuedTaskID string
+	receive(t, service.queue, &queuedTaskID, "timed out waiting for queued task")
+	assertions.Equal(created.Task.ID, queuedTaskID)
 }
 
 func TestServiceInternalTerminalEventSurvivesFullSubscriberBuffer(t *testing.T) {
@@ -443,9 +429,9 @@ func TestServiceInternalTerminalEventSurvivesFullSubscriberBuffer(t *testing.T) 
 		},
 	})
 
-	received := make([]database.TaskEventEntity, 0, eventBuffer)
-	for range eventBuffer {
-		received = append(received, receiveEvent(t, events))
+	received := make([]database.TaskEventEntity, eventBuffer)
+	for index := range eventBuffer {
+		receive(t, events, &received[index], "timed out waiting for task event")
 	}
 
 	assert.Equal(t, int64(2), received[0].Sequence, "oldest stream event should be evicted")
@@ -476,7 +462,7 @@ func TestServiceInternalFinalizeInterruptedRun(t *testing.T) {
 
 	fixture := newServiceRepositoryFixture(t)
 	tasks, agentTasks := fixture.tasks, fixture.agentTasks
-	_, created := fixture.createQueuedAgentTask(t)
+	created := fixture.createQueuedAgentTask(t)
 	changed, err := tasks.Transition(
 		t.Context(), created.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskRunning, "started",
 	)
@@ -516,17 +502,7 @@ func testQueuedTaskCancellation(
 	child, err := sessions.CreateSession(t.Context(), t.TempDir(), childSessionName, owner.ID)
 	require.NoError(t, err)
 
-	entity := emptyAgentTask()
-	entity.Task.OwnerSessionID = owner.ID
-	entity.Task.ConcurrencyKey = owner.ID
-	entity.ChildSessionID = child.ID
-	entity.AgentName = generalAgent
-	entity.Prompt = workPrompt
-	entity.PolicyJSON = `{}`
-	entity.UsageJSON = `{}`
-	entity.Depth = 1
-	created, err := agentTasks.Create(t.Context(), entity)
-	require.NoError(t, err)
+	created := createQueuedAgentTask(t, agentTasks, owner.ID, child.ID)
 	otherChild, err := sessions.CreateSession(t.Context(), t.TempDir(), "other", owner.ID)
 	require.NoError(t, err)
 
@@ -595,17 +571,7 @@ func testCancelingTaskFinalization(
 	cancelingChild, err := sessions.CreateSession(t.Context(), t.TempDir(), "canceling", ownerID)
 	require.NoError(t, err)
 
-	cancelingEntity := emptyAgentTask()
-	cancelingEntity.Task.OwnerSessionID = ownerID
-	cancelingEntity.Task.ConcurrencyKey = ownerID
-	cancelingEntity.ChildSessionID = cancelingChild.ID
-	cancelingEntity.AgentName = generalAgent
-	cancelingEntity.Prompt = workPrompt
-	cancelingEntity.PolicyJSON = `{}`
-	cancelingEntity.UsageJSON = `{}`
-	cancelingEntity.Depth = 1
-	canceling, err := agentTasks.Create(t.Context(), cancelingEntity)
-	require.NoError(t, err)
+	canceling := createQueuedAgentTask(t, agentTasks, ownerID, cancelingChild.ID)
 
 	changed, err := tasks.Transition(
 		t.Context(), canceling.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskRunning, "started",
@@ -648,7 +614,7 @@ func TestServiceInternalSubmitRejectsBeforeWritableQueue(t *testing.T) {
 
 			fixture := newServiceRepositoryFixture(t)
 			tasks, agentTasks := fixture.tasks, fixture.agentTasks
-			_, created := fixture.createQueuedAgentTask(t)
+			created := fixture.createQueuedAgentTask(t)
 
 			done := make(chan struct{})
 			if test.stop {
@@ -823,17 +789,18 @@ func TestServiceInternalHandleQueuedLoadError(t *testing.T) {
 			service.handleQueuedLoadError(ctx, "task", errors.New("database unavailable"))
 
 			if test.wantRequeue {
-				select {
-				case taskID := <-service.queue:
-					assertions.Equal("task", taskID)
-				case <-time.After(time.Second):
-					require.FailNow(t, "task was not requeued")
-				}
+				var taskID string
+				receive(t, service.queue, &taskID, "task was not requeued")
+				assertions.Equal("task", taskID)
 			} else {
 				assertions.Empty(service.queue)
 			}
 
-			assertions.Contains(logs.String(), test.wantLog)
+			if test.wantLog == "" {
+				assertions.Empty(logs.String())
+			} else {
+				assertions.Contains(logs.String(), test.wantLog)
+			}
 		})
 	}
 }
@@ -841,27 +808,17 @@ func TestServiceInternalHandleQueuedLoadError(t *testing.T) {
 func TestServiceInternalRunHandlesQueuedLoadError(t *testing.T) {
 	t.Parallel()
 
-	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	require.NoError(t, database.Migrate(t.Context(), connection))
-	tasks := database.NewTaskRepository(connection)
-	agentTasks := database.NewAgentTaskRepository(connection)
-	require.NoError(t, connection.Close())
-
 	var logs bytes.Buffer
 
-	service := serviceWithRepositories(tasks, agentTasks)
+	service := serviceWithClosedRepositories(t)
 	service.logger = slog.New(slog.NewTextHandler(&logs, nil))
 	service.queue = make(chan string, 1)
 
 	service.run(t.Context(), "task")
 
-	select {
-	case taskID := <-service.queue:
-		assert.Equal(t, "task", taskID)
-	case <-time.After(time.Second):
-		require.FailNow(t, "task was not requeued")
-	}
+	var taskID string
+	receive(t, service.queue, &taskID, "task was not requeued")
+	assert.Equal(t, "task", taskID)
 
 	assert.Contains(t, logs.String(), "load queued agent task")
 }
@@ -921,13 +878,8 @@ func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 	done := make(chan struct{})
 	go service.renewLease(ctx, cancel, "task", done)
 
-	select {
-	case <-ctx.Done():
-	case <-time.After(time.Second):
-		require.FailNow(t, "lease renewal did not cancel the run")
-	}
-
-	waitForSignal(t, done)
+	receive(t, ctx.Done(), new(struct{}), "lease renewal did not cancel the run")
+	receive(t, done, new(struct{}), "timed out waiting for lease renewal to stop")
 	assert.Equal(t, int32(3), attempts.Load())
 	assert.Contains(t, logs.String(), "renew agent task lease after retries")
 }
@@ -954,14 +906,10 @@ func TestServiceInternalLeaseRenewsThroughoutLongRun(t *testing.T) {
 	go service.renewLease(ctx, cancel, "task", done)
 
 	for range wantedRenewals {
-		select {
-		case <-renewed:
-		case <-time.After(time.Second):
-			require.FailNow(t, "long-running task stopped renewing its lease")
-		}
+		receive(t, renewed, new(struct{}), "long-running task stopped renewing its lease")
 	}
 
 	cancel()
-	waitForSignal(t, done)
+	receive(t, done, new(struct{}), "timed out waiting for lease renewal to stop")
 	assert.GreaterOrEqual(t, renewals.Load(), int32(wantedRenewals))
 }
