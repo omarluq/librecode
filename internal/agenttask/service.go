@@ -635,6 +635,10 @@ func (service *Service) acquireSessionSlot(key string) (func(), bool) {
 
 func (service *Service) requeue(ctx context.Context, taskID string) {
 	time.AfterFunc(dispatchRetryInterval, func() {
+		if ctx.Err() != nil {
+			return
+		}
+
 		select {
 		case service.queue <- taskID:
 		case <-ctx.Done():

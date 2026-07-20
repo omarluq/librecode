@@ -15,10 +15,14 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // Register the SQLite database/sql driver used by these tests.
 
+	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
 )
 
-const workerName = "worker"
+const (
+	childSessionName = "child"
+	workerName       = "worker"
+)
 
 func emptyService() *Service {
 	return &Service{
@@ -28,6 +32,45 @@ func emptyService() *Service {
 		nextSubscriber: 0, timeout: 0, sessionConcurrency: 0, leaseDuration: 0,
 		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0, leaseRenewalAttemptTimeout: 0,
 		leaseRenewalAttempts: 0, mu: sync.Mutex{},
+	}
+}
+
+func receiveString(t *testing.T, channel <-chan string) string {
+	t.Helper()
+
+	select {
+	case value := <-channel:
+		return value
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for string")
+
+		return ""
+	}
+}
+
+func receiveEvent(t *testing.T, channel <-chan database.TaskEventEntity) database.TaskEventEntity {
+	t.Helper()
+
+	select {
+	case value := <-channel:
+		return value
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for task event")
+
+		return database.TaskEventEntity{
+			Event:  database.EventEntity{CreatedAt: time.Time{}, ID: "", Kind: "", PayloadJSON: ""},
+			TaskID: "", Sequence: 0,
+		}
+	}
+}
+
+func waitForSignal(t *testing.T, channel <-chan struct{}) {
+	t.Helper()
+
+	select {
+	case <-channel:
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for signal")
 	}
 }
 
@@ -59,7 +102,7 @@ func (fixture serviceRepositoryFixture) createQueuedAgentTask(
 
 	owner, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
 	require.NoError(t, err)
-	child, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), "child", owner.ID)
+	child, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), childSessionName, owner.ID)
 	require.NoError(t, err)
 
 	entity := emptyAgentTask()
@@ -97,7 +140,7 @@ func serviceWithCancel(cancel context.CancelFunc) *Service {
 
 func serviceWithQueue() *Service {
 	service := emptyService()
-	service.queue = make(chan string)
+	service.queue = make(chan string, 1)
 
 	return service
 }
@@ -132,22 +175,191 @@ func leaseRenewalService(
 	return service
 }
 
-func TestServiceInternalDefaultsAndTimeoutParsing(t *testing.T) {
+func TestServiceInternalOptionDefaults(t *testing.T) {
 	t.Parallel()
 
-	concurrency, sessionConcurrency, capacity, timeout := optionDefaults(&Options{
-		Tasks: nil, AgentTasks: nil, Workflows: nil, Runner: nil, Logger: nil, Concurrency: 7,
-		SessionConcurrency: 3, QueueCapacity: 9, Timeout: time.Second,
-	})
-	assert.Equal(t, 7, concurrency)
-	assert.Equal(t, 3, sessionConcurrency)
-	assert.Equal(t, 9, capacity)
-	assert.Equal(t, time.Second, timeout)
-	assert.Zero(t, persistedTimeout(`not-json`))
-	assert.Equal(t, 2*time.Second, persistedTimeout(`{"limits":{"timeout":2000000000}}`))
+	tests := []struct {
+		options            *Options
+		name               string
+		concurrency        int
+		sessionConcurrency int
+		capacity           int
+		timeout            time.Duration
+	}{
+		{
+			name: "configured values",
+			options: &Options{
+				Tasks:              nil,
+				AgentTasks:         nil,
+				Workflows:          nil,
+				Runner:             nil,
+				Logger:             nil,
+				Concurrency:        7,
+				SessionConcurrency: 3,
+				QueueCapacity:      9,
+				Timeout:            time.Second,
+			},
+			concurrency:        7,
+			sessionConcurrency: 3,
+			capacity:           9,
+			timeout:            time.Second,
+		},
+		{
+			name: "defaults",
+			options: &Options{
+				Tasks: nil, AgentTasks: nil, Workflows: nil, Runner: nil, Logger: nil,
+				Timeout: 0, Concurrency: 0, SessionConcurrency: 0, QueueCapacity: 0,
+			},
+			concurrency:        defaultConcurrency,
+			sessionConcurrency: defaultSessionConcurrency,
+			capacity:           defaultQueueCapacity,
+			timeout:            defaultTimeout,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assertions := assert.New(t)
+
+			concurrency, sessionConcurrency, capacity, timeout := optionDefaults(test.options)
+			assertions.Equal(test.concurrency, concurrency)
+			assertions.Equal(test.sessionConcurrency, sessionConcurrency)
+			assertions.Equal(test.capacity, capacity)
+			assertions.Equal(test.timeout, timeout)
+		})
+	}
 }
 
-func TestServiceInternalRepositoryAndEventErrors(t *testing.T) {
+func TestServiceInternalPersistedTimeout(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		policyJSON string
+		want       time.Duration
+	}{
+		{name: "invalid policy", policyJSON: `not-json`, want: 0},
+		{name: "configured timeout", policyJSON: `{"limits":{"timeout":2000000000}}`, want: 2 * time.Second},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, test.want, persistedTimeout(test.policyJSON))
+		})
+	}
+}
+
+func TestServiceInternalRepositoryErrors(t *testing.T) {
+	t.Parallel()
+	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	require.NoError(t, err)
+	require.NoError(t, database.Migrate(t.Context(), connection))
+	tasks := database.NewTaskRepository(connection)
+	agentTasks := database.NewAgentTaskRepository(connection)
+	require.NoError(t, connection.Close())
+
+	service := serviceWithRepositories(tasks, agentTasks)
+	tests := append(repositoryWriteErrorCases(service), repositoryReadErrorCases(service)...)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert.ErrorContains(t, test.run(t), test.wantError)
+		})
+	}
+}
+
+type repositoryErrorCase struct {
+	run       func(*testing.T) error
+	name      string
+	wantError string
+}
+
+func repositoryWriteErrorCases(service *Service) []repositoryErrorCase {
+	return []repositoryErrorCase{
+		{name: "submit task", wantError: "create agent task", run: func(t *testing.T) error {
+			t.Helper()
+			_, err := service.Submit(t.Context(), &SubmitRequest{
+				ParentTaskID: "", OwnerSessionID: "", ChildSessionID: "", ConcurrencyKey: "", AgentName: "",
+				Prompt: "", Model: "", Provider: "", PolicyJSON: "", Depth: 0,
+			})
+
+			return err
+		}},
+		{
+			name:      "submit task with child session",
+			wantError: "create agent task with child session",
+			run: func(t *testing.T) error {
+				t.Helper()
+				_, err := service.SubmitAgentTask(t.Context(), &assistant.AgentTaskRequest{
+					ParentTaskID: "", OwnerSessionID: "owner", ChildSessionID: "", ChildSessionCWD: t.TempDir(),
+					ChildSessionName: childSessionName, AgentName: generalAgent, Prompt: workPrompt,
+					Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: "", NodeKey: "",
+					InvocationIndex: 0, Depth: 0,
+				})
+
+				return err
+			},
+		},
+		{name: "recover interrupted tasks", wantError: "recover expired tasks", run: func(t *testing.T) error {
+			t.Helper()
+
+			return service.recoverInterrupted(t.Context())
+		}},
+		{name: "enqueue recovered tasks", wantError: "list queued tasks", run: func(t *testing.T) error {
+			t.Helper()
+
+			return service.enqueueRecovered(t.Context(), t.Context())
+		}},
+	}
+}
+
+func repositoryReadErrorCases(service *Service) []repositoryErrorCase {
+	return []repositoryErrorCase{
+		{name: "get task", wantError: "get agent task", run: func(t *testing.T) error {
+			t.Helper()
+			_, _, err := service.Get(t.Context(), "id")
+
+			return err
+		}},
+		{name: "list tasks", wantError: "list agent tasks", run: func(t *testing.T) error {
+			t.Helper()
+			_, err := service.List(t.Context(), "owner", 1)
+
+			return err
+		}},
+		{name: "list events", wantError: "list task events", run: func(t *testing.T) error {
+			t.Helper()
+			_, err := service.Events(t.Context(), "id", 0, 1)
+
+			return err
+		}},
+		{name: "append event", wantError: "append task event", run: func(t *testing.T) error {
+			t.Helper()
+
+			return service.eventSink("id")(t.Context(), "event", map[string]string{"ok": "yes"})
+		}},
+		{name: "check task ownership", wantError: "get agent task", run: func(t *testing.T) error {
+			t.Helper()
+			owned, err := service.ownsTask(t.Context(), "owner", "id")
+			assert.False(t, owned)
+
+			return err
+		}},
+	}
+}
+
+func TestServiceInternalEventMarshalError(t *testing.T) {
+	t.Parallel()
+
+	service := emptyService()
+	err := service.eventSink("id")(t.Context(), "event", make(chan int))
+	assert.ErrorContains(t, err, "marshal task event")
+}
+
+func TestServiceInternalTerminalUpdateErrorsAreLogged(t *testing.T) {
 	t.Parallel()
 
 	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
@@ -157,21 +369,49 @@ func TestServiceInternalRepositoryAndEventErrors(t *testing.T) {
 	agentTasks := database.NewAgentTaskRepository(connection)
 	require.NoError(t, connection.Close())
 
-	service := serviceWithRepositories(tasks, agentTasks)
+	var logs bytes.Buffer
 
-	_, _, err = service.Get(t.Context(), "id")
-	require.ErrorContains(t, err, "get agent task")
-	_, err = service.List(t.Context(), "owner", 1)
-	require.ErrorContains(t, err, "list agent tasks")
-	_, err = service.Events(t.Context(), "id", 0, 1)
-	require.ErrorContains(t, err, "list task events")
-	err = service.eventSink("id")(t.Context(), "event", make(chan int))
-	require.ErrorContains(t, err, "marshal task event")
-	err = service.eventSink("id")(t.Context(), "event", map[string]string{"ok": "yes"})
-	require.ErrorContains(t, err, "append task event")
-	owned, err := service.ownsTask(t.Context(), "owner", "id")
-	assert.False(t, owned)
-	require.ErrorContains(t, err, "get agent task")
+	service := serviceWithRepositories(tasks, agentTasks)
+	service.logger = slog.New(slog.NewTextHandler(&logs, nil))
+
+	service.rejectQueuedTask("id", "rejected", "rejected")
+	service.finish(
+		t.Context(),
+		"id",
+		database.TaskFailed,
+		"task_failed",
+		Result{Text: "", UsageJSON: ""},
+		"failed",
+		"failed",
+	)
+
+	assertions := assert.New(t)
+	assertions.Contains(logs.String(), "reject queued agent task")
+	assertions.Contains(logs.String(), "finish agent task")
+}
+
+func TestServiceInternalSubmitAgentTaskCreatesChildSession(t *testing.T) {
+	t.Parallel()
+	assertions := assert.New(t)
+	must := require.New(t)
+
+	fixture := newServiceRepositoryFixture(t)
+	owner, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
+	must.NoError(err)
+
+	service := serviceWithRepositories(fixture.tasks, fixture.agentTasks)
+	service.queue = make(chan string, 1)
+	service.done = make(chan struct{})
+
+	created, err := service.SubmitAgentTask(t.Context(), &assistant.AgentTaskRequest{
+		ParentTaskID: "", OwnerSessionID: owner.ID, ChildSessionID: "", ChildSessionCWD: t.TempDir(),
+		ChildSessionName: childSessionName, AgentName: generalAgent, Prompt: workPrompt,
+		Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: owner.ID, NodeKey: "",
+		InvocationIndex: 0, Depth: 1,
+	})
+	must.NoError(err)
+	assertions.NotEmpty(created.ChildSessionID)
+	assertions.Equal(created.Task.ID, receiveString(t, service.queue))
 }
 
 func TestServiceInternalTerminalEventSurvivesFullSubscriberBuffer(t *testing.T) {
@@ -205,7 +445,7 @@ func TestServiceInternalTerminalEventSurvivesFullSubscriberBuffer(t *testing.T) 
 
 	received := make([]database.TaskEventEntity, 0, eventBuffer)
 	for range eventBuffer {
-		received = append(received, <-events)
+		received = append(received, receiveEvent(t, events))
 	}
 
 	assert.Equal(t, int64(2), received[0].Sequence, "oldest stream event should be evicted")
@@ -273,7 +513,7 @@ func testQueuedTaskCancellation(
 
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
 	require.NoError(t, err)
-	child, err := sessions.CreateSession(t.Context(), t.TempDir(), "child", owner.ID)
+	child, err := sessions.CreateSession(t.Context(), t.TempDir(), childSessionName, owner.ID)
 	require.NoError(t, err)
 
 	entity := emptyAgentTask()
@@ -551,6 +791,81 @@ func TestServiceInternalRunIgnoresCanceledContext(t *testing.T) {
 	assert.Empty(t, service.queue)
 }
 
+func TestServiceInternalHandleQueuedLoadError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		wantLog     string
+		cancel      bool
+		wantRequeue bool
+	}{
+		{name: "shutdown is ignored", cancel: true, wantRequeue: false, wantLog: ""},
+		{name: "live service logs and requeues", cancel: false, wantRequeue: true, wantLog: "database unavailable"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assertions := assert.New(t)
+
+			ctx, cancel := context.WithCancel(t.Context())
+			if test.cancel {
+				cancel()
+			} else {
+				t.Cleanup(cancel)
+			}
+
+			var logs bytes.Buffer
+
+			service := serviceWithQueue()
+			service.logger = slog.New(slog.NewTextHandler(&logs, nil))
+			service.handleQueuedLoadError(ctx, "task", errors.New("database unavailable"))
+
+			if test.wantRequeue {
+				select {
+				case taskID := <-service.queue:
+					assertions.Equal("task", taskID)
+				case <-time.After(time.Second):
+					require.FailNow(t, "task was not requeued")
+				}
+			} else {
+				assertions.Empty(service.queue)
+			}
+
+			assertions.Contains(logs.String(), test.wantLog)
+		})
+	}
+}
+
+func TestServiceInternalRunHandlesQueuedLoadError(t *testing.T) {
+	t.Parallel()
+
+	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
+	require.NoError(t, err)
+	require.NoError(t, database.Migrate(t.Context(), connection))
+	tasks := database.NewTaskRepository(connection)
+	agentTasks := database.NewAgentTaskRepository(connection)
+	require.NoError(t, connection.Close())
+
+	var logs bytes.Buffer
+
+	service := serviceWithRepositories(tasks, agentTasks)
+	service.logger = slog.New(slog.NewTextHandler(&logs, nil))
+	service.queue = make(chan string, 1)
+
+	service.run(t.Context(), "task")
+
+	select {
+	case taskID := <-service.queue:
+		assert.Equal(t, "task", taskID)
+	case <-time.After(time.Second):
+		require.FailNow(t, "task was not requeued")
+	}
+
+	assert.Contains(t, logs.String(), "load queued agent task")
+}
+
 func TestServiceInternalRequeueStopsWithContext(t *testing.T) {
 	t.Parallel()
 
@@ -559,6 +874,10 @@ func TestServiceInternalRequeueStopsWithContext(t *testing.T) {
 
 	service := serviceWithQueue()
 	service.requeue(ctx, "task")
+
+	assert.Never(t, func() bool {
+		return len(service.queue) > 0
+	}, 5*dispatchRetryInterval, dispatchRetryInterval)
 }
 
 func TestServiceInternalLeaseRenewalRetriesTransientDatabaseErrors(t *testing.T) {
@@ -578,7 +897,7 @@ func TestServiceInternalLeaseRenewalRetriesTransientDatabaseErrors(t *testing.T)
 	})
 
 	assert.True(t, service.renewLeaseWithRetry(t.Context(), "task"))
-	assert.EqualValues(t, 3, attempts.Load())
+	assert.Equal(t, int32(3), attempts.Load())
 	assert.Contains(t, logs.String(), "retry agent task lease renewal")
 	assert.NotContains(t, logs.String(), "renew agent task lease after retries")
 }
@@ -598,8 +917,9 @@ func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 	})
 	service.leaseHeartbeatInterval = time.Millisecond
 	ctx, cancel := context.WithCancel(t.Context())
+
 	done := make(chan struct{})
-	service.renewLease(ctx, cancel, "task", done)
+	go service.renewLease(ctx, cancel, "task", done)
 
 	select {
 	case <-ctx.Done():
@@ -607,8 +927,8 @@ func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 		require.FailNow(t, "lease renewal did not cancel the run")
 	}
 
-	<-done
-	assert.EqualValues(t, 3, attempts.Load())
+	waitForSignal(t, done)
+	assert.Equal(t, int32(3), attempts.Load())
 	assert.Contains(t, logs.String(), "renew agent task lease after retries")
 }
 
@@ -642,6 +962,6 @@ func TestServiceInternalLeaseRenewsThroughoutLongRun(t *testing.T) {
 	}
 
 	cancel()
-	<-done
+	waitForSignal(t, done)
 	assert.GreaterOrEqual(t, renewals.Load(), int32(wantedRenewals))
 }
