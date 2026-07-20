@@ -119,7 +119,7 @@ func TestRuntimeRunnerRunsPromptAndHandlesPromptAndEventErrors(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), db))
 	sessions := database.NewSessionRepository(db)
-	session, err := sessions.CreateSession(t.Context(), t.TempDir(), "child", "")
+	session, err := sessions.CreateSession(t.Context(), t.TempDir(), childSessionName, "")
 	require.NoError(t, err)
 
 	cfg := config.Load("").MustGet()
@@ -227,7 +227,7 @@ func TestRuntimeRunnerReportsSessionLoadError(t *testing.T) {
 	task := emptyAgentTask()
 	task.AgentName = generalAgent
 	task.PolicyJSON = `{}`
-	task.ChildSessionID = "child"
+	task.ChildSessionID = childSessionName
 	result, err := runner.Run(t.Context(), task, nil)
 	require.ErrorContains(t, err, "load child session")
 	assert.JSONEq(t, `{}`, result.UsageJSON)
