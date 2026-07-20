@@ -522,20 +522,34 @@ func (service *Service) worker(ctx context.Context) {
 	defer service.wg.Done()
 
 	for {
+		// Prefer shutdown over queued work when both cases are ready.
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
 		select {
 		case <-ctx.Done():
 			return
 		case taskID := <-service.queue:
+			if ctx.Err() != nil {
+				return
+			}
+
 			service.run(ctx, taskID)
 		}
 	}
 }
 
 func (service *Service) run(ctx context.Context, taskID string) {
+	if ctx.Err() != nil {
+		return
+	}
+
 	task, found, err := service.agentTasks.Get(ctx, taskID)
 	if err != nil {
-		service.logError(ctx, "load queued agent task", "task_id", taskID, "error", err)
-		service.requeue(ctx, taskID)
+		service.handleQueuedLoadError(ctx, taskID, err)
 
 		return
 	}
@@ -586,6 +600,17 @@ func (service *Service) run(ctx context.Context, taskID string) {
 
 	result, runErr := service.execute(ctx, taskID, task)
 	service.finalizeRun(ctx, taskID, result, runErr)
+}
+
+func (service *Service) handleQueuedLoadError(ctx context.Context, taskID string, err error) {
+	// Cancellation can occur while the query is in flight. Shutdown is
+	// expected and must not log or requeue durable work.
+	if ctx.Err() != nil {
+		return
+	}
+
+	service.logError(ctx, "load queued agent task", "task_id", taskID, "error", err)
+	service.requeue(ctx, taskID)
 }
 
 func (service *Service) acquireSessionSlot(key string) (func(), bool) {
