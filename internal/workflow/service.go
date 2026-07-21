@@ -396,6 +396,20 @@ func (service *Service) AgentTasks(
 	return tasks, nil
 }
 
+// AgentTaskDetails returns complete child tasks for multiple workflows in one query.
+func (service *Service) AgentTaskDetails(
+	ctx context.Context,
+	runIDs []string,
+) ([]database.WorkflowAgentTaskDetail, error) {
+	details, err := service.runs.ListAgentTaskDetails(ctx, runIDs)
+	if err != nil {
+		return nil, oops.In("workflow").Code("list_agent_task_details").
+			Wrapf(err, "list workflow agent task details")
+	}
+
+	return details, nil
+}
+
 func (service *Service) createRun(
 	ctx context.Context,
 	request *ServiceRequest,

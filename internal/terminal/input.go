@@ -270,6 +270,12 @@ func (app *App) composerShortcut(action actionID, handler func()) shortcutHandle
 
 func (app *App) handlePanelKey(ctx context.Context, event *tcell.EventKey) error {
 	if event.Key() == tcell.KeyEscape {
+		if app.selectedPanelKind == panelWorkflows && app.workflowPanelRunID != "" {
+			app.openWorkflowsPanel(ctx)
+
+			return nil
+		}
+
 		app.closePanel()
 
 		return nil
@@ -301,6 +307,8 @@ func (app *App) handleSpecialPanelKey(ctx context.Context, event *tcell.EventKey
 		return app.handleScopedModelKey(event), nil
 	case panelAgentTasks:
 		return app.handleAgentTasksPanelKey(ctx, event)
+	case panelWorkflows:
+		return app.handleWorkflowsPanelKey(ctx, event)
 	case panelModel, panelAuthLogin, panelAuthLogout, panelSettings,
 		panelHotkeys, panelChangelog, panelTree:
 		return false, nil

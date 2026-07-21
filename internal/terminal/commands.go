@@ -59,6 +59,12 @@ func (app *App) runSessionCommand(ctx context.Context, command, args, original s
 		return false, handler()
 	}
 
+	if command == "workflows" {
+		app.openWorkflowsPanel(ctx)
+
+		return false, nil
+	}
+
 	if command == "agents" {
 		switch args {
 		case "profiles":
