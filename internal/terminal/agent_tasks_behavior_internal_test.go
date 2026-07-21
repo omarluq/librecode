@@ -308,7 +308,9 @@ func TestWorkflowChildAgentTasksAreHiddenAndNotDelivered(t *testing.T) {
 	}
 	lines := app.renderAgentTaskSummary(80)
 	require.Len(t, lines, 2)
-	assert.Equal(t, "◌ workflow(active review)", lines[0].Text)
+	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), lines[0].Text)
+	assert.NotContains(t, lines[0].Text, "STEP")
+	assert.NotContains(t, lines[0].Text, "STATUS")
 	assert.True(t, app.hasRunningAgentTasks())
 
 	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":"workflow-child"}`, false))
@@ -1006,7 +1008,7 @@ func TestInspectAgentTaskLookupFailureDoesNotMutateState(t *testing.T) {
 			mutate: func(task *database.AgentTaskEntity) {
 				task.Task.ID = "missing-task"
 			},
-			wantErr: "not found",
+			wantErr: workflowNotFound,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -1205,7 +1207,7 @@ func TestAgentTaskPanelRejectsTaskOwnedByAnotherSession(t *testing.T) {
 	handled, err := app.handleAgentTasksPanelKey(t.Context(), tcell.NewEventKey(tcell.KeyCtrlC, "", tcell.ModNone))
 	assert.True(t, handled)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	assert.Contains(t, err.Error(), workflowNotFound)
 	assert.Empty(t, stub.cancelCalls)
 }
 

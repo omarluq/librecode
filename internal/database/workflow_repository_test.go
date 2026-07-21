@@ -78,6 +78,54 @@ func TestWorkflowRepositoryLifecycleAndAgentLinks(t *testing.T) {
 	assert.Len(t, events, 3)
 }
 
+func TestWorkflowRepositoryListAgentTaskDetails(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner, firstChild := fixture.createAgentTaskSessions(ctx)
+	secondChild, err := fixture.sessions.CreateSession(ctx, owner.CWD, "second", owner.ID)
+	require.NoError(t, err)
+
+	firstRun, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+	secondRun, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+
+	for index, creation := range []struct {
+		run   *database.WorkflowRunEntity
+		child string
+		node  string
+	}{
+		{run: firstRun, child: firstChild.ID, node: "inspect"},
+		{run: secondRun, child: secondChild.ID, node: "review"},
+	} {
+		task := newAgentTask(owner.ID, creation.child)
+		task.Task.ParentTaskID = creation.run.Task.ID
+		created, createErr := fixture.workflows.CreateAgentTask(ctx, creation.run.Task.ID, task, creation.node, index)
+		require.NoError(t, createErr)
+		assert.NotEmpty(t, created.Task.ID)
+	}
+
+	details, err := fixture.workflows.ListAgentTaskDetails(ctx, []string{firstRun.Task.ID, secondRun.Task.ID})
+	require.NoError(t, err)
+	require.Len(t, details, 2)
+
+	nodesByRun := map[string]string{}
+	for index := range details {
+		nodesByRun[details[index].Link.WorkflowTaskID] = details[index].Link.NodeKey
+	}
+
+	assert.Equal(t, map[string]string{
+		firstRun.Task.ID:  "inspect",
+		secondRun.Task.ID: "review",
+	}, nodesByRun)
+
+	empty, err := fixture.workflows.ListAgentTaskDetails(ctx, nil)
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+}
+
 func TestWorkflowRepositoryCreateAgentTaskAtomicallyLinks(t *testing.T) {
 	t.Parallel()
 

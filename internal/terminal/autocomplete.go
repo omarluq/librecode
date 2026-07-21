@@ -37,6 +37,7 @@ func slashSuggestions() []tui.ListItem {
 		autocompleteSuggestion("skill", "list or load an Agent Skill"),
 		autocompleteSuggestion(toolSectionTool, "run a built-in tool with JSON arguments"),
 		autocompleteSuggestion("tree", "open session tree"),
+		autocompleteSuggestion("workflows", "open dynamic workflows"),
 	}
 }
 

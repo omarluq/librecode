@@ -35,11 +35,25 @@ func (app *App) handleAgentTaskSummaryPriorityKey(
 	ctx context.Context,
 	event *tcell.EventKey,
 ) (bool, error) {
+	if app.workflowSummaryRunID != "" && app.agentTaskSummaryFocused() &&
+		app.keys.matches(event, actionSelectCancel) {
+		app.workflowSummaryRunID = ""
+		app.agentTaskSummarySelection.ItemIndex = 0
+
+		return true, nil
+	}
+
 	if app.agentTaskSummaryFocused() && app.keys.matches(event, actionSelectConfirm) {
+		index := app.agentTaskSummarySelection.ItemIndex
+		if index < len(app.activeWorkflows) {
+			app.workflowSummaryRunID = app.activeWorkflows[index].Task.ID
+			app.agentTaskSummarySelection.ItemIndex = 0
+
+			return true, nil
+		}
+
 		taskID, ok := app.selectedAgentTaskSummaryTaskID()
 		if !ok {
-			app.setStatus("workflow inspection is not available")
-
 			return true, nil
 		}
 
@@ -99,6 +113,10 @@ func (app *App) selectedAgentTaskSummaryTaskID() (string, bool) {
 }
 
 func (app *App) agentTaskSummaryItemCount() int {
+	if app.workflowSummaryRunID != "" {
+		return 1
+	}
+
 	count := len(app.activeWorkflows)
 	for index := range app.agentTasks {
 		if app.agentTasks[index].Task.ParentTaskID == "" {

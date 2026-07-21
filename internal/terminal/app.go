@@ -25,6 +25,11 @@ import (
 type workflowInspector interface {
 	Get(context.Context, string) (*database.WorkflowRunEntity, bool, error)
 	List(context.Context, string, int) ([]database.WorkflowRunEntity, error)
+	Events(context.Context, string, int64, int) ([]database.TaskEventEntity, error)
+	AgentTasks(context.Context, string) ([]database.WorkflowAgentTaskEntity, error)
+	AgentTask(context.Context, string) (*database.AgentTaskEntity, bool, error)
+	AgentTaskDetails(context.Context, []string) ([]database.WorkflowAgentTaskDetail, error)
+	Cancel(context.Context, string, string) (bool, error)
 }
 
 const (
@@ -168,6 +173,10 @@ type App struct {
 	liveAgentCompletions      []chatMessage
 	agentTasks                []database.AgentTaskEntity
 	activeWorkflows           []database.WorkflowRunEntity
+	workflowProgress          map[string]workflowProgress
+	workflowSteps             map[string][]database.WorkflowAgentTaskDetail
+	workflowSummaryRunID      string
+	workflowPanelRunID        string
 	agentTasksRefreshedAt     time.Time
 	agentTaskWatches          map[string]context.CancelFunc
 	deliveredAgentTasks       map[string]struct{}
@@ -275,6 +284,10 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 		liveAgentCompletions:      []chatMessage{},
 		agentTasks:                []database.AgentTaskEntity{},
 		activeWorkflows:           []database.WorkflowRunEntity{},
+		workflowProgress:          map[string]workflowProgress{},
+		workflowSteps:             map[string][]database.WorkflowAgentTaskDetail{},
+		workflowSummaryRunID:      "",
+		workflowPanelRunID:        "",
 		agentTaskSummaryOwnerID:   "",
 		agentTasksRefreshedAt:     time.Time{},
 		agentTaskWatches:          map[string]context.CancelFunc{},
@@ -412,6 +425,7 @@ func (app *App) runLoopStep(
 		if time.Since(app.agentTasksRefreshedAt) >= agentTaskRefreshInterval {
 			app.refreshVisibleAgentTasks(ctx)
 			app.refreshAgentTasksPanel(ctx)
+			app.refreshWorkflowsPanel(ctx)
 		}
 
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
@@ -521,7 +535,8 @@ func (app *App) coalesceResizeEvents(resize *tcell.EventResize) resizeCoalescedE
 }
 
 func (app *App) workTick(ticker *time.Ticker) <-chan time.Time {
-	if app.busy() || app.hasRunningAgentTasks() || app.selectedPanelKind == panelAgentTasks {
+	if app.busy() || app.hasRunningAgentTasks() ||
+		app.selectedPanelKind == panelAgentTasks || app.selectedPanelKind == panelWorkflows {
 		return ticker.C
 	}
 

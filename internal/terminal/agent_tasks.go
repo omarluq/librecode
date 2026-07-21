@@ -111,6 +111,9 @@ func (app *App) resetAgentTaskTracking() {
 	app.stopAgentTaskWatches()
 	app.agentTasks = nil
 	app.activeWorkflows = nil
+	app.workflowProgress = map[string]workflowProgress{}
+	app.workflowSteps = map[string][]database.WorkflowAgentTaskDetail{}
+	app.workflowSummaryRunID = ""
 	app.agentTaskSummaryOwnerID = ""
 	app.agentTasksRefreshedAt = time.Time{}
 	app.deliveredAgentTasks = map[string]struct{}{}
@@ -161,7 +164,28 @@ func (app *App) refreshActiveWorkflows(ctx context.Context) {
 		listed[runs[index].Task.ID] = runs[index]
 	}
 
-	active := make([]database.WorkflowRunEntity, 0, len(runs))
+	active := app.reconcileTrackedWorkflows(ctx, listed, len(runs))
+	for index := range runs {
+		run, found := listed[runs[index].Task.ID]
+		if found && !isTerminalAgentTaskState(run.Task.State) {
+			active = append(active, run)
+		}
+	}
+
+	app.activeWorkflows = active
+	if !app.hasActiveWorkflow(app.workflowSummaryRunID) {
+		app.workflowSummaryRunID = ""
+	}
+
+	app.refreshWorkflowSummaryDetails(ctx)
+}
+
+func (app *App) reconcileTrackedWorkflows(
+	ctx context.Context,
+	listed map[string]database.WorkflowRunEntity,
+	capacity int,
+) []database.WorkflowRunEntity {
+	active := make([]database.WorkflowRunEntity, 0, capacity)
 
 	for index := range app.activeWorkflows {
 		previous := app.activeWorkflows[index]
@@ -182,14 +206,36 @@ func (app *App) refreshActiveWorkflows(ctx context.Context) {
 		active = append(active, latest)
 	}
 
-	for index := range runs {
-		run, found := listed[runs[index].Task.ID]
-		if found && !isTerminalAgentTaskState(run.Task.State) {
-			active = append(active, run)
+	return active
+}
+
+func (app *App) hasActiveWorkflow(runID string) bool {
+	if runID == "" {
+		return false
+	}
+
+	for index := range app.activeWorkflows {
+		if app.activeWorkflows[index].Task.ID == runID {
+			return true
 		}
 	}
 
-	app.activeWorkflows = active
+	return false
+}
+
+func (app *App) refreshWorkflowSummaryDetails(ctx context.Context) {
+	runIDs := make([]string, len(app.activeWorkflows))
+	for index := range app.activeWorkflows {
+		runIDs[index] = app.activeWorkflows[index].Task.ID
+	}
+
+	details, err := app.loadWorkflowDetails(ctx, runIDs)
+	if err != nil {
+		return
+	}
+
+	app.workflowProgress = details.ProgressByRun
+	app.workflowSteps = details.StepsByRun
 }
 
 func (app *App) reconcileActiveWorkflow(
@@ -1072,6 +1118,13 @@ func isTerminalAgentTaskState(state database.TaskState) bool {
 	}
 }
 
+const (
+	workflowStepMinimumWidth = 8
+	workflowStatusWidth      = 12
+	workflowTableFixedWidth  = 24
+	workflowDetailFixedRows  = 3
+)
+
 func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 	if len(app.agentTasks) == 0 && len(app.activeWorkflows) == 0 {
 		return nil
@@ -1079,20 +1132,34 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 
 	indicatorStyle := tcell.StyleDefault.Foreground(defaultWorkingShimmerBrightColor()).Bold(true)
 	labelStyle := tcell.StyleDefault.Foreground(app.theme.colors[colorMuted])
+	headerStyle := tcell.StyleDefault.Foreground(app.theme.colors[colorDim]).Bold(true)
 
 	lines := make([]tui.Line, 0, len(app.activeWorkflows)+len(app.agentTasks)+1)
 	selectedIndex := app.selectedAgentTaskSummaryIndex()
+	selectableIndex := 0
+
+	if run := app.expandedWorkflowSummaryRun(); run != nil {
+		lines = app.renderWorkflowSummaryDetail(run, width, labelStyle, headerStyle, selectedIndex == 0)
+
+		return padAgentTaskSummary(lines, app.agentTaskSummaryHeight())
+	}
 
 	for index := range app.activeWorkflows {
-		label := workflowSummaryLabel(&app.activeWorkflows[index])
+		run := &app.activeWorkflows[index]
+		label := app.workflowSummaryLabel(run)
 		line := tui.Line{
-			Text: pendingToolIndicator + " " + label, Style: labelStyle,
+			Text:  pendingToolIndicator + " " + label,
+			Style: labelStyle,
 			Spans: []tui.Span{
 				{Text: pendingToolIndicator, Style: indicatorStyle},
 				{Text: " " + label, Style: labelStyle},
 			},
 		}
-		lines = append(lines, app.styleAgentTaskSummaryLine(line, width, len(lines) == selectedIndex))
+		lines = append(
+			lines,
+			app.styleAgentTaskSummaryLine(line, width, selectableIndex == selectedIndex),
+		)
+		selectableIndex++
 	}
 
 	for index := range app.agentTasks {
@@ -1110,7 +1177,11 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 				{Text: " " + label, Style: labelStyle},
 			},
 		}
-		lines = append(lines, app.styleAgentTaskSummaryLine(line, width, len(lines) == selectedIndex))
+		lines = append(
+			lines,
+			app.styleAgentTaskSummaryLine(line, width, selectableIndex == selectedIndex),
+		)
+		selectableIndex++
 	}
 
 	if len(lines) == 0 {
@@ -1119,7 +1190,88 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 
 	lines = append(lines, tui.NewLine(tcell.StyleDefault, ""))
 
+	return padAgentTaskSummary(lines, app.agentTaskSummaryHeight())
+}
+
+func (app *App) agentTaskSummaryHeight() int {
+	collapsedHeight := len(app.activeWorkflows) + 1
+	for index := range app.agentTasks {
+		if app.agentTasks[index].Task.ParentTaskID == "" {
+			collapsedHeight++
+		}
+	}
+
+	if app.workflowSummaryRunID == "" {
+		return collapsedHeight
+	}
+
+	reservedHeight := collapsedHeight
+
+	for index := range app.activeWorkflows {
+		stepRows := max(1, len(app.workflowSteps[app.activeWorkflows[index].Task.ID]))
+		reservedHeight = max(reservedHeight, stepRows+workflowDetailFixedRows)
+	}
+
+	return reservedHeight
+}
+
+func padAgentTaskSummary(lines []tui.Line, height int) []tui.Line {
+	padding := height - len(lines)
+	if padding <= 0 {
+		return lines
+	}
+
+	for range padding {
+		lines = append(lines, tui.NewLine(tcell.StyleDefault, ""))
+	}
+
 	return lines
+}
+
+func (app *App) expandedWorkflowSummaryRun() *database.WorkflowRunEntity {
+	for index := range app.activeWorkflows {
+		if app.activeWorkflows[index].Task.ID == app.workflowSummaryRunID {
+			return &app.activeWorkflows[index]
+		}
+	}
+
+	return nil
+}
+
+func (app *App) renderWorkflowSummaryDetail(
+	run *database.WorkflowRunEntity,
+	width int,
+	labelStyle tcell.Style,
+	headerStyle tcell.Style,
+	selected bool,
+) []tui.Line {
+	lines := make([]tui.Line, 0, len(app.workflowSteps[run.Task.ID])+workflowDetailFixedRows)
+	heading := tui.NewLine(labelStyle, "Workflow: "+app.workflowSummaryLabel(run))
+	lines = append(lines, app.styleAgentTaskSummaryLine(heading, width, selected))
+
+	stepWidth := max(workflowStepMinimumWidth, width-workflowTableFixedWidth)
+	header := tui.PadRight("STEP", stepWidth) + "  " +
+		tui.PadRight("STATUS", workflowStatusWidth) + "  ELAPSED"
+	lines = append(lines, tui.NewLine(headerStyle, tui.Truncate(header, width)))
+
+	steps := app.workflowSteps[run.Task.ID]
+	if len(steps) == 0 {
+		row := workflowStepRow("workflow", run.Task.State, taskMeta(&run.Task, time.Now()), stepWidth)
+		lines = append(lines, tui.NewLine(labelStyle, tui.Truncate(row, width)))
+	} else {
+		for index := range steps {
+			detail := &steps[index]
+			row := workflowStepRow(
+				workflowStepName(&detail.Link),
+				detail.AgentTask.Task.State,
+				taskMeta(&detail.AgentTask.Task, time.Now()),
+				stepWidth,
+			)
+			lines = append(lines, tui.NewLine(labelStyle, tui.Truncate(row, width)))
+		}
+	}
+
+	return append(lines, tui.NewLine(tcell.StyleDefault, ""))
 }
 
 func (app *App) selectedAgentTaskSummaryIndex() int {
@@ -1139,17 +1291,39 @@ func (app *App) styleAgentTaskSummaryLine(line tui.Line, width int, selected boo
 	return line
 }
 
-func workflowSummaryLabel(run *database.WorkflowRunEntity) string {
+func workflowStepName(link *database.WorkflowAgentTaskEntity) string {
+	name := strings.TrimSpace(link.NodeKey)
+	if name == "" {
+		name = "agent"
+	}
+
+	return fmt.Sprintf("%s[%d]", name, link.InvocationIndex)
+}
+
+func workflowStepRow(name string, state database.TaskState, elapsed string, stepWidth int) string {
+	return tui.PadRight(tui.Truncate(name, stepWidth), stepWidth) + "  " +
+		tui.PadRight(string(state), workflowStatusWidth) + "  " + elapsed
+}
+
+func (app *App) workflowSummaryLabel(run *database.WorkflowRunEntity) string {
 	if run == nil {
 		return toolDisplayWorkflow
 	}
 
-	name := strings.Join(strings.Fields(run.Name), " ")
-	if name == "" {
-		return toolDisplayWorkflow
+	label := toolDisplayWorkflow + "(" + workflowName(run) + ")"
+
+	progress, ok := app.workflowProgress[run.Task.ID]
+	if !ok || progress.Total == 0 {
+		return label
 	}
 
-	return toolDisplayWorkflow + "(" + name + ")"
+	return fmt.Sprintf(
+		"%s  %d/%d agents · %s",
+		label,
+		progress.Succeeded+progress.Failed,
+		progress.Total,
+		taskMeta(&run.Task, time.Now()),
+	)
 }
 
 func agentTaskSummaryLabel(task *database.AgentTaskEntity) string {

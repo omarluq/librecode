@@ -184,6 +184,8 @@ func TestServiceRepositoryFailurePaths(t *testing.T) {
 	require.ErrorContains(t, err, "get workflow agent task")
 	_, err = service.AgentTasks(t.Context(), run.Task.ID)
 	require.ErrorContains(t, err, "list workflow agent tasks")
+	_, err = service.AgentTaskDetails(t.Context(), []string{run.Task.ID})
+	require.ErrorContains(t, err, "list workflow agent task details")
 	_, err = service.RecoverInterrupted(t.Context())
 	require.ErrorContains(t, err, "recover interrupted workflow runs")
 	_, err = service.Cancel(t.Context(), owner, run.Task.ID)

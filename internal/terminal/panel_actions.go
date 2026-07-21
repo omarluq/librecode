@@ -22,6 +22,14 @@ func (app *App) openPanel(panelModel *panel.Model) {
 }
 
 func (app *App) applyPanelSelection(ctx context.Context, value string) error {
+	if app.selectedPanelKind == panelWorkflows {
+		return app.applyWorkflowSelection(ctx, value)
+	}
+
+	return app.applyStandardPanelSelection(ctx, value)
+}
+
+func (app *App) applyStandardPanelSelection(ctx context.Context, value string) error {
 	switch app.selectedPanelKind {
 	case panelAuthLogin, panelAuthLogout:
 		return app.applyAuthSelection(ctx, value)

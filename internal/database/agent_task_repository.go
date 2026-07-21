@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/samber/oops"
@@ -253,6 +254,40 @@ ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`
 	rows := []agentTaskRow{}
 	if err := repository.sql.Query(ctx, &rows, query, TaskKindAgent, ownerSessionID, limit); err != nil {
 		return nil, oops.In("database").Code("list_agent_tasks").Wrapf(err, "list agent tasks")
+	}
+
+	entities, err := collectSQLRows(rows, agentTaskFromRow)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_agent_task").Wrapf(err, "scan agent task")
+	}
+
+	return entities, nil
+}
+
+// ListByIDs returns complete agent tasks matching the supplied IDs.
+func (repository *AgentTaskRepository) ListByIDs(
+	ctx context.Context,
+	taskIDs []string,
+) ([]AgentTaskEntity, error) {
+	if len(taskIDs) == 0 {
+		return []AgentTaskEntity{}, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(taskIDs)), ",")
+	query := `SELECT ` + agentTaskColumns + `
+FROM tasks t JOIN agent_tasks a ON a.task_id = t.id
+WHERE t.kind = ? AND t.id IN (` + placeholders + `)`
+
+	arguments := make([]any, 0, len(taskIDs)+1)
+	arguments = append(arguments, TaskKindAgent)
+
+	for _, taskID := range taskIDs {
+		arguments = append(arguments, taskID)
+	}
+
+	rows := []agentTaskRow{}
+	if err := repository.sql.Query(ctx, &rows, query, arguments...); err != nil {
+		return nil, oops.In("database").Code("list_agent_tasks_by_id").Wrapf(err, "list agent tasks by id")
 	}
 
 	entities, err := collectSQLRows(rows, agentTaskFromRow)

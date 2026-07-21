@@ -22,6 +22,7 @@ type workflowInspectorStub struct {
 	runs          []database.WorkflowRunEntity
 	events        []database.TaskEventEntity
 	children      []database.WorkflowAgentTaskEntity
+	details       []database.WorkflowAgentTaskDetail
 	found         bool
 }
 
@@ -38,4 +39,32 @@ func (stub *workflowInspectorStub) List(
 	int,
 ) ([]database.WorkflowRunEntity, error) {
 	return stub.runs, stub.listErr
+}
+
+func (stub *workflowInspectorStub) Events(
+	context.Context, string, int64, int,
+) ([]database.TaskEventEntity, error) {
+	return stub.events, stub.eventsErr
+}
+
+func (stub *workflowInspectorStub) AgentTasks(
+	context.Context, string,
+) ([]database.WorkflowAgentTaskEntity, error) {
+	return stub.children, stub.agentTasksErr
+}
+
+func (stub *workflowInspectorStub) AgentTask(
+	context.Context, string,
+) (*database.AgentTaskEntity, bool, error) {
+	return nil, false, nil
+}
+
+func (stub *workflowInspectorStub) AgentTaskDetails(
+	context.Context, []string,
+) ([]database.WorkflowAgentTaskDetail, error) {
+	return stub.details, stub.agentTasksErr
+}
+
+func (stub *workflowInspectorStub) Cancel(context.Context, string, string) (bool, error) {
+	return true, nil
 }

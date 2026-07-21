@@ -41,18 +41,54 @@ func TestTabFocusesAgentTaskSummaryBeforeTranscriptList(t *testing.T) {
 	assert.Equal(t, focusKindComposer, app.focusState().Kind)
 }
 
-func TestAgentTaskSummaryEnterOnWorkflowDoesNotInspectAgent(t *testing.T) {
+func TestAgentTaskSummaryEnterOnWorkflowExpandsInline(t *testing.T) {
 	t.Parallel()
 
+	run := workflowSummaryRun(toolDisplayWorkflow, database.TaskRunning)
 	app := newRenderTestApp(t)
-	app.activeWorkflows = []database.WorkflowRunEntity{workflowSummaryRun(toolDisplayWorkflow, database.TaskRunning)}
+	app.sessionID = workflowTestSessionID
+	app.workflows = &workflowInspectorStub{
+		listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil,
+		getRun: &run, runs: nil, events: nil, children: nil, details: nil, found: true,
+	}
+	app.activeWorkflows = []database.WorkflowRunEntity{run}
 	app.agentTasks = []database.AgentTaskEntity{behaviorAgentTask("top-level", database.TaskRunning)}
+	transcriptBefore := app.transcript
 
 	pressTerminalKey(t, app, tcell.KeyTab, "")
+	collapsedLayout := app.defaultRuntimeLayout(80, 24)
+	collapsedLines := app.renderAgentTaskSummary(80)
+	require.Len(t, collapsedLines, 3)
+	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), collapsedLines[0].Text)
+	assert.Empty(t, collapsedLines[2].Text)
 	pressTerminalKey(t, app, tcell.KeyEnter, "")
 
 	assert.True(t, app.agentTaskSummaryFocused())
-	assert.Equal(t, "workflow inspection is not available", app.statusMessage)
+	assert.Equal(t, modeChat, app.mode)
+	assert.Equal(t, run.Task.ID, app.workflowSummaryRunID)
+	assert.Empty(t, app.workflowPanelRunID)
+	assert.Nil(t, app.panel)
+	assert.Equal(t, transcriptBefore, app.transcript)
+
+	lines := app.renderAgentTaskSummary(80)
+	require.Len(t, lines, 4)
+	assert.Contains(t, lines[0].Text, "Workflow:")
+	assert.Contains(t, lines[1].Text, "STEP")
+
+	expandedLayout := app.defaultRuntimeLayout(80, 24)
+	assert.NotEqual(t, collapsedLayout.Transcript, expandedLayout.Transcript)
+	assert.NotEqual(t, collapsedLayout.Composer, expandedLayout.Composer)
+	assert.NotEqual(t, collapsedLayout.Status, expandedLayout.Status)
+
+	pressTerminalKey(t, app, tcell.KeyEscape, "")
+	assert.Empty(t, app.workflowSummaryRunID)
+	assert.True(t, app.agentTaskSummaryFocused())
+	assert.Equal(t, transcriptBefore, app.transcript)
+
+	lines = app.renderAgentTaskSummary(80)
+	require.Len(t, lines, 3)
+	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), lines[0].Text)
+	assert.NotContains(t, lines[0].Text, "STEP")
 }
 
 func TestValidateAgentTaskSummarySelectionClampsNegativeIndex(t *testing.T) {

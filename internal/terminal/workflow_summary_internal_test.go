@@ -44,21 +44,64 @@ func (stub *activeWorkflowInspectorStub) AgentTasks(
 	return nil, nil
 }
 
+func (stub *activeWorkflowInspectorStub) AgentTask(
+	context.Context, string,
+) (*database.AgentTaskEntity, bool, error) {
+	return nil, false, nil
+}
+
+func (stub *activeWorkflowInspectorStub) AgentTaskDetails(
+	context.Context, []string,
+) ([]database.WorkflowAgentTaskDetail, error) {
+	return nil, nil
+}
+
+func (stub *activeWorkflowInspectorStub) Cancel(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
 func TestActiveWorkflowAppearsInAgentSummary(t *testing.T) {
 	t.Parallel()
 
+	running := workflowSummaryRun("active", database.TaskRunning)
+	child := testAgentTask(database.TaskRunning)
+	child.Task.ID = "reviewer-1"
 	app := newRenderTestApp(t)
 	app.sessionID = workflowTestSessionID
-	app.workflows = &activeWorkflowInspectorStub{byID: nil, runs: []database.WorkflowRunEntity{
-		workflowSummaryRun("active", database.TaskRunning),
-		workflowSummaryRun(statusDone, database.TaskSucceeded),
-	}}
+	app.workflows = &workflowInspectorStub{
+		listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil,
+		getRun: nil,
+		runs: []database.WorkflowRunEntity{
+			running,
+			workflowSummaryRun(statusDone, database.TaskSucceeded),
+		},
+		events: nil, children: nil,
+		details: []database.WorkflowAgentTaskDetail{{
+			AgentTask: child,
+			Link: database.WorkflowAgentTaskEntity{
+				CreatedAt: time.Time{}, WorkflowTaskID: running.Task.ID,
+				AgentTaskID: child.Task.ID, NodeKey: "review", InvocationIndex: 0, Sequence: 1,
+			},
+		}},
+		found: false,
+	}
 
 	app.refreshActiveWorkflows(t.Context())
 	require.Len(t, app.activeWorkflows, 1)
 	lines := app.renderAgentTaskSummary(80)
-	require.NotEmpty(t, lines)
-	assert.Contains(t, lines[0].Text, "workflow(active review)")
+	require.Len(t, lines, 2)
+	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), lines[0].Text)
+	assert.NotContains(t, lines[0].Text, "STEP")
+	assert.Empty(t, lines[1].Text)
+
+	app.workflowSummaryRunID = running.Task.ID
+	lines = app.renderAgentTaskSummary(80)
+	require.Len(t, lines, 4)
+	assert.Contains(t, lines[0].Text, "Workflow: workflow(active review)")
+	assert.Contains(t, lines[1].Text, "STEP")
+	assert.Contains(t, lines[1].Text, "STATUS")
+	assert.Contains(t, lines[2].Text, "review[0]")
+	assert.Contains(t, lines[2].Text, string(database.TaskRunning))
 	assert.True(t, app.hasRunningAgentTasks())
 }
 
@@ -202,14 +245,14 @@ func TestTrackStartedWorkflowRejectsForeignRunAndInspectorError(t *testing.T) {
 			name: "foreign session",
 			inspector: &workflowInspectorStub{
 				listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil,
-				getRun: &foreign, runs: nil, events: nil, children: nil, found: true,
+				getRun: &foreign, runs: nil, events: nil, children: nil, details: nil, found: true,
 			},
 		},
 		{
 			name: "get error",
 			inspector: &workflowInspectorStub{
 				listErr: nil, getErr: assert.AnError, eventsErr: nil, agentTasksErr: nil,
-				getRun: nil, runs: nil, events: nil, children: nil, found: false,
+				getRun: nil, runs: nil, events: nil, children: nil, details: nil, found: false,
 			},
 		},
 	}

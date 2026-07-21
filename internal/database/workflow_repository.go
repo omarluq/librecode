@@ -37,6 +37,12 @@ type WorkflowAgentTaskEntity struct {
 	Sequence        int64
 }
 
+// WorkflowAgentTaskDetail combines a workflow link with its complete agent task.
+type WorkflowAgentTaskDetail struct {
+	AgentTask AgentTaskEntity
+	Link      WorkflowAgentTaskEntity
+}
+
 // WorkflowRepository persists workflow metadata and composes generic lifecycle operations.
 type WorkflowRepository struct {
 	sql        ksql.Provider
@@ -401,6 +407,64 @@ FROM workflow_agent_tasks WHERE workflow_task_id = ? ORDER BY sequence ASC`
 	}
 
 	return links, nil
+}
+
+// ListAgentTaskDetails loads linked agent tasks for multiple workflows with two bulk queries.
+func (repository *WorkflowRepository) ListAgentTaskDetails(
+	ctx context.Context,
+	workflowTaskIDs []string,
+) ([]WorkflowAgentTaskDetail, error) {
+	if len(workflowTaskIDs) == 0 {
+		return []WorkflowAgentTaskDetail{}, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(workflowTaskIDs)), ",")
+	query := `SELECT workflow_task_id, agent_task_id, sequence, node_key, invocation_index, created_at
+FROM workflow_agent_tasks WHERE workflow_task_id IN (` + placeholders + `)
+ORDER BY workflow_task_id ASC, sequence ASC`
+
+	arguments := make([]any, len(workflowTaskIDs))
+	for index, workflowTaskID := range workflowTaskIDs {
+		arguments[index] = workflowTaskID
+	}
+
+	rows := []workflowAgentTaskRow{}
+	if err := repository.sql.Query(ctx, &rows, query, arguments...); err != nil {
+		return nil, oops.In("database").Code("list_workflow_agent_task_details").
+			Wrapf(err, "list workflow agent task details")
+	}
+
+	links, err := collectSQLRows(rows, workflowAgentTaskFromRow)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_workflow_agent_task").Wrapf(err, "scan workflow agent task")
+	}
+
+	taskIDs := make([]string, len(links))
+	for index := range links {
+		taskIDs[index] = links[index].AgentTaskID
+	}
+
+	tasks, err := repository.agentTasks.ListByIDs(ctx, taskIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	tasksByID := make(map[string]AgentTaskEntity, len(tasks))
+	for index := range tasks {
+		tasksByID[tasks[index].Task.ID] = tasks[index]
+	}
+
+	details := make([]WorkflowAgentTaskDetail, 0, len(links))
+	for index := range links {
+		task, found := tasksByID[links[index].AgentTaskID]
+		if !found {
+			continue
+		}
+
+		details = append(details, WorkflowAgentTaskDetail{AgentTask: task, Link: links[index]})
+	}
+
+	return details, nil
 }
 
 const workflowRunColumns = `t.id, t.kind, t.parent_task_id, t.owner_session_id, t.concurrency_key,
