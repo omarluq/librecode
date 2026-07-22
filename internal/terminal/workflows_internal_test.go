@@ -193,6 +193,42 @@ func TestWorkflowPanelNavigation(t *testing.T) {
 	assert.Equal(t, "Workflows", app.panel.Title)
 }
 
+func TestWorkflowDetailRefreshPreservesSelection(t *testing.T) {
+	t.Parallel()
+
+	run := workflowSummaryRun("run-1", database.TaskRunning)
+	first := behaviorAgentTask("agent-1", database.TaskRunning)
+	second := behaviorAgentTask("agent-2", database.TaskRunning)
+	stub := newWorkflowPanelInspector()
+	stub.run = &run
+	stub.links = []database.WorkflowAgentTaskEntity{
+		workflowLink(run.Task.ID, first.Task.ID, "inspect", 0),
+		workflowLink(run.Task.ID, second.Task.ID, "review", 0),
+	}
+	stub.tasks = map[string]*database.AgentTaskEntity{
+		first.Task.ID:  &first,
+		second.Task.ID: &second,
+	}
+	app := newRenderTestApp(t)
+	app.sessionID = workflowTestSessionID
+	app.workflows = stub
+	require.NoError(t, app.openWorkflowDetail(t.Context(), run.Task.ID))
+	app.panel.SetSelectedIndex(2)
+
+	app.refreshWorkflowsPanel(t.Context())
+
+	selected, hasSelection := app.panel.SelectedValue()
+	require.True(t, hasSelection)
+	assert.Equal(t, workflowTaskPrefix+second.Task.ID, selected)
+
+	stub.links = stub.links[:1]
+
+	app.refreshWorkflowsPanel(t.Context())
+	selected, hasSelection = app.panel.SelectedValue()
+	require.True(t, hasSelection)
+	assert.Equal(t, workflowRunPrefix+run.Task.ID, selected)
+}
+
 func TestWorkflowPanelCancellation(t *testing.T) {
 	t.Parallel()
 
