@@ -208,11 +208,14 @@ func (repository *AgentTaskRepository) Finish(
 	return changed, nil
 }
 
-const agentTaskColumns = `t.id, t.kind, t.parent_task_id, t.owner_session_id, t.concurrency_key,
+const (
+	scanAgentTaskMessage = "scan agent task"
+	agentTaskColumns     = `t.id, t.kind, t.parent_task_id, t.owner_session_id, t.concurrency_key,
        t.state, t.result, t.error_code, t.error_message, t.created_at, t.started_at,
        t.finished_at, t.updated_at, t.lease_owner, t.lease_expires_at,
        a.child_session_id, a.agent_name, a.prompt,
        a.model, a.provider, a.policy_json, a.usage_json, a.depth`
+)
 
 // Get loads an agent task and its generic lifecycle by task ID.
 func (repository *AgentTaskRepository) Get(ctx context.Context, taskID string) (*AgentTaskEntity, bool, error) {
@@ -230,7 +233,7 @@ FROM tasks t JOIN agent_tasks a ON a.task_id = t.id WHERE t.id = ? AND t.kind = 
 
 	entity, err := agentTaskFromRow(&row)
 	if err != nil {
-		return nil, false, oops.In("database").Code("scan_agent_task").Wrapf(err, "scan agent task")
+		return nil, false, oops.In("database").Code("scan_agent_task").Wrapf(err, scanAgentTaskMessage)
 	}
 
 	return entity, true, nil
@@ -258,7 +261,7 @@ ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`
 
 	entities, err := collectSQLRows(rows, agentTaskFromRow)
 	if err != nil {
-		return nil, oops.In("database").Code("scan_agent_task").Wrapf(err, "scan agent task")
+		return nil, oops.In("database").Code("scan_agent_task").Wrapf(err, scanAgentTaskMessage)
 	}
 
 	return entities, nil
@@ -292,7 +295,7 @@ WHERE t.kind = ? AND t.id IN (` + placeholders + `)`
 
 	entities, err := collectSQLRows(rows, agentTaskFromRow)
 	if err != nil {
-		return nil, oops.In("database").Code("scan_agent_task").Wrapf(err, "scan agent task")
+		return nil, oops.In("database").Code("scan_agent_task").Wrapf(err, scanAgentTaskMessage)
 	}
 
 	return entities, nil
