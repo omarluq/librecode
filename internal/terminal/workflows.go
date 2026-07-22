@@ -58,8 +58,15 @@ func (app *App) refreshWorkflowsPanel(ctx context.Context) {
 	}
 
 	if app.workflowPanelRunID != "" {
+		selected, hasSelection := app.panel.SelectedValue()
 		if err := app.openWorkflowDetail(ctx, app.workflowPanelRunID); err != nil {
 			app.setStatus(err.Error())
+
+			return
+		}
+
+		if hasSelection {
+			app.restoreWorkflowPanelSelection(selected)
 		}
 
 		return
@@ -74,16 +81,18 @@ func (app *App) refreshWorkflowsPanel(ctx context.Context) {
 		return
 	}
 
-	model := panel.New(panelWorkflows, "Workflows", "Enter inspects; Ctrl+C cancels", items, true)
-	for index := range items {
-		if items[index].Value == selected {
-			model.SetSelectedIndex(index)
+	app.panel = panel.New(panelWorkflows, "Workflows", "Enter inspects; Ctrl+C cancels", items, true)
+	app.restoreWorkflowPanelSelection(selected)
+}
 
-			break
+func (app *App) restoreWorkflowPanelSelection(selected string) {
+	for index, item := range app.panel.Items() {
+		if item.Value == selected {
+			app.panel.SetSelectedIndex(index)
+
+			return
 		}
 	}
-
-	app.panel = model
 }
 
 func (app *App) workflowItems(ctx context.Context) ([]tui.ListItem, error) {

@@ -48,7 +48,7 @@ func TestAgentTaskSummaryEnterOnWorkflowExpandsInline(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.sessionID = workflowTestSessionID
 	app.workflows = &workflowInspectorStub{
-		listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil,
+		listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil, detailsErr: nil,
 		getRun: &run, runs: nil, events: nil, children: nil, details: nil, found: true,
 	}
 	app.activeWorkflows = []database.WorkflowRunEntity{run}
@@ -89,6 +89,22 @@ func TestAgentTaskSummaryEnterOnWorkflowExpandsInline(t *testing.T) {
 	require.Len(t, lines, 3)
 	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), lines[0].Text)
 	assert.NotContains(t, lines[0].Text, "STEP")
+}
+
+func TestAgentTaskSummaryConfirmKeepsExpandedWorkflow(t *testing.T) {
+	t.Parallel()
+
+	first := workflowSummaryRun("first", database.TaskRunning)
+	second := workflowSummaryRun("second", database.TaskRunning)
+	app := newRenderTestApp(t)
+	app.activeWorkflows = []database.WorkflowRunEntity{first, second}
+	app.agentTaskSummarySelection = agentTaskSummarySelection{ItemIndex: 0, Active: true}
+	app.workflowSummaryRunID = second.Task.ID
+
+	pressTerminalKey(t, app, tcell.KeyEnter, "")
+
+	assert.Equal(t, second.Task.ID, app.workflowSummaryRunID)
+	assert.True(t, app.agentTaskSummaryFocused())
 }
 
 func TestValidateAgentTaskSummarySelectionClampsNegativeIndex(t *testing.T) {

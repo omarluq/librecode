@@ -44,6 +44,10 @@ func (app *App) handleAgentTaskSummaryPriorityKey(
 	}
 
 	if app.agentTaskSummaryFocused() && app.keys.matches(event, actionSelectConfirm) {
+		if app.workflowSummaryRunID != "" {
+			return true, nil
+		}
+
 		index := app.agentTaskSummarySelection.ItemIndex
 		if index < len(app.activeWorkflows) {
 			app.workflowSummaryRunID = app.activeWorkflows[index].Task.ID

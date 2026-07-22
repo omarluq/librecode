@@ -18,6 +18,7 @@ type workflowInspectorStub struct {
 	getErr        error
 	eventsErr     error
 	agentTasksErr error
+	detailsErr    error
 	getRun        *database.WorkflowRunEntity
 	runs          []database.WorkflowRunEntity
 	events        []database.TaskEventEntity
@@ -62,7 +63,7 @@ func (stub *workflowInspectorStub) AgentTask(
 func (stub *workflowInspectorStub) AgentTaskDetails(
 	context.Context, []string,
 ) ([]database.WorkflowAgentTaskDetail, error) {
-	return stub.details, stub.agentTasksErr
+	return stub.details, stub.detailsErr
 }
 
 func (stub *workflowInspectorStub) Cancel(context.Context, string, string) (bool, error) {

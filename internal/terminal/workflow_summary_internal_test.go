@@ -69,7 +69,7 @@ func TestActiveWorkflowAppearsInAgentSummary(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.sessionID = workflowTestSessionID
 	app.workflows = &workflowInspectorStub{
-		listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil,
+		listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil, detailsErr: nil,
 		getRun: nil,
 		runs: []database.WorkflowRunEntity{
 			running,
@@ -244,14 +244,14 @@ func TestTrackStartedWorkflowRejectsForeignRunAndInspectorError(t *testing.T) {
 		{
 			name: "foreign session",
 			inspector: &workflowInspectorStub{
-				listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil,
+				listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil, detailsErr: nil,
 				getRun: &foreign, runs: nil, events: nil, children: nil, details: nil, found: true,
 			},
 		},
 		{
 			name: "get error",
 			inspector: &workflowInspectorStub{
-				listErr: nil, getErr: assert.AnError, eventsErr: nil, agentTasksErr: nil,
+				listErr: nil, getErr: assert.AnError, eventsErr: nil, agentTasksErr: nil, detailsErr: nil,
 				getRun: nil, runs: nil, events: nil, children: nil, details: nil, found: false,
 			},
 		},
