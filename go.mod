@@ -41,7 +41,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
-	github.com/tailscale/hujson v0.0.0-20260718110524-10d7940d4c87
+	github.com/tailscale/hujson v0.0.0-20260722022634-78b5b162ee49
 	github.com/tmaxmax/go-sse v0.11.0
 	github.com/vingarcia/ksql v1.14.0
 	github.com/vingarcia/ksql/adapters/modernc-ksqlite v1.14.0
