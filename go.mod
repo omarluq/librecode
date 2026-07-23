@@ -25,7 +25,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/invopop/jsonschema v0.14.0
 	github.com/mvm-sh/mvm v0.5.0
-	github.com/odvcencio/gotreesitter v0.46.0
+	github.com/odvcencio/gotreesitter v0.47.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/rs/zerolog v1.35.1
