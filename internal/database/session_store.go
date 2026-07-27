@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/samber/oops"
@@ -161,12 +162,18 @@ func (repository *SessionRepository) Label(
 	return label, found, nil
 }
 
-// BuildContext reconstructs model-facing context from the active branch.
+// BuildContext reconstructs model-facing context from an explicit branch endpoint.
 func (repository *SessionRepository) BuildContext(
 	ctx context.Context,
 	sessionID string,
 	leafID string,
 ) (*SessionContextEntity, error) {
+	if strings.TrimSpace(leafID) == "" {
+		return nil, oops.In("database").
+			Code("context_entry_required").
+			Errorf("context entry ID is required for session %q", sessionID)
+	}
+
 	branch, err := repository.Branch(ctx, sessionID, leafID)
 	if err != nil {
 		return nil, err

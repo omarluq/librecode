@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // register sqlite driver for repository integration tests
@@ -637,6 +638,22 @@ func TestSessionRepository_AppendCustomAndCustomEntry(t *testing.T) {
 	assert.Equal(t, "checkpoint", customChild.CustomType)
 	require.NotNil(t, customChild.ParentID)
 	assert.Equal(t, root.ID, *customChild.ParentID)
+}
+
+func TestSessionRepository_BuildContextRequiresExplicitEndpoint(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "", "")
+	require.NoError(t, err)
+
+	_, err = repository.BuildContext(ctx, session.ID, " ")
+
+	require.Error(t, err)
+	oopsErr, ok := oops.AsOops(err)
+	require.True(t, ok)
+	assert.Equal(t, "context_entry_required", oopsErr.Code())
 }
 
 func TestSessionRepository_BuildContextIncludesBranchSummary(t *testing.T) {

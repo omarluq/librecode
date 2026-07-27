@@ -94,12 +94,13 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 func (runtime *Runtime) buildModelContext(
 	ctx context.Context,
 	sessionID string,
+	entryID string,
 	cwd string,
 	prompt string,
 	selectedModel *model.Model,
 	onEvent func(StreamEvent),
 ) (*contextwindow.BuildResult, error) {
-	contextEntity, err := runtime.modelContextEntity(ctx, sessionID)
+	contextEntity, err := runtime.modelContextEntityFrom(ctx, sessionID, entryID)
 	if err != nil {
 		return nil, err
 	}

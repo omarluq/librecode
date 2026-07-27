@@ -70,6 +70,7 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 	recoveredBuild, err := runtime.buildCompletionRequest(
 		ctx,
 		input.preparation.sessionID,
+		recoveredEntry.ID,
 		input.preparation.cwd,
 		input.preparation.prompt,
 		input.preparation.selectedModel,
