@@ -8,6 +8,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/compaction"
@@ -27,42 +28,60 @@ const (
 func TestPromptAndTurnPayloads(t *testing.T) {
 	t.Parallel()
 
-	parentID := lifecycleTestParentID
-	prompt := lifecyclepayload.Prompt(&lifecyclepayload.PromptRequest{
-		ParentEntryID: &parentID,
-		CWD:           "/work",
-		Name:          "agent",
-		SessionID:     lifecycleTestSessionID,
-		Text:          "hello",
-		ResumeLatest:  true,
-	})
-	assert.Equal(t, "/work", prompt[lifecyclepayload.CWDKey])
-	assert.Equal(t, "agent", prompt[lifecyclepayload.ToolNameKey])
-	assert.Equal(t, parentID, prompt[lifecyclepayload.ParentEntryIDKey])
-	assert.Equal(t, true, prompt["resume_latest"])
-	assert.Empty(t, lifecyclepayload.Prompt(nil))
+	t.Run("prompt", func(t *testing.T) {
+		t.Parallel()
 
-	turn := lifecyclepayload.TurnEndPayload(&lifecyclepayload.TurnEnd{
-		Err: errors.New("failed"),
-		Usage: model.TokenUsage{
-			Breakdown:       map[string]int{"history": 2},
-			TopContributors: nil,
-			ContextWindow:   0,
-			ContextTokens:   0,
-			InputTokens:     3,
-			OutputTokens:    0,
-		},
-		AssistantEntryID: "assistant-1",
-		SessionID:        lifecycleTestSessionID,
-		UserEntryID:      "user-1",
-		Cached:           true,
+		parentID := lifecycleTestParentID
+		prompt := lifecyclepayload.Prompt(&lifecyclepayload.PromptRequest{
+			ParentEntryID: &parentID,
+			CWD:           "/work",
+			Name:          "agent",
+			SessionID:     lifecycleTestSessionID,
+			Text:          "hello",
+			ResumeLatest:  true,
+		})
+		assert.Equal(t, "/work", prompt[lifecyclepayload.CWDKey])
+		assert.Equal(t, "agent", prompt[lifecyclepayload.ToolNameKey])
+		assert.Equal(t, parentID, prompt[lifecyclepayload.ParentEntryIDKey])
+		resumeLatest, ok := prompt["resume_latest"].(bool)
+		require.True(t, ok)
+		assert.True(t, resumeLatest)
 	})
-	assert.Equal(t, "assistant-1", turn[lifecyclepayload.AssistantEntryIDKey])
-	assert.Equal(t, "failed", turn[lifecyclepayload.ErrorKey])
-	assert.Equal(t, true, turn["cached"])
-	usage, ok := turn[lifecyclepayload.UsageKey].(map[string]any)
-	assert.True(t, ok)
-	assert.Equal(t, 3, usage[lifecyclepayload.InputTokensKey])
+
+	t.Run("nil prompt", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Empty(t, lifecyclepayload.Prompt(nil))
+	})
+
+	t.Run("turn end", func(t *testing.T) {
+		t.Parallel()
+
+		turn := lifecyclepayload.TurnEndPayload(&lifecyclepayload.TurnEnd{
+			Err: errors.New("failed"),
+			Usage: model.TokenUsage{
+				Breakdown:       map[string]int{"history": 2},
+				TopContributors: nil,
+				ContextWindow:   0,
+				ContextTokens:   0,
+				InputTokens:     3,
+				OutputTokens:    0,
+			},
+			AssistantEntryID: "assistant-1",
+			SessionID:        lifecycleTestSessionID,
+			UserEntryID:      "user-1",
+			Cached:           true,
+		})
+		assert.Equal(t, "assistant-1", turn[lifecyclepayload.AssistantEntryIDKey])
+		assert.Equal(t, "failed", turn[lifecyclepayload.ErrorKey])
+		cached, ok := turn["cached"].(bool)
+		require.True(t, ok)
+		assert.True(t, cached)
+
+		usage, ok := turn[lifecyclepayload.UsageKey].(map[string]any)
+		assert.True(t, ok)
+		assert.Equal(t, 3, usage[lifecyclepayload.InputTokensKey])
+	})
 }
 
 func TestSessionEntryAndContextPayloads(t *testing.T) {

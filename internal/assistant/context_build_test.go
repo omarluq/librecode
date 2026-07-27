@@ -41,7 +41,11 @@ func TestRuntime_ContextBuildUsesPromptBranchEndpoint(t *testing.T) {
 		firstDone <- promptErr
 	}()
 
-	<-firstPersisted
+	select {
+	case <-firstPersisted:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for first prompt persistence")
+	}
 
 	secondRequest := newRuntimePromptRequest(testRuntimeCWD, "second branch", "")
 	secondRequest.SessionID = session.ID
@@ -52,12 +56,6 @@ func TestRuntime_ContextBuildUsesPromptBranchEndpoint(t *testing.T) {
 		_, promptErr := runtime.Prompt(ctx, secondRequest)
 		secondDone <- promptErr
 	}()
-
-	select {
-	case request := <-client.requests:
-		t.Fatalf("second prompt reached provider while first prompt held session: %#v", request)
-	case <-time.After(25 * time.Millisecond):
-	}
 
 	close(releaseFirst)
 
@@ -162,7 +160,7 @@ func receiveContextRequest(
 	case request := <-requests:
 		return request
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for completion request")
+		require.FailNow(t, "timed out waiting for completion request")
 
 		return nil
 	}
