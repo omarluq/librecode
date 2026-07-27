@@ -71,19 +71,19 @@ func (runtime *Runtime) buildCompletionRequest(
 
 type completionRequestPreparationInput struct {
 	selectedModel *model.Model
-	onEvent       func(StreamEvent)
 	auth          *model.RequestAuth
+	lineage       *promptLineage
+	onEvent       func(StreamEvent)
 	sessionID     string
 	cwd           string
 	prompt        string
-	userEntryID   string
 }
 
 func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 	ctx context.Context,
 	input *completionRequestPreparationInput,
 ) (*contextRequestBuild, *database.EntryEntity, error) {
-	if input == nil || input.auth == nil {
+	if input == nil || input.auth == nil || input.lineage == nil {
 		err := errors.New("nil completion request preparation input")
 
 		return nil, nil, oops.In("assistant").
@@ -96,7 +96,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 	build, err := runtime.buildCompletionRequest(
 		ctx,
 		input.sessionID,
-		input.userEntryID,
+		input.lineage.activeParentEntryID,
 		input.cwd,
 		input.prompt,
 		input.selectedModel,
@@ -127,7 +127,14 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 		return nil, nil, err
 	}
 
-	build, err = runtime.rebuildAfterPreRequestCompaction(ctx, input, auth, compactionEntry.ID)
+	input.lineage.adopt(compactionEntry)
+
+	build, err = runtime.rebuildAfterPreRequestCompaction(
+		ctx,
+		input,
+		auth,
+		input.lineage.activeParentEntryID,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -192,7 +199,9 @@ func (runtime *Runtime) compactBeforeRequest(
 		preRequestAutoCompactionStartMessage(budget),
 	)
 
-	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.userEntryID)
+	parentEntryID := input.lineage.activeParentEntryID
+
+	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &parentEntryID)
 	if isCompactNothingToDoError(err) {
 		runtime.emitContextCompactionErrorMessage(
 			ctx,

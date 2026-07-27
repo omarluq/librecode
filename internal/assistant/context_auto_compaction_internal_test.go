@@ -21,7 +21,7 @@ func TestRuntime_PrepareCompletionRequestWithAutoCompactionInputValidation(t *te
 			sessionID:     "",
 			cwd:           "",
 			prompt:        "",
-			userEntryID:   "",
+			lineage:       nil,
 		},
 	}
 

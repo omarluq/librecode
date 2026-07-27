@@ -117,12 +117,11 @@ type PromptResponse struct {
 }
 
 type responseBundle struct {
-	ParentEntryID *string
-	Text          string
-	Thinking      []string
-	ToolEvents    []ToolEvent
-	Usage         model.TokenUsage
-	ModelFacing   bool
+	Text        string
+	Thinking    []string
+	ToolEvents  []ToolEvent
+	Usage       model.TokenUsage
+	ModelFacing bool
 }
 
 // RuntimeOptions contains dependencies for an assistant runtime.
@@ -214,17 +213,15 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		turnLifecycle.dispatchError(ctx, err)
 	}()
 
-	bundle, cached, err := runtime.respondWithPartialProgress(ctx, activeSession.ID, userEntry.ID, request)
+	lineage := newPromptLineage(userEntry.ID)
+
+	bundle, cached, err := runtime.respondWithPartialProgress(ctx, activeSession.ID, lineage, request)
 	if err != nil {
 		return nil, err
 	}
 
-	compactedBeforeRequest := bundle.ParentEntryID != nil
-
-	assistantParentID := bundle.ParentEntryID
-	if assistantParentID == nil {
-		assistantParentID = &userEntry.ID
-	}
+	compactedBeforeRequest := lineage.activeParentEntryID != userEntry.ID
+	assistantParentID := &lineage.activeParentEntryID
 
 	assistantParentID, err = runtime.appendAssistantSideEffects(ctx, activeSession.ID, assistantParentID, bundle)
 	if err != nil {

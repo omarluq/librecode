@@ -101,7 +101,7 @@ func (runtime *Runtime) appendAssistantSideEffects(
 func (runtime *Runtime) respondWithPartialProgress(
 	ctx context.Context,
 	sessionID string,
-	userEntryID string,
+	lineage *promptLineage,
 	request *PromptRequest,
 ) (*responseBundle, bool, error) {
 	progress := newPartialPromptProgress(request.OnEvent)
@@ -109,14 +109,20 @@ func (runtime *Runtime) respondWithPartialProgress(
 	bundle, cached, err := runtime.respond(
 		ctx,
 		sessionID,
-		userEntryID,
+		lineage,
 		request.CWD,
 		request.Text,
 		progress.handle,
 		progress.retryHandler(request.OnRetry),
 	)
 	if err != nil {
-		persistErr := runtime.appendPartialPromptFailure(ctx, sessionID, userEntryID, progress, err)
+		persistErr := runtime.appendPartialPromptFailure(
+			ctx,
+			sessionID,
+			lineage.activeParentEntryID,
+			progress,
+			err,
+		)
 		if persistErr != nil {
 			return nil, false, oops.
 				In("assistant").
