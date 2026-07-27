@@ -29,6 +29,8 @@ func (app *App) compactSession(ctx context.Context) error {
 	compactCtx, cancel := context.WithCancel(ctx)
 	compactID := app.nextPromptID()
 	parentEntryID := app.compactionParentEntryID()
+	sessionID := app.sessionID
+	cwd := app.cwd
 	app.compacting = true
 	app.activeCompaction = &activeCompactionState{
 		Cancel:      cancel,
@@ -40,7 +42,7 @@ func (app *App) compactSession(ctx context.Context) error {
 	app.scrollOffset = 0
 
 	app.setStatus("compacting context")
-	go app.runCompactSession(ctx, compactCtx, cancel, compactID, parentEntryID)
+	go app.runCompactSession(ctx, compactCtx, cancel, compactID, sessionID, cwd, parentEntryID)
 
 	return nil
 }
@@ -50,18 +52,20 @@ func (app *App) runCompactSession(
 	compactCtx context.Context,
 	cancel context.CancelFunc,
 	compactID uint64,
+	sessionID string,
+	cwd string,
 	parentEntryID *string,
 ) {
 	defer cancel()
 
-	entry, err := app.runtime.CompactSessionFrom(compactCtx, app.sessionID, app.cwd, parentEntryID)
+	entry, err := app.runtime.CompactSessionFrom(compactCtx, sessionID, cwd, parentEntryID)
 	if err != nil {
 		app.postCompactError(ctx, compactID, err)
 
 		return
 	}
 
-	usage, err := app.runtime.ContextUsage(compactCtx, app.sessionID, app.cwd)
+	usage, err := app.runtime.ContextUsage(compactCtx, sessionID, cwd)
 	if err != nil {
 		app.postCompactDone(ctx, compactID, entry, nil)
 

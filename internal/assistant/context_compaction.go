@@ -38,6 +38,21 @@ func (runtime *Runtime) CompactSessionFrom(
 		return nil, oops.In("assistant").Code("compact_no_session").Errorf("no active session to compact")
 	}
 
+	releaseOperation, err := runtime.operations.acquire(ctx, sessionID)
+	if err != nil {
+		return nil, oops.In("assistant").Code("compact_operation_wait").Wrapf(err, "wait for session operation")
+	}
+	defer releaseOperation()
+
+	return runtime.compactSessionFrom(ctx, sessionID, cwd, parentEntryID)
+}
+
+func (runtime *Runtime) compactSessionFrom(
+	ctx context.Context,
+	sessionID string,
+	cwd string,
+	parentEntryID *string,
+) (*database.EntryEntity, error) {
 	if runtime.models == nil {
 		return nil, oops.In("assistant").Code("models_unavailable").Errorf("model registry is not configured")
 	}

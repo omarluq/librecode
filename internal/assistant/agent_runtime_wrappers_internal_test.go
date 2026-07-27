@@ -287,6 +287,7 @@ func TestWithExecutionProfileClonesToolsAndDependencies(t *testing.T) {
 
 	runtime := new(Runtime)
 	runtime.agents = agent.Load(t.TempDir())
+	runtime.operations = newSessionOperationCoordinator()
 	profile := &ExecutionProfile{
 		Kind: ExecutionAgentTask, AgentName: "general", SystemPrompt: "prompt", Provider: "", Model: "",
 		ThinkingLevel: "", PermissionMode: agent.PermissionDeny, Tools: []tool.Name{tool.NameRead},
@@ -296,5 +297,6 @@ func TestWithExecutionProfileClonesToolsAndDependencies(t *testing.T) {
 	profile.Tools[0] = tool.NameWrite
 	assert.Equal(t, tool.NameRead, clone.profile.Tools[0])
 	assert.Same(t, runtime.agents, clone.agents)
+	assert.Same(t, runtime.operations, clone.operations)
 	assert.NotSame(t, runtime, clone)
 }

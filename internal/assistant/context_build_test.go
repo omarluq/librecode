@@ -46,17 +46,28 @@ func TestRuntime_ContextBuildUsesPromptBranchEndpoint(t *testing.T) {
 	secondRequest := newRuntimePromptRequest(testRuntimeCWD, "second branch", "")
 	secondRequest.SessionID = session.ID
 	secondRequest.ParentEntryID = &root.ID
-	_, err = runtime.Prompt(ctx, secondRequest)
-	require.NoError(t, err)
+	secondDone := make(chan error, 1)
 
-	secondProviderRequest := receiveContextRequest(t, client.requests)
-	assert.Equal(t, []string{"root", "second branch"}, contextRequestContents(secondProviderRequest))
+	go func() {
+		_, promptErr := runtime.Prompt(ctx, secondRequest)
+		secondDone <- promptErr
+	}()
+
+	select {
+	case request := <-client.requests:
+		t.Fatalf("second prompt reached provider while first prompt held session: %#v", request)
+	case <-time.After(25 * time.Millisecond):
+	}
 
 	close(releaseFirst)
 
 	firstProviderRequest := receiveContextRequest(t, client.requests)
 	require.NoError(t, <-firstDone)
 	assert.Equal(t, []string{"root", "first branch"}, contextRequestContents(firstProviderRequest))
+
+	secondProviderRequest := receiveContextRequest(t, client.requests)
+	require.NoError(t, <-secondDone)
+	assert.Equal(t, []string{"root", "second branch"}, contextRequestContents(secondProviderRequest))
 }
 
 func TestRuntime_ContextBuildIncludesAgentInstructions(t *testing.T) {
