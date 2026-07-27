@@ -5,10 +5,59 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/database"
 )
+
+func TestRuntime_ContextBuildUsesPromptBranchEndpoint(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := &contextRequestChannelCompleter{requests: make(chan *assistant.CompletionRequest, 2)}
+	runtime, repository, _ := newTestRuntimeWithManager(t, client)
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "branch context", "")
+	require.NoError(t, err)
+	root := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, "root")
+
+	firstPersisted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstRequest := newRuntimePromptRequest(testRuntimeCWD, "first branch", "")
+	firstRequest.SessionID = session.ID
+	firstRequest.ParentEntryID = &root.ID
+	firstRequest.OnUserEntry = func(assistant.PromptUserEntryEvent) {
+		close(firstPersisted)
+		<-releaseFirst
+	}
+
+	firstDone := make(chan error, 1)
+
+	go func() {
+		_, promptErr := runtime.Prompt(ctx, firstRequest)
+		firstDone <- promptErr
+	}()
+
+	<-firstPersisted
+
+	secondRequest := newRuntimePromptRequest(testRuntimeCWD, "second branch", "")
+	secondRequest.SessionID = session.ID
+	secondRequest.ParentEntryID = &root.ID
+	_, err = runtime.Prompt(ctx, secondRequest)
+	require.NoError(t, err)
+
+	secondProviderRequest := receiveContextRequest(t, client.requests)
+	assert.Equal(t, []string{"root", "second branch"}, contextRequestContents(secondProviderRequest))
+
+	close(releaseFirst)
+
+	firstProviderRequest := receiveContextRequest(t, client.requests)
+	require.NoError(t, <-firstDone)
+	assert.Equal(t, []string{"root", "first branch"}, contextRequestContents(firstProviderRequest))
+}
 
 func TestRuntime_ContextBuildIncludesAgentInstructions(t *testing.T) {
 	home := t.TempDir()
@@ -77,6 +126,44 @@ end)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "contribution limit")
+}
+
+type contextRequestChannelCompleter struct {
+	requests chan *assistant.CompletionRequest
+}
+
+func (client *contextRequestChannelCompleter) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.requests <- request
+
+	return testCompletionResult("ok"), nil
+}
+
+func receiveContextRequest(
+	t *testing.T,
+	requests <-chan *assistant.CompletionRequest,
+) *assistant.CompletionRequest {
+	t.Helper()
+
+	select {
+	case request := <-requests:
+		return request
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for completion request")
+
+		return nil
+	}
+}
+
+func contextRequestContents(request *assistant.CompletionRequest) []string {
+	contents := make([]string, 0, len(request.Messages))
+	for index := range request.Messages {
+		contents = append(contents, request.Messages[index].Content)
+	}
+
+	return contents
 }
 
 func TestRuntime_ContextBuildPayloadContainsBreakdown(t *testing.T) {

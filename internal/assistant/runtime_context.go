@@ -20,14 +20,33 @@ func (runtime *Runtime) modelContextEntity(
 		return nil, oops.In("assistant").Code("load_context_leaf").Wrapf(err, "load session leaf")
 	}
 
-	leafID := ""
 	if leafEntry != nil {
-		leafID = leafEntry.ID
+		return runtime.modelContextEntityFrom(ctx, sessionID, leafEntry.ID)
 	}
 
-	contextEntity, err := runtime.sessions.BuildContext(ctx, sessionID, leafID)
+	return &database.SessionContextEntity{
+		UsageAnchor:   nil,
+		Provider:      "",
+		Model:         "",
+		ThinkingLevel: "",
+		Messages:      []database.MessageEntity{},
+	}, nil
+}
+
+func (runtime *Runtime) modelContextEntityFrom(
+	ctx context.Context,
+	sessionID string,
+	entryID string,
+) (*database.SessionContextEntity, error) {
+	if strings.TrimSpace(entryID) == "" {
+		return nil, oops.In("assistant").
+			Code("context_entry_required").
+			Errorf("context entry ID is required for session %q", sessionID)
+	}
+
+	contextEntity, err := runtime.sessions.BuildContext(ctx, sessionID, entryID)
 	if err != nil {
-		return nil, oops.In("assistant").Code("load_context").Wrapf(err, "load session context")
+		return nil, oops.In("assistant").Code("load_context").Wrapf(err, "load session context from entry")
 	}
 
 	return contextEntity, nil

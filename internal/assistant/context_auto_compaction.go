@@ -29,13 +29,14 @@ type contextRequestBuild struct {
 func (runtime *Runtime) buildCompletionRequest(
 	ctx context.Context,
 	sessionID string,
+	entryID string,
 	cwd string,
 	prompt string,
 	selectedModel *model.Model,
 	auth model.RequestAuth,
 	onEvent func(StreamEvent),
 ) (*contextRequestBuild, error) {
-	contextResult, err := runtime.buildModelContext(ctx, sessionID, cwd, prompt, selectedModel, onEvent)
+	contextResult, err := runtime.buildModelContext(ctx, sessionID, entryID, cwd, prompt, selectedModel, onEvent)
 	if err != nil {
 		return nil, oops.In("assistant").Code("context_build_model").Wrapf(err, "context: build model context")
 	}
@@ -95,6 +96,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 	build, err := runtime.buildCompletionRequest(
 		ctx,
 		input.sessionID,
+		input.userEntryID,
 		input.cwd,
 		input.prompt,
 		input.selectedModel,
@@ -125,7 +127,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 		return nil, nil, err
 	}
 
-	build, err = runtime.rebuildAfterPreRequestCompaction(ctx, input, auth)
+	build, err = runtime.rebuildAfterPreRequestCompaction(ctx, input, auth, compactionEntry.ID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -144,10 +146,12 @@ func (runtime *Runtime) rebuildAfterPreRequestCompaction(
 	ctx context.Context,
 	input *completionRequestPreparationInput,
 	auth model.RequestAuth,
+	entryID string,
 ) (*contextRequestBuild, error) {
 	build, err := runtime.buildCompletionRequest(
 		ctx,
 		input.sessionID,
+		entryID,
 		input.cwd,
 		input.prompt,
 		input.selectedModel,
