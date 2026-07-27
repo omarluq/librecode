@@ -201,7 +201,7 @@ func (runtime *Runtime) compactBeforeRequest(
 
 	parentEntryID := input.lineage.activeParentEntryID
 
-	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &parentEntryID)
+	entry, err := runtime.compactSessionFrom(ctx, input.sessionID, input.cwd, &parentEntryID)
 	if isCompactNothingToDoError(err) {
 		runtime.emitContextCompactionErrorMessage(
 			ctx,
@@ -293,7 +293,7 @@ func (runtime *Runtime) autoCompactAfterResponse(
 		postResponseAutoCompactionStartMessage(budget),
 	)
 
-	entry, err := runtime.CompactSessionFrom(ctx, input.sessionID, input.cwd, &input.parentEntryID)
+	entry, err := runtime.compactSessionFrom(ctx, input.sessionID, input.cwd, &input.parentEntryID)
 	if isCompactNothingToDoError(err) {
 		runtime.emitContextCompactionErrorMessage(
 			ctx,

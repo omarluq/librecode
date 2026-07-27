@@ -54,6 +54,7 @@ func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
 		agents:            nil,
 		agentTasks:        nil,
 		workflowSubmitter: nil,
+		operations:        newSessionOperationCoordinator(),
 		profile:           topLevelExecutionProfile(),
 	}
 }

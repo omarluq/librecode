@@ -135,7 +135,7 @@ func (runtime *Runtime) compactAfterProviderOverflow(
 		"provider reported context overflow; attempting compaction before retry...",
 	)
 
-	entry, err := runtime.CompactSessionFrom(
+	entry, err := runtime.compactSessionFrom(
 		ctx,
 		input.preparation.sessionID,
 		input.preparation.cwd,

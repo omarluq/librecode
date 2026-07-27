@@ -39,6 +39,7 @@ type Runtime struct {
 	agents            *agent.Catalog
 	agentTasks        AgentTaskController
 	workflowSubmitter workflowSubmitter
+	operations        *sessionOperationCoordinator
 	profile           ExecutionProfile
 }
 
@@ -161,8 +162,18 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 		agents:            options.Agents,
 		agentTasks:        nil,
 		workflowSubmitter: nil,
+		operations:        newSessionOperationCoordinator(),
 		profile:           topLevelExecutionProfile(),
 	}
+}
+
+func (runtime *Runtime) acquirePromptOperation(ctx context.Context, sessionID string) (func(), error) {
+	release, err := runtime.operations.acquire(ctx, sessionID)
+	if err != nil {
+		return nil, oops.In("assistant").Code("prompt_operation_wait").Wrapf(err, "wait for session operation")
+	}
+
+	return release, nil
 }
 
 // SetAgentTaskController enables asynchronous subagent tools.
@@ -199,6 +210,12 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		return nil, err
 	}
 
+	releaseOperation, err := runtime.acquirePromptOperation(ctx, activeSession.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseOperation()
+
 	runtime.dispatchObservationalLifecycle(ctx, sessionEvent, lifecyclepayload.Session(activeSession))
 
 	userEntry, parentID, err := runtime.appendPromptUserEntry(persistCtx, activeSession, request)
@@ -221,16 +238,10 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	}
 
 	compactedBeforeRequest := lineage.activeParentEntryID != userEntry.ID
-	assistantParentID := &lineage.activeParentEntryID
 
-	assistantParentID, err = runtime.appendAssistantSideEffects(ctx, activeSession.ID, assistantParentID, bundle)
+	assistantEntry, err := runtime.persistAssistantBundle(ctx, activeSession.ID, lineage, bundle)
 	if err != nil {
 		return nil, err
-	}
-
-	assistantEntry, err := runtime.appendAssistantResponseEntry(ctx, activeSession.ID, assistantParentID, bundle)
-	if err != nil {
-		return nil, oops.In("assistant").Code("append_assistant").Wrapf(err, "append assistant message")
 	}
 
 	runtime.dispatchMessageAppend(ctx, assistantEntry)
@@ -254,6 +265,25 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		Usage:            bundle.Usage,
 		Cached:           cached,
 	}, nil
+}
+
+func (runtime *Runtime) persistAssistantBundle(
+	ctx context.Context,
+	sessionID string,
+	lineage *promptLineage,
+	bundle *responseBundle,
+) (*database.EntryEntity, error) {
+	parentID, err := runtime.appendAssistantSideEffects(ctx, sessionID, &lineage.activeParentEntryID, bundle)
+	if err != nil {
+		return nil, err
+	}
+
+	entry, err := runtime.appendAssistantResponseEntry(ctx, sessionID, parentID, bundle)
+	if err != nil {
+		return nil, oops.In("assistant").Code("append_assistant").Wrapf(err, "append assistant message")
+	}
+
+	return entry, nil
 }
 
 func (runtime *Runtime) appendPromptUserEntry(
@@ -448,7 +478,8 @@ func (runtime *Runtime) WithExecutionProfile(profile *ExecutionProfile) *Runtime
 		cfg: runtime.cfg, sessions: runtime.sessions, extensions: runtime.extensions, cache: runtime.cache,
 		models: runtime.models, client: runtime.client, logger: runtime.logger, skillsCache: runtime.skillsCache,
 		toolSchemaCache: runtime.toolSchemaCache, agents: runtime.agents,
-		agentTasks: runtime.agentTasks, workflowSubmitter: runtime.workflowSubmitter, profile: clonedProfile,
+		agentTasks: runtime.agentTasks, workflowSubmitter: runtime.workflowSubmitter,
+		operations: runtime.operations, profile: clonedProfile,
 	}
 }
 

@@ -325,7 +325,7 @@ func invokeRunCompactErrorTransition(t *testing.T, app *App) {
 	t.Helper()
 
 	compactCtx, cancel := context.WithCancel(context.Background())
-	go app.runCompactSession(context.Background(), compactCtx, cancel, 42, nil)
+	go app.runCompactSession(context.Background(), compactCtx, cancel, 42, app.sessionID, app.cwd, nil)
 }
 
 func setupCancelCompactTransition(t *testing.T, app *App) func(t *testing.T) {
