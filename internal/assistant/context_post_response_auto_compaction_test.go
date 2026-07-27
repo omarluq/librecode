@@ -51,10 +51,12 @@ func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, database.EntryTypeCompaction, leaf.Type)
+	require.NotNil(t, leaf.ParentID)
 	assert.Equal(t, response.AssistantEntryID, *leaf.ParentID)
 
 	branch, err := harness.runtime.SessionRepository().Branch(ctx, session.ID, leaf.ID)
 	require.NoError(t, err)
+	require.NotEmpty(t, branch)
 	assert.Equal(t, database.EntryTypeCompaction, branch[len(branch)-1].Type)
 }
 

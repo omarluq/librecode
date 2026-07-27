@@ -368,25 +368,33 @@ func TestSessionRepository_BranchLoadsOnlyActiveChain(t *testing.T) {
 	// Sibling branch off root — should NOT appear in the active chain.
 	sibling := helper.appendMessage(session.ID, &root.ID, database.RoleAssistant, "sibling")
 
-	// Explicit entry ID returns root-to-entry chain, excluding siblings.
-	branch, err := repository.Branch(ctx, session.ID, grandchild.ID)
-	require.NoError(t, err)
-	require.Len(t, branch, 3)
-	assert.Equal(t, root.ID, branch[0].ID)
-	assert.Equal(t, child.ID, branch[1].ID)
-	assert.Equal(t, grandchild.ID, branch[2].ID)
-
-	// Empty entry ID auto-resolves to the latest leaf (sibling, created last).
-	branch, err = repository.Branch(ctx, session.ID, "")
-	require.NoError(t, err)
-	require.Len(t, branch, 2)
-	assert.Equal(t, root.ID, branch[0].ID)
-	assert.Equal(t, sibling.ID, branch[1].ID)
-
-	// Grandchild must not appear in the sibling's chain.
-	for index := range branch {
-		assert.NotEqual(t, grandchild.ID, branch[index].ID, "grandchild leaked into sibling chain")
+	tests := []struct {
+		name    string
+		entryID string
+		wantIDs []string
+	}{
+		{name: "explicit endpoint", entryID: grandchild.ID, wantIDs: []string{root.ID, child.ID, grandchild.ID}},
+		{name: "latest leaf", entryID: "", wantIDs: []string{root.ID, sibling.ID}},
 	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			branch, branchErr := repository.Branch(ctx, session.ID, testCase.entryID)
+			require.NoError(t, branchErr)
+			assert.Equal(t, testCase.wantIDs, sessionEntryIDs(branch))
+		})
+	}
+}
+
+func sessionEntryIDs(entries []database.EntryEntity) []string {
+	ids := make([]string, 0, len(entries))
+	for index := range entries {
+		ids = append(ids, entries[index].ID)
+	}
+
+	return ids
 }
 
 func TestSessionRepository_BranchReturnsErrorForMissingEntryID(t *testing.T) {
@@ -685,8 +693,6 @@ func TestSessionRepository_BuildContextWithCompactionTailBranchSummary(t *testin
 	ctx := context.Background()
 	repository := newTestSessionRepository(t)
 	session, err := repository.CreateSession(ctx, "/work", "", "")
-	require.NoError(t, err)
-
 	require.NoError(t, err)
 
 	helper := sessionTestHelper{ctx, t, repository}

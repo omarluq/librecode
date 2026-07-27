@@ -15,28 +15,41 @@ func TestSessionOperationCoordinatorSerializesSameSession(t *testing.T) {
 	releaseFirst, err := coordinator.acquire(context.Background(), "session")
 	require.NoError(t, err)
 
-	acquired := make(chan func(), 1)
+	type acquisition struct {
+		release func()
+		err     error
+	}
+
+	acquired := make(chan acquisition, 1)
 
 	go func() {
 		release, acquireErr := coordinator.acquire(context.Background(), "session")
-		if acquireErr == nil {
-			acquired <- release
-		}
+		acquired <- acquisition{release: release, err: acquireErr}
 	}()
 
+	require.Eventually(t, func() bool {
+		coordinator.mu.Lock()
+		defer coordinator.mu.Unlock()
+
+		return coordinator.slots["session"].refs == 2
+	}, time.Second, time.Millisecond)
+
 	select {
-	case <-acquired:
-		t.Fatal("second operation acquired the session before the first released it")
-	case <-time.After(25 * time.Millisecond):
+	case result := <-acquired:
+		require.NoError(t, result.err)
+		require.FailNow(t, "second operation acquired the session before the first released it")
+	default:
 	}
 
 	releaseFirst()
 
 	select {
-	case releaseSecond := <-acquired:
-		releaseSecond()
+	case result := <-acquired:
+		require.NoError(t, result.err)
+		require.NotNil(t, result.release)
+		result.release()
 	case <-time.After(time.Second):
-		t.Fatal("second operation did not acquire the released session")
+		require.FailNow(t, "second operation did not acquire the released session")
 	}
 }
 
@@ -57,21 +70,70 @@ func TestSessionOperationCoordinatorAllowsDifferentSessions(t *testing.T) {
 	releaseSecond()
 }
 
-func TestSessionOperationCoordinatorCancelsWaiter(t *testing.T) {
+func TestSessionOperationCoordinatorCancellation(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		cancelBefore bool
+	}{
+		{name: "already canceled", cancelBefore: true},
+		{name: "canceled while waiting", cancelBefore: false},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			coordinator := newSessionOperationCoordinator()
+			releaseOwner, err := coordinator.acquire(context.Background(), "session")
+			require.NoError(t, err)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			if testCase.cancelBefore {
+				cancel()
+			}
+
+			type acquisition struct {
+				release func()
+				err     error
+			}
+
+			result := make(chan acquisition, 1)
+
+			go func() {
+				release, acquireErr := coordinator.acquire(ctx, "session")
+				result <- acquisition{release: release, err: acquireErr}
+			}()
+
+			if !testCase.cancelBefore {
+				cancel()
+			}
+
+			acquired := <-result
+			require.ErrorIs(t, acquired.err, context.Canceled)
+			require.Nil(t, acquired.release)
+
+			releaseOwner()
+
+			releaseNext, err := coordinator.acquire(context.Background(), "session")
+			require.NoError(t, err)
+			releaseNext()
+		})
+	}
+}
+
+func TestSessionOperationCoordinatorReleaseIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	coordinator := newSessionOperationCoordinator()
-	releaseOwner, err := coordinator.acquire(context.Background(), "session")
+	release, err := coordinator.acquire(context.Background(), "session")
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	releaseWaiter, err := coordinator.acquire(ctx, "session")
-	require.ErrorIs(t, err, context.Canceled)
-	require.Nil(t, releaseWaiter)
-
-	releaseOwner()
+	release()
+	release()
 
 	releaseNext, err := coordinator.acquire(context.Background(), "session")
 	require.NoError(t, err)

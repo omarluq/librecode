@@ -121,13 +121,8 @@ func appendRuntimeContextTestMessage(
 ) *database.EntryEntity {
 	t.Helper()
 
-	entry, err := repository.AppendMessage(context.Background(), sessionID, parentID, &database.MessageEntity{
-		Timestamp: time.Now().UTC(),
-		Role:      role,
-		Content:   content,
-		Provider:  "",
-		Model:     "",
-	})
+	message := newRuntimeContextTestMessage(role, content)
+	entry, err := repository.AppendMessage(context.Background(), sessionID, parentID, &message)
 	require.NoError(t, err)
 
 	return entry
