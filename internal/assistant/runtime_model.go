@@ -17,10 +17,24 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
+type promptLineage struct {
+	activeParentEntryID string
+}
+
+func newPromptLineage(userEntryID string) *promptLineage {
+	return &promptLineage{activeParentEntryID: userEntryID}
+}
+
+func (lineage *promptLineage) adopt(entry *database.EntryEntity) {
+	if lineage != nil && entry != nil {
+		lineage.activeParentEntryID = entry.ID
+	}
+}
+
 func (runtime *Runtime) respond(
 	ctx context.Context,
 	sessionID string,
-	userEntryID string,
+	lineage *promptLineage,
 	cwd string,
 	prompt string,
 	onEvent func(StreamEvent),
@@ -34,12 +48,11 @@ func (runtime *Runtime) respond(
 		slashResponse, slashToolEvents, slashErr := runtime.respondToSlashCommand(ctx, cwd, prompt, onEvent)
 
 		return &responseBundle{
-			ParentEntryID: nil,
-			Text:          slashResponse,
-			Thinking:      nil,
-			ToolEvents:    slashToolEvents,
-			Usage:         model.EmptyTokenUsage(),
-			ModelFacing:   false,
+			Text:        slashResponse,
+			Thinking:    nil,
+			ToolEvents:  slashToolEvents,
+			Usage:       model.EmptyTokenUsage(),
+			ModelFacing: false,
 		}, false, slashErr
 	}
 
@@ -52,16 +65,15 @@ func (runtime *Runtime) respond(
 
 	if found {
 		return &responseBundle{
-			ParentEntryID: nil,
-			Text:          cachedResponse,
-			Thinking:      nil,
-			ToolEvents:    nil,
-			Usage:         model.EmptyTokenUsage(),
-			ModelFacing:   true,
+			Text:        cachedResponse,
+			Thinking:    nil,
+			ToolEvents:  nil,
+			Usage:       model.EmptyTokenUsage(),
+			ModelFacing: true,
 		}, true, nil
 	}
 
-	bundle, err = runtime.modelResponse(ctx, sessionID, userEntryID, cwd, prompt, onEvent, onRetry)
+	bundle, err = runtime.modelResponse(ctx, sessionID, lineage, cwd, prompt, onEvent, onRetry)
 	if err != nil {
 		return nil, false, err
 	}
@@ -74,7 +86,7 @@ func (runtime *Runtime) respond(
 func (runtime *Runtime) modelResponse(
 	ctx context.Context,
 	sessionID string,
-	userEntryID string,
+	lineage *promptLineage,
 	cwd string,
 	prompt string,
 	onEvent func(StreamEvent),
@@ -101,7 +113,7 @@ func (runtime *Runtime) modelResponse(
 		sessionID:     sessionID,
 		cwd:           cwd,
 		prompt:        prompt,
-		userEntryID:   userEntryID,
+		lineage:       lineage,
 		selectedModel: &selectedModel,
 		auth:          &auth,
 		onEvent:       onEvent,
@@ -128,18 +140,14 @@ func (runtime *Runtime) modelResponse(
 	usage := contextwindow.MergeUsage(build.Context.Usage, result.Usage)
 	runtime.emitUsage(ctx, onEvent, usage)
 
-	parentEntryID := (*string)(nil)
-	if compactionEntry != nil {
-		parentEntryID = &compactionEntry.ID
-	}
+	lineage.adopt(compactionEntry)
 
 	return &responseBundle{
-		ParentEntryID: parentEntryID,
-		Text:          result.Text,
-		Thinking:      result.Thinking,
-		ToolEvents:    result.ToolEvents,
-		Usage:         usage,
-		ModelFacing:   true,
+		Text:        result.Text,
+		Thinking:    result.Thinking,
+		ToolEvents:  result.ToolEvents,
+		Usage:       usage,
+		ModelFacing: true,
 	}, nil
 }
 

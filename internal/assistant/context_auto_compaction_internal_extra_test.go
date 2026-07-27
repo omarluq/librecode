@@ -17,18 +17,20 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		client        assistant.Completer
-		seed          func(t *testing.T, repository *database.SessionRepository, sessionID string)
-		name          string
-		wantCode      string
-		wantOuterCode bool
+		client                      assistant.Completer
+		seed                        func(t *testing.T, repository *database.SessionRepository, sessionID string)
+		name                        string
+		wantCode                    string
+		wantOuterCode               bool
+		wantCompactionInFailurePath bool
 	}{
 		{
-			name:          "preserves validation error when nothing can be compacted",
-			client:        newSequencedCompleter(autoCompactionTestUnused),
-			seed:          nil,
-			wantCode:      testContextWindowExceededOopsCode,
-			wantOuterCode: false,
+			name:                        "preserves validation error when nothing can be compacted",
+			client:                      newSequencedCompleter(autoCompactionTestUnused),
+			seed:                        nil,
+			wantCode:                    testContextWindowExceededOopsCode,
+			wantOuterCode:               false,
+			wantCompactionInFailurePath: false,
 		},
 		{
 			name:   "wraps summarization failure",
@@ -37,8 +39,9 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 				t.Helper()
 				appendAutoCompactionOldTurn(t, repository, sessionID)
 			},
-			wantCode:      "assistant_error",
-			wantOuterCode: false,
+			wantCode:                    "assistant_error",
+			wantOuterCode:               false,
+			wantCompactionInFailurePath: false,
 		},
 		{
 			name:   "wraps rebuilt budget failure",
@@ -47,8 +50,9 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 				t.Helper()
 				appendAutoCompactionOldTurn(t, repository, sessionID)
 			},
-			wantCode:      testContextWindowExceededOopsCode,
-			wantOuterCode: false,
+			wantCode:                    testContextWindowExceededOopsCode,
+			wantOuterCode:               false,
+			wantCompactionInFailurePath: true,
 		},
 	}
 
@@ -71,6 +75,13 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 			response, err := runtime.Prompt(context.Background(), request)
 
 			require.Nil(t, response)
+
+			if testCase.wantCompactionInFailurePath {
+				leaf, found, leafErr := repository.LeafEntry(context.Background(), session.ID)
+				require.NoError(t, leafErr)
+				require.True(t, found)
+				assertBranchContainsCompaction(t, runtime, session.ID, leaf.ID)
+			}
 
 			if testCase.wantOuterCode {
 				requireOuterOopsCode(t, err, testCase.wantCode)

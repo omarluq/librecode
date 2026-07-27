@@ -101,7 +101,7 @@ func (runtime *Runtime) ProviderOverflowRecoveryNonContextErrorForTest(ctx conte
 			sessionID:     "",
 			cwd:           "",
 			prompt:        "",
-			userEntryID:   "",
+			lineage:       newPromptLineage(""),
 		},
 		build: &contextRequestBuild{
 			Context: nil,

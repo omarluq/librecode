@@ -56,6 +56,11 @@ func TestRuntime_ProviderContextOverflowRecoveryScenarios(t *testing.T) {
 				require.Error(t, err)
 				assert.True(t, assistant.IsContextWindowError(err))
 
+				leaf, found, leafErr := runtime.SessionRepository().LeafEntry(context.Background(), sessionID)
+				require.NoError(t, leafErr)
+				require.True(t, found)
+				assertBranchContainsCompaction(t, runtime, sessionID, leaf.ID)
+
 				return
 			}
 

@@ -57,20 +57,19 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 	input *providerOverflowRecoveryInput,
 	providerErr error,
 ) (*contextRequestBuild, *database.EntryEntity, *CompletionResult, error) {
-	currentParentID := input.preparation.userEntryID
-	if input.compactionEntry != nil {
-		currentParentID = input.compactionEntry.ID
-	}
+	currentParentID := input.preparation.lineage.activeParentEntryID
 
 	recoveredEntry, err := runtime.compactAfterProviderOverflow(ctx, input, currentParentID, providerErr)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
+	input.preparation.lineage.adopt(recoveredEntry)
+
 	recoveredBuild, err := runtime.buildCompletionRequest(
 		ctx,
 		input.preparation.sessionID,
-		recoveredEntry.ID,
+		input.preparation.lineage.activeParentEntryID,
 		input.preparation.cwd,
 		input.preparation.prompt,
 		input.preparation.selectedModel,
