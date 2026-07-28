@@ -26,40 +26,52 @@ type contextRequestBuild struct {
 	Budget  contextwindow.Budget
 }
 
+type completionRequestBuildInput struct {
+	selectedModel *model.Model
+	onEvent       func(StreamEvent)
+	sessionID     string
+	entryID       string
+	cwd           string
+	prompt        string
+	auth          model.RequestAuth
+}
+
 func (runtime *Runtime) buildCompletionRequest(
 	ctx context.Context,
-	sessionID string,
-	entryID string,
-	cwd string,
-	prompt string,
-	selectedModel *model.Model,
-	auth model.RequestAuth,
-	onEvent func(StreamEvent),
+	input *completionRequestBuildInput,
 ) (*contextRequestBuild, error) {
-	contextResult, err := runtime.buildModelContext(ctx, sessionID, entryID, cwd, prompt, selectedModel, onEvent)
+	contextResult, err := runtime.buildModelContext(
+		ctx,
+		input.sessionID,
+		input.entryID,
+		input.cwd,
+		input.prompt,
+		input.selectedModel,
+		input.onEvent,
+	)
 	if err != nil {
 		return nil, oops.In("assistant").Code("context_build_model").Wrapf(err, "context: build model context")
 	}
 
-	registry, err := runtime.promptToolRegistry(ctx, cwd, sessionID)
+	registry, err := runtime.promptToolRegistry(ctx, input.cwd, input.sessionID)
 	if err != nil {
 		return nil, oops.In("assistant").Code("context_tool_registry").Wrapf(err, "context: create tool registry")
 	}
 
 	request := runtime.modelCompletionRequest(&modelCompletionRequestInput{
-		selectedModel: selectedModel,
+		selectedModel: input.selectedModel,
 		registry:      registry,
-		onEvent:       onEvent,
+		onEvent:       input.onEvent,
 		messages:      contextResult.Messages,
-		auth:          auth,
+		auth:          input.auth,
 		usage:         contextResult.Usage,
-		sessionID:     sessionID,
+		sessionID:     input.sessionID,
 		systemPrompt:  contextResult.SystemPrompt,
-		cwd:           cwd,
+		cwd:           input.cwd,
 	})
 	budget := contextwindow.NewBudget(
 		contextResult.Usage,
-		selectedModel,
+		input.selectedModel,
 		runtime.cfg.Context,
 		func() int { return runtime.estimateToolSchemaTokens(request) },
 	)
@@ -93,16 +105,15 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 
 	auth := *input.auth
 
-	build, err := runtime.buildCompletionRequest(
-		ctx,
-		input.sessionID,
-		input.lineage.activeParentEntryID,
-		input.cwd,
-		input.prompt,
-		input.selectedModel,
-		auth,
-		input.onEvent,
-	)
+	build, err := runtime.buildCompletionRequest(ctx, &completionRequestBuildInput{
+		selectedModel: input.selectedModel,
+		auth:          auth,
+		onEvent:       input.onEvent,
+		sessionID:     input.sessionID,
+		entryID:       input.lineage.activeParentEntryID,
+		cwd:           input.cwd,
+		prompt:        input.prompt,
+	})
 	if err != nil {
 		return nil, nil, oops.In("assistant").
 			Code("context_request_build").
@@ -155,16 +166,15 @@ func (runtime *Runtime) rebuildAfterPreRequestCompaction(
 	auth model.RequestAuth,
 	entryID string,
 ) (*contextRequestBuild, error) {
-	build, err := runtime.buildCompletionRequest(
-		ctx,
-		input.sessionID,
-		entryID,
-		input.cwd,
-		input.prompt,
-		input.selectedModel,
-		auth,
-		input.onEvent,
-	)
+	build, err := runtime.buildCompletionRequest(ctx, &completionRequestBuildInput{
+		selectedModel: input.selectedModel,
+		auth:          auth,
+		onEvent:       input.onEvent,
+		sessionID:     input.sessionID,
+		entryID:       entryID,
+		cwd:           input.cwd,
+		prompt:        input.prompt,
+	})
 	if err != nil {
 		runtime.emitContextCompactionError(ctx, input.onEvent, contextAutoCompactionBeforeRequestFailed, err)
 
