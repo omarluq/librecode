@@ -3,6 +3,7 @@ package assistant
 import (
 	"testing"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/omarluq/librecode/internal/model"
@@ -173,6 +174,7 @@ func newTestRuntimeWithSchemaCache() *Runtime {
 		agentTasks:        nil,
 		workflowSubmitter: nil,
 		operations:        newSessionOperationCoordinator(),
+		newCompactionUUID: uuid.NewV7,
 		profile:           topLevelExecutionProfile(),
 	}
 }

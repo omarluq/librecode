@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/agent"
@@ -40,6 +41,7 @@ type Runtime struct {
 	agentTasks        AgentTaskController
 	workflowSubmitter workflowSubmitter
 	operations        *sessionOperationCoordinator
+	newCompactionUUID func() (uuid.UUID, error)
 	profile           ExecutionProfile
 }
 
@@ -163,6 +165,7 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 		agentTasks:        nil,
 		workflowSubmitter: nil,
 		operations:        newSessionOperationCoordinator(),
+		newCompactionUUID: uuid.NewV7,
 		profile:           topLevelExecutionProfile(),
 	}
 }
@@ -479,7 +482,7 @@ func (runtime *Runtime) WithExecutionProfile(profile *ExecutionProfile) *Runtime
 		models: runtime.models, client: runtime.client, logger: runtime.logger, skillsCache: runtime.skillsCache,
 		toolSchemaCache: runtime.toolSchemaCache, agents: runtime.agents,
 		agentTasks: runtime.agentTasks, workflowSubmitter: runtime.workflowSubmitter,
-		operations: runtime.operations, profile: clonedProfile,
+		operations: runtime.operations, newCompactionUUID: runtime.newCompactionUUID, profile: clonedProfile,
 	}
 }
 

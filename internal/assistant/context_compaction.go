@@ -8,7 +8,6 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/gofrs/uuid/v5"
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
@@ -78,19 +77,43 @@ func (runtime *Runtime) compactSessionFrom(
 
 	plan.FileOperations = compaction.CollectFileOperations(branch[:plan.FirstKeptEntryIndex])
 
+	operationID, err := runtime.compactionOperationID()
+	if err != nil {
+		return nil, err
+	}
+
 	providerInput := compactionProviderInput{
 		selectedModel: selectedModel,
 		auth:          auth,
-		operationID:   uuid.Must(uuid.NewV7()).String(),
+		operationID:   operationID,
 	}
 
 	return runtime.compactSessionWithPlan(ctx, sessionID, cwd, parentID, branch, providerInput, &plan)
+}
+
+func (runtime *Runtime) compactionOperationID() (string, error) {
+	operationUUID, err := runtime.newCompactionUUID()
+	if err != nil {
+		return "", oops.In("assistant").Code("compact_operation_id").Wrapf(err, "generate compaction operation id")
+	}
+
+	return operationUUID.String(), nil
 }
 
 type compactionProviderInput struct {
 	selectedModel *model.Model
 	operationID   string
 	auth          model.RequestAuth
+}
+
+type compactionAppendInput struct {
+	sessionID   string
+	parentID    *string
+	summary     string
+	plan        *compaction.Plan
+	decision    *compactionLifecycleDecision
+	operationID string
+	fromHook    bool
 }
 
 func (runtime *Runtime) compactionRecentTailTokens(selectedModel *model.Model, currentTokens int) int {
@@ -149,16 +172,15 @@ func (runtime *Runtime) compactSessionWithPlan(
 		return nil, err
 	}
 
-	entry, err := runtime.appendCompaction(
-		ctx,
-		sessionID,
-		parentID,
-		summary,
-		plan,
-		decision,
-		fromHook,
-		providerInput.operationID,
-	)
+	entry, err := runtime.appendCompaction(ctx, &compactionAppendInput{
+		sessionID:   sessionID,
+		parentID:    parentID,
+		summary:     summary,
+		plan:        plan,
+		decision:    decision,
+		fromHook:    fromHook,
+		operationID: providerInput.operationID,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -256,36 +278,30 @@ func (runtime *Runtime) compactionSummary(
 
 func (runtime *Runtime) appendCompaction(
 	ctx context.Context,
-	sessionID string,
-	parentID *string,
-	summary string,
-	plan *compaction.Plan,
-	decision *compactionLifecycleDecision,
-	fromHook bool,
-	operationID string,
+	input *compactionAppendInput,
 ) (*database.EntryEntity, error) {
 	details := map[string]any{
-		"summarized_entries":             len(plan.SummarizedEntryIDs),
-		"kept_entries":                   len(plan.KeptEntryIDs),
-		lifecyclepayload.TokensBeforeKey: plan.TokensBefore,
+		"summarized_entries":             len(input.plan.SummarizedEntryIDs),
+		"kept_entries":                   len(input.plan.KeptEntryIDs),
+		lifecyclepayload.TokensBeforeKey: input.plan.TokensBefore,
 	}
-	if decision != nil {
-		maps.Copy(details, decision.Details)
+	if input.decision != nil {
+		maps.Copy(details, input.decision.Details)
 	}
 
-	if len(plan.FileOperations) > 0 {
-		details[compaction.FileOperationsKey] = plan.FileOperations
+	if len(input.plan.FileOperations) > 0 {
+		details[compaction.FileOperationsKey] = input.plan.FileOperations
 	}
 
 	entry, err := runtime.sessions.AppendCompaction(ctx, &database.AppendCompactionInput{
-		ParentID:         parentID,
+		ParentID:         input.parentID,
 		Details:          details,
-		SessionID:        sessionID,
-		Summary:          summary,
-		FirstKeptEntryID: plan.FirstKeptEntryID,
-		TokensBefore:     plan.TokensBefore,
-		FromHook:         fromHook,
-		OperationID:      operationID,
+		SessionID:        input.sessionID,
+		Summary:          input.summary,
+		FirstKeptEntryID: input.plan.FirstKeptEntryID,
+		TokensBefore:     input.plan.TokensBefore,
+		FromHook:         input.fromHook,
+		OperationID:      input.operationID,
 	})
 	if err != nil {
 		if errors.Is(err, database.ErrStaleCompactionParent) {

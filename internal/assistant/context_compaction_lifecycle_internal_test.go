@@ -1,8 +1,10 @@
 package assistant
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,6 +14,25 @@ import (
 )
 
 const compactionTestOrigin = "test"
+
+func TestRuntimeCompactionOperationIDReturnsGenerationError(t *testing.T) {
+	t.Parallel()
+
+	expectedErr := errors.New("entropy unavailable")
+	runtime := newRuntimeFromDeps(nil)
+	runtime.newCompactionUUID = func() (uuid.UUID, error) {
+		return uuid.Nil, expectedErr
+	}
+
+	operationID, err := runtime.compactionOperationID()
+
+	require.ErrorIs(t, err, expectedErr)
+	assert.Empty(t, operationID)
+
+	oopsErr, ok := oops.AsOops(err)
+	require.True(t, ok)
+	assert.Equal(t, "compact_operation_id", oopsErr.Code())
+}
 
 func TestCompactionDecisionFromMutation(t *testing.T) {
 	t.Parallel()

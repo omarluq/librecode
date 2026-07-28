@@ -288,6 +288,10 @@ func (repository *SessionRepository) appendCompactionConditional(
 		return transactionErr
 	})
 	if err != nil {
+		if codedErr, ok := oops.AsOops(err); ok && codedErr.Code() != "" {
+			return nil, oops.In("database").Wrapf(err, "append compaction transaction")
+		}
+
 		return nil, oops.In("database").Code("append_compaction_tx").Wrapf(err, "append compaction transaction")
 	}
 
@@ -489,18 +493,18 @@ func (repository *SessionRepository) insertEntryIgnoringConflictTx(
 	operationID string,
 	ignoreConflict bool,
 ) (bool, error) {
-	insertPrefix := "INSERT"
+	conflictClause := ""
 	if ignoreConflict {
-		insertPrefix = "INSERT OR IGNORE"
+		conflictClause = " ON CONFLICT DO NOTHING"
 	}
 
-	insertEntry := fmt.Sprintf(`
-%s INTO session_entries (
+	insertEntry := `
+INSERT INTO session_entries (
     id, session_id, parent_id, entry_type, role, content,
     provider, model, custom_type, data_json, summary, created_at,
     tool_name, tool_status, tool_args_json, token_estimate, model_facing, display,
     compaction_first_kept_entry_id, compaction_tokens_before, branch_from_entry_id, operation_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, insertPrefix)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` + conflictClause
 
 	result, err := transaction.Exec(
 		ctx,

@@ -1,12 +1,88 @@
 package database
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
+
+	_ "modernc.org/sqlite"
 )
+
+func TestInsertEntryIgnoringConflictReturnsNonUniqueConstraintFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	connection, err := sql.Open("sqlite", ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+	connection.SetMaxOpenConns(1)
+	require.NoError(t, Migrate(ctx, connection))
+	_, err = connection.ExecContext(ctx, `CREATE TABLE compaction_insert_audit (value TEXT NOT NULL)`)
+	require.NoError(t, err)
+	_, err = connection.ExecContext(ctx, `CREATE TRIGGER reject_compaction_insert
+AFTER INSERT ON session_entries
+WHEN NEW.entry_type = 'compaction'
+BEGIN
+    INSERT INTO compaction_insert_audit(value) VALUES (NULL);
+END`)
+	require.NoError(t, err)
+
+	provider, err := ksqlite.NewFromSQLDB(connection)
+	require.NoError(t, err)
+
+	repository := NewSessionRepositoryWithProvider(provider)
+	entry := validConstraintTestCompactionEntry(t)
+
+	inserted, err := repository.insertEntryIgnoringConflictTx(
+		ctx,
+		provider,
+		entry,
+		uuid.Must(uuid.NewV7()).String(),
+		true,
+	)
+
+	require.Error(t, err)
+	assert.False(t, inserted)
+	assert.ErrorContains(t, err, "NOT NULL constraint failed")
+}
+
+func validConstraintTestCompactionEntry(t *testing.T) *EntryEntity {
+	t.Helper()
+
+	return &EntryEntity{
+		CreatedAt: time.Now().UTC(),
+		ParentID:  nil,
+		Message: MessageEntity{
+			Timestamp: time.Now().UTC(),
+			Role:      RoleAssistant,
+			Content:   "",
+			Provider:  "",
+			Model:     "",
+		},
+		Summary:                    "summary",
+		ToolStatus:                 "",
+		Type:                       EntryTypeCompaction,
+		CustomType:                 "",
+		DataJSON:                   "{}",
+		ID:                         uuid.Must(uuid.NewV7()).String(),
+		ToolName:                   "",
+		SessionID:                  uuid.Must(uuid.NewV7()).String(),
+		ToolArgsJSON:               "",
+		BranchFromEntryID:          "",
+		CompactionFirstKeptEntryID: "",
+		CompactionTokensBefore:     1,
+		TokenEstimate:              1,
+		Display:                    true,
+		ModelFacing:                true,
+	}
+}
 
 func TestCollectSQLRowsReturnsConvertedRows(t *testing.T) {
 	t.Parallel()
