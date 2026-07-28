@@ -90,6 +90,52 @@ func (runtime *Runtime) ProviderOverflowRecoveryNilBuildForTest(ctx context.Cont
 	return err
 }
 
+func newZeroCompletionRequest(auth model.RequestAuth) *CompletionRequest {
+	return &CompletionRequest{
+		OnEvent:           nil,
+		OnProviderObserve: nil,
+		OnProviderRequest: nil,
+		ToolRegistry:      nil,
+		ExecuteTools:      nil,
+		SessionID:         "",
+		SystemPrompt:      "",
+		ThinkingLevel:     "",
+		CWD:               "",
+		Auth:              auth,
+		Messages:          nil,
+		Usage: model.TokenUsage{
+			Breakdown:       nil,
+			TopContributors: nil,
+			ContextWindow:   0,
+			ContextTokens:   0,
+			InputTokens:     0,
+			OutputTokens:    0,
+		},
+		Model: model.Model{
+			ThinkingLevelMap: nil,
+			Headers:          nil,
+			Compat:           nil,
+			Provider:         "",
+			ID:               "",
+			Name:             "",
+			API:              "",
+			BaseURL:          "",
+			Input:            nil,
+			Cost: model.Cost{
+				Input:      0,
+				Output:     0,
+				CacheRead:  0,
+				CacheWrite: 0,
+			},
+			ContextWindow: 0,
+			MaxTokens:     0,
+			Reasoning:     false,
+		},
+		ProviderAttempt: 0,
+		DisableTools:    false,
+	}
+}
+
 // ProviderOverflowRecoveryNilLineageForTest exercises the nil-lineage guard.
 func (runtime *Runtime) ProviderOverflowRecoveryNilLineageForTest(ctx context.Context) error {
 	auth := model.RequestAuth{Headers: nil, APIKey: compactionTestOrigin, Error: "", OK: true}
@@ -105,8 +151,16 @@ func (runtime *Runtime) ProviderOverflowRecoveryNilLineageForTest(ctx context.Co
 		},
 		build: &contextRequestBuild{
 			Context: nil,
-			Request: &CompletionRequest{},
-			Budget:  contextwindow.Budget{},
+			Request: newZeroCompletionRequest(auth),
+			Budget: contextwindow.Budget{
+				InputTokens:       0,
+				ContextWindow:     0,
+				UsableInput:       0,
+				OutputReserve:     0,
+				ToolSchemaReserve: 0,
+				ProviderReserve:   0,
+				SafetyMargin:      0,
+			},
 		},
 		compactionEntry: nil,
 		onRetry:         nil,
@@ -130,49 +184,7 @@ func (runtime *Runtime) ProviderOverflowRecoveryNonContextErrorForTest(ctx conte
 		},
 		build: &contextRequestBuild{
 			Context: nil,
-			Request: &CompletionRequest{
-				OnEvent:           nil,
-				OnProviderObserve: nil,
-				OnProviderRequest: nil,
-				ToolRegistry:      nil,
-				ExecuteTools:      nil,
-				SessionID:         "",
-				SystemPrompt:      "",
-				ThinkingLevel:     "",
-				CWD:               "",
-				Auth:              auth,
-				Messages:          nil,
-				Usage: model.TokenUsage{
-					Breakdown:       nil,
-					TopContributors: nil,
-					ContextWindow:   0,
-					ContextTokens:   0,
-					InputTokens:     0,
-					OutputTokens:    0,
-				},
-				Model: model.Model{
-					ThinkingLevelMap: nil,
-					Headers:          nil,
-					Compat:           nil,
-					Provider:         "",
-					ID:               "",
-					Name:             "",
-					API:              "",
-					BaseURL:          "",
-					Input:            nil,
-					Cost: model.Cost{
-						Input:      0,
-						Output:     0,
-						CacheRead:  0,
-						CacheWrite: 0,
-					},
-					ContextWindow: 0,
-					MaxTokens:     0,
-					Reasoning:     false,
-				},
-				ProviderAttempt: 0,
-				DisableTools:    false,
-			},
+			Request: newZeroCompletionRequest(auth),
 			Budget: contextwindow.Budget{
 				InputTokens:       0,
 				ContextWindow:     0,
