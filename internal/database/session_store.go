@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,6 +13,9 @@ import (
 )
 
 const appendCompactionNilInputCode = "append_compaction_nil_input"
+
+// ErrStaleCompactionParent indicates that another compaction already won for the same branch endpoint.
+var ErrStaleCompactionParent = errors.New("stale compaction parent")
 
 // branchChainSQL walks the session entry tree from a starting entry back to
 // the root using a recursive CTE. When entryID is empty the most recent leaf
@@ -502,6 +506,7 @@ type AppendCompactionInput struct {
 	SessionID        string
 	Summary          string
 	FirstKeptEntryID string
+	OperationID      string
 	TokensBefore     int
 	FromHook         bool
 }
@@ -528,14 +533,12 @@ func (repository *SessionRepository) AppendCompaction(
 		return nil, err
 	}
 
-	return repository.appendSummaryEntry(
-		ctx,
-		input.SessionID,
-		input.ParentID,
-		EntryTypeCompaction,
-		input.Summary,
-		dataJSON,
-	)
+	options := newAppendEntryOptions()
+	options.summary = input.Summary
+	options.dataJSON = dataJSON
+	entry := repository.entryFromAppendOptions(input.SessionID, input.ParentID, EntryTypeCompaction, options)
+
+	return repository.appendCompactionConditional(ctx, &entry, input.OperationID)
 }
 
 // AppendBranchSummary records summary context from an abandoned branch.

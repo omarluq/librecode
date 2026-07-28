@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
@@ -76,6 +77,7 @@ func (h sessionTestHelper) appendCompactionSimple(
 		FirstKeptEntryID: firstKeptEntryID,
 		TokensBefore:     tokensBefore,
 		FromHook:         false,
+		OperationID:      uuid.Must(uuid.NewV7()).String(),
 	})
 }
 

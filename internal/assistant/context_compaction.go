@@ -8,6 +8,7 @@ import (
 	"maps"
 	"strings"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
@@ -77,13 +78,18 @@ func (runtime *Runtime) compactSessionFrom(
 
 	plan.FileOperations = compaction.CollectFileOperations(branch[:plan.FirstKeptEntryIndex])
 
-	providerInput := compactionProviderInput{selectedModel: selectedModel, auth: auth}
+	providerInput := compactionProviderInput{
+		selectedModel: selectedModel,
+		auth:          auth,
+		operationID:   uuid.Must(uuid.NewV7()).String(),
+	}
 
 	return runtime.compactSessionWithPlan(ctx, sessionID, cwd, parentID, branch, providerInput, &plan)
 }
 
 type compactionProviderInput struct {
 	selectedModel *model.Model
+	operationID   string
 	auth          model.RequestAuth
 }
 
@@ -151,6 +157,7 @@ func (runtime *Runtime) compactSessionWithPlan(
 		plan,
 		decision,
 		fromHook,
+		providerInput.operationID,
 	)
 	if err != nil {
 		return nil, err
@@ -255,6 +262,7 @@ func (runtime *Runtime) appendCompaction(
 	plan *compaction.Plan,
 	decision *compactionLifecycleDecision,
 	fromHook bool,
+	operationID string,
 ) (*database.EntryEntity, error) {
 	details := map[string]any{
 		"summarized_entries":             len(plan.SummarizedEntryIDs),
@@ -277,8 +285,13 @@ func (runtime *Runtime) appendCompaction(
 		FirstKeptEntryID: plan.FirstKeptEntryID,
 		TokensBefore:     plan.TokensBefore,
 		FromHook:         fromHook,
+		OperationID:      operationID,
 	})
 	if err != nil {
+		if errors.Is(err, database.ErrStaleCompactionParent) {
+			return nil, oops.In("assistant").Code("compact_stale_parent").Wrapf(err, "append compaction")
+		}
+
 		return nil, oops.In("assistant").Code("append_compaction").Wrapf(err, "append compaction")
 	}
 
