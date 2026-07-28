@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -124,6 +125,8 @@ func TestSessionRepositoryConcurrentCompactionsChooseOneWinner(t *testing.T) {
 		}
 
 		if errors.Is(result.err, database.ErrStaleCompactionParent) {
+			assertOopsCode(t, result.err, "stale_compaction_parent")
+
 			stale++
 
 			continue
@@ -174,9 +177,35 @@ func TestSessionRepositoryCompactionOperationIsIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, first.ID, second.ID)
+
+	otherParent, err := primary.AppendMessage(ctx, session.ID, &parent.ID, &database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleUser,
+		Content:   "different branch target",
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+	mismatched, err := secondary.AppendCompaction(
+		ctx,
+		newCompactionRaceInput(session.ID, otherParent.ID, operationID, "summary"),
+	)
+	require.Error(t, err)
+	assert.Nil(t, mismatched)
+	assertOopsCode(t, err, "compaction_operation_mismatch")
+
 	children, err := primary.Children(ctx, session.ID, &parent.ID)
 	require.NoError(t, err)
-	assert.Len(t, children, 1)
+	assert.Len(t, children, 2)
+	assert.Equal(t, database.EntryTypeCompaction, children[0].Type)
+}
+
+func assertOopsCode(t *testing.T, err error, wantCode string) {
+	t.Helper()
+
+	oopsErr, ok := oops.AsOops(err)
+	require.True(t, ok)
+	assert.Equal(t, wantCode, oopsErr.Code())
 }
 
 type compactionAppendResult struct {

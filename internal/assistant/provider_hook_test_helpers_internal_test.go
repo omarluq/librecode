@@ -1,11 +1,14 @@
 package assistant
 
 import (
+	"log/slog"
+
+	"github.com/gofrs/uuid/v5"
+
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
-	"log/slog"
 )
 
 // runtimeDeps is a bag of optional Runtime dependencies used by internal test
@@ -55,6 +58,7 @@ func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
 		agentTasks:        nil,
 		workflowSubmitter: nil,
 		operations:        newSessionOperationCoordinator(),
+		newCompactionUUID: uuid.NewV7,
 		profile:           topLevelExecutionProfile(),
 	}
 }
