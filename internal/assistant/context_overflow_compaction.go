@@ -67,16 +67,15 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 
 	input.preparation.lineage.adopt(recoveredEntry)
 
-	recoveredBuild, err := runtime.buildCompletionRequest(
-		ctx,
-		input.preparation.sessionID,
-		input.preparation.lineage.activeParentEntryID,
-		input.preparation.cwd,
-		input.preparation.prompt,
-		input.preparation.selectedModel,
-		*input.preparation.auth,
-		input.preparation.onEvent,
-	)
+	recoveredBuild, err := runtime.buildCompletionRequest(ctx, &completionRequestBuildInput{
+		selectedModel: input.preparation.selectedModel,
+		auth:          *input.preparation.auth,
+		onEvent:       input.preparation.onEvent,
+		sessionID:     input.preparation.sessionID,
+		entryID:       input.preparation.lineage.activeParentEntryID,
+		cwd:           input.preparation.cwd,
+		prompt:        input.preparation.prompt,
+	})
 	if err != nil {
 		runtime.emitContextCompactionError(
 			ctx,
