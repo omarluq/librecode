@@ -4,12 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gofrs/uuid/v5"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
@@ -63,6 +66,135 @@ func TestSessionRepositoryConcurrentWritersWaitForBusyDatabase(t *testing.T) {
 	entries, err := primaryRepository.Entries(ctx, session.ID)
 	require.NoError(t, err)
 	require.Len(t, entries, 40)
+}
+
+func TestSessionRepositoryConcurrentCompactionsChooseOneWinner(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping SQLite compaction contention test in short mode")
+	}
+
+	t.Parallel()
+
+	ctx := context.Background()
+	dbs := openMigratedSQLitePair(ctx, t, 2*time.Second)
+	repositories := []*database.SessionRepository{
+		database.NewSessionRepository(dbs.primary),
+		database.NewSessionRepository(dbs.secondary),
+	}
+	session, err := repositories[0].CreateSession(ctx, t.TempDir(), "compaction race", "")
+	require.NoError(t, err)
+	parent, err := repositories[0].AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleUser,
+		Content:   compactionTestHistory,
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+
+	start := make(chan struct{})
+	results := make(chan compactionAppendResult, len(repositories))
+
+	var waitGroup sync.WaitGroup
+	for index, repository := range repositories {
+		waitGroup.Go(func() {
+			<-start
+
+			entry, appendErr := repository.AppendCompaction(ctx, newCompactionRaceInput(
+				session.ID, parent.ID, uuid.Must(uuid.NewV7()).String(), fmt.Sprintf("summary %d", index),
+			))
+			results <- compactionAppendResult{entry: entry, err: appendErr}
+		})
+	}
+
+	close(start)
+	waitGroup.Wait()
+	close(results)
+
+	successes := 0
+	stale := 0
+
+	for result := range results {
+		if result.err == nil {
+			successes++
+
+			require.NotNil(t, result.entry)
+
+			continue
+		}
+
+		if errors.Is(result.err, database.ErrStaleCompactionParent) {
+			stale++
+
+			continue
+		}
+
+		require.NoError(t, result.err)
+	}
+
+	assert.Equal(t, 1, successes)
+	assert.Equal(t, 1, stale)
+
+	children, err := repositories[0].Children(ctx, session.ID, &parent.ID)
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+	assert.Equal(t, database.EntryTypeCompaction, children[0].Type)
+}
+
+func TestSessionRepositoryCompactionOperationIsIdempotent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping SQLite compaction idempotency test in short mode")
+	}
+
+	t.Parallel()
+
+	ctx := context.Background()
+	dbs := openMigratedSQLitePair(ctx, t, 2*time.Second)
+	primary := database.NewSessionRepository(dbs.primary)
+	secondary := database.NewSessionRepository(dbs.secondary)
+	session, err := primary.CreateSession(ctx, t.TempDir(), "compaction retry", "")
+	require.NoError(t, err)
+	parent, err := primary.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleUser,
+		Content:   compactionTestHistory,
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+
+	operationID := uuid.Must(uuid.NewV7()).String()
+
+	first, err := primary.AppendCompaction(ctx, newCompactionRaceInput(session.ID, parent.ID, operationID, "summary"))
+	require.NoError(t, err)
+	second, err := secondary.AppendCompaction(
+		ctx,
+		newCompactionRaceInput(session.ID, parent.ID, operationID, "summary"),
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, first.ID, second.ID)
+	children, err := primary.Children(ctx, session.ID, &parent.ID)
+	require.NoError(t, err)
+	assert.Len(t, children, 1)
+}
+
+type compactionAppendResult struct {
+	entry *database.EntryEntity
+	err   error
+}
+
+func newCompactionRaceInput(sessionID, parentID, operationID, summary string) *database.AppendCompactionInput {
+	return &database.AppendCompactionInput{
+		ParentID:         &parentID,
+		Details:          nil,
+		SessionID:        sessionID,
+		Summary:          summary,
+		FirstKeptEntryID: parentID,
+		TokensBefore:     100,
+		FromHook:         false,
+		OperationID:      operationID,
+	}
 }
 
 func TestSQLiteBusyTimeoutWaitsForExternalWriter(t *testing.T) {

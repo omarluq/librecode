@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -606,6 +607,7 @@ func TestRuntime_PromptIncludesCompactionSummaryContext(t *testing.T) {
 		FirstKeptEntryID: userEntry.ID,
 		TokensBefore:     42,
 		FromHook:         false,
+		OperationID:      uuid.Must(uuid.NewV7()).String(),
 	})
 	require.NoError(t, err)
 

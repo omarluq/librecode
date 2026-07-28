@@ -39,6 +39,44 @@ DROP TABLE IF EXISTS workflow_agent_tasks;
 DROP TABLE IF EXISTS workflow_runs;
 `
 
+func TestMigrateAddsCompactionOperationIdentityAfterPreviouslyDeployedVersionEleven(t *testing.T) {
+	t.Parallel()
+
+	connection := newMigratedThroughVersion(t, 10)
+	ctx := context.Background()
+	_, err := connection.ExecContext(ctx, `
+INSERT INTO goose_db_version (version_id, is_applied)
+VALUES (11, 1)`)
+	require.NoError(t, err)
+
+	require.NoError(t, database.Migrate(ctx, connection))
+
+	assertSchemaObjectExists(ctx, t, connection,
+		`SELECT COUNT(*) FROM pragma_table_info('session_entries') WHERE name = 'operation_id'`)
+
+	for _, indexName := range []string{
+		"idx_session_entries_operation_id",
+		"idx_session_entries_compaction_parent",
+	} {
+		assertSchemaObjectExists(ctx, t, connection,
+			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, indexName)
+	}
+}
+
+func assertSchemaObjectExists(
+	ctx context.Context,
+	t *testing.T,
+	connection *sql.DB,
+	query string,
+	args ...any,
+) {
+	t.Helper()
+
+	var count int
+	require.NoError(t, connection.QueryRowContext(ctx, query, args...).Scan(&count))
+	assert.Equal(t, 1, count)
+}
+
 func TestMigrateAddsWorkflowInvocationIndexToDeployedVersionEightDatabase(t *testing.T) {
 	t.Parallel()
 

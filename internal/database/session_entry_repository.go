@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
@@ -259,6 +260,164 @@ ORDER BY created_at ASC`, entrySelectColumns)
 	return entries, nil
 }
 
+func (repository *SessionRepository) appendCompactionConditional(
+	ctx context.Context,
+	entry *EntryEntity,
+	operationID string,
+) (*EntryEntity, error) {
+	if strings.TrimSpace(operationID) == "" {
+		return nil, oops.In("database").Code("compaction_operation_required").
+			Errorf("compaction operation id is required")
+	}
+
+	if err := repository.prepareAppendEntry(entry); err != nil {
+		return nil, err
+	}
+
+	if err := validateCompactionParent(ctx, repository.sql, entry); err != nil {
+		return nil, err
+	}
+
+	var resolved *EntryEntity
+
+	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+		var transactionErr error
+
+		resolved, transactionErr = repository.appendCompactionTx(ctx, transaction, entry, operationID)
+
+		return transactionErr
+	})
+	if err != nil {
+		return nil, oops.In("database").Code("append_compaction_tx").Wrapf(err, "append compaction transaction")
+	}
+
+	return resolved, nil
+}
+
+func (repository *SessionRepository) appendCompactionTx(
+	ctx context.Context,
+	transaction ksql.Provider,
+	entry *EntryEntity,
+	operationID string,
+) (*EntryEntity, error) {
+	inserted, err := repository.insertEntryIgnoringConflictTx(ctx, transaction, entry, operationID, true)
+	if err != nil {
+		return nil, err
+	}
+
+	if !inserted {
+		return resolveCompactionConflict(ctx, transaction, entry, operationID)
+	}
+
+	if err := repository.appendEntryMessage(ctx, transaction, entry); err != nil {
+		return nil, err
+	}
+
+	const touchSession = `UPDATE sessions SET updated_at = ? WHERE id = ?`
+	if _, err := transaction.Exec(ctx, touchSession, formatTime(entry.CreatedAt), entry.SessionID); err != nil {
+		return nil, oops.In("database").Code("touch_session").Wrapf(err, "touch session")
+	}
+
+	return entry, nil
+}
+
+func resolveCompactionConflict(
+	ctx context.Context,
+	transaction ksql.Provider,
+	entry *EntryEntity,
+	operationID string,
+) (*EntryEntity, error) {
+	existing, found, err := entryByOperationID(ctx, transaction, operationID)
+	if err != nil {
+		return nil, err
+	}
+
+	if found {
+		if !sameCompactionTarget(existing, entry) {
+			return nil, oops.In("database").Code("compaction_operation_mismatch").
+				Errorf("compaction operation id targets another branch")
+		}
+
+		return existing, nil
+	}
+
+	winner, found, err := compactionByParent(ctx, transaction, entry.SessionID, entry.ParentID)
+	if err != nil {
+		return nil, err
+	}
+
+	if found {
+		return nil, oops.In("database").Code("stale_compaction_parent").With("winner_entry_id", winner.ID).
+			Wrapf(ErrStaleCompactionParent, "append compaction")
+	}
+
+	return nil, oops.In("database").Code("compaction_insert_conflict").Errorf("compaction insert conflicted")
+}
+
+func entryByOperationID(
+	ctx context.Context,
+	provider ksql.Provider,
+	operationID string,
+) (*EntryEntity, bool, error) {
+	query := fmt.Sprintf(`SELECT %s FROM session_entries WHERE operation_id = ?`, entrySelectColumns)
+
+	return querySQLRow(ctx, provider, entryFromRow, query, "compaction_operation", operationID)
+}
+
+func compactionByParent(
+	ctx context.Context,
+	provider ksql.Provider,
+	sessionID string,
+	parentID *string,
+) (*EntryEntity, bool, error) {
+	query := fmt.Sprintf(`SELECT %s FROM session_entries
+WHERE session_id = ? AND entry_type = ? AND parent_id IS NULL`, entrySelectColumns)
+	args := []any{sessionID, EntryTypeCompaction}
+
+	if parentID != nil {
+		query = fmt.Sprintf(`SELECT %s FROM session_entries
+WHERE session_id = ? AND entry_type = ? AND parent_id = ?`, entrySelectColumns)
+
+		args = append(args, *parentID)
+	}
+
+	return querySQLRow(ctx, provider, entryFromRow, query, "compaction_parent", args...)
+}
+
+func validateCompactionParent(ctx context.Context, provider ksql.Provider, entry *EntryEntity) error {
+	if entry.ParentID == nil {
+		return nil
+	}
+
+	const query = `SELECT 1 AS present FROM session_entries WHERE session_id = ? AND id = ?`
+
+	var row struct {
+		Present int `ksql:"present"`
+	}
+	if err := provider.QueryOne(ctx, &row, query, entry.SessionID, *entry.ParentID); err != nil {
+		if errors.Is(err, ksql.ErrRecordNotFound) {
+			return oops.In("database").Code("compaction_parent_missing").
+				Errorf("compaction parent is not in the session")
+		}
+
+		return oops.In("database").Code("compaction_parent").Wrapf(err, "load compaction parent")
+	}
+
+	return nil
+}
+
+func sameCompactionTarget(left, right *EntryEntity) bool {
+	if left.SessionID != right.SessionID || left.Type != EntryTypeCompaction || right.Type != EntryTypeCompaction {
+		return false
+	}
+
+	if left.ParentID == nil || right.ParentID == nil {
+		return left.ParentID == nil && right.ParentID == nil
+	}
+
+	return *left.ParentID == *right.ParentID
+}
+
 func (repository *SessionRepository) appendEntry(ctx context.Context, entry *EntryEntity) error {
 	if err := repository.prepareAppendEntry(entry); err != nil {
 		return err
@@ -311,15 +470,39 @@ func (repository *SessionRepository) insertEntryTx(
 	transaction ksql.Provider,
 	entry *EntryEntity,
 ) error {
-	const insertEntry = `
-INSERT INTO session_entries (
+	inserted, err := repository.insertEntryIgnoringConflictTx(ctx, transaction, entry, "", false)
+	if err != nil {
+		return err
+	}
+
+	if !inserted {
+		return oops.In("database").Code("append_entry").Errorf("append session entry was ignored")
+	}
+
+	return nil
+}
+
+func (repository *SessionRepository) insertEntryIgnoringConflictTx(
+	ctx context.Context,
+	transaction ksql.Provider,
+	entry *EntryEntity,
+	operationID string,
+	ignoreConflict bool,
+) (bool, error) {
+	insertPrefix := "INSERT"
+	if ignoreConflict {
+		insertPrefix = "INSERT OR IGNORE"
+	}
+
+	insertEntry := fmt.Sprintf(`
+%s INTO session_entries (
     id, session_id, parent_id, entry_type, role, content,
     provider, model, custom_type, data_json, summary, created_at,
     tool_name, tool_status, tool_args_json, token_estimate, model_facing, display,
-    compaction_first_kept_entry_id, compaction_tokens_before, branch_from_entry_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    compaction_first_kept_entry_id, compaction_tokens_before, branch_from_entry_id, operation_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, insertPrefix)
 
-	_, err := transaction.Exec(
+	result, err := transaction.Exec(
 		ctx,
 		insertEntry,
 		entry.ID,
@@ -343,12 +526,18 @@ INSERT INTO session_entries (
 		entry.CompactionFirstKeptEntryID,
 		entry.CompactionTokensBefore,
 		entry.BranchFromEntryID,
+		operationID,
 	)
 	if err != nil {
-		return oops.In("database").Code("append_entry").Wrapf(err, "append session entry")
+		return false, oops.In("database").Code("append_entry").Wrapf(err, "append session entry")
 	}
 
-	return nil
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, oops.In("database").Code("entry_rows_affected").Wrapf(err, "read affected entry rows")
+	}
+
+	return rows == 1, nil
 }
 
 func boolToInt(value bool) int {
