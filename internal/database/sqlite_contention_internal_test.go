@@ -194,6 +194,10 @@ func TestSessionRepositoryCompactionOperationIsIdempotent(t *testing.T) {
 	assert.Nil(t, mismatched)
 	assertOopsCode(t, err, "compaction_operation_mismatch")
 
+	otherChildren, err := primary.Children(ctx, session.ID, &otherParent.ID)
+	require.NoError(t, err)
+	assert.Empty(t, otherChildren)
+
 	children, err := primary.Children(ctx, session.ID, &parent.ID)
 	require.NoError(t, err)
 	assert.Len(t, children, 2)

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // register the SQLite driver used by sql.Open in this test.
 )
 
 func TestInsertEntryIgnoringConflictReturnsNonUniqueConstraintFailure(t *testing.T) {
