@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
-	github.com/MicahParks/jwkset v0.11.1
+	github.com/MicahParks/jwkset v0.11.2
 	github.com/MicahParks/keyfunc/v3 v3.8.1
 	github.com/Oudwins/zog v0.22.2
 	github.com/PuerkitoBio/goquery v1.12.0
