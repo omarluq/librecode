@@ -109,6 +109,14 @@ func TestSessionOperationCoordinatorCancellation(t *testing.T) {
 			}()
 
 			if !testCase.cancelBefore {
+				require.Eventually(t, func() bool {
+					coordinator.mu.Lock()
+					defer coordinator.mu.Unlock()
+
+					slot := coordinator.slots["session"]
+
+					return slot != nil && slot.refs == 2
+				}, time.Second, time.Millisecond)
 				cancel()
 			}
 
