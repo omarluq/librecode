@@ -90,6 +90,31 @@ func (runtime *Runtime) ProviderOverflowRecoveryNilBuildForTest(ctx context.Cont
 	return err
 }
 
+// ProviderOverflowRecoveryNilLineageForTest exercises the nil-lineage guard.
+func (runtime *Runtime) ProviderOverflowRecoveryNilLineageForTest(ctx context.Context) error {
+	auth := model.RequestAuth{Headers: nil, APIKey: compactionTestOrigin, Error: "", OK: true}
+	_, _, _, err := runtime.completeWithProviderOverflowRecovery(ctx, &providerOverflowRecoveryInput{
+		preparation: &completionRequestPreparationInput{
+			selectedModel: nil,
+			onEvent:       nil,
+			auth:          &auth,
+			sessionID:     "",
+			cwd:           "",
+			prompt:        "",
+			lineage:       nil,
+		},
+		build: &contextRequestBuild{
+			Context: nil,
+			Request: &CompletionRequest{},
+			Budget:  contextwindow.Budget{},
+		},
+		compactionEntry: nil,
+		onRetry:         nil,
+	})
+
+	return err
+}
+
 // ProviderOverflowRecoveryNonContextErrorForTest exercises the non-overflow passthrough path.
 func (runtime *Runtime) ProviderOverflowRecoveryNonContextErrorForTest(ctx context.Context) error {
 	auth := model.RequestAuth{Headers: nil, APIKey: "test", Error: "", OK: true}

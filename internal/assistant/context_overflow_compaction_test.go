@@ -132,6 +132,8 @@ func TestRuntime_ProviderContextOverflowRecoveryErrorPaths(t *testing.T) {
 func TestRuntime_ProviderOverflowRecoveryInputGuards(t *testing.T) {
 	t.Parallel()
 
+	const recoveryInputCode = "context_overflow_recovery_input"
+
 	runtime := newProviderOverflowRecoveryRuntime(t, providerOverflowStaticErrorClient{})
 	tests := []struct {
 		call     func() error
@@ -143,14 +145,21 @@ func TestRuntime_ProviderOverflowRecoveryInputGuards(t *testing.T) {
 			call: func() error {
 				return runtime.ProviderOverflowRecoveryNilInputForTest(context.Background())
 			},
-			wantCode: "context_overflow_recovery_input",
+			wantCode: recoveryInputCode,
 		},
 		{
 			name: "nil nested input",
 			call: func() error {
 				return runtime.ProviderOverflowRecoveryNilBuildForTest(context.Background())
 			},
-			wantCode: "context_overflow_recovery_input",
+			wantCode: recoveryInputCode,
+		},
+		{
+			name: "nil lineage",
+			call: func() error {
+				return runtime.ProviderOverflowRecoveryNilLineageForTest(context.Background())
+			},
+			wantCode: recoveryInputCode,
 		},
 	}
 

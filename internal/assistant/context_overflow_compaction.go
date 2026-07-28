@@ -23,7 +23,8 @@ func (runtime *Runtime) completeWithProviderOverflowRecovery(
 	ctx context.Context,
 	input *providerOverflowRecoveryInput,
 ) (*contextRequestBuild, *database.EntryEntity, *CompletionResult, error) {
-	if input == nil || input.build == nil || input.preparation == nil || input.preparation.auth == nil {
+	if input == nil || input.build == nil || input.preparation == nil ||
+		input.preparation.auth == nil || input.preparation.lineage == nil {
 		err := errors.New("nil provider overflow recovery input")
 
 		return nil, nil, nil, oops.In("assistant").
