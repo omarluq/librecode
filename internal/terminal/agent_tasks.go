@@ -958,9 +958,11 @@ func (app *App) deliverAgentTaskCompletion(ctx context.Context, task *database.A
 		return
 	}
 
-	app.withSessionView(task.Task.OwnerSessionID, func() {
+	if !app.withSessionView(task.Task.OwnerSessionID, func() {
 		app.deliverAgentTaskCompletionText(ctx, task.Task.ID, completion)
-	})
+	}) {
+		app.setStatus("agent result owner view is unavailable")
+	}
 }
 
 func (app *App) deliverAgentTaskCompletionEvent(ctx context.Context, taskID, completion string) {
@@ -976,9 +978,11 @@ func (app *App) deliverAgentTaskCompletionEvent(ctx context.Context, taskID, com
 		ownerSessionID = task.Task.OwnerSessionID
 	}
 
-	app.withSessionView(ownerSessionID, func() {
+	if !app.withSessionView(ownerSessionID, func() {
 		app.deliverAgentTaskCompletionText(ctx, taskID, completion)
-	})
+	}) {
+		app.setStatus("agent result owner view is unavailable")
+	}
 }
 
 func (app *App) deliverAgentTaskCompletionText(ctx context.Context, taskID, completion string) {
@@ -1650,7 +1654,9 @@ func (app *App) leaveAgentTaskSession(ctx context.Context) error {
 	app.saveSessionView()
 	app.agentTaskSessionStack = app.agentTaskSessionStack[:last]
 
-	if !app.restoreSessionView(parentSessionID) {
+	if app.restoreSessionView(parentSessionID) {
+		app.appendMissingSessionMessages(messages)
+	} else {
 		app.sessionID = parentSessionID
 		app.pendingParentID = nil
 		app.resetMessages()
@@ -1672,6 +1678,49 @@ func (app *App) leaveAgentTaskSession(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (app *App) appendMissingSessionMessages(messages []database.SessionMessageEntity) {
+	appended := false
+
+	for index := range messages {
+		message := &messages[index]
+		role := transcript.FromDatabaseRole(message.Role)
+		found := false
+
+		for historyIndex := range app.transcript.History {
+			history := &app.transcript.History[historyIndex]
+			if history.CreatedAt.Equal(message.CreatedAt) &&
+				history.Role == role && history.Content == message.Content {
+				found = true
+
+				break
+			}
+		}
+
+		if found {
+			continue
+		}
+
+		app.appendMessage(chatMessage{
+			CreatedAt: message.CreatedAt,
+			Role:      role,
+			Content:   message.Content,
+		})
+
+		appended = true
+
+		if message.Role == database.RoleUser {
+			app.recordPromptHistory(message.Content)
+		}
+	}
+
+	if appended {
+		slices.SortStableFunc(app.transcript.History, func(left, right chatMessage) int {
+			return left.CreatedAt.Compare(right.CreatedAt)
+		})
+		app.transcript.LineCache.reset()
+	}
 }
 
 func (app *App) resumeInspectedAgentTask(ctx context.Context, childSessionID string) {
