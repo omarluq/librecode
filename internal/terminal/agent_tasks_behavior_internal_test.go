@@ -1120,6 +1120,29 @@ func TestAltEscapeLeavesInspectionWithoutCancelingParentPrompt(t *testing.T) {
 	assert.True(t, app.working)
 }
 
+func TestAltEscapeLeavesInspectionWhenAutocompleteIsActive(t *testing.T) {
+	t.Parallel()
+
+	fixture, _, app := newActivePromptInspectionTestApp(t, database.TaskRunning, nil)
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	defer app.stopAgentTaskWatches()
+
+	app.composerBuffer.SetText("/s")
+	require.True(t, app.autocompleteActive())
+
+	shouldQuit, err := app.handleKey(
+		t.Context(),
+		tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModAlt),
+	)
+	require.NoError(t, err)
+	assert.False(t, shouldQuit)
+	assert.Equal(t, fixture.parent.ID, app.sessionID)
+	require.NotNil(t, app.activePrompt)
+	assert.Equal(t, fixture.parent.ID, app.activePrompt.SessionID)
+	assert.True(t, app.working)
+}
+
 func TestActivePromptInspectionBlocksGlobalAndExtensionShortcuts(t *testing.T) {
 	t.Parallel()
 
