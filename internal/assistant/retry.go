@@ -109,8 +109,11 @@ func retryBackoffWithOverride(
 
 func providerRetryDelay(err error, fallback time.Duration) time.Duration {
 	var statusErr *provider.StatusError
-	if errors.As(err, &statusErr) && statusErr.RetryAfter > fallback {
-		return statusErr.RetryAfter
+	if errors.As(err, &statusErr) {
+		providerDelay := min(statusErr.RetryAfter, provider.MaxRetryAfter)
+		if providerDelay > fallback {
+			return providerDelay
+		}
 	}
 
 	return fallback
@@ -170,8 +173,8 @@ func IsContextWindowError(err error) bool {
 
 func retryDecisionFromProviderCode(err error) (retry, known bool) {
 	codes := []string{
-		providerErrorContextString(err, "provider_code"),
-		providerErrorContextString(err, "provider_type"),
+		providerErrorContextString(err, provider.ProviderCodeContextKey),
+		providerErrorContextString(err, provider.ProviderTypeContextKey),
 	}
 	if code, matched := providerErrorCode(err); matched {
 		codes = append(codes, code)
@@ -211,7 +214,7 @@ func retryableDeadlineExceeded(message string) bool {
 }
 
 func providerFailureCode(err error) (string, bool) {
-	if value := providerErrorContextString(err, "provider_code"); value != "" {
+	if value := providerErrorContextString(err, provider.ProviderCodeContextKey); value != "" {
 		return strings.ToLower(value), true
 	}
 

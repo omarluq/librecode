@@ -90,10 +90,10 @@ func TestParseSSEResultPreservesFailureMetadata(t *testing.T) {
 	coded, matched := oops.AsOops(err)
 	require.True(t, matched)
 	assert.Equal(t, "responses_failed", coded.Code())
-	assert.Equal(t, "server_error", coded.Context()[providerTypeContextKey])
-	assert.Equal(t, "internal_error", coded.Context()[providerCodeContextKey])
-	assert.Equal(t, "resp_123", coded.Context()[providerResponseIDContextKey])
-	assert.Equal(t, "req_123", coded.Context()[providerRequestIDContextKey])
+	assert.Equal(t, "server_error", coded.Context()[ProviderTypeContextKey])
+	assert.Equal(t, "internal_error", coded.Context()[ProviderCodeContextKey])
+	assert.Equal(t, "resp_123", coded.Context()[ProviderResponseIDContextKey])
+	assert.Equal(t, "req_123", coded.Context()[ProviderRequestIDContextKey])
 	assert.Contains(t, err.Error(), "please retry")
 }
 
@@ -108,8 +108,8 @@ func TestParseSSEResultMergesSplitFailureMetadata(t *testing.T) {
 
 	coded, matched := oops.AsOops(err)
 	require.True(t, matched)
-	assert.Equal(t, "server_error", coded.Context()[providerTypeContextKey])
-	assert.Equal(t, "backend_specific", coded.Context()[providerCodeContextKey])
+	assert.Equal(t, "server_error", coded.Context()[ProviderTypeContextKey])
+	assert.Equal(t, "backend_specific", coded.Context()[ProviderCodeContextKey])
 	assert.Contains(t, err.Error(), "please retry")
 }
 

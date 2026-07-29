@@ -316,21 +316,21 @@ func sseProviderError(code string, event map[string]any, fallback string) error 
 
 	errorDetails := sseErrorDetails(response, event)
 	if errorDetails.Type != "" {
-		builder = builder.With(providerTypeContextKey, errorDetails.Type)
+		builder = builder.With(ProviderTypeContextKey, errorDetails.Type)
 	}
 
 	if errorDetails.Code != "" {
-		builder = builder.With(providerCodeContextKey, errorDetails.Code)
+		builder = builder.With(ProviderCodeContextKey, errorDetails.Code)
 	}
 
 	responseID := firstNonEmptyString(stringValue(response["id"]), stringValue(event["response_id"]))
 	if responseID != "" {
-		builder = builder.With(providerResponseIDContextKey, responseID)
+		builder = builder.With(ProviderResponseIDContextKey, responseID)
 	}
 
 	requestID := firstNonEmptyString(stringValue(event["request_id"]), stringValue(response["request_id"]))
 	if requestID != "" {
-		builder = builder.With(providerRequestIDContextKey, requestID)
+		builder = builder.With(ProviderRequestIDContextKey, requestID)
 	}
 
 	return builder.Errorf("%s", message)

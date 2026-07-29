@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -802,7 +801,7 @@ func (client *sideEffectFailureCompleter) Complete(
 
 	_, err := request.ExecuteTools(ctx, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("execute tools: %w", err)
+		return nil, oops.In("assistant_test").Code("execute_tools").Wrapf(err, "execute tools")
 	}
 
 	return nil, errors.New("provider is temporarily unavailable")
