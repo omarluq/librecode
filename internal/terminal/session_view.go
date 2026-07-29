@@ -49,8 +49,12 @@ func (app *App) saveSessionView() {
 		app.sessionViews = make(map[string]sessionViewState)
 	}
 
-	app.sessionViews[app.sessionID] = sessionViewState{
-		pendingParentID:       cloneStringPtr(app.pendingParentID),
+	app.sessionViews[app.sessionID] = app.captureSessionView(true)
+}
+
+func (app *App) captureSessionView(clone bool) sessionViewState {
+	view := sessionViewState{
+		pendingParentID:       app.pendingParentID,
 		transcript:            app.transcript,
 		runningToolBlocks:     app.runningToolBlocks,
 		liveAgentCompletions:  app.liveAgentCompletions,
@@ -58,14 +62,14 @@ func (app *App) saveSessionView() {
 		hiddenQueuedMessages:  app.hiddenQueuedMessages,
 		promptHistory:         app.promptHistory,
 		promptHistoryDraft:    app.promptHistoryDraft,
-		tokenUsage:            cloneTerminalUsage(app.tokenUsage),
-		composerBuffer:        cloneComposerBuffer(app.composerBuffer),
+		tokenUsage:            app.tokenUsage,
+		composerBuffer:        app.composerBuffer,
 		selection:             app.selection,
 		transcriptList:        app.transcriptList,
 		streamingText:         app.streamingText,
 		streamingThinkingText: app.streamingThinkingText,
-		scopedEnabled:         maps.Clone(app.scopedEnabled),
-		scopedOrder:           slices.Clone(app.scopedOrder),
+		scopedEnabled:         app.scopedEnabled,
+		scopedOrder:           app.scopedOrder,
 		settings:              app.currentSessionSettings(),
 		streamedToolEvents:    app.streamedToolEvents,
 		promptHistoryIndex:    app.promptHistoryIndex,
@@ -76,6 +80,15 @@ func (app *App) saveSessionView() {
 		escapePresses:         app.escapePresses,
 		lastEscape:            app.lastEscape,
 	}
+	if clone {
+		view.pendingParentID = cloneStringPtr(view.pendingParentID)
+		view.tokenUsage = cloneTerminalUsage(view.tokenUsage)
+		view.composerBuffer = cloneComposerBuffer(view.composerBuffer)
+		view.scopedEnabled = maps.Clone(view.scopedEnabled)
+		view.scopedOrder = slices.Clone(view.scopedOrder)
+	}
+
+	return view
 }
 
 func (app *App) restoreSessionView(sessionID string) bool {
@@ -84,8 +97,14 @@ func (app *App) restoreSessionView(sessionID string) bool {
 		return false
 	}
 
+	app.applySessionView(sessionID, &view, true)
+
+	return true
+}
+
+func (app *App) applySessionView(sessionID string, view *sessionViewState, clone bool) {
 	app.sessionID = sessionID
-	app.pendingParentID = cloneStringPtr(view.pendingParentID)
+	app.pendingParentID = view.pendingParentID
 	app.transcript = view.transcript
 	app.runningToolBlocks = view.runningToolBlocks
 	app.liveAgentCompletions = view.liveAgentCompletions
@@ -93,14 +112,14 @@ func (app *App) restoreSessionView(sessionID string) bool {
 	app.hiddenQueuedMessages = view.hiddenQueuedMessages
 	app.promptHistory = view.promptHistory
 	app.promptHistoryDraft = view.promptHistoryDraft
-	app.tokenUsage = cloneTerminalUsage(view.tokenUsage)
-	app.composerBuffer = cloneComposerBuffer(view.composerBuffer)
+	app.tokenUsage = view.tokenUsage
+	app.composerBuffer = view.composerBuffer
 	app.selection = view.selection
 	app.transcriptList = view.transcriptList
 	app.streamingText = view.streamingText
 	app.streamingThinkingText = view.streamingThinkingText
-	app.scopedEnabled = maps.Clone(view.scopedEnabled)
-	app.scopedOrder = slices.Clone(view.scopedOrder)
+	app.scopedEnabled = view.scopedEnabled
+	app.scopedOrder = view.scopedOrder
 	app.streamedToolEvents = view.streamedToolEvents
 	app.promptHistoryIndex = view.promptHistoryIndex
 	app.scrollOffset = view.scrollOffset
@@ -111,16 +130,23 @@ func (app *App) restoreSessionView(sessionID string) bool {
 	app.lastEscape = view.lastEscape
 	app.applySessionSettings(&view.settings)
 
-	return true
+	if clone {
+		app.pendingParentID = cloneStringPtr(app.pendingParentID)
+		app.tokenUsage = cloneTerminalUsage(app.tokenUsage)
+		app.composerBuffer = cloneComposerBuffer(app.composerBuffer)
+		app.scopedEnabled = maps.Clone(app.scopedEnabled)
+		app.scopedOrder = slices.Clone(app.scopedOrder)
+	}
 }
 
-// withSessionView routes an event to its owning session without changing the
-// session the user is viewing. The terminal event loop serializes these state
-// transitions, so callbacks cannot observe a partially switched view.
 func (app *App) inspectingWhilePromptRuns() bool {
 	return app.activePrompt != nil && app.activePrompt.SessionID != "" && app.activePrompt.SessionID != app.sessionID
 }
 
+// withSessionView routes an event to its owning session without changing the
+// session the user is viewing. The terminal event loop serializes these state
+// transitions, so callbacks cannot observe a partially switched view. State is
+// transferred rather than cloned because neither view is used concurrently.
 func (app *App) withSessionView(sessionID string, apply func()) bool {
 	if sessionID == "" || sessionID == app.sessionID {
 		apply()
@@ -128,18 +154,20 @@ func (app *App) withSessionView(sessionID string, apply func()) bool {
 		return true
 	}
 
-	displayedSessionID := app.sessionID
-	app.saveSessionView()
-
-	if !app.restoreSessionView(sessionID) {
-		app.restoreSessionView(displayedSessionID)
-
+	targetView, found := app.sessionViews[sessionID]
+	if !found {
 		return false
 	}
 
+	displayedSessionID := app.sessionID
+	displayedView := app.captureSessionView(false)
+	app.sessionViews[displayedSessionID] = displayedView
+	app.applySessionView(sessionID, &targetView, false)
+
 	apply()
-	app.saveSessionView()
-	app.restoreSessionView(displayedSessionID)
+
+	app.sessionViews[sessionID] = app.captureSessionView(false)
+	app.applySessionView(displayedSessionID, &displayedView, false)
 
 	return true
 }

@@ -2,14 +2,34 @@ package terminal
 
 import (
 	"fmt"
-	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 	"testing"
 
 	"github.com/gdamore/tcell/v3"
 
 	"github.com/omarluq/librecode/internal/transcript"
+	"github.com/omarluq/librecode/internal/tui"
 )
+
+const benchmarkDisplayedSession = "displayed-session"
+
+func BenchmarkWithSessionViewMissing(b *testing.B) {
+	app := newApp(nil, &RunOptions{
+		Extensions: nil, Resources: nil, Runtime: nil, Workflows: nil, Settings: nil,
+		Models: nil, Auth: nil, Config: nil, CWD: "", SessionID: "",
+	})
+	app.sessionID = benchmarkDisplayedSession
+	app.composerBuffer.Metadata = map[string]any{"source": "benchmark"}
+	app.composerBuffer.Chars = []string{"a", "b", "c"}
+	app.scopedEnabled = map[string]bool{"benchmark-tool": true}
+	app.scopedOrder = []string{"benchmark-tool"}
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		app.withSessionView("missing-session", func() {})
+	}
+}
 
 func BenchmarkDrawMessagesSameWidth(b *testing.B) {
 	app := newApp(nil, &RunOptions{

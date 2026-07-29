@@ -706,6 +706,25 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	assert.Contains(t, err.Error(), "outside the current inspection path")
 }
 
+func TestLeaveAgentTaskSessionRefreshesDurableParentTranscript(t *testing.T) {
+	t.Parallel()
+
+	fixture, _, app := newAgentTaskSessionTestApp(t, database.TaskSucceeded)
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	_, err := fixture.sessions.AppendMessage(t.Context(), fixture.parent.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleAssistant,
+		Content:   "new durable parent message",
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+	assert.Contains(t, app.transcript.History[0].Content, "new durable parent message")
+}
+
 func TestRevisitAgentTaskSessionRefreshesDurableTranscript(t *testing.T) {
 	t.Parallel()
 

@@ -40,7 +40,7 @@ func TestWithSessionViewRejectsEventWhenOwnerViewIsMissing(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.sessionID = "displayed-session"
+	app.sessionID = benchmarkDisplayedSession
 	called := false
 
 	applied := app.withSessionView("missing-session", func() {
@@ -51,6 +51,25 @@ func TestWithSessionViewRejectsEventWhenOwnerViewIsMissing(t *testing.T) {
 
 	assert.False(t, applied)
 	assert.False(t, called)
-	assert.Equal(t, "displayed-session", app.sessionID)
+	assert.Equal(t, benchmarkDisplayedSession, app.sessionID)
 	assert.Empty(t, app.transcript.History)
+}
+
+func TestPromptEventReportsMissingOwnerView(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.sessionID = benchmarkDisplayedSession
+	app.activePrompt = newTestActivePrompt(nil)
+	app.activePrompt.SessionID = "missing-session"
+
+	app.handlePromptAsyncEvent(t.Context(), asyncTestEvent(
+		asyncEventPromptDelta,
+		"dropped delta",
+		"",
+		app.activePrompt.ID,
+	))
+
+	assert.Equal(t, "prompt event owner view is unavailable", app.statusMessage)
+	assert.Empty(t, app.transcript.Streaming.Blocks)
 }

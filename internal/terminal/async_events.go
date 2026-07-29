@@ -264,13 +264,15 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent)
 		ownerSessionID = app.activePrompt.SessionID
 	}
 
-	app.withSessionView(ownerSessionID, func() {
+	if !app.withSessionView(ownerSessionID, func() {
 		if app.handlePromptLifecycleEvent(ctx, payload) {
 			return
 		}
 
 		app.handlePromptStreamEvent(ctx, payload)
-	})
+	}) {
+		app.setStatus("prompt event owner view is unavailable")
+	}
 }
 
 func (app *App) ignorePromptEvent(payload *asyncEvent) bool {

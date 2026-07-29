@@ -146,10 +146,6 @@ func (app *App) handleInlineListsAndExtensionKey(
 	ctx context.Context,
 	event *tcell.EventKey,
 ) keyHandlingResult {
-	if app.inspectingWhilePromptRuns() {
-		return app.handleReadOnlyInspectionPriorityKey(ctx, event)
-	}
-
 	if handled, err := app.handleAgentTaskSummaryPriorityKey(ctx, event); handled || err != nil {
 		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
 	}
@@ -260,12 +256,6 @@ func (app *App) handleFocusedAutocompleteKey(event *tcell.EventKey) bool {
 }
 
 func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
-	if app.inspectingWhilePromptRuns() {
-		app.setStatus(readOnlyAgentInspectionStatus)
-
-		return false, nil
-	}
-
 	if app.keys.matches(event, actionInputClear) && !app.composerBuffer.Empty() {
 		app.composerBuffer.Clear()
 		app.resetPromptHistoryNavigation()
