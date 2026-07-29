@@ -23,7 +23,7 @@ func (app *App) handleEscape(ctx context.Context) {
 }
 
 func (app *App) handleEscapePresses(ctx context.Context, presses int) {
-	if app.working || app.compacting {
+	if (app.working || app.compacting) && !app.inspectingWhilePromptRuns() {
 		app.handleWorkingEscape(ctx, presses)
 
 		return
@@ -64,7 +64,7 @@ func (app *App) handleEscapePresses(ctx context.Context, presses int) {
 }
 
 func (app *App) handleWorkingInterruptKey(ctx context.Context, event *tcell.EventKey) bool {
-	if (!app.working && !app.compacting) || !isEscapeKey(event) {
+	if app.inspectingWhilePromptRuns() || (!app.working && !app.compacting) || !isEscapeKey(event) {
 		return false
 	}
 

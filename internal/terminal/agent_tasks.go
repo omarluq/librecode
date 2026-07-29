@@ -669,6 +669,13 @@ func (app *App) postAgentTaskStreamEvent(ctx context.Context, event *database.Ta
 }
 
 func (app *App) handleAgentTaskTerminalEvent(ctx context.Context, taskID string) {
+	if app.inspectingWhilePromptRuns() && app.runtime != nil {
+		task, found, err := app.runtime.AgentTask(ctx, taskID)
+		if err == nil && found {
+			app.deliverAgentTaskCompletion(ctx, task)
+		}
+	}
+
 	if len(app.agentTaskSessionStack) == 0 {
 		app.refreshVisibleAgentTasks(ctx)
 
@@ -951,7 +958,27 @@ func (app *App) deliverAgentTaskCompletion(ctx context.Context, task *database.A
 		return
 	}
 
-	app.deliverAgentTaskCompletionText(ctx, task.Task.ID, completion)
+	app.withSessionView(task.Task.OwnerSessionID, func() {
+		app.deliverAgentTaskCompletionText(ctx, task.Task.ID, completion)
+	})
+}
+
+func (app *App) deliverAgentTaskCompletionEvent(ctx context.Context, taskID, completion string) {
+	ownerSessionID := app.sessionID
+	if app.runtime != nil {
+		task, found, err := app.runtime.AgentTask(ctx, taskID)
+		if err != nil || !found || task.Task.OwnerSessionID == "" {
+			app.setStatus("agent result owner could not be resolved")
+
+			return
+		}
+
+		ownerSessionID = task.Task.OwnerSessionID
+	}
+
+	app.withSessionView(ownerSessionID, func() {
+		app.deliverAgentTaskCompletionText(ctx, taskID, completion)
+	})
 }
 
 func (app *App) deliverAgentTaskCompletionText(ctx context.Context, taskID, completion string) {
@@ -1454,12 +1481,8 @@ func taskMeta(task *database.TaskEntity, now time.Time) string {
 }
 
 func (app *App) inspectAgentTask(ctx context.Context, taskID string) error {
-	if app.busy() || app.activePrompt != nil {
-		return errors.New("cannot inspect an agent task while a prompt is active")
-	}
-
-	if app.runtime == nil {
-		return terminalError(errors.New("runtime is not configured"), agentTaskLoadOperation)
+	if err := app.validateAgentTaskInspection(); err != nil {
+		return err
 	}
 
 	task, found, err := app.runtime.AgentTask(ctx, taskID)
@@ -1480,33 +1503,95 @@ func (app *App) inspectAgentTask(ctx context.Context, taskID string) error {
 		)
 	}
 
-	settings, settingsFound, err := app.sessionSettings(ctx, task.ChildSessionID)
+	if app.activePrompt != nil && len(app.agentTaskSessionStack) > 0 &&
+		app.activePrompt.SessionID == app.sessionID {
+		return errors.New("cannot leave an inspected agent session while its prompt is active")
+	}
+
+	if err := app.switchToAgentTaskSession(
+		ctx,
+		task.ChildSessionID,
+		nextSessionStack,
+		!isTerminalAgentTaskState(task.Task.State),
+	); err != nil {
+		return err
+	}
+
+	app.watchInspectedTaskIfRunning(ctx, task)
+
+	app.closePanel()
+	app.addSystemMessage("inspecting agent task: " + taskID + "; use /agents back to return")
+
+	return nil
+}
+
+func (app *App) validateAgentTaskInspection() error {
+	if app.authWorking || app.compacting || (app.working && app.activePrompt == nil) {
+		return errors.New("cannot inspect an agent task while another operation is active")
+	}
+
+	if app.runtime == nil {
+		return terminalError(errors.New("runtime is not configured"), agentTaskLoadOperation)
+	}
+
+	return nil
+}
+
+func (app *App) switchToAgentTaskSession(
+	ctx context.Context,
+	sessionID string,
+	sessionStack []string,
+	preserveTransientState bool,
+) error {
+	settings, settingsFound, err := app.sessionSettings(ctx, sessionID)
 	if err != nil {
 		return terminalError(err, "load agent session")
 	}
 
-	messages, err := app.sessionMessages(ctx, task.ChildSessionID)
+	messages, err := app.sessionMessages(ctx, sessionID)
 	if err != nil {
 		return terminalError(err, "load agent session")
 	}
 
 	app.stopAgentTaskWatches()
-	app.agentTaskSessionStack = nextSessionStack
-	app.sessionID = task.ChildSessionID
-	app.pendingParentID = nil
-	app.resetMessages()
-	app.resetStreamingBlocks()
+	app.saveSessionView()
+	app.agentTaskSessionStack = sessionStack
+
+	if app.restoreSessionView(sessionID) {
+		promptHistory := app.promptHistory
+		promptHistoryDraft := app.promptHistoryDraft
+		promptHistoryIndex := app.promptHistoryIndex
+		app.transcript.History = nil
+		app.transcript.LineCache.reset()
+		app.appendSessionMessages(messages)
+		app.promptHistory = promptHistory
+		app.promptHistoryDraft = promptHistoryDraft
+		app.promptHistoryIndex = promptHistoryIndex
+		messages = nil
+
+		if !preserveTransientState {
+			app.resetStreamingBlocks()
+			app.streamingText = ""
+			app.streamingThinkingText = ""
+			app.streamedToolEvents = 0
+		}
+	} else {
+		app.sessionID = sessionID
+		app.pendingParentID = nil
+		app.resetMessages()
+		app.resetStreamingBlocks()
+		app.liveAgentCompletions = nil
+		app.queuedMessages = nil
+		app.hiddenQueuedMessages = nil
+		app.composerBuffer = tui.NewTextArea()
+		app.statusMessage = ""
+	}
 
 	if settingsFound {
 		app.applySessionSettings(&settings)
 	}
 
 	app.appendSessionMessages(messages)
-
-	app.watchInspectedTaskIfRunning(ctx, task)
-
-	app.closePanel()
-	app.addSystemMessage("inspecting agent task: " + taskID + "; use /agents back to return")
 
 	return nil
 }
@@ -1562,17 +1647,22 @@ func (app *App) leaveAgentTaskSession(ctx context.Context) error {
 	}
 
 	app.stopAgentTaskWatches()
-	app.sessionID = parentSessionID
+	app.saveSessionView()
 	app.agentTaskSessionStack = app.agentTaskSessionStack[:last]
-	app.pendingParentID = nil
-	app.resetMessages()
-	app.resetStreamingBlocks()
 
-	if settingsFound {
-		app.applySessionSettings(&settings)
+	if !app.restoreSessionView(parentSessionID) {
+		app.sessionID = parentSessionID
+		app.pendingParentID = nil
+		app.resetMessages()
+		app.resetStreamingBlocks()
+
+		if settingsFound {
+			app.applySessionSettings(&settings)
+		}
+
+		app.appendSessionMessages(messages)
 	}
 
-	app.appendSessionMessages(messages)
 	app.addSystemMessage("returned to parent session")
 
 	if len(app.agentTaskSessionStack) == 0 {

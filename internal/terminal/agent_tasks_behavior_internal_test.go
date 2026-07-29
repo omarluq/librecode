@@ -654,9 +654,11 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	app.transcript.Streaming.Blocks = []chatMessage{newChatMessage(transcript.RoleAssistant, "child stream")}
 	app.runningToolBlocks = []runningToolBlock{testRunningToolBlock(testToolRead, "")}
 	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
-	assert.Empty(t, app.transcript.Streaming.Blocks)
-	assert.Empty(t, app.runningToolBlocks)
-	assert.Zero(t, app.scrollOffset)
+	require.Len(t, app.transcript.Streaming.Blocks, 1)
+	assert.Equal(t, "stale stream", app.transcript.Streaming.Blocks[0].Content)
+	require.Len(t, app.runningToolBlocks, 1)
+	assert.Equal(t, testToolRead, app.runningToolBlocks[0].Call.Name)
+	assert.Equal(t, 12, app.scrollOffset)
 	assert.Equal(t, parent.ID, app.sessionID)
 	assert.Empty(t, app.agentTaskSessionStack)
 	assert.Contains(t, app.transcript.History[len(app.transcript.History)-1].Content, "returned to parent")
@@ -666,6 +668,76 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	err = app.inspectAgentTask(t.Context(), behaviorTaskID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "outside the current inspection path")
+}
+
+func TestRevisitAgentTaskSessionRefreshesDurableTranscript(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAgentTaskSessionPair(t)
+	task := behaviorAgentTask(behaviorTaskID, database.TaskSucceeded)
+	task.Task.OwnerSessionID = fixture.parent.ID
+	task.ChildSessionID = fixture.child.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{task.Task.ID: &task}, nil)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+	})
+	app.runtime.SetAgentTaskController(stub)
+	app.sessionID = fixture.parent.ID
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	app.transcript.Streaming.Blocks = []chatMessage{
+		newChatMessage(transcript.RoleAssistant, "retained transient stream"),
+	}
+	app.runningToolBlocks = []runningToolBlock{testRunningToolBlock(testToolRead, "")}
+	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+
+	_, err := fixture.sessions.AppendMessage(t.Context(), fixture.child.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(),
+		Role:      database.RoleAssistant,
+		Content:   "new durable child message",
+		Provider:  "",
+		Model:     "",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+	assert.Empty(t, app.runningToolBlocks)
+	assert.Contains(t, app.transcript.History[0].Content, "new durable child message")
+}
+
+func TestRevisitRunningAgentTaskPreservesTransientState(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAgentTaskSessionPair(t)
+	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	task.Task.OwnerSessionID = fixture.parent.ID
+	task.ChildSessionID = fixture.child.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{task.Task.ID: &task}, nil)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+	})
+	app.runtime.SetAgentTaskController(stub)
+	app.sessionID = fixture.parent.ID
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	defer app.stopAgentTaskWatches()
+
+	app.transcript.Streaming.Blocks = []chatMessage{
+		newChatMessage(transcript.RoleAssistant, "retained transient stream"),
+	}
+	app.runningToolBlocks = []runningToolBlock{testRunningToolBlock(testToolRead, "")}
+	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+
+	require.Len(t, app.transcript.Streaming.Blocks, 1)
+	assert.Equal(t, "retained transient stream", app.transcript.Streaming.Blocks[0].Content)
+	require.Len(t, app.runningToolBlocks, 1)
+	assert.Equal(t, testToolRead, app.runningToolBlocks[0].Call.Name)
 }
 
 func TestInspectAgentTaskSwitchesBetweenSiblingSessions(t *testing.T) {
@@ -824,21 +896,316 @@ func TestAltEscapeLeavesAgentTaskSession(t *testing.T) {
 	assert.Empty(t, app.agentTaskSessionStack)
 }
 
-func TestInspectAgentTaskRejectsActivePrompt(t *testing.T) {
+func TestInspectAgentTaskWhileParentPromptIsActive(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAgentTaskSessionPair(t)
+	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	task.Task.OwnerSessionID = fixture.parent.ID
+	task.ChildSessionID = fixture.child.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{task.Task.ID: &task}, nil)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+	})
+	app.runtime.SetAgentTaskController(stub)
+	app.sessionID = fixture.parent.ID
+	app.activePrompt = newTestActivePrompt(nil)
+	app.activePrompt.SessionID = fixture.parent.ID
+	app.working = true
+	app.composerBuffer.SetText("parent draft")
+	app.addSystemMessage("parent partial response")
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	defer app.stopAgentTaskWatches()
+
+	assert.Equal(t, fixture.child.ID, app.sessionID)
+	assert.Equal(t, fixture.parent.ID, app.activePrompt.SessionID)
+	assert.Equal(t, []string{fixture.parent.ID}, app.agentTaskSessionStack)
+	assert.True(t, app.inspectingWhilePromptRuns())
+	assert.Empty(t, app.composerBuffer.TextValue())
+
+	promptID := app.activePrompt.ID
+	app.handlePromptAsyncEvent(t.Context(), asyncTestEvent(
+		asyncEventPromptDelta,
+		"parent streamed response",
+		"",
+		promptID,
+	))
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+
+	app.applyInspectedAgentTaskEvent(t.Context(), behaviorTaskID, taskStreamPayload(t, assistant.StreamEvent{
+		ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: assistant.StreamEventTextDelta, Text: "child streamed response",
+	}))
+	require.Len(t, app.transcript.Streaming.Blocks, 1)
+	assert.Equal(t, "child streamed response", app.transcript.Streaming.Blocks[0].Content)
+
+	response := newTestPromptResponse("parent completed response")
+	response.SessionID = fixture.parent.ID
+	app.handlePromptAsyncEvent(t.Context(), &asyncEvent{
+		Response: response, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventPromptDone, Provider: "", Text: "", PromptID: promptID,
+	})
+	assert.Equal(t, fixture.child.ID, app.sessionID)
+	assert.Nil(t, app.activePrompt)
+
+	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+	assert.Equal(t, fixture.parent.ID, app.sessionID)
+	assert.Equal(t, "parent draft", app.composerBuffer.TextValue())
+	require.GreaterOrEqual(t, len(app.transcript.History), 3)
+	assert.Equal(t, "parent partial response", app.transcript.History[0].Content)
+	assert.Equal(t, "parent completed response", app.transcript.History[len(app.transcript.History)-2].Content)
+}
+
+func TestAgentTaskCompletionRoutesToParentWhileChildIsInspected(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAgentTaskSessionPair(t)
+	task := behaviorAgentTask(behaviorTaskID, database.TaskSucceeded)
+	task.Task.OwnerSessionID = fixture.parent.ID
+	task.ChildSessionID = fixture.child.ID
+	task.Task.Result = "parent completion"
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{task.Task.ID: &task}, nil)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+	})
+	app.runtime.SetAgentTaskController(stub)
+	app.sessionID = fixture.parent.ID
+	app.activePrompt = newTestActivePrompt(nil)
+	app.activePrompt.SessionID = fixture.parent.ID
+	app.working = true
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	defer app.stopAgentTaskWatches()
+
+	app.handlePromptAsyncEvent(t.Context(), &asyncEvent{
+		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventAgentTaskChanged, Provider: "", Text: behaviorTaskID, PromptID: 0,
+	})
+
+	assert.Equal(t, fixture.child.ID, app.sessionID)
+	assert.Empty(t, app.liveAgentCompletions)
+	assert.Empty(t, app.hiddenQueuedMessages)
+
+	childMessages, err := app.sessionMessages(t.Context(), fixture.child.ID)
+	require.NoError(t, err)
+	assert.Empty(t, childMessages)
+
+	parentMessages, err := app.sessionMessages(t.Context(), fixture.parent.ID)
+	require.NoError(t, err)
+	require.Len(t, parentMessages, 1)
+	assert.Contains(t, parentMessages[0].Content, "parent completion")
+
+	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+	require.Len(t, app.liveAgentCompletions, 1)
+	assert.Contains(t, app.liveAgentCompletions[0].Content, "parent completion")
+	require.Len(t, app.hiddenQueuedMessages, 1)
+	assert.Contains(t, app.hiddenQueuedMessages[0], "parent completion")
+}
+
+func TestActivePromptInspectionAllowsNestedTaskSelection(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAgentTaskSessionPair(t)
+	parentTask := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	parentTask.Task.OwnerSessionID = fixture.parent.ID
+	parentTask.ChildSessionID = fixture.child.ID
+	nestedTask := behaviorAgentTask("nested-task", database.TaskRunning)
+	nestedTask.Task.OwnerSessionID = fixture.child.ID
+	nestedTask.ChildSessionID = "nested-session"
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{
+		behaviorTaskID: &parentTask,
+		"nested-task":  &nestedTask,
+	}, nil)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+	})
+	app.runtime.SetAgentTaskController(stub)
+	app.sessionID = fixture.parent.ID
+	app.activePrompt = newTestActivePrompt(nil)
+	app.activePrompt.SessionID = fixture.parent.ID
+	app.working = true
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	defer app.stopAgentTaskWatches()
+
+	app.agentTasks = []database.AgentTaskEntity{nestedTask}
+	app.agentTaskSummarySelection = agentTaskSummarySelection{ItemIndex: 0, Active: true}
+
+	result := app.handleReadOnlyInspectionPriorityKey(
+		t.Context(),
+		tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone),
+	)
+
+	assert.True(t, result.handled)
+	require.NoError(t, result.err)
+	assert.Equal(t, "nested-session", app.sessionID)
+	assert.Equal(t, []string{fixture.parent.ID, fixture.child.ID}, app.agentTaskSessionStack)
+}
+
+func TestDoubleEscapeCancelsParentPromptWithoutLeavingInspection(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAgentTaskSessionPair(t)
+	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	task.Task.OwnerSessionID = fixture.parent.ID
+	task.ChildSessionID = fixture.child.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{task.Task.ID: &task}, nil)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+	})
+	app.runtime.SetAgentTaskController(stub)
+	app.sessionID = fixture.parent.ID
+	canceled := false
+	app.activePrompt = newTestActivePrompt(func() { canceled = true })
+	app.activePrompt.SessionID = fixture.parent.ID
+	app.working = true
+	app.composerBuffer.SetText("parent draft")
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	defer app.stopAgentTaskWatches()
+
+	pressTerminalKey(t, app, tcell.KeyEscape, "")
+	assert.False(t, canceled)
+	assert.Contains(t, app.statusMessage, "escape again to interrupt")
+	pressTerminalKey(t, app, tcell.KeyEscape, "")
+
+	assert.True(t, canceled)
+	assert.Equal(t, fixture.child.ID, app.sessionID)
+	assert.Equal(t, []string{fixture.parent.ID}, app.agentTaskSessionStack)
+	require.NotNil(t, app.activePrompt)
+	assert.True(t, app.activePrompt.Canceled)
+	assert.Empty(t, app.composerBuffer.TextValue())
+
+	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+	assert.Equal(t, "parent draft", app.composerBuffer.TextValue())
+}
+
+func TestInspectionPanelEscapeClosesPanelBeforeLeavingSession(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.sessionID = sessionCommandsParentID
+	app.sessionID = "child"
+	app.agentTaskSessionStack = []string{sessionCommandsParentID}
+	app.openPanel(panel.New(panelHotkeys, "Hotkeys", "", nil, true))
+
+	pressTerminalKey(t, app, tcell.KeyEscape, "")
+
+	assert.Equal(t, modeChat, app.mode)
+	assert.Nil(t, app.panel)
+	assert.Equal(t, "child", app.sessionID)
+	assert.Equal(t, []string{sessionCommandsParentID}, app.agentTaskSessionStack)
+}
+
+func TestAltEscapeLeavesInspectionWithoutCancelingParentPrompt(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAgentTaskSessionPair(t)
+	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	task.Task.OwnerSessionID = fixture.parent.ID
+	task.ChildSessionID = fixture.child.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{task.Task.ID: &task}, nil)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+	})
+	app.runtime.SetAgentTaskController(stub)
+	app.sessionID = fixture.parent.ID
+	canceled := false
+	app.activePrompt = newTestActivePrompt(func() { canceled = true })
+	app.activePrompt.SessionID = fixture.parent.ID
+	app.working = true
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	defer app.stopAgentTaskWatches()
+
+	shouldQuit, err := app.handleKey(
+		t.Context(),
+		tcell.NewEventKey(tcell.KeyEscape, "", tcell.ModAlt),
+	)
+	require.NoError(t, err)
+	assert.False(t, shouldQuit)
+	assert.False(t, canceled)
+	assert.Equal(t, fixture.parent.ID, app.sessionID)
+	require.NotNil(t, app.activePrompt)
+	assert.Equal(t, fixture.parent.ID, app.activePrompt.SessionID)
+	assert.True(t, app.working)
+}
+
+func TestActivePromptInspectionBlocksGlobalAndExtensionShortcuts(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAgentTaskSessionPair(t)
+	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	task.Task.OwnerSessionID = fixture.parent.ID
+	task.ChildSessionID = fixture.child.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{task.Task.ID: &task}, nil)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+	})
+	app.runtime.SetAgentTaskController(stub)
+	app.sessionID = fixture.parent.ID
 	app.activePrompt = newTestActivePrompt(nil)
-	app.agentTasks = []database.AgentTaskEntity{behaviorAgentTask(behaviorTaskID, database.TaskRunning)}
+	app.activePrompt.SessionID = fixture.parent.ID
+	app.working = true
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	defer app.stopAgentTaskWatches()
+
+	thinkingLevel := app.currentThinkingLevel()
+	toolsExpanded := app.toolsExpanded
+
+	for _, event := range []*tcell.EventKey{
+		tcell.NewEventKey(tcell.KeyBacktab, "", tcell.ModShift),
+		tcell.NewEventKey(tcell.KeyRune, "o", tcell.ModCtrl),
+		tcell.NewEventKey(tcell.KeyF1, "", tcell.ModNone),
+	} {
+		shouldQuit, err := app.handleKey(t.Context(), event)
+		require.NoError(t, err)
+		assert.False(t, shouldQuit)
+	}
+
+	assert.Equal(t, thinkingLevel, app.currentThinkingLevel())
+	assert.Equal(t, toolsExpanded, app.toolsExpanded)
+	assert.Equal(t, "agent task inspection is read-only while the parent response runs", app.statusMessage)
+}
+
+func TestInspectAgentTaskRejectsLeavingPromptOwningInspectedSession(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAgentTaskSessionPair(t)
+	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	task.Task.OwnerSessionID = fixture.parent.ID
+	task.ChildSessionID = fixture.child.ID
+	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{task.Task.ID: &task}, nil)
+
+	app := newRenderTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+	})
+	app.runtime.SetAgentTaskController(stub)
+	app.sessionID = fixture.child.ID
+	app.agentTaskSessionStack = []string{fixture.parent.ID}
+	app.activePrompt = newTestActivePrompt(nil)
+	app.activePrompt.SessionID = fixture.child.ID
+	app.working = true
 
 	err := app.inspectAgentTask(t.Context(), behaviorTaskID)
-
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "prompt is active")
-	assert.Equal(t, sessionCommandsParentID, app.sessionID)
-	assert.Empty(t, app.agentTaskSessionStack)
-	assert.Len(t, app.agentTasks, 1)
+	assert.Equal(t, fixture.child.ID, app.sessionID)
+	assert.Equal(t, []string{fixture.parent.ID}, app.agentTaskSessionStack)
 }
 
 func TestInspectedAgentTaskCompletionUpdatesRetainedSummary(t *testing.T) {

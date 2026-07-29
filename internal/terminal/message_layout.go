@@ -197,7 +197,7 @@ func (app *App) dynamicMessageLineGroups(width int) [][]tui.Line {
 		groups = append(groups, app.renderRunningToolBlock(width, &app.runningToolBlocks[index].Call))
 	}
 
-	if app.busy() {
+	if app.busy() && !app.inspectingWhilePromptRuns() {
 		groups = append(groups, app.renderWorkingIndicator(width))
 	}
 
