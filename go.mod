@@ -19,7 +19,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gdamore/tcell/v3 v3.4.1
 	github.com/go-git/go-billy/v5 v5.9.1
-	github.com/go-git/go-git/v5 v5.19.1
+	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/gofrs/uuid/v5 v5.4.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
