@@ -3,6 +3,7 @@ package provider
 import (
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/samber/oops"
@@ -27,6 +28,17 @@ func TestProviderStatusErrorUsesStructuredMessage(t *testing.T) {
 	require.ErrorAs(t, err, &coded)
 	assert.Equal(t, "provider_status", coded.Code())
 	assert.Equal(t, "provider", coded.Domain())
+}
+
+func TestProviderStatusErrorPreservesRetryAfter(t *testing.T) {
+	t.Parallel()
+
+	err := providerStatusErrorWithRetryAfter(503, nil, nil, 3*time.Second, "req_123")
+
+	var statusErr *StatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Equal(t, 3*time.Second, statusErr.RetryAfter)
+	assert.Equal(t, "req_123", statusErr.RequestID)
 }
 
 func TestProviderStatusErrorFallsBackToHTTPStatus(t *testing.T) {

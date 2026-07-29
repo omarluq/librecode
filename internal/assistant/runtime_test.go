@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -296,6 +297,18 @@ func TestRuntime_PromptRetriesTransientModelErrors(t *testing.T) {
 	assert.Equal(t, assistant.RetryEventStart, retryEvents[0].Kind)
 	assert.Equal(t, 2, retryEvents[0].Attempt)
 	assert.Equal(t, assistant.RetryEventEnd, retryEvents[1].Kind)
+}
+
+func TestRuntime_PromptDoesNotRetryAfterToolExecutionStarts(t *testing.T) {
+	t.Parallel()
+
+	client := &sideEffectFailureCompleter{attempts: 0}
+	runtime, _ := newTestRuntimeWithClient(t, client)
+
+	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(testRuntimeCWD, "do not replay", ""))
+
+	require.Error(t, err)
+	assert.Equal(t, 1, client.attempts)
 }
 
 func TestRuntime_PromptPersistsEmptyProviderResponse(t *testing.T) {
@@ -768,6 +781,10 @@ type retryCompleter struct {
 	failuresRemaining int
 }
 
+type sideEffectFailureCompleter struct {
+	attempts int
+}
+
 type failingProgressCompleter struct {
 	emit func(*assistant.CompletionRequest)
 	err  error
@@ -775,6 +792,20 @@ type failingProgressCompleter struct {
 
 type emptyCompleter struct {
 	attempts int
+}
+
+func (client *sideEffectFailureCompleter) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.attempts++
+
+	_, err := request.ExecuteTools(ctx, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("execute tools: %w", err)
+	}
+
+	return nil, errors.New("provider is temporarily unavailable")
 }
 
 func (client *capturingCompleter) Complete(

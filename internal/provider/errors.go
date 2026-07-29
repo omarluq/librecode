@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/samber/oops"
@@ -19,6 +20,8 @@ const (
 	providerBodyPreviewContextKey   = "body_preview"
 	providerBodyTruncatedContextKey = "body_truncated"
 	providerRequestShapeContextKey  = "request_shape"
+	providerRequestIDContextKey     = "provider_request_id"
+	providerResponseIDContextKey    = "provider_response_id"
 )
 
 type providerError struct {
@@ -42,6 +45,8 @@ type StatusError struct {
 	Details      *ErrorDetails
 	err          error
 	RequestShape *RequestShape
+	RequestID    string
+	RetryAfter   time.Duration
 	Status       int
 }
 
@@ -62,11 +67,23 @@ func (err *StatusError) Unwrap() error {
 }
 
 func providerStatusError(status int, content []byte, requestShape *RequestShape) error {
+	return providerStatusErrorWithRetryAfter(status, content, requestShape, 0, "")
+}
+
+func providerStatusErrorWithRetryAfter(
+	status int,
+	content []byte,
+	requestShape *RequestShape,
+	retryAfter time.Duration,
+	requestID string,
+) error {
 	details := providerErrorDetailsFromBytes(content)
 	statusErr := &StatusError{
 		Details:      &details,
 		err:          nil,
 		RequestShape: requestShape,
+		RequestID:    requestID,
+		RetryAfter:   retryAfter,
 		Status:       status,
 	}
 	statusErr.err = providerStatusOops(statusErr)
@@ -77,6 +94,10 @@ func providerStatusError(status int, content []byte, requestShape *RequestShape)
 func providerStatusOops(statusErr *StatusError) error {
 	message := providerStatusMessage(statusErr.Status, statusErr.Details)
 	builder := oops.In("provider").Code("provider_status").With("status", statusErr.Status)
+
+	if statusErr.RequestID != "" {
+		builder = builder.With(providerRequestIDContextKey, statusErr.RequestID)
+	}
 
 	if statusErr.Details.Type != "" {
 		builder = builder.With(providerTypeContextKey, statusErr.Details.Type)

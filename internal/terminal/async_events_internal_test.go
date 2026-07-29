@@ -12,6 +12,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/tool"
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
@@ -25,6 +26,7 @@ const (
 	asyncTestToolStart  = "async-bash"
 	asyncTestCompact    = "async context auto-compacted"
 	asyncTestIgnored    = "async-ignored"
+	asyncTestPartial    = "partial"
 )
 
 type promptHandlerCase struct {
@@ -519,10 +521,35 @@ func promptLifecycleEventCases() []promptLifecycleCase {
 		{
 			name:    "prompt retry",
 			payload: asyncTestEvent(asyncEventPromptRetry, string(assistant.RetryEventStart), "retrying", 1),
-			setup:   func(*App) {},
+			setup: func(app *App) {
+				app.streamingText = asyncTestPartial
+				app.streamingThinkingText = "thought"
+				app.transcript.Streaming.Blocks = []chatMessage{{
+					Role:      transcript.RoleAssistant,
+					Content:   asyncTestPartial,
+					CreatedAt: time.Time{},
+				}}
+				app.runningToolBlocks = []runningToolBlock{{
+					StartedAt: time.Time{},
+					Call: assistant.ToolCallEvent{
+						ArgumentsJSON: "",
+						ID:            "",
+						ParentCallID:  "",
+						Name:          testToolRead,
+						Arguments:     tool.EmptyArguments(),
+						Sequence:      0,
+					},
+				}}
+				app.streamedToolEvents = 1
+			},
 			assert: func(t *testing.T, app *App) {
 				t.Helper()
 				assert.Equal(t, "retrying", app.statusMessage)
+				assert.Empty(t, app.streamingText)
+				assert.Empty(t, app.streamingThinkingText)
+				assert.Empty(t, app.transcript.Streaming.Blocks)
+				assert.Empty(t, app.runningToolBlocks)
+				assert.Zero(t, app.streamedToolEvents)
 			},
 			wantHandled: true,
 		},

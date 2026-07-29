@@ -8,7 +8,9 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/samber/oops"
 
@@ -45,7 +47,13 @@ func (client *HTTPCompletionClient) requestProviderStream(
 			return nil, oops.In("provider").Code("provider_error_read").Wrapf(readErr, "read provider error")
 		}
 
-		return nil, providerStatusError(response.StatusCode, content, providerRequestShape(payload))
+		return nil, providerStatusErrorWithRetryAfter(
+			response.StatusCode,
+			content,
+			providerRequestShape(payload),
+			providerRetryAfter(response.Header, time.Now()),
+			providerRequestID(response.Header),
+		)
 	}
 
 	return parse(response.Body)
@@ -74,6 +82,29 @@ func readProviderBody(reader io.Reader) ([]byte, error) {
 	body, err := limitio.ReadAll(reader, providerResponseLimitBytes, "provider response")
 
 	return body, providerWrap(err, "read provider response")
+}
+
+func providerRequestID(header http.Header) string {
+	return firstNonEmptyString(header.Get("X-Request-Id"), header.Get("Request-Id"))
+}
+
+// providerRetryAfter returns a provider-requested delay; callers cap it to configured limits.
+func providerRetryAfter(header http.Header, now time.Time) time.Duration {
+	millisecondsValue := strings.TrimSpace(header.Get("Retry-After-Ms"))
+	if milliseconds, err := strconv.ParseInt(millisecondsValue, 10, 64); err == nil && milliseconds > 0 {
+		return time.Duration(milliseconds) * time.Millisecond
+	}
+
+	value := strings.TrimSpace(header.Get("Retry-After"))
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+
+	if date, err := http.ParseTime(value); err == nil && date.After(now) {
+		return date.Sub(now)
+	}
+
+	return 0
 }
 
 func closeBody(body io.Closer) {

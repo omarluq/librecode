@@ -37,7 +37,7 @@ func (runtime *Runtime) completeWithProviderOverflowRecovery(
 		return input.build, input.compactionEntry, result, nil
 	}
 
-	if !IsContextWindowError(err) {
+	if !IsContextWindowError(err) || input.build.Request.ToolSideEffectsStarted {
 		return input.build, input.compactionEntry, nil, err
 	}
 

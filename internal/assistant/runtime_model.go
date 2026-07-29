@@ -164,23 +164,36 @@ type modelCompletionRequestInput struct {
 }
 
 func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInput) *CompletionRequest {
-	return &CompletionRequest{
-		OnEvent:           input.onEvent,
-		OnProviderObserve: runtime.emitProviderRequest,
-		OnProviderRequest: runtime.dispatchProviderRequestHook,
-		ToolRegistry:      input.registry,
-		ExecuteTools:      runtime.executeProviderToolCalls(input.registry),
-		SessionID:         input.sessionID,
-		SystemPrompt:      input.systemPrompt,
-		ThinkingLevel:     runtime.thinkingLevel(),
-		CWD:               input.cwd,
-		Auth:              input.auth,
-		Messages:          input.messages,
-		Usage:             input.usage,
-		Model:             *input.selectedModel,
-		ProviderAttempt:   0,
-		DisableTools:      false,
+	request := &CompletionRequest{
+		OnEvent:                input.onEvent,
+		OnProviderObserve:      runtime.emitProviderRequest,
+		OnProviderRequest:      runtime.dispatchProviderRequestHook,
+		ToolRegistry:           input.registry,
+		ExecuteTools:           nil,
+		SessionID:              input.sessionID,
+		SystemPrompt:           input.systemPrompt,
+		ThinkingLevel:          runtime.thinkingLevel(),
+		CWD:                    input.cwd,
+		Auth:                   input.auth,
+		Messages:               input.messages,
+		Usage:                  input.usage,
+		Model:                  *input.selectedModel,
+		ProviderAttempt:        0,
+		DisableTools:           false,
+		ToolSideEffectsStarted: false,
 	}
+	executeTools := runtime.executeProviderToolCalls(input.registry)
+	request.ExecuteTools = func(
+		ctx context.Context,
+		calls []ToolCall,
+		onEvent func(StreamEvent),
+	) ([]ToolEvent, error) {
+		request.ToolSideEffectsStarted = true
+
+		return executeTools(ctx, calls, onEvent)
+	}
+
+	return request
 }
 
 func (runtime *Runtime) completeWithRetry(
@@ -199,7 +212,9 @@ func (runtime *Runtime) completeWithRetry(
 
 	var retryErr error
 
-	backoff := retryBackoff(retry, func(delay time.Duration) {
+	backoff := retryBackoffWithOverride(retry, func(delay time.Duration) time.Duration {
+		return providerRetryDelay(retryErr, delay)
+	}, func(delay time.Duration) {
 		retryEvent := RetryEvent{
 			Kind:        RetryEventStart,
 			Error:       "",
@@ -256,7 +271,7 @@ func (runtime *Runtime) retryAttempt(
 		return result, nil
 	}
 
-	if !ShouldRetryModelError(err) {
+	if request.ToolSideEffectsStarted || !ShouldRetryModelError(err) {
 		return nil, err
 	}
 
