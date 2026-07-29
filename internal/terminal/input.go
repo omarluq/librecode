@@ -10,6 +10,8 @@ import (
 	"github.com/omarluq/librecode/internal/tui"
 )
 
+const readOnlyAgentInspectionStatus = "agent task inspection is read-only while the parent response runs"
+
 func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error) {
 	switch typedEvent := event.(type) {
 	case *tcell.EventResize:
@@ -100,9 +102,7 @@ func (app *App) handleModalPriorityKey(ctx context.Context, event *tcell.EventKe
 		return app.handlePanelPriorityKey(ctx, event)
 	}
 
-	app.setStatus("agent task inspection is read-only while the parent response runs")
-
-	return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
+	return app.readOnlyInspectionResult()
 }
 
 func (app *App) handleInterruptPriorityKey(ctx context.Context, event *tcell.EventKey) keyHandlingResult {
@@ -133,7 +133,11 @@ func (app *App) handleReadOnlyInspectionPriorityKey(
 		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 	}
 
-	app.setStatus("agent task inspection is read-only while the parent response runs")
+	return app.readOnlyInspectionResult()
+}
+
+func (app *App) readOnlyInspectionResult() keyHandlingResult {
+	app.setStatus(readOnlyAgentInspectionStatus)
 
 	return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 }
@@ -257,7 +261,7 @@ func (app *App) handleFocusedAutocompleteKey(event *tcell.EventKey) bool {
 
 func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
 	if app.inspectingWhilePromptRuns() {
-		app.setStatus("agent task inspection is read-only while the parent response runs")
+		app.setStatus(readOnlyAgentInspectionStatus)
 
 		return false, nil
 	}
