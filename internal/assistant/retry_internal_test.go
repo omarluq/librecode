@@ -38,20 +38,31 @@ func TestRetryBackoffUsesCappedExponentialDelays(t *testing.T) {
 	assert.Equal(t, []time.Duration{10 * time.Millisecond, 15 * time.Millisecond, 15 * time.Millisecond}, delays)
 }
 
-func TestProviderRetryDelayHonorsLongerProviderDelay(t *testing.T) {
+func TestProviderRetryDelayHonorsBoundedProviderDelay(t *testing.T) {
 	t.Parallel()
 
-	err := &provider.StatusError{
-		Details:      nil,
-		RequestShape: nil,
-		RequestID:    "",
-		RetryAfter:   time.Minute,
-		Status:       0,
+	tests := []struct {
+		name       string
+		retryAfter time.Duration
+		fallback   time.Duration
+		want       time.Duration
+	}{
+		{name: "longer provider delay", retryAfter: time.Minute, fallback: 2 * time.Second, want: time.Minute},
+		{name: "longer fallback", retryAfter: time.Minute, fallback: 2 * time.Minute, want: 2 * time.Minute},
+		{name: "provider delay capped", retryAfter: time.Hour, fallback: 2 * time.Second, want: provider.MaxRetryAfter},
 	}
 
-	assert.Equal(t, time.Minute, providerRetryDelay(err, 2*time.Second))
-	assert.Equal(t, 2*time.Minute, providerRetryDelay(err, 2*time.Minute))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
+			err := newProviderStatusError(test.retryAfter)
+
+			assert.Equal(t, test.want, providerRetryDelay(err, test.fallback))
+		})
+	}
+
+	err := newProviderStatusError(time.Minute)
 	delays := []time.Duration{}
 	backoff := retryBackoffWithOverride(config.RetryConfig{
 		BaseDelay:   10 * time.Millisecond,
@@ -68,6 +79,16 @@ func TestProviderRetryDelayHonorsLongerProviderDelay(t *testing.T) {
 	require.False(t, stop)
 	assert.Equal(t, time.Minute, delay)
 	assert.Equal(t, []time.Duration{time.Minute}, delays)
+}
+
+func newProviderStatusError(retryAfter time.Duration) *provider.StatusError {
+	return &provider.StatusError{
+		Details:      nil,
+		RequestShape: nil,
+		RequestID:    "",
+		RetryAfter:   retryAfter,
+		Status:       0,
+	}
 }
 
 func TestShouldRetryModelErrorTreatsHTTP2StreamErrorsAsTransient(t *testing.T) {

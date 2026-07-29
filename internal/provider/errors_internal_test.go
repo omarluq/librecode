@@ -82,9 +82,9 @@ func TestProviderStatusErrorIncludesStructuredDetails(t *testing.T) {
 	require.ErrorAs(t, err, &coded)
 	context := coded.Context()
 	assert.Equal(t, 400, context["status"])
-	assert.Equal(t, "invalid_request_error", context[providerTypeContextKey])
-	assert.Equal(t, "unknown_parameter", context[providerCodeContextKey])
-	assert.Equal(t, "input[2].content", context[providerParamContextKey])
+	assert.Equal(t, "invalid_request_error", context[ProviderTypeContextKey])
+	assert.Equal(t, "unknown_parameter", context[ProviderCodeContextKey])
+	assert.Equal(t, "input[2].content", context[ProviderParamContextKey])
 	assert.Equal(t, map[string]any{
 		"has_include":             false,
 		"has_parallel_tool_calls": false,
@@ -93,8 +93,8 @@ func TestProviderStatusErrorIncludesStructuredDetails(t *testing.T) {
 		"input_count":             3,
 		"key_count":               1,
 		"keys":                    []string{jsonInputKey},
-	}, context[providerRequestShapeContextKey])
-	assert.Contains(t, context[providerBodyPreviewContextKey], "unknown parameter")
+	}, context[ProviderRequestShapeContextKey])
+	assert.Contains(t, context[ProviderBodyPreviewContextKey], "unknown parameter")
 }
 
 func TestProviderStatusErrorBoundsBodyPreview(t *testing.T) {
@@ -117,11 +117,11 @@ func TestProviderStatusErrorBoundsBodyPreview(t *testing.T) {
 			var coded oops.OopsError
 			require.ErrorAs(t, err, &coded)
 			context := coded.Context()
-			preview, ok := context[providerBodyPreviewContextKey].(string)
+			preview, ok := context[ProviderBodyPreviewContextKey].(string)
 			require.True(t, ok)
 			assert.LessOrEqual(t, len(preview), providerBodyPreviewBytes)
 			assert.True(t, utf8.ValidString(preview))
-			assertIsTrue(t, context[providerBodyTruncatedContextKey])
+			assertIsTrue(t, context[ProviderBodyTruncatedContextKey])
 		})
 	}
 }

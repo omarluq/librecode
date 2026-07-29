@@ -19,6 +19,9 @@ import (
 )
 
 const (
+	// MaxRetryAfter bounds provider-directed waits to avoid unbounded or overflowing delays.
+	MaxRetryAfter = 5 * time.Minute
+
 	providerResponseLimitBytes int64 = 16 * units.MiB
 	codexAccountIDHeader             = "chatgpt-account-id"
 	codexOriginatorHeader            = "originator"
@@ -88,23 +91,32 @@ func providerRequestID(header http.Header) string {
 	return firstNonEmptyString(header.Get("X-Request-Id"), header.Get("Request-Id"))
 }
 
-// providerRetryAfter returns a provider-requested delay; callers cap it to configured limits.
+// providerRetryAfter returns a bounded provider-requested delay.
 func providerRetryAfter(header http.Header, now time.Time) time.Duration {
 	millisecondsValue := strings.TrimSpace(header.Get("Retry-After-Ms"))
 	if milliseconds, err := strconv.ParseInt(millisecondsValue, 10, 64); err == nil && milliseconds > 0 {
-		return time.Duration(milliseconds) * time.Millisecond
+		return boundedRetryAfter(milliseconds, time.Millisecond)
 	}
 
 	value := strings.TrimSpace(header.Get("Retry-After"))
 	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil && seconds > 0 {
-		return time.Duration(seconds) * time.Second
+		return boundedRetryAfter(seconds, time.Second)
 	}
 
 	if date, err := http.ParseTime(value); err == nil && date.After(now) {
-		return date.Sub(now)
+		return min(date.Sub(now), MaxRetryAfter)
 	}
 
 	return 0
+}
+
+func boundedRetryAfter(value int64, unit time.Duration) time.Duration {
+	maximum := int64(MaxRetryAfter / unit)
+	if value >= maximum {
+		return MaxRetryAfter
+	}
+
+	return time.Duration(value) * unit
 }
 
 func closeBody(body io.Closer) {

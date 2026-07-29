@@ -14,14 +14,22 @@ import (
 const (
 	providerBodyPreviewBytes = 4096
 
-	providerCodeContextKey          = "provider_code"
-	providerParamContextKey         = "provider_param"
-	providerTypeContextKey          = "provider_type"
-	providerBodyPreviewContextKey   = "body_preview"
-	providerBodyTruncatedContextKey = "body_truncated"
-	providerRequestShapeContextKey  = "request_shape"
-	providerRequestIDContextKey     = "provider_request_id"
-	providerResponseIDContextKey    = "provider_response_id"
+	// ProviderCodeContextKey identifies a provider error code in structured error context.
+	ProviderCodeContextKey = "provider_code"
+	// ProviderTypeContextKey identifies a provider error type in structured error context.
+	ProviderTypeContextKey = "provider_type"
+	// ProviderRequestIDContextKey identifies a provider request ID in structured error context.
+	ProviderRequestIDContextKey = "provider_request_id"
+	// ProviderResponseIDContextKey identifies a provider response ID in structured error context.
+	ProviderResponseIDContextKey = "provider_response_id"
+	// ProviderParamContextKey identifies the provider request parameter associated with an error.
+	ProviderParamContextKey = "provider_param"
+	// ProviderBodyPreviewContextKey identifies a bounded provider response-body preview.
+	ProviderBodyPreviewContextKey = "body_preview"
+	// ProviderBodyTruncatedContextKey reports whether a provider response-body preview was truncated.
+	ProviderBodyTruncatedContextKey = "body_truncated"
+	// ProviderRequestShapeContextKey identifies safe request-shape diagnostics.
+	ProviderRequestShapeContextKey = "request_shape"
 )
 
 type providerError struct {
@@ -96,31 +104,31 @@ func providerStatusOops(statusErr *StatusError) error {
 	builder := oops.In("provider").Code("provider_status").With("status", statusErr.Status)
 
 	if statusErr.RequestID != "" {
-		builder = builder.With(providerRequestIDContextKey, statusErr.RequestID)
+		builder = builder.With(ProviderRequestIDContextKey, statusErr.RequestID)
 	}
 
 	if statusErr.Details.Type != "" {
-		builder = builder.With(providerTypeContextKey, statusErr.Details.Type)
+		builder = builder.With(ProviderTypeContextKey, statusErr.Details.Type)
 	}
 
 	if statusErr.Details.Code != "" {
-		builder = builder.With(providerCodeContextKey, statusErr.Details.Code)
+		builder = builder.With(ProviderCodeContextKey, statusErr.Details.Code)
 	}
 
 	if statusErr.Details.Param != "" {
-		builder = builder.With(providerParamContextKey, statusErr.Details.Param)
+		builder = builder.With(ProviderParamContextKey, statusErr.Details.Param)
 	}
 
 	if statusErr.Details.BodyPreview != "" {
-		builder = builder.With(providerBodyPreviewContextKey, statusErr.Details.BodyPreview)
+		builder = builder.With(ProviderBodyPreviewContextKey, statusErr.Details.BodyPreview)
 	}
 
 	if statusErr.Details.BodyTruncated {
-		builder = builder.With(providerBodyTruncatedContextKey, true)
+		builder = builder.With(ProviderBodyTruncatedContextKey, true)
 	}
 
 	if !statusErr.RequestShape.empty() {
-		builder = builder.With(providerRequestShapeContextKey, statusErr.RequestShape.Payload())
+		builder = builder.With(ProviderRequestShapeContextKey, statusErr.RequestShape.Payload())
 	}
 
 	return builder.Errorf("%s", message)
@@ -143,7 +151,7 @@ func providerErrorToOops(code string, providerError *providerError) error {
 	return oops.In("provider").
 		Code(code).
 		With(jsonTypeKey, providerError.Type).
-		With(providerCodeContextKey, providerError.Code).
+		With(ProviderCodeContextKey, providerError.Code).
 		Errorf("%s", message)
 }
 

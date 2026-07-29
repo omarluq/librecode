@@ -6,6 +6,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/provider"
 )
 
 func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *CompletionRequest, attempt int) {
@@ -79,17 +80,17 @@ func (runtime *Runtime) emitProviderError(ctx context.Context, request *Completi
 			slog.String("model", request.Model.ID),
 			slog.String("api", request.Model.API),
 			slog.Int("attempt", attempt),
-			slog.Any("error", err),
+			slog.String("error", err.Error()),
 		}
 		if code, ok := providerFailureCode(err); ok {
 			attributes = append(attributes, slog.String("provider_code", code))
 		}
 
-		if requestID := providerErrorContextString(err, "provider_request_id"); requestID != "" {
+		if requestID := providerErrorContextString(err, provider.ProviderRequestIDContextKey); requestID != "" {
 			attributes = append(attributes, slog.String("provider_request_id", requestID))
 		}
 
-		if responseID := providerErrorContextString(err, "provider_response_id"); responseID != "" {
+		if responseID := providerErrorContextString(err, provider.ProviderResponseIDContextKey); responseID != "" {
 			attributes = append(attributes, slog.String("provider_response_id", responseID))
 		}
 
