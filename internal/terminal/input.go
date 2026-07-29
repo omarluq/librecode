@@ -224,7 +224,10 @@ func (app *App) handlePanelPriorityKey(ctx context.Context, event *tcell.EventKe
 }
 
 func (app *App) handleInspectionAutocompleteEscape(event *tcell.EventKey) bool {
-	if !app.inspectingWhilePromptRuns() || !app.autocompleteActive() || !isEscapeKey(event) {
+	if !app.inspectingWhilePromptRuns() ||
+		!app.autocompleteActive() ||
+		!isEscapeKey(event) ||
+		event.Modifiers()&tcell.ModAlt != 0 {
 		return false
 	}
 
