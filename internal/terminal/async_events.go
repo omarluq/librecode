@@ -233,7 +233,7 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent)
 
 		return
 	case asyncEventAgentTaskCompleted:
-		app.deliverAgentTaskCompletionText(ctx, payload.Provider, payload.Text)
+		app.deliverAgentTaskCompletionEvent(ctx, payload.Provider, payload.Text)
 
 		return
 	case asyncEventAuthURL,
@@ -259,11 +259,18 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent)
 		return
 	}
 
-	if app.handlePromptLifecycleEvent(ctx, payload) {
-		return
+	ownerSessionID := ""
+	if app.activePrompt != nil {
+		ownerSessionID = app.activePrompt.SessionID
 	}
 
-	app.handlePromptStreamEvent(ctx, payload)
+	app.withSessionView(ownerSessionID, func() {
+		if app.handlePromptLifecycleEvent(ctx, payload) {
+			return
+		}
+
+		app.handlePromptStreamEvent(ctx, payload)
+	})
 }
 
 func (app *App) ignorePromptEvent(payload *asyncEvent) bool {
@@ -576,8 +583,13 @@ func (app *App) applyPromptUserEntry(_ context.Context, sessionID, entryID strin
 		return
 	}
 
+	previousSessionID := app.activePrompt.SessionID
 	app.activePrompt.SessionID = sessionID
 	app.activePrompt.UserEntryID = entryID
+
+	if app.sessionID == previousSessionID {
+		app.sessionID = sessionID
+	}
 }
 
 func (app *App) applyPromptError(ctx context.Context, message string, promptID uint64) {

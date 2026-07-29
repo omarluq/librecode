@@ -159,6 +159,7 @@ type App struct {
 	theme                     terminalTheme
 	selectedPanelKind         panel.Kind
 	sessionID                 string
+	sessionViews              map[string]sessionViewState
 	agentTaskSessionStack     []string
 	agentTaskSummaryOwnerID   string
 	statusMessage             string
@@ -275,6 +276,7 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 		panel:                     nil,
 		cwd:                       options.CWD,
 		sessionID:                 options.SessionID,
+		sessionViews:              map[string]sessionViewState{},
 		agentTaskSessionStack:     []string{},
 		pendingParentID:           nil,
 		activePrompt:              nil,

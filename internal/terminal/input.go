@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 
@@ -48,19 +49,7 @@ type keyHandlingResult struct {
 }
 
 func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) keyHandlingResult {
-	if app.handleWorkingInterruptKey(ctx, event) {
-		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
-	}
-
-	if handled, shouldQuit := app.handleForceExitKey(event); handled {
-		return keyHandlingResult{err: nil, shouldQuit: shouldQuit, handled: true}
-	}
-
-	if app.handleAgentTaskSessionEscape(ctx, event) {
-		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
-	}
-
-	if result := app.handlePanelPriorityKey(ctx, event); result.handled || result.err != nil {
+	if result := app.handleInspectionAndModalPriorityKey(ctx, event); result.handled || result.err != nil {
 		return result
 	}
 
@@ -79,10 +68,84 @@ func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) ke
 	return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
 }
 
+func (app *App) handleInspectionAndModalPriorityKey(
+	ctx context.Context,
+	event *tcell.EventKey,
+) keyHandlingResult {
+	if result := app.handleInterruptPriorityKey(ctx, event); result.handled {
+		return result
+	}
+
+	if result := app.handleModalPriorityKey(ctx, event); result.handled || result.err != nil {
+		return result
+	}
+
+	if app.handleInspectionAutocompleteEscape(event) || app.handleAgentTaskSessionEscape(ctx, event) {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
+	}
+
+	if app.inspectingWhilePromptRuns() {
+		return app.handleReadOnlyInspectionPriorityKey(ctx, event)
+	}
+
+	return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
+}
+
+func (app *App) handleModalPriorityKey(ctx context.Context, event *tcell.EventKey) keyHandlingResult {
+	if app.mode != modePanel || app.panel == nil {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
+	}
+
+	if isEscapeKey(event) || !app.inspectingWhilePromptRuns() {
+		return app.handlePanelPriorityKey(ctx, event)
+	}
+
+	app.setStatus("agent task inspection is read-only while the parent response runs")
+
+	return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
+}
+
+func (app *App) handleInterruptPriorityKey(ctx context.Context, event *tcell.EventKey) keyHandlingResult {
+	if app.handleWorkingInterruptKey(ctx, event) {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
+	}
+
+	if handled, shouldQuit := app.handleForceExitKey(event); handled {
+		return keyHandlingResult{err: nil, shouldQuit: shouldQuit, handled: true}
+	}
+
+	return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
+}
+
+func (app *App) handleReadOnlyInspectionPriorityKey(
+	ctx context.Context,
+	event *tcell.EventKey,
+) keyHandlingResult {
+	if !app.inspectingWhilePromptRuns() {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: false}
+	}
+
+	if handled, err := app.handleAgentTaskSummaryPriorityKey(ctx, event); handled || err != nil {
+		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
+	}
+
+	if app.agentTaskSummaryFocused() || app.handleTranscriptScroll(event) {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
+	}
+
+	app.setStatus("agent task inspection is read-only while the parent response runs")
+
+	return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
+}
+
 func (app *App) handleInlineListsAndExtensionKey(
 	ctx context.Context,
 	event *tcell.EventKey,
 ) keyHandlingResult {
+	if app.inspectingWhilePromptRuns() {
+		return app.handleReadOnlyInspectionPriorityKey(ctx, event)
+	}
+
 	if handled, err := app.handleAgentTaskSummaryPriorityKey(ctx, event); handled || err != nil {
 		return keyHandlingResult{err: err, shouldQuit: false, handled: true}
 	}
@@ -115,7 +178,39 @@ func (app *App) handleAgentTaskSessionEscape(ctx context.Context, event *tcell.E
 		return false
 	}
 
-	app.handleEscapePresses(ctx, escapePressCount(event))
+	if event.Modifiers()&tcell.ModAlt != 0 {
+		app.lastEscape = time.Time{}
+		if err := app.leaveAgentTaskSession(ctx); err != nil {
+			app.setStatus(err.Error())
+		}
+
+		return true
+	}
+
+	if time.Since(app.lastEscape) > doubleEscapeDelay {
+		app.lastEscape = time.Now()
+		if app.inspectingWhilePromptRuns() {
+			app.setStatus("escape again to interrupt; Alt+Escape returns to parent session")
+		} else {
+			app.setStatus("escape again to return to parent session")
+		}
+
+		return true
+	}
+
+	app.lastEscape = time.Time{}
+	if app.inspectingWhilePromptRuns() {
+		ownerSessionID := app.activePrompt.SessionID
+		app.withSessionView(ownerSessionID, func() {
+			app.cancelActivePrompt(ctx)
+		})
+
+		return true
+	}
+
+	if err := app.leaveAgentTaskSession(ctx); err != nil {
+		app.setStatus(err.Error())
+	}
 
 	return true
 }
@@ -126,6 +221,16 @@ func (app *App) handlePanelPriorityKey(ctx context.Context, event *tcell.EventKe
 	}
 
 	return keyHandlingResult{err: app.handlePanelKey(ctx, event), shouldQuit: false, handled: true}
+}
+
+func (app *App) handleInspectionAutocompleteEscape(event *tcell.EventKey) bool {
+	if !app.inspectingWhilePromptRuns() || !app.autocompleteActive() || !isEscapeKey(event) {
+		return false
+	}
+
+	app.closeAutocomplete()
+
+	return true
 }
 
 func (app *App) handleAutocompletePriorityKey(event *tcell.EventKey) bool {
@@ -151,6 +256,12 @@ func (app *App) handleFocusedAutocompleteKey(event *tcell.EventKey) bool {
 }
 
 func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
+	if app.inspectingWhilePromptRuns() {
+		app.setStatus("agent task inspection is read-only while the parent response runs")
+
+		return false, nil
+	}
+
 	if app.keys.matches(event, actionInputClear) && !app.composerBuffer.Empty() {
 		app.composerBuffer.Clear()
 		app.resetPromptHistoryNavigation()
