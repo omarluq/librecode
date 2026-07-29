@@ -77,6 +77,29 @@ func TestRuntime_ProviderContextOverflowRecoveryScenarios(t *testing.T) {
 	}
 }
 
+func TestRuntime_ProviderContextOverflowDoesNotRecoverAfterToolExecutionStarts(t *testing.T) {
+	t.Parallel()
+
+	client := &recordingCompleter{
+		complete: func(_ int, request *assistant.CompletionRequest) (*assistant.CompletionResult, error) {
+			_, err := request.ExecuteTools(context.Background(), nil, nil)
+			require.NoError(t, err)
+
+			return nil, testContextWindowError()
+		},
+		requests:           nil,
+		disableToolsByCall: nil,
+	}
+	runtime := newProviderOverflowRecoveryRuntime(t, client)
+
+	response, _, _, err := runProviderOverflowPrompt(t, runtime, t.Name())
+
+	require.Nil(t, response)
+	require.Error(t, err)
+	assert.True(t, assistant.IsContextWindowError(err))
+	assert.Len(t, client.requests, 1)
+}
+
 func TestRuntime_ProviderContextOverflowPreservesOriginalErrorWhenNoCompaction(t *testing.T) {
 	t.Parallel()
 

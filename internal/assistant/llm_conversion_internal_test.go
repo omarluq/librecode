@@ -57,8 +57,9 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 			MaxTokens:        4096,
 			Reasoning:        true,
 		},
-		ProviderAttempt: 0,
-		DisableTools:    false,
+		ProviderAttempt:        0,
+		DisableTools:           false,
+		ToolSideEffectsStarted: false,
 	}
 
 	converted := llmRequestFromCompletionRequest(request)
@@ -92,21 +93,22 @@ func TestLLMRequestFromCompletionRequestNilAndDisabledTools(t *testing.T) {
 	assert.Empty(t, empty.Tools)
 
 	converted := llmRequestFromCompletionRequest(&CompletionRequest{
-		OnEvent:           nil,
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ToolRegistry:      tool.NewRegistry(t.TempDir()),
-		ExecuteTools:      nil,
-		SessionID:         "",
-		SystemPrompt:      "",
-		ThinkingLevel:     "",
-		CWD:               "",
-		Auth:              model.RequestAuth{Headers: nil, APIKey: "", Error: "", OK: false},
-		Messages:          nil,
-		Usage:             model.EmptyTokenUsage(),
-		Model:             emptyTestModel(),
-		ProviderAttempt:   0,
-		DisableTools:      true,
+		OnEvent:                nil,
+		OnProviderObserve:      nil,
+		OnProviderRequest:      nil,
+		ToolRegistry:           tool.NewRegistry(t.TempDir()),
+		ExecuteTools:           nil,
+		SessionID:              "",
+		SystemPrompt:           "",
+		ThinkingLevel:          "",
+		CWD:                    "",
+		Auth:                   model.RequestAuth{Headers: nil, APIKey: "", Error: "", OK: false},
+		Messages:               nil,
+		Usage:                  model.EmptyTokenUsage(),
+		Model:                  emptyTestModel(),
+		ProviderAttempt:        0,
+		DisableTools:           true,
+		ToolSideEffectsStarted: false,
 	})
 	assert.Empty(t, converted.Tools)
 	assert.True(t, converted.DisableTools)

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -298,17 +299,84 @@ func providerResultFromSSEFinalResponse(accumulator *sseAccumulator, fallbackTex
 func sseProviderError(code string, event map[string]any, fallback string) error {
 	message := fallback
 
-	if response, ok := event["response"].(map[string]any); ok {
-		if responseMessage := sseErrorMessage(response); responseMessage != "" {
-			message = responseMessage
-		}
+	response := map[string]any(nil)
+	if value, ok := event["response"].(map[string]any); ok {
+		response = value
+	}
+
+	if responseMessage := sseErrorMessage(response); responseMessage != "" {
+		message = responseMessage
 	}
 
 	if eventMessage := sseErrorMessage(event); eventMessage != "" {
 		message = eventMessage
 	}
 
-	return oops.In("provider").Code(code).Errorf("%s", message)
+	builder := oops.In("provider").Code(code)
+
+	errorDetails := sseErrorDetails(response, event)
+	if errorDetails.Type != "" {
+		builder = builder.With(providerTypeContextKey, errorDetails.Type)
+	}
+
+	if errorDetails.Code != "" {
+		builder = builder.With(providerCodeContextKey, errorDetails.Code)
+	}
+
+	responseID := firstNonEmptyString(stringValue(response["id"]), stringValue(event["response_id"]))
+	if responseID != "" {
+		builder = builder.With(providerResponseIDContextKey, responseID)
+	}
+
+	requestID := firstNonEmptyString(stringValue(event["request_id"]), stringValue(response["request_id"]))
+	if requestID != "" {
+		builder = builder.With(providerRequestIDContextKey, requestID)
+	}
+
+	return builder.Errorf("%s", message)
+}
+
+func sseErrorDetails(objects ...map[string]any) ErrorDetails {
+	merged := emptyProviderErrorDetails()
+
+	for _, object := range objects {
+		details := sseObjectErrorDetails(object)
+		merged.Message = firstNonEmptyString(merged.Message, details.Message)
+		merged.Type = firstNonEmptyString(merged.Type, details.Type)
+		merged.Code = firstNonEmptyString(merged.Code, details.Code)
+		merged.Param = firstNonEmptyString(merged.Param, details.Param)
+	}
+
+	return merged
+}
+
+func sseObjectErrorDetails(object map[string]any) ErrorDetails {
+	if object == nil {
+		return emptyProviderErrorDetails()
+	}
+
+	if nested, ok := object["error"].(map[string]any); ok {
+		if details := providerErrorDetailsFromMap(nested); providerErrorDetailsPresent(&details) {
+			return details
+		}
+	}
+
+	return providerErrorDetailsFromMap(object)
+}
+
+func providerErrorDetailsPresent(details *ErrorDetails) bool {
+	return details != nil && (details.Message != "" || details.Type != "" || details.Code != "")
+}
+
+func providerErrorDetailsFromMap(object map[string]any) ErrorDetails {
+	content, err := json.Marshal(object)
+	if err != nil {
+		return emptyProviderErrorDetails()
+	}
+
+	details, _ := providerErrorDetailsFromJSON(content)
+
+	return details
 }
 
 func sseErrorMessage(object map[string]any) string {

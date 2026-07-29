@@ -32,21 +32,22 @@ type ToolExecutor func(context.Context, []ToolCall, func(StreamEvent)) ([]ToolEv
 
 // CompletionRequest describes one assistant-owned model completion request.
 type CompletionRequest struct {
-	OnEvent           func(StreamEvent)                              `json:"-"`
-	OnProviderObserve func(context.Context, *CompletionRequest, int) `json:"-"`
-	OnProviderRequest llm.ProviderRequestHook                        `json:"-"`
-	ToolRegistry      *tool.Registry                                 `json:"-"`
-	ExecuteTools      ToolExecutor                                   `json:"-"`
-	SessionID         string                                         `json:"session_id"`
-	SystemPrompt      string                                         `json:"system_prompt"`
-	ThinkingLevel     string                                         `json:"thinking_level"`
-	CWD               string                                         `json:"cwd"`
-	Auth              model.RequestAuth                              `json:"auth"`
-	Messages          []database.MessageEntity                       `json:"messages"`
-	Usage             model.TokenUsage                               `json:"usage"`
-	Model             model.Model                                    `json:"model"`
-	ProviderAttempt   int                                            `json:"-"`
-	DisableTools      bool                                           `json:"-"`
+	OnEvent                func(StreamEvent)                              `json:"-"`
+	OnProviderObserve      func(context.Context, *CompletionRequest, int) `json:"-"`
+	OnProviderRequest      llm.ProviderRequestHook                        `json:"-"`
+	ToolRegistry           *tool.Registry                                 `json:"-"`
+	ExecuteTools           ToolExecutor                                   `json:"-"`
+	SessionID              string                                         `json:"session_id"`
+	SystemPrompt           string                                         `json:"system_prompt"`
+	ThinkingLevel          string                                         `json:"thinking_level"`
+	CWD                    string                                         `json:"cwd"`
+	Auth                   model.RequestAuth                              `json:"auth"`
+	Messages               []database.MessageEntity                       `json:"messages"`
+	Usage                  model.TokenUsage                               `json:"usage"`
+	Model                  model.Model                                    `json:"model"`
+	ProviderAttempt        int                                            `json:"-"`
+	DisableTools           bool                                           `json:"-"`
+	ToolSideEffectsStarted bool                                           `json:"-"`
 }
 
 // CompletionResult is an assistant-owned provider response plus model-visible side effects.

@@ -28,21 +28,22 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 	}
 
 	request := &CompletionRequest{
-		OnEvent:           nil,
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ToolRegistry:      registry,
-		ExecuteTools:      nil,
-		SessionID:         sessionID,
-		SystemPrompt:      "",
-		ThinkingLevel:     "",
-		CWD:               cwd,
-		Auth:              model.RequestAuth{Headers: nil, APIKey: "", Error: "", OK: false},
-		Messages:          nil,
-		Usage:             model.EmptyTokenUsage(),
-		Model:             selectedModel,
-		ProviderAttempt:   0,
-		DisableTools:      false,
+		OnEvent:                nil,
+		OnProviderObserve:      nil,
+		OnProviderRequest:      nil,
+		ToolRegistry:           registry,
+		ExecuteTools:           nil,
+		SessionID:              sessionID,
+		SystemPrompt:           "",
+		ThinkingLevel:          "",
+		CWD:                    cwd,
+		Auth:                   model.RequestAuth{Headers: nil, APIKey: "", Error: "", OK: false},
+		Messages:               nil,
+		Usage:                  model.EmptyTokenUsage(),
+		Model:                  selectedModel,
+		ProviderAttempt:        0,
+		DisableTools:           false,
+		ToolSideEffectsStarted: false,
 	}
 
 	messages := []database.MessageEntity{}

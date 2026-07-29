@@ -326,21 +326,22 @@ func (runtime *Runtime) summarizeCompaction(
 ) (string, error) {
 	systemPrompt := compaction.SystemPrompt(plan.PreviousSummary, plan.SplitTurnSummary)
 	request := &CompletionRequest{
-		OnEvent:           nil,
-		OnProviderObserve: runtime.emitProviderRequest,
-		OnProviderRequest: runtime.dispatchProviderRequestHook,
-		ToolRegistry:      tool.NewRegistry(cwd),
-		ExecuteTools:      nil,
-		DisableTools:      true,
-		SessionID:         sessionID,
-		SystemPrompt:      systemPrompt,
-		ThinkingLevel:     thinkingOff,
-		CWD:               cwd,
-		Auth:              auth,
-		Messages:          plan.Messages,
-		Usage:             compactionRequestUsage(selectedModel, systemPrompt, plan.Messages),
-		Model:             *selectedModel,
-		ProviderAttempt:   0,
+		OnEvent:                nil,
+		OnProviderObserve:      runtime.emitProviderRequest,
+		OnProviderRequest:      runtime.dispatchProviderRequestHook,
+		ToolRegistry:           tool.NewRegistry(cwd),
+		ExecuteTools:           nil,
+		DisableTools:           true,
+		ToolSideEffectsStarted: false,
+		SessionID:              sessionID,
+		SystemPrompt:           systemPrompt,
+		ThinkingLevel:          thinkingOff,
+		CWD:                    cwd,
+		Auth:                   auth,
+		Messages:               plan.Messages,
+		Usage:                  compactionRequestUsage(selectedModel, systemPrompt, plan.Messages),
+		Model:                  *selectedModel,
+		ProviderAttempt:        0,
 	}
 
 	result, err := runtime.completeWithRetry(ctx, request, nil)

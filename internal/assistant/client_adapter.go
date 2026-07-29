@@ -62,21 +62,22 @@ func completionRequestFromHookInput(input *llm.HookInput) *CompletionRequest {
 	}
 
 	return &CompletionRequest{
-		OnEvent:           nil,
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ToolRegistry:      nil,
-		ExecuteTools:      nil,
-		SessionID:         input.SessionID,
-		SystemPrompt:      "",
-		ThinkingLevel:     input.ThinkingLevel,
-		CWD:               stringFromOptions(input.ProviderOptions, "cwd"),
-		Auth:              requestAuthFromHookInput(input),
-		Messages:          nil,
-		Usage:             model.EmptyTokenUsage(),
-		Model:             modelFromLLMRef(&input.Model),
-		ProviderAttempt:   input.Attempt,
-		DisableTools:      false,
+		OnEvent:                nil,
+		OnProviderObserve:      nil,
+		OnProviderRequest:      nil,
+		ToolRegistry:           nil,
+		ExecuteTools:           nil,
+		SessionID:              input.SessionID,
+		SystemPrompt:           "",
+		ThinkingLevel:          input.ThinkingLevel,
+		CWD:                    stringFromOptions(input.ProviderOptions, "cwd"),
+		Auth:                   requestAuthFromHookInput(input),
+		Messages:               nil,
+		Usage:                  model.EmptyTokenUsage(),
+		Model:                  modelFromLLMRef(&input.Model),
+		ProviderAttempt:        input.Attempt,
+		DisableTools:           false,
+		ToolSideEffectsStarted: false,
 	}
 }
 

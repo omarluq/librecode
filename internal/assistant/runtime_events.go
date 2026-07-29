@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/extension"
@@ -70,6 +71,29 @@ func (runtime *Runtime) emitProviderResponse(
 func (runtime *Runtime) emitProviderError(ctx context.Context, request *CompletionRequest, attempt int, err error) {
 	if request == nil || err == nil {
 		return
+	}
+
+	if runtime.logger != nil {
+		attributes := []any{
+			slog.String("provider", request.Model.Provider),
+			slog.String("model", request.Model.ID),
+			slog.String("api", request.Model.API),
+			slog.Int("attempt", attempt),
+			slog.Any("error", err),
+		}
+		if code, ok := providerFailureCode(err); ok {
+			attributes = append(attributes, slog.String("provider_code", code))
+		}
+
+		if requestID := providerErrorContextString(err, "provider_request_id"); requestID != "" {
+			attributes = append(attributes, slog.String("provider_request_id", requestID))
+		}
+
+		if responseID := providerErrorContextString(err, "provider_response_id"); responseID != "" {
+			attributes = append(attributes, slog.String("provider_response_id", responseID))
+		}
+
+		runtime.logger.WarnContext(ctx, "provider request failed", attributes...)
 	}
 
 	payload := lifecyclepayload.ProviderErrorPayload(&lifecyclepayload.ProviderError{

@@ -65,6 +65,16 @@ func TestShouldRetryModelError(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "explicit provider retry guidance",
+			err:  errors.New("an error occurred while processing your request; you can retry your request"),
+			want: true,
+		},
+		{
+			name: "quota remains non-retryable despite retry guidance",
+			err:  errors.New("quota exceeded; you can retry your request"),
+			want: false,
+		},
+		{
 			name: "canceled context",
 			err:  context.Canceled,
 			want: false,
@@ -94,6 +104,29 @@ func TestShouldRetryModelErrorHandlesResponsesStreamFailures(t *testing.T) {
 				Code("responses_stream_incomplete").
 				Errorf("provider stream closed before completion"),
 			want: true,
+		},
+		{
+			name: "response failed with transient provider code",
+			err: oops.In("assistant").Code("responses_failed").
+				With("provider_code", "server_error").
+				Errorf("processing failed"),
+			want: true,
+		},
+		{
+			name: "response failed with transient type and unknown code",
+			err: oops.In("assistant").Code("responses_failed").
+				With("provider_type", "server_error").
+				With("provider_code", "backend_specific").
+				Errorf("processing failed"),
+			want: true,
+		},
+		{
+			name: "non-retryable type overrides transient code",
+			err: oops.In("assistant").Code("responses_failed").
+				With("provider_type", "invalid_request_error").
+				With("provider_code", "server_error").
+				Errorf("invalid request"),
+			want: false,
 		},
 		{
 			name: "response failed without retryable details",

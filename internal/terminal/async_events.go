@@ -366,6 +366,14 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 		return true
 	case asyncEventPromptRetry:
 		app.emitPromptRetryExtensionEvent(ctx, payload)
+
+		if payload.Provider == string(assistant.RetryEventStart) {
+			app.streamingText = ""
+			app.streamingThinkingText = ""
+			app.resetStreamingBlocks()
+			app.streamedToolEvents = 0
+		}
+
 		app.setStatus(payload.Text)
 
 		return true

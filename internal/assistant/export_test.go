@@ -131,8 +131,9 @@ func newZeroCompletionRequest(auth model.RequestAuth) *CompletionRequest {
 			MaxTokens:     0,
 			Reasoning:     false,
 		},
-		ProviderAttempt: 0,
-		DisableTools:    false,
+		ProviderAttempt:        0,
+		DisableTools:           false,
+		ToolSideEffectsStarted: false,
 	}
 }
 

@@ -70,8 +70,9 @@ func TestProviderRequestFromCompletionRequestAdaptsCallbacksAndRequest(t *testin
 			MaxTokens:        50,
 			Reasoning:        true,
 		},
-		ProviderAttempt: 3,
-		DisableTools:    false,
+		ProviderAttempt:        3,
+		DisableTools:           false,
+		ToolSideEffectsStarted: false,
 	}
 
 	converted := providerRequestFromCompletionRequest(request)

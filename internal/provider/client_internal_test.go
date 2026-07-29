@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -74,6 +75,42 @@ func TestParseSSEResultExtractsToolCallFromOutputItems(t *testing.T) {
 	assert.Equal(t, "read", result.ToolCalls[0].Name)
 	assert.JSONEq(t, `{"path":"README.md"}`, result.ToolCalls[0].ArgumentsJSON)
 	assert.Equal(t, "README.md", testutil.ToolArgumentFields(result.ToolCalls[0].Arguments)["path"])
+}
+
+func TestParseSSEResultPreservesFailureMetadata(t *testing.T) {
+	t.Parallel()
+
+	stream := "data: " + `{"type":"response.failed","request_id":"req_123",` +
+		`"error":{"type":"server_error","code":"internal_error"},` +
+		`"response":{"id":"resp_123","error":{"message":"please retry"}}}` + "\n"
+
+	_, err := parseSSEResult(strings.NewReader(stream), nil)
+	require.Error(t, err)
+
+	coded, matched := oops.AsOops(err)
+	require.True(t, matched)
+	assert.Equal(t, "responses_failed", coded.Code())
+	assert.Equal(t, "server_error", coded.Context()[providerTypeContextKey])
+	assert.Equal(t, "internal_error", coded.Context()[providerCodeContextKey])
+	assert.Equal(t, "resp_123", coded.Context()[providerResponseIDContextKey])
+	assert.Equal(t, "req_123", coded.Context()[providerRequestIDContextKey])
+	assert.Contains(t, err.Error(), "please retry")
+}
+
+func TestParseSSEResultMergesSplitFailureMetadata(t *testing.T) {
+	t.Parallel()
+
+	stream := "data: " + `{"type":"response.failed","error":{"type":"server_error","code":"backend_specific"},` +
+		`"response":{"id":"resp_123","error":{"message":"please retry"}}}` + "\n"
+
+	_, err := parseSSEResult(strings.NewReader(stream), nil)
+	require.Error(t, err)
+
+	coded, matched := oops.AsOops(err)
+	require.True(t, matched)
+	assert.Equal(t, "server_error", coded.Context()[providerTypeContextKey])
+	assert.Equal(t, "backend_specific", coded.Context()[providerCodeContextKey])
+	assert.Contains(t, err.Error(), "please retry")
 }
 
 func TestParseSSEResultFailureCases(t *testing.T) {

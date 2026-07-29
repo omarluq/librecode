@@ -77,6 +77,14 @@ func defaultRetryConfig() config.RetryConfig {
 }
 
 func retryBackoff(retry config.RetryConfig, onDelay func(time.Duration)) retrylib.BackoffFunc {
+	return retryBackoffWithOverride(retry, nil, onDelay)
+}
+
+func retryBackoffWithOverride(
+	retry config.RetryConfig,
+	override func(time.Duration) time.Duration,
+	onDelay func(time.Duration),
+) retrylib.BackoffFunc {
 	retry = retry.Normalized()
 
 	backoff := retrylib.NewExponential(retry.BaseDelay)
@@ -89,10 +97,23 @@ func retryBackoff(retry config.RetryConfig, onDelay func(time.Duration)) retryli
 			return 0, true
 		}
 
+		if override != nil {
+			delay = override(delay)
+		}
+
 		onDelay(delay)
 
 		return delay, false
 	})
+}
+
+func providerRetryDelay(err error, fallback time.Duration) time.Duration {
+	var statusErr *provider.StatusError
+	if errors.As(err, &statusErr) && statusErr.RetryAfter > fallback {
+		return statusErr.RetryAfter
+	}
+
+	return fallback
 }
 
 func maxRetryDelays(retry config.RetryConfig) uint64 {
@@ -148,17 +169,24 @@ func IsContextWindowError(err error) bool {
 }
 
 func retryDecisionFromProviderCode(err error) (retry, known bool) {
-	code, matched := providerErrorCode(err)
-	if !matched {
-		return false, false
+	codes := []string{
+		providerErrorContextString(err, "provider_code"),
+		providerErrorContextString(err, "provider_type"),
+	}
+	if code, matched := providerErrorCode(err); matched {
+		codes = append(codes, code)
 	}
 
-	if nonRetryableProviderCode(code) {
-		return false, true
+	for _, code := range codes {
+		if nonRetryableProviderCode(strings.ToLower(code)) {
+			return false, true
+		}
 	}
 
-	if retryableProviderCode(code) {
-		return true, true
+	for _, code := range codes {
+		if retryableProviderCode(strings.ToLower(code)) {
+			return true, true
+		}
 	}
 
 	return false, false
@@ -182,20 +210,50 @@ func retryableDeadlineExceeded(message string) bool {
 	return !nonRetryableProviderMessage(message)
 }
 
+func providerFailureCode(err error) (string, bool) {
+	if value := providerErrorContextString(err, "provider_code"); value != "" {
+		return strings.ToLower(value), true
+	}
+
+	return providerErrorCode(err)
+}
+
+func providerErrorContextString(err error, key string) string {
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		oopsErr, matched := oops.AsOops(current)
+		if !matched {
+			continue
+		}
+
+		if value, ok := oopsErr.Context()[key].(string); ok {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+
+	return ""
+}
+
 func providerErrorCode(err error) (string, bool) {
-	oopsErr, matched := oops.AsOops(err)
-	if !matched {
-		return "", false
+	for current := err; current != nil; current = errors.Unwrap(current) {
+		oopsErr, matched := oops.AsOops(current)
+		if !matched {
+			continue
+		}
+
+		codeValue, ok := oopsErr.Code().(string)
+		if !ok {
+			continue
+		}
+
+		code := strings.ToLower(strings.TrimSpace(codeValue))
+		if code != "" && code != "assistant_error" {
+			return code, true
+		}
 	}
 
-	codeValue, matched := oopsErr.Code().(string)
-	if !matched {
-		return "", false
-	}
-
-	code := strings.ToLower(strings.TrimSpace(codeValue))
-
-	return code, code != ""
+	return "", false
 }
 
 func providerErrorStatus(err error) (int, bool) {
@@ -228,7 +286,10 @@ func providerErrorStatus(err error) (int, bool) {
 
 func retryableProviderCode(code string) bool {
 	switch code {
-	case "responses_stream_incomplete",
+	case "server_error",
+		"internal_error",
+		"overloaded_error",
+		"responses_stream_incomplete",
 		"responses_http",
 		"provider_http",
 		"responses_read",
@@ -243,6 +304,10 @@ func retryableProviderCode(code string) bool {
 func nonRetryableProviderCode(code string) bool {
 	switch code {
 	case "context_window_exceeded",
+		"invalid_request_error",
+		"authentication_error",
+		"permission_error",
+		"insufficient_quota",
 		"openai_chat_decode",
 		"anthropic_decode",
 		"openai_response_decode",
@@ -274,6 +339,10 @@ func nonRetryableProviderMessage(message string) bool {
 	}
 
 	nonRetryable := []string{
+		"billing",
+		"insufficient quota",
+		"quota exceeded",
+		"account limit",
 		"invalid api key",
 		"unauthorized",
 		"authentication",
@@ -360,6 +429,8 @@ func retryableProviderMessage(message string) bool {
 		"websocket closed",
 		"websocket error",
 		"terminated",
+		"you can retry your request",
+		"please try again later",
 	}
 	for _, pattern := range retryable {
 		if strings.Contains(message, pattern) {

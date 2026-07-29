@@ -227,7 +227,8 @@ func newSchemaEstimateRequest(t *testing.T, api string, disableTools bool) *Comp
 			MaxTokens:     0,
 			Reasoning:     false,
 		},
-		ProviderAttempt: 0,
-		DisableTools:    disableTools,
+		ProviderAttempt:        0,
+		DisableTools:           disableTools,
+		ToolSideEffectsStarted: false,
 	}
 }
