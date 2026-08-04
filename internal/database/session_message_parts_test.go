@@ -410,9 +410,12 @@ func assertMultipartParts(t *testing.T, parts []database.MessagePartEntity) {
 		Data: nil, Text: testMultipartText, MIMEType: "", Name: "",
 		Type: database.MessagePartText, Width: 0, Height: 0,
 	}, parts[0])
-	assert.Equal(t, database.MessagePartImage, parts[1].Type)
-	assert.Equal(t, []byte{1, 2, 3}, parts[1].Data)
-	assert.Equal(t, "first.png", parts[1].Name)
-	assert.Equal(t, database.MessagePartImage, parts[2].Type)
-	assert.Equal(t, []byte{4, 5}, parts[2].Data)
+	assert.Equal(t, database.MessagePartEntity{
+		Data: []byte{1, 2, 3}, Text: "", MIMEType: testImageMIME, Name: "first.png",
+		Type: database.MessagePartImage, Width: 10, Height: 20,
+	}, parts[1])
+	assert.Equal(t, database.MessagePartEntity{
+		Data: []byte{4, 5}, Text: "", MIMEType: "image/jpeg", Name: "second.jpg",
+		Type: database.MessagePartImage, Width: 30, Height: 40,
+	}, parts[2])
 }
