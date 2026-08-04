@@ -89,6 +89,22 @@ func remapUsageAnchor(
 	return &remapped
 }
 
+const engineeringPrinciplesPrompt = "# Engineering principles\n\n" +
+	"- Preserve documented public behavior, persisted data, and extension contracts unless the task explicitly " +
+	"authorizes a breaking change. When a breaking change is authorized, remove obsolete paths instead of " +
+	"adding indefinite compatibility layers, fallbacks, or migrations.\n" +
+	"- Choose the simplest implementation that fully satisfies the current requirements. Avoid speculative " +
+	"abstractions, configuration, and indirection.\n" +
+	"- Grow the system in working end-to-end layers. Start with the smallest complete version, then add " +
+	"capabilities without replacing working behavior with unfinished complexity.\n" +
+	"- Keep components modular and concerns clearly separated.\n" +
+	"- Prefer established, well-maintained libraries when they reduce overall complexity or improve reliability. " +
+	"Do not reimplement common functionality without a clear reason.\n" +
+	"- Inspect existing code, dependencies, documentation, and types before writing an implementation or adding " +
+	"a package. Prefer the standard library and existing project dependencies when they meet the requirements.\n" +
+	"- Make architectural decisions for the long term. Avoid knowingly temporary production implementations " +
+	"intended to be replaced later unless the task explicitly requires a documented incremental step."
+
 func (runtime *Runtime) baseSystemPrompt(cwd string) string {
 	identity := "You are librecode, an AI coding assistant. Be concise, helpful, and accurate."
 	toolGuidance := strings.Join([]string{
@@ -118,15 +134,18 @@ func (runtime *Runtime) baseSystemPrompt(cwd string) string {
 		}
 	}
 
-	sections := []string{strings.Join([]string{
-		identity,
-		"You are running inside a local filesystem workspace.",
-		"Current working directory: " + cwd,
-		toolGuidance,
-		"Do not claim you cannot access files; inspect them with tools instead.",
-		"Respect .gitignore and default ignored paths; avoid ignored files unless explicitly needed.",
-		"Use the fewest tool calls needed; once you have enough evidence, stop using tools and answer.",
-	}, "\n")}
+	sections := []string{
+		strings.Join([]string{
+			identity,
+			"You are running inside a local filesystem workspace.",
+			"Current working directory: " + cwd,
+			toolGuidance,
+			"Do not claim you cannot access files; inspect them with tools instead.",
+			"Respect .gitignore and default ignored paths; avoid ignored files unless explicitly needed.",
+			"Use the fewest tool calls needed; once you have enough evidence, stop using tools and answer.",
+		}, "\n"),
+		engineeringPrinciplesPrompt,
+	}
 
 	if instructions := runtime.loadAgentInstructions(cwd); instructions != "" {
 		sections = append(sections, instructions)

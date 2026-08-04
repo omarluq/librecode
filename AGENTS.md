@@ -64,6 +64,16 @@ Useful docs:
 - `docs/skills.md`
 - `docs/rendering-boundary.md`
 
+## Engineering principles
+
+- Preserve documented public behavior, persisted data, and extension contracts unless the task explicitly authorizes a breaking change. When a breaking change is authorized, remove obsolete paths instead of adding indefinite compatibility layers, fallbacks, or migrations.
+- Choose the simplest implementation that fully satisfies the current requirements. Avoid speculative abstractions, configuration, and indirection.
+- Grow the system in working end-to-end layers. Start with the smallest complete version, then add capabilities without replacing working behavior with unfinished complexity.
+- Keep components modular and concerns clearly separated.
+- Prefer established, well-maintained libraries when they reduce overall complexity or improve reliability. Do not reimplement common functionality without a clear reason.
+- Inspect existing code, dependencies, documentation, and types before writing an implementation or adding a package. Prefer the standard library and existing project dependencies when they meet the requirements.
+- Make architectural decisions for the long term. Avoid knowingly temporary production implementations intended to be replaced later unless the task explicitly requires a documented incremental step.
+
 ## Code style
 
 - Follow existing package patterns and keep changes small/focused.

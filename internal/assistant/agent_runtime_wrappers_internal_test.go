@@ -144,6 +144,11 @@ func TestAsyncAgentPromptAndToolRegistries(t *testing.T) {
 	prompt := runtime.baseSystemPrompt(cwd)
 	assert.Contains(t, prompt, "Use agent_start")
 	assert.Contains(t, prompt, "agent_cancel")
+	assert.Contains(t, prompt, "# Engineering principles")
+	assert.Contains(t, prompt, "Choose the simplest implementation")
+	assert.Contains(t, prompt, "Keep components modular")
+	assert.Contains(t, prompt, "Inspect existing code, dependencies, documentation, and types")
+	assert.Contains(t, prompt, "Make architectural decisions for the long term")
 
 	registry, err := runtime.promptToolRegistry(t.Context(), cwd, "owner")
 	require.NoError(t, err)
