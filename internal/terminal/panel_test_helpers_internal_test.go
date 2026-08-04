@@ -46,7 +46,7 @@ func testEntryEntity() database.EntryEntity {
 			Role:      "",
 			Content:   "",
 			Provider:  "",
-			Model:     "",
+			Model:     "", Parts: nil,
 		},
 	}
 }

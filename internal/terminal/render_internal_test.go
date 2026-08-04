@@ -20,6 +20,31 @@ import (
 	"github.com/omarluq/librecode/internal/tui"
 )
 
+func TestComposerLayoutFitsShortTerminals(t *testing.T) {
+	t.Parallel()
+
+	for height := 0; height <= 5; height++ {
+		t.Run(tui.Int(height), func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			app.composerImages = []imageAttachment{
+				{Name: "one.png", MIMEType: clipboardImageMIME, Data: []byte{1}, Width: 1, Height: 1},
+				{Name: "two.png", MIMEType: clipboardImageMIME, Data: []byte{2}, Width: 1, Height: 1},
+				{Name: "three.png", MIMEType: clipboardImageMIME, Data: []byte{3}, Width: 1, Height: 1},
+			}
+
+			layout := app.composerLayout(24, height)
+			assert.LessOrEqual(t, layout.reserve, height)
+			assert.GreaterOrEqual(t, layout.startRow, 0)
+			assert.GreaterOrEqual(t, layout.editorStart, 0)
+			assert.GreaterOrEqual(t, layout.footerStart, 0)
+			assert.LessOrEqual(t, layout.footerStart+len(layout.footerLines), height)
+			assert.LessOrEqual(t, layout.editorStart+len(layout.editor.Lines), height)
+		})
+	}
+}
+
 func TestClearWindowRespectsWindowOrigin(t *testing.T) {
 	t.Parallel()
 
@@ -228,14 +253,14 @@ func TestRenderQueuedMessagesRendersHeadersAndBody(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		queuedMessages []string
+		queuedMessages []promptDraft
 		name           string
 		expectedLines  []string
 		width          int
 	}{
 		{
 			name:           "single queued message",
-			queuedMessages: []string{"first queued"},
+			queuedMessages: promptDrafts("first queued"),
 			width:          40,
 			expectedLines: []string{
 				"  queued follow-up 1                    ",
@@ -244,7 +269,7 @@ func TestRenderQueuedMessagesRendersHeadersAndBody(t *testing.T) {
 		},
 		{
 			name:           "multiple queued messages",
-			queuedMessages: []string{"first queued", "second queued"},
+			queuedMessages: promptDrafts("first queued", "second queued"),
 			width:          40,
 			expectedLines: []string{
 				"  queued follow-up 1                    ",
@@ -1351,7 +1376,7 @@ func TestLoadInitialMessagesUsesTranscriptHistory(t *testing.T) {
 		Role:      database.RoleAssistant,
 		Content:   "loaded assistant",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 

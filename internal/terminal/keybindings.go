@@ -31,6 +31,9 @@ const (
 	actionInputNewLine               actionID = "tui.tui.newLine"
 	actionInputSubmit                actionID = "tui.tui.submit"
 	actionInputTab                   actionID = "tui.tui.tab"
+	actionAttachmentPasteImage       actionID = "tui.attachment.pasteImage"
+	actionAttachmentRemoveLast       actionID = "tui.attachment.removeLast"
+	actionAttachmentClear            actionID = "tui.attachment.clear"
 	actionSelectUp                   actionID = "tui.select.up"
 	actionSelectDown                 actionID = "tui.select.down"
 	actionSelectPageUp               actionID = "tui.select.pageUp"
@@ -109,6 +112,9 @@ func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 		actionInputNewLine:               binding("Insert newline", "shift+enter"),
 		actionInputSubmit:                binding("Submit input", "enter"),
 		actionInputTab:                   binding("Autocomplete or toggle scope", "tab"),
+		actionAttachmentPasteImage:       binding("Paste clipboard image", "ctrl+v", "super+v"),
+		actionAttachmentRemoveLast:       binding("Remove last image attachment", "alt+r"),
+		actionAttachmentClear:            binding("Clear image attachments", "alt+c"),
 		actionSelectUp:                   binding("Move selection up", "up"),
 		actionSelectDown:                 binding("Move selection down", "down"),
 		actionSelectPageUp:               binding("Page selection up", "pageUp"),

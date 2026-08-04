@@ -103,6 +103,6 @@ func newUsageTestMessage(role database.Role, content, provider, model string) *d
 		Role:      role,
 		Content:   content,
 		Provider:  provider,
-		Model:     model,
+		Model:     model, Parts: nil,
 	}
 }

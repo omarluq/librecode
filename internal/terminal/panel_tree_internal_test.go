@@ -85,7 +85,7 @@ func newTreePanelTestApp(ctx context.Context, t *testing.T) (app *App, userEntry
 		Role:      database.RoleUser,
 		Content:   interruptTestPrompt,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	if err != nil {
 		t.Fatalf("append user entry: %v", err)
@@ -96,7 +96,7 @@ func newTreePanelTestApp(ctx context.Context, t *testing.T) (app *App, userEntry
 		Role:      database.RoleAssistant,
 		Content:   "world",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	if err != nil {
 		t.Fatalf("append assistant entry: %v", err)

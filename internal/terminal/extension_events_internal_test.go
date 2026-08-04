@@ -79,6 +79,50 @@ end)
 	}
 }
 
+func TestExtensionPromptSubmitMutationPreservesImages(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("prompt_submit", function()
+  librecode.buf.set_text("composer", "mutated by extension")
+end)
+`)
+	app.working = true
+	app.composerBuffer.SetText("original")
+	app.composerImages = []imageAttachment{{
+		Name: testImageAttachmentName, MIMEType: clipboardImageMIME, Data: []byte{1}, Width: 1, Height: 1,
+	}}
+
+	shouldQuit, err := app.submit(t.Context())
+	require.NoError(t, err)
+	assert.False(t, shouldQuit)
+	require.Len(t, app.queuedMessages, 1)
+	assert.Equal(t, "mutated by extension", app.queuedMessages[0].Text)
+	require.Len(t, app.queuedMessages[0].Images, 1)
+	assert.Equal(t, []byte{1}, app.queuedMessages[0].Images[0].Data)
+}
+
+func TestExtensionPromptSubmitRevalidatesImageDraft(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("prompt_submit", function()
+  librecode.buf.set_text("composer", "/model")
+end)
+`)
+	app.composerBuffer.SetText("describe this")
+	app.composerImages = []imageAttachment{{
+		Name: testImageAttachmentName, MIMEType: clipboardImageMIME, Data: []byte{1}, Width: 1, Height: 1,
+	}}
+
+	shouldQuit, err := app.submit(t.Context())
+	require.NoError(t, err)
+	assert.False(t, shouldQuit)
+	assert.Equal(t, "/model", app.composerBuffer.TextValue())
+	assert.Len(t, app.composerImages, 1)
+	assert.Equal(t, "slash commands do not accept image attachments", app.statusMessage)
+}
+
 func TestExtensionRuntimeBuffersPersistBetweenEvents(t *testing.T) {
 	t.Parallel()
 

@@ -50,9 +50,10 @@ const (
 )
 
 type chatMessage struct {
-	CreatedAt time.Time
-	Role      transcript.Role
-	Content   string
+	Attachments *attachmentSummaries
+	CreatedAt   time.Time
+	Role        transcript.Role
+	Content     string
 }
 
 type activePromptState struct {
@@ -61,6 +62,7 @@ type activePromptState struct {
 	SessionID     string
 	UserEntryID   string
 	Prompt        string
+	Images        []imageAttachment
 	ID            uint64
 	Canceled      bool
 }
@@ -134,17 +136,18 @@ type RunOptions struct {
 
 // App is the terminal chat UI.
 type App struct {
-	lastEscape                time.Time
+	extensionUI               extui.State
 	lastControlC              time.Time
 	workStartedAt             time.Time
+	agentTasksRefreshedAt     time.Time
+	lastEscape                time.Time
+	workflows                 workflowInspector
 	screen                    terminalScreen
 	extensions                extension.TerminalEventRunner
-	renderer                  *tui.Renderer
-	frame                     *tui.CellBuffer
-	lastResize                *tcell.EventResize
 	systemClipboard           systemClipboardWriter
-	runtime                   *assistant.Runtime
-	workflows                 workflowInspector
+	imageClipboard            systemClipboardImageReader
+	activeCompaction          *activeCompactionState
+	activePrompt              *activePromptState
 	settings                  *database.DocumentRepository
 	models                    *model.Registry
 	auth                      *auth.Storage
@@ -152,53 +155,57 @@ type App struct {
 	keys                      *keybindings
 	panel                     *panel.Model
 	pendingParentID           *string
-	activePrompt              *activePromptState
-	activeCompaction          *activeCompactionState
+	agentTaskWatches          map[string]context.CancelFunc
+	workflowSteps             map[string][]database.WorkflowAgentTaskDetail
 	scopedEnabled             map[string]bool
-	extensionUI               extui.State
-	theme                     terminalTheme
-	selectedPanelKind         panel.Kind
-	sessionID                 string
+	lastResize                *tcell.EventResize
+	frame                     *tui.CellBuffer
+	workflowProgress          map[string]workflowProgress
+	runtime                   *assistant.Runtime
 	sessionViews              map[string]sessionViewState
-	agentTaskSessionStack     []string
-	agentTaskSummaryOwnerID   string
-	statusMessage             string
-	streamingText             string
+	deliveredAgentTasks       map[string]struct{}
+	renderer                  *tui.Renderer
+	theme                     terminalTheme
+	sessionID                 string
 	streamingThinkingText     string
 	cwd                       string
 	promptHistoryDraft        string
+	promptHistoryDraftImages  []imageAttachment
 	mode                      appMode
-	resources                 core.ResourceSnapshot
-	transcript                transcriptState
-	runningToolBlocks         []runningToolBlock
-	liveAgentCompletions      []chatMessage
-	agentTasks                []database.AgentTaskEntity
-	activeWorkflows           []database.WorkflowRunEntity
-	workflowProgress          map[string]workflowProgress
-	workflowSteps             map[string][]database.WorkflowAgentTaskDetail
-	workflowSummaryRunID      string
+	streamingText             string
+	statusMessage             string
+	agentTaskSummaryOwnerID   string
 	workflowPanelRunID        string
-	agentTasksRefreshedAt     time.Time
-	agentTaskWatches          map[string]context.CancelFunc
-	deliveredAgentTasks       map[string]struct{}
-	queuedMessages            []string
-	hiddenQueuedMessages      []string
+	workflowSummaryRunID      string
+	selectedPanelKind         panel.Kind
+	resources                 core.ResourceSnapshot
+	runningToolBlocks         []runningToolBlock
+	composerImages            []imageAttachment
+	agentTasks                []database.AgentTaskEntity
+	liveAgentCompletions      []chatMessage
+	activeWorkflows           []database.WorkflowRunEntity
+	agentTaskSessionStack     []string
+	queuedMessages            []promptDraft
+	hiddenQueuedMessages      []promptDraft
 	promptHistory             []string
+	promptHistoryImages       [][]imageAttachment
 	scopedOrder               []string
 	composerBuffer            tui.TextArea
+	transcript                transcriptState
 	tokenUsage                model.TokenUsage
 	selection                 mouseSelection
 	transcriptList            transcriptListSelection
 	agentTaskSummarySelection agentTaskSummarySelection
 	promptSequence            uint64
+	autocompleteSelection     int
 	workFrame                 int
 	streamedToolEvents        int
 	escapePresses             int
 	promptHistoryIndex        int
 	scrollOffset              int
-	autocompleteSelection     int
-	autocompleteClosed        bool
 	sessionNamedOnly          bool
+	autocompleteClosed        bool
+	bracketedPaste            bool
 	hideThinking              bool
 	working                   bool
 	compacting                bool
@@ -220,6 +227,8 @@ func Run(ctx context.Context, options *RunOptions) error {
 	}
 
 	screen.EnableMouse(tcell.MouseDragEvents)
+
+	screen.EnablePaste()
 	defer screen.Fini()
 
 	app := newApp(screen, options)
@@ -251,17 +260,26 @@ type terminalScreen interface {
 	HideCursor()
 	Show()
 	SetClipboard(data []byte)
+	EnablePaste()
 	ShowCursor(x, y int)
 	Size() (width, height int)
 }
 
 func newApp(screen terminalScreen, options *RunOptions) *App {
-	app := &App{
+	app := newAppState(screen, options)
+	app.addWelcomeMessage()
+
+	return app
+}
+
+func newAppState(screen terminalScreen, options *RunOptions) *App {
+	return &App{
 		screen:                    screen,
 		renderer:                  tui.NewRenderer(screen),
 		frame:                     nil,
 		lastResize:                nil,
 		systemClipboard:           newDesktopClipboard(),
+		imageClipboard:            newDesktopClipboard(),
 		runtime:                   options.Runtime,
 		workflows:                 options.Workflows,
 		extensions:                options.Extensions,
@@ -294,13 +312,17 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 		agentTasksRefreshedAt:     time.Time{},
 		agentTaskWatches:          map[string]context.CancelFunc{},
 		deliveredAgentTasks:       map[string]struct{}{},
-		queuedMessages:            []string{},
-		hiddenQueuedMessages:      []string{},
+		queuedMessages:            []promptDraft{},
+		hiddenQueuedMessages:      []promptDraft{},
 		promptHistory:             []string{},
+		promptHistoryImages:       [][]imageAttachment{},
 		promptHistoryDraft:        "",
+		promptHistoryDraftImages:  nil,
 		autocompleteSelection:     0,
 		autocompleteClosed:        false,
 		composerBuffer:            tui.NewTextArea(),
+		composerImages:            []imageAttachment{},
+		bracketedPaste:            false,
 		scopedOrder:               []string{},
 		scopedEnabled:             map[string]bool{},
 		sessionSortRecent:         true,
@@ -330,9 +352,6 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 		streamingThinkingText:     "",
 		extensionUI:               extui.NewState(),
 	}
-	app.addWelcomeMessage()
-
-	return app
 }
 
 func initialTranscriptState() transcriptState {
@@ -703,13 +722,16 @@ func (app *App) appendSessionMessages(messages []database.SessionMessageEntity) 
 	for index := range messages {
 		message := &messages[index]
 		app.appendMessage(chatMessage{
-			CreatedAt: message.CreatedAt,
-			Role:      transcript.FromDatabaseRole(message.Role),
-			Content:   message.Content,
+			CreatedAt:   message.CreatedAt,
+			Role:        transcript.FromDatabaseRole(message.Role),
+			Content:     message.Content,
+			Attachments: databaseAttachmentSummaries(message.Parts),
 		})
 
 		if message.Role == database.RoleUser {
-			app.recordPromptHistory(message.Content)
+			app.recordPromptDraftHistory(promptDraft{
+				Text: message.Content, Images: imageAttachmentsFromDatabase(message.Parts),
+			})
 		}
 	}
 }
@@ -723,7 +745,7 @@ func (app *App) addMessage(role transcript.Role, content string) {
 }
 
 func newChatMessage(role transcript.Role, content string) chatMessage {
-	return chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content}
+	return chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content, Attachments: nil}
 }
 
 func emptyCachedRenderedMessage() cachedRenderedMessage {

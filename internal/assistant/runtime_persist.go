@@ -64,7 +64,7 @@ func (runtime *Runtime) appendAssistantSideEffects(
 			Role:      database.RoleThinking,
 			Content:   trimmed,
 			Provider:  runtime.cfg.Assistant.Provider,
-			Model:     runtime.cfg.Assistant.Model,
+			Model:     runtime.cfg.Assistant.Model, Parts: nil,
 		}
 
 		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
@@ -83,7 +83,7 @@ func (runtime *Runtime) appendAssistantSideEffects(
 			Role:      database.RoleToolResult,
 			Content:   formatToolEvent(event),
 			Provider:  runtime.cfg.Assistant.Provider,
-			Model:     runtime.cfg.Assistant.Model,
+			Model:     runtime.cfg.Assistant.Model, Parts: nil,
 		}
 
 		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
@@ -112,6 +112,7 @@ func (runtime *Runtime) respondWithPartialProgress(
 		lineage,
 		request.CWD,
 		request.Text,
+		len(request.Images) > 0,
 		progress.handle,
 		progress.retryHandler(request.OnRetry),
 	)
@@ -384,7 +385,7 @@ func (runtime *Runtime) appendPartialPromptMessages(
 			Role:      partial.Role,
 			Content:   partial.Content,
 			Provider:  runtime.cfg.Assistant.Provider,
-			Model:     runtime.cfg.Assistant.Model,
+			Model:     runtime.cfg.Assistant.Model, Parts: nil,
 		}
 
 		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)

@@ -1098,7 +1098,7 @@ func (app *App) persistAgentCompletion(ctx context.Context, content string) {
 			Role:      database.RoleToolResult,
 			Content:   content,
 			Provider:  "",
-			Model:     "",
+			Model:     "", Parts: nil,
 		},
 		&modelFacing,
 	)
@@ -1563,13 +1563,17 @@ func (app *App) switchToAgentTaskSession(
 
 	if app.restoreSessionView(sessionID) {
 		promptHistory := app.promptHistory
+		promptHistoryImages := app.promptHistoryImages
 		promptHistoryDraft := app.promptHistoryDraft
+		promptHistoryDraftImages := app.promptHistoryDraftImages
 		promptHistoryIndex := app.promptHistoryIndex
 		app.transcript.History = nil
 		app.transcript.LineCache.reset()
 		app.appendSessionMessages(messages)
 		app.promptHistory = promptHistory
+		app.promptHistoryImages = promptHistoryImages
 		app.promptHistoryDraft = promptHistoryDraft
+		app.promptHistoryDraftImages = promptHistoryDraftImages
 		app.promptHistoryIndex = promptHistoryIndex
 		messages = nil
 
@@ -1703,15 +1707,18 @@ func (app *App) appendMissingSessionMessages(messages []database.SessionMessageE
 		}
 
 		app.appendMessage(chatMessage{
-			CreatedAt: message.CreatedAt,
-			Role:      role,
-			Content:   message.Content,
+			CreatedAt:   message.CreatedAt,
+			Role:        role,
+			Content:     message.Content,
+			Attachments: nil,
 		})
 
 		appended = true
 
 		if message.Role == database.RoleUser {
-			app.recordPromptHistory(message.Content)
+			app.recordPromptDraftHistory(promptDraft{
+				Text: message.Content, Images: imageAttachmentsFromDatabase(message.Parts),
+			})
 		}
 	}
 

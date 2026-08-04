@@ -23,7 +23,7 @@ func TestCancelActivePromptPreservesQueuedMessages(t *testing.T) {
 	app.working = true
 	app.addMessage(transcript.RoleUser, "prompt")
 	app.appendStreamingBlock(transcript.RoleAssistant, "partial")
-	app.queuedMessages = []string{"follow up"}
+	app.queuedMessages = promptDrafts("follow up")
 	app.activePrompt = newTestActivePrompt(func() { canceled = true })
 	app.activePrompt.Prompt = "prompt"
 
@@ -36,7 +36,7 @@ func TestCancelActivePromptPreservesQueuedMessages(t *testing.T) {
 	assert.Equal(t, "prompt", app.transcript.History[0].Content)
 	require.Len(t, app.transcript.Streaming.Blocks, 1)
 	assert.Equal(t, "partial", app.transcript.Streaming.Blocks[0].Content)
-	assert.Equal(t, []string{"follow up"}, app.queuedMessages)
+	assert.Equal(t, []string{"follow up"}, promptDraftTexts(app.queuedMessages))
 	assert.Equal(t, "canceling response...", app.statusMessage)
 }
 

@@ -13,31 +13,34 @@ import (
 // inspected. Prompt ownership remains on activePrompt and is intentionally not
 // part of a view.
 type sessionViewState struct {
-	lastEscape            time.Time
-	pendingParentID       *string
-	scopedEnabled         map[string]bool
-	promptHistoryDraft    string
-	streamingThinkingText string
-	streamingText         string
-	statusMessage         string
-	runningToolBlocks     []runningToolBlock
-	queuedMessages        []string
-	liveAgentCompletions  []chatMessage
-	promptHistory         []string
-	hiddenQueuedMessages  []string
-	scopedOrder           []string
-	settings              sessionSettingsDocument
-	composerBuffer        tui.TextArea
-	transcript            transcriptState
-	tokenUsage            model.TokenUsage
-	selection             mouseSelection
-	transcriptList        transcriptListSelection
-	streamedToolEvents    int
-	promptHistoryIndex    int
-	scrollOffset          int
-	autocompleteSelection int
-	escapePresses         int
-	autocompleteClosed    bool
+	lastEscape               time.Time
+	pendingParentID          *string
+	scopedEnabled            map[string]bool
+	promptHistoryDraft       string
+	promptHistoryDraftImages []imageAttachment
+	streamingThinkingText    string
+	streamingText            string
+	statusMessage            string
+	runningToolBlocks        []runningToolBlock
+	queuedMessages           []promptDraft
+	liveAgentCompletions     []chatMessage
+	promptHistory            []string
+	promptHistoryImages      [][]imageAttachment
+	hiddenQueuedMessages     []promptDraft
+	scopedOrder              []string
+	settings                 sessionSettingsDocument
+	composerBuffer           tui.TextArea
+	composerImages           []imageAttachment
+	transcript               transcriptState
+	tokenUsage               model.TokenUsage
+	selection                mouseSelection
+	transcriptList           transcriptListSelection
+	streamedToolEvents       int
+	promptHistoryIndex       int
+	scrollOffset             int
+	autocompleteSelection    int
+	escapePresses            int
+	autocompleteClosed       bool
 }
 
 func (app *App) saveSessionView() {
@@ -54,36 +57,44 @@ func (app *App) saveSessionView() {
 
 func (app *App) captureSessionView(clone bool) sessionViewState {
 	view := sessionViewState{
-		pendingParentID:       app.pendingParentID,
-		transcript:            app.transcript,
-		runningToolBlocks:     app.runningToolBlocks,
-		liveAgentCompletions:  app.liveAgentCompletions,
-		queuedMessages:        app.queuedMessages,
-		hiddenQueuedMessages:  app.hiddenQueuedMessages,
-		promptHistory:         app.promptHistory,
-		promptHistoryDraft:    app.promptHistoryDraft,
-		tokenUsage:            app.tokenUsage,
-		composerBuffer:        app.composerBuffer,
-		selection:             app.selection,
-		transcriptList:        app.transcriptList,
-		streamingText:         app.streamingText,
-		streamingThinkingText: app.streamingThinkingText,
-		scopedEnabled:         app.scopedEnabled,
-		scopedOrder:           app.scopedOrder,
-		settings:              app.currentSessionSettings(),
-		streamedToolEvents:    app.streamedToolEvents,
-		promptHistoryIndex:    app.promptHistoryIndex,
-		scrollOffset:          app.scrollOffset,
-		statusMessage:         app.statusMessage,
-		autocompleteSelection: app.autocompleteSelection,
-		autocompleteClosed:    app.autocompleteClosed,
-		escapePresses:         app.escapePresses,
-		lastEscape:            app.lastEscape,
+		pendingParentID:          app.pendingParentID,
+		transcript:               app.transcript,
+		runningToolBlocks:        app.runningToolBlocks,
+		liveAgentCompletions:     app.liveAgentCompletions,
+		queuedMessages:           app.queuedMessages,
+		hiddenQueuedMessages:     app.hiddenQueuedMessages,
+		promptHistory:            app.promptHistory,
+		promptHistoryImages:      app.promptHistoryImages,
+		promptHistoryDraft:       app.promptHistoryDraft,
+		promptHistoryDraftImages: app.promptHistoryDraftImages,
+		tokenUsage:               app.tokenUsage,
+		composerBuffer:           app.composerBuffer,
+		composerImages:           app.composerImages,
+		selection:                app.selection,
+		transcriptList:           app.transcriptList,
+		streamingText:            app.streamingText,
+		streamingThinkingText:    app.streamingThinkingText,
+		scopedEnabled:            app.scopedEnabled,
+		scopedOrder:              app.scopedOrder,
+		settings:                 app.currentSessionSettings(),
+		streamedToolEvents:       app.streamedToolEvents,
+		promptHistoryIndex:       app.promptHistoryIndex,
+		scrollOffset:             app.scrollOffset,
+		statusMessage:            app.statusMessage,
+		autocompleteSelection:    app.autocompleteSelection,
+		autocompleteClosed:       app.autocompleteClosed,
+		escapePresses:            app.escapePresses,
+		lastEscape:               app.lastEscape,
 	}
 	if clone {
 		view.pendingParentID = cloneStringPtr(view.pendingParentID)
 		view.tokenUsage = cloneTerminalUsage(view.tokenUsage)
 		view.composerBuffer = cloneComposerBuffer(view.composerBuffer)
+		view.composerImages = cloneImageAttachments(view.composerImages)
+		view.promptHistoryImages = cloneImageAttachmentGroups(view.promptHistoryImages)
+		view.promptHistoryDraftImages = cloneImageAttachments(view.promptHistoryDraftImages)
+		view.queuedMessages = clonePromptDrafts(view.queuedMessages)
+		view.hiddenQueuedMessages = clonePromptDrafts(view.hiddenQueuedMessages)
 		view.scopedEnabled = maps.Clone(view.scopedEnabled)
 		view.scopedOrder = slices.Clone(view.scopedOrder)
 	}
@@ -111,9 +122,12 @@ func (app *App) applySessionView(sessionID string, view *sessionViewState, clone
 	app.queuedMessages = view.queuedMessages
 	app.hiddenQueuedMessages = view.hiddenQueuedMessages
 	app.promptHistory = view.promptHistory
+	app.promptHistoryImages = view.promptHistoryImages
 	app.promptHistoryDraft = view.promptHistoryDraft
+	app.promptHistoryDraftImages = view.promptHistoryDraftImages
 	app.tokenUsage = view.tokenUsage
 	app.composerBuffer = view.composerBuffer
+	app.composerImages = view.composerImages
 	app.selection = view.selection
 	app.transcriptList = view.transcriptList
 	app.streamingText = view.streamingText
@@ -134,6 +148,11 @@ func (app *App) applySessionView(sessionID string, view *sessionViewState, clone
 		app.pendingParentID = cloneStringPtr(app.pendingParentID)
 		app.tokenUsage = cloneTerminalUsage(app.tokenUsage)
 		app.composerBuffer = cloneComposerBuffer(app.composerBuffer)
+		app.composerImages = cloneImageAttachments(app.composerImages)
+		app.promptHistoryImages = cloneImageAttachmentGroups(app.promptHistoryImages)
+		app.promptHistoryDraftImages = cloneImageAttachments(app.promptHistoryDraftImages)
+		app.queuedMessages = clonePromptDrafts(app.queuedMessages)
+		app.hiddenQueuedMessages = clonePromptDrafts(app.hiddenQueuedMessages)
 		app.scopedEnabled = maps.Clone(app.scopedEnabled)
 		app.scopedOrder = slices.Clone(app.scopedOrder)
 	}

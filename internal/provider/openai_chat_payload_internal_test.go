@@ -76,8 +76,9 @@ func TestOpenAIChatMessagesAndRoles(t *testing.T) {
 	setTestRequestSystemPrompt(request, "system")
 	setTestRequestMessages(request, mixedReplayMessages())
 
-	messages := openAIChatMessages(request)
+	messages, err := openAIChatMessages(request)
 
+	require.NoError(t, err)
 	assert.Len(t, messages, 8)
 	assert.JSONEq(t, jsonString(jsonSystemRole), jsonString(messages[0][jsonRoleKey]))
 	assert.JSONEq(t, jsonString(jsonUserRole), jsonString(messages[1][jsonRoleKey]))
@@ -86,6 +87,57 @@ func TestOpenAIChatMessagesAndRoles(t *testing.T) {
 	mapped, ok := openAIRole(llm.RoleTool)
 	assert.False(t, ok)
 	assert.Empty(t, mapped)
+}
+
+func TestOpenAIChatMultipartPayloadShapes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		message llm.Message
+		want    []map[string]any
+	}{
+		{
+			name:    testImageWithText,
+			message: testImageMessage(),
+			want: []map[string]any{
+				{jsonTypeKey: jsonTextKey, jsonTextKey: testImagePrompt},
+				{jsonTypeKey: jsonImageURLKey, jsonImageURLKey: map[string]any{
+					"url": testImageDataURL,
+				}},
+			},
+		},
+		{
+			name:    testImageOnly,
+			message: testImageOnlyMessage(llm.RoleUser, testImageMIME, testImageData),
+			want: []map[string]any{{
+				jsonTypeKey: jsonImageURLKey, jsonImageURLKey: map[string]any{
+					"url": testImageDataURL,
+				},
+			}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := emptyCompletionRequest()
+			setTestRequestMessages(request, []llm.Message{
+				test.message,
+				llm.TextMessage(llm.RoleAssistant, testAssistantReplay),
+				llm.TextMessage(llm.RoleTool, "tool output"),
+			})
+			messages, err := openAIChatMessages(request)
+
+			require.NoError(t, err)
+			require.Len(t, messages, 2)
+			assert.Equal(t, test.want, messages[0][jsonContentKey])
+			assert.Equal(t, map[string]any{
+				jsonRoleKey: jsonAssistantRole, jsonContentKey: testAssistantReplay,
+			}, messages[1])
+		})
+	}
 }
 
 func TestOpenAIChatPayloadAddsZAIStreamingOptions(t *testing.T) {

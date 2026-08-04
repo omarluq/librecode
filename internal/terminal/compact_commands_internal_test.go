@@ -181,7 +181,7 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 	app := newPromptSendTestApp(t, client)
 	app.compacting = true
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
-	app.queuedMessages = []string{"queued after compact"}
+	app.queuedMessages = promptDrafts("queued after compact")
 
 	app.applyCompactDone(context.Background(), &asyncEvent{
 		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: &model.TokenUsage{
@@ -393,7 +393,7 @@ func appendTerminalCompactMessage(
 		Role:      role,
 		Content:   content,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}
 
 	entry, err := app.runtime.SessionRepository().AppendMessage(context.Background(), sessionID, parentID, message)
@@ -524,7 +524,7 @@ func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.queuedMessages = []string{"preexisting", "during compaction"}
+	app.queuedMessages = promptDrafts("preexisting", "during compaction")
 	app.compacting = true
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 1}
 
@@ -534,7 +534,7 @@ func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
 	})
 
 	assert.Equal(t, "during compaction", app.composerBuffer.TextValue())
-	assert.Equal(t, []string{"preexisting"}, app.queuedMessages)
+	assert.Equal(t, []string{"preexisting"}, promptDraftTexts(app.queuedMessages))
 }
 
 func TestCompactFormattingHelpers(t *testing.T) {

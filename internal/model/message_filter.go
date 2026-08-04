@@ -25,6 +25,6 @@ func emptyMessage() database.MessageEntity {
 		Role:      "",
 		Content:   "",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}
 }

@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -68,7 +69,7 @@ func (app *App) renderMessageDetailed(width int, message chatMessage) cachedRend
 	case transcript.RoleAssistant:
 		panic("assistant message handled before role switch")
 	case transcript.RoleUser:
-		lines = app.renderUserMessage(width, message.Content)
+		lines = app.renderUserMessage(width, message.Content, derefAttachmentSummaries(message.Attachments))
 	case transcript.RoleToolResult, transcript.RoleBashExecution:
 		lines = app.renderToolMessage(width, message)
 	case transcript.RoleThinking:
@@ -84,9 +85,14 @@ func (app *App) renderMessageDetailed(width int, message chatMessage) cachedRend
 	return cachedRenderedMessage{Lines: lines, ListItems: []markdownListItemRange{}, Valid: true}
 }
 
-func (app *App) renderUserMessage(width int, content string) []tui.Line {
+func (app *App) renderUserMessage(width int, content string, attachments []attachmentSummary) []tui.Line {
 	innerWidth := max(1, width-messageBoxHorizontalPadding)
+
 	wrapped := tui.Wrap(content, innerWidth)
+	for _, item := range attachments {
+		wrapped = append(wrapped, tui.Truncate(attachmentSummaryText(item), innerWidth))
+	}
+
 	lines := make([]tui.Line, 0, len(wrapped)+defaultMessageExtraRows)
 
 	lines = append(lines,
@@ -115,7 +121,12 @@ func (app *App) renderQueuedMessages(width int) []tui.Line {
 		header := "queued follow-up " + tui.Int(index+1)
 
 		lines = append(lines, tui.NewLine(style.Bold(true), "  "+tui.PadRight(header, innerWidth)+"  "))
-		for _, line := range tui.Wrap(message, innerWidth) {
+		for _, line := range tui.Wrap(message.Text, innerWidth) {
+			lines = append(lines, tui.NewLine(style, "  "+tui.PadRight(line, innerWidth)+"  "))
+		}
+
+		for _, item := range *summarizeAttachments(message.Images) {
+			line := tui.Truncate(attachmentSummaryText(item), innerWidth)
 			lines = append(lines, tui.NewLine(style, "  "+tui.PadRight(line, innerWidth)+"  "))
 		}
 	}
@@ -123,6 +134,15 @@ func (app *App) renderQueuedMessages(width int) []tui.Line {
 	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
 
 	return lines
+}
+
+func attachmentSummaryText(item attachmentSummary) string {
+	format := strings.ToUpper(strings.TrimPrefix(item.MIMEType, "image/"))
+
+	return fmt.Sprintf(
+		"[image: %s · %s · %d×%d · %s]",
+		item.Name, format, item.Width, item.Height, formatByteSize(item.Size),
+	)
 }
 
 func (app *App) renderStreamingMessage(width int, content string) []tui.Line {

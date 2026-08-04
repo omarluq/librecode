@@ -12,6 +12,6 @@ func testMessageEntity(role database.Role, content string) database.MessageEntit
 		Role:      role,
 		Content:   content,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}
 }

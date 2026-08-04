@@ -39,6 +39,49 @@ DROP TABLE IF EXISTS workflow_agent_tasks;
 DROP TABLE IF EXISTS workflow_runs;
 `
 
+func TestMessagePartsMigrationUpDownAndOldSchemaUpgrade(t *testing.T) {
+	t.Parallel()
+
+	connection := newMigratedThroughVersion(t, 12)
+	ctx := context.Background()
+	assertSchemaObjectCount(ctx, t, connection, 0,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message_parts'`)
+
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+	_, err = provider.Up(ctx)
+	require.NoError(t, err)
+
+	assertSchemaObjectExists(ctx, t, connection,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message_parts'`)
+
+	const partsIndexQuery = `SELECT COUNT(*) FROM sqlite_master
+WHERE type = 'index' AND name = 'idx_session_message_parts_session_entry_sequence'`
+	assertSchemaObjectExists(ctx, t, connection, partsIndexQuery)
+
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	assertSchemaObjectCount(ctx, t, connection, 0,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message_parts'`)
+}
+
+func assertSchemaObjectCount(
+	ctx context.Context,
+	t *testing.T,
+	connection *sql.DB,
+	expected int,
+	query string,
+	args ...any,
+) {
+	t.Helper()
+
+	var count int
+	require.NoError(t, connection.QueryRowContext(ctx, query, args...).Scan(&count))
+	assert.Equal(t, expected, count)
+}
+
 func TestMigrateAddsCompactionOperationIdentityAfterPreviouslyDeployedVersionEleven(t *testing.T) {
 	t.Parallel()
 

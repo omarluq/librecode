@@ -115,7 +115,7 @@ func newUsageLedTestMessage(role database.Role, content string) database.Message
 		Role:      role,
 		Content:   content,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}
 }
 

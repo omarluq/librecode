@@ -167,8 +167,9 @@ func TestAnthropicMessagesAndRoles(t *testing.T) {
 	request := emptyCompletionRequest()
 	setTestRequestMessages(request, mixedReplayMessages())
 
-	converted := anthropicMessages(request.Request.Messages)
+	converted, err := anthropicMessages(request.Request.Messages)
 
+	require.NoError(t, err)
 	assert.Len(t, converted, 7)
 	assert.JSONEq(t, jsonString(jsonUserRole), jsonString(converted[0][jsonRoleKey]))
 	assert.JSONEq(t, jsonString(jsonAssistantRole), jsonString(converted[1][jsonRoleKey]))
@@ -176,6 +177,53 @@ func TestAnthropicMessagesAndRoles(t *testing.T) {
 	mapped, ok := anthropicRole(llm.RoleTool)
 	assert.False(t, ok)
 	assert.Empty(t, mapped)
+}
+
+func TestAnthropicMultipartPayloadShapes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		message llm.Message
+		want    []map[string]any
+	}{
+		{
+			name:    testImageWithText,
+			message: testImageMessage(),
+			want: []map[string]any{
+				{jsonTypeKey: jsonTextKey, jsonTextKey: testImagePrompt},
+				{jsonTypeKey: "image", "source": map[string]any{
+					jsonTypeKey: "base64", "media_type": testImageMIME, "data": testImageData,
+				}},
+			},
+		},
+		{
+			name:    testImageOnly,
+			message: testImageOnlyMessage(llm.RoleUser, testImageMIME, testImageData),
+			want: []map[string]any{{jsonTypeKey: "image", "source": map[string]any{
+				jsonTypeKey: "base64", "media_type": testImageMIME, "data": testImageData,
+			}}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			messages, err := anthropicMessages([]llm.Message{
+				test.message,
+				llm.TextMessage(llm.RoleAssistant, testAssistantReplay),
+				llm.TextMessage(llm.RoleTool, "tool output"),
+			})
+
+			require.NoError(t, err)
+			require.Len(t, messages, 2)
+			assert.Equal(t, test.want, messages[0][jsonContentKey])
+			assert.Equal(t, map[string]any{
+				jsonRoleKey: jsonAssistantRole, jsonContentKey: testAssistantReplay,
+			}, messages[1])
+		})
+	}
 }
 
 func TestAnthropicLocalToolNameFallbacks(t *testing.T) {

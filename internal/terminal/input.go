@@ -16,7 +16,31 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 	switch typedEvent := event.(type) {
 	case *tcell.EventResize:
 		return false, app.applyResizeEvent(ctx, typedEvent)
+	case *tcell.EventPaste:
+		if app.inspectingWhilePromptRuns() {
+			app.bracketedPaste = false
+			app.setStatus(readOnlyAgentInspectionStatus)
+
+			return false, nil
+		}
+
+		app.bracketedPaste = typedEvent.Start()
+
+		return false, nil
 	case *tcell.EventKey:
+		if app.bracketedPaste {
+			if app.inspectingWhilePromptRuns() {
+				app.bracketedPaste = false
+				app.setStatus(readOnlyAgentInspectionStatus)
+
+				return false, nil
+			}
+
+			app.insertPastedKey(typedEvent)
+
+			return false, nil
+		}
+
 		return app.handleKey(ctx, typedEvent)
 	case *tcell.EventMouse:
 		app.handleMouse(typedEvent)
@@ -53,6 +77,10 @@ type keyHandlingResult struct {
 func (app *App) handlePriorityKey(ctx context.Context, event *tcell.EventKey) keyHandlingResult {
 	if result := app.handleInspectionAndModalPriorityKey(ctx, event); result.handled || result.err != nil {
 		return result
+	}
+
+	if app.handleAttachmentKey(event) {
+		return keyHandlingResult{err: nil, shouldQuit: false, handled: true}
 	}
 
 	if app.handleAutocompletePriorityKey(event) {
@@ -166,7 +194,7 @@ func (app *App) handleInlineListsAndExtensionKey(
 }
 
 func (app *App) handleForceExitKey(event *tcell.EventKey) (handled, shouldQuit bool) {
-	if !app.keys.matches(event, actionForceExit) || !app.composerBuffer.Empty() {
+	if !app.keys.matches(event, actionForceExit) || !app.composerDraftEmpty() {
 		return false, false
 	}
 
@@ -258,9 +286,24 @@ func (app *App) handleFocusedAutocompleteKey(event *tcell.EventKey) bool {
 	return app.handleAutocompleteKey(event)
 }
 
+func (app *App) insertPastedKey(event *tcell.EventKey) {
+	if event.Key() == tcell.KeyRune {
+		app.composerBuffer.InsertRune(tui.EventRune(event))
+	}
+
+	if event.Key() == tcell.KeyEnter {
+		app.composerBuffer.InsertRune('\n')
+	}
+
+	if event.Key() == tcell.KeyTab {
+		app.composerBuffer.InsertRune('\t')
+	}
+}
+
 func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool, error) {
-	if app.keys.matches(event, actionInputClear) && !app.composerBuffer.Empty() {
+	if app.keys.matches(event, actionInputClear) && !app.composerDraftEmpty() {
 		app.composerBuffer.Clear()
+		app.composerImages = nil
 		app.resetPromptHistoryNavigation()
 		app.resetAutocompleteSelection()
 		app.escapePresses = 0

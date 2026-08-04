@@ -134,7 +134,7 @@ func newRuntimeContextTestMessage(role database.Role, content string) database.M
 		Role:      role,
 		Content:   content,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}
 }
 

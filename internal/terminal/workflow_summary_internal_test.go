@@ -130,7 +130,7 @@ func TestWorkflowFailureIsPushedIntoCompletedTurn(t *testing.T) {
 	assert.Contains(t, app.liveAgentCompletions[0].Content, "failed-run")
 	assert.Contains(t, app.liveAgentCompletions[0].Content, "compile failed")
 	require.Len(t, app.hiddenQueuedMessages, 1)
-	assert.Contains(t, app.hiddenQueuedMessages[0], "background workflow failed")
+	assert.Contains(t, app.hiddenQueuedMessages[0].Text, "background workflow failed")
 
 	app.refreshActiveWorkflows(t.Context())
 	assert.Len(t, app.liveAgentCompletions, 1, "failure must only be delivered once")
@@ -226,7 +226,7 @@ func TestWorkflowFailureNotificationFallbacksAndBusyBranches(t *testing.T) {
 			assert.Contains(t, app.liveAgentCompletions[0].Content, toolDisplayWorkflow)
 			assert.Contains(t, app.liveAgentCompletions[0].Content, "No error detail was returned.")
 			require.Len(t, app.hiddenQueuedMessages, 1)
-			assert.Contains(t, app.hiddenQueuedMessages[0], "background workflow failed")
+			assert.Contains(t, app.hiddenQueuedMessages[0].Text, "background workflow failed")
 		})
 	}
 }

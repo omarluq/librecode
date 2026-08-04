@@ -187,6 +187,7 @@ func newTestActivePrompt(cancel context.CancelFunc) *activePromptState {
 		ParentEntryID: nil,
 		SessionID:     "",
 		UserEntryID:   "",
+		Images:        nil,
 		Prompt:        interruptTestPrompt,
 		ID:            1,
 		Canceled:      false,

@@ -83,6 +83,13 @@ func newLuaValue(state *lua.LState, value any) luaValue {
 		return luaValue{value: stringMapToLuaTable(state, typedValue)}
 	case []any:
 		return luaValue{value: sliceToLuaTable(state, typedValue)}
+	case []map[string]any:
+		values := make([]any, len(typedValue))
+		for index := range typedValue {
+			values[index] = typedValue[index]
+		}
+
+		return luaValue{value: sliceToLuaTable(state, values)}
 	case []string:
 		return luaValue{value: stringSliceToLuaTable(state, typedValue)}
 	default:

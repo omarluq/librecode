@@ -27,7 +27,7 @@ func IsFacingRole(role database.Role) bool {
 
 // FacingMessage converts persisted summary roles into model-facing user messages.
 func FacingMessage(message *database.MessageEntity) database.MessageEntity {
-	converted := *message
+	converted := cloneMessage(message)
 	switch message.Role {
 	case database.RoleCompactionSummary:
 		converted.Role = database.RoleUser
@@ -49,5 +49,36 @@ func FacingMessage(message *database.MessageEntity) database.MessageEntity {
 
 // IsFacingMessage reports whether a persisted message has model-facing content.
 func IsFacingMessage(message *database.MessageEntity) bool {
-	return message != nil && IsFacingRole(message.Role) && strings.TrimSpace(message.Content) != ""
+	if message == nil || !IsFacingRole(message.Role) {
+		return false
+	}
+
+	if strings.TrimSpace(message.Content) != "" {
+		return true
+	}
+
+	for index := range message.Parts {
+		part := &message.Parts[index]
+		if part.Type == database.MessagePartImage && len(part.Data) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+func cloneMessage(message *database.MessageEntity) database.MessageEntity {
+	converted := *message
+	if message.Parts == nil {
+		return converted
+	}
+
+	converted.Parts = make([]database.MessagePartEntity, len(message.Parts))
+	copy(converted.Parts, message.Parts)
+
+	for index := range converted.Parts {
+		converted.Parts[index].Data = append([]byte(nil), message.Parts[index].Data...)
+	}
+
+	return converted
 }

@@ -39,7 +39,7 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 		Role:      database.RoleUser,
 		Content:   testHello,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}
 	firstEntry, err := repository.AppendMessage(ctx, createdSession.ID, nil, &firstMessage)
 	require.NoError(t, err)
@@ -50,7 +50,7 @@ func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 		Role:      database.RoleAssistant,
 		Content:   "hi",
 		Provider:  "local",
-		Model:     "librecode",
+		Model:     "librecode", Parts: nil,
 	}
 	secondEntry, err := repository.AppendMessage(ctx, createdSession.ID, &firstEntry.ID, &secondMessage)
 	require.NoError(t, err)
@@ -115,7 +115,7 @@ func TestSessionRepository_TranscriptMessagesHonorsDisplayMetadata(t *testing.T)
 		Role:      database.RoleUser,
 		Content:   testVisible,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}, &modelFacing, &visible)
 	require.NoError(t, err)
 	second, err := repository.AppendMessageWithDisplay(ctx, session.ID, &first.ID, &database.MessageEntity{
@@ -123,7 +123,7 @@ func TestSessionRepository_TranscriptMessagesHonorsDisplayMetadata(t *testing.T)
 		Role:      database.RoleAssistant,
 		Content:   "hidden",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}, &modelFacing, &hidden)
 	require.NoError(t, err)
 	_, err = repository.AppendMessage(ctx, session.ID, &second.ID, &database.MessageEntity{
@@ -131,7 +131,7 @@ func TestSessionRepository_TranscriptMessagesHonorsDisplayMetadata(t *testing.T)
 		Role:      database.RoleAssistant,
 		Content:   "default visible",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 
@@ -163,7 +163,7 @@ func TestSessionRepository_AppendMessageWithDisplayDefaultsIndependently(t *test
 	hidden := false
 	entry, err := repository.AppendMessageWithDisplay(ctx, session.ID, nil, &database.MessageEntity{
 		Timestamp: time.Time{}, Role: database.RoleUser, Content: "hidden but model-facing by role default",
-		Provider: "", Model: "",
+		Provider: "", Model: "", Parts: nil,
 	}, nil, &hidden)
 	require.NoError(t, err)
 	assert.False(t, entry.Display)
@@ -172,7 +172,7 @@ func TestSessionRepository_AppendMessageWithDisplayDefaultsIndependently(t *test
 	visible := true
 	entry, err = repository.AppendMessageWithDisplay(ctx, session.ID, &entry.ID, &database.MessageEntity{
 		Timestamp: time.Time{}, Role: database.RoleAssistant, Content: "shown",
-		Provider: "", Model: "",
+		Provider: "", Model: "", Parts: nil,
 	}, nil, &visible)
 	require.NoError(t, err)
 	assert.True(t, entry.Display)
@@ -193,7 +193,7 @@ func TestSessionRepository_TranscriptMessagesWrapsMalformedRows(t *testing.T) {
 	require.NoError(t, err)
 	_, err = repository.AppendMessage(context.Background(), session.ID, nil, &database.MessageEntity{
 		Timestamp: time.Time{}, Role: database.RoleUser, Content: "malformed",
-		Provider: "", Model: "",
+		Provider: "", Model: "", Parts: nil,
 	})
 	require.NoError(t, err)
 	_, err = connection.ExecContext(context.Background(), `UPDATE session_messages SET created_at = 'invalid'`)
@@ -248,7 +248,7 @@ func TestSessionRepository_AppendMessagePreservesInputTimestamp(t *testing.T) {
 				Role:      database.RoleUser,
 				Content:   testHello,
 				Provider:  "",
-				Model:     "",
+				Model:     "", Parts: nil,
 			}
 			expectedTimestamp := testCase.timestamp.UTC()
 

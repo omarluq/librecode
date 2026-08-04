@@ -332,7 +332,7 @@ func validSessionEntity(entityID string, now time.Time) SessionEntity {
 
 func validEntryEntity(entityID string, now time.Time) EntryEntity {
 	return EntryEntity{CreatedAt: now, ParentID: nil, Message: MessageEntity{Timestamp: time.Time{}, Role: "",
-		Content: "", Provider: "", Model: ""}, Summary: "", ToolStatus: "",
+		Content: "", Provider: "", Model: "", Parts: nil}, Summary: "", ToolStatus: "",
 		Type: EntryTypeMessage, CustomType: "", DataJSON: `{}`, ID: entityID, ToolName: "", SessionID: entityID,
 		ToolArgsJSON: "", BranchFromEntryID: "", CompactionFirstKeptEntryID: "", CompactionTokensBefore: 0,
 		TokenEstimate: 0, Display: false, ModelFacing: false}
@@ -340,7 +340,7 @@ func validEntryEntity(entityID string, now time.Time) EntryEntity {
 
 func validMessageEntity(entityID string, now time.Time) SessionMessageEntity {
 	return SessionMessageEntity{CreatedAt: now, ID: entityID, SessionID: entityID, EntryID: entityID,
-		Sender: string(RoleUser), Role: RoleUser, Content: "", Provider: "", Model: ""}
+		Sender: string(RoleUser), Role: RoleUser, Content: "", Provider: "", Model: "", Parts: nil}
 }
 
 func validTaskEntity(entityID string, now time.Time) TaskEntity {

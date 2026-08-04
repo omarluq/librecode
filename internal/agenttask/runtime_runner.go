@@ -72,7 +72,7 @@ func (runner *RuntimeRunner) Run(
 		},
 		OnRetry: nil, OnUserEntry: nil, ParentEntryID: nil,
 		SessionID: task.ChildSessionID, CWD: session.CWD, Text: task.Prompt,
-		Name: "", ResumeLatest: false, HideUserPrompt: false,
+		Images: nil, Name: "", ResumeLatest: false, HideUserPrompt: false,
 	})
 	usageJSON, usageErr := agentUsageJSON(response, metrics.Snapshot())
 

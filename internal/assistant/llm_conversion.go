@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"encoding/base64"
 	"strings"
 
 	"github.com/samber/lo"
@@ -47,7 +48,7 @@ func llmMessagesFromDatabase(messages []database.MessageEntity) []llm.Message {
 }
 
 func llmMessageFromDatabase(message *database.MessageEntity) (llm.Message, bool) {
-	if message == nil || strings.TrimSpace(message.Content) == "" {
+	if message == nil {
 		return emptyLLMMessage(), false
 	}
 
@@ -56,7 +57,37 @@ func llmMessageFromDatabase(message *database.MessageEntity) (llm.Message, bool)
 		return emptyLLMMessage(), false
 	}
 
-	return llm.TextMessage(role, message.Content), true
+	parts := llmPartsFromDatabase(message.Parts)
+
+	if len(parts) == 0 && strings.TrimSpace(message.Content) != "" {
+		parts = append(parts, llm.TextPart(message.Content))
+	}
+
+	if len(parts) == 0 {
+		return emptyLLMMessage(), false
+	}
+
+	return llm.Message{Metadata: nil, Role: role, Content: parts}, true
+}
+
+func llmPartsFromDatabase(databaseParts []database.MessagePartEntity) []llm.Part {
+	parts := make([]llm.Part, 0, len(databaseParts))
+	for index := range databaseParts {
+		part := &databaseParts[index]
+		if part.Type == database.MessagePartText && strings.TrimSpace(part.Text) != "" {
+			parts = append(parts, llm.TextPart(part.Text))
+		}
+
+		if part.Type == database.MessagePartImage && len(part.Data) != 0 {
+			parts = append(parts, llm.Part{
+				Metadata: imagePartMetadata(part.Name, part.Width, part.Height),
+				ToolCall: nil, ToolResult: nil, Type: llm.PartImage, Text: "",
+				Data: base64.StdEncoding.EncodeToString(part.Data), MIMEType: part.MIMEType,
+			})
+		}
+	}
+
+	return parts
 }
 
 func emptyLLMMessage() llm.Message {

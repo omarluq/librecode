@@ -67,7 +67,7 @@ func TestApplySessionSelectionAddsMessageAfterSuccessfulLoad(t *testing.T) {
 		Role:      database.RoleAssistant,
 		Content:   interruptTestPrompt,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	if err != nil {
 		t.Fatalf("append message: %v", err)

@@ -193,7 +193,7 @@ func assertSubmitCase(
 	assert.Equal(t, testCase.wantMode, app.mode)
 	assert.Equal(t, testCase.wantComposerText, app.composerBuffer.TextValue())
 	assert.Len(t, app.promptHistory, testCase.wantPromptHistory)
-	assertQueuedMessages(t, testCase.wantQueued, app.queuedMessages)
+	assertQueuedMessages(t, testCase.wantQueued, promptDraftTexts(app.queuedMessages))
 	assert.Equal(t, testCase.wantRequest, client.request != nil)
 }
 
@@ -217,7 +217,7 @@ func TestSendPromptQueuesWhenWorking(t *testing.T) {
 
 	app.sendPrompt(context.Background(), testQueuedPromptText)
 
-	assert.Equal(t, []string{testQueuedPromptText}, app.queuedMessages)
+	assert.Equal(t, []string{testQueuedPromptText}, promptDraftTexts(app.queuedMessages))
 	assert.Nil(t, app.activePrompt)
 }
 
@@ -249,6 +249,33 @@ func TestSendPromptInitializesPromptState(t *testing.T) {
 	assert.True(t, app.working)
 	require.NotNil(t, app.activePrompt)
 	assert.Equal(t, promptSendTestText, app.activePrompt.Prompt)
+}
+
+func TestSubmitImageOnlyDraftSendsImagePart(t *testing.T) {
+	t.Parallel()
+
+	client := newTerminalPromptClient(newTerminalCompletionResult("assistant response"), nil)
+	app := newPromptSendTestApp(t, client)
+	imageData := testPNG(t, 2, 3)
+	app.composerImages = []imageAttachment{{
+		Name: "paste-1.png", MIMEType: clipboardImageMIME, Data: imageData, Width: 2, Height: 3,
+	}}
+
+	shouldQuit, err := app.submit(t.Context())
+	require.NoError(t, err)
+	assert.False(t, shouldQuit)
+	assert.True(t, app.composerDraftEmpty())
+	require.NotNil(t, app.activePrompt)
+	require.Len(t, app.activePrompt.Images, 1)
+	assert.Equal(t, imageData, app.activePrompt.Images[0].Data)
+
+	request := waitForPromptRequest(t, client)
+	require.NotEmpty(t, request.Messages)
+	userMessage := request.Messages[len(request.Messages)-1]
+	assert.Empty(t, userMessage.Content)
+	require.Len(t, userMessage.Parts, 1)
+	assert.Equal(t, database.MessagePartImage, userMessage.Parts[0].Type)
+	assert.Equal(t, imageData, userMessage.Parts[0].Data)
 }
 
 func TestRunPromptPostsDoneAndError(t *testing.T) {
@@ -288,6 +315,7 @@ func TestRunPromptPostsDoneAndError(t *testing.T) {
 				ParentEntryID:  nil,
 				SessionID:      "",
 				CWD:            app.cwd,
+				Images:         nil,
 				Text:           promptSendTestText,
 				Name:           "",
 				ResumeLatest:   false,
@@ -395,7 +423,7 @@ func promptSendTestModelDefinition() model.Model {
 		Name:             promptSendTestModel,
 		API:              "openai-completions",
 		BaseURL:          "https://example.invalid/v1",
-		Input:            []model.InputMode{model.InputText},
+		Input:            []model.InputMode{model.InputText, model.InputImage},
 		Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
 		ContextWindow:    1000,
 		MaxTokens:        0,

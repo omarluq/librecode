@@ -12,7 +12,11 @@ func (client *HTTPCompletionClient) completeOpenAIResponses(
 	ctx context.Context,
 	request *CompletionRequest,
 ) (*llm.Response, error) {
-	input := openAIResponseInput(request.Request.Messages)
+	input, err := openAIResponseInput(request.Request.Messages)
+	if err != nil {
+		return nil, err
+	}
+
 	endpoint := joinEndpoint(request.Request.Model.BaseURL, "/responses")
 
 	return client.completeResponsesLoop(ctx, request, endpoint, openAIHeaders(request), input)
@@ -22,10 +26,27 @@ func (client *HTTPCompletionClient) completeOpenAICodex(
 	ctx context.Context,
 	request *CompletionRequest,
 ) (*llm.Response, error) {
-	input := openAIResponseInput(compactResponseMessages(request.Request.Messages))
+	messages, err := compactCodexResponseMessages(request.Request.Messages)
+	if err != nil {
+		return nil, err
+	}
+
+	input, err := openAIResponseInput(messages)
+	if err != nil {
+		return nil, err
+	}
+
 	endpoint := joinEndpoint(request.Request.Model.BaseURL, "/codex/responses")
 
 	return client.completeResponsesLoop(ctx, request, endpoint, codexHeaders(request), input)
+}
+
+func compactCodexResponseMessages(messages []llm.Message) ([]llm.Message, error) {
+	if err := validateImageMessages(messages); err != nil {
+		return nil, err
+	}
+
+	return compactResponseMessages(messages), nil
 }
 
 func (client *HTTPCompletionClient) completeResponsesLoop(

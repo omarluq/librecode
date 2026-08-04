@@ -37,6 +37,7 @@ func (runtime *Runtime) respond(
 	lineage *promptLineage,
 	cwd string,
 	prompt string,
+	hasImages bool,
 	onEvent func(StreamEvent),
 	onRetry RetryEventHandler,
 ) (
@@ -44,7 +45,7 @@ func (runtime *Runtime) respond(
 	cached bool,
 	err error,
 ) {
-	if strings.HasPrefix(prompt, slashPrefix) {
+	if strings.HasPrefix(strings.TrimSpace(prompt), slashPrefix) {
 		slashResponse, slashToolEvents, slashErr := runtime.respondToSlashCommand(ctx, cwd, prompt, onEvent)
 
 		return &responseBundle{
@@ -57,6 +58,21 @@ func (runtime *Runtime) respond(
 	}
 
 	cacheKey := runtime.cacheKey(sessionID, prompt)
+
+	contextHasImages, contextErr := runtime.promptContextContainsImages(ctx, sessionID, lineage)
+	if contextErr != nil {
+		return nil, false, contextErr
+	}
+
+	if hasImages || contextHasImages {
+		// Image bytes deliberately stay out of cache keys; prompts with image-bearing
+		// context always execute against their durable multipart history.
+		imageBundle, modelErr := runtime.modelResponse(
+			ctx, sessionID, lineage, cwd, prompt, contextHasImages, onEvent, onRetry,
+		)
+
+		return imageBundle, false, modelErr
+	}
 
 	cachedResponse, found, err := runtime.cache.Get(cacheKey)
 	if err != nil {
@@ -73,7 +89,7 @@ func (runtime *Runtime) respond(
 		}, true, nil
 	}
 
-	bundle, err = runtime.modelResponse(ctx, sessionID, lineage, cwd, prompt, onEvent, onRetry)
+	bundle, err = runtime.modelResponse(ctx, sessionID, lineage, cwd, prompt, false, onEvent, onRetry)
 	if err != nil {
 		return nil, false, err
 	}
@@ -89,6 +105,7 @@ func (runtime *Runtime) modelResponse(
 	lineage *promptLineage,
 	cwd string,
 	prompt string,
+	contextHasImages bool,
 	onEvent func(StreamEvent),
 	onRetry RetryEventHandler,
 ) (*responseBundle, error) {
@@ -99,6 +116,13 @@ func (runtime *Runtime) modelResponse(
 	selectedModel, err := runtime.selectedModel()
 	if err != nil {
 		return nil, err
+	}
+
+	if contextHasImages {
+		imageErr := validateSelectedModelHasImageInput(&selectedModel, "conversation_history")
+		if imageErr != nil {
+			return nil, imageErr
+		}
 	}
 
 	auth := runtime.models.RequestAuthContext(ctx, selectedModel.Provider)
@@ -122,6 +146,13 @@ func (runtime *Runtime) modelResponse(
 	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(ctx, preparation)
 	if err != nil {
 		return nil, err
+	}
+
+	if contextImageErr := validateModelContextImageInput(
+		&selectedModel,
+		build.Request.Messages,
+	); contextImageErr != nil {
+		return nil, contextImageErr
 	}
 
 	build, compactionEntry, result, err := runtime.completeWithProviderOverflowRecovery(
@@ -387,6 +418,23 @@ func (runtime *Runtime) thinkingLevel() string {
 	}
 
 	return runtime.cfg.Assistant.ThinkingLevel
+}
+
+func (runtime *Runtime) promptContextContainsImages(
+	ctx context.Context,
+	sessionID string,
+	lineage *promptLineage,
+) (bool, error) {
+	if lineage == nil || strings.TrimSpace(lineage.activeParentEntryID) == "" {
+		return false, nil
+	}
+
+	contextEntity, err := runtime.modelContextEntityFrom(ctx, sessionID, lineage.activeParentEntryID)
+	if err != nil {
+		return false, err
+	}
+
+	return messagesContainImages(contextEntity.Messages), nil
 }
 
 func (runtime *Runtime) cacheKey(sessionID, prompt string) string {

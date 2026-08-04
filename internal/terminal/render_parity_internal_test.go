@@ -314,7 +314,7 @@ func appendRenderParityMessage(
 		Role:      role,
 		Content:   content,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	requireNoError(t, err)
 

@@ -110,11 +110,32 @@ func TestIsFacingMessageHandlesNilAndBlankContent(t *testing.T) {
 	blank := testMessage(database.RoleUser, " \n\t ")
 	toolResult := testMessage(database.RoleToolResult, "visible text")
 	user := testMessage(database.RoleUser, "visible text")
+	imageOnly := testMessage(database.RoleUser, "")
+	imageOnly.Parts = []database.MessagePartEntity{{
+		Text: "", MIMEType: "image/png", Name: "", Type: database.MessagePartImage,
+		Data: []byte{1}, Width: 1, Height: 1,
+	}}
 
 	assert.False(t, model.IsFacingMessage(nil))
 	assert.False(t, model.IsFacingMessage(&blank))
 	assert.False(t, model.IsFacingMessage(&toolResult))
 	assert.True(t, model.IsFacingMessage(&user))
+	assert.True(t, model.IsFacingMessage(&imageOnly))
+}
+
+func TestFacingMessageDeepCopiesImageData(t *testing.T) {
+	t.Parallel()
+
+	message := testMessage(database.RoleUser, "")
+	message.Parts = []database.MessagePartEntity{{
+		Text: "", MIMEType: "image/png", Name: "", Type: database.MessagePartImage,
+		Data: []byte{1, 2}, Width: 1, Height: 1,
+	}}
+
+	converted := model.FacingMessage(&message)
+	converted.Parts[0].Data[0] = 9
+
+	assert.Equal(t, byte(1), message.Parts[0].Data[0])
 }
 
 func testMessage(role database.Role, content string) database.MessageEntity {
@@ -123,6 +144,6 @@ func testMessage(role database.Role, content string) database.MessageEntity {
 		Role:      role,
 		Content:   content,
 		Provider:  "provider",
-		Model:     "model",
+		Model:     "model", Parts: nil,
 	}
 }

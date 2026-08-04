@@ -117,7 +117,7 @@ func appendSessionMessage(t *testing.T, app *App, sessionID string, role databas
 		Role:      role,
 		Content:   content,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 }

@@ -108,7 +108,7 @@ func TestApplyPromptResponseAddsAssistantAndProcessesQueue(t *testing.T) {
 	client := newTerminalPromptClient(newTerminalCompletionResult("queued response"), nil)
 	app := newPromptSendTestApp(t, client)
 	app.activePrompt = newTestActivePrompt(nil)
-	app.queuedMessages = []string{asyncTestQueuedText}
+	app.queuedMessages = promptDrafts(asyncTestQueuedText)
 
 	app.applyPromptResponse(context.Background(), newTestPromptResponse("assistant response"), app.activePrompt.ID)
 
