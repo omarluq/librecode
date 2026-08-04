@@ -98,34 +98,12 @@ func openAIResponseUserContent(message llm.Message) []map[string]any {
 }
 
 func openAIChatUserContent(message llm.Message) any {
-	hasImage := false
-	for index := range message.Content {
-		hasImage = hasImage || message.Content[index].Type == llm.PartImage
-	}
-
-	if !hasImage {
-		return messageText(message)
-	}
-
-	blocks := make([]map[string]any, 0, len(message.Content))
-	for index := range message.Content {
-		part := &message.Content[index]
-		switch part.Type {
-		case llm.PartText:
-			if part.Text != "" {
-				blocks = append(blocks, map[string]any{jsonTypeKey: jsonTextKey, jsonTextKey: part.Text})
-			}
-		case llm.PartImage:
-			blocks = append(blocks, map[string]any{
-				jsonTypeKey:     jsonImageURLKey,
-				jsonImageURLKey: map[string]any{jsonImageURLValueKey: openAIDataURL(part)},
-			})
-		case llm.PartReasoning, llm.PartFile, llm.PartSource, llm.PartToolCall, llm.PartToolResult:
-			continue
+	return structuredUserContent(message, func(part *llm.Part) map[string]any {
+		return map[string]any{
+			jsonTypeKey:     jsonImageURLKey,
+			jsonImageURLKey: map[string]any{jsonImageURLValueKey: openAIDataURL(part)},
 		}
-	}
-
-	return blocks
+	})
 }
 
 func emptyMessageContent(content any) bool {
@@ -140,6 +118,14 @@ func emptyMessageContent(content any) bool {
 }
 
 func anthropicUserContent(message llm.Message) any {
+	return structuredUserContent(message, func(part *llm.Part) map[string]any {
+		return map[string]any{jsonTypeKey: anthropicImageType, anthropicSourceKey: map[string]any{
+			jsonTypeKey: anthropicBase64Type, anthropicMediaTypeKey: part.MIMEType, encodedImageDataKey: part.Data,
+		}}
+	})
+}
+
+func structuredUserContent(message llm.Message, imageBlock func(*llm.Part) map[string]any) any {
 	hasImage := false
 	for index := range message.Content {
 		hasImage = hasImage || message.Content[index].Type == llm.PartImage
@@ -158,9 +144,7 @@ func anthropicUserContent(message llm.Message) any {
 				blocks = append(blocks, map[string]any{jsonTypeKey: jsonTextKey, jsonTextKey: part.Text})
 			}
 		case llm.PartImage:
-			blocks = append(blocks, map[string]any{jsonTypeKey: anthropicImageType, anthropicSourceKey: map[string]any{
-				jsonTypeKey: anthropicBase64Type, anthropicMediaTypeKey: part.MIMEType, encodedImageDataKey: part.Data,
-			}})
+			blocks = append(blocks, imageBlock(part))
 		case llm.PartReasoning, llm.PartFile, llm.PartSource, llm.PartToolCall, llm.PartToolResult:
 			continue
 		}

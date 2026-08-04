@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,7 +13,10 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
-const deployedWorkflowMigrationV8 = `-- +goose Up
+const (
+	schemaIndexType = "index"
+
+	deployedWorkflowMigrationV8 = `-- +goose Up
 CREATE TABLE workflow_runs (
     task_id TEXT PRIMARY KEY,
     source TEXT NOT NULL,
@@ -38,6 +42,7 @@ CREATE INDEX idx_workflow_agent_tasks_replay
 DROP TABLE IF EXISTS workflow_agent_tasks;
 DROP TABLE IF EXISTS workflow_runs;
 `
+)
 
 func TestMessagePartsMigrationUpDownAndOldSchemaUpgrade(t *testing.T) {
 	t.Parallel()
@@ -65,6 +70,24 @@ func TestMessagePartsMigrationUpDownAndOldSchemaUpgrade(t *testing.T) {
 			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, indexName)
 	}
 
+	repository := database.NewSessionRepository(connection)
+	session, err := repository.CreateSession(ctx, "/work", "parts constraints", "")
+	require.NoError(t, err)
+	entry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: testMessageText,
+		Provider: "", Model: "", Parts: nil,
+	})
+	require.NoError(t, err)
+
+	_, err = connection.ExecContext(ctx, `
+INSERT INTO session_message_parts (id, session_id, entry_id, sequence, type, text)
+VALUES (NULL, ?, ?, 1, 'text', 'invalid')`, session.ID, entry.ID)
+	require.ErrorContains(t, err, "NOT NULL constraint failed")
+	_, err = connection.ExecContext(ctx, `
+INSERT INTO session_message_parts (id, session_id, entry_id, sequence, type, text)
+VALUES ('fractional-sequence', ?, ?, 1.5, 'text', 'invalid')`, session.ID, entry.ID)
+	require.ErrorContains(t, err, "CHECK constraint failed")
+
 	_, err = provider.Down(ctx)
 	require.NoError(t, err)
 	assertSchemaObjectExists(ctx, t, connection,
@@ -78,6 +101,70 @@ WHERE type = 'index' AND name = 'idx_session_message_parts_session_entry_image'`
 	require.NoError(t, err)
 	assertSchemaObjectCount(ctx, t, connection, 0,
 		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message_parts'`)
+}
+
+func TestMessagePartsMigrationRejectsPreexistingSchemaObjects(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		setup      string
+		objectType string
+		objectName string
+	}{
+		{
+			name:       "index",
+			setup:      `CREATE INDEX idx_session_entries_id_session ON session_entries(session_id)`,
+			objectType: schemaIndexType,
+			objectName: "idx_session_entries_id_session",
+		},
+		{
+			name:       "table",
+			setup:      `CREATE TABLE session_message_parts (sentinel TEXT NOT NULL)`,
+			objectType: "table",
+			objectName: "session_message_parts",
+		},
+		{
+			name: "image index",
+			setup: `
+CREATE UNIQUE INDEX idx_session_entries_id_session ON session_entries(id, session_id);
+CREATE TABLE session_message_parts (
+    id TEXT NOT NULL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    entry_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    type TEXT NOT NULL
+);
+CREATE INDEX idx_session_message_parts_session_entry_sequence
+    ON session_message_parts(session_id, entry_id, sequence);
+INSERT INTO goose_db_version (version_id, is_applied) VALUES (13, 1);
+CREATE INDEX idx_session_message_parts_session_entry_image
+    ON session_message_parts(entry_id)`,
+			objectType: schemaIndexType,
+			objectName: "idx_session_message_parts_session_entry_image",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			connection := newMigratedThroughVersion(t, 12)
+			ctx := context.Background()
+			_, err := connection.ExecContext(ctx, test.setup)
+			require.NoError(t, err)
+
+			migrationRoot, migrationErr := database.MigrationFS()
+			require.NoError(t, migrationErr)
+			provider, migrationErr := database.NewMigrationProvider(connection, migrationRoot)
+			require.NoError(t, migrationErr)
+			_, migrationErr = provider.Up(ctx)
+			require.Error(t, migrationErr)
+
+			assertSchemaObjectExists(ctx, t, connection,
+				`SELECT COUNT(*) FROM sqlite_master WHERE type = ? AND name = ?`,
+				test.objectType, test.objectName)
+		})
+	}
 }
 
 func assertSchemaObjectCount(

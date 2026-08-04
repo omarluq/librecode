@@ -92,26 +92,7 @@ WHERE session_id = ?
 ORDER BY created_at DESC
 LIMIT 1`, entrySelectColumns)
 
-	var row entryRow
-	if err := repository.sql.QueryOne(ctx, &row, query, sessionID); err != nil {
-		if errors.Is(err, ksql.ErrRecordNotFound) {
-			return nil, false, nil
-		}
-
-		return nil, false, oops.In("database").Code("leaf_entry").Wrapf(err, "load leaf entry")
-	}
-
-	entry, err := entryFromRow(&row)
-	if err != nil {
-		return nil, false, oops.In("database").Code("scan_entry").Wrapf(err, "scan leaf entry")
-	}
-
-	entries := []EntryEntity{*entry}
-	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
-		return nil, false, err
-	}
-
-	return &entries[0], true, nil
+	return repository.queryEntry(ctx, sessionID, query, "leaf_entry", "load leaf entry", sessionID)
 }
 
 // Entries returns all entries for a session in append order.
@@ -146,13 +127,24 @@ SELECT %s
 FROM session_entries
 WHERE session_id = ? AND id = ?`, entrySelectColumns)
 
+	return repository.queryEntry(ctx, sessionID, query, "get_entry", "load entry", sessionID, entryID)
+}
+
+func (repository *SessionRepository) queryEntry(
+	ctx context.Context,
+	sessionID string,
+	query string,
+	queryCode string,
+	queryMessage string,
+	arguments ...any,
+) (*EntryEntity, bool, error) {
 	var row entryRow
-	if err := repository.sql.QueryOne(ctx, &row, query, sessionID, entryID); err != nil {
+	if err := repository.sql.QueryOne(ctx, &row, query, arguments...); err != nil {
 		if errors.Is(err, ksql.ErrRecordNotFound) {
 			return nil, false, nil
 		}
 
-		return nil, false, oops.In("database").Code("get_entry").Wrapf(err, "load entry")
+		return nil, false, oops.In("database").Code(queryCode).Wrapf(err, "%s", queryMessage)
 	}
 
 	entry, err := entryFromRow(&row)
@@ -160,12 +152,11 @@ WHERE session_id = ? AND id = ?`, entrySelectColumns)
 		return nil, false, oops.In("database").Code("scan_entry").Wrapf(err, "scan entry")
 	}
 
-	entries := []EntryEntity{*entry}
-	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+	if err := repository.hydrateEntryMessage(ctx, sessionID, entry); err != nil {
 		return nil, false, err
 	}
 
-	return &entries[0], true, nil
+	return entry, true, nil
 }
 
 // DeleteEntryBranch removes an entry and all descendants from one session.
