@@ -21,6 +21,17 @@ type promptLineage struct {
 	activeParentEntryID string
 }
 
+type responseInput struct {
+	lineage          *promptLineage
+	onEvent          func(StreamEvent)
+	onRetry          RetryEventHandler
+	sessionID        string
+	cwd              string
+	prompt           string
+	hasPromptImages  bool
+	contextHasImages bool
+}
+
 func newPromptLineage(userEntryID string) *promptLineage {
 	return &promptLineage{activeParentEntryID: userEntryID}
 }
@@ -33,24 +44,18 @@ func (lineage *promptLineage) adopt(entry *database.EntryEntity) {
 
 func (runtime *Runtime) respond(
 	ctx context.Context,
-	sessionID string,
-	lineage *promptLineage,
-	cwd string,
-	prompt string,
-	hasImages bool,
-	onEvent func(StreamEvent),
-	onRetry RetryEventHandler,
+	input *responseInput,
 ) (
 	bundle *responseBundle,
 	cached bool,
 	err error,
 ) {
-	if strings.HasPrefix(strings.TrimSpace(prompt), slashPrefix) {
+	if strings.HasPrefix(strings.TrimSpace(input.prompt), slashPrefix) {
 		slashResponse, slashToolEvents, slashErr := runtime.respondToSlashCommand(
 			ctx,
-			cwd,
-			strings.TrimSpace(prompt),
-			onEvent,
+			input.cwd,
+			strings.TrimSpace(input.prompt),
+			input.onEvent,
 		)
 
 		return &responseBundle{
@@ -62,19 +67,18 @@ func (runtime *Runtime) respond(
 		}, false, slashErr
 	}
 
-	cacheKey := runtime.cacheKey(sessionID, prompt)
+	cacheKey := runtime.cacheKey(input.sessionID, input.prompt)
 
-	contextHasImages, contextErr := runtime.promptContextContainsImages(ctx, sessionID, lineage)
+	contextHasImages, contextErr := runtime.promptContextContainsImages(ctx, input.sessionID, input.lineage)
 	if contextErr != nil {
 		return nil, false, contextErr
 	}
 
-	if hasImages || contextHasImages {
+	if input.hasPromptImages || contextHasImages {
 		// Image bytes deliberately stay out of cache keys; prompts with image-bearing
 		// context always execute against their durable multipart history.
-		imageBundle, modelErr := runtime.modelResponse(
-			ctx, sessionID, lineage, cwd, prompt, contextHasImages, onEvent, onRetry,
-		)
+		input.contextHasImages = contextHasImages
+		imageBundle, modelErr := runtime.modelResponse(ctx, input)
 
 		return imageBundle, false, modelErr
 	}
@@ -94,7 +98,9 @@ func (runtime *Runtime) respond(
 		}, true, nil
 	}
 
-	bundle, err = runtime.modelResponse(ctx, sessionID, lineage, cwd, prompt, false, onEvent, onRetry)
+	input.contextHasImages = false
+
+	bundle, err = runtime.modelResponse(ctx, input)
 	if err != nil {
 		return nil, false, err
 	}
@@ -106,13 +112,7 @@ func (runtime *Runtime) respond(
 
 func (runtime *Runtime) modelResponse(
 	ctx context.Context,
-	sessionID string,
-	lineage *promptLineage,
-	cwd string,
-	prompt string,
-	contextHasImages bool,
-	onEvent func(StreamEvent),
-	onRetry RetryEventHandler,
+	input *responseInput,
 ) (*responseBundle, error) {
 	if runtime.models == nil {
 		return nil, oops.In("assistant").Code("models_unavailable").Errorf("model registry is not configured")
@@ -123,7 +123,7 @@ func (runtime *Runtime) modelResponse(
 		return nil, err
 	}
 
-	if contextHasImages {
+	if input.contextHasImages {
 		// Keep this early check: historical images are known before auth and context
 		// construction, so an incompatible model should fail without doing either.
 		imageErr := validateSelectedModelHasImageInput(&selectedModel, "conversation_history")
@@ -141,13 +141,13 @@ func (runtime *Runtime) modelResponse(
 	}
 
 	preparation := &completionRequestPreparationInput{
-		sessionID:     sessionID,
-		cwd:           cwd,
-		prompt:        prompt,
-		lineage:       lineage,
+		sessionID:     input.sessionID,
+		cwd:           input.cwd,
+		prompt:        input.prompt,
+		lineage:       input.lineage,
 		selectedModel: &selectedModel,
 		auth:          &auth,
-		onEvent:       onEvent,
+		onEvent:       input.onEvent,
 	}
 
 	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(ctx, preparation)
@@ -168,7 +168,7 @@ func (runtime *Runtime) modelResponse(
 			preparation:     preparation,
 			build:           build,
 			compactionEntry: compactionEntry,
-			onRetry:         onRetry,
+			onRetry:         input.onRetry,
 		},
 	)
 	if err != nil {
@@ -176,9 +176,9 @@ func (runtime *Runtime) modelResponse(
 	}
 
 	usage := contextwindow.MergeUsage(build.Context.Usage, result.Usage)
-	runtime.emitUsage(ctx, onEvent, usage)
+	runtime.emitUsage(ctx, input.onEvent, usage)
 
-	lineage.adopt(compactionEntry)
+	input.lineage.adopt(compactionEntry)
 
 	return &responseBundle{
 		Text:        result.Text,

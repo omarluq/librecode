@@ -106,16 +106,16 @@ func (runtime *Runtime) respondWithPartialProgress(
 ) (*responseBundle, bool, error) {
 	progress := newPartialPromptProgress(request.OnEvent)
 
-	bundle, cached, err := runtime.respond(
-		ctx,
-		sessionID,
-		lineage,
-		request.CWD,
-		request.Text,
-		len(request.Images) > 0,
-		progress.handle,
-		progress.retryHandler(request.OnRetry),
-	)
+	bundle, cached, err := runtime.respond(ctx, &responseInput{
+		lineage:          lineage,
+		onEvent:          progress.handle,
+		onRetry:          progress.retryHandler(request.OnRetry),
+		sessionID:        sessionID,
+		cwd:              request.CWD,
+		prompt:           request.Text,
+		hasPromptImages:  len(request.Images) > 0,
+		contextHasImages: false,
+	})
 	if err != nil {
 		persistErr := runtime.appendPartialPromptFailure(
 			ctx,

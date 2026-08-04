@@ -202,6 +202,8 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 	message := request.Messages[len(request.Messages)-1]
 	assert.Equal(t, "queued after compact", message.Content)
 	require.Len(t, message.Parts, 2)
+	assert.Equal(t, database.MessagePartText, message.Parts[0].Type)
+	assert.Equal(t, "queued after compact", message.Parts[0].Text)
 	assert.Equal(t, database.MessagePartImage, message.Parts[1].Type)
 	assert.Equal(t, image.Name, message.Parts[1].Name)
 	assert.Equal(t, image.MIMEType, message.Parts[1].MIMEType)

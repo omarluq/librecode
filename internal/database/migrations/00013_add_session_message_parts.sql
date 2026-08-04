@@ -1,12 +1,12 @@
 -- +goose Up
-CREATE UNIQUE INDEX IF NOT EXISTS idx_session_entries_id_session
+CREATE UNIQUE INDEX idx_session_entries_id_session
     ON session_entries(id, session_id);
 
-CREATE TABLE IF NOT EXISTS session_message_parts (
-    id TEXT PRIMARY KEY,
+CREATE TABLE session_message_parts (
+    id TEXT NOT NULL PRIMARY KEY,
     session_id TEXT NOT NULL,
     entry_id TEXT NOT NULL,
-    sequence INTEGER NOT NULL CHECK(sequence >= 0),
+    sequence INTEGER NOT NULL CHECK(typeof(sequence) = 'integer' AND sequence >= 0),
     type TEXT NOT NULL CHECK(type IN ('text', 'image')),
     text TEXT NOT NULL DEFAULT '',
     mime_type TEXT NOT NULL DEFAULT '',
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS session_message_parts (
     UNIQUE (entry_id, sequence)
 );
 
-CREATE INDEX IF NOT EXISTS idx_session_message_parts_session_entry_sequence
+CREATE INDEX idx_session_message_parts_session_entry_sequence
     ON session_message_parts(session_id, entry_id, sequence);
 
 -- +goose Down

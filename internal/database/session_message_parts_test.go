@@ -12,7 +12,11 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
-const testImageMIME = "image/png"
+const (
+	testImageMIME     = "image/png"
+	testMessageText   = "text"
+	testMultipartText = "compare these"
+)
 
 func TestSessionRepository_RoundTripsOrderedMultipartMessages(t *testing.T) {
 	t.Parallel()
@@ -24,7 +28,10 @@ func TestSessionRepository_RoundTripsOrderedMultipartMessages(t *testing.T) {
 
 	originalData := []byte{1, 2, 3}
 	parts := []database.MessagePartEntity{
-		{Data: nil, Text: "compare these", MIMEType: "", Name: "", Type: database.MessagePartText, Width: 0, Height: 0},
+		{
+			Data: nil, Text: testMultipartText, MIMEType: "", Name: "",
+			Type: database.MessagePartText, Width: 0, Height: 0,
+		},
 		{
 			Data: originalData, Text: "", MIMEType: testImageMIME, Name: "first.png",
 			Type: database.MessagePartImage, Width: 10, Height: 20,
@@ -163,48 +170,111 @@ func TestSessionRepository_PersistsImageOnlyAndSupportsLegacyText(t *testing.T) 
 	assert.Equal(t, []byte{7}, contextEntity.Messages[1].Parts[0].Data)
 }
 
-func TestSessionRepository_RejectsMultipartResourceLimitBypasses(t *testing.T) {
+func TestSessionRepository_RejectsInvalidMultipartMessages(t *testing.T) {
 	t.Parallel()
 
-	repository := newTestSessionRepository(t)
-	ctx := context.Background()
-	session, err := repository.CreateSession(ctx, "/work", "limits", "")
-	require.NoError(t, err)
+	for _, test := range invalidMultipartMessageCases() {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
+			repository := newTestSessionRepository(t)
+			session, err := repository.CreateSession(t.Context(), "/work", test.name, "")
+			require.NoError(t, err)
+			_, err = repository.AppendMessage(t.Context(), session.ID, nil, &database.MessageEntity{
+				Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: test.content, Provider: "", Model: "",
+				Parts: test.parts,
+			})
+			require.ErrorContains(t, err, test.wantErr)
+
+			entries, err := repository.Entries(t.Context(), session.ID)
+			require.NoError(t, err)
+			assert.Empty(t, entries)
+		})
+	}
+}
+
+type invalidMultipartMessageCase struct {
+	name    string
+	content string
+	wantErr string
+	parts   []database.MessagePartEntity
+}
+
+func invalidMultipartMessageCases() []invalidMultipartMessageCase {
 	images := make([]database.MessagePartEntity, 5)
 	for index := range images {
-		images[index] = database.MessagePartEntity{
-			Text: "", MIMEType: testImageMIME, Name: "", Type: database.MessagePartImage,
-			Data: []byte{1}, Width: 1, Height: 1,
-		}
+		images[index] = testImagePart([]byte{1}, "", 1, 1)
 	}
 
-	_, err = repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
-		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "", Provider: "", Model: "", Parts: images,
-	})
-	require.ErrorContains(t, err, "maximum is 4")
+	return []invalidMultipartMessageCase{
+		{name: "image count", content: "", wantErr: "maximum is 4", parts: images},
+		{
+			name: "text projection mismatch", content: "different",
+			wantErr: "content must match the text projection",
+			parts:   []database.MessagePartEntity{testTextPart(testMessageText, nil)},
+		},
+		{
+			name: "unsupported type", content: "", wantErr: "unsupported message part type",
+			parts: []database.MessagePartEntity{{
+				Data: nil, Text: "", MIMEType: "", Name: "",
+				Type: database.MessagePartType("audio"), Width: 0, Height: 0,
+			}},
+		},
+		{
+			name: "blank text", content: "", wantErr: "text part must have text",
+			parts: []database.MessagePartEntity{testTextPart(" \t", nil)},
+		},
+		{
+			name: "text with binary data", content: testMessageText,
+			wantErr: "text part must not have binary data",
+			parts:   []database.MessagePartEntity{testTextPart(testMessageText, []byte{1})},
+		},
+		{
+			name: "image without binary data", content: "", wantErr: "image part must have binary data",
+			parts: []database.MessagePartEntity{testImagePart(nil, "", 1, 1)},
+		},
+		{
+			name: "image with text", content: "", wantErr: "image part must not have text",
+			parts: []database.MessagePartEntity{testImagePart([]byte{1}, testMessageText, 1, 1)},
+		},
+		{
+			name: "MIME type", content: "", wantErr: "normalized image MIME type",
+			parts: []database.MessagePartEntity{{
+				Data: []byte{1}, Text: "", MIMEType: "image/*", Name: "",
+				Type: database.MessagePartImage, Width: 1, Height: 1,
+			}},
+		},
+		{
+			name: "image byte size", content: "", wantErr: "5 MiB limit",
+			parts: []database.MessagePartEntity{testImagePart(make([]byte, 5*1024*1024+1), "", 1, 1)},
+		},
+		{
+			name: "zero width", content: "", wantErr: "dimensions must be positive",
+			parts: []database.MessagePartEntity{testImagePart([]byte{1}, "", 0, 1)},
+		},
+		{
+			name: "zero height", content: "", wantErr: "dimensions must be positive",
+			parts: []database.MessagePartEntity{testImagePart([]byte{1}, "", 1, 0)},
+		},
+		{
+			name: "pixel count", content: "", wantErr: "40 megapixels",
+			parts: []database.MessagePartEntity{testImagePart([]byte{1}, "", 40_000_001, 1)},
+		},
+	}
+}
 
-	_, err = repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
-		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "", Provider: "", Model: "",
-		Parts: []database.MessagePartEntity{{
-			Text: "", MIMEType: "image/*", Name: "", Type: database.MessagePartImage,
-			Data: []byte{1}, Width: 1, Height: 1,
-		}},
-	})
-	require.ErrorContains(t, err, "normalized image MIME type")
+func testTextPart(text string, data []byte) database.MessagePartEntity {
+	return database.MessagePartEntity{
+		Data: data, Text: text, MIMEType: "", Name: "",
+		Type: database.MessagePartText, Width: 0, Height: 0,
+	}
+}
 
-	_, err = repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
-		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "", Provider: "", Model: "",
-		Parts: []database.MessagePartEntity{{
-			Text: "", MIMEType: testImageMIME, Name: "", Type: database.MessagePartImage,
-			Data: []byte{1}, Width: 40_000_001, Height: 1,
-		}},
-	})
-	require.ErrorContains(t, err, "40 megapixels")
-
-	entries, listErr := repository.Entries(ctx, session.ID)
-	require.NoError(t, listErr)
-	assert.Empty(t, entries)
+func testImagePart(data []byte, text string, width, height int) database.MessagePartEntity {
+	return database.MessagePartEntity{
+		Data: data, Text: text, MIMEType: testImageMIME, Name: "",
+		Type: database.MessagePartImage, Width: width, Height: height,
+	}
 }
 
 func TestSessionRepository_PartInsertFailureRollsBackEntryAndMessage(t *testing.T) {
@@ -336,8 +406,10 @@ func assertEntryReadersHydrateMultipart(
 func assertMultipartParts(t *testing.T, parts []database.MessagePartEntity) {
 	t.Helper()
 	require.Len(t, parts, 3)
-	assert.Equal(t, database.MessagePartText, parts[0].Type)
-	assert.Equal(t, "compare these", parts[0].Text)
+	assert.Equal(t, database.MessagePartEntity{
+		Data: nil, Text: testMultipartText, MIMEType: "", Name: "",
+		Type: database.MessagePartText, Width: 0, Height: 0,
+	}, parts[0])
 	assert.Equal(t, database.MessagePartImage, parts[1].Type)
 	assert.Equal(t, []byte{1, 2, 3}, parts[1].Data)
 	assert.Equal(t, "first.png", parts[1].Name)
