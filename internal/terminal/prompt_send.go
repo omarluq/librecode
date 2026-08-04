@@ -10,16 +10,16 @@ import (
 )
 
 func (app *App) sendPrompt(ctx context.Context, text string) {
-	app.sendPromptWithVisibility(ctx, text, true)
+	app.sendDraft(ctx, promptDraft{Text: text, Images: nil}, true)
 }
 
 func (app *App) sendPromptHidden(ctx context.Context, text string) {
-	app.sendPromptWithVisibility(ctx, text, false)
+	app.sendDraft(ctx, promptDraft{Text: text, Images: nil}, false)
 }
 
-func (app *App) sendPromptWithVisibility(ctx context.Context, text string, visible bool) {
+func (app *App) sendDraft(ctx context.Context, draft promptDraft, visible bool) {
 	if app.busy() {
-		app.queuePrompt(text, visible)
+		app.queueDraft(draft, visible)
 
 		return
 	}
@@ -34,7 +34,8 @@ func (app *App) sendPromptWithVisibility(ctx context.Context, text string, visib
 		ParentEntryID:  parentEntryID,
 		SessionID:      app.sessionID,
 		CWD:            app.cwd,
-		Text:           text,
+		Images:         draft.assistantImages(),
+		Text:           draft.Text,
 		Name:           "",
 		ResumeLatest:   false,
 		HideUserPrompt: !visible,
@@ -52,11 +53,14 @@ func (app *App) sendPromptWithVisibility(ctx context.Context, text string, visib
 		ID:            promptID,
 		SessionID:     app.sessionID,
 		UserEntryID:   "",
-		Prompt:        text,
+		Prompt:        draft.Text,
+		Images:        cloneImageAttachments(draft.Images),
 		Canceled:      false,
 	}
 	if visible {
-		app.addMessage(transcript.RoleUser, text)
+		message := newChatMessage(transcript.RoleUser, draft.Text)
+		message.Attachments = summarizeAttachments(draft.Images)
+		app.appendMessage(message)
 	}
 
 	app.working = true

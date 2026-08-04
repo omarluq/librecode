@@ -48,26 +48,49 @@ const (
 	RoleCompactionSummary Role = "compactionSummary"
 )
 
+// MessagePartType identifies a provider-neutral message part.
+type MessagePartType string
+
+const (
+	// MessagePartText stores a textual message part.
+	MessagePartText MessagePartType = "text"
+	// MessagePartImage stores an image and its metadata.
+	MessagePartImage MessagePartType = "image"
+)
+
+// MessagePartEntity is one ordered part of a durable message.
+type MessagePartEntity struct {
+	Text     string          `json:"text,omitempty"`
+	MIMEType string          `json:"mime_type,omitempty"`
+	Name     string          `json:"name,omitempty"`
+	Type     MessagePartType `json:"type"`
+	Data     []byte          `json:"data,omitempty"`
+	Width    int             `json:"width,omitempty"`
+	Height   int             `json:"height,omitempty"`
+}
+
 // MessageEntity is the context-facing representation of an assistant message.
 type MessageEntity struct {
-	Timestamp time.Time `json:"timestamp"`
-	Role      Role      `json:"role"`
-	Content   string    `json:"content"`
-	Provider  string    `json:"provider,omitempty"`
-	Model     string    `json:"model,omitempty"`
+	Timestamp time.Time           `json:"timestamp"`
+	Role      Role                `json:"role"`
+	Content   string              `json:"content"`
+	Provider  string              `json:"provider,omitempty"`
+	Model     string              `json:"model,omitempty"`
+	Parts     []MessagePartEntity `json:"parts,omitempty"`
 }
 
 // SessionMessageEntity is the normalized durable message related to a session and entry.
 type SessionMessageEntity struct {
-	CreatedAt time.Time `json:"created_at"`
-	ID        string    `json:"id"`
-	SessionID string    `json:"session_id"`
-	EntryID   string    `json:"entry_id"`
-	Sender    string    `json:"sender"`
-	Role      Role      `json:"role"`
-	Content   string    `json:"content"`
-	Provider  string    `json:"provider,omitempty"`
-	Model     string    `json:"model,omitempty"`
+	CreatedAt time.Time           `json:"created_at"`
+	ID        string              `json:"id"`
+	SessionID string              `json:"session_id"`
+	EntryID   string              `json:"entry_id"`
+	Sender    string              `json:"sender"`
+	Role      Role                `json:"role"`
+	Content   string              `json:"content"`
+	Provider  string              `json:"provider,omitempty"`
+	Model     string              `json:"model,omitempty"`
+	Parts     []MessagePartEntity `json:"parts,omitempty"`
 }
 
 // SessionEntity is a persisted conversation root.
@@ -84,18 +107,18 @@ type SessionEntity struct {
 type EntryEntity struct {
 	CreatedAt                  time.Time     `json:"created_at"`
 	ParentID                   *string       `json:"parent_id,omitempty"`
-	Message                    MessageEntity `json:"message"`
-	Summary                    string        `json:"summary,omitempty"`
 	ToolStatus                 string        `json:"tool_status,omitempty"`
-	Type                       EntryType     `json:"type"`
+	SessionID                  string        `json:"session_id"`
+	ToolArgsJSON               string        `json:"tool_args_json,omitempty"`
 	CustomType                 string        `json:"custom_type,omitempty"`
 	DataJSON                   string        `json:"data_json,omitempty"`
 	ID                         string        `json:"id"`
+	Summary                    string        `json:"summary,omitempty"`
 	ToolName                   string        `json:"tool_name,omitempty"`
-	SessionID                  string        `json:"session_id"`
-	ToolArgsJSON               string        `json:"tool_args_json,omitempty"`
+	Type                       EntryType     `json:"type"`
 	BranchFromEntryID          string        `json:"branch_from_entry_id,omitempty"`
 	CompactionFirstKeptEntryID string        `json:"compaction_first_kept_entry_id,omitempty"`
+	Message                    MessageEntity `json:"message"`
 	CompactionTokensBefore     int           `json:"compaction_tokens_before,omitempty"`
 	TokenEstimate              int           `json:"token_estimate,omitempty"`
 	Display                    bool          `json:"display"`

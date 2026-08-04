@@ -57,6 +57,7 @@ type PromptRequest struct {
 	Name          string
 	SessionID     string
 	Text          string
+	Attachments   []map[string]any
 	ResumeLatest  bool
 }
 
@@ -145,12 +146,14 @@ func Prompt(request *PromptRequest) map[string]any {
 	}
 
 	return map[string]any{
-		CWDKey:           request.CWD,
-		ToolNameKey:      request.Name,
-		ParentEntryIDKey: stringPtrValue(request.ParentEntryID),
-		PromptKey:        request.Text,
-		"resume_latest":  request.ResumeLatest,
-		SessionIDKey:     request.SessionID,
+		"attachments":      request.Attachments,
+		"attachment_count": len(request.Attachments),
+		CWDKey:             request.CWD,
+		ToolNameKey:        request.Name,
+		ParentEntryIDKey:   stringPtrValue(request.ParentEntryID),
+		PromptKey:          request.Text,
+		"resume_latest":    request.ResumeLatest,
+		SessionIDKey:       request.SessionID,
 	}
 }
 

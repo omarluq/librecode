@@ -6,21 +6,35 @@ import (
 	"github.com/omarluq/librecode/internal/llm"
 )
 
-func openAIResponseInput(messages []llm.Message) []any {
+func openAIResponseInput(messages []llm.Message) ([]any, error) {
+	if err := validateImageMessages(messages); err != nil {
+		return nil, err
+	}
+
 	input := []any{}
 
 	for _, message := range messages {
 		role, ok := openAIResponseInputRole(message.Role)
 
-		content := messageText(message)
-		if !ok || content == "" {
+		if !ok {
+			continue
+		}
+
+		var content any = messageText(message)
+		if message.Role == llm.RoleUser {
+			if blocks := openAIResponseUserContent(message); len(blocks) > 0 {
+				content = blocks
+			}
+		}
+
+		if content == "" {
 			continue
 		}
 
 		input = append(input, map[string]any{jsonRoleKey: role, jsonContentKey: content})
 	}
 
-	return input
+	return input, nil
 }
 
 func openAIResponseInputRole(role llm.Role) (string, bool) {

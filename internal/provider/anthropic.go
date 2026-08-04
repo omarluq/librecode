@@ -18,8 +18,13 @@ func (client *HTTPCompletionClient) completeAnthropic(
 	ctx context.Context,
 	request *CompletionRequest,
 ) (*llm.Response, error) {
+	messages, err := anthropicMessages(request.Request.Messages)
+	if err != nil {
+		return nil, err
+	}
+
 	state := anthropicLoopState{
-		messages: anthropicMessages(request.Request.Messages),
+		messages: messages,
 		endpoint: joinEndpoint(request.Request.Model.BaseURL, "/v1/messages"),
 		result:   newResponse(),
 	}
@@ -436,21 +441,33 @@ func anthropicToolResultMessage(calls []ToolCall, events []ToolEvent) (map[strin
 	return map[string]any{jsonRoleKey: jsonUserRole, jsonContentKey: blocks}, nil
 }
 
-func anthropicMessages(messages []llm.Message) []map[string]any {
+func anthropicMessages(messages []llm.Message) ([]map[string]any, error) {
+	if err := validateImageMessages(messages); err != nil {
+		return nil, err
+	}
+
 	output := []map[string]any{}
 
 	for _, message := range messages {
 		role, ok := anthropicRole(message.Role)
 
-		content := messageText(message)
-		if !ok || content == "" {
+		if !ok {
+			continue
+		}
+
+		var content any = messageText(message)
+		if message.Role == llm.RoleUser {
+			content = anthropicUserContent(message)
+		}
+
+		if content == "" {
 			continue
 		}
 
 		output = append(output, map[string]any{jsonRoleKey: role, jsonContentKey: content})
 	}
 
-	return output
+	return output, nil
 }
 
 // AnthropicToolsFromDefinitions returns Anthropic tool declarations for definitions.

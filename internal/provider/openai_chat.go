@@ -13,8 +13,13 @@ func (client *HTTPCompletionClient) completeOpenAIChat(
 	ctx context.Context,
 	request *CompletionRequest,
 ) (*llm.Response, error) {
+	messages, err := openAIChatMessages(request)
+	if err != nil {
+		return nil, err
+	}
+
 	state := openAIChatLoopState{
-		messages: openAIChatMessages(request),
+		messages: messages,
 		endpoint: joinEndpoint(request.Request.Model.BaseURL, "/chat/completions"),
 		result:   newResponse(),
 	}
@@ -182,7 +187,11 @@ func reasoningEffort(request *CompletionRequest) (string, bool) {
 	return request.Request.ThinkingLevel, true
 }
 
-func openAIChatMessages(request *CompletionRequest) []map[string]any {
+func openAIChatMessages(request *CompletionRequest) ([]map[string]any, error) {
+	if err := validateImageMessages(request.Request.Messages); err != nil {
+		return nil, err
+	}
+
 	messages := []map[string]any{}
 	if request.Request.SystemPrompt != "" {
 		messages = append(messages, map[string]any{
@@ -194,15 +203,23 @@ func openAIChatMessages(request *CompletionRequest) []map[string]any {
 	for _, message := range request.Request.Messages {
 		role, ok := openAIRole(message.Role)
 
-		content := messageText(message)
-		if !ok || content == "" {
+		if !ok {
+			continue
+		}
+
+		var content any = messageText(message)
+		if message.Role == llm.RoleUser {
+			content = openAIChatUserContent(message)
+		}
+
+		if content == "" {
 			continue
 		}
 
 		messages = append(messages, map[string]any{jsonRoleKey: role, jsonContentKey: content})
 	}
 
-	return messages
+	return messages, nil
 }
 
 func openAIChatAssistantToolMessage(result *providerResult) map[string]any {

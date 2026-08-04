@@ -166,6 +166,24 @@ func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
 	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
 }
 
+func TestEstimateMessageTokensCountsImagesConservatively(t *testing.T) {
+	t.Parallel()
+
+	messages := []database.MessageEntity{{
+		Timestamp: time.Time{}, Role: database.RoleUser, Content: "text", Provider: "", Model: "",
+		Parts: []database.MessagePartEntity{
+			{Text: "text", MIMEType: "", Name: "", Type: database.MessagePartText,
+				Data: nil, Width: 0, Height: 0},
+			{Text: "", MIMEType: "image/png", Name: "", Type: database.MessagePartImage,
+				Data: nil, Width: 1024, Height: 1024},
+		},
+	}}
+
+	assert.Equal(t, 801, EstimateMessageTokens(messages))
+	messages[0].Parts[1].Width = 0
+	assert.Equal(t, 16_001, EstimateMessageTokens(messages))
+}
+
 func TestEstimateMessageTokens(t *testing.T) {
 	t.Parallel()
 
@@ -184,7 +202,7 @@ func testMessageEntity(role database.Role, content string) database.MessageEntit
 		Role:      role,
 		Content:   content,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}
 }
 

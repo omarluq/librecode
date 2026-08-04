@@ -79,6 +79,10 @@ func (repository *SessionRepository) Branch(ctx context.Context, sessionID, entr
 			Errorf("entry %q not found in session %q", entryID, sessionID)
 	}
 
+	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+		return nil, err
+	}
+
 	return entries, nil
 }
 
@@ -251,6 +255,7 @@ type appendEntryOptions struct {
 	provider    string
 	summary     string
 	role        Role
+	parts       []MessagePartEntity
 }
 
 func newAppendEntryOptions() *appendEntryOptions {
@@ -297,6 +302,7 @@ func (repository *SessionRepository) entryFromAppendOptions(
 		Content:   options.content,
 		Provider:  options.provider,
 		Model:     options.model,
+		Parts:     cloneMessageParts(options.parts),
 	})
 
 	entry.CustomType = options.customType
@@ -375,12 +381,7 @@ func (repository *SessionRepository) AppendMessageWithDisplay(
 	modelFacing *bool,
 	display *bool,
 ) (*EntryEntity, error) {
-	options := newAppendEntryOptions()
-	options.content = message.Content
-	options.model = message.Model
-	options.provider = message.Provider
-	options.role = message.Role
-	options.timestamp = message.Timestamp
+	options := appendOptionsFromMessage(message)
 	options.modelFacing = modelFacing
 	options.display = display
 
@@ -396,16 +397,23 @@ func (repository *SessionRepository) AppendMessageWithMetadata(
 	modelFacing *bool,
 	usage *EntryTokenUsageEntity,
 ) (*EntryEntity, error) {
+	options := appendOptionsFromMessage(message)
+	options.modelFacing = modelFacing
+	options.usage = usage
+
+	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeMessage, options)
+}
+
+func appendOptionsFromMessage(message *MessageEntity) *appendEntryOptions {
 	options := newAppendEntryOptions()
 	options.content = message.Content
 	options.model = message.Model
 	options.provider = message.Provider
 	options.role = message.Role
 	options.timestamp = message.Timestamp
-	options.modelFacing = modelFacing
-	options.usage = usage
+	options.parts = message.Parts
 
-	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeMessage, options)
+	return options
 }
 
 // AppendCustom appends extension state that does not participate in prompt context.
@@ -711,7 +719,7 @@ func appendBranchSummaryContext(contextEntity *SessionContextEntity, entry *Entr
 		Role:      RoleBranchSummary,
 		Content:   entry.Summary,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 
 	return nil
@@ -757,6 +765,7 @@ func compactionSummaryMessages(entry *EntryEntity) []MessageEntity {
 		Content:   entry.Summary,
 		Provider:  "",
 		Model:     "",
+		Parts:     nil,
 	}}
 }
 

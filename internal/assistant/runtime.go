@@ -45,6 +45,15 @@ type Runtime struct {
 	profile           ExecutionProfile
 }
 
+// ImageAttachment is one provider-neutral image supplied with a prompt.
+type ImageAttachment struct {
+	Name     string `json:"name,omitempty"`
+	MIMEType string `json:"mime_type"`
+	Data     []byte `json:"-"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+}
+
 // PromptRequest contains one user prompt invocation.
 type PromptRequest struct {
 	OnEvent        func(StreamEvent)          `json:"-"`
@@ -55,6 +64,7 @@ type PromptRequest struct {
 	CWD            string                     `json:"cwd"`
 	Text           string                     `json:"text"`
 	Name           string                     `json:"name"`
+	Images         []ImageAttachment          `json:"images,omitempty"`
 	ResumeLatest   bool                       `json:"resume_latest,omitempty"`
 	HideUserPrompt bool                       `json:"-"`
 }
@@ -197,13 +207,14 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		return nil, oops.In("assistant").Code("nil_prompt_request").Errorf("prompt request is nil")
 	}
 
-	promptPayload := lifecyclePromptRequest(request)
-	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleInput, lifecyclepayload.Prompt(promptPayload))
-	runtime.dispatchObservationalLifecycle(
-		ctx,
-		extension.LifecyclePromptPrepare,
-		lifecyclepayload.Prompt(promptPayload),
-	)
+	originalRequest := request
+
+	request, err = runtime.preparePromptRequest(request)
+	if err != nil {
+		return nil, err
+	}
+
+	runtime.dispatchPromptInputLifecycle(ctx, request)
 
 	persistCtx, persistCancel := promptPersistenceContext(ctx)
 	defer persistCancel()
@@ -212,6 +223,8 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	if err != nil {
 		return nil, err
 	}
+
+	originalRequest.SessionID = activeSession.ID
 
 	releaseOperation, err := runtime.acquirePromptOperation(ctx, activeSession.ID)
 	if err != nil {
@@ -270,6 +283,12 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	}, nil
 }
 
+func (runtime *Runtime) dispatchPromptInputLifecycle(ctx context.Context, request *PromptRequest) {
+	payload := lifecyclepayload.Prompt(lifecyclePromptRequest(request))
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleInput, payload)
+	runtime.dispatchObservationalLifecycle(ctx, extension.LifecyclePromptPrepare, payload)
+}
+
 func (runtime *Runtime) persistAssistantBundle(
 	ctx context.Context,
 	sessionID string,
@@ -304,6 +323,7 @@ func (runtime *Runtime) appendPromptUserEntry(
 		activeSession.ID,
 		parentID,
 		request.Text,
+		request.Images,
 		!request.HideUserPrompt,
 	)
 	if err != nil {

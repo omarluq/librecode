@@ -64,7 +64,7 @@ func validConstraintTestCompactionEntry(t *testing.T) *EntryEntity {
 			Role:      RoleAssistant,
 			Content:   "",
 			Provider:  "",
-			Model:     "",
+			Model:     "", Parts: nil,
 		},
 		Summary:                    "summary",
 		ToolStatus:                 "",

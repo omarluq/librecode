@@ -50,7 +50,7 @@ func TestSessionRepositoryConcurrentWritersWaitForBusyDatabase(t *testing.T) {
 					Role:      database.RoleUser,
 					Content:   strings.Repeat("x", writerIndex+entryIndex+1),
 					Provider:  "",
-					Model:     "",
+					Model:     "", Parts: nil,
 				})
 				appendErrors <- appendErr
 			}
@@ -89,7 +89,7 @@ func TestSessionRepositoryConcurrentCompactionsChooseOneWinner(t *testing.T) {
 		Role:      database.RoleUser,
 		Content:   compactionTestHistory,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 
@@ -162,7 +162,7 @@ func TestSessionRepositoryCompactionOperationIsIdempotent(t *testing.T) {
 		Role:      database.RoleUser,
 		Content:   compactionTestHistory,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 
@@ -183,7 +183,7 @@ func TestSessionRepositoryCompactionOperationIsIdempotent(t *testing.T) {
 		Role:      database.RoleUser,
 		Content:   "different branch target",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 	mismatched, err := secondary.AppendCompaction(

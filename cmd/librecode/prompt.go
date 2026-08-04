@@ -199,6 +199,7 @@ func buildPromptRequest(cwd, message string, options promptRunOptions) *assistan
 		ParentEntryID:  nil,
 		SessionID:      options.SessionID,
 		CWD:            cwd,
+		Images:         nil,
 		Text:           message,
 		Name:           options.SessionName,
 		ResumeLatest:   options.Resume,

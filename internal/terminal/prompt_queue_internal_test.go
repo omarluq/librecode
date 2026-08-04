@@ -4,9 +4,17 @@ import (
 	"context"
 	"slices"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/omarluq/librecode/internal/model"
 )
 
-const testQueuedPromptText = "next prompt"
+const (
+	testQueuedImageName  = "paste.png"
+	testQueuedPromptText = "next prompt"
+)
 
 func TestQueueFollowUpText(t *testing.T) {
 	t.Parallel()
@@ -35,10 +43,35 @@ func TestQueueFollowUpText(t *testing.T) {
 				t.Fatalf("statusMessage = %q, want %q", got, want)
 			}
 
-			if got := app.queuedMessages; !slices.Equal(got, testCase.want) {
+			if got := app.queuedMessages; !slices.Equal(promptDraftTexts(got), testCase.want) {
 				t.Fatalf("queuedMessages = %v, want %v", got, testCase.want)
 			}
 		})
+	}
+}
+
+func TestQueueFollowUpRejectsImagesForTextOnlyModel(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.models = model.NewRegistry(&model.RegistryOptions{
+		ConfigReader: nil, Auth: nil, ModelsPath: "",
+		BuiltIns:  []model.Model{terminalCapabilityTestModel(app.currentProvider(), app.currentModel())},
+		Discovery: disabledModelDiscovery(),
+	})
+	app.composerImages = []imageAttachment{{
+		Name: testQueuedImageName, MIMEType: clipboardImageMIME, Data: []byte{1}, Width: 1, Height: 1,
+	}}
+	app.composerBuffer.SetText("follow-up")
+
+	app.queueFollowUp()
+
+	if len(app.queuedMessages) != 0 {
+		t.Fatalf("queuedMessages length = %d, want 0", len(app.queuedMessages))
+	}
+
+	if len(app.composerImages) != 1 {
+		t.Fatalf("composerImages length = %d, want 1", len(app.composerImages))
 	}
 }
 
@@ -69,7 +102,7 @@ func TestQueueFollowUpRecordsAndClearsComposer(t *testing.T) {
 		t.Fatalf("composer text = %q, want empty", got)
 	}
 
-	if got, want := app.queuedMessages, []string{"follow me"}; !slices.Equal(got, want) {
+	if got, want := app.queuedMessages, []string{"follow me"}; !slices.Equal(promptDraftTexts(got), want) {
 		t.Fatalf("queuedMessages = %v, want %v", got, want)
 	}
 
@@ -78,11 +111,57 @@ func TestQueueFollowUpRecordsAndClearsComposer(t *testing.T) {
 	}
 }
 
+func TestQueueAndDequeueFollowUpPreserveImages(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	image := imageAttachment{
+		Name: testQueuedImageName, MIMEType: clipboardImageMIME, Data: []byte{1, 2}, Width: 1, Height: 1,
+	}
+
+	app.composerBuffer.SetText("follow me")
+	app.composerImages = []imageAttachment{image}
+
+	app.queueFollowUp()
+	require.Len(t, app.queuedMessages, 1)
+	require.Len(t, app.queuedMessages[0].Images, 1)
+	assert.Equal(t, image.Data, app.queuedMessages[0].Images[0].Data)
+	assert.True(t, app.composerDraftEmpty())
+
+	image.Data[0] = 9
+	assert.Equal(t, byte(1), app.queuedMessages[0].Images[0].Data[0])
+
+	app.dequeueFollowUp()
+	assert.Equal(t, "follow me", app.composerBuffer.TextValue())
+	require.Len(t, app.composerImages, 1)
+	assert.Equal(t, []byte{1, 2}, app.composerImages[0].Data)
+	assert.Empty(t, app.queuedMessages)
+}
+
+func TestQueueAndDequeueImageOnlyFollowUp(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.composerImages = []imageAttachment{{
+		Name: testQueuedImageName, MIMEType: clipboardImageMIME, Data: []byte{1}, Width: 1, Height: 1,
+	}}
+
+	app.queueFollowUp()
+	require.Len(t, app.queuedMessages, 1)
+	assert.Empty(t, app.queuedMessages[0].Text)
+	assert.True(t, app.composerDraftEmpty())
+
+	app.dequeueFollowUp()
+	assert.Empty(t, app.composerBuffer.TextValue())
+	require.Len(t, app.composerImages, 1)
+	assert.Equal(t, []byte{1}, app.composerImages[0].Data)
+}
+
 func TestDequeueFollowUpRestoresLastMessage(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.queuedMessages = []string{"first", "second"}
+	app.queuedMessages = promptDrafts("first", "second")
 	app.promptHistoryIndex = 1
 
 	app.dequeueFollowUp()
@@ -91,7 +170,7 @@ func TestDequeueFollowUpRestoresLastMessage(t *testing.T) {
 		t.Fatalf("composer text = %q, want %q", got, want)
 	}
 
-	if got, want := app.queuedMessages, []string{"first"}; !slices.Equal(got, want) {
+	if got, want := app.queuedMessages, []string{"first"}; !slices.Equal(promptDraftTexts(got), want) {
 		t.Fatalf("queuedMessages = %v, want %v", got, want)
 	}
 
@@ -154,7 +233,7 @@ func TestProcessQueuedPrompt(t *testing.T) {
 			name: "busy leaves queue unchanged",
 			setup: func(app *App) {
 				app.working = true
-				app.queuedMessages = []string{firstQueuedPrompt}
+				app.queuedMessages = promptDrafts(firstQueuedPrompt)
 			},
 			wantQueued:  []string{firstQueuedPrompt},
 			wantWorking: true,
@@ -167,7 +246,7 @@ func TestProcessQueuedPrompt(t *testing.T) {
 		},
 		{
 			name:        sendFirstQueuedPrompt,
-			setup:       func(app *App) { app.queuedMessages = []string{firstQueuedPrompt, secondQueuedPrompt} },
+			setup:       func(app *App) { app.queuedMessages = promptDrafts(firstQueuedPrompt, secondQueuedPrompt) },
 			wantQueued:  []string{secondQueuedPrompt},
 			wantWorking: true,
 		},
@@ -192,7 +271,7 @@ func TestProcessQueuedPrompt(t *testing.T) {
 				_ = readPromptAsyncEvent(t, app)
 			}
 
-			if !slices.Equal(app.queuedMessages, testCase.wantQueued) {
+			if !slices.Equal(promptDraftTexts(app.queuedMessages), testCase.wantQueued) {
 				t.Fatalf("queuedMessages = %v, want %v", app.queuedMessages, testCase.wantQueued)
 			}
 

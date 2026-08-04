@@ -60,7 +60,7 @@ func TestInspectedAgentTaskRendersLiveStreamAndReloadsOnCompletion(t *testing.T)
 
 	_, err := sessions.AppendMessage(t.Context(), child.ID, nil, &database.MessageEntity{
 		Timestamp: time.Now().UTC(), Role: database.RoleAssistant, Content: "finished result",
-		Provider: "provider", Model: "model",
+		Provider: "provider", Model: "model", Parts: nil,
 	})
 	require.NoError(t, err)
 

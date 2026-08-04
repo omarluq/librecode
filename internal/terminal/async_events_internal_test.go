@@ -525,9 +525,10 @@ func promptLifecycleEventCases() []promptLifecycleCase {
 				app.streamingText = asyncTestPartial
 				app.streamingThinkingText = "thought"
 				app.transcript.Streaming.Blocks = []chatMessage{{
-					Role:      transcript.RoleAssistant,
-					Content:   asyncTestPartial,
-					CreatedAt: time.Time{},
+					Role:        transcript.RoleAssistant,
+					Content:     asyncTestPartial,
+					CreatedAt:   time.Time{},
+					Attachments: nil,
 				}}
 				app.runningToolBlocks = []runningToolBlock{{
 					StartedAt: time.Time{},
@@ -629,13 +630,13 @@ func TestApplyPromptErrorProcessesQueuedPrompt(t *testing.T) {
 	app.activePrompt = newTestActivePrompt(nil)
 	app.activePrompt.ID = 4
 	app.working = true
-	app.queuedMessages = []string{asyncTestQueuedText}
+	app.queuedMessages = promptDrafts(asyncTestQueuedText)
 
 	app.applyPromptError(context.Background(), "provider failed", app.activePrompt.ID)
 
 	waitForPromptRequest(t, client)
 	assert.True(t, app.working)
-	assert.True(t, slices.Equal(app.queuedMessages, []string(nil)))
+	assert.True(t, slices.Equal(promptDraftTexts(app.queuedMessages), []string(nil)))
 }
 
 type streamEventApplyCase struct {

@@ -478,7 +478,7 @@ func appendRuntimeTestMessage(
 		Role:      role,
 		Content:   content,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 

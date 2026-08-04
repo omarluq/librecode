@@ -63,7 +63,7 @@ func TestSessionRepositoryAppendCompactionValidation(t *testing.T) {
 				Role:      database.RoleUser,
 				Content:   compactionTestHistory,
 				Provider:  "",
-				Model:     "",
+				Model:     "", Parts: nil,
 			})
 			require.NoError(t, err)
 

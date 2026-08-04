@@ -16,10 +16,15 @@ type systemClipboardWriter interface {
 	WriteText(text string) error
 }
 
+type systemClipboardImageReader interface {
+	ReadImage() ([]byte, error)
+}
+
 type desktopClipboard struct {
 	prepare func() error
 	init    func() error
 	write   func(clipboard.Format, []byte) <-chan struct{}
+	read    func(clipboard.Format) []byte
 }
 
 func newDesktopClipboard() desktopClipboard {
@@ -27,6 +32,7 @@ func newDesktopClipboard() desktopClipboard {
 		prepare: defaultPrepareDesktopClipboardEnvironment,
 		init:    clipboard.Init,
 		write:   clipboard.Write,
+		read:    clipboard.Read,
 	}
 }
 
@@ -80,6 +86,20 @@ func candidateWaylandDisplay(
 	}
 
 	return ""
+}
+
+func (writer desktopClipboard) ReadImage() ([]byte, error) {
+	if writer.prepare != nil {
+		if err := writer.prepare(); err != nil {
+			return nil, terminalError(err, "prepare system clipboard")
+		}
+	}
+
+	if err := writer.init(); err != nil {
+		return nil, terminalError(err, "init system clipboard")
+	}
+
+	return append([]byte(nil), writer.read(clipboard.FmtImage)...), nil
 }
 
 func (writer desktopClipboard) WriteText(text string) error {

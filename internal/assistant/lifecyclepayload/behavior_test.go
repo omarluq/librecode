@@ -202,7 +202,7 @@ func messageEntity(role database.Role, content string) database.MessageEntity {
 		Role:      role,
 		Content:   content,
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}
 }
 

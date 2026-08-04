@@ -30,8 +30,9 @@ func (app *App) handleEscapePresses(ctx context.Context, presses int) {
 	}
 
 	app.escapePresses = 0
-	if !app.composerBuffer.Empty() {
+	if !app.composerDraftEmpty() {
 		app.composerBuffer.Clear()
+		app.composerImages = nil
 		app.resetPromptHistoryNavigation()
 		app.setStatus("editor cleared")
 

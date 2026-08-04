@@ -6,8 +6,12 @@ import (
 )
 
 func (app *App) submit(ctx context.Context) (bool, error) {
-	text := strings.TrimSpace(app.composerBuffer.TextValue())
-	if text == "" {
+	draft := app.currentDraft()
+	if draft.empty() {
+		return false, nil
+	}
+
+	if !app.draftCanSubmit(draft) {
 		return false, nil
 	}
 
@@ -16,39 +20,62 @@ func (app *App) submit(ctx context.Context) (bool, error) {
 		return false, err
 	}
 
-	text = strings.TrimSpace(app.composerBuffer.Clear())
-	if text == "" {
+	draft = app.currentDraft()
+	if !app.draftCanSubmit(draft) {
+		return false, nil
+	}
+
+	draft = app.consumeDraft()
+	if draft.empty() {
 		return false, nil
 	}
 
 	if app.compacting {
-		if strings.HasPrefix(text, "/") {
-			app.composerBuffer.SetText(text)
-			app.setStatus("wait for context compaction to finish")
-
-			return false, nil
-		}
-
-		app.recordPromptHistory(text)
-		app.queueFollowUpText(text)
-		app.setStatus("queued prompt until context compaction finishes")
-
-		return false, nil
+		return app.submitDuringCompaction(draft)
 	}
 
-	app.recordPromptHistory(text)
+	app.recordPromptDraftHistory(draft)
 
-	if strings.HasPrefix(text, "/") {
-		return app.submitCommand(ctx, text)
+	if strings.HasPrefix(draft.Text, "/") {
+		return app.submitCommand(ctx, draft.Text)
 	}
 
 	if app.working {
-		app.queueFollowUpText(text)
+		app.queueDraft(draft, true)
 
 		return false, nil
 	}
 
-	app.sendPrompt(ctx, text)
+	app.sendDraft(ctx, draft, true)
+
+	return false, nil
+}
+
+func (app *App) draftCanSubmit(draft promptDraft) bool {
+	if !app.validateDraftModel(draft) {
+		return false
+	}
+
+	if strings.HasPrefix(draft.Text, "/") && len(draft.Images) > 0 {
+		app.setStatus("slash commands do not accept image attachments")
+
+		return false
+	}
+
+	return true
+}
+
+func (app *App) submitDuringCompaction(draft promptDraft) (bool, error) {
+	if strings.HasPrefix(draft.Text, "/") {
+		app.restoreDraft(draft)
+		app.setStatus("wait for context compaction to finish")
+
+		return false, nil
+	}
+
+	app.recordPromptDraftHistory(draft)
+	app.queueDraft(draft, true)
+	app.setStatus("queued prompt until context compaction finishes")
 
 	return false, nil
 }

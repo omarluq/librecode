@@ -1,7 +1,9 @@
 package assistant
 
 import (
+	"encoding/base64"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -83,6 +85,38 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 
 	converted.Model.Metadata["compat"] = testLLMMutatedLabel
 	assert.Equal(t, "yes", request.Model.Compat["compat"])
+}
+
+func TestLLMMessageFromDatabasePreservesOrderedMultipartImageOnly(t *testing.T) {
+	t.Parallel()
+
+	data := []byte{0, 1, 2, 3}
+	message, converted := llmMessageFromDatabase(&database.MessageEntity{
+		Timestamp: time.Time{}, Role: database.RoleUser, Content: "", Provider: "", Model: "",
+		Parts: []database.MessagePartEntity{
+			{Text: "inspect image", MIMEType: "", Name: "", Type: database.MessagePartText,
+				Data: nil, Width: 0, Height: 0},
+			{Text: "", MIMEType: imageMIMEPNG, Name: "screen.png", Type: database.MessagePartImage,
+				Data: data, Width: 10, Height: 20},
+		},
+	})
+
+	require.True(t, converted)
+	require.Len(t, message.Content, 2)
+	assert.Equal(t, llm.PartText, message.Content[0].Type)
+	assert.Equal(t, llm.PartImage, message.Content[1].Type)
+	assert.Equal(t, base64.StdEncoding.EncodeToString(data), message.Content[1].Data)
+	assert.Equal(t, "screen.png", message.Content[1].Metadata["name"])
+
+	imageOnly, imageOnlyConverted := llmMessageFromDatabase(&database.MessageEntity{
+		Timestamp: time.Time{}, Role: database.RoleUser, Content: "", Provider: "", Model: "",
+		Parts: []database.MessagePartEntity{{
+			Text: "", MIMEType: imageMIMEPNG, Name: "", Type: database.MessagePartImage,
+			Data: data, Width: 1, Height: 1,
+		}},
+	})
+	require.True(t, imageOnlyConverted)
+	assert.Len(t, imageOnly.Content, 1)
 }
 
 func TestLLMRequestFromCompletionRequestNilAndDisabledTools(t *testing.T) {

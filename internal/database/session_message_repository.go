@@ -3,10 +3,23 @@ package database
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
 )
+
+type sessionMessagePartRow struct {
+	EntryID  string `ksql:"entry_id"`
+	Type     string `ksql:"type"`
+	Text     string `ksql:"text"`
+	MIMEType string `ksql:"mime_type"`
+	Name     string `ksql:"name"`
+	Data     []byte `ksql:"data"`
+	Width    int    `ksql:"width"`
+	Height   int    `ksql:"height"`
+}
 
 type sessionMessageRow struct {
 	ID        string `ksql:"id"`
@@ -35,7 +48,7 @@ func sessionMessageFromRow(row *sessionMessageRow) (*SessionMessageEntity, error
 		Role:      Role(row.Role),
 		Content:   row.Content,
 		Provider:  row.Provider,
-		Model:     row.Model,
+		Model:     row.Model, Parts: nil,
 	}, nil
 }
 
@@ -51,17 +64,7 @@ FROM session_messages
 WHERE session_id = ?
 ORDER BY created_at ASC`
 
-	rows := []sessionMessageRow{}
-	if err := repository.sql.Query(ctx, &rows, query, sessionID); err != nil {
-		return nil, oops.In("database").Code("list_messages").Wrapf(err, "query session messages")
-	}
-
-	messages, err := sessionMessagesFromRows(rows)
-	if err != nil {
-		return nil, oops.In("database").Code("scan_message").Wrapf(err, "scan session messages")
-	}
-
-	return messages, nil
+	return repository.querySessionMessages(ctx, sessionID, query, "messages")
 }
 
 // TranscriptMessages returns displayable normalized messages for a session in creation order.
@@ -76,20 +79,29 @@ JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
 WHERE m.session_id = ? AND e.display = 1
 ORDER BY m.created_at ASC`
 
+	return repository.querySessionMessages(ctx, sessionID, query, "transcript_messages")
+}
+
+func (repository *SessionRepository) querySessionMessages(
+	ctx context.Context,
+	sessionID string,
+	query string,
+	operation string,
+) ([]SessionMessageEntity, error) {
+	operationLabel := strings.ReplaceAll(operation, "_", " ")
+
 	rows := []sessionMessageRow{}
 	if err := repository.sql.Query(ctx, &rows, query, sessionID); err != nil {
-		return nil, oops.In("database").Code("list_transcript_messages").Wrapf(
-			err,
-			"query transcript messages",
-		)
+		return nil, oops.In("database").Code("list_"+operation).Wrapf(err, "query %s", operationLabel)
 	}
 
 	messages, err := sessionMessagesFromRows(rows)
 	if err != nil {
-		return nil, oops.In("database").Code("scan_transcript_message").Wrapf(
-			err,
-			"scan transcript messages",
-		)
+		return nil, oops.In("database").Code("scan_"+operation).Wrapf(err, "scan %s", operationLabel)
+	}
+
+	if err := repository.hydrateSessionMessages(ctx, sessionID, messages); err != nil {
+		return nil, err
 	}
 
 	return messages, nil
@@ -120,7 +132,12 @@ WHERE session_id = ? AND entry_id = ?`
 		return nil, false, oops.In("database").Code("scan_message").Wrapf(err, "scan session message")
 	}
 
-	return message, true, nil
+	messages := []SessionMessageEntity{*message}
+	if err := repository.hydrateSessionMessages(ctx, sessionID, messages); err != nil {
+		return nil, false, err
+	}
+
+	return &messages[0], true, nil
 }
 
 func (repository *SessionRepository) appendEntryMessage(
@@ -158,6 +175,21 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		return oops.In("database").Code("append_message").Wrapf(err, "append session message")
 	}
 
+	const insertPart = `
+INSERT INTO session_message_parts
+    (id, session_id, entry_id, sequence, type, text, mime_type, name, width, height, data)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	for sequence := range message.Parts {
+		part := &message.Parts[sequence]
+		if _, err := transaction.Exec(ctx, insertPart,
+			newEntryID(), message.SessionID, message.EntryID, sequence, string(part.Type),
+			part.Text, part.MIMEType, part.Name, part.Width, part.Height, cloneBytes(part.Data),
+		); err != nil {
+			return oops.In("database").Code("append_message_part").Wrapf(err, "append session message part")
+		}
+	}
+
 	return nil
 }
 
@@ -181,7 +213,143 @@ func sessionMessageFromEntry(entry *EntryEntity) SessionMessageEntity {
 		Content:   entry.Message.Content,
 		Provider:  entry.Message.Provider,
 		Model:     entry.Message.Model,
+		Parts:     cloneMessageParts(entry.Message.Parts),
 	}
+}
+
+func (repository *SessionRepository) hydrateSessionMessages(
+	ctx context.Context,
+	sessionID string,
+	messages []SessionMessageEntity,
+) error {
+	entryIDs := make([]string, len(messages))
+	for index := range messages {
+		entryIDs[index] = messages[index].EntryID
+	}
+
+	partsByEntry, err := repository.messagePartsForEntries(ctx, sessionID, entryIDs)
+	if err != nil {
+		return err
+	}
+
+	for index := range messages {
+		messages[index].Parts = partsOrLegacyText(partsByEntry[messages[index].EntryID], messages[index].Content)
+	}
+
+	return nil
+}
+
+func (repository *SessionRepository) hydrateEntryMessages(
+	ctx context.Context,
+	sessionID string,
+	entries []EntryEntity,
+) error {
+	entryIDs := make([]string, 0, len(entries))
+	for index := range entries {
+		if entryCarriesMessage(&entries[index]) {
+			entryIDs = append(entryIDs, entries[index].ID)
+		}
+	}
+
+	partsByEntry, err := repository.messagePartsForEntries(ctx, sessionID, entryIDs)
+	if err != nil {
+		return err
+	}
+
+	for index := range entries {
+		if entryCarriesMessage(&entries[index]) {
+			parts := partsByEntry[entries[index].ID]
+			entries[index].Message.Parts = partsOrLegacyText(parts, entries[index].Message.Content)
+		}
+	}
+
+	return nil
+}
+
+func (repository *SessionRepository) messagePartsForEntries(
+	ctx context.Context,
+	sessionID string,
+	entryIDs []string,
+) (map[string][]MessagePartEntity, error) {
+	const entryIDBatchSize = 900
+
+	partsByEntry := make(map[string][]MessagePartEntity, len(entryIDs))
+	for start := 0; start < len(entryIDs); start += entryIDBatchSize {
+		end := min(start+entryIDBatchSize, len(entryIDs))
+		if err := repository.appendMessagePartsBatch(ctx, sessionID, entryIDs[start:end], partsByEntry); err != nil {
+			return nil, err
+		}
+	}
+
+	return partsByEntry, nil
+}
+
+func (repository *SessionRepository) appendMessagePartsBatch(
+	ctx context.Context,
+	sessionID string,
+	entryIDs []string,
+	partsByEntry map[string][]MessagePartEntity,
+) error {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(entryIDs)), ",")
+	query := fmt.Sprintf(`
+SELECT entry_id, type, text, data, mime_type, name, width, height
+FROM session_message_parts
+WHERE session_id = ? AND entry_id IN (%s)
+ORDER BY entry_id, sequence`, placeholders)
+	args := make([]any, 0, len(entryIDs)+1)
+
+	args = append(args, sessionID)
+	for _, entryID := range entryIDs {
+		args = append(args, entryID)
+	}
+
+	rows := []sessionMessagePartRow{}
+	if err := repository.sql.Query(ctx, &rows, query, args...); err != nil {
+		return oops.In("database").Code("list_message_parts").Wrapf(err, "query message parts")
+	}
+
+	for index := range rows {
+		row := &rows[index]
+		partsByEntry[row.EntryID] = append(partsByEntry[row.EntryID], MessagePartEntity{
+			Type: MessagePartType(row.Type), Text: row.Text, Data: cloneBytes(row.Data),
+			MIMEType: row.MIMEType, Name: row.Name, Width: row.Width, Height: row.Height,
+		})
+	}
+
+	return nil
+}
+
+func partsOrLegacyText(parts []MessagePartEntity, content string) []MessagePartEntity {
+	if len(parts) == 0 && strings.TrimSpace(content) != "" {
+		return []MessagePartEntity{{
+			Data: nil, Text: content, MIMEType: "", Name: "", Type: MessagePartText, Width: 0, Height: 0,
+		}}
+	}
+
+	return cloneMessageParts(parts)
+}
+
+func cloneMessageParts(parts []MessagePartEntity) []MessagePartEntity {
+	if parts == nil {
+		return nil
+	}
+
+	cloned := make([]MessagePartEntity, len(parts))
+	copy(cloned, parts)
+
+	for index := range cloned {
+		cloned[index].Data = cloneBytes(parts[index].Data)
+	}
+
+	return cloned
+}
+
+func cloneBytes(data []byte) []byte {
+	if data == nil {
+		return nil
+	}
+
+	return append([]byte(nil), data...)
 }
 
 func senderIdentity(entry *EntryEntity) string {

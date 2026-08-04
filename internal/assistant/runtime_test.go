@@ -1,9 +1,12 @@
 package assistant_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"image"
+	"image/png"
 	"io"
 	"log/slog"
 	"os"
@@ -56,6 +59,7 @@ func newRuntimePromptRequest(cwd, text, name string) *assistant.PromptRequest {
 		ParentEntryID:  nil,
 		SessionID:      "",
 		CWD:            cwd,
+		Images:         nil,
 		Text:           text,
 		Name:           name,
 		ResumeLatest:   false,
@@ -124,6 +128,75 @@ func TestRuntime_PromptPersistsConversation(t *testing.T) {
 	require.Len(t, entries, 2)
 	assert.Equal(t, database.RoleUser, entries[0].Message.Role)
 	assert.Equal(t, database.RoleAssistant, entries[1].Message.Role)
+}
+
+func TestRuntime_PromptImagesRoundTripAndDisableResponseCache(t *testing.T) {
+	t.Parallel()
+
+	client := &countingCompleter{request: nil, attempts: 0}
+	runtime, repository := newTestRuntimeWithClient(t, client)
+	imageData := runtimeTestPNG(t, 2, 3)
+	request := newRuntimePromptRequest(testRuntimeCWD, "   ", "images")
+	request.Images = []assistant.ImageAttachment{{
+		Name: "screen.png", MIMEType: "image/png", Data: imageData, Width: 2, Height: 3,
+	}}
+
+	response, err := runtime.Prompt(t.Context(), request)
+	require.NoError(t, err)
+	assert.Equal(t, 1, client.attempts)
+
+	messages := requireRuntimeMessages(t, repository, response.SessionID, 2)
+	require.Len(t, messages[0].Parts, 1)
+	assert.Equal(t, database.MessagePartImage, messages[0].Parts[0].Type)
+	assert.Equal(t, imageData, messages[0].Parts[0].Data)
+	require.NotNil(t, client.request)
+	require.Len(t, client.request.Messages[0].Parts, 1)
+	assert.Equal(t, database.MessagePartImage, client.request.Messages[0].Parts[0].Type)
+
+	for range 2 {
+		followUp := newRuntimePromptRequest(testRuntimeCWD, "same follow-up", "")
+		followUp.SessionID = response.SessionID
+		_, err = runtime.Prompt(t.Context(), followUp)
+		require.NoError(t, err)
+	}
+
+	assert.Equal(t, 3, client.attempts, "image-bearing history must bypass the text response cache")
+}
+
+func TestRuntime_TextOnlyModelRejectsImageHistoryBeforeProviderCall(t *testing.T) {
+	t.Parallel()
+
+	imageClient := &countingCompleter{request: nil, attempts: 0}
+	imageRuntime, repository := newTestRuntimeWithClient(t, imageClient)
+	request := newRuntimePromptRequest(testRuntimeCWD, "look", "images")
+	request.Images = []assistant.ImageAttachment{{
+		Name: "screen.png", MIMEType: "image/png", Data: runtimeTestPNG(t, 1, 1), Width: 1, Height: 1,
+	}}
+	response, err := imageRuntime.Prompt(t.Context(), request)
+	require.NoError(t, err)
+
+	textClient := &countingCompleter{request: nil, attempts: 0}
+	textRuntime, _ := newTestRuntimeWithRepositoryClientAndInput(
+		t, repository, textClient, []model.InputMode{model.InputText},
+	)
+	followUp := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
+	followUp.SessionID = response.SessionID
+	_, err = textRuntime.Prompt(t.Context(), followUp)
+	require.Error(t, err)
+	assert.Equal(t, 0, textClient.attempts)
+
+	coded, ok := oops.AsOops(err)
+	require.True(t, ok)
+	assert.Equal(t, "image_input_unsupported", coded.Code())
+}
+
+func runtimeTestPNG(t *testing.T, width, height int) []byte {
+	t.Helper()
+
+	var output bytes.Buffer
+	require.NoError(t, png.Encode(&output, image.NewRGBA(image.Rect(0, 0, width, height))))
+
+	return output.Bytes()
 }
 
 func TestRuntime_HiddenPromptDoesNotAppearInTranscript(t *testing.T) {
@@ -558,7 +631,7 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 		Role:      database.RoleUser,
 		Content:   "hello",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 	_, err = repository.AppendMessage(ctx, session.ID, &userEntry.ID, &database.MessageEntity{
@@ -566,7 +639,7 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 		Role:      database.RoleToolResult,
 		Content:   strings.Repeat("tool output ", 10_000),
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 
@@ -608,7 +681,7 @@ func TestRuntime_PromptIncludesCompactionSummaryContext(t *testing.T) {
 		Role:      database.RoleUser,
 		Content:   "old user prompt",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 	compactionEntry, err := repository.AppendCompaction(ctx, &database.AppendCompactionInput{
@@ -724,7 +797,34 @@ func newTestRuntimeWithRepositoryAndClient(
 ) (*assistant.Runtime, *database.SessionRepository) {
 	t.Helper()
 
-	runtime, repository, _ := newTestRuntimeWithRepositoryClientAndManager(t, repository, client)
+	return newTestRuntimeWithRepositoryClientAndInput(
+		t, repository, client, []model.InputMode{model.InputText, model.InputImage},
+	)
+}
+
+func newTestRuntimeWithRepositoryClientAndInput(
+	t *testing.T,
+	repository *database.SessionRepository,
+	client assistant.Completer,
+	input []model.InputMode,
+) (*assistant.Runtime, *database.SessionRepository) {
+	t.Helper()
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+
+	cache := assistant.NewResponseCache(true, 32, time.Minute)
+	t.Cleanup(cache.Shutdown)
+
+	runtime := assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
+		opts.Config = testConfig()
+		opts.Sessions = repository
+		opts.Extensions = manager
+		opts.Cache = cache
+		opts.Models = testRegistryWithInput(t, input)
+		opts.Client = client
+		opts.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	})
 
 	return runtime, repository
 }
@@ -773,6 +873,11 @@ type capturingCompleter struct {
 	request *assistant.CompletionRequest
 }
 
+type countingCompleter struct {
+	request  *assistant.CompletionRequest
+	attempts int
+}
+
 type retryCompleter struct {
 	err               error
 	response          string
@@ -812,6 +917,16 @@ func (client *capturingCompleter) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	client.request = request
+
+	return testCompleter{}.Complete(ctx, request)
+}
+
+func (client *countingCompleter) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.request = request
+	client.attempts++
 
 	return testCompleter{}.Complete(ctx, request)
 }
@@ -1098,6 +1213,12 @@ func (testCompleter) Complete(
 func testRegistry(t *testing.T) *model.Registry {
 	t.Helper()
 
+	return testRegistryWithInput(t, []model.InputMode{model.InputText, model.InputImage})
+}
+
+func testRegistryWithInput(t *testing.T, input []model.InputMode) *model.Registry {
+	t.Helper()
+
 	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{
 		testRuntimeProvider: testProviderCredential(),
 	})
@@ -1116,7 +1237,7 @@ func testRegistry(t *testing.T) *model.Registry {
 				Name:             testRuntimeModel,
 				API:              "openai-completions",
 				BaseURL:          "https://example.invalid/v1",
-				Input:            []model.InputMode{model.InputText},
+				Input:            input,
 				Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
 				ContextWindow:    100_000,
 				MaxTokens:        0,

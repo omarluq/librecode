@@ -27,6 +27,36 @@ func TestPromptHistoryNavigatesPromptsAndRestoresDraft(t *testing.T) {
 	assertEditorText(t, app, "draft prompt")
 }
 
+func TestPromptHistoryRestoresImagesAndCurrentDraft(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	historyImage := imageAttachment{
+		Name: "history.png", MIMEType: clipboardImageMIME, Data: []byte{1}, Width: 1, Height: 1,
+	}
+	draftImage := imageAttachment{
+		Name: "draft.png", MIMEType: clipboardImageMIME, Data: []byte{2}, Width: 2, Height: 2,
+	}
+
+	app.recordPromptDraftHistory(promptDraft{Text: "with image", Images: []imageAttachment{historyImage}})
+	app.composerBuffer.SetText("draft")
+	app.composerImages = []imageAttachment{draftImage}
+
+	pressTerminalKey(t, app, tcell.KeyUp, "")
+	assertEditorText(t, app, "with image")
+
+	if len(app.composerImages) != 1 || app.composerImages[0].Name != historyImage.Name {
+		t.Fatalf("history images = %#v", app.composerImages)
+	}
+
+	pressTerminalKey(t, app, tcell.KeyDown, "")
+	assertEditorText(t, app, "draft")
+
+	if len(app.composerImages) != 1 || app.composerImages[0].Name != draftImage.Name {
+		t.Fatalf("draft images = %#v", app.composerImages)
+	}
+}
+
 func TestPromptHistoryEditBecomesDraft(t *testing.T) {
 	t.Parallel()
 

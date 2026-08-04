@@ -11,6 +11,54 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
+func TestImageMessagesContributeToPlanningAndSplitSummary(t *testing.T) {
+	t.Parallel()
+
+	imagePart := database.MessagePartEntity{
+		Text: "", MIMEType: "image/png", Name: "", Type: database.MessagePartImage,
+		Data: []byte{1}, Width: 512, Height: 512,
+	}
+
+	tests := []struct {
+		name    string
+		content string
+		parts   []database.MessagePartEntity
+	}{
+		{name: "image only", content: "", parts: []database.MessagePartEntity{imagePart}},
+		{
+			name: "text and image", content: "describe this",
+			parts: []database.MessagePartEntity{
+				{
+					Text: "describe this", MIMEType: "", Name: "", Type: database.MessagePartText,
+					Data: nil, Width: 0, Height: 0,
+				},
+				imagePart,
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			message := database.MessageEntity{
+				Timestamp: time.Time{}, Role: database.RoleUser, Content: testCase.content,
+				Provider: "", Model: "", Parts: testCase.parts,
+			}
+			entry := database.EntryEntity{
+				CreatedAt: time.Time{}, ParentID: nil, ToolStatus: "", SessionID: "", ToolArgsJSON: "",
+				CustomType: "", DataJSON: "", ID: "", Summary: "", ToolName: "", BranchFromEntryID: "",
+				CompactionFirstKeptEntryID: "", Message: message, Type: database.EntryTypeMessage,
+				CompactionTokensBefore: 0, TokenEstimate: 0, Display: false, ModelFacing: true,
+			}
+
+			wantTokens := estimateTokens(testCase.content) + 256
+			assert.Equal(t, wantTokens, BranchTokens([]database.EntryEntity{entry}, estimateTokens))
+			assert.Contains(t, formatSplitTurnSummary([]database.MessageEntity{message}), "[attached images: 1]")
+		})
+	}
+}
+
 type planCompactionCase struct {
 	assertFn func(t *testing.T, plan *Plan)
 	name     string
@@ -282,7 +330,7 @@ func testEntry(
 			Role:      role,
 			Content:   content,
 			Provider:  "",
-			Model:     "",
+			Model:     "", Parts: nil,
 		},
 		Summary:                    "",
 		ToolStatus:                 "",

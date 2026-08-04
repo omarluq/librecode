@@ -3,6 +3,7 @@ package assistant
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/omarluq/librecode/internal/contextwindow"
@@ -14,16 +15,34 @@ func (runtime *Runtime) appendUserPromptEntry(
 	sessionID string,
 	parentID *string,
 	prompt string,
+	images []ImageAttachment,
 	display bool,
 ) (*database.EntryEntity, error) {
-	message := database.MessageEntity{
-		Timestamp: time.Now().UTC(),
-		Role:      database.RoleUser,
-		Content:   prompt,
-		Provider:  "",
-		Model:     "",
+	parts := make([]database.MessagePartEntity, 0, len(images)+1)
+
+	content := prompt
+	if strings.TrimSpace(prompt) != "" {
+		parts = append(parts, database.MessagePartEntity{
+			Text: prompt, MIMEType: "", Name: "", Type: database.MessagePartText,
+			Data: nil, Width: 0, Height: 0,
+		})
+	} else {
+		content = ""
 	}
-	modelFacing := promptModelFacing(prompt)
+
+	for index := range images {
+		image := &images[index]
+		parts = append(parts, database.MessagePartEntity{
+			Text: "", MIMEType: image.MIMEType, Name: image.Name, Type: database.MessagePartImage,
+			Data: append([]byte(nil), image.Data...), Width: image.Width, Height: image.Height,
+		})
+	}
+
+	message := database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: content,
+		Provider: "", Model: "", Parts: parts,
+	}
+	modelFacing := len(images) > 0 || promptModelFacing(prompt)
 
 	entry, err := runtime.sessions.AppendMessageWithDisplay(
 		ctx,
@@ -48,7 +67,7 @@ func (runtime *Runtime) appendAssistantResponseEntry(
 		Role:      database.RoleAssistant,
 		Content:   bundle.Text,
 		Provider:  runtime.cfg.Assistant.Provider,
-		Model:     runtime.cfg.Assistant.Model,
+		Model:     runtime.cfg.Assistant.Model, Parts: nil,
 	}
 
 	entry, err := runtime.sessions.AppendMessageWithMetadata(

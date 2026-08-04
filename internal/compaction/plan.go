@@ -9,6 +9,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -377,9 +378,10 @@ func formatSplitTurnSummary(messages []database.MessageEntity) string {
 
 	for index := range messages {
 		message := messages[index]
-
 		content := strings.TrimSpace(message.Content)
-		if content == "" {
+
+		imageDescription := messageImageDescription(&message)
+		if content == "" && imageDescription == "" {
 			continue
 		}
 
@@ -387,6 +389,12 @@ func formatSplitTurnSummary(messages []database.MessageEntity) string {
 		builder.WriteString(string(message.Role))
 		builder.WriteString("]\n")
 		builder.WriteString(content)
+
+		if content != "" && imageDescription != "" {
+			builder.WriteString("\n")
+		}
+
+		builder.WriteString(imageDescription)
 		builder.WriteString("\n")
 	}
 
@@ -484,7 +492,7 @@ func emptyMessage() database.MessageEntity {
 		Role:      "",
 		Content:   "",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	}
 }
 
@@ -528,11 +536,43 @@ func candidateMessage(entry *database.EntryEntity) database.MessageEntity {
 
 func messageTokens(messages []database.MessageEntity, countTokens TokenCounter) int {
 	tokens := 0
+
 	for index := range messages {
-		tokens += countTokens(messages[index].Content)
+		message := &messages[index]
+		tokens += countTokens(message.Content)
+
+		imageParts := make([]database.MessagePartEntity, 0, len(message.Parts))
+		for partIndex := range message.Parts {
+			if message.Parts[partIndex].Type == database.MessagePartImage {
+				imageParts = append(imageParts, message.Parts[partIndex])
+			}
+		}
+
+		if len(imageParts) > 0 {
+			imageOnly := database.MessageEntity{
+				Timestamp: time.Time{}, Role: "", Content: "", Provider: "", Model: "", Parts: imageParts,
+			}
+			tokens += contextwindow.EstimateMessageTokens([]database.MessageEntity{imageOnly})
+		}
 	}
 
 	return tokens
+}
+
+func messageImageDescription(message *database.MessageEntity) string {
+	images := 0
+
+	for index := range message.Parts {
+		if message.Parts[index].Type == database.MessagePartImage {
+			images++
+		}
+	}
+
+	if images == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("[attached images: %d]", images)
 }
 
 func countRunesAsTokens(text string) int {

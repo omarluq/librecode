@@ -176,7 +176,7 @@ func TestParentIDFromEntry(t *testing.T) {
 			Role:      "",
 			Content:   "",
 			Provider:  "",
-			Model:     "",
+			Model:     "", Parts: nil,
 		},
 		Summary:                    "",
 		ToolStatus:                 "",

@@ -43,10 +43,71 @@ func (app *App) drawComposerWindow(layout *extui.Layout) {
 }
 
 func (app *App) renderComposerEditor(width, bodyRows int) tui.TextAreaRender {
-	return app.composerBuffer.Render(width, bodyRows, tui.TextAreaStyles{
+	chips := app.visibleAttachmentChipLines(width, max(0, bodyRows-1))
+	textRows := max(1, bodyRows-len(chips))
+
+	rendered := app.composerBuffer.Render(width, textRows, tui.TextAreaStyles{
 		Border: app.theme.style(app.editorBorderColor()),
 		Body:   app.theme.style(colorText),
 	})
+	if len(chips) == 0 {
+		return rendered
+	}
+
+	const afterTopBorder = 1
+
+	lines := make([]tui.Line, 0, len(rendered.Lines)+len(chips))
+	lines = append(lines, rendered.Lines[:afterTopBorder]...)
+	lines = append(lines, chips...)
+	lines = append(lines, rendered.Lines[afterTopBorder:]...)
+	rendered.Lines = lines
+	rendered.CursorRow += len(chips)
+
+	return rendered
+}
+
+func (app *App) attachmentChipLines(width int) []tui.Line {
+	lines := make([]tui.Line, 0, len(app.composerImages))
+	for _, item := range app.composerImages {
+		summary := attachmentSummary{
+			Name: item.Name, MIMEType: item.MIMEType, Width: item.Width,
+			Height: item.Height, Size: len(item.Data),
+		}
+		text := "  " + attachmentSummaryText(summary)
+		lines = append(lines, tui.NewLine(app.theme.style(colorDim), tui.Truncate(text, width)))
+	}
+
+	return lines
+}
+
+func (app *App) visibleAttachmentChipLines(width, limit int) []tui.Line {
+	chips := app.attachmentChipLines(width)
+	if limit <= 0 || len(chips) == 0 {
+		return nil
+	}
+
+	if len(chips) <= limit {
+		return chips
+	}
+
+	visible := max(0, limit-1)
+	lines := chips[:visible]
+	overflow := "  … " + tui.Int(len(chips)-visible) + " more attachments"
+
+	return append(lines, tui.NewLine(app.theme.style(colorDim), tui.Truncate(overflow, width)))
+}
+
+func formatByteSize(size int) string {
+	const (
+		kibibyte = 1024
+		mebibyte = kibibyte * kibibyte
+	)
+
+	if size >= mebibyte {
+		return tui.Int((size+mebibyte-1)/mebibyte) + " MiB"
+	}
+
+	return tui.Int((size+kibibyte-1)/kibibyte) + " KiB"
 }
 
 func (app *App) drawStatusWindow(layout *extui.Layout) {
@@ -84,7 +145,7 @@ func (app *App) drawEditorAndFooter(width, height, _ int) {
 		app.writeStyledLine(layout.footerStart+index, width, line)
 	}
 
-	if app.transcriptListFocused() || app.agentTaskSummaryFocused() {
+	if len(layout.editor.Lines) == 0 || app.transcriptListFocused() || app.agentTaskSummaryFocused() {
 		app.screen.HideCursor()
 
 		return
@@ -119,12 +180,15 @@ func (app *App) composerLayout(width, height int) composerLayout {
 	if reserve > height {
 		bodyRows := max(1, height-len(footerLines)-len(autocompleteLines)-composerBorderRows)
 		editor = app.renderComposerEditor(width, bodyRows)
-		reserve = len(footerLines) + len(autocompleteLines) + len(editor.Lines)
 	}
 
+	footerLines, autocompleteLines, editor = fitComposerRows(
+		height, footerLines, autocompleteLines, editor,
+	)
+	reserve = len(footerLines) + len(autocompleteLines) + len(editor.Lines)
 	startRow := max(0, height-reserve)
 	editorStart := startRow + len(autocompleteLines)
-	footerStart := height - len(footerLines)
+	footerStart := editorStart + len(editor.Lines)
 
 	return composerLayout{
 		editor:            editor,
@@ -135,6 +199,36 @@ func (app *App) composerLayout(width, height int) composerLayout {
 		footerStart:       footerStart,
 		reserve:           reserve,
 	}
+}
+
+func fitComposerRows(
+	height int,
+	footerLines, autocompleteLines []tui.Line,
+	editor tui.TextAreaRender,
+) (footer, autocomplete []tui.Line, fittedEditor tui.TextAreaRender) {
+	height = max(0, height)
+	if len(footerLines) > height {
+		footerLines = footerLines[:height]
+	}
+
+	remaining := height - len(footerLines)
+	if len(autocompleteLines) > remaining {
+		autocompleteLines = autocompleteLines[:remaining]
+	}
+
+	remaining -= len(autocompleteLines)
+	if len(editor.Lines) > remaining {
+		editor.Lines = editor.Lines[:remaining]
+	}
+
+	if len(editor.Lines) == 0 {
+		editor.CursorRow = 0
+		editor.CursorCol = 0
+	} else {
+		editor.CursorRow = min(editor.CursorRow, len(editor.Lines)-1)
+	}
+
+	return footerLines, autocompleteLines, editor
 }
 
 func (app *App) editorBorderColor() colorToken {

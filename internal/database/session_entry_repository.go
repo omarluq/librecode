@@ -52,7 +52,7 @@ func entryFromRow(row *entryRow) (*EntryEntity, error) {
 			Role:      Role(row.Role),
 			Content:   row.Content,
 			Provider:  row.Provider,
-			Model:     row.Model,
+			Model:     row.Model, Parts: nil,
 		},
 		Summary:                    row.Summary,
 		ToolStatus:                 row.ToolStatus,

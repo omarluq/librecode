@@ -429,6 +429,7 @@ func callDesktopClipboard(text string, initErr error, changed <-chan struct{}) d
 
 			return initErr
 		},
+		read: func(clipboard.Format) []byte { return nil },
 		write: func(_ clipboard.Format, data []byte) <-chan struct{} {
 			result.writes = append(result.writes, append([]byte(nil), data...))
 

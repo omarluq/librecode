@@ -317,7 +317,7 @@ func TestAgentTaskCompletionFallbacksAndDelivery(t *testing.T) {
 	assert.True(t, canceled)
 	assert.Contains(t, app.statusMessage, "1 agent task(s) finished")
 	require.Len(t, app.hiddenQueuedMessages, 1)
-	assert.Contains(t, app.hiddenQueuedMessages[0], "completion text")
+	assert.Contains(t, app.hiddenQueuedMessages[0].Text, "completion text")
 
 	app.deliverAgentTaskCompletionText(t.Context(), "done", "duplicate")
 	assert.Len(t, app.liveAgentCompletions, 1)
@@ -391,7 +391,7 @@ func TestDiscoverRefreshAndTrackAgentTasks(t *testing.T) {
 	app.deliverAgentTaskCompletion(t.Context(), &done)
 	assert.Empty(t, app.agentTasks)
 	require.Len(t, app.hiddenQueuedMessages, 1)
-	assert.Contains(t, app.hiddenQueuedMessages[0], "finished")
+	assert.Contains(t, app.hiddenQueuedMessages[0].Text, "finished")
 	assert.True(t, stub.wasCanceled(behaviorRunning))
 
 	app.runtime = nil
@@ -421,7 +421,7 @@ func TestRefreshActiveAgentTasksReconcilesMissedCompletion(t *testing.T) {
 	assert.Empty(t, app.agentTasks)
 	assert.True(t, stub.wasCanceled(behaviorRunning))
 	require.Len(t, app.hiddenQueuedMessages, 1)
-	assert.Contains(t, app.hiddenQueuedMessages[0], "finished after missed event")
+	assert.Contains(t, app.hiddenQueuedMessages[0].Text, "finished after missed event")
 }
 
 func TestRefreshActiveAgentTasksRetainsOmittedRunningTask(t *testing.T) {
@@ -484,7 +484,7 @@ func TestTrackStartedTerminalTaskDeliversImmediately(t *testing.T) {
 	app.working = true
 	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":"done"}`, false))
 	require.Len(t, app.liveAgentCompletions, 1)
-	assert.Contains(t, app.hiddenQueuedMessages[0], "immediate result")
+	assert.Contains(t, app.hiddenQueuedMessages[0].Text, "immediate result")
 }
 
 func TestAgentTaskStateAndRunningPredicates(t *testing.T) {
@@ -651,7 +651,7 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 		Role:      database.RoleAssistant,
 		Content:   "loaded child transcript",
 		Provider:  "child-provider",
-		Model:     "child-model",
+		Model:     "child-model", Parts: nil,
 	})
 	require.NoError(t, err)
 
@@ -717,7 +717,7 @@ func TestLeaveAgentTaskSessionRefreshesDurableParentTranscript(t *testing.T) {
 		Role:      database.RoleAssistant,
 		Content:   "new durable parent message",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 
@@ -742,7 +742,7 @@ func TestRevisitAgentTaskSessionRefreshesDurableTranscript(t *testing.T) {
 		Role:      database.RoleAssistant,
 		Content:   "new durable child message",
 		Provider:  "",
-		Model:     "",
+		Model:     "", Parts: nil,
 	})
 	require.NoError(t, err)
 
@@ -1013,7 +1013,7 @@ func TestAgentTaskCompletionRoutesToParentWhileChildIsInspected(t *testing.T) {
 	require.Len(t, app.liveAgentCompletions, 1)
 	assert.Contains(t, app.liveAgentCompletions[0].Content, "parent completion")
 	require.Len(t, app.hiddenQueuedMessages, 1)
-	assert.Contains(t, app.hiddenQueuedMessages[0], "parent completion")
+	assert.Contains(t, app.hiddenQueuedMessages[0].Text, "parent completion")
 }
 
 func TestActivePromptInspectionAllowsNestedTaskSelection(t *testing.T) {
@@ -1419,7 +1419,7 @@ func TestInspectAgentTaskLoadFailureDoesNotSwitchSession(t *testing.T) {
 					Role:      database.RoleUser,
 					Content:   "child message",
 					Provider:  "",
-					Model:     "",
+					Model:     "", Parts: nil,
 				})
 				require.NoError(t, err)
 			},

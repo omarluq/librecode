@@ -34,6 +34,7 @@ func TestPromptAndTurnPayloads(t *testing.T) {
 		parentID := lifecycleTestParentID
 		prompt := lifecyclepayload.Prompt(&lifecyclepayload.PromptRequest{
 			ParentEntryID: &parentID,
+			Attachments:   nil,
 			CWD:           "/work",
 			Name:          "agent",
 			SessionID:     lifecycleTestSessionID,
@@ -109,7 +110,7 @@ func TestSessionEntryAndContextPayloads(t *testing.T) {
 			Role:      database.RoleAssistant,
 			Content:   "answer",
 			Provider:  "provider-1",
-			Model:     lifecycleTestModel,
+			Model:     lifecycleTestModel, Parts: nil,
 		},
 		Summary:                    "summary",
 		ToolStatus:                 "",

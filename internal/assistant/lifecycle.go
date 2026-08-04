@@ -273,6 +273,7 @@ func lifecyclePromptRequest(request *PromptRequest) *lifecyclepayload.PromptRequ
 	if request == nil {
 		return &lifecyclepayload.PromptRequest{
 			ParentEntryID: nil,
+			Attachments:   nil,
 			CWD:           "",
 			Name:          "",
 			SessionID:     "",
@@ -281,8 +282,14 @@ func lifecyclePromptRequest(request *PromptRequest) *lifecyclepayload.PromptRequ
 		}
 	}
 
+	attachments := make([]map[string]any, len(request.Images))
+	for index := range request.Images {
+		attachments[index] = imageMetadata(request.Images[index])
+	}
+
 	return &lifecyclepayload.PromptRequest{
 		ParentEntryID: request.ParentEntryID,
+		Attachments:   attachments,
 		CWD:           request.CWD,
 		Name:          request.Name,
 		SessionID:     request.SessionID,

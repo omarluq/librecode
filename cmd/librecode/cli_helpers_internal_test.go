@@ -111,7 +111,7 @@ func TestPrintSessionSummaryAndEntry(t *testing.T) {
 			Role:      database.RoleUser,
 			Content:   "message text",
 			Provider:  "",
-			Model:     "",
+			Model:     "", Parts: nil,
 		},
 		Summary:                    "",
 		ToolStatus:                 "",
