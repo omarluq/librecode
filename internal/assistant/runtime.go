@@ -520,7 +520,9 @@ func (runtime *Runtime) ModelRegistry() *model.Registry {
 }
 
 func splitSlashCommand(prompt string) (name, args string) {
-	trimmedPrompt := strings.TrimSpace(strings.TrimPrefix(prompt, slashPrefix))
+	trimmedPrompt := strings.TrimPrefix(strings.TrimSpace(prompt), slashPrefix)
+
+	trimmedPrompt = strings.TrimSpace(trimmedPrompt)
 	if trimmedPrompt == "" {
 		return "", ""
 	}

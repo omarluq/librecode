@@ -7,11 +7,13 @@ import (
 	"image/png"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gdamore/tcell/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
 
@@ -113,15 +115,23 @@ func TestBracketedPasteInsertsLiterally(t *testing.T) {
 func TestPromptDraftAndSessionViewCloneImageBytes(t *testing.T) {
 	t.Parallel()
 	app := newRenderTestApp(t)
-	app.sessionID = "session"
+	app.sessionID = benchmarkDisplayedSession
 	app.composerImages = []imageAttachment{{Name: "image", MIMEType: "", Data: []byte{1, 2}, Width: 0, Height: 0}}
+	app.promptHistory = []string{"history"}
+	app.promptHistoryImages = [][]imageAttachment{{{
+		Name: "history-image", MIMEType: "", Data: []byte{4}, Width: 0, Height: 0,
+	}}}
 	queuedImage := imageAttachment{Name: "", MIMEType: "", Data: []byte{3}, Width: 0, Height: 0}
 	app.queuedMessages = []promptDraft{{Text: "queued", Images: []imageAttachment{queuedImage}}}
 	app.saveSessionView()
 	app.composerImages[0].Data[0] = 9
+	app.promptHistory[0] = "changed"
+	app.promptHistoryImages[0][0].Data[0] = 9
 	app.queuedMessages[0].Images[0].Data[0] = 9
-	view := app.sessionViews["session"]
+	view := app.sessionViews[benchmarkDisplayedSession]
 	assert.Equal(t, byte(1), view.composerImages[0].Data[0])
+	assert.Equal(t, "history", view.promptHistory[0])
+	assert.Equal(t, byte(4), view.promptHistoryImages[0][0].Data[0])
 	assert.Equal(t, byte(3), view.queuedMessages[0].Images[0].Data[0])
 }
 
@@ -217,6 +227,30 @@ func TestReadOnlyInspectionBlocksImageAndBracketedPaste(t *testing.T) {
 	assert.False(t, shouldQuit)
 	assert.Empty(t, app.composerImages)
 	assert.Equal(t, readOnlyAgentInspectionStatus, app.statusMessage)
+}
+
+func TestAppendSessionMessagesRestoresAttachmentSummaries(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.appendSessionMessages([]database.SessionMessageEntity{{
+		CreatedAt: time.Time{}, ID: "", SessionID: "", EntryID: "", Sender: "",
+		Role: database.RoleUser, Content: "", Provider: "", Model: "",
+		Parts: []database.MessagePartEntity{{
+			Type: database.MessagePartImage, Text: "", Name: testImageAttachmentName,
+			MIMEType: clipboardImageMIME, Data: []byte("image"), Width: 10, Height: 20,
+		}},
+	}})
+
+	require.Len(t, app.transcript.History, 1)
+	summaries := app.transcript.History[0].Attachments
+	require.NotNil(t, summaries)
+	require.Len(t, *summaries, 1)
+	assert.Equal(t, testImageAttachmentName, (*summaries)[0].Name)
+	assert.Equal(t, clipboardImageMIME, (*summaries)[0].MIMEType)
+	assert.Equal(t, 10, (*summaries)[0].Width)
+	assert.Equal(t, 20, (*summaries)[0].Height)
+	assert.Equal(t, len("image"), (*summaries)[0].Size)
 }
 
 func TestAttachmentRenderingContainsMetadataNotData(t *testing.T) {

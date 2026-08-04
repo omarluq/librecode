@@ -460,7 +460,7 @@ func anthropicMessages(messages []llm.Message) ([]map[string]any, error) {
 			content = anthropicUserContent(message)
 		}
 
-		if content == "" {
+		if emptyMessageContent(content) {
 			continue
 		}
 

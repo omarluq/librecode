@@ -1,6 +1,3 @@
 package assistant
 
-const (
-	expectedReadToolName = string(jsonReadToolName)
-	expectedSystemRole   = string(jsonSystemRole)
-)
+const expectedReadToolName = string(jsonReadToolName)

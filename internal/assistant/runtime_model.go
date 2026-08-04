@@ -46,7 +46,12 @@ func (runtime *Runtime) respond(
 	err error,
 ) {
 	if strings.HasPrefix(strings.TrimSpace(prompt), slashPrefix) {
-		slashResponse, slashToolEvents, slashErr := runtime.respondToSlashCommand(ctx, cwd, prompt, onEvent)
+		slashResponse, slashToolEvents, slashErr := runtime.respondToSlashCommand(
+			ctx,
+			cwd,
+			strings.TrimSpace(prompt),
+			onEvent,
+		)
 
 		return &responseBundle{
 			Text:        slashResponse,
@@ -119,6 +124,8 @@ func (runtime *Runtime) modelResponse(
 	}
 
 	if contextHasImages {
+		// Keep this early check: historical images are known before auth and context
+		// construction, so an incompatible model should fail without doing either.
 		imageErr := validateSelectedModelHasImageInput(&selectedModel, "conversation_history")
 		if imageErr != nil {
 			return nil, imageErr
@@ -429,12 +436,13 @@ func (runtime *Runtime) promptContextContainsImages(
 		return false, nil
 	}
 
-	contextEntity, err := runtime.modelContextEntityFrom(ctx, sessionID, lineage.activeParentEntryID)
+	hasImages, err := runtime.sessions.ContextHasImageParts(ctx, sessionID, lineage.activeParentEntryID)
 	if err != nil {
-		return false, err
+		return false, oops.In("assistant").Code("load_image_context").
+			Wrapf(err, "query session context for images")
 	}
 
-	return messagesContainImages(contextEntity.Messages), nil
+	return hasImages, nil
 }
 
 func (runtime *Runtime) cacheKey(sessionID, prompt string) string {

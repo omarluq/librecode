@@ -52,7 +52,8 @@ func entryFromRow(row *entryRow) (*EntryEntity, error) {
 			Role:      Role(row.Role),
 			Content:   row.Content,
 			Provider:  row.Provider,
-			Model:     row.Model, Parts: nil,
+			Model:     row.Model,
+			Parts:     nil,
 		},
 		Summary:                    row.Summary,
 		ToolStatus:                 row.ToolStatus,
@@ -105,7 +106,12 @@ LIMIT 1`, entrySelectColumns)
 		return nil, false, oops.In("database").Code("scan_entry").Wrapf(err, "scan leaf entry")
 	}
 
-	return entry, true, nil
+	entries := []EntryEntity{*entry}
+	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+		return nil, false, err
+	}
+
+	return &entries[0], true, nil
 }
 
 // Entries returns all entries for a session in append order.
@@ -124,6 +130,10 @@ ORDER BY created_at ASC`, entrySelectColumns)
 	entries, err := entriesFromRows(rows)
 	if err != nil {
 		return nil, oops.In("database").Code("scan_entry").Wrapf(err, "scan session entries")
+	}
+
+	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+		return nil, err
 	}
 
 	return entries, nil
@@ -150,7 +160,12 @@ WHERE session_id = ? AND id = ?`, entrySelectColumns)
 		return nil, false, oops.In("database").Code("scan_entry").Wrapf(err, "scan entry")
 	}
 
-	return entry, true, nil
+	entries := []EntryEntity{*entry}
+	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+		return nil, false, err
+	}
+
+	return &entries[0], true, nil
 }
 
 // DeleteEntryBranch removes an entry and all descendants from one session.
@@ -257,6 +272,10 @@ ORDER BY created_at ASC`, entrySelectColumns)
 		return nil, oops.In("database").Code("scan_child").Wrapf(err, "scan child entries")
 	}
 
+	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+		return nil, err
+	}
+
 	return entries, nil
 }
 
@@ -293,6 +312,10 @@ func (repository *SessionRepository) appendCompactionConditional(
 		}
 
 		return nil, oops.In("database").Code("append_compaction_tx").Wrapf(err, "append compaction transaction")
+	}
+
+	if err := repository.hydrateEntryMessage(ctx, resolved.SessionID, resolved); err != nil {
+		return nil, err
 	}
 
 	return resolved, nil

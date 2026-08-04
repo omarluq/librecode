@@ -57,9 +57,22 @@ func TestMessagePartsMigrationUpDownAndOldSchemaUpgrade(t *testing.T) {
 	assertSchemaObjectExists(ctx, t, connection,
 		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message_parts'`)
 
-	const partsIndexQuery = `SELECT COUNT(*) FROM sqlite_master
-WHERE type = 'index' AND name = 'idx_session_message_parts_session_entry_sequence'`
-	assertSchemaObjectExists(ctx, t, connection, partsIndexQuery)
+	for _, indexName := range []string{
+		"idx_session_message_parts_session_entry_sequence",
+		"idx_session_message_parts_session_entry_image",
+	} {
+		assertSchemaObjectExists(ctx, t, connection,
+			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, indexName)
+	}
+
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	assertSchemaObjectExists(ctx, t, connection,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message_parts'`)
+
+	const imagePartsIndexQuery = `SELECT COUNT(*) FROM sqlite_master
+WHERE type = 'index' AND name = 'idx_session_message_parts_session_entry_image'`
+	assertSchemaObjectCount(ctx, t, connection, 0, imagePartsIndexQuery)
 
 	_, err = provider.Down(ctx)
 	require.NoError(t, err)

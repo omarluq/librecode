@@ -89,9 +89,11 @@ end)
 `)
 	app.working = true
 	app.composerBuffer.SetText("original")
-	app.composerImages = []imageAttachment{{
-		Name: testImageAttachmentName, MIMEType: clipboardImageMIME, Data: []byte{1}, Width: 1, Height: 1,
-	}}
+
+	image := imageAttachment{
+		Name: testImageAttachmentName, MIMEType: clipboardImageMIME, Data: []byte{1}, Width: 2, Height: 3,
+	}
+	app.composerImages = []imageAttachment{image}
 
 	shouldQuit, err := app.submit(t.Context())
 	require.NoError(t, err)
@@ -99,7 +101,7 @@ end)
 	require.Len(t, app.queuedMessages, 1)
 	assert.Equal(t, "mutated by extension", app.queuedMessages[0].Text)
 	require.Len(t, app.queuedMessages[0].Images, 1)
-	assert.Equal(t, []byte{1}, app.queuedMessages[0].Images[0].Data)
+	assert.Equal(t, image, app.queuedMessages[0].Images[0])
 }
 
 func TestExtensionPromptSubmitRevalidatesImageDraft(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/samber/oops"
+	_ "golang.org/x/image/webp" // Register WebP for DecodeConfig.
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
@@ -22,6 +23,7 @@ const (
 	maxPromptImageTotal  = 20 << 20
 	maxPromptImagePixels = 40_000_000
 	imageMIMEPNG         = "image/png"
+	imageMIMEWebP        = "image/webp"
 )
 
 func (runtime *Runtime) preparePromptRequest(request *PromptRequest) (*PromptRequest, error) {
@@ -170,6 +172,8 @@ func imageMIMEType(format string) string {
 		return "image/jpeg"
 	case "png":
 		return imageMIMEPNG
+	case "webp":
+		return imageMIMEWebP
 	default:
 		return ""
 	}
@@ -207,11 +211,19 @@ func validateSelectedModelHasImageInput(selected *model.Model, source string) er
 }
 
 func messagesContainImages(messages []database.MessageEntity) bool {
-	for messageIndex := range messages {
-		for partIndex := range messages[messageIndex].Parts {
-			if messages[messageIndex].Parts[partIndex].Type == database.MessagePartImage {
-				return true
-			}
+	for index := range messages {
+		if messageContainsImages(&messages[index]) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func messageContainsImages(message *database.MessageEntity) bool {
+	for index := range message.Parts {
+		if message.Parts[index].Type == database.MessagePartImage {
+			return true
 		}
 	}
 

@@ -25,7 +25,7 @@ func (runtime *Runtime) respondToSlashCommand(
 	prompt string,
 	onEvent func(StreamEvent),
 ) (response string, toolEvents []ToolEvent, err error) {
-	commandName, commandArgs := splitSlashCommand(prompt)
+	commandName, commandArgs := splitSlashCommand(strings.TrimSpace(prompt))
 	if commandName == "" {
 		return "", nil, oops.In("assistant").Code("empty_slash_command").Errorf("empty slash command")
 	}

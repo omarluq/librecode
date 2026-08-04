@@ -18,8 +18,39 @@ import (
 
 const (
 	runtimeSlashHelloPrompt = "/hello world"
+	runtimeSlashHelloReply  = "hi world"
 	runtimeSlashMissing     = "missing"
 )
+
+func TestSplitSlashCommandRemovesOnePrefix(t *testing.T) {
+	t.Parallel()
+
+	const (
+		slashTestArgs  = "fast"
+		slashTestModel = "model"
+	)
+
+	tests := []struct {
+		name     string
+		prompt   string
+		wantName string
+		wantArgs string
+	}{
+		{name: "single prefix", prompt: "/model fast", wantName: slashTestModel, wantArgs: slashTestArgs},
+		{name: "double prefix", prompt: "//model fast", wantName: "/model", wantArgs: slashTestArgs},
+		{name: "surrounding whitespace", prompt: "  /model fast  ", wantName: slashTestModel, wantArgs: slashTestArgs},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			name, args := splitSlashCommand(test.prompt)
+			assert.Equal(t, test.wantName, name)
+			assert.Equal(t, test.wantArgs, args)
+		})
+	}
+}
 
 func TestRespondToSlashCommand(t *testing.T) {
 	t.Parallel()
@@ -39,10 +70,17 @@ func TestRespondToSlashCommand(t *testing.T) {
 			wantErrText:  "empty slash command",
 		},
 		{
-			extensions:   slashCommandExtensions{err: nil, response: "hi world"},
+			extensions:   slashCommandExtensions{err: nil, response: runtimeSlashHelloReply},
 			prompt:       runtimeSlashHelloPrompt,
 			name:         "extension command",
-			wantResponse: "hi world",
+			wantResponse: runtimeSlashHelloReply,
+			wantErrText:  "",
+		},
+		{
+			extensions:   slashCommandExtensions{err: nil, response: runtimeSlashHelloReply},
+			prompt:       "  " + runtimeSlashHelloPrompt + "  ",
+			name:         "extension command with surrounding whitespace",
+			wantResponse: runtimeSlashHelloReply,
 			wantErrText:  "",
 		},
 		{

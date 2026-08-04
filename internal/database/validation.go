@@ -187,7 +187,8 @@ func validImageMIMEType(value string) bool {
 	mediaType, _, err := mime.ParseMediaType(value)
 
 	return err == nil && mediaType == value && value == strings.ToLower(value) &&
-		strings.HasPrefix(value, "image/") && len(value) > len("image/")
+		strings.HasPrefix(value, "image/") && len(value) > len("image/") &&
+		!strings.Contains(value, "*")
 }
 
 func validateTaskEntity(entity *TaskEntity) error {

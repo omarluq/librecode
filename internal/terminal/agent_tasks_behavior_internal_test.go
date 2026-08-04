@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -750,6 +752,43 @@ func TestRevisitAgentTaskSessionRefreshesDurableTranscript(t *testing.T) {
 	assert.Empty(t, app.transcript.Streaming.Blocks)
 	assert.Empty(t, app.runningToolBlocks)
 	assert.Contains(t, app.transcript.History[0].Content, "new durable child message")
+}
+
+func TestRevisitAgentTaskPreservesFullPromptHistoryDuringRefresh(t *testing.T) {
+	t.Parallel()
+
+	fixture, _, app := newAgentTaskSessionTestApp(t, database.TaskSucceeded)
+	history := make([]string, promptHistoryLimit)
+	historyImages := make([][]imageAttachment, promptHistoryLimit)
+
+	for index := range history {
+		history[index] = fmt.Sprintf("prompt %d", index)
+		historyImages[index] = []imageAttachment{{
+			Name: fmt.Sprintf("image-%d.png", index), MIMEType: clipboardImageMIME, Data: []byte{byte(index)},
+			Width: 1, Height: 1,
+		}}
+	}
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	app.promptHistory = slices.Clone(history)
+	app.promptHistoryImages = cloneImageAttachmentGroups(historyImages)
+	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
+
+	_, err := fixture.sessions.AppendMessage(t.Context(), fixture.child.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "durable refresh prompt",
+		Provider: "", Model: "", Parts: nil,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	assert.Equal(t, history, app.promptHistory)
+	require.Len(t, app.promptHistoryImages, promptHistoryLimit)
+
+	for index := range historyImages {
+		require.Len(t, app.promptHistoryImages[index], 1)
+		assert.Equal(t, historyImages[index][0].Name, app.promptHistoryImages[index][0].Name)
+		assert.Equal(t, historyImages[index][0].Data, app.promptHistoryImages[index][0].Data)
+	}
 }
 
 func TestRevisitRunningAgentTaskPreservesTransientState(t *testing.T) {

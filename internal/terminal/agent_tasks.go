@@ -1562,10 +1562,10 @@ func (app *App) switchToAgentTaskSession(
 	app.agentTaskSessionStack = sessionStack
 
 	if app.restoreSessionView(sessionID) {
-		promptHistory := app.promptHistory
-		promptHistoryImages := app.promptHistoryImages
+		promptHistory := slices.Clone(app.promptHistory)
+		promptHistoryImages := cloneImageAttachmentGroups(app.promptHistoryImages)
 		promptHistoryDraft := app.promptHistoryDraft
-		promptHistoryDraftImages := app.promptHistoryDraftImages
+		promptHistoryDraftImages := cloneImageAttachments(app.promptHistoryDraftImages)
 		promptHistoryIndex := app.promptHistoryIndex
 		app.transcript.History = nil
 		app.transcript.LineCache.reset()
@@ -1710,7 +1710,7 @@ func (app *App) appendMissingSessionMessages(messages []database.SessionMessageE
 			CreatedAt:   message.CreatedAt,
 			Role:        role,
 			Content:     message.Content,
-			Attachments: nil,
+			Attachments: databaseAttachmentSummaries(message.Parts),
 		})
 
 		appended = true

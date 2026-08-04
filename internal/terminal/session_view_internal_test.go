@@ -55,6 +55,25 @@ func TestWithSessionViewRejectsEventWhenOwnerViewIsMissing(t *testing.T) {
 	assert.Empty(t, app.transcript.History)
 }
 
+func TestSessionViewSaveAndRestoreClonePromptHistory(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+
+	const savedPrompt = "saved prompt"
+
+	app.sessionID = benchmarkDisplayedSession
+	app.promptHistory = []string{savedPrompt}
+	app.saveSessionView()
+
+	app.promptHistory[0] = "mutated active prompt"
+	assert.Equal(t, []string{savedPrompt}, app.sessionViews[benchmarkDisplayedSession].promptHistory)
+
+	require.True(t, app.restoreSessionView(benchmarkDisplayedSession))
+	app.promptHistory[0] = "changed restored prompt"
+	assert.Equal(t, []string{savedPrompt}, app.sessionViews[benchmarkDisplayedSession].promptHistory)
+}
+
 func TestPromptEventReportsMissingOwnerView(t *testing.T) {
 	t.Parallel()
 

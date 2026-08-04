@@ -212,7 +212,7 @@ func openAIChatMessages(request *CompletionRequest) ([]map[string]any, error) {
 			content = openAIChatUserContent(message)
 		}
 
-		if content == "" {
+		if emptyMessageContent(content) {
 			continue
 		}
 

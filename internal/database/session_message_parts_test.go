@@ -59,10 +59,7 @@ func TestSessionRepository_RoundTripsOrderedMultipartMessages(t *testing.T) {
 	require.True(t, found)
 	assertMultipartParts(t, message.Parts)
 
-	branch, err := repository.Branch(ctx, session.ID, entry.ID)
-	require.NoError(t, err)
-	require.Len(t, branch, 1)
-	assertMultipartParts(t, branch[0].Message.Parts)
+	assertEntryReadersHydrateMultipart(t, repository, session.ID, entry.ID)
 
 	contextEntity, err := repository.BuildContext(ctx, session.ID, entry.ID)
 	require.NoError(t, err)
@@ -74,6 +71,54 @@ func TestSessionRepository_RoundTripsOrderedMultipartMessages(t *testing.T) {
 	again, err := repository.Messages(ctx, session.ID)
 	require.NoError(t, err)
 	assert.Equal(t, []byte{1, 2, 3}, again[0].Parts[1].Data)
+}
+
+func TestSessionRepository_ContextHasImagePartsFollowsActiveBranch(t *testing.T) {
+	t.Parallel()
+
+	repository := newTestSessionRepository(t)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, "/work", "image context", "")
+	require.NoError(t, err)
+
+	root, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "root", Provider: "", Model: "", Parts: nil,
+	})
+	require.NoError(t, err)
+	image, err := repository.AppendMessage(ctx, session.ID, &root.ID, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "", Provider: "", Model: "",
+		Parts: []database.MessagePartEntity{{
+			Data: []byte{1}, Text: "", MIMEType: testImageMIME, Name: "",
+			Type: database.MessagePartImage, Width: 1, Height: 1,
+		}},
+	})
+	require.NoError(t, err)
+	leaf, err := repository.AppendMessage(ctx, session.ID, &image.ID, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleAssistant, Content: "answer",
+		Provider: "", Model: "", Parts: nil,
+	})
+	require.NoError(t, err)
+
+	hasImages, err := repository.ContextHasImageParts(ctx, session.ID, leaf.ID)
+	require.NoError(t, err)
+	assert.True(t, hasImages)
+
+	hasImages, err = repository.ContextHasImageParts(ctx, session.ID, root.ID)
+	require.NoError(t, err)
+	assert.False(t, hasImages)
+
+	sibling, err := repository.AppendMessage(ctx, session.ID, &root.ID, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleAssistant, Content: "sibling",
+		Provider: "", Model: "", Parts: nil,
+	})
+	require.NoError(t, err)
+	hasImages, err = repository.ContextHasImageParts(ctx, session.ID, sibling.ID)
+	require.NoError(t, err)
+	assert.False(t, hasImages)
+
+	hasImages, err = repository.ContextHasImageParts(ctx, session.ID, "missing")
+	require.NoError(t, err)
+	assert.False(t, hasImages)
 }
 
 func TestSessionRepository_PersistsImageOnlyAndSupportsLegacyText(t *testing.T) {
@@ -138,6 +183,15 @@ func TestSessionRepository_RejectsMultipartResourceLimitBypasses(t *testing.T) {
 		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "", Provider: "", Model: "", Parts: images,
 	})
 	require.ErrorContains(t, err, "maximum is 4")
+
+	_, err = repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "", Provider: "", Model: "",
+		Parts: []database.MessagePartEntity{{
+			Text: "", MIMEType: "image/*", Name: "", Type: database.MessagePartImage,
+			Data: []byte{1}, Width: 1, Height: 1,
+		}},
+	})
+	require.ErrorContains(t, err, "normalized image MIME type")
 
 	_, err = repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
 		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "", Provider: "", Model: "",
@@ -236,6 +290,47 @@ func TestSessionRepository_MessagePartsCascadeWithEntryAndSession(t *testing.T) 
 	assert.Equal(t, 1, countParts())
 	require.NoError(t, repository.DeleteSession(ctx, secondSession.ID))
 	assert.Zero(t, countParts())
+}
+
+func assertEntryReadersHydrateMultipart(
+	t *testing.T,
+	repository *database.SessionRepository,
+	sessionID string,
+	entryID string,
+) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	branch, err := repository.Branch(ctx, sessionID, entryID)
+	require.NoError(t, err)
+	require.Len(t, branch, 1)
+	assertMultipartParts(t, branch[0].Message.Parts)
+
+	entries, err := repository.Entries(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assertMultipartParts(t, entries[0].Message.Parts)
+
+	loadedEntry, found, err := repository.Entry(ctx, sessionID, entryID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assertMultipartParts(t, loadedEntry.Message.Parts)
+
+	leaf, found, err := repository.LeafEntry(ctx, sessionID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assertMultipartParts(t, leaf.Message.Parts)
+
+	children, err := repository.Children(ctx, sessionID, nil)
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+	assertMultipartParts(t, children[0].Message.Parts)
+
+	tree, err := repository.Tree(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, tree, 1)
+	assertMultipartParts(t, tree[0].Entry.Message.Parts)
 }
 
 func assertMultipartParts(t *testing.T, parts []database.MessagePartEntity) {

@@ -22,12 +22,10 @@ func openAIResponseInput(messages []llm.Message) ([]any, error) {
 
 		var content any = messageText(message)
 		if message.Role == llm.RoleUser {
-			if blocks := openAIResponseUserContent(message); len(blocks) > 0 {
-				content = blocks
-			}
+			content = openAIResponseUserContent(message)
 		}
 
-		if content == "" {
+		if emptyMessageContent(content) {
 			continue
 		}
 
