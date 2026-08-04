@@ -107,6 +107,43 @@ func (repository *SessionRepository) querySessionMessages(
 	return messages, nil
 }
 
+// ContextHasImageParts reports whether an entry or one of its ancestors has an image part.
+func (repository *SessionRepository) ContextHasImageParts(
+	ctx context.Context,
+	sessionID string,
+	entryID string,
+) (bool, error) {
+	const query = `
+WITH RECURSIVE chain(id, parent_id) AS (
+    SELECT id, parent_id
+    FROM session_entries
+    WHERE session_id = ? AND id = ?
+    UNION ALL
+    SELECT parent.id, parent.parent_id
+    FROM session_entries AS parent
+    JOIN chain AS child ON parent.id = child.parent_id
+    WHERE parent.session_id = ?
+)
+SELECT EXISTS (
+    SELECT 1
+    FROM session_message_parts AS part
+    JOIN chain ON chain.id = part.entry_id
+    WHERE part.session_id = ? AND part.type = ?
+) AS present`
+
+	var row struct {
+		Present int `ksql:"present"`
+	}
+	if err := repository.sql.QueryOne(
+		ctx, &row, query, sessionID, entryID, sessionID, sessionID, string(MessagePartImage),
+	); err != nil {
+		return false, oops.In("database").Code("context_has_image_parts").
+			Wrapf(err, "query context image parts")
+	}
+
+	return row.Present != 0, nil
+}
+
 // MessageForEntry returns the normalized message for an entry.
 func (repository *SessionRepository) MessageForEntry(
 	ctx context.Context,
@@ -184,7 +221,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		part := &message.Parts[sequence]
 		if _, err := transaction.Exec(ctx, insertPart,
 			newEntryID(), message.SessionID, message.EntryID, sequence, string(part.Type),
-			part.Text, part.MIMEType, part.Name, part.Width, part.Height, cloneBytes(part.Data),
+			part.Text, part.MIMEType, part.Name, part.Width, part.Height, part.Data,
 		); err != nil {
 			return oops.In("database").Code("append_message_part").Wrapf(err, "append session message part")
 		}
@@ -235,6 +272,25 @@ func (repository *SessionRepository) hydrateSessionMessages(
 	for index := range messages {
 		messages[index].Parts = partsOrLegacyText(partsByEntry[messages[index].EntryID], messages[index].Content)
 	}
+
+	return nil
+}
+
+func (repository *SessionRepository) hydrateEntryMessage(
+	ctx context.Context,
+	sessionID string,
+	entry *EntryEntity,
+) error {
+	if entry == nil {
+		return nil
+	}
+
+	entries := []EntryEntity{*entry}
+	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+		return err
+	}
+
+	*entry = entries[0]
 
 	return nil
 }

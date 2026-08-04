@@ -179,9 +179,12 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 
 	client := newTerminalPromptClient(newTerminalCompletionResult("queued response"), nil)
 	app := newPromptSendTestApp(t, client)
+	image := imageAttachment{
+		Name: testQueuedImageName, MIMEType: clipboardImageMIME, Data: testPNG(t, 2, 3), Width: 2, Height: 3,
+	}
 	app.compacting = true
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
-	app.queuedMessages = promptDrafts("queued after compact")
+	app.queuedMessages = []promptDraft{{Text: "queued after compact", Images: []imageAttachment{image}}}
 
 	app.applyCompactDone(context.Background(), &asyncEvent{
 		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: &model.TokenUsage{
@@ -196,7 +199,15 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 	})
 
 	request := waitForPromptRequest(t, client)
-	assert.Equal(t, "queued after compact", request.Messages[len(request.Messages)-1].Content)
+	message := request.Messages[len(request.Messages)-1]
+	assert.Equal(t, "queued after compact", message.Content)
+	require.Len(t, message.Parts, 2)
+	assert.Equal(t, database.MessagePartImage, message.Parts[1].Type)
+	assert.Equal(t, image.Name, message.Parts[1].Name)
+	assert.Equal(t, image.MIMEType, message.Parts[1].MIMEType)
+	assert.Equal(t, image.Data, message.Parts[1].Data)
+	assert.Equal(t, image.Width, message.Parts[1].Width)
+	assert.Equal(t, image.Height, message.Parts[1].Height)
 	assert.Empty(t, app.queuedMessages)
 	assert.Equal(t, 10_000, app.tokenUsage.ContextTokens)
 }
@@ -524,7 +535,13 @@ func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.queuedMessages = promptDrafts("preexisting", "during compaction")
+	image := imageAttachment{
+		Name: testQueuedImageName, MIMEType: clipboardImageMIME, Data: []byte{1, 2}, Width: 2, Height: 3,
+	}
+	app.queuedMessages = []promptDraft{
+		{Text: "preexisting", Images: nil},
+		{Text: "during compaction", Images: []imageAttachment{image}},
+	}
 	app.compacting = true
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 1}
 
@@ -534,6 +551,7 @@ func TestCompactErrorRestoresQueuedPrompt(t *testing.T) {
 	})
 
 	assert.Equal(t, "during compaction", app.composerBuffer.TextValue())
+	assert.Equal(t, []imageAttachment{image}, app.composerImages)
 	assert.Equal(t, []string{"preexisting"}, promptDraftTexts(app.queuedMessages))
 }
 

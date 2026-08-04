@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"os"
 	"testing"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
+const testWebPName = "screen.webp"
+
 func testPNG(t *testing.T, width, height int) []byte {
 	t.Helper()
 
@@ -22,6 +25,31 @@ func testPNG(t *testing.T, width, height int) []byte {
 	require.NoError(t, png.Encode(&output, image.NewRGBA(image.Rect(0, 0, width, height))))
 
 	return output.Bytes()
+}
+
+func testWebP(t *testing.T) []byte {
+	t.Helper()
+
+	data, err := os.ReadFile("testdata/prompt.webp")
+	require.NoError(t, err)
+
+	return data
+}
+
+func TestValidatePromptImagesSupportsWebP(t *testing.T) {
+	t.Parallel()
+
+	attachment := ImageAttachment{
+		Name: testWebPName, MIMEType: imageMIMEWebP, Data: testWebP(t), Width: 75, Height: 100,
+	}
+	require.NoError(t, validatePromptImages([]ImageAttachment{attachment}))
+
+	attachment.MIMEType = imageMIMEPNG
+	err := validatePromptImages([]ImageAttachment{attachment})
+	require.Error(t, err)
+	coded, ok := oops.AsOops(err)
+	require.True(t, ok)
+	assert.Equal(t, "invalid_image_mime", coded.Code())
 }
 
 func TestValidatePromptImagesAndCloneBoundary(t *testing.T) {
@@ -38,6 +66,53 @@ func TestValidatePromptImagesAndCloneBoundary(t *testing.T) {
 	cloned := clonePromptRequest(request)
 	cloned.Images[0].Data[0]++
 	assert.NotEqual(t, cloned.Images[0].Data[0], request.Images[0].Data[0])
+}
+
+func TestLifecyclePromptRequestAttachments(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		request   *PromptRequest
+		name      string
+		wantName  string
+		wantCount int
+	}{
+		{name: "nil request", request: nil, wantName: "", wantCount: 0},
+		{
+			name: "no images",
+			request: &PromptRequest{
+				OnEvent: nil, OnRetry: nil, OnUserEntry: nil, ParentEntryID: nil,
+				SessionID: "", CWD: "", Text: "", Images: nil, Name: "",
+				ResumeLatest: false, HideUserPrompt: false,
+			},
+			wantName: "", wantCount: 0,
+		},
+		{
+			name: "image metadata",
+			request: &PromptRequest{
+				OnEvent: nil, OnRetry: nil, OnUserEntry: nil, ParentEntryID: nil,
+				SessionID: "", CWD: "", Text: "", Name: "", ResumeLatest: false, HideUserPrompt: false,
+				Images: []ImageAttachment{{
+					Name: testWebPName, MIMEType: imageMIMEWebP, Data: []byte{1, 2}, Width: 3, Height: 4,
+				}},
+			},
+			wantCount: 1, wantName: testWebPName,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			payload := lifecyclePromptRequest(testCase.request)
+			assert.Len(t, payload.Attachments, testCase.wantCount)
+
+			if testCase.wantCount > 0 {
+				assert.Equal(t, testCase.wantName, payload.Attachments[0][executeNameKey])
+				assert.Equal(t, 2, payload.Attachments[0]["size"])
+			}
+		})
+	}
 }
 
 func TestValidateSelectedModelImageInput(t *testing.T) {

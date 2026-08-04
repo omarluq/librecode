@@ -112,6 +112,26 @@ func TestMultipartProviderMappingsPreserveImageOnlyOrder(t *testing.T) {
 	assert.Len(t, anthropicContent, 2)
 }
 
+func TestMultipartProviderMappingsSkipEmptyUserMessages(t *testing.T) {
+	t.Parallel()
+
+	empty := llm.Message{Metadata: nil, Role: llm.RoleUser, Content: []llm.Part{}}
+
+	responses, err := openAIResponseInput([]llm.Message{empty})
+	require.NoError(t, err)
+	assert.Empty(t, responses)
+
+	request := emptyCompletionRequest()
+	setTestRequestMessages(request, []llm.Message{empty})
+	chat, err := openAIChatMessages(request)
+	require.NoError(t, err)
+	assert.Empty(t, chat)
+
+	anthropic, err := anthropicMessages([]llm.Message{empty})
+	require.NoError(t, err)
+	assert.Empty(t, anthropic)
+}
+
 func TestMultipartProviderMappingsPreserveTextOnlyPayloads(t *testing.T) {
 	t.Parallel()
 
@@ -160,6 +180,29 @@ func TestMultipartProviderMappingsRejectMalformedAndUnsupportedRole(t *testing.T
 			}
 		})
 	}
+}
+
+func TestProvidersSkipEmptyStructuredUserContent(t *testing.T) {
+	t.Parallel()
+
+	message := llm.Message{Metadata: nil, Role: llm.RoleUser, Content: []llm.Part{{
+		Metadata: nil, ToolCall: nil, ToolResult: nil, Type: llm.PartFile,
+		Text: "", MIMEType: "", Data: "",
+	}}}
+
+	responses, err := openAIResponseInput([]llm.Message{message})
+	require.NoError(t, err)
+	assert.Empty(t, responses)
+
+	request := emptyCompletionRequest()
+	setTestRequestMessages(request, []llm.Message{message})
+	chat, err := openAIChatMessages(request)
+	require.NoError(t, err)
+	assert.Empty(t, chat)
+
+	anthropic, err := anthropicMessages([]llm.Message{message})
+	require.NoError(t, err)
+	assert.Empty(t, anthropic)
 }
 
 func TestCodexCompactionRejectsAssistantImagesBeforeFlattening(t *testing.T) {

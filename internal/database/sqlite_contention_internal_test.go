@@ -176,7 +176,7 @@ func TestSessionRepositoryCompactionOperationIsIdempotent(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	assert.Equal(t, first.ID, second.ID)
+	assert.Equal(t, first, second)
 
 	otherParent, err := primary.AppendMessage(ctx, session.ID, &parent.ID, &database.MessageEntity{
 		Timestamp: time.Now().UTC(),

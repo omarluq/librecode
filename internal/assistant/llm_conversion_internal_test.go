@@ -27,7 +27,7 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 		ToolRegistry:      registry,
 		ExecuteTools:      nil,
 		SessionID:         "session-1",
-		SystemPrompt:      jsonSystemRole,
+		SystemPrompt:      "system instructions",
 		ThinkingLevel:     "high",
 		CWD:               t.TempDir(),
 		Auth: model.RequestAuth{
@@ -67,10 +67,12 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 	converted := llmRequestFromCompletionRequest(request)
 
 	assert.Equal(t, "session-1", converted.SessionID)
-	assert.Equal(t, expectedSystemRole, converted.SystemPrompt)
+	assert.Equal(t, "system instructions", converted.SystemPrompt)
 	assert.Equal(t, "high", converted.ThinkingLevel)
 	assert.Equal(t, "openai", converted.Model.Provider)
 	assert.Equal(t, "gpt-test", converted.Model.ID)
+	assert.Equal(t, apiOpenAIResponses, converted.Model.API)
+	assert.Equal(t, "https://example.test", converted.Model.BaseURL)
 	assert.Equal(t, "secret", converted.Auth.APIKey)
 	assert.Equal(t, "value", converted.Auth.Headers["x-test"])
 	assert.Len(t, converted.Messages, 4)
@@ -87,36 +89,77 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 	assert.Equal(t, "yes", request.Model.Compat["compat"])
 }
 
-func TestLLMMessageFromDatabasePreservesOrderedMultipartImageOnly(t *testing.T) {
+func TestLLMMessageFromDatabaseConvertsContentParts(t *testing.T) {
 	t.Parallel()
 
 	data := []byte{0, 1, 2, 3}
-	message, converted := llmMessageFromDatabase(&database.MessageEntity{
-		Timestamp: time.Time{}, Role: database.RoleUser, Content: "", Provider: "", Model: "",
-		Parts: []database.MessagePartEntity{
-			{Text: "inspect image", MIMEType: "", Name: "", Type: database.MessagePartText,
-				Data: nil, Width: 0, Height: 0},
-			{Text: "", MIMEType: imageMIMEPNG, Name: "screen.png", Type: database.MessagePartImage,
-				Data: data, Width: 10, Height: 20},
+	tests := []struct {
+		name      string
+		wantText  string
+		message   database.MessageEntity
+		wantTypes []llm.PartType
+	}{
+		{
+			name: "ordered multipart",
+			message: database.MessageEntity{
+				Timestamp: time.Time{}, Role: database.RoleUser, Content: "", Provider: "", Model: "",
+				Parts: []database.MessagePartEntity{
+					{Text: "inspect image", MIMEType: "", Name: "", Type: database.MessagePartText,
+						Data: nil, Width: 0, Height: 0},
+					{Text: "", MIMEType: imageMIMEPNG, Name: "screen.png", Type: database.MessagePartImage,
+						Data: data, Width: 10, Height: 20},
+				},
+			},
+			wantTypes: []llm.PartType{llm.PartText, llm.PartImage},
+			wantText:  "inspect image",
 		},
-	})
+		{
+			name: "image only",
+			message: database.MessageEntity{
+				Timestamp: time.Time{}, Role: database.RoleUser, Content: "", Provider: "", Model: "",
+				Parts: []database.MessagePartEntity{{
+					Text: "", MIMEType: imageMIMEPNG, Name: "", Type: database.MessagePartImage,
+					Data: data, Width: 1, Height: 1,
+				}},
+			},
+			wantTypes: []llm.PartType{llm.PartImage},
+			wantText:  "",
+		},
+		{
+			name: "legacy content fallback",
+			message: database.MessageEntity{
+				Timestamp: time.Time{}, Role: database.RoleAssistant, Content: "answer",
+				Provider: "", Model: "", Parts: nil,
+			},
+			wantTypes: []llm.PartType{llm.PartText},
+			wantText:  "answer",
+		},
+	}
 
-	require.True(t, converted)
-	require.Len(t, message.Content, 2)
-	assert.Equal(t, llm.PartText, message.Content[0].Type)
-	assert.Equal(t, llm.PartImage, message.Content[1].Type)
-	assert.Equal(t, base64.StdEncoding.EncodeToString(data), message.Content[1].Data)
-	assert.Equal(t, "screen.png", message.Content[1].Metadata["name"])
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
 
-	imageOnly, imageOnlyConverted := llmMessageFromDatabase(&database.MessageEntity{
-		Timestamp: time.Time{}, Role: database.RoleUser, Content: "", Provider: "", Model: "",
-		Parts: []database.MessagePartEntity{{
-			Text: "", MIMEType: imageMIMEPNG, Name: "", Type: database.MessagePartImage,
-			Data: data, Width: 1, Height: 1,
-		}},
-	})
-	require.True(t, imageOnlyConverted)
-	assert.Len(t, imageOnly.Content, 1)
+			message, converted := llmMessageFromDatabase(&testCase.message)
+			require.True(t, converted)
+			require.Len(t, message.Content, len(testCase.wantTypes))
+
+			for index := range testCase.wantTypes {
+				assert.Equal(t, testCase.wantTypes[index], message.Content[index].Type)
+			}
+
+			if testCase.wantText != "" {
+				assert.Equal(t, testCase.wantText, message.Content[0].Text)
+			}
+
+			if message.Content[len(message.Content)-1].Type == llm.PartImage {
+				imagePart := message.Content[len(message.Content)-1]
+				assert.Equal(t, base64.StdEncoding.EncodeToString(data), imagePart.Data)
+				assert.Equal(t, imageMIMEPNG, imagePart.MIMEType)
+				assert.NotEmpty(t, imagePart.Metadata)
+			}
+		})
+	}
 }
 
 func TestLLMRequestFromCompletionRequestNilAndDisabledTools(t *testing.T) {

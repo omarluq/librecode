@@ -28,25 +28,37 @@ const (
 func TestPromptAndTurnPayloads(t *testing.T) {
 	t.Parallel()
 
-	t.Run("prompt", func(t *testing.T) {
+	t.Run("prompt attachments", func(t *testing.T) {
 		t.Parallel()
 
 		parentID := lifecycleTestParentID
-		prompt := lifecyclepayload.Prompt(&lifecyclepayload.PromptRequest{
-			ParentEntryID: &parentID,
-			Attachments:   nil,
-			CWD:           "/work",
-			Name:          "agent",
-			SessionID:     lifecycleTestSessionID,
-			Text:          "hello",
-			ResumeLatest:  true,
-		})
-		assert.Equal(t, "/work", prompt[lifecyclepayload.CWDKey])
-		assert.Equal(t, "agent", prompt[lifecyclepayload.ToolNameKey])
-		assert.Equal(t, parentID, prompt[lifecyclepayload.ParentEntryIDKey])
-		resumeLatest, ok := prompt["resume_latest"].(bool)
-		require.True(t, ok)
-		assert.True(t, resumeLatest)
+
+		tests := []struct {
+			name        string
+			attachments []map[string]any
+			wantCount   int
+		}{
+			{name: "none", attachments: nil, wantCount: 0},
+			{name: "one", attachments: []map[string]any{{"name": "screen.webp", "size": 442}}, wantCount: 1},
+		}
+		for _, testCase := range tests {
+			t.Run(testCase.name, func(t *testing.T) {
+				t.Parallel()
+
+				prompt := lifecyclepayload.Prompt(&lifecyclepayload.PromptRequest{
+					ParentEntryID: &parentID, Attachments: testCase.attachments, CWD: "/work",
+					Name: "agent", SessionID: lifecycleTestSessionID, Text: "hello", ResumeLatest: true,
+				})
+				assert.Equal(t, "/work", prompt[lifecyclepayload.CWDKey])
+				assert.Equal(t, "agent", prompt[lifecyclepayload.ToolNameKey])
+				assert.Equal(t, parentID, prompt[lifecyclepayload.ParentEntryIDKey])
+				assert.Equal(t, testCase.wantCount, prompt["attachment_count"])
+				assert.Equal(t, testCase.attachments, prompt["attachments"])
+				resumeLatest, ok := prompt["resume_latest"].(bool)
+				require.True(t, ok)
+				assert.True(t, resumeLatest)
+			})
+		}
 	})
 
 	t.Run("nil prompt", func(t *testing.T) {

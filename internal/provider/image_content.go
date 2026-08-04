@@ -128,6 +128,17 @@ func openAIChatUserContent(message llm.Message) any {
 	return blocks
 }
 
+func emptyMessageContent(content any) bool {
+	switch value := content.(type) {
+	case string:
+		return value == ""
+	case []map[string]any:
+		return len(value) == 0
+	default:
+		return false
+	}
+}
+
 func anthropicUserContent(message llm.Message) any {
 	hasImage := false
 	for index := range message.Content {

@@ -87,19 +87,24 @@ func (app *App) captureSessionView(clone bool) sessionViewState {
 		lastEscape:               app.lastEscape,
 	}
 	if clone {
-		view.pendingParentID = cloneStringPtr(view.pendingParentID)
-		view.tokenUsage = cloneTerminalUsage(view.tokenUsage)
-		view.composerBuffer = cloneComposerBuffer(view.composerBuffer)
-		view.composerImages = cloneImageAttachments(view.composerImages)
-		view.promptHistoryImages = cloneImageAttachmentGroups(view.promptHistoryImages)
-		view.promptHistoryDraftImages = cloneImageAttachments(view.promptHistoryDraftImages)
-		view.queuedMessages = clonePromptDrafts(view.queuedMessages)
-		view.hiddenQueuedMessages = clonePromptDrafts(view.hiddenQueuedMessages)
-		view.scopedEnabled = maps.Clone(view.scopedEnabled)
-		view.scopedOrder = slices.Clone(view.scopedOrder)
+		cloneSessionViewState(&view)
 	}
 
 	return view
+}
+
+func cloneSessionViewState(view *sessionViewState) {
+	view.pendingParentID = cloneStringPtr(view.pendingParentID)
+	view.tokenUsage = cloneTerminalUsage(view.tokenUsage)
+	view.composerBuffer = cloneComposerBuffer(view.composerBuffer)
+	view.composerImages = cloneImageAttachments(view.composerImages)
+	view.promptHistory = slices.Clone(view.promptHistory)
+	view.promptHistoryImages = cloneImageAttachmentGroups(view.promptHistoryImages)
+	view.promptHistoryDraftImages = cloneImageAttachments(view.promptHistoryDraftImages)
+	view.queuedMessages = clonePromptDrafts(view.queuedMessages)
+	view.hiddenQueuedMessages = clonePromptDrafts(view.hiddenQueuedMessages)
+	view.scopedEnabled = maps.Clone(view.scopedEnabled)
+	view.scopedOrder = slices.Clone(view.scopedOrder)
 }
 
 func (app *App) restoreSessionView(sessionID string) bool {
@@ -114,6 +119,12 @@ func (app *App) restoreSessionView(sessionID string) bool {
 }
 
 func (app *App) applySessionView(sessionID string, view *sessionViewState, clone bool) {
+	if clone {
+		cloned := *view
+		cloneSessionViewState(&cloned)
+		view = &cloned
+	}
+
 	app.sessionID = sessionID
 	app.pendingParentID = view.pendingParentID
 	app.transcript = view.transcript
@@ -143,19 +154,6 @@ func (app *App) applySessionView(sessionID string, view *sessionViewState, clone
 	app.escapePresses = view.escapePresses
 	app.lastEscape = view.lastEscape
 	app.applySessionSettings(&view.settings)
-
-	if clone {
-		app.pendingParentID = cloneStringPtr(app.pendingParentID)
-		app.tokenUsage = cloneTerminalUsage(app.tokenUsage)
-		app.composerBuffer = cloneComposerBuffer(app.composerBuffer)
-		app.composerImages = cloneImageAttachments(app.composerImages)
-		app.promptHistoryImages = cloneImageAttachmentGroups(app.promptHistoryImages)
-		app.promptHistoryDraftImages = cloneImageAttachments(app.promptHistoryDraftImages)
-		app.queuedMessages = clonePromptDrafts(app.queuedMessages)
-		app.hiddenQueuedMessages = clonePromptDrafts(app.hiddenQueuedMessages)
-		app.scopedEnabled = maps.Clone(app.scopedEnabled)
-		app.scopedOrder = slices.Clone(app.scopedOrder)
-	}
 }
 
 func (app *App) inspectingWhilePromptRuns() bool {
