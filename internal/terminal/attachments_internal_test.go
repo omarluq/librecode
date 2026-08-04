@@ -260,8 +260,11 @@ func TestAttachmentRenderingContainsMetadataNotData(t *testing.T) {
 	attachment := imageAttachment{Name: "paste-1.png", MIMEType: "image/png", Data: secret, Width: 10, Height: 20}
 	app.composerImages = []imageAttachment{attachment}
 	composer := app.attachmentChipLines(80)
+	require.Len(t, composer, 1)
 	assert.Contains(t, composer[0].Text, "paste-1.png")
 	assert.NotContains(t, composer[0].Text, string(secret))
+	assert.True(t, strings.HasPrefix(composer[0].Text, "│ "))
+	assert.True(t, strings.HasSuffix(composer[0].Text, " │"))
 
 	lines := app.renderUserMessage(80, "", *summarizeAttachments([]imageAttachment{attachment}))
 

@@ -73,11 +73,17 @@ func (app *App) attachmentChipLines(width int) []tui.Line {
 			Name: item.Name, MIMEType: item.MIMEType, Width: item.Width,
 			Height: item.Height, Size: len(item.Data),
 		}
-		text := "  " + attachmentSummaryText(summary)
-		lines = append(lines, tui.NewLine(app.theme.style(colorDim), tui.Truncate(text, width)))
+		lines = append(lines, app.attachmentChipLine(width, attachmentSummaryText(summary)))
 	}
 
 	return lines
+}
+
+func (app *App) attachmentChipLine(width int, text string) tui.Line {
+	innerWidth := max(1, width-terminalMarkerMargin*2)
+	body := tui.PadRight(tui.Truncate(text, innerWidth), innerWidth)
+
+	return tui.NewLine(app.theme.style(colorDim), "│ "+body+" │")
 }
 
 func (app *App) visibleAttachmentChipLines(width, limit int) []tui.Line {
@@ -92,9 +98,9 @@ func (app *App) visibleAttachmentChipLines(width, limit int) []tui.Line {
 
 	visible := max(0, limit-1)
 	lines := chips[:visible]
-	overflow := "  … " + tui.Int(len(chips)-visible) + " more attachments"
+	overflow := "… " + tui.Int(len(chips)-visible) + " more attachments"
 
-	return append(lines, tui.NewLine(app.theme.style(colorDim), tui.Truncate(overflow, width)))
+	return append(lines, app.attachmentChipLine(width, overflow))
 }
 
 func formatByteSize(size int) string {
