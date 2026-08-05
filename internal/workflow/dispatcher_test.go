@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"database/sql"
+	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"time"
 
@@ -81,8 +82,8 @@ func TestDispatcherShutdownDoesNotHoldLifecycleLockAcrossSubmitIO(t *testing.T) 
 	connection.SetMaxOpenConns(1)
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
-	repository := mustWorkflowRepository(t, connection)
-	sessions := mustSessionRepository(t, connection)
+	repository := testutil.WorkflowRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), "/work", "owner", "")
 	require.NoError(t, err)
 	runner, err := workflow.NewRunner(newFakeController())

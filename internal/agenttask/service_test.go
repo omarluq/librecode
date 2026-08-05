@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/omarluq/librecode/internal/testutil"
 	"sync"
 	"testing"
 	"time"
@@ -505,9 +506,9 @@ func repositories(
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
-	return mustTaskRepository(t, connection),
-		mustAgentTaskRepository(t, connection),
-		mustSessionRepository(t, connection)
+	return testutil.TaskRepository(t, connection),
+		testutil.AgentTaskRepository(t, connection),
+		testutil.SessionRepository(t, connection)
 }
 
 func createSession(

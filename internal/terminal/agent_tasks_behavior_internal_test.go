@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/omarluq/librecode/internal/testutil"
 	"os"
 	"path/filepath"
 	"slices"
@@ -179,7 +180,7 @@ func newAgentTaskSessionPair(t *testing.T) agentTaskSessionPair {
 	t.Helper()
 
 	connection := newPromptSendTestConnection(t)
-	sessions := mustSessionRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
 	require.NoError(t, err)
 	child, err := sessions.CreateSession(t.Context(), parent.CWD, "child", parent.ID)
@@ -657,7 +658,7 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	settings := mustDocumentRepository(t, connection)
+	settings := testutil.DocumentRepository(t, connection)
 	require.NoError(t, settings.Put(t.Context(), &database.DocumentEntity{
 		UpdatedAt: time.Now().UTC(),
 		Namespace: sessionSettingsNamespace,
@@ -816,7 +817,7 @@ func TestInspectAgentTaskSwitchesBetweenSiblingSessions(t *testing.T) {
 	t.Parallel()
 
 	connection := newPromptSendTestConnection(t)
-	sessions := mustSessionRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	parent, err := sessions.CreateSession(t.Context(), t.TempDir(), "parent", "")
 	require.NoError(t, err)
 	firstChild, err := sessions.CreateSession(t.Context(), parent.CWD, "first child", parent.ID)
@@ -863,7 +864,7 @@ func TestInspectAgentTaskRecoversRetainedSummaryOwner(t *testing.T) {
 	t.Parallel()
 
 	connection := newPromptSendTestConnection(t)
-	sessions := mustSessionRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	root, err := sessions.CreateSession(t.Context(), t.TempDir(), "root", "")
 	require.NoError(t, err)
 	parent, err := sessions.CreateSession(t.Context(), root.CWD, "parent", root.ID)
@@ -1481,7 +1482,7 @@ func TestInspectAgentTaskLoadFailureDoesNotSwitchSession(t *testing.T) {
 
 			app := newRenderTestApp(t)
 			app.runtime = runtime
-			app.settings = mustDocumentRepository(t, connection)
+			app.settings = testutil.DocumentRepository(t, connection)
 			app.sessionID = parent.ID
 			snapshot := seedInspectFailureState(app, &task)
 

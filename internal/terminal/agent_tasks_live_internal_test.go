@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/omarluq/librecode/internal/testutil"
 	"sync"
 	"testing"
 	"time"
@@ -225,7 +226,7 @@ func TestNestedAgentTaskReturnResumesAndReplaysParentActivity(t *testing.T) {
 	t.Parallel()
 
 	connection := newPromptSendTestConnection(t)
-	sessions := mustSessionRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	root, err := sessions.CreateSession(t.Context(), t.TempDir(), "root", "")
 	require.NoError(t, err)
 	parent, err := sessions.CreateSession(t.Context(), root.CWD, "parent agent", root.ID)

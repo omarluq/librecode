@@ -21,7 +21,7 @@ func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("LIBRECODE_HOME", home)
 	db := newModelServiceTestDB(t)
-	documents := mustDocumentRepository(t, db)
+	documents := testutil.DocumentRepository(t, db)
 	storage := testutil.NewAuthStorage(t, map[string]auth.Credential{})
 
 	cfg := config.Load("").MustGet()

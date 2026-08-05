@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/omarluq/librecode/internal/testutil"
 	"strings"
 	"testing"
 	"time"
@@ -367,7 +368,7 @@ func agentToolSessionsWithDB(t *testing.T) (*database.SessionRepository, *sql.DB
 	})
 	require.NoError(t, database.Migrate(t.Context(), databaseConnection))
 
-	return mustSessionRepository(t, databaseConnection), databaseConnection
+	return testutil.SessionRepository(t, databaseConnection), databaseConnection
 }
 
 func newAgentControllerStub(

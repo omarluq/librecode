@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"fmt"
+	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"time"
 
@@ -35,7 +36,7 @@ func TestRepositoryRejectsInvalidUUIDs(t *testing.T) {
 
 			ctx := context.Background()
 			connection := newMigratedThroughVersion(t, 12)
-			repository := mustSessionRepository(t, connection)
+			repository := testutil.SessionRepository(t, connection)
 			session, err := repository.CreateSession(ctx, "/work", "uuid", "")
 			require.NoError(t, err)
 
@@ -118,7 +119,7 @@ func TestDocumentRepositoryRejectsInvalidEntities(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			documents := mustDocumentRepository(t, newTestConnection(t))
+			documents := testutil.DocumentRepository(t, newTestConnection(t))
 			err := documents.Put(context.Background(), &test.document)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.wantError)

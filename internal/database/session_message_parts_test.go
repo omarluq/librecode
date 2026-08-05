@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"database/sql"
+	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"time"
 
@@ -295,7 +296,7 @@ BEGIN
 END`)
 	require.NoError(t, err)
 
-	repository := mustSessionRepository(t, connection)
+	repository := testutil.SessionRepository(t, connection)
 	session, err := repository.CreateSession(ctx, "/work", "rollback", "")
 	require.NoError(t, err)
 
@@ -328,7 +329,7 @@ func TestSessionRepository_MessagePartsCascadeWithEntryAndSession(t *testing.T) 
 	ctx := context.Background()
 	require.NoError(t, database.Migrate(ctx, connection))
 	require.NoError(t, database.ConfigureSQLite(ctx, connection, database.SQLiteOptions{BusyTimeout: 0}))
-	repository := mustSessionRepository(t, connection)
+	repository := testutil.SessionRepository(t, connection)
 
 	appendImage := func(name string) (*database.SessionEntity, *database.EntryEntity) {
 		session, createErr := repository.CreateSession(ctx, "/work", name, "")

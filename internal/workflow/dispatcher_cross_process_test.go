@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"database/sql"
+	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"time"
 
@@ -28,8 +29,8 @@ func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, workerDB.Close()) })
 
-	repository := mustWorkflowRepository(t, submitterDB)
-	sessions := mustSessionRepository(t, submitterDB)
+	repository := testutil.WorkflowRepository(t, submitterDB)
+	sessions := testutil.SessionRepository(t, submitterDB)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "cross-process workflow", "")
 	require.NoError(t, err)
 
@@ -40,7 +41,7 @@ func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 
 	workerRunner, err := workflow.NewRunner(newFakeController())
 	require.NoError(t, err)
-	worker, err := workflow.NewService(mustWorkflowRepository(t, workerDB), workerRunner)
+	worker, err := workflow.NewService(testutil.WorkflowRepository(t, workerDB), workerRunner)
 	require.NoError(t, err)
 
 	run, err := submitter.Submit(t.Context(), &workflow.ServiceRequest{
@@ -51,7 +52,7 @@ func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 
 	dispatcher, err := workflow.NewDispatcher(context.Background(), workflow.DispatcherOptions{
 		Service:     worker,
-		Tasks:       mustTaskRepository(t, workerDB),
+		Tasks:       testutil.TaskRepository(t, workerDB),
 		Logger:      nil,
 		Concurrency: 1,
 		Buffer:      4,
