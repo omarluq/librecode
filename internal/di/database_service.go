@@ -73,12 +73,12 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 		return nil, closeAfterRepositoryError(connection, "task", databasePath, err)
 	}
 
-	agentTasks, err := database.NewAgentTaskRepositoryWithProvider(sqlProvider)
+	agentTasks, err := database.NewAgentTaskRepositoryWithProvider(sqlProvider, tasks)
 	if err != nil {
 		return nil, closeAfterRepositoryError(connection, "agent_task", databasePath, err)
 	}
 
-	workflows, err := database.NewWorkflowRepositoryWithProvider(sqlProvider)
+	workflows, err := database.NewWorkflowRepositoryWithProvider(sqlProvider, tasks, agentTasks)
 	if err != nil {
 		return nil, closeAfterRepositoryError(connection, "workflow", databasePath, err)
 	}

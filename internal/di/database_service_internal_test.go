@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/samber/do/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -46,6 +47,24 @@ func TestOpenSQLiteDatabaseAppliesPragmasAndMigrations(t *testing.T) {
 	).Scan(&tableName)
 	require.NoError(t, err)
 	assert.Equal(t, "sessions", tableName)
+}
+
+func TestNewDatabaseServiceSharesCompositeRepositories(t *testing.T) {
+	t.Parallel()
+
+	cfg := testServiceConfig()
+	cfg.Database.Path = filepath.Join(t.TempDir(), "librecode.db")
+	cfg.Database.ApplyMigrations = true
+
+	injector := do.New()
+	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: ""})
+	service, err := NewDatabaseService(injector)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, service.Shutdown(context.Background())) })
+
+	assert.Same(t, service.Tasks, service.AgentTasks.Tasks())
+	assert.Same(t, service.Tasks, service.Workflows.Tasks())
+	assert.Same(t, service.AgentTasks, service.Workflows.AgentTasks())
 }
 
 func TestDatabaseServiceHealthCheckAndShutdown(t *testing.T) {

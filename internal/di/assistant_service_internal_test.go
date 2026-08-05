@@ -69,13 +69,15 @@ func newTestDatabaseService(t *testing.T) *DatabaseService {
 	connection.SetMaxOpenConns(1)
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
+	workflows := testutil.WorkflowRepository(t, connection)
+
 	return &DatabaseService{
 		DB:         connection,
 		Sessions:   testutil.SessionRepository(t, connection),
 		Documents:  testutil.DocumentRepository(t, connection),
-		Tasks:      testutil.TaskRepository(t, connection),
-		AgentTasks: testutil.AgentTaskRepository(t, connection),
-		Workflows:  testutil.WorkflowRepository(t, connection),
+		Tasks:      workflows.Tasks(),
+		AgentTasks: workflows.AgentTasks(),
+		Workflows:  workflows,
 		path:       "",
 	}
 }

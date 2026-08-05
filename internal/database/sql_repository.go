@@ -27,6 +27,21 @@ func isNilProvider(provider ksql.Provider) bool {
 	return nilable && value.IsNil()
 }
 
+func sameSQLProvider(left, right ksql.Provider) bool {
+	if isNilProvider(left) || isNilProvider(right) {
+		return false
+	}
+
+	leftValue := reflect.ValueOf(left)
+	rightValue := reflect.ValueOf(right)
+
+	if leftValue.Type() != rightValue.Type() || !leftValue.Comparable() || !rightValue.Comparable() {
+		return false
+	}
+
+	return leftValue.Interface() == rightValue.Interface()
+}
+
 func newSQLProvider(connection *sql.DB) (ksql.DB, error) {
 	if connection == nil {
 		return ksql.DB{}, oops.In("database").Code("nil_sql_connection").Errorf("sql connection is required")
