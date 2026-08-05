@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/omarluq/librecode/internal/testutil"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -60,9 +61,9 @@ func newServiceRepositoryFixture(t *testing.T) serviceRepositoryFixture {
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
 	return serviceRepositoryFixture{
-		tasks:      mustTaskRepository(t, connection),
-		agentTasks: mustAgentTaskRepository(t, connection),
-		sessions:   mustSessionRepository(t, connection),
+		tasks:      testutil.TaskRepository(t, connection),
+		agentTasks: testutil.AgentTaskRepository(t, connection),
+		sessions:   testutil.SessionRepository(t, connection),
 	}
 }
 
@@ -118,8 +119,8 @@ func serviceWithClosedRepositories(t *testing.T) *Service {
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
 	service := serviceWithRepositories(
-		mustTaskRepository(t, connection),
-		mustAgentTaskRepository(t, connection),
+		testutil.TaskRepository(t, connection),
+		testutil.AgentTaskRepository(t, connection),
 	)
 	require.NoError(t, connection.Close())
 

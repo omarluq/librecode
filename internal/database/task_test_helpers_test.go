@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"github.com/omarluq/librecode/internal/testutil"
 	"path/filepath"
 	"testing"
 	"time"
@@ -38,10 +39,10 @@ func newTaskTestFixture(t *testing.T) *taskTestFixture {
 
 	return &taskTestFixture{
 		t:         t,
-		agents:    mustAgentTaskRepository(t, connection),
-		tasks:     mustTaskRepository(t, connection),
-		workflows: mustWorkflowRepository(t, connection),
-		sessions:  mustSessionRepository(t, connection),
+		agents:    testutil.AgentTaskRepository(t, connection),
+		tasks:     testutil.TaskRepository(t, connection),
+		workflows: testutil.WorkflowRepository(t, connection),
+		sessions:  testutil.SessionRepository(t, connection),
 	}
 }
 

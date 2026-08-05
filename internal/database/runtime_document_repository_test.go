@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"database/sql"
+	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ func TestDocumentRepositoryStoresRuntimeDocuments(t *testing.T) {
 	t.Parallel()
 
 	connection := newTestConnection(t)
-	repository := mustDocumentRepository(t, connection)
+	repository := testutil.DocumentRepository(t, connection)
 	ctx := context.Background()
 
 	document := database.DocumentEntity{

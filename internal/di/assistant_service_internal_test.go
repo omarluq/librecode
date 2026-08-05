@@ -71,11 +71,11 @@ func newTestDatabaseService(t *testing.T) *DatabaseService {
 
 	return &DatabaseService{
 		DB:         connection,
-		Sessions:   mustSessionRepository(t, connection),
-		Documents:  mustDocumentRepository(t, connection),
-		Tasks:      mustTaskRepository(t, connection),
-		AgentTasks: mustAgentTaskRepository(t, connection),
-		Workflows:  mustWorkflowRepository(t, connection),
+		Sessions:   testutil.SessionRepository(t, connection),
+		Documents:  testutil.DocumentRepository(t, connection),
+		Tasks:      testutil.TaskRepository(t, connection),
+		AgentTasks: testutil.AgentTaskRepository(t, connection),
+		Workflows:  testutil.WorkflowRepository(t, connection),
 		path:       "",
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/omarluq/librecode/internal/testutil"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -33,8 +34,8 @@ func TestSessionRepositoryConcurrentWritersWaitForBusyDatabase(t *testing.T) {
 
 	ctx := context.Background()
 	dbs := openMigratedSQLitePair(ctx, t, 2*time.Second)
-	primaryRepository := mustSessionRepository(t, dbs.primary)
-	secondaryRepository := mustSessionRepository(t, dbs.secondary)
+	primaryRepository := testutil.SessionRepository(t, dbs.primary)
+	secondaryRepository := testutil.SessionRepository(t, dbs.secondary)
 	session, err := primaryRepository.CreateSession(ctx, t.TempDir(), "concurrent", "")
 	require.NoError(t, err)
 
@@ -79,8 +80,8 @@ func TestSessionRepositoryConcurrentCompactionsChooseOneWinner(t *testing.T) {
 	ctx := context.Background()
 	dbs := openMigratedSQLitePair(ctx, t, 2*time.Second)
 	repositories := []*database.SessionRepository{
-		mustSessionRepository(t, dbs.primary),
-		mustSessionRepository(t, dbs.secondary),
+		testutil.SessionRepository(t, dbs.primary),
+		testutil.SessionRepository(t, dbs.secondary),
 	}
 	session, err := repositories[0].CreateSession(ctx, t.TempDir(), "compaction race", "")
 	require.NoError(t, err)
@@ -153,8 +154,8 @@ func TestSessionRepositoryCompactionOperationIsIdempotent(t *testing.T) {
 
 	ctx := context.Background()
 	dbs := openMigratedSQLitePair(ctx, t, 2*time.Second)
-	primary := mustSessionRepository(t, dbs.primary)
-	secondary := mustSessionRepository(t, dbs.secondary)
+	primary := testutil.SessionRepository(t, dbs.primary)
+	secondary := testutil.SessionRepository(t, dbs.secondary)
 	session, err := primary.CreateSession(ctx, t.TempDir(), "compaction retry", "")
 	require.NoError(t, err)
 	parent, err := primary.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
@@ -239,7 +240,7 @@ func TestSQLiteBusyTimeoutWaitsForExternalWriter(t *testing.T) {
 
 	ctx := context.Background()
 	dbs := openMigratedSQLitePair(ctx, t, 2*time.Second)
-	secondary := mustSessionRepository(t, dbs.secondary)
+	secondary := testutil.SessionRepository(t, dbs.secondary)
 	workingDirectory := t.TempDir()
 	withSessionsTableLock(ctx, t, dbs.primary, func(lock *sql.Tx) {
 		insertDone := make(chan error, 1)
@@ -270,7 +271,7 @@ func TestSQLiteShortBusyTimeoutStillReportsBusy(t *testing.T) {
 	ctx := context.Background()
 	dbs := openMigratedSQLitePair(ctx, t, 10*time.Millisecond)
 	withSessionsTableLock(ctx, t, dbs.primary, func(_ *sql.Tx) {
-		_, err := mustSessionRepository(t, dbs.secondary).CreateSession(ctx, t.TempDir(), "blocked", "")
+		_, err := testutil.SessionRepository(t, dbs.secondary).CreateSession(ctx, t.TempDir(), "blocked", "")
 		require.Error(t, err)
 		require.True(t, isSQLiteBusyError(err), "expected busy error, got %v", err)
 	})

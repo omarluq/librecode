@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"time"
 
@@ -223,14 +224,14 @@ func newInternalWorkflowService(
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
-	session, err := mustSessionRepository(t, connection).CreateSession(
+	session, err := testutil.SessionRepository(t, connection).CreateSession(
 		t.Context(), t.TempDir(), "workflow owner", "",
 	)
 	require.NoError(t, err)
 	runner, err := NewRunner(serviceTestController{})
 	require.NoError(t, err)
 
-	repository := mustWorkflowRepository(t, connection)
+	repository := testutil.WorkflowRepository(t, connection)
 	service, err := NewService(repository, runner)
 	require.NoError(t, err)
 

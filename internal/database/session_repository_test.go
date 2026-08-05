@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"database/sql"
+	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"time"
 
@@ -188,7 +189,7 @@ func TestSessionRepository_TranscriptMessagesWrapsMalformedRows(t *testing.T) {
 	connection.SetMaxOpenConns(1)
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
-	repository := mustSessionRepository(t, connection)
+	repository := testutil.SessionRepository(t, connection)
 	session, err := repository.CreateSession(context.Background(), "/work", "malformed transcript", "")
 	require.NoError(t, err)
 	_, err = repository.AppendMessage(context.Background(), session.ID, nil, &database.MessageEntity{
@@ -590,7 +591,7 @@ func newTestSessionRepository(t *testing.T) *database.SessionRepository {
 
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
-	return mustSessionRepository(t, connection)
+	return testutil.SessionRepository(t, connection)
 }
 
 func newMigratedThroughVersion(t *testing.T, version int64) *sql.DB {

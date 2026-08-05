@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"github.com/omarluq/librecode/internal/testutil"
 	"sync"
 	"testing"
 	"time"
@@ -364,8 +365,8 @@ func newWorkflowService(
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
-	repository := mustWorkflowRepository(t, connection)
-	sessions := mustSessionRepository(t, connection)
+	repository := testutil.WorkflowRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), "/work", "workflow owner", "")
 	require.NoError(t, err)
 
@@ -449,10 +450,10 @@ func newWorkflowIntegration(t *testing.T) *workflowIntegration {
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
-	taskRepository := mustTaskRepository(t, connection)
-	agentTaskRepository := mustAgentTaskRepository(t, connection)
-	sessions := mustSessionRepository(t, connection)
-	workflowRepository := mustWorkflowRepository(t, connection)
+	taskRepository := testutil.TaskRepository(t, connection)
+	agentTaskRepository := testutil.AgentTaskRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
+	workflowRepository := testutil.WorkflowRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "workflow integration owner", "")
 	require.NoError(t, err)
 

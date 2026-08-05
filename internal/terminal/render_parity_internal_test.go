@@ -3,6 +3,7 @@ package terminal
 import (
 	"context"
 	"database/sql"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tui"
 	"strings"
 	"testing"
@@ -274,7 +275,7 @@ func newRenderParityRuntimeWithSession(
 	requireNoError(t, err)
 	t.Cleanup(func() { requireNoError(t, connection.Close()) })
 	requireNoError(t, database.Migrate(ctx, connection))
-	repository := mustSessionRepository(t, connection)
+	repository := testutil.SessionRepository(t, connection)
 	session, err := repository.CreateSession(ctx, "/work", "render parity", "")
 	requireNoError(t, err)
 
