@@ -785,7 +785,7 @@ func newTestRuntimeWithManager(
 	connection.SetMaxOpenConns(1)
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
-	repository := database.NewSessionRepository(connection)
+	repository := mustSessionRepository(t, connection)
 
 	return newTestRuntimeWithRepositoryClientAndManager(t, repository, client)
 }

@@ -13,6 +13,10 @@ import (
 )
 
 func validateSessionEntity(entity *SessionEntity) error {
+	if entity == nil {
+		return errors.New("session is required")
+	}
+
 	if err := validateUUIDv7("session.id", entity.ID); err != nil {
 		return err
 	}
@@ -29,6 +33,10 @@ func validateSessionEntity(entity *SessionEntity) error {
 }
 
 func validateEntryEntity(entity *EntryEntity) error {
+	if entity == nil {
+		return errors.New("entry is required")
+	}
+
 	if err := validateUUIDv7("entry.id", entity.ID); err != nil {
 		return err
 	}
@@ -66,6 +74,10 @@ const (
 )
 
 func validateSessionMessageEntity(entity *SessionMessageEntity) error {
+	if entity == nil {
+		return errors.New("message is required")
+	}
+
 	if err := validateUUIDv7("message.id", entity.ID); err != nil {
 		return err
 	}
@@ -137,6 +149,10 @@ func validateMessageParts(parts []MessagePartEntity) error {
 }
 
 func validateMessagePartEntity(part *MessagePartEntity) error {
+	if part == nil {
+		return errors.New("message part is required")
+	}
+
 	switch part.Type {
 	case MessagePartText:
 		return validateTextMessagePart(part)
@@ -192,6 +208,10 @@ func validImageMIMEType(value string) bool {
 }
 
 func validateTaskEntity(entity *TaskEntity) error {
+	if entity == nil {
+		return errors.New("task is required")
+	}
+
 	if err := validateUUIDv7("task.id", entity.ID); err != nil {
 		return err
 	}
@@ -222,6 +242,10 @@ func validateTaskEntity(entity *TaskEntity) error {
 }
 
 func validateWorkflowRunEntity(entity *WorkflowRunEntity) error {
+	if entity == nil {
+		return errors.New("workflow run is required")
+	}
+
 	if err := validateTaskEntity(&entity.Task); err != nil {
 		return err
 	}
@@ -247,6 +271,10 @@ func validateWorkflowRunEntity(entity *WorkflowRunEntity) error {
 }
 
 func validateAgentTaskEntity(entity *AgentTaskEntity) error {
+	if entity == nil {
+		return errors.New("agent task is required")
+	}
+
 	if err := validateTaskEntity(&entity.Task); err != nil {
 		return err
 	}
@@ -283,6 +311,10 @@ func validateAgentTaskEntity(entity *AgentTaskEntity) error {
 }
 
 func validateDocumentEntity(entity *DocumentEntity) error {
+	if entity == nil {
+		return errors.New("document is required")
+	}
+
 	if err := validateRequiredText("document.namespace", entity.Namespace); err != nil {
 		return err
 	}

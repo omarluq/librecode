@@ -288,9 +288,9 @@ func TestWorkflowRepositoryLinkAgentTaskOnlyRecoversInvocationUniqueness(t *test
 	ctx := t.Context()
 	connection := openTestSQLite(t, filepath.Join(t.TempDir(), "workflow.db"), 0)
 	require.NoError(t, database.Migrate(ctx, connection))
-	sessions := database.NewSessionRepository(connection)
-	workflows := database.NewWorkflowRepository(connection)
-	agents := database.NewAgentTaskRepository(connection)
+	sessions := mustSessionRepository(t, connection)
+	workflows := mustWorkflowRepository(t, connection)
+	agents := mustAgentTaskRepository(t, connection)
 
 	owner, err := sessions.CreateSession(ctx, t.TempDir(), "owner", "")
 	require.NoError(t, err)
@@ -419,13 +419,13 @@ BEGIN SELECT RAISE(ABORT, 'reject workflow event'); END`,
 			ctx := t.Context()
 			connection := openTestSQLite(t, filepath.Join(t.TempDir(), "workflow.db"), 0)
 			require.NoError(t, database.Migrate(ctx, connection))
-			sessions := database.NewSessionRepository(connection)
+			sessions := mustSessionRepository(t, connection)
 			owner, err := sessions.CreateSession(ctx, t.TempDir(), "owner", "")
 			require.NoError(t, err)
 			_, err = connection.ExecContext(ctx, test.trigger)
 			require.NoError(t, err)
 
-			_, err = database.NewWorkflowRepository(connection).Create(ctx, newWorkflowRun(owner.ID))
+			_, err = mustWorkflowRepository(t, connection).Create(ctx, newWorkflowRun(owner.ID))
 			require.Error(t, err)
 
 			for _, table := range []string{"tasks", workflowRunsTable, "task_events"} {
@@ -451,11 +451,11 @@ func TestWorkflowRepositoryReportsStorageAndCorruptRowErrors(t *testing.T) {
 		connection := openTestSQLite(t, filepath.Join(t.TempDir(), "workflow.db"), 0)
 		require.NoError(t, database.Migrate(ctx, connection))
 
-		sessions := database.NewSessionRepository(connection)
+		sessions := mustSessionRepository(t, connection)
 		owner, err := sessions.CreateSession(ctx, t.TempDir(), "owner", "")
 		require.NoError(t, err)
 
-		repository := database.NewWorkflowRepository(connection)
+		repository := mustWorkflowRepository(t, connection)
 		run, err := repository.Create(ctx, newWorkflowRun(owner.ID))
 		require.NoError(t, err)
 		_, err = connection.ExecContext(ctx, `UPDATE tasks SET created_at = 'not-time' WHERE id = ?`, run.Task.ID)
@@ -498,7 +498,7 @@ func TestWorkflowRepositoryReportsStorageAndCorruptRowErrors(t *testing.T) {
 			_, err := connection.ExecContext(ctx, "DROP TABLE "+test.table)
 			require.NoError(t, err)
 
-			require.Error(t, test.call(database.NewWorkflowRepository(connection)))
+			require.Error(t, test.call(mustWorkflowRepository(t, connection)))
 		})
 	}
 }

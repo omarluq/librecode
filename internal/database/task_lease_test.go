@@ -122,7 +122,7 @@ func TestTaskRepositoryLeaseValidation(t *testing.T) {
 		name      string
 		wantError string
 	}{
-		{name: "nil claim", wantError: leaseOwnerExpiryRequired, run: func() error {
+		{name: "nil claim", wantError: "task claim is required", run: func() error {
 			_, err := fixture.tasks.ClaimQueued(t.Context(), nil)
 
 			return fmt.Errorf("lease operation: %w", err)
@@ -144,7 +144,7 @@ func TestTaskRepositoryLeaseValidation(t *testing.T) {
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},
-		{name: "nil recovery", wantError: "requires a terminal target", run: func() error {
+		{name: "nil recovery", wantError: "task recovery is required", run: func() error {
 			_, err := fixture.tasks.RecoverExpired(t.Context(), nil)
 
 			return fmt.Errorf("lease operation: %w", err)

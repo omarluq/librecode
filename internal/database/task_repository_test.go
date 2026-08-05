@@ -238,7 +238,7 @@ func TestTaskRepositoryFinishBehavior(t *testing.T) {
 		finish      database.TaskFinish
 		wantChanged bool
 	}{
-		{name: "nil finish", wantError: "source states and a terminal target",
+		{name: "nil finish", wantError: "task finish is required",
 			finish: newTaskFinish("", nil, database.TaskSucceeded, taskSucceededEvent), wantChanged: false},
 		{name: "succeeds", finish: successfulTaskFinish(), wantError: "", wantChanged: true},
 		{name: "fails with details", finish: failedTaskFinish(), wantError: "", wantChanged: true},

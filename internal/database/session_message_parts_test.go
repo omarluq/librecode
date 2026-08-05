@@ -295,7 +295,7 @@ BEGIN
 END`)
 	require.NoError(t, err)
 
-	repository := database.NewSessionRepository(connection)
+	repository := mustSessionRepository(t, connection)
 	session, err := repository.CreateSession(ctx, "/work", "rollback", "")
 	require.NoError(t, err)
 
@@ -328,7 +328,7 @@ func TestSessionRepository_MessagePartsCascadeWithEntryAndSession(t *testing.T) 
 	ctx := context.Background()
 	require.NoError(t, database.Migrate(ctx, connection))
 	require.NoError(t, database.ConfigureSQLite(ctx, connection, database.SQLiteOptions{BusyTimeout: 0}))
-	repository := database.NewSessionRepository(connection)
+	repository := mustSessionRepository(t, connection)
 
 	appendImage := func(name string) (*database.SessionEntity, *database.EntryEntity) {
 		session, createErr := repository.CreateSession(ctx, "/work", name, "")

@@ -11,7 +11,6 @@ import (
 
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
-	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 )
 
 // TaskState identifies the durable lifecycle state of a task.
@@ -113,22 +112,30 @@ type TaskRepository struct {
 }
 
 // NewTaskRepository creates a task repository.
-func NewTaskRepository(connection *sql.DB) *TaskRepository {
-	provider, err := ksqlite.NewFromSQLDB(connection)
+func NewTaskRepository(connection *sql.DB) (*TaskRepository, error) {
+	provider, err := newSQLProvider(connection)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	return NewTaskRepositoryWithProvider(provider)
 }
 
 // NewTaskRepositoryWithProvider creates a task repository with an explicit SQL provider.
-func NewTaskRepositoryWithProvider(provider ksql.Provider) *TaskRepository {
-	return &TaskRepository{sql: provider, now: time.Now}
+func NewTaskRepositoryWithProvider(provider ksql.Provider) (*TaskRepository, error) {
+	if isNilProvider(provider) {
+		return nil, nilProviderError()
+	}
+
+	return &TaskRepository{sql: provider, now: time.Now}, nil
 }
 
 // Create persists a queued task and its initial event atomically.
 func (repository *TaskRepository) Create(ctx context.Context, task *TaskEntity) (*TaskEntity, error) {
+	if task == nil {
+		return nil, oops.In("database").Code("nil_task").Errorf("task is required")
+	}
+
 	now := repository.now().UTC()
 	created := *task
 	created.ID = newUUIDv7()
@@ -166,7 +173,11 @@ func (repository *TaskRepository) ClaimInterrupted(ctx context.Context, claim *T
 }
 
 func (repository *TaskRepository) claim(ctx context.Context, claim *TaskClaim, from TaskState) (bool, error) {
-	if claim == nil || strings.TrimSpace(claim.LeaseOwner) == "" || claim.LeaseExpiresAt.IsZero() {
+	if claim == nil {
+		return false, oops.In("database").Code("nil_task_claim").Errorf("task claim is required")
+	}
+
+	if strings.TrimSpace(claim.LeaseOwner) == "" || claim.LeaseExpiresAt.IsZero() {
 		return false, errors.New("database: task claim requires an owner and expiry")
 	}
 
@@ -359,12 +370,8 @@ func transitionTimes(
 
 // Finish conditionally records a terminal outcome and appends its event atomically.
 func (repository *TaskRepository) Finish(ctx context.Context, finish *TaskFinish) (bool, error) {
-	if finish == nil || len(finish.From) == 0 || !isTerminalTaskState(finish.TargetState) {
-		return false, errors.New("database: task finish requires source states and a terminal target")
-	}
-
-	if err := validateEvent(finish.EventKind, finish.PayloadJSON); err != nil {
-		return false, oops.In("database").Code("validate_event").Wrapf(err, "validate terminal event")
+	if err := validateTaskFinish(finish); err != nil {
+		return false, err
 	}
 
 	changed := false
@@ -381,6 +388,22 @@ func (repository *TaskRepository) Finish(ctx context.Context, finish *TaskFinish
 	}
 
 	return changed, nil
+}
+
+func validateTaskFinish(finish *TaskFinish) error {
+	if finish == nil {
+		return oops.In("database").Code("nil_task_finish").Errorf("task finish is required")
+	}
+
+	if len(finish.From) == 0 || !isTerminalTaskState(finish.TargetState) {
+		return errors.New("database: task finish requires source states and a terminal target")
+	}
+
+	if err := validateEvent(finish.EventKind, finish.PayloadJSON); err != nil {
+		return oops.In("database").Code("validate_event").Wrapf(err, "validate terminal event")
+	}
+
+	return nil
 }
 
 func (repository *TaskRepository) finishTransaction(
@@ -438,7 +461,11 @@ WHERE id = ? AND state = ?
 // RecoverExpired atomically finishes running or canceling tasks whose leases are absent or expired.
 // It returns the IDs that were recovered.
 func (repository *TaskRepository) RecoverExpired(ctx context.Context, recovery *TaskRecovery) ([]string, error) {
-	if recovery == nil || !isTerminalTaskState(recovery.TargetState) {
+	if recovery == nil {
+		return nil, oops.In("database").Code("nil_task_recovery").Errorf("task recovery is required")
+	}
+
+	if !isTerminalTaskState(recovery.TargetState) {
 		return nil, errors.New("database: task recovery requires a terminal target")
 	}
 

@@ -274,7 +274,7 @@ func newRenderParityRuntimeWithSession(
 	requireNoError(t, err)
 	t.Cleanup(func() { requireNoError(t, connection.Close()) })
 	requireNoError(t, database.Migrate(ctx, connection))
-	repository := database.NewSessionRepository(connection)
+	repository := mustSessionRepository(t, connection)
 	session, err := repository.CreateSession(ctx, "/work", "render parity", "")
 	requireNoError(t, err)
 

@@ -38,10 +38,10 @@ func newTaskTestFixture(t *testing.T) *taskTestFixture {
 
 	return &taskTestFixture{
 		t:         t,
-		agents:    database.NewAgentTaskRepository(connection),
-		tasks:     database.NewTaskRepository(connection),
-		workflows: database.NewWorkflowRepository(connection),
-		sessions:  database.NewSessionRepository(connection),
+		agents:    mustAgentTaskRepository(t, connection),
+		tasks:     mustTaskRepository(t, connection),
+		workflows: mustWorkflowRepository(t, connection),
+		sessions:  mustSessionRepository(t, connection),
 	}
 }
 

@@ -37,7 +37,8 @@ END`)
 	provider, err := ksqlite.NewFromSQLDB(connection)
 	require.NoError(t, err)
 
-	repository := NewSessionRepositoryWithProvider(provider)
+	repository, err := NewSessionRepositoryWithProvider(provider)
+	require.NoError(t, err)
 	entry := validConstraintTestCompactionEntry(t)
 
 	inserted, err := repository.insertEntryIgnoringConflictTx(
@@ -192,7 +193,7 @@ func validSessionRow() sessionRow {
 	return sessionRow{
 		ID:            testRowSessionID,
 		CWD:           testCWD,
-		Name:          "session",
+		Name:          repositorySessionName,
 		ParentSession: "",
 		CreatedAt:     testRowCreatedAt,
 		UpdatedAt:     "2026-01-01T00:00:01Z",

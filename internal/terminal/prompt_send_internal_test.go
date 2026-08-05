@@ -352,8 +352,8 @@ func newPromptSendTestAppWithConfig(
 	cache := assistant.NewResponseCache(false, 1, time.Minute)
 	t.Cleanup(cache.Shutdown)
 	registry := newPromptSendTestModelRegistry(t)
-	sessionRepository := database.NewSessionRepository(connection)
-	settingsRepository := database.NewDocumentRepository(connection)
+	sessionRepository := mustSessionRepository(t, connection)
+	settingsRepository := mustDocumentRepository(t, connection)
 	runtime := assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
 		opts.Config = runtimeConfig
 		opts.Sessions = sessionRepository

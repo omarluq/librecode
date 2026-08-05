@@ -135,6 +135,8 @@ func TestAgentTaskRepositoryFinishBehavior(t *testing.T) {
 			from: []database.TaskState{database.TaskRunning}, wantError: "", wantChanged: false},
 		{name: "rejects invalid usage", usage: `{`, from: []database.TaskState{database.TaskQueued},
 			wantError: "usage_json must be valid JSON", wantChanged: false},
+		{name: "rejects empty source states", usage: `{}`, from: nil,
+			wantError: "source states and a terminal target", wantChanged: false},
 	}
 
 	for _, test := range tests {

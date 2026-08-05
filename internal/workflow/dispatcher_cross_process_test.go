@@ -28,8 +28,8 @@ func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, workerDB.Close()) })
 
-	repository := database.NewWorkflowRepository(submitterDB)
-	sessions := database.NewSessionRepository(submitterDB)
+	repository := mustWorkflowRepository(t, submitterDB)
+	sessions := mustSessionRepository(t, submitterDB)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "cross-process workflow", "")
 	require.NoError(t, err)
 
@@ -40,7 +40,7 @@ func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 
 	workerRunner, err := workflow.NewRunner(newFakeController())
 	require.NoError(t, err)
-	worker, err := workflow.NewService(database.NewWorkflowRepository(workerDB), workerRunner)
+	worker, err := workflow.NewService(mustWorkflowRepository(t, workerDB), workerRunner)
 	require.NoError(t, err)
 
 	run, err := submitter.Submit(t.Context(), &workflow.ServiceRequest{
@@ -51,7 +51,7 @@ func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 
 	dispatcher, err := workflow.NewDispatcher(context.Background(), workflow.DispatcherOptions{
 		Service:     worker,
-		Tasks:       database.NewTaskRepository(workerDB),
+		Tasks:       mustTaskRepository(t, workerDB),
 		Logger:      nil,
 		Concurrency: 1,
 		Buffer:      4,

@@ -367,7 +367,7 @@ func agentToolSessionsWithDB(t *testing.T) (*database.SessionRepository, *sql.DB
 	})
 	require.NoError(t, database.Migrate(t.Context(), databaseConnection))
 
-	return database.NewSessionRepository(databaseConnection), databaseConnection
+	return mustSessionRepository(t, databaseConnection), databaseConnection
 }
 
 func newAgentControllerStub(

@@ -505,9 +505,9 @@ func repositories(
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
-	return database.NewTaskRepository(connection),
-		database.NewAgentTaskRepository(connection),
-		database.NewSessionRepository(connection)
+	return mustTaskRepository(t, connection),
+		mustAgentTaskRepository(t, connection),
+		mustSessionRepository(t, connection)
 }
 
 func createSession(

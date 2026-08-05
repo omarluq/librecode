@@ -188,7 +188,7 @@ func TestSessionRepository_TranscriptMessagesWrapsMalformedRows(t *testing.T) {
 	connection.SetMaxOpenConns(1)
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
-	repository := database.NewSessionRepository(connection)
+	repository := mustSessionRepository(t, connection)
 	session, err := repository.CreateSession(context.Background(), "/work", "malformed transcript", "")
 	require.NoError(t, err)
 	_, err = repository.AppendMessage(context.Background(), session.ID, nil, &database.MessageEntity{
@@ -590,7 +590,7 @@ func newTestSessionRepository(t *testing.T) *database.SessionRepository {
 
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
-	return database.NewSessionRepository(connection)
+	return mustSessionRepository(t, connection)
 }
 
 func newMigratedThroughVersion(t *testing.T, version int64) *sql.DB {
