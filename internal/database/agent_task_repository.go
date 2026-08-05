@@ -10,7 +10,6 @@ import (
 
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
-	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 )
 
 // AgentTaskEntity contains agent-specific data for a generic task.
@@ -33,18 +32,27 @@ type AgentTaskRepository struct {
 }
 
 // NewAgentTaskRepository creates an agent task repository.
-func NewAgentTaskRepository(connection *sql.DB) *AgentTaskRepository {
-	provider, err := ksqlite.NewFromSQLDB(connection)
+func NewAgentTaskRepository(connection *sql.DB) (*AgentTaskRepository, error) {
+	provider, err := newSQLProvider(connection)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	return NewAgentTaskRepositoryWithProvider(provider)
 }
 
 // NewAgentTaskRepositoryWithProvider creates an agent task repository with an explicit SQL provider.
-func NewAgentTaskRepositoryWithProvider(provider ksql.Provider) *AgentTaskRepository {
-	return &AgentTaskRepository{sql: provider, tasks: NewTaskRepositoryWithProvider(provider)}
+func NewAgentTaskRepositoryWithProvider(provider ksql.Provider) (*AgentTaskRepository, error) {
+	if isNilProvider(provider) {
+		return nil, nilProviderError()
+	}
+
+	tasks, err := NewTaskRepositoryWithProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AgentTaskRepository{sql: provider, tasks: tasks}, nil
 }
 
 // CreateWithChildSession atomically creates a child session and its queued agent task.
@@ -107,7 +115,8 @@ func prepareAgentTaskChild(
 	}
 
 	if childRequest == nil {
-		return nil, nil, errors.New("database: child session request is required")
+		return nil, nil, oops.In("database").Code("nil_child_session_request").
+			Errorf("child session request is required")
 	}
 
 	if agentTask.Task.OwnerSessionID != childRequest.ParentSessionID {
@@ -180,6 +189,10 @@ func (repository *AgentTaskRepository) Finish(
 	finish *TaskFinish,
 	usageJSON string,
 ) (bool, error) {
+	if err := validateTaskFinish(finish); err != nil {
+		return false, err
+	}
+
 	if !json.Valid([]byte(usageJSON)) {
 		return false, errors.New("agent_task.usage_json must be valid JSON")
 	}

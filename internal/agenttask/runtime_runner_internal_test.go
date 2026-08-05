@@ -61,7 +61,7 @@ func TestRuntimeRunnerRunRejectsInvalidTaskBeforePrompt(t *testing.T) {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), db))
-	sessions := database.NewSessionRepository(db)
+	sessions := mustSessionRepository(t, db)
 	runner, err := NewRuntimeRunner(&assistant.Runtime{}, agent.Load(t.TempDir()), sessions)
 	require.NoError(t, err)
 
@@ -118,7 +118,7 @@ func TestRuntimeRunnerRunsPromptAndHandlesPromptAndEventErrors(t *testing.T) {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), db))
-	sessions := database.NewSessionRepository(db)
+	sessions := mustSessionRepository(t, db)
 	session, err := sessions.CreateSession(t.Context(), t.TempDir(), childSessionName, "")
 	require.NoError(t, err)
 
@@ -219,7 +219,7 @@ func TestRuntimeRunnerReportsSessionLoadError(t *testing.T) {
 	db, err := sql.Open("sqlite", "file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared")
 	require.NoError(t, err)
 	require.NoError(t, database.Migrate(t.Context(), db))
-	sessions := database.NewSessionRepository(db)
+	sessions := mustSessionRepository(t, db)
 	require.NoError(t, db.Close())
 	runner, err := NewRuntimeRunner(&assistant.Runtime{}, agent.Load(t.TempDir()), sessions)
 	require.NoError(t, err)

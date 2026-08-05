@@ -225,7 +225,7 @@ func TestNestedAgentTaskReturnResumesAndReplaysParentActivity(t *testing.T) {
 	t.Parallel()
 
 	connection := newPromptSendTestConnection(t)
-	sessions := database.NewSessionRepository(connection)
+	sessions := mustSessionRepository(t, connection)
 	root, err := sessions.CreateSession(t.Context(), t.TempDir(), "root", "")
 	require.NoError(t, err)
 	parent, err := sessions.CreateSession(t.Context(), root.CWD, "parent agent", root.ID)

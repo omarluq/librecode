@@ -58,13 +58,38 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 		return nil, closeAfterSetupError(connection, "close_after_sql_provider", "sql_provider", databasePath, err)
 	}
 
+	sessions, err := database.NewSessionRepositoryWithProvider(sqlProvider)
+	if err != nil {
+		return nil, closeAfterRepositoryError(connection, "session", databasePath, err)
+	}
+
+	documents, err := database.NewDocumentRepositoryWithProvider(sqlProvider)
+	if err != nil {
+		return nil, closeAfterRepositoryError(connection, "document", databasePath, err)
+	}
+
+	tasks, err := database.NewTaskRepositoryWithProvider(sqlProvider)
+	if err != nil {
+		return nil, closeAfterRepositoryError(connection, "task", databasePath, err)
+	}
+
+	agentTasks, err := database.NewAgentTaskRepositoryWithProvider(sqlProvider)
+	if err != nil {
+		return nil, closeAfterRepositoryError(connection, "agent_task", databasePath, err)
+	}
+
+	workflows, err := database.NewWorkflowRepositoryWithProvider(sqlProvider)
+	if err != nil {
+		return nil, closeAfterRepositoryError(connection, "workflow", databasePath, err)
+	}
+
 	return &DatabaseService{
 		DB:         connection,
-		Sessions:   database.NewSessionRepositoryWithProvider(sqlProvider),
-		Documents:  database.NewDocumentRepositoryWithProvider(sqlProvider),
-		Tasks:      database.NewTaskRepositoryWithProvider(sqlProvider),
-		AgentTasks: database.NewAgentTaskRepositoryWithProvider(sqlProvider),
-		Workflows:  database.NewWorkflowRepositoryWithProvider(sqlProvider),
+		Sessions:   sessions,
+		Documents:  documents,
+		Tasks:      tasks,
+		AgentTasks: agentTasks,
+		Workflows:  workflows,
 		path:       databasePath,
 	}, nil
 }
@@ -135,6 +160,16 @@ func setupSQLiteDatabase(
 	}
 
 	return nil
+}
+
+func closeAfterRepositoryError(connection *sql.DB, name, databasePath string, err error) error {
+	return closeAfterSetupError(
+		connection,
+		"close_after_"+name+"_repository",
+		name+"_repository",
+		databasePath,
+		err,
+	)
 }
 
 func closeAfterSetupError(connection *sql.DB, closeCode, code, databasePath string, err error) error {

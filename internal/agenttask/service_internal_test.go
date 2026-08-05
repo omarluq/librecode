@@ -60,9 +60,9 @@ func newServiceRepositoryFixture(t *testing.T) serviceRepositoryFixture {
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
 	return serviceRepositoryFixture{
-		tasks:      database.NewTaskRepository(connection),
-		agentTasks: database.NewAgentTaskRepository(connection),
-		sessions:   database.NewSessionRepository(connection),
+		tasks:      mustTaskRepository(t, connection),
+		agentTasks: mustAgentTaskRepository(t, connection),
+		sessions:   mustSessionRepository(t, connection),
 	}
 }
 
@@ -118,8 +118,8 @@ func serviceWithClosedRepositories(t *testing.T) *Service {
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
 	service := serviceWithRepositories(
-		database.NewTaskRepository(connection),
-		database.NewAgentTaskRepository(connection),
+		mustTaskRepository(t, connection),
+		mustAgentTaskRepository(t, connection),
 	)
 	require.NoError(t, connection.Close())
 

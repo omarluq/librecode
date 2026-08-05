@@ -9,7 +9,6 @@ import (
 
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
-	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 )
@@ -51,21 +50,32 @@ type WorkflowRepository struct {
 }
 
 // NewWorkflowRepository creates a workflow repository.
-func NewWorkflowRepository(connection *sql.DB) *WorkflowRepository {
-	provider, err := ksqlite.NewFromSQLDB(connection)
+func NewWorkflowRepository(connection *sql.DB) (*WorkflowRepository, error) {
+	provider, err := newSQLProvider(connection)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	return NewWorkflowRepositoryWithProvider(provider)
 }
 
 // NewWorkflowRepositoryWithProvider creates a workflow repository with an explicit SQL provider.
-func NewWorkflowRepositoryWithProvider(provider ksql.Provider) *WorkflowRepository {
-	return &WorkflowRepository{
-		sql: provider, tasks: NewTaskRepositoryWithProvider(provider),
-		agentTasks: NewAgentTaskRepositoryWithProvider(provider),
+func NewWorkflowRepositoryWithProvider(provider ksql.Provider) (*WorkflowRepository, error) {
+	if isNilProvider(provider) {
+		return nil, nilProviderError()
 	}
+
+	tasks, err := NewTaskRepositoryWithProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+
+	agentTasks, err := NewAgentTaskRepositoryWithProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+
+	return &WorkflowRepository{sql: provider, tasks: tasks, agentTasks: agentTasks}, nil
 }
 
 // Tasks returns the generic task repository used for workflow lifecycle and events.
@@ -84,7 +94,7 @@ func (repository *WorkflowRepository) Create(
 	run *WorkflowRunEntity,
 ) (*WorkflowRunEntity, error) {
 	if run == nil {
-		return nil, errors.New("database: workflow run is required")
+		return nil, oops.In("database").Code("nil_workflow_run").Errorf("workflow run is required")
 	}
 
 	now := repository.tasks.now().UTC()
@@ -196,9 +206,7 @@ func (repository *WorkflowRepository) createAgentTask(
 		return nil, err
 	}
 
-	agents := NewAgentTaskRepositoryWithProvider(repository.sql)
-
-	created, _, err := agents.prepareCreate(agentTask)
+	created, _, err := repository.agentTasks.prepareCreate(agentTask)
 	if err != nil {
 		return nil, err
 	}

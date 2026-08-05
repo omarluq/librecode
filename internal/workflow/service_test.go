@@ -364,8 +364,8 @@ func newWorkflowService(
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
-	repository := database.NewWorkflowRepository(connection)
-	sessions := database.NewSessionRepository(connection)
+	repository := mustWorkflowRepository(t, connection)
+	sessions := mustSessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), "/work", "workflow owner", "")
 	require.NoError(t, err)
 
@@ -449,10 +449,10 @@ func newWorkflowIntegration(t *testing.T) *workflowIntegration {
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
-	taskRepository := database.NewTaskRepository(connection)
-	agentTaskRepository := database.NewAgentTaskRepository(connection)
-	sessions := database.NewSessionRepository(connection)
-	workflowRepository := database.NewWorkflowRepository(connection)
+	taskRepository := mustTaskRepository(t, connection)
+	agentTaskRepository := mustAgentTaskRepository(t, connection)
+	sessions := mustSessionRepository(t, connection)
+	workflowRepository := mustWorkflowRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "workflow integration owner", "")
 	require.NoError(t, err)
 

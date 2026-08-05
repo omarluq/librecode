@@ -381,7 +381,11 @@ func (repository *SessionRepository) AppendMessageWithDisplay(
 	modelFacing *bool,
 	display *bool,
 ) (*EntryEntity, error) {
-	options := appendOptionsFromMessage(message)
+	options, err := appendOptionsFromMessage(message)
+	if err != nil {
+		return nil, err
+	}
+
 	options.modelFacing = modelFacing
 	options.display = display
 
@@ -397,14 +401,22 @@ func (repository *SessionRepository) AppendMessageWithMetadata(
 	modelFacing *bool,
 	usage *EntryTokenUsageEntity,
 ) (*EntryEntity, error) {
-	options := appendOptionsFromMessage(message)
+	options, err := appendOptionsFromMessage(message)
+	if err != nil {
+		return nil, err
+	}
+
 	options.modelFacing = modelFacing
 	options.usage = usage
 
 	return repository.appendBuiltEntry(ctx, sessionID, parentID, EntryTypeMessage, options)
 }
 
-func appendOptionsFromMessage(message *MessageEntity) *appendEntryOptions {
+func appendOptionsFromMessage(message *MessageEntity) (*appendEntryOptions, error) {
+	if message == nil {
+		return nil, oops.In("database").Code("nil_message").Errorf("message is required")
+	}
+
 	options := newAppendEntryOptions()
 	options.content = message.Content
 	options.model = message.Model
@@ -413,7 +425,7 @@ func appendOptionsFromMessage(message *MessageEntity) *appendEntryOptions {
 	options.timestamp = message.Timestamp
 	options.parts = message.Parts
 
-	return options
+	return options, nil
 }
 
 // AppendCustom appends extension state that does not participate in prompt context.

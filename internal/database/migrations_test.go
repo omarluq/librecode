@@ -70,7 +70,7 @@ func TestMessagePartsMigrationUpDownAndOldSchemaUpgrade(t *testing.T) {
 			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, indexName)
 	}
 
-	repository := database.NewSessionRepository(connection)
+	repository := mustSessionRepository(t, connection)
 	session, err := repository.CreateSession(ctx, "/work", "parts constraints", "")
 	require.NoError(t, err)
 	entry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{

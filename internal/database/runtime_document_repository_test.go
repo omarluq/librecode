@@ -18,7 +18,7 @@ func TestDocumentRepositoryStoresRuntimeDocuments(t *testing.T) {
 	t.Parallel()
 
 	connection := newTestConnection(t)
-	repository := database.NewDocumentRepository(connection)
+	repository := mustDocumentRepository(t, connection)
 	ctx := context.Background()
 
 	document := database.DocumentEntity{

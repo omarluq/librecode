@@ -8,7 +8,6 @@ import (
 
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
-	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 )
 
 // DocumentRepository persists runtime documents that upstream persists as JSON files.
@@ -18,18 +17,22 @@ type DocumentRepository struct {
 }
 
 // NewDocumentRepository creates a document repository.
-func NewDocumentRepository(connection *sql.DB) *DocumentRepository {
-	sqlProvider, err := ksqlite.NewFromSQLDB(connection)
+func NewDocumentRepository(connection *sql.DB) (*DocumentRepository, error) {
+	provider, err := newSQLProvider(connection)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	return NewDocumentRepositoryWithProvider(sqlProvider)
+	return NewDocumentRepositoryWithProvider(provider)
 }
 
 // NewDocumentRepositoryWithProvider creates a document repository with an explicit SQL provider.
-func NewDocumentRepositoryWithProvider(sqlProvider ksql.Provider) *DocumentRepository {
-	return &DocumentRepository{sql: sqlProvider, now: time.Now}
+func NewDocumentRepositoryWithProvider(provider ksql.Provider) (*DocumentRepository, error) {
+	if isNilProvider(provider) {
+		return nil, nilProviderError()
+	}
+
+	return &DocumentRepository{sql: provider, now: time.Now}, nil
 }
 
 type documentRow struct {
@@ -74,6 +77,10 @@ WHERE namespace = ? AND document_key = ?`
 
 // Put stores or replaces one runtime document.
 func (repository *DocumentRepository) Put(ctx context.Context, document *DocumentEntity) error {
+	if document == nil {
+		return oops.In("database").Code("nil_document").Errorf("runtime document is required")
+	}
+
 	if err := validateDocumentEntity(document); err != nil {
 		return oops.In("database").Code("validate_document").Wrapf(err, "validate runtime document")
 	}
