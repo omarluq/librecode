@@ -15,12 +15,14 @@ const ConfigOverridesKey = "config.overrides"
 // ConfigOverrides contains CLI/runtime overrides applied after config loading.
 type ConfigOverrides struct {
 	DisableExtensions bool
+	Interactive       bool
 }
 
 // ConfigService provides access to the resolved application configuration.
 type ConfigService struct {
-	cfg  *config.Config
-	path string
+	cfg         *config.Config
+	path        string
+	interactive bool
 }
 
 // NewConfigService loads configuration from the injector's configured path.
@@ -39,7 +41,7 @@ func NewConfigService(injector do.Injector) (*ConfigService, error) {
 		cfg.Extensions.Enabled = false
 	}
 
-	return &ConfigService{cfg: cfg, path: loaded.Path}, nil
+	return &ConfigService{cfg: cfg, path: loaded.Path, interactive: overrides.Interactive}, nil
 }
 
 // Get returns the resolved application configuration.
@@ -50,4 +52,9 @@ func (s *ConfigService) Get() *config.Config {
 // Path returns the config file path used to load configuration, if any.
 func (s *ConfigService) Path() string {
 	return s.path
+}
+
+// Interactive reports whether the process is running the terminal UI.
+func (s *ConfigService) Interactive() bool {
+	return s.interactive
 }

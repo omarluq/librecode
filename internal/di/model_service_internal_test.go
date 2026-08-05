@@ -32,7 +32,7 @@ func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
 		Enabled:      false,
 	}
 	injector := do.New()
-	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: ""})
+	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
 	do.ProvideValue(injector, &DatabaseService{
 		DB:         nil,
 		Sessions:   nil,

@@ -1,6 +1,7 @@
 package executeworker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,6 +27,7 @@ type Client struct {
 type workerProcess struct {
 	killErr  error
 	cmd      *exec.Cmd
+	stderr   *bytes.Buffer
 	killOnce sync.Once
 }
 
@@ -104,7 +106,9 @@ func (client Client) startWorker() (*workerProcess, io.WriteCloser, io.ReadClose
 		)
 	}
 
-	cmd.Stderr = os.Stderr
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
+
 	if err = cmd.Start(); err != nil {
 		return nil, nil, nil, errors.Join(
 			fmt.Errorf("start execute worker: %w", err),
@@ -113,7 +117,7 @@ func (client Client) startWorker() (*workerProcess, io.WriteCloser, io.ReadClose
 		)
 	}
 
-	return &workerProcess{cmd: cmd, killOnce: sync.Once{}, killErr: nil}, stdin, stdout, nil
+	return &workerProcess{cmd: cmd, stderr: stderr, killOnce: sync.Once{}, killErr: nil}, stdin, stdout, nil
 }
 
 func (client Client) executablePath() (string, error) {
@@ -278,7 +282,7 @@ func waitForWorker(ctx context.Context, worker *workerProcess) error {
 			return canceledError(ctx.Err())
 		}
 
-		return fmt.Errorf("wait for execute worker: %w", err)
+		return worker.commandError("wait for execute worker", err)
 	}
 
 	return nil
@@ -298,7 +302,11 @@ func (worker *workerProcess) abort(cause error) error {
 		return errors.Join(cause, fmt.Errorf("kill execute worker: %w", worker.killErr), waitErr)
 	}
 
-	return errors.Join(cause, waitErr)
+	if waitErr != nil {
+		return errors.Join(cause, worker.commandError("wait for execute worker", waitErr))
+	}
+
+	return cause
 }
 
 func (worker *workerProcess) readError(ctx context.Context, readErr error) error {
@@ -317,10 +325,31 @@ func (worker *workerProcess) readError(ctx context.Context, readErr error) error
 	}
 
 	if waitErr != nil {
-		return fmt.Errorf("execute worker exited without result: %w", waitErr)
+		return worker.commandError("execute worker exited without result", waitErr)
 	}
 
-	return errors.New("execute worker exited without result")
+	return worker.commandError("execute worker exited without result", nil)
+}
+
+func (worker *workerProcess) commandError(message string, err error) error {
+	stderr := ""
+	if worker.stderr != nil {
+		stderr = worker.stderr.String()
+	}
+
+	if stderr == "" {
+		if err == nil {
+			return errors.New(message)
+		}
+
+		return fmt.Errorf("%s: %w", message, err)
+	}
+
+	if err == nil {
+		return fmt.Errorf("%s: stderr: %s", message, stderr)
+	}
+
+	return fmt.Errorf("%s: %w: stderr: %s", message, err, stderr)
 }
 
 func canceledError(err error) error {

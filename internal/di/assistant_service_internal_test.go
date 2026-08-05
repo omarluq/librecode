@@ -41,7 +41,7 @@ func provideTestAssistantDependencies(t *testing.T, injector do.Injector) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: ""})
+	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: "", interactive: false})
 	do.ProvideValue(injector, &ExtensionService{
 		Manager: extension.NewManager(logger),
 		State:   extension.ManagerState{Configured: nil, Loaded: nil},
@@ -51,7 +51,7 @@ func provideTestAssistantDependencies(t *testing.T, injector do.Injector) {
 	do.ProvideValue(injector, &SkillsService{Cache: core.NewSkillsCache()})
 	do.ProvideValue(injector, &LoggerService{
 		SlogLogger:    logger,
-		ZerologLogger: newZerologLogger(testServiceConfig()),
+		ZerologLogger: newZerologLogger(testServiceConfig(), io.Discard),
 	})
 	t.Cleanup(func() {
 		if skills := do.MustInvoke[*SkillsService](injector); skills.Cache != nil {

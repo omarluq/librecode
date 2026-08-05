@@ -17,7 +17,7 @@ func TestNewCacheServiceUsesConfiguredCache(t *testing.T) {
 	t.Parallel()
 
 	injector := do.New()
-	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: ""})
+	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: "", interactive: false})
 
 	service, err := NewCacheService(injector)
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ func newTestAssistantService(t *testing.T, injector do.Injector) *AssistantServi
 func TestContainerServiceAccessors(t *testing.T) {
 	t.Parallel()
 
-	container, err := NewContainer("", ConfigOverrides{DisableExtensions: false})
+	container, err := NewContainer("", ConfigOverrides{DisableExtensions: false, Interactive: false})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		report := container.ShutdownWithContext(context.Background())

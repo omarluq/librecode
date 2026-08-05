@@ -304,7 +304,7 @@ func startedProcess(t *testing.T, script string) *workerProcess {
 
 	require.NoError(t, cmd.Start())
 
-	return &workerProcess{killErr: nil, cmd: cmd, killOnce: sync.Once{}}
+	return &workerProcess{killErr: nil, cmd: cmd, stderr: nil, killOnce: sync.Once{}}
 }
 
 func TestEvalRequestValidationInProcess(t *testing.T) {
