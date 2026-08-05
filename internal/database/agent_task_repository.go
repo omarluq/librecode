@@ -38,21 +38,39 @@ func NewAgentTaskRepository(connection *sql.DB) (*AgentTaskRepository, error) {
 		return nil, err
 	}
 
-	return NewAgentTaskRepositoryWithProvider(provider)
-}
-
-// NewAgentTaskRepositoryWithProvider creates an agent task repository with an explicit SQL provider.
-func NewAgentTaskRepositoryWithProvider(provider ksql.Provider) (*AgentTaskRepository, error) {
-	if isNilProvider(provider) {
-		return nil, nilProviderError()
-	}
-
 	tasks, err := NewTaskRepositoryWithProvider(provider)
 	if err != nil {
 		return nil, err
 	}
 
+	return NewAgentTaskRepositoryWithProvider(provider, tasks)
+}
+
+// NewAgentTaskRepositoryWithProvider creates an agent task repository with explicit shared dependencies.
+func NewAgentTaskRepositoryWithProvider(
+	provider ksql.Provider,
+	tasks *TaskRepository,
+) (*AgentTaskRepository, error) {
+	if isNilProvider(provider) {
+		return nil, nilProviderError()
+	}
+
+	if tasks == nil {
+		return nil, oops.In("database").Code("nil_task_repository").Errorf("task repository is required")
+	}
+
+	if !sameSQLProvider(provider, tasks.sql) {
+		return nil, oops.In("database").Code("repository_graph_mismatch").Errorf(
+			"task repository must share the SQL provider",
+		)
+	}
+
 	return &AgentTaskRepository{sql: provider, tasks: tasks}, nil
+}
+
+// Tasks returns the shared generic task repository.
+func (repository *AgentTaskRepository) Tasks() *TaskRepository {
+	return repository.tasks
 }
 
 // CreateWithChildSession atomically creates a child session and its queued agent task.

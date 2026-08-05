@@ -37,11 +37,13 @@ func newTaskTestFixture(t *testing.T) *taskTestFixture {
 	connection := openTestSQLite(t, filepath.Join(t.TempDir(), "tasks.db"), 0)
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
+	workflows := testutil.WorkflowRepository(t, connection)
+
 	return &taskTestFixture{
 		t:         t,
-		agents:    testutil.AgentTaskRepository(t, connection),
-		tasks:     testutil.TaskRepository(t, connection),
-		workflows: testutil.WorkflowRepository(t, connection),
+		agents:    workflows.AgentTasks(),
+		tasks:     workflows.Tasks(),
+		workflows: workflows,
 		sessions:  testutil.SessionRepository(t, connection),
 	}
 }

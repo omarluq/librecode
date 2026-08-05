@@ -56,23 +56,42 @@ func NewWorkflowRepository(connection *sql.DB) (*WorkflowRepository, error) {
 		return nil, err
 	}
 
-	return NewWorkflowRepositoryWithProvider(provider)
-}
-
-// NewWorkflowRepositoryWithProvider creates a workflow repository with an explicit SQL provider.
-func NewWorkflowRepositoryWithProvider(provider ksql.Provider) (*WorkflowRepository, error) {
-	if isNilProvider(provider) {
-		return nil, nilProviderError()
-	}
-
 	tasks, err := NewTaskRepositoryWithProvider(provider)
 	if err != nil {
 		return nil, err
 	}
 
-	agentTasks, err := NewAgentTaskRepositoryWithProvider(provider)
+	agentTasks, err := NewAgentTaskRepositoryWithProvider(provider, tasks)
 	if err != nil {
 		return nil, err
+	}
+
+	return NewWorkflowRepositoryWithProvider(provider, tasks, agentTasks)
+}
+
+// NewWorkflowRepositoryWithProvider creates a workflow repository with explicit shared dependencies.
+func NewWorkflowRepositoryWithProvider(
+	provider ksql.Provider,
+	tasks *TaskRepository,
+	agentTasks *AgentTaskRepository,
+) (*WorkflowRepository, error) {
+	if isNilProvider(provider) {
+		return nil, nilProviderError()
+	}
+
+	if tasks == nil {
+		return nil, oops.In("database").Code("nil_task_repository").Errorf("task repository is required")
+	}
+
+	if agentTasks == nil {
+		return nil, oops.In("database").Code("nil_agent_task_repository").Errorf("agent task repository is required")
+	}
+
+	if agentTasks.Tasks() != tasks || !sameSQLProvider(provider, tasks.sql) ||
+		!sameSQLProvider(provider, agentTasks.sql) {
+		return nil, oops.In("database").Code("repository_graph_mismatch").Errorf(
+			"workflow repositories must share dependencies and the SQL provider",
+		)
 	}
 
 	return &WorkflowRepository{sql: provider, tasks: tasks, agentTasks: agentTasks}, nil
