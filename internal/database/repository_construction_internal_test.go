@@ -218,18 +218,44 @@ func TestCompositeRepositoryConstructorsRejectInvalidGraph(t *testing.T) {
 	otherProvider, err := newSQLProvider(otherConnection)
 	require.NoError(t, err)
 
-	_, err = NewAgentTaskRepositoryWithProvider(provider, nil)
-	assertRepositoryOopsCode(t, err, "nil_task_repository")
-	_, err = NewAgentTaskRepositoryWithProvider(otherProvider, tasks)
-	assertRepositoryOopsCode(t, err, "repository_graph_mismatch")
-	_, err = NewWorkflowRepositoryWithProvider(provider, nil, agentTasks)
-	assertRepositoryOopsCode(t, err, "nil_task_repository")
-	_, err = NewWorkflowRepositoryWithProvider(provider, tasks, nil)
-	assertRepositoryOopsCode(t, err, "nil_agent_task_repository")
-	_, err = NewWorkflowRepositoryWithProvider(provider, otherTasks, agentTasks)
-	assertRepositoryOopsCode(t, err, "repository_graph_mismatch")
-	_, err = NewWorkflowRepositoryWithProvider(otherProvider, tasks, agentTasks)
-	assertRepositoryOopsCode(t, err, "repository_graph_mismatch")
+	const graphMismatch = "repository_graph_mismatch"
+
+	tests := map[string]struct {
+		err  error
+		code string
+	}{
+		"agent task with nil task repository": {
+			err:  agentTaskGraphConstructorError(provider, nil),
+			code: "nil_task_repository",
+		},
+		"agent task with mismatched provider": {
+			err:  agentTaskGraphConstructorError(otherProvider, tasks),
+			code: graphMismatch,
+		},
+		"workflow with nil task repository": {
+			err:  workflowGraphConstructorError(provider, nil, agentTasks),
+			code: "nil_task_repository",
+		},
+		"workflow with nil agent task repository": {
+			err:  workflowGraphConstructorError(provider, tasks, nil),
+			code: "nil_agent_task_repository",
+		},
+		"workflow with mismatched task repository": {
+			err:  workflowGraphConstructorError(provider, otherTasks, agentTasks),
+			code: graphMismatch,
+		},
+		"workflow with mismatched provider": {
+			err:  workflowGraphConstructorError(otherProvider, tasks, agentTasks),
+			code: graphMismatch,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assertRepositoryOopsCode(t, tt.err, tt.code)
+		})
+	}
 }
 
 func TestRepositoryMethodsRejectNilEntities(t *testing.T) {
@@ -330,6 +356,22 @@ func nilEntityCases(
 			return createErr
 		}, code: "nil_child_session_request"},
 	}
+}
+
+func agentTaskGraphConstructorError(provider ksql.Provider, tasks *TaskRepository) error {
+	_, err := NewAgentTaskRepositoryWithProvider(provider, tasks)
+
+	return err
+}
+
+func workflowGraphConstructorError(
+	provider ksql.Provider,
+	tasks *TaskRepository,
+	agentTasks *AgentTaskRepository,
+) error {
+	_, err := NewWorkflowRepositoryWithProvider(provider, tasks, agentTasks)
+
+	return err
 }
 
 func sessionConstructorError(connection *sql.DB) error {
