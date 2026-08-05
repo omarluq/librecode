@@ -10,6 +10,7 @@ import (
 type commandOptions struct {
 	configFile        string
 	disableExtensions bool
+	interactive       bool
 }
 
 func commandOptionsFromCommand(cmd *cobra.Command) commandOptions {
@@ -25,11 +26,14 @@ func commandOptionsFromCommand(cmd *cobra.Command) commandOptions {
 		disableExtensions = false
 	}
 
-	return commandOptions{configFile: configFile, disableExtensions: disableExtensions}
+	return commandOptions{configFile: configFile, disableExtensions: disableExtensions, interactive: false}
 }
 
 func (options commandOptions) configOverrides() di.ConfigOverrides {
-	return di.ConfigOverrides{DisableExtensions: options.disableExtensions}
+	return di.ConfigOverrides{
+		DisableExtensions: options.disableExtensions,
+		Interactive:       options.interactive,
+	}
 }
 
 func newRootCmd() *cobra.Command {

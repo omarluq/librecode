@@ -1,6 +1,7 @@
 package di
 
 import (
+	"io"
 	"log/slog"
 	"os"
 
@@ -19,8 +20,9 @@ type LoggerService struct {
 
 // NewLoggerService configures application logging from the resolved config.
 func NewLoggerService(injector do.Injector) (*LoggerService, error) {
-	cfg := do.MustInvoke[*ConfigService](injector).Get()
-	zerologLogger := newZerologLogger(cfg)
+	configService := do.MustInvoke[*ConfigService](injector)
+	cfg := configService.Get()
+	zerologLogger := newZerologLogger(cfg, loggerWriter(configService))
 
 	logger := slog.New(slogzerolog.Option{
 		Level:  slogLevel(cfg.Logging.Level),
@@ -35,9 +37,16 @@ func NewLoggerService(injector do.Injector) (*LoggerService, error) {
 	}, nil
 }
 
-func newZerologLogger(cfg *config.Config) zerolog.Logger {
+func loggerWriter(configService *ConfigService) io.Writer {
+	if configService.Interactive() {
+		return io.Discard
+	}
+
+	return os.Stdout
+}
+
+func newZerologLogger(cfg *config.Config, writer io.Writer) zerolog.Logger {
 	level := parseZerologLevel(cfg.Logging.Level)
-	writer := os.Stdout
 
 	if cfg.Logging.Format == "json" {
 		return zerolog.New(writer).With().Timestamp().Logger().Level(level)

@@ -51,7 +51,10 @@ func newChatCmd() *cobra.Command {
 }
 
 func runChat(cmd *cobra.Command, options chatRunOptions) error {
-	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
+	commandOptions := commandOptionsFromCommand(cmd)
+	commandOptions.interactive = true
+
+	return withContainer(cmd.Context(), commandOptions, func(container *di.Container) error {
 		databaseService := container.DatabaseService()
 		runtime := container.AssistantService().Runtime
 		modelRegistry := container.ModelService().Registry

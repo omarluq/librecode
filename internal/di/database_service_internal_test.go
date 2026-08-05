@@ -57,7 +57,7 @@ func TestNewDatabaseServiceSharesCompositeRepositories(t *testing.T) {
 	cfg.Database.ApplyMigrations = true
 
 	injector := do.New()
-	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: ""})
+	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
 	service, err := NewDatabaseService(injector)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, service.Shutdown(context.Background())) })

@@ -15,11 +15,20 @@ import (
 )
 
 const (
-	helperEnv = "LIBRECODE_EXECUTEWORKER_TEST_HELPER"
-	echoQuery = "echo"
+	helperEnv       = "LIBRECODE_EXECUTEWORKER_TEST_HELPER"
+	helperStderrEnv = "LIBRECODE_EXECUTEWORKER_TEST_STDERR"
+	echoQuery       = "echo"
 )
 
 func TestMain(testMain *testing.M) {
+	if os.Getenv(helperStderrEnv) == "1" {
+		if _, err := os.Stderr.WriteString("worker diagnostic"); err != nil {
+			os.Exit(3)
+		}
+
+		os.Exit(2)
+	}
+
 	if os.Getenv(helperEnv) == "1" {
 		if err := executeworker.Serve(os.Stdin, os.Stdout); err != nil {
 			os.Exit(2)
@@ -33,6 +42,14 @@ func TestMain(testMain *testing.M) {
 
 func testClient() executeworker.Client {
 	return executeworker.Client{Executable: os.Args[0], Handler: nil}
+}
+
+func TestClientCapturesWorkerStderr(t *testing.T) {
+	t.Setenv(helperStderrEnv, "1")
+
+	_, err := testClient().Eval(t.Context(), `1`)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "worker diagnostic")
 }
 
 func TestClientHardCancelsInfiniteLoop(t *testing.T) {

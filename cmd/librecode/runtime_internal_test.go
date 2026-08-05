@@ -15,7 +15,11 @@ import (
 func TestWithContainerRunsHandler(t *testing.T) {
 	t.Parallel()
 
-	options := commandOptions{configFile: writeTestConfig(t, "extensions:\n  use: []\n"), disableExtensions: true}
+	options := commandOptions{
+		configFile:        writeTestConfig(t, "extensions:\n  use: []\n"),
+		disableExtensions: true,
+		interactive:       false,
+	}
 
 	called := false
 	err := withContainerOptions(context.Background(), options, func(container *di.Container) error {
@@ -33,7 +37,11 @@ func TestWithContainerRunsHandler(t *testing.T) {
 func TestWithContainerReturnsHandlerError(t *testing.T) {
 	t.Parallel()
 
-	options := commandOptions{configFile: writeTestConfig(t, "extensions:\n  use: []\n"), disableExtensions: true}
+	options := commandOptions{
+		configFile:        writeTestConfig(t, "extensions:\n  use: []\n"),
+		disableExtensions: true,
+		interactive:       false,
+	}
 
 	expectedErr := errors.New("handler failed")
 	err := withContainerOptions(context.Background(), options, func(*di.Container) error {
@@ -120,6 +128,7 @@ func TestWithContainerReturnsConfigError(t *testing.T) {
 	options := commandOptions{
 		configFile:        writeTestConfig(t, "database:\n  busy_timeout: -1s\nextensions:\n  use: []\n"),
 		disableExtensions: true,
+		interactive:       false,
 	}
 
 	err := withContainerOptions(context.Background(), options, func(*di.Container) error {
