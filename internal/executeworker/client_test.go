@@ -2,9 +2,11 @@ package executeworker_test
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,15 +20,12 @@ const (
 	helperEnv       = "LIBRECODE_EXECUTEWORKER_TEST_HELPER"
 	helperStderrEnv = "LIBRECODE_EXECUTEWORKER_TEST_STDERR"
 	echoQuery       = "echo"
+	waitErrorText   = "wait for execute worker"
 )
 
 func TestMain(testMain *testing.M) {
-	if os.Getenv(helperStderrEnv) == "1" {
-		if _, err := os.Stderr.WriteString("worker diagnostic"); err != nil {
-			os.Exit(3)
-		}
-
-		os.Exit(2)
+	if mode := os.Getenv(helperStderrEnv); mode != "" {
+		runStderrHelper(mode)
 	}
 
 	if os.Getenv(helperEnv) == "1" {
@@ -40,16 +39,139 @@ func TestMain(testMain *testing.M) {
 	os.Exit(testMain.Run())
 }
 
+func runStderrHelper(mode string) {
+	if mode == "request-write" {
+		writeHelperStderr("worker diagnostic")
+		os.Exit(2)
+	}
+
+	if _, err := executeworker.Read(os.Stdin); err != nil {
+		os.Exit(3)
+	}
+
+	if mode == "abort" {
+		writeHelperStderr("worker diagnostic")
+		writeHelperMessage(helperMessage("unexpected"))
+		time.Sleep(time.Minute)
+		os.Exit(3)
+	}
+
+	switch mode {
+	case "large":
+		writeHelperStderr("stderr prefix " + strings.Repeat("x", 70<<10) + " tail sentinel")
+	case "stdout-read":
+		writeHelperStderr("worker diagnostic")
+		writeMalformedFrame()
+	case "wait-after-result":
+		writeHelperStderr("worker diagnostic")
+		writeHelperMessage(helperMessage("result"))
+	case "premature-exit":
+		writeHelperStderr("worker diagnostic")
+	default:
+		writeHelperStderr("worker diagnostic")
+	}
+
+	os.Exit(2)
+}
+
+func writeMalformedFrame() {
+	if err := binary.Write(os.Stdout, binary.BigEndian, uint32(2)); err != nil {
+		os.Exit(3)
+	}
+
+	if _, err := os.Stdout.WriteString("{"); err != nil {
+		os.Exit(3)
+	}
+}
+
+func writeHelperMessage(message *executeworker.Message) {
+	if err := executeworker.Write(os.Stdout, message); err != nil {
+		os.Exit(3)
+	}
+}
+
+func helperMessage(messageType string) *executeworker.Message {
+	return &executeworker.Message{
+		Stderr: "", Source: "", Method: "", Mode: "", Name: "", Query: "", Stdout: "",
+		Type: messageType, Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil,
+		Arguments: nil, ID: 0, ExitCode: 0,
+	}
+}
+
+func writeHelperStderr(message string) {
+	if _, err := os.Stderr.WriteString(message); err != nil {
+		os.Exit(3)
+	}
+}
+
 func testClient() executeworker.Client {
 	return executeworker.Client{Executable: os.Args[0], Handler: nil}
 }
 
-func TestClientCapturesWorkerStderr(t *testing.T) {
-	t.Setenv(helperStderrEnv, "1")
+func TestClientIncludesWorkerStderrForFailurePaths(t *testing.T) {
+	tests := []struct {
+		name           string
+		mode           string
+		source         string
+		expectedCauses []string
+	}{
+		{
+			name:           "request write",
+			mode:           "request-write",
+			source:         strings.Repeat("x", 1<<20),
+			expectedCauses: []string{"write execute worker frame", waitErrorText},
+		},
+		{
+			name:           "stdout read",
+			mode:           "stdout-read",
+			source:         `1`,
+			expectedCauses: []string{"read execute worker", waitErrorText},
+		},
+		{
+			name:           "wait after result",
+			mode:           "wait-after-result",
+			source:         `1`,
+			expectedCauses: []string{waitErrorText},
+		},
+		{
+			name:           "abort wait failure",
+			mode:           "abort",
+			source:         `1`,
+			expectedCauses: []string{"unexpected execute worker message", waitErrorText},
+		},
+		{
+			name:           "premature exit",
+			mode:           "premature-exit",
+			source:         `1`,
+			expectedCauses: []string{"execute worker exited without result"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(helperStderrEnv, test.mode)
+
+			_, err := testClient().Eval(t.Context(), test.source)
+			require.Error(t, err)
+
+			for _, expectedCause := range test.expectedCauses {
+				require.ErrorContains(t, err, expectedCause)
+			}
+
+			assert.ErrorContains(t, err, "worker diagnostic")
+		})
+	}
+}
+
+func TestClientBoundsWorkerStderr(t *testing.T) {
+	t.Setenv(helperStderrEnv, "large")
 
 	_, err := testClient().Eval(t.Context(), `1`)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "worker diagnostic")
+	require.ErrorContains(t, err, "stderr prefix")
+	require.ErrorContains(t, err, "[execute worker stderr truncated]")
+	assert.NotContains(t, err.Error(), "tail sentinel")
+	assert.Less(t, len(err.Error()), 66<<10)
 }
 
 func TestClientHardCancelsInfiniteLoop(t *testing.T) {
