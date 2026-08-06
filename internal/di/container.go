@@ -175,7 +175,7 @@ func (c *Container) constructRuntime(ctx context.Context) (*RuntimeServices, err
 		return nil, err
 	}
 
-	if err := services.ChatWorkflows.StartWorkers(); err != nil {
+	if err := services.ChatWorkflows.StartWorkers(ctx); err != nil {
 		return nil, err
 	}
 

@@ -86,7 +86,7 @@ func (service *ChatWorkflowService) Start(ctx context.Context) error {
 }
 
 // StartWorkers starts workflow workers after runtime capabilities are published.
-func (service *ChatWorkflowService) StartWorkers() error {
+func (service *ChatWorkflowService) StartWorkers(ctx context.Context) error {
 	service.lifecycle.Lock()
 	defer service.lifecycle.Unlock()
 
@@ -95,7 +95,7 @@ func (service *ChatWorkflowService) StartWorkers() error {
 			Errorf("workflow dispatcher is not constructed")
 	}
 
-	return serviceError(service.dispatcher.Start(), "start chat workflow dispatcher")
+	return serviceError(service.dispatcher.Start(ctx), "start chat workflow dispatcher")
 }
 
 // Shutdown stops workflow workers before their dependencies are closed.

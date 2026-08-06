@@ -150,8 +150,8 @@ func TestStoppedDispatcherWaitsForStart(t *testing.T) {
 	require.True(t, found)
 	assert.Equal(t, database.TaskQueued, persisted.Task.State)
 
-	require.NoError(t, dispatcher.Start())
-	require.NoError(t, dispatcher.Start())
+	require.NoError(t, dispatcher.Start(t.Context()))
+	require.NoError(t, dispatcher.Start(t.Context()))
 	completed, err := dispatcher.Await(t.Context(), run.Task.ID)
 	require.NoError(t, err)
 	assert.Equal(t, database.TaskSucceeded, completed.Task.State)

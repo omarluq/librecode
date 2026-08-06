@@ -36,7 +36,6 @@ type Dispatcher struct {
 	queue       chan string
 	cancel      context.CancelFunc
 	done        <-chan struct{}
-	ctx         context.Context
 	wg          sync.WaitGroup
 	submits     sync.WaitGroup
 	mu          sync.Mutex
@@ -53,7 +52,7 @@ func NewDispatcher(ctx context.Context, options DispatcherOptions) (*Dispatcher,
 		return nil, err
 	}
 
-	if err := dispatcher.Start(); err != nil {
+	if err := dispatcher.Start(ctx); err != nil {
 		return nil, err
 	}
 
@@ -87,19 +86,18 @@ func NewStoppedDispatcher(ctx context.Context, options DispatcherOptions) (*Disp
 		logger = slog.Default()
 	}
 
-	dispatchCtx, cancel := context.WithCancel(ctx)
 	dispatcher := &Dispatcher{
 		service: options.Service, tasks: options.Tasks, logger: logger,
-		queue: make(chan string, buffer), cancel: cancel, done: dispatchCtx.Done(),
-		wg: sync.WaitGroup{}, submits: sync.WaitGroup{}, interval: interval,
-		concurrency: concurrency, ctx: dispatchCtx, mu: sync.Mutex{}, closed: false, started: false,
+		queue: make(chan string, buffer), cancel: nil, done: nil,
+		wg: sync.WaitGroup{}, submits: sync.WaitGroup{},
+		interval: interval, concurrency: concurrency, mu: sync.Mutex{}, closed: false, started: false,
 	}
 
 	return dispatcher, nil
 }
 
 // Start launches workflow workers and polling.
-func (dispatcher *Dispatcher) Start() error {
+func (dispatcher *Dispatcher) Start(ctx context.Context) error {
 	dispatcher.mu.Lock()
 	defer dispatcher.mu.Unlock()
 
@@ -111,13 +109,17 @@ func (dispatcher *Dispatcher) Start() error {
 		return nil
 	}
 
+	workerCtx, cancel := context.WithCancel(ctx)
+	dispatcher.cancel = cancel
+	dispatcher.done = workerCtx.Done()
+
 	for range dispatcher.concurrency {
 		dispatcher.wg.Add(1)
-		go dispatcher.worker(dispatcher.ctx)
+		go dispatcher.worker(workerCtx)
 	}
 
 	dispatcher.wg.Add(1)
-	go dispatcher.poll(dispatcher.ctx)
+	go dispatcher.poll(workerCtx)
 
 	dispatcher.started = true
 
@@ -160,7 +162,10 @@ func (dispatcher *Dispatcher) Await(ctx context.Context, runID string) (*databas
 func (dispatcher *Dispatcher) Shutdown(ctx context.Context) error {
 	dispatcher.mu.Lock()
 	dispatcher.closed = true
-	dispatcher.cancel()
+
+	if dispatcher.cancel != nil {
+		dispatcher.cancel()
+	}
 	dispatcher.mu.Unlock()
 
 	done := make(chan struct{})
