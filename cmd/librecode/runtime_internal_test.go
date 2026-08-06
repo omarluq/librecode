@@ -18,7 +18,7 @@ func TestWithContainerRunsHandler(t *testing.T) {
 	options := commandOptions{
 		configFile:        writeTestConfig(t, "extensions:\n  use: []\n"),
 		disableExtensions: true,
-		interactive:       false,
+		interactive:       true,
 	}
 
 	called := false
@@ -26,6 +26,7 @@ func TestWithContainerRunsHandler(t *testing.T) {
 		called = true
 
 		require.NotNil(t, container)
+		assert.True(t, container.ConfigService().Interactive())
 
 		return nil
 	})

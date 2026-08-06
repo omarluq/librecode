@@ -25,16 +25,34 @@ func TestNewContainer_DisableExtensionsOverride(t *testing.T) {
 	assert.False(t, cfg.Extensions.Enabled)
 }
 
-func TestConfigServiceTracksLoadedPath(t *testing.T) {
+func TestConfigServiceTracksLoadedPathAndInteractiveOverride(t *testing.T) {
 	t.Parallel()
 
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	require.NoError(t, os.WriteFile(configPath, []byte("app:\n  env: test\n"), 0o600))
+	tests := []struct {
+		name        string
+		interactive bool
+	}{
+		{name: "non-interactive", interactive: false},
+		{name: "interactive", interactive: true},
+	}
 
-	container, err := di.NewContainer(configPath, di.ConfigOverrides{DisableExtensions: false, Interactive: false})
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	configService := container.ConfigService()
-	assert.Equal(t, configPath, configService.Path())
+			configPath := filepath.Join(t.TempDir(), "config.yaml")
+			require.NoError(t, os.WriteFile(configPath, []byte("app:\n  env: test\n"), 0o600))
+
+			container, err := di.NewContainer(configPath, di.ConfigOverrides{
+				DisableExtensions: false,
+				Interactive:       test.interactive,
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { assert.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
+
+			configService := container.ConfigService()
+			assert.Equal(t, configPath, configService.Path())
+			assert.Equal(t, test.interactive, configService.Interactive())
+		})
+	}
 }
