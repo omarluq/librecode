@@ -145,7 +145,7 @@ func TestRuntimeAgentWrappersWrapErrors(t *testing.T) {
 
 				return err
 			},
-			want: "list agent tasks",
+			want: "list_agent_tasks",
 		},
 		{
 			name:      "get",
@@ -155,7 +155,7 @@ func TestRuntimeAgentWrappersWrapErrors(t *testing.T) {
 
 				return err
 			},
-			want: "get agent task",
+			want: "get_agent_task",
 		},
 		{
 			name:      "cancel",
@@ -165,7 +165,17 @@ func TestRuntimeAgentWrappersWrapErrors(t *testing.T) {
 
 				return err
 			},
-			want: "cancel agent task",
+			want: "cancel_agent_task",
+		},
+		{
+			name:      "subscribe",
+			configure: func(stub *agentControllerStub) { stub.subscribeErr = errors.New("subscribe failed") },
+			call: func(runtime *Runtime) error {
+				_, _, err := runtime.SubscribeAgentTask("id")
+
+				return err
+			},
+			want: "subscribe_agent_task",
 		},
 	}
 
@@ -180,7 +190,7 @@ func TestRuntimeAgentWrappersWrapErrors(t *testing.T) {
 				options.AgentTasks = stub
 			})
 
-			require.ErrorContains(t, test.call(runtime), test.want)
+			requireRuntimeOopsCode(t, test.call(runtime), test.want)
 		})
 	}
 }
