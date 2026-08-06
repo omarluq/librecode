@@ -114,6 +114,16 @@ func TestNewAgentTaskServiceWrapsSchedulerError(t *testing.T) {
 	require.ErrorContains(t, err, "create agent task service")
 }
 
+func TestWorkflowServiceRejectsUnconstructedAgentTaskService(t *testing.T) {
+	t.Parallel()
+
+	service := &WorkflowService{
+		runner: nil, runs: nil, database: nil, assistant: nil, agentTasks: new(AgentTaskService),
+		lifecycle: sync.Mutex{},
+	}
+	requireOopsCode(t, service.Start(t.Context()), "agent_task_service_not_constructed")
+}
+
 func TestAgentTaskServiceWiresAndShutsDown(t *testing.T) {
 	t.Parallel()
 

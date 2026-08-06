@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/samber/do/v2"
+	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/workflow"
@@ -69,6 +70,10 @@ func (service *WorkflowService) Start(ctx context.Context) error {
 	}
 
 	tasks := service.agentTasks.Tasks()
+	if tasks == nil {
+		return oops.In("di").Code("agent_task_service_not_constructed").
+			Errorf("agent task service is not constructed")
+	}
 
 	submitter, err := assistant.NewAgentSubmitter(
 		tasks,
