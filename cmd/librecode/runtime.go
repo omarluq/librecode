@@ -3,36 +3,42 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
+	"time"
 
 	"github.com/samber/do/v2"
 
 	"github.com/omarluq/librecode/internal/di"
 )
 
-func withContainer(ctx context.Context, options commandOptions, handler func(*di.Container) error) error {
-	return withContainerOptions(ctx, options, handler)
-}
+const shutdownTimeout = 10 * time.Second
 
-func withContainerOptions(ctx context.Context, options commandOptions, handler func(*di.Container) error) error {
-	container, err := di.NewContainer(options.configFile, options.configOverrides())
+func withContainer(
+	ctx context.Context,
+	options commandOptions,
+	handler func(*di.Container) error,
+) (runErr error) {
+	container, err := di.NewContainer(ctx, options.configFile, options.configOverrides())
 	if err != nil {
 		return cliError(err, "initialize services")
 	}
 
-	runErr := handler(container)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
 
-	return finishContainerRun(runErr, container.ShutdownWithContext(ctx))
+		runErr = finishContainerRun(runErr, container.ShutdownWithContext(shutdownCtx))
+	}()
+
+	return handler(container)
 }
 
 func finishContainerRun(runErr error, shutdownReport *do.ShutdownReport) error {
 	if shutdownReport != nil && !shutdownReport.Succeed && shutdownReport.Error() != "" {
-		shutdownErr := fmt.Errorf("%w", shutdownReport)
 		if runErr != nil {
-			return errors.Join(runErr, shutdownErr)
+			return errors.Join(runErr, shutdownReport)
 		}
 
-		return shutdownErr
+		return shutdownReport
 	}
 
 	return runErr

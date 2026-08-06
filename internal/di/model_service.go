@@ -17,12 +17,29 @@ type ModelService struct {
 
 // NewModelService wires librecode-style model registry loading.
 func NewModelService(injector do.Injector) (*ModelService, error) {
-	configService := do.MustInvoke[*ConfigService](injector)
-	databaseService := do.MustInvoke[*DatabaseService](injector)
-	authStorage := do.MustInvoke[*AuthService](injector).Storage
-	registry := model.NewRegistry(&model.RegistryOptions{
+	configService, err := do.Invoke[*ConfigService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	databaseService, err := do.Invoke[*DatabaseService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	authService, err := do.Invoke[*AuthService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, err := applicationContext(injector)
+	if err != nil {
+		return nil, err
+	}
+
+	registry := model.NewRegistryContext(ctx, &model.RegistryOptions{
 		ConfigReader: database.NewDocumentSource(databaseService.Documents, "model", "models"),
-		Auth:         authStorage,
+		Auth:         authService.Storage,
 		ModelsPath:   "",
 		BuiltIns:     nil,
 		Discovery: model.DiscoveryOptions{
@@ -34,6 +51,9 @@ func NewModelService(injector do.Injector) (*ModelService, error) {
 			Enabled:      configService.Get().Models.Discovery.Enabled,
 		},
 	})
+	if err := registry.Error(); err != nil {
+		return nil, serviceError(err, "load model registry")
+	}
 
 	return &ModelService{Registry: registry}, nil
 }

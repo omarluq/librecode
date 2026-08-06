@@ -37,7 +37,12 @@ func newSessionNewCmd() *cobra.Command {
 			name := strings.TrimSpace(strings.Join(args, " "))
 
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				repository := container.DatabaseService().Sessions
+				service, err := container.DatabaseService()
+				if err != nil {
+					return cliError(err, "resolve database service")
+				}
+
+				repository := service.Sessions
 
 				cwd, err := assistant.DefaultCWD("")
 				if err != nil {
@@ -60,30 +65,35 @@ func newSessionListCmd() *cobra.Command {
 		Use:   listUse,
 		Short: "List sessions for the current working directory",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				repository := container.DatabaseService().Sessions
-
-				cwd, err := assistant.DefaultCWD("")
-				if err != nil {
-					return cliError(err, cliResolveWorkingDirectory)
-				}
-
-				sessions, err := repository.ListSessions(cmd.Context(), cwd)
-				if err != nil {
-					return cliError(err, "list sessions")
-				}
-
-				for index := range sessions {
-					if err := printSessionSummary(cmd, &sessions[index]); err != nil {
-						return err
-					}
-				}
-
-				return nil
-			})
-		},
+		RunE:  runSessionList,
 	}
+}
+
+func runSessionList(cmd *cobra.Command, _ []string) error {
+	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
+		service, err := container.DatabaseService()
+		if err != nil {
+			return cliError(err, "resolve database service")
+		}
+
+		cwd, err := assistant.DefaultCWD("")
+		if err != nil {
+			return cliError(err, cliResolveWorkingDirectory)
+		}
+
+		sessions, err := service.Sessions.ListSessions(cmd.Context(), cwd)
+		if err != nil {
+			return cliError(err, "list sessions")
+		}
+
+		for index := range sessions {
+			if err := printSessionSummary(cmd, &sessions[index]); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 func newSessionShowCmd() *cobra.Command {
@@ -93,7 +103,12 @@ func newSessionShowCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				repository := container.DatabaseService().Sessions
+				service, err := container.DatabaseService()
+				if err != nil {
+					return cliError(err, "resolve database service")
+				}
+
+				repository := service.Sessions
 
 				entries, err := repository.Entries(cmd.Context(), args[0])
 				if err != nil {

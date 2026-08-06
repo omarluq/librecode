@@ -36,7 +36,19 @@ type DatabaseService struct {
 
 // NewDatabaseService opens the session database and applies embedded migrations.
 func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
-	cfg := do.MustInvoke[*ConfigService](injector).Get()
+	cfg, err := databaseConfig(injector)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, err := applicationContext(injector)
+	if err != nil {
+		return nil, err
+	}
+
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, oops.In("database").Code("startup_canceled").Wrapf(contextErr, "initialize database")
+	}
 
 	databasePath, err := resolveDatabasePath(cfg)
 	if err != nil {
@@ -48,11 +60,20 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 		return nil, oops.In("database").Code("mkdir").With("path", databasePath).Wrapf(mkdirErr, "create database dir")
 	}
 
-	connection, err := openSQLiteDatabase(databasePath, cfg.Database)
+	connection, err := openSQLiteDatabase(ctx, databasePath, cfg.Database)
 	if err != nil {
 		return nil, err
 	}
 
+	service, err := newDatabaseRepositories(connection, databasePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return service, nil
+}
+
+func newDatabaseRepositories(connection *sql.DB, databasePath string) (*DatabaseService, error) {
 	sqlProvider, err := ksqlite.NewFromSQLDB(connection)
 	if err != nil {
 		return nil, closeAfterSetupError(connection, "close_after_sql_provider", "sql_provider", databasePath, err)
@@ -84,14 +105,18 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 	}
 
 	return &DatabaseService{
-		DB:         connection,
-		Sessions:   sessions,
-		Documents:  documents,
-		Tasks:      tasks,
-		AgentTasks: agentTasks,
-		Workflows:  workflows,
-		path:       databasePath,
+		DB: connection, Sessions: sessions, Documents: documents, Tasks: tasks,
+		AgentTasks: agentTasks, Workflows: workflows, path: databasePath,
 	}, nil
+}
+
+func databaseConfig(injector do.Injector) (*config.Config, error) {
+	configService, err := do.Invoke[*ConfigService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	return configService.Get(), nil
 }
 
 // Path returns the resolved session database path.
@@ -118,7 +143,7 @@ func (service *DatabaseService) Shutdown(ctx context.Context) error {
 	}
 }
 
-func openSQLiteDatabase(databasePath string, cfg config.DatabaseConfig) (*sql.DB, error) {
+func openSQLiteDatabase(ctx context.Context, databasePath string, cfg config.DatabaseConfig) (*sql.DB, error) {
 	dsn := database.SQLiteDSN(databasePath, database.SQLiteOptions{BusyTimeout: cfg.BusyTimeout})
 
 	connection, err := sql.Open(sqliteDriverName, dsn)
@@ -130,8 +155,7 @@ func openSQLiteDatabase(databasePath string, cfg config.DatabaseConfig) (*sql.DB
 	connection.SetMaxIdleConns(cfg.MaxIdleConns)
 	connection.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 
-	setupCtx := context.Background()
-	if err := setupSQLiteDatabase(setupCtx, connection, databasePath, cfg); err != nil {
+	if err := setupSQLiteDatabase(ctx, connection, databasePath, cfg); err != nil {
 		return nil, err
 	}
 

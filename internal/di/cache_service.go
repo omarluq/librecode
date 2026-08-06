@@ -13,7 +13,12 @@ type CacheService struct {
 
 // NewCacheService creates response caches from config.
 func NewCacheService(injector do.Injector) (*CacheService, error) {
-	cfg := do.MustInvoke[*ConfigService](injector).Get()
+	configService, err := do.Invoke[*ConfigService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := configService.Get()
 
 	return &CacheService{
 		Responses: assistant.NewResponseCache(cfg.Cache.Enabled, cfg.Cache.Capacity, cfg.Cache.TTL),

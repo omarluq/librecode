@@ -23,7 +23,7 @@ func TestOpenSQLiteDatabaseAppliesPragmasAndMigrations(t *testing.T) {
 	t.Parallel()
 
 	databasePath := filepath.Join(t.TempDir(), "librecode.db")
-	connection, err := openSQLiteDatabase(databasePath, config.DatabaseConfig{
+	connection, err := openSQLiteDatabase(context.Background(), databasePath, config.DatabaseConfig{
 		Path:            "",
 		ApplyMigrations: true,
 		MaxOpenConns:    1,
@@ -57,6 +57,7 @@ func TestNewDatabaseServiceSharesCompositeRepositories(t *testing.T) {
 	cfg.Database.ApplyMigrations = true
 
 	injector := do.New()
+	provideTestApplicationContext(injector)
 	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
 	service, err := NewDatabaseService(injector)
 	require.NoError(t, err)
@@ -65,6 +66,24 @@ func TestNewDatabaseServiceSharesCompositeRepositories(t *testing.T) {
 	assert.Same(t, service.Tasks, service.AgentTasks.Tasks())
 	assert.Same(t, service.Tasks, service.Workflows.Tasks())
 	assert.Same(t, service.AgentTasks, service.Workflows.AgentTasks())
+}
+
+func TestNewDatabaseServiceHonorsCanceledApplicationContext(t *testing.T) {
+	t.Parallel()
+
+	cfg := testServiceConfig()
+	cfg.Database.Path = filepath.Join(t.TempDir(), "librecode.db")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	injector := do.New()
+	do.ProvideNamedValue(injector, applicationContextKey, ctx)
+	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
+
+	service, err := NewDatabaseService(injector)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, service)
 }
 
 func TestDatabaseServiceHealthCheckAndShutdown(t *testing.T) {

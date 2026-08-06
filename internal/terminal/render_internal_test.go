@@ -791,7 +791,30 @@ func TestRunLoopStepHandlesQueuedEvents(t *testing.T) {
 	}
 }
 
+func TestRunLoopStepStopsOnContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	app := newScrollableRenderTestApp(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	shouldQuit, dirty := runLoopStepWithContextAndDormantTimers(ctx, t, app)
+
+	assert.True(t, shouldQuit)
+	assert.False(t, dirty)
+}
+
 func runLoopStepWithDormantTimers(t *testing.T, app *App) (shouldQuit, dirty bool) {
+	t.Helper()
+
+	return runLoopStepWithContextAndDormantTimers(context.Background(), t, app)
+}
+
+func runLoopStepWithContextAndDormantTimers(
+	ctx context.Context,
+	t *testing.T,
+	app *App,
+) (shouldQuit, dirty bool) {
 	t.Helper()
 
 	workTicker := time.NewTicker(time.Hour)
@@ -807,7 +830,7 @@ func runLoopStepWithDormantTimers(t *testing.T, app *App) (shouldQuit, dirty boo
 	})
 
 	return app.runLoopStep(
-		context.Background(),
+		ctx,
 		workTicker,
 		frameTicker,
 		extensionTimer,

@@ -1,6 +1,7 @@
 package di_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,10 +31,16 @@ func TestAuthServicePrefersProjectLibrecodeAuth(t *testing.T) {
 	require.NoError(t, os.WriteFile(projectAuthPath, projectAuth, 0o600))
 	require.NoError(t, os.WriteFile(globalAuthPath, globalAuth, 0o600))
 
-	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false, Interactive: false})
+	container, err := di.NewContainer(context.Background(), "", di.ConfigOverrides{
+		DisableExtensions: false,
+		Interactive:       false,
+	})
 	require.NoError(t, err)
 
-	storage := container.AuthService().Storage
+	authService, err := container.AuthService()
+	require.NoError(t, err)
+
+	storage := authService.Storage
 
 	t.Cleanup(func() { require.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
 
@@ -52,10 +59,14 @@ func TestDatabaseServicePrefersProjectLibrecodeDatabase(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(projectPath), 0o700))
 	require.NoError(t, os.WriteFile(projectPath, nil, 0o600))
 
-	container, err := di.NewContainer("", di.ConfigOverrides{DisableExtensions: false, Interactive: false})
+	container, err := di.NewContainer(context.Background(), "", di.ConfigOverrides{
+		DisableExtensions: false,
+		Interactive:       false,
+	})
 	require.NoError(t, err)
 
-	databaseService := container.DatabaseService()
+	databaseService, err := container.DatabaseService()
+	require.NoError(t, err)
 
 	t.Cleanup(func() { _ = container.ShutdownWithContext(t.Context()).Succeed })
 

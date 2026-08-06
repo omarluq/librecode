@@ -27,14 +27,20 @@ func TestExtensionServiceUsesProjectLockfile(t *testing.T) {
 
 	writeDIFile(t, projectLock, []byte("extensions:\n  github:owner/repo:\n    version: v9.9.9\n"))
 
-	container, err := NewContainer("", ConfigOverrides{DisableExtensions: false, Interactive: false})
+	container, err := NewContainer(context.Background(), "", ConfigOverrides{
+		DisableExtensions: false,
+		Interactive:       false,
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		report := container.ShutdownWithContext(context.Background())
 		assert.True(t, report.Succeed, report.Error())
 	})
 
-	state := container.ExtensionService().State
+	service, err := container.ExtensionService()
+	require.NoError(t, err)
+
+	state := service.State
 	require.Len(t, state.Configured, 1)
 	assert.Equal(t, "v9.9.9", state.Configured[0].Lock.Version)
 }

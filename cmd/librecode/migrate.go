@@ -13,7 +13,10 @@ func newMigrateCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				databaseService := container.DatabaseService()
+				databaseService, err := container.DatabaseService()
+				if err != nil {
+					return cliError(err, "resolve database service")
+				}
 
 				return printLine(cmd.OutOrStdout(), "migrations applied: %s", databaseService.Path())
 			})

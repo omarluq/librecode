@@ -17,13 +17,40 @@ type AssistantService struct {
 
 // NewAssistantService wires the assistant runtime.
 func NewAssistantService(injector do.Injector) (*AssistantService, error) {
-	cfg := do.MustInvoke[*ConfigService](injector).Get()
-	databaseService := do.MustInvoke[*DatabaseService](injector)
-	extensionService := do.MustInvoke[*ExtensionService](injector)
-	cache := do.MustInvoke[*CacheService](injector)
-	models := do.MustInvoke[*ModelService](injector)
-	logger := do.MustInvoke[*LoggerService](injector).SlogLogger
-	skills := do.MustInvoke[*SkillsService](injector)
+	configService, err := do.Invoke[*ConfigService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	databaseService, err := do.Invoke[*DatabaseService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	extensionService, err := do.Invoke[*ExtensionService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	cache, err := do.Invoke[*CacheService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	models, err := do.Invoke[*ModelService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	loggerService, err := do.Invoke[*LoggerService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	skills, err := do.Invoke[*SkillsService](injector)
+	if err != nil {
+		return nil, err
+	}
 
 	cwd, err := filepath.Abs(".")
 	if err != nil {
@@ -34,13 +61,13 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 
 	return &AssistantService{
 		Runtime: assistant.NewRuntime(&assistant.RuntimeOptions{
-			Config:      cfg,
+			Config:      configService.Get(),
 			Sessions:    databaseService.Sessions,
 			Extensions:  extensionService.Manager,
 			Cache:       cache.Responses,
 			Models:      models.Registry,
 			Client:      nil,
-			Logger:      logger,
+			Logger:      loggerService.SlogLogger,
 			SkillsCache: skills.Cache,
 			Agents:      agents,
 		}),
