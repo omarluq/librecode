@@ -15,7 +15,7 @@ func newMigrateCmd() *cobra.Command {
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 				databaseService, err := container.DatabaseService()
 				if err != nil {
-					return cliError(err, "resolve database service")
+					return cliError(err, cliResolveDatabaseService)
 				}
 
 				return printLine(cmd.OutOrStdout(), "migrations applied: %s", databaseService.Path())
