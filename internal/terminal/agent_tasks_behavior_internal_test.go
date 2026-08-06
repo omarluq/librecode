@@ -683,17 +683,9 @@ func TestInspectAgentTaskWithoutRuntimeDoesNotMutateState(t *testing.T) {
 func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	t.Parallel()
 
-	fixture := newAgentTaskSessionPair(t)
-	connection, sessions, parent, child := fixture.connection, fixture.sessions, fixture.parent, fixture.child
-
-	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
-	task.Task.OwnerSessionID = parent.ID
-	task.ChildSessionID = child.ID
-	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{behaviorTaskID: &task}, nil)
-	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
-		options.Sessions = sessions
-		options.AgentTasks = stub
-	})
+	fixture, task, app := newAgentTaskSessionTestApp(t, database.TaskRunning)
+	connection, sessions := fixture.connection, fixture.sessions
+	parent, child := fixture.parent, fixture.child
 
 	_, err := sessions.AppendMessage(t.Context(), child.ID, nil, &database.MessageEntity{
 		Timestamp: time.Now().UTC(),
@@ -714,8 +706,6 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 			`"hide_thinking":true,"tools_expanded":true}`,
 	}))
 
-	app := newRenderTestApp(t)
-	app.runtime = runtime
 	app.settings = settings
 	app.cfg = promptSendTestConfig()
 	app.cfg.Assistant.Provider = "parent-provider"
@@ -1525,22 +1515,10 @@ func TestInspectAgentTaskLoadFailureDoesNotSwitchSession(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			fixture := newAgentTaskSessionPair(t)
-			connection, sessions, parent, child := fixture.connection, fixture.sessions, fixture.parent, fixture.child
-
-			task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
-			task.Task.OwnerSessionID = parent.ID
-			task.ChildSessionID = child.ID
-			stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{behaviorTaskID: &task}, nil)
-			runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
-				options.Sessions = sessions
-				options.AgentTasks = stub
-			})
-
-			app := newRenderTestApp(t)
-			app.runtime = runtime
+			fixture, task, app := newAgentTaskSessionTestApp(t, database.TaskRunning)
+			connection, sessions := fixture.connection, fixture.sessions
+			parent, child := fixture.parent, fixture.child
 			app.settings = testutil.DocumentRepository(t, connection)
-			app.sessionID = parent.ID
 			snapshot := seedInspectFailureState(app, &task)
 
 			testCase.arrangeFail(t, app, sessions, child.ID)
