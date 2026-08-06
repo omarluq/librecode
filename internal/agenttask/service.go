@@ -184,6 +184,10 @@ func NewStopped(ctx context.Context, options *Options) (*Service, error) {
 
 // Start launches workers and queues recovered tasks.
 func (service *Service) Start(ctx context.Context) error {
+	if ctx == nil {
+		return oops.In("agenttask").Code("nil_start_context").Errorf("start context is required")
+	}
+
 	service.lifecycle.Lock()
 	defer service.lifecycle.Unlock()
 

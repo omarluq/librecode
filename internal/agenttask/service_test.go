@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // Register the SQLite database/sql driver used by test repositories.
@@ -405,6 +406,16 @@ func TestStoppedServiceDoesNotRunQueuedTasksUntilStarted(t *testing.T) {
 		Concurrency: 1, SessionConcurrency: 1, QueueCapacity: 1, Timeout: time.Minute,
 	})
 	require.NoError(t, err)
+
+	var (
+		nilContext context.Context
+		coded      oops.OopsError
+	)
+
+	err = service.Start(nilContext)
+	require.ErrorAs(t, err, &coded)
+	assert.Equal(t, "nil_start_context", coded.Code())
+
 	t.Cleanup(func() {
 		runner.unblock()
 		require.NoError(t, service.Shutdown(context.Background()))

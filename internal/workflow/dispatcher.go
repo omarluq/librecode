@@ -98,6 +98,10 @@ func NewStoppedDispatcher(ctx context.Context, options DispatcherOptions) (*Disp
 
 // Start launches workflow workers and polling.
 func (dispatcher *Dispatcher) Start(ctx context.Context) error {
+	if ctx == nil {
+		return oops.In("workflow").Code("nil_start_context").Errorf("start context is required")
+	}
+
 	dispatcher.mu.Lock()
 	defer dispatcher.mu.Unlock()
 
