@@ -51,7 +51,7 @@ func NewModelService(injector do.Injector) (*ModelService, error) {
 			Enabled:      configService.Get().Models.Discovery.Enabled,
 		},
 	})
-	if err := registry.Error(); err != nil {
+	if err := registry.ConfigError(); err != nil {
 		return nil, serviceError(err, "load model registry")
 	}
 

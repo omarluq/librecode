@@ -17,7 +17,7 @@ import (
 	"github.com/omarluq/librecode/internal/testutil"
 )
 
-func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
+func TestNewModelServiceKeepsRegistryAvailableWhenDiscoveryFails(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("LIBRECODE_HOME", home)
 	db := newModelServiceTestDB(t)
@@ -26,10 +26,10 @@ func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
 
 	cfg := config.Load("").MustGet()
 	cfg.Models.Discovery = config.ModelDiscoveryConfig{
-		SourceURL:    "https://models.invalid/api.json",
+		SourceURL:    "",
 		CacheTTL:     0,
 		FetchTimeout: 0,
-		Enabled:      false,
+		Enabled:      true,
 	}
 	injector := do.New()
 	provideTestApplicationContext(injector)
@@ -48,6 +48,8 @@ func TestNewModelServiceWiresRegistryDiscovery(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, service.Registry)
 	assert.NotEmpty(t, service.Registry.All())
+	require.NoError(t, service.Registry.ConfigError())
+	require.Error(t, service.Registry.DiscoveryError())
 	assert.Equal(t, filepath.Join(home, "models-dev.json"), modelDiscoveryCachePath())
 
 	discovery := service.Registry.DiscoveryOptions()

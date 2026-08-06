@@ -46,6 +46,25 @@ func TestChatCompositionStartsRuntimeAndInvokesTerminal(t *testing.T) {
 	assert.True(t, called)
 }
 
+func TestChatCompositionPropagatesTerminalError(t *testing.T) {
+	t.Parallel()
+
+	container := newRuntimeTestContainer(t, true)
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+
+	expectedErr := assert.AnError
+
+	err := runChatWithContainer(cmd, container, chatRunOptions{SessionID: "", ResumeID: "", Resume: false}, func(
+		context.Context,
+		*terminal.RunOptions,
+	) error {
+		return expectedErr
+	})
+
+	assert.ErrorIs(t, err, expectedErr)
+}
+
 func TestPromptCompositionStartsRuntimeAndInvokesRunner(t *testing.T) {
 	t.Parallel()
 
@@ -76,6 +95,67 @@ func TestPromptCompositionStartsRuntimeAndInvokesRunner(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.True(t, called)
+}
+
+func TestPromptCompositionPropagatesRunnerError(t *testing.T) {
+	t.Parallel()
+
+	container := newRuntimeTestContainer(t, false)
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+
+	expectedErr := assert.AnError
+
+	err := runPromptWithContainerAndRunner(
+		cmd,
+		container,
+		promptRunOptions{SessionID: "", SessionName: "", ToolStrategy: "", MetricsJSON: "", Resume: false},
+		"hello",
+		func(*assistant.Runtime, *cobra.Command, promptRunOptions, string) error {
+			return expectedErr
+		},
+	)
+
+	assert.ErrorIs(t, err, expectedErr)
+}
+
+func TestRuntimeCompositionRejectsClosedContainer(t *testing.T) {
+	t.Parallel()
+
+	container := newRuntimeTestContainer(t, false)
+	assert.True(t, container.ShutdownWithContext(context.Background()).Succeed)
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+
+	chatCalled := false
+	err := runChatWithContainer(cmd, container, chatRunOptions{SessionID: "", ResumeID: "", Resume: false}, func(
+		context.Context,
+		*terminal.RunOptions,
+	) error {
+		chatCalled = true
+
+		return nil
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "start runtime services")
+	assert.False(t, chatCalled)
+
+	promptCalled := false
+	err = runPromptWithContainerAndRunner(
+		cmd,
+		container,
+		promptRunOptions{SessionID: "", SessionName: "", ToolStrategy: "", MetricsJSON: "", Resume: false},
+		"hello",
+		func(*assistant.Runtime, *cobra.Command, promptRunOptions, string) error {
+			promptCalled = true
+
+			return nil
+		},
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "start runtime services")
+	assert.False(t, promptCalled)
 }
 
 func newRuntimeTestContainer(t *testing.T, interactive bool) *di.Container {

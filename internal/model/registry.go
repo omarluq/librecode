@@ -25,7 +25,8 @@ type RegistryOptions struct {
 
 // Registry loads built-in and custom models and resolves provider request auth.
 type Registry struct {
-	loadError       error
+	configError     error
+	discoveryError  error
 	configSource    ConfigReader
 	auth            *auth.Storage
 	providerConfigs map[string]providerRequestConfig
@@ -59,7 +60,8 @@ func NewRegistryContext(ctx context.Context, options *RegistryOptions) *Registry
 		builtIns:        cloneModels(resolvedOptions.BuiltIns),
 		discovery:       resolvedOptions.Discovery,
 		lock:            sync.RWMutex{},
-		loadError:       nil,
+		configError:     nil,
+		discoveryError:  nil,
 	}
 	registry.RefreshContext(ctx)
 
@@ -81,16 +83,33 @@ func (registry *Registry) RefreshContext(ctx context.Context) {
 	registry.lock.Lock()
 	registry.models = models
 	registry.providerConfigs = customResult.ProviderConfigs
-	registry.loadError = firstRegistryError(customResult.Err, discoveryErr)
+	registry.configError = customResult.Err
+	registry.discoveryError = discoveryErr
 	registry.lock.Unlock()
 }
 
-// Error returns the latest models.json load error.
+// Error returns the latest model configuration or discovery error.
 func (registry *Registry) Error() error {
 	registry.lock.RLock()
 	defer registry.lock.RUnlock()
 
-	return registry.loadError
+	return firstRegistryError(registry.configError, registry.discoveryError)
+}
+
+// ConfigError returns the latest custom model configuration error.
+func (registry *Registry) ConfigError() error {
+	registry.lock.RLock()
+	defer registry.lock.RUnlock()
+
+	return registry.configError
+}
+
+// DiscoveryError returns the latest model discovery error.
+func (registry *Registry) DiscoveryError() error {
+	registry.lock.RLock()
+	defer registry.lock.RUnlock()
+
+	return registry.discoveryError
 }
 
 // All returns all known models.

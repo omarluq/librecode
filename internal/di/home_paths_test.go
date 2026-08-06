@@ -36,13 +36,14 @@ func TestAuthServicePrefersProjectLibrecodeAuth(t *testing.T) {
 		Interactive:       false,
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.True(t, container.ShutdownWithContext(context.Background()).Succeed)
+	})
 
 	authService, err := container.AuthService()
 	require.NoError(t, err)
 
 	storage := authService.Storage
-
-	t.Cleanup(func() { require.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
 
 	assert.True(t, storage.HasStored("project-provider"))
 	assert.False(t, storage.HasStored("global-provider"))
@@ -64,11 +65,12 @@ func TestDatabaseServicePrefersProjectLibrecodeDatabase(t *testing.T) {
 		Interactive:       false,
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.True(t, container.ShutdownWithContext(context.Background()).Succeed)
+	})
 
 	databaseService, err := container.DatabaseService()
 	require.NoError(t, err)
-
-	t.Cleanup(func() { _ = container.ShutdownWithContext(t.Context()).Succeed })
 
 	assert.Equal(t, projectPath, databaseService.Path())
 }
