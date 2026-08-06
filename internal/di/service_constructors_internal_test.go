@@ -117,6 +117,16 @@ func newTestAssistantService(t *testing.T, injector do.Injector) *AssistantServi
 	return service
 }
 
+func TestNewContainerRejectsNilContext(t *testing.T) {
+	t.Parallel()
+
+	var ctx context.Context
+
+	container, err := NewContainer(ctx, "", ConfigOverrides{DisableExtensions: false, Interactive: false})
+	assert.Nil(t, container)
+	assert.ErrorContains(t, err, "application context is required")
+}
+
 func TestContainerAccessorReturnsConstructionError(t *testing.T) {
 	homeFile := filepath.Join(t.TempDir(), "home-file")
 	require.NoError(t, os.WriteFile(homeFile, []byte("not a directory"), 0o600))
@@ -317,6 +327,10 @@ func TestStartRuntimeStartsWorkersExplicitly(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, runtimeServices)
 
+	repeatedServices, err := container.StartRuntime()
+	require.NoError(t, err)
+	assert.Same(t, runtimeServices, repeatedServices)
+
 	agentTasks, err := container.AgentTaskService()
 	require.NoError(t, err)
 	require.NotNil(t, agentTasks.Tasks)
@@ -328,6 +342,29 @@ func TestStartRuntimeStartsWorkersExplicitly(t *testing.T) {
 	chatWorkflows, err := container.ChatWorkflowService()
 	require.NoError(t, err)
 	require.NotNil(t, chatWorkflows.Dispatcher)
+}
+
+func TestContainerRejectsResolutionAfterShutdown(t *testing.T) {
+	t.Parallel()
+
+	container, err := NewContainer(context.Background(), "", ConfigOverrides{
+		DisableExtensions: true,
+		Interactive:       false,
+	})
+	require.NoError(t, err)
+	assert.True(t, container.ShutdownWithContext(context.Background()).Succeed)
+	assert.True(t, container.ShutdownWithContext(context.Background()).Succeed)
+
+	runtimeServices, err := container.StartRuntime()
+	assert.Nil(t, runtimeServices)
+	require.ErrorContains(t, err, "container is closed")
+
+	services := containerServiceAccessors(container)
+	for _, resolve := range services {
+		service, resolveErr := resolve()
+		assert.Nil(t, service)
+		assert.ErrorContains(t, resolveErr, "container is closed")
+	}
 }
 
 func TestContainerServiceAccessors(t *testing.T) {
@@ -343,7 +380,16 @@ func TestContainerServiceAccessors(t *testing.T) {
 		assert.Empty(t, report.Errors)
 	})
 
-	services := []func() (any, error){
+	services := containerServiceAccessors(container)
+	for _, resolve := range services {
+		service, resolveErr := resolve()
+		require.NoError(t, resolveErr)
+		require.NotNil(t, service)
+	}
+}
+
+func containerServiceAccessors(container *Container) []func() (any, error) {
+	return []func() (any, error){
 		func() (any, error) { return container.ConfigService() },
 		func() (any, error) { return container.AuthService() },
 		func() (any, error) { return container.DatabaseService() },
@@ -355,10 +401,5 @@ func TestContainerServiceAccessors(t *testing.T) {
 		func() (any, error) { return container.ChatWorkflowService() },
 		func() (any, error) { return container.ToolService() },
 		func() (any, error) { return container.SkillsService() },
-	}
-	for _, resolve := range services {
-		service, resolveErr := resolve()
-		require.NoError(t, resolveErr)
-		require.NotNil(t, service)
 	}
 }

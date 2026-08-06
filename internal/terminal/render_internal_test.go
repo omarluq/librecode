@@ -795,6 +795,8 @@ func TestRunLoopStepStopsOnContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	app := newScrollableRenderTestApp(t)
+	app.screen.EventQ() <- tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -802,6 +804,7 @@ func TestRunLoopStepStopsOnContextCancellation(t *testing.T) {
 
 	assert.True(t, shouldQuit)
 	assert.False(t, dirty)
+	assert.Empty(t, app.composerBuffer.TextValue())
 }
 
 func runLoopStepWithDormantTimers(t *testing.T, app *App) (shouldQuit, dirty bool) {

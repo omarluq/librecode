@@ -135,6 +135,34 @@ func TestRegistryRequestAuthContextReturnsAuthErrors(t *testing.T) {
 	assert.False(t, resolved.OK)
 }
 
+func TestRegistrySeparatesConfigurationAndDiscoveryErrors(t *testing.T) {
+	t.Parallel()
+
+	builtIn := emptyModel()
+	builtIn.Provider = "test"
+	builtIn.ID = "built-in"
+
+	registry := NewRegistryContext(t.Context(), &RegistryOptions{
+		ConfigReader: nil,
+		Auth:         nil,
+		ModelsPath:   "",
+		BuiltIns:     []Model{builtIn},
+		Discovery: DiscoveryOptions{
+			Client:       nil,
+			CachePath:    "",
+			SourceURL:    "",
+			CacheTTL:     0,
+			FetchTimeout: 0,
+			Enabled:      true,
+		},
+	})
+
+	require.NoError(t, registry.ConfigError())
+	require.Error(t, registry.DiscoveryError())
+	require.Error(t, registry.Error())
+	assert.Len(t, registry.All(), 1)
+}
+
 func TestRegistryOptionsAndFirstRegistryError(t *testing.T) {
 	t.Parallel()
 

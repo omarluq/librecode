@@ -438,6 +438,10 @@ func (app *App) runLoopStep(
 	messageWarmTimer *time.Timer,
 	dirty bool,
 ) (shouldQuit, nextDirty bool) {
+	if ctx.Err() != nil {
+		return true, false
+	}
+
 	select {
 	case <-ctx.Done():
 		return true, false
