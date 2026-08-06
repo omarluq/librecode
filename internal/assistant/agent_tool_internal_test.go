@@ -23,6 +23,7 @@ type agentControllerStub struct {
 	getErr        error
 	cancelErr     error
 	listErr       error
+	subscribeErr  error
 	getFunc       func(int) (*database.AgentTaskEntity, bool, error)
 	submitFunc    func() (*database.AgentTaskEntity, error)
 	cancelFound   *bool
@@ -78,6 +79,10 @@ func (stub *agentControllerStub) SubscribeAgentTask(
 	string,
 ) (events <-chan database.TaskEventEntity, cancel func(), err error) {
 	stub.subscriptions++
+	if stub.subscribeErr != nil {
+		return nil, nil, stub.subscribeErr
+	}
+
 	channel := make(chan database.TaskEventEntity)
 	close(channel)
 

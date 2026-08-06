@@ -360,6 +360,8 @@ func (runtime *Runtime) AgentDefinitions() []agent.Definition {
 	return runtime.agents.Definitions()
 }
 
+const agentTaskServiceUnavailable = "agent task service is unavailable"
+
 // AgentTasks returns durable agent tasks owned by a session.
 func (runtime *Runtime) AgentTasks(
 	ctx context.Context,
@@ -368,7 +370,7 @@ func (runtime *Runtime) AgentTasks(
 ) ([]database.AgentTaskEntity, error) {
 	if runtime == nil || runtime.agentTasks == nil {
 		return nil, oops.In("assistant").Code("agent_task_service_unavailable").
-			Errorf("agent task service is unavailable")
+			Errorf(agentTaskServiceUnavailable)
 	}
 
 	tasks, err := runtime.agentTasks.List(ctx, ownerSessionID, limit)
@@ -386,7 +388,7 @@ func (runtime *Runtime) AgentTask(
 ) (*database.AgentTaskEntity, bool, error) {
 	if runtime == nil || runtime.agentTasks == nil {
 		return nil, false, oops.In("assistant").Code("agent_task_service_unavailable").
-			Errorf("agent task service is unavailable")
+			Errorf(agentTaskServiceUnavailable)
 	}
 
 	task, found, err := runtime.agentTasks.Get(ctx, taskID)
@@ -410,7 +412,7 @@ func (runtime *Runtime) AgentTaskEvents(
 ) ([]database.TaskEventEntity, error) {
 	if runtime == nil || runtime.agentTasks == nil {
 		return nil, oops.In("assistant").Code("agent_task_service_unavailable").
-			Errorf("agent task service is unavailable")
+			Errorf(agentTaskServiceUnavailable)
 	}
 
 	reader, ok := runtime.agentTasks.(agentTaskEventReader)
@@ -434,7 +436,7 @@ func (runtime *Runtime) SubscribeAgentTask(
 ) (events <-chan database.TaskEventEntity, cancel func(), err error) {
 	if runtime == nil || runtime.agentTasks == nil {
 		return nil, nil, oops.In("assistant").Code("agent_task_service_unavailable").
-			Errorf("agent task service is unavailable")
+			Errorf(agentTaskServiceUnavailable)
 	}
 
 	events, cancel, err = runtime.agentTasks.SubscribeAgentTask(taskID)
@@ -453,7 +455,7 @@ func (runtime *Runtime) CancelAgentTask(
 ) (*database.TaskEntity, bool, error) {
 	if runtime == nil || runtime.agentTasks == nil {
 		return nil, false, oops.In("assistant").Code("agent_task_service_unavailable").
-			Errorf("agent task service is unavailable")
+			Errorf(agentTaskServiceUnavailable)
 	}
 
 	task, found, err := runtime.agentTasks.Cancel(ctx, ownerSessionID, taskID)
