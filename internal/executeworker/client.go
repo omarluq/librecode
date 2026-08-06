@@ -1,7 +1,6 @@
 package executeworker
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,10 +23,46 @@ type Client struct {
 	Executable string
 }
 
+const (
+	maxWorkerStderrSize   = 64 << 10
+	stderrTruncatedMarker = "\n[execute worker stderr truncated]"
+)
+
+type cappedBuffer struct {
+	data      []byte
+	limit     int
+	truncated bool
+}
+
+func (buffer *cappedBuffer) Write(data []byte) (int, error) {
+	remaining := buffer.limit - len(buffer.data)
+	if remaining > 0 {
+		buffer.data = append(buffer.data, data[:min(len(data), remaining)]...)
+	}
+
+	if len(data) > remaining {
+		buffer.truncated = true
+	}
+
+	return len(data), nil
+}
+
+func (buffer *cappedBuffer) String() string {
+	if buffer == nil {
+		return ""
+	}
+
+	if buffer.truncated {
+		return string(buffer.data) + stderrTruncatedMarker
+	}
+
+	return string(buffer.data)
+}
+
 type workerProcess struct {
 	killErr  error
 	cmd      *exec.Cmd
-	stderr   *bytes.Buffer
+	stderr   *cappedBuffer
 	killOnce sync.Once
 }
 
@@ -106,7 +141,7 @@ func (client Client) startWorker() (*workerProcess, io.WriteCloser, io.ReadClose
 		)
 	}
 
-	stderr := &bytes.Buffer{}
+	stderr := &cappedBuffer{data: nil, limit: maxWorkerStderrSize, truncated: false}
 	cmd.Stderr = stderr
 
 	if err = cmd.Start(); err != nil {
@@ -298,15 +333,17 @@ func (worker *workerProcess) abort(cause error) error {
 	worker.kill()
 
 	waitErr := worker.cmd.Wait()
+	errs := []error{cause}
+
 	if worker.killErr != nil && !errors.Is(worker.killErr, os.ErrProcessDone) {
-		return errors.Join(cause, fmt.Errorf("kill execute worker: %w", worker.killErr), waitErr)
+		errs = append(errs, fmt.Errorf("kill execute worker: %w", worker.killErr))
 	}
 
 	if waitErr != nil {
-		return errors.Join(cause, worker.commandError("wait for execute worker", waitErr))
+		errs = append(errs, worker.commandError("wait for execute worker", waitErr))
 	}
 
-	return cause
+	return errors.Join(errs...)
 }
 
 func (worker *workerProcess) readError(ctx context.Context, readErr error) error {
@@ -321,7 +358,14 @@ func (worker *workerProcess) readError(ctx context.Context, readErr error) error
 	}
 
 	if !errors.Is(readErr, io.EOF) {
-		return errors.Join(fmt.Errorf("read execute worker: %w", readErr), waitErr)
+		if waitErr != nil {
+			return errors.Join(
+				fmt.Errorf("read execute worker: %w", readErr),
+				worker.commandError("wait for execute worker", waitErr),
+			)
+		}
+
+		return fmt.Errorf("read execute worker: %w", readErr)
 	}
 
 	if waitErr != nil {
