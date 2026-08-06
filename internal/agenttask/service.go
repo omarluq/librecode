@@ -93,7 +93,6 @@ type Service struct {
 	runner                     Runner
 	getTaskFn                  func(context.Context, string) (*database.TaskEntity, bool, error)
 	renewLeaseFn               func(context.Context, string, string, time.Time) (bool, error)
-	ctx                        context.Context
 	active                     map[string]context.CancelFunc
 	subscribers                map[string]map[uint64]chan database.TaskEventEntity
 	sessionSlots               map[string]chan struct{}
@@ -156,19 +155,15 @@ func NewStopped(ctx context.Context, options *Options) (*Service, error) {
 		logger = slog.Default()
 	}
 
-	serviceCtx, cancel := context.WithCancel(ctx)
-
 	leaseOwner, err := newLeaseOwner()
 	if err != nil {
-		cancel()
-
 		return nil, oops.In("agenttask").Code("worker_identity").Wrapf(err, "create worker identity")
 	}
 
 	service := &Service{
-		runner: options.Runner, done: serviceCtx.Done(), tasks: options.Tasks,
+		runner: options.Runner, tasks: options.Tasks,
 		agentTasks: options.AgentTasks, workflows: options.Workflows, queue: make(chan string, queueCapacity),
-		cancel: cancel, active: make(map[string]context.CancelFunc),
+		cancel: nil, done: nil, active: make(map[string]context.CancelFunc),
 		sessionSlots:   make(map[string]chan struct{}),
 		subscribers:    make(map[string]map[uint64]chan database.TaskEventEntity),
 		nextSubscriber: 0, wg: sync.WaitGroup{}, timeout: timeout,
@@ -178,11 +173,9 @@ func NewStopped(ctx context.Context, options *Options) (*Service, error) {
 		leaseRenewalRetryInterval:  leaseRenewalRetryInterval,
 		leaseRenewalAttemptTimeout: leaseRenewalAttemptTimeout,
 		leaseRenewalAttempts:       leaseRenewalAttempts, mu: sync.Mutex{},
-		lifecycle: sync.Mutex{}, ctx: serviceCtx, started: false, closed: false,
+		lifecycle: sync.Mutex{}, started: false, closed: false,
 	}
 	if err := service.recoverInterrupted(ctx); err != nil {
-		cancel()
-
 		return nil, err
 	}
 
@@ -202,12 +195,16 @@ func (service *Service) Start(ctx context.Context) error {
 		return nil
 	}
 
+	workerCtx, cancel := context.WithCancel(ctx)
+	service.cancel = cancel
+	service.done = workerCtx.Done()
+
 	for range service.concurrency {
 		service.wg.Add(1)
-		go service.worker(service.ctx)
+		go service.worker(workerCtx)
 	}
 
-	if err := service.enqueueRecovered(ctx, service.ctx); err != nil {
+	if err := service.enqueueRecovered(ctx); err != nil {
 		service.cancel()
 		service.wg.Wait()
 		service.closed = true
@@ -408,7 +405,9 @@ func (service *Service) Subscribe(taskID string) Subscription {
 	channel := make(chan database.TaskEventEntity)
 	close(channel)
 
-	return Subscription{Events: channel, Cancel: func() {}}
+	return Subscription{Events: channel, Cancel: func() {
+		// The failed subscription owns no resources, so cancellation is a no-op.
+	}}
 }
 
 func (service *Service) subscribe(taskID string) (Subscription, error) {
@@ -570,7 +569,10 @@ func (service *Service) Shutdown(ctx context.Context) error {
 	}
 
 	service.closed = true
-	service.cancel()
+	if service.cancel != nil {
+		service.cancel()
+	}
+
 	service.closeSubscriptions()
 	service.lifecycle.Unlock()
 
@@ -1071,7 +1073,7 @@ func (service *Service) recoverInterrupted(ctx context.Context) error {
 	return nil
 }
 
-func (service *Service) enqueueRecovered(ctx, serviceCtx context.Context) error {
+func (service *Service) enqueueRecovered(ctx context.Context) error {
 	queued, err := service.tasks.ListByStates(ctx, database.TaskKindAgent, []database.TaskState{database.TaskQueued}, 0)
 	if err != nil {
 		return oops.In("agenttask").Code("recover_tasks").Wrapf(err, "list queued tasks")
@@ -1082,8 +1084,8 @@ func (service *Service) enqueueRecovered(ctx, serviceCtx context.Context) error 
 		case service.queue <- queued[index].ID:
 		case <-ctx.Done():
 			return oops.In("agenttask").Code("recover_canceled").Wrapf(ctx.Err(), "enqueue recovered tasks")
-		case <-serviceCtx.Done():
-			return oops.In("agenttask").Code("service_stopped").Wrapf(serviceCtx.Err(), "enqueue recovered tasks")
+		case <-service.done:
+			return oops.In("agenttask").Code("service_stopped").Errorf("enqueue recovered tasks: service stopped")
 		}
 	}
 

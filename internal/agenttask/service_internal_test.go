@@ -32,7 +32,7 @@ func emptyService() *Service {
 		cancel: nil, done: nil, sessionSlots: nil, tasks: nil, logger: nil, leaseOwner: "", wg: sync.WaitGroup{},
 		nextSubscriber: 0, timeout: 0, sessionConcurrency: 0, leaseDuration: 0,
 		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0, leaseRenewalAttemptTimeout: 0,
-		leaseRenewalAttempts: 0, mu: sync.Mutex{}, lifecycle: sync.Mutex{}, ctx: nil,
+		leaseRenewalAttempts: 0, mu: sync.Mutex{}, lifecycle: sync.Mutex{},
 		concurrency: 0, started: false, closed: false,
 	}
 }
@@ -303,7 +303,7 @@ func repositoryWriteErrorCases(service *Service) []repositoryErrorCase {
 		{name: "enqueue recovered tasks", wantError: "list queued tasks", run: func(t *testing.T) error {
 			t.Helper()
 
-			return service.enqueueRecovered(t.Context(), t.Context())
+			return service.enqueueRecovered(t.Context())
 		}},
 	}
 }
@@ -533,7 +533,9 @@ func testQueuedTaskCancellation(
 	serviceCtx, cancelRecovery := context.WithCancel(t.Context())
 	cancelRecovery()
 
-	err = service.enqueueRecovered(t.Context(), serviceCtx)
+	service.done = serviceCtx.Done()
+
+	err = service.enqueueRecovered(t.Context())
 	require.ErrorContains(t, err, "enqueue recovered tasks")
 
 	testCancelingTaskFinalization(t, service, tasks, agentTasks, sessions, owner.ID)
@@ -712,8 +714,6 @@ func TestStartFailureClosesExistingSubscriptions(t *testing.T) {
 	t.Parallel()
 
 	service := emptyService()
-	service.ctx, service.cancel = context.WithCancel(t.Context())
-	service.done = service.ctx.Done()
 	service.queue = make(chan string)
 	service.subscribers = make(map[string]map[uint64]chan database.TaskEventEntity)
 	closedService := serviceWithClosedRepositories(t)
