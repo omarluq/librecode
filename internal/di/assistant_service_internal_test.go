@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/samber/do/v2"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // register SQLite driver for assistant service wiring tests.
 
@@ -24,19 +25,21 @@ func TestNewAssistantServiceWiresRuntimeOptions(t *testing.T) {
 	t.Parallel()
 
 	injector := do.New()
-	do.ProvideValue(injector, newTestDatabaseService(t))
-	provideTestAssistantDependencies(t, injector)
+	databaseService := newTestDatabaseService(t)
+	do.ProvideValue(injector, databaseService)
+	modelRegistry := provideTestAssistantDependencies(t, injector)
 
 	service, err := NewAssistantService(injector)
 
 	require.NoError(t, err)
 	require.NotNil(t, service.Runtime)
 	require.NotNil(t, service.Agents)
-	require.NotNil(t, service.Runtime.SessionRepository())
-	require.NotNil(t, service.Runtime.ModelRegistry())
+	assert.Same(t, databaseService.Sessions, service.Runtime.SessionRepository())
+	assert.Same(t, modelRegistry, service.Runtime.ModelRegistry())
+	assertRuntimeCapabilitiesUnavailable(t, service)
 }
 
-func provideTestAssistantDependencies(t *testing.T, injector do.Injector) {
+func provideTestAssistantDependencies(t *testing.T, injector do.Injector) *model.Registry {
 	t.Helper()
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -47,7 +50,9 @@ func provideTestAssistantDependencies(t *testing.T, injector do.Injector) {
 		State:   extension.ManagerState{Configured: nil, Loaded: nil},
 	})
 	do.ProvideValue(injector, &CacheService{Responses: nil})
-	do.ProvideValue(injector, &ModelService{Registry: newTestModelRegistry(t)})
+
+	modelRegistry := newTestModelRegistry(t)
+	do.ProvideValue(injector, &ModelService{Registry: modelRegistry})
 	do.ProvideValue(injector, &SkillsService{Cache: core.NewSkillsCache()})
 	do.ProvideValue(injector, &LoggerService{
 		SlogLogger:    logger,
@@ -58,6 +63,8 @@ func provideTestAssistantDependencies(t *testing.T, injector do.Injector) {
 			skills.Cache.Close()
 		}
 	})
+
+	return modelRegistry
 }
 
 func newTestDatabaseService(t *testing.T) *DatabaseService {

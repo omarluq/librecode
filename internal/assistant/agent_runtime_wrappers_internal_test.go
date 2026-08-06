@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -14,6 +15,14 @@ import (
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/tool"
 )
+
+func requireRuntimeOopsCode(t *testing.T, err error, code string) {
+	t.Helper()
+
+	coded, ok := oops.AsOops(err)
+	require.True(t, ok)
+	require.Equal(t, code, coded.Code())
+}
 
 type testToolProvider struct {
 	tools []extension.Tool
@@ -59,33 +68,34 @@ func TestRuntimeAgentWrappersWithoutController(t *testing.T) {
 			assert.Nil(t, runtime.AgentDefinitions())
 			assert.Nil(t, runtime.AgentDiagnostics())
 			tasks, err := runtime.AgentTasks(t.Context(), "owner", 10)
-			require.NoError(t, err)
+			requireRuntimeOopsCode(t, err, "agent_task_service_unavailable")
 			assert.Nil(t, tasks)
 			task, found, err := runtime.AgentTask(t.Context(), "id")
-			require.NoError(t, err)
+			requireRuntimeOopsCode(t, err, "agent_task_service_unavailable")
 			assert.Nil(t, task)
 			assert.False(t, found)
 			canceled, found, err := runtime.CancelAgentTask(t.Context(), "owner", "id")
-			require.NoError(t, err)
+			requireRuntimeOopsCode(t, err, "agent_task_service_unavailable")
 			assert.Nil(t, canceled)
 			assert.False(t, found)
 
-			events, cancel := runtime.SubscribeAgentTask("id")
-			cancel()
-
-			_, open := <-events
-			assert.False(t, open)
+			events, cancel, err := runtime.SubscribeAgentTask("id")
+			requireRuntimeOopsCode(t, err, "agent_task_service_unavailable")
+			assert.Nil(t, events)
+			assert.Nil(t, cancel)
 		})
 	}
 }
 
-func TestRuntimeAgentControllerSetterAndSubscriptionDelegate(t *testing.T) {
+func TestRuntimeAgentControllerOptionAndSubscriptionDelegate(t *testing.T) {
 	t.Parallel()
 
 	stub := new(agentControllerStub)
-	runtime := new(Runtime)
-	runtime.SetAgentTaskController(stub)
-	events, cancel := runtime.SubscribeAgentTask("task")
+	runtime := NewRuntimeForTest(func(options *RuntimeTestOptions) {
+		options.AgentTasks = stub
+	})
+	events, cancel, err := runtime.SubscribeAgentTask("task")
+	require.NoError(t, err)
 	cancel()
 
 	_, open := <-events
@@ -93,40 +103,86 @@ func TestRuntimeAgentControllerSetterAndSubscriptionDelegate(t *testing.T) {
 	assert.Equal(t, 1, stub.subscriptions)
 }
 
-func TestRuntimeAgentWrappersDelegateAndWrapErrors(t *testing.T) {
+func TestRuntimeAgentWrappersDelegate(t *testing.T) {
 	t.Parallel()
 
 	stub := new(agentControllerStub)
 	stub.task = agentToolTask("id", "owner", database.TaskQueued)
 	stub.listed = []database.AgentTaskEntity{}
 	stub.found = true
-	runtime := new(Runtime)
-	runtime.agentTasks = stub
-	runtime.agents = agent.Load(t.TempDir())
-	assert.NotEmpty(t, runtime.AgentDefinitions())
-	assert.Empty(t, runtime.AgentDiagnostics())
+	runtime := NewRuntimeForTest(func(options *RuntimeTestOptions) {
+		options.AgentTasks = stub
+	})
+
 	_, err := runtime.AgentTasks(t.Context(), "owner", 7)
 	require.NoError(t, err)
 	assert.Equal(t, 7, stub.lastLimit)
+
 	task, found, err := runtime.AgentTask(t.Context(), "id")
 	require.NoError(t, err)
 	assert.True(t, found)
 	assert.Equal(t, "id", task.Task.ID)
+
 	_, found, err = runtime.CancelAgentTask(t.Context(), "owner", "id")
 	require.NoError(t, err)
 	assert.True(t, found)
+}
 
-	stub.listErr = errors.New("list failed")
-	_, err = runtime.AgentTasks(t.Context(), "owner", 1)
-	require.ErrorContains(t, err, "list agent tasks")
+func TestRuntimeAgentWrappersWrapErrors(t *testing.T) {
+	t.Parallel()
 
-	stub.getErr = errors.New("get failed")
-	_, _, err = runtime.AgentTask(t.Context(), "id")
-	require.ErrorContains(t, err, "get agent task")
+	tests := []struct {
+		name      string
+		configure func(*agentControllerStub)
+		call      func(*Runtime) error
+		want      string
+	}{
+		{
+			name:      "list",
+			configure: func(stub *agentControllerStub) { stub.listErr = errors.New("list failed") },
+			call: func(runtime *Runtime) error {
+				_, err := runtime.AgentTasks(t.Context(), "owner", 1)
 
-	stub.cancelErr = errors.New("cancel failed")
-	_, _, err = runtime.CancelAgentTask(t.Context(), "owner", "id")
-	require.ErrorContains(t, err, "cancel agent task")
+				return err
+			},
+			want: "list agent tasks",
+		},
+		{
+			name:      "get",
+			configure: func(stub *agentControllerStub) { stub.getErr = errors.New("get failed") },
+			call: func(runtime *Runtime) error {
+				_, _, err := runtime.AgentTask(t.Context(), "id")
+
+				return err
+			},
+			want: "get agent task",
+		},
+		{
+			name:      "cancel",
+			configure: func(stub *agentControllerStub) { stub.cancelErr = errors.New("cancel failed") },
+			call: func(runtime *Runtime) error {
+				_, _, err := runtime.CancelAgentTask(t.Context(), "owner", "id")
+
+				return err
+			},
+			want: "cancel agent task",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			stub := new(agentControllerStub)
+			test.configure(stub)
+
+			runtime := NewRuntimeForTest(func(options *RuntimeTestOptions) {
+				options.AgentTasks = stub
+			})
+
+			require.ErrorContains(t, test.call(runtime), test.want)
+		})
+	}
 }
 
 func TestAsyncAgentPromptAndToolRegistries(t *testing.T) {
@@ -282,9 +338,7 @@ func TestPromptRegistryHonorsDisabledExtensions(t *testing.T) {
 	registry, err := runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
 	require.NoError(t, err)
 
-	for _, definition := range registry.Definitions() {
-		assert.NotEqual(t, tool.Name("custom"), definition.Name)
-	}
+	assert.False(t, registry.Has("custom"))
 }
 
 func TestWithExecutionProfileClonesToolsAndDependencies(t *testing.T) {

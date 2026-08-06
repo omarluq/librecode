@@ -32,7 +32,8 @@ func emptyService() *Service {
 		cancel: nil, done: nil, sessionSlots: nil, tasks: nil, logger: nil, leaseOwner: "", wg: sync.WaitGroup{},
 		nextSubscriber: 0, timeout: 0, sessionConcurrency: 0, leaseDuration: 0,
 		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0, leaseRenewalAttemptTimeout: 0,
-		leaseRenewalAttempts: 0, mu: sync.Mutex{},
+		leaseRenewalAttempts: 0, mu: sync.Mutex{}, lifecycle: sync.Mutex{}, ctx: nil,
+		concurrency: 0, started: false, closed: false,
 	}
 }
 
@@ -705,6 +706,28 @@ func TestServiceInternalExecuteSkipsUnavailableTask(t *testing.T) {
 			assert.NotContains(t, service.active, "task")
 		})
 	}
+}
+
+func TestStartFailureClosesExistingSubscriptions(t *testing.T) {
+	t.Parallel()
+
+	service := emptyService()
+	service.ctx, service.cancel = context.WithCancel(t.Context())
+	service.done = service.ctx.Done()
+	service.queue = make(chan string)
+	service.subscribers = make(map[string]map[uint64]chan database.TaskEventEntity)
+	closedService := serviceWithClosedRepositories(t)
+	service.tasks = closedService.tasks
+	service.agentTasks = closedService.agentTasks
+
+	subscription, err := service.subscribe("task")
+	require.NoError(t, err)
+
+	err = service.Start(t.Context())
+	require.ErrorContains(t, err, "list queued tasks")
+
+	_, open := <-subscription.Events
+	assert.False(t, open)
 }
 
 func TestServiceInternalShutdownCancellation(t *testing.T) {

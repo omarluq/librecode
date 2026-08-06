@@ -128,6 +128,35 @@ func TestDispatcherShutdownDoesNotHoldLifecycleLockAcrossSubmitIO(t *testing.T) 
 	require.NoError(t, dispatcher.Shutdown(context.Background()))
 }
 
+func TestStoppedDispatcherWaitsForStart(t *testing.T) {
+	t.Parallel()
+
+	service, repository, owner := newWorkflowService(t, newFakeController())
+	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
+		Name: "recovered", Source: "2 + 2", SourceVersion: "v1", ArgumentsJSON: "{}",
+		OwnerSessionID: owner,
+	})
+	require.NoError(t, err)
+
+	dispatcher, err := workflow.NewStoppedDispatcher(t.Context(), workflow.DispatcherOptions{
+		Service: service, Tasks: repository.Tasks(), Logger: nil, Concurrency: 1,
+		Buffer: 1, Interval: time.Millisecond,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, dispatcher.Shutdown(context.Background())) })
+
+	persisted, found, err := repository.Get(t.Context(), run.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, database.TaskQueued, persisted.Task.State)
+
+	require.NoError(t, dispatcher.Start())
+	require.NoError(t, dispatcher.Start())
+	completed, err := dispatcher.Await(t.Context(), run.Task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.TaskSucceeded, completed.Task.State)
+}
+
 func TestDispatcherExecutesSubmittedWorkflow(t *testing.T) {
 	t.Parallel()
 

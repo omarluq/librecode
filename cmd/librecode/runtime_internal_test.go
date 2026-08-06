@@ -178,7 +178,7 @@ func TestCommandsReturnBootstrapErrors(t *testing.T) {
 		args []string
 	}{
 		{name: chatUse, args: []string{chatUse}},
-		{name: "prompt", args: []string{"prompt", "hello"}},
+		{name: promptUse, args: []string{promptUse, "hello"}},
 		{name: "model list", args: []string{modelUse, listUse}},
 		{name: "tool list", args: []string{toolUse, listUse}},
 	}

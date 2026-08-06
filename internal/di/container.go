@@ -91,6 +91,9 @@ func (c *Container) shutdownLocked(ctx context.Context) *do.ShutdownReport {
 	}
 
 	c.closed = true
+	if c.runtime != nil {
+		c.runtime.Assistant.capabilities.revoke()
+	}
 
 	return c.injector.ShutdownWithContext(ctx)
 }
@@ -123,6 +126,10 @@ func (c *Container) StartRuntime() (*RuntimeServices, error) {
 	}
 
 	if contextErr := ctx.Err(); contextErr != nil {
+		if runtimeServices != nil && runtimeServices.Assistant != nil {
+			runtimeServices.Assistant.capabilities.revoke()
+		}
+
 		return nil, c.runtimeStartErrorLocked(contextErr)
 	}
 
@@ -149,6 +156,34 @@ func (c *Container) constructRuntime(ctx context.Context) (*RuntimeServices, err
 	if err := services.ChatWorkflows.Start(ctx); err != nil {
 		return nil, err
 	}
+
+	if err := services.Assistant.capabilities.publish(
+		services.AgentTasks.Tasks(),
+		services.ChatWorkflows.Dispatcher(),
+	); err != nil {
+		return nil, serviceError(err, "publish runtime capabilities")
+	}
+
+	published := true
+	defer func() {
+		if published {
+			services.Assistant.capabilities.revoke()
+		}
+	}()
+
+	if err := services.AgentTasks.StartWorkers(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := services.ChatWorkflows.StartWorkers(); err != nil {
+		return nil, err
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, oops.In("di").Code("runtime_start_canceled").Wrapf(err, "start runtime services")
+	}
+
+	published = false
 
 	return services, nil
 }

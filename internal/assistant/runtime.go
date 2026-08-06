@@ -39,7 +39,7 @@ type Runtime struct {
 	toolSchemaCache   *toolSchemaCache
 	agents            *agent.Catalog
 	agentTasks        AgentTaskController
-	workflowSubmitter workflowSubmitter
+	workflowSubmitter WorkflowSubmitter
 	operations        *sessionOperationCoordinator
 	newCompactionUUID func() (uuid.UUID, error)
 	profile           ExecutionProfile
@@ -139,15 +139,17 @@ type responseBundle struct {
 
 // RuntimeOptions contains dependencies for an assistant runtime.
 type RuntimeOptions struct {
-	Config      *config.Config
-	Sessions    *database.SessionRepository
-	Extensions  runtimeExtensions
-	Cache       *ResponseCache
-	Models      *model.Registry
-	Client      Completer
-	Logger      *slog.Logger
-	SkillsCache *core.SkillsCache
-	Agents      *agent.Catalog
+	Config            *config.Config
+	Sessions          *database.SessionRepository
+	Extensions        runtimeExtensions
+	Cache             *ResponseCache
+	Models            *model.Registry
+	Client            Completer
+	Logger            *slog.Logger
+	SkillsCache       *core.SkillsCache
+	Agents            *agent.Catalog
+	AgentTasks        AgentTaskController
+	WorkflowSubmitter WorkflowSubmitter
 }
 
 // NewRuntime creates an assistant runtime.
@@ -172,8 +174,8 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 		skillsCache:       options.SkillsCache,
 		toolSchemaCache:   newToolSchemaCache(),
 		agents:            options.Agents,
-		agentTasks:        nil,
-		workflowSubmitter: nil,
+		agentTasks:        options.AgentTasks,
+		workflowSubmitter: options.WorkflowSubmitter,
 		operations:        newSessionOperationCoordinator(),
 		newCompactionUUID: uuid.NewV7,
 		profile:           topLevelExecutionProfile(),
@@ -187,18 +189,6 @@ func (runtime *Runtime) acquirePromptOperation(ctx context.Context, sessionID st
 	}
 
 	return release, nil
-}
-
-// SetAgentTaskController enables asynchronous subagent tools.
-// It must be called during application startup, before Prompt is used.
-func (runtime *Runtime) SetAgentTaskController(controller AgentTaskController) {
-	runtime.agentTasks = controller
-}
-
-// SetWorkflowSubmitter enables model-authored durable workflows.
-// It must be called during application startup, before Prompt is used.
-func (runtime *Runtime) SetWorkflowSubmitter(submitter workflowSubmitter) {
-	runtime.workflowSubmitter = submitter
 }
 
 // Prompt appends a user prompt and an assistant response to the selected session.
@@ -377,7 +367,8 @@ func (runtime *Runtime) AgentTasks(
 	limit int,
 ) ([]database.AgentTaskEntity, error) {
 	if runtime == nil || runtime.agentTasks == nil {
-		return nil, nil
+		return nil, oops.In("assistant").Code("agent_task_service_unavailable").
+			Errorf("agent task service is unavailable")
 	}
 
 	tasks, err := runtime.agentTasks.List(ctx, ownerSessionID, limit)
@@ -394,7 +385,8 @@ func (runtime *Runtime) AgentTask(
 	taskID string,
 ) (*database.AgentTaskEntity, bool, error) {
 	if runtime == nil || runtime.agentTasks == nil {
-		return nil, false, nil
+		return nil, false, oops.In("assistant").Code("agent_task_service_unavailable").
+			Errorf("agent task service is unavailable")
 	}
 
 	task, found, err := runtime.agentTasks.Get(ctx, taskID)
@@ -417,12 +409,14 @@ func (runtime *Runtime) AgentTaskEvents(
 	limit int,
 ) ([]database.TaskEventEntity, error) {
 	if runtime == nil || runtime.agentTasks == nil {
-		return nil, nil
+		return nil, oops.In("assistant").Code("agent_task_service_unavailable").
+			Errorf("agent task service is unavailable")
 	}
 
 	reader, ok := runtime.agentTasks.(agentTaskEventReader)
 	if !ok {
-		return nil, nil
+		return nil, oops.In("assistant").Code("agent_task_events_unavailable").
+			Errorf("agent task events are unavailable")
 	}
 
 	events, err := reader.Events(ctx, taskID, after, limit)
@@ -437,17 +431,18 @@ func (runtime *Runtime) AgentTaskEvents(
 // SubscribeAgentTask follows persisted events for one agent task.
 func (runtime *Runtime) SubscribeAgentTask(
 	taskID string,
-) (events <-chan database.TaskEventEntity, cancel func()) {
+) (events <-chan database.TaskEventEntity, cancel func(), err error) {
 	if runtime == nil || runtime.agentTasks == nil {
-		channel := make(chan database.TaskEventEntity)
-		close(channel)
-
-		return channel, func() {
-			// The closed channel has no live subscription to cancel.
-		}
+		return nil, nil, oops.In("assistant").Code("agent_task_service_unavailable").
+			Errorf("agent task service is unavailable")
 	}
 
-	return runtime.agentTasks.SubscribeAgentTask(taskID)
+	events, cancel, err = runtime.agentTasks.SubscribeAgentTask(taskID)
+	if err != nil {
+		return nil, nil, oops.In("assistant").Code("subscribe_agent_task").Wrapf(err, "subscribe agent task")
+	}
+
+	return events, cancel, nil
 }
 
 // CancelAgentTask requests cancellation of one durable agent task.
@@ -457,7 +452,8 @@ func (runtime *Runtime) CancelAgentTask(
 	taskID string,
 ) (*database.TaskEntity, bool, error) {
 	if runtime == nil || runtime.agentTasks == nil {
-		return nil, false, nil
+		return nil, false, oops.In("assistant").Code("agent_task_service_unavailable").
+			Errorf("agent task service is unavailable")
 	}
 
 	task, found, err := runtime.agentTasks.Cancel(ctx, ownerSessionID, taskID)

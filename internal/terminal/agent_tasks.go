@@ -371,7 +371,13 @@ func (app *App) watchActiveAgentTasks(ctx context.Context) {
 			continue
 		}
 
-		events, cancelSubscription := app.runtime.SubscribeAgentTask(taskID)
+		events, cancelSubscription, err := app.runtime.SubscribeAgentTask(taskID)
+		if err != nil {
+			app.postAgentTaskWatchError(ctx, taskID, "failed to subscribe to agent task activity: "+err.Error())
+
+			continue
+		}
+
 		watchCtx, cancelWatch := context.WithCancel(ctx)
 		app.agentTaskWatches[taskID] = func() {
 			cancelWatch()
@@ -550,7 +556,13 @@ func (app *App) forwardAgentTaskEventWithRuntime(
 func (app *App) watchInspectedAgentTask(ctx context.Context, taskID string) {
 	app.stopAgentTaskWatch(taskID)
 
-	events, cancelSubscription := app.runtime.SubscribeAgentTask(taskID)
+	events, cancelSubscription, err := app.runtime.SubscribeAgentTask(taskID)
+	if err != nil {
+		app.postAgentTaskWatchError(ctx, taskID, "failed to subscribe to agent task activity: "+err.Error())
+
+		return
+	}
+
 	watchCtx, cancelWatch := context.WithCancel(ctx)
 	app.agentTaskWatches[taskID] = func() {
 		cancelWatch()
@@ -638,10 +650,13 @@ func (app *App) postAgentTaskWatchClosed(ctx context.Context, taskID string) {
 }
 
 func (app *App) postAgentTaskReplayError(ctx context.Context, taskID string, err error) {
+	app.postAgentTaskWatchError(ctx, taskID, "failed to replay agent task activity: "+err.Error())
+}
+
+func (app *App) postAgentTaskWatchError(ctx context.Context, taskID, message string) {
 	app.postAsyncEvent(ctx, &asyncEvent{
 		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
-		Kind: asyncEventAgentTaskReplayError, Provider: taskID,
-		Text: "failed to replay agent task activity: " + err.Error(), PromptID: 0,
+		Kind: asyncEventAgentTaskReplayError, Provider: taskID, Text: message, PromptID: 0,
 	})
 }
 

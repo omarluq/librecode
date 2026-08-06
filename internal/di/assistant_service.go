@@ -11,8 +11,9 @@ import (
 
 // AssistantService exposes the assistant runtime.
 type AssistantService struct {
-	Runtime *assistant.Runtime
-	Agents  *agent.Catalog
+	Runtime      *assistant.Runtime
+	Agents       *agent.Catalog
+	capabilities *runtimeCapabilities
 }
 
 // NewAssistantService wires the assistant runtime.
@@ -58,19 +59,23 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 	}
 
 	agents := agent.Load(cwd)
+	capabilities := newRuntimeCapabilities()
 
 	return &AssistantService{
 		Runtime: assistant.NewRuntime(&assistant.RuntimeOptions{
-			Config:      configService.Get(),
-			Sessions:    databaseService.Sessions,
-			Extensions:  extensionService.Manager,
-			Cache:       cache.Responses,
-			Models:      models.Registry,
-			Client:      nil,
-			Logger:      loggerService.SlogLogger,
-			SkillsCache: skills.Cache,
-			Agents:      agents,
+			Config:            configService.Get(),
+			Sessions:          databaseService.Sessions,
+			Extensions:        extensionService.Manager,
+			Cache:             cache.Responses,
+			Models:            models.Registry,
+			Client:            nil,
+			Logger:            loggerService.SlogLogger,
+			SkillsCache:       skills.Cache,
+			Agents:            agents,
+			AgentTasks:        capabilities,
+			WorkflowSubmitter: capabilities,
 		}),
-		Agents: agents,
+		Agents:       agents,
+		capabilities: capabilities,
 	}, nil
 }

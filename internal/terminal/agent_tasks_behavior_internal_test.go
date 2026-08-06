@@ -35,15 +35,16 @@ const (
 )
 
 type agentTaskControllerStub struct {
-	listErr     error
-	getErr      error
-	cancelErr   error
-	tasks       map[string]*database.AgentTaskEntity
-	subscribe   map[string]chan database.TaskEventEntity
-	canceled    map[string]bool
-	list        []database.AgentTaskEntity
-	cancelCalls []string
-	mu          sync.Mutex
+	listErr      error
+	getErr       error
+	cancelErr    error
+	subscribeErr error
+	tasks        map[string]*database.AgentTaskEntity
+	subscribe    map[string]chan database.TaskEventEntity
+	canceled     map[string]bool
+	list         []database.AgentTaskEntity
+	cancelCalls  []string
+	mu           sync.Mutex
 }
 
 func (stub *agentTaskControllerStub) SubmitAgentTask(
@@ -58,15 +59,16 @@ func newAgentTaskControllerStub(
 	list []database.AgentTaskEntity,
 ) *agentTaskControllerStub {
 	return &agentTaskControllerStub{
-		listErr:     nil,
-		getErr:      nil,
-		cancelErr:   nil,
-		tasks:       tasks,
-		subscribe:   nil,
-		canceled:    make(map[string]bool),
-		list:        list,
-		cancelCalls: nil,
-		mu:          sync.Mutex{},
+		listErr:      nil,
+		getErr:       nil,
+		cancelErr:    nil,
+		subscribeErr: nil,
+		tasks:        tasks,
+		subscribe:    nil,
+		canceled:     make(map[string]bool),
+		list:         list,
+		cancelCalls:  nil,
+		mu:           sync.Mutex{},
 	}
 }
 
@@ -116,9 +118,13 @@ func (stub *agentTaskControllerStub) Await(context.Context, string) (*database.A
 
 func (stub *agentTaskControllerStub) SubscribeAgentTask(
 	taskID string,
-) (events <-chan database.TaskEventEntity, cancel func()) {
+) (events <-chan database.TaskEventEntity, cancel func(), err error) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
+
+	if stub.subscribeErr != nil {
+		return nil, nil, stub.subscribeErr
+	}
 
 	if stub.subscribe == nil {
 		stub.subscribe = map[string]chan database.TaskEventEntity{}
@@ -135,7 +141,7 @@ func (stub *agentTaskControllerStub) SubscribeAgentTask(
 		defer stub.mu.Unlock()
 
 		stub.canceled[taskID] = true
-	}
+	}, nil
 }
 
 func (stub *agentTaskControllerStub) wasCanceled(taskID string) bool {
@@ -148,8 +154,9 @@ func (stub *agentTaskControllerStub) wasCanceled(taskID string) bool {
 func newAgentTaskBehaviorApp(t *testing.T, stub *agentTaskControllerStub) *App {
 	t.Helper()
 
-	runtime := assistant.NewRuntimeForTest(nil)
-	runtime.SetAgentTaskController(stub)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = stub
+	})
 
 	app := newRenderTestApp(t)
 	app.runtime = runtime
@@ -203,8 +210,8 @@ func newAgentTaskSessionTestApp(
 	app := newRenderTestApp(t)
 	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
 		options.Sessions = fixture.sessions
+		options.AgentTasks = stub
 	})
-	app.runtime.SetAgentTaskController(stub)
 	app.sessionID = fixture.parent.ID
 
 	return fixture, task, app
@@ -223,6 +230,41 @@ func newActivePromptInspectionTestApp(
 	app.working = true
 
 	return fixture, task, app
+}
+
+func TestAgentTaskWatchSkipsFailedSubscription(t *testing.T) {
+	t.Parallel()
+
+	stub := newAgentTaskControllerStub(nil, nil)
+	stub.subscribeErr = errors.New("subscription unavailable")
+	app := newAgentTaskBehaviorApp(t, stub)
+	app.screen = newClipboardScreen()
+	app.agentTasks = []database.AgentTaskEntity{behaviorAgentTask(behaviorTaskID, database.TaskRunning)}
+
+	app.watchActiveAgentTasks(t.Context())
+	assert.NotContains(t, app.agentTaskWatches, behaviorTaskID)
+	assertAgentTaskSubscriptionError(t, app)
+
+	app.watchInspectedAgentTask(t.Context(), behaviorTaskID)
+	assert.NotContains(t, app.agentTaskWatches, behaviorTaskID)
+	assertAgentTaskSubscriptionError(t, app)
+}
+
+func assertAgentTaskSubscriptionError(t *testing.T, app *App) {
+	t.Helper()
+
+	select {
+	case event := <-app.screen.EventQ():
+		interrupt, ok := event.(*tcell.EventInterrupt)
+		require.True(t, ok)
+		payload, ok := interrupt.Data().(*asyncEvent)
+		require.True(t, ok)
+		assert.Equal(t, asyncEventAgentTaskReplayError, payload.Kind)
+		assert.Contains(t, payload.Text, "failed to subscribe to agent task activity")
+		assert.Contains(t, payload.Text, "subscription unavailable")
+	case <-time.After(time.Second):
+		require.FailNow(t, "timed out waiting for subscription error")
+	}
 }
 
 func TestAgentTaskPureBehavior(t *testing.T) {
@@ -597,8 +639,10 @@ func TestAgentTaskSummaryEnterInspectsSelectedSubagent(t *testing.T) {
 		first.Task.ID:    &first,
 		selected.Task.ID: &selected,
 	}, nil)
-	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
-	runtime.SetAgentTaskController(stub)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = sessions
+		options.AgentTasks = stub
+	})
 
 	app := newRenderTestApp(t)
 	app.runtime = runtime
@@ -646,8 +690,10 @@ func TestInspectAndLeaveAgentTaskSession(t *testing.T) {
 	task.Task.OwnerSessionID = parent.ID
 	task.ChildSessionID = child.ID
 	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{behaviorTaskID: &task}, nil)
-	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
-	runtime.SetAgentTaskController(stub)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = sessions
+		options.AgentTasks = stub
+	})
 
 	_, err := sessions.AppendMessage(t.Context(), child.ID, nil, &database.MessageEntity{
 		Timestamp: time.Now().UTC(),
@@ -835,8 +881,10 @@ func TestInspectAgentTaskSwitchesBetweenSiblingSessions(t *testing.T) {
 		first.Task.ID:  &first,
 		second.Task.ID: &second,
 	}, nil)
-	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
-	runtime.SetAgentTaskController(stub)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = sessions
+		options.AgentTasks = stub
+	})
 
 	app := newRenderTestApp(t)
 	app.runtime = runtime
@@ -878,8 +926,10 @@ func TestInspectAgentTaskRecoversRetainedSummaryOwner(t *testing.T) {
 	second.Task.OwnerSessionID = parent.ID
 	second.ChildSessionID = secondChild.ID
 	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{second.Task.ID: &second}, nil)
-	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
-	runtime.SetAgentTaskController(stub)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = sessions
+		options.AgentTasks = stub
+	})
 
 	app := newRenderTestApp(t)
 	app.runtime = runtime
@@ -1023,10 +1073,13 @@ func TestAgentTaskCompletionRoutesToParentWhileChildIsInspected(t *testing.T) {
 
 	fixture, task, app := newActivePromptInspectionTestApp(t, database.TaskSucceeded, nil)
 	task.Task.Result = "parent completion"
-	app.runtime.SetAgentTaskController(newAgentTaskControllerStub(
-		map[string]*database.AgentTaskEntity{task.Task.ID: &task},
-		nil,
-	))
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+		options.AgentTasks = newAgentTaskControllerStub(
+			map[string]*database.AgentTaskEntity{task.Task.ID: &task},
+			nil,
+		)
+	})
 
 	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
 	defer app.stopAgentTaskWatches()
@@ -1063,13 +1116,16 @@ func TestActivePromptInspectionAllowsNestedTaskSelection(t *testing.T) {
 	nestedTask := behaviorAgentTask("nested-task", database.TaskRunning)
 	nestedTask.Task.OwnerSessionID = fixture.child.ID
 	nestedTask.ChildSessionID = "nested-session"
-	app.runtime.SetAgentTaskController(newAgentTaskControllerStub(
-		map[string]*database.AgentTaskEntity{
-			behaviorTaskID: &parentTask,
-			"nested-task":  &nestedTask,
-		},
-		nil,
-	))
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = fixture.sessions
+		options.AgentTasks = newAgentTaskControllerStub(
+			map[string]*database.AgentTaskEntity{
+				behaviorTaskID: &parentTask,
+				"nested-task":  &nestedTask,
+			},
+			nil,
+		)
+	})
 
 	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
 	defer app.stopAgentTaskWatches()
@@ -1221,8 +1277,8 @@ func TestInspectAgentTaskRejectsLeavingPromptOwningInspectedSession(t *testing.T
 	app := newRenderTestApp(t)
 	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
 		options.Sessions = fixture.sessions
+		options.AgentTasks = stub
 	})
-	app.runtime.SetAgentTaskController(stub)
 	app.sessionID = fixture.child.ID
 	app.agentTaskSessionStack = []string{fixture.parent.ID}
 	app.activePrompt = newTestActivePrompt(nil)
@@ -1421,8 +1477,9 @@ func TestInspectAgentTaskLookupFailureDoesNotMutateState(t *testing.T) {
 				nil,
 			)
 			stub.getErr = testCase.getErr
-			app.runtime = assistant.NewRuntimeForTest(nil)
-			app.runtime.SetAgentTaskController(stub)
+			app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+				options.AgentTasks = stub
+			})
 
 			err := app.inspectAgentTask(t.Context(), behaviorTaskID)
 			require.Error(t, err)
@@ -1477,8 +1534,8 @@ func TestInspectAgentTaskLoadFailureDoesNotSwitchSession(t *testing.T) {
 			stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{behaviorTaskID: &task}, nil)
 			runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
 				options.Sessions = sessions
+				options.AgentTasks = stub
 			})
-			runtime.SetAgentTaskController(stub)
 
 			app := newRenderTestApp(t)
 			app.runtime = runtime

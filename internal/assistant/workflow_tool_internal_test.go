@@ -158,18 +158,26 @@ func TestWorkflowResultDetailsHandlesNil(t *testing.T) {
 	assert.Empty(t, workflowResultDetails(nil))
 }
 
+func TestWorkflowToolDistinguishesUnavailableService(t *testing.T) {
+	t.Parallel()
+
+	executor := &workflowToolExecutor{submitter: nil, ownerSessionID: "owner"}
+	_, err := executor.Execute(t.Context(), tool.Arguments{})
+	requireRuntimeOopsCode(t, err, "workflow_service_unavailable")
+}
+
 func TestPromptRegistryIncludesWorkflowWhenConfigured(t *testing.T) {
 	t.Parallel()
 
-	runtime := new(Runtime)
-	runtime.profile = topLevelExecutionProfile()
-	runtime.SetWorkflowSubmitter(&workflowSubmitterStub{request: nil, run: nil, err: nil})
+	runtime := NewRuntimeForTest(func(options *RuntimeTestOptions) {
+		options.WorkflowSubmitter = &workflowSubmitterStub{request: nil, run: nil, err: nil}
+	})
 
 	registry, err := runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
 	require.NoError(t, err)
 	assert.True(t, registry.Has(workflowToolName))
 
-	runtime.SetWorkflowSubmitter(nil)
+	runtime = NewRuntimeForTest(nil)
 	registry, err = runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
 	require.NoError(t, err)
 	assert.False(t, registry.Has(workflowToolName))

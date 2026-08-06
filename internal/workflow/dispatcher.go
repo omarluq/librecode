@@ -30,21 +30,38 @@ type DispatcherOptions struct {
 
 // Dispatcher polls durable queued workflows and executes atomically claimed runs.
 type Dispatcher struct {
-	service  *Service
-	tasks    *database.TaskRepository
-	logger   *slog.Logger
-	queue    chan string
-	cancel   context.CancelFunc
-	done     <-chan struct{}
-	wg       sync.WaitGroup
-	submits  sync.WaitGroup
-	interval time.Duration
-	mu       sync.Mutex
-	closed   bool
+	service     *Service
+	tasks       *database.TaskRepository
+	logger      *slog.Logger
+	queue       chan string
+	cancel      context.CancelFunc
+	done        <-chan struct{}
+	ctx         context.Context
+	wg          sync.WaitGroup
+	submits     sync.WaitGroup
+	mu          sync.Mutex
+	interval    time.Duration
+	concurrency int
+	closed      bool
+	started     bool
 }
 
-// NewDispatcher starts durable workflow workers.
+// NewDispatcher creates and starts durable workflow workers.
 func NewDispatcher(ctx context.Context, options DispatcherOptions) (*Dispatcher, error) {
+	dispatcher, err := NewStoppedDispatcher(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := dispatcher.Start(); err != nil {
+		return nil, err
+	}
+
+	return dispatcher, nil
+}
+
+// NewStoppedDispatcher creates a dispatcher without starting its workers.
+func NewStoppedDispatcher(ctx context.Context, options DispatcherOptions) (*Dispatcher, error) {
 	if ctx == nil || options.Service == nil || options.Tasks == nil {
 		return nil, oops.In("workflow").Code("invalid_dispatcher_dependencies").
 			Errorf("process context, workflow service, and task repository are required")
@@ -74,18 +91,37 @@ func NewDispatcher(ctx context.Context, options DispatcherOptions) (*Dispatcher,
 	dispatcher := &Dispatcher{
 		service: options.Service, tasks: options.Tasks, logger: logger,
 		queue: make(chan string, buffer), cancel: cancel, done: dispatchCtx.Done(),
-		wg: sync.WaitGroup{}, submits: sync.WaitGroup{}, interval: interval, mu: sync.Mutex{}, closed: false,
+		wg: sync.WaitGroup{}, submits: sync.WaitGroup{}, interval: interval,
+		concurrency: concurrency, ctx: dispatchCtx, mu: sync.Mutex{}, closed: false, started: false,
 	}
 
-	for range concurrency {
+	return dispatcher, nil
+}
+
+// Start launches workflow workers and polling.
+func (dispatcher *Dispatcher) Start() error {
+	dispatcher.mu.Lock()
+	defer dispatcher.mu.Unlock()
+
+	if dispatcher.closed {
+		return oops.In("workflow").Code("dispatcher_shutdown").Errorf("workflow dispatcher is shut down")
+	}
+
+	if dispatcher.started {
+		return nil
+	}
+
+	for range dispatcher.concurrency {
 		dispatcher.wg.Add(1)
-		go dispatcher.worker(dispatchCtx)
+		go dispatcher.worker(dispatcher.ctx)
 	}
 
 	dispatcher.wg.Add(1)
-	go dispatcher.poll(dispatchCtx)
+	go dispatcher.poll(dispatcher.ctx)
 
-	return dispatcher, nil
+	dispatcher.started = true
+
+	return nil
 }
 
 // Submit persists and schedules a workflow run.
