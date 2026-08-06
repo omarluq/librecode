@@ -27,7 +27,10 @@ type ConfigService struct {
 
 // NewConfigService loads configuration from the injector's configured path.
 func NewConfigService(injector do.Injector) (*ConfigService, error) {
-	path := do.MustInvokeNamed[string](injector, ConfigPathKey)
+	path, err := do.InvokeNamed[string](injector, ConfigPathKey)
+	if err != nil {
+		return nil, err
+	}
 
 	loaded, err := config.LoadResolved(path)
 	if err != nil {
@@ -36,7 +39,11 @@ func NewConfigService(injector do.Injector) (*ConfigService, error) {
 
 	cfg := loaded.Config
 
-	overrides := do.MustInvokeNamed[ConfigOverrides](injector, ConfigOverridesKey)
+	overrides, err := do.InvokeNamed[ConfigOverrides](injector, ConfigOverridesKey)
+	if err != nil {
+		return nil, err
+	}
+
 	if overrides.DisableExtensions {
 		cfg.Extensions.Enabled = false
 	}

@@ -23,7 +23,7 @@ func newChatCmd() *cobra.Command {
 	var options chatRunOptions
 
 	cmd := &cobra.Command{
-		Use:   "chat",
+		Use:   chatUse,
 		Short: "Open the interactive chat UI",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -50,43 +50,76 @@ func newChatCmd() *cobra.Command {
 	return cmd
 }
 
+type chatServices struct {
+	database  *di.DatabaseService
+	assistant *di.AssistantService
+	models    *di.ModelService
+	auth      *di.AuthService
+	extension *di.ExtensionService
+	config    *di.ConfigService
+	workflows *di.ChatWorkflowService
+}
+
+func resolveChatServices(container *di.Container) (*chatServices, error) {
+	runtimeServices, err := container.StartRuntime()
+	if err != nil {
+		return nil, cliError(err, "start runtime services")
+	}
+
+	return &chatServices{
+		database: runtimeServices.Database, assistant: runtimeServices.Assistant, models: runtimeServices.Models,
+		auth: runtimeServices.Auth, extension: runtimeServices.Extensions, config: runtimeServices.Config,
+		workflows: runtimeServices.ChatWorkflows,
+	}, nil
+}
+
+type terminalRunner func(context.Context, *terminal.RunOptions) error
+
 func runChat(cmd *cobra.Command, options chatRunOptions) error {
 	commandOptions := commandOptionsFromCommand(cmd)
 	commandOptions.interactive = true
 
 	return withContainer(cmd.Context(), commandOptions, func(container *di.Container) error {
-		databaseService := container.DatabaseService()
-		runtime := container.AssistantService().Runtime
-		modelRegistry := container.ModelService().Registry
-		authStorage := container.AuthService().Storage
-		extensionManager := container.ExtensionService().Manager
-		cfg := container.ConfigService().Get()
-		chatWorkflows := container.ChatWorkflowService()
+		return runChatWithContainer(cmd, container, options, terminal.Run)
+	})
+}
 
-		cwd, err := assistant.DefaultCWD("")
-		if err != nil {
-			return cliError(err, cliResolveWorkingDirectory)
-		}
+func runChatWithContainer(
+	cmd *cobra.Command,
+	container *di.Container,
+	options chatRunOptions,
+	runTerminal terminalRunner,
+) error {
+	services, err := resolveChatServices(container)
+	if err != nil {
+		return err
+	}
 
-		sessionID, err := resolveChatSessionID(cmd.Context(), runtime, cwd, options)
-		if err != nil {
-			return err
-		}
+	runtime := services.assistant.Runtime
 
-		resources := loadTerminalResources(cmd.Context(), cwd)
+	cwd, err := assistant.DefaultCWD("")
+	if err != nil {
+		return cliError(err, cliResolveWorkingDirectory)
+	}
 
-		return terminal.Run(cmd.Context(), &terminal.RunOptions{
-			Extensions: extensionManager,
-			Resources:  &resources,
-			Runtime:    runtime,
-			Workflows:  chatWorkflows.Runs,
-			Settings:   databaseService.Documents,
-			Models:     modelRegistry,
-			Auth:       authStorage,
-			Config:     cfg,
-			CWD:        cwd,
-			SessionID:  sessionID,
-		})
+	sessionID, err := resolveChatSessionID(cmd.Context(), runtime, cwd, options)
+	if err != nil {
+		return err
+	}
+
+	resources := loadTerminalResources(cmd.Context(), cwd)
+
+	return runTerminal(cmd.Context(), &terminal.RunOptions{
+		Extensions: services.extension.Manager,
+		Resources:  &resources,
+		Runtime:    runtime,
+		Workflows:  services.workflows.Runs,
+		Settings:   services.database.Documents,
+		Models:     services.models.Registry,
+		Auth:       services.auth.Storage,
+		Config:     services.config.Get(),
+		CWD:        cwd,
+		SessionID:  sessionID,
 	})
 }
 

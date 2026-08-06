@@ -20,7 +20,11 @@ type LoggerService struct {
 
 // NewLoggerService configures application logging from the resolved config.
 func NewLoggerService(injector do.Injector) (*LoggerService, error) {
-	configService := do.MustInvoke[*ConfigService](injector)
+	configService, err := do.Invoke[*ConfigService](injector)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := configService.Get()
 	zerologLogger := newZerologLogger(cfg, loggerWriter(configService))
 

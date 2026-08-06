@@ -1,7 +1,6 @@
 package di
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 
@@ -18,13 +17,18 @@ type AuthService struct {
 }
 
 // NewAuthService wires librecode-style auth.json credential storage.
-func NewAuthService(_ do.Injector) (*AuthService, error) {
+func NewAuthService(injector do.Injector) (*AuthService, error) {
 	authPath, err := resolveAuthPath()
 	if err != nil {
 		return nil, err
 	}
 
-	storage, err := auth.NewStorage(context.Background(), auth.NewFileBackend(authPath))
+	ctx, err := applicationContext(injector)
+	if err != nil {
+		return nil, err
+	}
+
+	storage, err := auth.NewStorage(ctx, auth.NewFileBackend(authPath))
 	if err != nil {
 		return nil, oops.In("auth").Code("load").Wrapf(err, "load auth storage")
 	}

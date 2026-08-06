@@ -17,7 +17,7 @@ import (
 
 func newModelCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "model",
+		Use:   modelUse,
 		Short: "Inspect available models",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return newModelListCmd().RunE(cmd, nil)
@@ -37,28 +37,19 @@ func newModelListCmd() *cobra.Command {
 		Short: "List models for authorized providers",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			options := commandOptionsFromCommand(cmd)
-
-			container, err := di.NewContainer(options.configFile, options.configOverrides())
-			if err != nil {
-				return cliError(err, "initialize model services")
-			}
-			defer func() {
-				if report := container.ShutdownWithContext(cmd.Context()); report != nil && !report.Succeed {
-					if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "shutdown failed: %v\n", report.Errors); err != nil {
-						return
-					}
+			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
+				service, err := container.ModelService()
+				if err != nil {
+					return cliError(err, "resolve model service")
 				}
-			}()
 
-			registry := container.ModelService().Registry
+				models := listedModels(service.Registry, all)
+				if len(args) == 1 {
+					models = filterModelList(models, args[0])
+				}
 
-			models := listedModels(registry, all)
-			if len(args) == 1 {
-				models = filterModelList(models, args[0])
-			}
-
-			return printModels(cmd.OutOrStdout(), models)
+				return printModels(cmd.OutOrStdout(), models)
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "include models from unauthorized providers")

@@ -1,6 +1,7 @@
 package di_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,11 +18,17 @@ func TestNewContainer_DisableExtensionsOverride(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(configPath, []byte("extensions:\n  enabled: true\n"), 0o600))
 
-	container, err := di.NewContainer(configPath, di.ConfigOverrides{DisableExtensions: true, Interactive: false})
+	container, err := di.NewContainer(context.Background(), configPath, di.ConfigOverrides{
+		DisableExtensions: true,
+		Interactive:       false,
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
 
-	cfg := container.ConfigService().Get()
+	configService, err := container.ConfigService()
+	require.NoError(t, err)
+
+	cfg := configService.Get()
 	assert.False(t, cfg.Extensions.Enabled)
 }
 
@@ -43,14 +50,15 @@ func TestConfigServiceTracksLoadedPathAndInteractiveOverride(t *testing.T) {
 			configPath := filepath.Join(t.TempDir(), "config.yaml")
 			require.NoError(t, os.WriteFile(configPath, []byte("app:\n  env: test\n"), 0o600))
 
-			container, err := di.NewContainer(configPath, di.ConfigOverrides{
+			container, err := di.NewContainer(context.Background(), configPath, di.ConfigOverrides{
 				DisableExtensions: false,
 				Interactive:       test.interactive,
 			})
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
 
-			configService := container.ConfigService()
+			configService, err := container.ConfigService()
+			require.NoError(t, err)
 			assert.Equal(t, configPath, configService.Path())
 			assert.Equal(t, test.interactive, configService.Interactive())
 		})

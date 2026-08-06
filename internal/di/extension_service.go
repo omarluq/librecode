@@ -1,7 +1,6 @@
 package di
 
 import (
-	"context"
 	"path/filepath"
 
 	"github.com/samber/do/v2"
@@ -19,10 +18,19 @@ type ExtensionService struct {
 
 // NewExtensionService loads configured Lua extensions.
 func NewExtensionService(injector do.Injector) (*ExtensionService, error) {
-	configService := do.MustInvoke[*ConfigService](injector)
+	configService, err := do.Invoke[*ConfigService](injector)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := configService.Get()
-	logger := do.MustInvoke[*LoggerService](injector).SlogLogger
-	manager := extension.NewManager(logger)
+
+	loggerService, err := do.Invoke[*LoggerService](injector)
+	if err != nil {
+		return nil, err
+	}
+
+	manager := extension.NewManager(loggerService.SlogLogger)
 	state := extension.ManagerState{Configured: []extension.ResolvedSource{}, Loaded: []extension.LoadedExtension{}}
 
 	if cfg.Extensions.Enabled {
@@ -34,7 +42,17 @@ func NewExtensionService(injector do.Injector) (*ExtensionService, error) {
 		state.Configured = resolvedSources
 
 		paths := extensionLoadPaths(resolvedSources)
-		if err := manager.LoadPaths(context.Background(), paths); err != nil {
+
+		ctx, err := applicationContext(injector)
+		if err != nil {
+			manager.Shutdown()
+
+			return nil, err
+		}
+
+		if err := manager.LoadPaths(ctx, paths); err != nil {
+			manager.Shutdown()
+
 			return nil, oops.In("extension").Code("load_extensions").Wrapf(err, "load lua extensions")
 		}
 

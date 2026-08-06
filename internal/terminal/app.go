@@ -439,6 +439,8 @@ func (app *App) runLoopStep(
 	dirty bool,
 ) (shouldQuit, nextDirty bool) {
 	select {
+	case <-ctx.Done():
+		return true, false
 	case event := <-app.screen.EventQ():
 		return app.handleLoopEvent(ctx, event)
 	case <-app.workTick(workTicker):

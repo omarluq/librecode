@@ -87,14 +87,38 @@ func validatePromptRunOptions(options promptRunOptions) error {
 	return nil
 }
 
+type promptRunner func(*assistant.Runtime, *cobra.Command, promptRunOptions, string) error
+
 func runPromptWithContainer(
 	cmd *cobra.Command,
 	container *di.Container,
 	options promptRunOptions,
 	message string,
 ) error {
-	runtime := container.AssistantService().Runtime
+	return runPromptWithContainerAndRunner(cmd, container, options, message, runPromptRuntime)
+}
 
+func runPromptWithContainerAndRunner(
+	cmd *cobra.Command,
+	container *di.Container,
+	options promptRunOptions,
+	message string,
+	run promptRunner,
+) error {
+	runtimeServices, err := container.StartRuntime()
+	if err != nil {
+		return cliError(err, "start runtime services")
+	}
+
+	return run(runtimeServices.Assistant.Runtime, cmd, options, message)
+}
+
+func runPromptRuntime(
+	runtime *assistant.Runtime,
+	cmd *cobra.Command,
+	options promptRunOptions,
+	message string,
+) error {
 	cwd, err := assistant.DefaultCWD("")
 	if err != nil {
 		return cliError(err, cliResolveWorkingDirectory)

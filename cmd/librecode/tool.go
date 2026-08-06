@@ -16,7 +16,7 @@ const toolJSONStdinLimitBytes int64 = 1 << 20
 
 func newToolCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "tool",
+		Use:   toolUse,
 		Short: "Run librecode-style built-in coding tools",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -40,9 +40,12 @@ func newToolListCmd() *cobra.Command {
 
 func runToolList(cmd *cobra.Command, _ []string) error {
 	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-		registry := container.ToolService().Registry
+		service, err := container.ToolService()
+		if err != nil {
+			return cliError(err, "resolve tool service")
+		}
 
-		definitions := registry.Definitions()
+		definitions := service.Registry.Definitions()
 		for index := range definitions {
 			if err := printToolDefinition(cmd, &definitions[index]); err != nil {
 				return err
@@ -67,7 +70,10 @@ func newToolRunCmd() *cobra.Command {
 			}
 
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
-				service := container.ToolService()
+				service, err := container.ToolService()
+				if err != nil {
+					return cliError(err, "resolve tool service")
+				}
 
 				registry, err := toolRegistryForCWD(service, cwd)
 				if err != nil {
