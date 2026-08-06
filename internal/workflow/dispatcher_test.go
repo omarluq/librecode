@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -143,6 +144,16 @@ func TestStoppedDispatcherWaitsForStart(t *testing.T) {
 		Buffer: 1, Interval: time.Millisecond,
 	})
 	require.NoError(t, err)
+
+	var (
+		nilContext context.Context
+		coded      oops.OopsError
+	)
+
+	err = dispatcher.Start(nilContext)
+	require.ErrorAs(t, err, &coded)
+	assert.Equal(t, "nil_start_context", coded.Code())
+
 	t.Cleanup(func() { require.NoError(t, dispatcher.Shutdown(context.Background())) })
 
 	persisted, found, err := repository.Get(t.Context(), run.Task.ID)
