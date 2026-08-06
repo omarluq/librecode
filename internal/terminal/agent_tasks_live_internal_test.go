@@ -38,8 +38,8 @@ func TestInspectedAgentTaskRendersLiveStreamAndReloadsOnCompletion(t *testing.T)
 	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{task.Task.ID: &task}, nil)
 	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
 		options.Sessions = sessions
+		options.AgentTasks = stub
 	})
-	runtime.SetAgentTaskController(stub)
 
 	app := newRenderTestApp(t)
 	app.runtime = runtime
@@ -190,8 +190,8 @@ func TestInspectRunningAgentTaskReplaysActivityEmittedBeforeSubscription(t *test
 	}
 	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
 		options.Sessions = sessions
+		options.AgentTasks = controller
 	})
-	runtime.SetAgentTaskController(controller)
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
@@ -247,8 +247,10 @@ func TestNestedAgentTaskReturnResumesAndReplaysParentActivity(t *testing.T) {
 			Kind: assistant.StreamEventTextDelta, Text: "parent resumed activity",
 		})},
 	}
-	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) { options.Sessions = sessions })
-	runtime.SetAgentTaskController(controller)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.Sessions = sessions
+		options.AgentTasks = controller
+	})
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
@@ -298,8 +300,9 @@ func TestAgentTaskWatcherReplaysLiveSequenceGap(t *testing.T) {
 		calls: 0,
 		mu:    sync.Mutex{},
 	}
-	runtime := assistant.NewRuntimeForTest(nil)
-	runtime.SetAgentTaskController(controller)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = controller
+	})
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
@@ -341,8 +344,9 @@ func TestAgentTaskSequenceGapReplaysDurableEvents(t *testing.T) {
 			}),
 		},
 	}
-	runtime := assistant.NewRuntimeForTest(nil)
-	runtime.SetAgentTaskController(controller)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = controller
+	})
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
@@ -371,8 +375,9 @@ func TestAgentTaskGapReplayErrorStopsBeforeOutOfOrderEvent(t *testing.T) {
 		calls:                   0,
 		mu:                      sync.Mutex{},
 	}
-	runtime := assistant.NewRuntimeForTest(nil)
-	runtime.SetAgentTaskController(controller)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = controller
+	})
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
@@ -414,8 +419,9 @@ func TestAgentTaskReplayQueryErrorIsSurfaced(t *testing.T) {
 		calls:                   0,
 		mu:                      sync.Mutex{},
 	}
-	runtime := assistant.NewRuntimeForTest(nil)
-	runtime.SetAgentTaskController(controller)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = controller
+	})
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
@@ -592,8 +598,9 @@ func TestAgentTaskReplayErrorDoesNotImmediatelyRestartFailedWatch(t *testing.T) 
 		calls: 0,
 		mu:    sync.Mutex{},
 	}
-	runtime := assistant.NewRuntimeForTest(nil)
-	runtime.SetAgentTaskController(controller)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = controller
+	})
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
@@ -644,8 +651,9 @@ func TestOrdinaryAgentTaskWatchReplaysPersistedTerminalEvent(t *testing.T) {
 			},
 		}},
 	}
-	runtime := assistant.NewRuntimeForTest(nil)
-	runtime.SetAgentTaskController(controller)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = controller
+	})
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
@@ -688,8 +696,9 @@ func TestAgentTaskSequenceGapReplaysTerminalInOrder(t *testing.T) {
 			},
 		},
 	}
-	runtime := assistant.NewRuntimeForTest(nil)
-	runtime.SetAgentTaskController(controller)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = controller
+	})
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)
@@ -729,8 +738,9 @@ func TestUnexpectedAgentTaskWatchClosureClearsRegistration(t *testing.T) {
 		agentTaskControllerStub: newAgentTaskControllerStub(nil, nil),
 		events:                  nil,
 	}
-	runtime := assistant.NewRuntimeForTest(nil)
-	runtime.SetAgentTaskController(controller)
+	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = controller
+	})
 
 	screen := newClipboardScreen()
 	app := newRenderTestApp(t)

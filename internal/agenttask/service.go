@@ -93,27 +93,32 @@ type Service struct {
 	runner                     Runner
 	getTaskFn                  func(context.Context, string) (*database.TaskEntity, bool, error)
 	renewLeaseFn               func(context.Context, string, string, time.Time) (bool, error)
+	ctx                        context.Context
 	active                     map[string]context.CancelFunc
 	subscribers                map[string]map[uint64]chan database.TaskEventEntity
+	sessionSlots               map[string]chan struct{}
 	agentTasks                 *database.AgentTaskRepository
 	workflows                  *database.WorkflowRepository
+	tasks                      *database.TaskRepository
 	queue                      chan string
 	cancel                     context.CancelFunc
 	done                       <-chan struct{}
-	sessionSlots               map[string]chan struct{}
-	tasks                      *database.TaskRepository
 	logger                     *slog.Logger
 	leaseOwner                 string
 	wg                         sync.WaitGroup
+	mu                         sync.Mutex
+	lifecycle                  sync.Mutex
 	nextSubscriber             uint64
 	timeout                    time.Duration
-	sessionConcurrency         int
 	leaseDuration              time.Duration
 	leaseHeartbeatInterval     time.Duration
 	leaseRenewalRetryInterval  time.Duration
 	leaseRenewalAttemptTimeout time.Duration
 	leaseRenewalAttempts       int
-	mu                         sync.Mutex
+	concurrency                int
+	sessionConcurrency         int
+	started                    bool
+	closed                     bool
 }
 
 func invalidOptions(options *Options) bool {
@@ -122,6 +127,20 @@ func invalidOptions(options *Options) bool {
 
 // New creates and starts a task service.
 func New(ctx context.Context, options *Options) (*Service, error) {
+	service, err := NewStopped(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := service.Start(ctx); err != nil {
+		return nil, err
+	}
+
+	return service, nil
+}
+
+// NewStopped creates a task service without starting its workers.
+func NewStopped(ctx context.Context, options *Options) (*Service, error) {
 	if invalidOptions(options) {
 		return nil, errors.New("agenttask: tasks, agent tasks, and runner are required")
 	}
@@ -153,12 +172,13 @@ func New(ctx context.Context, options *Options) (*Service, error) {
 		sessionSlots:   make(map[string]chan struct{}),
 		subscribers:    make(map[string]map[uint64]chan database.TaskEventEntity),
 		nextSubscriber: 0, wg: sync.WaitGroup{}, timeout: timeout,
-		sessionConcurrency: sessionConcurrency, logger: logger, leaseOwner: leaseOwner,
+		concurrency: concurrency, sessionConcurrency: sessionConcurrency, logger: logger, leaseOwner: leaseOwner,
 		getTaskFn: options.Tasks.Get, renewLeaseFn: options.Tasks.RenewLease, leaseDuration: leaseDuration,
 		leaseHeartbeatInterval:     leaseHeartbeatInterval,
 		leaseRenewalRetryInterval:  leaseRenewalRetryInterval,
 		leaseRenewalAttemptTimeout: leaseRenewalAttemptTimeout,
 		leaseRenewalAttempts:       leaseRenewalAttempts, mu: sync.Mutex{},
+		lifecycle: sync.Mutex{}, ctx: serviceCtx, started: false, closed: false,
 	}
 	if err := service.recoverInterrupted(ctx); err != nil {
 		cancel()
@@ -166,19 +186,39 @@ func New(ctx context.Context, options *Options) (*Service, error) {
 		return nil, err
 	}
 
-	for range concurrency {
-		service.wg.Add(1)
-		go service.worker(serviceCtx)
-	}
-
-	if err := service.enqueueRecovered(ctx, serviceCtx); err != nil {
-		cancel()
-		service.wg.Wait()
-
-		return nil, err
-	}
-
 	return service, nil
+}
+
+// Start launches workers and queues recovered tasks.
+func (service *Service) Start(ctx context.Context) error {
+	service.lifecycle.Lock()
+	defer service.lifecycle.Unlock()
+
+	if service.closed {
+		return oops.In("agenttask").Code("service_stopped").Errorf("task service is stopped")
+	}
+
+	if service.started {
+		return nil
+	}
+
+	for range service.concurrency {
+		service.wg.Add(1)
+		go service.worker(service.ctx)
+	}
+
+	if err := service.enqueueRecovered(ctx, service.ctx); err != nil {
+		service.cancel()
+		service.wg.Wait()
+		service.closed = true
+		service.closeSubscriptions()
+
+		return err
+	}
+
+	service.started = true
+
+	return nil
 }
 
 func optionDefaults(options *Options) (
@@ -360,6 +400,25 @@ func (service *Service) Events(
 // Subscribe follows newly persisted events for a task. Delivery is bounded and
 // best-effort; callers recover gaps using Events and the event sequence.
 func (service *Service) Subscribe(taskID string) Subscription {
+	subscription, err := service.subscribe(taskID)
+	if err == nil {
+		return subscription
+	}
+
+	channel := make(chan database.TaskEventEntity)
+	close(channel)
+
+	return Subscription{Events: channel, Cancel: func() {}}
+}
+
+func (service *Service) subscribe(taskID string) (Subscription, error) {
+	service.lifecycle.Lock()
+	defer service.lifecycle.Unlock()
+
+	if service.closed {
+		return Subscription{}, oops.In("agenttask").Code("service_stopped").Errorf("task service is stopped")
+	}
+
 	channel := make(chan database.TaskEventEntity, eventBuffer)
 
 	service.mu.Lock()
@@ -391,16 +450,19 @@ func (service *Service) Subscribe(taskID string) Subscription {
 			}
 			service.mu.Unlock()
 		})
-	}}
+	}}, nil
 }
 
 // SubscribeAgentTask exposes task completion notifications through the assistant boundary.
 func (service *Service) SubscribeAgentTask(
 	taskID string,
-) (events <-chan database.TaskEventEntity, cancel func()) {
-	subscription := service.Subscribe(taskID)
+) (events <-chan database.TaskEventEntity, cancel func(), err error) {
+	subscription, err := service.subscribe(taskID)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	return subscription.Events, subscription.Cancel
+	return subscription.Events, subscription.Cancel, nil
 }
 
 // Cancel requests cancellation without allowing terminal states to change.
@@ -500,8 +562,17 @@ func (service *Service) Await(ctx context.Context, taskID string) (*database.Age
 
 // Shutdown cancels active work and waits for all workers.
 func (service *Service) Shutdown(ctx context.Context) error {
+	service.lifecycle.Lock()
+	if service.closed {
+		service.lifecycle.Unlock()
+
+		return nil
+	}
+
+	service.closed = true
 	service.cancel()
 	service.closeSubscriptions()
+	service.lifecycle.Unlock()
 
 	done := make(chan struct{})
 

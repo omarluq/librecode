@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -23,7 +22,7 @@ func TestChatCompositionStartsRuntimeAndInvokesTerminal(t *testing.T) {
 	cmd.SetContext(t.Context())
 
 	called := false
-	chatOptions := chatRunOptions{SessionID: "", ResumeID: "", Resume: false}
+	chatOptions := chatRunOptions{SessionID: testSessionID, ResumeID: "", Resume: false}
 	err := runChatWithContainer(cmd, container, chatOptions, func(
 		ctx context.Context,
 		options *terminal.RunOptions,
@@ -38,6 +37,12 @@ func TestChatCompositionStartsRuntimeAndInvokesTerminal(t *testing.T) {
 		require.NotNil(t, options.Models)
 		require.NotNil(t, options.Auth)
 		assert.NotNil(t, options.Config)
+		assert.True(t, filepath.IsAbs(options.CWD))
+		assert.Equal(t, chatOptions.SessionID, options.SessionID)
+
+		tasks, err := options.Runtime.AgentTasks(ctx, "missing", 1)
+		require.NoError(t, err)
+		assert.Empty(t, tasks)
 
 		return nil
 	})
@@ -89,6 +94,10 @@ func TestPromptCompositionStartsRuntimeAndInvokesRunner(t *testing.T) {
 			assert.Equal(t, "hello", message)
 			assert.Equal(t, promptOptions, options)
 
+			tasks, err := runtime.AgentTasks(gotCmd.Context(), "missing", 1)
+			require.NoError(t, err)
+			assert.Empty(t, tasks)
+
 			return nil
 		},
 	)
@@ -122,53 +131,70 @@ func TestPromptCompositionPropagatesRunnerError(t *testing.T) {
 func TestRuntimeCompositionRejectsClosedContainer(t *testing.T) {
 	t.Parallel()
 
-	container := newRuntimeTestContainer(t, false)
-	assert.True(t, container.ShutdownWithContext(context.Background()).Succeed)
+	tests := []struct {
+		run  func(*cobra.Command, *di.Container, *bool) error
+		name string
+	}{
+		{
+			name: "chat",
+			run: func(cmd *cobra.Command, container *di.Container, called *bool) error {
+				return runChatWithContainer(
+					cmd,
+					container,
+					chatRunOptions{SessionID: "", ResumeID: "", Resume: false},
+					func(context.Context, *terminal.RunOptions) error {
+						*called = true
 
-	cmd := &cobra.Command{}
-	cmd.SetContext(t.Context())
-
-	chatCalled := false
-	err := runChatWithContainer(cmd, container, chatRunOptions{SessionID: "", ResumeID: "", Resume: false}, func(
-		context.Context,
-		*terminal.RunOptions,
-	) error {
-		chatCalled = true
-
-		return nil
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "start runtime services")
-	assert.False(t, chatCalled)
-
-	promptCalled := false
-	err = runPromptWithContainerAndRunner(
-		cmd,
-		container,
-		promptRunOptions{SessionID: "", SessionName: "", ToolStrategy: "", MetricsJSON: "", Resume: false},
-		"hello",
-		func(*assistant.Runtime, *cobra.Command, promptRunOptions, string) error {
-			promptCalled = true
-
-			return nil
+						return nil
+					},
+				)
+			},
 		},
-	)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "start runtime services")
-	assert.False(t, promptCalled)
+		{
+			name: promptUse,
+			run: func(cmd *cobra.Command, container *di.Container, called *bool) error {
+				return runPromptWithContainerAndRunner(
+					cmd,
+					container,
+					promptRunOptions{
+						SessionID: "", SessionName: "", ToolStrategy: "", MetricsJSON: "", Resume: false,
+					},
+					"hello",
+					func(*assistant.Runtime, *cobra.Command, promptRunOptions, string) error {
+						*called = true
+
+						return nil
+					},
+				)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			container := newRuntimeTestContainer(t, false)
+			require.True(t, container.ShutdownWithContext(context.Background()).Succeed)
+
+			cmd := &cobra.Command{}
+			cmd.SetContext(t.Context())
+
+			called := false
+			err := test.run(cmd, container, &called)
+
+			require.ErrorContains(t, err, "start runtime services")
+			assert.False(t, called)
+		})
+	}
 }
 
 func newRuntimeTestContainer(t *testing.T, interactive bool) *di.Container {
 	t.Helper()
 
-	databasePath := filepath.Join(t.TempDir(), "librecode.db")
-	config := fmt.Sprintf(
-		"database:\n  path: %q\nmodels:\n  discovery:\n    enabled: false\nextensions:\n  use: []\n",
-		databasePath,
-	)
 	container, err := di.NewContainer(
 		t.Context(),
-		writeTestConfig(t, config),
+		writeLifecycleTestConfig(t),
 		di.ConfigOverrides{DisableExtensions: true, Interactive: interactive},
 	)
 	require.NoError(t, err)

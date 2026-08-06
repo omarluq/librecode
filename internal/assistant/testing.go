@@ -12,15 +12,17 @@ import (
 
 // RuntimeTestOptions holds optional Runtime dependencies for test factories.
 type RuntimeTestOptions struct {
-	Config      *config.Config
-	Sessions    *database.SessionRepository
-	Extensions  runtimeExtensions
-	Cache       *ResponseCache
-	Models      *model.Registry
-	Client      Completer
-	Logger      *slog.Logger
-	SkillsCache *core.SkillsCache
-	Agents      *agent.Catalog
+	Config            *config.Config
+	Sessions          *database.SessionRepository
+	Extensions        runtimeExtensions
+	Cache             *ResponseCache
+	Models            *model.Registry
+	Client            Completer
+	Logger            *slog.Logger
+	SkillsCache       *core.SkillsCache
+	Agents            *agent.Catalog
+	AgentTasks        AgentTaskController
+	WorkflowSubmitter WorkflowSubmitter
 }
 
 // NewRuntimeForTest builds a Runtime from the given setup closure, setting every
@@ -29,29 +31,33 @@ type RuntimeTestOptions struct {
 // warnings when exhaustruct forces every field to be listed).
 func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
 	opts := &RuntimeTestOptions{
-		Config:      nil,
-		Sessions:    nil,
-		Extensions:  nil,
-		Cache:       nil,
-		Models:      nil,
-		Client:      nil,
-		Logger:      nil,
-		SkillsCache: nil,
-		Agents:      nil,
+		Config:            nil,
+		Sessions:          nil,
+		Extensions:        nil,
+		Cache:             nil,
+		Models:            nil,
+		Client:            nil,
+		Logger:            nil,
+		SkillsCache:       nil,
+		Agents:            nil,
+		AgentTasks:        nil,
+		WorkflowSubmitter: nil,
 	}
 	if setup != nil {
 		setup(opts)
 	}
 
 	return NewRuntime(&RuntimeOptions{
-		Config:      opts.Config,
-		Sessions:    opts.Sessions,
-		Extensions:  opts.Extensions,
-		Cache:       opts.Cache,
-		Models:      opts.Models,
-		Client:      opts.Client,
-		Logger:      opts.Logger,
-		SkillsCache: opts.SkillsCache,
-		Agents:      opts.Agents,
+		Config:            opts.Config,
+		Sessions:          opts.Sessions,
+		Extensions:        opts.Extensions,
+		Cache:             opts.Cache,
+		Models:            opts.Models,
+		Client:            opts.Client,
+		Logger:            opts.Logger,
+		SkillsCache:       opts.SkillsCache,
+		Agents:            opts.Agents,
+		AgentTasks:        opts.AgentTasks,
+		WorkflowSubmitter: opts.WorkflowSubmitter,
 	})
 }

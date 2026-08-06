@@ -18,12 +18,13 @@ const workflowToolName tool.Name = "workflow"
 
 const workflowTaskIDKey = "workflow_task_id"
 
-type workflowSubmitter interface {
+// WorkflowSubmitter is the runtime-facing boundary for durable workflows.
+type WorkflowSubmitter interface {
 	Submit(context.Context, *workflow.ServiceRequest) (*database.WorkflowRunEntity, error)
 }
 
 type workflowToolExecutor struct {
-	submitter      workflowSubmitter
+	submitter      WorkflowSubmitter
 	ownerSessionID string
 }
 

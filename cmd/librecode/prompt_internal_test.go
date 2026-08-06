@@ -18,8 +18,6 @@ const testSessionName = "named"
 func TestValidatePromptRunOptions(t *testing.T) {
 	t.Parallel()
 
-	const testSessionID = "session-1"
-
 	tests := []struct {
 		wantErr string
 		name    string

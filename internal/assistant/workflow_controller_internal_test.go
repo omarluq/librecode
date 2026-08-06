@@ -68,11 +68,11 @@ func (stub *workflowControllerTaskStub) Await(
 
 func (*workflowControllerTaskStub) SubscribeAgentTask(
 	string,
-) (events <-chan database.TaskEventEntity, unsubscribe func()) {
+) (events <-chan database.TaskEventEntity, unsubscribe func(), err error) {
 	eventChannel := make(chan database.TaskEventEntity)
 	close(eventChannel)
 
-	return eventChannel, func() {}
+	return eventChannel, func() {}, nil
 }
 
 func TestNewWorkflowControllerValidatesDependencies(t *testing.T) {

@@ -6,5 +6,6 @@ const (
 	listUse          = "list"
 	modelUse         = "model"
 	noExtensionsFlag = "--no-extensions"
+	promptUse        = "prompt"
 	toolUse          = "tool"
 )

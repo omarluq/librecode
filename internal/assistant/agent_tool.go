@@ -51,7 +51,7 @@ type AgentTaskController interface {
 	List(context.Context, string, int) ([]database.AgentTaskEntity, error)
 	Cancel(context.Context, string, string) (*database.TaskEntity, bool, error)
 	Await(context.Context, string) (*database.AgentTaskEntity, error)
-	SubscribeAgentTask(string) (events <-chan database.TaskEventEntity, cancel func())
+	SubscribeAgentTask(string) (events <-chan database.TaskEventEntity, cancel func(), err error)
 }
 
 type agentToolExecutor struct {

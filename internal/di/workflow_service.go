@@ -2,6 +2,7 @@ package di
 
 import (
 	"context"
+	"sync"
 
 	"github.com/samber/do/v2"
 
@@ -11,11 +12,12 @@ import (
 
 // WorkflowService owns script-driven durable agent orchestration.
 type WorkflowService struct {
-	Runner     *workflow.Runner
-	Runs       *workflow.Service
+	runner     *workflow.Runner
+	runs       *workflow.Service
 	database   *DatabaseService
 	assistant  *AssistantService
 	agentTasks *AgentTaskService
+	lifecycle  sync.Mutex
 }
 
 // NewWorkflowService wires workflow execution to the durable agent scheduler.
@@ -36,18 +38,40 @@ func NewWorkflowService(injector do.Injector) (*WorkflowService, error) {
 	}
 
 	return &WorkflowService{
-		Runner: nil, Runs: nil, database: databaseService, assistant: assistantService, agentTasks: agentTaskService,
+		runner: nil, runs: nil, database: databaseService, assistant: assistantService, agentTasks: agentTaskService,
+		lifecycle: sync.Mutex{},
 	}, nil
+}
+
+// Runner returns the constructed workflow runner, if startup reached that stage.
+func (service *WorkflowService) Runner() *workflow.Runner {
+	service.lifecycle.Lock()
+	defer service.lifecycle.Unlock()
+
+	return service.runner
+}
+
+// Runs returns the constructed durable workflow service, if startup reached that stage.
+func (service *WorkflowService) Runs() *workflow.Service {
+	service.lifecycle.Lock()
+	defer service.lifecycle.Unlock()
+
+	return service.runs
 }
 
 // Start constructs workflow orchestration and recovers interrupted runs.
 func (service *WorkflowService) Start(ctx context.Context) error {
-	if service.Runs != nil {
+	service.lifecycle.Lock()
+	defer service.lifecycle.Unlock()
+
+	if service.runs != nil {
 		return nil
 	}
 
+	tasks := service.agentTasks.Tasks()
+
 	submitter, err := assistant.NewAgentSubmitter(
-		service.agentTasks.Tasks,
+		tasks,
 		service.assistant.Agents,
 	)
 	if err != nil {
@@ -56,7 +80,7 @@ func (service *WorkflowService) Start(ctx context.Context) error {
 
 	controller, err := assistant.NewWorkflowController(
 		submitter,
-		service.agentTasks.Tasks,
+		tasks,
 		service.database.Sessions,
 	)
 	if err != nil {
@@ -77,8 +101,8 @@ func (service *WorkflowService) Start(ctx context.Context) error {
 		return serviceError(recoverErr, "recover interrupted workflows")
 	}
 
-	service.Runner = runner
-	service.Runs = runs
+	service.runner = runner
+	service.runs = runs
 
 	return nil
 }

@@ -114,7 +114,8 @@ func TestServiceAgentTaskAdaptersAndSubscriptionCancellation(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	events, cancel := service.SubscribeAgentTask(created.Task.ID)
+	events, cancel, err := service.SubscribeAgentTask(created.Task.ID)
+	require.NoError(t, err)
 	cancel()
 	cancel() // Cancellation is intentionally idempotent.
 	requireChannelClosed(t, events)
@@ -122,6 +123,23 @@ func TestServiceAgentTaskAdaptersAndSubscriptionCancellation(t *testing.T) {
 	completed, err := service.Await(t.Context(), created.Task.ID)
 	require.NoError(t, err)
 	assert.Equal(t, database.TaskSucceeded, completed.Task.State)
+}
+
+func TestServiceRejectsSubscriptionsAfterShutdown(t *testing.T) {
+	t.Parallel()
+
+	tasks, agentTasks, _ := repositories(t)
+	service := newService(t, tasks, agentTasks, new(fakeRunner))
+	require.NoError(t, service.Shutdown(t.Context()))
+
+	events, cancel, err := service.SubscribeAgentTask("task")
+	require.ErrorContains(t, err, "task service is stopped")
+	assert.Nil(t, events)
+	assert.Nil(t, cancel)
+
+	subscription := service.Subscribe("task")
+	requireChannelClosed(t, subscription.Events)
+	subscription.Cancel()
 }
 
 func TestServiceRejectsWorkflowSubmissionWithoutRepository(t *testing.T) {
@@ -358,6 +376,49 @@ func TestSecondServiceDoesNotInterruptLiveTask(t *testing.T) {
 	completed, err := first.Await(t.Context(), created.Task.ID)
 	require.NoError(t, err)
 	assert.Equal(t, database.TaskSucceeded, completed.Task.State)
+}
+
+func TestStoppedServiceDoesNotRunQueuedTasksUntilStarted(t *testing.T) {
+	t.Parallel()
+
+	tasks, agentTasks, sessions := repositories(t)
+	parent := createSession(t, sessions, "parent", "")
+	child := createSession(t, sessions, "child", parent.ID)
+	created, err := agentTasks.Create(t.Context(), &database.AgentTaskEntity{
+		Task: database.TaskEntity{
+			ID: "", Kind: database.TaskKindAgent, ParentTaskID: "", OwnerSessionID: parent.ID,
+			ConcurrencyKey: parent.ID, State: database.TaskQueued, Result: "", ErrorCode: "", ErrorMessage: "",
+			LeaseOwner: "", CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{},
+			LeaseExpiresAt: nil,
+		},
+		ChildSessionID: child.ID, AgentName: "general", Prompt: "queued", Model: "", Provider: "",
+		PolicyJSON: "{}", UsageJSON: "{}", Depth: 1,
+	})
+	require.NoError(t, err)
+
+	runner := &fakeRunner{
+		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
+	}
+	service, err := agenttask.NewStopped(t.Context(), &agenttask.Options{
+		Tasks: tasks, AgentTasks: agentTasks, Workflows: nil, Runner: runner, Logger: nil,
+		Concurrency: 1, SessionConcurrency: 1, QueueCapacity: 1, Timeout: time.Minute,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		runner.unblock()
+		require.NoError(t, service.Shutdown(context.Background()))
+	})
+
+	select {
+	case <-runner.started:
+		t.Fatal("stopped service ran queued task before start")
+	default:
+	}
+
+	require.NoError(t, service.Start(t.Context()))
+	require.Equal(t, created.Task.ID, awaitStarted(t, runner.started))
+	require.NoError(t, service.Start(t.Context()))
 }
 
 func TestServiceEnforcesSessionConcurrency(t *testing.T) {

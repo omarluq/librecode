@@ -113,7 +113,7 @@ func runChatWithContainer(
 		Extensions: services.extension.Manager,
 		Resources:  &resources,
 		Runtime:    runtime,
-		Workflows:  services.workflows.Runs,
+		Workflows:  services.workflows.Runs(),
 		Settings:   services.database.Documents,
 		Models:     services.models.Registry,
 		Auth:       services.auth.Storage,

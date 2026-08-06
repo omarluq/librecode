@@ -76,12 +76,12 @@ func (stub *agentControllerStub) Await(context.Context, string) (*database.Agent
 }
 func (stub *agentControllerStub) SubscribeAgentTask(
 	string,
-) (events <-chan database.TaskEventEntity, cancel func()) {
+) (events <-chan database.TaskEventEntity, cancel func(), err error) {
 	stub.subscriptions++
 	channel := make(chan database.TaskEventEntity)
 	close(channel)
 
-	return channel, func() {}
+	return channel, func() {}, nil
 }
 
 func TestAgentToolDefinitionsAndDispatch(t *testing.T) {
