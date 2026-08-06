@@ -39,7 +39,7 @@ func newSessionNewCmd() *cobra.Command {
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 				service, err := container.DatabaseService()
 				if err != nil {
-					return cliError(err, "resolve database service")
+					return cliError(err, cliResolveDatabaseService)
 				}
 
 				repository := service.Sessions
@@ -73,7 +73,7 @@ func runSessionList(cmd *cobra.Command, _ []string) error {
 	return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 		service, err := container.DatabaseService()
 		if err != nil {
-			return cliError(err, "resolve database service")
+			return cliError(err, cliResolveDatabaseService)
 		}
 
 		cwd, err := assistant.DefaultCWD("")
@@ -105,7 +105,7 @@ func newSessionShowCmd() *cobra.Command {
 			return withContainer(cmd.Context(), commandOptionsFromCommand(cmd), func(container *di.Container) error {
 				service, err := container.DatabaseService()
 				if err != nil {
-					return cliError(err, "resolve database service")
+					return cliError(err, cliResolveDatabaseService)
 				}
 
 				repository := service.Sessions
