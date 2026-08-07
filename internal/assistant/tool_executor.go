@@ -26,13 +26,197 @@ func (runtime *Runtime) executeProviderToolCalls(
 			return nil, oops.In("assistant").Code("tool_registry_missing").Errorf("tool registry is not configured")
 		}
 
-		events := make([]ToolEvent, 0, len(calls))
-		for index := range calls {
-			events = append(events, runtime.executeProviderToolCall(ctx, registry, &calls[index], onEvent))
+		prepared := runtime.prepareProviderToolCalls(ctx, registry, calls)
+
+		return runtime.runPreparedToolCalls(ctx, prepared, onEvent), nil
+	}
+}
+
+type preparedToolCall struct {
+	err               error
+	call              *ToolCallEvent
+	invocation        tool.PreparedCall
+	result            tool.Result
+	lifecycleRejected bool
+	ready             bool
+}
+
+func (runtime *Runtime) prepareProviderToolCalls(
+	ctx context.Context,
+	registry *tool.Registry,
+	calls []ToolCall,
+) []preparedToolCall {
+	prepared := make([]preparedToolCall, len(calls))
+	for index := range calls {
+		prepared[index] = runtime.prepareProviderToolCall(ctx, registry, &calls[index])
+	}
+
+	return prepared
+}
+
+func (runtime *Runtime) runPreparedToolCalls(
+	ctx context.Context,
+	prepared []preparedToolCall,
+	onEvent func(StreamEvent),
+) []ToolEvent {
+	defer releasePreparedToolCalls(prepared)
+
+	return runtime.executePreparedToolCalls(ctx, prepared, onEvent)
+}
+
+func releasePreparedToolCalls(calls []preparedToolCall) {
+	for index := range calls {
+		calls[index].invocation.Release()
+	}
+}
+
+func (runtime *Runtime) prepareProviderToolCall(
+	ctx context.Context,
+	registry *tool.Registry,
+	call *ToolCall,
+) preparedToolCall {
+	callEvent := toolCallEvent(call)
+
+	prepared := preparedToolCall{
+		err:               nil,
+		call:              &callEvent,
+		invocation:        tool.PreparedCall{},
+		result:            tool.Result{Details: nil, Content: nil},
+		lifecycleRejected: false,
+		ready:             false,
+	}
+	if err := runtime.dispatchToolCallLifecycle(ctx, prepared.call); err != nil {
+		prepared.err = err
+		prepared.lifecycleRejected = true
+
+		return prepared
+	}
+
+	prepared.invocation, prepared.err = registry.Prepare(prepared.call.Name, prepared.call.Arguments)
+	prepared.ready = prepared.err == nil
+
+	return prepared
+}
+
+func (runtime *Runtime) executePreparedToolCalls(
+	ctx context.Context,
+	calls []preparedToolCall,
+	onEvent func(StreamEvent),
+) []ToolEvent {
+	for index := range calls {
+		if !calls[index].lifecycleRejected {
+			emitProviderToolStart(onEvent, calls[index].call)
 		}
 
-		return events, nil
+		if calls[index].ready {
+			calls[index].invocation.Admit()
+		}
 	}
+
+	events := make([]ToolEvent, len(calls))
+	if batchRequiresSequentialExecution(calls) {
+		for index := range calls {
+			runtime.executePreparedToolCall(ctx, &calls[index], onEvent)
+			events[index] = runtime.finalizePreparedToolCall(ctx, &calls[index], onEvent)
+		}
+
+		return events
+	}
+
+	guardedEvent := serializedEventSink(onEvent)
+
+	completed := make(chan int, len(calls))
+	for index := range calls {
+		if !calls[index].ready {
+			completed <- index
+
+			continue
+		}
+
+		go func(index int) {
+			runtime.executePreparedToolCall(ctx, &calls[index], guardedEvent)
+
+			completed <- index
+		}(index)
+	}
+
+	for range calls {
+		index := <-completed
+		events[index] = runtime.finalizePreparedToolCall(ctx, &calls[index], guardedEvent)
+	}
+
+	return events
+}
+
+func batchRequiresSequentialExecution(calls []preparedToolCall) bool {
+	for index := range calls {
+		if calls[index].ready && calls[index].invocation.Sequential() {
+			return true
+		}
+	}
+
+	return false
+}
+
+func serializedEventSink(onEvent func(StreamEvent)) func(StreamEvent) {
+	if onEvent == nil {
+		return nil
+	}
+
+	var mu sync.Mutex
+
+	return func(event StreamEvent) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		onEvent(event)
+	}
+}
+
+func (*Runtime) executePreparedToolCall(
+	ctx context.Context,
+	prepared *preparedToolCall,
+	onEvent func(StreamEvent),
+) {
+	if prepared == nil || !prepared.ready {
+		return
+	}
+
+	scope := &toolInvocationScope{
+		onEvent: onEvent, parentCallID: prepared.call.ID, nextSequence: 0, mu: sync.Mutex{},
+	}
+	nestedCtx := context.WithValue(ctx, toolInvocationContextKey{}, scope)
+
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			prepared.invocation.Release()
+			prepared.err = fmt.Errorf("tool panicked: %v", recovered)
+		}
+	}()
+
+	prepared.result, prepared.err = (&prepared.invocation).Execute(nestedCtx)
+}
+
+func (runtime *Runtime) finalizePreparedToolCall(
+	ctx context.Context,
+	prepared *preparedToolCall,
+	onEvent func(StreamEvent),
+) ToolEvent {
+	if prepared.lifecycleRejected {
+		event := toolLifecycleErrorEvent(prepared.call, prepared.err)
+		emitProviderToolResult(onEvent, &event)
+
+		return event
+	}
+
+	event := toolEventFromResult(prepared.call, prepared.result, prepared.err)
+	if lifecycleErr := runtime.dispatchToolResultLifecycle(ctx, &event); lifecycleErr != nil && runtime.logger != nil {
+		runtime.logger.Debug("tool result lifecycle failed", "error", lifecycleErr)
+	}
+
+	emitProviderToolResult(onEvent, &event)
+
+	return event
 }
 
 type toolInvocationScope struct {
@@ -69,7 +253,14 @@ func (runtime *Runtime) executeProviderToolCall(
 	call *ToolCall,
 	onEvent func(StreamEvent),
 ) ToolEvent {
-	callEvent := ToolCallEvent{
+	callEvent := toolCallEvent(call)
+	event, _ := runtime.invokeToolResult(ctx, registry, &callEvent, onEvent)
+
+	return event
+}
+
+func toolCallEvent(call *ToolCall) ToolCallEvent {
+	event := ToolCallEvent{
 		ArgumentsJSON: "",
 		ID:            "",
 		ParentCallID:  "",
@@ -78,19 +269,17 @@ func (runtime *Runtime) executeProviderToolCall(
 		Sequence:      0,
 	}
 	if call != nil {
-		callEvent.Arguments = call.Arguments
-		callEvent.ID = call.ID
-		callEvent.ParentCallID = stringFromOptions(call.Metadata, toolParentCallIDMetadataKey)
-		callEvent.Name = call.Name
-		callEvent.ArgumentsJSON = call.ArgumentsJSON
-		callEvent.Sequence = sequenceFromOptions(call.Metadata)
+		event.Arguments = call.Arguments
+		event.ID = call.ID
+		event.ParentCallID = stringFromOptions(call.Metadata, toolParentCallIDMetadataKey)
+		event.Name = call.Name
+		event.ArgumentsJSON = call.ArgumentsJSON
+		event.Sequence = sequenceFromOptions(call.Metadata)
 	}
 
-	if callEvent.ID == "" {
-		callEvent.ID = uuid.Must(uuid.NewV7()).String()
+	if event.ID == "" {
+		event.ID = uuid.Must(uuid.NewV7()).String()
 	}
-
-	event, _ := runtime.invokeToolResult(ctx, registry, &callEvent, onEvent)
 
 	return event
 }

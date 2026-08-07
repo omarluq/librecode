@@ -24,10 +24,11 @@ type WriteTool struct {
 
 // NewWriteTool creates the write tool for cwd.
 func NewWriteTool(cwd string) *WriteTool {
-	return &WriteTool{
-		locks: newFileMutationLocks(),
-		cwd:   cwd,
-	}
+	return newWriteTool(cwd, newFileMutationLocks())
+}
+
+func newWriteTool(cwd string, locks *fileMutationLocks) *WriteTool {
+	return &WriteTool{locks: locks, cwd: cwd}
 }
 
 // Definition returns write tool metadata.
@@ -47,14 +48,42 @@ func (writeTool *WriteTool) Definition() Definition {
 
 // Execute runs the write tool.
 func (writeTool *WriteTool) Execute(ctx context.Context, input Arguments) (Result, error) {
-	var args WriteInput
-
-	err := decodeInput(input, &args)
+	prepared, err := writeTool.prepareExecution(input)
 	if err != nil {
 		return emptyToolResult(), err
 	}
 
-	return writeTool.Write(ctx, args)
+	return writeTool.locks.mutate(ctx, prepared.mutationPath, func() (Result, error) {
+		return prepared.execute(ctx)
+	})
+}
+
+func (writeTool *WriteTool) prepareExecution(input Arguments) (preparedExecution, error) {
+	var args WriteInput
+	if err := decodeInput(input, &args); err != nil {
+		return preparedExecution{}, err
+	}
+
+	if strings.TrimSpace(args.Path) == "" {
+		return preparedExecution{}, oops.In("tool").Code("write_path_required").Errorf("write path is required")
+	}
+
+	if args.Content == nil {
+		return preparedExecution{}, oops.In("tool").Code("write_content_required").Errorf("write content is required")
+	}
+
+	absolutePath, err := ResolveToCWD(args.Path, writeTool.cwd)
+	if err != nil {
+		return preparedExecution{}, oops.In("tool").Code("write_resolve_path").Wrapf(err, "resolve write path")
+	}
+
+	return preparedExecution{
+		execute: func(ctx context.Context) (Result, error) {
+			return writeTool.writeLocked(ctx, absolutePath, args)
+		},
+		mutationPath:  absolutePath,
+		mutationLocks: writeTool.locks,
+	}, nil
 }
 
 // Write creates or overwrites one file.
@@ -72,31 +101,35 @@ func (writeTool *WriteTool) Write(ctx context.Context, input WriteInput) (Result
 		return emptyToolResult(), oops.In("tool").Code("write_resolve_path").Wrapf(err, "resolve write path")
 	}
 
-	return writeTool.locks.mutate(absolutePath, func() (Result, error) {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return emptyToolResult(), ctxErr
-		}
-
-		if err := os.MkdirAll(filepath.Dir(absolutePath), privateDirMode); err != nil {
-			return emptyToolResult(), oops.In("tool").Code("write_create_parent").Wrapf(err, "create parent directory")
-		}
-
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return emptyToolResult(), ctxErr
-		}
-
-		content := *input.Content
-		if err := os.WriteFile(absolutePath, []byte(content), privateFileMode); err != nil {
-			return emptyToolResult(), oops.
-				In("tool").
-				Code("write_file").
-				With("path", input.Path).
-				Wrapf(err, "write file")
-		}
-
-		return TextResult(
-			fmt.Sprintf("Successfully wrote %s to %s", FormatSize(len(content)), input.Path),
-			map[string]any{},
-		), nil
+	return writeTool.locks.mutate(ctx, absolutePath, func() (Result, error) {
+		return writeTool.writeLocked(ctx, absolutePath, input)
 	})
+}
+
+func (*WriteTool) writeLocked(ctx context.Context, absolutePath string, input WriteInput) (Result, error) {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return emptyToolResult(), ctxErr
+	}
+
+	if err := os.MkdirAll(filepath.Dir(absolutePath), privateDirMode); err != nil {
+		return emptyToolResult(), oops.In("tool").Code("write_create_parent").Wrapf(err, "create parent directory")
+	}
+
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return emptyToolResult(), ctxErr
+	}
+
+	content := *input.Content
+	if err := os.WriteFile(absolutePath, []byte(content), privateFileMode); err != nil {
+		return emptyToolResult(), oops.
+			In("tool").
+			Code("write_file").
+			With("path", input.Path).
+			Wrapf(err, "write file")
+	}
+
+	return TextResult(
+		fmt.Sprintf("Successfully wrote %s to %s", FormatSize(len(content)), input.Path),
+		map[string]any{},
+	), nil
 }
