@@ -64,17 +64,9 @@ func (writeTool *WriteTool) prepareExecution(input Arguments) (preparedExecution
 		return preparedExecution{}, err
 	}
 
-	if strings.TrimSpace(args.Path) == "" {
-		return preparedExecution{}, oops.In("tool").Code("write_path_required").Errorf("write path is required")
-	}
-
-	if args.Content == nil {
-		return preparedExecution{}, oops.In("tool").Code("write_content_required").Errorf("write content is required")
-	}
-
-	absolutePath, err := ResolveToCWD(args.Path, writeTool.cwd)
+	absolutePath, err := writeTool.resolveInput(args)
 	if err != nil {
-		return preparedExecution{}, oops.In("tool").Code("write_resolve_path").Wrapf(err, "resolve write path")
+		return preparedExecution{}, err
 	}
 
 	return preparedExecution{
@@ -88,22 +80,31 @@ func (writeTool *WriteTool) prepareExecution(input Arguments) (preparedExecution
 
 // Write creates or overwrites one file.
 func (writeTool *WriteTool) Write(ctx context.Context, input WriteInput) (Result, error) {
-	if strings.TrimSpace(input.Path) == "" {
-		return emptyToolResult(), oops.In("tool").Code("write_path_required").Errorf("write path is required")
-	}
-
-	if input.Content == nil {
-		return emptyToolResult(), oops.In("tool").Code("write_content_required").Errorf("write content is required")
-	}
-
-	absolutePath, err := ResolveToCWD(input.Path, writeTool.cwd)
+	absolutePath, err := writeTool.resolveInput(input)
 	if err != nil {
-		return emptyToolResult(), oops.In("tool").Code("write_resolve_path").Wrapf(err, "resolve write path")
+		return emptyToolResult(), err
 	}
 
 	return writeTool.locks.mutate(ctx, absolutePath, func() (Result, error) {
 		return writeTool.writeLocked(ctx, absolutePath, input)
 	})
+}
+
+func (writeTool *WriteTool) resolveInput(input WriteInput) (string, error) {
+	if strings.TrimSpace(input.Path) == "" {
+		return "", oops.In("tool").Code("write_path_required").Errorf("write path is required")
+	}
+
+	if input.Content == nil {
+		return "", oops.In("tool").Code("write_content_required").Errorf("write content is required")
+	}
+
+	absolutePath, err := ResolveToCWD(input.Path, writeTool.cwd)
+	if err != nil {
+		return "", oops.In("tool").Code("write_resolve_path").Wrapf(err, "resolve write path")
+	}
+
+	return absolutePath, nil
 }
 
 func (*WriteTool) writeLocked(ctx context.Context, absolutePath string, input WriteInput) (Result, error) {

@@ -2,7 +2,8 @@ package tool
 
 import (
 	"context"
-	"os"
+	"errors"
+	"io/fs"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -121,7 +122,9 @@ func canonicalMutationPath(absolutePath string) string {
 			return canonicalPath
 		}
 
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, fs.ErrNotExist) {
+			// Preserve the original path when canonicalization fails for reasons
+			// other than missing components, such as an intermediate non-directory.
 			return filepath.Clean(absolutePath)
 		}
 

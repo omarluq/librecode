@@ -178,7 +178,7 @@ func TestRegistry_ToolsAreParallelByDefault(t *testing.T) {
 
 	registry := tool.NewRegistry(t.TempDir())
 	for _, definition := range registry.Definitions() {
-		call, err := registry.Prepare(string(definition.Name), validRegistryArguments(definition.Name))
+		call, err := registry.Prepare(string(definition.Name), validRegistryArguments(t, definition.Name))
 		require.NoError(t, err, definition.Name)
 		assert.False(t, call.Sequential(), definition.Name)
 	}
@@ -192,7 +192,9 @@ func TestRegistry_ToolsAreParallelByDefault(t *testing.T) {
 	assert.False(t, call.Sequential())
 }
 
-func validRegistryArguments(name tool.Name) tool.Arguments {
+func validRegistryArguments(t *testing.T, name tool.Name) tool.Arguments {
+	t.Helper()
+
 	payloads := map[tool.Name]string{
 		tool.NameRead:  `{"path":"file"}`,
 		tool.NameBash:  `{"command":"true"}`,
@@ -205,10 +207,11 @@ func validRegistryArguments(name tool.Name) tool.Arguments {
 		tool.NameFetch: `{"url":"https://example.com"}`,
 	}
 
-	arguments, err := tool.ArgumentsFromRaw([]byte(payloads[name]))
-	if err != nil {
-		panic(err)
-	}
+	payload, ok := payloads[name]
+	require.True(t, ok, "missing test arguments for tool %q", name)
+
+	arguments, err := tool.ArgumentsFromRaw([]byte(payload))
+	require.NoError(t, err)
 
 	return arguments
 }
