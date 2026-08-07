@@ -3,9 +3,11 @@ package assistant
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
@@ -22,6 +24,8 @@ const (
 	toolExecutorMissingTool = "missing"
 	toolExecutorReadPath    = "README.md"
 	toolExecutorReadArgs    = `{"path":"README.md"}`
+	toolExecutorFirstName   = "one"
+	toolExecutorThirdName   = "three"
 )
 
 func TestExecuteProviderToolCallsRequiresRegistry(t *testing.T) {
@@ -76,6 +80,213 @@ func TestExecuteProviderToolCallsRunsAllCalls(t *testing.T) {
 	require.Len(t, events, 2)
 	assert.False(t, events[0].IsError)
 	assert.True(t, events[1].IsError)
+}
+
+const (
+	sequentialTestToolName = "sequential"
+	fastTestToolName       = "fast"
+	slowTestToolName       = "slow"
+)
+
+func TestExecuteProviderToolCallsRunsWholeBatchSequentiallyWhenRequired(t *testing.T) {
+	t.Parallel()
+
+	started := make(chan tool.Name, 3)
+	release := make(chan struct{}, 3)
+
+	toolRegistry, err := tool.NewRegistryWithTools(t.TempDir(), []tool.Name{})
+	require.NoError(t, err)
+
+	for _, definition := range []struct {
+		name       tool.Name
+		sequential bool
+	}{
+		{name: toolExecutorFirstName, sequential: false},
+		{name: sequentialTestToolName, sequential: true},
+		{name: toolExecutorThirdName, sequential: false},
+	} {
+		require.NoError(t, toolRegistry.Register(&blockingToolExecutor{
+			started: started, release: release, name: definition.name, sequential: definition.sequential,
+		}))
+	}
+
+	calls := []ToolCall{
+		{
+			Metadata: nil, ID: toolExecutorFirstName, Name: toolExecutorFirstName,
+			Arguments: tool.EmptyArguments(), ArgumentsJSON: `{}`,
+		},
+		{
+			Metadata: nil, ID: sequentialTestToolName, Name: sequentialTestToolName,
+			Arguments: tool.EmptyArguments(), ArgumentsJSON: `{}`,
+		},
+		{
+			Metadata: nil, ID: toolExecutorThirdName, Name: toolExecutorThirdName,
+			Arguments: tool.EmptyArguments(), ArgumentsJSON: `{}`,
+		},
+	}
+
+	type result struct {
+		err    error
+		events []ToolEvent
+	}
+
+	done := make(chan result, 1)
+
+	go func() {
+		events, executeErr := newToolExecutorTestRuntime(nil).executeProviderToolCalls(toolRegistry)(
+			t.Context(), calls, nil,
+		)
+		done <- result{events: events, err: executeErr}
+	}()
+
+	assert.Equal(t, tool.Name(toolExecutorFirstName), <-started)
+
+	select {
+	case name := <-started:
+		t.Fatalf("tool %q overlapped a sequential batch", name)
+	default:
+	}
+
+	release <- struct{}{}
+
+	assert.Equal(t, tool.Name(sequentialTestToolName), <-started)
+
+	release <- struct{}{}
+
+	assert.Equal(t, tool.Name(toolExecutorThirdName), <-started)
+
+	release <- struct{}{}
+
+	execution := <-done
+	require.NoError(t, execution.err)
+	require.Len(t, execution.events, len(calls))
+
+	for index := range calls {
+		assert.Equal(t, calls[index].ID, execution.events[index].CallID)
+	}
+}
+
+func TestExecuteProviderToolCallsHasNoParallelismLimit(t *testing.T) {
+	t.Parallel()
+
+	const callCount = 16
+
+	started := make(chan tool.Name, callCount)
+	release := make(chan struct{})
+	toolRegistry, err := tool.NewRegistryWithTools(t.TempDir(), []tool.Name{})
+	require.NoError(t, err)
+
+	calls := make([]ToolCall, callCount)
+	for index := range callCount {
+		name := tool.Name(fmt.Sprintf("parallel_%d", index))
+		require.NoError(t, toolRegistry.Register(&blockingToolExecutor{
+			started: started, release: release, name: name, sequential: false,
+		}))
+		calls[index] = ToolCall{
+			Metadata: nil, ID: string(name), Name: string(name), Arguments: tool.EmptyArguments(), ArgumentsJSON: `{}`,
+		}
+	}
+
+	done := make(chan error, 1)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	go func() {
+		_, executeErr := newToolExecutorTestRuntime(nil).executeProviderToolCalls(toolRegistry)(ctx, calls, nil)
+		done <- executeErr
+	}()
+
+	for range callCount {
+		select {
+		case <-started:
+		case <-ctx.Done():
+			t.Fatalf("all tool calls did not start concurrently: %v", ctx.Err())
+		}
+	}
+
+	close(release)
+
+	select {
+	case executeErr := <-done:
+		require.NoError(t, executeErr)
+	case <-ctx.Done():
+		t.Fatalf("tool calls did not finish: %v", ctx.Err())
+	}
+}
+
+func TestExecuteProviderToolCallsEmitsResultsAsCallsComplete(t *testing.T) {
+	t.Parallel()
+
+	started := make(chan tool.Name, 2)
+	slowRelease := make(chan struct{})
+	fastRelease := make(chan struct{})
+	registry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
+	require.NoError(t, err)
+	require.NoError(t, registry.Register(&blockingToolExecutor{
+		started: started, release: slowRelease, name: slowTestToolName, sequential: false,
+	}))
+	require.NoError(t, registry.Register(&blockingToolExecutor{
+		started: started, release: fastRelease, name: fastTestToolName, sequential: false,
+	}))
+
+	events := make(chan StreamEvent, 4)
+
+	type executionResult struct {
+		err    error
+		events []ToolEvent
+	}
+
+	done := make(chan executionResult, 1)
+
+	go func() {
+		results, executeErr := newToolExecutorTestRuntime(nil).executeProviderToolCalls(registry)(
+			t.Context(),
+			[]ToolCall{
+				{
+					Metadata: nil, ID: slowTestToolName, Name: slowTestToolName,
+					Arguments: tool.EmptyArguments(), ArgumentsJSON: `{}`,
+				},
+				{
+					Metadata: nil, ID: fastTestToolName, Name: fastTestToolName,
+					Arguments: tool.EmptyArguments(), ArgumentsJSON: `{}`,
+				},
+			},
+			func(event StreamEvent) { events <- event },
+		)
+		done <- executionResult{events: results, err: executeErr}
+	}()
+
+	for range 2 {
+		<-started
+	}
+
+	close(fastRelease)
+
+	var completed *ToolEvent
+	for completed == nil {
+		event := <-events
+		if event.Kind == StreamEventToolResult {
+			completed = event.ToolEvent
+		}
+	}
+
+	require.NotNil(t, completed)
+	assert.Equal(t, fastTestToolName, completed.CallID)
+
+	select {
+	case <-done:
+		t.Fatal("batch completed before slow call was released")
+	default:
+	}
+
+	close(slowRelease)
+
+	execution := <-done
+	require.NoError(t, execution.err)
+	require.Len(t, execution.events, 2)
+	assert.Equal(t, slowTestToolName, execution.events[0].CallID)
+	assert.Equal(t, fastTestToolName, execution.events[1].CallID)
 }
 
 func TestExecuteProviderToolCallEmitsResultForUnknownTool(t *testing.T) {
@@ -252,6 +463,40 @@ func TestLLMToolResultFromToolEvent(t *testing.T) {
 	require.Len(t, result.Content, 1)
 	assert.Equal(t, llm.PartText, result.Content[0].Type)
 	assert.Equal(t, "contents", result.Content[0].Text)
+}
+
+type blockingToolExecutor struct {
+	started    chan<- tool.Name
+	release    <-chan struct{}
+	name       tool.Name
+	sequential bool
+}
+
+func (executor *blockingToolExecutor) Sequential() bool {
+	return executor.sequential
+}
+
+func (executor *blockingToolExecutor) Definition() tool.Definition {
+	return tool.Definition{
+		Schema: tool.EmptySchema(), Name: executor.name, Label: string(executor.name), Description: "test tool",
+		PromptSnippet: "", PromptGuidelines: []string{}, ReadOnly: true,
+	}
+}
+
+func (executor *blockingToolExecutor) Execute(ctx context.Context, _ tool.Arguments) (tool.Result, error) {
+	if executor.started != nil {
+		executor.started <- executor.name
+	}
+
+	if executor.release != nil {
+		select {
+		case <-executor.release:
+		case <-ctx.Done():
+			return tool.Result{Content: nil, Details: nil}, fmt.Errorf("blocked test tool: %w", ctx.Err())
+		}
+	}
+
+	return tool.TextResult(string(executor.name), nil), nil
 }
 
 func writeToolExecutorReadFixture(t *testing.T, directory string) {

@@ -43,6 +43,10 @@ func NewRegistryWithTools(cwd string, names []Name) (*Registry, error) {
 		allowMutations:   true,
 	}
 
+	mutationLocks := newFileMutationLocks()
+	factories[NameEdit] = func() Executor { return newEditTool(cwd, mutationLocks) }
+	factories[NameWrite] = func() Executor { return newWriteTool(cwd, mutationLocks) }
+
 	for _, name := range names {
 		if _, exists := registry.executors[name]; exists {
 			continue
@@ -127,11 +131,90 @@ func (registry *Registry) Has(name Name) bool {
 	return exists
 }
 
-// Execute runs a named tool with raw JSON object arguments.
-func (registry *Registry) Execute(ctx context.Context, name string, input Arguments) (Result, error) {
-	executor, ok := registry.executors[Name(name)]
-	if !ok {
-		return emptyToolResult(), oops.
+type executionFunc func(context.Context) (Result, error)
+
+type preparedExecution struct {
+	mutationLocks *fileMutationLocks
+	execute       executionFunc
+	mutationPath  string
+}
+
+type executionPreparer interface {
+	prepareExecution(Arguments) (preparedExecution, error)
+}
+
+type sequentialToolExecutor interface {
+	Sequential() bool
+}
+
+// PreparedCall is a validated tool invocation ready for execution.
+type PreparedCall struct {
+	mutationLocks *fileMutationLocks
+	reservation   *fileMutationReservation
+	execute       executionFunc
+	mutationPath  string
+	sequential    bool
+}
+
+// Sequential reports whether this call requires the whole batch to run in source order.
+func (call PreparedCall) Sequential() bool {
+	return call.sequential
+}
+
+// Admit reserves any source-ordered resources needed by the call.
+// Callers preparing a batch must admit calls in source order before executing them concurrently.
+func (call *PreparedCall) Admit() {
+	if call == nil || call.mutationLocks == nil {
+		return
+	}
+
+	call.reservation = call.mutationLocks.reserve(call.mutationPath)
+	call.mutationLocks = nil
+	call.mutationPath = ""
+}
+
+// Release abandons resources reserved by Admit. It is safe to call after Execute.
+func (call *PreparedCall) Release() {
+	if call == nil || call.reservation == nil {
+		return
+	}
+
+	call.reservation.remove()
+	call.reservation = nil
+}
+
+// Execute runs the prepared call.
+func (call *PreparedCall) Execute(ctx context.Context) (Result, error) {
+	if call == nil || call.execute == nil {
+		return emptyToolResult(), oops.In("tool").Code("call_not_prepared").
+			Errorf("prepared call is not initialized")
+	}
+
+	call.Admit()
+	execute := call.execute
+
+	call.execute = nil
+	if call.reservation == nil {
+		return execute(ctx)
+	}
+
+	reservation := call.reservation
+	call.reservation = nil
+
+	return reservation.execute(ctx, func() (Result, error) {
+		return execute(ctx)
+	})
+}
+
+// Prepare resolves and validates a named tool invocation without executing it.
+func (registry *Registry) Prepare(name string, input Arguments) (PreparedCall, error) {
+	var executor Executor
+	if registry != nil {
+		executor = registry.executors[Name(name)]
+	}
+
+	if executor == nil {
+		return PreparedCall{}, oops.
 			In("tool").
 			Code("unknown_tool").
 			With("tool", name).
@@ -140,17 +223,54 @@ func (registry *Registry) Execute(ctx context.Context, name string, input Argume
 
 	definition := executor.Definition()
 	if !registry.allowMutations && !definition.ReadOnly {
-		return emptyToolResult(), oops.In("tool").Code("mutation_denied").
+		return PreparedCall{}, oops.In("tool").Code("mutation_denied").
 			With("tool", name).Errorf("mutating tool is denied by execution policy")
 	}
 
 	if err := validateToolInput(&definition, input, registry.schemaValidators); err != nil {
+		return PreparedCall{}, err
+	}
+
+	prepared := preparedExecution{
+		mutationLocks: nil,
+		execute: func(ctx context.Context) (Result, error) {
+			return executor.Execute(ctx, input)
+		},
+		mutationPath: "",
+	}
+
+	if preparer, ok := executor.(executionPreparer); ok {
+		var err error
+
+		prepared, err = preparer.prepareExecution(input)
+		if err != nil {
+			return PreparedCall{}, err
+		}
+	}
+
+	sequentialExecutor, sequential := executor.(sequentialToolExecutor)
+
+	return PreparedCall{
+		execute: func(ctx context.Context) (Result, error) {
+			result, executeErr := prepared.execute(ctx)
+
+			return result, toolWrap(executeErr, "execute tool")
+		},
+		mutationPath:  prepared.mutationPath,
+		mutationLocks: prepared.mutationLocks,
+		reservation:   nil,
+		sequential:    sequential && sequentialExecutor.Sequential(),
+	}, nil
+}
+
+// Execute runs a named tool with raw JSON object arguments.
+func (registry *Registry) Execute(ctx context.Context, name string, input Arguments) (Result, error) {
+	call, err := registry.Prepare(name, input)
+	if err != nil {
 		return emptyToolResult(), err
 	}
 
-	result, err := executor.Execute(ctx, input)
-
-	return result, toolWrap(err, "execute tool")
+	return (&call).Execute(ctx)
 }
 
 // ExecuteJSON runs a named tool with raw JSON object arguments.

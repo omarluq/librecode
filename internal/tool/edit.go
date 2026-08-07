@@ -22,10 +22,11 @@ type EditTool struct {
 
 // NewEditTool creates the edit tool for cwd.
 func NewEditTool(cwd string) *EditTool {
-	return &EditTool{
-		locks: newFileMutationLocks(),
-		cwd:   cwd,
-	}
+	return newEditTool(cwd, newFileMutationLocks())
+}
+
+func newEditTool(cwd string, locks *fileMutationLocks) *EditTool {
+	return &EditTool{locks: locks, cwd: cwd}
 }
 
 // Definition returns edit tool metadata.
@@ -47,14 +48,38 @@ func (editTool *EditTool) Definition() Definition {
 
 // Execute runs the edit tool.
 func (editTool *EditTool) Execute(ctx context.Context, input Arguments) (Result, error) {
-	var args EditInput
-
-	err := decodeInput(input, &args)
+	prepared, err := editTool.prepareExecution(input)
 	if err != nil {
 		return emptyToolResult(), err
 	}
 
-	return editTool.Edit(ctx, args)
+	return editTool.locks.mutate(ctx, prepared.mutationPath, func() (Result, error) {
+		return prepared.execute(ctx)
+	})
+}
+
+func (editTool *EditTool) prepareExecution(input Arguments) (preparedExecution, error) {
+	var args EditInput
+	if err := decodeInput(input, &args); err != nil {
+		return preparedExecution{}, err
+	}
+
+	if strings.TrimSpace(args.Path) == "" {
+		return preparedExecution{}, oops.In("tool").Code("edit_path_required").Errorf("edit path is required")
+	}
+
+	absolutePath, err := ResolveToCWD(args.Path, editTool.cwd)
+	if err != nil {
+		return preparedExecution{}, oops.In("tool").Code("edit_resolve_path").Wrapf(err, "resolve edit path")
+	}
+
+	return preparedExecution{
+		execute: func(ctx context.Context) (Result, error) {
+			return editTool.editLocked(ctx, absolutePath, args)
+		},
+		mutationPath:  absolutePath,
+		mutationLocks: editTool.locks,
+	}, nil
 }
 
 // Edit applies one or more replacements to one file.
@@ -68,7 +93,7 @@ func (editTool *EditTool) Edit(ctx context.Context, input EditInput) (Result, er
 		return emptyToolResult(), oops.In("tool").Code("edit_resolve_path").Wrapf(err, "resolve edit path")
 	}
 
-	return editTool.locks.mutate(absolutePath, func() (Result, error) {
+	return editTool.locks.mutate(ctx, absolutePath, func() (Result, error) {
 		return editTool.editLocked(ctx, absolutePath, input)
 	})
 }

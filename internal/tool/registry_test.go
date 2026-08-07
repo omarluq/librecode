@@ -173,6 +173,46 @@ func TestRegistry_Metadata(t *testing.T) {
 	assert.Len(t, tool.AllDefinitions(), len(registry.Definitions()))
 }
 
+func TestRegistry_ToolsAreParallelByDefault(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	for _, definition := range registry.Definitions() {
+		call, err := registry.Prepare(string(definition.Name), validRegistryArguments(definition.Name))
+		require.NoError(t, err, definition.Name)
+		assert.False(t, call.Sequential(), definition.Name)
+	}
+
+	customRegistry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
+	require.NoError(t, err)
+	require.NoError(t, customRegistry.Register(registryTestExecutor{name: "custom"}))
+
+	call, err := customRegistry.Prepare("custom", tool.EmptyArguments())
+	require.NoError(t, err)
+	assert.False(t, call.Sequential())
+}
+
+func validRegistryArguments(name tool.Name) tool.Arguments {
+	payloads := map[tool.Name]string{
+		tool.NameRead:  `{"path":"file"}`,
+		tool.NameBash:  `{"command":"true"}`,
+		tool.NameEdit:  `{"path":"file","edits":[{"old_text":"a","new_text":"b"}]}`,
+		tool.NameWrite: `{"path":"file","content":"content"}`,
+		tool.NameGrep:  `{"pattern":"pattern"}`,
+		tool.NameFind:  `{"pattern":"*"}`,
+		tool.NameLS:    `{}`,
+		tool.NameAST:   `{"path":"file.go"}`,
+		tool.NameFetch: `{"url":"https://example.com"}`,
+	}
+
+	arguments, err := tool.ArgumentsFromRaw([]byte(payloads[name]))
+	if err != nil {
+		panic(err)
+	}
+
+	return arguments
+}
+
 func TestRegistry_ExecuteJSONValidatesInputsBeforeExecution(t *testing.T) {
 	t.Parallel()
 
