@@ -64,13 +64,9 @@ func (editTool *EditTool) prepareExecution(input Arguments) (preparedExecution, 
 		return preparedExecution{}, err
 	}
 
-	if strings.TrimSpace(args.Path) == "" {
-		return preparedExecution{}, oops.In("tool").Code("edit_path_required").Errorf("edit path is required")
-	}
-
-	absolutePath, err := ResolveToCWD(args.Path, editTool.cwd)
+	absolutePath, err := editTool.resolveInput(args)
 	if err != nil {
-		return preparedExecution{}, oops.In("tool").Code("edit_resolve_path").Wrapf(err, "resolve edit path")
+		return preparedExecution{}, err
 	}
 
 	return preparedExecution{
@@ -84,18 +80,27 @@ func (editTool *EditTool) prepareExecution(input Arguments) (preparedExecution, 
 
 // Edit applies one or more replacements to one file.
 func (editTool *EditTool) Edit(ctx context.Context, input EditInput) (Result, error) {
-	if strings.TrimSpace(input.Path) == "" {
-		return emptyToolResult(), oops.In("tool").Code("edit_path_required").Errorf("edit path is required")
-	}
-
-	absolutePath, err := ResolveToCWD(input.Path, editTool.cwd)
+	absolutePath, err := editTool.resolveInput(input)
 	if err != nil {
-		return emptyToolResult(), oops.In("tool").Code("edit_resolve_path").Wrapf(err, "resolve edit path")
+		return emptyToolResult(), err
 	}
 
 	return editTool.locks.mutate(ctx, absolutePath, func() (Result, error) {
 		return editTool.editLocked(ctx, absolutePath, input)
 	})
+}
+
+func (editTool *EditTool) resolveInput(input EditInput) (string, error) {
+	if strings.TrimSpace(input.Path) == "" {
+		return "", oops.In("tool").Code("edit_path_required").Errorf("edit path is required")
+	}
+
+	absolutePath, err := ResolveToCWD(input.Path, editTool.cwd)
+	if err != nil {
+		return "", oops.In("tool").Code("edit_resolve_path").Wrapf(err, "resolve edit path")
+	}
+
+	return absolutePath, nil
 }
 
 func (editTool *EditTool) editLocked(ctx context.Context, absolutePath string, input EditInput) (Result, error) {

@@ -26,6 +26,9 @@ const (
 	toolExecutorReadArgs    = `{"path":"README.md"}`
 	toolExecutorFirstName   = "one"
 	toolExecutorThirdName   = "three"
+	sequentialTestToolName  = "sequential"
+	fastTestToolName        = "fast"
+	slowTestToolName        = "slow"
 )
 
 func TestExecuteProviderToolCallsRequiresRegistry(t *testing.T) {
@@ -81,12 +84,6 @@ func TestExecuteProviderToolCallsRunsAllCalls(t *testing.T) {
 	assert.False(t, events[0].IsError)
 	assert.True(t, events[1].IsError)
 }
-
-const (
-	sequentialTestToolName = "sequential"
-	fastTestToolName       = "fast"
-	slowTestToolName       = "slow"
-)
 
 func TestExecuteProviderToolCallsRunsWholeBatchSequentiallyWhenRequired(t *testing.T) {
 	t.Parallel()
@@ -230,7 +227,7 @@ func TestExecuteProviderToolCallsEmitsResultsAsCallsComplete(t *testing.T) {
 		started: started, release: fastRelease, name: fastTestToolName, sequential: false,
 	}))
 
-	events := make(chan StreamEvent, 4)
+	events := make(chan StreamEvent, 16)
 
 	type executionResult struct {
 		err    error

@@ -126,6 +126,8 @@ func (runtime *Runtime) executePreparedToolCalls(
 	guardedEvent := serializedEventSink(onEvent)
 
 	completed := make(chan int, len(calls))
+	// Provider tool batches intentionally have no process-local concurrency cap.
+	// Resource-specific limits can be added later without changing batch semantics.
 	for index := range calls {
 		if !calls[index].ready {
 			completed <- index

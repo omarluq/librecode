@@ -148,6 +148,8 @@ type sequentialToolExecutor interface {
 }
 
 // PreparedCall is a validated tool invocation ready for execution.
+// A call must not be used by multiple goroutines concurrently. Batch callers may
+// Admit in source order, Execute on a worker, then Release after execution completes.
 type PreparedCall struct {
 	mutationLocks *fileMutationLocks
 	reservation   *fileMutationReservation
@@ -248,7 +250,7 @@ func (registry *Registry) Prepare(name string, input Arguments) (PreparedCall, e
 		}
 	}
 
-	sequentialExecutor, sequential := executor.(sequentialToolExecutor)
+	sequentialExecutor, hasSequentialMetadata := executor.(sequentialToolExecutor)
 
 	return PreparedCall{
 		execute: func(ctx context.Context) (Result, error) {
@@ -259,7 +261,7 @@ func (registry *Registry) Prepare(name string, input Arguments) (PreparedCall, e
 		mutationPath:  prepared.mutationPath,
 		mutationLocks: prepared.mutationLocks,
 		reservation:   nil,
-		sequential:    sequential && sequentialExecutor.Sequential(),
+		sequential:    hasSequentialMetadata && sequentialExecutor.Sequential(),
 	}, nil
 }
 

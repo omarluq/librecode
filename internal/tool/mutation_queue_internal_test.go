@@ -49,7 +49,7 @@ func TestFileMutationLocksReserveSamePathInRegistrationOrder(t *testing.T) {
 	select {
 	case <-secondRan:
 		t.Fatal("second mutation ran before the first completed")
-	default:
+	case <-time.After(100 * time.Millisecond):
 	}
 
 	close(firstRelease)
@@ -152,7 +152,7 @@ func TestFileMutationLocksCanceledReservationDoesNotWaitForPrevious(t *testing.T
 	require.NoError(t, <-firstDone)
 }
 
-func TestPreparedCallReleaseRemovesUnexecutedReservation(t *testing.T) {
+func TestFileMutationLocksRemoveUnexecutedReservation(t *testing.T) {
 	t.Parallel()
 
 	locks := newFileMutationLocks()
