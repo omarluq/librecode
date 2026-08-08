@@ -11,14 +11,15 @@ import (
 
 // Config is the fully resolved application configuration.
 type Config struct {
-	App        AppConfig        `json:"app" mapstructure:"app" yaml:"app"`
-	Logging    LoggingConfig    `json:"logging" mapstructure:"logging" yaml:"logging"`
-	Extensions ExtensionsConfig `json:"extensions" mapstructure:"extensions" yaml:"extensions"`
-	Models     ModelsConfig     `json:"models" mapstructure:"models" yaml:"models"`
-	Assistant  AssistantConfig  `json:"assistant" mapstructure:"assistant" yaml:"assistant"`
-	Database   DatabaseConfig   `json:"database" mapstructure:"database" yaml:"database"`
-	Context    ContextConfig    `json:"context" mapstructure:"context" yaml:"context"`
-	Cache      CacheConfig      `json:"cache" mapstructure:"cache" yaml:"cache"`
+	App        AppConfig         `json:"app" mapstructure:"app" yaml:"app"`
+	Logging    LoggingConfig     `json:"logging" mapstructure:"logging" yaml:"logging"`
+	Extensions ExtensionsConfig  `json:"extensions" mapstructure:"extensions" yaml:"extensions"`
+	Models     ModelsConfig      `json:"models" mapstructure:"models" yaml:"models"`
+	Assistant  AssistantConfig   `json:"assistant" mapstructure:"assistant" yaml:"assistant"`
+	Database   DatabaseConfig    `json:"database" mapstructure:"database" yaml:"database"`
+	Context    ContextConfig     `json:"context" mapstructure:"context" yaml:"context"`
+	Cache      CacheConfig       `json:"cache" mapstructure:"cache" yaml:"cache"`
+	Tasks      TaskRuntimeConfig `json:"tasks" mapstructure:"tasks" yaml:"tasks"`
 }
 
 // AppConfig contains application identity and environment settings.
@@ -116,6 +117,19 @@ func (retry RetryConfig) Normalized() RetryConfig {
 	return retry
 }
 
+// TaskRuntimeConfig controls bounded durable background execution.
+type TaskRuntimeConfig struct {
+	Workers       int           `json:"workers" mapstructure:"workers" yaml:"workers"`
+	PollInterval  time.Duration `json:"poll_interval" mapstructure:"poll_interval" yaml:"poll_interval"`
+	LeaseDuration time.Duration `json:"lease_duration" mapstructure:"lease_duration" yaml:"lease_duration"`
+	Heartbeat     time.Duration `json:"heartbeat_interval" mapstructure:"heartbeat_interval" yaml:"heartbeat_interval"`
+
+	RecoveryInterval time.Duration `json:"recovery_interval" mapstructure:"recovery_interval" yaml:"recovery_interval"`
+	DefaultTimeout   time.Duration `json:"default_timeout" mapstructure:"default_timeout" yaml:"default_timeout"`
+	MaxTimeout       time.Duration `json:"max_timeout" mapstructure:"max_timeout" yaml:"max_timeout"`
+	MaxOutcomeBytes  int           `json:"max_outcome_bytes" mapstructure:"max_outcome_bytes" yaml:"max_outcome_bytes"`
+}
+
 // CacheConfig controls assistant response caching.
 type CacheConfig struct {
 	Enabled  bool          `json:"enabled" mapstructure:"enabled" yaml:"enabled"`
@@ -140,6 +154,7 @@ func (config *Config) Validate() error {
 		config.validateContext,
 		config.validateModels,
 		config.validateCache,
+		config.validateTasks,
 	}
 
 	for _, validate := range validators {
@@ -268,6 +283,42 @@ func (config *Config) validateModels() error {
 
 	if config.Models.Discovery.FetchTimeout < 0 {
 		return errors.New("config: models.discovery.fetch_timeout cannot be negative")
+	}
+
+	return nil
+}
+
+func (config *Config) validateTasks() error {
+	tasks := config.Tasks
+
+	positiveDurations := []time.Duration{
+		tasks.PollInterval,
+		tasks.LeaseDuration,
+		tasks.Heartbeat,
+		tasks.RecoveryInterval,
+		tasks.DefaultTimeout,
+		tasks.MaxTimeout,
+	}
+	if tasks.Workers <= 0 {
+		return errors.New("config: task runtime bounds must be positive")
+	}
+
+	for _, duration := range positiveDurations {
+		if duration <= 0 {
+			return errors.New("config: task runtime bounds must be positive")
+		}
+	}
+
+	if tasks.MaxOutcomeBytes < minimumTaskOutcomeBytes {
+		return errors.New("config: tasks.max_outcome_bytes must be at least 256")
+	}
+
+	if tasks.Heartbeat >= tasks.LeaseDuration {
+		return errors.New("config: tasks.heartbeat_interval must be below lease_duration")
+	}
+
+	if tasks.DefaultTimeout > tasks.MaxTimeout {
+		return errors.New("config: tasks.default_timeout must not exceed max_timeout")
 	}
 
 	return nil

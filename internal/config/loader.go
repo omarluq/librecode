@@ -108,4 +108,12 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("cache.enabled", true)
 	viperInstance.SetDefault("cache.capacity", defaultCacheCapacity)
 	viperInstance.SetDefault("cache.ttl", defaultCacheTTL)
+	viperInstance.SetDefault("tasks.workers", defaultTaskWorkers)
+	viperInstance.SetDefault("tasks.poll_interval", defaultTaskPollInterval)
+	viperInstance.SetDefault("tasks.lease_duration", defaultTaskLeaseDuration)
+	viperInstance.SetDefault("tasks.heartbeat_interval", defaultTaskHeartbeatInterval)
+	viperInstance.SetDefault("tasks.recovery_interval", defaultTaskRecoveryInterval)
+	viperInstance.SetDefault("tasks.default_timeout", defaultTaskTimeout)
+	viperInstance.SetDefault("tasks.max_timeout", defaultTaskMaxTimeout)
+	viperInstance.SetDefault("tasks.max_outcome_bytes", defaultTaskMaxOutcomeBytes)
 }

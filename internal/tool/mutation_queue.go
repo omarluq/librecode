@@ -6,12 +6,13 @@ import (
 	"io/fs"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 )
 
 type fileMutationLocks struct {
-	queues map[string][]*fileMutationReservation
-	lock   sync.Mutex
+	reservations []*fileMutationReservation
+	lock         sync.Mutex
 }
 
 type fileMutationReservation struct {
@@ -21,10 +22,7 @@ type fileMutationReservation struct {
 }
 
 func newFileMutationLocks() *fileMutationLocks {
-	return &fileMutationLocks{
-		queues: map[string][]*fileMutationReservation{},
-		lock:   sync.Mutex{},
-	}
+	return &fileMutationLocks{reservations: []*fileMutationReservation{}, lock: sync.Mutex{}}
 }
 
 func (locks *fileMutationLocks) mutate(
@@ -36,6 +34,16 @@ func (locks *fileMutationLocks) mutate(
 }
 
 func (locks *fileMutationLocks) reserve(absolutePath string) *fileMutationReservation {
+	reservation, _ := locks.reserveMode(absolutePath, false)
+
+	return reservation
+}
+
+func (locks *fileMutationLocks) tryReserve(absolutePath string) (*fileMutationReservation, bool) {
+	return locks.reserveMode(absolutePath, true)
+}
+
+func (locks *fileMutationLocks) reserveMode(absolutePath string, nonblocking bool) (*fileMutationReservation, bool) {
 	path := canonicalMutationPath(absolutePath)
 	reservation := &fileMutationReservation{
 		locks: locks,
@@ -44,15 +52,29 @@ func (locks *fileMutationLocks) reserve(absolutePath string) *fileMutationReserv
 	}
 
 	locks.lock.Lock()
-	queue := locks.queues[path]
+	blocked := false
 
-	locks.queues[path] = append(queue, reservation)
-	if len(queue) == 0 {
+	for _, pending := range locks.reservations {
+		if mutationPathsConflict(pending.path, path) {
+			blocked = true
+
+			break
+		}
+	}
+
+	if blocked && nonblocking {
+		locks.lock.Unlock()
+
+		return nil, false
+	}
+
+	locks.reservations = append(locks.reservations, reservation)
+	if !blocked {
 		close(reservation.ready)
 	}
 	locks.lock.Unlock()
 
-	return reservation
+	return reservation, true
 }
 
 func (reservation *fileMutationReservation) execute(
@@ -86,26 +108,46 @@ func (reservation *fileMutationReservation) remove() {
 	locks.lock.Lock()
 	defer locks.lock.Unlock()
 
-	queue := locks.queues[reservation.path]
-	index := slices.Index(queue, reservation)
-
+	index := slices.Index(locks.reservations, reservation)
 	if index < 0 {
 		return
 	}
 
-	wasFirst := index == 0
+	locks.reservations = slices.Delete(locks.reservations, index, index+1)
+	for candidateIndex, candidate := range locks.reservations {
+		select {
+		case <-candidate.ready:
+			continue
+		default:
+		}
 
-	queue = slices.Delete(queue, index, index+1)
-	if len(queue) == 0 {
-		delete(locks.queues, reservation.path)
+		blocked := false
 
-		return
+		for priorIndex := range candidateIndex {
+			if mutationPathsConflict(locks.reservations[priorIndex].path, candidate.path) {
+				blocked = true
+
+				break
+			}
+		}
+
+		if !blocked {
+			close(candidate.ready)
+		}
+	}
+}
+
+func mutationPathsConflict(left, right string) bool {
+	return pathContains(left, right) || pathContains(right, left)
+}
+
+func pathContains(parent, child string) bool {
+	relative, err := filepath.Rel(parent, child)
+	if err != nil {
+		return parent == child
 	}
 
-	locks.queues[reservation.path] = queue
-	if wasFirst {
-		close(queue[0].ready)
-	}
+	return relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)))
 }
 
 func canonicalMutationPath(absolutePath string) string {

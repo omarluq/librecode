@@ -13,6 +13,7 @@ func RegisterServices(injector do.Injector) {
 	do.Provide(injector, NewSkillsService)
 	do.Provide(injector, NewExtensionService)
 	do.Provide(injector, NewToolService)
+	do.Provide(injector, NewTaskRuntimeService)
 	do.Provide(injector, NewAssistantService)
 	do.Provide(injector, NewAgentTaskService)
 	do.Provide(injector, NewWorkflowService)

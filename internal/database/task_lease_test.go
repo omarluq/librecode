@@ -12,6 +12,26 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
+func TestTaskRepositoryDoesNotRenewExpiredLease(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	owner := fixture.createOwner(t.Context())
+	created, err := fixture.tasks.Create(t.Context(), newTask(owner.ID))
+	require.NoError(t, err)
+
+	claimed, err := fixture.tasks.ClaimQueued(t.Context(), &database.TaskClaim{
+		TaskID: created.ID, LeaseOwner: testWorker, EventKind: taskStartedEvent,
+		LeaseExpiresAt: time.Now().Add(-time.Minute),
+	})
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	renewed, err := fixture.tasks.RenewLease(t.Context(), created.ID, testWorker, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	assert.False(t, renewed)
+}
+
 func TestTaskRepositoryLeasesFenceWorkersAndRecovery(t *testing.T) {
 	t.Parallel()
 
@@ -135,7 +155,7 @@ func TestTaskRepositoryLeaseValidation(t *testing.T) {
 		}},
 		{name: "claim without event", wantError: eventKindRequired, run: func() error {
 			_, err := fixture.tasks.ClaimQueued(t.Context(), &database.TaskClaim{LeaseExpiresAt: expires, TaskID: "",
-				LeaseOwner: "worker", EventKind: ""})
+				LeaseOwner: testWorker, EventKind: ""})
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},
@@ -187,13 +207,14 @@ func TestTaskRepositoryLeaseOperationsPropagateContextErrors(t *testing.T) {
 		name string
 	}{
 		{name: "claim", run: func() error {
-			_, err := fixture.tasks.ClaimQueued(canceled, &database.TaskClaim{TaskID: created.ID, LeaseOwner: "worker",
-				EventKind: taskStartedEvent, LeaseExpiresAt: expires})
+			_, err := fixture.tasks.ClaimQueued(canceled, &database.TaskClaim{
+				TaskID: created.ID, LeaseOwner: testWorker, EventKind: taskStartedEvent, LeaseExpiresAt: expires,
+			})
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},
 		{name: "renew", run: func() error {
-			_, err := fixture.tasks.RenewLease(canceled, created.ID, "worker", expires)
+			_, err := fixture.tasks.RenewLease(canceled, created.ID, testWorker, expires)
 
 			return fmt.Errorf("lease operation: %w", err)
 		}},

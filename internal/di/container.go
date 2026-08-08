@@ -9,6 +9,9 @@ import (
 
 	"github.com/samber/do/v2"
 	"github.com/samber/oops"
+
+	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/taskruntime"
 )
 
 const (
@@ -28,15 +31,16 @@ type Container struct {
 
 // RuntimeServices is the fully constructed and started application runtime.
 type RuntimeServices struct {
-	Config        *ConfigService
-	Database      *DatabaseService
-	Auth          *AuthService
-	Models        *ModelService
-	Extensions    *ExtensionService
-	Assistant     *AssistantService
-	AgentTasks    *AgentTaskService
-	Workflows     *WorkflowService
-	ChatWorkflows *ChatWorkflowService
+	Config        *ConfigService       `do:""`
+	Database      *DatabaseService     `do:""`
+	Auth          *AuthService         `do:""`
+	Models        *ModelService        `do:""`
+	Extensions    *ExtensionService    `do:""`
+	Assistant     *AssistantService    `do:""`
+	AgentTasks    *AgentTaskService    `do:""`
+	Workflows     *WorkflowService     `do:""`
+	ChatWorkflows *ChatWorkflowService `do:""`
+	TaskRuntime   *TaskRuntimeService  `do:""`
 }
 
 // NewContainer builds the root injector for the CLI runtime.
@@ -145,20 +149,24 @@ func (c *Container) constructRuntime(ctx context.Context) (*RuntimeServices, err
 		return nil, err
 	}
 
-	if err := services.AgentTasks.Start(ctx); err != nil {
-		return nil, err
+	startServices := []func(context.Context) error{
+		services.AgentTasks.Start,
+		services.Workflows.Start,
+		services.ChatWorkflows.Start,
+	}
+	for _, start := range startServices {
+		if err := start(ctx); err != nil {
+			return nil, err
+		}
 	}
 
-	if err := services.Workflows.Start(ctx); err != nil {
-		return nil, err
-	}
-
-	if err := services.ChatWorkflows.Start(ctx); err != nil {
+	agentTasks := services.AgentTasks.Tasks()
+	if err := registerGenericCancellation(services, agentTasks.Cancel); err != nil {
 		return nil, err
 	}
 
 	if err := services.Assistant.capabilities.publish(
-		services.AgentTasks.Tasks(),
+		agentTasks,
 		services.ChatWorkflows.Dispatcher(),
 	); err != nil {
 		return nil, serviceError(err, "publish runtime capabilities")
@@ -171,12 +179,15 @@ func (c *Container) constructRuntime(ctx context.Context) (*RuntimeServices, err
 		}
 	}()
 
-	if err := services.AgentTasks.StartWorkers(ctx); err != nil {
-		return nil, err
+	startWorkers := []func(context.Context) error{
+		services.TaskRuntime.Start,
+		services.AgentTasks.StartWorkers,
+		services.ChatWorkflows.StartWorkers,
 	}
-
-	if err := services.ChatWorkflows.StartWorkers(ctx); err != nil {
-		return nil, err
+	for _, start := range startWorkers {
+		if err := start(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := ctx.Err(); err != nil {
@@ -188,63 +199,53 @@ func (c *Container) constructRuntime(ctx context.Context) (*RuntimeServices, err
 	return services, nil
 }
 
+func registerGenericCancellation(services *RuntimeServices, agentCancel taskruntime.CancelFunc) error {
+	manager := services.TaskRuntime.Manager
+	if err := manager.RegisterCancel(database.TaskKindTool, func(
+		ctx context.Context, owner, taskID string,
+	) (*database.TaskEntity, bool, error) {
+		entity, found, err := services.TaskRuntime.Tools.Cancel(ctx, owner, taskID)
+		if err != nil {
+			return nil, found, serviceError(err, "cancel tool task")
+		}
+
+		if entity == nil {
+			return nil, found, nil
+		}
+
+		return &entity.Task, found, nil
+	}); err != nil {
+		return serviceError(err, "register tool task cancellation")
+	}
+
+	if err := manager.RegisterCancel(database.TaskKindAgent, agentCancel); err != nil {
+		return serviceError(err, "register agent task cancellation")
+	}
+
+	workflowRuns := services.ChatWorkflows.Runs()
+
+	if err := manager.RegisterCancel(database.TaskKindWorkflow, func(
+		ctx context.Context, owner, taskID string,
+	) (*database.TaskEntity, bool, error) {
+		if _, err := workflowRuns.Cancel(ctx, owner, taskID); err != nil {
+			return nil, false, serviceError(err, "cancel workflow task")
+		}
+
+		return manager.GetTask(ctx, owner, taskID)
+	}); err != nil {
+		return serviceError(err, "register workflow task cancellation")
+	}
+
+	return nil
+}
+
 func (c *Container) resolveRuntimeServices() (*RuntimeServices, error) {
-	configService, err := do.Invoke[*ConfigService](c.injector)
+	services, err := do.InvokeStruct[*RuntimeServices](c.injector)
 	if err != nil {
-		return nil, err
+		return nil, serviceError(err, "resolve runtime services")
 	}
 
-	databaseService, err := do.Invoke[*DatabaseService](c.injector)
-	if err != nil {
-		return nil, err
-	}
-
-	authService, err := do.Invoke[*AuthService](c.injector)
-	if err != nil {
-		return nil, err
-	}
-
-	modelService, err := do.Invoke[*ModelService](c.injector)
-	if err != nil {
-		return nil, err
-	}
-
-	extensionService, err := do.Invoke[*ExtensionService](c.injector)
-	if err != nil {
-		return nil, err
-	}
-
-	assistantService, err := do.Invoke[*AssistantService](c.injector)
-	if err != nil {
-		return nil, err
-	}
-
-	agentTasks, err := do.Invoke[*AgentTaskService](c.injector)
-	if err != nil {
-		return nil, err
-	}
-
-	workflows, err := do.Invoke[*WorkflowService](c.injector)
-	if err != nil {
-		return nil, err
-	}
-
-	chatWorkflows, err := do.Invoke[*ChatWorkflowService](c.injector)
-	if err != nil {
-		return nil, err
-	}
-
-	return &RuntimeServices{
-		Config:        configService,
-		Database:      databaseService,
-		Auth:          authService,
-		Models:        modelService,
-		Extensions:    extensionService,
-		Assistant:     assistantService,
-		AgentTasks:    agentTasks,
-		Workflows:     workflows,
-		ChatWorkflows: chatWorkflows,
-	}, nil
+	return services, nil
 }
 
 func (c *Container) runtimeStartErrorLocked(startErr error) error {

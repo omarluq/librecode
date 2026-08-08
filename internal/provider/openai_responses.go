@@ -81,7 +81,9 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		result.Usage = accumulateUsage(result.Usage, providerResult.Usage)
 
 		result.FinishReason = providerResult.FinishReason
-		if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
+
+		validateErr := validateToolDispatch(providerResult.FinishReason, providerResult.ToolCalls)
+		if validateErr != nil {
 			return nil, validateErr
 		}
 
@@ -226,10 +228,6 @@ func providerResultFromOutputItems(outputItems []any, fallbackText string) *prov
 }
 
 func openAIResponseFinishReason(response map[string]any, hasToolCalls bool) llm.FinishReason {
-	if hasToolCalls {
-		return llm.FinishReasonToolCalls
-	}
-
 	status := stringValue(response["status"])
 	if status == statusCompleted {
 		return llm.FinishReasonStop
@@ -240,6 +238,10 @@ func openAIResponseFinishReason(response map[string]any, hasToolCalls bool) llm.
 	}
 
 	if status != "incomplete" {
+		if hasToolCalls {
+			return llm.FinishReasonToolCalls
+		}
+
 		return llm.FinishReasonUnknown
 	}
 

@@ -219,23 +219,11 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 }
 
 func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent) {
+	if app.handleAgentTaskAsyncEvent(ctx, payload) {
+		return
+	}
+
 	switch payload.Kind {
-	case asyncEventAgentTaskChanged:
-		app.handleAgentTaskTerminalEvent(ctx, payload.Text)
-
-		return
-	case asyncEventAgentTaskStream:
-		app.applyInspectedAgentTaskEvent(ctx, payload.Provider, payload.Text)
-
-		return
-	case asyncEventAgentTaskReplayError:
-		app.handleAgentTaskWatchError(ctx, payload.Provider, payload.Text)
-
-		return
-	case asyncEventAgentTaskCompleted:
-		app.deliverAgentTaskCompletionEvent(ctx, payload.Provider, payload.Text)
-
-		return
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
@@ -253,6 +241,11 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent)
 		asyncEventCompactStart,
 		asyncEventCompactDone,
 		asyncEventCompactError:
+	case asyncEventAgentTaskChanged,
+		asyncEventAgentTaskStream,
+		asyncEventAgentTaskReplayError,
+		asyncEventAgentTaskCompleted:
+		return
 	}
 
 	if app.ignorePromptEvent(payload) {
@@ -273,6 +266,39 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent)
 	}) {
 		app.setStatus("prompt event owner view is unavailable")
 	}
+}
+
+func (app *App) handleAgentTaskAsyncEvent(ctx context.Context, payload *asyncEvent) bool {
+	switch payload.Kind {
+	case asyncEventAgentTaskChanged:
+		app.handleAgentTaskTerminalEvent(ctx, payload.Text)
+	case asyncEventAgentTaskStream:
+		app.applyInspectedAgentTaskEvent(ctx, payload.Provider, payload.Text)
+	case asyncEventAgentTaskReplayError:
+		app.handleAgentTaskWatchError(ctx, payload.Provider, payload.Text)
+	case asyncEventAgentTaskCompleted:
+		app.handleTaskCompletionEvent(ctx, payload)
+	case asyncEventAuthURL,
+		asyncEventAuthDone,
+		asyncEventAuthError,
+		asyncEventPromptDone,
+		asyncEventPromptUserEntry,
+		asyncEventPromptDelta,
+		asyncEventPromptThinkingDelta,
+		asyncEventPromptToolStart,
+		asyncEventPromptToolResult,
+		asyncEventPromptRetry,
+		asyncEventPromptUsage,
+		asyncEventPromptUsageSnapshot,
+		asyncEventPromptError,
+		asyncEventPromptContext,
+		asyncEventCompactStart,
+		asyncEventCompactDone,
+		asyncEventCompactError:
+		return false
+	}
+
+	return true
 }
 
 func (app *App) ignorePromptEvent(payload *asyncEvent) bool {
@@ -499,7 +525,7 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 		app.appendStreamingBlock(transcript.RoleThinking, payload.Text)
 	case asyncEventPromptToolResult:
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventToolEnd, toolExtensionData(payload.ToolEvent))
-		app.applyStreamedToolEvent(payload.ToolEvent)
+		app.applyStreamedToolEvent(ctx, payload.ToolEvent)
 	case asyncEventPromptToolStart:
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventToolStart, toolCallExtensionData(payload))
 		app.applyStreamedToolStart(payload.ToolCallEvent, payload.Text)
@@ -677,19 +703,23 @@ func (app *App) applyStreamedToolStart(call *assistant.ToolCallEvent, fallbackNa
 	app.runningToolBlocks = append(app.runningToolBlocks, runningToolBlock{Call: *call, StartedAt: time.Now()})
 }
 
-func (app *App) applyStreamedToolEvent(event *assistant.ToolEvent) {
+func (app *App) applyStreamedToolEvent(ctx context.Context, event *assistant.ToolEvent) {
 	if event == nil {
 		return
 	}
 
 	if event.Name == workflowToolName && !event.IsError {
-		app.trackStartedWorkflow(context.Background(), event)
+		app.trackStartedWorkflow(ctx, event)
 	}
 
 	if isAgentManagementTool(event.Name) {
 		app.applyAgentToolEvent(event)
 
 		return
+	}
+
+	if strings.HasPrefix(event.Name, "task_") {
+		app.logToolTaskRefreshError(ctx, app.refreshToolTasks(ctx))
 	}
 
 	app.removeRunningToolBlock(event)

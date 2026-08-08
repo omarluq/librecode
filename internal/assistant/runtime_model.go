@@ -220,7 +220,7 @@ func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInpu
 		DisableTools:           false,
 		ToolSideEffectsStarted: false,
 	}
-	executeTools := runtime.executeProviderToolCalls(input.registry)
+	executeTools := runtime.executeProviderToolCalls(input.registry, input.sessionID, input.cwd)
 	request.ExecuteTools = func(
 		ctx context.Context,
 		calls []ToolCall,

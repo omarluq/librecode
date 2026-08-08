@@ -5,12 +5,14 @@ package tool
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/samber/lo"
 	"github.com/samber/oops"
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -30,29 +32,46 @@ func shellConfig(command string) (shellPath string, shellArgs []string, err erro
 }
 
 func findWindowsBash() (string, error) {
-	candidates := windowsBashCandidates()
-	for _, candidate := range candidates {
-		if path, err := exec.LookPath(candidate); err == nil {
+	configured := os.Getenv("LIBRECODE_BASH_PATH")
+	if configured != "" && !filepath.IsAbs(configured) {
+		return "", oops.In("tool").Code("bash-discovery").With("configured_path", configured).
+			Wrapf(errBashNotFound, "LIBRECODE_BASH_PATH must be an absolute path")
+	}
+
+	for _, candidate := range windowsBashCandidates() {
+		if path, ok := existingExecutable(candidate); ok {
 			return path, nil
-		}
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate, nil
 		}
 	}
 
 	return "", oops.In("tool").Code("bash-discovery").Wrapf(
 		errBashNotFound,
-		"install Git Bash, MSYS2/Cygwin/WSL bash, or set LIBRECODE_BASH_PATH to %s",
-		windowsBashExecutable,
+		"install Git Bash in a standard location or set LIBRECODE_BASH_PATH to an absolute path",
 	)
 }
 
+func existingExecutable(candidate string) (string, bool) {
+	if candidate == "" {
+		return "", false
+	}
+
+	path, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", false
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+
+	return path, true
+}
+
 func windowsBashCandidates() []string {
-	candidates := lo.Compact([]string{
-		os.Getenv("LIBRECODE_BASH_PATH"),
-		windowsBashExecutable,
-		"bash",
-	})
+	candidates := []string{}
+	if configured := os.Getenv("LIBRECODE_BASH_PATH"); filepath.IsAbs(configured) {
+		candidates = append(candidates, configured)
+	}
 
 	for _, candidate := range windowsBashDirectoryCandidates() {
 		candidates = append(candidates,
@@ -77,12 +96,26 @@ func windowsBashDirectoryCandidates() []string {
 }
 
 func configureShellCommand(_ *exec.Cmd) {
-	// Windows process groups are not configured here; terminateShellCommand kills the shell process directly.
+	// Windows does not require the Unix process-group configuration.
 }
 
 func terminateShellCommand(cmd *exec.Cmd) error {
 	if cmd.Process == nil {
 		return nil
+	}
+
+	// taskkill /T is the native, broadly available process-tree terminator.
+	// Bound it so cancellation cannot hang before Process.Kill gets a chance.
+	ctx, cancel := context.WithTimeout(context.Background(), commandWaitDelay)
+	defer cancel()
+
+	systemDirectory, err := windows.GetSystemDirectory()
+	if err == nil {
+		taskkillPath := filepath.Join(systemDirectory, "taskkill.exe")
+		killTree := exec.CommandContext(ctx, taskkillPath, "/PID", fmt.Sprint(cmd.Process.Pid), "/T", "/F")
+		if err := killTree.Run(); err == nil {
+			return nil
+		}
 	}
 
 	return cmd.Process.Kill()

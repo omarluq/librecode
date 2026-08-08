@@ -238,12 +238,12 @@ func (repository *TaskRepository) RenewLease(
 	}
 
 	const update = `UPDATE tasks SET lease_expires_at = ?, updated_at = ?
-WHERE id = ? AND lease_owner = ? AND state IN (?, ?)`
+WHERE id = ? AND lease_owner = ? AND state IN (?, ?) AND lease_expires_at > ?`
 
 	now := repository.now().UTC()
 
 	result, err := repository.sql.Exec(ctx, update, formatTime(leaseExpiresAt.UTC()), formatTime(now),
-		taskID, leaseOwner, TaskRunning, TaskCanceling)
+		taskID, leaseOwner, TaskRunning, TaskCanceling, formatTime(now))
 	if err != nil {
 		return false, oops.In("database").Code("renew_task_lease").Wrapf(err, "renew task lease")
 	}
@@ -411,6 +411,15 @@ func (repository *TaskRepository) finishTransaction(
 	transaction ksql.Provider,
 	finish *TaskFinish,
 ) (bool, error) {
+	return repository.finishTransactionWithExpiry(ctx, transaction, finish, time.Time{})
+}
+
+func (repository *TaskRepository) finishTransactionWithExpiry(
+	ctx context.Context,
+	transaction ksql.Provider,
+	finish *TaskFinish,
+	leaseExpiredAt time.Time,
+) (bool, error) {
 	current, found, err := loadTask(ctx, transaction, finish.TaskID)
 	if err != nil || !found || !slices.Contains(finish.From, current.State) {
 		return false, err
@@ -424,12 +433,16 @@ UPDATE tasks
 SET state = ?, result = ?, error_code = ?, error_message = ?,
     started_at = ?, finished_at = ?, updated_at = ?, lease_owner = NULL, lease_expires_at = NULL
 WHERE id = ? AND state = ?
-  AND ((? = '' AND lease_owner IS NULL) OR lease_owner = ?)`
+  AND ((? = '' AND lease_owner IS NULL) OR lease_owner = ?)
+  AND (? = FALSE OR lease_expires_at > ?)
+  AND (? = FALSE OR lease_expires_at IS NULL OR lease_expires_at <= ?)`
 
 	updateResult, err := transaction.Exec(
 		ctx, update, finish.TargetState, finish.Result, finish.ErrorCode, finish.ErrorMessage,
 		nullableTime(startedAt), nullableTime(finishedAt), formatTime(now), finish.TaskID, current.State,
 		finish.LeaseOwner, finish.LeaseOwner,
+		finish.LeaseOwner != "" && leaseExpiredAt.IsZero(), formatTime(now),
+		leaseFenceEnabled(leaseExpiredAt), nullableLeaseFence(leaseExpiredAt),
 	)
 	if err != nil {
 		return false, oops.In("database").Code("finish_task").Wrapf(err, "finish task")
@@ -458,6 +471,16 @@ WHERE id = ? AND state = ?
 	return true, nil
 }
 
+func leaseFenceEnabled(value time.Time) bool { return !value.IsZero() }
+
+func nullableLeaseFence(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+
+	return formatTime(value.UTC())
+}
+
 // RecoverExpired atomically finishes running or canceling tasks whose leases are absent or expired.
 // It returns the IDs that were recovered.
 func (repository *TaskRepository) RecoverExpired(ctx context.Context, recovery *TaskRecovery) ([]string, error) {
@@ -473,43 +496,66 @@ func (repository *TaskRepository) RecoverExpired(ctx context.Context, recovery *
 		return nil, oops.In("database").Code("validate_event").Wrapf(err, "validate recovery event")
 	}
 
+	const recoveryBatchSize = 100
+
 	recovered := []string{}
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+	for {
+		batch, selected, err := repository.recoverExpiredBatch(ctx, recovery, recoveryBatchSize)
+		if err != nil {
+			return nil, oops.In("database").Code("recover_tasks").Wrapf(err, "recover expired tasks")
+		}
+
+		recovered = append(recovered, batch...)
+		if selected < recoveryBatchSize || len(batch) == 0 {
+			return recovered, nil
+		}
+	}
+}
+
+func (repository *TaskRepository) recoverExpiredBatch(
+	ctx context.Context, recovery *TaskRecovery, limit int,
+) (batch []string, selected int, err error) {
+	batch = []string{}
+
+	err = repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
 		var rows []struct {
 			ID string `ksql:"id"`
 		}
 
 		const query = `SELECT id FROM tasks WHERE kind = ? AND state IN (?, ?)
-AND (lease_expires_at IS NULL OR lease_expires_at <= ?) ORDER BY created_at, id`
-		if err := transaction.Query(ctx, &rows, query, recovery.Kind, TaskRunning, TaskCanceling,
-			formatTime(recovery.ExpiresBefore.UTC())); err != nil {
-			return oops.In("database").Code("query_expired_tasks").Wrapf(err, "query expired tasks")
+AND (lease_expires_at IS NULL OR lease_expires_at <= ?) ORDER BY created_at, id LIMIT ?`
+
+		queryErr := transaction.Query(ctx, &rows, query, recovery.Kind, TaskRunning, TaskCanceling,
+			formatTime(recovery.ExpiresBefore.UTC()), limit)
+		if queryErr != nil {
+			return oops.In("database").Code("query_expired_tasks").Wrapf(queryErr, "query expired tasks")
 		}
 
+		selected = len(rows)
 		now := repository.now().UTC()
 
 		const update = `UPDATE tasks SET state = ?, error_code = ?, error_message = ?, finished_at = ?,
 updated_at = ?, lease_owner = NULL, lease_expires_at = NULL WHERE id = ? AND state IN (?, ?)
 AND (lease_expires_at IS NULL OR lease_expires_at <= ?)`
 		for _, row := range rows {
-			wasRecovered, err := recoverExpiredTask(ctx, transaction, update, row.ID, recovery, now)
-			if err != nil {
-				return err
+			wasRecovered, recoverErr := recoverExpiredTask(ctx, transaction, update, row.ID, recovery, now)
+			if recoverErr != nil {
+				return recoverErr
 			}
 
 			if wasRecovered {
-				recovered = append(recovered, row.ID)
+				batch = append(batch, row.ID)
 			}
 		}
 
 		return nil
 	})
 	if err != nil {
-		return nil, oops.In("database").Code("recover_tasks").Wrapf(err, "recover expired tasks")
+		return nil, 0, oops.In("database").Code("recover_task_batch").Wrapf(err, "recover task batch")
 	}
 
-	return recovered, nil
+	return batch, selected, nil
 }
 
 func recoverExpiredTask(
@@ -557,15 +603,44 @@ func (repository *TaskRepository) ListByOwner(
 	ownerSessionID string,
 	limit int,
 ) ([]TaskEntity, error) {
-	if limit <= 0 {
+	return repository.ListOwned(ctx, ownerSessionID, []string{kind}, nil, limit)
+}
+
+// ListOwned returns owner-scoped tasks, optionally filtered by kind and state, newest first.
+func (repository *TaskRepository) ListOwned(
+	ctx context.Context,
+	ownerSessionID string,
+	kinds []string,
+	states []TaskState,
+	limit int,
+) ([]TaskEntity, error) {
+	if limit <= 0 || limit > 100 {
 		limit = 100
 	}
 
-	const query = `SELECT ` + taskColumns + ` FROM tasks
-WHERE kind = ? AND owner_session_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?`
+	query := `SELECT ` + taskColumns + ` FROM tasks WHERE owner_session_id = ?`
+	args := []any{ownerSessionID}
+
+	if len(kinds) > 0 {
+		query += ` AND kind IN (` + strings.TrimRight(strings.Repeat("?,", len(kinds)), ",") + `)`
+		for _, kind := range kinds {
+			args = append(args, kind)
+		}
+	}
+
+	if len(states) > 0 {
+		query += ` AND state IN (` + strings.TrimRight(strings.Repeat("?,", len(states)), ",") + `)`
+		for _, state := range states {
+			args = append(args, state)
+		}
+	}
+
+	query += ` ORDER BY updated_at DESC, id DESC LIMIT ?`
+
+	args = append(args, limit)
 
 	rows := []taskRow{}
-	if err := repository.sql.Query(ctx, &rows, query, kind, ownerSessionID, limit); err != nil {
+	if err := repository.sql.Query(ctx, &rows, query, args...); err != nil {
 		return nil, oops.In("database").Code("list_tasks").Wrapf(err, "list tasks")
 	}
 
@@ -618,6 +693,41 @@ ORDER BY created_at ASC, id ASC`
 	return tasks, nil
 }
 
+// ListQueuedExcluding returns bounded queued tasks whose kinds are not registered.
+func (repository *TaskRepository) ListQueuedExcluding(
+	ctx context.Context, kinds []string, limit int,
+) ([]TaskEntity, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+
+	query := `SELECT ` + taskColumns + ` FROM tasks WHERE state = ?`
+	args := []any{TaskQueued}
+
+	if len(kinds) > 0 {
+		query += ` AND kind NOT IN (` + strings.TrimRight(strings.Repeat("?,", len(kinds)), ",") + `)`
+		for _, kind := range kinds {
+			args = append(args, kind)
+		}
+	}
+
+	query += ` ORDER BY created_at, id LIMIT ?`
+
+	args = append(args, limit)
+
+	rows := []taskRow{}
+	if err := repository.sql.Query(ctx, &rows, query, args...); err != nil {
+		return nil, oops.In("database").Code("list_unknown_tasks").Wrapf(err, "list unknown tasks")
+	}
+
+	tasks, err := collectSQLRows(rows, taskFromRow)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_task").Wrapf(err, "scan task")
+	}
+
+	return tasks, nil
+}
+
 // AppendEvent appends a durable event at the next task-local sequence.
 func (repository *TaskRepository) AppendEvent(
 	ctx context.Context,
@@ -659,6 +769,60 @@ func (repository *TaskRepository) AppendEvent(
 	}
 
 	return created, nil
+}
+
+// AppendRunningEvent appends only while taskID is running under a live lease owned by leaseOwner.
+func (repository *TaskRepository) AppendRunningEvent(
+	ctx context.Context, taskID, leaseOwner, kind, payloadJSON string,
+) (*TaskEventEntity, bool, error) {
+	if err := validateEvent(kind, payloadJSON); err != nil {
+		return nil, false, oops.In("database").Code("validate_event").Wrapf(err, "validate event")
+	}
+
+	var created *TaskEventEntity
+
+	appended := false
+
+	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+		var ownership struct {
+			Count int `ksql:"count"`
+		}
+
+		const owned = `SELECT COUNT(*) AS count FROM tasks WHERE id = ? AND state IN (?, ?)
+AND lease_owner = ? AND lease_expires_at > ?`
+		if err := transaction.QueryOne(ctx, &ownership, owned, taskID, TaskRunning, TaskCanceling,
+			leaseOwner, formatTime(repository.now().UTC())); err != nil {
+			return oops.In("database").Code("check_task_event_lease").Wrapf(err, "check task event lease")
+		}
+
+		if ownership.Count == 0 {
+			return nil
+		}
+
+		sequence, err := nextTaskEventSequence(ctx, transaction, taskID)
+		if err != nil {
+			return err
+		}
+
+		now := repository.now().UTC()
+
+		eventID, err := insertTaskEvent(ctx, transaction, taskID, sequence, kind, payloadJSON, now)
+		if err != nil {
+			return err
+		}
+
+		created = &TaskEventEntity{TaskID: taskID, Sequence: sequence, Event: EventEntity{
+			ID: eventID, Kind: kind, PayloadJSON: payloadJSON, CreatedAt: now,
+		}}
+		appended = true
+
+		return nil
+	})
+	if err != nil {
+		return nil, false, oops.In("database").Code("append_owned_task_event").Wrapf(err, "append task event")
+	}
+
+	return created, appended, nil
 }
 
 // LatestEvent returns the newest event associated with a task.

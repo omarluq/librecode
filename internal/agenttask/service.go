@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -37,6 +38,7 @@ const (
 	enqueueCanceledMessage     = "task submission was canceled before queue admission"
 	serviceStoppedCode         = "service_stopped"
 	serviceStoppedMessage      = "task service stopped before queue admission"
+	taskInterruptedEvent       = "task_interrupted"
 )
 
 // Runner executes one persisted agent task.
@@ -917,7 +919,7 @@ func (service *Service) finalizeRun(ctx context.Context, taskID string, result R
 
 	if ctx.Err() != nil {
 		service.finish(
-			ctx, taskID, database.TaskInterrupted, "task_interrupted", result,
+			ctx, taskID, database.TaskInterrupted, taskInterruptedEvent, result,
 			"service_stopped", "task interrupted by service shutdown",
 		)
 
@@ -973,7 +975,7 @@ func (service *Service) publish(event *database.TaskEventEntity) {
 
 func isTerminalEventKind(kind string) bool {
 	switch kind {
-	case "task_succeeded", "task_failed", "task_canceled", "task_interrupted":
+	case "task_succeeded", "task_failed", "task_canceled", taskInterruptedEvent:
 		return true
 	default:
 		return false
@@ -1030,7 +1032,25 @@ func (service *Service) finish(
 	}
 
 	if !changed {
-		return
+		recovered, recoverErr := service.tasks.RecoverExpired(ctx, &database.TaskRecovery{
+			Kind: database.TaskKindAgent, TargetState: database.TaskInterrupted,
+			EventKind: taskInterruptedEvent, ErrorCode: "process_restart",
+			ErrorMessage: "task interrupted after its worker lease expired",
+			PayloadJSON:  `{"error_code":"process_restart"}`, ExpiresBefore: time.Now(),
+		})
+		if recoverErr != nil {
+			service.logError(
+				ctx, "recover expired agent task after unchanged finish", "task_id", taskID, "error", recoverErr,
+			)
+
+			return
+		}
+
+		if !slices.Contains(recovered, taskID) {
+			service.logWarn(ctx, "agent task finish was unchanged", "task_id", taskID)
+
+			return
+		}
 	}
 
 	service.publishLatest(ctx, taskID)
@@ -1064,14 +1084,18 @@ func (service *Service) publishLatest(ctx context.Context, taskID string) {
 }
 
 func (service *Service) recoverInterrupted(ctx context.Context) error {
-	_, err := service.tasks.RecoverExpired(ctx, &database.TaskRecovery{
+	recovered, err := service.tasks.RecoverExpired(ctx, &database.TaskRecovery{
 		Kind: database.TaskKindAgent, TargetState: database.TaskInterrupted,
-		EventKind: "task_interrupted", ErrorCode: "process_restart",
+		EventKind: taskInterruptedEvent, ErrorCode: "process_restart",
 		ErrorMessage: "task interrupted after its worker lease expired",
 		PayloadJSON:  `{"error_code":"process_restart"}`, ExpiresBefore: time.Now(),
 	})
 	if err != nil {
 		return oops.In("agenttask").Code("recover_tasks").Wrapf(err, "recover expired tasks")
+	}
+
+	for _, taskID := range recovered {
+		service.publishLatest(ctx, taskID)
 	}
 
 	return nil

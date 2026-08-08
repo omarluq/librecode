@@ -18,6 +18,17 @@ const (
 	testToolPath = "README.md"
 )
 
+func TestValidateToolDispatchRejectsLengthTruncatedCalls(t *testing.T) {
+	t.Parallel()
+
+	err := validateToolDispatch(llm.FinishReasonLength, []ToolCall{{
+		Arguments: tool.EmptyArguments(), Metadata: nil, ID: testCallID,
+		Name: "bash", ArgumentsJSON: `{"background":{"arguments":{"command":"go test ./..."}}}`,
+	}})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing possibly partial invocations")
+}
+
 func TestValidateToolCallsRejectsMissingFields(t *testing.T) {
 	t.Parallel()
 

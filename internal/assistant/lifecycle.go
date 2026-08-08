@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 
@@ -217,6 +218,14 @@ func (runtime *Runtime) dispatchToolResultLifecycle(ctx context.Context, event *
 	}
 
 	payload := lifecyclepayload.ToolResultPayload(lifecycleToolResult(event))
+
+	var arguments any
+
+	if err := json.Unmarshal([]byte(event.ArgumentsJSON), &arguments); err != nil {
+		arguments = event.ArgumentsJSON
+	}
+
+	payload["arguments"] = arguments
 
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleToolResult, payload)
 	if err != nil {

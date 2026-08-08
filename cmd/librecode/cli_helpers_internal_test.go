@@ -33,6 +33,10 @@ func TestConfigFormattingHelpers(t *testing.T) {
 			BusyTimeout:     15 * time.Second,
 		},
 		Cache: config.CacheConfig{Enabled: true, Capacity: 10, TTL: time.Hour},
+		Tasks: config.TaskRuntimeConfig{
+			Workers: 0, PollInterval: 0, LeaseDuration: 0, Heartbeat: 0,
+			RecoveryInterval: 0, DefaultTimeout: 0, MaxTimeout: 0, MaxOutcomeBytes: 0,
+		},
 		Extensions: config.ExtensionsConfig{
 			Use: []config.ExtensionUse{
 				{Source: "github:user/ext", Version: "v1"},

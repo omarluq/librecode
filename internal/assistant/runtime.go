@@ -17,6 +17,8 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/tooltask"
 )
 
 type runtimeExtensions interface {
@@ -28,20 +30,23 @@ type runtimeExtensions interface {
 
 // Runtime coordinates prompt handling and durable sessions.
 type Runtime struct {
-	cfg               *config.Config
-	sessions          *database.SessionRepository
-	extensions        runtimeExtensions
-	cache             *ResponseCache
-	models            *model.Registry
 	client            Completer
-	logger            *slog.Logger
+	toolTasks         ToolTaskController
+	extensions        runtimeExtensions
+	workflowSubmitter WorkflowSubmitter
+	agentTasks        AgentTaskController
+	models            *model.Registry
+	sessions          *database.SessionRepository
 	skillsCache       *core.SkillsCache
 	toolSchemaCache   *toolSchemaCache
 	agents            *agent.Catalog
-	agentTasks        AgentTaskController
-	workflowSubmitter WorkflowSubmitter
-	operations        *sessionOperationCoordinator
+	cfg               *config.Config
+	cache             *ResponseCache
+	logger            *slog.Logger
+	toolCoordinator   *tool.Coordinator
+	attachments       *foregroundAttachments
 	newCompactionUUID func() (uuid.UUID, error)
+	operations        *sessionOperationCoordinator
 	profile           ExecutionProfile
 }
 
@@ -150,6 +155,8 @@ type RuntimeOptions struct {
 	Agents            *agent.Catalog
 	AgentTasks        AgentTaskController
 	WorkflowSubmitter WorkflowSubmitter
+	ToolTasks         ToolTaskController
+	ToolCoordinator   *tool.Coordinator
 }
 
 // NewRuntime creates an assistant runtime.
@@ -176,6 +183,9 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 		agents:            options.Agents,
 		agentTasks:        options.AgentTasks,
 		workflowSubmitter: options.WorkflowSubmitter,
+		toolTasks:         options.ToolTasks,
+		toolCoordinator:   options.ToolCoordinator,
+		attachments:       newForegroundAttachments(),
 		operations:        newSessionOperationCoordinator(),
 		newCompactionUUID: uuid.NewV7,
 		profile:           topLevelExecutionProfile(),
@@ -360,7 +370,92 @@ func (runtime *Runtime) AgentDefinitions() []agent.Definition {
 	return runtime.agents.Definitions()
 }
 
-const agentTaskServiceUnavailable = "agent task service is unavailable"
+const (
+	agentTaskServiceUnavailable = "agent task service is unavailable"
+	toolTaskServiceUnavailable  = "tool task service is unavailable"
+)
+
+// ToolTasks returns durable background tool tasks owned by a session.
+func (runtime *Runtime) ToolTasks(
+	ctx context.Context,
+	ownerSessionID string,
+	states []database.TaskState,
+	limit int,
+) ([]database.ToolTaskEntity, error) {
+	if runtime == nil || runtime.toolTasks == nil {
+		return nil, oops.In("assistant").Code("tool_task_service_unavailable").
+			Errorf(toolTaskServiceUnavailable)
+	}
+
+	tasks, err := runtime.toolTasks.List(ctx, ownerSessionID, states, limit)
+	if err != nil {
+		return nil, oops.In("assistant").Code("list_tool_tasks").Wrapf(err, "list tool tasks")
+	}
+
+	return tasks, nil
+}
+
+// ToolTask returns one owner-scoped durable background tool task.
+func (runtime *Runtime) ToolTask(
+	ctx context.Context,
+	ownerSessionID string,
+	taskID string,
+) (*database.ToolTaskEntity, bool, error) {
+	if runtime == nil || runtime.toolTasks == nil {
+		return nil, false, oops.In("assistant").Code("tool_task_service_unavailable").
+			Errorf(toolTaskServiceUnavailable)
+	}
+
+	task, found, err := runtime.toolTasks.Get(ctx, ownerSessionID, taskID)
+	if err != nil {
+		return nil, false, oops.In("assistant").Code("get_tool_task").Wrapf(err, "get tool task")
+	}
+
+	return task, found, nil
+}
+
+// CancelToolTask requests owner-scoped cancellation of durable background tool work.
+func (runtime *Runtime) CancelToolTask(
+	ctx context.Context,
+	ownerSessionID string,
+	taskID string,
+) (*database.ToolTaskEntity, bool, error) {
+	if runtime == nil || runtime.toolTasks == nil {
+		return nil, false, oops.In("assistant").Code("tool_task_service_unavailable").
+			Errorf(toolTaskServiceUnavailable)
+	}
+
+	task, found, err := runtime.toolTasks.Cancel(ctx, ownerSessionID, taskID)
+	if err != nil {
+		return nil, false, oops.In("assistant").Code("cancel_tool_task").Wrapf(err, "cancel tool task")
+	}
+
+	return task, found, nil
+}
+
+type toolTaskCompletionSubscriber interface {
+	SubscribeCompletions() (<-chan tooltask.Completion, func())
+}
+
+// SubscribeToolTaskCompletions follows locally completed durable tool executions.
+func (runtime *Runtime) SubscribeToolTaskCompletions() (
+	events <-chan tooltask.Completion, cancel func(), err error,
+) {
+	if runtime == nil || runtime.toolTasks == nil {
+		return nil, nil, oops.In("assistant").Code("tool_task_service_unavailable").
+			Errorf(toolTaskServiceUnavailable)
+	}
+
+	subscriber, ok := runtime.toolTasks.(toolTaskCompletionSubscriber)
+	if !ok {
+		return nil, nil, oops.In("assistant").Code("tool_task_completions_unavailable").
+			Errorf("tool task completions are unavailable")
+	}
+
+	events, cancel = subscriber.SubscribeCompletions()
+
+	return events, cancel, nil
+}
 
 // AgentTasks returns durable agent tasks owned by a session.
 func (runtime *Runtime) AgentTasks(
@@ -500,7 +595,9 @@ func (runtime *Runtime) WithExecutionProfile(profile *ExecutionProfile) *Runtime
 		models: runtime.models, client: runtime.client, logger: runtime.logger, skillsCache: runtime.skillsCache,
 		toolSchemaCache: runtime.toolSchemaCache, agents: runtime.agents,
 		agentTasks: runtime.agentTasks, workflowSubmitter: runtime.workflowSubmitter,
-		operations: runtime.operations, newCompactionUUID: runtime.newCompactionUUID, profile: clonedProfile,
+		toolTasks: runtime.toolTasks, toolCoordinator: runtime.toolCoordinator,
+		attachments: runtime.attachments,
+		operations:  runtime.operations, newCompactionUUID: runtime.newCompactionUUID, profile: clonedProfile,
 	}
 }
 

@@ -65,6 +65,14 @@ func (app *App) runSessionCommand(ctx context.Context, command, args, original s
 		return false, nil
 	}
 
+	if command == "detach" {
+		return false, app.detachForegroundTool(args)
+	}
+
+	if command == "tasks" {
+		return false, app.runToolTaskCommand(ctx, args)
+	}
+
 	if command == "agents" {
 		switch args {
 		case "profiles":
@@ -87,6 +95,26 @@ func (app *App) runSessionCommand(ctx context.Context, command, args, original s
 	app.sendPrompt(ctx, original)
 
 	return false, nil
+}
+
+func (app *App) detachForegroundTool(args string) error {
+	callID := strings.TrimSpace(args)
+	if callID == "" && len(app.runningToolBlocks) > 0 {
+		callID = app.runningToolBlocks[len(app.runningToolBlocks)-1].Call.ID
+	}
+
+	if callID == "" {
+		return errors.New("no detachable foreground tool")
+	}
+
+	taskID, detached := app.runtime.DetachForegroundTool(callID)
+	if !detached {
+		return errors.New("foreground tool is no longer detachable")
+	}
+
+	app.setStatus("detached task: " + taskID)
+
+	return nil
 }
 
 func (app *App) sessionCommandHandlers(ctx context.Context, args, original string) map[string]func() error {

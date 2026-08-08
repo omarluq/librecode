@@ -14,4 +14,13 @@ const (
 	defaultDiscoveryFetchTimeout   = 10 * time.Second
 	defaultCacheCapacity           = 512
 	defaultCacheTTL                = 10 * time.Minute
+	defaultTaskWorkers             = 4
+	defaultTaskPollInterval        = 250 * time.Millisecond
+	defaultTaskLeaseDuration       = 30 * time.Second
+	defaultTaskHeartbeatInterval   = 10 * time.Second
+	defaultTaskRecoveryInterval    = 30 * time.Second
+	defaultTaskTimeout             = 30 * time.Minute
+	defaultTaskMaxTimeout          = 2 * time.Hour
+	defaultTaskMaxOutcomeBytes     = 256 * 1024
+	minimumTaskOutcomeBytes        = 256
 )
