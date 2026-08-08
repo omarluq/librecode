@@ -10,6 +10,7 @@ import (
 	"github.com/omarluq/librecode/internal/executeworker"
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/tooltask"
 )
 
 const executeToolName tool.Name = "execute"
@@ -125,7 +126,7 @@ func (executor *executeToolExecutor) search(query string) []map[string]any {
 	matches := make([]map[string]any, 0)
 
 	for _, definition := range executor.registry.Definitions() {
-		if definition.Name == executeToolName || definition.Name == workflowToolName {
+		if executeHiddenTool(definition.Name) {
 			continue
 		}
 
@@ -142,7 +143,7 @@ func (executor *executeToolExecutor) search(query string) []map[string]any {
 
 func (executor *executeToolExecutor) describe(name string) map[string]any {
 	for _, definition := range executor.registry.Definitions() {
-		if definition.Name == executeToolName || definition.Name == workflowToolName {
+		if executeHiddenTool(definition.Name) {
 			continue
 		}
 
@@ -159,21 +160,27 @@ func (executor *executeToolExecutor) call(
 	name string,
 	encoded json.RawMessage,
 ) executeToolCallResult {
-	if tool.Name(name) == executeToolName {
-		return executeToolCallResult{
-			Details: map[string]any{}, Content: nil, Error: "execute cannot call itself", IsError: true,
+	if executeHiddenTool(tool.Name(name)) {
+		message := "execute cannot call " + name
+		if tool.Name(name) == executeToolName {
+			message = "execute cannot call itself"
 		}
-	}
 
-	if tool.Name(name) == workflowToolName {
 		return executeToolCallResult{
-			Details: map[string]any{}, Content: nil, Error: "execute cannot call workflow", IsError: true,
+			Details: map[string]any{}, Content: nil, Error: message, IsError: true,
 		}
 	}
 
 	arguments, err := tool.ArgumentsFromRaw(encoded)
 	if err != nil {
 		return executeToolCallResult{Details: map[string]any{}, Content: nil, Error: err.Error(), IsError: true}
+	}
+
+	if arguments.HasField(backgroundKey) {
+		return executeToolCallResult{
+			Details: map[string]any{}, Content: nil,
+			Error: "execute cannot manage background tool calls", IsError: true,
+		}
 	}
 
 	var result tool.Result
@@ -205,11 +212,31 @@ func (executor *executeToolExecutor) call(
 	return outcome
 }
 
+func executeHiddenTool(name tool.Name) bool {
+	switch name {
+	case executeToolName, workflowToolName:
+		return true
+	case tool.NameRead, tool.NameBash, tool.NameEdit, tool.NameWrite,
+		tool.NameGrep, tool.NameFind, tool.NameLS, tool.NameAST, tool.NameFetch:
+		return false
+	}
+
+	return false
+}
+
 func executeDefinitionMap(definition *tool.Definition) map[string]any {
 	var schema any
 	if raw := definition.Schema.RawMessage(); len(raw) > 0 {
 		if err := json.Unmarshal(raw, &schema); err != nil {
 			schema = string(raw)
+		}
+	}
+
+	if tooltask.Eligible(definition.Name) {
+		if wrapped, ok := schema.(map[string]any); ok {
+			if variants, variantsOK := wrapped["oneOf"].([]any); variantsOK && len(variants) > 0 {
+				schema = variants[0]
+			}
 		}
 	}
 

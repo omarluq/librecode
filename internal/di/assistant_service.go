@@ -7,7 +7,16 @@ import (
 
 	"github.com/omarluq/librecode/internal/agent"
 	"github.com/omarluq/librecode/internal/assistant"
+	"github.com/omarluq/librecode/internal/tool"
 )
+
+func toolCoordinator(service *ToolService) *tool.Coordinator {
+	if service == nil {
+		return nil
+	}
+
+	return service.Coordinator
+}
 
 // AssistantService exposes the assistant runtime.
 type AssistantService struct {
@@ -16,41 +25,23 @@ type AssistantService struct {
 	capabilities *runtimeCapabilities
 }
 
+type assistantDependencies struct {
+	Config      *ConfigService      `do:""`
+	Database    *DatabaseService    `do:""`
+	Extensions  *ExtensionService   `do:""`
+	Cache       *CacheService       `do:""`
+	Models      *ModelService       `do:""`
+	TaskRuntime *TaskRuntimeService `do:""`
+	Logger      *LoggerService      `do:""`
+	Tools       *ToolService        `do:""`
+	Skills      *SkillsService      `do:""`
+}
+
 // NewAssistantService wires the assistant runtime.
 func NewAssistantService(injector do.Injector) (*AssistantService, error) {
-	configService, err := do.Invoke[*ConfigService](injector)
+	dependencies, err := do.InvokeStruct[assistantDependencies](injector)
 	if err != nil {
-		return nil, err
-	}
-
-	databaseService, err := do.Invoke[*DatabaseService](injector)
-	if err != nil {
-		return nil, err
-	}
-
-	extensionService, err := do.Invoke[*ExtensionService](injector)
-	if err != nil {
-		return nil, err
-	}
-
-	cache, err := do.Invoke[*CacheService](injector)
-	if err != nil {
-		return nil, err
-	}
-
-	models, err := do.Invoke[*ModelService](injector)
-	if err != nil {
-		return nil, err
-	}
-
-	loggerService, err := do.Invoke[*LoggerService](injector)
-	if err != nil {
-		return nil, err
-	}
-
-	skills, err := do.Invoke[*SkillsService](injector)
-	if err != nil {
-		return nil, err
+		return nil, serviceError(err, "resolve assistant dependencies")
 	}
 
 	cwd, err := filepath.Abs(".")
@@ -61,20 +52,32 @@ func NewAssistantService(injector do.Injector) (*AssistantService, error) {
 	agents := agent.Load(cwd)
 	capabilities := newRuntimeCapabilities()
 
+	var toolTasks assistant.ToolTaskController
+	if dependencies.TaskRuntime != nil {
+		toolTasks = dependencies.TaskRuntime.Tools
+	}
+
+	runtime := assistant.NewRuntime(&assistant.RuntimeOptions{
+		Config:            dependencies.Config.Get(),
+		Sessions:          dependencies.Database.Sessions,
+		Extensions:        dependencies.Extensions.Manager,
+		Cache:             dependencies.Cache.Responses,
+		Models:            dependencies.Models.Registry,
+		Client:            nil,
+		Logger:            dependencies.Logger.SlogLogger,
+		SkillsCache:       dependencies.Skills.Cache,
+		Agents:            agents,
+		AgentTasks:        capabilities,
+		WorkflowSubmitter: capabilities,
+		ToolTasks:         toolTasks,
+		ToolCoordinator:   toolCoordinator(dependencies.Tools),
+	})
+	if dependencies.TaskRuntime != nil && dependencies.TaskRuntime.Tools != nil {
+		dependencies.TaskRuntime.Tools.SetCompletionHook(runtime.BackgroundToolCompletion)
+	}
+
 	return &AssistantService{
-		Runtime: assistant.NewRuntime(&assistant.RuntimeOptions{
-			Config:            configService.Get(),
-			Sessions:          databaseService.Sessions,
-			Extensions:        extensionService.Manager,
-			Cache:             cache.Responses,
-			Models:            models.Registry,
-			Client:            nil,
-			Logger:            loggerService.SlogLogger,
-			SkillsCache:       skills.Cache,
-			Agents:            agents,
-			AgentTasks:        capabilities,
-			WorkflowSubmitter: capabilities,
-		}),
+		Runtime:      runtime,
 		Agents:       agents,
 		capabilities: capabilities,
 	}, nil

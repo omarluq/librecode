@@ -18,6 +18,8 @@ const (
 	taskSucceededEvent       = "task_succeeded"
 	taskFailedEvent          = "task_failed"
 	taskInterruptedEvent     = "task_interrupted"
+	testWorker               = "worker"
+	testDone                 = "done"
 	invalidID                = "bad"
 	eventKindRequired        = "event.kind is required"
 	leaseOwnerExpiryRequired = "requires an owner and expiry"

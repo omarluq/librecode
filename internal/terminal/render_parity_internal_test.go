@@ -262,6 +262,16 @@ func renderParityConfig() *config.Config {
 			Capacity: 0,
 			TTL:      0,
 		},
+		Tasks: config.TaskRuntimeConfig{
+			Workers:          0,
+			PollInterval:     0,
+			LeaseDuration:    0,
+			Heartbeat:        0,
+			RecoveryInterval: 0,
+			DefaultTimeout:   0,
+			MaxTimeout:       0,
+			MaxOutcomeBytes:  0,
+		},
 	}
 }
 

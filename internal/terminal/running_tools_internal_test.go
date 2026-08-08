@@ -30,7 +30,7 @@ func TestAgentManagementToolsUseTaskSummaryInsteadOfToolBlocks(t *testing.T) {
 	call := testToolCallEvent(agentStartToolName, `{"agent":"explore","prompt":"review"}`)
 
 	app.applyStreamedToolStart(&call, "")
-	app.applyStreamedToolEvent(&assistant.ToolEvent{
+	app.applyStreamedToolEvent(t.Context(), &assistant.ToolEvent{
 		CallID: "", ParentCallID: "", Sequence: 0,
 		Name: agentStartToolName, ArgumentsJSON: call.ArgumentsJSON, DetailsJSON: "",
 		Result: "started", Error: "", IsError: false,
@@ -301,7 +301,7 @@ func runningToolAppendRenderRemoveCase() runningToolBlockTestCase {
 			lines := app.renderRunningToolBlock(80, &app.runningToolBlocks[0].Call)
 			assert.NotEqual(t, -1, lineIndexContaining(lines, "◌ $ go test ./..."))
 
-			app.applyStreamedToolEvent(&assistant.ToolEvent{
+			app.applyStreamedToolEvent(t.Context(), &assistant.ToolEvent{
 				CallID:        "",
 				ParentCallID:  "",
 				Sequence:      0,

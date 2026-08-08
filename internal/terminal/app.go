@@ -164,6 +164,8 @@ type App struct {
 	runtime                   *assistant.Runtime
 	sessionViews              map[string]sessionViewState
 	deliveredAgentTasks       map[string]struct{}
+	deliveredToolTasks        map[string]struct{}
+	cancelToolTaskCompletions context.CancelFunc
 	renderer                  *tui.Renderer
 	theme                     terminalTheme
 	sessionID                 string
@@ -182,6 +184,7 @@ type App struct {
 	runningToolBlocks         []runningToolBlock
 	composerImages            []imageAttachment
 	agentTasks                []database.AgentTaskEntity
+	toolTasks                 []database.ToolTaskEntity
 	liveAgentCompletions      []chatMessage
 	activeWorkflows           []database.WorkflowRunEntity
 	agentTaskSessionStack     []string
@@ -249,6 +252,8 @@ func Run(ctx context.Context, options *RunOptions) error {
 	}
 
 	app.discoverActiveAgentTasks(ctx)
+	app.logToolTaskRefreshError(ctx, app.refreshToolTasks(ctx))
+	app.watchToolTaskCompletions(ctx)
 	app.loop(ctx)
 
 	return nil
@@ -274,45 +279,46 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 
 func newAppState(screen terminalScreen, options *RunOptions) *App {
 	return &App{
-		screen:                    screen,
-		renderer:                  tui.NewRenderer(screen),
-		frame:                     nil,
-		lastResize:                nil,
-		systemClipboard:           newDesktopClipboard(),
-		imageClipboard:            newDesktopClipboard(),
-		runtime:                   options.Runtime,
-		workflows:                 options.Workflows,
-		extensions:                options.Extensions,
-		settings:                  options.Settings,
-		models:                    options.Models,
-		auth:                      options.Auth,
-		cfg:                       options.Config,
-		keys:                      newDefaultKeybindings(),
-		theme:                     initialAppTheme(options),
-		resources:                 initialResourceSnapshot(options),
-		mode:                      modeChat,
-		panel:                     nil,
-		cwd:                       options.CWD,
-		sessionID:                 options.SessionID,
-		sessionViews:              map[string]sessionViewState{},
-		agentTaskSessionStack:     []string{},
-		pendingParentID:           nil,
-		activePrompt:              nil,
-		activeCompaction:          nil,
-		transcript:                initialTranscriptState(),
-		runningToolBlocks:         []runningToolBlock{},
-		liveAgentCompletions:      []chatMessage{},
-		agentTasks:                []database.AgentTaskEntity{},
-		activeWorkflows:           []database.WorkflowRunEntity{},
-		workflowProgress:          map[string]workflowProgress{},
-		workflowSteps:             map[string][]database.WorkflowAgentTaskDetail{},
-		workflowSummaryRunID:      "",
-		workflowPanelRunID:        "",
-		agentTaskSummaryOwnerID:   "",
-		agentTasksRefreshedAt:     time.Time{},
-		agentTaskWatches:          map[string]context.CancelFunc{},
-		deliveredAgentTasks:       map[string]struct{}{},
-		queuedMessages:            []promptDraft{},
+		screen:                  screen,
+		renderer:                tui.NewRenderer(screen),
+		frame:                   nil,
+		lastResize:              nil,
+		systemClipboard:         newDesktopClipboard(),
+		imageClipboard:          newDesktopClipboard(),
+		runtime:                 options.Runtime,
+		workflows:               options.Workflows,
+		extensions:              options.Extensions,
+		settings:                options.Settings,
+		models:                  options.Models,
+		auth:                    options.Auth,
+		cfg:                     options.Config,
+		keys:                    newDefaultKeybindings(),
+		theme:                   initialAppTheme(options),
+		resources:               initialResourceSnapshot(options),
+		mode:                    modeChat,
+		panel:                   nil,
+		cwd:                     options.CWD,
+		sessionID:               options.SessionID,
+		sessionViews:            map[string]sessionViewState{},
+		agentTaskSessionStack:   []string{},
+		pendingParentID:         nil,
+		activePrompt:            nil,
+		activeCompaction:        nil,
+		transcript:              initialTranscriptState(),
+		runningToolBlocks:       []runningToolBlock{},
+		liveAgentCompletions:    []chatMessage{},
+		agentTasks:              []database.AgentTaskEntity{},
+		toolTasks:               []database.ToolTaskEntity{},
+		activeWorkflows:         []database.WorkflowRunEntity{},
+		workflowProgress:        map[string]workflowProgress{},
+		workflowSteps:           map[string][]database.WorkflowAgentTaskDetail{},
+		workflowSummaryRunID:    "",
+		workflowPanelRunID:      "",
+		agentTaskSummaryOwnerID: "",
+		agentTasksRefreshedAt:   time.Time{},
+		agentTaskWatches:        map[string]context.CancelFunc{},
+		deliveredAgentTasks:     map[string]struct{}{}, deliveredToolTasks: map[string]struct{}{},
+		cancelToolTaskCompletions: nil, queuedMessages: []promptDraft{},
 		hiddenQueuedMessages:      []promptDraft{},
 		promptHistory:             []string{},
 		promptHistoryImages:       [][]imageAttachment{},
@@ -390,6 +396,7 @@ func initialResourceSnapshot(options *RunOptions) core.ResourceSnapshot {
 
 func (app *App) loop(ctx context.Context) {
 	defer app.stopAgentTaskWatches()
+	defer app.stopToolTaskCompletions()
 
 	workTicker := time.NewTicker(workFrameInterval)
 	defer workTicker.Stop()
@@ -451,6 +458,7 @@ func (app *App) runLoopStep(
 		app.workFrame++
 		if time.Since(app.agentTasksRefreshedAt) >= agentTaskRefreshInterval {
 			app.refreshVisibleAgentTasks(ctx)
+			app.logToolTaskRefreshError(ctx, app.refreshToolTasks(ctx))
 			app.refreshAgentTasksPanel(ctx)
 			app.refreshWorkflowsPanel(ctx)
 		}

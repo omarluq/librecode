@@ -24,8 +24,10 @@ type Client struct {
 }
 
 const (
-	maxWorkerStderrSize   = 64 << 10
-	stderrTruncatedMarker = "\n[execute worker stderr truncated]"
+	maxWorkerStderrSize       = 64 << 10
+	maxConcurrentRPCCallbacks = 4
+	maxTotalRPCCallbacks      = 256
+	stderrTruncatedMarker     = "\n[execute worker stderr truncated]"
 )
 
 type cappedBuffer struct {
@@ -182,16 +184,23 @@ func (client Client) executablePath() (string, error) {
 	return executable, nil
 }
 
+type rpcCallbacks struct {
+	slots chan struct{}
+	done  []<-chan struct{}
+}
+
 func (client Client) readMessages(
 	ctx context.Context,
 	worker *workerProcess,
 	stdin io.WriteCloser,
 	stdout io.Reader,
 ) (mvmhost.Result, error) {
-	var (
-		writes    sync.Mutex
-		callbacks []<-chan struct{}
-	)
+	callbacks := rpcCallbacks{
+		slots: make(chan struct{}, maxConcurrentRPCCallbacks),
+		done:  nil,
+	}
+
+	var writes sync.Mutex
 
 	for {
 		message, err := Read(stdout)
@@ -201,23 +210,11 @@ func (client Client) readMessages(
 
 		switch message.Type {
 		case "rpc":
-			callbackDone := make(chan struct{})
-
-			callbacks = append(callbacks, callbackDone)
-			go func(rpc Message) {
-				defer close(callbackDone)
-
-				response := client.rpcResponse(ctx, &rpc)
-
-				writes.Lock()
-				defer writes.Unlock()
-
-				if Write(stdin, &response) != nil {
-					worker.kill()
-				}
-			}(message)
+			if err := client.startRPCCallback(ctx, worker, stdin, &message, &callbacks, &writes); err != nil {
+				return mvmhost.Result{}, worker.abort(err)
+			}
 		case "result":
-			if err := waitForCallbacks(ctx, callbacks); err != nil {
+			if err := waitForCallbacks(ctx, callbacks.done); err != nil {
 				return mvmhost.Result{}, worker.abort(err)
 			}
 
@@ -228,6 +225,48 @@ func (client Client) readMessages(
 			)
 		}
 	}
+}
+
+func (client Client) startRPCCallback(
+	ctx context.Context,
+	worker *workerProcess,
+	stdin io.Writer,
+	message *Message,
+	callbacks *rpcCallbacks,
+	writes *sync.Mutex,
+) error {
+	if len(callbacks.done) >= maxTotalRPCCallbacks {
+		return fmt.Errorf(
+			"execute worker RPC callback limit exceeded (maximum %d)",
+			maxTotalRPCCallbacks,
+		)
+	}
+
+	select {
+	case callbacks.slots <- struct{}{}:
+	case <-ctx.Done():
+		return canceledError(ctx.Err())
+	}
+
+	callbackDone := make(chan struct{})
+	callbacks.done = append(callbacks.done, callbackDone)
+	rpc := *message
+
+	go func() {
+		defer close(callbackDone)
+		defer func() { <-callbacks.slots }()
+
+		response := client.rpcResponse(ctx, &rpc)
+
+		writes.Lock()
+		defer writes.Unlock()
+
+		if Write(stdin, &response) != nil {
+			worker.kill()
+		}
+	}()
+
+	return nil
 }
 
 func waitForCallbacks(ctx context.Context, callbacks []<-chan struct{}) error {

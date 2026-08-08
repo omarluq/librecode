@@ -29,7 +29,24 @@ type toolProvider interface {
 }
 
 func newToolRegistry(cwd string, provider toolProvider) (*tool.Registry, error) {
-	registry := tool.NewRegistry(cwd)
+	return newToolRegistryWithCoordinator(cwd, provider, nil)
+}
+
+func newToolRegistryWithCoordinator(
+	cwd string,
+	provider toolProvider,
+	coordinator *tool.Coordinator,
+) (*tool.Registry, error) {
+	names := []tool.Name{
+		tool.NameRead, tool.NameBash, tool.NameEdit, tool.NameWrite, tool.NameGrep,
+		tool.NameFind, tool.NameLS, tool.NameAST, tool.NameFetch,
+	}
+
+	registry, err := tool.NewRegistryWithCoordinator(cwd, names, coordinator)
+	if err != nil {
+		return nil, oops.In("assistant").Code("create_tool_registry").Wrapf(err, "create tool registry")
+	}
+
 	if isNilToolProvider(provider) {
 		return registry, nil
 	}
@@ -55,12 +72,16 @@ func (runtime *Runtime) promptToolRegistry(
 		provider = nil
 	}
 
-	registry, err := newToolRegistry(cwd, provider)
+	registry, err := newToolRegistryWithCoordinator(cwd, provider, runtime.toolCoordinator)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := runtime.registerAgentTools(registry, sessionID, cwd); err != nil {
+		return nil, err
+	}
+
+	if err := runtime.registerBackgroundTools(registry, sessionID, cwd); err != nil {
 		return nil, err
 	}
 
@@ -89,6 +110,29 @@ func (runtime *Runtime) registerAgentTools(registry *tool.Registry, sessionID, c
 		}
 		if err := registry.Register(executor); err != nil {
 			return oops.In("assistant").Code("register_agent_tool").Wrapf(err, "register agent tool")
+		}
+	}
+
+	return nil
+}
+
+func (runtime *Runtime) registerBackgroundTools(registry *tool.Registry, sessionID, cwd string) error {
+	if runtime.toolTasks == nil {
+		return nil
+	}
+
+	for _, name := range []tool.Name{
+		tool.NameRead, tool.NameBash, tool.NameEdit, tool.NameWrite,
+		tool.NameGrep, tool.NameFind, tool.NameLS, tool.NameAST,
+	} {
+		err := registry.Wrap(name, func(executor tool.Executor) tool.Executor {
+			return &backgroundToolExecutor{
+				target: executor, controller: runtime.toolTasks, admit: runtime.admitBackgroundToolTarget,
+				cache: new(backgroundDefinitionCache), owner: sessionID, cwd: cwd,
+			}
+		})
+		if err != nil {
+			return oops.In("assistant").Code("wrap_background_tool").Wrapf(err, "wrap background tool")
 		}
 	}
 
@@ -131,7 +175,7 @@ func (runtime *Runtime) registerExecuteTool(ctx context.Context, registry *tool.
 }
 
 func (runtime *Runtime) profileToolRegistry(cwd string) (*tool.Registry, error) {
-	registry, err := tool.NewRegistryWithTools(cwd, runtime.profile.Tools)
+	registry, err := tool.NewRegistryWithCoordinator(cwd, runtime.profile.Tools, runtime.toolCoordinator)
 	if err != nil {
 		return nil, oops.In("assistant").Code("create_child_tool_registry").Wrapf(err, "create child tool registry")
 	}

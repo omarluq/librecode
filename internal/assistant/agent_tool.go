@@ -278,7 +278,7 @@ func (executor *agentToolExecutor) wait(ctx context.Context, input tool.Argument
 
 	task, err := executor.ownedTask(ctx, args.TaskID)
 	if err != nil {
-		return tool.TextResult("", map[string]any{"task_id": args.TaskID}), err
+		return tool.TextResult("", map[string]any{taskIDKey: args.TaskID}), err
 	}
 
 	return agentTaskResult(task), nil
@@ -380,7 +380,7 @@ func agentTaskResult(task *database.AgentTaskEntity) tool.Result {
 
 func agentTaskDetails(task *database.AgentTaskEntity) map[string]any {
 	return map[string]any{
-		"task_id": task.Task.ID, "state": task.Task.State, "agent": task.AgentName,
+		taskIDKey: task.Task.ID, taskStateKey: task.Task.State, "agent": task.AgentName,
 		"session_id": task.ChildSessionID, "usage": task.UsageJSON,
 	}
 }

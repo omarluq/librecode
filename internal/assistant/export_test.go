@@ -6,11 +6,17 @@ import (
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/tooltask"
 )
 
 // DispatchToolCallLifecycleForTest exposes tool call lifecycle dispatch for external package tests.
 func (runtime *Runtime) DispatchToolCallLifecycleForTest(ctx context.Context, call *ToolCallEvent) error {
 	return runtime.dispatchToolCallLifecycle(ctx, call)
+}
+
+// AdmitBackgroundToolTargetForTest exposes durable tool admission for external package tests.
+func (runtime *Runtime) AdmitBackgroundToolTargetForTest(ctx context.Context, request *tooltask.StartRequest) error {
+	return runtime.admitBackgroundToolTarget(ctx, request)
 }
 
 // DispatchToolResultLifecycleForTest exposes tool result lifecycle dispatch for external package tests.

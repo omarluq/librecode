@@ -59,7 +59,7 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 	}
 
 	state.result.Usage = accumulateUsage(state.result.Usage, providerResult.Usage)
-	if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
+	if validateErr := validateToolDispatch(providerResult.FinishReason, providerResult.ToolCalls); validateErr != nil {
 		return false, validateErr
 	}
 

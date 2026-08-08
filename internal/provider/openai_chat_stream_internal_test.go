@@ -85,6 +85,12 @@ func TestParseOpenAIChatStreamHandlesErrorsAndIncompleteStreams(t *testing.T) {
 	assert.Contains(t, err.Error(), "closed before completion")
 }
 
+func TestOpenAIChatFinishReasonPreservesLengthWithPartialToolCall(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, llm.FinishReasonLength, openAIChatFinishReason("length", true))
+}
+
 func TestParseOpenAIChatStreamMapsFinishReasonLength(t *testing.T) {
 	t.Parallel()
 

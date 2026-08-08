@@ -10,6 +10,7 @@ import (
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/tooltask"
 )
 
 const (
@@ -196,6 +197,86 @@ end)
 	require.Error(t, resultErr)
 	assert.Contains(t, callErr.Error(), "lifecycle handlers failed")
 	assert.Contains(t, resultErr.Error(), "lifecycle handlers failed")
+}
+
+func TestRuntime_BackgroundToolLifecyclePreservesAssistantHooks(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		lua           string
+		wantArguments string
+		wantResult    string
+		wantError     string
+	}{
+		{
+			name: "mutates admitted arguments and completed result",
+			lua: `
+local lc = require("librecode")
+lc.on("tool_call", function()
+  return {tool_call = {arguments = {path = "admitted.txt"}}}
+end)
+lc.on("tool_result", function(ev)
+  if ev.payload.arguments.path ~= "admitted.txt" then
+    error("missing structured background arguments")
+  end
+  return {tool_result = {result = "sanitized", error = ""}}
+end)
+`,
+			wantArguments: `{"path":"admitted.txt"}`,
+			wantResult:    "sanitized",
+			wantError:     "",
+		},
+		{
+			name: "turns lifecycle error event into completion error",
+			lua: `
+local lc = require("librecode")
+lc.on("tool_result", function()
+  return {tool_result = {error = "blocked"}}
+end)
+`,
+			wantArguments: testToolArgsJSON,
+			wantResult:    testToolResult,
+			wantError:     "blocked",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			runtime, _, manager := newTestRuntimeWithManager(t, testCompleter{})
+			loadRuntimeExtension(t, manager, testCase.lua)
+
+			request := &tooltask.StartRequest{
+				Invocation: tooltask.Invocation{
+					ID: testToolCallID, WrapperCallID: "", ParentCallID: testToolLifecycleParentID,
+					OwnerSessionID: "", CWD: "", InitiatingEntryID: "", SourceSequence: 0,
+				},
+				Target:    testToolName,
+				Arguments: testutil.ToolArguments(map[string]any{testToolPathKey: testToolPath}),
+				Timeout:   0,
+				Admit:     nil,
+			}
+
+			require.NoError(t, runtime.AdmitBackgroundToolTargetForTest(t.Context(), request))
+			assert.JSONEq(t, testCase.wantArguments, request.Arguments.String())
+
+			completion := &tooltask.Completion{
+				Err: nil, Arguments: request.Arguments, TaskID: "", InvocationID: testToolCallID,
+				WrapperCallID: "", OwnerSessionID: "", ParentCallID: testToolLifecycleParentID,
+				Target: testToolName, ArgumentsJSON: request.Arguments.String(),
+				Result: tool.TextResult(testToolResult, map[string]any{}), SourceSequence: 0,
+			}
+			require.NoError(t, runtime.BackgroundToolCompletion(t.Context(), completion))
+			assert.Equal(t, testCase.wantResult, completion.Result.Text())
+
+			if testCase.wantError == "" {
+				assert.NoError(t, completion.Err)
+			} else {
+				require.ErrorContains(t, completion.Err, testCase.wantError)
+			}
+		})
+	}
 }
 
 func TestRuntime_ToolResultLifecycleDispatchesToolErrorHandlers(t *testing.T) {

@@ -30,6 +30,16 @@ func validateToolCalls(calls []ToolCall) error {
 	return nil
 }
 
+func validateToolDispatch(finishReason llm.FinishReason, calls []ToolCall) error {
+	if finishReason == llm.FinishReasonLength && len(calls) > 0 {
+		return oops.In("provider").Code("truncated_tool_calls").Errorf(
+			"provider response ended for length with tool calls; refusing possibly partial invocations",
+		)
+	}
+
+	return validateToolCalls(calls)
+}
+
 func executeToolCalls(
 	ctx context.Context,
 	request *CompletionRequest,

@@ -47,13 +47,58 @@ func TestFileMutationLocksReserveSamePathInRegistrationOrder(t *testing.T) {
 	}()
 
 	select {
-	case <-secondRan:
-		t.Fatal("second mutation ran before the first completed")
-	case <-time.After(100 * time.Millisecond):
+	case <-second.ready:
+		t.Fatal("second reservation became ready before the first completed")
+	default:
 	}
 
 	close(firstRelease)
 	<-done
+}
+
+func TestFileMutationLocksParentPathConflictsWithChild(t *testing.T) {
+	t.Parallel()
+
+	locks := newFileMutationLocks()
+	root := t.TempDir()
+	workspace := locks.reserve(root)
+	file := locks.reserve(filepath.Join(root, "file.txt"))
+	workspaceStarted := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := workspace.execute(t.Context(), func() (Result, error) {
+			close(workspaceStarted)
+			<-release
+
+			return emptyToolResult(), nil
+		})
+		done <- err
+	}()
+
+	<-workspaceStarted
+
+	fileRan := make(chan struct{})
+
+	go func() {
+		_, err := file.execute(t.Context(), func() (Result, error) {
+			close(fileRan)
+
+			return emptyToolResult(), nil
+		})
+		done <- err
+	}()
+
+	select {
+	case <-file.ready:
+		t.Fatal("child reservation became ready during workspace mutation")
+	default:
+	}
+
+	close(release)
+	require.NoError(t, <-done)
+	require.NoError(t, <-done)
 }
 
 func TestFileMutationLocksCanceledWaitReleasesReservation(t *testing.T) {
