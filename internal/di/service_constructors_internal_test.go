@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -77,13 +79,98 @@ func testServiceConfig() *config.Config {
 	return cfg
 }
 
+func TestNewTaskRuntimeServiceWiringBranches(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		configure func(*DatabaseService, *ToolService)
+		wantCode  string
+	}{
+		{
+			name: "missing task repository",
+			configure: func(databaseService *DatabaseService, _ *ToolService) {
+				databaseService.Tasks = nil
+			},
+			wantCode: "missing_task_repositories",
+		},
+		{
+			name: "missing tool task repository",
+			configure: func(databaseService *DatabaseService, _ *ToolService) {
+				databaseService.ToolTasks = nil
+			},
+			wantCode: "missing_task_repositories",
+		},
+		{
+			name: "missing coordinator",
+			configure: func(_ *DatabaseService, toolService *ToolService) {
+				toolService.Coordinator = nil
+			},
+			wantCode: "missing_tool_coordinator",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			injector := do.New()
+			databaseService := newTestDatabaseService(t)
+			toolService, err := NewToolService(injector)
+			require.NoError(t, err)
+			testCase.configure(databaseService, toolService)
+			provideTaskRuntimeDependencies(injector, databaseService, toolService)
+
+			service, err := NewTaskRuntimeService(injector)
+			assert.Nil(t, service)
+			requireOopsCode(t, err, testCase.wantCode)
+		})
+	}
+}
+
+func TestNewTaskRuntimeServiceConstructsSchedulerManagerAndTools(t *testing.T) {
+	t.Parallel()
+
+	injector := do.New()
+	databaseService := newTestDatabaseService(t)
+	toolService, err := NewToolService(injector)
+	require.NoError(t, err)
+	provideTaskRuntimeDependencies(injector, databaseService, toolService)
+
+	service, err := NewTaskRuntimeService(injector)
+	require.NoError(t, err)
+	require.NotNil(t, service)
+	t.Cleanup(func() { assert.NoError(t, service.Shutdown(context.Background())) })
+	assert.NotNil(t, service.Runtime)
+	assert.NotNil(t, service.Manager)
+	assert.NotNil(t, service.Tools)
+	require.NoError(t, service.Start(t.Context()))
+}
+
+func provideTaskRuntimeDependencies(
+	injector do.Injector,
+	databaseService *DatabaseService,
+	toolService *ToolService,
+) {
+	logger := zerolog.Nop()
+
+	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: "", interactive: false})
+	do.ProvideValue(injector, databaseService)
+	do.ProvideValue(injector, &LoggerService{
+		SlogLogger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ZerologLogger: logger,
+	})
+	do.ProvideValue(injector, toolService)
+}
+
 func TestNewAgentTaskServiceRejectsIncompleteWiring(t *testing.T) {
 	t.Parallel()
 
 	injector := do.New()
 	provideTestApplicationContext(injector)
 	do.ProvideValue(injector, &DatabaseService{
-		DB: nil, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, Workflows: nil, path: "",
+		DB: nil, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, Workflows: nil, ToolTasks: nil,
+		path: "",
 	})
 	do.ProvideValue(injector, &AssistantService{
 		Runtime: nil, Agents: nil, capabilities: nil,
@@ -135,10 +222,10 @@ func TestAgentTaskServiceWiresAndShutsDown(t *testing.T) {
 
 	service, err := NewAgentTaskService(injector)
 	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, service.Shutdown(context.Background())) })
 	require.Nil(t, service.Tasks())
 	require.NoError(t, service.Start(t.Context()))
 	require.NotNil(t, service.Tasks())
-	require.NoError(t, service.Shutdown(context.Background()))
 }
 
 func newTestAssistantService(t *testing.T, injector do.Injector) *AssistantService {
@@ -353,6 +440,7 @@ func TestStartRuntimeRevokesCapabilitiesAfterCancellation(t *testing.T) {
 			AgentTasks:    nil,
 			Workflows:     nil,
 			ChatWorkflows: nil,
+			TaskRuntime:   nil,
 		}, nil
 	}
 

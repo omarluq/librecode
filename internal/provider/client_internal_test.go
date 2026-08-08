@@ -223,10 +223,10 @@ func incompleteSSECases() []incompleteSSECase {
 			expectedToolCalls:    0,
 		},
 		{
-			name:                 "tool calls win over length",
+			name:                 "length remains authoritative with parsed tool calls",
 			stream:               incompleteToolCallSSE(),
 			expectedText:         "",
-			expectedFinishReason: llm.FinishReasonToolCalls,
+			expectedFinishReason: llm.FinishReasonLength,
 			expectedToolName:     jsonReadToolName,
 			expectedInputTokens:  0,
 			expectedOutputTokens: 0,

@@ -4,6 +4,7 @@ package tool
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -13,12 +14,14 @@ import (
 )
 
 func TestFindWindowsBashReturnsConfiguredPath(t *testing.T) {
-	t.Setenv("LIBRECODE_BASH_PATH", "C:\\Tools\\Git\\bin\\bash.exe")
+	configuredPath := filepath.Join(t.TempDir(), windowsBashExecutable)
+	require.NoError(t, os.WriteFile(configuredPath, nil, 0o600))
+	t.Setenv("LIBRECODE_BASH_PATH", configuredPath)
 
 	path, err := findWindowsBash()
 	require.NoError(t, err)
 
-	assert.Equal(t, "C:\\Tools\\Git\\bin\\bash.exe", path)
+	assert.Equal(t, configuredPath, path)
 }
 
 func TestWindowsBashCandidatesSkipsEmptyBaseDirs(t *testing.T) {
@@ -32,8 +35,8 @@ func TestWindowsBashCandidatesSkipsEmptyBaseDirs(t *testing.T) {
 	assert.NotContains(t, candidates, filepath.Join("Git", "bin", windowsBashExecutable))
 	assert.NotContains(t, candidates, filepath.Join("Git", "usr", "bin", windowsBashExecutable))
 	assert.NotContains(t, candidates, filepath.Join("Programs", "Git", "bin", windowsBashExecutable))
-	assert.Contains(t, candidates, windowsBashExecutable)
-	assert.Contains(t, candidates, "bash")
+	assert.NotContains(t, candidates, windowsBashExecutable)
+	assert.NotContains(t, candidates, "bash")
 }
 
 func TestWindowsBashCandidatesIncludesConfiguredBaseDirs(t *testing.T) {
@@ -48,6 +51,38 @@ func TestWindowsBashCandidatesIncludesConfiguredBaseDirs(t *testing.T) {
 	assert.True(t, lo.Contains(candidates, filepath.Join("C:\\Program Files", "Git", "bin", windowsBashExecutable)))
 	assert.True(t, lo.Contains(candidates, filepath.Join("C:\\Program Files (x86)", "Git", "usr", "bin", windowsBashExecutable)))
 	assert.True(t, lo.Contains(candidates, filepath.Join("C:\\Users\\omar\\AppData\\Local", "Programs", "Git", "bin", windowsBashExecutable)))
+}
+
+func TestFindWindowsBashRejectsRelativeConfiguredPath(t *testing.T) {
+	pathDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(pathDir, "custom-bash.exe"), nil, 0o600))
+	t.Setenv("LIBRECODE_BASH_PATH", "custom-bash.exe")
+	t.Setenv("ProgramFiles", t.TempDir())
+	t.Setenv("ProgramFiles(x86)", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	t.Setenv("PATH", pathDir)
+
+	_, err := findWindowsBash()
+	require.Error(t, err)
+
+	assert.True(t, errors.Is(err, errBashNotFound))
+	assert.Contains(t, err.Error(), "LIBRECODE_BASH_PATH must be an absolute path")
+	assert.Contains(t, err.Error(), "custom-bash.exe")
+}
+
+func TestFindWindowsBashDoesNotUseDirectoryCandidate(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), windowsBashExecutable)
+	require.NoError(t, os.Mkdir(directory, 0o700))
+	t.Setenv("LIBRECODE_BASH_PATH", directory)
+	t.Setenv("ProgramFiles", t.TempDir())
+	t.Setenv("ProgramFiles(x86)", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+
+	_, err := findWindowsBash()
+	require.Error(t, err)
+
+	assert.True(t, errors.Is(err, errBashNotFound))
 }
 
 func TestFindWindowsBashDoesNotFallbackToCmd(t *testing.T) {

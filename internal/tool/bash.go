@@ -23,17 +23,22 @@ type BashInput struct {
 
 // BashTool executes shell commands in the configured working directory.
 type BashTool struct {
-	cwd string
+	locks *fileMutationLocks
+	cwd   string
 }
 
 type synchronizedBuffer struct {
-	buffer bytes.Buffer
-	lock   sync.Mutex
+	buffer    []byte
+	total     int64
+	truncated bool
+	lock      sync.Mutex
 }
 
 // NewBashTool creates the bash tool for cwd.
-func NewBashTool(cwd string) *BashTool {
-	return &BashTool{cwd: cwd}
+func NewBashTool(cwd string) *BashTool { return newBashTool(cwd, newFileMutationLocks()) }
+
+func newBashTool(cwd string, locks *fileMutationLocks) *BashTool {
+	return &BashTool{locks: locks, cwd: cwd}
 }
 
 // Definition returns bash tool metadata.
@@ -74,12 +79,71 @@ func (bashTool *BashTool) Bash(ctx context.Context, input BashInput) (Result, er
 		return emptyToolResult(), err
 	}
 
+	return bashTool.locks.mutate(ctx, workingDirectory, func() (Result, error) {
+		return bashTool.run(ctx, workingDirectory, input)
+	})
+}
+
+func (bashTool *BashTool) prepareExecution(input Arguments) (preparedExecution, error) {
+	var args BashInput
+	if err := decodeInput(input, &args); err != nil {
+		return preparedExecution{}, err
+	}
+
+	if strings.TrimSpace(args.Command) == "" {
+		return preparedExecution{}, oops.In("tool").Code("bash_command_required").Errorf("bash command is required")
+	}
+
+	workingDirectory, err := bashTool.workingDirectory()
+	if err != nil {
+		return preparedExecution{}, err
+	}
+
+	return preparedExecution{
+		mutationLocks: bashTool.locks,
+		mutationPath:  workingDirectory,
+		execute: func(ctx context.Context) (Result, error) {
+			return bashTool.run(ctx, workingDirectory, args)
+		},
+	}, nil
+}
+
+func (*BashTool) run(ctx context.Context, workingDirectory string, input BashInput) (Result, error) {
 	execCtx, cancel := contextWithOptionalTimeout(ctx, input.Timeout)
 	defer cancel()
 
 	output, waitErr := runShellCommand(execCtx, workingDirectory, input.Command)
+	captured, totalBytes, ingestionTruncated := output.snapshot()
 
-	return formatBashResult(execCtx, input, output.bytes(), waitErr)
+	result, resultErr := formatBashResult(execCtx, input, captured, waitErr)
+	if !ingestionTruncated {
+		return result, resultErr
+	}
+
+	metadata := map[string]any{
+		"truncated": true, "truncated_by": "ingestion_bytes",
+		"total_bytes": totalBytes, "retained_bytes": len(captured),
+	}
+
+	if result.Details == nil {
+		result.Details = map[string]any{}
+	}
+
+	result.Details[detailTruncation] = metadata
+
+	notice := fmt.Sprintf(
+		"[Output ingestion truncated: retained last %s of %s]",
+		FormatSize(len(captured)), FormatSize(int(totalBytes)),
+	)
+	if resultErr != nil {
+		return result, errors.New(appendStatus(resultErr.Error(), notice))
+	}
+
+	if len(result.Content) > 0 {
+		result.Content[0].Text = appendStatus(result.Content[0].Text, notice)
+	}
+
+	return result, nil
 }
 
 func (bashTool *BashTool) workingDirectory() (string, error) {
@@ -122,7 +186,9 @@ type commandOutput struct {
 }
 
 func runShellCommand(ctx context.Context, cwd, command string) (*commandOutput, error) {
-	output := &commandOutput{buffer: &synchronizedBuffer{buffer: bytes.Buffer{}, lock: sync.Mutex{}}}
+	output := &commandOutput{buffer: &synchronizedBuffer{
+		buffer: make([]byte, 0, DefaultMaxBytes), total: 0, truncated: false, lock: sync.Mutex{},
+	}}
 
 	shellPath, shellArgs, err := shellConfig(command)
 	if err != nil {
@@ -317,22 +383,36 @@ func appendStatus(text, status string) string {
 	return text + "\n\n" + status
 }
 
-func (output *commandOutput) bytes() []byte {
-	return output.buffer.bytes()
+func (output *commandOutput) snapshot() (captured []byte, total int64, truncated bool) {
+	return output.buffer.snapshot()
 }
 
 func (buffer *synchronizedBuffer) Write(data []byte) (int, error) {
 	buffer.lock.Lock()
 	defer buffer.lock.Unlock()
 
-	written, err := buffer.buffer.Write(data)
+	buffer.total += int64(len(data))
+	if len(data) >= DefaultMaxBytes {
+		buffer.buffer = append(buffer.buffer[:0], data[len(data)-DefaultMaxBytes:]...)
+		buffer.truncated = len(data) > DefaultMaxBytes || buffer.total > int64(len(data))
 
-	return written, toolWrap(err, "buffer bash output")
+		return len(data), nil
+	}
+
+	if overflow := len(buffer.buffer) + len(data) - DefaultMaxBytes; overflow > 0 {
+		copy(buffer.buffer, buffer.buffer[overflow:])
+		buffer.buffer = buffer.buffer[:len(buffer.buffer)-overflow]
+		buffer.truncated = true
+	}
+
+	buffer.buffer = append(buffer.buffer, data...)
+
+	return len(data), nil
 }
 
-func (buffer *synchronizedBuffer) bytes() []byte {
+func (buffer *synchronizedBuffer) snapshot() (captured []byte, total int64, truncated bool) {
 	buffer.lock.Lock()
 	defer buffer.lock.Unlock()
 
-	return append([]byte{}, buffer.buffer.Bytes()...)
+	return append([]byte{}, buffer.buffer...), buffer.total, buffer.truncated
 }

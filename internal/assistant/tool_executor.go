@@ -12,10 +12,12 @@ import (
 
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/tooltask"
 )
 
 func (runtime *Runtime) executeProviderToolCalls(
 	registry *tool.Registry,
+	owner, cwd string,
 ) ToolExecutor {
 	return func(
 		ctx context.Context,
@@ -28,17 +30,19 @@ func (runtime *Runtime) executeProviderToolCalls(
 
 		prepared := runtime.prepareProviderToolCalls(ctx, registry, calls)
 
-		return runtime.runPreparedToolCalls(ctx, prepared, onEvent), nil
+		return runtime.runPreparedToolCalls(ctx, prepared, onEvent, owner, cwd), nil
 	}
 }
 
 type preparedToolCall struct {
-	err               error
-	call              *ToolCallEvent
-	invocation        tool.PreparedCall
-	result            tool.Result
-	lifecycleRejected bool
-	ready             bool
+	err                error
+	call               *ToolCallEvent
+	invocation         tool.PreparedCall
+	result             tool.Result
+	lifecycleRejected  bool
+	lifecycleCompleted bool
+	background         bool
+	ready              bool
 }
 
 func (runtime *Runtime) prepareProviderToolCalls(
@@ -58,10 +62,11 @@ func (runtime *Runtime) runPreparedToolCalls(
 	ctx context.Context,
 	prepared []preparedToolCall,
 	onEvent func(StreamEvent),
+	owner, cwd string,
 ) []ToolEvent {
 	defer releasePreparedToolCalls(prepared)
 
-	return runtime.executePreparedToolCalls(ctx, prepared, onEvent)
+	return runtime.executePreparedToolCalls(ctx, prepared, onEvent, owner, cwd)
 }
 
 func releasePreparedToolCalls(calls []preparedToolCall) {
@@ -78,12 +83,14 @@ func (runtime *Runtime) prepareProviderToolCall(
 	callEvent := toolCallEvent(call)
 
 	prepared := preparedToolCall{
-		err:               nil,
-		call:              &callEvent,
-		invocation:        tool.PreparedCall{},
-		result:            tool.Result{Details: nil, Content: nil},
-		lifecycleRejected: false,
-		ready:             false,
+		err:                nil,
+		call:               &callEvent,
+		invocation:         tool.PreparedCall{},
+		result:             tool.Result{Details: nil, Content: nil},
+		lifecycleRejected:  false,
+		lifecycleCompleted: false,
+		background:         callEvent.Arguments.HasField("background"),
+		ready:              false,
 	}
 	if err := runtime.dispatchToolCallLifecycle(ctx, prepared.call); err != nil {
 		prepared.err = err
@@ -102,21 +109,14 @@ func (runtime *Runtime) executePreparedToolCalls(
 	ctx context.Context,
 	calls []preparedToolCall,
 	onEvent func(StreamEvent),
+	owner, cwd string,
 ) []ToolEvent {
-	for index := range calls {
-		if !calls[index].lifecycleRejected {
-			emitProviderToolStart(onEvent, calls[index].call)
-		}
-
-		if calls[index].ready {
-			calls[index].invocation.Admit()
-		}
-	}
+	admitPreparedToolCalls(calls, onEvent)
 
 	events := make([]ToolEvent, len(calls))
 	if batchRequiresSequentialExecution(calls) {
 		for index := range calls {
-			runtime.executePreparedToolCall(ctx, &calls[index], onEvent)
+			runtime.executePossiblyManagedTool(ctx, &calls[index], onEvent, owner, cwd)
 			events[index] = runtime.finalizePreparedToolCall(ctx, &calls[index], onEvent)
 		}
 
@@ -126,8 +126,12 @@ func (runtime *Runtime) executePreparedToolCalls(
 	guardedEvent := serializedEventSink(onEvent)
 
 	completed := make(chan int, len(calls))
-	// Provider tool batches intentionally have no process-local concurrency cap.
-	// Resource-specific limits can be added later without changing batch semantics.
+	// Bound provider-controlled fan-out. This protects processes, descriptors, and
+	// downstream stores while preserving source-indexed result ordering.
+	const maxConcurrentProviderTools = 4
+
+	semaphore := make(chan struct{}, maxConcurrentProviderTools)
+
 	for index := range calls {
 		if !calls[index].ready {
 			completed <- index
@@ -136,7 +140,17 @@ func (runtime *Runtime) executePreparedToolCalls(
 		}
 
 		go func(index int) {
-			runtime.executePreparedToolCall(ctx, &calls[index], guardedEvent)
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				calls[index].err = ctx.Err()
+				completed <- index
+
+				return
+			}
+
+			runtime.executePossiblyManagedTool(ctx, &calls[index], guardedEvent, owner, cwd)
 
 			completed <- index
 		}(index)
@@ -148,6 +162,36 @@ func (runtime *Runtime) executePreparedToolCalls(
 	}
 
 	return events
+}
+
+func admitPreparedToolCalls(calls []preparedToolCall, onEvent func(StreamEvent)) {
+	const maxProviderToolsPerTurn = 64
+
+	for index := range calls {
+		if index >= maxProviderToolsPerTurn && calls[index].ready {
+			calls[index].ready = false
+			calls[index].err = fmt.Errorf("provider tool-call limit exceeded (maximum %d)", maxProviderToolsPerTurn)
+		}
+
+		if !calls[index].lifecycleRejected {
+			emitProviderToolStart(onEvent, calls[index].call)
+		}
+
+		if calls[index].ready {
+			calls[index].invocation.Admit()
+		}
+	}
+}
+
+func (runtime *Runtime) executePossiblyManagedTool(
+	ctx context.Context,
+	call *preparedToolCall,
+	onEvent func(StreamEvent),
+	owner, cwd string,
+) {
+	if !runtime.executeManagedForegroundTool(ctx, call, owner, cwd) {
+		runtime.executePreparedToolCall(ctx, call, onEvent)
+	}
 }
 
 func batchRequiresSequentialExecution(calls []preparedToolCall) bool {
@@ -188,6 +232,10 @@ func (*Runtime) executePreparedToolCall(
 		onEvent: onEvent, parentCallID: prepared.call.ID, nextSequence: 0, mu: sync.Mutex{},
 	}
 	nestedCtx := context.WithValue(ctx, toolInvocationContextKey{}, scope)
+	nestedCtx = withTaskInvocation(nestedCtx, &tooltask.Invocation{
+		ID: prepared.call.ID, WrapperCallID: prepared.call.ID, OwnerSessionID: "", CWD: "",
+		ParentCallID: prepared.call.ParentCallID, InitiatingEntryID: "", SourceSequence: prepared.call.Sequence,
+	})
 
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -212,8 +260,11 @@ func (runtime *Runtime) finalizePreparedToolCall(
 	}
 
 	event := toolEventFromResult(prepared.call, prepared.result, prepared.err)
-	if lifecycleErr := runtime.dispatchToolResultLifecycle(ctx, &event); lifecycleErr != nil && runtime.logger != nil {
-		runtime.logger.Debug("tool result lifecycle failed", "error", lifecycleErr)
+	if !prepared.lifecycleCompleted {
+		lifecycleErr := runtime.dispatchToolResultLifecycle(ctx, &event)
+		if lifecycleErr != nil && runtime.logger != nil {
+			runtime.logger.Debug("tool result lifecycle failed", "error", lifecycleErr)
+		}
 	}
 
 	emitProviderToolResult(onEvent, &event)
@@ -305,6 +356,10 @@ func (runtime *Runtime) invokeToolResult(
 		onEvent: onEvent, parentCallID: callEvent.ID, nextSequence: 0, mu: sync.Mutex{},
 	}
 	nestedCtx := context.WithValue(ctx, toolInvocationContextKey{}, scope)
+	nestedCtx = withTaskInvocation(nestedCtx, &tooltask.Invocation{
+		ID: callEvent.ID, WrapperCallID: callEvent.ID, ParentCallID: callEvent.ParentCallID,
+		OwnerSessionID: "", CWD: "", InitiatingEntryID: "", SourceSequence: callEvent.Sequence,
+	})
 	result, err := registry.Execute(nestedCtx, callEvent.Name, callEvent.Arguments)
 
 	event := toolEventFromResult(callEvent, result, err)

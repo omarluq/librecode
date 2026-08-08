@@ -388,6 +388,23 @@ func TestExecuteCallHandlesProtectedToolsAndInvocationError(t *testing.T) {
 	assert.Equal(t, "nested failure", invocationResult.Error)
 }
 
+func TestExecuteDefinitionMapUsesOrdinarySchemaFromBackgroundEnvelope(t *testing.T) {
+	t.Parallel()
+
+	definition := tool.Definition{
+		Schema: mustToolSchema(
+			`{"oneOf":[{"type":"object","required":["path"]},` +
+				`{"type":"object","required":["background"]}]}`,
+		),
+		Name: tool.NameRead, Label: "", Description: "", PromptSnippet: "",
+		PromptGuidelines: nil, ReadOnly: true,
+	}
+
+	schema, ok := executeDefinitionMap(&definition)["schema"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, []any{"path"}, schema["required"])
+}
+
 func TestExecuteResultTextVariants(t *testing.T) {
 	t.Parallel()
 

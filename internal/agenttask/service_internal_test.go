@@ -484,6 +484,79 @@ func TestServiceInternalFinalizeInterruptedRun(t *testing.T) {
 	assert.JSONEq(t, `{}`, completed.UsageJSON)
 }
 
+func TestServiceInternalRecoveryPublishesEveryRecoveredTask(t *testing.T) {
+	t.Parallel()
+
+	fixture := newServiceRepositoryFixture(t)
+	service := serviceWithRepositories(fixture.tasks, fixture.agentTasks)
+	created := []*database.AgentTaskEntity{
+		fixture.createQueuedAgentTask(t),
+		fixture.createQueuedAgentTask(t),
+	}
+
+	subscriptions := make([]Subscription, 0, len(created))
+	for _, task := range created {
+		claimed, err := fixture.tasks.ClaimQueued(t.Context(), &database.TaskClaim{
+			TaskID: task.Task.ID, LeaseOwner: "expired-worker",
+			LeaseExpiresAt: time.Now().Add(-time.Minute), EventKind: "started",
+		})
+		require.NoError(t, err)
+		require.True(t, claimed)
+
+		subscription, err := service.subscribe(task.Task.ID)
+		require.NoError(t, err)
+		t.Cleanup(subscription.Cancel)
+		subscriptions = append(subscriptions, subscription)
+	}
+
+	require.NoError(t, service.recoverInterrupted(t.Context()))
+
+	for index, subscription := range subscriptions {
+		select {
+		case event := <-subscription.Events:
+			assert.Equal(t, created[index].Task.ID, event.TaskID)
+			assert.Equal(t, taskInterruptedEvent, event.Event.Kind)
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for recovered event for task %s", created[index].Task.ID)
+		}
+	}
+}
+
+func TestServiceInternalFinalizeRecoversExpiredLease(t *testing.T) {
+	t.Parallel()
+
+	fixture := newServiceRepositoryFixture(t)
+	created := fixture.createQueuedAgentTask(t)
+	claimed, err := fixture.tasks.ClaimQueued(t.Context(), &database.TaskClaim{
+		TaskID: created.Task.ID, LeaseOwner: "expired-worker",
+		LeaseExpiresAt: time.Now().Add(-time.Minute), EventKind: "started",
+	})
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	service := serviceWithRepositories(fixture.tasks, fixture.agentTasks)
+	service.leaseOwner = "different-worker"
+	subscription, err := service.subscribe(created.Task.ID)
+	require.NoError(t, err)
+
+	defer subscription.Cancel()
+
+	service.finalizeRun(t.Context(), created.Task.ID, Result{Text: "late", UsageJSON: `{}`}, nil)
+
+	completed, found, err := fixture.agentTasks.Get(t.Context(), created.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, database.TaskInterrupted, completed.Task.State)
+	assert.Equal(t, "process_restart", completed.Task.ErrorCode)
+
+	select {
+	case event := <-subscription.Events:
+		assert.Equal(t, "task_interrupted", event.Event.Kind)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for recovered terminal event")
+	}
+}
+
 func TestServiceInternalCancelsQueuedTask(t *testing.T) {
 	t.Parallel()
 

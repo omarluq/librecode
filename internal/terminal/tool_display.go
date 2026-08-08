@@ -42,11 +42,13 @@ type toolDisplay struct {
 }
 
 func toolDisplayFromCall(call *assistant.ToolCallEvent) toolDisplay {
+	argumentsJSON, arguments := toolDisplayArguments(call.ArgumentsJSON, toolArgumentsMap(call.Arguments))
+
 	return toolDisplay{
-		Title:         toolSummary(call.Name, call.ArgumentsJSON, toolArgumentsMap(call.Arguments)),
+		Title:         toolSummary(call.Name, argumentsJSON, arguments),
 		Name:          call.Name,
 		Nested:        call.ParentCallID != "",
-		ArgumentsJSON: call.ArgumentsJSON,
+		ArgumentsJSON: argumentsJSON,
 		DetailsJSON:   "",
 		Output:        "",
 		Error:         "",
@@ -60,11 +62,13 @@ func toolDisplayFromParsedEvent(event *parsedToolEvent) toolDisplay {
 		status = toolDisplayError
 	}
 
+	argumentsJSON, arguments := toolDisplayArguments(event.ArgumentsJSON, nil)
+
 	return toolDisplay{
-		Title:         toolSummary(event.Name, event.ArgumentsJSON, nil),
+		Title:         toolSummary(event.Name, argumentsJSON, arguments),
 		Name:          event.Name,
 		Nested:        event.ParentCallID != "",
-		ArgumentsJSON: event.ArgumentsJSON,
+		ArgumentsJSON: argumentsJSON,
 		DetailsJSON:   event.DetailsJSON,
 		Output:        event.Output,
 		Error:         event.Error,
@@ -138,6 +142,33 @@ func otherToolSummaryRenderer(name tool.Name) (toolSummaryRenderer, bool) {
 
 func toolArgumentsMap(arguments tool.Arguments) map[string]any {
 	return decodeToolArgs(arguments.String())
+}
+
+func toolDisplayArguments(argumentsJSON string, arguments map[string]any) (
+	targetJSON string,
+	targetArguments map[string]any,
+) {
+	args := arguments
+	if args == nil {
+		args = decodeToolArgs(argumentsJSON)
+	}
+
+	background, hasBackground := args["background"].(map[string]any)
+	if !hasBackground {
+		return argumentsJSON, args
+	}
+
+	target, hasTarget := background["arguments"].(map[string]any)
+	if !hasTarget {
+		return argumentsJSON, args
+	}
+
+	encodedTarget, err := json.Marshal(target)
+	if err != nil {
+		return argumentsJSON, args
+	}
+
+	return string(encodedTarget), target
 }
 
 func decodeToolArgs(raw string) map[string]any {

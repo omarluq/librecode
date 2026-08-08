@@ -58,6 +58,20 @@ func provideTestAssistantDependencies(t *testing.T, injector do.Injector) *model
 		SlogLogger:    logger,
 		ZerologLogger: newZerologLogger(testServiceConfig(), io.Discard),
 	})
+
+	toolService, err := NewToolService(injector)
+	require.NoError(t, err)
+	do.ProvideValue(injector, toolService)
+
+	databaseService := do.MustInvoke[*DatabaseService](injector)
+	if databaseService.Tasks == nil || databaseService.ToolTasks == nil {
+		do.ProvideValue(injector, &TaskRuntimeService{Runtime: nil, Manager: nil, Tools: nil})
+	} else {
+		taskRuntime, err := NewTaskRuntimeService(injector)
+		require.NoError(t, err)
+		do.ProvideValue(injector, taskRuntime)
+	}
+
 	t.Cleanup(func() {
 		if skills := do.MustInvoke[*SkillsService](injector); skills.Cache != nil {
 			skills.Cache.Close()
@@ -77,6 +91,8 @@ func newTestDatabaseService(t *testing.T) *DatabaseService {
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
 	workflows := testutil.WorkflowRepository(t, connection)
+	toolTasks, err := database.NewToolTaskRepository(connection)
+	require.NoError(t, err)
 
 	return &DatabaseService{
 		DB:         connection,
@@ -85,6 +101,7 @@ func newTestDatabaseService(t *testing.T) *DatabaseService {
 		Tasks:      workflows.Tasks(),
 		AgentTasks: workflows.AgentTasks(),
 		Workflows:  workflows,
+		ToolTasks:  toolTasks,
 		path:       "",
 	}
 }

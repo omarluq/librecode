@@ -47,6 +47,17 @@ func TestTaskRepositoryCreateGetAndList(t *testing.T) {
 	require.Len(t, byOwner, 2)
 	assert.Equal(t, second.ID, byOwner[0].ID)
 
+	toolTask := newTask(owner.ID)
+	toolTask.Kind = database.TaskKindTool
+	third, err := tasks.Create(ctx, toolTask)
+	require.NoError(t, err)
+	generic, err := tasks.ListOwned(ctx, owner.ID, nil, []database.TaskState{database.TaskQueued}, 0)
+	require.NoError(t, err)
+	assert.Equal(t, []string{third.ID, second.ID, first.ID}, taskIDs(generic))
+	agents, err := tasks.ListOwned(ctx, owner.ID, []string{database.TaskKindAgent}, nil, 1)
+	require.NoError(t, err)
+	assert.Equal(t, []string{second.ID}, taskIDs(agents))
+
 	assertTaskIDs := func(t *testing.T, limit int, want []string) {
 		t.Helper()
 
@@ -349,7 +360,7 @@ func taskIDs(tasks []database.TaskEntity) []string {
 
 func successfulTaskFinish() database.TaskFinish {
 	finish := newTaskFinish("", []database.TaskState{database.TaskQueued}, database.TaskSucceeded, taskSucceededEvent)
-	finish.Result, finish.PayloadJSON = "done", `{"result":"done"}`
+	finish.Result, finish.PayloadJSON = testDone, `{"result":"done"}`
 
 	return finish
 }
