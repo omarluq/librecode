@@ -374,7 +374,7 @@ func eventSequences(events []database.TaskEventEntity) []int64 {
 
 func agentSuccessFinish(taskID string, from []database.TaskState) database.TaskFinish {
 	finish := newTaskFinish(taskID, from, database.TaskSucceeded, taskSucceededEvent)
-	finish.Result = "done"
+	finish.Result = testDone
 
 	return finish
 }

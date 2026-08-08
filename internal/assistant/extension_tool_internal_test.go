@@ -82,12 +82,12 @@ func successfulExtensionExecutorCase() extensionExecutorCase {
 		runner: func(context.Context, string, tool.Arguments) (extension.ToolResult, error) {
 			return extension.ToolResult{
 				Details: map[string]any{"ok": true},
-				Content: "done",
+				Content: backgroundTestDone,
 			}, nil
 		},
 		expectedDetail: map[string]any{"ok": true},
 		name:           "success",
-		expectedText:   "done",
+		expectedText:   backgroundTestDone,
 		expectedErr:    "",
 		expectedCode:   "",
 	}

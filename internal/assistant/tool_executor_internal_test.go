@@ -35,7 +35,7 @@ func TestExecuteProviderToolCallsRequiresRegistry(t *testing.T) {
 	t.Parallel()
 
 	runtime := newToolExecutorTestRuntime(nil)
-	executor := runtime.executeProviderToolCalls(nil)
+	executor := runtime.executeProviderToolCalls(nil, "", "")
 
 	events, err := executor(context.Background(), []ToolCall{{
 		Metadata:      nil,
@@ -60,7 +60,7 @@ func TestExecuteProviderToolCallsRunsAllCalls(t *testing.T) {
 	writeToolExecutorReadFixture(t, directory)
 
 	runtime := newToolExecutorTestRuntime(nil)
-	executor := runtime.executeProviderToolCalls(tool.NewRegistry(directory))
+	executor := runtime.executeProviderToolCalls(tool.NewRegistry(directory), "", "")
 
 	events, err := executor(context.Background(), []ToolCall{
 		{
@@ -130,7 +130,7 @@ func TestExecuteProviderToolCallsRunsWholeBatchSequentiallyWhenRequired(t *testi
 	done := make(chan result, 1)
 
 	go func() {
-		events, executeErr := newToolExecutorTestRuntime(nil).executeProviderToolCalls(toolRegistry)(
+		events, executeErr := newToolExecutorTestRuntime(nil).executeProviderToolCalls(toolRegistry, "", "")(
 			t.Context(), calls, nil,
 		)
 		done <- result{events: events, err: executeErr}
@@ -163,10 +163,13 @@ func TestExecuteProviderToolCallsRunsWholeBatchSequentiallyWhenRequired(t *testi
 	}
 }
 
-func TestExecuteProviderToolCallsHasNoParallelismLimit(t *testing.T) {
+func TestExecuteProviderToolCallsBoundsParallelism(t *testing.T) {
 	t.Parallel()
 
-	const callCount = 16
+	const (
+		callCount        = 16
+		concurrencyLimit = 4
+	)
 
 	started := make(chan tool.Name, callCount)
 	release := make(chan struct{})
@@ -190,16 +193,22 @@ func TestExecuteProviderToolCallsHasNoParallelismLimit(t *testing.T) {
 	defer cancel()
 
 	go func() {
-		_, executeErr := newToolExecutorTestRuntime(nil).executeProviderToolCalls(toolRegistry)(ctx, calls, nil)
+		_, executeErr := newToolExecutorTestRuntime(nil).executeProviderToolCalls(toolRegistry, "", "")(ctx, calls, nil)
 		done <- executeErr
 	}()
 
-	for range callCount {
+	for range concurrencyLimit {
 		select {
 		case <-started:
 		case <-ctx.Done():
-			t.Fatalf("all tool calls did not start concurrently: %v", ctx.Err())
+			t.Fatalf("initial tool calls did not start: %v", ctx.Err())
 		}
+	}
+
+	select {
+	case name := <-started:
+		t.Fatalf("tool call %q exceeded concurrency limit", name)
+	case <-time.After(50 * time.Millisecond):
 	}
 
 	close(release)
@@ -237,7 +246,7 @@ func TestExecuteProviderToolCallsEmitsResultsAsCallsComplete(t *testing.T) {
 	done := make(chan executionResult, 1)
 
 	go func() {
-		results, executeErr := newToolExecutorTestRuntime(nil).executeProviderToolCalls(registry)(
+		results, executeErr := newToolExecutorTestRuntime(nil).executeProviderToolCalls(registry, "", "")(
 			t.Context(),
 			[]ToolCall{
 				{

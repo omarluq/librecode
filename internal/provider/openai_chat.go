@@ -68,7 +68,7 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 	}
 
 	state.result.Usage = accumulateUsage(state.result.Usage, providerResult.Usage)
-	if validateErr := validateToolCalls(providerResult.ToolCalls); validateErr != nil {
+	if validateErr := validateToolDispatch(providerResult.FinishReason, providerResult.ToolCalls); validateErr != nil {
 		return false, validateErr
 	}
 
@@ -155,6 +155,10 @@ func buildOpenAIChatPayload(request *CompletionRequest, messages []map[string]an
 }
 
 func openAIChatFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
+	if reason == "length" {
+		return llm.FinishReasonLength
+	}
+
 	if hasToolCalls {
 		return llm.FinishReasonToolCalls
 	}
@@ -162,8 +166,6 @@ func openAIChatFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
 	switch reason {
 	case openAIStopReason:
 		return llm.FinishReasonStop
-	case "length":
-		return llm.FinishReasonLength
 	case openAIToolCallsReason, "function_call":
 		return llm.FinishReasonToolCalls
 	case "content_filter":

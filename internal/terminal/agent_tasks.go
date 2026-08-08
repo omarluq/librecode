@@ -34,6 +34,7 @@ const (
 	agentWaitToolName   = "agent_wait"
 	agentCancelToolName = "agent_cancel"
 	agentListToolName   = "agent_list"
+	taskToolPrefix      = "task_"
 )
 
 func isAgentManagementTool(name string) bool {
@@ -43,6 +44,10 @@ func isAgentManagementTool(name string) bool {
 	default:
 		return false
 	}
+}
+
+func isTaskManagementTool(name string) bool {
+	return strings.HasPrefix(name, taskToolPrefix)
 }
 
 func (app *App) applyAgentToolEvent(event *assistant.ToolEvent) {

@@ -15,6 +15,8 @@ const (
 	registryTestContentKey = "content"
 	registryTestEmptyPath  = "empty.txt"
 	registryTestPathKey    = "path"
+	registryTestCustomName = "custom"
+	registryTestMissing    = "missing"
 )
 
 func TestNewRegistryWithTools(t *testing.T) {
@@ -34,7 +36,7 @@ func TestNewRegistryWithTools(t *testing.T) {
 			wantError: nil, name: "deduplicates",
 			tools: []tool.Name{tool.NameRead, tool.NameRead}, wantNames: []tool.Name{tool.NameRead},
 		},
-		{wantError: tool.ErrUnknownTool, name: "unknown", tools: []tool.Name{"missing"}, wantNames: nil},
+		{wantError: tool.ErrUnknownTool, name: "unknown", tools: []tool.Name{registryTestMissing}, wantNames: nil},
 	}
 
 	for _, testCase := range tests {
@@ -149,14 +151,100 @@ func TestRegistry_Register(t *testing.T) {
 		t.Parallel()
 
 		registry := tool.NewRegistry(t.TempDir())
-		custom := registryTestExecutor{name: "custom"}
+		custom := registryTestExecutor{name: registryTestCustomName}
 
 		require.NoError(t, registry.Register(custom))
-		result, err := registry.Execute(context.Background(), "custom", tool.EmptyArguments())
+		result, err := registry.Execute(context.Background(), registryTestCustomName, tool.EmptyArguments())
 
 		require.NoError(t, err)
 		assert.Equal(t, "custom ok", result.Text())
 	})
+}
+
+func TestRegistry_Wrap(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		registry    func(*testing.T) *tool.Registry
+		decorate    func(tool.Executor) tool.Executor
+		wantError   error
+		name        string
+		toolName    tool.Name
+		wantErrText string
+		wantResult  string
+	}{
+		{
+			name: "decorates registered executor", toolName: registryTestCustomName,
+			registry: registryWithCustomExecutor, wantError: nil, wantErrText: "",
+			decorate:   func(tool.Executor) tool.Executor { return registryTestExecutor{name: registryTestCustomName} },
+			wantResult: "custom ok",
+		},
+		{
+			name: "rejects unknown tool", toolName: registryTestMissing, wantError: tool.ErrUnknownTool,
+			registry: newRegistryForWrapTest, wantErrText: "", wantResult: "",
+			decorate: func(executor tool.Executor) tool.Executor { return executor },
+		},
+		{
+			name: "rejects nil decorator", toolName: tool.NameRead, wantError: tool.ErrUnknownTool,
+			registry: newRegistryForWrapTest, decorate: nil, wantErrText: "", wantResult: "",
+		},
+		{
+			name: "rejects nil wrapper", toolName: tool.NameRead, registry: newRegistryForWrapTest,
+			decorate: func(tool.Executor) tool.Executor { return nil }, wantError: nil,
+			wantErrText: "preserve its name", wantResult: "",
+		},
+		{
+			name: "rejects renamed wrapper", toolName: tool.NameRead, registry: newRegistryForWrapTest,
+			decorate:  func(tool.Executor) tool.Executor { return registryTestExecutor{name: "renamed"} },
+			wantError: nil, wantErrText: "preserve its name", wantResult: "",
+		},
+		{
+			name: "rejects nil registry", toolName: tool.NameRead,
+			registry: func(*testing.T) *tool.Registry { return nil }, wantError: tool.ErrUnknownTool,
+			decorate: func(executor tool.Executor) tool.Executor { return executor }, wantErrText: "", wantResult: "",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			registry := testCase.registry(t)
+
+			err := registry.Wrap(testCase.toolName, testCase.decorate)
+			if testCase.wantError != nil {
+				require.ErrorIs(t, err, testCase.wantError)
+
+				return
+			}
+
+			if testCase.wantErrText != "" {
+				require.ErrorContains(t, err, testCase.wantErrText)
+
+				return
+			}
+
+			require.NoError(t, err)
+			result, executeErr := registry.Execute(t.Context(), string(testCase.toolName), tool.EmptyArguments())
+			require.NoError(t, executeErr)
+			assert.Equal(t, testCase.wantResult, result.Text())
+		})
+	}
+}
+
+func registryWithCustomExecutor(t *testing.T) *tool.Registry {
+	t.Helper()
+
+	registry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
+	require.NoError(t, err)
+	require.NoError(t, registry.Register(registryTestExecutor{name: registryTestCustomName}))
+
+	return registry
+}
+
+func newRegistryForWrapTest(t *testing.T) *tool.Registry {
+	t.Helper()
+
+	return tool.NewRegistry(t.TempDir())
 }
 
 func TestRegistry_Metadata(t *testing.T) {
@@ -167,10 +255,37 @@ func TestRegistry_Metadata(t *testing.T) {
 
 	assert.Equal(t, cwd, registry.CWD())
 	assert.True(t, registry.Has(tool.NameRead))
-	assert.False(t, registry.Has("missing"))
+	assert.False(t, registry.Has(registryTestMissing))
 	assert.False(t, (*tool.Registry)(nil).Has(tool.NameRead))
 	assert.NotEmpty(t, registry.Definitions())
 	assert.Len(t, tool.AllDefinitions(), len(registry.Definitions()))
+}
+
+func TestPreparedCallTryAdmitAndRelease(t *testing.T) {
+	t.Parallel()
+
+	registry := tool.NewRegistry(t.TempDir())
+	arguments := validRegistryArguments(t, tool.NameWrite)
+	first, err := registry.Prepare(string(tool.NameWrite), arguments)
+	require.NoError(t, err)
+	second, err := registry.Prepare(string(tool.NameWrite), arguments)
+	require.NoError(t, err)
+
+	assert.True(t, first.TryAdmit())
+	assert.False(t, second.TryAdmit())
+	first.Release()
+	assert.True(t, second.TryAdmit())
+	second.Release()
+
+	third, err := registry.Prepare(string(tool.NameWrite), arguments)
+	require.NoError(t, err)
+	third.Admit()
+	third.Release()
+
+	var nilCall *tool.PreparedCall
+	nilCall.Admit()
+	assert.True(t, nilCall.TryAdmit())
+	nilCall.Release()
 }
 
 func TestRegistry_ToolsAreParallelByDefault(t *testing.T) {
@@ -185,9 +300,9 @@ func TestRegistry_ToolsAreParallelByDefault(t *testing.T) {
 
 	customRegistry, err := tool.NewRegistryWithTools(t.TempDir(), nil)
 	require.NoError(t, err)
-	require.NoError(t, customRegistry.Register(registryTestExecutor{name: "custom"}))
+	require.NoError(t, customRegistry.Register(registryTestExecutor{name: registryTestCustomName}))
 
-	call, err := customRegistry.Prepare("custom", tool.EmptyArguments())
+	call, err := customRegistry.Prepare(registryTestCustomName, tool.EmptyArguments())
 	require.NoError(t, err)
 	assert.False(t, call.Sequential())
 }
@@ -316,7 +431,7 @@ func TestRegistry_ExecuteErrors(t *testing.T) {
 		wantErrText string
 		payload     []byte
 	}{
-		{name: "unknown tool", toolName: "missing", payload: []byte(`{}`), wantErrText: "unknown tool"},
+		{name: "unknown tool", toolName: registryTestMissing, payload: []byte(`{}`), wantErrText: "unknown tool"},
 		{name: "invalid json", toolName: "read", payload: []byte(`{`), wantErrText: "decode tool arguments"},
 	}
 

@@ -21,6 +21,7 @@ func slashSuggestions() []tui.ListItem {
 		autocompleteSuggestion("compact", "compact conversation context"),
 		autocompleteSuggestion("context", "show context token breakdown"),
 		autocompleteSuggestion("copy", "copy the last assistant message"),
+		autocompleteSuggestion("detach", "detach the latest foreground tool"),
 		autocompleteSuggestion("fork", "fork current session"),
 		autocompleteSuggestion(hotkeysCommandName, "show keybindings"),
 		autocompleteSuggestion(commandLogin, "authenticate a provider"),
@@ -36,6 +37,7 @@ func slashSuggestions() []tui.ListItem {
 		autocompleteSuggestion("settings", "open settings"),
 		autocompleteSuggestion("skill", "list or load an Agent Skill"),
 		autocompleteSuggestion(toolSectionTool, "run a built-in tool with JSON arguments"),
+		autocompleteSuggestion("tasks", "inspect or cancel durable background tasks"),
 		autocompleteSuggestion("tree", "open session tree"),
 		autocompleteSuggestion("workflows", "open dynamic workflows"),
 	}

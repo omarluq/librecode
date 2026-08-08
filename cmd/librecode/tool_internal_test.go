@@ -71,7 +71,7 @@ func TestPrintToolDefinition(t *testing.T) {
 func TestToolRegistryForCWD(t *testing.T) {
 	t.Parallel()
 
-	service := &di.ToolService{Registry: toolRegistryForTest(t)}
+	service := &di.ToolService{Registry: toolRegistryForTest(t), Coordinator: nil}
 
 	defaultRegistry, err := toolRegistryForCWD(service, "")
 	require.NoError(t, err)

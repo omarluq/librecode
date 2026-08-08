@@ -3,7 +3,6 @@ package database_test
 import (
 	"context"
 	"database/sql"
-	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -50,14 +50,14 @@ func TestMessagePartsMigrationUpDownAndOldSchemaUpgrade(t *testing.T) {
 
 	connection := newMigratedThroughVersion(t, 12)
 	ctx := context.Background()
-	assertSchemaObjectCount(ctx, t, connection, 0,
+	assertSchemaObjectMissing(ctx, t, connection,
 		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message_parts'`)
 
 	migrationRoot, err := database.MigrationFS()
 	require.NoError(t, err)
 	provider, err := database.NewMigrationProvider(connection, migrationRoot)
 	require.NoError(t, err)
-	_, err = provider.Up(ctx)
+	_, err = provider.UpTo(ctx, 14)
 	require.NoError(t, err)
 
 	assertSchemaObjectExists(ctx, t, connection,
@@ -96,12 +96,89 @@ VALUES ('fractional-sequence', ?, ?, 1.5, 'text', 'invalid')`, session.ID, entry
 
 	const imagePartsIndexQuery = `SELECT COUNT(*) FROM sqlite_master
 WHERE type = 'index' AND name = 'idx_session_message_parts_session_entry_image'`
-	assertSchemaObjectCount(ctx, t, connection, 0, imagePartsIndexQuery)
+	assertSchemaObjectMissing(ctx, t, connection, imagePartsIndexQuery)
 
 	_, err = provider.Down(ctx)
 	require.NoError(t, err)
-	assertSchemaObjectCount(ctx, t, connection, 0,
+	assertSchemaObjectMissing(ctx, t, connection,
 		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message_parts'`)
+}
+
+func TestToolTasksMigrationUpDownAndVersionFourteenUpgrade(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	connection := newMigratedThroughVersion(t, 14)
+	_, err := connection.ExecContext(ctx, `PRAGMA foreign_keys=ON`)
+	require.NoError(t, err)
+
+	_, err = connection.ExecContext(ctx, `
+INSERT INTO sessions (id, cwd, name, created_at, updated_at)
+VALUES ('01900000-0000-7000-8000-000000000101', '/tmp', 'owner', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+       ('01900000-0000-7000-8000-000000000102', '/tmp', 'other', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO tasks (id, kind, state, owner_session_id, created_at, updated_at)
+VALUES ('01900000-0000-7000-8000-000000000103', 'tool', 'queued',
+        '01900000-0000-7000-8000-000000000101', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+       ('01900000-0000-7000-8000-000000000104', 'tool', 'queued',
+        '01900000-0000-7000-8000-000000000101', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+	_, err = provider.UpTo(ctx, 15)
+	require.NoError(t, err)
+
+	for _, indexName := range []string{
+		"idx_tasks_id_owner_tool",
+		"idx_tool_tasks_owner_invocation",
+		"idx_tool_tasks_owner_target",
+	} {
+		assertSchemaObjectExists(ctx, t, connection,
+			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, indexName)
+	}
+
+	assertSchemaObjectExists(ctx, t, connection,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'tool_tasks'`)
+	assertSchemaObjectExists(ctx, t, connection,
+		`SELECT COUNT(*) FROM pragma_table_info('tool_tasks') WHERE name = 'task_id' AND "notnull" = 1`)
+
+	const insertToolTask = `INSERT INTO tool_tasks (
+    task_id, target_name, arguments_json, cwd, owner_session_id, invocation_id,
+    wrapper_call_id, timeout_seconds, policy_json, definition_json
+) VALUES (?, 'read', '{}', '/tmp', ?, ?, 'wrapper-call', 30, '{}', '{}')`
+
+	_, err = connection.ExecContext(ctx, insertToolTask,
+		"01900000-0000-7000-8000-000000000103",
+		"01900000-0000-7000-8000-000000000101",
+		"invocation-1",
+	)
+	require.NoError(t, err)
+
+	_, err = connection.ExecContext(ctx, insertToolTask,
+		"01900000-0000-7000-8000-000000000104",
+		"01900000-0000-7000-8000-000000000102",
+		"invocation-2",
+	)
+	require.ErrorContains(t, err, "FOREIGN KEY constraint failed")
+
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	assertSchemaObjectMissing(ctx, t, connection,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'tool_tasks'`)
+
+	for _, indexName := range []string{
+		"idx_tasks_id_owner_tool",
+		"idx_tool_tasks_owner_invocation",
+		"idx_tool_tasks_owner_target",
+	} {
+		assertSchemaObjectMissing(ctx, t, connection,
+			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, indexName)
+	}
+
+	assertSchemaObjectExists(ctx, t, connection,
+		`SELECT COUNT(*) FROM tasks WHERE id = '01900000-0000-7000-8000-000000000103'`)
 }
 
 func TestMessagePartsMigrationRejectsPreexistingSchemaObjects(t *testing.T) {
@@ -168,11 +245,10 @@ CREATE INDEX idx_session_message_parts_session_entry_image
 	}
 }
 
-func assertSchemaObjectCount(
+func assertSchemaObjectMissing(
 	ctx context.Context,
 	t *testing.T,
 	connection *sql.DB,
-	expected int,
 	query string,
 	args ...any,
 ) {
@@ -180,7 +256,7 @@ func assertSchemaObjectCount(
 
 	var count int
 	require.NoError(t, connection.QueryRowContext(ctx, query, args...).Scan(&count))
-	assert.Equal(t, expected, count)
+	assert.Zero(t, count)
 }
 
 func TestMigrateAddsCompactionOperationIdentityAfterPreviouslyDeployedVersionEleven(t *testing.T) {

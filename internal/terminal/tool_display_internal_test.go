@@ -42,8 +42,8 @@ func TestToolSummaryHumanizesKnownTools(t *testing.T) {
 		},
 		{name: testToolWrite, tool: testToolWrite, args: `{"path":"out.txt"}`, want: "write out.txt"},
 		{
-			name: "grep",
-			tool: "grep",
+			name: testToolGrep,
+			tool: testToolGrep,
 			args: strings.Join([]string{
 				`{"pattern":"StreamEventToolStart"`,
 				`"path":"internal"`,
@@ -168,7 +168,7 @@ func TestToolDisplayAdditionalFallbackBranches(t *testing.T) {
 	assert.Equal(t, "$ false", errorDisplay.Title)
 
 	assert.Equal(t, testToolBash, bashToolSummary(nil, testToolBash))
-	assert.Equal(t, "grep", grepToolSummary(map[string]any{}, "grep"))
+	assert.Equal(t, testToolGrep, grepToolSummary(map[string]any{}, testToolGrep))
 	assert.Equal(t, "ast", astToolSummary(map[string]any{"mode": "query"}, "ast"))
 	assert.Equal(t, "ast outline main.go", astToolSummary(map[string]any{"path": "main.go"}, "ast"))
 	assert.Contains(t, unknownToolSummary("custom", map[string]any{"nested": make(chan int)}, ""), "custom nested=")
@@ -202,6 +202,62 @@ func TestToolDisplayFromCallUsesStructuredArguments(t *testing.T) {
 
 	assert.Equal(t, "$ go test ./...", display.Title)
 	assert.Equal(t, toolDisplayPending, display.Status)
+}
+
+func TestToolDisplayUsesTargetArgumentsForBackgroundCalls(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		tool string
+		args string
+		want string
+	}{
+		{
+			name: "bash",
+			tool: testToolBash,
+			args: `{"background":{"arguments":{"command":"go test ./..."},"timeout_seconds":30}}`,
+			want: "$ go test ./...",
+		},
+		{
+			name: "ls",
+			tool: "ls",
+			args: `{"background":{"arguments":{"path":"internal"}}}`,
+			want: "ls internal",
+		},
+		{
+			name: testToolGrep,
+			tool: testToolGrep,
+			args: `{"background":{"arguments":{"pattern":"ToolEvent","path":"internal"}}}`,
+			want: `grep "ToolEvent" in internal`,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			arguments := testutil.ToolArguments(decodeToolArgs(testCase.args))
+			callDisplay := toolDisplayFromCall(&assistant.ToolCallEvent{
+				Arguments: arguments, ID: "call-background", ParentCallID: "",
+				Name: testCase.tool, ArgumentsJSON: testCase.args, Sequence: 0,
+			})
+			resultDisplay := toolDisplayFromParsedEvent(&parsedToolEvent{
+				Name: testCase.tool, ParentCallID: "", ArgumentsJSON: testCase.args,
+				DetailsJSON: "", Error: "", Output: "",
+			})
+
+			assert.Equal(t, testCase.want, callDisplay.Title)
+			assert.Equal(t, testCase.want, resultDisplay.Title)
+			assert.NotContains(t, callDisplay.ArgumentsJSON, "background")
+			assert.JSONEq(t, callDisplay.ArgumentsJSON, resultDisplay.ArgumentsJSON)
+		})
+	}
+
+	management := `{"background":{"action":"get","task_id":"task-1"}}`
+	managementJSON, managementArgs := toolDisplayArguments(management, nil)
+	assert.JSONEq(t, management, managementJSON)
+	assert.Equal(t, decodeToolArgs(management), managementArgs)
 }
 
 func TestToolDisplayTitleUsesPendingMarkerOnly(t *testing.T) {

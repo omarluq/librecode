@@ -8,6 +8,7 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/tool"
 )
 
 // RuntimeTestOptions holds optional Runtime dependencies for test factories.
@@ -23,6 +24,8 @@ type RuntimeTestOptions struct {
 	Agents            *agent.Catalog
 	AgentTasks        AgentTaskController
 	WorkflowSubmitter WorkflowSubmitter
+	ToolTasks         ToolTaskController
+	ToolCoordinator   *tool.Coordinator
 }
 
 // NewRuntimeForTest builds a Runtime from the given setup closure, setting every
@@ -42,6 +45,8 @@ func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
 		Agents:            nil,
 		AgentTasks:        nil,
 		WorkflowSubmitter: nil,
+		ToolTasks:         nil,
+		ToolCoordinator:   nil,
 	}
 	if setup != nil {
 		setup(opts)
@@ -59,5 +64,7 @@ func NewRuntimeForTest(setup func(*RuntimeTestOptions)) *Runtime {
 		Agents:            opts.Agents,
 		AgentTasks:        opts.AgentTasks,
 		WorkflowSubmitter: opts.WorkflowSubmitter,
+		ToolTasks:         opts.ToolTasks,
+		ToolCoordinator:   opts.ToolCoordinator,
 	})
 }

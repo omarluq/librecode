@@ -35,6 +35,15 @@ func NewRegistry(cwd string) *Registry {
 
 // NewRegistryWithTools creates a registry containing only the named built-in tools.
 func NewRegistryWithTools(cwd string, names []Name) (*Registry, error) {
+	return NewRegistryWithCoordinator(cwd, names, NewCoordinator())
+}
+
+// NewRegistryWithCoordinator creates a registry sharing process-wide mutation coordination.
+func NewRegistryWithCoordinator(cwd string, names []Name, coordinator *Coordinator) (*Registry, error) {
+	if coordinator == nil {
+		coordinator = NewCoordinator()
+	}
+
 	factories := builtInToolFactories(cwd)
 	registry := &Registry{
 		schemaValidators: newSchemaValidatorCache(),
@@ -43,9 +52,10 @@ func NewRegistryWithTools(cwd string, names []Name) (*Registry, error) {
 		allowMutations:   true,
 	}
 
-	mutationLocks := newFileMutationLocks()
+	mutationLocks := coordinator.files
 	factories[NameEdit] = func() Executor { return newEditTool(cwd, mutationLocks) }
 	factories[NameWrite] = func() Executor { return newWriteTool(cwd, mutationLocks) }
+	factories[NameBash] = func() Executor { return newBashTool(cwd, mutationLocks) }
 
 	for _, name := range names {
 		if _, exists := registry.executors[name]; exists {
@@ -120,6 +130,30 @@ func (registry *Registry) Definitions() []Definition {
 	return definitions
 }
 
+// Wrap replaces an executor with a decorator that preserves its definition name.
+func (registry *Registry) Wrap(name Name, decorate func(Executor) Executor) error {
+	if registry == nil || decorate == nil {
+		return oops.In("tool").Code("unknown_tool").With("tool", name).
+			Wrapf(ErrUnknownTool, "wrap tool")
+	}
+
+	executor := registry.executors[name]
+	if executor == nil {
+		return oops.In("tool").Code("unknown_tool").With("tool", name).
+			Wrapf(ErrUnknownTool, "wrap tool")
+	}
+
+	wrapped := decorate(executor)
+	if wrapped == nil || wrapped.Definition().Name != name {
+		return oops.In("tool").Code("invalid_tool_wrapper").With("tool", name).
+			Errorf("wrapped tool must preserve its name")
+	}
+
+	registry.executors[name] = wrapped
+
+	return nil
+}
+
 // Has reports whether a tool is registered under name.
 func (registry *Registry) Has(name Name) bool {
 	if registry == nil {
@@ -173,6 +207,25 @@ func (call *PreparedCall) Admit() {
 	call.reservation = call.mutationLocks.reserve(call.mutationPath)
 	call.mutationLocks = nil
 	call.mutationPath = ""
+}
+
+// TryAdmit reserves resources only when they are immediately available.
+// A false result leaves the call prepared and may be retried later.
+func (call *PreparedCall) TryAdmit() bool {
+	if call == nil || call.mutationLocks == nil {
+		return true
+	}
+
+	reservation, ok := call.mutationLocks.tryReserve(call.mutationPath)
+	if !ok {
+		return false
+	}
+
+	call.reservation = reservation
+	call.mutationLocks = nil
+	call.mutationPath = ""
+
+	return true
 }
 
 // Release abandons resources reserved by Admit. It is safe to call after Execute.

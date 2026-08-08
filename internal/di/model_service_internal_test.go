@@ -39,7 +39,7 @@ func TestNewModelServiceKeepsRegistryAvailableWhenDiscoveryFails(t *testing.T) {
 		Sessions:   nil,
 		Documents:  documents,
 		Tasks:      nil,
-		AgentTasks: nil, Workflows: nil,
+		AgentTasks: nil, Workflows: nil, ToolTasks: nil,
 		path: "",
 	})
 	do.ProvideValue(injector, &AuthService{Storage: storage})

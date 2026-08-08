@@ -31,6 +31,7 @@ type DatabaseService struct {
 	Tasks      *database.TaskRepository
 	AgentTasks *database.AgentTaskRepository
 	Workflows  *database.WorkflowRepository
+	ToolTasks  *database.ToolTaskRepository
 	path       string
 }
 
@@ -99,6 +100,11 @@ func newDatabaseRepositories(connection *sql.DB, databasePath string) (*Database
 		return nil, closeAfterRepositoryError(connection, "agent_task", databasePath, err)
 	}
 
+	toolTasks, err := database.NewToolTaskRepositoryWithProvider(sqlProvider, tasks)
+	if err != nil {
+		return nil, closeAfterRepositoryError(connection, "tool_task", databasePath, err)
+	}
+
 	workflows, err := database.NewWorkflowRepositoryWithProvider(sqlProvider, tasks, agentTasks)
 	if err != nil {
 		return nil, closeAfterRepositoryError(connection, "workflow", databasePath, err)
@@ -106,7 +112,7 @@ func newDatabaseRepositories(connection *sql.DB, databasePath string) (*Database
 
 	return &DatabaseService{
 		DB: connection, Sessions: sessions, Documents: documents, Tasks: tasks,
-		AgentTasks: agentTasks, Workflows: workflows, path: databasePath,
+		AgentTasks: agentTasks, ToolTasks: toolTasks, Workflows: workflows, path: databasePath,
 	}, nil
 }
 
