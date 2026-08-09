@@ -23,7 +23,7 @@ func TestUsageConversionsCloneMapsAndContributors(t *testing.T) {
 		ContextTokens: 2,
 		InputTokens:   2,
 		OutputTokens:  1,
-	}
+	}.WithReported()
 
 	converted := llmconv.UsageFromModel(usage)
 	usage.Breakdown["history"] = 99
@@ -40,6 +40,10 @@ func TestUsageConversionsCloneMapsAndContributors(t *testing.T) {
 	assert.Equal(t, 1, roundTrip.Breakdown["history"])
 	require.Len(t, roundTrip.TopContributors, 1)
 	assert.Equal(t, "history", roundTrip.TopContributors[0].Label)
+	assert.True(t, converted.Reported())
+	assert.True(t, roundTrip.Reported())
+	assert.Equal(t, usage.HasAny(), converted.HasAny())
+	assert.Equal(t, converted.HasAny(), roundTrip.HasAny())
 }
 
 func TestTokenContributorConversionsPreserveNilAndClone(t *testing.T) {

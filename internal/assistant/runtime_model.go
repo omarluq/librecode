@@ -59,11 +59,12 @@ func (runtime *Runtime) respond(
 		)
 
 		return &responseBundle{
-			Text:        slashResponse,
-			Thinking:    nil,
-			ToolEvents:  slashToolEvents,
-			Usage:       model.EmptyTokenUsage(),
-			ModelFacing: false,
+			Text:          slashResponse,
+			Thinking:      nil,
+			ToolEvents:    slashToolEvents,
+			Usage:         model.EmptyTokenUsage(),
+			ProviderUsage: model.EmptyTokenUsage(),
+			ModelFacing:   false,
 		}, false, slashErr
 	}
 
@@ -90,11 +91,12 @@ func (runtime *Runtime) respond(
 
 	if found {
 		return &responseBundle{
-			Text:        cachedResponse,
-			Thinking:    nil,
-			ToolEvents:  nil,
-			Usage:       model.EmptyTokenUsage(),
-			ModelFacing: true,
+			Text:          cachedResponse,
+			Thinking:      nil,
+			ToolEvents:    nil,
+			Usage:         model.EmptyTokenUsage(),
+			ProviderUsage: model.EmptyTokenUsage(),
+			ModelFacing:   true,
 		}, true, nil
 	}
 
@@ -181,11 +183,12 @@ func (runtime *Runtime) modelResponse(
 	input.lineage.adopt(compactionEntry)
 
 	return &responseBundle{
-		Text:        result.Text,
-		Thinking:    result.Thinking,
-		ToolEvents:  result.ToolEvents,
-		Usage:       usage,
-		ModelFacing: true,
+		Text:          result.Text,
+		Thinking:      result.Thinking,
+		ToolEvents:    result.ToolEvents,
+		Usage:         usage,
+		ProviderUsage: result.Usage,
+		ModelFacing:   true,
 	}, nil
 }
 
@@ -205,6 +208,7 @@ func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInpu
 	request := &CompletionRequest{
 		OnEvent:                input.onEvent,
 		OnProviderObserve:      runtime.emitProviderRequest,
+		OnProviderResponse:     observeProviderUsage,
 		OnProviderRequest:      runtime.dispatchProviderRequestHook,
 		ToolRegistry:           input.registry,
 		ExecuteTools:           nil,

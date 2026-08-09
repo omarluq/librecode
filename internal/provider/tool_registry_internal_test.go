@@ -13,10 +13,11 @@ func TestRequestToolDefinitionsUsesLLMDefinitions(t *testing.T) {
 	t.Parallel()
 
 	request := &CompletionRequest{
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ExecuteTools:      nil,
-		OnEvent:           nil,
+		OnProviderObserve:  nil,
+		OnProviderResponse: nil,
+		OnProviderRequest:  nil,
+		ExecuteTools:       nil,
+		OnEvent:            nil,
 		Request: llm.Request{
 			ProviderOptions: nil,
 			Auth:            llm.Auth{Headers: nil, APIKey: ""},

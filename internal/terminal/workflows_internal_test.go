@@ -60,6 +60,14 @@ func (stub *workflowPanelInspector) List(
 	return []database.WorkflowRunEntity{*stub.run}, nil
 }
 
+func (stub *workflowPanelInspector) ListActive(
+	ctx context.Context,
+	ownerID string,
+	limit int,
+) ([]database.WorkflowRunEntity, error) {
+	return stub.List(ctx, ownerID, limit)
+}
+
 func (stub *workflowPanelInspector) Events(
 	context.Context,
 	string,

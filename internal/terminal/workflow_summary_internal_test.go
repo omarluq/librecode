@@ -32,6 +32,12 @@ func (stub *activeWorkflowInspectorStub) List(
 	return stub.runs, nil
 }
 
+func (stub *activeWorkflowInspectorStub) ListActive(
+	context.Context, string, int,
+) ([]database.WorkflowRunEntity, error) {
+	return stub.runs, nil
+}
+
 func (stub *activeWorkflowInspectorStub) Events(
 	context.Context, string, int64, int,
 ) ([]database.TaskEventEntity, error) {
@@ -102,6 +108,35 @@ func TestActiveWorkflowAppearsInAgentSummary(t *testing.T) {
 	assert.Contains(t, lines[1].Text, "STATUS")
 	assert.Contains(t, lines[2].Text, "review[0]")
 	assert.Contains(t, lines[2].Text, string(database.TaskRunning))
+	assert.True(t, app.hasRunningAgentTasks())
+}
+
+func TestColdLoadRetainsTerminalWorkflowWhileChildRuns(t *testing.T) {
+	t.Parallel()
+
+	terminal := workflowSummaryRun("terminal-with-running-child", database.TaskSucceeded)
+	child := testAgentTask(database.TaskRunning)
+	child.Task.ID = "running-child"
+	app := newRenderTestApp(t)
+	app.sessionID = workflowTestSessionID
+	app.workflows = &workflowInspectorStub{
+		listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil, detailsErr: nil,
+		getRun: nil, runs: []database.WorkflowRunEntity{terminal}, events: nil, children: nil,
+		details: []database.WorkflowAgentTaskDetail{{
+			AgentTask: child,
+			Link: database.WorkflowAgentTaskEntity{
+				CreatedAt: time.Time{}, WorkflowTaskID: terminal.Task.ID,
+				AgentTaskID: child.Task.ID, NodeKey: "worker", InvocationIndex: 0, Sequence: 1,
+			},
+		}},
+		found: false,
+	}
+
+	app.refreshActiveWorkflows(t.Context())
+
+	require.Len(t, app.activeWorkflows, 1)
+	assert.Equal(t, terminal.Task.ID, app.activeWorkflows[0].Task.ID)
+	assert.True(t, app.workflowHasActiveChildren(terminal.Task.ID))
 	assert.True(t, app.hasRunningAgentTasks())
 }
 

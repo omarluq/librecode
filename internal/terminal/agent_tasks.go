@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	model "github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/terminal/panel"
 	"github.com/omarluq/librecode/internal/transcript"
 	"github.com/omarluq/librecode/internal/tui"
@@ -118,8 +120,11 @@ func (app *App) resetAgentTaskTracking() {
 	app.activeWorkflows = nil
 	app.workflowProgress = map[string]workflowProgress{}
 	app.workflowSteps = map[string][]database.WorkflowAgentTaskDetail{}
+	app.agentTaskUsageTotals = map[string]model.UsageTotals{}
+	app.workflowSummaryMetrics = map[string]workflowSummaryMetric{}
 	app.workflowSummaryRunID = ""
 	app.agentTaskSummaryOwnerID = ""
+	app.inspectedAgentTaskID = ""
 	app.agentTasksRefreshedAt = time.Time{}
 	app.deliveredAgentTasks = map[string]struct{}{}
 }
@@ -159,7 +164,7 @@ func (app *App) refreshActiveWorkflows(ctx context.Context) {
 		return
 	}
 
-	runs, err := app.workflows.List(ctx, app.sessionID, agentTaskInlineLimit)
+	runs, err := app.workflows.ListActive(ctx, app.sessionID, agentTaskInlineLimit)
 	if err != nil {
 		return
 	}
@@ -169,10 +174,22 @@ func (app *App) refreshActiveWorkflows(ctx context.Context) {
 		listed[runs[index].Task.ID] = runs[index]
 	}
 
-	active := app.reconcileTrackedWorkflows(ctx, listed, len(runs))
+	candidates := app.reconcileTrackedWorkflows(ctx, listed, len(runs))
 	for index := range runs {
-		run, found := listed[runs[index].Task.ID]
-		if found && !isTerminalAgentTaskState(run.Task.State) {
+		if run, found := listed[runs[index].Task.ID]; found {
+			candidates = append(candidates, run)
+		}
+	}
+
+	// Load direct children before filtering terminal runs. A workflow can finish
+	// before children it launched, including before the first terminal refresh.
+	app.activeWorkflows = candidates
+	app.refreshWorkflowSummaryDetails(ctx)
+
+	active := make([]database.WorkflowRunEntity, 0, len(candidates))
+	for index := range candidates {
+		run := candidates[index]
+		if !isTerminalAgentTaskState(run.Task.State) || app.workflowHasActiveChildren(run.Task.ID) {
 			active = append(active, run)
 		}
 	}
@@ -181,8 +198,6 @@ func (app *App) refreshActiveWorkflows(ctx context.Context) {
 	if !app.hasActiveWorkflow(app.workflowSummaryRunID) {
 		app.workflowSummaryRunID = ""
 	}
-
-	app.refreshWorkflowSummaryDetails(ctx)
 }
 
 func (app *App) reconcileTrackedWorkflows(
@@ -204,14 +219,22 @@ func (app *App) reconcileTrackedWorkflows(
 
 		if isTerminalAgentTaskState(latest.Task.State) {
 			app.deliverWorkflowFailure(ctx, &latest)
-
-			continue
 		}
 
 		active = append(active, latest)
 	}
 
 	return active
+}
+
+func (app *App) workflowHasActiveChildren(runID string) bool {
+	for index := range app.workflowSteps[runID] {
+		if !isTerminalAgentTaskState(app.workflowSteps[runID][index].AgentTask.Task.State) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (app *App) hasActiveWorkflow(runID string) bool {
@@ -241,6 +264,9 @@ func (app *App) refreshWorkflowSummaryDetails(ctx context.Context) {
 
 	app.workflowProgress = details.ProgressByRun
 	app.workflowSteps = details.StepsByRun
+	app.hydrateAgentTaskUsageTotals()
+	app.refreshWorkflowSummaryMetrics()
+	app.watchActiveAgentTasks(ctx)
 }
 
 func (app *App) reconcileActiveWorkflow(
@@ -366,12 +392,20 @@ func (app *App) discoverActiveAgentTasks(ctx context.Context) {
 
 	app.agentTasks = active
 	app.agentTaskSummaryOwnerID = app.sessionID
+	app.hydrateAgentTaskUsageTotals()
 	app.watchActiveAgentTasks(ctx)
 }
 
 func (app *App) watchActiveAgentTasks(ctx context.Context) {
-	for index := range app.agentTasks {
-		taskID := app.agentTasks[index].Task.ID
+	desired := app.desiredAgentTaskWatches()
+
+	for taskID := range app.agentTaskWatches {
+		if _, keep := desired[taskID]; !keep {
+			app.stopAgentTaskWatch(taskID)
+		}
+	}
+
+	for taskID := range desired {
 		if _, watching := app.agentTaskWatches[taskID]; watching {
 			continue
 		}
@@ -707,7 +741,13 @@ func (app *App) handleAgentTaskTerminalEvent(ctx context.Context, taskID string)
 }
 
 func (app *App) applyInspectedAgentTaskEvent(ctx context.Context, taskID, payloadJSON string) {
-	if taskID == "" || len(app.agentTaskSessionStack) == 0 || app.runtime == nil {
+	if taskID == "" {
+		return
+	}
+
+	app.recordAgentTaskUsageTotals(taskID, payloadJSON)
+
+	if len(app.agentTaskSessionStack) == 0 || app.runtime == nil {
 		return
 	}
 
@@ -727,6 +767,29 @@ func (app *App) applyInspectedAgentTaskEvent(ctx context.Context, taskID, payloa
 	}
 
 	app.renderInspectedAgentTaskEvent(payload)
+}
+
+func (app *App) recordAgentTaskUsageTotals(taskID, payloadJSON string) {
+	var usageTotals model.UsageTotals
+	if json.Unmarshal([]byte(payloadJSON), &usageTotals) != nil || !usageTotals.Reported {
+		return
+	}
+
+	if app.agentTaskUsageTotals == nil {
+		app.agentTaskUsageTotals = make(map[string]model.UsageTotals)
+	}
+
+	previous, found := app.agentTaskUsageTotals[taskID]
+
+	regressed := found && (usageTotals.InputTokens < previous.InputTokens ||
+		usageTotals.OutputTokens < previous.OutputTokens ||
+		usageTotals.ProviderRoundTrips < previous.ProviderRoundTrips)
+	if regressed {
+		return
+	}
+
+	app.agentTaskUsageTotals[taskID] = usageTotals
+	app.refreshWorkflowSummaryMetricsForTask(taskID)
 }
 
 func (app *App) renderInspectedAgentTaskEvent(payload *asyncEvent) {
@@ -820,7 +883,10 @@ func (app *App) refreshInspectedParentAgentTask(ctx context.Context, taskID stri
 	}
 }
 
-const agentTaskSucceededEvent = "task_succeeded"
+const (
+	agentTaskSucceededEvent = "task_succeeded"
+	taskQueuedLabel         = "queued"
+)
 
 func isTerminalAgentTaskEvent(kind string) bool {
 	switch kind {
@@ -829,6 +895,32 @@ func isTerminalAgentTaskEvent(kind string) bool {
 	default:
 		return false
 	}
+}
+
+func (app *App) desiredAgentTaskWatches() map[string]struct{} {
+	desired := make(map[string]struct{})
+
+	for index := range app.agentTasks {
+		task := &app.agentTasks[index].Task
+		if !isTerminalAgentTaskState(task.State) {
+			desired[task.ID] = struct{}{}
+		}
+	}
+
+	for _, steps := range app.workflowSteps {
+		for index := range steps {
+			task := &steps[index].AgentTask.Task
+			if !isTerminalAgentTaskState(task.State) {
+				desired[task.ID] = struct{}{}
+			}
+		}
+	}
+
+	if app.inspectedAgentTaskID != "" {
+		desired[app.inspectedAgentTaskID] = struct{}{}
+	}
+
+	return desired
 }
 
 func (app *App) stopAgentTaskWatch(taskID string) {
@@ -891,6 +983,7 @@ func (app *App) refreshActiveAgentTasks(ctx context.Context) {
 
 	app.agentTasks = active
 	app.agentTaskSummaryOwnerID = app.sessionID
+	app.hydrateAgentTaskUsageTotals()
 	app.watchActiveAgentTasks(ctx)
 
 	for index := range completed {
@@ -1143,7 +1236,8 @@ func formatAgentCompletionForUI(completion string) string {
 
 func (app *App) hasRunningAgentTasks() bool {
 	for index := range app.activeWorkflows {
-		if !isTerminalAgentTaskState(app.activeWorkflows[index].Task.State) {
+		run := &app.activeWorkflows[index]
+		if !isTerminalAgentTaskState(run.Task.State) || app.workflowHasActiveChildren(run.Task.ID) {
 			return true
 		}
 	}
@@ -1197,7 +1291,7 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 
 	for index := range app.activeWorkflows {
 		run := &app.activeWorkflows[index]
-		label := app.workflowSummaryLabel(run)
+		label := app.workflowSummaryLabelForWidth(run, max(0, width-tui.Width(pendingToolIndicator+" ")))
 		line := tui.Line{
 			Text:  pendingToolIndicator + " " + label,
 			Style: labelStyle,
@@ -1219,7 +1313,7 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 			continue
 		}
 
-		label := agentTaskSummaryLabel(task)
+		label := app.agentTaskSummaryLabelForWidth(task, time.Now(), max(0, width-tui.Width(pendingToolIndicator+" ")))
 		line := tui.Line{
 			Text:  pendingToolIndicator + " " + label,
 			Style: labelStyle,
@@ -1334,7 +1428,11 @@ func (app *App) selectedAgentTaskSummaryIndex() int {
 }
 
 func (app *App) styleAgentTaskSummaryLine(line tui.Line, width int, selected bool) tui.Line {
-	line = line.Truncate(max(1, width))
+	if width <= 0 {
+		return tui.Line{Text: "", Style: line.Style, Spans: []tui.Span{}}
+	}
+
+	line = line.Truncate(width)
 	if selected {
 		return applyLineStyle(line, app.theme.selected())
 	}
@@ -1357,24 +1455,114 @@ func workflowStepRow(name string, state database.TaskState, elapsed string, step
 }
 
 func (app *App) workflowSummaryLabel(run *database.WorkflowRunEntity) string {
+	return app.workflowSummaryLabelForWidth(run, math.MaxInt)
+}
+
+func (app *App) workflowSummaryLabelForWidth(run *database.WorkflowRunEntity, width int) string {
 	if run == nil {
 		return toolDisplayWorkflow
 	}
 
-	label := toolDisplayWorkflow + "(" + workflowName(run) + ")"
+	metrics := app.workflowSummaryMetrics[run.Task.ID]
+	terminal, total, usageTotals := metrics.terminal, metrics.total, metrics.usage
 
-	progress, ok := app.workflowProgress[run.Task.ID]
-	if !ok || progress.Total == 0 {
-		return label
+	if total == 0 {
+		progress := app.workflowProgress[run.Task.ID]
+		terminal, total = progress.Succeeded+progress.Failed, progress.Total
 	}
 
-	return fmt.Sprintf(
-		"%s  %d/%d agents · %s",
-		label,
-		progress.Succeeded+progress.Failed,
-		progress.Total,
-		taskMeta(&run.Task, time.Now()),
-	)
+	identitySuffix := fmt.Sprintf(") %d/%d agents", terminal, total)
+	elapsed := summaryElapsed(&run.Task, time.Now())
+	token := usageTotalsSuffix(usageTotals, total)
+
+	return fitSummaryIdentity(toolDisplayWorkflow+"(", workflowName(run), identitySuffix, elapsed, token, width)
+}
+
+type workflowSummaryMetric struct {
+	usage    model.UsageAggregate
+	terminal int
+	total    int
+}
+
+func (app *App) refreshWorkflowSummaryMetrics() {
+	app.workflowSummaryMetrics = make(map[string]workflowSummaryMetric, len(app.workflowSteps))
+	for runID, details := range app.workflowSteps {
+		app.workflowSummaryMetrics[runID] = newWorkflowSummaryMetric(details, app.agentTaskUsageTotals)
+	}
+}
+
+func (app *App) refreshWorkflowSummaryMetricsForTask(taskID string) {
+	if app.workflowSummaryMetrics == nil {
+		app.workflowSummaryMetrics = make(map[string]workflowSummaryMetric)
+	}
+
+	for runID, details := range app.workflowSteps {
+		for index := range details {
+			if details[index].AgentTask.Task.ID == taskID {
+				app.workflowSummaryMetrics[runID] = newWorkflowSummaryMetric(details, app.agentTaskUsageTotals)
+
+				break
+			}
+		}
+	}
+}
+
+func newWorkflowSummaryMetric(
+	details []database.WorkflowAgentTaskDetail,
+	live map[string]model.UsageTotals,
+) workflowSummaryMetric {
+	terminal, total, usage := workflowSummaryMetricsWithLive(details, live)
+
+	return workflowSummaryMetric{usage: usage, terminal: terminal, total: total}
+}
+
+func workflowSummaryMetricsWithLive(
+	details []database.WorkflowAgentTaskDetail,
+	live map[string]model.UsageTotals,
+) (terminal, total int, aggregate model.UsageAggregate) {
+	seen := make(map[string]struct{}, len(details))
+	allUsage := make([]model.UsageTotals, 0, len(details))
+	terminal = 0
+
+	for index := range details {
+		detail := &details[index]
+
+		taskID := detail.AgentTask.Task.ID
+		if _, ok := seen[taskID]; ok {
+			continue
+		}
+
+		seen[taskID] = struct{}{}
+
+		if isTerminalAgentTaskState(detail.AgentTask.Task.State) {
+			terminal++
+		}
+
+		usage, ok := decodeFinalUsageTotals(detail.AgentTask.UsageJSON)
+		if !ok && !isTerminalAgentTaskState(detail.AgentTask.Task.State) {
+			usage, ok = live[taskID]
+		}
+
+		if !ok {
+			usage = model.UsageTotals{
+				InputTokens: 0, OutputTokens: 0, ProviderRoundTrips: 0, Reported: false,
+			}
+		}
+
+		allUsage = append(allUsage, usage)
+	}
+
+	aggregate, err := model.AggregateUsage(allUsage)
+	if err != nil {
+		return terminal, len(seen), model.UsageAggregate{
+			Usage: model.UsageTotals{
+				InputTokens: 0, OutputTokens: 0, ProviderRoundTrips: 0, Reported: false,
+			},
+			Known: 0, Total: len(seen),
+		}
+	}
+
+	return terminal, len(seen), aggregate
 }
 
 func agentTaskSummaryLabel(task *database.AgentTaskEntity) string {
@@ -1393,6 +1581,167 @@ func agentTaskSummaryLabel(task *database.AgentTaskEntity) string {
 	}
 
 	return name + "(" + prompt + ")"
+}
+
+func agentTaskSummaryLabelForWidth(task *database.AgentTaskEntity, now time.Time, width int) string {
+	if task == nil {
+		return agentDefaultDisplayName
+	}
+
+	usageTotals, known := decodeFinalUsageTotals(task.UsageJSON)
+
+	return agentTaskSummaryLabelWithUsageTotals(task, now, width, usageTotals, known)
+}
+
+func (app *App) agentTaskSummaryLabelForWidth(task *database.AgentTaskEntity, now time.Time, width int) string {
+	usageTotals, known := app.agentTaskUsageTotals[task.Task.ID]
+	if final, ok := decodeFinalUsageTotals(task.UsageJSON); ok {
+		usageTotals, known = final, true
+	} else if isTerminalAgentTaskState(task.Task.State) {
+		usageTotals, known = emptyUsageTotals(), false
+	}
+
+	return agentTaskSummaryLabelWithUsageTotals(task, now, width, usageTotals, known)
+}
+
+func agentTaskSummaryLabelWithUsageTotals(
+	task *database.AgentTaskEntity,
+	now time.Time,
+	width int,
+	usageTotals model.UsageTotals,
+	known bool,
+) string {
+	if task == nil {
+		return agentDefaultDisplayName
+	}
+
+	name := strings.TrimSpace(task.AgentName)
+	if name == "" {
+		name = agentDefaultDisplayName
+	}
+
+	prompt := strings.Join(strings.Fields(task.Prompt), " ")
+	elapsed := summaryElapsed(&task.Task, now)
+	token := ""
+
+	if task.Task.StartedAt != nil {
+		if known {
+			total, err := usageTotals.TotalTokens()
+			if err == nil {
+				token = compactCount64(total) + " tok"
+			}
+		}
+	}
+
+	return fitSummaryIdentity(name+"(", prompt, ")", elapsed, token, width)
+}
+
+func (app *App) hydrateAgentTaskUsageTotals() {
+	if app.agentTaskUsageTotals == nil {
+		app.agentTaskUsageTotals = make(map[string]model.UsageTotals)
+	}
+
+	for index := range app.agentTasks {
+		app.hydrateFinalAgentTaskUsageTotals(&app.agentTasks[index])
+	}
+
+	for _, steps := range app.workflowSteps {
+		for index := range steps {
+			app.hydrateFinalAgentTaskUsageTotals(&steps[index].AgentTask)
+		}
+	}
+}
+
+func (app *App) hydrateFinalAgentTaskUsageTotals(task *database.AgentTaskEntity) {
+	if usageTotals, ok := decodeFinalUsageTotals(task.UsageJSON); ok {
+		app.agentTaskUsageTotals[task.Task.ID] = usageTotals
+
+		return
+	}
+
+	if isTerminalAgentTaskState(task.Task.State) {
+		delete(app.agentTaskUsageTotals, task.Task.ID)
+	}
+}
+
+func decodeFinalUsageTotals(usageJSON string) (model.UsageTotals, bool) {
+	var usageTotals model.UsageTotals
+	if strings.TrimSpace(usageJSON) == "" ||
+		json.Unmarshal([]byte(usageJSON), &usageTotals) != nil ||
+		!usageTotals.Reported {
+		return emptyUsageTotals(), false
+	}
+
+	if _, err := usageTotals.TotalTokens(); err != nil {
+		return emptyUsageTotals(), false
+	}
+
+	return usageTotals, true
+}
+
+func emptyUsageTotals() model.UsageTotals {
+	return model.UsageTotals{
+		InputTokens: 0, OutputTokens: 0, ProviderRoundTrips: 0, Reported: false,
+	}
+}
+
+func usageTotalsSuffix(aggregate model.UsageAggregate, total int) string {
+	if aggregate.Known == 0 {
+		return ""
+	}
+
+	tokens, err := aggregate.Usage.TotalTokens()
+	if err != nil {
+		return ""
+	}
+
+	suffix := compactCount64(tokens)
+	if aggregate.Known < total {
+		suffix += "+"
+	}
+
+	return suffix + " tok"
+}
+
+func summaryElapsed(task *database.TaskEntity, now time.Time) string {
+	if task == nil || task.StartedAt == nil {
+		return taskQueuedLabel
+	}
+
+	end := now
+
+	if isTerminalAgentTaskState(task.State) {
+		if task.FinishedAt == nil {
+			return "unknown"
+		}
+
+		end = *task.FinishedAt
+	}
+
+	duration := max(end.Sub(*task.StartedAt), 0)
+
+	return duration.Round(time.Second).String()
+}
+
+func fitSummaryIdentity(opening, flexible, identitySuffix, elapsed, token string, width int) string {
+	baseSuffix := identitySuffix
+	if elapsed != "" {
+		baseSuffix += " · " + elapsed
+	}
+
+	withToken := baseSuffix
+	if token != "" {
+		withToken += " · " + token
+	}
+
+	for _, suffix := range []string{withToken, baseSuffix, identitySuffix} {
+		available := width - tui.Width(opening) - tui.Width(suffix)
+		if available >= 1 {
+			return opening + tui.Truncate(flexible, available) + suffix
+		}
+	}
+
+	return tui.Truncate(opening+flexible+withToken, width)
 }
 
 func (app *App) openAgentTasksPanel(ctx context.Context) {
@@ -1426,7 +1775,7 @@ func (app *App) refreshAgentTasksPanel(ctx context.Context) {
 		return
 	}
 
-	model := panel.New(
+	panelModel := panel.New(
 		panelAgentTasks,
 		"Agent Tasks",
 		"Enter inspects; Ctrl+C cancels; /agents profiles lists profiles",
@@ -1435,13 +1784,13 @@ func (app *App) refreshAgentTasksPanel(ctx context.Context) {
 	)
 	for index := range items {
 		if items[index].Value == selected {
-			model.SetSelectedIndex(index)
+			panelModel.SetSelectedIndex(index)
 
 			break
 		}
 	}
 
-	app.panel = model
+	app.panel = panelModel
 }
 
 func (app *App) agentTaskItems(ctx context.Context) ([]tui.ListItem, error) {
@@ -1625,7 +1974,9 @@ func (app *App) switchToAgentTaskSession(
 }
 
 func (app *App) watchInspectedTaskIfRunning(ctx context.Context, task *database.AgentTaskEntity) {
+	app.inspectedAgentTaskID = ""
 	if task != nil && !isTerminalAgentTaskState(task.Task.State) {
+		app.inspectedAgentTaskID = task.Task.ID
 		app.watchInspectedAgentTask(ctx, task.Task.ID)
 	}
 }
@@ -1675,6 +2026,7 @@ func (app *App) leaveAgentTaskSession(ctx context.Context) error {
 	}
 
 	app.stopAgentTaskWatches()
+	app.inspectedAgentTaskID = ""
 	app.saveSessionView()
 	app.agentTaskSessionStack = app.agentTaskSessionStack[:last]
 

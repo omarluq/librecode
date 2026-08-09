@@ -299,6 +299,7 @@ func (progress *partialPromptProgress) record(streamEvent StreamEvent) {
 	case StreamEventSkillLoaded,
 		StreamEventUsage,
 		StreamEventUsageSnapshot,
+		StreamEventUsageTotal,
 		StreamEventContextCompaction,
 		StreamEventContextCompactionStart,
 		StreamEventContextCompactionDone,

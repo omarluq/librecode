@@ -77,6 +77,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			return nil, err
 		}
 
+		observeProviderResponse(ctx, request, providerResult.Usage)
 		appendThinking(result, providerResult.Thinking)
 		result.Usage = accumulateUsage(result.Usage, providerResult.Usage)
 

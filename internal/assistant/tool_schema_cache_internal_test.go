@@ -186,15 +186,16 @@ func newSchemaEstimateRequest(t *testing.T, api string, disableTools bool) *Comp
 	t.Helper()
 
 	return &CompletionRequest{
-		OnEvent:           nil,
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ToolRegistry:      tool.NewRegistry(t.TempDir()),
-		ExecuteTools:      nil,
-		SessionID:         "",
-		SystemPrompt:      "",
-		ThinkingLevel:     "",
-		CWD:               "",
+		OnEvent:            nil,
+		OnProviderObserve:  nil,
+		OnProviderResponse: nil,
+		OnProviderRequest:  nil,
+		ToolRegistry:       tool.NewRegistry(t.TempDir()),
+		ExecuteTools:       nil,
+		SessionID:          "",
+		SystemPrompt:       "",
+		ThinkingLevel:      "",
+		CWD:                "",
 		Auth: model.RequestAuth{
 			Headers: nil,
 			APIKey:  "",

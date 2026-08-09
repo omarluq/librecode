@@ -30,6 +30,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 	request := &CompletionRequest{
 		OnEvent:                nil,
 		OnProviderObserve:      nil,
+		OnProviderResponse:     nil,
 		OnProviderRequest:      nil,
 		ToolRegistry:           registry,
 		ExecuteTools:           nil,

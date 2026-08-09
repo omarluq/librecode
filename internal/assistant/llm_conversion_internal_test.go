@@ -21,15 +21,16 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 
 	registry := tool.NewRegistry(t.TempDir())
 	request := &CompletionRequest{
-		OnEvent:           nil,
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ToolRegistry:      registry,
-		ExecuteTools:      nil,
-		SessionID:         "session-1",
-		SystemPrompt:      "system instructions",
-		ThinkingLevel:     "high",
-		CWD:               t.TempDir(),
+		OnEvent:            nil,
+		OnProviderObserve:  nil,
+		OnProviderResponse: nil,
+		OnProviderRequest:  nil,
+		ToolRegistry:       registry,
+		ExecuteTools:       nil,
+		SessionID:          "session-1",
+		SystemPrompt:       "system instructions",
+		ThinkingLevel:      "high",
+		CWD:                t.TempDir(),
 		Auth: model.RequestAuth{
 			Headers: map[string]string{"x-test": "value"},
 			APIKey:  "secret",
@@ -172,6 +173,7 @@ func TestLLMRequestFromCompletionRequestNilAndDisabledTools(t *testing.T) {
 	converted := llmRequestFromCompletionRequest(&CompletionRequest{
 		OnEvent:                nil,
 		OnProviderObserve:      nil,
+		OnProviderResponse:     nil,
 		OnProviderRequest:      nil,
 		ToolRegistry:           tool.NewRegistry(t.TempDir()),
 		ExecuteTools:           nil,

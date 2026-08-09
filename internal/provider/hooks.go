@@ -58,6 +58,14 @@ func applyProviderRequestHook(
 	return output, nil
 }
 
+func observeProviderResponse(ctx context.Context, request *CompletionRequest, usage llm.Usage) {
+	if request == nil || request.OnProviderResponse == nil {
+		return
+	}
+
+	request.OnProviderResponse(ctx, usage)
+}
+
 func providerAttempt(request *CompletionRequest) int {
 	if request == nil || request.ProviderAttempt <= 0 {
 		return 1

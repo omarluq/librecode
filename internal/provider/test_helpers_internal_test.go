@@ -99,14 +99,26 @@ func responseToolEvents(response *llm.Response) []ToolEvent {
 	return events
 }
 
+func reportedRoundUsage(inputTokens, outputTokens int) llm.Usage {
+	return llm.Usage{
+		Breakdown:       nil,
+		TopContributors: nil,
+		ContextWindow:   0,
+		ContextTokens:   0,
+		InputTokens:     inputTokens,
+		OutputTokens:    outputTokens,
+	}.WithReported()
+}
+
 func emptyCompletionRequest() *CompletionRequest {
 	return &CompletionRequest{
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ExecuteTools:      nil,
-		OnEvent:           nil,
-		Request:           emptyRequest(),
-		ProviderAttempt:   0,
+		OnProviderObserve:  nil,
+		OnProviderResponse: nil,
+		OnProviderRequest:  nil,
+		ExecuteTools:       nil,
+		OnEvent:            nil,
+		Request:            emptyRequest(),
+		ProviderAttempt:    0,
 	}
 }
 

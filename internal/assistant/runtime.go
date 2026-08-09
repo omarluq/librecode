@@ -101,6 +101,8 @@ const (
 	StreamEventUsage StreamEventKind = "usage"
 	// StreamEventUsageSnapshot carries a fresh full-context usage snapshot that should replace prior UI usage.
 	StreamEventUsageSnapshot StreamEventKind = "usage_snapshot"
+	// StreamEventUsageTotal carries cumulative provider-reported usage for one run.
+	StreamEventUsageTotal StreamEventKind = "usage_total"
 	// StreamEventContextCompaction carries UI-only context compaction notices.
 	StreamEventContextCompaction StreamEventKind = "context_compaction"
 	// StreamEventContextCompactionStart reports that context compaction has started.
@@ -135,11 +137,12 @@ type PromptResponse struct {
 }
 
 type responseBundle struct {
-	Text        string
-	Thinking    []string
-	ToolEvents  []ToolEvent
-	Usage       model.TokenUsage
-	ModelFacing bool
+	Text          string
+	Thinking      []string
+	ToolEvents    []ToolEvent
+	Usage         model.TokenUsage
+	ProviderUsage model.TokenUsage
+	ModelFacing   bool
 }
 
 // RuntimeOptions contains dependencies for an assistant runtime.

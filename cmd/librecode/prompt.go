@@ -170,10 +170,10 @@ func promptExecutionError(promptErr, metricsErr error) error {
 type promptMetrics struct {
 	Strategy            string `json:"strategy"`
 	Error               string `json:"error"`
-	ProviderRoundTrips  int    `json:"provider_round_trips"`
+	ProviderRoundTrips  int64  `json:"provider_round_trips"`
 	ElapsedMilliseconds int64  `json:"elapsed_ms"`
-	InputTokens         int    `json:"input_tokens"`
-	OutputTokens        int    `json:"output_tokens"`
+	InputTokens         int64  `json:"input_tokens"`
+	OutputTokens        int64  `json:"output_tokens"`
 	ToolCalls           int    `json:"tool_calls"`
 	NestedToolCalls     int    `json:"nested_tool_calls"`
 	TraceComplete       bool   `json:"trace_complete"`

@@ -176,10 +176,11 @@ func newProviderHookCaptureServer(
 
 func providerPayloadHookRequest(baseURL string) *CompletionRequest {
 	return &CompletionRequest{
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ExecuteTools:      nil,
-		OnEvent:           nil,
+		OnProviderObserve:  nil,
+		OnProviderResponse: nil,
+		OnProviderRequest:  nil,
+		ExecuteTools:       nil,
+		OnEvent:            nil,
 		Request: llm.Request{
 			ProviderOptions: map[string]any{"cwd": "/work"},
 			Auth:            llm.Auth{Headers: map[string]string{}, APIKey: "test-key"},

@@ -41,7 +41,7 @@ func mergeTerminalUsage(current, next model.TokenUsage) model.TokenUsage {
 		current.ContextWindow = next.ContextWindow
 	}
 
-	if next.ContextTokens > current.ContextTokens {
+	if next.ContextTokens > 0 {
 		current.ContextTokens = next.ContextTokens
 	}
 
@@ -81,7 +81,7 @@ func formatContextUsage(usage model.TokenUsage) string {
 			"ctx %s/%s %d%%",
 			compactCount(usage.ContextTokens),
 			compactCount(window),
-			percentOf(usage.ContextTokens, window),
+			units.PercentOf(usage.ContextTokens, window),
 		)
 	case usage.ContextTokens > 0:
 		return "ctx " + compactCount(usage.ContextTokens)
@@ -92,14 +92,6 @@ func formatContextUsage(usage model.TokenUsage) string {
 	}
 }
 
-func percentOf(tokens, budget int) int {
-	if tokens <= 0 || budget <= 0 {
-		return 0
-	}
-
-	return tokens * units.PercentScale / budget
-}
-
 func cloneTokenBreakdown(values map[string]int) map[string]int {
 	cloned := make(map[string]int, len(values))
 	maps.Copy(cloned, values)
@@ -108,17 +100,21 @@ func cloneTokenBreakdown(values map[string]int) map[string]int {
 }
 
 func compactCount(value int) string {
-	if value >= units.TokenMillion {
+	return compactCount64(int64(value))
+}
+
+func compactCount64(value int64) string {
+	if value >= int64(units.TokenMillion) {
 		return fmt.Sprintf("%.1fm", float64(value)/units.TokenMillion)
 	}
 
-	if value >= compactWholeThousandsThreshold {
-		return fmt.Sprintf("%dk", value/units.TokenThousand)
+	if value >= int64(compactWholeThousandsThreshold) {
+		return fmt.Sprintf("%dk", value/int64(units.TokenThousand))
 	}
 
-	if value >= units.TokenThousand {
+	if value >= int64(units.TokenThousand) {
 		return fmt.Sprintf("%.1fk", float64(value)/units.TokenThousand)
 	}
 
-	return strconv.Itoa(value)
+	return strconv.FormatInt(value, 10)
 }

@@ -70,13 +70,17 @@ func (runtime *Runtime) appendAssistantResponseEntry(
 		Model:     runtime.cfg.Assistant.Model, Parts: nil,
 	}
 
+	persistedUsage := bundle.ProviderUsage
+	persistedUsage.ContextWindow = bundle.Usage.ContextWindow
+	persistedUsage.ContextTokens = bundle.Usage.ContextTokens
+
 	entry, err := runtime.sessions.AppendMessageWithMetadata(
 		ctx,
 		sessionID,
 		parentID,
 		&message,
 		&bundle.ModelFacing,
-		contextwindow.ProviderUsageEntity(bundle.Usage),
+		contextwindow.ProviderUsageEntity(persistedUsage),
 	)
 
 	return entry, assistantError(err, "append assistant response")

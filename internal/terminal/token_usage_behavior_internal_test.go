@@ -47,7 +47,7 @@ func TestMergeTerminalUsageIgnoresInputOutputTokens(t *testing.T) {
 	}, mergeTerminalUsage(current, next))
 }
 
-func TestMergeTerminalUsagePreservesEstimatedContext(t *testing.T) {
+func TestMergeTerminalUsageUsesLatestContextObservation(t *testing.T) {
 	t.Parallel()
 
 	current := model.TokenUsage{
@@ -62,7 +62,7 @@ func TestMergeTerminalUsagePreservesEstimatedContext(t *testing.T) {
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
-		ContextTokens:   0,
+		ContextTokens:   12_000,
 		InputTokens:     12_000,
 		OutputTokens:    700,
 	}
@@ -71,7 +71,7 @@ func TestMergeTerminalUsagePreservesEstimatedContext(t *testing.T) {
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1_000_000,
-		ContextTokens:   17_000,
+		ContextTokens:   12_000,
 		InputTokens:     17_000,
 		OutputTokens:    0,
 	}, mergeTerminalUsage(current, next))

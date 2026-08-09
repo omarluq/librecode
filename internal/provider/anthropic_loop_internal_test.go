@@ -18,6 +18,9 @@ func TestCompleteAnthropicExecutesToolCalls(t *testing.T) {
 
 	workspace := testToolWorkspace(t)
 	requests := make([]map[string]any, 0, 2)
+
+	var roundUsage []llm.Usage
+
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requestCount++
@@ -38,7 +41,11 @@ func TestCompleteAnthropicExecutesToolCalls(t *testing.T) {
 			return
 		}
 
-		writeTestProviderResponse(t, writer, anthropicResponseStream(anthropicResponseJSON("end_turn", "done", nil)))
+		writeTestProviderResponse(t, writer, anthropicResponseStream(`{
+			"stop_reason":"end_turn",
+			"usage":{"input_tokens":3,"output_tokens":4},
+			"content":[{"type":"text","text":"done"}]
+		}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -46,6 +53,9 @@ func TestCompleteAnthropicExecutesToolCalls(t *testing.T) {
 	setTestRequestCWD(request, workspace)
 	setTestRequestBaseURL(request, server.URL)
 	installTestToolExecutor(request)
+	request.OnProviderResponse = func(_ context.Context, usage llm.Usage) {
+		roundUsage = append(roundUsage, usage)
+	}
 
 	result, err := (&HTTPCompletionClient{client: server.Client()}).completeAnthropic(context.Background(), request)
 
@@ -56,6 +66,12 @@ func TestCompleteAnthropicExecutesToolCalls(t *testing.T) {
 	require.Len(t, response.ToolEvents, 1)
 	assert.Equal(t, expectedReadToolName, response.ToolEvents[0].Name)
 	assert.Contains(t, response.ToolEvents[0].Result, "librecode")
+	assert.Equal(t, []llm.Usage{
+		reportedRoundUsage(1, 2),
+		reportedRoundUsage(3, 4),
+	}, roundUsage)
+	assert.Equal(t, 4, response.Usage.InputTokens)
+	assert.Equal(t, 6, response.Usage.OutputTokens)
 	require.Len(t, requests, 2)
 	messages, ok := requests[1][jsonMessagesKey].([]any)
 	require.True(t, ok)
@@ -76,6 +92,14 @@ func TestAdvanceAnthropicLoopReturnsToolValidationError(t *testing.T) {
 
 	request := testCompletionRequestAuth("sk-ant-api03-secret")
 	setTestRequestBaseURL(request, server.URL)
+
+	var observed bool
+
+	request.OnProviderResponse = func(_ context.Context, usage llm.Usage) {
+		observed = true
+
+		assert.False(t, usage.Reported())
+	}
 	state := anthropicLoopState{
 		result:   newResponse(),
 		endpoint: server.URL + "/v1/messages",
@@ -90,6 +114,7 @@ func TestAdvanceAnthropicLoopReturnsToolValidationError(t *testing.T) {
 
 	assert.False(t, finished)
 	require.Error(t, err)
+	assert.True(t, observed)
 	assert.Contains(t, err.Error(), "without call_id")
 }
 

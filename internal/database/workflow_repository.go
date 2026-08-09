@@ -185,6 +185,46 @@ ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`
 	)
 }
 
+// ListActiveByOwner returns nonterminal workflows and workflows with active directly linked agents.
+func (repository *WorkflowRepository) ListActiveByOwner(
+	ctx context.Context,
+	ownerSessionID string,
+	limit int,
+) ([]WorkflowRunEntity, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	const query = `SELECT ` + workflowRunColumns + ` FROM tasks t
+JOIN workflow_runs w ON w.task_id = t.id
+WHERE t.kind = ? AND t.owner_session_id = ? AND (
+	t.state IN (?, ?, ?)
+	OR EXISTS (
+		SELECT 1 FROM workflow_agent_tasks wat
+		JOIN tasks child ON child.id = wat.agent_task_id
+		WHERE wat.workflow_task_id = t.id AND child.state IN (?, ?, ?)
+	)
+)
+ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`
+
+	return querySQLRows(
+		ctx,
+		repository.sql,
+		workflowRunFromRow,
+		query,
+		"active_workflow_run",
+		TaskKindWorkflow,
+		ownerSessionID,
+		TaskQueued,
+		TaskRunning,
+		TaskCanceling,
+		TaskQueued,
+		TaskRunning,
+		TaskCanceling,
+		limit,
+	)
+}
+
 // CreateAgentTaskWithChildSession atomically creates a child session, queued agent task, and workflow link.
 func (repository *WorkflowRepository) CreateAgentTaskWithChildSession(
 	ctx context.Context,

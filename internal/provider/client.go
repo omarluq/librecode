@@ -106,6 +106,8 @@ const (
 	jsonToolCallsKey        = "tool_calls"
 	jsonIndexKey            = "index"
 	jsonInputTokensKey      = "input_tokens"
+	jsonPromptTokensKey     = "prompt_tokens"
+	jsonCompletionTokensKey = "completion_tokens"
 	openAIStopReason        = "stop"
 	openAIToolCallsReason   = jsonToolCallsKey
 	anthropicStopReasonKey  = "stop_reason"
@@ -115,12 +117,13 @@ const (
 
 // CompletionRequest describes one provider-neutral generation request plus runtime callbacks.
 type CompletionRequest struct {
-	OnProviderObserve llm.ProviderObserver
-	OnProviderRequest llm.ProviderRequestHook
-	ExecuteTools      llm.ToolExecutor
-	OnEvent           func(*llm.StreamChunk)
-	Request           llm.Request
-	ProviderAttempt   int
+	OnProviderObserve  llm.ProviderObserver
+	OnProviderResponse llm.ProviderResponseObserver
+	OnProviderRequest  llm.ProviderRequestHook
+	ExecuteTools       llm.ToolExecutor
+	OnEvent            func(*llm.StreamChunk)
+	Request            llm.Request
+	ProviderAttempt    int
 }
 
 // Completer talks to provider APIs.
@@ -219,12 +222,13 @@ func (transport h2OnlyTransport) RoundTrip(request *http.Request) (*http.Respons
 // Generate sends a provider-neutral request without runtime callbacks.
 func (client *HTTPCompletionClient) Generate(ctx context.Context, request *llm.Request) (*llm.Response, error) {
 	completionRequest := CompletionRequest{
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ExecuteTools:      nil,
-		OnEvent:           nil,
-		Request:           emptyRequest(),
-		ProviderAttempt:   0,
+		OnProviderObserve:  nil,
+		OnProviderResponse: nil,
+		OnProviderRequest:  nil,
+		ExecuteTools:       nil,
+		OnEvent:            nil,
+		Request:            emptyRequest(),
+		ProviderAttempt:    0,
 	}
 	if request != nil {
 		completionRequest.Request = *request

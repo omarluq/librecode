@@ -19,7 +19,7 @@ import (
 func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
 	t.Parallel()
 
-	requests, result := completeOpenAIChatWithResponses(
+	requests, result, roundUsage := completeOpenAIChatWithResponses(
 		t,
 		openAIChatReadToolResponse(),
 		openAIChatTextStream("done"),
@@ -30,6 +30,13 @@ func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
 	assert.Equal(t, expectedReadToolName, result.ToolEvents[0].Name)
 	assert.Contains(t, result.ToolEvents[0].Result, "librecode")
 	require.Len(t, requests, 2)
+	assert.Equal(t, []llm.Usage{
+		reportedRoundUsage(4, 2),
+		reportedRoundUsage(6, 3),
+	}, roundUsage)
+	assert.Equal(t, 10, result.Usage.InputTokens)
+	assert.Equal(t, 5, result.Usage.OutputTokens)
+
 	tools, ok := requests[0]["tools"].([]any)
 	require.True(t, ok)
 	assert.NotEmpty(t, tools)
@@ -45,7 +52,10 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	workspace := testToolWorkspace(t)
 	captures := make(chan providerResponseHookCapture, 2)
 
-	var hookIterations []int
+	var (
+		hookIterations []int
+		roundUsage     []llm.Usage
+	)
 
 	requestCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -62,6 +72,9 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	setTestRequestAPI(request, apiOpenAIResponses)
 	setTestRequestBaseURL(request, server.URL)
 	installTestToolExecutor(request)
+	request.OnProviderResponse = func(_ context.Context, usage llm.Usage) {
+		roundUsage = append(roundUsage, usage)
+	}
 	request.OnProviderRequest = func(
 		_ context.Context,
 		input *llm.HookInput,
@@ -89,6 +102,12 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	require.NoError(t, first.Err)
 	require.NoError(t, second.Err)
 	assert.Equal(t, []int{1, 2}, hookIterations)
+	assert.Equal(t, []llm.Usage{
+		reportedRoundUsage(8, 1),
+		reportedRoundUsage(9, 2),
+	}, roundUsage)
+	assert.Equal(t, 17, result.Usage.InputTokens)
+	assert.Equal(t, 3, result.Usage.OutputTokens)
 	assert.Equal(t, "1", first.Header)
 	assert.Equal(t, "2", second.Header)
 	assert.InDelta(t, 1, first.Body["iteration"], 0)
@@ -123,18 +142,30 @@ func writeProviderHookIterationResponse(t *testing.T, writer http.ResponseWriter
 	writer.Header().Set("Content-Type", "text/event-stream")
 
 	if requestCount != 1 {
-		writeTestProviderResponse(t, writer, openAIResponseCompletedStream(`{"output_text":"done"}`))
+		writeTestProviderResponse(
+			t,
+			writer,
+			openAIResponseCompletedStream(`{
+				"output_text":"done",
+				"usage":{"input_tokens":9,"output_tokens":2}
+			}`),
+		)
 
 		return
 	}
 
 	arguments, err := json.Marshal(map[string]string{jsonPathKey: testToolPath})
 	require.NoError(t, err)
-	writeTestProviderResponse(
-		t,
-		writer,
-		openAIResponseCompletedStream(responseFunctionCallJSON("call_1", jsonReadToolName, string(arguments))),
-	)
+
+	response := map[string]any{}
+	require.NoError(t, json.Unmarshal(
+		[]byte(responseFunctionCallJSON("call_1", jsonReadToolName, string(arguments))),
+		&response,
+	))
+	response[jsonUsageKey] = map[string]any{jsonInputTokensKey: 8, jsonOutputTokensKey: 1}
+	encoded, err := json.Marshal(response)
+	require.NoError(t, err)
+	writeTestProviderResponse(t, writer, openAIResponseCompletedStream(string(encoded)))
 }
 
 type providerResponseHookCapture struct {
@@ -147,10 +178,13 @@ func completeOpenAIChatWithResponses(
 	t *testing.T,
 	firstResponse string,
 	secondResponse string,
-) ([]map[string]any, providerResponse) {
+) ([]map[string]any, providerResponse, []llm.Usage) {
 	t.Helper()
 
-	var requests []map[string]any
+	var (
+		requests   []map[string]any
+		roundUsage []llm.Usage
+	)
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var payload map[string]any
@@ -173,12 +207,15 @@ func completeOpenAIChatWithResponses(
 	setTestRequestCWD(request, testToolWorkspace(t))
 	setTestRequestBaseURL(request, server.URL)
 	installTestToolExecutor(request)
+	request.OnProviderResponse = func(_ context.Context, usage llm.Usage) {
+		roundUsage = append(roundUsage, usage)
+	}
 
 	client := &HTTPCompletionClient{client: server.Client()}
 	result, err := client.completeOpenAIChat(context.Background(), request)
 	require.NoError(t, err)
 
-	return requests, providerResponseView(result)
+	return requests, providerResponseView(result), roundUsage
 }
 
 func openAIChatReadToolResponse() string {
@@ -187,33 +224,44 @@ func openAIChatReadToolResponse() string {
 		panic(err)
 	}
 
-	return openAIChatToolCallStream("call_1", jsonReadToolName, string(arguments))
+	return openAIChatToolCallStreamWithUsage(
+		"call_1",
+		jsonReadToolName,
+		string(arguments),
+		map[string]any{jsonPromptTokensKey: 4, jsonCompletionTokensKey: 2},
+	)
 }
 
-func openAIChatToolCallStream(callID, name, arguments string) string {
+func openAIChatToolCallStreamWithUsage(callID, name, arguments string, usage map[string]any) string {
+	choice := map[string]any{
+		anthropicDeltaKey: map[string]any{jsonToolCallsKey: []any{map[string]any{
+			jsonIndexKey: 0,
+			"id":         callID,
+			"type":       functionToolType,
+			jsonFunctionKey: map[string]any{
+				jsonToolNameKey:  name,
+				jsonArgumentsKey: arguments,
+			},
+		}}},
+		jsonFinishReasonKey: jsonToolCallsKey,
+	}
+	if len(usage) > 0 {
+		choice[jsonUsageKey] = usage
+	}
+
 	return openAIChatStream(
-		openAIChatChunk(map[string]any{jsonChoicesKey: []any{map[string]any{
-			anthropicDeltaKey: map[string]any{jsonToolCallsKey: []any{map[string]any{
-				jsonIndexKey: 0,
-				"id":         callID,
-				"type":       functionToolType,
-				jsonFunctionKey: map[string]any{
-					jsonToolNameKey:  name,
-					jsonArgumentsKey: arguments,
-				},
-			}}},
-			jsonFinishReasonKey: jsonToolCallsKey,
-		}}}),
+		openAIChatChunk(map[string]any{jsonChoicesKey: []any{choice}}),
 		openAIChatDoneLine,
 	)
 }
 
 func openAIChatTextStream(text string) string {
 	return openAIChatStream(
-		openAIChatChunk(map[string]any{jsonChoicesKey: []any{map[string]any{
-			anthropicDeltaKey:   map[string]any{jsonContentKey: text},
-			jsonFinishReasonKey: "stop",
-		}}}),
+		openAIChatDelta(
+			map[string]any{jsonContentKey: text},
+			"stop",
+			map[string]any{jsonPromptTokensKey: 6, jsonCompletionTokensKey: 3},
+		),
 		openAIChatDoneLine,
 	)
 }
