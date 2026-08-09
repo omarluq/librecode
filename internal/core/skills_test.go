@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/core"
-	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -22,8 +21,6 @@ func TestLoadSkillsDiscoversConfiguredRootsAndFormatsPrompt(t *testing.T) {
 	home := t.TempDir()
 	agentDir := t.TempDir()
 	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
 
 	writeTestFile(t, filepath.Join(
 		cwd,
@@ -80,8 +77,6 @@ func TestLoadSkillsDedupesByPriority(t *testing.T) {
 	agentDir := t.TempDir()
 	t.Setenv("HOME", home)
 
-	testutil.SetWindowsHome(t, home)
-
 	winnerPath := filepath.Join(cwd, core.ConfigDirName, "skills", "same", "SKILL.md")
 	writeTestFile(t, winnerPath, skillMarkdown("same"))
 	writeTestFile(t, filepath.Join(cwd, core.AgentsDirName, "skills", "same", "SKILL.md"), skillMarkdown("same"))
@@ -129,8 +124,6 @@ func TestLoadSkillsParsesSpecFrontmatter(t *testing.T) {
 			cwd := t.TempDir()
 			home := t.TempDir()
 			t.Setenv("HOME", home)
-
-			testutil.SetWindowsHome(t, home)
 
 			frontmatter := []string{
 				frontmatterDelimiter,
@@ -207,8 +200,6 @@ func TestLoadSkillsHonorsIgnoreFiles(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
 
-			testutil.SetWindowsHome(t, home)
-
 			skillsDir := filepath.Join(cwd, core.ConfigDirName, "skills")
 			writeTestFile(t, filepath.Join(skillsDir, ".ignore"), testCase.ignoreFile)
 
@@ -235,8 +226,6 @@ func TestAutoActivateSkillsSelectsMatchingSkill(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
 	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "bug-fix", "SKILL.md"), strings.Join([]string{
 		frontmatterDelimiter,
 		"name: bug-fix",
@@ -258,8 +247,6 @@ func TestAutoActivateSkillsIgnoresActivationStopWords(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
 	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "loud", "SKILL.md"), strings.Join([]string{
 		frontmatterDelimiter,
 		"name: loud",
@@ -279,8 +266,6 @@ func TestAutoActivateSkillsRequiresStrongIntent(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
 	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "hud", "SKILL.md"), strings.Join([]string{
 		frontmatterDelimiter,
 		"name: hud",
@@ -317,8 +302,6 @@ func TestLoadSkillsReportsValidationWarningsAndNameCollisions(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
 
 	writeTestFile(t, filepath.Join(home, core.AgentsDirName, "skills", "same", "SKILL.md"), strings.Join([]string{
 		frontmatterDelimiter,

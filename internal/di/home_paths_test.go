@@ -10,15 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/di"
-	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestAuthServicePrefersProjectLibrecodeAuth(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
 	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
 	t.Chdir(cwd)
 
@@ -56,8 +53,6 @@ func TestDatabaseServicePrefersProjectLibrecodeDatabase(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
 	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
 	t.Chdir(cwd)
 

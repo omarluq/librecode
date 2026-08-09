@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -823,10 +822,6 @@ func assertTerminalKeyExecution(t *testing.T, manager *extension.Manager) {
 
 func createManagerSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping symlink test on Windows: symlinks require elevated privileges")
-	}
 
 	require.NoError(t, os.Symlink(oldname, newname))
 }

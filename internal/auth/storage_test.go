@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -97,11 +96,7 @@ func TestStoragePersistsFileCredentials(t *testing.T) {
 
 	info, err := os.Stat(authPath)
 	require.NoError(t, err)
-	assert.True(t, info.Mode().IsRegular())
-
-	if runtime.GOOS != "windows" {
-		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
-	}
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 
 	require.NoError(t, reloaded.Remove(ctx, "openai"))
 	assert.False(t, reloaded.HasStored("openai"))

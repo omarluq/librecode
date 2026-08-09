@@ -190,10 +190,7 @@ func runShellCommand(ctx context.Context, cwd, command string) (*commandOutput, 
 		buffer: make([]byte, 0, DefaultMaxBytes), total: 0, truncated: false, lock: sync.Mutex{},
 	}}
 
-	shellPath, shellArgs, err := shellConfig(command)
-	if err != nil {
-		return output, toolWrap(err, "start bash command")
-	}
+	shellPath, shellArgs := shellConfig(command)
 
 	cmd := shellCommandContext(ctx, shellPath, shellArgs)
 	cmd.Dir = cwd

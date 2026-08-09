@@ -1,5 +1,3 @@
-//go:build !windows
-
 package tool
 
 import (
@@ -13,8 +11,7 @@ import (
 func TestUnixShellConfigUsesConfiguredShell(t *testing.T) {
 	t.Setenv("SHELL", "/custom/bash")
 
-	shellPath, args, err := shellConfig("echo ok")
-	require.NoError(t, err)
+	shellPath, args := shellConfig("echo ok")
 	assert.Equal(t, "/custom/bash", shellPath)
 	assert.Equal(t, []string{shellLoginArg, "echo ok"}, args)
 }

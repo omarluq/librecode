@@ -12,7 +12,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestRuntime_ContextBuildUsesPromptBranchEndpoint(t *testing.T) {
@@ -72,8 +71,6 @@ func TestRuntime_ContextBuildUsesPromptBranchEndpoint(t *testing.T) {
 func TestRuntime_ContextBuildIncludesAgentInstructions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
 	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
 
 	cwd := t.TempDir()

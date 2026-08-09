@@ -1,5 +1,3 @@
-//go:build !windows
-
 package tool
 
 import (
@@ -12,16 +10,16 @@ import (
 
 const shellLoginArg = "-lc"
 
-func shellConfig(command string) (shellPath string, shellArgs []string, err error) {
+func shellConfig(command string) (shellPath string, shellArgs []string) {
 	if shellPath := os.Getenv("SHELL"); shellPath != "" {
-		return shellPath, []string{shellLoginArg, command}, nil
+		return shellPath, []string{shellLoginArg, command}
 	}
 
 	if _, err := os.Stat("/bin/bash"); err == nil {
-		return "/bin/bash", []string{shellLoginArg, command}, nil
+		return "/bin/bash", []string{shellLoginArg, command}
 	}
 
-	return "/bin/sh", []string{shellLoginArg, command}, nil
+	return "/bin/sh", []string{shellLoginArg, command}
 }
 
 func configureShellCommand(cmd *exec.Cmd) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -262,10 +261,6 @@ func TestRegistryPreparesEditAndWriteInSourceOrderForSamePath(t *testing.T) {
 
 func TestFileMutationLocksCanonicalizeSymlinkPaths(t *testing.T) {
 	t.Parallel()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping symlink test on Windows: symlinks require elevated privileges")
-	}
 
 	root := t.TempDir()
 	realDirectory := filepath.Join(root, "real")

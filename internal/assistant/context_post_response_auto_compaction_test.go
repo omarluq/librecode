@@ -10,13 +10,10 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-
-	testutil.SetWindowsHome(t, t.TempDir())
 
 	harness := newAutoCompactionRuntimeHarness(t, []string{"final answer", "summary of completed work"}, 16_000)
 	ctx := context.Background()
