@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -35,10 +34,6 @@ func TestFindRejectsRelativePath(t *testing.T) {
 }
 
 func TestFindDoesNotUsePATH(t *testing.T) {
-	if runtime.GOOS == windowsOS {
-		t.Skip("test relies on Unix executable mode")
-	}
-
 	dir := t.TempDir()
 	path := filepath.Join(dir, "private-tool")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"), executableTestMode))
@@ -77,10 +72,6 @@ func TestRunWithTimeoutWrapsRunFailure(t *testing.T) {
 func TestFindRejectsAbsoluteExecutableOutsideFixedDirs(t *testing.T) {
 	t.Parallel()
 
-	if runtime.GOOS == windowsOS {
-		t.Skip("test relies on Unix executable mode")
-	}
-
 	path := filepath.Join(t.TempDir(), "tool")
 	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"), executableTestMode))
 
@@ -91,10 +82,6 @@ func TestFindRejectsAbsoluteExecutableOutsideFixedDirs(t *testing.T) {
 
 func TestValidateExecutableRejectsDirectoryAndNonExecutable(t *testing.T) {
 	t.Parallel()
-
-	if runtime.GOOS == windowsOS {
-		t.Skip("test relies on Unix executable mode")
-	}
 
 	dir := t.TempDir()
 
@@ -113,14 +100,7 @@ func TestValidateExecutableRejectsDirectoryAndNonExecutable(t *testing.T) {
 func TestCandidateNames(t *testing.T) {
 	t.Parallel()
 
-	candidates := candidateNames("tool")
-	if runtime.GOOS == windowsOS {
-		assert.Equal(t, []string{"tool.exe", "tool.cmd", "tool.bat"}, candidates)
-
-		return
-	}
-
-	assert.Equal(t, []string{"tool"}, candidates)
+	assert.Equal(t, []string{"tool"}, candidateNames("tool"))
 }
 
 func TestFixedDirs(t *testing.T) {

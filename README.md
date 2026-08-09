@@ -318,7 +318,7 @@ Seven tools, kept deliberately small. No registry, marketplace, or external serv
 
 The `bash` tool executes commands directly in your shell with the permissions of the librecode process. There is no allowlist or interactive confirmation.
 
-On Windows, the `bash` tool requires a real Bash shell rather than `cmd.exe`. librecode checks `LIBRECODE_BASH_PATH`, common Git Bash install paths, then `bash.exe` on `PATH`. Native Windows users should install Git Bash/MSYS2/Cygwin or run librecode from WSL.
+Native Windows is not supported. Windows users should run librecode through WSL.
 
 ## CLI reference
 
@@ -408,7 +408,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The release workflow cross-compiles Linux, macOS, and Windows binaries, archives them, generates checksums, and publishes a GitHub release.
+The release workflow cross-compiles Linux and macOS binaries, archives them, generates checksums, and publishes a GitHub release.
 
 ## License
 

@@ -17,13 +17,9 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
     ldflags:
       - -s -w
       - -X github.com/omarluq/librecode/internal/vinfo.version={{.Version}}|{{.ShortCommit}}|{{.Date}}
@@ -32,10 +28,6 @@ archives:
   - id: default
     formats:
       - tar.gz
-    format_overrides:
-      - goos: windows
-        formats:
-          - zip
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_

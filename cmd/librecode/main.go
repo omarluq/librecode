@@ -1,3 +1,5 @@
+//go:build !windows
+
 // Package main defines the librecode CLI entrypoint and top-level commands.
 package main
 

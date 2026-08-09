@@ -95,7 +95,3 @@ Useful docs:
 1. Create the service under the appropriate `internal/` package.
 2. Register dependencies in `internal/di/register.go` when the service is app-wide.
 3. Inject via `do.MustInvoke`/`do.Invoke` following existing patterns.
-
-## Windows notes
-
-The public `bash` tool requires a Bash-compatible shell. On Windows, librecode should prefer configured/Git Bash/MSYS2/Cygwin/WSL Bash and should not silently fall back to `cmd.exe` for Bash semantics.

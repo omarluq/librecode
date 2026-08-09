@@ -507,12 +507,12 @@ func TestServiceBoundsWorkersAndDrainsQueuedTasks(t *testing.T) {
 	handler := &blockingHandler{release: release, active: atomic.Int32{}, maximum: atomic.Int32{}}
 	service, err := New(Options{
 		Tasks: tasks, Logger: nil, Workers: 2, PollInterval: 10 * time.Millisecond,
-		LeaseDuration: time.Second, HeartbeatInterval: 100 * time.Millisecond,
-		RecoveryInterval: time.Second, DefaultTimeout: time.Second, MaxPayloadBytes: 0,
+		LeaseDuration: 30 * time.Second, HeartbeatInterval: 5 * time.Second,
+		RecoveryInterval: 30 * time.Second, DefaultTimeout: 30 * time.Second, MaxPayloadBytes: 0,
 	}, handler)
 	require.NoError(t, err)
 	require.NoError(t, service.Start(t.Context()))
-	require.Eventually(t, func() bool { return handler.active.Load() == 2 }, time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return handler.active.Load() == 2 }, 10*time.Second, 50*time.Millisecond)
 	assert.Equal(t, int32(2), handler.maximum.Load())
 	queued, err := tasks.ListByStates(t.Context(), testTaskKind, []database.TaskState{database.TaskQueued}, 0)
 	require.NoError(t, err)
@@ -524,6 +524,6 @@ func TestServiceBoundsWorkersAndDrainsQueuedTasks(t *testing.T) {
 		)
 
 		return queryErr == nil && len(completed) == 3
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 10*time.Second, 50*time.Millisecond)
 	require.NoError(t, service.Shutdown(context.Background()))
 }

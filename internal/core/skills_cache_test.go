@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"github.com/omarluq/librecode/internal/core"
-	"github.com/omarluq/librecode/internal/testutil"
 )
 
 // --- helpers --------------------------------------------------------
@@ -39,10 +38,7 @@ type SkillsCacheSuite struct {
 }
 
 func TestSkillsCacheSuite(t *testing.T) {
-	home := newOutsideTempDir(t)
-	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
+	t.Setenv("HOME", newOutsideTempDir(t))
 	suite.Run(t, new(SkillsCacheSuite))
 }
 

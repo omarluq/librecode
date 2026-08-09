@@ -591,8 +591,6 @@ func TestRuntime_SlashSkillShowsContent(t *testing.T) {
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
 
-	testutil.SetWindowsHome(t, home)
-
 	skillPath := filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md")
 	writeRuntimeTestFile(t, skillPath, strings.Join([]string{
 		testSkillDelimiter,
@@ -629,7 +627,6 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 	cwd := newRuntimeOutsideTempDir(t)
 	t.Setenv("HOME", home)
 
-	testutil.SetWindowsHome(t, home)
 	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
 
 	_, repository := newTestRuntime(t)
@@ -734,7 +731,6 @@ func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
 
-	testutil.SetWindowsHome(t, home)
 	writeRuntimeTestFile(t, filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md"), strings.Join([]string{
 		testSkillDelimiter,
 		"name: fix-bug",

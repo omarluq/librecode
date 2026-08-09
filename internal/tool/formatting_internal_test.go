@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,9 +15,8 @@ import (
 )
 
 const (
-	testWindowsOS = "windows"
-	testLineOne   = "one"
-	testABC       = "abc"
+	testLineOne = "one"
+	testABC     = "abc"
 )
 
 func TestFormatBashResultSuccess(t *testing.T) {
@@ -66,10 +64,6 @@ func TestFormatBashResultErrors(t *testing.T) {
 
 func TestFormatBashWaitErrorIncludesExitCode(t *testing.T) {
 	t.Parallel()
-
-	if runtime.GOOS == testWindowsOS {
-		t.Skip("test relies on Unix shell exit semantics")
-	}
 
 	cmd := exec.CommandContext(t.Context(), "sh", "-c", "exit 7")
 	runErr := cmd.Run()
@@ -130,10 +124,6 @@ func TestBashTruncationNotice(t *testing.T) {
 }
 
 func TestWriteFullBashOutputCreateDirectoryFailure(t *testing.T) {
-	if runtime.GOOS == testWindowsOS {
-		t.Skip("test relies on Unix directory permissions")
-	}
-
 	cacheFile := filepath.Join(t.TempDir(), "cache-file")
 	require.NoError(t, os.WriteFile(cacheFile, []byte("not a directory"), 0o600))
 	t.Setenv("XDG_CACHE_HOME", cacheFile)
@@ -287,10 +277,6 @@ func TestRejectOverlappingEditsAllowsAdjacent(t *testing.T) {
 }
 
 func TestFormatBashOutputWriteFailure(t *testing.T) {
-	if runtime.GOOS == testWindowsOS {
-		t.Skip("test relies on Unix directory permissions")
-	}
-
 	cacheFile := filepath.Join(t.TempDir(), "cache-file")
 	require.NoError(t, os.WriteFile(cacheFile, []byte("not a directory"), 0o600))
 	t.Setenv("XDG_CACHE_HOME", cacheFile)
@@ -301,10 +287,6 @@ func TestFormatBashOutputWriteFailure(t *testing.T) {
 }
 
 func TestFormatBashWaitErrorPropagatesFormattingFailure(t *testing.T) {
-	if runtime.GOOS == testWindowsOS {
-		t.Skip("test relies on Unix directory permissions")
-	}
-
 	cacheFile := filepath.Join(t.TempDir(), "cache-file")
 	require.NoError(t, os.WriteFile(cacheFile, []byte("not a directory"), 0o600))
 	t.Setenv("XDG_CACHE_HOME", cacheFile)

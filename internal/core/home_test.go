@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/core"
-	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestLibrecodeHomeUsesOverride(t *testing.T) {
@@ -23,8 +22,6 @@ func TestLibrecodeHomeUsesUserHome(t *testing.T) {
 	t.Setenv("LIBRECODE_HOME", "")
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
-
-	testutil.SetWindowsHome(t, homeDir)
 
 	home, err := core.LibrecodeHome()
 	require.NoError(t, err)

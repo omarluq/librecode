@@ -15,10 +15,7 @@ import (
 	"github.com/samber/oops"
 )
 
-const (
-	executableBits fs.FileMode = 0o111
-	windowsOS                  = "windows"
-)
+const executableBits fs.FileMode = 0o111
 
 // Command builds a command whose executable is resolved from fixed system directories.
 func Command(name string, args ...string) (*exec.Cmd, error) {
@@ -127,7 +124,7 @@ func validateExecutable(path string) (string, error) {
 			Errorf("executable is a directory")
 	}
 
-	if runtime.GOOS != windowsOS && info.Mode().Perm()&executableBits == 0 {
+	if info.Mode().Perm()&executableBits == 0 {
 		return "", oops.In("execpath").Code("not_executable").With("path", path).
 			Errorf("executable is not executable")
 	}
@@ -155,27 +152,20 @@ func isPathInDir(path, dir string) bool {
 }
 
 func candidateNames(name string) []string {
-	if runtime.GOOS != windowsOS || filepath.Ext(name) != "" {
-		return []string{name}
-	}
-
-	return []string{name + ".exe", name + ".cmd", name + ".bat"}
+	return []string{name}
 }
 
 func fixedDirs() []string {
-	switch runtime.GOOS {
-	case "darwin":
+	if runtime.GOOS == "darwin" {
 		return []string{"/usr/bin", "/bin", "/usr/sbin", "/sbin", "/opt/homebrew/bin", "/usr/local/bin"}
-	case windowsOS:
-		return []string{`C:\Windows\System32`, `C:\Windows`, `C:\Windows\SysWOW64`}
-	default:
-		return []string{
-			"/usr/bin",
-			"/bin",
-			"/usr/local/bin",
-			"/usr/sbin",
-			"/sbin",
-			"/data/data/com.termux/files/usr/bin",
-		}
+	}
+
+	return []string{
+		"/usr/bin",
+		"/bin",
+		"/usr/local/bin",
+		"/usr/sbin",
+		"/sbin",
+		"/data/data/com.termux/files/usr/bin",
 	}
 }

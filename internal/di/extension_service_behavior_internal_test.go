@@ -4,22 +4,18 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/extension"
-	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestExtensionServiceUsesProjectLockfile(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
-
-	testutil.SetWindowsHome(t, home)
 	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
 	t.Chdir(cwd)
 
@@ -88,10 +84,6 @@ func newResolvedSourceForTest(loadPath string) extension.ResolvedSource {
 
 func createSymlinkOrSkip(t *testing.T, oldname, newname string) {
 	t.Helper()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("skipping symlink test on Windows: symlinks require elevated privileges")
-	}
 
 	require.NoError(t, os.Symlink(oldname, newname))
 }
