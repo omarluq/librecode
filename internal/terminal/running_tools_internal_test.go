@@ -15,6 +15,7 @@ import (
 	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 	"github.com/omarluq/librecode/internal/transcript"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 type runningToolBlockTestCase struct {
@@ -45,15 +46,19 @@ func TestRenderAgentTaskSummary(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	task := testAgentTask(database.TaskRunning)
+	started := time.Now()
+	task.Task.StartedAt = &started
 	task.Prompt = "review the code\nfor concurrency issues"
 	app.agentTasks = []database.AgentTaskEntity{task}
 
 	lines := app.renderAgentTaskSummary(80)
 	require.Len(t, lines, 2)
-	assert.Equal(t, "◌ explore(review the code for concurrency issues)", lines[0].Text)
+	assert.Contains(t, lines[0].Text, "◌ explore(review the code for concurrency issues) · ")
+	assert.NotContains(t, lines[0].Text, taskQueuedLabel)
 	require.Len(t, lines[0].Spans, 2)
 	assert.Equal(t, pendingToolIndicator, lines[0].Spans[0].Text)
-	assert.Equal(t, " explore(review the code for concurrency issues)", lines[0].Spans[1].Text)
+	assert.Contains(t, lines[0].Spans[1].Text, " explore(review the code for concurrency issues) · ")
+	assert.NotContains(t, lines[0].Spans[1].Text, taskQueuedLabel)
 	assert.Equal(t, defaultWorkingShimmerBrightColor(), lines[0].Spans[0].Style.GetForeground())
 	assert.Equal(t, app.theme.colors[colorMuted], lines[0].Spans[1].Style.GetForeground())
 	assert.Empty(t, lines[len(lines)-1].Text)
@@ -69,8 +74,9 @@ func TestRenderAgentTaskSummaryTruncatesPromptToOneLine(t *testing.T) {
 
 	lines := app.renderAgentTaskSummary(30)
 	require.Len(t, lines, 2)
-	assert.Equal(t, "◌ explore(investigate investi…", lines[0].Text)
+	assert.Equal(t, "◌ explore(investiga…) · queued", lines[0].Text)
 	assert.NotContains(t, lines[0].Text, "\n")
+	assert.LessOrEqual(t, tui.Width(lines[0].Text), 30)
 }
 
 func TestAgentTaskSummaryRendersBelowComposer(t *testing.T) {

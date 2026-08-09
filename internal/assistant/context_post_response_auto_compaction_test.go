@@ -114,6 +114,7 @@ func assertPostResponseCompactionEvent(t *testing.T, events []assistant.StreamEv
 			assistant.StreamEventSkillLoaded,
 			assistant.StreamEventUsage,
 			assistant.StreamEventUsageSnapshot,
+			assistant.StreamEventUsageTotal,
 			assistant.StreamEventUnknown:
 			continue
 		}

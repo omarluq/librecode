@@ -25,6 +25,7 @@ import (
 type workflowInspector interface {
 	Get(context.Context, string) (*database.WorkflowRunEntity, bool, error)
 	List(context.Context, string, int) ([]database.WorkflowRunEntity, error)
+	ListActive(context.Context, string, int) ([]database.WorkflowRunEntity, error)
 	Events(context.Context, string, int64, int) ([]database.TaskEventEntity, error)
 	AgentTasks(context.Context, string) ([]database.WorkflowAgentTaskEntity, error)
 	AgentTask(context.Context, string) (*database.AgentTaskEntity, bool, error)
@@ -156,6 +157,8 @@ type App struct {
 	panel                     *panel.Model
 	pendingParentID           *string
 	agentTaskWatches          map[string]context.CancelFunc
+	agentTaskUsageTotals      map[string]model.UsageTotals
+	workflowSummaryMetrics    map[string]workflowSummaryMetric
 	workflowSteps             map[string][]database.WorkflowAgentTaskDetail
 	scopedEnabled             map[string]bool
 	lastResize                *tcell.EventResize
@@ -177,6 +180,7 @@ type App struct {
 	streamingText             string
 	statusMessage             string
 	agentTaskSummaryOwnerID   string
+	inspectedAgentTaskID      string
 	workflowPanelRunID        string
 	workflowSummaryRunID      string
 	selectedPanelKind         panel.Kind
@@ -279,64 +283,64 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 
 func newAppState(screen terminalScreen, options *RunOptions) *App {
 	return &App{
-		screen:                  screen,
-		renderer:                tui.NewRenderer(screen),
-		frame:                   nil,
-		lastResize:              nil,
-		systemClipboard:         newDesktopClipboard(),
-		imageClipboard:          newDesktopClipboard(),
-		runtime:                 options.Runtime,
-		workflows:               options.Workflows,
-		extensions:              options.Extensions,
-		settings:                options.Settings,
-		models:                  options.Models,
-		auth:                    options.Auth,
-		cfg:                     options.Config,
-		keys:                    newDefaultKeybindings(),
-		theme:                   initialAppTheme(options),
-		resources:               initialResourceSnapshot(options),
-		mode:                    modeChat,
-		panel:                   nil,
-		cwd:                     options.CWD,
-		sessionID:               options.SessionID,
-		sessionViews:            map[string]sessionViewState{},
-		agentTaskSessionStack:   []string{},
-		pendingParentID:         nil,
-		activePrompt:            nil,
-		activeCompaction:        nil,
-		transcript:              initialTranscriptState(),
-		runningToolBlocks:       []runningToolBlock{},
-		liveAgentCompletions:    []chatMessage{},
-		agentTasks:              []database.AgentTaskEntity{},
-		toolTasks:               []database.ToolTaskEntity{},
-		activeWorkflows:         []database.WorkflowRunEntity{},
-		workflowProgress:        map[string]workflowProgress{},
-		workflowSteps:           map[string][]database.WorkflowAgentTaskDetail{},
-		workflowSummaryRunID:    "",
-		workflowPanelRunID:      "",
+		screen:                screen,
+		renderer:              tui.NewRenderer(screen),
+		frame:                 nil,
+		lastResize:            nil,
+		systemClipboard:       newDesktopClipboard(),
+		imageClipboard:        newDesktopClipboard(),
+		runtime:               options.Runtime,
+		workflows:             options.Workflows,
+		extensions:            options.Extensions,
+		settings:              options.Settings,
+		models:                options.Models,
+		auth:                  options.Auth,
+		cfg:                   options.Config,
+		keys:                  newDefaultKeybindings(),
+		theme:                 initialAppTheme(options),
+		resources:             initialResourceSnapshot(options),
+		mode:                  modeChat,
+		panel:                 nil,
+		cwd:                   options.CWD,
+		sessionID:             options.SessionID,
+		sessionViews:          map[string]sessionViewState{},
+		agentTaskSessionStack: []string{},
+		pendingParentID:       nil,
+		activePrompt:          nil,
+		activeCompaction:      nil,
+		transcript:            initialTranscriptState(),
+		runningToolBlocks:     []runningToolBlock{},
+		liveAgentCompletions:  []chatMessage{},
+		agentTasks:            []database.AgentTaskEntity{},
+		toolTasks:             []database.ToolTaskEntity{},
+		activeWorkflows:       []database.WorkflowRunEntity{},
+		workflowProgress:      map[string]workflowProgress{},
+		workflowSteps:         map[string][]database.WorkflowAgentTaskDetail{},
+		workflowSummaryRunID:  "", workflowPanelRunID: "",
 		agentTaskSummaryOwnerID: "",
+		inspectedAgentTaskID:    "",
 		agentTasksRefreshedAt:   time.Time{},
 		agentTaskWatches:        map[string]context.CancelFunc{},
+		agentTaskUsageTotals:    map[string]model.UsageTotals{},
+		workflowSummaryMetrics:  map[string]workflowSummaryMetric{},
 		deliveredAgentTasks:     map[string]struct{}{}, deliveredToolTasks: map[string]struct{}{},
 		cancelToolTaskCompletions: nil, queuedMessages: []promptDraft{},
-		hiddenQueuedMessages:      []promptDraft{},
-		promptHistory:             []string{},
-		promptHistoryImages:       [][]imageAttachment{},
-		promptHistoryDraft:        "",
-		promptHistoryDraftImages:  nil,
-		autocompleteSelection:     0,
-		autocompleteClosed:        false,
-		composerBuffer:            tui.NewTextArea(),
-		composerImages:            []imageAttachment{},
-		bracketedPaste:            false,
-		scopedOrder:               []string{},
-		scopedEnabled:             map[string]bool{},
-		sessionSortRecent:         true,
-		sessionNamedOnly:          false,
-		sessionShowPath:           false,
-		authWorking:               false,
-		toolsExpanded:             false,
-		hideThinking:              false,
+		hiddenQueuedMessages:     []promptDraft{},
+		promptHistory:            []string{},
+		promptHistoryImages:      [][]imageAttachment{},
+		promptHistoryDraft:       "",
+		promptHistoryDraftImages: nil,
+		autocompleteSelection:    0,
+		autocompleteClosed:       false,
+		composerBuffer:           tui.NewTextArea(),
+		composerImages:           []imageAttachment{},
+		bracketedPaste:           false,
+		scopedOrder:              []string{},
+		scopedEnabled:            map[string]bool{},
+		sessionSortRecent:        true,
+		sessionNamedOnly:         false,
+		sessionShowPath:          false,
+		authWorking:              false, toolsExpanded: false, hideThinking: false,
 		lastEscape:                time.Time{},
 		lastControlC:              time.Time{},
 		escapePresses:             0,

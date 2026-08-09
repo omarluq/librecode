@@ -34,6 +34,7 @@ type ToolExecutor func(context.Context, []ToolCall, func(StreamEvent)) ([]ToolEv
 type CompletionRequest struct {
 	OnEvent                func(StreamEvent)                              `json:"-"`
 	OnProviderObserve      func(context.Context, *CompletionRequest, int) `json:"-"`
+	OnProviderResponse     func(context.Context, model.TokenUsage)        `json:"-"`
 	OnProviderRequest      llm.ProviderRequestHook                        `json:"-"`
 	ToolRegistry           *tool.Registry                                 `json:"-"`
 	ExecuteTools           ToolExecutor                                   `json:"-"`

@@ -35,7 +35,7 @@ func TestParseOpenAIChatStreamTextThinkingToolCallsAndUsage(t *testing.T) {
 					jsonArgumentsKey: `th":"README.md"}`,
 				},
 			}},
-		}, jsonToolCallsKey, map[string]any{"prompt_tokens": 4, "completion_tokens": 2}),
+		}, jsonToolCallsKey, map[string]any{jsonPromptTokensKey: 4, jsonCompletionTokensKey: 2}),
 		openAIChatDoneLine,
 	)
 

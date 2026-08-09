@@ -73,17 +73,13 @@ func contextBreakdownLines(breakdown map[string]int) []string {
 }
 
 func (app *App) contextUsage(ctx context.Context) model.TokenUsage {
-	if app.tokenUsage.HasAny() {
-		return app.tokenUsage
-	}
-
 	if app.runtime == nil {
-		return model.EmptyTokenUsage()
+		return app.tokenUsage
 	}
 
 	usage, err := app.runtime.ContextUsage(ctx, app.sessionID, app.cwd)
 	if err != nil {
-		return model.EmptyTokenUsage()
+		return app.tokenUsage
 	}
 
 	return usage

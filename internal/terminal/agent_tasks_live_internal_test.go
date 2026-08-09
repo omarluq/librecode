@@ -336,11 +336,11 @@ func TestAgentTaskSequenceGapReplaysDurableEvents(t *testing.T) {
 		events: []database.TaskEventEntity{
 			taskStreamEvent(taskID, 1, assistant.StreamEvent{
 				ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
-				Kind: assistant.StreamEventTextDelta, Text: "one",
+				Kind: assistant.StreamEventTextDelta, Text: summaryMetricFirstItem,
 			}),
 			taskStreamEvent(taskID, 2, assistant.StreamEvent{
 				ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
-				Kind: assistant.StreamEventTextDelta, Text: "two",
+				Kind: assistant.StreamEventTextDelta, Text: summaryMetricSecondItem,
 			}),
 		},
 	}

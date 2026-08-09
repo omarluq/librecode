@@ -122,7 +122,7 @@ func TestPromptDraftAndSessionViewCloneImageBytes(t *testing.T) {
 		Name: "history-image", MIMEType: "", Data: []byte{4}, Width: 0, Height: 0,
 	}}}
 	queuedImage := imageAttachment{Name: "", MIMEType: "", Data: []byte{3}, Width: 0, Height: 0}
-	app.queuedMessages = []promptDraft{{Text: "queued", Images: []imageAttachment{queuedImage}}}
+	app.queuedMessages = []promptDraft{{Text: asyncTestQueuedText, Images: []imageAttachment{queuedImage}}}
 	app.saveSessionView()
 	app.composerImages[0].Data[0] = 9
 	app.promptHistory[0] = "changed"

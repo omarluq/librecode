@@ -74,9 +74,47 @@ func TestWorkflowRepositoryLifecycleAndAgentLinks(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, runs, 1)
 	assert.Equal(t, "complete", runs[0].Task.Result)
+
 	events, err := repository.Tasks().ListEvents(ctx, created.Task.ID, 0, 10)
 	require.NoError(t, err)
 	assert.Len(t, events, 3)
+}
+
+func TestWorkflowRepositoryListActiveByOwnerIncludesTerminalRunWithActiveChild(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner, childSession := fixture.createAgentTaskSessions(ctx)
+	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+	child, err := fixture.agents.Create(ctx, newAgentTask(owner.ID, childSession.ID))
+	require.NoError(t, err)
+	_, err = fixture.workflows.LinkAgentTask(ctx, run.Task.ID, child.Task.ID, "child", 0)
+	require.NoError(t, err)
+
+	finish := newTaskFinish(
+		run.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskSucceeded, taskSucceededEvent,
+	)
+	changed, err := fixture.workflows.Tasks().Finish(ctx, &finish)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	runs, err := fixture.workflows.ListActiveByOwner(ctx, owner.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	assert.Equal(t, run.Task.ID, runs[0].Task.ID)
+
+	childFinish := newTaskFinish(
+		child.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskCanceled, "task_canceled",
+	)
+	changed, err = fixture.workflows.Tasks().Finish(ctx, &childFinish)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	runs, err = fixture.workflows.ListActiveByOwner(ctx, owner.ID, 10)
+	require.NoError(t, err)
+	assert.Empty(t, runs)
 }
 
 func TestWorkflowRepositoryListAgentTaskDetails(t *testing.T) {

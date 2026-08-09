@@ -128,13 +128,14 @@ func asyncEventFromStreamEvent(event assistant.StreamEvent, promptID uint64) (*a
 		payload.Usage = event.Usage
 		payload.Text = ""
 		payload.Kind = asyncEventPromptUsageSnapshot
+	case assistant.StreamEventUsageTotal,
+		assistant.StreamEventUnknown:
+		return nil, false
 	case assistant.StreamEventContextCompaction,
 		assistant.StreamEventContextCompactionStart,
 		assistant.StreamEventContextCompactionDone,
 		assistant.StreamEventContextCompactionError:
 		payload.Kind = asyncContextEventKind(event.Kind)
-	case assistant.StreamEventUnknown:
-		return nil, false
 	default:
 		return nil, false
 	}
@@ -450,6 +451,7 @@ func asyncContextEventKind(kind assistant.StreamEventKind) asyncEventKind {
 		assistant.StreamEventSkillLoaded,
 		assistant.StreamEventUsage,
 		assistant.StreamEventUsageSnapshot,
+		assistant.StreamEventUsageTotal,
 		assistant.StreamEventUnknown:
 		return asyncEventPromptContext
 	}

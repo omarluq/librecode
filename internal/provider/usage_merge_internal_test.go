@@ -92,7 +92,11 @@ func TestUsageFromObjectIgnoresNonObjectsAndMissingValues(t *testing.T) {
 	t.Parallel()
 
 	assert.Equal(t, llm.EmptyUsage(), usageFromObject("not object"))
-	assert.Equal(t, llm.EmptyUsage(), usageFromObject(map[string]any{"total_tokens": float64(10)}))
+
+	totalOnly := usageFromObject(map[string]any{jsonTotalTokensKey: float64(10)})
+	assert.True(t, totalOnly.Reported())
+	assert.Zero(t, totalOnly.InputTokens)
+	assert.Zero(t, totalOnly.OutputTokens)
 }
 
 func TestIntFromAnyParsesSupportedTypes(t *testing.T) {
@@ -100,7 +104,7 @@ func TestIntFromAnyParsesSupportedTypes(t *testing.T) {
 
 	assert.Equal(t, 3, intFromAny(3))
 	assert.Equal(t, 4, intFromAny(int64(4)))
-	assert.Equal(t, 5, intFromAny(float64(5.9)))
+	assert.Zero(t, intFromAny(float64(5.9)))
 	assert.Equal(t, 6, intFromAny(json.Number("6")))
 	assert.Zero(t, intFromAny("7"))
 }

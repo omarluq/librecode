@@ -85,11 +85,19 @@ type runnerCompleter struct {
 }
 
 func (completer runnerCompleter) Complete(
-	_ context.Context,
+	ctx context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	if completer.err != nil {
 		return nil, completer.err
+	}
+
+	usage := model.TokenUsage{
+		Breakdown: nil, TopContributors: nil, ContextWindow: 1000,
+		ContextTokens: 3, InputTokens: 2, OutputTokens: 1,
+	}.WithReported()
+	if request.OnProviderResponse != nil {
+		request.OnProviderResponse(ctx, usage)
 	}
 
 	if request.OnEvent != nil {
@@ -104,10 +112,7 @@ func (completer runnerCompleter) Complete(
 		Text:         "answer",
 		Thinking:     nil,
 		ToolEvents:   nil,
-		Usage: model.TokenUsage{
-			Breakdown: nil, TopContributors: nil, ContextWindow: 1000,
-			ContextTokens: 3, InputTokens: 2, OutputTokens: 1,
-		},
+		Usage:        usage,
 	}, nil
 }
 
@@ -195,15 +200,17 @@ func runPromptScenarios(
 	assert.Equal(t, 2, usage.InputTokens)
 	assert.Equal(t, 1, usage.OutputTokens)
 	assert.Contains(t, kinds, string(assistant.StreamEventTextDelta))
+	assert.Contains(t, kinds, string(assistant.StreamEventUsageTotal))
 
 	result, err = newRunner(runnerCompleter{err: errors.New("provider unavailable")}).Run(
 		t.Context(), task, func(context.Context, string, any) error { return nil },
 	)
 	require.ErrorContains(t, err, "run agent prompt")
 
-	var failedUsage agentUsage
+	var failedUsage model.UsageTotals
 	require.NoError(t, json.Unmarshal([]byte(result.UsageJSON), &failedUsage))
-	assert.Equal(t, 4, failedUsage.InputTokens)
+	assert.Zero(t, failedUsage.InputTokens)
+	assert.False(t, failedUsage.Reported)
 
 	sinkErr := errors.New("persist event")
 	result, err = newRunner(runnerCompleter{err: nil}).Run(
@@ -211,7 +218,11 @@ func runPromptScenarios(
 	)
 	require.ErrorIs(t, err, sinkErr)
 	assert.Equal(t, "answer", result.Text)
-	assert.JSONEq(t, `{}`, result.UsageJSON)
+
+	var sinkFailureUsage model.UsageTotals
+	require.NoError(t, json.Unmarshal([]byte(result.UsageJSON), &sinkFailureUsage))
+	assert.Equal(t, int64(2), sinkFailureUsage.InputTokens)
+	assert.True(t, sinkFailureUsage.Reported)
 }
 
 func TestRuntimeRunnerReportsSessionLoadError(t *testing.T) {

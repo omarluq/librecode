@@ -339,6 +339,7 @@ func isContextCompactionLifecycleEvent(kind assistant.StreamEventKind) bool {
 		assistant.StreamEventSkillLoaded,
 		assistant.StreamEventUsage,
 		assistant.StreamEventUsageSnapshot,
+		assistant.StreamEventUsageTotal,
 		assistant.StreamEventUnknown:
 		return false
 	}

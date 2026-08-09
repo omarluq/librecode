@@ -26,23 +26,25 @@ func providerRequestFromCompletionRequest(request *CompletionRequest) *provider.
 	}
 
 	return &provider.CompletionRequest{
-		OnProviderObserve: llmProviderObserver(request.OnProviderObserve),
-		OnProviderRequest: request.OnProviderRequest,
-		ExecuteTools:      llmToolExecutor(request.ExecuteTools),
-		OnEvent:           llmStreamEventHandler(request.OnEvent),
-		Request:           llmRequestFromCompletionRequest(request),
-		ProviderAttempt:   request.ProviderAttempt,
+		OnProviderObserve:  llmProviderObserver(request.OnProviderObserve),
+		OnProviderResponse: llmProviderResponseObserver(request.OnProviderResponse),
+		OnProviderRequest:  request.OnProviderRequest,
+		ExecuteTools:       llmToolExecutor(request.ExecuteTools),
+		OnEvent:            llmStreamEventHandler(request.OnEvent),
+		Request:            llmRequestFromCompletionRequest(request),
+		ProviderAttempt:    request.ProviderAttempt,
 	}
 }
 
 func emptyProviderRequest() *provider.CompletionRequest {
 	return &provider.CompletionRequest{
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ExecuteTools:      nil,
-		OnEvent:           nil,
-		Request:           emptyLLMRequest(),
-		ProviderAttempt:   0,
+		OnProviderObserve:  nil,
+		OnProviderResponse: nil,
+		OnProviderRequest:  nil,
+		ExecuteTools:       nil,
+		OnEvent:            nil,
+		Request:            emptyLLMRequest(),
+		ProviderAttempt:    0,
 	}
 }
 
@@ -56,6 +58,18 @@ func llmProviderObserver(observer func(context.Context, *CompletionRequest, int)
 	}
 }
 
+func llmProviderResponseObserver(
+	observer func(context.Context, model.TokenUsage),
+) llm.ProviderResponseObserver {
+	if observer == nil {
+		return nil
+	}
+
+	return func(ctx context.Context, usage llm.Usage) {
+		observer(ctx, llmconv.UsageToModel(usage))
+	}
+}
+
 func completionRequestFromHookInput(input *llm.HookInput) *CompletionRequest {
 	if input == nil {
 		return nil
@@ -64,6 +78,7 @@ func completionRequestFromHookInput(input *llm.HookInput) *CompletionRequest {
 	return &CompletionRequest{
 		OnEvent:                nil,
 		OnProviderObserve:      nil,
+		OnProviderResponse:     nil,
 		OnProviderRequest:      nil,
 		ToolRegistry:           nil,
 		ExecuteTools:           nil,
@@ -469,6 +484,7 @@ func llmPartFromStreamEvent(event StreamEvent) *llm.Part {
 		StreamEventSkillLoaded,
 		StreamEventUsage,
 		StreamEventUsageSnapshot,
+		StreamEventUsageTotal,
 		StreamEventContextCompaction,
 		StreamEventContextCompactionStart,
 		StreamEventContextCompactionDone,

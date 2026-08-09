@@ -5,6 +5,10 @@ import "github.com/omarluq/librecode/internal/mapsutil"
 // MergeUsage overlays provider-reported usage on an estimated usage snapshot.
 func MergeUsage(estimated, reported Usage) Usage {
 	usage := estimated
+	if reported.Reported() {
+		usage = usage.WithReported()
+	}
+
 	if reported.ContextWindow > 0 {
 		usage.ContextWindow = reported.ContextWindow
 	}

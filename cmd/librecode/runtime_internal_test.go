@@ -199,11 +199,10 @@ func TestCommandsReturnBootstrapErrors(t *testing.T) {
 func TestModelAndToolCommandsUseApplicationLifecycle(t *testing.T) {
 	t.Parallel()
 
-	configPath := writeTestConfig(t, "models:\n  discovery:\n    enabled: false\nextensions:\n  use: []\n")
-
 	t.Run("model list", func(t *testing.T) {
 		t.Parallel()
 
+		configPath := writeLifecycleTestConfig(t)
 		cmd := newRootCmd()
 		output := new(bytes.Buffer)
 		cmd.SetOut(output)
@@ -216,6 +215,7 @@ func TestModelAndToolCommandsUseApplicationLifecycle(t *testing.T) {
 	t.Run("read tool", func(t *testing.T) {
 		t.Parallel()
 
+		configPath := writeLifecycleTestConfig(t)
 		cwd := t.TempDir()
 		path := filepath.Join(cwd, "hello.txt")
 		writeCLIFile(t, path, "hello")

@@ -358,6 +358,20 @@ func (service *Service) List(
 	return runs, nil
 }
 
+// ListActive returns nonterminal runs and terminal runs with active directly linked agents.
+func (service *Service) ListActive(
+	ctx context.Context,
+	ownerSessionID string,
+	limit int,
+) ([]database.WorkflowRunEntity, error) {
+	runs, err := service.runs.ListActiveByOwner(ctx, ownerSessionID, limit)
+	if err != nil {
+		return nil, oops.In("workflow").Code("list_active_runs").Wrapf(err, "list active workflow runs")
+	}
+
+	return runs, nil
+}
+
 // Events returns durable workflow events in replay order.
 func (service *Service) Events(
 	ctx context.Context,

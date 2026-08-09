@@ -1,11 +1,16 @@
 package assistant
 
 import (
+	"context"
+	"math"
 	"sync"
 	"testing"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -32,7 +37,7 @@ func TestRunMetricsCollectsUsageAndNestedTrace(t *testing.T) {
 	metrics.ObserveStreamEvent(metricsResult(outerCallID, "", 0))
 
 	assert.Equal(t, RunMetricsSnapshot{
-		ProviderRoundTrips: 2, InputTokens: 13, OutputTokens: 5,
+		ProviderRoundTrips: 2, InputTokens: 13, OutputTokens: 5, UsageTotalsReported: true,
 		ToolCalls: 2, NestedToolCalls: 1, TraceComplete: true,
 	}, metrics.Snapshot())
 }
@@ -64,7 +69,7 @@ func TestRunMetricsContextDefaultsAndNilSafety(t *testing.T) {
 	nilMetrics.ObserveStreamEvent(metricsEvent(StreamEventToolStart, nil, nil, nil))
 	assert.Equal(t, RunMetricsSnapshot{
 		ProviderRoundTrips: 0, InputTokens: 0, OutputTokens: 0,
-		ToolCalls: 0, NestedToolCalls: 0, TraceComplete: true,
+		ToolCalls: 0, NestedToolCalls: 0, UsageTotalsReported: false, TraceComplete: true,
 	}, nilMetrics.Snapshot())
 }
 
@@ -86,8 +91,9 @@ func TestRunMetricsStreamUsageAndIgnoredEvents(t *testing.T) {
 	}
 
 	snapshot := metrics.Snapshot()
-	assert.Equal(t, 21, snapshot.InputTokens)
-	assert.Equal(t, 8, snapshot.OutputTokens)
+	assert.Zero(t, snapshot.InputTokens)
+	assert.Zero(t, snapshot.OutputTokens)
+	assert.False(t, snapshot.UsageTotalsReported)
 }
 
 func TestRunMetricsRejectsMalformedToolTraces(t *testing.T) {
@@ -182,5 +188,167 @@ func TestRunMetricsConcurrentProviderObservations(t *testing.T) {
 
 	wait.Wait()
 
-	assert.Equal(t, observations, metrics.ProviderRoundTrips())
+	assert.Equal(t, int64(observations), metrics.ProviderRoundTrips())
+}
+
+func TestRunMetricsAccumulatesUsageAndObservesOutsideLock(t *testing.T) {
+	t.Parallel()
+
+	metrics := new(RunMetrics)
+	ctx := WithRunMetrics(t.Context(), metrics)
+
+	var snapshots []model.UsageTotals
+
+	metrics.SetUsageTotalsObserver(func(usageTotals model.UsageTotals) {
+		// Snapshot acquires the metrics lock; this would deadlock if callbacks ran under it.
+		_ = metrics.Snapshot()
+
+		snapshots = append(snapshots, usageTotals)
+	})
+
+	observeProviderRoundTrip(ctx)
+	observeProviderUsage(ctx, metricsTokenUsage(3, 2))
+	observeProviderRoundTrip(ctx)
+	observeProviderUsage(ctx, metricsTokenUsage(7, 5))
+
+	usageTotals, err := metrics.UsageTotals()
+	require.NoError(t, err)
+	assert.Equal(t, model.UsageTotals{
+		InputTokens: 10, OutputTokens: 7, ProviderRoundTrips: 2, Reported: true,
+	}, usageTotals)
+	assert.Len(t, snapshots, 2)
+	assert.Equal(t, int64(3), snapshots[0].InputTokens)
+	assert.Equal(t, int64(10), snapshots[1].InputTokens)
+}
+
+func TestProviderResponseRoundsAccumulateWithoutOuterResponseDoubleCount(t *testing.T) {
+	t.Parallel()
+
+	metrics := new(RunMetrics)
+	ctx := WithRunMetrics(t.Context(), metrics)
+	request := providerHookTestRequest()
+	request.OnProviderResponse = observeProviderUsage
+
+	observeProviderRoundTrip(ctx)
+	request.OnProviderResponse(ctx, metricsTokenUsage(3, 2))
+	observeProviderRoundTrip(ctx)
+	request.OnProviderResponse(ctx, metricsTokenUsage(7, 5))
+
+	new(Runtime).emitProviderResponse(ctx, request, 1, &CompletionResult{
+		FinishReason: llm.FinishReasonStop,
+		Text:         "",
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        metricsTokenUsage(10, 7),
+	})
+
+	usageTotals, err := metrics.UsageTotals()
+	require.NoError(t, err)
+	assert.Equal(t, model.UsageTotals{
+		InputTokens:        10,
+		OutputTokens:       7,
+		ProviderRoundTrips: 2,
+		Reported:           true,
+	}, usageTotals)
+}
+
+func TestRunMetricsDistinguishesMissingAndReportedZeroUsage(t *testing.T) {
+	t.Parallel()
+
+	metrics := new(RunMetrics)
+	ctx := WithRunMetrics(t.Context(), metrics)
+	observeProviderRoundTrip(ctx)
+
+	var observed bool
+
+	metrics.SetUsageTotalsObserver(func(model.UsageTotals) { observed = true })
+	observeProviderUsage(ctx, model.EmptyTokenUsage())
+
+	usageTotals, err := metrics.UsageTotals()
+	require.NoError(t, err)
+	assert.False(t, usageTotals.Reported)
+	assert.False(t, observed)
+
+	observeProviderUsage(ctx, model.EmptyTokenUsage().WithReported())
+
+	usageTotals, err = metrics.UsageTotals()
+	require.NoError(t, err)
+	assert.True(t, usageTotals.Reported)
+	assert.True(t, observed)
+	assert.Equal(t, int64(1), usageTotals.ProviderRoundTrips)
+}
+
+func TestRunMetricsRejectsInvalidUsage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		observe   func(context.Context)
+		wantError string
+	}{
+		{
+			name: "negative",
+			observe: func(ctx context.Context) {
+				observeProviderUsage(ctx, metricsTokenUsage(-1, 2))
+			},
+			wantError: "negative",
+		},
+		{
+			name: "overflow",
+			observe: func(ctx context.Context) {
+				observeProviderUsage(ctx, metricsTokenUsage(math.MaxInt, 0))
+				observeProviderUsage(ctx, metricsTokenUsage(1, 0))
+			},
+			wantError: "overflows",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			metrics := new(RunMetrics)
+			test.observe(WithRunMetrics(t.Context(), metrics))
+
+			_, err := metrics.UsageTotals()
+			assert.ErrorContains(t, err, test.wantError)
+		})
+	}
+}
+
+func TestRunMetricsNotifiesObserverForValidUsageAfterInvalidUsage(t *testing.T) {
+	t.Parallel()
+
+	metrics := new(RunMetrics)
+	ctx := WithRunMetrics(t.Context(), metrics)
+	snapshots := []model.UsageTotals{}
+
+	metrics.SetUsageTotalsObserver(func(usageTotals model.UsageTotals) {
+		snapshots = append(snapshots, usageTotals)
+	})
+
+	observeProviderUsage(ctx, metricsTokenUsage(-1, 0))
+	observeProviderUsage(ctx, metricsTokenUsage(3, 2))
+
+	require.Len(t, snapshots, 1)
+	assert.Equal(t, model.UsageTotals{
+		InputTokens: 3, OutputTokens: 2, ProviderRoundTrips: 0, Reported: true,
+	}, snapshots[0])
+
+	_, err := metrics.UsageTotals()
+	assert.ErrorContains(t, err, "negative")
+}
+
+func TestRunMetricsProviderRoundTripOverflowUsesStructuredError(t *testing.T) {
+	t.Parallel()
+
+	metrics := new(RunMetrics)
+	metrics.providerRoundTrips = math.MaxInt64
+	observeProviderRoundTrip(WithRunMetrics(t.Context(), metrics))
+
+	_, err := metrics.UsageTotals()
+	require.Error(t, err)
+	coded, ok := oops.AsOops(err)
+	require.True(t, ok)
+	assert.Equal(t, "provider_round_trips_overflow", coded.Code())
 }

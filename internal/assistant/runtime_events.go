@@ -48,8 +48,6 @@ func (runtime *Runtime) emitProviderResponse(
 		return
 	}
 
-	observeProviderUsage(ctx, result.Usage)
-
 	payload := lifecyclepayload.ProviderResponsePayload(&lifecyclepayload.ProviderResponse{
 		FinishReason:   result.FinishReason,
 		Usage:          result.Usage,

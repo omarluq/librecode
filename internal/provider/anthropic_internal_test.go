@@ -241,10 +241,11 @@ func testCompletionRequestAuth(args ...string) *CompletionRequest {
 	}
 
 	return &CompletionRequest{
-		OnProviderObserve: nil,
-		OnProviderRequest: nil,
-		ExecuteTools:      nil,
-		OnEvent:           nil,
+		OnProviderObserve:  nil,
+		OnProviderResponse: nil,
+		OnProviderRequest:  nil,
+		ExecuteTools:       nil,
+		OnEvent:            nil,
 		Request: llm.Request{
 			ProviderOptions: nil,
 			Auth:            llm.Auth{Headers: nil, APIKey: apiKey},

@@ -62,7 +62,13 @@ func (runner *RuntimeRunner) Run(
 
 	metrics := new(assistant.RunMetrics)
 	runCtx := assistant.WithRunMetrics(ctx, metrics)
-	response, err := runtime.Prompt(runCtx, &assistant.PromptRequest{
+	metrics.SetUsageTotalsObserver(func(usageTotals model.UsageTotals) {
+		if eventErr == nil && sink != nil {
+			eventErr = sink(runCtx, string(assistant.StreamEventUsageTotal), usageTotals)
+		}
+	})
+
+	response, promptErr := runtime.Prompt(runCtx, &assistant.PromptRequest{
 		OnEvent: func(event assistant.StreamEvent) {
 			metrics.ObserveStreamEvent(event)
 
@@ -74,19 +80,28 @@ func (runner *RuntimeRunner) Run(
 		SessionID: task.ChildSessionID, CWD: session.CWD, Text: task.Prompt,
 		Images: nil, Name: "", ResumeLatest: false, HideUserPrompt: false,
 	})
-	usageJSON, usageErr := agentUsageJSON(response, metrics.Snapshot())
 
-	if err != nil {
+	return runtimeRunResult(response, promptErr, eventErr, metrics)
+}
+
+func runtimeRunResult(
+	response *assistant.PromptResponse,
+	promptErr error,
+	eventErr error,
+	metrics *assistant.RunMetrics,
+) (Result, error) {
+	usageJSON, usageErr := agentUsageJSON(metrics)
+	if promptErr != nil {
 		if usageErr != nil {
 			usageJSON = "{}"
 		}
 
 		return Result{Text: "", UsageJSON: usageJSON},
-			oops.In("agenttask").Code("run_prompt").Wrapf(err, "run agent prompt")
+			oops.In("agenttask").Code("run_prompt").Wrapf(promptErr, "run agent prompt")
 	}
 
 	if eventErr != nil {
-		return Result{Text: response.Text, UsageJSON: "{}"}, eventErr
+		return Result{Text: response.Text, UsageJSON: usageJSON}, eventErr
 	}
 
 	if usageErr != nil {
@@ -96,21 +111,13 @@ func (runner *RuntimeRunner) Run(
 	return Result{Text: response.Text, UsageJSON: usageJSON}, nil
 }
 
-type agentUsage struct {
-	model.TokenUsage
-	ProviderRoundTrips int `json:"provider_round_trips,omitempty"`
-}
-
-func agentUsageJSON(response *assistant.PromptResponse, metrics assistant.RunMetricsSnapshot) (string, error) {
-	usage := model.EmptyTokenUsage()
-	if response != nil {
-		usage = response.Usage
-	} else {
-		usage.InputTokens = metrics.InputTokens
-		usage.OutputTokens = metrics.OutputTokens
+func agentUsageJSON(metrics *assistant.RunMetrics) (string, error) {
+	usageTotals, err := metrics.UsageTotals()
+	if err != nil {
+		return "{}", oops.In("agenttask").Code("invalid_usage").Wrapf(err, "collect agent usage")
 	}
 
-	encoded, err := json.Marshal(agentUsage{TokenUsage: usage, ProviderRoundTrips: metrics.ProviderRoundTrips})
+	encoded, err := json.Marshal(usageTotals)
 	if err != nil {
 		return "{}", oops.In("agenttask").Code("marshal_usage").Wrapf(err, "marshal agent usage")
 	}

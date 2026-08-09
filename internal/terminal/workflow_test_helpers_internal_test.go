@@ -42,6 +42,14 @@ func (stub *workflowInspectorStub) List(
 	return stub.runs, stub.listErr
 }
 
+func (stub *workflowInspectorStub) ListActive(
+	context.Context,
+	string,
+	int,
+) ([]database.WorkflowRunEntity, error) {
+	return stub.runs, stub.listErr
+}
+
 func (stub *workflowInspectorStub) Events(
 	context.Context, string, int64, int,
 ) ([]database.TaskEventEntity, error) {

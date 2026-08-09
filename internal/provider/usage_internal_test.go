@@ -2,6 +2,8 @@ package provider
 
 import (
 	"encoding/json"
+	"math"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -30,8 +32,8 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 		{
 			name: "chat completions",
 			usage: map[string]any{
-				"prompt_tokens":     json.Number("77"),
-				"completion_tokens": json.Number("9"),
+				jsonPromptTokensKey:     json.Number("77"),
+				jsonCompletionTokensKey: json.Number("9"),
 			},
 			expected: llm.Usage{
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
@@ -40,9 +42,37 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 			},
 		},
 		{
+			name: "anthropic cache tokens count as provider input",
+			usage: map[string]any{
+				jsonInputTokensKey:            json.Number("27"),
+				"cache_read_input_tokens":     json.Number("50"),
+				"cache_creation_input_tokens": json.Number("3"),
+				jsonOutputTokensKey:           json.Number("9"),
+			},
+			expected: llm.Usage{
+				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
+				TopContributors: nil,
+				InputTokens:     80, OutputTokens: 9,
+			},
+		},
+		{
+			name: "anthropic cache-only input is counted",
+			usage: map[string]any{
+				jsonInputTokensKey:            json.Number("0"),
+				"cache_read_input_tokens":     json.Number("50"),
+				"cache_creation_input_tokens": json.Number("3"),
+				jsonOutputTokensKey:           json.Number("9"),
+			},
+			expected: llm.Usage{
+				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
+				TopContributors: nil,
+				InputTokens:     53, OutputTokens: 9,
+			},
+		},
+		{
 			name: "total tokens does not become input tokens",
 			usage: map[string]any{
-				"total_tokens":      json.Number("120"),
+				jsonTotalTokensKey:  json.Number("120"),
 				jsonOutputTokensKey: json.Number("20"),
 			},
 			expected: llm.Usage{
@@ -57,7 +87,10 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, test.expected, usageFromObject(test.usage))
+			actual := usageFromObject(test.usage)
+			assert.Equal(t, test.expected.InputTokens, actual.InputTokens)
+			assert.Equal(t, test.expected.OutputTokens, actual.OutputTokens)
+			assert.True(t, actual.Reported())
 		})
 	}
 }
@@ -130,10 +163,54 @@ func TestMergeUsageClonesReportedContributors(t *testing.T) {
 	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
 }
 
-func TestIntFromAnyIgnoresInvalidJSONNumber(t *testing.T) {
+func TestUsageFromObjectMarksTotalTokensAsReported(t *testing.T) {
 	t.Parallel()
 
-	assert.Zero(t, intFromAny(json.Number("not-a-number")))
+	tests := []struct {
+		name  string
+		total json.Number
+	}{
+		{name: "zero", total: json.Number("0")},
+		{name: "nonzero without split", total: json.Number("120")},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			usage := usageFromObject(map[string]any{jsonTotalTokensKey: test.total})
+			assert.True(t, usage.Reported())
+			assert.Zero(t, usage.InputTokens)
+			assert.Zero(t, usage.OutputTokens)
+		})
+	}
+}
+
+func TestIntFromAnyIgnoresInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		value any
+		name  string
+	}{
+		{name: "invalid JSON number", value: json.Number("not-a-number")},
+		{name: "overflowing JSON number", value: json.Number("9223372036854775808")},
+		{name: "fractional float", value: float64(1.5)},
+		{name: "negative integer", value: -1},
+	}
+	if strconv.IntSize == 64 {
+		tests = append(tests, struct {
+			value any
+			name  string
+		}{name: "rounded maximum integer float", value: float64(math.MaxInt)})
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Zero(t, intFromAny(test.value))
+		})
+	}
 }
 
 func TestParseSSEResultPreservesUsageWhenItemsProvideText(t *testing.T) {
@@ -148,14 +225,9 @@ func TestParseSSEResultPreservesUsageWhenItemsProvideText(t *testing.T) {
 
 	result, err := parseSSEResult(strings.NewReader(stream), nil)
 	require.NoError(t, err)
-	assert.Equal(t, llm.Usage{
-		Breakdown:       nil,
-		TopContributors: nil,
-		ContextWindow:   0,
-		ContextTokens:   0,
-		InputTokens:     12,
-		OutputTokens:    7,
-	}, result.Usage)
+	assert.Equal(t, 12, result.Usage.InputTokens)
+	assert.Equal(t, 7, result.Usage.OutputTokens)
+	assert.True(t, result.Usage.Reported())
 	assert.Equal(t, "hello", result.Text)
 }
 
@@ -172,14 +244,9 @@ func TestParseSSEResultPreservesUsageAcrossLaterResponseEvents(t *testing.T) {
 
 	result, err := parseSSEResult(strings.NewReader(stream), nil)
 	require.NoError(t, err)
-	assert.Equal(t, llm.Usage{
-		Breakdown:       nil,
-		TopContributors: nil,
-		ContextWindow:   0,
-		ContextTokens:   0,
-		InputTokens:     12,
-		OutputTokens:    7,
-	}, result.Usage)
+	assert.Equal(t, 12, result.Usage.InputTokens)
+	assert.Equal(t, 7, result.Usage.OutputTokens)
+	assert.True(t, result.Usage.Reported())
 	assert.Equal(t, "hello", result.Text)
 }
 

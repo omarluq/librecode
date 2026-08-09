@@ -12,6 +12,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/llm"
+	"github.com/omarluq/librecode/internal/llmconv"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/testutil"
 )
@@ -37,9 +38,15 @@ func TestProviderRequestFromCompletionRequestAdaptsCallbacksAndRequest(t *testin
 	t.Parallel()
 
 	observed := false
+
+	var observedUsage model.TokenUsage
+
 	request := &CompletionRequest{
 		OnEvent:           nil,
 		OnProviderObserve: providerObserveAssertion(t, &observed),
+		OnProviderResponse: func(_ context.Context, usage model.TokenUsage) {
+			observedUsage = usage
+		},
 		OnProviderRequest: nil,
 		ToolRegistry:      nil,
 		ExecuteTools:      nil,
@@ -82,15 +89,24 @@ func TestProviderRequestFromCompletionRequestAdaptsCallbacksAndRequest(t *testin
 	assert.Equal(t, adapterThinkingLevel, converted.Request.ThinkingLevel)
 	assert.Equal(t, 3, converted.ProviderAttempt)
 	require.NotNil(t, converted.OnProviderObserve)
+	require.NotNil(t, converted.OnProviderResponse)
 
 	converted.OnProviderObserve(context.Background(), adapterHookInput())
+	converted.OnProviderResponse(
+		context.Background(),
+		llmconv.UsageFromModel(metricsTokenUsage(5, 2).WithReported()),
+	)
 	assert.True(t, observed)
+	assert.Equal(t, 5, observedUsage.InputTokens)
+	assert.Equal(t, 2, observedUsage.OutputTokens)
+	assert.True(t, observedUsage.Reported())
 
 	empty := providerRequestFromCompletionRequest(nil)
 	require.NotNil(t, empty)
 	assert.Empty(t, empty.Request.SessionID)
 	assert.Equal(t, 0, empty.ProviderAttempt)
 	assert.Nil(t, empty.OnProviderObserve)
+	assert.Nil(t, empty.OnProviderResponse)
 }
 
 func TestCompletionResultFromLLMResponseConvertsPartsAndUsage(t *testing.T) {

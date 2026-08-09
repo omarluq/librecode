@@ -12,6 +12,9 @@ type ProviderRequestHook func(context.Context, *HookInput) (HookOutput, error)
 // ProviderObserver observes provider attempts without mutating them.
 type ProviderObserver func(context.Context, *HookInput)
 
+// ProviderResponseObserver observes usage from one successfully parsed provider response.
+type ProviderResponseObserver func(context.Context, Usage)
+
 // HookInput describes a provider wire request before it is sent.
 type HookInput struct {
 	ProviderOptions map[string]any    `json:"provider_options,omitempty"`
