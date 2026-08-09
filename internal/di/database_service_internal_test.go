@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/config"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestOpenSQLiteDatabaseAppliesPragmasAndMigrations(t *testing.T) {
@@ -140,6 +141,8 @@ func TestResolveDatabasePath(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
+
+	testutil.SetWindowsHome(t, home)
 	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
 	t.Chdir(cwd)
 
@@ -155,9 +158,10 @@ func TestResolveDatabasePath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(home, "custom.db"), resolved)
 
-	resolved, err = resolveDatabasePath(testDatabasePathConfig("/tmp/custom.db"))
+	absolutePath := filepath.Join(t.TempDir(), "custom.db")
+	resolved, err = resolveDatabasePath(testDatabasePathConfig(absolutePath))
 	require.NoError(t, err)
-	assert.Equal(t, "/tmp/custom.db", resolved)
+	assert.Equal(t, absolutePath, resolved)
 }
 
 func testDatabasePathConfig(path string) *config.Config {

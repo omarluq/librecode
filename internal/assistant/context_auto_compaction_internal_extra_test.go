@@ -11,6 +11,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
@@ -96,6 +97,8 @@ func TestRuntime_AutoCompactionBeforeRequestErrorPaths(t *testing.T) {
 
 func TestRuntime_AutoCompactionAfterResponseErrorEvent(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+
+	testutil.SetWindowsHome(t, t.TempDir())
 
 	runtime := newAutoCompactionErrorRuntimeWithWindow(t, failingSummaryClient(), 160_000)
 	repository := runtime.SessionRepository()

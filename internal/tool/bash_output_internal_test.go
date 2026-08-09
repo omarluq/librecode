@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,6 +14,7 @@ import (
 func TestWriteFullBashOutputUsesPrivateCacheFile(t *testing.T) {
 	cacheDir := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cacheDir)
+	t.Setenv("LOCALAPPDATA", cacheDir)
 
 	outputPath, err := writeFullBashOutput([]byte("hello\nworld"))
 	require.NoError(t, err)
@@ -20,7 +22,11 @@ func TestWriteFullBashOutputUsesPrivateCacheFile(t *testing.T) {
 	assert.Equal(t, filepath.Join(cacheDir, "librecode", "bash-output"), filepath.Dir(outputPath))
 	info, err := os.Stat(filepath.Dir(outputPath))
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	assert.True(t, info.IsDir())
+
+	if runtime.GOOS != "windows" {
+		assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
+	}
 
 	content, err := os.ReadFile(filepath.Clean(outputPath))
 	require.NoError(t, err)

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/core"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -21,6 +22,8 @@ func TestLoadSkillsDiscoversConfiguredRootsAndFormatsPrompt(t *testing.T) {
 	home := t.TempDir()
 	agentDir := t.TempDir()
 	t.Setenv("HOME", home)
+
+	testutil.SetWindowsHome(t, home)
 
 	writeTestFile(t, filepath.Join(
 		cwd,
@@ -77,6 +80,8 @@ func TestLoadSkillsDedupesByPriority(t *testing.T) {
 	agentDir := t.TempDir()
 	t.Setenv("HOME", home)
 
+	testutil.SetWindowsHome(t, home)
+
 	winnerPath := filepath.Join(cwd, core.ConfigDirName, "skills", "same", "SKILL.md")
 	writeTestFile(t, winnerPath, skillMarkdown("same"))
 	writeTestFile(t, filepath.Join(cwd, core.AgentsDirName, "skills", "same", "SKILL.md"), skillMarkdown("same"))
@@ -124,6 +129,8 @@ func TestLoadSkillsParsesSpecFrontmatter(t *testing.T) {
 			cwd := t.TempDir()
 			home := t.TempDir()
 			t.Setenv("HOME", home)
+
+			testutil.SetWindowsHome(t, home)
 
 			frontmatter := []string{
 				frontmatterDelimiter,

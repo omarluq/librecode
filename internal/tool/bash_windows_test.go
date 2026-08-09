@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/samber/lo"
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -67,7 +68,9 @@ func TestFindWindowsBashRejectsRelativeConfiguredPath(t *testing.T) {
 
 	assert.True(t, errors.Is(err, errBashNotFound))
 	assert.Contains(t, err.Error(), "LIBRECODE_BASH_PATH must be an absolute path")
-	assert.Contains(t, err.Error(), "custom-bash.exe")
+	oopsErr, ok := oops.AsOops(err)
+	require.True(t, ok)
+	assert.Equal(t, "custom-bash.exe", oopsErr.Context()["configured_path"])
 }
 
 func TestFindWindowsBashDoesNotUseDirectoryCandidate(t *testing.T) {

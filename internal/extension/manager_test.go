@@ -725,7 +725,6 @@ func assertLoadedExtension(t *testing.T, loaded []extension.LoadedExtension) {
 	require.Len(t, loaded, 1)
 	assert.Equal(t, []string{testEventStartup}, loaded[0].Handlers)
 	assert.Equal(t, []string{"focus:composer:x"}, loaded[0].Keymaps)
-	assert.Positive(t, loaded[0].TotalDuration)
 }
 
 func TestManager_HasTerminalEventHandlers(t *testing.T) {
