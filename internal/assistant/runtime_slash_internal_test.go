@@ -194,6 +194,8 @@ func TestRespondToSkillCommandWithNoSkills(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
+	testutil.SetWindowsHome(t, home)
+
 	response, events, err := newRuntimeFromDeps(nil).respondToSkillCommand(context.Background(), t.TempDir(), "", nil)
 
 	require.NoError(t, err)

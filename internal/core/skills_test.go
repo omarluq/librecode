@@ -207,6 +207,8 @@ func TestLoadSkillsHonorsIgnoreFiles(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
 
+			testutil.SetWindowsHome(t, home)
+
 			skillsDir := filepath.Join(cwd, core.ConfigDirName, "skills")
 			writeTestFile(t, filepath.Join(skillsDir, ".ignore"), testCase.ignoreFile)
 
@@ -233,6 +235,8 @@ func TestAutoActivateSkillsSelectsMatchingSkill(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+
+	testutil.SetWindowsHome(t, home)
 	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "bug-fix", "SKILL.md"), strings.Join([]string{
 		frontmatterDelimiter,
 		"name: bug-fix",
@@ -254,6 +258,8 @@ func TestAutoActivateSkillsIgnoresActivationStopWords(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+
+	testutil.SetWindowsHome(t, home)
 	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "loud", "SKILL.md"), strings.Join([]string{
 		frontmatterDelimiter,
 		"name: loud",
@@ -273,6 +279,8 @@ func TestAutoActivateSkillsRequiresStrongIntent(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+
+	testutil.SetWindowsHome(t, home)
 	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "hud", "SKILL.md"), strings.Join([]string{
 		frontmatterDelimiter,
 		"name: hud",
@@ -309,6 +317,8 @@ func TestLoadSkillsReportsValidationWarningsAndNameCollisions(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+
+	testutil.SetWindowsHome(t, home)
 
 	writeTestFile(t, filepath.Join(home, core.AgentsDirName, "skills", "same", "SKILL.md"), strings.Join([]string{
 		frontmatterDelimiter,
