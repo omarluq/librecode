@@ -154,6 +154,23 @@ func (catalog *Catalog) Diagnostics() []Diagnostic {
 }
 
 func (catalog *Catalog) loadDir(dir string, scope core.SourceScope) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			catalog.diagnostics = append(catalog.diagnostics, Diagnostic{Path: ".", Message: err.Error()})
+		}
+
+		return
+	}
+
+	if !info.IsDir() {
+		catalog.diagnostics = append(catalog.diagnostics, Diagnostic{
+			Path: ".", Message: dir + " is not a directory",
+		})
+
+		return
+	}
+
 	catalog.loadFS(os.DirFS(dir), ".", scope)
 }
 

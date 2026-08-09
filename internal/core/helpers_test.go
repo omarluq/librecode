@@ -20,7 +20,11 @@ func writeTestFile(t *testing.T, path, content string) {
 func newOutsideTempDir(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp(filepath.Clean("/tmp"), "librecode-core-*")
+	base, err := os.UserCacheDir()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(base, 0o700))
+
+	dir, err := os.MkdirTemp(base, "librecode-core-*")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(dir))

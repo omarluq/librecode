@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"image"
 	"image/png"
@@ -590,6 +591,8 @@ func TestRuntime_SlashSkillShowsContent(t *testing.T) {
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
 
+	testutil.SetWindowsHome(t, home)
+
 	skillPath := filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md")
 	writeRuntimeTestFile(t, skillPath, strings.Join([]string{
 		testSkillDelimiter,
@@ -611,7 +614,12 @@ func TestRuntime_SlashSkillShowsContent(t *testing.T) {
 	assert.Contains(t, response.Text, "Use tests first.")
 	require.Len(t, response.ToolEvents, 1)
 	assert.Equal(t, "load skill: fix-bug", response.ToolEvents[0].Name)
-	assert.Contains(t, response.ToolEvents[0].ArgumentsJSON, skillPath)
+
+	var arguments struct {
+		Path string `json:"path"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(response.ToolEvents[0].ArgumentsJSON), &arguments))
+	assert.Equal(t, skillPath, arguments.Path)
 	require.Len(t, events, 1)
 	assert.Equal(t, assistant.StreamEventSkillLoaded, events[0].Kind)
 }
@@ -620,6 +628,8 @@ func TestRuntime_PromptEstimatesContextFromModelFacingBranch(t *testing.T) {
 	home := newRuntimeOutsideTempDir(t)
 	cwd := newRuntimeOutsideTempDir(t)
 	t.Setenv("HOME", home)
+
+	testutil.SetWindowsHome(t, home)
 	t.Setenv("LIBRECODE_HOME", filepath.Join(home, ".librecode"))
 
 	_, repository := newTestRuntime(t)
@@ -723,6 +733,8 @@ func TestRuntime_PromptIncludesDiscoveredSkills(t *testing.T) {
 	home := t.TempDir()
 	cwd := t.TempDir()
 	t.Setenv("HOME", home)
+
+	testutil.SetWindowsHome(t, home)
 	writeRuntimeTestFile(t, filepath.Join(cwd, ".librecode", "skills", "fix-bug", "SKILL.md"), strings.Join([]string{
 		testSkillDelimiter,
 		"name: fix-bug",

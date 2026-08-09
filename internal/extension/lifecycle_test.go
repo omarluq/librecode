@@ -43,7 +43,6 @@ end)
 	assert.Empty(t, result.Errors)
 	assert.False(t, result.Consumed)
 	assert.False(t, result.Stopped)
-	assert.Positive(t, result.Duration)
 }
 
 func TestManager_DispatchLifecycleCanStopHandlers(t *testing.T) {

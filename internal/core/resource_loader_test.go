@@ -9,12 +9,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/core"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestDefaultResourceLoaderReloadsSkills(t *testing.T) {
 	cwd := newOutsideTempDir(t)
 	home := newOutsideTempDir(t)
 	t.Setenv("HOME", home)
+
+	testutil.SetWindowsHome(t, home)
 
 	writeTestFile(
 		t,

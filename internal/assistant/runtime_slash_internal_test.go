@@ -13,6 +13,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -131,6 +132,8 @@ func TestRespondToSkillCommand(t *testing.T) {
 	t.Run("lists skills", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
+
+		testutil.SetWindowsHome(t, home)
 		root := t.TempDir()
 		skillPath := writeSlashTestSkill(t, root, "one", "First skill", "skill body")
 		runtime := newRuntimeFromDeps(nil)
@@ -147,6 +150,8 @@ func TestRespondToSkillCommand(t *testing.T) {
 	t.Run("loads named skill and emits event", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
+
+		testutil.SetWindowsHome(t, home)
 		root := t.TempDir()
 		writeSlashTestSkill(t, root, "one", "First skill", "skill body")
 
@@ -171,6 +176,8 @@ func TestRespondToSkillCommand(t *testing.T) {
 	t.Run("unknown skill", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
+
+		testutil.SetWindowsHome(t, home)
 		root := t.TempDir()
 		writeSlashTestSkill(t, root, "one", "First skill", "skill body")
 
