@@ -624,9 +624,28 @@ func (app *App) applyPromptUserEntry(_ context.Context, sessionID, entryID strin
 	previousSessionID := app.activePrompt.SessionID
 	app.activePrompt.SessionID = sessionID
 	app.activePrompt.UserEntryID = entryID
+	app.bindPromptUserMessageEntryID(entryID)
 
 	if app.sessionID == previousSessionID {
 		app.sessionID = sessionID
+	}
+}
+
+func (app *App) bindPromptUserMessageEntryID(entryID string) {
+	if entryID == "" || app.activePrompt.UserMessageTimestamp == 0 {
+		return
+	}
+
+	for index := range app.transcript.History {
+		message := &app.transcript.History[index]
+
+		isPromptUserMessage := message.CreatedAt.UnixNano() == app.activePrompt.UserMessageTimestamp &&
+			message.Role == transcript.RoleUser
+		if isPromptUserMessage {
+			message.EntryID = &entryID
+
+			return
+		}
 	}
 }
 

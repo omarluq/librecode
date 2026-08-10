@@ -47,20 +47,26 @@ func (app *App) sendDraft(ctx context.Context, draft promptDraft, visible bool) 
 	app.resetStreamingBlocks()
 	app.streamedToolEvents = 0
 
+	userMessage := newChatMessage(transcript.RoleUser, draft.Text)
+	userMessageTimestamp := int64(0)
+
+	if visible {
+		userMessage.Attachments = summarizeAttachments(draft.Images)
+		userMessageTimestamp = userMessage.CreatedAt.UnixNano()
+	}
+
 	app.activePrompt = &activePromptState{
-		Cancel:        cancel,
-		ParentEntryID: cloneStringPtr(parentEntryID),
-		ID:            promptID,
-		SessionID:     app.sessionID,
-		UserEntryID:   "",
-		Prompt:        draft.Text,
-		Images:        cloneImageAttachments(draft.Images),
-		Canceled:      false,
+		Cancel:               cancel,
+		SessionID:            app.sessionID,
+		UserEntryID:          "",
+		Prompt:               draft.Text,
+		Images:               cloneImageAttachments(draft.Images),
+		ID:                   promptID,
+		UserMessageTimestamp: userMessageTimestamp,
+		Canceled:             false,
 	}
 	if visible {
-		message := newChatMessage(transcript.RoleUser, draft.Text)
-		message.Attachments = summarizeAttachments(draft.Images)
-		app.appendMessage(message)
+		app.appendMessage(userMessage)
 	}
 
 	app.working = true

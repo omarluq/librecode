@@ -14,6 +14,10 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 		return
 	}
 
+	if response != nil {
+		app.bindPromptUserMessageEntryID(response.UserEntryID)
+	}
+
 	if app.activePrompt.Canceled {
 		app.finishPrompt()
 		app.applyFailedPromptStreamedBlocks(streamingBlocks)
@@ -43,7 +47,13 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	app.applyTokenUsage(&response.Usage)
 	app.applyPromptResponseSideEffects(response, streamingBlocks)
 	app.commitLiveAgentCompletions()
-	app.addMessage(transcript.RoleAssistant, response.Text)
+
+	message := newChatMessage(transcript.RoleAssistant, response.Text)
+	if response.AssistantEntryID != "" {
+		message.EntryID = &response.AssistantEntryID
+	}
+
+	app.appendMessage(message)
 	app.persistSessionSettings()
 	app.processQueuedPrompt(ctx)
 }

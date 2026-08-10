@@ -53,19 +53,20 @@ const (
 type chatMessage struct {
 	Attachments *attachmentSummaries
 	CreatedAt   time.Time
+	EntryID     *string
 	Role        transcript.Role
 	Content     string
 }
 
 type activePromptState struct {
-	Cancel        context.CancelFunc
-	ParentEntryID *string
-	SessionID     string
-	UserEntryID   string
-	Prompt        string
-	Images        []imageAttachment
-	ID            uint64
-	Canceled      bool
+	Cancel               context.CancelFunc
+	SessionID            string
+	UserEntryID          string
+	Prompt               string
+	Images               []imageAttachment
+	UserMessageTimestamp int64
+	ID                   uint64
+	Canceled             bool
 }
 
 type resizeCoalescedEvent struct {
@@ -739,12 +740,7 @@ func (app *App) sessionMessages(ctx context.Context, sessionID string) ([]databa
 func (app *App) appendSessionMessages(messages []database.SessionMessageEntity) {
 	for index := range messages {
 		message := &messages[index]
-		app.appendMessage(chatMessage{
-			CreatedAt:   message.CreatedAt,
-			Role:        transcript.FromDatabaseRole(message.Role),
-			Content:     message.Content,
-			Attachments: databaseAttachmentSummaries(message.Parts),
-		})
+		app.appendMessage(chatMessageFromSessionMessage(message))
 
 		if message.Role == database.RoleUser {
 			app.recordPromptDraftHistory(promptDraft{
@@ -752,6 +748,21 @@ func (app *App) appendSessionMessages(messages []database.SessionMessageEntity) 
 			})
 		}
 	}
+}
+
+func chatMessageFromSessionMessage(message *database.SessionMessageEntity) chatMessage {
+	chat := chatMessage{
+		CreatedAt:   message.CreatedAt,
+		EntryID:     nil,
+		Role:        transcript.FromDatabaseRole(message.Role),
+		Content:     message.Content,
+		Attachments: databaseAttachmentSummaries(message.Parts),
+	}
+	if message.EntryID != "" {
+		chat.EntryID = cloneStringPtr(&message.EntryID)
+	}
+
+	return chat
 }
 
 func (app *App) addSystemMessage(content string) {
@@ -763,7 +774,13 @@ func (app *App) addMessage(role transcript.Role, content string) {
 }
 
 func newChatMessage(role transcript.Role, content string) chatMessage {
-	return chatMessage{CreatedAt: time.Now().UTC(), Role: role, Content: content, Attachments: nil}
+	return chatMessage{
+		Attachments: nil,
+		CreatedAt:   time.Now().UTC(),
+		EntryID:     nil,
+		Role:        role,
+		Content:     content,
+	}
 }
 
 func emptyCachedRenderedMessage() cachedRenderedMessage {

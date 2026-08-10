@@ -2061,29 +2061,11 @@ func (app *App) appendMissingSessionMessages(messages []database.SessionMessageE
 
 	for index := range messages {
 		message := &messages[index]
-		role := transcript.FromDatabaseRole(message.Role)
-		found := false
-
-		for historyIndex := range app.transcript.History {
-			history := &app.transcript.History[historyIndex]
-			if history.CreatedAt.Equal(message.CreatedAt) &&
-				history.Role == role && history.Content == message.Content {
-				found = true
-
-				break
-			}
-		}
-
-		if found {
+		if app.hasSessionMessage(message) {
 			continue
 		}
 
-		app.appendMessage(chatMessage{
-			CreatedAt:   message.CreatedAt,
-			Role:        role,
-			Content:     message.Content,
-			Attachments: databaseAttachmentSummaries(message.Parts),
-		})
+		app.appendMessage(chatMessageFromSessionMessage(message))
 
 		appended = true
 
@@ -2100,6 +2082,28 @@ func (app *App) appendMissingSessionMessages(messages []database.SessionMessageE
 		})
 		app.transcript.LineCache.reset()
 	}
+}
+
+func (app *App) hasSessionMessage(message *database.SessionMessageEntity) bool {
+	role := transcript.FromDatabaseRole(message.Role)
+
+	for index := range app.transcript.History {
+		history := &app.transcript.History[index]
+		if message.EntryID != "" && history.EntryID != nil && *history.EntryID == message.EntryID {
+			return true
+		}
+
+		if history.EntryID == nil && history.CreatedAt.Equal(message.CreatedAt) &&
+			history.Role == role && history.Content == message.Content {
+			if message.EntryID != "" {
+				history.EntryID = cloneStringPtr(&message.EntryID)
+			}
+
+			return true
+		}
+	}
+
+	return false
 }
 
 func (app *App) resumeInspectedAgentTask(ctx context.Context, childSessionID string) {
