@@ -516,6 +516,30 @@ func promptCompactionLifecycleEventCases() []promptLifecycleCase {
 	}
 }
 
+func promptUserEntryLifecycleCase() promptLifecycleCase {
+	return promptLifecycleCase{
+		name:    "prompt user entry",
+		payload: asyncTestEvent(asyncEventPromptUserEntry, asyncTestSessionID, asyncTestEntryID, 3),
+		setup: func(app *App) {
+			app.activePrompt = newTestActivePrompt(nil)
+			app.activePrompt.ID = 3
+			message := newChatMessage(transcript.RoleUser, app.activePrompt.Prompt)
+			app.activePrompt.UserMessageTimestamp = message.CreatedAt.UnixNano()
+			app.appendMessage(message)
+		},
+		assert: func(t *testing.T, app *App) {
+			t.Helper()
+			require.NotNil(t, app.activePrompt)
+			assert.Equal(t, asyncTestSessionID, app.activePrompt.SessionID)
+			assert.Equal(t, asyncTestEntryID, app.activePrompt.UserEntryID)
+			require.Len(t, app.transcript.History, 1)
+			require.NotNil(t, app.transcript.History[0].EntryID)
+			assert.Equal(t, asyncTestEntryID, *app.transcript.History[0].EntryID)
+		},
+		wantHandled: true,
+	}
+}
+
 func promptLifecycleEventCases() []promptLifecycleCase {
 	return append(promptCompactionLifecycleEventCases(), []promptLifecycleCase{
 		{
@@ -525,10 +549,11 @@ func promptLifecycleEventCases() []promptLifecycleCase {
 				app.streamingText = asyncTestPartial
 				app.streamingThinkingText = "thought"
 				app.transcript.Streaming.Blocks = []chatMessage{{
+					Attachments: nil,
+					CreatedAt:   time.Time{},
+					EntryID:     nil,
 					Role:        transcript.RoleAssistant,
 					Content:     asyncTestPartial,
-					CreatedAt:   time.Time{},
-					Attachments: nil,
 				}}
 				app.runningToolBlocks = []runningToolBlock{{
 					StartedAt: time.Time{},
@@ -554,21 +579,7 @@ func promptLifecycleEventCases() []promptLifecycleCase {
 			},
 			wantHandled: true,
 		},
-		{
-			name:    "prompt user entry",
-			payload: asyncTestEvent(asyncEventPromptUserEntry, asyncTestSessionID, asyncTestEntryID, 3),
-			setup: func(app *App) {
-				app.activePrompt = newTestActivePrompt(nil)
-				app.activePrompt.ID = 3
-			},
-			assert: func(t *testing.T, app *App) {
-				t.Helper()
-				require.NotNil(t, app.activePrompt)
-				assert.Equal(t, asyncTestSessionID, app.activePrompt.SessionID)
-				assert.Equal(t, asyncTestEntryID, app.activePrompt.UserEntryID)
-			},
-			wantHandled: true,
-		},
+		promptUserEntryLifecycleCase(),
 		{
 			name:    "prompt error",
 			payload: asyncTestEvent(asyncEventPromptError, "", "provider failed", 4),

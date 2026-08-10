@@ -764,6 +764,126 @@ func TestLeaveAgentTaskSessionRefreshesDurableParentTranscript(t *testing.T) {
 	assert.Contains(t, app.transcript.History[0].Content, "new durable parent message")
 }
 
+func TestAgentBackCommandReconcilesOptimisticPromptByEntryID(t *testing.T) {
+	t.Parallel()
+
+	fixture, _, app := newAgentTaskSessionTestApp(t, database.TaskSucceeded)
+
+	const prompt = "optimistic parent prompt"
+
+	entry, err := fixture.sessions.AppendMessage(t.Context(), fixture.parent.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC().Add(time.Second),
+		Role:      database.RoleUser,
+		Content:   prompt,
+		Provider:  "",
+		Model:     "", Parts: nil,
+	})
+	require.NoError(t, err)
+
+	message := newChatMessage(transcript.RoleUser, prompt)
+	message.EntryID = cloneStringPtr(&entry.ID)
+	app.appendMessage(message)
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+	quit, err := app.runSessionCommand(t.Context(), "agents", "back", "/agents back")
+	require.NoError(t, err)
+	assert.False(t, quit)
+	assert.Equal(t, fixture.parent.ID, app.sessionID)
+	assert.Empty(t, app.agentTaskSessionStack)
+
+	matches := 0
+
+	for index := range app.transcript.History {
+		if app.transcript.History[index].Content == prompt {
+			matches++
+		}
+	}
+
+	assert.Equal(t, 1, matches)
+}
+
+func TestAgentBackAfterParentPromptCompletionDoesNotDuplicateDurableMessages(t *testing.T) {
+	t.Parallel()
+
+	fixture, _, app := newActivePromptInspectionTestApp(t, database.TaskSucceeded, nil)
+
+	const (
+		prompt   = "parent prompt completed during inspection"
+		response = "parent response completed during inspection"
+	)
+
+	userMessage := newChatMessage(transcript.RoleUser, prompt)
+	app.activePrompt.Prompt = prompt
+	app.activePrompt.UserMessageTimestamp = userMessage.CreatedAt.UnixNano()
+	app.appendMessage(userMessage)
+	promptID := app.activePrompt.ID
+
+	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
+
+	userEntry, err := fixture.sessions.AppendMessage(t.Context(), fixture.parent.ID, nil, &database.MessageEntity{
+		Timestamp: userMessage.CreatedAt.Add(time.Second),
+		Role:      database.RoleUser,
+		Content:   prompt,
+		Provider:  "",
+		Model:     "", Parts: nil,
+	})
+	require.NoError(t, err)
+	assistantEntry, err := fixture.sessions.AppendMessage(
+		t.Context(),
+		fixture.parent.ID,
+		&userEntry.ID,
+		&database.MessageEntity{
+			Timestamp: userMessage.CreatedAt.Add(2 * time.Second),
+			Role:      database.RoleAssistant,
+			Content:   response,
+			Provider:  "",
+			Model:     "", Parts: nil,
+		},
+	)
+	require.NoError(t, err)
+
+	app.handlePromptAsyncEvent(t.Context(), asyncTestEvent(
+		asyncEventPromptUserEntry,
+		fixture.parent.ID,
+		userEntry.ID,
+		promptID,
+	))
+
+	promptResponse := newTestPromptResponse(response)
+	promptResponse.SessionID = fixture.parent.ID
+	promptResponse.UserEntryID = userEntry.ID
+	promptResponse.AssistantEntryID = assistantEntry.ID
+	app.handlePromptAsyncEvent(t.Context(), &asyncEvent{
+		Response: promptResponse, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: asyncEventPromptDone, Provider: "", Text: "", PromptID: promptID,
+	})
+
+	assert.Equal(t, fixture.child.ID, app.sessionID)
+	assert.Nil(t, app.activePrompt)
+
+	quit, err := app.runSessionCommand(t.Context(), "agents", "back", "/agents back")
+	require.NoError(t, err)
+	assert.False(t, quit)
+	assert.Equal(t, fixture.parent.ID, app.sessionID)
+
+	messageCounts := make(map[string]int)
+	entryIDsByContent := make(map[string][]string)
+
+	for index := range app.transcript.History {
+		message := &app.transcript.History[index]
+
+		messageCounts[message.Content]++
+		if message.EntryID != nil {
+			entryIDsByContent[message.Content] = append(entryIDsByContent[message.Content], *message.EntryID)
+		}
+	}
+
+	assert.Equal(t, 1, messageCounts[prompt])
+	assert.Equal(t, 1, messageCounts[response])
+	assert.Equal(t, []string{userEntry.ID}, entryIDsByContent[prompt])
+	assert.Equal(t, []string{assistantEntry.ID}, entryIDsByContent[response])
+}
+
 func TestRevisitAgentTaskSessionRefreshesDurableTranscript(t *testing.T) {
 	t.Parallel()
 
