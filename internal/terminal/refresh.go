@@ -120,21 +120,23 @@ func (app *App) invalidateTerminalRefresh() {
 	}
 }
 
-func postTerminalRefreshResult(ctx context.Context, screen terminalScreen, result *terminalRefreshResult) {
-	if ctx.Err() != nil {
-		return
+func screenStop(screen terminalScreen) <-chan struct{} {
+	if stoppable, ok := screen.(interface{ StopQ() <-chan struct{} }); ok {
+		return stoppable.StopQ()
 	}
 
-	// The screen event queue can close during shutdown, causing a send to panic.
-	defer func() {
-		if recover() != nil {
-			return
-		}
-	}()
+	return nil
+}
+
+func postTerminalRefreshResult(ctx context.Context, screen terminalScreen, result *terminalRefreshResult) {
+	if screen == nil || ctx.Err() != nil {
+		return
+	}
 
 	select {
 	case screen.EventQ() <- tcell.NewEventInterrupt(result):
 	case <-ctx.Done():
+	case <-screenStop(screen):
 	}
 }
 
