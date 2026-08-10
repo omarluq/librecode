@@ -83,7 +83,7 @@ func (manager *Manager) HandleTerminalEvent(
 	ctx context.Context,
 	event *TerminalEvent,
 ) (TerminalEventResult, error) {
-	if event == nil || event.Name != "tick" && event.Name != "render" {
+	if event == nil || (event.Name != "tick" && event.Name != "render") {
 		return manager.handleTerminalEvent(ctx, event)
 	}
 
@@ -237,16 +237,26 @@ func (manager *Manager) logDispatchDuration(
 		outcome = "error"
 	}
 
+	slow := duration >= extensionSlowDispatchThreshold
+	debugEnabled := manager.logger.Enabled(context.Background(), slog.LevelDebug)
+
+	if !slow && !debugEnabled {
+		return
+	}
+
 	attributes := make([]any, 0, extensionDiagnosticAttributes)
+
 	attributes = append(attributes,
 		slog.String("operation", operation),
 		slog.Duration("duration", duration),
 		slog.String("outcome", outcome),
 		slog.Int("count", count),
 	)
-	manager.logger.Debug("extension callback dispatch", attributes...)
+	if debugEnabled {
+		manager.logger.Debug("extension callback dispatch", attributes...)
+	}
 
-	if duration < extensionSlowDispatchThreshold {
+	if !slow {
 		return
 	}
 

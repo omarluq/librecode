@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/omarluq/librecode/internal/testutil"
 	"os"
 	"path/filepath"
 	"slices"
@@ -23,15 +22,17 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/terminal/panel"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 	"github.com/omarluq/librecode/internal/transcript"
 	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
-	behaviorTaskID   = "task-1"
-	behaviorRunning  = "running"
-	parentScopeValue = "parent-scope"
+	behaviorTaskID      = "task-1"
+	behaviorRunning     = "running"
+	behaviorWorkflowRun = "workflow-run"
+	parentScopeValue    = "parent-scope"
 )
 
 type agentTaskControllerStub struct {
@@ -175,6 +176,13 @@ func (stub *agentTaskControllerStub) wasCanceled(taskID string) bool {
 	defer stub.mu.Unlock()
 
 	return stub.canceled[taskID]
+}
+
+func (stub *agentTaskControllerStub) calls() int {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+
+	return stub.listCalls
 }
 
 func newAgentTaskBehaviorApp(t *testing.T, stub *agentTaskControllerStub) *App {
@@ -403,7 +411,7 @@ func TestWorkflowChildAgentTasksAreHiddenAndNotDelivered(t *testing.T) {
 	t.Parallel()
 
 	child := behaviorAgentTask("workflow-child", database.TaskRunning)
-	child.Task.ParentTaskID = "workflow-run"
+	child.Task.ParentTaskID = behaviorWorkflowRun
 	stub := newAgentTaskControllerStub(
 		map[string]*database.AgentTaskEntity{child.Task.ID: &child},
 		[]database.AgentTaskEntity{child},
@@ -414,7 +422,7 @@ func TestWorkflowChildAgentTasksAreHiddenAndNotDelivered(t *testing.T) {
 	app.discoverActiveAgentTasks(t.Context())
 	assert.Empty(t, app.agentTasks)
 	app.activeWorkflows = []database.WorkflowRunEntity{
-		workflowSummaryRun("workflow-run", database.TaskRunning),
+		workflowSummaryRun(behaviorWorkflowRun, database.TaskRunning),
 	}
 	lines := app.renderAgentTaskSummary(80)
 	require.Len(t, lines, 2)
@@ -432,6 +440,33 @@ func TestWorkflowChildAgentTasksAreHiddenAndNotDelivered(t *testing.T) {
 	stub.tasks[child.Task.ID] = &completed
 	app.deliverAgentTaskCompletionText(t.Context(), child.Task.ID, "workflow-owned result")
 	app.deliverAgentTaskCompletion(t.Context(), &completed)
+
+	assert.Empty(t, app.liveAgentCompletions)
+	assert.Empty(t, app.hiddenQueuedMessages)
+	assert.Contains(t, app.deliveredAgentTasks, child.Task.ID)
+}
+
+func TestKnownWorkflowChildCompletionUsesSnapshotLink(t *testing.T) {
+	t.Parallel()
+
+	child := behaviorAgentTask("workflow-child", database.TaskSucceeded)
+	child.Task.OwnerSessionID = testSlashSession
+	child.Task.ParentTaskID = ""
+	app := newRenderTestApp(t)
+	app.sessionID = child.Task.OwnerSessionID
+	app.working = true
+	app.agentTasks = []database.AgentTaskEntity{child}
+	app.workflowSteps = map[string][]database.WorkflowAgentTaskDetail{
+		behaviorWorkflowRun: {{
+			AgentTask: child,
+			Link: database.WorkflowAgentTaskEntity{
+				CreatedAt: time.Time{}, WorkflowTaskID: behaviorWorkflowRun,
+				AgentTaskID: child.Task.ID, NodeKey: "", InvocationIndex: 0, Sequence: 0,
+			},
+		}},
+	}
+
+	app.deliverKnownAgentTaskCompletionText(t.Context(), child.Task.ID, "workflow-owned result")
 
 	assert.Empty(t, app.liveAgentCompletions)
 	assert.Empty(t, app.hiddenQueuedMessages)
@@ -556,14 +591,8 @@ func applyAgentRefreshInterrupt(t *testing.T, app *App) {
 	t.Helper()
 
 	for {
-		event := <-app.screen.EventQ()
-
-		interrupt, ok := event.(*tcell.EventInterrupt)
-		if !ok {
-			continue
-		}
-
-		if _, ok = interrupt.Data().(*terminalRefreshResult); !ok {
+		interrupt := awaitInterrupt(t, app.screen.EventQ(), "agent refresh interrupt was not published")
+		if _, ok := interrupt.Data().(*terminalRefreshResult); !ok {
 			continue
 		}
 
@@ -1745,7 +1774,7 @@ func TestAgentPanelPathsDoNotDuplicateSnapshotQueries(t *testing.T) {
 	app.refreshAgentTasksPanel(t.Context())
 	_ = app.agentTaskItemsFromSnapshot()
 
-	assert.Equal(t, 0, stub.listCalls)
+	assert.Equal(t, 0, stub.calls())
 }
 
 func TestRefreshAgentTasksPanelPreservesSelection(t *testing.T) {

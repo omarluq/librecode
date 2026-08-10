@@ -373,8 +373,6 @@ func initializeAppInputState(app *App) {
 	app.composerBuffer = tui.NewTextArea()
 	app.composerImages = []imageAttachment{}
 	app.bracketedPaste = false
-	app.scopedOrder = []string{}
-	app.scopedEnabled = map[string]bool{}
 }
 
 func initializeTerminalRefreshState(app *App) {
