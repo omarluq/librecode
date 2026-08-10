@@ -110,8 +110,23 @@ func (app *App) workflowItemsFromSnapshot() []tui.ListItem {
 	return items
 }
 
-func (app *App) openWorkflowDetail(_ context.Context, runID string) error {
-	return app.openWorkflowDetailFromSnapshot(runID)
+func (app *App) openWorkflowDetail(ctx context.Context, runID string) error {
+	err := app.openWorkflowDetailFromSnapshot(runID)
+	if err == nil || app.workflowDetailSnapshotValid {
+		return err
+	}
+
+	run := workflowByID(app.workflowPanelSnapshot, runID)
+	if run == nil {
+		run = workflowByID(app.activeWorkflows, runID)
+	}
+
+	if run != nil && run.Task.OwnerSessionID == app.sessionID {
+		app.workflowPanelRunID = runID
+		app.requestTerminalRefresh(ctx)
+	}
+
+	return err
 }
 
 func (app *App) openWorkflowDetailFromSnapshot(runID string) error {

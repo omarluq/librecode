@@ -125,8 +125,9 @@ func postTerminalRefreshResult(ctx context.Context, screen terminalScreen, resul
 		return
 	}
 
+	// The screen event queue can close during shutdown, causing a send to panic.
 	defer func() {
-		if panicValue := recover(); panicValue != nil {
+		if recover() != nil {
 			return
 		}
 	}()

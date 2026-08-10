@@ -18,7 +18,12 @@ import (
 	"github.com/omarluq/librecode/internal/tooltask"
 )
 
-const agentTaskFinishedResult = "finished"
+const (
+	agentTaskFinishedResult = "finished"
+	refreshOrderAlpha       = "alpha"
+	refreshOrderBravo       = "bravo"
+	refreshOrderCharlie     = "charlie"
+)
 
 func newRefreshTestApp(t *testing.T) (*App, *clipboardScreen) {
 	t.Helper()
@@ -340,7 +345,9 @@ func TestTerminalRefreshPartialSnapshotPreservesEveryFailedSection(t *testing.T)
 
 	snapshot := newTerminalRefreshSnapshot(app.sessionID)
 	snapshot.AgentTasks = refreshSection([]database.AgentTaskEntity{newAgent})
-	snapshot.AgentTaskByID = refreshSection(map[string]*database.AgentTaskEntity{})
+	snapshot.AgentTaskByID = refreshSection(map[string]*database.AgentTaskEntity{
+		oldAgent.Task.ID: nil,
+	})
 	snapshot.AgentPanel.Err = assert.AnError
 	snapshot.ToolTasks.Err = assert.AnError
 	snapshot.ActiveWorkflow.Err = assert.AnError
@@ -358,6 +365,50 @@ func TestTerminalRefreshPartialSnapshotPreservesEveryFailedSection(t *testing.T)
 	assert.Equal(t, 3, app.workflowProgress[oldRun.Task.ID].Total)
 	assert.Len(t, app.workflowSteps[oldRun.Task.ID], 1)
 	assert.True(t, app.workflowDetailSnapshotValid)
+	assert.Contains(t, app.statusMessage, "refresh failed")
+}
+
+func TestTerminalRefreshNewEntriesUseDeterministicOrder(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newRefreshTestApp(t)
+	tasks := []database.AgentTaskEntity{
+		behaviorAgentTask(refreshOrderCharlie, database.TaskRunning),
+		behaviorAgentTask(refreshOrderAlpha, database.TaskRunning),
+		behaviorAgentTask(refreshOrderBravo, database.TaskRunning),
+	}
+	runs := []database.WorkflowRunEntity{
+		workflowSummaryRun(refreshOrderCharlie, database.TaskRunning),
+		workflowSummaryRun(refreshOrderAlpha, database.TaskRunning),
+		workflowSummaryRun(refreshOrderBravo, database.TaskRunning),
+	}
+	snapshot := newTerminalRefreshSnapshot(app.sessionID)
+	snapshot.AgentTasks = refreshSection(tasks)
+	snapshot.AgentTaskByID = refreshSection(map[string]*database.AgentTaskEntity{})
+	snapshot.ActiveWorkflow = refreshSection(runs)
+	snapshot.WorkflowByID = refreshSection(map[string]*database.WorkflowRunEntity{})
+
+	app.applyTerminalRefreshSnapshot(t.Context(), &snapshot)
+
+	wantOrder := []string{refreshOrderAlpha, refreshOrderBravo, refreshOrderCharlie}
+	assert.Equal(t, wantOrder, agentTaskIDs(app.agentTasks))
+	assert.Equal(t, wantOrder, workflowRunIDs(app.activeWorkflows))
+}
+
+func TestTerminalRefreshRetainsTaskAddedAfterCapture(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newRefreshTestApp(t)
+	lateTask := behaviorAgentTask("late-task", database.TaskRunning)
+	app.agentTasks = []database.AgentTaskEntity{lateTask}
+	snapshot := newTerminalRefreshSnapshot(app.sessionID)
+	snapshot.AgentTasks = refreshSection([]database.AgentTaskEntity{})
+	snapshot.AgentTaskByID = refreshSection(map[string]*database.AgentTaskEntity{})
+
+	app.applyTerminalRefreshSnapshot(t.Context(), &snapshot)
+
+	require.Len(t, app.agentTasks, 1)
+	assert.Equal(t, lateTask.Task.ID, app.agentTasks[0].Task.ID)
 }
 
 func TestTerminalRefreshApplySideEffectsOnlyDuringInterrupt(t *testing.T) {
@@ -373,8 +424,8 @@ func TestTerminalRefreshApplySideEffectsOnlyDuringInterrupt(t *testing.T) {
 	watchStopped := false
 	app.agentTaskWatches[running.Task.ID] = func() { watchStopped = true }
 	app.runtime = &assistant.Runtime{}
-	app.refreshLoader = func(context.Context, *terminalRefreshRequest) terminalRefreshSnapshot {
-		snapshot := newTerminalRefreshSnapshot(app.sessionID)
+	app.refreshLoader = func(_ context.Context, request *terminalRefreshRequest) terminalRefreshSnapshot {
+		snapshot := newTerminalRefreshSnapshot(request.SessionID)
 		snapshot.AgentTasks = refreshSection([]database.AgentTaskEntity{completed})
 		snapshot.AgentTaskByID = refreshSection(map[string]*database.AgentTaskEntity{
 			completed.Task.ID: &completed,
@@ -464,7 +515,7 @@ func TestTerminalPanelsUsePublishedSnapshotsWithoutDuplicateQueries(t *testing.T
 	})
 	app.applyTerminalRefreshSnapshot(t.Context(), &snapshot)
 
-	agentCalls := agentStub.listCalls
+	agentCalls := agentStub.calls()
 	toolCalls := toolStub.calls()
 
 	workflowStub.mu.Lock()
@@ -481,7 +532,7 @@ func TestTerminalPanelsUsePublishedSnapshotsWithoutDuplicateQueries(t *testing.T
 	require.NoError(t, app.openWorkflowDetail(t.Context(), run.Task.ID))
 	app.refreshWorkflowsPanel(t.Context())
 
-	assert.Equal(t, agentCalls, agentStub.listCalls)
+	assert.Equal(t, agentCalls, agentStub.calls())
 	assert.Equal(t, toolCalls, toolStub.calls())
 
 	workflowStub.mu.Lock()
@@ -506,6 +557,24 @@ func awaitSignal(t *testing.T, signal <-chan struct{}, failure string) {
 
 func refreshSection[T any](value T) terminalRefreshSection[T] {
 	return terminalRefreshSection[T]{Value: value, Err: nil, Valid: true}
+}
+
+func agentTaskIDs(tasks []database.AgentTaskEntity) []string {
+	ids := make([]string, len(tasks))
+	for index := range tasks {
+		ids[index] = tasks[index].Task.ID
+	}
+
+	return ids
+}
+
+func workflowRunIDs(runs []database.WorkflowRunEntity) []string {
+	ids := make([]string, len(runs))
+	for index := range runs {
+		ids[index] = runs[index].Task.ID
+	}
+
+	return ids
 }
 
 func refreshWorkflowLink(runID, taskID, node string) database.WorkflowAgentTaskEntity {

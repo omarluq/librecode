@@ -703,12 +703,6 @@ func (app *App) postAgentTaskWatchError(ctx context.Context, taskID, message str
 func (app *App) handleAgentTaskWatchError(_ context.Context, taskID, message string) {
 	app.addSystemMessage(message)
 
-	if len(app.agentTaskSessionStack) > 0 {
-		app.stopAgentTaskWatch(taskID)
-
-		return
-	}
-
 	// Leave the failed watch stopped. The next periodic snapshot can retry it
 	// without recursively publishing another event from this handler.
 	app.stopAgentTaskWatch(taskID)
@@ -1106,7 +1100,7 @@ func (app *App) deliverAgentTaskCompletionText(ctx context.Context, taskID, comp
 }
 
 func (app *App) deliverKnownAgentTaskCompletionText(ctx context.Context, taskID, completion string) {
-	app.finishAgentTaskCompletion(ctx, taskID, completion, false)
+	app.finishAgentTaskCompletion(ctx, taskID, completion, app.isTrackedWorkflowChild(taskID))
 }
 
 func (app *App) finishAgentTaskCompletion(ctx context.Context, taskID, completion string, workflowChild bool) {
@@ -1127,8 +1121,16 @@ func (app *App) finishAgentTaskCompletion(ctx context.Context, taskID, completio
 
 func (app *App) isTrackedWorkflowChild(taskID string) bool {
 	for index := range app.agentTasks {
-		if app.agentTasks[index].Task.ID == taskID {
-			return app.agentTasks[index].Task.ParentTaskID != ""
+		if app.agentTasks[index].Task.ID == taskID && app.agentTasks[index].Task.ParentTaskID != "" {
+			return true
+		}
+	}
+
+	for _, details := range app.workflowSteps {
+		for index := range details {
+			if details[index].Link.AgentTaskID == taskID {
+				return true
+			}
 		}
 	}
 

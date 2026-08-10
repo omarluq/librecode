@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"time"
 
@@ -425,6 +426,10 @@ func (app *App) applyTerminalRefreshSnapshot(ctx context.Context, snapshot *term
 	app.refreshAgentTasksPanelFromSnapshot()
 	app.refreshWorkflowsPanelFromSnapshot()
 	app.agentTasksRefreshedAt = time.Now()
+
+	if snapshot.hasErrors() {
+		app.setStatus("background task refresh failed; showing last known data")
+	}
 }
 
 func (app *App) applyWorkflowDetailSnapshot(ctx context.Context, snapshot *terminalRefreshSnapshot) {
@@ -507,7 +512,7 @@ func (app *App) applyLoadedAgentTasks(
 		}
 	}
 
-	for taskID := range activeByID {
+	for _, taskID := range slices.Sorted(maps.Keys(activeByID)) {
 		active = append(active, activeByID[taskID])
 	}
 
@@ -559,7 +564,7 @@ func (app *App) reconcileLoadedAgentTask(
 
 	latest, found := lookups.Value[previous.Task.ID]
 	if !found {
-		return nil, nil
+		return previous, nil
 	}
 
 	if latest == nil {
@@ -590,7 +595,7 @@ func (app *App) applyLoadedWorkflows(ctx context.Context, snapshot *terminalRefr
 		}
 	}
 
-	for runID := range listed {
+	for _, runID := range slices.Sorted(maps.Keys(listed)) {
 		candidates = append(candidates, listed[runID])
 	}
 

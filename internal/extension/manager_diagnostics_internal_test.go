@@ -68,6 +68,7 @@ func TestExtensionTickAndRenderDiagnosticsIncludeLockWait(t *testing.T) {
 			output := logs.String()
 			assert.Contains(t, output, "operation="+operation)
 			assert.Contains(t, output, "outcome=success")
+			assert.Contains(t, output, "duration=100ms")
 			assert.Contains(t, output, "count=1")
 			assert.NotContains(t, output, "private-event-content")
 		})
@@ -98,6 +99,7 @@ func TestExtensionTimerDiagnosticsIncludeLockWait(t *testing.T) {
 	output := logs.String()
 	assert.Contains(t, output, "operation=timer")
 	assert.Contains(t, output, "outcome=success")
+	assert.Contains(t, output, "duration=100ms")
 	assert.Contains(t, output, "count=1")
 	assert.NotContains(t, output, "private-event-content")
 }
@@ -159,12 +161,18 @@ func assertDispatchIncludesLockWait(
 
 	started := make(chan struct{})
 	manager.dispatchNow = func() time.Time {
-		now := <-times
-		if now.Equal(startedAt) {
-			close(started)
-		}
+		select {
+		case now := <-times:
+			if now.Equal(startedAt) {
+				close(started)
+			}
 
-		return now
+			return now
+		default:
+			t.Error("unexpected dispatchNow call")
+
+			return startedAt
+		}
 	}
 
 	extensionRuntime.lock.Lock()
@@ -184,4 +192,5 @@ func assertDispatchIncludesLockWait(
 
 	extensionRuntime.lock.Unlock()
 	require.NoError(t, <-done)
+	assert.Empty(t, times, "expected dispatch to consume every timestamp")
 }
