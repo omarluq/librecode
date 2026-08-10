@@ -40,10 +40,10 @@ type terminalRefreshResult struct {
 
 type terminalRefreshLoader func(context.Context, *terminalRefreshRequest) terminalRefreshSnapshot
 
-func (app *App) requestTerminalRefresh(ctx context.Context) {
+func (app *App) requestTerminalRefresh(ctx context.Context) <-chan struct{} {
 	// Keep the parent task/workflow summary stable while inspecting a child.
 	if len(app.agentTaskSessionStack) > 0 {
-		return
+		return nil
 	}
 
 	if app.refreshInFlight {
@@ -51,11 +51,11 @@ func (app *App) requestTerminalRefresh(ctx context.Context) {
 
 		app.logTerminalRefresh("coalesce", 0, "pending")
 
-		return
+		return nil
 	}
 
 	if app.runtime == nil || app.sessionID == "" {
-		return
+		return nil
 	}
 
 	app.refreshGeneration++
@@ -73,8 +73,11 @@ func (app *App) requestTerminalRefresh(ctx context.Context) {
 
 	screen := app.screen
 	diagnostics := app.refreshDiagnostics
+	done := make(chan struct{})
 
 	go func() {
+		defer close(done)
+
 		refreshCtx, cancel := context.WithTimeout(loadCtx, terminalRefreshTimeout)
 		defer cancel()
 
@@ -93,6 +96,8 @@ func (app *App) requestTerminalRefresh(ctx context.Context) {
 		logTerminalRefreshTimings(diagnostics, result, outcome)
 		postTerminalRefreshResult(ctx, screen, result)
 	}()
+
+	return done
 }
 
 func refreshOutcome(result *terminalRefreshResult) string {
@@ -133,10 +138,37 @@ func postTerminalRefreshResult(ctx context.Context, screen terminalScreen, resul
 		return
 	}
 
+	stop := screenStop(screen)
 	select {
-	case screen.EventQ() <- tcell.NewEventInterrupt(result):
+	case <-stop:
+		return
+	default:
+	}
+
+	postTerminalRefreshEvent(ctx, screen.EventQ(), stop, tcell.NewEventInterrupt(result))
+}
+
+func postTerminalRefreshEvent(
+	ctx context.Context,
+	events chan<- tcell.Event,
+	stop <-chan struct{},
+	event tcell.Event,
+) (posted bool) {
+	// Test screens may close their event queue during shutdown. Treat that race
+	// like a stopped screen instead of crashing the refresh worker.
+	defer func() {
+		if recover() != nil {
+			posted = false
+		}
+	}()
+
+	select {
+	case events <- event:
+		return true
 	case <-ctx.Done():
-	case <-screenStop(screen):
+		return false
+	case <-stop:
+		return false
 	}
 }
 
@@ -290,17 +322,10 @@ func (diagnostics *terminalRefreshDiagnostics) log(
 	outcome string,
 	count int,
 ) {
-	attributes := []any{
-		slog.String("operation", operation),
-		slog.Duration("duration", duration),
-		slog.String("outcome", outcome),
-	}
-	if count > 0 {
-		attributes = append(attributes, slog.Int("count", count))
-	}
-
 	logger := slog.Default()
-	logger.Debug("terminal refresh", attributes...)
+	if logger.Enabled(context.Background(), slog.LevelDebug) {
+		logger.Debug("terminal refresh", terminalRefreshAttributes(operation, duration, outcome, count)...)
+	}
 
 	if duration < terminalSlowOperationThreshold {
 		return
@@ -324,6 +349,20 @@ func (diagnostics *terminalRefreshDiagnostics) log(
 	diagnostics.suppressed[key] = 0
 	diagnostics.Unlock()
 
+	attributes := terminalRefreshAttributes(operation, duration, outcome, count)
 	attributes = append(attributes, slog.Int("suppressed_count", suppressed))
 	logger.Warn("terminal refresh slow", attributes...)
+}
+
+func terminalRefreshAttributes(operation string, duration time.Duration, outcome string, count int) []any {
+	attributes := []any{
+		slog.String("operation", operation),
+		slog.Duration("duration", duration),
+		slog.String("outcome", outcome),
+	}
+	if count > 0 {
+		attributes = append(attributes, slog.Int("count", count))
+	}
+
+	return attributes
 }
