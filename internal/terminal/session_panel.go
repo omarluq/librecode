@@ -57,6 +57,8 @@ func (app *App) deleteSelectedSession(ctx context.Context) {
 	}
 
 	if app.sessionID == value {
+		app.resetAgentTaskTracking()
+		app.agentTaskSessionStack = nil
 		app.sessionID = ""
 		app.resetMessages()
 		app.addSystemMessage("deleted active session")

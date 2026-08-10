@@ -24,7 +24,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 		app.commitLiveAgentCompletions()
 
 		if response != nil {
-			app.sessionID = response.SessionID
+			app.updatePromptSession(response.SessionID)
 			app.applyTokenUsage(&response.Usage)
 		}
 
@@ -43,7 +43,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 		return
 	}
 
-	app.sessionID = response.SessionID
+	app.updatePromptSession(response.SessionID)
 	app.applyTokenUsage(&response.Usage)
 	app.applyPromptResponseSideEffects(response, streamingBlocks)
 	app.commitLiveAgentCompletions()
@@ -56,6 +56,13 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	app.appendMessage(message)
 	app.persistSessionSettings()
 	app.processQueuedPrompt(ctx)
+}
+
+func (app *App) updatePromptSession(sessionID string) {
+	if app.sessionID != sessionID {
+		app.resetAgentTaskTracking()
+		app.sessionID = sessionID
+	}
 }
 
 func (app *App) applyPromptResponseSideEffects(response *assistant.PromptResponse, streamingBlocks []chatMessage) {

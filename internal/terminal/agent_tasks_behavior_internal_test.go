@@ -39,11 +39,14 @@ type agentTaskControllerStub struct {
 	getErr       error
 	cancelErr    error
 	subscribeErr error
-	tasks        map[string]*database.AgentTaskEntity
-	subscribe    map[string]chan database.TaskEventEntity
 	canceled     map[string]bool
+	subscribe    map[string]chan database.TaskEventEntity
+	tasks        map[string]*database.AgentTaskEntity
+	listStarted  chan struct{}
+	listRelease  chan struct{}
 	list         []database.AgentTaskEntity
 	cancelCalls  []string
+	listCalls    int
 	mu           sync.Mutex
 }
 
@@ -68,6 +71,9 @@ func newAgentTaskControllerStub(
 		canceled:     make(map[string]bool),
 		list:         list,
 		cancelCalls:  nil,
+		listCalls:    0,
+		listStarted:  nil,
+		listRelease:  nil,
 		mu:           sync.Mutex{},
 	}
 }
@@ -96,7 +102,27 @@ func (stub *agentTaskControllerStub) Get(_ context.Context, taskID string) (*dat
 	return task, found, nil
 }
 
-func (stub *agentTaskControllerStub) List(context.Context, string, int) ([]database.AgentTaskEntity, error) {
+func (stub *agentTaskControllerStub) List(ctx context.Context, _ string, _ int) ([]database.AgentTaskEntity, error) {
+	stub.mu.Lock()
+	stub.listCalls++
+	started, release := stub.listStarted, stub.listRelease
+	stub.mu.Unlock()
+
+	if started != nil {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+	}
+
+	if release != nil {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return nil, fmt.Errorf("list agent tasks: %w", ctx.Err())
+		}
+	}
+
 	return stub.list, stub.listErr
 }
 
@@ -161,6 +187,9 @@ func newAgentTaskBehaviorApp(t *testing.T, stub *agentTaskControllerStub) *App {
 	app := newRenderTestApp(t)
 	app.runtime = runtime
 	app.sessionID = "owner-session"
+
+	app.agentTaskPanelSnapshot = append([]database.AgentTaskEntity(nil), stub.list...)
+	app.agentTaskPanelSnapshotValid = true
 
 	return app
 }
@@ -495,12 +524,14 @@ func TestApplyAgentToolEventAndWatchCleanup(t *testing.T) {
 		[]database.AgentTaskEntity{running},
 	)
 	app := newAgentTaskBehaviorApp(t, stub)
+	app.screen = newClipboardScreen()
 
-	app.applyAgentToolEvent(nil)
-	app.applyAgentToolEvent(agentToolEvent(agentStartToolName, "", true))
+	app.applyAgentToolEvent(t.Context(), nil)
+	app.applyAgentToolEvent(t.Context(), agentToolEvent(agentStartToolName, "", true))
 	assert.Empty(t, app.agentTasks)
 
-	app.applyAgentToolEvent(agentToolEvent(agentStartToolName, `{"task_id":"running"}`, false))
+	app.applyAgentToolEvent(t.Context(), agentToolEvent(agentStartToolName, `{"task_id":"running"}`, false))
+	applyAgentRefreshInterrupt(t, app)
 	require.Len(t, app.agentTasks, 1)
 	assert.False(t, app.agentTasksRefreshedAt.IsZero())
 
@@ -508,7 +539,9 @@ func TestApplyAgentToolEventAndWatchCleanup(t *testing.T) {
 	updated.Task.UpdatedAt = updated.Task.UpdatedAt.Add(time.Second)
 	stub.list = []database.AgentTaskEntity{updated}
 
-	app.applyAgentToolEvent(agentToolEvent(agentStatusToolName, "", false))
+	app.applyAgentToolEvent(t.Context(), agentToolEvent(agentStatusToolName, "", false))
+
+	applyAgentRefreshInterrupt(t, app)
 	assert.Equal(t, updated.Task.UpdatedAt, app.agentTasks[0].Task.UpdatedAt)
 
 	app.stopAgentTaskWatches()
@@ -516,7 +549,29 @@ func TestApplyAgentToolEventAndWatchCleanup(t *testing.T) {
 	assert.True(t, stub.wasCanceled(behaviorRunning))
 
 	app.runtime = nil
-	app.applyAgentToolEvent(agentToolEvent(agentStatusToolName, "", false))
+	app.applyAgentToolEvent(t.Context(), agentToolEvent(agentStatusToolName, "", false))
+}
+
+func applyAgentRefreshInterrupt(t *testing.T, app *App) {
+	t.Helper()
+
+	for {
+		event := <-app.screen.EventQ()
+
+		interrupt, ok := event.(*tcell.EventInterrupt)
+		if !ok {
+			continue
+		}
+
+		if _, ok = interrupt.Data().(*terminalRefreshResult); !ok {
+			continue
+		}
+
+		_, err := app.handleInterrupt(t.Context(), interrupt)
+		require.NoError(t, err)
+
+		return
+	}
 }
 
 func TestTrackStartedTerminalTaskDeliversImmediately(t *testing.T) {
@@ -596,8 +651,7 @@ func TestAgentTaskPanelItemsRefreshAndCancellation(t *testing.T) {
 	)
 	app := newAgentTaskBehaviorApp(t, stub)
 
-	items, err := app.agentTaskItems(t.Context())
-	require.NoError(t, err)
+	items := app.agentTaskItemsFromSnapshot()
 	require.Len(t, items, 1)
 	assert.Equal(t, behaviorTaskID, items[0].Value)
 	assert.Contains(t, items[0].Description, "working result")
@@ -620,8 +674,10 @@ func TestAgentTaskPanelItemsRefreshAndCancellation(t *testing.T) {
 
 	stub.listErr = errors.New("list failed")
 
+	before := len(app.transcript.History)
 	app.openAgentTasksPanel(t.Context())
-	assert.Contains(t, app.transcript.History[len(app.transcript.History)-1].Content, "list agent tasks")
+	assert.Len(t, app.transcript.History, before)
+	assert.Len(t, app.panel.Items(), 1)
 }
 
 func TestAgentTaskSummaryEnterInspectsSelectedSubagent(t *testing.T) {
@@ -1675,6 +1731,23 @@ func TestAgentTaskCommandPaths(t *testing.T) {
 	assert.Equal(t, "agents: none", app.transcript.History[len(app.transcript.History)-1].Content)
 }
 
+func TestAgentPanelPathsDoNotDuplicateSnapshotQueries(t *testing.T) {
+	t.Parallel()
+
+	task := behaviorAgentTask(behaviorTaskID, database.TaskRunning)
+	stub := newAgentTaskControllerStub(
+		map[string]*database.AgentTaskEntity{behaviorTaskID: &task},
+		[]database.AgentTaskEntity{task},
+	)
+	app := newAgentTaskBehaviorApp(t, stub)
+
+	app.openAgentTasksPanel(t.Context())
+	app.refreshAgentTasksPanel(t.Context())
+	_ = app.agentTaskItemsFromSnapshot()
+
+	assert.Equal(t, 0, stub.listCalls)
+}
+
 func TestRefreshAgentTasksPanelPreservesSelection(t *testing.T) {
 	t.Parallel()
 
@@ -1693,7 +1766,7 @@ func TestRefreshAgentTasksPanelPreservesSelection(t *testing.T) {
 	stub.listErr = errors.New("refresh failed")
 
 	app.refreshAgentTasksPanel(t.Context())
-	assert.Contains(t, app.statusMessage, "list agent tasks")
+	assert.Empty(t, app.statusMessage)
 }
 
 func TestAgentTaskRefreshAndCompletionBranchPaths(t *testing.T) {
@@ -1734,12 +1807,17 @@ func TestAgentTaskAsyncChangedRefreshesVisibleTasks(t *testing.T) {
 		map[string]*database.AgentTaskEntity{behaviorRunning: &running},
 		[]database.AgentTaskEntity{running},
 	)
-	app := newAgentTaskBehaviorApp(t, stub)
+	app, screen := newRefreshTestApp(t)
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = stub
+	})
 
 	app.handlePromptAsyncEvent(t.Context(), &asyncEvent{
 		Kind: asyncEventAgentTaskChanged, Text: behaviorRunning, Response: nil, ToolCallEvent: nil,
 		ToolEvent: nil, Usage: nil, Provider: "", PromptID: 0,
 	})
+
+	applyNextRefreshInterrupt(t, app, screen)
 	require.Len(t, app.agentTasks, 1)
 	assert.Equal(t, behaviorRunning, app.agentTasks[0].Task.ID)
 }
@@ -1797,9 +1875,9 @@ func TestAgentTaskFallbackAndErrorPaths(t *testing.T) {
 	assert.Empty(t, app.liveAgentCompletions)
 
 	app.runtime = nil
-	items, err := app.agentTaskItems(t.Context())
-	require.NoError(t, err)
-	assert.Nil(t, items)
+	app.agentTaskPanelSnapshot = nil
+	items := app.agentTaskItemsFromSnapshot()
+	assert.Empty(t, items)
 	app.refreshAgentTasksPanel(t.Context()) // no active panel is a no-op
 }
 

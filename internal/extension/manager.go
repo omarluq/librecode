@@ -63,20 +63,25 @@ type luaTimer struct {
 
 // Manager is the built-in Lua runtime adapter for the extension host.
 type Manager struct {
-	logger           *slog.Logger
+	diagnosticLast   map[string]time.Time
 	commands         map[string]luaCommand
 	tools            map[string]luaTool
 	handlers         map[string][]luaHookHandler
-	keymaps          []luaKeymap
+	logger           *slog.Logger
 	namespaces       map[string]int
 	canceledTimers   map[uint64]struct{}
-	moduleRoots      []string
-	timers           []luaTimer
+	diagnosticNow    func() time.Time
+	dispatchNow      func() time.Time
+	diagnosticDrops  map[string]int
+	keymaps          []luaKeymap
 	extensions       []*luaExtension
-	lock             sync.RWMutex
+	timers           []luaTimer
+	moduleRoots      []string
 	nextHandlerOrder uint64
 	nextTimerID      uint64
 	nextNamespaceID  int
+	lock             sync.RWMutex
+	diagnosticLock   sync.Mutex
 }
 
 // NewManager creates an empty Lua runtime adapter.
@@ -93,6 +98,11 @@ func NewManager(logger *slog.Logger) *Manager {
 		timers:           []luaTimer{},
 		extensions:       []*luaExtension{},
 		lock:             sync.RWMutex{},
+		diagnosticLock:   sync.Mutex{},
+		diagnosticLast:   map[string]time.Time{},
+		diagnosticDrops:  map[string]int{},
+		diagnosticNow:    time.Now,
+		dispatchNow:      time.Now,
 		nextHandlerOrder: 0,
 		nextTimerID:      1,
 		nextNamespaceID:  1,
