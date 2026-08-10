@@ -18,6 +18,8 @@ func (app *App) cloneSession(ctx context.Context, name string) error {
 		return terminalError(err, "clone session")
 	}
 
+	app.resetAgentTaskTracking()
+	app.agentTaskSessionStack = nil
 	app.sessionID = createdSession.ID
 	app.pendingParentID = nil
 	app.addSystemMessage("cloned session handle: " + createdSession.ID)

@@ -97,8 +97,15 @@ func (manager *Manager) NextTimerDelay(now time.Time) (time.Duration, bool) {
 	return nextDue.Sub(now), true
 }
 
-func (manager *Manager) runDueTimers(ctx context.Context, event *luaHostEvent, now time.Time) error {
+func (manager *Manager) runDueTimers(ctx context.Context, event *luaHostEvent, now time.Time) (dispatchErr error) {
 	due := manager.takeDueTimers(now)
+	if len(due) > 0 {
+		started := manager.dispatchNow()
+		defer func() {
+			manager.logDispatchDuration("timer", manager.dispatchNow().Sub(started), dispatchErr, len(due))
+		}()
+	}
+
 	for _, timer := range due {
 		if err := ctx.Err(); err != nil {
 			return extensionError(err, extensionCheckContextStep)

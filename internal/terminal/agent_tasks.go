@@ -52,19 +52,12 @@ func isTaskManagementTool(name string) bool {
 	return strings.HasPrefix(name, taskToolPrefix)
 }
 
-func (app *App) applyAgentToolEvent(event *assistant.ToolEvent) {
+func (app *App) applyAgentToolEvent(ctx context.Context, event *assistant.ToolEvent) {
 	if event == nil || event.IsError || app.runtime == nil || app.sessionID == "" {
 		return
 	}
 
-	if event.Name == agentStartToolName {
-		app.trackStartedAgentTask(context.Background(), event)
-		app.agentTasksRefreshedAt = time.Now()
-
-		return
-	}
-
-	app.refreshVisibleAgentTasks(context.Background())
+	app.requestTerminalRefresh(ctx)
 }
 
 func (app *App) trackStartedAgentTask(ctx context.Context, event *assistant.ToolEvent) {
@@ -116,13 +109,21 @@ func agentTaskIDFromDetails(detailsJSON string) string {
 
 func (app *App) resetAgentTaskTracking() {
 	app.stopAgentTaskWatches()
+	app.invalidateTerminalRefresh()
 	app.agentTasks = nil
+	app.toolTasks = nil
 	app.activeWorkflows = nil
+	app.agentTaskPanelSnapshot = nil
+	app.workflowPanelSnapshot = nil
+	app.agentTaskPanelSnapshotValid = false
+	app.workflowPanelSnapshotValid = false
+	app.workflowDetailSnapshotValid = false
 	app.workflowProgress = map[string]workflowProgress{}
 	app.workflowSteps = map[string][]database.WorkflowAgentTaskDetail{}
 	app.agentTaskUsageTotals = map[string]model.UsageTotals{}
 	app.workflowSummaryMetrics = map[string]workflowSummaryMetric{}
 	app.workflowSummaryRunID = ""
+	app.workflowPanelRunID = ""
 	app.agentTaskSummaryOwnerID = ""
 	app.inspectedAgentTaskID = ""
 	app.agentTasksRefreshedAt = time.Time{}
@@ -699,19 +700,17 @@ func (app *App) postAgentTaskWatchError(ctx context.Context, taskID, message str
 	})
 }
 
-func (app *App) handleAgentTaskWatchError(ctx context.Context, taskID, message string) {
+func (app *App) handleAgentTaskWatchError(_ context.Context, taskID, message string) {
 	app.addSystemMessage(message)
 
 	if len(app.agentTaskSessionStack) > 0 {
 		app.stopAgentTaskWatch(taskID)
-		app.reloadInspectedAgentTaskTranscript(ctx, taskID)
 
 		return
 	}
 
-	// Refresh while the failed watch is still registered so the refresh cannot
-	// immediately create another watcher that repeats the same replay failure.
-	app.refreshVisibleAgentTasks(ctx)
+	// Leave the failed watch stopped. The next periodic snapshot can retry it
+	// without recursively publishing another event from this handler.
 	app.stopAgentTaskWatch(taskID)
 }
 
@@ -723,36 +722,31 @@ func (app *App) postAgentTaskStreamEvent(ctx context.Context, event *database.Ta
 }
 
 func (app *App) handleAgentTaskTerminalEvent(ctx context.Context, taskID string) {
-	if app.inspectingWhilePromptRuns() && app.runtime != nil {
+	if len(app.agentTaskSessionStack) > 0 {
 		task, found, err := app.runtime.AgentTask(ctx, taskID)
-		if err == nil && found {
+		if err == nil && found && app.inspectingWhilePromptRuns() {
 			app.deliverAgentTaskCompletion(ctx, task)
 		}
-	}
 
-	if len(app.agentTaskSessionStack) == 0 {
-		app.refreshVisibleAgentTasks(ctx)
+		app.refreshInspectedParentAgentTask(ctx, taskID)
+		app.reloadInspectedAgentTaskTranscript(ctx, taskID)
 
 		return
 	}
 
-	app.refreshInspectedParentAgentTask(ctx, taskID)
-	app.reloadInspectedAgentTaskTranscript(ctx, taskID)
+	// Durable terminal state and completion data are reconciled by the coalesced
+	// worker. Never re-enter the repository from the normal summary event path.
+	app.requestTerminalRefresh(ctx)
 }
 
-func (app *App) applyInspectedAgentTaskEvent(ctx context.Context, taskID, payloadJSON string) {
+func (app *App) applyInspectedAgentTaskEvent(_ context.Context, taskID, payloadJSON string) {
 	if taskID == "" {
 		return
 	}
 
 	app.recordAgentTaskUsageTotals(taskID, payloadJSON)
 
-	if len(app.agentTaskSessionStack) == 0 || app.runtime == nil {
-		return
-	}
-
-	task, found, err := app.runtime.AgentTask(ctx, taskID)
-	if err != nil || !found || task.ChildSessionID != app.sessionID {
+	if len(app.agentTaskSessionStack) == 0 {
 		return
 	}
 
@@ -1072,7 +1066,7 @@ func (app *App) deliverAgentTaskCompletion(ctx context.Context, task *database.A
 	}
 
 	if !app.withSessionView(task.Task.OwnerSessionID, func() {
-		app.deliverAgentTaskCompletionText(ctx, task.Task.ID, completion)
+		app.deliverKnownAgentTaskCompletionText(ctx, task.Task.ID, completion)
 	}) {
 		app.setStatus("agent result owner view is unavailable")
 	}
@@ -1108,13 +1102,27 @@ func (app *App) deliverAgentTaskCompletionText(ctx context.Context, taskID, comp
 	}
 
 	workflowChild := app.isTrackedWorkflowChild(taskID) || app.isPersistedWorkflowChild(ctx, taskID)
-	app.discardAgentTaskCompletion(taskID)
+	app.finishAgentTaskCompletion(ctx, taskID, completion, workflowChild)
+}
 
-	if workflowChild {
+func (app *App) deliverKnownAgentTaskCompletionText(ctx context.Context, taskID, completion string) {
+	app.finishAgentTaskCompletion(ctx, taskID, completion, false)
+}
+
+func (app *App) finishAgentTaskCompletion(ctx context.Context, taskID, completion string, workflowChild bool) {
+	if taskID == "" || completion == "" {
 		return
 	}
 
-	app.deliverAgentTaskCompletions(ctx, []string{completion})
+	if _, delivered := app.deliveredAgentTasks[taskID]; delivered {
+		return
+	}
+
+	app.discardAgentTaskCompletion(taskID)
+
+	if !workflowChild {
+		app.deliverAgentTaskCompletions(ctx, []string{completion})
+	}
 }
 
 func (app *App) isTrackedWorkflowChild(taskID string) bool {
@@ -1745,13 +1753,7 @@ func fitSummaryIdentity(opening, flexible, identitySuffix, elapsed, token string
 }
 
 func (app *App) openAgentTasksPanel(ctx context.Context) {
-	items, err := app.agentTaskItems(ctx)
-	if err != nil {
-		app.addSystemMessage(err.Error())
-
-		return
-	}
-
+	items := app.agentTaskItemsFromSnapshot()
 	app.openPanel(panel.New(
 		panelAgentTasks,
 		"Agent Tasks",
@@ -1759,21 +1761,24 @@ func (app *App) openAgentTasksPanel(ctx context.Context) {
 		items,
 		true,
 	))
+
+	if !app.agentTaskPanelSnapshotValid {
+		app.requestTerminalRefresh(ctx)
+	}
 }
 
-func (app *App) refreshAgentTasksPanel(ctx context.Context) {
-	if app.selectedPanelKind != panelAgentTasks || app.panel == nil {
+func (app *App) refreshAgentTasksPanel(_ context.Context) {
+	app.refreshAgentTasksPanelFromSnapshot()
+}
+
+func (app *App) refreshAgentTasksPanelFromSnapshot() {
+	if app.selectedPanelKind != panelAgentTasks || app.panel == nil ||
+		!app.agentTaskPanelSnapshotValid {
 		return
 	}
 
 	selected, _ := app.panel.SelectedValue()
-
-	items, err := app.agentTaskItems(ctx)
-	if err != nil {
-		app.setStatus(err.Error())
-
-		return
-	}
+	items := app.agentTaskItemsFromSnapshot()
 
 	panelModel := panel.New(
 		panelAgentTasks,
@@ -1793,19 +1798,10 @@ func (app *App) refreshAgentTasksPanel(ctx context.Context) {
 	app.panel = panelModel
 }
 
-func (app *App) agentTaskItems(ctx context.Context) ([]tui.ListItem, error) {
-	if app.runtime == nil || app.sessionID == "" {
-		return nil, nil
-	}
-
-	tasks, err := app.runtime.AgentTasks(ctx, app.sessionID, agentTaskPanelLimit)
-	if err != nil {
-		return nil, terminalError(err, "list agent tasks")
-	}
-
-	items := make([]tui.ListItem, 0, len(tasks))
-	for index := range tasks {
-		task := &tasks[index].Task
+func (app *App) agentTaskItemsFromSnapshot() []tui.ListItem {
+	items := make([]tui.ListItem, 0, len(app.agentTaskPanelSnapshot))
+	for index := range app.agentTaskPanelSnapshot {
+		task := &app.agentTaskPanelSnapshot[index].Task
 		items = append(items, tui.ListItem{
 			Value:       task.ID,
 			Title:       taskTitle(task),
@@ -1814,7 +1810,7 @@ func (app *App) agentTaskItems(ctx context.Context) ([]tui.ListItem, error) {
 		})
 	}
 
-	return items, nil
+	return items
 }
 
 func taskTitle(task *database.TaskEntity) string {
@@ -1927,6 +1923,7 @@ func (app *App) switchToAgentTaskSession(
 	}
 
 	app.stopAgentTaskWatches()
+	app.invalidateTerminalRefresh()
 	app.saveSessionView()
 	app.agentTaskSessionStack = sessionStack
 
@@ -2026,6 +2023,7 @@ func (app *App) leaveAgentTaskSession(ctx context.Context) error {
 	}
 
 	app.stopAgentTaskWatches()
+	app.invalidateTerminalRefresh()
 	app.inspectedAgentTaskID = ""
 	app.saveSessionView()
 	app.agentTaskSessionStack = app.agentTaskSessionStack[:last]
@@ -2048,7 +2046,7 @@ func (app *App) leaveAgentTaskSession(ctx context.Context) error {
 	app.addSystemMessage("returned to parent session")
 
 	if len(app.agentTaskSessionStack) == 0 {
-		app.refreshVisibleAgentTasks(ctx)
+		app.requestTerminalRefresh(ctx)
 	} else {
 		app.resumeInspectedAgentTask(ctx, parentSessionID)
 	}

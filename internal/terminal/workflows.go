@@ -35,13 +35,7 @@ type workflowDetails struct {
 }
 
 func (app *App) openWorkflowsPanel(ctx context.Context) {
-	items, err := app.workflowItems(ctx)
-	if err != nil {
-		app.addSystemMessage(err.Error())
-
-		return
-	}
-
+	items := app.workflowItemsFromSnapshot()
 	app.workflowPanelRunID = ""
 	app.openPanel(panel.New(
 		panelWorkflows,
@@ -50,18 +44,24 @@ func (app *App) openWorkflowsPanel(ctx context.Context) {
 		items,
 		true,
 	))
+
+	if !app.workflowPanelSnapshotValid || !app.workflowDetailSnapshotValid {
+		app.requestTerminalRefresh(ctx)
+	}
 }
 
-func (app *App) refreshWorkflowsPanel(ctx context.Context) {
+func (app *App) refreshWorkflowsPanel(_ context.Context) {
+	app.refreshWorkflowsPanelFromSnapshot()
+}
+
+func (app *App) refreshWorkflowsPanelFromSnapshot() {
 	if app.selectedPanelKind != panelWorkflows || app.panel == nil {
 		return
 	}
 
 	if app.workflowPanelRunID != "" {
 		selected, hasSelection := app.panel.SelectedValue()
-		if err := app.openWorkflowDetail(ctx, app.workflowPanelRunID); err != nil {
-			app.setStatus(err.Error())
-
+		if err := app.openWorkflowDetailFromSnapshot(app.workflowPanelRunID); err != nil {
 			return
 		}
 
@@ -74,13 +74,11 @@ func (app *App) refreshWorkflowsPanel(ctx context.Context) {
 
 	selected, _ := app.panel.SelectedValue()
 
-	items, err := app.workflowItems(ctx)
-	if err != nil {
-		app.setStatus(err.Error())
-
+	if !app.workflowPanelSnapshotValid {
 		return
 	}
 
+	items := app.workflowItemsFromSnapshot()
 	app.panel = panel.New(panelWorkflows, "Workflows", "Enter inspects; Ctrl+C cancels", items, true)
 	app.restoreWorkflowPanelSelection(selected)
 }
@@ -95,31 +93,11 @@ func (app *App) restoreWorkflowPanelSelection(selected string) {
 	}
 }
 
-func (app *App) workflowItems(ctx context.Context) ([]tui.ListItem, error) {
-	if app.workflows == nil || app.sessionID == "" {
-		return []tui.ListItem{}, nil
-	}
-
-	runs, err := app.workflows.List(ctx, app.sessionID, workflowPanelLimit)
-	if err != nil {
-		return nil, terminalError(err, "list workflows")
-	}
-
-	runIDs := make([]string, len(runs))
-	for index := range runs {
-		runIDs[index] = runs[index].Task.ID
-	}
-
-	details, detailsErr := app.loadWorkflowDetails(ctx, runIDs)
-	if detailsErr != nil {
-		return nil, detailsErr
-	}
-
-	items := make([]tui.ListItem, 0, len(runs))
-	for index := range runs {
-		run := &runs[index]
-		progress := details.ProgressByRun[run.Task.ID]
-		app.workflowProgress[run.Task.ID] = progress
+func (app *App) workflowItemsFromSnapshot() []tui.ListItem {
+	items := make([]tui.ListItem, 0, len(app.workflowPanelSnapshot))
+	for index := range app.workflowPanelSnapshot {
+		run := &app.workflowPanelSnapshot[index]
+		progress := app.workflowProgress[run.Task.ID]
 
 		items = append(items, tui.ListItem{
 			Value:       workflowRunPrefix + run.Task.ID,
@@ -129,27 +107,28 @@ func (app *App) workflowItems(ctx context.Context) ([]tui.ListItem, error) {
 		})
 	}
 
-	return items, nil
+	return items
 }
 
-func (app *App) openWorkflowDetail(ctx context.Context, runID string) error {
-	if app.workflows == nil {
-		return errors.New("workflow runtime is not configured")
+func (app *App) openWorkflowDetail(_ context.Context, runID string) error {
+	return app.openWorkflowDetailFromSnapshot(runID)
+}
+
+func (app *App) openWorkflowDetailFromSnapshot(runID string) error {
+	run := workflowByID(app.workflowPanelSnapshot, runID)
+	if run == nil {
+		run = workflowByID(app.activeWorkflows, runID)
 	}
 
-	run, found, err := app.workflows.Get(ctx, runID)
-	if err != nil {
-		return terminalError(err, "load workflow")
-	}
-
-	if !found || run.Task.OwnerSessionID != app.sessionID {
+	if run == nil || run.Task.OwnerSessionID != app.sessionID {
 		return fmt.Errorf("workflow %q not found", runID)
 	}
 
-	details, err := app.workflows.AgentTaskDetails(ctx, []string{runID})
-	if err != nil {
-		return terminalError(err, "list workflow agent task details")
+	if !app.workflowDetailSnapshotValid {
+		return errors.New("workflow details are loading")
 	}
+
+	details := app.workflowSteps[runID]
 
 	items := make([]tui.ListItem, 0, len(details)+1)
 	items = append(items, tui.ListItem{
@@ -185,6 +164,16 @@ func (app *App) openWorkflowDetail(ctx context.Context, runID string) error {
 		items,
 		true,
 	))
+
+	return nil
+}
+
+func workflowByID(runs []database.WorkflowRunEntity, runID string) *database.WorkflowRunEntity {
+	for index := range runs {
+		if runs[index].Task.ID == runID {
+			return &runs[index]
+		}
+	}
 
 	return nil
 }
@@ -235,43 +224,7 @@ func (app *App) loadWorkflowDetails(
 	ctx context.Context,
 	runIDs []string,
 ) (workflowDetails, error) {
-	result := workflowDetails{
-		ProgressByRun: make(map[string]workflowProgress, len(runIDs)),
-		StepsByRun:    make(map[string][]database.WorkflowAgentTaskDetail, len(runIDs)),
-	}
-
-	for _, runID := range runIDs {
-		result.ProgressByRun[runID] = workflowProgress{
-			Total: 0, Succeeded: 0, Failed: 0, Running: 0,
-		}
-		result.StepsByRun[runID] = []database.WorkflowAgentTaskDetail{}
-	}
-
-	details, err := app.workflows.AgentTaskDetails(ctx, runIDs)
-	if err != nil {
-		return workflowDetails{}, terminalError(err, "list workflow agent task details")
-	}
-
-	for index := range details {
-		detail := details[index]
-		runID := detail.Link.WorkflowTaskID
-		result.StepsByRun[runID] = append(result.StepsByRun[runID], detail)
-		progress := result.ProgressByRun[runID]
-		progress.Total++
-
-		switch detail.AgentTask.Task.State {
-		case database.TaskSucceeded:
-			progress.Succeeded++
-		case database.TaskFailed, database.TaskCanceled, database.TaskInterrupted:
-			progress.Failed++
-		case database.TaskQueued, database.TaskRunning, database.TaskCanceling:
-			progress.Running++
-		}
-
-		result.ProgressByRun[runID] = progress
-	}
-
-	return result, nil
+	return loadWorkflowDetails(ctx, app.workflows, runIDs)
 }
 
 func workflowTitle(run *database.WorkflowRunEntity) string {

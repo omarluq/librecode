@@ -158,6 +158,12 @@ func (app *App) postAsyncEvent(ctx context.Context, event *asyncEvent) {
 }
 
 func (app *App) handleInterrupt(ctx context.Context, event *tcell.EventInterrupt) (bool, error) {
+	if result, ok := event.Data().(*terminalRefreshResult); ok {
+		app.applyTerminalRefresh(ctx, result)
+
+		return false, nil
+	}
+
 	payload, ok := event.Data().(*asyncEvent)
 	if !ok {
 		return false, nil
@@ -627,6 +633,10 @@ func (app *App) applyPromptUserEntry(_ context.Context, sessionID, entryID strin
 	app.bindPromptUserMessageEntryID(entryID)
 
 	if app.sessionID == previousSessionID {
+		if app.sessionID != sessionID {
+			app.invalidateTerminalRefresh()
+		}
+
 		app.sessionID = sessionID
 	}
 }
@@ -730,17 +740,17 @@ func (app *App) applyStreamedToolEvent(ctx context.Context, event *assistant.Too
 	}
 
 	if event.Name == workflowToolName && !event.IsError {
-		app.trackStartedWorkflow(ctx, event)
+		app.requestTerminalRefresh(ctx)
 	}
 
 	if isAgentManagementTool(event.Name) {
-		app.applyAgentToolEvent(event)
+		app.applyAgentToolEvent(ctx, event)
 
 		return
 	}
 
 	if isTaskManagementTool(event.Name) {
-		app.logToolTaskRefreshError(ctx, app.refreshToolTasks(ctx))
+		app.requestTerminalRefresh(ctx)
 	}
 
 	app.removeRunningToolBlock(event)

@@ -138,89 +138,101 @@ type RunOptions struct {
 
 // App is the terminal chat UI.
 type App struct {
-	extensionUI               extui.State
-	lastControlC              time.Time
-	workStartedAt             time.Time
-	agentTasksRefreshedAt     time.Time
-	lastEscape                time.Time
-	workflows                 workflowInspector
-	screen                    terminalScreen
-	extensions                extension.TerminalEventRunner
-	systemClipboard           systemClipboardWriter
-	imageClipboard            systemClipboardImageReader
-	activeCompaction          *activeCompactionState
-	activePrompt              *activePromptState
-	settings                  *database.DocumentRepository
-	models                    *model.Registry
-	auth                      *auth.Storage
-	cfg                       *config.Config
-	keys                      *keybindings
-	panel                     *panel.Model
-	pendingParentID           *string
-	agentTaskWatches          map[string]context.CancelFunc
-	agentTaskUsageTotals      map[string]model.UsageTotals
-	workflowSummaryMetrics    map[string]workflowSummaryMetric
-	workflowSteps             map[string][]database.WorkflowAgentTaskDetail
-	scopedEnabled             map[string]bool
-	lastResize                *tcell.EventResize
-	frame                     *tui.CellBuffer
-	workflowProgress          map[string]workflowProgress
-	runtime                   *assistant.Runtime
-	sessionViews              map[string]sessionViewState
-	deliveredAgentTasks       map[string]struct{}
-	deliveredToolTasks        map[string]struct{}
-	cancelToolTaskCompletions context.CancelFunc
-	renderer                  *tui.Renderer
-	theme                     terminalTheme
-	sessionID                 string
-	streamingThinkingText     string
-	cwd                       string
-	promptHistoryDraft        string
-	promptHistoryDraftImages  []imageAttachment
-	mode                      appMode
-	streamingText             string
-	statusMessage             string
-	agentTaskSummaryOwnerID   string
-	inspectedAgentTaskID      string
-	workflowPanelRunID        string
-	workflowSummaryRunID      string
-	selectedPanelKind         panel.Kind
-	resources                 core.ResourceSnapshot
-	runningToolBlocks         []runningToolBlock
-	composerImages            []imageAttachment
-	agentTasks                []database.AgentTaskEntity
-	toolTasks                 []database.ToolTaskEntity
-	liveAgentCompletions      []chatMessage
-	activeWorkflows           []database.WorkflowRunEntity
-	agentTaskSessionStack     []string
-	queuedMessages            []promptDraft
-	hiddenQueuedMessages      []promptDraft
-	promptHistory             []string
-	promptHistoryImages       [][]imageAttachment
-	scopedOrder               []string
-	composerBuffer            tui.TextArea
-	transcript                transcriptState
-	tokenUsage                model.TokenUsage
-	selection                 mouseSelection
-	transcriptList            transcriptListSelection
-	agentTaskSummarySelection agentTaskSummarySelection
-	promptSequence            uint64
-	autocompleteSelection     int
-	workFrame                 int
-	streamedToolEvents        int
-	escapePresses             int
-	promptHistoryIndex        int
-	scrollOffset              int
-	sessionNamedOnly          bool
-	autocompleteClosed        bool
-	bracketedPaste            bool
-	hideThinking              bool
-	working                   bool
-	compacting                bool
-	toolsExpanded             bool
-	authWorking               bool
-	sessionShowPath           bool
-	sessionSortRecent         bool
+	extensionUI                 extui.State
+	lastControlC                time.Time
+	workStartedAt               time.Time
+	agentTasksRefreshedAt       time.Time
+	lastEscape                  time.Time
+	workflows                   workflowInspector
+	screen                      terminalScreen
+	extensions                  extension.TerminalEventRunner
+	systemClipboard             systemClipboardWriter
+	imageClipboard              systemClipboardImageReader
+	pendingParentID             *string
+	scopedEnabled               map[string]bool
+	settings                    *database.DocumentRepository
+	models                      *model.Registry
+	auth                        *auth.Storage
+	cfg                         *config.Config
+	keys                        *keybindings
+	panel                       *panel.Model
+	activeCompaction            *activeCompactionState
+	agentTaskWatches            map[string]context.CancelFunc
+	agentTaskUsageTotals        map[string]model.UsageTotals
+	workflowSummaryMetrics      map[string]workflowSummaryMetric
+	workflowSteps               map[string][]database.WorkflowAgentTaskDetail
+	activePrompt                *activePromptState
+	lastResize                  *tcell.EventResize
+	frame                       *tui.CellBuffer
+	workflowProgress            map[string]workflowProgress
+	runtime                     *assistant.Runtime
+	sessionViews                map[string]sessionViewState
+	deliveredAgentTasks         map[string]struct{}
+	deliveredToolTasks          map[string]struct{}
+	cancelToolTaskCompletions   context.CancelFunc
+	renderer                    *tui.Renderer
+	refreshDiagnostics          *terminalRefreshDiagnostics
+	refreshLoader               terminalRefreshLoader
+	refreshCancel               context.CancelFunc
+	theme                       terminalTheme
+	workflowSummaryRunID        string
+	sessionID                   string
+	promptHistoryDraft          string
+	mode                        appMode
+	streamingText               string
+	statusMessage               string
+	agentTaskSummaryOwnerID     string
+	inspectedAgentTaskID        string
+	workflowPanelRunID          string
+	cwd                         string
+	selectedPanelKind           panel.Kind
+	streamingThinkingText       string
+	resources                   core.ResourceSnapshot
+	activeWorkflows             []database.WorkflowRunEntity
+	agentTaskPanelSnapshot      []database.AgentTaskEntity
+	scopedOrder                 []string
+	promptHistoryImages         [][]imageAttachment
+	promptHistory               []string
+	runningToolBlocks           []runningToolBlock
+	composerImages              []imageAttachment
+	agentTasks                  []database.AgentTaskEntity
+	toolTasks                   []database.ToolTaskEntity
+	liveAgentCompletions        []chatMessage
+	hiddenQueuedMessages        []promptDraft
+	workflowPanelSnapshot       []database.WorkflowRunEntity
+	promptHistoryDraftImages    []imageAttachment
+	agentTaskSessionStack       []string
+	queuedMessages              []promptDraft
+	composerBuffer              tui.TextArea
+	transcript                  transcriptState
+	tokenUsage                  model.TokenUsage
+	selection                   mouseSelection
+	transcriptList              transcriptListSelection
+	agentTaskSummarySelection   agentTaskSummarySelection
+	promptHistoryIndex          int
+	refreshGeneration           uint64
+	scrollOffset                int
+	refreshInFlightGeneration   uint64
+	promptSequence              uint64
+	autocompleteSelection       int
+	workFrame                   int
+	streamedToolEvents          int
+	escapePresses               int
+	sessionNamedOnly            bool
+	compacting                  bool
+	refreshPending              bool
+	autocompleteClosed          bool
+	bracketedPaste              bool
+	hideThinking                bool
+	working                     bool
+	refreshInFlight             bool
+	toolsExpanded               bool
+	authWorking                 bool
+	sessionShowPath             bool
+	sessionSortRecent           bool
+	agentTaskPanelSnapshotValid bool
+	workflowPanelSnapshotValid  bool
+	workflowDetailSnapshotValid bool
 }
 
 // Run starts an interactive tcell chat loop.
@@ -283,86 +295,100 @@ func newApp(screen terminalScreen, options *RunOptions) *App {
 }
 
 func newAppState(screen terminalScreen, options *RunOptions) *App {
-	return &App{
-		screen:                screen,
-		renderer:              tui.NewRenderer(screen),
-		frame:                 nil,
-		lastResize:            nil,
-		systemClipboard:       newDesktopClipboard(),
-		imageClipboard:        newDesktopClipboard(),
-		runtime:               options.Runtime,
-		workflows:             options.Workflows,
-		extensions:            options.Extensions,
-		settings:              options.Settings,
-		models:                options.Models,
-		auth:                  options.Auth,
-		cfg:                   options.Config,
-		keys:                  newDefaultKeybindings(),
-		theme:                 initialAppTheme(options),
-		resources:             initialResourceSnapshot(options),
-		mode:                  modeChat,
-		panel:                 nil,
-		cwd:                   options.CWD,
-		sessionID:             options.SessionID,
-		sessionViews:          map[string]sessionViewState{},
-		agentTaskSessionStack: []string{},
-		pendingParentID:       nil,
-		activePrompt:          nil,
-		activeCompaction:      nil,
-		transcript:            initialTranscriptState(),
-		runningToolBlocks:     []runningToolBlock{},
-		liveAgentCompletions:  []chatMessage{},
-		agentTasks:            []database.AgentTaskEntity{},
-		toolTasks:             []database.ToolTaskEntity{},
-		activeWorkflows:       []database.WorkflowRunEntity{},
-		workflowProgress:      map[string]workflowProgress{},
-		workflowSteps:         map[string][]database.WorkflowAgentTaskDetail{},
-		workflowSummaryRunID:  "", workflowPanelRunID: "",
-		agentTaskSummaryOwnerID: "",
-		inspectedAgentTaskID:    "",
-		agentTasksRefreshedAt:   time.Time{},
-		agentTaskWatches:        map[string]context.CancelFunc{},
-		agentTaskUsageTotals:    map[string]model.UsageTotals{},
-		workflowSummaryMetrics:  map[string]workflowSummaryMetric{},
-		deliveredAgentTasks:     map[string]struct{}{}, deliveredToolTasks: map[string]struct{}{},
-		cancelToolTaskCompletions: nil, queuedMessages: []promptDraft{},
-		hiddenQueuedMessages:     []promptDraft{},
-		promptHistory:            []string{},
-		promptHistoryImages:      [][]imageAttachment{},
-		promptHistoryDraft:       "",
-		promptHistoryDraftImages: nil,
-		autocompleteSelection:    0,
-		autocompleteClosed:       false,
-		composerBuffer:           tui.NewTextArea(),
-		composerImages:           []imageAttachment{},
-		bracketedPaste:           false,
-		scopedOrder:              []string{},
-		scopedEnabled:            map[string]bool{},
-		sessionSortRecent:        true,
-		sessionNamedOnly:         false,
-		sessionShowPath:          false,
-		authWorking:              false, toolsExpanded: false, hideThinking: false,
-		lastEscape:                time.Time{},
-		lastControlC:              time.Time{},
-		escapePresses:             0,
-		working:                   false,
-		compacting:                false,
-		workStartedAt:             time.Time{},
-		workFrame:                 0,
-		scrollOffset:              0,
-		selection:                 emptyMouseSelection(),
-		transcriptList:            emptyTranscriptListSelection(),
-		agentTaskSummarySelection: agentTaskSummarySelection{ItemIndex: 0, Active: false},
-		streamedToolEvents:        0,
-		promptHistoryIndex:        0,
-		promptSequence:            0,
-		statusMessage:             "",
-		tokenUsage:                model.EmptyTokenUsage(),
-		selectedPanelKind:         "",
-		streamingText:             "",
-		streamingThinkingText:     "",
-		extensionUI:               extui.NewState(),
-	}
+	app := newBaseAppState(screen, options)
+	initializeTerminalRefreshState(app)
+
+	return app
+}
+
+func newBaseAppState(screen terminalScreen, options *RunOptions) *App {
+	app := new(App)
+	initializeAppServices(app, screen, options)
+	initializeAppTaskState(app)
+	initializeAppViewState(app)
+	initializeAppInputState(app)
+	app.refreshDiagnostics = newTerminalRefreshDiagnostics()
+
+	return app
+}
+
+func initializeAppServices(app *App, screen terminalScreen, options *RunOptions) {
+	app.screen = screen
+	app.renderer = tui.NewRenderer(screen)
+	app.systemClipboard = newDesktopClipboard()
+	app.imageClipboard = newDesktopClipboard()
+	app.runtime = options.Runtime
+	app.workflows = options.Workflows
+	app.extensions = options.Extensions
+	app.settings = options.Settings
+	app.models = options.Models
+	app.auth = options.Auth
+	app.cfg = options.Config
+	app.keys = newDefaultKeybindings()
+	app.theme = initialAppTheme(options)
+	app.resources = initialResourceSnapshot(options)
+	app.cwd = options.CWD
+	app.sessionID = options.SessionID
+}
+
+func initializeAppTaskState(app *App) {
+	app.sessionViews = map[string]sessionViewState{}
+	app.agentTaskSessionStack = []string{}
+	app.runningToolBlocks = []runningToolBlock{}
+	app.liveAgentCompletions = []chatMessage{}
+	app.agentTasks = []database.AgentTaskEntity{}
+	app.toolTasks = []database.ToolTaskEntity{}
+	app.activeWorkflows = []database.WorkflowRunEntity{}
+	app.workflowProgress = map[string]workflowProgress{}
+	app.workflowSteps = map[string][]database.WorkflowAgentTaskDetail{}
+	app.agentTaskWatches = map[string]context.CancelFunc{}
+	app.agentTaskUsageTotals = map[string]model.UsageTotals{}
+	app.workflowSummaryMetrics = map[string]workflowSummaryMetric{}
+	app.deliveredAgentTasks = map[string]struct{}{}
+	app.deliveredToolTasks = map[string]struct{}{}
+	app.queuedMessages = []promptDraft{}
+	app.hiddenQueuedMessages = []promptDraft{}
+}
+
+func initializeAppViewState(app *App) {
+	app.scopedOrder = []string{}
+	app.scopedEnabled = map[string]bool{}
+	app.mode = modeChat
+	app.transcript = initialTranscriptState()
+	app.sessionSortRecent = true
+	app.selection = emptyMouseSelection()
+	app.transcriptList = emptyTranscriptListSelection()
+	app.agentTaskSummarySelection = agentTaskSummarySelection{ItemIndex: 0, Active: false}
+	app.tokenUsage = model.EmptyTokenUsage()
+	app.extensionUI = extui.NewState()
+}
+
+func initializeAppInputState(app *App) {
+	app.promptHistory = []string{}
+	app.promptHistoryImages = [][]imageAttachment{}
+	app.promptHistoryDraft = ""
+	app.promptHistoryDraftImages = nil
+	app.autocompleteSelection = 0
+	app.autocompleteClosed = false
+	app.composerBuffer = tui.NewTextArea()
+	app.composerImages = []imageAttachment{}
+	app.bracketedPaste = false
+	app.scopedOrder = []string{}
+	app.scopedEnabled = map[string]bool{}
+}
+
+func initializeTerminalRefreshState(app *App) {
+	app.refreshLoader = nil
+	app.refreshCancel = nil
+	app.refreshGeneration = 0
+	app.refreshInFlightGeneration = 0
+	app.refreshInFlight = false
+	app.refreshPending = false
+	app.agentTaskPanelSnapshot = []database.AgentTaskEntity{}
+	app.workflowPanelSnapshot = []database.WorkflowRunEntity{}
+	app.agentTaskPanelSnapshotValid = false
+	app.workflowPanelSnapshotValid = false
+	app.workflowDetailSnapshotValid = false
 }
 
 func initialTranscriptState() transcriptState {
@@ -462,10 +488,7 @@ func (app *App) runLoopStep(
 	case <-app.workTick(workTicker):
 		app.workFrame++
 		if time.Since(app.agentTasksRefreshedAt) >= agentTaskRefreshInterval {
-			app.refreshVisibleAgentTasks(ctx)
-			app.logToolTaskRefreshError(ctx, app.refreshToolTasks(ctx))
-			app.refreshAgentTasksPanel(ctx)
-			app.refreshWorkflowsPanel(ctx)
+			app.requestTerminalRefresh(ctx)
 		}
 
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})

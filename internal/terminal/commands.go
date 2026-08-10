@@ -189,6 +189,8 @@ func (app *App) newSession(ctx context.Context, name string) error {
 		return terminalError(err, "create session")
 	}
 
+	app.resetAgentTaskTracking()
+	app.agentTaskSessionStack = nil
 	app.sessionID = createdSession.ID
 	app.pendingParentID = nil
 	app.resetMessages()

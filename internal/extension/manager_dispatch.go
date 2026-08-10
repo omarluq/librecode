@@ -3,6 +3,7 @@ package extension
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -71,8 +72,29 @@ func (manager *Manager) ExecuteTool(ctx context.Context, name string, args tool.
 	return result.ToolResult(), nil
 }
 
+const (
+	extensionSlowDispatchThreshold = 100 * time.Millisecond
+	extensionDiagnosticWindow      = time.Minute
+	extensionDiagnosticAttributes  = 5
+)
+
 // HandleTerminalEvent runs registered low-level terminal runtime handlers.
-func (manager *Manager) HandleTerminalEvent(ctx context.Context, event *TerminalEvent) (TerminalEventResult, error) {
+func (manager *Manager) HandleTerminalEvent(
+	ctx context.Context,
+	event *TerminalEvent,
+) (TerminalEventResult, error) {
+	if event == nil || event.Name != "tick" && event.Name != "render" {
+		return manager.handleTerminalEvent(ctx, event)
+	}
+
+	started := manager.dispatchNow()
+	result, err := manager.handleTerminalEvent(ctx, event)
+	manager.logDispatchDuration(event.Name, manager.dispatchNow().Sub(started), err, 1)
+
+	return result, err
+}
+
+func (manager *Manager) handleTerminalEvent(ctx context.Context, event *TerminalEvent) (TerminalEventResult, error) {
 	hostEvent := newLuaHostEvent(event)
 	if err := manager.runDueTimers(ctx, hostEvent, time.Now()); err != nil {
 		return hostEvent.result(), err
@@ -202,4 +224,50 @@ func callLuaPrepared(
 
 func recordLuaCallDuration(extensionRuntime *luaExtension, startedAt time.Time) {
 	extensionRuntime.totalDuration.Add(int64(time.Since(startedAt)))
+}
+
+func (manager *Manager) logDispatchDuration(
+	operation string,
+	duration time.Duration,
+	err error,
+	count int,
+) {
+	outcome := "success"
+	if err != nil {
+		outcome = "error"
+	}
+
+	attributes := make([]any, 0, extensionDiagnosticAttributes)
+	attributes = append(attributes,
+		slog.String("operation", operation),
+		slog.Duration("duration", duration),
+		slog.String("outcome", outcome),
+		slog.Int("count", count),
+	)
+	manager.logger.Debug("extension callback dispatch", attributes...)
+
+	if duration < extensionSlowDispatchThreshold {
+		return
+	}
+
+	key := operation + ":" + outcome
+
+	manager.diagnosticLock.Lock()
+	now := manager.diagnosticNow()
+
+	last := manager.diagnosticLast[key]
+	if !last.IsZero() && now.Sub(last) < extensionDiagnosticWindow {
+		manager.diagnosticDrops[key]++
+		manager.diagnosticLock.Unlock()
+
+		return
+	}
+
+	suppressed := manager.diagnosticDrops[key]
+	manager.diagnosticLast[key] = now
+	manager.diagnosticDrops[key] = 0
+	manager.diagnosticLock.Unlock()
+
+	attributes = append(attributes, slog.Int("suppressed_count", suppressed))
+	manager.logger.Warn("extension callback dispatch slow", attributes...)
 }

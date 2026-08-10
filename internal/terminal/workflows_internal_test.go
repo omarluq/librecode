@@ -20,6 +20,8 @@ type workflowPanelInspector struct {
 	cancelCall    *workflowCancelCall
 	links         []database.WorkflowAgentTaskEntity
 	detailCalls   [][]string
+	listCalls     int
+	getCalls      int
 	getFails      bool
 	linksFail     bool
 	cancelChanged bool
@@ -33,7 +35,8 @@ type workflowCancelCall struct {
 func newWorkflowPanelInspector() *workflowPanelInspector {
 	return &workflowPanelInspector{
 		run: nil, tasks: map[string]*database.AgentTaskEntity{}, links: nil, cancelCall: nil,
-		detailCalls: nil, getFails: false, linksFail: false, cancelChanged: false,
+		detailCalls: nil, listCalls: 0, getCalls: 0, getFails: false,
+		linksFail: false, cancelChanged: false,
 	}
 }
 
@@ -41,6 +44,7 @@ func (stub *workflowPanelInspector) Get(
 	context.Context,
 	string,
 ) (*database.WorkflowRunEntity, bool, error) {
+	stub.getCalls++
 	if stub.getFails {
 		return nil, false, assert.AnError
 	}
@@ -53,6 +57,7 @@ func (stub *workflowPanelInspector) List(
 	string,
 	int,
 ) ([]database.WorkflowRunEntity, error) {
+	stub.listCalls++
 	if stub.run == nil {
 		return []database.WorkflowRunEntity{}, nil
 	}
@@ -121,6 +126,22 @@ func (stub *workflowPanelInspector) AgentTaskDetails(
 	return details, nil
 }
 
+func seedWorkflowPanelSnapshot(app *App, stub *workflowPanelInspector) {
+	if stub == nil || stub.run == nil {
+		return
+	}
+
+	app.workflowPanelSnapshot = []database.WorkflowRunEntity{*stub.run}
+	app.workflowPanelSnapshotValid = true
+
+	details, err := loadWorkflowDetails(context.Background(), stub, []string{stub.run.Task.ID})
+	if err == nil {
+		app.workflowProgress = details.ProgressByRun
+		app.workflowSteps = details.StepsByRun
+		app.workflowDetailSnapshotValid = true
+	}
+}
+
 func (stub *workflowPanelInspector) Cancel(
 	_ context.Context,
 	ownerSessionID string,
@@ -150,9 +171,9 @@ func TestWorkflowItemsDescribeAgentProgress(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.sessionID = workflowTestSessionID
 	app.workflows = stub
+	seedWorkflowPanelSnapshot(app, stub)
 
-	items, err := app.workflowItems(t.Context())
-	require.NoError(t, err)
+	items := app.workflowItemsFromSnapshot()
 	require.Len(t, items, 1)
 	assert.Equal(t, workflowRunPrefix+run.Task.ID, items[0].Value)
 	assert.Contains(t, items[0].Title, "active review")
@@ -180,6 +201,7 @@ func TestWorkflowPanelNavigation(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.sessionID = workflowTestSessionID
 	app.workflows = stub
+	seedWorkflowPanelSnapshot(app, stub)
 
 	app.openWorkflowsPanel(t.Context())
 	require.Equal(t, panelWorkflows, app.selectedPanelKind)
@@ -220,6 +242,7 @@ func TestWorkflowDetailRefreshPreservesSelection(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.sessionID = workflowTestSessionID
 	app.workflows = stub
+	seedWorkflowPanelSnapshot(app, stub)
 	require.NoError(t, app.openWorkflowDetail(t.Context(), run.Task.ID))
 	app.panel.SetSelectedIndex(2)
 
@@ -230,6 +253,7 @@ func TestWorkflowDetailRefreshPreservesSelection(t *testing.T) {
 	assert.Equal(t, workflowTaskPrefix+second.Task.ID, selected)
 
 	stub.links = stub.links[:1]
+	seedWorkflowPanelSnapshot(app, stub)
 
 	app.refreshWorkflowsPanel(t.Context())
 	selected, hasSelection = app.panel.SelectedValue()
@@ -259,6 +283,7 @@ func TestWorkflowPanelCancellation(t *testing.T) {
 			app := newRenderTestApp(t)
 			app.sessionID = workflowTestSessionID
 			app.workflows = stub
+			seedWorkflowPanelSnapshot(app, stub)
 			app.openWorkflowsPanel(t.Context())
 
 			if test.detail {
@@ -279,37 +304,43 @@ func TestWorkflowPanelCancellation(t *testing.T) {
 	}
 }
 
-func TestOpenWorkflowDetailRejectsInvalidRuns(t *testing.T) {
+func TestWorkflowPanelPathsDoNotDuplicateSnapshotQueries(t *testing.T) {
 	t.Parallel()
 
-	foreign := workflowSummaryRun("foreign", database.TaskRunning)
-	foreign.Task.OwnerSessionID = workflowTestForeignSession
+	run := workflowSummaryRun("run-1", database.TaskRunning)
+	stub := inspectorWithRun(&run)
+	app := newRenderTestApp(t)
+	app.sessionID = workflowTestSessionID
+	app.workflows = stub
+	seedWorkflowPanelSnapshot(app, stub)
+	calls := len(stub.detailCalls)
 
-	tests := []struct {
-		name      string
-		workflows workflowInspector
-		wantError string
-	}{
-		{name: "runtime unavailable", workflows: nil, wantError: "not configured"},
-		{name: "load failure", workflows: inspectorWithGetError(), wantError: "load workflow"},
-		{name: "missing run", workflows: newWorkflowPanelInspector(), wantError: workflowNotFound},
-		{name: "foreign run", workflows: inspectorWithRun(&foreign), wantError: workflowNotFound},
-		{name: "links failure", workflows: inspectorWithLinksError(), wantError: "list workflow agent task details"},
-	}
+	app.openWorkflowsPanel(t.Context())
+	require.NoError(t, app.openWorkflowDetail(t.Context(), run.Task.ID))
+	app.refreshWorkflowsPanel(t.Context())
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+	assert.Equal(t, 0, stub.listCalls)
+	assert.Equal(t, 0, stub.getCalls)
+	assert.Len(t, stub.detailCalls, calls)
+}
 
-			app := newRenderTestApp(t)
-			app.sessionID = workflowTestSessionID
-			app.workflows = test.workflows
+func TestOpenWorkflowDetailRequiresSnapshot(t *testing.T) {
+	t.Parallel()
 
-			err := app.openWorkflowDetail(t.Context(), "run-1")
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), test.wantError)
-		})
-	}
+	app := newRenderTestApp(t)
+	app.sessionID = workflowTestSessionID
+	err := app.openWorkflowDetail(t.Context(), "run-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), workflowNotFound)
+
+	run := workflowSummaryRun("run-1", database.TaskRunning)
+	stub := inspectorWithRun(&run)
+	app.workflows = stub
+	app.workflowPanelSnapshot = []database.WorkflowRunEntity{run}
+	app.workflowPanelSnapshotValid = true
+	err = app.openWorkflowDetail(t.Context(), run.Task.ID)
+	require.ErrorContains(t, err, "loading")
+	assert.Empty(t, stub.detailCalls)
 }
 
 func workflowLink(runID, taskID, nodeKey string, invocationIndex int) database.WorkflowAgentTaskEntity {
@@ -319,24 +350,9 @@ func workflowLink(runID, taskID, nodeKey string, invocationIndex int) database.W
 	}
 }
 
-func inspectorWithGetError() *workflowPanelInspector {
-	stub := newWorkflowPanelInspector()
-	stub.getFails = true
-
-	return stub
-}
-
 func inspectorWithRun(run *database.WorkflowRunEntity) *workflowPanelInspector {
 	stub := newWorkflowPanelInspector()
 	stub.run = run
-
-	return stub
-}
-
-func inspectorWithLinksError() *workflowPanelInspector {
-	run := workflowSummaryRun("run-1", database.TaskRunning)
-	stub := inspectorWithRun(&run)
-	stub.linksFail = true
 
 	return stub
 }
