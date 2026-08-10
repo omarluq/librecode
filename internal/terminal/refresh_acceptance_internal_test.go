@@ -207,10 +207,12 @@ func TestTerminalRefreshCancellationWhileRuntimeLoadIsBlocked(t *testing.T) {
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	app.requestTerminalRefresh(ctx)
+	done := app.requestTerminalRefresh(ctx)
+	require.NotNil(t, done)
 	awaitSignal(t, started, "refresh did not enter Runtime.AgentTasks")
 	cancel()
 	awaitSignal(t, stub.exited, "Runtime.AgentTasks did not return after application cancellation")
+	awaitSignal(t, done, "refresh worker did not finish after application cancellation")
 
 	select {
 	case event := <-screen.EventQ():
@@ -249,25 +251,42 @@ func TestTerminalRefreshPublicationStopsWithScreen(t *testing.T) {
 	t.Parallel()
 
 	app, screen := newRefreshTestApp(t)
-	for index := 0; index < cap(screen.EventQ()); index++ {
-		screen.EventQ() <- tcell.NewEventInterrupt(index)
+	close(screen.stop)
+
+	postTerminalRefreshResult(t.Context(), app.screen, &terminalRefreshResult{
+		Snapshot: newTerminalRefreshSnapshot(""), SessionID: "", Timing: terminalRefreshTiming{
+			Total: 0, AgentTasks: 0, AgentPanel: 0, ToolTasks: 0,
+			Workflows: 0, Details: 0, WorkflowPanel: 0,
+		},
+		Generation: 0, TimedOut: false, Canceled: false,
+	})
+
+	select {
+	case event := <-screen.EventQ():
+		t.Fatalf("stopped screen received refresh event %T", event)
+	default:
 	}
+}
 
-	done := make(chan struct{})
+func TestTerminalRefreshPublicationHandlesClosedEventQueue(t *testing.T) {
+	t.Parallel()
 
-	go func() {
-		postTerminalRefreshResult(t.Context(), app.screen, &terminalRefreshResult{
+	events := make(chan tcell.Event)
+	close(events)
+
+	posted := postTerminalRefreshEvent(
+		t.Context(),
+		events,
+		nil,
+		tcell.NewEventInterrupt(&terminalRefreshResult{
 			Snapshot: newTerminalRefreshSnapshot(""), SessionID: "", Timing: terminalRefreshTiming{
 				Total: 0, AgentTasks: 0, AgentPanel: 0, ToolTasks: 0,
 				Workflows: 0, Details: 0, WorkflowPanel: 0,
 			},
 			Generation: 0, TimedOut: false, Canceled: false,
-		})
-		close(done)
-	}()
-
-	close(screen.stop)
-	awaitSignal(t, done, "blocked refresh publication did not stop with the screen")
+		}),
+	)
+	assert.False(t, posted)
 }
 
 func TestTerminalRefreshLatestStateCoalescing(t *testing.T) {
