@@ -4,6 +4,7 @@ package assistant
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -15,10 +16,12 @@ import (
 )
 
 const (
-	promptPersistenceTimeout  = 5 * time.Second
-	promptCanceledMessage     = "[system] response canceled by user"
-	toolCallCanceledMessage   = "tool call canceled by user"
-	toolCallIncompleteMessage = "tool call did not complete"
+	minimumPromptPersistenceTimeout = 5 * time.Second
+	promptPersistenceBusyAttempts   = 3
+	promptPersistenceGracePeriod    = time.Second
+	promptCanceledMessage           = "[system] response canceled by user"
+	toolCallCanceledMessage         = "tool call canceled by user"
+	toolCallIncompleteMessage       = "tool call did not complete"
 )
 
 type partialPromptBlock struct {
@@ -125,10 +128,7 @@ func (runtime *Runtime) respondWithPartialProgress(
 			err,
 		)
 		if persistErr != nil {
-			return nil, false, oops.
-				In("assistant").
-				Code("persist_failed_prompt").
-				Wrapf(persistErr, "persist failed prompt progress")
+			return nil, false, failedPromptError(err, persistErr)
 		}
 
 		return nil, false, err
@@ -137,6 +137,14 @@ func (runtime *Runtime) respondWithPartialProgress(
 	bundle.ToolEvents = mergeNestedToolEvents(bundle.ToolEvents, progress.completedNestedTools)
 
 	return bundle, cached, nil
+}
+
+func failedPromptError(promptErr, persistErr error) error {
+	return errors.Join(
+		promptErr,
+		oops.In("assistant").Code("persist_failed_prompt").
+			Wrapf(persistErr, "persist failed prompt progress"),
+	)
 }
 
 type nestedToolEventMerger struct {
@@ -350,8 +358,56 @@ func (progress *partialPromptProgress) append(role transcript.Role, content stri
 	progress.blocks = append(progress.blocks, partialPromptBlock{Role: role, Content: content})
 }
 
-func promptPersistenceContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(ctx), promptPersistenceTimeout)
+func (runtime *Runtime) promptPersistenceContext(
+	ctx context.Context,
+	writeOperations int,
+) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(
+		context.WithoutCancel(ctx),
+		promptPersistenceTimeout(runtime.cfg.Database.BusyTimeout, writeOperations),
+	)
+}
+
+func promptPersistenceTimeout(busyTimeout time.Duration, writeOperations int) time.Duration {
+	perWriteTimeout := minimumPromptPersistenceTimeout
+
+	if busyTimeout > 0 {
+		maximumBusyTimeout := (time.Duration(math.MaxInt64) - promptPersistenceGracePeriod) /
+			promptPersistenceBusyAttempts
+		if busyTimeout > maximumBusyTimeout {
+			return time.Duration(math.MaxInt64)
+		}
+
+		perWriteTimeout = max(
+			minimumPromptPersistenceTimeout,
+			busyTimeout*promptPersistenceBusyAttempts+promptPersistenceGracePeriod,
+		)
+	}
+
+	// Each append may make three full attempts after SQLite reports contention.
+	// A persistence phase can append several messages, so reserve that complete
+	// retry window for every independently committed write.
+	writeOperations = max(writeOperations, 1)
+	if perWriteTimeout > time.Duration(math.MaxInt64)/time.Duration(writeOperations) {
+		return time.Duration(math.MaxInt64)
+	}
+
+	return perWriteTimeout * time.Duration(writeOperations)
+}
+
+func assistantBundleWriteCount(bundle *responseBundle) int {
+	if bundle == nil {
+		return 1
+	}
+
+	writeCount := len(bundle.ToolEvents) + 1
+	for _, thinking := range bundle.Thinking {
+		if strings.TrimSpace(thinking) != "" {
+			writeCount++
+		}
+	}
+
+	return writeCount
 }
 
 func (runtime *Runtime) appendPartialPromptFailure(
@@ -361,14 +417,16 @@ func (runtime *Runtime) appendPartialPromptFailure(
 	progress *partialPromptProgress,
 	promptErr error,
 ) error {
-	persistCtx, cancel := promptPersistenceContext(ctx)
+	messages := progress.failureMessages(promptErr)
+	persistCtx, cancel := runtime.promptPersistenceContext(ctx, len(messages))
+
 	defer cancel()
 
 	_, err := runtime.appendPartialPromptMessages(
 		persistCtx,
 		sessionID,
 		&userEntryID,
-		progress.failureMessages(promptErr),
+		messages,
 	)
 
 	return err

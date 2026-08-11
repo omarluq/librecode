@@ -219,10 +219,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 
 	runtime.dispatchPromptInputLifecycle(ctx, request)
 
-	persistCtx, persistCancel := promptPersistenceContext(ctx)
-	defer persistCancel()
-
-	activeSession, sessionEvent, err := runtime.resolveSession(persistCtx, request)
+	activeSession, sessionEvent, err := runtime.resolveSessionWithPersistence(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +234,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 
 	runtime.dispatchObservationalLifecycle(ctx, sessionEvent, lifecyclepayload.Session(activeSession))
 
-	userEntry, parentID, err := runtime.appendPromptUserEntry(persistCtx, activeSession, request)
+	userEntry, parentID, err := runtime.appendPromptUserEntryWithPersistence(ctx, activeSession, request)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +255,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 
 	compactedBeforeRequest := lineage.activeParentEntryID != userEntry.ID
 
-	assistantEntry, err := runtime.persistAssistantBundle(ctx, activeSession.ID, lineage, bundle)
+	assistantEntry, err := runtime.persistAssistantBundleWithPersistence(ctx, activeSession.ID, lineage, bundle)
 	if err != nil {
 		return nil, err
 	}
@@ -286,10 +283,43 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	}, nil
 }
 
+func (runtime *Runtime) resolveSessionWithPersistence(
+	ctx context.Context,
+	request *PromptRequest,
+) (*database.SessionEntity, extension.LifecycleEventName, error) {
+	persistCtx, cancel := runtime.promptPersistenceContext(ctx, 1)
+	defer cancel()
+
+	return runtime.resolveSession(persistCtx, request)
+}
+
+func (runtime *Runtime) appendPromptUserEntryWithPersistence(
+	ctx context.Context,
+	activeSession *database.SessionEntity,
+	request *PromptRequest,
+) (*database.EntryEntity, *string, error) {
+	persistCtx, cancel := runtime.promptPersistenceContext(ctx, 1)
+	defer cancel()
+
+	return runtime.appendPromptUserEntry(persistCtx, activeSession, request)
+}
+
 func (runtime *Runtime) dispatchPromptInputLifecycle(ctx context.Context, request *PromptRequest) {
 	payload := lifecyclepayload.Prompt(lifecyclePromptRequest(request))
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecycleInput, payload)
 	runtime.dispatchObservationalLifecycle(ctx, extension.LifecyclePromptPrepare, payload)
+}
+
+func (runtime *Runtime) persistAssistantBundleWithPersistence(
+	ctx context.Context,
+	sessionID string,
+	lineage *promptLineage,
+	bundle *responseBundle,
+) (*database.EntryEntity, error) {
+	persistCtx, cancel := runtime.promptPersistenceContext(ctx, assistantBundleWriteCount(bundle))
+	defer cancel()
+
+	return runtime.persistAssistantBundle(persistCtx, sessionID, lineage, bundle)
 }
 
 func (runtime *Runtime) persistAssistantBundle(

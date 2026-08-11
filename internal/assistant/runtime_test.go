@@ -454,6 +454,30 @@ func TestRuntime_PromptPersistsPartialProgressWhenRequestContextIsCanceled(t *te
 	assertPersistedPartialFailure(t, repository, request.SessionID)
 }
 
+func TestRuntime_PromptPersistsSuccessfulResponseWhenRequestContextIsCanceled(t *testing.T) {
+	t.Parallel()
+
+	runtime, repository := newTestRuntime(t)
+	request := newRuntimePromptRequest(testRuntimeCWD, "succeed after cancel", "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	request.OnEvent = func(event assistant.StreamEvent) {
+		if event.Kind == assistant.StreamEventTextDelta {
+			cancel()
+		}
+	}
+
+	response, err := runtime.Prompt(ctx, request)
+
+	require.NoError(t, err)
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	messages := requireRuntimeMessages(t, repository, request.SessionID, 2)
+	assert.Equal(t, response.Text, messages[1].Content)
+	assert.Equal(t, database.RoleAssistant, messages[1].Role)
+}
+
 func TestRuntime_PromptPersistsToolProgressOnFailure(t *testing.T) {
 	t.Parallel()
 
