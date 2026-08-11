@@ -146,7 +146,9 @@ func (repository *WorkflowRepository) Create(
 			return oops.In("database").Code("insert_workflow_run").Wrapf(err, "insert workflow run")
 		}
 
-		err := insertTaskEvent(ctx, transaction, eventID, created.Task.ID, 1, "task_queued", "{}", now)
+		err := insertTaskEvent(ctx, transaction, &taskEventInsert{
+			createdAt: now, id: eventID, taskID: created.Task.ID,
+			kind: taskQueuedEvent, payload: "{}", sequence: 1})
 
 		return err
 	}); err != nil {

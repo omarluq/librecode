@@ -13,11 +13,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/testutil"
@@ -35,12 +38,22 @@ type soakResult struct {
 	Count  int    `json:"count,omitempty"`
 }
 
+type soakScanResult struct {
+	err  error
+	line string
+}
+
 type soakProcess struct {
-	command *exec.Cmd
-	stdin   io.WriteCloser
-	scanner *bufio.Scanner
-	cancel  context.CancelFunc
-	stderr  strings.Builder
+	command   *exec.Cmd
+	stdin     io.WriteCloser
+	lines     chan soakScanResult
+	scanDone  chan struct{}
+	cancel    context.CancelFunc
+	stdinErr  error
+	waitErr   error
+	stderr    strings.Builder
+	stdinOnce sync.Once
+	waitOnce  sync.Once
 }
 
 type soakFixture struct {
@@ -65,7 +78,7 @@ func TestSQLiteContentionMultiProcessSoak(t *testing.T) {
 	}
 
 	if runtime.GOOS != "linux" {
-		t.Skip("multi-process SQLite contention soak requires /proc/self/exe")
+		t.Skip("multi-process SQLite contention soak requires Linux process isolation")
 	}
 
 	fixture := newSoakFixture(t)
@@ -117,12 +130,9 @@ func runConcurrentAppendSoak(t *testing.T, environment map[string]string) {
 		appenders[index] = startSoakProcess(t, environment, "append", fmt.Sprintf("writer-%d", index))
 	}
 
-	for _, process := range appenders {
-		process.release(t)
-	}
-
-	for _, process := range appenders {
-		assert.Equal(t, soakResult{Status: "ok", Count: 4}, process.result(t))
+	results := releaseAndCollectResults(t, appenders)
+	for _, result := range results {
+		assert.Equal(t, soakResult{Status: "ok", Count: 4}, result)
 	}
 }
 
@@ -148,34 +158,54 @@ func startSoakProcesses(t *testing.T, environment map[string]string, mode string
 func releaseAndCollect(t *testing.T, processes []*soakProcess) []string {
 	t.Helper()
 
-	for _, process := range processes {
-		process.release(t)
-	}
+	results := releaseAndCollectResults(t, processes)
+	statuses := make([]string, len(results))
 
-	statuses := make([]string, len(processes))
-	for index, process := range processes {
-		statuses[index] = process.result(t).Status
+	for index := range results {
+		statuses[index] = results[index].Status
 	}
 
 	return statuses
 }
 
+// releaseAndCollectResults uses a second barrier so every helper has consumed
+// its initial release before any helper starts its database operation.
+func releaseAndCollectResults(t *testing.T, processes []*soakProcess) []soakResult {
+	t.Helper()
+
+	for _, process := range processes {
+		process.startOperation(t)
+	}
+
+	for _, process := range processes {
+		process.awaitOperationStart(t)
+	}
+
+	for _, process := range processes {
+		process.releaseOperation(t)
+	}
+
+	results := make([]soakResult, len(processes))
+	for index, process := range processes {
+		results[index] = process.result(t)
+	}
+
+	return results
+}
+
 func runLifecycleSoak(t *testing.T, environment map[string]string) {
 	t.Helper()
 	recovery := startSoakProcess(t, environment, "recover", "")
-	recovery.release(t)
-	assert.Equal(t, soakResult{Status: "ok", Count: 1}, recovery.result(t))
+	assert.Equal(t, soakResult{Status: "ok", Count: 1}, releaseAndCollectResults(t, []*soakProcess{recovery})[0])
 
 	locker := startSoakProcess(t, environment, "lock", "")
 	canceled := startSoakProcess(t, environment, "cancel", "")
-	canceled.release(t)
-	assert.Equal(t, "canceled", canceled.result(t).Status)
-	locker.release(t)
+	assert.Equal(t, "canceled", releaseAndCollectResults(t, []*soakProcess{canceled})[0].Status)
+	locker.releaseOperation(t)
 	assert.Equal(t, "unlocked", locker.result(t).Status)
 
 	shutdown := startSoakProcess(t, environment, "shutdown", "")
-	shutdown.release(t)
-	assert.Equal(t, "closed", shutdown.result(t).Status)
+	assert.Equal(t, "closed", releaseAndCollectResults(t, []*soakProcess{shutdown})[0].Status)
 }
 
 func assertSoakState(t *testing.T, fixture *soakFixture) {
@@ -243,16 +273,13 @@ func runSQLiteSoakHelper(mode, argument string) (resultErr error) {
 	}
 	defer func() { resultErr = errors.Join(resultErr, closeSoakConnection(connection)) }()
 
+	stdin := bufio.NewReader(os.Stdin)
 	if mode == "lock" {
-		return runSoakLock(ctx, connection)
+		return runSoakLock(ctx, connection, stdin)
 	}
 
-	if readyErr := signalSoakReady(); readyErr != nil {
-		return readyErr
-	}
-
-	if releaseErr := awaitSoakRelease(); releaseErr != nil {
-		return releaseErr
+	if barrierErr := awaitSoakOperationBarrier(stdin); barrierErr != nil {
+		return barrierErr
 	}
 
 	sessions, err := database.NewSessionRepository(connection)
@@ -270,13 +297,23 @@ func runSQLiteSoakHelper(mode, argument string) (resultErr error) {
 		return err
 	}
 
-	if mode != "shutdown" {
-		if err = connection.Close(); err != nil {
-			return fmt.Errorf("close soak database: %w", err)
-		}
+	return writeSoakResult(result)
+}
+
+func awaitSoakOperationBarrier(stdin *bufio.Reader) error {
+	if err := signalSoakReady(); err != nil {
+		return err
 	}
 
-	return writeSoakResult(result)
+	if err := awaitSoakRelease(stdin); err != nil {
+		return err
+	}
+
+	if err := signalSoakOperationStart(); err != nil {
+		return err
+	}
+
+	return awaitSoakRelease(stdin)
 }
 
 func executeSoakMode(
@@ -368,11 +405,21 @@ func runCancelSoak(ctx context.Context, sessions *database.SessionRepository) (s
 	defer cancel()
 
 	_, err := sessions.CreateSession(cancelContext, os.TempDir(), "must cancel", "")
-	if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+	if !isSoakCancellation(err) {
 		return soakResult{Status: "", Count: 0}, fmt.Errorf("expected context cancellation, got %w", err)
 	}
 
 	return soakResult{Status: "canceled", Count: 0}, nil
+}
+
+func isSoakCancellation(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+
+	var sqliteErr *sqlite.Error
+
+	return errors.As(err, &sqliteErr) && sqliteErr.Code()&sqliteTestPrimaryCodeMask == sqlite3.SQLITE_INTERRUPT
 }
 
 func runShutdownSoak(
@@ -394,14 +441,19 @@ func runShutdownSoak(
 	return soakResult{Status: "closed", Count: 0}, nil
 }
 
-func runSoakLock(ctx context.Context, connection *sql.DB) (resultErr error) {
+func runSoakLock(ctx context.Context, connection *sql.DB, stdin *bufio.Reader) (resultErr error) {
 	transaction, err := connection.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin soak lock transaction: %w", err)
 	}
-	defer func() { resultErr = errors.Join(resultErr, rollbackSoakTransaction(transaction)) }()
+	defer func() {
+		rollbackErr := transaction.Rollback()
+		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			resultErr = errors.Join(resultErr, fmt.Errorf("rollback soak lock transaction: %w", rollbackErr))
+		}
+	}()
 
-	if _, err = transaction.ExecContext(ctx, `UPDATE sessions SET updated_at = updated_at`); err != nil {
+	if _, err := transaction.ExecContext(ctx, `UPDATE sessions SET updated_at = updated_at`); err != nil {
 		return fmt.Errorf("acquire soak write lock: %w", err)
 	}
 
@@ -409,16 +461,12 @@ func runSoakLock(ctx context.Context, connection *sql.DB) (resultErr error) {
 		return readyErr
 	}
 
-	if releaseErr := awaitSoakRelease(); releaseErr != nil {
+	if releaseErr := awaitSoakRelease(stdin); releaseErr != nil {
 		return releaseErr
 	}
 
-	if err = transaction.Commit(); err != nil {
+	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit soak lock transaction: %w", err)
-	}
-
-	if err = connection.Close(); err != nil {
-		return fmt.Errorf("close soak lock database: %w", err)
 	}
 
 	return writeSoakResult(soakResult{Status: "unlocked", Count: 0})
@@ -427,14 +475,6 @@ func runSoakLock(ctx context.Context, connection *sql.DB) (resultErr error) {
 func closeSoakConnection(connection *sql.DB) error {
 	if err := connection.Close(); err != nil {
 		return fmt.Errorf("close soak database: %w", err)
-	}
-
-	return nil
-}
-
-func rollbackSoakTransaction(transaction *sql.Tx) error {
-	if err := transaction.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-		return fmt.Errorf("rollback soak lock transaction: %w", err)
 	}
 
 	return nil
@@ -455,8 +495,16 @@ func signalSoakReady() error {
 	return nil
 }
 
-func awaitSoakRelease() error {
-	if _, err := bufio.NewReader(os.Stdin).ReadString('\n'); err != nil {
+func signalSoakOperationStart() error {
+	if _, err := fmt.Fprintln(os.Stdout, "STARTED"); err != nil {
+		return fmt.Errorf("signal soak operation start: %w", err)
+	}
+
+	return nil
+}
+
+func awaitSoakRelease(stdin *bufio.Reader) error {
+	if _, err := stdin.ReadString('\n'); err != nil {
 		return fmt.Errorf("await soak release: %w", err)
 	}
 
@@ -475,8 +523,8 @@ func startSoakProcess(t *testing.T, environment map[string]string, mode, argumen
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), soakProcessTimeout)
-	// Start this exact Linux test binary while keeping the executable fixed and
-	// trusted. Each helper is therefore a genuinely separate process.
+	// Start this exact Linux test binary from the fixed procfs path. Each helper
+	// is therefore a genuinely separate process without accepting an executable.
 	command := exec.CommandContext(ctx, "/proc/self/exe", "-test.run=^TestSQLiteContentionSoakHelper$", "-test.v=false")
 
 	command.Env = append(os.Environ(), soakHelperEnvironment+"="+mode, "LIBRECODE_SQLITE_SOAK_ARG="+argument)
@@ -485,64 +533,137 @@ func startSoakProcess(t *testing.T, environment map[string]string, mode, argumen
 	}
 
 	stdin, err := command.StdinPipe()
-	require.NoError(t, err)
+	if err != nil {
+		cancel()
+		require.NoError(t, err)
+	}
+
 	stdout, err := command.StdoutPipe()
-	require.NoError(t, err)
+	if err != nil {
+		cancel()
+		require.NoError(t, errors.Join(err, stdin.Close()))
+	}
 
 	process := &soakProcess{
-		command: command, stdin: stdin, scanner: bufio.NewScanner(stdout), cancel: cancel, stderr: strings.Builder{},
+		command: command, stdin: stdin, lines: make(chan soakScanResult, 8),
+		scanDone: make(chan struct{}), cancel: cancel,
+		stdinErr: nil, waitErr: nil, stderr: strings.Builder{}, stdinOnce: sync.Once{}, waitOnce: sync.Once{},
 	}
+
 	command.Stderr = &process.stderr
-	require.NoError(t, command.Start())
-	require.Equal(t, "READY", process.scanLine(t))
+
+	if err = command.Start(); err != nil {
+		cancel()
+		process.closeStdin()
+		require.NoError(t, errors.Join(err, process.stdinErr))
+	}
+
+	go process.scanOutput(bufio.NewScanner(stdout))
+
+	t.Cleanup(func() { process.stop(true) })
+
+	line, scanErr := process.scanLine()
+	if scanErr != nil || line != "READY" {
+		process.stop(true)
+		require.NoError(t, scanErr, "helper stderr: %s", process.stderr.String())
+		require.Equal(t, "READY", line, "helper stderr: %s", process.stderr.String())
+	}
 
 	return process
 }
 
-func (process *soakProcess) release(t *testing.T) {
+func (process *soakProcess) startOperation(t *testing.T) {
 	t.Helper()
 
 	_, err := io.WriteString(process.stdin, "GO\n")
 	require.NoError(t, err)
-	require.NoError(t, process.stdin.Close())
+}
+
+func (process *soakProcess) awaitOperationStart(t *testing.T) {
+	t.Helper()
+
+	line, err := process.scanLine()
+	if err != nil || line != "STARTED" {
+		process.stop(true)
+		require.NoError(t, err, "helper stderr: %s", process.stderr.String())
+		require.Equal(t, "STARTED", line, "helper stderr: %s", process.stderr.String())
+	}
+}
+
+func (process *soakProcess) releaseOperation(t *testing.T) {
+	t.Helper()
+
+	_, err := io.WriteString(process.stdin, "GO\n")
+	require.NoError(t, err)
+	process.closeStdin()
+	require.NoError(t, process.stdinErr)
 }
 
 func (process *soakProcess) result(t *testing.T) soakResult {
 	t.Helper()
-	line := process.scanLine(t)
+
+	line, scanErr := process.scanLine()
+	if scanErr != nil {
+		process.stop(true)
+		require.NoError(t, scanErr, "helper stderr: %s", process.stderr.String())
+	}
 
 	var result soakResult
-	require.NoError(t, json.Unmarshal([]byte(line), &result), "helper output: %q", line)
+	if err := json.Unmarshal([]byte(line), &result); err != nil {
+		process.stop(true)
+		require.NoError(t, err, "helper output: %q; stderr: %s", line, process.stderr.String())
+	}
 
-	err := process.command.Wait()
-	process.cancel()
-	require.NoError(t, err, "helper stderr: %s", process.stderr.String())
+	process.stop(false)
+	require.NoError(t, process.waitErr, "helper stderr: %s", process.stderr.String())
 
 	return result
 }
 
-func (process *soakProcess) scanLine(t *testing.T) string {
-	t.Helper()
-
-	line := make(chan string, 1)
-
-	go func() {
-		if process.scanner.Scan() {
-			line <- process.scanner.Text()
-		} else {
-			line <- ""
-		}
-	}()
-
-	select {
-	case value := <-line:
-		require.NotEmpty(t, value, "helper produced no output; stderr: %s", process.stderr.String())
-
-		return value
-	case <-time.After(soakProcessTimeout):
+func (process *soakProcess) stop(cancelFirst bool) {
+	if cancelFirst {
 		process.cancel()
-		require.FailNow(t, "timed out waiting for soak helper", process.stderr.String())
+	}
 
-		return ""
+	process.closeStdin()
+
+	process.waitOnce.Do(func() {
+		<-process.scanDone
+		process.waitErr = process.command.Wait()
+	})
+	process.cancel()
+}
+
+func (process *soakProcess) closeStdin() {
+	process.stdinOnce.Do(func() {
+		process.stdinErr = process.stdin.Close()
+	})
+}
+
+func (process *soakProcess) scanOutput(scanner *bufio.Scanner) {
+	defer close(process.scanDone)
+
+	for scanner.Scan() {
+		process.lines <- soakScanResult{err: nil, line: scanner.Text()}
+	}
+
+	err := scanner.Err()
+	if err == nil {
+		err = io.EOF
+	}
+
+	process.lines <- soakScanResult{err: err, line: ""}
+
+	close(process.lines)
+}
+
+func (process *soakProcess) scanLine() (string, error) {
+	select {
+	case scanned := <-process.lines:
+		return scanned.line, scanned.err
+	case <-time.After(soakProcessTimeout):
+		process.stop(true)
+
+		return "", errors.New("timed out waiting for soak helper")
 	}
 }

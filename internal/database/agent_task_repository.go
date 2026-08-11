@@ -202,7 +202,9 @@ func insertAgentTask(
 		return oops.In("database").Code("insert_agent_task").Wrapf(err, "insert agent task")
 	}
 
-	err := insertTaskEvent(ctx, transaction, eventID, created.Task.ID, 1, "task_queued", "{}", now)
+	err := insertTaskEvent(ctx, transaction, &taskEventInsert{
+		createdAt: now, id: eventID, taskID: created.Task.ID,
+		kind: taskQueuedEvent, payload: "{}", sequence: 1})
 
 	return err
 }

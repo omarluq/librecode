@@ -41,6 +41,15 @@ type ToolTaskEntity struct {
 	TimeoutSeconds    int
 }
 
+type expiredToolTaskRecovery struct {
+	expiresBefore time.Time
+	now           time.Time
+	taskID        string
+	leaseOwner    string
+	outcome       string
+	eventID       string
+}
+
 // ToolTaskRepository persists tool task data atomically with generic lifecycle state.
 type ToolTaskRepository struct {
 	sql   ksql.Provider
@@ -131,7 +140,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			return oops.In("database").Code("insert_tool_task").Wrapf(execErr, "insert tool task")
 		}
 
-		eventErr := insertTaskEvent(ctx, provider, eventID, created.Task.ID, 1, "task_queued", "{}", now)
+		eventErr := insertTaskEvent(ctx, provider, &taskEventInsert{
+			createdAt: now, id: eventID, taskID: created.Task.ID,
+			kind: taskQueuedEvent, payload: "{}", sequence: 1})
 
 		return eventErr
 	})
@@ -301,9 +312,10 @@ ORDER BY created_at, id LIMIT ?`
 	}
 
 	for index, row := range rows {
-		changed, recoverErr := repository.recoverExpiredTransaction(
-			ctx, provider, row.ID, row.LeaseOwner, expiresBefore, outcome, now, eventIDs[index],
-		)
+		changed, recoverErr := repository.recoverExpiredTransaction(ctx, provider, &expiredToolTaskRecovery{
+			expiresBefore: expiresBefore, now: now, taskID: row.ID,
+			leaseOwner: row.LeaseOwner, outcome: outcome, eventID: eventIDs[index],
+		})
 		if recoverErr != nil {
 			return 0, 0, recoverErr
 		}
@@ -319,28 +331,23 @@ ORDER BY created_at, id LIMIT ?`
 func (repository *ToolTaskRepository) recoverExpiredTransaction(
 	ctx context.Context,
 	provider ksql.Provider,
-	taskID string,
-	leaseOwner string,
-	expiresBefore time.Time,
-	outcome string,
-	now time.Time,
-	eventID string,
+	recovery *expiredToolTaskRecovery,
 ) (bool, error) {
 	finish := &TaskFinish{
-		TaskID: taskID, From: []TaskState{TaskRunning, TaskCanceling}, TargetState: TaskInterrupted,
+		TaskID: recovery.taskID, From: []TaskState{TaskRunning, TaskCanceling}, TargetState: TaskInterrupted,
 		EventKind: taskInterruptedEvent, Result: "", ErrorCode: "lease_expired",
 		ErrorMessage: "task worker lease expired", PayloadJSON: `{"error_code":"lease_expired"}`,
-		LeaseOwner: leaseOwner,
+		LeaseOwner: recovery.leaseOwner,
 	}
 
 	transitioned, err := repository.tasks.finishTransactionWithExpiry(
-		ctx, provider, finish, expiresBefore, now, eventID,
+		ctx, provider, finish, recovery.expiresBefore, recovery.now, recovery.eventID,
 	)
 	if err != nil || !transitioned {
 		return false, err
 	}
 
-	updated, err := updateToolOutcome(ctx, provider, taskID, outcome)
+	updated, err := updateToolOutcome(ctx, provider, recovery.taskID, recovery.outcome)
 
 	return updated, err
 }
@@ -534,7 +541,8 @@ func (repository *ToolTaskRepository) cancelTransaction(
 		_, err = repository.finishTransaction(ctx, transaction, finish, outcome, now, eventID)
 	case TaskRunning:
 		_, err = repository.tasks.transition(
-			ctx, transaction, taskID, []TaskState{TaskRunning}, TaskCanceling, "task_canceling", now, eventID,
+			ctx, transaction, taskID, []TaskState{TaskRunning}, TaskCanceling, "task_canceling",
+			retryStableTaskOperation{now: now, eventID: eventID},
 		)
 	case TaskCanceling, TaskSucceeded, TaskFailed, TaskCanceled, TaskInterrupted:
 	}

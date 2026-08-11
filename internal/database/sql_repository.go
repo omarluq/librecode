@@ -54,7 +54,7 @@ type Repositories struct {
 
 // NewRepositories constructs the complete repository graph for a SQL connection.
 func NewRepositories(connection *sql.DB) (*Repositories, error) {
-	provider, err := newSQLProvider(connection)
+	provider, err := newSQLProviderFromOpenConnection(connection)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +108,16 @@ func newSQLProvider(connection *sql.DB) (*transactionProvider, error) {
 		return nil, oops.In("database").Code("ping_sql_connection").Wrapf(err, "ping sql connection")
 	}
 
+	return newSQLProviderFromOpenConnection(connection)
+}
+
+// newSQLProviderFromOpenConnection adapts a connection already verified by its
+// lifecycle owner. Standalone repository constructors use newSQLProvider.
+func newSQLProviderFromOpenConnection(connection *sql.DB) (*transactionProvider, error) {
+	if connection == nil {
+		return nil, oops.In("database").Code("nil_sql_connection").Errorf("sql connection is required")
+	}
+
 	provider, err := ksqlite.NewFromSQLDB(connection)
 	if err != nil {
 		return nil, oops.In("database").Code("sql_provider").Wrapf(err, "create sql provider")
@@ -115,6 +125,6 @@ func newSQLProvider(connection *sql.DB) (*transactionProvider, error) {
 
 	return &transactionProvider{
 		Provider: provider, connection: connection,
-		executeAttempt: nil, diagnostic: nil,
+		executeAttempt: nil, waitRetry: nil, restoreReadWrite: nil, diagnostic: nil,
 	}, nil
 }
