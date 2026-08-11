@@ -90,21 +90,29 @@ func (repository *SessionRepository) querySessionMessages(
 ) ([]SessionMessageEntity, error) {
 	operationLabel := strings.ReplaceAll(operation, "_", " ")
 
-	rows := []sessionMessageRow{}
-	if err := repository.sql.Query(ctx, &rows, query, sessionID); err != nil {
-		return nil, oops.In("database").Code("list_"+operation).Wrapf(err, "query %s", operationLabel)
-	}
+	result, err := readOnlyTransactionValue(
+		ctx, repository.sql, func(provider ksql.Provider) ([]SessionMessageEntity, error) {
+			rows := []sessionMessageRow{}
+			if err := provider.Query(ctx, &rows, query, sessionID); err != nil {
+				return nil, oops.In("database").Code("list_"+operation).Wrapf(err, "query %s", operationLabel)
+			}
 
-	messages, err := sessionMessagesFromRows(rows)
+			messages, err := sessionMessagesFromRows(rows)
+			if err != nil {
+				return nil, oops.In("database").Code("scan_"+operation).Wrapf(err, "scan %s", operationLabel)
+			}
+
+			if err := repository.withProvider(provider).hydrateSessionMessages(ctx, sessionID, messages); err != nil {
+				return nil, err
+			}
+
+			return messages, nil
+		})
 	if err != nil {
-		return nil, oops.In("database").Code("scan_"+operation).Wrapf(err, "scan %s", operationLabel)
-	}
-
-	if err := repository.hydrateSessionMessages(ctx, sessionID, messages); err != nil {
 		return nil, err
 	}
 
-	return messages, nil
+	return result.value, nil
 }
 
 // ContextHasImageParts reports whether an entry or one of its ancestors has an image part.
@@ -155,38 +163,54 @@ SELECT id, session_id, entry_id, sender, role, content, provider, model, created
 FROM session_messages
 WHERE session_id = ? AND entry_id = ?`
 
-	var row sessionMessageRow
-	if err := repository.sql.QueryOne(ctx, &row, query, sessionID, entryID); err != nil {
-		if errors.Is(err, ksql.ErrRecordNotFound) {
-			return nil, false, nil
+	type messageResult struct {
+		message *SessionMessageEntity
+		found   bool
+	}
+
+	result, err := readOnlyTransactionValue(ctx, repository.sql, func(provider ksql.Provider) (messageResult, error) {
+		var row sessionMessageRow
+		if queryErr := provider.QueryOne(ctx, &row, query, sessionID, entryID); queryErr != nil {
+			if errors.Is(queryErr, ksql.ErrRecordNotFound) {
+				return messageResult{message: nil, found: false}, nil
+			}
+
+			return messageResult{}, oops.In("database").Code("get_message").Wrapf(queryErr, "load session message")
 		}
 
-		return nil, false, oops.In("database").Code("get_message").Wrapf(err, "load session message")
-	}
+		message, scanErr := sessionMessageFromRow(&row)
+		if scanErr != nil {
+			return messageResult{}, oops.In("database").Code("scan_message").Wrapf(scanErr, "scan session message")
+		}
 
-	message, err := sessionMessageFromRow(&row)
+		messages := []SessionMessageEntity{*message}
+
+		snapshot := repository.withProvider(provider)
+		if hydrateErr := snapshot.hydrateSessionMessages(ctx, sessionID, messages); hydrateErr != nil {
+			return messageResult{}, hydrateErr
+		}
+
+		return messageResult{message: &messages[0], found: true}, nil
+	})
 	if err != nil {
-		return nil, false, oops.In("database").Code("scan_message").Wrapf(err, "scan session message")
-	}
-
-	messages := []SessionMessageEntity{*message}
-	if err := repository.hydrateSessionMessages(ctx, sessionID, messages); err != nil {
 		return nil, false, err
 	}
 
-	return &messages[0], true, nil
+	return result.value.message, result.value.found, nil
 }
 
 func (repository *SessionRepository) appendEntryMessage(
 	ctx context.Context,
 	transaction ksql.Provider,
 	entry *EntryEntity,
+	messageID string,
+	partIDs []string,
 ) error {
 	if !entryCarriesMessage(entry) {
 		return nil
 	}
 
-	message := sessionMessageFromEntry(entry)
+	message := sessionMessageFromEntry(entry, messageID)
 	if err := validateSessionMessageEntity(&message); err != nil {
 		return oops.In("database").Code("validate_message").Wrapf(err, "validate session message")
 	}
@@ -220,7 +244,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	for sequence := range message.Parts {
 		part := &message.Parts[sequence]
 		if _, err := transaction.Exec(ctx, insertPart,
-			newEntryID(), message.SessionID, message.EntryID, sequence, string(part.Type),
+			partIDs[sequence], message.SessionID, message.EntryID, sequence, string(part.Type),
 			part.Text, part.MIMEType, part.Name, part.Width, part.Height, part.Data,
 		); err != nil {
 			return oops.In("database").Code("append_message_part").Wrapf(err, "append session message part")
@@ -234,7 +258,20 @@ func entryCarriesMessage(entry *EntryEntity) bool {
 	return entry.Message.Role != ""
 }
 
-func sessionMessageFromEntry(entry *EntryEntity) SessionMessageEntity {
+func newEntryMessageIDs(entry *EntryEntity) (messageID string, partIDs []string) {
+	if !entryCarriesMessage(entry) {
+		return "", nil
+	}
+
+	partIDs = make([]string, len(entry.Message.Parts))
+	for index := range partIDs {
+		partIDs[index] = newEntryID()
+	}
+
+	return newEntryID(), partIDs
+}
+
+func sessionMessageFromEntry(entry *EntryEntity, messageID string) SessionMessageEntity {
 	createdAt := entry.Message.Timestamp
 	if createdAt.IsZero() {
 		createdAt = entry.CreatedAt
@@ -242,7 +279,7 @@ func sessionMessageFromEntry(entry *EntryEntity) SessionMessageEntity {
 
 	return SessionMessageEntity{
 		CreatedAt: createdAt,
-		ID:        newEntryID(),
+		ID:        messageID,
 		SessionID: entry.SessionID,
 		EntryID:   entry.ID,
 		Sender:    senderIdentity(entry),
@@ -252,6 +289,13 @@ func sessionMessageFromEntry(entry *EntryEntity) SessionMessageEntity {
 		Model:     entry.Message.Model,
 		Parts:     cloneMessageParts(entry.Message.Parts),
 	}
+}
+
+func (repository *SessionRepository) withProvider(provider ksql.Provider) *SessionRepository {
+	snapshot := *repository
+	snapshot.sql = provider
+
+	return &snapshot
 }
 
 func (repository *SessionRepository) hydrateSessionMessages(

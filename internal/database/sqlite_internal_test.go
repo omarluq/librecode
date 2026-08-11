@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"database/sql"
+	"net/url"
 	"path/filepath"
 	"testing"
 	"time"
@@ -15,6 +16,8 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 )
 
+const immediateTransactionLock = "immediate"
+
 func TestSQLiteDSNAddsPragmas(t *testing.T) {
 	t.Parallel()
 
@@ -25,6 +28,7 @@ func TestSQLiteDSNAddsPragmas(t *testing.T) {
 	assert.Contains(t, dsn, "_pragma=journal_mode%3DWAL")
 	assert.Contains(t, dsn, "_pragma=synchronous%3DNORMAL")
 	assert.Contains(t, dsn, "_pragma=foreign_keys%3DON")
+	assert.Equal(t, []string{immediateTransactionLock}, dsnQueryValues(t, dsn)["_txlock"])
 }
 
 func TestSQLiteDSNAppendsPragmasToExistingURI(t *testing.T) {
@@ -37,6 +41,18 @@ func TestSQLiteDSNAppendsPragmasToExistingURI(t *testing.T) {
 	assert.Contains(t, dsn, "_pragma=journal_mode%3DWAL")
 	assert.Contains(t, dsn, "_pragma=synchronous%3DNORMAL")
 	assert.Contains(t, dsn, "_pragma=foreign_keys%3DON")
+	assert.Equal(t, []string{immediateTransactionLock}, dsnQueryValues(t, dsn)["_txlock"])
+}
+
+func TestSQLiteDSNReplacesExistingTransactionLock(t *testing.T) {
+	t.Parallel()
+
+	dsn := database.SQLiteDSN(
+		"file:librecode.db?_txlock=deferred&_txlock=exclusive",
+		database.SQLiteOptions{BusyTimeout: 0},
+	)
+
+	assert.Equal(t, []string{immediateTransactionLock}, dsnQueryValues(t, dsn)["_txlock"])
 }
 
 func TestSQLiteDSNClampsNegativeBusyTimeout(t *testing.T) {
@@ -96,6 +112,15 @@ func queryPragmaInt(t *testing.T, db *sql.DB, name string) int {
 	require.NoError(t, db.QueryRowContext(context.Background(), "PRAGMA "+name).Scan(&value))
 
 	return value
+}
+
+func dsnQueryValues(t *testing.T, dsn string) url.Values {
+	t.Helper()
+
+	parsed, err := url.Parse(dsn)
+	require.NoError(t, err)
+
+	return parsed.Query()
 }
 
 func queryPragmaString(t *testing.T, db *sql.DB, name string) string {

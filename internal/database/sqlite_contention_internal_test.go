@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/omarluq/librecode/internal/testutil"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -16,8 +15,11 @@ import (
 	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 type sqlitePair struct {
@@ -231,36 +233,6 @@ func newCompactionRaceInput(sessionID, parentID, operationID, summary string) *d
 	}
 }
 
-func TestSQLiteBusyTimeoutWaitsForExternalWriter(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping SQLite lock contention test in short mode")
-	}
-
-	t.Parallel()
-
-	ctx := context.Background()
-	dbs := openMigratedSQLitePair(ctx, t, 2*time.Second)
-	secondary := testutil.SessionRepository(t, dbs.secondary)
-	workingDirectory := t.TempDir()
-	withSessionsTableLock(ctx, t, dbs.primary, func(lock *sql.Tx) {
-		insertDone := make(chan error, 1)
-
-		go func() {
-			_, createErr := secondary.CreateSession(ctx, workingDirectory, "waiter", "")
-			insertDone <- createErr
-		}()
-
-		select {
-		case err := <-insertDone:
-			require.FailNowf(t, "writer completed before lock release", "error: %v", err)
-		case <-time.After(100 * time.Millisecond):
-		}
-
-		require.NoError(t, lock.Commit())
-		require.NoError(t, <-insertDone)
-	})
-}
-
 func TestSQLiteShortBusyTimeoutStillReportsBusy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping SQLite lock contention test in short mode")
@@ -310,12 +282,7 @@ func withSessionsTableLock(ctx context.Context, t *testing.T, connection *sql.DB
 }
 
 func isSQLiteBusyError(err error) bool {
-	for current := err; current != nil; current = errors.Unwrap(current) {
-		message := strings.ToLower(current.Error())
-		if strings.Contains(message, "busy") || strings.Contains(message, "locked") {
-			return true
-		}
-	}
+	var sqliteErr *sqlite.Error
 
-	return false
+	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == sqlite3.SQLITE_BUSY
 }

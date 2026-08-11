@@ -42,19 +42,79 @@ func sameSQLProvider(left, right ksql.Provider) bool {
 	return leftValue.Interface() == rightValue.Interface()
 }
 
-func newSQLProvider(connection *sql.DB) (ksql.DB, error) {
+// Repositories is a repository graph backed by one shared transaction provider.
+type Repositories struct {
+	Sessions   *SessionRepository
+	Documents  *DocumentRepository
+	Tasks      *TaskRepository
+	AgentTasks *AgentTaskRepository
+	Workflows  *WorkflowRepository
+	ToolTasks  *ToolTaskRepository
+}
+
+// NewRepositories constructs the complete repository graph for a SQL connection.
+func NewRepositories(connection *sql.DB) (*Repositories, error) {
+	provider, err := newSQLProvider(connection)
+	if err != nil {
+		return nil, err
+	}
+
+	sessions, err := NewSessionRepositoryWithProvider(provider)
+	if err != nil {
+		return nil, wrapRepositoryConstruction(err, "session")
+	}
+
+	documents, err := NewDocumentRepositoryWithProvider(provider)
+	if err != nil {
+		return nil, wrapRepositoryConstruction(err, "document")
+	}
+
+	tasks, err := NewTaskRepositoryWithProvider(provider)
+	if err != nil {
+		return nil, wrapRepositoryConstruction(err, "task")
+	}
+
+	agentTasks, err := NewAgentTaskRepositoryWithProvider(provider, tasks)
+	if err != nil {
+		return nil, wrapRepositoryConstruction(err, "agent task")
+	}
+
+	toolTasks, err := NewToolTaskRepositoryWithProvider(provider, tasks)
+	if err != nil {
+		return nil, wrapRepositoryConstruction(err, "tool task")
+	}
+
+	workflows, err := NewWorkflowRepositoryWithProvider(provider, tasks, agentTasks)
+	if err != nil {
+		return nil, wrapRepositoryConstruction(err, "workflow")
+	}
+
+	return &Repositories{
+		Sessions: sessions, Documents: documents, Tasks: tasks,
+		AgentTasks: agentTasks, Workflows: workflows, ToolTasks: toolTasks,
+	}, nil
+}
+
+func wrapRepositoryConstruction(err error, name string) error {
+	return oops.In("database").Code("repository_construction").Wrapf(err, "construct %s repository", name)
+}
+
+func newSQLProvider(connection *sql.DB) (*transactionProvider, error) {
 	if connection == nil {
-		return ksql.DB{}, oops.In("database").Code("nil_sql_connection").Errorf("sql connection is required")
+		return nil, oops.In("database").Code("nil_sql_connection").Errorf("sql connection is required")
 	}
 
 	if err := connection.PingContext(context.Background()); err != nil {
-		return ksql.DB{}, oops.In("database").Code("ping_sql_connection").Wrapf(err, "ping sql connection")
+		return nil, oops.In("database").Code("ping_sql_connection").Wrapf(err, "ping sql connection")
 	}
 
 	provider, err := ksqlite.NewFromSQLDB(connection)
 	if err != nil {
-		return ksql.DB{}, oops.In("database").Code("sql_provider").Wrapf(err, "create sql provider")
+		return nil, oops.In("database").Code("sql_provider").Wrapf(err, "create sql provider")
 	}
 
-	return provider, nil
+	return &transactionProvider{
+		Provider: provider, connection: connection,
+		executeAttempt: nil, diagnostic: nil,
+	}, nil
 }

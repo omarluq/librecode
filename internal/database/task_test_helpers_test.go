@@ -20,6 +20,7 @@ const (
 	taskInterruptedEvent     = "task_interrupted"
 	testWorker               = "worker"
 	testDone                 = "done"
+	testExpired              = "expired"
 	invalidID                = "bad"
 	eventKindRequired        = "event.kind is required"
 	leaseOwnerExpiryRequired = "requires an owner and expiry"

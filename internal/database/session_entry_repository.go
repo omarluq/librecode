@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
@@ -103,21 +104,7 @@ FROM session_entries
 WHERE session_id = ?
 ORDER BY created_at ASC`, entrySelectColumns)
 
-	rows := []entryRow{}
-	if err := repository.sql.Query(ctx, &rows, query, sessionID); err != nil {
-		return nil, oops.In("database").Code("list_entries").Wrapf(err, "query session entries")
-	}
-
-	entries, err := entriesFromRows(rows)
-	if err != nil {
-		return nil, oops.In("database").Code("scan_entry").Wrapf(err, "scan session entries")
-	}
-
-	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
-		return nil, err
-	}
-
-	return entries, nil
+	return repository.queryEntries(ctx, sessionID, query, "list_entries", "scan_entry", "entries", sessionID)
 }
 
 // Entry loads one entry by id.
@@ -138,31 +125,45 @@ func (repository *SessionRepository) queryEntry(
 	queryMessage string,
 	arguments ...any,
 ) (*EntryEntity, bool, error) {
-	var row entryRow
-	if err := repository.sql.QueryOne(ctx, &row, query, arguments...); err != nil {
-		if errors.Is(err, ksql.ErrRecordNotFound) {
-			return nil, false, nil
+	type entryResult struct {
+		entry *EntryEntity
+		found bool
+	}
+
+	result, err := readOnlyTransactionValue(ctx, repository.sql, func(provider ksql.Provider) (entryResult, error) {
+		var row entryRow
+		if queryErr := provider.QueryOne(ctx, &row, query, arguments...); queryErr != nil {
+			if errors.Is(queryErr, ksql.ErrRecordNotFound) {
+				return entryResult{entry: nil, found: false}, nil
+			}
+
+			return entryResult{}, oops.In("database").Code(queryCode).Wrapf(queryErr, "%s", queryMessage)
 		}
 
-		return nil, false, oops.In("database").Code(queryCode).Wrapf(err, "%s", queryMessage)
-	}
+		entry, scanErr := entryFromRow(&row)
+		if scanErr != nil {
+			return entryResult{}, oops.In("database").Code("scan_entry").Wrapf(scanErr, "scan entry")
+		}
 
-	entry, err := entryFromRow(&row)
+		snapshot := repository.withProvider(provider)
+		if hydrateErr := snapshot.hydrateEntryMessage(ctx, sessionID, entry); hydrateErr != nil {
+			return entryResult{}, hydrateErr
+		}
+
+		return entryResult{entry: entry, found: true}, nil
+	})
 	if err != nil {
-		return nil, false, oops.In("database").Code("scan_entry").Wrapf(err, "scan entry")
-	}
-
-	if err := repository.hydrateEntryMessage(ctx, sessionID, entry); err != nil {
 		return nil, false, err
 	}
 
-	return entry, true, nil
+	return result.value.entry, result.value.found, nil
 }
 
 // DeleteEntryBranch removes an entry and all descendants from one session.
 func (repository *SessionRepository) DeleteEntryBranch(ctx context.Context, sessionID, entryID string) error {
+	now := repository.now().UTC()
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		return repository.deleteEntryBranchTx(ctx, transaction, sessionID, entryID)
+		return repository.deleteEntryBranchTx(ctx, transaction, sessionID, entryID, now)
 	}); err != nil {
 		return oops.In("database").Code("delete_entry_branch").Wrapf(err, "delete entry branch")
 	}
@@ -175,6 +176,7 @@ func (repository *SessionRepository) deleteEntryBranchTx(
 	transaction ksql.Provider,
 	sessionID string,
 	entryID string,
+	now time.Time,
 ) error {
 	if _, err := transaction.Exec(
 		ctx,
@@ -199,7 +201,7 @@ func (repository *SessionRepository) deleteEntryBranchTx(
 	}
 
 	const touchSession = `UPDATE sessions SET updated_at = ? WHERE id = ?`
-	if _, err := transaction.Exec(ctx, touchSession, formatTime(repository.now().UTC()), sessionID); err != nil {
+	if _, err := transaction.Exec(ctx, touchSession, formatTime(now), sessionID); err != nil {
 		return oops.In("database").Code("touch_after_delete_branch").Wrapf(err, "touch session after delete branch")
 	}
 
@@ -253,21 +255,40 @@ ORDER BY created_at ASC`, entrySelectColumns)
 		args = append(args, *parentID)
 	}
 
-	rows := []entryRow{}
-	if err := repository.sql.Query(ctx, &rows, query, args...); err != nil {
-		return nil, oops.In("database").Code("list_children").Wrapf(err, "query child entries")
-	}
+	return repository.queryEntries(ctx, sessionID, query, "list_children", "scan_child", "children", args...)
+}
 
-	entries, err := entriesFromRows(rows)
+func (repository *SessionRepository) queryEntries(
+	ctx context.Context,
+	sessionID string,
+	query string,
+	queryCode string,
+	scanCode string,
+	operation string,
+	arguments ...any,
+) ([]EntryEntity, error) {
+	result, err := readOnlyTransactionValue(ctx, repository.sql, func(provider ksql.Provider) ([]EntryEntity, error) {
+		rows := []entryRow{}
+		if err := provider.Query(ctx, &rows, query, arguments...); err != nil {
+			return nil, oops.In("database").Code(queryCode).Wrapf(err, "query session %s", operation)
+		}
+
+		entries, err := entriesFromRows(rows)
+		if err != nil {
+			return nil, oops.In("database").Code(scanCode).Wrapf(err, "scan session %s", operation)
+		}
+
+		if err := repository.withProvider(provider).hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+			return nil, err
+		}
+
+		return entries, nil
+	})
 	if err != nil {
-		return nil, oops.In("database").Code("scan_child").Wrapf(err, "scan child entries")
-	}
-
-	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
 		return nil, err
 	}
 
-	return entries, nil
+	return result.value, nil
 }
 
 func (repository *SessionRepository) appendCompactionConditional(
@@ -288,14 +309,10 @@ func (repository *SessionRepository) appendCompactionConditional(
 		return nil, err
 	}
 
-	var resolved *EntryEntity
+	messageID, partIDs := newEntryMessageIDs(entry)
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		var transactionErr error
-
-		resolved, transactionErr = repository.appendCompactionTx(ctx, transaction, entry, operationID)
-
-		return transactionErr
+	resolved, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (*EntryEntity, error) {
+		return repository.appendCompactionTx(ctx, transaction, entry, operationID, messageID, partIDs)
 	})
 	if err != nil {
 		if codedErr, ok := oops.AsOops(err); ok && codedErr.Code() != "" {
@@ -305,11 +322,11 @@ func (repository *SessionRepository) appendCompactionConditional(
 		return nil, oops.In("database").Code("append_compaction_tx").Wrapf(err, "append compaction transaction")
 	}
 
-	if err := repository.hydrateEntryMessage(ctx, resolved.SessionID, resolved); err != nil {
+	if err := repository.hydrateEntryMessage(ctx, resolved.value.SessionID, resolved.value); err != nil {
 		return nil, err
 	}
 
-	return resolved, nil
+	return resolved.value, nil
 }
 
 func (repository *SessionRepository) appendCompactionTx(
@@ -317,6 +334,8 @@ func (repository *SessionRepository) appendCompactionTx(
 	transaction ksql.Provider,
 	entry *EntryEntity,
 	operationID string,
+	messageID string,
+	partIDs []string,
 ) (*EntryEntity, error) {
 	inserted, err := repository.insertEntryIgnoringConflictTx(ctx, transaction, entry, operationID, true)
 	if err != nil {
@@ -327,7 +346,7 @@ func (repository *SessionRepository) appendCompactionTx(
 		return resolveCompactionConflict(ctx, transaction, entry, operationID)
 	}
 
-	if err := repository.appendEntryMessage(ctx, transaction, entry); err != nil {
+	if err := repository.appendEntryMessage(ctx, transaction, entry, messageID, partIDs); err != nil {
 		return nil, err
 	}
 
@@ -441,8 +460,10 @@ func (repository *SessionRepository) appendEntry(ctx context.Context, entry *Ent
 		return err
 	}
 
+	messageID, partIDs := newEntryMessageIDs(entry)
+
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		return repository.appendEntryTx(ctx, transaction, entry)
+		return repository.appendEntryTx(ctx, transaction, entry, messageID, partIDs)
 	}); err != nil {
 		return oops.In("database").Code("append_entry_tx").Wrapf(err, "append entry transaction")
 	}
@@ -454,12 +475,14 @@ func (repository *SessionRepository) appendEntryTx(
 	ctx context.Context,
 	transaction ksql.Provider,
 	entry *EntryEntity,
+	messageID string,
+	partIDs []string,
 ) error {
 	if err := repository.insertEntryTx(ctx, transaction, entry); err != nil {
 		return err
 	}
 
-	if err := repository.appendEntryMessage(ctx, transaction, entry); err != nil {
+	if err := repository.appendEntryMessage(ctx, transaction, entry, messageID, partIDs); err != nil {
 		return err
 	}
 

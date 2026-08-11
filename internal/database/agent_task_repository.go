@@ -89,12 +89,14 @@ func (repository *AgentTaskRepository) CreateWithChildSession(
 		return nil, err
 	}
 
+	eventID := newUUIDv7()
+
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
 		if err := insertSession(ctx, transaction, child); err != nil {
 			return err
 		}
 
-		return insertAgentTask(ctx, transaction, created, now)
+		return insertAgentTask(ctx, transaction, created, now, eventID)
 	}); err != nil {
 		return nil, oops.In("database").Code("create_agent_task_with_session").
 			Wrapf(err, "create agent task with child session")
@@ -113,8 +115,10 @@ func (repository *AgentTaskRepository) Create(
 		return nil, err
 	}
 
+	eventID := newUUIDv7()
+
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		return insertAgentTask(ctx, transaction, created, now)
+		return insertAgentTask(ctx, transaction, created, now, eventID)
 	}); err != nil {
 		return nil, oops.In("database").Code("create_agent_task").Wrapf(err, "create agent task")
 	}
@@ -181,7 +185,9 @@ func (repository *AgentTaskRepository) prepareCreate(agentTask *AgentTaskEntity)
 	return &created, now, nil
 }
 
-func insertAgentTask(ctx context.Context, transaction ksql.Provider, created *AgentTaskEntity, now time.Time) error {
+func insertAgentTask(
+	ctx context.Context, transaction ksql.Provider, created *AgentTaskEntity, now time.Time, eventID string,
+) error {
 	if err := insertTask(ctx, transaction, &created.Task); err != nil {
 		return err
 	}
@@ -196,7 +202,7 @@ func insertAgentTask(ctx context.Context, transaction ksql.Provider, created *Ag
 		return oops.In("database").Code("insert_agent_task").Wrapf(err, "insert agent task")
 	}
 
-	_, err := insertTaskEvent(ctx, transaction, created.Task.ID, 1, "task_queued", "{}", now)
+	err := insertTaskEvent(ctx, transaction, eventID, created.Task.ID, 1, "task_queued", "{}", now)
 
 	return err
 }
@@ -215,28 +221,27 @@ func (repository *AgentTaskRepository) Finish(
 		return false, errors.New("agent_task.usage_json must be valid JSON")
 	}
 
-	changed := false
+	now := repository.tasks.now().UTC()
+	eventID := newUUIDv7()
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		transitioned, err := repository.tasks.finishTransaction(ctx, transaction, finish)
+	changed, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
+		transitioned, err := repository.tasks.finishTransaction(ctx, transaction, finish, now, eventID)
 		if err != nil || !transitioned {
-			return err
+			return false, err
 		}
 
 		const statement = `UPDATE agent_tasks SET usage_json = ? WHERE task_id = ?`
 		if _, err = transaction.Exec(ctx, statement, usageJSON, finish.TaskID); err != nil {
-			return oops.In("database").Code("update_agent_usage").Wrapf(err, "update agent usage")
+			return false, oops.In("database").Code("update_agent_usage").Wrapf(err, "update agent usage")
 		}
 
-		changed = true
-
-		return nil
+		return true, nil
 	})
 	if err != nil {
 		return false, oops.In("database").Code("finish_agent_task").Wrapf(err, "finish agent task")
 	}
 
-	return changed, nil
+	return changed.value, nil
 }
 
 const (
