@@ -11,7 +11,10 @@ import (
 	"github.com/samber/oops"
 )
 
-const sqliteBusyTimeoutPragma = "busy_timeout"
+const (
+	sqliteBusyTimeoutPragma = "busy_timeout"
+	sqliteTransactionLock   = "immediate"
+)
 
 // SQLiteOptions contains connection-level SQLite settings.
 type SQLiteOptions struct {
@@ -34,6 +37,8 @@ func SQLiteDSN(path string, options SQLiteOptions) string {
 		query.Add("_pragma", pragma)
 	}
 
+	query.Set("_txlock", sqliteTransactionLock)
+
 	parsed.RawQuery = query.Encode()
 
 	return parsed.String()
@@ -53,6 +58,8 @@ func ConfigureSQLite(ctx context.Context, connection *sql.DB, options SQLiteOpti
 
 func sqliteFileURI(path string, query url.Values) string {
 	uri := &url.URL{Scheme: "file", Path: path}
+
+	query.Set("_txlock", sqliteTransactionLock)
 	uri.RawQuery = query.Encode()
 
 	return uri.String()

@@ -132,6 +132,8 @@ func (repository *WorkflowRepository) Create(
 		return nil, oops.In("database").Code("validate_workflow_run").Wrapf(err, "validate workflow run")
 	}
 
+	eventID := newUUIDv7()
+
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
 		if err := insertTask(ctx, transaction, &created.Task); err != nil {
 			return err
@@ -144,7 +146,7 @@ func (repository *WorkflowRepository) Create(
 			return oops.In("database").Code("insert_workflow_run").Wrapf(err, "insert workflow run")
 		}
 
-		_, err := insertTaskEvent(ctx, transaction, created.Task.ID, 1, "task_queued", "{}", now)
+		err := insertTaskEvent(ctx, transaction, eventID, created.Task.ID, 1, "task_queued", "{}", now)
 
 		return err
 	}); err != nil {
@@ -276,6 +278,7 @@ func (repository *WorkflowRepository) createAgentTask(
 	}
 
 	request := workflowAgentTaskCreate{
+		eventID:         newUUIDv7(),
 		workflowTaskID:  workflowTaskID,
 		agentTask:       created,
 		child:           child,
@@ -296,6 +299,7 @@ type workflowAgentTaskCreate struct {
 	agentTask      *AgentTaskEntity
 	child          *SessionEntity
 	workflowTaskID string
+	eventID        string
 	nodeKey        string
 
 	invocationIndex int
@@ -327,7 +331,9 @@ JOIN workflow_runs w ON w.task_id = t.id WHERE t.id = ?`
 		}
 	}
 
-	if err := insertAgentTask(ctx, transaction, request.agentTask, request.agentTask.Task.CreatedAt); err != nil {
+	if err := insertAgentTask(
+		ctx, transaction, request.agentTask, request.agentTask.Task.CreatedAt, request.eventID,
+	); err != nil {
 		return err
 	}
 
@@ -361,45 +367,46 @@ func (repository *WorkflowRepository) LinkAgentTask(
 		return nil, err
 	}
 
-	var link *WorkflowAgentTaskEntity
-
 	nodeKey = strings.TrimSpace(nodeKey)
+	createdAt := repository.tasks.now().UTC()
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		created, err := insertWorkflowAgentTask(ctx, transaction, workflowTaskID, agentTaskID,
-			nodeKey, invocationIndex, repository.tasks.now().UTC())
-		if err == nil {
-			link = created
+	link, err := transactionValue(
+		ctx, repository.sql, func(transaction ksql.Provider) (*WorkflowAgentTaskEntity, error) {
+			created, err := insertWorkflowAgentTask(ctx, transaction, workflowTaskID, agentTaskID,
+				nodeKey, invocationIndex, createdAt)
+			if err == nil {
+				return created, nil
+			}
 
-			return nil
-		}
+			if !isWorkflowInvocationUniqueConstraint(err) {
+				return nil, err
+			}
 
-		if !isWorkflowInvocationUniqueConstraint(err) {
-			return err
-		}
-
-		existing, found, queryErr := querySQLRow(ctx, transaction, workflowAgentTaskFromRow,
-			`SELECT workflow_task_id, agent_task_id, sequence, node_key, invocation_index, created_at
+			existing, found, queryErr := querySQLRow(ctx, transaction, workflowAgentTaskFromRow,
+				`SELECT workflow_task_id, agent_task_id, sequence, node_key, invocation_index, created_at
 FROM workflow_agent_tasks WHERE workflow_task_id = ? AND node_key = ? AND invocation_index = ?`,
-			"workflow_agent_task", workflowTaskID, nodeKey, invocationIndex)
-		if queryErr != nil || !found {
-			return err
-		}
+				"workflow_agent_task", workflowTaskID, nodeKey, invocationIndex)
+			if queryErr != nil {
+				return nil, queryErr
+			}
 
-		if existing.AgentTaskID != agentTaskID {
-			return oops.In("database").Code("workflow_agent_invocation_conflict").
-				Errorf("workflow invocation is already linked to agent task %q", existing.AgentTaskID)
-		}
+			if !found {
+				return nil, err
+			}
 
-		link = existing
+			if existing.AgentTaskID != agentTaskID {
+				return nil, oops.In("database").Code("workflow_agent_invocation_conflict").
+					Errorf("workflow invocation is already linked to agent task %q", existing.AgentTaskID)
+			}
 
-		return nil
-	})
+			return existing, nil
+		},
+	)
 	if err != nil {
 		return nil, oops.In("database").Code("create_workflow_agent_link").Wrapf(err, "create workflow agent link")
 	}
 
-	return link, nil
+	return link.value, nil
 }
 
 func isWorkflowInvocationUniqueConstraint(err error) bool {

@@ -147,12 +147,14 @@ func (repository *TaskRepository) Create(ctx context.Context, task *TaskEntity) 
 		return nil, oops.In("database").Code("validate_task").Wrapf(err, "validate task")
 	}
 
+	eventID := newUUIDv7()
+
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
 		if err := insertTask(ctx, transaction, &created); err != nil {
 			return err
 		}
 
-		_, err := insertTaskEvent(ctx, transaction, created.ID, 1, "task_queued", "{}", now)
+		err := insertTaskEvent(ctx, transaction, eventID, created.ID, 1, "task_queued", "{}", now)
 
 		return err
 	}); err != nil {
@@ -185,11 +187,10 @@ func (repository *TaskRepository) claim(ctx context.Context, claim *TaskClaim, f
 		return false, err
 	}
 
-	changed := false
+	now := repository.now().UTC()
+	eventID := newUUIDv7()
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		now := repository.now().UTC()
-
+	changed, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
 		const update = `UPDATE tasks SET state = ?, started_at = COALESCE(started_at, ?), finished_at = NULL,
 updated_at = ?, lease_owner = ?, lease_expires_at = ?, result = '', error_code = '', error_message = ''
 WHERE id = ? AND state = ?`
@@ -197,33 +198,32 @@ WHERE id = ? AND state = ?`
 		result, err := transaction.Exec(ctx, update, TaskRunning, formatTime(now), formatTime(now),
 			claim.LeaseOwner, formatTime(claim.LeaseExpiresAt.UTC()), claim.TaskID, from)
 		if err != nil {
-			return oops.In("database").Code("claim_task").Wrapf(err, "claim task")
+			return false, oops.In("database").Code("claim_task").Wrapf(err, "claim task")
 		}
 
 		rows, err := result.RowsAffected()
 		if err != nil {
-			return oops.In("database").Code("task_rows_affected").Wrapf(err, readAffectedTaskRowsMessage)
+			return false, oops.In("database").Code("task_rows_affected").Wrapf(err, readAffectedTaskRowsMessage)
 		}
 
 		if rows != 1 {
-			return nil
+			return false, nil
 		}
 
 		sequence, err := nextTaskEventSequence(ctx, transaction, claim.TaskID)
 		if err != nil {
-			return err
+			return false, err
 		}
 
-		_, err = insertTaskEvent(ctx, transaction, claim.TaskID, sequence, claim.EventKind, "{}", now)
-		changed = err == nil
+		err = insertTaskEvent(ctx, transaction, eventID, claim.TaskID, sequence, claim.EventKind, "{}", now)
 
-		return err
+		return err == nil, err
 	})
 	if err != nil {
 		return false, oops.In("database").Code("claim_task").Wrapf(err, "claim task")
 	}
 
-	return changed, nil
+	return changed.value, nil
 }
 
 // RenewLease extends a lease only while the same owner still runs or cancels the task.
@@ -282,19 +282,17 @@ func (repository *TaskRepository) Transition(
 		return false, err
 	}
 
-	changed := false
+	now := repository.now().UTC()
+	eventID := newUUIDv7()
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		transitioned, err := repository.transition(ctx, transaction, taskID, from, targetState, kind)
-		changed = transitioned
-
-		return err
+	changed, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
+		return repository.transition(ctx, transaction, taskID, from, targetState, kind, now, eventID)
 	})
 	if err != nil {
 		return false, oops.In("database").Code("transition_task").Wrapf(err, "transition task")
 	}
 
-	return changed, nil
+	return changed.value, nil
 }
 
 func (repository *TaskRepository) transition(
@@ -304,13 +302,14 @@ func (repository *TaskRepository) transition(
 	from []TaskState,
 	targetState TaskState,
 	kind string,
+	now time.Time,
+	eventID string,
 ) (bool, error) {
 	current, found, err := loadTask(ctx, transaction, taskID)
 	if err != nil || !found || !slices.Contains(from, current.State) {
 		return false, err
 	}
 
-	now := repository.now().UTC()
 	startedAt, finishedAt := transitionTimes(current, targetState, now)
 
 	const update = `
@@ -344,7 +343,7 @@ WHERE id = ? AND state = ? AND (? = FALSE OR lease_owner IS NULL)`
 		return false, err
 	}
 
-	if _, err := insertTaskEvent(ctx, transaction, taskID, sequence, kind, "{}", now); err != nil {
+	if err := insertTaskEvent(ctx, transaction, eventID, taskID, sequence, kind, "{}", now); err != nil {
 		return false, err
 	}
 
@@ -374,20 +373,17 @@ func (repository *TaskRepository) Finish(ctx context.Context, finish *TaskFinish
 		return false, err
 	}
 
-	changed := false
+	now := repository.now().UTC()
+	eventID := newUUIDv7()
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		var transactionErr error
-
-		changed, transactionErr = repository.finishTransaction(ctx, transaction, finish)
-
-		return transactionErr
+	changed, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
+		return repository.finishTransaction(ctx, transaction, finish, now, eventID)
 	})
 	if err != nil {
 		return false, oops.In("database").Code("finish_task").Wrapf(err, "finish task")
 	}
 
-	return changed, nil
+	return changed.value, nil
 }
 
 func validateTaskFinish(finish *TaskFinish) error {
@@ -410,8 +406,10 @@ func (repository *TaskRepository) finishTransaction(
 	ctx context.Context,
 	transaction ksql.Provider,
 	finish *TaskFinish,
+	now time.Time,
+	eventID string,
 ) (bool, error) {
-	return repository.finishTransactionWithExpiry(ctx, transaction, finish, time.Time{})
+	return repository.finishTransactionWithExpiry(ctx, transaction, finish, time.Time{}, now, eventID)
 }
 
 func (repository *TaskRepository) finishTransactionWithExpiry(
@@ -419,13 +417,14 @@ func (repository *TaskRepository) finishTransactionWithExpiry(
 	transaction ksql.Provider,
 	finish *TaskFinish,
 	leaseExpiredAt time.Time,
+	now time.Time,
+	eventID string,
 ) (bool, error) {
 	current, found, err := loadTask(ctx, transaction, finish.TaskID)
 	if err != nil || !found || !slices.Contains(finish.From, current.State) {
 		return false, err
 	}
 
-	now := repository.now().UTC()
 	startedAt, finishedAt := transitionTimes(current, finish.TargetState, now)
 
 	const update = `
@@ -462,8 +461,8 @@ WHERE id = ? AND state = ?
 		return false, err
 	}
 
-	if _, err := insertTaskEvent(
-		ctx, transaction, finish.TaskID, sequence, finish.EventKind, finish.PayloadJSON, now,
+	if err := insertTaskEvent(
+		ctx, transaction, eventID, finish.TaskID, sequence, finish.EventKind, finish.PayloadJSON, now,
 	); err != nil {
 		return false, err
 	}
@@ -516,9 +515,21 @@ func (repository *TaskRepository) RecoverExpired(ctx context.Context, recovery *
 func (repository *TaskRepository) recoverExpiredBatch(
 	ctx context.Context, recovery *TaskRecovery, limit int,
 ) (batch []string, selected int, err error) {
-	batch = []string{}
+	type recoveryResult struct {
+		batch    []string
+		selected int
+	}
 
-	err = repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+	now := repository.now().UTC()
+
+	eventIDs := make([]string, limit)
+	for index := range eventIDs {
+		eventIDs[index] = newUUIDv7()
+	}
+
+	result, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (recoveryResult, error) {
+		batch := []string{}
+
 		var rows []struct {
 			ID string `ksql:"id"`
 		}
@@ -529,19 +540,22 @@ AND (lease_expires_at IS NULL OR lease_expires_at <= ?) ORDER BY created_at, id 
 		queryErr := transaction.Query(ctx, &rows, query, recovery.Kind, TaskRunning, TaskCanceling,
 			formatTime(recovery.ExpiresBefore.UTC()), limit)
 		if queryErr != nil {
-			return oops.In("database").Code("query_expired_tasks").Wrapf(queryErr, "query expired tasks")
+			return recoveryResult{}, oops.In("database").Code("query_expired_tasks").Wrapf(
+				queryErr, "query expired tasks",
+			)
 		}
 
-		selected = len(rows)
-		now := repository.now().UTC()
+		selected := len(rows)
 
 		const update = `UPDATE tasks SET state = ?, error_code = ?, error_message = ?, finished_at = ?,
 updated_at = ?, lease_owner = NULL, lease_expires_at = NULL WHERE id = ? AND state IN (?, ?)
 AND (lease_expires_at IS NULL OR lease_expires_at <= ?)`
-		for _, row := range rows {
-			wasRecovered, recoverErr := recoverExpiredTask(ctx, transaction, update, row.ID, recovery, now)
+		for index, row := range rows {
+			wasRecovered, recoverErr := recoverExpiredTask(
+				ctx, transaction, update, row.ID, recovery, now, eventIDs[index],
+			)
 			if recoverErr != nil {
-				return recoverErr
+				return recoveryResult{}, recoverErr
 			}
 
 			if wasRecovered {
@@ -549,13 +563,13 @@ AND (lease_expires_at IS NULL OR lease_expires_at <= ?)`
 			}
 		}
 
-		return nil
+		return recoveryResult{batch: batch, selected: selected}, nil
 	})
 	if err != nil {
 		return nil, 0, oops.In("database").Code("recover_task_batch").Wrapf(err, "recover task batch")
 	}
 
-	return batch, selected, nil
+	return result.value.batch, result.value.selected, nil
 }
 
 func recoverExpiredTask(
@@ -565,6 +579,7 @@ func recoverExpiredTask(
 	taskID string,
 	recovery *TaskRecovery,
 	now time.Time,
+	eventID string,
 ) (bool, error) {
 	result, err := transaction.Exec(ctx, update, recovery.TargetState, recovery.ErrorCode,
 		recovery.ErrorMessage, formatTime(now), formatTime(now), taskID, TaskRunning,
@@ -587,8 +602,8 @@ func recoverExpiredTask(
 		return false, err
 	}
 
-	if _, err = insertTaskEvent(
-		ctx, transaction, taskID, sequence, recovery.EventKind, recovery.PayloadJSON, now,
+	if err := insertTaskEvent(
+		ctx, transaction, eventID, taskID, sequence, recovery.EventKind, recovery.PayloadJSON, now,
 	); err != nil {
 		return false, err
 	}
@@ -729,22 +744,21 @@ func (repository *TaskRepository) AppendEvent(
 		return nil, oops.In("database").Code("validate_event").Wrapf(err, "validate event")
 	}
 
-	var created *TaskEventEntity
+	now := repository.now().UTC()
+	eventID := newUUIDv7()
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+	created, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (*TaskEventEntity, error) {
 		sequence, err := nextTaskEventSequence(ctx, transaction, taskID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		now := repository.now().UTC()
-
-		eventID, err := insertTaskEvent(ctx, transaction, taskID, sequence, kind, payloadJSON, now)
+		err = insertTaskEvent(ctx, transaction, eventID, taskID, sequence, kind, payloadJSON, now)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		created = &TaskEventEntity{
+		created := &TaskEventEntity{
 			TaskID:   taskID,
 			Sequence: sequence,
 			Event: EventEntity{
@@ -752,13 +766,13 @@ func (repository *TaskRepository) AppendEvent(
 			},
 		}
 
-		return nil
+		return created, nil
 	})
 	if err != nil {
 		return nil, oops.In("database").Code("append_task_event").Wrapf(err, "append task event")
 	}
 
-	return created, nil
+	return created.value, nil
 }
 
 // AppendRunningEvent appends only while taskID is running under a live lease owned by leaseOwner.
@@ -769,11 +783,15 @@ func (repository *TaskRepository) AppendRunningEvent(
 		return nil, false, oops.In("database").Code("validate_event").Wrapf(err, "validate event")
 	}
 
-	var created *TaskEventEntity
+	type appendResult struct {
+		created  *TaskEventEntity
+		appended bool
+	}
 
-	appended := false
+	now := repository.now().UTC()
+	eventID := newUUIDv7()
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+	result, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (appendResult, error) {
 		var ownership struct {
 			Count int `ksql:"count"`
 		}
@@ -781,38 +799,37 @@ func (repository *TaskRepository) AppendRunningEvent(
 		const owned = `SELECT COUNT(*) AS count FROM tasks WHERE id = ? AND state IN (?, ?)
 AND lease_owner = ? AND lease_expires_at > ?`
 		if err := transaction.QueryOne(ctx, &ownership, owned, taskID, TaskRunning, TaskCanceling,
-			leaseOwner, formatTime(repository.now().UTC())); err != nil {
-			return oops.In("database").Code("check_task_event_lease").Wrapf(err, "check task event lease")
+			leaseOwner, formatTime(now)); err != nil {
+			return appendResult{}, oops.In("database").Code("check_task_event_lease").Wrapf(
+				err, "check task event lease",
+			)
 		}
 
 		if ownership.Count == 0 {
-			return nil
+			return appendResult{created: nil, appended: false}, nil
 		}
 
 		sequence, err := nextTaskEventSequence(ctx, transaction, taskID)
 		if err != nil {
-			return err
+			return appendResult{}, err
 		}
 
-		now := repository.now().UTC()
-
-		eventID, err := insertTaskEvent(ctx, transaction, taskID, sequence, kind, payloadJSON, now)
+		err = insertTaskEvent(ctx, transaction, eventID, taskID, sequence, kind, payloadJSON, now)
 		if err != nil {
-			return err
+			return appendResult{}, err
 		}
 
-		created = &TaskEventEntity{TaskID: taskID, Sequence: sequence, Event: EventEntity{
+		created := &TaskEventEntity{TaskID: taskID, Sequence: sequence, Event: EventEntity{
 			ID: eventID, Kind: kind, PayloadJSON: payloadJSON, CreatedAt: now,
 		}}
-		appended = true
 
-		return nil
+		return appendResult{created: created, appended: true}, nil
 	})
 	if err != nil {
 		return nil, false, oops.In("database").Code("append_owned_task_event").Wrapf(err, "append task event")
 	}
 
-	return created, appended, nil
+	return result.value.created, result.value.appended, nil
 }
 
 // LatestEvent returns the newest event associated with a task.
@@ -1003,29 +1020,28 @@ func nextTaskEventSequence(ctx context.Context, provider ksql.Provider, taskID s
 func insertTaskEvent(
 	ctx context.Context,
 	provider ksql.Provider,
+	eventID string,
 	taskID string,
 	sequence int64,
 	kind string,
 	payload string,
 	createdAt time.Time,
-) (string, error) {
+) error {
 	if err := validateEvent(kind, payload); err != nil {
-		return "", err
+		return err
 	}
-
-	eventID := newUUIDv7()
 
 	const insertEvent = `INSERT INTO events (id, kind, payload_json, created_at) VALUES (?, ?, ?, ?)`
 	if _, err := provider.Exec(ctx, insertEvent, eventID, kind, payload, formatTime(createdAt)); err != nil {
-		return "", oops.In("database").Code("insert_event").Wrapf(err, "insert event")
+		return oops.In("database").Code("insert_event").Wrapf(err, "insert event")
 	}
 
 	const associate = `INSERT INTO task_events (task_id, event_id, sequence) VALUES (?, ?, ?)`
 	if _, err := provider.Exec(ctx, associate, taskID, eventID, sequence); err != nil {
-		return "", oops.In("database").Code("associate_task_event").Wrapf(err, "associate task event")
+		return oops.In("database").Code("associate_task_event").Wrapf(err, "associate task event")
 	}
 
-	return eventID, nil
+	return nil
 }
 
 func parseOptionalTime(value *string) (parsed *time.Time, err error) {

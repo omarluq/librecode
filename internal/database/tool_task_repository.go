@@ -108,6 +108,8 @@ func (repository *ToolTaskRepository) Create(ctx context.Context, candidate *Too
 	created.Task.LeaseOwner, created.Task.LeaseExpiresAt = "", nil
 	created.Task.Result, created.Task.ErrorCode, created.Task.ErrorMessage = "", "", ""
 
+	eventID := newUUIDv7()
+
 	err = repository.sql.Transaction(ctx, func(provider ksql.Provider) error {
 		insertErr := insertTask(ctx, provider, &created.Task)
 		if insertErr != nil {
@@ -129,7 +131,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 			return oops.In("database").Code("insert_tool_task").Wrapf(execErr, "insert tool task")
 		}
 
-		_, eventErr := insertTaskEvent(ctx, provider, created.Task.ID, 1, "task_queued", "{}", now)
+		eventErr := insertTaskEvent(ctx, provider, eventID, created.Task.ID, 1, "task_queued", "{}", now)
 
 		return eventErr
 	})
@@ -167,20 +169,17 @@ func (repository *ToolTaskRepository) Finish(
 		return false, errors.New("tool_task.outcome_json must be valid JSON")
 	}
 
-	changed := false
+	now := repository.tasks.now().UTC()
+	eventID := newUUIDv7()
 
-	err := repository.sql.Transaction(ctx, func(tx ksql.Provider) error {
-		var transitionErr error
-
-		changed, transitionErr = repository.finishTransaction(ctx, tx, finish, outcomeJSON)
-
-		return transitionErr
+	changed, err := transactionValue(ctx, repository.sql, func(tx ksql.Provider) (bool, error) {
+		return repository.finishTransaction(ctx, tx, finish, outcomeJSON, now, eventID)
 	})
 	if err != nil {
 		return false, oops.In("database").Code("finish_tool_task").Wrapf(err, "finish tool task")
 	}
 
-	return changed, nil
+	return changed.value, nil
 }
 
 func (repository *ToolTaskRepository) finishTransaction(
@@ -188,6 +187,8 @@ func (repository *ToolTaskRepository) finishTransaction(
 	provider ksql.Provider,
 	finish *TaskFinish,
 	outcomeJSON string,
+	now time.Time,
+	eventID string,
 ) (bool, error) {
 	terminal := *finish
 
@@ -203,13 +204,13 @@ func (repository *ToolTaskRepository) finishTransaction(
 		terminal.TargetState = TaskCanceled
 		terminal.EventKind = "task_canceled"
 		terminal.Result = ""
-		terminal.ErrorCode = "canceled"
+		terminal.ErrorCode = string(TaskCanceled)
 		terminal.ErrorMessage = "task canceled"
 		terminal.PayloadJSON = `{"error_code":"canceled"}`
 		outcomeJSON = `{"error":"task canceled","is_error":true,"result":{"content":[],"details":{}},"truncated":false}`
 	}
 
-	transitioned, err := repository.tasks.finishTransaction(ctx, provider, &terminal)
+	transitioned, err := repository.tasks.finishTransaction(ctx, provider, &terminal, now, eventID)
 	if err != nil || !transitioned {
 		return false, err
 	}
@@ -247,30 +248,44 @@ func (repository *ToolTaskRepository) RecoverExpired(ctx context.Context, expire
 	)
 
 	for {
-		selected, transitioned := 0, 0
+		type recoveryResult struct {
+			selected     int
+			transitioned int
+		}
 
-		err := repository.sql.Transaction(ctx, func(provider ksql.Provider) error {
-			var recoverErr error
+		now := repository.tasks.now().UTC()
 
-			selected, transitioned, recoverErr = repository.recoverExpiredBatch(
-				ctx, provider, expiresBefore, outcome, batchSize,
+		eventIDs := make([]string, batchSize)
+		for index := range eventIDs {
+			eventIDs[index] = newUUIDv7()
+		}
+
+		result, err := transactionValue(ctx, repository.sql, func(provider ksql.Provider) (recoveryResult, error) {
+			selected, transitioned, recoverErr := repository.recoverExpiredBatch(
+				ctx, provider, expiresBefore, outcome, batchSize, now, eventIDs,
 			)
 
-			return recoverErr
+			return recoveryResult{selected: selected, transitioned: transitioned}, recoverErr
 		})
 		if err != nil {
 			return oops.In("database").Code("recover_expired_tool_tasks").
 				Wrapf(err, "recover expired tool tasks")
 		}
 
-		if selected < batchSize || transitioned == 0 {
+		if result.value.selected < batchSize || result.value.transitioned == 0 {
 			return nil
 		}
 	}
 }
 
 func (repository *ToolTaskRepository) recoverExpiredBatch(
-	ctx context.Context, provider ksql.Provider, expiresBefore time.Time, outcome string, limit int,
+	ctx context.Context,
+	provider ksql.Provider,
+	expiresBefore time.Time,
+	outcome string,
+	limit int,
+	now time.Time,
+	eventIDs []string,
 ) (selected, transitioned int, err error) {
 	var rows []struct {
 		ID         string `ksql:"id"`
@@ -285,9 +300,9 @@ ORDER BY created_at, id LIMIT ?`
 		return 0, 0, oops.In("database").Code("list_expired_tool_tasks").Wrapf(err, "list expired tool tasks")
 	}
 
-	for _, row := range rows {
+	for index, row := range rows {
 		changed, recoverErr := repository.recoverExpiredTransaction(
-			ctx, provider, row.ID, row.LeaseOwner, expiresBefore, outcome,
+			ctx, provider, row.ID, row.LeaseOwner, expiresBefore, outcome, now, eventIDs[index],
 		)
 		if recoverErr != nil {
 			return 0, 0, recoverErr
@@ -308,6 +323,8 @@ func (repository *ToolTaskRepository) recoverExpiredTransaction(
 	leaseOwner string,
 	expiresBefore time.Time,
 	outcome string,
+	now time.Time,
+	eventID string,
 ) (bool, error) {
 	finish := &TaskFinish{
 		TaskID: taskID, From: []TaskState{TaskRunning, TaskCanceling}, TargetState: TaskInterrupted,
@@ -316,7 +333,9 @@ func (repository *ToolTaskRepository) recoverExpiredTransaction(
 		LeaseOwner: leaseOwner,
 	}
 
-	transitioned, err := repository.tasks.finishTransactionWithExpiry(ctx, provider, finish, expiresBefore)
+	transitioned, err := repository.tasks.finishTransactionWithExpiry(
+		ctx, provider, finish, expiresBefore, now, eventID,
+	)
 	if err != nil || !transitioned {
 		return false, err
 	}
@@ -471,20 +490,17 @@ func (repository *ToolTaskRepository) Cancel(ctx context.Context, owner, taskID 
 		return nil, false, err
 	}
 
-	found := false
+	now := repository.tasks.now().UTC()
+	eventID := newUUIDv7()
 
-	err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		var transactionErr error
-
-		found, transactionErr = repository.cancelTransaction(ctx, transaction, owner, taskID)
-
-		return transactionErr
+	found, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
+		return repository.cancelTransaction(ctx, transaction, owner, taskID, now, eventID)
 	})
 	if err != nil {
 		return nil, false, oops.In("database").Code("cancel_tool_task").Wrapf(err, "cancel tool task")
 	}
 
-	if !found {
+	if !found.value {
 		return nil, false, nil
 	}
 
@@ -492,7 +508,12 @@ func (repository *ToolTaskRepository) Cancel(ctx context.Context, owner, taskID 
 }
 
 func (repository *ToolTaskRepository) cancelTransaction(
-	ctx context.Context, transaction ksql.Provider, owner, taskID string,
+	ctx context.Context,
+	transaction ksql.Provider,
+	owner string,
+	taskID string,
+	now time.Time,
+	eventID string,
 ) (bool, error) {
 	current, found, err := loadTask(ctx, transaction, taskID)
 	if err != nil || !found || current.OwnerSessionID != owner || current.Kind != TaskKindTool {
@@ -510,10 +531,10 @@ func (repository *ToolTaskRepository) cancelTransaction(
 		const outcome = `{"error":"task canceled","is_error":true,` +
 			`"result":{"content":[],"details":{}},"truncated":false}`
 
-		_, err = repository.finishTransaction(ctx, transaction, finish, outcome)
+		_, err = repository.finishTransaction(ctx, transaction, finish, outcome, now, eventID)
 	case TaskRunning:
 		_, err = repository.tasks.transition(
-			ctx, transaction, taskID, []TaskState{TaskRunning}, TaskCanceling, "task_canceling",
+			ctx, transaction, taskID, []TaskState{TaskRunning}, TaskCanceling, "task_canceling", now, eventID,
 		)
 	case TaskCanceling, TaskSucceeded, TaskFailed, TaskCanceled, TaskInterrupted:
 	}

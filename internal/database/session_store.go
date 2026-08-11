@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samber/oops"
+	"github.com/vingarcia/ksql"
 )
 
 const appendCompactionNilInputCode = "append_compaction_nil_input"
@@ -61,29 +62,36 @@ ORDER BY c.depth DESC`
 // Branch returns the entries along the path from root to the requested entry
 // (or the current leaf when entryID is empty).
 func (repository *SessionRepository) Branch(ctx context.Context, sessionID, entryID string) ([]EntryEntity, error) {
-	rows := []entryRow{}
-	if err := repository.sql.Query(ctx, &rows, branchChainSQL,
-		sessionID, entryID, sessionID, sessionID, sessionID,
-	); err != nil {
-		return nil, oops.In("database").Code("branch_chain").Wrapf(err, "query session branch")
-	}
+	result, err := readOnlyTransactionValue(ctx, repository.sql, func(provider ksql.Provider) ([]EntryEntity, error) {
+		rows := []entryRow{}
+		if err := provider.Query(ctx, &rows, branchChainSQL,
+			sessionID, entryID, sessionID, sessionID, sessionID,
+		); err != nil {
+			return nil, oops.In("database").Code("branch_chain").Wrapf(err, "query session branch")
+		}
 
-	entries, err := entriesFromRows(rows)
+		entries, err := entriesFromRows(rows)
+		if err != nil {
+			return nil, oops.In("database").Code("scan_entry").Wrapf(err, "scan session branch")
+		}
+
+		if entryID != "" && len(entries) == 0 {
+			return nil, oops.In("database").
+				Code("branch_entry_missing").
+				Errorf("entry %q not found in session %q", entryID, sessionID)
+		}
+
+		if err := repository.withProvider(provider).hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+			return nil, err
+		}
+
+		return entries, nil
+	})
 	if err != nil {
-		return nil, oops.In("database").Code("scan_entry").Wrapf(err, "scan session branch")
-	}
-
-	if entryID != "" && len(entries) == 0 {
-		return nil, oops.In("database").
-			Code("branch_entry_missing").
-			Errorf("entry %q not found in session %q", entryID, sessionID)
-	}
-
-	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
 		return nil, err
 	}
 
-	return entries, nil
+	return result.value, nil
 }
 
 // Tree returns the full session entry tree.

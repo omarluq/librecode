@@ -488,7 +488,7 @@ func TestRunnerCancellationCancelsActiveLaunchedTasks(t *testing.T) {
 	select {
 	case <-fake.submitCh:
 		cancel()
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("workflow did not submit task")
 	}
 

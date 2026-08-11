@@ -15,7 +15,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
-	ksqlite "github.com/vingarcia/ksql/adapters/modernc-ksqlite"
 )
 
 const (
@@ -75,44 +74,17 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 }
 
 func newDatabaseRepositories(connection *sql.DB, databasePath string) (*DatabaseService, error) {
-	sqlProvider, err := ksqlite.NewFromSQLDB(connection)
+	repositories, err := database.NewRepositories(connection)
 	if err != nil {
-		return nil, closeAfterSetupError(connection, "close_after_sql_provider", "sql_provider", databasePath, err)
-	}
-
-	sessions, err := database.NewSessionRepositoryWithProvider(sqlProvider)
-	if err != nil {
-		return nil, closeAfterRepositoryError(connection, "session", databasePath, err)
-	}
-
-	documents, err := database.NewDocumentRepositoryWithProvider(sqlProvider)
-	if err != nil {
-		return nil, closeAfterRepositoryError(connection, "document", databasePath, err)
-	}
-
-	tasks, err := database.NewTaskRepositoryWithProvider(sqlProvider)
-	if err != nil {
-		return nil, closeAfterRepositoryError(connection, "task", databasePath, err)
-	}
-
-	agentTasks, err := database.NewAgentTaskRepositoryWithProvider(sqlProvider, tasks)
-	if err != nil {
-		return nil, closeAfterRepositoryError(connection, "agent_task", databasePath, err)
-	}
-
-	toolTasks, err := database.NewToolTaskRepositoryWithProvider(sqlProvider, tasks)
-	if err != nil {
-		return nil, closeAfterRepositoryError(connection, "tool_task", databasePath, err)
-	}
-
-	workflows, err := database.NewWorkflowRepositoryWithProvider(sqlProvider, tasks, agentTasks)
-	if err != nil {
-		return nil, closeAfterRepositoryError(connection, "workflow", databasePath, err)
+		return nil, closeAfterSetupError(
+			connection, "close_after_repositories", "repositories", databasePath, err,
+		)
 	}
 
 	return &DatabaseService{
-		DB: connection, Sessions: sessions, Documents: documents, Tasks: tasks,
-		AgentTasks: agentTasks, ToolTasks: toolTasks, Workflows: workflows, path: databasePath,
+		DB: connection, Sessions: repositories.Sessions, Documents: repositories.Documents,
+		Tasks: repositories.Tasks, AgentTasks: repositories.AgentTasks,
+		ToolTasks: repositories.ToolTasks, Workflows: repositories.Workflows, path: databasePath,
 	}, nil
 }
 
@@ -190,16 +162,6 @@ func setupSQLiteDatabase(
 	}
 
 	return nil
-}
-
-func closeAfterRepositoryError(connection *sql.DB, name, databasePath string, err error) error {
-	return closeAfterSetupError(
-		connection,
-		"close_after_"+name+"_repository",
-		name+"_repository",
-		databasePath,
-		err,
-	)
 }
 
 func closeAfterSetupError(connection *sql.DB, closeCode, code, databasePath string, err error) error {
