@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/samber/oops"
@@ -25,20 +26,22 @@ type SQLiteOptions struct {
 // multi-process session database. The path may be a filesystem path or an
 // existing SQLite URI.
 func SQLiteDSN(path string, options SQLiteOptions) string {
-	values := sqlitePragmas(options)
-
 	parsed, err := url.Parse(path)
-	if err != nil || parsed.Scheme == "" {
-		return sqliteFileURI(path, values)
+	if err != nil || parsed.Scheme != "file" {
+		filePath := strings.ReplaceAll(path, `\`, "/")
+		if len(filePath) >= 2 && filePath[1] == ':' {
+			filePath = "/" + filePath
+		}
+
+		parsed = &url.URL{Scheme: "file", Path: filePath}
 	}
 
 	query := parsed.Query()
-	for _, pragma := range values["_pragma"] {
+	for _, pragma := range sqlitePragmaValues(options) {
 		query.Add("_pragma", pragma)
 	}
 
 	query.Set("_txlock", sqliteTransactionLock)
-
 	parsed.RawQuery = query.Encode()
 
 	return parsed.String()
@@ -54,24 +57,6 @@ func ConfigureSQLite(ctx context.Context, connection *sql.DB, options SQLiteOpti
 	}
 
 	return nil
-}
-
-func sqliteFileURI(path string, query url.Values) string {
-	uri := &url.URL{Scheme: "file", Path: path}
-
-	query.Set("_txlock", sqliteTransactionLock)
-	uri.RawQuery = query.Encode()
-
-	return uri.String()
-}
-
-func sqlitePragmas(options SQLiteOptions) url.Values {
-	query := url.Values{}
-	for _, pragma := range sqlitePragmaValues(options) {
-		query.Add("_pragma", pragma)
-	}
-
-	return query
 }
 
 func sqlitePragmaValues(options SQLiteOptions) []string {

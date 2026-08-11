@@ -31,6 +31,17 @@ func TestSQLiteDSNAddsPragmas(t *testing.T) {
 	assert.Equal(t, []string{immediateTransactionLock}, dsnQueryValues(t, dsn)["_txlock"])
 }
 
+func TestSQLiteDSNTreatsNonFileSchemesAsPaths(t *testing.T) {
+	t.Parallel()
+
+	dsn := database.SQLiteDSN("C:\\data\\librecode.db", database.SQLiteOptions{BusyTimeout: 0})
+
+	parsed, err := url.Parse(dsn)
+	require.NoError(t, err)
+	assert.Equal(t, "file", parsed.Scheme)
+	assert.Equal(t, "/C:/data/librecode.db", parsed.Path)
+}
+
 func TestSQLiteDSNAppendsPragmasToExistingURI(t *testing.T) {
 	t.Parallel()
 

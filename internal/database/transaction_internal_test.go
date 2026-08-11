@@ -87,16 +87,19 @@ func TestTransactionProviderRetriesBusyAttemptBoundaries(t *testing.T) {
 
 			attempts := 0
 			callbacks := 0
-			provider := &transactionProvider{Provider: nil, connection: nil, diagnostic: nil, executeAttempt: func(
-				_ context.Context, _ *sql.TxOptions, callback func(ksql.Provider) error,
-			) error {
-				attempts++
-				if attempts == 1 {
-					return test.firstAttempt(callback)
-				}
+			provider := &transactionProvider{
+				Provider: nil, connection: nil, waitRetry: nil, restoreReadWrite: nil, diagnostic: nil,
+				executeAttempt: func(
+					_ context.Context, _ *sql.TxOptions, callback func(ksql.Provider) error,
+				) error {
+					attempts++
+					if attempts == 1 {
+						return test.firstAttempt(callback)
+					}
 
-				return callback(nil)
-			}}
+					return callback(nil)
+				},
+			}
 
 			err := provider.Transaction(t.Context(), func(_ ksql.Provider) error {
 				callbacks++
@@ -139,17 +142,20 @@ func TestTransactionValueDiscardsCommitFailureResult(t *testing.T) {
 
 	busy := sqliteContentionError(t, contentionBusy)
 	attempts := 0
-	provider := &transactionProvider{Provider: nil, connection: nil, diagnostic: nil, executeAttempt: func(
-		_ context.Context, _ *sql.TxOptions, callback func(ksql.Provider) error,
-	) error {
-		attempts++
+	provider := &transactionProvider{
+		Provider: nil, connection: nil, waitRetry: nil, restoreReadWrite: nil, diagnostic: nil,
+		executeAttempt: func(
+			_ context.Context, _ *sql.TxOptions, callback func(ksql.Provider) error,
+		) error {
+			attempts++
 
-		if err := callback(nil); err != nil {
-			return err
-		}
+			if err := callback(nil); err != nil {
+				return err
+			}
 
-		return busy
-	}}
+			return busy
+		},
+	}
 
 	result, err := transactionValue(t.Context(), provider, func(ksql.Provider) (string, error) {
 		return fmt.Sprintf("attempt-%d", attempts), nil
@@ -232,7 +238,7 @@ func TestClassifyTransactionOutcome(t *testing.T) {
 		want     transactionOutcome
 		attempts int
 	}{
-		{name: "success", err: nil, want: transactionOutcomeSuccess, attempts: 0},
+		{name: string(transactionOutcomeSuccess), err: nil, want: transactionOutcomeSuccess, attempts: 0},
 		{
 			name: "busy exhaustion", err: busy, attempts: sqliteTransactionAttempts,
 			want: transactionOutcomeBusyExhausted,
@@ -251,42 +257,114 @@ func TestClassifyTransactionOutcome(t *testing.T) {
 	}
 }
 
+type transactionDiagnosticTest struct {
+	attemptError    error
+	waitError       error
+	wantError       error
+	name            string
+	wantOutcome     transactionOutcome
+	wantPhase       transactionPhase
+	wantAttempts    int
+	wantPrimaryCode int
+	preCanceled     bool
+}
+
 func TestTransactionProviderDiagnostics(t *testing.T) {
 	t.Parallel()
 
 	busy := sqliteContentionError(t, contentionBusy)
+	locked := sqliteContentionError(t, contentionLocked)
+	tests := []transactionDiagnosticTest{
+		{
+			attemptError: nil, waitError: nil, wantError: nil, name: string(transactionOutcomeSuccess),
+			wantOutcome: transactionOutcomeSuccess, wantPhase: transactionPhaseAttempt,
+			wantAttempts: 1, wantPrimaryCode: 0, preCanceled: false,
+		},
+		{
+			attemptError: busy, waitError: nil, wantError: busy, name: "busy exhaustion",
+			wantOutcome: transactionOutcomeBusyExhausted, wantPhase: transactionPhaseAttempt,
+			wantAttempts: sqliteTransactionAttempts, wantPrimaryCode: sqlitePrimaryCode(busy), preCanceled: false,
+		},
+		{
+			attemptError: locked, waitError: nil, wantError: locked, name: contentionLocked,
+			wantOutcome: transactionOutcomeLocked, wantPhase: transactionPhaseAttempt,
+			wantAttempts: 1, wantPrimaryCode: sqlitePrimaryCode(locked), preCanceled: false,
+		},
+		{
+			attemptError: context.DeadlineExceeded, waitError: nil, wantError: context.DeadlineExceeded,
+			name: "deadline during attempt", wantOutcome: transactionOutcomeDeadline,
+			wantPhase: transactionPhaseAttempt, wantAttempts: 1, wantPrimaryCode: 0, preCanceled: false,
+		},
+		{
+			attemptError: busy, waitError: context.Canceled, wantError: context.Canceled,
+			name: "retry wait cancellation", wantOutcome: transactionOutcomeCanceled,
+			wantPhase: transactionPhaseRetryWait, wantAttempts: 1, wantPrimaryCode: 0, preCanceled: false,
+		},
+		{
+			attemptError: nil, waitError: nil, wantError: context.Canceled, name: "pre-canceled",
+			wantOutcome: transactionOutcomeCanceled, wantPhase: transactionPhaseAttempt,
+			wantAttempts: 0, wantPrimaryCode: 0, preCanceled: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			testTransactionProviderDiagnostic(t, &test)
+		})
+	}
+}
+
+func testTransactionProviderDiagnostic(t *testing.T, test *transactionDiagnosticTest) {
+	t.Helper()
+
+	ctx := t.Context()
+	if test.preCanceled {
+		canceledCtx, cancel := context.WithCancel(ctx)
+		cancel()
+
+		ctx = canceledCtx
+	}
+
 	attempts := 0
 
 	var diagnostic transactionDiagnostic
 
 	captured := false
 	provider := &transactionProvider{
-		Provider: nil, connection: nil,
+		Provider:   nil,
+		connection: nil,
 		executeAttempt: func(
-			_ context.Context, _ *sql.TxOptions, callback func(ksql.Provider) error,
+			_ context.Context, _ *sql.TxOptions, _ func(ksql.Provider) error,
 		) error {
 			attempts++
-			if attempts == 1 {
-				return busy
-			}
 
-			return callback(nil)
+			return test.attemptError
 		},
+		waitRetry:        func(context.Context, time.Duration) error { return test.waitError },
+		restoreReadWrite: nil,
 		diagnostic: func(value transactionDiagnostic) {
 			diagnostic = value
 			captured = true
 		},
 	}
 
-	require.NoError(t, provider.Transaction(t.Context(), func(ksql.Provider) error { return nil }))
+	err := provider.Transaction(ctx, func(ksql.Provider) error { return nil })
+	if test.wantError == nil {
+		require.NoError(t, err)
+	} else {
+		require.ErrorIs(t, err, test.wantError)
+	}
+
 	assert.True(t, captured)
 	assert.Equal(t, transactionModeWrite, diagnostic.mode)
-	assert.Equal(t, transactionOutcomeSuccess, diagnostic.outcome)
-	assert.Equal(t, transactionPhaseAttempt, diagnostic.phase)
-	assert.Equal(t, 2, diagnostic.attempts)
+	assert.Equal(t, test.wantOutcome, diagnostic.outcome)
+	assert.Equal(t, test.wantPhase, diagnostic.phase)
+	assert.Equal(t, test.wantAttempts, diagnostic.attempts)
+	assert.Equal(t, test.wantAttempts, attempts)
 	assert.GreaterOrEqual(t, diagnostic.retryDelay, time.Duration(0))
 	assert.GreaterOrEqual(t, diagnostic.attemptDuration, time.Duration(0))
-	assert.Zero(t, diagnostic.primaryCode)
+	assert.Equal(t, test.wantPrimaryCode, diagnostic.primaryCode)
 }
 
 func TestTransactionProviderTerminalErrors(t *testing.T) {
@@ -337,7 +415,10 @@ func TestTransactionProviderCancellationStopsRetry(t *testing.T) {
 	connection := openInternalSQLite(t, filepath.Join(t.TempDir(), "cancel.db"), 0, true)
 	provider := internalTransactionProvider(t, connection)
 	busy := sqliteContentionError(t, contentionBusy)
+
 	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
 	attempts := 0
 
 	var diagnostic transactionDiagnostic
@@ -363,7 +444,9 @@ func TestReadOnlyTransactionCancellationRestoresWrites(t *testing.T) {
 
 	connection := openInternalSQLite(t, filepath.Join(t.TempDir(), "read-only-cancel.db"), 0, true)
 	provider := internalTransactionProvider(t, connection)
+
 	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
 	err := provider.readOnlyTransaction(ctx, func(ksql.Provider) error {
 		cancel()
@@ -393,6 +476,43 @@ func TestReadOnlyTransactionPanicRestoresWrites(t *testing.T) {
 	}()
 
 	_, err := connection.ExecContext(t.Context(), "CREATE TABLE writable_after_panic (id INTEGER)")
+	require.NoError(t, err)
+}
+
+func TestReadOnlyTransactionRestoreFailureDiscardsConnection(t *testing.T) {
+	t.Parallel()
+
+	connection := openInternalSQLite(t, filepath.Join(t.TempDir(), "read-only-restore.db"), 0, true)
+	provider := internalTransactionProvider(t, connection)
+	restoreFailure := errors.New("restore query_only")
+
+	var poisoned any
+
+	provider.restoreReadWrite = func(_ context.Context, conn *sql.Conn) error {
+		require.NoError(t, conn.Raw(func(driverConnection any) error {
+			poisoned = driverConnection
+
+			return nil
+		}))
+
+		return restoreFailure
+	}
+
+	err := provider.readOnlyTransaction(t.Context(), func(ksql.Provider) error { return nil })
+
+	require.ErrorIs(t, err, restoreFailure)
+
+	fresh, err := connection.Conn(t.Context())
+	require.NoError(t, err)
+
+	defer func() { require.NoError(t, fresh.Close()) }()
+
+	require.NoError(t, fresh.Raw(func(driverConnection any) error {
+		assert.NotSame(t, poisoned, driverConnection)
+
+		return nil
+	}))
+	_, err = fresh.ExecContext(t.Context(), "CREATE TABLE writable_after_restore_failure (id INTEGER)")
 	require.NoError(t, err)
 }
 
@@ -474,14 +594,17 @@ func TestImmediateTransactionArbitratesBeforeReading(t *testing.T) {
 func TestReadOnlyTransactionOverlapsImmediateWriterAndRejectsWrites(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-
 	path := filepath.Join(t.TempDir(), "read-only.db")
 	readerDB := openInternalSQLite(t, path, time.Second, true)
 	writerDB := openInternalSQLite(t, path, time.Second, true)
-	require.NoError(t, Migrate(ctx, readerDB))
+	require.NoError(t, Migrate(t.Context(), readerDB))
 	reader := internalTransactionProvider(t, readerDB)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	readerCtx, readerCancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer readerCancel()
 
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -491,23 +614,30 @@ func TestReadOnlyTransactionOverlapsImmediateWriterAndRejectsWrites(t *testing.T
 	releaseReader := func() { releaseOnce.Do(func() { close(release) }) }
 	t.Cleanup(releaseReader)
 
+	var writeAccepted atomic.Bool
+
 	readDone := make(chan error, 1)
 	go func() {
-		readDone <- reader.readOnlyTransaction(ctx, func(transaction ksql.Provider) error {
+		readDone <- reader.readOnlyTransaction(readerCtx, func(transaction ksql.Provider) error {
 			var rows []struct {
 				Count int `ksql:"count"`
 			}
-			if err := transaction.Query(ctx, &rows, "SELECT COUNT(*) AS count FROM sessions"); err != nil {
+			if err := transaction.Query(readerCtx, &rows, "SELECT COUNT(*) AS count FROM sessions"); err != nil {
 				return fmt.Errorf("query session count: %w", err)
 			}
 
 			close(started)
 			<-release
 
-			_, err := transaction.Exec(ctx, `INSERT INTO sessions
+			_, execErr := transaction.Exec(readerCtx, `INSERT INTO sessions
 (id, parent_session_id, cwd, name, created_at, updated_at) VALUES ('read-only', NULL, '/', 'no', 'x', 'x')`)
+			if execErr == nil {
+				writeAccepted.Store(true)
 
-			return fmt.Errorf("write in read-only transaction: %w", err)
+				return nil
+			}
+
+			return fmt.Errorf("write in read-only transaction: %w", execErr)
 		})
 	}()
 
@@ -521,6 +651,12 @@ func TestReadOnlyTransactionOverlapsImmediateWriterAndRejectsWrites(t *testing.T
 
 	writer, err := writerDB.BeginTx(ctx, nil)
 	require.NoError(t, err, "read-only transaction must not reserve the writer slot")
+
+	defer func() {
+		rollbackErr := writer.Rollback()
+		require.True(t, rollbackErr == nil || errors.Is(rollbackErr, sql.ErrTxDone))
+	}()
+
 	_, err = writer.ExecContext(ctx, `UPDATE sessions SET updated_at = updated_at`)
 	require.NoError(t, err)
 	require.NoError(t, writer.Commit())
@@ -532,6 +668,7 @@ func TestReadOnlyTransactionOverlapsImmediateWriterAndRejectsWrites(t *testing.T
 		require.NoError(t, ctx.Err(), "timed out waiting for read-only transaction cleanup")
 	}
 
+	assert.False(t, writeAccepted.Load(), "read-only transaction accepted a write")
 	require.Error(t, err)
 	assert.False(t, isSQLiteBusy(err))
 	assert.Equal(t, 0, countInternalRows(t, readerDB, "SELECT COUNT(*) FROM sessions WHERE id = 'read-only'"))
@@ -619,11 +756,11 @@ func sqliteContentionError(t *testing.T, kind string) error {
 	path := filepath.Join(t.TempDir(), kind+".db")
 
 	switch kind {
-	case "busy":
+	case contentionBusy:
 		return sqliteBusyError(t, path)
-	case "busy_snapshot":
+	case contentionBusySnapshot:
 		return sqliteBusySnapshotError(t, path)
-	case "locked":
+	case contentionLocked:
 		database, err := sql.Open("sqlite", ":memory:")
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, database.Close()) })

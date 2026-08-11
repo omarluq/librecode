@@ -24,6 +24,7 @@ const (
 	sqliteRetryInitialDelay   = 5 * time.Millisecond
 	sqliteRetryMaximumDelay   = 20 * time.Millisecond
 	sqliteCleanupTimeout      = time.Second
+	retryMinimumDivisor       = 2
 )
 
 func isSQLiteBusy(err error) bool {
@@ -70,14 +71,20 @@ type transactionDiagnostic struct {
 	primaryCode     int
 }
 
+type readOnlyTransactionProvider interface {
+	readOnlyTransaction(context.Context, func(ksql.Provider) error) error
+}
+
 type transactionProvider struct {
 	ksql.Provider
 	connection *sql.DB
 
 	// These private hooks keep retry policy independently testable without
 	// abstracting database/sql transactions or adding a SQL mocking dependency.
-	executeAttempt func(context.Context, *sql.TxOptions, func(ksql.Provider) error) error
-	diagnostic     func(transactionDiagnostic)
+	executeAttempt   func(context.Context, *sql.TxOptions, func(ksql.Provider) error) error
+	waitRetry        func(context.Context, time.Duration) error
+	restoreReadWrite func(context.Context, *sql.Conn) error
+	diagnostic       func(transactionDiagnostic)
 }
 
 type transactionAttemptError struct {
@@ -113,7 +120,7 @@ func readOnlyTransactionValue[T any](
 	provider ksql.Provider,
 	callback func(ksql.Provider) (T, error),
 ) (*transactionResult[T], error) {
-	transactional, ok := provider.(*transactionProvider)
+	transactional, ok := provider.(readOnlyTransactionProvider)
 	if !ok {
 		// A generic provider cannot express database/sql read-only options, but
 		// its transaction boundary still guarantees a consistent snapshot.
@@ -211,7 +218,7 @@ func (provider *transactionProvider) execute(
 		delay := retryDelay(attempt)
 
 		waitStarted := time.Now()
-		if waitErr := waitForRetry(ctx, delay); waitErr != nil {
+		if waitErr := provider.waitForRetry(ctx, delay); waitErr != nil {
 			totalDelay += time.Since(waitStarted)
 			provider.logTransaction(
 				ctx, mode, transactionPhaseRetryWait, attempt, totalDelay, attemptDuration, waitErr,
@@ -223,7 +230,15 @@ func (provider *transactionProvider) execute(
 		totalDelay += time.Since(waitStarted)
 	}
 
-	panic("unreachable")
+	return oops.In("database").Code("transaction_no_attempts").Errorf("transaction executed no attempts")
+}
+
+func (provider *transactionProvider) waitForRetry(ctx context.Context, delay time.Duration) error {
+	if provider.waitRetry != nil {
+		return provider.waitRetry(ctx, delay)
+	}
+
+	return waitForRetry(ctx, delay)
 }
 
 func (provider *transactionProvider) runAttempt(
@@ -255,7 +270,7 @@ func (provider *transactionProvider) attempt(
 	defer func() {
 		recovered := recover()
 
-		cleanupErr := cleanupTransaction(connection, transaction, readOnly)
+		cleanupErr := cleanupTransaction(connection, transaction, readOnly, provider.restoreReadWrite)
 		if closeErr := connection.Close(); closeErr != nil {
 			cleanupErr = errors.Join(cleanupErr, oops.In("database").Code("transaction_connection_cleanup").Wrapf(
 				closeErr, "close transaction connection",
@@ -313,7 +328,12 @@ func enableReadOnly(ctx context.Context, transaction *sql.Tx, readOnly bool) err
 	return nil
 }
 
-func cleanupTransaction(connection *sql.Conn, transaction *sql.Tx, readOnly bool) error {
+func cleanupTransaction(
+	connection *sql.Conn,
+	transaction *sql.Tx,
+	readOnly bool,
+	restoreReadWrite func(context.Context, *sql.Conn) error,
+) error {
 	var cleanupErr error
 
 	if transaction != nil {
@@ -328,7 +348,14 @@ func cleanupTransaction(connection *sql.Conn, transaction *sql.Tx, readOnly bool
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), sqliteCleanupTimeout)
 		defer cancel()
 
-		if _, err := connection.ExecContext(cleanupCtx, "PRAGMA query_only=OFF"); err != nil {
+		var err error
+		if restoreReadWrite != nil {
+			err = restoreReadWrite(cleanupCtx, connection)
+		} else {
+			_, err = connection.ExecContext(cleanupCtx, "PRAGMA query_only=OFF")
+		}
+
+		if err != nil {
 			cleanupErr = errors.Join(cleanupErr, oops.In("database").Code("read_only_transaction_cleanup").Wrapf(
 				err, "disable query-only transaction",
 			))
@@ -363,13 +390,14 @@ func joinTransactionErrors(cause, cleanup error) error {
 
 func retryDelay(attempt int) time.Duration {
 	delay := min(sqliteRetryInitialDelay<<(attempt-1), sqliteRetryMaximumDelay)
+	minimum := delay / retryMinimumDivisor
 
-	jitter, err := rand.Int(rand.Reader, big.NewInt(int64(delay)+1))
+	jitter, err := rand.Int(rand.Reader, big.NewInt(int64(minimum)+1))
 	if err != nil {
 		return delay
 	}
 
-	return time.Duration(jitter.Int64())
+	return minimum + time.Duration(jitter.Int64())
 }
 
 func waitForRetry(ctx context.Context, delay time.Duration) error {
@@ -391,7 +419,7 @@ func (provider *transactionProvider) logTransaction(
 	mode transactionMode,
 	phase transactionPhase,
 	attempts int,
-	retryDelay time.Duration,
+	totalRetryDelay time.Duration,
 	attemptDuration time.Duration,
 	err error,
 ) {
@@ -400,7 +428,7 @@ func (provider *transactionProvider) logTransaction(
 		outcome:         classifyTransactionOutcome(err, attempts),
 		phase:           phase,
 		attempts:        attempts,
-		retryDelay:      retryDelay,
+		retryDelay:      totalRetryDelay,
 		attemptDuration: attemptDuration,
 		primaryCode:     sqlitePrimaryCode(err),
 	}
@@ -408,7 +436,7 @@ func (provider *transactionProvider) logTransaction(
 		provider.diagnostic(diagnostic)
 	}
 
-	slog.DebugContext(ctx, "sqlite transaction",
+	attributes := []any{
 		slog.String("mode", string(diagnostic.mode)),
 		slog.String("outcome", string(diagnostic.outcome)),
 		slog.String("phase", string(diagnostic.phase)),
@@ -416,7 +444,14 @@ func (provider *transactionProvider) logTransaction(
 		slog.Duration("retry_delay", diagnostic.retryDelay),
 		slog.Duration("attempt_duration", diagnostic.attemptDuration),
 		slog.Int("sqlite_primary_code", diagnostic.primaryCode),
-	)
+	}
+	if diagnostic.outcome == transactionOutcomeSuccess {
+		slog.DebugContext(ctx, "sqlite transaction", attributes...)
+
+		return
+	}
+
+	slog.WarnContext(ctx, "sqlite transaction failed", attributes...)
 }
 
 func classifyTransactionOutcome(err error, attempts int) transactionOutcome {

@@ -19,6 +19,7 @@ type TaskState string
 const (
 	eventKindField              = "event.kind"
 	readAffectedTaskRowsMessage = "read affected task rows"
+	taskQueuedEvent             = "task_queued"
 
 	// TaskKindAgent identifies asynchronous subagent work.
 	TaskKindAgent = "agent"
@@ -105,6 +106,20 @@ type TaskRecovery struct {
 	TargetState   TaskState
 }
 
+type retryStableTaskOperation struct {
+	now     time.Time
+	eventID string
+}
+
+type taskEventInsert struct {
+	createdAt time.Time
+	id        string
+	taskID    string
+	kind      string
+	payload   string
+	sequence  int64
+}
+
 // TaskRepository persists generic task lifecycle state and ordered events.
 type TaskRepository struct {
 	sql ksql.Provider
@@ -154,7 +169,9 @@ func (repository *TaskRepository) Create(ctx context.Context, task *TaskEntity) 
 			return err
 		}
 
-		err := insertTaskEvent(ctx, transaction, eventID, created.ID, 1, "task_queued", "{}", now)
+		err := insertTaskEvent(ctx, transaction, &taskEventInsert{
+			createdAt: now, id: eventID, taskID: created.ID,
+			kind: taskQueuedEvent, payload: "{}", sequence: 1})
 
 		return err
 	}); err != nil {
@@ -215,7 +232,9 @@ WHERE id = ? AND state = ?`
 			return false, err
 		}
 
-		err = insertTaskEvent(ctx, transaction, eventID, claim.TaskID, sequence, claim.EventKind, "{}", now)
+		err = insertTaskEvent(ctx, transaction, &taskEventInsert{
+			createdAt: now, id: eventID, taskID: claim.TaskID,
+			kind: claim.EventKind, payload: "{}", sequence: sequence})
 
 		return err == nil, err
 	})
@@ -286,7 +305,10 @@ func (repository *TaskRepository) Transition(
 	eventID := newUUIDv7()
 
 	changed, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
-		return repository.transition(ctx, transaction, taskID, from, targetState, kind, now, eventID)
+		return repository.transition(
+			ctx, transaction, taskID, from, targetState, kind,
+			retryStableTaskOperation{now: now, eventID: eventID},
+		)
 	})
 	if err != nil {
 		return false, oops.In("database").Code("transition_task").Wrapf(err, "transition task")
@@ -302,15 +324,14 @@ func (repository *TaskRepository) transition(
 	from []TaskState,
 	targetState TaskState,
 	kind string,
-	now time.Time,
-	eventID string,
+	operation retryStableTaskOperation,
 ) (bool, error) {
 	current, found, err := loadTask(ctx, transaction, taskID)
 	if err != nil || !found || !slices.Contains(from, current.State) {
 		return false, err
 	}
 
-	startedAt, finishedAt := transitionTimes(current, targetState, now)
+	startedAt, finishedAt := transitionTimes(current, targetState, operation.now)
 
 	const update = `
 UPDATE tasks
@@ -323,7 +344,7 @@ WHERE id = ? AND state = ? AND (? = FALSE OR lease_owner IS NULL)`
 
 	result, err := transaction.Exec(
 		ctx, update, targetState, nullableTime(startedAt), nullableTime(finishedAt),
-		formatTime(now), terminal, terminal, taskID, current.State, terminal,
+		formatTime(operation.now), terminal, terminal, taskID, current.State, terminal,
 	)
 	if err != nil {
 		return false, oops.In("database").Code("update_task_state").Wrapf(err, "update task state")
@@ -343,7 +364,10 @@ WHERE id = ? AND state = ? AND (? = FALSE OR lease_owner IS NULL)`
 		return false, err
 	}
 
-	if err := insertTaskEvent(ctx, transaction, eventID, taskID, sequence, kind, "{}", now); err != nil {
+	if err := insertTaskEvent(ctx, transaction, &taskEventInsert{
+		createdAt: operation.now, id: operation.eventID, taskID: taskID,
+		kind: kind, payload: "{}", sequence: sequence,
+	}); err != nil {
 		return false, err
 	}
 
@@ -461,9 +485,10 @@ WHERE id = ? AND state = ?
 		return false, err
 	}
 
-	if err := insertTaskEvent(
-		ctx, transaction, eventID, finish.TaskID, sequence, finish.EventKind, finish.PayloadJSON, now,
-	); err != nil {
+	if err := insertTaskEvent(ctx, transaction, &taskEventInsert{
+		createdAt: now, id: eventID, taskID: finish.TaskID,
+		kind: finish.EventKind, payload: finish.PayloadJSON, sequence: sequence,
+	}); err != nil {
 		return false, err
 	}
 
@@ -602,9 +627,10 @@ func recoverExpiredTask(
 		return false, err
 	}
 
-	if err := insertTaskEvent(
-		ctx, transaction, eventID, taskID, sequence, recovery.EventKind, recovery.PayloadJSON, now,
-	); err != nil {
+	if err := insertTaskEvent(ctx, transaction, &taskEventInsert{
+		createdAt: now, id: eventID, taskID: taskID,
+		kind: recovery.EventKind, payload: recovery.PayloadJSON, sequence: sequence,
+	}); err != nil {
 		return false, err
 	}
 
@@ -753,7 +779,10 @@ func (repository *TaskRepository) AppendEvent(
 			return nil, err
 		}
 
-		err = insertTaskEvent(ctx, transaction, eventID, taskID, sequence, kind, payloadJSON, now)
+		err = insertTaskEvent(ctx, transaction, &taskEventInsert{
+			createdAt: now, id: eventID, taskID: taskID,
+			kind: kind, payload: payloadJSON, sequence: sequence,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -814,7 +843,10 @@ AND lease_owner = ? AND lease_expires_at > ?`
 			return appendResult{}, err
 		}
 
-		err = insertTaskEvent(ctx, transaction, eventID, taskID, sequence, kind, payloadJSON, now)
+		err = insertTaskEvent(ctx, transaction, &taskEventInsert{
+			createdAt: now, id: eventID, taskID: taskID,
+			kind: kind, payload: payloadJSON, sequence: sequence,
+		})
 		if err != nil {
 			return appendResult{}, err
 		}
@@ -1017,27 +1049,20 @@ func nextTaskEventSequence(ctx context.Context, provider ksql.Provider, taskID s
 	return row.Sequence, nil
 }
 
-func insertTaskEvent(
-	ctx context.Context,
-	provider ksql.Provider,
-	eventID string,
-	taskID string,
-	sequence int64,
-	kind string,
-	payload string,
-	createdAt time.Time,
-) error {
-	if err := validateEvent(kind, payload); err != nil {
+func insertTaskEvent(ctx context.Context, provider ksql.Provider, event *taskEventInsert) error {
+	if err := validateEvent(event.kind, event.payload); err != nil {
 		return err
 	}
 
 	const insertEvent = `INSERT INTO events (id, kind, payload_json, created_at) VALUES (?, ?, ?, ?)`
-	if _, err := provider.Exec(ctx, insertEvent, eventID, kind, payload, formatTime(createdAt)); err != nil {
+	if _, err := provider.Exec(
+		ctx, insertEvent, event.id, event.kind, event.payload, formatTime(event.createdAt),
+	); err != nil {
 		return oops.In("database").Code("insert_event").Wrapf(err, "insert event")
 	}
 
 	const associate = `INSERT INTO task_events (task_id, event_id, sequence) VALUES (?, ?, ?)`
-	if _, err := provider.Exec(ctx, associate, taskID, eventID, sequence); err != nil {
+	if _, err := provider.Exec(ctx, associate, event.taskID, event.id, event.sequence); err != nil {
 		return oops.In("database").Code("associate_task_event").Wrapf(err, "associate task event")
 	}
 

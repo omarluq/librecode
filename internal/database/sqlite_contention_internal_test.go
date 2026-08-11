@@ -22,6 +22,8 @@ import (
 	"github.com/omarluq/librecode/internal/testutil"
 )
 
+const sqliteTestPrimaryCodeMask = 0xff
+
 type sqlitePair struct {
 	primary   *sql.DB
 	secondary *sql.DB
@@ -249,6 +251,45 @@ func TestSQLiteShortBusyTimeoutStillReportsBusy(t *testing.T) {
 	})
 }
 
+func TestSQLiteBusyTimeoutWaitsForExternalWriter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping SQLite lock contention test in short mode")
+	}
+
+	t.Parallel()
+
+	dbs := openMigratedSQLitePair(t.Context(), t, 2*time.Second)
+	secondaryRepository := testutil.SessionRepository(t, dbs.secondary)
+	cwd := t.TempDir()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	withSessionsTableLock(ctx, t, dbs.primary, func(lock *sql.Tx) {
+		done := make(chan error, 1)
+		started := make(chan struct{})
+
+		go func() {
+			close(started)
+
+			_, err := secondaryRepository.CreateSession(ctx, cwd, "waited", "")
+			done <- err
+		}()
+
+		<-started
+
+		select {
+		case err := <-done:
+			require.NoError(t, err, "writer returned before the external lock was released")
+			t.Fatal("writer did not wait for the external lock")
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		require.NoError(t, lock.Commit())
+		require.NoError(t, <-done)
+	})
+}
+
 func openMigratedSQLitePair(ctx context.Context, t *testing.T, busyTimeout time.Duration) sqlitePair {
 	t.Helper()
 
@@ -284,5 +325,5 @@ func withSessionsTableLock(ctx context.Context, t *testing.T, connection *sql.DB
 func isSQLiteBusyError(err error) bool {
 	var sqliteErr *sqlite.Error
 
-	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == sqlite3.SQLITE_BUSY
+	return errors.As(err, &sqliteErr) && sqliteErr.Code()&sqliteTestPrimaryCodeMask == sqlite3.SQLITE_BUSY
 }

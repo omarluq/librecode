@@ -306,7 +306,9 @@ func TestTaskRowDecodingBehavior(t *testing.T) {
 
 func TestTaskEventInsertionRejectsInvalidEvent(t *testing.T) {
 	t.Parallel()
-	err := insertTaskEvent(t.Context(), nil, newUUIDv7(), "task", 1, " ", `{}`, time.Now())
+	err := insertTaskEvent(t.Context(), nil, &taskEventInsert{
+		createdAt: time.Now(), id: newUUIDv7(), taskID: "task", kind: " ", payload: `{}`, sequence: 1,
+	})
 	require.ErrorContains(t, err, "event.kind is required")
 }
 
