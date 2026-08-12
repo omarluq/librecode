@@ -71,24 +71,26 @@ func (app *App) deliverDraft(
 		return app.submitCommand(ctx, draft.Text)
 	}
 
-	switch delivery {
-	case promptDeliveryPrompt:
-		app.recordPromptDraftHistory(draft)
-		app.sendDraft(ctx, draft, true)
-	case promptDeliveryFollowUp:
+	if delivery == promptDeliveryFollowUp {
 		app.recordPromptDraftHistory(draft)
 		app.queueDraft(draft, true)
 		app.setStatus("follow-up queued")
-	case promptDeliverySteer:
+
+		return false, nil
+	}
+
+	if delivery == promptDeliverySteer {
 		if err := app.steerDraft(ctx, draft); err != nil {
 			return false, err
 		}
 
 		app.recordPromptDraftHistory(draft)
-	default:
-		app.recordPromptDraftHistory(draft)
-		app.sendDraft(ctx, draft, true)
+
+		return false, nil
 	}
+
+	app.recordPromptDraftHistory(draft)
+	app.sendDraft(ctx, draft, true)
 
 	return false, nil
 }
@@ -145,7 +147,7 @@ func (app *App) steerDraft(ctx context.Context, draft promptDraft) error {
 
 func (app *App) queueSteeringFallback(draft promptDraft) {
 	app.queueDraft(draft, true)
-	app.setStatus("response finished; prompt queued next")
+	app.setStatus("prompt queued next")
 }
 
 func (app *App) deliverHiddenContinuation(ctx context.Context, text string) {
