@@ -94,9 +94,9 @@ func TestRuntimeRoundCheckpointToolRoundWithoutSteeringKeepsInboxActive(t *testi
 	runtime := NewRuntimeForTest(nil)
 	lineage := newPromptLineage(testRoundRun)
 
-	require.NoError(t, runtime.steering.register("session", testRoundRun))
+	require.NoError(t, runtime.steering.register(testSteeringSession, testRoundRun))
 
-	messages, err := runtime.roundCheckpoint("session", lineage)(context.Background(), &llm.CompletedRound{
+	messages, err := runtime.roundCheckpoint(testSteeringSession, lineage)(context.Background(), &llm.CompletedRound{
 		Assistant:   llm.Message{Metadata: nil, Role: llm.RoleAssistant, Content: nil},
 		ToolResults: nil, FinishReason: llm.FinishReasonToolCalls, Usage: llm.EmptyUsage(),
 	})
@@ -113,9 +113,9 @@ func TestRuntimeRoundCheckpointFinalRoundWithoutSteeringSettlesInbox(t *testing.
 	runtime := NewRuntimeForTest(nil)
 	lineage := newPromptLineage(testRoundRun)
 
-	require.NoError(t, runtime.steering.register("session", testRoundRun))
+	require.NoError(t, runtime.steering.register(testSteeringSession, testRoundRun))
 
-	messages, err := runtime.roundCheckpoint("session", lineage)(context.Background(), &llm.CompletedRound{
+	messages, err := runtime.roundCheckpoint(testSteeringSession, lineage)(context.Background(), &llm.CompletedRound{
 		Assistant:   llm.Message{Metadata: nil, Role: llm.RoleAssistant, Content: nil},
 		ToolResults: nil, FinishReason: llm.FinishReasonStop, Usage: llm.EmptyUsage(),
 	})

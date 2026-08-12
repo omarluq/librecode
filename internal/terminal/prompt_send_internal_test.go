@@ -459,7 +459,7 @@ func TestSteerDraftQueuesWhenActivePromptDoesNotMatchDisplayedSession(t *testing
 			require.NoError(t, app.steerDraft(t.Context(), promptDraft{Text: testQueuedPromptText, Images: nil}))
 
 			assert.Equal(t, []string{testQueuedPromptText}, promptDraftTexts(app.queuedMessages))
-			assert.Equal(t, "response finished; prompt queued next", app.statusMessage)
+			assert.Equal(t, "prompt queued next", app.statusMessage)
 		})
 	}
 }
@@ -476,7 +476,7 @@ func TestSteerDraftQueuesExactlyOnceWhenRunClosesBeforeAcceptance(t *testing.T) 
 	require.NoError(t, app.steerDraft(t.Context(), draft))
 
 	assert.Equal(t, []string{testQueuedPromptText}, promptDraftTexts(app.queuedMessages))
-	assert.Equal(t, "response finished; prompt queued next", app.statusMessage)
+	assert.Equal(t, "prompt queued next", app.statusMessage)
 }
 
 func TestRestoreReturnedSteeringPrecedesFollowUps(t *testing.T) {
