@@ -171,15 +171,33 @@ func TestWorkflowFailureIsPushedIntoCompletedTurn(t *testing.T) {
 	assert.Len(t, app.liveAgentCompletions, 1, "failure must only be delivered once")
 }
 
-func TestTerminalWorkflowWithoutFailureDoesNotPushCompletion(t *testing.T) {
+func TestTerminalWorkflowCompletionDelivery(t *testing.T) {
 	t.Parallel()
 
-	for _, state := range []database.TaskState{database.TaskSucceeded, database.TaskCanceled} {
-		t.Run(string(state), func(t *testing.T) {
+	tests := []struct {
+		state              database.TaskState
+		completionContains string
+		queuedContains     string
+		wantCompletions    int
+		wantQueued         int
+	}{
+		{
+			state: database.TaskSucceeded, completionContains: "workflow output",
+			queuedContains: "completed workflow result", wantCompletions: 1, wantQueued: 1,
+		},
+		{
+			state: database.TaskCanceled, completionContains: "", queuedContains: "",
+			wantCompletions: 0, wantQueued: 0,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(string(testCase.state), func(t *testing.T) {
 			t.Parallel()
 
 			running := workflowSummaryRun("terminal-run", database.TaskRunning)
-			terminal := workflowSummaryRun("terminal-run", state)
+			terminal := workflowSummaryRun("terminal-run", testCase.state)
+			terminal.Task.Result = "workflow output"
 			app := newRenderTestApp(t)
 			app.sessionID = workflowTestSessionID
 			app.workflows = &activeWorkflowInspectorStub{
@@ -191,8 +209,17 @@ func TestTerminalWorkflowWithoutFailureDoesNotPushCompletion(t *testing.T) {
 			app.refreshActiveWorkflows(t.Context())
 
 			assert.Empty(t, app.activeWorkflows)
-			assert.Empty(t, app.liveAgentCompletions)
-			assert.Empty(t, app.hiddenQueuedMessages)
+
+			assert.Len(t, app.liveAgentCompletions, testCase.wantCompletions)
+			assert.Len(t, app.hiddenQueuedMessages, testCase.wantQueued)
+
+			if testCase.wantCompletions > 0 {
+				assert.Contains(t, app.liveAgentCompletions[0].Content, testCase.completionContains)
+			}
+
+			if testCase.wantQueued > 0 {
+				assert.Contains(t, app.hiddenQueuedMessages[0].Text, testCase.queuedContains)
+			}
 		})
 	}
 }
@@ -249,12 +276,12 @@ func TestWorkflowFailureNotificationFallbacksAndBusyBranches(t *testing.T) {
 			app := newRenderTestApp(t)
 			testCase.makeBusy(app)
 
-			app.deliverWorkflowFailure(t.Context(), nil)
+			app.deliverWorkflowCompletion(t.Context(), nil)
 
-			nonfailure := failed
-			nonfailure.Task.State = database.TaskSucceeded
-			app.deliverWorkflowFailure(t.Context(), &nonfailure)
-			app.deliverWorkflowFailure(t.Context(), &failed)
+			nonterminal := failed
+			nonterminal.Task.State = database.TaskRunning
+			app.deliverWorkflowCompletion(t.Context(), &nonterminal)
+			app.deliverWorkflowCompletion(t.Context(), &failed)
 
 			assert.Equal(t, "workflow failed", app.statusMessage)
 			require.Len(t, app.liveAgentCompletions, 1)

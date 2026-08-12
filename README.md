@@ -129,6 +129,22 @@ librecode session list
 librecode session show <session-id>
 ```
 
+## Keyboard behavior
+
+In the editable chat composer:
+
+| Key | Idle | While an agent run is active |
+| --- | --- | --- |
+| `Enter` | Submit a prompt | Steer the active run |
+| `Shift+Enter` | Insert a newline | Queue a follow-up |
+| `Ctrl+J` | Insert a newline | Insert a newline |
+| `Alt+Enter` | Queue a follow-up | Queue a follow-up |
+| `Alt+Up` | Restore the newest queued follow-up | Restore the newest queued follow-up |
+
+A steer joins the current run at the next safe model-turn boundary. It does not cancel or rewrite an in-flight provider response, and it waits for every tool in the already admitted tool batch to settle. A follow-up stays in the terminal queue and starts only after the active run settles. Canceling or failing a run restores accepted but unconsumed steering ahead of queued follow-ups; it does not restart canceled work.
+
+Some legacy terminals report `Shift+Enter` as plain `Enter`. Use `Ctrl+J` for a portable newline and `Alt+Enter` for a portable follow-up. During compaction, authentication, and modal panels, the current state-specific input gating takes precedence.
+
 ## Authentication and providers
 
 Built-in provider IDs:

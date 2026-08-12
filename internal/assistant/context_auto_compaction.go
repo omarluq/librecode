@@ -29,6 +29,7 @@ type contextRequestBuild struct {
 type completionRequestBuildInput struct {
 	selectedModel *model.Model
 	onEvent       func(StreamEvent)
+	lineage       *promptLineage
 	sessionID     string
 	entryID       string
 	cwd           string
@@ -68,6 +69,7 @@ func (runtime *Runtime) buildCompletionRequest(
 		sessionID:     input.sessionID,
 		systemPrompt:  contextResult.SystemPrompt,
 		cwd:           input.cwd,
+		lineage:       input.lineage,
 	})
 	budget := contextwindow.NewBudget(
 		contextResult.Usage,
@@ -113,6 +115,7 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 		entryID:       input.lineage.activeParentEntryID,
 		cwd:           input.cwd,
 		prompt:        input.prompt,
+		lineage:       input.lineage,
 	})
 	if err != nil {
 		return nil, nil, oops.In("assistant").
@@ -174,6 +177,7 @@ func (runtime *Runtime) rebuildAfterPreRequestCompaction(
 		entryID:       entryID,
 		cwd:           input.cwd,
 		prompt:        input.prompt,
+		lineage:       input.lineage,
 	})
 	if err != nil {
 		runtime.emitContextCompactionError(ctx, input.onEvent, contextAutoCompactionBeforeRequestFailed, err)

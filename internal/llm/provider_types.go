@@ -15,6 +15,20 @@ type ProviderObserver func(context.Context, *HookInput)
 // ProviderResponseObserver observes usage from one successfully parsed provider response.
 type ProviderResponseObserver func(context.Context, Usage)
 
+// RoundCheckpoint runs after one provider response and its complete tool batch settle.
+// Returned user messages are appended before the next provider request. An empty
+// result lets a final response return or an existing tool continuation proceed.
+type RoundCheckpoint func(context.Context, *CompletedRound) ([]Message, error)
+
+// CompletedRound is the provider-neutral artifact produced by one model turn.
+// Usage contains only this provider response, not cumulative completion usage.
+type CompletedRound struct {
+	Assistant    Message      `json:"assistant"`
+	ToolResults  []ToolResult `json:"tool_results,omitempty"`
+	FinishReason FinishReason `json:"finish_reason,omitempty"`
+	Usage        Usage        `json:"usage"`
+}
+
 // HookInput describes a provider wire request before it is sent.
 type HookInput struct {
 	ProviderOptions map[string]any    `json:"provider_options,omitempty"`

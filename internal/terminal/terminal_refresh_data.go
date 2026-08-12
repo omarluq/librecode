@@ -619,7 +619,7 @@ func (app *App) reconcileLoadedWorkflow(
 		delete(listed, previous.Task.ID)
 
 		if isTerminalAgentTaskState(current.Task.State) {
-			app.deliverWorkflowFailure(ctx, &current)
+			app.deliverWorkflowCompletion(ctx, &current)
 		}
 
 		return &current
@@ -635,7 +635,7 @@ func (app *App) reconcileLoadedWorkflow(
 	}
 
 	if latest != nil && isTerminalAgentTaskState(latest.Task.State) {
-		app.deliverWorkflowFailure(ctx, latest)
+		app.deliverWorkflowCompletion(ctx, latest)
 	}
 
 	return latest

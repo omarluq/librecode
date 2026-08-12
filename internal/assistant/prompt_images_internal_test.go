@@ -60,7 +60,7 @@ func TestValidatePromptImagesAndCloneBoundary(t *testing.T) {
 	require.NoError(t, validatePromptImages(images))
 
 	request := &PromptRequest{
-		OnEvent: nil, OnRetry: nil, OnUserEntry: nil, ParentEntryID: nil,
+		OnEvent: nil, OnRetry: nil, OnUserEntry: nil, OnSteeringReturn: nil, ParentEntryID: nil,
 		SessionID: "", CWD: "", Text: "", Images: images, Name: "", ResumeLatest: false, HideUserPrompt: false,
 	}
 	cloned := clonePromptRequest(request)
@@ -81,7 +81,7 @@ func TestLifecyclePromptRequestAttachments(t *testing.T) {
 		{
 			name: "no images",
 			request: &PromptRequest{
-				OnEvent: nil, OnRetry: nil, OnUserEntry: nil, ParentEntryID: nil,
+				OnEvent: nil, OnRetry: nil, OnUserEntry: nil, OnSteeringReturn: nil, ParentEntryID: nil,
 				SessionID: "", CWD: "", Text: "", Images: nil, Name: "",
 				ResumeLatest: false, HideUserPrompt: false,
 			},
@@ -90,7 +90,7 @@ func TestLifecyclePromptRequestAttachments(t *testing.T) {
 		{
 			name: "image metadata",
 			request: &PromptRequest{
-				OnEvent: nil, OnRetry: nil, OnUserEntry: nil, ParentEntryID: nil,
+				OnEvent: nil, OnRetry: nil, OnUserEntry: nil, OnSteeringReturn: nil, ParentEntryID: nil,
 				SessionID: "", CWD: "", Text: "", Name: "", ResumeLatest: false, HideUserPrompt: false,
 				Images: []ImageAttachment{{
 					Name: testWebPName, MIMEType: imageMIMEWebP, Data: []byte{1, 2}, Width: 3, Height: 4,

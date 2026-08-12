@@ -81,6 +81,18 @@ func clonePromptDrafts(drafts []promptDraft) []promptDraft {
 	return cloned
 }
 
+func promptDraftFromSteeringConsumed(event assistant.SteeringConsumedEvent) promptDraft {
+	images := make([]imageAttachment, len(event.Images))
+	for index, item := range event.Images {
+		images[index] = imageAttachment{
+			Name: item.Name, MIMEType: item.MIMEType, Data: bytes.Clone(item.Data),
+			Width: item.Width, Height: item.Height,
+		}
+	}
+
+	return promptDraft{Text: event.Text, Images: images}
+}
+
 func (draft promptDraft) assistantImages() []assistant.ImageAttachment {
 	images := make([]assistant.ImageAttachment, len(draft.Images))
 	for index, item := range draft.Images {

@@ -76,7 +76,7 @@ func (runner *RuntimeRunner) Run(
 				eventErr = sink(runCtx, string(event.Kind), event)
 			}
 		},
-		OnRetry: nil, OnUserEntry: nil, ParentEntryID: nil,
+		OnRetry: nil, OnUserEntry: nil, OnSteeringReturn: nil, ParentEntryID: nil,
 		SessionID: task.ChildSessionID, CWD: session.CWD, Text: task.Prompt,
 		Images: nil, Name: "", ResumeLatest: false, HideUserPrompt: false,
 	})

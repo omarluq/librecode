@@ -7,13 +7,157 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gdamore/tcell/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/transcript"
 )
+
+type terminalSteeringCancelCompleter struct {
+	firstStarted  chan *assistant.CompletionRequest
+	checkpoint    chan []llm.Message
+	proceed       chan struct{}
+	second        chan *assistant.CompletionRequest
+	releaseSecond chan struct{}
+	lock          sync.Mutex
+	calls         int
+}
+
+func newTerminalSteeringCancelCompleter() *terminalSteeringCancelCompleter {
+	return &terminalSteeringCancelCompleter{
+		firstStarted:  make(chan *assistant.CompletionRequest, 1),
+		checkpoint:    make(chan []llm.Message, 1),
+		proceed:       make(chan struct{}),
+		second:        make(chan *assistant.CompletionRequest, 1),
+		releaseSecond: make(chan struct{}),
+		lock:          sync.Mutex{},
+		calls:         0,
+	}
+}
+
+func (client *terminalSteeringCancelCompleter) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.lock.Lock()
+	client.calls++
+	call := client.calls
+	client.lock.Unlock()
+
+	if call > 1 {
+		client.second <- request
+
+		select {
+		case <-client.releaseSecond:
+			return newTerminalCompletionResult("follow-up done"), nil
+		case <-ctx.Done():
+			return nil, fmt.Errorf("follow-up completion canceled: %w", ctx.Err())
+		}
+	}
+
+	client.firstStarted <- request
+
+	select {
+	case <-client.proceed:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("completion canceled before checkpoint: %w", ctx.Err())
+	}
+
+	messages, err := request.OnRoundCheckpoint(ctx, &llm.CompletedRound{
+		Assistant: llm.Message{
+			Metadata: nil, Role: llm.RoleAssistant, Content: []llm.Part{llm.TextPart("settled round")},
+		},
+		ToolResults: nil, FinishReason: llm.FinishReasonStop, Usage: llm.EmptyUsage(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint: %w", err)
+	}
+
+	client.checkpoint <- messages
+
+	<-ctx.Done()
+
+	return nil, fmt.Errorf("completion canceled after checkpoint: %w", ctx.Err())
+}
+
+func TestTerminalRuntimeCancelRestoresOnlyUnconsumedSteeringBeforeFollowUp(t *testing.T) {
+	t.Parallel()
+
+	client := newTerminalSteeringCancelCompleter()
+	app := newPromptSendTestApp(t, client)
+	app.screen = newClipboardScreen()
+	app.sendPrompt(t.Context(), "initial")
+
+	<-client.firstStarted
+
+	entryEvent := readPromptAsyncEvent(t, app)
+	require.Equal(t, asyncEventPromptUserEntry, entryEvent.Kind)
+	app.handlePromptAsyncEvent(t.Context(), entryEvent)
+
+	app.composerBuffer.SetText("consumed steering")
+	_, err := app.handleInputKey(t.Context(), tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	require.NoError(t, err)
+	close(client.proceed)
+
+	checkpoint := <-client.checkpoint
+	require.Len(t, checkpoint, 1)
+	assert.Equal(t, "consumed steering", checkpoint[0].Content[0].Text)
+
+	app.composerBuffer.SetText("unconsumed steering")
+	_, err = app.handleInputKey(t.Context(), tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	require.NoError(t, err)
+	app.composerBuffer.SetText(promptSendQueuedFollowUp)
+	_, err = app.handleInputKey(t.Context(), tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModShift))
+	require.NoError(t, err)
+	assert.Equal(t, []string{promptSendQueuedFollowUp}, promptDraftTexts(app.queuedMessages))
+
+	app.cancelActivePrompt(t.Context())
+
+	returnedEvent := readPromptAsyncEventUntilKind(t, app, asyncEventSteeringReturn)
+
+	app.handlePromptAsyncEvent(t.Context(), returnedEvent)
+	assert.Equal(t, []string{"unconsumed steering", promptSendQueuedFollowUp}, promptDraftTexts(app.queuedMessages))
+
+	errorEvent := readPromptAsyncEventUntilKind(t, app, asyncEventPromptError)
+
+	persisted, err := app.runtime.SessionRepository().Messages(t.Context(), app.sessionID)
+	require.NoError(t, err)
+	require.Len(t, persisted, 4)
+	assert.Equal(t, []database.Role{
+		database.RoleUser, database.RoleAssistant, database.RoleUser, database.RoleCustom,
+	}, []database.Role{persisted[0].Role, persisted[1].Role, persisted[2].Role, persisted[3].Role})
+	assert.Equal(t, []string{"initial", "settled round", "consumed steering"}, []string{
+		persisted[0].Content, persisted[1].Content, persisted[2].Content,
+	})
+	assert.Equal(t, "[system] response canceled by user", persisted[3].Content)
+
+	app.handlePromptAsyncEvent(t.Context(), errorEvent)
+
+	secondRequest := <-client.second
+	require.NotEmpty(t, secondRequest.Messages)
+	assert.Equal(t, "unconsumed steering", secondRequest.Messages[len(secondRequest.Messages)-1].Content)
+	assert.Equal(t, []string{promptSendQueuedFollowUp}, promptDraftTexts(app.queuedMessages))
+	require.NotNil(t, app.activePrompt)
+	assert.Equal(t, "unconsumed steering", app.activePrompt.Prompt)
+	close(client.releaseSecond)
+}
+
+func readPromptAsyncEventUntilKind(t *testing.T, app *App, want asyncEventKind) *asyncEvent {
+	t.Helper()
+
+	for {
+		event := readPromptAsyncEvent(t, app)
+		if event.Kind == want {
+			return event
+		}
+
+		app.handlePromptAsyncEvent(t.Context(), event)
+	}
+}
 
 func TestCancelActivePromptPreservesQueuedMessages(t *testing.T) {
 	t.Parallel()

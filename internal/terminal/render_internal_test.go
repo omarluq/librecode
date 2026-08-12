@@ -249,28 +249,19 @@ func TestFooterLinesIgnoreTransientStatus(t *testing.T) {
 	}
 }
 
-func TestRenderQueuedMessagesRendersHeadersAndBody(t *testing.T) {
+func TestRenderPendingMessagesRendersHeadersAndBody(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		queuedMessages []promptDraft
-		name           string
-		expectedLines  []string
-		width          int
+		messages      []promptDraft
+		name          string
+		label         string
+		expectedLines []string
+		width         int
 	}{
 		{
-			name:           "single queued message",
-			queuedMessages: promptDrafts("first queued"),
-			width:          40,
-			expectedLines: []string{
-				"  queued follow-up 1                    ",
-				"  first queued                          ",
-			},
-		},
-		{
-			name:           "multiple queued messages",
-			queuedMessages: promptDrafts("first queued", "second queued"),
-			width:          40,
+			name: "multiple queued messages", label: "queued follow-up",
+			messages: promptDrafts("first queued", "second queued"), width: 40,
 			expectedLines: []string{
 				"  queued follow-up 1                    ",
 				"  first queued                          ",
@@ -286,9 +277,7 @@ func TestRenderQueuedMessagesRendersHeadersAndBody(t *testing.T) {
 			t.Parallel()
 
 			app := newRenderTestApp(t)
-			app.queuedMessages = testCase.queuedMessages
-
-			lines := app.renderQueuedMessages(testCase.width)
+			lines := app.renderPendingMessages(testCase.width, testCase.label, testCase.messages)
 
 			texts := lineTexts(lines)
 			for _, expected := range testCase.expectedLines {
@@ -296,6 +285,40 @@ func TestRenderQueuedMessagesRendersHeadersAndBody(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRenderPendingSteeringMessagesUsesUnlabeledPendingUserBox(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	lines := app.renderPendingSteeringMessages(40, promptDrafts("change direction"))
+	texts := lineTexts(lines)
+
+	assert.NotContains(t, strings.Join(texts, "\n"), "steering")
+	assert.Contains(t, texts, "  change direction                      ")
+	require.NotEmpty(t, lines)
+
+	for _, line := range lines[1:] {
+		for _, span := range line.Spans {
+			assert.Equal(t, app.theme.colors[colorPendingUserMessageBg], span.Style.GetBackground())
+		}
+	}
+}
+
+func TestDynamicMessagesRenderSteeringAndQueuedFollowUps(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.working = true
+	app.activePrompt = newTestActivePrompt(nil)
+	app.steeringMessages = promptDrafts("steer now")
+	app.queuedMessages = promptDrafts("run later")
+
+	text := strings.Join(lineTexts(app.messageLines(60, -1)), "\n")
+	assert.NotContains(t, text, "steering 1")
+	assert.Contains(t, text, "steer now")
+	assert.Contains(t, text, "queued follow-up 1")
+	assert.Contains(t, text, "run later")
 }
 
 func TestRenderBoxedMessagesUseBoxedLayout(t *testing.T) {

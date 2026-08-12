@@ -28,6 +28,7 @@ func (app *App) queueFollowUp() {
 
 	app.recordPromptDraftHistory(draft)
 	app.queueDraft(draft, true)
+	app.setStatus("follow-up queued")
 }
 
 func (app *App) queueFollowUpText(text string) { app.queuePrompt(text, true) }

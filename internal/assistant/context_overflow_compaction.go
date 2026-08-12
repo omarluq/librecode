@@ -75,6 +75,7 @@ func (runtime *Runtime) recoverProviderContextOverflow(
 		entryID:       input.preparation.lineage.activeParentEntryID,
 		cwd:           input.preparation.cwd,
 		prompt:        input.preparation.prompt,
+		lineage:       input.preparation.lineage,
 	})
 	if err != nil {
 		runtime.emitContextCompactionError(

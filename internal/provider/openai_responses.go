@@ -66,13 +66,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			return nil, err
 		}
 
-		providerResult, err := client.requestResponses(
-			ctx,
-			endpoint,
-			providerRequest.Headers,
-			providerRequest.Payload,
-			request.OnEvent,
-		)
+		providerResult, err := client.responsesRound(ctx, request, endpoint, providerRequest)
 		if err != nil {
 			return nil, err
 		}
@@ -80,35 +74,130 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		observeProviderResponse(ctx, request, providerResult.Usage)
 		appendThinking(result, providerResult.Thinking)
 		result.Usage = accumulateUsage(result.Usage, providerResult.Usage)
-
 		result.FinishReason = providerResult.FinishReason
 
-		validateErr := validateToolDispatch(providerResult.FinishReason, providerResult.ToolCalls)
-		if validateErr != nil {
-			return nil, validateErr
-		}
-
 		if len(providerResult.ToolCalls) == 0 {
-			setResponseText(result, providerResult.Text)
-
-			if result.FinishReason == llm.FinishReasonUnknown {
-				result.FinishReason = llm.FinishReasonStop
+			finished, nextInput, finishErr := advanceResponsesTextRound(ctx, request, result, input, providerResult)
+			if finishErr != nil {
+				return nil, finishErr
 			}
 
-			return result, nil
+			if finished {
+				return result, nil
+			}
+
+			input = nextInput
+
+			continue
 		}
 
-		input = append(input, statelessResponseOutputItems(providerResult.OutputItems)...)
-
-		outputs, events, err := executeToolCalls(ctx, request, providerResult.ToolCalls)
+		input, err = advanceResponsesToolRound(ctx, request, result, input, providerResult)
 		if err != nil {
 			return nil, err
 		}
-
-		appendToolResults(result, events)
-
-		input = append(input, outputs...)
 	}
+}
+
+func (client *HTTPCompletionClient) responsesRound(
+	ctx context.Context,
+	request *CompletionRequest,
+	endpoint string,
+	providerRequest HookOutput,
+) (*providerResult, error) {
+	result, err := client.requestResponses(
+		ctx,
+		endpoint,
+		providerRequest.Headers,
+		providerRequest.Payload,
+		request.OnEvent,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validateToolDispatch(result.FinishReason, result.ToolCalls); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func advanceResponsesTextRound(
+	ctx context.Context,
+	request *CompletionRequest,
+	result *llm.Response,
+	input []any,
+	providerResult *providerResult,
+) (finished bool, nextInput []any, err error) {
+	steering, err := runRoundCheckpoint(ctx, request, new(completedRound(providerResult, nil)))
+	if err != nil {
+		return false, nil, err
+	}
+
+	if len(steering) > 0 {
+		return false, appendResponsesRound(input, providerResult, steering), nil
+	}
+
+	setResponseText(result, providerResult.Text)
+	result.FinishReason = normalizedFinishReason(providerResult)
+
+	return true, input, nil
+}
+
+func advanceResponsesToolRound(
+	ctx context.Context,
+	request *CompletionRequest,
+	result *llm.Response,
+	input []any,
+	providerResult *providerResult,
+) ([]any, error) {
+	input = append(input, statelessResponseOutputItems(providerResult.OutputItems)...)
+
+	outputs, events, err := executeToolCalls(ctx, request, providerResult.ToolCalls)
+	if err != nil {
+		return nil, err
+	}
+
+	appendToolResults(result, events)
+
+	input = append(input, outputs...)
+
+	steering, err := runRoundCheckpoint(ctx, request, new(completedRoundWithToolEvents(providerResult, events)))
+	if err != nil {
+		return nil, err
+	}
+
+	return appendOpenAIResponseUserMessages(input, steering), nil
+}
+
+func appendResponsesRound(
+	input []any,
+	result *providerResult,
+	steering []llm.Message,
+) []any {
+	input = append(input, statelessResponseOutputItems(result.OutputItems)...)
+	if text := strings.TrimSpace(result.Text); text != "" {
+		input = append(input, map[string]any{
+			jsonRoleKey: jsonAssistantRole,
+			jsonContentKey: []map[string]any{{
+				jsonTypeKey: "output_text",
+				jsonTextKey: text,
+			}},
+		})
+	}
+
+	return appendOpenAIResponseUserMessages(input, steering)
+}
+
+func appendOpenAIResponseUserMessages(input []any, messages []llm.Message) []any {
+	for index := range messages {
+		input = append(input, map[string]any{
+			jsonRoleKey:    jsonUserRole,
+			jsonContentKey: openAIResponseUserContent(messages[index]),
+		})
+	}
+
+	return input
 }
 
 func (client *HTTPCompletionClient) responsesPayload(request *CompletionRequest, input []any) map[string]any {

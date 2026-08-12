@@ -177,6 +177,7 @@ func newTestRuntimeWithSchemaCache() *Runtime {
 		toolCoordinator:   nil,
 		attachments:       newForegroundAttachments(),
 		operations:        newSessionOperationCoordinator(),
+		steering:          newSteeringInboxRegistry(defaultSteeringInboxCapacity),
 		newCompactionUUID: uuid.NewV7,
 		profile:           topLevelExecutionProfile(),
 	}
@@ -189,6 +190,7 @@ func newSchemaEstimateRequest(t *testing.T, api string, disableTools bool) *Comp
 		OnEvent:            nil,
 		OnProviderObserve:  nil,
 		OnProviderResponse: nil,
+		OnRoundCheckpoint:  nil,
 		OnProviderRequest:  nil,
 		ToolRegistry:       tool.NewRegistry(t.TempDir()),
 		ExecuteTools:       nil,

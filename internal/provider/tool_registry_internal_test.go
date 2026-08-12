@@ -15,6 +15,7 @@ func TestRequestToolDefinitionsUsesLLMDefinitions(t *testing.T) {
 	request := &CompletionRequest{
 		OnProviderObserve:  nil,
 		OnProviderResponse: nil,
+		OnRoundCheckpoint:  nil,
 		OnProviderRequest:  nil,
 		ExecuteTools:       nil,
 		OnEvent:            nil,

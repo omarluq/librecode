@@ -66,7 +66,19 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 	}
 
 	if len(providerResult.ToolCalls) == 0 {
-		return finishProviderResult(state.result, providerResult)
+		steering, checkpointErr := runRoundCheckpoint(ctx, request, new(completedRound(providerResult, nil)))
+		if checkpointErr != nil {
+			return false, checkpointErr
+		}
+
+		if len(steering) == 0 {
+			return finishProviderResult(state.result, providerResult)
+		}
+
+		appendAnthropicAssistantMessage(state, providerResult)
+		appendAnthropicUserMessages(state, steering)
+
+		return false, nil
 	}
 
 	events, err := executeAnthropicToolCalls(ctx, request, providerResult.ToolCalls)
@@ -76,11 +88,76 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 
 	appendToolResults(state.result, events)
 
-	if err := appendAnthropicToolConversation(request, state, providerResult, events); err != nil {
+	appendErr := appendAnthropicToolConversation(request, state, providerResult, events)
+	if appendErr != nil {
+		return false, appendErr
+	}
+
+	steering, err := runRoundCheckpoint(ctx, request, new(completedRoundWithToolEvents(providerResult, events)))
+	if err != nil {
 		return false, err
 	}
 
+	appendAnthropicUserMessages(state, steering)
+
 	return false, nil
+}
+
+func appendAnthropicAssistantMessage(state *anthropicLoopState, result *providerResult) {
+	blocks := make([]map[string]any, 0, len(result.Thinking)+1)
+	for _, thinking := range result.Thinking {
+		if text := strings.TrimSpace(thinking); text != "" {
+			blocks = append(blocks, map[string]any{jsonTypeKey: jsonTextKey, jsonTextKey: text})
+		}
+	}
+
+	if text := strings.TrimSpace(result.Text); text != "" {
+		blocks = append(blocks, map[string]any{jsonTypeKey: jsonTextKey, jsonTextKey: text})
+	}
+
+	state.messages = append(state.messages, map[string]any{
+		jsonRoleKey:    jsonAssistantRole,
+		jsonContentKey: blocks,
+	})
+}
+
+func appendAnthropicUserMessages(state *anthropicLoopState, messages []llm.Message) {
+	if len(messages) == 0 {
+		return
+	}
+
+	blocks := make([]map[string]any, 0, len(messages))
+	for index := range messages {
+		blocks = append(blocks, anthropicContentBlocks(anthropicUserContent(messages[index]))...)
+	}
+
+	lastIndex := len(state.messages) - 1
+	if lastIndex >= 0 && state.messages[lastIndex][jsonRoleKey] == jsonUserRole {
+		existing := anthropicContentBlocks(state.messages[lastIndex][jsonContentKey])
+		state.messages[lastIndex][jsonContentKey] = append(existing, blocks...)
+
+		return
+	}
+
+	state.messages = append(state.messages, map[string]any{
+		jsonRoleKey:    jsonUserRole,
+		jsonContentKey: blocks,
+	})
+}
+
+func anthropicContentBlocks(content any) []map[string]any {
+	switch value := content.(type) {
+	case string:
+		if strings.TrimSpace(value) == "" {
+			return nil
+		}
+
+		return []map[string]any{{jsonTypeKey: jsonTextKey, jsonTextKey: value}}
+	case []map[string]any:
+		return value
+	default:
+		return nil
+	}
 }
 
 func executeAnthropicToolCalls(

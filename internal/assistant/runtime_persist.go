@@ -12,6 +12,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/transcript"
 )
 
@@ -72,7 +73,7 @@ func (runtime *Runtime) appendAssistantSideEffects(
 
 		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
 		if err != nil {
-			return nil, oops.In("assistant").Code("append_thinking").Wrapf(err, "append thinking message")
+			return parentID, oops.In("assistant").Code("append_thinking").Wrapf(err, "append thinking message")
 		}
 
 		runtime.dispatchMessageAppend(ctx, entry)
@@ -91,7 +92,7 @@ func (runtime *Runtime) appendAssistantSideEffects(
 
 		entry, err := runtime.sessions.AppendMessage(ctx, sessionID, parentID, &message)
 		if err != nil {
-			return nil, oops.In("assistant").Code("append_tool_result").Wrapf(err, "append tool result")
+			return parentID, oops.In("assistant").Code("append_tool_result").Wrapf(err, "append tool result")
 		}
 
 		runtime.dispatchMessageAppend(ctx, entry)
@@ -108,6 +109,9 @@ func (runtime *Runtime) respondWithPartialProgress(
 	request *PromptRequest,
 ) (*responseBundle, bool, error) {
 	progress := newPartialPromptProgress(request.OnEvent)
+
+	lineage.progress = progress
+	defer func() { lineage.progress = nil }()
 
 	bundle, cached, err := runtime.respond(ctx, &responseInput{
 		lineage:          lineage,
@@ -308,6 +312,7 @@ func (progress *partialPromptProgress) record(streamEvent StreamEvent) {
 		StreamEventUsage,
 		StreamEventUsageSnapshot,
 		StreamEventUsageTotal,
+		StreamEventSteeringConsumed,
 		StreamEventContextCompaction,
 		StreamEventContextCompactionStart,
 		StreamEventContextCompactionDone,
@@ -315,6 +320,91 @@ func (progress *partialPromptProgress) record(streamEvent StreamEvent) {
 		StreamEventUnknown:
 		return
 	}
+}
+
+func (progress *partialPromptProgress) commitCompletedRound(
+	round *llm.CompletedRound,
+	completedNestedTools []ToolEvent,
+) {
+	if progress == nil || round == nil {
+		return
+	}
+
+	committedThinking := thinkingFromLLMParts(round.Assistant.Content)
+	committedText := textFromLLMParts(round.Assistant.Content)
+	committedTools := toolEventsFromLLMResults(round.ToolResults)
+	committedToolCount := len(committedTools) + len(completedNestedTools)
+
+	progress.blocks = dropCommittedBlocks(progress.blocks, len(committedThinking), committedText, committedToolCount)
+	for index := range committedTools {
+		progress.removePendingTool(&committedTools[index])
+	}
+
+	progress.completedNestedTools = dropCommittedToolEvents(
+		progress.completedNestedTools,
+		completedNestedTools,
+	)
+}
+
+func dropCommittedBlocks(
+	blocks []partialPromptBlock,
+	thinkingCount int,
+	committedText string,
+	toolCount int,
+) []partialPromptBlock {
+	remaining := make([]partialPromptBlock, 0, len(blocks))
+	textCommitted := strings.TrimSpace(committedText) != ""
+
+	for _, block := range blocks {
+		drop := false
+
+		switch block.Role {
+		case transcript.RoleThinking:
+			drop = thinkingCount > 0
+			thinkingCount--
+		case transcript.RoleAssistant:
+			drop = textCommitted
+		case transcript.RoleToolResult:
+			drop = toolCount > 0
+			toolCount--
+		case transcript.RoleUser,
+			transcript.RoleCustom,
+			transcript.RoleBashExecution,
+			transcript.RoleBranchSummary,
+			transcript.RoleCompactionSummary:
+		}
+
+		if !drop {
+			remaining = append(remaining, block)
+		}
+	}
+
+	return remaining
+}
+
+func dropCommittedToolEvents(events, committed []ToolEvent) []ToolEvent {
+	if len(events) == 0 || len(committed) == 0 {
+		return events
+	}
+
+	committedIDs := make(map[string]int, len(committed))
+	for index := range committed {
+		committedIDs[committed[index].CallID]++
+	}
+
+	remaining := make([]ToolEvent, 0, len(events))
+	for index := range events {
+		count := committedIDs[events[index].CallID]
+		if count > 0 {
+			committedIDs[events[index].CallID] = count - 1
+
+			continue
+		}
+
+		remaining = append(remaining, events[index])
+	}
+
+	return remaining
 }
 
 func (progress *partialPromptProgress) retryHandler(forward RetryEventHandler) RetryEventHandler {

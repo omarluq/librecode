@@ -5,11 +5,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
@@ -58,6 +60,85 @@ func TestRuntime_AutoCompactsAfterResponseNearThreshold(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, branch)
 	assert.Equal(t, database.EntryTypeCompaction, branch[len(branch)-1].Type)
+}
+
+type postResponseSteeringBarrierCompleter struct {
+	compactionEntered chan struct{}
+	allowCompaction   chan struct{}
+}
+
+func newPostResponseSteeringBarrierCompleter() *postResponseSteeringBarrierCompleter {
+	return &postResponseSteeringBarrierCompleter{
+		compactionEntered: make(chan struct{}),
+		allowCompaction:   make(chan struct{}),
+	}
+}
+
+func (client *postResponseSteeringBarrierCompleter) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	if request.DisableTools {
+		close(client.compactionEntered)
+
+		select {
+		case <-client.allowCompaction:
+			return testCompletionResult("summary after completed response"), nil
+		case <-ctx.Done():
+			return nil, oops.In("assistant_test").Code("compaction_canceled").Wrapf(ctx.Err(), "wait for compaction")
+		}
+	}
+
+	_, err := request.OnRoundCheckpoint(ctx, &llm.CompletedRound{
+		Assistant: llm.Message{
+			Metadata: nil, Role: llm.RoleAssistant, Content: []llm.Part{llm.TextPart("final answer")},
+		},
+		ToolResults: nil, FinishReason: llm.FinishReasonStop, Usage: llm.EmptyUsage(),
+	})
+	if err != nil {
+		return nil, oops.In("assistant_test").Code("checkpoint").Wrapf(err, "checkpoint final round")
+	}
+
+	return testCompletionResult("final answer"), nil
+}
+
+func TestRuntime_CompletedRunIsInactiveDuringPostResponseCompaction(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	client := newPostResponseSteeringBarrierCompleter()
+	runtime := newAutoCompactionTestRuntime(t, client, 16_000)
+	ctx := context.Background()
+	session, err := runtime.SessionRepository().CreateSession(ctx, testRuntimeCWD, t.Name(), "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(
+		t, runtime.SessionRepository(), session.ID, nil, database.RoleUser, strings.Repeat("old ", 12_000),
+	)
+
+	runStarted := make(chan assistant.PromptUserEntryEvent, 1)
+	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
+	request.SessionID = session.ID
+	request.ParentEntryID = &old.ID
+	request.OnUserEntry = func(event assistant.PromptUserEntryEvent) { runStarted <- event }
+	promptResult := make(chan error, 1)
+
+	go func() {
+		_, promptErr := runtime.Prompt(ctx, request)
+		promptResult <- promptErr
+	}()
+
+	run := <-runStarted
+
+	<-client.compactionEntered
+	require.ErrorIs(t, runtime.Steer(ctx, &assistant.SteeringRequest{
+		SessionID:      run.SessionID,
+		RunID:          run.EntryID,
+		Text:           "too late",
+		Images:         nil,
+		HideUserPrompt: false,
+	}), assistant.ErrSteeringInactive)
+
+	close(client.allowCompaction)
+	require.NoError(t, <-promptResult)
 }
 
 func TestShouldAutoCompactAfterResponse(t *testing.T) {
@@ -115,6 +196,7 @@ func assertPostResponseCompactionEvent(t *testing.T, events []assistant.StreamEv
 			assistant.StreamEventUsage,
 			assistant.StreamEventUsageSnapshot,
 			assistant.StreamEventUsageTotal,
+			assistant.StreamEventSteeringConsumed,
 			assistant.StreamEventUnknown:
 			continue
 		}

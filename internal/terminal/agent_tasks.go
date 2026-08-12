@@ -27,6 +27,7 @@ const (
 	agentTaskInlineLimit      = 20
 	agentTaskRefreshInterval  = time.Second
 	agentTaskLoadOperation    = "load agent task"
+	noTaskResultMessage       = "No result was returned."
 )
 
 const (
@@ -219,7 +220,7 @@ func (app *App) reconcileTrackedWorkflows(
 		}
 
 		if isTerminalAgentTaskState(latest.Task.State) {
-			app.deliverWorkflowFailure(ctx, &latest)
+			app.deliverWorkflowCompletion(ctx, &latest)
 		}
 
 		active = append(active, latest)
@@ -313,7 +314,7 @@ func (app *App) trackStartedWorkflow(ctx context.Context, event *assistant.ToolE
 	}
 
 	if isTerminalAgentTaskState(run.Task.State) {
-		app.deliverWorkflowFailure(ctx, run)
+		app.deliverWorkflowCompletion(ctx, run)
 
 		return
 	}
@@ -332,8 +333,8 @@ func workflowRunIDFromDetails(detailsJSON string) string {
 	return strings.TrimSpace(details.RunID)
 }
 
-func (app *App) deliverWorkflowFailure(ctx context.Context, run *database.WorkflowRunEntity) {
-	if run == nil || run.Task.State != database.TaskFailed {
+func (app *App) deliverWorkflowCompletion(ctx context.Context, run *database.WorkflowRunEntity) {
+	if run == nil || (run.Task.State != database.TaskSucceeded && run.Task.State != database.TaskFailed) {
 		return
 	}
 
@@ -344,36 +345,41 @@ func (app *App) deliverWorkflowFailure(ctx context.Context, run *database.Workfl
 
 	app.deliveredAgentTasks[runID] = struct{}{}
 
-	detail := strings.TrimSpace(run.Task.ErrorMessage)
-	if detail == "" {
-		detail = "No error detail was returned."
-	}
-
 	name := strings.TrimSpace(run.Name)
 	if name == "" {
 		name = toolDisplayWorkflow
 	}
 
-	completion := fmt.Sprintf("Workflow %q (%s) failed.\n\n%s", name, runID, detail)
+	detail := strings.TrimSpace(run.Task.Result)
+	failed := run.Task.State == database.TaskFailed
 
-	app.setStatus("workflow failed")
+	if failed {
+		detail = strings.TrimSpace(run.Task.ErrorMessage)
+		if detail == "" {
+			detail = "No error detail was returned."
+		}
+	} else if detail == "" {
+		detail = noTaskResultMessage
+	}
+
+	completion := fmt.Sprintf("Workflow %q (%s) finished with state %s.\n\n%s", name, runID, run.Task.State, detail)
+	app.setStatus("workflow " + string(run.Task.State))
 
 	content := formatToolEventForUI(&assistant.ToolEvent{
 		CallID: "", ParentCallID: "", Sequence: 0, Name: "workflow_result",
-		ArgumentsJSON: "", DetailsJSON: "", Result: completion, Error: detail, IsError: true,
+		ArgumentsJSON: "", DetailsJSON: "", Result: completion, Error: run.Task.ErrorMessage, IsError: failed,
 	})
 	app.addAgentCompletionMessage(content)
 	app.persistAgentCompletion(ctx, content)
 
-	prompt := completion + "\n\nA background workflow failed after it was submitted. " +
-		"Report the failure and relevant next step to the user."
-	if app.busy() {
-		app.queuePrompt(prompt, false)
-
-		return
+	prompt := completion +
+		"\n\nUse this completed workflow result to continue the current task and report the relevant findings."
+	if failed {
+		prompt = completion + "\n\nA background workflow failed after it was submitted. " +
+			"Report the failure and relevant next step to the user."
 	}
 
-	app.sendPromptHidden(ctx, prompt)
+	app.deliverHiddenContinuation(ctx, prompt)
 }
 
 func (app *App) discoverActiveAgentTasks(ctx context.Context) {
@@ -804,6 +810,8 @@ func (app *App) renderInspectedAgentTaskEvent(payload *asyncEvent) {
 	case asyncEventPromptUsage,
 		asyncEventPromptUsageSnapshot,
 		asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptRetry,
 		asyncEventPromptError,
@@ -1031,7 +1039,7 @@ func agentTaskCompletion(
 	}
 
 	if result == "" {
-		result = "No result was returned."
+		result = noTaskResultMessage
 	}
 
 	return fmt.Sprintf(
@@ -1176,13 +1184,7 @@ func (app *App) deliverAgentTaskCompletions(ctx context.Context, completions []s
 
 	prompt := strings.Join(completions, "\n\n---\n\n") +
 		"\n\nUse these completed subagent results to continue the current task and report the relevant findings."
-	if app.busy() {
-		app.queuePrompt(prompt, false)
-
-		return
-	}
-
-	app.sendPromptHidden(ctx, prompt)
+	app.deliverHiddenContinuation(ctx, prompt)
 }
 
 func (app *App) addAgentCompletionMessage(content string) {
@@ -1958,6 +1960,7 @@ func (app *App) switchToAgentTaskSession(
 		app.resetStreamingBlocks()
 		app.liveAgentCompletions = nil
 		app.queuedMessages = nil
+		app.steeringMessages = nil
 		app.hiddenQueuedMessages = nil
 		app.composerBuffer = tui.NewTextArea()
 		app.statusMessage = ""

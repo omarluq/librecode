@@ -36,6 +36,7 @@ type CompletionRequest struct {
 	OnProviderObserve      func(context.Context, *CompletionRequest, int) `json:"-"`
 	OnProviderResponse     func(context.Context, model.TokenUsage)        `json:"-"`
 	OnProviderRequest      llm.ProviderRequestHook                        `json:"-"`
+	OnRoundCheckpoint      llm.RoundCheckpoint                            `json:"-"`
 	ToolRegistry           *tool.Registry                                 `json:"-"`
 	ExecuteTools           ToolExecutor                                   `json:"-"`
 	SessionID              string                                         `json:"session_id"`

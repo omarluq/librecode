@@ -178,6 +178,7 @@ func providerPayloadHookRequest(baseURL string) *CompletionRequest {
 	return &CompletionRequest{
 		OnProviderObserve:  nil,
 		OnProviderResponse: nil,
+		OnRoundCheckpoint:  nil,
 		OnProviderRequest:  nil,
 		ExecuteTools:       nil,
 		OnEvent:            nil,

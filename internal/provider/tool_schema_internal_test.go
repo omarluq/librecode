@@ -112,6 +112,7 @@ func TestRequestToolDefinitions(t *testing.T) {
 		definitions := requestToolDefinitions(&CompletionRequest{
 			OnProviderObserve:  nil,
 			OnProviderResponse: nil,
+			OnRoundCheckpoint:  nil,
 			OnProviderRequest:  nil,
 			ExecuteTools:       nil,
 			OnEvent:            nil,

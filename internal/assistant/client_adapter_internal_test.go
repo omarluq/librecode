@@ -47,6 +47,7 @@ func TestProviderRequestFromCompletionRequestAdaptsCallbacksAndRequest(t *testin
 		OnProviderResponse: func(_ context.Context, usage model.TokenUsage) {
 			observedUsage = usage
 		},
+		OnRoundCheckpoint: nil,
 		OnProviderRequest: nil,
 		ToolRegistry:      nil,
 		ExecuteTools:      nil,
@@ -107,6 +108,37 @@ func TestProviderRequestFromCompletionRequestAdaptsCallbacksAndRequest(t *testin
 	assert.Equal(t, 0, empty.ProviderAttempt)
 	assert.Nil(t, empty.OnProviderObserve)
 	assert.Nil(t, empty.OnProviderResponse)
+	assert.Nil(t, empty.OnRoundCheckpoint)
+}
+
+func TestProviderRequestFromCompletionRequestPropagatesRoundCheckpoint(t *testing.T) {
+	t.Parallel()
+
+	var request CompletionRequest
+
+	checkpointed := false
+
+	checkpoint := func(context.Context, *llm.CompletedRound) ([]llm.Message, error) {
+		checkpointed = true
+
+		return []llm.Message{{
+			Metadata: nil, Role: llm.RoleUser, Content: []llm.Part{llm.TextPart("steer")},
+		}}, nil
+	}
+
+	request.OnRoundCheckpoint = checkpoint
+	converted := providerRequestFromCompletionRequest(&request)
+	require.NotNil(t, converted.OnRoundCheckpoint)
+
+	messages, err := converted.OnRoundCheckpoint(context.Background(), &llm.CompletedRound{
+		Assistant:   llm.Message{Metadata: nil, Role: llm.RoleAssistant, Content: nil},
+		ToolResults: nil, FinishReason: llm.FinishReasonStop, Usage: llm.EmptyUsage(),
+	})
+
+	require.NoError(t, err)
+	assert.True(t, checkpointed)
+	require.Len(t, messages, 1)
+	assert.Equal(t, "steer", messages[0].Content[0].Text)
 }
 
 func TestCompletionResultFromLLMResponseConvertsPartsAndUsage(t *testing.T) {

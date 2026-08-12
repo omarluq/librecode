@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -44,6 +45,222 @@ func TestCompleteOpenAIChatExecutesNativeToolCalls(t *testing.T) {
 	messages, ok := requests[1]["messages"].([]any)
 	require.True(t, ok)
 	assert.True(t, containsRoleMessage(messages, jsonToolRole))
+}
+
+func TestCompleteOpenAIChatInjectsCheckpointMessagesAfterToolResults(t *testing.T) {
+	t.Parallel()
+
+	var capturedRound llm.CompletedRound
+
+	requests, result, _ := completeOpenAIChatWithRequest(
+		t,
+		openAIChatReadToolResponse(),
+		openAIChatTextStream("done"),
+		func(request *CompletionRequest) {
+			request.OnRoundCheckpoint = func(
+				_ context.Context,
+				round *llm.CompletedRound,
+			) ([]llm.Message, error) {
+				if len(round.ToolResults) == 0 {
+					return nil, nil
+				}
+
+				capturedRound = *round
+
+				return []llm.Message{llm.TextMessage(llm.RoleUser, "steer")}, nil
+			}
+		},
+	)
+
+	assert.Equal(t, "done", result.Text)
+	require.Len(t, capturedRound.ToolResults, 1)
+	assert.Equal(t, llm.FinishReasonToolCalls, capturedRound.FinishReason)
+	assert.Equal(t, llm.RoleAssistant, capturedRound.Assistant.Role)
+
+	require.Len(t, requests, 2)
+	messages, messagesOK := requests[1][jsonMessagesKey].([]any)
+	require.True(t, messagesOK)
+	require.GreaterOrEqual(t, len(messages), 3)
+
+	toolMessage, ok := messages[len(messages)-2].(map[string]any)
+	require.True(t, ok)
+	assert.JSONEq(t, jsonString(jsonToolRole), jsonString(toolMessage[jsonRoleKey]))
+
+	steeringMessage, ok := messages[len(messages)-1].(map[string]any)
+	require.True(t, ok)
+	assert.JSONEq(t, jsonString(jsonUserRole), jsonString(steeringMessage[jsonRoleKey]))
+	assert.Equal(t, "steer", steeringMessage[jsonContentKey])
+}
+
+func TestCompleteOpenAIChatContinuesTextResponseWhenCheckpointReturnsMessages(t *testing.T) {
+	t.Parallel()
+
+	checkpointCalls := 0
+	requests, result, _ := completeOpenAIChatWithRequest(
+		t,
+		openAIChatTextStream("first"),
+		openAIChatTextStream("second"),
+		func(request *CompletionRequest) {
+			request.OnRoundCheckpoint = func(
+				_ context.Context,
+				round *llm.CompletedRound,
+			) ([]llm.Message, error) {
+				checkpointCalls++
+
+				assert.Equal(t, llm.RoleAssistant, round.Assistant.Role)
+
+				if checkpointCalls == 1 {
+					return []llm.Message{llm.TextMessage(llm.RoleUser, "continue differently")}, nil
+				}
+
+				return nil, nil
+			}
+		},
+	)
+
+	assert.Equal(t, "second", result.Text)
+	assert.Equal(t, 2, checkpointCalls)
+	require.Len(t, requests, 2)
+
+	messages, messagesOK := requests[1][jsonMessagesKey].([]any)
+	require.True(t, messagesOK)
+	require.Len(t, messages, 2)
+	assistantMessage, assistantOK := messages[0].(map[string]any)
+	require.True(t, assistantOK)
+	assert.JSONEq(t, jsonString(jsonAssistantRole), jsonString(assistantMessage[jsonRoleKey]))
+	assert.Equal(t, "first", assistantMessage[jsonContentKey])
+
+	steeringMessage, ok := messages[1].(map[string]any)
+	require.True(t, ok)
+	assert.JSONEq(t, jsonString(jsonUserRole), jsonString(steeringMessage[jsonRoleKey]))
+	assert.Equal(t, "continue differently", steeringMessage[jsonContentKey])
+}
+
+func TestCompleteOpenAIResponsesContinuesTextResponseWhenCheckpointReturnsMessages(t *testing.T) {
+	t.Parallel()
+
+	requests, result := completeOpenAIResponsesWithCheckpoint(t, apiOpenAIResponses)
+
+	assert.Equal(t, "second", result.Text)
+	require.Len(t, requests, 2)
+
+	input, inputOK := requests[1][jsonInputKey].([]any)
+	require.True(t, inputOK)
+	require.Len(t, input, 2)
+
+	assistant, assistantOK := input[0].(map[string]any)
+	require.True(t, assistantOK)
+	assert.JSONEq(t, jsonString(jsonAssistantRole), jsonString(assistant[jsonRoleKey]))
+	assert.Equal(t, "first", responseOutputText(assistant))
+
+	steering, ok := input[1].(map[string]any)
+	require.True(t, ok)
+	assert.JSONEq(t, jsonString(jsonUserRole), jsonString(steering[jsonRoleKey]))
+}
+
+func TestCompleteOpenAICodexContinuesTextResponseWhenCheckpointReturnsMessages(t *testing.T) {
+	t.Parallel()
+
+	requests, result := completeOpenAIResponsesWithCheckpoint(t, apiOpenAICodexResponses)
+
+	assert.Equal(t, "second", result.Text)
+	require.Len(t, requests, 2)
+}
+
+func TestCompleteAnthropicContinuesTextResponseWhenCheckpointReturnsMessages(t *testing.T) {
+	t.Parallel()
+
+	var requests []map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload map[string]any
+
+		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
+		requests = append(requests, payload)
+
+		writer.Header().Set("Content-Type", "text/event-stream")
+
+		text := "first"
+		if len(requests) > 1 {
+			text = "second"
+		}
+
+		writeTestProviderResponse(t, writer, anthropicResponseStream(`{"content":[{"type":"text","text":"`+text+`"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	checkpointCalls := 0
+	request := testCompletionRequestAuth("sk-ant-test")
+	setTestRequestProvider(request, "anthropic")
+	setTestRequestAPI(request, apiAnthropicMessages)
+	setTestRequestBaseURL(request, server.URL)
+	request.OnRoundCheckpoint = func(_ context.Context, round *llm.CompletedRound) ([]llm.Message, error) {
+		checkpointCalls++
+
+		assert.Equal(t, llm.FinishReasonStop, round.FinishReason)
+
+		if checkpointCalls == 1 {
+			return []llm.Message{llm.TextMessage(llm.RoleUser, "steer")}, nil
+		}
+
+		return nil, nil
+	}
+
+	client := &HTTPCompletionClient{client: server.Client()}
+	result, err := client.completeAnthropic(context.Background(), request)
+	require.NoError(t, err)
+
+	assert.Equal(t, "second", providerResponseView(result).Text)
+	require.Len(t, requests, 2)
+	messages, ok := requests[1][jsonMessagesKey].([]any)
+	require.True(t, ok)
+	require.Len(t, messages, 2)
+}
+
+func TestRoundCheckpointRejectsInvalidMessages(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		message *llm.Message
+		name    string
+		code    string
+	}{
+		{
+			name: "non-user role", code: "invalid_round_checkpoint_message",
+			message: new(llm.TextMessage(llm.RoleAssistant, "bad")),
+		},
+		{
+			name: "empty", code: "empty_round_checkpoint_message",
+			message: new(llm.TextMessage(llm.RoleUser, "  ")),
+		},
+		{
+			name: "unsupported part", code: "invalid_round_checkpoint_part",
+			message: new(llm.Message{Metadata: nil, Role: llm.RoleUser, Content: []llm.Part{{
+				Metadata: nil, ToolCall: nil, ToolResult: nil, Type: llm.PartReasoning,
+				Text: "bad", Data: "", MIMEType: "",
+			}}}),
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := emptyCompletionRequest()
+			request.OnRoundCheckpoint = func(context.Context, *llm.CompletedRound) ([]llm.Message, error) {
+				return []llm.Message{*testCase.message}, nil
+			}
+
+			_, err := runRoundCheckpoint(t.Context(), request, &llm.CompletedRound{
+				Assistant: llm.Message{Metadata: nil, Role: "", Content: nil}, ToolResults: nil,
+				FinishReason: llm.FinishReasonUnknown, Usage: llm.EmptyUsage(),
+			})
+
+			require.Error(t, err)
+			oopsErr, ok := oops.AsOops(err)
+			require.True(t, ok)
+			assert.Equal(t, testCase.code, oopsErr.Code())
+		})
+	}
 }
 
 func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
@@ -114,6 +331,66 @@ func TestCompleteOpenAIResponsesAppliesProviderHookEachIteration(t *testing.T) {
 	assert.InDelta(t, 2, second.Body["iteration"], 0)
 }
 
+func completeOpenAIResponsesWithCheckpoint(t *testing.T, api string) ([]map[string]any, providerResponse) {
+	t.Helper()
+
+	var requests []map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload map[string]any
+
+		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
+		requests = append(requests, payload)
+
+		writer.Header().Set("Content-Type", "text/event-stream")
+
+		text := "first"
+		if len(requests) > 1 {
+			text = "second"
+		}
+
+		writeTestProviderResponse(t, writer, openAIResponseCompletedStream(`{"output_text":"`+text+`"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	checkpointCalls := 0
+	request := testCompletionRequestAuth("sk-test")
+	setTestRequestProvider(request, testOpenAIProvider)
+	setTestRequestAPI(request, api)
+	setTestRequestBaseURL(request, server.URL)
+	request.OnRoundCheckpoint = func(_ context.Context, round *llm.CompletedRound) ([]llm.Message, error) {
+		checkpointCalls++
+
+		assert.Equal(t, llm.FinishReasonStop, round.FinishReason)
+
+		if checkpointCalls == 1 {
+			return []llm.Message{llm.TextMessage(llm.RoleUser, "steer")}, nil
+		}
+
+		return nil, nil
+	}
+
+	client := &HTTPCompletionClient{client: server.Client()}
+	result, err := client.Complete(context.Background(), request)
+	require.NoError(t, err)
+
+	return requests, providerResponseView(result)
+}
+
+func responseOutputText(item map[string]any) string {
+	content, contentOK := item[jsonContentKey].([]any)
+	if !contentOK || len(content) == 0 {
+		return ""
+	}
+
+	block, ok := content[0].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	return stringValue(block[jsonTextKey])
+}
+
 func captureProviderHookRequest(
 	t *testing.T,
 	writer http.ResponseWriter,
@@ -181,6 +458,17 @@ func completeOpenAIChatWithResponses(
 ) ([]map[string]any, providerResponse, []llm.Usage) {
 	t.Helper()
 
+	return completeOpenAIChatWithRequest(t, firstResponse, secondResponse, nil)
+}
+
+func completeOpenAIChatWithRequest(
+	t *testing.T,
+	firstResponse string,
+	secondResponse string,
+	configure func(*CompletionRequest),
+) ([]map[string]any, providerResponse, []llm.Usage) {
+	t.Helper()
+
 	var (
 		requests   []map[string]any
 		roundUsage []llm.Usage
@@ -207,6 +495,11 @@ func completeOpenAIChatWithResponses(
 	setTestRequestCWD(request, testToolWorkspace(t))
 	setTestRequestBaseURL(request, server.URL)
 	installTestToolExecutor(request)
+
+	if configure != nil {
+		configure(request)
+	}
+
 	request.OnProviderResponse = func(_ context.Context, usage llm.Usage) {
 		roundUsage = append(roundUsage, usage)
 	}
