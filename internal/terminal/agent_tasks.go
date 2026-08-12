@@ -852,7 +852,7 @@ func (app *App) reloadInspectedAgentTaskTranscript(ctx context.Context, taskID s
 	app.resetMessages()
 	app.resetStreamingBlocks()
 	app.appendSessionMessages(messages)
-	app.addSystemMessage("inspecting agent task: " + taskID + "; use /agents back to return")
+	app.addSystemMessage("inspecting agent task: " + taskID + "; select main above to return")
 }
 
 func (app *App) refreshInspectedParentAgentTask(ctx context.Context, taskID string) {
@@ -1291,12 +1291,25 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 	labelStyle := tcell.StyleDefault.Foreground(app.theme.colors[colorMuted])
 	headerStyle := tcell.StyleDefault.Foreground(app.theme.colors[colorDim]).Bold(true)
 
-	lines := make([]tui.Line, 0, len(app.activeWorkflows)+len(app.agentTasks)+1)
+	lines := make(
+		[]tui.Line,
+		0,
+		len(app.activeWorkflows)+len(app.agentTasks)+agentTaskSummaryContentStart+1,
+	)
 	selectedIndex := app.selectedAgentTaskSummaryIndex()
-	selectableIndex := 0
+	mainLine := app.renderMainAgentTaskSummaryLine(
+		width, labelStyle, indicatorStyle, selectedIndex == agentTaskSummaryMainIndex,
+	)
+	lines = append(lines, mainLine)
+	selectableIndex := agentTaskSummaryContentStart
 
 	if run := app.expandedWorkflowSummaryRun(); run != nil {
-		lines = app.renderWorkflowSummaryDetail(run, width, labelStyle, headerStyle, selectedIndex == 0)
+		lines = append(
+			lines,
+			app.renderWorkflowSummaryDetail(
+				run, width, labelStyle, headerStyle, selectedIndex == agentTaskSummaryContentStart,
+			)...,
+		)
 
 		return padAgentTaskSummary(lines, app.agentTaskSummaryHeight())
 	}
@@ -1350,8 +1363,24 @@ func (app *App) renderAgentTaskSummary(width int) []tui.Line {
 	return padAgentTaskSummary(lines, app.agentTaskSummaryHeight())
 }
 
+func (app *App) renderMainAgentTaskSummaryLine(
+	width int,
+	labelStyle tcell.Style,
+	indicatorStyle tcell.Style,
+	selected bool,
+) tui.Line {
+	return app.styleAgentTaskSummaryLine(tui.Line{
+		Text:  pendingToolIndicator + " main",
+		Style: labelStyle,
+		Spans: []tui.Span{
+			{Text: pendingToolIndicator, Style: indicatorStyle},
+			{Text: " main", Style: labelStyle},
+		},
+	}, width, selected)
+}
+
 func (app *App) agentTaskSummaryHeight() int {
-	collapsedHeight := len(app.activeWorkflows) + 1
+	collapsedHeight := len(app.activeWorkflows) + agentTaskSummaryContentStart + 1
 	for index := range app.agentTasks {
 		if app.agentTasks[index].Task.ParentTaskID == "" {
 			collapsedHeight++
@@ -1893,7 +1922,7 @@ func (app *App) inspectAgentTask(ctx context.Context, taskID string) error {
 	app.watchInspectedTaskIfRunning(ctx, task)
 
 	app.closePanel()
-	app.addSystemMessage("inspecting agent task: " + taskID + "; use /agents back to return")
+	app.addSystemMessage("inspecting agent task: " + taskID + "; select main above to return")
 
 	return nil
 }
@@ -2007,6 +2036,27 @@ func (app *App) agentTaskInspectionStack(ownerSessionID string) ([]string, bool)
 	}
 
 	return nil, false
+}
+
+func (app *App) navigateToMainSession(ctx context.Context) error {
+	if len(app.agentTaskSessionStack) == 0 {
+		return nil
+	}
+
+	if app.activePrompt != nil && app.activePrompt.SessionID == app.sessionID {
+		return errors.New("cannot leave an inspected agent session while its prompt is active")
+	}
+
+	rootSessionID := app.agentTaskSessionStack[0]
+	if err := app.switchToAgentTaskSession(ctx, rootSessionID, nil, false); err != nil {
+		return err
+	}
+
+	app.inspectedAgentTaskID = ""
+	app.addSystemMessage("returned to main session")
+	app.requestTerminalRefresh(ctx)
+
+	return nil
 }
 
 func (app *App) leaveAgentTaskSession(ctx context.Context) error {

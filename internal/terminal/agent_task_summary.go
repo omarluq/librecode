@@ -6,7 +6,11 @@ import (
 	"github.com/gdamore/tcell/v3"
 )
 
-const agentTaskSummaryPageItems = 5
+const (
+	agentTaskSummaryPageItems    = 5
+	agentTaskSummaryMainIndex    = 0
+	agentTaskSummaryContentStart = 1
+)
 
 type agentTaskSummarySelection struct {
 	ItemIndex int
@@ -38,36 +42,13 @@ func (app *App) handleAgentTaskSummaryPriorityKey(
 	if app.workflowSummaryRunID != "" && app.agentTaskSummaryFocused() &&
 		app.keys.matches(event, actionSelectCancel) {
 		app.workflowSummaryRunID = ""
-		app.agentTaskSummarySelection.ItemIndex = 0
+		app.agentTaskSummarySelection.ItemIndex = 1
 
 		return true, nil
 	}
 
 	if app.agentTaskSummaryFocused() && app.keys.matches(event, actionSelectConfirm) {
-		if app.workflowSummaryRunID != "" {
-			return true, nil
-		}
-
-		index := app.agentTaskSummarySelection.ItemIndex
-		if index < len(app.activeWorkflows) {
-			app.workflowSummaryRunID = app.activeWorkflows[index].Task.ID
-			app.agentTaskSummarySelection.ItemIndex = 0
-
-			return true, nil
-		}
-
-		taskID, ok := app.selectedAgentTaskSummaryTaskID()
-		if !ok {
-			return true, nil
-		}
-
-		if err := app.inspectAgentTask(ctx, taskID); err != nil {
-			return true, err
-		}
-
-		app.blurAgentTaskSummary()
-
-		return true, nil
+		return true, app.confirmAgentTaskSummarySelection(ctx)
 	}
 
 	return app.handleInlineListKey(
@@ -78,6 +59,44 @@ func (app *App) handleAgentTaskSummaryPriorityKey(
 		app.blurAgentTaskSummary,
 		agentTaskSummaryPageItems,
 	), nil
+}
+
+func (app *App) confirmAgentTaskSummarySelection(ctx context.Context) error {
+	if app.workflowSummaryRunID != "" {
+		return nil
+	}
+
+	index := app.agentTaskSummarySelection.ItemIndex
+	if index == agentTaskSummaryMainIndex {
+		if err := app.navigateToMainSession(ctx); err != nil {
+			return err
+		}
+
+		app.blurAgentTaskSummary()
+
+		return nil
+	}
+
+	workflowIndex := index - agentTaskSummaryContentStart
+	if workflowIndex < len(app.activeWorkflows) {
+		app.workflowSummaryRunID = app.activeWorkflows[workflowIndex].Task.ID
+		app.agentTaskSummarySelection.ItemIndex = agentTaskSummaryContentStart
+
+		return nil
+	}
+
+	taskID, ok := app.selectedAgentTaskSummaryTaskID()
+	if !ok {
+		return nil
+	}
+
+	if err := app.inspectAgentTask(ctx, taskID); err != nil {
+		return err
+	}
+
+	app.blurAgentTaskSummary()
+
+	return nil
 }
 
 func (app *App) moveAgentTaskSummarySelection(delta int) {
@@ -95,7 +114,7 @@ func (app *App) moveAgentTaskSummarySelection(delta int) {
 }
 
 func (app *App) selectedAgentTaskSummaryTaskID() (string, bool) {
-	index := app.agentTaskSummarySelection.ItemIndex - len(app.activeWorkflows)
+	index := app.agentTaskSummarySelection.ItemIndex - agentTaskSummaryContentStart - len(app.activeWorkflows)
 	if index < 0 {
 		return "", false
 	}
@@ -117,11 +136,15 @@ func (app *App) selectedAgentTaskSummaryTaskID() (string, bool) {
 }
 
 func (app *App) agentTaskSummaryItemCount() int {
-	if app.workflowSummaryRunID != "" {
-		return 1
+	if len(app.activeWorkflows) == 0 && len(app.agentTasks) == 0 {
+		return 0
 	}
 
-	count := len(app.activeWorkflows)
+	if app.workflowSummaryRunID != "" {
+		return agentTaskSummaryContentStart + 1
+	}
+
+	count := agentTaskSummaryContentStart + len(app.activeWorkflows)
 	for index := range app.agentTasks {
 		if app.agentTasks[index].Task.ParentTaskID == "" {
 			count++

@@ -73,15 +73,8 @@ func (app *App) runSessionCommand(ctx context.Context, command, args, original s
 		return false, app.runToolTaskCommand(ctx, args)
 	}
 
-	if command == "agents" {
-		switch args {
-		case "profiles":
-			app.showAgentProfiles()
-		case "back":
-			return false, app.leaveAgentTaskSession(ctx)
-		default:
-			app.openAgentTasksPanel(ctx)
-		}
+	if command == "agents" && args == "profiles" {
+		app.showAgentProfiles()
 
 		return false, nil
 	}

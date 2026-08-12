@@ -14,7 +14,6 @@ import (
 
 func slashSuggestions() []tui.ListItem {
 	return []tui.ListItem{
-		autocompleteSuggestion("agents", "open asynchronous agent tasks"),
 		autocompleteSuggestion("auth", "show auth status"),
 		autocompleteSuggestion(changelogCommandName, "open changelog"),
 		autocompleteSuggestion("clone", "clone current session"),
