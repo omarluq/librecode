@@ -120,6 +120,7 @@ type CompletionRequest struct {
 	OnProviderObserve  llm.ProviderObserver
 	OnProviderResponse llm.ProviderResponseObserver
 	OnProviderRequest  llm.ProviderRequestHook
+	OnRoundCheckpoint  llm.RoundCheckpoint
 	ExecuteTools       llm.ToolExecutor
 	OnEvent            func(*llm.StreamChunk)
 	Request            llm.Request
@@ -225,6 +226,7 @@ func (client *HTTPCompletionClient) Generate(ctx context.Context, request *llm.R
 		OnProviderObserve:  nil,
 		OnProviderResponse: nil,
 		OnProviderRequest:  nil,
+		OnRoundCheckpoint:  nil,
 		ExecuteTools:       nil,
 		OnEvent:            nil,
 		Request:            emptyRequest(),

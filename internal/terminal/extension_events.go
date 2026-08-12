@@ -206,17 +206,17 @@ func (app *App) resetFrameUIOverrides() {
 	app.extensionUI.ResetFrameOverrides()
 }
 
-func (app *App) applyPromptSubmitExtensions(ctx context.Context) (bool, error) {
+func (app *App) applyPromptSubmitExtensions(
+	ctx context.Context,
+	key extension.ComposerKeyEvent,
+	delivery promptDelivery,
+) (bool, error) {
 	if !app.hasExtensionHandlers(extensionEventPromptSubmit) {
 		return false, nil
 	}
 
-	event := app.newExtensionEvent(extensionEventPromptSubmit, extension.ComposerKeyEvent{
-		Key:   "enter",
-		Text:  "",
-		Ctrl:  false,
-		Alt:   false,
-		Shift: false,
+	event := app.newExtensionEventWithData(extensionEventPromptSubmit, key, map[string]any{
+		"delivery": string(delivery),
 	})
 
 	result, err := app.extensions.HandleTerminalEvent(

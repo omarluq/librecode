@@ -94,23 +94,25 @@ func newDefaultKeybindings() *keybindings {
 
 func defaultKeybindingDefinitions() map[actionID]keyBindingDefinition {
 	return map[actionID]keyBindingDefinition{
-		actionCursorUp:                   binding("Move cursor up", "up"),
-		actionCursorDown:                 binding("Move cursor down", "down"),
-		actionCursorLeft:                 binding("Move cursor left", "left", "ctrl+b"),
-		actionCursorRight:                binding("Move cursor right", "right", "ctrl+f"),
-		actionCursorWordLeft:             binding("Move cursor word left", "alt+left", "ctrl+left", "alt+b"),
-		actionCursorWordRight:            binding("Move cursor word right", "alt+right", "ctrl+right", "alt+f"),
-		actionCursorLineStart:            binding("Move to line start", "home", "ctrl+a"),
-		actionCursorLineEnd:              binding("Move to line end", "end", "ctrl+e"),
-		actionDeleteCharBackward:         binding("Delete character backward", "backspace"),
-		actionDeleteCharForward:          binding("Delete character forward", "delete"),
-		actionDeleteWordBackward:         binding("Delete word backward", "ctrl+w", "alt+backspace"),
-		actionDeleteWordForward:          binding("Delete word forward", "alt+d", "alt+delete"),
-		actionDeleteToLineStart:          binding("Delete to line start", "ctrl+u"),
-		actionDeleteToLineEnd:            binding("Delete to line end", "ctrl+k"),
-		actionInputClear:                 binding("Clear input", "ctrl+c"),
-		actionInputNewLine:               binding("Insert newline", "shift+enter"),
-		actionInputSubmit:                binding("Submit input", "enter"),
+		actionCursorUp:           binding("Move cursor up", "up"),
+		actionCursorDown:         binding("Move cursor down", "down"),
+		actionCursorLeft:         binding("Move cursor left", "left", "ctrl+b"),
+		actionCursorRight:        binding("Move cursor right", "right", "ctrl+f"),
+		actionCursorWordLeft:     binding("Move cursor word left", "alt+left", "ctrl+left", "alt+b"),
+		actionCursorWordRight:    binding("Move cursor word right", "alt+right", "ctrl+right", "alt+f"),
+		actionCursorLineStart:    binding("Move to line start", "home", "ctrl+a"),
+		actionCursorLineEnd:      binding("Move to line end", "end", "ctrl+e"),
+		actionDeleteCharBackward: binding("Delete character backward", "backspace"),
+		actionDeleteCharForward:  binding("Delete character forward", "delete"),
+		actionDeleteWordBackward: binding("Delete word backward", "ctrl+w", "alt+backspace"),
+		actionDeleteWordForward:  binding("Delete word forward", "alt+d", "alt+delete"),
+		actionDeleteToLineStart:  binding("Delete to line start", "ctrl+u"),
+		actionDeleteToLineEnd:    binding("Delete to line end", "ctrl+k"),
+		actionInputClear:         binding("Clear input", "ctrl+c"),
+		actionInputNewLine: binding(
+			"Insert newline (Shift+Enter queues while active)", "shift+enter", "ctrl+j",
+		),
+		actionInputSubmit:                binding("Submit prompt or steer active response", "enter"),
 		actionInputTab:                   binding("Autocomplete or toggle scope", "tab"),
 		actionAttachmentPasteImage:       binding("Paste clipboard image", "ctrl+v", "super+v"),
 		actionAttachmentRemoveLast:       binding("Remove last image attachment", "alt+r"),
@@ -220,7 +222,8 @@ func normalizedEventKeys(event *tcell.EventKey) map[string]struct{} {
 		addKey(keys, "escape")
 	}
 
-	if event.Key() == tcell.KeyBacktab {
+	if event.Key() == tcell.KeyBacktab ||
+		event.Key() == tcell.KeyTab && event.Modifiers()&tcell.ModShift != 0 {
 		addKey(keys, keyShiftTab)
 	}
 
@@ -252,6 +255,10 @@ func addCtrlLetter(keys map[string]struct{}, offset tcell.Key) {
 
 func eventKeyName(event *tcell.EventKey) string {
 	name := event.Name()
+	if event.Key() == tcell.KeyEnter && event.Modifiers()&tcell.ModShift != 0 {
+		return "shift+enter"
+	}
+
 	if event.Key() == tcell.KeyRune {
 		name = string(unicode.ToLower(tui.EventRune(event)))
 		if event.Modifiers()&tcell.ModAlt != 0 {

@@ -133,6 +133,8 @@ func (app *App) handleCompactAsyncEvent(ctx context.Context, payload *asyncEvent
 		asyncEventAgentTaskCompleted,
 		asyncEventCompactStart,
 		asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,

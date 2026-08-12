@@ -13,6 +13,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 )
 
 func TestRuntime_ProviderContextOverflowRecoveryScenarios(t *testing.T) {
@@ -75,6 +76,155 @@ func TestRuntime_ProviderContextOverflowRecoveryScenarios(t *testing.T) {
 			assertBranchContainsCompaction(t, runtime, sessionID, response.AssistantEntryID)
 		})
 	}
+}
+
+type steeringOverflowCompactionCompleter struct {
+	summaryEntered     chan struct{}
+	allowSummary       chan struct{}
+	recoveredRequest   chan *assistant.CompletionRequest
+	allowCheckpoint    chan struct{}
+	checkpointMessages chan []llm.Message
+	providerCalls      int
+}
+
+func newSteeringOverflowCompactionCompleter() *steeringOverflowCompactionCompleter {
+	return &steeringOverflowCompactionCompleter{
+		summaryEntered:     make(chan struct{}),
+		allowSummary:       make(chan struct{}),
+		recoveredRequest:   make(chan *assistant.CompletionRequest, 1),
+		allowCheckpoint:    make(chan struct{}),
+		checkpointMessages: make(chan []llm.Message, 1),
+		providerCalls:      0,
+	}
+}
+
+func (client *steeringOverflowCompactionCompleter) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	if request.DisableTools {
+		close(client.summaryEntered)
+
+		select {
+		case <-client.allowSummary:
+			return testCompletionResult("summary made while steering was pending"), nil
+		case <-ctx.Done():
+			return nil, oops.In("assistant_test").Code("compaction_canceled").Wrapf(ctx.Err(), "wait for summary")
+		}
+	}
+
+	client.providerCalls++
+	if client.providerCalls == 1 {
+		return nil, testContextWindowError()
+	}
+
+	select {
+	case client.recoveredRequest <- request:
+	case <-ctx.Done():
+		return nil, oops.In("assistant_test").Code("completion_canceled").Wrapf(ctx.Err(), "publish recovered request")
+	}
+
+	return completeAfterCheckpoint(
+		ctx, request, client.allowCheckpoint, client.checkpointMessages, "recovered round",
+	)
+}
+
+func TestRuntime_ProviderOverflowSteeringWaitsForRecoveredRoundCheckpoint(t *testing.T) {
+	t.Parallel()
+
+	client := newSteeringOverflowCompactionCompleter()
+	runtime := newProviderOverflowRecoveryRuntime(t, client)
+	ctx := context.Background()
+	session, err := runtime.SessionRepository().CreateSession(ctx, testRuntimeCWD, t.Name(), "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(
+		t, runtime.SessionRepository(), session.ID, nil, database.RoleUser, strings.Repeat("old ", 1_000),
+	)
+	appendRuntimeTestMessage(t, runtime.SessionRepository(), session.ID, &old.ID, database.RoleAssistant, "tail")
+
+	runStarted := make(chan assistant.PromptUserEntryEvent, 1)
+	request := newRuntimePromptRequest(testRuntimeCWD, "continue", "")
+	request.SessionID = session.ID
+	request.OnUserEntry = func(event assistant.PromptUserEntryEvent) { runStarted <- event }
+	promptResult := make(chan struct {
+		response *assistant.PromptResponse
+		err      error
+	}, 1)
+
+	go func() {
+		response, promptErr := runtime.Prompt(ctx, request)
+		promptResult <- struct {
+			response *assistant.PromptResponse
+			err      error
+		}{response: response, err: promptErr}
+	}()
+
+	run := <-runStarted
+
+	<-client.summaryEntered
+	require.NoError(t, runtime.Steer(ctx, &assistant.SteeringRequest{
+		SessionID:      run.SessionID,
+		RunID:          run.EntryID,
+		Text:           "steer after overflow",
+		Images:         nil,
+		HideUserPrompt: false,
+	}))
+	close(client.allowSummary)
+
+	recoveredRequest := <-client.recoveredRequest
+	for _, message := range recoveredRequest.Messages {
+		assert.NotContains(t, message.Content, "steer after overflow",
+			"steering accepted during compaction must not alter the recovered retry request")
+	}
+
+	close(client.allowCheckpoint)
+
+	checkpointMessages := <-client.checkpointMessages
+	require.Len(t, checkpointMessages, 1)
+	assert.Equal(t, "steer after overflow", checkpointMessages[0].Content[0].Text)
+
+	result := <-promptResult
+	require.NoError(t, result.err)
+	require.NotNil(t, result.response)
+
+	assertSteeringAfterCompactedRound(t, runtime, session.ID, "recovered round", "steer after overflow")
+}
+
+func assertSteeringAfterCompactedRound(
+	t *testing.T,
+	runtime *assistant.Runtime,
+	sessionID string,
+	completedRound string,
+	steering string,
+) {
+	t.Helper()
+
+	leaf, found, err := runtime.SessionRepository().LeafEntry(t.Context(), sessionID)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	branch, err := runtime.SessionRepository().Branch(t.Context(), sessionID, leaf.ID)
+	require.NoError(t, err)
+
+	compactionIndex := -1
+	recoveredRoundIndex := -1
+	steeringIndex := -1
+
+	for index := range branch {
+		switch {
+		case branch[index].Type == database.EntryTypeCompaction:
+			compactionIndex = index
+		case recoveredRoundIndex == -1 && branch[index].Message.Role == database.RoleAssistant &&
+			branch[index].Message.Content == completedRound:
+			recoveredRoundIndex = index
+		case branch[index].Message.Role == database.RoleUser && branch[index].Message.Content == steering:
+			steeringIndex = index
+		}
+	}
+
+	require.NotEqual(t, -1, compactionIndex)
+	require.Greater(t, recoveredRoundIndex, compactionIndex)
+	require.Greater(t, steeringIndex, recoveredRoundIndex)
 }
 
 func TestRuntime_ProviderContextOverflowDoesNotRecoverAfterToolExecutionStarts(t *testing.T) {
@@ -340,6 +490,7 @@ func isContextCompactionLifecycleEvent(kind assistant.StreamEventKind) bool {
 		assistant.StreamEventUsage,
 		assistant.StreamEventUsageSnapshot,
 		assistant.StreamEventUsageTotal,
+		assistant.StreamEventSteeringConsumed,
 		assistant.StreamEventUnknown:
 		return false
 	}

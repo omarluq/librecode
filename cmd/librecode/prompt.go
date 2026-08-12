@@ -217,17 +217,18 @@ func writePromptMetrics(path string, metrics *promptMetrics) error {
 
 func buildPromptRequest(cwd, message string, options promptRunOptions) *assistant.PromptRequest {
 	return &assistant.PromptRequest{
-		OnEvent:        nil,
-		OnRetry:        nil,
-		OnUserEntry:    nil,
-		ParentEntryID:  nil,
-		SessionID:      options.SessionID,
-		CWD:            cwd,
-		Images:         nil,
-		Text:           message,
-		Name:           options.SessionName,
-		ResumeLatest:   options.Resume,
-		HideUserPrompt: false,
+		OnEvent:          nil,
+		OnRetry:          nil,
+		OnUserEntry:      nil,
+		OnSteeringReturn: nil,
+		ParentEntryID:    nil,
+		SessionID:        options.SessionID,
+		CWD:              cwd,
+		Images:           nil,
+		Text:             message,
+		Name:             options.SessionName,
+		ResumeLatest:     options.Resume,
+		HideUserPrompt:   false,
 	}
 }
 

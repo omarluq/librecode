@@ -375,7 +375,7 @@ func TestAgentTaskCompletionFallbacksAndDelivery(t *testing.T) {
 			set:  func(task *database.AgentTaskEntity) { task.Task.ErrorMessage = "failed detail" },
 			want: "failed detail",
 		},
-		{name: "no result", set: func(*database.AgentTaskEntity) {}, want: "No result was returned."},
+		{name: "no result", set: func(*database.AgentTaskEntity) {}, want: noTaskResultMessage},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()

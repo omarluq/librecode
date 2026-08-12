@@ -12,6 +12,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/tool"
 	"github.com/omarluq/librecode/internal/transcript"
 )
@@ -312,6 +313,34 @@ func TestMergeNestedToolEventsKeepsOrphansInStreamOrder(t *testing.T) {
 	merged := mergeNestedToolEvents(nil, nested)
 
 	assert.Equal(t, []string{"orphan-2", "root", "orphan-1"}, toolEventCallIDs(merged))
+}
+
+func TestPartialPromptProgressCommitCompletedRoundDropsNestedToolBlocks(t *testing.T) {
+	t.Parallel()
+
+	progress := newPartialPromptProgress(nil)
+	outer := runtimePersistIdentityEvent("outer", "", "execute", 0)
+	nested := runtimePersistIdentityEvent("nested", "outer", "read", 1)
+	progress.record(StreamEvent{
+		ToolCallEvent: nil, ToolEvent: &nested, Usage: nil, Kind: StreamEventToolResult, Text: "",
+	})
+	progress.record(StreamEvent{
+		ToolCallEvent: nil, ToolEvent: &outer, Usage: nil, Kind: StreamEventToolResult, Text: "",
+	})
+
+	progress.commitCompletedRound(&llm.CompletedRound{
+		Assistant: llm.Message{Metadata: nil, Role: llm.RoleAssistant, Content: nil},
+		ToolResults: []llm.ToolResult{{
+			Metadata: nil, ToolCallID: outer.CallID, ArgumentsJSON: "", Name: outer.Name,
+			Error: "", Content: []llm.Part{llm.TextPart("done")}, IsError: false,
+		}},
+		FinishReason: llm.FinishReasonUnknown,
+		Usage:        llm.EmptyUsage(),
+	}, []ToolEvent{nested})
+
+	assert.Empty(t, progress.persistableBlocks(),
+		"failure repair must not synthesize tool results already committed by a checkpoint")
+	assert.Empty(t, progress.completedNestedTools)
 }
 
 func TestPartialPromptProgressResetClearsPendingTools(t *testing.T) {

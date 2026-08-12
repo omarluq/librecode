@@ -61,6 +61,7 @@ func newRuntimeFromDeps(setup func(*runtimeDeps)) *Runtime {
 		toolCoordinator:   nil,
 		attachments:       newForegroundAttachments(),
 		operations:        newSessionOperationCoordinator(),
+		steering:          newSteeringInboxRegistry(defaultSteeringInboxCapacity),
 		newCompactionUUID: uuid.NewV7,
 		profile:           topLevelExecutionProfile(),
 	}

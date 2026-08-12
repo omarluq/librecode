@@ -45,6 +45,50 @@ end)
 	}
 }
 
+func TestVimModePreservesModifiedEnterDelivery(t *testing.T) {
+	t.Parallel()
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+
+	vimModePath := filepath.Join("..", "..", "extensions", "vim-mode")
+	require.NoError(t, manager.LoadPaths(t.Context(), []string{vimModePath}))
+
+	app := newRenderTestApp(t)
+	app.extensions = manager
+	require.NoError(t, app.runStartupExtensions(t.Context()))
+	app.working = true
+	app.activePrompt = &activePromptState{
+		Cancel: nil, SessionID: app.sessionID, UserEntryID: "", Prompt: "", Images: nil,
+		UserMessageTimestamp: 0, ID: 1, Canceled: false,
+	}
+	app.composerBuffer.SetText("later")
+
+	_, err := app.handleKey(t.Context(), tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModShift))
+	require.NoError(t, err)
+	assert.True(t, app.composerDraftEmpty())
+	assert.Equal(t, []string{"later"}, promptDraftTexts(app.queuedMessages))
+	assert.Empty(t, app.steeringMessages)
+}
+
+func TestExtensionPromptSubmitReceivesActualKeyAndDelivery(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("prompt_submit", function(event)
+  librecode.buf.set_text("status", event.key .. ":" .. tostring(event.shift) .. ":" .. event.data.delivery)
+  librecode.event.consume()
+end)
+`)
+	app.working = true
+	app.composerBuffer.SetText("later")
+
+	_, err := app.submit(t.Context(), tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModShift))
+	require.NoError(t, err)
+	assert.Equal(t, "enter:true:follow_up", app.statusMessage)
+	assert.Equal(t, "later", app.composerBuffer.TextValue())
+}
+
 func TestExtensionPromptSubmitCanConsumeDefault(t *testing.T) {
 	t.Parallel()
 

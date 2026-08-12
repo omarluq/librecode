@@ -28,20 +28,7 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 
 		return false, nil
 	case *tcell.EventKey:
-		if app.bracketedPaste {
-			if app.inspectingWhilePromptRuns() {
-				app.bracketedPaste = false
-				app.setStatus(readOnlyAgentInspectionStatus)
-
-				return false, nil
-			}
-
-			app.insertPastedKey(typedEvent)
-
-			return false, nil
-		}
-
-		return app.handleKey(ctx, typedEvent)
+		return app.handleKeyEvent(ctx, typedEvent)
 	case *tcell.EventMouse:
 		app.handleMouse(typedEvent)
 
@@ -51,6 +38,27 @@ func (app *App) handleEvent(ctx context.Context, event tcell.Event) (bool, error
 	default:
 		return false, nil
 	}
+}
+
+func (app *App) handleKeyEvent(ctx context.Context, event *tcell.EventKey) (bool, error) {
+	if !event.Pressed() {
+		return false, nil
+	}
+
+	if app.bracketedPaste {
+		if app.inspectingWhilePromptRuns() {
+			app.bracketedPaste = false
+			app.setStatus(readOnlyAgentInspectionStatus)
+
+			return false, nil
+		}
+
+		app.insertPastedKey(event)
+
+		return false, nil
+	}
+
+	return app.handleKey(ctx, event)
 }
 
 func (app *App) applyResizeEvent(ctx context.Context, event *tcell.EventResize) error {
@@ -312,7 +320,12 @@ func (app *App) handleInputKey(ctx context.Context, event *tcell.EventKey) (bool
 	}
 
 	if app.keys.matches(event, actionInputSubmit) {
-		return app.submit(ctx)
+		return app.submit(ctx, event)
+	}
+
+	if app.keys.matches(event, actionInputNewLine) && app.working &&
+		event.Modifiers()&tcell.ModShift != 0 {
+		return app.submit(ctx, event)
 	}
 
 	if app.keys.matches(event, actionInputNewLine) {

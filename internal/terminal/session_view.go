@@ -23,6 +23,7 @@ type sessionViewState struct {
 	statusMessage            string
 	runningToolBlocks        []runningToolBlock
 	queuedMessages           []promptDraft
+	steeringMessages         []promptDraft
 	liveAgentCompletions     []chatMessage
 	promptHistory            []string
 	promptHistoryImages      [][]imageAttachment
@@ -41,6 +42,40 @@ type sessionViewState struct {
 	autocompleteSelection    int
 	escapePresses            int
 	autocompleteClosed       bool
+}
+
+func newLoadedSessionView(settings *sessionSettingsDocument) *sessionViewState {
+	return &sessionViewState{
+		lastEscape:               time.Time{},
+		pendingParentID:          nil,
+		scopedEnabled:            map[string]bool{},
+		promptHistoryDraft:       "",
+		promptHistoryDraftImages: nil,
+		streamingThinkingText:    "",
+		streamingText:            "",
+		statusMessage:            "",
+		runningToolBlocks:        []runningToolBlock{},
+		queuedMessages:           []promptDraft{},
+		steeringMessages:         []promptDraft{},
+		liveAgentCompletions:     []chatMessage{},
+		promptHistory:            []string{},
+		promptHistoryImages:      [][]imageAttachment{},
+		hiddenQueuedMessages:     []promptDraft{},
+		scopedOrder:              []string{},
+		settings:                 *settings,
+		composerBuffer:           tui.NewTextArea(),
+		composerImages:           []imageAttachment{},
+		transcript:               initialTranscriptState(),
+		tokenUsage:               model.EmptyTokenUsage(),
+		selection:                emptyMouseSelection(),
+		transcriptList:           emptyTranscriptListSelection(),
+		streamedToolEvents:       0,
+		promptHistoryIndex:       0,
+		scrollOffset:             0,
+		autocompleteSelection:    0,
+		escapePresses:            0,
+		autocompleteClosed:       false,
+	}
 }
 
 func (app *App) saveSessionView() {
@@ -62,6 +97,7 @@ func (app *App) captureSessionView(clone bool) sessionViewState {
 		runningToolBlocks:        app.runningToolBlocks,
 		liveAgentCompletions:     app.liveAgentCompletions,
 		queuedMessages:           app.queuedMessages,
+		steeringMessages:         app.steeringMessages,
 		hiddenQueuedMessages:     app.hiddenQueuedMessages,
 		promptHistory:            app.promptHistory,
 		promptHistoryImages:      app.promptHistoryImages,
@@ -95,6 +131,12 @@ func (app *App) captureSessionView(clone bool) sessionViewState {
 
 func cloneSessionViewState(view *sessionViewState) {
 	view.pendingParentID = cloneStringPtr(view.pendingParentID)
+	view.transcript.History = slices.Clone(view.transcript.History)
+	view.transcript.Streaming.Blocks = slices.Clone(view.transcript.Streaming.Blocks)
+	view.transcript.LineCache.reset()
+	view.transcript.Streaming.LineCache = nil
+	view.runningToolBlocks = slices.Clone(view.runningToolBlocks)
+	view.liveAgentCompletions = slices.Clone(view.liveAgentCompletions)
 	view.tokenUsage = cloneTerminalUsage(view.tokenUsage)
 	view.composerBuffer = cloneComposerBuffer(view.composerBuffer)
 	view.composerImages = cloneImageAttachments(view.composerImages)
@@ -102,6 +144,7 @@ func cloneSessionViewState(view *sessionViewState) {
 	view.promptHistoryImages = cloneImageAttachmentGroups(view.promptHistoryImages)
 	view.promptHistoryDraftImages = cloneImageAttachments(view.promptHistoryDraftImages)
 	view.queuedMessages = clonePromptDrafts(view.queuedMessages)
+	view.steeringMessages = clonePromptDrafts(view.steeringMessages)
 	view.hiddenQueuedMessages = clonePromptDrafts(view.hiddenQueuedMessages)
 	view.scopedEnabled = maps.Clone(view.scopedEnabled)
 	view.scopedOrder = slices.Clone(view.scopedOrder)
@@ -131,6 +174,7 @@ func (app *App) applySessionView(sessionID string, view *sessionViewState, clone
 	app.runningToolBlocks = view.runningToolBlocks
 	app.liveAgentCompletions = view.liveAgentCompletions
 	app.queuedMessages = view.queuedMessages
+	app.steeringMessages = view.steeringMessages
 	app.hiddenQueuedMessages = view.hiddenQueuedMessages
 	app.promptHistory = view.promptHistory
 	app.promptHistoryImages = view.promptHistoryImages

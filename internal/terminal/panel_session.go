@@ -50,6 +50,13 @@ func (app *App) sessionItems(ctx context.Context) ([]tui.ListItem, error) {
 }
 
 func (app *App) applySessionSelection(ctx context.Context, value string) error {
+	if value == app.sessionID {
+		app.addSystemMessage("resumed session: " + value)
+		app.closePanel()
+
+		return nil
+	}
+
 	settings, settingsFound, err := app.sessionSettings(ctx, value)
 	if err != nil {
 		return terminalError(err, "load session")
@@ -62,15 +69,26 @@ func (app *App) applySessionSelection(ctx context.Context, value string) error {
 
 	app.resetAgentTaskTracking()
 	app.agentTaskSessionStack = nil
-	app.sessionID = value
-	app.pendingParentID = nil
-	app.resetMessages()
 
-	if settingsFound {
-		app.applySessionSettings(&settings)
+	app.saveSessionView()
+	restored := app.restoreSessionView(value)
+
+	if !restored {
+		viewSettings := app.currentSessionSettings()
+		if settingsFound {
+			viewSettings = settings
+		}
+
+		app.applySessionView(value, newLoadedSessionView(&viewSettings), false)
+		app.appendSessionMessages(messages)
+	} else {
+		app.appendMissingSessionMessages(messages)
+
+		if settingsFound {
+			app.applySessionSettings(&settings)
+		}
 	}
 
-	app.appendSessionMessages(messages)
 	app.addSystemMessage("resumed session: " + value)
 	app.closePanel()
 

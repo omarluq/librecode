@@ -283,6 +283,8 @@ local function handle_insert(ev)
   if key == "escape" then
     set_mode("normal")
     return true
+  elseif key == "enter" and (ev.shift or ev.alt) then
+    return false
   elseif key == "enter" then
     lc.action.run("submit")
     return true
@@ -524,6 +526,8 @@ local function handle_normal(ev)
     set_composer(next_chars, next_cursor)
     set_mode("insert")
     return true
+  elseif key == "enter" and (ev.shift or ev.alt) then
+    return false
   elseif key == "enter" then
     lc.action.run("submit")
     return true

@@ -149,6 +149,7 @@ func providerHookTestRequest() *CompletionRequest {
 		OnEvent:            nil,
 		OnProviderObserve:  nil,
 		OnProviderResponse: nil,
+		OnRoundCheckpoint:  nil,
 		OnProviderRequest:  nil,
 		ToolRegistry:       nil,
 		ExecuteTools:       nil,

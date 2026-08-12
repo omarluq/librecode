@@ -3,6 +3,7 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -47,6 +48,7 @@ type Runtime struct {
 	attachments       *foregroundAttachments
 	newCompactionUUID func() (uuid.UUID, error)
 	operations        *sessionOperationCoordinator
+	steering          *steeringInboxRegistry
 	profile           ExecutionProfile
 }
 
@@ -61,23 +63,87 @@ type ImageAttachment struct {
 
 // PromptRequest contains one user prompt invocation.
 type PromptRequest struct {
-	OnEvent        func(StreamEvent)          `json:"-"`
-	OnRetry        RetryEventHandler          `json:"-"`
-	OnUserEntry    func(PromptUserEntryEvent) `json:"-"`
-	ParentEntryID  *string                    `json:"parent_entry_id,omitempty"`
-	SessionID      string                     `json:"session_id"`
-	CWD            string                     `json:"cwd"`
-	Text           string                     `json:"text"`
-	Name           string                     `json:"name"`
-	Images         []ImageAttachment          `json:"images,omitempty"`
-	ResumeLatest   bool                       `json:"resume_latest,omitempty"`
-	HideUserPrompt bool                       `json:"-"`
+	OnEvent          func(StreamEvent)          `json:"-"`
+	OnRetry          RetryEventHandler          `json:"-"`
+	OnUserEntry      func(PromptUserEntryEvent) `json:"-"`
+	OnSteeringReturn func([]SteeringMessage)    `json:"-"`
+	ParentEntryID    *string                    `json:"parent_entry_id,omitempty"`
+	SessionID        string                     `json:"session_id"`
+	CWD              string                     `json:"cwd"`
+	Text             string                     `json:"text"`
+	Name             string                     `json:"name"`
+	Images           []ImageAttachment          `json:"images,omitempty"`
+	ResumeLatest     bool                       `json:"resume_latest,omitempty"`
+	HideUserPrompt   bool                       `json:"-"`
 }
 
 // PromptUserEntryEvent identifies the persisted user entry for an active prompt.
 type PromptUserEntryEvent struct {
 	SessionID string `json:"session_id"`
 	EntryID   string `json:"entry_id"`
+}
+
+// SteeringRequest targets the active run identified by its initial user entry.
+type SteeringRequest struct {
+	SessionID      string            `json:"session_id"`
+	RunID          string            `json:"run_id"`
+	Text           string            `json:"text"`
+	Images         []ImageAttachment `json:"images,omitempty"`
+	HideUserPrompt bool              `json:"-"`
+}
+
+// SteeringConsumedEvent identifies a steering message after it becomes durable.
+type SteeringConsumedEvent struct {
+	EntryID        string            `json:"entry_id"`
+	Text           string            `json:"text"`
+	Images         []ImageAttachment `json:"images,omitempty"`
+	HideUserPrompt bool              `json:"hide_user_prompt"`
+}
+
+// SteeringMessage is a user draft returned when a run settles before consumption.
+type SteeringMessage struct {
+	Text           string            `json:"text"`
+	Images         []ImageAttachment `json:"images,omitempty"`
+	HideUserPrompt bool              `json:"-"`
+}
+
+// Steer transfers one user message to an active run's steering inbox.
+func (runtime *Runtime) Steer(ctx context.Context, request *SteeringRequest) error {
+	if err := ctx.Err(); err != nil {
+		return oops.In("assistant").Code("steering_canceled").Wrapf(err, "accept steering message")
+	}
+
+	if runtime == nil || runtime.steering == nil {
+		return ErrSteeringInactive
+	}
+
+	if request == nil {
+		return oops.In("assistant").Code("nil_steering_request").
+			Wrapf(ErrSteeringInvalidInput, "steering request is nil")
+	}
+
+	if strings.TrimSpace(request.SessionID) == "" {
+		return oops.In("assistant").Code("steering_session_required").
+			Wrapf(ErrSteeringInvalidInput, "steering session ID is required")
+	}
+
+	if strings.TrimSpace(request.RunID) == "" {
+		return oops.In("assistant").Code("steering_run_required").
+			Wrapf(ErrSteeringInvalidInput, "steering run ID is required")
+	}
+
+	prompt := &PromptRequest{
+		OnEvent: nil, OnRetry: nil, OnUserEntry: nil, OnSteeringReturn: nil, ParentEntryID: nil,
+		SessionID: "", CWD: "", Text: request.Text, Images: request.Images, Name: "",
+		ResumeLatest: false, HideUserPrompt: false,
+	}
+	if _, err := runtime.preparePromptRequest(prompt); err != nil {
+		return errors.Join(ErrSteeringInvalidInput, err)
+	}
+
+	return runtime.steering.accept(request.SessionID, request.RunID, steeringDraft{
+		Text: request.Text, Images: request.Images, HideUserPrompt: request.HideUserPrompt,
+	})
 }
 
 // StreamEventKind identifies incremental assistant activity.
@@ -103,6 +169,8 @@ const (
 	StreamEventUsageSnapshot StreamEventKind = "usage_snapshot"
 	// StreamEventUsageTotal carries cumulative provider-reported usage for one run.
 	StreamEventUsageTotal StreamEventKind = "usage_total"
+	// StreamEventSteeringConsumed reports that a steering message became durable.
+	StreamEventSteeringConsumed StreamEventKind = "steering_consumed"
 	// StreamEventContextCompaction carries UI-only context compaction notices.
 	StreamEventContextCompaction StreamEventKind = "context_compaction"
 	// StreamEventContextCompactionStart reports that context compaction has started.
@@ -190,6 +258,7 @@ func NewRuntime(options *RuntimeOptions) *Runtime {
 		toolCoordinator:   options.ToolCoordinator,
 		attachments:       newForegroundAttachments(),
 		operations:        newSessionOperationCoordinator(),
+		steering:          newSteeringInboxRegistry(defaultSteeringInboxCapacity),
 		newCompactionUUID: uuid.NewV7,
 		profile:           topLevelExecutionProfile(),
 	}
@@ -206,13 +275,7 @@ func (runtime *Runtime) acquirePromptOperation(ctx context.Context, sessionID st
 
 // Prompt appends a user prompt and an assistant response to the selected session.
 func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (response *PromptResponse, err error) {
-	if request == nil {
-		return nil, oops.In("assistant").Code("nil_prompt_request").Errorf("prompt request is nil")
-	}
-
-	originalRequest := request
-
-	request, err = runtime.preparePromptRequest(request)
+	originalRequest, request, err := runtime.validateAndPreparePromptRequest(request)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +309,16 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		turnLifecycle.dispatchError(ctx, err)
 	}()
 
-	lineage := newPromptLineage(userEntry.ID)
+	lineage := newPromptLineageWithEvents(userEntry.ID, request.OnEvent)
+
+	if registerErr := runtime.registerSteeringInbox(activeSession.ID, userEntry.ID); registerErr != nil {
+		return nil, registerErr
+	}
+
+	steeringOpen := runtime.steering != nil
+	defer func() {
+		runtime.closePromptSteering(activeSession.ID, userEntry.ID, request, steeringOpen)
+	}()
 
 	bundle, cached, err := runtime.respondWithPartialProgress(ctx, activeSession.ID, lineage, request)
 	if err != nil {
@@ -259,6 +331,9 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	if err != nil {
 		return nil, err
 	}
+
+	// Stop accepting steering once the response is durable and before lifecycle work.
+	steeringOpen = runtime.closePromptSteering(activeSession.ID, userEntry.ID, request, steeringOpen)
 
 	runtime.dispatchMessageAppend(ctx, assistantEntry)
 	turnLifecycle.dispatchEnd(ctx, assistantEntry.ID, cached, bundle.Usage)
@@ -281,6 +356,64 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 		Usage:            bundle.Usage,
 		Cached:           cached,
 	}, nil
+}
+
+func (runtime *Runtime) closePromptSteering(
+	sessionID string,
+	entryID string,
+	request *PromptRequest,
+	open bool,
+) bool {
+	if open {
+		runtime.closeSteeringInbox(sessionID, entryID, request.OnSteeringReturn)
+	}
+
+	return false
+}
+
+func (runtime *Runtime) validateAndPreparePromptRequest(
+	request *PromptRequest,
+) (original, prepared *PromptRequest, err error) {
+	if request == nil {
+		return nil, nil, oops.In("assistant").Code("nil_prompt_request").Errorf("prompt request is nil")
+	}
+
+	prepared, err = runtime.preparePromptRequest(request)
+
+	return request, prepared, err
+}
+
+func (runtime *Runtime) registerSteeringInbox(sessionID, runID string) error {
+	if runtime.steering == nil {
+		return nil
+	}
+
+	if err := runtime.steering.register(sessionID, runID); err != nil {
+		return oops.In("assistant").Code("steering_register").Wrapf(err, "register active steering inbox")
+	}
+
+	return nil
+}
+
+func (runtime *Runtime) closeSteeringInbox(
+	sessionID string,
+	runID string,
+	onReturn func([]SteeringMessage),
+) {
+	drafts, err := runtime.steering.close(sessionID, runID)
+	if err != nil || len(drafts) == 0 || onReturn == nil {
+		return
+	}
+
+	messages := make([]SteeringMessage, len(drafts))
+	for index := range drafts {
+		messages[index] = SteeringMessage{
+			Text: drafts[index].Text, Images: drafts[index].Images,
+			HideUserPrompt: drafts[index].HideUserPrompt,
+		}
+	}
+
+	onReturn(messages)
 }
 
 func (runtime *Runtime) resolveSessionWithPersistence(
@@ -330,13 +463,23 @@ func (runtime *Runtime) persistAssistantBundle(
 ) (*database.EntryEntity, error) {
 	parentID, err := runtime.appendAssistantSideEffects(ctx, sessionID, &lineage.activeParentEntryID, bundle)
 	if err != nil {
+		if parentID != nil {
+			lineage.activeParentEntryID = *parentID
+		}
+
 		return nil, err
+	}
+
+	if parentID != nil {
+		lineage.activeParentEntryID = *parentID
 	}
 
 	entry, err := runtime.appendAssistantResponseEntry(ctx, sessionID, parentID, bundle)
 	if err != nil {
 		return nil, oops.In("assistant").Code("append_assistant").Wrapf(err, "append assistant message")
 	}
+
+	lineage.adopt(entry)
 
 	return entry, nil
 }
@@ -630,7 +773,8 @@ func (runtime *Runtime) WithExecutionProfile(profile *ExecutionProfile) *Runtime
 		agentTasks: runtime.agentTasks, workflowSubmitter: runtime.workflowSubmitter,
 		toolTasks: runtime.toolTasks, toolCoordinator: runtime.toolCoordinator,
 		attachments: runtime.attachments,
-		operations:  runtime.operations, newCompactionUUID: runtime.newCompactionUUID, profile: clonedProfile,
+		operations:  runtime.operations, steering: runtime.steering,
+		newCompactionUUID: runtime.newCompactionUUID, profile: clonedProfile,
 	}
 }
 

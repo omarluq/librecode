@@ -62,6 +62,7 @@ func imageConversionError(messageIndex, partIndex int, text string) error {
 }
 
 const (
+	openAIInputTextType   = "input_text"
 	jsonImageURLKey       = "image_url"
 	jsonImageURLValueKey  = "url"
 	openAIInputImageType  = "input_image"
@@ -83,7 +84,7 @@ func openAIResponseUserContent(message llm.Message) []map[string]any {
 		switch part.Type {
 		case llm.PartText:
 			if part.Text != "" {
-				blocks = append(blocks, map[string]any{jsonTypeKey: "input_text", jsonTextKey: part.Text})
+				blocks = append(blocks, map[string]any{jsonTypeKey: openAIInputTextType, jsonTextKey: part.Text})
 			}
 		case llm.PartImage:
 			blocks = append(blocks, map[string]any{

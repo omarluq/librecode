@@ -203,6 +203,7 @@ type App struct {
 	promptHistoryDraftImages    []imageAttachment
 	agentTaskSessionStack       []string
 	queuedMessages              []promptDraft
+	steeringMessages            []promptDraft
 	composerBuffer              tui.TextArea
 	transcript                  transcriptState
 	tokenUsage                  model.TokenUsage
@@ -237,7 +238,7 @@ type App struct {
 
 // Run starts an interactive tcell chat loop.
 func Run(ctx context.Context, options *RunOptions) error {
-	screen, err := tcell.NewScreen()
+	screen, err := tcell.NewScreen(tcell.OptAdvancedKeys(true))
 	if err != nil {
 		return fmt.Errorf("tui: create screen: %w", err)
 	}
@@ -347,6 +348,7 @@ func initializeAppTaskState(app *App) {
 	app.deliveredAgentTasks = map[string]struct{}{}
 	app.deliveredToolTasks = map[string]struct{}{}
 	app.queuedMessages = []promptDraft{}
+	app.steeringMessages = []promptDraft{}
 	app.hiddenQueuedMessages = []promptDraft{}
 }
 
@@ -722,6 +724,8 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 		asyncEventCompactDone,
 		asyncEventCompactError,
 		asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptRetry,
 		asyncEventPromptError,

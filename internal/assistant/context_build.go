@@ -31,6 +31,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		OnEvent:                nil,
 		OnProviderObserve:      nil,
 		OnProviderResponse:     nil,
+		OnRoundCheckpoint:      nil,
 		OnProviderRequest:      nil,
 		ToolRegistry:           registry,
 		ExecuteTools:           nil,

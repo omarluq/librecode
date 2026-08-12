@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/testutil"
+	"github.com/omarluq/librecode/internal/transcript"
 )
 
 const (
@@ -33,6 +35,7 @@ const (
 	promptSendTestEnv         = "test-env"
 	promptSendTestProvider    = "test-provider"
 	promptSendTestText        = "hello"
+	promptSendQueuedFollowUp  = "queued follow-up"
 	promptSendSlashModel      = "/model"
 	promptSendWhitespaceInput = "   "
 )
@@ -81,6 +84,29 @@ func (client *terminalPromptClient) Complete(
 	return client.response, nil
 }
 
+type terminalBlockingPromptClient struct {
+	started chan *assistant.CompletionRequest
+	release chan struct{}
+}
+
+func (client *terminalBlockingPromptClient) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	select {
+	case client.started <- request:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("wait for request: %w", ctx.Err())
+	}
+
+	select {
+	case <-client.release:
+		return newTerminalCompletionResult("done"), nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("wait for release: %w", ctx.Err())
+	}
+}
+
 type submitCase struct {
 	setupApp          func(*App)
 	composerText      string
@@ -116,6 +142,23 @@ func TestSubmit(t *testing.T) {
 	}
 }
 
+func TestDeliverDraftDefaultsUnknownDeliveryToPrompt(t *testing.T) {
+	t.Parallel()
+
+	client := newTerminalPromptClient(newTerminalCompletionResult("ok"), nil)
+	app := newPromptSendTestApp(t, client)
+
+	consumed, err := app.deliverDraft(
+		t.Context(), promptDraft{Text: string(promptDeliveryPrompt), Images: nil}, promptDelivery("unknown"),
+	)
+	require.NoError(t, err)
+	assert.False(t, consumed)
+	assert.Equal(t, []string{string(promptDeliveryPrompt)}, app.promptHistory)
+	request := waitForPromptRequest(t, client)
+	require.NotEmpty(t, request.Messages)
+	assert.Equal(t, string(promptDeliveryPrompt), request.Messages[len(request.Messages)-1].Content)
+}
+
 func submitCases() []submitCase {
 	return []submitCase{
 		{
@@ -144,9 +187,9 @@ func submitCases() []submitCase {
 			setupApp: func(app *App) {
 				app.working = true
 			},
-			composerText:      "queued follow-up",
+			composerText:      promptSendQueuedFollowUp,
 			wantComposerText:  "",
-			wantQueued:        []string{"queued follow-up"},
+			wantQueued:        []string{promptSendQueuedFollowUp},
 			name:              "queues when working",
 			wantMode:          modeChat,
 			wantPromptHistory: 1,
@@ -207,6 +250,255 @@ func assertQueuedMessages(t *testing.T, expected, actual []string) {
 	}
 
 	assert.Equal(t, expected, actual)
+}
+
+func startBlockingPrompt(
+	t *testing.T,
+) (*App, *terminalBlockingPromptClient, *assistant.CompletionRequest) {
+	t.Helper()
+
+	client := &terminalBlockingPromptClient{
+		started: make(chan *assistant.CompletionRequest, 1),
+		release: make(chan struct{}),
+	}
+	app := newPromptSendTestApp(t, client)
+	app.screen = newClipboardScreen()
+	app.sendPrompt(t.Context(), "initial")
+
+	var request *assistant.CompletionRequest
+	select {
+	case request = <-client.started:
+	case <-time.After(time.Minute):
+		t.Fatal("blocking prompt request should start")
+	}
+
+	entryEvent := readPromptAsyncEvent(t, app)
+	require.Equal(t, asyncEventPromptUserEntry, entryEvent.Kind)
+	app.applyPromptUserEntry(t.Context(), entryEvent.Provider, entryEvent.Text, entryEvent.PromptID)
+
+	return app, client, request
+}
+
+func TestActiveEnterSteersRuntime(t *testing.T) {
+	t.Parallel()
+
+	app, client, request := startBlockingPrompt(t)
+	app.composerBuffer.SetText("steer this")
+	initialTranscriptLength := len(app.transcript.History)
+
+	_, err := app.handleInputKey(t.Context(), tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModNone))
+	require.NoError(t, err)
+	assert.True(t, app.composerDraftEmpty())
+	assert.Empty(t, app.queuedMessages)
+	assert.Contains(t, app.statusMessage, "steering accepted")
+	require.Len(t, app.steeringMessages, 1)
+	assert.Equal(t, "steer this", app.steeringMessages[0].Text)
+	assert.Contains(t, strings.Join(lineTexts(app.messageLines(80, -1)), "\n"), "steer this")
+	assert.Len(t, app.transcript.History, initialTranscriptLength,
+		"accepted steering must render as pending without adding an optimistic durable transcript entry")
+
+	app.appendStreamingBlock(transcript.RoleAssistant, "checkpointed response")
+	pendingLines := strings.Join(lineTexts(app.messageLines(80, -1)), "\n")
+	assert.Less(t, strings.Index(pendingLines, "checkpointed response"), strings.Index(pendingLines, "steer this"))
+
+	round := &llm.CompletedRound{
+		Assistant: llm.Message{Metadata: nil, Role: "", Content: nil}, ToolResults: nil,
+		FinishReason: llm.FinishReasonStop, Usage: llm.EmptyUsage(),
+	}
+	messages, err := request.OnRoundCheckpoint(t.Context(), round)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	require.Len(t, messages[0].Content, 1)
+	assert.Equal(t, "steer this", messages[0].Content[0].Text)
+
+	consumedEvent := readPromptAsyncEventUntilKind(t, app, asyncEventSteeringConsumed)
+	app.handlePromptAsyncEvent(t.Context(), consumedEvent)
+	assert.Empty(t, app.steeringMessages)
+	require.Len(t, app.transcript.History, initialTranscriptLength+2)
+	checkpointed := app.transcript.History[len(app.transcript.History)-2]
+	assert.Equal(t, transcript.RoleAssistant, checkpointed.Role)
+	assert.Equal(t, "checkpointed response", checkpointed.Content)
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+	consumed := app.transcript.History[len(app.transcript.History)-1]
+	assert.Equal(t, transcript.RoleUser, consumed.Role)
+	assert.Equal(t, "steer this", consumed.Content)
+	require.NotNil(t, consumed.EntryID)
+
+	close(client.release)
+}
+
+func TestHiddenContinuationSteersRuntime(t *testing.T) {
+	t.Parallel()
+
+	app, client, request := startBlockingPrompt(t)
+	app.deliverHiddenContinuation(t.Context(), "background result")
+
+	assert.Empty(t, app.hiddenQueuedMessages)
+	assert.Contains(t, app.statusMessage, "steered into the active response")
+
+	round := &llm.CompletedRound{
+		Assistant: llm.Message{Metadata: nil, Role: "", Content: nil}, ToolResults: nil,
+		FinishReason: llm.FinishReasonStop, Usage: llm.EmptyUsage(),
+	}
+	messages, err := request.OnRoundCheckpoint(t.Context(), round)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	require.Len(t, messages[0].Content, 1)
+	assert.Equal(t, "background result", messages[0].Content[0].Text)
+
+	entries, err := app.runtime.SessionRepository().Entries(t.Context(), app.sessionID)
+	require.NoError(t, err)
+	require.NotEmpty(t, entries)
+	assert.False(t, entries[len(entries)-1].Display)
+	assert.True(t, entries[len(entries)-1].ModelFacing)
+
+	app.appendStreamingBlock(transcript.RoleAssistant, "pre-continuation response")
+	consumedEvent := readPromptAsyncEventUntilKind(t, app, asyncEventSteeringConsumed)
+	app.handlePromptAsyncEvent(t.Context(), consumedEvent)
+	require.Len(t, app.transcript.History, 2)
+	checkpointed := app.transcript.History[len(app.transcript.History)-1]
+	assert.Equal(t, transcript.RoleAssistant, checkpointed.Role)
+	assert.Equal(t, "pre-continuation response", checkpointed.Content)
+	assert.Empty(t, app.transcript.Streaming.Blocks)
+	assert.NotContains(t, transcriptContents(app.transcript.History), "background result")
+
+	close(client.release)
+}
+
+func TestActiveInputKeyRouting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		event       *tcell.EventKey
+		name        string
+		wantText    string
+		wantQueued  []string
+		wantHistory int
+	}{
+		{
+			name: "shift enter queues follow-up", event: tcell.NewEventKey(tcell.KeyEnter, "", tcell.ModShift),
+			wantText: "", wantQueued: []string{"draft"}, wantHistory: 1,
+		},
+		{
+			name: "ctrl j inserts newline", event: tcell.NewEventKey(tcell.KeyCtrlJ, "", tcell.ModNone),
+			wantText: "draft\n", wantQueued: nil, wantHistory: 0,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			app := newRenderTestApp(t)
+			app.working = true
+			app.activePrompt = &activePromptState{
+				Cancel: nil, SessionID: app.sessionID, UserEntryID: "", Prompt: "", Images: nil,
+				UserMessageTimestamp: 0, ID: 1, Canceled: false,
+			}
+			app.composerBuffer.SetText("draft")
+
+			_, err := app.handleInputKey(t.Context(), testCase.event)
+			require.NoError(t, err)
+			assert.Equal(t, testCase.wantText, app.composerBuffer.TextValue())
+			assertQueuedMessages(t, testCase.wantQueued, promptDraftTexts(app.queuedMessages))
+			assert.Len(t, app.promptHistory, testCase.wantHistory)
+		})
+	}
+}
+
+func TestSteerDraftQueuesWhenActivePromptDoesNotMatchDisplayedSession(t *testing.T) {
+	t.Parallel()
+
+	const promptEntry = "prompt-entry"
+
+	tests := []struct {
+		name            string
+		displayed       string
+		promptSession   string
+		promptUserEntry string
+	}{
+		{
+			name:            "session mismatch",
+			displayed:       benchmarkDisplayedSession,
+			promptSession:   "prompt-session",
+			promptUserEntry: promptEntry,
+		},
+		{
+			name:            "missing prompt session",
+			displayed:       benchmarkDisplayedSession,
+			promptSession:   "",
+			promptUserEntry: promptEntry,
+		},
+		{
+			name:            "missing prompt user entry",
+			displayed:       benchmarkDisplayedSession,
+			promptSession:   benchmarkDisplayedSession,
+			promptUserEntry: "",
+		},
+		{
+			name:            "missing runtime",
+			displayed:       benchmarkDisplayedSession,
+			promptSession:   benchmarkDisplayedSession,
+			promptUserEntry: promptEntry,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newRenderTestApp(t)
+			app.sessionID = test.displayed
+			app.activePrompt = newTestActivePrompt(nil)
+			app.activePrompt.SessionID = test.promptSession
+			app.activePrompt.UserEntryID = test.promptUserEntry
+
+			if test.name == "missing runtime" {
+				app.runtime = nil
+			}
+
+			require.NoError(t, app.steerDraft(t.Context(), promptDraft{Text: testQueuedPromptText, Images: nil}))
+
+			assert.Equal(t, []string{testQueuedPromptText}, promptDraftTexts(app.queuedMessages))
+			assert.Equal(t, "response finished; prompt queued next", app.statusMessage)
+		})
+	}
+}
+
+func TestSteerDraftQueuesExactlyOnceWhenRunClosesBeforeAcceptance(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.activePrompt = newTestActivePrompt(nil)
+	app.activePrompt.SessionID = app.sessionID
+	app.activePrompt.UserEntryID = "closed-run"
+	draft := promptDraft{Text: testQueuedPromptText, Images: nil}
+
+	require.NoError(t, app.steerDraft(t.Context(), draft))
+
+	assert.Equal(t, []string{testQueuedPromptText}, promptDraftTexts(app.queuedMessages))
+	assert.Equal(t, "response finished; prompt queued next", app.statusMessage)
+}
+
+func TestRestoreReturnedSteeringPrecedesFollowUps(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.activePrompt = &activePromptState{
+		Cancel: nil, SessionID: "", UserEntryID: "", Prompt: "", Images: nil,
+		UserMessageTimestamp: 0, ID: 7, Canceled: false,
+	}
+	app.queuedMessages = promptDrafts("follow-up")
+
+	const encoded = `[{"text":"steer","images":[{"data":"AQ=="}]}]`
+
+	app.restoreReturnedSteering(encoded, 7)
+
+	assert.Equal(t, []string{"steer", "follow-up"}, promptDraftTexts(app.queuedMessages))
+	assert.Equal(t, byte(1), app.queuedMessages[0].Images[0].Data[0])
+	assert.Contains(t, app.statusMessage, "restored")
+
+	app.restoreReturnedSteering(`[{"text":"stale"}]`, 8)
+	assert.Equal(t, []string{"steer", "follow-up"}, promptDraftTexts(app.queuedMessages))
 }
 
 func TestSendPromptQueuesWhenWorking(t *testing.T) {
@@ -309,17 +601,18 @@ func TestRunPromptPostsDoneAndError(t *testing.T) {
 			app.screen = newClipboardScreen()
 			promptCtx, cancel := context.WithCancel(context.Background())
 			request := &assistant.PromptRequest{
-				OnEvent:        nil,
-				OnRetry:        nil,
-				OnUserEntry:    nil,
-				ParentEntryID:  nil,
-				SessionID:      "",
-				CWD:            app.cwd,
-				Images:         nil,
-				Text:           promptSendTestText,
-				Name:           "",
-				ResumeLatest:   false,
-				HideUserPrompt: false,
+				OnEvent:          nil,
+				OnRetry:          nil,
+				OnUserEntry:      nil,
+				OnSteeringReturn: nil,
+				ParentEntryID:    nil,
+				SessionID:        "",
+				CWD:              app.cwd,
+				Images:           nil,
+				Text:             promptSendTestText,
+				Name:             "",
+				ResumeLatest:     false,
+				HideUserPrompt:   false,
 			}
 
 			app.runPrompt(context.Background(), promptCtx, cancel, request, 7)
@@ -500,14 +793,11 @@ func newTerminalCompletionResult(text string) *assistant.CompletionResult {
 func waitForPromptRequest(t *testing.T, client *terminalPromptClient) *assistant.CompletionRequest {
 	t.Helper()
 
-	require.Eventually(t, func() bool {
-		select {
-		case <-client.ready:
-			return true
-		default:
-			return false
-		}
-	}, 5*time.Second, 10*time.Millisecond, "runtime request should be captured")
+	select {
+	case <-client.ready:
+	case <-time.After(time.Minute):
+		t.Fatal("runtime request should be captured")
+	}
 
 	client.lock.Lock()
 	defer client.lock.Unlock()

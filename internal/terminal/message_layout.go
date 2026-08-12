@@ -197,12 +197,20 @@ func (app *App) dynamicMessageLineGroups(width int) [][]tui.Line {
 		groups = append(groups, app.renderRunningToolBlock(width, &app.runningToolBlocks[index].Call))
 	}
 
+	return app.appendPendingMessageGroups(groups, width)
+}
+
+func (app *App) appendPendingMessageGroups(groups [][]tui.Line, width int) [][]tui.Line {
 	if app.busy() && !app.inspectingWhilePromptRuns() {
 		groups = append(groups, app.renderWorkingIndicator(width))
 	}
 
+	if app.activePrompt != nil && app.activePrompt.SessionID == app.sessionID && len(app.steeringMessages) > 0 {
+		groups = append(groups, app.renderPendingSteeringMessages(width, app.steeringMessages))
+	}
+
 	if len(app.queuedMessages) > 0 {
-		groups = append(groups, app.renderQueuedMessages(width))
+		groups = append(groups, app.renderPendingMessages(width, "queued follow-up", app.queuedMessages))
 	}
 
 	return groups

@@ -54,17 +54,18 @@ const (
 
 func newRuntimePromptRequest(cwd, text, name string) *assistant.PromptRequest {
 	return &assistant.PromptRequest{
-		OnEvent:        nil,
-		OnRetry:        nil,
-		OnUserEntry:    nil,
-		ParentEntryID:  nil,
-		SessionID:      "",
-		CWD:            cwd,
-		Images:         nil,
-		Text:           text,
-		Name:           name,
-		ResumeLatest:   false,
-		HideUserPrompt: false,
+		OnEvent:          nil,
+		OnRetry:          nil,
+		OnUserEntry:      nil,
+		OnSteeringReturn: nil,
+		ParentEntryID:    nil,
+		SessionID:        "",
+		CWD:              cwd,
+		Images:           nil,
+		Text:             text,
+		Name:             name,
+		ResumeLatest:     false,
+		HideUserPrompt:   false,
 	}
 }
 
@@ -290,6 +291,28 @@ func TestRuntime_PromptUsesResponseCache(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, secondResponse.Cached)
 	assert.Equal(t, firstResponse.Text, secondResponse.Text)
+}
+
+func TestRuntime_SteeredResponseDoesNotPopulateUnsteeredCacheKey(t *testing.T) {
+	t.Parallel()
+
+	client := &steeringCacheCompleter{runtime: nil, runID: "", attempts: 0, steer: false}
+	runtime, _ := newTestRuntimeWithClient(t, client)
+	client.runtime = runtime
+
+	request := newRuntimePromptRequest(testRuntimeCWD, "cache safety", "")
+	request.OnUserEntry = func(event assistant.PromptUserEntryEvent) { client.runID = event.EntryID }
+	first, err := runtime.Prompt(t.Context(), request)
+	require.NoError(t, err)
+	assert.False(t, first.Cached)
+	assert.Equal(t, 1, client.attempts)
+
+	client.steer = false
+	request.SessionID = first.SessionID
+	second, err := runtime.Prompt(t.Context(), request)
+	require.NoError(t, err)
+	assert.False(t, second.Cached)
+	assert.Equal(t, 2, client.attempts, "steered output must not populate the ordinary prompt cache")
 }
 
 func TestRuntime_PromptEmitsStreamEvents(t *testing.T) {
@@ -910,6 +933,13 @@ type countingCompleter struct {
 	attempts int
 }
 
+type steeringCacheCompleter struct {
+	runtime  *assistant.Runtime
+	runID    string
+	attempts int
+	steer    bool
+}
+
 type retryCompleter struct {
 	err               error
 	response          string
@@ -961,6 +991,42 @@ func (client *countingCompleter) Complete(
 	client.attempts++
 
 	return testCompleter{}.Complete(ctx, request)
+}
+
+func (client *steeringCacheCompleter) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.attempts++
+	if client.attempts == 1 {
+		client.steer = true
+	}
+
+	if client.steer {
+		if err := client.runtime.Steer(ctx, &assistant.SteeringRequest{
+			SessionID: request.SessionID, RunID: client.runID, Text: "steer", Images: nil, HideUserPrompt: false,
+		}); err != nil {
+			return nil, oops.In("assistant_test").Code("steer").Wrapf(err, "submit steering")
+		}
+
+		_, err := request.OnRoundCheckpoint(ctx, &llm.CompletedRound{
+			Assistant: llm.Message{Metadata: nil, Role: llm.RoleAssistant, Content: []llm.Part{
+				llm.TextPart("before steering"),
+			}},
+			ToolResults: nil, FinishReason: llm.FinishReasonStop, Usage: llm.EmptyUsage(),
+		})
+		if err != nil {
+			return nil, oops.In("assistant_test").Code("checkpoint").Wrapf(err, "checkpoint steering")
+		}
+	}
+
+	return &assistant.CompletionResult{
+		FinishReason: llm.FinishReasonStop,
+		Text:         "response",
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        model.EmptyTokenUsage(),
+	}, nil
 }
 
 func (client *retryCompleter) Complete(

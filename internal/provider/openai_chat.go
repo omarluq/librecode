@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"io"
+	"strings"
 
 	"github.com/samber/oops"
 
@@ -75,34 +76,76 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 	}
 
 	if len(providerResult.ToolCalls) == 0 {
-		return finishProviderResult(state.result, providerResult)
+		steering, checkpointErr := runRoundCheckpoint(
+			ctx,
+			request,
+			new(completedRound(providerResult, nil)),
+		)
+		if checkpointErr != nil {
+			return false, checkpointErr
+		}
+
+		if len(steering) == 0 {
+			return finishProviderResult(state.result, providerResult)
+		}
+
+		appendOpenAIChatSteeringConversation(state, providerResult, steering)
+
+		return false, nil
 	}
 
-	events, err := executeOpenAIChatToolCalls(ctx, request, providerResult.ToolCalls)
+	_, events, err := executeToolCalls(ctx, request, providerResult.ToolCalls)
 	if err != nil {
 		return false, err
 	}
 
 	appendToolResults(state.result, events)
 
-	if err := appendOpenAIChatToolConversation(state, providerResult, events); err != nil {
+	appendErr := appendOpenAIChatToolConversation(state, providerResult, events)
+	if appendErr != nil {
+		return false, appendErr
+	}
+
+	steering, err := runRoundCheckpoint(
+		ctx,
+		request,
+		new(completedRoundWithToolEvents(providerResult, events)),
+	)
+	if err != nil {
 		return false, err
 	}
+
+	appendOpenAIChatUserMessages(state, steering)
 
 	return false, nil
 }
 
-func executeOpenAIChatToolCalls(
-	ctx context.Context,
-	request *CompletionRequest,
-	calls []ToolCall,
-) ([]ToolEvent, error) {
-	_, events, err := executeToolCalls(ctx, request, calls)
-	if err != nil {
-		return nil, err
+func appendOpenAIChatSteeringConversation(
+	state *openAIChatLoopState,
+	result *providerResult,
+	steering []llm.Message,
+) {
+	if strings.TrimSpace(result.Text) != "" {
+		appendOpenAIChatAssistantMessage(state, result)
 	}
 
-	return events, nil
+	appendOpenAIChatUserMessages(state, steering)
+}
+
+func appendOpenAIChatAssistantMessage(state *openAIChatLoopState, result *providerResult) {
+	state.messages = append(state.messages, map[string]any{
+		jsonRoleKey:    jsonAssistantRole,
+		jsonContentKey: result.Text,
+	})
+}
+
+func appendOpenAIChatUserMessages(state *openAIChatLoopState, messages []llm.Message) {
+	for index := range messages {
+		state.messages = append(state.messages, map[string]any{
+			jsonRoleKey:    jsonUserRole,
+			jsonContentKey: openAIChatUserContent(messages[index]),
+		})
+	}
 }
 
 func appendOpenAIChatToolConversation(state *openAIChatLoopState, result *providerResult, events []ToolEvent) error {

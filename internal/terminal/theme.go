@@ -18,28 +18,29 @@ const (
 )
 
 const (
-	colorAccent          colorToken = "accent"
-	colorBorder          colorToken = "border"
-	colorBorderAccent    colorToken = "borderAccent"
-	colorBorderMuted     colorToken = "borderMuted"
-	colorSuccess         colorToken = "success"
-	colorError           colorToken = "error"
-	colorWarning         colorToken = "warning"
-	colorMuted           colorToken = "muted"
-	colorDim             colorToken = "dim"
-	colorText            colorToken = "text"
-	colorCodeBg          colorToken = "codeBg"
-	colorCodeText        colorToken = "codeText"
-	colorDiffAdd         colorToken = "diffAdd"
-	colorDiffDelete      colorToken = "diffDelete"
-	colorThinkingText    colorToken = "thinkingText"
-	colorSelectedBg      colorToken = "selectedBg"
-	colorUserMessageBg   colorToken = "userMessageBg"
-	colorCustomMessageBg colorToken = "customMessageBg"
-	colorToolPendingBg   colorToken = "toolPendingBg"
-	colorToolSuccessBg   colorToken = "toolSuccessBg"
-	colorToolErrorBg     colorToken = "toolErrorBg"
-	colorBashMode        colorToken = "bashMode"
+	colorAccent               colorToken = "accent"
+	colorBorder               colorToken = "border"
+	colorBorderAccent         colorToken = "borderAccent"
+	colorBorderMuted          colorToken = "borderMuted"
+	colorSuccess              colorToken = "success"
+	colorError                colorToken = "error"
+	colorWarning              colorToken = "warning"
+	colorMuted                colorToken = "muted"
+	colorDim                  colorToken = "dim"
+	colorText                 colorToken = "text"
+	colorCodeBg               colorToken = "codeBg"
+	colorCodeText             colorToken = "codeText"
+	colorDiffAdd              colorToken = "diffAdd"
+	colorDiffDelete           colorToken = "diffDelete"
+	colorThinkingText         colorToken = "thinkingText"
+	colorSelectedBg           colorToken = "selectedBg"
+	colorUserMessageBg        colorToken = "userMessageBg"
+	colorPendingUserMessageBg colorToken = "pendingUserMessageBg"
+	colorCustomMessageBg      colorToken = "customMessageBg"
+	colorToolPendingBg        colorToken = "toolPendingBg"
+	colorToolSuccessBg        colorToken = "toolSuccessBg"
+	colorToolErrorBg          colorToken = "toolErrorBg"
+	colorBashMode             colorToken = "bashMode"
 )
 
 type terminalTheme struct {
@@ -80,6 +81,7 @@ func piThemeColors() []themeColor {
 		{token: colorThinkingText, dark: hexColorFromString("#808080"), light: hexColorFromString(colorLightMuted)},
 		{token: colorSelectedBg, dark: hexColorFromString("#3a3a4a"), light: hexColorFromString("#e8f0fe")},
 		{token: colorUserMessageBg, dark: hexColorFromString("#343541"), light: hexColorFromString("#f3f4f6")},
+		{token: colorPendingUserMessageBg, dark: hexColorFromString("#303744"), light: hexColorFromString("#edf3f8")},
 		{token: colorCustomMessageBg, dark: hexColorFromString("#2d2838"), light: hexColorFromString("#f3efff")},
 		{token: colorToolPendingBg, dark: hexColorFromString("#282832"), light: hexColorFromString("#f4f4ff")},
 		{token: colorToolSuccessBg, dark: hexColorFromString("#283228"), light: hexColorFromString("#f0fff4")},

@@ -157,7 +157,7 @@ func (metrics *RunMetrics) ObserveStreamEvent(event StreamEvent) {
 		metrics.observeToolStart(event.ToolCallEvent)
 	case StreamEventToolResult:
 		metrics.observeToolResult(event.ToolEvent)
-	case StreamEventUsage, StreamEventUsageSnapshot, StreamEventUsageTotal:
+	case StreamEventUsage, StreamEventUsageSnapshot, StreamEventUsageTotal, StreamEventSteeringConsumed:
 	case StreamEventTextDelta,
 		StreamEventThinkingDelta,
 		StreamEventSkillLoaded,

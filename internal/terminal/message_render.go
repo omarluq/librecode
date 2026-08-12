@@ -112,13 +112,39 @@ func (app *App) renderUserMessage(width int, content string, attachments []attac
 	return lines
 }
 
-func (app *App) renderQueuedMessages(width int) []tui.Line {
+func (app *App) renderPendingSteeringMessages(width int, messages []promptDraft) []tui.Line {
+	style := app.theme.background(colorPendingUserMessageBg)
+	innerWidth := max(1, width-messageBoxHorizontalPadding)
+	lines := make([]tui.Line, 0, len(messages)*defaultMessageExtraRows)
+
+	for _, message := range messages {
+		lines = append(lines,
+			tui.NewLine(app.theme.style(colorDim), ""),
+			tui.NewLine(style, tui.PadRight("", width)),
+		)
+		for _, line := range tui.Wrap(message.Text, innerWidth) {
+			lines = append(lines, tui.NewLine(style, "  "+tui.PadRight(line, innerWidth)+"  "))
+		}
+
+		for _, item := range *summarizeAttachments(message.Images) {
+			line := tui.Truncate(attachmentSummaryText(item), innerWidth)
+			lines = append(lines, tui.NewLine(style, "  "+tui.PadRight(line, innerWidth)+"  "))
+		}
+
+		lines = append(lines, tui.NewLine(style, tui.PadRight("", width)))
+	}
+
+	return lines
+}
+
+func (app *App) renderPendingMessages(width int, label string, messages []promptDraft) []tui.Line {
 	style := app.theme.background(colorUserMessageBg).Foreground(app.theme.colors[colorMuted])
 	innerWidth := max(1, width-messageBoxHorizontalPadding)
 
 	lines := []tui.Line{tui.NewLine(app.theme.style(colorDim), "")}
-	for index, message := range app.queuedMessages {
-		header := "queued follow-up " + tui.Int(index+1)
+
+	for index, message := range messages {
+		header := label + " " + tui.Int(index+1)
 
 		lines = append(lines, tui.NewLine(style.Bold(true), "  "+tui.PadRight(header, innerWidth)+"  "))
 		for _, line := range tui.Wrap(message.Text, innerWidth) {
@@ -130,8 +156,6 @@ func (app *App) renderQueuedMessages(width int) []tui.Line {
 			lines = append(lines, tui.NewLine(style, "  "+tui.PadRight(line, innerWidth)+"  "))
 		}
 	}
-
-	lines = append(lines, tui.NewLine(app.theme.style(colorDim), ""))
 
 	return lines
 }

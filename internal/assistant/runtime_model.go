@@ -13,12 +13,21 @@ import (
 
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
 type promptLineage struct {
+	onEvent             func(StreamEvent)
+	progress            *partialPromptProgress
 	activeParentEntryID string
+	runID               string
+	pendingRounds       []llm.CompletedRound
+	latestRoundUsage    model.TokenUsage
+	committedThinking   int
+	committedTools      int
+	checkpointed        bool
 }
 
 type responseInput struct {
@@ -33,7 +42,21 @@ type responseInput struct {
 }
 
 func newPromptLineage(userEntryID string) *promptLineage {
-	return &promptLineage{activeParentEntryID: userEntryID}
+	return newPromptLineageWithEvents(userEntryID, nil)
+}
+
+func newPromptLineageWithEvents(userEntryID string, onEvent func(StreamEvent)) *promptLineage {
+	return &promptLineage{
+		onEvent:             onEvent,
+		activeParentEntryID: userEntryID,
+		runID:               userEntryID,
+		progress:            nil,
+		pendingRounds:       nil,
+		committedThinking:   0,
+		committedTools:      0,
+		latestRoundUsage:    model.EmptyTokenUsage(),
+		checkpointed:        false,
+	}
 }
 
 func (lineage *promptLineage) adopt(entry *database.EntryEntity) {
@@ -76,28 +99,16 @@ func (runtime *Runtime) respond(
 	}
 
 	if input.hasPromptImages || contextHasImages {
-		// Image bytes deliberately stay out of cache keys; prompts with image-bearing
-		// context always execute against their durable multipart history.
-		input.contextHasImages = contextHasImages
-		imageBundle, modelErr := runtime.modelResponse(ctx, input)
-
-		return imageBundle, false, modelErr
+		return runtime.respondWithImages(ctx, input, contextHasImages)
 	}
 
-	cachedResponse, found, err := runtime.cache.Get(cacheKey)
-	if err != nil {
-		return nil, false, oops.In("assistant").Code("cache_get").Wrapf(err, "read response cache")
+	cachedBundle, usable, cacheErr := runtime.cachedResponse(cacheKey, input)
+	if cacheErr != nil {
+		return nil, false, cacheErr
 	}
 
-	if found {
-		return &responseBundle{
-			Text:          cachedResponse,
-			Thinking:      nil,
-			ToolEvents:    nil,
-			Usage:         model.EmptyTokenUsage(),
-			ProviderUsage: model.EmptyTokenUsage(),
-			ModelFacing:   true,
-		}, true, nil
+	if usable {
+		return cachedBundle, true, nil
 	}
 
 	input.contextHasImages = false
@@ -107,9 +118,69 @@ func (runtime *Runtime) respond(
 		return nil, false, err
 	}
 
-	runtime.cache.Set(cacheKey, bundle.Text)
+	if !input.lineage.checkpointed {
+		runtime.cache.Set(cacheKey, bundle.Text)
+	}
 
 	return bundle, false, nil
+}
+
+func (runtime *Runtime) respondWithImages(
+	ctx context.Context,
+	input *responseInput,
+	contextHasImages bool,
+) (*responseBundle, bool, error) {
+	// Image bytes deliberately stay out of cache keys; prompts with image-bearing
+	// context always execute against their durable multipart history.
+	input.contextHasImages = contextHasImages
+	bundle, err := runtime.modelResponse(ctx, input)
+
+	return bundle, false, err
+}
+
+func (runtime *Runtime) cachedResponse(cacheKey string, input *responseInput) (*responseBundle, bool, error) {
+	cachedResponse, found, err := runtime.cache.Get(cacheKey)
+	if err != nil {
+		return nil, false, oops.In("assistant").Code("cache_get").Wrapf(err, "read response cache")
+	}
+
+	if !found {
+		return nil, false, nil
+	}
+
+	return runtime.usableCachedResponse(input, cachedResponse)
+}
+
+func (runtime *Runtime) usableCachedResponse(
+	input *responseInput,
+	cachedResponse string,
+) (*responseBundle, bool, error) {
+	if runtime.steering == nil {
+		return cachedResponseBundle(cachedResponse), true, nil
+	}
+
+	settled, err := runtime.steering.settleIfEmpty(input.sessionID, lineageRunID(input.lineage))
+	if err != nil {
+		return nil, false, oops.In("assistant").Code("steering_cache_settle").
+			Wrapf(err, "settle steering before cached response")
+	}
+
+	if !settled {
+		return nil, false, nil
+	}
+
+	return cachedResponseBundle(cachedResponse), true, nil
+}
+
+func cachedResponseBundle(cachedResponse string) *responseBundle {
+	return &responseBundle{
+		Text:          cachedResponse,
+		Thinking:      nil,
+		ToolEvents:    nil,
+		Usage:         model.EmptyTokenUsage(),
+		ProviderUsage: model.EmptyTokenUsage(),
+		ModelFacing:   true,
+	}
 }
 
 func (runtime *Runtime) modelResponse(
@@ -142,37 +213,7 @@ func (runtime *Runtime) modelResponse(
 			Wrapf(fmt.Errorf("%s", auth.Error), "resolve model auth")
 	}
 
-	preparation := &completionRequestPreparationInput{
-		sessionID:     input.sessionID,
-		cwd:           input.cwd,
-		prompt:        input.prompt,
-		lineage:       input.lineage,
-		selectedModel: &selectedModel,
-		auth:          &auth,
-		onEvent:       input.onEvent,
-	}
-
-	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(ctx, preparation)
-	if err != nil {
-		return nil, err
-	}
-
-	if contextImageErr := validateModelContextImageInput(
-		&selectedModel,
-		build.Request.Messages,
-	); contextImageErr != nil {
-		return nil, contextImageErr
-	}
-
-	build, compactionEntry, result, err := runtime.completeWithProviderOverflowRecovery(
-		ctx,
-		&providerOverflowRecoveryInput{
-			preparation:     preparation,
-			build:           build,
-			compactionEntry: compactionEntry,
-			onRetry:         input.onRetry,
-		},
-	)
+	build, _, result, err := runtime.prepareAndComplete(ctx, input, &selectedModel, &auth)
 	if err != nil {
 		return nil, err
 	}
@@ -180,22 +221,56 @@ func (runtime *Runtime) modelResponse(
 	usage := contextwindow.MergeUsage(build.Context.Usage, result.Usage)
 	runtime.emitUsage(ctx, input.onEvent, usage)
 
-	input.lineage.adopt(compactionEntry)
+	thinking := result.Thinking
+	toolEvents := result.ToolEvents
+	providerUsage := result.Usage
+
+	if input.lineage.checkpointed {
+		thinking = suffixFrom(input.lineage.committedThinking, thinking)
+		toolEvents = suffixFrom(input.lineage.committedTools, toolEvents)
+		providerUsage = input.lineage.latestRoundUsage
+	}
 
 	return &responseBundle{
 		Text:          result.Text,
-		Thinking:      result.Thinking,
-		ToolEvents:    result.ToolEvents,
+		Thinking:      thinking,
+		ToolEvents:    toolEvents,
 		Usage:         usage,
-		ProviderUsage: result.Usage,
+		ProviderUsage: providerUsage,
 		ModelFacing:   true,
 	}, nil
+}
+
+func (runtime *Runtime) prepareAndComplete(
+	ctx context.Context,
+	input *responseInput,
+	selectedModel *model.Model,
+	auth *model.RequestAuth,
+) (*contextRequestBuild, *database.EntryEntity, *CompletionResult, error) {
+	preparation := &completionRequestPreparationInput{
+		sessionID: input.sessionID, cwd: input.cwd, prompt: input.prompt, lineage: input.lineage,
+		selectedModel: selectedModel, auth: auth, onEvent: input.onEvent,
+	}
+
+	build, compactionEntry, err := runtime.prepareCompletionRequestWithAutoCompaction(ctx, preparation)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if err := validateModelContextImageInput(selectedModel, build.Request.Messages); err != nil {
+		return nil, nil, nil, err
+	}
+
+	return runtime.completeWithProviderOverflowRecovery(ctx, &providerOverflowRecoveryInput{
+		preparation: preparation, build: build, compactionEntry: compactionEntry, onRetry: input.onRetry,
+	})
 }
 
 type modelCompletionRequestInput struct {
 	selectedModel *model.Model
 	registry      *tool.Registry
 	onEvent       func(StreamEvent)
+	lineage       *promptLineage
 	sessionID     string
 	systemPrompt  string
 	cwd           string
@@ -210,6 +285,7 @@ func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInpu
 		OnProviderObserve:      runtime.emitProviderRequest,
 		OnProviderResponse:     observeProviderUsage,
 		OnProviderRequest:      runtime.dispatchProviderRequestHook,
+		OnRoundCheckpoint:      runtime.roundCheckpoint(input.sessionID, input.lineage),
 		ToolRegistry:           input.registry,
 		ExecuteTools:           nil,
 		SessionID:              input.sessionID,
@@ -362,6 +438,18 @@ func (runtime *Runtime) completeAttempt(
 	runtime.emitProviderResponse(ctx, request, attempt, result)
 
 	return result, nil
+}
+
+func suffixFrom[T any](committed int, values []T) []T {
+	if committed <= 0 {
+		return values
+	}
+
+	if committed >= len(values) {
+		return nil
+	}
+
+	return values[committed:]
 }
 
 func (runtime *Runtime) emitRetryEvent(ctx context.Context, handler RetryEventHandler, retryEvent RetryEvent) {

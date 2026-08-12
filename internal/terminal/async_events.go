@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ const (
 	asyncEventAuthDone             asyncEventKind = "auth_done"
 	asyncEventAuthError            asyncEventKind = "auth_error"
 	asyncEventPromptDone           asyncEventKind = "prompt_done"
+	asyncEventSteeringReturn       asyncEventKind = "steering_return"
+	asyncEventSteeringConsumed     asyncEventKind = "steering_consumed"
 	asyncEventPromptUserEntry      asyncEventKind = "prompt_user_entry"
 	asyncEventPromptDelta          asyncEventKind = "prompt_delta"
 	asyncEventPromptThinkingDelta  asyncEventKind = "prompt_thinking_delta"
@@ -87,6 +90,15 @@ func (app *App) promptRetryHandler(ctx context.Context, promptID uint64) assista
 
 func (app *App) promptStreamHandler(ctx context.Context, promptID uint64) func(assistant.StreamEvent) {
 	return func(event assistant.StreamEvent) {
+		if event.Kind == assistant.StreamEventSteeringConsumed {
+			app.postAsyncEvent(ctx, &asyncEvent{
+				Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+				Kind: asyncEventSteeringConsumed, Provider: "", Text: event.Text, PromptID: promptID,
+			})
+
+			return
+		}
+
 		payload, ok := asyncEventFromStreamEvent(event, promptID)
 		if !ok {
 			return
@@ -129,6 +141,7 @@ func asyncEventFromStreamEvent(event assistant.StreamEvent, promptID uint64) (*a
 		payload.Text = ""
 		payload.Kind = asyncEventPromptUsageSnapshot
 	case assistant.StreamEventUsageTotal,
+		assistant.StreamEventSteeringConsumed,
 		assistant.StreamEventUnknown:
 		return nil, false
 	case assistant.StreamEventContextCompaction,
@@ -202,6 +215,8 @@ func (app *App) handleAuthAsyncEvent(payload *asyncEvent) bool {
 
 		return true
 	case asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -235,6 +250,8 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent)
 		asyncEventAuthDone,
 		asyncEventAuthError,
 		asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -265,6 +282,12 @@ func (app *App) handlePromptAsyncEvent(ctx context.Context, payload *asyncEvent)
 	}
 
 	if !app.withSessionView(ownerSessionID, func() {
+		if payload.Kind == asyncEventSteeringConsumed {
+			app.applySteeringConsumed(payload.Text, payload.PromptID)
+
+			return
+		}
+
 		if app.handlePromptLifecycleEvent(ctx, payload) {
 			return
 		}
@@ -289,6 +312,8 @@ func (app *App) handleAgentTaskAsyncEvent(ctx context.Context, payload *asyncEve
 		asyncEventAuthDone,
 		asyncEventAuthError,
 		asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -330,6 +355,8 @@ func isCompactionAsyncEvent(kind asyncEventKind) bool {
 		asyncEventAuthDone,
 		asyncEventAuthError,
 		asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -353,6 +380,8 @@ func isCompactionAsyncEvent(kind asyncEventKind) bool {
 func isPromptAsyncEvent(kind asyncEventKind) bool {
 	switch kind {
 	case asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -385,6 +414,10 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 	case asyncEventPromptDone:
 		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventPromptDone, promptDoneExtensionData(payload.Response))
 		app.applyPromptResponse(ctx, payload.Response, payload.PromptID)
+
+		return true
+	case asyncEventSteeringReturn:
+		app.restoreReturnedSteering(payload.Text, payload.PromptID)
 
 		return true
 	case asyncEventPromptUserEntry:
@@ -424,6 +457,7 @@ func (app *App) handlePromptLifecycleEvent(ctx context.Context, payload *asyncEv
 	case asyncEventAuthURL,
 		asyncEventAuthDone,
 		asyncEventAuthError,
+		asyncEventSteeringConsumed,
 		asyncEventAgentTaskChanged,
 		asyncEventAgentTaskStream,
 		asyncEventAgentTaskReplayError,
@@ -458,6 +492,7 @@ func asyncContextEventKind(kind assistant.StreamEventKind) asyncEventKind {
 		assistant.StreamEventUsage,
 		assistant.StreamEventUsageSnapshot,
 		assistant.StreamEventUsageTotal,
+		assistant.StreamEventSteeringConsumed,
 		assistant.StreamEventUnknown:
 		return asyncEventPromptContext
 	}
@@ -491,6 +526,8 @@ func (app *App) applyPromptContextEvent(payload *asyncEvent) {
 		asyncEventAgentTaskReplayError,
 		asyncEventAgentTaskCompleted,
 		asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptDelta,
 		asyncEventPromptThinkingDelta,
@@ -548,6 +585,8 @@ func (app *App) handlePromptStreamEvent(ctx context.Context, payload *asyncEvent
 
 		return
 	case asyncEventPromptDone,
+		asyncEventSteeringReturn,
+		asyncEventSteeringConsumed,
 		asyncEventPromptUserEntry,
 		asyncEventPromptRetry,
 		asyncEventPromptError,
@@ -678,8 +717,121 @@ func (app *App) applyPromptError(ctx context.Context, message string, promptID u
 	app.processQueuedPrompt(ctx)
 }
 
+func (app *App) applySteeringConsumed(encoded string, promptID uint64) {
+	if encoded == "" || app.activePrompt == nil || app.activePrompt.ID != promptID {
+		return
+	}
+
+	var event assistant.SteeringConsumedEvent
+	if err := json.Unmarshal([]byte(encoded), &event); err != nil {
+		app.addSystemMessage("consume steering: " + err.Error())
+
+		return
+	}
+
+	draft := promptDraftFromSteeringConsumed(event)
+	if !event.HideUserPrompt {
+		if pending, found := app.removePendingSteering(draft); found {
+			draft = pending
+		}
+	}
+
+	app.commitCheckpointStreamingBlocks()
+
+	if event.HideUserPrompt {
+		return
+	}
+
+	message := newChatMessage(transcript.RoleUser, draft.Text)
+	message.EntryID = &event.EntryID
+	message.Attachments = summarizeAttachments(draft.Images)
+	app.appendMessage(message)
+}
+
+func (app *App) commitCheckpointStreamingBlocks() {
+	blocks := append([]chatMessage(nil), app.transcript.Streaming.Blocks...)
+	app.resetStreamingBlocks()
+
+	for _, block := range blocks {
+		if block.Content == "" || block.Role == transcript.RoleThinking && strings.TrimSpace(block.Content) == "" {
+			continue
+		}
+
+		app.appendMessage(block)
+	}
+}
+
+func (app *App) removePendingSteering(consumed promptDraft) (promptDraft, bool) {
+	for index := range app.steeringMessages {
+		if promptDraftEqual(app.steeringMessages[index], consumed) {
+			pending := app.steeringMessages[index]
+			app.steeringMessages = append(app.steeringMessages[:index], app.steeringMessages[index+1:]...)
+
+			return pending, true
+		}
+	}
+
+	return promptDraft{Text: "", Images: nil}, false
+}
+
+func promptDraftEqual(left, right promptDraft) bool {
+	if left.Text != right.Text || len(left.Images) != len(right.Images) {
+		return false
+	}
+
+	for index := range left.Images {
+		leftImage := left.Images[index]
+		rightImage := right.Images[index]
+
+		if leftImage.Name != rightImage.Name || leftImage.MIMEType != rightImage.MIMEType ||
+			leftImage.Width != rightImage.Width || leftImage.Height != rightImage.Height {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (app *App) restoreReturnedSteering(encoded string, promptID uint64) {
+	if encoded == "" || app.activePrompt == nil || app.activePrompt.ID != promptID {
+		return
+	}
+
+	var payloads []steeringReturnPayload
+	if err := json.Unmarshal([]byte(encoded), &payloads); err != nil {
+		app.addSystemMessage("restore steering: " + err.Error())
+
+		return
+	}
+
+	visible := make([]promptDraft, 0, len(payloads))
+	hidden := make([]promptDraft, 0, len(payloads))
+
+	for _, payload := range payloads {
+		images := make([]imageAttachment, len(payload.Images))
+		for index, image := range payload.Images {
+			images[index] = imageAttachment{
+				Name: image.Name, MIMEType: image.MIMEType, Data: append([]byte(nil), image.Data...),
+				Width: image.Width, Height: image.Height,
+			}
+		}
+
+		draft := promptDraft{Text: payload.Text, Images: images}
+		if payload.HideUserPrompt {
+			hidden = append(hidden, draft)
+		} else {
+			visible = append(visible, draft)
+		}
+	}
+
+	app.hiddenQueuedMessages = append(hidden, app.hiddenQueuedMessages...)
+	app.queuedMessages = append(visible, app.queuedMessages...)
+	app.setStatus("unconsumed steering restored before queued follow-ups")
+}
+
 func (app *App) finishPrompt() {
 	app.working = false
+	app.steeringMessages = nil
 	app.streamingText = ""
 	app.streamingThinkingText = ""
 	app.resetStreamingBlocks()
