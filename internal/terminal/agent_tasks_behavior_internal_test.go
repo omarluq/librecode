@@ -425,10 +425,11 @@ func TestWorkflowChildAgentTasksAreHiddenAndNotDelivered(t *testing.T) {
 		workflowSummaryRun(behaviorWorkflowRun, database.TaskRunning),
 	}
 	lines := app.renderAgentTaskSummary(80)
-	require.Len(t, lines, 2)
-	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), lines[0].Text)
-	assert.NotContains(t, lines[0].Text, "STEP")
-	assert.NotContains(t, lines[0].Text, "STATUS")
+	require.Len(t, lines, 3)
+	assert.Equal(t, pendingToolIndicator+" main", lines[0].Text)
+	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), lines[1].Text)
+	assert.NotContains(t, lines[1].Text, "STEP")
+	assert.NotContains(t, lines[1].Text, "STATUS")
 	assert.True(t, app.hasRunningAgentTasks())
 
 	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":"workflow-child"}`, false))
@@ -741,6 +742,7 @@ func TestAgentTaskSummaryEnterInspectsSelectedSubagent(t *testing.T) {
 	require.True(t, app.agentTaskSummaryFocused())
 	pressTerminalKey(t, app, tcell.KeyDown, "")
 	pressTerminalKey(t, app, tcell.KeyDown, "")
+	pressTerminalKey(t, app, tcell.KeyDown, "")
 	pressTerminalKey(t, app, tcell.KeyEnter, "")
 
 	assert.Equal(t, child.ID, app.sessionID)
@@ -849,7 +851,7 @@ func TestLeaveAgentTaskSessionRefreshesDurableParentTranscript(t *testing.T) {
 	assert.Contains(t, app.transcript.History[0].Content, "new durable parent message")
 }
 
-func TestAgentBackCommandReconcilesOptimisticPromptByEntryID(t *testing.T) {
+func TestMainSelectionReconcilesOptimisticPromptByEntryID(t *testing.T) {
 	t.Parallel()
 
 	fixture, _, app := newAgentTaskSessionTestApp(t, database.TaskSucceeded)
@@ -870,9 +872,7 @@ func TestAgentBackCommandReconcilesOptimisticPromptByEntryID(t *testing.T) {
 	app.appendMessage(message)
 
 	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
-	quit, err := app.runSessionCommand(t.Context(), "agents", "back", "/agents back")
-	require.NoError(t, err)
-	assert.False(t, quit)
+	require.NoError(t, app.navigateToMainSession(t.Context()))
 	assert.Equal(t, fixture.parent.ID, app.sessionID)
 	assert.Empty(t, app.agentTaskSessionStack)
 
@@ -887,7 +887,7 @@ func TestAgentBackCommandReconcilesOptimisticPromptByEntryID(t *testing.T) {
 	assert.Equal(t, 1, matches)
 }
 
-func TestAgentBackAfterParentPromptCompletionDoesNotDuplicateDurableMessages(t *testing.T) {
+func TestMainSelectionAfterParentPromptCompletionDoesNotDuplicateDurableMessages(t *testing.T) {
 	t.Parallel()
 
 	fixture, _, app := newActivePromptInspectionTestApp(t, database.TaskSucceeded, nil)
@@ -946,9 +946,7 @@ func TestAgentBackAfterParentPromptCompletionDoesNotDuplicateDurableMessages(t *
 	assert.Equal(t, fixture.child.ID, app.sessionID)
 	assert.Nil(t, app.activePrompt)
 
-	quit, err := app.runSessionCommand(t.Context(), "agents", "back", "/agents back")
-	require.NoError(t, err)
-	assert.False(t, quit)
+	require.NoError(t, app.navigateToMainSession(t.Context()))
 	assert.Equal(t, fixture.parent.ID, app.sessionID)
 
 	messageCounts := make(map[string]int)
@@ -1093,6 +1091,7 @@ func TestInspectAgentTaskSwitchesBetweenSiblingSessions(t *testing.T) {
 	pressTerminalKey(t, app, tcell.KeyTab, "")
 	require.True(t, app.agentTaskSummaryFocused())
 	pressTerminalKey(t, app, tcell.KeyDown, "")
+	pressTerminalKey(t, app, tcell.KeyDown, "")
 	pressTerminalKey(t, app, tcell.KeyEnter, "")
 	assert.Equal(t, secondChild.ID, app.sessionID)
 	assert.Equal(t, []string{parent.ID}, app.agentTaskSessionStack)
@@ -1137,9 +1136,11 @@ func TestInspectAgentTaskRecoversRetainedSummaryOwner(t *testing.T) {
 	assert.Equal(t, secondChild.ID, app.sessionID)
 	assert.Equal(t, []string{root.ID, parent.ID}, app.agentTaskSessionStack)
 
-	require.NoError(t, app.leaveAgentTaskSession(t.Context()))
-	assert.Equal(t, parent.ID, app.sessionID)
-	assert.Equal(t, []string{root.ID}, app.agentTaskSessionStack)
+	pressTerminalKey(t, app, tcell.KeyTab, "")
+	pressTerminalKey(t, app, tcell.KeyEnter, "")
+	assert.Equal(t, root.ID, app.sessionID)
+	assert.Empty(t, app.agentTaskSessionStack)
+	assert.False(t, app.agentTaskSummaryFocused())
 }
 
 func assertLoadedChildAgentSession(
@@ -1326,7 +1327,7 @@ func TestActivePromptInspectionAllowsNestedTaskSelection(t *testing.T) {
 	defer app.stopAgentTaskWatches()
 
 	app.agentTasks = []database.AgentTaskEntity{nestedTask}
-	app.agentTaskSummarySelection = agentTaskSummarySelection{ItemIndex: 0, Active: true}
+	app.agentTaskSummarySelection = agentTaskSummarySelection{ItemIndex: 1, Active: true}
 
 	result := app.handleReadOnlyInspectionPriorityKey(
 		t.Context(),
@@ -1748,13 +1749,8 @@ func TestAgentTaskCommandPaths(t *testing.T) {
 
 	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{}, nil)
 	app := newAgentTaskBehaviorApp(t, stub)
-	quit, err := app.runSessionCommand(t.Context(), "agents", "", "/agents")
-	require.NoError(t, err)
-	assert.False(t, quit)
-	assert.Equal(t, panelAgentTasks, app.selectedPanelKind)
-
 	app.runtime = assistant.NewRuntimeForTest(nil)
-	quit, err = app.runSessionCommand(t.Context(), "agents", "profiles", "/agents profiles")
+	quit, err := app.runSessionCommand(t.Context(), "agents", "profiles", "/agents profiles")
 	require.NoError(t, err)
 	assert.False(t, quit)
 	assert.Equal(t, "agents: none", app.transcript.History[len(app.transcript.History)-1].Content)
@@ -1933,15 +1929,6 @@ func TestAgentProfilesDisplayDefinitionsDiagnosticsAndTools(t *testing.T) {
 	assert.Contains(t, message.Content, "warning:")
 	assert.Equal(t, "none", agentToolNames(nil))
 	assert.Equal(t, "read, grep", agentToolNames([]tool.Name{tool.NameRead, tool.NameGrep}))
-}
-
-func TestAgentBackCommandPropagatesNotInspectingError(t *testing.T) {
-	t.Parallel()
-
-	app := newRenderTestApp(t)
-	quit, err := app.runSessionCommand(t.Context(), "agents", "back", "/agents back")
-	assert.False(t, quit)
-	require.EqualError(t, err, "not inspecting an agent task")
 }
 
 func TestAgentTaskPanelCancellationErrorsAndEmptySelection(t *testing.T) {

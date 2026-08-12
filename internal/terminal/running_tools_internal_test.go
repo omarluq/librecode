@@ -52,15 +52,19 @@ func TestRenderAgentTaskSummary(t *testing.T) {
 	app.agentTasks = []database.AgentTaskEntity{task}
 
 	lines := app.renderAgentTaskSummary(80)
-	require.Len(t, lines, 2)
-	assert.Contains(t, lines[0].Text, "◌ explore(review the code for concurrency issues) · ")
-	assert.NotContains(t, lines[0].Text, taskQueuedLabel)
+	require.Len(t, lines, 3)
+	assert.Equal(t, pendingToolIndicator+" main", lines[0].Text)
 	require.Len(t, lines[0].Spans, 2)
 	assert.Equal(t, pendingToolIndicator, lines[0].Spans[0].Text)
-	assert.Contains(t, lines[0].Spans[1].Text, " explore(review the code for concurrency issues) · ")
-	assert.NotContains(t, lines[0].Spans[1].Text, taskQueuedLabel)
-	assert.Equal(t, defaultWorkingShimmerBrightColor(), lines[0].Spans[0].Style.GetForeground())
-	assert.Equal(t, app.theme.colors[colorMuted], lines[0].Spans[1].Style.GetForeground())
+	assert.Equal(t, " main", lines[0].Spans[1].Text)
+	assert.Contains(t, lines[1].Text, "◌ explore(review the code for concurrency issues) · ")
+	assert.NotContains(t, lines[1].Text, taskQueuedLabel)
+	require.Len(t, lines[1].Spans, 2)
+	assert.Equal(t, pendingToolIndicator, lines[1].Spans[0].Text)
+	assert.Contains(t, lines[1].Spans[1].Text, " explore(review the code for concurrency issues) · ")
+	assert.NotContains(t, lines[1].Spans[1].Text, taskQueuedLabel)
+	assert.Equal(t, defaultWorkingShimmerBrightColor(), lines[1].Spans[0].Style.GetForeground())
+	assert.Equal(t, app.theme.colors[colorMuted], lines[1].Spans[1].Style.GetForeground())
 	assert.Empty(t, lines[len(lines)-1].Text)
 }
 
@@ -73,10 +77,10 @@ func TestRenderAgentTaskSummaryTruncatesPromptToOneLine(t *testing.T) {
 	app.agentTasks = []database.AgentTaskEntity{task}
 
 	lines := app.renderAgentTaskSummary(30)
-	require.Len(t, lines, 2)
-	assert.Equal(t, "◌ explore(investiga…) · queued", lines[0].Text)
-	assert.NotContains(t, lines[0].Text, "\n")
-	assert.LessOrEqual(t, tui.Width(lines[0].Text), 30)
+	require.Len(t, lines, 3)
+	assert.Equal(t, "◌ explore(investiga…) · queued", lines[1].Text)
+	assert.NotContains(t, lines[1].Text, "\n")
+	assert.LessOrEqual(t, tui.Width(lines[1].Text), 30)
 }
 
 func TestAgentTaskSummaryRendersBelowComposer(t *testing.T) {
@@ -87,7 +91,8 @@ func TestAgentTaskSummaryRendersBelowComposer(t *testing.T) {
 
 	layout := app.composerLayout(80, 24)
 	require.GreaterOrEqual(t, len(layout.footerLines), 2)
-	assert.Contains(t, layout.footerLines[0].Text, "explore")
+	assert.Equal(t, pendingToolIndicator+" main", layout.footerLines[0].Text)
+	assert.Contains(t, layout.footerLines[1].Text, "explore")
 	assert.Equal(t, layout.editorStart+len(layout.editor.Lines), layout.footerStart)
 
 	dynamicLines := flattenStyledLineGroups(app.dynamicMessageLineGroups(80), 100)
@@ -107,8 +112,8 @@ func TestRenderAgentTaskSummaryUsesStaticIndicator(t *testing.T) {
 
 	require.NotEmpty(t, first)
 	require.NotEmpty(t, later)
-	assert.Equal(t, pendingToolIndicator, first[0].Spans[0].Text)
-	assert.Equal(t, first[0].Text, later[0].Text)
+	assert.Equal(t, pendingToolIndicator, first[1].Spans[0].Text)
+	assert.Equal(t, first[1].Text, later[1].Text)
 }
 
 func TestAgentTaskCompletion(t *testing.T) {

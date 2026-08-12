@@ -31,14 +31,28 @@ func TestTabFocusesAgentTaskSummaryBeforeTranscriptList(t *testing.T) {
 	pressTerminalKey(t, app, tcell.KeyDown, "")
 	assert.Equal(t, 1, app.agentTaskSummarySelection.ItemIndex)
 	pressTerminalKey(t, app, tcell.KeyPgDn, "")
-	assert.Equal(t, 2, app.agentTaskSummarySelection.ItemIndex)
+	assert.Equal(t, 3, app.agentTaskSummarySelection.ItemIndex)
 
 	lines := app.renderAgentTaskSummary(80)
-	assert.Equal(t, app.theme.selected(), lines[2].Style)
+	assert.Equal(t, app.theme.selected(), lines[3].Style)
 
 	pressTerminalKey(t, app, tcell.KeyTab, "")
 	assert.False(t, app.agentTaskSummaryFocused())
 	assert.Equal(t, focusKindComposer, app.focusState().Kind)
+}
+
+func TestAgentTaskSummaryMainSelectionOnMainBlurs(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	app.agentTasks = []database.AgentTaskEntity{behaviorAgentTask("task", database.TaskRunning)}
+	originalSessionID := app.sessionID
+
+	pressTerminalKey(t, app, tcell.KeyTab, "")
+	pressTerminalKey(t, app, tcell.KeyEnter, "")
+
+	assert.Equal(t, originalSessionID, app.sessionID)
+	assert.False(t, app.agentTaskSummaryFocused())
 }
 
 func TestAgentTaskSummaryEnterOnWorkflowExpandsInline(t *testing.T) {
@@ -58,9 +72,11 @@ func TestAgentTaskSummaryEnterOnWorkflowExpandsInline(t *testing.T) {
 	pressTerminalKey(t, app, tcell.KeyTab, "")
 	collapsedLayout := app.defaultRuntimeLayout(80, 24)
 	collapsedLines := app.renderAgentTaskSummary(80)
-	require.Len(t, collapsedLines, 3)
-	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), collapsedLines[0].Text)
-	assert.Empty(t, collapsedLines[2].Text)
+	require.Len(t, collapsedLines, 4)
+	assert.Equal(t, pendingToolIndicator+" main", collapsedLines[0].Text)
+	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), collapsedLines[1].Text)
+	assert.Empty(t, collapsedLines[3].Text)
+	pressTerminalKey(t, app, tcell.KeyDown, "")
 	pressTerminalKey(t, app, tcell.KeyEnter, "")
 
 	assert.True(t, app.agentTaskSummaryFocused())
@@ -71,9 +87,10 @@ func TestAgentTaskSummaryEnterOnWorkflowExpandsInline(t *testing.T) {
 	assert.Equal(t, transcriptBefore, app.transcript)
 
 	lines := app.renderAgentTaskSummary(80)
-	require.Len(t, lines, 4)
-	assert.Contains(t, lines[0].Text, "Workflow:")
-	assert.Contains(t, lines[1].Text, "STEP")
+	require.Len(t, lines, 5)
+	assert.Equal(t, pendingToolIndicator+" main", lines[0].Text)
+	assert.Contains(t, lines[1].Text, "Workflow:")
+	assert.Contains(t, lines[2].Text, "STEP")
 
 	expandedLayout := app.defaultRuntimeLayout(80, 24)
 	assert.NotEqual(t, collapsedLayout.Transcript, expandedLayout.Transcript)
@@ -86,9 +103,9 @@ func TestAgentTaskSummaryEnterOnWorkflowExpandsInline(t *testing.T) {
 	assert.Equal(t, transcriptBefore, app.transcript)
 
 	lines = app.renderAgentTaskSummary(80)
-	require.Len(t, lines, 3)
-	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), lines[0].Text)
-	assert.NotContains(t, lines[0].Text, "STEP")
+	require.Len(t, lines, 4)
+	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), lines[1].Text)
+	assert.NotContains(t, lines[1].Text, "STEP")
 }
 
 func TestAgentTaskSummaryConfirmKeepsExpandedWorkflow(t *testing.T) {
@@ -130,7 +147,7 @@ func TestSelectedAgentTaskSummaryTaskIDSkipsWorkflowsAndChildTasks(t *testing.T)
 		child,
 		behaviorAgentTask("top-level", database.TaskRunning),
 	}
-	app.agentTaskSummarySelection = agentTaskSummarySelection{ItemIndex: 1, Active: true}
+	app.agentTaskSummarySelection = agentTaskSummarySelection{ItemIndex: 2, Active: true}
 
 	taskID, ok := app.selectedAgentTaskSummaryTaskID()
 	require.True(t, ok)
