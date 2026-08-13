@@ -232,6 +232,7 @@ func newAutoCompactionTestRuntime(
 		opts.Config = runtimeConfig
 		opts.Sessions = runtime.SessionRepository()
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+		t.Cleanup(opts.Cache.Shutdown)
 		opts.Models = runtime.ModelRegistry()
 		opts.Client = client
 	})

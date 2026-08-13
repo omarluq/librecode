@@ -163,6 +163,7 @@ func TestRuntimeRunnerRunsPromptAndHandlesPromptAndEventErrors(t *testing.T) {
 			options.Config = cfg
 			options.Sessions = sessions
 			options.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+			t.Cleanup(options.Cache.Shutdown)
 			options.Models = models
 			options.Client = completer
 			options.Agents = catalog

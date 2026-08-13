@@ -414,6 +414,7 @@ func newCompactionRuntimeForTailPolicy(
 		opts.Config = runtimeConfig
 		opts.Sessions = repository
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+		t.Cleanup(opts.Cache.Shutdown)
 		opts.Models = newCompactionTestRegistry(t, contextWindow)
 		opts.Client = client
 	}), repository
