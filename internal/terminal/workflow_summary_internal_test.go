@@ -103,6 +103,7 @@ func TestActiveWorkflowAppearsInAgentSummary(t *testing.T) {
 
 	app.workflowSummaryRunID = running.Task.ID
 	lines = app.renderAgentTaskSummary(80)
+	require.Len(t, lines, app.agentTaskSummaryHeight())
 	require.Len(t, lines, 5)
 	assert.Equal(t, pendingToolIndicator+" main", lines[0].Text)
 	assert.Contains(t, lines[1].Text, "Workflow: workflow(active review)")

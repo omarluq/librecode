@@ -1395,7 +1395,10 @@ func (app *App) agentTaskSummaryHeight() int {
 
 	for index := range app.activeWorkflows {
 		stepRows := max(1, len(app.workflowSteps[app.activeWorkflows[index].Task.ID]))
-		reservedHeight = max(reservedHeight, stepRows+workflowDetailFixedRows)
+		reservedHeight = max(
+			reservedHeight,
+			agentTaskSummaryContentStart+stepRows+workflowDetailFixedRows,
+		)
 	}
 
 	return reservedHeight
