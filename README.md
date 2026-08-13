@@ -25,7 +25,7 @@
   <br><br>
   No sandbox. No MCP. No permission prompts. No marketplace. No telemetry.
   <br><br>
-  Just a model, your shell, and seven tools that do what they say, designed for developers who'd rather review their own diffs than click through approval dialogs.
+  Just a model, your shell, and a focused set of tools that do what they say, designed for developers who'd rather review their own diffs than click through approval dialogs.
 </p>
 
 <p align="center">
@@ -50,13 +50,16 @@ It's a direct, capable tool. Treat it like one.
 
 ## What's in the box
 
-- **Interactive terminal chat**: streaming output, visible reasoning blocks, chronological tool activity, scrollback, prompt history, mouse selection, configurable loader text.
-- **Seven built-in tools**: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`. A small toolkit that covers most coding workflows.
-- **Persistent SQLite sessions**: branchable, resumable, listable. Per-project or global.
-- **Agent Skills support**: drop a `SKILL.md` in `.librecode/skills/` or `.agents/skills/` and it's discoverable. Autocomplete and explicit `/skill:<name>` loading included.
-- **Provider/model registry**: OAuth for ChatGPT/Codex and Claude Pro/Max, API-key providers, automatic retries on transient failures, custom provider definitions.
-- **Lua extensions**: an optional layer for commands, key interception, buffer mutation, and event hooks. Trusted local code rather than a plugin marketplace.
-- **YAML config + env vars**: sane defaults and strict validation.
+- **Interactive terminal chat**: streaming text and reasoning, chronological tool activity, scrollback, prompt history, mouse selection, image attachments, model/thinking controls, and searchable panels.
+- **Focused coding tools**: filesystem reads and writes, shell execution, text and path search, structural syntax-tree inspection, and explicit URL fetching.
+- **Tool orchestration**: direct calls, durable background tool execution, and an `execute` code mode that can discover and compose tools from small Go programs.
+- **Durable subagents and workflows**: delegate independent work to isolated child sessions or launch dynamic, asynchronous multi-agent workflows that outlive the initiating model turn.
+- **Persistent SQLite sessions**: resumable conversation trees with naming, cloning, forking, compaction, per-session settings, and full transcript history.
+- **Context awareness**: token budgeting, contributor breakdowns, automatic/manual compaction, and model-aware context/output limits.
+- **Agent Skills and instructions**: discover project/user `SKILL.md` bundles and layered `AGENTS.md` instructions, with progressive disclosure and slash-command activation.
+- **Provider/model registry**: OAuth for ChatGPT/Codex and Claude Pro/Max, API-key providers, models.dev metadata discovery, scoped model lists, and transient-failure retries.
+- **Lua extensions**: optional trusted-local commands, tools, keymaps, buffers, renderers, timers, and lifecycle/tool/context hooks. The default UI remains Go-owned.
+- **YAML config + env vars**: layered configuration, strict validation, project-local overrides, and no background daemon.
 
 ## What to expect
 
@@ -77,8 +80,8 @@ If you'd prefer per-action approval, sandboxing, or policy enforcement, other ag
 ```bash
 git clone https://github.com/omarluq/librecode.git
 cd librecode
-mise install          # optional: install the pinned Go/Task/golangci-lint/lefthook versions
-task build            # writes ./bin/librecode
+mise install                       # optional: install the pinned development tools
+mise exec -- task build            # writes ./bin/librecode
 ./bin/librecode --help
 ```
 
@@ -102,8 +105,6 @@ Resume the latest session for the current working directory:
 
 ```bash
 librecode --resume
-# or
-librecode chat --resume
 ```
 
 Send a one-shot prompt:
@@ -113,12 +114,20 @@ librecode prompt "summarize this repo"
 librecode prompt --resume "continue from the last session"
 ```
 
-Run a built-in tool directly:
+Inspect available models and run a built-in tool directly:
 
 ```bash
+librecode model list
+librecode model list --all "claude"
 librecode tool list
 librecode tool run read '{"path":"README.md"}'
 librecode tool run bash '{"command":"go test ./...","timeout":120}'
+```
+
+For scripts and benchmarks, `prompt` can write machine-readable run metrics and select direct or hybrid tool exposure:
+
+```bash
+librecode prompt --tool-strategy direct --metrics-json metrics.json "run the tests"
 ```
 
 Manage sessions:
@@ -128,6 +137,29 @@ librecode session new "docs pass"
 librecode session list
 librecode session show <session-id>
 ```
+
+## Slash commands
+
+Type `/` in the composer to search the commands available in the current runtime. Common commands include:
+
+| Command | Purpose |
+| --- | --- |
+| `/model`, `/scoped-models` | Select a model or configure the model set used by keyboard cycling. |
+| `/login`, `/logout`, `/auth` | Manage provider credentials and inspect authentication state. |
+| `/new`, `/resume`, `/name`, `/clone`, `/fork`, `/tree` | Create, resume, label, branch, and navigate durable sessions. |
+| `/context`, `/compact` | Inspect context usage or summarize older history. |
+| `/skill`, `/skill:<name>` | List or load an Agent Skill. |
+| `/agents`, `/agents profiles` | Inspect subagent tasks or effective profiles, tool allowlists, and diagnostics. |
+| `/tasks` | List, inspect, or cancel durable background tool executions. |
+| `/workflows` | Inspect or cancel durable workflow runs. |
+| `/settings`, `/hotkeys` | Change persisted session preferences or view keybindings. |
+| `/reload` | Reload authentication and model runtime state. |
+
+Unrecognized slash-prefixed text is sent to the model rather than silently discarded. Extension commands may add to this surface.
+
+## Image attachments
+
+PNG images can be pasted from the clipboard with `Ctrl+V`/`Cmd+V` when the selected model supports image input. A prompt accepts up to four images, 5 MiB each and 20 MiB total.
 
 ## Keyboard behavior
 
@@ -158,7 +190,7 @@ Built-in provider IDs:
 | `azure-openai-responses`    | API key/custom config              | OpenAI Responses            |
 | OpenAI-compatible providers | API key                            | Chat Completions-compatible |
 
-OpenAI-compatible built-ins: `cerebras`, `deepseek`, `groq`, `mistral`, `moonshotai`, `moonshotai-cn`, `opencode`, `opencode-go`, `openrouter`, `vercel-ai-gateway`, `xai`, and `zai`.
+OpenAI-compatible built-ins: `cerebras`, `deepseek`, `fireworks`, `groq`, `mistral`, `moonshotai`, `moonshotai-cn`, `opencode`, `opencode-go`, `openrouter`, `vercel-ai-gateway`, `xai`, and `zai`.
 
 The default assistant config is:
 
@@ -181,20 +213,22 @@ Credentials can come from:
 - `/login openai-codex` for ChatGPT/Codex subscription OAuth;
 - `/login anthropic-claude` for Claude Pro/Max OAuth;
 - `/login <provider> <api-key>` for API-key providers such as `anthropic`, `openai`, `openrouter`, or `zai`;
-- provider-specific environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_OAUTH_TOKEN`, `OPENROUTER_API_KEY`, or `ZAI_API_KEY`;
-- custom provider config stored in the runtime model document.
+- provider-specific environment variables: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `ANTHROPIC_OAUTH_TOKEN`, `AZURE_OPENAI_API_KEY`, `CEREBRAS_API_KEY`, `DEEPSEEK_API_KEY`, `FIREWORKS_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `OPENCODE_API_KEY`, `OPENROUTER_API_KEY`, `AI_GATEWAY_API_KEY`, `XAI_API_KEY`, and `ZHIPU_API_KEY`/`ZAI_API_KEY`;
+- a normalized `<PROVIDER>_API_KEY` variable for custom provider IDs;
+- custom provider/model definitions in the runtime model document.
 
 Provider IDs are configured with `LIBRECODE_ASSISTANT_PROVIDER` or `assistant.provider`; model IDs use `LIBRECODE_ASSISTANT_MODEL` or `assistant.model`.
 
 ## Configuration
 
-librecode resolves config in this order:
+librecode resolves configuration in this order:
 
-1. `--config <path>`
-2. `LIBRECODE_*` environment variables
-3. `./.librecode/config.yaml`
-4. `~/.librecode/config.yaml` or `$LIBRECODE_HOME/config.yaml`
-5. built-in defaults
+1. `LIBRECODE_*` environment variables
+2. the YAML file selected by `--config <path>`, when supplied
+3. otherwise `./.librecode/config.yaml`, then `~/.librecode/config.yaml` or `$LIBRECODE_HOME/config.yaml`
+4. built-in defaults
+
+`--config` selects a file; environment variables still override values from that file.
 
 Useful commands:
 
@@ -203,7 +237,7 @@ librecode config show
 librecode config validate
 ```
 
-See [`config.example.yaml`](config.example.yaml) for all current config keys. The in-progress loader text defaults to `Shenaniganing...` and is configurable with `app.working_loader.text`.
+See [`config.example.yaml`](config.example.yaml) for a commented configuration template. Durable background execution is bounded by the `tasks` settings described there. The in-progress loader text defaults to `Shenaniganing...` and is configurable with `app.working_loader.text`.
 
 Built-in memory limits protect untrusted input and remote bodies: prompt stdin and tool JSON stdin are capped at 1 MiB, provider response/error bodies at 16 MiB.
 
@@ -216,7 +250,9 @@ Default global persistence lives under one librecode home:
 
 Project-local overrides live under `./.librecode/` too. If `./.librecode/auth.json` or `./.librecode/librecode.db` exists, librecode uses it instead of the global file for that project.
 
-## Skills
+## Instructions and Skills
+
+librecode loads layered `AGENTS.md` instructions from the user home and from the workspace hierarchy down to the current directory. This lets a repository or subdirectory supply coding conventions without baking them into global configuration.
 
 Skills are Agent Skills-compatible directories containing `SKILL.md`. Skill metadata is always advertised to the model, and matching skills can be auto-activated by loading their full `SKILL.md` into the request context.
 
@@ -238,6 +274,8 @@ description: Use when working on my project-specific workflow.
 license: MIT
 compatibility: Works with librecode and Agent Skills-compatible agents.
 allowed-tools: Read Bash(git:*)
+user-invocable: true
+disable-model-invocation: false
 metadata:
   author: me
 ---
@@ -253,7 +291,25 @@ librecode skill show my-skill
 librecode skill validate
 ```
 
-Inside chat, `/skill` lists discovered skills. Use `/skill my-skill` or `/skill:my-skill` to load a skill through the read-tool path and render a `loaded skill my-skill` block. User-invocable skills also appear in slash autocomplete as `/skill:<name>`.
+Inside chat, `/skill` lists discovered skills. Use `/skill my-skill` or `/skill:my-skill` to load a skill through the read-tool path and render a `loaded skill my-skill` block. User-invocable skills also appear in slash autocomplete as `/skill:<name>`. `allowed-tools` is metadata today, not an enforced security boundary.
+
+See [`docs/skills.md`](docs/skills.md) for validation and activation details.
+
+## Subagents and workflows
+
+> [!NOTE]
+> Subagents, background tools, dynamic workflows, and low-level Lua UI overrides are advanced pre-release surfaces. Their contracts may change before 1.0.
+
+Top-level sessions can delegate focused work to durable asynchronous subagents. librecode includes:
+
+- `explore`, a read-only repository investigator;
+- `general`, a coding agent whose mutating tools require an explicit `permissions: allow` profile.
+
+Custom profiles are Markdown files in `./.librecode/agents/` or `$LIBRECODE_HOME/agents/`. Profiles can select tools, provider/model/thinking overrides, timeout, and mutation policy. Each task runs in an isolated child session, survives as durable state, and can be inspected or canceled from the terminal. Queued tasks resume after restart; interrupted task transcripts remain available.
+
+For coordinated work, the model-visible `workflow` tool launches MVM Go programs against a small `librecode/workflow` API. Workflows can start, wait for, list, cancel, and pipeline subagents while the main chat remains responsive. Workflow runs and their child tasks are persisted in SQLite and visible through `/workflows`.
+
+See [`docs/subagents.md`](docs/subagents.md) for profiles and lifecycle behavior.
 
 ## Extensions
 
@@ -268,7 +324,7 @@ extensions:
     - path:.librecode/extensions
 ```
 
-The extension manager interface supports source strings and object entries with versions:
+Extension source declarations accept strings and object entries with versions:
 
 ```yaml
 extensions:
@@ -281,7 +337,7 @@ extensions:
       version: v1.2.3
 ```
 
-Startup loads only entries declared in `extensions.use`; extra directories on disk are ignored. `path:` sources load from disk today, while `official:` and `github:` sources are installed and pinned by the extension manager.
+Startup loads only entries declared in `extensions.use`; extra directories on disk are ignored. The current CLI loads configured sources and can execute registered commands. Package-manager operations for installing or changing `official:` and `github:` sources remain roadmap work; use `path:` for local extensions today.
 
 The default chat UI is Go-owned and extensions are optional customization. Use `--no-extensions` to disable configured extensions for a single run.
 
@@ -305,34 +361,32 @@ For architecture, roadmap, and API details, see:
 - [`docs/rendering-boundary.md`](docs/rendering-boundary.md)
 - [`docs/skills.md`](docs/skills.md)
 
-Inspect and manage extensions:
+Inspect extensions or run a registered extension command:
 
 ```bash
 librecode extension list
-librecode extension add <source> [--version vX.Y.Z]
-librecode extension remove <source-or-name>
-librecode extension install
-librecode extension update
-librecode extension tidy
-librecode extension doctor
 librecode extension run <command> [args...]
 ```
 
-## Built-in tools
+## Tools and execution
 
-Seven tools, kept deliberately small. No registry, marketplace, or external server lifecycle to manage.
+The direct coding toolkit stays deliberately small. No external tool-server lifecycle is required.
 
-| Tool    | Mutates? | Purpose                                            |
-| ------- | -------- | -------------------------------------------------- |
-| `read`  | No       | Read text/image files with truncation controls.    |
-| `ls`    | No       | List directory entries.                            |
-| `find`  | No       | Search file paths by glob.                         |
-| `grep`  | No       | Search file contents.                              |
-| `write` | **Yes**  | Overwrite/create files.                            |
-| `edit`  | **Yes**  | Exact text replacement with uniqueness checks.     |
-| `bash`  | **Yes**  | Execute shell commands with timeout/output limits. |
+| Tool | Mutates? | Purpose |
+| --- | --- | --- |
+| `read` | No | Read text or images with offsets and truncation controls. |
+| `ls` | No | List directory entries. |
+| `find` | No | Search paths with glob patterns. |
+| `grep` | No | Search file contents with regex or literal matching. |
+| `ast` | No | Inspect supported source syntax structurally with outlines, symbol trees, queries, and node views. |
+| `fetch` | No | Fetch an explicit HTTP(S) URL as Markdown, text, or HTML. It does not perform web search. |
+| `write` | **Yes** | Create or overwrite a file. |
+| `edit` | **Yes** | Apply exact, unique text replacements. |
+| `bash` | **Yes** | Execute shell commands with timeout and output limits. |
 
-The `bash` tool executes commands directly in your shell with the permissions of the librecode process. There is no allowlist or interactive confirmation.
+At the top level, librecode can augment these with extension tools, durable `agent_*` controls, asynchronous workflow launch, background envelopes for long-running tool calls, and the `execute` orchestration tool. `--tool-strategy direct` omits `execute`; the default `hybrid` strategy exposes both direct tools and code mode.
+
+The `bash` tool executes commands directly in your shell with the permissions of the librecode process. There is no allowlist or interactive confirmation for the top-level assistant. Background subagents separately enforce their profile tool allowlist and permission policy.
 
 Native Windows is not supported. Windows users should run librecode through WSL.
 
@@ -348,19 +402,15 @@ librecode session show <session-id>
 librecode skill list
 librecode skill show <name>
 librecode skill validate
+librecode model [list [search] [--all]]
 librecode tool list
 librecode tool run <name> [json-args|-] [--cwd path]
 librecode extension list
-librecode extension add <source> [--version vX.Y.Z]
-librecode extension remove <source-or-name>
-librecode extension install
-librecode extension update
-librecode extension tidy
-librecode extension doctor
 librecode extension run <command> [args...]
 librecode config show
 librecode config validate
 librecode migrate
+librecode completion <bash|fish|powershell|zsh>
 librecode version
 ```
 
@@ -393,6 +443,8 @@ Project-local caches are used for reproducible local runs and are gitignored:
 
 ```text
 cmd/librecode/          CLI commands and process entrypoint
+internal/agent/         Built-in and project/user subagent profile discovery
+internal/agenttask/     Durable asynchronous subagent task execution
 internal/assistant/     Prompt/session orchestration, lifecycle hooks, tool execution, persistence
 internal/auth/          Provider credential storage, OAuth flows, and token refresh
 internal/browser/       Cross-platform browser opener helpers
@@ -403,6 +455,7 @@ internal/core/          Resources: system prompts, context files, skills, slash 
 internal/database/      SQLite repositories and migrations
 internal/di/            Service wiring with samber/do
 internal/event/         Runtime event spine and stream helpers
+internal/executeworker/  Isolated MVM execution worker/client boundary
 internal/extension/     Extension host and Lua runtime API bridge
 internal/llm/           Provider-neutral LLM DTOs, finish reasons, usage, and typed errors
 internal/llmconv/       Shared conversions between model usage and LLM DTOs
@@ -411,8 +464,10 @@ internal/model/         Provider/model registry, catalog discovery, and auth res
 internal/provider/      Provider HTTP/SSE wire clients and protocol normalization
 internal/terminal/      Interactive terminal UI and terminal-specific subpackages
 internal/tool/          Built-in coding tools
+internal/tooltask/      Durable background tool execution
 internal/transcript/    Shared transcript roles and tool-event formatting
 internal/vinfo/         Version metadata injected at build time
+internal/workflow/      Durable dynamic subagent workflow runtime
 ```
 
 ## Release
