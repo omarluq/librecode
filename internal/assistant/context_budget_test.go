@@ -43,6 +43,7 @@ func TestRuntime_ContextPreflightCanBeDisabled(t *testing.T) {
 		opts.Config = runtimeConfig
 		opts.Sessions = runtime.SessionRepository()
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+		t.Cleanup(opts.Cache.Shutdown)
 		opts.Models = runtime.ModelRegistry()
 		opts.Client = client
 	})
@@ -87,6 +88,7 @@ func TestRuntime_ContextUsageHonorsExplicitZeroReserves(t *testing.T) {
 		opts.Config = runtimeConfig
 		opts.Sessions = runtime.SessionRepository()
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+		t.Cleanup(opts.Cache.Shutdown)
 		opts.Models = runtime.ModelRegistry()
 		opts.Client = client
 	})
@@ -124,6 +126,7 @@ func TestRuntime_ContextUsageUsesExplicitOutputReserve(t *testing.T) {
 		opts.Config = runtimeConfig
 		opts.Sessions = runtime.SessionRepository()
 		opts.Cache = assistant.NewResponseCache(false, 1, time.Minute)
+		t.Cleanup(opts.Cache.Shutdown)
 		opts.Models = runtime.ModelRegistry()
 		opts.Client = client
 	})
