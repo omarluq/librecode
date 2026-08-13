@@ -67,6 +67,17 @@ cache:
   capacity: 512
   ttl: 10m
 
+tasks:
+  # Durable subagents, workflows, and background tools share this worker pool.
+  workers: 4
+  poll_interval: 250ms
+  lease_duration: 30s
+  heartbeat_interval: 10s
+  recovery_interval: 30s
+  default_timeout: 30m
+  max_timeout: 2h
+  max_outcome_bytes: 262144
+
 
 # Built-in hard limits protect memory usage for untrusted input/remote bodies:
 # - prompt stdin: 1 MiB
