@@ -1754,6 +1754,11 @@ func TestAgentTaskCommandPaths(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, quit)
 	assert.Equal(t, "agents: none", app.transcript.History[len(app.transcript.History)-1].Content)
+
+	quit, err = app.runSessionCommand(t.Context(), "agents", "", "/agents")
+	require.NoError(t, err)
+	assert.False(t, quit)
+	assert.Equal(t, panelAgentTasks, app.selectedPanelKind)
 }
 
 func TestAgentPanelPathsDoNotDuplicateSnapshotQueries(t *testing.T) {
