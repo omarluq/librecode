@@ -14,6 +14,7 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 const (
@@ -36,7 +37,7 @@ func TestMain(testMain *testing.M) {
 		os.Exit(0)
 	}
 
-	os.Exit(testMain.Run())
+	goleak.VerifyTestMain(testMain)
 }
 
 func runStderrHelper(mode string) {
