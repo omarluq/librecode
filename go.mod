@@ -47,6 +47,7 @@ require (
 	github.com/vingarcia/ksql/adapters/modernc-ksqlite v1.14.0
 	github.com/yuin/goldmark v1.8.5
 	github.com/yuin/gopher-lua v1.1.2
+	go.uber.org/goleak v1.3.0
 	golang.design/x/clipboard v0.8.0
 	golang.org/x/image v0.45.0
 	golang.org/x/net v0.58.0

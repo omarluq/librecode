@@ -3,6 +3,8 @@ package terminal_test
 import (
 	"os"
 	"testing"
+
+	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
@@ -15,11 +17,11 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	code := m.Run()
+	goleak.VerifyTestMain(m, goleak.Cleanup(func(code int) {
+		if err := os.RemoveAll(home); err != nil {
+			panic(err)
+		}
 
-	if err := os.RemoveAll(home); err != nil {
-		panic(err)
-	}
-
-	os.Exit(code)
+		os.Exit(code)
+	}))
 }

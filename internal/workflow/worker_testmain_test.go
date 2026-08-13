@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/omarluq/librecode/internal/executeworker"
+	"go.uber.org/goleak"
 )
 
 func TestMain(testMain *testing.M) {
@@ -16,5 +17,5 @@ func TestMain(testMain *testing.M) {
 		os.Exit(0)
 	}
 
-	os.Exit(testMain.Run())
+	goleak.VerifyTestMain(testMain)
 }
