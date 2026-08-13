@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/omarluq/librecode/internal/executeworker"
+	"github.com/omarluq/librecode/internal/testutil"
 	"go.uber.org/goleak"
 )
 
@@ -22,24 +23,9 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
-	home, err := os.MkdirTemp("", "librecode-assistant-test-home-*")
-	if err != nil {
-		panic(err)
-	}
-
-	if err := os.Setenv("LIBRECODE_HOME", home); err != nil {
-		panic(err)
-	}
-
 	goleak.VerifyTestMain(
 		m,
 		goleak.IgnoreAnyFunction("net/http.(*http2ClientConn).readLoop"),
-		goleak.Cleanup(func(code int) {
-			if err := os.RemoveAll(home); err != nil {
-				panic(err)
-			}
-
-			os.Exit(code)
-		}),
+		goleak.Cleanup(testutil.TestMainHome("assistant")),
 	)
 }
