@@ -50,6 +50,20 @@ assistant:
 
 context:
   preflight_enabled: true
+  # Controls automatic pre-request and post-response compaction. Provider
+  # overflow recovery and manual /compact remain available when disabled.
+  auto_compaction_enabled: true
+  # Percentage of usable input that triggers post-response compaction.
+  auto_compaction_threshold: 80
+  # Dynamic retained context is capped at this many tokens.
+  retained_tail_max_tokens: 64000
+  # 0 selects the bounded default; configured values are clamped to model/reserve limits.
+  summary_output_tokens: 0
+  # Optional dedicated summary model; provider and model must be set together.
+  compaction_provider: ""
+  compaction_model: ""
+  # Aggregate token limit for extension-provided context blocks.
+  extension_contribution_tokens: 8192
   # 0 uses the selected model max_tokens, otherwise 16k capped at 20% of context.
   output_reserve_tokens: 0
   provider_reserve_tokens: 2048

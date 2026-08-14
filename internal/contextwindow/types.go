@@ -13,6 +13,8 @@ const (
 	ContributionRoleSystem = "system"
 	// ContributionMaxTokens limits a single extension contribution.
 	ContributionMaxTokens = 2048
+	// ContributionAggregateMaxTokens limits all extension contributions in one context build.
+	ContributionAggregateMaxTokens = 8192
 	// BreakdownSystem is the token breakdown key for the base system prompt.
 	BreakdownSystem = "system"
 	// BreakdownSkills is the token breakdown key for available and active skills.
@@ -35,12 +37,13 @@ type Contribution struct {
 
 // BuildResult is the model-facing context assembled for a provider request.
 type BuildResult struct {
-	Breakdown     map[string]int
-	SystemPrompt  string
-	Contributions []Contribution
-	Messages      []database.MessageEntity
-	UsageAnchor   *database.ContextUsageAnchorEntity
-	Usage         model.TokenUsage
+	Breakdown                       map[string]int
+	UsageAnchor                     *database.ContextUsageAnchorEntity
+	SystemPrompt                    string
+	Contributions                   []Contribution
+	Messages                        []database.MessageEntity
+	Usage                           model.TokenUsage
+	ExtensionContributionTokenLimit int
 }
 
 // Base describes context inputs before extension context-build hooks mutate them.

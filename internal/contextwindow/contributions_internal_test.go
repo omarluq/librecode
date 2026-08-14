@@ -86,10 +86,113 @@ func TestContributionsFromPayloadRejectsInvalidShapes(t *testing.T) {
 	}
 }
 
+func TestContributionsFromPayloadEnforcesAggregateLimitInOrder(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		contents    []string
+		wantTokens  []int
+		wantErrText []string
+		limit       int
+	}{
+		{
+			name:        "exact limit accepted",
+			contents:    []string{strings.Repeat("a", 8), strings.Repeat("b", 12)},
+			wantTokens:  []int{2, 3},
+			wantErrText: nil,
+			limit:       5,
+		},
+		{
+			name:       "first contribution over limit rejected",
+			wantTokens: nil,
+			contents:   []string{strings.Repeat("secret", 8)},
+			limit:      5,
+			wantErrText: []string{
+				"context contribution 0", "requires 12 tokens", "after 0 used", "limit is 5 tokens",
+			},
+		},
+		{
+			name:       "later contribution over limit rejected deterministically",
+			wantTokens: nil,
+			contents:   []string{strings.Repeat("a", 8), strings.Repeat("secret", 4), strings.Repeat("z", 4)},
+			limit:      5,
+			wantErrText: []string{
+				"context contribution 1", "requires 6 tokens", "after 2 used", "limit is 5 tokens",
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			raw := make([]any, 0, len(testCase.contents))
+			for index, content := range testCase.contents {
+				raw = append(raw, map[string]any{
+					jsonToolNameKey: "item-" + string(rune('0'+index)),
+					jsonContentKey:  content,
+				})
+			}
+
+			contributions, err := ContributionsFromPayloadWithLimit(
+				map[string]any{payloadContributionsKey: raw},
+				testCase.limit,
+			)
+			if len(testCase.wantErrText) == 0 {
+				require.NoError(t, err)
+				require.Len(t, contributions, len(testCase.wantTokens))
+
+				for index, tokens := range testCase.wantTokens {
+					assert.Equal(t, tokens, contributions[index].Tokens)
+				}
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.Nil(t, contributions, "aggregate rejection must not return a partial list")
+
+			for _, text := range testCase.wantErrText {
+				assert.Contains(t, err.Error(), text)
+			}
+
+			assert.NotContains(t, err.Error(), "secretsecret", "diagnostics must not expose content")
+		})
+	}
+}
+
+func TestContributionsFromPayloadUsesCoreAggregateLimit(t *testing.T) {
+	t.Parallel()
+
+	raw := make([]any, 0, ContributionAggregateMaxTokens/ContributionMaxTokens+1)
+	for range cap(raw) {
+		raw = append(raw, map[string]any{jsonContentKey: strings.Repeat("a", ContributionMaxTokens*4)})
+	}
+
+	contributions, err := ContributionsFromPayload(map[string]any{payloadContributionsKey: raw})
+
+	require.Error(t, err)
+	assert.Nil(t, contributions)
+	assert.Contains(t, err.Error(), "context contribution 4")
+	assert.Contains(t, err.Error(), "after 8192 used")
+	assert.Contains(t, err.Error(), "limit is 8192 tokens")
+}
+
+func TestContributionsFromPayloadRejectsInvalidAggregateLimit(t *testing.T) {
+	t.Parallel()
+
+	contributions, err := ContributionsFromPayloadWithLimit(map[string]any{}, 0)
+
+	require.Error(t, err)
+	assert.Nil(t, contributions)
+	assert.Contains(t, err.Error(), "aggregate token limit must be positive")
+}
+
 func TestAppendContributionsAddsExtensionContextBlocks(t *testing.T) {
 	t.Parallel()
 
-	result := &BuildResult{
+	result := &BuildResult{ExtensionContributionTokenLimit: 0,
 		Breakdown:     nil,
 		SystemPrompt:  "base",
 		Contributions: []Contribution{},

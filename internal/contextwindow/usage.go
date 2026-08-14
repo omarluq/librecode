@@ -50,6 +50,12 @@ func EstimateBuildUsage(
 		contextWindow = selectedModel.ContextWindow
 	}
 
+	provenance := model.UsageLocalEstimate
+	if usageAnchor != nil && usageAnchor.Usage.ContextTokens > 0 && usageAnchor.MessageIndex >= 0 &&
+		usageAnchor.MessageIndex < len(messages) {
+		provenance = model.UsageProviderAnchorEstimate
+	}
+
 	return model.TokenUsage{
 		Breakdown:       mapsutil.CloneOrNil(breakdown),
 		TopContributors: TopContributors(systemPrompt, messages, contributions),
@@ -57,6 +63,7 @@ func EstimateBuildUsage(
 		ContextTokens:   inputTokens,
 		InputTokens:     inputTokens,
 		OutputTokens:    0,
+		Provenance:      provenance,
 	}
 }
 
@@ -165,14 +172,16 @@ func ContributorPreview(content string) string {
 }
 
 // MergeUsage overlays provider-reported usage on an estimated usage snapshot.
-func MergeUsage(estimated, reported model.TokenUsage) model.TokenUsage {
-	usage := llm.MergeUsage(llmconv.UsageFromModel(estimated), llmconv.UsageFromModel(reported))
+func MergeUsage(estimated, reported *model.TokenUsage) model.TokenUsage {
+	estimatedUsage := llmconv.UsageFromModel(estimated)
+	reportedUsage := llmconv.UsageFromModel(reported)
+	usage := llm.MergeUsage(&estimatedUsage, &reportedUsage)
 
-	return llmconv.UsageToModel(usage)
+	return llmconv.UsageToModel(&usage)
 }
 
 // ProviderUsageEntity converts model usage into database usage metadata for persisted provider entries.
-func ProviderUsageEntity(usage model.TokenUsage) *database.EntryTokenUsageEntity {
+func ProviderUsageEntity(usage *model.TokenUsage) *database.EntryTokenUsageEntity {
 	if usage.InputTokens <= 0 && usage.ContextTokens <= 0 && usage.ContextWindow <= 0 && usage.OutputTokens <= 0 {
 		return nil
 	}

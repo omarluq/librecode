@@ -69,10 +69,17 @@ type AssistantConfig struct {
 
 // ContextConfig controls local context-window budgeting before provider requests.
 type ContextConfig struct {
-	OutputReserveTokens   int  `json:"output_reserve_tokens" yaml:"output_reserve_tokens"`
-	ProviderReserveTokens int  `json:"provider_reserve_tokens" yaml:"provider_reserve_tokens"`
-	SafetyMarginTokens    int  `json:"safety_margin_tokens" yaml:"safety_margin_tokens"`
-	PreflightEnabled      bool `json:"preflight_enabled" yaml:"preflight_enabled"`
+	CompactionProvider          string `json:"compaction_provider" yaml:"compaction_provider"`
+	CompactionModel             string `json:"compaction_model" yaml:"compaction_model"`
+	OutputReserveTokens         int    `json:"output_reserve_tokens" yaml:"output_reserve_tokens"`
+	ProviderReserveTokens       int    `json:"provider_reserve_tokens" yaml:"provider_reserve_tokens"`
+	SafetyMarginTokens          int    `json:"safety_margin_tokens" yaml:"safety_margin_tokens"`
+	ExtensionContributionTokens int    `json:"extension_contribution_tokens" yaml:"extension_contribution_tokens"`
+	AutoCompactionThreshold     int    `json:"auto_compaction_threshold" yaml:"auto_compaction_threshold"`
+	RetainedTailMaxTokens       int    `json:"retained_tail_max_tokens" yaml:"retained_tail_max_tokens"`
+	SummaryOutputTokens         int    `json:"summary_output_tokens" yaml:"summary_output_tokens"`
+	PreflightEnabled            bool   `json:"preflight_enabled" yaml:"preflight_enabled"`
+	AutoCompactionEnabled       bool   `json:"auto_compaction_enabled" yaml:"auto_compaction_enabled"`
 }
 
 // ModelsConfig controls model catalog discovery.
@@ -257,6 +264,18 @@ func (config *Config) validateAssistant() error {
 }
 
 func (config *Config) validateContext() error {
+	if err := config.validateContextReserves(); err != nil {
+		return err
+	}
+
+	if err := config.validateContextCompaction(); err != nil {
+		return err
+	}
+
+	return config.validateCompactionModel()
+}
+
+func (config *Config) validateContextReserves() error {
 	if config.Context.OutputReserveTokens < 0 {
 		return errors.New("config: context.output_reserve_tokens cannot be negative")
 	}
@@ -267,6 +286,37 @@ func (config *Config) validateContext() error {
 
 	if config.Context.SafetyMarginTokens < 0 {
 		return errors.New("config: context.safety_margin_tokens cannot be negative")
+	}
+
+	if config.Context.ExtensionContributionTokens <= 0 {
+		return errors.New("config: context.extension_contribution_tokens must be greater than zero")
+	}
+
+	return nil
+}
+
+func (config *Config) validateContextCompaction() error {
+	if config.Context.AutoCompactionThreshold <= 0 || config.Context.AutoCompactionThreshold > 100 {
+		return errors.New("config: context.auto_compaction_threshold must be between 1 and 100")
+	}
+
+	if config.Context.RetainedTailMaxTokens <= 0 {
+		return errors.New("config: context.retained_tail_max_tokens must be greater than zero")
+	}
+
+	if config.Context.SummaryOutputTokens < 0 ||
+		config.Context.SummaryOutputTokens > 0 && config.Context.SummaryOutputTokens < 64 {
+		return errors.New("config: context.summary_output_tokens must be zero or at least 64")
+	}
+
+	return nil
+}
+
+func (config *Config) validateCompactionModel() error {
+	if (config.Context.CompactionProvider == "") != (config.Context.CompactionModel == "") {
+		return errors.New(
+			"config: context.compaction_provider and context.compaction_model must be configured together",
+		)
 	}
 
 	return nil
