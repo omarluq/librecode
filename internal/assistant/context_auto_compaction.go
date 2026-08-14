@@ -9,6 +9,7 @@ import (
 
 	"github.com/samber/oops"
 
+	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
@@ -72,12 +73,12 @@ func (runtime *Runtime) buildCompletionRequest(
 		lineage:       input.lineage,
 	})
 	budget := contextwindow.NewBudget(
-		contextResult.Usage,
+		&contextResult.Usage,
 		input.selectedModel,
-		runtime.cfg.Context,
+		&runtime.cfg.Context,
 		func() int { return runtime.estimateToolSchemaTokens(request) },
 	)
-	contextResult.Usage = budget.UsageWithBudget(contextResult.Usage)
+	contextResult.Usage = budget.UsageWithBudget(&contextResult.Usage)
 	request.Usage = contextResult.Usage
 
 	return &contextRequestBuild{Context: contextResult, Request: request, Budget: budget}, nil
@@ -123,9 +124,9 @@ func (runtime *Runtime) prepareCompletionRequestWithAutoCompaction(
 			Wrapf(err, "context: build completion request")
 	}
 
-	runtime.emitUsage(ctx, input.onEvent, build.Context.Usage)
+	runtime.emitUsage(ctx, input.onEvent, &build.Context.Usage)
 
-	if !runtime.cfg.Context.PreflightEnabled {
+	if !runtime.cfg.Context.PreflightEnabled || !runtime.cfg.Context.AutoCompactionEnabled {
 		return build, nil, nil
 	}
 
@@ -187,7 +188,7 @@ func (runtime *Runtime) rebuildAfterPreRequestCompaction(
 			Wrapf(err, "context: rebuild completion request after compaction")
 	}
 
-	runtime.emitUsageSnapshot(ctx, input.onEvent, build.Context.Usage)
+	runtime.emitUsageSnapshot(ctx, input.onEvent, &build.Context.Usage)
 
 	if err := build.Budget.Validate(); err != nil {
 		runtime.emitContextCompactionError(ctx, input.onEvent, contextAutoCompactionBeforeRequestFailed, err)
@@ -215,7 +216,10 @@ func (runtime *Runtime) compactBeforeRequest(
 
 	parentEntryID := input.lineage.activeParentEntryID
 
-	entry, err := runtime.compactSessionFrom(ctx, input.sessionID, input.cwd, &parentEntryID)
+	entry, err := runtime.compactSessionFrom(ctx, input.sessionID, input.cwd, &parentEntryID, compaction.Operation{
+		ID:     pendingCompactionOperationID,
+		Reason: compaction.ReasonPreRequest, RetryIntent: compaction.RetryNone,
+	})
 	if isCompactNothingToDoError(err) {
 		runtime.emitContextCompactionErrorMessage(
 			ctx,
@@ -295,8 +299,8 @@ func (runtime *Runtime) autoCompactAfterResponse(
 		return model.EmptyTokenUsage(), false
 	}
 
-	budget := contextwindow.BudgetFromUsage(usage)
-	if !shouldAutoCompactAfterResponse(budget) {
+	budget := contextwindow.BudgetFromUsage(&usage)
+	if !runtime.shouldAutoCompactAfterResponse(budget) {
 		return model.EmptyTokenUsage(), false
 	}
 
@@ -304,10 +308,16 @@ func (runtime *Runtime) autoCompactAfterResponse(
 		ctx,
 		input.onEvent,
 		StreamEventContextCompactionStart,
-		postResponseAutoCompactionStartMessage(budget),
+		runtime.postResponseAutoCompactionStartMessage(budget),
 	)
 
-	entry, err := runtime.compactSessionFrom(ctx, input.sessionID, input.cwd, &input.parentEntryID)
+	operation := compaction.Operation{
+		ID: pendingCompactionOperationID, Reason: compaction.ReasonPostResponse, RetryIntent: compaction.RetryNone,
+	}
+
+	entry, err := runtime.compactSessionFrom(
+		ctx, input.sessionID, input.cwd, &input.parentEntryID, operation,
+	)
 	if isCompactNothingToDoError(err) {
 		runtime.emitContextCompactionErrorMessage(
 			ctx,
@@ -331,7 +341,7 @@ func (runtime *Runtime) autoCompactAfterResponse(
 		return model.EmptyTokenUsage(), false
 	}
 
-	runtime.emitUsageSnapshot(ctx, input.onEvent, compactedUsage)
+	runtime.emitUsageSnapshot(ctx, input.onEvent, &compactedUsage)
 	runtime.emitContextCompactionEvent(ctx, input.onEvent, StreamEventContextCompactionDone, compactionMessage(
 		"context auto-compacted after response",
 		budget,
@@ -342,16 +352,27 @@ func (runtime *Runtime) autoCompactAfterResponse(
 }
 
 func (runtime *Runtime) shouldTryPostResponseAutoCompaction(input *postResponseAutoCompactionInput) bool {
-	return runtime.cfg.Context.PreflightEnabled && input != nil && strings.TrimSpace(input.sessionID) != "" &&
+	return runtime.cfg.Context.PreflightEnabled &&
+		runtime.cfg.Context.AutoCompactionEnabled &&
+		input != nil &&
+		strings.TrimSpace(input.sessionID) != "" &&
 		strings.TrimSpace(input.parentEntryID) != ""
 }
 
+func (runtime *Runtime) shouldAutoCompactAfterResponse(budget contextwindow.Budget) bool {
+	return shouldAutoCompactAfterResponseAt(budget, runtime.cfg.Context.AutoCompactionThreshold)
+}
+
 func shouldAutoCompactAfterResponse(budget contextwindow.Budget) bool {
+	return shouldAutoCompactAfterResponseAt(budget, postResponseAutoCompactThresholdPercent)
+}
+
+func shouldAutoCompactAfterResponseAt(budget contextwindow.Budget, threshold int) bool {
 	if budget.ContextWindow <= 0 || budget.UsableInput <= 0 || budget.InputTokens <= 0 {
 		return false
 	}
 
-	return budget.InputTokens >= budget.UsableInput*postResponseAutoCompactThresholdPercent/100
+	return budget.InputTokens >= budget.UsableInput*threshold/100
 }
 
 func (runtime *Runtime) emitPostResponseAutoCompactionError(
@@ -372,11 +393,11 @@ func preRequestAutoCompactionStartMessage(budget contextwindow.Budget) string {
 	return fmt.Sprintf(message, budget.InputTokens, budget.UsableInput)
 }
 
-func postResponseAutoCompactionStartMessage(budget contextwindow.Budget) string {
+func (runtime *Runtime) postResponseAutoCompactionStartMessage(budget contextwindow.Budget) string {
 	message := "context auto-compacting after response: estimated input is %d tokens; " +
 		"threshold is %d%% of usable input budget %d"
 
-	return fmt.Sprintf(message, budget.InputTokens, postResponseAutoCompactThresholdPercent, budget.UsableInput)
+	return fmt.Sprintf(message, budget.InputTokens, runtime.cfg.Context.AutoCompactionThreshold, budget.UsableInput)
 }
 
 func autoCompactionMessage(budget contextwindow.Budget, entry *database.EntryEntity) string {

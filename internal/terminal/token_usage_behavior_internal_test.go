@@ -17,71 +17,60 @@ const (
 	testBreakdownSystem     = "system"
 )
 
-func TestMergeTerminalUsageIgnoresInputOutputTokens(t *testing.T) {
+func TestMergeTerminalUsage(t *testing.T) {
 	t.Parallel()
 
-	current := model.TokenUsage{
-		Breakdown:       nil,
-		TopContributors: nil,
-		ContextWindow:   1_000_000,
-		ContextTokens:   0,
-		InputTokens:     0,
-		OutputTokens:    0,
-	}
-	next := model.TokenUsage{
-		Breakdown:       nil,
-		TopContributors: nil,
-		ContextWindow:   0,
-		ContextTokens:   0,
-		InputTokens:     12_000,
-		OutputTokens:    700,
+	tests := []struct {
+		name           string
+		currentContext int
+		nextContext    int
+		wantContext    int
+		wantInput      int
+	}{
+		{name: "ignores input and output tokens", currentContext: 0, nextContext: 0, wantContext: 0, wantInput: 0},
+		{name: "uses latest context observation", currentContext: 17_000, nextContext: 12_000,
+			wantContext: 12_000, wantInput: 17_000},
 	}
 
-	assert.Equal(t, model.TokenUsage{
-		Breakdown:       nil,
-		TopContributors: nil,
-		ContextWindow:   1_000_000,
-		ContextTokens:   0,
-		InputTokens:     0,
-		OutputTokens:    0,
-	}, mergeTerminalUsage(current, next))
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := emptyTestTokenUsage()
+			current.ContextWindow = 1_000_000
+			current.ContextTokens = test.currentContext
+			current.InputTokens = test.currentContext
+			next := emptyTestTokenUsage()
+			next.ContextTokens = test.nextContext
+			next.InputTokens = 12_000
+			next.OutputTokens = 700
+			want := emptyTestTokenUsage()
+			want.ContextWindow = 1_000_000
+			want.ContextTokens = test.wantContext
+			want.InputTokens = test.wantInput
+
+			assert.Equal(t, want, mergeTerminalUsage(&current, &next))
+		})
+	}
 }
 
-func TestMergeTerminalUsageUsesLatestContextObservation(t *testing.T) {
-	t.Parallel()
-
-	current := model.TokenUsage{
+func emptyTestTokenUsage() model.TokenUsage {
+	return model.TokenUsage{
 		Breakdown:       nil,
-		TopContributors: nil,
-		ContextWindow:   1_000_000,
-		ContextTokens:   17_000,
-		InputTokens:     17_000,
-		OutputTokens:    0,
-	}
-	next := model.TokenUsage{
-		Breakdown:       nil,
+		Provenance:      model.UsageProvenance(""),
 		TopContributors: nil,
 		ContextWindow:   0,
-		ContextTokens:   12_000,
-		InputTokens:     12_000,
-		OutputTokens:    700,
-	}
-
-	assert.Equal(t, model.TokenUsage{
-		Breakdown:       nil,
-		TopContributors: nil,
-		ContextWindow:   1_000_000,
-		ContextTokens:   12_000,
-		InputTokens:     17_000,
+		ContextTokens:   0,
+		InputTokens:     0,
 		OutputTokens:    0,
-	}, mergeTerminalUsage(current, next))
+	}
 }
 
 func TestApplyTokenUsageSnapshotAllowsContextDecrease(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp()
-	app.applyTokenUsage(&model.TokenUsage{
+	app.applyTokenUsage(&model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
@@ -89,7 +78,7 @@ func TestApplyTokenUsageSnapshotAllowsContextDecrease(t *testing.T) {
 		InputTokens:     80_000,
 		OutputTokens:    0,
 	})
-	usage := model.TokenUsage{
+	usage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown: map[string]int{testBreakdownHistory: 5_000},
 		TopContributors: []model.TokenContributor{
 			{Label: terminalTestSummary, Role: "", Preview: "", Tokens: 5_000, Chars: 20_000},
@@ -104,7 +93,7 @@ func TestApplyTokenUsageSnapshotAllowsContextDecrease(t *testing.T) {
 	usage.Breakdown[testBreakdownHistory] = 99
 	usage.TopContributors[0].Label = "mutated"
 
-	assert.Equal(t, model.TokenUsage{
+	assert.Equal(t, model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown: map[string]int{testBreakdownHistory: 5_000},
 		TopContributors: []model.TokenContributor{
 			{Label: terminalTestSummary, Role: "", Preview: "", Tokens: 5_000, Chars: 20_000},
@@ -119,7 +108,7 @@ func TestApplyTokenUsageSnapshotAllowsContextDecrease(t *testing.T) {
 func TestFormatTokenStatusHidesWindowOnlyUsage(t *testing.T) {
 	t.Parallel()
 
-	usage := model.TokenUsage{
+	usage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   9_000,
@@ -128,14 +117,14 @@ func TestFormatTokenStatusHidesWindowOnlyUsage(t *testing.T) {
 		OutputTokens:    0,
 	}
 
-	assert.Empty(t, formatTokenStatus(usage))
+	assert.Empty(t, formatTokenStatus(&usage))
 }
 
 func TestResetMessagesClearsTokenUsage(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp()
-	app.setTokenUsageForTest(model.TokenUsage{
+	app.setTokenUsageForTest(&model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1000,
@@ -153,7 +142,7 @@ func TestTruncateMessagesClearsTokenUsage(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp()
-	app.setTokenUsageForTest(model.TokenUsage{
+	app.setTokenUsageForTest(&model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1000,
@@ -171,7 +160,7 @@ func TestTruncateMessagesClearsTokenUsage(t *testing.T) {
 func TestMergeTerminalUsageKeepsBreakdownAndContributors(t *testing.T) {
 	t.Parallel()
 
-	current := model.TokenUsage{
+	current := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       map[string]int{testBreakdownSystem: 10},
 		TopContributors: nil,
 		ContextWindow:   1000,
@@ -179,7 +168,7 @@ func TestMergeTerminalUsageKeepsBreakdownAndContributors(t *testing.T) {
 		InputTokens:     20,
 		OutputTokens:    0,
 	}
-	next := model.TokenUsage{
+	next := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown: map[string]int{
 			testBreakdownExtensions: 5,
 			testBreakdownHistory:    15,
@@ -194,7 +183,7 @@ func TestMergeTerminalUsageKeepsBreakdownAndContributors(t *testing.T) {
 		OutputTokens:  0,
 	}
 
-	merged := mergeTerminalUsage(current, next)
+	merged := mergeTerminalUsage(&current, &next)
 	next.TopContributors[0].Label = "mutated"
 
 	assert.Equal(t, map[string]int{
@@ -230,7 +219,7 @@ func TestContextContributorLinesFormatsTopContributors(t *testing.T) {
 func TestCompactCountFormatsMillionValues(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, "ctx 1.2m", formatContextUsage(model.TokenUsage{
+	assert.Equal(t, "ctx 1.2m", formatContextUsage(&model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -256,7 +245,7 @@ func TestShowContextInfoDisplaysSummaryAndBreakdown(t *testing.T) {
 	t.Parallel()
 
 	app := newTestApp()
-	app.setTokenUsageForTest(model.TokenUsage{
+	app.setTokenUsageForTest(&model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown: map[string]int{
 			testBreakdownExtensions: 0,
 			testBreakdownHistory:    1200,
@@ -286,7 +275,7 @@ func TestShowContextInfoDisplaysSummaryAndBreakdown(t *testing.T) {
 func TestFormatContextUsageUsesModelWindow(t *testing.T) {
 	t.Parallel()
 
-	usage := model.TokenUsage{
+	usage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown: map[string]int{
 			"usable_input": 132_624,
 		},
@@ -297,7 +286,7 @@ func TestFormatContextUsageUsesModelWindow(t *testing.T) {
 		OutputTokens:    0,
 	}
 
-	assert.Equal(t, "ctx 156k/272k 57%", formatContextUsage(usage))
+	assert.Equal(t, "ctx 156k/272k 57%", formatContextUsage(&usage))
 }
 
 func newTestApp() *App {
@@ -315,8 +304,8 @@ func newTestApp() *App {
 	})
 }
 
-func (app *App) setTokenUsageForTest(usage model.TokenUsage) {
-	app.tokenUsage = usage
+func (app *App) setTokenUsageForTest(usage *model.TokenUsage) {
+	app.tokenUsage = *usage
 }
 
 func (app *App) applyTokenUsageSnapshotForTest(usage *model.TokenUsage) {

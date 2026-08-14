@@ -40,10 +40,14 @@ func (client *recordingCompleter) Complete(
 
 func newSequencedCompleter(responses ...string) *recordingCompleter {
 	return &recordingCompleter{
-		complete: func(call int, _ *assistant.CompletionRequest) (*assistant.CompletionResult, error) {
+		complete: func(call int, request *assistant.CompletionRequest) (*assistant.CompletionResult, error) {
 			response := "ok"
 			if len(responses) >= call {
 				response = responses[call-1]
+			}
+
+			if request.DisableTools {
+				response = structuredTestSummary(response)
 			}
 
 			return testCompletionResult(response), nil
@@ -83,7 +87,7 @@ func newOverflowRecoveryCompleter(
 	return &recordingCompleter{
 		complete: func(call int, request *assistant.CompletionRequest) (*assistant.CompletionResult, error) {
 			if request.DisableTools {
-				return testCompletionResult(summary), nil
+				return testCompletionResult(structuredTestSummary(summary)), nil
 			}
 
 			switch call {
@@ -125,11 +129,21 @@ func newOverflowSummaryCompleter(summary string, summaryErr error) *recordingCom
 }
 
 func testContextWindowError() error {
-	return oops.In("assistant").Code("responses_status").Errorf("maximum context length exceeded")
+	return oops.In("assistant").Code(testContextWindowExceededOopsCode).Errorf("provider context window exceeded")
+}
+
+func structuredTestSummary(text string) string {
+	return "## Goal\n- " + text +
+		"\n## User constraints and preferences\n- x" +
+		"\n## Completed work\n- x\n## Work in progress\n- x" +
+		"\n## Files changed/read\n- x\n## Commands and validation\n- x" +
+		"\n## Decisions\n- x\n## Errors and blockers\n- x" +
+		"\n## Exact next steps\n- x"
 }
 
 func testCompletionResult(text string) *assistant.CompletionResult {
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         text,
 		Thinking:     nil,

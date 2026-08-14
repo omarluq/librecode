@@ -113,21 +113,22 @@ func TestLLMUsageConversionsCloneMapsAndContributors(t *testing.T) {
 	t.Parallel()
 
 	usage := model.TokenUsage{
-		Breakdown: map[string]int{contextwindow.BreakdownHistory: 1}, ContextWindow: 10, ContextTokens: 2,
+		Provenance: "",
+		Breakdown:  map[string]int{contextwindow.BreakdownHistory: 1}, ContextWindow: 10, ContextTokens: 2,
 		TopContributors: []model.TokenContributor{
 			{Label: contextwindow.BreakdownHistory, Role: string(llm.RoleUser), Preview: "", Tokens: 1, Chars: 1},
 		},
 		InputTokens: 2, OutputTokens: 1,
 	}
 
-	converted := llmconv.UsageFromModel(usage)
+	converted := llmconv.UsageFromModel(&usage)
 	usage.Breakdown[contextwindow.BreakdownHistory] = 99
 	usage.TopContributors[0].Label = testLLMMutatedLabel
 
 	assert.Equal(t, 1, converted.Breakdown[contextwindow.BreakdownHistory])
 	assert.Equal(t, contextwindow.BreakdownHistory, converted.TopContributors[0].Label)
 
-	modelUsage := llmconv.UsageToModel(converted)
+	modelUsage := llmconv.UsageToModel(&converted)
 	converted.Breakdown[contextwindow.BreakdownHistory] = 42
 	converted.TopContributors[0].Label = testLLMMutatedAgainLabel
 

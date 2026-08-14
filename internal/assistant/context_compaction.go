@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"time"
 
 	"github.com/samber/oops"
 
@@ -16,6 +17,11 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
+)
+
+const (
+	pendingCompactionOperationID = "pending"
+	summaryRetryReductionDivisor = 2
 )
 
 // CompactSession summarizes older model-facing context and appends a compaction entry.
@@ -44,7 +50,16 @@ func (runtime *Runtime) CompactSessionFrom(
 	}
 	defer releaseOperation()
 
-	return runtime.compactSessionFrom(ctx, sessionID, cwd, parentEntryID)
+	operationID, err := runtime.compactionOperationID()
+	if err != nil {
+		return nil, err
+	}
+
+	return runtime.compactSessionFrom(ctx, sessionID, cwd, parentEntryID, compaction.Operation{
+		ID:          operationID,
+		Reason:      compaction.ReasonManual,
+		RetryIntent: compaction.RetryNone,
+	})
 }
 
 func (runtime *Runtime) compactSessionFrom(
@@ -52,6 +67,7 @@ func (runtime *Runtime) compactSessionFrom(
 	sessionID string,
 	cwd string,
 	parentEntryID *string,
+	operation compaction.Operation,
 ) (*database.EntryEntity, error) {
 	if runtime.models == nil {
 		return nil, oops.In("assistant").Code("models_unavailable").Errorf("model registry is not configured")
@@ -77,18 +93,33 @@ func (runtime *Runtime) compactSessionFrom(
 
 	plan.FileOperations = compaction.CollectFileOperations(branch[:plan.FirstKeptEntryIndex])
 
-	operationID, err := runtime.compactionOperationID()
+	if operation.ID == pendingCompactionOperationID {
+		operationID, operationErr := runtime.compactionOperationID()
+		if operationErr != nil {
+			return nil, operationErr
+		}
+
+		operation.ID = operationID
+	}
+
+	validateErr := operation.Validate()
+	if validateErr != nil {
+		return nil, oops.In("assistant").Code("compact_operation").Wrapf(validateErr, "validate compaction operation")
+	}
+
+	outputLimit, err := runtime.summaryOutputLimit(selectedModel)
 	if err != nil {
 		return nil, err
 	}
 
 	providerInput := compactionProviderInput{
 		selectedModel: selectedModel,
+		operation:     operation,
 		auth:          auth,
-		operationID:   operationID,
+		outputLimit:   outputLimit,
 	}
 
-	return runtime.compactSessionWithPlan(ctx, sessionID, cwd, parentID, branch, providerInput, &plan)
+	return runtime.compactSessionWithPlan(ctx, sessionID, cwd, parentID, branch, &providerInput, &plan)
 }
 
 func (runtime *Runtime) compactionOperationID() (string, error) {
@@ -102,8 +133,9 @@ func (runtime *Runtime) compactionOperationID() (string, error) {
 
 type compactionProviderInput struct {
 	selectedModel *model.Model
-	operationID   string
+	operation     compaction.Operation
 	auth          model.RequestAuth
+	outputLimit   int
 }
 
 type compactionAppendInput struct {
@@ -122,10 +154,15 @@ func (runtime *Runtime) compactionRecentTailTokens(selectedModel *model.Model, c
 		contextWindow = selectedModel.ContextWindow
 	}
 
-	return contextwindow.RecentTailTarget(contextwindow.RecentTailInput{
+	target := contextwindow.RecentTailTarget(contextwindow.RecentTailInput{
 		ContextWindow: contextWindow,
 		CurrentTokens: currentTokens,
 	})
+	if configured := runtime.cfg.Context.RetainedTailMaxTokens; configured > 0 {
+		target = min(target, configured)
+	}
+
+	return target
 }
 
 func (runtime *Runtime) compactSessionWithPlan(
@@ -134,10 +171,10 @@ func (runtime *Runtime) compactSessionWithPlan(
 	cwd string,
 	parentID *string,
 	branch []database.EntryEntity,
-	providerInput compactionProviderInput,
+	providerInput *compactionProviderInput,
 	plan *compaction.Plan,
 ) (*database.EntryEntity, error) {
-	decision, err := runtime.dispatchBeforeCompaction(ctx, sessionID, cwd, plan)
+	decision, err := runtime.dispatchBeforeCompaction(ctx, sessionID, cwd, plan, providerInput.operation)
 	if errors.Is(err, errNoCompactionDecision) {
 		decision = nil
 	} else if err != nil {
@@ -157,7 +194,10 @@ func (runtime *Runtime) compactSessionWithPlan(
 		plan = &adjustedPlan
 	}
 
-	plan.FileOperations = compaction.CollectFileOperations(branch[:plan.FirstKeptEntryIndex])
+	compactedEntries := branch[:plan.FirstKeptEntryIndex]
+	plan.FileOperations = compaction.CollectFileOperations(compactedEntries)
+	plan.ValidationRecords = compaction.CollectValidationRecords(compactedEntries)
+	plan.ActiveWorkRecords = compaction.CollectActiveWorkRecords(compactedEntries)
 
 	summary, fromHook, err := runtime.compactionSummary(
 		ctx,
@@ -165,11 +205,24 @@ func (runtime *Runtime) compactSessionWithPlan(
 		sessionID,
 		providerInput.selectedModel,
 		providerInput.auth,
+		providerInput.operation,
+		providerInput.outputLimit,
 		plan,
 		decision,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if structureErr := compaction.ValidateCheckpoint(compaction.StripDeterministicState(summary)); structureErr != nil {
+		return nil, oops.In("assistant").Code("compact_summary_structure").Wrapf(
+			structureErr, "validate compaction checkpoint",
+		)
+	}
+
+	validationErr := runtime.validateCompactionResult(ctx, cwd, summary, branch, plan, providerInput)
+	if validationErr != nil {
+		return nil, validationErr
 	}
 
 	entry, err := runtime.appendCompaction(ctx, &compactionAppendInput{
@@ -179,19 +232,19 @@ func (runtime *Runtime) compactSessionWithPlan(
 		plan:        plan,
 		decision:    decision,
 		fromHook:    fromHook,
-		operationID: providerInput.operationID,
+		operationID: providerInput.operation.ID,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	runtime.dispatchAfterCompaction(ctx, sessionID, cwd, entry, plan, fromHook)
+	runtime.dispatchAfterCompaction(ctx, sessionID, cwd, entry, plan, providerInput.operation, fromHook)
 
 	return entry, nil
 }
 
 func (runtime *Runtime) compactionModelAuth(ctx context.Context) (*model.Model, model.RequestAuth, error) {
-	selectedModel, err := runtime.selectedModel()
+	selectedModel, err := runtime.compactionModel()
 	if err != nil {
 		return nil, model.RequestAuth{}, err
 	}
@@ -205,6 +258,28 @@ func (runtime *Runtime) compactionModelAuth(ctx context.Context) (*model.Model, 
 	}
 
 	return &selectedModel, auth, nil
+}
+
+func (runtime *Runtime) compactionModel() (model.Model, error) {
+	provider := runtime.cfg.Context.CompactionProvider
+
+	modelID := runtime.cfg.Context.CompactionModel
+	if provider == "" && modelID == "" {
+		return runtime.selectedModel()
+	}
+
+	candidates := runtime.models.All()
+	for index := range candidates {
+		if candidates[index].Provider == provider && candidates[index].ID == modelID {
+			return candidates[index], nil
+		}
+	}
+
+	return model.Model{}, oops.In("assistant").Code("compaction_model_unavailable").Errorf(
+		"configured compaction model %s/%s is unavailable",
+		provider,
+		modelID,
+	)
 }
 
 func (runtime *Runtime) compactionBranch(
@@ -261,14 +336,18 @@ func (runtime *Runtime) compactionSummary(
 	sessionID string,
 	selectedModel *model.Model,
 	auth model.RequestAuth,
+	operation compaction.Operation,
+	outputLimit int,
 	plan *compaction.Plan,
 	decision *compactionLifecycleDecision,
 ) (summary string, fromHook bool, err error) {
 	if decision != nil && decision.Summary != "" {
-		return compaction.AppendFileOperationsSummary(decision.Summary, plan.FileOperations), true, nil
+		return compaction.AppendDeterministicState(
+			decision.Summary, plan.FileOperations, plan.ValidationRecords, plan.ActiveWorkRecords,
+		), true, nil
 	}
 
-	summary, err = runtime.summarizeCompaction(ctx, cwd, sessionID, selectedModel, auth, plan)
+	summary, err = runtime.summarizeCompaction(ctx, cwd, sessionID, selectedModel, auth, operation, outputLimit, plan)
 	if err != nil {
 		return "", false, err
 	}
@@ -291,6 +370,14 @@ func (runtime *Runtime) appendCompaction(
 
 	if len(input.plan.FileOperations) > 0 {
 		details[compaction.FileOperationsKey] = input.plan.FileOperations
+	}
+
+	if len(input.plan.ValidationRecords) > 0 {
+		details["validation_records"] = input.plan.ValidationRecords
+	}
+
+	if len(input.plan.ActiveWorkRecords) > 0 {
+		details["active_work_records"] = input.plan.ActiveWorkRecords
 	}
 
 	entry, err := runtime.sessions.AppendCompaction(ctx, &database.AppendCompactionInput{
@@ -322,13 +409,15 @@ func (runtime *Runtime) summarizeCompaction(
 	sessionID string,
 	selectedModel *model.Model,
 	auth model.RequestAuth,
+	operation compaction.Operation,
+	outputLimit int,
 	plan *compaction.Plan,
 ) (string, error) {
 	systemPrompt := compaction.SystemPrompt(plan.PreviousSummary, plan.SplitTurnSummary)
 	request := &CompletionRequest{
 		OnEvent:                nil,
 		OnProviderObserve:      runtime.emitProviderRequest,
-		OnProviderResponse:     observeProviderUsage,
+		OnProviderResponse:     providerUsageObserver(),
 		OnRoundCheckpoint:      nil,
 		OnProviderRequest:      runtime.dispatchProviderRequestHook,
 		ToolRegistry:           tool.NewRegistry(cwd),
@@ -336,6 +425,7 @@ func (runtime *Runtime) summarizeCompaction(
 		DisableTools:           true,
 		ToolSideEffectsStarted: false,
 		SessionID:              sessionID,
+		Identity:               emptyRequestIdentity(),
 		SystemPrompt:           systemPrompt,
 		ThinkingLevel:          thinkingOff,
 		CWD:                    cwd,
@@ -344,19 +434,87 @@ func (runtime *Runtime) summarizeCompaction(
 		Usage:                  compactionRequestUsage(selectedModel, systemPrompt, plan.Messages),
 		Model:                  *selectedModel,
 		ProviderAttempt:        0,
+		MaxTokens:              outputLimit,
 	}
 
-	result, err := runtime.completeWithRetry(ctx, request, nil)
+	outcome, err := runtime.completeSummary(ctx, runtime.newSummaryRequest(request), operation)
+	if errors.Is(err, compaction.ErrSummaryOutputTruncated) {
+		initialErr := err
+
+		outcome, err = runtime.completeReducedSummary(ctx, request, plan.SummaryGroups, operation)
+		if err != nil {
+			return "", errors.Join(initialErr, err)
+		}
+	}
+
 	if err != nil {
-		return "", oops.In("assistant").Code("compact_summarize").Wrapf(err, "summarize compacted context")
+		return "", err
 	}
 
-	summary := strings.TrimSpace(result.Text)
-	if summary == "" {
-		return "", oops.In("assistant").Code("compact_empty_summary").Errorf("compaction summary was empty")
+	return compaction.AppendDeterministicState(
+		outcome.Text, plan.FileOperations, plan.ValidationRecords, plan.ActiveWorkRecords,
+	), nil
+}
+
+func (runtime *Runtime) newSummaryRequest(request *CompletionRequest) *summaryRequest {
+	contextWindow, _ := summaryModelLimits(&request.Model)
+
+	return &summaryRequest{
+		completion: request,
+		budget: contextwindow.NewSummaryBudget(contextwindow.SummaryBudgetInput{
+			ContextWindow:         contextWindow,
+			SystemPromptTokens:    contextwindow.EstimateTokens(request.SystemPrompt),
+			PreviousSummaryTokens: 0,
+			SplitTurnTokens:       0,
+			HistoryTokens:         contextwindow.EstimateMessageTokens(request.Messages),
+			ProviderReserve:       max(runtime.cfg.Context.ProviderReserveTokens, 0),
+			SafetyMargin:          max(runtime.cfg.Context.SafetyMarginTokens, 0),
+			EnvelopeTokens:        contextwindow.DefaultSummaryRequestEnvelopeTokens,
+			MaxOutputTokens:       request.MaxTokens,
+		}),
+	}
+}
+
+func (runtime *Runtime) completeReducedSummary(
+	ctx context.Context,
+	base *CompletionRequest,
+	groups []compaction.SemanticGroup,
+	operation compaction.Operation,
+) (compaction.SummaryOutcome, error) {
+	historyTokens := contextwindow.EstimateMessageTokens(base.Messages)
+	reducedLimit := max(historyTokens/summaryRetryReductionDivisor, 1)
+
+	chunks, err := compaction.Partition(groups, reducedLimit, compaction.MaxChunksPerReductionRound)
+	if err != nil || len(chunks) < summaryRetryReductionDivisor {
+		return compaction.SummaryOutcome{}, &compaction.SummaryError{
+			Kind: compaction.ErrSummaryReductionNoProgress, Cause: err,
+			Provider: base.Model.Provider, Model: base.Model.ID, Reason: operation.Reason,
+			Input: historyTokens, Limit: reducedLimit, Before: historyTokens, After: historyTokens,
+		}
 	}
 
-	return compaction.AppendFileOperationsSummary(summary, plan.FileOperations), nil
+	reduced := make([]database.MessageEntity, 0, len(chunks))
+	for index := range chunks {
+		request := *base
+		request.Messages = chunks[index].Messages
+		request.Usage = compactionRequestUsage(&request.Model, request.SystemPrompt, request.Messages)
+
+		outcome, completeErr := runtime.completeSummary(ctx, runtime.newSummaryRequest(&request), operation)
+		if completeErr != nil {
+			return outcome, completeErr
+		}
+
+		reduced = append(reduced, database.MessageEntity{
+			Timestamp: time.Time{}, Role: database.RoleUser, Content: outcome.Text,
+			Provider: "", Model: "", Parts: nil,
+		})
+	}
+
+	request := *base
+	request.Messages = reduced
+	request.Usage = compactionRequestUsage(&request.Model, request.SystemPrompt, request.Messages)
+
+	return runtime.completeSummary(ctx, runtime.newSummaryRequest(&request), operation)
 }
 
 func compactionRequestUsage(
@@ -376,6 +534,7 @@ func compactionRequestUsage(
 			jsonSystemRole:                 contextwindow.EstimateTokens(systemPrompt),
 			contextwindow.BreakdownHistory: contextwindow.EstimateMessageTokens(messages),
 		},
+		Provenance:      "",
 		TopContributors: nil,
 		ContextWindow:   contextWindow,
 		ContextTokens:   inputTokens,

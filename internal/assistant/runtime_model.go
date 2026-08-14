@@ -28,6 +28,7 @@ type promptLineage struct {
 	committedThinking   int
 	committedTools      int
 	checkpointed        bool
+	generation          uint64
 }
 
 type responseInput struct {
@@ -47,6 +48,7 @@ func newPromptLineage(userEntryID string) *promptLineage {
 
 func newPromptLineageWithEvents(userEntryID string, onEvent func(StreamEvent)) *promptLineage {
 	return &promptLineage{
+		generation:          0,
 		onEvent:             onEvent,
 		activeParentEntryID: userEntryID,
 		runID:               userEntryID,
@@ -62,6 +64,7 @@ func newPromptLineageWithEvents(userEntryID string, onEvent func(StreamEvent)) *
 func (lineage *promptLineage) adopt(entry *database.EntryEntity) {
 	if lineage != nil && entry != nil {
 		lineage.activeParentEntryID = entry.ID
+		lineage.generation++
 	}
 }
 
@@ -218,8 +221,8 @@ func (runtime *Runtime) modelResponse(
 		return nil, err
 	}
 
-	usage := contextwindow.MergeUsage(build.Context.Usage, result.Usage)
-	runtime.emitUsage(ctx, input.onEvent, usage)
+	usage := contextwindow.MergeUsage(&build.Context.Usage, &result.Usage)
+	runtime.emitUsage(ctx, input.onEvent, &usage)
 
 	thinking := result.Thinking
 	toolEvents := result.ToolEvents
@@ -262,7 +265,8 @@ func (runtime *Runtime) prepareAndComplete(
 	}
 
 	return runtime.completeWithProviderOverflowRecovery(ctx, &providerOverflowRecoveryInput{
-		preparation: preparation, build: build, compactionEntry: compactionEntry, onRetry: input.onRetry,
+		onRetry: input.onRetry, preparation: preparation, build: build, compactionEntry: compactionEntry,
+		recovery: newProviderOverflowRecoveryState(),
 	})
 }
 
@@ -281,22 +285,32 @@ type modelCompletionRequestInput struct {
 
 func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInput) *CompletionRequest {
 	request := &CompletionRequest{
-		OnEvent:                input.onEvent,
-		OnProviderObserve:      runtime.emitProviderRequest,
-		OnProviderResponse:     observeProviderUsage,
-		OnProviderRequest:      runtime.dispatchProviderRequestHook,
-		OnRoundCheckpoint:      runtime.roundCheckpoint(input.sessionID, input.lineage),
-		ToolRegistry:           input.registry,
-		ExecuteTools:           nil,
-		SessionID:              input.sessionID,
-		SystemPrompt:           input.systemPrompt,
-		ThinkingLevel:          runtime.thinkingLevel(),
-		CWD:                    input.cwd,
-		Auth:                   input.auth,
-		Messages:               input.messages,
-		Usage:                  input.usage,
-		Model:                  *input.selectedModel,
-		ProviderAttempt:        0,
+		OnEvent:            input.onEvent,
+		OnProviderObserve:  runtime.emitProviderRequest,
+		OnProviderResponse: providerUsageObserver(),
+		OnProviderRequest:  runtime.dispatchProviderRequestHook,
+		OnRoundCheckpoint:  runtime.roundCheckpoint(input.sessionID, input.lineage),
+		ToolRegistry:       input.registry,
+		ExecuteTools:       nil,
+		SessionID:          input.sessionID,
+		SystemPrompt:       input.systemPrompt,
+		ThinkingLevel:      runtime.thinkingLevel(),
+		CWD:                input.cwd,
+		Auth:               input.auth,
+		Messages:           input.messages,
+		Usage:              input.usage,
+		Model:              *input.selectedModel,
+		ProviderAttempt:    0,
+		Identity: RequestIdentity{
+			LogicalRequestID:     input.lineage.runID,
+			Provider:             input.selectedModel.Provider,
+			Model:                input.selectedModel.ID,
+			LineageParentEntryID: input.lineage.activeParentEntryID,
+			CompactionGeneration: input.lineage.generation,
+			ProviderAttempt:      0,
+			RecoveryAttempt:      0,
+		},
+		MaxTokens:              input.selectedModel.MaxTokens,
 		DisableTools:           false,
 		ToolSideEffectsStarted: false,
 	}
@@ -314,14 +328,17 @@ func (runtime *Runtime) modelCompletionRequest(input *modelCompletionRequestInpu
 	return request
 }
 
+type providerAttemptAuthorizer func(int)
+
 func (runtime *Runtime) completeWithRetry(
 	ctx context.Context,
 	request *CompletionRequest,
 	onRetry RetryEventHandler,
+	authorize providerAttemptAuthorizer,
 ) (*CompletionResult, error) {
 	retry := retryConfig(runtime.cfg)
 	if !retry.Enabled || retry.MaxAttempts <= 1 {
-		return runtime.completeAttempt(ctx, request, 1)
+		return runtime.completeAttempt(ctx, request, 1, authorize)
 	}
 
 	attempt := 0
@@ -352,7 +369,7 @@ func (runtime *Runtime) completeWithRetry(
 
 		var err error
 
-		result, err = runtime.retryAttempt(ctx, request, retry.MaxAttempts, attempt, onRetry)
+		result, err = runtime.retryAttempt(ctx, request, retry.MaxAttempts, attempt, onRetry, authorize)
 		retryErr = retryError(err)
 
 		return err
@@ -373,8 +390,9 @@ func (runtime *Runtime) retryAttempt(
 	maxAttempts int,
 	attempt int,
 	onRetry RetryEventHandler,
+	authorize providerAttemptAuthorizer,
 ) (*CompletionResult, error) {
-	result, err := runtime.completeAttempt(ctx, request, attempt)
+	result, err := runtime.completeAttempt(ctx, request, attempt, authorize)
 	if err == nil {
 		if attempt > 1 {
 			runtime.emitRetryEvent(ctx, onRetry, RetryEvent{
@@ -425,8 +443,14 @@ func (runtime *Runtime) completeAttempt(
 	ctx context.Context,
 	request *CompletionRequest,
 	attempt int,
+	authorize providerAttemptAuthorizer,
 ) (*CompletionResult, error) {
 	request.ProviderAttempt = attempt
+	request.Identity.ProviderAttempt = attempt
+
+	if authorize != nil {
+		authorize(attempt)
+	}
 
 	result, err := runtime.client.Complete(ctx, request)
 	if err != nil {

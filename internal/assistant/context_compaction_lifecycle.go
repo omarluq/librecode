@@ -34,8 +34,11 @@ func (runtime *Runtime) dispatchBeforeCompaction(
 	sessionID string,
 	cwd string,
 	plan *compaction.Plan,
+	operation compaction.Operation,
 ) (*compactionLifecycleDecision, error) {
 	payload := lifecyclepayload.CompactionPreparation(sessionID, cwd, plan)
+	payload["reason"] = string(operation.Reason)
+	payload["retry_intent"] = string(operation.RetryIntent)
 
 	result, err := runtime.dispatchLifecycle(ctx, extension.LifecycleSessionBeforeCompact, payload)
 	if err != nil {
@@ -63,6 +66,7 @@ func (runtime *Runtime) dispatchAfterCompaction(
 	cwd string,
 	entry *database.EntryEntity,
 	plan *compaction.Plan,
+	operation compaction.Operation,
 	fromHook bool,
 ) {
 	source := compactionSourceCore
@@ -77,6 +81,8 @@ func (runtime *Runtime) dispatchAfterCompaction(
 		CWD:       cwd,
 		Source:    source,
 	})
+	payload["reason"] = string(operation.Reason)
+	payload["retry_intent"] = string(operation.RetryIntent)
 
 	_, err := runtime.dispatchLifecycle(ctx, extension.LifecycleSessionCompact, payload)
 	if err != nil {
@@ -103,7 +109,10 @@ func compactionDecisionFromMutation(
 		if decision.Summary == "" {
 			return nil, oops.In("assistant").
 				Code("compact_hook_empty_summary").
-				Errorf("extension compaction summary was empty")
+				Wrapf(&compaction.SummaryError{
+					Kind: compaction.ErrSummaryEmpty, Cause: nil, Provider: "", Model: "", Reason: "",
+					Input: 0, Limit: 0, Before: 0, After: 0,
+				}, "extension compaction summary was empty")
 		}
 	}
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/samber/oops"
@@ -84,12 +85,14 @@ type steeringOverflowCompactionCompleter struct {
 	recoveredRequest   chan *assistant.CompletionRequest
 	allowCheckpoint    chan struct{}
 	checkpointMessages chan []llm.Message
+	summaryEnteredOnce sync.Once
 	providerCalls      int
 }
 
 func newSteeringOverflowCompactionCompleter() *steeringOverflowCompactionCompleter {
 	return &steeringOverflowCompactionCompleter{
 		summaryEntered:     make(chan struct{}),
+		summaryEnteredOnce: sync.Once{},
 		allowSummary:       make(chan struct{}),
 		recoveredRequest:   make(chan *assistant.CompletionRequest, 1),
 		allowCheckpoint:    make(chan struct{}),
@@ -103,11 +106,11 @@ func (client *steeringOverflowCompactionCompleter) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	if request.DisableTools {
-		close(client.summaryEntered)
+		client.summaryEnteredOnce.Do(func() { close(client.summaryEntered) })
 
 		select {
 		case <-client.allowSummary:
-			return testCompletionResult("summary made while steering was pending"), nil
+			return testCompletionResult(structuredTestSummary("steering pending")), nil
 		case <-ctx.Done():
 			return nil, oops.In("assistant_test").Code("compaction_canceled").Wrapf(ctx.Err(), "wait for summary")
 		}
@@ -161,7 +164,13 @@ func TestRuntime_ProviderOverflowSteeringWaitsForRecoveredRoundCheckpoint(t *tes
 
 	run := <-runStarted
 
-	<-client.summaryEntered
+	select {
+	case <-client.summaryEntered:
+	case result := <-promptResult:
+		require.NoError(t, result.err)
+		t.Fatal("prompt completed before entering overflow compaction summary")
+	}
+
 	require.NoError(t, runtime.Steer(ctx, &assistant.SteeringRequest{
 		SessionID:      run.SessionID,
 		RunID:          run.EntryID,
@@ -171,7 +180,14 @@ func TestRuntime_ProviderOverflowSteeringWaitsForRecoveredRoundCheckpoint(t *tes
 	}))
 	close(client.allowSummary)
 
-	recoveredRequest := <-client.recoveredRequest
+	var recoveredRequest *assistant.CompletionRequest
+	select {
+	case recoveredRequest = <-client.recoveredRequest:
+	case result := <-promptResult:
+		require.NoError(t, result.err)
+		t.Fatal("prompt completed before recovered model completion")
+	}
+
 	for _, message := range recoveredRequest.Messages {
 		assert.NotContains(t, message.Content, "steer after overflow",
 			"steering accepted during compaction must not alter the recovered retry request")
@@ -283,7 +299,7 @@ func TestRuntime_ProviderContextOverflowRecoveryErrorPaths(t *testing.T) {
 		{
 			name:          "wraps rebuilt budget failure",
 			client:        newOverflowSummaryCompleter(strings.Repeat("summary ", 30_000), nil),
-			wantCode:      "context_budget_after_provider_overflow_compact",
+			wantCode:      "context_overflow_compact",
 			contextWindow: 20_000,
 		},
 	}

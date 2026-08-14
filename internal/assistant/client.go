@@ -39,26 +39,29 @@ type CompletionRequest struct {
 	OnRoundCheckpoint      llm.RoundCheckpoint                            `json:"-"`
 	ToolRegistry           *tool.Registry                                 `json:"-"`
 	ExecuteTools           ToolExecutor                                   `json:"-"`
-	SessionID              string                                         `json:"session_id"`
+	CWD                    string                                         `json:"cwd"`
 	SystemPrompt           string                                         `json:"system_prompt"`
 	ThinkingLevel          string                                         `json:"thinking_level"`
-	CWD                    string                                         `json:"cwd"`
+	SessionID              string                                         `json:"session_id"`
+	Identity               RequestIdentity                                `json:"-"`
 	Auth                   model.RequestAuth                              `json:"auth"`
 	Messages               []database.MessageEntity                       `json:"messages"`
 	Usage                  model.TokenUsage                               `json:"usage"`
 	Model                  model.Model                                    `json:"model"`
 	ProviderAttempt        int                                            `json:"-"`
+	MaxTokens              int                                            `json:"max_tokens,omitempty"`
 	DisableTools           bool                                           `json:"-"`
 	ToolSideEffectsStarted bool                                           `json:"-"`
 }
 
 // CompletionResult is an assistant-owned provider response plus model-visible side effects.
 type CompletionResult struct {
-	FinishReason llm.FinishReason `json:"finish_reason,omitempty"`
-	Text         string           `json:"text"`
-	Thinking     []string         `json:"thinking,omitempty"`
-	ToolEvents   []ToolEvent      `json:"tool_events,omitempty"`
-	Usage        model.TokenUsage `json:"usage"`
+	FinishReason llm.FinishReason        `json:"finish_reason,omitempty"`
+	Termination  llm.TerminationMetadata `json:"termination,omitzero"`
+	Text         string                  `json:"text"`
+	Thinking     []string                `json:"thinking,omitempty"`
+	ToolEvents   []ToolEvent             `json:"tool_events,omitempty"`
+	Usage        model.TokenUsage        `json:"usage"`
 }
 
 // ToolCallEvent captures one requested tool call before execution.

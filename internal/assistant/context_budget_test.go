@@ -142,10 +142,17 @@ func TestLoadRejectsNegativeContextBudget(t *testing.T) {
 
 	cfg := testConfig()
 	cfg.Context = config.ContextConfig{
-		OutputReserveTokens:   0,
-		ProviderReserveTokens: 0,
-		SafetyMarginTokens:    -1,
-		PreflightEnabled:      true,
+		CompactionProvider:          "",
+		CompactionModel:             "",
+		ExtensionContributionTokens: 0,
+		AutoCompactionThreshold:     0,
+		RetainedTailMaxTokens:       0,
+		SummaryOutputTokens:         0,
+		AutoCompactionEnabled:       false,
+		OutputReserveTokens:         0,
+		ProviderReserveTokens:       0,
+		SafetyMarginTokens:          -1,
+		PreflightEnabled:            true,
 	}
 
 	err := cfg.Validate()

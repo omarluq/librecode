@@ -1021,6 +1021,7 @@ func (client *steeringCacheCompleter) Complete(
 	}
 
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         "response",
 		Thinking:     nil,
@@ -1044,6 +1045,7 @@ func (client *retryCompleter) Complete(
 	}
 
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         client.response + " for " + request.Messages[len(request.Messages)-1].Content,
 		Thinking:     nil,
@@ -1059,6 +1061,7 @@ func (client *emptyCompleter) Complete(
 	client.attempts++
 
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         "",
 		Thinking:     nil,
@@ -1268,6 +1271,7 @@ tools.Call("read", map[string]interface{}{"path": "two.txt"})`
 	}
 
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         "done",
 		Thinking:     nil,
@@ -1293,11 +1297,13 @@ func (testCompleter) Complete(
 	}
 
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         "test assistant response for " + request.Messages[len(request.Messages)-1].Content,
 		Thinking:     nil,
 		ToolEvents:   nil,
 		Usage: model.TokenUsage{
+			Provenance:      "",
 			Breakdown:       nil,
 			TopContributors: nil,
 			ContextWindow:   1000,
@@ -1396,10 +1402,17 @@ func testConfig() *config.Config {
 			ThinkingLevel: "off",
 		},
 		Context: config.ContextConfig{
-			OutputReserveTokens:   0,
-			ProviderReserveTokens: 2048,
-			SafetyMarginTokens:    8192,
-			PreflightEnabled:      true,
+			CompactionProvider:          "",
+			CompactionModel:             "",
+			SummaryOutputTokens:         0,
+			OutputReserveTokens:         0,
+			ProviderReserveTokens:       2048,
+			SafetyMarginTokens:          8192,
+			ExtensionContributionTokens: 8192,
+			AutoCompactionThreshold:     80,
+			RetainedTailMaxTokens:       64_000,
+			PreflightEnabled:            true,
+			AutoCompactionEnabled:       true,
 		},
 		Models: config.ModelsConfig{
 			Discovery: config.ModelDiscoveryConfig{

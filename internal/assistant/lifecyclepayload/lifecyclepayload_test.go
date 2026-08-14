@@ -73,6 +73,7 @@ func TestPromptAndTurnPayloads(t *testing.T) {
 		turn := lifecyclepayload.TurnEndPayload(&lifecyclepayload.TurnEnd{
 			Err: errors.New("failed"),
 			Usage: model.TokenUsage{
+				Provenance:      "",
 				Breakdown:       map[string]int{"history": 2},
 				TopContributors: nil,
 				ContextWindow:   0,
@@ -223,10 +224,13 @@ func TestCompactionAndDiagnosticPayloads(t *testing.T) {
 	t.Parallel()
 
 	plan := &compaction.Plan{
-		FirstKeptEntryID: "kept-1",
-		Messages:         nil,
-		PreviousSummary:  "",
-		SplitTurnSummary: "split",
+		ValidationRecords: nil,
+		ActiveWorkRecords: nil,
+		SummaryGroups:     nil,
+		FirstKeptEntryID:  "kept-1",
+		Messages:          nil,
+		PreviousSummary:   "",
+		SplitTurnSummary:  "split",
 		SummarizedEntryIDs: []string{
 			"old-1",
 		},

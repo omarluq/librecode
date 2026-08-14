@@ -164,7 +164,7 @@ func IsContextWindowError(err error) bool {
 	}
 
 	code, matched := providerErrorCode(err)
-	if matched && code == "context_window_exceeded" {
+	if matched && code == contextWindowExceededCode {
 		return true
 	}
 

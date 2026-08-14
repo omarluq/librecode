@@ -42,6 +42,8 @@ func TestProviderRequestFromCompletionRequestAdaptsCallbacksAndRequest(t *testin
 	var observedUsage model.TokenUsage
 
 	request := &CompletionRequest{
+		Identity:          emptyRequestIdentity(),
+		MaxTokens:         0,
 		OnEvent:           nil,
 		OnProviderObserve: providerObserveAssertion(t, &observed),
 		OnProviderResponse: func(_ context.Context, usage model.TokenUsage) {
@@ -67,7 +69,7 @@ func TestProviderRequestFromCompletionRequestAdaptsCallbacksAndRequest(t *testin
 			ThinkingLevelMap: map[model.ThinkingLevel]*string{model.ThinkingHigh: new("enabled")},
 			Headers:          nil,
 			Compat:           map[string]any{"feature": "on"},
-			Provider:         "anthropic",
+			Provider:         anthropicProvider,
 			ID:               "claude",
 			Name:             "Claude",
 			API:              apiAnthropicMessages,
@@ -93,10 +95,10 @@ func TestProviderRequestFromCompletionRequestAdaptsCallbacksAndRequest(t *testin
 	require.NotNil(t, converted.OnProviderResponse)
 
 	converted.OnProviderObserve(context.Background(), adapterHookInput())
-	converted.OnProviderResponse(
-		context.Background(),
-		llmconv.UsageFromModel(metricsTokenUsage(5, 2).WithReported()),
-	)
+
+	usage := metricsTokenUsage(5, 2)
+	reportedUsage := usage.WithReported()
+	converted.OnProviderResponse(context.Background(), llmconv.UsageFromModel(&reportedUsage))
 	assert.True(t, observed)
 	assert.Equal(t, 5, observedUsage.InputTokens)
 	assert.Equal(t, 2, observedUsage.OutputTokens)
@@ -145,6 +147,7 @@ func TestCompletionResultFromLLMResponseConvertsPartsAndUsage(t *testing.T) {
 	t.Parallel()
 
 	response := &llm.Response{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Content: []llm.Part{
 			llm.TextPart(" first "),
@@ -172,6 +175,7 @@ func TestCompletionResultFromLLMResponseConvertsPartsAndUsage(t *testing.T) {
 		},
 		ToolCalls: nil,
 		Usage: llm.Usage{
+			Provenance:      "",
 			Breakdown:       map[string]int{contextwindow.BreakdownHistory: 7},
 			TopContributors: nil,
 			ContextWindow:   100,
@@ -206,6 +210,7 @@ func TestStreamEventAdaptersRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	usage := model.TokenUsage{
+		Provenance:      "",
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,
@@ -404,9 +409,11 @@ func TestAdapterNilAndFallbackHelpers(t *testing.T) {
 	assert.Empty(t, stringFromOptions(map[string]any{"value": 1}, "value"))
 	assert.Empty(t, textFromLLMChunk(nil))
 	assert.Nil(t, chunkPart(nil))
-	assert.Equal(t, llm.EmptyUsage(), chunkUsage(nil))
+	assert.Nil(t, chunkUsage(nil))
 	assert.Nil(t, toolEventPointerFromLLMPart(nil))
-	assert.Nil(t, usagePointerFromLLMUsage(llm.EmptyUsage()))
+
+	emptyUsage := llm.EmptyUsage()
+	assert.Nil(t, usagePointerFromLLMUsage(&emptyUsage))
 
 	modelRef := modelFromLLMRef(nil)
 	assert.Empty(t, modelRef.ID)
@@ -428,13 +435,14 @@ func providerObserveAssertion(t *testing.T, observed *bool) func(context.Context
 
 func adapterHookInput() *llm.HookInput {
 	return &llm.HookInput{
+		MaxTokens:       0,
 		Payload:         nil,
 		Headers:         map[string]string{adapterHeaderKey: adapterHeaderValue},
 		ProviderOptions: map[string]any{"cwd": adapterCWD},
 		Model: llm.ModelRef{
 			Metadata:         map[string]any{"feature": "on"},
 			ThinkingLevelMap: map[string]*string{adapterThinkingLevel: new("enabled")},
-			Provider:         "anthropic",
+			Provider:         anthropicProvider,
 			ID:               "claude",
 			API:              apiAnthropicMessages,
 			BaseURL:          adapterBaseURL,

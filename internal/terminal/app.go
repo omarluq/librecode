@@ -187,6 +187,7 @@ type App struct {
 	cwd                         string
 	selectedPanelKind           panel.Kind
 	streamingThinkingText       string
+	tokenUsage                  model.TokenUsage
 	resources                   core.ResourceSnapshot
 	activeWorkflows             []database.WorkflowRunEntity
 	agentTaskPanelSnapshot      []database.AgentTaskEntity
@@ -206,7 +207,6 @@ type App struct {
 	steeringMessages            []promptDraft
 	composerBuffer              tui.TextArea
 	transcript                  transcriptState
-	tokenUsage                  model.TokenUsage
 	selection                   mouseSelection
 	transcriptList              transcriptListSelection
 	agentTaskSummarySelection   agentTaskSummarySelection

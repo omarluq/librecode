@@ -21,46 +21,48 @@ func (app *App) applyTokenUsageEvent(usage *model.TokenUsage, snapshot bool) {
 	}
 
 	if snapshot {
-		app.tokenUsage = cloneTerminalUsage(*usage)
+		app.tokenUsage = cloneTerminalUsage(usage)
 
 		return
 	}
 
-	app.tokenUsage = mergeTerminalUsage(app.tokenUsage, *usage)
+	app.tokenUsage = mergeTerminalUsage(&app.tokenUsage, usage)
 }
 
-func cloneTerminalUsage(usage model.TokenUsage) model.TokenUsage {
-	usage.Breakdown = cloneTokenBreakdown(usage.Breakdown)
-	usage.TopContributors = model.CloneTokenContributors(usage.TopContributors)
+func cloneTerminalUsage(usage *model.TokenUsage) model.TokenUsage {
+	cloned := *usage
+	cloned.Breakdown = cloneTokenBreakdown(usage.Breakdown)
+	cloned.TopContributors = model.CloneTokenContributors(usage.TopContributors)
 
-	return usage
+	return cloned
 }
 
-func mergeTerminalUsage(current, next model.TokenUsage) model.TokenUsage {
+func mergeTerminalUsage(current, next *model.TokenUsage) model.TokenUsage {
+	merged := *current
 	if next.ContextWindow > 0 {
-		current.ContextWindow = next.ContextWindow
+		merged.ContextWindow = next.ContextWindow
 	}
 
 	if next.ContextTokens > 0 {
-		current.ContextTokens = next.ContextTokens
+		merged.ContextTokens = next.ContextTokens
 	}
 
 	if len(next.Breakdown) > 0 {
-		current.Breakdown = cloneTokenBreakdown(next.Breakdown)
+		merged.Breakdown = cloneTokenBreakdown(next.Breakdown)
 	}
 
 	if len(next.TopContributors) > 0 {
-		current.TopContributors = model.CloneTokenContributors(next.TopContributors)
+		merged.TopContributors = model.CloneTokenContributors(next.TopContributors)
 	}
 
-	return current
+	return merged
 }
 
 func (app *App) tokenStatusText() string {
-	return formatTokenStatus(app.tokenUsage)
+	return formatTokenStatus(&app.tokenUsage)
 }
 
-func formatTokenStatus(usage model.TokenUsage) string {
+func formatTokenStatus(usage *model.TokenUsage) string {
 	if !usage.HasAny() {
 		return ""
 	}
@@ -73,7 +75,7 @@ func formatTokenStatus(usage model.TokenUsage) string {
 	return contextText
 }
 
-func formatContextUsage(usage model.TokenUsage) string {
+func formatContextUsage(usage *model.TokenUsage) string {
 	window := usage.ContextWindow
 	switch {
 	case usage.ContextTokens > 0 && window > 0:

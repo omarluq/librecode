@@ -68,7 +68,7 @@ func llmProviderResponseObserver(
 	}
 
 	return func(ctx context.Context, usage llm.Usage) {
-		observer(ctx, llmconv.UsageToModel(usage))
+		observer(ctx, llmconv.UsageToModel(&usage))
 	}
 }
 
@@ -86,6 +86,7 @@ func completionRequestFromHookInput(input *llm.HookInput) *CompletionRequest {
 		ToolRegistry:           nil,
 		ExecuteTools:           nil,
 		SessionID:              input.SessionID,
+		Identity:               emptyRequestIdentity(),
 		SystemPrompt:           "",
 		ThinkingLevel:          input.ThinkingLevel,
 		CWD:                    stringFromOptions(input.ProviderOptions, "cwd"),
@@ -94,6 +95,7 @@ func completionRequestFromHookInput(input *llm.HookInput) *CompletionRequest {
 		Usage:                  model.EmptyTokenUsage(),
 		Model:                  modelFromLLMRef(&input.Model),
 		ProviderAttempt:        input.Attempt,
+		MaxTokens:              input.MaxTokens,
 		DisableTools:           false,
 		ToolSideEffectsStarted: false,
 	}
@@ -161,6 +163,7 @@ func completionResultFromLLMResponse(response *llm.Response) *CompletionResult {
 	if response == nil {
 		return &CompletionResult{
 			FinishReason: llm.FinishReasonUnknown,
+			Termination:  llm.NewTerminationMetadata("", "", ""),
 			Text:         "",
 			Thinking:     nil,
 			ToolEvents:   nil,
@@ -170,10 +173,11 @@ func completionResultFromLLMResponse(response *llm.Response) *CompletionResult {
 
 	return &CompletionResult{
 		FinishReason: response.FinishReason,
+		Termination:  response.Termination,
 		Text:         textFromLLMParts(response.Content),
 		Thinking:     thinkingFromLLMParts(response.Content),
 		ToolEvents:   toolEventsFromLLMParts(response.Content),
-		Usage:        llmconv.UsageToModel(response.Usage),
+		Usage:        llmconv.UsageToModel(&response.Usage),
 	}
 }
 
@@ -307,12 +311,12 @@ func chunkPart(chunk *llm.StreamChunk) *llm.Part {
 	return chunk.Part
 }
 
-func chunkUsage(chunk *llm.StreamChunk) llm.Usage {
+func chunkUsage(chunk *llm.StreamChunk) *llm.Usage {
 	if chunk == nil {
-		return llm.EmptyUsage()
+		return nil
 	}
 
-	return chunk.Usage
+	return &chunk.Usage
 }
 
 func toolCallEventPointerFromLLMPart(part *llm.Part) *ToolCallEvent {
@@ -377,12 +381,13 @@ func toolEventPointerFromLLMPart(part *llm.Part) *ToolEvent {
 	return &event
 }
 
-func usagePointerFromLLMUsage(usage llm.Usage) *model.TokenUsage {
-	if !usage.HasAny() {
+func usagePointerFromLLMUsage(value any) *model.TokenUsage {
+	usage, ok := value.(llm.Usage)
+	if !ok || !usage.HasAny() {
 		return nil
 	}
 
-	converted := llmconv.UsageToModel(usage)
+	converted := llmconv.UsageToModel(&usage)
 
 	return &converted
 }
@@ -509,7 +514,7 @@ func llmUsageFromPointer(usage *model.TokenUsage) llm.Usage {
 		return llm.EmptyUsage()
 	}
 
-	return llmconv.UsageFromModel(*usage)
+	return llmconv.UsageFromModel(usage)
 }
 
 func stringFromOptions(options map[string]any, key string) string {

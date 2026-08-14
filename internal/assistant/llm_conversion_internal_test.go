@@ -21,6 +21,8 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 
 	registry := tool.NewRegistry(t.TempDir())
 	request := &CompletionRequest{
+		Identity:           emptyRequestIdentity(),
+		MaxTokens:          0,
 		OnEvent:            nil,
 		OnProviderObserve:  nil,
 		OnProviderResponse: nil,
@@ -172,6 +174,8 @@ func TestLLMRequestFromCompletionRequestNilAndDisabledTools(t *testing.T) {
 	assert.Empty(t, empty.Tools)
 
 	converted := llmRequestFromCompletionRequest(&CompletionRequest{
+		Identity:               emptyRequestIdentity(),
+		MaxTokens:              0,
 		OnEvent:                nil,
 		OnProviderObserve:      nil,
 		OnProviderResponse:     nil,
@@ -199,6 +203,7 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 	t.Parallel()
 
 	result := &CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonLength,
 		Text:         "final answer",
 		Thinking:     []string{" thought ", "   "},
@@ -225,6 +230,7 @@ func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
 				IsError:       true,
 			}},
 		Usage: model.TokenUsage{
+			Provenance:      "",
 			Breakdown:       map[string]int{contextwindow.BreakdownHistory: 10},
 			TopContributors: nil,
 			ContextWindow:   100,
@@ -260,6 +266,7 @@ func TestLLMUsageToModelRoundTrips(t *testing.T) {
 	t.Parallel()
 
 	usage := llm.Usage{
+		Provenance:      "",
 		Breakdown:       map[string]int{"system": 1},
 		TopContributors: nil,
 		ContextWindow:   10,
@@ -268,7 +275,7 @@ func TestLLMUsageToModelRoundTrips(t *testing.T) {
 		OutputTokens:    1,
 	}
 
-	converted := llmconv.UsageToModel(usage)
+	converted := llmconv.UsageToModel(&usage)
 
 	assert.Equal(t, 10, converted.ContextWindow)
 	assert.Equal(t, 2, converted.InputTokens)

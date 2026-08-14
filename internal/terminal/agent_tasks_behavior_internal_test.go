@@ -1544,7 +1544,7 @@ func seedInspectFailureState(app *App, task *database.AgentTaskEntity) func(*tes
 	app.toolsExpanded = true
 	app.scopedEnabled = map[string]bool{parentScopeValue: true}
 	app.scopedOrder = []string{parentScopeValue}
-	app.tokenUsage = model.TokenUsage{
+	app.tokenUsage = model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   128,

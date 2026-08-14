@@ -146,6 +146,8 @@ func loadProviderHookTestExtension(t *testing.T, manager *extension.Manager, sou
 
 func providerHookTestRequest() *CompletionRequest {
 	return &CompletionRequest{
+		Identity:           emptyRequestIdentity(),
+		MaxTokens:          0,
 		OnEvent:            nil,
 		OnProviderObserve:  nil,
 		OnProviderResponse: nil,

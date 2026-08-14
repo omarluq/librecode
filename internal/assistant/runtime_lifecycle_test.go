@@ -170,6 +170,7 @@ func TestRuntime_PromptEmitsSideEffectMessageAppendEvents(t *testing.T) {
 
 	client := staticCompleter{
 		result: &assistant.CompletionResult{
+			Termination:  llm.NewTerminationMetadata("", "", ""),
 			FinishReason: llm.FinishReasonStop,
 			Text:         "done",
 			Thinking:     []string{"reasoning"},

@@ -136,9 +136,9 @@ func TestAgentStartValidationAndSubmissionCleanup(t *testing.T) {
 
 	tests := []struct{ name, raw, want string }{
 		{name: "decode", raw: `{"agent":1,"prompt":"work"}`, want: "decode tool input"},
-		{name: "missing", raw: `{}`, want: "required"},
+		{name: runtimeSlashMissing, raw: `{}`, want: "required"},
 		{name: "blank", raw: `{"agent":"general","prompt":"  "}`, want: "required"},
-		{name: "unknown", raw: `{"agent":"missing","prompt":"work"}`, want: "unknown agent"},
+		{name: "unknown", raw: `{"agent":runtimeSlashMissing,"prompt":"work"}`, want: "unknown agent"},
 		{
 			name: "too long",
 			raw:  `{"agent":"general","prompt":"` + strings.Repeat("x", maxAgentPromptBytes+1) + `"}`,

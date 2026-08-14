@@ -92,10 +92,12 @@ func (completer runnerCompleter) Complete(
 		return nil, completer.err
 	}
 
-	usage := model.TokenUsage{
+	baseUsage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown: nil, TopContributors: nil, ContextWindow: 1000,
 		ContextTokens: 3, InputTokens: 2, OutputTokens: 1,
-	}.WithReported()
+	}
+
+	usage := baseUsage.WithReported()
 	if request.OnProviderResponse != nil {
 		request.OnProviderResponse(ctx, usage)
 	}
@@ -107,7 +109,7 @@ func (completer runnerCompleter) Complete(
 		})
 	}
 
-	return &assistant.CompletionResult{
+	return &assistant.CompletionResult{Termination: llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         "answer",
 		Thinking:     nil,

@@ -187,6 +187,8 @@ func newSchemaEstimateRequest(t *testing.T, api string, disableTools bool) *Comp
 	t.Helper()
 
 	return &CompletionRequest{
+		Identity:           emptyRequestIdentity(),
+		MaxTokens:          0,
 		OnEvent:            nil,
 		OnProviderObserve:  nil,
 		OnProviderResponse: nil,
@@ -206,6 +208,7 @@ func newSchemaEstimateRequest(t *testing.T, api string, disableTools bool) *Comp
 		},
 		Messages: nil,
 		Usage: model.TokenUsage{
+			Provenance:      "",
 			Breakdown:       nil,
 			TopContributors: nil,
 			ContextWindow:   0,

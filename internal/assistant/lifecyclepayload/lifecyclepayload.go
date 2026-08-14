@@ -195,7 +195,7 @@ func TurnEndPayload(turn *TurnEnd) map[string]any {
 		"cached":            turn.Cached,
 		ErrorKey:            "",
 		SessionIDKey:        turn.SessionID,
-		UsageKey:            TokenUsage(turn.Usage),
+		UsageKey:            TokenUsage(&turn.Usage),
 		UserEntryIDKey:      turn.UserEntryID,
 	}
 	if turn.Err != nil {
@@ -215,12 +215,22 @@ func ContextBuild(sessionID, cwd string, base *contextwindow.Base, result *conte
 		"contributions":           []any{},
 		"topContributors":         TokenContributors(result.Usage.TopContributors),
 		"max_contribution_tokens": contextwindow.ContributionMaxTokens,
+		"extension_tokens_used":   0,
+		"extension_tokens_limit":  contributionTokenLimit(result),
 		"system_tokens":           base.SystemTokens,
 		"skill_tokens":            base.SkillTokens,
 		"message_tokens":          base.HistoryTokens,
-		UsageKey:                  TokenUsage(result.Usage),
+		UsageKey:                  TokenUsage(&result.Usage),
 		"model_facing_roles":      ModelFacingRoleCounts(base.Messages),
 	}
+}
+
+func contributionTokenLimit(result *contextwindow.BuildResult) int {
+	if result.ExtensionContributionTokenLimit > 0 {
+		return result.ExtensionContributionTokenLimit
+	}
+
+	return contextwindow.ContributionAggregateMaxTokens
 }
 
 // ModelFacingRoleCounts counts model-facing roles for lifecycle diagnostics.
@@ -262,7 +272,7 @@ func Entry(entry *database.EntryEntity) map[string]any {
 }
 
 // TokenUsage builds a lifecycle payload for token usage.
-func TokenUsage(usage model.TokenUsage) map[string]any {
+func TokenUsage(usage *model.TokenUsage) map[string]any {
 	return map[string]any{
 		BreakdownKey:      mapsutil.IntMapToAnyMap(usage.Breakdown),
 		"topContributors": TokenContributors(usage.TopContributors),
@@ -320,7 +330,7 @@ func ProviderResponsePayload(response *ProviderResponse) map[string]any {
 		"finish_reason":    string(response.FinishReason),
 		"thinking_count":   response.ThinkingCount,
 		"tool_event_count": response.ToolEventCount,
-		UsageKey:           TokenUsage(response.Usage),
+		UsageKey:           TokenUsage(&response.Usage),
 	}
 }
 

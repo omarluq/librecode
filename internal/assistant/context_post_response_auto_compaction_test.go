@@ -83,7 +83,7 @@ func (client *postResponseSteeringBarrierCompleter) Complete(
 
 		select {
 		case <-client.allowCompaction:
-			return testCompletionResult("summary after completed response"), nil
+			return testCompletionResult(structuredTestSummary("summary after completed response")), nil
 		case <-ctx.Done():
 			return nil, oops.In("assistant_test").Code("compaction_canceled").Wrapf(ctx.Err(), "wait for compaction")
 		}

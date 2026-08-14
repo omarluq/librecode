@@ -13,6 +13,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/auth"
+	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
@@ -25,7 +26,7 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	t.Parallel()
 
 	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
-	runtime, repository := newCompactionRuntimeForTailPolicy(t, client, 1_000)
+	runtime, repository := newCompactionRuntimeForTailPolicy(t, client, 64_000)
 	ctx := context.Background()
 	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
 	require.NoError(t, err)
@@ -53,14 +54,14 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, entry)
 	assert.Equal(t, database.EntryTypeCompaction, entry.Type)
-	assert.Equal(t, compactedWorkSummary, entry.Summary)
+	assert.Equal(t, structuredTestSummary(compactedWorkSummary), entry.Summary)
 	assert.Equal(t, third.ID, entry.CompactionFirstKeptEntryID)
 	assert.Positive(t, entry.CompactionTokensBefore)
 	require.NotNil(t, entry.ParentID)
 	assert.Equal(t, fourth.ID, *entry.ParentID)
 	require.Len(t, client.requests, 1)
 	assert.True(t, client.requests[0].DisableTools)
-	assert.Contains(t, client.requests[0].SystemPrompt, "Summarize the conversation history")
+	assert.Contains(t, client.requests[0].SystemPrompt, "Summarize the supplied conversation history")
 	require.Len(t, client.requests[0].Messages, 2)
 	assert.Equal(t, "old user goal", client.requests[0].Messages[0].Content)
 	assert.Equal(t, "old assistant answer", client.requests[0].Messages[1].Content)
@@ -69,7 +70,7 @@ func TestRuntime_CompactSessionSummarizesOldHistoryAndKeepsTail(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, contextEntity.Messages, 3)
 	assert.Equal(t, database.RoleCompactionSummary, contextEntity.Messages[0].Role)
-	assert.Equal(t, compactedWorkSummary, contextEntity.Messages[0].Content)
+	assert.Equal(t, structuredTestSummary(compactedWorkSummary), contextEntity.Messages[0].Content)
 	assert.Equal(t, "recent user tail", contextEntity.Messages[1].Content)
 	assert.Equal(t, "recent assistant tail", contextEntity.Messages[2].Content)
 }
@@ -302,7 +303,24 @@ lc.on("session_before_compact", function()
   return {
     compaction = {
       first_kept_entry_id = %q,
-      summary = "hook summary",
+      summary = [[## Goal
+- hook summary
+## User constraints and preferences
+- None
+## Completed work
+- None
+## Work in progress
+- None
+## Files changed/read
+- None
+## Commands and validation
+- None
+## Decisions
+- None
+## Errors and blockers
+- None
+## Exact next steps
+- None]],
     }
   }
 end)
@@ -314,6 +332,39 @@ end)
 	assert.Equal(t, tail.ID, entry.CompactionFirstKeptEntryID)
 	assert.Contains(t, entry.Summary, "read: first.txt")
 	assert.Contains(t, entry.Summary, "read: tail.txt")
+}
+
+func TestRuntime_CompactSessionRejectsMalformedHookSummary(t *testing.T) {
+	t.Parallel()
+
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
+	_, repository, manager := newTestRuntimeWithManager(t, client)
+	runtime := newCompactionRuntimeWithManagerWindow(t, repository, manager, client)
+	loadRuntimeExtension(t, manager, `
+local lc = require("librecode")
+lc.on("session_before_compact", function()
+  return { compaction = { summary = "malformed hook summary" } }
+end)
+`)
+
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 1000))
+	appendRuntimeTestMessage(t, repository, session.ID, &old.ID, database.RoleAssistant, "tail")
+
+	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+
+	require.ErrorIs(t, err, compaction.ErrCheckpointStructure)
+	assert.Nil(t, entry)
+	assert.Empty(t, client.requests)
+
+	branch, branchErr := repository.Branch(ctx, session.ID, "")
+	require.NoError(t, branchErr)
+
+	for index := range branch {
+		assert.NotEqual(t, database.EntryTypeCompaction, branch[index].Type)
+	}
 }
 
 func TestRuntime_CompactSessionRejectsEmptySummary(t *testing.T) {
@@ -332,6 +383,96 @@ func TestRuntime_CompactSessionRejectsEmptySummary(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "compaction summary was empty")
 	assert.Nil(t, entry)
+}
+
+func TestRuntime_CompactSessionRetriesTruncatedSummaryWithSmallerInput(t *testing.T) {
+	t.Parallel()
+
+	client := &truncatedCompactionCompleter{truncateCalls: 1, requests: nil}
+	runtime, repository := newCompactionRuntimeForTailPolicy(t, client, 64_000)
+	session := appendTruncationRetryHistory(t, repository)
+
+	entry, err := runtime.CompactSession(context.Background(), session.ID, testRuntimeCWD)
+
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	require.GreaterOrEqual(t, len(client.requests), 4)
+	initialMessages := len(client.requests[0].Messages)
+	assert.Greater(t, initialMessages, len(client.requests[1].Messages))
+	assert.Greater(t, initialMessages, len(client.requests[2].Messages))
+
+	for _, request := range client.requests {
+		assert.Equal(t, client.requests[0].MaxTokens, request.MaxTokens)
+	}
+
+	assert.NotContains(t, entry.Summary, "incomplete summary")
+}
+
+func TestRuntime_CompactSessionDoesNotPersistRepeatedlyTruncatedSummary(t *testing.T) {
+	t.Parallel()
+
+	client := &truncatedCompactionCompleter{truncateCalls: 2, requests: nil}
+	runtime, repository := newCompactionRuntimeForTailPolicy(t, client, 64_000)
+	session := appendTruncationRetryHistory(t, repository)
+
+	entry, err := runtime.CompactSession(context.Background(), session.ID, testRuntimeCWD)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, compaction.ErrSummaryOutputTruncated)
+	assert.Nil(t, entry)
+	require.Len(t, client.requests, 2)
+
+	branch, branchErr := repository.Branch(context.Background(), session.ID, "")
+	require.NoError(t, branchErr)
+
+	for index := range branch {
+		assert.NotEqual(t, database.EntryTypeCompaction, branch[index].Type)
+	}
+}
+
+func appendTruncationRetryHistory(
+	t *testing.T,
+	repository *database.SessionRepository,
+) *database.SessionEntity {
+	t.Helper()
+
+	session, err := repository.CreateSession(context.Background(), testRuntimeCWD, t.Name(), "")
+	require.NoError(t, err)
+
+	var parentID *string
+	for index := range 4 {
+		entry := appendRuntimeTestMessage(t, repository, session.ID, parentID, database.RoleUser,
+			fmt.Sprintf("old goal %d %s", index, strings.Repeat("detail ", 200)))
+		parentID = &entry.ID
+		entry = appendRuntimeTestMessage(t, repository, session.ID, parentID, database.RoleAssistant,
+			fmt.Sprintf("old result %d", index))
+		parentID = &entry.ID
+	}
+
+	entry := appendRuntimeTestMessage(t, repository, session.ID, parentID, database.RoleUser, "recent goal")
+	appendRuntimeTestMessage(t, repository, session.ID, &entry.ID, database.RoleAssistant, "recent result")
+
+	return session
+}
+
+type truncatedCompactionCompleter struct {
+	requests      []*assistant.CompletionRequest
+	truncateCalls int
+}
+
+func (client *truncatedCompactionCompleter) Complete(
+	_ context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	client.requests = append(client.requests, request)
+	if len(client.requests) <= client.truncateCalls {
+		result := testCompletionResult("incomplete summary")
+		result.FinishReason = llm.FinishReasonLength
+
+		return result, nil
+	}
+
+	return testCompletionResult(structuredTestSummary("complete summary")), nil
 }
 
 func TestRuntime_CompactSessionPreservesFileOperations(t *testing.T) {
@@ -382,7 +523,7 @@ func TestRuntime_CompactSessionPreservesFileOperations(t *testing.T) {
 	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
 
 	require.NoError(t, err)
-	assert.Contains(t, entry.Summary, "File operations preserved during compaction:")
+	assert.Contains(t, entry.Summary, "### Librecode file operations")
 	assert.Contains(t, entry.Summary, "read: internal/assistant/runtime.go")
 	assert.Contains(t, entry.Summary, "modified: internal/assistant/new_file.go")
 	assert.Contains(t, entry.Summary, "modified: internal/assistant/runtime.go")
@@ -409,6 +550,9 @@ func newCompactionRuntimeForTailPolicy(
 
 	_, repository := newTestRuntimeWithClient(t, client)
 	runtimeConfig := testConfig()
+	runtimeConfig.Context.ProviderReserveTokens = 0
+	runtimeConfig.Context.SafetyMarginTokens = 0
+	runtimeConfig.Context.OutputReserveTokens = 80
 
 	return assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
 		opts.Config = runtimeConfig
@@ -523,7 +667,12 @@ func (client *compactionCompleter) Complete(
 		text = "summary: " + strings.TrimSpace(request.Messages[0].Content)
 	}
 
+	if strings.TrimSpace(text) != "" {
+		text = structuredTestSummary(text)
+	}
+
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         text,
 		Thinking:     nil,
