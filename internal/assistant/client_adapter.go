@@ -382,12 +382,22 @@ func toolEventPointerFromLLMPart(part *llm.Part) *ToolEvent {
 }
 
 func usagePointerFromLLMUsage(value any) *model.TokenUsage {
-	usage, ok := value.(llm.Usage)
-	if !ok || !usage.HasAny() {
+	var usage *llm.Usage
+
+	switch typed := value.(type) {
+	case llm.Usage:
+		usage = &typed
+	case *llm.Usage:
+		usage = typed
+	default:
 		return nil
 	}
 
-	converted := llmconv.UsageToModel(&usage)
+	if usage == nil || !usage.HasAny() {
+		return nil
+	}
+
+	converted := llmconv.UsageToModel(usage)
 
 	return &converted
 }

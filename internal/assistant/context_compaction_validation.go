@@ -52,7 +52,8 @@ func (runtime *Runtime) validateCompactionResult(
 
 	registry, err := newToolRegistry(cwd, runtime.extensions)
 	if err != nil {
-		return err
+		return oops.In("assistant").Code("compact_validation_tools").
+			Wrapf(err, "create tool registry for compacted context validation")
 	}
 
 	request := &CompletionRequest{

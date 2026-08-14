@@ -113,6 +113,15 @@ func TestSystemPromptSnapshots(t *testing.T) {
 	assert.Contains(t, repair, "add no facts")
 }
 
+func TestSystemPromptPreservesExactNonDelimiterText(t *testing.T) {
+	t.Parallel()
+
+	prompt := SystemPrompt("go test ./... && echo '<ok>'", "path with 'quotes' & symbols")
+
+	assert.Contains(t, prompt, "go test ./... && echo '<ok>'")
+	assert.Contains(t, prompt, "path with 'quotes' & symbols")
+}
+
 func TestSystemPromptEscapesInjectedDelimiters(t *testing.T) {
 	t.Parallel()
 

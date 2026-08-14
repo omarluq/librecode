@@ -21,7 +21,7 @@ func TestGroupsFromMessagesKeepsToolResultsWithTurn(t *testing.T) {
 		testGroupMessage(database.RoleUser, "two"),
 		testGroupMessage(database.RoleAssistant, "done"),
 	}
-	groups := GroupsFromMessages(messages, []string{"1", "2", "3", "4", "5", "6"}, func(string) int { return 1 })
+	groups := GroupsFromMessages(messages, []string{"1", "2", "3", "4", "5", "6"})
 
 	require.Len(t, groups, 2)
 	assert.Len(t, groups[0].Messages, 4)
@@ -43,6 +43,26 @@ func TestPartitionRejectsInvalidGroups(t *testing.T) {
 		Messages: []database.MessageEntity{orphan}, Tokens: 1,
 	}}, 100, MaxChunksPerReductionRound)
 	require.Error(t, err)
+
+	valid := newTestSemanticGroup("valid", 1)
+	invalid := newTestSemanticGroup("invalid", 0)
+	_, err = Partition([]SemanticGroup{valid, invalid}, 100, MaxChunksPerReductionRound)
+	require.ErrorContains(t, err, "index 1")
+}
+
+func TestPackChunkDoesNotDropGroups(t *testing.T) {
+	t.Parallel()
+
+	groups := []SemanticGroup{
+		newTestSemanticGroup("one", 1),
+		newTestSemanticGroup("two", 0),
+	}
+	chunk, nextIndex := packChunk(groups, 0, 1)
+
+	assert.Equal(t, 2, nextIndex)
+	require.Len(t, chunk.Groups, 2)
+	require.Len(t, chunk.Messages, 2)
+	assert.Equal(t, "two", chunk.Messages[1].Content)
 }
 
 func TestPartition(t *testing.T) {

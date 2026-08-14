@@ -24,6 +24,7 @@ func (runtime *Runtime) emitProviderRequest(ctx context.Context, request *Comple
 	payload.SessionID = request.SessionID
 	payload.ThinkingLevel = request.ThinkingLevel
 	payload.Attempt = attempt
+	payload.MaxTokens = request.MaxTokens
 
 	if runtime.extensions == nil {
 		return
@@ -50,6 +51,7 @@ func (runtime *Runtime) emitProviderResponse(
 
 	payload := lifecyclepayload.ProviderResponsePayload(&lifecyclepayload.ProviderResponse{
 		FinishReason:   result.FinishReason,
+		Termination:    result.Termination,
 		Usage:          result.Usage,
 		API:            request.Model.API,
 		ModelID:        request.Model.ID,

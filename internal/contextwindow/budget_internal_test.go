@@ -47,6 +47,33 @@ func TestBudgetUsageWithReservesAndValidation(t *testing.T) {
 	assert.Contains(t, err.Error(), "model context preflight failed")
 }
 
+func TestUsageWithBudgetClonesBreakdownBeforeAddingDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	usage := model.TokenUsage{
+		Breakdown: map[string]int{"history": 42}, Provenance: model.UsageLocalEstimate,
+		TopContributors: nil, ContextWindow: 0, ContextTokens: 0, InputTokens: 0, OutputTokens: 0,
+	}
+	budget := Budget{
+		InputTokens:       20,
+		ContextWindow:     100,
+		UsableInput:       70,
+		OutputReserve:     10,
+		ToolSchemaReserve: 5,
+		ProviderReserve:   5,
+		SafetyMargin:      10,
+	}
+
+	enriched := budget.UsageWithBudget(&usage)
+
+	assert.Equal(t, 42, enriched.Breakdown["history"])
+	assert.Equal(t, 10, enriched.Breakdown["reserve_output"])
+	assert.Equal(t, map[string]int{"history": 42}, usage.Breakdown)
+
+	enriched.Breakdown["history"] = 99
+	assert.Equal(t, 42, usage.Breakdown["history"])
+}
+
 func TestBudgetDefaultsAndReconstruction(t *testing.T) {
 	t.Parallel()
 

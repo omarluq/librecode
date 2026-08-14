@@ -414,6 +414,12 @@ func TestAdapterNilAndFallbackHelpers(t *testing.T) {
 
 	emptyUsage := llm.EmptyUsage()
 	assert.Nil(t, usagePointerFromLLMUsage(&emptyUsage))
+	assert.Nil(t, usagePointerFromLLMUsage((*llm.Usage)(nil)))
+
+	usage := llm.EmptyUsage()
+	usage.InputTokens = 3
+	assert.Equal(t, 3, usagePointerFromLLMUsage(usage).InputTokens)
+	assert.Equal(t, 3, usagePointerFromLLMUsage(&usage).InputTokens)
 
 	modelRef := modelFromLLMRef(nil)
 	assert.Empty(t, modelRef.ID)

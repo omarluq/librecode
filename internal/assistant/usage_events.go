@@ -2,6 +2,8 @@ package assistant
 
 import (
 	"context"
+	"maps"
+	"slices"
 
 	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/model"
@@ -25,15 +27,16 @@ func (runtime *Runtime) emitUsageEvent(
 		return
 	}
 
+	usageSnapshot := cloneTokenUsage(usage)
 	emitStreamEvent(onEvent, StreamEvent{
 		ToolCallEvent: nil,
 		ToolEvent:     nil,
-		Usage:         usage,
+		Usage:         usageSnapshot,
 		Kind:          kind,
 		Text:          "",
 	})
 
-	payload := lifecyclepayload.TokenUsage(usage)
+	payload := lifecyclepayload.TokenUsage(usageSnapshot)
 	if kind == StreamEventUsageSnapshot {
 		payload["snapshot"] = true
 	}
@@ -43,4 +46,16 @@ func (runtime *Runtime) emitUsageEvent(
 			runtime.logger.Debug("emit usage extension event failed", "error", err)
 		}
 	}
+}
+
+func cloneTokenUsage(usage *model.TokenUsage) *model.TokenUsage {
+	if usage == nil {
+		return nil
+	}
+
+	cloned := *usage
+	cloned.Breakdown = maps.Clone(usage.Breakdown)
+	cloned.TopContributors = slices.Clone(usage.TopContributors)
+
+	return &cloned
 }

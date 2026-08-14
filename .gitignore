@@ -20,6 +20,7 @@ __pycache__/
 /.gocache/
 /.gomodcache/
 /.tmp/
+/.cache/
 
 # IDE files
 .idea/

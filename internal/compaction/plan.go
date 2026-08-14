@@ -2,7 +2,6 @@ package compaction
 
 import (
 	"fmt"
-	"html"
 	"slices"
 	"strings"
 	"time"
@@ -105,7 +104,7 @@ func PlanBranch(
 		FileOperations:      CollectFileOperations(branch[:cutPoint.firstKeptEntryIndex]),
 		ValidationRecords:   CollectValidationRecords(branch[:cutPoint.firstKeptEntryIndex]),
 		ActiveWorkRecords:   CollectActiveWorkRecords(branch[:cutPoint.firstKeptEntryIndex]),
-		SummaryGroups:       GroupsFromMessages(messages, summarizedIDs, countTokens),
+		SummaryGroups:       GroupsFromMessages(messages, summarizedIDs),
 		FirstKeptEntryID:    firstKeptEntryID,
 		TokensBefore:        BranchTokens(branch, countTokens),
 		FirstKeptEntryIndex: cutPoint.firstKeptEntryIndex,
@@ -159,7 +158,7 @@ func PlanBranchFromFirstKept(
 		FileOperations:      CollectFileOperations(branch[:firstKeptEntryIndex]),
 		ValidationRecords:   CollectValidationRecords(branch[:firstKeptEntryIndex]),
 		ActiveWorkRecords:   CollectActiveWorkRecords(branch[:firstKeptEntryIndex]),
-		SummaryGroups:       GroupsFromMessages(messages, summarizedIDs, countTokens),
+		SummaryGroups:       GroupsFromMessages(messages, summarizedIDs),
 		TokensBefore:        BranchTokens(branch, countTokens),
 		FirstKeptEntryIndex: firstKeptEntryIndex,
 	}, nil
@@ -597,12 +596,19 @@ func baseSystemPrompt(previousSummary string) string {
 		return summaryPrompt
 	}
 
-	return fmt.Sprintf(updatePrompt, html.EscapeString(previousSummary))
+	return fmt.Sprintf(updatePrompt, neutralizePromptDelimiters(previousSummary, "checkpoint"))
 }
 
 func splitTurnPromptSection(splitTurnSummary string) string {
 	return strings.TrimSpace(`Additional split-turn context:
 <split_turn_summary>
-` + html.EscapeString(strings.TrimSpace(splitTurnSummary)) + `
+` + neutralizePromptDelimiters(strings.TrimSpace(splitTurnSummary), "split_turn_summary") + `
 </split_turn_summary>`)
+}
+
+func neutralizePromptDelimiters(content, tag string) string {
+	return strings.NewReplacer(
+		"<"+tag+">", "&lt;"+tag+"&gt;",
+		"</"+tag+">", "&lt;/"+tag+"&gt;",
+	).Replace(content)
 }

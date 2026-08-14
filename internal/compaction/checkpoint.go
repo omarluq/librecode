@@ -9,7 +9,10 @@ import (
 const (
 	checkpointCodeDuplicate = "duplicate"
 	checkpointCodeEmpty     = "empty"
+	checkpointCodeMissing   = "missing"
 	checkpointCodeOrder     = "order"
+	checkpointCodePrefix    = "prefix"
+	checkpointCodeReserved  = "reserved"
 
 	checkpointHeadingsText = `Goal
 User constraints and preferences
@@ -74,7 +77,7 @@ func ValidateCheckpoint(text string) error {
 
 func validateNonHeadingLine(line string, wanted int, headings []string, hasBullet *bool) error {
 	if strings.HasPrefix(line, "### Librecode ") {
-		return &CheckpointStructureError{Code: "reserved", Heading: strings.TrimPrefix(line, "### ")}
+		return &CheckpointStructureError{Code: checkpointCodeReserved, Heading: strings.TrimPrefix(line, "### ")}
 	}
 
 	if strings.HasPrefix(line, "## ") {
@@ -82,7 +85,7 @@ func validateNonHeadingLine(line string, wanted int, headings []string, hasBulle
 	}
 
 	if wanted == 0 && strings.TrimSpace(line) != "" {
-		return &CheckpointStructureError{Code: "prefix", Heading: headings[0]}
+		return &CheckpointStructureError{Code: checkpointCodePrefix, Heading: headings[0]}
 	}
 
 	if wanted > 0 && strings.HasPrefix(strings.TrimSpace(line), "- ") {
@@ -116,7 +119,7 @@ func validateHeading(
 
 func validateCheckpointEnd(wanted int, hasBullet bool, headings []string) error {
 	if wanted != len(headings) {
-		return &CheckpointStructureError{Code: "missing", Heading: headings[wanted]}
+		return &CheckpointStructureError{Code: checkpointCodeMissing, Heading: headings[wanted]}
 	}
 
 	if !hasBullet {

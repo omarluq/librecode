@@ -28,6 +28,7 @@ const (
 	EntryIDKey            = "entry_id"
 	ErrorKey              = "error"
 	InputTokensKey        = "input_tokens"
+	MaxTokensKey          = "max_tokens"
 	ModelKey              = "model"
 	OutputTokensKey       = "output_tokens"
 	ParentEntryIDKey      = "parent_entry_id"
@@ -41,6 +42,7 @@ const (
 	SessionIDKey          = "session_id"
 	SummaryKey            = "summary"
 	TextKey               = "text"
+	TerminationKey        = "termination"
 	TokensBeforeKey       = "tokens_before"
 	ToolErrorKey          = "error"
 	ToolNameKey           = "name"
@@ -81,11 +83,13 @@ type ProviderRequest struct {
 	SessionID     string
 	ThinkingLevel string
 	Attempt       int
+	MaxTokens     int
 }
 
 // ProviderResponse describes after-provider-response lifecycle payload metadata.
 type ProviderResponse struct {
 	FinishReason   llm.FinishReason
+	Termination    llm.TerminationMetadata
 	API            string
 	ModelID        string
 	Provider       string
@@ -215,7 +219,7 @@ func ContextBuild(sessionID, cwd string, base *contextwindow.Base, result *conte
 		"contributions":           []any{},
 		"topContributors":         TokenContributors(result.Usage.TopContributors),
 		"max_contribution_tokens": contextwindow.ContributionMaxTokens,
-		"extension_tokens_used":   0,
+		"extension_tokens_used":   extensionTokensUsed(result),
 		"extension_tokens_limit":  contributionTokenLimit(result),
 		"system_tokens":           base.SystemTokens,
 		"skill_tokens":            base.SkillTokens,
@@ -223,6 +227,15 @@ func ContextBuild(sessionID, cwd string, base *contextwindow.Base, result *conte
 		UsageKey:                  TokenUsage(&result.Usage),
 		"model_facing_roles":      ModelFacingRoleCounts(base.Messages),
 	}
+}
+
+func extensionTokensUsed(result *contextwindow.BuildResult) int {
+	used := 0
+	for index := range result.Contributions {
+		used += result.Contributions[index].Tokens
+	}
+
+	return used
 }
 
 func contributionTokenLimit(result *contextwindow.BuildResult) int {
@@ -306,6 +319,7 @@ func ProviderRequestPayload(request *ProviderRequest) map[string]any {
 		APIKey:             request.API,
 		AttemptKey:         request.Attempt,
 		ProviderHeadersKey: request.Headers,
+		MaxTokensKey:       request.MaxTokens,
 		ModelKey:           request.ModelID,
 		ProviderKey:        request.Provider,
 		SessionIDKey:       request.SessionID,
@@ -321,13 +335,18 @@ func ProviderResponsePayload(response *ProviderResponse) map[string]any {
 	}
 
 	return map[string]any{
-		APIKey:             response.API,
-		AttemptKey:         response.Attempt,
-		ModelKey:           response.ModelID,
-		ProviderKey:        response.Provider,
-		SessionIDKey:       response.SessionID,
-		TextKey:            response.Text,
-		"finish_reason":    string(response.FinishReason),
+		APIKey:          response.API,
+		AttemptKey:      response.Attempt,
+		ModelKey:        response.ModelID,
+		ProviderKey:     response.Provider,
+		SessionIDKey:    response.SessionID,
+		TextKey:         response.Text,
+		"finish_reason": string(response.FinishReason),
+		TerminationKey: map[string]any{
+			"provider_status":        response.Termination.ProviderStatus,
+			"provider_finish_reason": response.Termination.ProviderFinishReason,
+			"incomplete_reason":      response.Termination.IncompleteReason,
+		},
 		"thinking_count":   response.ThinkingCount,
 		"tool_event_count": response.ToolEventCount,
 		UsageKey:           TokenUsage(&response.Usage),

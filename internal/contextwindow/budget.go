@@ -4,6 +4,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/config"
+	"github.com/omarluq/librecode/internal/mapsutil"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/units"
 )
@@ -79,9 +80,7 @@ func (budget Budget) UsageWithBudget(usage *model.TokenUsage) model.TokenUsage {
 	result.ContextTokens = budget.InputTokens
 
 	result.InputTokens = budget.InputTokens
-	if result.Breakdown == nil {
-		result.Breakdown = map[string]int{}
-	}
+	result.Breakdown = mapsutil.CloneOrEmpty(usage.Breakdown)
 
 	result.Breakdown["reserve_output"] = budget.OutputReserve
 	result.Breakdown["reserve_tools"] = budget.ToolSchemaReserve

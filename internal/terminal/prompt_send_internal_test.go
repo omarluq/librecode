@@ -817,6 +817,12 @@ func waitForPromptRequest(t *testing.T, client *terminalPromptClient) *assistant
 func readPromptAsyncEvent(t *testing.T, app *App) *asyncEvent {
 	t.Helper()
 
+	return readPromptAsyncEventWithin(t, app, 5*time.Second)
+}
+
+func readPromptAsyncEventWithin(t *testing.T, app *App, timeout time.Duration) *asyncEvent {
+	t.Helper()
+
 	var raw tcell.Event
 
 	require.Eventually(t, func() bool {
@@ -826,7 +832,7 @@ func readPromptAsyncEvent(t *testing.T, app *App) *asyncEvent {
 		default:
 			return false
 		}
-	}, 5*time.Second, 10*time.Millisecond, "timed out waiting for async event")
+	}, timeout, 10*time.Millisecond, "timed out waiting for async event")
 
 	interrupt, matched := raw.(*tcell.EventInterrupt)
 	require.Truef(t, matched, "event = %T, want *tcell.EventInterrupt", raw)

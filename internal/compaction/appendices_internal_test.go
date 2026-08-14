@@ -112,6 +112,33 @@ func TestAppendixIndependentTokenBoundsAndNewestRetention(t *testing.T) {
 	}
 }
 
+func TestAppendBoundedSectionOmitsMarkerWhenItCannotFit(t *testing.T) {
+	t.Parallel()
+
+	heading := "### nearly full"
+	limit := contextwindow.EstimateTokens(heading)
+	sections := appendBoundedSection(nil, heading, []string{"- omitted"}, limit)
+
+	require.Len(t, sections, 1)
+	assert.LessOrEqual(t, contextwindow.EstimateTokens(sections[0]), limit)
+	assert.NotContains(t, sections[0], "older records omitted")
+}
+
+func TestAppendBoundedSectionKeepsContiguousNewestSuffix(t *testing.T) {
+	t.Parallel()
+
+	heading := "### records"
+	newest := "- newest"
+	marker := "- ... 2 older records omitted"
+	limit := contextwindow.EstimateTokens(heading) + contextwindow.EstimateTokens(newest) +
+		contextwindow.EstimateTokens(marker)
+	sections := appendBoundedSection(nil, heading, []string{"- tiny-old", strings.Repeat("x", 100), newest}, limit)
+
+	require.Len(t, sections, 1)
+	assert.Contains(t, sections[0], newest)
+	assert.NotContains(t, sections[0], "tiny-old")
+}
+
 func TestAppendDeterministicStateReplacesStaleAppendices(t *testing.T) {
 	t.Parallel()
 

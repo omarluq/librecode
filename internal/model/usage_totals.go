@@ -17,14 +17,14 @@ type UsageTotals struct {
 }
 
 // UsageTotalsFromTokenUsage converts one provider usage observation into
-// cumulative usage. Reported distinguishes an explicit zero provider report
-// from absent usage; positive legacy values remain compatible.
+// cumulative usage. Reported preserves whether the source usage was explicitly
+// reported by a provider, including a zero-token report.
 func UsageTotalsFromTokenUsage(usage *TokenUsage) (UsageTotals, error) {
 	cumulative := UsageTotals{
 		InputTokens:        int64(usage.InputTokens),
 		OutputTokens:       int64(usage.OutputTokens),
 		ProviderRoundTrips: 0,
-		Reported:           usage.Reported() || usage.InputTokens > 0 || usage.OutputTokens > 0,
+		Reported:           usage.Reported(),
 	}
 	if err := cumulative.Validate(); err != nil {
 		return UsageTotals{}, err

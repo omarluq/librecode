@@ -297,8 +297,10 @@ func TestRuntime_ProviderContextOverflowRecoveryErrorPaths(t *testing.T) {
 			contextWindow: 200_000,
 		},
 		{
-			name:          "wraps rebuilt budget failure",
-			client:        newOverflowSummaryCompleter(strings.Repeat("summary ", 30_000), nil),
+			name: "wraps rebuilt budget failure",
+			client: newOverflowSummaryCompleter(
+				structuredTestSummary(strings.Repeat("summary ", 30_000)), nil,
+			),
 			wantCode:      "context_overflow_compact",
 			contextWindow: 20_000,
 		},
@@ -340,6 +342,13 @@ func TestRuntime_ProviderOverflowRecoveryInputGuards(t *testing.T) {
 			name: "nil nested input",
 			call: func() error {
 				return runtime.ProviderOverflowRecoveryNilBuildForTest(context.Background())
+			},
+			wantCode: recoveryInputCode,
+		},
+		{
+			name: "nil request",
+			call: func() error {
+				return runtime.ProviderOverflowRecoveryNilRequestForTest(context.Background())
 			},
 			wantCode: recoveryInputCode,
 		},

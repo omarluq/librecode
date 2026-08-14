@@ -45,8 +45,8 @@ func TestCompactSessionStartsAsyncWork(t *testing.T) {
 	require.Eventually(t, client.readyClosed, 3*time.Second, 10*time.Millisecond)
 	assert.True(t, app.compacting)
 
-	client.finish("summary of compacted work", nil)
-	assertCompactDoneEventHasUsage(t, readPromptAsyncEvent(t, app))
+	client.finish(terminalStructuredSummary("summary of compacted work"), nil)
+	assertCompactDoneEventHasUsage(t, readPromptAsyncEventWithin(t, app, time.Minute))
 }
 
 func TestPostCompactDoneAllowsNilUsage(t *testing.T) {
@@ -427,6 +427,15 @@ type blockingTerminalClient struct {
 type blockingTerminalResult struct {
 	err     error
 	summary string
+}
+
+func terminalStructuredSummary(goal string) string {
+	return "## Goal\n- " + goal +
+		"\n## User constraints and preferences\n- None" +
+		"\n## Completed work\n- None\n## Work in progress\n- None" +
+		"\n## Files changed/read\n- None\n## Commands and validation\n- None" +
+		"\n## Decisions\n- None\n## Errors and blockers\n- None" +
+		"\n## Exact next steps\n- None"
 }
 
 func newBlockingTerminalClient() *blockingTerminalClient {

@@ -212,7 +212,12 @@ func buildAnthropicPayload(request *CompletionRequest, messages []map[string]any
 	// temperature unless/until librecode exposes an explicit user setting.
 	maxTokens := minPositive(request.Request.Model.MaxTokens, anthropicDefaultMaxTokens)
 	if request.Request.MaxTokens > 0 {
-		maxTokens = request.Request.MaxTokens
+		maxTokenLimit := request.Request.Model.MaxTokens
+		if maxTokenLimit <= 0 {
+			maxTokenLimit = anthropicDefaultMaxTokens
+		}
+
+		maxTokens = minPositive(request.Request.MaxTokens, maxTokenLimit)
 	}
 
 	payload := map[string]any{
