@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/samber/oops"
@@ -139,16 +140,17 @@ func TestCompleteOpenAIChatContinuesTextResponseWhenCheckpointReturnsMessages(t 
 func TestCompleteOpenAIResponsesPreservesFinalTerminationMetadataAcrossLoop(t *testing.T) {
 	t.Parallel()
 
-	requestCount := 0
+	var requestCount atomic.Int32
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		requestCount++
+		count := requestCount.Add(1)
 
 		writer.Header().Set("Content-Type", "text/event-stream")
 
 		status := "incomplete"
 		details := `,"incomplete_details":{"reason":"max_output_tokens"}`
 
-		if requestCount == 2 {
+		if count == 2 {
 			status = statusCompleted
 			details = ""
 		}
@@ -164,7 +166,7 @@ func TestCompleteOpenAIResponsesPreservesFinalTerminationMetadataAcrossLoop(t *t
 	setTestRequestAPI(request, apiOpenAIResponses)
 	setTestRequestBaseURL(request, server.URL)
 	request.OnRoundCheckpoint = func(_ context.Context, _ *llm.CompletedRound) ([]llm.Message, error) {
-		if requestCount == 1 {
+		if requestCount.Load() == 1 {
 			return []llm.Message{llm.TextMessage(llm.RoleUser, "continue")}, nil
 		}
 
