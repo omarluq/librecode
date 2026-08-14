@@ -28,6 +28,12 @@ func (runtime *Runtime) emitUsageEvent(
 	}
 
 	usageSnapshot := cloneTokenUsage(usage)
+
+	payload := lifecyclepayload.TokenUsage(usageSnapshot)
+	if kind == StreamEventUsageSnapshot {
+		payload["snapshot"] = true
+	}
+
 	emitStreamEvent(onEvent, StreamEvent{
 		ToolCallEvent: nil,
 		ToolEvent:     nil,
@@ -35,11 +41,6 @@ func (runtime *Runtime) emitUsageEvent(
 		Kind:          kind,
 		Text:          "",
 	})
-
-	payload := lifecyclepayload.TokenUsage(usageSnapshot)
-	if kind == StreamEventUsageSnapshot {
-		payload["snapshot"] = true
-	}
 
 	if runtime.extensions != nil {
 		if err := runtime.extensions.Emit(ctx, lifecyclepayload.UsageKey, payload); err != nil {
