@@ -28,7 +28,24 @@ local lc = require("librecode")
 lc.on("session_before_compact", function(event)
   return {
     compaction = {
-      summary = "extension summary for " .. event.payload.first_kept_entry_id,
+      summary = [[## Goal
+- extension summary
+## User constraints and preferences
+- None
+## Completed work
+- None
+## Work in progress
+- None
+## Files changed/read
+- None
+## Commands and validation
+- None
+## Decisions
+- None
+## Errors and blockers
+- None
+## Exact next steps
+- Continue from ]] .. event.payload.first_kept_entry_id,
       details = { origin = "extension" },
     }
   }
@@ -125,6 +142,9 @@ func newCompactionRuntimeWithManagerWindow(
 	t.Helper()
 
 	runtimeConfig := testConfig()
+	runtimeConfig.Context.ProviderReserveTokens = 0
+	runtimeConfig.Context.SafetyMarginTokens = 0
+	runtimeConfig.Context.OutputReserveTokens = 80
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 

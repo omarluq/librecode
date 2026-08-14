@@ -87,10 +87,7 @@ func (runtime *Runtime) ProviderOverflowRecoveryNilInputForTest(ctx context.Cont
 // ProviderOverflowRecoveryNilBuildForTest exercises nested nil-input guards for external package tests.
 func (runtime *Runtime) ProviderOverflowRecoveryNilBuildForTest(ctx context.Context) error {
 	_, _, _, err := runtime.completeWithProviderOverflowRecovery(ctx, &providerOverflowRecoveryInput{
-		preparation:     nil,
-		build:           nil,
-		compactionEntry: nil,
-		onRetry:         nil,
+		onRetry: nil, preparation: nil, build: nil, compactionEntry: nil, recovery: nil,
 	})
 
 	return err
@@ -98,6 +95,8 @@ func (runtime *Runtime) ProviderOverflowRecoveryNilBuildForTest(ctx context.Cont
 
 func newZeroCompletionRequest(auth model.RequestAuth) *CompletionRequest {
 	return &CompletionRequest{
+		Identity:           emptyRequestIdentity(),
+		MaxTokens:          0,
 		OnEvent:            nil,
 		OnProviderObserve:  nil,
 		OnProviderResponse: nil,
@@ -112,6 +111,7 @@ func newZeroCompletionRequest(auth model.RequestAuth) *CompletionRequest {
 		Auth:               auth,
 		Messages:           nil,
 		Usage: model.TokenUsage{
+			Provenance:      "",
 			Breakdown:       nil,
 			TopContributors: nil,
 			ContextWindow:   0,
@@ -171,8 +171,7 @@ func (runtime *Runtime) ProviderOverflowRecoveryNilLineageForTest(ctx context.Co
 				SafetyMargin:      0,
 			},
 		},
-		compactionEntry: nil,
-		onRetry:         nil,
+		onRetry: nil, compactionEntry: nil, recovery: newProviderOverflowRecoveryState(),
 	})
 
 	return err
@@ -204,8 +203,7 @@ func (runtime *Runtime) ProviderOverflowRecoveryNonContextErrorForTest(ctx conte
 				SafetyMargin:      0,
 			},
 		},
-		compactionEntry: nil,
-		onRetry:         nil,
+		onRetry: nil, compactionEntry: nil, recovery: newProviderOverflowRecoveryState(),
 	})
 
 	return err

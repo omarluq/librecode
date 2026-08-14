@@ -336,7 +336,7 @@ func (runtime *Runtime) Prompt(ctx context.Context, request *PromptRequest) (res
 	steeringOpen = runtime.closePromptSteering(activeSession.ID, userEntry.ID, request, steeringOpen)
 
 	runtime.dispatchMessageAppend(ctx, assistantEntry)
-	turnLifecycle.dispatchEnd(ctx, assistantEntry.ID, cached, bundle.Usage)
+	turnLifecycle.dispatchEnd(ctx, assistantEntry.ID, cached, &bundle.Usage)
 	runtime.maybeAutoCompactAfterResponse(
 		ctx,
 		activeSession.ID,

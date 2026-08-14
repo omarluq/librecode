@@ -60,10 +60,12 @@ func TestRuntime_PersistCompletedRoundPreservesOrderAndUsage(t *testing.T) {
 	ctx := context.Background()
 	harness := newRoundPersistenceTestHarness(t, "checkpoint")
 
-	usage := llm.Usage{
-		Breakdown: nil, TopContributors: nil,
+	baseUsage := llm.Usage{
+		Provenance: "",
+		Breakdown:  nil, TopContributors: nil,
 		ContextWindow: 128_000, ContextTokens: 32_000, InputTokens: 11, OutputTokens: 7,
-	}.WithReported()
+	}
+	usage := baseUsage.WithReported()
 	lineage := newPromptLineage(harness.rootID)
 	entry, err := harness.runtime.persistCompletedRoundWithPersistence(
 		ctx, harness.sessionID, lineage, &llm.CompletedRound{
@@ -102,7 +104,7 @@ func TestRuntime_PersistCompletedRoundPreservesOrderAndUsage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, contextEntity.UsageAnchor)
 
-	expectedUsage := llmconv.UsageToModel(usage)
+	expectedUsage := llmconv.UsageToModel(&usage)
 	assert.Equal(t, expectedUsage.InputTokens, contextEntity.UsageAnchor.Usage.InputTokens)
 	assert.Equal(t, expectedUsage.OutputTokens, contextEntity.UsageAnchor.Usage.OutputTokens)
 }
@@ -139,7 +141,14 @@ func testRuntimeConfig() *config.Config {
 			ConnMaxLifetime: 0, BusyTimeout: 0,
 		},
 		Context: config.ContextConfig{
-			OutputReserveTokens: 0, ProviderReserveTokens: 0, SafetyMarginTokens: 0, PreflightEnabled: false,
+			CompactionProvider:          "",
+			CompactionModel:             "",
+			ExtensionContributionTokens: 0,
+			AutoCompactionThreshold:     0,
+			RetainedTailMaxTokens:       0,
+			SummaryOutputTokens:         0,
+			AutoCompactionEnabled:       false,
+			OutputReserveTokens:         0, ProviderReserveTokens: 0, SafetyMarginTokens: 0, PreflightEnabled: false,
 		},
 		Cache: config.CacheConfig{Enabled: false, Capacity: 0, TTL: 0},
 		Tasks: config.TaskRuntimeConfig{

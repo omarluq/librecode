@@ -17,23 +17,23 @@ type sessionViewState struct {
 	pendingParentID          *string
 	scopedEnabled            map[string]bool
 	promptHistoryDraft       string
-	promptHistoryDraftImages []imageAttachment
 	streamingThinkingText    string
 	streamingText            string
 	statusMessage            string
-	runningToolBlocks        []runningToolBlock
-	queuedMessages           []promptDraft
+	tokenUsage               model.TokenUsage
+	hiddenQueuedMessages     []promptDraft
+	promptHistoryDraftImages []imageAttachment
 	steeringMessages         []promptDraft
 	liveAgentCompletions     []chatMessage
 	promptHistory            []string
 	promptHistoryImages      [][]imageAttachment
-	hiddenQueuedMessages     []promptDraft
+	runningToolBlocks        []runningToolBlock
 	scopedOrder              []string
+	composerImages           []imageAttachment
+	queuedMessages           []promptDraft
 	settings                 sessionSettingsDocument
 	composerBuffer           tui.TextArea
-	composerImages           []imageAttachment
 	transcript               transcriptState
-	tokenUsage               model.TokenUsage
 	selection                mouseSelection
 	transcriptList           transcriptListSelection
 	streamedToolEvents       int
@@ -137,7 +137,7 @@ func cloneSessionViewState(view *sessionViewState) {
 	view.transcript.Streaming.LineCache = nil
 	view.runningToolBlocks = slices.Clone(view.runningToolBlocks)
 	view.liveAgentCompletions = slices.Clone(view.liveAgentCompletions)
-	view.tokenUsage = cloneTerminalUsage(view.tokenUsage)
+	view.tokenUsage = cloneTerminalUsage(&view.tokenUsage)
 	view.composerBuffer = cloneComposerBuffer(view.composerBuffer)
 	view.composerImages = cloneImageAttachments(view.composerImages)
 	view.promptHistory = slices.Clone(view.promptHistory)

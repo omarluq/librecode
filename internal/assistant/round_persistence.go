@@ -54,7 +54,7 @@ func (runtime *Runtime) persistCompletedRoundWithPersistence(
 	lineage.committedThinking += len(thinkingFromLLMParts(round.Assistant.Content))
 	lineage.committedTools += len(round.ToolResults)
 
-	lineage.latestRoundUsage = llmconv.UsageToModel(round.Usage)
+	lineage.latestRoundUsage = llmconv.UsageToModel(&round.Usage)
 	if lineage.progress != nil {
 		lineage.progress.commitCompletedRound(round, completedNestedTools)
 	}
@@ -67,7 +67,7 @@ func responseBundleFromCompletedRound(round *llm.CompletedRound) *responseBundle
 		return nil
 	}
 
-	usage := llmconv.UsageToModel(round.Usage)
+	usage := llmconv.UsageToModel(&round.Usage)
 
 	return &responseBundle{
 		Text:          textFromLLMParts(round.Assistant.Content),

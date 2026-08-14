@@ -3,6 +3,7 @@ package assistant_test
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,11 +83,13 @@ type steeringPreflightCompactionCompleter struct {
 	completionRequest  chan *assistant.CompletionRequest
 	allowCheckpoint    chan struct{}
 	checkpointMessages chan []llm.Message
+	summaryEnteredOnce sync.Once
 }
 
 func newSteeringPreflightCompactionCompleter() *steeringPreflightCompactionCompleter {
 	return &steeringPreflightCompactionCompleter{
 		summaryEntered:     make(chan struct{}),
+		summaryEnteredOnce: sync.Once{},
 		allowSummary:       make(chan struct{}),
 		completionRequest:  make(chan *assistant.CompletionRequest, 1),
 		allowCheckpoint:    make(chan struct{}),
@@ -99,11 +102,11 @@ func (client *steeringPreflightCompactionCompleter) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	if request.DisableTools {
-		close(client.summaryEntered)
+		client.summaryEnteredOnce.Do(func() { close(client.summaryEntered) })
 
 		select {
 		case <-client.allowSummary:
-			return testCompletionResult("summary made while steering was pending"), nil
+			return testCompletionResult(structuredTestSummary("steering pending")), nil
 		case <-ctx.Done():
 			return nil, oops.In("assistant_test").Code("compaction_canceled").Wrapf(ctx.Err(), "wait for summary")
 		}
@@ -170,7 +173,13 @@ func TestRuntime_PreflightCompactionDefersSteeringUntilRoundCheckpoint(t *testin
 
 	run := <-runStarted
 
-	<-client.summaryEntered
+	select {
+	case <-client.summaryEntered:
+	case promptErr := <-promptResult:
+		require.NoError(t, promptErr)
+		t.Fatal("prompt completed before entering compaction summary")
+	}
+
 	require.NoError(t, runtime.Steer(ctx, &assistant.SteeringRequest{
 		SessionID: run.SessionID,
 		RunID:     run.EntryID,
@@ -178,7 +187,14 @@ func TestRuntime_PreflightCompactionDefersSteeringUntilRoundCheckpoint(t *testin
 	}))
 	close(client.allowSummary)
 
-	completionRequest := <-client.completionRequest
+	var completionRequest *assistant.CompletionRequest
+	select {
+	case completionRequest = <-client.completionRequest:
+	case promptErr := <-promptResult:
+		require.NoError(t, promptErr)
+		t.Fatal("prompt completed before model completion")
+	}
+
 	for _, message := range completionRequest.Messages {
 		assert.NotContains(t, message.Content, "steer during compaction",
 			"steering accepted during compaction must wait for a completed-round checkpoint")
@@ -224,9 +240,8 @@ func newAutoCompactionTestRuntime(
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.ProviderReserveTokens = 0
 	runtimeConfig.Context.SafetyMarginTokens = 0
-	// Reserve one token so post-response compaction tests keep a stable output headroom
-	// and do not depend on off-by-one budget boundaries.
-	runtimeConfig.Context.OutputReserveTokens = 1
+	// Use the minimum viable summary reserve while keeping test budgets compact.
+	runtimeConfig.Context.OutputReserveTokens = 80
 
 	return assistant.NewRuntimeForTest(func(opts *assistant.RuntimeTestOptions) {
 		opts.Config = runtimeConfig

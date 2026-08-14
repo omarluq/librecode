@@ -102,7 +102,13 @@ func observeProviderRoundTrip(ctx context.Context) {
 	metrics.mu.Unlock()
 }
 
-func observeProviderUsage(ctx context.Context, usage model.TokenUsage) {
+func providerUsageObserver() func(context.Context, model.TokenUsage) {
+	return func(ctx context.Context, usage model.TokenUsage) {
+		observeProviderUsageValue(ctx, &usage)
+	}
+}
+
+func observeProviderUsageValue(ctx context.Context, usage *model.TokenUsage) {
 	metrics := runMetricsFromContext(ctx)
 	if metrics == nil {
 		return

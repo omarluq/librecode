@@ -520,7 +520,7 @@ func TestSendPromptInitializesPromptState(t *testing.T) {
 	app := newPromptSendTestApp(t, client)
 	parentID := ""
 	app.pendingParentID = &parentID
-	app.tokenUsage = model.TokenUsage{
+	app.tokenUsage = model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
@@ -718,7 +718,7 @@ func promptSendTestModelDefinition() model.Model {
 		BaseURL:          "https://example.invalid/v1",
 		Input:            []model.InputMode{model.InputText, model.InputImage},
 		Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
-		ContextWindow:    1000,
+		ContextWindow:    64_000,
 		MaxTokens:        0,
 		Reasoning:        false,
 	}
@@ -738,10 +738,17 @@ func promptSendTestConfig() *config.Config {
 			},
 		},
 		Context: config.ContextConfig{
-			OutputReserveTokens:   0,
-			ProviderReserveTokens: 0,
-			SafetyMarginTokens:    0,
-			PreflightEnabled:      false,
+			CompactionProvider:          "",
+			CompactionModel:             "",
+			ExtensionContributionTokens: 0,
+			AutoCompactionThreshold:     0,
+			RetainedTailMaxTokens:       0,
+			SummaryOutputTokens:         0,
+			AutoCompactionEnabled:       false,
+			OutputReserveTokens:         0,
+			ProviderReserveTokens:       0,
+			SafetyMarginTokens:          0,
+			PreflightEnabled:            false,
 		},
 		Models: config.ModelsConfig{
 			Discovery: config.ModelDiscoveryConfig{
@@ -781,7 +788,7 @@ func promptSendTestConfig() *config.Config {
 }
 
 func newTerminalCompletionResult(text string) *assistant.CompletionResult {
-	return &assistant.CompletionResult{
+	return &assistant.CompletionResult{Termination: llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         text,
 		Thinking:     nil,

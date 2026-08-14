@@ -1108,7 +1108,7 @@ func TestApplyPromptResponsePreservesLargerStreamedContextUsage(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.applyTokenUsage(&model.TokenUsage{
+	app.applyTokenUsage(&model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
@@ -1124,7 +1124,7 @@ func TestApplyPromptResponsePreservesLargerStreamedContextUsage(t *testing.T) {
 		Text:             "ok",
 		Thinking:         nil,
 		ToolEvents:       nil,
-		Usage: model.TokenUsage{
+		Usage: model.TokenUsage{Provenance: model.UsageProvenance(""),
 			Breakdown:       nil,
 			TopContributors: nil,
 			ContextWindow:   100_000,
@@ -1135,7 +1135,7 @@ func TestApplyPromptResponsePreservesLargerStreamedContextUsage(t *testing.T) {
 		Cached: false,
 	}, 0)
 
-	assert.Equal(t, model.TokenUsage{
+	assert.Equal(t, model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,

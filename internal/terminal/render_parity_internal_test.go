@@ -70,7 +70,7 @@ func TestRenderParityStatuslineTokenUsage(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.tokenUsage = model.TokenUsage{
+	app.tokenUsage = model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1000,
@@ -229,10 +229,17 @@ func renderParityConfig() *config.Config {
 			},
 		},
 		Context: config.ContextConfig{
-			OutputReserveTokens:   0,
-			ProviderReserveTokens: 0,
-			SafetyMarginTokens:    0,
-			PreflightEnabled:      false,
+			CompactionProvider:          "",
+			CompactionModel:             "",
+			ExtensionContributionTokens: 0,
+			AutoCompactionThreshold:     0,
+			RetainedTailMaxTokens:       0,
+			SummaryOutputTokens:         0,
+			AutoCompactionEnabled:       false,
+			OutputReserveTokens:         0,
+			ProviderReserveTokens:       0,
+			SafetyMarginTokens:          0,
+			PreflightEnabled:            false,
 		},
 		Models: config.ModelsConfig{
 			Discovery: config.ModelDiscoveryConfig{

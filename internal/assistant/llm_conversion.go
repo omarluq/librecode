@@ -28,7 +28,8 @@ func llmRequestFromCompletionRequest(request *CompletionRequest) llm.Request {
 		Messages:        llmMessagesFromDatabase(request.Messages),
 		Tools:           llmToolDefinitionsFromRegistry(request.ToolRegistry, request.DisableTools),
 		Model:           llmModelRefFromModel(&request.Model),
-		Usage:           llmconv.UsageFromModel(request.Usage),
+		Usage:           llmconv.UsageFromModel(&request.Usage),
+		MaxTokens:       request.MaxTokens,
 		DisableTools:    request.DisableTools,
 	}
 }
@@ -135,6 +136,7 @@ func llmResponseFromCompletionResult(result *CompletionResult) llm.Response {
 	if result == nil {
 		return llm.Response{
 			FinishReason: llm.FinishReasonUnknown,
+			Termination:  llm.NewTerminationMetadata("", "", ""),
 			Content:      nil,
 			ToolCalls:    nil,
 			Usage:        llm.EmptyUsage(),
@@ -170,9 +172,10 @@ func llmResponseFromCompletionResult(result *CompletionResult) llm.Response {
 
 	return llm.Response{
 		FinishReason: completionResultFinishReason(result),
+		Termination:  result.Termination,
 		Content:      content,
 		ToolCalls:    nil,
-		Usage:        llmconv.UsageFromModel(result.Usage),
+		Usage:        llmconv.UsageFromModel(&result.Usage),
 	}
 }
 

@@ -117,6 +117,36 @@ end)
 	assert.Positive(t, client.request.Usage.Breakdown["extensions"])
 }
 
+func TestRuntime_ContextBuildRejectsAggregateExtensionContributionsAllOrNothing(t *testing.T) {
+	t.Parallel()
+
+	client := &capturingCompleter{request: nil}
+	runtime, _, manager := newTestRuntimeWithManager(t, client)
+	loadRuntimeExtension(t, manager, `
+local lc = require("librecode")
+lc.on("context_build", function(event)
+  event.payload.contributions = {
+    { name = "first", source = "aggregate-test", content = string.rep("a", 8192) },
+    { name = "second", source = "aggregate-test", content = string.rep("b", 8192) },
+    { name = "third", source = "aggregate-test", content = string.rep("c", 8192) },
+    { name = "fourth", source = "aggregate-test", content = string.rep("d", 8192) },
+    { name = "rejected", source = "aggregate-test", content = "x" },
+  }
+  return { payload = event.payload }
+end)
+`)
+
+	_, err := runtime.Prompt(context.Background(), newRuntimePromptRequest(testRuntimeCWD, "context", ""))
+
+	require.Error(t, err)
+	assert.Nil(t, client.request, "provider must not receive partially accepted extension context")
+	assert.Contains(t, err.Error(), "context contribution 4")
+	assert.Contains(t, err.Error(), "rejected")
+	assert.Contains(t, err.Error(), "aggregate-test")
+	assert.Contains(t, err.Error(), "after 8192 used")
+	assert.Contains(t, err.Error(), "limit is 8192 tokens")
+}
+
 func TestRuntime_ContextBuildRejectsOversizedExtensionContributions(t *testing.T) {
 	t.Parallel()
 
@@ -190,6 +220,8 @@ lc.on("context_build", function(event)
     tostring(breakdown.history ~= nil),
     tostring(breakdown.extensions ~= nil),
     tostring(event.payload.max_contribution_tokens ~= nil),
+    tostring(event.payload.extension_tokens_used == 0),
+    tostring(event.payload.extension_tokens_limit == 8192),
   }, ":")
 end)
 lc.register_command("context_seen", "context_seen", function()
@@ -203,5 +235,5 @@ end)
 
 	seen, err := manager.ExecuteCommand(context.Background(), "context_seen", "")
 	require.NoError(t, err)
-	assert.Equal(t, "true:true:true:true:true", seen)
+	assert.Equal(t, "true:true:true:true:true:true:true", seen)
 }

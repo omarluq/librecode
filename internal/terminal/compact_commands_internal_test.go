@@ -55,7 +55,7 @@ func TestPostCompactDoneAllowsNilUsage(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.compacting = true
 	app.activeCompaction = &activeCompactionState{Cancel: func() {}, ID: 9, QueuedStart: 0}
-	app.tokenUsage = model.TokenUsage{
+	app.tokenUsage = model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
@@ -187,8 +187,12 @@ func TestHandleCompactDoneStartsQueuedPrompt(t *testing.T) {
 	app.queuedMessages = []promptDraft{{Text: "queued after compact", Images: []imageAttachment{image}}}
 
 	app.applyCompactDone(context.Background(), &asyncEvent{
-		Response: nil, ToolCallEvent: nil, ToolEvent: nil, Usage: &model.TokenUsage{
+		Response:      nil,
+		ToolCallEvent: nil,
+		ToolEvent:     nil,
+		Usage: &model.TokenUsage{
 			Breakdown:       nil,
+			Provenance:      model.UsageProvenance(""),
 			TopContributors: nil,
 			ContextWindow:   100_000,
 			ContextTokens:   10_000,

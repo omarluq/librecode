@@ -29,7 +29,7 @@ func TestRunMetricsCollectsUsageAndNestedTrace(t *testing.T) {
 	ctx := WithRunMetrics(t.Context(), metrics)
 	observeProviderRoundTrip(ctx)
 	observeProviderRoundTrip(ctx)
-	observeProviderUsage(ctx, metricsTokenUsage(13, 5))
+	providerUsageObserver()(ctx, metricsTokenUsage(13, 5))
 
 	metrics.ObserveStreamEvent(metricsStart(outerCallID, "", 0))
 	metrics.ObserveStreamEvent(metricsStart(nestedCallID, outerCallID, 1))
@@ -62,7 +62,7 @@ func TestRunMetricsContextDefaultsAndNilSafety(t *testing.T) {
 	assert.Nil(t, runMetricsFromContext(ctx))
 
 	observeProviderRoundTrip(ctx)
-	observeProviderUsage(ctx, metricsTokenUsage(9, 4))
+	providerUsageObserver()(ctx, metricsTokenUsage(9, 4))
 
 	var nilMetrics *RunMetrics
 
@@ -138,7 +138,8 @@ func TestRunMetricsRejectsMalformedToolTraces(t *testing.T) {
 
 func metricsTokenUsage(input, output int) model.TokenUsage {
 	return model.TokenUsage{
-		Breakdown: nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
+		Provenance: "",
+		Breakdown:  nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
 		InputTokens: input, OutputTokens: output,
 	}
 }
@@ -207,9 +208,9 @@ func TestRunMetricsAccumulatesUsageAndObservesOutsideLock(t *testing.T) {
 	})
 
 	observeProviderRoundTrip(ctx)
-	observeProviderUsage(ctx, metricsTokenUsage(3, 2))
+	providerUsageObserver()(ctx, metricsTokenUsage(3, 2))
 	observeProviderRoundTrip(ctx)
-	observeProviderUsage(ctx, metricsTokenUsage(7, 5))
+	providerUsageObserver()(ctx, metricsTokenUsage(7, 5))
 
 	usageTotals, err := metrics.UsageTotals()
 	require.NoError(t, err)
@@ -227,7 +228,7 @@ func TestProviderResponseRoundsAccumulateWithoutOuterResponseDoubleCount(t *test
 	metrics := new(RunMetrics)
 	ctx := WithRunMetrics(t.Context(), metrics)
 	request := providerHookTestRequest()
-	request.OnProviderResponse = observeProviderUsage
+	request.OnProviderResponse = providerUsageObserver()
 
 	observeProviderRoundTrip(ctx)
 	request.OnProviderResponse(ctx, metricsTokenUsage(3, 2))
@@ -235,6 +236,7 @@ func TestProviderResponseRoundsAccumulateWithoutOuterResponseDoubleCount(t *test
 	request.OnProviderResponse(ctx, metricsTokenUsage(7, 5))
 
 	new(Runtime).emitProviderResponse(ctx, request, 1, &CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         "",
 		Thinking:     nil,
@@ -262,14 +264,15 @@ func TestRunMetricsDistinguishesMissingAndReportedZeroUsage(t *testing.T) {
 	var observed bool
 
 	metrics.SetUsageTotalsObserver(func(model.UsageTotals) { observed = true })
-	observeProviderUsage(ctx, model.EmptyTokenUsage())
+	providerUsageObserver()(ctx, model.EmptyTokenUsage())
 
 	usageTotals, err := metrics.UsageTotals()
 	require.NoError(t, err)
 	assert.False(t, usageTotals.Reported)
 	assert.False(t, observed)
 
-	observeProviderUsage(ctx, model.EmptyTokenUsage().WithReported())
+	reportedUsage := model.EmptyTokenUsage()
+	providerUsageObserver()(ctx, reportedUsage.WithReported())
 
 	usageTotals, err = metrics.UsageTotals()
 	require.NoError(t, err)
@@ -289,15 +292,15 @@ func TestRunMetricsRejectsInvalidUsage(t *testing.T) {
 		{
 			name: "negative",
 			observe: func(ctx context.Context) {
-				observeProviderUsage(ctx, metricsTokenUsage(-1, 2))
+				providerUsageObserver()(ctx, metricsTokenUsage(-1, 2))
 			},
 			wantError: "negative",
 		},
 		{
 			name: "overflow",
 			observe: func(ctx context.Context) {
-				observeProviderUsage(ctx, metricsTokenUsage(math.MaxInt, 0))
-				observeProviderUsage(ctx, metricsTokenUsage(1, 0))
+				providerUsageObserver()(ctx, metricsTokenUsage(math.MaxInt, 0))
+				providerUsageObserver()(ctx, metricsTokenUsage(1, 0))
 			},
 			wantError: "overflows",
 		},
@@ -327,8 +330,8 @@ func TestRunMetricsNotifiesObserverForValidUsageAfterInvalidUsage(t *testing.T) 
 		snapshots = append(snapshots, usageTotals)
 	})
 
-	observeProviderUsage(ctx, metricsTokenUsage(-1, 0))
-	observeProviderUsage(ctx, metricsTokenUsage(3, 2))
+	providerUsageObserver()(ctx, metricsTokenUsage(-1, 0))
+	providerUsageObserver()(ctx, metricsTokenUsage(3, 2))
 
 	require.Len(t, snapshots, 1)
 	assert.Equal(t, model.UsageTotals{

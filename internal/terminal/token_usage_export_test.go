@@ -8,15 +8,15 @@ import (
 	"github.com/omarluq/librecode/internal/model"
 )
 
-func MergeTerminalUsageForTest(current, next model.TokenUsage) model.TokenUsage {
+func MergeTerminalUsageForTest(current, next *model.TokenUsage) model.TokenUsage {
 	return mergeTerminalUsage(current, next)
 }
 
-func FormatContextUsageForTest(usage model.TokenUsage) string {
+func FormatContextUsageForTest(usage *model.TokenUsage) string {
 	return formatContextUsage(usage)
 }
 
-func FormatTokenStatusForTest(usage model.TokenUsage) string {
+func FormatTokenStatusForTest(usage *model.TokenUsage) string {
 	return formatTokenStatus(usage)
 }
 
@@ -43,8 +43,8 @@ func NewAppForTest() *App {
 	})
 }
 
-func (app *App) SetTokenUsageForTest(usage model.TokenUsage) {
-	app.tokenUsage = usage
+func (app *App) SetTokenUsageForTest(usage *model.TokenUsage) {
+	app.tokenUsage = *usage
 }
 
 func (app *App) ApplyTokenUsageForTest(usage *model.TokenUsage) {

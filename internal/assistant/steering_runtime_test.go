@@ -18,6 +18,8 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
+const pendingCompactionOperationID = "pending"
+
 const steeringTestMIMEPNG = "image/png"
 
 type steeringLifecycleCompleter struct {
@@ -89,23 +91,30 @@ func (client *steeringCheckpointLifecycleCompleter) Complete(
 		return nil, oops.In("assistant_test").Code("checkpoint").Wrapf(err, "checkpoint final round")
 	}
 
+	usage := model.TokenUsage{
+		Provenance: "",
+		Breakdown:  nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
+		InputTokens: 40, OutputTokens: 11,
+	}
+
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         "final",
 		Thinking:     nil,
 		ToolEvents:   nil,
-		Usage: model.TokenUsage{
-			Breakdown: nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
-			InputTokens: 40, OutputTokens: 11,
-		}.WithReported(),
+		Usage:        usage.WithReported(),
 	}, nil
 }
 
 func steeringRoundUsage(input, output int) llm.Usage {
-	return llm.Usage{
-		Breakdown: nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
+	usage := llm.Usage{
+		Provenance: "",
+		Breakdown:  nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
 		InputTokens: input, OutputTokens: output,
-	}.WithReported()
+	}
+
+	return usage.WithReported()
 }
 
 func newSteeringLifecycleCompleter(mode string) *steeringLifecycleCompleter {
@@ -172,6 +181,7 @@ func (client *steeringLifecycleCompleter) Complete(
 	}
 
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         recoveredResponseText,
 		Thinking:     nil,
@@ -444,14 +454,18 @@ func TestRuntime_PromptCancellationReturnsOnlyUnconsumedSteering(t *testing.T) {
 	assert.Equal(t, "consumed", checkpointMessages[0].Content[0].Text)
 
 	require.NoError(t, runtime.Steer(context.Background(), &assistant.SteeringRequest{
-		SessionID: run.SessionID, RunID: run.EntryID, Text: "pending", Images: nil, HideUserPrompt: false,
+		SessionID:      run.SessionID,
+		RunID:          run.EntryID,
+		Text:           pendingCompactionOperationID,
+		Images:         nil,
+		HideUserPrompt: false,
 	}))
 	cancel()
 	require.ErrorIs(t, <-promptErr, context.Canceled)
 
 	messages := <-returned
 	require.Len(t, messages, 1)
-	assert.Equal(t, "pending", messages[0].Text)
+	assert.Equal(t, pendingCompactionOperationID, messages[0].Text)
 
 	persisted, err := repository.Messages(context.Background(), run.SessionID)
 	require.NoError(t, err)

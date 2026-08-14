@@ -80,7 +80,7 @@ func (runtime *Runtime) appendAssistantResponseEntry(
 		parentID,
 		&message,
 		&bundle.ModelFacing,
-		contextwindow.ProviderUsageEntity(persistedUsage),
+		contextwindow.ProviderUsageEntity(&persistedUsage),
 	)
 
 	return entry, assistantError(err, "append assistant response")

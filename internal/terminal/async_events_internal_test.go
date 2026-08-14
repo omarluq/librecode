@@ -795,7 +795,7 @@ func TestAsyncEventDataHelpers(t *testing.T) {
 }
 
 func asyncTestUsage() *model.TokenUsage {
-	return &model.TokenUsage{
+	return &model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,

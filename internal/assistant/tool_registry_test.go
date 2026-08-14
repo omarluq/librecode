@@ -105,6 +105,7 @@ func (client *extensionToolCompleter) Complete(
 	*client.toolDetails = result.Details
 
 	return &assistant.CompletionResult{
+		Termination:  llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         "tool registry inspected",
 		Thinking:     nil,

@@ -168,7 +168,7 @@ func TestApplyPromptResponsePreservesCanceledProgress(t *testing.T) {
 			name:          "late response preserves bookkeeping",
 			response:      newTestPromptResponseWithBookkeeping("late response"),
 			wantSessionID: "response-session",
-			wantUsage: model.TokenUsage{
+			wantUsage: model.TokenUsage{Provenance: model.UsageProvenance(""),
 				Breakdown:       nil,
 				TopContributors: nil,
 				ContextWindow:   100,
@@ -235,7 +235,7 @@ func newTestPromptResponse(text string) *assistant.PromptResponse {
 func newTestPromptResponseWithBookkeeping(text string) *assistant.PromptResponse {
 	response := newTestPromptResponse(text)
 	response.SessionID = "response-session"
-	response.Usage = model.TokenUsage{
+	response.Usage = model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,

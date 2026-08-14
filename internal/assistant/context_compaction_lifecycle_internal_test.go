@@ -38,6 +38,9 @@ func TestCompactionDecisionFromMutation(t *testing.T) {
 	t.Parallel()
 
 	plan := &compaction.Plan{
+		ValidationRecords:   nil,
+		ActiveWorkRecords:   nil,
+		SummaryGroups:       nil,
 		FirstKeptEntryID:    "",
 		Messages:            nil,
 		PreviousSummary:     "",
@@ -93,7 +96,7 @@ func compactionDecisionMutationCases() []compactionDecisionMutationCase {
 	summary := " extension summary "
 	emptySummary := "   "
 	firstKept := " kept-2 "
-	invalidFirstKept := "missing"
+	invalidFirstKept := runtimeSlashMissing
 
 	return []compactionDecisionMutationCase{
 		{

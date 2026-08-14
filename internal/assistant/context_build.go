@@ -36,6 +36,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		ToolRegistry:           registry,
 		ExecuteTools:           nil,
 		SessionID:              sessionID,
+		Identity:               emptyRequestIdentity(),
 		SystemPrompt:           "",
 		ThinkingLevel:          "",
 		CWD:                    cwd,
@@ -44,6 +45,7 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		Usage:                  model.EmptyTokenUsage(),
 		Model:                  selectedModel,
 		ProviderAttempt:        0,
+		MaxTokens:              0,
 		DisableTools:           false,
 		ToolSideEffectsStarted: false,
 	}
@@ -85,13 +87,13 @@ func (runtime *Runtime) ContextUsage(ctx context.Context, sessionID, cwd string)
 		usageAnchor,
 	)
 	budget := contextwindow.NewBudget(
-		usage,
+		&usage,
 		&selectedModel,
-		runtime.cfg.Context,
+		&runtime.cfg.Context,
 		func() int { return runtime.estimateToolSchemaTokens(request) },
 	)
 
-	return budget.UsageWithBudget(usage), nil
+	return budget.UsageWithBudget(&usage), nil
 }
 
 func (runtime *Runtime) buildModelContext(
@@ -122,12 +124,22 @@ func (runtime *Runtime) buildModelContext(
 		return result, nil
 	}
 
+	aggregateLimit := runtime.cfg.Context.ExtensionContributionTokens
+	if aggregateLimit <= 0 {
+		aggregateLimit = contextwindow.ContributionAggregateMaxTokens
+	}
+
+	result.ExtensionContributionTokenLimit = aggregateLimit
+
 	dispatchResult, err := runtime.dispatchContextBuild(ctx, sessionID, cwd, &base, result)
 	if err != nil {
 		return nil, err
 	}
 
-	contributions, err := contextwindow.ContributionsFromPayload(dispatchResult.Payload)
+	contributions, err := contextwindow.ContributionsFromPayloadWithLimit(
+		dispatchResult.Payload,
+		aggregateLimit,
+	)
 	if err != nil {
 		return nil, assistantError(err, "parse context contributions")
 	}
@@ -216,11 +228,12 @@ func initialContextBuildResult(base *contextwindow.Base, selectedModel *model.Mo
 	breakdown := contextwindow.Breakdown(base.SystemTokens, base.SkillTokens, base.HistoryTokens, nil)
 
 	return &contextwindow.BuildResult{
-		Contributions: []contextwindow.Contribution{},
-		Messages:      base.Messages,
-		Breakdown:     breakdown,
-		SystemPrompt:  base.SystemPrompt,
-		UsageAnchor:   base.UsageAnchor,
+		Contributions:                   []contextwindow.Contribution{},
+		ExtensionContributionTokenLimit: contextwindow.ContributionAggregateMaxTokens,
+		Messages:                        base.Messages,
+		Breakdown:                       breakdown,
+		SystemPrompt:                    base.SystemPrompt,
+		UsageAnchor:                     base.UsageAnchor,
 		Usage: contextwindow.EstimateBuildUsage(
 			base.SystemPrompt,
 			base.Messages,

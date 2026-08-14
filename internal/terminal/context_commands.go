@@ -21,7 +21,7 @@ func (app *App) showContextInfo(ctx context.Context, original string) error {
 	usage := app.contextUsage(ctx)
 
 	lines := []string{"context:"}
-	if summary := formatContextUsage(usage); summary != "" {
+	if summary := formatContextUsage(&usage); summary != "" {
 		lines = append(lines, "- "+summary)
 	}
 

@@ -52,13 +52,15 @@ func TestTurnStartAndContextBuildPayloads(t *testing.T) {
 		messageEntity(database.RoleAssistant, "again"),
 	}
 	result := &contextwindow.BuildResult{
-		Breakdown:     map[string]int{contextwindow.BreakdownHistory: 10},
-		SystemPrompt:  "",
-		Contributions: nil,
-		Messages:      nil,
-		UsageAnchor:   nil,
+		ExtensionContributionTokenLimit: 0,
+		Breakdown:                       map[string]int{contextwindow.BreakdownHistory: 10},
+		SystemPrompt:                    "",
+		Contributions:                   nil,
+		Messages:                        nil,
+		UsageAnchor:                     nil,
 		Usage: model.TokenUsage{
-			Breakdown: map[string]int{contextwindow.BreakdownHistory: 10},
+			Provenance: "",
+			Breakdown:  map[string]int{contextwindow.BreakdownHistory: 10},
 			TopContributors: []model.TokenContributor{{
 				Label:   lifecycleHistoryLabel,
 				Role:    string(database.RoleUser),
@@ -104,6 +106,7 @@ func TestProviderResponseErrorAndNilPayloads(t *testing.T) {
 	t.Parallel()
 
 	usage := model.TokenUsage{
+		Provenance:      "",
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,
@@ -208,10 +211,13 @@ func messageEntity(role database.Role, content string) database.MessageEntity {
 
 func lifecycleCompactionPlan() *compaction.Plan {
 	return &compaction.Plan{
-		FirstKeptEntryID: lifecycleKeptEntryID,
-		Messages:         nil,
-		PreviousSummary:  "",
-		SplitTurnSummary: "",
+		ValidationRecords: nil,
+		ActiveWorkRecords: nil,
+		SummaryGroups:     nil,
+		FirstKeptEntryID:  lifecycleKeptEntryID,
+		Messages:          nil,
+		PreviousSummary:   "",
+		SplitTurnSummary:  "",
 		SummarizedEntryIDs: []string{
 			lifecycleOldEntryID,
 		},

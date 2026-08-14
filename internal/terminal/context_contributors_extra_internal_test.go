@@ -29,7 +29,7 @@ func TestApplyTokenUsageAndFormattingVariants(t *testing.T) {
 	assert.Equal(t, model.EmptyTokenUsage(), app.tokenUsage)
 	assert.Empty(t, app.tokenStatusText())
 
-	usage := model.TokenUsage{
+	usage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   9000,
@@ -39,9 +39,9 @@ func TestApplyTokenUsageAndFormattingVariants(t *testing.T) {
 	}
 	app.applyTokenUsage(&usage)
 	assert.Empty(t, app.tokenStatusText())
-	assert.Empty(t, formatTokenStatus(usage))
+	assert.Empty(t, formatTokenStatus(&usage))
 
-	assert.Equal(t, "ctx 42", formatContextUsage(model.TokenUsage{
+	assert.Equal(t, "ctx 42", formatContextUsage(&model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -49,7 +49,7 @@ func TestApplyTokenUsageAndFormattingVariants(t *testing.T) {
 		InputTokens:     0,
 		OutputTokens:    0,
 	}))
-	assert.Empty(t, formatTokenStatus(model.TokenUsage{
+	assert.Empty(t, formatTokenStatus(&model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,

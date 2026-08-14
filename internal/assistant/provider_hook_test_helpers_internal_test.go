@@ -71,6 +71,7 @@ func providerHookTestInput(payload map[string]any, headers map[string]string, at
 	request := providerHookTestRequest()
 
 	return &llm.HookInput{
+		MaxTokens:       0,
 		ProviderOptions: map[string]any{"cwd": request.CWD},
 		Payload:         payload,
 		Headers:         headers,

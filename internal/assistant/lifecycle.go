@@ -38,7 +38,7 @@ func (lifecycle *promptTurnLifecycle) dispatchEnd(
 	ctx context.Context,
 	assistantEntryID string,
 	cached bool,
-	usage model.TokenUsage,
+	usage *model.TokenUsage,
 ) {
 	if lifecycle == nil || lifecycle.ended {
 		return
@@ -115,11 +115,11 @@ func (runtime *Runtime) dispatchTurnEndLifecycle(
 	userEntryID string,
 	assistantEntryID string,
 	cached bool,
-	usage model.TokenUsage,
+	usage *model.TokenUsage,
 ) {
 	payload := lifecyclepayload.TurnEndPayload(&lifecyclepayload.TurnEnd{
 		Err:              nil,
-		Usage:            usage,
+		Usage:            *usage,
 		AssistantEntryID: assistantEntryID,
 		SessionID:        sessionID,
 		UserEntryID:      userEntryID,
