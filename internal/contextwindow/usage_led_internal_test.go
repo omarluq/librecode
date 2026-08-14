@@ -91,16 +91,18 @@ func TestEstimateUsageLedInputTokensFallsBackWhenAnchorMissing(t *testing.T) {
 func TestProviderUsageEntitySkipsEmptyUsage(t *testing.T) {
 	t.Parallel()
 
-	assert.Nil(t, ProviderUsageEntity(model.EmptyTokenUsage()))
+	emptyUsage := model.EmptyTokenUsage()
+	assert.Nil(t, ProviderUsageEntity(&emptyUsage))
 
-	entity := ProviderUsageEntity(model.TokenUsage{
+	usage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1000,
 		ContextTokens:   50,
 		InputTokens:     42,
 		OutputTokens:    8,
-	})
+	}
+	entity := ProviderUsageEntity(&usage)
 
 	require.NotNil(t, entity)
 	assert.Equal(t, 1000, entity.ContextWindow)

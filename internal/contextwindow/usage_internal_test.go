@@ -112,7 +112,7 @@ func TestTopContributorsCapsResults(t *testing.T) {
 func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
 	t.Parallel()
 
-	estimated := model.TokenUsage{
+	estimated := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
@@ -120,7 +120,7 @@ func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
 		InputTokens:     14_000,
 		OutputTokens:    0,
 	}
-	reported := model.TokenUsage{
+	reported := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -129,20 +129,20 @@ func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
 		OutputTokens:    700,
 	}
 
-	assert.Equal(t, model.TokenUsage{
+	assert.Equal(t, model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
 		ContextTokens:   12_000,
 		InputTokens:     12_000,
 		OutputTokens:    700,
-	}, MergeUsage(estimated, reported))
+	}, MergeUsage(&estimated, &reported))
 }
 
 func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
 	t.Parallel()
 
-	reported := model.TokenUsage{
+	reported := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown: map[string]int{
 			BreakdownHistory: 10,
 		},
@@ -154,7 +154,8 @@ func TestMergeUsageClonesReportedBreakdownAndContributors(t *testing.T) {
 		InputTokens:   0,
 		OutputTokens:  0,
 	}
-	merged := MergeUsage(model.EmptyTokenUsage(), reported)
+	emptyUsage := model.EmptyTokenUsage()
+	merged := MergeUsage(&emptyUsage, &reported)
 
 	require.Equal(t, reported.Breakdown, merged.Breakdown)
 	require.Equal(t, reported.TopContributors, merged.TopContributors)

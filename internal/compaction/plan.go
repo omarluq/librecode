@@ -2,6 +2,7 @@ package compaction
 
 import (
 	"fmt"
+	"html"
 	"slices"
 	"strings"
 	"time"
@@ -15,30 +16,23 @@ import (
 )
 
 const (
-	summaryPrompt = `Summarize the conversation history below for a coding agent that will continue
-this same session.
+	summaryPrompt = `Summarize the supplied conversation history for a coding agent that will continue the same session.
 
-Preserve:
-- the user's goals and current task
-- important decisions and constraints
-- files, commands, errors, and validation results mentioned
-- pending next steps and open questions
+` + checkpointContract
+	updatePrompt = "Update the existing compaction summary by merging the supplied newer history into the existing " +
+		`coding checkpoint.
 
-Be concise but specific. Do not invent facts. Return only the summary.`
-	updatePrompt = `Update the existing compaction summary with the new conversation history below.
+Retain active constraints and preferences until explicitly superseded. Retain unresolved blockers and unknown ` +
+		`validation outcomes. Remove facts only when newer history proves them obsolete. Preserve exact next steps ` +
+		`until completed or superseded. Return a complete checkpoint, not a patch. Never copy deterministic ` +
+		`Librecode appendices into generated prose.
 
-Rules:
-- preserve important facts from the existing summary
-- add new progress, decisions, files, commands, errors, validation results, next steps, and open questions
-- remove details that are clearly obsolete
-- be concise but specific
-- do not invent facts
-- return only the updated summary
+` + checkpointContract + `
 
-Existing summary:
-<summary>
+Existing checkpoint:
+<checkpoint>
 %s
-</summary>`
+</checkpoint>`
 )
 
 // TokenCounter estimates token usage for text.
@@ -53,6 +47,9 @@ type Plan struct {
 	SummarizedEntryIDs  []string
 	KeptEntryIDs        []string
 	FileOperations      []FileOperation
+	ValidationRecords   []ValidationRecord
+	ActiveWorkRecords   []ActiveWorkRecord
+	SummaryGroups       []SemanticGroup
 	TokensBefore        int
 	FirstKeptEntryIndex int
 }
@@ -105,7 +102,10 @@ func PlanBranch(
 		SplitTurnSummary:    splitTurnSummary,
 		SummarizedEntryIDs:  summarizedIDs,
 		KeptEntryIDs:        keptEntryIDs(branch[cutPoint.firstKeptEntryIndex:]),
-		FileOperations:      nil,
+		FileOperations:      CollectFileOperations(branch[:cutPoint.firstKeptEntryIndex]),
+		ValidationRecords:   CollectValidationRecords(branch[:cutPoint.firstKeptEntryIndex]),
+		ActiveWorkRecords:   CollectActiveWorkRecords(branch[:cutPoint.firstKeptEntryIndex]),
+		SummaryGroups:       GroupsFromMessages(messages, summarizedIDs, countTokens),
 		FirstKeptEntryID:    firstKeptEntryID,
 		TokensBefore:        BranchTokens(branch, countTokens),
 		FirstKeptEntryIndex: cutPoint.firstKeptEntryIndex,
@@ -157,6 +157,9 @@ func PlanBranchFromFirstKept(
 		SummarizedEntryIDs:  summarizedIDs,
 		KeptEntryIDs:        keptEntryIDs(branch[firstKeptEntryIndex:]),
 		FileOperations:      CollectFileOperations(branch[:firstKeptEntryIndex]),
+		ValidationRecords:   CollectValidationRecords(branch[:firstKeptEntryIndex]),
+		ActiveWorkRecords:   CollectActiveWorkRecords(branch[:firstKeptEntryIndex]),
+		SummaryGroups:       GroupsFromMessages(messages, summarizedIDs, countTokens),
 		TokensBefore:        BranchTokens(branch, countTokens),
 		FirstKeptEntryIndex: firstKeptEntryIndex,
 	}, nil
@@ -594,12 +597,12 @@ func baseSystemPrompt(previousSummary string) string {
 		return summaryPrompt
 	}
 
-	return fmt.Sprintf(updatePrompt, previousSummary)
+	return fmt.Sprintf(updatePrompt, html.EscapeString(previousSummary))
 }
 
 func splitTurnPromptSection(splitTurnSummary string) string {
 	return strings.TrimSpace(`Additional split-turn context:
 <split_turn_summary>
-` + strings.TrimSpace(splitTurnSummary) + `
+` + html.EscapeString(strings.TrimSpace(splitTurnSummary)) + `
 </split_turn_summary>`)
 }

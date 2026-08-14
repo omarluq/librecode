@@ -35,9 +35,9 @@ type Budget struct {
 
 // NewBudget builds a context budget from current usage and policy.
 func NewBudget(
-	usage model.TokenUsage,
+	usage *model.TokenUsage,
 	selectedModel *model.Model,
-	policy config.ContextConfig,
+	policy *config.ContextConfig,
 	estimateTools ToolSchemaEstimator,
 ) Budget {
 	contextWindow := usage.ContextWindow
@@ -73,22 +73,23 @@ func (budget Budget) TotalReserve() int {
 }
 
 // UsageWithBudget adds budget diagnostics to usage.
-func (budget Budget) UsageWithBudget(usage model.TokenUsage) model.TokenUsage {
-	usage.ContextWindow = budget.ContextWindow
-	usage.ContextTokens = budget.InputTokens
+func (budget Budget) UsageWithBudget(usage *model.TokenUsage) model.TokenUsage {
+	result := *usage
+	result.ContextWindow = budget.ContextWindow
+	result.ContextTokens = budget.InputTokens
 
-	usage.InputTokens = budget.InputTokens
-	if usage.Breakdown == nil {
-		usage.Breakdown = map[string]int{}
+	result.InputTokens = budget.InputTokens
+	if result.Breakdown == nil {
+		result.Breakdown = map[string]int{}
 	}
 
-	usage.Breakdown["reserve_output"] = budget.OutputReserve
-	usage.Breakdown["reserve_tools"] = budget.ToolSchemaReserve
-	usage.Breakdown["reserve_provider"] = budget.ProviderReserve
-	usage.Breakdown["reserve_safety"] = budget.SafetyMargin
-	usage.Breakdown["usable_input"] = budget.UsableInput
+	result.Breakdown["reserve_output"] = budget.OutputReserve
+	result.Breakdown["reserve_tools"] = budget.ToolSchemaReserve
+	result.Breakdown["reserve_provider"] = budget.ProviderReserve
+	result.Breakdown["reserve_safety"] = budget.SafetyMargin
+	result.Breakdown["usable_input"] = budget.UsableInput
 
-	return usage
+	return result
 }
 
 // Validate reports whether estimated input fits inside usable context.
@@ -111,7 +112,7 @@ func (budget Budget) Validate() error {
 }
 
 // OutputReserve returns the output token reserve for the given model/policy.
-func OutputReserve(_ *model.Model, contextWindow int, policy config.ContextConfig) int {
+func OutputReserve(_ *model.Model, contextWindow int, policy *config.ContextConfig) int {
 	if policy.OutputReserveTokens > 0 {
 		return policy.OutputReserveTokens
 	}
@@ -133,7 +134,7 @@ func nonNegativeOrDefault(value, fallback int) int {
 }
 
 // BudgetFromUsage reconstructs budget diagnostics from usage breakdown fields.
-func BudgetFromUsage(usage model.TokenUsage) Budget {
+func BudgetFromUsage(usage *model.TokenUsage) Budget {
 	return Budget{
 		InputTokens:       usage.ContextTokens,
 		ContextWindow:     usage.ContextWindow,

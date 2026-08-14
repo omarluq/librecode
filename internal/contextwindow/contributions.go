@@ -52,8 +52,20 @@ func AppendContributions(result *BuildResult, contributions []Contribution) {
 	result.SystemPrompt = builder.String()
 }
 
-// ContributionsFromPayload parses extension context-build contributions.
+// ContributionsFromPayload parses extension context-build contributions and enforces
+// the core per-contribution and aggregate token limits.
 func ContributionsFromPayload(payload map[string]any) ([]Contribution, error) {
+	return ContributionsFromPayloadWithLimit(payload, ContributionAggregateMaxTokens)
+}
+
+// ContributionsFromPayloadWithLimit parses contributions using an explicit aggregate limit.
+func ContributionsFromPayloadWithLimit(payload map[string]any, aggregateMaxTokens int) ([]Contribution, error) {
+	if aggregateMaxTokens <= 0 {
+		return nil, oops.In("contextwindow").
+			Code("invalid_context_contribution_budget").
+			Errorf("extension context aggregate token limit must be positive, got %d", aggregateMaxTokens)
+	}
+
 	raw, found := payload[payloadContributionsKey]
 	if !found || raw == nil {
 		return []Contribution{}, nil
@@ -71,6 +83,8 @@ func ContributionsFromPayload(payload map[string]any) ([]Contribution, error) {
 	}
 
 	contributions := make([]Contribution, 0, len(rawContributions))
+	usedTokens := 0
+
 	for index, rawContribution := range rawContributions {
 		contribution, err := contributionFromValue(rawContribution)
 		if err != nil {
@@ -79,6 +93,28 @@ func ContributionsFromPayload(payload map[string]any) ([]Contribution, error) {
 				Wrapf(err, "context contribution %d", index)
 		}
 
+		if contribution.Tokens > aggregateMaxTokens-usedTokens {
+			return nil, oops.In("contextwindow").
+				Code("extension_context_budget_exceeded").
+				With("contribution_index", index).
+				With("contribution_name", diagnosticLabel(contribution.Name)).
+				With("contribution_source", diagnosticLabel(contribution.Source)).
+				With("contribution_tokens", contribution.Tokens).
+				With("extension_tokens_used", usedTokens).
+				With("extension_tokens_limit", aggregateMaxTokens).
+				Errorf(
+					"context contribution %d (%s, source %s) requires %d tokens after %d used; "+
+						"extension context aggregate limit is %d tokens",
+					index,
+					diagnosticLabel(contribution.Name),
+					diagnosticLabel(contribution.Source),
+					contribution.Tokens,
+					usedTokens,
+					aggregateMaxTokens,
+				)
+		}
+
+		usedTokens += contribution.Tokens
 		contributions = append(contributions, contribution)
 	}
 
@@ -138,6 +174,22 @@ func contributionFromValue(value any) (Contribution, error) {
 		Content:  content,
 		Tokens:   tokens,
 	}, nil
+}
+
+func diagnosticLabel(label string) string {
+	const maxRunes = 64
+
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return "<unnamed>"
+	}
+
+	runes := []rune(label)
+	if len(runes) > maxRunes {
+		return string(runes[:maxRunes]) + "…"
+	}
+
+	return label
 }
 
 func stringFromAny(value any) string {

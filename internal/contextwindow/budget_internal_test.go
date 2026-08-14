@@ -13,7 +13,7 @@ import (
 func TestBudgetUsageWithReservesAndValidation(t *testing.T) {
 	t.Parallel()
 
-	usage := model.TokenUsage{
+	usage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,
@@ -21,16 +21,23 @@ func TestBudgetUsageWithReservesAndValidation(t *testing.T) {
 		InputTokens:     90,
 		OutputTokens:    0,
 	}
-	budget := NewBudget(usage, nil, config.ContextConfig{
-		OutputReserveTokens:   10,
-		ProviderReserveTokens: 5,
-		SafetyMarginTokens:    5,
-		PreflightEnabled:      true,
+	budget := NewBudget(&usage, nil, &config.ContextConfig{
+		CompactionProvider:          "",
+		CompactionModel:             "",
+		ExtensionContributionTokens: 0,
+		AutoCompactionThreshold:     0,
+		RetainedTailMaxTokens:       0,
+		SummaryOutputTokens:         0,
+		AutoCompactionEnabled:       false,
+		OutputReserveTokens:         10,
+		ProviderReserveTokens:       5,
+		SafetyMarginTokens:          5,
+		PreflightEnabled:            true,
 	}, func() int { return 5 })
 
 	assert.Equal(t, 75, budget.UsableInput)
 	assert.Equal(t, 25, budget.TotalReserve())
-	enriched := budget.UsageWithBudget(usage)
+	enriched := budget.UsageWithBudget(&usage)
 	assert.Equal(t, 10, enriched.Breakdown["reserve_output"])
 	assert.Equal(t, 5, enriched.Breakdown["reserve_tools"])
 	assert.Equal(t, 75, enriched.Breakdown["usable_input"])
@@ -44,11 +51,19 @@ func TestBudgetDefaultsAndReconstruction(t *testing.T) {
 	t.Parallel()
 
 	selectedModel := testModelWithContextWindow(1_000)
-	budget := NewBudget(model.EmptyTokenUsage(), selectedModel, config.ContextConfig{
-		OutputReserveTokens:   0,
-		ProviderReserveTokens: -1,
-		SafetyMarginTokens:    -1,
-		PreflightEnabled:      true,
+	emptyUsage := model.EmptyTokenUsage()
+	budget := NewBudget(&emptyUsage, selectedModel, &config.ContextConfig{
+		CompactionProvider:          "",
+		CompactionModel:             "",
+		ExtensionContributionTokens: 0,
+		AutoCompactionThreshold:     0,
+		RetainedTailMaxTokens:       0,
+		SummaryOutputTokens:         0,
+		AutoCompactionEnabled:       false,
+		OutputReserveTokens:         0,
+		ProviderReserveTokens:       -1,
+		SafetyMarginTokens:          -1,
+		PreflightEnabled:            true,
 	}, nil)
 
 	assert.Equal(t, 1_000, budget.ContextWindow)
@@ -56,7 +71,7 @@ func TestBudgetDefaultsAndReconstruction(t *testing.T) {
 	assert.Equal(t, DefaultProviderReserve, budget.ProviderReserve)
 	assert.Equal(t, DefaultSafetyMargin, budget.SafetyMargin)
 
-	reconstructed := BudgetFromUsage(model.TokenUsage{
+	reconstructed := BudgetFromUsage(&model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown: map[string]int{
 			"usable_input":     1,
 			"reserve_output":   2,
