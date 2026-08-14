@@ -12,27 +12,31 @@ import (
 func TestUsageTotalsFromTokenUsage(t *testing.T) {
 	t.Parallel()
 
-	reported, err := UsageTotalsFromTokenUsage(TokenUsage{
+	reportedUsage := TokenUsage{Provenance: UsageProvenance(""),
 		Breakdown: nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
-		InputTokens: 2, OutputTokens: 3, reported: false,
-	})
+		InputTokens: 2, OutputTokens: 3,
+	}
+	reported, err := UsageTotalsFromTokenUsage(&reportedUsage)
 	require.NoError(t, err)
 	assert.Equal(t, UsageTotals{
 		InputTokens: 2, OutputTokens: 3, ProviderRoundTrips: 0, Reported: true,
 	}, reported)
 
-	unknown, err := UsageTotalsFromTokenUsage(EmptyTokenUsage())
+	emptyUsage := EmptyTokenUsage()
+	unknown, err := UsageTotalsFromTokenUsage(&emptyUsage)
 	require.NoError(t, err)
 	assert.False(t, unknown.Reported)
 
-	reportedZero, err := UsageTotalsFromTokenUsage(EmptyTokenUsage().WithReported())
+	reportedZeroUsage := emptyUsage.WithReported()
+	reportedZero, err := UsageTotalsFromTokenUsage(&reportedZeroUsage)
 	require.NoError(t, err)
 	assert.Equal(t, UsageTotals{InputTokens: 0, OutputTokens: 0, ProviderRoundTrips: 0, Reported: true}, reportedZero)
 
-	_, err = UsageTotalsFromTokenUsage(TokenUsage{
+	negativeUsage := TokenUsage{Provenance: UsageProvenance(""),
 		Breakdown: nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
-		InputTokens: -1, OutputTokens: 0, reported: false,
-	})
+		InputTokens: -1, OutputTokens: 0,
+	}
+	_, err = UsageTotalsFromTokenUsage(&negativeUsage)
 	assert.ErrorContains(t, err, "negative")
 }
 

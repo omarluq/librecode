@@ -9,11 +9,17 @@ import (
 
 const jsonTotalTokensKey = "total_tokens"
 
-func mergeUsage(estimated, reported llm.Usage) llm.Usage {
+func mergeUsage(estimated, reported *llm.Usage) llm.Usage {
 	return llm.MergeUsage(estimated, reported)
 }
 
-func accumulateUsage(aggregate, reported llm.Usage) llm.Usage {
+func mergeUsageObject(estimated *llm.Usage, object map[string]any) llm.Usage {
+	reported := usageFromObject(object)
+
+	return mergeUsage(estimated, &reported)
+}
+
+func accumulateUsage(aggregate, reported *llm.Usage) llm.Usage {
 	usage := llm.MergeUsage(aggregate, reported)
 	usage.InputTokens = checkedTokenAdd(aggregate.InputTokens, reported.InputTokens)
 	usage.OutputTokens = checkedTokenAdd(aggregate.OutputTokens, reported.OutputTokens)
@@ -45,6 +51,7 @@ func usageFromObject(value any) llm.Usage {
 		ContextTokens:   0,
 		InputTokens:     input,
 		OutputTokens:    output,
+		Provenance:      "",
 	}
 	if reported {
 		usage = usage.WithReported()

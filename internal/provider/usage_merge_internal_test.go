@@ -17,7 +17,7 @@ const (
 func TestMergeUsageKeepsExistingBreakdownWhenPresent(t *testing.T) {
 	t.Parallel()
 
-	estimated := llm.Usage{
+	estimated := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown: map[string]int{testEstimatedUsageLabel: 1}, ContextWindow: 10, ContextTokens: 2,
 		TopContributors: []llm.TokenContributor{
 			{Label: testEstimatedUsageLabel, Role: jsonSystemRole, Preview: "", Tokens: 1, Chars: 1},
@@ -25,7 +25,7 @@ func TestMergeUsageKeepsExistingBreakdownWhenPresent(t *testing.T) {
 		InputTokens:  0,
 		OutputTokens: 0,
 	}
-	reported := llm.Usage{
+	reported := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown: map[string]int{testReportedUsageLabel: 2}, ContextWindow: 20, ContextTokens: 3,
 		TopContributors: []llm.TokenContributor{
 			{Label: testReportedUsageLabel, Role: jsonUserRole, Preview: "", Tokens: 2, Chars: 2},
@@ -33,7 +33,7 @@ func TestMergeUsageKeepsExistingBreakdownWhenPresent(t *testing.T) {
 		InputTokens: 4, OutputTokens: 5,
 	}
 
-	merged := mergeUsage(estimated, reported)
+	merged := mergeUsage(&estimated, &reported)
 
 	assert.Equal(t, map[string]int{testEstimatedUsageLabel: 1}, merged.Breakdown)
 	assert.Equal(t, testEstimatedUsageLabel, merged.TopContributors[0].Label)
@@ -53,7 +53,7 @@ func TestMergeUsageAccumulatesRequestTokens(t *testing.T) {
 	}{
 		{
 			name: "uses explicit provider context tokens",
-			reported: llm.Usage{
+			reported: llm.Usage{Provenance: llm.UsageProvenance(""),
 				Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 30,
 				InputTokens: 11, OutputTokens: 5,
 			},
@@ -61,7 +61,7 @@ func TestMergeUsageAccumulatesRequestTokens(t *testing.T) {
 		},
 		{
 			name: "uses latest request input when context tokens are absent",
-			reported: llm.Usage{
+			reported: llm.Usage{Provenance: llm.UsageProvenance(""),
 				Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 0,
 				InputTokens: 11, OutputTokens: 5,
 			},
@@ -73,13 +73,11 @@ func TestMergeUsageAccumulatesRequestTokens(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			merged := accumulateUsage(
-				llm.Usage{
-					Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 20,
-					InputTokens: 7, OutputTokens: 3,
-				},
-				test.reported,
-			)
+			aggregate := llm.Usage{Provenance: llm.UsageProvenance(""),
+				Breakdown: nil, TopContributors: nil, ContextWindow: 100, ContextTokens: 20,
+				InputTokens: 7, OutputTokens: 3,
+			}
+			merged := accumulateUsage(&aggregate, &test.reported)
 
 			assert.Equal(t, 18, merged.InputTokens)
 			assert.Equal(t, 8, merged.OutputTokens)

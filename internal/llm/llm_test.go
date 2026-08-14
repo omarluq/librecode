@@ -18,7 +18,7 @@ func TestBoundaryInterfaces(t *testing.T) {
 
 	var generator llm.Generator = testGenerator{}
 
-	request := llm.Request{
+	request := llm.Request{MaxTokens: 0,
 		ProviderOptions: nil,
 		Auth: llm.Auth{
 			Headers: nil,
@@ -169,7 +169,7 @@ func TestUsageHelpers(t *testing.T) {
 	assert.Zero(t, empty.TotalTokens())
 	assert.Zero(t, empty.ContextPercent())
 
-	reported := llm.Usage{
+	reported := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,
@@ -181,7 +181,7 @@ func TestUsageHelpers(t *testing.T) {
 	assert.Equal(t, 13, reported.TotalTokens())
 	assert.Equal(t, 25, reported.ContextPercent())
 
-	overWindow := llm.Usage{
+	overWindow := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,
@@ -191,7 +191,7 @@ func TestUsageHelpers(t *testing.T) {
 	}
 	assert.Equal(t, 100, overWindow.ContextPercent())
 
-	inputOnly := llm.Usage{
+	inputOnly := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -203,7 +203,7 @@ func TestUsageHelpers(t *testing.T) {
 	assert.Equal(t, 7, inputOnly.TotalTokens())
 	assert.Zero(t, inputOnly.ContextPercent())
 
-	metadataOnly := llm.Usage{
+	metadataOnly := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       map[string]int{"tools": 3},
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -213,7 +213,7 @@ func TestUsageHelpers(t *testing.T) {
 	}
 	assert.True(t, metadataOnly.HasAny())
 
-	contributorsOnly := llm.Usage{
+	contributorsOnly := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: []llm.TokenContributor{{Label: "system", Role: "system", Preview: "", Tokens: 3, Chars: 12}},
 		ContextWindow:   0,

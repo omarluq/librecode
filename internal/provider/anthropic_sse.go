@@ -136,7 +136,7 @@ func (accumulator *anthropicStreamAccumulator) add(
 ) error {
 	switch event.Type {
 	case anthropicMessageStartEvent:
-		accumulator.usage = mergeUsage(accumulator.usage, usageFromObject(event.Message.Usage))
+		accumulator.usage = mergeUsageObject(&accumulator.usage, event.Message.Usage)
 	case anthropicContentBlockStartEvent:
 		accumulator.startBlock(event)
 	case anthropicContentBlockDeltaEvent:
@@ -161,7 +161,7 @@ func (accumulator *anthropicStreamAccumulator) addMessageDelta(event *anthropicS
 		accumulator.stopDetails = event.Delta.StopDetails
 	}
 
-	accumulator.usage = mergeUsage(accumulator.usage, usageFromObject(event.Usage))
+	accumulator.usage = mergeUsageObject(&accumulator.usage, event.Usage)
 }
 
 func (accumulator *anthropicStreamAccumulator) startBlock(event *anthropicStreamEvent) {
@@ -264,6 +264,7 @@ func (accumulator *anthropicStreamAccumulator) result() *providerResult {
 
 	return &providerResult{
 		FinishReason: finishReason,
+		Termination:  llm.NewTerminationMetadata("", accumulator.stopReason, ""),
 		Text:         text,
 		OutputItems:  nil,
 		Thinking:     accumulator.thinking,

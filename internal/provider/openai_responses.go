@@ -71,9 +71,9 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 			return nil, err
 		}
 
-		observeProviderResponse(ctx, request, providerResult.Usage)
+		observeProviderResponse(ctx, request, &providerResult.Usage)
 		appendThinking(result, providerResult.Thinking)
-		result.Usage = accumulateUsage(result.Usage, providerResult.Usage)
+		result.Usage = accumulateUsage(&result.Usage, &providerResult.Usage)
 		result.FinishReason = providerResult.FinishReason
 
 		if len(providerResult.ToolCalls) == 0 {
@@ -224,6 +224,10 @@ func responsesBasePayload(request *CompletionRequest, input []any) map[string]an
 		payload["instructions"] = request.Request.SystemPrompt
 	}
 
+	if request.Request.MaxTokens > 0 {
+		payload["max_output_tokens"] = request.Request.MaxTokens
+	}
+
 	payload["text"] = map[string]string{"verbosity": "low"}
 	payload["include"] = []string{reasoningContentKey}
 	payload["prompt_cache_key"] = request.Request.SessionID
@@ -291,6 +295,7 @@ func providerResultFromResponse(response map[string]any) *providerResult {
 
 	return &providerResult{
 		FinishReason: openAIResponseFinishReason(response, len(toolCalls) > 0),
+		Termination:  openAIResponseTermination(response),
 		Text:         text,
 		OutputItems:  outputItems,
 		Thinking:     thinkingFromOutput(outputItems),
@@ -309,11 +314,16 @@ func providerResultFromOutputItems(outputItems []any, fallbackText string) *prov
 
 	return &providerResult{
 		FinishReason: openAIResponseOutputItemsFinishReason(toolCalls),
-		Text:         text,
-		OutputItems:  outputItems,
-		Thinking:     thinkingFromOutput(outputItems),
-		ToolCalls:    toolCalls,
-		Usage:        llm.EmptyUsage(),
+		Termination: llm.TerminationMetadata{
+			ProviderStatus:       "",
+			ProviderFinishReason: "",
+			IncompleteReason:     "",
+		},
+		Text:        text,
+		OutputItems: outputItems,
+		Thinking:    thinkingFromOutput(outputItems),
+		ToolCalls:   toolCalls,
+		Usage:       llm.EmptyUsage(),
 	}
 }
 
@@ -338,10 +348,19 @@ func openAIResponseFinishReason(response map[string]any, hasToolCalls bool) llm.
 	return openAIIncompleteFinishReason(response)
 }
 
+func openAIResponseTermination(response map[string]any) llm.TerminationMetadata {
+	incomplete := ""
+	if details, ok := response["incomplete_details"].(map[string]any); ok {
+		incomplete = stringValue(details["reason"])
+	}
+
+	return llm.NewTerminationMetadata(stringValue(response["status"]), "", incomplete)
+}
+
 func openAIIncompleteFinishReason(response map[string]any) llm.FinishReason {
 	details, ok := response["incomplete_details"].(map[string]any)
 	if !ok {
-		return llm.FinishReasonLength
+		return llm.FinishReasonError
 	}
 
 	switch stringValue(details["reason"]) {
@@ -350,7 +369,7 @@ func openAIIncompleteFinishReason(response map[string]any) llm.FinishReason {
 	case "content_filter":
 		return llm.FinishReasonContentFilter
 	default:
-		return llm.FinishReasonLength
+		return llm.FinishReasonError
 	}
 }
 

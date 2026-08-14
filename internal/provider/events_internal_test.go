@@ -112,7 +112,7 @@ type streamEventMappingCase struct {
 }
 
 func streamEventTestUsage() *llm.Usage {
-	return &llm.Usage{
+	return &llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
@@ -127,5 +127,7 @@ func TestStreamPartToLLMHandlesMissingAndUnknownEvents(t *testing.T) {
 
 	assert.Nil(t, streamPartToLLM(StreamEvent{ToolEvent: nil, Usage: nil, Kind: StreamEventToolResult, Text: ""}))
 	assert.Nil(t, streamPartToLLM(StreamEvent{ToolEvent: nil, Usage: nil, Kind: StreamEventKind("unknown"), Text: ""}))
-	assert.False(t, usagePointerToLLM(nil).HasAny())
+
+	emptyUsage := usagePointerToLLM(nil)
+	assert.False(t, emptyUsage.HasAny())
 }

@@ -11,7 +11,7 @@ import (
 func TestTokenUsageHelpers(t *testing.T) {
 	t.Parallel()
 
-	usage := model.TokenUsage{
+	usage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,
@@ -28,7 +28,7 @@ func TestTokenUsageHelpers(t *testing.T) {
 func TestTokenUsageContextPercentCapsAtHundred(t *testing.T) {
 	t.Parallel()
 
-	usage := model.TokenUsage{
+	usage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,

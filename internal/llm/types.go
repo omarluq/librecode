@@ -29,15 +29,17 @@ type Request struct {
 	Tools           []ToolDefinition `json:"tools,omitempty"`
 	Model           ModelRef         `json:"model"`
 	Usage           Usage            `json:"usage"`
+	MaxTokens       int              `json:"max_tokens,omitempty"`
 	DisableTools    bool             `json:"disable_tools,omitempty"`
 }
 
 // Response is a completed provider-neutral LLM response.
 type Response struct {
-	FinishReason FinishReason `json:"finish_reason,omitempty"`
-	Content      []Part       `json:"content,omitempty"`
-	ToolCalls    []ToolCall   `json:"tool_calls,omitempty"`
-	Usage        Usage        `json:"usage"`
+	FinishReason FinishReason        `json:"finish_reason,omitempty"`
+	Termination  TerminationMetadata `json:"termination"`
+	Content      []Part              `json:"content,omitempty"`
+	ToolCalls    []ToolCall          `json:"tool_calls,omitempty"`
+	Usage        Usage               `json:"usage"`
 }
 
 // StreamChunk is one provider-neutral streaming delta.

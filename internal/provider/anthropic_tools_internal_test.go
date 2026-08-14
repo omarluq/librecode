@@ -187,7 +187,7 @@ func TestAppendAnthropicToolConversationRejectsMismatchedNativeResults(t *testin
 	t.Parallel()
 
 	state := &anthropicLoopState{result: nil, endpoint: "", messages: nil}
-	result := &providerResult{
+	result := &providerResult{Termination: llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonToolCalls,
 		Text:         "",
 		OutputItems:  nil,

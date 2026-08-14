@@ -9,9 +9,14 @@ import (
 func newResponse() *llm.Response {
 	return &llm.Response{
 		FinishReason: llm.FinishReasonUnknown,
-		Content:      nil,
-		ToolCalls:    nil,
-		Usage:        llm.EmptyUsage(),
+		Termination: llm.TerminationMetadata{
+			ProviderStatus:       "",
+			ProviderFinishReason: "",
+			IncompleteReason:     "",
+		},
+		Content:   nil,
+		ToolCalls: nil,
+		Usage:     llm.EmptyUsage(),
 	}
 }
 

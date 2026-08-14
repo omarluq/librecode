@@ -46,7 +46,7 @@ func TestResponseResultHelpersHandleEmptyInputs(t *testing.T) {
 	assert.Nil(t, responseThinking(nil))
 	assert.Nil(t, responseToolEvents(nil))
 
-	plainResponse := &llm.Response{
+	plainResponse := &llm.Response{Termination: llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonUnknown,
 		Content:      []llm.Part{llm.TextPart("plain")},
 		ToolCalls:    nil,

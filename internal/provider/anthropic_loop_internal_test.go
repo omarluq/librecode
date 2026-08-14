@@ -124,7 +124,7 @@ func TestAppendAnthropicToolConversationMismatchedEvents(t *testing.T) {
 	err := appendAnthropicToolConversation(
 		testCompletionRequestAuth("sk-ant-api03-secret"),
 		&anthropicLoopState{result: newResponse(), endpoint: "", messages: nil},
-		&providerResult{
+		&providerResult{Termination: llm.NewTerminationMetadata("", "", ""),
 			FinishReason: llm.FinishReasonUnknown,
 			Text:         "",
 			OutputItems:  nil,

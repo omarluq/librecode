@@ -91,11 +91,13 @@ func validateCheckpointParts(message *llm.Message, messageIndex int) error {
 }
 
 func completedRound(result *providerResult, toolResults []llm.ToolResult) llm.CompletedRound {
+	usage := providerResultUsage(result)
+
 	return llm.CompletedRound{
 		Assistant:    assistantMessageFromProviderResult(result),
 		ToolResults:  cloneToolResults(toolResults),
 		FinishReason: normalizedFinishReason(result),
-		Usage:        cloneUsage(providerResultUsage(result)),
+		Usage:        cloneUsage(&usage),
 	}
 }
 
@@ -157,7 +159,7 @@ func cloneCompletedRound(round *llm.CompletedRound) *llm.CompletedRound {
 		Assistant:    cloneMessage(round.Assistant),
 		ToolResults:  cloneToolResults(round.ToolResults),
 		FinishReason: round.FinishReason,
-		Usage:        cloneUsage(round.Usage),
+		Usage:        cloneUsage(&round.Usage),
 	}
 }
 
@@ -234,8 +236,8 @@ func cloneToolResults(results []llm.ToolResult) []llm.ToolResult {
 	return cloned
 }
 
-func cloneUsage(usage llm.Usage) llm.Usage {
-	cloned := usage
+func cloneUsage(usage *llm.Usage) llm.Usage {
+	cloned := *usage
 	cloned.Breakdown = cloneStringIntMap(usage.Breakdown)
 
 	cloned.TopContributors = append([]llm.TokenContributor(nil), usage.TopContributors...)

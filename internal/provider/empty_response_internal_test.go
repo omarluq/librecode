@@ -13,13 +13,13 @@ import (
 func TestFinishProviderResultAllowsEmptyText(t *testing.T) {
 	t.Parallel()
 
-	result := &llm.Response{
+	result := &llm.Response{Termination: llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonUnknown,
 		Content:      nil,
 		ToolCalls:    nil,
 		Usage:        llm.EmptyUsage(),
 	}
-	finished, err := finishProviderResult(result, &providerResult{
+	finished, err := finishProviderResult(result, &providerResult{Termination: llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Text:         strings.Repeat(" ", 3),
 		OutputItems:  nil,

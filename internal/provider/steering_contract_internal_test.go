@@ -83,7 +83,7 @@ func TestOpenAIChatBlankToolCallMessageIsPreserved(t *testing.T) {
 	t.Parallel()
 
 	state := &openAIChatLoopState{result: nil, endpoint: "", messages: nil}
-	result := &providerResult{
+	result := &providerResult{Termination: llm.NewTerminationMetadata("", "", ""),
 		FinishReason: "", Text: "", OutputItems: nil, Thinking: nil,
 		ToolCalls: []ToolCall{{
 			Metadata: nil, ArgumentsJSON: "", ID: testCallID, Name: jsonReadToolName, Arguments: tool.EmptyArguments(),

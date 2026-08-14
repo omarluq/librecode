@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/samber/oops"
 
@@ -50,6 +52,11 @@ func applyProviderRequestHook(
 		output = HookOutput{Payload: mutated.Payload, Headers: mutated.Headers}
 	}
 
+	if err := validateBoundedOutputMutation(request, input.Payload, output.Payload); err != nil {
+		return HookOutput{}, oops.In("provider").Code("provider_request_hook_invalid_max_tokens").
+			Wrapf(err, "validate provider request hook output bound")
+	}
+
 	if request.OnProviderObserve != nil {
 		observeInput := hookInputToLLM(request, output.Payload, output.Headers, providerAttempt(request))
 		request.OnProviderObserve(ctx, observeInput)
@@ -58,12 +65,47 @@ func applyProviderRequestHook(
 	return output, nil
 }
 
-func observeProviderResponse(ctx context.Context, request *CompletionRequest, usage llm.Usage) {
+func validateBoundedOutputMutation(request *CompletionRequest, before, after map[string]any) error {
+	if request == nil || request.Request.MaxTokens <= 0 {
+		return nil
+	}
+
+	for _, key := range []string{"max_tokens", "max_completion_tokens", "max_output_tokens"} {
+		if _, bounded := before[key]; !bounded {
+			continue
+		}
+
+		if value, ok := integerPayloadValue(after[key]); !ok || value != int64(request.Request.MaxTokens) {
+			return fmt.Errorf("bounded field %q must remain %d", key, request.Request.MaxTokens)
+		}
+
+		return nil
+	}
+
+	return errors.New("bounded request has no provider maximum-output field")
+}
+
+func integerPayloadValue(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case int:
+		return int64(typed), true
+	case int64:
+		return typed, true
+	case float64:
+		converted := int64(typed)
+
+		return converted, float64(converted) == typed
+	default:
+		return 0, false
+	}
+}
+
+func observeProviderResponse(ctx context.Context, request *CompletionRequest, usage *llm.Usage) {
 	if request == nil || request.OnProviderResponse == nil {
 		return
 	}
 
-	request.OnProviderResponse(ctx, usage)
+	request.OnProviderResponse(ctx, *usage)
 }
 
 func providerAttempt(request *CompletionRequest) int {
@@ -88,6 +130,7 @@ func hookInputToLLM(
 			Headers:         cloneStringMap(headers),
 			SessionID:       "",
 			ThinkingLevel:   "",
+			MaxTokens:       0,
 			Attempt:         attempt,
 		}
 	}
@@ -99,6 +142,7 @@ func hookInputToLLM(
 		Headers:         cloneStringMap(headers),
 		SessionID:       request.Request.SessionID,
 		ThinkingLevel:   request.Request.ThinkingLevel,
+		MaxTokens:       request.Request.MaxTokens,
 		Attempt:         attempt,
 	}
 }

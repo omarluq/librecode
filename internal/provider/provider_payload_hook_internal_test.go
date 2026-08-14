@@ -122,6 +122,34 @@ func TestApplyProviderRequestHookObservesMutatedRequests(t *testing.T) {
 	assert.Equal(t, []string{"mutate:1", "observe:1"}, calls)
 }
 
+func TestApplyProviderRequestHookRejectsBoundMutation(t *testing.T) {
+	t.Parallel()
+
+	for _, mutation := range []struct {
+		apply func(map[string]any)
+		name  string
+	}{
+		{name: "remove", apply: func(payload map[string]any) { delete(payload, "max_completion_tokens") }},
+		{name: "raise", apply: func(payload map[string]any) { payload["max_completion_tokens"] = 257 }},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := providerPayloadHookRequest("https://example.test")
+			request.Request.MaxTokens = 256
+			request.OnProviderRequest = func(_ context.Context, input *llm.HookInput) (llm.HookOutput, error) {
+				payload := cloneAnyMap(input.Payload)
+				mutation.apply(payload)
+
+				return llm.HookOutput{Payload: payload, Headers: input.Headers}, nil
+			}
+			_, err := applyProviderRequestHook(context.Background(), request,
+				map[string]any{"max_completion_tokens": 256}, map[string]string{})
+			assert.Error(t, err)
+		})
+	}
+}
+
 func TestApplyProviderRequestHookHandlesNilRequest(t *testing.T) {
 	t.Parallel()
 
@@ -182,7 +210,7 @@ func providerPayloadHookRequest(baseURL string) *CompletionRequest {
 		OnProviderRequest:  nil,
 		ExecuteTools:       nil,
 		OnEvent:            nil,
-		Request: llm.Request{
+		Request: llm.Request{MaxTokens: 0,
 			ProviderOptions: map[string]any{"cwd": "/work"},
 			Auth:            llm.Auth{Headers: map[string]string{}, APIKey: "test-key"},
 			SystemPrompt:    providerPayloadHookSystemPrompt,
