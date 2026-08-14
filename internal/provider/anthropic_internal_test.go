@@ -22,6 +22,18 @@ func TestAnthropicPayloadOmitsTemperature(t *testing.T) {
 	assert.Equal(t, 4096, payload["max_tokens"])
 }
 
+func TestAnthropicPayloadCapsMaxTokensOverrideAtModelLimit(t *testing.T) {
+	t.Parallel()
+
+	request := testCompletionRequestAuth("sk-ant-api03-secret")
+	request.Request.Model.MaxTokens = 2_048
+	request.Request.MaxTokens = 4_096
+
+	payload := anthropicPayload(request)
+
+	assert.Equal(t, 2_048, payload[finishReasonMaxTokens])
+}
+
 const anthropicTestSystemPrompt = "system"
 
 func TestAnthropicPayloadUsesStructuredSystemPrompt(t *testing.T) {

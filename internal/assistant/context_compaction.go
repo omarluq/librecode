@@ -148,6 +148,14 @@ type compactionAppendInput struct {
 	fromHook    bool
 }
 
+type compactionSummaryInput struct {
+	providerInput *compactionProviderInput
+	plan          *compaction.Plan
+	decision      *compactionLifecycleDecision
+	cwd           string
+	sessionID     string
+}
+
 func (runtime *Runtime) compactionRecentTailTokens(selectedModel *model.Model, currentTokens int) int {
 	contextWindow := 0
 	if selectedModel != nil {
@@ -199,17 +207,13 @@ func (runtime *Runtime) compactSessionWithPlan(
 	plan.ValidationRecords = compaction.CollectValidationRecords(compactedEntries)
 	plan.ActiveWorkRecords = compaction.CollectActiveWorkRecords(compactedEntries)
 
-	summary, fromHook, err := runtime.compactionSummary(
-		ctx,
-		cwd,
-		sessionID,
-		providerInput.selectedModel,
-		providerInput.auth,
-		providerInput.operation,
-		providerInput.outputLimit,
-		plan,
-		decision,
-	)
+	summary, fromHook, err := runtime.compactionSummary(ctx, &compactionSummaryInput{
+		cwd:           cwd,
+		sessionID:     sessionID,
+		providerInput: providerInput,
+		plan:          plan,
+		decision:      decision,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -332,22 +336,18 @@ func (runtime *Runtime) explicitCompactionBranch(
 
 func (runtime *Runtime) compactionSummary(
 	ctx context.Context,
-	cwd string,
-	sessionID string,
-	selectedModel *model.Model,
-	auth model.RequestAuth,
-	operation compaction.Operation,
-	outputLimit int,
-	plan *compaction.Plan,
-	decision *compactionLifecycleDecision,
+	input *compactionSummaryInput,
 ) (summary string, fromHook bool, err error) {
-	if decision != nil && decision.Summary != "" {
+	if input.decision != nil && input.decision.Summary != "" {
 		return compaction.AppendDeterministicState(
-			decision.Summary, plan.FileOperations, plan.ValidationRecords, plan.ActiveWorkRecords,
+			input.decision.Summary,
+			input.plan.FileOperations,
+			input.plan.ValidationRecords,
+			input.plan.ActiveWorkRecords,
 		), true, nil
 	}
 
-	summary, err = runtime.summarizeCompaction(ctx, cwd, sessionID, selectedModel, auth, operation, outputLimit, plan)
+	summary, err = runtime.summarizeCompaction(ctx, input)
 	if err != nil {
 		return "", false, err
 	}
@@ -405,14 +405,10 @@ func (runtime *Runtime) appendCompaction(
 
 func (runtime *Runtime) summarizeCompaction(
 	ctx context.Context,
-	cwd string,
-	sessionID string,
-	selectedModel *model.Model,
-	auth model.RequestAuth,
-	operation compaction.Operation,
-	outputLimit int,
-	plan *compaction.Plan,
+	input *compactionSummaryInput,
 ) (string, error) {
+	plan := input.plan
+	providerInput := input.providerInput
 	systemPrompt := compaction.SystemPrompt(plan.PreviousSummary, plan.SplitTurnSummary)
 	request := &CompletionRequest{
 		OnEvent:                nil,
@@ -420,28 +416,28 @@ func (runtime *Runtime) summarizeCompaction(
 		OnProviderResponse:     providerUsageObserver(),
 		OnRoundCheckpoint:      nil,
 		OnProviderRequest:      runtime.dispatchProviderRequestHook,
-		ToolRegistry:           tool.NewRegistry(cwd),
+		ToolRegistry:           tool.NewRegistry(input.cwd),
 		ExecuteTools:           nil,
 		DisableTools:           true,
 		ToolSideEffectsStarted: false,
-		SessionID:              sessionID,
+		SessionID:              input.sessionID,
 		Identity:               emptyRequestIdentity(),
 		SystemPrompt:           systemPrompt,
 		ThinkingLevel:          thinkingOff,
-		CWD:                    cwd,
-		Auth:                   auth,
+		CWD:                    input.cwd,
+		Auth:                   providerInput.auth,
 		Messages:               plan.Messages,
-		Usage:                  compactionRequestUsage(selectedModel, systemPrompt, plan.Messages),
-		Model:                  *selectedModel,
+		Usage:                  compactionRequestUsage(providerInput.selectedModel, systemPrompt, plan.Messages),
+		Model:                  *providerInput.selectedModel,
 		ProviderAttempt:        0,
-		MaxTokens:              outputLimit,
+		MaxTokens:              providerInput.outputLimit,
 	}
 
-	outcome, err := runtime.completeSummary(ctx, runtime.newSummaryRequest(request), operation)
+	outcome, err := runtime.completeSummary(ctx, runtime.newSummaryRequest(request), providerInput.operation)
 	if errors.Is(err, compaction.ErrSummaryOutputTruncated) {
 		initialErr := err
 
-		outcome, err = runtime.completeReducedSummary(ctx, request, plan.SummaryGroups, operation)
+		outcome, err = runtime.completeReducedSummary(ctx, request, plan.SummaryGroups, providerInput.operation)
 		if err != nil {
 			return "", errors.Join(initialErr, err)
 		}

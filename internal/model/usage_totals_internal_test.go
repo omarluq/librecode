@@ -12,7 +12,7 @@ import (
 func TestUsageTotalsFromTokenUsage(t *testing.T) {
 	t.Parallel()
 
-	reportedUsage := TokenUsage{Provenance: UsageProvenance(""),
+	reportedUsage := TokenUsage{Provenance: UsageProviderReported,
 		Breakdown: nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
 		InputTokens: 2, OutputTokens: 3,
 	}
@@ -21,6 +21,16 @@ func TestUsageTotalsFromTokenUsage(t *testing.T) {
 	assert.Equal(t, UsageTotals{
 		InputTokens: 2, OutputTokens: 3, ProviderRoundTrips: 0, Reported: true,
 	}, reported)
+
+	estimatedUsage := TokenUsage{Provenance: UsageLocalEstimate,
+		Breakdown: nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 5,
+		InputTokens: 2, OutputTokens: 3,
+	}
+	estimated, err := UsageTotalsFromTokenUsage(&estimatedUsage)
+	require.NoError(t, err)
+	assert.Equal(t, UsageTotals{
+		InputTokens: 2, OutputTokens: 3, ProviderRoundTrips: 0, Reported: false,
+	}, estimated)
 
 	emptyUsage := EmptyTokenUsage()
 	unknown, err := UsageTotalsFromTokenUsage(&emptyUsage)
@@ -50,6 +60,15 @@ func TestUsageTotalsJSONCompatibilityAndValidation(t *testing.T) {
 	var legacy UsageTotals
 	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":2,"output_tokens":3,"extra":true}`), &legacy))
 	assert.Equal(t, UsageTotals{InputTokens: 2, OutputTokens: 3, ProviderRoundTrips: 0, Reported: true}, legacy)
+
+	var explicitlyEstimated UsageTotals
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"input_tokens":2,"output_tokens":3,"reported":false}`),
+		&explicitlyEstimated,
+	))
+	assert.Equal(t, UsageTotals{
+		InputTokens: 2, OutputTokens: 3, ProviderRoundTrips: 0, Reported: false,
+	}, explicitlyEstimated)
 
 	var zero UsageTotals
 	require.NoError(t, json.Unmarshal([]byte(`{"reported":true}`), &zero))

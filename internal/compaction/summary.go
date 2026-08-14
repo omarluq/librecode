@@ -73,9 +73,14 @@ func (summaryError *SummaryError) Unwrap() []error {
 		return nil
 	}
 
-	if summaryError.Cause == nil {
-		return []error{summaryError.Kind}
+	unwrapped := make([]error, 0)
+	if summaryError.Kind != nil {
+		unwrapped = append(unwrapped, summaryError.Kind)
 	}
 
-	return []error{summaryError.Kind, summaryError.Cause}
+	if summaryError.Cause != nil {
+		unwrapped = append(unwrapped, summaryError.Cause)
+	}
+
+	return unwrapped
 }

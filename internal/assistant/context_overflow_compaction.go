@@ -42,8 +42,8 @@ func (state *providerOverflowRecoveryState) reserve() bool {
 }
 
 func validProviderOverflowRecoveryInput(input *providerOverflowRecoveryInput) bool {
-	return input != nil && input.build != nil && input.preparation != nil && input.recovery != nil &&
-		input.preparation.auth != nil && input.preparation.lineage != nil
+	return input != nil && input.build != nil && input.build.Request != nil && input.preparation != nil &&
+		input.recovery != nil && input.preparation.auth != nil && input.preparation.lineage != nil
 }
 
 func (runtime *Runtime) completeWithProviderOverflowRecovery(

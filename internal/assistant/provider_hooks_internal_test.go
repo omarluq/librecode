@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/assistant/lifecyclepayload"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -21,6 +22,17 @@ const (
 	providerHookTestModelID   = "test-model"
 	providerHookMessagesKey   = "messages"
 )
+
+func TestProviderRequestLifecyclePayloadIncludesMaxTokens(t *testing.T) {
+	t.Parallel()
+
+	input := providerHookTestInput(map[string]any{}, map[string]string{}, 1)
+	input.MaxTokens = 4096
+
+	payload := providerRequestLifecyclePayload(input)
+
+	assert.Equal(t, 4096, payload[lifecyclepayload.MaxTokensKey])
+}
 
 func TestRuntime_ProviderRequestHookMutatesPayloadAndHeaders(t *testing.T) {
 	t.Parallel()

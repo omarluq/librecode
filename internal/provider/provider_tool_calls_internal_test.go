@@ -136,6 +136,47 @@ func TestCompleteOpenAIChatContinuesTextResponseWhenCheckpointReturnsMessages(t 
 	assert.Equal(t, "continue differently", steeringMessage[jsonContentKey])
 }
 
+func TestCompleteOpenAIResponsesPreservesFinalTerminationMetadataAcrossLoop(t *testing.T) {
+	t.Parallel()
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		requestCount++
+
+		writer.Header().Set("Content-Type", "text/event-stream")
+
+		status := "incomplete"
+		details := `,"incomplete_details":{"reason":"max_output_tokens"}`
+
+		if requestCount == 2 {
+			status = statusCompleted
+			details = ""
+		}
+
+		writeTestProviderResponse(t, writer, openAIResponseCompletedStream(
+			`{"status":"`+status+`"`+details+`,"output_text":"answer"}`,
+		))
+	}))
+	t.Cleanup(server.Close)
+
+	request := testCompletionRequestAuth("sk-test")
+	setTestRequestProvider(request, testOpenAIProvider)
+	setTestRequestAPI(request, apiOpenAIResponses)
+	setTestRequestBaseURL(request, server.URL)
+	request.OnRoundCheckpoint = func(_ context.Context, _ *llm.CompletedRound) ([]llm.Message, error) {
+		if requestCount == 1 {
+			return []llm.Message{llm.TextMessage(llm.RoleUser, "continue")}, nil
+		}
+
+		return nil, nil
+	}
+
+	result, err := (&HTTPCompletionClient{client: server.Client()}).completeOpenAIResponses(t.Context(), request)
+
+	require.NoError(t, err)
+	assert.Equal(t, llm.NewTerminationMetadata(statusCompleted, "", ""), result.Termination)
+}
+
 func TestCompleteOpenAIResponsesContinuesTextResponseWhenCheckpointReturnsMessages(t *testing.T) {
 	t.Parallel()
 

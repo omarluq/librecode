@@ -182,7 +182,8 @@ func MergeUsage(estimated, reported *model.TokenUsage) model.TokenUsage {
 
 // ProviderUsageEntity converts model usage into database usage metadata for persisted provider entries.
 func ProviderUsageEntity(usage *model.TokenUsage) *database.EntryTokenUsageEntity {
-	if usage.InputTokens <= 0 && usage.ContextTokens <= 0 && usage.ContextWindow <= 0 && usage.OutputTokens <= 0 {
+	if usage == nil ||
+		(usage.InputTokens <= 0 && usage.ContextTokens <= 0 && usage.ContextWindow <= 0 && usage.OutputTokens <= 0) {
 		return nil
 	}
 

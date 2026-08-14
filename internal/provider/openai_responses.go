@@ -75,6 +75,7 @@ func (client *HTTPCompletionClient) completeResponsesLoop(
 		appendThinking(result, providerResult.Thinking)
 		result.Usage = accumulateUsage(&result.Usage, &providerResult.Usage)
 		result.FinishReason = providerResult.FinishReason
+		result.Termination = providerResult.Termination
 
 		if len(providerResult.ToolCalls) == 0 {
 			finished, nextInput, finishErr := advanceResponsesTextRound(ctx, request, result, input, providerResult)
@@ -140,6 +141,7 @@ func advanceResponsesTextRound(
 
 	setResponseText(result, providerResult.Text)
 	result.FinishReason = normalizedFinishReason(providerResult)
+	result.Termination = providerResult.Termination
 
 	return true, input, nil
 }

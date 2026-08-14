@@ -23,6 +23,8 @@ const (
 	activeStateQueued      = "queued"
 	activeStateRunning     = "running"
 	activeStateUnknown     = "unknown"
+	// validationCanceledBritish accepts the British spelling from providers and tools.
+	validationCanceledBritish = "cancel" + "led"
 
 	// MaxValidationRecords bounds validation records retained in a checkpoint.
 	MaxValidationRecords = 32
@@ -167,7 +169,7 @@ func validationOutcome(status string) ValidationOutcome {
 		return ValidationPassed
 	case "failed", "error":
 		return ValidationFailed
-	case "canceled", "cancel" + "led":
+	case "canceled", validationCanceledBritish:
 		return ValidationCanceled
 	default:
 		return ValidationUnknown
@@ -412,12 +414,12 @@ func appendBoundedSection(sections []string, heading string, lines []string, lim
 	used := contextwindow.EstimateTokens(heading)
 	omitted := 0
 
-	for _, line := range slices.Backward(lines) {
+	for index, line := range slices.Backward(lines) {
 		cost := contextwindow.EstimateTokens(line)
 		if used+cost > limit {
-			omitted++
+			omitted = index + 1
 
-			continue
+			break
 		}
 
 		kept = append([]string{line}, kept...)
@@ -439,6 +441,10 @@ func appendOmissionMarker(kept []string, used, omitted, limit int) []string {
 		kept = kept[1:]
 		omitted++
 		marker = fmt.Sprintf("- ... %d older records omitted", omitted)
+	}
+
+	if used+contextwindow.EstimateTokens(marker) > limit {
+		return kept
 	}
 
 	return append(kept, marker)

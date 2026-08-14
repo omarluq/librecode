@@ -138,7 +138,7 @@ func TestRunMetricsRejectsMalformedToolTraces(t *testing.T) {
 
 func metricsTokenUsage(input, output int) model.TokenUsage {
 	return model.TokenUsage{
-		Provenance: "",
+		Provenance: model.UsageProviderReported,
 		Breakdown:  nil, TopContributors: nil, ContextWindow: 0, ContextTokens: 0,
 		InputTokens: input, OutputTokens: output,
 	}

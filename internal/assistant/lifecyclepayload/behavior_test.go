@@ -55,9 +55,12 @@ func TestTurnStartAndContextBuildPayloads(t *testing.T) {
 		ExtensionContributionTokenLimit: 0,
 		Breakdown:                       map[string]int{contextwindow.BreakdownHistory: 10},
 		SystemPrompt:                    "",
-		Contributions:                   nil,
-		Messages:                        nil,
-		UsageAnchor:                     nil,
+		Contributions: []contextwindow.Contribution{
+			{Source: "", Name: "", Role: "", Content: "", Tokens: 3, Metadata: nil},
+			{Source: "", Name: "", Role: "", Content: "", Tokens: 4, Metadata: nil},
+		},
+		Messages:    nil,
+		UsageAnchor: nil,
 		Usage: model.TokenUsage{
 			Provenance: "",
 			Breakdown:  map[string]int{contextwindow.BreakdownHistory: 10},
@@ -93,6 +96,7 @@ func TestTurnStartAndContextBuildPayloads(t *testing.T) {
 	)
 
 	assert.Equal(t, 3, payload["message_count"])
+	assert.Equal(t, 7, payload["extension_tokens_used"])
 	assert.Equal(t, map[string]int{"user": 1, "assistant": 2}, payload["model_facing_roles"])
 	contributors, ok := payload["topContributors"].([]any)
 	require.True(t, ok)
@@ -115,7 +119,12 @@ func TestProviderResponseErrorAndNilPayloads(t *testing.T) {
 		OutputTokens:    5,
 	}
 	response := lifecyclepayload.ProviderResponsePayload(&lifecyclepayload.ProviderResponse{
-		FinishReason:   llm.FinishReasonLength,
+		FinishReason: llm.FinishReasonLength,
+		Termination: llm.NewTerminationMetadata(
+			"incomplete",
+			"max_tokens",
+			"max_output_tokens",
+		),
 		API:            lifecycleProviderAPI,
 		ModelID:        lifecycleProviderModel,
 		Provider:       lifecycleProviderName,
@@ -128,6 +137,11 @@ func TestProviderResponseErrorAndNilPayloads(t *testing.T) {
 	})
 	assert.Equal(t, lifecycleAnswer, response[lifecyclepayload.TextKey])
 	assert.Equal(t, string(llm.FinishReasonLength), response["finish_reason"])
+	assert.Equal(t, map[string]any{
+		"provider_status":        "incomplete",
+		"provider_finish_reason": "max_tokens",
+		"incomplete_reason":      "max_output_tokens",
+	}, response[lifecyclepayload.TerminationKey])
 	assert.Equal(t, 3, response["tool_event_count"])
 
 	providerErr := lifecyclepayload.ProviderErrorPayload(&lifecyclepayload.ProviderError{

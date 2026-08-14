@@ -28,7 +28,7 @@ type SemanticGroup struct {
 
 // GroupsFromMessages groups model-facing history at user/custom/bash turn boundaries.
 // Tokens use the same complete-message estimator as summary request preflight.
-func GroupsFromMessages(messages []database.MessageEntity, entryIDs []string, _ TokenCounter) []SemanticGroup {
+func GroupsFromMessages(messages []database.MessageEntity, entryIDs []string) []SemanticGroup {
 	groups := make([]SemanticGroup, 0)
 
 	for index := range messages {
@@ -83,11 +83,13 @@ func Partition(groups []SemanticGroup, availableInputTokens, maxChunks int) ([]C
 
 	chunks := make([]Chunk, 0)
 
-	for index := 0; index < len(groups); {
+	for index := range groups {
 		if err := validateSemanticGroup(groups[index], index, availableInputTokens); err != nil {
 			return nil, err
 		}
+	}
 
+	for index := 0; index < len(groups); {
 		chunk, nextIndex := packChunk(groups, index, availableInputTokens)
 		if len(chunk.Groups) == 0 {
 			return nil, fmt.Errorf("%w", ErrSummaryIndivisibleGroup)
@@ -138,11 +140,9 @@ func packChunk(
 
 	for index < len(groups) && chunk.Tokens+groups[index].Tokens <= availableInputTokens {
 		group := groups[index]
-		if group.Tokens > 0 && len(group.Messages) > 0 {
-			chunk.Groups = append(chunk.Groups, group)
-			chunk.Messages = append(chunk.Messages, group.Messages...)
-			chunk.Tokens += group.Tokens
-		}
+		chunk.Groups = append(chunk.Groups, group)
+		chunk.Messages = append(chunk.Messages, group.Messages...)
+		chunk.Tokens += group.Tokens
 
 		index++
 	}

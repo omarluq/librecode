@@ -158,6 +158,7 @@ func TestProviderAndToolPayloads(t *testing.T) {
 		SessionID:     lifecycleTestSessionID,
 		ThinkingLevel: "off",
 		Attempt:       2,
+		MaxTokens:     0,
 	})
 	assert.Equal(t, lifecycleTestAPI, providerRequest[lifecyclepayload.APIKey])
 	assert.Equal(t, 2, providerRequest[lifecyclepayload.AttemptKey])

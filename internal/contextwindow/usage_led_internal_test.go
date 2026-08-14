@@ -91,6 +91,8 @@ func TestEstimateUsageLedInputTokensFallsBackWhenAnchorMissing(t *testing.T) {
 func TestProviderUsageEntitySkipsEmptyUsage(t *testing.T) {
 	t.Parallel()
 
+	assert.Nil(t, ProviderUsageEntity(nil))
+
 	emptyUsage := model.EmptyTokenUsage()
 	assert.Nil(t, ProviderUsageEntity(&emptyUsage))
 

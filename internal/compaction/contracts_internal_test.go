@@ -24,6 +24,37 @@ func TestContractsValidate(t *testing.T) {
 	require.Error(t, RetryIntent("again").Validate())
 }
 
+func TestSummaryErrorUnwrapOmitsNilAndPreservesOrder(t *testing.T) {
+	t.Parallel()
+
+	kind := errors.New("kind")
+	cause := errors.New("cause")
+	tests := []struct {
+		name string
+		err  *SummaryError
+		want []error
+	}{
+		{name: "neither", err: testSummaryError(nil, nil), want: []error{}},
+		{name: "kind", err: testSummaryError(kind, nil), want: []error{kind}},
+		{name: "cause", err: testSummaryError(nil, cause), want: []error{cause}},
+		{name: "both", err: testSummaryError(kind, cause), want: []error{kind, cause}},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, testCase.want, testCase.err.Unwrap())
+		})
+	}
+}
+
+func testSummaryError(kind, cause error) *SummaryError {
+	return &SummaryError{
+		Kind: kind, Cause: cause, Provider: "", Model: "", Reason: "",
+		Input: 0, Limit: 0, Before: 0, After: 0,
+	}
+}
+
 func TestSummaryErrorSupportsIsAndAs(t *testing.T) {
 	t.Parallel()
 

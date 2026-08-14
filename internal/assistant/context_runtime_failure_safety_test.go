@@ -32,8 +32,10 @@ func TestRuntime_OverflowRecoveryFailureNeverReplaysProvider(t *testing.T) {
 			contextWindow: 200_000,
 		},
 		{
-			name:          "rebuilt request fails preflight",
-			client:        newOverflowSummaryCompleter(strings.Repeat("summary ", 30_000), nil),
+			name: "rebuilt request fails preflight",
+			client: newOverflowSummaryCompleter(
+				structuredTestSummary(strings.Repeat("summary ", 30_000)), nil,
+			),
 			contextWindow: 20_000,
 		},
 	}

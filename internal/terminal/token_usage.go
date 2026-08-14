@@ -39,6 +39,10 @@ func cloneTerminalUsage(usage *model.TokenUsage) model.TokenUsage {
 
 func mergeTerminalUsage(current, next *model.TokenUsage) model.TokenUsage {
 	merged := *current
+	if next.Provenance != "" {
+		merged.Provenance = next.Provenance
+	}
+
 	if next.ContextWindow > 0 {
 		merged.ContextWindow = next.ContextWindow
 	}

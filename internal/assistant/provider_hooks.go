@@ -66,6 +66,7 @@ func providerRequestLifecyclePayload(input *llm.HookInput) map[string]any {
 		SessionID:     input.SessionID,
 		ThinkingLevel: input.ThinkingLevel,
 		Attempt:       input.Attempt,
+		MaxTokens:     input.MaxTokens,
 	})
 }
 

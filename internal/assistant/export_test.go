@@ -93,6 +93,37 @@ func (runtime *Runtime) ProviderOverflowRecoveryNilBuildForTest(ctx context.Cont
 	return err
 }
 
+// ProviderOverflowRecoveryNilRequestForTest exercises the nil build-request guard.
+func (runtime *Runtime) ProviderOverflowRecoveryNilRequestForTest(ctx context.Context) error {
+	auth := model.RequestAuth{Headers: nil, APIKey: compactionTestOrigin, Error: "", OK: true}
+	_, _, _, err := runtime.completeWithProviderOverflowRecovery(ctx, &providerOverflowRecoveryInput{
+		preparation: &completionRequestPreparationInput{
+			selectedModel: nil,
+			onEvent:       nil,
+			auth:          &auth,
+			sessionID:     "",
+			cwd:           "",
+			prompt:        "",
+			lineage: &promptLineage{
+				onEvent: nil, progress: nil, activeParentEntryID: "", runID: "", pendingRounds: nil,
+				latestRoundUsage: model.EmptyTokenUsage(), committedThinking: 0, committedTools: 0,
+				checkpointed: false, generation: 0,
+			},
+		},
+		build: &contextRequestBuild{
+			Context: nil,
+			Request: nil,
+			Budget: contextwindow.Budget{
+				InputTokens: 0, ContextWindow: 0, UsableInput: 0, OutputReserve: 0,
+				ToolSchemaReserve: 0, ProviderReserve: 0, SafetyMargin: 0,
+			},
+		},
+		onRetry: nil, compactionEntry: nil, recovery: newProviderOverflowRecoveryState(),
+	})
+
+	return err
+}
+
 func newZeroCompletionRequest(auth model.RequestAuth) *CompletionRequest {
 	return &CompletionRequest{
 		Identity:           emptyRequestIdentity(),

@@ -54,6 +54,45 @@ func TestMergeTerminalUsage(t *testing.T) {
 	}
 }
 
+func TestMergeTerminalUsageProvenance(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		current model.UsageProvenance
+		next    model.UsageProvenance
+		want    model.UsageProvenance
+	}{
+		{
+			name:    "uses non-empty next provenance",
+			current: model.UsageLocalEstimate,
+			next:    model.UsageProviderAnchorEstimate,
+			want:    model.UsageProviderAnchorEstimate,
+		},
+		{
+			name:    "retains current provenance when next is empty",
+			current: model.UsageProviderAnchorEstimate,
+			next:    "",
+			want:    model.UsageProviderAnchorEstimate,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := emptyTestTokenUsage()
+			current.Provenance = test.current
+			next := emptyTestTokenUsage()
+			next.Provenance = test.next
+
+			merged := mergeTerminalUsage(&current, &next)
+
+			assert.Equal(t, test.want, merged.Provenance)
+		})
+	}
+}
+
 func emptyTestTokenUsage() model.TokenUsage {
 	return model.TokenUsage{
 		Breakdown:       nil,
