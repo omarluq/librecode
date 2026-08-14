@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,9 +22,10 @@ func TestCompleteAnthropicExecutesToolCalls(t *testing.T) {
 
 	var roundUsage []llm.Usage
 
-	requestCount := 0
+	var requestCount atomic.Int32
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		requestCount++
+		count := requestCount.Add(1)
 
 		var payload map[string]any
 		assert.NoError(t, json.NewDecoder(request.Body).Decode(&payload))
@@ -31,7 +33,7 @@ func TestCompleteAnthropicExecutesToolCalls(t *testing.T) {
 
 		writer.Header().Set("Content-Type", "text/event-stream")
 
-		if requestCount == 1 {
+		if count == 1 {
 			writeTestProviderResponse(t, writer, anthropicResponseStream(`{
 				"stop_reason":"tool_use",
 				"usage":{"input_tokens":1,"output_tokens":2},
