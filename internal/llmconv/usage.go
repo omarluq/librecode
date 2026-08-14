@@ -10,7 +10,7 @@ import (
 )
 
 // UsageFromModel converts model token usage into provider-neutral LLM usage.
-func UsageFromModel(usage model.TokenUsage) llm.Usage {
+func UsageFromModel(usage *model.TokenUsage) llm.Usage {
 	converted := llm.Usage{
 		Breakdown:       mapsutil.CloneOrNil(usage.Breakdown),
 		TopContributors: TokenContributorsFromModel(usage.TopContributors),
@@ -18,6 +18,7 @@ func UsageFromModel(usage model.TokenUsage) llm.Usage {
 		ContextTokens:   usage.ContextTokens,
 		InputTokens:     usage.InputTokens,
 		OutputTokens:    usage.OutputTokens,
+		Provenance:      llm.UsageProvenance(usage.Provenance),
 	}
 	if usage.Reported() {
 		converted = converted.WithReported()
@@ -27,7 +28,7 @@ func UsageFromModel(usage model.TokenUsage) llm.Usage {
 }
 
 // UsageToModel converts provider-neutral LLM usage into model token usage.
-func UsageToModel(usage llm.Usage) model.TokenUsage {
+func UsageToModel(usage *llm.Usage) model.TokenUsage {
 	converted := model.TokenUsage{
 		Breakdown:       mapsutil.CloneOrNil(usage.Breakdown),
 		TopContributors: TokenContributorsToModel(usage.TopContributors),
@@ -35,6 +36,7 @@ func UsageToModel(usage llm.Usage) model.TokenUsage {
 		ContextTokens:   usage.ContextTokens,
 		InputTokens:     usage.InputTokens,
 		OutputTokens:    usage.OutputTokens,
+		Provenance:      model.UsageProvenance(usage.Provenance),
 	}
 	if usage.Reported() {
 		converted = converted.WithReported()

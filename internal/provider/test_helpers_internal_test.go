@@ -100,14 +100,16 @@ func responseToolEvents(response *llm.Response) []ToolEvent {
 }
 
 func reportedRoundUsage(inputTokens, outputTokens int) llm.Usage {
-	return llm.Usage{
+	usage := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   0,
 		ContextTokens:   0,
 		InputTokens:     inputTokens,
 		OutputTokens:    outputTokens,
-	}.WithReported()
+	}
+
+	return usage.WithReported()
 }
 
 func emptyCompletionRequest() *CompletionRequest {

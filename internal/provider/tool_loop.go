@@ -193,6 +193,8 @@ func finishProviderResult(result *llm.Response, providerResult *providerResult) 
 	}
 
 	result.FinishReason = providerResult.FinishReason
+	result.Termination = providerResult.Termination
+
 	if result.FinishReason == llm.FinishReasonUnknown {
 		result.FinishReason = llm.FinishReasonStop
 	}

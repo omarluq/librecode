@@ -19,7 +19,7 @@ type UsageTotals struct {
 // UsageTotalsFromTokenUsage converts one provider usage observation into
 // cumulative usage. Reported distinguishes an explicit zero provider report
 // from absent usage; positive legacy values remain compatible.
-func UsageTotalsFromTokenUsage(usage TokenUsage) (UsageTotals, error) {
+func UsageTotalsFromTokenUsage(usage *TokenUsage) (UsageTotals, error) {
 	cumulative := UsageTotals{
 		InputTokens:        int64(usage.InputTokens),
 		OutputTokens:       int64(usage.OutputTokens),

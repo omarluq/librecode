@@ -268,11 +268,16 @@ func providerResultFromSSEAccumulator(accumulator *sseAccumulator, fallbackText 
 
 	return &providerResult{
 		FinishReason: llm.FinishReasonUnknown,
-		Text:         fallbackText,
-		OutputItems:  nil,
-		Thinking:     nil,
-		ToolCalls:    nil,
-		Usage:        llm.EmptyUsage(),
+		Termination: llm.TerminationMetadata{
+			ProviderStatus:       "",
+			ProviderFinishReason: "",
+			IncompleteReason:     "",
+		},
+		Text:        fallbackText,
+		OutputItems: nil,
+		Thinking:    nil,
+		ToolCalls:   nil,
+		Usage:       llm.EmptyUsage(),
 	}
 }
 

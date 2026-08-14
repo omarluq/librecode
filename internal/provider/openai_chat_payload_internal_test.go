@@ -175,7 +175,7 @@ func TestOpenAIChatPayloadDisablesZAIThinkingAndOmitsToolStreamWithoutTools(t *t
 func TestOpenAIChatAssistantToolMessage(t *testing.T) {
 	t.Parallel()
 
-	message := openAIChatAssistantToolMessage(&providerResult{
+	message := openAIChatAssistantToolMessage(&providerResult{Termination: llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonToolCalls,
 		Text:         "using tool",
 		OutputItems:  nil,

@@ -68,9 +68,9 @@ func (client *HTTPCompletionClient) advanceOpenAIChatLoop(
 		return false, err
 	}
 
-	observeProviderResponse(ctx, request, providerResult.Usage)
+	observeProviderResponse(ctx, request, &providerResult.Usage)
 
-	state.result.Usage = accumulateUsage(state.result.Usage, providerResult.Usage)
+	state.result.Usage = accumulateUsage(&state.result.Usage, &providerResult.Usage)
 	if validateErr := validateToolDispatch(providerResult.FinishReason, providerResult.ToolCalls); validateErr != nil {
 		return false, validateErr
 	}
@@ -190,6 +190,10 @@ func buildOpenAIChatPayload(request *CompletionRequest, messages []map[string]an
 		jsonToolsKey:      tools,
 		jsonToolChoiceKey: "auto",
 	}
+	if request.Request.MaxTokens > 0 {
+		payload["max_completion_tokens"] = request.Request.MaxTokens
+	}
+
 	if effort, ok := reasoningEffort(request); ok {
 		payload["reasoning_effort"] = effort
 	}

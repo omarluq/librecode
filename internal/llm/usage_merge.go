@@ -3,8 +3,8 @@ package llm
 import "github.com/omarluq/librecode/internal/mapsutil"
 
 // MergeUsage overlays provider-reported usage on an estimated usage snapshot.
-func MergeUsage(estimated, reported Usage) Usage {
-	usage := estimated
+func MergeUsage(estimated, reported *Usage) Usage {
+	usage := *estimated
 	if reported.Reported() {
 		usage = usage.WithReported()
 	}

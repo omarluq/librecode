@@ -247,7 +247,7 @@ func testCompletionRequestAuth(args ...string) *CompletionRequest {
 		OnProviderRequest:  nil,
 		ExecuteTools:       nil,
 		OnEvent:            nil,
-		Request: llm.Request{
+		Request: llm.Request{MaxTokens: 0,
 			ProviderOptions: nil,
 			Auth:            llm.Auth{Headers: nil, APIKey: apiKey},
 			SystemPrompt:    "",

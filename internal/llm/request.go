@@ -22,6 +22,7 @@ func EmptyRequest() Request {
 			Reasoning:        false,
 		},
 		Usage:        EmptyUsage(),
+		MaxTokens:    0,
 		DisableTools: false,
 	}
 }

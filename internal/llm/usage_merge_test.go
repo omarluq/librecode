@@ -14,7 +14,7 @@ const mergeUsageProviderKey = "provider"
 func TestMergeUsageOverlaysProviderReportedFields(t *testing.T) {
 	t.Parallel()
 
-	estimated := llm.Usage{
+	estimated := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown: map[string]int{"history": 100},
 		TopContributors: []llm.TokenContributor{
 			{Label: "estimate", Role: "user", Preview: "old", Tokens: 100, Chars: 300},
@@ -24,7 +24,7 @@ func TestMergeUsageOverlaysProviderReportedFields(t *testing.T) {
 		InputTokens:   15_000,
 		OutputTokens:  0,
 	}
-	reported := llm.Usage{
+	reported := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown: map[string]int{mergeUsageProviderKey: 1},
 		TopContributors: []llm.TokenContributor{
 			{Label: "reported", Role: "assistant", Preview: "new", Tokens: 10, Chars: 30},
@@ -35,7 +35,7 @@ func TestMergeUsageOverlaysProviderReportedFields(t *testing.T) {
 		OutputTokens:  700,
 	}
 
-	merged := llm.MergeUsage(estimated, reported)
+	merged := llm.MergeUsage(&estimated, &reported)
 
 	assert.Equal(t, 128_000, merged.ContextWindow)
 	assert.Equal(t, 12_000, merged.ContextTokens)
@@ -48,7 +48,7 @@ func TestMergeUsageOverlaysProviderReportedFields(t *testing.T) {
 func TestMergeUsagePreservesEstimatesWhenReportedValuesAreZero(t *testing.T) {
 	t.Parallel()
 
-	estimated := llm.Usage{
+	estimated := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   200_000,
@@ -57,7 +57,8 @@ func TestMergeUsagePreservesEstimatesWhenReportedValuesAreZero(t *testing.T) {
 		OutputTokens:    99,
 	}
 
-	merged := llm.MergeUsage(estimated, llm.EmptyUsage())
+	empty := llm.EmptyUsage()
+	merged := llm.MergeUsage(&estimated, &empty)
 
 	assert.Equal(t, estimated, merged)
 }
@@ -65,7 +66,7 @@ func TestMergeUsagePreservesEstimatesWhenReportedValuesAreZero(t *testing.T) {
 func TestMergeUsageClonesReportedMetadataWhenEstimateIsEmpty(t *testing.T) {
 	t.Parallel()
 
-	reported := llm.Usage{
+	reported := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown: map[string]int{"history": 12},
 		TopContributors: []llm.TokenContributor{
 			{Label: "message", Role: "user", Preview: "hello", Tokens: 12, Chars: 40},
@@ -76,7 +77,8 @@ func TestMergeUsageClonesReportedMetadataWhenEstimateIsEmpty(t *testing.T) {
 		OutputTokens:  0,
 	}
 
-	merged := llm.MergeUsage(llm.EmptyUsage(), reported)
+	empty := llm.EmptyUsage()
+	merged := llm.MergeUsage(&empty, &reported)
 
 	require.Equal(t, reported.Breakdown, merged.Breakdown)
 	require.Equal(t, reported.TopContributors, merged.TopContributors)
@@ -90,7 +92,7 @@ func TestMergeUsageClonesReportedMetadataWhenEstimateIsEmpty(t *testing.T) {
 func TestMergeUsageUsesReportedMetadataWhenEstimateMetadataNil(t *testing.T) {
 	t.Parallel()
 
-	reported := llm.Usage{
+	reported := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown: map[string]int{mergeUsageProviderKey: 3},
 		TopContributors: []llm.TokenContributor{
 			{Label: mergeUsageProviderKey, Role: "assistant", Preview: "ok", Tokens: 3, Chars: 9},
@@ -101,14 +103,15 @@ func TestMergeUsageUsesReportedMetadataWhenEstimateMetadataNil(t *testing.T) {
 		OutputTokens:  4,
 	}
 
-	merged := llm.MergeUsage(llm.Usage{
+	estimated := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100,
 		ContextTokens:   0,
 		InputTokens:     0,
 		OutputTokens:    0,
-	}, reported)
+	}
+	merged := llm.MergeUsage(&estimated, &reported)
 
 	assert.Equal(t, map[string]int{mergeUsageProviderKey: 3}, merged.Breakdown)
 	require.Len(t, merged.TopContributors, 1)

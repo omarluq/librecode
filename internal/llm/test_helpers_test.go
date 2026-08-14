@@ -10,7 +10,7 @@ import (
 type testGenerator struct{}
 
 func (testGenerator) Generate(context.Context, *llm.Request) (*llm.Response, error) {
-	return &llm.Response{
+	return &llm.Response{Termination: llm.NewTerminationMetadata("", "", ""),
 		FinishReason: llm.FinishReasonStop,
 		Content:      []llm.Part{llm.TextPart("done")},
 		ToolCalls:    nil,

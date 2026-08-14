@@ -153,6 +153,7 @@ type ToolEvent struct {
 
 type providerResult struct {
 	FinishReason llm.FinishReason
+	Termination  llm.TerminationMetadata
 	Text         string
 	OutputItems  []any
 	Thinking     []string

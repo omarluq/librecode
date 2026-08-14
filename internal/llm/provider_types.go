@@ -37,6 +37,7 @@ type HookInput struct {
 	SessionID       string            `json:"session_id,omitempty"`
 	ThinkingLevel   string            `json:"thinking_level,omitempty"`
 	Model           ModelRef          `json:"model"`
+	MaxTokens       int               `json:"max_tokens,omitempty"`
 	Attempt         int               `json:"attempt"`
 }
 

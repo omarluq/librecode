@@ -123,12 +123,12 @@ func (accumulator *openAIChatStreamAccumulator) add(
 	}
 
 	if len(chunk.Usage) > 0 {
-		accumulator.usage = mergeUsage(accumulator.usage, usageFromObject(chunk.Usage))
+		accumulator.usage = mergeUsageObject(&accumulator.usage, chunk.Usage)
 	}
 
 	for _, choice := range chunk.Choices {
 		if len(choice.Usage) > 0 {
-			accumulator.usage = mergeUsage(accumulator.usage, usageFromObject(choice.Usage))
+			accumulator.usage = mergeUsageObject(&accumulator.usage, choice.Usage)
 		}
 
 		accumulator.addDelta(choice.Delta, onEvent)
@@ -223,6 +223,7 @@ func (accumulator *openAIChatStreamAccumulator) result() *providerResult {
 
 	return &providerResult{
 		FinishReason: openAIChatFinishReason(accumulator.finishReason, len(calls) > 0),
+		Termination:  llm.NewTerminationMetadata("", accumulator.finishReason, ""),
 		Text:         strings.TrimSpace(strings.Join(accumulator.textParts, "")),
 		OutputItems:  nil,
 		Thinking:     accumulator.thinking,

@@ -58,9 +58,9 @@ func (client *HTTPCompletionClient) advanceAnthropicLoop(
 		return false, err
 	}
 
-	observeProviderResponse(ctx, request, providerResult.Usage)
+	observeProviderResponse(ctx, request, &providerResult.Usage)
 
-	state.result.Usage = accumulateUsage(state.result.Usage, providerResult.Usage)
+	state.result.Usage = accumulateUsage(&state.result.Usage, &providerResult.Usage)
 	if validateErr := validateToolDispatch(providerResult.FinishReason, providerResult.ToolCalls); validateErr != nil {
 		return false, validateErr
 	}
@@ -210,9 +210,14 @@ func buildAnthropicPayload(request *CompletionRequest, messages []map[string]any
 	// Anthropic's recent Claude models reject temperature when thinking/adaptive
 	// reasoning is available. Match production agent clients by omitting
 	// temperature unless/until librecode exposes an explicit user setting.
+	maxTokens := minPositive(request.Request.Model.MaxTokens, anthropicDefaultMaxTokens)
+	if request.Request.MaxTokens > 0 {
+		maxTokens = request.Request.MaxTokens
+	}
+
 	payload := map[string]any{
 		jsonModelKey:          request.Request.Model.ID,
-		finishReasonMaxTokens: minPositive(request.Request.Model.MaxTokens, anthropicDefaultMaxTokens),
+		finishReasonMaxTokens: maxTokens,
 		jsonMessagesKey:       messages,
 		jsonStreamKey:         true,
 		jsonToolsKey:          anthropicTools(requestToolDefinitions(request), usesAnthropicOAuth(request)),

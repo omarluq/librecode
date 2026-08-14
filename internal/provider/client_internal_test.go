@@ -213,10 +213,10 @@ func incompleteSSECases() []incompleteSSECase {
 			expectedToolCalls:    0,
 		},
 		{
-			name:                 "missing incomplete details defaults to length",
+			name:                 "missing incomplete details maps to error",
 			stream:               incompleteTextSSE("truncated ", "", incompleteMissingDetailsTrailer),
 			expectedText:         "truncated answer",
-			expectedFinishReason: llm.FinishReasonLength,
+			expectedFinishReason: llm.FinishReasonError,
 			expectedToolName:     "",
 			expectedInputTokens:  5,
 			expectedOutputTokens: 1,

@@ -14,7 +14,7 @@ import (
 func TestUsageConversionsCloneMapsAndContributors(t *testing.T) {
 	t.Parallel()
 
-	usage := model.TokenUsage{
+	baseUsage := model.TokenUsage{Provenance: model.UsageProvenance(""),
 		Breakdown: map[string]int{"history": 1},
 		TopContributors: []model.TokenContributor{
 			{Label: "history", Role: string(llm.RoleUser), Preview: "hello", Tokens: 2, Chars: 5},
@@ -23,9 +23,10 @@ func TestUsageConversionsCloneMapsAndContributors(t *testing.T) {
 		ContextTokens: 2,
 		InputTokens:   2,
 		OutputTokens:  1,
-	}.WithReported()
+	}
+	usage := baseUsage.WithReported()
 
-	converted := llmconv.UsageFromModel(usage)
+	converted := llmconv.UsageFromModel(&usage)
 	usage.Breakdown["history"] = 99
 	usage.TopContributors[0].Label = "mutated"
 
@@ -33,7 +34,7 @@ func TestUsageConversionsCloneMapsAndContributors(t *testing.T) {
 	require.Len(t, converted.TopContributors, 1)
 	assert.Equal(t, "history", converted.TopContributors[0].Label)
 
-	roundTrip := llmconv.UsageToModel(converted)
+	roundTrip := llmconv.UsageToModel(&converted)
 	converted.Breakdown["history"] = 42
 	converted.TopContributors[0].Label = "mutated again"
 

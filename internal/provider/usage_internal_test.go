@@ -23,7 +23,7 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 				jsonInputTokensKey:  float64(123),
 				jsonOutputTokensKey: float64(45),
 			},
-			expected: llm.Usage{
+			expected: llm.Usage{Provenance: llm.UsageProvenance(""),
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
 				TopContributors: nil,
 				InputTokens:     123, OutputTokens: 45,
@@ -35,7 +35,7 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 				jsonPromptTokensKey:     json.Number("77"),
 				jsonCompletionTokensKey: json.Number("9"),
 			},
-			expected: llm.Usage{
+			expected: llm.Usage{Provenance: llm.UsageProvenance(""),
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
 				TopContributors: nil,
 				InputTokens:     77, OutputTokens: 9,
@@ -49,7 +49,7 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 				"cache_creation_input_tokens": json.Number("3"),
 				jsonOutputTokensKey:           json.Number("9"),
 			},
-			expected: llm.Usage{
+			expected: llm.Usage{Provenance: llm.UsageProvenance(""),
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
 				TopContributors: nil,
 				InputTokens:     80, OutputTokens: 9,
@@ -63,7 +63,7 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 				"cache_creation_input_tokens": json.Number("3"),
 				jsonOutputTokensKey:           json.Number("9"),
 			},
-			expected: llm.Usage{
+			expected: llm.Usage{Provenance: llm.UsageProvenance(""),
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
 				TopContributors: nil,
 				InputTokens:     53, OutputTokens: 9,
@@ -75,7 +75,7 @@ func TestUsageFromObjectParsesProviderShapes(t *testing.T) {
 				jsonTotalTokensKey:  json.Number("120"),
 				jsonOutputTokensKey: json.Number("20"),
 			},
-			expected: llm.Usage{
+			expected: llm.Usage{Provenance: llm.UsageProvenance(""),
 				Breakdown: nil, ContextWindow: 0, ContextTokens: 0,
 				TopContributors: nil,
 				InputTokens:     100, OutputTokens: 20,
@@ -101,14 +101,14 @@ func TestMergeUsagePreservesEstimatedContextWindow(t *testing.T) {
 	estimated := usageFixture(1000, 200, 200, 0)
 	reported := usageFixture(0, 0, 150, 25)
 
-	assert.Equal(t, llm.Usage{
+	assert.Equal(t, llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   1000,
 		ContextTokens:   200,
 		InputTokens:     150,
 		OutputTokens:    25,
-	}, mergeUsage(estimated, reported))
+	}, mergeUsage(&estimated, &reported))
 }
 
 func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
@@ -117,14 +117,14 @@ func TestMergeUsageAcceptsProviderContextTokens(t *testing.T) {
 	estimated := usageFixture(100_000, 14_000, 14_000, 0)
 	reported := usageFixture(0, 12_000, 12_000, 700)
 
-	assert.Equal(t, llm.Usage{
+	assert.Equal(t, llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   100_000,
 		ContextTokens:   12_000,
 		InputTokens:     12_000,
 		OutputTokens:    700,
-	}, mergeUsage(estimated, reported))
+	}, mergeUsage(&estimated, &reported))
 }
 
 func TestMergeUsageDoesNotPromoteProviderTotalToContext(t *testing.T) {
@@ -133,20 +133,20 @@ func TestMergeUsageDoesNotPromoteProviderTotalToContext(t *testing.T) {
 	estimated := usageFixture(272_000, 0, 0, 0)
 	reported := usageFixture(0, 0, 13_000_000, 100)
 
-	assert.Equal(t, llm.Usage{
+	assert.Equal(t, llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   272_000,
 		ContextTokens:   0,
 		InputTokens:     13_000_000,
 		OutputTokens:    100,
-	}, mergeUsage(estimated, reported))
+	}, mergeUsage(&estimated, &reported))
 }
 
 func TestMergeUsageClonesReportedContributors(t *testing.T) {
 	t.Parallel()
 
-	reported := llm.Usage{
+	reported := llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:     map[string]int{"history": 12},
 		ContextWindow: 0,
 		ContextTokens: 0,
@@ -157,7 +157,8 @@ func TestMergeUsageClonesReportedContributors(t *testing.T) {
 		OutputTokens: 0,
 	}
 
-	merged := mergeUsage(llm.EmptyUsage(), reported)
+	emptyUsage := llm.EmptyUsage()
+	merged := mergeUsage(&emptyUsage, &reported)
 	reported.TopContributors[0].Label = "changed contributor"
 
 	assert.Equal(t, "message 1", merged.TopContributors[0].Label)
@@ -257,7 +258,7 @@ type usageParseTest struct {
 }
 
 func usageFixture(contextWindow, contextTokens, inputTokens, outputTokens int) llm.Usage {
-	return llm.Usage{
+	return llm.Usage{Provenance: llm.UsageProvenance(""),
 		Breakdown:       nil,
 		TopContributors: nil,
 		ContextWindow:   contextWindow,
