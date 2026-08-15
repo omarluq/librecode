@@ -157,6 +157,37 @@ type responsesPayloadReasoningTest struct {
 	mapLevel   bool
 }
 
+func TestResponsesBasePayloadOutputLimit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		api     string
+		wantSet bool
+	}{
+		{name: "OpenAI Responses includes limit", api: apiOpenAIResponses, wantSet: true},
+		{name: "Codex Responses omits unsupported limit", api: apiOpenAICodexResponses, wantSet: false},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := testCompletionRequestAuth("sk-test")
+			setTestRequestAPI(request, testCase.api)
+			request.Request.MaxTokens = 1_024
+
+			payload := responsesBasePayload(request, nil)
+			value, exists := payload["max_output_tokens"]
+			assert.Equal(t, testCase.wantSet, exists)
+
+			if testCase.wantSet {
+				assert.Equal(t, 1_024, value)
+			}
+		})
+	}
+}
+
 func TestResponsesPayloadReasoningModes(t *testing.T) {
 	t.Parallel()
 

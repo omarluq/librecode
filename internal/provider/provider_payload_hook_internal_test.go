@@ -150,6 +150,29 @@ func TestApplyProviderRequestHookRejectsBoundMutation(t *testing.T) {
 	}
 }
 
+func TestApplyProviderRequestHookAllowsCodexWithoutOutputLimitField(t *testing.T) {
+	t.Parallel()
+
+	request := providerPayloadHookRequest("https://example.test")
+	setTestRequestAPI(request, apiOpenAICodexResponses)
+	request.Request.MaxTokens = 256
+	request.OnProviderRequest = func(
+		_ context.Context,
+		input *llm.HookInput,
+	) (llm.HookOutput, error) {
+		return llm.HookOutput{Payload: input.Payload, Headers: input.Headers}, nil
+	}
+
+	_, err := applyProviderRequestHook(
+		context.Background(),
+		request,
+		map[string]any{providerHookPayloadKey: true},
+		map[string]string{},
+	)
+
+	require.NoError(t, err)
+}
+
 func TestApplyProviderRequestHookHandlesNilRequest(t *testing.T) {
 	t.Parallel()
 
