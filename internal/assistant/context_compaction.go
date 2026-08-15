@@ -15,6 +15,7 @@ import (
 	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -477,40 +478,160 @@ func (runtime *Runtime) completeReducedSummary(
 	groups []compaction.SemanticGroup,
 	operation compaction.Operation,
 ) (compaction.SummaryOutcome, error) {
-	historyTokens := contextwindow.EstimateMessageTokens(base.Messages)
-	reducedLimit := max(historyTokens/summaryRetryReductionDivisor, 1)
+	return runtime.completeReducedSummaryLevel(ctx, base, groups, operation, 1, true)
+}
 
-	chunks, err := compaction.Partition(groups, reducedLimit, compaction.MaxChunksPerReductionRound)
-	if err != nil || len(chunks) < summaryRetryReductionDivisor {
-		return compaction.SummaryOutcome{}, &compaction.SummaryError{
-			Kind: compaction.ErrSummaryReductionNoProgress, Cause: err,
-			Provider: base.Model.Provider, Model: base.Model.ID, Reason: operation.Reason,
-			Input: historyTokens, Limit: reducedLimit, Before: historyTokens, After: historyTokens,
+func (runtime *Runtime) completeReducedSummaryLevel(
+	ctx context.Context,
+	base *CompletionRequest,
+	groups []compaction.SemanticGroup,
+	operation compaction.Operation,
+	depth int,
+	forceSplit bool,
+) (compaction.SummaryOutcome, error) {
+	requestBudget := runtime.newSummaryRequest(base).budget
+	availableTokens := requestBudget.AvailableHistoryTokens()
+	beforeTokens := contextwindow.EstimateMessageTokens(base.Messages)
+	chunkLimit := availableTokens
+
+	if depth > compaction.MaxReductionDepth {
+		return compaction.SummaryOutcome{}, reductionNoProgressError(
+			base, operation, beforeTokens, chunkLimit, beforeTokens, nil,
+		)
+	}
+
+	chunks, err := partitionReductionGroups(groups, chunkLimit, forceSplit)
+	if err != nil {
+		return compaction.SummaryOutcome{}, reductionNoProgressError(
+			base, operation, beforeTokens, chunkLimit, beforeTokens, err,
+		)
+	}
+
+	reducedGroups, outcome, err := runtime.summarizeReductionChunks(ctx, base, chunks, operation)
+	if err != nil {
+		return outcome, err
+	}
+
+	reducedMessages := messagesFromSemanticGroups(reducedGroups)
+	afterTokens := contextwindow.EstimateMessageTokens(reducedMessages)
+
+	if afterTokens >= beforeTokens {
+		return compaction.SummaryOutcome{}, reductionNoProgressError(
+			base, operation, beforeTokens, chunkLimit, afterTokens, nil,
+		)
+	}
+
+	request := *base
+	request.Messages = reducedMessages
+	request.Usage = compactionRequestUsage(&request.Model, request.SystemPrompt, request.Messages)
+
+	if err := runtime.newSummaryRequest(&request).budget.Validate(); err == nil {
+		return runtime.completeSummary(ctx, runtime.newSummaryRequest(&request), operation)
+	}
+
+	return runtime.completeReducedSummaryLevel(
+		ctx, &request, reducedGroups, operation, depth+1, false,
+	)
+}
+
+func partitionReductionGroups(
+	groups []compaction.SemanticGroup,
+	chunkLimit int,
+	forceSplit bool,
+) ([]compaction.Chunk, error) {
+	chunks, err := compaction.Partition(groups, chunkLimit, compaction.MaxChunksPerReductionRound)
+	if err != nil {
+		return nil, fmt.Errorf("partition summary reduction groups: %w", err)
+	}
+
+	if forceSplit && len(chunks) == 1 && len(groups) >= summaryRetryReductionDivisor {
+		split := len(groups) / summaryRetryReductionDivisor
+		chunks = []compaction.Chunk{
+			chunkFromSemanticGroups(groups[:split]),
+			chunkFromSemanticGroups(groups[split:]),
 		}
 	}
 
-	reduced := make([]database.MessageEntity, 0, len(chunks))
+	if len(chunks) < summaryRetryReductionDivisor {
+		return nil, compaction.ErrSummaryReductionNoProgress
+	}
+
+	return chunks, nil
+}
+
+func (runtime *Runtime) summarizeReductionChunks(
+	ctx context.Context,
+	base *CompletionRequest,
+	chunks []compaction.Chunk,
+	operation compaction.Operation,
+) ([]compaction.SemanticGroup, compaction.SummaryOutcome, error) {
+	reducedGroups := make([]compaction.SemanticGroup, 0, len(chunks))
 	for index := range chunks {
 		request := *base
 		request.Messages = chunks[index].Messages
 		request.Usage = compactionRequestUsage(&request.Model, request.SystemPrompt, request.Messages)
 
-		outcome, completeErr := runtime.completeSummary(ctx, runtime.newSummaryRequest(&request), operation)
-		if completeErr != nil {
-			return outcome, completeErr
+		outcome, err := runtime.completeSummary(ctx, runtime.newSummaryRequest(&request), operation)
+		if err != nil {
+			return nil, outcome, err
 		}
 
-		reduced = append(reduced, database.MessageEntity{
+		message := database.MessageEntity{
 			Timestamp: time.Time{}, Role: database.RoleUser, Content: outcome.Text,
 			Provider: "", Model: "", Parts: nil,
+		}
+		reducedGroups = append(reducedGroups, compaction.SemanticGroup{
+			Kind:     compaction.SemanticGroupReduction,
+			EntryIDs: nil,
+			Messages: []database.MessageEntity{message},
+			Tokens:   contextwindow.EstimateMessageTokens([]database.MessageEntity{message}),
 		})
 	}
 
-	request := *base
-	request.Messages = reduced
-	request.Usage = compactionRequestUsage(&request.Model, request.SystemPrompt, request.Messages)
+	return reducedGroups, emptySummaryOutcome(), nil
+}
 
-	return runtime.completeSummary(ctx, runtime.newSummaryRequest(&request), operation)
+func emptySummaryOutcome() compaction.SummaryOutcome {
+	return compaction.SummaryOutcome{
+		Text: "", Provider: "", Model: "", Reason: "", FinishReason: llm.FinishReasonUnknown,
+		EstimatedInputTokens: 0, ReportedInputTokens: 0, ReportedOutputTokens: 0,
+		OutputLimit: 0, Truncated: false,
+	}
+}
+
+func chunkFromSemanticGroups(groups []compaction.SemanticGroup) compaction.Chunk {
+	messages := messagesFromSemanticGroups(groups)
+
+	return compaction.Chunk{
+		Groups: groups, Messages: messages, Tokens: contextwindow.EstimateMessageTokens(messages),
+	}
+}
+
+func messagesFromSemanticGroups(groups []compaction.SemanticGroup) []database.MessageEntity {
+	messageCount := 0
+	for index := range groups {
+		messageCount += len(groups[index].Messages)
+	}
+
+	messages := make([]database.MessageEntity, 0, messageCount)
+	for index := range groups {
+		messages = append(messages, groups[index].Messages...)
+	}
+
+	return messages
+}
+
+func reductionNoProgressError(
+	base *CompletionRequest,
+	operation compaction.Operation,
+	input, limit, after int,
+	cause error,
+) error {
+	return &compaction.SummaryError{
+		Kind: compaction.ErrSummaryReductionNoProgress, Cause: cause,
+		Provider: base.Model.Provider, Model: base.Model.ID, Reason: operation.Reason,
+		Input: input, Limit: limit, Before: input, After: after,
+	}
 }
 
 func compactionRequestUsage(
