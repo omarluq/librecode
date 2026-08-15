@@ -1,6 +1,9 @@
 package provider
 
 import (
+	"encoding/json"
+	"maps"
+
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/llm"
@@ -114,6 +117,106 @@ func toolParameterSchemaForDefinition(definition *llm.ToolDefinition) toolParame
 	}
 
 	return rawToolParameterSchema(freeformToolSchema())
+}
+
+func anthropicToolParameterSchemaForDefinition(definition *llm.ToolDefinition) any {
+	schema := toolParameterSchemaForDefinition(definition)
+
+	var document map[string]any
+	if err := json.Unmarshal(schema.raw.RawMessage(), &document); err != nil {
+		return schema
+	}
+
+	variants, variantsOK := document["oneOf"].([]any)
+	if !variantsOK || len(variants) == 0 {
+		return schema
+	}
+
+	flattened, flattenedOK := mergeObjectSchemaVariants(variants)
+	if !flattenedOK {
+		return schema
+	}
+
+	for key, value := range document {
+		if key != "oneOf" {
+			flattened[key] = value
+		}
+	}
+
+	return flattened
+}
+
+func mergeObjectSchemaVariants(variants []any) (map[string]any, bool) {
+	properties := map[string]any{}
+
+	for _, variant := range variants {
+		object, objectOK := variant.(map[string]any)
+		if !objectOK || object[jsonTypeKey] != jsonObjectType {
+			return nil, false
+		}
+
+		variantProperties := schemaProperties(object)
+		mergeSchemaProperties(properties, variantProperties)
+	}
+
+	return map[string]any{
+		jsonTypeKey:            jsonObjectType,
+		"additionalProperties": false,
+		jsonPropertiesKey:      properties,
+	}, true
+}
+
+func mergeSchemaProperties(destination, source map[string]any) {
+	for name, property := range source {
+		if existing, found := destination[name]; found {
+			destination[name] = mergeObjectPropertySchemas(existing, property)
+		} else {
+			destination[name] = property
+		}
+	}
+}
+
+func mergeObjectPropertySchemas(left, right any) any {
+	leftObject, leftOK := objectSchema(left)
+	if !leftOK {
+		return left
+	}
+
+	rightObject, rightOK := objectSchema(right)
+	if !rightOK {
+		return left
+	}
+
+	leftProperties, leftPropertiesOK := leftObject[jsonPropertiesKey].(map[string]any)
+
+	rightProperties, rightPropertiesOK := rightObject[jsonPropertiesKey].(map[string]any)
+	if !leftPropertiesOK || !rightPropertiesOK {
+		return left
+	}
+
+	mergedProperties := maps.Clone(leftProperties)
+	maps.Copy(mergedProperties, rightProperties)
+
+	merged := maps.Clone(leftObject)
+	delete(merged, jsonRequiredKey)
+	merged[jsonPropertiesKey] = mergedProperties
+
+	return merged
+}
+
+func objectSchema(value any) (map[string]any, bool) {
+	object, objectOK := value.(map[string]any)
+
+	return object, objectOK && object[jsonTypeKey] == jsonObjectType
+}
+
+func schemaProperties(schema map[string]any) map[string]any {
+	properties, propertiesOK := schema[jsonPropertiesKey].(map[string]any)
+	if !propertiesOK {
+		return nil
+	}
+
+	return properties
 }
 
 func freeformToolSchema() tool.Schema {

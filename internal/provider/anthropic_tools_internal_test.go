@@ -104,6 +104,72 @@ func TestAnthropicToolsFromDefinitions(t *testing.T) {
 	assert.Equal(t, "read files", tools[0][jsonDescriptionKey])
 }
 
+func TestAnthropicToolsFlattenTopLevelOneOf(t *testing.T) {
+	t.Parallel()
+
+	const (
+		backgroundKey = "background"
+		stringType    = "string"
+	)
+
+	ordinarySchema := map[string]any{
+		jsonTypeKey: jsonObjectType, jsonRequiredKey: []string{jsonPathKey},
+		jsonPropertiesKey: map[string]any{jsonPathKey: map[string]any{jsonTypeKey: stringType}},
+	}
+	startSchema := map[string]any{
+		jsonTypeKey: jsonObjectType, jsonRequiredKey: []string{backgroundKey},
+		jsonPropertiesKey: map[string]any{backgroundKey: map[string]any{
+			jsonTypeKey: jsonObjectType, jsonRequiredKey: []string{jsonArgumentsKey},
+			jsonPropertiesKey: map[string]any{
+				jsonArgumentsKey: map[string]any{jsonTypeKey: jsonObjectType, jsonPropertiesKey: map[string]any{
+					jsonPathKey: map[string]any{jsonTypeKey: stringType},
+				}},
+				"timeout_seconds": map[string]any{jsonTypeKey: "integer"},
+			},
+		}},
+	}
+	manageSchema := map[string]any{
+		jsonTypeKey: jsonObjectType, jsonRequiredKey: []string{backgroundKey},
+		jsonPropertiesKey: map[string]any{backgroundKey: map[string]any{
+			jsonTypeKey: jsonObjectType, jsonRequiredKey: []string{"action", "task_id"},
+			jsonPropertiesKey: map[string]any{
+				"action":  map[string]any{jsonTypeKey: stringType},
+				"task_id": map[string]any{jsonTypeKey: stringType},
+			},
+		}},
+	}
+	rawSchema, err := json.Marshal(map[string]any{
+		jsonTypeKey: jsonObjectType, "oneOf": []any{ordinarySchema, startSchema, manageSchema},
+	})
+	require.NoError(t, err)
+	schema, err := tool.SchemaFromRaw(rawSchema)
+	require.NoError(t, err)
+
+	tools := AnthropicToolsFromDefinitions([]llm.ToolDefinition{{
+		Schema: schema, Name: jsonReadToolName, Description: "read files", ReadOnly: true,
+	}}, false)
+	require.Len(t, tools, 1)
+
+	inputSchema, schemaOK := tools[0][jsonInputSchemaKey].(map[string]any)
+	require.True(t, schemaOK)
+	assert.NotContains(t, inputSchema, "oneOf")
+	assert.NotContains(t, inputSchema, jsonRequiredKey)
+
+	properties, propertiesOK := inputSchema[jsonPropertiesKey].(map[string]any)
+	require.True(t, propertiesOK)
+	assert.Contains(t, properties, jsonPathKey)
+	background, backgroundOK := properties[backgroundKey].(map[string]any)
+	require.True(t, backgroundOK)
+	assert.NotContains(t, background, jsonRequiredKey)
+
+	backgroundProperties, backgroundPropertiesOK := background[jsonPropertiesKey].(map[string]any)
+	require.True(t, backgroundPropertiesOK)
+	assert.Contains(t, backgroundProperties, jsonArgumentsKey)
+	assert.Contains(t, backgroundProperties, "timeout_seconds")
+	assert.Contains(t, backgroundProperties, "action")
+	assert.Contains(t, backgroundProperties, "task_id")
+}
+
 func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {
 	t.Parallel()
 
