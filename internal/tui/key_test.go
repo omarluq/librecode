@@ -38,30 +38,32 @@ func TestNewKeyEvent(t *testing.T) {
 	tests := []struct {
 		name  string
 		event *tcell.EventKey
-		want  string
-		text  string
-		ctrl  bool
+		want  tui.KeyEvent
 	}{
 		{
 			name:  "rune",
 			event: tcell.NewEventKey(tcell.KeyRune, "x", tcell.ModNone),
-			want:  "x",
-			text:  "x",
-			ctrl:  false,
+			want:  tui.KeyEvent{Key: "x", Text: "x", Ctrl: false, Alt: false, Shift: false},
 		},
 		{
 			name:  "control rune",
 			event: tcell.NewEventKey(tcell.KeyRune, "R", tcell.ModCtrl),
-			want:  "ctrl+r",
-			text:  "",
-			ctrl:  true,
+			want:  tui.KeyEvent{Key: "ctrl+r", Text: "", Ctrl: true, Alt: false, Shift: false},
 		},
 		{
 			name:  "backtab",
 			event: tcell.NewEventKey(tcell.KeyBacktab, "", tcell.ModShift),
-			want:  "shift+tab",
-			text:  "",
-			ctrl:  false,
+			want:  tui.KeyEvent{Key: "shift+tab", Text: "", Ctrl: false, Alt: false, Shift: true},
+		},
+		{
+			name:  "control tab",
+			event: tcell.NewEventKey(tcell.KeyTab, "", tcell.ModCtrl),
+			want:  tui.KeyEvent{Key: "tab", Text: "", Ctrl: true, Alt: false, Shift: false},
+		},
+		{
+			name:  "alt tab",
+			event: tcell.NewEventKey(tcell.KeyTab, "", tcell.ModAlt),
+			want:  tui.KeyEvent{Key: "tab", Text: "", Ctrl: false, Alt: true, Shift: false},
 		},
 	}
 
@@ -71,9 +73,7 @@ func TestNewKeyEvent(t *testing.T) {
 
 			got, ok := tui.NewKeyEvent(test.event)
 			require.True(t, ok)
-			require.Equal(t, test.want, got.Key)
-			require.Equal(t, test.text, got.Text)
-			require.Equal(t, test.ctrl, got.Ctrl)
+			require.Equal(t, test.want, got)
 		})
 	}
 }
