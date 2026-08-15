@@ -15,6 +15,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
+	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/terminal/extui"
 	"github.com/omarluq/librecode/internal/transcript"
 	"github.com/omarluq/librecode/internal/tui"
@@ -48,15 +49,7 @@ end)
 func TestVimModePreservesModifiedEnterDelivery(t *testing.T) {
 	t.Parallel()
 
-	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(manager.Shutdown)
-
-	vimModePath := filepath.Join("..", "..", "extensions", "vim-mode")
-	require.NoError(t, manager.LoadPaths(t.Context(), []string{vimModePath}))
-
-	app := newRenderTestApp(t)
-	app.extensions = manager
-	require.NoError(t, app.runStartupExtensions(t.Context()))
+	app := newVimModeTestApp(t)
 	app.working = true
 	app.activePrompt = &activePromptState{
 		Cancel: nil, SessionID: app.sessionID, UserEntryID: "", Prompt: "", Images: nil,
@@ -69,6 +62,34 @@ func TestVimModePreservesModifiedEnterDelivery(t *testing.T) {
 	assert.True(t, app.composerDraftEmpty())
 	assert.Equal(t, []string{"later"}, promptDraftTexts(app.queuedMessages))
 	assert.Empty(t, app.steeringMessages)
+}
+
+func TestVimModePreservesThinkingCycleShortcut(t *testing.T) {
+	t.Parallel()
+
+	app := newVimModeTestApp(t)
+	app.cfg = renderParityConfig()
+	app.cfg.Assistant.ThinkingLevel = string(model.ThinkingOff)
+
+	_, err := app.handleKey(t.Context(), tcell.NewEventKey(tcell.KeyTab, "", tcell.ModShift))
+	require.NoError(t, err)
+	assert.Equal(t, string(model.ThinkingMinimal), app.currentThinkingLevel())
+}
+
+func newVimModeTestApp(t *testing.T) *App {
+	t.Helper()
+
+	manager := extension.NewManager(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(manager.Shutdown)
+
+	vimModePath := filepath.Join("..", "..", "extensions", "vim-mode")
+	require.NoError(t, manager.LoadPaths(t.Context(), []string{vimModePath}))
+
+	app := newRenderTestApp(t)
+	app.extensions = manager
+	require.NoError(t, app.runStartupExtensions(t.Context()))
+
+	return app
 }
 
 func TestExtensionPromptSubmitReceivesActualKeyAndDelivery(t *testing.T) {
