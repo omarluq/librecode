@@ -47,7 +47,7 @@ func NewKeyEvent(event *tcell.EventKey) (KeyEvent, bool) {
 	return KeyEvent{
 		Key:   key,
 		Text:  "",
-		Ctrl:  strings.HasPrefix(key, "ctrl+"),
+		Ctrl:  strings.HasPrefix(key, "ctrl+") || event.Modifiers()&tcell.ModCtrl != 0,
 		Alt:   event.Modifiers()&tcell.ModAlt != 0,
 		Shift: strings.HasPrefix(key, "shift+") || event.Modifiers()&tcell.ModShift != 0,
 	}, true

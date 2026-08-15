@@ -76,6 +76,31 @@ func TestVimModePreservesThinkingCycleShortcut(t *testing.T) {
 	assert.Equal(t, string(model.ThinkingMinimal), app.currentThinkingLevel())
 }
 
+func TestVimModeDoesNotAcceptAutocompleteForModifiedTab(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		modifier tcell.ModMask
+	}{
+		{name: "control", modifier: tcell.ModCtrl},
+		{name: "alt", modifier: tcell.ModAlt},
+		{name: "shift", modifier: tcell.ModShift},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := newVimModeTestApp(t)
+			app.composerBuffer.SetText("/s")
+
+			_, err := app.handleKey(t.Context(), tcell.NewEventKey(tcell.KeyTab, "", test.modifier))
+			require.NoError(t, err)
+			assert.NotEqual(t, "/skill ", app.composerBuffer.TextValue())
+		})
+	}
+}
+
 func newVimModeTestApp(t *testing.T) *App {
 	t.Helper()
 

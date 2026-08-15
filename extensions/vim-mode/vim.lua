@@ -288,7 +288,7 @@ local function handle_insert(ev)
   elseif key == "enter" then
     lc.action.run("submit")
     return true
-  elseif key == "tab" and not ev.shift then
+  elseif key == "tab" and not ev.ctrl and not ev.alt and not ev.shift then
     lc.action.run("autocomplete.accept")
     return true
   elseif key == "left" then
