@@ -16,6 +16,8 @@ import (
 const (
 	testAnthropicToolUseID = "toolu_1"
 	missingFileToolError   = "missing file"
+	testIntegerType        = "integer"
+	testNestedProperty     = "nested"
 )
 
 func TestParseAnthropicStreamExtractsNativeToolUse(t *testing.T) {
@@ -124,7 +126,7 @@ func TestAnthropicToolsFlattenTopLevelOneOf(t *testing.T) {
 				jsonArgumentsKey: map[string]any{jsonTypeKey: jsonObjectType, jsonPropertiesKey: map[string]any{
 					jsonPathKey: map[string]any{jsonTypeKey: stringType},
 				}},
-				"timeout_seconds": map[string]any{jsonTypeKey: "integer"},
+				"timeout_seconds": map[string]any{jsonTypeKey: testIntegerType},
 			},
 		}},
 	}
@@ -168,6 +170,56 @@ func TestAnthropicToolsFlattenTopLevelOneOf(t *testing.T) {
 	assert.Contains(t, backgroundProperties, "timeout_seconds")
 	assert.Contains(t, backgroundProperties, "action")
 	assert.Contains(t, backgroundProperties, "task_id")
+}
+
+func TestMergeObjectPropertySchemasRecursivelyMergesNestedProperties(t *testing.T) {
+	t.Parallel()
+
+	left := map[string]any{
+		jsonTypeKey: jsonObjectType,
+		jsonPropertiesKey: map[string]any{
+			testNestedProperty: map[string]any{
+				jsonTypeKey: jsonObjectType,
+				jsonPropertiesKey: map[string]any{
+					"left": map[string]any{jsonTypeKey: "string"},
+				},
+			},
+		},
+	}
+	right := map[string]any{
+		jsonTypeKey: jsonObjectType,
+		jsonPropertiesKey: map[string]any{
+			testNestedProperty: map[string]any{
+				jsonTypeKey: jsonObjectType,
+				jsonPropertiesKey: map[string]any{
+					"right": map[string]any{jsonTypeKey: testIntegerType},
+				},
+			},
+		},
+	}
+
+	merged, mergedOK := mergeObjectPropertySchemas(left, right).(map[string]any)
+	require.True(t, mergedOK)
+
+	properties, propertiesOK := merged[jsonPropertiesKey].(map[string]any)
+	require.True(t, propertiesOK)
+
+	nested, nestedOK := properties[testNestedProperty].(map[string]any)
+	require.True(t, nestedOK)
+
+	nestedProperties, nestedPropertiesOK := nested[jsonPropertiesKey].(map[string]any)
+	require.True(t, nestedPropertiesOK)
+	assert.Contains(t, nestedProperties, "left")
+	assert.Contains(t, nestedProperties, "right")
+}
+
+func TestMergeObjectPropertySchemasLoosensIncompatibleSchemas(t *testing.T) {
+	t.Parallel()
+
+	left := map[string]any{jsonTypeKey: "string"}
+	right := map[string]any{jsonTypeKey: testIntegerType}
+
+	assert.Empty(t, mergeObjectPropertySchemas(left, right))
 }
 
 func TestAnthropicToolResultMessageUsesToolUseID(t *testing.T) {

@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"maps"
+	"reflect"
 
 	"github.com/samber/oops"
 
@@ -177,25 +178,26 @@ func mergeSchemaProperties(destination, source map[string]any) {
 }
 
 func mergeObjectPropertySchemas(left, right any) any {
-	leftObject, leftOK := objectSchema(left)
-	if !leftOK {
+	if reflect.DeepEqual(left, right) {
 		return left
 	}
 
+	leftObject, leftOK := objectSchema(left)
 	rightObject, rightOK := objectSchema(right)
-	if !rightOK {
-		return left
+
+	if !leftOK || !rightOK {
+		return map[string]any{}
 	}
 
 	leftProperties, leftPropertiesOK := leftObject[jsonPropertiesKey].(map[string]any)
-
 	rightProperties, rightPropertiesOK := rightObject[jsonPropertiesKey].(map[string]any)
+
 	if !leftPropertiesOK || !rightPropertiesOK {
-		return left
+		return map[string]any{}
 	}
 
 	mergedProperties := maps.Clone(leftProperties)
-	maps.Copy(mergedProperties, rightProperties)
+	mergeSchemaProperties(mergedProperties, rightProperties)
 
 	merged := maps.Clone(leftObject)
 	delete(merged, jsonRequiredKey)
