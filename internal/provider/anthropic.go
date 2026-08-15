@@ -570,7 +570,7 @@ func anthropicTools(definitions []llm.ToolDefinition, oauth bool) []map[string]a
 		tools = append(tools, map[string]any{
 			jsonToolNameKey:         anthropicProviderToolName(definition.Name, oauth),
 			jsonDescriptionKey:      definition.Description,
-			jsonInputSchemaKey:      toolParameterSchemaForDefinition(&definition),
+			jsonInputSchemaKey:      anthropicToolParameterSchemaForDefinition(&definition),
 			"eager_input_streaming": true,
 		})
 	}
