@@ -177,7 +177,14 @@ func (client *HTTPCompletionClient) openAIChatPayload(
 }
 
 func buildOpenAIChatPayload(request *CompletionRequest, messages []map[string]any) map[string]any {
-	tools := openAIChatTools(requestToolDefinitions(request))
+	definitions := requestToolDefinitions(request)
+	tools := openAIChatTools(definitions)
+
+	if request.Request.Model.Provider == "zai" {
+		// ZAI's GLM tool-calling implementation does not reliably support oneOf.
+		// Flatten background-capable schemas while preserving every property.
+		tools = zaiOpenAIChatTools(definitions)
+	}
 
 	payload := map[string]any{
 		jsonModelKey:    request.Request.Model.ID,

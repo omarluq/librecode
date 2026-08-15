@@ -157,6 +157,40 @@ func TestOpenAIChatPayloadAddsZAIStreamingOptions(t *testing.T) {
 	assertIsTrue(t, payload["tool_stream"])
 }
 
+func TestOpenAIChatPayloadFlattensBackgroundToolSchemasForZAI(t *testing.T) {
+	t.Parallel()
+
+	ordinarySchema := map[string]any{
+		jsonTypeKey: jsonObjectType, jsonRequiredKey: []string{jsonCommandKey},
+		jsonPropertiesKey: map[string]any{jsonCommandKey: map[string]any{jsonTypeKey: jsonStringType}},
+	}
+	schema := schemaFromTestMap(map[string]any{
+		jsonTypeKey: jsonObjectType,
+		jsonOneOfKey: []any{
+			ordinarySchema,
+			map[string]any{
+				jsonTypeKey:       jsonObjectType,
+				jsonPropertiesKey: map[string]any{jsonBackgroundKey: map[string]any{jsonTypeKey: jsonObjectType}},
+			},
+		},
+	})
+	request := testCompletionRequestAuth("zai", "sk-test")
+	request.Request.Tools = []llm.ToolDefinition{{
+		Schema: schema, Name: jsonBashToolName, Description: "execute command", ReadOnly: false,
+	}}
+
+	payload := openAIChatPayload(request)
+	tools, toolsOK := payload[jsonToolsKey].([]map[string]any)
+	require.True(t, toolsOK)
+	require.Len(t, tools, 1)
+	function, functionOK := tools[0][jsonFunctionKey].(map[string]any)
+	require.True(t, functionOK)
+
+	parameters, parametersOK := function[jsonToolParamsKey].(map[string]any)
+	require.True(t, parametersOK)
+	assert.NotContains(t, parameters, jsonOneOfKey)
+}
+
 func TestOpenAIChatPayloadDisablesZAIThinkingAndOmitsToolStreamWithoutTools(t *testing.T) {
 	t.Parallel()
 

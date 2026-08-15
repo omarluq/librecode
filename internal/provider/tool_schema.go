@@ -66,6 +66,19 @@ func OpenAIChatToolsFromDefinitions(definitions []llm.ToolDefinition) []map[stri
 }
 
 func openAIChatTools(definitions []llm.ToolDefinition) []map[string]any {
+	return openAIChatToolsWithSchema(definitions, func(definition *llm.ToolDefinition) any {
+		return toolParameterSchemaForDefinition(definition)
+	})
+}
+
+func zaiOpenAIChatTools(definitions []llm.ToolDefinition) []map[string]any {
+	return openAIChatToolsWithSchema(definitions, flattenedToolParameterSchemaForDefinition)
+}
+
+func openAIChatToolsWithSchema(
+	definitions []llm.ToolDefinition,
+	parameterSchema func(*llm.ToolDefinition) any,
+) []map[string]any {
 	tools := make([]map[string]any, 0, len(definitions))
 	for index := range definitions {
 		definition := &definitions[index]
@@ -74,7 +87,7 @@ func openAIChatTools(definitions []llm.ToolDefinition) []map[string]any {
 			jsonFunctionKey: map[string]any{
 				jsonToolNameKey:    definition.Name,
 				jsonDescriptionKey: definition.Description,
-				jsonToolParamsKey:  toolParameterSchemaForDefinition(definition),
+				jsonToolParamsKey:  parameterSchema(definition),
 			},
 		})
 	}
@@ -121,6 +134,10 @@ func toolParameterSchemaForDefinition(definition *llm.ToolDefinition) toolParame
 }
 
 func anthropicToolParameterSchemaForDefinition(definition *llm.ToolDefinition) any {
+	return flattenedToolParameterSchemaForDefinition(definition)
+}
+
+func flattenedToolParameterSchemaForDefinition(definition *llm.ToolDefinition) any {
 	schema := toolParameterSchemaForDefinition(definition)
 
 	var document map[string]any
@@ -128,7 +145,7 @@ func anthropicToolParameterSchemaForDefinition(definition *llm.ToolDefinition) a
 		return schema
 	}
 
-	variants, variantsOK := document["oneOf"].([]any)
+	variants, variantsOK := document[jsonOneOfKey].([]any)
 	if !variantsOK || len(variants) == 0 {
 		return schema
 	}
@@ -139,7 +156,7 @@ func anthropicToolParameterSchemaForDefinition(definition *llm.ToolDefinition) a
 	}
 
 	for key, value := range document {
-		if key != "oneOf" {
+		if key != jsonOneOfKey {
 			flattened[key] = value
 		}
 	}
