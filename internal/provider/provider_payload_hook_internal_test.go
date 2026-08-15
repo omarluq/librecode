@@ -150,6 +150,28 @@ func TestApplyProviderRequestHookRejectsBoundMutation(t *testing.T) {
 	}
 }
 
+func TestApplyProviderRequestHookRejectsNonCodexWithoutOutputLimitField(t *testing.T) {
+	t.Parallel()
+
+	request := providerPayloadHookRequest("https://example.test")
+	request.Request.MaxTokens = 256
+	request.OnProviderRequest = func(
+		_ context.Context,
+		input *llm.HookInput,
+	) (llm.HookOutput, error) {
+		return llm.HookOutput{Payload: input.Payload, Headers: input.Headers}, nil
+	}
+
+	_, err := applyProviderRequestHook(
+		context.Background(),
+		request,
+		map[string]any{providerHookPayloadKey: true},
+		map[string]string{},
+	)
+
+	require.ErrorContains(t, err, "bounded request has no provider maximum-output field")
+}
+
 func TestApplyProviderRequestHookAllowsCodexWithoutOutputLimitField(t *testing.T) {
 	t.Parallel()
 

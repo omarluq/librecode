@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/samber/oops"
@@ -81,7 +82,11 @@ func validateBoundedOutputMutation(request *CompletionRequest, before, after map
 		return nil
 	}
 
-	return nil
+	if request.Request.Model.API == apiOpenAICodexResponses {
+		return nil
+	}
+
+	return errors.New("bounded request has no provider maximum-output field")
 }
 
 func integerPayloadValue(value any) (int64, bool) {
