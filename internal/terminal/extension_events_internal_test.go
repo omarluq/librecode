@@ -67,13 +67,23 @@ func TestVimModePreservesModifiedEnterDelivery(t *testing.T) {
 func TestVimModePreservesThinkingCycleShortcut(t *testing.T) {
 	t.Parallel()
 
-	app := newVimModeTestApp(t)
-	app.cfg = renderParityConfig()
-	app.cfg.Assistant.ThinkingLevel = string(model.ThinkingOff)
+	tests := map[string]*tcell.EventKey{
+		"legacy backtab":     tcell.NewEventKey(tcell.KeyTab, "", tcell.ModShift),
+		"advanced shift tab": tcell.NewEventKeyEx(tcell.KeyTab, "", tcell.ModShift, true, tcell.KeyTab, 1),
+	}
+	for name, event := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-	_, err := app.handleKey(t.Context(), tcell.NewEventKey(tcell.KeyTab, "", tcell.ModShift))
-	require.NoError(t, err)
-	assert.Equal(t, string(model.ThinkingMinimal), app.currentThinkingLevel())
+			app := newVimModeTestApp(t)
+			app.cfg = renderParityConfig()
+			app.cfg.Assistant.ThinkingLevel = string(model.ThinkingOff)
+
+			_, err := app.handleKey(t.Context(), event)
+			require.NoError(t, err)
+			assert.Equal(t, string(model.ThinkingMinimal), app.currentThinkingLevel())
+		})
+	}
 }
 
 func TestVimModeDoesNotAcceptAutocompleteForModifiedTab(t *testing.T) {
@@ -96,7 +106,7 @@ func TestVimModeDoesNotAcceptAutocompleteForModifiedTab(t *testing.T) {
 
 			_, err := app.handleKey(t.Context(), tcell.NewEventKey(tcell.KeyTab, "", test.modifier))
 			require.NoError(t, err)
-			assert.NotEqual(t, "/skill ", app.composerBuffer.TextValue())
+			assert.Equal(t, "/s", app.composerBuffer.TextValue())
 		})
 	}
 }
