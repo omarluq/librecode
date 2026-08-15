@@ -226,7 +226,7 @@ func responsesBasePayload(request *CompletionRequest, input []any) map[string]an
 		payload["instructions"] = request.Request.SystemPrompt
 	}
 
-	if request.Request.MaxTokens > 0 {
+	if request.Request.MaxTokens > 0 && request.Request.Model.API != apiOpenAICodexResponses {
 		payload["max_output_tokens"] = request.Request.MaxTokens
 	}
 
