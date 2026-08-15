@@ -282,9 +282,12 @@ func TestBackgroundToolDefinitionKeepsOrdinarySchemaFirst(t *testing.T) {
 	executor := backgroundTestExecutor(t, newBackgroundTaskController(), tool.NameRead, backgroundTestOwner)
 	definition := executor.Definition()
 
-	var schema map[string][]json.RawMessage
+	var schema map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(definition.Schema.RawMessage(), &schema))
-	variants := schema["oneOf"]
+	assert.JSONEq(t, `"object"`, string(schema[jsonTypeKey]))
+
+	var variants []json.RawMessage
+	require.NoError(t, json.Unmarshal(schema["oneOf"], &variants))
 	require.Len(t, variants, 3)
 	assert.JSONEq(t, string(executor.target.Definition().Schema.RawMessage()), string(variants[0]))
 }
