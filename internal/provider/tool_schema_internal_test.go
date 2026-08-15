@@ -103,6 +103,43 @@ func TestToolDeclarationsFromDefinitions(t *testing.T) {
 	}
 }
 
+func TestZAIOpenAIChatToolsFlattenOneOfSchemas(t *testing.T) {
+	t.Parallel()
+
+	ordinarySchema := map[string]any{
+		jsonTypeKey: jsonObjectType, jsonRequiredKey: []string{jsonCommandKey},
+		jsonPropertiesKey: map[string]any{jsonCommandKey: map[string]any{jsonTypeKey: jsonStringType}},
+	}
+	backgroundSchema := map[string]any{
+		jsonTypeKey: jsonObjectType, jsonRequiredKey: []string{jsonBackgroundKey},
+		jsonPropertiesKey: map[string]any{jsonBackgroundKey: map[string]any{
+			jsonTypeKey:       jsonObjectType,
+			jsonPropertiesKey: map[string]any{"arguments": ordinarySchema},
+		}},
+	}
+	schema := schemaFromTestMap(map[string]any{
+		jsonTypeKey: jsonObjectType, jsonOneOfKey: []any{ordinarySchema, backgroundSchema},
+	})
+
+	tools := zaiOpenAIChatTools([]llm.ToolDefinition{{
+		Schema: schema, Name: jsonBashToolName, Description: "execute command", ReadOnly: false,
+	}})
+	require.Len(t, tools, 1)
+
+	function, functionOK := tools[0][jsonFunctionKey].(map[string]any)
+	require.True(t, functionOK)
+
+	parameters, parametersOK := function[jsonToolParamsKey].(map[string]any)
+	require.True(t, parametersOK)
+	assert.NotContains(t, parameters, jsonOneOfKey)
+	assert.NotContains(t, parameters, jsonRequiredKey)
+
+	properties, propertiesOK := parameters[jsonPropertiesKey].(map[string]any)
+	require.True(t, propertiesOK)
+	assert.Contains(t, properties, jsonCommandKey)
+	assert.Contains(t, properties, jsonBackgroundKey)
+}
+
 func TestRequestToolDefinitions(t *testing.T) {
 	t.Parallel()
 
