@@ -2,20 +2,24 @@ package assistant
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/compaction"
 	"github.com/omarluq/librecode/internal/contextwindow"
+	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
 )
 
 const (
-	summaryValidationModelID = "summary-validation-model"
-	malformedSummary         = "malformed"
+	summaryValidationModelID  = "summary-validation-model"
+	summaryValidationProvider = "provider"
+	malformedSummary          = "malformed"
 )
 
 type summaryValidationCompleter struct {
@@ -109,7 +113,7 @@ func TestCompleteSummaryValidatesInputBeforeProviderDispatch(t *testing.T) {
 
 			var summaryError *compaction.SummaryError
 			require.ErrorAs(t, err, &summaryError)
-			assert.Equal(t, "provider", summaryError.Provider)
+			assert.Equal(t, summaryValidationProvider, summaryError.Provider)
 			assert.Equal(t, summaryValidationModelID, summaryError.Model)
 			assert.Equal(t, compaction.ReasonManual, summaryError.Reason)
 			assert.Zero(t, client.calls, "invalid summary requests must not reach the provider")
@@ -218,6 +222,95 @@ func TestCompleteSummaryKeepsProviderFailuresDistinctFromTruncation(t *testing.T
 	}
 }
 
+func TestCompleteReducedSummaryRecursesUntilCombinedSummariesFit(t *testing.T) {
+	t.Parallel()
+
+	client := &recursiveReductionCompleter{requests: nil}
+	cfg := testRuntimeConfig()
+	cfg.Context.ProviderReserveTokens = 0
+	cfg.Context.SafetyMarginTokens = 0
+	runtime := newRuntimeFromDeps(func(deps *runtimeDeps) {
+		deps.Client = client
+		deps.Config = cfg
+	})
+
+	base := newZeroCompletionRequest(model.RequestAuth{Headers: nil, APIKey: "", Error: "", OK: false})
+	base.Model.Provider = summaryValidationProvider
+	base.Model.ID = summaryValidationModelID
+	base.Model.ContextWindow = 1_600
+	base.SystemPrompt = "Summarize the supplied checkpoints."
+	base.MaxTokens = 500
+
+	groups := make([]compaction.SemanticGroup, 0, 4)
+
+	for range 4 {
+		message := database.MessageEntity{
+			Timestamp: time.Time{}, Role: database.RoleUser,
+			Content: repeatedSummaryTokens("history", 380), Provider: "", Model: "", Parts: nil,
+		}
+		groups = append(groups, compaction.SemanticGroup{
+			Kind: compaction.SemanticGroupHistoryTurn, EntryIDs: nil,
+			Messages: []database.MessageEntity{message},
+			Tokens:   contextwindow.EstimateMessageTokens([]database.MessageEntity{message}),
+		})
+		base.Messages = append(base.Messages, message)
+	}
+
+	base.Usage = compactionRequestUsage(&base.Model, base.SystemPrompt, base.Messages)
+
+	outcome, err := runtime.completeReducedSummary(t.Context(), base, groups, compaction.Operation{
+		ID: "recursive", Reason: compaction.ReasonManual, RetryIntent: compaction.RetryNone,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, summaryValidationCheckpoint("final reduction"), outcome.Text)
+	require.Len(t, client.requests, 7)
+	assert.Len(t, client.requests[0].Messages, 1)
+	assert.Len(t, client.requests[4].Messages, 2)
+	assert.Len(t, client.requests[6].Messages, 2)
+
+	for _, request := range client.requests {
+		assert.NoError(t, runtime.newSummaryRequest(request).budget.Validate())
+	}
+}
+
+type recursiveReductionCompleter struct {
+	requests []*CompletionRequest
+}
+
+func (client *recursiveReductionCompleter) Complete(
+	_ context.Context,
+	request *CompletionRequest,
+) (*CompletionResult, error) {
+	client.requests = append(client.requests, request)
+
+	goal := "first reduction"
+	padding := 200
+
+	if len(client.requests) > 4 {
+		goal = "recursive reduction"
+		padding = 140
+	}
+
+	if len(client.requests) == 7 {
+		goal = "final reduction"
+		padding = 0
+	}
+
+	return &CompletionResult{
+		FinishReason: llm.FinishReasonStop,
+		Termination:  llm.NewTerminationMetadata("", "", ""),
+		Text:         summaryValidationCheckpoint(goal) + repeatedSummaryTokens(" detail", padding),
+		Thinking:     nil,
+		ToolEvents:   nil,
+		Usage:        model.EmptyTokenUsage(),
+	}, nil
+}
+
+func repeatedSummaryTokens(value string, tokens int) string {
+	return strings.Repeat(value+" ", tokens)
+}
+
 func TestCompleteSummaryRejectsTruncatedRepair(t *testing.T) {
 	t.Parallel()
 
@@ -256,7 +349,7 @@ func summaryValidationCheckpoint(goal string) string {
 
 func summaryValidationRequest(input contextwindow.SummaryBudgetInput) *summaryRequest {
 	completion := newZeroCompletionRequest(model.RequestAuth{Headers: nil, APIKey: "", Error: "", OK: false})
-	completion.Model.Provider = "provider"
+	completion.Model.Provider = summaryValidationProvider
 	completion.Model.ID = summaryValidationModelID
 	completion.MaxTokens = input.MaxOutputTokens
 
