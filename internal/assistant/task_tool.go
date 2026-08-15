@@ -83,6 +83,7 @@ func (executor *backgroundToolExecutor) buildDefinition() tool.Definition {
 	}
 
 	schema := map[string]any{
+		jsonTypeKey: jsonObjectType,
 		"oneOf": []any{
 			ordinarySchema,
 			map[string]any{
