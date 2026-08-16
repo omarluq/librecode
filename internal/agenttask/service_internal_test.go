@@ -31,9 +31,8 @@ func emptyService() *Service {
 		agentTasks: nil, workflows: nil, queue: nil,
 		cancel: nil, done: nil, sessionSlots: nil, tasks: nil, logger: nil, leaseOwner: "", wg: sync.WaitGroup{},
 		nextSubscriber: 0, timeout: 0, sessionConcurrency: 0, leaseDuration: 0,
-		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0, leaseRenewalAttemptTimeout: 0,
-		leaseRenewalAttempts: 0, mu: sync.Mutex{}, lifecycle: sync.Mutex{},
-		concurrency: 0, started: false, closed: false,
+		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0, leaseRenewalWindow: 0,
+		mu: sync.Mutex{}, lifecycle: sync.Mutex{}, concurrency: 0, started: false, closed: false,
 	}
 }
 
@@ -165,8 +164,7 @@ func leaseRenewalService(
 	service.leaseOwner = workerName
 	service.leaseDuration = time.Minute
 	service.leaseRenewalRetryInterval = time.Millisecond
-	service.leaseRenewalAttemptTimeout = time.Second
-	service.leaseRenewalAttempts = 3
+	service.leaseRenewalWindow = 50 * time.Millisecond
 	service.logger = slog.New(slog.NewTextHandler(logs, nil))
 	service.renewLeaseFn = renewLease
 
@@ -974,6 +972,46 @@ func TestServiceInternalLeaseRenewalRetriesTransientDatabaseErrors(t *testing.T)
 	assert.NotContains(t, logs.String(), "renew agent task lease after retries")
 }
 
+func TestServiceInternalLeaseRenewalAttemptHonorsWindowOverFixedTimeout(t *testing.T) {
+	t.Parallel()
+
+	var deadline time.Time
+
+	service := leaseRenewalService(&bytes.Buffer{},
+		func(ctx context.Context, _ string, _ string, _ time.Time) (bool, error) {
+			deadline, _ = ctx.Deadline()
+
+			return true, nil
+		})
+	// A window beyond the old fixed attempt timeout (2s) must extend the
+	// attempt deadline: a busy database then waits for the SQLite write lock
+	// instead of the attempt aborting early.
+	service.leaseRenewalWindow = 4 * time.Second
+
+	assert.True(t, service.renewLeaseWithRetry(t.Context(), "task"))
+	assert.GreaterOrEqual(t, time.Until(deadline), 3*time.Second)
+}
+
+func TestServiceInternalLeaseRenewalFailsAfterExhaustingWindow(t *testing.T) {
+	t.Parallel()
+
+	var (
+		attempts atomic.Int32
+		logs     bytes.Buffer
+	)
+
+	service := leaseRenewalService(&logs, func(context.Context, string, string, time.Time) (bool, error) {
+		attempts.Add(1)
+
+		return false, errors.New("database is locked")
+	})
+
+	assert.False(t, service.renewLeaseWithRetry(t.Context(), "task"))
+	assert.GreaterOrEqual(t, attempts.Load(), int32(3))
+	assert.Contains(t, logs.String(), "renew agent task lease after retries")
+	assert.Contains(t, logs.String(), "renewal_window")
+}
+
 func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 	t.Parallel()
 
@@ -995,8 +1033,9 @@ func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 
 	receive(t, ctx.Done(), new(struct{}), "lease renewal did not cancel the run")
 	receive(t, done, new(struct{}), "timed out waiting for lease renewal to stop")
-	assert.Equal(t, int32(3), attempts.Load())
+	assert.GreaterOrEqual(t, attempts.Load(), int32(3))
 	assert.Contains(t, logs.String(), "renew agent task lease after retries")
+	assert.Contains(t, logs.String(), "renewal_window")
 }
 
 func TestServiceInternalLeaseRenewsThroughoutLongRun(t *testing.T) {
