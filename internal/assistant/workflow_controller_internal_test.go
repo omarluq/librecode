@@ -51,6 +51,7 @@ func (stub *workflowControllerTaskStub) Cancel(
 	context.Context,
 	string,
 	string,
+	string,
 ) (*database.TaskEntity, bool, error) {
 	if stub.task == nil {
 		return nil, stub.found, stub.err
@@ -184,7 +185,9 @@ func TestWorkflowControllerDelegatesTaskOperations(t *testing.T) {
 	awaited, err := controller.Await(t.Context(), task.Task.ID)
 	require.NoError(t, err)
 	assert.Same(t, task, awaited)
-	canceled, found, err := controller.Cancel(t.Context(), workflowControllerOwnerID, task.Task.ID)
+	canceled, found, err := controller.Cancel(
+		t.Context(), workflowControllerOwnerID, task.Task.ID, database.CancelSourceWorkflow,
+	)
 	require.NoError(t, err)
 	assert.True(t, found)
 	assert.Same(t, &task.Task, canceled)
@@ -204,7 +207,7 @@ func TestWorkflowControllerWrapsTaskOperationErrors(t *testing.T) {
 	assertOopsCode(t, err, "list_workflow_agent_tasks")
 	_, err = controller.Await(t.Context(), "task")
 	assertOopsCode(t, err, "await_workflow_agent_task")
-	_, _, err = controller.Cancel(t.Context(), workflowControllerOwnerID, "task")
+	_, _, err = controller.Cancel(t.Context(), workflowControllerOwnerID, "task", database.CancelSourceWorkflow)
 	assertOopsCode(t, err, "cancel_workflow_agent_task")
 }
 

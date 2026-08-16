@@ -31,7 +31,7 @@ func (serviceTestController) Await(context.Context, string) (*database.AgentTask
 	return nil, errors.New("unexpected agent await")
 }
 
-func (serviceTestController) Cancel(context.Context, string, string) (*database.TaskEntity, bool, error) {
+func (serviceTestController) Cancel(context.Context, string, string, string) (*database.TaskEntity, bool, error) {
 	return nil, false, nil
 }
 
@@ -71,7 +71,7 @@ func TestServiceRenewLeaseStateBoundaries(t *testing.T) {
 	require.NoError(t, service.renewLease(t.Context(), running.Task.ID))
 
 	changed, err := repository.Tasks().Transition(t.Context(), running.Task.ID,
-		[]database.TaskState{database.TaskRunning}, database.TaskCanceling, "canceling")
+		[]database.TaskState{database.TaskRunning}, database.TaskCanceling, "canceling", "{}")
 	require.NoError(t, err)
 	require.True(t, changed)
 	err = service.renewLease(t.Context(), running.Task.ID)
@@ -107,7 +107,7 @@ func TestServiceRejectsMissingAndMalformedPersistedRuns(t *testing.T) {
 
 			if test.resume {
 				changed, transitionErr := repository.Tasks().Transition(t.Context(), run.Task.ID,
-					[]database.TaskState{database.TaskQueued}, database.TaskInterrupted, "interrupted")
+					[]database.TaskState{database.TaskQueued}, database.TaskInterrupted, "interrupted", "{}")
 				require.NoError(t, transitionErr)
 				require.True(t, changed)
 				_, _, createErr = service.Resume(t.Context(), run.Task.ID)

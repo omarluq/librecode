@@ -162,7 +162,7 @@ func TestServiceCancelActiveStopsHandlerAndSettlesCancellation(t *testing.T) {
 
 	changed, err := tasks.Transition(
 		t.Context(), created.ID, []database.TaskState{database.TaskRunning},
-		database.TaskCanceling, "task_cancel_requested",
+		database.TaskCanceling, "task_cancel_requested", "{}",
 	)
 	require.NoError(t, err)
 	require.True(t, changed)

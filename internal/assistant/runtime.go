@@ -729,7 +729,7 @@ func (runtime *Runtime) CancelAgentTask(
 			Errorf(agentTaskServiceUnavailable)
 	}
 
-	task, found, err := runtime.agentTasks.Cancel(ctx, ownerSessionID, taskID)
+	task, found, err := runtime.agentTasks.Cancel(ctx, ownerSessionID, taskID, database.CancelSourceParent)
 	if err != nil {
 		return nil, false, oops.In("assistant").Code("cancel_agent_task").Wrapf(err, "cancel agent task")
 	}

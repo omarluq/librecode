@@ -83,7 +83,7 @@ func (fake *fakeController) Await(ctx context.Context, taskID string) (*database
 	return cloneAgentTask(task), nil
 }
 
-func (fake *fakeController) Cancel(_ context.Context, owner, taskID string) (*database.TaskEntity, bool, error) {
+func (fake *fakeController) Cancel(_ context.Context, owner, taskID, _ string) (*database.TaskEntity, bool, error) {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 

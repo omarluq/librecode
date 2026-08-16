@@ -124,13 +124,14 @@ func (capabilities *runtimeCapabilities) Cancel(
 	ctx context.Context,
 	ownerSessionID string,
 	taskID string,
+	source string,
 ) (*database.TaskEntity, bool, error) {
 	set, err := capabilities.load()
 	if err != nil {
 		return nil, false, unavailableAgentTasks(err)
 	}
 
-	result, found, err := set.agentTasks.Cancel(ctx, ownerSessionID, taskID)
+	result, found, err := set.agentTasks.Cancel(ctx, ownerSessionID, taskID, source)
 	if err != nil {
 		return nil, false, oops.In("di").Code("cancel_agent_task").Wrapf(err, "cancel agent task")
 	}

@@ -49,7 +49,7 @@ type AgentTaskController interface {
 	SubmitAgentTask(context.Context, *AgentTaskRequest) (*database.AgentTaskEntity, error)
 	Get(context.Context, string) (*database.AgentTaskEntity, bool, error)
 	List(context.Context, string, int) ([]database.AgentTaskEntity, error)
-	Cancel(context.Context, string, string) (*database.TaskEntity, bool, error)
+	Cancel(context.Context, string, string, string) (*database.TaskEntity, bool, error)
 	Await(context.Context, string) (*database.AgentTaskEntity, error)
 	SubscribeAgentTask(string) (events <-chan database.TaskEventEntity, cancel func(), err error)
 }
@@ -294,7 +294,7 @@ func (executor *agentToolExecutor) cancel(ctx context.Context, input tool.Argume
 		return tool.TextResult("", nil), err
 	}
 
-	_, found, err := executor.controller.Cancel(ctx, executor.parentSessionID, args.TaskID)
+	_, found, err := executor.controller.Cancel(ctx, executor.parentSessionID, args.TaskID, database.CancelSourceParent)
 	if err != nil {
 		return tool.TextResult("", nil), err
 	}

@@ -44,6 +44,7 @@ func (stub *capabilityAgentStub) Cancel(
 	context.Context,
 	string,
 	string,
+	string,
 ) (*database.TaskEntity, bool, error) {
 	return testTask("task"), true, stub.err
 }
@@ -108,7 +109,7 @@ func TestRuntimeCapabilitiesDelegateSuccessfulOperations(t *testing.T) {
 	require.Len(t, listed, 1)
 	assert.Equal(t, "agent-task", listed[0].Task.ID)
 
-	canceled, found, err := capabilities.Cancel(t.Context(), "owner", "task")
+	canceled, found, err := capabilities.Cancel(t.Context(), "owner", "task", database.CancelSourceParent)
 	require.NoError(t, err)
 	assert.True(t, found)
 	assert.Equal(t, "task", canceled.ID)
@@ -211,7 +212,7 @@ func runtimeCapabilityErrorTests(t *testing.T) []capabilityErrorTest {
 		{
 			name: "cancel agent task", wantCode: "cancel_agent_task",
 			call: func(capabilities *runtimeCapabilities) error {
-				_, _, err := capabilities.Cancel(t.Context(), "owner", "task")
+				_, _, err := capabilities.Cancel(t.Context(), "owner", "task", database.CancelSourceParent)
 
 				return err
 			},

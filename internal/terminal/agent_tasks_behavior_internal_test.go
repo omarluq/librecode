@@ -130,6 +130,7 @@ func (stub *agentTaskControllerStub) List(ctx context.Context, _ string, _ int) 
 func (stub *agentTaskControllerStub) Cancel(
 	_ context.Context,
 	ownerSessionID, taskID string,
+	_ string,
 ) (*database.TaskEntity, bool, error) {
 	stub.cancelCalls = append(stub.cancelCalls, ownerSessionID+"/"+taskID)
 	if stub.cancelErr != nil {

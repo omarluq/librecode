@@ -161,7 +161,11 @@ func (c *Container) constructRuntime(ctx context.Context) (*RuntimeServices, err
 	}
 
 	agentTasks := services.AgentTasks.Tasks()
-	if err := registerGenericCancellation(services, agentTasks.Cancel); err != nil {
+	if err := registerGenericCancellation(services, func(
+		ctx context.Context, owner, taskID string,
+	) (*database.TaskEntity, bool, error) {
+		return agentTasks.Cancel(ctx, owner, taskID, database.CancelSourceParent)
+	}); err != nil {
 		return nil, err
 	}
 

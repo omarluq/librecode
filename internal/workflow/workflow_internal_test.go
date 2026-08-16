@@ -37,7 +37,9 @@ func (controller *branchController) Await(ctx context.Context, id string) (*data
 	return controller.await(ctx, id)
 }
 
-func (controller *branchController) Cancel(ctx context.Context, owner, id string) (*database.TaskEntity, bool, error) {
+func (controller *branchController) Cancel(
+	ctx context.Context, owner, id, _ string,
+) (*database.TaskEntity, bool, error) {
 	return controller.cancel(ctx, owner, id)
 }
 
