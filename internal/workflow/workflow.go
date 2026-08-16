@@ -69,7 +69,7 @@ type Controller interface {
 	Submit(context.Context, *AgentRequest) (*database.AgentTaskEntity, error)
 	Get(context.Context, string) (*database.AgentTaskEntity, bool, error)
 	Await(context.Context, string) (*database.AgentTaskEntity, error)
-	Cancel(context.Context, string, string) (*database.TaskEntity, bool, error)
+	Cancel(context.Context, string, string, string) (*database.TaskEntity, bool, error)
 }
 
 // RunRequest describes one isolated workflow evaluation.
@@ -442,7 +442,7 @@ func (host *runHost) cancel(ctx context.Context, taskID string) (TaskResult, err
 			Errorf(taskNotOwnedBySession)
 	}
 
-	canceled, found, err := host.controller.Cancel(ctx, host.ownerSessionID, taskID)
+	canceled, found, err := host.controller.Cancel(ctx, host.ownerSessionID, taskID, database.CancelSourceWorkflow)
 	if err != nil {
 		return TaskResult{}, oops.In("workflow").Code("cancel_task").Wrapf(err, "cancel agent task")
 	}
@@ -587,7 +587,9 @@ func (host *runHost) cancelActive(ctx context.Context) error {
 			continue
 		}
 
-		if _, _, err := host.controller.Cancel(ctx, host.ownerSessionID, taskID); err != nil {
+		if _, _, err := host.controller.Cancel(
+			ctx, host.ownerSessionID, taskID, database.CancelSourceWorkflow,
+		); err != nil {
 			wrapped := oops.In("workflow").Code("cancel_task").
 				Wrapf(err, "cancel launched task %s", taskID)
 			cancelErr = errors.Join(cancelErr, wrapped)

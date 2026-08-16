@@ -307,8 +307,11 @@ func (service *Service) Cancel(ctx context.Context, ownerSessionID, runID string
 		return false, nil
 	}
 
+	cancelPayload := database.CancelEventPayload(database.CancelSourceParent)
+
 	changed, err := service.runs.Tasks().Transition(
 		ctx, runID, []database.TaskState{database.TaskQueued}, database.TaskCanceled, workflowCanceled,
+		cancelPayload,
 	)
 	if err != nil {
 		return false, oops.In("workflow").Code("cancel_queued_run").Wrapf(err, "cancel queued workflow run")
@@ -317,6 +320,7 @@ func (service *Service) Cancel(ctx context.Context, ownerSessionID, runID string
 	if !changed {
 		changed, err = service.runs.Tasks().Transition(
 			ctx, runID, []database.TaskState{database.TaskRunning}, database.TaskCanceling, workflowCanceled,
+			cancelPayload,
 		)
 		if err != nil {
 			return false, oops.In("workflow").Code("cancel_running_run").Wrapf(err, "cancel running workflow run")

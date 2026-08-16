@@ -42,7 +42,7 @@ func TestManagerPreservesOwnerScopeAndSpecializedCancellation(t *testing.T) {
 	) (*database.TaskEntity, bool, error) {
 		called = true
 		changed, transitionErr := tasks.Transition(
-			ctx, taskID, []database.TaskState{database.TaskQueued}, database.TaskCanceled, "task_canceled",
+			ctx, taskID, []database.TaskState{database.TaskQueued}, database.TaskCanceled, "task_canceled", "{}",
 		)
 		entity, found, getErr := tasks.Get(ctx, taskID)
 

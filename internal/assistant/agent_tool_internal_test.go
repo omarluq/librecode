@@ -60,7 +60,7 @@ func (stub *agentControllerStub) List(_ context.Context, _ string, limit int) ([
 
 	return stub.listed, stub.listErr
 }
-func (stub *agentControllerStub) Cancel(context.Context, string, string) (*database.TaskEntity, bool, error) {
+func (stub *agentControllerStub) Cancel(context.Context, string, string, string) (*database.TaskEntity, bool, error) {
 	found := stub.found
 	if stub.cancelFound != nil {
 		found = *stub.cancelFound

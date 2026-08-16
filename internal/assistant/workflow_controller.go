@@ -112,8 +112,9 @@ func (controller *WorkflowController) Cancel(
 	ctx context.Context,
 	ownerSessionID string,
 	taskID string,
+	source string,
 ) (*database.TaskEntity, bool, error) {
-	task, found, err := controller.tasks.Cancel(ctx, ownerSessionID, taskID)
+	task, found, err := controller.tasks.Cancel(ctx, ownerSessionID, taskID, source)
 	if err != nil {
 		return nil, false, oops.In("assistant").Code("cancel_workflow_agent_task").Wrapf(
 			err,

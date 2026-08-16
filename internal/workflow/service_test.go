@@ -261,7 +261,7 @@ func TestServiceResumesInterruptedRun(t *testing.T) {
 	run, err := repository.Create(t.Context(), verifiedWorkflowRunEntity(owner, "1 + 1"))
 	require.NoError(t, err)
 	changed, err := repository.Tasks().Transition(t.Context(), run.Task.ID,
-		[]database.TaskState{database.TaskQueued}, database.TaskInterrupted, "workflow_interrupted")
+		[]database.TaskState{database.TaskQueued}, database.TaskInterrupted, "workflow_interrupted", "{}")
 	require.NoError(t, err)
 	require.True(t, changed)
 
