@@ -3,6 +3,8 @@ package agenttask
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"sync"
 
 	"github.com/samber/oops"
 
@@ -58,7 +60,10 @@ func (runner *RuntimeRunner) Run(
 	profile := profileFromDefinition(definition, task.Depth)
 	runtime := runner.runtime.WithExecutionProfile(&profile)
 
-	var eventErr error
+	var (
+		eventErr error
+		partial  partialText
+	)
 
 	metrics := new(assistant.RunMetrics)
 	runCtx := assistant.WithRunMetrics(ctx, metrics)
@@ -71,6 +76,7 @@ func (runner *RuntimeRunner) Run(
 	response, promptErr := runtime.Prompt(runCtx, &assistant.PromptRequest{
 		OnEvent: func(event assistant.StreamEvent) {
 			metrics.ObserveStreamEvent(event)
+			partial.observe(event)
 
 			if eventErr == nil {
 				eventErr = sink(runCtx, string(event.Kind), event)
@@ -81,7 +87,33 @@ func (runner *RuntimeRunner) Run(
 		Images: nil, Name: "", ResumeLatest: false, HideUserPrompt: false,
 	})
 
-	return runtimeRunResult(response, promptErr, eventErr, metrics)
+	return runtimeRunResult(response, promptErr, eventErr, metrics, partial.text())
+}
+
+// partialText accumulates streamed assistant text so failed or canceled runs
+// can surface the output produced before the error. Events may arrive from
+// provider streaming callbacks, so access is synchronized.
+type partialText struct {
+	sb strings.Builder
+	mu sync.Mutex
+}
+
+func (partial *partialText) observe(event assistant.StreamEvent) {
+	if event.Kind != assistant.StreamEventTextDelta || event.Text == "" {
+		return
+	}
+
+	partial.mu.Lock()
+	defer partial.mu.Unlock()
+
+	partial.sb.WriteString(event.Text)
+}
+
+func (partial *partialText) text() string {
+	partial.mu.Lock()
+	defer partial.mu.Unlock()
+
+	return partial.sb.String()
 }
 
 func runtimeRunResult(
@@ -89,6 +121,7 @@ func runtimeRunResult(
 	promptErr error,
 	eventErr error,
 	metrics *assistant.RunMetrics,
+	partialText string,
 ) (Result, error) {
 	usageJSON, usageErr := agentUsageJSON(metrics)
 	if promptErr != nil {
@@ -96,7 +129,7 @@ func runtimeRunResult(
 			usageJSON = "{}"
 		}
 
-		return Result{Text: "", UsageJSON: usageJSON},
+		return Result{Text: partialText, UsageJSON: usageJSON},
 			oops.In("agenttask").Code("run_prompt").Wrapf(promptErr, "run agent prompt")
 	}
 

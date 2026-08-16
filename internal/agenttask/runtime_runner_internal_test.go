@@ -2,10 +2,10 @@ package agenttask
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -56,11 +56,7 @@ func TestNewRuntimeRunnerRequiresDependencies(t *testing.T) {
 
 func TestRuntimeRunnerRunRejectsInvalidTaskBeforePrompt(t *testing.T) {
 	t.Parallel()
-	db, err := sql.Open("sqlite", "file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	require.NoError(t, database.Migrate(t.Context(), db))
+	db := testutil.OpenMemoryDatabase(t)
 	sessions := testutil.SessionRepository(t, db)
 	runner, err := NewRuntimeRunner(&assistant.Runtime{}, agent.Load(t.TempDir()), sessions)
 	require.NoError(t, err)
@@ -82,12 +78,24 @@ func TestRuntimeRunnerRunRejectsInvalidTaskBeforePrompt(t *testing.T) {
 
 type runnerCompleter struct {
 	err error
+	// streamText, when set, is emitted as text deltas before the completer
+	// returns its result or error.
+	streamText []string
 }
 
 func (completer runnerCompleter) Complete(
 	ctx context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
+	if completer.streamText != nil && request.OnEvent != nil {
+		for _, text := range completer.streamText {
+			request.OnEvent(assistant.StreamEvent{
+				ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+				Kind: assistant.StreamEventTextDelta, Text: text,
+			})
+		}
+	}
+
 	if completer.err != nil {
 		return nil, completer.err
 	}
@@ -118,16 +126,16 @@ func (completer runnerCompleter) Complete(
 	}, nil
 }
 
-func TestRuntimeRunnerRunsPromptAndHandlesPromptAndEventErrors(t *testing.T) {
-	t.Parallel()
-	db, err := sql.Open("sqlite", "file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	require.NoError(t, database.Migrate(t.Context(), db))
-	sessions := testutil.SessionRepository(t, db)
-	session, err := sessions.CreateSession(t.Context(), t.TempDir(), childSessionName, "")
-	require.NoError(t, err)
+type runnerFixture struct {
+	task      *database.AgentTaskEntity
+	newRunner func(assistant.Completer) *RuntimeRunner
+}
+
+func newRunnerFixture(t *testing.T, depth int) runnerFixture {
+	t.Helper()
+
+	sessions := testutil.SessionRepository(t, testutil.OpenMemoryDatabase(t))
+	session := testutil.CreateSession(t, sessions, childSessionName)
 
 	cfg := config.Load("").MustGet()
 	models := model.NewRegistry(&model.RegistryOptions{
@@ -144,13 +152,7 @@ func TestRuntimeRunnerRunsPromptAndHandlesPromptAndEventErrors(t *testing.T) {
 		},
 	})
 	catalog := agent.Load(t.TempDir())
-	definition := agent.Definition{
-		SourceInfo: core.SourceInfo{Path: "", Source: "", Scope: "", Origin: "", BaseDir: ""},
-		Name:       testValue, Description: "", SystemPrompt: testValue,
-		Model:       agent.ModelPolicy{Provider: testValue, Model: testValue, Thinking: model.ThinkingOff},
-		Permissions: agent.PermissionDeny, Tools: nil, Limits: agent.Limits{Timeout: time.Minute},
-	}
-	policyJSON, err := jsonMarshal(definition)
+	policyJSON, err := jsonMarshal(runnerTestDefinition())
 	require.NoError(t, err)
 
 	task := emptyAgentTask()
@@ -158,7 +160,7 @@ func TestRuntimeRunnerRunsPromptAndHandlesPromptAndEventErrors(t *testing.T) {
 	task.AgentName = testValue
 	task.Prompt = workPrompt
 	task.PolicyJSON = policyJSON
-	task.Depth = 2
+	task.Depth = depth
 
 	newRunner := func(completer assistant.Completer) *RuntimeRunner {
 		runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
@@ -176,7 +178,14 @@ func TestRuntimeRunnerRunsPromptAndHandlesPromptAndEventErrors(t *testing.T) {
 		return runner
 	}
 
-	runPromptScenarios(t, newRunner, task)
+	return runnerFixture{task: task, newRunner: newRunner}
+}
+
+func TestRuntimeRunnerRunsPromptAndHandlesPromptAndEventErrors(t *testing.T) {
+	t.Parallel()
+
+	fixture := newRunnerFixture(t, 2)
+	runPromptScenarios(t, fixture.newRunner, fixture.task)
 }
 
 func runPromptScenarios(
@@ -188,7 +197,7 @@ func runPromptScenarios(
 
 	var kinds []string
 
-	result, err := newRunner(runnerCompleter{err: nil}).Run(
+	result, err := newRunner(runnerCompleter{err: nil, streamText: nil}).Run(
 		t.Context(), task, func(_ context.Context, kind string, _ any) error {
 			kinds = append(kinds, kind)
 
@@ -205,7 +214,7 @@ func runPromptScenarios(
 	assert.Contains(t, kinds, string(assistant.StreamEventTextDelta))
 	assert.Contains(t, kinds, string(assistant.StreamEventUsageTotal))
 
-	result, err = newRunner(runnerCompleter{err: errors.New("provider unavailable")}).Run(
+	result, err = newRunner(runnerCompleter{err: errors.New("provider unavailable"), streamText: nil}).Run(
 		t.Context(), task, func(context.Context, string, any) error { return nil },
 	)
 	require.ErrorContains(t, err, "run agent prompt")
@@ -216,7 +225,7 @@ func runPromptScenarios(
 	assert.False(t, failedUsage.Reported)
 
 	sinkErr := errors.New("persist event")
-	result, err = newRunner(runnerCompleter{err: nil}).Run(
+	result, err = newRunner(runnerCompleter{err: nil, streamText: nil}).Run(
 		t.Context(), task, func(context.Context, string, any) error { return sinkErr },
 	)
 	require.ErrorIs(t, err, sinkErr)
@@ -228,11 +237,79 @@ func runPromptScenarios(
 	assert.True(t, sinkFailureUsage.Reported)
 }
 
+func TestRuntimeRunnerSurfacesPartialTextWhenPromptFails(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		err  error
+		name string
+	}{
+		{name: "context cancellation", err: context.Canceled},
+		{name: "provider failure", err: errors.New("provider unavailable")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newRunnerFixture(t, 1)
+			completer := runnerCompleter{err: test.err, streamText: []string{"partial ", "findings"}}
+			runner := fixture.newRunner(completer)
+
+			nopSink := func(context.Context, string, any) error { return nil }
+			result, err := runner.Run(t.Context(), fixture.task, nopSink)
+			require.ErrorIs(t, err, test.err)
+			assert.Equal(t, "partial findings", result.Text)
+
+			var usage model.UsageTotals
+			require.NoError(t, json.Unmarshal([]byte(result.UsageJSON), &usage))
+			assert.Zero(t, usage.InputTokens)
+			assert.False(t, usage.Reported)
+		})
+	}
+}
+
+func TestPartialTextAccumulatesConcurrently(t *testing.T) {
+	t.Parallel()
+
+	var partial partialText
+	partial.observe(assistant.StreamEvent{
+		ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: assistant.StreamEventTextDelta, Text: "one",
+	})
+	partial.observe(assistant.StreamEvent{
+		ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+		Kind: assistant.StreamEventThinkingDelta, Text: "ignored",
+	})
+
+	const writers = 16
+
+	const writesPerWriter = 50
+
+	var writersWG sync.WaitGroup
+	writersWG.Add(writers)
+
+	for range writers {
+		go func() {
+			defer writersWG.Done()
+
+			for range writesPerWriter {
+				partial.observe(assistant.StreamEvent{
+					ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+					Kind: assistant.StreamEventTextDelta, Text: "x",
+				})
+			}
+		}()
+	}
+
+	writersWG.Wait()
+
+	assert.Len(t, partial.text(), len("one")+writers*writesPerWriter)
+	assert.True(t, strings.HasPrefix(partial.text(), "one"))
+}
+
 func TestRuntimeRunnerReportsSessionLoadError(t *testing.T) {
 	t.Parallel()
-	db, err := sql.Open("sqlite", "file:"+strings.ReplaceAll(t.Name(), "/", "_")+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	require.NoError(t, database.Migrate(t.Context(), db))
+	db := testutil.OpenMemoryDatabase(t)
 	sessions := testutil.SessionRepository(t, db)
 	require.NoError(t, db.Close())
 	runner, err := NewRuntimeRunner(&assistant.Runtime{}, agent.Load(t.TempDir()), sessions)
@@ -304,6 +381,14 @@ func TestProfileFromDefinitionIsBackgroundAndDeterministic(t *testing.T) {
 	assert.False(t, profile.EnableExtensions)
 	assert.Equal(t, definition.Tools, profile.Tools)
 	assert.Equal(t, definition.Model.Thinking, profile.ThinkingLevel)
+}
+
+func runnerTestDefinition() agent.Definition {
+	return agent.Definition{
+		SourceInfo: emptySourceInfo(), Name: testValue, Description: "", SystemPrompt: testValue,
+		Model:       agent.ModelPolicy{Provider: testValue, Model: testValue, Thinking: model.ThinkingOff},
+		Permissions: agent.PermissionDeny, Tools: nil, Limits: agent.Limits{Timeout: time.Minute},
+	}
 }
 
 func emptySourceInfo() core.SourceInfo {
