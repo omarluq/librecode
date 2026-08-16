@@ -21,38 +21,35 @@ var errTaskLeaseLost = errors.New("agent task lease lost")
 // ticker, a batch-size threshold, or any structural event kind, so one task
 // no longer performs a write transaction per provider delta.
 type taskEventWriter struct {
-	ctx           context.Context
 	err           error
 	service       *Service
-	cancel        context.CancelFunc
+	stop          chan struct{}
 	done          chan struct{}
 	taskID        string
 	pending       []database.TaskEventDraft
 	flushInterval time.Duration
-	flushBatch    int
 	flushMu       sync.Mutex
 	mu            sync.Mutex
+	flushBatch    int
 	closed        bool
 }
 
 // newTaskEventWriter creates the coalescing writer for one running task.
 // The flush loop only starts with start, so callers may override the flush
 // tuning fields first.
-func (service *Service) newTaskEventWriter(ctx context.Context, taskID string) *taskEventWriter {
-	writerCtx, cancel := context.WithCancel(ctx)
-
+func (service *Service) newTaskEventWriter(taskID string) *taskEventWriter {
 	return &taskEventWriter{
 		service: service, taskID: taskID,
 		flushInterval: eventFlushInterval, flushBatch: eventFlushBatch,
-		ctx: writerCtx, cancel: cancel, done: make(chan struct{}),
+		done: make(chan struct{}), stop: make(chan struct{}),
 		flushMu: sync.Mutex{}, mu: sync.Mutex{},
 		pending: nil, err: nil, closed: false,
 	}
 }
 
-// start launches the flush ticker goroutine.
-func (writer *taskEventWriter) start() {
-	go writer.run()
+// start launches the flush ticker goroutine scoped to the run context.
+func (writer *taskEventWriter) start(runCtx context.Context) {
+	go writer.run(runCtx)
 }
 
 // sink adapts the writer to the runner event sink contract.
@@ -61,8 +58,10 @@ func (writer *taskEventWriter) sink() EventSink {
 }
 
 // close stops the ticker, flushes remaining events, and reports the first
-// write failure observed by the writer.
-func (writer *taskEventWriter) close() error {
+// write failure observed by the writer. The run context may already be
+// canceled; the final flush still deserves a bounded attempt because the
+// lease is checked at append time.
+func (writer *taskEventWriter) close(runCtx context.Context) error {
 	writer.mu.Lock()
 	if writer.closed {
 		err := writer.err
@@ -74,12 +73,10 @@ func (writer *taskEventWriter) close() error {
 	writer.closed = true
 	writer.mu.Unlock()
 
-	writer.cancel()
+	close(writer.stop)
 	<-writer.done
 
-	// The run context may already be canceled; the final flush still deserves
-	// a bounded attempt because the lease is checked at append time.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(writer.ctx), finalizeTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(runCtx), finalizeTimeout)
 	defer cancel()
 
 	writer.flush(ctx)
@@ -90,7 +87,7 @@ func (writer *taskEventWriter) close() error {
 	return writer.err
 }
 
-func (writer *taskEventWriter) run() {
+func (writer *taskEventWriter) run(runCtx context.Context) {
 	defer close(writer.done)
 
 	ticker := time.NewTicker(writer.flushInterval)
@@ -98,10 +95,12 @@ func (writer *taskEventWriter) run() {
 
 	for {
 		select {
-		case <-writer.ctx.Done():
+		case <-writer.stop:
+			return
+		case <-runCtx.Done():
 			return
 		case <-ticker.C:
-			writer.flush(writer.ctx)
+			writer.flush(runCtx)
 		}
 	}
 }
@@ -146,6 +145,7 @@ func (writer *taskEventWriter) flush(ctx context.Context) {
 	defer writer.flushMu.Unlock()
 
 	writer.mu.Lock()
+
 	pending := writer.pending
 	writer.pending = nil
 	writer.mu.Unlock()

@@ -346,13 +346,13 @@ func repositoryReadErrorCases(service *Service) []repositoryErrorCase {
 func writeTaskEvent(t *testing.T, service *Service, kind string, payload any) error {
 	t.Helper()
 
-	writer := service.newTaskEventWriter(t.Context(), "id")
-	writer.start()
+	writer := service.newTaskEventWriter("id")
+	writer.start(t.Context())
 
 	// Structural kinds flush synchronously, but report failures from close so
 	// callers observe the first write error either way.
 	err := writer.write(t.Context(), kind, payload)
-	closeErr := writer.close()
+	closeErr := writer.close(t.Context())
 
 	if err != nil {
 		return err

@@ -59,9 +59,9 @@ func TestTaskEventWriterCoalescesStreamDeltas(t *testing.T) {
 	t.Parallel()
 
 	fixture := newWriterFixture(t)
-	writer := fixture.service.newTaskEventWriter(t.Context(), fixture.taskID)
+	writer := fixture.service.newTaskEventWriter(fixture.taskID)
 	writer.flushInterval = time.Hour
-	writer.start() // disable the ticker; only batch/close flush
+	writer.start(t.Context()) // disable the ticker; only batch/close flush
 
 	for range eventFlushBatch - 1 {
 		require.NoError(t, writer.write(t.Context(), string(assistant.StreamEventTextDelta),
@@ -82,16 +82,16 @@ func TestTaskEventWriterCoalescesStreamDeltas(t *testing.T) {
 		assert.Equal(t, string(assistant.StreamEventTextDelta), persisted[index+2].Event.Kind)
 	}
 
-	require.NoError(t, writer.close())
+	require.NoError(t, writer.close(t.Context()))
 }
 
 func TestTaskEventWriterFlushesStructuralEventsImmediately(t *testing.T) {
 	t.Parallel()
 
 	fixture := newWriterFixture(t)
-	writer := fixture.service.newTaskEventWriter(t.Context(), fixture.taskID)
+	writer := fixture.service.newTaskEventWriter(fixture.taskID)
 	writer.flushInterval = time.Hour
-	writer.start()
+	writer.start(t.Context())
 
 	require.NoError(t, writer.write(t.Context(), string(assistant.StreamEventTextDelta),
 		delta(assistant.StreamEventTextDelta, "partial")))
@@ -103,16 +103,16 @@ func TestTaskEventWriterFlushesStructuralEventsImmediately(t *testing.T) {
 	assert.Equal(t, string(assistant.StreamEventTextDelta), persisted[2].Event.Kind)
 	assert.Equal(t, string(assistant.StreamEventToolResult), persisted[3].Event.Kind)
 
-	require.NoError(t, writer.close())
+	require.NoError(t, writer.close(t.Context()))
 }
 
 func TestTaskEventWriterTickerFlush(t *testing.T) {
 	t.Parallel()
 
 	fixture := newWriterFixture(t)
-	writer := fixture.service.newTaskEventWriter(t.Context(), fixture.taskID)
+	writer := fixture.service.newTaskEventWriter(fixture.taskID)
 	writer.flushInterval = 20 * time.Millisecond
-	writer.start()
+	writer.start(t.Context())
 
 	require.NoError(t, writer.write(t.Context(), string(assistant.StreamEventTextDelta),
 		delta(assistant.StreamEventTextDelta, "x")))
@@ -121,21 +121,21 @@ func TestTaskEventWriterTickerFlush(t *testing.T) {
 		return len(fixture.events(t)) > 2
 	}, time.Second, 5*time.Millisecond, "ticker must flush buffered deltas")
 
-	require.NoError(t, writer.close())
+	require.NoError(t, writer.close(t.Context()))
 }
 
 func TestTaskEventWriterCloseFlushesRemaining(t *testing.T) {
 	t.Parallel()
 
 	fixture := newWriterFixture(t)
-	writer := fixture.service.newTaskEventWriter(t.Context(), fixture.taskID)
+	writer := fixture.service.newTaskEventWriter(fixture.taskID)
 	writer.flushInterval = time.Hour
-	writer.start()
+	writer.start(t.Context())
 
 	require.NoError(t, writer.write(t.Context(), string(assistant.StreamEventTextDelta),
 		delta(assistant.StreamEventTextDelta, "tail")))
 
-	require.NoError(t, writer.close())
+	require.NoError(t, writer.close(t.Context()))
 	assert.Len(t, fixture.events(t), 3, "close must flush buffered deltas")
 
 	// Writes after close fail closed.
@@ -143,16 +143,16 @@ func TestTaskEventWriterCloseFlushesRemaining(t *testing.T) {
 		"task event writer is closed")
 
 	// Double close is safe and idempotent.
-	require.NoError(t, writer.close())
+	require.NoError(t, writer.close(t.Context()))
 }
 
 func TestTaskEventWriterFailsClosedOnLeaseLoss(t *testing.T) {
 	t.Parallel()
 
 	fixture := newWriterFixture(t)
-	writer := fixture.service.newTaskEventWriter(t.Context(), fixture.taskID)
+	writer := fixture.service.newTaskEventWriter(fixture.taskID)
 	writer.flushInterval = time.Hour
-	writer.start()
+	writer.start(t.Context())
 
 	// Steal the lease: finish the task out from under the writer.
 	changed, err := fixture.tasks.Finish(t.Context(), &database.TaskFinish{
@@ -168,7 +168,7 @@ func TestTaskEventWriterFailsClosedOnLeaseLoss(t *testing.T) {
 		delta(assistant.StreamEventTextDelta, "x")))
 
 	// The flush at close discovers the lost lease and fails closed.
-	err = writer.close()
+	err = writer.close(t.Context())
 	require.ErrorContains(t, err, "lease lost")
 
 	// The rejected delta must not be durable: queued + started + terminal only.
