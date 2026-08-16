@@ -20,27 +20,33 @@ import (
 )
 
 const (
-	defaultConcurrency         = 4
-	defaultSessionConcurrency  = 2
-	defaultTimeout             = 30 * time.Minute
-	defaultQueueCapacity       = 256
-	awaitPollInterval          = time.Second
-	dispatchRetryInterval      = 10 * time.Millisecond
-	finalizeTimeout            = 10 * time.Second
-	leaseDuration              = 30 * time.Second
-	leaseHeartbeatInterval     = 10 * time.Second
-	leaseRenewalRetryInterval  = 250 * time.Millisecond
-	leaseRenewalAttemptTimeout = 2 * time.Second
-	leaseRenewalAttempts       = 3
-	eventBuffer                = 64
-	eventFlushInterval         = time.Second
-	eventFlushBatch            = 32
-	enqueueTaskOperation       = "enqueue task"
-	enqueueCanceledCode        = "enqueue_canceled"
-	enqueueCanceledMessage     = "task submission was canceled before queue admission"
-	serviceStoppedCode         = "service_stopped"
-	serviceStoppedMessage      = "task service stopped before queue admission"
-	taskInterruptedEvent       = "task_interrupted"
+	defaultConcurrency        = 4
+	defaultSessionConcurrency = 2
+	defaultTimeout            = 30 * time.Minute
+	defaultQueueCapacity      = 256
+	awaitPollInterval         = time.Second
+	dispatchRetryInterval     = 10 * time.Millisecond
+	finalizeTimeout           = 10 * time.Second
+	leaseDuration             = 30 * time.Second
+	leaseHeartbeatInterval    = 10 * time.Second
+	leaseRenewalRetryInterval = 250 * time.Millisecond
+	// leaseRenewalWindow bounds the total renewal retry budget per heartbeat.
+	// It stays below the heartbeat interval so a stuck renewal never starves the
+	// next scheduled renewal of the 30s lease.
+	leaseRenewalWindow = 8 * time.Second
+	// leaseBusyGrace outlasts the database busy_timeout (15s default) so a
+	// renewal attempt waits for the SQLite write lock instead of aborting while
+	// the driver would still have succeeded.
+	leaseBusyGrace         = 16 * time.Second
+	eventBuffer            = 64
+	eventFlushInterval     = time.Second
+	eventFlushBatch        = 32
+	enqueueTaskOperation   = "enqueue task"
+	enqueueCanceledCode    = "enqueue_canceled"
+	enqueueCanceledMessage = "task submission was canceled before queue admission"
+	serviceStoppedCode     = "service_stopped"
+	serviceStoppedMessage  = "task service stopped before queue admission"
+	taskInterruptedEvent   = "task_interrupted"
 )
 
 // Runner executes one persisted agent task.
@@ -94,34 +100,33 @@ type Options struct {
 
 // Service schedules and owns durable agent tasks.
 type Service struct {
-	runner                     Runner
-	getTaskFn                  func(context.Context, string) (*database.TaskEntity, bool, error)
-	renewLeaseFn               func(context.Context, string, string, time.Time) (bool, error)
-	active                     map[string]context.CancelFunc
-	subscribers                map[string]map[uint64]chan database.TaskEventEntity
-	sessionSlots               map[string]chan struct{}
-	agentTasks                 *database.AgentTaskRepository
-	workflows                  *database.WorkflowRepository
-	tasks                      *database.TaskRepository
-	queue                      chan string
-	cancel                     context.CancelFunc
-	done                       <-chan struct{}
-	logger                     *slog.Logger
-	leaseOwner                 string
-	wg                         sync.WaitGroup
-	mu                         sync.Mutex
-	lifecycle                  sync.Mutex
-	nextSubscriber             uint64
-	timeout                    time.Duration
-	leaseDuration              time.Duration
-	leaseHeartbeatInterval     time.Duration
-	leaseRenewalRetryInterval  time.Duration
-	leaseRenewalAttemptTimeout time.Duration
-	leaseRenewalAttempts       int
-	concurrency                int
-	sessionConcurrency         int
-	started                    bool
-	closed                     bool
+	runner                    Runner
+	getTaskFn                 func(context.Context, string) (*database.TaskEntity, bool, error)
+	renewLeaseFn              func(context.Context, string, string, time.Time) (bool, error)
+	active                    map[string]context.CancelFunc
+	subscribers               map[string]map[uint64]chan database.TaskEventEntity
+	sessionSlots              map[string]chan struct{}
+	agentTasks                *database.AgentTaskRepository
+	workflows                 *database.WorkflowRepository
+	tasks                     *database.TaskRepository
+	queue                     chan string
+	cancel                    context.CancelFunc
+	done                      <-chan struct{}
+	logger                    *slog.Logger
+	leaseOwner                string
+	wg                        sync.WaitGroup
+	mu                        sync.Mutex
+	lifecycle                 sync.Mutex
+	nextSubscriber            uint64
+	timeout                   time.Duration
+	leaseDuration             time.Duration
+	leaseHeartbeatInterval    time.Duration
+	leaseRenewalRetryInterval time.Duration
+	leaseRenewalWindow        time.Duration
+	concurrency               int
+	sessionConcurrency        int
+	started                   bool
+	closed                    bool
 }
 
 func invalidOptions(options *Options) bool {
@@ -173,10 +178,9 @@ func NewStopped(ctx context.Context, options *Options) (*Service, error) {
 		nextSubscriber: 0, wg: sync.WaitGroup{}, timeout: timeout,
 		concurrency: concurrency, sessionConcurrency: sessionConcurrency, logger: logger, leaseOwner: leaseOwner,
 		getTaskFn: options.Tasks.Get, renewLeaseFn: options.Tasks.RenewLease, leaseDuration: leaseDuration,
-		leaseHeartbeatInterval:     leaseHeartbeatInterval,
-		leaseRenewalRetryInterval:  leaseRenewalRetryInterval,
-		leaseRenewalAttemptTimeout: leaseRenewalAttemptTimeout,
-		leaseRenewalAttempts:       leaseRenewalAttempts, mu: sync.Mutex{},
+		leaseHeartbeatInterval:    leaseHeartbeatInterval,
+		leaseRenewalRetryInterval: leaseRenewalRetryInterval,
+		leaseRenewalWindow:        leaseRenewalWindow, mu: sync.Mutex{},
 		lifecycle: sync.Mutex{}, started: false, closed: false,
 	}
 	if err := service.recoverInterrupted(ctx); err != nil {
@@ -838,9 +842,27 @@ func (service *Service) renewLease(
 	}
 }
 
+// renewLeaseWithRetry renews the lease within a bounded window instead of a
+// fixed attempt count. SQLite waits up to its busy_timeout for the write lock,
+// so each attempt gets min(busy grace, remaining window): a busy database gets
+// the full window to succeed while genuine lease loss (renewed=false) still
+// fails fast.
 func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string) bool {
-	for attempt := 1; attempt <= service.leaseRenewalAttempts; attempt++ {
-		renewed, err := service.attemptLeaseRenewal(ctx, taskID)
+	const busyGrace = leaseBusyGrace
+
+	deadline := time.Now().Add(service.leaseRenewalWindow)
+
+	for attempt := 1; ; attempt++ {
+		timeout := min(busyGrace, time.Until(deadline))
+		if timeout <= 0 {
+			service.logError(ctx, "renew agent task lease after retries", "task_id", taskID,
+				"lease_owner", service.leaseOwner, "attempts", attempt-1,
+				"renewal_window", service.leaseRenewalWindow)
+
+			return false
+		}
+
+		renewed, err := service.attemptLeaseRenewal(ctx, taskID, timeout)
 		if err == nil {
 			return service.handleLeaseRenewal(ctx, taskID, attempt, renewed)
 		}
@@ -849,28 +871,28 @@ func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string) 
 			return false
 		}
 
-		if attempt == service.leaseRenewalAttempts {
+		if !time.Now().Before(deadline) {
 			service.logError(ctx, "renew agent task lease after retries", "task_id", taskID,
-				"lease_owner", service.leaseOwner, "attempts", attempt, "error", err)
+				"lease_owner", service.leaseOwner, "attempts", attempt,
+				"renewal_window", service.leaseRenewalWindow, "error", err)
 
 			return false
 		}
 
 		service.logWarn(ctx, "retry agent task lease renewal", "task_id", taskID,
 			"lease_owner", service.leaseOwner, "attempt", attempt,
-			"max_attempts", service.leaseRenewalAttempts,
+			"renewal_window", service.leaseRenewalWindow,
 			"retry_after", service.leaseRenewalRetryInterval, "error", err)
 
-		if !waitForLeaseRenewalRetry(ctx, service.leaseRenewalRetryInterval) {
+		retryDelay := min(service.leaseRenewalRetryInterval, time.Until(deadline))
+		if !waitForLeaseRenewalRetry(ctx, retryDelay) {
 			return false
 		}
 	}
-
-	return false
 }
 
-func (service *Service) attemptLeaseRenewal(ctx context.Context, taskID string) (bool, error) {
-	attemptCtx, cancel := context.WithTimeout(ctx, service.leaseRenewalAttemptTimeout)
+func (service *Service) attemptLeaseRenewal(ctx context.Context, taskID string, timeout time.Duration) (bool, error) {
+	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	return service.renewLeaseFn(
