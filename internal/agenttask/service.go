@@ -20,23 +20,25 @@ import (
 )
 
 const (
-	defaultConcurrency        = 4
-	defaultSessionConcurrency = 2
-	defaultTimeout            = 30 * time.Minute
-	defaultQueueCapacity      = 256
-	awaitPollInterval         = time.Second
-	dispatchRetryInterval     = 10 * time.Millisecond
-	finalizeTimeout           = 10 * time.Second
-	leaseDuration             = 30 * time.Second
-	leaseHeartbeatInterval    = 10 * time.Second
-	leaseRenewalRetryInterval = 250 * time.Millisecond
+	defaultConcurrency         = 10
+	defaultSessionConcurrency  = 10
+	defaultTimeout             = 30 * time.Minute
+	defaultQueueCapacity       = 256
+	awaitPollInterval          = time.Second
+	dispatchRetryInterval      = 10 * time.Millisecond
+	finalizeTimeout            = 10 * time.Second
+	leaseDuration              = 30 * time.Second
+	leaseHeartbeatInterval     = 10 * time.Second
+	leaseRenewalRetryInterval  = 250 * time.Millisecond
 	// leaseBusyGrace outlasts the database busy_timeout (15s default) so a
 	// renewal attempt waits for the SQLite write lock instead of aborting while
 	// the driver would still have succeeded.
-	leaseBusyGrace     = 16 * time.Second
-	eventBuffer        = 64
-	eventFlushInterval = time.Second
-	eventFlushBatch    = 32
+	leaseBusyGrace             = 16 * time.Second
+	leaseRenewalAttemptTimeout = 2 * time.Second
+	leaseRenewalAttempts       = 3
+	eventBuffer                = 64
+	eventFlushInterval         = time.Second
+	eventFlushBatch            = 32
 	// cancelSourceEventLimit bounds the durable provenance scan; the
 	// task_canceling event is among the task's most recent events.
 	cancelSourceEventLimit = 64
