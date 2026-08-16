@@ -58,7 +58,7 @@ func TestWorkflowRepositoryLifecycleAndAgentLinks(t *testing.T) {
 	assert.Equal(t, []string{first.Task.ID, second.Task.ID}, []string{links[0].AgentTaskID, links[1].AgentTaskID})
 
 	changed, err := repository.Tasks().Transition(ctx, created.Task.ID,
-		[]database.TaskState{database.TaskQueued}, database.TaskRunning, taskStartedEvent)
+		[]database.TaskState{database.TaskQueued}, database.TaskRunning, taskStartedEvent, "{}")
 	require.NoError(t, err)
 	require.True(t, changed)
 

@@ -38,7 +38,7 @@ func TestTaskRepositoryListFiltersAndLimits(t *testing.T) {
 	_ = create("extension-job", other.ID)
 
 	changed, err := tasks.Transition(ctx, agentRunning.ID, []database.TaskState{database.TaskQueued},
-		database.TaskRunning, taskStartedEvent)
+		database.TaskRunning, taskStartedEvent, "{}")
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -75,7 +75,7 @@ func TestTaskRepositoryClaimInterruptedAndRunningEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	changed, err := tasks.Transition(ctx, created.ID, []database.TaskState{database.TaskQueued},
-		database.TaskInterrupted, taskInterruptedEvent)
+		database.TaskInterrupted, taskInterruptedEvent, "{}")
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -99,7 +99,7 @@ func TestTaskRepositoryClaimInterruptedAndRunningEvents(t *testing.T) {
 	assert.Equal(t, int64(4), event.Sequence)
 
 	changed, err = tasks.Transition(ctx, created.ID, []database.TaskState{database.TaskRunning},
-		database.TaskCanceling, "task_canceling")
+		database.TaskCanceling, "task_canceling", "{}")
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -127,7 +127,7 @@ func TestTaskRepositoryRecoveryHandlesCancelingAndUnleasedTasks(t *testing.T) {
 		created, err := tasks.Create(ctx, newTask(owner.ID))
 		require.NoError(t, err)
 		changed, err := tasks.Transition(ctx, created.ID, []database.TaskState{database.TaskQueued},
-			database.TaskRunning, taskStartedEvent)
+			database.TaskRunning, taskStartedEvent, "{}")
 		require.NoError(t, err)
 		require.True(t, changed)
 
@@ -137,7 +137,7 @@ func TestTaskRepositoryRecoveryHandlesCancelingAndUnleasedTasks(t *testing.T) {
 	running := createRunning()
 	canceling := createRunning()
 	changed, err := tasks.Transition(ctx, canceling.ID, []database.TaskState{database.TaskRunning},
-		database.TaskCanceling, "task_canceling")
+		database.TaskCanceling, "task_canceling", "{}")
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -323,7 +323,7 @@ func TestToolTaskRepositoryRecoveryHandlesCancelingAndSkipsLiveLease(t *testing.
 	expired := createClaimed("expired", time.Now().Add(-time.Minute))
 	canceling := createClaimed("canceling", time.Now().Add(-time.Minute))
 	changed, err := repository.Tasks().Transition(ctx, canceling.Task.ID, []database.TaskState{database.TaskRunning},
-		database.TaskCanceling, "task_canceling")
+		database.TaskCanceling, "task_canceling", "{}")
 	require.NoError(t, err)
 	require.True(t, changed)
 
