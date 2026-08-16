@@ -69,7 +69,7 @@ func TestTaskRepositoryLeasesFenceWorkersAndRecovery(t *testing.T) {
 	assert.Empty(t, recovered)
 
 	transitioned, err := tasks.Transition(
-		ctx, created.ID, []database.TaskState{database.TaskRunning}, database.TaskFailed, taskFailedEvent,
+		ctx, created.ID, []database.TaskState{database.TaskRunning}, database.TaskFailed, taskFailedEvent, "{}",
 	)
 	require.NoError(t, err)
 	assert.False(t, transitioned)

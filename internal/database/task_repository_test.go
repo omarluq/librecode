@@ -135,7 +135,7 @@ func TestTaskRepositoryPropagatesContextErrors(t *testing.T) {
 		}},
 		{name: "transition", run: func() error {
 			_, runErr := tasks.Transition(canceled, created.ID, []database.TaskState{database.TaskQueued},
-				database.TaskRunning, taskStartedEvent)
+				database.TaskRunning, taskStartedEvent, "{}")
 
 			return fmt.Errorf("repository operation: %w", runErr)
 		}},
@@ -221,7 +221,7 @@ func TestTaskRepositoryTransitionBehavior(t *testing.T) {
 			created, err := tasks.Create(ctx, newTask(owner.ID))
 			require.NoError(t, err)
 
-			changed, err := tasks.Transition(ctx, created.ID, test.from, test.target, test.event)
+			changed, err := tasks.Transition(ctx, created.ID, test.from, test.target, test.event, "{}")
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)
 			} else {

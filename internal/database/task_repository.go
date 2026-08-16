@@ -24,6 +24,16 @@ const (
 	// TaskKindAgent identifies asynchronous subagent work.
 	TaskKindAgent = "agent"
 
+	// CancelSourceParent marks a cancellation requested by the task owner's
+	// session (agent_cancel tool, terminal, or shutdown).
+	CancelSourceParent = "parent"
+	// CancelSourceWorkflow marks a cancellation requested by a workflow run.
+	CancelSourceWorkflow = "workflow"
+
+	// CanceledByJSONKey is the task event payload key recording who requested
+	// cancellation.
+	CanceledByJSONKey = "canceled_by"
+
 	// TaskQueued is accepted work waiting for execution.
 	TaskQueued TaskState = "queued"
 	// TaskRunning is work currently being executed.
@@ -39,6 +49,17 @@ const (
 	// TaskInterrupted is work abandoned by process interruption.
 	TaskInterrupted TaskState = "interrupted"
 )
+
+// CancelEventPayload builds the task event payload recording who requested a
+// cancellation.
+func CancelEventPayload(source string) string {
+	payload, err := json.Marshal(map[string]string{CanceledByJSONKey: source})
+	if err != nil { // unreachable: map[string]string always marshals
+		return "{}"
+	}
+
+	return string(payload)
+}
 
 // TaskEntity is the generic durable lifecycle of asynchronous work.
 type TaskEntity struct {
@@ -292,6 +313,7 @@ func (repository *TaskRepository) Transition(
 	from []TaskState,
 	targetState TaskState,
 	kind string,
+	payloadJSON string,
 ) (bool, error) {
 	if len(from) == 0 {
 		return false, errors.New("database: task transition requires a source state")
@@ -301,12 +323,20 @@ func (repository *TaskRepository) Transition(
 		return false, err
 	}
 
+	if payloadJSON == "" {
+		payloadJSON = "{}"
+	}
+
+	if err := validateEvent(kind, payloadJSON); err != nil {
+		return false, oops.In("database").Code("validate_event").Wrapf(err, "validate transition event")
+	}
+
 	now := repository.now().UTC()
 	eventID := newUUIDv7()
 
 	changed, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
 		return repository.transition(
-			ctx, transaction, taskID, from, targetState, kind,
+			ctx, transaction, taskID, from, targetState, kind, payloadJSON,
 			retryStableTaskOperation{now: now, eventID: eventID},
 		)
 	})
@@ -324,6 +354,7 @@ func (repository *TaskRepository) transition(
 	from []TaskState,
 	targetState TaskState,
 	kind string,
+	payloadJSON string,
 	operation retryStableTaskOperation,
 ) (bool, error) {
 	current, found, err := loadTask(ctx, transaction, taskID)
@@ -366,7 +397,7 @@ WHERE id = ? AND state = ? AND (? = FALSE OR lease_owner IS NULL)`
 
 	if err := insertTaskEvent(ctx, transaction, &taskEventInsert{
 		createdAt: operation.now, id: operation.eventID, taskID: taskID,
-		kind: kind, payload: "{}", sequence: sequence,
+		kind: kind, payload: payloadJSON, sequence: sequence,
 	}); err != nil {
 		return false, err
 	}

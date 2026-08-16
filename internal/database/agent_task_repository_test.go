@@ -348,7 +348,7 @@ func assertTaskTransition(
 	t.Helper()
 
 	changed, err := repository.Transition(
-		assertion.Context, assertion.TaskID, assertion.From, assertion.Target, assertion.EventKind,
+		assertion.Context, assertion.TaskID, assertion.From, assertion.Target, assertion.EventKind, "{}",
 	)
 	require.NoError(t, err)
 	assert.Equal(t, assertion.Want, changed)
