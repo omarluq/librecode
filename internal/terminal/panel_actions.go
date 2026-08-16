@@ -38,6 +38,11 @@ func (app *App) applyStandardPanelSelection(ctx context.Context, value string) e
 		app.closePanel()
 
 		return nil
+	case panelModelSubagent:
+		app.applyModelSubagentSelection(value)
+		app.closePanel()
+
+		return nil
 	case panelScopedModels:
 		app.toggleScopedModel(value)
 
