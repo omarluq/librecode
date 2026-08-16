@@ -340,12 +340,17 @@ func (runtime *Runtime) compactionSummary(
 	input *compactionSummaryInput,
 ) (summary string, fromHook bool, err error) {
 	if input.decision != nil && input.decision.Summary != "" {
-		return compaction.AppendDeterministicState(
+		summary = compaction.AppendDeterministicState(
 			input.decision.Summary,
 			input.plan.FileOperations,
 			input.plan.ValidationRecords,
 			input.plan.ActiveWorkRecords,
-		), true, nil
+		)
+		if validationErr := validateHookSummaryOutput(summary, input.providerInput); validationErr != nil {
+			return "", false, validationErr
+		}
+
+		return summary, true, nil
 	}
 
 	summary, err = runtime.summarizeCompaction(ctx, input)
@@ -354,6 +359,28 @@ func (runtime *Runtime) compactionSummary(
 	}
 
 	return summary, false, nil
+}
+
+func validateHookSummaryOutput(summary string, providerInput *compactionProviderInput) error {
+	estimatedTokens := contextwindow.EstimateTokens(summary)
+	if estimatedTokens <= providerInput.outputLimit {
+		return nil
+	}
+
+	return oops.In("assistant").Code("compact_hook_summary_output_limit").Wrapf(
+		&compaction.SummaryError{
+			Kind:     compaction.ErrSummaryOutputTruncated,
+			Cause:    nil,
+			Provider: providerInput.selectedModel.Provider,
+			Model:    providerInput.selectedModel.ID,
+			Reason:   providerInput.operation.Reason,
+			Input:    estimatedTokens,
+			Limit:    providerInput.outputLimit,
+			Before:   0,
+			After:    0,
+		},
+		"extension compaction summary exceeds output limit",
+	)
 }
 
 func (runtime *Runtime) appendCompaction(

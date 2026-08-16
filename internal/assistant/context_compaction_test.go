@@ -14,6 +14,7 @@ import (
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/auth"
 	"github.com/omarluq/librecode/internal/compaction"
+	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
@@ -332,6 +333,148 @@ end)
 	assert.Equal(t, tail.ID, entry.CompactionFirstKeptEntryID)
 	assert.Contains(t, entry.Summary, "read: first.txt")
 	assert.Contains(t, entry.Summary, "read: tail.txt")
+}
+
+func TestRuntime_CompactSessionEnforcesHookSummaryOutputLimit(t *testing.T) {
+	t.Parallel()
+
+	summary := structuredTestSummary("bounded extension summary " + strings.Repeat("detail ", 20))
+	summaryTokens := contextwindow.EstimateTokens(summary)
+	tests := []struct {
+		name        string
+		outputLimit int
+		wantError   bool
+	}{
+		{name: "under limit", outputLimit: summaryTokens + 1, wantError: false},
+		{name: "exact limit", outputLimit: summaryTokens, wantError: false},
+		{name: "over limit", outputLimit: summaryTokens - 1, wantError: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
+			_, repository, manager := newTestRuntimeWithManager(t, client)
+			runtime := newCompactionRuntimeWithManagerOutputLimit(
+				t, repository, manager, client, test.outputLimit,
+			)
+			loadRuntimeExtension(t, manager, fmt.Sprintf(`
+local lc = require("librecode")
+lc.on("session_before_compact", function()
+  return { compaction = { summary = %q } }
+end)
+`, summary))
+
+			ctx := context.Background()
+			session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+			require.NoError(t, err)
+			old := appendRuntimeTestMessage(
+				t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 1000),
+			)
+			appendRuntimeTestMessage(t, repository, session.ID, &old.ID, database.RoleAssistant, "tail")
+
+			entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+			if !test.wantError {
+				require.NoError(t, err)
+				require.NotNil(t, entry)
+				assert.Equal(t, summary, entry.Summary)
+				assert.Empty(t, client.requests)
+
+				return
+			}
+
+			require.ErrorIs(t, err, compaction.ErrSummaryOutputTruncated)
+			assert.Contains(t, err.Error(), "extension compaction summary exceeds output limit")
+			assert.Nil(t, entry)
+			assert.Empty(t, client.requests)
+
+			branch, branchErr := repository.Branch(ctx, session.ID, "")
+			require.NoError(t, branchErr)
+
+			for index := range branch {
+				assert.NotEqual(t, database.EntryTypeCompaction, branch[index].Type)
+			}
+		})
+	}
+}
+
+func TestRuntime_CompactSessionValidatesNormalizedHookSummary(t *testing.T) {
+	t.Parallel()
+
+	baseSummary := structuredTestSummary("normalized extension summary")
+	hookSummary := baseSummary + "\n\n### Librecode file operations\n- read: " + strings.Repeat("stale-path ", 100)
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
+	_, repository, manager := newTestRuntimeWithManager(t, client)
+	runtime := newCompactionRuntimeWithManagerOutputLimit(
+		t,
+		repository,
+		manager,
+		client,
+		contextwindow.EstimateTokens(baseSummary),
+	)
+	loadRuntimeExtension(t, manager, fmt.Sprintf(`
+local lc = require("librecode")
+lc.on("session_before_compact", function()
+  return { compaction = { summary = %q } }
+end)
+`, hookSummary))
+
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 1000))
+	appendRuntimeTestMessage(t, repository, session.ID, &old.ID, database.RoleAssistant, "tail")
+
+	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	assert.Equal(t, baseSummary, entry.Summary)
+	assert.Empty(t, client.requests)
+}
+
+func TestRuntime_CompactSessionIncludesDeterministicStateInHookSummaryOutputLimit(t *testing.T) {
+	t.Parallel()
+
+	summary := structuredTestSummary("extension summary with canonical state")
+	client := &compactionCompleter{summary: compactedWorkSummary, requests: nil}
+	_, repository, manager := newTestRuntimeWithManager(t, client)
+	runtime := newCompactionRuntimeWithManagerOutputLimit(
+		t,
+		repository,
+		manager,
+		client,
+		contextwindow.EstimateTokens(summary),
+	)
+	loadRuntimeExtension(t, manager, fmt.Sprintf(`
+local lc = require("librecode")
+lc.on("session_before_compact", function()
+  return { compaction = { summary = %q } }
+end)
+`, summary))
+
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, testRuntimeCWD, "compact", "")
+	require.NoError(t, err)
+	old := appendRuntimeTestMessage(t, repository, session.ID, nil, database.RoleUser, strings.Repeat("old ", 1000))
+	readEntry := appendRuntimeTestToolResult(
+		t,
+		repository,
+		session.ID,
+		&old.ID,
+		"read",
+		`{"path":"internal/assistant/context_compaction.go"}`,
+		"source",
+	)
+	appendRuntimeTestMessage(t, repository, session.ID, &readEntry.ID, database.RoleAssistant, "tail")
+
+	entry, err := runtime.CompactSession(ctx, session.ID, testRuntimeCWD)
+
+	require.ErrorIs(t, err, compaction.ErrSummaryOutputTruncated)
+	assert.Contains(t, err.Error(), "extension compaction summary exceeds output limit")
+	assert.Nil(t, entry)
+	assert.Empty(t, client.requests)
 }
 
 func TestRuntime_CompactSessionRejectsMalformedHookSummary(t *testing.T) {
