@@ -328,10 +328,10 @@ func repositoryReadErrorCases(service *Service) []repositoryErrorCase {
 
 			return err
 		}},
-		{name: "append event", wantError: "append task event", run: func(t *testing.T) error {
+		{name: "append event", wantError: "append task events", run: func(t *testing.T) error {
 			t.Helper()
 
-			return service.eventSink("id")(t.Context(), "event", map[string]string{"ok": "yes"})
+			return writeTaskEvent(t, service, "event", map[string]string{"ok": "yes"})
 		}},
 		{name: "check task ownership", wantError: "get agent task", run: func(t *testing.T) error {
 			t.Helper()
@@ -343,11 +343,29 @@ func repositoryReadErrorCases(service *Service) []repositoryErrorCase {
 	}
 }
 
+func writeTaskEvent(t *testing.T, service *Service, kind string, payload any) error {
+	t.Helper()
+
+	writer := service.newTaskEventWriter(t.Context(), "id")
+	writer.start()
+
+	// Structural kinds flush synchronously, but report failures from close so
+	// callers observe the first write error either way.
+	err := writer.write(t.Context(), kind, payload)
+	closeErr := writer.close()
+
+	if err != nil {
+		return err
+	}
+
+	return closeErr
+}
+
 func TestServiceInternalEventMarshalError(t *testing.T) {
 	t.Parallel()
 
 	service := emptyService()
-	err := service.eventSink("id")(t.Context(), "event", make(chan int))
+	err := writeTaskEvent(t, service, "event", make(chan int))
 	assert.ErrorContains(t, err, "marshal task event")
 }
 

@@ -808,60 +808,128 @@ func (repository *TaskRepository) AppendEvent(
 func (repository *TaskRepository) AppendRunningEvent(
 	ctx context.Context, taskID, leaseOwner, kind, payloadJSON string,
 ) (*TaskEventEntity, bool, error) {
-	if err := validateEvent(kind, payloadJSON); err != nil {
-		return nil, false, oops.In("database").Code("validate_event").Wrapf(err, "validate event")
+	events, appended, err := repository.AppendRunningEvents(ctx, taskID, leaseOwner,
+		[]TaskEventDraft{{Kind: kind, PayloadJSON: payloadJSON}})
+	if err != nil || !appended {
+		return nil, false, err
+	}
+
+	return &events[0], true, nil
+}
+
+// TaskEventDraft describes one event appended by a batched AppendRunningEvents call.
+type TaskEventDraft struct {
+	Kind        string
+	PayloadJSON string
+}
+
+// AppendRunningEvents atomically appends a batch of events while taskID stays
+// running under a live lease owned by leaseOwner. It returns the appended
+// events; appended is false when lease ownership was lost and nothing was written.
+func (repository *TaskRepository) AppendRunningEvents(
+	ctx context.Context,
+	taskID string,
+	leaseOwner string,
+	drafts []TaskEventDraft,
+) ([]TaskEventEntity, bool, error) {
+	if len(drafts) == 0 {
+		return nil, true, nil
+	}
+
+	for index := range drafts {
+		if err := validateEvent(drafts[index].Kind, drafts[index].PayloadJSON); err != nil {
+			return nil, false, oops.In("database").Code("validate_event").Wrapf(err, "validate event")
+		}
 	}
 
 	type appendResult struct {
-		created  *TaskEventEntity
+		created  []TaskEventEntity
 		appended bool
 	}
 
 	now := repository.now().UTC()
-	eventID := newUUIDv7()
 
 	result, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (appendResult, error) {
-		var ownership struct {
-			Count int `ksql:"count"`
+		owned, err := ownsRunningTask(ctx, transaction, taskID, leaseOwner, now)
+		if err != nil {
+			return appendResult{}, err
 		}
 
-		const owned = `SELECT COUNT(*) AS count FROM tasks WHERE id = ? AND state IN (?, ?)
-AND lease_owner = ? AND lease_expires_at > ?`
-		if err := transaction.QueryOne(ctx, &ownership, owned, taskID, TaskRunning, TaskCanceling,
-			leaseOwner, formatTime(now)); err != nil {
-			return appendResult{}, oops.In("database").Code("check_task_event_lease").Wrapf(
-				err, "check task event lease",
-			)
-		}
-
-		if ownership.Count == 0 {
+		if !owned {
 			return appendResult{created: nil, appended: false}, nil
 		}
 
-		sequence, err := nextTaskEventSequence(ctx, transaction, taskID)
-		if err != nil {
-			return appendResult{}, err
-		}
+		created := make([]TaskEventEntity, 0, len(drafts))
+		for index := range drafts {
+			event, err := appendTaskEventDraft(ctx, transaction, taskID, now, drafts[index])
+			if err != nil {
+				return appendResult{}, err
+			}
 
-		err = insertTaskEvent(ctx, transaction, &taskEventInsert{
-			createdAt: now, id: eventID, taskID: taskID,
-			kind: kind, payload: payloadJSON, sequence: sequence,
-		})
-		if err != nil {
-			return appendResult{}, err
+			created = append(created, event)
 		}
-
-		created := &TaskEventEntity{TaskID: taskID, Sequence: sequence, Event: EventEntity{
-			ID: eventID, Kind: kind, PayloadJSON: payloadJSON, CreatedAt: now,
-		}}
 
 		return appendResult{created: created, appended: true}, nil
 	})
 	if err != nil {
-		return nil, false, oops.In("database").Code("append_owned_task_event").Wrapf(err, "append task event")
+		return nil, false, oops.In("database").Code("append_owned_task_event").Wrapf(err, "append task events")
 	}
 
 	return result.value.created, result.value.appended, nil
+}
+
+// appendTaskEventDraft inserts one draft at the next task-local sequence and
+// returns the created association.
+func appendTaskEventDraft(
+	ctx context.Context,
+	transaction ksql.Provider,
+	taskID string,
+	now time.Time,
+	draft TaskEventDraft,
+) (TaskEventEntity, error) {
+	sequence, err := nextTaskEventSequence(ctx, transaction, taskID)
+	if err != nil {
+		return TaskEventEntity{}, err
+	}
+
+	eventID := newUUIDv7()
+
+	err = insertTaskEvent(ctx, transaction, &taskEventInsert{
+		createdAt: now, id: eventID, taskID: taskID,
+		kind: draft.Kind, payload: draft.PayloadJSON, sequence: sequence,
+	})
+	if err != nil {
+		return TaskEventEntity{}, err
+	}
+
+	return TaskEventEntity{TaskID: taskID, Sequence: sequence, Event: EventEntity{
+		ID: eventID, Kind: draft.Kind, PayloadJSON: draft.PayloadJSON, CreatedAt: now,
+	}}, nil
+}
+
+// ownsRunningTask reports whether taskID is running under a live lease owned
+// by leaseOwner at the given instant.
+func ownsRunningTask(
+	ctx context.Context,
+	provider ksql.Provider,
+	taskID string,
+	leaseOwner string,
+	now time.Time,
+) (bool, error) {
+	var ownership struct {
+		Count int `ksql:"count"`
+	}
+
+	const owned = `SELECT COUNT(*) AS count FROM tasks WHERE id = ? AND state IN (?, ?)
+AND lease_owner = ? AND lease_expires_at > ?`
+	if err := provider.QueryOne(ctx, &ownership, owned, taskID, TaskRunning, TaskCanceling,
+		leaseOwner, formatTime(now)); err != nil {
+		return false, oops.In("database").Code("check_task_event_lease").Wrapf(
+			err, "check task event lease",
+		)
+	}
+
+	return ownership.Count > 0, nil
 }
 
 // LatestEvent returns the newest event associated with a task.

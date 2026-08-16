@@ -62,7 +62,7 @@ func TestTaskRepositoryLeasesFenceWorkersAndRecovery(t *testing.T) {
 
 	recovered, err := tasks.RecoverExpired(ctx, &database.TaskRecovery{
 		Kind: database.TaskKindAgent, TargetState: database.TaskInterrupted,
-		EventKind: taskInterruptedEvent, ErrorCode: "process_restart", ErrorMessage: testExpired,
+		EventKind: taskInterruptedEvent, ErrorCode: soakRestartErrorCode, ErrorMessage: testExpired,
 		PayloadJSON: `{"error_code":"process_restart"}`, ExpiresBefore: expires,
 	})
 	require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestTaskRepositoryRecoversExpiredLease(t *testing.T) {
 
 	recovered, err := tasks.RecoverExpired(ctx, &database.TaskRecovery{
 		Kind: database.TaskKindAgent, TargetState: database.TaskInterrupted,
-		EventKind: taskInterruptedEvent, ErrorCode: "process_restart", ErrorMessage: testExpired,
+		EventKind: taskInterruptedEvent, ErrorCode: soakRestartErrorCode, ErrorMessage: testExpired,
 		PayloadJSON: `{"error_code":"process_restart"}`, ExpiresBefore: time.Now(),
 	})
 	require.NoError(t, err)

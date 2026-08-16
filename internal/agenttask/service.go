@@ -33,6 +33,8 @@ const (
 	leaseRenewalAttemptTimeout = 2 * time.Second
 	leaseRenewalAttempts       = 3
 	eventBuffer                = 64
+	eventFlushInterval         = time.Second
+	eventFlushBatch            = 32
 	enqueueTaskOperation       = "enqueue task"
 	enqueueCanceledCode        = "enqueue_canceled"
 	enqueueCanceledMessage     = "task submission was canceled before queue admission"
@@ -796,7 +798,14 @@ func (service *Service) execute(ctx context.Context, taskID string, task *databa
 		return Result{Text: "", UsageJSON: ""}, context.Canceled
 	}
 
-	result, runErr := service.runner.Run(runCtx, task, service.eventSink(taskID))
+	writer := service.newTaskEventWriter(runCtx, taskID)
+	writer.start()
+
+	result, runErr := service.runner.Run(runCtx, task, writer.sink())
+	if writeErr := writer.close(); writeErr != nil && runErr == nil {
+		runErr = writeErr
+	}
+
 	if runErr != nil {
 		return result, oops.In("agenttask").Code("execute_task").Wrapf(runErr, "execute agent task")
 	}
@@ -927,24 +936,6 @@ func (service *Service) finalizeRun(ctx context.Context, taskID string, result R
 	}
 
 	service.finish(ctx, taskID, database.TaskFailed, "task_failed", result, "run_failed", runErr.Error())
-}
-
-func (service *Service) eventSink(taskID string) EventSink {
-	return func(ctx context.Context, kind string, payload any) error {
-		encoded, err := json.Marshal(payload)
-		if err != nil {
-			return oops.In("agenttask").Code("marshal_event").Wrapf(err, "marshal task event")
-		}
-
-		event, err := service.tasks.AppendEvent(ctx, taskID, kind, string(encoded))
-		if err != nil {
-			return oops.In("agenttask").Code("append_event").Wrapf(err, "append task event")
-		}
-
-		service.publish(event)
-
-		return nil
-	}
 }
 
 func (service *Service) publish(event *database.TaskEventEntity) {
