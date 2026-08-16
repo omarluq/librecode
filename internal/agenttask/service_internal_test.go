@@ -3,7 +3,6 @@ package agenttask
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"errors"
 	"github.com/omarluq/librecode/internal/testutil"
 	"log/slog"
@@ -55,10 +54,7 @@ type serviceRepositoryFixture struct {
 func newServiceRepositoryFixture(t *testing.T) serviceRepositoryFixture {
 	t.Helper()
 
-	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, connection.Close()) })
-	require.NoError(t, database.Migrate(t.Context(), connection))
+	connection := testutil.OpenMemoryDatabase(t)
 
 	return serviceRepositoryFixture{
 		tasks:      testutil.TaskRepository(t, connection),
@@ -70,10 +66,8 @@ func newServiceRepositoryFixture(t *testing.T) serviceRepositoryFixture {
 func (fixture serviceRepositoryFixture) createQueuedAgentTask(t *testing.T) *database.AgentTaskEntity {
 	t.Helper()
 
-	owner, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
-	require.NoError(t, err)
-	child, err := fixture.sessions.CreateSession(t.Context(), t.TempDir(), childSessionName, owner.ID)
-	require.NoError(t, err)
+	owner := testutil.CreateSession(t, fixture.sessions, "owner")
+	child := testutil.CreateChildSession(t, fixture.sessions, childSessionName, owner.ID)
 
 	return createQueuedAgentTask(t, fixture.agentTasks, owner.ID, child.ID)
 }
@@ -114,9 +108,7 @@ func serviceWithRepositories(tasks *database.TaskRepository, agentTasks *databas
 func serviceWithClosedRepositories(t *testing.T) *Service {
 	t.Helper()
 
-	connection, err := sql.Open("sqlite", "file:"+t.Name()+"?mode=memory&cache=shared")
-	require.NoError(t, err)
-	require.NoError(t, database.Migrate(t.Context(), connection))
+	connection := testutil.OpenMemoryDatabase(t)
 
 	service := serviceWithRepositories(
 		testutil.TaskRepository(t, connection),
@@ -676,7 +668,18 @@ func testCancelingTaskFinalization(
 	)
 	require.NoError(t, err)
 	require.True(t, changed)
-	service.finalizeRun(t.Context(), canceling.Task.ID, Result{Text: "", UsageJSON: ""}, context.Canceled)
+
+	usageJSON := `{"input_tokens":3,"output_tokens":1}`
+	service.finalizeRun(
+		t.Context(), canceling.Task.ID, Result{Text: "partial findings", UsageJSON: usageJSON}, context.Canceled,
+	)
+
+	finalized, found, err := agentTasks.Get(t.Context(), canceling.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, database.TaskCanceled, finalized.Task.State)
+	assert.Equal(t, "partial findings", finalized.Task.Result)
+	assert.JSONEq(t, usageJSON, finalized.UsageJSON)
 }
 
 func TestServiceInternalSubmitRejectsBeforeWritableQueue(t *testing.T) {
