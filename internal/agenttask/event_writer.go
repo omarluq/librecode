@@ -145,6 +145,12 @@ func (writer *taskEventWriter) flush(ctx context.Context) {
 	defer writer.flushMu.Unlock()
 
 	writer.mu.Lock()
+	if writer.err != nil {
+		writer.pending = nil
+		writer.mu.Unlock()
+
+		return
+	}
 
 	pending := writer.pending
 	writer.pending = nil
