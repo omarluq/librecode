@@ -798,11 +798,11 @@ func (service *Service) execute(ctx context.Context, taskID string, task *databa
 		return Result{Text: "", UsageJSON: ""}, context.Canceled
 	}
 
-	writer := service.newTaskEventWriter(runCtx, taskID)
-	writer.start()
+	writer := service.newTaskEventWriter(taskID)
+	writer.start(runCtx)
 
 	result, runErr := service.runner.Run(runCtx, task, writer.sink())
-	if writeErr := writer.close(); writeErr != nil && runErr == nil {
+	if writeErr := writer.close(runCtx); writeErr != nil && runErr == nil {
 		runErr = writeErr
 	}
 
