@@ -543,6 +543,92 @@ func TestServiceFailureAndOwnerScoping(t *testing.T) {
 	assert.Equal(t, created.Task.ID, listed[0].Task.ID)
 }
 
+func TestServiceAwaitAll(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no tasks returns nil", func(t *testing.T) {
+		t.Parallel()
+
+		tasks, agentTasks, sessions := repositories(t)
+		parent := createSession(t, sessions, "parent", "")
+		service := newService(t, tasks, agentTasks, new(fakeRunner))
+
+		awaited, err := service.AwaitAll(t.Context(), parent.ID)
+		require.NoError(t, err)
+		assert.Nil(t, awaited)
+	})
+
+	t.Run("blocks until running task is terminal", func(t *testing.T) {
+		t.Parallel()
+
+		tasks, agentTasks, sessions := repositories(t)
+		parent := createSession(t, sessions, "parent", "")
+		child := createSession(t, sessions, "child", parent.ID)
+		runner := &fakeRunner{
+			result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+			started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
+		}
+		service := newService(t, tasks, agentTasks, runner)
+
+		created, err := service.Submit(t.Context(), submitRequest(parent.ID, child.ID))
+		require.NoError(t, err)
+		require.Equal(t, created.Task.ID, awaitStarted(t, runner.started))
+
+		awaited := make(chan []database.AgentTaskEntity, 1)
+		go func() {
+			all, awaitErr := service.AwaitAll(t.Context(), parent.ID)
+			require.NoError(t, awaitErr)
+			awaited <- all
+		}()
+
+		select {
+		case <-awaited:
+			t.Fatal("AwaitAll returned before the task was terminal")
+		case <-time.After(50 * time.Millisecond):
+		}
+
+		runner.unblock()
+
+		select {
+		case all := <-awaited:
+			require.Len(t, all, 1)
+			assert.Equal(t, created.Task.ID, all[0].Task.ID)
+			assert.Equal(t, database.TaskSucceeded, all[0].Task.State)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for AwaitAll")
+		}
+	})
+
+	t.Run("returns multiple terminal tasks", func(t *testing.T) {
+		t.Parallel()
+
+		tasks, agentTasks, sessions := repositories(t)
+		parent := createSession(t, sessions, "parent", "")
+		firstChild := createSession(t, sessions, "first", parent.ID)
+		secondChild := createSession(t, sessions, "second", parent.ID)
+		runner := &fakeRunner{
+			result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+			started: make(chan string, 2), release: nil, eventRelease: nil, once: sync.Once{},
+		}
+		service := newService(t, tasks, agentTasks, runner)
+
+		first, err := service.Submit(t.Context(), submitRequest(parent.ID, firstChild.ID))
+		require.NoError(t, err)
+		second, err := service.Submit(t.Context(), submitRequest(parent.ID, secondChild.ID))
+		require.NoError(t, err)
+
+		all, err := service.AwaitAll(t.Context(), parent.ID)
+		require.NoError(t, err)
+		require.Len(t, all, 2)
+		states := map[string]database.TaskState{}
+		for index := range all {
+			states[all[index].Task.ID] = all[index].Task.State
+		}
+		assert.Equal(t, database.TaskSucceeded, states[first.Task.ID])
+		assert.Equal(t, database.TaskSucceeded, states[second.Task.ID])
+	})
+}
+
 func newService(
 	t *testing.T,
 	tasks *database.TaskRepository,

@@ -156,6 +156,23 @@ func (capabilities *runtimeCapabilities) Await(
 	return result, nil
 }
 
+func (capabilities *runtimeCapabilities) AwaitAll(
+	ctx context.Context,
+	ownerSessionID string,
+) ([]database.AgentTaskEntity, error) {
+	set, err := capabilities.load()
+	if err != nil {
+		return nil, unavailableAgentTasks(err)
+	}
+
+	result, err := set.agentTasks.AwaitAll(ctx, ownerSessionID)
+	if err != nil {
+		return nil, oops.In("di").Code("await_all_agent_tasks").Wrapf(err, "await all agent tasks")
+	}
+
+	return result, nil
+}
+
 func (capabilities *runtimeCapabilities) SubscribeAgentTask(
 	taskID string,
 ) (events <-chan database.TaskEventEntity, cancel func(), err error) {

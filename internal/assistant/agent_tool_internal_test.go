@@ -78,6 +78,9 @@ func (stub *agentControllerStub) Await(context.Context, string) (*database.Agent
 
 	return stub.task, nil
 }
+func (stub *agentControllerStub) AwaitAll(context.Context, string) ([]database.AgentTaskEntity, error) {
+	return stub.listed, nil
+}
 func (stub *agentControllerStub) SubscribeAgentTask(
 	string,
 ) (events <-chan database.TaskEventEntity, cancel func(), err error) {
@@ -98,6 +101,7 @@ func TestAgentToolDefinitionsAndDispatch(t *testing.T) {
 	catalog := isolatedAgentCatalog(t)
 	for _, name := range []tool.Name{
 		agentStartToolName, agentStatusToolName, agentWaitToolName, agentCancelToolName, agentListToolName,
+		agentWaitAllToolName,
 	} {
 		executor := newAgentToolExecutor(nil, nil, catalog, name, "", "")
 		definition := executor.Definition()
@@ -209,6 +213,32 @@ func TestAgentTaskOperationsAreOwnerScoped(t *testing.T) {
 	require.ErrorContains(t, err, "not found")
 	_, err = executor.Execute(t.Context(), agentArguments(t, `{"task_id":" "}`))
 	require.ErrorContains(t, err, "required")
+}
+
+func TestAgentWaitAllReturnsCombinedResults(t *testing.T) {
+	t.Parallel()
+	catalog := isolatedAgentCatalog(t)
+
+	first := agentToolTask("task-1", "owner", database.TaskSucceeded)
+	first.Task.Result = "first result"
+	second := agentToolTask("task-2", "owner", database.TaskFailed)
+	second.Task.ErrorMessage = "boom"
+	stub := newAgentControllerStub(nil, []database.AgentTaskEntity{*first, *second}, false)
+	executor := newAgentToolExecutor(stub, nil, catalog, agentWaitAllToolName, "owner", "")
+
+	result, err := executor.Execute(t.Context(), tool.EmptyArguments())
+	require.NoError(t, err)
+	assert.Contains(t, result.Text(), "task-1")
+	assert.Contains(t, result.Text(), "first result")
+	assert.Contains(t, result.Text(), "task-2")
+	assert.Contains(t, result.Text(), "boom")
+	assert.Equal(t, 2, result.Details["count"])
+
+	stub.listed = nil
+	result, err = executor.Execute(t.Context(), tool.EmptyArguments())
+	require.NoError(t, err)
+	assert.Equal(t, "No agent tasks in this session.", result.Text())
+	assert.Equal(t, 0, result.Details["count"])
 }
 
 func TestAgentToolDecodeErrors(t *testing.T) {

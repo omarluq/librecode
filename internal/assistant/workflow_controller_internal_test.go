@@ -69,6 +69,17 @@ func (stub *workflowControllerTaskStub) Await(
 	return stub.task, stub.err
 }
 
+func (stub *workflowControllerTaskStub) AwaitAll(
+	context.Context,
+	string,
+) ([]database.AgentTaskEntity, error) {
+	if stub.task == nil {
+		return nil, stub.err
+	}
+
+	return []database.AgentTaskEntity{*stub.task}, stub.err
+}
+
 func (*workflowControllerTaskStub) SubscribeAgentTask(
 	string,
 ) (events <-chan database.TaskEventEntity, unsubscribe func(), err error) {

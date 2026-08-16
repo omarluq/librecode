@@ -614,6 +614,45 @@ func (service *Service) Await(ctx context.Context, taskID string) (*database.Age
 	}
 }
 
+// AwaitAll blocks until every agent task owned by ownerSessionID is terminal,
+// then returns them. It returns a nil slice when the session has no tasks.
+func (service *Service) AwaitAll(
+	ctx context.Context,
+	ownerSessionID string,
+) ([]database.AgentTaskEntity, error) {
+	ticker := time.NewTicker(awaitPollInterval)
+	defer ticker.Stop()
+
+	for {
+		tasks, err := service.agentTasks.ListByOwner(ctx, ownerSessionID, 100)
+		if err != nil {
+			return nil, oops.In("agenttask").Code("list_agent_tasks").Wrapf(err, "list agent tasks")
+		}
+
+		if len(tasks) == 0 {
+			return nil, nil
+		}
+
+		allTerminal := true
+		for index := range tasks {
+			if !terminal(tasks[index].Task.State) {
+				allTerminal = false
+				break
+			}
+		}
+
+		if allTerminal {
+			return tasks, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, oops.In("agenttask").Code("await_canceled").Wrapf(ctx.Err(), "await agent tasks")
+		case <-ticker.C:
+		}
+	}
+}
+
 // Shutdown cancels active work and waits for all workers.
 func (service *Service) Shutdown(ctx context.Context) error {
 	service.lifecycle.Lock()

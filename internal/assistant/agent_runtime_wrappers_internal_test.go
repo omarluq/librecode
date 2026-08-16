@@ -226,6 +226,7 @@ func TestAsyncAgentPromptAndToolRegistries(t *testing.T) {
 
 	for _, name := range []tool.Name{
 		agentStartToolName, agentStatusToolName, agentWaitToolName, agentCancelToolName, agentListToolName,
+		agentWaitAllToolName,
 	} {
 		assert.Contains(t, names, name)
 	}

@@ -20,6 +20,7 @@ const (
 	agentWaitToolName        tool.Name = "agent_wait"
 	agentCancelToolName      tool.Name = "agent_cancel"
 	agentListToolName        tool.Name = "agent_list"
+	agentWaitAllToolName     tool.Name = "agent_wait_all"
 	maxAgentPromptBytes                = 32 * 1024
 	maxChildSessionNameRunes           = 80
 	defaultAgentListLimit              = 20
@@ -51,6 +52,7 @@ type AgentTaskController interface {
 	List(context.Context, string, int) ([]database.AgentTaskEntity, error)
 	Cancel(context.Context, string, string, string) (*database.TaskEntity, bool, error)
 	Await(context.Context, string) (*database.AgentTaskEntity, error)
+	AwaitAll(context.Context, string) ([]database.AgentTaskEntity, error)
 	SubscribeAgentTask(string) (events <-chan database.TaskEventEntity, cancel func(), err error)
 }
 
@@ -91,7 +93,7 @@ func (executor *agentToolExecutor) Definition() tool.Definition {
 			Schema: schemaForAgentStart(executor.catalog), Name: agentStartToolName, Label: "Start agent",
 			Description:   "Start a durable asynchronous subagent and return its task ID immediately.",
 			PromptSnippet: "Start an asynchronous subagent", PromptGuidelines: []string{
-				"Delegate focused independent work, then use agent_wait or agent_status to collect it.",
+				"Delegate focused independent work, then use agent_wait_all to collect all results.",
 			}, ReadOnly: false,
 		},
 		agentStatusToolName: taskToolDefinition(
@@ -128,6 +130,16 @@ func (executor *agentToolExecutor) Definition() tool.Definition {
 			Label:         "List agents",
 			Description:   "List asynchronous agent tasks owned by this session.",
 			PromptSnippet: "List asynchronous agents", PromptGuidelines: []string{}, ReadOnly: true,
+		},
+		agentWaitAllToolName: {
+			Schema: mustToolSchema(`{"type":"object","additionalProperties":false,"properties":{}}`),
+			Name:   agentWaitAllToolName, Label: "Wait for agents",
+			Description:   "Block until all asynchronous agent tasks in this session finish, then return their combined results.",
+			PromptSnippet: "Wait for all agents to finish",
+			PromptGuidelines: []string{
+				"Use this after starting several agents to collect every result in one call instead of polling each agent.",
+			},
+			ReadOnly: true,
 		},
 	}
 
@@ -188,6 +200,8 @@ func (executor *agentToolExecutor) Execute(ctx context.Context, input tool.Argum
 		return executor.cancel(ctx, input)
 	case string(agentListToolName):
 		return executor.list(ctx, input)
+	case string(agentWaitAllToolName):
+		return executor.waitAll(ctx, input)
 	default:
 		return tool.TextResult("", nil), fmt.Errorf("unknown agent tool %q", executor.name)
 	}
@@ -282,6 +296,39 @@ func (executor *agentToolExecutor) wait(ctx context.Context, input tool.Argument
 	}
 
 	return agentTaskResult(task), nil
+}
+
+func (executor *agentToolExecutor) waitAll(ctx context.Context, input tool.Arguments) (tool.Result, error) {
+	tasks, err := executor.controller.AwaitAll(ctx, executor.parentSessionID)
+	if err != nil {
+		return tool.TextResult("", nil), err
+	}
+
+	return agentTasksResult(tasks), nil
+}
+
+func agentTasksResult(tasks []database.AgentTaskEntity) tool.Result {
+	if len(tasks) == 0 {
+		return tool.TextResult("No agent tasks in this session.", map[string]any{"count": 0})
+	}
+
+	details := map[string]any{"count": len(tasks)}
+	lines := make([]string, 0, len(tasks))
+	for index := range tasks {
+		task := &tasks[index]
+		details[task.Task.ID] = agentTaskDetails(task)
+
+		entry := fmt.Sprintf("%s (%s): %s", task.Task.ID, task.AgentName, task.Task.State)
+		if task.Task.Result != "" {
+			entry += "\n" + task.Task.Result
+		}
+		if task.Task.ErrorMessage != "" {
+			entry += "\n" + task.Task.ErrorMessage
+		}
+		lines = append(lines, entry)
+	}
+
+	return tool.TextResult(strings.Join(lines, "\n\n"), details)
 }
 
 func (executor *agentToolExecutor) cancel(ctx context.Context, input tool.Arguments) (tool.Result, error) {
