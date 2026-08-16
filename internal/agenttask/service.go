@@ -49,6 +49,10 @@ const (
 	taskInterruptedEvent   = "task_interrupted"
 )
 
+// errTaskTimeout marks a run ended by its execution timeout rather than an
+// error in the run itself or an explicit cancellation.
+var errTaskTimeout = errors.New("task timed out")
+
 // Runner executes one persisted agent task.
 type Runner interface {
 	Run(context.Context, *database.AgentTaskEntity, EventSink) (Result, error)
@@ -104,6 +108,7 @@ type Service struct {
 	getTaskFn                 func(context.Context, string) (*database.TaskEntity, bool, error)
 	renewLeaseFn              func(context.Context, string, string, time.Time) (bool, error)
 	active                    map[string]context.CancelFunc
+	cancelSources             map[string]string
 	subscribers               map[string]map[uint64]chan database.TaskEventEntity
 	sessionSlots              map[string]chan struct{}
 	agentTasks                *database.AgentTaskRepository
@@ -173,6 +178,7 @@ func NewStopped(ctx context.Context, options *Options) (*Service, error) {
 		runner: options.Runner, tasks: options.Tasks,
 		agentTasks: options.AgentTasks, workflows: options.Workflows, queue: make(chan string, queueCapacity),
 		cancel: nil, done: nil, active: make(map[string]context.CancelFunc),
+		cancelSources:  make(map[string]string),
 		sessionSlots:   make(map[string]chan struct{}),
 		subscribers:    make(map[string]map[uint64]chan database.TaskEventEntity),
 		nextSubscriber: 0, wg: sync.WaitGroup{}, timeout: timeout,
@@ -477,44 +483,37 @@ func (service *Service) SubscribeAgentTask(
 }
 
 // Cancel requests cancellation without allowing terminal states to change.
+// The source records who requested cancellation for durable provenance.
 func (service *Service) Cancel(
 	ctx context.Context,
 	ownerSessionID string,
 	taskID string,
+	source string,
 ) (*database.TaskEntity, bool, error) {
 	owned, err := service.ownsTask(ctx, ownerSessionID, taskID)
 	if err != nil || !owned {
 		return nil, false, err
 	}
 
-	changed, err := service.tasks.Transition(
-		ctx, taskID, []database.TaskState{database.TaskQueued}, database.TaskCanceled, "task_canceled",
-	)
-	if err != nil {
-		return nil, false, oops.In("agenttask").Code("cancel_task").Wrapf(err, "cancel queued task")
+	payload := database.CancelEventPayload(source)
+
+	canceled, cancelErr := service.cancelQueued(ctx, taskID, payload)
+	if cancelErr != nil {
+		return nil, false, cancelErr
 	}
 
-	if changed {
+	if canceled {
 		service.publishLatest(ctx, taskID)
-	}
-
-	if !changed {
-		changed, err = service.tasks.Transition(
-			ctx, taskID, []database.TaskState{database.TaskRunning}, database.TaskCanceling, "task_canceling",
-		)
-		if err != nil {
-			return nil, false, oops.In("agenttask").Code("cancel_task").Wrapf(err, "cancel running task")
+	} else {
+		canceling, cancelErr := service.requestRunningCancel(ctx, taskID, payload)
+		if cancelErr != nil {
+			return nil, false, cancelErr
 		}
 
-		if changed {
+		if canceling {
+			service.rememberCancelSource(taskID, source)
 			service.publishLatest(ctx, taskID)
-			service.mu.Lock()
-			cancel := service.active[taskID]
-			service.mu.Unlock()
-
-			if cancel != nil {
-				cancel()
-			}
+			service.cancelActive(taskID)
 		}
 	}
 
@@ -524,6 +523,47 @@ func (service *Service) Cancel(
 	}
 
 	return task, found, nil
+}
+
+// cancelQueued moves a still-queued task straight to canceled. It reports false
+// when the task is no longer queued so the caller can try the running path.
+func (service *Service) cancelQueued(
+	ctx context.Context, taskID, payload string,
+) (bool, error) {
+	changed, err := service.tasks.Transition(
+		ctx, taskID, []database.TaskState{database.TaskQueued}, database.TaskCanceled, "task_canceled", payload,
+	)
+	if err != nil {
+		return false, oops.In("agenttask").Code("cancel_task").Wrapf(err, "cancel queued task")
+	}
+
+	return changed, nil
+}
+
+// requestRunningCancel asks a running task to stop. It reports false when the
+// task is not running.
+func (service *Service) requestRunningCancel(
+	ctx context.Context, taskID, payload string,
+) (bool, error) {
+	changed, err := service.tasks.Transition(
+		ctx, taskID, []database.TaskState{database.TaskRunning}, database.TaskCanceling, "task_canceling", payload,
+	)
+	if err != nil {
+		return false, oops.In("agenttask").Code("cancel_task").Wrapf(err, "cancel running task")
+	}
+
+	return changed, nil
+}
+
+// cancelActive signals the in-process run, if any, to stop.
+func (service *Service) cancelActive(taskID string) {
+	service.mu.Lock()
+	cancel := service.active[taskID]
+	service.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
 }
 
 func (service *Service) ownsTask(ctx context.Context, ownerSessionID, taskID string) (bool, error) {
@@ -780,6 +820,7 @@ func (service *Service) execute(ctx context.Context, taskID string, task *databa
 
 		service.mu.Lock()
 		delete(service.active, taskID)
+		delete(service.cancelSources, taskID)
 		service.mu.Unlock()
 	}()
 
@@ -808,6 +849,12 @@ func (service *Service) execute(ctx context.Context, taskID string, task *databa
 	result, runErr := service.runner.Run(runCtx, task, writer.sink())
 	if writeErr := writer.close(runCtx); writeErr != nil && runErr == nil {
 		runErr = writeErr
+	}
+
+	// A run-context deadline with a live parent context is a timeout, not a
+	// failure of the underlying run; record it distinctly.
+	if errors.Is(runErr, context.DeadlineExceeded) && ctx.Err() == nil {
+		runErr = fmt.Errorf("%w: %w", errTaskTimeout, runErr)
 	}
 
 	if runErr != nil {
@@ -932,8 +979,8 @@ func waitForLeaseRenewalRetry(ctx context.Context, delay time.Duration) bool {
 func (service *Service) finalizeRun(ctx context.Context, taskID string, result Result, runErr error) {
 	current, found, err := service.tasks.Get(context.WithoutCancel(ctx), taskID)
 	if err == nil && found && current.State == database.TaskCanceling {
-		message := "task canceled"
-		if runErr != nil {
+		message := service.cancelSourceMessage(taskID)
+		if message == "" && runErr != nil {
 			message = runErr.Error()
 		}
 
@@ -953,6 +1000,12 @@ func (service *Service) finalizeRun(ctx context.Context, taskID string, result R
 			ctx, taskID, database.TaskInterrupted, taskInterruptedEvent, result,
 			"service_stopped", "task interrupted by service shutdown",
 		)
+
+		return
+	}
+
+	if errors.Is(runErr, errTaskTimeout) {
+		service.finish(ctx, taskID, database.TaskFailed, "task_failed", result, "timeout", runErr.Error())
 
 		return
 	}
@@ -1007,6 +1060,30 @@ func (service *Service) closeSubscriptions() {
 
 		delete(service.subscribers, taskID)
 	}
+}
+
+// rememberCancelSource records who requested cancellation so the final
+// outcome can name the requester. The durable task_canceling event payload is
+// the source of truth; this map survives only until the run finalizes.
+func (service *Service) rememberCancelSource(taskID, source string) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+
+	service.cancelSources[taskID] = source
+}
+
+// cancelSourceMessage describes the cancellation requester, or "" when the
+// canceling transition was recorded by another process or before startup.
+func (service *Service) cancelSourceMessage(taskID string) string {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+
+	source, ok := service.cancelSources[taskID]
+	if !ok {
+		return ""
+	}
+
+	return "task canceled by " + source
 }
 
 func (service *Service) finish(

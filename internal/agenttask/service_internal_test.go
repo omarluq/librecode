@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/omarluq/librecode/internal/testutil"
+	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -27,7 +28,7 @@ const (
 func emptyService() *Service {
 	return &Service{
 		runner: nil, getTaskFn: nil, renewLeaseFn: nil, active: nil, subscribers: nil,
-		agentTasks: nil, workflows: nil, queue: nil,
+		agentTasks: nil, workflows: nil, queue: nil, cancelSources: nil,
 		cancel: nil, done: nil, sessionSlots: nil, tasks: nil, logger: nil, leaseOwner: "", wg: sync.WaitGroup{},
 		nextSubscriber: 0, timeout: 0, sessionConcurrency: 0, leaseDuration: 0,
 		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0, leaseRenewalWindow: 0,
@@ -100,6 +101,8 @@ func serviceWithRepositories(tasks *database.TaskRepository, agentTasks *databas
 	service.tasks = tasks
 	service.getTaskFn = tasks.Get
 	service.agentTasks = agentTasks
+	service.active = make(map[string]context.CancelFunc)
+	service.cancelSources = make(map[string]string)
 	service.subscribers = make(map[string]map[uint64]chan database.TaskEventEntity)
 
 	return service
@@ -474,7 +477,7 @@ func TestServiceInternalFinalizeInterruptedRun(t *testing.T) {
 	tasks, agentTasks := fixture.tasks, fixture.agentTasks
 	created := fixture.createQueuedAgentTask(t)
 	changed, err := tasks.Transition(
-		t.Context(), created.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskRunning, "started",
+		t.Context(), created.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskRunning, "started", "{}",
 	)
 	require.NoError(t, err)
 	require.True(t, changed)
@@ -572,6 +575,97 @@ func TestServiceInternalCancelsQueuedTask(t *testing.T) {
 	testQueuedTaskCancellation(t, fixture.tasks, fixture.agentTasks, fixture.sessions)
 }
 
+func TestServiceInternalCancelRecordsProvenance(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{name: "parent cancellation", source: database.CancelSourceParent, want: "task canceled by parent"},
+		{name: "workflow cancellation", source: database.CancelSourceWorkflow, want: "task canceled by workflow"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newServiceRepositoryFixture(t)
+			created := fixture.createQueuedAgentTask(t)
+
+			service := queuedService(fixture.tasks, fixture.agentTasks)
+
+			// Provenance is recorded on the durable queued-cancel event.
+			_, found, err := service.Cancel(t.Context(), created.Task.OwnerSessionID, created.Task.ID, test.source)
+			require.NoError(t, err)
+			require.True(t, found)
+
+			latest, found, err := fixture.tasks.LatestEvent(t.Context(), created.Task.ID)
+			require.NoError(t, err)
+			require.True(t, found)
+			assert.Equal(t, "task_canceled", latest.Event.Kind)
+			assert.JSONEq(t, `{"canceled_by":"`+test.source+`"}`, latest.Event.PayloadJSON)
+		})
+	}
+}
+
+func TestServiceInternalCancelingRunNamesRequester(t *testing.T) {
+	t.Parallel()
+
+	fixture := newServiceRepositoryFixture(t)
+	tasks, agentTasks := fixture.tasks, fixture.agentTasks
+	created := fixture.createQueuedAgentTask(t)
+
+	changed, err := tasks.Transition(
+		t.Context(), created.Task.ID,
+		[]database.TaskState{database.TaskQueued}, database.TaskRunning, "task_started", "{}",
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	service := queuedService(tasks, agentTasks)
+
+	_, found, err := service.Cancel(
+		t.Context(), created.Task.OwnerSessionID, created.Task.ID, database.CancelSourceWorkflow,
+	)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	// The finalized outcome names the requester instead of a bare context error.
+	service.finalizeRun(t.Context(), created.Task.ID, Result{Text: "", UsageJSON: ""}, context.Canceled)
+
+	finalized, found, err := agentTasks.Get(t.Context(), created.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, database.TaskCanceled, finalized.Task.State)
+	assert.Equal(t, "task canceled by workflow", finalized.Task.ErrorMessage)
+}
+
+func TestServiceInternalTimeoutRecordsDistinctErrorCode(t *testing.T) {
+	t.Parallel()
+
+	fixture := newServiceRepositoryFixture(t)
+	tasks, agentTasks := fixture.tasks, fixture.agentTasks
+	created := fixture.createQueuedAgentTask(t)
+
+	changed, err := tasks.Transition(
+		t.Context(), created.Task.ID,
+		[]database.TaskState{database.TaskQueued}, database.TaskRunning, "task_started", "{}",
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	service := queuedService(tasks, agentTasks)
+
+	timeoutErr := fmt.Errorf("%w: %w", errTaskTimeout, context.DeadlineExceeded)
+	service.finalizeRun(t.Context(), created.Task.ID, Result{Text: "", UsageJSON: ""}, timeoutErr)
+
+	finalized, found, err := agentTasks.Get(t.Context(), created.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, database.TaskFailed, finalized.Task.State)
+	assert.Equal(t, "timeout", finalized.Task.ErrorCode)
+}
+
 func testQueuedTaskCancellation(
 	t *testing.T,
 	tasks *database.TaskRepository,
@@ -621,17 +715,17 @@ func testQueuedTaskCancellation(
 
 	testCancelingTaskFinalization(t, service, tasks, agentTasks, sessions, owner.ID)
 
-	canceled, found, err := service.Cancel(t.Context(), owner.ID, created.Task.ID)
+	canceled, found, err := service.Cancel(t.Context(), owner.ID, created.Task.ID, database.CancelSourceParent)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, database.TaskCanceled, canceled.State)
 
-	canceled, found, err = service.Cancel(t.Context(), owner.ID, created.Task.ID)
+	canceled, found, err = service.Cancel(t.Context(), owner.ID, created.Task.ID, database.CancelSourceParent)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Equal(t, database.TaskCanceled, canceled.State)
 
-	task, found, err := service.Cancel(t.Context(), "another-owner", created.Task.ID)
+	task, found, err := service.Cancel(t.Context(), "another-owner", created.Task.ID, database.CancelSourceParent)
 	require.NoError(t, err)
 	assert.False(t, found)
 	assert.Nil(t, task)
@@ -659,12 +753,14 @@ func testCancelingTaskFinalization(
 	canceling := createQueuedAgentTask(t, agentTasks, ownerID, cancelingChild.ID)
 
 	changed, err := tasks.Transition(
-		t.Context(), canceling.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskRunning, "started",
+		t.Context(), canceling.Task.ID,
+		[]database.TaskState{database.TaskQueued}, database.TaskRunning, "started", "{}",
 	)
 	require.NoError(t, err)
 	require.True(t, changed)
 	changed, err = tasks.Transition(
-		t.Context(), canceling.Task.ID, []database.TaskState{database.TaskRunning}, database.TaskCanceling, "canceling",
+		t.Context(), canceling.Task.ID,
+		[]database.TaskState{database.TaskRunning}, database.TaskCanceling, "canceling", "{}",
 	)
 	require.NoError(t, err)
 	require.True(t, changed)

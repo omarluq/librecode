@@ -252,7 +252,7 @@ func TestServiceCancelRunningTask(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, created.Task.ID, awaitStarted(t, runner.started))
 
-	canceled, found, err := service.Cancel(t.Context(), parent.ID, created.Task.ID)
+	canceled, found, err := service.Cancel(t.Context(), parent.ID, created.Task.ID, database.CancelSourceParent)
 	require.NoError(t, err)
 	require.True(t, found)
 	assert.Contains(t, []database.TaskState{database.TaskCanceling, database.TaskCanceled}, canceled.State)
@@ -310,7 +310,7 @@ func TestServiceRecoversQueuedAndInterruptedTasks(t *testing.T) {
 				require.NoError(t, err)
 				changed, err := tasks.Transition(
 					t.Context(), created.Task.ID, []database.TaskState{database.TaskQueued},
-					database.TaskRunning, "task_started",
+					database.TaskRunning, "task_started", "{}",
 				)
 				require.NoError(t, err)
 				require.True(t, changed)
