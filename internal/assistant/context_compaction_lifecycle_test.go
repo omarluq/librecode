@@ -141,10 +141,23 @@ func newCompactionRuntimeWithManagerWindow(
 ) *assistant.Runtime {
 	t.Helper()
 
+	return newCompactionRuntimeWithManagerOutputLimit(t, repository, manager, client, 128)
+}
+
+func newCompactionRuntimeWithManagerOutputLimit(
+	t *testing.T,
+	repository *database.SessionRepository,
+	manager *extension.Manager,
+	client assistant.Completer,
+	outputLimit int,
+) *assistant.Runtime {
+	t.Helper()
+
 	runtimeConfig := testConfig()
 	runtimeConfig.Context.ProviderReserveTokens = 0
 	runtimeConfig.Context.SafetyMarginTokens = 0
-	runtimeConfig.Context.OutputReserveTokens = 80
+	runtimeConfig.Context.OutputReserveTokens = max(80, (outputLimit*100+79)/80)
+	runtimeConfig.Context.SummaryOutputTokens = outputLimit
 	cache := assistant.NewResponseCache(true, 32, time.Minute)
 	t.Cleanup(cache.Shutdown)
 
