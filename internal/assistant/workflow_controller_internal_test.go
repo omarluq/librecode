@@ -16,11 +16,12 @@ import (
 const workflowControllerOwnerID = "workflow-controller-owner"
 
 type workflowControllerTaskStub struct {
-	task    *database.AgentTaskEntity
-	request *AgentTaskRequest
-	err     error
-	listed  []database.AgentTaskEntity
-	found   bool
+	task         *database.AgentTaskEntity
+	cancelSource string
+	request      *AgentTaskRequest
+	err          error
+	listed       []database.AgentTaskEntity
+	found        bool
 }
 
 func (stub *workflowControllerTaskStub) SubmitAgentTask(
@@ -48,11 +49,12 @@ func (stub *workflowControllerTaskStub) List(
 }
 
 func (stub *workflowControllerTaskStub) Cancel(
-	context.Context,
-	string,
-	string,
-	string,
+	_ context.Context,
+	_ string,
+	_ string,
+	source string,
 ) (*database.TaskEntity, bool, error) {
+	stub.cancelSource = source
 	if stub.task == nil {
 		return nil, stub.found, stub.err
 	}
@@ -113,11 +115,12 @@ func TestWorkflowControllerSubmitResolvesOwnerAndPreservesRequestIdentity(t *tes
 	t.Parallel()
 
 	tasks := &workflowControllerTaskStub{
-		err:     nil,
-		task:    agentToolTask("workflow-agent-task", workflowControllerOwnerID, database.TaskQueued),
-		request: nil,
-		listed:  nil,
-		found:   true,
+		cancelSource: "",
+		err:          nil,
+		task:         agentToolTask("workflow-agent-task", workflowControllerOwnerID, database.TaskQueued),
+		request:      nil,
+		listed:       nil,
+		found:        true,
 	}
 	sessions := agentToolSessions(t)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
@@ -172,7 +175,9 @@ func TestWorkflowControllerDelegatesTaskOperations(t *testing.T) {
 
 	task := agentToolTask("task-1", workflowControllerOwnerID, database.TaskRunning)
 	listed := []database.AgentTaskEntity{*task}
-	tasks := &workflowControllerTaskStub{err: nil, task: task, request: nil, listed: listed, found: true}
+	tasks := &workflowControllerTaskStub{
+		err: nil, task: task, cancelSource: "", request: nil, listed: listed, found: true,
+	}
 	controller := &WorkflowController{submitter: nil, tasks: tasks, sessions: nil}
 
 	got, found, err := controller.Get(t.Context(), task.Task.ID)
@@ -191,13 +196,15 @@ func TestWorkflowControllerDelegatesTaskOperations(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, found)
 	assert.Same(t, &task.Task, canceled)
+	assert.Equal(t, database.CancelSourceWorkflow, tasks.cancelSource)
 }
 
 func TestWorkflowControllerWrapsTaskOperationErrors(t *testing.T) {
 	t.Parallel()
 
 	tasks := &workflowControllerTaskStub{
-		err: errors.New("backend failed"), task: nil, request: nil, listed: nil, found: false,
+		cancelSource: "",
+		err:          errors.New("backend failed"), task: nil, request: nil, listed: nil, found: false,
 	}
 	controller := &WorkflowController{submitter: nil, tasks: tasks, sessions: nil}
 

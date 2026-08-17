@@ -23,13 +23,14 @@ const (
 )
 
 type fakeController struct {
-	tasks    map[string]*database.AgentTaskEntity
-	await    func(context.Context, string) (*database.AgentTaskEntity, error)
-	submitCh chan string
-	taskIDs  []string
-	submits  []*workflow.AgentRequest
-	cancels  [][2]string
-	mu       sync.Mutex
+	tasks         map[string]*database.AgentTaskEntity
+	await         func(context.Context, string) (*database.AgentTaskEntity, error)
+	submitCh      chan string
+	taskIDs       []string
+	submits       []*workflow.AgentRequest
+	cancels       [][2]string
+	cancelSources []string
+	mu            sync.Mutex
 }
 
 func (fake *fakeController) Submit(
@@ -83,11 +84,15 @@ func (fake *fakeController) Await(ctx context.Context, taskID string) (*database
 	return cloneAgentTask(task), nil
 }
 
-func (fake *fakeController) Cancel(_ context.Context, owner, taskID, _ string) (*database.TaskEntity, bool, error) {
+func (fake *fakeController) Cancel(
+	_ context.Context,
+	owner, taskID, source string,
+) (*database.TaskEntity, bool, error) {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 
 	fake.cancels = append(fake.cancels, [2]string{owner, taskID})
+	fake.cancelSources = append(fake.cancelSources, source)
 	task := fake.tasks[taskID]
 	task.Task.State = database.TaskCanceled
 
@@ -234,6 +239,10 @@ func TestRunnerScopesWaitToLaunchedOwnedTasks(t *testing.T) {
 			})
 			require.Error(t, err)
 			assert.Equal(t, test.wantCancels, fake.cancels)
+
+			for _, source := range fake.cancelSources {
+				assert.Equal(t, database.CancelSourceWorkflow, source)
+			}
 		})
 	}
 }
@@ -264,6 +273,7 @@ canceled, _ := workflow.Cancel(second)
 	assert.Equal(t, secondTask, result.TaskResults[1].ID)
 	assert.Equal(t, string(database.TaskCanceled), result.TaskResults[1].State)
 	assert.Equal(t, [][2]string{{testOwner, secondTask}}, fake.cancels)
+	assert.Equal(t, []string{database.CancelSourceWorkflow}, fake.cancelSources)
 }
 
 func TestRunnerPipelinePreservesInputOrder(t *testing.T) {
@@ -456,6 +466,7 @@ func TestRunnerEventFailureCancelsActiveLaunchedTasks(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Equal(t, [][2]string{{testOwner, firstTask}}, fake.cancels)
+	assert.Equal(t, []string{database.CancelSourceWorkflow}, fake.cancelSources)
 	require.Len(t, result.TaskResults, 1)
 	assert.Equal(t, string(database.TaskCanceled), result.TaskResults[0].State)
 }
@@ -494,6 +505,7 @@ func TestRunnerCancellationCancelsActiveLaunchedTasks(t *testing.T) {
 
 	require.Error(t, <-done)
 	assert.Equal(t, [][2]string{{testOwner, firstTask}}, fake.cancels)
+	assert.Equal(t, []string{database.CancelSourceWorkflow}, fake.cancelSources)
 }
 
 func updatePeak(peak *atomic.Int64, value int64) {
@@ -508,7 +520,7 @@ func updatePeak(peak *atomic.Int64, value int64) {
 func newFakeController() *fakeController {
 	return &fakeController{
 		tasks: make(map[string]*database.AgentTaskEntity), await: nil, submitCh: nil, taskIDs: nil,
-		submits: nil, cancels: nil, mu: sync.Mutex{},
+		submits: nil, cancels: nil, cancelSources: nil, mu: sync.Mutex{},
 	}
 }
 
