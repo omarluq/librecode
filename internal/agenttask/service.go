@@ -37,10 +37,13 @@ const (
 	// leaseBusyGrace outlasts the database busy_timeout (15s default) so a
 	// renewal attempt waits for the SQLite write lock instead of aborting while
 	// the driver would still have succeeded.
-	leaseBusyGrace         = 16 * time.Second
-	eventBuffer            = 64
-	eventFlushInterval     = time.Second
-	eventFlushBatch        = 32
+	leaseBusyGrace     = 16 * time.Second
+	eventBuffer        = 64
+	eventFlushInterval = time.Second
+	eventFlushBatch    = 32
+	// cancelSourceEventLimit bounds the durable provenance scan; the
+	// task_canceling event is among the task's most recent events.
+	cancelSourceEventLimit = 64
 	enqueueTaskOperation   = "enqueue task"
 	enqueueCanceledCode    = "enqueue_canceled"
 	enqueueCanceledMessage = "task submission was canceled before queue admission"
@@ -820,7 +823,6 @@ func (service *Service) execute(ctx context.Context, taskID string, task *databa
 
 		service.mu.Lock()
 		delete(service.active, taskID)
-		delete(service.cancelSources, taskID)
 		service.mu.Unlock()
 	}()
 
@@ -979,11 +981,12 @@ func waitForLeaseRenewalRetry(ctx context.Context, delay time.Duration) bool {
 func (service *Service) finalizeRun(ctx context.Context, taskID string, result Result, runErr error) {
 	current, found, err := service.tasks.Get(context.WithoutCancel(ctx), taskID)
 	if err == nil && found && current.State == database.TaskCanceling {
-		message := service.cancelSourceMessage(taskID)
+		message := service.cancelSourceMessage(ctx, taskID)
 		if message == "" && runErr != nil {
 			message = runErr.Error()
 		}
 
+		service.forgetCancelSource(taskID)
 		service.finish(ctx, taskID, database.TaskCanceled, "task_canceled", result, "canceled", message)
 
 		return
@@ -1062,9 +1065,9 @@ func (service *Service) closeSubscriptions() {
 	}
 }
 
-// rememberCancelSource records who requested cancellation so the final
-// outcome can name the requester. The durable task_canceling event payload is
-// the source of truth; this map survives only until the run finalizes.
+// rememberCancelSource caches who requested cancellation. The durable
+// task_canceling event payload is the source of truth; the cache only avoids
+// a database read when this process recorded the request itself.
 func (service *Service) rememberCancelSource(taskID, source string) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
@@ -1072,18 +1075,65 @@ func (service *Service) rememberCancelSource(taskID, source string) {
 	service.cancelSources[taskID] = source
 }
 
-// cancelSourceMessage describes the cancellation requester, or "" when the
-// canceling transition was recorded by another process or before startup.
-func (service *Service) cancelSourceMessage(taskID string) string {
+func (service *Service) forgetCancelSource(taskID string) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 
-	source, ok := service.cancelSources[taskID]
-	if !ok {
+	delete(service.cancelSources, taskID)
+}
+
+// cancelSourceMessage describes the cancellation requester, or "" when no
+// provenance is known. The in-memory cache covers cancels requested by this
+// process; the durable task_canceling event payload also covers requests
+// recorded by another process before this worker finalizes the run.
+func (service *Service) cancelSourceMessage(ctx context.Context, taskID string) string {
+	if source := service.cachedCancelSource(taskID); source != "" {
+		return "task canceled by " + source
+	}
+
+	source := service.durableCancelSource(ctx, taskID)
+	if source == "" {
 		return ""
 	}
 
 	return "task canceled by " + source
+}
+
+func (service *Service) cachedCancelSource(taskID string) string {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+
+	return service.cancelSources[taskID]
+}
+
+// durableCancelSource reads the canceled_by payload from the task's most
+// recent task_canceling event.
+func (service *Service) durableCancelSource(ctx context.Context, taskID string) string {
+	events, err := service.tasks.ListEvents(context.WithoutCancel(ctx), taskID, 0, cancelSourceEventLimit)
+	if err != nil {
+		// Provenance is best-effort; the event read may fail while the database
+		// is busy finalizing the run. The caller falls back to the raw error.
+		service.logError(ctx, "read cancel provenance", "task_id", taskID, "error", err)
+
+		return ""
+	}
+
+	for _, event := range slices.Backward(events) {
+		if event.Event.Kind != "task_canceling" {
+			continue
+		}
+
+		payload := map[string]string{}
+		if err := json.Unmarshal([]byte(event.Event.PayloadJSON), &payload); err != nil {
+			continue
+		}
+
+		if source := payload[database.CanceledByJSONKey]; source != "" {
+			return source
+		}
+	}
+
+	return ""
 }
 
 func (service *Service) finish(
