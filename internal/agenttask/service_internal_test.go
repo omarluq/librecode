@@ -760,7 +760,8 @@ func testCancelingTaskFinalization(
 	require.True(t, changed)
 	changed, err = tasks.Transition(
 		t.Context(), canceling.Task.ID,
-		[]database.TaskState{database.TaskRunning}, database.TaskCanceling, "canceling", "{}",
+		[]database.TaskState{database.TaskRunning}, database.TaskCanceling, "task_canceling",
+		database.CancelEventPayload(database.CancelSourceParent),
 	)
 	require.NoError(t, err)
 	require.True(t, changed)
@@ -776,6 +777,9 @@ func testCancelingTaskFinalization(
 	assert.Equal(t, database.TaskCanceled, finalized.Task.State)
 	assert.Equal(t, "partial findings", finalized.Task.Result)
 	assert.JSONEq(t, usageJSON, finalized.UsageJSON)
+	// The durable canceled_by payload names the requester even when this
+	// process never saw the cancel request (cross-process finalization).
+	assert.Equal(t, "task canceled by parent", finalized.Task.ErrorMessage)
 }
 
 func TestServiceInternalSubmitRejectsBeforeWritableQueue(t *testing.T) {
@@ -1130,8 +1134,8 @@ func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 	done := make(chan struct{})
 	go service.renewLease(ctx, cancel, "task", done)
 
-	receive(t, ctx.Done(), new(struct{}), "lease renewal did not cancel the run")
-	receive(t, done, new(struct{}), "timed out waiting for lease renewal to stop")
+	receive(t, ctx.Done(), &struct{}{}, "lease renewal did not cancel the run")
+	receive(t, done, &struct{}{}, "timed out waiting for lease renewal to stop")
 	assert.GreaterOrEqual(t, attempts.Load(), int32(3))
 	assert.Contains(t, logs.String(), "renew agent task lease after retries")
 	assert.Contains(t, logs.String(), "renewal_window")
@@ -1159,10 +1163,10 @@ func TestServiceInternalLeaseRenewsThroughoutLongRun(t *testing.T) {
 	go service.renewLease(ctx, cancel, "task", done)
 
 	for range wantedRenewals {
-		receive(t, renewed, new(struct{}), "long-running task stopped renewing its lease")
+		receive(t, renewed, &struct{}{}, "long-running task stopped renewing its lease")
 	}
 
 	cancel()
-	receive(t, done, new(struct{}), "timed out waiting for lease renewal to stop")
+	receive(t, done, &struct{}{}, "timed out waiting for lease renewal to stop")
 	assert.GreaterOrEqual(t, renewals.Load(), int32(wantedRenewals))
 }
