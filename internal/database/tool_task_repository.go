@@ -541,8 +541,8 @@ func (repository *ToolTaskRepository) cancelTransaction(
 		_, err = repository.finishTransaction(ctx, transaction, finish, outcome, now, eventID)
 	case TaskRunning:
 		_, err = repository.tasks.transition(
-			ctx, transaction, taskID, []TaskState{TaskRunning}, TaskCanceling, "task_canceling",
-			CancelEventPayload(CancelSourceParent),
+			ctx, transaction, taskID, []TaskState{TaskRunning}, TaskCanceling,
+			TaskEventDraft{Kind: "task_canceling", PayloadJSON: CancelEventPayload(CancelSourceParent)},
 			retryStableTaskOperation{now: now, eventID: eventID},
 		)
 	case TaskCanceling, TaskSucceeded, TaskFailed, TaskCanceled, TaskInterrupted:
