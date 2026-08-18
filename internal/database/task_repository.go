@@ -336,7 +336,8 @@ func (repository *TaskRepository) Transition(
 
 	changed, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
 		return repository.transition(
-			ctx, transaction, taskID, from, targetState, kind, payloadJSON,
+			ctx, transaction, taskID, from, targetState,
+			TaskEventDraft{Kind: kind, PayloadJSON: payloadJSON},
 			retryStableTaskOperation{now: now, eventID: eventID},
 		)
 	})
@@ -353,8 +354,7 @@ func (repository *TaskRepository) transition(
 	taskID string,
 	from []TaskState,
 	targetState TaskState,
-	kind string,
-	payloadJSON string,
+	event TaskEventDraft,
 	operation retryStableTaskOperation,
 ) (bool, error) {
 	current, found, err := loadTask(ctx, transaction, taskID)
@@ -397,7 +397,7 @@ WHERE id = ? AND state = ? AND (? = FALSE OR lease_owner IS NULL)`
 
 	if err := insertTaskEvent(ctx, transaction, &taskEventInsert{
 		createdAt: operation.now, id: operation.eventID, taskID: taskID,
-		kind: kind, payload: payloadJSON, sequence: sequence,
+		kind: event.Kind, payload: event.PayloadJSON, sequence: sequence,
 	}); err != nil {
 		return false, err
 	}
