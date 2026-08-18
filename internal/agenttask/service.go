@@ -109,6 +109,7 @@ type Options struct {
 type Service struct {
 	runner                    Runner
 	getTaskFn                 func(context.Context, string) (*database.TaskEntity, bool, error)
+	awaitGetFn                func(context.Context, string) (*database.AgentTaskEntity, bool, error)
 	renewLeaseFn              func(context.Context, string, string, time.Time) (bool, error)
 	active                    map[string]context.CancelFunc
 	cancelSources             map[string]string
@@ -126,6 +127,7 @@ type Service struct {
 	mu                        sync.Mutex
 	lifecycle                 sync.Mutex
 	nextSubscriber            uint64
+	awaitPollEvery            time.Duration
 	timeout                   time.Duration
 	leaseDuration             time.Duration
 	leaseHeartbeatInterval    time.Duration
@@ -187,6 +189,8 @@ func NewStopped(ctx context.Context, options *Options) (*Service, error) {
 		nextSubscriber: 0, wg: sync.WaitGroup{}, timeout: timeout,
 		concurrency: concurrency, sessionConcurrency: sessionConcurrency, logger: logger, leaseOwner: leaseOwner,
 		getTaskFn: options.Tasks.Get, renewLeaseFn: options.Tasks.RenewLease, leaseDuration: leaseDuration,
+		awaitGetFn:                options.AgentTasks.Get,
+		awaitPollEvery:            awaitPollInterval,
 		leaseHeartbeatInterval:    leaseHeartbeatInterval,
 		leaseRenewalRetryInterval: leaseRenewalRetryInterval,
 		leaseRenewalWindow:        leaseRenewalWindow, mu: sync.Mutex{},
@@ -583,13 +587,13 @@ func (service *Service) Await(ctx context.Context, taskID string) (*database.Age
 	subscription := service.Subscribe(taskID)
 	defer subscription.Cancel()
 
-	ticker := time.NewTicker(awaitPollInterval)
+	ticker := time.NewTicker(service.awaitPollEvery)
 	defer ticker.Stop()
 
 	events := subscription.Events
 
 	for {
-		task, found, err := service.agentTasks.Get(ctx, taskID)
+		task, found, err := service.awaitGetFn(ctx, taskID)
 		if err != nil {
 			return nil, oops.In("agenttask").Code("await_task").Wrapf(err, "await agent task")
 		}

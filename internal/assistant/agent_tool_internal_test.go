@@ -32,6 +32,7 @@ type agentControllerStub struct {
 	listed        []database.AgentTaskEntity
 	lastLimit     int
 	getCalls      int
+	awaitCalls    int
 	subscriptions int
 	found         bool
 }
@@ -73,6 +74,8 @@ func (stub *agentControllerStub) Cancel(context.Context, string, string, string)
 	return &stub.task.Task, found, stub.cancelErr
 }
 func (stub *agentControllerStub) Await(context.Context, string) (*database.AgentTaskEntity, error) {
+	stub.awaitCalls++
+
 	return stub.task, nil
 }
 func (stub *agentControllerStub) SubscribeAgentTask(
@@ -421,4 +424,75 @@ func agentToolTask(id, owner string, state database.TaskState) *database.AgentTa
 		Task: agentToolTaskEntity(id, owner, state), ChildSessionID: "child", AgentName: "general", Prompt: "work",
 		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`, Depth: 1,
 	}
+}
+
+// TestAgentWaitToolReturnsImmediatelyWithoutBlocking pins the non-blocking
+// contract of agent_wait: one ownership Get per invocation, no Await
+// subscription, and the current state returned as-is so the parent can keep
+// working while the agent runs.
+func TestAgentWaitToolReturnsImmediatelyWithoutBlocking(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		state       database.TaskState
+		resultText  string
+		wantContain string
+	}{
+		{
+			name:        "running task reports state",
+			state:       database.TaskRunning,
+			resultText:  "",
+			wantContain: "is running",
+		},
+		{
+			name:        "queued task reports state",
+			state:       database.TaskQueued,
+			resultText:  "",
+			wantContain: "is queued",
+		},
+		{
+			name:        "terminal task reports result",
+			state:       database.TaskSucceeded,
+			resultText:  "summary of findings",
+			wantContain: "summary of findings",
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			task := agentToolTask("task", "owner", testCase.state)
+			task.Task.Result = testCase.resultText
+			stub := newAgentControllerStub(task, nil, true)
+			executor := newAgentToolExecutor(
+				stub, nil, isolatedAgentCatalog(t), agentWaitToolName, "owner", "",
+			)
+
+			result, err := executor.Execute(t.Context(), agentArguments(t, `{"task_id":" task "}`))
+			require.NoError(t, err)
+			assert.Contains(t, result.Text(), testCase.wantContain)
+			assert.Equal(t, 1, stub.getCalls, "agent_wait must perform exactly one Get")
+			assert.Equal(t, 0, stub.subscriptions, "agent_wait must not subscribe")
+		})
+	}
+}
+
+// TestAgentWaitToolNeverCallsAwait pins that agent_wait stays non-blocking at
+// the controller boundary: a blocking Await call would freeze the parent tool
+// loop and reintroduce the polling pressure the design removed.
+func TestAgentWaitToolNeverCallsAwait(t *testing.T) {
+	t.Parallel()
+
+	stub := newAgentControllerStub(
+		agentToolTask("task", "owner", database.TaskRunning), nil, true,
+	)
+	executor := newAgentToolExecutor(
+		stub, nil, isolatedAgentCatalog(t), agentWaitToolName, "owner", "",
+	)
+
+	_, err := executor.Execute(t.Context(), agentArguments(t, `{"task_id":"task"}`))
+	require.NoError(t, err)
+	assert.Zero(t, stub.awaitCalls, "agent_wait must never call the blocking Await")
 }
