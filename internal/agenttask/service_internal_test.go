@@ -21,8 +21,15 @@ import (
 )
 
 const (
-	childSessionName = "child"
-	workerName       = "worker"
+	childSessionName  = "child"
+	workerName        = "worker"
+	taskSucceededKind = "task_succeeded"
+	taskFailedKind    = "task_failed"
+	taskCanceledKind  = "task_canceled"
+
+	// awaitTestTimeout bounds Await calls in tests so a failed terminal
+	// transition fails fast instead of consuming the suite timeout.
+	awaitTestTimeout = 5 * time.Second
 )
 
 func emptyService() *Service {
@@ -32,6 +39,7 @@ func emptyService() *Service {
 		cancel: nil, done: nil, sessionSlots: nil, tasks: nil, logger: nil, leaseOwner: "", wg: sync.WaitGroup{},
 		nextSubscriber: 0, timeout: 0, sessionConcurrency: 0, leaseDuration: 0,
 		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0, leaseRenewalWindow: 0,
+		awaitGetFn: nil, awaitPollEvery: awaitPollInterval,
 		mu: sync.Mutex{}, lifecycle: sync.Mutex{}, concurrency: 0, started: false, closed: false,
 	}
 }
@@ -101,6 +109,7 @@ func serviceWithRepositories(tasks *database.TaskRepository, agentTasks *databas
 	service.tasks = tasks
 	service.getTaskFn = tasks.Get
 	service.agentTasks = agentTasks
+	service.awaitGetFn = agentTasks.Get
 	service.active = make(map[string]context.CancelFunc)
 	service.cancelSources = make(map[string]string)
 	service.subscribers = make(map[string]map[uint64]chan database.TaskEventEntity)
@@ -438,7 +447,7 @@ func TestServiceInternalTerminalEventSurvivesFullSubscriberBuffer(t *testing.T) 
 	service.publish(&database.TaskEventEntity{
 		TaskID: taskID, Sequence: eventBuffer + 1,
 		Event: database.EventEntity{
-			CreatedAt: time.Time{}, ID: "", Kind: "task_succeeded", PayloadJSON: "",
+			CreatedAt: time.Time{}, ID: "", Kind: taskSucceededKind, PayloadJSON: "",
 		},
 	})
 
@@ -448,7 +457,7 @@ func TestServiceInternalTerminalEventSurvivesFullSubscriberBuffer(t *testing.T) 
 	}
 
 	assert.Equal(t, int64(2), received[0].Sequence, "oldest stream event should be evicted")
-	assert.Equal(t, "task_succeeded", received[len(received)-1].Event.Kind)
+	assert.Equal(t, taskSucceededKind, received[len(received)-1].Event.Kind)
 }
 
 func TestServiceInternalClosesAllSubscriptions(t *testing.T) {
@@ -602,7 +611,7 @@ func TestServiceInternalCancelRecordsProvenance(t *testing.T) {
 			latest, found, err := fixture.tasks.LatestEvent(t.Context(), created.Task.ID)
 			require.NoError(t, err)
 			require.True(t, found)
-			assert.Equal(t, "task_canceled", latest.Event.Kind)
+			assert.Equal(t, taskCanceledKind, latest.Event.Kind)
 			assert.JSONEq(t, `{"canceled_by":"`+test.source+`"}`, latest.Event.PayloadJSON)
 		})
 	}
@@ -1169,4 +1178,159 @@ func TestServiceInternalLeaseRenewsThroughoutLongRun(t *testing.T) {
 	cancel()
 	receive(t, done, &struct{}{}, "timed out waiting for lease renewal to stop")
 	assert.GreaterOrEqual(t, renewals.Load(), int32(wantedRenewals))
+}
+
+// gateAwaitOnQueuedRead parks Await in its wait loop by signaling when its
+// first repository read observes the queued task. The returned channel
+// closes once; terminal transitions sent after it can only be observed
+// through the subscription or the safety-net poll.
+func gateAwaitOnQueuedRead(t *testing.T, service *Service) <-chan struct{} {
+	t.Helper()
+
+	readQueued := make(chan struct{})
+
+	var once sync.Once
+
+	inner := service.awaitGetFn
+	service.awaitGetFn = func(ctx context.Context, id string) (*database.AgentTaskEntity, bool, error) {
+		entity, found, err := inner(ctx, id)
+		if err == nil && found && entity.Task.State == database.TaskQueued {
+			once.Do(func() { close(readQueued) })
+		}
+
+		return entity, found, err
+	}
+
+	return readQueued
+}
+
+// TestServiceAwaitIsWokenBySubscriptionPublish pins the fire-once wait
+// contract: the terminal event published through the subscription wakes
+// Await without waiting for the safety-net poll.
+func TestServiceAwaitIsWokenBySubscriptionPublish(t *testing.T) {
+	t.Parallel()
+
+	fixture := newServiceRepositoryFixture(t)
+	task := fixture.createQueuedAgentTask(t)
+	service := serviceWithRepositories(fixture.tasks, fixture.agentTasks)
+	// Stretch the safety-net poll beyond the test deadline so only the
+	// published subscription event can wake Await.
+	service.awaitPollEvery = 10 * time.Minute
+	readQueued := gateAwaitOnQueuedRead(t, service)
+	transitionErr := make(chan error, 1)
+
+	go func() {
+		<-readQueued
+
+		_, err := service.tasks.Finish(t.Context(), &database.TaskFinish{
+			TaskID: task.Task.ID, EventKind: taskSucceededKind, Result: "done",
+			ErrorCode: "", ErrorMessage: "", PayloadJSON: `{}`, LeaseOwner: "",
+			TargetState: database.TaskSucceeded, From: []database.TaskState{database.TaskQueued},
+		})
+		if err != nil {
+			transitionErr <- err
+
+			return
+		}
+
+		service.publishLatest(t.Context(), task.Task.ID)
+	}()
+
+	awaitCtx, awaitCancel := context.WithTimeout(t.Context(), awaitTestTimeout)
+	defer awaitCancel()
+
+	awaited, err := service.Await(awaitCtx, task.Task.ID)
+	require.NoError(t, err)
+
+	select {
+	case err := <-transitionErr:
+		t.Fatalf("finish task for Await wake: %v", err)
+	default:
+	}
+
+	assert.Equal(t, database.TaskSucceeded, awaited.Task.State)
+	assert.Nil(t, service.subscribers[task.Task.ID], "Await should cancel its subscription before returning")
+}
+
+// TestServiceAwaitSafetyNetObservesCrossProcessTerminalState pins the poll
+// fallback: when no in-process publisher exists, the bounded poll still
+// observes a terminal state written by another process.
+func TestServiceAwaitSafetyNetObservesCrossProcessTerminalState(t *testing.T) {
+	t.Parallel()
+
+	fixture := newServiceRepositoryFixture(t)
+	task := fixture.createQueuedAgentTask(t)
+	service := serviceWithRepositories(fixture.tasks, fixture.agentTasks)
+	readQueued := gateAwaitOnQueuedRead(t, service)
+	transitionErr := make(chan error, 1)
+
+	go func() {
+		<-readQueued
+
+		_, err := service.tasks.Transition(
+			t.Context(), task.Task.ID,
+			[]database.TaskState{database.TaskQueued}, database.TaskCanceled,
+			taskCanceledKind, database.CancelEventPayload(database.CancelSourceParent),
+		)
+		if err != nil {
+			transitionErr <- err
+		}
+	}()
+
+	awaitCtx, awaitCancel := context.WithTimeout(t.Context(), awaitTestTimeout)
+	defer awaitCancel()
+
+	awaited, err := service.Await(awaitCtx, task.Task.ID)
+	require.NoError(t, err)
+
+	select {
+	case err := <-transitionErr:
+		t.Fatalf("transition task for Await poll: %v", err)
+	default:
+	}
+
+	assert.Equal(t, database.TaskCanceled, awaited.Task.State)
+}
+
+// TestServiceAwaitReturnsPromptlyOnAlreadyTerminalTask pins that a task
+// which is already terminal resolves on the first repository read without
+// waiting for a subscription event or the poll ticker.
+func TestServiceAwaitReturnsPromptlyOnAlreadyTerminalTask(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		state database.TaskState
+		kind  string
+	}{
+		{name: "succeeded", state: database.TaskSucceeded, kind: taskSucceededKind},
+		{name: "failed", state: database.TaskFailed, kind: taskFailedKind},
+		{name: taskCanceledKind, state: database.TaskCanceled, kind: taskCanceledKind},
+		{name: "interrupted", state: database.TaskInterrupted, kind: taskInterruptedEvent},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newServiceRepositoryFixture(t)
+			task := fixture.createQueuedAgentTask(t)
+			service := serviceWithRepositories(fixture.tasks, fixture.agentTasks)
+
+			changed, err := service.tasks.Transition(
+				t.Context(), task.Task.ID,
+				[]database.TaskState{database.TaskQueued}, testCase.state,
+				testCase.kind, `{}`,
+			)
+			require.NoError(t, err)
+			require.True(t, changed)
+
+			awaitCtx, awaitCancel := context.WithTimeout(t.Context(), awaitTestTimeout)
+			defer awaitCancel()
+
+			awaited, err := service.Await(awaitCtx, task.Task.ID)
+			require.NoError(t, err)
+			assert.Equal(t, testCase.state, awaited.Task.State)
+		})
+	}
 }
