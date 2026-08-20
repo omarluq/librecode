@@ -12,11 +12,11 @@ func TestSSEAccumulatorAddsArgumentsBeforeItem(t *testing.T) {
 	t.Parallel()
 
 	accumulator := newSSEAccumulator()
-	accumulator.add(map[string]any{
+	require.NoError(t, accumulator.add(map[string]any{
 		jsonTypeKey:  "response.function_call_arguments.delta",
 		sseItemIDKey: testCallID,
 		"arguments":  testToolArgumentsJSON,
-	}, nil)
+	}, nil))
 
 	assert.Len(t, accumulator.items, 1)
 	item, ok := accumulator.items[0].(map[string]any)
