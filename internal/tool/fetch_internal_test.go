@@ -529,6 +529,58 @@ func TestFetchTool_PinsDialedAddressToValidatedIP(t *testing.T) {
 	}
 }
 
+func TestFetchTool_PinsDialedTLSToValidatedIP(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range fetchTestDialPinCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			lookupCalls := 0
+			fetchTool, dialedAddresses := fetchTestRecordingTransport()
+			fetchTool.lookupIPAddrs = func(_ context.Context, _ string) ([]net.IPAddr, error) {
+				defer func() { lookupCalls++ }()
+
+				return testCase.lookups[min(lookupCalls, len(testCase.lookups)-1)], nil
+			}
+
+			requestURL, err := parseFetchURL("http://" + fetchTestExampleHost)
+			require.NoError(t, err)
+
+			// Consume the pre-flight validation lookup the same way the real
+			// request path does, so the dial below observes the second resolution.
+			require.NoError(t, fetchTool.validatePublicFetchURL(context.Background(), requestURL))
+
+			transport, closeIdleConnections, err := fetchTool.transportWithNetworkValidation(fetchTool.client.Transport)
+			require.NoError(t, err)
+
+			defer closeIdleConnections()
+
+			httpTransport, ok := transport.(*http.Transport)
+			require.True(t, ok)
+
+			// Supply a TLS dial hook so the validating wrapper exercises the
+			// HTTPS path: the recorded target must be the pinned literal IP.
+			httpTransport.DialTLSContext = httpTransport.DialContext
+
+			conn, dialErr := httpTransport.DialTLSContext(context.Background(), "tcp", fetchTestExampleHost+":443")
+
+			if testCase.wantErr != "" {
+				require.Error(t, dialErr)
+				assert.Contains(t, dialErr.Error(), testCase.wantErr)
+				assert.Empty(t, *dialedAddresses, "no connection should be attempted after validation fails")
+
+				return
+			}
+
+			require.NoError(t, dialErr)
+			require.NoError(t, conn.Close())
+			require.Len(t, *dialedAddresses, 1)
+			assert.Equal(t, testCase.wantDialedIP+":443", (*dialedAddresses)[0])
+		})
+	}
+}
+
 // fetchTestRecordingTransport builds a fetch tool whose transport records every
 // dialed address and rejects hostnames: the base dialer must only ever receive a
 // validated literal IP, since a hostname would let the OS resolver rebind it.
