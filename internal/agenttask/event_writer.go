@@ -41,8 +41,8 @@ func (service *Service) newTaskEventWriter(taskID string) *taskEventWriter {
 	return &taskEventWriter{
 		service: service, taskID: taskID,
 		flushInterval: eventFlushInterval, flushBatch: eventFlushBatch,
-		done: make(chan struct{}), stop: make(chan struct{}),
 		flushMu: sync.Mutex{}, mu: sync.Mutex{},
+		done: make(chan struct{}), stop: make(chan struct{}),
 		pending: nil, err: nil, closed: false,
 	}
 }
