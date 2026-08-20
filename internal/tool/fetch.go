@@ -35,6 +35,7 @@ const (
 	fetchReadLimitBytes    = 5 * units.MiB
 	fetchTextWrapWidth     = 120
 	fetchUserAgent         = "librecode/1.0 (+https://github.com/omarluq/librecode)"
+	fetchMissingHostMsg    = "fetch url host is required"
 	fetchAcceptHeader      = "text/html,application/xhtml+xml,application/json,text/plain,*/*;q=0.8"
 	fetchNoiseSelector     = "script,style,noscript,template,nav,header,footer,aside,iframe,svg,form"
 	fetchJSONContentType   = "application/json"
@@ -175,7 +176,7 @@ func parseFetchURL(rawURL string) (*url.URL, error) {
 	}
 
 	if parsedURL.Host == "" {
-		return nil, oops.In("tool").Code("fetch_missing_host").Errorf("fetch url host is required")
+		return nil, oops.In("tool").Code("fetch_missing_host").Errorf(fetchMissingHostMsg)
 	}
 
 	return parsedURL, nil
@@ -441,7 +442,7 @@ func (fetchTool *FetchTool) pinnedFetchDialAddress(
 
 	normalizedHost := normalizedFetchHost(host)
 	if normalizedHost == "" {
-		return "", oops.In("tool").Code("fetch_missing_host").Errorf("fetch url host is required")
+		return "", oops.In("tool").Code("fetch_missing_host").Errorf(fetchMissingHostMsg)
 	}
 
 	if isLocalhostFetchHost(normalizedHost) {
@@ -547,7 +548,7 @@ func (fetchTool *FetchTool) validatePublicFetchURL(ctx context.Context, requestU
 
 	host := normalizedFetchHost(requestURL.Hostname())
 	if host == "" {
-		return oops.In("tool").Code("fetch_missing_host").Errorf("fetch url host is required")
+		return oops.In("tool").Code("fetch_missing_host").Errorf(fetchMissingHostMsg)
 	}
 
 	if isLocalhostFetchHost(host) {
