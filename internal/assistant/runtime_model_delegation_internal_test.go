@@ -13,69 +13,103 @@ import (
 func TestDelegationModelSelection(t *testing.T) {
 	t.Parallel()
 
-	var chat model.Model
+	chat := model.Model{Provider: "chat", ID: "large"}
+	cheap := model.Model{Provider: "cheap", ID: "small"}
 
-	chat.Provider, chat.ID = "chat", "large"
+	newRuntime := func(t *testing.T) *Runtime {
+		t.Helper()
+		var cfg config.Config
+		cfg.Assistant.Provider, cfg.Assistant.Model = chat.Provider, chat.ID
+		cfg.Delegation.Provider, cfg.Delegation.Model = cheap.Provider, cheap.ID
+		cfg.Delegation.ThinkingLevel = "off"
 
-	var cheap model.Model
+		var registryOptions model.RegistryOptions
+		registryOptions.BuiltIns = []model.Model{chat, cheap}
 
-	cheap.Provider, cheap.ID = "cheap", "small"
+		runtime := &Runtime{cfg: &cfg}
+		runtime.models = model.NewRegistry(&registryOptions)
+		return runtime
+	}
 
-	var cfg config.Config
+	tests := []struct {
+		name         string
+		profile      ExecutionProfile
+		wantProvider string
+		wantModel    string
+	}{
+		{
+			name:         "agent task uses delegation model",
+			profile:      ExecutionProfile{Kind: ExecutionAgentTask},
+			wantProvider: cheap.Provider,
+			wantModel:    cheap.ID,
+		},
+		{
+			name:         "top level uses assistant model",
+			profile:      topLevelExecutionProfile(),
+			wantProvider: chat.Provider,
+			wantModel:    chat.ID,
+		},
+		{
+			name:         "profile override wins",
+			profile:      ExecutionProfile{Kind: ExecutionAgentTask, Provider: "override", Model: "custom"},
+			wantProvider: "override",
+			wantModel:    "custom",
+		},
+	}
 
-	cfg.Assistant.Provider, cfg.Assistant.Model = chat.Provider, chat.ID
-	cfg.Delegation.Provider, cfg.Delegation.Model = cheap.Provider, cheap.ID
-	cfg.Delegation.ThinkingLevel = "off"
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			runtime := newRuntime(t)
+			runtime.profile = testCase.profile
 
-	var registryOptions model.RegistryOptions
-
-	registryOptions.BuiltIns = []model.Model{chat, cheap}
-
-	var runtime Runtime
-
-	runtime.cfg = &cfg
-	runtime.models = model.NewRegistry(&registryOptions)
-
-	runtime.profile = ExecutionProfile{Kind: ExecutionAgentTask}
-
-	got, err := runtime.selectedModel()
-	require.NoError(t, err)
-	assert.Equal(t, cheap.Provider, got.Provider)
-	assert.Equal(t, cheap.ID, got.ID)
-
-	runtime.profile = topLevelExecutionProfile()
-
-	got, err = runtime.selectedModel()
-	require.NoError(t, err)
-	assert.Equal(t, chat.Provider, got.Provider)
-	assert.Equal(t, chat.ID, got.ID)
-
-	runtime.profile = ExecutionProfile{Kind: ExecutionAgentTask, Provider: "override", Model: "custom"}
-
-	got, err = runtime.selectedModel()
-	require.NoError(t, err)
-	assert.Equal(t, "override", got.Provider)
-	assert.Equal(t, "custom", got.ID)
+			got, err := runtime.selectedModel()
+			require.NoError(t, err)
+			assert.Equal(t, testCase.wantProvider, got.Provider)
+			assert.Equal(t, testCase.wantModel, got.ID)
+		})
+	}
 }
 
 func TestDelegationThinkingLevel(t *testing.T) {
 	t.Parallel()
 
-	var cfg config.Config
+	newRuntime := func(t *testing.T) *Runtime {
+		t.Helper()
+		var cfg config.Config
+		cfg.Assistant.ThinkingLevel = "high"
+		cfg.Delegation.ThinkingLevel = "off"
+		return &Runtime{cfg: &cfg}
+	}
 
-	cfg.Assistant.ThinkingLevel = "high"
-	cfg.Delegation.ThinkingLevel = "off"
+	tests := []struct {
+		name      string
+		profile   ExecutionProfile
+		wantLevel string
+	}{
+		{
+			name:      "agent task uses delegation thinking level",
+			profile:   ExecutionProfile{Kind: ExecutionAgentTask},
+			wantLevel: "off",
+		},
+		{
+			name:      "top level uses assistant thinking level",
+			profile:   topLevelExecutionProfile(),
+			wantLevel: "high",
+		},
+		{
+			name:      "profile override wins",
+			profile:   ExecutionProfile{Kind: ExecutionAgentTask, ThinkingLevel: "low"},
+			wantLevel: "low",
+		},
+	}
 
-	var runtime Runtime
-
-	runtime.cfg = &cfg
-
-	runtime.profile = ExecutionProfile{Kind: ExecutionAgentTask}
-	assert.Equal(t, "off", runtime.thinkingLevel())
-
-	runtime.profile = topLevelExecutionProfile()
-	assert.Equal(t, "high", runtime.thinkingLevel())
-
-	runtime.profile = ExecutionProfile{Kind: ExecutionAgentTask, ThinkingLevel: "low"}
-	assert.Equal(t, "low", runtime.thinkingLevel())
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			runtime := newRuntime(t)
+			runtime.profile = testCase.profile
+			assert.Equal(t, testCase.wantLevel, runtime.thinkingLevel())
+		})
+	}
 }

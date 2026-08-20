@@ -627,6 +627,69 @@ func TestServiceAwaitAll(t *testing.T) {
 		assert.Equal(t, database.TaskSucceeded, states[first.Task.ID])
 		assert.Equal(t, database.TaskSucceeded, states[second.Task.ID])
 	})
+
+	t.Run("does not stop at the page-size cap while a task is running", func(t *testing.T) {
+		t.Parallel()
+
+		tasks, agentTasks, sessions := repositories(t)
+		parent := createSession(t, sessions, "parent", "")
+		child := createSession(t, sessions, "child", parent.ID)
+		finished := 0
+
+		// Seed more terminal tasks than the previous ListByOwner page size (100)
+		// so an uncapped listing is required to notice the running task.
+		for range 105 {
+			child := createSession(t, sessions, "bulk", parent.ID)
+			created, err := agentTasks.Create(t.Context(), agentTaskEntity(parent.ID, child.ID))
+			require.NoError(t, err)
+			changed, err := tasks.Finish(t.Context(), &database.TaskFinish{
+				TaskID: created.Task.ID, EventKind: "task_succeeded", Result: completedResult,
+				ErrorCode: "", ErrorMessage: "", PayloadJSON: `{}`, LeaseOwner: "",
+				TargetState: database.TaskSucceeded, From: []database.TaskState{database.TaskQueued},
+			})
+			require.NoError(t, err)
+			require.True(t, changed)
+			finished++
+		}
+		require.Equal(t, 105, finished)
+
+		runner := &fakeRunner{
+			result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+			started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
+		}
+		service := newService(t, tasks, agentTasks, runner)
+
+		running, err := service.Submit(t.Context(), submitRequest(parent.ID, child.ID))
+		require.NoError(t, err)
+		require.Equal(t, running.Task.ID, awaitStarted(t, runner.started))
+
+		awaited := make(chan []database.AgentTaskEntity, 1)
+		go func() {
+			all, awaitErr := service.AwaitAll(t.Context(), parent.ID)
+			require.NoError(t, awaitErr)
+			awaited <- all
+		}()
+
+		select {
+		case <-awaited:
+			t.Fatal("AwaitAll returned even though a task beyond the page-size cap was running")
+		case <-time.After(50 * time.Millisecond):
+		}
+
+		runner.unblock()
+
+		select {
+		case all := <-awaited:
+			require.Len(t, all, 106)
+			states := map[string]database.TaskState{}
+			for index := range all {
+				states[all[index].Task.ID] = all[index].Task.State
+			}
+			assert.Equal(t, database.TaskSucceeded, states[running.Task.ID])
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for AwaitAll")
+		}
+	})
 }
 
 func newService(

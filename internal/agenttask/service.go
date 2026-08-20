@@ -20,16 +20,16 @@ import (
 )
 
 const (
-	defaultConcurrency         = 10
-	defaultSessionConcurrency  = 10
-	defaultTimeout             = 30 * time.Minute
-	defaultQueueCapacity       = 256
-	awaitPollInterval          = time.Second
-	dispatchRetryInterval      = 10 * time.Millisecond
-	finalizeTimeout            = 10 * time.Second
-	leaseDuration              = 30 * time.Second
-	leaseHeartbeatInterval     = 10 * time.Second
-	leaseRenewalRetryInterval  = 250 * time.Millisecond
+	defaultConcurrency        = 10
+	defaultSessionConcurrency = 10
+	defaultTimeout            = 30 * time.Minute
+	defaultQueueCapacity      = 256
+	awaitPollInterval         = time.Second
+	dispatchRetryInterval     = 10 * time.Millisecond
+	finalizeTimeout           = 10 * time.Second
+	leaseDuration             = 30 * time.Second
+	leaseHeartbeatInterval    = 10 * time.Second
+	leaseRenewalRetryInterval = 250 * time.Millisecond
 	// leaseBusyGrace outlasts the database busy_timeout (15s default) so a
 	// renewal attempt waits for the SQLite write lock instead of aborting while
 	// the driver would still have succeeded.
@@ -624,7 +624,7 @@ func (service *Service) AwaitAll(
 	defer ticker.Stop()
 
 	for {
-		tasks, err := service.agentTasks.ListByOwner(ctx, ownerSessionID, 100)
+		tasks, err := service.agentTasks.ListAllByOwner(ctx, ownerSessionID)
 		if err != nil {
 			return nil, oops.In("agenttask").Code("list_agent_tasks").Wrapf(err, "list agent tasks")
 		}
