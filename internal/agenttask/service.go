@@ -882,15 +882,18 @@ func (service *Service) renewLease(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if service.renewLeaseWithRetry(ctx, taskID, validUntil) {
-				validUntil = time.Now().Add(service.leaseDuration)
+			renewedUntil, ok := service.renewLeaseWithRetry(ctx, taskID, validUntil)
+			if !ok {
+				cancel()
 
-				continue
+				return
 			}
 
-			cancel()
-
-			return
+			// Track the expiry that was actually persisted, not a value derived
+			// from local clock time after the (possibly slow) renewal call:
+			// deriving it locally can extend the retry deadline past the stored
+			// lease, letting another worker acquire the task mid-retry.
+			validUntil = renewedUntil
 		}
 	}
 }
@@ -901,7 +904,11 @@ func (service *Service) renewLease(
 // up to its busy_timeout for the write lock, so each attempt gets
 // min(busy grace, remaining lease validity) — a busy database keeps its chance
 // to succeed while genuine lease loss (renewed=false) still fails fast.
-func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string, deadline time.Time) bool {
+func (service *Service) renewLeaseWithRetry(
+	ctx context.Context,
+	taskID string,
+	deadline time.Time,
+) (time.Time, bool) {
 	const busyGrace = leaseBusyGrace
 
 	for attempt := 1; ; attempt++ {
@@ -911,16 +918,16 @@ func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string, 
 				"lease_owner", service.leaseOwner, "attempts", attempt-1,
 				"lease_duration", service.leaseDuration)
 
-			return false
+			return time.Time{}, false
 		}
 
-		renewed, err := service.attemptLeaseRenewal(ctx, taskID, timeout)
+		renewedUntil, renewed, err := service.attemptLeaseRenewal(ctx, taskID, timeout)
 		if err == nil {
-			return service.handleLeaseRenewal(ctx, taskID, attempt, renewed)
+			return renewedUntil, service.handleLeaseRenewal(ctx, taskID, attempt, renewed)
 		}
 
 		if ctx.Err() != nil {
-			return false
+			return time.Time{}, false
 		}
 
 		if !time.Now().Before(deadline) {
@@ -928,7 +935,7 @@ func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string, 
 				"lease_owner", service.leaseOwner, "attempts", attempt,
 				"lease_duration", service.leaseDuration, "error", err)
 
-			return false
+			return time.Time{}, false
 		}
 
 		service.logWarn(ctx, "retry agent task lease renewal", "task_id", taskID,
@@ -938,18 +945,26 @@ func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string, 
 
 		retryDelay := min(service.leaseRenewalRetryInterval, time.Until(deadline))
 		if !waitForLeaseRenewalRetry(ctx, retryDelay) {
-			return false
+			return time.Time{}, false
 		}
 	}
 }
 
-func (service *Service) attemptLeaseRenewal(ctx context.Context, taskID string, timeout time.Duration) (bool, error) {
+func (service *Service) attemptLeaseRenewal(
+	ctx context.Context,
+	taskID string,
+	timeout time.Duration,
+) (time.Time, bool, error) {
 	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	return service.renewLeaseFn(
-		attemptCtx, taskID, service.leaseOwner, time.Now().Add(service.leaseDuration),
-	)
+	// Capture the expiry before the call so a delayed response returns the
+	// exact expiry that was persisted, never one shifted by call duration.
+	renewedUntil := time.Now().Add(service.leaseDuration)
+
+	renewed, err := service.renewLeaseFn(attemptCtx, taskID, service.leaseOwner, renewedUntil)
+
+	return renewedUntil, renewed, err
 }
 
 func (service *Service) handleLeaseRenewal(

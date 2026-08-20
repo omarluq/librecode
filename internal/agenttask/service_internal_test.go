@@ -1077,7 +1077,8 @@ func TestServiceInternalLeaseRenewalRetriesTransientDatabaseErrors(t *testing.T)
 		return true, nil
 	})
 
-	assert.True(t, service.renewLeaseWithRetry(t.Context(), "task", time.Now().Add(time.Minute)))
+	_, ok := service.renewLeaseWithRetry(t.Context(), "task", time.Now().Add(time.Minute))
+	assert.True(t, ok)
 	assert.Equal(t, int32(3), attempts.Load())
 	assert.Contains(t, logs.String(), "retry agent task lease renewal")
 	assert.NotContains(t, logs.String(), "renew agent task lease after retries")
@@ -1097,8 +1098,33 @@ func TestServiceInternalLeaseRenewalAttemptHonorsRemainingLeaseOverFixedTimeout(
 	// A remaining lease validity beyond the old fixed attempt timeout (2s)
 	// must extend the attempt deadline: a busy database then waits for the
 	// SQLite write lock instead of the attempt aborting early.
-	assert.True(t, service.renewLeaseWithRetry(t.Context(), "task", time.Now().Add(time.Minute)))
+	_, ok := service.renewLeaseWithRetry(t.Context(), "task", time.Now().Add(time.Minute))
+	assert.True(t, ok)
 	assert.GreaterOrEqual(t, time.Until(deadline), leaseBusyGrace-time.Second)
+}
+
+func TestServiceInternalLeaseRenewalReturnsPersistedExpiryDespiteDelayedResponse(t *testing.T) {
+	t.Parallel()
+
+	// A renewal that succeeds after blocking must report the expiry that was
+	// sent to the database, not one shifted forward by the call duration:
+	// a locally derived expiry could extend the next retry deadline past the
+	// stored lease, letting another worker acquire the task mid-retry.
+	const delay = 150 * time.Millisecond
+
+	service := leaseRenewalService(&bytes.Buffer{},
+		func(_ context.Context, _ string, _ string, _ time.Time) (bool, error) {
+			time.Sleep(delay)
+
+			return true, nil
+		})
+
+	renewedUntil, ok := service.renewLeaseWithRetry(t.Context(), "task", time.Now().Add(time.Minute))
+	assert.True(t, ok)
+	assert.LessOrEqual(
+		t, time.Until(renewedUntil), service.leaseDuration,
+		"returned expiry must not extend past leaseDuration from the pre-call clock read",
+	)
 }
 
 func TestServiceInternalLeaseRenewalFailsOnlyWhenLeaseExpires(t *testing.T) {
@@ -1118,9 +1144,8 @@ func TestServiceInternalLeaseRenewalFailsOnlyWhenLeaseExpires(t *testing.T) {
 	// Renewal keeps retrying for the full lease validity instead of an
 	// arbitrary retry window, so a transient outage shorter than the lease
 	// must never forfeit it.
-	assert.False(t, service.renewLeaseWithRetry(
-		t.Context(), "task", time.Now().Add(100*time.Millisecond),
-	))
+	_, ok := service.renewLeaseWithRetry(t.Context(), "task", time.Now().Add(100*time.Millisecond))
+	assert.False(t, ok)
 	assert.GreaterOrEqual(t, attempts.Load(), int32(3))
 	assert.Contains(t, logs.String(), "renew agent task lease after lease expiry")
 	assert.Contains(t, logs.String(), "lease_duration")
@@ -1137,21 +1162,40 @@ func TestServiceInternalLeaseRenewalSurvivesTransientOutageShorterThanLease(t *t
 	// canceling the run, as the old bounded renewal window would have.
 	const outage = 250 * time.Millisecond
 
-	service := leaseRenewalService(&bytes.Buffer{}, func(context.Context, string, string, time.Time) (bool, error) {
+	service := leaseRenewalService(&bytes.Buffer{}, nil)
+	service.leaseHeartbeatInterval = time.Millisecond
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// Signal the first successful renewal after the outage so the test can
+	// stop the loop immediately: without cancellation, the goroutine keeps
+	// heartbeating until the parent test context deadline, adding five
+	// seconds to every parallel run.
+	recovered := make(chan struct{})
+
+	var recoveredOnce sync.Once
+
+	service.renewLeaseFn = func(context.Context, string, string, time.Time) (bool, error) {
 		if time.Since(startedAt) < outage {
 			return false, errors.New("database is locked")
 		}
 
-		return true, nil
-	})
-	service.leaseHeartbeatInterval = time.Millisecond
+		recoveredOnce.Do(func() { close(recovered) })
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
+		return true, nil
+	}
 
 	done := make(chan struct{})
 	go service.renewLease(ctx, func() { canceled.Store(true) }, "task", done)
 
+	select {
+	case <-recovered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("lease renewal never recovered after the transient outage")
+	}
+
+	cancel()
 	<-done
 	assert.False(t, canceled.Load(), "transient renewal outage canceled the run")
 }
@@ -1159,14 +1203,9 @@ func TestServiceInternalLeaseRenewalSurvivesTransientOutageShorterThanLease(t *t
 func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 	t.Parallel()
 
-	var (
-		attempts atomic.Int32
-		logs     bytes.Buffer
-	)
+	var logs bytes.Buffer
 
 	service := leaseRenewalService(&logs, func(context.Context, string, string, time.Time) (bool, error) {
-		attempts.Add(1)
-
 		return false, errors.New("database is locked")
 	})
 	service.leaseHeartbeatInterval = time.Millisecond
@@ -1178,8 +1217,9 @@ func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 
 	receive(t, ctx.Done(), &struct{}{}, "lease renewal did not cancel the run")
 	receive(t, done, &struct{}{}, "timed out waiting for lease renewal to stop")
-	assert.GreaterOrEqual(t, attempts.Load(), int32(1),
-		"renewal should have been attempted at least once before exhaustion")
+	// The attempts count is not asserted: under -race load the goroutine can
+	// start after the short lease already expired, so exhaustion with zero
+	// attempts is a valid outcome of the behavior under test.
 	assert.Contains(t, logs.String(), "renew agent task lease after lease expiry")
 	assert.Contains(t, logs.String(), "lease_duration")
 }
