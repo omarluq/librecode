@@ -206,6 +206,7 @@ func finishProviderResult(result *llm.Response, providerResult *providerResult) 
 	return true, nil
 }
 
+// joinedThinkingDeltas converts transport deltas into one completed-round semantic block.
 func joinedThinkingDeltas(deltas []string) []string {
 	thinking := strings.TrimSpace(strings.Join(deltas, ""))
 	if thinking == "" {
