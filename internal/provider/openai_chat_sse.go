@@ -136,8 +136,6 @@ func (accumulator *openAIChatStreamAccumulator) add(
 		if choice.FinishReason != "" {
 			accumulator.finishReason = choice.FinishReason
 			accumulator.terminal = true
-
-			return errSSEDone
 		}
 	}
 
