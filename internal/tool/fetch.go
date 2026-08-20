@@ -298,6 +298,9 @@ func (fetchTool *FetchTool) fetchURL(
 	return body, info, nil
 }
 
+// httpClient returns the HTTP client used for fetch requests.
+// The fallback guards the zero-value FetchTool (client is nil only when the
+// struct is built as &FetchTool{} instead of via NewFetchTool).
 func (fetchTool *FetchTool) httpClient() *http.Client {
 	if fetchTool.client != nil {
 		return fetchTool.client
@@ -354,7 +357,7 @@ func (fetchTool *FetchTool) transportWithNetworkValidation(
 
 	transport.Proxy = nil
 
-	if err := wrapFetchTransportDialHooks(transport); err != nil {
+	if err := fetchTool.wrapFetchTransportDialHooks(transport); err != nil {
 		return nil, nil, err
 	}
 
@@ -374,17 +377,17 @@ func cloneFetchHTTPTransport(baseTransport http.RoundTripper) (*http.Transport, 
 	return transport.Clone(), true
 }
 
-func wrapFetchTransportDialHooks(transport *http.Transport) error {
+func (fetchTool *FetchTool) wrapFetchTransportDialHooks(transport *http.Transport) error {
 	if hasFetchDeprecatedDialHook(transport, "Dial") || hasFetchDeprecatedDialHook(transport, "DialTLS") {
 		return oops.In("tool").Code("fetch_legacy_dial_hook").Errorf(
 			"fetch transport uses deprecated legacy dial hooks that cannot be safely validated",
 		)
 	}
 
-	transport.DialContext = validatingFetchDialContext(fetchDialContext(transport))
+	transport.DialContext = fetchTool.validatingFetchDialContext(fetchDialContext(transport))
 
 	if transport.DialTLSContext != nil {
-		transport.DialTLSContext = validatingFetchDialContext(transport.DialTLSContext)
+		transport.DialTLSContext = fetchTool.validatingFetchDialContext(transport.DialTLSContext)
 	}
 
 	return nil
@@ -406,11 +409,108 @@ func hasFetchDeprecatedDialHook(transport *http.Transport, name string) bool {
 	return field.IsValid() && !field.IsNil()
 }
 
-func validatingFetchDialContext(
+func (fetchTool *FetchTool) validatingFetchDialContext(
 	dialContext func(context.Context, string, string) (net.Conn, error),
 ) func(context.Context, string, string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		return validateFetchDialedConnection(dialContext(ctx, network, address))
+		pinnedAddress, err := fetchTool.pinnedFetchDialAddress(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+
+		// Defense in depth: even a custom dialer that ignores the pinned
+		// address is rejected when it reports an unvalidated remote address.
+		return validateFetchDialedConnection(dialContext(ctx, network, pinnedAddress))
+	}
+}
+
+// pinnedFetchDialAddress resolves the dial address once, validates every
+// returned IP address, and rewrites the address to a validated IP so the
+// connection cannot be rebound to a different address between validation and
+// dial. The port is preserved, and because only the dialed address changes,
+// the request Host header and TLS server name still come from the original
+// hostname, keeping virtual hosting and certificate verification intact.
+func (fetchTool *FetchTool) pinnedFetchDialAddress(
+	ctx context.Context,
+	network, address string,
+) (string, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", oops.In("tool").Code("fetch_dial_address").Wrapf(err, "parse fetch dial address")
+	}
+
+	normalizedHost := normalizedFetchHost(host)
+	if normalizedHost == "" {
+		return "", oops.In("tool").Code("fetch_missing_host").Errorf("fetch url host is required")
+	}
+
+	if isLocalhostFetchHost(normalizedHost) {
+		return "", privateFetchNetworkError()
+	}
+
+	if ipAddress := parseFetchHostIP(normalizedHost); ipAddress != nil {
+		return pinnedLiteralFetchAddress(ipAddress, port)
+	}
+
+	addrs, err := fetchTool.lookupFetchIPAddrs(ctx, normalizedHost)
+	if err != nil {
+		return "", err
+	}
+
+	return pinnedResolvedFetchAddress(addrs, network, port)
+}
+
+// pinnedLiteralFetchAddress validates a literal host IP and pins the dial to it.
+func pinnedLiteralFetchAddress(ipAddress net.IP, port string) (string, error) {
+	if err := validatePublicFetchIP(ipAddress); err != nil {
+		return "", err
+	}
+
+	return net.JoinHostPort(ipAddress.String(), port), nil
+}
+
+// pinnedResolvedFetchAddress validates every resolved address (failing closed on
+// any private or ambiguous result) and pins the dial to one matching the network.
+func pinnedResolvedFetchAddress(addrs []net.IPAddr, network, port string) (string, error) {
+	if len(addrs) == 0 {
+		return "", oops.In("tool").Code("fetch_resolve_host").Errorf("resolve fetch url host returned no addresses")
+	}
+
+	for _, addr := range addrs {
+		if err := validatePublicFetchIP(addr.IP); err != nil {
+			return "", err
+		}
+	}
+
+	pinnedIP := fetchDialIPForNetwork(addrs, network)
+	if pinnedIP == nil {
+		return "", oops.In("tool").
+			Code("fetch_no_validated_address").
+			With("network", network).
+			Errorf("no validated fetch address matches network")
+	}
+
+	return net.JoinHostPort(pinnedIP.String(), port), nil
+}
+
+func fetchDialIPForNetwork(addrs []net.IPAddr, network string) net.IP {
+	for _, addr := range addrs {
+		if fetchIPMatchesNetwork(addr.IP, network) {
+			return addr.IP
+		}
+	}
+
+	return nil
+}
+
+func fetchIPMatchesNetwork(ipAddress net.IP, network string) bool {
+	switch network {
+	case "tcp4", "udp4", "ip4":
+		return ipAddress.To4() != nil
+	case "tcp6", "udp6", "ip6":
+		return ipAddress.To4() == nil
+	default:
+		return true
 	}
 }
 
@@ -851,7 +951,7 @@ func truncateFetchedContent(content string) TruncationResult {
 
 	truncation.Content = validUTF8Prefix(content, truncation.MaxBytes)
 	truncation.OutputLines = 1
-	truncation.OutputBytes = len([]byte(truncation.Content))
+	truncation.OutputBytes = len(truncation.Content)
 	truncation.LastLinePartial = true
 
 	return truncation
