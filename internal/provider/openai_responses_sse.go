@@ -16,6 +16,7 @@ type sseAccumulator struct {
 	finalResponse         map[string]any
 	terminalErr           error
 	parts                 []string
+	thinkingParts         []string
 	items                 []any
 	completed             bool
 	terminal              bool
@@ -28,6 +29,7 @@ func newSSEAccumulator() *sseAccumulator {
 		finalResponse:         nil,
 		terminalErr:           nil,
 		parts:                 []string{},
+		thinkingParts:         []string{},
 		items:                 []any{},
 		completed:             false,
 		terminal:              false,
@@ -46,6 +48,7 @@ func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(*llm.S
 	accumulator.addUsage(event)
 
 	if text, delta := thinkingTextFromSSEEvent(event); delta && text != "" {
+		accumulator.thinkingParts = append(accumulator.thinkingParts, text)
 		emitStreamEvent(onEvent, StreamEvent{
 			ToolEvent: nil,
 			Usage:     nil,
@@ -230,7 +233,12 @@ func parseSSEResult(reader io.Reader, onEvent func(*llm.StreamChunk)) (*provider
 
 	fallbackText := strings.TrimSpace(strings.Join(accumulator.parts, ""))
 
-	return providerResultFromSSEAccumulator(accumulator, fallbackText), nil
+	result := providerResultFromSSEAccumulator(accumulator, fallbackText)
+	if len(result.Thinking) == 0 {
+		result.Thinking = joinedThinkingDeltas(accumulator.thinkingParts)
+	}
+
+	return result, nil
 }
 
 func scanResponsesSSE(
