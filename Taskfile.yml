@@ -78,20 +78,20 @@ tasks:
     desc: Run golangci-lint
     deps: [ensure-cache]
     cmds:
-      - golangci-lint run
+      - go tool golangci-lint run
 
   fmt:
     desc: Format and fix with golangci-lint
     deps: [ensure-cache]
     cmds:
-      - golangci-lint fmt
-      - golangci-lint run --fix
+      - go tool golangci-lint fmt
+      - go tool golangci-lint run --fix
 
   fmt-check:
     desc: Check formatting without modifying files
     deps: [ensure-cache]
     cmds:
-      - golangci-lint fmt --diff
+      - go tool golangci-lint fmt --diff
 
   lint-suppressions-check:
     desc: Reject nolint directives in project Go source

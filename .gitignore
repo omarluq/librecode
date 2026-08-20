@@ -5,6 +5,8 @@
 *.dll
 *.so
 *.dylib
+/.config/
+/go/
 
 # Test artifacts
 *.test
