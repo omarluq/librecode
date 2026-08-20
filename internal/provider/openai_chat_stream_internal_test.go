@@ -62,18 +62,39 @@ func TestParseOpenAIChatStreamTextThinkingToolCallsAndUsage(t *testing.T) {
 	assert.Equal(t, llm.PartText, events[1].Type)
 }
 
-func TestParseOpenAIChatStreamStopsAtFinishReason(t *testing.T) {
+func TestParseOpenAIChatStreamConsumesUsageChunkAfterFinishReason(t *testing.T) {
 	t.Parallel()
 
+	// include_usage streams a final usage-only chunk (empty choices) after the
+	// finish_reason chunk; the reader must keep consuming until [DONE].
 	stream := openAIChatStream(
 		openAIChatDelta(map[string]any{"reasoning_content": "finished"}, "stop", nil),
-		"data: invalid-json",
+		openAIChatDelta(map[string]any{}, "", map[string]any{
+			jsonPromptTokensKey:    7,
+			jsonCompletionTokensKey: 3,
+		}),
+		openAIChatDoneLine,
 	)
 	result, err := parseOpenAIChatStream(strings.NewReader(stream), nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{"finished"}, result.Thinking)
 	assert.Equal(t, llm.FinishReasonStop, result.FinishReason)
+	assert.Equal(t, 7, result.Usage.InputTokens)
+	assert.Equal(t, 3, result.Usage.OutputTokens)
+}
+
+func TestParseOpenAIChatStreamReturnsDecodeErrors(t *testing.T) {
+	t.Parallel()
+
+	stream := openAIChatStream(
+		openAIChatDelta(map[string]any{jsonContentKey: testProviderPartialText}, "stop", nil),
+		"data: invalid-json",
+	)
+	_, err := parseOpenAIChatStream(strings.NewReader(stream), nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid character")
 }
 
 func TestParseOpenAIChatStreamHandlesErrorsAndIncompleteStreams(t *testing.T) {
