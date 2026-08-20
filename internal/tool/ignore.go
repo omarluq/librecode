@@ -16,6 +16,17 @@ import (
 const (
 	gitignoreFileName       = ".gitignore"
 	readIgnoreCacheCapacity = 16
+
+	gitDirName = ".git"
+
+	defaultIgnoreGitDir      = ".git/"
+	defaultIgnoreNodeModules = "node_modules/"
+	defaultIgnoreEnv         = ".env"
+	defaultIgnoreGoCache     = ".gocache/"
+	defaultIgnoreGoModCache  = ".gomodcache/"
+	defaultIgnoreTmp         = ".tmp/"
+	defaultIgnoreBin         = "bin/"
+	defaultIgnoreAgentSkills = "/skills/"
 )
 
 type ignorePattern struct {
@@ -24,8 +35,7 @@ type ignorePattern struct {
 }
 
 type readIgnoreCache struct {
-	patterns        *hot.HotCache[string, repositoryIgnorePatterns]
-	defaultPatterns []ignorePattern
+	patterns *hot.HotCache[string, repositoryIgnorePatterns]
 }
 
 type repositoryIgnorePatterns struct {
@@ -46,9 +56,13 @@ type ignorePathState struct {
 	dir     bool
 }
 
+// defaultReadIgnorePatterns holds the default read-ignore patterns, parsed once at package
+// initialization. The list and its patterns are immutable and shared across caches; callers
+// must never mutate them.
+var defaultReadIgnorePatterns = newDefaultReadIgnorePatterns()
+
 func newReadIgnoreCache() *readIgnoreCache {
 	return &readIgnoreCache{
-		defaultPatterns: newDefaultReadIgnorePatterns(),
 		patterns: hot.NewHotCache[string, repositoryIgnorePatterns](hot.WTinyLFU, readIgnoreCacheCapacity).
 			WithLoaders(func(workspaceRoots []string) (map[string]repositoryIgnorePatterns, error) {
 				patterns := make(map[string]repositoryIgnorePatterns, len(workspaceRoots))
@@ -118,10 +132,9 @@ func pathEscapesRoot(relativePath string) bool {
 }
 
 func readIgnorePatterns(workspaceRoot string, cache *readIgnoreCache) []ignorePattern {
-	defaults := readDefaultIgnorePatterns(cache)
 	repositoryPatterns := cache.repositoryPatterns(workspaceRoot)
-	patterns := make([]ignorePattern, 0, len(defaults)+len(repositoryPatterns))
-	patterns = append(patterns, defaults...)
+	patterns := make([]ignorePattern, 0, len(defaultReadIgnorePatterns)+len(repositoryPatterns))
+	patterns = append(patterns, defaultReadIgnorePatterns...)
 
 	for _, pattern := range repositoryPatterns {
 		patterns = append(patterns, ignorePattern{
@@ -133,24 +146,16 @@ func readIgnorePatterns(workspaceRoot string, cache *readIgnoreCache) []ignorePa
 	return patterns
 }
 
-func readDefaultIgnorePatterns(cache *readIgnoreCache) []ignorePattern {
-	if cache != nil {
-		return cache.defaultPatterns
-	}
-
-	return newDefaultReadIgnorePatterns()
-}
-
 func newDefaultReadIgnorePatterns() []ignorePattern {
 	patternSources := [...]string{
-		".git/",
-		"node_modules/",
-		".env",
-		".gocache/",
-		".gomodcache/",
-		".tmp/",
-		"bin/",
-		"/skills/",
+		defaultIgnoreGitDir,
+		defaultIgnoreNodeModules,
+		defaultIgnoreEnv,
+		defaultIgnoreGoCache,
+		defaultIgnoreGoModCache,
+		defaultIgnoreTmp,
+		defaultIgnoreBin,
+		defaultIgnoreAgentSkills,
 	}
 	patterns := make([]ignorePattern, 0, len(patternSources))
 
@@ -244,7 +249,7 @@ func ignoreSignatureWalkError(entry os.DirEntry) error {
 func (collector *ignoreSignatureCollector) visitDirectory(path, name string) error {
 	collector.append(path)
 
-	if name == ".git" {
+	if name == gitDirName {
 		return filepath.SkipDir
 	}
 
