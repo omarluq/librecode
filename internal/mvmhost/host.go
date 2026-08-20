@@ -134,15 +134,38 @@ func finalizeResult(result Result, value reflect.Value) (Result, error) {
 	return result, nil
 }
 
+// Compile validates that request source compiles against the request bindings
+// without executing any of it. The interpreter lockdown and source limit match
+// Eval so compile acceptance predicts evaluation acceptance.
+func (e *Evaluator) Compile(request Request) error {
+	if len(request.Source) > defaultSourceLimit {
+		err := fmt.Errorf("source is %d bytes; limit is %d", len(request.Source), defaultSourceLimit)
+
+		return evalError(ErrorKindSourceLimit, 0, err)
+	}
+
+	bindings, err := reflectBindings(request.Bindings)
+	if err != nil {
+		return err
+	}
+
+	machine := newIsolatedMachine(io.Discard, io.Discard)
+	machine.ImportPackageValues(bindings)
+
+	name := request.Name
+	if name == "" {
+		name = "execute.go"
+	}
+
+	if err := machine.Compile(name, request.Source); err != nil {
+		return normalizeError(err)
+	}
+
+	return nil
+}
+
 func evaluate(request Request, stdout, stderr io.Writer) (reflect.Value, error) {
-	machine := interp.NewInterpreter(golang.GoSpec)
-	machine.SetIO(bytes.NewReader(nil), stdout, stderr)
-	// os.DevNull is a portable non-directory path, so package lookups cannot
-	// fall back to the working directory. Disable MVM's embedded source-package
-	// and remote fallbacks as well; imports are limited to explicit bindings.
-	machine.SetPkgfs(os.DevNull)
-	machine.SetStdlibFS(emptyFS{})
-	machine.SetRemoteFS(emptyFS{})
+	machine := newIsolatedMachine(stdout, stderr)
 
 	bindings, err := reflectBindings(request.Bindings)
 	if err != nil {
@@ -162,6 +185,19 @@ func evaluate(request Request, stdout, stderr io.Writer) (reflect.Value, error) 
 	}
 
 	return value, nil
+}
+
+func newIsolatedMachine(stdout, stderr io.Writer) *interp.Interp {
+	machine := interp.NewInterpreter(golang.GoSpec)
+	machine.SetIO(bytes.NewReader(nil), stdout, stderr)
+	// os.DevNull is a portable non-directory path, so package lookups cannot
+	// fall back to the working directory. Disable MVM's embedded source-package
+	// and remote fallbacks as well; imports are limited to explicit bindings.
+	machine.SetPkgfs(os.DevNull)
+	machine.SetStdlibFS(emptyFS{})
+	machine.SetRemoteFS(emptyFS{})
+
+	return machine
 }
 
 func reflectBindings(bindings Bindings) (map[string]map[string]reflect.Value, error) {

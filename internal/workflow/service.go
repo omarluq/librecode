@@ -447,6 +447,21 @@ func (service *Service) createRun(
 		argumentsJSON = "{}"
 	}
 
+	// Compile before persisting: invalid source fails the submission inline with
+	// compiler diagnostics instead of creating a doomed run that the TUI watches
+	// briefly fail. ExecuteQueued still re-evaluates and persists evaluation
+	// failures, so pre-Submit runs are unaffected.
+	arguments, err := decodeArguments(argumentsJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	validateErr := service.runner.ValidateSource(request.Name, request.Source, arguments)
+	if validateErr != nil {
+		return nil, oops.In("workflow").Code("compile_source").
+			Wrapf(validateErr, "workflow source does not compile")
+	}
+
 	hash := sha256.Sum256([]byte(request.Source))
 
 	run, err := service.runs.Create(ctx, &database.WorkflowRunEntity{

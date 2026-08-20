@@ -75,24 +75,73 @@ func workerBindings(request *Message, caller *rpcCaller) (mvmhost.Bindings, erro
 		}
 	}
 
+	return workflowModeBindings(arguments, workflowCallBridge{caller: caller}), nil
+}
+
+// callBridge forwards workflow binding calls somewhere. The production worker
+// bridges them over RPC to the parent process; compile validation uses an inert
+// bridge because nothing is executed.
+type callBridge interface {
+	call(method string, input any) any
+	callResult(method, taskID string, input any) (any, error)
+}
+
+type workflowCallBridge struct {
+	caller *rpcCaller
+}
+
+func (bridge workflowCallBridge) call(method string, input any) any {
+	return bridge.caller.call(method, "", "", input)
+}
+
+func (bridge workflowCallBridge) callResult(method, taskID string, input any) (any, error) {
+	return bridge.caller.callResult(method, taskID, "", input)
+}
+
+// workflowModeBindings builds the "librecode/workflow" package exposed to
+// workflow source. It is the single source of truth for binding signatures:
+// both worker evaluation and compile-time validation derive from it, so a
+// signature change cannot make validation accept what execution rejects (or
+// vice versa).
+func workflowModeBindings(arguments map[string]any, bridge callBridge) mvmhost.Bindings {
 	return mvmhost.Bindings{"librecode/workflow": {
 		"Arguments": arguments,
 		"Agent": func(prompt string, options ...map[string]any) (any, error) {
-			return caller.callResult("workflow_agent", "", "", map[string]any{"prompt": prompt, "options": options})
+			return bridge.callResult("workflow_agent", "", map[string]any{"prompt": prompt, "options": options})
 		},
 		"Wait": func(taskID string) (any, error) {
-			return caller.callResult("workflow_wait", taskID, "", nil)
+			return bridge.callResult("workflow_wait", taskID, nil)
 		},
-		"List": func() (any, error) { return caller.callResult("workflow_list", "", "", nil) },
+		"List": func() (any, error) { return bridge.callResult("workflow_list", "", nil) },
 		"Cancel": func(taskID string) (any, error) {
-			return caller.callResult("workflow_cancel", taskID, "", nil)
+			return bridge.callResult("workflow_cancel", taskID, nil)
 		},
 		"Pipeline": func(items []any, callback func(any) (any, error), concurrency int) (any, error) {
 			results, err := workerPipeline(items, callback, concurrency)
 
 			return pipelineValue(results), err
 		},
-	}}, nil
+	}}
+}
+
+// WorkflowModeBindings exposes the workflow-mode binding set for compile-only
+// validation. Signatures match worker evaluation because both derive from
+// workflowModeBindings; callables never run during compilation.
+func WorkflowModeBindings(arguments map[string]any) mvmhost.Bindings {
+	return workflowModeBindings(arguments, inertCallBridge{})
+}
+
+// inertCallBridge satisfies callBridge without doing anything. Compilation
+// never invokes bindings, but an unreachable path must fail loudly rather than
+// silently return nil results.
+type inertCallBridge struct{}
+
+func (inertCallBridge) call(method string, _ any) any {
+	panic("executeworker: workflow binding " + method + " must not be called during compile")
+}
+
+func (inertCallBridge) callResult(method, _ string, _ any) (any, error) {
+	panic("executeworker: workflow binding " + method + " must not be called during compile")
 }
 
 type pipelineValue []map[string]any
