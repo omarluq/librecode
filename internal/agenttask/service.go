@@ -30,10 +30,6 @@ const (
 	leaseDuration             = 30 * time.Second
 	leaseHeartbeatInterval    = 10 * time.Second
 	leaseRenewalRetryInterval = 250 * time.Millisecond
-	// leaseRenewalWindow bounds the total renewal retry budget per heartbeat.
-	// It stays below the heartbeat interval so a stuck renewal never starves the
-	// next scheduled renewal of the 30s lease.
-	leaseRenewalWindow = 8 * time.Second
 	// leaseBusyGrace outlasts the database busy_timeout (15s default) so a
 	// renewal attempt waits for the SQLite write lock instead of aborting while
 	// the driver would still have succeeded.
@@ -132,7 +128,6 @@ type Service struct {
 	leaseDuration             time.Duration
 	leaseHeartbeatInterval    time.Duration
 	leaseRenewalRetryInterval time.Duration
-	leaseRenewalWindow        time.Duration
 	concurrency               int
 	sessionConcurrency        int
 	started                   bool
@@ -192,9 +187,8 @@ func NewStopped(ctx context.Context, options *Options) (*Service, error) {
 		awaitGetFn:                options.AgentTasks.Get,
 		awaitPollEvery:            awaitPollInterval,
 		leaseHeartbeatInterval:    leaseHeartbeatInterval,
-		leaseRenewalRetryInterval: leaseRenewalRetryInterval,
-		leaseRenewalWindow:        leaseRenewalWindow, mu: sync.Mutex{},
-		lifecycle: sync.Mutex{}, started: false, closed: false,
+		leaseRenewalRetryInterval: leaseRenewalRetryInterval, started: false, closed: false,
+		mu: sync.Mutex{}, lifecycle: sync.Mutex{},
 	}
 	if err := service.recoverInterrupted(ctx); err != nil {
 		return nil, err
@@ -881,36 +875,41 @@ func (service *Service) renewLease(
 	ticker := time.NewTicker(service.leaseHeartbeatInterval)
 	defer ticker.Stop()
 
+	validUntil := time.Now().Add(service.leaseDuration)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if !service.renewLeaseWithRetry(ctx, taskID) {
-				cancel()
+			if service.renewLeaseWithRetry(ctx, taskID, validUntil) {
+				validUntil = time.Now().Add(service.leaseDuration)
 
-				return
+				continue
 			}
+
+			cancel()
+
+			return
 		}
 	}
 }
 
-// renewLeaseWithRetry renews the lease within a bounded window instead of a
-// fixed attempt count. SQLite waits up to its busy_timeout for the write lock,
-// so each attempt gets min(busy grace, remaining window): a busy database gets
-// the full window to succeed while genuine lease loss (renewed=false) still
-// fails fast.
-func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string) bool {
+// renewLeaseWithRetry renews the lease, retrying transient database errors
+// until the lease actually expires instead of an arbitrary retry window: a
+// transient outage shorter than the lease must never forfeit it. SQLite waits
+// up to its busy_timeout for the write lock, so each attempt gets
+// min(busy grace, remaining lease validity) — a busy database keeps its chance
+// to succeed while genuine lease loss (renewed=false) still fails fast.
+func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string, deadline time.Time) bool {
 	const busyGrace = leaseBusyGrace
-
-	deadline := time.Now().Add(service.leaseRenewalWindow)
 
 	for attempt := 1; ; attempt++ {
 		timeout := min(busyGrace, time.Until(deadline))
 		if timeout <= 0 {
-			service.logError(ctx, "renew agent task lease after retries", "task_id", taskID,
+			service.logError(ctx, "renew agent task lease after lease expiry", "task_id", taskID,
 				"lease_owner", service.leaseOwner, "attempts", attempt-1,
-				"renewal_window", service.leaseRenewalWindow)
+				"lease_duration", service.leaseDuration)
 
 			return false
 		}
@@ -925,16 +924,16 @@ func (service *Service) renewLeaseWithRetry(ctx context.Context, taskID string) 
 		}
 
 		if !time.Now().Before(deadline) {
-			service.logError(ctx, "renew agent task lease after retries", "task_id", taskID,
+			service.logError(ctx, "renew agent task lease after lease expiry", "task_id", taskID,
 				"lease_owner", service.leaseOwner, "attempts", attempt,
-				"renewal_window", service.leaseRenewalWindow, "error", err)
+				"lease_duration", service.leaseDuration, "error", err)
 
 			return false
 		}
 
 		service.logWarn(ctx, "retry agent task lease renewal", "task_id", taskID,
 			"lease_owner", service.leaseOwner, "attempt", attempt,
-			"renewal_window", service.leaseRenewalWindow,
+			"lease_duration", service.leaseDuration,
 			"retry_after", service.leaseRenewalRetryInterval, "error", err)
 
 		retryDelay := min(service.leaseRenewalRetryInterval, time.Until(deadline))
