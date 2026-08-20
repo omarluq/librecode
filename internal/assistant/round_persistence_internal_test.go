@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,6 +108,73 @@ func TestRuntime_PersistCompletedRoundPreservesOrderAndUsage(t *testing.T) {
 	expectedUsage := llmconv.UsageToModel(&usage)
 	assert.Equal(t, expectedUsage.InputTokens, contextEntity.UsageAnchor.Usage.InputTokens)
 	assert.Equal(t, expectedUsage.OutputTokens, contextEntity.UsageAnchor.Usage.OutputTokens)
+}
+
+func TestRuntime_PersistCompletedRoundCoalescesHighDeltaThinkingAtBoundary(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	harness := newRoundPersistenceTestHarness(t, "joined thinking")
+
+	const deltaCount = 4_096
+
+	deltas := make([]string, deltaCount)
+	for index := range deltas {
+		deltas[index] = "x"
+	}
+
+	joinedThinking := "  first  line\n" + strings.Join(deltas, "") + "\nlast line  "
+	wantThinking := strings.TrimSpace(joinedThinking)
+
+	lineage := newPromptLineage(harness.rootID)
+	entry, err := harness.runtime.persistCompletedRoundWithPersistence(
+		ctx, harness.sessionID, lineage, &llm.CompletedRound{
+			Assistant: llm.Message{Metadata: nil, Role: llm.RoleAssistant, Content: []llm.Part{
+				{
+					Metadata: nil, ToolCall: nil, ToolResult: nil, Type: llm.PartReasoning,
+					Text: joinedThinking, Data: "", MIMEType: "",
+				},
+				llm.TextPart("finished"),
+			}},
+			ToolResults: []llm.ToolResult{{
+				Metadata: nil, ToolCallID: "call-scale", ArgumentsJSON: `{}`, Name: "read", Error: "",
+				Content: []llm.Part{llm.TextPart("result")}, IsError: false,
+			}},
+			FinishReason: llm.FinishReasonToolCalls,
+			Usage:        llm.EmptyUsage(),
+		},
+	)
+	require.NoError(t, err)
+
+	messages, err := harness.repository.Messages(ctx, harness.sessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 4)
+	assert.Equal(t, []database.Role{
+		database.RoleUser,
+		database.RoleThinking,
+		database.RoleToolResult,
+		database.RoleAssistant,
+	}, []database.Role{messages[0].Role, messages[1].Role, messages[2].Role, messages[3].Role})
+	assert.Equal(t, wantThinking, messages[1].Content)
+	assert.Equal(t, "finished", messages[3].Content)
+
+	thinkingCount := 0
+
+	for index := range messages {
+		if messages[index].Role == database.RoleThinking {
+			thinkingCount++
+		}
+	}
+
+	assert.Equal(t, 1, thinkingCount, "persistence must scale with completed rounds, not transport deltas")
+
+	contextEntity, err := harness.repository.BuildContext(ctx, harness.sessionID, entry.ID)
+	require.NoError(t, err)
+	require.Len(t, contextEntity.Messages, 2)
+	assert.Equal(t, []database.Role{
+		database.RoleUser,
+		database.RoleAssistant,
+	}, []database.Role{contextEntity.Messages[0].Role, contextEntity.Messages[1].Role})
 }
 
 func TestRuntime_PersistCompletedRoundRejectsNilInput(t *testing.T) {
