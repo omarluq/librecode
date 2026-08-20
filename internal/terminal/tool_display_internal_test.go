@@ -434,8 +434,9 @@ func TestRenderToolDisplayWrapsLongTitleWithinPadding(t *testing.T) {
 	lines := app.renderToolDisplayBlock(18, &display)
 	texts := lineTexts(lines)
 
-	assert.Contains(t, texts, "  ◌ $ word word   ")
-	assert.Contains(t, texts, "  word word       ")
+	repeatedWords := strings.TrimSpace(strings.Repeat("word ", 2))
+	assert.Contains(t, texts, "  ◌ $ "+repeatedWords+"   ")
+	assert.Contains(t, texts, "  "+repeatedWords+"       ")
 }
 
 func TestHiddenToolLinesTextIncludesExpandHint(t *testing.T) {
