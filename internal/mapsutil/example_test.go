@@ -37,7 +37,7 @@ func ExampleClonePreserveNil() {
 // CloneOrNil collapses nil and empty input to nil, keeping `omitempty`
 // fields out of serialized output.
 func ExampleCloneOrNil() {
-	var empty map[string]string
+	empty := map[string]string{}
 
 	fmt.Println(mapsutil.CloneOrNil(map[string]string(nil)) == nil)
 	fmt.Println(mapsutil.CloneOrNil(empty) == nil)
