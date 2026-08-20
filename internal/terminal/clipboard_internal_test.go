@@ -108,8 +108,8 @@ func newClipboardScreen() *clipboardScreen {
 		events:    make(chan tcell.Event, 8),
 		stop:      make(chan struct{}),
 		clipboard: nil,
-		mu:        sync.Mutex{},
 		size:      [2]int{80, 24},
+		mu:        sync.Mutex{},
 	}
 }
 

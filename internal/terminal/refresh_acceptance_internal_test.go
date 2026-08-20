@@ -505,7 +505,8 @@ func TestLoadTerminalRefreshSnapshotAssociatesWorkflowDetailsWithRuns(t *testing
 			{AgentTask: taskB, Link: refreshWorkflowLink(runB.Task.ID, taskB.Task.ID, "")},
 			{AgentTask: taskA, Link: refreshWorkflowLink(runA.Task.ID, taskA.Task.ID, "")},
 		},
-		listActiveCall: 0, listCall: 0, getCall: 0, detailCall: 0, mu: sync.Mutex{},
+		listActiveCall: 0, listCall: 0, getCall: 0, detailCall: 0,
+		mu: sync.Mutex{},
 	}
 
 	snapshot := loadTerminalRefreshSnapshot(t.Context(), &terminalRefreshRequest{
@@ -533,7 +534,8 @@ func TestTerminalPanelsUsePublishedSnapshotsWithoutDuplicateQueries(t *testing.T
 	child := behaviorAgentTask("child", database.TaskSucceeded)
 	agentStub := newAgentTaskControllerStub(nil, []database.AgentTaskEntity{agent})
 	toolStub := &refreshToolTaskController{
-		listStarted: nil, listRelease: nil, list: nil, mu: sync.Mutex{}, listCalls: 0,
+		listStarted: nil, listRelease: nil, list: nil, listCalls: 0,
+		mu: sync.Mutex{},
 	}
 	workflowStub := &refreshWorkflowInspector{
 		runs: []database.WorkflowRunEntity{run},
@@ -541,7 +543,8 @@ func TestTerminalPanelsUsePublishedSnapshotsWithoutDuplicateQueries(t *testing.T
 			AgentTask: child,
 			Link:      refreshWorkflowLink(run.Task.ID, child.Task.ID, "build"),
 		}},
-		listActiveCall: 0, listCall: 0, getCall: 0, detailCall: 0, mu: sync.Mutex{},
+		listActiveCall: 0, listCall: 0, getCall: 0, detailCall: 0,
+		mu: sync.Mutex{},
 	}
 	app, _ := newRefreshTestApp(t)
 	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {

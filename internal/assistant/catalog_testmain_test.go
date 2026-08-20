@@ -26,6 +26,7 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(
 		m,
 		goleak.IgnoreAnyFunction("net/http.(*http2ClientConn).readLoop"),
+		goleak.IgnoreAnyFunction("net/http/internal/http2.(*ClientConn).readLoop"),
 		goleak.Cleanup(testutil.TestMainHome("assistant")),
 	)
 }

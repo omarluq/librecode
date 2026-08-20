@@ -51,14 +51,27 @@ func (app *App) captureTerminalRefreshRequest() terminalRefreshRequest {
 		agentIDs[index] = app.agentTasks[index].Task.ID
 	}
 
-	workflowIDs := make([]string, len(app.activeWorkflows))
+	workflowIDs := make([]string, 0, len(app.activeWorkflows)+len(app.workflowPanelSnapshot)+1)
 	knownWorkflowIDs := make([]string, 0, len(app.activeWorkflows)+len(app.workflowPanelSnapshot)+1)
 	known := make(map[string]struct{})
 
 	for index := range app.activeWorkflows {
-		workflowIDs[index] = app.activeWorkflows[index].Task.ID
-		known[workflowIDs[index]] = struct{}{}
-		knownWorkflowIDs = append(knownWorkflowIDs, workflowIDs[index])
+		workflowIDs = append(workflowIDs, app.activeWorkflows[index].Task.ID)
+		known[workflowIDs[len(workflowIDs)-1]] = struct{}{}
+		knownWorkflowIDs = append(knownWorkflowIDs, workflowIDs[len(workflowIDs)-1])
+	}
+
+	// Submitted runs that have not been observed yet are tracked exactly so the
+	// refresh worker can resolve them even when ListActive already excludes a
+	// quickly terminal run.
+	for _, runID := range app.pendingWorkflowRunIDs() {
+		if _, found := known[runID]; found {
+			continue
+		}
+
+		workflowIDs = append(workflowIDs, runID)
+		known[runID] = struct{}{}
+		knownWorkflowIDs = append(knownWorkflowIDs, runID)
 	}
 
 	for index := range app.workflowPanelSnapshot {
@@ -410,6 +423,8 @@ func (app *App) applyTerminalRefreshSnapshot(ctx context.Context, snapshot *term
 	if snapshot.ActiveWorkflow.Valid {
 		app.applyLoadedWorkflows(ctx, snapshot)
 	}
+
+	app.reconcilePendingWorkflows(ctx, snapshot)
 
 	if snapshot.AgentPanel.Valid {
 		app.agentTaskPanelSnapshot = slices.Clone(snapshot.AgentPanel.Value)

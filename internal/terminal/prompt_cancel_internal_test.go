@@ -34,8 +34,8 @@ func newTerminalSteeringCancelCompleter() *terminalSteeringCancelCompleter {
 		proceed:       make(chan struct{}),
 		second:        make(chan *assistant.CompletionRequest, 1),
 		releaseSecond: make(chan struct{}),
-		lock:          sync.Mutex{},
 		calls:         0,
+		lock:          sync.Mutex{},
 	}
 }
 
