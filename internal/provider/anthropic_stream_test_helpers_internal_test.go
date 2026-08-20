@@ -109,7 +109,7 @@ func anthropicToolUseBlockData(index int, callID, name string, input any) string
 
 func anthropicMessageDeltaLines(stopReason string, stopDetails *anthropicStopDetails) []string {
 	if stopReason == "" {
-		stopReason = "end_turn"
+		stopReason = anthropicStopEndTurn
 	}
 
 	delta := map[string]any{anthropicStopReasonKey: stopReason}

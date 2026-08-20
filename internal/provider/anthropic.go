@@ -447,7 +447,7 @@ func anthropicRefusalText(details *anthropicStopDetails) string {
 
 func anthropicFinishReason(reason string, hasToolCalls bool) llm.FinishReason {
 	switch reason {
-	case "end_turn", "stop_sequence":
+	case anthropicStopEndTurn, "stop_sequence":
 		return llm.FinishReasonStop
 	case finishReasonMaxTokens, "model_context_window_exceeded":
 		return llm.FinishReasonLength

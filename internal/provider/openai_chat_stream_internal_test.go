@@ -48,7 +48,7 @@ func TestParseOpenAIChatStreamTextThinkingToolCallsAndUsage(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "hello world", result.Text)
-	assert.Equal(t, []string{"think ", "fallback"}, result.Thinking)
+	assert.Equal(t, []string{"think fallback"}, result.Thinking)
 	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
 	assert.Equal(t, 4, result.Usage.InputTokens)
 	assert.Equal(t, 2, result.Usage.OutputTokens)
@@ -60,6 +60,20 @@ func TestParseOpenAIChatStreamTextThinkingToolCallsAndUsage(t *testing.T) {
 	require.Len(t, events, 4)
 	assert.Equal(t, llm.PartReasoning, events[0].Type)
 	assert.Equal(t, llm.PartText, events[1].Type)
+}
+
+func TestParseOpenAIChatStreamStopsAtFinishReason(t *testing.T) {
+	t.Parallel()
+
+	stream := openAIChatStream(
+		openAIChatDelta(map[string]any{"reasoning_content": "finished"}, "stop", nil),
+		"data: invalid-json",
+	)
+	result, err := parseOpenAIChatStream(strings.NewReader(stream), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"finished"}, result.Thinking)
+	assert.Equal(t, llm.FinishReasonStop, result.FinishReason)
 }
 
 func TestParseOpenAIChatStreamHandlesErrorsAndIncompleteStreams(t *testing.T) {
