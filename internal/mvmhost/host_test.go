@@ -395,3 +395,66 @@ func TestEvalError_Unwrap(t *testing.T) {
 	err := &mvmhost.EvalError{Err: cause, Kind: mvmhost.ErrorKindRuntime, ExitCode: 0}
 	assert.ErrorIs(t, err, cause)
 }
+
+func TestEvaluator_Compile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		source    string
+		wantError string
+	}{
+		{name: "valid expression", source: "1 + 1", wantError: ""},
+		{
+			name: "valid function", source: "func add(a, b int) int { return a + b }; add(1, 2)",
+			wantError: "",
+		},
+		{
+			name:      "parse error",
+			source:    "func {",
+			wantError: "mvm compile error",
+		},
+		{
+			name:      "undefined symbol",
+			source:    "undefinedSymbol()",
+			wantError: "mvm compile error",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := mvmhost.Request{Bindings: nil, Name: "compile.go", Source: test.source}
+
+			err := mvmhost.New().Compile(request)
+			if test.wantError == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.wantError)
+		})
+	}
+}
+
+func TestEvaluator_CompileDoesNotExecuteSource(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	bindings := mvmhost.Bindings{"hostpkg": {
+		"SideEffect": func() int {
+			called = true
+
+			return 1
+		},
+	}}
+
+	source := `import "hostpkg"; x := hostpkg.SideEffect(); _ = x`
+	request := mvmhost.Request{Bindings: bindings, Name: "compile.go", Source: source}
+	err := mvmhost.New().Compile(request)
+	require.NoError(t, err)
+	assert.False(t, called, "compilation must not invoke host bindings")
+}

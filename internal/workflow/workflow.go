@@ -13,6 +13,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/executeworker"
+	"github.com/omarluq/librecode/internal/mvmhost"
 )
 
 const (
@@ -114,6 +115,22 @@ func NewRunner(controller Controller) (*Runner, error) {
 	}
 
 	return &Runner{controller: controller, executable: ""}, nil
+}
+
+// ValidateSource compiles workflow source without executing it. It rejects
+// programs that could never run (parse and type errors, bad imports) so the
+// submitter sees the compiler diagnostics inline instead of a durable run
+// that fails milliseconds after submission.
+func (runner *Runner) ValidateSource(name, source string, arguments map[string]any) error {
+	if err := mvmhost.New().Compile(mvmhost.Request{
+		Bindings: executeworker.WorkflowModeBindings(arguments),
+		Name:     name,
+		Source:   source,
+	}); err != nil {
+		return oops.In("workflow").Code("validate_source").Wrapf(err, "compile workflow source")
+	}
+
+	return nil
 }
 
 // Run evaluates source and waits for any Agent/Wait calls made by that source.

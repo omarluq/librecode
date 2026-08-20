@@ -24,7 +24,10 @@ import (
 
 const serviceQueuedName = "queued"
 
-const serviceTestSource = "1 + 1"
+const (
+	serviceTestSource = "1 + 1"
+	invalidRunName    = "invalid"
+)
 
 func TestServiceRejectsMissingDependencies(t *testing.T) {
 	t.Parallel()
@@ -65,6 +68,37 @@ func TestServiceSubmitRejectsNilRequest(t *testing.T) {
 	run, err := service.Submit(t.Context(), nil)
 	require.ErrorContains(t, err, "request is required")
 	assert.Nil(t, run)
+}
+
+func TestServiceSubmitRejectsInvalidSourceInline(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
+		Name: invalidRunName, Source: `func {`, SourceVersion: "v1", ArgumentsJSON: "{}",
+		OwnerSessionID: owner,
+	})
+	require.Error(t, err)
+	assert.Nil(t, run)
+	require.ErrorContains(t, err, "workflow source does not compile")
+
+	// No doomed run may be persisted for the TUI to track.
+	active, err := service.ListActive(t.Context(), owner, 10)
+	require.NoError(t, err)
+	assert.Empty(t, active)
+}
+
+func TestServiceSubmitAcceptsWorkflowBindingSource(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
+		Name:          "agents",
+		Source:        `import "librecode/workflow"; id, _ := workflow.Agent("inspect"); workflow.Wait(id)`,
+		SourceVersion: "v1", ArgumentsJSON: `{"x": 1}`, OwnerSessionID: owner,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, database.TaskQueued, run.Task.State)
 }
 
 func TestServiceAwaitMissingRun(t *testing.T) {
@@ -218,9 +252,11 @@ func TestServicePersistsSuccessfulRun(t *testing.T) {
 func TestServicePersistsFailedRun(t *testing.T) {
 	t.Parallel()
 
+	// Runtime failure, not a compile error: compile-invalid source is rejected
+	// at Submit/Run time now.
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, _, err := service.Run(t.Context(), &workflow.ServiceRequest{
-		Name: "invalid", Source: `func {`, SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: invalidRunName, Source: `divisor := 0; _ = 1 / divisor`, SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner,
 	})
 	require.Error(t, err)
@@ -237,7 +273,7 @@ func TestServiceExecuteQueuedPersistsEvaluationFailureWithoutReturningIt(t *test
 
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
-		Name: "invalid", Source: `func {`, SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: invalidRunName, Source: `divisor := 0; _ = 1 / divisor`, SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
