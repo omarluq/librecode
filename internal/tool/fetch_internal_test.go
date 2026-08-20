@@ -695,11 +695,13 @@ func fetchTestResolvedDialCases() []fetchTestPinnedDialCase {
 			name:    "trailing dot hostname is normalized",
 			network: fetchTestNetworkTCP,
 			address: "Example.Test.:80",
+			// Distinct from the fetchTestLookupTool fallback IP so a
+			// normalization regression hits the fallback and fails this case.
 			lookups: map[string][]net.IPAddr{
-				fetchTestExampleHost: {{IP: net.ParseIP("93.184.216.34")}},
+				fetchTestExampleHost: {{IP: net.ParseIP("198.51.100.10")}},
 			},
 			wantErr: "",
-			wantPin: "93.184.216.34:80",
+			wantPin: "198.51.100.10:80",
 		},
 	}
 }
