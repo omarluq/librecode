@@ -17,7 +17,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/gdamore/tcell/v3 v3.4.1
+	github.com/gdamore/tcell/v3 v3.4.2
 	github.com/go-git/go-billy/v5 v5.9.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
