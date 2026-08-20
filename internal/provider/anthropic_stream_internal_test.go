@@ -78,6 +78,34 @@ func TestParseAnthropicStreamTextThinkingToolUseAndUsage(t *testing.T) {
 	assert.Equal(t, llm.PartText, events[1].Type)
 }
 
+func TestParseAnthropicStreamStopsAtMessageStop(t *testing.T) {
+	t.Parallel()
+
+	stream := strings.Join([]string{
+		anthropicEventContentBlockDelta,
+		anthropicDataLine(anthropicDeltaEvent(0, anthropicThinkingDelta, "thinking", "done")),
+		"",
+		anthropicEventMessageDelta,
+		anthropicDataLine(map[string]any{
+			jsonTypeKey: anthropicMessageDeltaEvent,
+			anthropicDeltaKey: map[string]any{
+				anthropicStopReasonKey: anthropicStopEndTurn,
+			},
+		}),
+		"",
+		anthropicEventMessageStop,
+		anthropicMessageStopData,
+		"",
+		"data: invalid-json",
+		"",
+	}, "\n")
+	result, err := parseAnthropicStream(strings.NewReader(stream), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"done"}, result.Thinking)
+	assert.Equal(t, llm.FinishReasonStop, result.FinishReason)
+}
+
 func TestParseAnthropicStreamHandlesErrorsRefusalsAndIncompleteStreams(t *testing.T) {
 	t.Parallel()
 

@@ -115,6 +115,17 @@ func TestParseOpenAIResponseStreamUsesOutputTextAndErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "bad request")
 }
 
+func TestParseOpenAIResponseStreamStopsAtTerminalEvent(t *testing.T) {
+	t.Parallel()
+
+	stream := openAIResponseCompletedStream(`{"output_text":"ok"}`) +
+		"data: invalid-json\n\n"
+	result, err := parseSSEResult(strings.NewReader(stream), nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, "ok", result.Text)
+}
+
 func TestParseOpenAIResponseStreamStopsAtDoneMarker(t *testing.T) {
 	t.Parallel()
 

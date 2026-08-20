@@ -35,11 +35,11 @@ func newSSEAccumulator() *sseAccumulator {
 	}
 }
 
-func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(*llm.StreamChunk)) {
+func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(*llm.StreamChunk)) error {
 	accumulator.addResponseEventState(event)
 
 	if accumulator.terminalErr != nil {
-		return
+		return errSSEDone
 	}
 
 	accumulator.addResponse(event)
@@ -71,6 +71,12 @@ func (accumulator *sseAccumulator) add(event map[string]any, onEvent func(*llm.S
 	if arguments, ok := event["arguments"].(string); ok {
 		accumulator.addArguments(event, arguments)
 	}
+
+	if accumulator.terminal {
+		return errSSEDone
+	}
+
+	return nil
 }
 
 func (accumulator *sseAccumulator) addResponseEventState(event map[string]any) {
@@ -246,9 +252,7 @@ func scanResponsesSSE(
 			return err
 		}
 
-		accumulator.add(decoded, onEvent)
-
-		return nil
+		return accumulator.add(decoded, onEvent)
 	})
 	if errors.Is(err, errSSEDone) {
 		return nil
