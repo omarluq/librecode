@@ -120,6 +120,7 @@ func (app *App) resetAgentTaskTracking() {
 	app.workflowPanelSnapshotValid = false
 	app.workflowDetailSnapshotValid = false
 	app.workflowProgress = map[string]workflowProgress{}
+	app.pendingWorkflowRuns = map[string]int{}
 	app.workflowSteps = map[string][]database.WorkflowAgentTaskDetail{}
 	app.agentTaskUsageTotals = map[string]model.UsageTotals{}
 	app.workflowSummaryMetrics = map[string]workflowSummaryMetric{}

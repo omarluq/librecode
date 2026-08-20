@@ -1,6 +1,7 @@
 package tool
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"slices"
@@ -270,17 +271,9 @@ func applyMatchedEdits(baseContent string, edits []matchedEdit) string {
 }
 
 func sortMatchedEdits(edits []matchedEdit) {
-	for leftIndex := 1; leftIndex < len(edits); leftIndex++ {
-		currentEdit := edits[leftIndex]
-
-		rightIndex := leftIndex - 1
-		for rightIndex >= 0 && edits[rightIndex].matchIndex > currentEdit.matchIndex {
-			edits[rightIndex+1] = edits[rightIndex]
-			rightIndex--
-		}
-
-		edits[rightIndex+1] = currentEdit
-	}
+	slices.SortStableFunc(edits, func(left, right matchedEdit) int {
+		return cmp.Compare(left.matchIndex, right.matchIndex)
+	})
 }
 
 func notFoundError(displayPath string, editIndex, totalEdits int) error {
