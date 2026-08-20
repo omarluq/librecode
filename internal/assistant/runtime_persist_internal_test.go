@@ -115,6 +115,23 @@ func TestRespondWithPartialProgressPreservesPromptAndPersistenceErrors(t *testin
 	assert.Contains(t, joined.Error(), "persist failed prompt progress")
 }
 
+func TestPartialPromptProgressCoalescesAdjacentThinkingDeltas(t *testing.T) {
+	t.Parallel()
+
+	progress := newPartialPromptProgress(nil)
+	for _, delta := range []string{" use ", "the", "\n", "tool "} {
+		progress.record(StreamEvent{
+			ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
+			Kind: StreamEventThinkingDelta, Text: delta,
+		})
+	}
+
+	blocks := progress.persistableBlocks()
+	require.Len(t, blocks, 1)
+	assert.Equal(t, transcript.RoleThinking, blocks[0].Role)
+	assert.Equal(t, " use the\ntool ", blocks[0].Content)
+}
+
 func TestRuntime_AppendPartialPromptFailureKeepsEarlierMessagesWhenLaterAppendFails(t *testing.T) {
 	t.Parallel()
 
