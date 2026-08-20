@@ -7,6 +7,8 @@ import (
 
 const (
 	commandWaitDelay          = 2 * time.Second
+	fullBashOutputPrefix      = "librecode-bash-"
+	fullBashOutputRetention   = 7 * 24 * time.Hour
 	limitSuggestionMultiplier = 2
 	maxTruncationLines        = 200
 	privateDirMode            = 0o700

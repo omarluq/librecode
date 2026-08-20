@@ -192,7 +192,7 @@ func formatReadOutput(
 ) (output string, details map[string]any) {
 	startLineDisplay := startLine + 1
 	if truncation.FirstLineExceedsLimit {
-		firstLineSize := FormatSize(len([]byte(allLines[startLine])))
+		firstLineSize := FormatSize(len(allLines[startLine]))
 
 		return fmt.Sprintf(
 			"[Line %d is %s, exceeds %s limit. Use bash: sed -n '%dp' %s | head -c %d]",
