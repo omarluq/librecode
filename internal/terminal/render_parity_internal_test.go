@@ -271,6 +271,7 @@ func renderParityConfig() *config.Config {
 		},
 		Tasks: config.TaskRuntimeConfig{
 			Workers:          0,
+			SessionWorkers:   0,
 			PollInterval:     0,
 			LeaseDuration:    0,
 			Heartbeat:        0,

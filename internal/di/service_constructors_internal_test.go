@@ -168,6 +168,7 @@ func TestNewAgentTaskServiceRejectsIncompleteWiring(t *testing.T) {
 
 	injector := do.New()
 	provideTestApplicationContext(injector)
+	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: "", interactive: false})
 	do.ProvideValue(injector, &DatabaseService{
 		DB: nil, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, Workflows: nil, ToolTasks: nil,
 		path: "",
@@ -228,10 +229,46 @@ func TestAgentTaskServiceWiresAndShutsDown(t *testing.T) {
 	require.NotNil(t, service.Tasks())
 }
 
+func TestAgentTaskServicePropagatesConfiguredWorkerBounds(t *testing.T) {
+	t.Parallel()
+
+	cfg := testServiceConfig()
+	cfg.Tasks.Workers = 15
+	cfg.Tasks.SessionWorkers = 7
+
+	injector := do.New()
+	provideTestApplicationContext(injector)
+	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
+
+	do.ProvideValue(injector, newTestDatabaseService(t))
+	assistantService := newTestAssistantServiceWithoutConfig(t, injector)
+	do.ProvideValue(injector, assistantService)
+
+	service, err := NewAgentTaskService(injector)
+	require.NoError(t, err)
+
+	assert.Equal(t, 15, service.options.Concurrency)
+	assert.Equal(t, 7, service.options.SessionConcurrency)
+}
+
 func newTestAssistantService(t *testing.T, injector do.Injector) *AssistantService {
 	t.Helper()
 
 	provideTestAssistantDependencies(t, injector)
+	service, err := NewAssistantService(injector)
+	require.NoError(t, err)
+
+	return service
+}
+
+func newTestAssistantServiceWithoutConfig(t *testing.T, injector do.Injector) *AssistantService {
+	t.Helper()
+
+	// The caller already provided a ConfigService with a customized config;
+	// reusing provideTestAssistantDependencies would re-provide it and panic.
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	provideTestAssistantDependenciesExceptConfig(t, injector, logger)
+
 	service, err := NewAssistantService(injector)
 	require.NoError(t, err)
 

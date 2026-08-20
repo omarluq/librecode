@@ -18,6 +18,7 @@ const (
 	defaultCacheCapacity               = 512
 	defaultCacheTTL                    = 10 * time.Minute
 	defaultTaskWorkers                 = 4
+	defaultTaskSessionWorkers          = 2
 	defaultTaskPollInterval            = 250 * time.Millisecond
 	defaultTaskLeaseDuration           = 30 * time.Second
 	defaultTaskHeartbeatInterval       = 10 * time.Second

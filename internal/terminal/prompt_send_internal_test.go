@@ -776,6 +776,7 @@ func promptSendTestConfig() *config.Config {
 		Cache: config.CacheConfig{Enabled: false, Capacity: 1, TTL: time.Minute},
 		Tasks: config.TaskRuntimeConfig{
 			Workers:          0,
+			SessionWorkers:   0,
 			PollInterval:     0,
 			LeaseDuration:    0,
 			Heartbeat:        0,

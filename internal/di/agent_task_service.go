@@ -36,6 +36,13 @@ func NewAgentTaskService(injector do.Injector) (*AgentTaskService, error) {
 
 	logger := loggerService.SlogLogger
 
+	configService, err := do.Invoke[*ConfigService](injector)
+	if err != nil {
+		return nil, serviceError(err, "resolve config service")
+	}
+
+	cfg := configService.Get()
+
 	runner, err := agenttask.NewRuntimeRunner(
 		assistantService.Runtime,
 		assistantService.Agents,
@@ -49,7 +56,9 @@ func NewAgentTaskService(injector do.Injector) (*AgentTaskService, error) {
 		tasks: nil,
 		options: &agenttask.Options{
 			Tasks: databaseService.Tasks, AgentTasks: databaseService.AgentTasks, Workflows: databaseService.Workflows,
-			Runner: runner, Concurrency: 0, SessionConcurrency: 0, QueueCapacity: 0, Timeout: 0,
+			Runner:      runner,
+			Concurrency: cfg.Tasks.Workers, SessionConcurrency: cfg.Tasks.SessionWorkers,
+			QueueCapacity: 0, Timeout: 0,
 			Logger: logger,
 		},
 		lifecycle: sync.Mutex{},
