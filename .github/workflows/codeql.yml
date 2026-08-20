@@ -36,7 +36,12 @@ jobs:
         uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
         with:
           languages: go
-          build-mode: autobuild
+          build-mode: manual
+
+      - name: Build
+        run: |
+          mkdir -p bin
+          go build -v -o bin/librecode ./cmd/librecode
 
       - name: Analyze
         uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
