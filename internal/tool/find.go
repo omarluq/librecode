@@ -19,7 +19,7 @@ import (
 const defaultFindLimit = 1000
 
 func ignoredSearchDirs() []string {
-	return []string{".git", "node_modules"}
+	return []string{gitDirName, "node_modules"}
 }
 
 // FindInput contains arguments for the find tool.
@@ -143,8 +143,8 @@ func collectFindResults(ctx context.Context, searchRoot, pattern string, limit i
 		matcher:    matcher,
 		results:    []string{},
 		searchRoot: searchRoot,
-		lock:       sync.Mutex{},
 		limit:      limit,
+		lock:       sync.Mutex{},
 	}
 
 	visitor := func(currentPath string, dirEntry fs.DirEntry, walkErr error) error {

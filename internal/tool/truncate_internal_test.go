@@ -88,3 +88,32 @@ func TestTruncateLine(t *testing.T) {
 	assert.True(t, truncated)
 	assert.Len(t, text, GrepMaxLineLength+15)
 }
+
+func TestTruncationByteCountsMatchStringLengthByteLength(t *testing.T) {
+	t.Parallel()
+
+	// Multi-byte content proves len(content) and len(lines[i]) keep reporting
+	// byte counts identical to the previous len([]byte(...)) expressions.
+	const content = "héllo\n世界\nαβγδε\nok"
+
+	head := TruncateHead(content, TruncationOptions{MaxLines: 2, MaxBytes: 16})
+	assert.Equal(t, len(content), head.TotalBytes)
+	assert.Equal(t, 2, head.OutputLines)
+	assert.Equal(t, len("héllo\n世界"), head.OutputBytes)
+	assert.Equal(t, TruncatedByLines, head.TruncatedBy)
+
+	tail := TruncateTail(content, TruncationOptions{MaxLines: 2, MaxBytes: 1024})
+	assert.Equal(t, len(content), tail.TotalBytes)
+	assert.Equal(t, len("αβγδε\nok"), tail.OutputBytes)
+
+	whole := TruncateTail(content, TruncationOptions{MaxLines: 100, MaxBytes: 4096})
+	assert.False(t, whole.Truncated)
+	assert.Equal(t, len(content), whole.TotalBytes)
+	assert.Equal(t, len(content), whole.OutputBytes)
+	assert.Equal(t, content, whole.Content)
+
+	partial := TruncateTail("first\n世界世界", TruncationOptions{MaxLines: 10, MaxBytes: 6})
+	assert.True(t, partial.LastLinePartial)
+	assert.Equal(t, len(partial.Content), partial.OutputBytes)
+	assert.Equal(t, "世界", partial.Content)
+}

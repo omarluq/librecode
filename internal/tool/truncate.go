@@ -60,12 +60,12 @@ func TruncateHead(content string, options TruncationOptions) TruncationResult {
 	limits := normalizeTruncationOptions(options)
 	lines := strings.Split(content, "\n")
 
-	totalBytes := len([]byte(content))
+	totalBytes := len(content)
 	if len(lines) <= limits.MaxLines && totalBytes <= limits.MaxBytes {
 		return newTruncationResult(content, false, TruncatedByNone, false, false, lines, limits)
 	}
 
-	if len([]byte(lines[0])) > limits.MaxBytes {
+	if len(lines[0]) > limits.MaxBytes {
 		return TruncationResult{
 			Truncated:             true,
 			LastLinePartial:       false,
@@ -92,7 +92,7 @@ func TruncateHead(content string, options TruncationOptions) TruncationResult {
 		TotalLines:            len(lines),
 		TotalBytes:            totalBytes,
 		OutputLines:           len(outputLines),
-		OutputBytes:           len([]byte(outputContent)),
+		OutputBytes:           len(outputContent),
 		MaxLines:              limits.MaxLines,
 		MaxBytes:              limits.MaxBytes,
 		Content:               outputContent,
@@ -104,7 +104,7 @@ func TruncateTail(content string, options TruncationOptions) TruncationResult {
 	limits := normalizeTruncationOptions(options)
 	lines := strings.Split(content, "\n")
 
-	totalBytes := len([]byte(content))
+	totalBytes := len(content)
 	if len(lines) <= limits.MaxLines && totalBytes <= limits.MaxBytes {
 		return newTruncationResult(content, false, TruncatedByNone, false, false, lines, limits)
 	}
@@ -120,7 +120,7 @@ func TruncateTail(content string, options TruncationOptions) TruncationResult {
 		TotalLines:            len(lines),
 		TotalBytes:            totalBytes,
 		OutputLines:           len(outputLines),
-		OutputBytes:           len([]byte(outputContent)),
+		OutputBytes:           len(outputContent),
 		MaxLines:              limits.MaxLines,
 		MaxBytes:              limits.MaxBytes,
 		Content:               outputContent,
@@ -160,7 +160,7 @@ func collectHeadLines(lines []string, limits TruncationOptions) ([]string, Trunc
 	truncatedBy := TruncatedByLines
 
 	for lineIndex := 0; lineIndex < len(lines) && lineIndex < limits.MaxLines; lineIndex++ {
-		lineBytes := len([]byte(lines[lineIndex]))
+		lineBytes := len(lines[lineIndex])
 		if lineIndex > 0 {
 			lineBytes++
 		}
@@ -185,7 +185,7 @@ func collectTailLines(lines []string, limits TruncationOptions) ([]string, Trunc
 	lastLinePartial := false
 
 	for lineIndex := len(lines) - 1; lineIndex >= 0 && len(outputLines) < limits.MaxLines; lineIndex-- {
-		lineBytes := len([]byte(lines[lineIndex]))
+		lineBytes := len(lines[lineIndex])
 		if len(outputLines) > 0 {
 			lineBytes++
 		}
@@ -225,9 +225,9 @@ func newTruncationResult(
 		FirstLineExceedsLimit: firstLineExceedsLimit,
 		TruncatedBy:           truncatedBy,
 		TotalLines:            len(lines),
-		TotalBytes:            len([]byte(content)),
+		TotalBytes:            len(content),
 		OutputLines:           len(lines),
-		OutputBytes:           len([]byte(content)),
+		OutputBytes:           len(content),
 		MaxLines:              limits.MaxLines,
 		MaxBytes:              limits.MaxBytes,
 		Content:               content,

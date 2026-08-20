@@ -1,10 +1,10 @@
 package tool
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -313,7 +313,7 @@ func writeFullBashOutput(output []byte) (string, error) {
 		return "", err
 	}
 
-	file, err := os.CreateTemp(outputDir, "librecode-bash-*.log")
+	file, err := os.CreateTemp(outputDir, fullBashOutputPrefix+"*.log")
 	if err != nil {
 		return "", bashOutputFSError(err, "create full bash output file")
 	}
@@ -334,6 +334,8 @@ func writeFullBashOutput(output []byte) (string, error) {
 		return "", errors.Join(bashOutputFSError(err, "close full bash output"), cleanupErr)
 	}
 
+	cleanupStaleBashOutputs(outputDir, outputPath, time.Now())
+
 	return outputPath, nil
 }
 
@@ -351,6 +353,54 @@ func fullBashOutputDir() (string, error) {
 	return outputDir, nil
 }
 
+// cleanupStaleBashOutputs removes full bash output logs older than the retention
+// threshold. Cleanup is opportunistic: the freshly written output is always kept
+// and any failure is logged instead of failing the tool call that triggered it.
+func cleanupStaleBashOutputs(outputDir, keepPath string, now time.Time) {
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Debug("read full bash output dir for cleanup", "dir", outputDir, "error", err)
+		}
+
+		return
+	}
+
+	cutoff := now.Add(-fullBashOutputRetention)
+
+	for _, entry := range entries {
+		removeStaleBashOutput(entry, outputDir, keepPath, cutoff)
+	}
+}
+
+// removeStaleBashOutput removes a single stale full-output log unless it is the
+// freshly written file or newer than the retention cutoff.
+func removeStaleBashOutput(entry os.DirEntry, outputDir, keepPath string, cutoff time.Time) {
+	if entry.IsDir() || !strings.HasPrefix(entry.Name(), fullBashOutputPrefix) {
+		return
+	}
+
+	outputPath := filepath.Join(outputDir, entry.Name())
+	if keepPath != "" && outputPath == keepPath {
+		return
+	}
+
+	info, err := entry.Info()
+	if err != nil {
+		slog.Debug("stat full bash output for cleanup", "path", outputPath, "error", err)
+
+		return
+	}
+
+	if info.ModTime().After(cutoff) {
+		return
+	}
+
+	if err := os.Remove(outputPath); err != nil {
+		slog.Debug("remove stale full bash output", "path", outputPath, "error", err)
+	}
+}
+
 func bashOutputFSError(err error, message string) error {
 	return oops.In("tool.bash").Code("bash-output-fs").Wrapf(err, "%s", message)
 }
@@ -364,12 +414,12 @@ func bashOutputCleanupError(err error, message string) error {
 }
 
 func lastLineByteCount(text string) int {
-	lastNewline := bytes.LastIndexByte([]byte(text), '\n')
+	lastNewline := strings.LastIndexByte(text, '\n')
 	if lastNewline == -1 {
-		return len([]byte(text))
+		return len(text)
 	}
 
-	return len([]byte(text[lastNewline+1:]))
+	return len(text[lastNewline+1:])
 }
 
 func appendStatus(text, status string) string {
