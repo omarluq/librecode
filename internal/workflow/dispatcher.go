@@ -90,7 +90,8 @@ func NewStoppedDispatcher(ctx context.Context, options DispatcherOptions) (*Disp
 		service: options.Service, tasks: options.Tasks, logger: logger,
 		queue: make(chan string, buffer), cancel: nil, done: nil,
 		wg: sync.WaitGroup{}, submits: sync.WaitGroup{},
-		interval: interval, concurrency: concurrency, mu: sync.Mutex{}, closed: false, started: false,
+		interval: interval, concurrency: concurrency, closed: false, started: false,
+		mu: sync.Mutex{},
 	}
 
 	return dispatcher, nil

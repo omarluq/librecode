@@ -79,7 +79,8 @@ func NewService(runs *database.WorkflowRepository, runner *Runner) (*Service, er
 
 	return &Service{
 		runs: runs, runner: runner, active: make(map[string]context.CancelFunc),
-		leaseOwner: leaseOwner.String(), mu: sync.Mutex{},
+		leaseOwner: leaseOwner.String(),
+		mu:         sync.Mutex{},
 	}, nil
 }
 

@@ -520,7 +520,8 @@ func updatePeak(peak *atomic.Int64, value int64) {
 func newFakeController() *fakeController {
 	return &fakeController{
 		tasks: make(map[string]*database.AgentTaskEntity), await: nil, submitCh: nil, taskIDs: nil,
-		submits: nil, cancels: nil, cancelSources: nil, mu: sync.Mutex{},
+		submits: nil, cancels: nil, cancelSources: nil,
+		mu: sync.Mutex{},
 	}
 }
 

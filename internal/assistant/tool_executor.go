@@ -229,7 +229,8 @@ func (*Runtime) executePreparedToolCall(
 	}
 
 	scope := &toolInvocationScope{
-		onEvent: onEvent, parentCallID: prepared.call.ID, nextSequence: 0, mu: sync.Mutex{},
+		onEvent: onEvent, parentCallID: prepared.call.ID, nextSequence: 0,
+		mu: sync.Mutex{},
 	}
 	nestedCtx := context.WithValue(ctx, toolInvocationContextKey{}, scope)
 	nestedCtx = withTaskInvocation(nestedCtx, &tooltask.Invocation{
@@ -353,7 +354,8 @@ func (runtime *Runtime) invokeToolResult(
 	emitProviderToolStart(onEvent, callEvent)
 
 	scope := &toolInvocationScope{
-		onEvent: onEvent, parentCallID: callEvent.ID, nextSequence: 0, mu: sync.Mutex{},
+		onEvent: onEvent, parentCallID: callEvent.ID, nextSequence: 0,
+		mu: sync.Mutex{},
 	}
 	nestedCtx := context.WithValue(ctx, toolInvocationContextKey{}, scope)
 	nestedCtx = withTaskInvocation(nestedCtx, &tooltask.Invocation{

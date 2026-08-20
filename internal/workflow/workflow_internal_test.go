@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
+
 	"testing"
 	"time"
 
@@ -341,7 +342,8 @@ func newBranchHost(controller Controller) *runHost {
 		controller: controller, runID: "", onEvent: nil,
 		ownerSessionID: testBranchOwner, launched: make(map[string]struct{}),
 		invocations: make(map[string]int), persisted: make(map[invocationKey]persistedInvocation),
-		taskIDs: make([]string, 0), mu: sync.Mutex{}, launchMu: sync.Mutex{}, eventMu: sync.Mutex{},
+		taskIDs: make([]string, 0),
+		mu:      sync.Mutex{}, launchMu: sync.Mutex{}, eventMu: sync.Mutex{},
 	}
 }
 
