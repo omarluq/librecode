@@ -215,6 +215,41 @@ func TestWorkflowSubmissionReconcilesLoadedRunsDuringPartialLookupFailure(t *tes
 	assert.Contains(t, app.pendingWorkflowRuns, "unresolved-run")
 }
 
+// The loop reconciles in sorted ID order, so an unresolved ID sorting first
+// must not abort reconciliation of later IDs that loaded successfully:
+// z-loaded still delivers its completion while a-unresolved stays pending.
+func TestWorkflowSubmissionReconcilesSortedLaterRunsDuringPartialLookupFailure(t *testing.T) {
+	t.Parallel()
+
+	loaded := workflowSummaryRun("z-loaded", database.TaskSucceeded)
+	app := newRenderTestApp(t)
+	app.sessionID = workflowTestSessionID
+	app.trackSubmittedWorkflow(workflowSubmittedToolEvent("a-unresolved"))
+	app.trackSubmittedWorkflow(workflowSubmittedToolEvent(loaded.Task.ID))
+	require.Equal(t, []string{"a-unresolved", loaded.Task.ID}, app.pendingWorkflowRunIDs())
+
+	// The exact-ID lookup for a-unresolved failed and sorts first; the one for
+	// z-loaded succeeded, so Value holds only the loaded run.
+	snapshot := newTerminalRefreshSnapshot(app.sessionID)
+	snapshot.ActiveWorkflow = refreshSection([]database.WorkflowRunEntity{})
+	snapshot.WorkflowByID = terminalRefreshSection[map[string]*database.WorkflowRunEntity]{
+		Value: map[string]*database.WorkflowRunEntity{loaded.Task.ID: &loaded},
+		Err:   assert.AnError,
+		Valid: false,
+	}
+
+	app.applyTerminalRefreshSnapshot(t.Context(), &snapshot)
+
+	// z-loaded sorts after the unresolved ID but is still reconciled: its
+	// completion delivered and it left the pending set.
+	assert.NotContains(t, app.pendingWorkflowRuns, loaded.Task.ID)
+	assert.Empty(t, app.activeWorkflows)
+	assert.Contains(t, app.deliveredAgentTasks, loaded.Task.ID)
+	// a-unresolved sorts first and was never loaded, so it stays pending.
+	assert.Contains(t, app.pendingWorkflowRuns, "a-unresolved")
+	assert.NotContains(t, app.deliveredAgentTasks, "a-unresolved")
+}
+
 func TestWorkflowSubmissionResolvesListedRunWithoutDuplicateLookup(t *testing.T) {
 	t.Parallel()
 

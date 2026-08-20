@@ -63,7 +63,7 @@ func (app *App) reconcilePendingWorkflows(ctx context.Context, snapshot *termina
 		// are unresolved, so keep them pending for the next refresh instead of
 		// discarding.
 		if !lookups.Valid {
-			break
+			continue
 		}
 
 		// A run listed by ListActive was not looked up again by ID. Resolve it
