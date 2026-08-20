@@ -1187,7 +1187,7 @@ func TestServiceInternalLeaseRenewalSurvivesTransientOutageShorterThanLease(t *t
 	}
 
 	done := make(chan struct{})
-	go service.renewLease(ctx, func() { canceled.Store(true) }, "task", done)
+	go service.renewLease(ctx, func() { canceled.Store(true) }, "task", nil, done)
 
 	select {
 	case <-recovered:
@@ -1213,7 +1213,7 @@ func TestServiceInternalLeaseRenewalExhaustionCancelsLongRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 
 	done := make(chan struct{})
-	go service.renewLease(ctx, cancel, "task", done)
+	go service.renewLease(ctx, cancel, "task", nil, done)
 
 	receive(t, ctx.Done(), &struct{}{}, "lease renewal did not cancel the run")
 	receive(t, done, &struct{}{}, "timed out waiting for lease renewal to stop")
@@ -1243,7 +1243,7 @@ func TestServiceInternalLeaseRenewsThroughoutLongRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 
 	done := make(chan struct{})
-	go service.renewLease(ctx, cancel, "task", done)
+	go service.renewLease(ctx, cancel, "task", nil, done)
 
 	for range wantedRenewals {
 		receive(t, renewed, &struct{}{}, "long-running task stopped renewing its lease")
@@ -1252,6 +1252,129 @@ func TestServiceInternalLeaseRenewsThroughoutLongRun(t *testing.T) {
 	cancel()
 	receive(t, done, &struct{}{}, "timed out waiting for lease renewal to stop")
 	assert.GreaterOrEqual(t, renewals.Load(), int32(wantedRenewals))
+}
+
+const (
+	// claimExpiryMissing and claimExpiryZero are sentinel claimed-lease
+	// remaining times for the renewal seeding test.
+	claimExpiryMissing = -1
+	claimExpiryZero    = -2
+)
+
+func TestServiceInternalLeaseRenewalSeedsDeadlineFromClaimedLeaseExpiry(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name               string
+		claimedRemaining   time.Duration
+		wantDeadlineMin    time.Duration
+		wantDeadlineMax    time.Duration
+	}{
+		{
+			// Claim-to-start latency means the persisted lease can expire far
+			// sooner than now+leaseDuration; the first renewal attempt must be
+			// bounded by the remaining claimed validity, not a fresh lease.
+			name:             "claimed lease expiring sooner bounds the first attempt",
+			claimedRemaining: 500 * time.Millisecond,
+			wantDeadlineMin:  300 * time.Millisecond,
+			wantDeadlineMax:  600 * time.Millisecond,
+		},
+		{
+			name:            "missing claimed expiry falls back to now plus lease duration",
+			claimedRemaining: claimExpiryMissing,
+			wantDeadlineMin:  leaseBusyGrace - 500*time.Millisecond,
+			wantDeadlineMax:  leaseBusyGrace,
+		},
+		{
+			name:            "zero claimed expiry falls back to now plus lease duration",
+			claimedRemaining: claimExpiryZero,
+			wantDeadlineMin:  leaseBusyGrace - 500*time.Millisecond,
+			wantDeadlineMax:  leaseBusyGrace,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			claimedExpiry := claimedExpiryAfter(test.claimedRemaining)
+			assertLeaseRenewalAttemptDeadline(t, claimedExpiry, test.wantDeadlineMin, test.wantDeadlineMax)
+		})
+	}
+}
+
+// claimedExpiryAfter builds the claimed lease expiry for the renewal seeding
+// test: positive durations become an in-the-future expiry (built now, not when
+// the table was declared, so suite scheduling never starts past it), while the
+// sentinels model a missing or zero expiry.
+func claimedExpiryAfter(remaining time.Duration) *time.Time {
+	if remaining == claimExpiryMissing {
+		return nil
+	}
+
+	if remaining == claimExpiryZero {
+		return &time.Time{}
+	}
+
+	expiry := time.Now().Add(remaining)
+
+	return &expiry
+}
+
+// assertLeaseRenewalAttemptDeadline verifies that the first lease renewal
+// attempt is bounded by the claimed lease expiry instead of a locally derived
+// now+leaseDuration seed.
+func assertLeaseRenewalAttemptDeadline(
+	t *testing.T,
+	claimedExpiry *time.Time,
+	wantDeadlineMin time.Duration,
+	wantDeadlineMax time.Duration,
+) {
+	t.Helper()
+
+	attemptDeadlines := make(chan time.Time, 1)
+
+	renewLease := func(ctx context.Context, _ string, _ string, _ time.Time) (bool, error) {
+		deadline, _ := ctx.Deadline()
+
+		select {
+		case attemptDeadlines <- deadline:
+		default:
+		}
+
+		return true, nil
+	}
+
+	// The service from leaseRenewalService has a one-minute lease duration, so
+	// a locally seeded deadline would grant the attempt the full busy grace
+	// instead of the shorter claimed validity.
+	service := leaseRenewalService(&bytes.Buffer{}, renewLease)
+	service.leaseHeartbeatInterval = time.Millisecond
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	done := make(chan struct{})
+	go service.renewLease(ctx, cancel, "task", claimedExpiry, done)
+
+	var deadline time.Time
+
+	select {
+	case deadline = <-attemptDeadlines:
+	case <-time.After(5 * time.Second):
+		receive(t, done, &struct{}{}, "timed out waiting for lease renewal to stop")
+
+		t.Fatal("lease renewal never attempted a renewal")
+	}
+
+	cancel()
+	receive(t, done, &struct{}{}, "timed out waiting for lease renewal to stop")
+
+	remaining := time.Until(deadline)
+	assert.GreaterOrEqual(t, remaining, wantDeadlineMin,
+		"attempt deadline must use the claimed lease expiry, not a locally derived one")
+	assert.LessOrEqual(t, remaining, wantDeadlineMax,
+		"attempt deadline must not extend past the claimed lease expiry")
 }
 
 // gateAwaitOnQueuedRead parks Await in its wait loop by signaling when its
