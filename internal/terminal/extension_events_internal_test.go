@@ -539,10 +539,12 @@ func TestExtensionTimerDeferRunsOnNextRuntimeEvent(t *testing.T) {
 	t.Parallel()
 
 	app := newExtensionRuntimeTestApp(t, `
+local function append_timer_event()
+  librecode.buf.append("events", "timer\n")
+end
+
 librecode.on("startup", function()
-  librecode.timer.defer(0, function()
-    librecode.buf.append("events", "timer\n")
-  end)
+  librecode.timer.defer(0, append_timer_event)
 end)
 `)
 
