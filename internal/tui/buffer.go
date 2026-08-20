@@ -105,19 +105,44 @@ func (buffer *CellBuffer) Clone() *CellBuffer {
 	}
 
 	cloned := &CellBuffer{
-		cells:  make([]Cell, len(buffer.cells)),
 		width:  buffer.width,
 		height: buffer.height,
+		cells:  make([]Cell, len(buffer.cells)),
 	}
-	for index, cell := range buffer.cells {
-		cloned.cells[index] = Cell{
-			Rune:  cell.Rune,
-			Comb:  append([]rune(nil), cell.Comb...),
-			Style: cell.Style,
-		}
-	}
+	cloned.store(buffer)
 
 	return cloned
+}
+
+// store overwrites the buffer with a deep copy of frame, reusing previously
+// allocated cell and combining-rune storage whenever possible.
+func (buffer *CellBuffer) store(frame *CellBuffer) {
+	buffer.width = frame.width
+
+	buffer.height = frame.height
+	if cap(buffer.cells) < len(frame.cells) {
+		buffer.cells = make([]Cell, len(frame.cells))
+	} else {
+		buffer.cells = buffer.cells[:len(frame.cells)]
+	}
+
+	for index, cell := range frame.cells {
+		copied := buffer.cells[index]
+		copied.Rune = cell.Rune
+
+		copied.Style = cell.Style
+		switch {
+		case len(cell.Comb) == 0:
+			copied.Comb = nil
+		case cap(copied.Comb) < len(cell.Comb):
+			copied.Comb = append([]rune(nil), cell.Comb...)
+		default:
+			copied.Comb = copied.Comb[:len(cell.Comb)]
+			copy(copied.Comb, cell.Comb)
+		}
+
+		buffer.cells[index] = copied
+	}
 }
 
 // Renderer flushes changed cells to a screen.
@@ -147,14 +172,24 @@ func (renderer *Renderer) Flush(frame *CellBuffer) {
 	force := renderer.previous == nil ||
 		renderer.previous.width != frame.width ||
 		renderer.previous.height != frame.height
-	for y := range frame.height {
-		for x := range frame.width {
-			cell := frame.Cell(x, y)
-			if force || !cell.Equal(renderer.previous.Cell(x, y)) {
-				renderer.screen.SetContent(x, y, cell.Rune, cell.Comb, cell.Style)
-			}
-		}
+	renderer.writeChanged(frame, force)
+
+	if renderer.previous == nil {
+		renderer.previous = NewCellBuffer(frame.width, frame.height, tcell.StyleDefault)
 	}
 
-	renderer.previous = frame.Clone()
+	renderer.previous.store(frame)
+}
+
+func (renderer *Renderer) writeChanged(frame *CellBuffer, force bool) {
+	for row := range frame.height {
+		for column := range frame.width {
+			cell := frame.Cell(column, row)
+			if !force && cell.Equal(renderer.previous.Cell(column, row)) {
+				continue
+			}
+
+			renderer.screen.SetContent(column, row, cell.Rune, cell.Comb, cell.Style)
+		}
+	}
 }

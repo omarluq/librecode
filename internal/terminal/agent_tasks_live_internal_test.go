@@ -287,6 +287,7 @@ func TestAgentTaskWatcherReplaysLiveSequenceGap(t *testing.T) {
 
 	controller := &stagedReplayAgentTaskController{
 		agentTaskControllerStub: newAgentTaskControllerStub(nil, nil),
+		mu:                      sync.Mutex{},
 		batches: [][]database.TaskEventEntity{
 			{taskStreamEvent(taskID, 1, assistant.StreamEvent{
 				ToolCallEvent: nil, ToolEvent: nil, Usage: nil,
@@ -298,7 +299,6 @@ func TestAgentTaskWatcherReplaysLiveSequenceGap(t *testing.T) {
 			})},
 		},
 		calls: 0,
-		mu:    sync.Mutex{},
 	}
 	runtime := assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
 		options.AgentTasks = controller

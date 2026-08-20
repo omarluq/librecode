@@ -165,6 +165,7 @@ type App struct {
 	lastResize                  *tcell.EventResize
 	frame                       *tui.CellBuffer
 	workflowProgress            map[string]workflowProgress
+	pendingWorkflowRuns         map[string]int
 	runtime                     *assistant.Runtime
 	sessionViews                map[string]sessionViewState
 	deliveredAgentTasks         map[string]struct{}
@@ -341,6 +342,7 @@ func initializeAppTaskState(app *App) {
 	app.toolTasks = []database.ToolTaskEntity{}
 	app.activeWorkflows = []database.WorkflowRunEntity{}
 	app.workflowProgress = map[string]workflowProgress{}
+	app.pendingWorkflowRuns = map[string]int{}
 	app.workflowSteps = map[string][]database.WorkflowAgentTaskDetail{}
 	app.agentTaskWatches = map[string]context.CancelFunc{}
 	app.agentTaskUsageTotals = map[string]model.UsageTotals{}
