@@ -3,13 +3,15 @@ package mapsutil_test
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/omarluq/librecode/internal/mapsutil"
 )
 
+// mustPrintln writes example output to stdout for godoc, panicking on write
+// errors so example bodies stay focused on the behavior under demonstration.
 func mustPrintln(values ...any) {
-	//nolint:forbidigo // helper used by godoc examples; error is checked, not ignored
-	if _, err := fmt.Println(values...); err != nil {
+	if _, err := fmt.Fprintln(os.Stdout, values...); err != nil {
 		panic(err)
 	}
 }

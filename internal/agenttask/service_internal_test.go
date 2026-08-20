@@ -1265,10 +1265,10 @@ func TestServiceInternalLeaseRenewalSeedsDeadlineFromClaimedLeaseExpiry(t *testi
 	t.Parallel()
 
 	tests := []struct {
-		name               string
-		claimedRemaining   time.Duration
-		wantDeadlineMin    time.Duration
-		wantDeadlineMax    time.Duration
+		name             string
+		claimedRemaining time.Duration
+		wantDeadlineMin  time.Duration
+		wantDeadlineMax  time.Duration
 	}{
 		{
 			// Claim-to-start latency means the persisted lease can expire far
@@ -1280,13 +1280,13 @@ func TestServiceInternalLeaseRenewalSeedsDeadlineFromClaimedLeaseExpiry(t *testi
 			wantDeadlineMax:  600 * time.Millisecond,
 		},
 		{
-			name:            "missing claimed expiry falls back to now plus lease duration",
+			name:             "missing claimed expiry falls back to now plus lease duration",
 			claimedRemaining: claimExpiryMissing,
 			wantDeadlineMin:  leaseBusyGrace - 500*time.Millisecond,
 			wantDeadlineMax:  leaseBusyGrace,
 		},
 		{
-			name:            "zero claimed expiry falls back to now plus lease duration",
+			name:             "zero claimed expiry falls back to now plus lease duration",
 			claimedRemaining: claimExpiryZero,
 			wantDeadlineMin:  leaseBusyGrace - 500*time.Millisecond,
 			wantDeadlineMax:  leaseBusyGrace,
