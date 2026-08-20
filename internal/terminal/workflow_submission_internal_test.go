@@ -183,6 +183,38 @@ func TestWorkflowSubmissionCleansUpMissingRunIDs(t *testing.T) {
 	assert.NotContains(t, app.pendingWorkflowRuns, "flaky-run")
 }
 
+// A later failed lookup must not strand runs that were already loaded
+// successfully in the same refresh: terminal entries still deliver their
+// completion, while the unresolved ID stays pending for the next refresh.
+func TestWorkflowSubmissionReconcilesLoadedRunsDuringPartialLookupFailure(t *testing.T) {
+	t.Parallel()
+
+	loaded := workflowSummaryRun("loaded-run", database.TaskSucceeded)
+	app := newRenderTestApp(t)
+	app.sessionID = workflowTestSessionID
+	app.trackSubmittedWorkflow(workflowSubmittedToolEvent(loaded.Task.ID))
+	app.trackSubmittedWorkflow(workflowSubmittedToolEvent("unresolved-run"))
+
+	// The exact-ID lookup for loaded-run succeeded; the one for
+	// unresolved-run failed, invalidating the section as a whole.
+	snapshot := newTerminalRefreshSnapshot(app.sessionID)
+	snapshot.ActiveWorkflow = refreshSection([]database.WorkflowRunEntity{})
+	snapshot.WorkflowByID = terminalRefreshSection[map[string]*database.WorkflowRunEntity]{
+		Value: map[string]*database.WorkflowRunEntity{loaded.Task.ID: &loaded},
+		Err:   assert.AnError,
+		Valid: false,
+	}
+
+	app.applyTerminalRefreshSnapshot(t.Context(), &snapshot)
+
+	// The successfully loaded terminal run is reconciled despite the invalid
+	// section: its completion delivered and it left the pending set.
+	assert.NotContains(t, app.pendingWorkflowRuns, loaded.Task.ID)
+	assert.Empty(t, app.activeWorkflows)
+	// The unresolved run was never loaded, so it stays pending for retry.
+	assert.Contains(t, app.pendingWorkflowRuns, "unresolved-run")
+}
+
 func TestWorkflowSubmissionResolvesListedRunWithoutDuplicateLookup(t *testing.T) {
 	t.Parallel()
 

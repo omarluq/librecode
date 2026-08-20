@@ -50,14 +50,20 @@ func (app *App) reconcilePendingWorkflows(ctx context.Context, snapshot *termina
 	lookups := snapshot.WorkflowByID
 
 	for _, runID := range app.pendingWorkflowRunIDs() {
-		if !lookups.Valid {
-			break
-		}
-
+		// Entries already loaded successfully are reconciled even when a later
+		// lookup failed: a partial failure must not strand terminal runs until
+		// the retry limit — their completion still delivers exactly once.
 		if run, found := lookups.Value[runID]; found {
 			app.reconcilePendingWorkflowRun(ctx, runID, run)
 
 			continue
+		}
+
+		// An invalid section means a lookup failed; entries absent from Value
+		// are unresolved, so keep them pending for the next refresh instead of
+		// discarding.
+		if !lookups.Valid {
+			break
 		}
 
 		// A run listed by ListActive was not looked up again by ID. Resolve it
