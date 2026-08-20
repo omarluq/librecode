@@ -126,10 +126,11 @@ func (retry RetryConfig) Normalized() RetryConfig {
 
 // TaskRuntimeConfig controls bounded durable background execution.
 type TaskRuntimeConfig struct {
-	Workers       int           `json:"workers" mapstructure:"workers" yaml:"workers"`
-	PollInterval  time.Duration `json:"poll_interval" mapstructure:"poll_interval" yaml:"poll_interval"`
-	LeaseDuration time.Duration `json:"lease_duration" mapstructure:"lease_duration" yaml:"lease_duration"`
-	Heartbeat     time.Duration `json:"heartbeat_interval" mapstructure:"heartbeat_interval" yaml:"heartbeat_interval"`
+	Workers        int           `json:"workers" mapstructure:"workers" yaml:"workers"`
+	SessionWorkers int           `json:"session_workers" mapstructure:"session_workers" yaml:"session_workers"`
+	PollInterval   time.Duration `json:"poll_interval" mapstructure:"poll_interval" yaml:"poll_interval"`
+	LeaseDuration  time.Duration `json:"lease_duration" mapstructure:"lease_duration" yaml:"lease_duration"`
+	Heartbeat      time.Duration `json:"heartbeat_interval" mapstructure:"heartbeat_interval" yaml:"heartbeat_interval"`
 
 	RecoveryInterval time.Duration `json:"recovery_interval" mapstructure:"recovery_interval" yaml:"recovery_interval"`
 	DefaultTimeout   time.Duration `json:"default_timeout" mapstructure:"default_timeout" yaml:"default_timeout"`
@@ -349,7 +350,7 @@ func (config *Config) validateTasks() error {
 		tasks.DefaultTimeout,
 		tasks.MaxTimeout,
 	}
-	if tasks.Workers <= 0 {
+	if tasks.Workers <= 0 || tasks.SessionWorkers <= 0 {
 		return errors.New("config: task runtime bounds must be positive")
 	}
 

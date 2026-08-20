@@ -116,6 +116,7 @@ func setDefaults(viperInstance *viper.Viper) {
 	viperInstance.SetDefault("cache.capacity", defaultCacheCapacity)
 	viperInstance.SetDefault("cache.ttl", defaultCacheTTL)
 	viperInstance.SetDefault("tasks.workers", defaultTaskWorkers)
+	viperInstance.SetDefault("tasks.session_workers", defaultTaskSessionWorkers)
 	viperInstance.SetDefault("tasks.poll_interval", defaultTaskPollInterval)
 	viperInstance.SetDefault("tasks.lease_duration", defaultTaskLeaseDuration)
 	viperInstance.SetDefault("tasks.heartbeat_interval", defaultTaskHeartbeatInterval)

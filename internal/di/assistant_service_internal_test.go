@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite" // register SQLite driver for assistant service wiring tests.
 
 	"github.com/omarluq/librecode/internal/auth"
+	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
@@ -42,9 +43,30 @@ func TestNewAssistantServiceWiresRuntimeOptions(t *testing.T) {
 func provideTestAssistantDependencies(t *testing.T, injector do.Injector) *model.Registry {
 	t.Helper()
 
+	return provideTestAssistantDependenciesWithConfig(t, injector, testServiceConfig())
+}
+
+func provideTestAssistantDependenciesWithConfig(
+	t *testing.T,
+	injector do.Injector,
+	cfg *config.Config,
+) *model.Registry {
+	t.Helper()
+
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: "", interactive: false})
+	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
+
+	return provideTestAssistantDependenciesExceptConfig(t, injector, logger)
+}
+
+func provideTestAssistantDependenciesExceptConfig(
+	t *testing.T,
+	injector do.Injector,
+	logger *slog.Logger,
+) *model.Registry {
+	t.Helper()
+
 	do.ProvideValue(injector, &ExtensionService{
 		Manager: extension.NewManager(logger),
 		State:   extension.ManagerState{Configured: nil, Loaded: nil},

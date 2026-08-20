@@ -11,6 +11,8 @@ import (
 func TestConfigValidateTasks(t *testing.T) {
 	t.Parallel()
 
+	const errTaskBoundsPositive = "config: task runtime bounds must be positive"
+
 	valid := Load("").MustGet().Tasks
 	tests := []struct {
 		name    string
@@ -27,14 +29,21 @@ func TestConfigValidateTasks(t *testing.T) {
 			mutate: func(tasks *TaskRuntimeConfig) {
 				tasks.Workers = 0
 			},
-			wantErr: "config: task runtime bounds must be positive",
+			wantErr: errTaskBoundsPositive,
+		},
+		{
+			name: "non-positive session workers",
+			mutate: func(tasks *TaskRuntimeConfig) {
+				tasks.SessionWorkers = 0
+			},
+			wantErr: errTaskBoundsPositive,
 		},
 		{
 			name: "non-positive duration",
 			mutate: func(tasks *TaskRuntimeConfig) {
 				tasks.PollInterval = 0
 			},
-			wantErr: "config: task runtime bounds must be positive",
+			wantErr: errTaskBoundsPositive,
 		},
 		{
 			name: "outcome limit below minimum",
