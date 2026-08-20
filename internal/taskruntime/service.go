@@ -116,8 +116,9 @@ func New(options Options, handlers ...Handler) (*Service, error) {
 		wake: make(chan struct{}, 1), sem: make(chan struct{}, options.Workers),
 		active: map[string]context.CancelFunc{}, stopped: make(chan struct{}),
 		leaseOwner: hex.EncodeToString(identity), handlerOrder: nil, nextHandler: 0, options: options,
-		wg: sync.WaitGroup{}, dbMu: sync.RWMutex{}, stopOnce: sync.Once{}, mu: sync.Mutex{},
+		wg: sync.WaitGroup{}, stopOnce: sync.Once{},
 		started: false, abandoned: false,
+		dbMu: sync.RWMutex{}, mu: sync.Mutex{},
 	}
 
 	if err := service.registerHandlers(handlers); err != nil {

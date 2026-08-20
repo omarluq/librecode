@@ -59,9 +59,9 @@ func NewRegistryContext(ctx context.Context, options *RegistryOptions) *Registry
 		models:          []Model{},
 		builtIns:        cloneModels(resolvedOptions.BuiltIns),
 		discovery:       resolvedOptions.Discovery,
-		lock:            sync.RWMutex{},
 		configError:     nil,
 		discoveryError:  nil,
+		lock:            sync.RWMutex{},
 	}
 	registry.RefreshContext(ctx)
 

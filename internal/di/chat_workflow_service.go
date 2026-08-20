@@ -40,7 +40,8 @@ func NewChatWorkflowService(injector do.Injector) (*ChatWorkflowService, error) 
 
 	return &ChatWorkflowService{
 		runs: nil, dispatcher: nil, workflows: workflows, database: databaseService,
-		logger: loggerService.SlogLogger, lifecycle: sync.Mutex{},
+		logger:    loggerService.SlogLogger,
+		lifecycle: sync.Mutex{},
 	}, nil
 }
 

@@ -97,8 +97,6 @@ func NewManager(logger *slog.Logger) *Manager {
 		moduleRoots:      []string{},
 		timers:           []luaTimer{},
 		extensions:       []*luaExtension{},
-		lock:             sync.RWMutex{},
-		diagnosticLock:   sync.Mutex{},
 		diagnosticLast:   map[string]time.Time{},
 		diagnosticDrops:  map[string]int{},
 		diagnosticNow:    time.Now,
@@ -106,6 +104,8 @@ func NewManager(logger *slog.Logger) *Manager {
 		nextHandlerOrder: 0,
 		nextTimerID:      1,
 		nextNamespaceID:  1,
+		lock:             sync.RWMutex{},
+		diagnosticLock:   sync.Mutex{},
 	}
 }
 

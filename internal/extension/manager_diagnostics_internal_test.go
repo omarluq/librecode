@@ -115,10 +115,10 @@ func newDiagnosticTestManager(t *testing.T, logs *bytes.Buffer) (*Manager, *luaE
 		name:          "diagnostic",
 		path:          "",
 		commands:      nil,
+		lock:          sync.Mutex{},
 		tools:         nil,
 		keymaps:       nil,
 		handlers:      nil,
-		lock:          sync.Mutex{},
 		totalDuration: atomic.Int64{},
 	}
 	manager.extensions = append(manager.extensions, extensionRuntime)

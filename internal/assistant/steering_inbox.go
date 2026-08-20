@@ -64,8 +64,8 @@ func (registry *steeringInboxRegistry) register(sessionID, runID string) error {
 		drafts:   make([]steeringDraft, 0, registry.capacity),
 		runID:    runID,
 		capacity: registry.capacity,
-		mu:       sync.Mutex{},
 		closed:   false,
+		mu:       sync.Mutex{},
 	}
 
 	return nil

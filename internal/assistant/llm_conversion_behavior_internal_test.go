@@ -89,7 +89,8 @@ func TestLLMTokenContributorConversionsCloneAndRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	contributors := []model.TokenContributor{
-		{Label: contextwindow.BreakdownHistory, Role: string(llm.RoleUser), Preview: "hello", Tokens: 4, Chars: 20},
+		{Label: contextwindow.BreakdownHistory, Role: string(llm.RoleUser), Preview: adapterHello, Tokens: 4,
+			Chars: 20},
 	}
 	converted := llmconv.TokenContributorsFromModel(contributors)
 	require.Len(t, converted, 1)

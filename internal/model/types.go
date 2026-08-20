@@ -72,21 +72,9 @@ func ModelsAreEqual(left, right *Model) bool {
 }
 
 func emptyModel() Model {
-	return Model{
-		ThinkingLevelMap: nil,
-		Headers:          nil,
-		Compat:           nil,
-		Provider:         "",
-		ID:               "",
-		Name:             "",
-		API:              "",
-		BaseURL:          "",
-		Input:            nil,
-		Cost:             Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
-		ContextWindow:    0,
-		MaxTokens:        0,
-		Reasoning:        false,
-	}
+	var m Model
+
+	return m
 }
 
 func cloneModel(model *Model) Model {

@@ -359,18 +359,15 @@ func normalizeError(err error) error {
 		return evalError(ErrorKindCanceled, 0, err)
 	}
 
-	var exitErr *interp.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*interp.ExitError](err); ok {
 		return evalError(ErrorKindExit, exitErr.Code, err)
 	}
 
-	var valueErr *valueError
-	if errors.As(err, &valueErr) {
-		return evalError(ErrorKindRuntime, 0, err)
+	if valueErr, ok := errors.AsType[*valueError](err); ok {
+		return evalError(ErrorKindRuntime, 0, valueErr)
 	}
 
-	var panicErr *vm.PanicError
-	if errors.As(err, &panicErr) {
+	if panicErr, ok := errors.AsType[*vm.PanicError](err); ok {
 		if _, ok := panicErr.Raw.(runtime.Error); ok {
 			return evalError(ErrorKindRuntime, 0, err)
 		}
