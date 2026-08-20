@@ -481,6 +481,56 @@ func fetchTestRebindingDialPinCases() []fetchTestDialPinCase {
 	return cases
 }
 
+// fetchTestRunDialPinCase exercises one dial-pinning table entry end to end:
+// validate, wrap the transport, dial via dialCase, and assert the recorded
+// target is the pinned validated IP (or that dialing was refused).
+type (
+	fetchTestDialFunc = func(context.Context, string, string) (net.Conn, error)
+	fetchTestDialHook = func(*http.Transport) fetchTestDialFunc
+)
+
+func fetchTestRunDialPinCase(t *testing.T, testCase fetchTestDialPinCase, port string, dialCase fetchTestDialHook) {
+	t.Helper()
+
+	lookupCalls := 0
+	fetchTool, dialedAddresses := fetchTestRecordingTransport()
+	fetchTool.lookupIPAddrs = func(_ context.Context, _ string) ([]net.IPAddr, error) {
+		defer func() { lookupCalls++ }()
+
+		return testCase.lookups[min(lookupCalls, len(testCase.lookups)-1)], nil
+	}
+
+	requestURL, err := parseFetchURL("http://" + fetchTestExampleHost)
+	require.NoError(t, err)
+
+	// Consume the pre-flight validation lookup the same way the real
+	// request path does, so the dial below observes the second resolution.
+	require.NoError(t, fetchTool.validatePublicFetchURL(context.Background(), requestURL))
+
+	transport, closeIdleConnections, err := fetchTool.transportWithNetworkValidation(fetchTool.client.Transport)
+	require.NoError(t, err)
+
+	defer closeIdleConnections()
+
+	httpTransport, ok := transport.(*http.Transport)
+	require.True(t, ok)
+
+	conn, dialErr := dialCase(httpTransport)(context.Background(), "tcp", fetchTestExampleHost+":"+port)
+
+	if testCase.wantErr != "" {
+		require.Error(t, dialErr)
+		assert.Contains(t, dialErr.Error(), testCase.wantErr)
+		assert.Empty(t, *dialedAddresses, "no connection should be attempted after validation fails")
+
+		return
+	}
+
+	require.NoError(t, dialErr)
+	require.NoError(t, conn.Close())
+	require.Len(t, *dialedAddresses, 1)
+	assert.Equal(t, testCase.wantDialedIP+":"+port, (*dialedAddresses)[0])
+}
+
 func TestFetchTool_PinsDialedAddressToValidatedIP(t *testing.T) {
 	t.Parallel()
 
@@ -488,43 +538,9 @@ func TestFetchTool_PinsDialedAddressToValidatedIP(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			lookupCalls := 0
-			fetchTool, dialedAddresses := fetchTestRecordingTransport()
-			fetchTool.lookupIPAddrs = func(_ context.Context, _ string) ([]net.IPAddr, error) {
-				defer func() { lookupCalls++ }()
-
-				return testCase.lookups[min(lookupCalls, len(testCase.lookups)-1)], nil
-			}
-
-			requestURL, err := parseFetchURL("http://" + fetchTestExampleHost)
-			require.NoError(t, err)
-
-			// Consume the pre-flight validation lookup the same way the real
-			// request path does, so the dial below observes the second resolution.
-			require.NoError(t, fetchTool.validatePublicFetchURL(context.Background(), requestURL))
-
-			transport, closeIdleConnections, err := fetchTool.transportWithNetworkValidation(fetchTool.client.Transport)
-			require.NoError(t, err)
-
-			defer closeIdleConnections()
-
-			httpTransport, ok := transport.(*http.Transport)
-			require.True(t, ok)
-
-			conn, dialErr := httpTransport.DialContext(context.Background(), "tcp", fetchTestExampleHost+":80")
-
-			if testCase.wantErr != "" {
-				require.Error(t, dialErr)
-				assert.Contains(t, dialErr.Error(), testCase.wantErr)
-				assert.Empty(t, *dialedAddresses, "no connection should be attempted after validation fails")
-
-				return
-			}
-
-			require.NoError(t, dialErr)
-			require.NoError(t, conn.Close())
-			require.Len(t, *dialedAddresses, 1)
-			assert.Equal(t, testCase.wantDialedIP+":80", (*dialedAddresses)[0])
+			fetchTestRunDialPinCase(t, testCase, "80", func(transport *http.Transport) fetchTestDialFunc {
+				return transport.DialContext
+			})
 		})
 	}
 }
@@ -536,47 +552,13 @@ func TestFetchTool_PinsDialedTLSToValidatedIP(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			lookupCalls := 0
-			fetchTool, dialedAddresses := fetchTestRecordingTransport()
-			fetchTool.lookupIPAddrs = func(_ context.Context, _ string) ([]net.IPAddr, error) {
-				defer func() { lookupCalls++ }()
-
-				return testCase.lookups[min(lookupCalls, len(testCase.lookups)-1)], nil
-			}
-
-			requestURL, err := parseFetchURL("http://" + fetchTestExampleHost)
-			require.NoError(t, err)
-
-			// Consume the pre-flight validation lookup the same way the real
-			// request path does, so the dial below observes the second resolution.
-			require.NoError(t, fetchTool.validatePublicFetchURL(context.Background(), requestURL))
-
-			transport, closeIdleConnections, err := fetchTool.transportWithNetworkValidation(fetchTool.client.Transport)
-			require.NoError(t, err)
-
-			defer closeIdleConnections()
-
-			httpTransport, ok := transport.(*http.Transport)
-			require.True(t, ok)
-
 			// Supply a TLS dial hook so the validating wrapper exercises the
 			// HTTPS path: the recorded target must be the pinned literal IP.
-			httpTransport.DialTLSContext = httpTransport.DialContext
+			fetchTestRunDialPinCase(t, testCase, "443", func(transport *http.Transport) fetchTestDialFunc {
+				transport.DialTLSContext = transport.DialContext
 
-			conn, dialErr := httpTransport.DialTLSContext(context.Background(), "tcp", fetchTestExampleHost+":443")
-
-			if testCase.wantErr != "" {
-				require.Error(t, dialErr)
-				assert.Contains(t, dialErr.Error(), testCase.wantErr)
-				assert.Empty(t, *dialedAddresses, "no connection should be attempted after validation fails")
-
-				return
-			}
-
-			require.NoError(t, dialErr)
-			require.NoError(t, conn.Close())
-			require.Len(t, *dialedAddresses, 1)
-			assert.Equal(t, testCase.wantDialedIP+":443", (*dialedAddresses)[0])
+				return transport.DialTLSContext
+			})
 		})
 	}
 }

@@ -186,6 +186,25 @@ func TestWorkflowSubmissionCleansUpMissingRunIDs(t *testing.T) {
 // A later failed lookup must not strand runs that were already loaded
 // successfully in the same refresh: terminal entries still deliver their
 // completion, while the unresolved ID stays pending for the next refresh.
+// partialLookupSnapshot builds a refresh snapshot whose exact-ID lookup
+// section is invalid overall but still carries the runs that loaded fine.
+func partialLookupSnapshot(runs ...database.WorkflowRunEntity) terminalRefreshSnapshot {
+	byID := make(map[string]*database.WorkflowRunEntity, len(runs))
+	for i := range runs {
+		byID[runs[i].Task.ID] = &runs[i]
+	}
+
+	snapshot := newTerminalRefreshSnapshot(workflowTestSessionID)
+	snapshot.ActiveWorkflow = refreshSection([]database.WorkflowRunEntity{})
+	snapshot.WorkflowByID = terminalRefreshSection[map[string]*database.WorkflowRunEntity]{
+		Value: byID,
+		Err:   assert.AnError,
+		Valid: false,
+	}
+
+	return snapshot
+}
+
 func TestWorkflowSubmissionReconcilesLoadedRunsDuringPartialLookupFailure(t *testing.T) {
 	t.Parallel()
 
@@ -197,14 +216,7 @@ func TestWorkflowSubmissionReconcilesLoadedRunsDuringPartialLookupFailure(t *tes
 
 	// The exact-ID lookup for loaded-run succeeded; the one for
 	// unresolved-run failed, invalidating the section as a whole.
-	snapshot := newTerminalRefreshSnapshot(app.sessionID)
-	snapshot.ActiveWorkflow = refreshSection([]database.WorkflowRunEntity{})
-	snapshot.WorkflowByID = terminalRefreshSection[map[string]*database.WorkflowRunEntity]{
-		Value: map[string]*database.WorkflowRunEntity{loaded.Task.ID: &loaded},
-		Err:   assert.AnError,
-		Valid: false,
-	}
-
+	snapshot := partialLookupSnapshot(loaded)
 	app.applyTerminalRefreshSnapshot(t.Context(), &snapshot)
 
 	// The successfully loaded terminal run is reconciled despite the invalid
@@ -229,15 +241,8 @@ func TestWorkflowSubmissionReconcilesSortedLaterRunsDuringPartialLookupFailure(t
 	require.Equal(t, []string{"a-unresolved", loaded.Task.ID}, app.pendingWorkflowRunIDs())
 
 	// The exact-ID lookup for a-unresolved failed and sorts first; the one for
-	// z-loaded succeeded, so Value holds only the loaded run.
-	snapshot := newTerminalRefreshSnapshot(app.sessionID)
-	snapshot.ActiveWorkflow = refreshSection([]database.WorkflowRunEntity{})
-	snapshot.WorkflowByID = terminalRefreshSection[map[string]*database.WorkflowRunEntity]{
-		Value: map[string]*database.WorkflowRunEntity{loaded.Task.ID: &loaded},
-		Err:   assert.AnError,
-		Valid: false,
-	}
-
+	// z-loaded succeeded, so only the loaded run is present.
+	snapshot := partialLookupSnapshot(loaded)
 	app.applyTerminalRefreshSnapshot(t.Context(), &snapshot)
 
 	// z-loaded sorts after the unresolved ID but is still reconciled: its

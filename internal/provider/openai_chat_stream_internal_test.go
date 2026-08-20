@@ -70,7 +70,7 @@ func TestParseOpenAIChatStreamConsumesUsageChunkAfterFinishReason(t *testing.T) 
 	stream := openAIChatStream(
 		openAIChatDelta(map[string]any{"reasoning_content": "finished"}, "stop", nil),
 		openAIChatDelta(map[string]any{}, "", map[string]any{
-			jsonPromptTokensKey:    7,
+			jsonPromptTokensKey:     7,
 			jsonCompletionTokensKey: 3,
 		}),
 		openAIChatDoneLine,
