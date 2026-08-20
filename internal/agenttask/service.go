@@ -809,7 +809,7 @@ func (service *Service) execute(ctx context.Context, taskID string, task *databa
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 
 	heartbeatDone := make(chan struct{})
-	go service.renewLease(runCtx, cancel, taskID, heartbeatDone)
+	go service.renewLease(runCtx, cancel, taskID, task.Task.LeaseExpiresAt, heartbeatDone)
 
 	service.mu.Lock()
 	service.active[taskID] = cancel
@@ -868,6 +868,7 @@ func (service *Service) renewLease(
 	ctx context.Context,
 	cancel context.CancelFunc,
 	taskID string,
+	leaseExpiresAt *time.Time,
 	done chan<- struct{},
 ) {
 	defer close(done)
@@ -875,7 +876,15 @@ func (service *Service) renewLease(
 	ticker := time.NewTicker(service.leaseHeartbeatInterval)
 	defer ticker.Stop()
 
+	// Seed the retry deadline from the persisted claim, not local clock time:
+	// claim-to-start latency means now+leaseDuration can extend the retry
+	// window past the stored lease, letting another worker acquire the task
+	// mid-retry. Fall back to the old computation when the claim carried no
+	// expiry.
 	validUntil := time.Now().Add(service.leaseDuration)
+	if leaseExpiresAt != nil && !leaseExpiresAt.IsZero() {
+		validUntil = *leaseExpiresAt
+	}
 
 	for {
 		select {
