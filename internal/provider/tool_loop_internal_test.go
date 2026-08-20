@@ -14,9 +14,63 @@ import (
 )
 
 const (
-	testCallID   = "call-1"
-	testToolPath = "README.md"
+	testCallID             = "call-1"
+	testToolPath           = "README.md"
+	testThinkingChunkUse   = "use "
+	testThinkingChunkThe   = "the"
+	testJoinedThinkingText = "use the tool"
 )
+
+func TestJoinedThinkingDeltas(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		deltas []string
+		want   []string
+	}{
+		{name: "nil", deltas: nil, want: nil},
+		{name: "empty input", deltas: []string{}, want: nil},
+		{name: "whitespace only", deltas: []string{" ", "\t\n"}, want: nil},
+		{name: "split words", deltas: []string{"rea", "son", "ing"}, want: []string{"reasoning"}},
+		{
+			name:   "boundary spaces",
+			deltas: []string{" use ", testThinkingChunkThe, " tool "},
+			want:   []string{testJoinedThinkingText},
+		},
+		{name: "newlines", deltas: []string{"\nfirst\n", "second\n"}, want: []string{"first\nsecond"}},
+		{name: "unicode", deltas: []string{"  düşün", "ce 世界  "}, want: []string{"düşünce 世界"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := joinedThinkingDeltas(test.deltas)
+			assert.Equal(t, test.want, got)
+
+			if len(test.want) > 0 {
+				assert.Len(t, got, 1)
+			}
+		})
+	}
+}
+
+func TestJoinedThinkingDeltasCoalescesThousandsOfChunks(t *testing.T) {
+	t.Parallel()
+
+	const deltaCount = 10_000
+
+	deltas := make([]string, deltaCount)
+	for index := range deltas {
+		deltas[index] = "x"
+	}
+
+	thinking := joinedThinkingDeltas(deltas)
+
+	require.Len(t, thinking, 1)
+	assert.Len(t, thinking[0], deltaCount)
+}
 
 func TestValidateToolDispatchRejectsLengthTruncatedCalls(t *testing.T) {
 	t.Parallel()

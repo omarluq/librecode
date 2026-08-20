@@ -11,13 +11,18 @@ import (
 	"github.com/omarluq/librecode/internal/testutil"
 )
 
+const (
+	jsonReasoningContentKey          = "reasoning_content"
+	openAIChatReasoningPrefixForTest = "use "
+)
+
 func TestParseOpenAIChatStreamTextThinkingToolCallsAndUsage(t *testing.T) {
 	t.Parallel()
 
 	stream := openAIChatStream(
-		openAIChatDelta(map[string]any{"reasoning_content": "think "}, "", nil),
+		openAIChatDelta(map[string]any{jsonReasoningContentKey: "think "}, "", nil),
 		openAIChatDelta(map[string]any{jsonContentKey: "hello "}, "", nil),
-		openAIChatDelta(map[string]any{"reasoning": "fallback"}, "", nil),
+		openAIChatDelta(map[string]any{jsonReasoningKey: "fallback"}, "", nil),
 		openAIChatDelta(map[string]any{jsonToolCallsKey: []any{map[string]any{
 			jsonIndexKey: 0,
 			"id":         "call_1",
@@ -62,13 +67,59 @@ func TestParseOpenAIChatStreamTextThinkingToolCallsAndUsage(t *testing.T) {
 	assert.Equal(t, llm.PartText, events[1].Type)
 }
 
+func TestParseOpenAIChatStreamJoinsReasoningDeltasAfterStreaming(t *testing.T) {
+	t.Parallel()
+
+	stream := openAIChatStream(
+		openAIChatDelta(map[string]any{jsonReasoningContentKey: openAIChatReasoningPrefixForTest}, "", nil),
+		openAIChatDelta(map[string]any{jsonReasoningKey: testThinkingChunkThe}, "", nil),
+		openAIChatDelta(map[string]any{"reasoning_text": " "}, "", nil),
+		openAIChatDelta(map[string]any{jsonReasoningContentKey: "tool"}, "stop", nil),
+		openAIChatDoneLine,
+	)
+
+	var reasoningDeltas []string
+
+	result, err := parseOpenAIChatStream(strings.NewReader(stream), func(chunk *llm.StreamChunk) {
+		if chunk.Part != nil && chunk.Part.Type == llm.PartReasoning {
+			reasoningDeltas = append(reasoningDeltas, chunk.Part.Text)
+		}
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{openAIChatReasoningPrefixForTest, testThinkingChunkThe, " ", "tool"}, reasoningDeltas)
+	assert.Equal(t, []string{testJoinedThinkingText}, result.Thinking)
+}
+
+func TestParseOpenAIChatStreamOmitsBlankOnlyReasoning(t *testing.T) {
+	t.Parallel()
+
+	stream := openAIChatStream(
+		openAIChatDelta(map[string]any{jsonReasoningContentKey: " "}, "", nil),
+		openAIChatDelta(map[string]any{jsonReasoningKey: "\n\t"}, "stop", nil),
+		openAIChatDoneLine,
+	)
+
+	var reasoningDeltas []string
+
+	result, err := parseOpenAIChatStream(strings.NewReader(stream), func(chunk *llm.StreamChunk) {
+		if chunk.Part != nil && chunk.Part.Type == llm.PartReasoning {
+			reasoningDeltas = append(reasoningDeltas, chunk.Part.Text)
+		}
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{" ", "\n\t"}, reasoningDeltas)
+	assert.Empty(t, result.Thinking)
+}
+
 func TestParseOpenAIChatStreamConsumesUsageChunkAfterFinishReason(t *testing.T) {
 	t.Parallel()
 
 	// include_usage streams a final usage-only chunk (empty choices) after the
 	// finish_reason chunk; the reader must keep consuming until [DONE].
 	stream := openAIChatStream(
-		openAIChatDelta(map[string]any{"reasoning_content": "finished"}, "stop", nil),
+		openAIChatDelta(map[string]any{jsonReasoningContentKey: "finished"}, "stop", nil),
 		openAIChatDelta(map[string]any{}, "", map[string]any{
 			jsonPromptTokensKey:     7,
 			jsonCompletionTokensKey: 3,

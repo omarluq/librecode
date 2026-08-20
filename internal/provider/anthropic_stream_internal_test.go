@@ -78,6 +78,34 @@ func TestParseAnthropicStreamTextThinkingToolUseAndUsage(t *testing.T) {
 	assert.Equal(t, llm.PartText, events[1].Type)
 }
 
+func TestParseAnthropicStreamJoinsThinkingDeltasWithoutChangingCallbacks(t *testing.T) {
+	t.Parallel()
+
+	deltas := []string{testThinkingChunkUse, testThinkingChunkThe, " ", jsonToolRole}
+
+	lines := make([]string, 0, len(deltas)*3+3)
+	for _, delta := range deltas {
+		lines = append(lines,
+			anthropicEventContentBlockDelta,
+			anthropicDataLine(anthropicDeltaEvent(0, anthropicThinkingDelta, "thinking", delta)),
+			"",
+		)
+	}
+
+	lines = append(lines, anthropicEventMessageStop, anthropicMessageStopData, "")
+	streamed := []string{}
+
+	result, err := parseAnthropicStream(strings.NewReader(strings.Join(lines, "\n")), func(chunk *llm.StreamChunk) {
+		if chunk.Part != nil && chunk.Part.Type == llm.PartReasoning {
+			streamed = append(streamed, chunk.Part.Text)
+		}
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, deltas, streamed)
+	assert.Equal(t, []string{testJoinedThinkingText}, result.Thinking)
+}
+
 func TestParseAnthropicStreamStopsAtMessageStop(t *testing.T) {
 	t.Parallel()
 
