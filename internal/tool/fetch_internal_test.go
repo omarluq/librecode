@@ -429,39 +429,12 @@ type fetchTestDialPinCase struct {
 }
 
 func fetchTestDialPinCases() []fetchTestDialPinCase {
-	return []fetchTestDialPinCase{
+	cases := append([]fetchTestDialPinCase{
 		{
 			name:         "public host dials pinned validated ip",
 			lookups:      [][]net.IPAddr{{{IP: net.ParseIP("93.184.216.34")}}},
 			wantErr:      "",
 			wantDialedIP: "93.184.216.34",
-		},
-		{
-			name: "resolver rebinding to loopback is rejected at dial time",
-			lookups: [][]net.IPAddr{
-				{{IP: net.ParseIP("93.184.216.34")}},
-				{{IP: net.ParseIP("127.0.0.1")}},
-			},
-			wantErr:      fetchTestWantPrivateErr,
-			wantDialedIP: "",
-		},
-		{
-			name: "resolver rebinding to private network is rejected at dial time",
-			lookups: [][]net.IPAddr{
-				{{IP: net.ParseIP("93.184.216.34")}},
-				{{IP: net.ParseIP("192.168.0.5")}},
-			},
-			wantErr:      fetchTestWantPrivateErr,
-			wantDialedIP: "",
-		},
-		{
-			name: "resolver rebinding to link local metadata address is rejected",
-			lookups: [][]net.IPAddr{
-				{{IP: net.ParseIP("93.184.216.34")}},
-				{{IP: net.ParseIP("169.254.169.254")}},
-			},
-			wantErr:      fetchTestWantPrivateErr,
-			wantDialedIP: "",
 		},
 		{
 			name: "ambiguous empty re-resolution fails closed",
@@ -472,7 +445,40 @@ func fetchTestDialPinCases() []fetchTestDialPinCase {
 			wantErr:      fetchTestWantNoAddrErr,
 			wantDialedIP: "",
 		},
+	}, fetchTestRebindingDialPinCases()...)
+
+	return cases
+}
+
+// fetchTestRebindingDialPinCases builds dial-rebinding cases sharing one shape:
+// the pre-flight lookup returns the public example IP, then the dial-time
+// re-resolution returns the hostile rebinding IP, which must be rejected before
+// any connection is attempted. Generating the near-identical entries keeps the
+// test table free of duplicated blocks.
+func fetchTestRebindingDialPinCases() []fetchTestDialPinCase {
+	targets := []struct {
+		name string
+		ip   string
+	}{
+		{"loopback", "127.0.0.1"},
+		{"private network", "192.168.0.5"},
+		{"link local metadata address", "169.254.169.254"},
 	}
+
+	cases := make([]fetchTestDialPinCase, 0, len(targets))
+	for _, target := range targets {
+		cases = append(cases, fetchTestDialPinCase{
+			name: "resolver rebinding to " + target.name + " is rejected at dial time",
+			lookups: [][]net.IPAddr{
+				{{IP: net.ParseIP("93.184.216.34")}},
+				{{IP: net.ParseIP(target.ip)}},
+			},
+			wantErr:      fetchTestWantPrivateErr,
+			wantDialedIP: "",
+		})
+	}
+
+	return cases
 }
 
 func TestFetchTool_PinsDialedAddressToValidatedIP(t *testing.T) {
@@ -671,6 +677,19 @@ func fetchTestResolvedDialCases() []fetchTestPinnedDialCase {
 			},
 			wantErr: fetchTestWantPrivateErr,
 			wantPin: "",
+		},
+		{
+			name:    "dual stack tcp pins first validated address",
+			network: fetchTestNetworkTCP,
+			address: fetchTestExampleHostPort,
+			lookups: map[string][]net.IPAddr{
+				fetchTestExampleHost: {
+					{IP: net.ParseIP("2606:2800:220:1:248:1893:25c8:1946")},
+					{IP: net.ParseIP("93.184.216.34")},
+				},
+			},
+			wantErr: "",
+			wantPin: "[2606:2800:220:1:248:1893:25c8:1946]:80",
 		},
 		{
 			name:    "trailing dot hostname is normalized",
