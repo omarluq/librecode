@@ -61,6 +61,59 @@ func TestParseOpenAIResponseStreamExtractsTextThinkingAndToolCalls(t *testing.T)
 	assert.Equal(t, llm.FinishReasonToolCalls, result.FinishReason)
 }
 
+func TestParseOpenAIResponseStreamJoinsReasoningDeltas(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		finalResponse string
+		wantThinking  string
+	}{
+		{
+			name:          "delta fallback",
+			finalResponse: `{"status":"completed","output_text":"done"}`,
+			wantThinking:  "use the tool",
+		},
+		{
+			name: "canonical final reasoning is preferred and coalesced",
+			finalResponse: `{"status":"completed","output":[` +
+				`{"type":"reasoning","summary":[{"text":"canonical thought"}]},` +
+				`{"type":"reasoning","summary":[{"text":"second thought"}]},` +
+				`{"type":"message","content":[{"type":"output_text","text":"done"}]}]}`,
+			wantThinking: "canonical thought\n\nsecond thought",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			stream := `data: {"type":"response.reasoning_summary_text.delta","delta":"use "}
+
+` +
+				`data: {"type":"response.reasoning_summary_text.delta","delta":"the"}
+
+` +
+				`data: {"type":"response.reasoning_summary_text.delta","delta":" tool"}
+
+` +
+				openAIResponseCompletedStream(testCase.finalResponse) +
+				"data: invalid-json\n\n"
+			deltas := []string{}
+
+			result, err := parseSSEResult(strings.NewReader(stream), func(chunk *llm.StreamChunk) {
+				if chunk.Part != nil && chunk.Part.Type == llm.PartReasoning {
+					deltas = append(deltas, chunk.Part.Text)
+				}
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, []string{"use ", "the", " tool"}, deltas)
+			assert.Equal(t, []string{testCase.wantThinking}, result.Thinking)
+		})
+	}
+}
+
 func TestParseOpenAIResponseStreamMapsIncompleteFinishReasons(t *testing.T) {
 	t.Parallel()
 
@@ -118,12 +171,20 @@ func TestParseOpenAIResponseStreamUsesOutputTextAndErrors(t *testing.T) {
 func TestParseOpenAIResponseStreamStopsAtTerminalEvent(t *testing.T) {
 	t.Parallel()
 
-	stream := openAIResponseCompletedStream(`{"output_text":"ok"}`) +
-		"data: invalid-json\n\n"
-	result, err := parseSSEResult(strings.NewReader(stream), nil)
+	for _, eventType := range []string{"response.completed", "response.done"} {
+		t.Run(eventType, func(t *testing.T) {
+			t.Parallel()
 
-	require.NoError(t, err)
-	assert.Equal(t, "ok", result.Text)
+			stream := `data: {"type":"` + eventType + `","response":{"output_text":"ok"}}
+
+` +
+				"data: invalid-json\n\n"
+			result, err := parseSSEResult(strings.NewReader(stream), nil)
+
+			require.NoError(t, err)
+			assert.Equal(t, "ok", result.Text)
+		})
+	}
 }
 
 func TestParseOpenAIResponseStreamStopsAtDoneMarker(t *testing.T) {

@@ -435,7 +435,7 @@ func thinkingFromOutput(output []any) []string {
 		}
 	}
 
-	return thinking
+	return joinedThinkingDeltas([]string{strings.Join(thinking, "\n\n")})
 }
 
 func extractThinkingText(value any) string {
