@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"sort"
 	"strings"
@@ -106,7 +107,7 @@ func parseAnthropicStream(reader io.Reader, onEvent func(*llm.StreamChunk)) (*pr
 
 		return accumulator.add(&decoded, onEvent)
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, errSSEDone) {
 		return nil, err
 	}
 
@@ -145,6 +146,8 @@ func (accumulator *anthropicStreamAccumulator) add(
 		accumulator.addMessageDelta(event)
 	case anthropicMessageStopEvent:
 		accumulator.terminal = true
+
+		return errSSEDone
 	case anthropicErrorEvent:
 		return providerErrorToOops("anthropic_error", &event.Error)
 	}
@@ -267,7 +270,7 @@ func (accumulator *anthropicStreamAccumulator) result() *providerResult {
 		Termination:  llm.NewTerminationMetadata("", accumulator.stopReason, ""),
 		Text:         text,
 		OutputItems:  nil,
-		Thinking:     accumulator.thinking,
+		Thinking:     joinedThinkingDeltas(accumulator.thinking),
 		ToolCalls:    calls,
 		Usage:        accumulator.usage,
 	}

@@ -136,6 +136,8 @@ func (accumulator *openAIChatStreamAccumulator) add(
 		if choice.FinishReason != "" {
 			accumulator.finishReason = choice.FinishReason
 			accumulator.terminal = true
+
+			return errSSEDone
 		}
 	}
 
@@ -226,7 +228,7 @@ func (accumulator *openAIChatStreamAccumulator) result() *providerResult {
 		Termination:  llm.NewTerminationMetadata("", accumulator.finishReason, ""),
 		Text:         strings.TrimSpace(strings.Join(accumulator.textParts, "")),
 		OutputItems:  nil,
-		Thinking:     accumulator.thinking,
+		Thinking:     joinedThinkingDeltas(accumulator.thinking),
 		ToolCalls:    calls,
 		Usage:        accumulator.usage,
 	}

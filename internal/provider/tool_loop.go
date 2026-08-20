@@ -206,6 +206,15 @@ func finishProviderResult(result *llm.Response, providerResult *providerResult) 
 	return true, nil
 }
 
+func joinedThinkingDeltas(deltas []string) []string {
+	thinking := strings.TrimSpace(strings.Join(deltas, ""))
+	if thinking == "" {
+		return nil
+	}
+
+	return []string{thinking}
+}
+
 func emitStreamEvent(onEvent func(*llm.StreamChunk), event StreamEvent) {
 	if onEvent != nil {
 		onEvent(streamChunkToLLM(event))

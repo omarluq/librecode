@@ -96,6 +96,7 @@ const (
 	reasoningEffortNone     = "none"
 	statusCompleted         = "completed"
 	finishReasonMaxTokens   = "max_tokens"
+	anthropicStopEndTurn    = "end_turn"
 	sseItemIDKey            = "item_id"
 	sseOutputItemIDKey      = "output_item_id"
 	jsonStreamKey           = "stream"
