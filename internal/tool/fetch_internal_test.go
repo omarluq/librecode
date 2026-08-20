@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -21,14 +22,18 @@ import (
 )
 
 const (
-	fetchTestExampleHost   = "example.test"
-	fetchTestExampleURL    = "https://example.com"
-	fetchTestIgnoredFooter = "Ignore footer"
-	fetchTestIgnoredHeader = "Ignore header"
-	fetchTestPlainText     = "plain text"
-	fetchTestTextPlain     = "text/plain"
-	fetchTestInvalidLimit  = "invalid limit"
-	serverURLPlaceholder   = "{server_url}"
+	fetchTestExampleHost    = "example.test"
+	fetchTestNetworkTCP     = "tcp"
+	fetchTestNetworkTCP6    = "tcp6"
+	fetchTestWantNoAddrErr  = "returned no addresses"
+	fetchTestWantPrivateErr = "private or local networks"
+	fetchTestExampleURL     = "https://example.com"
+	fetchTestIgnoredFooter  = "Ignore footer"
+	fetchTestIgnoredHeader  = "Ignore header"
+	fetchTestPlainText      = "plain text"
+	fetchTestTextPlain      = "text/plain"
+	fetchTestInvalidLimit   = "invalid limit"
+	serverURLPlaceholder    = "{server_url}"
 )
 
 func TestFetchTool_Definition(t *testing.T) {
@@ -414,6 +419,294 @@ func TestFetchTool_ReadLimitDetails(t *testing.T) {
 	assert.Equal(t, fetchReadLimitBytes, result.Details["bytes_read"])
 	assert.True(t, fetchDetailBoolForTest(t, result, "read_limit_reached"))
 	assert.True(t, fetchDetailBoolForTest(t, result, "truncated"))
+}
+
+type fetchTestDialPinCase struct {
+	wantDialedIP string
+	wantErr      string
+	name         string
+	lookups      [][]net.IPAddr
+}
+
+func fetchTestDialPinCases() []fetchTestDialPinCase {
+	return []fetchTestDialPinCase{
+		{
+			name:         "public host dials pinned validated ip",
+			lookups:      [][]net.IPAddr{{{IP: net.ParseIP("93.184.216.34")}}},
+			wantErr:      "",
+			wantDialedIP: "93.184.216.34",
+		},
+		{
+			name: "resolver rebinding to loopback is rejected at dial time",
+			lookups: [][]net.IPAddr{
+				{{IP: net.ParseIP("93.184.216.34")}},
+				{{IP: net.ParseIP("127.0.0.1")}},
+			},
+			wantErr:      fetchTestWantPrivateErr,
+			wantDialedIP: "",
+		},
+		{
+			name: "resolver rebinding to private network is rejected at dial time",
+			lookups: [][]net.IPAddr{
+				{{IP: net.ParseIP("93.184.216.34")}},
+				{{IP: net.ParseIP("192.168.0.5")}},
+			},
+			wantErr:      fetchTestWantPrivateErr,
+			wantDialedIP: "",
+		},
+		{
+			name: "resolver rebinding to link local metadata address is rejected",
+			lookups: [][]net.IPAddr{
+				{{IP: net.ParseIP("93.184.216.34")}},
+				{{IP: net.ParseIP("169.254.169.254")}},
+			},
+			wantErr:      fetchTestWantPrivateErr,
+			wantDialedIP: "",
+		},
+		{
+			name: "ambiguous empty re-resolution fails closed",
+			lookups: [][]net.IPAddr{
+				{{IP: net.ParseIP("93.184.216.34")}},
+				{},
+			},
+			wantErr:      fetchTestWantNoAddrErr,
+			wantDialedIP: "",
+		},
+	}
+}
+
+func TestFetchTool_PinsDialedAddressToValidatedIP(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range fetchTestDialPinCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			lookupCalls := 0
+			fetchTool, dialedAddresses := fetchTestRecordingTransport()
+			fetchTool.lookupIPAddrs = func(_ context.Context, _ string) ([]net.IPAddr, error) {
+				defer func() { lookupCalls++ }()
+
+				return testCase.lookups[min(lookupCalls, len(testCase.lookups)-1)], nil
+			}
+
+			requestURL, err := parseFetchURL("http://" + fetchTestExampleHost)
+			require.NoError(t, err)
+
+			// Consume the pre-flight validation lookup the same way the real
+			// request path does, so the dial below observes the second resolution.
+			require.NoError(t, fetchTool.validatePublicFetchURL(context.Background(), requestURL))
+
+			transport, closeIdleConnections, err := fetchTool.transportWithNetworkValidation(fetchTool.client.Transport)
+			require.NoError(t, err)
+
+			defer closeIdleConnections()
+
+			httpTransport, ok := transport.(*http.Transport)
+			require.True(t, ok)
+
+			conn, dialErr := httpTransport.DialContext(context.Background(), "tcp", fetchTestExampleHost+":80")
+
+			if testCase.wantErr != "" {
+				require.Error(t, dialErr)
+				assert.Contains(t, dialErr.Error(), testCase.wantErr)
+				assert.Empty(t, *dialedAddresses, "no connection should be attempted after validation fails")
+
+				return
+			}
+
+			require.NoError(t, dialErr)
+			require.NoError(t, conn.Close())
+			require.Len(t, *dialedAddresses, 1)
+			assert.Equal(t, testCase.wantDialedIP+":80", (*dialedAddresses)[0])
+		})
+	}
+}
+
+// fetchTestRecordingTransport builds a fetch tool whose transport records every
+// dialed address and rejects hostnames: the base dialer must only ever receive a
+// validated literal IP, since a hostname would let the OS resolver rebind it.
+func fetchTestRecordingTransport() (fetchTool *FetchTool, dialed *[]string) {
+	fetchTool = NewFetchTool()
+
+	var dialedAddresses []string
+
+	fetchTool.client = &http.Client{Transport: &http.Transport{
+		DialContext: func(_ context.Context, _, address string) (net.Conn, error) {
+			dialedAddresses = append(dialedAddresses, address)
+
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, fmt.Errorf("split fetch dial address: %w", err)
+			}
+
+			ipAddress := parseFetchHostIP(host)
+			if ipAddress == nil {
+				return nil, fmt.Errorf("dialer received a hostname instead of a pinned IP: %s", host)
+			}
+
+			if err := validatePublicFetchIP(ipAddress); err != nil {
+				return nil, fmt.Errorf("validate pinned dial address: %w", err)
+			}
+
+			remoteAddr, resolveErr := net.ResolveTCPAddr("tcp", address)
+			if resolveErr != nil {
+				return nil, fmt.Errorf("resolve pinned dial address: %w", resolveErr)
+			}
+
+			return fetchTestConn{remoteAddr: remoteAddr}, nil
+		},
+	}}
+
+	return fetchTool, &dialedAddresses
+}
+
+type fetchTestPinnedDialCase struct {
+	lookups map[string][]net.IPAddr
+	name    string
+	network string
+	address string
+	wantErr string
+	wantPin string
+}
+
+func fetchTestPinnedDialAddressCases() []fetchTestPinnedDialCase {
+	return append(fetchTestLiteralDialCases(), fetchTestResolvedDialCases()...)
+}
+
+func fetchTestLiteralDialCases() []fetchTestPinnedDialCase {
+	return []fetchTestPinnedDialCase{
+		{
+			name:    "public literal ipv4 is pinned",
+			network: fetchTestNetworkTCP,
+			address: "93.184.216.34:443",
+			lookups: nil,
+			wantErr: "",
+			wantPin: "93.184.216.34:443",
+		},
+		{
+			name:    "public literal ipv6 is pinned with brackets",
+			network: fetchTestNetworkTCP6,
+			address: "[2606:2800:220:1:248:1893:25c8:1946]:443",
+			lookups: nil,
+			wantErr: "",
+			wantPin: "[2606:2800:220:1:248:1893:25c8:1946]:443",
+		},
+		{
+			name:    "private literal ipv4 is rejected",
+			network: fetchTestNetworkTCP,
+			address: "10.1.2.3:80",
+			lookups: nil,
+			wantErr: fetchTestWantPrivateErr,
+			wantPin: "",
+		},
+		{
+			name:    "link local literal ipv6 is rejected",
+			network: fetchTestNetworkTCP6,
+			address: "[fe80::1]:80",
+			lookups: nil,
+			wantErr: fetchTestWantPrivateErr,
+			wantPin: "",
+		},
+		{
+			name:    "localhost host is rejected",
+			network: fetchTestNetworkTCP,
+			address: "localhost:80",
+			lookups: nil,
+			wantErr: fetchTestWantPrivateErr,
+			wantPin: "",
+		},
+		{
+			name:    "missing port is rejected",
+			network: fetchTestNetworkTCP,
+			address: fetchTestExampleHost,
+			lookups: nil,
+			wantErr: "parse fetch dial address",
+			wantPin: "",
+		},
+	}
+}
+
+func fetchTestResolvedDialCases() []fetchTestPinnedDialCase {
+	const fetchTestExampleHostPort = fetchTestExampleHost + ":80"
+
+	return []fetchTestPinnedDialCase{
+		{
+			name:    "hostname without validated addresses fails closed",
+			network: fetchTestNetworkTCP,
+			address: fetchTestExampleHostPort,
+			lookups: map[string][]net.IPAddr{fetchTestExampleHost: {}},
+			wantErr: fetchTestWantNoAddrErr,
+			wantPin: "",
+		},
+		{
+			name:    "ipv4 network with only ipv6 results fails closed",
+			network: "tcp4",
+			address: fetchTestExampleHostPort,
+			lookups: map[string][]net.IPAddr{
+				fetchTestExampleHost: {{IP: net.ParseIP("2606:2800:220:1:248:1893:25c8:1946")}},
+			},
+			wantErr: "no validated fetch address matches network",
+			wantPin: "",
+		},
+		{
+			name:    "hostname resolves to pinned public ipv6",
+			network: fetchTestNetworkTCP6,
+			address: fetchTestExampleHostPort,
+			lookups: map[string][]net.IPAddr{
+				fetchTestExampleHost: {
+					{IP: net.ParseIP("93.184.216.34")},
+					{IP: net.ParseIP("2606:2800:220:1:248:1893:25c8:1946")},
+				},
+			},
+			wantErr: "",
+			wantPin: "[2606:2800:220:1:248:1893:25c8:1946]:80",
+		},
+		{
+			name:    "hostname with mixed public and private results is rejected",
+			network: fetchTestNetworkTCP,
+			address: fetchTestExampleHostPort,
+			lookups: map[string][]net.IPAddr{
+				fetchTestExampleHost: {{IP: net.ParseIP("93.184.216.34")}, {IP: net.ParseIP("10.0.0.1")}},
+			},
+			wantErr: fetchTestWantPrivateErr,
+			wantPin: "",
+		},
+		{
+			name:    "trailing dot hostname is normalized",
+			network: fetchTestNetworkTCP,
+			address: "Example.Test.:80",
+			lookups: map[string][]net.IPAddr{
+				fetchTestExampleHost: {{IP: net.ParseIP("93.184.216.34")}},
+			},
+			wantErr: "",
+			wantPin: "93.184.216.34:80",
+		},
+	}
+}
+
+func TestFetchTool_PinnedDialAddress(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range fetchTestPinnedDialAddressCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			fetchTool := fetchTestLookupTool(testCase.lookups)
+
+			pinned, err := fetchTool.pinnedFetchDialAddress(context.Background(), testCase.network, testCase.address)
+
+			if testCase.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), testCase.wantErr)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, testCase.wantPin, pinned)
+		})
+	}
 }
 
 func TestFetchTool_RejectsPrivateNetworkTargets(t *testing.T) {
@@ -852,25 +1145,45 @@ func TestFetchTool_RedirectValidation(t *testing.T) {
 	}
 }
 
+// fetchTestLegacyDialTransport sets a deprecated legacy Dial hook via reflection,
+// matching how the production guard detects it without tripping SA1019.
+func fetchTestLegacyDialTransport() *http.Transport {
+	transport := &http.Transport{}
+	reflect.ValueOf(transport).Elem().FieldByName("Dial").Set(
+		reflect.ValueOf(legacyFetchDial),
+	)
+
+	return transport
+}
+
+func fetchTestLegacyDialTLSTransport() *http.Transport {
+	transport := &http.Transport{}
+	reflect.ValueOf(transport).Elem().FieldByName("DialTLS").Set(
+		reflect.ValueOf(legacyFetchDial),
+	)
+
+	return transport
+}
+
+func legacyFetchDial(string, string) (net.Conn, error) {
+	return nil, errors.New("legacy dial should not run")
+}
+
 func TestFetchTool_RejectsLegacyTransportDialHooks(t *testing.T) {
 	t.Parallel()
 
-	legacyDial := func(string, string) (net.Conn, error) {
-		return nil, errors.New("legacy dial should not run")
-	}
-
 	tests := []struct {
-		transport *http.Transport
+		transport func() *http.Transport
 		name      string
 	}{
-		{name: "legacy dial", transport: &http.Transport{Dial: legacyDial}},
-		{name: "legacy dial tls", transport: &http.Transport{DialTLS: legacyDial}},
+		{name: "legacy dial", transport: fetchTestLegacyDialTransport},
+		{name: "legacy dial tls", transport: fetchTestLegacyDialTLSTransport},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, _, err := NewFetchTool().transportWithNetworkValidation(testCase.transport)
+			_, _, err := NewFetchTool().transportWithNetworkValidation(testCase.transport())
 
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "deprecated legacy dial hooks")
@@ -1203,3 +1516,18 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return roundTrip(request)
 }
+
+// fetchTestConn is a stub net.Conn used to observe the address that the
+// validated dial hands to the base dialer without opening a real connection.
+type fetchTestConn struct {
+	remoteAddr net.Addr
+}
+
+func (conn fetchTestConn) Read([]byte) (int, error)         { return 0, io.EOF }
+func (conn fetchTestConn) Write(data []byte) (int, error)   { return len(data), nil }
+func (conn fetchTestConn) Close() error                     { return nil }
+func (conn fetchTestConn) LocalAddr() net.Addr              { return conn.remoteAddr }
+func (conn fetchTestConn) RemoteAddr() net.Addr             { return conn.remoteAddr }
+func (conn fetchTestConn) SetDeadline(time.Time) error      { return nil }
+func (conn fetchTestConn) SetReadDeadline(time.Time) error  { return nil }
+func (conn fetchTestConn) SetWriteDeadline(time.Time) error { return nil }
