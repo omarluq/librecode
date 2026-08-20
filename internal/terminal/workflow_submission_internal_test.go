@@ -221,6 +221,7 @@ func TestWorkflowSubmissionReconcilesLoadedRunsDuringPartialLookupFailure(t *tes
 
 	// The successfully loaded terminal run is reconciled despite the invalid
 	// section: its completion delivered and it left the pending set.
+	assert.Contains(t, app.deliveredAgentTasks, loaded.Task.ID)
 	assert.NotContains(t, app.pendingWorkflowRuns, loaded.Task.ID)
 	assert.Empty(t, app.activeWorkflows)
 	// The unresolved run was never loaded, so it stays pending for retry.
