@@ -99,10 +99,16 @@ func BenchmarkRendererFlushAllChanged(b *testing.B) {
 
 	b.ReportAllocs()
 
+	current := 'y'
 	for b.Loop() {
-		frame.SetContent(60, 25, 'y', nil, tcell.StyleDefault)
+		frame.SetContent(60, 25, current, nil, tcell.StyleDefault)
 		renderer.Flush(frame)
-		frame.SetContent(60, 25, 'z', nil, tcell.StyleDefault)
+
+		if current == 'y' {
+			current = 'z'
+		} else {
+			current = 'y'
+		}
 	}
 }
 
