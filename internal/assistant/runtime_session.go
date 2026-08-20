@@ -121,9 +121,12 @@ func (runtime *Runtime) notifyPromptUserEntry(request *PromptRequest, sessionID,
 	request.OnUserEntry(PromptUserEntryEvent{SessionID: sessionID, EntryID: entryID})
 }
 
+// promptParentID resolves the explicit branch endpoint the prompt is submitted
+// against. Explicit endpoints are validated against the session so a cross-session
+// or deleted entry cannot silently truncate reconstructed lineage.
 func (runtime *Runtime) promptParentID(ctx context.Context, sessionID string, explicitParent *string) (*string, error) {
-	if explicitParent != nil {
-		return explicitPromptParentID(explicitParent), nil
+	if explicitParent != nil && *explicitParent != "" {
+		return runtime.explicitPromptParentID(ctx, sessionID, explicitParent)
 	}
 
 	leaf, _, err := runtime.sessions.LeafEntry(ctx, sessionID)
@@ -134,12 +137,31 @@ func (runtime *Runtime) promptParentID(ctx context.Context, sessionID string, ex
 	return parentIDFromEntry(leaf), nil
 }
 
-func explicitPromptParentID(explicitParent *string) *string {
-	if *explicitParent == "" {
-		return nil
+func (runtime *Runtime) explicitPromptParentID(
+	ctx context.Context,
+	sessionID string,
+	explicitParent *string,
+) (*string, error) {
+	// Validation must read the parent in the same session: a cross-session or
+	// missing entry would otherwise append onto a detached root and rebuild a
+	// truncated branch without any error.
+	_, found, err := runtime.sessions.Entry(ctx, sessionID, *explicitParent)
+	if err != nil {
+		return nil, oops.In("assistant").
+			Code("load_prompt_parent").
+			With("session_id", sessionID).
+			Wrapf(err, "load prompt parent entry")
 	}
 
-	return explicitParent
+	if !found {
+		return nil, oops.In("assistant").
+			Code("prompt_parent_not_found").
+			With("session_id", sessionID).
+			With("parent_entry_id", *explicitParent).
+			Errorf("prompt parent entry %q is not in session %q", *explicitParent, sessionID)
+	}
+
+	return explicitParent, nil
 }
 
 func parentIDFromEntry(entry *database.EntryEntity) *string {

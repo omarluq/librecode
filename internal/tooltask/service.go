@@ -122,13 +122,21 @@ func New(
 	}
 
 	return &Service{
-		repository: repository, runtime: nil, coordinator: coordinator, completionHook: nil,
-		defaultTimeout: defaultTimeout, maxTimeout: maxTimeout, maxOutcomeBytes: maxOutcomeBytes,
-		admissions: make(map[string]*tool.PreparedCall), admissionMu: sync.Mutex{},
-		completions: make(map[string]*Completion), subscribers: make(map[uint64]chan Completion),
-		completionMu: sync.Mutex{}, nextSubscriber: 0,
-		startMu: sync.Mutex{}, starts: make(map[string]*startLock),
-		waitMu: sync.Mutex{}, waiters: make(map[string]map[chan struct{}]struct{}),
+		repository:      repository,
+		runtime:         nil,
+		coordinator:     coordinator,
+		completionHook:  nil,
+		defaultTimeout:  defaultTimeout,
+		maxTimeout:      maxTimeout,
+		maxOutcomeBytes: maxOutcomeBytes,
+		admissions:      make(map[string]*tool.PreparedCall),
+		completions:     make(map[string]*Completion),
+		subscribers:     make(map[uint64]chan Completion),
+		nextSubscriber:  0,
+		starts:          make(map[string]*startLock),
+		waiters:         make(map[string]map[chan struct{}]struct{}),
+		admissionMu:     sync.Mutex{}, completionMu: sync.Mutex{},
+		startMu: sync.Mutex{}, waitMu: sync.Mutex{},
 	}
 }
 
@@ -218,7 +226,7 @@ func (service *Service) lockStart(owner, invocationID string) func() {
 
 	lock := service.starts[key]
 	if lock == nil {
-		lock = &startLock{mu: sync.Mutex{}, refs: 0}
+		lock = &startLock{refs: 0, mu: sync.Mutex{}}
 		service.starts[key] = lock
 	}
 

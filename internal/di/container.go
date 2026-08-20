@@ -59,9 +59,9 @@ func NewContainer(ctx context.Context, configPath string, overrides ConfigOverri
 		injector:     injector,
 		runtime:      nil,
 		buildRuntime: nil,
-		lifecycle:    sync.Mutex{},
 		closed:       false,
 		started:      false,
+		lifecycle:    sync.Mutex{},
 	}
 	container.buildRuntime = container.constructRuntime
 

@@ -319,8 +319,7 @@ func resultMessage(result mvmhost.Result, evalErr error) Message {
 	if evalErr != nil {
 		response.Error = evalErr.Error()
 
-		var normalized *mvmhost.EvalError
-		if errors.As(evalErr, &normalized) {
+		if normalized, ok := errors.AsType[*mvmhost.EvalError](evalErr); ok {
 			response.ErrorKind = string(normalized.Kind)
 			response.ExitCode = normalized.ExitCode
 		}

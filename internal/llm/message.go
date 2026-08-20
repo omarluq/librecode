@@ -57,8 +57,8 @@ type Part struct {
 // TextMessage creates a message with one text part.
 func TextMessage(role Role, text string) Message {
 	return Message{
-		Metadata: nil,
 		Role:     role,
+		Metadata: nil,
 		Content: []Part{
 			TextPart(text),
 		},
@@ -68,12 +68,8 @@ func TextMessage(role Role, text string) Message {
 // TextPart creates one text part.
 func TextPart(text string) Part {
 	return Part{
-		Metadata:   nil,
-		ToolCall:   nil,
-		ToolResult: nil,
-		Type:       PartText,
-		Text:       text,
-		Data:       "",
-		MIMEType:   "",
+		Type:     PartText,
+		Text:     text,
+		Metadata: nil, ToolCall: nil, ToolResult: nil, Data: "", MIMEType: "",
 	}
 }

@@ -139,10 +139,10 @@ func (manager *Manager) loadLuaFile(ctx context.Context, extensionPath, name, di
 		name:          name,
 		path:          displayPath,
 		commands:      []string{},
+		lock:          sync.Mutex{},
 		tools:         []string{},
 		keymaps:       []string{},
 		handlers:      []string{},
-		lock:          sync.Mutex{},
 		totalDuration: atomic.Int64{},
 	}
 	openExtensionLibs(extensionRuntime.state)

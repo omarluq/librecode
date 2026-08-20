@@ -21,8 +21,7 @@ const (
 
 // ProviderErrorDetails returns safe structured provider-error diagnostics from err.
 func ProviderErrorDetails(err error) map[string]any {
-	var statusErr *provider.StatusError
-	if errors.As(err, &statusErr) {
+	if statusErr, ok := errors.AsType[*provider.StatusError](err); ok {
 		return statusProviderErrorDetails(statusErr)
 	}
 

@@ -70,9 +70,9 @@ func newSkillsCache(ttl time.Duration) *SkillsCache {
 		cache:    cache,
 		watcher:  nil,
 		done:     make(chan struct{}),
-		purgeMu:  sync.Mutex{},
 		wg:       sync.WaitGroup{},
 		once:     sync.Once{},
+		purgeMu:  sync.Mutex{},
 		purgeTim: nil,
 	}
 

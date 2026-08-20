@@ -30,9 +30,9 @@ func TestEmitStreamEventCallsHandler(t *testing.T) {
 		ToolEvent:     nil,
 		Usage:         nil,
 		Kind:          StreamEventTextDelta,
-		Text:          "hello",
+		Text:          adapterHello,
 	})
 
 	require.Equal(t, StreamEventTextDelta, got.Kind)
-	require.Equal(t, "hello", got.Text)
+	require.Equal(t, adapterHello, got.Text)
 }

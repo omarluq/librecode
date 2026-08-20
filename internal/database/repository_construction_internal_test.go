@@ -15,6 +15,7 @@ const (
 	repositorySessionName   = "session"
 	repositoryDocumentName  = "document"
 	repositoryTaskName      = "task"
+	repositoryToolTaskName  = "tool task"
 	repositoryAgentTaskName = "agent task"
 	repositoryWorkflowName  = "workflow"
 )
@@ -42,6 +43,7 @@ func TestRepositoryConstructorsRejectInvalidSQLConnections(t *testing.T) {
 		{name: repositorySessionName, construct: sessionConstructorError},
 		{name: repositoryDocumentName, construct: documentConstructorError},
 		{name: repositoryTaskName, construct: taskConstructorError},
+		{name: repositoryToolTaskName, construct: toolTaskConstructorError},
 		{name: repositoryAgentTaskName, construct: agentTaskConstructorError},
 		{name: repositoryWorkflowName, construct: workflowConstructorError},
 	}
@@ -67,6 +69,7 @@ func TestRepositoryConstructorsRejectNilProviders(t *testing.T) {
 		{name: repositorySessionName, construct: sessionProviderConstructorError},
 		{name: repositoryDocumentName, construct: documentProviderConstructorError},
 		{name: repositoryTaskName, construct: taskProviderConstructorError},
+		{name: repositoryToolTaskName, construct: toolTaskProviderConstructorError},
 		{name: repositoryAgentTaskName, construct: agentTaskProviderConstructorError},
 		{name: repositoryWorkflowName, construct: workflowProviderConstructorError},
 	}
@@ -232,6 +235,14 @@ func TestCompositeRepositoryConstructorsRejectInvalidGraph(t *testing.T) {
 			err:  agentTaskGraphConstructorError(otherProvider, tasks),
 			code: graphMismatch,
 		},
+		"tool task with nil task repository": {
+			err:  toolTaskGraphConstructorError(provider, nil),
+			code: graphMismatch,
+		},
+		"tool task with mismatched provider": {
+			err:  toolTaskGraphConstructorError(otherProvider, tasks),
+			code: graphMismatch,
+		},
 		"workflow with nil task repository": {
 			err:  workflowGraphConstructorError(provider, nil, agentTasks),
 			code: "nil_task_repository",
@@ -364,6 +375,12 @@ func agentTaskGraphConstructorError(provider ksql.Provider, tasks *TaskRepositor
 	return err
 }
 
+func toolTaskGraphConstructorError(provider ksql.Provider, tasks *TaskRepository) error {
+	_, err := NewToolTaskRepositoryWithProvider(provider, tasks)
+
+	return err
+}
+
 func workflowGraphConstructorError(
 	provider ksql.Provider,
 	tasks *TaskRepository,
@@ -388,6 +405,12 @@ func documentConstructorError(connection *sql.DB) error {
 
 func taskConstructorError(connection *sql.DB) error {
 	_, err := NewTaskRepository(connection)
+
+	return err
+}
+
+func toolTaskConstructorError(connection *sql.DB) error {
+	_, err := NewToolTaskRepository(connection)
 
 	return err
 }
@@ -418,6 +441,12 @@ func documentProviderConstructorError(provider ksql.Provider) error {
 
 func taskProviderConstructorError(provider ksql.Provider) error {
 	_, err := NewTaskRepositoryWithProvider(provider)
+
+	return err
+}
+
+func toolTaskProviderConstructorError(provider ksql.Provider) error {
+	_, err := NewToolTaskRepositoryWithProvider(provider, nil)
 
 	return err
 }

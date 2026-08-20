@@ -415,8 +415,7 @@ func (runtime *Runtime) retryAttempt(
 }
 
 func retryError(err error) error {
-	var retryFailed *retryFailedError
-	if errors.As(err, &retryFailed) {
+	if retryFailed, ok := errors.AsType[*retryFailedError](err); ok {
 		return retryFailed.Unwrap()
 	}
 

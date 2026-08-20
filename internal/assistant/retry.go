@@ -108,8 +108,7 @@ func retryBackoffWithOverride(
 }
 
 func providerRetryDelay(err error, fallback time.Duration) time.Duration {
-	var statusErr *provider.StatusError
-	if errors.As(err, &statusErr) {
+	if statusErr, ok := errors.AsType[*provider.StatusError](err); ok {
 		providerDelay := min(statusErr.RetryAfter, provider.MaxRetryAfter)
 		if providerDelay > fallback {
 			return providerDelay
@@ -260,8 +259,7 @@ func providerErrorCode(err error) (string, bool) {
 }
 
 func providerErrorStatus(err error) (int, bool) {
-	var statusErr *provider.StatusError
-	if errors.As(err, &statusErr) {
+	if statusErr, ok := errors.AsType[*provider.StatusError](err); ok {
 		return statusErr.Status, true
 	}
 
