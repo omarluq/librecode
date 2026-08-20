@@ -19,24 +19,9 @@ func TestReadIgnorePatternsAppliesDefaultsWithoutUserConfig(t *testing.T) {
 
 	patterns := readIgnorePatterns(workspace, nil)
 
-	expectedSources := []string{
-		".git/",
-		"node_modules/",
-		defaultIgnoreEnv,
-		".gocache/",
-		".gomodcache/",
-		".tmp/",
-		"bin/",
-		"/skills/",
-	}
-
-	actualSources := make([]string, 0, len(patterns))
-	for _, pattern := range patterns {
-		actualSources = append(actualSources, pattern.source)
-	}
-
-	assert.Equal(t, expectedSources, actualSources)
-	assert.False(t, slices.IsSorted(actualSources) && len(actualSources) != len(expectedSources))
+	sources := patternSources(patterns)
+	assert.Equal(t, defaultIgnorePatternSources(), sources)
+	assert.False(t, slices.IsSorted(sources) && len(sources) != len(defaultIgnorePatternSources()))
 }
 
 func TestReadIgnorePatternsReturnsSharedDefaultsWithoutMutatingThem(t *testing.T) {
@@ -96,17 +81,6 @@ func TestIgnoredReadPathReasonsMatchDefaultAndCustomPatterns(t *testing.T) {
 func TestDefaultReadIgnorePatternsMatchingMatchesFreshlyParsedPatterns(t *testing.T) {
 	t.Parallel()
 
-	expectedSources := []string{
-		".git/",
-		"node_modules/",
-		defaultIgnoreEnv,
-		".gocache/",
-		".gomodcache/",
-		".tmp/",
-		"bin/",
-		"/skills/",
-	}
-
 	paths := [][]string{
 		{gitDirName, "config"},
 		{"node_modules", "pkg", "index.js"},
@@ -121,8 +95,8 @@ func TestDefaultReadIgnorePatternsMatchingMatchesFreshlyParsedPatterns(t *testin
 		{"cmd", "main.go"},
 	}
 
-	fresh := make([]ignorePattern, 0, len(expectedSources))
-	for _, source := range expectedSources {
+	fresh := make([]ignorePattern, 0, len(defaultIgnorePatternSources()))
+	for _, source := range defaultIgnorePatternSources() {
 		fresh = append(fresh, ignorePattern{pattern: gitignore.ParsePattern(source, nil), source: source})
 	}
 
@@ -135,6 +109,28 @@ func TestDefaultReadIgnorePatternsMatchingMatchesFreshlyParsedPatterns(t *testin
 			"path %v", pathParts,
 		)
 	}
+}
+
+func defaultIgnorePatternSources() []string {
+	return []string{
+		".git/",
+		"node_modules/",
+		defaultIgnoreEnv,
+		".gocache/",
+		".gomodcache/",
+		".tmp/",
+		"bin/",
+		"/skills/",
+	}
+}
+
+func patternSources(patterns []ignorePattern) []string {
+	sources := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		sources = append(sources, pattern.source)
+	}
+
+	return sources
 }
 
 func writeIgnoreTestFile(t *testing.T, path, content string) {
