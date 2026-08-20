@@ -485,8 +485,12 @@ func fetchTestRebindingDialPinCases() []fetchTestDialPinCase {
 // validate, wrap the transport, dial via dialCase, and assert the recorded
 // target is the pinned validated IP (or that dialing was refused).
 type (
-	fetchTestDialFunc = func(context.Context, string, string) (net.Conn, error)
-	fetchTestDialHook = func(*http.Transport) fetchTestDialFunc
+	fetchTestDialFunc   = func(context.Context, string, string) (net.Conn, error)
+	fetchTestDialSelect = func(*http.Transport) fetchTestDialFunc
+	// fetchTestDialHook installs any base dial hooks on the pre-wrap transport
+	// and returns a selector that picks the dial func to invoke on the wrapped
+	// transport, so the installed validating wrappers are actually exercised.
+	fetchTestDialHook = func(base *http.Transport) fetchTestDialSelect
 )
 
 func fetchTestRunDialPinCase(t *testing.T, testCase fetchTestDialPinCase, port string, dialCase fetchTestDialHook) {
@@ -507,6 +511,13 @@ func fetchTestRunDialPinCase(t *testing.T, testCase fetchTestDialPinCase, port s
 	// request path does, so the dial below observes the second resolution.
 	require.NoError(t, fetchTool.validatePublicFetchURL(context.Background(), requestURL))
 
+	// Install the base dial hooks before the validating wrapper so the
+	// wrapper wraps them; the selector then invokes the wrapped hook.
+	baseTransport, isHTTP := fetchTool.client.Transport.(*http.Transport)
+	require.True(t, isHTTP)
+
+	dialSelector := dialCase(baseTransport)
+
 	transport, closeIdleConnections, err := fetchTool.transportWithNetworkValidation(fetchTool.client.Transport)
 	require.NoError(t, err)
 
@@ -515,7 +526,7 @@ func fetchTestRunDialPinCase(t *testing.T, testCase fetchTestDialPinCase, port s
 	httpTransport, ok := transport.(*http.Transport)
 	require.True(t, ok)
 
-	conn, dialErr := dialCase(httpTransport)(context.Background(), "tcp", fetchTestExampleHost+":"+port)
+	conn, dialErr := dialSelector(httpTransport)(context.Background(), "tcp", fetchTestExampleHost+":"+port)
 
 	if testCase.wantErr != "" {
 		require.Error(t, dialErr)
@@ -538,8 +549,8 @@ func TestFetchTool_PinsDialedAddressToValidatedIP(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			fetchTestRunDialPinCase(t, testCase, "80", func(transport *http.Transport) fetchTestDialFunc {
-				return transport.DialContext
+			fetchTestRunDialPinCase(t, testCase, "80", func(*http.Transport) fetchTestDialSelect {
+				return func(wrapped *http.Transport) fetchTestDialFunc { return wrapped.DialContext }
 			})
 		})
 	}
@@ -552,12 +563,13 @@ func TestFetchTool_PinsDialedTLSToValidatedIP(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			// Supply a TLS dial hook so the validating wrapper exercises the
-			// HTTPS path: the recorded target must be the pinned literal IP.
-			fetchTestRunDialPinCase(t, testCase, "443", func(transport *http.Transport) fetchTestDialFunc {
-				transport.DialTLSContext = transport.DialContext
+			// Install the TLS dial hook on the base transport before wrapping so
+			// the validating wrapper wraps it; invoking the wrapped transport's
+			// DialTLSContext must dial the pinned literal IP.
+			fetchTestRunDialPinCase(t, testCase, "443", func(base *http.Transport) fetchTestDialSelect {
+				base.DialTLSContext = base.DialContext
 
-				return transport.DialTLSContext
+				return func(wrapped *http.Transport) fetchTestDialFunc { return wrapped.DialTLSContext }
 			})
 		})
 	}
