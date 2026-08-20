@@ -7,17 +7,24 @@ import (
 	"github.com/omarluq/librecode/internal/mapsutil"
 )
 
+func mustPrintln(values ...any) {
+	//nolint:forbidigo // helper used by godoc examples; error is checked, not ignored
+	if _, err := fmt.Println(values...); err != nil {
+		panic(err)
+	}
+}
+
 // CloneOrEmpty always yields a non-nil map, so nil input still serializes as
 // a JSON object instead of null.
 func ExampleCloneOrEmpty() {
 	serialized, err := json.Marshal(mapsutil.CloneOrEmpty(map[string]int(nil)))
 	if err != nil {
-		fmt.Println("error:", err)
+		mustPrintln("error:", err)
 
 		return
 	}
 
-	fmt.Println(string(serialized))
+	mustPrintln(string(serialized))
 	// Output: {}
 }
 
@@ -27,8 +34,8 @@ func ExampleClonePreserveNil() {
 
 	empty := map[string]string{}
 
-	fmt.Println(mapsutil.ClonePreserveNil(unset) == nil)
-	fmt.Println(mapsutil.ClonePreserveNil(empty) == nil)
+	mustPrintln(mapsutil.ClonePreserveNil(unset) == nil)
+	mustPrintln(mapsutil.ClonePreserveNil(empty) == nil)
 	// Output:
 	// true
 	// false
@@ -39,9 +46,9 @@ func ExampleClonePreserveNil() {
 func ExampleCloneOrNil() {
 	empty := map[string]string{}
 
-	fmt.Println(mapsutil.CloneOrNil(map[string]string(nil)) == nil)
-	fmt.Println(mapsutil.CloneOrNil(empty) == nil)
-	fmt.Println(mapsutil.CloneOrNil(map[string]string{"k": "v"}))
+	mustPrintln(mapsutil.CloneOrNil(map[string]string(nil)) == nil)
+	mustPrintln(mapsutil.CloneOrNil(empty) == nil)
+	mustPrintln(mapsutil.CloneOrNil(map[string]string{"k": "v"}))
 	// Output:
 	// true
 	// true
