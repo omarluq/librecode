@@ -110,26 +110,54 @@ func profileBindings(
 	arguments map[string]any,
 	bridge callBridge,
 ) mvmhost.Bindings {
-	if profile == guestapi.ProfileTurn {
-		packageName := guestapi.PackageTools
-		if version == guestapi.Version1 {
-			packageName = guestapi.LegacyPackageTools
+	if version == guestapi.Version1 {
+		if profile == guestapi.ProfileDurable {
+			return workflowModeBindings(arguments, bridge)
 		}
 
 		if workflowBridge, ok := bridge.(workflowCallBridge); ok {
-			return toolsBindings(packageName, workflowBridge.caller)
+			return toolsBindings(guestapi.LegacyPackageTools, workflowBridge.caller)
 		}
 
-		return inertToolsBindings(packageName)
+		return inertToolsBindings(guestapi.LegacyPackageTools)
 	}
 
-	// Version 1 is the persisted workflow compatibility manifest. Version 2
-	// durable tools are intentionally absent until effect journaling exists.
-	if version == guestapi.Version1 {
-		return workflowModeBindings(arguments, bridge)
+	bindings := version2Bindings(profile)
+	if profile == guestapi.ProfileTurn {
+		if workflowBridge, ok := bridge.(workflowCallBridge); ok {
+			bindings[guestapi.PackageTools] = toolsBindings(
+				guestapi.PackageTools,
+				workflowBridge.caller,
+			)[guestapi.PackageTools]
+		} else {
+			bindings[guestapi.PackageTools] = inertToolsBindings(guestapi.PackageTools)[guestapi.PackageTools]
+		}
 	}
 
-	return mvmhost.Bindings{}
+	return bindings
+}
+
+func version2Bindings(profile guestapi.Profile) mvmhost.Bindings {
+	bindings := make(mvmhost.Bindings)
+
+	for _, availability := range guestapi.AvailabilityManifest() {
+		if !availability.Available(profile) || availability.Implemented {
+			continue
+		}
+
+		packageBindings := bindings[availability.Package]
+		if packageBindings == nil {
+			packageBindings = make(map[string]any)
+			bindings[availability.Package] = packageBindings
+		}
+
+		packageName, functionName := availability.Package, availability.Function
+		packageBindings[functionName] = func(...any) error {
+			return fmt.Errorf("%s: %s.%s is not implemented", guestapi.ErrorUnsupported, packageName, functionName)
+		}
+	}
+
+	return bindings
 }
 
 func inertToolsBindings(packageName string) mvmhost.Bindings {

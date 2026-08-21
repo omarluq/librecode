@@ -44,6 +44,29 @@ type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
 
+type countingWriteCloser struct {
+	writes int
+	mu     sync.Mutex
+}
+
+func (w *countingWriteCloser) Write(payload []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.writes++
+
+	return len(payload), nil
+}
+
+func (w *countingWriteCloser) Close() error { return nil }
+
+func (w *countingWriteCloser) count() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.writes
+}
+
 func TestProtocolErrorBranches(t *testing.T) {
 	t.Parallel()
 
@@ -131,31 +154,111 @@ func TestWorkerBindingsModes(t *testing.T) {
 	t.Parallel()
 
 	caller := newRPCCaller()
-	bindings, err := workerBindings(ptrMessage("eval"), caller)
-	require.NoError(t, err)
-	assert.Contains(t, bindings, "tools")
 
+	contractTests := []struct {
+		name        string
+		errContains string
+		profile     guestapi.Profile
+		version     guestapi.Version
+		packages    []string
+		bindings    []string
+	}{{
+		packages: []string{guestapi.LegacyPackageTools}, bindings: []string{"Call", "Describe", "Search"},
+		name: "turn version 1", errContains: "", profile: guestapi.ProfileTurn, version: guestapi.Version1,
+	},
+		{
+			packages: []string{guestapi.PackageArtifacts, guestapi.PackageTools, guestapi.PackageWorkflow},
+			bindings: nil, name: "turn version 2", errContains: "", profile: guestapi.ProfileTurn,
+			version: guestapi.Version2,
+		},
+		{
+			packages: []string{guestapi.PackageWorkflow},
+			bindings: []string{"Agent", "Arguments", "Cancel", "List", "Pipeline", "Wait"},
+			name:     "durable version 1", errContains: "", profile: guestapi.ProfileDurable,
+			version: guestapi.Version1,
+		},
+		{
+			packages: []string{
+				guestapi.PackageAgents, guestapi.PackageArtifacts, guestapi.PackageState, guestapi.PackageWorkflow,
+			},
+			bindings: nil, name: "durable version 2", errContains: "",
+			profile: guestapi.ProfileDurable, version: guestapi.Version2,
+		},
+		{
+			packages: nil, bindings: nil, name: "profile only", errContains: "must be provided together",
+			profile: guestapi.ProfileTurn, version: "",
+		},
+		{
+			packages: nil, bindings: nil, name: "version only", errContains: "must be provided together",
+			profile: "", version: guestapi.Version2,
+		},
+		{
+			packages: nil, bindings: nil, name: "unknown profile", errContains: "unknown execute worker profile",
+			profile: "bad", version: guestapi.Version2,
+		},
+		{
+			packages: nil, bindings: nil, name: "unknown version", errContains: "incompatible guest API version",
+			profile: guestapi.ProfileTurn, version: "99",
+		},
+	}
+	for _, test := range contractTests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := ptrMessage("eval")
+			request.Profile, request.GuestAPI = test.profile, test.version
+
+			bindings, err := workerBindings(request, caller)
+			if test.errContains != "" {
+				require.ErrorContains(t, err, test.errContains)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, test.packages, bindingPackageNames(bindings))
+
+			if test.bindings != nil && len(test.packages) == 1 {
+				assert.Equal(t, test.bindings, bindingNames(bindings[test.packages[0]]))
+			}
+
+			if test.version == guestapi.Version2 {
+				assertVersion2Bindings(t, bindings, test.profile)
+			}
+		})
+	}
+}
+
+func TestVersion2CapabilityFailures(t *testing.T) {
+	t.Parallel()
+
+	durableBindings, err := CompileBindings(guestapi.ProfileDurable, guestapi.Version2, nil)
+	require.NoError(t, err)
+
+	_, err = mvmhost.New().Eval(t.Context(), mvmhost.Request{
+		Bindings: durableBindings,
+		Name:     "unsupported-agent.go",
+		Source:   `import "librecode/agents"; agents.Run("prompt")`,
+	})
+	require.ErrorContains(t, err, string(guestapi.ErrorUnsupported))
+
+	_, err = mvmhost.New().Eval(t.Context(), mvmhost.Request{
+		Bindings: durableBindings,
+		Name:     "unavailable-tool.go",
+		Source:   `import "librecode/tools"; tools.Call("read", {})`,
+	})
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), string(guestapi.ErrorUnsupported))
+}
+
+func TestWorkerBindingsLegacyModes(t *testing.T) {
+	t.Parallel()
+
+	caller := newRPCCaller()
 	request := ptrMessage("eval")
-	request.Profile, request.GuestAPI = guestapi.ProfileTurn, guestapi.Version2
-	bindings, err = workerBindings(request, caller)
+	bindings, err := workerBindings(request, caller)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"librecode/tools"}, bindingPackageNames(bindings))
-	assert.ElementsMatch(t, []string{"Search", "Describe", "Call"}, bindingNames(bindings["librecode/tools"]))
-
-	request.Profile = guestapi.ProfileDurable
-	bindings, err = workerBindings(request, caller)
-	require.NoError(t, err)
-	assert.Empty(t, bindings, "durable tools stay unavailable until the effect journal exists")
-
-	request.Profile, request.GuestAPI = "bad", guestapi.Version2
-	_, err = workerBindings(request, caller)
-	require.ErrorContains(t, err, "unknown execute worker profile")
-
-	request.Profile, request.GuestAPI = guestapi.ProfileTurn, "99"
-	_, err = workerBindings(request, caller)
-	require.ErrorContains(t, err, "incompatible guest API version")
-
-	request = ptrMessage("eval")
+	assert.Contains(t, bindings, guestapi.LegacyPackageTools)
 
 	request.Mode = "bad"
 	_, err = workerBindings(request, caller)
@@ -166,11 +269,29 @@ func TestWorkerBindingsModes(t *testing.T) {
 	_, err = workerBindings(request, caller)
 	require.ErrorContains(t, err, "decode workflow arguments")
 
-	for _, arguments := range []json.RawMessage{nil, json.RawMessage("null"), json.RawMessage(`{"x":1}`)} {
+	workflowArguments := []json.RawMessage{nil, json.RawMessage("null"), json.RawMessage(`{"x":1}`)}
+	for _, arguments := range workflowArguments {
 		request.Arguments = arguments
 		bindings, err = workerBindings(request, caller)
 		require.NoError(t, err)
 		assert.Contains(t, bindings, "librecode/workflow")
+	}
+}
+
+func assertVersion2Bindings(t *testing.T, bindings mvmhost.Bindings, profile guestapi.Profile) {
+	t.Helper()
+
+	expected := make(map[string][]string)
+
+	for _, availability := range guestapi.AvailabilityManifest() {
+		if availability.Available(profile) {
+			expected[availability.Package] = append(expected[availability.Package], availability.Function)
+		}
+	}
+
+	for packageName := range expected {
+		sort.Strings(expected[packageName])
+		assert.Equal(t, expected[packageName], bindingNames(bindings[packageName]))
 	}
 }
 
@@ -408,12 +529,14 @@ func TestReadMessagesCallbackWaitHonorsCancellation(t *testing.T) {
 	t.Parallel()
 
 	callbackStarted := make(chan struct{})
-	releaseCallback := make(chan struct{})
-	client := newClient(func(context.Context, *Message) (any, error) {
-		close(callbackStarted)
-		<-releaseCallback
+	callbackDone := make(chan struct{})
+	client := newClient(func(ctx context.Context, _ *Message) (any, error) {
+		defer close(callbackDone)
 
-		return "released", nil
+		close(callbackStarted)
+		<-ctx.Done()
+
+		return nil, ctx.Err()
 	}, "")
 
 	var output bytes.Buffer
@@ -427,10 +550,11 @@ func TestReadMessagesCallbackWaitHonorsCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	worker := startedProcess(t, "sleep 10")
+	stdin := &countingWriteCloser{writes: 0, mu: sync.Mutex{}}
 	resultCh := make(chan error, 1)
 
 	go func() {
-		_, err := client.readMessages(ctx, worker, nopWriteCloser{io.Discard}, &output)
+		_, err := client.readMessages(ctx, worker, stdin, &output)
 		resultCh <- err
 	}()
 
@@ -444,7 +568,42 @@ func TestReadMessagesCallbackWaitHonorsCancellation(t *testing.T) {
 		require.FailNow(t, "callback wait did not honor cancellation")
 	}
 
-	close(releaseCallback)
+	select {
+	case <-callbackDone:
+	case <-t.Context().Done():
+		require.FailNow(t, "callback handler did not finish before readMessages returned")
+	}
+
+	assert.Zero(t, stdin.count(), "canceled callback must not write a late response")
+}
+
+func TestReadMessagesAbortCancelsCallback(t *testing.T) {
+	t.Parallel()
+
+	callbackStarted := make(chan struct{})
+	callbackCanceled := make(chan struct{})
+	client := newClient(func(ctx context.Context, _ *Message) (any, error) {
+		close(callbackStarted)
+		<-ctx.Done()
+		close(callbackCanceled)
+
+		return nil, ctx.Err()
+	}, "")
+
+	var output bytes.Buffer
+
+	rpc := newMessage("rpc")
+	rpc.ID = 1
+	require.NoError(t, Write(&output, &rpc))
+	require.NoError(t, Write(&output, ptrMessage("unexpected")))
+
+	worker := startedProcess(t, "sleep 10")
+	stdin := &countingWriteCloser{writes: 0, mu: sync.Mutex{}}
+	_, err := client.readMessages(t.Context(), worker, stdin, &output)
+	require.ErrorContains(t, err, "unexpected execute worker message")
+	<-callbackStarted
+	<-callbackCanceled
+	assert.Zero(t, stdin.count(), "aborted callback must not write a late response")
 }
 
 func TestFinishResultBranches(t *testing.T) {

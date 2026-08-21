@@ -222,8 +222,9 @@ func (client Client) executablePath() (string, error) {
 }
 
 type rpcCallbacks struct {
-	slots chan struct{}
-	done  []<-chan struct{}
+	cancel context.CancelFunc
+	slots  chan struct{}
+	done   []<-chan struct{}
 }
 
 func (client Client) readMessages(
@@ -232,31 +233,42 @@ func (client Client) readMessages(
 	stdin io.WriteCloser,
 	stdout io.Reader,
 ) (mvmhost.Result, error) {
+	callbackCtx, cancelCallbacks := context.WithCancel(ctx)
+
 	callbacks := rpcCallbacks{
-		slots: make(chan struct{}, maxConcurrentRPCCallbacks),
-		done:  nil,
+		cancel: cancelCallbacks,
+		slots:  make(chan struct{}, maxConcurrentRPCCallbacks), done: nil,
 	}
+	defer cancelCallbacks()
 
 	var writes sync.Mutex
 
 	for {
 		message, err := Read(stdout)
 		if err != nil {
+			client.stopRPCCallbacks(worker, &callbacks)
+
 			return mvmhost.Result{}, worker.readError(ctx, err)
 		}
 
 		switch message.Type {
 		case "rpc":
-			if err := client.startRPCCallback(ctx, worker, stdin, &message, &callbacks, &writes); err != nil {
+			if err := client.startRPCCallback(callbackCtx, worker, stdin, &message, &callbacks, &writes); err != nil {
+				client.stopRPCCallbacks(worker, &callbacks)
+
 				return mvmhost.Result{}, worker.abort(err)
 			}
 		case "result":
 			if err := waitForCallbacks(ctx, callbacks.done); err != nil {
+				client.stopRPCCallbacks(worker, &callbacks)
+
 				return mvmhost.Result{}, worker.abort(err)
 			}
 
 			return finishResult(ctx, worker, stdin, &message)
 		default:
+			client.stopRPCCallbacks(worker, &callbacks)
+
 			return mvmhost.Result{}, worker.abort(
 				fmt.Errorf("unexpected execute worker message %q", message.Type),
 			)
@@ -294,9 +306,16 @@ func (client Client) startRPCCallback(
 		defer func() { <-callbacks.slots }()
 
 		response := client.rpcResponse(ctx, &rpc)
+		if ctx.Err() != nil {
+			return
+		}
 
 		writes.Lock()
 		defer writes.Unlock()
+
+		if ctx.Err() != nil {
+			return
+		}
 
 		if Write(stdin, &response) != nil {
 			worker.kill()
@@ -304,6 +323,15 @@ func (client Client) startRPCCallback(
 	}()
 
 	return nil
+}
+
+func (client Client) stopRPCCallbacks(worker *workerProcess, callbacks *rpcCallbacks) {
+	callbacks.cancel()
+	worker.kill()
+
+	for _, callbackDone := range callbacks.done {
+		<-callbackDone
+	}
 }
 
 func waitForCallbacks(ctx context.Context, callbacks []<-chan struct{}) error {
