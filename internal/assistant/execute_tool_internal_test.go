@@ -67,7 +67,7 @@ func TestExecuteToolUsesCompletedPromptRegistry(t *testing.T) {
 	}{
 		{
 			name:   "search",
-			source: `import "tools"; tools.Search("echo")`,
+			source: `import "librecode/tools"; tools.Search("echo")`,
 			check: func(t *testing.T, result tool.Result) {
 				t.Helper()
 				assert.Contains(t, result.Text(), `"name":"echo"`)
@@ -78,7 +78,7 @@ func TestExecuteToolUsesCompletedPromptRegistry(t *testing.T) {
 		},
 		{
 			name:   "single call preserves common envelope",
-			source: `import "tools"; tools.Call("echo", map[string]interface{}{"text": "one"})`,
+			source: `import "librecode/tools"; tools.Call("echo", map[string]interface{}{"text": "one"})`,
 			check: func(t *testing.T, result tool.Result) {
 				t.Helper()
 				assert.Equal(t, "one", result.Text())
@@ -90,7 +90,7 @@ func TestExecuteToolUsesCompletedPromptRegistry(t *testing.T) {
 		},
 		{
 			name:   "describe includes schema",
-			source: `import "tools"; tools.Describe("echo")`,
+			source: `import "librecode/tools"; tools.Describe("echo")`,
 			check: func(t *testing.T, result tool.Result) {
 				t.Helper()
 				assert.Contains(t, result.Text(), `"required":["text"]`)
@@ -98,7 +98,7 @@ func TestExecuteToolUsesCompletedPromptRegistry(t *testing.T) {
 		},
 		{
 			name: "multiple calls",
-			source: `import "tools"
+			source: `import "librecode/tools"
 first := tools.Call("echo", map[string]interface{}{"text": "one"})
 second := tools.Call("echo", map[string]interface{}{"text": "two"})
 []interface{}{first, second}`,
@@ -122,6 +122,19 @@ second := tools.Call("echo", map[string]interface{}{"text": "two"})
 	}
 }
 
+func TestExecuteToolHidesManagementCapabilities(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []tool.Name{
+		executeToolName, "workflow", agentStartToolName, agentStatusToolName,
+		agentWaitToolName, agentCancelToolName, agentListToolName,
+	} {
+		assert.True(t, executeHiddenTool(name), name)
+	}
+
+	assert.False(t, executeHiddenTool(tool.NameRead))
+}
+
 func TestExecuteToolRejectsRecursionAndInvalidNestedInput(t *testing.T) {
 	t.Parallel()
 
@@ -137,15 +150,19 @@ func TestExecuteToolRejectsRecursionAndInvalidNestedInput(t *testing.T) {
 		want   string
 	}{
 		{
-			name: executeCallMethod, source: `import "tools"; tools.Call("execute", map[string]interface{}{})`,
-			want: "execute cannot call itself",
+			name:   executeCallMethod,
+			source: `import "librecode/tools"; tools.Call("execute", map[string]interface{}{})`,
+			want:   "execute cannot call itself",
 		},
-		{name: "describe", source: `import "tools"; tools.Describe("execute")`, want: "null"},
+		{name: "describe", source: `import "librecode/tools"; tools.Describe("execute")`, want: "null"},
 		{
-			name: "unknown", source: `import "tools"; tools.Call("missing", map[string]interface{}{})`,
+			name: "unknown", source: `import "librecode/tools"; tools.Call("missing", map[string]interface{}{})`,
 			want: "unknown tool",
 		},
-		{name: "non object input", source: `import "tools"; tools.Call("missing", "bad")`, want: "cannot unmarshal"},
+		{
+			name: "non object input", source: `import "librecode/tools"; tools.Call("missing", "bad")`,
+			want: "cannot unmarshal",
+		},
 	}
 
 	for _, test := range tests {
@@ -182,7 +199,7 @@ func TestExecuteNestedCallsUseSharedInvocationBoundary(t *testing.T) {
 	outer := runtime.executeProviderToolCall(
 		t.Context(), registry,
 		&ToolCall{
-			Metadata: nil, Arguments: executeArguments(t, `import "tools"
+			Metadata: nil, Arguments: executeArguments(t, `import "librecode/tools"
  tools.Call("echo", map[string]interface{}{"text": "one"})
  tools.Call("echo", map[string]interface{}{"text": "two"})`),
 			ID: executeOuterCallID, Name: string(executeToolName), ArgumentsJSON: `{}`,
@@ -253,7 +270,7 @@ func TestExecuteNestedCallsPreserveMixedResultsAndLifecycleOrder(t *testing.T) {
 	events := []StreamEvent{}
 	outer := runtime.executeProviderToolCall(t.Context(), registry, &ToolCall{
 		Metadata: nil,
-		Arguments: executeArguments(t, `import "tools"
+		Arguments: executeArguments(t, `import "librecode/tools"
 []interface{}{
 	tools.Call("echo", map[string]interface{}{"text": "ok"}),
 	tools.Call("missing", map[string]interface{}{}),
@@ -301,7 +318,7 @@ func TestExecuteNestedCallCancellationEmitsCompletedBoundaries(t *testing.T) {
 	events := []StreamEvent{}
 
 	done := make(chan ToolEvent, 1)
-	arguments := executeArguments(t, `import "tools"; tools.Call("block", map[string]interface{}{})`)
+	arguments := executeArguments(t, `import "librecode/tools"; tools.Call("block", map[string]interface{}{})`)
 
 	go func() {
 		done <- runtime.executeProviderToolCall(ctx, registry, &ToolCall{
@@ -390,7 +407,8 @@ func TestExecuteToolValidationAndWorkerErrors(t *testing.T) {
 
 func executeTestWorkerMessage(method, name string, input json.RawMessage) *executeworker.Message {
 	return &executeworker.Message{
-		Stderr: "", Source: "", Method: method, Mode: "", Name: name, Query: "", Stdout: "", Type: "",
+		Stderr: "", Source: "", Method: method, Mode: "", Profile: "", GuestAPI: "", Name: name,
+		Query: "", Stdout: "", Type: "",
 		Error: "", ErrorKind: "", ValueKind: "", Input: input, Value: nil, Arguments: nil, ID: 0,
 		ExitCode: 0,
 	}

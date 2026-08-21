@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
 )
 
@@ -56,26 +57,101 @@ func Serve(input io.Reader, output io.Writer) error {
 }
 
 func workerBindings(request *Message, caller *rpcCaller) (mvmhost.Bindings, error) {
-	if request.Mode == "" || request.Mode == "execute" {
-		return mvmhost.Bindings{"tools": {
-			"Search":   func(query string) any { return caller.call("search", "", query, nil) },
-			"Describe": func(name string) any { return caller.call("describe", name, "", nil) },
-			"Call":     func(name string, input any) any { return caller.call("call", name, "", input) },
-		}}, nil
-	}
-
-	if request.Mode != "workflow" {
-		return nil, fmt.Errorf("unknown execute worker mode %q", request.Mode)
+	profile, version, err := workerContract(request)
+	if err != nil {
+		return nil, err
 	}
 
 	var arguments map[string]any
-	if len(request.Arguments) > 0 && string(request.Arguments) != jsonNullValue {
+	if profile == guestapi.ProfileDurable && len(request.Arguments) > 0 && string(request.Arguments) != jsonNullValue {
 		if err := json.Unmarshal(request.Arguments, &arguments); err != nil {
 			return nil, fmt.Errorf("decode workflow arguments: %w", err)
 		}
 	}
 
-	return workflowModeBindings(arguments, workflowCallBridge{caller: caller}), nil
+	return profileBindings(profile, version, arguments, workflowCallBridge{caller: caller}), nil
+}
+
+func workerContract(request *Message) (guestapi.Profile, guestapi.Version, error) {
+	profile, version := request.Profile, request.GuestAPI
+	if profile == "" && version == "" { // pre-manifest version-1 protocol
+		switch request.Mode {
+		case "", "execute":
+			profile = guestapi.ProfileTurn
+		case "workflow":
+			profile = guestapi.ProfileDurable
+		default:
+			return "", "", fmt.Errorf("unknown execute worker mode %q", request.Mode)
+		}
+
+		version = guestapi.Version1
+	} else if profile == "" || version == "" {
+		return "", "", errors.New("execute worker profile and guest API version must be provided together")
+	}
+
+	if err := guestapi.ValidateWorkerContract(profile, version); err != nil {
+		return "", "", fmt.Errorf("validate worker contract: %w", err)
+	}
+
+	return profile, version, nil
+}
+
+func toolsBindings(packageName string, caller *rpcCaller) mvmhost.Bindings {
+	return mvmhost.Bindings{packageName: {
+		"Search":   func(query string) any { return caller.call("search", "", query, nil) },
+		"Describe": func(name string) any { return caller.call("describe", name, "", nil) },
+		"Call":     func(name string, input any) any { return caller.call("call", name, "", input) },
+	}}
+}
+
+func profileBindings(
+	profile guestapi.Profile,
+	version guestapi.Version,
+	arguments map[string]any,
+	bridge callBridge,
+) mvmhost.Bindings {
+	if profile == guestapi.ProfileTurn {
+		packageName := guestapi.PackageTools
+		if version == guestapi.Version1 {
+			packageName = guestapi.LegacyPackageTools
+		}
+
+		if workflowBridge, ok := bridge.(workflowCallBridge); ok {
+			return toolsBindings(packageName, workflowBridge.caller)
+		}
+
+		return inertToolsBindings(packageName)
+	}
+
+	// Version 1 is the persisted workflow compatibility manifest. Version 2
+	// durable tools are intentionally absent until effect journaling exists.
+	if version == guestapi.Version1 {
+		return workflowModeBindings(arguments, bridge)
+	}
+
+	return mvmhost.Bindings{}
+}
+
+func inertToolsBindings(packageName string) mvmhost.Bindings {
+	fail := func() { panic("executeworker: tools binding must not be called during compile") }
+
+	return mvmhost.Bindings{packageName: {
+		"Search": func(string) any {
+			fail()
+
+			return nil
+		},
+		"Describe": func(string) any {
+			fail()
+
+			return nil
+		},
+		"Call": func(string, any) any {
+			fail()
+
+			return nil
+		},
+	}}
 }
 
 // callBridge forwards workflow binding calls somewhere. The production worker
@@ -124,11 +200,29 @@ func workflowModeBindings(arguments map[string]any, bridge callBridge) mvmhost.B
 	}}
 }
 
-// WorkflowModeBindings exposes the workflow-mode binding set for compile-only
-// validation. Signatures match worker evaluation because both derive from
-// workflowModeBindings; callables never run during compilation.
+// CompileBindings returns the same profile/version manifest used by runtime
+// evaluation, with inert callbacks suitable for compile-only validation.
+func CompileBindings(
+	profile guestapi.Profile,
+	version guestapi.Version,
+	arguments map[string]any,
+) (mvmhost.Bindings, error) {
+	if err := guestapi.ValidateWorkerContract(profile, version); err != nil {
+		return nil, fmt.Errorf("validate compile worker contract: %w", err)
+	}
+
+	return profileBindings(profile, version, arguments, inertCallBridge{}), nil
+}
+
+// WorkflowModeBindings preserves the version-1 compile API for persisted
+// workflow source.
 func WorkflowModeBindings(arguments map[string]any) mvmhost.Bindings {
-	return workflowModeBindings(arguments, inertCallBridge{})
+	bindings, err := CompileBindings(guestapi.ProfileDurable, guestapi.Version1, arguments)
+	if err != nil {
+		panic(err)
+	}
+
+	return bindings
 }
 
 // inertCallBridge satisfies callBridge without doing anything. Compilation

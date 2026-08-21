@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/omarluq/librecode/internal/executeworker"
+	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/tool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,7 @@ import (
 )
 
 const (
+	workerNameKey   = "name"
 	helperEnv       = "LIBRECODE_EXECUTEWORKER_TEST_HELPER"
 	helperStderrEnv = "LIBRECODE_EXECUTEWORKER_TEST_STDERR"
 	echoQuery       = "echo"
@@ -93,7 +95,7 @@ func writeHelperMessage(message *executeworker.Message) {
 
 func helperMessage(messageType string) *executeworker.Message {
 	return &executeworker.Message{
-		Stderr: "", Source: "", Method: "", Mode: "", Name: "", Query: "", Stdout: "",
+		Stderr: "", Source: "", Method: "", Mode: "", Profile: "", GuestAPI: "", Name: "", Query: "", Stdout: "",
 		Type: messageType, Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil,
 		Arguments: nil, ID: 0, ExitCode: 0,
 	}
@@ -223,6 +225,43 @@ func TestClientPreservesNullCallbackResult(t *testing.T) {
 	assert.JSONEq(t, "null", string(raw))
 }
 
+func TestClientCanonicalToolsPackage(t *testing.T) {
+	t.Setenv(helperEnv, "1")
+
+	client := testClient()
+	client.Handler = func(_ context.Context, message *executeworker.Message) (any, error) {
+		return []map[string]any{{workerNameKey: message.Query}}, nil
+	}
+	result, err := client.EvalRequest(t.Context(), &executeworker.Request{
+		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Name: "canonical.go", Source: `import "librecode/tools"; tools.Search("echo")`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []any{map[string]any{workerNameKey: echoQuery}}, result.Value)
+
+	_, err = client.EvalRequest(t.Context(), &executeworker.Request{
+		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Name: "legacy.go", Source: `import "tools"; tools.Search("echo")`,
+	})
+	require.ErrorContains(t, err, "tools")
+}
+
+func TestClientRejectsInvalidWorkerManifest(t *testing.T) {
+	t.Setenv(helperEnv, "1")
+
+	_, err := testClient().EvalRequest(t.Context(), &executeworker.Request{
+		Arguments: nil, Mode: "", Profile: "unknown", GuestAPIVersion: guestapi.Version2,
+		Name: "bad.go", Source: "1",
+	})
+	require.ErrorContains(t, err, "unknown execute worker profile")
+
+	_, err = testClient().EvalRequest(t.Context(), &executeworker.Request{
+		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: "99",
+		Name: "bad.go", Source: "1",
+	})
+	require.ErrorContains(t, err, "incompatible guest API version")
+}
+
 func TestClientCallbackRPC(t *testing.T) {
 	t.Setenv(helperEnv, "1")
 
@@ -237,5 +276,5 @@ func TestClientCallbackRPC(t *testing.T) {
 
 	result, err := client.Eval(t.Context(), `import "tools"; tools.Search("echo")`)
 	require.NoError(t, err)
-	assert.Equal(t, []any{map[string]any{"name": echoQuery}}, result.Value)
+	assert.Equal(t, []any{map[string]any{workerNameKey: echoQuery}}, result.Value)
 }

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
 )
 
@@ -70,21 +71,29 @@ type workerProcess struct {
 
 // Request describes one isolated MVM evaluation.
 type Request struct {
-	Arguments any
-	Mode      string
-	Name      string
-	Source    string
+	Arguments       any
+	Mode            string // legacy version-1 compatibility; use Profile for new requests
+	Profile         guestapi.Profile
+	GuestAPIVersion guestapi.Version
+	Name            string
+	Source          string
 }
 
 // Eval evaluates provider-facing source, forwarding callback requests to Handler.
 func (client Client) Eval(ctx context.Context, source string) (mvmhost.Result, error) {
 	return client.EvalRequest(ctx, &Request{
-		Arguments: nil, Mode: "execute", Name: "execute.go", Source: source,
+		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version1,
+		Name: "execute.go", Source: source,
 	})
 }
 
 // EvalRequest evaluates source in the requested worker mode.
 func (client Client) EvalRequest(ctx context.Context, eval *Request) (mvmhost.Result, error) {
+	request, err := evaluationMessage(eval)
+	if err != nil {
+		return mvmhost.Result{}, err
+	}
+
 	worker, stdin, stdout, err := client.startWorker()
 	if err != nil {
 		return mvmhost.Result{}, err
@@ -102,22 +111,50 @@ func (client Client) EvalRequest(ctx context.Context, eval *Request) (mvmhost.Re
 
 	defer close(stopCancellation)
 
-	if eval == nil {
-		return mvmhost.Result{}, worker.abort(errors.New("execute worker request is required"))
-	}
-
-	request := newMessage("eval")
-	request.Mode, request.Name, request.Source = eval.Mode, eval.Name, eval.Source
-
 	if request.Arguments, err = json.Marshal(eval.Arguments); err != nil {
 		return mvmhost.Result{}, worker.abort(fmt.Errorf("encode worker arguments: %w", err))
 	}
 
-	if err = Write(stdin, &request); err != nil {
+	if err = Write(stdin, request); err != nil {
 		return mvmhost.Result{}, worker.abort(err)
 	}
 
 	return client.readMessages(ctx, worker, stdin, stdout)
+}
+
+func evaluationMessage(eval *Request) (*Message, error) {
+	if eval == nil {
+		return nil, errors.New("execute worker request is required")
+	}
+
+	request := newMessage("eval")
+	request.Profile, request.GuestAPI = eval.Profile, eval.GuestAPIVersion
+	request.Name, request.Source = eval.Name, eval.Source
+
+	if request.Profile == "" && request.GuestAPI == "" {
+		switch eval.Mode {
+		case "", "execute":
+			request.Profile, request.GuestAPI = guestapi.ProfileTurn, guestapi.Version1
+		case "workflow":
+			request.Profile, request.GuestAPI = guestapi.ProfileDurable, guestapi.Version1
+		default:
+			request.Mode = eval.Mode
+		}
+
+		return &request, nil
+	}
+
+	if request.Profile == "" || request.GuestAPI == "" {
+		return nil, errors.New(
+			"execute worker profile and guest API version must be provided together",
+		)
+	}
+
+	if err := guestapi.ValidateWorkerContract(request.Profile, request.GuestAPI); err != nil {
+		return nil, fmt.Errorf("validate execute worker contract: %w", err)
+	}
+
+	return &request, nil
 }
 
 func (client Client) startWorker() (*workerProcess, io.WriteCloser, io.ReadCloser, error) {

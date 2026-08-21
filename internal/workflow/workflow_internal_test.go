@@ -331,7 +331,8 @@ func newBranchController() *branchController {
 
 func branchMessage(method string) *executeworker.Message {
 	return &executeworker.Message{
-		Stderr: "", Source: "", Method: method, Mode: "", Name: "", Query: "", Stdout: "", Type: "",
+		Stderr: "", Source: "", Method: method, Mode: "", Profile: "", GuestAPI: "", Name: "",
+		Query: "", Stdout: "", Type: "",
 		Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil, Arguments: nil,
 		ID: 0, ExitCode: 0,
 	}

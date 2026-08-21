@@ -1258,7 +1258,7 @@ func (nestedExecuteCompleter) Complete(
 	ctx context.Context,
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
-	source := `import "tools"
+	source := `import "librecode/tools"
 tools.Call("read", map[string]interface{}{"path": "one.txt"})
 tools.Call("read", map[string]interface{}{"path": "two.txt"})`
 	arguments := testutil.ToolArguments(map[string]any{"source": source})
