@@ -119,16 +119,43 @@ func TestDecodeExecuteToolInputPreservesRequestedProfileOnRejection(t *testing.T
 	assert.Equal(t, MVMExecutionProfileDurable, request.Profile)
 }
 
-func TestExecuteDefinitionPublishesUnifiedRequestContract(t *testing.T) {
+func TestExecuteDefinitionPublishesAvailableProfiles(t *testing.T) {
 	t.Parallel()
 
-	definition := newExecuteTool(nil, nil).Definition()
-	raw := string(definition.Schema.RawMessage())
+	tests := []struct {
+		submitter   WorkflowSubmitter
+		name        string
+		wantEnum    string
+		wantDurable bool
+	}{
+		{
+			name: "turn only", submitter: nil,
+			wantEnum: `"enum":["turn"]`, wantDurable: false,
+		},
+		{
+			name:      "turn and durable",
+			submitter: &workflowSubmitterStub{request: nil, run: nil, err: nil},
+			wantEnum:  `"enum":["turn","durable"]`, wantDurable: true,
+		},
+	}
 
-	assert.Contains(t, raw, `"enum":["turn","durable"]`)
-	assert.Contains(t, raw, `"default":"turn"`)
-	assert.Contains(t, raw, `"arguments"`)
-	assert.Contains(t, raw, `"limits"`)
-	assert.Contains(t, raw, `"output_schema"`)
-	assert.Contains(t, raw, "Imports do not select")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			definition := newExecuteFacade(nil, nil, test.submitter, "").Definition()
+			raw := string(definition.Schema.RawMessage())
+
+			assert.Contains(t, raw, test.wantEnum)
+			assert.Contains(t, raw, `"default":"turn"`)
+			assert.Contains(t, raw, `"arguments"`)
+			assert.Contains(t, raw, `"limits"`)
+			assert.Contains(t, raw, `"output_schema"`)
+			assert.Contains(t, raw, "Imports do not select")
+			assert.Equal(t, test.wantDurable, strings.Contains(definition.Description, "profile durable"))
+			assert.Equal(t, test.wantDurable, strings.Contains(definition.PromptSnippet, "durable workflows"))
+			guidelines := strings.Join(definition.PromptGuidelines, " ")
+			assert.Equal(t, test.wantDurable, strings.Contains(guidelines, "Durable execution"))
+		})
+	}
 }

@@ -52,6 +52,8 @@ func newExecuteFacade(
 
 func (executor *executeToolExecutor) Definition() tool.Definition {
 	description := "Evaluate Go source that can search, describe, and call the tools available for this prompt."
+	promptSnippet := "Use execute for compact multi-tool programs"
+	profileEnum := `["turn"]`
 	guidelines := []string{
 		`For turn execution, import "tools" to use tools.Search(query), tools.Describe(name), ` +
 			`and tools.Call(name, input).`,
@@ -60,6 +62,8 @@ func (executor *executeToolExecutor) Definition() tool.Definition {
 
 	if executor.submitter != nil {
 		description += " Use profile durable to submit a detached, persisted workflow."
+		promptSnippet += " and durable workflows"
+		profileEnum = `["turn","durable"]`
 
 		guidelines = append(guidelines,
 			`For durable execution, import "librecode/workflow" and provide an optional name and arguments.`,
@@ -78,7 +82,7 @@ func (executor *executeToolExecutor) Definition() tool.Definition {
 				},
 				"profile":{
 					"type":"string",
-					"enum":["turn","durable"],
+					"enum":` + profileEnum + `,
 					"default":"turn",
 					"description":"Execution guarantees; omitted defaults to turn."
 				},
@@ -106,7 +110,7 @@ func (executor *executeToolExecutor) Definition() tool.Definition {
 		Name:             executeToolName,
 		Label:            "Execute Go",
 		Description:      description,
-		PromptSnippet:    "Use execute for compact multi-tool programs and durable workflows",
+		PromptSnippet:    promptSnippet,
 		PromptGuidelines: guidelines,
 		ReadOnly:         false,
 	}
