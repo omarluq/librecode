@@ -1,7 +1,7 @@
 package database_test
 
 import (
-	_ "embed"
+	_ "embed" // Embed the schema-v10 SQL fixture used by the compatibility test.
 	"testing"
 
 	"github.com/stretchr/testify/assert"
