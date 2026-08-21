@@ -72,6 +72,20 @@ func TestExecuteToolUsesCompletedPromptRegistry(t *testing.T) {
 				t.Helper()
 				assert.Contains(t, result.Text(), `"name":"echo"`)
 				assert.NotContains(t, result.Text(), `"name":"execute"`)
+				assert.Equal(t, ExecutionResultCompleted, result.Details[executionResultKindKey])
+				assert.Equal(t, MVMExecutionProfileTurn, result.Details[executionProfileKey])
+			},
+		},
+		{
+			name:   "single call preserves common envelope",
+			source: `import "tools"; tools.Call("echo", map[string]interface{}{"text": "one"})`,
+			check: func(t *testing.T, result tool.Result) {
+				t.Helper()
+				assert.Equal(t, "one", result.Text())
+				assert.Empty(t, result.Details["stdout"])
+				assert.Empty(t, result.Details["stderr"])
+				assert.Equal(t, map[string]any{"length": float64(3)}, result.Details["tool_details"])
+				assert.Equal(t, result.Content, result.Details["content"])
 			},
 		},
 		{
@@ -311,15 +325,32 @@ func TestExecuteNestedCallCancellationEmitsCompletedBoundaries(t *testing.T) {
 	assert.True(t, events[2].ToolEvent.IsError)
 }
 
-func TestExecuteResultTextRejectsOversizedResult(t *testing.T) {
+func TestExecuteResultTextDeterministicallyTruncatesOversizedResult(t *testing.T) {
 	t.Parallel()
 
-	_, err := executeResultText(mvmhost.Result{
-		Value: strings.Repeat("x", defaultExecuteResultLimit), ValueKind: "", Stdout: "", Stderr: "",
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "execute result")
-	assert.Contains(t, err.Error(), "limit")
+	value := strings.Repeat("x", MaxProviderVisibleExecutionResultSize)
+	text, err := executeResultText(mvmhost.Result{Value: value, ValueKind: "", Stdout: "", Stderr: ""})
+	require.NoError(t, err)
+	assert.Len(t, []byte(text), MaxProviderVisibleExecutionResultSize)
+
+	details := executeResultDetails(
+		mvmhost.Result{Value: value, ValueKind: "", Stdout: "", Stderr: ""},
+		ExecutionResultCompleted,
+	)
+	assert.Nil(t, details[executeResultValueKey])
+	assert.Equal(t, text, details["partial_value"])
+	assert.Equal(t, &ExecutionTruncation{
+		Field: "result_value", LimitBytes: MaxProviderVisibleExecutionResultSize,
+		OriginalBytes: MaxProviderVisibleExecutionResultSize + 2,
+		VisibleBytes:  MaxProviderVisibleExecutionResultSize, OmittedBytes: 2,
+	}, details["truncation"])
+
+	bounded := boundProviderVisibleExecutionResult(tool.TextResult(text, details))
+	assert.LessOrEqual(t, providerVisibleExecutionResultSize(bounded), MaxProviderVisibleExecutionResultSize)
+	truncation, ok := bounded.Details["truncation"].(*ExecutionTruncation)
+	require.True(t, ok)
+	assert.Equal(t, "provider_result", truncation.Field)
+	assert.Positive(t, truncation.OmittedBytes)
 }
 
 func TestExecuteToolValidationAndWorkerErrors(t *testing.T) {
@@ -337,7 +368,7 @@ func TestExecuteToolValidationAndWorkerErrors(t *testing.T) {
 	invalidInput, inputErr := tool.ArgumentsFromRaw([]byte(`{"source":42}`))
 	require.NoError(t, inputErr)
 	_, err = execute.Execute(t.Context(), invalidInput)
-	require.ErrorContains(t, err, "decode execute input")
+	require.ErrorContains(t, err, "decode execute")
 
 	_, err = execute.handleWorkerMessage(t.Context(), executeTestWorkerMessage("unknown", "", nil))
 	require.ErrorContains(t, err, "unknown execute worker RPC method")
