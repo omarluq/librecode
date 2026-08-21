@@ -10,6 +10,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/executeworker"
+	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/tool"
 	"github.com/omarluq/librecode/internal/tooltask"
@@ -55,7 +56,7 @@ func (executor *executeToolExecutor) Definition() tool.Definition {
 	promptSnippet := "Use execute for compact multi-tool programs"
 	profileEnum := `["turn"]`
 	guidelines := []string{
-		`For turn execution, import "tools" to use tools.Search(query), tools.Describe(name), ` +
+		`For turn execution, import "librecode/tools" to use tools.Search(query), tools.Describe(name), ` +
 			`and tools.Call(name, input).`,
 		"The execute tool cannot search for, describe, or call itself.",
 	}
@@ -149,7 +150,10 @@ func (executor *executeToolExecutor) executeTurn(ctx context.Context, source str
 
 	client := executeworker.Client{Executable: "", Handler: executor.handleWorkerMessage}
 
-	result, err := client.Eval(ctx, source)
+	result, err := client.EvalRequest(ctx, &executeworker.Request{
+		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
+		Name: "execute.go", Source: source,
+	})
 	if err != nil {
 		wrapped := oops.In("assistant").Code("execute_source").Wrapf(err, "execute MVM source")
 
@@ -335,7 +339,8 @@ func (executor *executeToolExecutor) call(
 
 func executeHiddenTool(name tool.Name) bool {
 	switch name {
-	case executeToolName, tool.Name("workflow"):
+	case executeToolName, tool.Name("workflow"), agentStartToolName,
+		agentStatusToolName, agentWaitToolName, agentCancelToolName, agentListToolName:
 		return true
 	case tool.NameRead, tool.NameBash, tool.NameEdit, tool.NameWrite,
 		tool.NameGrep, tool.NameFind, tool.NameLS, tool.NameAST, tool.NameFetch:

@@ -10,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -134,6 +136,27 @@ func TestWorkerBindingsModes(t *testing.T) {
 	assert.Contains(t, bindings, "tools")
 
 	request := ptrMessage("eval")
+	request.Profile, request.GuestAPI = guestapi.ProfileTurn, guestapi.Version2
+	bindings, err = workerBindings(request, caller)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"librecode/tools"}, bindingPackageNames(bindings))
+	assert.ElementsMatch(t, []string{"Search", "Describe", "Call"}, bindingNames(bindings["librecode/tools"]))
+
+	request.Profile = guestapi.ProfileDurable
+	bindings, err = workerBindings(request, caller)
+	require.NoError(t, err)
+	assert.Empty(t, bindings, "durable tools stay unavailable until the effect journal exists")
+
+	request.Profile, request.GuestAPI = "bad", guestapi.Version2
+	_, err = workerBindings(request, caller)
+	require.ErrorContains(t, err, "unknown execute worker profile")
+
+	request.Profile, request.GuestAPI = guestapi.ProfileTurn, "99"
+	_, err = workerBindings(request, caller)
+	require.ErrorContains(t, err, "incompatible guest API version")
+
+	request = ptrMessage("eval")
+
 	request.Mode = "bad"
 	_, err = workerBindings(request, caller)
 	require.ErrorContains(t, err, "unknown")
@@ -149,6 +172,28 @@ func TestWorkerBindingsModes(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, bindings, "librecode/workflow")
 	}
+}
+
+func bindingPackageNames(bindings mvmhost.Bindings) []string {
+	names := make([]string, 0, len(bindings))
+	for name := range bindings {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	return names
+}
+
+func bindingNames(bindings map[string]any) []string {
+	names := make([]string, 0, len(bindings))
+	for name := range bindings {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	return names
 }
 
 func TestRPCCallerExchangeAndFailures(t *testing.T) {
@@ -495,7 +540,7 @@ func newClient(handler RPCHandler, executable string) Client {
 
 func requestWithArguments(arguments any) *Request {
 	return &Request{
-		Arguments: arguments, Mode: "", Name: "", Source: "",
+		Arguments: arguments, Mode: "", Profile: "", GuestAPIVersion: "", Name: "", Source: "",
 	}
 }
 

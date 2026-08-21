@@ -160,7 +160,8 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 
 	client := executeworker.Client{Executable: runner.executable, Handler: run.handleRPC}
 	result, err := client.EvalRequest(ctx, &executeworker.Request{
-		Mode: "workflow", Name: request.Name, Source: request.Source, Arguments: request.Arguments,
+		Arguments: request.Arguments, Mode: "workflow", Profile: "", GuestAPIVersion: "",
+		Name: request.Name, Source: request.Source,
 	})
 
 	value := normalizeWorkflowValue(result.Value)

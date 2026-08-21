@@ -75,7 +75,8 @@ func TestProtocolResponseBudgetsCompose(t *testing.T) {
 
 func protocolMessage(messageType string, value []byte) *executeworker.Message {
 	return &executeworker.Message{
-		Stderr: "", Source: "", Method: "", Mode: "", Name: "", Query: "", Stdout: "", Type: messageType,
+		Stderr: "", Source: "", Method: "", Mode: "", Profile: "", GuestAPI: "", Name: "",
+		Query: "", Stdout: "", Type: messageType,
 		Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: value, Arguments: nil,
 		ID: 0, ExitCode: 0,
 	}

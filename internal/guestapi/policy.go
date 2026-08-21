@@ -3,6 +3,8 @@
 // enforcing the contract for a particular execution profile.
 package guestapi
 
+import "fmt"
+
 // Version identifies a guest API independently of any persisted source format.
 type Version string
 
@@ -67,9 +69,9 @@ type Availability struct {
 // AvailabilityManifest returns the canonical function policy.
 func AvailabilityManifest() []Availability {
 	return []Availability{
-		{Package: PackageTools, Function: "Search", Turn: true, Durable: false, Implemented: false},
-		{Package: PackageTools, Function: "Describe", Turn: true, Durable: false, Implemented: false},
-		{Package: PackageTools, Function: "Call", Turn: true, Durable: false, Implemented: false},
+		{Package: PackageTools, Function: "Search", Turn: true, Durable: false, Implemented: true},
+		{Package: PackageTools, Function: "Describe", Turn: true, Durable: false, Implemented: true},
+		{Package: PackageTools, Function: "Call", Turn: true, Durable: false, Implemented: true},
 		{Package: PackageAgents, Function: "Run", Turn: false, Durable: true, Implemented: false},
 		{Package: PackageAgents, Function: "Spawn", Turn: false, Durable: true, Implemented: false},
 		{Package: PackageAgents, Function: "Wait", Turn: false, Durable: true, Implemented: false},
@@ -85,6 +87,24 @@ func AvailabilityManifest() []Availability {
 		{Package: PackageArtifacts, Function: "Get", Turn: true, Durable: true, Implemented: false},
 		{Package: PackageState, Function: "Get", Turn: false, Durable: true, Implemented: false},
 		{Package: PackageState, Function: "Put", Turn: false, Durable: true, Implemented: false},
+	}
+}
+
+// ValidateWorkerContract rejects worker contracts that this binary cannot
+// execute. Version 1 retains the legacy turn and durable package layouts;
+// version 2 selects the canonical profile-aware manifest.
+func ValidateWorkerContract(profile Profile, version Version) error {
+	switch profile {
+	case ProfileTurn, ProfileDurable:
+	default:
+		return fmt.Errorf("unknown execute worker profile %q", profile)
+	}
+
+	switch version {
+	case Version1, Version2:
+		return nil
+	default:
+		return fmt.Errorf("incompatible guest API version %q", version)
 	}
 }
 
