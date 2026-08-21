@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/model"
 	"github.com/omarluq/librecode/internal/tool"
@@ -96,6 +97,23 @@ func TestToolSchemaCacheKeyDifferentiatesInputs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestToolSchemaCacheKeyChangesWhenDurableExecuteBecomesAvailable(t *testing.T) {
+	t.Parallel()
+
+	withoutDurable := tool.NewRegistry(t.TempDir())
+	require.NoError(t, withoutDurable.Register(newExecuteFacade(withoutDurable, nil, nil, "owner")))
+
+	withDurable := tool.NewRegistry(t.TempDir())
+	require.NoError(t, withDurable.Register(newExecuteFacade(
+		withDurable, nil, &workflowSubmitterStub{request: nil, run: nil, err: nil}, "owner",
+	)))
+
+	assert.NotEqual(t,
+		toolSchemaCacheKey(withoutDurable, apiOpenAIResponses, false, false),
+		toolSchemaCacheKey(withDurable, apiOpenAIResponses, false, false),
+	)
 }
 
 func TestToolSchemaCacheKeySameRegistryProducesSameKey(t *testing.T) {

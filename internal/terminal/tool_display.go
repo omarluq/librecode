@@ -184,7 +184,11 @@ func decodeToolArgs(raw string) map[string]any {
 	return args
 }
 
-func executeToolSummary(_ map[string]any, _ string) string {
+func executeToolSummary(args map[string]any, _ string) string {
+	if stringArg(args, "profile") == "durable" {
+		return "execute durable Go"
+	}
+
 	return "execute Go"
 }
 

@@ -85,11 +85,7 @@ func (runtime *Runtime) promptToolRegistry(
 		return nil, err
 	}
 
-	if err := runtime.registerWorkflowTool(registry, sessionID); err != nil {
-		return nil, err
-	}
-
-	if err := runtime.registerExecuteTool(ctx, registry); err != nil {
+	if err := runtime.registerExecuteTool(ctx, registry, sessionID); err != nil {
 		return nil, err
 	}
 
@@ -139,22 +135,11 @@ func (runtime *Runtime) registerBackgroundTools(registry *tool.Registry, session
 	return nil
 }
 
-func (runtime *Runtime) registerWorkflowTool(registry *tool.Registry, sessionID string) error {
-	if runtime.workflowSubmitter == nil {
-		return nil
-	}
-
-	executor := &workflowToolExecutor{
-		submitter: runtime.workflowSubmitter, ownerSessionID: sessionID,
-	}
-	if err := registry.Register(executor); err != nil {
-		return oops.In("assistant").Code("register_workflow_tool").Wrapf(err, "register workflow tool")
-	}
-
-	return nil
-}
-
-func (runtime *Runtime) registerExecuteTool(ctx context.Context, registry *tool.Registry) error {
+func (runtime *Runtime) registerExecuteTool(
+	ctx context.Context,
+	registry *tool.Registry,
+	sessionID string,
+) error {
 	if toolStrategyFromContext(ctx) == ToolStrategyDirect {
 		return nil
 	}
@@ -167,7 +152,9 @@ func (runtime *Runtime) registerExecuteTool(ctx context.Context, registry *tool.
 	) (tool.Result, ToolEvent) {
 		return runtime.invokeNestedTool(ctx, registry, name, arguments, argumentsJSON)
 	}
-	if err := registry.Register(newExecuteTool(registry, invoke)); err != nil {
+
+	executor := newExecuteFacade(registry, invoke, runtime.workflowSubmitter, sessionID)
+	if err := registry.Register(executor); err != nil {
 		return oops.In("assistant").Code("register_execute_tool").Wrapf(err, "register execute tool")
 	}
 

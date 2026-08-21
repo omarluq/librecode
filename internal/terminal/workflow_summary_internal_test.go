@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/transcript"
 )
@@ -239,11 +238,7 @@ func TestTrackStartedWorkflowDeliversImmediateFailureOnce(t *testing.T) {
 		byID: map[string]*database.WorkflowRunEntity{failed.Task.ID: &failed},
 		runs: nil,
 	}
-	event := &assistant.ToolEvent{
-		CallID: "", ParentCallID: "", Sequence: 0, Name: workflowToolName,
-		ArgumentsJSON: "", DetailsJSON: `{"run_id":"immediate-failure"}`,
-		Result: "", Error: "", IsError: false,
-	}
+	event := workflowSubmittedToolEvent("immediate-failure")
 
 	app.trackStartedWorkflow(t.Context(), event)
 	app.trackStartedWorkflow(t.Context(), event)
@@ -329,11 +324,7 @@ func TestTrackStartedWorkflowRejectsForeignRunAndInspectorError(t *testing.T) {
 			app := newRenderTestApp(t)
 			app.sessionID = workflowTestSessionID
 			app.workflows = testCase.inspector
-			app.trackStartedWorkflow(t.Context(), &assistant.ToolEvent{
-				CallID: "", ParentCallID: "", Sequence: 0, Name: workflowToolName,
-				ArgumentsJSON: "", DetailsJSON: `{"run_id":"foreign-run"}`,
-				Result: "", Error: "", IsError: false,
-			})
+			app.trackStartedWorkflow(t.Context(), workflowSubmittedToolEvent("foreign-run"))
 
 			assert.Empty(t, app.activeWorkflows)
 			assert.Empty(t, app.liveAgentCompletions)
@@ -351,16 +342,15 @@ func TestTrackStartedWorkflowUsesToolResultRunID(t *testing.T) {
 		byID: map[string]*database.WorkflowRunEntity{run.Task.ID: &run}, runs: nil,
 	}
 
-	app.trackStartedWorkflow(t.Context(), &assistant.ToolEvent{
-		CallID: "", ParentCallID: "", Sequence: 0, Name: workflowToolName,
-		ArgumentsJSON: "", DetailsJSON: `{"run_id":" queued-run "}`,
-		Result: "", Error: "", IsError: false,
-	})
+	event := workflowSubmittedToolEvent("queued-run")
+	event.DetailsJSON = `{"execution":"mvm","profile":"durable","result_kind":"accepted",` +
+		`"run_id":" queued-run ","workflow_task_id":"queued-run"}`
+	app.trackStartedWorkflow(t.Context(), event)
 
 	require.Len(t, app.activeWorkflows, 1)
 	assert.Equal(t, run.Task.ID, app.activeWorkflows[0].Task.ID)
-	assert.Equal(t, "queued-run", workflowRunIDFromDetails(`{"run_id":" queued-run "}`))
-	assert.Empty(t, workflowRunIDFromDetails(`{`))
+	assert.Equal(t, "queued-run", durableExecutionRunID(event.DetailsJSON))
+	assert.Empty(t, durableExecutionRunID(`{`))
 }
 
 func workflowSummaryRun(id string, state database.TaskState) database.WorkflowRunEntity {

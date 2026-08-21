@@ -31,7 +31,6 @@ const (
 )
 
 const (
-	workflowToolName    = "workflow"
 	agentStartToolName  = "agent_start"
 	agentStatusToolName = "agent_status"
 	agentWaitToolName   = "agent_wait"
@@ -294,7 +293,7 @@ func (app *App) reconcileActiveWorkflow(
 }
 
 func (app *App) trackStartedWorkflow(ctx context.Context, event *assistant.ToolEvent) {
-	runID := workflowRunIDFromDetails(event.DetailsJSON)
+	runID := durableExecutionRunID(event.DetailsJSON)
 	if runID == "" || app.workflows == nil {
 		app.refreshActiveWorkflows(ctx)
 
@@ -323,15 +322,27 @@ func (app *App) trackStartedWorkflow(ctx context.Context, event *assistant.ToolE
 	app.activeWorkflows = append(app.activeWorkflows, *run)
 }
 
-func workflowRunIDFromDetails(detailsJSON string) string {
+func durableExecutionRunID(detailsJSON string) string {
 	var details struct {
-		RunID string `json:"run_id"`
+		Execution      string `json:"execution"`
+		Profile        string `json:"profile"`
+		ResultKind     string `json:"result_kind"`
+		RunID          string `json:"run_id"`
+		WorkflowTaskID string `json:"workflow_task_id"`
 	}
-	if json.Unmarshal([]byte(detailsJSON), &details) != nil {
+	if json.Unmarshal([]byte(detailsJSON), &details) != nil ||
+		details.Execution != "mvm" || details.Profile != "durable" || details.ResultKind != "accepted" {
 		return ""
 	}
 
-	return strings.TrimSpace(details.RunID)
+	runID := strings.TrimSpace(details.RunID)
+
+	taskID := strings.TrimSpace(details.WorkflowTaskID)
+	if runID == "" || taskID == "" || runID != taskID {
+		return ""
+	}
+
+	return runID
 }
 
 func (app *App) deliverWorkflowCompletion(ctx context.Context, run *database.WorkflowRunEntity) {

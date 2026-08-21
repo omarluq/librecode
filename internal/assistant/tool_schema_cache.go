@@ -22,9 +22,8 @@ const (
 // that repeated budget calculations within and across prompts do not
 // re-marshal tool definitions and re-estimate tokens.
 //
-// The estimate depends only on the tool set (built-in names are fixed,
-// extension names change on reload), the provider API, the Anthropic OAuth
-// mode, and the DisableTools flag.
+// The estimate depends on the complete provider-visible definitions, the
+// provider API, the Anthropic OAuth mode, and the DisableTools flag.
 type toolSchemaCache struct {
 	cache *hot.HotCache[string, int]
 }
@@ -35,22 +34,24 @@ func newToolSchemaCache() *toolSchemaCache {
 	}
 }
 
-// toolSchemaCacheKey builds a cache key from every factor that influences
-// the serialized tool schema: the sorted tool names, API type, OAuth mode,
-// and DisableTools flag. Two registries with the same key produce identical
-// token estimates.
+// toolSchemaCacheKey builds a cache key from every factor that influences the
+// serialized provider schema, including definition content so profile
+// availability changes cannot reuse a stale estimate.
 func toolSchemaCacheKey(registry *tool.Registry, api string, oauth, disableTools bool) string {
 	if disableTools {
 		return "disabled"
 	}
 
-	names := lo.Map(registry.Definitions(), func(definition tool.Definition, _ int) string {
-		return string(definition.Name)
+	definitions := lo.Map(registry.Definitions(), func(definition tool.Definition, _ int) string {
+		return strings.Join([]string{
+			string(definition.Name), definition.Description, string(definition.Schema.RawMessage()),
+			strconv.FormatBool(definition.ReadOnly),
+		}, "\x1f")
 	})
-	slices.Sort(names)
+	slices.Sort(definitions)
 
 	return strings.Join(
-		[]string{api, strconv.FormatBool(oauth), strings.Join(names, ",")},
+		[]string{api, strconv.FormatBool(oauth), strings.Join(definitions, "\x1e")},
 		"\x00",
 	)
 }

@@ -891,9 +891,9 @@ func (app *App) applyStreamedToolEvent(ctx context.Context, event *assistant.Too
 		return
 	}
 
-	if event.Name == workflowToolName && !event.IsError {
-		// Keep the submitted run ID so the asynchronous refresh can reconcile a
-		// workflow that finishes before the terminal observes it.
+	if durableExecutionRunID(event.DetailsJSON) != "" && !event.IsError {
+		// Keep the submitted durable IDs so the asynchronous refresh can reconcile
+		// a workflow that finishes before the terminal observes it.
 		app.trackSubmittedWorkflow(event)
 		app.requestTerminalRefresh(ctx)
 	}

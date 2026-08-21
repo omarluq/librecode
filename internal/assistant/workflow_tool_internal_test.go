@@ -14,7 +14,10 @@ import (
 	"github.com/omarluq/librecode/internal/workflow"
 )
 
-const workflowTestSessionID = "workflow-session"
+const (
+	workflowTestSessionID = "workflow-session"
+	workflowTestRunName   = "durable-review"
+)
 
 type workflowSubmitterStub struct {
 	request *workflow.ServiceRequest
@@ -31,37 +34,20 @@ func (stub *workflowSubmitterStub) Submit(
 	return stub.run, stub.err
 }
 
-func TestWorkflowToolDefinitionSignalsDynamicWorkflowIntent(t *testing.T) {
-	t.Parallel()
-
-	executor := &workflowToolExecutor{submitter: nil, ownerSessionID: ""}
-	definition := executor.Definition()
-
-	assert.Contains(t, definition.Description, "launch, start, run, or create a dynamic workflow")
-	assert.Contains(t, definition.PromptSnippet, "dynamic workflows")
-	require.NotEmpty(t, definition.PromptGuidelines)
-	assert.Contains(t, definition.PromptGuidelines[0], "explicit instructions to call this tool")
-}
-
-func TestWorkflowToolSubmitsModelAuthoredSource(t *testing.T) {
+func TestExecuteDurableSubmitsModelAuthoredSource(t *testing.T) {
 	t.Parallel()
 
 	stub := &workflowSubmitterStub{
 		request: nil,
 		run: &database.WorkflowRunEntity{
-			Task: database.TaskEntity{
-				CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{},
-				LeaseExpiresAt: nil, ID: "run-1", Kind: database.TaskKindWorkflow, ParentTaskID: "",
-				OwnerSessionID: workflowTestSessionID, ConcurrencyKey: "", LeaseOwner: "",
-				State: database.TaskSucceeded, Result: "reviewed", ErrorCode: "", ErrorMessage: "",
-			},
+			Task: workflowTestTask("run-1", workflowTestSessionID),
 			Name: "review", Source: "", SourceHash: "", SourceVersion: "", ArgumentsJSON: "",
 		},
 		err: nil,
 	}
-	executor := &workflowToolExecutor{submitter: stub, ownerSessionID: workflowTestSessionID}
+	executor := newExecuteFacade(nil, nil, stub, workflowTestSessionID)
 	input, err := tool.ArgumentsFromRaw([]byte(`{
-		"name":"review",
+		"profile":"durable","name":"review",
 		"source":"import \"librecode/workflow\"; workflow.List()",
 		"arguments":{"scope":"changes"}
 	}`))
@@ -71,117 +57,96 @@ func TestWorkflowToolSubmitsModelAuthoredSource(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, `Started workflow "review" with run ID run-1.`, result.Text())
 	assert.Equal(t, "run-1", result.Details["run_id"])
-	assert.Equal(t, "review", result.Details["name"])
 	assert.Equal(t, ExecutionResultAccepted, result.Details[executionResultKindKey])
-	assert.Equal(t, executionIdentityMVM, result.Details[executionIdentityKey])
 	assert.Equal(t, MVMExecutionProfileDurable, result.Details[executionProfileKey])
 	require.NotNil(t, stub.request)
 	assert.Equal(t, workflowTestSessionID, stub.request.OwnerSessionID)
 	assert.Equal(t, "review", stub.request.Name)
+	assert.Equal(t, "v1", stub.request.SourceVersion)
 	assert.JSONEq(t, `{"scope":"changes"}`, stub.request.ArgumentsJSON)
 }
 
-func TestWorkflowToolReturnsWithoutAwaitingCompletion(t *testing.T) {
+func TestExecuteDurableReturnsWithoutAwaitingCompletion(t *testing.T) {
 	t.Parallel()
 
 	stub := &workflowSubmitterStub{
 		request: nil,
 		run: &database.WorkflowRunEntity{
-			Task: database.TaskEntity{
-				CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{},
-				LeaseExpiresAt: nil, ID: "run-queued", Kind: database.TaskKindWorkflow, ParentTaskID: "",
-				OwnerSessionID: workflowTestSessionID, ConcurrencyKey: "", LeaseOwner: "",
-				State: database.TaskQueued, Result: "", ErrorCode: "", ErrorMessage: "",
-			},
+			Task: workflowTestTask("run-queued", ""),
 			Name: "background review", Source: "", SourceHash: "", SourceVersion: "", ArgumentsJSON: "",
 		},
 		err: nil,
 	}
-	executor := &workflowToolExecutor{submitter: stub, ownerSessionID: workflowTestSessionID}
-	input, err := tool.ArgumentsFromRaw([]byte(`{"name":"background review","source":"1 + 1"}`))
+	executor := newExecuteFacade(nil, nil, stub, workflowTestSessionID)
+	input, err := tool.ArgumentsFromRaw([]byte(
+		`{"profile":"durable","name":"background review","source":"1 + 1"}`,
+	))
 	require.NoError(t, err)
 
 	result, err := executor.Execute(t.Context(), input)
 	require.NoError(t, err)
-	assert.Equal(t, `Started workflow "background review" with run ID run-queued.`, result.Text())
 	assert.Equal(t, database.TaskQueued, result.Details["state"])
 }
 
-func TestWorkflowToolRejectsInvalidInput(t *testing.T) {
+func TestExecuteDurableRejectsUnavailableAndSubmissionFailure(t *testing.T) {
 	t.Parallel()
 
-	validStub := &workflowSubmitterStub{request: nil, run: nil, err: nil}
+	unavailable := newExecuteFacade(nil, nil, nil, workflowTestSessionID)
+	input, err := tool.ArgumentsFromRaw([]byte(`{"profile":"durable","source":"1"}`))
+	require.NoError(t, err)
+	result, err := unavailable.Execute(t.Context(), input)
+	requireRuntimeOopsCode(t, err, "execute_durable_unavailable")
+	assert.Equal(t, ExecutionResultRejected, result.Details[executionResultKindKey])
+	assert.Equal(t, MVMExecutionProfileDurable, result.Details[executionProfileKey])
 
-	tests := []struct {
-		executor *workflowToolExecutor
-		raw      string
-		name     string
-		want     string
-	}{
-		{
-			name: "missing submitter", executor: &workflowToolExecutor{submitter: nil, ownerSessionID: ""},
-			raw: `{}`, want: "workflow service is unavailable",
+	failing := newExecuteFacade(nil, nil, &workflowSubmitterStub{
+		request: nil, run: nil, err: errors.New("down"),
+	}, workflowTestSessionID)
+	result, err = failing.Execute(t.Context(), input)
+	requireRuntimeOopsCode(t, err, "submit_workflow")
+	assert.Equal(t, ExecutionResultFailed, result.Details[executionResultKindKey])
+}
+
+func TestPromptRegistryExposesOnlyUnifiedExecuteWithDurableAvailability(t *testing.T) {
+	t.Parallel()
+
+	stub := &workflowSubmitterStub{
+		request: nil,
+		run: &database.WorkflowRunEntity{
+			Task: workflowTestTask("workflow-run", ""),
+			Name: workflowTestRunName, Source: "", SourceHash: "", SourceVersion: "", ArgumentsJSON: "",
 		},
-		{
-			name: "invalid shape", executor: &workflowToolExecutor{submitter: validStub, ownerSessionID: ""},
-			raw: `{"name":1}`, want: "decode workflow input",
-		},
-		{
-			name: "blank name", executor: &workflowToolExecutor{submitter: validStub, ownerSessionID: ""},
-			raw: `{"name":" ","source":"1"}`, want: "workflow name is required",
-		},
-		{
-			name: "blank source", executor: &workflowToolExecutor{submitter: validStub, ownerSessionID: ""},
-			raw: `{"name":"run","source":" "}`, want: "workflow source is required",
-		},
-		{
-			name: "submit failure",
-			executor: &workflowToolExecutor{
-				submitter:      &workflowSubmitterStub{request: nil, run: nil, err: errors.New("down")},
-				ownerSessionID: "",
-			},
-			raw: `{"name":"run","source":"1"}`, want: "submit workflow",
-		},
+		err: nil,
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+	runtime := NewRuntimeForTest(func(options *RuntimeTestOptions) { options.WorkflowSubmitter = stub })
+	registry, err := runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
+	require.NoError(t, err)
+	assert.True(t, registry.Has(executeToolName))
+	assert.False(t, registry.Has("workflow"))
 
-			input, err := tool.ArgumentsFromRaw([]byte(test.raw))
-			require.NoError(t, err)
-			_, err = test.executor.Execute(t.Context(), input)
-			require.ErrorContains(t, err, test.want)
-		})
+	result, err := registry.Execute(t.Context(), string(executeToolName), mustArguments(t,
+		`{"profile":"durable","source":"1"}`,
+	))
+	require.NoError(t, err)
+	assert.Equal(t, ExecutionResultAccepted, result.Details[executionResultKindKey])
+
+	direct, err := runtime.promptToolRegistry(
+		WithToolStrategy(t.Context(), ToolStrategyDirect), t.TempDir(), "owner",
+	)
+	require.NoError(t, err)
+	assert.False(t, direct.Has(executeToolName))
+	assert.False(t, direct.Has("workflow"))
+}
+
+func workflowTestTask(id, owner string) database.TaskEntity {
+	return database.TaskEntity{
+		CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{}, LeaseExpiresAt: nil,
+		ID: id, Kind: database.TaskKindWorkflow, ParentTaskID: "", OwnerSessionID: owner,
+		ConcurrencyKey: "", LeaseOwner: "", State: database.TaskQueued, Result: "", ErrorCode: "", ErrorMessage: "",
 	}
 }
 
 func TestWorkflowResultDetailsHandlesNil(t *testing.T) {
 	t.Parallel()
-
 	assert.Empty(t, workflowResultDetails(nil))
-}
-
-func TestWorkflowToolDistinguishesUnavailableService(t *testing.T) {
-	t.Parallel()
-
-	executor := &workflowToolExecutor{submitter: nil, ownerSessionID: "owner"}
-	_, err := executor.Execute(t.Context(), tool.Arguments{})
-	requireRuntimeOopsCode(t, err, "workflow_service_unavailable")
-}
-
-func TestPromptRegistryIncludesWorkflowWhenConfigured(t *testing.T) {
-	t.Parallel()
-
-	runtime := NewRuntimeForTest(func(options *RuntimeTestOptions) {
-		options.WorkflowSubmitter = &workflowSubmitterStub{request: nil, run: nil, err: nil}
-	})
-
-	registry, err := runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
-	require.NoError(t, err)
-	assert.True(t, registry.Has(workflowToolName))
-
-	runtime = NewRuntimeForTest(nil)
-	registry, err = runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
-	require.NoError(t, err)
-	assert.False(t, registry.Has(workflowToolName))
 }
