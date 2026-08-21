@@ -16,12 +16,13 @@ func workflowSubmittedToolEvent(runID string) *assistant.ToolEvent {
 		CallID:        "",
 		ParentCallID:  "",
 		Sequence:      0,
-		Name:          workflowToolName,
-		ArgumentsJSON: "",
-		DetailsJSON:   `{"run_id":"` + runID + `"}`,
-		Result:        "",
-		Error:         "",
-		IsError:       false,
+		Name:          toolDisplayExecute,
+		ArgumentsJSON: `{"profile":"durable","source":"package main"}`,
+		DetailsJSON: `{"execution":"mvm","profile":"durable","result_kind":"accepted",` +
+			`"run_id":"` + runID + `","workflow_task_id":"` + runID + `"}`,
+		Result:  "",
+		Error:   "",
+		IsError: false,
 	}
 }
 
@@ -54,6 +55,7 @@ func TestWorkflowSubmissionRemainsVisibleAcrossFirstRefresh(t *testing.T) {
 		{name: "canceling", state: database.TaskCanceling, wantActiveRuns: 1, wantDelivered: false},
 		{name: "succeeded", state: database.TaskSucceeded, wantActiveRuns: 0, wantDelivered: true},
 		{name: "failed", state: database.TaskFailed, wantActiveRuns: 0, wantDelivered: true},
+		{name: "canceled", state: database.TaskCanceled, wantActiveRuns: 0, wantDelivered: false},
 	}
 
 	for _, testCase := range tests {
@@ -114,15 +116,17 @@ func TestWorkflowSubmissionCapturedIntoRefreshRequest(t *testing.T) {
 	assert.Empty(t, request.TrackedWorkflowIDs)
 	assert.Empty(t, request.KnownWorkflowIDs)
 
-	app.trackSubmittedWorkflow(workflowSubmittedToolEvent(run.Task.ID))
-	app.trackSubmittedWorkflow(workflowSubmittedToolEvent(run.Task.ID))
+	event := workflowSubmittedToolEvent(run.Task.ID)
+	event.Name = "unified_execute_outer_name"
+	app.trackSubmittedWorkflow(event)
+	app.trackSubmittedWorkflow(event)
 
 	request = app.captureTerminalRefreshRequest()
 	assert.Equal(t, []string{run.Task.ID}, request.TrackedWorkflowIDs)
 	assert.Equal(t, []string{run.Task.ID}, request.KnownWorkflowIDs)
 }
 
-func TestWorkflowSubmissionIgnoresErrorAndForeignEvents(t *testing.T) {
+func TestWorkflowSubmissionIgnoresErrorAndNonDurableResults(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
@@ -132,9 +136,22 @@ func TestWorkflowSubmissionIgnoresErrorAndForeignEvents(t *testing.T) {
 	failedEvent.IsError = true
 	app.trackSubmittedWorkflow(failedEvent)
 
-	otherTool := workflowSubmittedToolEvent("ignored")
-	otherTool.Name = agentStartToolName
-	app.trackSubmittedWorkflow(otherTool)
+	const durableDetails = `"profile":"durable","run_id":"ignored"`
+
+	for _, details := range []string{
+		`{"execution":"mvm","profile":"turn","result_kind":"completed"}`,
+		`{"execution":"mvm",` + durableDetails +
+			`,"result_kind":"failed","workflow_task_id":"ignored"}`,
+		`{"execution":"other",` + durableDetails +
+			`,"result_kind":"accepted","workflow_task_id":"ignored"}`,
+		`{"execution":"mvm",` + durableDetails +
+			`,"result_kind":"accepted","workflow_task_id":"different"}`,
+		`{"run_id":"legacy-name-coupled-result"}`,
+	} {
+		event := workflowSubmittedToolEvent("ignored")
+		event.DetailsJSON = details
+		app.trackSubmittedWorkflow(event)
+	}
 
 	app.trackSubmittedWorkflow(workflowSubmittedToolEvent(""))
 	assert.Empty(t, app.pendingWorkflowRunIDs())

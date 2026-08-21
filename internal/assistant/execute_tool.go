@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/samber/oops"
@@ -12,6 +13,7 @@ import (
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/tool"
 	"github.com/omarluq/librecode/internal/tooltask"
+	"github.com/omarluq/librecode/internal/workflow"
 )
 
 const executeToolName tool.Name = "execute"
@@ -25,17 +27,46 @@ const (
 type nestedToolInvoker func(context.Context, string, tool.Arguments, string) (tool.Result, ToolEvent)
 
 type executeToolExecutor struct {
-	registry *tool.Registry
-	invoke   nestedToolInvoker
+	registry       *tool.Registry
+	invoke         nestedToolInvoker
+	submitter      WorkflowSubmitter
+	ownerSessionID string
 }
 
 type executeToolCallResult = executeworker.ToolCallResult
 
 func newExecuteTool(registry *tool.Registry, invoke nestedToolInvoker) *executeToolExecutor {
-	return &executeToolExecutor{registry: registry, invoke: invoke}
+	return newExecuteFacade(registry, invoke, nil, "")
+}
+
+func newExecuteFacade(
+	registry *tool.Registry,
+	invoke nestedToolInvoker,
+	submitter WorkflowSubmitter,
+	ownerSessionID string,
+) *executeToolExecutor {
+	return &executeToolExecutor{
+		registry: registry, invoke: invoke, submitter: submitter, ownerSessionID: ownerSessionID,
+	}
 }
 
 func (executor *executeToolExecutor) Definition() tool.Definition {
+	description := "Evaluate Go source that can search, describe, and call the tools available for this prompt."
+	guidelines := []string{
+		`For turn execution, import "tools" to use tools.Search(query), tools.Describe(name), ` +
+			`and tools.Call(name, input).`,
+		"The execute tool cannot search for, describe, or call itself.",
+	}
+
+	if executor.submitter != nil {
+		description += " Use profile durable to submit a detached, persisted workflow."
+
+		guidelines = append(guidelines,
+			`For durable execution, import "librecode/workflow" and provide an optional name and arguments.`,
+			"Durable execution continues independently of the provider turn after acceptance.",
+		)
+	}
+
 	return tool.Definition{
 		Schema: mustToolSchema(`{
 			"type":"object",
@@ -72,15 +103,12 @@ func (executor *executeToolExecutor) Definition() tool.Definition {
 			},
 			"required":["source"]
 		}`),
-		Name:          executeToolName,
-		Label:         "Execute Go",
-		Description:   "Evaluate Go source that can search, describe, and call the tools available for this prompt.",
-		PromptSnippet: "Use execute for compact multi-tool programs",
-		PromptGuidelines: []string{
-			`Import "tools" to use tools.Search(query), tools.Describe(name), and tools.Call(name, input).`,
-			"The execute tool cannot search for, describe, or call itself.",
-		},
-		ReadOnly: false,
+		Name:             executeToolName,
+		Label:            "Execute Go",
+		Description:      description,
+		PromptSnippet:    "Use execute for compact multi-tool programs and durable workflows",
+		PromptGuidelines: guidelines,
+		ReadOnly:         false,
 	}
 }
 
@@ -93,22 +121,31 @@ func executeRequestProfile(args *executeToolInput) MVMExecutionProfile {
 }
 
 func (executor *executeToolExecutor) Execute(ctx context.Context, input tool.Arguments) (tool.Result, error) {
-	args, decodeErr := decodeExecuteToolInput(input, false)
-	profile := executeRequestProfile(&args)
+	args, decodeErr := decodeExecuteToolInput(input, executor.submitter != nil)
 
-	if executor.registry == nil {
-		return tool.TextResult("", executionResultDetails(nil, profile, ExecutionResultRejected)),
-			oops.In("assistant").Code("execute_registry_missing").
-				Errorf("execute tool registry is not configured")
+	profile := executeRequestProfile(&args)
+	if decodeErr != nil {
+		return tool.TextResult("", executionResultDetails(nil, profile, ExecutionResultRejected)), decodeErr
 	}
 
-	if decodeErr != nil {
-		return tool.TextResult("", executionResultDetails(nil, args.Profile, ExecutionResultRejected)), decodeErr
+	if profile == MVMExecutionProfileDurable {
+		return executor.submitDurable(ctx, &args)
+	}
+
+	return executor.executeTurn(ctx, args.Source)
+}
+
+func (executor *executeToolExecutor) executeTurn(ctx context.Context, source string) (tool.Result, error) {
+	if executor.registry == nil {
+		return tool.TextResult("", executionResultDetails(
+				nil, MVMExecutionProfileTurn, ExecutionResultRejected,
+			)), oops.In("assistant").Code("execute_registry_missing").
+				Errorf("execute tool registry is not configured")
 	}
 
 	client := executeworker.Client{Executable: "", Handler: executor.handleWorkerMessage}
 
-	result, err := client.Eval(ctx, args.Source)
+	result, err := client.Eval(ctx, source)
 	if err != nil {
 		wrapped := oops.In("assistant").Code("execute_source").Wrapf(err, "execute MVM source")
 
@@ -147,6 +184,35 @@ func (executor *executeToolExecutor) Execute(ctx context.Context, input tool.Arg
 	return boundProviderVisibleExecutionResult(
 		tool.TextResult(text, executeResultDetails(result, ExecutionResultCompleted)),
 	), nil
+}
+
+func (executor *executeToolExecutor) submitDurable(
+	ctx context.Context,
+	args *executeToolInput,
+) (tool.Result, error) {
+	argumentsJSON := string(args.Arguments)
+	if argumentsJSON == "" {
+		argumentsJSON = "{}"
+	}
+
+	run, err := executor.submitter.Submit(ctx, &workflow.ServiceRequest{
+		Name: args.Name, Source: args.Source, SourceVersion: "v1",
+		ArgumentsJSON: argumentsJSON, OwnerSessionID: executor.ownerSessionID,
+	})
+	if err != nil {
+		return workflowOutcomeResult(ExecutionResultFailed), oops.In("assistant").Code("submit_workflow").
+			Wrapf(err, "submit workflow")
+	}
+
+	if run == nil {
+		return workflowOutcomeResult(ExecutionResultFailed), oops.In("assistant").Code("submit_workflow_result").
+			Errorf("workflow submitter returned no run")
+	}
+
+	return boundProviderVisibleExecutionResult(tool.TextResult(
+		fmt.Sprintf("Started workflow %q with run ID %s.", run.Name, run.Task.ID),
+		workflowResultDetails(run),
+	)), nil
 }
 
 func (executor *executeToolExecutor) handleWorkerMessage(
@@ -265,7 +331,7 @@ func (executor *executeToolExecutor) call(
 
 func executeHiddenTool(name tool.Name) bool {
 	switch name {
-	case executeToolName, workflowToolName:
+	case executeToolName, tool.Name("workflow"):
 		return true
 	case tool.NameRead, tool.NameBash, tool.NameEdit, tool.NameWrite,
 		tool.NameGrep, tool.NameFind, tool.NameLS, tool.NameAST, tool.NameFetch:

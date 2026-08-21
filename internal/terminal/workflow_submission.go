@@ -14,16 +14,16 @@ import (
 // never count against it.
 const pendingWorkflowRetryLimit = 3
 
-// trackSubmittedWorkflow records the run ID returned by a successful workflow
-// tool submission. The ID is reconciled by the next terminal refresh instead of
-// a synchronous database read, so a workflow that finishes before that refresh
+// trackSubmittedWorkflow records the durable IDs returned by an accepted MVM
+// execution. The IDs are reconciled by the next terminal refresh instead of a
+// synchronous database read, so a workflow that finishes before that refresh
 // still surfaces as a completion instead of vanishing from the submission list.
 func (app *App) trackSubmittedWorkflow(event *assistant.ToolEvent) {
-	if event == nil || event.IsError || event.Name != workflowToolName {
+	if event == nil || event.IsError {
 		return
 	}
 
-	runID := workflowRunIDFromDetails(event.DetailsJSON)
+	runID := durableExecutionRunID(event.DetailsJSON)
 	if runID == "" || app.hasActiveWorkflow(runID) {
 		return
 	}

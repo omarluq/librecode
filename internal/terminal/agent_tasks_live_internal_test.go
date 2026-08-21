@@ -145,9 +145,9 @@ func TestInspectedAgentTaskToolResultsHaveNoOperationalSideEffects(t *testing.T)
 	app := newRenderTestApp(t)
 	app.agentTasks = []database.AgentTaskEntity{behaviorAgentTask("existing", database.TaskRunning)}
 
-	workflowResult := agentToolEvent(workflowToolName, `{"run_id":"historical-run"}`, false)
-	workflowResult.CallID = "workflow-call"
-	workflowResult.Result = "submitted"
+	workflowResult := workflowSubmittedToolEvent("historical-run")
+	workflowResult.CallID = "execute-call"
+	workflowResult.Result = "accepted"
 	app.renderInspectedAgentTaskEvent(asyncTestEventWithTool(workflowResult))
 
 	agentResult := agentToolEvent(agentStartToolName, `{"task_id":"historical-task"}`, false)

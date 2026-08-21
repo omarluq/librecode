@@ -357,13 +357,15 @@ func TestExecuteToolValidationAndWorkerErrors(t *testing.T) {
 	t.Parallel()
 
 	missingRegistry := newExecuteTool(nil, nil)
-	_, err := missingRegistry.Execute(t.Context(), tool.EmptyArguments())
+	turnInput, inputErr := tool.ArgumentsFromRaw([]byte(`{"source":"1"}`))
+	require.NoError(t, inputErr)
+	_, err := missingRegistry.Execute(t.Context(), turnInput)
 	require.ErrorContains(t, err, "registry is not configured")
 
 	durableInput, inputErr := tool.ArgumentsFromRaw([]byte(`{"source":"1","profile":"durable"}`))
 	require.NoError(t, inputErr)
 	result, err := missingRegistry.Execute(t.Context(), durableInput)
-	require.ErrorContains(t, err, "registry is not configured")
+	requireRuntimeOopsCode(t, err, "execute_durable_unavailable")
 	assert.Equal(t, MVMExecutionProfileDurable, result.Details[executionProfileKey])
 
 	registry, registryErr := tool.NewRegistryWithTools(t.TempDir(), nil)
@@ -412,7 +414,7 @@ func TestExecuteCallHandlesProtectedToolsAndInvocationError(t *testing.T) {
 		}
 	})
 
-	workflowResult := execute.call(t.Context(), string(workflowToolName), json.RawMessage(`{}`))
+	workflowResult := execute.call(t.Context(), "workflow", json.RawMessage(`{}`))
 	assert.True(t, workflowResult.IsError)
 	assert.Equal(t, "execute cannot call workflow", workflowResult.Error)
 

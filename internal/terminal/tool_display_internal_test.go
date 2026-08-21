@@ -353,6 +353,18 @@ func TestToolDisplayOutputDoesNotDuplicateErrorAsOutput(t *testing.T) {
 	assert.Equal(t, compileError, toolDisplayOutput(&display))
 }
 
+func TestExecuteToolSummaryDistinguishesTurnAndDurableProfiles(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "execute Go", toolSummary(toolDisplayExecute, `{"source":"package main"}`, nil))
+	assert.Equal(t, "execute Go", toolSummary(toolDisplayExecute, `{"profile":"turn","source":"package main"}`, nil))
+	assert.Equal(t, "execute durable Go", toolSummary(
+		toolDisplayExecute,
+		`{"profile":"durable","source":"package main"}`,
+		nil,
+	))
+}
+
 func TestRenderExpandedExecuteToolHighlightsGoSource(t *testing.T) {
 	t.Parallel()
 
