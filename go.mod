@@ -290,4 +290,4 @@ require (
 
 tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 
-replace honnef.co/go/tools => honnef.co/go/tools v0.8.0
+replace honnef.co/go/tools => honnef.co/go/tools v0.8.1
