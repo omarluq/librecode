@@ -24,6 +24,8 @@ func requireRuntimeOopsCode(t *testing.T, err error, code string) {
 	require.Equal(t, code, coded.Code())
 }
 
+const wrapperTestCustomTool = "custom"
+
 type testToolProvider struct {
 	tools []extension.Tool
 }
@@ -301,8 +303,6 @@ func TestAgentExecutionProfileRegistryAndPrompt(t *testing.T) {
 func TestToolRegistryProviderAndCollisionBranches(t *testing.T) {
 	t.Parallel()
 
-	const customToolName = "custom"
-
 	assert.True(t, isNilToolProvider(nil))
 
 	var typedNil *pointerToolProvider
@@ -311,11 +311,11 @@ func TestToolRegistryProviderAndCollisionBranches(t *testing.T) {
 	assert.False(t, isNilToolProvider(testToolProvider{tools: nil}))
 
 	provider := testToolProvider{tools: []extension.Tool{{
-		Name: customToolName, Description: "custom tool", Extension: "", InputSchema: tool.EmptySchema(),
+		Name: wrapperTestCustomTool, Description: "custom tool", Extension: "", InputSchema: tool.EmptySchema(),
 	}}}
 	registry, err := newToolRegistry(t.TempDir(), provider)
 	require.NoError(t, err)
-	result, err := registry.Execute(t.Context(), customToolName, tool.EmptyArguments())
+	result, err := registry.Execute(t.Context(), wrapperTestCustomTool, tool.EmptyArguments())
 	require.NoError(t, err)
 	assert.Equal(t, "ok", result.Text())
 
@@ -342,14 +342,14 @@ func TestPromptRegistryHonorsDisabledExtensions(t *testing.T) {
 
 	runtime := new(Runtime)
 	runtime.extensions = testToolProvider{tools: []extension.Tool{{
-		Name: "custom", Description: "custom", Extension: "", InputSchema: tool.EmptySchema(),
+		Name: wrapperTestCustomTool, Description: wrapperTestCustomTool, Extension: "", InputSchema: tool.EmptySchema(),
 	}}}
 	runtime.profile = topLevelExecutionProfile()
 	runtime.profile.EnableExtensions = false
 	registry, err := runtime.promptToolRegistry(t.Context(), t.TempDir(), "owner")
 	require.NoError(t, err)
 
-	assert.False(t, registry.Has("custom"))
+	assert.False(t, registry.Has(wrapperTestCustomTool))
 }
 
 func TestWithExecutionProfileClonesToolsAndDependencies(t *testing.T) {

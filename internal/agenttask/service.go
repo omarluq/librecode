@@ -634,9 +634,11 @@ func (service *Service) AwaitAll(
 		}
 
 		allTerminal := true
+
 		for index := range tasks {
 			if !terminal(tasks[index].Task.State) {
 				allTerminal = false
+
 				break
 			}
 		}

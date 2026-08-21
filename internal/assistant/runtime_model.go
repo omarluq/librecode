@@ -494,7 +494,7 @@ func (runtime *Runtime) emitRetryEvent(ctx context.Context, handler RetryEventHa
 	}
 }
 
-func (runtime *Runtime) defaultProviderModel() (string, string) {
+func (runtime *Runtime) defaultProviderModel() (provider, modelID string) {
 	if runtime.profile.Kind == ExecutionAgentTask &&
 		runtime.cfg.Delegation.Provider != "" &&
 		runtime.cfg.Delegation.Model != "" {

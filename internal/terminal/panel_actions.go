@@ -53,6 +53,15 @@ func (app *App) applyStandardPanelSelection(ctx context.Context, value string) e
 		return nil
 	case panelHotkeys, panelChangelog:
 		return nil
+	case panelSessions, panelTree, panelAgentTasks:
+		return app.applyBrowsablePanelSelection(ctx, value)
+	default:
+		return fmt.Errorf("unknown panel kind: %q", app.selectedPanelKind)
+	}
+}
+
+func (app *App) applyBrowsablePanelSelection(ctx context.Context, value string) error {
+	switch app.selectedPanelKind {
 	case panelSessions:
 		return app.applySessionSelection(ctx, value)
 	case panelTree:

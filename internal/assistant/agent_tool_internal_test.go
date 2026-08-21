@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/omarluq/librecode/internal/testutil"
 	"strings"
 	"testing"
 	"time"
@@ -15,8 +14,11 @@ import (
 
 	"github.com/omarluq/librecode/internal/agent"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
+
+const agentToolBoomError = "boom"
 
 type agentControllerStub struct {
 	submitErr     error
@@ -222,7 +224,7 @@ func TestAgentWaitAllReturnsCombinedResults(t *testing.T) {
 	first := agentToolTask("task-1", "owner", database.TaskSucceeded)
 	first.Task.Result = "first result"
 	second := agentToolTask("task-2", "owner", database.TaskFailed)
-	second.Task.ErrorMessage = "boom"
+	second.Task.ErrorMessage = agentToolBoomError
 	stub := newAgentControllerStub(nil, []database.AgentTaskEntity{*first, *second}, false)
 	executor := newAgentToolExecutor(stub, nil, catalog, agentWaitAllToolName, "owner", "")
 
@@ -231,8 +233,8 @@ func TestAgentWaitAllReturnsCombinedResults(t *testing.T) {
 	assert.Contains(t, result.Text(), "task-1")
 	assert.Contains(t, result.Text(), "first result")
 	assert.Contains(t, result.Text(), "task-2")
-	assert.Contains(t, result.Text(), "boom")
-	assert.Equal(t, 2, result.Details["count"])
+	assert.Contains(t, result.Text(), agentToolBoomError)
+	assert.Equal(t, 2, result.Details[agentTaskCountKey])
 
 	stub.listed = nil
 	result, err = executor.Execute(t.Context(), tool.EmptyArguments())
@@ -332,9 +334,9 @@ func TestAgentListAndResultBranches(t *testing.T) {
 
 	task := agentToolTask("done", "owner", database.TaskFailed)
 	task.Task.Result = "partial result"
-	task.Task.ErrorMessage = "boom"
+	task.Task.ErrorMessage = agentToolBoomError
 	result = agentTaskResult(task)
-	assert.Equal(t, "partial result\nboom", result.Text())
+	assert.Equal(t, "partial result\n"+agentToolBoomError, result.Text())
 	assert.Equal(t, "done", result.Details["task_id"])
 
 	assert.Panics(t, func() { mustToolSchema(`not json`) })

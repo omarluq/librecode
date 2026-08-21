@@ -21,11 +21,11 @@ func TestDelegationValidation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
 		mutate func(*DelegationConfig)
+		name   string
 	}{
-		{"provider only", func(delegationConfig *DelegationConfig) { delegationConfig.Provider = "openai" }},
-		{"model only", func(delegationConfig *DelegationConfig) { delegationConfig.Model = "small" }},
+		{func(delegationConfig *DelegationConfig) { delegationConfig.Provider = "openai" }, "provider only"},
+		{func(delegationConfig *DelegationConfig) { delegationConfig.Model = "small" }, "model only"},
 	}
 
 	for _, test := range tests {

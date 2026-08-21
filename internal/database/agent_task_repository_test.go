@@ -95,11 +95,11 @@ func TestAgentTaskRepositoryListAllByOwner(t *testing.T) {
 	listed, err := agents.ListAllByOwner(ctx, parent.ID)
 	require.NoError(t, err)
 	require.Len(t, listed, count)
+
 	for index := range listed {
 		assert.Equal(t, parent.ID, listed[index].Task.OwnerSessionID)
 	}
 }
-
 
 func TestAgentTaskRepositoryCreatesChildSessionAtomically(t *testing.T) {
 	t.Parallel()

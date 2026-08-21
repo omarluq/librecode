@@ -228,6 +228,11 @@ func renderParityConfig() *config.Config {
 				Enabled:     false,
 			},
 		},
+		Delegation: config.DelegationConfig{
+			Provider:      "",
+			Model:         "",
+			ThinkingLevel: "",
+		},
 		Context: config.ContextConfig{
 			CompactionProvider:          "",
 			CompactionModel:             "",

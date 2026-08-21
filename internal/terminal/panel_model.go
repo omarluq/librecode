@@ -125,6 +125,7 @@ func (app *App) applyModelSubagentSelection(value string) {
 		if provider == "" {
 			provider = app.currentProvider()
 		}
+
 		modelID = value
 	}
 

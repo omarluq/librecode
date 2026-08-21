@@ -16,12 +16,12 @@ func TestCompactionModelUsesDedicatedCatalogEntry(t *testing.T) {
 
 	var conversation model.Model
 
-	conversation.Provider, conversation.ID = "chat", "large"
+	conversation.Provider, conversation.ID = "chat", delegationLargeModel
 	conversation.ContextWindow, conversation.MaxTokens = 100_000, 8_000
 
 	var dedicated model.Model
 
-	dedicated.Provider, dedicated.ID = "summary", "small"
+	dedicated.Provider, dedicated.ID = "summary", delegationSmallModel
 	dedicated.ContextWindow, dedicated.MaxTokens = 32_000, 2_000
 
 	var cfg config.Config

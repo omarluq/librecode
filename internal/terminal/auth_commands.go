@@ -223,7 +223,8 @@ func (app *App) applyAuthSelection(ctx context.Context, value string) error {
 		app.closePanel()
 
 		return app.logoutCommand(ctx, value)
-	case panelModel, panelModelSubagent, panelScopedModels, panelSettings, panelHotkeys, panelChangelog, panelSessions, panelTree:
+	case panelModel, panelModelSubagent, panelScopedModels, panelSettings,
+		panelHotkeys, panelChangelog, panelSessions, panelTree:
 		return nil
 	}
 

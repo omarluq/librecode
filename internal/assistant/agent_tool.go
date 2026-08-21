@@ -25,6 +25,7 @@ const (
 	maxChildSessionNameRunes           = 80
 	defaultAgentListLimit              = 20
 	maxAgentListLimit                  = 100
+	agentTaskCountKey                  = "count"
 )
 
 // AgentTaskRequest describes one asynchronous agent submission.
@@ -134,10 +135,12 @@ func (executor *agentToolExecutor) Definition() tool.Definition {
 		agentWaitAllToolName: {
 			Schema: mustToolSchema(`{"type":"object","additionalProperties":false,"properties":{}}`),
 			Name:   agentWaitAllToolName, Label: "Wait for agents",
-			Description:   "Block until all asynchronous agent tasks in this session finish, then return their combined results.",
+			Description: "Block until all asynchronous agent tasks in this session finish, " +
+				"then return their combined results.",
 			PromptSnippet: "Wait for all agents to finish",
 			PromptGuidelines: []string{
-				"Use this after starting several agents to collect every result in one call instead of polling each agent.",
+				"Use this after starting several agents to collect every result in one call " +
+					"instead of polling each agent.",
 			},
 			ReadOnly: true,
 		},
@@ -298,7 +301,7 @@ func (executor *agentToolExecutor) wait(ctx context.Context, input tool.Argument
 	return agentTaskResult(task), nil
 }
 
-func (executor *agentToolExecutor) waitAll(ctx context.Context, input tool.Arguments) (tool.Result, error) {
+func (executor *agentToolExecutor) waitAll(ctx context.Context, _ tool.Arguments) (tool.Result, error) {
 	tasks, err := executor.controller.AwaitAll(ctx, executor.parentSessionID)
 	if err != nil {
 		return tool.TextResult("", nil), err
@@ -309,10 +312,11 @@ func (executor *agentToolExecutor) waitAll(ctx context.Context, input tool.Argum
 
 func agentTasksResult(tasks []database.AgentTaskEntity) tool.Result {
 	if len(tasks) == 0 {
-		return tool.TextResult("No agent tasks in this session.", map[string]any{"count": 0})
+		return tool.TextResult("No agent tasks in this session.", map[string]any{agentTaskCountKey: 0})
 	}
 
-	details := map[string]any{"count": len(tasks)}
+	details := map[string]any{agentTaskCountKey: len(tasks)}
+
 	lines := make([]string, 0, len(tasks))
 	for index := range tasks {
 		task := &tasks[index]
@@ -322,9 +326,11 @@ func agentTasksResult(tasks []database.AgentTaskEntity) tool.Result {
 		if task.Task.Result != "" {
 			entry += "\n" + task.Task.Result
 		}
+
 		if task.Task.ErrorMessage != "" {
 			entry += "\n" + task.Task.ErrorMessage
 		}
+
 		lines = append(lines, entry)
 	}
 

@@ -6,61 +6,141 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/omarluq/librecode/internal/agent"
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/model"
 )
 
+const (
+	delegationCustomModel = "custom"
+	delegationLargeModel  = "large"
+	delegationSmallModel  = "small"
+)
+
+func delegationChatModel() model.Model {
+	return model.Model{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		Provider:         "chat",
+		ID:               delegationLargeModel,
+		Name:             delegationLargeModel,
+		API:              "",
+		BaseURL:          "",
+		Input:            nil,
+		Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
+		ContextWindow:    0,
+		MaxTokens:        0,
+		Reasoning:        false,
+	}
+}
+
+func delegationCheapModel() model.Model {
+	return model.Model{
+		ThinkingLevelMap: nil,
+		Headers:          nil,
+		Compat:           nil,
+		Provider:         "cheap",
+		ID:               delegationSmallModel,
+		Name:             delegationSmallModel,
+		API:              "",
+		BaseURL:          "",
+		Input:            nil,
+		Cost:             model.Cost{Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0},
+		ContextWindow:    0,
+		MaxTokens:        0,
+		Reasoning:        false,
+	}
+}
+
+func delegationEmptyAgentProfile() ExecutionProfile {
+	return ExecutionProfile{
+		Kind:             ExecutionAgentTask,
+		AgentName:        "",
+		SystemPrompt:     "",
+		Provider:         "",
+		Model:            "",
+		ThinkingLevel:    "",
+		PermissionMode:   agent.PermissionAllow,
+		Tools:            nil,
+		EnableSkills:     false,
+		EnableExtensions: false,
+		MaxTurns:         0,
+		Depth:            0,
+	}
+}
+
+func newDelegationModelSelectionRuntime(t *testing.T, chat, cheap *model.Model) *Runtime {
+	t.Helper()
+
+	var cfg config.Config
+
+	cfg.Assistant.Provider, cfg.Assistant.Model = chat.Provider, chat.ID
+	cfg.Delegation.Provider, cfg.Delegation.Model = cheap.Provider, cheap.ID
+	cfg.Delegation.ThinkingLevel = thinkingOff
+
+	var registryOptions model.RegistryOptions
+
+	registryOptions.BuiltIns = []model.Model{*chat, *cheap}
+
+	registry := model.NewRegistry(&registryOptions)
+
+	return NewRuntimeForTest(func(opts *RuntimeTestOptions) {
+		opts.Config = &cfg
+		opts.Models = registry
+	})
+}
+
 func TestDelegationModelSelection(t *testing.T) {
 	t.Parallel()
 
-	chat := model.Model{Provider: "chat", ID: "large"}
-	cheap := model.Model{Provider: "cheap", ID: "small"}
-
-	newRuntime := func(t *testing.T) *Runtime {
-		t.Helper()
-		var cfg config.Config
-		cfg.Assistant.Provider, cfg.Assistant.Model = chat.Provider, chat.ID
-		cfg.Delegation.Provider, cfg.Delegation.Model = cheap.Provider, cheap.ID
-		cfg.Delegation.ThinkingLevel = "off"
-
-		var registryOptions model.RegistryOptions
-		registryOptions.BuiltIns = []model.Model{chat, cheap}
-
-		runtime := &Runtime{cfg: &cfg}
-		runtime.models = model.NewRegistry(&registryOptions)
-		return runtime
-	}
+	chat := delegationChatModel()
+	cheap := delegationCheapModel()
 
 	tests := []struct {
 		name         string
-		profile      ExecutionProfile
 		wantProvider string
 		wantModel    string
+		profile      ExecutionProfile
 	}{
 		{
 			name:         "agent task uses delegation model",
-			profile:      ExecutionProfile{Kind: ExecutionAgentTask},
 			wantProvider: cheap.Provider,
 			wantModel:    cheap.ID,
+			profile:      delegationEmptyAgentProfile(),
 		},
 		{
 			name:         "top level uses assistant model",
-			profile:      topLevelExecutionProfile(),
 			wantProvider: chat.Provider,
 			wantModel:    chat.ID,
+			profile:      topLevelExecutionProfile(),
 		},
 		{
 			name:         "profile override wins",
-			profile:      ExecutionProfile{Kind: ExecutionAgentTask, Provider: "override", Model: "custom"},
 			wantProvider: "override",
-			wantModel:    "custom",
+			wantModel:    delegationCustomModel,
+			profile: ExecutionProfile{
+				Kind:             ExecutionAgentTask,
+				AgentName:        "",
+				SystemPrompt:     "",
+				Provider:         "override",
+				Model:            delegationCustomModel,
+				ThinkingLevel:    "",
+				PermissionMode:   agent.PermissionAllow,
+				Tools:            nil,
+				EnableSkills:     false,
+				EnableExtensions: false,
+				MaxTurns:         0,
+				Depth:            0,
+			},
 		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			runtime := newRuntime(t)
+
+			runtime := newDelegationModelSelectionRuntime(t, &chat, &cheap)
 			runtime.profile = testCase.profile
 
 			got, err := runtime.selectedModel()
@@ -76,39 +156,59 @@ func TestDelegationThinkingLevel(t *testing.T) {
 
 	newRuntime := func(t *testing.T) *Runtime {
 		t.Helper()
+
 		var cfg config.Config
-		cfg.Assistant.ThinkingLevel = "high"
-		cfg.Delegation.ThinkingLevel = "off"
-		return &Runtime{cfg: &cfg}
+
+		cfg.Assistant.ThinkingLevel = adapterThinkingLevel
+		cfg.Delegation.ThinkingLevel = thinkingOff
+
+		return NewRuntimeForTest(func(opts *RuntimeTestOptions) {
+			opts.Config = &cfg
+		})
 	}
 
 	tests := []struct {
 		name      string
-		profile   ExecutionProfile
 		wantLevel string
+		profile   ExecutionProfile
 	}{
 		{
 			name:      "agent task uses delegation thinking level",
-			profile:   ExecutionProfile{Kind: ExecutionAgentTask},
-			wantLevel: "off",
+			wantLevel: thinkingOff,
+			profile:   delegationEmptyAgentProfile(),
 		},
 		{
 			name:      "top level uses assistant thinking level",
+			wantLevel: adapterThinkingLevel,
 			profile:   topLevelExecutionProfile(),
-			wantLevel: "high",
 		},
 		{
 			name:      "profile override wins",
-			profile:   ExecutionProfile{Kind: ExecutionAgentTask, ThinkingLevel: "low"},
 			wantLevel: "low",
+			profile: ExecutionProfile{
+				Kind:             ExecutionAgentTask,
+				AgentName:        "",
+				SystemPrompt:     "",
+				Provider:         "",
+				Model:            "",
+				ThinkingLevel:    "low",
+				PermissionMode:   agent.PermissionAllow,
+				Tools:            nil,
+				EnableSkills:     false,
+				EnableExtensions: false,
+				MaxTurns:         0,
+				Depth:            0,
+			},
 		},
 	}
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
+
 			runtime := newRuntime(t)
 			runtime.profile = testCase.profile
+
 			assert.Equal(t, testCase.wantLevel, runtime.thinkingLevel())
 		})
 	}

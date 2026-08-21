@@ -55,6 +55,11 @@ func TestConfigFormattingHelpers(t *testing.T) {
 				MaxDelay:    2 * time.Second,
 			},
 		},
+		Delegation: config.DelegationConfig{
+			Provider:      "",
+			Model:         "",
+			ThinkingLevel: "",
+		},
 		Context: config.ContextConfig{
 			CompactionProvider:          "",
 			CompactionModel:             "",

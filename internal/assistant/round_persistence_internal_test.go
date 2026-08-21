@@ -133,8 +133,13 @@ func testRuntimeConfig() *config.Config {
 			SourceURL: "", CacheTTL: 0, FetchTimeout: 0, Enabled: false,
 		}},
 		Assistant: config.AssistantConfig{
-			Provider: compactionTestOrigin, Model: compactionTestOrigin, ThinkingLevel: "off",
+			Provider: compactionTestOrigin, Model: compactionTestOrigin, ThinkingLevel: thinkingOff,
 			Retry: config.RetryConfig{BaseDelay: 0, MaxDelay: 0, MaxAttempts: 1, Enabled: false},
+		},
+		Delegation: config.DelegationConfig{
+			Provider:      "",
+			Model:         "",
+			ThinkingLevel: "",
 		},
 		Database: config.DatabaseConfig{
 			Path: "", ApplyMigrations: true, MaxOpenConns: 1, MaxIdleConns: 1,
