@@ -360,6 +360,12 @@ func TestExecuteToolValidationAndWorkerErrors(t *testing.T) {
 	_, err := missingRegistry.Execute(t.Context(), tool.EmptyArguments())
 	require.ErrorContains(t, err, "registry is not configured")
 
+	durableInput, inputErr := tool.ArgumentsFromRaw([]byte(`{"source":"1","profile":"durable"}`))
+	require.NoError(t, inputErr)
+	result, err := missingRegistry.Execute(t.Context(), durableInput)
+	require.ErrorContains(t, err, "registry is not configured")
+	assert.Equal(t, MVMExecutionProfileDurable, result.Details[executionProfileKey])
+
 	registry, registryErr := tool.NewRegistryWithTools(t.TempDir(), nil)
 	require.NoError(t, registryErr)
 
