@@ -3,6 +3,7 @@ package assistant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/samber/oops"
@@ -16,10 +17,9 @@ import (
 const executeToolName tool.Name = "execute"
 
 const (
-	defaultExecuteResultLimit = 1 << 20
-	executeNameKey            = "name"
-	executeResultValueKey     = "result_value"
-	executeCallMethod         = "call"
+	executeNameKey        = "name"
+	executeResultValueKey = "result_value"
+	executeCallMethod     = "call"
 )
 
 type nestedToolInvoker func(context.Context, string, tool.Arguments, string) (tool.Result, ToolEvent)
@@ -27,10 +27,6 @@ type nestedToolInvoker func(context.Context, string, tool.Arguments, string) (to
 type executeToolExecutor struct {
 	registry *tool.Registry
 	invoke   nestedToolInvoker
-}
-
-type executeToolInput struct {
-	Source string `json:"source"`
 }
 
 type executeToolCallResult = executeworker.ToolCallResult
@@ -41,11 +37,41 @@ func newExecuteTool(registry *tool.Registry, invoke nestedToolInvoker) *executeT
 
 func (executor *executeToolExecutor) Definition() tool.Definition {
 	return tool.Definition{
-		Schema: mustToolSchema(
-			`{"type":"object","additionalProperties":false,"properties":` +
-				`{"source":{"type":"string","description":"Go source to evaluate with the tools package."}},` +
-				`"required":["source"]}`,
-		),
+		Schema: mustToolSchema(`{
+			"type":"object",
+			"additionalProperties":false,
+			"properties":{
+				"source":{
+					"type":"string",
+					"description":"Go source to evaluate. Imports do not select the execution profile."
+				},
+				"profile":{
+					"type":"string",
+					"enum":["turn","durable"],
+					"default":"turn",
+					"description":"Execution guarantees; omitted defaults to turn."
+				},
+				"name":{
+					"type":"string",
+					"description":"Optional durable display name, limited to 80 UTF-8 bytes; not execution identity."
+				},
+				"arguments":{
+					"type":"object",
+					"description":"Optional durable JSON values; canonical encoding is limited to 65536 bytes."
+				},
+				"limits":{
+					"type":"object",
+					"additionalProperties":false,
+					"maxProperties":0,
+					"description":"Reserved; no execution limits are accepted initially."
+				},
+				"output_schema":{
+					"type":"object",
+					"description":"Reserved structured-output schema; not supported initially."
+				}
+			},
+			"required":["source"]
+		}`),
 		Name:          executeToolName,
 		Label:         "Execute Go",
 		Description:   "Evaluate Go source that can search, describe, and call the tools available for this prompt.",
@@ -60,13 +86,14 @@ func (executor *executeToolExecutor) Definition() tool.Definition {
 
 func (executor *executeToolExecutor) Execute(ctx context.Context, input tool.Arguments) (tool.Result, error) {
 	if executor.registry == nil {
-		return tool.Result{}, oops.In("assistant").Code("execute_registry_missing").
-			Errorf("execute tool registry is not configured")
+		return tool.TextResult("", executionResultDetails(nil, MVMExecutionProfileTurn, ExecutionResultRejected)),
+			oops.In("assistant").Code("execute_registry_missing").
+				Errorf("execute tool registry is not configured")
 	}
 
-	var args executeToolInput
-	if err := input.Decode(&args); err != nil {
-		return tool.Result{}, oops.In("assistant").Code("execute_input").Wrapf(err, "decode execute input")
+	args, err := decodeExecuteToolInput(input, false)
+	if err != nil {
+		return tool.TextResult("", executionResultDetails(nil, args.Profile, ExecutionResultRejected)), err
 	}
 
 	client := executeworker.Client{Executable: "", Handler: executor.handleWorkerMessage}
@@ -75,7 +102,14 @@ func (executor *executeToolExecutor) Execute(ctx context.Context, input tool.Arg
 	if err != nil {
 		wrapped := oops.In("assistant").Code("execute_source").Wrapf(err, "execute MVM source")
 
-		return tool.TextResult("", executeResultDetails(result)), wrapped
+		kind := ExecutionResultFailed
+		if errors.Is(err, context.Canceled) {
+			kind = ExecutionResultCanceled
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			kind = ExecutionResultTimedOut
+		}
+
+		return tool.TextResult("", executeResultDetails(result, kind)), wrapped
 	}
 
 	if nested, ok := result.Value.(executeworker.ToolCallResult); ok && !nested.IsError {
@@ -84,18 +118,25 @@ func (executor *executeToolExecutor) Execute(ctx context.Context, input tool.Arg
 			toolResult.Details = map[string]any{}
 		}
 
-		toolResult.Details["execute_stdout"] = result.Stdout
-		toolResult.Details["execute_stderr"] = result.Stderr
+		toolResult.Details = executionResultDetails(map[string]any{
+			executeResultValueKey: nil,
+			"stdout":              result.Stdout,
+			"stderr":              result.Stderr,
+			"content":             nested.Content,
+			"tool_details":        nested.Details,
+		}, MVMExecutionProfileTurn, ExecutionResultCompleted)
 
-		return toolResult, nil
+		return boundProviderVisibleExecutionResult(toolResult), nil
 	}
 
 	text, err := executeResultText(result)
 	if err != nil {
-		return tool.Result{}, err
+		return tool.TextResult("", executeResultDetails(result, ExecutionResultFailed)), err
 	}
 
-	return tool.TextResult(text, executeResultDetails(result)), nil
+	return boundProviderVisibleExecutionResult(
+		tool.TextResult(text, executeResultDetails(result, ExecutionResultCompleted)),
+	), nil
 }
 
 func (executor *executeToolExecutor) handleWorkerMessage(
@@ -260,24 +301,27 @@ func executeResultText(result mvmhost.Result) (string, error) {
 		return "null", nil
 	}
 
-	encoded, err := json.Marshal(result.Value)
-	if err != nil {
-		return "", oops.In("assistant").Code("execute_result_encode").Wrapf(err, "encode execute result")
-	}
+	text, _, _, _, err := encodeProviderVisibleExecutionValue(result.Value)
 
-	if len(encoded) > defaultExecuteResultLimit {
-		return "", oops.In("assistant").Code("execute_result_limit").Errorf(
-			"encoded execute result is %d bytes; limit is %d",
-			len(encoded),
-			defaultExecuteResultLimit,
-		)
-	}
-
-	return string(encoded), nil
+	return text, err
 }
 
-func executeResultDetails(result mvmhost.Result) map[string]any {
-	return map[string]any{executeResultValueKey: result.Value, "stdout": result.Stdout, "stderr": result.Stderr}
+func executeResultDetails(result mvmhost.Result, kind ExecutionResultKind) map[string]any {
+	_, resultValue, partialValue, truncation, err := encodeProviderVisibleExecutionValue(result.Value)
+	if err != nil {
+		resultValue = result.Value
+	}
+
+	details := map[string]any{executeResultValueKey: resultValue, "stdout": result.Stdout, "stderr": result.Stderr}
+	if partialValue != nil {
+		details["partial_value"] = partialValue
+	}
+
+	if truncation != nil {
+		details["truncation"] = truncation
+	}
+
+	return executionResultDetails(details, MVMExecutionProfileTurn, kind)
 }
 
 var _ tool.Executor = (*executeToolExecutor)(nil)

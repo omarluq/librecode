@@ -65,31 +65,34 @@ func (executor *workflowToolExecutor) Definition() tool.Definition {
 
 func (executor *workflowToolExecutor) Execute(ctx context.Context, input tool.Arguments) (tool.Result, error) {
 	if executor.submitter == nil {
-		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_service_unavailable").
-			Errorf("workflow service is unavailable")
+		return tool.TextResult("", executionResultDetails(nil, MVMExecutionProfileDurable, ExecutionResultRejected)),
+			oops.In("assistant").Code("workflow_service_unavailable").
+				Errorf("workflow service is unavailable")
 	}
 
 	var args workflowToolInput
 	if err := input.Decode(&args); err != nil {
-		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_input").Wrapf(err, "decode workflow input")
+		return tool.TextResult("", executionResultDetails(nil, MVMExecutionProfileDurable, ExecutionResultRejected)),
+			oops.In("assistant").Code("workflow_input").Wrapf(err, "decode workflow input")
 	}
 
 	args.Name = strings.TrimSpace(args.Name)
 	args.Source = strings.TrimSpace(args.Source)
 
 	if args.Name == "" {
-		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_name_required").
+		return workflowOutcomeResult(ExecutionResultRejected), oops.In("assistant").Code("workflow_name_required").
 			Errorf("workflow name is required")
 	}
 
 	if args.Source == "" {
-		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_source_required").
+		return workflowOutcomeResult(ExecutionResultRejected), oops.In("assistant").Code("workflow_source_required").
 			Errorf("workflow source is required")
 	}
 
 	if !utf8.ValidString(args.Source) {
-		return tool.TextResult("", nil), oops.In("assistant").Code("workflow_source_invalid_utf8").
-			Errorf("workflow source must be valid UTF-8")
+		return workflowOutcomeResult(ExecutionResultRejected),
+			oops.In("assistant").Code("workflow_source_invalid_utf8").
+				Errorf("workflow source must be valid UTF-8")
 	}
 
 	arguments := args.Arguments
@@ -99,7 +102,7 @@ func (executor *workflowToolExecutor) Execute(ctx context.Context, input tool.Ar
 
 	argumentsJSON, err := json.Marshal(arguments)
 	if err != nil {
-		return tool.TextResult("", nil), oops.In("assistant").Code("encode_workflow_arguments").
+		return workflowOutcomeResult(ExecutionResultRejected), oops.In("assistant").Code("encode_workflow_arguments").
 			Wrapf(err, "encode workflow arguments")
 	}
 
@@ -108,7 +111,8 @@ func (executor *workflowToolExecutor) Execute(ctx context.Context, input tool.Ar
 		ArgumentsJSON: string(argumentsJSON), OwnerSessionID: executor.ownerSessionID,
 	})
 	if err != nil {
-		return tool.TextResult("", nil), oops.In("assistant").Code("submit_workflow").Wrapf(err, "submit workflow")
+		return workflowOutcomeResult(ExecutionResultFailed), oops.In("assistant").Code("submit_workflow").
+			Wrapf(err, "submit workflow")
 	}
 
 	return tool.TextResult(
@@ -117,15 +121,19 @@ func (executor *workflowToolExecutor) Execute(ctx context.Context, input tool.Ar
 	), nil
 }
 
+func workflowOutcomeResult(kind ExecutionResultKind) tool.Result {
+	return tool.TextResult("", executionResultDetails(nil, MVMExecutionProfileDurable, kind))
+}
+
 func workflowResultDetails(run *database.WorkflowRunEntity) map[string]any {
 	if run == nil {
 		return map[string]any{}
 	}
 
-	return map[string]any{
+	return executionResultDetails(map[string]any{
 		"run_id": run.Task.ID, workflowTaskIDKey: run.Task.ID,
 		"kind": database.TaskKindWorkflow, executeNameKey: run.Name, "state": run.Task.State,
-	}
+	}, MVMExecutionProfileDurable, ExecutionResultAccepted)
 }
 
 var _ tool.Executor = (*workflowToolExecutor)(nil)
