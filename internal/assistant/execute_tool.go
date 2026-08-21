@@ -84,16 +84,26 @@ func (executor *executeToolExecutor) Definition() tool.Definition {
 	}
 }
 
+func executeRequestProfile(args *executeToolInput) MVMExecutionProfile {
+	if args.Profile == "" {
+		return MVMExecutionProfileTurn
+	}
+
+	return args.Profile
+}
+
 func (executor *executeToolExecutor) Execute(ctx context.Context, input tool.Arguments) (tool.Result, error) {
+	args, decodeErr := decodeExecuteToolInput(input, false)
+	profile := executeRequestProfile(&args)
+
 	if executor.registry == nil {
-		return tool.TextResult("", executionResultDetails(nil, MVMExecutionProfileTurn, ExecutionResultRejected)),
+		return tool.TextResult("", executionResultDetails(nil, profile, ExecutionResultRejected)),
 			oops.In("assistant").Code("execute_registry_missing").
 				Errorf("execute tool registry is not configured")
 	}
 
-	args, err := decodeExecuteToolInput(input, false)
-	if err != nil {
-		return tool.TextResult("", executionResultDetails(nil, args.Profile, ExecutionResultRejected)), err
+	if decodeErr != nil {
+		return tool.TextResult("", executionResultDetails(nil, args.Profile, ExecutionResultRejected)), decodeErr
 	}
 
 	client := executeworker.Client{Executable: "", Handler: executor.handleWorkerMessage}
