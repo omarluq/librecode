@@ -41,6 +41,7 @@ func TestPersistedWorkflowCompatibilityFixture(t *testing.T) {
 	assert.Equal(t, compatibilityOwnerID, run.Task.OwnerSessionID)
 	assert.Equal(t, "compatibility fixture", run.Name)
 	assert.Equal(t, "v1", run.SourceVersion)
+	assert.Empty(t, run.GuestAPIVersion)
 	assert.JSONEq(t, `{"scope":"terminal states"}`, run.ArgumentsJSON)
 
 	links, err := repository.ListAgentTaskDetails(t.Context(), []string{compatibilityRunID})

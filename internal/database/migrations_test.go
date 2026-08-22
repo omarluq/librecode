@@ -104,6 +104,49 @@ WHERE type = 'index' AND name = 'idx_session_message_parts_session_entry_image'`
 		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_message_parts'`)
 }
 
+func TestWorkflowGuestAPIVersionMigrationPreservesLegacyRuns(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	connection := newMigratedThroughVersion(t, 15)
+	_, err := connection.ExecContext(ctx, `
+INSERT INTO sessions (id, cwd, name, created_at, updated_at)
+VALUES ('01900000-0000-7000-8000-000000000201', '/tmp', 'owner', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO tasks (id, kind, state, owner_session_id, created_at, updated_at)
+VALUES ('01900000-0000-7000-8000-000000000202', 'workflow', 'queued',
+        '01900000-0000-7000-8000-000000000201', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO workflow_runs (task_id, source, source_hash, source_version, arguments_json, name)
+VALUES ('01900000-0000-7000-8000-000000000202', '1', 'hash', 'v1', '{}', 'legacy')`)
+	require.NoError(t, err)
+
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+	_, err = provider.UpTo(ctx, 16)
+	require.NoError(t, err)
+
+	var version string
+	require.NoError(t, connection.QueryRowContext(ctx, `
+SELECT guest_api_version FROM workflow_runs
+WHERE task_id = '01900000-0000-7000-8000-000000000202'`).Scan(&version))
+	assert.Empty(t, version)
+
+	_, err = connection.ExecContext(ctx, `
+INSERT INTO tasks (id, kind, state, owner_session_id, created_at, updated_at)
+VALUES ('01900000-0000-7000-8000-000000000203', 'workflow', 'queued',
+        '01900000-0000-7000-8000-000000000201', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO workflow_runs (
+    task_id, source, source_hash, source_version, guest_api_version, arguments_json, name
+) VALUES ('01900000-0000-7000-8000-000000000203', '2', 'hash', 'v1', '2', '{}', 'v2')`)
+	require.NoError(t, err)
+
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	assertSchemaObjectMissing(ctx, t, connection,
+		`SELECT COUNT(*) FROM pragma_table_info('workflow_runs') WHERE name = 'guest_api_version'`)
+}
+
 func TestToolTasksMigrationUpDownAndVersionFourteenUpgrade(t *testing.T) {
 	t.Parallel()
 

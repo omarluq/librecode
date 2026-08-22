@@ -607,13 +607,14 @@ func TestWorkflowRepositoryRejectsAgentParentAndOwnerMismatch(t *testing.T) {
 func newWorkflowRun(ownerSessionID string) *database.WorkflowRunEntity {
 	return &database.WorkflowRunEntity{
 		Task: *newTask(ownerSessionID), Name: "inspect database", Source: "return agent('inspect')",
-		SourceHash: "sha256:first", SourceVersion: "v1", ArgumentsJSON: `{"scope":"database"}`,
+		SourceHash: "sha256:first", GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: `{"scope":"database"}`,
 	}
 }
 
 func workflowRunForValidation(ownerSessionID, source, hash, arguments string) *database.WorkflowRunEntity {
 	return &database.WorkflowRunEntity{
-		Task: *newTask(ownerSessionID), Name: "validation", Source: source, SourceHash: hash, SourceVersion: "",
+		Task: *newTask(ownerSessionID), Name: "validation", Source: source, SourceHash: hash,
+		GuestAPIVersion: "", SourceVersion: "",
 		ArgumentsJSON: arguments,
 	}
 }

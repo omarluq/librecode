@@ -18,12 +18,13 @@ const TaskKindWorkflow = "workflow"
 
 // WorkflowRunEntity contains workflow-specific data for a generic task.
 type WorkflowRunEntity struct {
-	Task          TaskEntity
-	Name          string
-	Source        string
-	SourceHash    string
-	SourceVersion string
-	ArgumentsJSON string
+	Task            TaskEntity
+	Name            string
+	Source          string
+	SourceHash      string
+	SourceVersion   string
+	GuestAPIVersion string
+	ArgumentsJSON   string
 }
 
 // WorkflowAgentTaskEntity associates an agent task with its workflow-local launch order.
@@ -140,9 +141,19 @@ func (repository *WorkflowRepository) Create(
 		}
 
 		const statement = `INSERT INTO workflow_runs
-(task_id, name, source, source_hash, source_version, arguments_json) VALUES (?, ?, ?, ?, ?, ?)`
-		if _, err := transaction.Exec(ctx, statement, created.Task.ID, created.Name, created.Source, created.SourceHash,
-			created.SourceVersion, created.ArgumentsJSON); err != nil {
+(task_id, name, source, source_hash, source_version, guest_api_version, arguments_json)
+VALUES (?, ?, ?, ?, ?, ?, ?)`
+		if _, err := transaction.Exec(
+			ctx,
+			statement,
+			created.Task.ID,
+			created.Name,
+			created.Source,
+			created.SourceHash,
+			created.SourceVersion,
+			created.GuestAPIVersion,
+			created.ArgumentsJSON,
+		); err != nil {
 			return oops.In("database").Code("insert_workflow_run").Wrapf(err, "insert workflow run")
 		}
 
@@ -546,29 +557,30 @@ ORDER BY workflow_task_id ASC, sequence ASC`
 const workflowRunColumns = `t.id, t.kind, t.parent_task_id, t.owner_session_id, t.concurrency_key,
 t.state, t.result, t.error_code, t.error_message, t.created_at, t.started_at, t.finished_at,
 t.updated_at, t.lease_owner, t.lease_expires_at,
-w.name, w.source, w.source_hash, w.source_version, w.arguments_json`
+w.name, w.source, w.source_hash, w.source_version, w.guest_api_version, w.arguments_json`
 
 type workflowRunRow struct {
-	ID             string  `ksql:"id"`
-	Kind           string  `ksql:"kind"`
-	ParentTaskID   *string `ksql:"parent_task_id"`
-	OwnerSessionID string  `ksql:"owner_session_id"`
-	ConcurrencyKey string  `ksql:"concurrency_key"`
-	State          string  `ksql:"state"`
-	Result         string  `ksql:"result"`
-	ErrorCode      string  `ksql:"error_code"`
-	ErrorMessage   string  `ksql:"error_message"`
-	CreatedAt      string  `ksql:"created_at"`
-	StartedAt      *string `ksql:"started_at"`
-	FinishedAt     *string `ksql:"finished_at"`
-	UpdatedAt      string  `ksql:"updated_at"`
-	LeaseOwner     *string `ksql:"lease_owner"`
-	LeaseExpiresAt *string `ksql:"lease_expires_at"`
-	Name           string  `ksql:"name"`
-	Source         string  `ksql:"source"`
-	SourceHash     string  `ksql:"source_hash"`
-	SourceVersion  string  `ksql:"source_version"`
-	ArgumentsJSON  string  `ksql:"arguments_json"`
+	ID              string  `ksql:"id"`
+	Kind            string  `ksql:"kind"`
+	ParentTaskID    *string `ksql:"parent_task_id"`
+	OwnerSessionID  string  `ksql:"owner_session_id"`
+	ConcurrencyKey  string  `ksql:"concurrency_key"`
+	State           string  `ksql:"state"`
+	Result          string  `ksql:"result"`
+	ErrorCode       string  `ksql:"error_code"`
+	ErrorMessage    string  `ksql:"error_message"`
+	CreatedAt       string  `ksql:"created_at"`
+	StartedAt       *string `ksql:"started_at"`
+	FinishedAt      *string `ksql:"finished_at"`
+	UpdatedAt       string  `ksql:"updated_at"`
+	LeaseOwner      *string `ksql:"lease_owner"`
+	LeaseExpiresAt  *string `ksql:"lease_expires_at"`
+	Name            string  `ksql:"name"`
+	Source          string  `ksql:"source"`
+	SourceHash      string  `ksql:"source_hash"`
+	SourceVersion   string  `ksql:"source_version"`
+	GuestAPIVersion string  `ksql:"guest_api_version"`
+	ArgumentsJSON   string  `ksql:"arguments_json"`
 }
 
 func workflowRunFromRow(row *workflowRunRow) (*WorkflowRunEntity, error) {
@@ -583,8 +595,11 @@ func workflowRunFromRow(row *workflowRunRow) (*WorkflowRunEntity, error) {
 		return nil, err
 	}
 
-	return &WorkflowRunEntity{Task: *task, Name: row.Name, Source: row.Source, SourceHash: row.SourceHash,
-		SourceVersion: row.SourceVersion, ArgumentsJSON: row.ArgumentsJSON}, nil
+	return &WorkflowRunEntity{
+		Task: *task, Name: row.Name, Source: row.Source, SourceHash: row.SourceHash,
+		SourceVersion: row.SourceVersion, GuestAPIVersion: row.GuestAPIVersion,
+		ArgumentsJSON: row.ArgumentsJSON,
+	}, nil
 }
 
 type workflowAgentTaskRow struct {
