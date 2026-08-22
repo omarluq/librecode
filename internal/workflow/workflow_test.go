@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/workflow"
 )
 
@@ -107,6 +108,46 @@ func cloneAgentTask(task *database.AgentTaskEntity) *database.AgentTaskEntity {
 	return &clone
 }
 
+func TestRunnerVersion2AgentOperations(t *testing.T) {
+	t.Parallel()
+
+	fake := newFakeController()
+	runner, err := workflow.NewRunner(fake)
+	require.NoError(t, err)
+
+	const source = `import "librecode/agents"
+first, _ := agents.Spawn("first", map[string]any{
+    "node_key": "review",
+    "agent_name": "explore",
+    "model": "model",
+    "provider": "provider",
+    "concurrency_key": "agents",
+    "depth": 2,
+})
+completed, _ := agents.Wait(first)
+second, _ := agents.Run("second")
+listed, _ := agents.List()
+canceled, _ := agents.Cancel(first)
+[]any{completed, second, listed, canceled}`
+
+	result, err := runner.Run(t.Context(), &workflow.RunRequest{
+		RunID: "run-1", Name: "", Source: source, OwnerSessionID: testOwner,
+		OnEvent: nil, Arguments: nil, PersistedLinks: nil, GuestAPI: guestapi.Version2,
+	})
+	require.NoError(t, err)
+	require.Len(t, fake.submits, 2)
+	assert.Equal(t, "run-1", fake.submits[0].ParentTaskID)
+	assert.Equal(t, testOwner, fake.submits[0].OwnerSessionID)
+	assert.Equal(t, "review", fake.submits[0].NodeKey)
+	assert.Equal(t, 0, fake.submits[0].InvocationIndex)
+	assert.Equal(t, workflow.AgentOptions{
+		NodeKey: "review", AgentName: "explore", Model: "model", Provider: "provider",
+		ConcurrencyKey: "agents", Depth: 2,
+	}, fake.submits[0].Options)
+	assert.Equal(t, []string{firstTask, secondTask}, result.LaunchedTaskIDs)
+	assert.Equal(t, [][2]string{{testOwner, firstTask}}, fake.cancels)
+}
+
 func TestRunnerSingleTask(t *testing.T) {
 	t.Parallel()
 
@@ -123,7 +164,7 @@ func TestRunnerSingleTask(t *testing.T) {
 			return nil
 		},
 		Name: "", Source: agentSource, OwnerSessionID: testOwner,
-		PersistedLinks: nil,
+		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
 
@@ -149,7 +190,7 @@ func TestRunnerReusesPersistedInvocationByNormalizedNodeKey(t *testing.T) {
 
 	result, err := runner.Run(t.Context(), &workflow.RunRequest{
 		RunID: "", Name: "", Source: source, OwnerSessionID: testOwner,
-		PersistedLinks: []database.WorkflowAgentTaskEntity{{
+		GuestAPI: "", PersistedLinks: []database.WorkflowAgentTaskEntity{{
 			CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: firstTask,
 			NodeKey: " agent ", InvocationIndex: 0, Sequence: 1,
 		}},
@@ -179,7 +220,7 @@ func TestRunnerReusesPersistedInvocationsByNormalizedNodeKeyAndIndex(t *testing.
 
 	result, err := runner.Run(t.Context(), &workflow.RunRequest{
 		RunID: "", Name: "", Source: source, OwnerSessionID: testOwner, OnEvent: nil, Arguments: nil,
-		PersistedLinks: []database.WorkflowAgentTaskEntity{
+		GuestAPI: "", PersistedLinks: []database.WorkflowAgentTaskEntity{
 			{
 				CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: secondTask,
 				NodeKey: " review ", InvocationIndex: 1, Sequence: 0,
@@ -235,7 +276,7 @@ func TestRunnerScopesWaitToLaunchedOwnedTasks(t *testing.T) {
 
 			_, err = runner.Run(context.Background(), &workflow.RunRequest{
 				Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: test.source, OwnerSessionID: testOwner,
-				PersistedLinks: nil,
+				GuestAPI: "", PersistedLinks: nil,
 			})
 			require.Error(t, err)
 			assert.Equal(t, test.wantCancels, fake.cancels)
@@ -263,7 +304,7 @@ canceled, _ := workflow.Cancel(second)
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		PersistedLinks: nil,
+		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
 
@@ -292,7 +333,7 @@ results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		PersistedLinks: nil,
+		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
 
@@ -316,7 +357,7 @@ results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		PersistedLinks: nil,
+		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []workflow.PipelineResult{}, result.Value)
@@ -330,7 +371,7 @@ func TestRunnerDoesNotInferPipelineResultFromValueShape(t *testing.T) {
 
 	result, err := runner.Run(t.Context(), &workflow.RunRequest{
 		RunID: "", Name: "", Source: `[]map[string]any{{"index": 0, "value": "ordinary", "error": ""}}`,
-		OwnerSessionID: testOwner, OnEvent: nil, Arguments: nil, PersistedLinks: nil,
+		OwnerSessionID: testOwner, OnEvent: nil, Arguments: nil, GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
 
@@ -371,7 +412,7 @@ results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		PersistedLinks: nil,
+		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
 	require.Len(t, result.Value, 4)
@@ -396,7 +437,7 @@ results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		PersistedLinks: nil,
+		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []workflow.PipelineResult{
@@ -425,7 +466,7 @@ err`
 
 	_, err = runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		PersistedLinks: nil,
+		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "pipeline concurrency must be positive")
@@ -443,7 +484,7 @@ func TestRunnerRejectsCancelForUnlaunchedTask(t *testing.T) {
 		Arguments: nil, RunID: "", OnEvent: nil, Name: "",
 		Source:         `import "librecode/workflow"; workflow.Cancel("other")`,
 		OwnerSessionID: testOwner,
-		PersistedLinks: nil,
+		GuestAPI:       "", PersistedLinks: nil,
 	})
 	require.Error(t, err)
 	assert.Empty(t, fake.cancels)
@@ -462,7 +503,7 @@ func TestRunnerEventFailureCancelsActiveLaunchedTasks(t *testing.T) {
 		},
 		Name: "", Source: `import "librecode/workflow"; workflow.Agent("inspect")`,
 		OwnerSessionID: testOwner,
-		PersistedLinks: nil,
+		GuestAPI:       "", PersistedLinks: nil,
 	})
 	require.Error(t, err)
 	assert.Equal(t, [][2]string{{testOwner, firstTask}}, fake.cancels)
@@ -491,7 +532,7 @@ func TestRunnerCancellationCancelsActiveLaunchedTasks(t *testing.T) {
 	go func() {
 		_, runErr := runner.Run(ctx, &workflow.RunRequest{
 			Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: agentSource, OwnerSessionID: testOwner,
-			PersistedLinks: nil,
+			GuestAPI: "", PersistedLinks: nil,
 		})
 		done <- runErr
 	}()

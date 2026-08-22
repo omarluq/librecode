@@ -361,6 +361,6 @@ func workflowSummaryRun(id string, state database.TaskState) database.WorkflowRu
 			OwnerSessionID: workflowTestSessionID, ConcurrencyKey: "", LeaseOwner: "", State: state,
 			Result: "", ErrorCode: "", ErrorMessage: "",
 		},
-		Name: "active review", Source: "", SourceHash: "", SourceVersion: "", ArgumentsJSON: "",
+		Name: "active review", Source: "", SourceHash: "", GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "",
 	}
 }

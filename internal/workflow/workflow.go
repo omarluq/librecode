@@ -13,6 +13,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/executeworker"
+	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
 )
 
@@ -75,12 +76,13 @@ type Controller interface {
 
 // RunRequest describes one isolated workflow evaluation.
 type RunRequest struct {
+	OnEvent        EventSink
+	Arguments      map[string]any
 	RunID          string
 	Name           string
 	Source         string
 	OwnerSessionID string
-	OnEvent        EventSink
-	Arguments      map[string]any
+	GuestAPI       guestapi.Version
 	PersistedLinks []database.WorkflowAgentTaskEntity
 }
 
@@ -122,11 +124,22 @@ func NewRunner(controller Controller) (*Runner, error) {
 // submitter sees the compiler diagnostics inline instead of a durable run
 // that fails milliseconds after submission.
 func (runner *Runner) ValidateSource(name, source string, arguments map[string]any) error {
-	if err := mvmhost.New().Compile(mvmhost.Request{
-		Bindings: executeworker.WorkflowModeBindings(arguments),
-		Name:     name,
-		Source:   source,
-	}); err != nil {
+	return runner.ValidateSourceVersion(name, source, arguments, guestapi.Version1)
+}
+
+// ValidateSourceVersion compiles durable source against an explicit guest API.
+func (runner *Runner) ValidateSourceVersion(
+	name string,
+	source string,
+	arguments map[string]any,
+	version guestapi.Version,
+) error {
+	bindings, err := executeworker.CompileBindings(guestapi.ProfileDurable, version, arguments)
+	if err != nil {
+		return oops.In("workflow").Code("validate_contract").Wrapf(err, "validate workflow guest API")
+	}
+
+	if err := mvmhost.New().Compile(mvmhost.Request{Bindings: bindings, Name: name, Source: source}); err != nil {
 		return oops.In("workflow").Code("validate_source").Wrapf(err, "compile workflow source")
 	}
 
@@ -158,9 +171,14 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 		run.taskIDs = append(run.taskIDs, link.AgentTaskID)
 	}
 
+	version := request.GuestAPI
+	if version == "" {
+		version = guestapi.Version1
+	}
+
 	client := executeworker.Client{Executable: runner.executable, Handler: run.handleRPC}
 	result, err := client.EvalRequest(ctx, &executeworker.Request{
-		Arguments: request.Arguments, Mode: "workflow", Profile: "", GuestAPIVersion: "",
+		Arguments: request.Arguments, Mode: "", Profile: guestapi.ProfileDurable, GuestAPIVersion: version,
 		Name: request.Name, Source: request.Source,
 	})
 
@@ -535,6 +553,11 @@ func (host *runHost) persistedTask(
 		return "", false, nil
 	}
 
+	if task.Task.OwnerSessionID != host.ownerSessionID {
+		return "", false, oops.In("workflow").Code("task_not_owned").
+			Errorf(taskNotOwnedBySession)
+	}
+
 	host.mu.Lock()
 	current, persisted := host.persisted[key]
 
@@ -602,6 +625,14 @@ func (host *runHost) cancelActive(ctx context.Context) error {
 		}
 
 		if !found || task == nil || terminal(task.Task.State) {
+			continue
+		}
+
+		if task.Task.OwnerSessionID != host.ownerSessionID {
+			wrapped := oops.In("workflow").Code("task_not_owned").
+				Errorf("launched task %s is not owned by this workflow session", taskID)
+			cancelErr = errors.Join(cancelErr, wrapped)
+
 			continue
 		}
 

@@ -19,6 +19,7 @@ import (
 	"github.com/omarluq/librecode/internal/agenttask"
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/workflow"
 )
 
@@ -75,7 +76,7 @@ func TestServiceSubmitRejectsInvalidSourceInline(t *testing.T) {
 
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
-		Name: invalidRunName, Source: `func {`, SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: invalidRunName, Source: `func {`, GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner,
 	})
 	require.Error(t, err)
@@ -93,11 +94,24 @@ func TestServiceSubmitAcceptsWorkflowBindingSource(t *testing.T) {
 
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
-		Name:          "agents",
-		Source:        `import "librecode/workflow"; id, _ := workflow.Agent("inspect"); workflow.Wait(id)`,
-		SourceVersion: "v1", ArgumentsJSON: `{"x": 1}`, OwnerSessionID: owner,
+		Name:            "agents",
+		Source:          `import "librecode/workflow"; id, _ := workflow.Agent("inspect"); workflow.Wait(id)`,
+		GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: `{"x": 1}`, OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
+	assert.Equal(t, database.TaskQueued, run.Task.State)
+}
+
+func TestServiceSubmitAcceptsVersion2AgentBindingSource(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
+		Name: "agents-v2", Source: `import "librecode/agents"; agents.List()`,
+		GuestAPIVersion: guestapi.Version2, SourceVersion: "v1", ArgumentsJSON: `{}`, OwnerSessionID: owner,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, string(guestapi.Version2), run.GuestAPIVersion)
 	assert.Equal(t, database.TaskQueued, run.Task.State)
 }
 
@@ -173,7 +187,7 @@ func TestServiceAwaitHonorsCancellation(t *testing.T) {
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
 		Name: serviceQueuedName, Source: serviceTestSource, ArgumentsJSON: "{}", OwnerSessionID: owner,
-		SourceVersion: "",
+		GuestAPIVersion: "", SourceVersion: "",
 	})
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -190,7 +204,7 @@ func TestServiceRejectsInvalidArguments(t *testing.T) {
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, result, err := service.Run(t.Context(), &workflow.ServiceRequest{
 		Name: "bad arguments", Source: serviceTestSource, ArgumentsJSON: `{"x":`, OwnerSessionID: owner,
-		SourceVersion: "",
+		GuestAPIVersion: "", SourceVersion: "",
 	})
 	require.Error(t, err)
 	assert.Nil(t, run)
@@ -218,7 +232,7 @@ func submitQueuedWorkflow(t *testing.T, service *workflow.Service, owner string)
 
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
 		Name: serviceQueuedName, Source: serviceTestSource, ArgumentsJSON: "{}", OwnerSessionID: owner,
-		SourceVersion: "",
+		GuestAPIVersion: "", SourceVersion: "",
 	})
 	require.NoError(t, err)
 
@@ -230,7 +244,7 @@ func TestServicePersistsSuccessfulRun(t *testing.T) {
 
 	service, repository, owner := newWorkflowService(t, newFakeController())
 	run, result, err := service.Run(t.Context(), &workflow.ServiceRequest{
-		Name: "inspect", Source: serviceTestSource, SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: "inspect", Source: serviceTestSource, GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
@@ -256,7 +270,8 @@ func TestServicePersistsFailedRun(t *testing.T) {
 	// at Submit/Run time now.
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, _, err := service.Run(t.Context(), &workflow.ServiceRequest{
-		Name: invalidRunName, Source: `divisor := 0; _ = 1 / divisor`, SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: invalidRunName, Source: `divisor := 0; _ = 1 / divisor`, GuestAPIVersion: "",
+		SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner,
 	})
 	require.Error(t, err)
@@ -273,7 +288,8 @@ func TestServiceExecuteQueuedPersistsEvaluationFailureWithoutReturningIt(t *test
 
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
-		Name: invalidRunName, Source: `divisor := 0; _ = 1 / divisor`, SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: invalidRunName, Source: `divisor := 0; _ = 1 / divisor`, GuestAPIVersion: "",
+		SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
@@ -430,7 +446,8 @@ func workflowRunEntity(owner string) *database.WorkflowRunEntity {
 			LeaseExpiresAt: nil, ID: "", Kind: "", ParentTaskID: "", OwnerSessionID: owner,
 			ConcurrencyKey: owner, LeaseOwner: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
 		},
-		Name: "test workflow", Source: "1", SourceHash: "hash", SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: "test workflow", Source: "1", SourceHash: "hash", GuestAPIVersion: "",
+		SourceVersion: "v1", ArgumentsJSON: "{}",
 	}
 }
 
@@ -533,7 +550,7 @@ func startIntegrationWorkflow(
 
 	go func() {
 		run, result, err := environment.workflows.Run(context.Background(), &workflow.ServiceRequest{
-			Name: name, Source: agentSource, SourceVersion: "", ArgumentsJSON: "{}",
+			Name: name, Source: agentSource, GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "{}",
 			OwnerSessionID: environment.owner,
 		})
 		outcomeChannel <- workflowRunOutcome{run: run, result: result, err: err}
