@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/tool"
 	"github.com/omarluq/librecode/internal/workflow"
 )
@@ -41,14 +42,14 @@ func TestExecuteDurableSubmitsModelAuthoredSource(t *testing.T) {
 		request: nil,
 		run: &database.WorkflowRunEntity{
 			Task: workflowTestTask("run-1", workflowTestSessionID),
-			Name: "review", Source: "", SourceHash: "", SourceVersion: "", ArgumentsJSON: "",
+			Name: "review", Source: "", SourceHash: "", GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "",
 		},
 		err: nil,
 	}
 	executor := newExecuteFacade(nil, nil, stub, workflowTestSessionID)
 	input, err := tool.ArgumentsFromRaw([]byte(`{
 		"profile":"durable","name":"review",
-		"source":"import \"librecode/workflow\"; workflow.List()",
+		"source":"import \"librecode/agents\"; agents.List()",
 		"arguments":{"scope":"changes"}
 	}`))
 	require.NoError(t, err)
@@ -63,6 +64,7 @@ func TestExecuteDurableSubmitsModelAuthoredSource(t *testing.T) {
 	assert.Equal(t, workflowTestSessionID, stub.request.OwnerSessionID)
 	assert.Equal(t, "review", stub.request.Name)
 	assert.Equal(t, "v1", stub.request.SourceVersion)
+	assert.Equal(t, guestapi.Version2, stub.request.GuestAPIVersion)
 	assert.JSONEq(t, `{"scope":"changes"}`, stub.request.ArgumentsJSON)
 }
 
@@ -73,7 +75,8 @@ func TestExecuteDurableReturnsWithoutAwaitingCompletion(t *testing.T) {
 		request: nil,
 		run: &database.WorkflowRunEntity{
 			Task: workflowTestTask("run-queued", ""),
-			Name: "background review", Source: "", SourceHash: "", SourceVersion: "", ArgumentsJSON: "",
+			Name: "background review", Source: "", SourceHash: "", GuestAPIVersion: "",
+			SourceVersion: "", ArgumentsJSON: "",
 		},
 		err: nil,
 	}
@@ -114,7 +117,8 @@ func TestPromptRegistryExposesOnlyUnifiedExecuteWithDurableAvailability(t *testi
 		request: nil,
 		run: &database.WorkflowRunEntity{
 			Task: workflowTestTask("workflow-run", ""),
-			Name: workflowTestRunName, Source: "", SourceHash: "", SourceVersion: "", ArgumentsJSON: "",
+			Name: workflowTestRunName, Source: "", SourceHash: "", GuestAPIVersion: "",
+			SourceVersion: "", ArgumentsJSON: "",
 		},
 		err: nil,
 	}

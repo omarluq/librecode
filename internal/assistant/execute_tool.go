@@ -67,7 +67,8 @@ func (executor *executeToolExecutor) Definition() tool.Definition {
 		profileEnum = `["turn","durable"]`
 
 		guidelines = append(guidelines,
-			`For durable execution, import "librecode/workflow" and provide an optional name and arguments.`,
+			`For durable execution, import "librecode/agents" and use agents.Run, agents.Spawn, `+
+				`agents.Wait, agents.List, or agents.Cancel.`,
 			"Durable execution continues independently of the provider turn after acceptance.",
 		)
 	}
@@ -204,7 +205,7 @@ func (executor *executeToolExecutor) submitDurable(
 	}
 
 	run, err := executor.submitter.Submit(ctx, &workflow.ServiceRequest{
-		Name: args.Name, Source: args.Source, SourceVersion: "v1",
+		Name: args.Name, Source: args.Source, SourceVersion: "v1", GuestAPIVersion: guestapi.CurrentVersion,
 		ArgumentsJSON: argumentsJSON, OwnerSessionID: executor.ownerSessionID,
 	})
 	if err != nil {
