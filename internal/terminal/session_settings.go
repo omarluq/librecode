@@ -13,14 +13,16 @@ import (
 const sessionSettingsNamespace = "terminal_session_settings"
 
 type sessionSettingsDocument struct {
-	Provider      string   `json:"provider"`
-	Model         string   `json:"model"`
-	ThinkingLevel string   `json:"thinking_level"`
-	Theme         string   `json:"theme"`
-	ScopedEnabled []string `json:"scoped_enabled"`
-	ScopedOrder   []string `json:"scoped_order"`
-	HideThinking  bool     `json:"hide_thinking"`
-	ToolsExpanded bool     `json:"tools_expanded"`
+	Provider           string   `json:"provider"`
+	Model              string   `json:"model"`
+	ThinkingLevel      string   `json:"thinking_level"`
+	DelegationProvider string   `json:"delegation_provider"`
+	DelegationModel    string   `json:"delegation_model"`
+	Theme              string   `json:"theme"`
+	ScopedEnabled      []string `json:"scoped_enabled"`
+	ScopedOrder        []string `json:"scoped_order"`
+	HideThinking       bool     `json:"hide_thinking"`
+	ToolsExpanded      bool     `json:"tools_expanded"`
 }
 
 func (app *App) loadSessionSettings(ctx context.Context) error {
@@ -70,14 +72,16 @@ func (app *App) sessionSettings(ctx context.Context, sessionID string) (sessionS
 	}
 
 	settings := sessionSettingsDocument{
-		Provider:      "",
-		Model:         "",
-		ThinkingLevel: "",
-		Theme:         "",
-		ScopedEnabled: nil,
-		ScopedOrder:   nil,
-		HideThinking:  false,
-		ToolsExpanded: false,
+		Provider:           "",
+		Model:              "",
+		ThinkingLevel:      "",
+		DelegationProvider: "",
+		DelegationModel:    "",
+		Theme:              "",
+		ScopedEnabled:      nil,
+		ScopedOrder:        nil,
+		HideThinking:       false,
+		ToolsExpanded:      false,
 	}
 	if err := json.Unmarshal([]byte(document.ValueJSON), &settings); err != nil {
 		return empty, false, terminalError(err, "decode session settings")
@@ -114,14 +118,16 @@ func (app *App) persistSessionSettings() {
 
 func (app *App) currentSessionSettings() sessionSettingsDocument {
 	return sessionSettingsDocument{
-		Provider:      app.currentProvider(),
-		Model:         app.currentModel(),
-		ThinkingLevel: app.currentThinkingLevel(),
-		Theme:         app.theme.name,
-		ScopedEnabled: app.scopedEnabledValues(),
-		ScopedOrder:   append([]string{}, app.scopedOrder...),
-		HideThinking:  app.hideThinking,
-		ToolsExpanded: app.toolsExpanded,
+		Provider:           app.currentProvider(),
+		Model:              app.currentModel(),
+		ThinkingLevel:      app.currentThinkingLevel(),
+		DelegationProvider: app.currentDelegationProvider(),
+		DelegationModel:    app.currentDelegationModel(),
+		Theme:              app.theme.name,
+		ScopedEnabled:      app.scopedEnabledValues(),
+		ScopedOrder:        append([]string{}, app.scopedOrder...),
+		HideThinking:       app.hideThinking,
+		ToolsExpanded:      app.toolsExpanded,
 	}
 }
 
@@ -147,6 +153,22 @@ func (app *App) currentModel() string {
 	}
 
 	return app.cfg.Assistant.Model
+}
+
+func (app *App) currentDelegationProvider() string {
+	if app.cfg == nil {
+		return ""
+	}
+
+	return app.cfg.Delegation.Provider
+}
+
+func (app *App) currentDelegationModel() string {
+	if app.cfg == nil {
+		return ""
+	}
+
+	return app.cfg.Delegation.Model
 }
 
 func (app *App) scopedEnabledValues() []string {
@@ -175,6 +197,14 @@ func (app *App) applySessionSettings(settings *sessionSettingsDocument) {
 		if settings.ThinkingLevel != "" {
 			app.cfg.Assistant.ThinkingLevel = settings.ThinkingLevel
 		}
+
+		if settings.DelegationProvider != "" {
+			app.cfg.Delegation.Provider = settings.DelegationProvider
+		}
+
+		if settings.DelegationModel != "" {
+			app.cfg.Delegation.Model = settings.DelegationModel
+		}
 	}
 
 	if settings.Theme != "" {
@@ -195,6 +225,15 @@ func (app *App) setModelSelection(provider, modelID string) {
 	if app.cfg != nil {
 		app.cfg.Assistant.Provider = provider
 		app.cfg.Assistant.Model = modelID
+	}
+
+	app.persistSessionSettings()
+}
+
+func (app *App) setDelegationModelSelection(provider, modelID string) {
+	if app.cfg != nil {
+		app.cfg.Delegation.Provider = provider
+		app.cfg.Delegation.Model = modelID
 	}
 
 	app.persistSessionSettings()

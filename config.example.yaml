@@ -48,6 +48,14 @@ assistant:
     base_delay: 2s
     max_delay: 30s
 
+delegation:
+  # Optional model for durable subagents. When set, agent tasks fall back
+  # to this model instead of the assistant model, unless a specific agent
+  # profile overrides it. provider and model must be set together.
+  provider: ""
+  model: ""
+  thinking_level: ""
+
 context:
   preflight_enabled: true
   # Controls automatic pre-request and post-response compaction. Provider

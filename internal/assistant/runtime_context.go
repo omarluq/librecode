@@ -112,6 +112,7 @@ func (runtime *Runtime) baseSystemPrompt(cwd string) string {
 			"to inspect or change workspace files when needed.",
 		"Use agent_start for focused independent work that can run concurrently; " +
 			"it returns immediately with a task ID.",
+		"Use agent_wait_all to block until every started agent finishes and collect all results at once.",
 		"Use agent_status or agent_wait to check progress without blocking, agent_list to inspect tasks, " +
 			"and agent_cancel to stop work.",
 		"Start independent agents before checking results so they run in parallel; " +

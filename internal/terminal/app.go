@@ -853,6 +853,11 @@ func (app *App) setModel(provider, modelID string) {
 	app.addSystemMessage("model selected: " + provider + "/" + modelID)
 }
 
+func (app *App) setDelegationModel(provider, modelID string) {
+	app.setDelegationModelSelection(provider, modelID)
+	app.addSystemMessage("subagent model selected: " + provider + "/" + modelID)
+}
+
 func (app *App) setThinkingLevel(level string) {
 	app.setThinkingLevelValue(level)
 	app.setStatus("thinking: " + level)

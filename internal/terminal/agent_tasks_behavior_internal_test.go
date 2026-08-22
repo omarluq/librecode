@@ -144,6 +144,10 @@ func (stub *agentTaskControllerStub) Await(context.Context, string) (*database.A
 	return nil, errors.New("not implemented")
 }
 
+func (stub *agentTaskControllerStub) AwaitAll(context.Context, string) ([]database.AgentTaskEntity, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (stub *agentTaskControllerStub) SubscribeAgentTask(
 	taskID string,
 ) (events <-chan database.TaskEventEntity, cancel func(), err error) {

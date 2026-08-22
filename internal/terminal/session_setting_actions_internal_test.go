@@ -129,6 +129,7 @@ func TestSessionSettingMutatorsPersist(t *testing.T) {
 	app.setHideThinking(true)
 	app.setTheme(lightTheme())
 	app.setModelSelection(testProviderOpenAI, testGPT5ModelID)
+	app.setDelegationModelSelection(testProviderOpenAI, testGPT5ModelID)
 	app.setThinkingLevelValue(string(model.ThinkingHigh))
 	app.setScopedModelEnabled(testOpenAIGPT5, true)
 	app.setScopedModelsEnabled([]string{testAnthropicClaudeID}, true)
@@ -169,6 +170,8 @@ func assertPersistedSessionSettings(t *testing.T, settings *sessionSettingsDocum
 	assert.Equal(t, themeNameLight, settings.Theme)
 	assert.Equal(t, testProviderOpenAI, settings.Provider)
 	assert.Equal(t, testGPT5ModelID, settings.Model)
+	assert.Equal(t, testProviderOpenAI, settings.DelegationProvider)
+	assert.Equal(t, testGPT5ModelID, settings.DelegationModel)
 	assert.Equal(t, string(model.ThinkingHigh), settings.ThinkingLevel)
 	assert.Empty(t, settings.ScopedEnabled)
 }

@@ -19,6 +19,8 @@ import (
 	"github.com/omarluq/librecode/internal/tool"
 )
 
+const toolExecutorBoomError = "boom"
+
 const (
 	toolExecutorCallID      = "call_1"
 	toolExecutorMissingTool = "missing"
@@ -414,7 +416,7 @@ func TestEncodeToolDetails(t *testing.T) {
 	t.Parallel()
 
 	assert.Empty(t, encodeToolDetails(nil))
-	assert.JSONEq(t, `{"count":1}`, encodeToolDetails(map[string]any{"count": 1}))
+	assert.JSONEq(t, `{"`+agentTaskCountKey+`":1}`, encodeToolDetails(map[string]any{agentTaskCountKey: 1}))
 	assert.Empty(t, encodeToolDetails(map[string]any{"bad": func() {}}))
 }
 
@@ -455,7 +457,7 @@ func TestLLMToolResultFromToolEvent(t *testing.T) {
 		ArgumentsJSON: toolExecutorReadArgs,
 		DetailsJSON:   `{"diff":"+added"}`,
 		Result:        "contents",
-		Error:         "boom",
+		Error:         toolExecutorBoomError,
 		IsError:       true,
 	})
 
@@ -464,7 +466,7 @@ func TestLLMToolResultFromToolEvent(t *testing.T) {
 	detailsJSON, ok := result.Metadata["details_json"].(string)
 	require.True(t, ok)
 	assert.JSONEq(t, `{"diff":"+added"}`, detailsJSON)
-	assert.Equal(t, "boom", result.Error)
+	assert.Equal(t, toolExecutorBoomError, result.Error)
 	assert.True(t, result.IsError)
 	require.Len(t, result.Content, 1)
 	assert.Equal(t, llm.PartText, result.Content[0].Type)

@@ -737,6 +737,11 @@ func promptSendTestConfig() *config.Config {
 				Enabled:     true,
 			},
 		},
+		Delegation: config.DelegationConfig{
+			Provider:      "",
+			Model:         "",
+			ThinkingLevel: "",
+		},
 		Context: config.ContextConfig{
 			CompactionProvider:          "",
 			CompactionModel:             "",

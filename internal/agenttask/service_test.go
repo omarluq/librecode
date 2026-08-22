@@ -543,6 +543,205 @@ func TestServiceFailureAndOwnerScoping(t *testing.T) {
 	assert.Equal(t, created.Task.ID, listed[0].Task.ID)
 }
 
+func TestServiceAwaitAll(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no tasks returns nil", func(t *testing.T) {
+		t.Parallel()
+		testAwaitAllNoTasks(t)
+	})
+
+	t.Run("blocks until running task is terminal", func(t *testing.T) {
+		t.Parallel()
+		testAwaitAllBlocksUntilTerminal(t)
+	})
+
+	t.Run("returns multiple terminal tasks", func(t *testing.T) {
+		t.Parallel()
+		testAwaitAllMultipleTerminal(t)
+	})
+
+	t.Run("does not stop at the page-size cap while a task is running", func(t *testing.T) {
+		t.Parallel()
+		testAwaitAllBeyondPageCap(t)
+	})
+}
+
+func testAwaitAllNoTasks(t *testing.T) {
+	t.Helper()
+
+	tasks, agentTasks, sessions := repositories(t)
+	parent := createSession(t, sessions, "parent", "")
+	service := newService(t, tasks, agentTasks, new(fakeRunner))
+
+	awaited, err := service.AwaitAll(t.Context(), parent.ID)
+	require.NoError(t, err)
+	assert.Nil(t, awaited)
+}
+
+func testAwaitAllBlocksUntilTerminal(t *testing.T) {
+	t.Helper()
+
+	tasks, agentTasks, sessions := repositories(t)
+	parent := createSession(t, sessions, "parent", "")
+	child := createSession(t, sessions, "child", parent.ID)
+	runner := &fakeRunner{
+		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
+	}
+	service := newService(t, tasks, agentTasks, runner)
+
+	created, err := service.Submit(t.Context(), submitRequest(parent.ID, child.ID))
+	require.NoError(t, err)
+	require.Equal(t, created.Task.ID, awaitStarted(t, runner.started))
+
+	awaited := make(chan []database.AgentTaskEntity, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		all, awaitErr := service.AwaitAll(t.Context(), parent.ID)
+		if awaitErr != nil {
+			errCh <- awaitErr
+
+			return
+		}
+
+		awaited <- all
+	}()
+
+	select {
+	case <-awaited:
+		t.Fatal("AwaitAll returned before the task was terminal")
+	case <-errCh:
+		t.Fatal("AwaitAll failed unexpectedly")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	runner.unblock()
+
+	select {
+	case all := <-awaited:
+		require.Len(t, all, 1)
+		assert.Equal(t, created.Task.ID, all[0].Task.ID)
+		assert.Equal(t, database.TaskSucceeded, all[0].Task.State)
+	case err := <-errCh:
+		t.Fatalf("AwaitAll error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for AwaitAll")
+	}
+}
+
+func testAwaitAllMultipleTerminal(t *testing.T) {
+	t.Helper()
+
+	tasks, agentTasks, sessions := repositories(t)
+	parent := createSession(t, sessions, "parent", "")
+	firstChild := createSession(t, sessions, "first", parent.ID)
+	secondChild := createSession(t, sessions, "second", parent.ID)
+	runner := &fakeRunner{
+		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		started: make(chan string, 2), release: nil, eventRelease: nil, once: sync.Once{},
+	}
+	service := newService(t, tasks, agentTasks, runner)
+
+	first, err := service.Submit(t.Context(), submitRequest(parent.ID, firstChild.ID))
+	require.NoError(t, err)
+
+	second, err := service.Submit(t.Context(), submitRequest(parent.ID, secondChild.ID))
+	require.NoError(t, err)
+
+	all, err := service.AwaitAll(t.Context(), parent.ID)
+	require.NoError(t, err)
+	require.Len(t, all, 2)
+
+	states := map[string]database.TaskState{}
+	for index := range all {
+		states[all[index].Task.ID] = all[index].Task.State
+	}
+
+	assert.Equal(t, database.TaskSucceeded, states[first.Task.ID])
+	assert.Equal(t, database.TaskSucceeded, states[second.Task.ID])
+}
+
+func testAwaitAllBeyondPageCap(t *testing.T) {
+	t.Helper()
+
+	tasks, agentTasks, sessions := repositories(t)
+	parent := createSession(t, sessions, "parent", "")
+	child := createSession(t, sessions, "child", parent.ID)
+	finished := 0
+
+	// Seed more terminal tasks than the previous ListByOwner page size (100)
+	// so an uncapped listing is required to notice the running task.
+	for range 105 {
+		bulkChild := createSession(t, sessions, "bulk", parent.ID)
+		created, err := agentTasks.Create(t.Context(), agentTaskEntity(parent.ID, bulkChild.ID))
+		require.NoError(t, err)
+
+		changed, err := tasks.Finish(t.Context(), &database.TaskFinish{
+			TaskID: created.Task.ID, EventKind: "task_succeeded", Result: completedResult,
+			ErrorCode: "", ErrorMessage: "", PayloadJSON: `{}`, LeaseOwner: "",
+			TargetState: database.TaskSucceeded, From: []database.TaskState{database.TaskQueued},
+		})
+		require.NoError(t, err)
+		require.True(t, changed)
+
+		finished++
+	}
+
+	require.Equal(t, 105, finished)
+
+	runner := &fakeRunner{
+		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
+	}
+	service := newService(t, tasks, agentTasks, runner)
+
+	running, err := service.Submit(t.Context(), submitRequest(parent.ID, child.ID))
+	require.NoError(t, err)
+	require.Equal(t, running.Task.ID, awaitStarted(t, runner.started))
+
+	awaited := make(chan []database.AgentTaskEntity, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		all, awaitErr := service.AwaitAll(t.Context(), parent.ID)
+		if awaitErr != nil {
+			errCh <- awaitErr
+
+			return
+		}
+
+		awaited <- all
+	}()
+
+	select {
+	case <-awaited:
+		t.Fatal("AwaitAll returned even though a task beyond the page-size cap was running")
+	case <-errCh:
+		t.Fatal("AwaitAll failed unexpectedly")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	runner.unblock()
+
+	select {
+	case all := <-awaited:
+		require.Len(t, all, 106)
+
+		states := map[string]database.TaskState{}
+		for index := range all {
+			states[all[index].Task.ID] = all[index].Task.State
+		}
+
+		assert.Equal(t, database.TaskSucceeded, states[running.Task.ID])
+	case err := <-errCh:
+		t.Fatalf("AwaitAll error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for AwaitAll")
+	}
+}
+
 func newService(
 	t *testing.T,
 	tasks *database.TaskRepository,

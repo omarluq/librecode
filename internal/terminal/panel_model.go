@@ -15,9 +15,25 @@ func (app *App) openModelPanel() {
 }
 
 func (app *App) modelItems() []tui.ListItem {
+	return app.buildModelItems(app.currentProvider(), app.currentModel())
+}
+
+func (app *App) subagentModelItems() []tui.ListItem {
+	return app.buildModelItems(app.currentDelegationProvider(), app.currentDelegationModel())
+}
+
+func (app *App) buildModelItems(currentProvider, currentModel string) []tui.ListItem {
 	models := app.availableModels()
+	models = ensureCurrentModel(models, currentProvider, currentModel)
+	sort.Slice(models, func(leftIndex, rightIndex int) bool {
+		left := modelLabel(models[leftIndex].Provider, models[leftIndex].ID)
+		right := modelLabel(models[rightIndex].Provider, models[rightIndex].ID)
+
+		return left < right
+	})
+
 	items := make([]tui.ListItem, 0, len(models))
-	current := modelLabel(app.currentProvider(), app.currentModel())
+	current := modelLabel(currentProvider, currentModel)
 
 	for index := range models {
 		knownModel := &models[index]
@@ -39,6 +55,11 @@ func (app *App) modelItems() []tui.ListItem {
 	return items
 }
 
+func (app *App) openModelSubagentPanel() {
+	items := app.subagentModelItems()
+	app.openPanel(panel.New(panelModelSubagent, "Select Subagent Model", "type to filter; Enter selects", items, true))
+}
+
 func (app *App) availableModels() []model.Model {
 	models := []model.Model{}
 	if app.models != nil {
@@ -57,6 +78,10 @@ func (app *App) availableModels() []model.Model {
 }
 
 func ensureCurrentModel(models []model.Model, provider, modelID string) []model.Model {
+	if provider == "" && modelID == "" {
+		return models
+	}
+
 	for index := range models {
 		knownModel := &models[index]
 		if knownModel.Provider == provider && knownModel.ID == modelID {
@@ -91,6 +116,20 @@ func (app *App) applyModelSelection(value string) {
 	}
 
 	app.setModel(provider, modelID)
+}
+
+func (app *App) applyModelSubagentSelection(value string) {
+	provider, modelID, found := strings.Cut(value, "/")
+	if !found {
+		provider = app.currentDelegationProvider()
+		if provider == "" {
+			provider = app.currentProvider()
+		}
+
+		modelID = value
+	}
+
+	app.setDelegationModel(provider, modelID)
 }
 
 func (app *App) cycleModel(delta int) {

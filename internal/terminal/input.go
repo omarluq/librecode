@@ -473,7 +473,7 @@ func (app *App) handleSpecialPanelKey(ctx context.Context, event *tcell.EventKey
 		return app.handleAgentTasksPanelKey(ctx, event)
 	case panelWorkflows:
 		return app.handleWorkflowsPanelKey(ctx, event)
-	case panelModel, panelAuthLogin, panelAuthLogout, panelSettings,
+	case panelModel, panelModelSubagent, panelAuthLogin, panelAuthLogout, panelSettings,
 		panelHotkeys, panelChangelog, panelTree:
 		return false, nil
 	default:

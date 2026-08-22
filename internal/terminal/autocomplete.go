@@ -26,6 +26,7 @@ func slashSuggestions() []tui.ListItem {
 		autocompleteSuggestion(commandLogin, "authenticate a provider"),
 		autocompleteSuggestion(commandLogout, "clear provider auth"),
 		autocompleteSuggestion("model", "select provider/model"),
+		autocompleteSuggestion("model_subagent", "select subagent model"),
 		autocompleteSuggestion("name", "rename current session"),
 		autocompleteSuggestion("new", "start a new session"),
 		autocompleteSuggestion("quit", "exit librecode"),

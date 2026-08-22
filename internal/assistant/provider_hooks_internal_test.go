@@ -169,7 +169,7 @@ func providerHookTestRequest() *CompletionRequest {
 		ExecuteTools:       nil,
 		SessionID:          "session-1",
 		SystemPrompt:       "",
-		ThinkingLevel:      "off",
+		ThinkingLevel:      thinkingOff,
 		CWD:                "/work",
 		Auth:               model.RequestAuth{Headers: map[string]string{}, APIKey: "", Error: "", OK: true},
 		Messages:           nil,

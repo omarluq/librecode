@@ -99,6 +99,7 @@ func (runtime *Runtime) registerAgentTools(registry *tool.Registry, sessionID, c
 
 	for _, name := range []tool.Name{
 		agentStartToolName, agentStatusToolName, agentWaitToolName, agentCancelToolName, agentListToolName,
+		agentWaitAllToolName,
 	} {
 		executor := &agentToolExecutor{
 			controller: runtime.agentTasks, sessions: runtime.sessions, catalog: runtime.agents, name: name,

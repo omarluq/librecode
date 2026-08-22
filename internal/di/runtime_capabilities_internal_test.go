@@ -56,6 +56,13 @@ func (stub *capabilityAgentStub) Await(
 	return testAgentTask(), stub.err
 }
 
+func (stub *capabilityAgentStub) AwaitAll(
+	context.Context,
+	string,
+) ([]database.AgentTaskEntity, error) {
+	return []database.AgentTaskEntity{*testAgentTask()}, stub.err
+}
+
 func (stub *capabilityAgentStub) SubscribeAgentTask(
 	string,
 ) (events <-chan database.TaskEventEntity, cancel func(), err error) {
