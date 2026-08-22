@@ -234,13 +234,8 @@ func TestVersion2CapabilityFailures(t *testing.T) {
 
 	durableBindings, err := CompileBindings(guestapi.ProfileDurable, guestapi.Version2, nil)
 	require.NoError(t, err)
-
-	_, err = mvmhost.New().Eval(t.Context(), mvmhost.Request{
-		Bindings: durableBindings,
-		Name:     "unsupported-agent.go",
-		Source:   `import "librecode/agents"; agents.Run("prompt")`,
-	})
-	require.ErrorContains(t, err, string(guestapi.ErrorUnsupported))
+	assert.Equal(t, []string{"Cancel", "List", "Run", "Spawn", "Wait"},
+		bindingNames(durableBindings[guestapi.PackageAgents]))
 
 	_, err = mvmhost.New().Eval(t.Context(), mvmhost.Request{
 		Bindings: durableBindings,

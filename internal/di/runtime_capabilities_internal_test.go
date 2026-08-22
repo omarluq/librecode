@@ -276,6 +276,7 @@ func testTaskEvent() *database.TaskEventEntity {
 
 func testWorkflowRun() *database.WorkflowRunEntity {
 	return &database.WorkflowRunEntity{
-		Task: *testTask("workflow"), Name: "", Source: "", SourceHash: "", SourceVersion: "", ArgumentsJSON: "",
+		Task: *testTask("workflow"), Name: "", Source: "", SourceHash: "",
+		GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "",
 	}
 }

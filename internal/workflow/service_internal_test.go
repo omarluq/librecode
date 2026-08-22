@@ -13,6 +13,7 @@ import (
 	_ "modernc.org/sqlite" // Register the sqlite database/sql driver used by internal service tests.
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/guestapi"
 )
 
 const serviceStartedEvent = "started"
@@ -40,10 +41,11 @@ func TestServiceDefaultsAndHelperBoundaries(t *testing.T) {
 
 	service, _, owner, _ := newInternalWorkflowService(t)
 	run, err := service.Submit(t.Context(), &ServiceRequest{
-		Name: "defaults", Source: "1", SourceVersion: "", ArgumentsJSON: "", OwnerSessionID: owner,
+		Name: "defaults", Source: "1", GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "", OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, defaultSourceVersion, run.SourceVersion)
+	assert.Equal(t, string(guestapi.Version1), run.GuestAPIVersion)
 	assert.Equal(t, "{}", run.ArgumentsJSON)
 
 	assert.False(t, terminal(database.TaskState("unknown")))
@@ -204,7 +206,7 @@ func TestServiceRepositoryFailurePaths(t *testing.T) {
 
 func serviceTestRequest(name, owner string) *ServiceRequest {
 	return &ServiceRequest{
-		Name: name, Source: "1", SourceVersion: "", ArgumentsJSON: "{}", OwnerSessionID: owner,
+		Name: name, Source: "1", GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "{}", OwnerSessionID: owner,
 	}
 }
 
