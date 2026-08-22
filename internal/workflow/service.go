@@ -13,6 +13,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/guestapi"
 )
 
 var errRunClaimConflict = errors.New("workflow run is not claimable")
@@ -33,11 +34,12 @@ const (
 
 // ServiceRequest describes one durable one-shot workflow execution.
 type ServiceRequest struct {
-	Name           string
-	Source         string
-	SourceVersion  string
-	ArgumentsJSON  string
-	OwnerSessionID string
+	Name            string
+	Source          string
+	SourceVersion   string
+	GuestAPIVersion guestapi.Version
+	ArgumentsJSON   string
+	OwnerSessionID  string
 }
 
 type eventPayload struct {
@@ -226,7 +228,7 @@ func (service *Service) executeExisting(
 	result, runErr := service.runner.Run(runCtx, &RunRequest{
 		RunID: persisted.Task.ID, OnEvent: service.eventSink(persisted.Task.ID), Name: name,
 		Source: persisted.Source, OwnerSessionID: persisted.Task.OwnerSessionID, Arguments: arguments,
-		PersistedLinks: links,
+		PersistedLinks: links, GuestAPI: persistedGuestAPI(persisted.GuestAPIVersion),
 	})
 
 	stopHeartbeat()
@@ -429,6 +431,14 @@ func (service *Service) AgentTaskDetails(
 	return details, nil
 }
 
+func persistedGuestAPI(version string) guestapi.Version {
+	if version == "" {
+		return guestapi.Version1
+	}
+
+	return guestapi.Version(version)
+}
+
 func (service *Service) createRun(
 	ctx context.Context,
 	request *ServiceRequest,
@@ -456,7 +466,12 @@ func (service *Service) createRun(
 		return nil, err
 	}
 
-	validateErr := service.runner.ValidateSource(request.Name, request.Source, arguments)
+	guestAPIVersion := request.GuestAPIVersion
+	if guestAPIVersion == "" {
+		guestAPIVersion = guestapi.Version1
+	}
+
+	validateErr := service.runner.ValidateSourceVersion(request.Name, request.Source, arguments, guestAPIVersion)
 	if validateErr != nil {
 		return nil, oops.In("workflow").Code("compile_source").
 			Wrapf(validateErr, "workflow source does not compile")
@@ -472,7 +487,7 @@ func (service *Service) createRun(
 			ErrorCode: "", ErrorMessage: "",
 		},
 		Name: request.Name, Source: request.Source, SourceHash: hex.EncodeToString(hash[:]),
-		SourceVersion: sourceVersion, ArgumentsJSON: argumentsJSON,
+		SourceVersion: sourceVersion, GuestAPIVersion: string(guestAPIVersion), ArgumentsJSON: argumentsJSON,
 	})
 	if err != nil {
 		return nil, oops.In("workflow").Code("create_run").Wrapf(err, "create workflow run")

@@ -45,7 +45,7 @@ func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 	require.NoError(t, err)
 
 	run, err := submitter.Submit(t.Context(), &workflow.ServiceRequest{
-		Name: "cross-process", Source: "21 * 2", SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: "cross-process", Source: "21 * 2", GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner.ID,
 	})
 	require.NoError(t, err)

@@ -57,7 +57,7 @@ func TestRunnerRejectsInvalidConstructionAndRunInputs(t *testing.T) {
 
 	_, err = runner.Run(nilContext, &RunRequest{
 		RunID: "", Name: "", Source: "", OwnerSessionID: "", OnEvent: nil,
-		Arguments: nil, PersistedLinks: nil,
+		Arguments: nil, GuestAPI: "", PersistedLinks: nil,
 	})
 	require.ErrorContains(t, err, "context is required")
 	_, err = runner.Run(t.Context(), nil)
@@ -235,14 +235,16 @@ func TestRunHostWaitFailureBranches(t *testing.T) {
 func TestRunHostListAndCancelFailureBranches(t *testing.T) {
 	t.Parallel()
 
+	const taskID = "task"
+
 	failure := errors.New("controller failure")
 	controller := newBranchController()
 	controller.get = func(context.Context, string) (*database.AgentTaskEntity, bool, error) {
 		return nil, false, failure
 	}
 	host := newBranchHost(controller)
-	host.launched["task"] = struct{}{}
-	host.taskIDs = []string{"task"}
+	host.launched[taskID] = struct{}{}
+	host.taskIDs = []string{taskID}
 	_, err := host.list(t.Context())
 	require.ErrorContains(t, err, "get launched task")
 
@@ -252,7 +254,7 @@ func TestRunHostListAndCancelFailureBranches(t *testing.T) {
 		return nil, false, failure
 	}
 	host.controller = controller
-	_, err = host.cancel(t.Context(), "task")
+	_, err = host.cancel(t.Context(), taskID)
 	require.ErrorContains(t, err, "cancel agent task")
 
 	controller = newBranchController()
@@ -261,7 +263,7 @@ func TestRunHostListAndCancelFailureBranches(t *testing.T) {
 		return nil, false, nil
 	}
 	host.controller = controller
-	_, err = host.cancel(t.Context(), "task")
+	_, err = host.cancel(t.Context(), taskID)
 	require.ErrorContains(t, err, taskNotOwnedBySession)
 }
 
@@ -278,6 +280,17 @@ func TestRunHostPersistedAndCleanupFailures(t *testing.T) {
 	_, _, err := host.persistedTask(t.Context(), "agent", 0)
 	require.ErrorContains(t, err, "get persisted agent task")
 
+	host = newBranchHost(&branchController{
+		submit: nil,
+		get: func(context.Context, string) (*database.AgentTaskEntity, bool, error) {
+			return branchAgentTask("task", "other", database.TaskRunning), true, nil
+		},
+		await: nil, cancel: nil,
+	})
+	host.persisted[invocationKey{nodeKey: "agent", index: 0}] = persistedInvocation{taskID: "task"}
+	_, _, err = host.persistedTask(t.Context(), "agent", 0)
+	require.ErrorContains(t, err, taskNotOwnedBySession)
+
 	cancelCalls := 0
 	host = newBranchHost(&branchController{
 		submit: nil,
@@ -289,6 +302,8 @@ func TestRunHostPersistedAndCleanupFailures(t *testing.T) {
 			switch taskID {
 			case "terminal":
 				return branchAgentTask(taskID, testBranchOwner, database.TaskSucceeded), true, nil
+			case "wrong-owner":
+				return branchAgentTask(taskID, "other", database.TaskRunning), true, nil
 			default:
 				return branchAgentTask(taskID, testBranchOwner, database.TaskRunning), true, nil
 			}
@@ -300,9 +315,10 @@ func TestRunHostPersistedAndCleanupFailures(t *testing.T) {
 			return nil, false, failure
 		},
 	})
-	host.taskIDs = []string{"get-error", "terminal", "running"}
+	host.taskIDs = []string{"get-error", "terminal", "wrong-owner", "running"}
 	err = host.cancelActive(t.Context())
 	require.ErrorContains(t, err, "get launched task get-error")
+	require.ErrorContains(t, err, "wrong-owner is not owned")
 	require.ErrorContains(t, err, "cancel launched task running")
 	assert.Equal(t, 1, cancelCalls)
 }

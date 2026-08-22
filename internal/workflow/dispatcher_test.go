@@ -64,9 +64,9 @@ func TestDispatcherDependencyDefaultsAndShutdownBoundaries(t *testing.T) {
 	require.NoError(t, dispatcher.Shutdown(t.Context()))
 
 	run, err := dispatcher.Submit(t.Context(), &workflow.ServiceRequest{
-		Name:           "",
-		Source:         "",
-		SourceVersion:  "",
+		Name:            "",
+		Source:          "",
+		GuestAPIVersion: "", SourceVersion: "",
 		ArgumentsJSON:  "",
 		OwnerSessionID: "",
 	})
@@ -105,7 +105,8 @@ func TestDispatcherShutdownDoesNotHoldLifecycleLockAcrossSubmitIO(t *testing.T) 
 
 	go func() {
 		_, submitErr := dispatcher.Submit(context.Background(), &workflow.ServiceRequest{
-			Name: "blocked", Source: "1", SourceVersion: "v1", ArgumentsJSON: "{}", OwnerSessionID: owner.ID,
+			Name: "blocked", Source: "1", GuestAPIVersion: "", SourceVersion: "v1",
+			ArgumentsJSON: "{}", OwnerSessionID: owner.ID,
 		})
 		submitDone <- submitErr
 	}()
@@ -121,7 +122,7 @@ func TestDispatcherShutdownDoesNotHoldLifecycleLockAcrossSubmitIO(t *testing.T) 
 	require.ErrorIs(t, dispatcher.Shutdown(shutdownCtx), context.DeadlineExceeded)
 
 	_, err = dispatcher.Submit(t.Context(), &workflow.ServiceRequest{
-		Name: "", Source: "", SourceVersion: "", ArgumentsJSON: "", OwnerSessionID: "",
+		Name: "", Source: "", GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "", OwnerSessionID: "",
 	})
 	require.ErrorContains(t, err, "dispatcher is shut down")
 	require.NoError(t, transaction.Rollback())
@@ -134,7 +135,7 @@ func TestStoppedDispatcherWaitsForStart(t *testing.T) {
 
 	service, repository, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
-		Name: "recovered", Source: "2 + 2", SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: "recovered", Source: "2 + 2", GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
@@ -180,7 +181,7 @@ func TestDispatcherExecutesSubmittedWorkflow(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, dispatcher.Shutdown(context.Background())) })
 
 	run, err := dispatcher.Submit(t.Context(), &workflow.ServiceRequest{
-		Name: dispatcherQueuedName, Source: "1 + 1", SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: dispatcherQueuedName, Source: "1 + 1", GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
@@ -195,7 +196,7 @@ func TestDispatcherRecoversQueuedWorkflow(t *testing.T) {
 
 	service, repository, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
-		Name: "recovered", Source: "2 + 2", SourceVersion: "v1", ArgumentsJSON: "{}",
+		Name: "recovered", Source: "2 + 2", GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: "{}",
 		OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
