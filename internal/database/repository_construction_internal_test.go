@@ -163,11 +163,11 @@ func TestCompositeRepositoriesUseSharedClock(t *testing.T) {
 	})
 	require.NoError(t, err)
 	createdWorkflow, err := workflows.Create(t.Context(), &WorkflowRunEntity{
-		Task:          *newClockTestTask(owner.ID, ""),
-		Name:          "clock workflow",
-		Source:        "workflow source",
-		SourceHash:    "source hash",
-		SourceVersion: "1",
+		Task:            *newClockTestTask(owner.ID, ""),
+		Name:            "clock workflow",
+		Source:          "workflow source",
+		SourceHash:      "source hash",
+		GuestAPIVersion: "", SourceVersion: "1",
 		ArgumentsJSON: "{}",
 	})
 	require.NoError(t, err)
