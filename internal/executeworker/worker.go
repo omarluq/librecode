@@ -134,6 +134,10 @@ func profileBindings(
 		}
 	}
 
+	if profile == guestapi.ProfileDurable {
+		bindings[guestapi.PackageAgents] = agentsBindings(bridge)[guestapi.PackageAgents]
+	}
+
 	return bindings
 }
 
@@ -208,22 +212,51 @@ func (bridge workflowCallBridge) callResult(method, taskID string, input any) (a
 // signature change cannot make validation accept what execution rejects (or
 // vice versa).
 func workflowModeBindings(arguments map[string]any, bridge callBridge) mvmhost.Bindings {
-	return mvmhost.Bindings{"librecode/workflow": {
+	agents := agentsBindings(bridge)[guestapi.PackageAgents]
+
+	return mvmhost.Bindings{guestapi.PackageWorkflow: {
 		"Arguments": arguments,
-		"Agent": func(prompt string, options ...map[string]any) (any, error) {
-			return bridge.callResult("workflow_agent", "", map[string]any{"prompt": prompt, "options": options})
-		},
-		"Wait": func(taskID string) (any, error) {
-			return bridge.callResult("workflow_wait", taskID, nil)
-		},
-		"List": func() (any, error) { return bridge.callResult("workflow_list", "", nil) },
-		"Cancel": func(taskID string) (any, error) {
-			return bridge.callResult("workflow_cancel", taskID, nil)
-		},
+		"Agent":     agents["Spawn"],
+		"Wait":      agents["Wait"],
+		"List":      agents["List"],
+		"Cancel":    agents["Cancel"],
 		"Pipeline": func(items []any, callback func(any) (any, error), concurrency int) (any, error) {
 			results, err := workerPipeline(items, callback, concurrency)
 
 			return pipelineValue(results), err
+		},
+	}}
+}
+
+func agentsBindings(bridge callBridge) mvmhost.Bindings {
+	spawn := func(prompt string, options ...map[string]any) (any, error) {
+		return bridge.callResult("workflow_agent", "", map[string]any{"prompt": prompt, "options": options})
+	}
+	wait := func(taskID string) (any, error) {
+		return bridge.callResult("workflow_wait", taskID, nil)
+	}
+
+	return mvmhost.Bindings{guestapi.PackageAgents: {
+		"Run": func(prompt string, options ...map[string]any) (any, error) {
+			taskID, err := spawn(prompt, options...)
+			if err != nil {
+				return nil, err
+			}
+
+			id, ok := taskID.(string)
+			if !ok {
+				return nil, fmt.Errorf("agent spawn returned task ID of type %T", taskID)
+			}
+
+			return wait(id)
+		},
+		"Spawn": spawn,
+		"Wait":  wait,
+		"List": func() (any, error) {
+			return bridge.callResult("workflow_list", "", nil)
+		},
+		"Cancel": func(taskID string) (any, error) {
+			return bridge.callResult("workflow_cancel", taskID, nil)
 		},
 	}}
 }
