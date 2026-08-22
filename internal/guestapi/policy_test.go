@@ -46,8 +46,8 @@ func TestAvailabilityManifest(t *testing.T) {
 		implemented bool
 	}{
 		{guestapi.PackageTools, "Call", true, false, true},
-		{guestapi.PackageAgents, "Run", false, true, false},
-		{guestapi.PackageAgents, "Spawn", false, true, false},
+		{guestapi.PackageAgents, "Run", false, true, true},
+		{guestapi.PackageAgents, "Spawn", false, true, true},
 		{guestapi.PackageWorkflow, "Pipeline", true, true, false},
 		{guestapi.PackageArtifacts, "Put", true, true, false},
 		{guestapi.PackageState, "Get", false, true, false},
