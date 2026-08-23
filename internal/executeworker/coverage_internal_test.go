@@ -17,9 +17,12 @@ import (
 
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
+	"github.com/omarluq/librecode/internal/workflowkernel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const cancelBindingName = "Cancel"
 
 type errorWriter struct{ calls int }
 
@@ -173,7 +176,7 @@ func TestWorkerBindingsModes(t *testing.T) {
 		},
 		{
 			packages: []string{guestapi.PackageWorkflow},
-			bindings: []string{"Agent", "Arguments", "Cancel", "List", "Pipeline", "Wait"},
+			bindings: []string{"Agent", "Arguments", cancelBindingName, "List", "Pipeline", "Wait"},
 			name:     "durable version 1", errContains: "", profile: guestapi.ProfileDurable,
 			version: guestapi.Version1,
 		},
@@ -208,7 +211,7 @@ func TestWorkerBindingsModes(t *testing.T) {
 			request := ptrMessage("eval")
 			request.Profile, request.GuestAPI = test.profile, test.version
 
-			bindings, err := workerBindings(request, caller)
+			bindings, err := workerBindings(t.Context(), request, caller)
 			if test.errContains != "" {
 				require.ErrorContains(t, err, test.errContains)
 
@@ -229,7 +232,73 @@ func TestWorkerBindingsModes(t *testing.T) {
 	}
 }
 
+func TestVersion2CombinatorBindingsUseEvaluationContext(t *testing.T) {
+	t.Parallel()
+
+	for _, profile := range []guestapi.Profile{guestapi.ProfileTurn, guestapi.ProfileDurable} {
+		t.Run(string(profile), func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			bindings := profileBindings(ctx, profile, guestapi.Version2, nil, inertCallBridge{})
+			bindings["testsupport"] = map[string]any{cancelBindingName: func(value any) any {
+				cancel()
+
+				return value
+			}}
+
+			result, err := mvmhost.New().Eval(t.Context(), mvmhost.Request{
+				Bindings: bindings,
+				Name:     "cancel-combinator.go",
+				Source: `import "librecode/workflow"
+import "testsupport"
+outcome, _ := workflow.Parallel([]any{1, 2}, func(value any) (any, error) {
+	return testsupport.Cancel(value), nil
+}, 1)
+outcome`,
+			})
+			require.NoError(t, err)
+
+			outcome, ok := result.Value.(workflowkernel.Outcome)
+			require.True(t, ok, "combinator result has type %T", result.Value)
+			assert.Equal(t, workflowkernel.StateCanceled, outcome.Items[0].State)
+			assert.Equal(t, workflowkernel.StateNotStarted, outcome.Items[1].State)
+		})
+	}
+}
+
 func TestVersion2CombinatorBindings(t *testing.T) {
+	t.Parallel()
+
+	profileResults := make([]any, 0, 2)
+
+	for _, profile := range []guestapi.Profile{guestapi.ProfileTurn, guestapi.ProfileDurable} {
+		bindings, err := CompileBindings(profile, guestapi.Version2, nil)
+		require.NoError(t, err)
+
+		result, err := mvmhost.New().Eval(t.Context(), mvmhost.Request{
+			Bindings: bindings,
+			Name:     "combinators.go",
+			Source: `import "librecode/workflow"
+parallel, _ := workflow.Parallel([]any{1, 2}, func(value any) (any, error) {
+	return value.(int) * 2, nil
+}, 1)
+pipeline, _ := workflow.Pipeline([]any{2}, []func(any) (any, error){
+	func(value any) (any, error) { return value.(int) + 1, nil },
+	func(value any) (any, error) { return value.(int) * 3, nil },
+}, 1)
+[]any{parallel, pipeline}`,
+		})
+		require.NoError(t, err)
+		assert.NotNil(t, result.Value)
+		profileResults = append(profileResults, result.Value)
+	}
+
+	assert.Equal(t, profileResults[0], profileResults[1],
+		"turn and durable profiles must expose the same canonical combinator semantics")
+}
+
+func TestVersion2PlannedBindingReturnsStableUnsupportedError(t *testing.T) {
 	t.Parallel()
 
 	for _, profile := range []guestapi.Profile{guestapi.ProfileTurn, guestapi.ProfileDurable} {
@@ -239,21 +308,16 @@ func TestVersion2CombinatorBindings(t *testing.T) {
 			bindings, err := CompileBindings(profile, guestapi.Version2, nil)
 			require.NoError(t, err)
 
-			result, err := mvmhost.New().Eval(t.Context(), mvmhost.Request{
+			_, err = mvmhost.New().Eval(t.Context(), mvmhost.Request{
 				Bindings: bindings,
-				Name:     "combinators.go",
-				Source: `import "librecode/workflow"
-parallel, _ := workflow.Parallel([]any{1, 2}, func(value any) (any, error) {
-	return value.(int) * 2, nil
-}, 1)
-pipeline, _ := workflow.Pipeline([]any{2}, []func(any) (any, error){
-	func(value any) (any, error) { return value.(int) + 1, nil },
-	func(value any) (any, error) { return value.(int) * 3, nil },
-}, 1)
-[]any{parallel, pipeline}`,
+				Name:     "planned-artifact.go",
+				Source: `import "librecode/artifacts"
+if err := artifacts.Put("result", "value"); err != nil {
+	panic(err)
+}`,
 			})
-			require.NoError(t, err)
-			assert.NotNil(t, result.Value)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), string(guestapi.ErrorUnsupported))
 		})
 	}
 }
@@ -263,7 +327,7 @@ func TestVersion2CapabilityFailures(t *testing.T) {
 
 	durableBindings, err := CompileBindings(guestapi.ProfileDurable, guestapi.Version2, nil)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"Cancel", "List", "Run", "Spawn", "Wait"},
+	assert.Equal(t, []string{cancelBindingName, "List", "Run", "Spawn", "Wait"},
 		bindingNames(durableBindings[guestapi.PackageAgents]))
 
 	_, err = mvmhost.New().Eval(t.Context(), mvmhost.Request{
@@ -280,23 +344,23 @@ func TestWorkerBindingsLegacyModes(t *testing.T) {
 
 	caller := newRPCCaller()
 	request := ptrMessage("eval")
-	bindings, err := workerBindings(request, caller)
+	bindings, err := workerBindings(t.Context(), request, caller)
 	require.NoError(t, err)
 	assert.Contains(t, bindings, guestapi.LegacyPackageTools)
 
 	request.Mode = "bad"
-	_, err = workerBindings(request, caller)
+	_, err = workerBindings(t.Context(), request, caller)
 	require.ErrorContains(t, err, "unknown")
 
 	request.Mode = "workflow"
 	request.Arguments = json.RawMessage(`{`)
-	_, err = workerBindings(request, caller)
+	_, err = workerBindings(t.Context(), request, caller)
 	require.ErrorContains(t, err, "decode workflow arguments")
 
 	workflowArguments := []json.RawMessage{nil, json.RawMessage("null"), json.RawMessage(`{"x":1}`)}
 	for _, arguments := range workflowArguments {
 		request.Arguments = arguments
-		bindings, err = workerBindings(request, caller)
+		bindings, err = workerBindings(t.Context(), request, caller)
 		require.NoError(t, err)
 		assert.Contains(t, bindings, "librecode/workflow")
 	}
@@ -349,7 +413,7 @@ func TestRPCCallerExchangeAndFailures(t *testing.T) {
 	caller := newRPCCaller()
 
 	caller.in, caller.out = workerRead, workerWrite
-	go caller.readResponses()
+	go caller.readResponses(func() {})
 
 	writeErrors := make(chan error, 1)
 
