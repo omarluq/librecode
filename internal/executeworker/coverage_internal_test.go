@@ -229,6 +229,35 @@ func TestWorkerBindingsModes(t *testing.T) {
 	}
 }
 
+func TestVersion2CombinatorBindings(t *testing.T) {
+	t.Parallel()
+
+	for _, profile := range []guestapi.Profile{guestapi.ProfileTurn, guestapi.ProfileDurable} {
+		t.Run(string(profile), func(t *testing.T) {
+			t.Parallel()
+
+			bindings, err := CompileBindings(profile, guestapi.Version2, nil)
+			require.NoError(t, err)
+
+			result, err := mvmhost.New().Eval(t.Context(), mvmhost.Request{
+				Bindings: bindings,
+				Name:     "combinators.go",
+				Source: `import "librecode/workflow"
+parallel, _ := workflow.Parallel([]any{1, 2}, func(value any) (any, error) {
+	return value.(int) * 2, nil
+}, 1)
+pipeline, _ := workflow.Pipeline([]any{2}, []func(any) (any, error){
+	func(value any) (any, error) { return value.(int) + 1, nil },
+	func(value any) (any, error) { return value.(int) * 3, nil },
+}, 1)
+[]any{parallel, pipeline}`,
+			})
+			require.NoError(t, err)
+			assert.NotNil(t, result.Value)
+		})
+	}
+}
+
 func TestVersion2CapabilityFailures(t *testing.T) {
 	t.Parallel()
 
