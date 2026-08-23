@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,11 +47,24 @@ const (
 	serviceStoppedCode     = "service_stopped"
 	serviceStoppedMessage  = "task service stopped before queue admission"
 	taskInterruptedEvent   = "task_interrupted"
+	taskCanceledByPrefix   = "task canceled by "
 )
 
 // errTaskTimeout marks a run ended by its execution timeout rather than an
 // error in the run itself or an explicit cancellation.
 var errTaskTimeout = errors.New("task timed out")
+
+const (
+	diagnosticAgentTaskOutcome             = "agent_task_outcome"
+	diagnosticAgentTaskLeaseRenewalFailure = "agent_task_lease_renewal_failure"
+)
+
+type agentTaskDiagnostic struct {
+	name     string
+	outcome  string
+	reason   string
+	attempts int
+}
 
 // Runner executes one persisted agent task.
 type Runner interface {
@@ -60,8 +74,9 @@ type Runner interface {
 // EventSink persists observable task progress.
 type EventSink func(context.Context, string, any) error
 
-// Subscription delivers best-effort live events. Durable replay remains available
-// through Events when a subscriber falls behind.
+// Subscription delivers process-local, best-effort wakeups for events published
+// after registration. It does not replay durable history or provide a complete
+// event stream; callers that need event contents recover gaps through Events.
 type Subscription struct {
 	Events <-chan database.TaskEventEntity
 	Cancel func()
@@ -118,6 +133,7 @@ type Service struct {
 	cancel                    context.CancelFunc
 	done                      <-chan struct{}
 	logger                    *slog.Logger
+	diagnostic                func(agentTaskDiagnostic)
 	leaseOwner                string
 	wg                        sync.WaitGroup
 	mu                        sync.Mutex
@@ -182,8 +198,9 @@ func NewStopped(ctx context.Context, options *Options) (*Service, error) {
 		sessionSlots:   make(map[string]chan struct{}),
 		subscribers:    make(map[string]map[uint64]chan database.TaskEventEntity),
 		nextSubscriber: 0, wg: sync.WaitGroup{}, timeout: timeout,
-		concurrency: concurrency, sessionConcurrency: sessionConcurrency, logger: logger, leaseOwner: leaseOwner,
-		getTaskFn: options.Tasks.Get, renewLeaseFn: options.Tasks.RenewLease, leaseDuration: leaseDuration,
+		concurrency: concurrency, sessionConcurrency: sessionConcurrency, logger: logger, diagnostic: nil,
+		leaseOwner: leaseOwner,
+		getTaskFn:  options.Tasks.Get, renewLeaseFn: options.Tasks.RenewLease, leaseDuration: leaseDuration,
 		awaitGetFn:                options.AgentTasks.Get,
 		awaitPollEvery:            awaitPollInterval,
 		leaseHeartbeatInterval:    leaseHeartbeatInterval,
@@ -413,8 +430,11 @@ func (service *Service) Events(
 	return events, nil
 }
 
-// Subscribe follows newly persisted events for a task. Delivery is bounded and
-// best-effort; callers recover gaps using Events and the event sequence.
+// Subscribe follows events published after registration for a task. Delivery is
+// bounded and best-effort: non-terminal events may be dropped on a full buffer,
+// while a terminal event evicts one older event so it can wake the subscriber.
+// Callers must re-read durable state after a wakeup and use Events plus sequence
+// numbers when they need complete event contents.
 func (service *Service) Subscribe(taskID string) Subscription {
 	subscription, err := service.subscribe(taskID)
 	if err == nil {
@@ -504,6 +524,7 @@ func (service *Service) Cancel(
 	}
 
 	if canceled {
+		service.recordTaskOutcome(ctx, taskID, database.TaskCanceled, "", taskCanceledByPrefix+source)
 		service.publishLatest(ctx, taskID)
 	} else {
 		canceling, cancelErr := service.requestRunningCancel(ctx, taskID, payload)
@@ -576,7 +597,10 @@ func (service *Service) ownsTask(ctx context.Context, ownerSessionID, taskID str
 	return found && task.Task.OwnerSessionID == ownerSessionID, nil
 }
 
-// Await waits until a task is terminal or the caller context ends.
+// Await waits until durable task state is terminal or the caller context ends.
+// Subscription events are fire-once wakeup hints: each one causes a single state
+// recheck. The immediate read closes the subscribe/read race, and bounded polling
+// repairs dropped wakeups, cross-process transitions, and subscription closure.
 func (service *Service) Await(ctx context.Context, taskID string) (*database.AgentTaskEntity, error) {
 	subscription := service.Subscribe(taskID)
 	defer subscription.Cancel()
@@ -796,6 +820,7 @@ func (service *Service) rejectQueuedTask(taskID, errorCode, errorMessage string)
 	}
 
 	if changed {
+		service.recordTaskOutcome(ctx, taskID, database.TaskFailed, errorCode, "")
 		service.publishLatest(ctx, taskID)
 	}
 }
@@ -926,6 +951,7 @@ func (service *Service) renewLeaseWithRetry(
 			service.logError(ctx, "renew agent task lease after lease expiry", "task_id", taskID,
 				"lease_owner", service.leaseOwner, "attempts", attempt-1,
 				"lease_duration", service.leaseDuration)
+			service.recordLeaseRenewalFailure(ctx, taskID, "lease_expired", attempt-1)
 
 			return time.Time{}, false
 		}
@@ -943,6 +969,7 @@ func (service *Service) renewLeaseWithRetry(
 			service.logError(ctx, "renew agent task lease after lease expiry", "task_id", taskID,
 				"lease_owner", service.leaseOwner, "attempts", attempt,
 				"lease_duration", service.leaseDuration, "error", err)
+			service.recordLeaseRenewalFailure(ctx, taskID, "lease_expired", attempt)
 
 			return time.Time{}, false
 		}
@@ -985,6 +1012,7 @@ func (service *Service) handleLeaseRenewal(
 	if !renewed {
 		service.logWarn(ctx, "agent task lease ownership lost", "task_id", taskID,
 			"lease_owner", service.leaseOwner)
+		service.recordLeaseRenewalFailure(ctx, taskID, "ownership_lost", attempt)
 	} else if attempt > 1 {
 		service.logger.DebugContext(ctx, "agent task lease renewal recovered", "task_id", taskID,
 			"lease_owner", service.leaseOwner, "attempt", attempt)
@@ -1043,6 +1071,10 @@ func (service *Service) finalizeRun(ctx context.Context, taskID string, result R
 	service.finish(ctx, taskID, database.TaskFailed, "task_failed", result, "run_failed", runErr.Error())
 }
 
+// publish sends a process-local wakeup after its caller has persisted the event.
+// Non-terminal sends are best-effort. Terminal sends evict one buffered event if
+// necessary and are enqueued for every subscriber registered at this point. The
+// shared mutex serializes sends with subscription cancellation and shutdown close.
 func (service *Service) publish(event *database.TaskEventEntity) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
@@ -1115,7 +1147,7 @@ func (service *Service) forgetCancelSource(taskID string) {
 // recorded by another process before this worker finalizes the run.
 func (service *Service) cancelSourceMessage(ctx context.Context, taskID string) string {
 	if source := service.cachedCancelSource(taskID); source != "" {
-		return "task canceled by " + source
+		return taskCanceledByPrefix + source
 	}
 
 	source := service.durableCancelSource(ctx, taskID)
@@ -1123,7 +1155,7 @@ func (service *Service) cancelSourceMessage(ctx context.Context, taskID string) 
 		return ""
 	}
 
-	return "task canceled by " + source
+	return taskCanceledByPrefix + source
 }
 
 func (service *Service) cachedCancelSource(taskID string) string {
@@ -1214,6 +1246,7 @@ func (service *Service) finish(
 		}
 
 		for _, recoveredID := range recovered {
+			service.recordTaskOutcome(ctx, recoveredID, database.TaskInterrupted, "process_restart", "")
 			service.publishLatest(ctx, recoveredID)
 		}
 
@@ -1226,27 +1259,74 @@ func (service *Service) finish(
 		return
 	}
 
+	service.recordTaskOutcome(ctx, taskID, state, errorCode, errorMessage)
 	service.publishLatest(ctx, taskID)
 }
 
-func (service *Service) logError(ctx context.Context, message string, args ...any) {
-	logger := service.logger
-	if logger == nil {
-		logger = slog.Default()
+func (service *Service) recordTaskOutcome(
+	ctx context.Context,
+	taskID string,
+	state database.TaskState,
+	errorCode string,
+	errorMessage string,
+) {
+	outcome := string(state)
+	if state == database.TaskSucceeded {
+		outcome = "completed"
 	}
 
-	logger.ErrorContext(ctx, message, args...)
+	reason := errorCode
+
+	if state == database.TaskCanceled {
+		reason = "unknown"
+
+		if source, found := strings.CutPrefix(errorMessage, taskCanceledByPrefix); found {
+			reason = source
+		}
+	}
+
+	diagnostic := agentTaskDiagnostic{
+		name: diagnosticAgentTaskOutcome, outcome: outcome, reason: reason, attempts: 0,
+	}
+	service.emitDiagnostic(diagnostic)
+	service.loggerOrDefault().InfoContext(ctx, "agent task outcome",
+		"metric", diagnostic.name, "task_id", taskID, "outcome", outcome, "reason", reason)
+}
+
+func (service *Service) recordLeaseRenewalFailure(ctx context.Context, taskID, reason string, attempts int) {
+	diagnostic := agentTaskDiagnostic{
+		name: diagnosticAgentTaskLeaseRenewalFailure, outcome: "failed", reason: reason, attempts: attempts,
+	}
+	service.emitDiagnostic(diagnostic)
+	service.loggerOrDefault().WarnContext(ctx, "agent task lease renewal failed",
+		"metric", diagnostic.name, "task_id", taskID, "outcome", diagnostic.outcome,
+		"reason", reason, "attempts", attempts)
+}
+
+func (service *Service) emitDiagnostic(diagnostic agentTaskDiagnostic) {
+	if service.diagnostic != nil {
+		service.diagnostic(diagnostic)
+	}
+}
+
+func (service *Service) loggerOrDefault() *slog.Logger {
+	if service.logger != nil {
+		return service.logger
+	}
+
+	return slog.Default()
+}
+
+func (service *Service) logError(ctx context.Context, message string, args ...any) {
+	service.loggerOrDefault().ErrorContext(ctx, message, args...)
 }
 
 func (service *Service) logWarn(ctx context.Context, message string, args ...any) {
-	logger := service.logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	logger.WarnContext(ctx, message, args...)
+	service.loggerOrDefault().WarnContext(ctx, message, args...)
 }
 
+// publishLatest republishes the latest durable event as a wakeup hint. It does
+// not replay history, and duplicate publication is permitted.
 func (service *Service) publishLatest(ctx context.Context, taskID string) {
 	event, found, err := service.tasks.LatestEvent(ctx, taskID)
 	if err != nil || !found {
@@ -1268,6 +1348,7 @@ func (service *Service) recoverInterrupted(ctx context.Context) error {
 	}
 
 	for _, taskID := range recovered {
+		service.recordTaskOutcome(ctx, taskID, database.TaskInterrupted, "process_restart", "")
 		service.publishLatest(ctx, taskID)
 	}
 
