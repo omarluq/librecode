@@ -36,7 +36,8 @@ func emptyService() *Service {
 	return &Service{
 		runner: nil, getTaskFn: nil, renewLeaseFn: nil, active: nil, subscribers: nil,
 		agentTasks: nil, workflows: nil, queue: nil, cancelSources: nil,
-		cancel: nil, done: nil, sessionSlots: nil, tasks: nil, logger: nil, leaseOwner: "", wg: sync.WaitGroup{},
+		cancel: nil, done: nil, sessionSlots: nil, tasks: nil, logger: nil, diagnostic: nil,
+		leaseOwner: "", wg: sync.WaitGroup{},
 		nextSubscriber: 0, timeout: 0, sessionConcurrency: 0, leaseDuration: 0,
 		leaseHeartbeatInterval: 0, leaseRenewalRetryInterval: 0,
 		awaitGetFn: nil, awaitPollEvery: awaitPollInterval, concurrency: 0, started: false, closed: false,
@@ -602,6 +603,10 @@ func TestServiceInternalCancelRecordsProvenance(t *testing.T) {
 
 			service := queuedService(fixture.tasks, fixture.agentTasks)
 
+			var diagnostic agentTaskDiagnostic
+
+			service.diagnostic = func(value agentTaskDiagnostic) { diagnostic = value }
+
 			// Provenance is recorded on the durable queued-cancel event.
 			_, found, err := service.Cancel(t.Context(), created.Task.OwnerSessionID, created.Task.ID, test.source)
 			require.NoError(t, err)
@@ -612,6 +617,9 @@ func TestServiceInternalCancelRecordsProvenance(t *testing.T) {
 			require.True(t, found)
 			assert.Equal(t, taskCanceledKind, latest.Event.Kind)
 			assert.JSONEq(t, `{"canceled_by":"`+test.source+`"}`, latest.Event.PayloadJSON)
+			assert.Equal(t, diagnosticAgentTaskOutcome, diagnostic.name)
+			assert.Equal(t, string(database.TaskCanceled), diagnostic.outcome)
+			assert.Equal(t, test.source, diagnostic.reason)
 		})
 	}
 }
@@ -1061,6 +1069,78 @@ func TestServiceInternalRequeueStopsWithContext(t *testing.T) {
 	}, 5*dispatchRetryInterval, dispatchRetryInterval)
 }
 
+func TestServiceInternalTaskOutcomeDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		state        database.TaskState
+		errorCode    string
+		errorMessage string
+		wantOutcome  string
+		wantReason   string
+	}{
+		{
+			name: "completed", state: database.TaskSucceeded, errorCode: "", errorMessage: "",
+			wantOutcome: "completed", wantReason: "",
+		},
+		{
+			name: "run failure", state: database.TaskFailed, errorCode: "run_failed", errorMessage: "",
+			wantOutcome: string(database.TaskFailed), wantReason: "run_failed",
+		},
+		{
+			name: "canceled by parent", state: database.TaskCanceled, errorCode: "",
+			errorMessage: "task canceled by parent", wantOutcome: string(database.TaskCanceled), wantReason: "parent",
+		},
+		{
+			name: "process interruption", state: database.TaskInterrupted,
+			errorCode: "process_restart", errorMessage: "",
+			wantOutcome: string(database.TaskInterrupted), wantReason: "process_restart",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			service := emptyService()
+			service.logger = slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
+
+			var diagnostic agentTaskDiagnostic
+
+			service.diagnostic = func(value agentTaskDiagnostic) { diagnostic = value }
+			service.recordTaskOutcome(
+				t.Context(), "task", test.state, test.errorCode, test.errorMessage,
+			)
+
+			assert.Equal(t, diagnosticAgentTaskOutcome, diagnostic.name)
+			assert.Equal(t, test.wantOutcome, diagnostic.outcome)
+			assert.Equal(t, test.wantReason, diagnostic.reason)
+			assert.Zero(t, diagnostic.attempts)
+		})
+	}
+}
+
+func TestServiceInternalLeaseRenewalFailureDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	service := leaseRenewalService(&bytes.Buffer{}, func(context.Context, string, string, time.Time) (bool, error) {
+		return false, nil
+	})
+
+	var diagnostic agentTaskDiagnostic
+
+	service.diagnostic = func(value agentTaskDiagnostic) { diagnostic = value }
+
+	_, ok := service.renewLeaseWithRetry(t.Context(), "task", time.Now().Add(time.Minute))
+
+	assert.False(t, ok)
+	assert.Equal(t, diagnosticAgentTaskLeaseRenewalFailure, diagnostic.name)
+	assert.Equal(t, string(database.TaskFailed), diagnostic.outcome)
+	assert.Equal(t, "ownership_lost", diagnostic.reason)
+	assert.Equal(t, 1, diagnostic.attempts)
+}
+
 func TestServiceInternalLeaseRenewalRetriesTransientDatabaseErrors(t *testing.T) {
 	t.Parallel()
 
@@ -1446,6 +1526,7 @@ func TestServiceAwaitIsWokenBySubscriptionPublish(t *testing.T) {
 	}
 
 	assert.Equal(t, database.TaskSucceeded, awaited.Task.State)
+	assert.Equal(t, uint64(1), service.nextSubscriber, "Await should create exactly one subscription")
 	assert.Nil(t, service.subscribers[task.Task.ID], "Await should cancel its subscription before returning")
 }
 
