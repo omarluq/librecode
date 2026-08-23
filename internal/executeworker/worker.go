@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"sync"
 
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
+	"github.com/omarluq/librecode/internal/workflowkernel"
 )
 
 const errorKey = "error"
@@ -123,6 +125,8 @@ func profileBindings(
 	}
 
 	bindings := version2Bindings(profile)
+	maps.Copy(bindings[guestapi.PackageWorkflow], combinatorBindings()[guestapi.PackageWorkflow])
+
 	if profile == guestapi.ProfileTurn {
 		if workflowBridge, ok := bridge.(workflowCallBridge); ok {
 			bindings[guestapi.PackageTools] = toolsBindings(
@@ -162,6 +166,26 @@ func version2Bindings(profile guestapi.Profile) mvmhost.Bindings {
 	}
 
 	return bindings
+}
+
+func combinatorBindings() mvmhost.Bindings {
+	return mvmhost.Bindings{guestapi.PackageWorkflow: {
+		"Parallel": func(items []any, callback func(any) (any, error), concurrency int) (any, error) {
+			return workflowkernel.Parallel(context.Background(), items, callback, concurrency)
+		},
+		"Pipeline": func(
+			items []any,
+			stages []func(any) (any, error),
+			concurrency int,
+		) (any, error) {
+			callbacks := make([]workflowkernel.Callback, len(stages))
+			for index := range stages {
+				callbacks[index] = stages[index]
+			}
+
+			return workflowkernel.Pipeline(context.Background(), items, callbacks, concurrency)
+		},
+	}}
 }
 
 func inertToolsBindings(packageName string) mvmhost.Bindings {
