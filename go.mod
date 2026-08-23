@@ -34,7 +34,7 @@ require (
 	github.com/samber/hot v0.13.1
 	github.com/samber/lo v1.53.0
 	github.com/samber/mo v1.17.0
-	github.com/samber/oops v1.23.0
+	github.com/samber/oops v1.23.1
 	github.com/samber/slog-zerolog/v2 v2.9.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sethvargo/go-retry v0.4.0
@@ -202,7 +202,7 @@ require (
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/nunnatsa/ginkgolinter v0.24.0 // indirect
-	github.com/oklog/ulid/v2 v2.1.1 // indirect
+	github.com/oklog/ulid/v2 v2.1.2 // indirect
 	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/prometheus/client_golang v1.22.0 // indirect
