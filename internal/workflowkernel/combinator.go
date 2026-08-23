@@ -125,10 +125,7 @@ func run(ctx context.Context, items []any, stages []Callback, concurrency int) (
 
 				result := executeItem(ctx, index, items[index], stages)
 
-				outcome.Items[index] = result
-				if result.State == StateFailed {
-					state.stop()
-				}
+				state.publish(&outcome, index, result)
 			}
 		}()
 	}
@@ -162,10 +159,17 @@ func (state *admissionState) admit(ctx context.Context, total int) (int, bool) {
 	return index, true
 }
 
-func (state *admissionState) stop() {
+func (state *admissionState) publish(outcome *Outcome, index int, result ItemOutcome) {
 	state.Lock()
-	state.stopped = true
-	state.Unlock()
+	defer state.Unlock()
+
+	// Publishing a terminal error and closing admission are one synchronized
+	// transition. Since admit uses the same lock, no item can cross the
+	// admission boundary after observers could see the error outcome.
+	outcome.Items[index] = result
+	if result.State == StateFailed || result.State == StateCanceled {
+		state.stopped = true
+	}
 }
 
 func executeItem(ctx context.Context, index int, value any, stages []Callback) ItemOutcome {
@@ -184,7 +188,10 @@ func executeItem(ctx context.Context, index int, value any, stages []Callback) I
 			result.Value, result.Error = next, err.Error()
 			result.Stage = stageIndex
 
-			if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// An ordinary callback error is a failure even if the context is
+			// canceled concurrently. Only an error which itself reports
+			// cancellation is classified as canceled.
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				result.State = StateCanceled
 			} else {
 				result.State = StateFailed
@@ -213,6 +220,7 @@ func executeItem(ctx context.Context, index int, value any, stages []Callback) I
 func call(callback Callback, value any) (result any, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			result = nil
 			err = fmt.Errorf("callback panic: %v", recovered)
 		}
 	}()
