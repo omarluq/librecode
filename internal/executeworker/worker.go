@@ -12,6 +12,7 @@ import (
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/workflowkernel"
+	"github.com/samber/oops"
 )
 
 const errorKey = "error"
@@ -38,18 +39,21 @@ func Serve(input io.Reader, output io.Writer) error {
 		return fmt.Errorf("unexpected execute worker message %q", request.Type)
 	}
 
+	evalCtx, cancelEval := context.WithCancel(context.Background())
+	defer cancelEval()
+
 	caller := &rpcCaller{
 		in: input, out: output, pending: make(map[uint64]chan Message), nextID: 0, terminalErr: nil,
 		mu: sync.Mutex{}, writeMu: sync.Mutex{},
 	}
-	go caller.readResponses()
+	go caller.readResponses(cancelEval)
 
-	bindings, err := workerBindings(&request, caller)
+	bindings, err := workerBindings(evalCtx, &request, caller)
 	if err != nil {
 		return err
 	}
 
-	result, evalErr := mvmhost.New().Eval(context.Background(), mvmhost.Request{
+	result, evalErr := mvmhost.New().Eval(evalCtx, mvmhost.Request{
 		Bindings: bindings, Name: request.Name, Source: request.Source,
 	})
 
@@ -58,7 +62,7 @@ func Serve(input io.Reader, output io.Writer) error {
 	return Write(output, &response)
 }
 
-func workerBindings(request *Message, caller *rpcCaller) (mvmhost.Bindings, error) {
+func workerBindings(ctx context.Context, request *Message, caller *rpcCaller) (mvmhost.Bindings, error) {
 	profile, version, err := workerContract(request)
 	if err != nil {
 		return nil, err
@@ -71,7 +75,7 @@ func workerBindings(request *Message, caller *rpcCaller) (mvmhost.Bindings, erro
 		}
 	}
 
-	return profileBindings(profile, version, arguments, workflowCallBridge{caller: caller}), nil
+	return profileBindings(ctx, profile, version, arguments, workflowCallBridge{caller: caller}), nil
 }
 
 func workerContract(request *Message) (guestapi.Profile, guestapi.Version, error) {
@@ -107,6 +111,7 @@ func toolsBindings(packageName string, caller *rpcCaller) mvmhost.Bindings {
 }
 
 func profileBindings(
+	ctx context.Context,
 	profile guestapi.Profile,
 	version guestapi.Version,
 	arguments map[string]any,
@@ -125,7 +130,7 @@ func profileBindings(
 	}
 
 	bindings := version2Bindings(profile)
-	maps.Copy(bindings[guestapi.PackageWorkflow], combinatorBindings()[guestapi.PackageWorkflow])
+	maps.Copy(bindings[guestapi.PackageWorkflow], combinatorBindings(ctx)[guestapi.PackageWorkflow])
 
 	if profile == guestapi.ProfileTurn {
 		if workflowBridge, ok := bridge.(workflowCallBridge); ok {
@@ -168,10 +173,10 @@ func version2Bindings(profile guestapi.Profile) mvmhost.Bindings {
 	return bindings
 }
 
-func combinatorBindings() mvmhost.Bindings {
+func combinatorBindings(ctx context.Context) mvmhost.Bindings {
 	return mvmhost.Bindings{guestapi.PackageWorkflow: {
 		"Parallel": func(items []any, callback func(any) (any, error), concurrency int) (any, error) {
-			return workflowkernel.Parallel(context.Background(), items, callback, concurrency)
+			return workflowkernel.Parallel(ctx, items, callback, concurrency)
 		},
 		"Pipeline": func(
 			items []any,
@@ -183,7 +188,7 @@ func combinatorBindings() mvmhost.Bindings {
 				callbacks[index] = stages[index]
 			}
 
-			return workflowkernel.Pipeline(context.Background(), items, callbacks, concurrency)
+			return workflowkernel.Pipeline(ctx, items, callbacks, concurrency)
 		},
 	}}
 }
@@ -296,7 +301,10 @@ func CompileBindings(
 		return nil, fmt.Errorf("validate compile worker contract: %w", err)
 	}
 
-	return profileBindings(profile, version, arguments, inertCallBridge{}), nil
+	// CompileBindings is intentionally context-free: bindings are reflected for
+	// type checking but never invoked. Runtime bindings capture the worker's
+	// evaluation context in workerBindings.
+	return profileBindings(context.Background(), profile, version, arguments, inertCallBridge{}), nil
 }
 
 // WorkflowModeBindings preserves the version-1 compile API for persisted
@@ -326,6 +334,8 @@ func (inertCallBridge) callResult(method, _ string, _ any) (any, error) {
 type pipelineValue []map[string]any
 
 func workerPipeline(items []any, callback func(any) (any, error), concurrency int) ([]map[string]any, error) {
+	// Keep the version-1 validation messages and result shape while delegating
+	// scheduling to the same kernel used by the canonical version-2 bindings.
 	if concurrency <= 0 {
 		return nil, errors.New("pipeline concurrency must be positive")
 	}
@@ -334,70 +344,54 @@ func workerPipeline(items []any, callback func(any) (any, error), concurrency in
 		return nil, errors.New("pipeline callback is required")
 	}
 
-	results := make([]map[string]any, len(items))
-	for index := range results {
-		results[index] = map[string]any{
-			"index": index, "value": nil, "error": "pipeline stopped before item was scheduled",
-		}
-	}
-
+	// The v1 API historically let callback panics escape. The canonical kernel
+	// recovers them into item failures, so remember and re-panic after its
+	// workers finish rather than changing the persisted v1 contract.
 	var (
-		state struct {
-			sync.Mutex
-			next    int
-			stopped bool
-		}
-		workers sync.WaitGroup
+		panicOnce  sync.Once
+		panicValue any
+		panicked   bool
 	)
-	workers.Add(min(concurrency, len(items)))
 
-	for range min(concurrency, len(items)) {
-		go runWorkerPipeline(items, callback, results, &state, &workers)
+	legacyCallback := func(value any) (result any, err error) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				panicOnce.Do(func() {
+					panicValue = recovered
+					panicked = true
+				})
+
+				result = nil
+				err = errors.New("worker pipeline callback panicked")
+			}
+		}()
+
+		return callback(value)
 	}
 
-	workers.Wait()
+	outcome, err := workflowkernel.Pipeline(
+		context.Background(), items, []workflowkernel.Callback{legacyCallback}, concurrency,
+	)
+
+	if panicked {
+		panic(panicValue)
+	}
+
+	if err != nil {
+		return nil, oops.In("executeworker").Code("worker_pipeline").Wrapf(err, "run worker pipeline")
+	}
+
+	results := make([]map[string]any, len(outcome.Items))
+	for index, item := range outcome.Items {
+		message := item.Error
+		if item.State == workflowkernel.StateNotStarted {
+			message = "pipeline stopped before item was scheduled"
+		}
+
+		results[index] = map[string]any{"index": item.Index, "value": item.Value, "error": message}
+	}
 
 	return results, nil
-}
-
-func runWorkerPipeline(
-	items []any,
-	callback func(any) (any, error),
-	results []map[string]any,
-	state *struct {
-		sync.Mutex
-		next    int
-		stopped bool
-	},
-	workers *sync.WaitGroup,
-) {
-	defer workers.Done()
-
-	for {
-		state.Lock()
-		if state.stopped || state.next >= len(items) {
-			state.Unlock()
-
-			return
-		}
-
-		index := state.next
-		state.next++
-		state.Unlock()
-
-		value, err := callback(items[index])
-
-		message := ""
-		if err != nil {
-			message = err.Error()
-
-			state.Lock()
-			state.stopped = true
-			state.Unlock()
-		}
-
-		results[index] = map[string]any{"index": index, "value": value, "error": message}
-	}
 }
 
 func (caller *rpcCaller) call(method, name, query string, input any) any {
@@ -467,7 +461,9 @@ func (caller *rpcCaller) exchange(method, name, query string, input json.RawMess
 	return &response, nil
 }
 
-func (caller *rpcCaller) readResponses() {
+func (caller *rpcCaller) readResponses(cancelEval context.CancelFunc) {
+	defer cancelEval()
+
 	for {
 		response, err := Read(caller.in)
 		if err != nil {
