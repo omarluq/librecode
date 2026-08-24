@@ -240,6 +240,8 @@ func TestVersion2CombinatorBindingsUseEvaluationContext(t *testing.T) {
 			t.Parallel()
 
 			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
 			bindings := profileBindings(ctx, profile, guestapi.Version2, nil, inertCallBridge{})
 			bindings["testsupport"] = map[string]any{cancelBindingName: func(value any) any {
 				cancel()
