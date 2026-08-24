@@ -103,9 +103,12 @@ func TestParallelSettlesAdmittedItemsBeforeReturning(t *testing.T) {
 			close(bothAdmitted)
 		}
 
-		<-bothAdmitted
-
-		return nil, errors.New("systemic")
+		select {
+		case <-bothAdmitted:
+			return nil, errors.New("systemic")
+		case <-time.After(time.Second):
+			return nil, errors.New("timed out waiting for both callbacks to be admitted")
+		}
 	}, 2)
 	require.NoError(t, err)
 
@@ -124,7 +127,7 @@ func TestParallelRetainsInputOrderAfterOutOfOrderCompletion(t *testing.T) {
 
 	releases := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{})}
 	started := make(chan int, len(releases))
-	completed := make(chan int)
+	completed := make(chan int, len(releases))
 	done := make(chan struct{})
 
 	var (
@@ -151,19 +154,33 @@ func TestParallelRetainsInputOrderAfterOutOfOrderCompletion(t *testing.T) {
 	}()
 
 	for range releases {
-		<-started
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for callback admission")
+		}
 	}
 
 	releaseAndAwaitCompletion := func(index int) {
 		close(releases[index])
-		require.Equal(t, index, <-completed)
+
+		select {
+		case completedIndex := <-completed:
+			require.Equal(t, index, completedIndex)
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for callback %d to complete", index)
+		}
 	}
 
 	releaseAndAwaitCompletion(2)
 	releaseAndAwaitCompletion(1)
 	releaseAndAwaitCompletion(0)
 
-	<-done
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for parallel result")
+	}
 
 	require.NoError(t, err)
 	assert.Equal(t, []any{0, 10, 20}, values(outcome.Items))
