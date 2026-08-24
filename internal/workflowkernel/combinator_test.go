@@ -248,6 +248,8 @@ func TestCallbackFailureWinsConcurrentCancellation(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	outcome, err := workflowkernel.Parallel(ctx, []any{1, 2}, func(_ any) (any, error) {
 		cancel()
 
