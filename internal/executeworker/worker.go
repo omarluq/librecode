@@ -530,32 +530,62 @@ func decodeRPCValue(response *Message) (any, error) {
 		return nil, fmt.Errorf("decode RPC result: %w", err)
 	}
 
-	return normalizeRPCNumbers(value), nil
+	value, err := normalizeRPCNumbers(value)
+	if err != nil {
+		return nil, fmt.Errorf("normalize RPC result: %w", err)
+	}
+
+	return value, nil
 }
 
 // normalizeRPCNumbers keeps UseNumber's exact integer decoding without exposing
 // json.Number (a named string type) to guest code that expects native numbers.
-func normalizeRPCNumbers(value any) any {
+func normalizeRPCNumbers(value any) (any, error) {
 	switch typed := value.(type) {
 	case json.Number:
 		if integer, err := strconv.Atoi(typed.String()); err == nil {
-			return integer
+			return integer, nil
 		}
 
-		if decimal, err := typed.Float64(); err == nil {
-			return decimal
+		decimal, err := typed.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("convert JSON number %q: %w", typed, err)
 		}
+
+		return decimal, nil
 	case []any:
-		for index := range typed {
-			typed[index] = normalizeRPCNumbers(typed[index])
-		}
+		return normalizeRPCSlice(typed)
 	case map[string]any:
-		for key := range typed {
-			typed[key] = normalizeRPCNumbers(typed[key])
-		}
+		return normalizeRPCMap(typed)
 	}
 
-	return value
+	return value, nil
+}
+
+func normalizeRPCSlice(values []any) ([]any, error) {
+	for index := range values {
+		normalized, err := normalizeRPCNumbers(values[index])
+		if err != nil {
+			return nil, err
+		}
+
+		values[index] = normalized
+	}
+
+	return values, nil
+}
+
+func normalizeRPCMap(values map[string]any) (map[string]any, error) {
+	for key := range values {
+		normalized, err := normalizeRPCNumbers(values[key])
+		if err != nil {
+			return nil, err
+		}
+
+		values[key] = normalized
+	}
+
+	return values, nil
 }
 
 func rpcError(message string) map[string]any {
