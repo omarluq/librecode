@@ -568,8 +568,12 @@ func (service *Service) finish(ctx context.Context, runID string, result *RunRes
 	state, eventKind, errorCode, errorMessage := workflowOutcome(ctx, runErr)
 
 	run, found, loadErr := service.runs.Get(context.WithoutCancel(ctx), runID)
-	if loadErr != nil || !found {
+	if loadErr != nil {
 		return oops.In("workflow").Code("load_run_for_finish").Wrapf(loadErr, "load workflow run")
+	}
+
+	if !found {
+		return oops.In("workflow").Code("load_run_for_finish").Errorf("workflow run was not found")
 	}
 
 	changed, err := service.runs.FinishOwned(context.WithoutCancel(ctx), run.Task.OwnerSessionID, &database.TaskFinish{

@@ -147,6 +147,9 @@ func TestServiceFinishEncodingAndStateConflicts(t *testing.T) {
 	t.Parallel()
 
 	service, repository, owner, _ := newInternalWorkflowService(t)
+	err := service.finish(t.Context(), "missing-run", serviceTestResult(nil), nil)
+	require.ErrorContains(t, err, "workflow run was not found")
+
 	queued, err := service.Submit(t.Context(), serviceTestRequest("queued", owner))
 	require.NoError(t, err)
 	err = service.finish(t.Context(), queued.Task.ID, serviceTestResult(nil), nil)
