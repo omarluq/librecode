@@ -25,7 +25,7 @@ func TestAgentSubmitterBuildsAtomicChildSubmissionAndSnapshotsPolicy(t *testing.
 	task, err := submitter.SubmitAgent(t.Context(), &AgentSubmitRequest{
 		ParentTaskID: "", OwnerSessionID: agentSubmitterOwnerID, CWD: cwd, AgentName: "", Prompt: "inspect code",
 		Model: "model-override", Provider: "provider-override", ConcurrencyKey: agentSubmitterOwnerID,
-		NodeKey: "", InvocationIndex: 0, Depth: 2,
+		NodeKey: "", OutputSchema: "", InvocationIndex: 0, Depth: 2,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, task)
@@ -56,7 +56,7 @@ func TestAgentSubmitterReturnsRejectedAtomicSubmission(t *testing.T) {
 	_, err = submitter.SubmitAgent(t.Context(), &AgentSubmitRequest{
 		ParentTaskID: "", OwnerSessionID: agentSubmitterOwnerID, CWD: t.TempDir(),
 		AgentName: defaultWorkflowAgentName, Prompt: "inspect", Model: "", Provider: "",
-		ConcurrencyKey: agentSubmitterOwnerID, NodeKey: "", InvocationIndex: 0, Depth: 1,
+		ConcurrencyKey: agentSubmitterOwnerID, NodeKey: "", OutputSchema: "", InvocationIndex: 0, Depth: 1,
 	})
 	require.Error(t, err)
 	require.NotNil(t, controller.lastSubmit)

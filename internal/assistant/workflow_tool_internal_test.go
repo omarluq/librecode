@@ -43,6 +43,7 @@ func TestExecuteDurableSubmitsModelAuthoredSource(t *testing.T) {
 		run: &database.WorkflowRunEntity{
 			Task: workflowTestTask("run-1", workflowTestSessionID),
 			Name: "review", Source: "", SourceHash: "", GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "",
+			AdmissionClosedAt: nil,
 		},
 		err: nil,
 	}
@@ -76,7 +77,7 @@ func TestExecuteDurableReturnsWithoutAwaitingCompletion(t *testing.T) {
 		run: &database.WorkflowRunEntity{
 			Task: workflowTestTask("run-queued", ""),
 			Name: "background review", Source: "", SourceHash: "", GuestAPIVersion: "",
-			SourceVersion: "", ArgumentsJSON: "",
+			SourceVersion: "", ArgumentsJSON: "", AdmissionClosedAt: nil,
 		},
 		err: nil,
 	}
@@ -118,7 +119,7 @@ func TestPromptRegistryExposesOnlyUnifiedExecuteWithDurableAvailability(t *testi
 		run: &database.WorkflowRunEntity{
 			Task: workflowTestTask("workflow-run", ""),
 			Name: workflowTestRunName, Source: "", SourceHash: "", GuestAPIVersion: "",
-			SourceVersion: "", ArgumentsJSON: "",
+			SourceVersion: "", ArgumentsJSON: "", AdmissionClosedAt: nil,
 		},
 		err: nil,
 	}

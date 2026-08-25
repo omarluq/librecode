@@ -61,6 +61,7 @@ func (controller *WorkflowController) Submit(
 		Model:           request.Options.Model,
 		Provider:        request.Options.Provider,
 		ConcurrencyKey:  request.Options.ConcurrencyKey,
+		OutputSchema:    request.Options.OutputSchema,
 		NodeKey:         request.NodeKey,
 		InvocationIndex: request.InvocationIndex,
 		Depth:           request.Options.Depth,

@@ -184,7 +184,8 @@ func TestAgentTaskOperationsAreOwnerScoped(t *testing.T) {
 		[]database.AgentTaskEntity{{
 			Task:           agentToolTaskEntity("task-1", "owner", database.TaskRunning),
 			ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "",
-			PolicyJSON: "", UsageJSON: "", Depth: 0,
+			PolicyJSON: "", UsageJSON: "", OutputSchemaJSON: "", OutputSchemaDigest: "",
+			OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 0,
 		}},
 		true,
 	)
@@ -422,7 +423,8 @@ func agentToolTaskEntity(id, owner string, state database.TaskState) database.Ta
 func agentToolTask(id, owner string, state database.TaskState) *database.AgentTaskEntity {
 	return &database.AgentTaskEntity{
 		Task: agentToolTaskEntity(id, owner, state), ChildSessionID: "child", AgentName: "general", Prompt: "work",
-		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`, Depth: 1,
+		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`, OutputSchemaJSON: "", OutputSchemaDigest: "",
+		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1,
 	}
 }
 
