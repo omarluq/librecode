@@ -159,9 +159,14 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 		return RunResult{}, oops.In("workflow").Code("invalid_request").Errorf("request is required")
 	}
 
+	version := request.GuestAPI
+	if version == "" {
+		version = guestapi.Version1
+	}
+
 	run := &runHost{
 		runID: request.RunID, ownerSessionID: request.OwnerSessionID, controller: runner.controller,
-		onEvent: request.OnEvent, guestAPI: request.GuestAPI,
+		onEvent: request.OnEvent, guestAPI: version,
 		launched: make(map[string]struct{}), settled: make(map[string]struct{}),
 		taskIDs:     make([]string, 0),
 		invocations: make(map[string]int), persisted: make(map[invocationKey]persistedInvocation),
@@ -174,11 +179,6 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 
 		run.launched[link.AgentTaskID] = struct{}{}
 		run.taskIDs = append(run.taskIDs, link.AgentTaskID)
-	}
-
-	version := request.GuestAPI
-	if version == "" {
-		version = guestapi.Version1
 	}
 
 	client := executeworker.Client{Executable: runner.executable, Handler: run.handleRPC}
