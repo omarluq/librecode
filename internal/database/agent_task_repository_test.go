@@ -293,10 +293,12 @@ func TestSessionDeleteRemovesOwnedWorkflowChildren(t *testing.T) {
 	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
 	require.NoError(t, err)
 
-	candidate := newAgentTask(owner.ID, child.ID)
-	candidate.Task.ParentTaskID = run.Task.ID
-	created, err := fixture.workflows.CreateAgentTask(ctx, run.Task.ID, candidate, "inspect", 0)
+	created, err := fixture.agents.Create(ctx, newAgentTask(owner.ID, child.ID))
 	require.NoError(t, err)
+	require.Empty(t, created.Task.ParentTaskID)
+	_, err = fixture.workflows.LinkAgentTask(ctx, run.Task.ID, created.Task.ID, "inspect", 0)
+	require.NoError(t, err)
+
 	require.NoError(t, fixture.sessions.DeleteSession(ctx, owner.ID))
 
 	_, found, err := fixture.sessions.GetSession(ctx, child.ID)
@@ -308,6 +310,37 @@ func TestSessionDeleteRemovesOwnedWorkflowChildren(t *testing.T) {
 	_, found, err = fixture.agents.Get(ctx, created.Task.ID)
 	require.NoError(t, err)
 	assert.False(t, found)
+}
+
+func TestSessionDeletePreservesWorkflowChildrenOwnedByAnotherSession(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	workflowOwner := fixture.createOwner(ctx)
+	run, err := fixture.workflows.Create(ctx, newWorkflowRun(workflowOwner.ID))
+	require.NoError(t, err)
+
+	agentOwner, child := fixture.createAgentTaskSessions(ctx)
+	created, err := fixture.agents.Create(ctx, newAgentTask(agentOwner.ID, child.ID))
+	require.NoError(t, err)
+	_, err = fixture.workflows.LinkAgentTask(ctx, run.Task.ID, created.Task.ID, "inspect", 0)
+	require.NoError(t, err)
+
+	require.NoError(t, fixture.sessions.DeleteSession(ctx, workflowOwner.ID))
+
+	for _, sessionID := range []string{agentOwner.ID, child.ID} {
+		_, found, getErr := fixture.sessions.GetSession(ctx, sessionID)
+		require.NoError(t, getErr)
+		assert.True(t, found)
+	}
+
+	_, found, err := fixture.tasks.Get(ctx, created.Task.ID)
+	require.NoError(t, err)
+	assert.True(t, found)
+	_, found, err = fixture.agents.Get(ctx, created.Task.ID)
+	require.NoError(t, err)
+	assert.True(t, found)
 }
 
 func TestTaskRepositoryAppendsPolymorphicEvents(t *testing.T) {
