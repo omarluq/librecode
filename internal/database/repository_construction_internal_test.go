@@ -151,15 +151,20 @@ func TestCompositeRepositoriesUseSharedClock(t *testing.T) {
 	createdTask, err := tasks.Create(t.Context(), newClockTestTask(owner.ID, "test"))
 	require.NoError(t, err)
 	createdAgentTask, err := agentTasks.Create(t.Context(), &AgentTaskEntity{
-		Task:           *newClockTestTask(owner.ID, ""),
-		ChildSessionID: child.ID,
-		AgentName:      "clock-agent",
-		Prompt:         "inspect",
-		Model:          "",
-		Provider:       "",
-		PolicyJSON:     "{}",
-		UsageJSON:      "{}",
-		Depth:          1,
+		Task:                    *newClockTestTask(owner.ID, ""),
+		ChildSessionID:          child.ID,
+		AgentName:               "clock-agent",
+		Prompt:                  "inspect",
+		Model:                   "",
+		Provider:                "",
+		PolicyJSON:              "{}",
+		UsageJSON:               "{}",
+		OutputSchemaJSON:        "",
+		OutputSchemaDigest:      "",
+		OutputAttemptsReserved:  0,
+		OutputAttemptsCompleted: 0,
+		OutputValidationSummary: "",
+		Depth:                   1,
 	})
 	require.NoError(t, err)
 	createdWorkflow, err := workflows.Create(t.Context(), &WorkflowRunEntity{
@@ -168,7 +173,8 @@ func TestCompositeRepositoriesUseSharedClock(t *testing.T) {
 		Source:          "workflow source",
 		SourceHash:      "source hash",
 		GuestAPIVersion: "", SourceVersion: "1",
-		ArgumentsJSON: "{}",
+		ArgumentsJSON:     "{}",
+		AdmissionClosedAt: nil,
 	})
 	require.NoError(t, err)
 

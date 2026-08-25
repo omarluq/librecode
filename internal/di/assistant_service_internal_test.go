@@ -117,14 +117,15 @@ func newTestDatabaseService(t *testing.T) *DatabaseService {
 	require.NoError(t, err)
 
 	return &DatabaseService{
-		DB:         connection,
-		Sessions:   testutil.SessionRepository(t, connection),
-		Documents:  testutil.DocumentRepository(t, connection),
-		Tasks:      workflows.Tasks(),
-		AgentTasks: workflows.AgentTasks(),
-		Workflows:  workflows,
-		ToolTasks:  toolTasks,
-		path:       "",
+		DB:          connection,
+		Sessions:    testutil.SessionRepository(t, connection),
+		Documents:   testutil.DocumentRepository(t, connection),
+		Tasks:       workflows.Tasks(),
+		AgentTasks:  workflows.AgentTasks(),
+		Workflows:   workflows,
+		ToolTasks:   toolTasks,
+		Completions: nil,
+		path:        "",
 	}
 }
 

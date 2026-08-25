@@ -171,7 +171,7 @@ func TestNewAgentTaskServiceRejectsIncompleteWiring(t *testing.T) {
 	do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: "", interactive: false})
 	do.ProvideValue(injector, &DatabaseService{
 		DB: nil, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, Workflows: nil, ToolTasks: nil,
-		path: "",
+		Completions: nil, path: "",
 	})
 	do.ProvideValue(injector, &AssistantService{
 		Runtime: nil, Agents: nil, capabilities: nil,
