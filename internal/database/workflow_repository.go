@@ -475,22 +475,9 @@ func workflowInvocationIdentityOf(agentTask *AgentTaskEntity) workflowInvocation
 func (repository *WorkflowRepository) CloseAdmission(
 	ctx context.Context, ownerSessionID, workflowTaskID string,
 ) (bool, error) {
-	now := repository.tasks.now().UTC()
-
-	result, err := repository.sql.Exec(ctx, `UPDATE workflow_runs
-SET admission_closed_at = COALESCE(admission_closed_at, ?)
-WHERE task_id = ? AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND kind = ? AND owner_session_id = ?)`,
-		formatTime(now), workflowTaskID, workflowTaskID, TaskKindWorkflow, ownerSessionID)
-	if err != nil {
-		return false, oops.In("database").Code("close_workflow_admission").Wrapf(err, "close workflow admission")
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return false, oops.In("database").Code("workflow_admission_rows").Wrapf(err, readWorkflowAdmissionMessage)
-	}
-
-	return rows == 1, nil
+	return closeWorkflowAdmission(
+		ctx, repository.sql, ownerSessionID, workflowTaskID, repository.tasks.now().UTC(),
+	)
 }
 
 // CancelOwned closes admission and idempotently records cancellation for a run and all linked children.
