@@ -79,8 +79,10 @@ func (fake *fakeController) Await(ctx context.Context, taskID string) (*database
 	defer fake.mu.Unlock()
 
 	task := fake.tasks[taskID]
-	task.Task.State = database.TaskSucceeded
-	task.Task.Result = "done"
+	if task.Task.State == database.TaskRunning {
+		task.Task.State = database.TaskSucceeded
+		task.Task.Result = "done"
+	}
 
 	return cloneAgentTask(task), nil
 }
@@ -142,7 +144,7 @@ canceled, _ := agents.Cancel(first)
 	assert.Equal(t, 0, fake.submits[0].InvocationIndex)
 	assert.Equal(t, workflow.AgentOptions{
 		NodeKey: "review", AgentName: "explore", Model: "model", Provider: "provider",
-		ConcurrencyKey: "agents", Depth: 2,
+		ConcurrencyKey: "agents", OutputSchema: "", Depth: 2,
 	}, fake.submits[0].Options)
 	assert.Equal(t, []string{firstTask, secondTask}, result.LaunchedTaskIDs)
 	assert.Equal(t, [][2]string{{testOwner, firstTask}}, fake.cancels)
@@ -199,7 +201,7 @@ func TestRunnerReusesPersistedInvocationByNormalizedNodeKey(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, fake.submits)
 	assert.Equal(t, []string{firstTask}, result.LaunchedTaskIDs)
-	assert.Equal(t, "done", result.TaskResults[0].Result)
+	assert.Equal(t, "persisted", result.TaskResults[0].Result)
 }
 
 func TestRunnerReusesPersistedInvocationsByNormalizedNodeKeyAndIndex(t *testing.T) {
@@ -313,8 +315,8 @@ canceled, _ := workflow.Cancel(second)
 	assert.Equal(t, firstTask, result.TaskResults[0].ID)
 	assert.Equal(t, secondTask, result.TaskResults[1].ID)
 	assert.Equal(t, string(database.TaskCanceled), result.TaskResults[1].State)
-	assert.Equal(t, [][2]string{{testOwner, secondTask}}, fake.cancels)
-	assert.Equal(t, []string{database.CancelSourceWorkflow}, fake.cancelSources)
+	assert.Equal(t, [][2]string{{testOwner, secondTask}, {testOwner, firstTask}}, fake.cancels)
+	assert.Equal(t, []string{database.CancelSourceWorkflow, database.CancelSourceWorkflow}, fake.cancelSources)
 }
 
 func TestRunnerPipelinePreservesInputOrder(t *testing.T) {
@@ -574,6 +576,7 @@ func agentTask(id, owner string, state database.TaskState, result string) *datab
 			ConcurrencyKey: "", LeaseOwner: "", State: state, Result: result, ErrorCode: "", ErrorMessage: "",
 		},
 		ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "", PolicyJSON: "",
-		UsageJSON: "", Depth: 0,
+		UsageJSON: "", OutputSchemaJSON: "", OutputSchemaDigest: "", OutputAttemptsReserved: 0,
+		OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 0,
 	}
 }

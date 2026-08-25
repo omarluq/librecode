@@ -447,7 +447,7 @@ func workflowRunEntity(owner string) *database.WorkflowRunEntity {
 			ConcurrencyKey: owner, LeaseOwner: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
 		},
 		Name: "test workflow", Source: "1", SourceHash: "hash", GuestAPIVersion: "",
-		SourceVersion: "v1", ArgumentsJSON: "{}",
+		SourceVersion: "v1", ArgumentsJSON: "{}", AdmissionClosedAt: nil,
 	}
 }
 

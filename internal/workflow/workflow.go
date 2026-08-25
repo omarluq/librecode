@@ -15,6 +15,7 @@ import (
 	"github.com/omarluq/librecode/internal/executeworker"
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
+	"github.com/omarluq/librecode/internal/outputschema"
 )
 
 const (
@@ -53,6 +54,7 @@ type AgentOptions struct {
 	Model          string `json:"model"`
 	Provider       string `json:"provider"`
 	ConcurrencyKey string `json:"concurrency_key"`
+	OutputSchema   string `json:"output_schema"`
 	Depth          int    `json:"depth"`
 }
 
@@ -158,7 +160,8 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 
 	run := &runHost{
 		runID: request.RunID, ownerSessionID: request.OwnerSessionID, controller: runner.controller,
-		onEvent: request.OnEvent, launched: make(map[string]struct{}), taskIDs: make([]string, 0),
+		onEvent: request.OnEvent, launched: make(map[string]struct{}), settled: make(map[string]struct{}),
+		taskIDs:     make([]string, 0),
 		invocations: make(map[string]int), persisted: make(map[invocationKey]persistedInvocation),
 		mu: sync.Mutex{}, launchMu: sync.Mutex{}, eventMu: sync.Mutex{},
 	}
@@ -191,6 +194,10 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 		runErr = errors.Join(runErr, oops.In("workflow").Code("evaluate_source").Wrapf(err, "evaluate workflow source"))
 		runErr = errors.Join(runErr, run.cancelActive(ctx))
 	}
+
+	// Spawned children are scoped to the durable run. Closing the source, even
+	// successfully, cancels and settles any child that was not explicitly awaited.
+	runErr = errors.Join(runErr, run.cancelActive(ctx))
 
 	taskResults, snapshotErr := run.taskResults(ctx)
 	runResult = RunResult{
@@ -317,6 +324,7 @@ type runHost struct {
 	onEvent        EventSink
 	ownerSessionID string
 	launched       map[string]struct{}
+	settled        map[string]struct{}
 	invocations    map[string]int
 	persisted      map[invocationKey]persistedInvocation
 	taskIDs        []string
@@ -438,6 +446,8 @@ func (host *runHost) wait(ctx context.Context, taskID string) (TaskResult, error
 		return TaskResult{}, err
 	}
 
+	host.markSettled(taskID)
+
 	return result, nil
 }
 
@@ -488,7 +498,25 @@ func (host *runHost) cancel(ctx context.Context, taskID string) (TaskResult, err
 			Errorf(taskNotOwnedBySession)
 	}
 
+	host.markSettled(taskID)
+
 	return taskResultFromTask(canceled), nil
+}
+
+func admitAgentOutputSchema(options *AgentOptions) error {
+	if options.OutputSchema == "" {
+		return nil
+	}
+
+	contract, err := outputschema.Admit(options.OutputSchema)
+	if err != nil {
+		return oops.In("workflow").Code("invalid_output_schema").
+			Wrapf(err, "admit agent output schema")
+	}
+
+	options.OutputSchema = string(contract.Canonical)
+
+	return nil
 }
 
 func validatedAgentInput(prompt string, options []AgentOptions) (AgentOptions, string, error) {
@@ -499,6 +527,10 @@ func validatedAgentInput(prompt string, options []AgentOptions) (AgentOptions, s
 
 	agentOptions, err := oneAgentOptions(options)
 	if err != nil {
+		return AgentOptions{}, "", err
+	}
+
+	if err := admitAgentOutputSchema(&agentOptions); err != nil {
 		return AgentOptions{}, "", err
 	}
 
@@ -518,7 +550,7 @@ func oneAgentOptions(options []AgentOptions) (AgentOptions, error) {
 	switch len(options) {
 	case 0:
 		return AgentOptions{
-			NodeKey: "", AgentName: "", Model: "", Provider: "", ConcurrencyKey: "", Depth: 0,
+			NodeKey: "", AgentName: "", Model: "", Provider: "", ConcurrencyKey: "", OutputSchema: "", Depth: 0,
 		}, nil
 	case 1:
 		return options[0], nil
@@ -582,6 +614,22 @@ func (host *runHost) owns(taskID string) bool {
 	return found
 }
 
+func (host *runHost) markSettled(taskID string) {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+
+	host.settled[taskID] = struct{}{}
+}
+
+func (host *runHost) isSettled(taskID string) bool {
+	host.mu.Lock()
+	defer host.mu.Unlock()
+
+	_, settled := host.settled[taskID]
+
+	return settled
+}
+
 func (host *runHost) launchedTaskIDs() []string {
 	host.mu.Lock()
 	defer host.mu.Unlock()
@@ -615,6 +663,10 @@ func (host *runHost) cancelActive(ctx context.Context) error {
 	var cancelErr error
 
 	for _, taskID := range host.launchedTaskIDs() {
+		if host.isSettled(taskID) {
+			continue
+		}
+
 		task, found, err := host.controller.Get(ctx, taskID)
 		if err != nil {
 			wrapped := oops.In("workflow").Code("get_task_for_cancel").
@@ -641,6 +693,14 @@ func (host *runHost) cancelActive(ctx context.Context) error {
 		); err != nil {
 			wrapped := oops.In("workflow").Code("cancel_task").
 				Wrapf(err, "cancel launched task %s", taskID)
+			cancelErr = errors.Join(cancelErr, wrapped)
+
+			continue
+		}
+
+		if _, err := host.controller.Await(ctx, taskID); err != nil {
+			wrapped := oops.In("workflow").Code("settle_task").
+				Wrapf(err, "settle launched task %s", taskID)
 			cancelErr = errors.Join(cancelErr, wrapped)
 		}
 	}
