@@ -13,8 +13,11 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-// TaskKindWorkflow identifies durable workflow execution.
-const TaskKindWorkflow = "workflow"
+const (
+	// TaskKindWorkflow identifies durable workflow execution.
+	TaskKindWorkflow             = "workflow"
+	readWorkflowAdmissionMessage = "read workflow admission"
+)
 
 // WorkflowRunEntity contains workflow-specific data for a generic task.
 type WorkflowRunEntity struct {
@@ -397,7 +400,7 @@ WHERE task_id = ? AND admission_closed_at IS NULL AND EXISTS (
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return oops.In("database").Code("workflow_admission_rows").Wrapf(err, "read workflow admission")
+		return oops.In("database").Code("workflow_admission_rows").Wrapf(err, readWorkflowAdmissionMessage)
 	}
 
 	if rows != 1 {
@@ -484,7 +487,7 @@ WHERE task_id = ? AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND kind = ? AND 
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return false, oops.In("database").Code("workflow_admission_rows").Wrapf(err, "read workflow admission")
+		return false, oops.In("database").Code("workflow_admission_rows").Wrapf(err, readWorkflowAdmissionMessage)
 	}
 
 	return rows == 1, nil
@@ -569,7 +572,7 @@ WHERE task_id = ? AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND kind = ? AND 
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return false, oops.In("database").Code("workflow_admission_rows").Wrapf(err, "read workflow admission")
+		return false, oops.In("database").Code("workflow_admission_rows").Wrapf(err, readWorkflowAdmissionMessage)
 	}
 
 	return rows == 1, nil
