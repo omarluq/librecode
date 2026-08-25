@@ -11,6 +11,8 @@ import (
 	"github.com/vingarcia/ksql"
 )
 
+const deleteSessionMessage = "delete session"
+
 // ChildSessionRequest describes a child session created with durable agent work.
 type ChildSessionRequest struct {
 	CWD             string
@@ -233,7 +235,7 @@ func (repository *SessionRepository) DeleteSession(ctx context.Context, sessionI
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
 		return deleteSessionRows(ctx, transaction, sessionID)
 	}); err != nil {
-		return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
+		return oops.In("database").Code("delete_session").Wrapf(err, deleteSessionMessage)
 	}
 
 	return nil
@@ -261,15 +263,15 @@ WHERE a.child_session_id = ?`, sessionID); err != nil {
 	if _, err := transaction.Exec(ctx,
 		`DELETE FROM tasks WHERE id IN (SELECT task_id FROM agent_tasks WHERE child_session_id = ?)`, sessionID,
 	); err != nil {
-		return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
+		return oops.In("database").Code("delete_session").Wrapf(err, deleteSessionMessage)
 	}
 
 	if err := deleteSessionContent(ctx, transaction, sessionID); err != nil {
-		return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
+		return oops.In("database").Code("delete_session").Wrapf(err, deleteSessionMessage)
 	}
 
 	if _, err := transaction.Exec(ctx, `DELETE FROM sessions WHERE id = ?`, sessionID); err != nil {
-		return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
+		return oops.In("database").Code("delete_session").Wrapf(err, deleteSessionMessage)
 	}
 
 	return nil
@@ -281,10 +283,12 @@ func deleteOwnedWorkflowChildren(ctx context.Context, transaction ksql.Provider,
 		ChildSessionID string `ksql:"child_session_id"`
 	}
 	if err := transaction.Query(ctx, &workflowChildren, `SELECT a.task_id, a.child_session_id
-FROM agent_tasks a
-JOIN tasks t ON t.id = a.task_id
-JOIN workflow_runs w ON w.task_id = t.parent_task_id
-WHERE t.owner_session_id = ?`, ownerSessionID); err != nil {
+FROM workflow_agent_tasks wat
+JOIN agent_tasks a ON a.task_id = wat.agent_task_id
+JOIN tasks child ON child.id = a.task_id
+JOIN workflow_runs w ON w.task_id = wat.workflow_task_id
+JOIN tasks workflow ON workflow.id = w.task_id
+WHERE workflow.owner_session_id = ? AND child.owner_session_id = ?`, ownerSessionID, ownerSessionID); err != nil {
 		return oops.In("database").Code("delete_workflow_tree").Wrapf(err, "load workflow session tree")
 	}
 
