@@ -199,7 +199,7 @@ func TestServiceRepositoryFailurePaths(t *testing.T) {
 	_, err = service.loadVerifiedRun(t.Context(), run.Task.ID)
 	require.ErrorContains(t, err, "load persisted workflow run")
 	err = service.eventSink(run.Task.ID)(t.Context(), Event{
-		Task: TaskResult{ID: "", State: "", Result: "", ErrorCode: "", ErrorMessage: ""},
+		Task: TaskResult{ID: "", State: "", Result: "", Value: nil, ErrorCode: "", ErrorMessage: ""},
 		Kind: EventTaskLaunched, TaskID: "", NodeKey: "", InvocationIndex: 0,
 	})
 	require.ErrorContains(t, err, "persist workflow event")
