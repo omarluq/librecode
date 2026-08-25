@@ -2,10 +2,28 @@ package outputschema
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
 )
+
+func TestDenyURLLoaderNeverReadsExternalResources(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "schema.json")
+	if err := os.WriteFile(path, []byte(`true`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, resource := range []string{"file://" + path, "https://example.invalid/schema.json"} {
+		value, err := (denyURLLoader{}).Load(resource)
+		if err == nil || value != nil {
+			t.Fatalf("Load(%q) = (%v, %v), want (nil, error)", resource, value, err)
+		}
+	}
+}
 
 func TestFailureDiagnosticTruncationPreservesUTF8(t *testing.T) {
 	t.Parallel()
