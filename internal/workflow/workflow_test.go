@@ -225,6 +225,8 @@ func TestRunnerStructuredResultCompatibilityAndNumbers(t *testing.T) {
 		hasSchema   bool
 		valueInJSON bool
 	}{
+		{name: "version 1 structured result gate", version: guestapi.Version1, hasSchema: true,
+			state: database.TaskSucceeded, wantValue: nil, valueInJSON: false},
 		{name: "version 2 typed numbers", version: guestapi.Version2, hasSchema: true,
 			state: database.TaskSucceeded, wantValue: map[string]any{
 				"large": json.Number("9007199254740993"), "decimal": json.Number("1.2300"),
@@ -249,9 +251,14 @@ func TestRunnerStructuredResultCompatibilityAndNumbers(t *testing.T) {
 			runner, err := workflow.NewRunner(fake)
 			require.NoError(t, err)
 
+			source := `import "librecode/agents"; agents.List()`
+			if test.version == guestapi.Version1 {
+				source = `import "librecode/workflow"; workflow.List()`
+			}
+
 			result, err := runner.Run(t.Context(), &workflow.RunRequest{
 				OnEvent: nil, Arguments: nil, RunID: "", Name: "",
-				Source: `import "librecode/agents"; agents.List()`, OwnerSessionID: testOwner,
+				Source: source, OwnerSessionID: testOwner,
 				GuestAPI: test.version, PersistedLinks: []database.WorkflowAgentTaskEntity{{
 					CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: firstTask,
 					NodeKey: "agent", InvocationIndex: 0, Sequence: 0,
