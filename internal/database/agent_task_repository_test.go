@@ -69,6 +69,38 @@ func TestAgentTaskRepositoryLifecycle(t *testing.T) {
 	assert.NotEmpty(t, events[2].Event.ID)
 }
 
+func TestAgentTaskRepositoryListAllByOwner(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx, agents := t.Context(), fixture.agents
+	parent, _ := fixture.createAgentTaskSessions(ctx)
+	other := fixture.createOwner(ctx)
+
+	otherChild, err := fixture.sessions.CreateSession(ctx, parent.CWD, "other-child", other.ID)
+	require.NoError(t, err)
+
+	const count = 105
+	for range count {
+		sibling, createErr := fixture.sessions.CreateSession(ctx, parent.CWD, "bulk", parent.ID)
+		require.NoError(t, createErr)
+		_, createErr = agents.Create(ctx, newAgentTask(parent.ID, sibling.ID))
+		require.NoError(t, createErr)
+	}
+
+	// Tasks owned by another session are excluded.
+	_, err = agents.Create(ctx, newAgentTask(other.ID, otherChild.ID))
+	require.NoError(t, err)
+
+	listed, err := agents.ListAllByOwner(ctx, parent.ID)
+	require.NoError(t, err)
+	require.Len(t, listed, count)
+
+	for index := range listed {
+		assert.Equal(t, parent.ID, listed[index].Task.OwnerSessionID)
+	}
+}
+
 func TestAgentTaskRepositoryCreatesChildSessionAtomically(t *testing.T) {
 	t.Parallel()
 

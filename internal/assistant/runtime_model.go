@@ -494,15 +494,25 @@ func (runtime *Runtime) emitRetryEvent(ctx context.Context, handler RetryEventHa
 	}
 }
 
-func (runtime *Runtime) selectedModel() (model.Model, error) {
-	provider := runtime.profile.Provider
-	if provider == "" {
-		provider = runtime.cfg.Assistant.Provider
+func (runtime *Runtime) defaultProviderModel() (provider, modelID string) {
+	if runtime.profile.Kind == ExecutionAgentTask &&
+		runtime.cfg.Delegation.Provider != "" &&
+		runtime.cfg.Delegation.Model != "" {
+		return runtime.cfg.Delegation.Provider, runtime.cfg.Delegation.Model
 	}
 
-	modelID := runtime.profile.Model
-	if modelID == "" {
-		modelID = runtime.cfg.Assistant.Model
+	return runtime.cfg.Assistant.Provider, runtime.cfg.Assistant.Model
+}
+
+func (runtime *Runtime) selectedModel() (model.Model, error) {
+	provider, modelID := runtime.defaultProviderModel()
+
+	if runtime.profile.Provider != "" {
+		provider = runtime.profile.Provider
+	}
+
+	if runtime.profile.Model != "" {
+		modelID = runtime.profile.Model
 	}
 
 	models := runtime.models.All()
@@ -537,6 +547,10 @@ func (runtime *Runtime) selectedModel() (model.Model, error) {
 func (runtime *Runtime) thinkingLevel() string {
 	if runtime.profile.ThinkingLevel != "" {
 		return string(runtime.profile.ThinkingLevel)
+	}
+
+	if runtime.profile.Kind == ExecutionAgentTask && runtime.cfg.Delegation.ThinkingLevel != "" {
+		return runtime.cfg.Delegation.ThinkingLevel
 	}
 
 	return runtime.cfg.Assistant.ThinkingLevel

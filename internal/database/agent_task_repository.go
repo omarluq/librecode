@@ -315,6 +315,32 @@ ORDER BY t.updated_at DESC, t.id DESC LIMIT ?`
 	return entities, nil
 }
 
+// ListAllByOwner returns every complete agent task belonging to a session,
+// newest first. Unlike ListByOwner it applies no row cap, so callers that
+// must reason about the full task set (for example waiting for every task to
+// become terminal) are not bounded by the default limit.
+func (repository *AgentTaskRepository) ListAllByOwner(
+	ctx context.Context,
+	ownerSessionID string,
+) ([]AgentTaskEntity, error) {
+	const query = `SELECT ` + agentTaskColumns + `
+FROM tasks t JOIN agent_tasks a ON a.task_id = t.id
+WHERE t.kind = ? AND t.owner_session_id = ?
+ORDER BY t.updated_at DESC, t.id DESC`
+
+	rows := []agentTaskRow{}
+	if err := repository.sql.Query(ctx, &rows, query, TaskKindAgent, ownerSessionID); err != nil {
+		return nil, oops.In("database").Code("list_all_agent_tasks").Wrapf(err, "list all agent tasks")
+	}
+
+	entities, err := collectSQLRows(rows, agentTaskFromRow)
+	if err != nil {
+		return nil, oops.In("database").Code("scan_agent_task").Wrapf(err, scanAgentTaskMessage)
+	}
+
+	return entities, nil
+}
+
 // ListByIDs returns complete agent tasks matching the supplied IDs.
 func (repository *AgentTaskRepository) ListByIDs(
 	ctx context.Context,

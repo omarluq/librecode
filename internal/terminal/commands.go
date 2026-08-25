@@ -38,6 +38,7 @@ func (app *App) openCommandPanel(ctx context.Context, command string) bool {
 		commandLogin:         app.openLoginPanel,
 		commandLogout:        app.openLogoutPanel,
 		"model":              app.openModelPanel,
+		"model_subagent":     app.openModelSubagentPanel,
 		"scoped-models":      app.openScopedModelsPanel,
 		"settings":           app.openSettingsPanel,
 		"resume":             func() { app.openSessionPanel(ctx) },

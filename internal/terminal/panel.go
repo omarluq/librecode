@@ -6,16 +6,17 @@ import (
 )
 
 const (
-	panelModel        panel.Kind = "model"
-	panelScopedModels panel.Kind = "scoped_models"
-	panelAuthLogin    panel.Kind = "auth_login"
-	panelAuthLogout   panel.Kind = "auth_logout"
-	panelSettings     panel.Kind = "settings"
-	panelHotkeys      panel.Kind = hotkeysCommandName
-	panelChangelog    panel.Kind = changelogCommandName
-	panelSessions     panel.Kind = "sessions"
-	panelTree         panel.Kind = "tree"
-	panelAgentTasks   panel.Kind = "agent_tasks"
+	panelModel         panel.Kind = "model"
+	panelModelSubagent panel.Kind = "model_subagent"
+	panelScopedModels  panel.Kind = "scoped_models"
+	panelAuthLogin     panel.Kind = "auth_login"
+	panelAuthLogout    panel.Kind = "auth_logout"
+	panelSettings      panel.Kind = "settings"
+	panelHotkeys       panel.Kind = hotkeysCommandName
+	panelChangelog     panel.Kind = changelogCommandName
+	panelSessions      panel.Kind = "sessions"
+	panelTree          panel.Kind = "tree"
+	panelAgentTasks    panel.Kind = "agent_tasks"
 
 	hotkeysCommandName   = "hotkeys"
 	changelogCommandName = "changelog"

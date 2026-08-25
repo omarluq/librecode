@@ -32,7 +32,7 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 		ExecuteTools:       nil,
 		SessionID:          "session-1",
 		SystemPrompt:       "system instructions",
-		ThinkingLevel:      "high",
+		ThinkingLevel:      adapterThinkingLevel,
 		CWD:                t.TempDir(),
 		Auth: model.RequestAuth{
 			Headers: map[string]string{"x-test": "value"},
@@ -72,7 +72,7 @@ func TestLLMRequestFromCompletionRequestConvertsAssistantState(t *testing.T) {
 
 	assert.Equal(t, "session-1", converted.SessionID)
 	assert.Equal(t, "system instructions", converted.SystemPrompt)
-	assert.Equal(t, "high", converted.ThinkingLevel)
+	assert.Equal(t, adapterThinkingLevel, converted.ThinkingLevel)
 	assert.Equal(t, "openai", converted.Model.Provider)
 	assert.Equal(t, "gpt-test", converted.Model.ID)
 	assert.Equal(t, apiOpenAIResponses, converted.Model.API)

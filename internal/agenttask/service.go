@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	defaultConcurrency        = 4
-	defaultSessionConcurrency = 2
+	defaultConcurrency        = 10
+	defaultSessionConcurrency = 10
 	defaultTimeout            = 30 * time.Minute
 	defaultQueueCapacity      = 256
 	awaitPollInterval         = time.Second
@@ -35,10 +35,12 @@ const (
 	// leaseBusyGrace outlasts the database busy_timeout (15s default) so a
 	// renewal attempt waits for the SQLite write lock instead of aborting while
 	// the driver would still have succeeded.
-	leaseBusyGrace     = 16 * time.Second
-	eventBuffer        = 64
-	eventFlushInterval = time.Second
-	eventFlushBatch    = 32
+	leaseBusyGrace             = 16 * time.Second
+	leaseRenewalAttemptTimeout = 2 * time.Second
+	leaseRenewalAttempts       = 3
+	eventBuffer                = 64
+	eventFlushInterval         = time.Second
+	eventFlushBatch            = 32
 	// cancelSourceEventLimit bounds the durable provenance scan; the
 	// task_canceling event is among the task's most recent events.
 	cancelSourceEventLimit = 64
@@ -643,6 +645,47 @@ func (service *Service) Await(ctx context.Context, taskID string) (*database.Age
 			if !open {
 				events = nil
 			}
+		case <-ticker.C:
+		}
+	}
+}
+
+// AwaitAll blocks until every agent task owned by ownerSessionID is terminal,
+// then returns them. It returns a nil slice when the session has no tasks.
+func (service *Service) AwaitAll(
+	ctx context.Context,
+	ownerSessionID string,
+) ([]database.AgentTaskEntity, error) {
+	ticker := time.NewTicker(awaitPollInterval)
+	defer ticker.Stop()
+
+	for {
+		tasks, err := service.agentTasks.ListAllByOwner(ctx, ownerSessionID)
+		if err != nil {
+			return nil, oops.In("agenttask").Code("list_agent_tasks").Wrapf(err, "list agent tasks")
+		}
+
+		if len(tasks) == 0 {
+			return nil, nil
+		}
+
+		allTerminal := true
+
+		for index := range tasks {
+			if !terminal(tasks[index].Task.State) {
+				allTerminal = false
+
+				break
+			}
+		}
+
+		if allTerminal {
+			return tasks, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, oops.In("agenttask").Code("await_canceled").Wrapf(ctx.Err(), "await agent tasks")
 		case <-ticker.C:
 		}
 	}

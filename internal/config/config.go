@@ -16,6 +16,7 @@ type Config struct {
 	Extensions ExtensionsConfig  `json:"extensions" mapstructure:"extensions" yaml:"extensions"`
 	Models     ModelsConfig      `json:"models" mapstructure:"models" yaml:"models"`
 	Assistant  AssistantConfig   `json:"assistant" mapstructure:"assistant" yaml:"assistant"`
+	Delegation DelegationConfig  `json:"delegation" mapstructure:"delegation" yaml:"delegation"`
 	Database   DatabaseConfig    `json:"database" mapstructure:"database" yaml:"database"`
 	Context    ContextConfig     `json:"context" mapstructure:"context" yaml:"context"`
 	Cache      CacheConfig       `json:"cache" mapstructure:"cache" yaml:"cache"`
@@ -65,6 +66,13 @@ type AssistantConfig struct {
 	Model         string      `json:"model" mapstructure:"model" yaml:"model"`
 	ThinkingLevel string      `json:"thinking_level" mapstructure:"thinking_level" yaml:"thinking_level"`
 	Retry         RetryConfig `json:"retry" mapstructure:"retry" yaml:"retry"`
+}
+
+// DelegationConfig controls the model durable subagents fall back to.
+type DelegationConfig struct {
+	Provider      string `json:"provider" mapstructure:"provider" yaml:"provider"`
+	Model         string `json:"model" mapstructure:"model" yaml:"model"`
+	ThinkingLevel string `json:"thinking_level" mapstructure:"thinking_level" yaml:"thinking_level"`
 }
 
 // ContextConfig controls local context-window budgeting before provider requests.
@@ -159,6 +167,7 @@ func (config *Config) Validate() error {
 		config.validateDatabase,
 		config.validateExtensions,
 		config.validateAssistant,
+		config.validateDelegation,
 		config.validateContext,
 		config.validateModels,
 		config.validateCache,
@@ -260,6 +269,14 @@ func (config *Config) validateAssistant() error {
 	}
 
 	config.Assistant.Retry = retry
+
+	return nil
+}
+
+func (config *Config) validateDelegation() error {
+	if (config.Delegation.Provider == "") != (config.Delegation.Model == "") {
+		return errors.New("config: delegation.provider and delegation.model must be configured together")
+	}
 
 	return nil
 }
