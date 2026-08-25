@@ -472,6 +472,57 @@ func TestRPCCallerExchangeAndFailures(t *testing.T) {
 	assert.Equal(t, "first", (<-responseCh).Error)
 }
 
+func TestDecodeRPCValueNormalizesJSONNumbers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		want any
+		name string
+		raw  string
+	}{
+		{name: "integer", raw: `42`, want: 42},
+		{name: "decimal", raw: `1.25`, want: 1.25},
+		{
+			name: "nested values",
+			raw:  `{"count":2,"values":[3,4.5]}`,
+			want: map[string]any{"count": 2, "values": []any{3, 4.5}},
+		},
+		{
+			name: "large exactly representable int",
+			raw:  `9007199254740993`,
+			want: int(9007199254740993),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			value, err := decodeRPCValue(messageWithValue("", json.RawMessage(test.raw)))
+			require.NoError(t, err)
+			assert.Equal(t, test.want, value)
+			assertNoJSONNumbers(t, value)
+		})
+	}
+}
+
+func assertNoJSONNumbers(t *testing.T, value any) {
+	t.Helper()
+
+	switch typed := value.(type) {
+	case json.Number:
+		t.Errorf("unexpected json.Number %q", typed)
+	case []any:
+		for _, item := range typed {
+			assertNoJSONNumbers(t, item)
+		}
+	case map[string]any:
+		for _, item := range typed {
+			assertNoJSONNumbers(t, item)
+		}
+	}
+}
+
 func TestRPCValuesAndResultMessages(t *testing.T) {
 	t.Parallel()
 
