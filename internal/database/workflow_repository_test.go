@@ -608,6 +608,7 @@ func newWorkflowRun(ownerSessionID string) *database.WorkflowRunEntity {
 	return &database.WorkflowRunEntity{
 		Task: *newTask(ownerSessionID), Name: "inspect database", Source: "return agent('inspect')",
 		SourceHash: "sha256:first", GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: `{"scope":"database"}`,
+		AdmissionClosedAt: nil,
 	}
 }
 
@@ -615,6 +616,6 @@ func workflowRunForValidation(ownerSessionID, source, hash, arguments string) *d
 	return &database.WorkflowRunEntity{
 		Task: *newTask(ownerSessionID), Name: "validation", Source: source, SourceHash: hash,
 		GuestAPIVersion: "", SourceVersion: "",
-		ArgumentsJSON: arguments,
+		ArgumentsJSON: arguments, AdmissionClosedAt: nil,
 	}
 }

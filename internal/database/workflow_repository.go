@@ -18,13 +18,14 @@ const TaskKindWorkflow = "workflow"
 
 // WorkflowRunEntity contains workflow-specific data for a generic task.
 type WorkflowRunEntity struct {
-	Task            TaskEntity
-	Name            string
-	Source          string
-	SourceHash      string
-	SourceVersion   string
-	GuestAPIVersion string
-	ArgumentsJSON   string
+	AdmissionClosedAt *time.Time
+	Task              TaskEntity
+	Name              string
+	Source            string
+	SourceHash        string
+	SourceVersion     string
+	GuestAPIVersion   string
+	ArgumentsJSON     string
 }
 
 // WorkflowAgentTaskEntity associates an agent task with its workflow-local launch order.
@@ -39,8 +40,8 @@ type WorkflowAgentTaskEntity struct {
 
 // WorkflowAgentTaskDetail combines a workflow link with its complete agent task.
 type WorkflowAgentTaskDetail struct {
-	AgentTask AgentTaskEntity
 	Link      WorkflowAgentTaskEntity
+	AgentTask AgentTaskEntity
 }
 
 // WorkflowRepository persists workflow metadata and composes generic lifecycle operations.
@@ -299,13 +300,14 @@ func (repository *WorkflowRepository) createAgentTask(
 		invocationIndex: invocationIndex,
 	}
 
-	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
+	result, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (*AgentTaskEntity, error) {
 		return persistWorkflowAgentTask(ctx, transaction, &request)
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, oops.In("database").Code("create_workflow_agent_task").Wrapf(err, "create workflow agent task")
 	}
 
-	return created, nil
+	return result.value, nil
 }
 
 type workflowAgentTaskCreate struct {
@@ -322,45 +324,333 @@ func persistWorkflowAgentTask(
 	ctx context.Context,
 	transaction ksql.Provider,
 	request *workflowAgentTaskCreate,
-) error {
-	var workflow struct {
-		OwnerSessionID string `ksql:"owner_session_id"`
+) (*AgentTaskEntity, error) {
+	if err := validateWorkflowAgentParent(ctx, transaction, request); err != nil {
+		return nil, err
 	}
 
-	const workflowQuery = `SELECT t.owner_session_id FROM tasks t
-JOIN workflow_runs w ON w.task_id = t.id WHERE t.id = ?`
-	if err := transaction.QueryOne(ctx, &workflow, workflowQuery, request.workflowTaskID); err != nil {
-		return oops.In("database").Code("load_workflow_agent_parent").Wrapf(err, "load workflow agent parent")
+	if err := fenceWorkflowAdmission(ctx, transaction, request); err != nil {
+		return nil, err
 	}
 
-	if workflow.OwnerSessionID != request.agentTask.Task.OwnerSessionID {
-		return oops.In("database").Code("workflow_agent_owner_mismatch").
-			Errorf("agent task owner differs from workflow owner")
+	persisted, found, err := findMatchingWorkflowAgentTask(ctx, transaction, request)
+	if err != nil || found {
+		return persisted, err
 	}
 
 	if request.child != nil {
 		if err := insertSession(ctx, transaction, request.child); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	if err := insertAgentTask(
-		ctx, transaction, request.agentTask, request.agentTask.Task.CreatedAt, request.eventID,
-	); err != nil {
-		return err
+	if err := insertAgentTask(ctx, transaction, request.agentTask,
+		request.agentTask.Task.CreatedAt, request.eventID); err != nil {
+		return nil, err
 	}
 
-	_, err := insertWorkflowAgentTask(
-		ctx,
-		transaction,
-		request.workflowTaskID,
-		request.agentTask.Task.ID,
-		request.nodeKey,
-		request.invocationIndex,
-		request.agentTask.Task.CreatedAt,
-	)
+	if _, err := insertWorkflowAgentTask(ctx, transaction, request.workflowTaskID,
+		request.agentTask.Task.ID, request.nodeKey, request.invocationIndex,
+		request.agentTask.Task.CreatedAt); err != nil {
+		return nil, err
+	}
+
+	return request.agentTask, nil
+}
+
+func validateWorkflowAgentParent(
+	ctx context.Context,
+	transaction ksql.Provider,
+	request *workflowAgentTaskCreate,
+) error {
+	var owner struct {
+		ID string `ksql:"owner_session_id"`
+	}
+
+	if err := transaction.QueryOne(ctx, &owner, `SELECT t.owner_session_id FROM tasks t
+JOIN workflow_runs w ON w.task_id = t.id WHERE t.id = ?`, request.workflowTaskID); err != nil {
+		return oops.In("database").Code("load_workflow_agent_parent").Wrapf(err, "load workflow agent parent")
+	}
+
+	if owner.ID != request.agentTask.Task.OwnerSessionID {
+		return oops.In("database").Code("workflow_agent_owner_mismatch").
+			Errorf("agent task owner differs from workflow owner")
+	}
+
+	return nil
+}
+
+func fenceWorkflowAdmission(
+	ctx context.Context,
+	transaction ksql.Provider,
+	request *workflowAgentTaskCreate,
+) error {
+	const statement = `UPDATE workflow_runs SET admission_closed_at = admission_closed_at
+WHERE task_id = ? AND admission_closed_at IS NULL AND EXISTS (
+ SELECT 1 FROM tasks WHERE id = ? AND kind = ? AND owner_session_id = ? AND state IN (?, ?))`
+
+	result, err := transaction.Exec(ctx, statement, request.workflowTaskID, request.workflowTaskID,
+		TaskKindWorkflow, request.agentTask.Task.OwnerSessionID, TaskQueued, TaskRunning)
+	if err != nil {
+		return oops.In("database").Code("workflow_admission").Wrapf(err, "fence workflow admission")
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return oops.In("database").Code("workflow_admission_rows").Wrapf(err, "read workflow admission")
+	}
+
+	if rows != 1 {
+		return oops.In("database").Code("run_closed").Errorf("workflow run is closed to new children")
+	}
+
+	return nil
+}
+
+func findMatchingWorkflowAgentTask(
+	ctx context.Context,
+	transaction ksql.Provider,
+	request *workflowAgentTaskCreate,
+) (*AgentTaskEntity, bool, error) {
+	existing, found, err := querySQLRow(ctx, transaction, workflowAgentTaskFromRow,
+		`SELECT workflow_task_id, agent_task_id, sequence, node_key, invocation_index, created_at
+FROM workflow_agent_tasks WHERE workflow_task_id = ? AND node_key = ? AND invocation_index = ?`,
+		"workflow_agent_task", request.workflowTaskID, request.nodeKey, request.invocationIndex)
+	if err != nil || !found {
+		return nil, false, err
+	}
+
+	persisted, taskFound, err := querySQLRow(ctx, transaction, agentTaskFromRow,
+		`SELECT `+agentTaskColumns+` FROM tasks t JOIN agent_tasks a ON a.task_id = t.id WHERE t.id = ?`,
+		"agent_task", existing.AgentTaskID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if !taskFound || workflowInvocationIdentityOf(persisted) != workflowInvocationIdentityOf(request.agentTask) {
+		return nil, false, workflowInvocationConflict("workflow invocation identity does not match persisted child")
+	}
+
+	if request.child != nil && persisted.ChildSessionID != request.child.ID {
+		return nil, false, workflowInvocationConflict("workflow invocation already has a persisted child session")
+	}
+
+	if request.child == nil && persisted.Task.ID != request.agentTask.Task.ID {
+		return nil, false, oops.In("database").Code("workflow_agent_invocation_conflict").
+			Errorf("workflow invocation is already linked to agent task %q", persisted.Task.ID)
+	}
+
+	return persisted, true, nil
+}
+
+func workflowInvocationConflict(message string) error {
+	return oops.In("database").Code("workflow_agent_invocation_conflict").Errorf("%s", message)
+}
+
+type workflowInvocationIdentity struct {
+	parentTaskID       string
+	ownerSessionID     string
+	concurrencyKey     string
+	agentName          string
+	prompt             string
+	model              string
+	provider           string
+	policyJSON         string
+	outputSchemaJSON   string
+	outputSchemaDigest string
+	depth              int
+}
+
+func workflowInvocationIdentityOf(agentTask *AgentTaskEntity) workflowInvocationIdentity {
+	return workflowInvocationIdentity{
+		parentTaskID:       agentTask.Task.ParentTaskID,
+		ownerSessionID:     agentTask.Task.OwnerSessionID,
+		concurrencyKey:     agentTask.Task.ConcurrencyKey,
+		agentName:          agentTask.AgentName,
+		prompt:             agentTask.Prompt,
+		model:              agentTask.Model,
+		provider:           agentTask.Provider,
+		policyJSON:         agentTask.PolicyJSON,
+		outputSchemaJSON:   agentTask.OutputSchemaJSON,
+		outputSchemaDigest: agentTask.OutputSchemaDigest,
+		depth:              agentTask.Depth,
+	}
+}
+
+// CloseAdmission durably prevents further child admission for an owner-scoped run.
+func (repository *WorkflowRepository) CloseAdmission(
+	ctx context.Context, ownerSessionID, workflowTaskID string,
+) (bool, error) {
+	now := repository.tasks.now().UTC()
+
+	result, err := repository.sql.Exec(ctx, `UPDATE workflow_runs
+SET admission_closed_at = COALESCE(admission_closed_at, ?)
+WHERE task_id = ? AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND kind = ? AND owner_session_id = ?)`,
+		formatTime(now), workflowTaskID, workflowTaskID, TaskKindWorkflow, ownerSessionID)
+	if err != nil {
+		return false, oops.In("database").Code("close_workflow_admission").Wrapf(err, "close workflow admission")
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, oops.In("database").Code("workflow_admission_rows").Wrapf(err, "read workflow admission")
+	}
+
+	return rows == 1, nil
+}
+
+// CancelOwned closes admission and idempotently records cancellation for a run and all linked children.
+func (repository *WorkflowRepository) CancelOwned(
+	ctx context.Context, ownerSessionID, workflowTaskID, runEventKind, runPayload string,
+) (bool, error) {
+	now := repository.tasks.now().UTC()
+
+	changed, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
+		return repository.cancelWorkflowTree(
+			ctx, transaction, ownerSessionID, workflowTaskID, runEventKind, runPayload, now,
+		)
+	})
+	if err != nil {
+		return false, oops.In("database").Code("cancel_workflow_tree").Wrapf(err, "cancel workflow tree")
+	}
+
+	return changed.value, nil
+}
+
+type workflowChildState struct {
+	ID    string `ksql:"id"`
+	State string `ksql:"state"`
+}
+
+func (repository *WorkflowRepository) cancelWorkflowTree(
+	ctx context.Context,
+	transaction ksql.Provider,
+	ownerSessionID, workflowTaskID, runEventKind, runPayload string,
+	now time.Time,
+) (bool, error) {
+	closed, err := closeWorkflowAdmission(ctx, transaction, ownerSessionID, workflowTaskID, now)
+	if err != nil || !closed {
+		return false, err
+	}
+
+	children, err := listCancelableWorkflowChildren(ctx, transaction, ownerSessionID, workflowTaskID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, child := range children {
+		if err := repository.cancelWorkflowChild(ctx, transaction, child, now); err != nil {
+			return false, err
+		}
+	}
+
+	target := TaskCanceled
+	if len(children) > 0 {
+		target = TaskCanceling
+	}
+
+	return repository.tasks.transition(ctx, transaction, workflowTaskID,
+		[]TaskState{TaskQueued, TaskRunning}, target,
+		TaskEventDraft{Kind: runEventKind, PayloadJSON: runPayload},
+		retryStableTaskOperation{now: now, eventID: newUUIDv7()})
+}
+
+func closeWorkflowAdmission(
+	ctx context.Context,
+	transaction ksql.Provider,
+	ownerSessionID, workflowTaskID string,
+	now time.Time,
+) (bool, error) {
+	result, err := transaction.Exec(ctx, `UPDATE workflow_runs
+SET admission_closed_at = COALESCE(admission_closed_at, ?)
+WHERE task_id = ? AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND kind = ? AND owner_session_id = ?)`,
+		formatTime(now), workflowTaskID, workflowTaskID, TaskKindWorkflow, ownerSessionID)
+	if err != nil {
+		return false, oops.In("database").Code("close_workflow_admission").Wrapf(err, "close workflow admission")
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, oops.In("database").Code("workflow_admission_rows").Wrapf(err, "read workflow admission")
+	}
+
+	return rows == 1, nil
+}
+
+func listCancelableWorkflowChildren(
+	ctx context.Context,
+	transaction ksql.Provider,
+	ownerSessionID, workflowTaskID string,
+) ([]workflowChildState, error) {
+	var children []workflowChildState
+	if err := transaction.Query(ctx, &children, `SELECT t.id, t.state FROM tasks t
+JOIN workflow_agent_tasks wat ON wat.agent_task_id = t.id
+WHERE wat.workflow_task_id = ? AND t.owner_session_id = ? AND t.state IN (?, ?)`,
+		workflowTaskID, ownerSessionID, TaskQueued, TaskRunning); err != nil {
+		return nil, oops.In("database").Code("list_cancelable_workflow_children").
+			Wrapf(err, "list cancelable workflow children")
+	}
+
+	return children, nil
+}
+
+func (repository *WorkflowRepository) cancelWorkflowChild(
+	ctx context.Context,
+	transaction ksql.Provider,
+	child workflowChildState,
+	now time.Time,
+) error {
+	target := TaskCanceling
+	if TaskState(child.State) == TaskQueued {
+		target = TaskCanceled
+	}
+
+	_, err := repository.tasks.transition(ctx, transaction, child.ID,
+		[]TaskState{TaskState(child.State)}, target,
+		TaskEventDraft{Kind: taskCanceledEvent, PayloadJSON: CancelEventPayload(CancelSourceWorkflow)},
+		retryStableTaskOperation{now: now, eventID: newUUIDv7()})
 
 	return err
+}
+
+// FinishOwned closes admission and commits a terminal run outcome only after every admitted child is terminal.
+func (repository *WorkflowRepository) FinishOwned(
+	ctx context.Context, ownerSessionID string, finish *TaskFinish,
+) (bool, error) {
+	if err := validateTaskFinish(finish); err != nil {
+		return false, err
+	}
+
+	now := repository.tasks.now().UTC()
+
+	changed, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (bool, error) {
+		closed, closeErr := closeWorkflowAdmission(ctx, transaction, ownerSessionID, finish.TaskID, now)
+		if closeErr != nil || !closed {
+			return false, closeErr
+		}
+
+		var active struct {
+			Count int `ksql:"count"`
+		}
+		if queryErr := transaction.QueryOne(ctx, &active, `SELECT COUNT(*) AS count FROM workflow_agent_tasks wat
+JOIN tasks child ON child.id = wat.agent_task_id
+WHERE wat.workflow_task_id = ? AND child.owner_session_id = ? AND child.state IN (?, ?, ?)`,
+			finish.TaskID, ownerSessionID, TaskQueued, TaskRunning, TaskCanceling); queryErr != nil {
+			return false, oops.In("database").Code("count_active_workflow_children").
+				Wrapf(queryErr, "count active workflow children")
+		}
+
+		if active.Count != 0 {
+			return false, nil
+		}
+
+		return repository.tasks.finishTransaction(ctx, transaction, finish, now, newUUIDv7())
+	})
+	if err != nil {
+		return false, oops.In("database").Code("finish_workflow_tree").Wrapf(err, "finish workflow tree")
+	}
+
+	return changed.value, nil
 }
 
 // LinkAgentTask appends an agent task to a workflow's launch order. Repeating
@@ -557,30 +847,32 @@ ORDER BY workflow_task_id ASC, sequence ASC`
 const workflowRunColumns = `t.id, t.kind, t.parent_task_id, t.owner_session_id, t.concurrency_key,
 t.state, t.result, t.error_code, t.error_message, t.created_at, t.started_at, t.finished_at,
 t.updated_at, t.lease_owner, t.lease_expires_at,
-w.name, w.source, w.source_hash, w.source_version, w.guest_api_version, w.arguments_json`
+w.name, w.source, w.source_hash, w.source_version, w.guest_api_version, w.arguments_json,
+w.admission_closed_at`
 
 type workflowRunRow struct {
-	ID              string  `ksql:"id"`
-	Kind            string  `ksql:"kind"`
-	ParentTaskID    *string `ksql:"parent_task_id"`
-	OwnerSessionID  string  `ksql:"owner_session_id"`
-	ConcurrencyKey  string  `ksql:"concurrency_key"`
-	State           string  `ksql:"state"`
-	Result          string  `ksql:"result"`
-	ErrorCode       string  `ksql:"error_code"`
-	ErrorMessage    string  `ksql:"error_message"`
-	CreatedAt       string  `ksql:"created_at"`
-	StartedAt       *string `ksql:"started_at"`
-	FinishedAt      *string `ksql:"finished_at"`
-	UpdatedAt       string  `ksql:"updated_at"`
-	LeaseOwner      *string `ksql:"lease_owner"`
-	LeaseExpiresAt  *string `ksql:"lease_expires_at"`
-	Name            string  `ksql:"name"`
-	Source          string  `ksql:"source"`
-	SourceHash      string  `ksql:"source_hash"`
-	SourceVersion   string  `ksql:"source_version"`
-	GuestAPIVersion string  `ksql:"guest_api_version"`
-	ArgumentsJSON   string  `ksql:"arguments_json"`
+	StartedAt         *string `ksql:"started_at"`
+	AdmissionClosedAt *string `ksql:"admission_closed_at"`
+	ParentTaskID      *string `ksql:"parent_task_id"`
+	LeaseExpiresAt    *string `ksql:"lease_expires_at"`
+	LeaseOwner        *string `ksql:"lease_owner"`
+	FinishedAt        *string `ksql:"finished_at"`
+	State             string  `ksql:"state"`
+	ConcurrencyKey    string  `ksql:"concurrency_key"`
+	ErrorMessage      string  `ksql:"error_message"`
+	CreatedAt         string  `ksql:"created_at"`
+	Result            string  `ksql:"result"`
+	ID                string  `ksql:"id"`
+	UpdatedAt         string  `ksql:"updated_at"`
+	ErrorCode         string  `ksql:"error_code"`
+	OwnerSessionID    string  `ksql:"owner_session_id"`
+	Name              string  `ksql:"name"`
+	Source            string  `ksql:"source"`
+	SourceHash        string  `ksql:"source_hash"`
+	SourceVersion     string  `ksql:"source_version"`
+	GuestAPIVersion   string  `ksql:"guest_api_version"`
+	ArgumentsJSON     string  `ksql:"arguments_json"`
+	Kind              string  `ksql:"kind"`
 }
 
 func workflowRunFromRow(row *workflowRunRow) (*WorkflowRunEntity, error) {
@@ -595,10 +887,15 @@ func workflowRunFromRow(row *workflowRunRow) (*WorkflowRunEntity, error) {
 		return nil, err
 	}
 
+	closedAt, err := parseOptionalTime(row.AdmissionClosedAt)
+	if err != nil {
+		return nil, err
+	}
+
 	return &WorkflowRunEntity{
 		Task: *task, Name: row.Name, Source: row.Source, SourceHash: row.SourceHash,
 		SourceVersion: row.SourceVersion, GuestAPIVersion: row.GuestAPIVersion,
-		ArgumentsJSON: row.ArgumentsJSON,
+		ArgumentsJSON: row.ArgumentsJSON, AdmissionClosedAt: closedAt,
 	}, nil
 }
 
