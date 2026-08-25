@@ -103,13 +103,18 @@ func TestCompositeRepositoryConstructorsShareDependencies(t *testing.T) {
 
 	provider, err := newSQLProvider(connection)
 	require.NoError(t, err)
-	tasks, err := NewTaskRepositoryWithProvider(provider)
+	sessions, err := NewSessionRepositoryWithProvider(provider)
+	require.NoError(t, err)
+	completions, err := newCompletionRepository(provider, sessions)
+	require.NoError(t, err)
+	tasks, err := NewTaskRepositoryWithProvider(provider, completions)
 	require.NoError(t, err)
 	agentTasks, err := NewAgentTaskRepositoryWithProvider(provider, tasks)
 	require.NoError(t, err)
 	workflows, err := NewWorkflowRepositoryWithProvider(provider, tasks, agentTasks)
 	require.NoError(t, err)
 
+	assert.Same(t, completions, tasks.completions)
 	assert.Same(t, tasks, agentTasks.Tasks())
 	assert.Same(t, tasks, workflows.Tasks())
 	assert.Same(t, agentTasks, workflows.AgentTasks())
@@ -133,7 +138,7 @@ func TestCompositeRepositoriesUseSharedClock(t *testing.T) {
 	require.NoError(t, err)
 	sessions, err := NewSessionRepositoryWithProvider(provider)
 	require.NoError(t, err)
-	tasks, err := NewTaskRepositoryWithProvider(provider)
+	tasks, err := newStandaloneTaskRepository(provider)
 	require.NoError(t, err)
 	agentTasks, err := NewAgentTaskRepositoryWithProvider(provider, tasks)
 	require.NoError(t, err)
@@ -213,9 +218,9 @@ func TestCompositeRepositoryConstructorsRejectInvalidGraph(t *testing.T) {
 
 	provider, err := newSQLProvider(connection)
 	require.NoError(t, err)
-	tasks, err := NewTaskRepositoryWithProvider(provider)
+	tasks, err := newStandaloneTaskRepository(provider)
 	require.NoError(t, err)
-	otherTasks, err := NewTaskRepositoryWithProvider(provider)
+	otherTasks, err := newStandaloneTaskRepository(provider)
 	require.NoError(t, err)
 	agentTasks, err := NewAgentTaskRepositoryWithProvider(provider, tasks)
 	require.NoError(t, err)
@@ -233,6 +238,14 @@ func TestCompositeRepositoryConstructorsRejectInvalidGraph(t *testing.T) {
 		err  error
 		code string
 	}{
+		"task with nil completion repository": {
+			err:  taskGraphConstructorError(provider, nil),
+			code: graphMismatch,
+		},
+		"task with mismatched completion repository": {
+			err:  taskGraphConstructorError(otherProvider, tasks.completions),
+			code: graphMismatch,
+		},
 		"agent task with nil task repository": {
 			err:  agentTaskGraphConstructorError(provider, nil),
 			code: "nil_task_repository",
@@ -375,6 +388,12 @@ func nilEntityCases(
 	}
 }
 
+func taskGraphConstructorError(provider ksql.Provider, completions *CompletionRepository) error {
+	_, err := NewTaskRepositoryWithProvider(provider, completions)
+
+	return err
+}
+
 func agentTaskGraphConstructorError(provider ksql.Provider, tasks *TaskRepository) error {
 	_, err := NewAgentTaskRepositoryWithProvider(provider, tasks)
 
@@ -446,7 +465,7 @@ func documentProviderConstructorError(provider ksql.Provider) error {
 }
 
 func taskProviderConstructorError(provider ksql.Provider) error {
-	_, err := NewTaskRepositoryWithProvider(provider)
+	_, err := NewTaskRepositoryWithProvider(provider, nil)
 
 	return err
 }

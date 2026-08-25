@@ -226,12 +226,16 @@ func TestCompletionQuotaIncludesCandidateEnvelope(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 
+	repaired, err := repositories.Completions.Repair(ctx, 16)
+	require.NoError(t, err)
+	assert.Zero(t, repaired, "quota-skipped candidates must not count as repaired")
+
 	// Once pressure is relieved, repair must revisit the quota-skipped event rather than
 	// leaving it behind a forward-only cursor.
 	_, err = fixture.connection.ExecContext(ctx,
 		`UPDATE session_completion_deliveries SET envelope_json='{}' WHERE id=?`, pending[0].ID)
 	require.NoError(t, err)
-	repaired, err := repositories.Completions.Repair(ctx, 16)
+	repaired, err = repositories.Completions.Repair(ctx, 16)
 	require.NoError(t, err)
 	assert.Equal(t, 1, repaired)
 
