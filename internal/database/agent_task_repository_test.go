@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,6 +68,59 @@ func TestAgentTaskRepositoryLifecycle(t *testing.T) {
 	assert.NotEmpty(t, events[0].Event.ID)
 	assert.NotEmpty(t, events[1].Event.ID)
 	assert.NotEmpty(t, events[2].Event.ID)
+}
+
+func TestAgentTaskRepositoryOutputSchemaReservationAndCheckpointRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	parent, child := fixture.createAgentTaskSessions(ctx)
+	candidate := newAgentTask(parent.ID, child.ID)
+	candidate.OutputSchemaJSON = `{"type":"string"}`
+	candidate.OutputSchemaDigest = "sha256:test-digest"
+	candidate.OutputValidationSummary = ""
+
+	created, err := fixture.agents.Create(ctx, candidate)
+	require.NoError(t, err)
+	claimed, err := fixture.tasks.ClaimQueued(ctx, &database.TaskClaim{
+		TaskID: created.Task.ID, LeaseOwner: testWorker, EventKind: taskStartedEvent,
+		LeaseExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		reserved, reserveErr := fixture.agents.ReserveOutputAttempt(ctx, created.Task.ID, testWorker, 3)
+		require.NoError(t, reserveErr)
+		assert.True(t, reserved)
+
+		summary := fmt.Sprintf("attempt %d", attempt)
+		usage := fmt.Sprintf(`{"input_tokens":%d,"output_tokens":%d}`, attempt*2, attempt)
+		require.NoError(t, fixture.agents.CheckpointOutputAttempt(
+			ctx, created.Task.ID, testWorker, usage, summary,
+		))
+
+		loaded, found, loadErr := fixture.agents.Get(ctx, created.Task.ID)
+		require.NoError(t, loadErr)
+		require.True(t, found)
+		assert.Equal(t, candidate.OutputSchemaJSON, loaded.OutputSchemaJSON)
+		assert.Equal(t, candidate.OutputSchemaDigest, loaded.OutputSchemaDigest)
+		assert.Equal(t, attempt, loaded.OutputAttemptsReserved)
+		assert.Equal(t, attempt, loaded.OutputAttemptsCompleted)
+		assert.Equal(t, summary, loaded.OutputValidationSummary)
+		assert.JSONEq(t, usage, loaded.UsageJSON)
+	}
+
+	reserved, err := fixture.agents.ReserveOutputAttempt(ctx, created.Task.ID, testWorker, 3)
+	require.NoError(t, err)
+	assert.False(t, reserved)
+	reserved, err = fixture.agents.ReserveOutputAttempt(ctx, created.Task.ID, "stale-worker", 4)
+	require.NoError(t, err)
+	assert.False(t, reserved)
+	require.ErrorContains(t, fixture.agents.CheckpointOutputAttempt(
+		ctx, created.Task.ID, "stale-worker", `{}`, "stale",
+	), "lease lost")
 }
 
 func TestAgentTaskRepositoryCreatesChildSessionAtomically(t *testing.T) {
