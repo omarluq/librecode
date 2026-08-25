@@ -30,19 +30,14 @@ func NewRuntimeRunner(
 	runtime *assistant.Runtime,
 	catalog *agent.Catalog,
 	sessions *database.SessionRepository,
-	tasks ...*database.AgentTaskRepository,
+	tasks *database.AgentTaskRepository,
 ) (*RuntimeRunner, error) {
-	if runtime == nil || catalog == nil || sessions == nil {
+	if runtime == nil || catalog == nil || sessions == nil || tasks == nil {
 		return nil, oops.In("agenttask").Code("invalid_dependencies").
-			Errorf("runtime, agent catalog, and sessions are required")
+			Errorf("runtime, agent catalog, sessions, and agent tasks are required")
 	}
 
-	runner := &RuntimeRunner{runtime: runtime, catalog: catalog, sessions: sessions, tasks: nil}
-	if len(tasks) > 0 {
-		runner.tasks = tasks[0]
-	}
-
-	return runner, nil
+	return &RuntimeRunner{runtime: runtime, catalog: catalog, sessions: sessions, tasks: tasks}, nil
 }
 
 // Run executes one task using the persisted agent definition and child session.
@@ -101,7 +96,11 @@ func restoreOutputContract(task *database.AgentTaskEntity) (*outputschema.Contra
 		return nil, false, nil
 	}
 
-	contract, err := outputschema.Restore([]byte(task.OutputSchemaJSON), task.OutputSchemaDigest)
+	// Existing task rows were admitted under the frozen V1 policy. Restore under that
+	// policy rather than today's admission rules; canonical bytes and digest still bind identity.
+	contract, err := outputschema.RestoreWithPolicy(
+		[]byte(task.OutputSchemaJSON), task.OutputSchemaDigest, outputschema.PersistedPolicyV1,
+	)
 	if err != nil {
 		return nil, false, oops.In("agenttask").Code("restore_output_schema").Wrapf(err, "restore output schema")
 	}

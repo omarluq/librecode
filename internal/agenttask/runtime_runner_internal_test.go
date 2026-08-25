@@ -35,6 +35,8 @@ func TestNewRuntimeRunnerRequiresDependencies(t *testing.T) {
 	t.Parallel()
 
 	catalog := agent.Load(t.TempDir())
+	tasks := &database.AgentTaskRepository{}
+
 	for _, testCase := range []struct {
 		runtime  *assistant.Runtime
 		catalog  *agent.Catalog
@@ -48,7 +50,7 @@ func TestNewRuntimeRunnerRequiresDependencies(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := NewRuntimeRunner(testCase.runtime, testCase.catalog, testCase.sessions)
+			_, err := NewRuntimeRunner(testCase.runtime, testCase.catalog, testCase.sessions, tasks)
 			assert.ErrorContains(t, err, "required")
 		})
 	}
@@ -58,7 +60,8 @@ func TestRuntimeRunnerRunRejectsInvalidTaskBeforePrompt(t *testing.T) {
 	t.Parallel()
 	db := testutil.OpenMemoryDatabase(t)
 	sessions := testutil.SessionRepository(t, db)
-	runner, err := NewRuntimeRunner(&assistant.Runtime{}, agent.Load(t.TempDir()), sessions)
+	tasks := testutil.AgentTaskRepository(t, db)
+	runner, err := NewRuntimeRunner(&assistant.Runtime{}, agent.Load(t.TempDir()), sessions, tasks)
 	require.NoError(t, err)
 
 	invalidTask := emptyAgentTask()
@@ -134,7 +137,9 @@ type runnerFixture struct {
 func newRunnerFixture(t *testing.T, depth int) runnerFixture {
 	t.Helper()
 
-	sessions := testutil.SessionRepository(t, testutil.OpenMemoryDatabase(t))
+	db := testutil.OpenMemoryDatabase(t)
+	sessions := testutil.SessionRepository(t, db)
+	tasks := testutil.AgentTaskRepository(t, db)
 	session := testutil.CreateSession(t, sessions, childSessionName)
 
 	cfg := config.Load("").MustGet()
@@ -172,7 +177,7 @@ func newRunnerFixture(t *testing.T, depth int) runnerFixture {
 			options.Client = completer
 			options.Agents = catalog
 		})
-		runner, runnerErr := NewRuntimeRunner(runtime, catalog, sessions)
+		runner, runnerErr := NewRuntimeRunner(runtime, catalog, sessions, tasks)
 		require.NoError(t, runnerErr)
 
 		return runner
@@ -311,8 +316,9 @@ func TestRuntimeRunnerReportsSessionLoadError(t *testing.T) {
 	t.Parallel()
 	db := testutil.OpenMemoryDatabase(t)
 	sessions := testutil.SessionRepository(t, db)
+	tasks := testutil.AgentTaskRepository(t, db)
 	require.NoError(t, db.Close())
-	runner, err := NewRuntimeRunner(&assistant.Runtime{}, agent.Load(t.TempDir()), sessions)
+	runner, err := NewRuntimeRunner(&assistant.Runtime{}, agent.Load(t.TempDir()), sessions, tasks)
 	require.NoError(t, err)
 
 	task := emptyAgentTask()
