@@ -28,20 +28,22 @@ const (
 
 // AgentTaskRequest describes one asynchronous agent submission.
 type AgentTaskRequest struct {
-	ParentTaskID     string
-	OwnerSessionID   string
-	ChildSessionID   string
-	ChildSessionCWD  string
-	ChildSessionName string
-	AgentName        string
-	Prompt           string
-	Model            string
-	Provider         string
-	PolicyJSON       string
-	ConcurrencyKey   string
-	NodeKey          string
-	InvocationIndex  int
-	Depth            int
+	ParentTaskID       string
+	OwnerSessionID     string
+	ChildSessionID     string
+	ChildSessionCWD    string
+	ChildSessionName   string
+	AgentName          string
+	Prompt             string
+	Model              string
+	Provider           string
+	PolicyJSON         string
+	ConcurrencyKey     string
+	NodeKey            string
+	OutputSchema       string
+	OutputSchemaDigest string
+	InvocationIndex    int
+	Depth              int
 }
 
 // AgentTaskController is the runtime-facing boundary for durable agent work.
@@ -249,6 +251,7 @@ func (executor *agentToolExecutor) submit(
 		Provider:        definition.Model.Provider,
 		ConcurrencyKey:  executor.parentSessionID,
 		NodeKey:         "",
+		OutputSchema:    "",
 		InvocationIndex: 0,
 		Depth:           1,
 	})

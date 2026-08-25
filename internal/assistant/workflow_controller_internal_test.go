@@ -134,7 +134,7 @@ func TestWorkflowControllerSubmitResolvesOwnerAndPreservesRequestIdentity(t *tes
 		ParentTaskID: "parent-task", OwnerSessionID: owner.ID, NodeKey: "node-1", Prompt: "review",
 		Options: workflow.AgentOptions{
 			NodeKey: "option-node", AgentName: defaultWorkflowAgentName, Model: "model", Provider: "provider",
-			ConcurrencyKey: "concurrency", Depth: 2,
+			ConcurrencyKey: "concurrency", OutputSchema: "", Depth: 2,
 		},
 		InvocationIndex: 3,
 	}
@@ -222,7 +222,7 @@ func emptyWorkflowAgentRequest(owner string) *workflow.AgentRequest {
 	return &workflow.AgentRequest{
 		ParentTaskID: "", OwnerSessionID: owner, NodeKey: "", Prompt: "",
 		Options: workflow.AgentOptions{
-			NodeKey: "", AgentName: "", Model: "", Provider: "", ConcurrencyKey: "", Depth: 0,
+			NodeKey: "", AgentName: "", Model: "", Provider: "", ConcurrencyKey: "", OutputSchema: "", Depth: 0,
 		},
 		InvocationIndex: 0,
 	}

@@ -353,7 +353,9 @@ func validTaskEntity(entityID string, now time.Time) TaskEntity {
 
 func validAgentTaskEntity(entityID string, now time.Time) AgentTaskEntity {
 	return AgentTaskEntity{Task: validTaskEntity(entityID, now), ChildSessionID: entityID, AgentName: "general",
-		Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`, Depth: 1}
+		Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`,
+		OutputSchemaJSON: "", OutputSchemaDigest: "", OutputAttemptsReserved: 0,
+		OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1}
 }
 
 func validTaskRow(entityID, now string) taskRow {
@@ -367,7 +369,8 @@ func validAgentTaskRow(entityID, now string) agentTaskRow {
 		ConcurrencyKey: "", State: string(TaskQueued), Result: "", ErrorCode: "", ErrorMessage: "",
 		CreatedAt: now, StartedAt: nil, FinishedAt: nil, UpdatedAt: now, LeaseOwner: nil, LeaseExpiresAt: nil,
 		ChildSessionID: entityID, AgentName: "general", Prompt: "work", Model: "", Provider: "",
-		PolicyJSON: `{}`, UsageJSON: `{}`, Depth: 1}
+		PolicyJSON: `{}`, UsageJSON: `{}`, OutputSchemaJSON: nil, OutputSchemaDigest: nil,
+		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1}
 }
 
 func mustTestUUIDv7(t *testing.T) string {

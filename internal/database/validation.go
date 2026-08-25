@@ -307,6 +307,14 @@ func validateAgentTaskEntity(entity *AgentTaskEntity) error {
 		return errors.New("agent_task.usage_json must be valid JSON")
 	}
 
+	return validateAgentOutputSchema(entity)
+}
+
+func validateAgentOutputSchema(entity *AgentTaskEntity) error {
+	if (entity.OutputSchemaJSON == "") != (entity.OutputSchemaDigest == "") {
+		return errors.New("agent_task output schema and digest must both be set")
+	}
+
 	return nil
 }
 

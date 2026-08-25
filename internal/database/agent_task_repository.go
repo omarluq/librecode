@@ -14,15 +14,20 @@ import (
 
 // AgentTaskEntity contains agent-specific data for a generic task.
 type AgentTaskEntity struct {
-	Task           TaskEntity
-	ChildSessionID string
-	AgentName      string
-	Prompt         string
-	Model          string
-	Provider       string
-	PolicyJSON     string
-	UsageJSON      string
-	Depth          int
+	Task                    TaskEntity
+	ChildSessionID          string
+	AgentName               string
+	Prompt                  string
+	Model                   string
+	Provider                string
+	PolicyJSON              string
+	UsageJSON               string
+	OutputSchemaJSON        string
+	OutputSchemaDigest      string
+	OutputValidationSummary string
+	OutputAttemptsReserved  int
+	OutputAttemptsCompleted int
+	Depth                   int
 }
 
 // AgentTaskRepository persists the agent-task extension alongside generic tasks.
@@ -194,11 +199,14 @@ func insertAgentTask(
 
 	const statement = `INSERT INTO agent_tasks (
     task_id, child_session_id, agent_name, prompt, model,
-    provider, policy_json, usage_json, depth
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    provider, policy_json, usage_json, output_schema_json, output_schema_digest,
+    output_attempts_reserved, output_attempts_completed, output_validation_summary, depth
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if _, err := transaction.Exec(ctx, statement, created.Task.ID, created.ChildSessionID,
 		created.AgentName, created.Prompt, created.Model, created.Provider,
-		created.PolicyJSON, created.UsageJSON, created.Depth); err != nil {
+		created.PolicyJSON, created.UsageJSON, nullableString(created.OutputSchemaJSON),
+		nullableString(created.OutputSchemaDigest), created.OutputAttemptsReserved,
+		created.OutputAttemptsCompleted, created.OutputValidationSummary, created.Depth); err != nil {
 		return oops.In("database").Code("insert_agent_task").Wrapf(err, "insert agent task")
 	}
 
@@ -252,7 +260,9 @@ const (
        t.state, t.result, t.error_code, t.error_message, t.created_at, t.started_at,
        t.finished_at, t.updated_at, t.lease_owner, t.lease_expires_at,
        a.child_session_id, a.agent_name, a.prompt,
-       a.model, a.provider, a.policy_json, a.usage_json, a.depth`
+       a.model, a.provider, a.policy_json, a.usage_json,
+       a.output_schema_json, a.output_schema_digest, a.output_attempts_reserved,
+       a.output_attempts_completed, a.output_validation_summary, a.depth`
 )
 
 // Get loads an agent task and its generic lifecycle by task ID.
@@ -340,29 +350,34 @@ WHERE t.kind = ? AND t.id IN (` + placeholders + `)`
 }
 
 type agentTaskRow struct {
-	ID             string  `ksql:"id"`
-	Kind           string  `ksql:"kind"`
-	ParentTaskID   *string `ksql:"parent_task_id"`
-	OwnerSessionID string  `ksql:"owner_session_id"`
-	ConcurrencyKey string  `ksql:"concurrency_key"`
-	State          string  `ksql:"state"`
-	Result         string  `ksql:"result"`
-	ErrorCode      string  `ksql:"error_code"`
-	ErrorMessage   string  `ksql:"error_message"`
-	CreatedAt      string  `ksql:"created_at"`
-	StartedAt      *string `ksql:"started_at"`
-	FinishedAt     *string `ksql:"finished_at"`
-	UpdatedAt      string  `ksql:"updated_at"`
-	LeaseOwner     *string `ksql:"lease_owner"`
-	LeaseExpiresAt *string `ksql:"lease_expires_at"`
-	ChildSessionID string  `ksql:"child_session_id"`
-	AgentName      string  `ksql:"agent_name"`
-	Prompt         string  `ksql:"prompt"`
-	Model          string  `ksql:"model"`
-	Provider       string  `ksql:"provider"`
-	PolicyJSON     string  `ksql:"policy_json"`
-	UsageJSON      string  `ksql:"usage_json"`
-	Depth          int     `ksql:"depth"`
+	ID                      string  `ksql:"id"`
+	Kind                    string  `ksql:"kind"`
+	ParentTaskID            *string `ksql:"parent_task_id"`
+	OwnerSessionID          string  `ksql:"owner_session_id"`
+	ConcurrencyKey          string  `ksql:"concurrency_key"`
+	State                   string  `ksql:"state"`
+	Result                  string  `ksql:"result"`
+	ErrorCode               string  `ksql:"error_code"`
+	ErrorMessage            string  `ksql:"error_message"`
+	CreatedAt               string  `ksql:"created_at"`
+	StartedAt               *string `ksql:"started_at"`
+	FinishedAt              *string `ksql:"finished_at"`
+	UpdatedAt               string  `ksql:"updated_at"`
+	LeaseOwner              *string `ksql:"lease_owner"`
+	LeaseExpiresAt          *string `ksql:"lease_expires_at"`
+	ChildSessionID          string  `ksql:"child_session_id"`
+	AgentName               string  `ksql:"agent_name"`
+	Prompt                  string  `ksql:"prompt"`
+	Model                   string  `ksql:"model"`
+	Provider                string  `ksql:"provider"`
+	PolicyJSON              string  `ksql:"policy_json"`
+	UsageJSON               string  `ksql:"usage_json"`
+	OutputSchemaJSON        *string `ksql:"output_schema_json"`
+	OutputSchemaDigest      *string `ksql:"output_schema_digest"`
+	OutputValidationSummary string  `ksql:"output_validation_summary"`
+	OutputAttemptsReserved  int     `ksql:"output_attempts_reserved"`
+	OutputAttemptsCompleted int     `ksql:"output_attempts_completed"`
+	Depth                   int     `ksql:"depth"`
 }
 
 func agentTaskFromRow(row *agentTaskRow) (*AgentTaskEntity, error) {
@@ -381,6 +396,59 @@ func agentTaskFromRow(row *agentTaskRow) (*AgentTaskEntity, error) {
 	return &AgentTaskEntity{
 		Task: *task, ChildSessionID: row.ChildSessionID, AgentName: row.AgentName,
 		Prompt: row.Prompt, Model: row.Model, Provider: row.Provider,
-		PolicyJSON: row.PolicyJSON, UsageJSON: row.UsageJSON, Depth: row.Depth,
+		PolicyJSON: row.PolicyJSON, UsageJSON: row.UsageJSON,
+		OutputSchemaJSON:        stringValue(row.OutputSchemaJSON),
+		OutputSchemaDigest:      stringValue(row.OutputSchemaDigest),
+		OutputAttemptsReserved:  row.OutputAttemptsReserved,
+		OutputAttemptsCompleted: row.OutputAttemptsCompleted,
+		OutputValidationSummary: row.OutputValidationSummary, Depth: row.Depth,
 	}, nil
+}
+
+// ReserveOutputAttempt atomically consumes one model-call slot under the active lease.
+func (repository *AgentTaskRepository) ReserveOutputAttempt(
+	ctx context.Context, taskID, leaseOwner string, maximum int,
+) (bool, error) {
+	const statement = `UPDATE agent_tasks SET output_attempts_reserved = output_attempts_reserved + 1
+WHERE task_id = ? AND output_attempts_reserved < ? AND EXISTS (
+ SELECT 1 FROM tasks WHERE id = ? AND state = ? AND lease_owner = ?)`
+
+	result, err := repository.sql.Exec(ctx, statement, taskID, maximum, taskID, TaskRunning, leaseOwner)
+	if err != nil {
+		return false, oops.In("database").Code("reserve_output_attempt").Wrapf(err, "reserve output attempt")
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, oops.In("database").Code("reserve_output_attempt_rows").
+			Wrapf(err, "read reserved output attempt rows")
+	}
+
+	return rows == 1, nil
+}
+
+// CheckpointOutputAttempt records one completed response and cumulative usage under the active lease.
+func (repository *AgentTaskRepository) CheckpointOutputAttempt(
+	ctx context.Context, taskID, leaseOwner, usageJSON, summary string,
+) error {
+	const statement = `UPDATE agent_tasks SET output_attempts_completed = output_attempts_completed + 1,
+ usage_json = ?, output_validation_summary = ? WHERE task_id = ? AND EXISTS (
+ SELECT 1 FROM tasks WHERE id = ? AND state = ? AND lease_owner = ?)`
+
+	result, err := repository.sql.Exec(ctx, statement, usageJSON, summary, taskID, taskID, TaskRunning, leaseOwner)
+	if err != nil {
+		return oops.In("database").Code("checkpoint_output_attempt").Wrapf(err, "checkpoint output attempt")
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return oops.In("database").Code("checkpoint_output_attempt_rows").
+			Wrapf(err, "read checkpointed output attempt rows")
+	}
+
+	if rows != 1 {
+		return oops.In("database").Code("output_attempt_lease_lost").Errorf("output attempt lease lost")
+	}
+
+	return nil
 }

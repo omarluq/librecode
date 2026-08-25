@@ -18,6 +18,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/outputschema"
 )
 
 const (
@@ -90,16 +91,18 @@ type Result struct {
 
 // SubmitRequest describes a durable agent task.
 type SubmitRequest struct {
-	ParentTaskID   string
-	OwnerSessionID string
-	ChildSessionID string
-	ConcurrencyKey string
-	AgentName      string
-	Prompt         string
-	Model          string
-	Provider       string
-	PolicyJSON     string
-	Depth          int
+	ParentTaskID       string
+	OwnerSessionID     string
+	ChildSessionID     string
+	ConcurrencyKey     string
+	AgentName          string
+	Prompt             string
+	Model              string
+	Provider           string
+	PolicyJSON         string
+	OutputSchema       string
+	OutputSchemaDigest string
+	Depth              int
 }
 
 // Options configures the task service.
@@ -293,6 +296,7 @@ func (service *Service) SubmitAgentTask(
 		ChildSessionID: request.ChildSessionID, ConcurrencyKey: request.ConcurrencyKey,
 		AgentName: request.AgentName, Prompt: request.Prompt, Model: request.Model,
 		Provider: request.Provider, PolicyJSON: request.PolicyJSON, Depth: request.Depth,
+		OutputSchema: request.OutputSchema, OutputSchemaDigest: request.OutputSchemaDigest,
 	}
 	childRequest := &database.ChildSessionRequest{
 		CWD: request.ChildSessionCWD, Name: request.ChildSessionName,
@@ -348,7 +352,9 @@ func agentTaskEntity(request *SubmitRequest) *database.AgentTaskEntity {
 		},
 		ChildSessionID: request.ChildSessionID, AgentName: request.AgentName,
 		Prompt: request.Prompt, Model: request.Model, Provider: request.Provider,
-		PolicyJSON: request.PolicyJSON, UsageJSON: "{}", Depth: request.Depth,
+		PolicyJSON: request.PolicyJSON, UsageJSON: "{}",
+		OutputSchemaJSON: request.OutputSchema, OutputSchemaDigest: request.OutputSchemaDigest,
+		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: request.Depth,
 	}
 }
 
@@ -542,6 +548,12 @@ func (service *Service) Cancel(
 	task, found, err := service.tasks.Get(ctx, taskID)
 	if err != nil {
 		return nil, false, oops.In("agenttask").Code("get_task").Wrapf(err, "get canceled task")
+	}
+	// A repository-owned workflow cascade may have won the transition race.
+	// Repeated cancellation still delivers the live signal for canceling work.
+	if found && task.State == database.TaskCanceling {
+		service.rememberCancelSource(taskID, source)
+		service.cancelActive(taskID)
 	}
 
 	return task, found, nil
@@ -1048,7 +1060,7 @@ func (service *Service) finalizeRun(ctx context.Context, taskID string, result R
 	}
 
 	if runErr == nil {
-		service.finish(ctx, taskID, database.TaskSucceeded, "task_succeeded", result, "", "")
+		service.finalizeSuccess(ctx, taskID, result)
 
 		return
 	}
@@ -1068,7 +1080,30 @@ func (service *Service) finalizeRun(ctx context.Context, taskID string, result R
 		return
 	}
 
+	if schemaErr, ok := errors.AsType[*outputschema.Error](runErr); ok {
+		service.finish(
+			ctx, taskID, database.TaskFailed, "task_failed",
+			Result{Text: "", UsageJSON: result.UsageJSON}, schemaErr.Code, schemaErr.Reason,
+		)
+
+		return
+	}
+
 	service.finish(ctx, taskID, database.TaskFailed, "task_failed", result, "run_failed", runErr.Error())
+}
+
+func (service *Service) finalizeSuccess(ctx context.Context, taskID string, result Result) {
+	if len(result.Text) > outputschema.MaxOutcomeBytes {
+		service.finish(
+			ctx, taskID, database.TaskFailed, "task_failed",
+			Result{Text: "", UsageJSON: result.UsageJSON},
+			"outcome_size_exceeded", "terminal outcome exceeds the 262144 byte limit",
+		)
+
+		return
+	}
+
+	service.finish(ctx, taskID, database.TaskSucceeded, "task_succeeded", result, "", "")
 }
 
 // publish sends a process-local wakeup after its caller has persisted the event.

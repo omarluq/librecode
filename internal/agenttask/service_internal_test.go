@@ -277,7 +277,7 @@ func repositoryWriteErrorCases(service *Service) []repositoryErrorCase {
 			t.Helper()
 			_, err := service.Submit(t.Context(), &SubmitRequest{
 				ParentTaskID: "", OwnerSessionID: "", ChildSessionID: "", ConcurrencyKey: "", AgentName: "",
-				Prompt: "", Model: "", Provider: "", PolicyJSON: "", Depth: 0,
+				Prompt: "", Model: "", Provider: "", PolicyJSON: "", OutputSchema: "", OutputSchemaDigest: "", Depth: 0,
 			})
 
 			return err
@@ -291,7 +291,7 @@ func repositoryWriteErrorCases(service *Service) []repositoryErrorCase {
 					ParentTaskID: "", OwnerSessionID: "owner", ChildSessionID: "", ChildSessionCWD: t.TempDir(),
 					ChildSessionName: childSessionName, AgentName: generalAgent, Prompt: workPrompt,
 					Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: "", NodeKey: "",
-					InvocationIndex: 0, Depth: 0,
+					OutputSchema: "", OutputSchemaDigest: "", InvocationIndex: 0, Depth: 0,
 				})
 
 				return err
@@ -412,7 +412,7 @@ func TestServiceInternalSubmitAgentTaskCreatesChildSession(t *testing.T) {
 		ParentTaskID: "", OwnerSessionID: owner.ID, ChildSessionID: "", ChildSessionCWD: t.TempDir(),
 		ChildSessionName: childSessionName, AgentName: generalAgent, Prompt: workPrompt,
 		Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: owner.ID, NodeKey: "",
-		InvocationIndex: 0, Depth: 1,
+		OutputSchema: "", OutputSchemaDigest: "", InvocationIndex: 0, Depth: 1,
 	})
 	must.NoError(err)
 	assertions.NotEmpty(created.ChildSessionID)
@@ -707,7 +707,9 @@ func testQueuedTaskCancellation(
 	stoppedService.done = done
 	stopped, err := stoppedService.Submit(t.Context(), &SubmitRequest{
 		ParentTaskID: "", OwnerSessionID: owner.ID, ChildSessionID: otherChild.ID, ConcurrencyKey: owner.ID,
-		AgentName: generalAgent, Prompt: workPrompt, Model: "", Provider: "", PolicyJSON: `{}`, Depth: 1,
+		AgentName: generalAgent, Prompt: workPrompt, Model: "", Provider: "", PolicyJSON: `{}`,
+		OutputSchema: "", OutputSchemaDigest: "",
+		Depth: 1,
 	})
 	require.ErrorContains(t, err, "enqueue task")
 	require.NotNil(t, stopped)

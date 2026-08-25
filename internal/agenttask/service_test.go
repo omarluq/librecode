@@ -111,7 +111,7 @@ func TestServiceAgentTaskAdaptersAndSubscriptionCancellation(t *testing.T) {
 		ParentTaskID: "", OwnerSessionID: parent.ID, ChildSessionID: child.ID,
 		ChildSessionCWD: "", ChildSessionName: "", AgentName: generalAgentName,
 		Prompt: testAgentPrompt, Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: parent.ID,
-		NodeKey: "", InvocationIndex: 0, Depth: 1,
+		NodeKey: "", OutputSchema: "", OutputSchemaDigest: "", InvocationIndex: 0, Depth: 1,
 	})
 	require.NoError(t, err)
 
@@ -154,7 +154,7 @@ func TestServiceRejectsWorkflowSubmissionWithoutRepository(t *testing.T) {
 		ParentTaskID: "019f6830-8622-7b1a-a810-55cdac44de22", OwnerSessionID: owner.ID, ChildSessionID: "",
 		ChildSessionCWD: owner.CWD, ChildSessionName: "child", AgentName: generalAgentName,
 		Prompt: testAgentPrompt, Model: "", Provider: "", PolicyJSON: `{}`, ConcurrencyKey: owner.ID,
-		NodeKey: "node", InvocationIndex: 0, Depth: 1,
+		NodeKey: "node", OutputSchema: "", OutputSchemaDigest: "", InvocationIndex: 0, Depth: 1,
 	})
 	require.ErrorContains(t, err, "workflow repository is required")
 	assert.Nil(t, created)
@@ -359,7 +359,9 @@ func TestSecondServiceDoesNotInterruptLiveTask(t *testing.T) {
 	first := newService(t, tasks, agentTasks, firstRunner)
 	created, err := first.Submit(t.Context(), &agenttask.SubmitRequest{
 		ParentTaskID: "", OwnerSessionID: parent.ID, ChildSessionID: child.ID, ConcurrencyKey: parent.ID,
-		AgentName: generalAgentName, Prompt: testAgentPrompt, Model: "", Provider: "", PolicyJSON: `{}`, Depth: 1,
+		AgentName: generalAgentName, Prompt: testAgentPrompt, Model: "", Provider: "", PolicyJSON: `{}`,
+		OutputSchema: "", OutputSchemaDigest: "",
+		Depth: 1,
 	})
 	require.NoError(t, err)
 	require.Equal(t, created.Task.ID, awaitStarted(t, firstRunner.started))
@@ -393,7 +395,8 @@ func TestStoppedServiceDoesNotRunQueuedTasksUntilStarted(t *testing.T) {
 			LeaseExpiresAt: nil,
 		},
 		ChildSessionID: child.ID, AgentName: "general", Prompt: "queued", Model: "", Provider: "",
-		PolicyJSON: "{}", UsageJSON: "{}", Depth: 1,
+		PolicyJSON: "{}", UsageJSON: "{}", OutputSchemaJSON: "", OutputSchemaDigest: "",
+		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1,
 	})
 	require.NoError(t, err)
 
@@ -605,7 +608,8 @@ func agentTaskEntity(parentSessionID, childSessionID string) *database.AgentTask
 			ErrorMessage: "", CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{},
 		},
 		ChildSessionID: childSessionID, AgentName: generalAgentName, Prompt: "do work",
-		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`, Depth: 1,
+		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`, OutputSchemaJSON: "", OutputSchemaDigest: "",
+		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1,
 	}
 }
 
@@ -613,7 +617,9 @@ func submitRequest(parentSessionID, childSessionID string) *agenttask.SubmitRequ
 	return &agenttask.SubmitRequest{
 		ParentTaskID: "", OwnerSessionID: parentSessionID, ChildSessionID: childSessionID,
 		ConcurrencyKey: parentSessionID, AgentName: generalAgentName, Prompt: "do work",
-		Model: "", Provider: "", PolicyJSON: `{}`, Depth: 1,
+		Model: "", Provider: "", PolicyJSON: `{}`,
+		OutputSchema: "", OutputSchemaDigest: "",
+		Depth: 1,
 	}
 }
 

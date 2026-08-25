@@ -12,13 +12,17 @@ import (
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/outputschema"
 )
+
+const maxOutputAttempts = 3
 
 // RuntimeRunner executes durable tasks through the shared assistant runtime.
 type RuntimeRunner struct {
 	runtime  *assistant.Runtime
 	catalog  *agent.Catalog
 	sessions *database.SessionRepository
+	tasks    *database.AgentTaskRepository
 }
 
 // NewRuntimeRunner creates an assistant runtime adapter for durable agent tasks.
@@ -26,13 +30,19 @@ func NewRuntimeRunner(
 	runtime *assistant.Runtime,
 	catalog *agent.Catalog,
 	sessions *database.SessionRepository,
+	tasks ...*database.AgentTaskRepository,
 ) (*RuntimeRunner, error) {
 	if runtime == nil || catalog == nil || sessions == nil {
 		return nil, oops.In("agenttask").Code("invalid_dependencies").
 			Errorf("runtime, agent catalog, and sessions are required")
 	}
 
-	return &RuntimeRunner{runtime: runtime, catalog: catalog, sessions: sessions}, nil
+	runner := &RuntimeRunner{runtime: runtime, catalog: catalog, sessions: sessions, tasks: nil}
+	if len(tasks) > 0 {
+		runner.tasks = tasks[0]
+	}
+
+	return runner, nil
 }
 
 // Run executes one task using the persisted agent definition and child session.
@@ -60,34 +70,174 @@ func (runner *RuntimeRunner) Run(
 	profile := profileFromDefinition(definition, task.Depth)
 	runtime := runner.runtime.WithExecutionProfile(&profile)
 
-	var (
-		eventErr error
-		partial  partialText
-	)
+	var partial partialText
 
+	events := eventSinkState{ctx: nil, sink: sink, mu: sync.Mutex{}, fail: nil}
 	metrics := new(assistant.RunMetrics)
 	runCtx := assistant.WithRunMetrics(ctx, metrics)
+	events.ctx = runCtx
+
 	metrics.SetUsageTotalsObserver(func(usageTotals model.UsageTotals) {
-		if eventErr == nil && sink != nil {
-			eventErr = sink(runCtx, string(assistant.StreamEventUsageTotal), usageTotals)
+		events.emit(string(assistant.StreamEventUsageTotal), usageTotals)
+	})
+
+	contract, hasContract, err := restoreOutputContract(task)
+	if err != nil {
+		return Result{Text: "", UsageJSON: "{}"}, err
+	}
+
+	response, promptErr, runErr := runner.runPrompts(
+		runCtx, runtime, task, session.CWD, contract, hasContract, metrics, &events, &partial,
+	)
+	if runErr != nil {
+		return Result{Text: "", UsageJSON: mustUsageJSON(metrics)}, runErr
+	}
+
+	return runtimeRunResult(response, promptErr, events.err(), metrics, partial.text())
+}
+
+func restoreOutputContract(task *database.AgentTaskEntity) (*outputschema.Contract, bool, error) {
+	if task.OutputSchemaJSON == "" {
+		return nil, false, nil
+	}
+
+	contract, err := outputschema.Restore([]byte(task.OutputSchemaJSON), task.OutputSchemaDigest)
+	if err != nil {
+		return nil, false, oops.In("agenttask").Code("restore_output_schema").Wrapf(err, "restore output schema")
+	}
+
+	return contract, true, nil
+}
+
+func (runner *RuntimeRunner) runPrompts(
+	ctx context.Context,
+	runtime *assistant.Runtime,
+	task *database.AgentTaskEntity,
+	cwd string,
+	contract *outputschema.Contract,
+	hasContract bool,
+	metrics *assistant.RunMetrics,
+	events *eventSinkState,
+	partial *partialText,
+) (*assistant.PromptResponse, error, error) {
+	prompt := task.Prompt
+
+	for attempt := task.OutputAttemptsReserved + 1; attempt <= maxOutputAttempts; attempt++ {
+		if err := runner.reserveOutputAttempt(ctx, task, hasContract); err != nil {
+			return &assistant.PromptResponse{}, nil, err
 		}
-	})
 
-	response, promptErr := runtime.Prompt(runCtx, &assistant.PromptRequest{
-		OnEvent: func(event assistant.StreamEvent) {
-			metrics.ObserveStreamEvent(event)
-			partial.observe(event)
-
-			if eventErr == nil {
-				eventErr = sink(runCtx, string(event.Kind), event)
+		response, promptErr := runtime.Prompt(ctx, &assistant.PromptRequest{
+			OnEvent: func(event assistant.StreamEvent) {
+				metrics.ObserveStreamEvent(event)
+				partial.observe(event)
+				events.emit(string(event.Kind), event)
+			},
+			OnRetry: nil, OnUserEntry: nil, OnSteeringReturn: nil, ParentEntryID: nil,
+			SessionID: task.ChildSessionID, CWD: cwd, Text: prompt,
+			Images: nil, Name: "", ResumeLatest: false, HideUserPrompt: attempt > 1,
+		})
+		if promptErr != nil || events.err() != nil || !hasContract {
+			if promptErr != nil {
+				promptErr = oops.In("agenttask").Code("prompt").Wrapf(promptErr, "prompt agent runtime")
 			}
-		},
-		OnRetry: nil, OnUserEntry: nil, OnSteeringReturn: nil, ParentEntryID: nil,
-		SessionID: task.ChildSessionID, CWD: session.CWD, Text: task.Prompt,
-		Images: nil, Name: "", ResumeLatest: false, HideUserPrompt: false,
-	})
 
-	return runtimeRunResult(response, promptErr, eventErr, metrics, partial.text())
+			return response, promptErr, nil
+		}
+
+		canonical, validationErr := contract.Validate(response.Text)
+		if err := runner.checkpointOutputAttempt(ctx, task, metrics, validationErr); err != nil {
+			return &assistant.PromptResponse{}, nil, err
+		}
+
+		if validationErr == nil {
+			response.Text = string(canonical)
+
+			return response, nil, nil
+		}
+
+		if attempt == maxOutputAttempts {
+			return &assistant.PromptResponse{}, nil, oops.In("agenttask").Code("validate_output").
+				Wrapf(validationErr, "validate structured output")
+		}
+
+		prompt = "Return only one JSON value matching the requested output schema. Validation failed: " +
+			validationErr.Error()
+	}
+
+	return &assistant.PromptResponse{}, nil, oops.In("agenttask").Code("output_schema_attempt_outcome_unknown").
+		Errorf("structured output attempt budget exhausted with an unavailable outcome")
+}
+
+func (runner *RuntimeRunner) reserveOutputAttempt(
+	ctx context.Context,
+	task *database.AgentTaskEntity,
+	hasContract bool,
+) error {
+	if !hasContract {
+		return nil
+	}
+
+	if runner.tasks == nil {
+		return oops.In("agenttask").Code("output_attempt_repository_missing").
+			Errorf("output attempt repository is required")
+	}
+
+	reserved, err := runner.tasks.ReserveOutputAttempt(ctx, task.Task.ID, task.Task.LeaseOwner, maxOutputAttempts)
+	if err != nil {
+		return oops.In("agenttask").Code("reserve_output_attempt").Wrapf(err, "reserve output attempt")
+	}
+
+	if !reserved {
+		return oops.In("agenttask").Code("output_schema_attempt_outcome_unknown").
+			Errorf("structured output attempt budget exhausted with an unavailable outcome")
+	}
+
+	return nil
+}
+
+func (runner *RuntimeRunner) checkpointOutputAttempt(
+	ctx context.Context,
+	task *database.AgentTaskEntity,
+	metrics *assistant.RunMetrics,
+	validationErr error,
+) error {
+	summary := "valid"
+	if validationErr != nil {
+		summary = validationErr.Error()
+	}
+
+	err := runner.tasks.CheckpointOutputAttempt(
+		ctx, task.Task.ID, task.Task.LeaseOwner, mustUsageJSON(metrics), summary,
+	)
+	if err != nil {
+		return oops.In("agenttask").Code("checkpoint_output_attempt").Wrapf(err, "checkpoint output attempt")
+	}
+
+	return nil
+}
+
+type eventSinkState struct {
+	ctx  context.Context
+	sink EventSink
+	fail error
+	mu   sync.Mutex
+}
+
+func (state *eventSinkState) emit(kind string, event any) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if state.fail == nil && state.sink != nil {
+		state.fail = state.sink(state.ctx, kind, event)
+	}
+}
+
+func (state *eventSinkState) err() error {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	return state.fail
 }
 
 // partialText accumulates streamed assistant text so failed or canceled runs
@@ -142,6 +292,15 @@ func runtimeRunResult(
 	}
 
 	return Result{Text: response.Text, UsageJSON: usageJSON}, nil
+}
+
+func mustUsageJSON(metrics *assistant.RunMetrics) string {
+	usage, err := agentUsageJSON(metrics)
+	if err != nil {
+		return "{}"
+	}
+
+	return usage
 }
 
 func agentUsageJSON(metrics *assistant.RunMetrics) (string, error) {

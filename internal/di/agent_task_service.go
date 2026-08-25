@@ -47,6 +47,7 @@ func NewAgentTaskService(injector do.Injector) (*AgentTaskService, error) {
 		assistantService.Runtime,
 		assistantService.Agents,
 		databaseService.Sessions,
+		databaseService.AgentTasks,
 	)
 	if err != nil {
 		return nil, serviceError(err, "create agent task runner")

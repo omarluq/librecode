@@ -9,6 +9,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/agent"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/outputschema"
 )
 
 const defaultWorkflowAgentName = "general"
@@ -24,6 +25,7 @@ type AgentSubmitRequest struct {
 	Provider        string
 	ConcurrencyKey  string
 	NodeKey         string
+	OutputSchema    string
 	InvocationIndex int
 	Depth           int
 }
@@ -62,6 +64,18 @@ func (submitter *AgentSubmitter) SubmitAgent(
 		return nil, err
 	}
 
+	var schemaJSON, schemaDigest string
+
+	if request.OutputSchema != "" {
+		contract, schemaErr := outputschema.Admit(request.OutputSchema)
+		if schemaErr != nil {
+			return nil, oops.In("assistant").Code("admit_output_schema").
+				Wrapf(schemaErr, "admit output schema")
+		}
+
+		schemaJSON, schemaDigest = string(contract.Canonical), contract.Digest
+	}
+
 	policy, err := json.Marshal(&definition)
 	if err != nil {
 		return nil, oops.In("assistant").Code("encode_agent_profile").Wrapf(err, "encode agent profile")
@@ -83,6 +97,7 @@ func (submitter *AgentSubmitter) SubmitAgent(
 		ChildSessionName: childSessionName(definition.Name, request.Prompt), AgentName: definition.Name,
 		Prompt: request.Prompt, Model: definition.Model.Model, Provider: definition.Model.Provider,
 		PolicyJSON: string(policy), ConcurrencyKey: concurrencyKey,
+		OutputSchema: schemaJSON, OutputSchemaDigest: schemaDigest,
 		NodeKey: request.NodeKey, InvocationIndex: request.InvocationIndex, Depth: depth,
 	})
 	if err != nil {

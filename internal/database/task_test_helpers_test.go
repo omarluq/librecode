@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"database/sql"
 	"github.com/omarluq/librecode/internal/testutil"
 	"path/filepath"
 	"testing"
@@ -27,11 +28,12 @@ const (
 )
 
 type taskTestFixture struct {
-	t         *testing.T
-	agents    *database.AgentTaskRepository
-	tasks     *database.TaskRepository
-	workflows *database.WorkflowRepository
-	sessions  *database.SessionRepository
+	t          *testing.T
+	connection *sql.DB
+	agents     *database.AgentTaskRepository
+	tasks      *database.TaskRepository
+	workflows  *database.WorkflowRepository
+	sessions   *database.SessionRepository
 }
 
 func newTaskTestFixture(t *testing.T) *taskTestFixture {
@@ -43,11 +45,12 @@ func newTaskTestFixture(t *testing.T) *taskTestFixture {
 	workflows := testutil.WorkflowRepository(t, connection)
 
 	return &taskTestFixture{
-		t:         t,
-		agents:    workflows.AgentTasks(),
-		tasks:     workflows.Tasks(),
-		workflows: workflows,
-		sessions:  testutil.SessionRepository(t, connection),
+		t:          t,
+		connection: connection,
+		agents:     workflows.AgentTasks(),
+		tasks:      workflows.Tasks(),
+		workflows:  workflows,
+		sessions:   testutil.SessionRepository(t, connection),
 	}
 }
 
@@ -97,13 +100,18 @@ func newAgentTask(parentSessionID, childSessionID string) *database.AgentTaskEnt
 			LeaseExpiresAt: nil, ID: "", Kind: "", ParentTaskID: "", OwnerSessionID: parentSessionID,
 			ConcurrencyKey: "", LeaseOwner: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
 		},
-		ChildSessionID: childSessionID,
-		AgentName:      "general",
-		Prompt:         "inspect the repository",
-		Model:          "",
-		Provider:       "",
-		PolicyJSON:     "{}",
-		UsageJSON:      "{}",
-		Depth:          1,
+		ChildSessionID:          childSessionID,
+		AgentName:               "general",
+		Prompt:                  "inspect the repository",
+		Model:                   "",
+		Provider:                "",
+		PolicyJSON:              "{}",
+		UsageJSON:               "{}",
+		OutputSchemaJSON:        "",
+		OutputSchemaDigest:      "",
+		OutputAttemptsReserved:  0,
+		OutputAttemptsCompleted: 0,
+		OutputValidationSummary: "",
+		Depth:                   1,
 	}
 }

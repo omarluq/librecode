@@ -327,7 +327,7 @@ func TestRuntimeRunnerReportsSessionLoadError(t *testing.T) {
 func TestRuntimeRunnerResolvesPersistedAndCatalogDefinitions(t *testing.T) {
 	t.Parallel()
 	catalog := agent.Load(t.TempDir())
-	runner := &RuntimeRunner{runtime: nil, catalog: catalog, sessions: nil}
+	runner := &RuntimeRunner{runtime: nil, catalog: catalog, sessions: nil, tasks: nil}
 
 	persisted := agent.Definition{
 		SourceInfo: emptySourceInfo(), Name: "snapshot", Description: "", SystemPrompt: "persisted",
@@ -403,7 +403,8 @@ func emptyAgentTask() *database.AgentTaskEntity {
 			State: "", Result: "", ErrorCode: "", ErrorMessage: "",
 		},
 		ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "",
-		PolicyJSON: "", UsageJSON: "", Depth: 0,
+		PolicyJSON: "", UsageJSON: "", OutputSchemaJSON: "", OutputSchemaDigest: "",
+		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 0,
 	}
 }
 
