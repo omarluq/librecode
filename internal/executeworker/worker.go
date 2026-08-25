@@ -530,6 +530,10 @@ func decodeRPCValue(response *Message) (any, error) {
 		return nil, fmt.Errorf("decode RPC result: %w", err)
 	}
 
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, errors.New("decode RPC result: trailing data")
+	}
+
 	value, err := normalizeRPCNumbers(value)
 	if err != nil {
 		return nil, fmt.Errorf("normalize RPC result: %w", err)

@@ -506,6 +506,36 @@ func TestDecodeRPCValueNormalizesJSONNumbers(t *testing.T) {
 	}
 }
 
+func TestDecodeRPCValueRejectsTrailingJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{name: "trailing whitespace", raw: "42 \n\t", wantErr: false},
+		{name: "second value", raw: `42 true`, wantErr: true},
+		{name: "trailing invalid data", raw: `42 garbage`, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			value, err := decodeRPCValue(messageWithValue("", json.RawMessage(test.raw)))
+			if test.wantErr {
+				require.ErrorContains(t, err, "decode RPC result: trailing data")
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, 42, value)
+		})
+	}
+}
+
 func TestDecodeRPCValueRejectsOutOfRangeJSONNumbers(t *testing.T) {
 	t.Parallel()
 
