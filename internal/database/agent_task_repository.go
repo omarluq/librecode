@@ -43,7 +43,7 @@ func NewAgentTaskRepository(connection *sql.DB) (*AgentTaskRepository, error) {
 		return nil, err
 	}
 
-	tasks, err := NewTaskRepositoryWithProvider(provider)
+	tasks, err := newStandaloneTaskRepository(provider)
 	if err != nil {
 		return nil, err
 	}

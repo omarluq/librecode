@@ -156,16 +156,39 @@ func NewTaskRepository(connection *sql.DB) (*TaskRepository, error) {
 		return nil, err
 	}
 
-	return NewTaskRepositoryWithProvider(provider)
+	return newStandaloneTaskRepository(provider)
 }
 
-// NewTaskRepositoryWithProvider creates a task repository with an explicit SQL provider.
-func NewTaskRepositoryWithProvider(provider ksql.Provider) (*TaskRepository, error) {
+// NewTaskRepositoryWithProvider creates a task repository with explicit shared dependencies.
+func NewTaskRepositoryWithProvider(
+	provider ksql.Provider,
+	completions *CompletionRepository,
+) (*TaskRepository, error) {
 	if isNilProvider(provider) {
 		return nil, nilProviderError()
 	}
 
-	return &TaskRepository{sql: provider, now: time.Now, completions: nil}, nil
+	if completions == nil || !sameSQLProvider(provider, completions.sql) {
+		return nil, oops.In("database").Code("repository_graph_mismatch").Errorf(
+			"task repository requires shared completions provider",
+		)
+	}
+
+	return &TaskRepository{sql: provider, now: time.Now, completions: completions}, nil
+}
+
+func newStandaloneTaskRepository(provider ksql.Provider) (*TaskRepository, error) {
+	sessions, err := NewSessionRepositoryWithProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+
+	completions, err := newCompletionRepository(provider, sessions)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewTaskRepositoryWithProvider(provider, completions)
 }
 
 // Create persists a queued task and its initial event atomically.
@@ -557,17 +580,13 @@ func (repository *TaskRepository) projectCompletion(
 	eventID string,
 	now time.Time,
 ) error {
-	if repository.completions == nil {
-		return nil
-	}
-
 	source := completionSource{
 		EventID: eventID, TaskID: current.ID, EventKind: finish.EventKind,
 		TaskKind: current.Kind, Owner: current.OwnerSessionID, State: string(finish.TargetState),
 		Result: finish.Result, ErrorCode: finish.ErrorCode, ErrorMessage: finish.ErrorMessage,
 		CreatedAt: now,
 	}
-	if err := repository.completions.projectTerminalTx(ctx, transaction, &source); err != nil {
+	if _, err := repository.completions.projectTerminalTx(ctx, transaction, &source); err != nil {
 		return oops.In("database").Code("project_task_completion").Wrapf(err, "project terminal task completion")
 	}
 

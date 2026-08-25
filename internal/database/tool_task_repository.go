@@ -63,7 +63,7 @@ func NewToolTaskRepository(connection *sql.DB) (*ToolTaskRepository, error) {
 		return nil, err
 	}
 
-	tasks, err := NewTaskRepositoryWithProvider(provider)
+	tasks, err := newStandaloneTaskRepository(provider)
 	if err != nil {
 		return nil, err
 	}
