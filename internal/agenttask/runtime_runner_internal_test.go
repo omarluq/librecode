@@ -21,6 +21,7 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/outputschema"
 	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
@@ -129,8 +130,52 @@ func (completer runnerCompleter) Complete(
 	}, nil
 }
 
+// sequenceCompleter keeps response order explicit for structured-output retries.
+type sequenceCompleter struct {
+	responses []string
+	calls     int
+}
+
+func (completer *sequenceCompleter) Complete(
+	ctx context.Context,
+	request *assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	completer.calls++
+
+	text := completer.responses[completer.calls-1]
+	usageValue := model.TokenUsage{
+		Provenance: "", Breakdown: nil, TopContributors: nil,
+		ContextWindow: 1000, ContextTokens: 3, InputTokens: 2, OutputTokens: 1,
+	}
+
+	usage := usageValue.WithReported()
+	if request.OnProviderResponse != nil {
+		request.OnProviderResponse(ctx, usage)
+	}
+
+	return &assistant.CompletionResult{
+		Termination: llm.NewTerminationMetadata("", "", ""), FinishReason: llm.FinishReasonStop,
+		Text: text, Thinking: nil, ToolEvents: nil, Usage: usage,
+	}, nil
+}
+
+type countingErrorCompleter struct {
+	err   error
+	calls int
+}
+
+func (completer *countingErrorCompleter) Complete(
+	context.Context,
+	*assistant.CompletionRequest,
+) (*assistant.CompletionResult, error) {
+	completer.calls++
+
+	return nil, completer.err
+}
+
 type runnerFixture struct {
 	task      *database.AgentTaskEntity
+	tasks     *database.AgentTaskRepository
 	newRunner func(assistant.Completer) *RuntimeRunner
 }
 
@@ -140,7 +185,9 @@ func newRunnerFixture(t *testing.T, depth int) runnerFixture {
 	db := testutil.OpenMemoryDatabase(t)
 	sessions := testutil.SessionRepository(t, db)
 	tasks := testutil.AgentTaskRepository(t, db)
-	session := testutil.CreateSession(t, sessions, childSessionName)
+	parent := testutil.CreateSession(t, sessions, "parent")
+	session, err := sessions.CreateSession(t.Context(), parent.CWD, childSessionName, parent.ID)
+	require.NoError(t, err)
 
 	cfg := config.Load("").MustGet()
 	models := model.NewRegistry(&model.RegistryOptions{
@@ -161,6 +208,7 @@ func newRunnerFixture(t *testing.T, depth int) runnerFixture {
 	require.NoError(t, err)
 
 	task := emptyAgentTask()
+	task.Task.OwnerSessionID = parent.ID
 	task.ChildSessionID = session.ID
 	task.AgentName = testValue
 	task.Prompt = workPrompt
@@ -183,7 +231,133 @@ func newRunnerFixture(t *testing.T, depth int) runnerFixture {
 		return runner
 	}
 
-	return runnerFixture{task: task, newRunner: newRunner}
+	return runnerFixture{task: task, tasks: tasks, newRunner: newRunner}
+}
+
+func TestRuntimeRunnerStructuredOutputAttempts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		wantText      string
+		wantError     string
+		responses     []string
+		wantCalls     int
+		wantCompleted int
+	}{
+		{name: "first attempt success", responses: []string{`{"value":"ok"}`},
+			wantText: `{"value":"ok"}`, wantError: "", wantCalls: 1, wantCompleted: 1},
+		{name: "repair success", responses: []string{`{"value":1}`, `{"value":"fixed"}`},
+			wantText: `{"value":"fixed"}`, wantError: "", wantCalls: 2, wantCompleted: 2},
+		{name: "three invalid attempts", responses: []string{`{}`, `{"value":1}`, `null`},
+			wantText: "", wantError: "validate structured output", wantCalls: 3, wantCompleted: 3},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newStructuredRunnerFixture(t, 0)
+			completer := &sequenceCompleter{responses: test.responses, calls: 0}
+
+			result, err := fixture.newRunner(completer).Run(t.Context(), fixture.task, nil)
+			if test.wantError == "" {
+				require.NoError(t, err)
+				assert.JSONEq(t, test.wantText, result.Text)
+			} else {
+				require.ErrorContains(t, err, test.wantError)
+
+				var schemaErr *outputschema.Error
+				require.ErrorAs(t, err, &schemaErr,
+					"exhaustion must retain the structured-output classification")
+			}
+
+			assert.Equal(t, test.wantCalls, completer.calls)
+			loaded, found, loadErr := fixture.tasks.Get(t.Context(), fixture.task.Task.ID)
+			require.NoError(t, loadErr)
+			require.True(t, found)
+			assert.Equal(t, test.wantCalls, loaded.OutputAttemptsReserved)
+			assert.Equal(t, test.wantCompleted, loaded.OutputAttemptsCompleted)
+
+			var usage model.UsageTotals
+			require.NoError(t, json.Unmarshal([]byte(loaded.UsageJSON), &usage))
+			assert.Equal(t, int64(2*test.wantCompleted), usage.InputTokens)
+			assert.Equal(t, int64(test.wantCompleted), usage.OutputTokens)
+		})
+	}
+}
+
+func TestRuntimeRunnerDoesNotRepairProviderOrCancellationFailures(t *testing.T) {
+	t.Parallel()
+
+	for _, runErr := range []error{errors.New("provider unavailable"), context.Canceled} {
+		fixture := newStructuredRunnerFixture(t, 0)
+		completer := &countingErrorCompleter{err: runErr, calls: 0}
+		_, err := fixture.newRunner(completer).Run(t.Context(), fixture.task, nil)
+		require.ErrorIs(t, err, runErr)
+		assert.Equal(t, 1, completer.calls)
+
+		loaded, found, loadErr := fixture.tasks.Get(t.Context(), fixture.task.Task.ID)
+		require.NoError(t, loadErr)
+		require.True(t, found)
+		assert.Equal(t, 1, loaded.OutputAttemptsReserved)
+		assert.Zero(t, loaded.OutputAttemptsCompleted)
+	}
+}
+
+func TestRuntimeRunnerReservedSlotRecoveryAndExhaustion(t *testing.T) {
+	t.Parallel()
+
+	recovered := newStructuredRunnerFixture(t, 1)
+	completer := &sequenceCompleter{responses: []string{`{"value":"recovered"}`}, calls: 0}
+	result, err := recovered.newRunner(completer).Run(t.Context(), recovered.task, nil)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"value":"recovered"}`, result.Text)
+	loaded, found, err := recovered.tasks.Get(t.Context(), recovered.task.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, 2, loaded.OutputAttemptsReserved)
+	assert.Equal(t, 1, loaded.OutputAttemptsCompleted)
+
+	exhausted := newStructuredRunnerFixture(t, maxOutputAttempts)
+	unused := &sequenceCompleter{responses: []string{`{"value":"unused"}`}, calls: 0}
+	_, err = exhausted.newRunner(unused).Run(t.Context(), exhausted.task, nil)
+	require.ErrorContains(t, err, "attempt budget exhausted")
+	assert.Zero(t, unused.calls)
+}
+
+func newStructuredRunnerFixture(t *testing.T, reserved int) runnerFixture {
+	t.Helper()
+
+	fixture := newRunnerFixture(t, 1)
+	contract, err := outputschema.Admit(`{
+		"type":"object",
+		"required":["value"],
+		"properties":{"value":{"type":"string"}},
+		"additionalProperties":false
+	}`)
+	require.NoError(t, err)
+
+	fixture.task.OutputSchemaJSON = string(contract.Canonical)
+	fixture.task.OutputSchemaDigest = contract.Digest
+	fixture.task.OutputAttemptsReserved = reserved
+
+	created, err := fixture.tasks.Create(t.Context(), fixture.task)
+	require.NoError(t, err)
+	claimed, err := fixture.tasks.Tasks().ClaimQueued(t.Context(), &database.TaskClaim{
+		TaskID: created.Task.ID, LeaseOwner: "worker", EventKind: "task_started",
+		LeaseExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	var found bool
+
+	fixture.task, found, err = fixture.tasks.Get(t.Context(), created.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	return fixture
 }
 
 func TestRuntimeRunnerRunsPromptAndHandlesPromptAndEventErrors(t *testing.T) {
