@@ -362,5 +362,6 @@ func workflowSummaryRun(id string, state database.TaskState) database.WorkflowRu
 			Result: "", ErrorCode: "", ErrorMessage: "",
 		},
 		Name: "active review", Source: "", SourceHash: "", GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "",
+		AdmissionClosedAt: nil,
 	}
 }
