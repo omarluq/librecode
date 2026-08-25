@@ -159,6 +159,31 @@ func TestCompletionEnvelopeTreatsOutputAsTypedPlainData(t *testing.T) {
 	assert.Contains(t, envelope.Deliveries[0].Summary.Text, "tool_call")
 }
 
+func requireSuccessfulCompletion(
+	ctx context.Context,
+	t *testing.T,
+	repositories *database.Repositories,
+	ownerID string,
+	result string,
+) database.CompletionDelivery {
+	t.Helper()
+
+	task, err := repositories.Tasks.Create(ctx, newTask(ownerID))
+	require.NoError(t, err)
+
+	finish := newTaskFinish(task.ID, []database.TaskState{database.TaskQueued}, database.TaskSucceeded,
+		taskSucceededEvent)
+	finish.Result = result
+	_, err = repositories.Tasks.Finish(ctx, &finish)
+	require.NoError(t, err)
+
+	pending, err := repositories.Completions.Pending(ctx, ownerID, 1)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+
+	return pending[0]
+}
+
 func TestCompletionCustomRedactorOutputIsSanitized(t *testing.T) {
 	t.Parallel()
 
@@ -171,20 +196,9 @@ func TestCompletionCustomRedactorOutputIsSanitized(t *testing.T) {
 		return "redacted\x00\xff", nil
 	})
 
-	task, err := repositories.Tasks.Create(ctx, newTask(owner.ID))
-	require.NoError(t, err)
-
-	finish := newTaskFinish(task.ID, []database.TaskState{database.TaskQueued}, database.TaskSucceeded,
-		taskSucceededEvent)
-	finish.Result = "secret"
-	_, err = repositories.Tasks.Finish(ctx, &finish)
-	require.NoError(t, err)
-
-	pending, err := repositories.Completions.Pending(ctx, owner.ID, 1)
-	require.NoError(t, err)
-	require.Len(t, pending, 1)
-	assert.NotContains(t, pending[0].EnvelopeJSON, "\\u0000")
-	assert.Contains(t, pending[0].EnvelopeJSON, "redacted��")
+	completion := requireSuccessfulCompletion(ctx, t, repositories, owner.ID, "secret")
+	assert.NotContains(t, completion.EnvelopeJSON, "\\u0000")
+	assert.Contains(t, completion.EnvelopeJSON, "redacted��")
 }
 
 func TestCompletionQuotaIncludesCandidateEnvelope(t *testing.T) {
@@ -316,20 +330,10 @@ func TestCompletionConsumeRejectsPersistedEnvelopeMismatch(t *testing.T) {
 	owner := fixture.createOwner(ctx)
 	repositories, err := database.NewRepositories(fixture.connection)
 	require.NoError(t, err)
-	task, err := repositories.Tasks.Create(ctx, newTask(owner.ID))
-	require.NoError(t, err)
-
-	finish := newTaskFinish(task.ID, []database.TaskState{database.TaskQueued}, database.TaskSucceeded,
-		taskSucceededEvent)
-	finish.Result = "done"
-	_, err = repositories.Tasks.Finish(ctx, &finish)
-	require.NoError(t, err)
-	pending, err := repositories.Completions.Pending(ctx, owner.ID, 1)
-	require.NoError(t, err)
-	require.Len(t, pending, 1)
+	completion := requireSuccessfulCompletion(ctx, t, repositories, owner.ID, "done")
 
 	var envelope map[string]any
-	require.NoError(t, json.Unmarshal([]byte(pending[0].EnvelopeJSON), &envelope))
+	require.NoError(t, json.Unmarshal([]byte(completion.EnvelopeJSON), &envelope))
 	deliveries, deliveriesOK := envelope["deliveries"].([]any)
 	require.True(t, deliveriesOK)
 	require.NotEmpty(t, deliveries)
@@ -340,10 +344,10 @@ func TestCompletionConsumeRejectsPersistedEnvelopeMismatch(t *testing.T) {
 	corrupt, err := json.Marshal(envelope)
 	require.NoError(t, err)
 	_, err = fixture.connection.ExecContext(ctx,
-		`UPDATE session_completion_deliveries SET envelope_json=? WHERE id=?`, string(corrupt), pending[0].ID)
+		`UPDATE session_completion_deliveries SET envelope_json=? WHERE id=?`, string(corrupt), completion.ID)
 	require.NoError(t, err)
 
-	_, err = repositories.Completions.Consume(ctx, owner.ID, []string{pending[0].ID})
+	_, err = repositories.Completions.Consume(ctx, owner.ID, []string{completion.ID})
 	require.Error(t, err)
 
 	remaining, pendingErr := repositories.Completions.Pending(ctx, owner.ID, 1)
