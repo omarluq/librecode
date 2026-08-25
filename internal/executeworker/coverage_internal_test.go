@@ -506,6 +506,27 @@ func TestDecodeRPCValueNormalizesJSONNumbers(t *testing.T) {
 	}
 }
 
+func TestDecodeRPCValueRejectsOutOfRangeJSONNumbers(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "scalar", raw: `1e10000`},
+		{name: "nested", raw: `{"values":[1,{"value":1e10000}]}`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := decodeRPCValue(messageWithValue("", json.RawMessage(test.raw)))
+			require.ErrorContains(t, err, `normalize RPC result: convert JSON number "1e10000"`)
+		})
+	}
+}
+
 func assertNoJSONNumbers(t *testing.T, value any) {
 	t.Helper()
 
