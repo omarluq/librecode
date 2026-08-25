@@ -99,11 +99,12 @@ type RunResult struct {
 
 // TaskResult is the stable workflow-facing view of a durable task.
 type TaskResult struct {
-	ID           string `json:"id"`
-	State        string `json:"state"`
-	Result       string `json:"result"`
-	ErrorCode    string `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	ID           string           `json:"id"`
+	State        string           `json:"state"`
+	Result       string           `json:"result"`
+	Value        *json.RawMessage `json:"value,omitempty"`
+	ErrorCode    string           `json:"error_code"`
+	ErrorMessage string           `json:"error_message"`
 }
 
 // Runner evaluates workflow source against a durable agent controller.
@@ -160,7 +161,8 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 
 	run := &runHost{
 		runID: request.RunID, ownerSessionID: request.OwnerSessionID, controller: runner.controller,
-		onEvent: request.OnEvent, launched: make(map[string]struct{}), settled: make(map[string]struct{}),
+		onEvent: request.OnEvent, guestAPI: request.GuestAPI,
+		launched: make(map[string]struct{}), settled: make(map[string]struct{}),
 		taskIDs:     make([]string, 0),
 		invocations: make(map[string]int), persisted: make(map[invocationKey]persistedInvocation),
 		mu: sync.Mutex{}, launchMu: sync.Mutex{}, eventMu: sync.Mutex{},
@@ -262,7 +264,7 @@ func normalizePipelineResults(value any) any {
 		results[index] = result
 		if results[index].Value == nil && results[index].Error != pipelineNotScheduled {
 			results[index].Value = TaskResult{
-				ID: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
+				Value: nil, ID: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
 			}
 		}
 	}
@@ -322,6 +324,7 @@ type runHost struct {
 	controller     Controller
 	runID          string
 	onEvent        EventSink
+	guestAPI       guestapi.Version
 	ownerSessionID string
 	launched       map[string]struct{}
 	settled        map[string]struct{}
@@ -406,7 +409,7 @@ func (host *runHost) agent(ctx context.Context, prompt string, options ...AgentO
 
 	if err := host.emit(ctx, &Event{
 		Kind: EventTaskLaunched, TaskID: task.Task.ID, NodeKey: nodeKey,
-		InvocationIndex: invocationIndex, Task: taskResult(task),
+		InvocationIndex: invocationIndex, Task: host.taskResult(task),
 	}); err != nil {
 		return "", err
 	}
@@ -439,7 +442,7 @@ func (host *runHost) wait(ctx context.Context, taskID string) (TaskResult, error
 			Errorf("controller returned a task owned by another session")
 	}
 
-	result := taskResult(task)
+	result := host.taskResult(task)
 	if err := host.emit(ctx, &Event{
 		Task: result, Kind: EventTaskCompleted, TaskID: taskID, NodeKey: "", InvocationIndex: 0,
 	}); err != nil {
@@ -466,7 +469,7 @@ func (host *runHost) list(ctx context.Context) ([]TaskResult, error) {
 				Errorf(taskNotOwnedBySession)
 		}
 
-		results = append(results, taskResult(task))
+		results = append(results, host.taskResult(task))
 	}
 
 	return results, nil
@@ -718,13 +721,25 @@ func (host *runHost) cancelActive(ctx context.Context) error {
 	return cancelErr
 }
 
-func taskResult(task *database.AgentTaskEntity) TaskResult {
-	return taskResultFromTask(&task.Task)
+func (host *runHost) taskResult(task *database.AgentTaskEntity) TaskResult {
+	result := taskResultFromTask(&task.Task)
+	if host.guestAPI != guestapi.Version2 || task.OutputSchemaJSON == "" || task.Task.State != database.TaskSucceeded {
+		return result
+	}
+
+	if !json.Valid([]byte(task.Task.Result)) {
+		return result
+	}
+
+	value := json.RawMessage(task.Task.Result)
+	result.Value = &value
+
+	return result
 }
 
 func taskResultFromTask(task *database.TaskEntity) TaskResult {
 	return TaskResult{
-		ID: task.ID, State: string(task.State), Result: task.Result,
+		Value: nil, ID: task.ID, State: string(task.State), Result: task.Result,
 		ErrorCode: task.ErrorCode, ErrorMessage: task.ErrorMessage,
 	}
 }

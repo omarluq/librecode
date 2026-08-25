@@ -395,7 +395,7 @@ func branchMessage(method string) *executeworker.Message {
 
 func newBranchHost(controller Controller) *runHost {
 	return &runHost{
-		controller: controller, runID: "", onEvent: nil,
+		controller: controller, runID: "", onEvent: nil, guestAPI: "",
 		ownerSessionID: testBranchOwner, launched: make(map[string]struct{}), settled: make(map[string]struct{}),
 		invocations: make(map[string]int), persisted: make(map[invocationKey]persistedInvocation),
 		taskIDs: make([]string, 0),

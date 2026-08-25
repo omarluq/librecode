@@ -1,6 +1,7 @@
 package executeworker
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -520,7 +521,11 @@ func decodeRPCValue(response *Message) (any, error) {
 	}
 
 	var value any
-	if err := json.Unmarshal(response.Value, &value); err != nil {
+
+	decoder := json.NewDecoder(bytes.NewReader(response.Value))
+	decoder.UseNumber()
+
+	if err := decoder.Decode(&value); err != nil {
 		return nil, fmt.Errorf("decode RPC result: %w", err)
 	}
 

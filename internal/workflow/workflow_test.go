@@ -2,7 +2,9 @@ package workflow_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -148,6 +150,140 @@ canceled, _ := agents.Cancel(first)
 	}, fake.submits[0].Options)
 	assert.Equal(t, []string{firstTask, secondTask}, result.LaunchedTaskIDs)
 	assert.Equal(t, [][2]string{{testOwner, firstTask}}, fake.cancels)
+}
+
+func TestRunnerVersion2StructuredAgentResults(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "run",
+			source: `import "librecode/agents"
+result, _ := agents.Run("inspect", map[string]any{"output_schema": ` + "`" + `{"type":"object"}` + "`" + `})
+result`,
+		},
+		{
+			name: "wait",
+			source: `import "librecode/agents"
+id, _ := agents.Spawn("inspect", map[string]any{"output_schema": ` + "`" + `{"type":"object"}` + "`" + `})
+result, _ := agents.Wait(id)
+result`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fake := newFakeController()
+			fake.await = func(_ context.Context, taskID string) (*database.AgentTaskEntity, error) {
+				task := agentTask(taskID, testOwner, database.TaskSucceeded, `{"answer":"yes"}`)
+				task.OutputSchemaJSON = `{"type":"object"}`
+				fake.tasks[taskID] = task
+
+				return task, nil
+			}
+			runner, err := workflow.NewRunner(fake)
+			require.NoError(t, err)
+
+			result, err := runner.Run(t.Context(), &workflow.RunRequest{
+				OnEvent: nil, Arguments: nil, RunID: "", Name: "", Source: test.source,
+				OwnerSessionID: testOwner, GuestAPI: guestapi.Version2, PersistedLinks: nil,
+			})
+			require.NoError(t, err)
+			require.Len(t, result.TaskResults, 1)
+			require.NotNil(t, result.TaskResults[0].Value)
+			assert.JSONEq(t, `{"answer":"yes"}`, string(*result.TaskResults[0].Value))
+
+			envelopeJSON, err := json.Marshal(result.Value)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{
+				"id":"task-1",
+				"state":"succeeded",
+				"result":"{\"answer\":\"yes\"}",
+				"error_code":"",
+				"error_message":"",
+				"value":{"answer":"yes"}
+			}`, string(envelopeJSON))
+		})
+	}
+}
+
+func TestRunnerStructuredResultCompatibilityAndNumbers(t *testing.T) {
+	t.Parallel()
+
+	const canonical = `{"large":9007199254740993,"decimal":1.2300}`
+
+	tests := []struct {
+		wantValue   any
+		name        string
+		version     guestapi.Version
+		state       database.TaskState
+		hasSchema   bool
+		valueInJSON bool
+	}{
+		{name: "version 2 typed numbers", version: guestapi.Version2, hasSchema: true,
+			state: database.TaskSucceeded, wantValue: map[string]any{
+				"large": json.Number("9007199254740993"), "decimal": json.Number("1.2300"),
+			}, valueInJSON: true},
+		{name: "schema absent", version: guestapi.Version2, hasSchema: false,
+			state: database.TaskSucceeded, wantValue: nil, valueInJSON: false},
+		{name: "failure", version: guestapi.Version2, hasSchema: true,
+			state: database.TaskFailed, wantValue: nil, valueInJSON: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fake := newFakeController()
+
+			fake.tasks[firstTask] = agentTask(firstTask, testOwner, test.state, canonical)
+			if test.hasSchema {
+				fake.tasks[firstTask].OutputSchemaJSON = `{"type":"object"}`
+			}
+
+			runner, err := workflow.NewRunner(fake)
+			require.NoError(t, err)
+
+			result, err := runner.Run(t.Context(), &workflow.RunRequest{
+				OnEvent: nil, Arguments: nil, RunID: "", Name: "",
+				Source: `import "librecode/agents"; agents.List()`, OwnerSessionID: testOwner,
+				GuestAPI: test.version, PersistedLinks: []database.WorkflowAgentTaskEntity{{
+					CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: firstTask,
+					NodeKey: "agent", InvocationIndex: 0, Sequence: 0,
+				}},
+			})
+			require.NoError(t, err)
+			require.Len(t, result.TaskResults, 1)
+			assert.Equal(t, canonical, result.TaskResults[0].Result)
+
+			if test.wantValue == nil {
+				assert.Nil(t, result.TaskResults[0].Value)
+			} else {
+				require.NotNil(t, result.TaskResults[0].Value)
+
+				var value any
+
+				decoder := json.NewDecoder(strings.NewReader(string(*result.TaskResults[0].Value)))
+				decoder.UseNumber()
+				require.NoError(t, decoder.Decode(&value))
+				assert.Equal(t, test.wantValue, value)
+			}
+
+			encoded, err := json.Marshal(result.TaskResults[0])
+			require.NoError(t, err)
+			assert.Equal(t, test.valueInJSON, strings.Contains(string(encoded), `"value":`))
+
+			if test.valueInJSON {
+				assert.Contains(t, string(encoded), `9007199254740993`)
+				assert.Contains(t, string(encoded), `1.2300`)
+			}
+		})
+	}
 }
 
 func TestRunnerSingleTask(t *testing.T) {
@@ -446,7 +582,7 @@ results`
 		{
 			Index: 0,
 			Value: workflow.TaskResult{
-				ID: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
+				ID: "", State: "", Result: "", Value: nil, ErrorCode: "", ErrorMessage: "",
 			},
 			Error: "task was not launched by this workflow",
 		},
