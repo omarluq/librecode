@@ -94,7 +94,7 @@ func TestDatabaseServiceHealthCheckAndShutdown(t *testing.T) {
 
 	service := &DatabaseService{
 		DB: connection, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, Workflows: nil, ToolTasks: nil,
-		path: "",
+		Completions: nil, path: "",
 	}
 
 	require.NoError(t, service.HealthCheck(context.Background()))
@@ -111,7 +111,7 @@ func TestDatabaseServiceShutdownReturnsContextError(t *testing.T) {
 
 	service := &DatabaseService{
 		DB: connection, Sessions: nil, Documents: nil, Tasks: nil, AgentTasks: nil, Workflows: nil, ToolTasks: nil,
-		path: "",
+		Completions: nil, path: "",
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

@@ -213,7 +213,7 @@ func (repository *ToolTaskRepository) finishTransaction(
 	if current.State == TaskCanceling && finish.TargetState != TaskCanceled {
 		terminal.From = []TaskState{TaskCanceling}
 		terminal.TargetState = TaskCanceled
-		terminal.EventKind = "task_canceled"
+		terminal.EventKind = taskCanceledEvent
 		terminal.Result = ""
 		terminal.ErrorCode = string(TaskCanceled)
 		terminal.ErrorMessage = "task canceled"
@@ -531,7 +531,7 @@ func (repository *ToolTaskRepository) cancelTransaction(
 	case TaskQueued:
 		finish := &TaskFinish{
 			TaskID: taskID, From: []TaskState{TaskQueued}, TargetState: TaskCanceled,
-			EventKind: "task_canceled", Result: "", ErrorCode: "canceled", ErrorMessage: "task canceled",
+			EventKind: taskCanceledEvent, Result: "", ErrorCode: "canceled", ErrorMessage: "task canceled",
 			PayloadJSON: `{"error_code":"canceled"}`, LeaseOwner: "",
 		}
 

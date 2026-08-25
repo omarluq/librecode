@@ -44,12 +44,13 @@ func sameSQLProvider(left, right ksql.Provider) bool {
 
 // Repositories is a repository graph backed by one shared transaction provider.
 type Repositories struct {
-	Sessions   *SessionRepository
-	Documents  *DocumentRepository
-	Tasks      *TaskRepository
-	AgentTasks *AgentTaskRepository
-	Workflows  *WorkflowRepository
-	ToolTasks  *ToolTaskRepository
+	Sessions    *SessionRepository
+	Documents   *DocumentRepository
+	Tasks       *TaskRepository
+	AgentTasks  *AgentTaskRepository
+	Workflows   *WorkflowRepository
+	ToolTasks   *ToolTaskRepository
+	Completions *CompletionRepository
 }
 
 // NewRepositories constructs the complete repository graph for a SQL connection.
@@ -89,9 +90,19 @@ func NewRepositories(connection *sql.DB) (*Repositories, error) {
 		return nil, wrapRepositoryConstruction(err, "workflow")
 	}
 
+	completions, err := newCompletionRepository(provider, sessions)
+	if err != nil {
+		return nil, wrapRepositoryConstruction(err, "completion")
+	}
+
+	tasks.completions = completions
+	if _, err = completions.Repair(context.Background(), completionPageDefault); err != nil {
+		return nil, wrapRepositoryConstruction(err, "completion repair")
+	}
+
 	return &Repositories{
 		Sessions: sessions, Documents: documents, Tasks: tasks,
-		AgentTasks: agentTasks, Workflows: workflows, ToolTasks: toolTasks,
+		AgentTasks: agentTasks, Workflows: workflows, ToolTasks: toolTasks, Completions: completions,
 	}, nil
 }
 

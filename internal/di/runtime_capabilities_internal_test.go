@@ -255,7 +255,8 @@ func runtimeCapabilityErrorTests(t *testing.T) []capabilityErrorTest {
 func testAgentTask() *database.AgentTaskEntity {
 	return &database.AgentTaskEntity{
 		Task: *testTask("agent-task"), ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "",
-		PolicyJSON: "", UsageJSON: "", Depth: 0,
+		PolicyJSON: "", UsageJSON: "", OutputSchemaJSON: "", OutputSchemaDigest: "",
+		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 0,
 	}
 }
 
@@ -277,6 +278,6 @@ func testTaskEvent() *database.TaskEventEntity {
 func testWorkflowRun() *database.WorkflowRunEntity {
 	return &database.WorkflowRunEntity{
 		Task: *testTask("workflow"), Name: "", Source: "", SourceHash: "",
-		GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "",
+		GuestAPIVersion: "", SourceVersion: "", ArgumentsJSON: "", AdmissionClosedAt: nil,
 	}
 }

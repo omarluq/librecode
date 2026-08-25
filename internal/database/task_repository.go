@@ -20,6 +20,7 @@ const (
 	eventKindField              = "event.kind"
 	readAffectedTaskRowsMessage = "read affected task rows"
 	taskQueuedEvent             = "task_queued"
+	taskCanceledEvent           = "task_canceled"
 
 	// TaskKindAgent identifies asynchronous subagent work.
 	TaskKindAgent = "agent"
@@ -143,8 +144,9 @@ type taskEventInsert struct {
 
 // TaskRepository persists generic task lifecycle state and ordered events.
 type TaskRepository struct {
-	sql ksql.Provider
-	now func() time.Time
+	sql         ksql.Provider
+	now         func() time.Time
+	completions *CompletionRepository
 }
 
 // NewTaskRepository creates a task repository.
@@ -163,7 +165,7 @@ func NewTaskRepositoryWithProvider(provider ksql.Provider) (*TaskRepository, err
 		return nil, nilProviderError()
 	}
 
-	return &TaskRepository{sql: provider, now: time.Now}, nil
+	return &TaskRepository{sql: provider, now: time.Now, completions: nil}, nil
 }
 
 // Create persists a queued task and its initial event atomically.
@@ -475,8 +477,8 @@ func (repository *TaskRepository) finishTransactionWithExpiry(
 	now time.Time,
 	eventID string,
 ) (bool, error) {
-	current, found, err := loadTask(ctx, transaction, finish.TaskID)
-	if err != nil || !found || !slices.Contains(finish.From, current.State) {
+	current, found, err := loadFinishSource(ctx, transaction, finish)
+	if err != nil || !found {
 		return false, err
 	}
 
@@ -523,7 +525,53 @@ WHERE id = ? AND state = ?
 		return false, err
 	}
 
+	if err := repository.projectCompletion(ctx, transaction, finish, current, eventID, now); err != nil {
+		return false, err
+	}
+
 	return true, nil
+}
+
+func loadFinishSource(
+	ctx context.Context,
+	transaction ksql.Provider,
+	finish *TaskFinish,
+) (*TaskEntity, bool, error) {
+	current, found, err := loadTask(ctx, transaction, finish.TaskID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if !found || !slices.Contains(finish.From, current.State) {
+		return nil, false, nil
+	}
+
+	return current, true, nil
+}
+
+func (repository *TaskRepository) projectCompletion(
+	ctx context.Context,
+	transaction ksql.Provider,
+	finish *TaskFinish,
+	current *TaskEntity,
+	eventID string,
+	now time.Time,
+) error {
+	if repository.completions == nil {
+		return nil
+	}
+
+	source := completionSource{
+		EventID: eventID, TaskID: current.ID, EventKind: finish.EventKind,
+		TaskKind: current.Kind, Owner: current.OwnerSessionID, State: string(finish.TargetState),
+		Result: finish.Result, ErrorCode: finish.ErrorCode, ErrorMessage: finish.ErrorMessage,
+		CreatedAt: now,
+	}
+	if err := repository.completions.projectTerminalTx(ctx, transaction, &source); err != nil {
+		return oops.In("database").Code("project_task_completion").Wrapf(err, "project terminal task completion")
+	}
+
+	return nil
 }
 
 func leaseFenceEnabled(value time.Time) bool { return !value.IsZero() }

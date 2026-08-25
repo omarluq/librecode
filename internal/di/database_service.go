@@ -24,14 +24,15 @@ const (
 
 // DatabaseService owns the session database connection and schema lifecycle.
 type DatabaseService struct {
-	DB         *sql.DB
-	Sessions   *database.SessionRepository
-	Documents  *database.DocumentRepository
-	Tasks      *database.TaskRepository
-	AgentTasks *database.AgentTaskRepository
-	Workflows  *database.WorkflowRepository
-	ToolTasks  *database.ToolTaskRepository
-	path       string
+	DB          *sql.DB
+	Sessions    *database.SessionRepository
+	Documents   *database.DocumentRepository
+	Tasks       *database.TaskRepository
+	AgentTasks  *database.AgentTaskRepository
+	Workflows   *database.WorkflowRepository
+	ToolTasks   *database.ToolTaskRepository
+	Completions *database.CompletionRepository
+	path        string
 }
 
 // NewDatabaseService opens the session database and applies embedded migrations.
@@ -84,7 +85,8 @@ func newDatabaseRepositories(connection *sql.DB, databasePath string) (*Database
 	return &DatabaseService{
 		DB: connection, Sessions: repositories.Sessions, Documents: repositories.Documents,
 		Tasks: repositories.Tasks, AgentTasks: repositories.AgentTasks,
-		ToolTasks: repositories.ToolTasks, Workflows: repositories.Workflows, path: databasePath,
+		ToolTasks: repositories.ToolTasks, Workflows: repositories.Workflows,
+		Completions: repositories.Completions, path: databasePath,
 	}, nil
 }
 

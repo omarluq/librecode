@@ -271,7 +271,8 @@ func testAgentTask(state database.TaskState) database.AgentTaskEntity {
 			State: state, Result: "", ErrorCode: "", ErrorMessage: "",
 		},
 		ChildSessionID: "", AgentName: "explore", Prompt: "", Model: "", Provider: "",
-		PolicyJSON: "{}", UsageJSON: "{}", Depth: 0,
+		PolicyJSON: "{}", UsageJSON: "{}", OutputSchemaJSON: "", OutputSchemaDigest: "",
+		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 0,
 	}
 }
 
