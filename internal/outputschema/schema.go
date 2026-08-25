@@ -43,6 +43,21 @@ const (
 	prefixItemsKeyword = "prefixItems"
 )
 
+// PersistedPolicy identifies the admission semantics used to restore a durable schema snapshot.
+type PersistedPolicy string
+
+const (
+	// PersistedPolicyV1 freezes the original structured-output subset and resource limits.
+	// New admission behavior must use a new policy; V1 semantics must not be tightened.
+	PersistedPolicyV1 PersistedPolicy = "output-schema/v1"
+)
+
+type admissionPolicy struct {
+	preflight func(map[string]any) error
+}
+
+var jsonNumberPattern = regexp.MustCompile(`^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$`)
+
 // Contract is an admitted, canonical schema and its compiled validator.
 type Contract struct {
 	schema *jsonschema.Schema
@@ -59,7 +74,12 @@ func (e *Error) Error() string { return e.Code + ": " + e.Reason }
 func failure(code, format string, args ...any) error {
 	reason := fmt.Sprintf(format, args...)
 	if len(reason) > MaxDiagnosticBytes {
-		reason = reason[:MaxDiagnosticBytes]
+		end := MaxDiagnosticBytes
+		for !utf8.RuneStart(reason[end]) {
+			end--
+		}
+
+		reason = reason[:end]
 	}
 
 	return &Error{Code: code, Reason: reason}
@@ -67,6 +87,10 @@ func failure(code, format string, args ...any) error {
 
 // Admit parses, bounds, preflights, canonicalizes, digests, and compiles a schema.
 func Admit(text string) (*Contract, error) {
+	return admitWithPolicy(text, admissionPolicy{preflight: preflightV1})
+}
+
+func admitWithPolicy(text string, policy admissionPolicy) (*Contract, error) {
 	if len(text) > MaxSchemaBytes {
 		return nil, failure("invalid_output_schema", "submitted schema bytes exceed limit %d", MaxSchemaBytes)
 	}
@@ -85,7 +109,7 @@ func Admit(text string) (*Contract, error) {
 		return nil, failure("invalid_output_schema", "schema root must be an object")
 	}
 
-	if preflightErr := preflight(root); preflightErr != nil {
+	if preflightErr := policy.preflight(root); preflightErr != nil {
 		return nil, failure("invalid_output_schema", "%v", preflightErr)
 	}
 
@@ -109,9 +133,23 @@ func Admit(text string) (*Contract, error) {
 	return &Contract{schema: compiled, Canonical: canonical, Digest: digest}, nil
 }
 
-// Restore verifies and compiles a persisted admitted schema.
+// Restore verifies and compiles a persisted V1 schema.
+//
+// Deprecated: durable callers should use RestoreWithPolicy and persist the selected policy.
 func Restore(canonical []byte, digest string) (*Contract, error) {
-	contract, err := Admit(string(canonical))
+	return RestoreWithPolicy(canonical, digest, PersistedPolicyV1)
+}
+
+// RestoreWithPolicy restores a durable schema under its frozen admission policy. Compatibility
+// handling never rewrites canonical bytes, so digest and canonical identity remain authoritative.
+func RestoreWithPolicy(canonical []byte, digest string, persistedPolicy PersistedPolicy) (*Contract, error) {
+	if persistedPolicy != PersistedPolicyV1 {
+		return nil, failure("invalid_output_schema", "unsupported persisted schema policy %q", persistedPolicy)
+	}
+
+	policy := admissionPolicy{preflight: preflightV1}
+
+	contract, err := admitWithPolicy(string(canonical), policy)
 	if err != nil {
 		return nil, err
 	}
@@ -419,10 +457,12 @@ func (e *canonicalEncoder) writeObject(object map[string]any) error {
 }
 
 func validJSONNumber(value string) bool {
-	return regexp.MustCompile(`^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$`).MatchString(value)
+	return jsonNumberPattern.MatchString(value)
 }
 
-func allowedKeyword(keyword string) bool {
+// allowedKeywordV1 is part of PersistedPolicyV1. Expand current admission through a new
+// policy rather than changing the semantics used to recover existing durable tasks.
+func allowedKeywordV1(keyword string) bool {
 	switch keyword {
 	case "$schema", "$defs", "$ref", "title", "description", "default", "examples", "deprecated",
 		"readOnly", "writeOnly", "type", "enum", "const", "allOf", "anyOf", "oneOf", "not", "properties",
@@ -445,7 +485,7 @@ type preflightState struct {
 	refs     int
 }
 
-func preflight(root map[string]any) error {
+func preflightV1(root map[string]any) error {
 	state := &preflightState{
 		defs: map[string]any{}, used: map[string]bool{}, nodes: 0, members: 0, branches: 0, refs: 0,
 	}
@@ -523,7 +563,7 @@ func (s *preflightState) checkObject(object map[string]any) error {
 	}
 
 	for keyword := range object {
-		if !allowedKeyword(keyword) {
+		if !allowedKeywordV1(keyword) {
 			return fmt.Errorf("unsupported keyword %q", keyword)
 		}
 	}

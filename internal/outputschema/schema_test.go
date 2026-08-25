@@ -41,6 +41,48 @@ func TestAdmitCanonicalIdentity(t *testing.T) {
 	}
 }
 
+func TestRestoreWithPolicyPreservesPersistedIdentity(t *testing.T) {
+	t.Parallel()
+
+	admitted, err := outputschema.Admit(` { "type": "number", "minimum": 1.0 } `)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restored, err := outputschema.RestoreWithPolicy(
+		admitted.Canonical, admitted.Digest, outputschema.PersistedPolicyV1,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if restored.Digest != admitted.Digest || !bytes.Equal(restored.Canonical, admitted.Canonical) {
+		t.Fatal("restore changed persisted schema identity")
+	}
+
+	mutated := append([]byte(nil), admitted.Canonical...)
+
+	mutated = append(mutated, ' ')
+
+	if _, err = outputschema.RestoreWithPolicy(
+		mutated, admitted.Digest, outputschema.PersistedPolicyV1,
+	); err == nil {
+		t.Fatal("restore accepted non-canonical persisted bytes")
+	}
+
+	if _, err = outputschema.RestoreWithPolicy(
+		admitted.Canonical, "sha256:"+strings.Repeat("0", 64), outputschema.PersistedPolicyV1,
+	); err == nil {
+		t.Fatal("restore accepted a mismatched digest")
+	}
+
+	if _, err = outputschema.RestoreWithPolicy(
+		admitted.Canonical, admitted.Digest, outputschema.PersistedPolicy("output-schema/unknown"),
+	); err == nil {
+		t.Fatal("restore accepted an unknown persisted policy")
+	}
+}
+
 func TestValidateNumericSemanticsAndStrictJSON(t *testing.T) {
 	t.Parallel()
 
