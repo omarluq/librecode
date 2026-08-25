@@ -240,21 +240,8 @@ func (repository *SessionRepository) DeleteSession(ctx context.Context, sessionI
 }
 
 func deleteSessionRows(ctx context.Context, transaction ksql.Provider, sessionID string) error {
-	const ownedWorkflowChildren = `SELECT a.child_session_id
-FROM agent_tasks a
-JOIN tasks t ON t.id = a.task_id
-JOIN workflow_runs w ON w.task_id = t.parent_task_id
-WHERE t.owner_session_id = ?`
-
-	ownerCleanup := []string{
-		`DELETE FROM session_messages WHERE session_id IN (` + ownedWorkflowChildren + `)`,
-		`DELETE FROM session_entries WHERE session_id IN (` + ownedWorkflowChildren + `)`,
-		`DELETE FROM sessions WHERE id IN (` + ownedWorkflowChildren + `)`,
-	}
-	for _, statement := range ownerCleanup {
-		if _, err := transaction.Exec(ctx, statement, sessionID); err != nil {
-			return oops.In("database").Code("delete_workflow_tree").Wrapf(err, "delete workflow session tree")
-		}
+	if err := deleteOwnedWorkflowChildren(ctx, transaction, sessionID); err != nil {
+		return err
 	}
 
 	var retained struct {
@@ -271,15 +258,65 @@ WHERE a.child_session_id = ?`, sessionID); err != nil {
 			Errorf("child session is retained by a workflow run")
 	}
 
-	statements := []string{
-		`DELETE FROM tasks WHERE id IN (SELECT task_id FROM agent_tasks WHERE child_session_id = ?)`,
+	if _, err := transaction.Exec(ctx,
+		`DELETE FROM tasks WHERE id IN (SELECT task_id FROM agent_tasks WHERE child_session_id = ?)`, sessionID,
+	); err != nil {
+		return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
+	}
+
+	if err := deleteSessionContent(ctx, transaction, sessionID); err != nil {
+		return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
+	}
+
+	if _, err := transaction.Exec(ctx, `DELETE FROM sessions WHERE id = ?`, sessionID); err != nil {
+		return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
+	}
+
+	return nil
+}
+
+func deleteOwnedWorkflowChildren(ctx context.Context, transaction ksql.Provider, ownerSessionID string) error {
+	var workflowChildren []struct {
+		TaskID         string `ksql:"task_id"`
+		ChildSessionID string `ksql:"child_session_id"`
+	}
+	if err := transaction.Query(ctx, &workflowChildren, `SELECT a.task_id, a.child_session_id
+FROM agent_tasks a
+JOIN tasks t ON t.id = a.task_id
+JOIN workflow_runs w ON w.task_id = t.parent_task_id
+WHERE t.owner_session_id = ?`, ownerSessionID); err != nil {
+		return oops.In("database").Code("delete_workflow_tree").Wrapf(err, "load workflow session tree")
+	}
+
+	for _, child := range workflowChildren {
+		if err := deleteSessionContent(ctx, transaction, child.ChildSessionID); err != nil {
+			return oops.In("database").Code("delete_workflow_tree").Wrapf(err, "delete workflow session tree")
+		}
+
+		for _, cleanup := range []struct {
+			statement string
+			argument  string
+		}{
+			{statement: `DELETE FROM session_completion_deliveries WHERE task_id = ?`, argument: child.TaskID},
+			{statement: `DELETE FROM tasks WHERE id = ?`, argument: child.TaskID},
+			{statement: `DELETE FROM sessions WHERE id = ?`, argument: child.ChildSessionID},
+		} {
+			if _, err := transaction.Exec(ctx, cleanup.statement, cleanup.argument); err != nil {
+				return oops.In("database").Code("delete_workflow_tree").Wrapf(err, "delete workflow session tree")
+			}
+		}
+	}
+
+	return nil
+}
+
+func deleteSessionContent(ctx context.Context, transaction ksql.Provider, sessionID string) error {
+	for _, statement := range []string{
 		`DELETE FROM session_messages WHERE session_id = ?`,
 		`DELETE FROM session_entries WHERE session_id = ?`,
-		`DELETE FROM sessions WHERE id = ?`,
-	}
-	for _, statement := range statements {
+	} {
 		if _, err := transaction.Exec(ctx, statement, sessionID); err != nil {
-			return oops.In("database").Code("delete_session").Wrapf(err, "delete session")
+			return oops.In("database").Code("delete_session_content").Wrapf(err, "delete session content")
 		}
 	}
 

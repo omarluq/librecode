@@ -284,30 +284,30 @@ func TestAgentTaskRepositoryGetMissing(t *testing.T) {
 	assert.Nil(t, entity)
 }
 
-func TestSessionDeleteRemovesChildAgentTaskAndEvents(t *testing.T) {
+func TestSessionDeleteRemovesOwnedWorkflowChildren(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTaskTestFixture(t)
-	ctx, agents, tasks, sessions := t.Context(), fixture.agents, fixture.tasks, fixture.sessions
-	parent, child := fixture.createAgentTaskSessions(ctx)
-	created, err := agents.Create(ctx, newAgentTask(parent.ID, child.ID))
+	ctx := t.Context()
+	owner, child := fixture.createAgentTaskSessions(ctx)
+	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
 	require.NoError(t, err)
-	require.NoError(t, sessions.DeleteSession(ctx, child.ID))
 
-	_, found, err := agents.Get(ctx, created.Task.ID)
+	candidate := newAgentTask(owner.ID, child.ID)
+	candidate.Task.ParentTaskID = run.Task.ID
+	created, err := fixture.workflows.CreateAgentTask(ctx, run.Task.ID, candidate, "inspect", 0)
+	require.NoError(t, err)
+	require.NoError(t, fixture.sessions.DeleteSession(ctx, owner.ID))
+
+	_, found, err := fixture.sessions.GetSession(ctx, child.ID)
 	require.NoError(t, err)
 	assert.False(t, found)
-	_, found, err = tasks.Get(ctx, created.Task.ID)
+	_, found, err = fixture.tasks.Get(ctx, created.Task.ID)
 	require.NoError(t, err)
 	assert.False(t, found)
-
-	events, err := tasks.ListEvents(ctx, created.Task.ID, 0, 10)
+	_, found, err = fixture.agents.Get(ctx, created.Task.ID)
 	require.NoError(t, err)
-	assert.Empty(t, events)
-
-	_, parentFound, err := sessions.GetSession(ctx, parent.ID)
-	require.NoError(t, err)
-	assert.True(t, parentFound)
+	assert.False(t, found)
 }
 
 func TestTaskRepositoryAppendsPolymorphicEvents(t *testing.T) {
