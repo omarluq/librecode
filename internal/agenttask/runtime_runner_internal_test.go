@@ -141,6 +141,9 @@ func (completer *sequenceCompleter) Complete(
 	request *assistant.CompletionRequest,
 ) (*assistant.CompletionResult, error) {
 	completer.calls++
+	if completer.calls > len(completer.responses) {
+		return nil, errors.New("sequence completer responses exhausted")
+	}
 
 	text := completer.responses[completer.calls-1]
 	usageValue := model.TokenUsage{
