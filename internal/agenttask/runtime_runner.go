@@ -67,13 +67,12 @@ func (runner *RuntimeRunner) Run(
 
 	var partial partialText
 
-	events := eventSinkState{ctx: nil, sink: sink, mu: sync.Mutex{}, fail: nil}
+	events := eventSinkState{sink: sink, mu: sync.Mutex{}, fail: nil}
 	metrics := new(assistant.RunMetrics)
 	runCtx := assistant.WithRunMetrics(ctx, metrics)
-	events.ctx = runCtx
 
 	metrics.SetUsageTotalsObserver(func(usageTotals model.UsageTotals) {
-		events.emit(string(assistant.StreamEventUsageTotal), usageTotals)
+		events.emit(runCtx, string(assistant.StreamEventUsageTotal), usageTotals)
 	})
 
 	contract, hasContract, err := restoreOutputContract(task)
@@ -81,9 +80,12 @@ func (runner *RuntimeRunner) Run(
 		return Result{Text: "", UsageJSON: "{}"}, err
 	}
 
-	response, promptErr, runErr := runner.runPrompts(
-		runCtx, runtime, task, session.CWD, contract, hasContract, metrics, &events, &partial,
-	)
+	execution := runtimeExecution{
+		runtime: runtime, task: task, cwd: session.CWD, contract: contract, hasContract: hasContract,
+		metrics: metrics, events: &events, partial: &partial,
+	}
+
+	response, promptErr, runErr := runner.runPrompts(runCtx, &execution)
 	if runErr != nil {
 		return Result{Text: "", UsageJSON: mustUsageJSON(metrics)}, runErr
 	}
@@ -108,35 +110,39 @@ func restoreOutputContract(task *database.AgentTaskEntity) (*outputschema.Contra
 	return contract, true, nil
 }
 
+type runtimeExecution struct {
+	runtime     *assistant.Runtime
+	task        *database.AgentTaskEntity
+	contract    *outputschema.Contract
+	metrics     *assistant.RunMetrics
+	events      *eventSinkState
+	partial     *partialText
+	cwd         string
+	hasContract bool
+}
+
 func (runner *RuntimeRunner) runPrompts(
 	ctx context.Context,
-	runtime *assistant.Runtime,
-	task *database.AgentTaskEntity,
-	cwd string,
-	contract *outputschema.Contract,
-	hasContract bool,
-	metrics *assistant.RunMetrics,
-	events *eventSinkState,
-	partial *partialText,
+	execution *runtimeExecution,
 ) (*assistant.PromptResponse, error, error) {
-	prompt := task.Prompt
+	prompt := execution.task.Prompt
 
-	for attempt := task.OutputAttemptsReserved + 1; attempt <= maxOutputAttempts; attempt++ {
-		if err := runner.reserveOutputAttempt(ctx, task, hasContract); err != nil {
+	for attempt := execution.task.OutputAttemptsReserved + 1; attempt <= maxOutputAttempts; attempt++ {
+		if err := runner.reserveOutputAttempt(ctx, execution.task, execution.hasContract); err != nil {
 			return &assistant.PromptResponse{}, nil, err
 		}
 
-		response, promptErr := runtime.Prompt(ctx, &assistant.PromptRequest{
+		response, promptErr := execution.runtime.Prompt(ctx, &assistant.PromptRequest{
 			OnEvent: func(event assistant.StreamEvent) {
-				metrics.ObserveStreamEvent(event)
-				partial.observe(event)
-				events.emit(string(event.Kind), event)
+				execution.metrics.ObserveStreamEvent(event)
+				execution.partial.observe(event)
+				execution.events.emit(ctx, string(event.Kind), event)
 			},
 			OnRetry: nil, OnUserEntry: nil, OnSteeringReturn: nil, ParentEntryID: nil,
-			SessionID: task.ChildSessionID, CWD: cwd, Text: prompt,
+			SessionID: execution.task.ChildSessionID, CWD: execution.cwd, Text: prompt,
 			Images: nil, Name: "", ResumeLatest: false, HideUserPrompt: attempt > 1,
 		})
-		if promptErr != nil || events.err() != nil || !hasContract {
+		if promptErr != nil || execution.events.err() != nil || !execution.hasContract {
 			if promptErr != nil {
 				promptErr = oops.In("agenttask").Code("prompt").Wrapf(promptErr, "prompt agent runtime")
 			}
@@ -144,8 +150,8 @@ func (runner *RuntimeRunner) runPrompts(
 			return response, promptErr, nil
 		}
 
-		canonical, validationErr := contract.Validate(response.Text)
-		if err := runner.checkpointOutputAttempt(ctx, task, metrics, validationErr); err != nil {
+		canonical, validationErr := execution.contract.Validate(response.Text)
+		if err := runner.checkpointOutputAttempt(ctx, execution.task, execution.metrics, validationErr); err != nil {
 			return &assistant.PromptResponse{}, nil, err
 		}
 
@@ -217,18 +223,17 @@ func (runner *RuntimeRunner) checkpointOutputAttempt(
 }
 
 type eventSinkState struct {
-	ctx  context.Context
 	sink EventSink
 	fail error
 	mu   sync.Mutex
 }
 
-func (state *eventSinkState) emit(kind string, event any) {
+func (state *eventSinkState) emit(ctx context.Context, kind string, event any) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	if state.fail == nil && state.sink != nil {
-		state.fail = state.sink(state.ctx, kind, event)
+		state.fail = state.sink(ctx, kind, event)
 	}
 }
 
