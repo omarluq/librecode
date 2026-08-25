@@ -473,19 +473,8 @@ func (host *runHost) list(ctx context.Context) ([]TaskResult, error) {
 }
 
 func (host *runHost) cancel(ctx context.Context, taskID string) (TaskResult, error) {
-	if !host.owns(taskID) {
-		return TaskResult{}, oops.In("workflow").Code("task_not_owned").
-			Errorf("task was not launched by this workflow")
-	}
-
-	task, found, err := host.controller.Get(ctx, taskID)
-	if err != nil {
-		return TaskResult{}, oops.In("workflow").Code("get_task").Wrapf(err, "get agent task")
-	}
-
-	if !found || task == nil || task.Task.OwnerSessionID != host.ownerSessionID {
-		return TaskResult{}, oops.In("workflow").Code("task_not_owned").
-			Errorf(taskNotOwnedBySession)
+	if err := host.validateCancelableTask(ctx, taskID); err != nil {
+		return TaskResult{}, err
 	}
 
 	canceled, found, err := host.controller.Cancel(ctx, host.ownerSessionID, taskID, database.CancelSourceWorkflow)
@@ -498,9 +487,30 @@ func (host *runHost) cancel(ctx context.Context, taskID string) (TaskResult, err
 			Errorf(taskNotOwnedBySession)
 	}
 
-	host.markSettled(taskID)
+	if terminal(canceled.State) {
+		host.markSettled(taskID)
+	}
 
 	return taskResultFromTask(canceled), nil
+}
+
+func (host *runHost) validateCancelableTask(ctx context.Context, taskID string) error {
+	if !host.owns(taskID) {
+		return oops.In("workflow").Code("task_not_owned").
+			Errorf("task was not launched by this workflow")
+	}
+
+	task, found, err := host.controller.Get(ctx, taskID)
+	if err != nil {
+		return oops.In("workflow").Code("get_task").Wrapf(err, "get agent task")
+	}
+
+	if !found || task == nil || task.Task.OwnerSessionID != host.ownerSessionID {
+		return oops.In("workflow").Code("task_not_owned").
+			Errorf(taskNotOwnedBySession)
+	}
+
+	return nil
 }
 
 func admitAgentOutputSchema(options *AgentOptions) error {

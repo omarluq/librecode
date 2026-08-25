@@ -550,9 +550,9 @@ func (service *Service) Cancel(
 		return nil, false, oops.In("agenttask").Code("get_task").Wrapf(err, "get canceled task")
 	}
 	// A repository-owned workflow cascade may have won the transition race.
-	// Repeated cancellation still delivers the live signal for canceling work.
+	// Repeated cancellation still delivers the live signal for canceling work,
+	// but must not replace the source recorded by the transition that won.
 	if found && task.State == database.TaskCanceling {
-		service.rememberCancelSource(taskID, source)
 		service.cancelActive(taskID)
 	}
 

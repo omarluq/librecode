@@ -117,6 +117,214 @@ func TestWorkflowRepositoryListActiveByOwnerIncludesTerminalRunWithActiveChild(t
 	assert.Empty(t, runs)
 }
 
+type workflowCancelTestCase struct {
+	name         string
+	wantRunState database.TaskState
+	childStates  []database.TaskState
+
+	wantChanged   bool
+	useWrongOwner bool
+}
+
+func TestWorkflowRepositoryCancelOwnedPreservesTreeCancellationBehavior(t *testing.T) {
+	t.Parallel()
+
+	tests := []workflowCancelTestCase{
+		{
+			name:          "queued run without children is canceled",
+			childStates:   nil,
+			wantRunState:  database.TaskCanceled,
+			wantChanged:   true,
+			useWrongOwner: false,
+		},
+		{
+			name:          "active children are canceled before the run",
+			childStates:   []database.TaskState{database.TaskQueued, database.TaskRunning},
+			wantRunState:  database.TaskCanceling,
+			wantChanged:   true,
+			useWrongOwner: false,
+		},
+		{
+			name:          "another owner cannot cancel the run",
+			childStates:   nil,
+			wantRunState:  database.TaskQueued,
+			wantChanged:   false,
+			useWrongOwner: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			testWorkflowCancellation(t, test)
+		})
+	}
+}
+
+func testWorkflowCancellation(t *testing.T, test workflowCancelTestCase) {
+	t.Helper()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner, childSession := fixture.createAgentTaskSessions(ctx)
+	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+
+	childIDs := make([]string, 0, len(test.childStates))
+
+	for index, state := range test.childStates {
+		if index > 0 {
+			childSession, err = fixture.sessions.CreateSession(
+				ctx, owner.CWD, fmt.Sprintf("child-%d", index), owner.ID,
+			)
+			require.NoError(t, err)
+		}
+
+		child, createErr := fixture.agents.Create(ctx, newAgentTask(owner.ID, childSession.ID))
+		require.NoError(t, createErr)
+
+		_, err = fixture.workflows.LinkAgentTask(
+			ctx, run.Task.ID, child.Task.ID, fmt.Sprintf("child-%d", index), 0,
+		)
+		require.NoError(t, err)
+
+		childIDs = append(childIDs, child.Task.ID)
+
+		if state == database.TaskRunning {
+			changed, transitionErr := fixture.workflows.Tasks().Transition(
+				ctx, child.Task.ID, []database.TaskState{database.TaskQueued},
+				database.TaskRunning, taskStartedEvent, "{}",
+			)
+			require.NoError(t, transitionErr)
+			require.True(t, changed)
+		}
+	}
+
+	cancelOwner := owner.ID
+
+	if test.useWrongOwner {
+		otherOwner, otherErr := fixture.sessions.CreateSession(ctx, owner.CWD, "other owner", "")
+		require.NoError(t, otherErr)
+
+		cancelOwner = otherOwner.ID
+	}
+
+	changed, err := fixture.workflows.CancelOwned(
+		ctx, cancelOwner, run.Task.ID,
+		"workflow_canceled", database.CancelEventPayload(database.CancelSourceParent),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, test.wantChanged, changed)
+
+	loadedRun, found, err := fixture.workflows.Get(ctx, run.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, test.wantRunState, loadedRun.Task.State)
+
+	assertWorkflowChildrenCanceled(t, fixture, childIDs, test.childStates)
+
+	if test.wantChanged {
+		changed, err = fixture.workflows.CancelOwned(
+			ctx, cancelOwner, run.Task.ID,
+			"workflow_canceled", database.CancelEventPayload(database.CancelSourceParent),
+		)
+		require.NoError(t, err)
+		assert.False(t, changed, "repeated cancellation must be idempotent")
+	}
+}
+
+func assertWorkflowChildrenCanceled(
+	t *testing.T,
+	fixture *taskTestFixture,
+	childIDs []string,
+	childStates []database.TaskState,
+) {
+	t.Helper()
+
+	for index, childID := range childIDs {
+		child, childFound, childErr := fixture.workflows.Tasks().Get(t.Context(), childID)
+		require.NoError(t, childErr)
+		require.True(t, childFound)
+
+		wantState := database.TaskCanceled
+		if childStates[index] == database.TaskRunning {
+			wantState = database.TaskCanceling
+		}
+
+		assert.Equal(t, wantState, child.State)
+
+		events, eventsErr := fixture.workflows.Tasks().ListEvents(t.Context(), childID, 0, 10)
+		require.NoError(t, eventsErr)
+		require.NotEmpty(t, events)
+		assert.Equal(t, "task_canceled", events[len(events)-1].Event.Kind)
+		assert.JSONEq(
+			t, database.CancelEventPayload(database.CancelSourceWorkflow),
+			events[len(events)-1].Event.PayloadJSON,
+		)
+	}
+}
+
+func TestWorkflowRepositoryCancelOwnedCountsOnlyCancelingChildrenAsActive(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		childState     database.TaskState
+		wantRunState   database.TaskState
+		wantChildState database.TaskState
+	}{
+		{
+			name:           "queued child is canceled",
+			childState:     database.TaskQueued,
+			wantRunState:   database.TaskCanceled,
+			wantChildState: database.TaskCanceled,
+		},
+		{
+			name:           "running child remains active while canceling",
+			childState:     database.TaskRunning,
+			wantRunState:   database.TaskCanceling,
+			wantChildState: database.TaskCanceling,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newTaskTestFixture(t)
+			ctx := t.Context()
+			owner, childSession := fixture.createAgentTaskSessions(ctx)
+			run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+			require.NoError(t, err)
+			child, err := fixture.agents.Create(ctx, newAgentTask(owner.ID, childSession.ID))
+			require.NoError(t, err)
+			_, err = fixture.workflows.LinkAgentTask(ctx, run.Task.ID, child.Task.ID, "child", 0)
+			require.NoError(t, err)
+
+			if test.childState == database.TaskRunning {
+				changed, transitionErr := fixture.workflows.Tasks().Transition(ctx, child.Task.ID,
+					[]database.TaskState{database.TaskQueued}, database.TaskRunning, taskStartedEvent, "{}")
+				require.NoError(t, transitionErr)
+				require.True(t, changed)
+			}
+
+			changed, err := fixture.workflows.CancelOwned(ctx, owner.ID, run.Task.ID, "workflow_canceled", "{}")
+			require.NoError(t, err)
+			require.True(t, changed)
+
+			loadedRun, found, err := fixture.workflows.Get(ctx, run.Task.ID)
+			require.NoError(t, err)
+			require.True(t, found)
+			assert.Equal(t, test.wantRunState, loadedRun.Task.State)
+
+			loadedChild, found, err := fixture.agents.Get(ctx, child.Task.ID)
+			require.NoError(t, err)
+			require.True(t, found)
+			assert.Equal(t, test.wantChildState, loadedChild.Task.State)
+		})
+	}
+}
+
 func TestWorkflowRepositoryListAgentTaskDetails(t *testing.T) {
 	t.Parallel()
 
@@ -212,14 +420,16 @@ func TestWorkflowRepositoryCreateAgentTaskAtomicallyLinks(t *testing.T) {
 	require.True(t, found)
 	assert.Equal(t, created.Task.ID, link.AgentTaskID)
 
-	invalid := newAgentTask(owner.ID, child.ID)
-	invalid.Task.ParentTaskID = run.Task.ID
-	_, err = fixture.workflows.CreateAgentTask(ctx, run.Task.ID, invalid, "inspect", 0)
-	require.Error(t, err)
+	duplicate := newAgentTask(owner.ID, child.ID)
+	duplicate.Task.ParentTaskID = run.Task.ID
+	reused, err := fixture.workflows.CreateAgentTask(ctx, run.Task.ID, duplicate, "inspect", 0)
+	require.NoError(t, err)
+	assert.Equal(t, created.Task.ID, reused.Task.ID,
+		"semantic invocation matches must reuse the persisted task instead of comparing generated IDs")
 
 	listed, listErr := fixture.agents.ListByOwner(ctx, owner.ID, 10)
 	require.NoError(t, listErr)
-	assert.Len(t, listed, 1, "failed workflow links must roll back agent task creation")
+	assert.Len(t, listed, 1, "duplicate workflow invocations must not create another agent task")
 }
 
 func TestWorkflowRepositoryCreatesChildSessionAtomically(t *testing.T) {
@@ -249,20 +459,23 @@ func TestWorkflowRepositoryCreatesChildSessionAtomically(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, created.ChildSessionID)
 
-	_, err = create("orphan")
-	require.Error(t, err)
+	reused, err := create("orphan")
+	require.NoError(t, err)
+	assert.Equal(t, created.Task.ID, reused.Task.ID)
+	assert.Equal(t, created.ChildSessionID, reused.ChildSessionID,
+		"semantic invocation matches must not compare generated child session IDs")
 
 	children, err := fixture.sessions.ListChildSessions(ctx, owner.ID)
 	require.NoError(t, err)
-	assert.Len(t, children, 1, "link conflicts must roll back their child session")
+	assert.Len(t, children, 1, "duplicate invocations must not create another child session")
 
 	agentTasks, err := fixture.agents.ListByOwner(ctx, owner.ID, 10)
 	require.NoError(t, err)
-	assert.Len(t, agentTasks, 1, "link conflicts must roll back their agent task")
+	assert.Len(t, agentTasks, 1, "duplicate invocations must not create another agent task")
 
 	links, err := fixture.workflows.ListAgentTasks(ctx, run.Task.ID)
 	require.NoError(t, err)
-	assert.Len(t, links, 1, "link conflicts must not add another workflow link")
+	assert.Len(t, links, 1, "duplicate invocations must not add another workflow link")
 
 	mismatched := newAgentTask(owner.ID, "")
 	mismatched.Task.ParentTaskID = run.Task.ID
