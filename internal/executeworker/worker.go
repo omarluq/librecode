@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"strconv"
 	"sync"
 
 	"github.com/omarluq/librecode/internal/guestapi"
@@ -529,7 +530,32 @@ func decodeRPCValue(response *Message) (any, error) {
 		return nil, fmt.Errorf("decode RPC result: %w", err)
 	}
 
-	return value, nil
+	return normalizeRPCNumbers(value), nil
+}
+
+// normalizeRPCNumbers keeps UseNumber's exact integer decoding without exposing
+// json.Number (a named string type) to guest code that expects native numbers.
+func normalizeRPCNumbers(value any) any {
+	switch typed := value.(type) {
+	case json.Number:
+		if integer, err := strconv.Atoi(typed.String()); err == nil {
+			return integer
+		}
+
+		if decimal, err := typed.Float64(); err == nil {
+			return decimal
+		}
+	case []any:
+		for index := range typed {
+			typed[index] = normalizeRPCNumbers(typed[index])
+		}
+	case map[string]any:
+		for key := range typed {
+			typed[key] = normalizeRPCNumbers(typed[key])
+		}
+	}
+
+	return value
 }
 
 func rpcError(message string) map[string]any {
