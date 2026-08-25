@@ -279,20 +279,47 @@ func (service *Service) prepareRun(
 	return run, persisted, arguments, nil
 }
 
-// RecoverInterrupted marks abandoned in-process runs interrupted after restart.
-// Workflow source is not replayed because interpreter memory is intentionally not persisted.
+// RecoverInterrupted closes and cancels expired non-resumable run trees before
+// publishing the interrupted parent outcome. Interpreter state is never replayed.
 func (service *Service) RecoverInterrupted(ctx context.Context) ([]string, error) {
-	runIDs, err := service.runs.Tasks().RecoverExpired(ctx, &database.TaskRecovery{
-		ExpiresBefore: time.Now().UTC(), Kind: database.TaskKindWorkflow,
-		EventKind: workflowInterrupted, ErrorCode: "process_restart",
-		ErrorMessage: "workflow interrupted by process restart", PayloadJSON: "{}",
-		TargetState: database.TaskInterrupted,
-	})
+	tasks, err := service.runs.Tasks().ListByStates(ctx, database.TaskKindWorkflow,
+		[]database.TaskState{database.TaskRunning, database.TaskCanceling}, 0)
 	if err != nil {
 		return nil, oops.In("workflow").Code("recover_runs").Wrapf(err, "recover interrupted workflow runs")
 	}
 
-	return runIDs, nil
+	recovered := make([]string, 0, len(tasks))
+	for index := range tasks {
+		task := tasks[index]
+		if task.LeaseExpiresAt != nil && task.LeaseExpiresAt.After(time.Now().UTC()) {
+			continue
+		}
+
+		if _, cancelErr := service.runs.CancelOwned(ctx, task.OwnerSessionID, task.ID,
+			workflowInterrupted, database.CancelEventPayload(database.CancelSourceWorkflow)); cancelErr != nil {
+			return recovered, oops.In("workflow").Code("recover_runs").
+				Wrapf(cancelErr, "cancel interrupted workflow run")
+		}
+
+		finish := &database.TaskFinish{
+			TaskID: task.ID, EventKind: workflowInterrupted, Result: "",
+			ErrorCode: "process_restart", ErrorMessage: "workflow interrupted by process restart",
+			PayloadJSON: "{}", LeaseOwner: "", TargetState: database.TaskInterrupted,
+			From: []database.TaskState{database.TaskRunning, database.TaskCanceling},
+		}
+
+		changed, finishErr := service.runs.FinishOwned(ctx, task.OwnerSessionID, finish)
+		if finishErr != nil {
+			return recovered, oops.In("workflow").Code("recover_runs").
+				Wrapf(finishErr, "finish interrupted workflow run")
+		}
+
+		if changed {
+			recovered = append(recovered, task.ID)
+		}
+	}
+
+	return recovered, nil
 }
 
 // Cancel cancels an active run owned by the supplied session.
@@ -312,22 +339,9 @@ func (service *Service) Cancel(ctx context.Context, ownerSessionID, runID string
 
 	cancelPayload := database.CancelEventPayload(database.CancelSourceParent)
 
-	changed, err := service.runs.Tasks().Transition(
-		ctx, runID, []database.TaskState{database.TaskQueued}, database.TaskCanceled, workflowCanceled,
-		cancelPayload,
-	)
+	changed, err := service.runs.CancelOwned(ctx, ownerSessionID, runID, workflowCanceled, cancelPayload)
 	if err != nil {
-		return false, oops.In("workflow").Code("cancel_queued_run").Wrapf(err, "cancel queued workflow run")
-	}
-
-	if !changed {
-		changed, err = service.runs.Tasks().Transition(
-			ctx, runID, []database.TaskState{database.TaskRunning}, database.TaskCanceling, workflowCanceled,
-			cancelPayload,
-		)
-		if err != nil {
-			return false, oops.In("workflow").Code("cancel_running_run").Wrapf(err, "cancel running workflow run")
-		}
+		return false, oops.In("workflow").Code("cancel_run").Wrapf(err, "cancel workflow run")
 	}
 
 	service.mu.Lock()
@@ -488,6 +502,7 @@ func (service *Service) createRun(
 		},
 		Name: request.Name, Source: request.Source, SourceHash: hex.EncodeToString(hash[:]),
 		SourceVersion: sourceVersion, GuestAPIVersion: string(guestAPIVersion), ArgumentsJSON: argumentsJSON,
+		AdmissionClosedAt: nil,
 	})
 	if err != nil {
 		return nil, oops.In("workflow").Code("create_run").Wrapf(err, "create workflow run")
@@ -552,7 +567,12 @@ func (service *Service) finish(ctx context.Context, runID string, result *RunRes
 
 	state, eventKind, errorCode, errorMessage := workflowOutcome(ctx, runErr)
 
-	changed, err := service.runs.Tasks().Finish(context.WithoutCancel(ctx), &database.TaskFinish{
+	run, found, loadErr := service.runs.Get(context.WithoutCancel(ctx), runID)
+	if loadErr != nil || !found {
+		return oops.In("workflow").Code("load_run_for_finish").Wrapf(loadErr, "load workflow run")
+	}
+
+	changed, err := service.runs.FinishOwned(context.WithoutCancel(ctx), run.Task.OwnerSessionID, &database.TaskFinish{
 		TaskID: runID, EventKind: eventKind, Result: string(encoded), ErrorCode: errorCode,
 		ErrorMessage: errorMessage, PayloadJSON: "{}", LeaseOwner: service.leaseOwner, TargetState: state,
 		From: []database.TaskState{database.TaskRunning, database.TaskCanceling},

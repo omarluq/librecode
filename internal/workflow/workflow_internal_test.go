@@ -161,7 +161,7 @@ func TestRunHostAgentFailureBranches(t *testing.T) {
 	require.ErrorContains(t, err, "prompt is required")
 
 	options := AgentOptions{
-		NodeKey: "", AgentName: "", Model: "", Provider: "", ConcurrencyKey: "", Depth: 0,
+		NodeKey: "", AgentName: "", Model: "", Provider: "", ConcurrencyKey: "", OutputSchema: "", Depth: 0,
 	}
 	_, err = newBranchHost(newBranchController()).agent(t.Context(), "prompt", options, options)
 	require.ErrorContains(t, err, "at most one")
@@ -357,7 +357,7 @@ func branchMessage(method string) *executeworker.Message {
 func newBranchHost(controller Controller) *runHost {
 	return &runHost{
 		controller: controller, runID: "", onEvent: nil,
-		ownerSessionID: testBranchOwner, launched: make(map[string]struct{}),
+		ownerSessionID: testBranchOwner, launched: make(map[string]struct{}), settled: make(map[string]struct{}),
 		invocations: make(map[string]int), persisted: make(map[invocationKey]persistedInvocation),
 		taskIDs: make([]string, 0),
 		mu:      sync.Mutex{}, launchMu: sync.Mutex{}, eventMu: sync.Mutex{},
@@ -375,6 +375,8 @@ func branchAgentTask(id, owner string, state database.TaskState) *database.Agent
 			ID: id, Kind: "", ParentTaskID: "", OwnerSessionID: owner, ConcurrencyKey: "", LeaseOwner: "",
 			State: state, Result: "", ErrorCode: "", ErrorMessage: "",
 		},
-		ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "", PolicyJSON: "", UsageJSON: "", Depth: 0,
+		ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "", PolicyJSON: "", UsageJSON: "",
+		OutputSchemaJSON: "", OutputSchemaDigest: "", OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0,
+		OutputValidationSummary: "", Depth: 0,
 	}
 }
