@@ -85,13 +85,7 @@ func TestWorkflowRepositoryListActiveByOwnerIncludesTerminalRunWithActiveChild(t
 
 	fixture := newTaskTestFixture(t)
 	ctx := t.Context()
-	owner, childSession := fixture.createAgentTaskSessions(ctx)
-	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
-	require.NoError(t, err)
-	child, err := fixture.agents.Create(ctx, newAgentTask(owner.ID, childSession.ID))
-	require.NoError(t, err)
-	_, err = fixture.workflows.LinkAgentTask(ctx, run.Task.ID, child.Task.ID, "child", 0)
-	require.NoError(t, err)
+	owner, run, child := createLinkedWorkflowChild(t, fixture)
 
 	finish := newTaskFinish(
 		run.Task.ID, []database.TaskState{database.TaskQueued}, database.TaskSucceeded, taskSucceededEvent,
@@ -293,13 +287,7 @@ func TestWorkflowRepositoryCancelOwnedCountsOnlyCancelingChildrenAsActive(t *tes
 
 			fixture := newTaskTestFixture(t)
 			ctx := t.Context()
-			owner, childSession := fixture.createAgentTaskSessions(ctx)
-			run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
-			require.NoError(t, err)
-			child, err := fixture.agents.Create(ctx, newAgentTask(owner.ID, childSession.ID))
-			require.NoError(t, err)
-			_, err = fixture.workflows.LinkAgentTask(ctx, run.Task.ID, child.Task.ID, "child", 0)
-			require.NoError(t, err)
+			owner, run, child := createLinkedWorkflowChild(t, fixture)
 
 			if test.childState == database.TaskRunning {
 				changed, transitionErr := fixture.workflows.Tasks().Transition(ctx, child.Task.ID,
@@ -323,6 +311,24 @@ func TestWorkflowRepositoryCancelOwnedCountsOnlyCancelingChildrenAsActive(t *tes
 			assert.Equal(t, test.wantChildState, loadedChild.Task.State)
 		})
 	}
+}
+
+func createLinkedWorkflowChild(
+	t *testing.T,
+	fixture *taskTestFixture,
+) (*database.SessionEntity, *database.WorkflowRunEntity, *database.AgentTaskEntity) {
+	t.Helper()
+
+	ctx := t.Context()
+	owner, childSession := fixture.createAgentTaskSessions(ctx)
+	run, err := fixture.workflows.Create(ctx, newWorkflowRun(owner.ID))
+	require.NoError(t, err)
+	child, err := fixture.agents.Create(ctx, newAgentTask(owner.ID, childSession.ID))
+	require.NoError(t, err)
+	_, err = fixture.workflows.LinkAgentTask(ctx, run.Task.ID, child.Task.ID, "child", 0)
+	require.NoError(t, err)
+
+	return owner, run, child
 }
 
 func TestWorkflowRepositoryListAgentTaskDetails(t *testing.T) {
