@@ -267,6 +267,45 @@ func TestRunHostListAndCancelFailureBranches(t *testing.T) {
 	require.ErrorContains(t, err, taskNotOwnedBySession)
 }
 
+func TestRunHostCancelOnlySettlesTerminalTask(t *testing.T) {
+	t.Parallel()
+
+	const taskID = "task"
+
+	awaitCalls := 0
+	controller := newBranchController()
+	controller.get = ownedGet
+	controller.cancel = func(context.Context, string, string) (*database.TaskEntity, bool, error) {
+		return &branchAgentTask(taskID, testBranchOwner, database.TaskCanceling).Task, true, nil
+	}
+	controller.await = func(context.Context, string) (*database.AgentTaskEntity, error) {
+		awaitCalls++
+
+		return branchAgentTask(taskID, testBranchOwner, database.TaskCanceled), nil
+	}
+
+	host := newBranchHost(controller)
+	host.launched[taskID] = struct{}{}
+	host.taskIDs = []string{taskID}
+
+	result, err := host.cancel(t.Context(), taskID)
+	require.NoError(t, err)
+	assert.Equal(t, string(database.TaskCanceling), result.State)
+	assert.False(t, host.isSettled(taskID))
+
+	require.NoError(t, host.cancelActive(t.Context()))
+	assert.Equal(t, 1, awaitCalls)
+
+	controller.cancel = func(context.Context, string, string) (*database.TaskEntity, bool, error) {
+		return &branchAgentTask(taskID, testBranchOwner, database.TaskCanceled).Task, true, nil
+	}
+	host = newBranchHost(controller)
+	host.launched[taskID] = struct{}{}
+	_, err = host.cancel(t.Context(), taskID)
+	require.NoError(t, err)
+	assert.True(t, host.isSettled(taskID))
+}
+
 func TestRunHostPersistedAndCleanupFailures(t *testing.T) {
 	t.Parallel()
 

@@ -656,6 +656,46 @@ func TestServiceInternalCancelingRunNamesRequester(t *testing.T) {
 	assert.Equal(t, "task canceled by workflow", finalized.Task.ErrorMessage)
 }
 
+func TestServiceInternalCancelPreservesExistingCancelingSource(t *testing.T) {
+	t.Parallel()
+
+	fixture := newServiceRepositoryFixture(t)
+	created := fixture.createQueuedAgentTask(t)
+
+	changed, err := fixture.tasks.Transition(
+		t.Context(), created.Task.ID,
+		[]database.TaskState{database.TaskQueued}, database.TaskRunning, "task_started", "{}",
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	changed, err = fixture.tasks.Transition(
+		t.Context(), created.Task.ID,
+		[]database.TaskState{database.TaskRunning}, database.TaskCanceling, "task_canceling",
+		database.CancelEventPayload(database.CancelSourceWorkflow),
+	)
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	service := queuedService(fixture.tasks, fixture.agentTasks)
+
+	// A later parent cancellation may repeat the live signal, but the workflow
+	// source that won the durable transition remains authoritative.
+	_, found, err := service.Cancel(
+		t.Context(), created.Task.OwnerSessionID, created.Task.ID, database.CancelSourceParent,
+	)
+	require.NoError(t, err)
+	require.True(t, found)
+
+	service.finalizeRun(t.Context(), created.Task.ID, Result{Text: "", UsageJSON: ""}, context.Canceled)
+
+	finalized, found, err := fixture.agentTasks.Get(t.Context(), created.Task.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, database.TaskCanceled, finalized.Task.State)
+	assert.Equal(t, "task canceled by workflow", finalized.Task.ErrorMessage)
+}
+
 func TestServiceInternalTimeoutRecordsDistinctErrorCode(t *testing.T) {
 	t.Parallel()
 

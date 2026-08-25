@@ -58,7 +58,7 @@ func NewWorkflowRepository(connection *sql.DB) (*WorkflowRepository, error) {
 		return nil, err
 	}
 
-	tasks, err := NewTaskRepositoryWithProvider(provider)
+	tasks, err := newStandaloneTaskRepository(provider)
 	if err != nil {
 		return nil, err
 	}
@@ -431,15 +431,6 @@ FROM workflow_agent_tasks WHERE workflow_task_id = ? AND node_key = ? AND invoca
 		return nil, false, workflowInvocationConflict("workflow invocation identity does not match persisted child")
 	}
 
-	if request.child != nil && persisted.ChildSessionID != request.child.ID {
-		return nil, false, workflowInvocationConflict("workflow invocation already has a persisted child session")
-	}
-
-	if request.child == nil && persisted.Task.ID != request.agentTask.Task.ID {
-		return nil, false, oops.In("database").Code("workflow_agent_invocation_conflict").
-			Errorf("workflow invocation is already linked to agent task %q", persisted.Task.ID)
-	}
-
 	return persisted, true, nil
 }
 
@@ -538,14 +529,21 @@ func (repository *WorkflowRepository) cancelWorkflowTree(
 		return false, err
 	}
 
+	activeChildren := 0
+
 	for _, child := range children {
-		if err := repository.cancelWorkflowChild(ctx, transaction, child, now); err != nil {
-			return false, err
+		canceling, cancelErr := repository.cancelWorkflowChild(ctx, transaction, child, now)
+		if cancelErr != nil {
+			return false, cancelErr
+		}
+
+		if canceling {
+			activeChildren++
 		}
 	}
 
 	target := TaskCanceled
-	if len(children) > 0 {
+	if activeChildren > 0 {
 		target = TaskCanceling
 	}
 
@@ -599,18 +597,18 @@ func (repository *WorkflowRepository) cancelWorkflowChild(
 	transaction ksql.Provider,
 	child workflowChildState,
 	now time.Time,
-) error {
+) (bool, error) {
 	target := TaskCanceling
 	if TaskState(child.State) == TaskQueued {
 		target = TaskCanceled
 	}
 
-	_, err := repository.tasks.transition(ctx, transaction, child.ID,
+	changed, err := repository.tasks.transition(ctx, transaction, child.ID,
 		[]TaskState{TaskState(child.State)}, target,
 		TaskEventDraft{Kind: taskCanceledEvent, PayloadJSON: CancelEventPayload(CancelSourceWorkflow)},
 		retryStableTaskOperation{now: now, eventID: newUUIDv7()})
 
-	return err
+	return changed && target == TaskCanceling, err
 }
 
 // FinishOwned closes admission and commits a terminal run outcome only after every admitted child is terminal.
