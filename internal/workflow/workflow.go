@@ -16,6 +16,7 @@ import (
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/outputschema"
+	"github.com/omarluq/librecode/internal/workflowprogress"
 )
 
 const (
@@ -79,6 +80,7 @@ type Controller interface {
 // RunRequest describes one isolated workflow evaluation.
 type RunRequest struct {
 	OnEvent        EventSink
+	OnProgress     workflowprogress.Sink
 	Arguments      map[string]any
 	RunID          string
 	Name           string
@@ -181,7 +183,9 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 		run.taskIDs = append(run.taskIDs, link.AgentTaskID)
 	}
 
-	client := executeworker.Client{Executable: runner.executable, Handler: run.handleRPC, Progress: nil}
+	client := executeworker.Client{
+		Executable: runner.executable, Handler: run.handleRPC, Progress: request.OnProgress,
+	}
 	result, err := client.EvalRequest(ctx, &executeworker.Request{
 		Arguments: request.Arguments, Mode: "", Profile: guestapi.ProfileDurable, GuestAPIVersion: version,
 		Name: request.Name, Source: request.Source,

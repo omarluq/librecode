@@ -56,7 +56,7 @@ func TestRunnerRejectsInvalidConstructionAndRunInputs(t *testing.T) {
 	var nilContext context.Context
 
 	_, err = runner.Run(nilContext, &RunRequest{
-		RunID: "", Name: "", Source: "", OwnerSessionID: "", OnEvent: nil,
+		RunID: "", Name: "", Source: "", OwnerSessionID: "", OnProgress: nil, OnEvent: nil,
 		Arguments: nil, GuestAPI: "", PersistedLinks: nil,
 	})
 	require.ErrorContains(t, err, "context is required")
