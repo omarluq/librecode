@@ -285,55 +285,62 @@ func boolInt(value bool) int {
 	return 0
 }
 
-//nolint:wsl_v5 // Keep validation clauses compact and consistently ordered.
 func validatePhase(phase *Phase) error {
 	if phase == nil {
 		return errors.New("phase progress event is missing its phase body")
 	}
+
 	if err := validID("phase", phase.ID); err != nil {
 		return err
 	}
+
 	if err := validText("phase title", phase.Title); err != nil {
 		return err
 	}
+
 	_, err := parseState(string(phase.State))
 
 	return err
 }
 
-//nolint:wsl_v5 // Keep validation clauses compact and consistently ordered.
 func validateItem(item *Item) error {
 	if item == nil {
 		return errors.New("item progress event is missing its item body")
 	}
+
 	if err := validID("item", item.ID); err != nil {
 		return err
 	}
+
 	if item.PhaseID != "" {
 		if err := validID("item phase", item.PhaseID); err != nil {
 			return err
 		}
 	}
+
 	if err := validText("item title", item.Title); err != nil {
 		return err
 	}
+
 	_, err := parseState(string(item.State))
 
 	return err
 }
 
-//nolint:wsl_v5 // Keep validation clauses compact and consistently ordered.
 func validateCustom(custom *Custom) error {
 	if custom == nil {
 		return errors.New("custom progress event is missing its event body")
 	}
+
 	if err := validText("event name", custom.Name); err != nil {
 		return err
 	}
+
 	encoded, err := json.Marshal(custom.Data)
 	if err != nil {
 		return fmt.Errorf("encode progress event data: %w", err)
 	}
+
 	if len(encoded) > MaxDataBytes {
 		return fmt.Errorf("progress event data is %d bytes; limit is %d", len(encoded), MaxDataBytes)
 	}
@@ -341,11 +348,11 @@ func validateCustom(custom *Custom) error {
 	return nil
 }
 
-//nolint:wsl_v5 // Keep validation clauses compact and consistently ordered.
 func validateLog(log *Log) error {
 	if log == nil {
 		return errors.New("log progress event is missing its log body")
 	}
+
 	if err := validText("log level", log.Level); err != nil {
 		return err
 	}
