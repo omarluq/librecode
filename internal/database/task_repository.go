@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -147,16 +146,6 @@ type TaskRepository struct {
 	sql         ksql.Provider
 	now         func() time.Time
 	completions *CompletionRepository
-}
-
-// NewTaskRepository creates a task repository.
-func NewTaskRepository(connection *sql.DB) (*TaskRepository, error) {
-	provider, err := newSQLProvider(connection)
-	if err != nil {
-		return nil, err
-	}
-
-	return newStandaloneTaskRepository(provider)
 }
 
 // NewTaskRepositoryWithProvider creates a task repository with explicit shared dependencies.

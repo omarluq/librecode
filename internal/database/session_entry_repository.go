@@ -495,6 +495,8 @@ func (repository *SessionRepository) appendEntryTx(
 }
 
 func (repository *SessionRepository) prepareAppendEntry(entry *EntryEntity) error {
+	canonicalizeEntryMessageParts(entry)
+
 	if err := applyEntryMetadata(entry); err != nil {
 		return oops.In("database").Code("entry_metadata").Wrapf(err, "prepare entry metadata")
 	}
@@ -504,6 +506,17 @@ func (repository *SessionRepository) prepareAppendEntry(entry *EntryEntity) erro
 	}
 
 	return nil
+}
+
+func canonicalizeEntryMessageParts(entry *EntryEntity) {
+	if !entryCarriesMessage(entry) || len(entry.Message.Parts) != 0 || strings.TrimSpace(entry.Message.Content) == "" {
+		return
+	}
+
+	entry.Message.Parts = []MessagePartEntity{{
+		Type: MessagePartText, Text: entry.Message.Content, Data: nil,
+		MIMEType: "", Name: "", Width: 0, Height: 0,
+	}}
 }
 
 func (repository *SessionRepository) insertEntryTx(

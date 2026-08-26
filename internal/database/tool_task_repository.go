@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -54,21 +53,6 @@ type expiredToolTaskRecovery struct {
 type ToolTaskRepository struct {
 	sql   ksql.Provider
 	tasks *TaskRepository
-}
-
-// NewToolTaskRepository creates a tool task repository backed by connection.
-func NewToolTaskRepository(connection *sql.DB) (*ToolTaskRepository, error) {
-	provider, err := newSQLProvider(connection)
-	if err != nil {
-		return nil, err
-	}
-
-	tasks, err := newStandaloneTaskRepository(provider)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewToolTaskRepositoryWithProvider(provider, tasks)
 }
 
 // NewToolTaskRepositoryWithProvider creates a tool task repository sharing tasks' provider.

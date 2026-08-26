@@ -282,17 +282,12 @@ func runSQLiteSoakHelper(mode, argument string) (resultErr error) {
 		return barrierErr
 	}
 
-	sessions, err := database.NewSessionRepository(connection)
+	repositories, err := database.NewRepositories(connection)
 	if err != nil {
-		return fmt.Errorf("create session repository: %w", err)
+		return fmt.Errorf("create repositories: %w", err)
 	}
 
-	tasks, err := database.NewTaskRepository(connection)
-	if err != nil {
-		return fmt.Errorf("create task repository: %w", err)
-	}
-
-	result, err := executeSoakMode(ctx, mode, argument, sessions, tasks, connection)
+	result, err := executeSoakMode(ctx, mode, argument, repositories.Sessions, repositories.Tasks, connection)
 	if err != nil {
 		return err
 	}

@@ -147,6 +147,12 @@ func messageValidationCases(entityID string, now time.Time) []entityValidationCa
 
 			return validateSessionMessageEntity(&entity)
 		}, wantError: "message.role is required"},
+		{name: "message content without parts", validate: func() error {
+			entity := validMessageEntity(entityID, now)
+			entity.Content = "scalar text"
+
+			return validateSessionMessageEntity(&entity)
+		}, wantError: "message.content must match the text projection of message.parts"},
 		{name: "message created", validate: func() error {
 			entity := validMessageEntity(entityID, now)
 			entity.CreatedAt = time.Time{}
@@ -353,7 +359,7 @@ func validTaskEntity(entityID string, now time.Time) TaskEntity {
 
 func validAgentTaskEntity(entityID string, now time.Time) AgentTaskEntity {
 	return AgentTaskEntity{Task: validTaskEntity(entityID, now), ChildSessionID: entityID, AgentName: "general",
-		Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`,
+		Prompt: "work", Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: unknownUsageJSON,
 		OutputSchemaJSON: "", OutputSchemaDigest: "", OutputAttemptsReserved: 0,
 		OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1}
 }
@@ -369,7 +375,7 @@ func validAgentTaskRow(entityID, now string) agentTaskRow {
 		ConcurrencyKey: "", State: string(TaskQueued), Result: "", ErrorCode: "", ErrorMessage: "",
 		CreatedAt: now, StartedAt: nil, FinishedAt: nil, UpdatedAt: now, LeaseOwner: nil, LeaseExpiresAt: nil,
 		ChildSessionID: entityID, AgentName: "general", Prompt: "work", Model: "", Provider: "",
-		PolicyJSON: `{}`, UsageJSON: `{}`, OutputSchemaJSON: nil, OutputSchemaDigest: nil,
+		PolicyJSON: `{}`, UsageJSON: unknownUsageJSON, OutputSchemaJSON: nil, OutputSchemaDigest: nil,
 		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1}
 }
 

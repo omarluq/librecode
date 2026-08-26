@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 
@@ -14,16 +13,6 @@ import (
 type DocumentRepository struct {
 	sql ksql.Provider
 	now func() time.Time
-}
-
-// NewDocumentRepository creates a document repository.
-func NewDocumentRepository(connection *sql.DB) (*DocumentRepository, error) {
-	provider, err := newSQLProvider(connection)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewDocumentRepositoryWithProvider(provider)
 }
 
 // NewDocumentRepositoryWithProvider creates a document repository with an explicit SQL provider.

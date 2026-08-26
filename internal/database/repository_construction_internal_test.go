@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	unknownUsageJSON        = `{"reported":false}`
 	repositorySessionName   = "session"
 	repositoryDocumentName  = "document"
 	repositoryTaskName      = "task"
@@ -19,11 +20,6 @@ const (
 	repositoryAgentTaskName = "agent task"
 	repositoryWorkflowName  = "workflow"
 )
-
-type repositoryConstructorCase struct {
-	construct func(*sql.DB) error
-	name      string
-}
 
 type nilEntityCase struct {
 	call func() error
@@ -34,32 +30,6 @@ type nilEntityCase struct {
 type providerRepositoryConstructorCase struct {
 	construct func(ksql.Provider) error
 	name      string
-}
-
-func TestRepositoryConstructorsRejectInvalidSQLConnections(t *testing.T) {
-	t.Parallel()
-
-	constructors := []repositoryConstructorCase{
-		{name: repositorySessionName, construct: sessionConstructorError},
-		{name: repositoryDocumentName, construct: documentConstructorError},
-		{name: repositoryTaskName, construct: taskConstructorError},
-		{name: repositoryToolTaskName, construct: toolTaskConstructorError},
-		{name: repositoryAgentTaskName, construct: agentTaskConstructorError},
-		{name: repositoryWorkflowName, construct: workflowConstructorError},
-	}
-
-	for _, constructor := range constructors {
-		t.Run(constructor.name, func(t *testing.T) {
-			t.Parallel()
-
-			assertRepositoryOopsCode(t, constructor.construct(nil), "nil_sql_connection")
-
-			connection, err := sql.Open("sqlite", ":memory:")
-			require.NoError(t, err)
-			require.NoError(t, connection.Close())
-			assertRepositoryOopsCode(t, constructor.construct(connection), "ping_sql_connection")
-		})
-	}
 }
 
 func TestRepositoryConstructorsRejectNilProviders(t *testing.T) {
@@ -101,7 +71,7 @@ func TestCompositeRepositoryConstructorsShareDependencies(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 
-	provider, err := newSQLProvider(connection)
+	provider, err := newSQLProviderFromOpenConnection(connection)
 	require.NoError(t, err)
 	sessions, err := NewSessionRepositoryWithProvider(provider)
 	require.NoError(t, err)
@@ -134,7 +104,7 @@ func TestCompositeRepositoriesUseSharedClock(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	require.NoError(t, Migrate(t.Context(), connection))
 
-	provider, err := newSQLProvider(connection)
+	provider, err := newSQLProviderFromOpenConnection(connection)
 	require.NoError(t, err)
 	sessions, err := NewSessionRepositoryWithProvider(provider)
 	require.NoError(t, err)
@@ -163,7 +133,7 @@ func TestCompositeRepositoriesUseSharedClock(t *testing.T) {
 		Model:                   "",
 		Provider:                "",
 		PolicyJSON:              "{}",
-		UsageJSON:               "{}",
+		UsageJSON:               unknownUsageJSON,
 		OutputSchemaJSON:        "",
 		OutputSchemaDigest:      "",
 		OutputAttemptsReserved:  0,
@@ -216,7 +186,7 @@ func TestCompositeRepositoryConstructorsRejectInvalidGraph(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 
-	provider, err := newSQLProvider(connection)
+	provider, err := newSQLProviderFromOpenConnection(connection)
 	require.NoError(t, err)
 	tasks, err := newStandaloneTaskRepository(provider)
 	require.NoError(t, err)
@@ -229,7 +199,7 @@ func TestCompositeRepositoryConstructorsRejectInvalidGraph(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, otherConnection.Close()) })
 
-	otherProvider, err := newSQLProvider(otherConnection)
+	otherProvider, err := newSQLProviderFromOpenConnection(otherConnection)
 	require.NoError(t, err)
 
 	const graphMismatch = "repository_graph_mismatch"
@@ -297,18 +267,13 @@ func TestRepositoryMethodsRejectNilEntities(t *testing.T) {
 	connection.SetMaxOpenConns(1)
 	require.NoError(t, Migrate(t.Context(), connection))
 
-	tasks, err := NewTaskRepository(connection)
-	require.NoError(t, err)
-	documents, err := NewDocumentRepository(connection)
-	require.NoError(t, err)
-	agentTasks, err := NewAgentTaskRepository(connection)
-	require.NoError(t, err)
-	workflows, err := NewWorkflowRepository(connection)
-	require.NoError(t, err)
-	sessions, err := NewSessionRepository(connection)
+	repositories, err := NewRepositories(connection)
 	require.NoError(t, err)
 
-	tests := nilEntityCases(t, tasks, documents, agentTasks, workflows, sessions)
+	tests := nilEntityCases(
+		t, repositories.Tasks, repositories.Documents, repositories.AgentTasks,
+		repositories.Workflows, repositories.Sessions,
+	)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -412,42 +377,6 @@ func workflowGraphConstructorError(
 	agentTasks *AgentTaskRepository,
 ) error {
 	_, err := NewWorkflowRepositoryWithProvider(provider, tasks, agentTasks)
-
-	return err
-}
-
-func sessionConstructorError(connection *sql.DB) error {
-	_, err := NewSessionRepository(connection)
-
-	return err
-}
-
-func documentConstructorError(connection *sql.DB) error {
-	_, err := NewDocumentRepository(connection)
-
-	return err
-}
-
-func taskConstructorError(connection *sql.DB) error {
-	_, err := NewTaskRepository(connection)
-
-	return err
-}
-
-func toolTaskConstructorError(connection *sql.DB) error {
-	_, err := NewToolTaskRepository(connection)
-
-	return err
-}
-
-func agentTaskConstructorError(connection *sql.DB) error {
-	_, err := NewAgentTaskRepository(connection)
-
-	return err
-}
-
-func workflowConstructorError(connection *sql.DB) error {
-	_, err := NewWorkflowRepository(connection)
 
 	return err
 }

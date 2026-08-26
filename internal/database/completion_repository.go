@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,21 +50,6 @@ type CompletionRepository struct {
 	sessions *SessionRepository
 	redact   CompletionRedactor
 	now      func() time.Time
-}
-
-// NewCompletionRepository creates a completion repository backed by connection.
-func NewCompletionRepository(connection *sql.DB) (*CompletionRepository, error) {
-	provider, err := newSQLProvider(connection)
-	if err != nil {
-		return nil, err
-	}
-
-	sessions, err := NewSessionRepositoryWithProvider(provider)
-	if err != nil {
-		return nil, err
-	}
-
-	return newCompletionRepository(provider, sessions)
 }
 
 func newCompletionRepository(provider ksql.Provider, sessions *SessionRepository) (*CompletionRepository, error) {

@@ -3,7 +3,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 
@@ -24,16 +23,6 @@ type ChildSessionRequest struct {
 type SessionRepository struct {
 	sql ksql.Provider
 	now func() time.Time
-}
-
-// NewSessionRepository creates a session repository.
-func NewSessionRepository(connection *sql.DB) (*SessionRepository, error) {
-	provider, err := newSQLProvider(connection)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewSessionRepositoryWithProvider(provider)
 }
 
 // NewSessionRepositoryWithProvider creates a session repository with an explicit SQL provider.
