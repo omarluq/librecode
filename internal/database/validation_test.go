@@ -35,7 +35,7 @@ func TestRepositoryRejectsInvalidUUIDs(t *testing.T) {
 			t.Parallel()
 
 			ctx := context.Background()
-			connection := newMigratedThroughVersion(t, 12)
+			connection := newMigratedThroughVersion(t, 13)
 			repository := testutil.SessionRepository(t, connection)
 			session, err := repository.CreateSession(ctx, "/work", "uuid", "")
 			require.NoError(t, err)
