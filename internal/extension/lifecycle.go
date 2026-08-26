@@ -20,12 +20,6 @@ const (
 	LifecycleSessionStart LifecycleEventName = "session_start"
 	// LifecycleSessionLoad fires when an existing session is loaded.
 	LifecycleSessionLoad LifecycleEventName = "session_load"
-	// LifecycleSessionSave fires after durable session state is written.
-	LifecycleSessionSave LifecycleEventName = "session_save"
-	// LifecycleSessionShutdown fires before a session/runtime shuts down.
-	LifecycleSessionShutdown LifecycleEventName = "session_shutdown"
-	// LifecycleResourcesDiscover fires while project resources are discovered.
-	LifecycleResourcesDiscover LifecycleEventName = "resources_discover"
 	// LifecycleInput fires when raw user input enters the assistant runtime.
 	LifecycleInput LifecycleEventName = "input"
 	// LifecyclePromptPrepare fires before a prompt becomes a model turn.
@@ -60,8 +54,6 @@ const (
 	LifecycleSessionCompact LifecycleEventName = "session_compact"
 	// LifecycleAgentEnd fires when assistant turn execution ends.
 	LifecycleAgentEnd LifecycleEventName = "agent_end"
-	// LifecycleShutdown fires before the runtime exits.
-	LifecycleShutdown LifecycleEventName = "shutdown"
 )
 
 // LifecycleEvent is the runtime-neutral payload passed through lifecycle handlers.
