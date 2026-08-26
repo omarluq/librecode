@@ -1327,7 +1327,7 @@ func testRegistryWithInput(t *testing.T, input []model.InputMode) *model.Registr
 		testRuntimeProvider: testProviderCredential(),
 	})
 
-	return model.NewRegistry(&model.RegistryOptions{
+	return model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",

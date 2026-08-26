@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/model"
 )
 
 func TestRuntimeModelContextEntityFromUsesExplicitBranch(t *testing.T) {
@@ -105,9 +105,9 @@ func TestModelFacingMessagesPreservesModelFacingCustomRoles(t *testing.T) {
 	}, messageRoles(filtered))
 	assert.Equal(t, "extension context", filtered[0].Content)
 	assert.Equal(t, "bash context", filtered[1].Content)
-	assert.True(t, strings.HasPrefix(filtered[2].Content, core.CompactionSummaryPrefix))
+	assert.True(t, strings.HasPrefix(filtered[2].Content, model.CompactionSummaryPrefix))
 	assert.Contains(t, filtered[2].Content, "earlier summary")
-	assert.True(t, strings.HasPrefix(filtered[3].Content, core.BranchSummaryPrefix))
+	assert.True(t, strings.HasPrefix(filtered[3].Content, model.BranchSummaryPrefix))
 	assert.Contains(t, filtered[3].Content, "branch summary")
 }
 

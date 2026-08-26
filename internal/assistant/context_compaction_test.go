@@ -742,7 +742,7 @@ func newCompactionTestRegistry(t *testing.T, contextWindow int) *model.Registry 
 		testRuntimeProvider: testProviderCredential(),
 	})
 
-	return model.NewRegistry(&model.RegistryOptions{
+	return model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",

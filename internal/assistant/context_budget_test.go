@@ -183,7 +183,7 @@ func newTestRuntimeWithContextWindowAndMaxTokens(
 		testRuntimeProvider: testProviderCredential(),
 	})
 
-	registry := model.NewRegistry(&model.RegistryOptions{
+	registry := model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",

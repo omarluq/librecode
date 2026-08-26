@@ -54,7 +54,7 @@ func testRuntimeOverflowRejectsStaleResponse(
 		failureSafetyModel("original-model"),
 		failureSafetyModel("replacement-model"),
 	}
-	registry := model.NewRegistry(&model.RegistryOptions{
+	registry := model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil, Auth: nil, ModelsPath: "", BuiltIns: models,
 		Discovery: model.DiscoveryOptions{
 			Client: nil, CachePath: "", SourceURL: "", CacheTTL: 0, FetchTimeout: 0, Enabled: false,
