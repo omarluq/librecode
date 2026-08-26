@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
 )
@@ -52,13 +51,13 @@ func TestFacingMessageWrapsSummaryRoles(t *testing.T) {
 			name:        "compaction summary",
 			role:        database.RoleCompactionSummary,
 			wantRole:    database.RoleUser,
-			wantContent: core.CompactionSummaryPrefix + "compacted facts" + core.CompactionSummarySuffix,
+			wantContent: model.CompactionSummaryPrefix + "compacted facts" + model.CompactionSummarySuffix,
 		},
 		{
 			name:        "branch summary",
 			role:        database.RoleBranchSummary,
 			wantRole:    database.RoleUser,
-			wantContent: core.BranchSummaryPrefix + "compacted facts" + core.BranchSummarySuffix,
+			wantContent: model.BranchSummaryPrefix + "compacted facts" + model.BranchSummarySuffix,
 		},
 		{
 			name:        "assistant passthrough",
@@ -99,7 +98,7 @@ func TestFacingMessagesFiltersAndConverts(t *testing.T) {
 	assert.Equal(t, database.RoleUser, facing[0].Role)
 	assert.Equal(t, "hello", facing[0].Content)
 	assert.Equal(t, database.RoleUser, facing[1].Role)
-	assert.Equal(t, core.BranchSummaryPrefix+"branch facts"+core.BranchSummarySuffix, facing[1].Content)
+	assert.Equal(t, model.BranchSummaryPrefix+"branch facts"+model.BranchSummarySuffix, facing[1].Content)
 	assert.Equal(t, database.RoleCustom, facing[2].Role)
 	assert.Equal(t, "custom facts", facing[2].Content)
 }

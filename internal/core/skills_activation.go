@@ -29,13 +29,6 @@ type rankedSkill struct {
 	order  int
 }
 
-// AutoActivateSkills selects matching skills and reads their SKILL.md content for prompt context.
-func AutoActivateSkills(prompt string, skills []Skill) ([]ActivatedSkill, []ResourceDiagnostic) {
-	result := AutoActivateSkillsDetailed(prompt, skills)
-
-	return result.Activated, result.Diagnostics
-}
-
 // AutoActivateSkillsDetailed selects matching skills and returns activation reasons for diagnostics.
 func AutoActivateSkillsDetailed(prompt string, skills []Skill) SkillActivationResult {
 	ranked := rankSkillsForPrompt(prompt, skills)

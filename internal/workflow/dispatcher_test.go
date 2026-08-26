@@ -17,6 +17,22 @@ import (
 
 const dispatcherQueuedName = "queued"
 
+func newStartedDispatcher(
+	ctx context.Context,
+	options workflow.DispatcherOptions,
+) (*workflow.Dispatcher, error) {
+	dispatcher, err := workflow.NewStoppedDispatcher(ctx, options)
+	if err != nil {
+		return nil, oops.In("workflow_test").Code("new_dispatcher").Wrapf(err, "create stopped dispatcher")
+	}
+
+	if err := dispatcher.Start(ctx); err != nil {
+		return nil, oops.In("workflow_test").Code("start_dispatcher").Wrapf(err, "start dispatcher")
+	}
+
+	return dispatcher, nil
+}
+
 func TestDispatcherDependencyDefaultsAndShutdownBoundaries(t *testing.T) {
 	t.Parallel()
 
@@ -36,7 +52,7 @@ func TestDispatcherDependencyDefaultsAndShutdownBoundaries(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			dispatcher, err := workflow.NewDispatcher(test.ctx(), workflow.DispatcherOptions{
+			dispatcher, err := newStartedDispatcher(test.ctx(), workflow.DispatcherOptions{
 				Service:     test.service,
 				Tasks:       test.tasks,
 				Logger:      nil,
@@ -49,7 +65,7 @@ func TestDispatcherDependencyDefaultsAndShutdownBoundaries(t *testing.T) {
 		})
 	}
 
-	dispatcher, err := workflow.NewDispatcher(t.Context(), workflow.DispatcherOptions{
+	dispatcher, err := newStartedDispatcher(t.Context(), workflow.DispatcherOptions{
 		Service:     service,
 		Tasks:       repository.Tasks(),
 		Logger:      nil,
@@ -96,7 +112,7 @@ func TestDispatcherShutdownDoesNotHoldLifecycleLockAcrossSubmitIO(t *testing.T) 
 
 	initialWaitCount := connection.Stats().WaitCount
 
-	dispatcher, err := workflow.NewDispatcher(context.Background(), workflow.DispatcherOptions{
+	dispatcher, err := newStartedDispatcher(context.Background(), workflow.DispatcherOptions{
 		Service: service, Tasks: repository.Tasks(), Logger: nil, Concurrency: 1, Buffer: 1, Interval: time.Hour,
 	})
 	require.NoError(t, err)
@@ -173,7 +189,7 @@ func TestDispatcherExecutesSubmittedWorkflow(t *testing.T) {
 	t.Parallel()
 
 	service, repository, owner := newWorkflowService(t, newFakeController())
-	dispatcher, err := workflow.NewDispatcher(context.Background(), workflow.DispatcherOptions{
+	dispatcher, err := newStartedDispatcher(context.Background(), workflow.DispatcherOptions{
 		Service: service, Tasks: repository.Tasks(), Logger: nil,
 		Concurrency: 1, Buffer: 4, Interval: 10 * time.Millisecond,
 	})
@@ -201,7 +217,7 @@ func TestDispatcherRecoversQueuedWorkflow(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	dispatcher, err := workflow.NewDispatcher(context.Background(), workflow.DispatcherOptions{
+	dispatcher, err := newStartedDispatcher(context.Background(), workflow.DispatcherOptions{
 		Service: service, Tasks: repository.Tasks(), Logger: nil,
 		Concurrency: 1, Buffer: 4, Interval: 10 * time.Millisecond,
 	})

@@ -52,12 +52,6 @@ func AppendContributions(result *BuildResult, contributions []Contribution) {
 	result.SystemPrompt = builder.String()
 }
 
-// ContributionsFromPayload parses extension context-build contributions and enforces
-// the core per-contribution and aggregate token limits.
-func ContributionsFromPayload(payload map[string]any) ([]Contribution, error) {
-	return ContributionsFromPayloadWithLimit(payload, ContributionAggregateMaxTokens)
-}
-
 // ContributionsFromPayloadWithLimit parses contributions using an explicit aggregate limit.
 func ContributionsFromPayloadWithLimit(payload map[string]any, aggregateMaxTokens int) ([]Contribution, error) {
 	if aggregateMaxTokens <= 0 {

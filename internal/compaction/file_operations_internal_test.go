@@ -270,25 +270,12 @@ func shellCommandParsingExtraTestCases() []shellCommandParsingTestCase {
 	}
 }
 
-func TestFileOperationFormattingHelpers(t *testing.T) {
+func TestTruncateCommand(t *testing.T) {
 	t.Parallel()
 
 	command := strings.Repeat("x", 200)
 	assert.Len(t, truncateCommand(command), 160)
 	assert.True(t, strings.HasSuffix(truncateCommand(command), "..."))
-
-	summary := AppendFileOperationsSummary(
-		"summary\n\n"+fileOperationsHeader+"\n- read: stale",
-		[]FileOperation{{
-			EntryID: "",
-			Action:  compactFileOperationTestReadTool,
-			Path:    compactFileOperationTestPath,
-			Tool:    compactFileOperationTestReadTool,
-			Command: "",
-		}},
-	)
-	assert.Equal(t, "summary\n\n"+fileOperationsHeader+"\n- read: README.md (via read)", summary)
-	assert.Equal(t, "summary", StripFileOperationsSummary(summary))
 }
 
 func compactFileOperationCompactionEntry(

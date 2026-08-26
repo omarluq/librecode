@@ -43,11 +43,6 @@ type providerRequestConfig struct {
 	AuthHeader bool
 }
 
-// NewRegistry creates and refreshes a registry.
-func NewRegistry(options *RegistryOptions) *Registry {
-	return NewRegistryContext(context.Background(), options)
-}
-
 // NewRegistryContext creates and refreshes a registry using ctx for discovery.
 func NewRegistryContext(ctx context.Context, options *RegistryOptions) *Registry {
 	resolvedOptions := registryOptions(options)

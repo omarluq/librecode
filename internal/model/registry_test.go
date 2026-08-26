@@ -37,7 +37,7 @@ func TestRegistryLoadsCustomModelsAndProviderOverrides(t *testing.T) {
 		"}",
 	}, "\n"))
 
-	registry := model.NewRegistry(&model.RegistryOptions{
+	registry := model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   modelsPath,
@@ -85,7 +85,7 @@ func assertRegistryAvailableProvider(t *testing.T, expectedProvider string, mode
 		expectedProvider: testCredential(),
 	})
 
-	registry := model.NewRegistry(&model.RegistryOptions{
+	registry := model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
@@ -139,7 +139,7 @@ func testModel(provider, modelID, name string) model.Model {
 func TestRegistryAccessorsCloneInternalState(t *testing.T) {
 	t.Parallel()
 
-	registry := model.NewRegistry(&model.RegistryOptions{
+	registry := model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   "",

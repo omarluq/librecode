@@ -235,12 +235,12 @@ func TestAutoActivateSkillsSelectsMatchingSkill(t *testing.T) {
 	}, "\n"))
 
 	result := core.LoadSkills(cwd, nil, true)
-	activated, diagnostics := core.AutoActivateSkills("please use bug-fix safely", result.Skills)
+	detail := core.AutoActivateSkillsDetailed("please use bug-fix safely", result.Skills)
 
-	require.Empty(t, diagnostics)
-	require.Len(t, activated, 1)
-	assert.Equal(t, "bug-fix", activated[0].Skill.Name)
-	assert.Contains(t, activated[0].Content, "Run tests")
+	require.Empty(t, detail.Diagnostics)
+	require.Len(t, detail.Activated, 1)
+	assert.Equal(t, "bug-fix", detail.Activated[0].Skill.Name)
+	assert.Contains(t, detail.Activated[0].Content, "Run tests")
 }
 
 func TestAutoActivateSkillsIgnoresActivationStopWords(t *testing.T) {
@@ -283,19 +283,19 @@ func TestAutoActivateSkillsRequiresStrongIntent(t *testing.T) {
 
 	result := core.LoadSkills(cwd, nil, true)
 
-	activated, diagnostics := core.AutoActivateSkills("hello", result.Skills)
-	require.Empty(t, diagnostics)
-	assert.Empty(t, activated)
+	detail := core.AutoActivateSkillsDetailed("hello", result.Skills)
+	require.Empty(t, detail.Diagnostics)
+	assert.Empty(t, detail.Activated)
 
-	activated, diagnostics = core.AutoActivateSkills("hud", result.Skills)
-	require.Empty(t, diagnostics)
-	require.Len(t, activated, 1)
-	assert.Equal(t, "hud", activated[0].Skill.Name)
+	detail = core.AutoActivateSkillsDetailed("hud", result.Skills)
+	require.Empty(t, detail.Diagnostics)
+	require.Len(t, detail.Activated, 1)
+	assert.Equal(t, "hud", detail.Activated[0].Skill.Name)
 
-	activated, diagnostics = core.AutoActivateSkills("please write Go tests for this package", result.Skills)
-	require.Empty(t, diagnostics)
-	require.Len(t, activated, 1)
-	assert.Equal(t, "go-tests", activated[0].Skill.Name)
+	detail = core.AutoActivateSkillsDetailed("please write Go tests for this package", result.Skills)
+	require.Empty(t, detail.Diagnostics)
+	require.Len(t, detail.Activated, 1)
+	assert.Equal(t, "go-tests", detail.Activated[0].Skill.Name)
 }
 
 func TestLoadSkillsReportsValidationWarningsAndNameCollisions(t *testing.T) {
