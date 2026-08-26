@@ -97,7 +97,7 @@ func writeHelperMessage(message *executeworker.Message) {
 
 func helperMessage(messageType string) *executeworker.Message {
 	return &executeworker.Message{
-		Stderr: "", Source: "", Method: "", Mode: "", Profile: "", GuestAPI: "", Name: "", Query: "", Stdout: "",
+		Stderr: "", Source: "", Method: "", Profile: "", GuestAPI: "", Name: "", Query: "", Stdout: "",
 		Type: messageType, Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil,
 		Arguments: nil, Progress: nil, ID: 0, ExitCode: 0,
 	}
@@ -156,7 +156,7 @@ func TestClientIncludesWorkerStderrForFailurePaths(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv(helperStderrEnv, test.mode)
 
-			_, err := testClient().Eval(t.Context(), test.source)
+			_, err := testClient().EvalRequest(t.Context(), canonicalTurnRequest(test.source))
 			require.Error(t, err)
 
 			for _, expectedCause := range test.expectedCauses {
@@ -171,7 +171,7 @@ func TestClientIncludesWorkerStderrForFailurePaths(t *testing.T) {
 func TestClientBoundsWorkerStderr(t *testing.T) {
 	t.Setenv(helperStderrEnv, "large")
 
-	_, err := testClient().Eval(t.Context(), `1`)
+	_, err := testClient().EvalRequest(t.Context(), canonicalTurnRequest(`1`))
 	require.Error(t, err)
 	require.ErrorContains(t, err, "stderr prefix")
 	require.ErrorContains(t, err, "[execute worker stderr truncated]")
@@ -186,10 +186,17 @@ func TestClientHardCancelsInfiniteLoop(t *testing.T) {
 	defer cancel()
 
 	started := time.Now()
-	_, err := testClient().Eval(ctx, `for {}; 1`)
+	_, err := testClient().EvalRequest(ctx, canonicalTurnRequest(`for {}; 1`))
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.Less(t, time.Since(started), 3*time.Second)
+}
+
+func canonicalTurnRequest(source string) *executeworker.Request {
+	return &executeworker.Request{
+		Arguments: nil, Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
+		Name: "execute.go", Source: source,
+	}
 }
 
 func TestClientPreservesTypedToolCallResults(t *testing.T) {
@@ -206,7 +213,8 @@ func TestClientPreservesTypedToolCallResults(t *testing.T) {
 	client := testClient()
 	client.Handler = func(_ context.Context, _ *executeworker.Message) (any, error) { return want, nil }
 
-	result, err := client.Eval(t.Context(), `import "tools"; tools.Call("image", nil)`)
+	request := canonicalTurnRequest(`import "librecode/tools"; tools.Call("image", nil)`)
+	result, err := client.EvalRequest(t.Context(), request)
 	require.NoError(t, err)
 	assert.Equal(t, want, result.Value)
 }
@@ -219,7 +227,8 @@ func TestClientPreservesNullCallbackResult(t *testing.T) {
 		return json.RawMessage("null"), nil
 	}
 
-	result, err := client.Eval(t.Context(), `import "tools"; tools.Describe("missing")`)
+	request := canonicalTurnRequest(`import "librecode/tools"; tools.Describe("missing")`)
+	result, err := client.EvalRequest(t.Context(), request)
 	require.NoError(t, err)
 
 	raw, ok := result.Value.(json.RawMessage)
@@ -235,14 +244,14 @@ func TestClientCanonicalToolsPackage(t *testing.T) {
 		return []map[string]any{{workerNameKey: message.Query}}, nil
 	}
 	result, err := client.EvalRequest(t.Context(), &executeworker.Request{
-		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Arguments: nil, Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
 		Name: "canonical.go", Source: `import "librecode/tools"; tools.Search("echo")`,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []any{map[string]any{workerNameKey: echoQuery}}, result.Value)
 
 	_, err = client.EvalRequest(t.Context(), &executeworker.Request{
-		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Arguments: nil, Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
 		Name: "legacy.go", Source: `import "tools"; tools.Search("echo")`,
 	})
 	require.ErrorContains(t, err, "tools")
@@ -252,13 +261,13 @@ func TestClientRejectsInvalidWorkerManifest(t *testing.T) {
 	t.Setenv(helperEnv, "1")
 
 	_, err := testClient().EvalRequest(t.Context(), &executeworker.Request{
-		Arguments: nil, Mode: "", Profile: "unknown", GuestAPIVersion: guestapi.Version2,
+		Arguments: nil, Profile: "unknown", GuestAPIVersion: guestapi.CurrentVersion,
 		Name: "bad.go", Source: "1",
 	})
 	require.ErrorContains(t, err, "unknown execute worker profile")
 
 	_, err = testClient().EvalRequest(t.Context(), &executeworker.Request{
-		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: "99",
+		Arguments: nil, Profile: guestapi.ProfileTurn, GuestAPIVersion: "99",
 		Name: "bad.go", Source: "1",
 	})
 	require.ErrorContains(t, err, "incompatible guest API version")
@@ -277,7 +286,7 @@ func TestClientProgressFramesPreserveOrderAndFinalResult(t *testing.T) {
 	}
 
 	result, err := client.EvalRequest(t.Context(), &executeworker.Request{
-		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Arguments: nil, Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
 		Name: progressName, Source: `import "librecode/workflow"
 workflow.Log("info", "first")
 workflow.Log("info", "second")
@@ -300,7 +309,7 @@ func TestClientProgressErrorStopsEvaluation(t *testing.T) {
 	}
 
 	_, err := client.EvalRequest(t.Context(), &executeworker.Request{
-		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Arguments: nil, Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
 		Name: progressName, Source: `import "librecode/workflow"; workflow.Log("info", "hello")`,
 	})
 	require.ErrorContains(t, err, "progress rejected")
@@ -321,7 +330,7 @@ func TestClientProgressCallbackReceivesCancellation(t *testing.T) {
 	}
 
 	_, err := client.EvalRequest(ctx, &executeworker.Request{
-		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Arguments: nil, Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
 		Name: progressName, Source: `import "librecode/workflow"; workflow.Log("info", "hello")`,
 	})
 	require.ErrorIs(t, err, context.Canceled)
@@ -346,7 +355,7 @@ func TestProgressFramesDoNotConsumeRPCCallbackBudget(t *testing.T) {
 	source.WriteString("tools.Search(\"after progress\")")
 
 	result, err := client.EvalRequest(t.Context(), &executeworker.Request{
-		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Arguments: nil, Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
 		Name: "budget.go", Source: source.String(),
 	})
 	require.NoError(t, err)
@@ -365,7 +374,8 @@ func TestClientCallbackRPC(t *testing.T) {
 		return []map[string]any{{"name": echoQuery}}, nil
 	}
 
-	result, err := client.Eval(t.Context(), `import "tools"; tools.Search("echo")`)
+	request := canonicalTurnRequest(`import "librecode/tools"; tools.Search("echo")`)
+	result, err := client.EvalRequest(t.Context(), request)
 	require.NoError(t, err)
 	assert.Equal(t, []any{map[string]any{workerNameKey: echoQuery}}, result.Value)
 }

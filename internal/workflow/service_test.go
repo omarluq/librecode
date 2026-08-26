@@ -94,8 +94,9 @@ func TestServiceSubmitAcceptsWorkflowBindingSource(t *testing.T) {
 
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
-		Name:            "agents",
-		Source:          `import "librecode/workflow"; id, _ := workflow.Agent("inspect"); workflow.Wait(id)`,
+		Name: "agents",
+		Source: `import "librecode/workflow"
+import "librecode/agents"; id, _ := agents.Spawn("inspect"); agents.Wait(id)`,
 		GuestAPIVersion: "", SourceVersion: "v1", ArgumentsJSON: `{"x": 1}`, OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
@@ -108,10 +109,10 @@ func TestServiceSubmitAcceptsVersion2AgentBindingSource(t *testing.T) {
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, err := service.Submit(t.Context(), &workflow.ServiceRequest{
 		Name: "agents-v2", Source: `import "librecode/agents"; agents.List()`,
-		GuestAPIVersion: guestapi.Version2, SourceVersion: "v1", ArgumentsJSON: `{}`, OwnerSessionID: owner,
+		GuestAPIVersion: guestapi.CurrentVersion, SourceVersion: "v1", ArgumentsJSON: `{}`, OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, string(guestapi.Version2), run.GuestAPIVersion)
+	assert.Equal(t, string(guestapi.CurrentVersion), run.GuestAPIVersion)
 	assert.Equal(t, database.TaskQueued, run.Task.State)
 }
 
@@ -268,8 +269,9 @@ func TestServicePersistsVersion2Progress(t *testing.T) {
 
 	service, _, owner := newWorkflowService(t, newFakeController())
 	run, _, err := service.Run(t.Context(), &workflow.ServiceRequest{
-		Name: "progress", Source: `import "librecode/workflow"; workflow.Log("info", "working")`,
-		GuestAPIVersion: guestapi.Version2, SourceVersion: "v1", ArgumentsJSON: "{}", OwnerSessionID: owner,
+		Name: "progress", Source: `import "librecode/workflow"
+import "librecode/agents"; workflow.Log("info", "working")`,
+		GuestAPIVersion: guestapi.CurrentVersion, SourceVersion: "v1", ArgumentsJSON: "{}", OwnerSessionID: owner,
 	})
 	require.NoError(t, err)
 
@@ -490,7 +492,7 @@ func (runner *integrationAgentRunner) Run(
 	case <-ctx.Done():
 		return agenttask.Result{}, errors.Join(errors.New("integration agent canceled"), ctx.Err())
 	case <-runner.release:
-		return agenttask.Result{Text: "integrated result", UsageJSON: `{}`}, nil
+		return agenttask.Result{Text: "integrated result", UsageJSON: `{"reported":false}`}, nil
 	}
 }
 

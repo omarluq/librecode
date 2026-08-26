@@ -66,7 +66,7 @@ func Serve(input io.Reader, output io.Writer) error {
 }
 
 func workerBindings(ctx context.Context, request *Message, caller *rpcCaller) (mvmhost.Bindings, error) {
-	profile, version, err := workerContract(request)
+	profile, _, err := workerContract(request)
 	if err != nil {
 		return nil, err
 	}
@@ -78,23 +78,12 @@ func workerBindings(ctx context.Context, request *Message, caller *rpcCaller) (m
 		}
 	}
 
-	return profileBindings(ctx, profile, version, arguments, workflowCallBridge{caller: caller}), nil
+	return profileBindings(ctx, profile, workflowCallBridge{caller: caller}), nil
 }
 
 func workerContract(request *Message) (guestapi.Profile, guestapi.Version, error) {
 	profile, version := request.Profile, request.GuestAPI
-	if profile == "" && version == "" { // pre-manifest version-1 protocol
-		switch request.Mode {
-		case "", "execute":
-			profile = guestapi.ProfileTurn
-		case "workflow":
-			profile = guestapi.ProfileDurable
-		default:
-			return "", "", fmt.Errorf("unknown execute worker mode %q", request.Mode)
-		}
-
-		version = guestapi.Version1
-	} else if profile == "" || version == "" {
+	if profile == "" || version == "" {
 		return "", "", errors.New("execute worker profile and guest API version must be provided together")
 	}
 
@@ -116,22 +105,8 @@ func toolsBindings(packageName string, caller *rpcCaller) mvmhost.Bindings {
 func profileBindings(
 	ctx context.Context,
 	profile guestapi.Profile,
-	version guestapi.Version,
-	arguments map[string]any,
 	bridge callBridge,
 ) mvmhost.Bindings {
-	if version == guestapi.Version1 {
-		if profile == guestapi.ProfileDurable {
-			return workflowModeBindings(arguments, bridge)
-		}
-
-		if workflowBridge, ok := bridge.(workflowCallBridge); ok {
-			return toolsBindings(guestapi.LegacyPackageTools, workflowBridge.caller)
-		}
-
-		return inertToolsBindings(guestapi.LegacyPackageTools)
-	}
-
 	bindings := version2Bindings(profile)
 	if bindings[guestapi.PackageWorkflow] == nil {
 		bindings[guestapi.PackageWorkflow] = make(map[string]any)
@@ -273,28 +248,6 @@ func (bridge workflowCallBridge) callResult(method, taskID string, input any) (a
 	return bridge.caller.callResult(method, taskID, "", input)
 }
 
-// workflowModeBindings builds the "librecode/workflow" package exposed to
-// workflow source. It is the single source of truth for binding signatures:
-// both worker evaluation and compile-time validation derive from it, so a
-// signature change cannot make validation accept what execution rejects (or
-// vice versa).
-func workflowModeBindings(arguments map[string]any, bridge callBridge) mvmhost.Bindings {
-	agents := agentsBindings(bridge)[guestapi.PackageAgents]
-
-	return mvmhost.Bindings{guestapi.PackageWorkflow: {
-		"Arguments": arguments,
-		"Agent":     agents["Spawn"],
-		"Wait":      agents["Wait"],
-		"List":      agents["List"],
-		"Cancel":    agents["Cancel"],
-		"Pipeline": func(items []any, callback func(any) (any, error), concurrency int) (any, error) {
-			results, err := workerPipeline(items, callback, concurrency)
-
-			return pipelineValue(results), err
-		},
-	}}
-}
-
 func agentsBindings(bridge callBridge) mvmhost.Bindings {
 	spawn := func(prompt string, options ...map[string]any) (any, error) {
 		return bridge.callResult("workflow_agent", "", map[string]any{"prompt": prompt, "options": options})
@@ -333,7 +286,6 @@ func agentsBindings(bridge callBridge) mvmhost.Bindings {
 func CompileBindings(
 	profile guestapi.Profile,
 	version guestapi.Version,
-	arguments map[string]any,
 ) (mvmhost.Bindings, error) {
 	if err := guestapi.ValidateWorkerContract(profile, version); err != nil {
 		return nil, fmt.Errorf("validate compile worker contract: %w", err)
@@ -342,18 +294,7 @@ func CompileBindings(
 	// CompileBindings is intentionally context-free: bindings are reflected for
 	// type checking but never invoked. Runtime bindings capture the worker's
 	// evaluation context in workerBindings.
-	return profileBindings(context.Background(), profile, version, arguments, inertCallBridge{}), nil
-}
-
-// WorkflowModeBindings preserves the version-1 compile API for persisted
-// workflow source.
-func WorkflowModeBindings(arguments map[string]any) mvmhost.Bindings {
-	bindings, err := CompileBindings(guestapi.ProfileDurable, guestapi.Version1, arguments)
-	if err != nil {
-		panic(err)
-	}
-
-	return bindings
+	return profileBindings(context.Background(), profile, inertCallBridge{}), nil
 }
 
 // inertCallBridge satisfies callBridge without doing anything. Compilation
@@ -367,69 +308,6 @@ func (inertCallBridge) call(method string, _ any) any {
 
 func (inertCallBridge) callResult(method, _ string, _ any) (any, error) {
 	panic("executeworker: workflow binding " + method + " must not be called during compile")
-}
-
-type pipelineValue []map[string]any
-
-func workerPipeline(items []any, callback func(any) (any, error), concurrency int) ([]map[string]any, error) {
-	// Keep the version-1 validation messages and result shape while delegating
-	// scheduling to the same kernel used by the canonical version-2 bindings.
-	if concurrency <= 0 {
-		return nil, errors.New("pipeline concurrency must be positive")
-	}
-
-	if callback == nil {
-		return nil, errors.New("pipeline callback is required")
-	}
-
-	// The v1 API historically let callback panics escape. The canonical kernel
-	// recovers them into item failures, so remember and re-panic after its
-	// workers finish rather than changing the persisted v1 contract.
-	var (
-		panicOnce  sync.Once
-		panicValue any
-		panicked   bool
-	)
-
-	legacyCallback := func(value any) (result any, err error) {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				panicOnce.Do(func() {
-					panicValue = recovered
-					panicked = true
-				})
-
-				result = nil
-				err = errors.New("worker pipeline callback panicked")
-			}
-		}()
-
-		return callback(value)
-	}
-
-	outcome, err := workflowkernel.Pipeline(
-		context.Background(), items, []workflowkernel.Callback{legacyCallback}, concurrency,
-	)
-
-	if panicked {
-		panic(panicValue)
-	}
-
-	if err != nil {
-		return nil, oops.In("executeworker").Code("worker_pipeline").Wrapf(err, "run worker pipeline")
-	}
-
-	results := make([]map[string]any, len(outcome.Items))
-	for index, item := range outcome.Items {
-		message := item.Error
-		if item.State == workflowkernel.StateNotStarted {
-			message = "pipeline stopped before item was scheduled"
-		}
-
-		results[index] = map[string]any{"index": item.Index, "value": item.Value, "error": message}
-	}
-
-	return results, nil
 }
 
 func (caller *rpcCaller) call(method, name, query string, input any) any {
@@ -675,11 +553,6 @@ func resultMessage(result mvmhost.Result, evalErr error) Message {
 	response := newMessage("result")
 
 	response.Stdout, response.Stderr = result.Stdout, result.Stderr
-	if pipeline, ok := result.Value.(pipelineValue); ok {
-		result.Value = []map[string]any(pipeline)
-		response.ValueKind = pipelineResultKind
-	}
-
 	if evalErr != nil {
 		response.Error = evalErr.Error()
 

@@ -237,7 +237,7 @@ func (service *Service) executeExisting(
 		RunID: persisted.Task.ID, OnEvent: service.eventSink(progress),
 		OnProgress: service.progressSink(progress), Name: name,
 		Source: persisted.Source, OwnerSessionID: persisted.Task.OwnerSessionID, Arguments: arguments,
-		PersistedLinks: links, GuestAPI: persistedGuestAPI(persisted.GuestAPIVersion),
+		PersistedLinks: links, GuestAPI: guestapi.Version(persisted.GuestAPIVersion),
 	})
 
 	stopHeartbeat()
@@ -459,14 +459,6 @@ func (service *Service) AgentTaskDetails(
 	return details, nil
 }
 
-func persistedGuestAPI(version string) guestapi.Version {
-	if version == "" {
-		return guestapi.Version1
-	}
-
-	return guestapi.Version(version)
-}
-
 func (service *Service) createRun(
 	ctx context.Context,
 	request *ServiceRequest,
@@ -489,17 +481,16 @@ func (service *Service) createRun(
 	// compiler diagnostics instead of creating a doomed run that the TUI watches
 	// briefly fail. ExecuteQueued still re-evaluates and persists evaluation
 	// failures, so pre-Submit runs are unaffected.
-	arguments, err := decodeArguments(argumentsJSON)
-	if err != nil {
+	if _, err := decodeArguments(argumentsJSON); err != nil {
 		return nil, err
 	}
 
 	guestAPIVersion := request.GuestAPIVersion
 	if guestAPIVersion == "" {
-		guestAPIVersion = guestapi.Version1
+		guestAPIVersion = guestapi.CurrentVersion
 	}
 
-	validateErr := service.runner.ValidateSourceVersion(request.Name, request.Source, arguments, guestAPIVersion)
+	validateErr := service.runner.ValidateSourceVersion(request.Name, request.Source, guestAPIVersion)
 	if validateErr != nil {
 		return nil, oops.In("workflow").Code("compile_source").
 			Wrapf(validateErr, "workflow source does not compile")

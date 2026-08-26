@@ -152,7 +152,7 @@ func (executor *executeToolExecutor) executeTurn(ctx context.Context, source str
 	client := executeworker.Client{Executable: "", Handler: executor.handleWorkerMessage, Progress: nil}
 
 	result, err := client.EvalRequest(ctx, &executeworker.Request{
-		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
+		Arguments: nil, Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
 		Name: "execute.go", Source: source,
 	})
 	if err != nil {

@@ -45,7 +45,7 @@ func TestServiceDefaultsAndHelperBoundaries(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, defaultSourceVersion, run.SourceVersion)
-	assert.Equal(t, string(guestapi.Version1), run.GuestAPIVersion)
+	assert.Equal(t, string(guestapi.CurrentVersion), run.GuestAPIVersion)
 	assert.Equal(t, "{}", run.ArgumentsJSON)
 
 	assert.False(t, terminal(database.TaskState("unknown")))

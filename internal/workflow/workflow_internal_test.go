@@ -74,17 +74,6 @@ func TestWorkflowValueNormalizationFallbacks(t *testing.T) {
 
 	original := map[string]any{"number": json.Number("2"), "items": []any{json.Number("3")}}
 	assert.Equal(t, map[string]any{"number": 2, "items": []any{3}}, normalizeNumbers(original))
-
-	assert.Equal(t, "ordinary", normalizePipelineResults("ordinary"))
-	assert.Equal(t, []PipelineResult{}, normalizePipelineResults([]any{}))
-
-	for _, malformed := range []any{
-		[]any{"not fields"},
-		[]any{map[string]any{"index": 0, "value": "x"}},
-		[]any{map[string]any{"index": "zero", "value": "x", "error": ""}},
-	} {
-		assert.Equal(t, malformed, normalizePipelineResults(malformed))
-	}
 }
 
 func TestRunHostRPCValidation(t *testing.T) {
@@ -386,7 +375,7 @@ func newBranchController() *branchController {
 
 func branchMessage(method string) *executeworker.Message {
 	return &executeworker.Message{
-		Stderr: "", Source: "", Method: method, Mode: "", Profile: "", GuestAPI: "", Name: "",
+		Stderr: "", Source: "", Method: method, Profile: "", GuestAPI: "", Name: "",
 		Query: "", Stdout: "", Type: "",
 		Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil, Arguments: nil,
 		Progress: nil, ID: 0, ExitCode: 0,

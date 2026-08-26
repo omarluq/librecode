@@ -26,7 +26,7 @@ workflow.Phase("review", "Review", "succeeded")`
 		t.Run(string(profile), func(t *testing.T) {
 			t.Parallel()
 
-			bindings, err := executeworker.CompileBindings(profile, guestapi.Version2, nil)
+			bindings, err := executeworker.CompileBindings(profile, guestapi.CurrentVersion)
 			require.NoError(t, err)
 			_, err = mvmhost.New().Eval(t.Context(), mvmhost.Request{
 				Bindings: bindings, Name: "progress.go", Source: source,
@@ -43,7 +43,7 @@ workflow.Phase("review", "Review", "succeeded")`
 func TestVersion2ProgressTerminalTransitionsAreImmutable(t *testing.T) {
 	t.Parallel()
 
-	bindings, err := executeworker.CompileBindings(guestapi.ProfileTurn, guestapi.Version2, nil)
+	bindings, err := executeworker.CompileBindings(guestapi.ProfileTurn, guestapi.CurrentVersion)
 	require.NoError(t, err)
 	_, err = mvmhost.New().Eval(t.Context(), mvmhost.Request{
 		Bindings: bindings,

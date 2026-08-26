@@ -127,34 +127,6 @@ func ptrMessage(kind string) *Message {
 	return &message
 }
 
-func TestWorkerPipelineBranches(t *testing.T) {
-	t.Parallel()
-
-	_, err := workerPipeline(nil, func(any) (any, error) { return 0, nil }, 0)
-	require.EqualError(t, err, "pipeline concurrency must be positive")
-	_, err = workerPipeline(nil, nil, 1)
-	require.EqualError(t, err, "pipeline callback is required")
-
-	results, err := workerPipeline([]any{1, 2, 3}, func(value any) (any, error) {
-		if value == 2 {
-			return nil, errors.New("stop")
-		}
-
-		integer, integerOK := value.(int)
-		require.True(t, integerOK)
-
-		return integer * 2, nil
-	}, 1)
-	require.NoError(t, err)
-	assert.Equal(t, 2, results[0]["value"])
-	assert.Equal(t, "stop", results[1]["error"])
-	assert.Contains(t, results[2]["error"], "stopped")
-
-	empty, err := workerPipeline(nil, func(any) (any, error) { return 0, nil }, 2)
-	require.NoError(t, err)
-	assert.Empty(t, empty)
-}
-
 func TestWorkerBindingsModes(t *testing.T) {
 	t.Parallel()
 
@@ -168,26 +140,16 @@ func TestWorkerBindingsModes(t *testing.T) {
 		packages    []string
 		bindings    []string
 	}{{
-		packages: []string{guestapi.LegacyPackageTools}, bindings: []string{"Call", "Describe", "Search"},
-		name: "turn version 1", errContains: "", profile: guestapi.ProfileTurn, version: guestapi.Version1,
+		packages: []string{guestapi.PackageArtifacts, guestapi.PackageTools, guestapi.PackageWorkflow},
+		bindings: nil, name: "turn version 2", errContains: "", profile: guestapi.ProfileTurn,
+		version: guestapi.CurrentVersion,
 	},
-		{
-			packages: []string{guestapi.PackageArtifacts, guestapi.PackageTools, guestapi.PackageWorkflow},
-			bindings: nil, name: "turn version 2", errContains: "", profile: guestapi.ProfileTurn,
-			version: guestapi.Version2,
-		},
-		{
-			packages: []string{guestapi.PackageWorkflow},
-			bindings: []string{"Agent", "Arguments", cancelBindingName, "List", "Pipeline", "Wait"},
-			name:     "durable version 1", errContains: "", profile: guestapi.ProfileDurable,
-			version: guestapi.Version1,
-		},
 		{
 			packages: []string{
 				guestapi.PackageAgents, guestapi.PackageArtifacts, guestapi.PackageState, guestapi.PackageWorkflow,
 			},
 			bindings: nil, name: "durable version 2", errContains: "",
-			profile: guestapi.ProfileDurable, version: guestapi.Version2,
+			profile: guestapi.ProfileDurable, version: guestapi.CurrentVersion,
 		},
 		{
 			packages: nil, bindings: nil, name: "profile only", errContains: "must be provided together",
@@ -195,11 +157,11 @@ func TestWorkerBindingsModes(t *testing.T) {
 		},
 		{
 			packages: nil, bindings: nil, name: "version only", errContains: "must be provided together",
-			profile: "", version: guestapi.Version2,
+			profile: "", version: guestapi.CurrentVersion,
 		},
 		{
 			packages: nil, bindings: nil, name: "unknown profile", errContains: "unknown execute worker profile",
-			profile: "bad", version: guestapi.Version2,
+			profile: "bad", version: guestapi.CurrentVersion,
 		},
 		{
 			packages: nil, bindings: nil, name: "unknown version", errContains: "incompatible guest API version",
@@ -227,7 +189,7 @@ func TestWorkerBindingsModes(t *testing.T) {
 				assert.Equal(t, test.bindings, bindingNames(bindings[test.packages[0]]))
 			}
 
-			if test.version == guestapi.Version2 {
+			if test.version == guestapi.CurrentVersion {
 				assertVersion2Bindings(t, bindings, test.profile)
 			}
 		})
@@ -244,7 +206,7 @@ func TestVersion2CombinatorBindingsUseEvaluationContext(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
-			bindings := profileBindings(ctx, profile, guestapi.Version2, nil, inertCallBridge{})
+			bindings := profileBindings(ctx, profile, inertCallBridge{})
 			bindings["testsupport"] = map[string]any{cancelBindingName: func(value any) any {
 				cancel()
 
@@ -277,7 +239,7 @@ func TestVersion2CombinatorBindings(t *testing.T) {
 	profileResults := make([]any, 0, 2)
 
 	for _, profile := range []guestapi.Profile{guestapi.ProfileTurn, guestapi.ProfileDurable} {
-		bindings, err := CompileBindings(profile, guestapi.Version2, nil)
+		bindings, err := CompileBindings(profile, guestapi.CurrentVersion)
 		require.NoError(t, err)
 
 		result, err := mvmhost.New().Eval(t.Context(), mvmhost.Request{
@@ -309,7 +271,7 @@ func TestVersion2PlannedBindingReturnsStableUnsupportedError(t *testing.T) {
 		t.Run(string(profile), func(t *testing.T) {
 			t.Parallel()
 
-			bindings, err := CompileBindings(profile, guestapi.Version2, nil)
+			bindings, err := CompileBindings(profile, guestapi.CurrentVersion)
 			require.NoError(t, err)
 
 			_, err = mvmhost.New().Eval(t.Context(), mvmhost.Request{
@@ -329,7 +291,7 @@ if err := artifacts.Put("result", "value"); err != nil {
 func TestVersion2CapabilityFailures(t *testing.T) {
 	t.Parallel()
 
-	durableBindings, err := CompileBindings(guestapi.ProfileDurable, guestapi.Version2, nil)
+	durableBindings, err := CompileBindings(guestapi.ProfileDurable, guestapi.CurrentVersion)
 	require.NoError(t, err)
 	assert.Equal(t, []string{cancelBindingName, "List", "Run", "Spawn", "Wait"},
 		bindingNames(durableBindings[guestapi.PackageAgents]))
@@ -341,33 +303,6 @@ func TestVersion2CapabilityFailures(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), string(guestapi.ErrorUnsupported))
-}
-
-func TestWorkerBindingsLegacyModes(t *testing.T) {
-	t.Parallel()
-
-	caller := newRPCCaller()
-	request := ptrMessage("eval")
-	bindings, err := workerBindings(t.Context(), request, caller)
-	require.NoError(t, err)
-	assert.Contains(t, bindings, guestapi.LegacyPackageTools)
-
-	request.Mode = "bad"
-	_, err = workerBindings(t.Context(), request, caller)
-	require.ErrorContains(t, err, "unknown")
-
-	request.Mode = "workflow"
-	request.Arguments = json.RawMessage(`{`)
-	_, err = workerBindings(t.Context(), request, caller)
-	require.ErrorContains(t, err, "decode workflow arguments")
-
-	workflowArguments := []json.RawMessage{nil, json.RawMessage("null"), json.RawMessage(`{"x":1}`)}
-	for _, arguments := range workflowArguments {
-		request.Arguments = arguments
-		bindings, err = workerBindings(t.Context(), request, caller)
-		require.NoError(t, err)
-		assert.Contains(t, bindings, "librecode/workflow")
-	}
 }
 
 func assertVersion2Bindings(t *testing.T, bindings mvmhost.Bindings, profile guestapi.Profile) {
@@ -654,12 +589,7 @@ func TestRPCValuesAndResultMessages(t *testing.T) {
 	require.True(t, isErrorOK)
 	assert.True(t, isError)
 
-	message := resultMessage(mvmhost.Result{
-		Value: pipelineValue{{"x": 1}}, ValueKind: "", Stdout: "out", Stderr: "err",
-	}, nil)
-	assert.Equal(t, pipelineResultKind, message.ValueKind)
-	assert.NotEmpty(t, message.Value)
-	message = resultMessage(mvmResult(toolValue), nil)
+	message := resultMessage(mvmResult(toolValue), nil)
 	assert.Equal(t, toolCallResultKind, message.ValueKind)
 	message = resultMessage(mvmResult(func() {}), nil)
 	assert.Equal(t, string(mvmhost.ErrorKindRuntime), message.ErrorKind)
@@ -676,16 +606,14 @@ func TestServeBranchesInProcess(t *testing.T) {
 
 	require.Error(t, Serve(strings.NewReader("bad"), io.Discard))
 
-	wrongMode := newMessage("eval")
-	wrongMode.Mode = "wrong"
-
-	for _, request := range []Message{newMessage("wrong"), wrongMode} {
+	for _, request := range []Message{newMessage("wrong"), newMessage("eval")} {
 		var input bytes.Buffer
 		require.NoError(t, Write(&input, &request))
 		require.Error(t, Serve(&input, io.Discard))
 	}
 
 	request := newMessage("eval")
+	request.Profile, request.GuestAPI = guestapi.ProfileTurn, guestapi.CurrentVersion
 	request.Source = "1"
 
 	var input, output bytes.Buffer
@@ -945,7 +873,8 @@ func newClient(handler RPCHandler, executable string) Client {
 
 func requestWithArguments(arguments any) *Request {
 	return &Request{
-		Arguments: arguments, Mode: "", Profile: "", GuestAPIVersion: "", Name: "", Source: "",
+		Arguments: arguments, Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,
+		Name: "", Source: "",
 	}
 }
 

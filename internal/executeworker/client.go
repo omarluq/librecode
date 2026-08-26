@@ -74,19 +74,10 @@ type workerProcess struct {
 // Request describes one isolated MVM evaluation.
 type Request struct {
 	Arguments       any
-	Mode            string // legacy version-1 compatibility; use Profile for new requests
 	Profile         guestapi.Profile
 	GuestAPIVersion guestapi.Version
 	Name            string
 	Source          string
-}
-
-// Eval evaluates provider-facing source, forwarding callback requests to Handler.
-func (client Client) Eval(ctx context.Context, source string) (mvmhost.Result, error) {
-	return client.EvalRequest(ctx, &Request{
-		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version1,
-		Name: "execute.go", Source: source,
-	})
 }
 
 // EvalRequest evaluates source in the requested worker mode.
@@ -132,19 +123,6 @@ func evaluationMessage(eval *Request) (*Message, error) {
 	request := newMessage("eval")
 	request.Profile, request.GuestAPI = eval.Profile, eval.GuestAPIVersion
 	request.Name, request.Source = eval.Name, eval.Source
-
-	if request.Profile == "" && request.GuestAPI == "" {
-		switch eval.Mode {
-		case "", "execute":
-			request.Profile, request.GuestAPI = guestapi.ProfileTurn, guestapi.Version1
-		case "workflow":
-			request.Profile, request.GuestAPI = guestapi.ProfileDurable, guestapi.Version1
-		default:
-			request.Mode = eval.Mode
-		}
-
-		return &request, nil
-	}
 
 	if request.Profile == "" || request.GuestAPI == "" {
 		return nil, errors.New(

@@ -32,7 +32,6 @@ func TestCanonicalPackageNames(t *testing.T) {
 		guestapi.PackageArtifacts,
 		guestapi.PackageState,
 	})
-	assert.Equal(t, "tools", guestapi.LegacyPackageTools)
 }
 
 func TestAvailabilityManifest(t *testing.T) {
@@ -91,12 +90,10 @@ func TestValidateWorkerContract(t *testing.T) {
 	t.Parallel()
 
 	for _, profile := range []guestapi.Profile{guestapi.ProfileTurn, guestapi.ProfileDurable} {
-		for _, version := range []guestapi.Version{guestapi.Version1, guestapi.Version2} {
-			require.NoError(t, guestapi.ValidateWorkerContract(profile, version))
-		}
+		require.NoError(t, guestapi.ValidateWorkerContract(profile, guestapi.CurrentVersion))
 	}
 
-	require.ErrorContains(t, guestapi.ValidateWorkerContract("other", guestapi.Version2), "unknown")
+	require.ErrorContains(t, guestapi.ValidateWorkerContract("other", guestapi.CurrentVersion), "unknown")
 	require.ErrorContains(t, guestapi.ValidateWorkerContract(guestapi.ProfileTurn, "3"), "incompatible")
 }
 
