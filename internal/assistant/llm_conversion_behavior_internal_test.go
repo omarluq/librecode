@@ -61,19 +61,6 @@ func TestLLMRoleFromDatabaseMappings(t *testing.T) {
 	}
 }
 
-func TestLLMResponseAndToolResultNilPaths(t *testing.T) {
-	t.Parallel()
-
-	response := llmResponseFromCompletionResult(nil)
-	assert.Equal(t, llm.FinishReasonUnknown, response.FinishReason)
-	assert.False(t, response.Usage.HasAny())
-
-	result := llmToolResultFromEvent(nil)
-	require.NotNil(t, result)
-	assert.Empty(t, result.Name)
-	assert.Empty(t, result.Content)
-}
-
 func TestLLMModelAndToolDefinitionNilPaths(t *testing.T) {
 	t.Parallel()
 

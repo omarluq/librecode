@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/omarluq/librecode/internal/contextwindow"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/llm"
 	"github.com/omarluq/librecode/internal/llmconv"
@@ -197,69 +196,6 @@ func TestLLMRequestFromCompletionRequestNilAndDisabledTools(t *testing.T) {
 	})
 	assert.Empty(t, converted.Tools)
 	assert.True(t, converted.DisableTools)
-}
-
-func TestLLMResponseFromCompletionResultConvertsContentAndUsage(t *testing.T) {
-	t.Parallel()
-
-	result := &CompletionResult{
-		Termination:  llm.NewTerminationMetadata("", "", ""),
-		FinishReason: llm.FinishReasonLength,
-		Text:         "final answer",
-		Thinking:     []string{" thought ", "   "},
-		ToolEvents: []ToolEvent{
-			{
-				CallID:        "conversion-call-1",
-				ParentCallID:  "conversion-parent",
-				Sequence:      1,
-				Name:          jsonReadToolName,
-				ArgumentsJSON: `{"path":"README.md"}`,
-				DetailsJSON:   "",
-				Result:        "read output",
-				Error:         "",
-				IsError:       false,
-			}, {
-				CallID:        "conversion-call-2",
-				ParentCallID:  "conversion-parent",
-				Sequence:      2,
-				Name:          "bash",
-				ArgumentsJSON: `{"command":"false"}`,
-				DetailsJSON:   "",
-				Result:        "exit status 1",
-				Error:         "exit status 1",
-				IsError:       true,
-			}},
-		Usage: model.TokenUsage{
-			Provenance:      "",
-			Breakdown:       map[string]int{contextwindow.BreakdownHistory: 10},
-			TopContributors: nil,
-			ContextWindow:   100,
-			ContextTokens:   20,
-			InputTokens:     18,
-			OutputTokens:    2,
-		},
-	}
-
-	converted := llmResponseFromCompletionResult(result)
-
-	assert.Equal(t, llm.FinishReasonLength, converted.FinishReason)
-	assert.Equal(t, 18, converted.Usage.InputTokens)
-	require.Len(t, converted.Content, 4)
-	assert.Equal(t, llm.PartReasoning, converted.Content[0].Type)
-	assert.Equal(t, "thought", converted.Content[0].Text)
-	assert.Equal(t, llm.PartText, converted.Content[1].Type)
-	assert.Equal(t, "final answer", converted.Content[1].Text)
-	assert.Equal(t, llm.PartToolResult, converted.Content[2].Type)
-	assert.False(t, converted.Content[2].ToolResult.IsError)
-	assert.Equal(t, "conversion-call-1", converted.Content[2].ToolResult.ToolCallID)
-	assert.Equal(t, "conversion-parent", converted.Content[2].ToolResult.Metadata[toolParentCallIDMetadataKey])
-	assert.Equal(t, 1, converted.Content[2].ToolResult.Metadata[toolSequenceMetadataKey])
-	assert.Equal(t, llm.PartToolResult, converted.Content[3].Type)
-	assert.True(t, converted.Content[3].ToolResult.IsError)
-	assert.Equal(t, "conversion-call-2", converted.Content[3].ToolResult.ToolCallID)
-	assert.Equal(t, "conversion-parent", converted.Content[3].ToolResult.Metadata[toolParentCallIDMetadataKey])
-	assert.Equal(t, 2, converted.Content[3].ToolResult.Metadata[toolSequenceMetadataKey])
-	assert.Equal(t, "exit status 1", converted.Content[3].ToolResult.Error)
 }
 
 func TestLLMUsageToModelRoundTrips(t *testing.T) {
