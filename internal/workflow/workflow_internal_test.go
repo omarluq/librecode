@@ -389,7 +389,7 @@ func branchMessage(method string) *executeworker.Message {
 		Stderr: "", Source: "", Method: method, Mode: "", Profile: "", GuestAPI: "", Name: "",
 		Query: "", Stdout: "", Type: "",
 		Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil, Arguments: nil,
-		ID: 0, ExitCode: 0,
+		Progress: nil, ID: 0, ExitCode: 0,
 	}
 }
 

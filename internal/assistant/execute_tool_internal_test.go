@@ -408,7 +408,7 @@ func TestExecuteToolValidationAndWorkerErrors(t *testing.T) {
 func executeTestWorkerMessage(method, name string, input json.RawMessage) *executeworker.Message {
 	return &executeworker.Message{
 		Stderr: "", Source: "", Method: method, Mode: "", Profile: "", GuestAPI: "", Name: name,
-		Query: "", Stdout: "", Type: "",
+		Query: "", Stdout: "", Type: "", Progress: nil,
 		Error: "", ErrorKind: "", ValueKind: "", Input: input, Value: nil, Arguments: nil, ID: 0,
 		ExitCode: 0,
 	}

@@ -886,7 +886,7 @@ func newRPCCaller() *rpcCaller {
 }
 
 func newClient(handler RPCHandler, executable string) Client {
-	return Client{Handler: handler, Executable: executable}
+	return Client{Handler: handler, Progress: nil, Executable: executable}
 }
 
 func requestWithArguments(arguments any) *Request {

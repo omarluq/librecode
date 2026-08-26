@@ -14,6 +14,7 @@ import (
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/workflowkernel"
+	"github.com/omarluq/librecode/internal/workflowprogress"
 	"github.com/samber/oops"
 )
 
@@ -132,7 +133,12 @@ func profileBindings(
 	}
 
 	bindings := version2Bindings(profile)
+	if bindings[guestapi.PackageWorkflow] == nil {
+		bindings[guestapi.PackageWorkflow] = make(map[string]any)
+	}
+
 	maps.Copy(bindings[guestapi.PackageWorkflow], combinatorBindings(ctx)[guestapi.PackageWorkflow])
+	maps.Copy(bindings[guestapi.PackageWorkflow], progressBindings(ctx, bridge)[guestapi.PackageWorkflow])
 
 	if profile == guestapi.ProfileTurn {
 		if workflowBridge, ok := bridge.(workflowCallBridge); ok {
@@ -191,6 +197,36 @@ func combinatorBindings(ctx context.Context) mvmhost.Bindings {
 			}
 
 			return workflowkernel.Pipeline(ctx, items, callbacks, concurrency)
+		},
+	}}
+}
+
+func progressBindings(ctx context.Context, bridge callBridge) mvmhost.Bindings {
+	emitter := workflowprogress.New(func(_ context.Context, event workflowprogress.Event) error {
+		workflowBridge, ok := bridge.(workflowCallBridge)
+		if !ok {
+			return nil
+		}
+
+		if err := workflowBridge.caller.progress(event); err != nil {
+			panic(err)
+		}
+
+		return nil
+	})
+
+	return mvmhost.Bindings{guestapi.PackageWorkflow: {
+		"Phase": func(id, title, state string) error {
+			return emitter.Phase(ctx, id, title, state)
+		},
+		"Item": func(id, phaseID, title, state string) error {
+			return emitter.Item(ctx, id, phaseID, title, state)
+		},
+		"Event": func(name string, data map[string]any) error {
+			return emitter.Event(ctx, name, data)
+		},
+		"Log": func(level, message string) error {
+			return emitter.Log(ctx, level, message)
 		},
 	}}
 }
@@ -424,6 +460,44 @@ func (caller *rpcCaller) callResult(method, name, query string, input any) (any,
 	return value, nil
 }
 
+func (caller *rpcCaller) progress(event workflowprogress.Event) error {
+	caller.mu.Lock()
+	if caller.terminalErr != nil {
+		err := caller.terminalErr
+		caller.mu.Unlock()
+
+		return err
+	}
+
+	caller.nextID++
+	requestID := caller.nextID
+	responseCh := make(chan Message, 1)
+	caller.pending[requestID] = responseCh
+	caller.mu.Unlock()
+
+	request := newMessage("progress")
+	request.ID, request.Progress = requestID, &event
+
+	caller.writeMu.Lock()
+	err := Write(caller.out, &request)
+	caller.writeMu.Unlock()
+
+	if err != nil {
+		caller.mu.Lock()
+		delete(caller.pending, requestID)
+		caller.mu.Unlock()
+
+		return err
+	}
+
+	response := <-responseCh
+	if response.Error != "" {
+		return errors.New(response.Error)
+	}
+
+	return nil
+}
+
 func (caller *rpcCaller) exchange(method, name, query string, input json.RawMessage) (*Message, error) {
 	caller.mu.Lock()
 	if caller.terminalErr != nil {
@@ -474,7 +548,7 @@ func (caller *rpcCaller) readResponses(cancelEval context.CancelFunc) {
 			return
 		}
 
-		if response.Type != "rpc_result" {
+		if response.Type != "rpc_result" && response.Type != "progress_result" {
 			continue
 		}
 

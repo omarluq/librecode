@@ -13,6 +13,7 @@ import (
 	"github.com/omarluq/librecode/internal/executeworker"
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/workflowprogress"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -24,6 +25,7 @@ const (
 	helperStderrEnv = "LIBRECODE_EXECUTEWORKER_TEST_STDERR"
 	echoQuery       = "echo"
 	waitErrorText   = "wait for execute worker"
+	progressName    = "progress.go"
 )
 
 func TestMain(testMain *testing.M) {
@@ -97,7 +99,7 @@ func helperMessage(messageType string) *executeworker.Message {
 	return &executeworker.Message{
 		Stderr: "", Source: "", Method: "", Mode: "", Profile: "", GuestAPI: "", Name: "", Query: "", Stdout: "",
 		Type: messageType, Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil,
-		Arguments: nil, ID: 0, ExitCode: 0,
+		Arguments: nil, Progress: nil, ID: 0, ExitCode: 0,
 	}
 }
 
@@ -108,7 +110,7 @@ func writeHelperStderr(message string) {
 }
 
 func testClient() executeworker.Client {
-	return executeworker.Client{Executable: os.Args[0], Handler: nil}
+	return executeworker.Client{Executable: os.Args[0], Handler: nil, Progress: nil}
 }
 
 func TestClientIncludesWorkerStderrForFailurePaths(t *testing.T) {
@@ -260,6 +262,93 @@ func TestClientRejectsInvalidWorkerManifest(t *testing.T) {
 		Name: "bad.go", Source: "1",
 	})
 	require.ErrorContains(t, err, "incompatible guest API version")
+}
+
+func TestClientProgressFramesPreserveOrderAndFinalResult(t *testing.T) {
+	t.Setenv(helperEnv, "1")
+
+	var events []workflowprogress.Event
+
+	client := testClient()
+	client.Progress = func(_ context.Context, event workflowprogress.Event) error {
+		events = append(events, event)
+
+		return nil
+	}
+
+	result, err := client.EvalRequest(t.Context(), &executeworker.Request{
+		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Name: progressName, Source: `import "librecode/workflow"
+workflow.Log("info", "first")
+workflow.Log("info", "second")
+42`,
+	})
+	require.NoError(t, err)
+	assert.InDelta(t, 42, result.Value, 0)
+	require.Len(t, events, 2)
+	assert.Equal(t, []uint64{1, 2}, []uint64{events[0].Sequence, events[1].Sequence})
+	assert.Equal(t, "first", events[0].Log.Message)
+	assert.Equal(t, "second", events[1].Log.Message)
+}
+
+func TestClientProgressErrorStopsEvaluation(t *testing.T) {
+	t.Setenv(helperEnv, "1")
+
+	client := testClient()
+	client.Progress = func(_ context.Context, _ workflowprogress.Event) error {
+		return errors.New("progress rejected")
+	}
+
+	_, err := client.EvalRequest(t.Context(), &executeworker.Request{
+		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Name: progressName, Source: `import "librecode/workflow"; workflow.Log("info", "hello")`,
+	})
+	require.ErrorContains(t, err, "progress rejected")
+}
+
+func TestClientProgressCallbackReceivesCancellation(t *testing.T) {
+	t.Setenv(helperEnv, "1")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	client := testClient()
+	client.Progress = func(ctx context.Context, _ workflowprogress.Event) error {
+		cancel()
+		<-ctx.Done()
+
+		return ctx.Err()
+	}
+
+	_, err := client.EvalRequest(ctx, &executeworker.Request{
+		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Name: progressName, Source: `import "librecode/workflow"; workflow.Log("info", "hello")`,
+	})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestProgressFramesDoNotConsumeRPCCallbackBudget(t *testing.T) {
+	t.Setenv(helperEnv, "1")
+
+	client := testClient()
+	client.Handler = func(_ context.Context, _ *executeworker.Message) (any, error) {
+		return []string{"ok"}, nil
+	}
+
+	var source strings.Builder
+
+	source.WriteString("import \"librecode/workflow\"\nimport \"librecode/tools\"\n")
+
+	for range workflowprogress.MaxEvents {
+		source.WriteString("workflow.Log(\"info\", \"event\")\n")
+	}
+
+	source.WriteString("tools.Search(\"after progress\")")
+
+	result, err := client.EvalRequest(t.Context(), &executeworker.Request{
+		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.Version2,
+		Name: "budget.go", Source: source.String(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []any{"ok"}, result.Value)
 }
 
 func TestClientCallbackRPC(t *testing.T) {
