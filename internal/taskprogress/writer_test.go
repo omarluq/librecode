@@ -98,6 +98,33 @@ func TestWriterCloseFlushesWithCanceledContextAndIsIdempotent(t *testing.T) {
 		taskprogress.ErrClosed)
 }
 
+func TestWriterCancellationRetainsPendingForClose(t *testing.T) {
+	t.Parallel()
+
+	var received []database.TaskEventDraft
+
+	attempts := 0
+	writer := taskprogress.New(func(ctx context.Context, drafts []database.TaskEventDraft) (
+		[]database.TaskEventEntity, bool, error,
+	) {
+		attempts++
+		if attempts == 1 {
+			return nil, false, ctx.Err()
+		}
+
+		received = append(received, drafts...)
+
+		return make([]database.TaskEventEntity, len(drafts)), true, nil
+	}, nil, taskprogress.Options{FlushInterval: 0, FlushBatch: 0, FinalizeTimeout: time.Second})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.NoError(t, writer.Write(ctx, database.TaskEventDraft{Kind: "event", PayloadJSON: `{}`}, true))
+	require.NoError(t, writer.Close(ctx))
+	assert.Equal(t, 2, attempts)
+	require.Len(t, received, 1)
+}
+
 func TestWriterAppendErrorIsSticky(t *testing.T) {
 	t.Parallel()
 

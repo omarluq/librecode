@@ -170,6 +170,14 @@ func (writer *Writer) flush(ctx context.Context) {
 
 	events, appended, err := writer.append(ctx, pending)
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+			writer.mu.Lock()
+			writer.pending = append(pending, writer.pending...)
+			writer.mu.Unlock()
+
+			return
+		}
+
 		writer.recordErr(err)
 
 		return
