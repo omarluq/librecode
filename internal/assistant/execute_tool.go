@@ -149,7 +149,7 @@ func (executor *executeToolExecutor) executeTurn(ctx context.Context, source str
 				Errorf("execute tool registry is not configured")
 	}
 
-	client := executeworker.Client{Executable: "", Handler: executor.handleWorkerMessage}
+	client := executeworker.Client{Executable: "", Handler: executor.handleWorkerMessage, Progress: nil}
 
 	result, err := client.EvalRequest(ctx, &executeworker.Request{
 		Arguments: nil, Mode: "", Profile: guestapi.ProfileTurn, GuestAPIVersion: guestapi.CurrentVersion,

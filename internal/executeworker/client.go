@@ -13,6 +13,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
+	"github.com/omarluq/librecode/internal/workflowprogress"
 )
 
 // RPCHandler handles a callback request received from an execute worker.
@@ -21,6 +22,7 @@ type RPCHandler func(context.Context, *Message) (any, error)
 // Client evaluates source in a separate worker process.
 type Client struct {
 	Handler    RPCHandler
+	Progress   workflowprogress.Sink
 	Executable string
 }
 
@@ -241,7 +243,10 @@ func (client Client) readMessages(
 	}
 	defer cancelCallbacks()
 
-	var writes sync.Mutex
+	var (
+		writes           sync.Mutex
+		progressSequence uint64
+	)
 
 	for {
 		message, err := Read(stdout)
@@ -252,6 +257,12 @@ func (client Client) readMessages(
 		}
 
 		switch message.Type {
+		case "progress":
+			if err := client.handleProgress(callbackCtx, stdin, &message, &writes, &progressSequence); err != nil {
+				client.stopRPCCallbacks(worker, &callbacks)
+
+				return mvmhost.Result{}, worker.abort(err)
+			}
 		case "rpc":
 			if err := client.startRPCCallback(callbackCtx, worker, stdin, &message, &callbacks, &writes); err != nil {
 				client.stopRPCCallbacks(worker, &callbacks)
@@ -274,6 +285,46 @@ func (client Client) readMessages(
 			)
 		}
 	}
+}
+
+func (client Client) handleProgress(
+	ctx context.Context,
+	stdin io.Writer,
+	message *Message,
+	writes *sync.Mutex,
+	previous *uint64,
+) error {
+	if message.Progress.Sequence != *previous+1 {
+		return fmt.Errorf(
+			"execute worker progress sequence %d follows %d",
+			message.Progress.Sequence,
+			*previous,
+		)
+	}
+
+	response := newMessage("progress_result")
+	response.ID = message.ID
+
+	if client.Progress != nil {
+		if progressErr := client.Progress(ctx, *message.Progress); progressErr != nil {
+			response.Error = progressErr.Error()
+		}
+	}
+
+	if ctx.Err() != nil {
+		return canceledError(ctx.Err())
+	}
+
+	writes.Lock()
+	defer writes.Unlock()
+
+	if err := Write(stdin, &response); err != nil {
+		return err
+	}
+
+	*previous = message.Progress.Sequence
+
+	return nil
 }
 
 func (client Client) startRPCCallback(

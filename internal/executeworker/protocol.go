@@ -13,6 +13,7 @@ import (
 	"github.com/omarluq/librecode/internal/executionlimits"
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/tool"
+	"github.com/omarluq/librecode/internal/workflowprogress"
 )
 
 const (
@@ -34,24 +35,25 @@ type ToolCallResult struct {
 
 // Message is a framed request or response exchanged with an execute worker.
 type Message struct {
-	Stderr    string           `json:"stderr,omitempty"`
-	Source    string           `json:"source,omitempty"`
-	Method    string           `json:"method,omitempty"`
-	Mode      string           `json:"mode,omitempty"`
-	Profile   guestapi.Profile `json:"profile,omitempty"`
-	GuestAPI  guestapi.Version `json:"guest_api_version,omitempty"`
-	Name      string           `json:"name,omitempty"`
-	Query     string           `json:"query,omitempty"`
-	Stdout    string           `json:"stdout,omitempty"`
-	Type      string           `json:"type"`
-	Error     string           `json:"error,omitempty"`
-	ErrorKind string           `json:"error_kind,omitempty"`
-	ValueKind string           `json:"value_kind,omitempty"`
-	Input     json.RawMessage  `json:"input,omitempty"`
-	Value     json.RawMessage  `json:"value,omitempty"`
-	Arguments json.RawMessage  `json:"arguments,omitempty"`
-	ID        uint64           `json:"id,omitempty"`
-	ExitCode  int              `json:"exit_code,omitempty"`
+	Progress  *workflowprogress.Event `json:"progress,omitempty"`
+	Stderr    string                  `json:"stderr,omitempty"`
+	Source    string                  `json:"source,omitempty"`
+	Method    string                  `json:"method,omitempty"`
+	Mode      string                  `json:"mode,omitempty"`
+	Profile   guestapi.Profile        `json:"profile,omitempty"`
+	GuestAPI  guestapi.Version        `json:"guest_api_version,omitempty"`
+	Name      string                  `json:"name,omitempty"`
+	Query     string                  `json:"query,omitempty"`
+	Stdout    string                  `json:"stdout,omitempty"`
+	Type      string                  `json:"type"`
+	Error     string                  `json:"error,omitempty"`
+	ErrorKind string                  `json:"error_kind,omitempty"`
+	ValueKind string                  `json:"value_kind,omitempty"`
+	Input     json.RawMessage         `json:"input,omitempty"`
+	Value     json.RawMessage         `json:"value,omitempty"`
+	Arguments json.RawMessage         `json:"arguments,omitempty"`
+	ID        uint64                  `json:"id,omitempty"`
+	ExitCode  int                     `json:"exit_code,omitempty"`
 }
 
 const (
@@ -64,7 +66,7 @@ func newMessage(messageType string) Message {
 	return Message{
 		Stderr: "", Source: "", Method: "", Mode: "", Profile: "", GuestAPI: "", Name: "", Query: "", Stdout: "",
 		Type: messageType, Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil,
-		Arguments: nil, ID: 0, ExitCode: 0,
+		Arguments: nil, Progress: nil, ID: 0, ExitCode: 0,
 	}
 }
 
@@ -140,6 +142,16 @@ func validateMessage(message *Message) error {
 
 	if message.Type == "result" && len(message.Value) > MaxResultSize {
 		return fmt.Errorf("execute worker result size %d exceeds limit %d", len(message.Value), MaxResultSize)
+	}
+
+	if message.Type == "progress" {
+		if message.Progress == nil {
+			return errors.New("invalid execute worker progress message: missing event")
+		}
+
+		if err := workflowprogress.ValidateEvent(*message.Progress); err != nil {
+			return fmt.Errorf("invalid execute worker progress message: %w", err)
+		}
 	}
 
 	return nil

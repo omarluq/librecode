@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/omarluq/librecode/internal/executeworker"
+	"github.com/omarluq/librecode/internal/workflowprogress"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,6 +57,21 @@ func TestProtocolRejectsOversizedMessagesOnReadAndWrite(t *testing.T) {
 	assert.Contains(t, err.Error(), "frame size")
 }
 
+func TestProtocolValidatesProgressFrames(t *testing.T) {
+	t.Parallel()
+
+	missing := protocolMessage("progress", nil)
+	invalid := protocolMessage("progress", nil)
+	invalid.Progress = &workflowprogress.Event{
+		Phase: nil, Item: nil, Custom: nil, Log: nil,
+		Version: 1, Sequence: 0, Kind: workflowprogress.KindLog,
+	}
+
+	for _, message := range []*executeworker.Message{missing, invalid} {
+		require.Error(t, executeworker.Write(new(bytes.Buffer), message))
+	}
+}
+
 func TestProtocolResponseBudgetsCompose(t *testing.T) {
 	t.Parallel()
 
@@ -78,6 +94,6 @@ func protocolMessage(messageType string, value []byte) *executeworker.Message {
 		Stderr: "", Source: "", Method: "", Mode: "", Profile: "", GuestAPI: "", Name: "",
 		Query: "", Stdout: "", Type: messageType,
 		Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: value, Arguments: nil,
-		ID: 0, ExitCode: 0,
+		Progress: nil, ID: 0, ExitCode: 0,
 	}
 }

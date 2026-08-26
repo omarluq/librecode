@@ -50,6 +50,10 @@ func TestAvailabilityManifest(t *testing.T) {
 		{guestapi.PackageAgents, "Spawn", false, true, true},
 		{guestapi.PackageWorkflow, "Parallel", true, true, true},
 		{guestapi.PackageWorkflow, "Pipeline", true, true, true},
+		{guestapi.PackageWorkflow, "Phase", true, true, true},
+		{guestapi.PackageWorkflow, "Item", true, true, true},
+		{guestapi.PackageWorkflow, "Event", true, true, true},
+		{guestapi.PackageWorkflow, "Log", true, true, true},
 		{guestapi.PackageArtifacts, "Put", true, true, false},
 		{guestapi.PackageState, "Get", false, true, false},
 	}

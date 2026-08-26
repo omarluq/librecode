@@ -181,7 +181,7 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 		run.taskIDs = append(run.taskIDs, link.AgentTaskID)
 	}
 
-	client := executeworker.Client{Executable: runner.executable, Handler: run.handleRPC}
+	client := executeworker.Client{Executable: runner.executable, Handler: run.handleRPC, Progress: nil}
 	result, err := client.EvalRequest(ctx, &executeworker.Request{
 		Arguments: request.Arguments, Mode: "", Profile: guestapi.ProfileDurable, GuestAPIVersion: version,
 		Name: request.Name, Source: request.Source,
