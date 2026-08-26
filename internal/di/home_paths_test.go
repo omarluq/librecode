@@ -40,8 +40,10 @@ func TestAuthServicePrefersProjectLibrecodeAuth(t *testing.T) {
 		require.True(t, container.ShutdownWithContext(context.Background()).Succeed)
 	})
 
-	authService, err := container.AuthService()
+	services, err := container.StartRuntime()
 	require.NoError(t, err)
+
+	authService := services.Auth
 
 	storage := authService.Storage
 

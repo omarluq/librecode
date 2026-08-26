@@ -334,20 +334,20 @@ func TestAssistantServiceAccessorDoesNotStartWorkers(t *testing.T) {
 		assert.Empty(t, report.Errors)
 	})
 
-	assistantService, err := container.AssistantService()
+	assistantService, err := do.Invoke[*AssistantService](container.injector)
 	require.NoError(t, err)
 
 	assertRuntimeCapabilitiesUnavailable(t, assistantService)
 
-	agentTasks, err := container.AgentTaskService()
+	agentTasks, err := do.Invoke[*AgentTaskService](container.injector)
 	require.NoError(t, err)
 	assert.Nil(t, agentTasks.Tasks())
 
-	workflows, err := container.WorkflowService()
+	workflows, err := do.Invoke[*WorkflowService](container.injector)
 	require.NoError(t, err)
 	assert.Nil(t, workflows.Runs())
 
-	chatWorkflows, err := container.ChatWorkflowService()
+	chatWorkflows, err := do.Invoke[*ChatWorkflowService](container.injector)
 	require.NoError(t, err)
 	assert.Nil(t, chatWorkflows.Dispatcher())
 }
@@ -374,7 +374,7 @@ func TestStartRuntimeCleansUpPartialConstruction(t *testing.T) {
 		return nil, expectedErr
 	}
 
-	assistantService, err := container.AssistantService()
+	assistantService, err := do.Invoke[*AssistantService](container.injector)
 	require.NoError(t, err)
 	assertRuntimeCapabilitiesUnavailable(t, assistantService)
 
@@ -457,7 +457,7 @@ func TestStartRuntimeRevokesCapabilitiesAfterCancellation(t *testing.T) {
 		Interactive:       false,
 	})
 
-	assistantService, err := container.AssistantService()
+	assistantService, err := do.Invoke[*AssistantService](container.injector)
 	require.NoError(t, err)
 
 	container.buildRuntime = func(context.Context) (*RuntimeServices, error) {
@@ -486,7 +486,7 @@ func TestStartRuntimeRevokesCapabilitiesAfterCancellation(t *testing.T) {
 	assert.Nil(t, runtimeServices)
 	assertRuntimeCapabilitiesUnavailable(t, assistantService)
 
-	_, err = container.ConfigService()
+	_, err = container.DatabaseService()
 	requireOopsCode(t, err, "container_closed")
 }
 
@@ -577,17 +577,9 @@ func TestStartRuntimeStartsWorkersExplicitly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Same(t, runtimeServices, repeatedServices)
 
-	agentTasks, err := container.AgentTaskService()
-	require.NoError(t, err)
-	require.NotNil(t, agentTasks.Tasks())
-
-	workflows, err := container.WorkflowService()
-	require.NoError(t, err)
-	require.NotNil(t, workflows.Runs())
-
-	chatWorkflows, err := container.ChatWorkflowService()
-	require.NoError(t, err)
-	require.NotNil(t, chatWorkflows.Dispatcher())
+	require.NotNil(t, runtimeServices.AgentTasks.Tasks())
+	require.NotNil(t, runtimeServices.Workflows.Runs())
+	require.NotNil(t, runtimeServices.ChatWorkflows.Dispatcher())
 
 	tasks, err := runtimeServices.Assistant.Runtime.AgentTasks(t.Context(), "missing", 1)
 	require.NoError(t, err)
@@ -673,16 +665,9 @@ type containerServiceAccessor struct {
 
 func containerServiceAccessors(container *Container) []containerServiceAccessor {
 	return []containerServiceAccessor{
-		{name: "config", resolve: func() (any, error) { return container.ConfigService() }},
-		{name: "auth", resolve: func() (any, error) { return container.AuthService() }},
 		{name: "database", resolve: func() (any, error) { return container.DatabaseService() }},
 		{name: "extension", resolve: func() (any, error) { return container.ExtensionService() }},
 		{name: "model", resolve: func() (any, error) { return container.ModelService() }},
-		{name: "assistant", resolve: func() (any, error) { return container.AssistantService() }},
-		{name: "agent task", resolve: func() (any, error) { return container.AgentTaskService() }},
-		{name: "workflow", resolve: func() (any, error) { return container.WorkflowService() }},
-		{name: "chat workflow", resolve: func() (any, error) { return container.ChatWorkflowService() }},
 		{name: "tool", resolve: func() (any, error) { return container.ToolService() }},
-		{name: "skills", resolve: func() (any, error) { return container.SkillsService() }},
 	}
 }

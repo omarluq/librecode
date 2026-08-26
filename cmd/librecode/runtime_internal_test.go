@@ -28,9 +28,6 @@ func TestWithContainerRunsHandler(t *testing.T) {
 		called = true
 
 		require.NotNil(t, container)
-		configService, resolveErr := container.ConfigService()
-		require.NoError(t, resolveErr)
-		assert.True(t, configService.Interactive())
 
 		return nil
 	})

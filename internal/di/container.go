@@ -281,26 +281,6 @@ func (c *Container) lockForResolution() error {
 	return nil
 }
 
-// ConfigService resolves the configuration service.
-func (c *Container) ConfigService() (*ConfigService, error) {
-	if err := c.lockForResolution(); err != nil {
-		return nil, err
-	}
-	defer c.lifecycle.Unlock()
-
-	return do.Invoke[*ConfigService](c.injector)
-}
-
-// AuthService resolves the auth service.
-func (c *Container) AuthService() (*AuthService, error) {
-	if err := c.lockForResolution(); err != nil {
-		return nil, err
-	}
-	defer c.lifecycle.Unlock()
-
-	return do.Invoke[*AuthService](c.injector)
-}
-
 // DatabaseService resolves the database service.
 func (c *Container) DatabaseService() (*DatabaseService, error) {
 	if err := c.lockForResolution(); err != nil {
@@ -331,46 +311,6 @@ func (c *Container) ModelService() (*ModelService, error) {
 	return do.Invoke[*ModelService](c.injector)
 }
 
-// AssistantService resolves the assistant runtime without starting workers.
-func (c *Container) AssistantService() (*AssistantService, error) {
-	if err := c.lockForResolution(); err != nil {
-		return nil, err
-	}
-	defer c.lifecycle.Unlock()
-
-	return do.Invoke[*AssistantService](c.injector)
-}
-
-// AgentTaskService resolves the inert durable background agent service.
-func (c *Container) AgentTaskService() (*AgentTaskService, error) {
-	if err := c.lockForResolution(); err != nil {
-		return nil, err
-	}
-	defer c.lifecycle.Unlock()
-
-	return do.Invoke[*AgentTaskService](c.injector)
-}
-
-// WorkflowService resolves inert script-driven durable agent orchestration.
-func (c *Container) WorkflowService() (*WorkflowService, error) {
-	if err := c.lockForResolution(); err != nil {
-		return nil, err
-	}
-	defer c.lifecycle.Unlock()
-
-	return do.Invoke[*WorkflowService](c.injector)
-}
-
-// ChatWorkflowService resolves the inert interactive workflow dispatcher.
-func (c *Container) ChatWorkflowService() (*ChatWorkflowService, error) {
-	if err := c.lockForResolution(); err != nil {
-		return nil, err
-	}
-	defer c.lifecycle.Unlock()
-
-	return do.Invoke[*ChatWorkflowService](c.injector)
-}
-
 // ToolService resolves the tool service.
 func (c *Container) ToolService() (*ToolService, error) {
 	if err := c.lockForResolution(); err != nil {
@@ -379,14 +319,4 @@ func (c *Container) ToolService() (*ToolService, error) {
 	defer c.lifecycle.Unlock()
 
 	return do.Invoke[*ToolService](c.injector)
-}
-
-// SkillsService resolves the skills cache service.
-func (c *Container) SkillsService() (*SkillsService, error) {
-	if err := c.lockForResolution(); err != nil {
-		return nil, err
-	}
-	defer c.lifecycle.Unlock()
-
-	return do.Invoke[*SkillsService](c.injector)
 }
