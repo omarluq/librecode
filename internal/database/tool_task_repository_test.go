@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestToolTaskRepositoryCreateIdempotentFinishAndOwnerScope(t *testing.T) {
@@ -18,12 +19,9 @@ func TestToolTaskRepositoryCreateIdempotentFinishAndOwnerScope(t *testing.T) {
 
 	connection := openTestSQLite(t, filepath.Join(t.TempDir(), "tool-tasks.db"), 0)
 	require.NoError(t, database.Migrate(t.Context(), connection))
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
-	repository, err := database.NewToolTaskRepository(connection)
-	require.NoError(t, err)
-	sessions, err := database.NewSessionRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
+	repository := testutil.ToolTaskRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
 	require.NoError(t, err)
 	other, err := sessions.CreateSession(t.Context(), t.TempDir(), "other", "")
@@ -112,10 +110,8 @@ func TestToolTaskRepositoryCancelRacesClaimWithoutLosingCancellation(t *testing.
 
 	connection := openTestSQLite(t, filepath.Join(t.TempDir(), "cancel-claim-race.db"), time.Second)
 	require.NoError(t, database.Migrate(t.Context(), connection))
-	repository, err := database.NewToolTaskRepository(connection)
-	require.NoError(t, err)
-	sessions, err := database.NewSessionRepository(connection)
-	require.NoError(t, err)
+	repository := testutil.ToolTaskRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
 	require.NoError(t, err)
 
@@ -272,8 +268,7 @@ func TestToolTaskRepositoryCreateRollsBackWhenOwnerIsMissing(t *testing.T) {
 
 	connection := openTestSQLite(t, filepath.Join(t.TempDir(), "missing-owner.db"), 0)
 	require.NoError(t, database.Migrate(t.Context(), connection))
-	repository, err := database.NewToolTaskRepository(connection)
-	require.NoError(t, err)
+	repository := testutil.ToolTaskRepository(t, connection)
 
 	missingOwner := testUUIDV7(t)
 	created, err := repository.Create(t.Context(), newToolTask(missingOwner, t.TempDir(), "orphan"))
@@ -294,8 +289,7 @@ func TestToolTaskRepositoryLookupValidationAndMissingFinish(t *testing.T) {
 
 	connection := openTestSQLite(t, filepath.Join(t.TempDir(), "lookup-validation.db"), 0)
 	require.NoError(t, database.Migrate(t.Context(), connection))
-	repository, err := database.NewToolTaskRepository(connection)
-	require.NoError(t, err)
+	repository := testutil.ToolTaskRepository(t, connection)
 
 	_, found, err := repository.Get(t.Context(), invalidID)
 	require.ErrorContains(t, err, "must be a UUIDv7")
@@ -323,10 +317,8 @@ func TestToolTaskRepositoryCancelIsNoopAfterTerminalState(t *testing.T) {
 
 	connection := openTestSQLite(t, filepath.Join(t.TempDir(), "terminal-cancel.db"), 0)
 	require.NoError(t, database.Migrate(t.Context(), connection))
-	repository, err := database.NewToolTaskRepository(connection)
-	require.NoError(t, err)
-	sessions, err := database.NewSessionRepository(connection)
-	require.NoError(t, err)
+	repository := testutil.ToolTaskRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
 	require.NoError(t, err)
 	created, err := repository.Create(t.Context(), newToolTask(owner.ID, owner.CWD, "terminal"))

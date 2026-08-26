@@ -50,7 +50,7 @@ func TestListedModelsDefaultsToAuthorizedProviders(t *testing.T) {
 		"anthropic-claude": testCLIAuthCredential(),
 	})
 
-	registry := model.NewRegistry(&model.RegistryOptions{
+	registry := model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",

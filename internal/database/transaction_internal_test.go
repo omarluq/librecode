@@ -677,7 +677,7 @@ func TestReadOnlyTransactionOverlapsImmediateWriterAndRejectsWrites(t *testing.T
 func internalTransactionProvider(t *testing.T, database *sql.DB) *transactionProvider {
 	t.Helper()
 
-	provider, err := newSQLProvider(database)
+	provider, err := newSQLProviderFromOpenConnection(database)
 	require.NoError(t, err)
 
 	return provider

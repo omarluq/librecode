@@ -19,6 +19,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/taskruntime"
+	"github.com/omarluq/librecode/internal/testutil"
 	"github.com/omarluq/librecode/internal/tool"
 )
 
@@ -239,10 +240,8 @@ func newTestService(t *testing.T, defaultTimeout time.Duration) (*Service, *sql.
 	connection.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	require.NoError(t, database.Migrate(t.Context(), connection))
-	repository, err := database.NewToolTaskRepository(connection)
-	require.NoError(t, err)
-	sessions, err := database.NewSessionRepository(connection)
-	require.NoError(t, err)
+	repository := testutil.ToolTaskRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
 	require.NoError(t, err)
 

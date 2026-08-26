@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestTaskRepositoryListFiltersAndLimits(t *testing.T) {
@@ -358,10 +359,8 @@ func newToolTaskTestFixture(t *testing.T) *toolTaskTestFixture {
 	t.Helper()
 	connection := openTestSQLite(t, filepath.Join(t.TempDir(), "tool-task-branches.db"), 0)
 	require.NoError(t, database.Migrate(t.Context(), connection))
-	repository, err := database.NewToolTaskRepository(connection)
-	require.NoError(t, err)
-	sessions, err := database.NewSessionRepository(connection)
-	require.NoError(t, err)
+	repository := testutil.ToolTaskRepository(t, connection)
+	sessions := testutil.SessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
 	require.NoError(t, err)
 

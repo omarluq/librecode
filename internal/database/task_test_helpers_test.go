@@ -106,7 +106,7 @@ func newAgentTask(parentSessionID, childSessionID string) *database.AgentTaskEnt
 		Model:                   "",
 		Provider:                "",
 		PolicyJSON:              "{}",
-		UsageJSON:               "{}",
+		UsageJSON:               "{\"reported\":false}",
 		OutputSchemaJSON:        "",
 		OutputSchemaDigest:      "",
 		OutputAttemptsReserved:  0,

@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"strings"
 	"time"
@@ -52,26 +51,6 @@ type WorkflowRepository struct {
 	sql        ksql.Provider
 	tasks      *TaskRepository
 	agentTasks *AgentTaskRepository
-}
-
-// NewWorkflowRepository creates a workflow repository.
-func NewWorkflowRepository(connection *sql.DB) (*WorkflowRepository, error) {
-	provider, err := newSQLProvider(connection)
-	if err != nil {
-		return nil, err
-	}
-
-	tasks, err := newStandaloneTaskRepository(provider)
-	if err != nil {
-		return nil, err
-	}
-
-	agentTasks, err := NewAgentTaskRepositoryWithProvider(provider, tasks)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewWorkflowRepositoryWithProvider(provider, tasks, agentTasks)
 }
 
 // NewWorkflowRepositoryWithProvider creates a workflow repository with explicit shared dependencies.

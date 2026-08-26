@@ -12,20 +12,19 @@ import (
 	_ "modernc.org/sqlite" // Register the SQLite driver used by sql.Open.
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 func TestManagerPreservesOwnerScopeAndSpecializedCancellation(t *testing.T) {
 	t.Parallel()
 
 	connection := newRuntimeTestDatabase(t, "manager.db")
-	sessions, err := database.NewSessionRepository(connection)
-	require.NoError(t, err)
+	sessions := testutil.SessionRepository(t, connection)
 	firstOwner, err := sessions.CreateSession(t.Context(), t.TempDir(), "first", "")
 	require.NoError(t, err)
 	secondOwner, err := sessions.CreateSession(t.Context(), t.TempDir(), "second", "")
 	require.NoError(t, err)
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
 	created, err := tasks.Create(t.Context(), &database.TaskEntity{
 		CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{}, LeaseExpiresAt: nil,
 		ID: "", Kind: database.TaskKindAgent, OwnerSessionID: firstOwner.ID, ParentTaskID: "",
@@ -134,12 +133,10 @@ func newRuntimeTestOwnerAndTasks(t *testing.T, name string) (*database.SessionEn
 	t.Helper()
 
 	connection := newRuntimeTestDatabase(t, name)
-	sessions, err := database.NewSessionRepository(connection)
-	require.NoError(t, err)
+	sessions := testutil.SessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
 	require.NoError(t, err)
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
 
 	return owner, tasks
 }

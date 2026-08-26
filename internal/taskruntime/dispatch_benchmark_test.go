@@ -10,6 +10,7 @@ import (
 	_ "modernc.org/sqlite" // Register the SQLite driver used by sql.Open.
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const benchmarkTaskKind = "benchmark"
@@ -20,20 +21,14 @@ const benchmarkTaskKind = "benchmark"
 func BenchmarkTaskTableDispatch(b *testing.B) {
 	connection := newBenchmarkDatabase(b, "dispatch.db")
 
-	sessions, err := database.NewSessionRepository(connection)
-	if err != nil {
-		b.Fatal(err)
-	}
+	sessions := testutil.SessionRepository(b, connection)
 
 	owner, err := sessions.CreateSession(context.Background(), b.TempDir(), "benchmark", "")
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	tasks, err := database.NewTaskRepository(connection)
-	if err != nil {
-		b.Fatal(err)
-	}
+	tasks := testutil.TaskRepository(b, connection)
 
 	b.ResetTimer()
 

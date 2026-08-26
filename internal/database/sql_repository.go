@@ -113,20 +113,7 @@ func wrapRepositoryConstruction(err error, name string) error {
 	return oops.In("database").Code("repository_construction").Wrapf(err, "construct %s repository", name)
 }
 
-func newSQLProvider(connection *sql.DB) (*transactionProvider, error) {
-	if connection == nil {
-		return nil, oops.In("database").Code("nil_sql_connection").Errorf("sql connection is required")
-	}
-
-	if err := connection.PingContext(context.Background()); err != nil {
-		return nil, oops.In("database").Code("ping_sql_connection").Wrapf(err, "ping sql connection")
-	}
-
-	return newSQLProviderFromOpenConnection(connection)
-}
-
-// newSQLProviderFromOpenConnection adapts a connection already verified by its
-// lifecycle owner. Standalone repository constructors use newSQLProvider.
+// newSQLProviderFromOpenConnection adapts a connection verified by its lifecycle owner.
 func newSQLProviderFromOpenConnection(connection *sql.DB) (*transactionProvider, error) {
 	if connection == nil {
 		return nil, oops.In("database").Code("nil_sql_connection").Errorf("sql connection is required")

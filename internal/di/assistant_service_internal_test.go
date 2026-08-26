@@ -113,8 +113,7 @@ func newTestDatabaseService(t *testing.T) *DatabaseService {
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
 	workflows := testutil.WorkflowRepository(t, connection)
-	toolTasks, err := database.NewToolTaskRepository(connection)
-	require.NoError(t, err)
+	toolTasks := testutil.ToolTaskRepository(t, connection)
 
 	return &DatabaseService{
 		DB:          connection,
@@ -145,7 +144,7 @@ func newTestModelRegistry(t *testing.T) *model.Registry {
 		},
 	})
 
-	return model.NewRegistry(&model.RegistryOptions{
+	return model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",

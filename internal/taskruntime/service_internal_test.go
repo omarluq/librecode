@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -182,8 +183,7 @@ func TestServiceRecoversHandlerPanic(t *testing.T) {
 	t.Parallel()
 
 	connection := newRuntimeTestDatabase(t, "panic.db")
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
 	service, err := New(Options{
 		Tasks: tasks, Logger: nil, Workers: 0, PollInterval: 0, LeaseDuration: 0,
 		HeartbeatInterval: 0, RecoveryInterval: 0, DefaultTimeout: 0, MaxPayloadBytes: 0,
@@ -207,8 +207,7 @@ func TestServiceHeartbeatLogsLostLeaseContextBeforeCancel(t *testing.T) {
 	t.Parallel()
 
 	connection := newRuntimeTestDatabase(t, "heartbeat-log.db")
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
 
 	var logs bytes.Buffer
 
@@ -249,8 +248,7 @@ func TestServiceLifecycleValidationAndIdempotence(t *testing.T) {
 	t.Parallel()
 
 	connection := newRuntimeTestDatabase(t, "lifecycle.db")
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
 	service, err := New(Options{
 		Tasks: tasks, Logger: nil, Workers: 0, PollInterval: 0, LeaseDuration: 0,
 		HeartbeatInterval: 0, RecoveryInterval: 0, DefaultTimeout: 0, MaxPayloadBytes: 0,
@@ -327,12 +325,10 @@ func TestServiceDispatchSkipsBlockedTasksBeyondWorkerCount(t *testing.T) {
 	t.Parallel()
 
 	connection := newRuntimeTestDatabase(t, "fairness.db")
-	sessions, err := database.NewSessionRepository(connection)
-	require.NoError(t, err)
+	sessions := testutil.SessionRepository(t, connection)
 	owner, err := sessions.CreateSession(t.Context(), t.TempDir(), "owner", "")
 	require.NoError(t, err)
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
 
 	created := make([]*database.TaskEntity, 3)
 	for index := range created {
@@ -370,8 +366,7 @@ func TestServiceDoesNotAdmitWhenWorkersAreFull(t *testing.T) {
 	t.Parallel()
 
 	connection := newRuntimeTestDatabase(t, "capacity.db")
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
 
 	handler := &admittingHandler{blocked: map[string]bool{}, started: make(chan string, 1), calls: atomic.Int32{}}
 	service, err := New(Options{
@@ -403,8 +398,7 @@ func TestServiceValidatesConfigurationAndHandlers(t *testing.T) {
 	t.Parallel()
 
 	connection := newRuntimeTestDatabase(t, "validation.db")
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
 
 	t.Run("missing repository", func(t *testing.T) {
 		t.Parallel()
@@ -485,8 +479,7 @@ func TestServiceRequiresLifecycleContexts(t *testing.T) {
 	t.Parallel()
 
 	connection := newRuntimeTestDatabase(t, "contexts.db")
-	tasks, err := database.NewTaskRepository(connection)
-	require.NoError(t, err)
+	tasks := testutil.TaskRepository(t, connection)
 	service, err := New(runtimeTestOptions(tasks))
 	require.NoError(t, err)
 
