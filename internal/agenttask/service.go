@@ -352,7 +352,7 @@ func agentTaskEntity(request *SubmitRequest) *database.AgentTaskEntity {
 		},
 		ChildSessionID: request.ChildSessionID, AgentName: request.AgentName,
 		Prompt: request.Prompt, Model: request.Model, Provider: request.Provider,
-		PolicyJSON: request.PolicyJSON, UsageJSON: "{}",
+		PolicyJSON: request.PolicyJSON, UsageJSON: unknownUsageJSON,
 		OutputSchemaJSON: request.OutputSchema, OutputSchemaDigest: request.OutputSchemaDigest,
 		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: request.Depth,
 	}
@@ -1251,7 +1251,7 @@ func (service *Service) finish(
 
 	usageJSON := result.UsageJSON
 	if usageJSON == "" {
-		usageJSON = "{}"
+		usageJSON = unknownUsageJSON
 	}
 
 	changed, err := service.agentTasks.Finish(ctx, &database.TaskFinish{

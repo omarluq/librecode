@@ -97,7 +97,7 @@ func createQueuedAgentTask(
 	entity.AgentName = generalAgent
 	entity.Prompt = workPrompt
 	entity.PolicyJSON = `{}`
-	entity.UsageJSON = `{}`
+	entity.UsageJSON = `{"reported":false}`
 	entity.Depth = 1
 	created, err := repository.Create(t.Context(), entity)
 	require.NoError(t, err)
@@ -501,7 +501,7 @@ func TestServiceInternalFinalizeInterruptedRun(t *testing.T) {
 	require.True(t, found)
 	assert.Equal(t, database.TaskInterrupted, completed.Task.State)
 	assert.Equal(t, "service_stopped", completed.Task.ErrorCode)
-	assert.JSONEq(t, `{}`, completed.UsageJSON)
+	assert.JSONEq(t, `{"reported":false}`, completed.UsageJSON)
 }
 
 func TestServiceInternalRecoveryPublishesEveryRecoveredTask(t *testing.T) {
@@ -561,7 +561,7 @@ func TestServiceInternalFinalizeRecoversExpiredLease(t *testing.T) {
 
 	defer subscription.Cancel()
 
-	service.finalizeRun(t.Context(), created.Task.ID, Result{Text: "late", UsageJSON: `{}`}, nil)
+	service.finalizeRun(t.Context(), created.Task.ID, Result{Text: "late", UsageJSON: `{"reported":false}`}, nil)
 
 	completed, found, err := fixture.agentTasks.Get(t.Context(), created.Task.ID)
 	require.NoError(t, err)
@@ -824,7 +824,7 @@ func testCancelingTaskFinalization(
 	require.NoError(t, err)
 	require.True(t, changed)
 
-	usageJSON := `{"input_tokens":3,"output_tokens":1}`
+	usageJSON := `{"input_tokens":3,"output_tokens":1,"reported":true}`
 	service.finalizeRun(
 		t.Context(), canceling.Task.ID, Result{Text: "partial findings", UsageJSON: usageJSON}, context.Canceled,
 	)

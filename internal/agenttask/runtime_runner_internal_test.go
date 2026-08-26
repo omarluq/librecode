@@ -69,7 +69,7 @@ func TestRuntimeRunnerRunRejectsInvalidTaskBeforePrompt(t *testing.T) {
 	invalidTask.PolicyJSON = `{bad`
 	result, err := runner.Run(t.Context(), invalidTask, nil)
 	require.ErrorContains(t, err, "decode agent profile")
-	assert.JSONEq(t, `{}`, result.UsageJSON)
+	assert.JSONEq(t, `{"reported":false}`, result.UsageJSON)
 
 	missingSessionTask := emptyAgentTask()
 	missingSessionTask.PolicyJSON = `{}`
@@ -77,7 +77,7 @@ func TestRuntimeRunnerRunRejectsInvalidTaskBeforePrompt(t *testing.T) {
 	missingSessionTask.ChildSessionID = "missing"
 	result, err = runner.Run(t.Context(), missingSessionTask, nil)
 	require.ErrorContains(t, err, "child session not found")
-	assert.JSONEq(t, `{}`, result.UsageJSON)
+	assert.JSONEq(t, `{"reported":false}`, result.UsageJSON)
 }
 
 type runnerCompleter struct {
@@ -193,7 +193,7 @@ func newRunnerFixture(t *testing.T, depth int) runnerFixture {
 	require.NoError(t, err)
 
 	cfg := config.Load("").MustGet()
-	models := model.NewRegistry(&model.RegistryOptions{
+	models := model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth: testutil.NewAuthStorage(t, map[string]auth.Credential{
 			testValue: {
@@ -504,7 +504,7 @@ func TestRuntimeRunnerReportsSessionLoadError(t *testing.T) {
 	task.ChildSessionID = childSessionName
 	result, err := runner.Run(t.Context(), task, nil)
 	require.ErrorContains(t, err, "load child session")
-	assert.JSONEq(t, `{}`, result.UsageJSON)
+	assert.JSONEq(t, `{"reported":false}`, result.UsageJSON)
 }
 
 func TestRuntimeRunnerResolvesPersistedAndCatalogDefinitions(t *testing.T) {

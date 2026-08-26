@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	unknownUsageJSON = `{"reported":false}`
 	completedResult  = "done"
 	generalAgentName = "general"
 	testAgentPrompt  = "work"
@@ -103,7 +104,7 @@ func TestServiceAgentTaskAdaptersAndSubscriptionCancellation(t *testing.T) {
 	parent := createSession(t, sessions, "parent", "")
 	child := createSession(t, sessions, "child", parent.ID)
 	service := newService(t, tasks, agentTasks, &fakeRunner{
-		err: nil, result: agenttask.Result{Text: completedResult, UsageJSON: `{}`},
+		err: nil, result: agenttask.Result{Text: completedResult, UsageJSON: unknownUsageJSON},
 		started: nil, release: nil, eventRelease: nil, once: sync.Once{},
 	})
 
@@ -187,7 +188,7 @@ func TestServiceSubmitRunsAndPersistsResult(t *testing.T) {
 	parent := createSession(t, sessions, "parent", "")
 	child := createSession(t, sessions, "child", parent.ID)
 	runner := &fakeRunner{
-		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		result: agenttask.Result{Text: completedResult, UsageJSON: unknownUsageJSON}, err: nil,
 		started: make(chan string, 1), release: nil, eventRelease: nil, once: sync.Once{},
 	}
 	service := newService(t, tasks, agentTasks, runner)
@@ -212,7 +213,7 @@ func TestServicePublishesPersistedEvents(t *testing.T) {
 	parent := createSession(t, sessions, "parent", "")
 	child := createSession(t, sessions, "child", parent.ID)
 	runner := &fakeRunner{
-		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		result: agenttask.Result{Text: completedResult, UsageJSON: unknownUsageJSON}, err: nil,
 		started: make(chan string, 1), release: make(chan struct{}),
 		eventRelease: make(chan struct{}), once: sync.Once{},
 	}
@@ -243,7 +244,7 @@ func TestServiceCancelRunningTask(t *testing.T) {
 	parent := createSession(t, sessions, "parent", "")
 	child := createSession(t, sessions, "child", parent.ID)
 	runner := &fakeRunner{
-		result: agenttask.Result{Text: "partial", UsageJSON: `{}`}, err: nil,
+		result: agenttask.Result{Text: "partial", UsageJSON: unknownUsageJSON}, err: nil,
 		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
 	}
 	service := newService(t, tasks, agentTasks, runner)
@@ -353,7 +354,7 @@ func TestSecondServiceDoesNotInterruptLiveTask(t *testing.T) {
 	parent := createSession(t, sessions, "parent", "")
 	child := createSession(t, sessions, "child", parent.ID)
 	firstRunner := &fakeRunner{
-		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		result: agenttask.Result{Text: completedResult, UsageJSON: unknownUsageJSON}, err: nil,
 		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
 	}
 	first := newService(t, tasks, agentTasks, firstRunner)
@@ -395,13 +396,13 @@ func TestStoppedServiceDoesNotRunQueuedTasksUntilStarted(t *testing.T) {
 			LeaseExpiresAt: nil,
 		},
 		ChildSessionID: child.ID, AgentName: "general", Prompt: "queued", Model: "", Provider: "",
-		PolicyJSON: "{}", UsageJSON: "{}", OutputSchemaJSON: "", OutputSchemaDigest: "",
+		PolicyJSON: "{}", UsageJSON: unknownUsageJSON, OutputSchemaJSON: "", OutputSchemaDigest: "",
 		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1,
 	})
 	require.NoError(t, err)
 
 	runner := &fakeRunner{
-		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		result: agenttask.Result{Text: completedResult, UsageJSON: unknownUsageJSON}, err: nil,
 		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
 	}
 	service, err := agenttask.NewStopped(t.Context(), &agenttask.Options{
@@ -445,7 +446,7 @@ func TestServiceEnforcesSessionConcurrency(t *testing.T) {
 	probeParent := createSession(t, sessions, "probe-parent", "")
 	probeChild := createSession(t, sessions, "probe-child", probeParent.ID)
 	runner := &fakeRunner{
-		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		result: agenttask.Result{Text: completedResult, UsageJSON: unknownUsageJSON}, err: nil,
 		started: make(chan string, 3), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
 	}
 	service, err := agenttask.New(context.Background(), &agenttask.Options{
@@ -488,7 +489,7 @@ func TestServiceRejectsWorkWhenQueueIsFull(t *testing.T) {
 	tasks, agentTasks, sessions := repositories(t)
 	parent := createSession(t, sessions, "parent", "")
 	runner := &fakeRunner{
-		result: agenttask.Result{Text: completedResult, UsageJSON: `{}`}, err: nil,
+		result: agenttask.Result{Text: completedResult, UsageJSON: unknownUsageJSON}, err: nil,
 		started: make(chan string, 1), release: make(chan struct{}), eventRelease: nil, once: sync.Once{},
 	}
 	service, err := agenttask.New(context.Background(), &agenttask.Options{
@@ -528,7 +529,7 @@ func TestServiceFailureAndOwnerScoping(t *testing.T) {
 	parent := createSession(t, sessions, "parent", "")
 	child := createSession(t, sessions, "child", parent.ID)
 	runner := &fakeRunner{
-		result: agenttask.Result{Text: "", UsageJSON: `{}`}, err: errors.New("provider failed"),
+		result: agenttask.Result{Text: "", UsageJSON: unknownUsageJSON}, err: errors.New("provider failed"),
 		started: nil, release: nil, eventRelease: nil, once: sync.Once{},
 	}
 	service := newService(t, tasks, agentTasks, runner)
@@ -608,7 +609,8 @@ func agentTaskEntity(parentSessionID, childSessionID string) *database.AgentTask
 			ErrorMessage: "", CreatedAt: time.Time{}, StartedAt: nil, FinishedAt: nil, UpdatedAt: time.Time{},
 		},
 		ChildSessionID: childSessionID, AgentName: generalAgentName, Prompt: "do work",
-		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`, OutputSchemaJSON: "", OutputSchemaDigest: "",
+		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: unknownUsageJSON,
+		OutputSchemaJSON: "", OutputSchemaDigest: "",
 		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1,
 	}
 }

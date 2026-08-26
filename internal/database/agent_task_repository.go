@@ -2,8 +2,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -34,21 +32,6 @@ type AgentTaskEntity struct {
 type AgentTaskRepository struct {
 	sql   ksql.Provider
 	tasks *TaskRepository
-}
-
-// NewAgentTaskRepository creates an agent task repository.
-func NewAgentTaskRepository(connection *sql.DB) (*AgentTaskRepository, error) {
-	provider, err := newSQLProvider(connection)
-	if err != nil {
-		return nil, err
-	}
-
-	tasks, err := newStandaloneTaskRepository(provider)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewAgentTaskRepositoryWithProvider(provider, tasks)
 }
 
 // NewAgentTaskRepositoryWithProvider creates an agent task repository with explicit shared dependencies.
@@ -180,7 +163,7 @@ func (repository *AgentTaskRepository) prepareCreate(agentTask *AgentTaskEntity)
 	}
 
 	if created.UsageJSON == "" {
-		created.UsageJSON = "{}"
+		created.UsageJSON = `{"reported":false}`
 	}
 
 	if err := validateAgentTaskEntity(&created); err != nil {
@@ -227,8 +210,8 @@ func (repository *AgentTaskRepository) Finish(
 		return false, err
 	}
 
-	if !json.Valid([]byte(usageJSON)) {
-		return false, errors.New("agent_task.usage_json must be valid JSON")
+	if err := validateUsageJSON(usageJSON); err != nil {
+		return false, err
 	}
 
 	now := repository.tasks.now().UTC()
@@ -431,6 +414,10 @@ WHERE task_id = ? AND output_attempts_reserved < ? AND EXISTS (
 func (repository *AgentTaskRepository) CheckpointOutputAttempt(
 	ctx context.Context, taskID, leaseOwner, usageJSON, summary string,
 ) error {
+	if err := validateUsageJSON(usageJSON); err != nil {
+		return err
+	}
+
 	const statement = `UPDATE agent_tasks SET output_attempts_completed = output_attempts_completed + 1,
  usage_json = ?, output_validation_summary = ? WHERE task_id = ? AND EXISTS (
  SELECT 1 FROM tasks WHERE id = ? AND state = ? AND lease_owner = ?)`

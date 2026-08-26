@@ -96,7 +96,7 @@ func TestAgentTaskRepositoryOutputSchemaReservationAndCheckpointRoundTrip(t *tes
 		assert.True(t, reserved)
 
 		summary := fmt.Sprintf("attempt %d", attempt)
-		usage := fmt.Sprintf(`{"input_tokens":%d,"output_tokens":%d}`, attempt*2, attempt)
+		usage := fmt.Sprintf(`{"input_tokens":%d,"output_tokens":%d,"reported":true}`, attempt*2, attempt)
 		require.NoError(t, fixture.agents.CheckpointOutputAttempt(
 			ctx, created.Task.ID, testWorker, usage, summary,
 		))
@@ -119,7 +119,7 @@ func TestAgentTaskRepositoryOutputSchemaReservationAndCheckpointRoundTrip(t *tes
 	require.NoError(t, err)
 	assert.False(t, reserved)
 	require.ErrorContains(t, fixture.agents.CheckpointOutputAttempt(
-		ctx, created.Task.ID, "stale-worker", `{}`, "stale",
+		ctx, created.Task.ID, "stale-worker", `{"reported":false}`, "stale",
 	), "lease lost")
 }
 
@@ -183,9 +183,9 @@ func TestAgentTaskRepositoryFinishBehavior(t *testing.T) {
 		from        []database.TaskState
 		wantChanged bool
 	}{
-		{name: "records terminal outcome and usage", usage: `{"input_tokens":12}`,
+		{name: "records terminal outcome and usage", usage: `{"input_tokens":12,"reported":true}`,
 			from: []database.TaskState{database.TaskQueued}, wantChanged: true, wantError: ""},
-		{name: "stale transition leaves usage unchanged", usage: `{"input_tokens":12}`,
+		{name: "stale transition leaves usage unchanged", usage: `{"input_tokens":12,"reported":true}`,
 			from: []database.TaskState{database.TaskRunning}, wantError: "", wantChanged: false},
 		{name: "rejects invalid usage", usage: `{`, from: []database.TaskState{database.TaskQueued},
 			wantError: "usage_json must be valid JSON", wantChanged: false},
@@ -220,7 +220,7 @@ func TestAgentTaskRepositoryFinishBehavior(t *testing.T) {
 				assert.JSONEq(t, test.usage, loaded.UsageJSON)
 			} else {
 				assert.Equal(t, database.TaskQueued, loaded.Task.State)
-				assert.JSONEq(t, `{}`, loaded.UsageJSON)
+				assert.JSONEq(t, `{"reported":false}`, loaded.UsageJSON)
 			}
 		})
 	}
@@ -282,7 +282,7 @@ func TestAgentTaskRepositoryCreateValidationAndDefaults(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.JSONEq(t, `{}`, created.PolicyJSON)
-			assert.JSONEq(t, `{}`, created.UsageJSON)
+			assert.JSONEq(t, `{"reported":false}`, created.UsageJSON)
 		})
 	}
 }
@@ -309,8 +309,13 @@ func TestAgentTaskRepositoryPropagatesContextErrors(t *testing.T) {
 			return fmt.Errorf("agent task operation: %w", runErr)
 		}},
 		{name: "finish", run: func() error {
-			_, runErr := agents.Finish(canceled, new(newTaskFinish(created.Task.ID,
-				[]database.TaskState{database.TaskQueued}, database.TaskSucceeded, taskSucceededEvent)), `{}`)
+			finish := newTaskFinish(
+				created.Task.ID,
+				[]database.TaskState{database.TaskQueued},
+				database.TaskSucceeded,
+				taskSucceededEvent,
+			)
+			_, runErr := agents.Finish(canceled, &finish, `{"reported":false}`)
 
 			return fmt.Errorf("agent task operation: %w", runErr)
 		}},
