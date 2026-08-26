@@ -3,8 +3,19 @@ package model
 import (
 	"strings"
 
-	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
+)
+
+const (
+	// CompactionSummaryPrefix wraps compacted conversation history.
+	CompactionSummaryPrefix = "The conversation history before this point was compacted into the following summary:" +
+		"\n\n<summary>\n"
+	// CompactionSummarySuffix closes a compacted summary block.
+	CompactionSummarySuffix = "\n</summary>"
+	// BranchSummaryPrefix wraps summaries from abandoned branches.
+	BranchSummaryPrefix = "The following is a summary of a branch that this conversation came back from:\n\n<summary>\n"
+	// BranchSummarySuffix closes a branch summary block.
+	BranchSummarySuffix = "</summary>"
 )
 
 // IsFacingRole reports whether a persisted message role is replayed to models.
@@ -31,10 +42,10 @@ func FacingMessage(message *database.MessageEntity) database.MessageEntity {
 	switch message.Role {
 	case database.RoleCompactionSummary:
 		converted.Role = database.RoleUser
-		converted.Content = core.CompactionSummaryPrefix + message.Content + core.CompactionSummarySuffix
+		converted.Content = CompactionSummaryPrefix + message.Content + CompactionSummarySuffix
 	case database.RoleBranchSummary:
 		converted.Role = database.RoleUser
-		converted.Content = core.BranchSummaryPrefix + message.Content + core.BranchSummarySuffix
+		converted.Content = BranchSummaryPrefix + message.Content + BranchSummarySuffix
 	case database.RoleUser,
 		database.RoleAssistant,
 		database.RoleToolResult,

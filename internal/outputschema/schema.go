@@ -133,13 +133,6 @@ func admitWithPolicy(text string, policy admissionPolicy) (*Contract, error) {
 	return &Contract{schema: compiled, Canonical: canonical, Digest: digest}, nil
 }
 
-// Restore verifies and compiles a persisted V1 schema.
-//
-// Deprecated: durable callers should use RestoreWithPolicy and persist the selected policy.
-func Restore(canonical []byte, digest string) (*Contract, error) {
-	return RestoreWithPolicy(canonical, digest, PersistedPolicyV1)
-}
-
 // RestoreWithPolicy restores a durable schema under its frozen admission policy. Compatibility
 // handling never rewrites canonical bytes, so digest and canonical identity remain authoritative.
 func RestoreWithPolicy(canonical []byte, digest string, persistedPolicy PersistedPolicy) (*Contract, error) {

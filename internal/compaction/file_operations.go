@@ -435,37 +435,6 @@ func truncateCommand(command string) string {
 	return command[:commandPreviewLimit-commandPreviewSuffixWidth] + "..."
 }
 
-// AppendFileOperationsSummary replaces stale operation text and appends current operations.
-func AppendFileOperationsSummary(summary string, operations []FileOperation) string {
-	summary = StripFileOperationsSummary(summary)
-	if len(operations) == 0 {
-		return summary
-	}
-
-	lines := []string{strings.TrimSpace(summary), "", fileOperationsHeader}
-
-	for _, operation := range operations[:min(len(operations), maxFileOperations)] {
-		line := "- " + operation.Action + ": " + operation.Path
-		if operation.Tool != "" {
-			line += " (via " + operation.Tool + ")"
-		}
-
-		lines = append(lines, line)
-	}
-
-	return strings.TrimSpace(strings.Join(lines, "\n"))
-}
-
-// StripFileOperationsSummary removes the generated file-operation section from summary text.
-func StripFileOperationsSummary(summary string) string {
-	before, _, ok := strings.Cut(summary, fileOperationsHeader)
-	if !ok {
-		return strings.TrimSpace(summary)
-	}
-
-	return strings.TrimSpace(before)
-}
-
 type entryData struct {
 	Details map[string]any `json:"details,omitempty"`
 }

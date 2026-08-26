@@ -13,7 +13,7 @@ import (
 func TestContributionsFromPayloadParsesListAndDefaults(t *testing.T) {
 	t.Parallel()
 
-	contributions, err := ContributionsFromPayload(map[string]any{
+	contributions, err := ContributionsFromPayloadWithLimit(map[string]any{
 		payloadContributionsKey: []any{
 			map[string]any{
 				jsonToolNameKey: "note",
@@ -23,7 +23,7 @@ func TestContributionsFromPayloadParsesListAndDefaults(t *testing.T) {
 				},
 			},
 		},
-	})
+	}, ContributionAggregateMaxTokens)
 
 	require.NoError(t, err)
 	require.Len(t, contributions, 1)
@@ -38,12 +38,12 @@ func TestContributionsFromPayloadParsesListAndDefaults(t *testing.T) {
 func TestContributionsFromPayloadParsesLuaNumericMap(t *testing.T) {
 	t.Parallel()
 
-	contributions, err := ContributionsFromPayload(map[string]any{
+	contributions, err := ContributionsFromPayloadWithLimit(map[string]any{
 		payloadContributionsKey: map[string]any{
 			"1": map[string]any{jsonContentKey: "first"},
 			"2": map[string]any{jsonContentKey: "second"},
 		},
-	})
+	}, ContributionAggregateMaxTokens)
 
 	require.NoError(t, err)
 	require.Len(t, contributions, 2)
@@ -80,7 +80,7 @@ func TestContributionsFromPayloadRejectsInvalidShapes(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := ContributionsFromPayload(testCase.payload)
+			_, err := ContributionsFromPayloadWithLimit(testCase.payload, ContributionAggregateMaxTokens)
 			require.Error(t, err)
 		})
 	}
@@ -160,23 +160,6 @@ func TestContributionsFromPayloadEnforcesAggregateLimitInOrder(t *testing.T) {
 			assert.NotContains(t, err.Error(), "secretsecret", "diagnostics must not expose content")
 		})
 	}
-}
-
-func TestContributionsFromPayloadUsesCoreAggregateLimit(t *testing.T) {
-	t.Parallel()
-
-	raw := make([]any, 0, ContributionAggregateMaxTokens/ContributionMaxTokens+1)
-	for range cap(raw) {
-		raw = append(raw, map[string]any{jsonContentKey: strings.Repeat("a", ContributionMaxTokens*4)})
-	}
-
-	contributions, err := ContributionsFromPayload(map[string]any{payloadContributionsKey: raw})
-
-	require.Error(t, err)
-	assert.Nil(t, contributions)
-	assert.Contains(t, err.Error(), "context contribution 4")
-	assert.Contains(t, err.Error(), "after 8192 used")
-	assert.Contains(t, err.Error(), "limit is 8192 tokens")
 }
 
 func TestContributionsFromPayloadRejectsInvalidAggregateLimit(t *testing.T) {

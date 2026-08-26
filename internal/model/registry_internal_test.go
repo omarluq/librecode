@@ -20,7 +20,7 @@ const (
 func TestRegistryRequestAuthBranches(t *testing.T) {
 	t.Parallel()
 
-	registry := NewRegistry(&RegistryOptions{
+	registry := NewRegistryContext(t.Context(), &RegistryOptions{
 		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   "",
@@ -79,7 +79,7 @@ func TestRegistryRequestAuthContext(t *testing.T) {
 	})
 	storage.SetRuntimeAPIKey("stored", "runtime-key")
 	storage.SetRuntimeAPIKey("without-config", "runtime-key")
-	registry := NewRegistry(&RegistryOptions{
+	registry := NewRegistryContext(t.Context(), &RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
@@ -119,7 +119,7 @@ func TestRegistryRequestAuthContextReturnsAuthErrors(t *testing.T) {
 	storage.SetFallbackResolver(func(string) (string, bool) {
 		return "", false
 	})
-	registry := NewRegistry(&RegistryOptions{
+	registry := NewRegistryContext(t.Context(), &RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",

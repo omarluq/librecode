@@ -45,20 +45,6 @@ type Dispatcher struct {
 	started     bool
 }
 
-// NewDispatcher creates and starts durable workflow workers.
-func NewDispatcher(ctx context.Context, options DispatcherOptions) (*Dispatcher, error) {
-	dispatcher, err := NewStoppedDispatcher(ctx, options)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := dispatcher.Start(ctx); err != nil {
-		return nil, err
-	}
-
-	return dispatcher, nil
-}
-
 // NewStoppedDispatcher creates a dispatcher without starting its workers.
 func NewStoppedDispatcher(ctx context.Context, options DispatcherOptions) (*Dispatcher, error) {
 	if ctx == nil || options.Service == nil || options.Tasks == nil {

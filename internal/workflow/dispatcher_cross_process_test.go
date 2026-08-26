@@ -50,7 +50,7 @@ func TestDispatcherClaimsWorkflowSubmittedByAnotherService(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	dispatcher, err := workflow.NewDispatcher(context.Background(), workflow.DispatcherOptions{
+	dispatcher, err := newStartedDispatcher(context.Background(), workflow.DispatcherOptions{
 		Service:     worker,
 		Tasks:       testutil.TaskRepository(t, workerDB),
 		Logger:      nil,
