@@ -50,16 +50,23 @@ func TestUsageTotalsFromTokenUsage(t *testing.T) {
 	assert.ErrorContains(t, err, "negative")
 }
 
-func TestUsageTotalsJSONCompatibilityAndValidation(t *testing.T) {
+func TestUsageTotalsJSONContractAndValidation(t *testing.T) {
 	t.Parallel()
 
 	var unknown UsageTotals
-	require.NoError(t, json.Unmarshal([]byte(`{}`), &unknown))
+	require.NoError(t, json.Unmarshal([]byte(`{"reported":false}`), &unknown))
 	assert.False(t, unknown.Reported)
+	encodedUnknown, err := json.Marshal(unknown)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"reported":false}`, string(encodedUnknown))
 
-	var legacy UsageTotals
-	require.NoError(t, json.Unmarshal([]byte(`{"input_tokens":2,"output_tokens":3,"extra":true}`), &legacy))
-	assert.Equal(t, UsageTotals{InputTokens: 2, OutputTokens: 3, ProviderRoundTrips: 0, Reported: true}, legacy)
+	for _, invalid := range []string{
+		`{}`,
+		`{"reported":null}`,
+		`{"input_tokens":2,"output_tokens":3,"extra":true}`,
+	} {
+		require.ErrorContains(t, json.Unmarshal([]byte(invalid), new(UsageTotals)), "reported field is required")
+	}
 
 	var explicitlyEstimated UsageTotals
 	require.NoError(t, json.Unmarshal(
@@ -77,7 +84,7 @@ func TestUsageTotalsJSONCompatibilityAndValidation(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"reported":true}`, string(encoded))
 
-	require.Error(t, json.Unmarshal([]byte(`{"input_tokens":-1}`), new(UsageTotals)))
+	require.Error(t, json.Unmarshal([]byte(`{"input_tokens":-1,"reported":true}`), new(UsageTotals)))
 
 	_, err = (UsageTotals{
 		InputTokens: math.MaxInt64, OutputTokens: 1, ProviderRoundTrips: 0, Reported: false,

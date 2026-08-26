@@ -13,7 +13,7 @@ type UsageTotals struct {
 	InputTokens        int64 `json:"input_tokens"`
 	OutputTokens       int64 `json:"output_tokens"`
 	ProviderRoundTrips int64 `json:"provider_round_trips"`
-	Reported           bool  `json:"-"`
+	Reported           bool  `json:"reported"`
 }
 
 // UsageTotalsFromTokenUsage converts one provider usage observation into
@@ -126,10 +126,6 @@ func (usage UsageTotals) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	if usage == (UsageTotals{InputTokens: 0, OutputTokens: 0, ProviderRoundTrips: 0, Reported: false}) {
-		return []byte("{}"), nil
-	}
-
 	type wireUsage struct {
 		InputTokens        int64 `json:"input_tokens,omitempty"`
 		OutputTokens       int64 `json:"output_tokens,omitempty"`
@@ -145,8 +141,7 @@ func (usage UsageTotals) MarshalJSON() ([]byte, error) {
 	return encoded, nil
 }
 
-// UnmarshalJSON accepts legacy snapshots and ignores unknown fields. Positive
-// legacy fields imply reported usage; an explicit reported field is authoritative.
+// UnmarshalJSON requires an explicit reported field and ignores unknown fields.
 func (usage *UsageTotals) UnmarshalJSON(data []byte) error {
 	type wireUsage struct {
 		Reported           *bool `json:"reported"`
@@ -160,16 +155,15 @@ func (usage *UsageTotals) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("unmarshal provider usage: %w", err)
 	}
 
+	if wire.Reported == nil {
+		return errors.New("provider usage reported field is required")
+	}
+
 	decoded := UsageTotals{
 		InputTokens:        wire.InputTokens,
 		OutputTokens:       wire.OutputTokens,
 		ProviderRoundTrips: wire.ProviderRoundTrips,
-		Reported:           false,
-	}
-	if wire.Reported != nil {
-		decoded.Reported = *wire.Reported
-	} else {
-		decoded.Reported = decoded.InputTokens > 0 || decoded.OutputTokens > 0 || decoded.ProviderRoundTrips > 0
+		Reported:           *wire.Reported,
 	}
 
 	if err := decoded.Validate(); err != nil {

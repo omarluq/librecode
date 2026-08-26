@@ -15,7 +15,10 @@ import (
 	"github.com/omarluq/librecode/internal/outputschema"
 )
 
-const maxOutputAttempts = 3
+const (
+	maxOutputAttempts = 3
+	unknownUsageJSON  = `{"reported":false}`
+)
 
 // RuntimeRunner executes durable tasks through the shared assistant runtime.
 type RuntimeRunner struct {
@@ -48,17 +51,17 @@ func (runner *RuntimeRunner) Run(
 ) (Result, error) {
 	definition, err := runner.taskDefinition(task)
 	if err != nil {
-		return Result{Text: "", UsageJSON: "{}"}, err
+		return Result{Text: "", UsageJSON: unknownUsageJSON}, err
 	}
 
 	session, found, err := runner.sessions.GetSession(ctx, task.ChildSessionID)
 	if err != nil {
-		return Result{Text: "", UsageJSON: "{}"}, oops.In("agenttask").Code("load_child_session").
+		return Result{Text: "", UsageJSON: unknownUsageJSON}, oops.In("agenttask").Code("load_child_session").
 			Wrapf(err, "load child session")
 	}
 
 	if !found {
-		return Result{Text: "", UsageJSON: "{}"}, oops.In("agenttask").Code("child_session_not_found").
+		return Result{Text: "", UsageJSON: unknownUsageJSON}, oops.In("agenttask").Code("child_session_not_found").
 			With("session_id", task.ChildSessionID).Errorf("child session not found")
 	}
 
@@ -77,7 +80,7 @@ func (runner *RuntimeRunner) Run(
 
 	contract, hasContract, err := restoreOutputContract(task)
 	if err != nil {
-		return Result{Text: "", UsageJSON: "{}"}, err
+		return Result{Text: "", UsageJSON: unknownUsageJSON}, err
 	}
 
 	execution := runtimeExecution{
@@ -280,7 +283,7 @@ func runtimeRunResult(
 	usageJSON, usageErr := agentUsageJSON(metrics)
 	if promptErr != nil {
 		if usageErr != nil {
-			usageJSON = "{}"
+			usageJSON = unknownUsageJSON
 		}
 
 		return Result{Text: partialText, UsageJSON: usageJSON},
@@ -292,7 +295,7 @@ func runtimeRunResult(
 	}
 
 	if usageErr != nil {
-		return Result{Text: response.Text, UsageJSON: "{}"}, usageErr
+		return Result{Text: response.Text, UsageJSON: unknownUsageJSON}, usageErr
 	}
 
 	return Result{Text: response.Text, UsageJSON: usageJSON}, nil
@@ -301,7 +304,7 @@ func runtimeRunResult(
 func mustUsageJSON(metrics *assistant.RunMetrics) string {
 	usage, err := agentUsageJSON(metrics)
 	if err != nil {
-		return "{}"
+		return unknownUsageJSON
 	}
 
 	return usage
@@ -310,12 +313,12 @@ func mustUsageJSON(metrics *assistant.RunMetrics) string {
 func agentUsageJSON(metrics *assistant.RunMetrics) (string, error) {
 	usageTotals, err := metrics.UsageTotals()
 	if err != nil {
-		return "{}", oops.In("agenttask").Code("invalid_usage").Wrapf(err, "collect agent usage")
+		return unknownUsageJSON, oops.In("agenttask").Code("invalid_usage").Wrapf(err, "collect agent usage")
 	}
 
 	encoded, err := json.Marshal(usageTotals)
 	if err != nil {
-		return "{}", oops.In("agenttask").Code("marshal_usage").Wrapf(err, "marshal agent usage")
+		return unknownUsageJSON, oops.In("agenttask").Code("marshal_usage").Wrapf(err, "marshal agent usage")
 	}
 
 	return string(encoded), nil
