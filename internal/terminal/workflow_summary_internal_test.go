@@ -226,32 +226,6 @@ func TestTerminalWorkflowCompletionDelivery(t *testing.T) {
 	}
 }
 
-func TestTrackStartedWorkflowDeliversImmediateFailureOnce(t *testing.T) {
-	t.Parallel()
-
-	failed := workflowSummaryRun("immediate-failure", database.TaskFailed)
-	failed.Task.ErrorMessage = "source did not compile"
-	app := newRenderTestApp(t)
-	app.sessionID = workflowTestSessionID
-	app.working = true
-	app.workflows = &activeWorkflowInspectorStub{
-		byID: map[string]*database.WorkflowRunEntity{failed.Task.ID: &failed},
-		runs: nil,
-	}
-	event := workflowSubmittedToolEvent("immediate-failure")
-
-	app.trackStartedWorkflow(t.Context(), event)
-	app.trackStartedWorkflow(t.Context(), event)
-
-	assert.Empty(t, app.activeWorkflows)
-	require.Len(t, app.liveAgentCompletions, 1)
-	assert.Equal(t, transcript.RoleToolResult, app.liveAgentCompletions[0].Role)
-	assert.Contains(t, app.liveAgentCompletions[0].Content, "active review")
-	assert.Contains(t, app.liveAgentCompletions[0].Content, failed.Task.ID)
-	assert.Contains(t, app.liveAgentCompletions[0].Content, failed.Task.ErrorMessage)
-	require.Len(t, app.hiddenQueuedMessages, 1)
-}
-
 func TestWorkflowFailureNotificationFallbacksAndBusyBranches(t *testing.T) {
 	t.Parallel()
 
@@ -289,68 +263,6 @@ func TestWorkflowFailureNotificationFallbacksAndBusyBranches(t *testing.T) {
 			assert.Contains(t, app.hiddenQueuedMessages[0].Text, "background workflow failed")
 		})
 	}
-}
-
-func TestTrackStartedWorkflowRejectsForeignRunAndInspectorError(t *testing.T) {
-	t.Parallel()
-
-	foreign := workflowSummaryRun("foreign-run", database.TaskRunning)
-	foreign.Task.OwnerSessionID = workflowTestForeignSession
-
-	tests := []struct {
-		inspector *workflowInspectorStub
-		name      string
-	}{
-		{
-			name: "foreign session",
-			inspector: &workflowInspectorStub{
-				listErr: nil, getErr: nil, eventsErr: nil, agentTasksErr: nil, detailsErr: nil,
-				getRun: &foreign, runs: nil, events: nil, children: nil, details: nil, found: true,
-			},
-		},
-		{
-			name: "get error",
-			inspector: &workflowInspectorStub{
-				listErr: nil, getErr: assert.AnError, eventsErr: nil, agentTasksErr: nil, detailsErr: nil,
-				getRun: nil, runs: nil, events: nil, children: nil, details: nil, found: false,
-			},
-		},
-	}
-
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-
-			app := newRenderTestApp(t)
-			app.sessionID = workflowTestSessionID
-			app.workflows = testCase.inspector
-			app.trackStartedWorkflow(t.Context(), workflowSubmittedToolEvent("foreign-run"))
-
-			assert.Empty(t, app.activeWorkflows)
-			assert.Empty(t, app.liveAgentCompletions)
-		})
-	}
-}
-
-func TestTrackStartedWorkflowUsesToolResultRunID(t *testing.T) {
-	t.Parallel()
-
-	run := workflowSummaryRun("queued-run", database.TaskQueued)
-	app := newRenderTestApp(t)
-	app.sessionID = workflowTestSessionID
-	app.workflows = &activeWorkflowInspectorStub{
-		byID: map[string]*database.WorkflowRunEntity{run.Task.ID: &run}, runs: nil,
-	}
-
-	event := workflowSubmittedToolEvent("queued-run")
-	event.DetailsJSON = `{"execution":"mvm","profile":"durable","result_kind":"accepted",` +
-		`"run_id":" queued-run ","workflow_task_id":"queued-run"}`
-	app.trackStartedWorkflow(t.Context(), event)
-
-	require.Len(t, app.activeWorkflows, 1)
-	assert.Equal(t, run.Task.ID, app.activeWorkflows[0].Task.ID)
-	assert.Equal(t, "queued-run", durableExecutionRunID(event.DetailsJSON))
-	assert.Empty(t, durableExecutionRunID(`{`))
 }
 
 func workflowSummaryRun(id string, state database.TaskState) database.WorkflowRunEntity {

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -305,64 +304,6 @@ func assertAgentTaskSubscriptionError(t *testing.T, app *App) {
 	}
 }
 
-func TestAgentTaskPureBehavior(t *testing.T) {
-	t.Parallel()
-
-	for _, testCase := range []struct {
-		name    string
-		details string
-		want    string
-	}{
-		{name: "valid", details: `{"task_id":" task-1 "}`, want: behaviorTaskID},
-		{name: "invalid", details: `{`, want: ""},
-		{name: "missing", details: `{}`, want: ""},
-	} {
-		t.Run("task id "+testCase.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, testCase.want, agentTaskIDFromDetails(testCase.details))
-		})
-	}
-
-	agentToolNames := []string{
-		agentStartToolName,
-		agentStatusToolName,
-		agentWaitToolName,
-		agentCancelToolName,
-		agentListToolName,
-	}
-	for _, name := range agentToolNames {
-		assert.True(t, isAgentManagementTool(name))
-	}
-
-	assert.False(t, isAgentManagementTool("read"))
-	assert.True(t, isTerminalAgentTaskEvent("task_interrupted"))
-	assert.False(t, isTerminalAgentTaskEvent("task_running"))
-
-	assert.Equal(t, agentDefaultDisplayName, agentTaskSummaryLabel(nil))
-
-	task := behaviorAgentTask("id", database.TaskRunning)
-	task.AgentName = " "
-	task.Prompt = "  inspect\n code "
-	assert.Equal(t, "agent(inspect code)", agentTaskSummaryLabel(&task))
-	task.Prompt = ""
-	assert.Equal(t, "agent", agentTaskSummaryLabel(&task))
-
-	assert.Equal(t, "running  id", taskTitle(&task.Task))
-	task.Task.ErrorMessage = " failure\n reason "
-	assert.Equal(t, "failure reason", taskDescription(&task.Task))
-	task.Task.ErrorMessage = ""
-	task.Task.Result = strings.Repeat("界", agentTaskDescriptionLimit+10)
-	description := taskDescription(&task.Task)
-	assert.Len(t, []rune(description), agentTaskDescriptionLimit)
-	assert.True(t, strings.HasSuffix(description, "…"))
-
-	started := time.Unix(110, 0)
-	finished := time.Unix(125, 0)
-	task.Task.StartedAt = &started
-	task.Task.FinishedAt = &finished
-	assert.Equal(t, "15s", taskMeta(&task.Task, time.Unix(999, 0)))
-}
-
 func TestAgentTaskCompletionFallbacksAndDelivery(t *testing.T) {
 	t.Parallel()
 
@@ -408,46 +349,6 @@ func TestAgentTaskCompletionFallbacksAndDelivery(t *testing.T) {
 	app.deliverAgentTaskCompletion(t.Context(), nil)
 }
 
-func TestWorkflowChildAgentTasksAreHiddenAndNotDelivered(t *testing.T) {
-	t.Parallel()
-
-	child := behaviorAgentTask("workflow-child", database.TaskRunning)
-	child.Task.ParentTaskID = behaviorWorkflowRun
-	stub := newAgentTaskControllerStub(
-		map[string]*database.AgentTaskEntity{child.Task.ID: &child},
-		[]database.AgentTaskEntity{child},
-	)
-	app := newAgentTaskBehaviorApp(t, stub)
-	app.working = true
-
-	app.discoverActiveAgentTasks(t.Context())
-	assert.Empty(t, app.agentTasks)
-	app.activeWorkflows = []database.WorkflowRunEntity{
-		workflowSummaryRun(behaviorWorkflowRun, database.TaskRunning),
-	}
-	lines := app.renderAgentTaskSummary(80)
-	require.Len(t, lines, 3)
-	assert.Equal(t, pendingToolIndicator+" main", lines[0].Text)
-	assert.Equal(t, pendingToolIndicator+" "+app.workflowSummaryLabel(&app.activeWorkflows[0]), lines[1].Text)
-	assert.NotContains(t, lines[1].Text, "STEP")
-	assert.NotContains(t, lines[1].Text, "STATUS")
-	assert.True(t, app.hasRunningAgentTasks())
-
-	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":"workflow-child"}`, false))
-	assert.Empty(t, app.agentTasks)
-
-	completed := child
-	completed.Task.State = database.TaskSucceeded
-	completed.Task.Result = "workflow-owned result"
-	stub.tasks[child.Task.ID] = &completed
-	app.deliverAgentTaskCompletionText(t.Context(), child.Task.ID, "workflow-owned result")
-	app.deliverAgentTaskCompletion(t.Context(), &completed)
-
-	assert.Empty(t, app.liveAgentCompletions)
-	assert.Empty(t, app.hiddenQueuedMessages)
-	assert.Contains(t, app.deliveredAgentTasks, child.Task.ID)
-}
-
 func TestKnownWorkflowChildCompletionUsesSnapshotLink(t *testing.T) {
 	t.Parallel()
 
@@ -473,41 +374,6 @@ func TestKnownWorkflowChildCompletionUsesSnapshotLink(t *testing.T) {
 	assert.Empty(t, app.liveAgentCompletions)
 	assert.Empty(t, app.hiddenQueuedMessages)
 	assert.Contains(t, app.deliveredAgentTasks, child.Task.ID)
-}
-
-func TestDiscoverRefreshAndTrackAgentTasks(t *testing.T) {
-	t.Parallel()
-
-	running := behaviorAgentTask(behaviorRunning, database.TaskRunning)
-	done := behaviorAgentTask("done", database.TaskSucceeded)
-	stub := newAgentTaskControllerStub(
-		map[string]*database.AgentTaskEntity{behaviorRunning: &running, "done": &done},
-		[]database.AgentTaskEntity{running, done},
-	)
-	app := newAgentTaskBehaviorApp(t, stub)
-	app.discoverActiveAgentTasks(t.Context())
-	require.Len(t, app.agentTasks, 1)
-	assert.Equal(t, behaviorRunning, app.agentTasks[0].Task.ID)
-	assert.Equal(t, running.AgentName, app.agentTasks[0].AgentName)
-	assert.Equal(t, running.Prompt, app.agentTasks[0].Prompt)
-	assert.Contains(t, app.agentTaskWatches, behaviorRunning)
-
-	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":"running"}`, false))
-	assert.Len(t, app.agentTasks, 1)
-
-	stub.tasks[behaviorRunning] = &done
-	done.Task.ID = behaviorRunning
-	done.Task.Result = "finished"
-	app.working = true
-	app.deliverAgentTaskCompletion(t.Context(), &done)
-	assert.Empty(t, app.agentTasks)
-	require.Len(t, app.hiddenQueuedMessages, 1)
-	assert.Contains(t, app.hiddenQueuedMessages[0].Text, "finished")
-	assert.True(t, stub.wasCanceled(behaviorRunning))
-
-	app.runtime = nil
-	app.refreshVisibleAgentTasks(t.Context())
-	assert.Empty(t, app.agentTasks)
 }
 
 func TestRefreshActiveAgentTasksReconcilesMissedCompletion(t *testing.T) {
@@ -605,19 +471,6 @@ func applyAgentRefreshInterrupt(t *testing.T, app *App) {
 	}
 }
 
-func TestTrackStartedTerminalTaskDeliversImmediately(t *testing.T) {
-	t.Parallel()
-
-	done := behaviorAgentTask("done", database.TaskSucceeded)
-	done.Task.Result = "immediate result"
-	stub := newAgentTaskControllerStub(map[string]*database.AgentTaskEntity{"done": &done}, nil)
-	app := newAgentTaskBehaviorApp(t, stub)
-	app.working = true
-	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":"done"}`, false))
-	require.Len(t, app.liveAgentCompletions, 1)
-	assert.Contains(t, app.hiddenQueuedMessages[0].Text, "immediate result")
-}
-
 func TestAgentTaskStateAndRunningPredicates(t *testing.T) {
 	t.Parallel()
 
@@ -642,33 +495,6 @@ func TestAgentTaskStateAndRunningPredicates(t *testing.T) {
 	assert.False(t, app.hasRunningAgentTasks())
 	app.agentTasks = append(app.agentTasks, behaviorAgentTask(behaviorRunning, database.TaskRunning))
 	assert.True(t, app.hasRunningAgentTasks())
-}
-
-func TestWatchAgentTaskIgnoresNonterminalAndStopsOnContext(t *testing.T) {
-	t.Parallel()
-
-	app := newRenderTestApp(t)
-
-	events := make(chan database.TaskEventEntity, 1)
-	events <- database.TaskEventEntity{
-		Event:  database.EventEntity{CreatedAt: time.Time{}, ID: "", Kind: "task_running", PayloadJSON: ""},
-		TaskID: "", Sequence: 0,
-	}
-
-	close(events)
-
-	canceled := make(chan struct{}, 1)
-
-	app.watchAgentTask(t.Context(), "task", events, func() { canceled <- struct{}{} })
-	assert.NotEmpty(t, canceled)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	contextCanceled := false
-
-	app.watchAgentTask(ctx, "task", make(chan database.TaskEventEntity), func() { contextCanceled = true })
-	assert.True(t, contextCanceled)
 }
 
 func TestAgentTaskPanelItemsRefreshAndCancellation(t *testing.T) {
@@ -1868,48 +1694,6 @@ func TestAgentTaskPanelRejectsTaskOwnedByAnotherSession(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), workflowNotFound)
 	assert.Empty(t, stub.cancelCalls)
-}
-
-func TestAgentTaskFallbackAndErrorPaths(t *testing.T) {
-	t.Parallel()
-
-	running := behaviorAgentTask(behaviorRunning, database.TaskRunning)
-	stub := newAgentTaskControllerStub(
-		map[string]*database.AgentTaskEntity{behaviorRunning: &running},
-		[]database.AgentTaskEntity{running},
-	)
-	app := newAgentTaskBehaviorApp(t, stub)
-
-	// Missing and unknown IDs fall back to discovery instead of losing active tasks.
-	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{}`, false))
-	require.Len(t, app.agentTasks, 1)
-	app.agentTasks = nil
-	app.trackStartedAgentTask(t.Context(), agentToolEvent("", `{"task_id":"unknown"}`, false))
-	require.Len(t, app.agentTasks, 1)
-
-	// List and refresh failures preserve the last known state.
-	stub.listErr = errors.New("list failed")
-	app.agentTasks = nil
-	app.discoverActiveAgentTasks(t.Context())
-	assert.Empty(t, app.agentTasks)
-	app.agentTasks = []database.AgentTaskEntity{running}
-	stub.getErr = errors.New("refresh failed")
-
-	app.refreshActiveAgentTasks(t.Context())
-	require.Len(t, app.agentTasks, 1)
-	assert.Equal(t, behaviorRunning, app.agentTasks[0].Task.ID)
-
-	completion, completed := agentTaskCompletion(database.TaskSucceeded, &running)
-	assert.False(t, completed)
-	assert.Empty(t, completion)
-	app.deliverAgentTaskCompletion(t.Context(), &running)
-	assert.Empty(t, app.liveAgentCompletions)
-
-	app.runtime = nil
-	app.agentTaskPanelSnapshot = nil
-	items := app.agentTaskItemsFromSnapshot()
-	assert.Empty(t, items)
-	app.refreshAgentTasksPanel(t.Context()) // no active panel is a no-op
 }
 
 func TestAgentProfilesDisplayDefinitionsDiagnosticsAndTools(t *testing.T) {

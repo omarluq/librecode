@@ -60,53 +60,6 @@ func (app *App) applyAgentToolEvent(ctx context.Context, event *assistant.ToolEv
 	app.requestTerminalRefresh(ctx)
 }
 
-func (app *App) trackStartedAgentTask(ctx context.Context, event *assistant.ToolEvent) {
-	taskID := agentTaskIDFromDetails(event.DetailsJSON)
-	if taskID == "" {
-		app.discoverActiveAgentTasks(ctx)
-
-		return
-	}
-
-	for index := range app.agentTasks {
-		if app.agentTasks[index].Task.ID == taskID {
-			return
-		}
-	}
-
-	task, found, err := app.runtime.AgentTask(ctx, taskID)
-	if err != nil || !found {
-		app.discoverActiveAgentTasks(ctx)
-
-		return
-	}
-
-	if task.Task.ParentTaskID != "" {
-		return
-	}
-
-	if isTerminalAgentTaskState(task.Task.State) {
-		app.deliverAgentTaskCompletion(ctx, task)
-
-		return
-	}
-
-	app.agentTasks = append(app.agentTasks, *task)
-	app.agentTaskSummaryOwnerID = task.Task.OwnerSessionID
-	app.watchActiveAgentTasks(ctx)
-}
-
-func agentTaskIDFromDetails(detailsJSON string) string {
-	var details struct {
-		TaskID string `json:"task_id"`
-	}
-	if json.Unmarshal([]byte(detailsJSON), &details) != nil {
-		return ""
-	}
-
-	return strings.TrimSpace(details.TaskID)
-}
-
 func (app *App) resetAgentTaskTracking() {
 	app.stopAgentTaskWatches()
 	app.invalidateTerminalRefresh()
@@ -292,36 +245,6 @@ func (app *App) reconcileActiveWorkflow(
 	return *loaded, true
 }
 
-func (app *App) trackStartedWorkflow(ctx context.Context, event *assistant.ToolEvent) {
-	runID := durableExecutionRunID(event.DetailsJSON)
-	if runID == "" || app.workflows == nil {
-		app.refreshActiveWorkflows(ctx)
-
-		return
-	}
-
-	for index := range app.activeWorkflows {
-		if app.activeWorkflows[index].Task.ID == runID {
-			return
-		}
-	}
-
-	run, found, err := app.workflows.Get(ctx, runID)
-	if err != nil || !found || run.Task.OwnerSessionID != app.sessionID {
-		app.refreshActiveWorkflows(ctx)
-
-		return
-	}
-
-	if isTerminalAgentTaskState(run.Task.State) {
-		app.deliverWorkflowCompletion(ctx, run)
-
-		return
-	}
-
-	app.activeWorkflows = append(app.activeWorkflows, *run)
-}
-
 func durableExecutionRunID(detailsJSON string) string {
 	var details struct {
 		Execution      string `json:"execution"`
@@ -443,28 +366,9 @@ func (app *App) watchActiveAgentTasks(ctx context.Context) {
 		}
 
 		go app.watchAgentTaskEventsWithRuntime(
-			watchCtx, app.runtime, taskID, events, cancelSubscription, true,
+			watchCtx, app.runtime, taskID, events, cancelSubscription,
 		)
 	}
-}
-
-func (app *App) watchAgentTask(
-	ctx context.Context,
-	taskID string,
-	events <-chan database.TaskEventEntity,
-	cancelSubscription func(),
-) {
-	app.watchAgentTaskEvents(ctx, taskID, events, cancelSubscription, false)
-}
-
-func (app *App) watchAgentTaskEvents(
-	ctx context.Context,
-	taskID string,
-	events <-chan database.TaskEventEntity,
-	cancelSubscription func(),
-	replay bool,
-) {
-	app.watchAgentTaskEventsWithRuntime(ctx, app.runtime, taskID, events, cancelSubscription, replay)
 }
 
 func (app *App) watchAgentTaskEventsWithRuntime(
@@ -473,7 +377,6 @@ func (app *App) watchAgentTaskEventsWithRuntime(
 	taskID string,
 	events <-chan database.TaskEventEntity,
 	cancelSubscription func(),
-	replay bool,
 ) {
 	defer cancelSubscription()
 
@@ -482,19 +385,17 @@ func (app *App) watchAgentTaskEventsWithRuntime(
 		terminal bool
 	)
 
-	if replay {
-		var err error
+	var err error
 
-		sequence, terminal, err = app.replayAgentTaskEventsWithRuntime(ctx, runtime, taskID, 0)
-		if err != nil {
-			app.postAgentTaskReplayError(ctx, taskID, err)
+	sequence, terminal, err = app.replayAgentTaskEventsWithRuntime(ctx, runtime, taskID, 0)
+	if err != nil {
+		app.postAgentTaskReplayError(ctx, taskID, err)
 
-			return
-		}
+		return
+	}
 
-		if terminal {
-			return
-		}
+	if terminal {
+		return
 	}
 
 	for {
@@ -506,7 +407,7 @@ func (app *App) watchAgentTaskEventsWithRuntime(
 		}
 
 		sequence, terminal = app.forwardAgentTaskEventWithRuntime(
-			ctx, runtime, taskID, &event, sequence, replay,
+			ctx, runtime, taskID, &event, sequence, true,
 		)
 		if terminal {
 			return
@@ -545,16 +446,6 @@ func nextAgentTaskEvent(
 			TaskID: "", Sequence: 0,
 		}, false
 	}
-}
-
-func (app *App) forwardAgentTaskEvent(
-	ctx context.Context,
-	taskID string,
-	event *database.TaskEventEntity,
-	sequence int64,
-	replay bool,
-) (int64, bool) {
-	return app.forwardAgentTaskEventWithRuntime(ctx, app.runtime, taskID, event, sequence, replay)
 }
 
 func (app *App) forwardAgentTaskEventWithRuntime(
@@ -628,7 +519,7 @@ func (app *App) watchInspectedAgentTask(ctx context.Context, taskID string) {
 	}
 
 	go app.watchAgentTaskEventsWithRuntime(
-		watchCtx, app.runtime, taskID, events, cancelSubscription, true,
+		watchCtx, app.runtime, taskID, events, cancelSubscription,
 	)
 }
 
@@ -1637,16 +1528,6 @@ func agentTaskSummaryLabel(task *database.AgentTaskEntity) string {
 	}
 
 	return name + "(" + prompt + ")"
-}
-
-func agentTaskSummaryLabelForWidth(task *database.AgentTaskEntity, now time.Time, width int) string {
-	if task == nil {
-		return agentDefaultDisplayName
-	}
-
-	usageTotals, known := decodeFinalUsageTotals(task.UsageJSON)
-
-	return agentTaskSummaryLabelWithUsageTotals(task, now, width, usageTotals, known)
 }
 
 func (app *App) agentTaskSummaryLabelForWidth(task *database.AgentTaskEntity, now time.Time, width int) string {
