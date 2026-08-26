@@ -136,7 +136,7 @@ canceled, _ := agents.Cancel(first)
 
 	result, err := runner.Run(t.Context(), &workflow.RunRequest{
 		RunID: "run-1", Name: "", Source: source, OwnerSessionID: testOwner,
-		OnEvent: nil, Arguments: nil, PersistedLinks: nil, GuestAPI: guestapi.Version2,
+		OnProgress: nil, OnEvent: nil, Arguments: nil, PersistedLinks: nil, GuestAPI: guestapi.Version2,
 	})
 	require.NoError(t, err)
 	require.Len(t, fake.submits, 2)
@@ -190,7 +190,7 @@ result`,
 			require.NoError(t, err)
 
 			result, err := runner.Run(t.Context(), &workflow.RunRequest{
-				OnEvent: nil, Arguments: nil, RunID: "", Name: "", Source: test.source,
+				OnProgress: nil, OnEvent: nil, Arguments: nil, RunID: "", Name: "", Source: test.source,
 				OwnerSessionID: testOwner, GuestAPI: guestapi.Version2, PersistedLinks: nil,
 			})
 			require.NoError(t, err)
@@ -257,7 +257,7 @@ func TestRunnerStructuredResultCompatibilityAndNumbers(t *testing.T) {
 			}
 
 			result, err := runner.Run(t.Context(), &workflow.RunRequest{
-				OnEvent: nil, Arguments: nil, RunID: "", Name: "",
+				OnProgress: nil, OnEvent: nil, Arguments: nil, RunID: "", Name: "",
 				Source: source, OwnerSessionID: testOwner,
 				GuestAPI: test.version, PersistedLinks: []database.WorkflowAgentTaskEntity{{
 					CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: firstTask,
@@ -303,7 +303,7 @@ func TestRunnerSingleTask(t *testing.T) {
 	var events []workflow.Event
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnEvent: func(_ context.Context, event workflow.Event) error {
+		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: func(_ context.Context, event workflow.Event) error {
 			events = append(events, event)
 
 			return nil
@@ -339,7 +339,7 @@ func TestRunnerReusesPersistedInvocationByNormalizedNodeKey(t *testing.T) {
 			CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: firstTask,
 			NodeKey: " agent ", InvocationIndex: 0, Sequence: 1,
 		}},
-		Arguments: nil, OnEvent: nil,
+		Arguments: nil, OnProgress: nil, OnEvent: nil,
 	})
 	require.NoError(t, err)
 	assert.Empty(t, fake.submits)
@@ -364,7 +364,7 @@ func TestRunnerReusesPersistedInvocationsByNormalizedNodeKeyAndIndex(t *testing.
 	[]any{first, second}`
 
 	result, err := runner.Run(t.Context(), &workflow.RunRequest{
-		RunID: "", Name: "", Source: source, OwnerSessionID: testOwner, OnEvent: nil, Arguments: nil,
+		RunID: "", Name: "", Source: source, OwnerSessionID: testOwner, OnProgress: nil, OnEvent: nil, Arguments: nil,
 		GuestAPI: "", PersistedLinks: []database.WorkflowAgentTaskEntity{
 			{
 				CreatedAt: time.Time{}, WorkflowTaskID: "", AgentTaskID: secondTask,
@@ -420,8 +420,8 @@ func TestRunnerScopesWaitToLaunchedOwnedTasks(t *testing.T) {
 			require.NoError(t, err)
 
 			_, err = runner.Run(context.Background(), &workflow.RunRequest{
-				Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: test.source, OwnerSessionID: testOwner,
-				GuestAPI: "", PersistedLinks: nil,
+				Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: test.source,
+				OwnerSessionID: testOwner, GuestAPI: "", PersistedLinks: nil,
 			})
 			require.Error(t, err)
 			assert.Equal(t, test.wantCancels, fake.cancels)
@@ -448,7 +448,7 @@ canceled, _ := workflow.Cancel(second)
 []any{first, second, before, canceled}`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
+		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
 		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -477,7 +477,7 @@ results, _ := workflow.Pipeline([]any{1, 2, 3}, func(item any) (any, error) {
 results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
+		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
 		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -501,7 +501,7 @@ results, _ := workflow.Pipeline([]any{}, func(item any) (any, error) { return it
 results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
+		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
 		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -516,7 +516,7 @@ func TestRunnerDoesNotInferPipelineResultFromValueShape(t *testing.T) {
 
 	result, err := runner.Run(t.Context(), &workflow.RunRequest{
 		RunID: "", Name: "", Source: `[]map[string]any{{"index": 0, "value": "ordinary", "error": ""}}`,
-		OwnerSessionID: testOwner, OnEvent: nil, Arguments: nil, GuestAPI: "", PersistedLinks: nil,
+		OwnerSessionID: testOwner, OnProgress: nil, OnEvent: nil, Arguments: nil, GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
 
@@ -556,7 +556,7 @@ results, _ := workflow.Pipeline([]any{"a", "b", "c", "d"}, func(item any) (any, 
 results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
+		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
 		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -581,7 +581,7 @@ results, _ := workflow.Pipeline([]any{1, 2, 3}, func(item any) (any, error) {
 results`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
+		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
 		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.NoError(t, err)
@@ -610,7 +610,7 @@ _, err := workflow.Pipeline([]any{1}, func(item any) (any, error) { return item,
 err`
 
 	_, err = runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
+		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
 		GuestAPI: "", PersistedLinks: nil,
 	})
 	require.Error(t, err)
@@ -626,7 +626,7 @@ func TestRunnerRejectsCancelForUnlaunchedTask(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnEvent: nil, Name: "",
+		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "",
 		Source:         `import "librecode/workflow"; workflow.Cancel("other")`,
 		OwnerSessionID: testOwner,
 		GuestAPI:       "", PersistedLinks: nil,
@@ -643,7 +643,7 @@ func TestRunnerEventFailureCancelsActiveLaunchedTasks(t *testing.T) {
 	require.NoError(t, err)
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnEvent: func(_ context.Context, _ workflow.Event) error {
+		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: func(_ context.Context, _ workflow.Event) error {
 			return assert.AnError
 		},
 		Name: "", Source: `import "librecode/workflow"; workflow.Agent("inspect")`,
@@ -676,8 +676,8 @@ func TestRunnerCancellationCancelsActiveLaunchedTasks(t *testing.T) {
 
 	go func() {
 		_, runErr := runner.Run(ctx, &workflow.RunRequest{
-			Arguments: nil, RunID: "", OnEvent: nil, Name: "", Source: agentSource, OwnerSessionID: testOwner,
-			GuestAPI: "", PersistedLinks: nil,
+			Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: agentSource,
+			OwnerSessionID: testOwner, GuestAPI: "", PersistedLinks: nil,
 		})
 		done <- runErr
 	}()

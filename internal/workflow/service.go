@@ -15,6 +15,7 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/taskprogress"
+	"github.com/omarluq/librecode/internal/workflowprogress"
 )
 
 var errRunClaimConflict = errors.New("workflow run is not claimable")
@@ -24,6 +25,7 @@ const (
 	workflowStartedEvent    = "workflow_started"
 	workflowResumedEvent    = "workflow_resumed"
 	workflowEventKind       = "workflow_event"
+	workflowProgressKind    = "workflow_progress"
 	workflowSucceeded       = "workflow_succeeded"
 	workflowFailed          = "workflow_failed"
 	workflowCanceled        = "workflow_canceled"
@@ -232,7 +234,8 @@ func (service *Service) executeExisting(
 	progress := service.progressWriter(persisted.Task.ID)
 	progress.Start(runCtx)
 	result, runErr := service.runner.Run(runCtx, &RunRequest{
-		RunID: persisted.Task.ID, OnEvent: service.eventSink(progress), Name: name,
+		RunID: persisted.Task.ID, OnEvent: service.eventSink(progress),
+		OnProgress: service.progressSink(progress), Name: name,
 		Source: persisted.Source, OwnerSessionID: persisted.Task.OwnerSessionID, Arguments: arguments,
 		PersistedLinks: links, GuestAPI: persistedGuestAPI(persisted.GuestAPIVersion),
 	})
@@ -561,6 +564,23 @@ func (service *Service) progressWriter(runID string) *taskprogress.Writer {
 		FlushInterval: workflowFlushInterval, FlushBatch: workflowFlushBatch,
 		FinalizeTimeout: workflowFinalizeTimeout,
 	})
+}
+
+func (service *Service) progressSink(progress *taskprogress.Writer) workflowprogress.Sink {
+	return func(ctx context.Context, event workflowprogress.Event) error {
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return oops.In("workflow").Code("encode_progress").Wrapf(err, "encode workflow progress")
+		}
+
+		if err := progress.Write(ctx, database.TaskEventDraft{
+			Kind: workflowProgressKind, PayloadJSON: string(payload),
+		}, event.Kind == workflowprogress.KindPhase || event.Kind == workflowprogress.KindItem); err != nil {
+			return oops.In("workflow").Code("persist_progress").Wrapf(err, "persist workflow progress")
+		}
+
+		return nil
+	}
 }
 
 func (service *Service) eventSink(progress *taskprogress.Writer) EventSink {

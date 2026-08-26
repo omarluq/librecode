@@ -263,6 +263,24 @@ func TestServicePersistsSuccessfulRun(t *testing.T) {
 	assert.NotEmpty(t, stored.Task.Result)
 }
 
+func TestServicePersistsVersion2Progress(t *testing.T) {
+	t.Parallel()
+
+	service, _, owner := newWorkflowService(t, newFakeController())
+	run, _, err := service.Run(t.Context(), &workflow.ServiceRequest{
+		Name: "progress", Source: `import "librecode/workflow"; workflow.Log("info", "working")`,
+		GuestAPIVersion: guestapi.Version2, SourceVersion: "v1", ArgumentsJSON: "{}", OwnerSessionID: owner,
+	})
+	require.NoError(t, err)
+
+	events, err := service.Events(t.Context(), run.Task.ID, 0, 20)
+	require.NoError(t, err)
+	require.Len(t, events, 4)
+	assert.Equal(t, "workflow_progress", events[2].Event.Kind)
+	assert.JSONEq(t, `{"kind":"log","version":1,"sequence":1,"log":{"level":"info","message":"working"}}`,
+		events[2].Event.PayloadJSON)
+}
+
 func TestServicePersistsFailedRun(t *testing.T) {
 	t.Parallel()
 
