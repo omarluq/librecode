@@ -310,6 +310,8 @@ func TestClientProgressCallbackReceivesCancellation(t *testing.T) {
 	t.Setenv(helperEnv, "1")
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	client := testClient()
 	client.Progress = func(ctx context.Context, _ workflowprogress.Event) error {
 		cancel()

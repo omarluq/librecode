@@ -487,12 +487,13 @@ func (caller *rpcCaller) progress(event workflowprogress.Event) error {
 		delete(caller.pending, requestID)
 		caller.mu.Unlock()
 
-		return err
+		return oops.In("executeworker").Code("write_progress").Wrapf(err, "write progress request")
 	}
 
 	response := <-responseCh
 	if response.Error != "" {
-		return errors.New(response.Error)
+		return oops.In("executeworker").Code("progress_rejected").
+			Wrapf(errors.New(response.Error), "progress request rejected")
 	}
 
 	return nil

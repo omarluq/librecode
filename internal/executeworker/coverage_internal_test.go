@@ -18,6 +18,8 @@ import (
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
 	"github.com/omarluq/librecode/internal/workflowkernel"
+	"github.com/omarluq/librecode/internal/workflowprogress"
+	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -470,6 +472,58 @@ func TestRPCCallerExchangeAndFailures(t *testing.T) {
 	pending.failPending(errors.New("second"))
 	require.EqualError(t, pending.terminalErr, "first")
 	assert.Equal(t, "first", (<-responseCh).Error)
+}
+
+func TestRPCCallerProgressErrorsHaveContext(t *testing.T) {
+	t.Parallel()
+
+	event := workflowprogress.Event{
+		Phase: nil, Item: nil, Custom: nil, Log: &workflowprogress.Log{Level: "info", Message: "message"},
+		Kind: workflowprogress.KindLog, Version: workflowprogress.ContractVersion, Sequence: 1,
+	}
+
+	writeFailed := newRPCCaller()
+	writeFailed.out = shortWriter{}
+	err := writeFailed.progress(event)
+	writeOops, matched := oops.AsOops(err)
+	require.True(t, matched)
+	assert.Equal(t, "write_progress", writeOops.Code())
+	assert.Empty(t, writeFailed.pending)
+
+	rejected := newRPCCaller()
+	progressRead, progressWrite := io.Pipe()
+	rejected.out = progressWrite
+	readErrors := make(chan error, 1)
+
+	go func() {
+		request, readErr := Read(progressRead)
+		if readErr != nil {
+			readErrors <- readErr
+
+			return
+		}
+
+		rejected.mu.Lock()
+		response := rejected.pending[request.ID]
+		rejected.mu.Unlock()
+
+		message := newMessage("progress_result")
+
+		message.Error = "rejected"
+		response <- message
+
+		readErrors <- nil
+	}()
+
+	err = rejected.progress(event)
+
+	require.NoError(t, <-readErrors)
+
+	rejectedOops, matched := oops.AsOops(err)
+	require.True(t, matched)
+	assert.Equal(t, "progress_rejected", rejectedOops.Code())
+	require.NoError(t, progressWrite.Close())
+	require.NoError(t, progressRead.Close())
 }
 
 func TestDecodeRPCValueNormalizesJSONNumbers(t *testing.T) {
