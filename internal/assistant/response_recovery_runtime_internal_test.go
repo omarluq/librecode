@@ -137,7 +137,7 @@ func TestActiveRequestIdentityUsesCurrentRuntimeState(t *testing.T) {
 			Input: 0, Output: 0, CacheRead: 0, CacheWrite: 0,
 		}, ContextWindow: 64_000, MaxTokens: 4_096, Reasoning: false,
 	}
-	registry := model.NewRegistry(&model.RegistryOptions{
+	registry := model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil, Auth: nil, ModelsPath: "", BuiltIns: []model.Model{selected},
 		Discovery: model.DiscoveryOptions{
 			Client: nil, CachePath: "", SourceURL: "", CacheTTL: 0, FetchTimeout: 0, Enabled: false,

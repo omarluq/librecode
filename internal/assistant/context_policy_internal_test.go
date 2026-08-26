@@ -36,7 +36,7 @@ func TestCompactionModelUsesDedicatedCatalogEntry(t *testing.T) {
 	var runtime Runtime
 
 	runtime.cfg = &cfg
-	runtime.models = model.NewRegistry(&registryOptions)
+	runtime.models = model.NewRegistryContext(t.Context(), &registryOptions)
 
 	got, err := runtime.compactionModel()
 	require.NoError(t, err)
