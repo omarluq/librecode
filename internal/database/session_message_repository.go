@@ -314,7 +314,7 @@ func (repository *SessionRepository) hydrateSessionMessages(
 	}
 
 	for index := range messages {
-		messages[index].Parts = partsOrLegacyText(partsByEntry[messages[index].EntryID], messages[index].Content)
+		messages[index].Parts = cloneMessageParts(partsByEntry[messages[index].EntryID])
 	}
 
 	return nil
@@ -358,8 +358,7 @@ func (repository *SessionRepository) hydrateEntryMessages(
 
 	for index := range entries {
 		if entryCarriesMessage(&entries[index]) {
-			parts := partsByEntry[entries[index].ID]
-			entries[index].Message.Parts = partsOrLegacyText(parts, entries[index].Message.Content)
+			entries[index].Message.Parts = cloneMessageParts(partsByEntry[entries[index].ID])
 		}
 	}
 
@@ -417,16 +416,6 @@ ORDER BY entry_id, sequence`, placeholders)
 	}
 
 	return nil
-}
-
-func partsOrLegacyText(parts []MessagePartEntity, content string) []MessagePartEntity {
-	if len(parts) == 0 && strings.TrimSpace(content) != "" {
-		return []MessagePartEntity{{
-			Data: nil, Text: content, MIMEType: "", Name: "", Type: MessagePartText, Width: 0, Height: 0,
-		}}
-	}
-
-	return cloneMessageParts(parts)
 }
 
 func cloneMessageParts(parts []MessagePartEntity) []MessagePartEntity {

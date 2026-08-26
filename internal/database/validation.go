@@ -98,6 +98,14 @@ func validateSessionMessageEntity(entity *SessionMessageEntity) error {
 		return err
 	}
 
+	if err := validateMessageContent(entity); err != nil {
+		return err
+	}
+
+	return validateRequiredTime("message.created_at", entity.CreatedAt)
+}
+
+func validateMessageContent(entity *SessionMessageEntity) error {
 	if err := validateMessageParts(entity.Parts); err != nil {
 		return err
 	}
@@ -106,7 +114,11 @@ func validateSessionMessageEntity(entity *SessionMessageEntity) error {
 		return errors.New("message.content must match the text projection of message.parts")
 	}
 
-	return validateRequiredTime("message.created_at", entity.CreatedAt)
+	if len(entity.Parts) == 0 && strings.TrimSpace(entity.Content) != "" {
+		return errors.New("message.parts must contain nonblank message.content")
+	}
+
+	return nil
 }
 
 func messagePartsText(parts []MessagePartEntity) string {
@@ -303,11 +315,26 @@ func validateAgentTaskEntity(entity *AgentTaskEntity) error {
 		return errors.New("agent_task.policy_json must be valid JSON")
 	}
 
-	if !json.Valid([]byte(entity.UsageJSON)) {
-		return errors.New("agent_task.usage_json must be valid JSON")
+	if err := validateUsageJSON(entity.UsageJSON); err != nil {
+		return err
 	}
 
 	return validateAgentOutputSchema(entity)
+}
+
+func validateUsageJSON(value string) error {
+	var usage struct {
+		Reported *bool `json:"reported"`
+	}
+	if err := json.Unmarshal([]byte(value), &usage); err != nil {
+		return errors.New("agent_task.usage_json must be valid JSON")
+	}
+
+	if usage.Reported == nil {
+		return errors.New("agent_task.usage_json reported field is required")
+	}
+
+	return nil
 }
 
 func validateAgentOutputSchema(entity *AgentTaskEntity) error {

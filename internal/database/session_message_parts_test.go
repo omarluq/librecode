@@ -129,7 +129,7 @@ func TestSessionRepository_ContextHasImagePartsFollowsActiveBranch(t *testing.T)
 	assert.False(t, hasImages)
 }
 
-func TestSessionRepository_PersistsImageOnlyAndSupportsLegacyText(t *testing.T) {
+func TestSessionRepository_CanonicalizesScalarTextAndPersistsImageOnly(t *testing.T) {
 	t.Parallel()
 
 	repository := newTestSessionRepository(t)
@@ -137,12 +137,12 @@ func TestSessionRepository_PersistsImageOnlyAndSupportsLegacyText(t *testing.T) 
 	session, err := repository.CreateSession(ctx, "/work", "compatibility", "")
 	require.NoError(t, err)
 
-	legacy, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
-		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "legacy text",
+	text, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "canonical text",
 		Provider: "", Model: "", Parts: nil,
 	})
 	require.NoError(t, err)
-	imageOnly, err := repository.AppendMessage(ctx, session.ID, &legacy.ID, &database.MessageEntity{
+	imageOnly, err := repository.AppendMessage(ctx, session.ID, &text.ID, &database.MessageEntity{
 		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "", Provider: "", Model: "",
 		Parts: []database.MessagePartEntity{{
 			Data: []byte{7}, Text: "", MIMEType: testImageMIME, Name: "",
@@ -155,11 +155,11 @@ func TestSessionRepository_PersistsImageOnlyAndSupportsLegacyText(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, messages, 2)
 
-	legacyParts := []database.MessagePartEntity{{
-		Data: nil, Text: "legacy text", MIMEType: "", Name: "",
+	canonicalParts := []database.MessagePartEntity{{
+		Data: nil, Text: "canonical text", MIMEType: "", Name: "",
 		Type: database.MessagePartText, Width: 0, Height: 0,
 	}}
-	assert.Equal(t, legacyParts, messages[0].Parts)
+	assert.Equal(t, canonicalParts, messages[0].Parts)
 	assert.Empty(t, messages[1].Content)
 	require.Len(t, messages[1].Parts, 1)
 	assert.Equal(t, database.MessagePartImage, messages[1].Parts[0].Type)
@@ -169,6 +169,35 @@ func TestSessionRepository_PersistsImageOnlyAndSupportsLegacyText(t *testing.T) 
 	require.Len(t, contextEntity.Messages, 2)
 	assert.Empty(t, contextEntity.Messages[1].Content)
 	assert.Equal(t, []byte{7}, contextEntity.Messages[1].Parts[0].Data)
+}
+
+func TestSessionRepository_DoesNotSynthesizeMissingMessageParts(t *testing.T) {
+	t.Parallel()
+
+	connection, err := sql.Open(sqliteDriver(), ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+	connection.SetMaxOpenConns(1)
+
+	ctx := context.Background()
+	require.NoError(t, database.Migrate(ctx, connection))
+	repository := testutil.SessionRepository(t, connection)
+	session, err := repository.CreateSession(ctx, "/work", "missing parts", "")
+	require.NoError(t, err)
+	entry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "stored scalar",
+		Provider: "", Model: "", Parts: nil,
+	})
+	require.NoError(t, err)
+
+	_, err = connection.ExecContext(ctx, `DELETE FROM session_message_parts WHERE entry_id = ?`, entry.ID)
+	require.NoError(t, err)
+
+	messages, err := repository.Messages(ctx, session.ID)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	assert.Equal(t, "stored scalar", messages[0].Content)
+	assert.Empty(t, messages[0].Parts)
 }
 
 func TestSessionRepository_RejectsInvalidMultipartMessages(t *testing.T) {
