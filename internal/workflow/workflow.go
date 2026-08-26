@@ -21,7 +21,6 @@ import (
 
 const (
 	cancelTimeout         = 5 * time.Second
-	pipelineResultKind    = "pipeline_result"
 	taskNotOwnedBySession = "task is not owned by this workflow session"
 )
 
@@ -128,18 +127,17 @@ func NewRunner(controller Controller) (*Runner, error) {
 // programs that could never run (parse and type errors, bad imports) so the
 // submitter sees the compiler diagnostics inline instead of a durable run
 // that fails milliseconds after submission.
-func (runner *Runner) ValidateSource(name, source string, arguments map[string]any) error {
-	return runner.ValidateSourceVersion(name, source, arguments, guestapi.Version1)
+func (runner *Runner) ValidateSource(name, source string) error {
+	return runner.ValidateSourceVersion(name, source, guestapi.CurrentVersion)
 }
 
 // ValidateSourceVersion compiles durable source against an explicit guest API.
 func (runner *Runner) ValidateSourceVersion(
 	name string,
 	source string,
-	arguments map[string]any,
 	version guestapi.Version,
 ) error {
-	bindings, err := executeworker.CompileBindings(guestapi.ProfileDurable, version, arguments)
+	bindings, err := executeworker.CompileBindings(guestapi.ProfileDurable, version)
 	if err != nil {
 		return oops.In("workflow").Code("validate_contract").Wrapf(err, "validate workflow guest API")
 	}
@@ -163,7 +161,7 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 
 	version := request.GuestAPI
 	if version == "" {
-		version = guestapi.Version1
+		version = guestapi.CurrentVersion
 	}
 
 	run := &runHost{
@@ -187,14 +185,11 @@ func (runner *Runner) Run(ctx context.Context, request *RunRequest) (runResult R
 		Executable: runner.executable, Handler: run.handleRPC, Progress: request.OnProgress,
 	}
 	result, err := client.EvalRequest(ctx, &executeworker.Request{
-		Arguments: request.Arguments, Mode: "", Profile: guestapi.ProfileDurable, GuestAPIVersion: version,
+		Arguments: request.Arguments, Profile: guestapi.ProfileDurable, GuestAPIVersion: version,
 		Name: request.Name, Source: request.Source,
 	})
 
 	value := normalizeWorkflowValue(result.Value)
-	if result.ValueKind == pipelineResultKind {
-		value = normalizePipelineResults(value)
-	}
 
 	if err != nil {
 		runErr = errors.Join(runErr, oops.In("workflow").Code("evaluate_source").Wrapf(err, "evaluate workflow source"))
@@ -241,47 +236,6 @@ func normalizeWorkflowValue(value any) any {
 	}
 
 	return normalizeNumbers(normalized)
-}
-
-func normalizePipelineResults(value any) any {
-	items, ok := value.([]any)
-	if !ok {
-		return value
-	}
-
-	if len(items) == 0 {
-		return []PipelineResult{}
-	}
-
-	results := make([]PipelineResult, len(items))
-	for index, item := range items {
-		fields, fieldsOK := item.(map[string]any)
-		if !fieldsOK || len(fields) != 3 {
-			return value
-		}
-
-		result, ok := pipelineResultFromFields(fields)
-		if !ok {
-			return value
-		}
-
-		results[index] = result
-		if results[index].Value == nil && results[index].Error != pipelineNotScheduled {
-			results[index].Value = TaskResult{
-				Value: nil, ID: "", State: "", Result: "", ErrorCode: "", ErrorMessage: "",
-			}
-		}
-	}
-
-	return results
-}
-
-func pipelineResultFromFields(fields map[string]any) (PipelineResult, bool) {
-	itemIndex, indexOK := fields["index"].(int)
-	itemValue, valueOK := fields["value"]
-	itemError, errorOK := fields["error"].(string)
-
-	return PipelineResult{Index: itemIndex, Value: itemValue, Error: itemError}, indexOK && valueOK && errorOK
 }
 
 func normalizeNumbers(value any) any {

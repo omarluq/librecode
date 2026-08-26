@@ -423,7 +423,8 @@ func agentToolTaskEntity(id, owner string, state database.TaskState) database.Ta
 func agentToolTask(id, owner string, state database.TaskState) *database.AgentTaskEntity {
 	return &database.AgentTaskEntity{
 		Task: agentToolTaskEntity(id, owner, state), ChildSessionID: "child", AgentName: "general", Prompt: "work",
-		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{}`, OutputSchemaJSON: "", OutputSchemaDigest: "",
+		Model: "", Provider: "", PolicyJSON: `{}`, UsageJSON: `{"reported":false}`,
+		OutputSchemaJSON: "", OutputSchemaDigest: "",
 		OutputAttemptsReserved: 0, OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 1,
 	}
 }

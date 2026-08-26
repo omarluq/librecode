@@ -39,7 +39,6 @@ type Message struct {
 	Stderr    string                  `json:"stderr,omitempty"`
 	Source    string                  `json:"source,omitempty"`
 	Method    string                  `json:"method,omitempty"`
-	Mode      string                  `json:"mode,omitempty"`
 	Profile   guestapi.Profile        `json:"profile,omitempty"`
 	GuestAPI  guestapi.Version        `json:"guest_api_version,omitempty"`
 	Name      string                  `json:"name,omitempty"`
@@ -58,13 +57,12 @@ type Message struct {
 
 const (
 	toolCallResultKind = "tool_call_result"
-	pipelineResultKind = "pipeline_result"
 	jsonNullValue      = "null"
 )
 
 func newMessage(messageType string) Message {
 	return Message{
-		Stderr: "", Source: "", Method: "", Mode: "", Profile: "", GuestAPI: "", Name: "", Query: "", Stdout: "",
+		Stderr: "", Source: "", Method: "", Profile: "", GuestAPI: "", Name: "", Query: "", Stdout: "",
 		Type: messageType, Error: "", ErrorKind: "", ValueKind: "", Input: nil, Value: nil,
 		Arguments: nil, Progress: nil, ID: 0, ExitCode: 0,
 	}

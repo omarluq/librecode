@@ -9,13 +9,9 @@ import "fmt"
 type Version string
 
 const (
-	// Version1 is the currently deployed legacy guest API.
-	Version1 Version = "1"
-	// Version2 is the canonical unified package contract introduced by the
-	// unified execute migration.
+	// Version2 is the canonical unified package contract.
 	Version2 Version = "2"
-	// CurrentVersion is the version new unified executions will request once
-	// profile-aware worker manifests are introduced.
+	// CurrentVersion is the sole supported guest API version.
 	CurrentVersion = Version2
 )
 
@@ -37,8 +33,6 @@ const (
 	PackageWorkflow  = "librecode/workflow"
 	PackageArtifacts = "librecode/artifacts"
 	PackageState     = "librecode/state"
-
-	LegacyPackageTools = "tools"
 )
 
 // CapabilityErrorCode is a stable machine-readable guest capability failure.
@@ -56,7 +50,7 @@ const (
 )
 
 // Availability describes whether a canonical function is part of a profile's
-// Version2 contract. Implemented is false for functions reserved for a later
+// contract. Implemented is false for functions reserved for a later
 // epic phase; callers must receive ErrorUnsupported until that phase ships.
 type Availability struct {
 	Package     string
@@ -90,9 +84,7 @@ func AvailabilityManifest() []Availability {
 	}
 }
 
-// ValidateWorkerContract rejects worker contracts that this binary cannot
-// execute. Version 1 retains the legacy turn and durable package layouts;
-// version 2 selects the canonical profile-aware manifest.
+// ValidateWorkerContract rejects worker contracts that this binary cannot execute.
 func ValidateWorkerContract(profile Profile, version Version) error {
 	switch profile {
 	case ProfileTurn, ProfileDurable:
@@ -100,12 +92,11 @@ func ValidateWorkerContract(profile Profile, version Version) error {
 		return fmt.Errorf("unknown execute worker profile %q", profile)
 	}
 
-	switch version {
-	case Version1, Version2:
-		return nil
-	default:
+	if version != CurrentVersion {
 		return fmt.Errorf("incompatible guest API version %q", version)
 	}
+
+	return nil
 }
 
 // Available reports whether a function belongs to the selected profile. It

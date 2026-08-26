@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,7 +21,8 @@ const (
 	testOwner   = "session-1"
 	firstTask   = "task-1"
 	secondTask  = "task-2"
-	agentSource = `import "librecode/workflow"; id, _ := workflow.Agent("inspect"); workflow.Wait(id)`
+	agentSource = `import "librecode/workflow"
+import "librecode/agents"; id, _ := agents.Spawn("inspect"); agents.Wait(id)`
 )
 
 type fakeController struct {
@@ -136,7 +136,7 @@ canceled, _ := agents.Cancel(first)
 
 	result, err := runner.Run(t.Context(), &workflow.RunRequest{
 		RunID: "run-1", Name: "", Source: source, OwnerSessionID: testOwner,
-		OnProgress: nil, OnEvent: nil, Arguments: nil, PersistedLinks: nil, GuestAPI: guestapi.Version2,
+		OnProgress: nil, OnEvent: nil, Arguments: nil, PersistedLinks: nil, GuestAPI: guestapi.CurrentVersion,
 	})
 	require.NoError(t, err)
 	require.Len(t, fake.submits, 2)
@@ -191,7 +191,7 @@ result`,
 
 			result, err := runner.Run(t.Context(), &workflow.RunRequest{
 				OnProgress: nil, OnEvent: nil, Arguments: nil, RunID: "", Name: "", Source: test.source,
-				OwnerSessionID: testOwner, GuestAPI: guestapi.Version2, PersistedLinks: nil,
+				OwnerSessionID: testOwner, GuestAPI: guestapi.CurrentVersion, PersistedLinks: nil,
 			})
 			require.NoError(t, err)
 			require.Len(t, result.TaskResults, 1)
@@ -225,15 +225,13 @@ func TestRunnerStructuredResultCompatibilityAndNumbers(t *testing.T) {
 		hasSchema   bool
 		valueInJSON bool
 	}{
-		{name: "version 1 structured result gate", version: guestapi.Version1, hasSchema: true,
-			state: database.TaskSucceeded, wantValue: nil, valueInJSON: false},
-		{name: "version 2 typed numbers", version: guestapi.Version2, hasSchema: true,
+		{name: "version 2 typed numbers", version: guestapi.CurrentVersion, hasSchema: true,
 			state: database.TaskSucceeded, wantValue: map[string]any{
 				"large": json.Number("9007199254740993"), "decimal": json.Number("1.2300"),
 			}, valueInJSON: true},
-		{name: "schema absent", version: guestapi.Version2, hasSchema: false,
+		{name: "schema absent", version: guestapi.CurrentVersion, hasSchema: false,
 			state: database.TaskSucceeded, wantValue: nil, valueInJSON: false},
-		{name: "failure", version: guestapi.Version2, hasSchema: true,
+		{name: "failure", version: guestapi.CurrentVersion, hasSchema: true,
 			state: database.TaskFailed, wantValue: nil, valueInJSON: false},
 	}
 
@@ -252,9 +250,6 @@ func TestRunnerStructuredResultCompatibilityAndNumbers(t *testing.T) {
 			require.NoError(t, err)
 
 			source := `import "librecode/agents"; agents.List()`
-			if test.version == guestapi.Version1 {
-				source = `import "librecode/workflow"; workflow.List()`
-			}
 
 			result, err := runner.Run(t.Context(), &workflow.RunRequest{
 				OnProgress: nil, OnEvent: nil, Arguments: nil, RunID: "", Name: "",
@@ -331,7 +326,8 @@ func TestRunnerReusesPersistedInvocationByNormalizedNodeKey(t *testing.T) {
 	runner, err := workflow.NewRunner(fake)
 	require.NoError(t, err)
 
-	const source = `import "librecode/workflow"; id, _ := workflow.Agent("inspect"); workflow.Wait(id)`
+	const source = `import "librecode/workflow"
+import "librecode/agents"; id, _ := agents.Spawn("inspect"); agents.Wait(id)`
 
 	result, err := runner.Run(t.Context(), &workflow.RunRequest{
 		RunID: "", Name: "", Source: source, OwnerSessionID: testOwner,
@@ -359,8 +355,9 @@ func TestRunnerReusesPersistedInvocationsByNormalizedNodeKeyAndIndex(t *testing.
 	require.NoError(t, err)
 
 	const source = `import "librecode/workflow"
-	first, _ := workflow.Agent("alpha", map[string]any{"node_key": "review"})
-	second, _ := workflow.Agent("beta", map[string]any{"node_key": " review "})
+import "librecode/agents"
+	first, _ := agents.Spawn("alpha", map[string]any{"node_key": "review"})
+	second, _ := agents.Spawn("beta", map[string]any{"node_key": " review "})
 	[]any{first, second}`
 
 	result, err := runner.Run(t.Context(), &workflow.RunRequest{
@@ -391,8 +388,9 @@ func TestRunnerScopesWaitToLaunchedOwnedTasks(t *testing.T) {
 		wantCancels [][2]string
 	}{
 		{
-			name:        "unlaunched task",
-			source:      `import "librecode/workflow"; workflow.Wait("other")`,
+			name: "unlaunched task",
+			source: `import "librecode/workflow"
+import "librecode/agents"; agents.Wait("other")`,
 			wantCancels: nil,
 			setup: func(fake *fakeController) {
 				fake.tasks["other"] = agentTask("other", testOwner, database.TaskSucceeded, "secret")
@@ -441,10 +439,11 @@ func TestRunnerListAndCancelStayScopedToLaunchOrder(t *testing.T) {
 	require.NoError(t, err)
 
 	const source = `import "librecode/workflow"
-first, _ := workflow.Agent("first")
-second, _ := workflow.Agent("second")
-before, _ := workflow.List()
-canceled, _ := workflow.Cancel(second)
+import "librecode/agents"
+first, _ := agents.Spawn("first")
+second, _ := agents.Spawn("second")
+before, _ := agents.List()
+canceled, _ := agents.Cancel(second)
 []any{first, second, before, canceled}`
 
 	result, err := runner.Run(context.Background(), &workflow.RunRequest{
@@ -462,161 +461,6 @@ canceled, _ := workflow.Cancel(second)
 	assert.Equal(t, []string{database.CancelSourceWorkflow, database.CancelSourceWorkflow}, fake.cancelSources)
 }
 
-func TestRunnerPipelinePreservesInputOrder(t *testing.T) {
-	t.Parallel()
-
-	fake := newFakeController()
-	runner, err := workflow.NewRunner(fake)
-	require.NoError(t, err)
-
-	const source = `import "librecode/workflow"
-results, _ := workflow.Pipeline([]any{1, 2, 3}, func(item any) (any, error) {
-	value := item.(int)
-	return value * value, nil
-}, 2)
-results`
-
-	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		GuestAPI: "", PersistedLinks: nil,
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, []workflow.PipelineResult{
-		{Index: 0, Value: 1, Error: ""},
-		{Index: 1, Value: 4, Error: ""},
-		{Index: 2, Value: 9, Error: ""},
-	}, result.Value)
-}
-
-func TestRunnerPipelineHandlesEmptyInput(t *testing.T) {
-	t.Parallel()
-
-	fake := newFakeController()
-	runner, err := workflow.NewRunner(fake)
-	require.NoError(t, err)
-
-	const source = `import "librecode/workflow"
-results, _ := workflow.Pipeline([]any{}, func(item any) (any, error) { return item, nil }, 4)
-results`
-
-	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		GuestAPI: "", PersistedLinks: nil,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []workflow.PipelineResult{}, result.Value)
-}
-
-func TestRunnerDoesNotInferPipelineResultFromValueShape(t *testing.T) {
-	t.Parallel()
-
-	runner, err := workflow.NewRunner(newFakeController())
-	require.NoError(t, err)
-
-	result, err := runner.Run(t.Context(), &workflow.RunRequest{
-		RunID: "", Name: "", Source: `[]map[string]any{{"index": 0, "value": "ordinary", "error": ""}}`,
-		OwnerSessionID: testOwner, OnProgress: nil, OnEvent: nil, Arguments: nil, GuestAPI: "", PersistedLinks: nil,
-	})
-	require.NoError(t, err)
-
-	assert.IsType(t, []any{}, result.Value)
-	assert.NotEqual(t, []workflow.PipelineResult{{Value: "ordinary", Error: "", Index: 0}}, result.Value)
-}
-
-func TestRunnerPipelineBoundsConcurrency(t *testing.T) {
-	t.Parallel()
-
-	fake := newFakeController()
-
-	var (
-		active atomic.Int64
-		peak   atomic.Int64
-	)
-
-	fake.await = func(_ context.Context, taskID string) (*database.AgentTaskEntity, error) {
-		current := active.Add(1)
-		updatePeak(&peak, current)
-
-		time.Sleep(10 * time.Millisecond)
-		active.Add(-1)
-
-		return agentTask(taskID, testOwner, database.TaskSucceeded, taskID), nil
-	}
-
-	runner, err := workflow.NewRunner(fake)
-	require.NoError(t, err)
-
-	const source = `import "librecode/workflow"
-results, _ := workflow.Pipeline([]any{"a", "b", "c", "d"}, func(item any) (any, error) {
-	id, err := workflow.Agent(item.(string))
-	if err != nil { return nil, err }
-	return workflow.Wait(id)
-}, 2)
-results`
-
-	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		GuestAPI: "", PersistedLinks: nil,
-	})
-	require.NoError(t, err)
-	require.Len(t, result.Value, 4)
-	assert.Positive(t, peak.Load())
-	assert.LessOrEqual(t, peak.Load(), int64(2))
-}
-
-func TestRunnerPipelineCollectsFailureAndStopsScheduling(t *testing.T) {
-	t.Parallel()
-
-	fake := newFakeController()
-	runner, err := workflow.NewRunner(fake)
-	require.NoError(t, err)
-
-	const source = `import "librecode/workflow"
-results, _ := workflow.Pipeline([]any{1, 2, 3}, func(item any) (any, error) {
-	value := item.(int)
-	if value == 1 { return workflow.Wait("other") }
-	return value, nil
-}, 1)
-results`
-
-	result, err := runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		GuestAPI: "", PersistedLinks: nil,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, []workflow.PipelineResult{
-		{
-			Index: 0,
-			Value: workflow.TaskResult{
-				ID: "", State: "", Result: "", Value: nil, ErrorCode: "", ErrorMessage: "",
-			},
-			Error: "task was not launched by this workflow",
-		},
-		{Index: 1, Value: nil, Error: "pipeline stopped before item was scheduled"},
-		{Index: 2, Value: nil, Error: "pipeline stopped before item was scheduled"},
-	}, result.Value)
-}
-
-func TestRunnerPipelineRejectsInvalidConcurrency(t *testing.T) {
-	t.Parallel()
-
-	fake := newFakeController()
-	runner, err := workflow.NewRunner(fake)
-	require.NoError(t, err)
-
-	const source = `import "librecode/workflow"
-_, err := workflow.Pipeline([]any{1}, func(item any) (any, error) { return item, nil }, 0)
-err`
-
-	_, err = runner.Run(context.Background(), &workflow.RunRequest{
-		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "", Source: source, OwnerSessionID: testOwner,
-		GuestAPI: "", PersistedLinks: nil,
-	})
-	require.Error(t, err)
-	assert.ErrorContains(t, err, "pipeline concurrency must be positive")
-}
-
 func TestRunnerRejectsCancelForUnlaunchedTask(t *testing.T) {
 	t.Parallel()
 
@@ -627,7 +471,8 @@ func TestRunnerRejectsCancelForUnlaunchedTask(t *testing.T) {
 
 	_, err = runner.Run(context.Background(), &workflow.RunRequest{
 		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: nil, Name: "",
-		Source:         `import "librecode/workflow"; workflow.Cancel("other")`,
+		Source: `import "librecode/workflow"
+import "librecode/agents"; agents.Cancel("other")`,
 		OwnerSessionID: testOwner,
 		GuestAPI:       "", PersistedLinks: nil,
 	})
@@ -646,7 +491,8 @@ func TestRunnerEventFailureCancelsActiveLaunchedTasks(t *testing.T) {
 		Arguments: nil, RunID: "", OnProgress: nil, OnEvent: func(_ context.Context, _ workflow.Event) error {
 			return assert.AnError
 		},
-		Name: "", Source: `import "librecode/workflow"; workflow.Agent("inspect")`,
+		Name: "", Source: `import "librecode/workflow"
+import "librecode/agents"; agents.Spawn("inspect")`,
 		OwnerSessionID: testOwner,
 		GuestAPI:       "", PersistedLinks: nil,
 	})
@@ -694,15 +540,6 @@ func TestRunnerCancellationCancelsActiveLaunchedTasks(t *testing.T) {
 	assert.Equal(t, []string{database.CancelSourceWorkflow}, fake.cancelSources)
 }
 
-func updatePeak(peak *atomic.Int64, value int64) {
-	for {
-		current := peak.Load()
-		if value <= current || peak.CompareAndSwap(current, value) {
-			return
-		}
-	}
-}
-
 func newFakeController() *fakeController {
 	return &fakeController{
 		tasks: make(map[string]*database.AgentTaskEntity), await: nil, submitCh: nil, taskIDs: nil,
@@ -719,7 +556,7 @@ func agentTask(id, owner string, state database.TaskState, result string) *datab
 			ConcurrencyKey: "", LeaseOwner: "", State: state, Result: result, ErrorCode: "", ErrorMessage: "",
 		},
 		ChildSessionID: "", AgentName: "", Prompt: "", Model: "", Provider: "", PolicyJSON: "",
-		UsageJSON: "", OutputSchemaJSON: "", OutputSchemaDigest: "", OutputAttemptsReserved: 0,
+		UsageJSON: `{"reported":false}`, OutputSchemaJSON: "", OutputSchemaDigest: "", OutputAttemptsReserved: 0,
 		OutputAttemptsCompleted: 0, OutputValidationSummary: "", Depth: 0,
 	}
 }

@@ -190,12 +190,10 @@ func evalCanonicalCombinator(
 ) workflowkernel.Outcome {
 	t.Helper()
 
-	bindings, err := executeworker.CompileBindings(profile, guestapi.Version2, nil)
+	bindings, err := executeworker.CompileBindings(profile, guestapi.CurrentVersion)
 	require.NoError(t, err)
 
 	maps.Copy(bindings, extra)
-	_, legacy := bindings[guestapi.LegacyPackageTools]
-	require.False(t, legacy, "version 2 exposed legacy import")
 
 	result, err := mvmhost.New().Eval(t.Context(), mvmhost.Request{
 		Bindings: bindings,
