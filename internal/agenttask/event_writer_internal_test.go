@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/oops"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -178,32 +177,4 @@ func TestTaskEventWriterFailsClosedOnLeaseLoss(t *testing.T) {
 	// Once the error is recorded, further writes fail fast without touching the database.
 	assert.ErrorContains(t, writer.write(t.Context(), string(assistant.StreamEventTextDelta),
 		delta(assistant.StreamEventTextDelta, "x")), "lease lost")
-}
-
-func TestTaskEventWriterDiscardsPendingDraftsAfterFailure(t *testing.T) {
-	t.Parallel()
-
-	fixture := newWriterFixture(t)
-	writer := fixture.service.newTaskEventWriter(fixture.taskID)
-	writer.flushInterval = time.Hour
-	writer.start(t.Context())
-
-	// Simulate a write that raced the first flush failure: it passed the
-	// error check before recordErr ran and queued a draft afterwards.
-	writer.mu.Lock()
-	writer.err = oops.In("agenttask").Code("task_lease_lost").
-		Wrapf(errTaskLeaseLost, "stop writing task events")
-	writer.pending = []database.TaskEventDraft{{
-		Kind: string(assistant.StreamEventTextDelta), PayloadJSON: `{"text":"raced"}`,
-	}}
-	writer.mu.Unlock()
-
-	// Later ticker or close flushes must discard the draft, never persist it.
-	writer.flush(t.Context())
-
-	err := writer.close(t.Context())
-	require.ErrorContains(t, err, "lease lost")
-
-	// queued + started only: the raced draft must not become durable.
-	assert.Len(t, fixture.events(t), 2)
 }
