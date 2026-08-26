@@ -29,17 +29,6 @@ func testTableCell(text string) tui.TableCell {
 	return tui.TableCell{Style: tcell.StyleDefault, Text: text}
 }
 
-func testTreeNode(text string, expanded, selected bool, children ...*tui.TreeNode) *tui.TreeNode {
-	return &tui.TreeNode{
-		Style:    tcell.StyleDefault,
-		Value:    text,
-		Text:     text,
-		Children: children,
-		Expanded: expanded,
-		Selected: selected,
-	}
-}
-
 func testLine(text string) tui.Line {
 	return tui.Line{Style: tcell.StyleDefault, Text: text, Spans: nil}
 }
