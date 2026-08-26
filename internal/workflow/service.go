@@ -14,22 +14,26 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/guestapi"
+	"github.com/omarluq/librecode/internal/taskprogress"
 )
 
 var errRunClaimConflict = errors.New("workflow run is not claimable")
 
 const (
-	defaultSourceVersion  = "v1"
-	workflowStartedEvent  = "workflow_started"
-	workflowResumedEvent  = "workflow_resumed"
-	workflowEventKind     = "workflow_event"
-	workflowSucceeded     = "workflow_succeeded"
-	workflowFailed        = "workflow_failed"
-	workflowCanceled      = "workflow_canceled"
-	workflowInterrupted   = "workflow_interrupted"
-	workflowLeaseDuration = 30 * time.Second
-	workflowLeaseInterval = 5 * time.Second
-	workflowAwaitInterval = 100 * time.Millisecond
+	defaultSourceVersion    = "v1"
+	workflowStartedEvent    = "workflow_started"
+	workflowResumedEvent    = "workflow_resumed"
+	workflowEventKind       = "workflow_event"
+	workflowSucceeded       = "workflow_succeeded"
+	workflowFailed          = "workflow_failed"
+	workflowCanceled        = "workflow_canceled"
+	workflowInterrupted     = "workflow_interrupted"
+	workflowLeaseDuration   = 30 * time.Second
+	workflowLeaseInterval   = 5 * time.Second
+	workflowAwaitInterval   = 100 * time.Millisecond
+	workflowFlushInterval   = time.Second
+	workflowFlushBatch      = 32
+	workflowFinalizeTimeout = 10 * time.Second
 )
 
 // ServiceRequest describes one durable one-shot workflow execution.
@@ -225,13 +229,20 @@ func (service *Service) executeExisting(
 	}()
 
 	heartbeatErr := service.monitorLease(heartbeatCtx, run.Task.ID, cancelRun)
+	progress := service.progressWriter(persisted.Task.ID)
+	progress.Start(runCtx)
 	result, runErr := service.runner.Run(runCtx, &RunRequest{
-		RunID: persisted.Task.ID, OnEvent: service.eventSink(persisted.Task.ID), Name: name,
+		RunID: persisted.Task.ID, OnEvent: service.eventSink(progress), Name: name,
 		Source: persisted.Source, OwnerSessionID: persisted.Task.OwnerSessionID, Arguments: arguments,
 		PersistedLinks: links, GuestAPI: persistedGuestAPI(persisted.GuestAPIVersion),
 	})
 
 	stopHeartbeat()
+
+	if progressErr := progress.Close(runCtx); progressErr != nil {
+		runErr = errors.Join(runErr, oops.In("workflow").Code("persist_event").
+			Wrapf(progressErr, "persist workflow event"))
+	}
 
 	if heartbeatRunErr := <-heartbeatErr; heartbeatRunErr != nil {
 		runErr = errors.Join(runErr, heartbeatRunErr)
@@ -541,14 +552,30 @@ func (service *Service) loadVerifiedRun(
 	return run, nil
 }
 
-func (service *Service) eventSink(runID string) EventSink {
+func (service *Service) progressWriter(runID string) *taskprogress.Writer {
+	return taskprogress.New(func(ctx context.Context, drafts []database.TaskEventDraft) (
+		[]database.TaskEventEntity, bool, error,
+	) {
+		return service.runs.Tasks().AppendRunningEvents(ctx, runID, service.leaseOwner, drafts)
+	}, nil, taskprogress.Options{
+		FlushInterval: workflowFlushInterval, FlushBatch: workflowFlushBatch,
+		FinalizeTimeout: workflowFinalizeTimeout,
+	})
+}
+
+func (service *Service) eventSink(progress *taskprogress.Writer) EventSink {
 	return func(ctx context.Context, event Event) error {
 		payload, err := json.Marshal(eventPayload(event))
 		if err != nil {
 			return oops.In("workflow").Code("encode_event").Wrapf(err, "encode workflow event")
 		}
 
-		if _, err := service.runs.Tasks().AppendEvent(ctx, runID, workflowEventKind, string(payload)); err != nil {
+		// Workflow events currently have structural semantics. Flush them with
+		// any preceding buffered progress rather than assigning new payload
+		// meanings here.
+		if err := progress.Write(ctx, database.TaskEventDraft{
+			Kind: workflowEventKind, PayloadJSON: string(payload),
+		}, true); err != nil {
 			return oops.In("workflow").Code("persist_event").Wrapf(err, "persist workflow event")
 		}
 
