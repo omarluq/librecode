@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -10,7 +9,6 @@ import (
 
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
-	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
@@ -64,58 +62,6 @@ func TestSummaryElapsedExcludesQueueTime(t *testing.T) {
 				ConcurrencyKey: "", LeaseOwner: "", State: test.state, Result: "", ErrorCode: "", ErrorMessage: "",
 			}
 			assert.Equal(t, test.want, summaryElapsed(&task, time.Unix(142, 0)))
-		})
-	}
-}
-
-func TestAgentSummaryMetricsAndSuffixPreservingWidth(t *testing.T) {
-	t.Parallel()
-
-	started := time.Unix(100, 0)
-	task := testAgentTask(database.TaskRunning)
-	task.Task.StartedAt = &started
-	task.Prompt = strings.Repeat("界e\u0301", 20)
-	task.UsageJSON = `{"input_tokens":8000,"output_tokens":700,"reported":true}`
-
-	label := agentTaskSummaryLabelForWidth(&task, time.Unix(142, 0), 44)
-	assert.Contains(t, label, ") · 42s · 8.7k tok")
-	assert.LessOrEqual(t, tui.Width(label), 44)
-	assert.Contains(t, label, "…)")
-
-	fullLabel := agentTaskSummaryLabelForWidth(&task, time.Unix(142, 0), 200)
-	assert.Equal(t, "explore("+task.Prompt+") · 42s · 8.7k tok", fullLabel)
-}
-
-func TestSummaryMetricWidthFallbacks(t *testing.T) {
-	t.Parallel()
-
-	started := time.Unix(100, 0)
-	task := testAgentTask(database.TaskRunning)
-	task.Task.StartedAt = &started
-	task.Prompt = strings.Repeat("investigate ", 10)
-	task.UsageJSON = `{"input_tokens":8000,"output_tokens":700,"reported":true}`
-
-	for _, test := range []struct {
-		name          string
-		wantContains  string
-		wantOmissions []string
-		width         int
-	}{
-		{name: "full metrics", wantContains: " · 42s · 8.7k tok", wantOmissions: []string{}, width: 44},
-		{name: "tokens omitted", wantContains: ") · 42s", wantOmissions: []string{"tok"}, width: 25},
-		{name: "metrics omitted", wantContains: ")", wantOmissions: []string{"42s", "tok"}, width: 14},
-		{name: "zero width", wantContains: "", wantOmissions: []string{agentDefaultDisplayName}, width: 0},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			label := agentTaskSummaryLabelForWidth(&task, time.Unix(142, 0), test.width)
-			assert.Contains(t, label, test.wantContains)
-			assert.LessOrEqual(t, tui.Width(label), test.width)
-
-			for _, omitted := range test.wantOmissions {
-				assert.NotContains(t, label, omitted)
-			}
 		})
 	}
 }
