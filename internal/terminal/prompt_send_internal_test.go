@@ -697,7 +697,7 @@ func newPromptSendTestModelRegistry(t *testing.T) *model.Registry {
 		},
 	})
 
-	return model.NewRegistry(&model.RegistryOptions{
+	return model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         authStorage,
 		ModelsPath:   "",

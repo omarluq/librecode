@@ -46,7 +46,7 @@ func TestModelPanelSelectionAndCycling(t *testing.T) {
 		promptSendTestProvider: testPanelAuthCredential(),
 	})
 
-	app.models = model.NewRegistry(&model.RegistryOptions{
+	app.models = model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",
@@ -97,7 +97,7 @@ func TestAvailableModelsDoesNotFallbackToUnauthorizedCatalog(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.cfg = promptSendTestConfig()
-	app.models = model.NewRegistry(&model.RegistryOptions{
+	app.models = model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         nil,
 		ModelsPath:   "",

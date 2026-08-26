@@ -145,7 +145,7 @@ func TestDraftModelCapabilityValidation(t *testing.T) {
 	}}}
 	assert.True(t, app.validateDraftModel(draft))
 
-	app.models = model.NewRegistry(&model.RegistryOptions{
+	app.models = model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil, Auth: nil, ModelsPath: "",
 		BuiltIns:  []model.Model{terminalCapabilityTestModel(app.currentProvider(), app.currentModel())},
 		Discovery: disabledModelDiscovery(),

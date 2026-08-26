@@ -54,7 +54,7 @@ func TestQueueFollowUpRejectsImagesForTextOnlyModel(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.models = model.NewRegistry(&model.RegistryOptions{
+	app.models = model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil, Auth: nil, ModelsPath: "",
 		BuiltIns:  []model.Model{terminalCapabilityTestModel(app.currentProvider(), app.currentModel())},
 		Discovery: disabledModelDiscovery(),

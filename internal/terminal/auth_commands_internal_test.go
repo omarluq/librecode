@@ -207,7 +207,7 @@ func newAuthPanelTestApp(t *testing.T) *App {
 	})
 	app := newRenderTestApp(t)
 	app.auth = storage
-	app.models = model.NewRegistry(&model.RegistryOptions{
+	app.models = model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",

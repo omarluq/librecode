@@ -91,7 +91,7 @@ func TestCycleThinking(t *testing.T) {
 
 			if testCase.supportsMax {
 				app.cfg.Assistant.Model = "gpt-5.6-sol"
-				app.models = model.NewRegistry(&model.RegistryOptions{
+				app.models = model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 					ConfigReader: nil,
 					Auth:         nil,
 					ModelsPath:   "",
@@ -263,7 +263,7 @@ func newScopedModelTestApp(t *testing.T) *App {
 		promptSendTestProvider: testPanelAuthCredential(),
 	})
 
-	app.models = model.NewRegistry(&model.RegistryOptions{
+	app.models = model.NewRegistryContext(t.Context(), &model.RegistryOptions{
 		ConfigReader: nil,
 		Auth:         storage,
 		ModelsPath:   "",

@@ -30,7 +30,7 @@ func TestScopedModelPanelBehavior(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.models = model.NewRegistry(nil)
+	app.models = model.NewRegistryContext(t.Context(), nil)
 	app.scopedEnabled = map[string]bool{}
 
 	app.openScopedModelsPanel()
