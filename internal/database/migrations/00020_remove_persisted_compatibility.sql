@@ -33,4 +33,7 @@ WHERE trim(message.content) <> ''
   );
 
 -- +goose Down
-SELECT 1;
+CREATE TABLE migration_20_is_irreversible (
+    guard INTEGER CONSTRAINT migration_20_is_irreversible CHECK (guard = 0)
+);
+INSERT INTO migration_20_is_irreversible (guard) VALUES (1);
