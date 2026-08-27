@@ -8,6 +8,7 @@ import (
 	"github.com/samber/do/v2"
 
 	"github.com/omarluq/librecode/internal/di"
+	"github.com/omarluq/librecode/internal/startupprofile"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -17,7 +18,12 @@ func withContainer(
 	options commandOptions,
 	handler func(*di.Container) error,
 ) (runErr error) {
+	profiler := startupprofile.FromContext(ctx)
+	finishContainer := profiler.Span("container")
 	container, err := di.NewContainer(ctx, options.configFile, options.configOverrides())
+
+	finishContainer()
+
 	if err != nil {
 		return cliError(err, "initialize services")
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/startupprofile"
 	"github.com/omarluq/librecode/internal/taskruntime"
 )
 
@@ -144,7 +145,12 @@ func (c *Container) StartRuntime() (*RuntimeServices, error) {
 }
 
 func (c *Container) constructRuntime(ctx context.Context) (*RuntimeServices, error) {
+	profiler := startupprofile.FromContext(ctx)
+	finishGraph := profiler.Span("runtime_graph")
 	services, err := c.resolveRuntimeServices()
+
+	finishGraph()
+
 	if err != nil {
 		return nil, err
 	}
@@ -154,11 +160,17 @@ func (c *Container) constructRuntime(ctx context.Context) (*RuntimeServices, err
 		services.Workflows.Start,
 		services.ChatWorkflows.Start,
 	}
+	finishServices := profiler.Span("runtime_services")
+
 	for _, start := range startServices {
 		if err := start(ctx); err != nil {
+			finishServices()
+
 			return nil, err
 		}
 	}
+
+	finishServices()
 
 	agentTasks := services.AgentTasks.Tasks()
 	if err := registerGenericCancellation(services, func(
@@ -188,11 +200,17 @@ func (c *Container) constructRuntime(ctx context.Context) (*RuntimeServices, err
 		services.AgentTasks.StartWorkers,
 		services.ChatWorkflows.StartWorkers,
 	}
+	finishWorkers := profiler.Span("runtime_workers")
+
 	for _, start := range startWorkers {
 		if err := start(ctx); err != nil {
+			finishWorkers()
+
 			return nil, err
 		}
 	}
+
+	finishWorkers()
 
 	if err := ctx.Err(); err != nil {
 		return nil, oops.In("di").Code("runtime_start_canceled").Wrapf(err, "start runtime services")
