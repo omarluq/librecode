@@ -7,7 +7,7 @@ require (
 	github.com/MicahParks/jwkset v0.11.3
 	github.com/MicahParks/keyfunc/v3 v3.8.1
 	github.com/Oudwins/zog v0.22.2
-	github.com/PuerkitoBio/goquery v1.12.0
+	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/adrg/frontmatter v0.2.0
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/aymanbagabas/go-udiff v0.4.1
