@@ -66,6 +66,52 @@ func TestNewDatabaseServiceSharesCompositeRepositories(t *testing.T) {
 	assert.Same(t, service.Tasks, service.AgentTasks.Tasks())
 	assert.Same(t, service.Tasks, service.Workflows.Tasks())
 	assert.Same(t, service.AgentTasks, service.Workflows.AgentTasks())
+	assert.Equal(t, cfg.Database.Path, service.Path())
+}
+
+func TestNewDatabaseServiceReturnsDependencyErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		prepare func(do.Injector)
+		name    string
+	}{
+		{name: "config", prepare: func(do.Injector) {}},
+		{name: "application context", prepare: func(injector do.Injector) {
+			do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: "", interactive: false})
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			injector := do.New()
+			test.prepare(injector)
+			service, err := NewDatabaseService(injector)
+			require.Error(t, err)
+			assert.Nil(t, service)
+		})
+	}
+}
+
+func TestNewDatabaseServiceReturnsFilesystemError(t *testing.T) {
+	t.Parallel()
+
+	parent := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(parent, []byte("not a directory"), 0o600))
+
+	cfg := testServiceConfig()
+	cfg.Database.Path = filepath.Join(parent, "librecode.db")
+
+	injector := do.New()
+	provideTestApplicationContext(injector)
+	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
+
+	service, err := NewDatabaseService(injector)
+	require.Error(t, err)
+	assert.Nil(t, service)
+	assert.ErrorContains(t, err, "create database dir")
 }
 
 func TestNewDatabaseServiceHonorsCanceledApplicationContext(t *testing.T) {
@@ -117,6 +163,23 @@ func TestDatabaseServiceShutdownReturnsContextError(t *testing.T) {
 	cancel()
 
 	assert.ErrorIs(t, service.Shutdown(ctx), context.Canceled)
+}
+
+func TestSetupSQLiteDatabaseReturnsPingError(t *testing.T) {
+	t.Parallel()
+
+	connection, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "librecode.db"))
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = setupSQLiteDatabase(ctx, connection, "test.db", config.DatabaseConfig{
+		Path: "", ApplyMigrations: false, MaxOpenConns: 0, MaxIdleConns: 0,
+		ConnMaxLifetime: 0, BusyTimeout: 0,
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Error(t, connection.PingContext(context.Background()))
 }
 
 func TestCloseAfterSetupErrorPreservesSetupAndCloseErrors(t *testing.T) {
