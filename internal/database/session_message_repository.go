@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/samber/oops"
 	"github.com/vingarcia/ksql"
@@ -64,7 +65,7 @@ FROM session_messages
 WHERE session_id = ?
 ORDER BY created_at ASC`
 
-	return repository.querySessionMessages(ctx, sessionID, query, "messages")
+	return repository.querySessionMessages(ctx, sessionID, query, "messages", sessionID)
 }
 
 // TranscriptMessages returns displayable normalized messages for a session in creation order.
@@ -77,9 +78,71 @@ SELECT m.id, m.session_id, m.entry_id, m.sender, m.role, m.content, m.provider, 
 FROM session_messages AS m
 JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
 WHERE m.session_id = ? AND e.display = 1
-ORDER BY m.created_at ASC`
+ORDER BY m.created_at ASC, m.entry_id ASC`
 
-	return repository.querySessionMessages(ctx, sessionID, query, "transcript_messages")
+	return repository.querySessionMessages(ctx, sessionID, query, "transcript_messages", sessionID)
+}
+
+// TranscriptMessageTail returns at most limit displayable messages from the end
+// of a session, ordered chronologically for display.
+func (repository *SessionRepository) TranscriptMessageTail(
+	ctx context.Context,
+	sessionID string,
+	limit int,
+) ([]SessionMessageEntity, error) {
+	if limit <= 0 {
+		return []SessionMessageEntity{}, nil
+	}
+
+	const query = `
+SELECT id, session_id, entry_id, sender, role, content, provider, model, created_at
+FROM (
+    SELECT m.id, m.session_id, m.entry_id, m.sender, m.role, m.content,
+           m.provider, m.model, m.created_at
+    FROM session_messages AS m
+    JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
+    WHERE m.session_id = ? AND e.display = 1
+    ORDER BY m.created_at DESC, m.entry_id DESC
+    LIMIT ?
+)
+ORDER BY created_at ASC, entry_id ASC`
+
+	return repository.querySessionMessages(ctx, sessionID, query, "transcript_message_tail", sessionID, limit)
+}
+
+// TranscriptMessagesBefore returns at most limit displayable messages older
+// than the supplied message cursor, ordered chronologically for display.
+func (repository *SessionRepository) TranscriptMessagesBefore(
+	ctx context.Context,
+	sessionID string,
+	beforeCreatedAt time.Time,
+	beforeEntryID string,
+	limit int,
+) ([]SessionMessageEntity, error) {
+	if limit <= 0 {
+		return []SessionMessageEntity{}, nil
+	}
+
+	const query = `
+SELECT id, session_id, entry_id, sender, role, content, provider, model, created_at
+FROM (
+    SELECT m.id, m.session_id, m.entry_id, m.sender, m.role, m.content,
+           m.provider, m.model, m.created_at
+    FROM session_messages AS m
+    JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
+    WHERE m.session_id = ? AND e.display = 1
+      AND (m.created_at < ? OR (m.created_at = ? AND m.entry_id < ?))
+    ORDER BY m.created_at DESC, m.entry_id DESC
+    LIMIT ?
+)
+ORDER BY created_at ASC, entry_id ASC`
+
+	cursorTime := formatTime(beforeCreatedAt)
+
+	return repository.querySessionMessages(
+		ctx, sessionID, query, "transcript_messages_before",
+		sessionID, cursorTime, cursorTime, beforeEntryID, limit,
+	)
 }
 
 func (repository *SessionRepository) querySessionMessages(
@@ -87,13 +150,14 @@ func (repository *SessionRepository) querySessionMessages(
 	sessionID string,
 	query string,
 	operation string,
+	args ...any,
 ) ([]SessionMessageEntity, error) {
 	operationLabel := strings.ReplaceAll(operation, "_", " ")
 
 	result, err := readOnlyTransactionValue(
 		ctx, repository.sql, func(provider ksql.Provider) ([]SessionMessageEntity, error) {
 			rows := []sessionMessageRow{}
-			if err := provider.Query(ctx, &rows, query, sessionID); err != nil {
+			if err := provider.Query(ctx, &rows, query, args...); err != nil {
 				return nil, oops.In("database").Code("list_"+operation).Wrapf(err, "query %s", operationLabel)
 			}
 
