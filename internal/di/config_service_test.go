@@ -23,7 +23,10 @@ func TestNewContainer_DisableExtensionsOverride(t *testing.T) {
 		Interactive:       false,
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() { assert.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
+	t.Cleanup(func() {
+		report := container.ShutdownWithContext(context.Background())
+		assert.True(t, report.Succeed, report.Error())
+	})
 
 	services, err := container.StartRuntime()
 	require.NoError(t, err)
@@ -57,7 +60,10 @@ func TestConfigServiceTracksLoadedPathAndInteractiveOverride(t *testing.T) {
 				Interactive:       test.interactive,
 			})
 			require.NoError(t, err)
-			t.Cleanup(func() { assert.True(t, container.ShutdownWithContext(t.Context()).Succeed) })
+			t.Cleanup(func() {
+				report := container.ShutdownWithContext(context.Background())
+				assert.True(t, report.Succeed, report.Error())
+			})
 
 			services, err := container.StartRuntime()
 			require.NoError(t, err)
