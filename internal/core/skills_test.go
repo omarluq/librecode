@@ -226,13 +226,14 @@ func TestAutoActivateSkillsSelectsMatchingSkill(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "bug-fix", "SKILL.md"), strings.Join([]string{
-		frontmatterDelimiter,
-		"name: bug-fix",
-		"description: Use when fixing bugs safely",
-		frontmatterDelimiter,
+
+	writeSkillFile(
+		t,
+		filepath.Join(cwd, core.ConfigDirName, "skills"),
+		"bug-fix",
+		"Use when fixing bugs safely",
 		"Run tests before editing.",
-	}, "\n"))
+	)
 
 	result := core.LoadSkills(cwd, nil, true)
 	detail := core.AutoActivateSkillsDetailed("please use bug-fix safely", result.Skills)
@@ -247,13 +248,14 @@ func TestAutoActivateSkillsIgnoresActivationStopWords(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "loud", "SKILL.md"), strings.Join([]string{
-		frontmatterDelimiter,
-		"name: loud",
-		"description: Use when the agent and any task",
-		frontmatterDelimiter,
+
+	writeSkillFile(
+		t,
+		filepath.Join(cwd, core.ConfigDirName, "skills"),
+		"loud",
+		"Use when the agent and any task",
 		"Loud instructions.",
-	}, "\n"))
+	)
 
 	result := core.LoadSkills(cwd, nil, true)
 	detail := core.AutoActivateSkillsDetailed("the agent and any task", result.Skills)
@@ -266,20 +268,16 @@ func TestAutoActivateSkillsRequiresStrongIntent(t *testing.T) {
 	cwd := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "hud", "SKILL.md"), strings.Join([]string{
-		frontmatterDelimiter,
-		"name: hud",
-		"description: Show or configure the runtime HUD status display",
-		frontmatterDelimiter,
-		"HUD instructions.",
-	}, "\n"))
-	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "go-tests", "SKILL.md"), strings.Join([]string{
-		frontmatterDelimiter,
-		"name: go-tests",
-		"description: Use when writing Go tests or debugging flaky test failures",
-		frontmatterDelimiter,
+
+	skillsDir := filepath.Join(cwd, core.ConfigDirName, "skills")
+	writeSkillFile(t, skillsDir, "hud", "Show or configure the runtime HUD status display", "HUD instructions.")
+	writeSkillFile(
+		t,
+		skillsDir,
+		"go-tests",
+		"Use when writing Go tests or debugging flaky test failures",
 		"Testing instructions.",
-	}, "\n"))
+	)
 
 	result := core.LoadSkills(cwd, nil, true)
 
@@ -303,27 +301,10 @@ func TestLoadSkillsReportsValidationWarningsAndNameCollisions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	writeTestFile(t, filepath.Join(home, core.AgentsDirName, "skills", "same", "SKILL.md"), strings.Join([]string{
-		frontmatterDelimiter,
-		"name: same",
-		"description: First skill",
-		frontmatterDelimiter,
-		"",
-	}, "\n"))
-	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "same", "SKILL.md"), strings.Join([]string{
-		frontmatterDelimiter,
-		"name: same",
-		"description: Second skill",
-		frontmatterDelimiter,
-		"",
-	}, "\n"))
-	writeTestFile(t, filepath.Join(cwd, core.ConfigDirName, "skills", "Bad_Name", "SKILL.md"), strings.Join([]string{
-		frontmatterDelimiter,
-		"name: Bad_Name",
-		"description: Invalid name",
-		frontmatterDelimiter,
-		"",
-	}, "\n"))
+	writeSkillFile(t, filepath.Join(home, core.AgentsDirName, "skills"), "same", "First skill", "")
+	projectSkillsDir := filepath.Join(cwd, core.ConfigDirName, "skills")
+	writeSkillFile(t, projectSkillsDir, "same", "Second skill", "")
+	writeSkillFile(t, projectSkillsDir, "Bad_Name", "Invalid name", "")
 
 	result := core.LoadSkills(cwd, nil, true)
 	require.Len(t, result.Skills, 2)
@@ -331,6 +312,17 @@ func TestLoadSkillsReportsValidationWarningsAndNameCollisions(t *testing.T) {
 
 	assert.True(t, hasCollision(result.Diagnostics, "same"))
 	assert.True(t, hasDiagnosticMessage(result.Diagnostics, "invalid characters"))
+}
+
+func writeSkillFile(t *testing.T, skillsDir, name, description, body string) {
+	t.Helper()
+	writeTestFile(t, filepath.Join(skillsDir, name, "SKILL.md"), strings.Join([]string{
+		frontmatterDelimiter,
+		"name: " + name,
+		"description: " + description,
+		frontmatterDelimiter,
+		body,
+	}, "\n"))
 }
 
 func skillNames(skills []core.Skill) []string {

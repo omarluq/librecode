@@ -15,8 +15,7 @@ SET usage_json = json_set(
         ELSE 'false'
     END)
 )
-WHERE json_type(usage_json, '$.reported') IS NULL
-   OR json_type(usage_json, '$.reported') = 'null';
+WHERE COALESCE(json_type(usage_json, '$.reported'), 'null') = 'null';
 
 INSERT INTO session_message_parts (id, session_id, entry_id, sequence, type, text)
 SELECT 'canonical-text-' || message.entry_id,
