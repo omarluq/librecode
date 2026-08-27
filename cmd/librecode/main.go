@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/omarluq/librecode/internal/executeworker"
+	"github.com/omarluq/librecode/internal/startupprofile"
 )
 
 func main() {
@@ -29,9 +30,29 @@ func main() {
 	os.Exit(run())
 }
 
-func run() int {
+func run() (exitCode int) {
+	profiler, err := startupprofile.Start()
+	if err != nil {
+		if _, writeErr := fmt.Fprintln(os.Stderr, "start startup profiler:", err); writeErr != nil {
+			return 1
+		}
+
+		return 1
+	}
+	defer func() {
+		if err := profiler.Stop(); err != nil {
+			if _, writeErr := fmt.Fprintln(os.Stderr, "stop startup profiler:", err); writeErr != nil {
+				exitCode = 1
+			}
+		}
+	}()
+
+	profiler.Mark("main")
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	ctx = startupprofile.Context(ctx, profiler)
 
 	cmd := newRootCmd()
 	cmd.SetContext(ctx)

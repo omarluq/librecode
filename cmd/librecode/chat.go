@@ -8,6 +8,7 @@ import (
 
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/di"
+	"github.com/omarluq/librecode/internal/startupprofile"
 	"github.com/omarluq/librecode/internal/terminal"
 )
 
@@ -90,7 +91,12 @@ func runChatWithContainer(
 	options chatRunOptions,
 	runTerminal terminalRunner,
 ) error {
+	profiler := startupprofile.FromContext(cmd.Context())
+	finishRuntime := profiler.Span("runtime")
 	services, err := resolveChatServices(container)
+
+	finishRuntime()
+
 	if err != nil {
 		return err
 	}
@@ -107,7 +113,11 @@ func runChatWithContainer(
 		return err
 	}
 
+	finishResources := profiler.Span("resources")
 	resources := loadTerminalResources(cmd.Context(), cwd)
+
+	finishResources()
+	profiler.Mark("terminal_run")
 
 	return runTerminal(cmd.Context(), &terminal.RunOptions{
 		Extensions: services.extension.Manager,

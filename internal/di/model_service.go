@@ -8,6 +8,7 @@ import (
 	"github.com/omarluq/librecode/internal/core"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/startupprofile"
 )
 
 // ModelService owns the provider/model registry.
@@ -37,6 +38,7 @@ func NewModelService(injector do.Injector) (*ModelService, error) {
 		return nil, err
 	}
 
+	finishRegistry := startupprofile.FromContext(ctx).Span("model_registry")
 	registry := model.NewRegistryContext(ctx, &model.RegistryOptions{
 		ConfigReader: database.NewDocumentSource(databaseService.Documents, "model", "models"),
 		Auth:         authService.Storage,
@@ -51,6 +53,9 @@ func NewModelService(injector do.Injector) (*ModelService, error) {
 			Enabled:      configService.Get().Models.Discovery.Enabled,
 		},
 	})
+
+	finishRegistry()
+
 	if err := registry.ConfigError(); err != nil {
 		return nil, serviceError(err, "load model registry")
 	}

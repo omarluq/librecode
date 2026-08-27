@@ -5,11 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/samber/do/v2"
 	"github.com/samber/oops"
@@ -17,13 +15,12 @@ import (
 
 	"github.com/omarluq/librecode/internal/config"
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/startupprofile"
 )
 
 const (
-	sqliteDriverName        = "sqlite"
-	databaseDirMode         = 0o700
-	completionRepairTimeout = 5 * time.Second
-	completionRepairLimit   = 256
+	sqliteDriverName = "sqlite"
+	databaseDirMode  = 0o700
 )
 
 // DatabaseService owns the session database connection and schema lifecycle.
@@ -65,7 +62,11 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 		return nil, oops.In("database").Code("mkdir").With("path", databasePath).Wrapf(mkdirErr, "create database dir")
 	}
 
+	finishDatabase := startupprofile.FromContext(ctx).Span("database")
 	connection, err := openSQLiteDatabase(ctx, databasePath, cfg.Database)
+
+	finishDatabase()
+
 	if err != nil {
 		return nil, err
 	}
@@ -73,13 +74,6 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 	service, err := newDatabaseRepositories(connection, databasePath)
 	if err != nil {
 		return nil, err
-	}
-
-	repairCtx, cancelRepair := context.WithTimeout(ctx, completionRepairTimeout)
-	defer cancelRepair()
-
-	if _, repairErr := service.Completions.Repair(repairCtx, completionRepairLimit); repairErr != nil {
-		slog.WarnContext(repairCtx, "completion startup repair failed", slog.Any("error", repairErr))
 	}
 
 	return service, nil
@@ -122,16 +116,15 @@ func (service *DatabaseService) HealthCheck(ctx context.Context) error {
 
 // Shutdown closes the database connection.
 func (service *DatabaseService) Shutdown(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return serviceError(ctx.Err(), "shutdown database")
-	default:
-		if err := service.DB.Close(); err != nil {
-			return fmt.Errorf("database: close: %w", err)
-		}
-
-		return nil
+	if err := ctx.Err(); err != nil {
+		return serviceError(err, "shutdown database")
 	}
+
+	if err := service.DB.Close(); err != nil {
+		return fmt.Errorf("database: close: %w", err)
+	}
+
+	return nil
 }
 
 func openSQLiteDatabase(ctx context.Context, databasePath string, cfg config.DatabaseConfig) (*sql.DB, error) {
