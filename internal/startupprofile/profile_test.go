@@ -1,9 +1,9 @@
 package startupprofile_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,7 +28,38 @@ func TestSpanCompletionIsIdempotent(t *testing.T) {
 	require.NoError(t, profiler.FirstFrame())
 
 	contents := readProfile(t, profilePath)
-	assert.Equal(t, 1, countEventName(contents, "runtime"))
+	assert.Equal(t, 1, countEventName(t, contents, "runtime"))
+}
+
+func TestStopFinalizesRequestedOutputsOnce(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "startup.json")
+	t.Setenv(profilePathEnv, profilePath)
+
+	profiler, err := startupprofile.Start()
+	require.NoError(t, err)
+	profiler.Mark("before_exit")
+
+	require.NoError(t, profiler.Stop())
+	profileContents := readProfile(t, profilePath)
+	assert.Equal(t, 1, countEventName(t, profileContents, "before_exit"))
+	assert.Zero(t, countEventName(t, profileContents, "first_frame"))
+
+	require.NoError(t, os.WriteFile(profilePath, []byte("unchanged"), 0o600))
+	require.NoError(t, profiler.Stop())
+	assert.Equal(t, []byte("unchanged"), readProfile(t, profilePath))
+}
+
+func TestStopAfterFirstFrameDoesNotRewriteOutputs(t *testing.T) {
+	profilePath := filepath.Join(t.TempDir(), "startup.json")
+	t.Setenv(profilePathEnv, profilePath)
+
+	profiler, err := startupprofile.Start()
+	require.NoError(t, err)
+	require.NoError(t, profiler.FirstFrame())
+
+	require.NoError(t, os.WriteFile(profilePath, []byte("unchanged"), 0o600))
+	require.NoError(t, profiler.Stop())
+	assert.Equal(t, []byte("unchanged"), readProfile(t, profilePath))
 }
 
 func TestReportReplacesPermissiveFileMode(t *testing.T) {
@@ -45,7 +76,7 @@ func TestReportReplacesPermissiveFileMode(t *testing.T) {
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 }
 
-func readProfile(t *testing.T, path string) string {
+func readProfile(t *testing.T, path string) []byte {
 	t.Helper()
 
 	root, err := os.OpenRoot(filepath.Dir(path))
@@ -56,13 +87,28 @@ func readProfile(t *testing.T, path string) string {
 	contents, err := root.ReadFile(filepath.Base(path))
 	require.NoError(t, err)
 
-	return string(contents)
+	return contents
 }
 
-func countEventName(contents, name string) int {
-	needle := `"name": "` + name + `"`
+func countEventName(t *testing.T, contents []byte, name string) int {
+	t.Helper()
 
-	return strings.Count(contents, needle)
+	var decoded struct {
+		Events []struct {
+			Name string `json:"name"`
+		} `json:"events"`
+	}
+	require.NoError(t, json.Unmarshal(contents, &decoded))
+
+	count := 0
+
+	for _, profileEvent := range decoded.Events {
+		if profileEvent.Name == name {
+			count++
+		}
+	}
+
+	return count
 }
 
 func createPermissiveProfile(t *testing.T, path string) {
