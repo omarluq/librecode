@@ -278,13 +278,13 @@ func runSQLiteSoakHelper(mode, argument string) (resultErr error) {
 		return runSoakLock(ctx, connection, stdin)
 	}
 
-	if barrierErr := awaitSoakOperationBarrier(stdin); barrierErr != nil {
-		return barrierErr
-	}
-
 	repositories, err := database.NewRepositories(connection)
 	if err != nil {
 		return fmt.Errorf("create repositories: %w", err)
+	}
+
+	if barrierErr := awaitSoakOperationBarrier(stdin); barrierErr != nil {
+		return barrierErr
 	}
 
 	result, err := executeSoakMode(ctx, mode, argument, repositories.Sessions, repositories.Tasks, connection)
