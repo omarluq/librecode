@@ -152,7 +152,7 @@ func messageValidationCases(entityID string, now time.Time) []entityValidationCa
 			entity.Content = "scalar text"
 
 			return validateSessionMessageEntity(&entity)
-		}, wantError: "message.content must match the text projection of message.parts"},
+		}, wantError: "message.parts must contain nonblank message.content"},
 		{name: "message created", validate: func() error {
 			entity := validMessageEntity(entityID, now)
 			entity.CreatedAt = time.Time{}
