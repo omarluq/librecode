@@ -1,9 +1,7 @@
 package database
 
 import (
-	"context"
 	"database/sql"
-	"log/slog"
 	"reflect"
 
 	"github.com/samber/oops"
@@ -94,13 +92,6 @@ func NewRepositories(connection *sql.DB) (*Repositories, error) {
 	workflows, err := NewWorkflowRepositoryWithProvider(provider, tasks, agentTasks)
 	if err != nil {
 		return nil, wrapRepositoryConstruction(err, "workflow")
-	}
-
-	repairCtx, cancelRepair := context.WithTimeout(context.Background(), completionRepairTimeout)
-	defer cancelRepair()
-
-	if _, repairErr := completions.Repair(repairCtx, completionPageDefault); repairErr != nil {
-		slog.WarnContext(repairCtx, "completion startup repair failed", slog.Any("error", repairErr))
 	}
 
 	return &Repositories{
