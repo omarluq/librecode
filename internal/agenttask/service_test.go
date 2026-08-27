@@ -331,7 +331,7 @@ func TestServiceRecoversQueuedAndInterruptedTasks(t *testing.T) {
 			child := createSession(t, sessions, "child", parent.ID)
 			taskID := testCase.prepare(t, tasks, agentTasks, parent.ID, child.ID)
 			runner := &fakeRunner{
-				result: agenttask.Result{Text: "recovered", UsageJSON: `{"input":1}`},
+				result: agenttask.Result{Text: "recovered", UsageJSON: `{"input_tokens":1,"reported":true}`},
 				err:    nil, started: nil, release: nil, eventRelease: nil, once: sync.Once{},
 			}
 			service := newService(t, tasks, agentTasks, runner)
@@ -341,7 +341,7 @@ func TestServiceRecoversQueuedAndInterruptedTasks(t *testing.T) {
 			assert.Equal(t, testCase.wantState, task.Task.State)
 
 			if testCase.wantState == database.TaskSucceeded {
-				assert.JSONEq(t, `{"input":1}`, task.UsageJSON)
+				assert.JSONEq(t, `{"input_tokens":1,"reported":true}`, task.UsageJSON)
 			}
 		})
 	}
