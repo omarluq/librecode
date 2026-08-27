@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	schemaIndexType = "index"
+	schemaIndexType     = "index"
+	createdAtColumnName = "created_at"
 
 	deployedWorkflowMigrationV8 = `-- +goose Up
 CREATE TABLE workflow_runs (
@@ -45,6 +46,29 @@ DROP TABLE IF EXISTS workflow_runs;
 `
 )
 
+func TestStartupQueryIndexMigration(t *testing.T) {
+	t.Parallel()
+
+	connection := newMigratedThroughVersion(t, 21)
+	ctx := t.Context()
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+
+	_, err = provider.UpTo(ctx, 22)
+	require.NoError(t, err)
+	assertIndexColumns(ctx, t, connection, "idx_tasks_state_created", []string{
+		"state", createdAtColumnName, "id",
+	})
+
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	assertSchemaObjectMissing(ctx, t, connection,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`,
+		"idx_tasks_state_created")
+}
+
 func TestTranscriptTailIndexMigrationUsesCursorColumns(t *testing.T) {
 	t.Parallel()
 
@@ -58,13 +82,13 @@ func TestTranscriptTailIndexMigrationUsesCursorColumns(t *testing.T) {
 	_, err = provider.UpTo(ctx, 21)
 	require.NoError(t, err)
 	assertIndexColumns(ctx, t, connection, "idx_session_messages_session_created", []string{
-		"session_id", "created_at", "entry_id",
+		"session_id", createdAtColumnName, "entry_id",
 	})
 
 	_, err = provider.Down(ctx)
 	require.NoError(t, err)
 	assertIndexColumns(ctx, t, connection, "idx_session_messages_session_created", []string{
-		"session_id", "created_at",
+		"session_id", createdAtColumnName,
 	})
 }
 
