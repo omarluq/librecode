@@ -41,6 +41,8 @@ func run() (exitCode int) {
 	}
 	defer func() {
 		if err := profiler.Stop(); err != nil {
+			exitCode = 1
+
 			if _, writeErr := fmt.Fprintln(os.Stderr, "stop startup profiler:", err); writeErr != nil {
 				exitCode = 1
 			}
