@@ -31,19 +31,6 @@ func (app *App) loadSessionSettings(ctx context.Context) error {
 	return app.loadSettingsForSession(ctx, app.sessionID)
 }
 
-func (app *App) loadLatestSessionSettings(ctx context.Context) error {
-	if app.sessionID != "" || app.runtime == nil {
-		return nil
-	}
-
-	latestSession, found, err := app.runtime.SessionRepository().LatestSession(ctx, app.cwd)
-	if err != nil || !found {
-		return terminalError(err, "load latest session")
-	}
-
-	return app.loadSettingsForSession(ctx, latestSession.ID)
-}
-
 func (app *App) loadSettingsForSession(ctx context.Context, sessionID string) error {
 	settings, found, err := app.sessionSettings(ctx, sessionID)
 	if err != nil {

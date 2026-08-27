@@ -143,6 +143,81 @@ func TestSessionSettingMutatorsPersist(t *testing.T) {
 	assertPersistedSessionSettings(t, &settings)
 }
 
+func TestLoadSessionSettingsUsesDefaultsForFreshSessionAndSavedValuesForResume(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		wantProvider      string
+		wantModel         string
+		wantThinkingLevel string
+		wantTheme         string
+		resume            bool
+		wantHideThinking  bool
+		wantToolsExpanded bool
+	}{
+		{
+			name:              "fresh session keeps configured defaults",
+			resume:            false,
+			wantProvider:      "openai-codex",
+			wantModel:         "gpt-5.5",
+			wantThinkingLevel: boolTextOff,
+			wantTheme:         themeNameDark,
+			wantHideThinking:  false,
+			wantToolsExpanded: false,
+		},
+		{
+			name:              "resumed session restores saved settings",
+			resume:            true,
+			wantProvider:      testProviderOpenAI,
+			wantModel:         testGPT5ModelID,
+			wantThinkingLevel: string(model.ThinkingHigh),
+			wantTheme:         themeNameLight,
+			wantHideThinking:  true,
+			wantToolsExpanded: true,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
+
+			previousSession, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, "previous", "")
+			require.NoError(t, err)
+
+			app.sessionID = previousSession.ID
+			app.cfg = renderParityConfig()
+			app.setModelSelection(testProviderOpenAI, testGPT5ModelID)
+			app.setThinkingLevelValue(string(model.ThinkingHigh))
+			app.setTheme(lightTheme())
+			app.setHideThinking(true)
+			app.setToolsExpanded(true)
+
+			app.sessionID = ""
+			if testCase.resume {
+				app.sessionID = previousSession.ID
+			}
+
+			app.cfg = renderParityConfig()
+			app.theme = darkTheme()
+			app.hideThinking = false
+			app.toolsExpanded = false
+
+			require.NoError(t, app.loadSessionSettings(ctx))
+
+			assert.Equal(t, testCase.wantProvider, app.currentProvider())
+			assert.Equal(t, testCase.wantModel, app.currentModel())
+			assert.Equal(t, testCase.wantThinkingLevel, app.currentThinkingLevel())
+			assert.Equal(t, testCase.wantTheme, app.theme.name)
+			assert.Equal(t, testCase.wantHideThinking, app.hideThinking)
+			assert.Equal(t, testCase.wantToolsExpanded, app.toolsExpanded)
+		})
+	}
+}
+
 func persistedSessionSettings(
 	ctx context.Context,
 	t *testing.T,

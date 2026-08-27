@@ -1116,11 +1116,11 @@ func TestAgentTaskCompletionRoutesToParentWhileChildIsInspected(t *testing.T) {
 	assert.Empty(t, app.liveAgentCompletions)
 	assert.Empty(t, app.hiddenQueuedMessages)
 
-	childMessages, err := app.sessionMessages(t.Context(), fixture.child.ID)
+	childMessages, err := app.runtime.SessionRepository().TranscriptMessages(t.Context(), fixture.child.ID)
 	require.NoError(t, err)
 	assert.Empty(t, childMessages)
 
-	parentMessages, err := app.sessionMessages(t.Context(), fixture.parent.ID)
+	parentMessages, err := app.runtime.SessionRepository().TranscriptMessages(t.Context(), fixture.parent.ID)
 	require.NoError(t, err)
 	require.Len(t, parentMessages, 1)
 	assert.Contains(t, parentMessages[0].Content, "parent completion")

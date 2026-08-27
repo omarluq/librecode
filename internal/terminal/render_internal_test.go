@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1411,6 +1412,32 @@ func TestMessageLineCacheInvalidatesForThinkingVisibility(t *testing.T) {
 	if lineIndexContaining(hidden, "thinking…") == -1 {
 		t.Fatalf("expected thinking placeholder after hiding, got %v", lineTexts(hidden))
 	}
+}
+
+func TestLoadInitialMessagesUsesViewportSizedTranscriptTail(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	app := newPromptSendTestApp(t, newTerminalPromptClient(newTerminalCompletionResult("ok"), nil))
+	session, err := app.runtime.SessionRepository().CreateSession(ctx, app.cwd, "tail load", "")
+	require.NoError(t, err)
+
+	for index := range defaultTerminalHeight + 5 {
+		_, err = app.runtime.SessionRepository().AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+			Timestamp: time.Date(2025, 1, 1, 0, 0, index, 0, time.UTC),
+			Role:      database.RoleAssistant, Content: fmt.Sprintf("message %02d", index),
+			Provider: "", Model: "", Parts: nil,
+		})
+		require.NoError(t, err)
+	}
+
+	app.sessionID = session.ID
+	app.resetMessages()
+
+	require.NoError(t, app.loadInitialMessages(ctx))
+	require.Len(t, app.transcript.History, defaultTerminalHeight)
+	assert.Equal(t, "message 05", app.transcript.History[0].Content)
+	assert.Equal(t, "message 28", app.transcript.History[len(app.transcript.History)-1].Content)
 }
 
 func TestLoadInitialMessagesUsesTranscriptHistory(t *testing.T) {

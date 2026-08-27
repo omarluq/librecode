@@ -62,7 +62,7 @@ func (app *App) applySessionSelection(ctx context.Context, value string) error {
 		return terminalError(err, "load session")
 	}
 
-	messages, err := app.sessionMessages(ctx, value)
+	messages, hasOlder, err := app.sessionMessageTail(ctx, value)
 	if err != nil {
 		return terminalError(err, "load session")
 	}
@@ -80,8 +80,10 @@ func (app *App) applySessionSelection(ctx context.Context, value string) error {
 		}
 
 		app.applySessionView(value, newLoadedSessionView(&viewSettings), false)
+		app.transcript.HasOlder = hasOlder
 		app.appendSessionMessages(messages)
 	} else {
+		app.transcript.HasOlder = app.transcript.HasOlder || hasOlder
 		app.appendMissingSessionMessages(messages)
 
 		if settingsFound {
