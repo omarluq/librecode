@@ -199,6 +199,18 @@ func canonicalTurnRequest(source string) *executeworker.Request {
 	}
 }
 
+func TestClientPreservesDurableWorkflowArguments(t *testing.T) {
+	t.Setenv(helperEnv, "1")
+
+	result, err := testClient().EvalRequest(t.Context(), &executeworker.Request{
+		Arguments: map[string]any{"topic": "sqlite"},
+		Profile:   guestapi.ProfileDurable, GuestAPIVersion: guestapi.CurrentVersion,
+		Name: "arguments.go", Source: `import "librecode/workflow"; workflow.Arguments["topic"]`,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "sqlite", result.Value)
+}
+
 func TestClientPreservesTypedToolCallResults(t *testing.T) {
 	t.Setenv(helperEnv, "1")
 
