@@ -17,6 +17,8 @@ import (
 )
 
 const (
+	testFirst              = "first"
+	testSecond             = "second"
 	testHello              = "hello"
 	testVisible            = "visible"
 	testUserPrompt         = "pick a path"
@@ -24,6 +26,70 @@ const (
 	testCustomMessageType  = "test-extension"
 	testCustomMessageValue = "extra"
 )
+
+func TestSessionRepository_TranscriptMessageTailIsLimitedVisibleAndChronological(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "tail", "")
+	require.NoError(t, err)
+
+	const hiddenMessage = "hidden"
+
+	var parentID *string
+
+	for index, content := range []string{"oldest", hiddenMessage, "middle", "newest"} {
+		display := content != hiddenMessage
+		entry, appendErr := repository.AppendMessageWithDisplay(ctx, session.ID, parentID, &database.MessageEntity{
+			Timestamp: time.Date(2025, 1, 1, 0, 0, index, 0, time.UTC),
+			Role:      database.RoleAssistant, Content: content, Provider: "", Model: "", Parts: nil,
+		}, nil, &display)
+		require.NoError(t, appendErr)
+
+		parentID = &entry.ID
+	}
+
+	messages, err := repository.TranscriptMessageTail(ctx, session.ID, 2)
+	require.NoError(t, err)
+	require.Len(t, messages, 2)
+	assert.Equal(t, []string{"middle", "newest"}, []string{messages[0].Content, messages[1].Content})
+
+	empty, err := repository.TranscriptMessageTail(ctx, session.ID, 0)
+	require.NoError(t, err)
+	assert.Empty(t, empty)
+}
+
+func TestSessionRepository_TranscriptMessagesBeforeUsesStableCursor(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "before", "")
+	require.NoError(t, err)
+
+	var parentID *string
+
+	timestamp := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, content := range []string{testFirst, testSecond, "third"} {
+		entry, appendErr := repository.AppendMessage(ctx, session.ID, parentID, &database.MessageEntity{
+			Timestamp: timestamp, Role: database.RoleAssistant, Content: content,
+			Provider: "", Model: "", Parts: nil,
+		})
+		require.NoError(t, appendErr)
+
+		parentID = &entry.ID
+	}
+
+	tail, err := repository.TranscriptMessageTail(ctx, session.ID, 2)
+	require.NoError(t, err)
+	require.Len(t, tail, 2)
+
+	older, err := repository.TranscriptMessagesBefore(ctx, session.ID, tail[0].CreatedAt, tail[0].EntryID, 2)
+	require.NoError(t, err)
+	require.Len(t, older, 1)
+	assert.Equal(t, testFirst, older[0].Content)
+}
 
 func TestSessionRepository_AppendsMessagesInSessionTree(t *testing.T) {
 	t.Parallel()

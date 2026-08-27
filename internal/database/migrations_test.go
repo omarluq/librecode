@@ -45,6 +45,49 @@ DROP TABLE IF EXISTS workflow_runs;
 `
 )
 
+func TestTranscriptTailIndexMigrationUsesCursorColumns(t *testing.T) {
+	t.Parallel()
+
+	connection := newMigratedThroughVersion(t, 20)
+	ctx := t.Context()
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+
+	_, err = provider.UpTo(ctx, 21)
+	require.NoError(t, err)
+	assertIndexColumns(ctx, t, connection, "idx_session_messages_session_created", []string{
+		"session_id", "created_at", "entry_id",
+	})
+
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	assertIndexColumns(ctx, t, connection, "idx_session_messages_session_created", []string{
+		"session_id", "created_at",
+	})
+}
+
+func assertIndexColumns(ctx context.Context, t *testing.T, connection *sql.DB, indexName string, want []string) {
+	t.Helper()
+
+	rows, err := connection.QueryContext(ctx, `SELECT name FROM pragma_index_info(?) ORDER BY seqno`, indexName)
+
+	require.NoError(t, err)
+	defer func() { require.NoError(t, rows.Close()) }()
+
+	got := []string{}
+
+	for rows.Next() {
+		var name string
+		require.NoError(t, rows.Scan(&name))
+		got = append(got, name)
+	}
+
+	require.NoError(t, rows.Err())
+	assert.Equal(t, want, got)
+}
+
 func TestMessagePartsMigrationUpDownAndOldSchemaUpgrade(t *testing.T) {
 	t.Parallel()
 
