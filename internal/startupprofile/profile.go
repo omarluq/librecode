@@ -18,7 +18,6 @@ const (
 	profilePathEnv   = "LIBRECODE_STARTUP_PROFILE"
 	tracePathEnv     = "LIBRECODE_STARTUP_TRACE"
 	cpuPathEnv       = "LIBRECODE_STARTUP_CPU_PROFILE"
-	heapPathEnv      = "LIBRECODE_STARTUP_HEAP_PROFILE"
 	profileFileMode  = 0o600
 	profileEventKind = "startup"
 )
@@ -41,7 +40,6 @@ type Profiler struct {
 	traceFile    *os.File
 	cpuFile      *os.File
 	profilePath  string
-	heapPath     string
 	events       []event
 	lock         sync.Mutex
 	traceRunning bool
@@ -54,14 +52,14 @@ type Profiler struct {
 func Start() (*Profiler, error) {
 	profiler := &Profiler{
 		started: time.Time{}, events: nil,
-		profilePath: os.Getenv(profilePathEnv), heapPath: os.Getenv(heapPathEnv),
-		traceFile: nil, cpuFile: nil, traceRunning: false, cpuRunning: false,
+		profilePath: os.Getenv(profilePathEnv),
+		traceFile:   nil, cpuFile: nil, traceRunning: false, cpuRunning: false,
 		enabled: false, finished: false, lock: sync.Mutex{},
 	}
 	tracePath := os.Getenv(tracePathEnv)
 	cpuPath := os.Getenv(cpuPathEnv)
 
-	profiler.enabled = profiler.profilePath != "" || profiler.heapPath != "" || tracePath != "" || cpuPath != ""
+	profiler.enabled = profiler.profilePath != "" || tracePath != "" || cpuPath != ""
 	if !profiler.enabled {
 		return profiler, nil
 	}
@@ -161,7 +159,7 @@ func (profiler *Profiler) Mark(name string) {
 // Span records a timed startup stage. The returned function must be called once.
 func (profiler *Profiler) Span(name string) func() {
 	if profiler == nil {
-		return func() {}
+		return noopSpan
 	}
 
 	profiler.lock.Lock()
@@ -169,16 +167,24 @@ func (profiler *Profiler) Span(name string) func() {
 	profiler.lock.Unlock()
 
 	if !enabled {
-		return func() {}
+		return noopSpan
 	}
 
 	started := time.Now()
 	region := trace.StartRegion(context.Background(), profileEventKind+"."+name)
 
+	var once sync.Once
+
 	return func() {
-		region.End()
-		profiler.recordSpan(name, started)
+		once.Do(func() {
+			region.End()
+			profiler.recordSpan(name, started)
+		})
 	}
+}
+
+func noopSpan() {
+	// Intentionally empty so callers can always defer the result of Span.
 }
 
 func (profiler *Profiler) recordSpan(name string, started time.Time) {
@@ -214,7 +220,7 @@ func (profiler *Profiler) FirstFrame() error {
 	})
 	profiler.finished = true
 
-	return errors.Join(profiler.stopCPU(), profiler.stopTrace(), profiler.writeHeap(), profiler.writeReport())
+	return errors.Join(profiler.stopCPU(), profiler.stopTrace(), profiler.writeReport())
 }
 
 // Stop finalizes active runtime profiles when startup exits before its first frame.
@@ -247,19 +253,6 @@ func (profiler *Profiler) stopCPU() error {
 	}
 
 	return closeProfileFile(&profiler.cpuFile)
-}
-
-func (profiler *Profiler) writeHeap() error {
-	if profiler.heapPath == "" {
-		return nil
-	}
-
-	file, err := createProfileFile(profiler.heapPath)
-	if err != nil {
-		return fmt.Errorf("create startup heap profile: %w", err)
-	}
-
-	return errors.Join(pprof.WriteHeapProfile(file), file.Close())
 }
 
 func (profiler *Profiler) writeReport() error {
@@ -295,6 +288,10 @@ func createProfileFile(path string) (*os.File, error) {
 
 	if closeErr != nil {
 		return file, fmt.Errorf("close profile directory: %w", closeErr)
+	}
+
+	if err := file.Chmod(profileFileMode); err != nil {
+		return nil, errors.Join(fmt.Errorf("secure profile file: %w", err), file.Close())
 	}
 
 	return file, nil
