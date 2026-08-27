@@ -245,7 +245,13 @@ func Run(ctx context.Context, options *RunOptions) error {
 	profiler := startupprofile.FromContext(ctx)
 	finishScreen := profiler.Span("screen_init")
 
-	screen, err := tcell.NewScreen(tcell.OptAdvancedKeys(true))
+	screen, err := tcell.NewScreen(
+		tcell.OptAdvancedKeys(true),
+		// Capability negotiation may wait a full second for terminals that do not
+		// answer tcell's startup queries. Modern keyboard behavior remains enabled
+		// when the terminal is identifiable from its environment.
+		tcell.OptNegotiation(false),
+	)
 	if err != nil {
 		finishScreen()
 
