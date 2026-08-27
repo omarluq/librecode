@@ -147,6 +147,28 @@ INSERT INTO workflow_runs (
 		`SELECT COUNT(*) FROM pragma_table_info('workflow_runs') WHERE name = 'guest_api_version'`)
 }
 
+func TestPersistedCompatibilityMigrationRejectsRollback(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	connection := newMigratedThroughVersion(t, 19)
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+
+	_, err = provider.UpTo(ctx, 20)
+	require.NoError(t, err)
+	_, err = provider.Down(ctx)
+	require.ErrorContains(t, err, "migration_20_is_irreversible")
+
+	version, err := provider.GetDBVersion(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(20), version)
+	assertSchemaObjectMissing(ctx, t, connection,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'migration_20_is_irreversible'`)
+}
+
 func TestToolTasksMigrationUpDownAndVersionFourteenUpgrade(t *testing.T) {
 	t.Parallel()
 
