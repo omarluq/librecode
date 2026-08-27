@@ -16,6 +16,7 @@ import (
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/extension"
 	"github.com/omarluq/librecode/internal/model"
+	"github.com/omarluq/librecode/internal/startupprofile"
 	"github.com/omarluq/librecode/internal/terminal/extui"
 	"github.com/omarluq/librecode/internal/terminal/panel"
 	"github.com/omarluq/librecode/internal/transcript"
@@ -115,6 +116,7 @@ type transcriptState struct {
 	Streaming   transcriptStreamingState
 	LineCache   messageLineCache
 	LastMaxRows int
+	HasOlder    bool
 }
 
 type runningToolBlock struct {
@@ -173,6 +175,7 @@ type App struct {
 	cancelToolTaskCompletions   context.CancelFunc
 	renderer                    *tui.Renderer
 	refreshDiagnostics          *terminalRefreshDiagnostics
+	startupProfiler             *startupprofile.Profiler
 	refreshLoader               terminalRefreshLoader
 	refreshCancel               context.CancelFunc
 	theme                       terminalTheme
@@ -239,14 +242,23 @@ type App struct {
 
 // Run starts an interactive tcell chat loop.
 func Run(ctx context.Context, options *RunOptions) error {
+	profiler := startupprofile.FromContext(ctx)
+	finishScreen := profiler.Span("screen_init")
+
 	screen, err := tcell.NewScreen(tcell.OptAdvancedKeys(true))
 	if err != nil {
+		finishScreen()
+
 		return fmt.Errorf("tui: create screen: %w", err)
 	}
 
 	if err := screen.Init(); err != nil {
+		finishScreen()
+
 		return fmt.Errorf("tui: init screen: %w", err)
 	}
+
+	finishScreen()
 
 	screen.EnableMouse(tcell.MouseDragEvents)
 
@@ -254,28 +266,42 @@ func Run(ctx context.Context, options *RunOptions) error {
 	defer screen.Fini()
 
 	app := newApp(screen, options)
-	if err := app.loadInitialMessages(ctx); err != nil {
-		app.addSystemMessage(err.Error())
-	}
+	app.startupProfiler = profiler
 
-	if err := app.loadSessionSettings(ctx); err != nil {
-		app.addSystemMessage(err.Error())
-	}
-
-	if err := app.loadLatestSessionSettings(ctx); err != nil {
-		app.addSystemMessage(err.Error())
-	}
-
-	if err := app.runStartupExtensions(ctx); err != nil {
-		app.addSystemMessage(err.Error())
-	}
-
-	app.discoverActiveAgentTasks(ctx)
-	app.logToolTaskRefreshError(ctx, app.refreshToolTasks(ctx))
+	profileStartupStage(profiler, "transcript", func() {
+		if err := app.loadInitialMessages(ctx); err != nil {
+			app.addSystemMessage(err.Error())
+		}
+	})
+	profileStartupStage(profiler, "session_settings", func() {
+		if err := app.loadSessionSettings(ctx); err != nil {
+			app.addSystemMessage(err.Error())
+		}
+	})
+	profileStartupStage(profiler, "startup_extensions", func() {
+		if err := app.runStartupExtensions(ctx); err != nil {
+			app.addSystemMessage(err.Error())
+		}
+	})
+	// Active agent and tool tasks are database-backed and may be slow to load.
+	// Complete the first frame before starting their regular refresh worker.
+	app.drawFirstFrameAndLoadInitialTasks(ctx)
 	app.watchToolTaskCompletions(ctx)
 	app.loop(ctx)
 
 	return nil
+}
+
+func (app *App) drawFirstFrameAndLoadInitialTasks(ctx context.Context) {
+	app.draw(ctx)
+	app.loadInitialTasksAsync(ctx)
+}
+
+func profileStartupStage(profiler *startupprofile.Profiler, name string, operation func()) {
+	finish := profiler.Span(name)
+
+	operation()
+	finish()
 }
 
 type terminalScreen interface {
@@ -403,6 +429,7 @@ func initialTranscriptState() transcriptState {
 		},
 		LineCache:   emptyMessageLineCache(),
 		LastMaxRows: 0,
+		HasOlder:    false,
 	}
 }
 
@@ -550,6 +577,13 @@ func (app *App) handleLoopEvent(ctx context.Context, event tcell.Event) (shouldQ
 func (app *App) handleScrollLoopEvent(ctx context.Context, delta int) (shouldQuit, dirty bool) {
 	coalesced := app.coalesceScrollEvents(delta)
 	app.scrollTranscript(coalesced.Delta)
+
+	if coalesced.Delta > 0 && app.atLoadedTranscriptStart() {
+		if err := app.hydrateOlderTranscript(ctx); err != nil {
+			app.addSystemMessage(err.Error())
+		}
+	}
+
 	app.draw(ctx)
 
 	if coalesced.Pending != nil {
@@ -741,27 +775,42 @@ func isHighVolumePromptStreamEvent(kind asyncEventKind) bool {
 }
 
 func (app *App) loadInitialMessages(ctx context.Context) error {
-	messages, err := app.sessionMessages(ctx, app.sessionID)
+	messages, hasOlder, err := app.sessionMessageTail(ctx, app.sessionID)
 	if err != nil {
 		return err
 	}
 
+	if len(messages) > 0 {
+		app.resetMessages()
+	}
+
+	app.transcript.HasOlder = hasOlder
 	app.appendSessionMessages(messages)
 
 	return nil
 }
 
-func (app *App) sessionMessages(ctx context.Context, sessionID string) ([]database.SessionMessageEntity, error) {
+func (app *App) sessionMessageTail(
+	ctx context.Context,
+	sessionID string,
+) ([]database.SessionMessageEntity, bool, error) {
 	if sessionID == "" || app.runtime == nil {
-		return nil, nil
+		return nil, false, nil
 	}
 
-	messages, err := app.runtime.SessionRepository().TranscriptMessages(ctx, sessionID)
+	_, viewportRows := app.screenSize()
+
+	messages, err := app.runtime.SessionRepository().TranscriptMessageTail(ctx, sessionID, viewportRows+1)
 	if err != nil {
-		return nil, terminalError(err, "load initial messages")
+		return nil, false, terminalError(err, "load transcript tail")
 	}
 
-	return messages, nil
+	hasOlder := len(messages) > viewportRows
+	if hasOlder {
+		messages = messages[1:]
+	}
+
+	return messages, hasOlder, nil
 }
 
 func (app *App) appendSessionMessages(messages []database.SessionMessageEntity) {

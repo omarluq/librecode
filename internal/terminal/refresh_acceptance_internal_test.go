@@ -16,6 +16,7 @@ import (
 	"github.com/omarluq/librecode/internal/assistant"
 	"github.com/omarluq/librecode/internal/database"
 	"github.com/omarluq/librecode/internal/tooltask"
+	"github.com/omarluq/librecode/internal/tui"
 )
 
 const (
@@ -190,6 +191,102 @@ func (stub *refreshWorkflowInspector) AgentTaskDetails(
 
 func (stub *refreshWorkflowInspector) Cancel(context.Context, string, string) (bool, error) {
 	return true, nil
+}
+
+type showRecordingScreen struct {
+	*clipboardScreen
+	shown   chan struct{}
+	release chan struct{}
+}
+
+func (screen *showRecordingScreen) Show() {
+	select {
+	case screen.shown <- struct{}{}:
+	default:
+	}
+
+	<-screen.release
+}
+
+func TestFirstFrameCompletesBeforeInitialTaskLoadStarts(t *testing.T) {
+	t.Parallel()
+
+	app, baseScreen := newRefreshTestApp(t)
+	screen := &showRecordingScreen{
+		clipboardScreen: baseScreen,
+		shown:           make(chan struct{}, 1),
+		release:         make(chan struct{}),
+	}
+	app.screen = screen
+	app.renderer = tui.NewRenderer(screen)
+	listStarted := make(chan struct{}, 1)
+	agentStub := newAgentTaskControllerStub(nil, nil)
+	agentStub.listStarted = listStarted
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = agentStub
+	})
+
+	started := make(chan struct{})
+
+	go func() {
+		app.drawFirstFrameAndLoadInitialTasks(t.Context())
+		close(started)
+	}()
+
+	awaitSignal(t, screen.shown, "first frame was not shown")
+
+	select {
+	case <-listStarted:
+		t.Fatal("initial task load started before the first frame completed")
+	default:
+	}
+
+	close(screen.release)
+	awaitSignal(t, listStarted, "initial task load did not start after first frame")
+	awaitSignal(t, started, "startup helper did not return")
+}
+
+func TestInitialTaskLoadUsesRefreshWorkerWithoutMutatingApp(t *testing.T) {
+	t.Parallel()
+
+	app, screen := newRefreshTestApp(t)
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+	agent := behaviorAgentTask("startup-agent", database.TaskRunning)
+	tool := refreshToolTask("startup-tool")
+	agentStub := newAgentTaskControllerStub(nil, []database.AgentTaskEntity{agent})
+	agentStub.listStarted = started
+	agentStub.listRelease = release
+	toolStub := &refreshToolTaskController{
+		listStarted: nil,
+		listRelease: nil,
+		list:        []database.ToolTaskEntity{tool},
+		mu:          sync.Mutex{},
+		listCalls:   0,
+	}
+	app.runtime = assistant.NewRuntimeForTest(func(options *assistant.RuntimeTestOptions) {
+		options.AgentTasks = agentStub
+		options.ToolTasks = toolStub
+	})
+
+	done := app.loadInitialTasksAsync(t.Context())
+	require.NotNil(t, done)
+	awaitSignal(t, started, "initial task load did not start asynchronously")
+	assert.Empty(t, app.agentTasks)
+	assert.Empty(t, app.toolTasks)
+
+	close(release)
+
+	interrupt := awaitInterrupt(t, screen.EventQ(), "initial task load did not publish a refresh")
+	assert.Empty(t, app.agentTasks)
+	assert.Empty(t, app.toolTasks)
+
+	_, err := app.handleInterrupt(t.Context(), interrupt)
+	require.NoError(t, err)
+	require.Len(t, app.agentTasks, 1)
+	require.Len(t, app.toolTasks, 1)
+	assert.Equal(t, agent.Task.ID, app.agentTasks[0].Task.ID)
+	assert.Equal(t, tool.Task.ID, app.toolTasks[0].Task.ID)
 }
 
 func TestTerminalRefreshCancellationWhileRuntimeLoadIsBlocked(t *testing.T) {

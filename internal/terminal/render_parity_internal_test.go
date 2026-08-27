@@ -220,7 +220,7 @@ func renderParityConfig() *config.Config {
 		Assistant: config.AssistantConfig{
 			Provider:      "openai-codex",
 			Model:         "gpt-5.5",
-			ThinkingLevel: "off",
+			ThinkingLevel: boolTextOff,
 			Retry: config.RetryConfig{
 				BaseDelay:   0,
 				MaxDelay:    0,

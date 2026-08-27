@@ -40,6 +40,13 @@ type terminalRefreshResult struct {
 
 type terminalRefreshLoader func(context.Context, *terminalRefreshRequest) terminalRefreshSnapshot
 
+// loadInitialTasksAsync starts the same immutable-snapshot refresh used by the
+// running terminal. The worker only publishes an interrupt; App state remains
+// owned by the UI goroutine.
+func (app *App) loadInitialTasksAsync(ctx context.Context) <-chan struct{} {
+	return app.requestTerminalRefresh(ctx)
+}
+
 func (app *App) requestTerminalRefresh(ctx context.Context) <-chan struct{} {
 	// Keep the parent task/workflow summary stable while inspecting a child.
 	if len(app.agentTaskSessionStack) > 0 {

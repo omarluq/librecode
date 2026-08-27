@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/gdamore/tcell/v3"
 
@@ -107,6 +108,10 @@ func (app *App) flushFrame() {
 	app.applySelectionHighlight()
 	app.renderer.Flush(app.frame)
 	app.screen.Show()
+
+	if err := app.startupProfiler.FirstFrame(); err != nil {
+		slog.Debug("write startup profile", "error", err)
+	}
 }
 
 func (app *App) drawTiny(width, height int) {

@@ -745,7 +745,7 @@ func (app *App) reloadInspectedAgentTaskTranscript(ctx context.Context, taskID s
 		return
 	}
 
-	messages, err := app.sessionMessages(ctx, task.ChildSessionID)
+	messages, hasOlder, err := app.sessionMessageTail(ctx, task.ChildSessionID)
 	if err != nil {
 		app.addSystemMessage(err.Error())
 
@@ -754,6 +754,7 @@ func (app *App) reloadInspectedAgentTaskTranscript(ctx context.Context, taskID s
 
 	app.resetMessages()
 	app.resetStreamingBlocks()
+	app.transcript.HasOlder = hasOlder
 	app.appendSessionMessages(messages)
 	app.addSystemMessage("inspecting agent task: " + taskID + "; select main above to return")
 }
@@ -1846,7 +1847,7 @@ func (app *App) switchToAgentTaskSession(
 		return terminalError(err, "load agent session")
 	}
 
-	messages, err := app.sessionMessages(ctx, sessionID)
+	messages, hasOlder, err := app.sessionMessageTail(ctx, sessionID)
 	if err != nil {
 		return terminalError(err, "load agent session")
 	}
@@ -1864,6 +1865,7 @@ func (app *App) switchToAgentTaskSession(
 		promptHistoryIndex := app.promptHistoryIndex
 		app.transcript.History = nil
 		app.transcript.LineCache.reset()
+		app.transcript.HasOlder = hasOlder
 		app.appendSessionMessages(messages)
 		app.promptHistory = promptHistory
 		app.promptHistoryImages = promptHistoryImages
@@ -1882,6 +1884,7 @@ func (app *App) switchToAgentTaskSession(
 		app.sessionID = sessionID
 		app.pendingParentID = nil
 		app.resetMessages()
+		app.transcript.HasOlder = hasOlder
 		app.resetStreamingBlocks()
 		app.liveAgentCompletions = nil
 		app.queuedMessages = nil
@@ -1968,7 +1971,7 @@ func (app *App) leaveAgentTaskSession(ctx context.Context) error {
 		return terminalError(err, "load parent session")
 	}
 
-	messages, err := app.sessionMessages(ctx, parentSessionID)
+	messages, hasOlder, err := app.sessionMessageTail(ctx, parentSessionID)
 	if err != nil {
 		return terminalError(err, "load parent session")
 	}
@@ -1980,12 +1983,14 @@ func (app *App) leaveAgentTaskSession(ctx context.Context) error {
 	app.agentTaskSessionStack = app.agentTaskSessionStack[:last]
 
 	if app.restoreSessionView(parentSessionID) {
+		app.transcript.HasOlder = app.transcript.HasOlder || hasOlder
 		app.appendMissingSessionMessages(messages)
 	} else {
 		app.sessionID = parentSessionID
 		app.pendingParentID = nil
 		app.resetMessages()
 		app.resetStreamingBlocks()
+		app.transcript.HasOlder = hasOlder
 
 		if settingsFound {
 			app.applySessionSettings(&settings)

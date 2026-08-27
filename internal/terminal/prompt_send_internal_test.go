@@ -729,7 +729,7 @@ func promptSendTestConfig() *config.Config {
 		Assistant: config.AssistantConfig{
 			Provider:      promptSendTestProvider,
 			Model:         promptSendTestModel,
-			ThinkingLevel: "off",
+			ThinkingLevel: boolTextOff,
 			Retry: config.RetryConfig{
 				BaseDelay:   time.Millisecond,
 				MaxDelay:    time.Millisecond,
