@@ -3,7 +3,7 @@ package database_test
 import (
 	"context"
 	"database/sql"
-	"github.com/omarluq/librecode/internal/testutil"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite" // register sqlite driver for repository integration tests
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
@@ -26,6 +27,45 @@ const (
 	testCustomMessageType  = "test-extension"
 	testCustomMessageValue = "extra"
 )
+
+func TestSessionRepository_TranscriptTailQueryUsesCursorIndex(t *testing.T) {
+	t.Parallel()
+
+	connection, err := sql.Open(sqliteDriver(), ":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+	require.NoError(t, database.Migrate(t.Context(), connection))
+
+	const query = `EXPLAIN QUERY PLAN
+SELECT m.id
+FROM session_messages AS m INDEXED BY idx_session_messages_session_created
+JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
+WHERE m.session_id = ? AND e.display = 1
+ORDER BY m.created_at DESC, m.entry_id DESC
+LIMIT ?`
+
+	rows, err := connection.QueryContext(t.Context(), query, "session", 25)
+
+	require.NoError(t, err)
+	defer func() { require.NoError(t, rows.Close()) }()
+
+	usedCursorIndex := false
+
+	for rows.Next() {
+		var (
+			id, parent, unused int
+			detail             string
+		)
+		require.NoError(t, rows.Scan(&id, &parent, &unused, &detail))
+
+		if strings.Contains(detail, "idx_session_messages_session_created") {
+			usedCursorIndex = true
+		}
+	}
+
+	require.NoError(t, rows.Err())
+	assert.True(t, usedCursorIndex)
+}
 
 func TestSessionRepository_TranscriptMessageTailIsLimitedVisibleAndChronological(t *testing.T) {
 	t.Parallel()

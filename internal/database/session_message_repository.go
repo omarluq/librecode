@@ -99,7 +99,7 @@ SELECT id, session_id, entry_id, sender, role, content, provider, model, created
 FROM (
     SELECT m.id, m.session_id, m.entry_id, m.sender, m.role, m.content,
            m.provider, m.model, m.created_at
-    FROM session_messages AS m
+    FROM session_messages AS m INDEXED BY idx_session_messages_session_created
     JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
     WHERE m.session_id = ? AND e.display = 1
     ORDER BY m.created_at DESC, m.entry_id DESC
@@ -128,7 +128,7 @@ SELECT id, session_id, entry_id, sender, role, content, provider, model, created
 FROM (
     SELECT m.id, m.session_id, m.entry_id, m.sender, m.role, m.content,
            m.provider, m.model, m.created_at
-    FROM session_messages AS m
+    FROM session_messages AS m INDEXED BY idx_session_messages_session_created
     JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
     WHERE m.session_id = ? AND e.display = 1
       AND (m.created_at < ? OR (m.created_at = ? AND m.entry_id < ?))
