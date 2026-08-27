@@ -78,7 +78,7 @@ func workerBindings(ctx context.Context, request *Message, caller *rpcCaller) (m
 		}
 	}
 
-	return profileBindings(ctx, profile, workflowCallBridge{caller: caller}), nil
+	return profileBindings(ctx, profile, arguments, workflowCallBridge{caller: caller}), nil
 }
 
 func workerContract(request *Message) (guestapi.Profile, guestapi.Version, error) {
@@ -105,6 +105,7 @@ func toolsBindings(packageName string, caller *rpcCaller) mvmhost.Bindings {
 func profileBindings(
 	ctx context.Context,
 	profile guestapi.Profile,
+	arguments map[string]any,
 	bridge callBridge,
 ) mvmhost.Bindings {
 	bindings := version2Bindings(profile)
@@ -127,6 +128,7 @@ func profileBindings(
 	}
 
 	if profile == guestapi.ProfileDurable {
+		bindings[guestapi.PackageWorkflow]["Arguments"] = arguments
 		bindings[guestapi.PackageAgents] = agentsBindings(bridge)[guestapi.PackageAgents]
 	}
 
@@ -294,7 +296,7 @@ func CompileBindings(
 	// CompileBindings is intentionally context-free: bindings are reflected for
 	// type checking but never invoked. Runtime bindings capture the worker's
 	// evaluation context in workerBindings.
-	return profileBindings(context.Background(), profile, inertCallBridge{}), nil
+	return profileBindings(context.Background(), profile, map[string]any{}, inertCallBridge{}), nil
 }
 
 // inertCallBridge satisfies callBridge without doing anything. Compilation

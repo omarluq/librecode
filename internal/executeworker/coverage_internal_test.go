@@ -206,7 +206,7 @@ func TestVersion2CombinatorBindingsUseEvaluationContext(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
-			bindings := profileBindings(ctx, profile, inertCallBridge{})
+			bindings := profileBindings(ctx, profile, map[string]any{}, inertCallBridge{})
 			bindings["testsupport"] = map[string]any{cancelBindingName: func(value any) any {
 				cancel()
 
@@ -314,6 +314,10 @@ func assertVersion2Bindings(t *testing.T, bindings mvmhost.Bindings, profile gue
 		if availability.Available(profile) {
 			expected[availability.Package] = append(expected[availability.Package], availability.Function)
 		}
+	}
+
+	if profile == guestapi.ProfileDurable {
+		expected[guestapi.PackageWorkflow] = append(expected[guestapi.PackageWorkflow], "Arguments")
 	}
 
 	for packageName := range expected {
