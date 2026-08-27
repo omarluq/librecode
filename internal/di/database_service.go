@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/samber/do/v2"
 	"github.com/samber/oops"
@@ -18,8 +20,10 @@ import (
 )
 
 const (
-	sqliteDriverName = "sqlite"
-	databaseDirMode  = 0o700
+	sqliteDriverName        = "sqlite"
+	databaseDirMode         = 0o700
+	completionRepairTimeout = 5 * time.Second
+	completionRepairLimit   = 256
 )
 
 // DatabaseService owns the session database connection and schema lifecycle.
@@ -69,6 +73,13 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 	service, err := newDatabaseRepositories(connection, databasePath)
 	if err != nil {
 		return nil, err
+	}
+
+	repairCtx, cancelRepair := context.WithTimeout(ctx, completionRepairTimeout)
+	defer cancelRepair()
+
+	if _, repairErr := service.Completions.Repair(repairCtx, completionRepairLimit); repairErr != nil {
+		slog.WarnContext(repairCtx, "completion startup repair failed", slog.Any("error", repairErr))
 	}
 
 	return service, nil
