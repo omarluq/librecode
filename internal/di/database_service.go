@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,7 +120,7 @@ func (service *DatabaseService) Shutdown(ctx context.Context) error {
 	}
 
 	if err := service.DB.Close(); err != nil {
-		return fmt.Errorf("database: close: %w", err)
+		return oops.In("database").Code("close").Wrapf(err, "close database")
 	}
 
 	return nil
