@@ -83,7 +83,7 @@ func Context(ctx context.Context, profiler *Profiler) context.Context {
 	return context.WithValue(ctx, contextKey{}, profiler)
 }
 
-// FromContext returns the attached profiler or a disabled profiler.
+// FromContext returns the attached profiler or nil.
 func FromContext(ctx context.Context) *Profiler {
 	value := ctx.Value(contextKey{})
 
@@ -218,9 +218,8 @@ func (profiler *Profiler) FirstFrame() error {
 	profiler.events = append(profiler.events, event{
 		Name: "first_frame", SinceStart: time.Since(profiler.started).Nanoseconds(), Duration: 0,
 	})
-	profiler.finished = true
 
-	return errors.Join(profiler.stopCPU(), profiler.stopTrace(), profiler.writeReport())
+	return profiler.finish()
 }
 
 // Stop finalizes active runtime profiles when startup exits before its first frame.
@@ -232,7 +231,17 @@ func (profiler *Profiler) Stop() error {
 	profiler.lock.Lock()
 	defer profiler.lock.Unlock()
 
-	return errors.Join(profiler.stopCPU(), profiler.stopTrace())
+	if !profiler.enabled || profiler.finished {
+		return nil
+	}
+
+	return profiler.finish()
+}
+
+func (profiler *Profiler) finish() error {
+	profiler.finished = true
+
+	return errors.Join(profiler.stopCPU(), profiler.stopTrace(), profiler.writeReport())
 }
 
 func (profiler *Profiler) stopTrace() error {
@@ -287,7 +296,7 @@ func createProfileFile(path string) (*os.File, error) {
 	}
 
 	if closeErr != nil {
-		return file, fmt.Errorf("close profile directory: %w", closeErr)
+		return nil, errors.Join(fmt.Errorf("close profile directory: %w", closeErr), file.Close())
 	}
 
 	if err := file.Chmod(profileFileMode); err != nil {
