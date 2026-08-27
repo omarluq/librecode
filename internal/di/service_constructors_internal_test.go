@@ -352,6 +352,37 @@ func TestAssistantServiceAccessorDoesNotStartWorkers(t *testing.T) {
 	assert.Nil(t, chatWorkflows.Dispatcher())
 }
 
+func TestJoinShutdownError(t *testing.T) {
+	t.Parallel()
+
+	base := errors.New("startup failed")
+	shutdownErr := errors.New("shutdown failed")
+	description := do.ServiceDescription{ScopeName: "test", Service: "service"}
+
+	tests := []struct {
+		report *do.ShutdownReport
+		name   string
+		joined bool
+	}{
+		{name: "nil report", report: nil, joined: false},
+		{name: "successful report", report: &do.ShutdownReport{Succeed: true}, joined: false},
+		{name: "empty failed report", report: &do.ShutdownReport{Succeed: false}, joined: false},
+		{name: "shutdown error", report: &do.ShutdownReport{
+			Succeed: false, Errors: map[do.ServiceDescription]error{description: shutdownErr},
+		}, joined: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := joinShutdownError(base, test.report)
+			require.ErrorIs(t, err, base)
+			assert.Equal(t, test.joined, errors.Is(err, test.report))
+		})
+	}
+}
+
 func TestStartRuntimeCleansUpPartialConstruction(t *testing.T) {
 	t.Parallel()
 
