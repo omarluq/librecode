@@ -123,6 +123,33 @@ func TestCompletionMappingExcludesWorkflowChildrenAndRepairIsIdempotent(t *testi
 	assert.Empty(t, pending)
 }
 
+func TestCompletionRepairFindsTerminalEventBeforeLaterDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner := fixture.createOwner(ctx)
+	repositories, err := database.NewRepositories(fixture.connection)
+	require.NoError(t, err)
+
+	task, err := repositories.Tasks.Create(ctx, newTask(owner.ID))
+	require.NoError(t, err)
+
+	finish := newTaskFinish(task.ID, []database.TaskState{database.TaskQueued}, database.TaskInterrupted,
+		taskInterruptedEvent)
+	_, err = repositories.Tasks.Finish(ctx, &finish)
+	require.NoError(t, err)
+
+	_, err = repositories.Tasks.AppendEvent(ctx, task.ID, "completion_diagnostic", `{}`)
+	require.NoError(t, err)
+	_, err = fixture.connection.ExecContext(ctx, `DELETE FROM session_completion_deliveries WHERE task_id=?`, task.ID)
+	require.NoError(t, err)
+
+	repaired, err := repositories.Completions.Repair(ctx, 1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, repaired)
+}
+
 func TestCompletionEnvelopeTreatsOutputAsTypedPlainData(t *testing.T) {
 	t.Parallel()
 
