@@ -48,7 +48,7 @@ require (
 	github.com/yuin/goldmark/v2 v2.0.0
 	github.com/yuin/gopher-lua v1.1.2
 	go.uber.org/goleak v1.3.0
-	golang.design/x/clipboard v0.8.0
+	golang.design/x/clipboard v0.9.0
 	golang.org/x/image v0.45.0
 	golang.org/x/net v0.58.0
 	golang.org/x/text v0.41.0
