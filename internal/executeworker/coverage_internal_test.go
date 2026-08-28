@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/omarluq/librecode/internal/guestapi"
 	"github.com/omarluq/librecode/internal/mvmhost"
@@ -43,10 +44,11 @@ func (shortWriter) Write([]byte) (int, error) { return 0, nil }
 
 type closeError struct{ err error }
 
-type cancelOnSecondErrContext struct {
-	context.Context
-	checks int
-}
+type cancelOnSecondErrContext struct{ checks int }
+
+func (*cancelOnSecondErrContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (*cancelOnSecondErrContext) Done() <-chan struct{}       { return nil }
+func (*cancelOnSecondErrContext) Value(any) any               { return nil }
 
 func (ctx *cancelOnSecondErrContext) Err() error {
 	ctx.checks++
@@ -720,7 +722,7 @@ func TestClientPrivateBranches(t *testing.T) {
 func TestWaitForCallbacksCancellationWinsAfterCallbackDone(t *testing.T) {
 	t.Parallel()
 
-	ctx := &cancelOnSecondErrContext{Context: t.Context(), checks: 0}
+	ctx := &cancelOnSecondErrContext{checks: 0}
 	callbackDone := make(chan struct{})
 	close(callbackDone)
 
