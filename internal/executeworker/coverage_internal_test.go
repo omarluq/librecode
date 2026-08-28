@@ -43,6 +43,20 @@ func (shortWriter) Write([]byte) (int, error) { return 0, nil }
 
 type closeError struct{ err error }
 
+type cancelOnSecondErrContext struct {
+	context.Context
+	checks int
+}
+
+func (ctx *cancelOnSecondErrContext) Err() error {
+	ctx.checks++
+	if ctx.checks >= 2 {
+		return context.Canceled
+	}
+
+	return nil
+}
+
 func (c closeError) Close() error { return c.err }
 
 type nopWriteCloser struct{ io.Writer }
@@ -703,13 +717,11 @@ func TestClientPrivateBranches(t *testing.T) {
 	require.ErrorContains(t, err, "unexpected execute worker message")
 }
 
-func TestWaitForCallbacksCancellationWinsWhenCallbackAlsoDone(t *testing.T) {
+func TestWaitForCallbacksCancellationWinsAfterCallbackDone(t *testing.T) {
 	t.Parallel()
 
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx := &cancelOnSecondErrContext{Context: t.Context(), checks: 0}
 	callbackDone := make(chan struct{})
-
-	cancel()
 	close(callbackDone)
 
 	require.ErrorIs(t, waitForCallbacks(ctx, []<-chan struct{}{callbackDone}), context.Canceled)
