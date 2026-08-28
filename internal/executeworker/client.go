@@ -365,8 +365,15 @@ func (client Client) stopRPCCallbacks(worker *workerProcess, callbacks *rpcCallb
 
 func waitForCallbacks(ctx context.Context, callbacks []<-chan struct{}) error {
 	for _, callbackDone := range callbacks {
+		if err := ctx.Err(); err != nil {
+			return canceledError(err)
+		}
+
 		select {
 		case <-callbackDone:
+			if err := ctx.Err(); err != nil {
+				return canceledError(err)
+			}
 		case <-ctx.Done():
 			return canceledError(ctx.Err())
 		}

@@ -703,6 +703,18 @@ func TestClientPrivateBranches(t *testing.T) {
 	require.ErrorContains(t, err, "unexpected execute worker message")
 }
 
+func TestWaitForCallbacksCancellationWinsWhenCallbackAlsoDone(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	callbackDone := make(chan struct{})
+
+	cancel()
+	close(callbackDone)
+
+	require.ErrorIs(t, waitForCallbacks(ctx, []<-chan struct{}{callbackDone}), context.Canceled)
+}
+
 func TestReadMessagesCallbackWaitHonorsCancellation(t *testing.T) {
 	t.Parallel()
 
