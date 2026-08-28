@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -23,8 +24,8 @@ type systemClipboardImageReader interface {
 type desktopClipboard struct {
 	prepare func() error
 	init    func() error
-	write   func(clipboard.Format, []byte) <-chan struct{}
-	read    func(clipboard.Format) []byte
+	write   func(context.Context, clipboard.Format, []byte, ...clipboard.Option) (<-chan struct{}, error)
+	read    func(context.Context, clipboard.Format, ...clipboard.Option) ([]byte, error)
 }
 
 func newDesktopClipboard() desktopClipboard {
@@ -99,7 +100,16 @@ func (writer desktopClipboard) ReadImage() ([]byte, error) {
 		return nil, terminalError(err, "init system clipboard")
 	}
 
-	return append([]byte(nil), writer.read(clipboard.FmtImage)...), nil
+	data, err := writer.read(context.Background(), clipboard.FmtImage)
+	if errors.Is(err, clipboard.ErrNoData) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, terminalError(err, "read system clipboard")
+	}
+
+	return append([]byte(nil), data...), nil
 }
 
 func (writer desktopClipboard) WriteText(text string) error {
@@ -117,7 +127,12 @@ func (writer desktopClipboard) WriteText(text string) error {
 		return terminalError(err, "init system clipboard")
 	}
 
-	if writer.write(clipboard.FmtText, []byte(text)) == nil {
+	changed, err := writer.write(context.Background(), clipboard.FmtText, []byte(text))
+	if err != nil {
+		return terminalError(err, "write system clipboard")
+	}
+
+	if changed == nil {
 		return errSystemClipboardWriteFailed
 	}
 
