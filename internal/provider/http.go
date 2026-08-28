@@ -88,7 +88,7 @@ func readProviderBody(reader io.Reader) ([]byte, error) {
 }
 
 func providerRequestID(header http.Header) string {
-	return firstNonEmptyString(header.Get("X-Request-Id"), header.Get("Request-Id"))
+	return firstNonEmptyString(header.Get("X-Request-ID"), header.Get("Request-Id"))
 }
 
 // providerRetryAfter returns a bounded provider-requested delay.
