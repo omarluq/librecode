@@ -6,24 +6,19 @@ import (
 	"sync"
 
 	"github.com/gdamore/tcell/v3"
-	"github.com/yuin/goldmark/v2"
 	"github.com/yuin/goldmark/v2/ast"
 	"github.com/yuin/goldmark/v2/extension"
 	extast "github.com/yuin/goldmark/v2/extension/ast"
 	"github.com/yuin/goldmark/v2/parser"
-	goldtext "github.com/yuin/goldmark/v2/text"
-	"github.com/yuin/goldmark/v2/util"
 )
 
 const (
 	markdownIndent = " "
 	markdownBullet = "• "
 
-	markdownQuote                    = "┃ "
-	markdownRule                     = "─"
-	markdownTableTransformerPriority = 200
-	markdownStrikePriority           = 500
-	markdownTableMaxHeight           = 10_000
+	markdownQuote          = "┃ "
+	markdownRule           = "─"
+	markdownTableMaxHeight = 10_000
 )
 
 // MarkdownEngine lazily initializes and caches a goldmark parser.
@@ -38,20 +33,14 @@ type MarkdownEngine struct {
 // The parser is initialized on first call and reused for all subsequent calls.
 func (engine *MarkdownEngine) render(source []byte, visitor func(ast.Node)) {
 	engine.once.Do(func() {
-		engine.parser = goldmark.New(
-			goldmark.WithParserOptions(
-				parser.WithParagraphTransformers(util.Prioritized(
-					extension.NewTableParagraphTransformer(),
-					markdownTableTransformerPriority,
-				)),
-				parser.WithASTTransformers(util.Prioritized(extension.NewTableASTTransformer(), 0)),
-				parser.WithInlineParsers(util.Prioritized(extension.NewStrikethroughParser(), markdownStrikePriority)),
-				parser.WithInlineParsers(util.Prioritized(extension.NewTaskCheckBoxParser(), 0)),
-			),
-		).Parser()
+		engine.parser = parser.New(parser.WithExtensions(
+			extension.NewTableParser(),
+			extension.NewStrikethroughParser(),
+			extension.NewTaskListItemParser(),
+		))
 	})
 
-	document := engine.parser.Parse(goldtext.NewReader(source))
+	document := engine.parser.Parse(source)
 	for child := document.FirstChild(); child != nil; child = child.NextSibling() {
 		visitor(child)
 	}
@@ -166,10 +155,8 @@ func (renderer *markdownRenderer) renderNode(node ast.Node, indent string) {
 		renderer.renderHeading(typedNode, indent)
 	case *ast.Paragraph:
 		renderer.appendWrappedLines(renderer.inlineText(typedNode), indent, renderer.styles.Text)
-	case *ast.FencedCodeBlock:
-		renderer.renderCodeBlock(typedNode, indent)
 	case *ast.CodeBlock:
-		renderer.renderIndentedCodeBlock(typedNode, indent)
+		renderer.renderCodeBlock(typedNode, indent)
 	case *ast.Blockquote:
 		renderer.renderChildren(typedNode, indent+markdownQuote)
 	case *ast.List:
@@ -194,17 +181,9 @@ func (renderer *markdownRenderer) renderHeading(node *ast.Heading, indent string
 	renderer.appendWrappedLines(prefix+text, indent, renderer.styles.Accent.Bold(true))
 }
 
-func (renderer *markdownRenderer) renderCodeBlock(node *ast.FencedCodeBlock, indent string) {
-	language := ""
-	if node.Language(renderer.source) != nil {
-		language = string(node.Language(renderer.source))
-	}
-
+func (renderer *markdownRenderer) renderCodeBlock(node *ast.CodeBlock, indent string) {
+	language, _ := node.Language(renderer.source)
 	renderer.appendCodeLines(language, renderer.codeBlockText(node), indent)
-}
-
-func (renderer *markdownRenderer) renderIndentedCodeBlock(node *ast.CodeBlock, indent string) {
-	renderer.appendCodeLines("", renderer.codeBlockText(node), indent)
 }
 
 func (renderer *markdownRenderer) appendCodeLines(language, text, indent string) {
@@ -260,15 +239,12 @@ func (renderer *markdownRenderer) renderListItem(item *ast.ListItem, indent, mar
 		switch typedChild := child.(type) {
 		case *ast.Paragraph:
 			renderer.appendListItemText(typedChild, blockIndent, continuationIndent)
-		case *ast.TextBlock:
-			renderer.appendListItemText(typedChild, blockIndent, continuationIndent)
 		default:
 			renderer.renderNode(typedChild, blockIndent)
 		}
 
 		if !itemRecorded && len(renderer.lines) > startLine {
-			switch child.(type) {
-			case *ast.Paragraph, *ast.TextBlock:
+			if _, ok := child.(*ast.Paragraph); ok {
 				renderer.listItems = append(renderer.listItems, MarkdownListItem{
 					StartLine: startLine,
 					EndLine:   len(renderer.lines),
@@ -319,24 +295,23 @@ func (renderer *markdownRenderer) inlineText(node ast.Node) string {
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch typedChild := child.(type) {
 		case *ast.Text:
-			builder.Write(typedChild.Segment.Value(renderer.source))
+			builder.WriteString(typedChild.Value.Value(renderer.source))
 
 			if typedChild.SoftLineBreak() || typedChild.HardLineBreak() {
 				builder.WriteString(" ")
 			}
 		case *ast.CodeSpan:
 			builder.WriteString("`")
-			builder.WriteString(renderer.inlineText(typedChild))
+			builder.WriteString(typedChild.Value.Value(renderer.source))
 			builder.WriteString("`")
-		case *ast.String:
-			builder.Write(typedChild.Value)
 		case *ast.Link:
 			label := renderer.inlineText(typedChild)
 			builder.WriteString(label)
 
-			if len(typedChild.Destination) > 0 {
+			destination := typedChild.Destination.Value(renderer.source)
+			if destination != "" {
 				builder.WriteString(" (")
-				builder.Write(typedChild.Destination)
+				builder.WriteString(destination)
 				builder.WriteString(")")
 			}
 		default:
@@ -347,16 +322,8 @@ func (renderer *markdownRenderer) inlineText(node ast.Node) string {
 	return strings.TrimSpace(builder.String())
 }
 
-func (renderer *markdownRenderer) codeBlockText(node ast.Node) string {
-	var builder strings.Builder
-
-	lines := node.Lines()
-	for index := 0; index < lines.Len(); index++ {
-		segment := lines.At(index)
-		builder.Write(segment.Value(renderer.source))
-	}
-
-	return builder.String()
+func (renderer *markdownRenderer) codeBlockText(node *ast.CodeBlock) string {
+	return string(node.Value.Bytes(renderer.source))
 }
 
 func (renderer *markdownRenderer) renderTable(node *extast.Table, indent string) {
@@ -393,12 +360,19 @@ func (adapter markdownTableAdapter) rows(node *extast.Table) [][]TableCell {
 	rows := [][]TableCell{}
 
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		row, ok := child.(*extast.TableRow)
+		body, ok := child.(*extast.TableBody)
 		if !ok {
 			continue
 		}
 
-		rows = append(rows, adapter.cells(row, adapter.renderer.styles.Text))
+		for rowNode := body.FirstChild(); rowNode != nil; rowNode = rowNode.NextSibling() {
+			row, ok := rowNode.(*extast.TableRow)
+			if !ok {
+				continue
+			}
+
+			rows = append(rows, adapter.cells(row, adapter.renderer.styles.Text))
+		}
 	}
 
 	return rows
