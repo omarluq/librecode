@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -385,6 +386,82 @@ func TestDesktopClipboardReturnsWriteFailure(t *testing.T) {
 	assert.Equal(t, clipboardCopyText, string(result.writes[0]))
 }
 
+func TestDesktopClipboardReturnsWriteError(t *testing.T) {
+	t.Parallel()
+
+	writeErr := errors.New("write failed")
+	writer := desktopClipboard{
+		prepare: func() error { return nil },
+		init:    func() error { return nil },
+		read:    nil,
+		write: func(context.Context, clipboard.Format, []byte, ...clipboard.Option) (<-chan struct{}, error) {
+			return nil, writeErr
+		},
+	}
+
+	err := writer.WriteText(clipboardCopyText)
+
+	require.ErrorIs(t, err, writeErr)
+}
+
+func TestDesktopClipboardReadsImage(t *testing.T) {
+	t.Parallel()
+
+	image := []byte("image")
+	writer := desktopClipboard{
+		prepare: func() error { return nil },
+		init:    func() error { return nil },
+		write:   nil,
+		read: func(context.Context, clipboard.Format, ...clipboard.Option) ([]byte, error) {
+			return image, nil
+		},
+	}
+
+	got, err := writer.ReadImage()
+
+	require.NoError(t, err)
+	assert.Equal(t, image, got)
+	image[0] = 'X'
+
+	assert.Equal(t, []byte("image"), got)
+}
+
+func TestDesktopClipboardTreatsMissingImageAsEmpty(t *testing.T) {
+	t.Parallel()
+
+	writer := desktopClipboard{
+		prepare: func() error { return nil },
+		init:    func() error { return nil },
+		write:   nil,
+		read: func(context.Context, clipboard.Format, ...clipboard.Option) ([]byte, error) {
+			return nil, clipboard.ErrNoData
+		},
+	}
+
+	got, err := writer.ReadImage()
+
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+func TestDesktopClipboardReturnsReadError(t *testing.T) {
+	t.Parallel()
+
+	readErr := errors.New("read failed")
+	writer := desktopClipboard{
+		prepare: func() error { return nil },
+		init:    func() error { return nil },
+		write:   nil,
+		read: func(context.Context, clipboard.Format, ...clipboard.Option) ([]byte, error) {
+			return nil, readErr
+		},
+	}
+
+	_, err := writer.ReadImage()
+
+	require.ErrorIs(t, err, readErr)
+}
+
 func TestDesktopClipboardReturnsInitError(t *testing.T) {
 	t.Parallel()
 
@@ -429,11 +506,18 @@ func callDesktopClipboard(text string, initErr error, changed <-chan struct{}) d
 
 			return initErr
 		},
-		read: func(clipboard.Format) []byte { return nil },
-		write: func(_ clipboard.Format, data []byte) <-chan struct{} {
+		read: func(context.Context, clipboard.Format, ...clipboard.Option) ([]byte, error) {
+			return nil, clipboard.ErrNoData
+		},
+		write: func(
+			_ context.Context,
+			_ clipboard.Format,
+			data []byte,
+			_ ...clipboard.Option,
+		) (<-chan struct{}, error) {
 			result.writes = append(result.writes, append([]byte(nil), data...))
 
-			return changed
+			return changed, nil
 		},
 	}
 
