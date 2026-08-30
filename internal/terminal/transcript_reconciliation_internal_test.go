@@ -107,6 +107,7 @@ func TestBindPromptUserMessageEntryIDTargetsLocalPromptIdentity(t *testing.T) {
 
 	assert.Equal(t, reconciliationFirstEntry, app.transcript.History[0].Identity.EntryID)
 	assert.Equal(t, reconciliationSecondEntry, app.transcript.History[1].Identity.EntryID)
+	assert.True(t, app.transcript.HasOlder)
 }
 
 func testSessionMessage(createdAt time.Time, entryID string) database.SessionMessageEntity {

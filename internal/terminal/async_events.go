@@ -689,6 +689,7 @@ func (app *App) bindPromptUserMessageEntryID(promptID uint64, entryID string) {
 		message := &app.transcript.History[index]
 		if message.Identity != nil && message.Identity.PromptID == promptID && message.Role == transcript.RoleUser {
 			message.Identity.EntryID = entryID
+			app.transcript.HasOlder = true
 
 			return
 		}
