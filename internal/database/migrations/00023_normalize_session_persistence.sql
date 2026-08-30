@@ -276,7 +276,11 @@ CREATE TABLE session_completion_entry_deliveries (
  FOREIGN KEY(delivery_id) REFERENCES session_completion_deliveries(id) ON DELETE CASCADE
 );
 
-INSERT INTO session_entries
+INSERT INTO session_entries (
+ id,session_id,parent_id,entry_type,custom_type,data_json,summary,created_at,
+ tool_name,tool_status,tool_args_json,token_estimate,model_facing,display,
+ compaction_first_kept_entry_id,compaction_tokens_before,branch_from_entry_id,operation_id
+)
 SELECT id,session_id,parent_id,entry_type,custom_type,
  json_remove(data_json,
   '$.tool_name','$.tool_status','$.tool_args_json','$.token_estimate','$.model_facing','$.display',
