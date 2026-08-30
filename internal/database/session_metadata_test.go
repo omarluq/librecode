@@ -36,6 +36,7 @@ func TestSessionRepository_EnrichesEntryMetadata(t *testing.T) {
 	assert.Equal(t, "read", toolEntry.ToolName)
 	assert.Equal(t, "success", toolEntry.ToolStatus)
 	assert.JSONEq(t, `{"path":"main.go"}`, toolEntry.ToolArgsJSON)
+	assert.JSONEq(t, `{}`, toolEntry.DataJSON)
 	assert.Positive(t, toolEntry.TokenEstimate)
 
 	fetched, found, err := repository.Entry(ctx, session.ID, toolEntry.ID)
@@ -47,6 +48,37 @@ func TestSessionRepository_EnrichesEntryMetadata(t *testing.T) {
 	assert.Equal(t, toolEntry.TokenEstimate, fetched.TokenEstimate)
 	assert.Equal(t, toolEntry.ModelFacing, fetched.ModelFacing)
 	assert.Equal(t, toolEntry.Display, fetched.Display)
+}
+
+func TestSessionRepository_CustomEntryToolMetadataRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repository := newTestSessionRepository(t)
+	session, err := repository.CreateSession(ctx, "/work", "custom metadata", "")
+	require.NoError(t, err)
+
+	const metadata = `{
+		"tool_name":"custom-tool",
+		"tool_status":"pending",
+		"tool_args_json":"{\"value\":1}",
+		"details":{"key":"value"}
+	}`
+
+	entry, err := repository.AppendCustom(ctx, session.ID, "extension", metadata)
+	require.NoError(t, err)
+	assert.Equal(t, "custom-tool", entry.ToolName)
+	assert.Equal(t, "pending", entry.ToolStatus)
+	assert.JSONEq(t, `{"value":1}`, entry.ToolArgsJSON)
+	assert.JSONEq(t, `{"details":{"key":"value"}}`, entry.DataJSON)
+
+	fetched, found, err := repository.Entry(ctx, session.ID, entry.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, entry.ToolName, fetched.ToolName)
+	assert.Equal(t, entry.ToolStatus, fetched.ToolStatus)
+	assert.Equal(t, entry.ToolArgsJSON, fetched.ToolArgsJSON)
+	assert.JSONEq(t, entry.DataJSON, fetched.DataJSON)
 }
 
 func TestSessionRepository_EnrichesCompactionMetadata(t *testing.T) {
