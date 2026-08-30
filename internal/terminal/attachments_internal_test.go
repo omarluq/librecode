@@ -234,7 +234,7 @@ func TestAppendSessionMessagesRestoresAttachmentSummaries(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	app.appendSessionMessages([]database.SessionMessageEntity{{
-		CreatedAt: time.Time{}, ID: "", SessionID: "", EntryID: "", Sender: "",
+		CreatedAt: time.Time{}, SessionID: "", EntryID: "", Sender: "",
 		Role: database.RoleUser, Content: "", Provider: "", Model: "",
 		Parts: []database.MessagePartEntity{{
 			Type: database.MessagePartImage, Text: "", Name: testImageAttachmentName,

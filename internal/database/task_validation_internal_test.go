@@ -123,12 +123,6 @@ func messageValidationCases(entityID string, now time.Time) []entityValidationCa
 
 			return validateSessionMessageEntity(&entity)
 		}, wantError: ""},
-		{name: "message id", validate: func() error {
-			entity := validMessageEntity(entityID, now)
-			entity.ID = ""
-
-			return validateSessionMessageEntity(&entity)
-		}, wantError: "message.id is required"},
 		{name: "message session", validate: func() error {
 			entity := validMessageEntity(entityID, now)
 			entity.SessionID = ""
@@ -347,7 +341,7 @@ func validEntryEntity(entityID string, now time.Time) EntryEntity {
 }
 
 func validMessageEntity(entityID string, now time.Time) SessionMessageEntity {
-	return SessionMessageEntity{CreatedAt: now, ID: entityID, SessionID: entityID, EntryID: entityID,
+	return SessionMessageEntity{CreatedAt: now, SessionID: entityID, EntryID: entityID,
 		Sender: string(RoleUser), Role: RoleUser, Content: "", Provider: "", Model: "", Parts: nil}
 }
 

@@ -78,15 +78,11 @@ func validateSessionMessageEntity(entity *SessionMessageEntity) error {
 		return errors.New("message is required")
 	}
 
-	if err := validateUUIDv7("message.id", entity.ID); err != nil {
+	if err := validateUUIDv7("message.entry_id", entity.EntryID); err != nil {
 		return err
 	}
 
 	if err := validateUUIDv7("message.session_id", entity.SessionID); err != nil {
-		return err
-	}
-
-	if err := validateUUIDv7("message.entry_id", entity.EntryID); err != nil {
 		return err
 	}
 

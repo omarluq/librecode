@@ -23,68 +23,78 @@ type sessionMessagePartRow struct {
 }
 
 type sessionMessageRow struct {
-	ID        string `ksql:"id"`
-	SessionID string `ksql:"session_id"`
-	EntryID   string `ksql:"entry_id"`
-	Sender    string `ksql:"sender"`
-	Role      string `ksql:"role"`
-	Content   string `ksql:"content"`
-	Provider  string `ksql:"provider"`
-	Model     string `ksql:"model"`
-	CreatedAt string `ksql:"created_at"`
+	EntryID    string `ksql:"entry_id"`
+	SessionID  string `ksql:"session_id"`
+	CustomType string `ksql:"custom_type"`
+	Role       string `ksql:"role"`
+	Provider   string `ksql:"provider"`
+	Model      string `ksql:"model"`
+	CreatedAt  string `ksql:"created_at"`
 }
 
-func sessionMessageFromRow(row *sessionMessageRow) (*SessionMessageEntity, error) {
+func sessionMessageFromRow(row *sessionMessageRow, parts []MessagePartEntity) (*SessionMessageEntity, error) {
 	createdAt, err := parseTime(row.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 
-	return &SessionMessageEntity{
-		CreatedAt: createdAt,
-		ID:        row.ID,
-		SessionID: row.SessionID,
-		EntryID:   row.EntryID,
-		Sender:    row.Sender,
-		Role:      Role(row.Role),
-		Content:   row.Content,
-		Provider:  row.Provider,
-		Model:     row.Model, Parts: nil,
-	}, nil
+	entry := EntryEntity{
+		ID:                         row.EntryID,
+		SessionID:                  row.SessionID,
+		ParentID:                   nil,
+		Type:                       "",
+		CustomType:                 row.CustomType,
+		DataJSON:                   "",
+		Summary:                    "",
+		CreatedAt:                  createdAt,
+		ToolName:                   "",
+		ToolStatus:                 "",
+		ToolArgsJSON:               "",
+		CompactionFirstKeptEntryID: "",
+		BranchFromEntryID:          "",
+		TokenEstimate:              0,
+		ModelFacing:                false,
+		Display:                    false,
+		CompactionTokensBefore:     0,
+		Message: MessageEntity{
+			Timestamp: createdAt,
+			Role:      Role(row.Role),
+			Content:   "",
+			Provider:  row.Provider,
+			Model:     row.Model,
+			Parts:     nil,
+		},
+	}
+	message := projectSessionMessage(&entry, parts)
+
+	return &message, nil
 }
 
-func sessionMessagesFromRows(rows []sessionMessageRow) ([]SessionMessageEntity, error) {
-	return collectSQLRows(rows, sessionMessageFromRow)
-}
+const sessionMessageSelectColumns = `
+e.id AS entry_id, e.session_id, e.custom_type, m.role, m.provider, m.model, e.created_at`
 
-// Messages returns normalized messages for a session in creation order.
+// Messages returns normalized messages for a session in deterministic creation order.
 func (repository *SessionRepository) Messages(ctx context.Context, sessionID string) ([]SessionMessageEntity, error) {
-	const query = `
-SELECT id, session_id, entry_id, sender, role, content, provider, model, created_at
-FROM session_messages
-WHERE session_id = ?
-ORDER BY created_at ASC`
+	query := fmt.Sprintf(`SELECT %s FROM session_entries AS e
+JOIN session_messages AS m ON m.entry_id = e.id
+WHERE e.session_id = ? ORDER BY e.created_at ASC, e.id ASC`, sessionMessageSelectColumns)
 
-	return repository.querySessionMessages(ctx, sessionID, query, "messages", sessionID)
+	return repository.querySessionMessages(ctx, query, "messages", sessionID)
 }
 
-// TranscriptMessages returns displayable normalized messages for a session in creation order.
+// TranscriptMessages returns displayable normalized messages in deterministic creation order.
 func (repository *SessionRepository) TranscriptMessages(
 	ctx context.Context,
 	sessionID string,
 ) ([]SessionMessageEntity, error) {
-	const query = `
-SELECT m.id, m.session_id, m.entry_id, m.sender, m.role, m.content, m.provider, m.model, m.created_at
-FROM session_messages AS m
-JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
-WHERE m.session_id = ? AND e.display = 1
-ORDER BY m.created_at ASC, m.entry_id ASC`
+	query := fmt.Sprintf(`SELECT %s FROM session_entries AS e
+JOIN session_messages AS m ON m.entry_id = e.id
+WHERE e.session_id = ? AND e.display = 1 ORDER BY e.created_at ASC, e.id ASC`, sessionMessageSelectColumns)
 
-	return repository.querySessionMessages(ctx, sessionID, query, "transcript_messages", sessionID)
+	return repository.querySessionMessages(ctx, query, "transcript_messages", sessionID)
 }
 
-// TranscriptMessageTail returns at most limit displayable messages from the end
-// of a session, ordered chronologically for display.
+// TranscriptMessageTail returns at most limit displayable messages from the end, chronologically.
 func (repository *SessionRepository) TranscriptMessageTail(
 	ctx context.Context,
 	sessionID string,
@@ -94,24 +104,16 @@ func (repository *SessionRepository) TranscriptMessageTail(
 		return []SessionMessageEntity{}, nil
 	}
 
-	const query = `
-SELECT id, session_id, entry_id, sender, role, content, provider, model, created_at
-FROM (
-    SELECT m.id, m.session_id, m.entry_id, m.sender, m.role, m.content,
-           m.provider, m.model, m.created_at
-    FROM session_messages AS m INDEXED BY idx_session_messages_session_created
-    JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
-    WHERE m.session_id = ? AND e.display = 1
-    ORDER BY m.created_at DESC, m.entry_id DESC
-    LIMIT ?
-)
-ORDER BY created_at ASC, entry_id ASC`
+	query := fmt.Sprintf(`SELECT entry_id, session_id, custom_type, role, provider, model, created_at FROM (
+SELECT %s FROM session_entries AS e INDEXED BY idx_session_entries_transcript_cursor
+JOIN session_messages AS m ON m.entry_id = e.id
+WHERE e.session_id = ? AND e.display = 1 ORDER BY e.created_at DESC, e.id DESC LIMIT ?)
+ORDER BY created_at ASC, entry_id ASC`, sessionMessageSelectColumns)
 
-	return repository.querySessionMessages(ctx, sessionID, query, "transcript_message_tail", sessionID, limit)
+	return repository.querySessionMessages(ctx, query, "transcript_message_tail", sessionID, limit)
 }
 
-// TranscriptMessagesBefore returns at most limit displayable messages older
-// than the supplied message cursor, ordered chronologically for display.
+// TranscriptMessagesBefore returns at most limit displayable messages older than the cursor.
 func (repository *SessionRepository) TranscriptMessagesBefore(
 	ctx context.Context,
 	sessionID string,
@@ -123,55 +125,60 @@ func (repository *SessionRepository) TranscriptMessagesBefore(
 		return []SessionMessageEntity{}, nil
 	}
 
-	const query = `
-SELECT id, session_id, entry_id, sender, role, content, provider, model, created_at
-FROM (
-    SELECT m.id, m.session_id, m.entry_id, m.sender, m.role, m.content,
-           m.provider, m.model, m.created_at
-    FROM session_messages AS m INDEXED BY idx_session_messages_session_created
-    JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
-    WHERE m.session_id = ? AND e.display = 1
-      AND (m.created_at < ? OR (m.created_at = ? AND m.entry_id < ?))
-    ORDER BY m.created_at DESC, m.entry_id DESC
-    LIMIT ?
-)
-ORDER BY created_at ASC, entry_id ASC`
-
-	cursorTime := formatTime(beforeCreatedAt)
+	query := fmt.Sprintf(`SELECT entry_id, session_id, custom_type, role, provider, model, created_at FROM (
+SELECT %s FROM session_entries AS e INDEXED BY idx_session_entries_transcript_cursor
+JOIN session_messages AS m ON m.entry_id = e.id
+WHERE e.session_id = ? AND e.display = 1 AND (e.created_at < ? OR (e.created_at = ? AND e.id < ?))
+ORDER BY e.created_at DESC, e.id DESC LIMIT ?) ORDER BY created_at ASC, entry_id ASC`, sessionMessageSelectColumns)
+	cursor := formatTime(beforeCreatedAt)
 
 	return repository.querySessionMessages(
-		ctx, sessionID, query, "transcript_messages_before",
-		sessionID, cursorTime, cursorTime, beforeEntryID, limit,
+		ctx, query, "transcript_messages_before", sessionID, cursor, cursor, beforeEntryID, limit,
 	)
 }
 
 func (repository *SessionRepository) querySessionMessages(
 	ctx context.Context,
-	sessionID string,
 	query string,
 	operation string,
 	args ...any,
 ) ([]SessionMessageEntity, error) {
-	operationLabel := strings.ReplaceAll(operation, "_", " ")
+	label := strings.ReplaceAll(operation, "_", " ")
 
 	result, err := readOnlyTransactionValue(
-		ctx, repository.sql, func(provider ksql.Provider) ([]SessionMessageEntity, error) {
+		ctx, repository.sql,
+		func(provider ksql.Provider) ([]SessionMessageEntity, error) {
 			rows := []sessionMessageRow{}
 			if err := provider.Query(ctx, &rows, query, args...); err != nil {
-				return nil, oops.In("database").Code("list_"+operation).Wrapf(err, "query %s", operationLabel)
+				return nil, oops.In("database").Code("list_"+operation).Wrapf(err, "query %s", label)
 			}
 
-			messages, err := sessionMessagesFromRows(rows)
+			ids := make([]string, len(rows))
+			for i := range rows {
+				ids[i] = rows[i].EntryID
+			}
+
+			parts, err := repository.withProvider(provider).messagePartsForEntries(ctx, ids)
 			if err != nil {
-				return nil, oops.In("database").Code("scan_"+operation).Wrapf(err, "scan %s", operationLabel)
-			}
-
-			if err := repository.withProvider(provider).hydrateSessionMessages(ctx, sessionID, messages); err != nil {
 				return nil, err
 			}
 
+			messages := make([]SessionMessageEntity, len(rows))
+			for rowIndex := range rows {
+				message, scanErr := sessionMessageFromRow(
+					&rows[rowIndex],
+					parts[rows[rowIndex].EntryID],
+				)
+				if scanErr != nil {
+					return nil, oops.In("database").Code("scan_"+operation).Wrapf(scanErr, "scan %s", label)
+				}
+
+				messages[rowIndex] = *message
+			}
+
 			return messages, nil
-		})
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -185,131 +192,97 @@ func (repository *SessionRepository) ContextHasImageParts(
 	sessionID string,
 	entryID string,
 ) (bool, error) {
-	const query = `
-WITH RECURSIVE chain(id, parent_id) AS (
-    SELECT id, parent_id
-    FROM session_entries
-    WHERE session_id = ? AND id = ?
-    UNION ALL
-    SELECT parent.id, parent.parent_id
-    FROM session_entries AS parent
-    JOIN chain AS child ON parent.id = child.parent_id
-    WHERE parent.session_id = ?
-)
-SELECT EXISTS (
-    SELECT 1
-    FROM session_message_parts AS part
-    JOIN chain ON chain.id = part.entry_id
-    WHERE part.session_id = ? AND part.type = ?
-) AS present`
+	const query = `WITH RECURSIVE chain(id,parent_id) AS (
+SELECT id,parent_id FROM session_entries WHERE session_id=? AND id=? UNION ALL
+SELECT p.id,p.parent_id FROM session_entries p JOIN chain c ON p.id=c.parent_id WHERE p.session_id=? )
+SELECT EXISTS(SELECT 1 FROM chain JOIN session_messages m ON m.entry_id=chain.id
+JOIN session_message_parts part ON part.entry_id=m.entry_id WHERE part.type=?) AS present`
 
 	var row struct {
 		Present int `ksql:"present"`
 	}
 	if err := repository.sql.QueryOne(
-		ctx, &row, query, sessionID, entryID, sessionID, sessionID, string(MessagePartImage),
+		ctx, &row, query, sessionID, entryID, sessionID, string(MessagePartImage),
 	); err != nil {
-		return false, oops.In("database").Code("context_has_image_parts").
-			Wrapf(err, "query context image parts")
+		return false, oops.In("database").Code("context_has_image_parts").Wrapf(err, "query context image parts")
 	}
 
 	return row.Present != 0, nil
 }
 
-// MessageForEntry returns the normalized message for an entry.
+// MessageForEntry returns the normalized message for an entry scoped to its session.
 func (repository *SessionRepository) MessageForEntry(
 	ctx context.Context,
 	sessionID string,
 	entryID string,
 ) (*SessionMessageEntity, bool, error) {
-	const query = `
-SELECT id, session_id, entry_id, sender, role, content, provider, model, created_at
-FROM session_messages
-WHERE session_id = ? AND entry_id = ?`
+	query := fmt.Sprintf(`SELECT %s FROM session_entries e
+JOIN session_messages m ON m.entry_id=e.id
+WHERE e.session_id=? AND e.id=?`, sessionMessageSelectColumns)
 
-	type messageResult struct {
+	type result struct {
 		message *SessionMessageEntity
 		found   bool
 	}
 
-	result, err := readOnlyTransactionValue(ctx, repository.sql, func(provider ksql.Provider) (messageResult, error) {
+	got, err := readOnlyTransactionValue(ctx, repository.sql, func(provider ksql.Provider) (result, error) {
 		var row sessionMessageRow
-		if queryErr := provider.QueryOne(ctx, &row, query, sessionID, entryID); queryErr != nil {
-			if errors.Is(queryErr, ksql.ErrRecordNotFound) {
-				return messageResult{message: nil, found: false}, nil
+		if err := provider.QueryOne(ctx, &row, query, sessionID, entryID); err != nil {
+			if errors.Is(err, ksql.ErrRecordNotFound) {
+				return result{message: nil, found: false}, nil
 			}
 
-			return messageResult{}, oops.In("database").Code("get_message").Wrapf(queryErr, "load session message")
+			return result{}, oops.In("database").Code("get_message").Wrapf(err, "load session message")
 		}
 
-		message, scanErr := sessionMessageFromRow(&row)
-		if scanErr != nil {
-			return messageResult{}, oops.In("database").Code("scan_message").Wrapf(scanErr, "scan session message")
+		parts, err := repository.withProvider(provider).messagePartsForEntries(ctx, []string{entryID})
+		if err != nil {
+			return result{}, err
 		}
 
-		messages := []SessionMessageEntity{*message}
-
-		snapshot := repository.withProvider(provider)
-		if hydrateErr := snapshot.hydrateSessionMessages(ctx, sessionID, messages); hydrateErr != nil {
-			return messageResult{}, hydrateErr
+		message, err := sessionMessageFromRow(&row, parts[entryID])
+		if err != nil {
+			return result{}, oops.In("database").Code("scan_message").Wrapf(err, "scan session message")
 		}
 
-		return messageResult{message: &messages[0], found: true}, nil
+		return result{message: message, found: true}, nil
 	})
 	if err != nil {
 		return nil, false, err
 	}
 
-	return result.value.message, result.value.found, nil
+	return got.value.message, got.value.found, nil
 }
 
 func (repository *SessionRepository) appendEntryMessage(
 	ctx context.Context,
 	transaction ksql.Provider,
 	entry *EntryEntity,
-	messageID string,
-	partIDs []string,
 ) error {
 	if !entryCarriesMessage(entry) {
 		return nil
 	}
 
-	message := sessionMessageFromEntry(entry, messageID)
+	message := sessionMessageFromEntry(entry)
 	if err := validateSessionMessageEntity(&message); err != nil {
 		return oops.In("database").Code("validate_message").Wrapf(err, "validate session message")
 	}
 
-	const insertMessage = `
-INSERT INTO session_messages (id, session_id, entry_id, sender, role, content, provider, model, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-
-	_, err := transaction.Exec(
-		ctx,
-		insertMessage,
-		message.ID,
-		message.SessionID,
-		message.EntryID,
-		message.Sender,
-		string(message.Role),
-		message.Content,
-		message.Provider,
-		message.Model,
-		formatTime(message.CreatedAt),
-	)
-	if err != nil {
+	const insertMessage = `INSERT INTO session_messages (entry_id,role,provider,model) VALUES (?,?,?,?)`
+	if _, err := transaction.Exec(
+		ctx, insertMessage, message.EntryID, string(message.Role), message.Provider, message.Model,
+	); err != nil {
 		return oops.In("database").Code("append_message").Wrapf(err, "append session message")
 	}
 
-	const insertPart = `
-INSERT INTO session_message_parts
-    (id, session_id, entry_id, sequence, type, text, mime_type, name, width, height, data)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	const insertPart = `INSERT INTO session_message_parts
+(entry_id,sequence,type,text,mime_type,name,width,height,data) VALUES (?,?,?,?,?,?,?,?,?)`
 
 	for sequence := range message.Parts {
 		part := &message.Parts[sequence]
-		if _, err := transaction.Exec(ctx, insertPart,
-			partIDs[sequence], message.SessionID, message.EntryID, sequence, string(part.Type),
-			part.Text, part.MIMEType, part.Name, part.Width, part.Height, part.Data,
+		if _, err := transaction.Exec(
+			ctx, insertPart, message.EntryID, sequence, string(part.Type), part.Text,
+			part.MIMEType, part.Name, part.Width, part.Height, part.Data,
 		); err != nil {
 			return oops.In("database").Code("append_message_part").Wrapf(err, "append session message part")
 		}
@@ -318,41 +291,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	return nil
 }
 
-func entryCarriesMessage(entry *EntryEntity) bool {
-	return entry.Message.Role != ""
-}
-
-func newEntryMessageIDs(entry *EntryEntity) (messageID string, partIDs []string) {
-	if !entryCarriesMessage(entry) {
-		return "", nil
-	}
-
-	partIDs = make([]string, len(entry.Message.Parts))
-	for index := range partIDs {
-		partIDs[index] = newEntryID()
-	}
-
-	return newEntryID(), partIDs
-}
-
-func sessionMessageFromEntry(entry *EntryEntity, messageID string) SessionMessageEntity {
-	createdAt := entry.Message.Timestamp
-	if createdAt.IsZero() {
-		createdAt = entry.CreatedAt
-	}
-
-	return SessionMessageEntity{
-		CreatedAt: createdAt,
-		ID:        messageID,
-		SessionID: entry.SessionID,
-		EntryID:   entry.ID,
-		Sender:    senderIdentity(entry),
-		Role:      entry.Message.Role,
-		Content:   entry.Message.Content,
-		Provider:  entry.Message.Provider,
-		Model:     entry.Message.Model,
-		Parts:     cloneMessageParts(entry.Message.Parts),
-	}
+func entryCarriesMessage(entry *EntryEntity) bool { return entry.Message.Role != "" }
+func sessionMessageFromEntry(entry *EntryEntity) SessionMessageEntity {
+	return projectSessionMessage(entry, entry.Message.Parts)
 }
 
 func (repository *SessionRepository) withProvider(provider ksql.Provider) *SessionRepository {
@@ -362,39 +303,13 @@ func (repository *SessionRepository) withProvider(provider ksql.Provider) *Sessi
 	return &snapshot
 }
 
-func (repository *SessionRepository) hydrateSessionMessages(
-	ctx context.Context,
-	sessionID string,
-	messages []SessionMessageEntity,
-) error {
-	entryIDs := make([]string, len(messages))
-	for index := range messages {
-		entryIDs[index] = messages[index].EntryID
-	}
-
-	partsByEntry, err := repository.messagePartsForEntries(ctx, sessionID, entryIDs)
-	if err != nil {
-		return err
-	}
-
-	for index := range messages {
-		messages[index].Parts = cloneMessageParts(partsByEntry[messages[index].EntryID])
-	}
-
-	return nil
-}
-
-func (repository *SessionRepository) hydrateEntryMessage(
-	ctx context.Context,
-	sessionID string,
-	entry *EntryEntity,
-) error {
+func (repository *SessionRepository) hydrateEntryMessage(ctx context.Context, entry *EntryEntity) error {
 	if entry == nil {
 		return nil
 	}
 
 	entries := []EntryEntity{*entry}
-	if err := repository.hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+	if err := repository.hydrateEntryMessages(ctx, entries); err != nil {
 		return err
 	}
 
@@ -403,26 +318,81 @@ func (repository *SessionRepository) hydrateEntryMessage(
 	return nil
 }
 
-func (repository *SessionRepository) hydrateEntryMessages(
-	ctx context.Context,
-	sessionID string,
-	entries []EntryEntity,
-) error {
-	entryIDs := make([]string, 0, len(entries))
-	for index := range entries {
-		if entryCarriesMessage(&entries[index]) {
-			entryIDs = append(entryIDs, entries[index].ID)
+func (repository *SessionRepository) hydrateEntryMessages(ctx context.Context, entries []EntryEntity) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	ids := make([]string, len(entries))
+
+	byID := make(map[string]int, len(entries))
+	for i := range entries {
+		ids[i] = entries[i].ID
+		byID[entries[i].ID] = i
+	}
+
+	if err := repository.hydrateMessageEnvelopes(ctx, entries, ids, byID); err != nil {
+		return err
+	}
+
+	messageIDs := make([]string, 0, len(entries))
+	for i := range entries {
+		if entryCarriesMessage(&entries[i]) {
+			messageIDs = append(messageIDs, entries[i].ID)
 		}
 	}
 
-	partsByEntry, err := repository.messagePartsForEntries(ctx, sessionID, entryIDs)
+	parts, err := repository.messagePartsForEntries(ctx, messageIDs)
 	if err != nil {
 		return err
 	}
 
-	for index := range entries {
-		if entryCarriesMessage(&entries[index]) {
-			entries[index].Message.Parts = cloneMessageParts(partsByEntry[entries[index].ID])
+	for i := range entries {
+		if entryCarriesMessage(&entries[i]) {
+			entries[i].Message.Parts = cloneMessageParts(parts[entries[i].ID])
+			entries[i].Message.Content = messagePartsText(entries[i].Message.Parts)
+		}
+	}
+
+	return nil
+}
+
+func (repository *SessionRepository) hydrateMessageEnvelopes(
+	ctx context.Context,
+	entries []EntryEntity,
+	ids []string,
+	byID map[string]int,
+) error {
+	const batchSize = 900
+	for start := 0; start < len(ids); start += batchSize {
+		end := min(start+batchSize, len(ids))
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", end-start), ",")
+		query := fmt.Sprintf(
+			`SELECT entry_id,role,provider,model FROM session_messages WHERE entry_id IN (%s)`,
+			placeholders,
+		)
+
+		args := make([]any, end-start)
+		for index, id := range ids[start:end] {
+			args[index] = id
+		}
+
+		var rows []struct {
+			EntryID  string `ksql:"entry_id"`
+			Role     string `ksql:"role"`
+			Provider string `ksql:"provider"`
+			Model    string `ksql:"model"`
+		}
+		if err := repository.sql.Query(ctx, &rows, query, args...); err != nil {
+			return oops.In("database").Code("list_message_envelopes").Wrapf(err, "query message envelopes")
+		}
+
+		for _, row := range rows {
+			entry := &entries[byID[row.EntryID]]
+			entry.Message.Timestamp = entry.CreatedAt
+			entry.Message.Role = Role(row.Role)
+			entry.Message.Provider = row.Provider
+			entry.Message.Model = row.Model
 		}
 	}
 
@@ -431,39 +401,36 @@ func (repository *SessionRepository) hydrateEntryMessages(
 
 func (repository *SessionRepository) messagePartsForEntries(
 	ctx context.Context,
-	sessionID string,
 	entryIDs []string,
 ) (map[string][]MessagePartEntity, error) {
-	const entryIDBatchSize = 900
+	const batchSize = 900
 
-	partsByEntry := make(map[string][]MessagePartEntity, len(entryIDs))
-	for start := 0; start < len(entryIDs); start += entryIDBatchSize {
-		end := min(start+entryIDBatchSize, len(entryIDs))
-		if err := repository.appendMessagePartsBatch(ctx, sessionID, entryIDs[start:end], partsByEntry); err != nil {
+	parts := make(map[string][]MessagePartEntity, len(entryIDs))
+	for start := 0; start < len(entryIDs); start += batchSize {
+		end := min(start+batchSize, len(entryIDs))
+		if err := repository.appendMessagePartsBatch(ctx, entryIDs[start:end], parts); err != nil {
 			return nil, err
 		}
 	}
 
-	return partsByEntry, nil
+	return parts, nil
 }
-
 func (repository *SessionRepository) appendMessagePartsBatch(
 	ctx context.Context,
-	sessionID string,
-	entryIDs []string,
-	partsByEntry map[string][]MessagePartEntity,
+	ids []string,
+	parts map[string][]MessagePartEntity,
 ) error {
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(entryIDs)), ",")
-	query := fmt.Sprintf(`
-SELECT entry_id, type, text, data, mime_type, name, width, height
-FROM session_message_parts
-WHERE session_id = ? AND entry_id IN (%s)
-ORDER BY entry_id, sequence`, placeholders)
-	args := make([]any, 0, len(entryIDs)+1)
+	if len(ids) == 0 {
+		return nil
+	}
 
-	args = append(args, sessionID)
-	for _, entryID := range entryIDs {
-		args = append(args, entryID)
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	query := fmt.Sprintf(`SELECT entry_id,type,text,data,mime_type,name,width,height
+FROM session_message_parts WHERE entry_id IN (%s) ORDER BY entry_id,sequence`, placeholders)
+
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
 	}
 
 	rows := []sessionMessagePartRow{}
@@ -471,17 +438,20 @@ ORDER BY entry_id, sequence`, placeholders)
 		return oops.In("database").Code("list_message_parts").Wrapf(err, "query message parts")
 	}
 
-	for index := range rows {
-		row := &rows[index]
-		partsByEntry[row.EntryID] = append(partsByEntry[row.EntryID], MessagePartEntity{
-			Type: MessagePartType(row.Type), Text: row.Text, Data: cloneBytes(row.Data),
-			MIMEType: row.MIMEType, Name: row.Name, Width: row.Width, Height: row.Height,
+	for _, row := range rows {
+		parts[row.EntryID] = append(parts[row.EntryID], MessagePartEntity{
+			Type:     MessagePartType(row.Type),
+			Text:     row.Text,
+			MIMEType: row.MIMEType,
+			Name:     row.Name,
+			Data:     cloneBytes(row.Data),
+			Width:    row.Width,
+			Height:   row.Height,
 		})
 	}
 
 	return nil
 }
-
 func cloneMessageParts(parts []MessagePartEntity) []MessagePartEntity {
 	if parts == nil {
 		return nil
@@ -490,25 +460,16 @@ func cloneMessageParts(parts []MessagePartEntity) []MessagePartEntity {
 	cloned := make([]MessagePartEntity, len(parts))
 	copy(cloned, parts)
 
-	for index := range cloned {
-		cloned[index].Data = cloneBytes(parts[index].Data)
+	for i := range cloned {
+		cloned[i].Data = cloneBytes(parts[i].Data)
 	}
 
 	return cloned
 }
-
 func cloneBytes(data []byte) []byte {
 	if data == nil {
 		return nil
 	}
 
 	return append([]byte(nil), data...)
-}
-
-func senderIdentity(entry *EntryEntity) string {
-	if entry.Message.Role == RoleCustom && entry.CustomType != "" {
-		return entry.CustomType
-	}
-
-	return string(entry.Message.Role)
 }

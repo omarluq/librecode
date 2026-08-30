@@ -16,10 +16,6 @@ type entryRow struct {
 	ID                         string  `ksql:"id"`
 	SessionID                  string  `ksql:"session_id"`
 	EntryType                  string  `ksql:"entry_type"`
-	Role                       string  `ksql:"role"`
-	Content                    string  `ksql:"content"`
-	Provider                   string  `ksql:"provider"`
-	Model                      string  `ksql:"model"`
 	CustomType                 string  `ksql:"custom_type"`
 	DataJSON                   string  `ksql:"data_json"`
 	Summary                    string  `ksql:"summary"`
@@ -50,10 +46,10 @@ func entryFromRow(row *entryRow) (*EntryEntity, error) {
 		ParentID:  row.ParentID,
 		Message: MessageEntity{
 			Timestamp: createdAt,
-			Role:      Role(row.Role),
-			Content:   row.Content,
-			Provider:  row.Provider,
-			Model:     row.Model,
+			Role:      "",
+			Content:   "",
+			Provider:  "",
+			Model:     "",
 			Parts:     nil,
 		},
 		Summary:                    row.Summary,
@@ -79,8 +75,8 @@ func entriesFromRows(rows []entryRow) ([]EntryEntity, error) {
 }
 
 const entrySelectColumns = `
-id, session_id, parent_id, entry_type, role, content,
-provider, model, custom_type, data_json, summary, created_at,
+id, session_id, parent_id, entry_type,
+custom_type, data_json, summary, created_at,
 tool_name, tool_status, tool_args_json, token_estimate, model_facing, display,
 compaction_first_kept_entry_id, compaction_tokens_before, branch_from_entry_id`
 
@@ -93,7 +89,7 @@ WHERE session_id = ?
 ORDER BY created_at DESC
 LIMIT 1`, entrySelectColumns)
 
-	return repository.queryEntry(ctx, sessionID, query, "leaf_entry", "load leaf entry", sessionID)
+	return repository.queryEntry(ctx, query, "leaf_entry", "load leaf entry", sessionID)
 }
 
 // Entries returns all entries for a session in append order.
@@ -104,7 +100,7 @@ FROM session_entries
 WHERE session_id = ?
 ORDER BY created_at ASC`, entrySelectColumns)
 
-	return repository.queryEntries(ctx, sessionID, query, "list_entries", "scan_entry", "entries", sessionID)
+	return repository.queryEntries(ctx, query, "list_entries", "scan_entry", "entries", sessionID)
 }
 
 // Entry loads one entry by id.
@@ -114,12 +110,11 @@ SELECT %s
 FROM session_entries
 WHERE session_id = ? AND id = ?`, entrySelectColumns)
 
-	return repository.queryEntry(ctx, sessionID, query, "get_entry", "load entry", sessionID, entryID)
+	return repository.queryEntry(ctx, query, "get_entry", "load entry", sessionID, entryID)
 }
 
 func (repository *SessionRepository) queryEntry(
 	ctx context.Context,
-	sessionID string,
 	query string,
 	queryCode string,
 	queryMessage string,
@@ -146,7 +141,7 @@ func (repository *SessionRepository) queryEntry(
 		}
 
 		snapshot := repository.withProvider(provider)
-		if hydrateErr := snapshot.hydrateEntryMessage(ctx, sessionID, entry); hydrateErr != nil {
+		if hydrateErr := snapshot.hydrateEntryMessage(ctx, entry); hydrateErr != nil {
 			return entryResult{}, hydrateErr
 		}
 
@@ -180,17 +175,6 @@ func (repository *SessionRepository) deleteEntryBranchTx(
 ) error {
 	if _, err := transaction.Exec(
 		ctx,
-		deleteEntryBranchMessages,
-		sessionID,
-		entryID,
-		sessionID,
-		sessionID,
-	); err != nil {
-		return oops.In("database").Code("delete_branch_messages").Wrapf(err, "delete branch messages")
-	}
-
-	if _, err := transaction.Exec(
-		ctx,
 		deleteEntryBranchEntries,
 		sessionID,
 		entryID,
@@ -207,18 +191,6 @@ func (repository *SessionRepository) deleteEntryBranchTx(
 
 	return nil
 }
-
-const deleteEntryBranchMessages = `
-WITH RECURSIVE subtree(id) AS (
-    SELECT id FROM session_entries WHERE session_id = ? AND id = ?
-    UNION ALL
-    SELECT child.id
-    FROM session_entries child
-    JOIN subtree parent ON child.parent_id = parent.id
-    WHERE child.session_id = ?
-)
-DELETE FROM session_messages
-WHERE session_id = ? AND entry_id IN (SELECT id FROM subtree)`
 
 const deleteEntryBranchEntries = `
 WITH RECURSIVE subtree(id) AS (
@@ -255,12 +227,11 @@ ORDER BY created_at ASC`, entrySelectColumns)
 		args = append(args, *parentID)
 	}
 
-	return repository.queryEntries(ctx, sessionID, query, "list_children", "scan_child", "children", args...)
+	return repository.queryEntries(ctx, query, "list_children", "scan_child", "children", args...)
 }
 
 func (repository *SessionRepository) queryEntries(
 	ctx context.Context,
-	sessionID string,
 	query string,
 	queryCode string,
 	scanCode string,
@@ -278,7 +249,7 @@ func (repository *SessionRepository) queryEntries(
 			return nil, oops.In("database").Code(scanCode).Wrapf(err, "scan session %s", operation)
 		}
 
-		if err := repository.withProvider(provider).hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+		if err := repository.withProvider(provider).hydrateEntryMessages(ctx, entries); err != nil {
 			return nil, err
 		}
 
@@ -309,10 +280,8 @@ func (repository *SessionRepository) appendCompactionConditional(
 		return nil, err
 	}
 
-	messageID, partIDs := newEntryMessageIDs(entry)
-
 	resolved, err := transactionValue(ctx, repository.sql, func(transaction ksql.Provider) (*EntryEntity, error) {
-		return repository.appendCompactionTx(ctx, transaction, entry, operationID, messageID, partIDs)
+		return repository.appendCompactionTx(ctx, transaction, entry, operationID)
 	})
 	if err != nil {
 		if codedErr, ok := oops.AsOops(err); ok && codedErr.Code() != "" {
@@ -322,7 +291,7 @@ func (repository *SessionRepository) appendCompactionConditional(
 		return nil, oops.In("database").Code("append_compaction_tx").Wrapf(err, "append compaction transaction")
 	}
 
-	if err := repository.hydrateEntryMessage(ctx, resolved.value.SessionID, resolved.value); err != nil {
+	if err := repository.hydrateEntryMessage(ctx, resolved.value); err != nil {
 		return nil, err
 	}
 
@@ -334,8 +303,6 @@ func (repository *SessionRepository) appendCompactionTx(
 	transaction ksql.Provider,
 	entry *EntryEntity,
 	operationID string,
-	messageID string,
-	partIDs []string,
 ) (*EntryEntity, error) {
 	inserted, err := repository.insertEntryIgnoringConflictTx(ctx, transaction, entry, operationID, true)
 	if err != nil {
@@ -346,7 +313,7 @@ func (repository *SessionRepository) appendCompactionTx(
 		return resolveCompactionConflict(ctx, transaction, entry, operationID)
 	}
 
-	if err := repository.appendEntryMessage(ctx, transaction, entry, messageID, partIDs); err != nil {
+	if err := repository.appendEntryMessage(ctx, transaction, entry); err != nil {
 		return nil, err
 	}
 
@@ -460,10 +427,8 @@ func (repository *SessionRepository) appendEntry(ctx context.Context, entry *Ent
 		return err
 	}
 
-	messageID, partIDs := newEntryMessageIDs(entry)
-
 	if err := repository.sql.Transaction(ctx, func(transaction ksql.Provider) error {
-		return repository.appendEntryTx(ctx, transaction, entry, messageID, partIDs)
+		return repository.appendEntryTx(ctx, transaction, entry)
 	}); err != nil {
 		return oops.In("database").Code("append_entry_tx").Wrapf(err, "append entry transaction")
 	}
@@ -475,14 +440,12 @@ func (repository *SessionRepository) appendEntryTx(
 	ctx context.Context,
 	transaction ksql.Provider,
 	entry *EntryEntity,
-	messageID string,
-	partIDs []string,
 ) error {
 	if err := repository.insertEntryTx(ctx, transaction, entry); err != nil {
 		return err
 	}
 
-	if err := repository.appendEntryMessage(ctx, transaction, entry, messageID, partIDs); err != nil {
+	if err := repository.appendEntryMessage(ctx, transaction, entry); err != nil {
 		return err
 	}
 
@@ -550,11 +513,10 @@ func (repository *SessionRepository) insertEntryIgnoringConflictTx(
 
 	insertEntry := `
 INSERT INTO session_entries (
-    id, session_id, parent_id, entry_type, role, content,
-    provider, model, custom_type, data_json, summary, created_at,
+    id, session_id, parent_id, entry_type, custom_type, data_json, summary, created_at,
     tool_name, tool_status, tool_args_json, token_estimate, model_facing, display,
     compaction_first_kept_entry_id, compaction_tokens_before, branch_from_entry_id, operation_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` + conflictClause
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` + conflictClause
 
 	result, err := transaction.Exec(
 		ctx,
@@ -563,10 +525,6 @@ INSERT INTO session_entries (
 		entry.SessionID,
 		entry.ParentID,
 		string(entry.Type),
-		string(entry.Message.Role),
-		entry.Message.Content,
-		entry.Message.Provider,
-		entry.Message.Model,
 		entry.CustomType,
 		entry.DataJSON,
 		entry.Summary,

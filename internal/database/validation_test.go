@@ -2,8 +2,8 @@ package database_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"time"
 
@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 type invalidUUIDCase struct {
@@ -36,16 +37,45 @@ func TestRepositoryRejectsInvalidUUIDs(t *testing.T) {
 
 			ctx := context.Background()
 			connection := newMigratedThroughVersion(t, 13)
-			repository := testutil.SessionRepository(t, connection)
-			session, err := repository.CreateSession(ctx, "/work", "uuid", "")
-			require.NoError(t, err)
-
-			helper := sessionTestHelper{ctx, t, repository}
-			entry := helper.appendMessage(session.ID, nil, database.RoleUser, "hello")
-			_, err = connection.ExecContext(ctx, test.query, test.args(t, session, entry)...)
+			session, entry := insertLegacyUUIDFixtures(ctx, t, connection)
+			_, err := connection.ExecContext(ctx, test.query, test.args(t, session, entry)...)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), test.wantError)
 		})
+	}
+}
+
+func insertLegacyUUIDFixtures(
+	ctx context.Context,
+	t *testing.T,
+	connection *sql.DB,
+) (*database.SessionEntity, *database.EntryEntity) {
+	t.Helper()
+
+	const (
+		sessionID = "01900000-0000-7000-8000-000000000501"
+		entryID   = "01900000-0000-7000-8000-000000000502"
+	)
+
+	_, err := connection.ExecContext(ctx, `
+INSERT INTO sessions (id, cwd, name, parent_session, created_at, updated_at)
+VALUES ('01900000-0000-7000-8000-000000000501', '/work', 'uuid', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO session_entries (id, session_id, entry_type, role, content, data_json, created_at)
+VALUES ('01900000-0000-7000-8000-000000000502', '01900000-0000-7000-8000-000000000501',
+        'message', 'user', 'hello', '{}', CURRENT_TIMESTAMP)`)
+	require.NoError(t, err)
+
+	return &database.SessionEntity{
+		CreatedAt: time.Time{}, UpdatedAt: time.Time{}, ID: sessionID,
+		CWD: "", Name: "", ParentSession: "",
+	}, &database.EntryEntity{
+		CreatedAt: time.Time{}, ParentID: nil, ToolStatus: "", SessionID: "", ToolArgsJSON: "",
+		CustomType: "", DataJSON: "", ID: entryID, Summary: "", ToolName: "", Type: "",
+		BranchFromEntryID: "", CompactionFirstKeptEntryID: "",
+		Message: database.MessageEntity{
+			Timestamp: time.Time{}, Role: "", Content: "", Provider: "", Model: "", Parts: nil,
+		},
+		CompactionTokensBefore: 0, TokenEstimate: 0, Display: false, ModelFacing: false,
 	}
 }
 

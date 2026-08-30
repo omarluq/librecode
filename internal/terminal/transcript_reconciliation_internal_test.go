@@ -90,7 +90,6 @@ func TestBindPromptUserMessageEntryIDTargetsTrackedMessage(t *testing.T) {
 func testSessionMessage(createdAt time.Time, entryID string) database.SessionMessageEntity {
 	return database.SessionMessageEntity{
 		CreatedAt: createdAt,
-		ID:        "message-" + entryID,
 		SessionID: "session",
 		EntryID:   entryID,
 		Sender:    "",

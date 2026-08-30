@@ -159,7 +159,7 @@ func TestRowConvertersReturnTimestampErrors(t *testing.T) {
 			run: func() error {
 				row := validSessionMessageRow()
 				row.CreatedAt = invalidTimestamp
-				_, err := sessionMessageFromRow(&row)
+				_, err := sessionMessageFromRow(&row, nil)
 
 				return err
 			},
@@ -194,7 +194,7 @@ func validSessionRow() sessionRow {
 		ID:            testRowSessionID,
 		CWD:           testCWD,
 		Name:          repositorySessionName,
-		ParentSession: "",
+		ParentSession: nil,
 		CreatedAt:     testRowCreatedAt,
 		UpdatedAt:     "2026-01-01T00:00:01Z",
 	}
@@ -206,10 +206,6 @@ func validEntryRow() entryRow {
 		ID:                         "entry-id",
 		SessionID:                  testRowSessionID,
 		EntryType:                  string(EntryTypeMessage),
-		Role:                       string(RoleUser),
-		Content:                    "hello",
-		Provider:                   "",
-		Model:                      "",
 		CustomType:                 "",
 		DataJSON:                   "{}",
 		Summary:                    "",
@@ -228,15 +224,13 @@ func validEntryRow() entryRow {
 
 func validSessionMessageRow() sessionMessageRow {
 	return sessionMessageRow{
-		ID:        "message-id",
-		SessionID: testRowSessionID,
-		EntryID:   "entry-id",
-		Sender:    string(RoleUser),
-		Role:      string(RoleUser),
-		Content:   "hello",
-		Provider:  "",
-		Model:     "",
-		CreatedAt: testRowCreatedAt,
+		SessionID:  testRowSessionID,
+		EntryID:    "entry-id",
+		CustomType: "",
+		Role:       string(RoleUser),
+		Provider:   "",
+		Model:      "",
+		CreatedAt:  testRowCreatedAt,
 	}
 }
 

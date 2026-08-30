@@ -35,12 +35,12 @@ func NewSessionRepositoryWithProvider(provider ksql.Provider) (*SessionRepositor
 }
 
 type sessionRow struct {
-	ID            string `ksql:"id"`
-	CWD           string `ksql:"cwd"`
-	Name          string `ksql:"name"`
-	ParentSession string `ksql:"parent_session"`
-	CreatedAt     string `ksql:"created_at"`
-	UpdatedAt     string `ksql:"updated_at"`
+	ID            string  `ksql:"id"`
+	CWD           string  `ksql:"cwd"`
+	Name          string  `ksql:"name"`
+	ParentSession *string `ksql:"parent_session_id"`
+	CreatedAt     string  `ksql:"created_at"`
+	UpdatedAt     string  `ksql:"updated_at"`
 }
 
 func sessionFromRow(row *sessionRow) (*SessionEntity, error) {
@@ -54,13 +54,18 @@ func sessionFromRow(row *sessionRow) (*SessionEntity, error) {
 		return nil, err
 	}
 
+	parentSession := ""
+	if row.ParentSession != nil {
+		parentSession = *row.ParentSession
+	}
+
 	return &SessionEntity{
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
 		ID:            row.ID,
 		CWD:           row.CWD,
 		Name:          row.Name,
-		ParentSession: row.ParentSession,
+		ParentSession: parentSession,
 	}, nil
 }
 
@@ -90,8 +95,8 @@ func prepareSession(now time.Time, cwd, name, parentSession string) (*SessionEnt
 
 func insertSession(ctx context.Context, provider ksql.Provider, session *SessionEntity) error {
 	const statement = `
-INSERT INTO sessions (id, cwd, name, parent_session, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?)`
+INSERT INTO sessions (id, cwd, name, parent_session_id, created_at, updated_at)
+VALUES (?, ?, ?, NULLIF(?, ''), ?, ?)`
 
 	if _, err := provider.Exec(
 		ctx,
@@ -131,9 +136,9 @@ func (repository *SessionRepository) CreateSession(
 // LatestSession returns the newest top-level session for cwd.
 func (repository *SessionRepository) LatestSession(ctx context.Context, cwd string) (*SessionEntity, bool, error) {
 	const query = `
-SELECT id, cwd, name, parent_session, created_at, updated_at
+SELECT id, cwd, name, parent_session_id, created_at, updated_at
 FROM sessions
-WHERE cwd = ? AND parent_session = ''
+WHERE cwd = ? AND parent_session_id IS NULL
 ORDER BY updated_at DESC
 LIMIT 1`
 
@@ -143,7 +148,7 @@ LIMIT 1`
 // GetSession loads a session by id.
 func (repository *SessionRepository) GetSession(ctx context.Context, sessionID string) (*SessionEntity, bool, error) {
 	const query = `
-SELECT id, cwd, name, parent_session, created_at, updated_at
+SELECT id, cwd, name, parent_session_id, created_at, updated_at
 FROM sessions
 WHERE id = ?`
 
@@ -177,9 +182,9 @@ func (repository *SessionRepository) loadSession(
 // ListSessions returns top-level sessions for cwd ordered by newest first.
 func (repository *SessionRepository) ListSessions(ctx context.Context, cwd string) ([]SessionEntity, error) {
 	const query = `
-SELECT id, cwd, name, parent_session, created_at, updated_at
+SELECT id, cwd, name, parent_session_id, created_at, updated_at
 FROM sessions
-WHERE cwd = ? AND parent_session = ''
+WHERE cwd = ? AND parent_session_id IS NULL
 ORDER BY updated_at DESC`
 
 	rows := []sessionRow{}
@@ -201,9 +206,9 @@ func (repository *SessionRepository) ListChildSessions(
 	parentSessionID string,
 ) ([]SessionEntity, error) {
 	const query = `
-SELECT id, cwd, name, parent_session, created_at, updated_at
+SELECT id, cwd, name, parent_session_id, created_at, updated_at
 FROM sessions
-WHERE parent_session = ?
+WHERE parent_session_id = ?
 ORDER BY updated_at DESC`
 
 	rows := []sessionRow{}
@@ -304,13 +309,8 @@ WHERE workflow.owner_session_id = ? AND child.owner_session_id = ?`, ownerSessio
 }
 
 func deleteSessionContent(ctx context.Context, transaction ksql.Provider, sessionID string) error {
-	for _, statement := range []string{
-		`DELETE FROM session_messages WHERE session_id = ?`,
-		`DELETE FROM session_entries WHERE session_id = ?`,
-	} {
-		if _, err := transaction.Exec(ctx, statement, sessionID); err != nil {
-			return oops.In("database").Code("delete_session_content").Wrapf(err, "delete session content")
-		}
+	if _, err := transaction.Exec(ctx, `DELETE FROM session_entries WHERE session_id = ?`, sessionID); err != nil {
+		return oops.In("database").Code("delete_session_content").Wrapf(err, "delete session content")
 	}
 
 	return nil
