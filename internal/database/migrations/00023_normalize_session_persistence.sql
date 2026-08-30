@@ -8,7 +8,8 @@
 -- databases can lack it while retaining those triggers, so restore its canonical
 -- contents before preflight and before recreating the final triggers.
 CREATE TABLE IF NOT EXISTS uuid_v7_pattern (pattern TEXT NOT NULL);
-DELETE FROM uuid_v7_pattern;
+-- Reset every canonical-pattern row. The predicate is exhaustive because pattern is NOT NULL.
+DELETE FROM uuid_v7_pattern WHERE pattern IS NOT NULL;
 INSERT INTO uuid_v7_pattern (pattern) VALUES ('[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-7[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[89aAbB][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]-[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]');
 
 CREATE TEMP TABLE migration_23_assert (failed INTEGER NOT NULL);
@@ -234,7 +235,8 @@ DROP INDEX IF EXISTS idx_session_message_parts_session_entry_image;
 -- all existing foreign keys that reference sessions unchanged. The nullable added column
 -- can carry the normalized self-reference directly.
 ALTER TABLE sessions ADD COLUMN parent_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;
-UPDATE sessions SET parent_session_id=NULLIF(parent_session,'');
+-- The new column is already NULL for root sessions, so only copy nonempty parent IDs.
+UPDATE sessions SET parent_session_id=parent_session WHERE parent_session <> '';
 ALTER TABLE sessions DROP COLUMN parent_session;
 
 -- Rename the entry-delivery edge first so its FK can be rebuilt against the new entries.
