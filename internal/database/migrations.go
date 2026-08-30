@@ -32,7 +32,7 @@ func NewMigrationProvider(database *sql.DB, migrationRoot fs.FS) (*goose.Provide
 
 func newMigrationProvider(database *sql.DB, migrationRoot fs.FS, logger *slog.Logger) (*goose.Provider, error) {
 	options := []goose.ProviderOption{goose.WithDisableGlobalRegistry(true)}
-	if logger != nil {
+	if logger != nil && logger.Enabled(context.Background(), slog.LevelDebug) {
 		options = append(options, goose.WithVerbose(true), goose.WithSlog(logger))
 	}
 
@@ -54,7 +54,8 @@ func Migrate(ctx context.Context, database *sql.DB) error {
 	return migrate(ctx, database, nil)
 }
 
-// MigrateWithLogger applies migrations with statement-level progress logging.
+// MigrateWithLogger applies migrations using the application logger.
+// Statement-level Goose progress is enabled when debug logging is configured.
 func MigrateWithLogger(ctx context.Context, database *sql.DB, logger *slog.Logger) error {
 	return migrate(ctx, database, logger)
 }

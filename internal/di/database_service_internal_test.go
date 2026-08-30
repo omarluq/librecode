@@ -30,7 +30,7 @@ func TestOpenSQLiteDatabaseAppliesPragmasAndMigrations(t *testing.T) {
 		MaxIdleConns:    1,
 		ConnMaxLifetime: 0,
 		BusyTimeout:     1200 * time.Millisecond,
-	})
+	}, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 
@@ -59,6 +59,7 @@ func TestNewDatabaseServiceSharesCompositeRepositories(t *testing.T) {
 	injector := do.New()
 	provideTestApplicationContext(injector)
 	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
+	do.Provide(injector, NewLoggerService)
 	service, err := NewDatabaseService(injector)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, service.Shutdown(context.Background())) })
@@ -88,6 +89,7 @@ func TestNewDatabaseServiceReturnsDependencyErrors(t *testing.T) {
 
 			injector := do.New()
 			test.prepare(injector)
+			do.Provide(injector, NewLoggerService)
 			service, err := NewDatabaseService(injector)
 			require.Error(t, err)
 			assert.Nil(t, service)
@@ -107,6 +109,7 @@ func TestNewDatabaseServiceReturnsFilesystemError(t *testing.T) {
 	injector := do.New()
 	provideTestApplicationContext(injector)
 	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
+	do.Provide(injector, NewLoggerService)
 
 	service, err := NewDatabaseService(injector)
 	require.Error(t, err)
@@ -126,6 +129,7 @@ func TestNewDatabaseServiceHonorsCanceledApplicationContext(t *testing.T) {
 	injector := do.New()
 	do.ProvideNamedValue(injector, applicationContextKey, ctx)
 	do.ProvideValue(injector, &ConfigService{cfg: cfg, path: "", interactive: false})
+	do.Provide(injector, NewLoggerService)
 
 	service, err := NewDatabaseService(injector)
 	require.ErrorIs(t, err, context.Canceled)
@@ -177,7 +181,7 @@ func TestSetupSQLiteDatabaseReturnsPingError(t *testing.T) {
 	err = setupSQLiteDatabase(ctx, connection, "test.db", config.DatabaseConfig{
 		Path: "", ApplyMigrations: false, MaxOpenConns: 0, MaxIdleConns: 0,
 		ConnMaxLifetime: 0, BusyTimeout: 0,
-	})
+	}, nil)
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Error(t, connection.PingContext(context.Background()))
 }
