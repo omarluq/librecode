@@ -33,6 +33,7 @@ __pycache__/
 
 # Environment
 .env
+/.vfox/
 
 # OS files
 .DS_Store
