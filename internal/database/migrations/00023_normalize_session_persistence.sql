@@ -28,11 +28,11 @@ INSERT INTO migration_23_assert SELECT foreign_keys <> 1 FROM pragma_foreign_key
 -- Check only tables whose rows or foreign-key definitions this migration rewrites. A
 -- database-wide check scans unrelated multi-gigabyte task and event payload tables.
 INSERT INTO migration_23_assert SELECT
- EXISTS(SELECT 1 FROM pragma_foreign_key_check('sessions'))
- OR EXISTS(SELECT 1 FROM pragma_foreign_key_check('session_entries'))
- OR EXISTS(SELECT 1 FROM pragma_foreign_key_check('session_messages'))
- OR EXISTS(SELECT 1 FROM pragma_foreign_key_check('session_message_parts'))
- OR EXISTS(SELECT 1 FROM pragma_foreign_key_check('session_completion_entry_deliveries'));
+ EXISTS(SELECT 1 FROM pragma_foreign_key_check('sessions')) -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
+ OR EXISTS(SELECT 1 FROM pragma_foreign_key_check('session_entries')) -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
+ OR EXISTS(SELECT 1 FROM pragma_foreign_key_check('session_messages')) -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
+ OR EXISTS(SELECT 1 FROM pragma_foreign_key_check('session_message_parts')) -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
+ OR EXISTS(SELECT 1 FROM pragma_foreign_key_check('session_completion_entry_deliveries')); -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
 
 -- Graph ownership and retained duplicated-envelope preflight. Legacy message sender and
 -- created_at projections are intentionally discarded, so differences in those fields do
@@ -81,7 +81,7 @@ SELECT EXISTS (
     WHERE entry.id IS NULL OR message.entry_id IS NULL
        OR part.session_id <> entry.session_id
        OR part.session_id <> message.session_id
-       OR typeof(part.sequence) <> 'integer' OR part.sequence < 0
+       OR typeof(part.sequence) <> 'integer' OR part.sequence < 0 -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
 );
 INSERT INTO migration_23_assert
 SELECT EXISTS (
@@ -118,11 +118,11 @@ INSERT INTO migration_23_assert
 SELECT EXISTS (
  SELECT 1 FROM session_entries AS e WHERE
  (CASE WHEN json_valid(e.data_json) THEN
-   (json_type(e.data_json,'$.tool_name') NOT IN ('text','null') OR
+   (json_type(e.data_json,'$.tool_name') NOT IN ('text','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.tool_name')='text' AND json_extract(e.data_json,'$.tool_name')<>e.tool_name) OR
-    json_type(e.data_json,'$.tool_status') NOT IN ('text','null') OR
+    json_type(e.data_json,'$.tool_status') NOT IN ('text','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.tool_status')='text' AND json_extract(e.data_json,'$.tool_status')<>e.tool_status) OR
-    json_type(e.data_json,'$.tool_args_json') NOT IN ('text','null') OR
+    json_type(e.data_json,'$.tool_args_json') NOT IN ('text','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.tool_args_json')='text' AND json_extract(e.data_json,'$.tool_args_json')<>e.tool_args_json))
   ELSE 0 END)
 );
@@ -134,17 +134,17 @@ SELECT EXISTS (
  SELECT 1 FROM session_entries AS e WHERE
  e.model_facing NOT IN (0,1) OR e.display NOT IN (0,1) OR
  (CASE WHEN json_valid(e.data_json) THEN
-   (json_type(e.data_json,'$.token_estimate') NOT IN ('integer','null') OR
+   (json_type(e.data_json,'$.token_estimate') NOT IN ('integer','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.token_estimate')='integer' AND json_extract(e.data_json,'$.token_estimate')<>e.token_estimate) OR
-    json_type(e.data_json,'$.model_facing') NOT IN ('true','false','null') OR
+    json_type(e.data_json,'$.model_facing') NOT IN ('true','false','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.model_facing') IN ('true','false') AND json_extract(e.data_json,'$.model_facing')<>e.model_facing) OR
-    json_type(e.data_json,'$.display') NOT IN ('true','false','null') OR
+    json_type(e.data_json,'$.display') NOT IN ('true','false','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.display') IN ('true','false') AND json_extract(e.data_json,'$.display')<>e.display) OR
-    json_type(e.data_json,'$.compaction_tokens_before') NOT IN ('integer','null') OR
+    json_type(e.data_json,'$.compaction_tokens_before') NOT IN ('integer','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.compaction_tokens_before')='integer' AND json_extract(e.data_json,'$.compaction_tokens_before')<>e.compaction_tokens_before) OR
-    json_type(e.data_json,'$.tokens_before') NOT IN ('integer','null') OR
+    json_type(e.data_json,'$.tokens_before') NOT IN ('integer','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.tokens_before')='integer' AND json_extract(e.data_json,'$.tokens_before')<>e.compaction_tokens_before) OR
-    json_type(e.data_json,'$.tokensBefore') NOT IN ('integer','null') OR
+    json_type(e.data_json,'$.tokensBefore') NOT IN ('integer','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.tokensBefore')='integer' AND json_extract(e.data_json,'$.tokensBefore')<>e.compaction_tokens_before))
   ELSE 0 END)
 );
@@ -153,27 +153,27 @@ SELECT EXISTS (
 INSERT INTO migration_23_assert
 SELECT EXISTS (
  SELECT 1 FROM session_entries AS e WHERE CASE WHEN json_valid(e.data_json) THEN
-   (json_type(e.data_json,'$.compaction_first_kept_entry_id') NOT IN ('text','null') OR
+   (json_type(e.data_json,'$.compaction_first_kept_entry_id') NOT IN ('text','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.compaction_first_kept_entry_id')='text' AND
       (json_extract(e.data_json,'$.compaction_first_kept_entry_id')<>e.compaction_first_kept_entry_id OR
        (json_extract(e.data_json,'$.compaction_first_kept_entry_id')<>'' AND json_extract(e.data_json,'$.compaction_first_kept_entry_id') NOT GLOB (SELECT pattern FROM uuid_v7_pattern LIMIT 1)))) OR
-    json_type(e.data_json,'$.first_kept_entry_id') NOT IN ('text','null') OR
+    json_type(e.data_json,'$.first_kept_entry_id') NOT IN ('text','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.first_kept_entry_id')='text' AND
       (json_extract(e.data_json,'$.first_kept_entry_id')<>e.compaction_first_kept_entry_id OR
        (json_extract(e.data_json,'$.first_kept_entry_id')<>'' AND json_extract(e.data_json,'$.first_kept_entry_id') NOT GLOB (SELECT pattern FROM uuid_v7_pattern LIMIT 1)))) OR
-    json_type(e.data_json,'$.firstKeptEntryId') NOT IN ('text','null') OR
+    json_type(e.data_json,'$.firstKeptEntryId') NOT IN ('text','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.firstKeptEntryId')='text' AND
       (json_extract(e.data_json,'$.firstKeptEntryId')<>e.compaction_first_kept_entry_id OR
        (json_extract(e.data_json,'$.firstKeptEntryId')<>'' AND json_extract(e.data_json,'$.firstKeptEntryId') NOT GLOB (SELECT pattern FROM uuid_v7_pattern LIMIT 1)))) OR
-    json_type(e.data_json,'$.branch_from_entry_id') NOT IN ('text','null') OR
+    json_type(e.data_json,'$.branch_from_entry_id') NOT IN ('text','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.branch_from_entry_id')='text' AND
       (json_extract(e.data_json,'$.branch_from_entry_id')<>e.branch_from_entry_id OR
        (json_extract(e.data_json,'$.branch_from_entry_id')<>'' AND json_extract(e.data_json,'$.branch_from_entry_id') NOT GLOB (SELECT pattern FROM uuid_v7_pattern LIMIT 1)))) OR
-    json_type(e.data_json,'$.from_id') NOT IN ('text','null') OR
+    json_type(e.data_json,'$.from_id') NOT IN ('text','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.from_id')='text' AND
       (json_extract(e.data_json,'$.from_id')<>e.branch_from_entry_id OR
        (json_extract(e.data_json,'$.from_id')<>'' AND json_extract(e.data_json,'$.from_id') NOT GLOB (SELECT pattern FROM uuid_v7_pattern LIMIT 1)))) OR
-    json_type(e.data_json,'$.fromId') NOT IN ('text','null') OR
+    json_type(e.data_json,'$.fromId') NOT IN ('text','null') OR -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
     (json_type(e.data_json,'$.fromId')='text' AND
       (json_extract(e.data_json,'$.fromId')<>e.branch_from_entry_id OR
        (json_extract(e.data_json,'$.fromId')<>'' AND json_extract(e.data_json,'$.fromId') NOT GLOB (SELECT pattern FROM uuid_v7_pattern LIMIT 1)))))
@@ -236,7 +236,7 @@ DROP INDEX IF EXISTS idx_session_message_parts_session_entry_image;
 -- can carry the normalized self-reference directly.
 ALTER TABLE sessions ADD COLUMN parent_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL;
 -- The new column is already NULL for root sessions, so only copy nonempty parent IDs.
-UPDATE sessions SET parent_session_id=parent_session WHERE parent_session <> '';
+UPDATE sessions SET parent_session_id=parent_session WHERE length(parent_session) > 0;
 ALTER TABLE sessions DROP COLUMN parent_session;
 
 -- Rename the entry-delivery edge first so its FK can be rebuilt against the new entries.
@@ -449,8 +449,8 @@ INSERT INTO migration_23_assert SELECT EXISTS(
 INSERT INTO migration_23_assert SELECT
  (SELECT count(*) FROM pragma_foreign_key_list('sessions') WHERE "table"='sessions' AND "from"='parent_session_id' AND "to"='id' AND on_delete='SET NULL')<>1;
 INSERT INTO migration_23_assert SELECT
- (SELECT count(DISTINCT id) FROM pragma_foreign_key_list('session_entries') WHERE on_delete='CASCADE')<>2
- OR (SELECT count(*) FROM pragma_foreign_key_list('session_entries') WHERE "table"='sessions' AND "from"='session_id' AND "to"='id' AND on_delete='CASCADE')<>1
+ (SELECT count(DISTINCT id) FROM pragma_foreign_key_list('session_entries') WHERE on_delete='CASCADE')<>2 -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
+ OR (SELECT count(*) FROM pragma_foreign_key_list('session_entries') WHERE "table"='sessions' AND "from"='session_id' AND "to"='id' AND on_delete='CASCADE')<>1 -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
  OR (SELECT count(*) FROM (
       SELECT id FROM pragma_foreign_key_list('session_entries')
       WHERE "table"='session_entries' AND on_delete='CASCADE' GROUP BY id
@@ -459,7 +459,7 @@ INSERT INTO migration_23_assert SELECT
        AND sum(seq=1 AND "from"='session_id' AND "to"='session_id')=1
     ))<>1;
 INSERT INTO migration_23_assert SELECT
- (SELECT count(*) FROM pragma_foreign_key_list('session_messages') WHERE "table"='session_entries' AND "from"='entry_id' AND "to"='id' AND on_delete='CASCADE')<>1
+ (SELECT count(*) FROM pragma_foreign_key_list('session_messages') WHERE "table"='session_entries' AND "from"='entry_id' AND "to"='id' AND on_delete='CASCADE')<>1 -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
  OR (SELECT count(*) FROM pragma_foreign_key_list('session_message_parts') WHERE "table"='session_messages' AND "from"='entry_id' AND "to"='entry_id' AND on_delete='CASCADE')<>1
  OR (SELECT count(*) FROM pragma_foreign_key_list('session_completion_entry_deliveries') WHERE "table"='session_entries' AND "from"='entry_id' AND "to"='id' AND on_delete='CASCADE')<>1
  OR (SELECT count(*) FROM pragma_foreign_key_list('session_completion_entry_deliveries') WHERE "table"='session_completion_deliveries' AND "from"='delivery_id' AND "to"='id' AND on_delete='CASCADE')<>1;
@@ -485,7 +485,7 @@ INSERT INTO migration_23_assert SELECT
  OR (SELECT sql FROM sqlite_schema WHERE type='index' AND name='idx_session_entries_transcript_cursor') NOT LIKE '%WHERE display=1%'
  OR EXISTS(SELECT 1 FROM sqlite_schema WHERE type='index' AND name IN ('idx_session_messages_session_created','idx_session_messages_sender'));
 INSERT INTO migration_23_assert SELECT
- (SELECT count(*) FROM sqlite_schema WHERE type='trigger' AND name IN (
+ (SELECT count(*) FROM sqlite_schema WHERE type='trigger' AND name IN ( -- NOSONAR: SQLite has no SQL constants; these exact schema, JSON, type, and FK literals are required.
   'validate_sessions_id_uuid_insert','validate_sessions_id_uuid_update',
   'validate_sessions_parent_session_id_uuid_insert','validate_sessions_parent_session_id_uuid_update',
   'validate_session_entries_session_id_uuid_insert','validate_session_entries_session_id_uuid_update',
