@@ -13,7 +13,7 @@ Harbor agent docs: <https://www.harborframework.com/docs/agents>
 Build librecode first:
 
 ```bash
-mise exec -- task build
+vfox exec golang -- go tool task build
 ```
 
 Then run Harbor from the repository root:
@@ -77,5 +77,5 @@ Then rerun `task bench`. Lower `LIBRECODE_BENCH_N` if pulls or local resources a
 For local terminal render microbenchmarks, use Go benchmarks directly:
 
 ```bash
-mise exec -- go test -bench=. -benchmem ./internal/terminal
+vfox exec golang -- go test -bench=. -benchmem ./internal/terminal
 ```

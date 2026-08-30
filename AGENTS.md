@@ -9,24 +9,24 @@ librecode is a local-first AI coding assistant and programmable terminal runtime
 After code changes, run all of:
 
 ```bash
-mise exec -- go test ./...
-mise exec -- task build
-mise exec -- task ci
+vfox exec golang -- go test ./...
+vfox exec golang -- go tool task build
+vfox exec golang -- go tool task ci
 ```
 
-Report the results before committing. Use `mise exec --` for Task/Go tooling in this repo.
+Report the results before committing. Use `vfox exec golang --` for Go tooling and invoke development tools declared in `go.mod` with `go tool`.
 
 ## Common commands
 
 ```bash
-mise exec -- task build          # build ./bin/librecode
-mise exec -- task run            # build and run
-mise exec -- task test           # tests with race detector
-mise exec -- task test-coverage  # coverage report
-mise exec -- task lint           # golangci-lint
-mise exec -- task fmt            # auto-format and auto-fix lint issues
-mise exec -- task fmt-check      # check formatting without modifying files
-mise exec -- task ci             # non-mutating full CI pipeline
+vfox exec golang -- go tool task build          # build ./bin/librecode
+vfox exec golang -- go tool task run            # build and run
+vfox exec golang -- go tool task test           # tests with race detector
+vfox exec golang -- go tool task test-coverage  # coverage report
+vfox exec golang -- go tool task lint           # golangci-lint
+vfox exec golang -- go tool task fmt            # auto-format and auto-fix lint issues
+vfox exec golang -- go tool task fmt-check      # check formatting without modifying files
+vfox exec golang -- go tool task ci             # non-mutating full CI pipeline
 ```
 
 ## Project structure
