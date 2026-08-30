@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	// Register the SQLite driver used by sql.Open in this test.
 	_ "modernc.org/sqlite"
 )
 
