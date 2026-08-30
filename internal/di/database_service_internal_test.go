@@ -74,13 +74,18 @@ func TestNewDatabaseServiceReturnsDependencyErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		prepare func(do.Injector)
-		name    string
+		prepare        func(do.Injector)
+		name           string
+		registerLogger bool
 	}{
-		{name: "config", prepare: func(do.Injector) {}},
+		{name: "config", prepare: func(do.Injector) {}, registerLogger: true},
+		{name: "logger", prepare: func(injector do.Injector) {
+			provideTestApplicationContext(injector)
+			do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: "", interactive: false})
+		}, registerLogger: false},
 		{name: "application context", prepare: func(injector do.Injector) {
 			do.ProvideValue(injector, &ConfigService{cfg: testServiceConfig(), path: "", interactive: false})
-		}},
+		}, registerLogger: true},
 	}
 
 	for _, test := range tests {
@@ -89,7 +94,11 @@ func TestNewDatabaseServiceReturnsDependencyErrors(t *testing.T) {
 
 			injector := do.New()
 			test.prepare(injector)
-			do.Provide(injector, NewLoggerService)
+
+			if test.registerLogger {
+				do.Provide(injector, NewLoggerService)
+			}
+
 			service, err := NewDatabaseService(injector)
 			require.Error(t, err)
 			assert.Nil(t, service)
