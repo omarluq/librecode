@@ -219,9 +219,9 @@ func (optional *Optional) UnmarshalJSON(data []byte) error {
 }
 
 // Value returns nil for an absent timestamp and a signed integer when present.
-func (optional Optional) Value() (driver.Value, error) {
+func (optional Optional) Value() (value driver.Value, err error) {
 	if !optional.Valid {
-		return nil, nil //nolint:nilnil // SQL NULL is the intentional value for an absent timestamp.
+		return
 	}
 
 	return optional.UnixSeconds.Value()
