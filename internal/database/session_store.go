@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -113,10 +113,12 @@ func (repository *SessionRepository) Tree(ctx context.Context, sessionID string)
 	}
 
 	for parentID := range childrenByParent {
-		sort.Slice(childrenByParent[parentID], func(leftIndex, rightIndex int) bool {
-			return childrenByParent[parentID][leftIndex].CreatedAt.Before(
-				childrenByParent[parentID][rightIndex].CreatedAt,
-			)
+		slices.SortFunc(childrenByParent[parentID], func(left, right EntryEntity) int {
+			if byTime := left.CreatedAt.Compare(right.CreatedAt); byTime != 0 {
+				return byTime
+			}
+
+			return strings.Compare(left.ID, right.ID)
 		})
 	}
 

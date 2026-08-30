@@ -13,9 +13,11 @@ import (
 )
 
 const (
-	schemaIndexType     = "index"
-	createdAtColumnName = "created_at"
-	sessionIDColumnName = "session_id"
+	schemaIndexType           = "index"
+	createdAtColumnName       = "created_at"
+	sessionIDColumnName       = "session_id"
+	parentSessionIDColumnName = "parent_session_id"
+	updatedAtColumnName       = "updated_at"
 
 	deployedWorkflowMigrationV8 = `-- +goose Up
 CREATE TABLE workflow_runs (
@@ -359,6 +361,35 @@ func TestStartupQueryIndexMigration(t *testing.T) {
 	assertSchemaObjectMissing(ctx, t, connection,
 		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`,
 		"idx_tasks_state_created")
+}
+
+func TestSessionTimestampOrderIndexMigrationUsesStableIDSuffix(t *testing.T) {
+	t.Parallel()
+
+	connection := newMigratedThroughVersion(t, 23)
+	ctx := t.Context()
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+
+	_, err = provider.UpTo(ctx, 24)
+	require.NoError(t, err)
+	assertIndexColumns(ctx, t, connection, "idx_sessions_cwd_parent_updated", []string{
+		"cwd", parentSessionIDColumnName, updatedAtColumnName, "id",
+	})
+	assertIndexColumns(ctx, t, connection, "idx_sessions_parent_updated", []string{
+		parentSessionIDColumnName, updatedAtColumnName, "id",
+	})
+
+	_, err = provider.Down(ctx)
+	require.NoError(t, err)
+	assertIndexColumns(ctx, t, connection, "idx_sessions_cwd_parent_updated", []string{
+		"cwd", parentSessionIDColumnName, updatedAtColumnName,
+	})
+	assertIndexColumns(ctx, t, connection, "idx_sessions_parent_updated", []string{
+		parentSessionIDColumnName, updatedAtColumnName,
+	})
 }
 
 func TestTranscriptTailIndexMigrationUsesCursorColumns(t *testing.T) {

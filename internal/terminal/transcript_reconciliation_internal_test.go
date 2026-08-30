@@ -74,6 +74,49 @@ func TestAppendMissingSessionMessagesDoesNotReconcileDurableEntryByTimestampAndC
 	assert.Equal(t, reconciliationFirstEntry, app.transcript.History[1].Identity.EntryID)
 }
 
+func TestAppendMissingSessionMessagesOrdersEqualTimestampDurableEntriesByID(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	createdAt := time.Now().UTC()
+	app.appendMissingSessionMessages([]database.SessionMessageEntity{
+		testSessionMessage(createdAt, reconciliationSecondEntry),
+		testSessionMessage(createdAt, reconciliationFirstEntry),
+	})
+
+	require.Len(t, app.transcript.History, 2)
+	assert.Equal(t, []string{reconciliationFirstEntry, reconciliationSecondEntry}, []string{
+		app.transcript.History[0].Identity.EntryID,
+		app.transcript.History[1].Identity.EntryID,
+	})
+}
+
+func TestAppendMissingSessionMessagesPreservesEqualTimestampLocalInsertionOrder(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	createdAt := time.Now().UTC()
+	first := newChatMessage(transcript.RoleUser, "first-local")
+	first.CreatedAt = createdAt
+	first.Identity = &chatMessageIdentity{EntryID: "", PromptID: 2}
+	second := newChatMessage(transcript.RoleUser, "second-local")
+	second.CreatedAt = createdAt
+	second.Identity = &chatMessageIdentity{EntryID: "", PromptID: 1}
+
+	app.appendMessage(first)
+	app.appendMessage(second)
+
+	app.appendMissingSessionMessages([]database.SessionMessageEntity{
+		testSessionMessage(createdAt.Add(time.Second), reconciliationFirstEntry),
+	})
+
+	require.Len(t, app.transcript.History, 3)
+	assert.Equal(t, []string{"first-local", "second-local"}, []string{
+		app.transcript.History[0].Content,
+		app.transcript.History[1].Content,
+	})
+}
+
 func TestAppendMissingSessionMessagesIsIdempotent(t *testing.T) {
 	t.Parallel()
 

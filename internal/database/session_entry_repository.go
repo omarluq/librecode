@@ -86,7 +86,7 @@ func (repository *SessionRepository) LeafEntry(ctx context.Context, sessionID st
 SELECT %s
 FROM session_entries
 WHERE session_id = ?
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id DESC
 LIMIT 1`, entrySelectColumns)
 
 	return repository.queryEntry(ctx, query, "leaf_entry", "load leaf entry", sessionID)
@@ -98,7 +98,7 @@ func (repository *SessionRepository) Entries(ctx context.Context, sessionID stri
 SELECT %s
 FROM session_entries
 WHERE session_id = ?
-ORDER BY created_at ASC`, entrySelectColumns)
+ORDER BY created_at ASC, id ASC`, entrySelectColumns)
 
 	return repository.queryEntries(ctx, query, "list_entries", "scan_entry", "entries", sessionID)
 }
@@ -214,7 +214,7 @@ func (repository *SessionRepository) Children(
 SELECT %s
 FROM session_entries
 WHERE session_id = ? AND parent_id IS NULL
-ORDER BY created_at ASC`, entrySelectColumns)
+ORDER BY created_at ASC, id ASC`, entrySelectColumns)
 	args := []any{sessionID}
 
 	if parentID != nil {
@@ -222,7 +222,7 @@ ORDER BY created_at ASC`, entrySelectColumns)
 SELECT %s
 FROM session_entries
 WHERE session_id = ? AND parent_id = ?
-ORDER BY created_at ASC`, entrySelectColumns)
+ORDER BY created_at ASC, id ASC`, entrySelectColumns)
 
 		args = append(args, *parentID)
 	}

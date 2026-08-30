@@ -139,7 +139,7 @@ func (repository *SessionRepository) LatestSession(ctx context.Context, cwd stri
 SELECT id, cwd, name, parent_session_id, created_at, updated_at
 FROM sessions
 WHERE cwd = ? AND parent_session_id IS NULL
-ORDER BY updated_at DESC
+ORDER BY updated_at DESC, id DESC
 LIMIT 1`
 
 	return repository.loadSession(ctx, query, "latest_session", "load latest session", cwd)
@@ -185,7 +185,7 @@ func (repository *SessionRepository) ListSessions(ctx context.Context, cwd strin
 SELECT id, cwd, name, parent_session_id, created_at, updated_at
 FROM sessions
 WHERE cwd = ? AND parent_session_id IS NULL
-ORDER BY updated_at DESC`
+ORDER BY updated_at DESC, id DESC`
 
 	rows := []sessionRow{}
 	if err := repository.sql.Query(ctx, &rows, query, cwd); err != nil {
@@ -209,7 +209,7 @@ func (repository *SessionRepository) ListChildSessions(
 SELECT id, cwd, name, parent_session_id, created_at, updated_at
 FROM sessions
 WHERE parent_session_id = ?
-ORDER BY updated_at DESC`
+ORDER BY updated_at DESC, id DESC`
 
 	rows := []sessionRow{}
 	if err := repository.sql.Query(ctx, &rows, query, parentSessionID); err != nil {
