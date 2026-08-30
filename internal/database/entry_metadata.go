@@ -25,12 +25,15 @@ func applyEntryMetadata(entry *EntryEntity) error {
 	entry.CompactionFirstKeptEntryID = data.CompactionFirstKeptEntryID
 	entry.CompactionTokensBefore = data.CompactionTokensBefore
 	entry.BranchFromEntryID = data.BranchFromEntryID
+	entry.ToolName = data.ToolName
+	entry.ToolStatus = data.ToolStatus
+	entry.ToolArgsJSON = data.ToolArgsJSON
 
 	if entry.Message.Role == RoleToolResult {
 		metadata := parseToolMetadata(entry.Message.Content)
-		entry.ToolName = firstNonEmpty(data.ToolName, metadata.Name)
-		entry.ToolStatus = firstNonEmpty(data.ToolStatus, metadata.Status)
-		entry.ToolArgsJSON = firstNonEmpty(data.ToolArgsJSON, metadata.ArgsJSON)
+		entry.ToolName = firstNonEmpty(entry.ToolName, metadata.Name)
+		entry.ToolStatus = firstNonEmpty(entry.ToolStatus, metadata.Status)
+		entry.ToolArgsJSON = firstNonEmpty(entry.ToolArgsJSON, metadata.ArgsJSON)
 	}
 
 	// Dedicated columns are the sole owner of these projections. They are
