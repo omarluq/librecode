@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +41,11 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 	cfg, err := databaseConfig(injector)
 	if err != nil {
 		return nil, err
+	}
+
+	_, loggerErr := do.Invoke[*LoggerService](injector)
+	if loggerErr != nil {
+		return nil, loggerErr
 	}
 
 	ctx, err := applicationContext(injector)
@@ -161,7 +167,7 @@ func setupSQLiteDatabase(
 	}
 
 	if cfg.ApplyMigrations {
-		if err := database.Migrate(ctx, connection); err != nil {
+		if err := database.MigrateWithLogger(ctx, connection, slog.Default()); err != nil {
 			return closeAfterSetupError(connection, "close_after_migrate", "migrate", databasePath, err)
 		}
 	}
