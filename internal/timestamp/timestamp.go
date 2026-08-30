@@ -49,6 +49,23 @@ func FromTime(value time.Time) (UnixSeconds, error) {
 	return FromUnix(value.Unix())
 }
 
+// MustFromTime converts an observed instant or panics. It is intended for static
+// fixtures and tests whose timestamps are known to be in range.
+func MustFromTime(value time.Time) UnixSeconds {
+	converted, err := FromTime(value)
+	if err != nil {
+		panic(err)
+	}
+
+	return converted
+}
+
+// Time returns the UTC standard-library representation for presentation and APIs
+// that require time.Time.
+func (timestamp UnixSeconds) Time() time.Time {
+	return time.Unix(timestamp.Unix(), 0).UTC()
+}
+
 // DeadlineFromTime converts a deadline by rounding it up to the next second
 // when it has a fractional component. It rejects source instants outside the
 // representable range, even when rounding could move them into range.
@@ -135,7 +152,7 @@ func (timestamp UnixSeconds) Equal(other UnixSeconds) bool {
 
 // Format formats the timestamp in UTC for presentation using a time layout.
 func (timestamp UnixSeconds) Format(layout string) string {
-	return time.Unix(timestamp.Unix(), 0).UTC().Format(layout)
+	return timestamp.Time().Format(layout)
 }
 
 // MarshalJSON encodes timestamp as a JSON number.
