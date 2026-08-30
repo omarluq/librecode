@@ -695,7 +695,7 @@ func TestMainSelectionReconcilesOptimisticPromptByEntryID(t *testing.T) {
 	require.NoError(t, err)
 
 	message := newChatMessage(transcript.RoleUser, prompt)
-	message.EntryID = cloneStringPtr(&entry.ID)
+	message.Identity = &chatMessageIdentity{EntryID: entry.ID, PromptID: 0}
 	app.appendMessage(message)
 
 	require.NoError(t, app.inspectAgentTask(t.Context(), behaviorTaskID))
@@ -726,7 +726,7 @@ func TestMainSelectionAfterParentPromptCompletionDoesNotDuplicateDurableMessages
 
 	userMessage := newChatMessage(transcript.RoleUser, prompt)
 	app.activePrompt.Prompt = prompt
-	app.activePrompt.UserMessageTimestamp = userMessage.CreatedAt.UnixNano()
+	userMessage.Identity = &chatMessageIdentity{EntryID: "", PromptID: app.activePrompt.ID}
 	app.appendMessage(userMessage)
 	promptID := app.activePrompt.ID
 
@@ -783,8 +783,8 @@ func TestMainSelectionAfterParentPromptCompletionDoesNotDuplicateDurableMessages
 		message := &app.transcript.History[index]
 
 		messageCounts[message.Content]++
-		if message.EntryID != nil {
-			entryIDsByContent[message.Content] = append(entryIDsByContent[message.Content], *message.EntryID)
+		if message.Identity != nil && message.Identity.EntryID != "" {
+			entryIDsByContent[message.Content] = append(entryIDsByContent[message.Content], message.Identity.EntryID)
 		}
 	}
 

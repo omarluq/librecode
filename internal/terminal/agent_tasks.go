@@ -2039,20 +2039,29 @@ func (app *App) appendMissingSessionMessages(messages []database.SessionMessageE
 }
 
 func (app *App) hasSessionMessage(message *database.SessionMessageEntity) bool {
+	if message.EntryID != "" {
+		return app.hasDurableSessionMessage(message.EntryID)
+	}
+
 	role := transcript.FromDatabaseRole(message.Role)
 
 	for index := range app.transcript.History {
 		history := &app.transcript.History[index]
-		if message.EntryID != "" && history.EntryID != nil && *history.EntryID == message.EntryID {
+		missingDurableID := history.Identity == nil || history.Identity.EntryID == ""
+		matchingContent := history.Role == role && history.Content == message.Content
+
+		if missingDurableID && matchingContent && history.CreatedAt.Equal(message.CreatedAt) {
 			return true
 		}
+	}
 
-		if history.EntryID == nil && history.CreatedAt.Equal(message.CreatedAt) &&
-			history.Role == role && history.Content == message.Content {
-			if message.EntryID != "" {
-				history.EntryID = cloneStringPtr(&message.EntryID)
-			}
+	return false
+}
 
+func (app *App) hasDurableSessionMessage(entryID string) bool {
+	for index := range app.transcript.History {
+		identity := app.transcript.History[index].Identity
+		if identity != nil && identity.EntryID == entryID {
 			return true
 		}
 	}

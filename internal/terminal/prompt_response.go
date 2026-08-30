@@ -15,7 +15,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 	}
 
 	if response != nil {
-		app.bindPromptUserMessageEntryID(response.UserEntryID)
+		app.bindPromptUserMessageEntryID(promptID, response.UserEntryID)
 	}
 
 	if app.activePrompt.Canceled {
@@ -50,7 +50,7 @@ func (app *App) applyPromptResponse(ctx context.Context, response *assistant.Pro
 
 	message := newChatMessage(transcript.RoleAssistant, response.Text)
 	if response.AssistantEntryID != "" {
-		message.EntryID = &response.AssistantEntryID
+		message.Identity = &chatMessageIdentity{EntryID: response.AssistantEntryID, PromptID: 0}
 	}
 
 	app.appendMessage(message)

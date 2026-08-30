@@ -155,7 +155,7 @@ func TestAgentTaskCompletionEventDrawsCollapsedExpandableToolResult(t *testing.T
 	app.working = true
 	app.activePrompt = &activePromptState{
 		Cancel: func() {}, SessionID: "", UserEntryID: "",
-		Images: nil, Prompt: "", ID: 1, UserMessageTimestamp: 0, Canceled: false,
+		Images: nil, Prompt: "", ID: 1, Canceled: false,
 	}
 	app.scrollOffset = 10
 	app.agentTasks = []database.AgentTaskEntity{testAgentTask(database.TaskRunning)}
@@ -224,7 +224,7 @@ func TestAgentCompletionSurvivesPromptStreamingReset(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.activePrompt = &activePromptState{
 		Cancel: func() {}, SessionID: "", UserEntryID: "",
-		Images: nil, Prompt: "", ID: 1, UserMessageTimestamp: 0, Canceled: false,
+		Images: nil, Prompt: "", ID: 1, Canceled: false,
 	}
 	content := formatAgentCompletionForUI("Agent explore finished.\n\nreview complete")
 	app.addAgentCompletionMessage(content)
@@ -248,7 +248,7 @@ func TestAgentCompletionStaysLiveAcrossQueuedContinuation(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.activePrompt = &activePromptState{
 		Cancel: func() {}, SessionID: "", UserEntryID: "",
-		Images: nil, Prompt: "", ID: 1, UserMessageTimestamp: 0, Canceled: false,
+		Images: nil, Prompt: "", ID: 1, Canceled: false,
 	}
 	content := formatAgentCompletionForUI("Agent explore finished.\n\nreview complete")
 	app.addAgentCompletionMessage(content)

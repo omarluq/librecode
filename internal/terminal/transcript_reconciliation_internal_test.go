@@ -22,8 +22,7 @@ func TestAppendMissingSessionMessagesReconcilesByEntryID(t *testing.T) {
 
 	app := newRenderTestApp(t)
 	local := newChatMessage(transcript.RoleUser, reconciliationContent)
-	entryID := reconciliationFirstEntry
-	local.EntryID = &entryID
+	local.Identity = &chatMessageIdentity{EntryID: reconciliationFirstEntry, PromptID: 0}
 	app.appendMessage(local)
 
 	app.appendMissingSessionMessages([]database.SessionMessageEntity{
@@ -31,8 +30,7 @@ func TestAppendMissingSessionMessagesReconcilesByEntryID(t *testing.T) {
 	})
 
 	require.Len(t, app.transcript.History, 1)
-	require.NotNil(t, app.transcript.History[0].EntryID)
-	assert.Equal(t, reconciliationFirstEntry, *app.transcript.History[0].EntryID)
+	assert.Equal(t, reconciliationFirstEntry, app.transcript.History[0].Identity.EntryID)
 }
 
 func TestAppendMissingSessionMessagesPreservesRepeatedContentWithDistinctEntryIDs(t *testing.T) {
@@ -50,12 +48,30 @@ func TestAppendMissingSessionMessagesPreservesRepeatedContentWithDistinctEntryID
 	})
 
 	require.Len(t, app.transcript.History, 2)
-	require.NotNil(t, app.transcript.History[0].EntryID)
-	require.NotNil(t, app.transcript.History[1].EntryID)
 	assert.Equal(t, []string{reconciliationFirstEntry, reconciliationSecondEntry}, []string{
-		*app.transcript.History[0].EntryID,
-		*app.transcript.History[1].EntryID,
+		app.transcript.History[0].Identity.EntryID,
+		app.transcript.History[1].Identity.EntryID,
 	})
+}
+
+func TestAppendMissingSessionMessagesDoesNotReconcileDurableEntryByTimestampAndContent(t *testing.T) {
+	t.Parallel()
+
+	app := newRenderTestApp(t)
+	createdAt := time.Now().UTC()
+	local := newChatMessage(transcript.RoleUser, reconciliationContent)
+	local.CreatedAt = createdAt
+	local.Identity = &chatMessageIdentity{EntryID: "", PromptID: 1}
+	app.appendMessage(local)
+
+	app.appendMissingSessionMessages([]database.SessionMessageEntity{
+		testSessionMessage(createdAt, reconciliationFirstEntry),
+	})
+
+	require.Len(t, app.transcript.History, 2)
+	require.NotNil(t, app.transcript.History[0].Identity)
+	assert.Empty(t, app.transcript.History[0].Identity.EntryID)
+	assert.Equal(t, reconciliationFirstEntry, app.transcript.History[1].Identity.EntryID)
 }
 
 func TestAppendMissingSessionMessagesIsIdempotent(t *testing.T) {
@@ -71,20 +87,26 @@ func TestAppendMissingSessionMessagesIsIdempotent(t *testing.T) {
 	assert.Equal(t, []string{reconciliationContent}, app.promptHistory)
 }
 
-func TestBindPromptUserMessageEntryIDTargetsTrackedMessage(t *testing.T) {
+func TestBindPromptUserMessageEntryIDTargetsLocalPromptIdentity(t *testing.T) {
 	t.Parallel()
 
 	app := newRenderTestApp(t)
-	app.appendMessage(newChatMessage(transcript.RoleUser, reconciliationContent))
-	app.appendMessage(newChatMessage(transcript.RoleUser, reconciliationContent))
-	app.activePrompt = newTestActivePrompt(nil)
-	app.activePrompt.UserMessageTimestamp = app.transcript.History[1].CreatedAt.UnixNano()
+	createdAt := time.Now().UTC()
+	first := newChatMessage(transcript.RoleUser, reconciliationContent)
+	first.CreatedAt = createdAt
+	first.Identity = &chatMessageIdentity{EntryID: "", PromptID: 1}
+	second := newChatMessage(transcript.RoleUser, reconciliationContent)
+	second.CreatedAt = createdAt
+	second.Identity = &chatMessageIdentity{EntryID: "", PromptID: 2}
 
-	app.bindPromptUserMessageEntryID(reconciliationSecondEntry)
+	app.appendMessage(first)
+	app.appendMessage(second)
 
-	assert.Nil(t, app.transcript.History[0].EntryID)
-	require.NotNil(t, app.transcript.History[1].EntryID)
-	assert.Equal(t, reconciliationSecondEntry, *app.transcript.History[1].EntryID)
+	app.bindPromptUserMessageEntryID(first.Identity.PromptID, reconciliationFirstEntry)
+	app.bindPromptUserMessageEntryID(second.Identity.PromptID, reconciliationSecondEntry)
+
+	assert.Equal(t, reconciliationFirstEntry, app.transcript.History[0].Identity.EntryID)
+	assert.Equal(t, reconciliationSecondEntry, app.transcript.History[1].Identity.EntryID)
 }
 
 func testSessionMessage(createdAt time.Time, entryID string) database.SessionMessageEntity {
