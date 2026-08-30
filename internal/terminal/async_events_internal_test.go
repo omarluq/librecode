@@ -524,7 +524,7 @@ func promptUserEntryLifecycleCase() promptLifecycleCase {
 			app.activePrompt = newTestActivePrompt(nil)
 			app.activePrompt.ID = 3
 			message := newChatMessage(transcript.RoleUser, app.activePrompt.Prompt)
-			app.activePrompt.UserMessageTimestamp = message.CreatedAt.UnixNano()
+			message.Identity = &chatMessageIdentity{EntryID: "", PromptID: app.activePrompt.ID}
 			app.appendMessage(message)
 		},
 		assert: func(t *testing.T, app *App) {
@@ -533,8 +533,7 @@ func promptUserEntryLifecycleCase() promptLifecycleCase {
 			assert.Equal(t, asyncTestSessionID, app.activePrompt.SessionID)
 			assert.Equal(t, asyncTestEntryID, app.activePrompt.UserEntryID)
 			require.Len(t, app.transcript.History, 1)
-			require.NotNil(t, app.transcript.History[0].EntryID)
-			assert.Equal(t, asyncTestEntryID, *app.transcript.History[0].EntryID)
+			assert.Equal(t, asyncTestEntryID, app.transcript.History[0].Identity.EntryID)
 		},
 		wantHandled: true,
 	}
@@ -551,7 +550,7 @@ func promptLifecycleEventCases() []promptLifecycleCase {
 				app.transcript.Streaming.Blocks = []chatMessage{{
 					Attachments: nil,
 					CreatedAt:   time.Time{},
-					EntryID:     nil,
+					Identity:    nil,
 					Role:        transcript.RoleAssistant,
 					Content:     asyncTestPartial,
 				}}

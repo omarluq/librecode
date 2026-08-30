@@ -322,7 +322,8 @@ func TestActiveEnterSteersRuntime(t *testing.T) {
 	consumed := app.transcript.History[len(app.transcript.History)-1]
 	assert.Equal(t, transcript.RoleUser, consumed.Role)
 	assert.Equal(t, "steer this", consumed.Content)
-	require.NotNil(t, consumed.EntryID)
+	require.NotNil(t, consumed.Identity)
+	assert.NotEmpty(t, consumed.Identity.EntryID)
 
 	close(client.release)
 }
@@ -392,7 +393,7 @@ func TestActiveInputKeyRouting(t *testing.T) {
 			app.working = true
 			app.activePrompt = &activePromptState{
 				Cancel: nil, SessionID: app.sessionID, UserEntryID: "", Prompt: "", Images: nil,
-				UserMessageTimestamp: 0, ID: 1, Canceled: false,
+				ID: 1, Canceled: false,
 			}
 			app.composerBuffer.SetText("draft")
 
@@ -485,7 +486,7 @@ func TestRestoreReturnedSteeringPrecedesFollowUps(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.activePrompt = &activePromptState{
 		Cancel: nil, SessionID: "", UserEntryID: "", Prompt: "", Images: nil,
-		UserMessageTimestamp: 0, ID: 7, Canceled: false,
+		ID: 7, Canceled: false,
 	}
 	app.queuedMessages = promptDrafts("follow-up")
 

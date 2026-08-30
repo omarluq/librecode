@@ -183,13 +183,12 @@ func newInterruptTestApp(t *testing.T, cancel context.CancelFunc) *App {
 
 func newTestActivePrompt(cancel context.CancelFunc) *activePromptState {
 	return &activePromptState{
-		Cancel:               cancel,
-		SessionID:            "",
-		UserEntryID:          "",
-		Images:               nil,
-		Prompt:               interruptTestPrompt,
-		ID:                   1,
-		UserMessageTimestamp: 0,
-		Canceled:             false,
+		Cancel:      cancel,
+		SessionID:   "",
+		UserEntryID: "",
+		Images:      nil,
+		Prompt:      interruptTestPrompt,
+		ID:          1,
+		Canceled:    false,
 	}
 }

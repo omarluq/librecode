@@ -51,23 +51,27 @@ const (
 	modePanel appMode = "panel"
 )
 
+type chatMessageIdentity struct {
+	EntryID  string
+	PromptID uint64
+}
+
 type chatMessage struct {
 	Attachments *attachmentSummaries
+	Identity    *chatMessageIdentity
 	CreatedAt   time.Time
-	EntryID     *string
 	Role        transcript.Role
 	Content     string
 }
 
 type activePromptState struct {
-	Cancel               context.CancelFunc
-	SessionID            string
-	UserEntryID          string
-	Prompt               string
-	Images               []imageAttachment
-	UserMessageTimestamp int64
-	ID                   uint64
-	Canceled             bool
+	Cancel      context.CancelFunc
+	SessionID   string
+	UserEntryID string
+	Prompt      string
+	Images      []imageAttachment
+	ID          uint64
+	Canceled    bool
 }
 
 type resizeCoalescedEvent struct {
@@ -816,13 +820,13 @@ func (app *App) appendSessionMessages(messages []database.SessionMessageEntity) 
 func chatMessageFromSessionMessage(message *database.SessionMessageEntity) chatMessage {
 	chat := chatMessage{
 		CreatedAt:   message.CreatedAt,
-		EntryID:     nil,
 		Role:        transcript.FromDatabaseRole(message.Role),
 		Content:     message.Content,
 		Attachments: databaseAttachmentSummaries(message.Parts),
+		Identity:    nil,
 	}
 	if message.EntryID != "" {
-		chat.EntryID = cloneStringPtr(&message.EntryID)
+		chat.Identity = &chatMessageIdentity{EntryID: message.EntryID, PromptID: 0}
 	}
 
 	return chat
@@ -839,8 +843,8 @@ func (app *App) addMessage(role transcript.Role, content string) {
 func newChatMessage(role transcript.Role, content string) chatMessage {
 	return chatMessage{
 		Attachments: nil,
+		Identity:    nil,
 		CreatedAt:   time.Now().UTC(),
-		EntryID:     nil,
 		Role:        role,
 		Content:     content,
 	}

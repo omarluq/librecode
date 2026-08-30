@@ -669,7 +669,7 @@ func (app *App) applyPromptUserEntry(_ context.Context, sessionID, entryID strin
 	previousSessionID := app.activePrompt.SessionID
 	app.activePrompt.SessionID = sessionID
 	app.activePrompt.UserEntryID = entryID
-	app.bindPromptUserMessageEntryID(entryID)
+	app.bindPromptUserMessageEntryID(promptID, entryID)
 
 	if app.sessionID == previousSessionID {
 		if app.sessionID != sessionID {
@@ -680,18 +680,15 @@ func (app *App) applyPromptUserEntry(_ context.Context, sessionID, entryID strin
 	}
 }
 
-func (app *App) bindPromptUserMessageEntryID(entryID string) {
-	if entryID == "" || app.activePrompt.UserMessageTimestamp == 0 {
+func (app *App) bindPromptUserMessageEntryID(promptID uint64, entryID string) {
+	if promptID == 0 || entryID == "" {
 		return
 	}
 
 	for index := range app.transcript.History {
 		message := &app.transcript.History[index]
-
-		isPromptUserMessage := message.CreatedAt.UnixNano() == app.activePrompt.UserMessageTimestamp &&
-			message.Role == transcript.RoleUser
-		if isPromptUserMessage {
-			message.EntryID = &entryID
+		if message.Identity != nil && message.Identity.PromptID == promptID && message.Role == transcript.RoleUser {
+			message.Identity.EntryID = entryID
 
 			return
 		}
@@ -743,7 +740,7 @@ func (app *App) applySteeringConsumed(encoded string, promptID uint64) {
 	}
 
 	message := newChatMessage(transcript.RoleUser, draft.Text)
-	message.EntryID = &event.EntryID
+	message.Identity = &chatMessageIdentity{EntryID: event.EntryID, PromptID: 0}
 	message.Attachments = summarizeAttachments(draft.Images)
 	app.appendMessage(message)
 }

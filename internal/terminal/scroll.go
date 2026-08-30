@@ -142,14 +142,14 @@ func (app *App) hydrateOlderTranscript(ctx context.Context) error {
 	}
 
 	oldest := &app.transcript.History[0]
-	if oldest.EntryID == nil {
+	if !hasDurableChatMessageIdentity(oldest) {
 		app.transcript.HasOlder = false
 
 		return nil
 	}
 
 	messages, err := app.runtime.SessionRepository().TranscriptMessagesBefore(
-		ctx, app.sessionID, oldest.CreatedAt, *oldest.EntryID, transcriptHydrationBatch+1,
+		ctx, app.sessionID, oldest.CreatedAt, oldest.Identity.EntryID, transcriptHydrationBatch+1,
 	)
 	if err != nil {
 		return terminalError(err, "load older messages")
@@ -181,6 +181,10 @@ func (app *App) hydrateOlderTranscript(ctx context.Context) error {
 	app.prependPromptHistory(messages)
 
 	return nil
+}
+
+func hasDurableChatMessageIdentity(message *chatMessage) bool {
+	return message.Identity != nil && message.Identity.EntryID != ""
 }
 
 func (app *App) prependPromptHistory(messages []database.SessionMessageEntity) {

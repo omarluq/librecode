@@ -46,7 +46,7 @@ func TestApplyPromptResponseAssignsDurableEntryIDs(t *testing.T) {
 	app := newRenderTestApp(t)
 	app.activePrompt = newTestActivePrompt(nil)
 	message := newChatMessage(transcript.RoleUser, "prompt")
-	app.activePrompt.UserMessageTimestamp = message.CreatedAt.UnixNano()
+	message.Identity = &chatMessageIdentity{EntryID: "", PromptID: app.activePrompt.ID}
 	app.appendMessage(message)
 
 	response := newTestPromptResponse("response")
@@ -56,10 +56,8 @@ func TestApplyPromptResponseAssignsDurableEntryIDs(t *testing.T) {
 	app.applyPromptResponse(context.Background(), response, app.activePrompt.ID)
 
 	require.Len(t, app.transcript.History, 2)
-	require.NotNil(t, app.transcript.History[0].EntryID)
-	require.NotNil(t, app.transcript.History[1].EntryID)
-	assert.Equal(t, terminalTestUserID, *app.transcript.History[0].EntryID)
-	assert.Equal(t, "assistant-entry", *app.transcript.History[1].EntryID)
+	assert.Equal(t, terminalTestUserID, app.transcript.History[0].Identity.EntryID)
+	assert.Equal(t, "assistant-entry", app.transcript.History[1].Identity.EntryID)
 }
 
 func TestApplyPromptResponseNilClearsStreamedToolEvents(t *testing.T) {

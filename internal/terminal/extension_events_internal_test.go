@@ -53,7 +53,7 @@ func TestVimModePreservesModifiedEnterDelivery(t *testing.T) {
 	app.working = true
 	app.activePrompt = &activePromptState{
 		Cancel: nil, SessionID: app.sessionID, UserEntryID: "", Prompt: "", Images: nil,
-		UserMessageTimestamp: 0, ID: 1, Canceled: false,
+		ID: 1, Canceled: false,
 	}
 	app.composerBuffer.SetText("later")
 
