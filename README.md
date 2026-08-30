@@ -17,7 +17,6 @@
   <a href="https://codecov.io/gh/omarluq/librecode"><img src="https://img.shields.io/codecov/c/github/omarluq/librecode?style=flat&labelColor=24292e&logo=codecov&logoColor=white" alt="Codecov"></a>
   <a href="https://coderabbit.ai"><img src="https://img.shields.io/coderabbit/prs/github/omarluq/librecode?utm_source=oss&utm_medium=github&utm_campaign=omarluq%2Flibrecode&style=flat&labelColor=24292e&color=FF570A&label=CodeRabbit+Reviews" alt="CodeRabbit Reviews"></a>
   <a href="https://deepwiki.com/omarluq/librecode"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
-  <!-- <a herf="https://mise.jdx.dev"> <img src="https://mise-versions.jdx.dev/badge.svg?style=flat&labelColor=24292ee" alt="mise-en-place"></a> -->
 </p>
 
 <p align="center">
@@ -80,12 +79,12 @@ If you'd prefer per-action approval, sandboxing, or policy enforcement, other ag
 ```bash
 git clone https://github.com/omarluq/librecode.git
 cd librecode
-mise install                       # optional: install the pinned development tools
-mise exec -- task build            # writes ./bin/librecode
+vfox install --all                            # optional: install the pinned Go toolchain
+vfox exec golang -- go tool task build        # writes ./bin/librecode
 ./bin/librecode --help
 ```
 
-If you do not use `mise`, install a Go toolchain matching `go.mod` and [Task](https://taskfile.dev/) yourself.
+If you do not use [vfox](https://vfox.lhan.me/), install a Go toolchain matching `go.mod`. Development tools such as [Task](https://taskfile.dev/) are declared in `go.mod` and invoked with `go tool`.
 
 ### With `go install`
 
