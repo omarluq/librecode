@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -372,6 +373,102 @@ func TestSessionRepository_AppendMessagePreservesInputTimestamp(t *testing.T) {
 	}
 }
 
+func TestSessionRepository_OrdersEqualTimestampEntriesByID(t *testing.T) {
+	t.Parallel()
+
+	repository := newTestSessionRepository(t)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, "/work", "entry-order", "")
+	require.NoError(t, err)
+
+	helper := sessionTestHelper{ctx: ctx, t: t, repository: repository}
+	createdAt := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
+	roots := []*database.EntryEntity{
+		helper.appendMessageAt(session.ID, nil, database.RoleUser, "root-1", createdAt),
+		helper.appendMessageAt(session.ID, nil, database.RoleUser, "root-2", createdAt),
+		helper.appendMessageAt(session.ID, nil, database.RoleUser, "root-3", createdAt),
+	}
+	children := []*database.EntryEntity{
+		helper.appendMessageAt(session.ID, &roots[0].ID, database.RoleAssistant, "child-1", createdAt),
+		helper.appendMessageAt(session.ID, &roots[0].ID, database.RoleAssistant, "child-2", createdAt),
+	}
+
+	wantAll := sortedEntryIDs(append(append([]*database.EntryEntity{}, roots...), children...))
+	entries, err := repository.Entries(ctx, session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, wantAll, sessionEntryIDs(entries))
+
+	leaf, found, err := repository.LeafEntry(ctx, session.ID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, wantAll[len(wantAll)-1], leaf.ID)
+
+	rootEntries, err := repository.Children(ctx, session.ID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, sortedEntryIDs(roots), sessionEntryIDs(rootEntries))
+
+	childEntries, err := repository.Children(ctx, session.ID, &roots[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, sortedEntryIDs(children), sessionEntryIDs(childEntries))
+
+	tree, err := repository.Tree(ctx, session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, sortedEntryIDs(roots), treeEntryIDs(tree))
+
+	for index := range tree {
+		if tree[index].Entry.ID == roots[0].ID {
+			assert.Equal(t, sortedEntryIDs(children), treeEntryIDs(tree[index].Children))
+		}
+	}
+}
+
+func TestSessionRepository_OrdersEqualTimestampSessionsByID(t *testing.T) {
+	t.Parallel()
+
+	repository, connection := newTestSessionRepositoryWithConnection(t)
+	ctx := context.Background()
+
+	parent, err := repository.CreateSession(ctx, "/work", "parent", "")
+	require.NoError(t, err)
+
+	topLevel := make([]*database.SessionEntity, 1, 3)
+	topLevel[0] = parent
+
+	for _, name := range []string{"top-2", "top-3"} {
+		session, createErr := repository.CreateSession(ctx, "/work", name, "")
+		require.NoError(t, createErr)
+
+		topLevel = append(topLevel, session)
+	}
+
+	children := make([]*database.SessionEntity, 0, 3)
+
+	for _, name := range []string{"child-1", "child-2", "child-3"} {
+		session, createErr := repository.CreateSession(ctx, "/work", name, parent.ID)
+		require.NoError(t, createErr)
+
+		children = append(children, session)
+	}
+
+	updatedAt := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	_, err = connection.ExecContext(ctx, `UPDATE sessions SET updated_at = ? WHERE cwd = ?`, updatedAt, "/work")
+	require.NoError(t, err)
+
+	wantTopLevel := sortedSessionIDsDescending(topLevel)
+	latest, found, err := repository.LatestSession(ctx, "/work")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, wantTopLevel[0], latest.ID)
+
+	sessions, err := repository.ListSessions(ctx, "/work")
+	require.NoError(t, err)
+	assert.Equal(t, wantTopLevel, sessionIDs(sessions))
+
+	childSessions, err := repository.ListChildSessions(ctx, parent.ID)
+	require.NoError(t, err)
+	assert.Equal(t, sortedSessionIDsDescending(children), sessionIDs(childSessions))
+}
+
 func TestSessionRepository_LoadsAndListsSessions(t *testing.T) {
 	t.Parallel()
 
@@ -499,6 +596,47 @@ func sessionEntryIDs(entries []database.EntryEntity) []string {
 	ids := make([]string, 0, len(entries))
 	for index := range entries {
 		ids = append(ids, entries[index].ID)
+	}
+
+	return ids
+}
+
+func sortedEntryIDs(entries []*database.EntryEntity) []string {
+	ids := make([]string, 0, len(entries))
+	for index := range entries {
+		ids = append(ids, entries[index].ID)
+	}
+
+	slices.Sort(ids)
+
+	return ids
+}
+
+func treeEntryIDs(nodes []database.TreeNodeEntity) []string {
+	ids := make([]string, 0, len(nodes))
+	for index := range nodes {
+		ids = append(ids, nodes[index].Entry.ID)
+	}
+
+	return ids
+}
+
+func sortedSessionIDsDescending(sessions []*database.SessionEntity) []string {
+	ids := make([]string, 0, len(sessions))
+	for index := range sessions {
+		ids = append(ids, sessions[index].ID)
+	}
+
+	slices.Sort(ids)
+	slices.Reverse(ids)
+
+	return ids
+}
+
+func sessionIDs(sessions []database.SessionEntity) []string {
+	ids := make([]string, 0, len(sessions))
+	for index := range sessions {
+		ids = append(ids, sessions[index].ID)
 	}
 
 	return ids
@@ -690,6 +828,14 @@ func newMetadataFixture(ctx context.Context, t *testing.T) metadataFixture {
 func newTestSessionRepository(t *testing.T) *database.SessionRepository {
 	t.Helper()
 
+	repository, _ := newTestSessionRepositoryWithConnection(t)
+
+	return repository
+}
+
+func newTestSessionRepositoryWithConnection(t *testing.T) (*database.SessionRepository, *sql.DB) {
+	t.Helper()
+
 	connection, err := sql.Open(sqliteDriver(), ":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -699,7 +845,7 @@ func newTestSessionRepository(t *testing.T) *database.SessionRepository {
 
 	require.NoError(t, database.Migrate(context.Background(), connection))
 
-	return testutil.SessionRepository(t, connection)
+	return testutil.SessionRepository(t, connection), connection
 }
 
 func newMigratedThroughVersion(t *testing.T, version int64) *sql.DB {

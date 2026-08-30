@@ -2031,11 +2031,40 @@ func (app *App) appendMissingSessionMessages(messages []database.SessionMessageE
 	}
 
 	if appended {
-		slices.SortStableFunc(app.transcript.History, func(left, right chatMessage) int {
-			return left.CreatedAt.Compare(right.CreatedAt)
-		})
+		slices.SortStableFunc(app.transcript.History, compareTranscriptMessages)
 		app.transcript.LineCache.reset()
 	}
+}
+
+func compareTranscriptMessages(left, right chatMessage) int {
+	if byTime := left.CreatedAt.Compare(right.CreatedAt); byTime != 0 {
+		return byTime
+	}
+
+	leftEntryID := transcriptEntryID(left)
+	rightEntryID := transcriptEntryID(right)
+
+	if leftEntryID == "" && rightEntryID == "" {
+		return 0
+	}
+
+	if leftEntryID == "" {
+		return -1
+	}
+
+	if rightEntryID == "" {
+		return 1
+	}
+
+	return strings.Compare(leftEntryID, rightEntryID)
+}
+
+func transcriptEntryID(message chatMessage) string {
+	if message.Identity == nil {
+		return ""
+	}
+
+	return message.Identity.EntryID
 }
 
 func (app *App) hasSessionMessage(message *database.SessionMessageEntity) bool {
