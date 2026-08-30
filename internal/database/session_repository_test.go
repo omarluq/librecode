@@ -37,11 +37,11 @@ func TestSessionRepository_TranscriptTailQueryUsesCursorIndex(t *testing.T) {
 	require.NoError(t, database.Migrate(t.Context(), connection))
 
 	const query = `EXPLAIN QUERY PLAN
-SELECT m.id
-FROM session_messages AS m INDEXED BY idx_session_messages_session_created
-JOIN session_entries AS e ON e.id = m.entry_id AND e.session_id = m.session_id
-WHERE m.session_id = ? AND e.display = 1
-ORDER BY m.created_at DESC, m.entry_id DESC
+SELECT e.id
+FROM session_entries AS e INDEXED BY idx_session_entries_transcript_cursor
+JOIN session_messages AS m ON m.entry_id = e.id
+WHERE e.session_id = ? AND e.display = 1
+ORDER BY e.created_at DESC, e.id DESC
 LIMIT ?`
 
 	rows, err := connection.QueryContext(t.Context(), query, "session", 25)
@@ -58,7 +58,7 @@ LIMIT ?`
 		)
 		require.NoError(t, rows.Scan(&id, &parent, &unused, &detail))
 
-		if strings.Contains(detail, "idx_session_messages_session_created") {
+		if strings.Contains(detail, "idx_session_entries_transcript_cursor") {
 			usedCursorIndex = true
 		}
 	}
@@ -303,7 +303,7 @@ func TestSessionRepository_TranscriptMessagesWrapsMalformedRows(t *testing.T) {
 		Provider: "", Model: "", Parts: nil,
 	})
 	require.NoError(t, err)
-	_, err = connection.ExecContext(context.Background(), `UPDATE session_messages SET created_at = 'invalid'`)
+	_, err = connection.ExecContext(context.Background(), `UPDATE session_entries SET created_at = 'invalid'`)
 	require.NoError(t, err)
 
 	messages, err := repository.TranscriptMessages(context.Background(), session.ID)
@@ -596,8 +596,10 @@ func TestSessionRepository_SupportsLibrecodeStyleTreeMetadata(t *testing.T) {
 
 	contextEntity, err := fixture.repository.BuildContext(ctx, fixture.sessionID, fixture.compactionEntry.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "anthropic", contextEntity.Provider)
-	assert.Equal(t, "sonnet", contextEntity.Model)
+	// Migration 23 stores provider/model only on message envelopes. Model-change
+	// entries therefore retain no provider/model payload after round-tripping.
+	assert.Empty(t, contextEntity.Provider)
+	assert.Empty(t, contextEntity.Model)
 	assert.Equal(t, "high", contextEntity.ThinkingLevel)
 	require.Len(t, contextEntity.Messages, 3)
 	assert.Equal(t, database.RoleCompactionSummary, contextEntity.Messages[0].Role)
@@ -709,6 +711,8 @@ func newMigratedThroughVersion(t *testing.T, version int64) *sql.DB {
 		require.NoError(t, connection.Close())
 	})
 	connection.SetMaxOpenConns(1)
+	_, err = connection.ExecContext(context.Background(), `PRAGMA foreign_keys=ON`)
+	require.NoError(t, err)
 
 	migrationRoot, err := database.MigrationFS()
 	require.NoError(t, err)

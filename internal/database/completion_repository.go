@@ -654,10 +654,7 @@ WHERE session_id=? ORDER BY created_at DESC,id DESC LIMIT 1`
 		return nil, prepareErr
 	}
 
-	messageID, partIDs := newEntryMessageIDs(&entry)
-	if appendErr := repository.sessions.appendEntryTx(
-		ctx, transaction, &entry, messageID, partIDs,
-	); appendErr != nil {
+	if appendErr := repository.sessions.appendEntryTx(ctx, transaction, &entry); appendErr != nil {
 		return nil, appendErr
 	}
 

@@ -69,7 +69,8 @@ type MessagePartEntity struct {
 	Height   int             `json:"height,omitempty"`
 }
 
-// MessageEntity is the context-facing representation of an assistant message.
+// MessageEntity is the context-facing representation of a message.
+// Parts is the canonical ordered content; Content is its scalar text projection.
 type MessageEntity struct {
 	Timestamp time.Time           `json:"timestamp"`
 	Role      Role                `json:"role"`
@@ -79,10 +80,13 @@ type MessageEntity struct {
 	Parts     []MessagePartEntity `json:"parts,omitempty"`
 }
 
-// SessionMessageEntity is the normalized durable message related to a session and entry.
+// SessionMessageEntity is the runtime projection of a session entry's message.
+//
+// EntryID is the message's durable identity. SessionID and CreatedAt are
+// entry-owned values. Parts is canonical ordered content; Content and Sender
+// are derived.
 type SessionMessageEntity struct {
 	CreatedAt time.Time           `json:"created_at"`
-	ID        string              `json:"id"`
 	SessionID string              `json:"session_id"`
 	EntryID   string              `json:"entry_id"`
 	Sender    string              `json:"sender"`
@@ -132,7 +136,6 @@ type EntryDataEntity struct {
 	Label                      *string                `json:"label,omitempty"`
 	ModelFacing                *bool                  `json:"model_facing,omitempty"`
 	Usage                      *EntryTokenUsageEntity `json:"usage,omitempty"`
-	FromID                     string                 `json:"from_id,omitempty"`
 	BranchFromEntryID          string                 `json:"branch_from_entry_id,omitempty"`
 	TargetID                   string                 `json:"target_id,omitempty"`
 	ThinkingLevel              string                 `json:"thinking_level,omitempty"`
@@ -140,11 +143,9 @@ type EntryDataEntity struct {
 	ToolStatus                 string                 `json:"tool_status,omitempty"`
 	ToolArgsJSON               string                 `json:"tool_args_json,omitempty"`
 	Name                       string                 `json:"name,omitempty"`
-	FirstKeptEntryID           string                 `json:"first_kept_entry_id,omitempty"`
 	CompactionFirstKeptEntryID string                 `json:"compaction_first_kept_entry_id,omitempty"`
 	TokenEstimate              int                    `json:"token_estimate,omitempty"`
 	CompactionTokensBefore     int                    `json:"compaction_tokens_before,omitempty"`
-	TokensBefore               int                    `json:"tokens_before,omitempty"`
 	FromHook                   bool                   `json:"from_hook,omitempty"`
 }
 

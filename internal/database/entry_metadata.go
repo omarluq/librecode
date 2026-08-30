@@ -22,9 +22,9 @@ func applyEntryMetadata(entry *EntryEntity) error {
 	}
 
 	entry.Display = entryDisplaysInTranscript(entry, &data)
-	entry.CompactionFirstKeptEntryID = firstNonEmpty(data.CompactionFirstKeptEntryID, data.FirstKeptEntryID)
-	entry.CompactionTokensBefore = firstPositive(data.CompactionTokensBefore, data.TokensBefore)
-	entry.BranchFromEntryID = firstNonEmpty(data.BranchFromEntryID, data.FromID)
+	entry.CompactionFirstKeptEntryID = data.CompactionFirstKeptEntryID
+	entry.CompactionTokensBefore = data.CompactionTokensBefore
+	entry.BranchFromEntryID = data.BranchFromEntryID
 
 	if entry.Message.Role == RoleToolResult {
 		metadata := parseToolMetadata(entry.Message.Content)
@@ -33,18 +33,17 @@ func applyEntryMetadata(entry *EntryEntity) error {
 		entry.ToolArgsJSON = firstNonEmpty(data.ToolArgsJSON, metadata.ArgsJSON)
 	}
 
-	data.ToolName = entry.ToolName
-	data.ToolStatus = entry.ToolStatus
-	data.ToolArgsJSON = entry.ToolArgsJSON
-	data.TokenEstimate = entry.TokenEstimate
-	data.ModelFacing = &entry.ModelFacing
-	data.CompactionFirstKeptEntryID = entry.CompactionFirstKeptEntryID
-	data.CompactionTokensBefore = entry.CompactionTokensBefore
-
-	data.BranchFromEntryID = entry.BranchFromEntryID
-	if data.Display == nil {
-		data.Display = &entry.Display
-	}
+	// Dedicated columns are the sole owner of these projections. They are
+	// accepted from API metadata above, then removed before data_json is stored.
+	data.ToolName = ""
+	data.ToolStatus = ""
+	data.ToolArgsJSON = ""
+	data.TokenEstimate = 0
+	data.ModelFacing = nil
+	data.Display = nil
+	data.CompactionFirstKeptEntryID = ""
+	data.CompactionTokensBefore = 0
+	data.BranchFromEntryID = ""
 
 	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
@@ -175,16 +174,6 @@ func firstNonEmpty(values ...string) string {
 	}
 
 	return ""
-}
-
-func firstPositive(values ...int) int {
-	for _, value := range values {
-		if value > 0 {
-			return value
-		}
-	}
-
-	return 0
 }
 
 func compactJSON(value string) string {

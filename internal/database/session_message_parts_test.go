@@ -3,7 +3,6 @@ package database_test
 import (
 	"context"
 	"database/sql"
-	"github.com/omarluq/librecode/internal/testutil"
 	"testing"
 	"time"
 
@@ -11,12 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
+	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
 	testImageMIME     = "image/png"
 	testMessageText   = "text"
+	testModel         = "model"
 	testMultipartText = "compare these"
+	testStoredScalar  = "stored scalar"
 )
 
 func TestSessionRepository_RoundTripsOrderedMultipartMessages(t *testing.T) {
@@ -30,7 +32,7 @@ func TestSessionRepository_RoundTripsOrderedMultipartMessages(t *testing.T) {
 	originalData := []byte{1, 2, 3}
 	parts := []database.MessagePartEntity{
 		{
-			Data: nil, Text: testMultipartText, MIMEType: "", Name: "",
+			Data: nil, Text: "compare ", MIMEType: "", Name: "",
 			Type: database.MessagePartText, Width: 0, Height: 0,
 		},
 		{
@@ -38,13 +40,18 @@ func TestSessionRepository_RoundTripsOrderedMultipartMessages(t *testing.T) {
 			Type: database.MessagePartImage, Width: 10, Height: 20,
 		},
 		{
+			Data: nil, Text: "these", MIMEType: "", Name: "",
+			Type: database.MessagePartText, Width: 0, Height: 0,
+		},
+		{
 			Data: []byte{4, 5}, Text: "", MIMEType: "image/jpeg", Name: "second.jpg",
 			Type: database.MessagePartImage, Width: 30, Height: 40,
 		},
 	}
+	timestamp := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
 	entry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
-		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "compare these",
-		Provider: "", Model: "", Parts: parts,
+		Timestamp: timestamp, Role: database.RoleUser, Content: testMultipartText,
+		Provider: "provider", Model: testModel, Parts: parts,
 	})
 	require.NoError(t, err)
 
@@ -52,33 +59,76 @@ func TestSessionRepository_RoundTripsOrderedMultipartMessages(t *testing.T) {
 	originalData[0] = 99
 	parts[1].Data[1] = 99
 
+	expected := database.MessageEntity{
+		Timestamp: timestamp, Role: database.RoleUser, Content: testMultipartText,
+		Provider: "provider", Model: testModel, Parts: expectedMultipartParts(),
+	}
+
 	messages, err := repository.Messages(ctx, session.ID)
 	require.NoError(t, err)
 	require.Len(t, messages, 1)
-	assertMultipartParts(t, messages[0].Parts)
+	assertSessionMessageHydrated(t, &messages[0], session.ID, entry.ID, string(database.RoleUser), &expected)
 
 	transcript, err := repository.TranscriptMessages(ctx, session.ID)
 	require.NoError(t, err)
 	require.Len(t, transcript, 1)
-	assertMultipartParts(t, transcript[0].Parts)
+	assertSessionMessageHydrated(t, &transcript[0], session.ID, entry.ID, string(database.RoleUser), &expected)
 
 	message, found, err := repository.MessageForEntry(ctx, session.ID, entry.ID)
 	require.NoError(t, err)
 	require.True(t, found)
-	assertMultipartParts(t, message.Parts)
+	assertSessionMessageHydrated(t, message, session.ID, entry.ID, string(database.RoleUser), &expected)
 
-	assertEntryReadersHydrateMultipart(t, repository, session.ID, entry.ID)
+	assertEntryReadersHydrateMultipart(t, repository, session.ID, entry.ID, &expected)
 
 	contextEntity, err := repository.BuildContext(ctx, session.ID, entry.ID)
 	require.NoError(t, err)
 	require.Len(t, contextEntity.Messages, 1)
-	assertMultipartParts(t, contextEntity.Messages[0].Parts)
+	assert.Equal(t, expected, contextEntity.Messages[0])
 
 	// Mutating one read cannot mutate durable data returned by a later read.
 	messages[0].Parts[1].Data[0] = 88
 	again, err := repository.Messages(ctx, session.ID)
 	require.NoError(t, err)
 	assert.Equal(t, []byte{1, 2, 3}, again[0].Parts[1].Data)
+}
+
+func TestSessionRepository_CustomSenderAndDisplayFilteringPreserveHydratedMessages(t *testing.T) {
+	t.Parallel()
+
+	repository := newTestSessionRepository(t)
+	ctx := context.Background()
+	session, err := repository.CreateSession(ctx, "/work", "custom sender", "")
+	require.NoError(t, err)
+
+	hidden, err := repository.AppendCustomMessage(
+		ctx, session.ID, nil, "extension-context", "hidden context", false, nil,
+	)
+	require.NoError(t, err)
+	visible, err := repository.AppendCustomMessage(
+		ctx, session.ID, &hidden.ID, "extension-context", "visible context", true, nil,
+	)
+	require.NoError(t, err)
+
+	messages, err := repository.Messages(ctx, session.ID)
+	require.NoError(t, err)
+	require.Len(t, messages, 2)
+	assert.Equal(t, []string{"hidden context", "visible context"}, []string{messages[0].Content, messages[1].Content})
+
+	for index := range messages {
+		assert.Equal(t, "extension-context", messages[index].Sender)
+		assert.Equal(t, database.RoleCustom, messages[index].Role)
+		require.Len(t, messages[index].Parts, 1)
+		assert.Equal(t, database.MessagePartText, messages[index].Parts[0].Type)
+		assert.Equal(t, messages[index].Content, messages[index].Parts[0].Text)
+	}
+
+	transcript, err := repository.TranscriptMessages(ctx, session.ID)
+	require.NoError(t, err)
+	require.Len(t, transcript, 1)
+	assert.Equal(t, visible.ID, transcript[0].EntryID)
+	assert.Equal(t, "extension-context", transcript[0].Sender)
+	assert.Equal(t, messages[1].Parts, transcript[0].Parts)
 }
 
 func TestSessionRepository_ContextHasImagePartsFollowsActiveBranch(t *testing.T) {
@@ -171,33 +221,61 @@ func TestSessionRepository_CanonicalizesScalarTextAndPersistsImageOnly(t *testin
 	assert.Equal(t, []byte{7}, contextEntity.Messages[1].Parts[0].Data)
 }
 
-func TestSessionRepository_DoesNotSynthesizeMissingMessageParts(t *testing.T) {
+func TestSessionRepository_SurfacesMalformedAndMissingCanonicalPartsWithoutSynthesis(t *testing.T) {
 	t.Parallel()
 
-	connection, err := sql.Open(sqliteDriver(), ":memory:")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, connection.Close()) })
-	connection.SetMaxOpenConns(1)
+	for _, test := range []struct {
+		name        string
+		mutate      string
+		wantContent string
+		wantParts   []database.MessagePartEntity
+	}{
+		{
+			name: "malformed text part",
+			mutate: `UPDATE session_message_parts
+SET text = '', data = X'01'
+WHERE entry_id = ? AND sequence = 0`,
+			wantContent: "",
+			wantParts: []database.MessagePartEntity{{
+				Data: []byte{1}, Text: "", MIMEType: "", Name: "",
+				Type: database.MessagePartText, Width: 0, Height: 0,
+			}},
+		},
+		{
+			name:        "missing canonical part",
+			mutate:      `DELETE FROM session_message_parts WHERE entry_id = ?`,
+			wantParts:   nil,
+			wantContent: "",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 
-	ctx := context.Background()
-	require.NoError(t, database.Migrate(ctx, connection))
-	repository := testutil.SessionRepository(t, connection)
-	session, err := repository.CreateSession(ctx, "/work", "missing parts", "")
-	require.NoError(t, err)
-	entry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
-		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "stored scalar",
-		Provider: "", Model: "", Parts: nil,
-	})
-	require.NoError(t, err)
+			connection, err := sql.Open(sqliteDriver(), ":memory:")
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, connection.Close()) })
+			connection.SetMaxOpenConns(1)
 
-	_, err = connection.ExecContext(ctx, `DELETE FROM session_message_parts WHERE entry_id = ?`, entry.ID)
-	require.NoError(t, err)
+			ctx := context.Background()
+			require.NoError(t, database.Migrate(ctx, connection))
+			repository := testutil.SessionRepository(t, connection)
+			session, err := repository.CreateSession(ctx, "/work", test.name, "")
+			require.NoError(t, err)
+			entry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+				Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: testStoredScalar,
+				Provider: "", Model: "", Parts: nil,
+			})
+			require.NoError(t, err)
 
-	messages, err := repository.Messages(ctx, session.ID)
-	require.NoError(t, err)
-	require.Len(t, messages, 1)
-	assert.Equal(t, "stored scalar", messages[0].Content)
-	assert.Empty(t, messages[0].Parts)
+			_, err = connection.ExecContext(ctx, test.mutate, entry.ID)
+			require.NoError(t, err)
+
+			assertAllMessageReaders(t, repository, session.ID, entry.ID, func(message *database.MessageEntity) {
+				assert.Equal(t, test.wantContent, message.Content)
+				assert.Equal(t, test.wantParts, message.Parts)
+			})
+		})
+	}
 }
 
 func TestSessionRepository_RejectsInvalidMultipartMessages(t *testing.T) {
@@ -238,11 +316,6 @@ func invalidMultipartMessageCases() []invalidMultipartMessageCase {
 
 	return []invalidMultipartMessageCase{
 		{name: "image count", content: "", wantErr: "maximum is 4", parts: images},
-		{
-			name: "text projection mismatch", content: "different",
-			wantErr: "content must match the text projection",
-			parts:   []database.MessagePartEntity{testTextPart(testMessageText, nil)},
-		},
 		{
 			name: "unsupported type", content: "", wantErr: "unsupported message part type",
 			parts: []database.MessagePartEntity{{
@@ -293,6 +366,26 @@ func invalidMultipartMessageCases() []invalidMultipartMessageCase {
 	}
 }
 
+func TestSessionRepository_NormalizesScalarContentFromCanonicalParts(t *testing.T) {
+	t.Parallel()
+
+	repository := newTestSessionRepository(t)
+	ctx := t.Context()
+	session, err := repository.CreateSession(ctx, "/work", "canonical parts", "")
+	require.NoError(t, err)
+	entry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
+		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "stale scalar",
+		Provider: "", Model: "", Parts: []database.MessagePartEntity{testTextPart(testMessageText, nil)},
+	})
+	require.NoError(t, err)
+
+	assertAllMessageReaders(t, repository, session.ID, entry.ID, func(message *database.MessageEntity) {
+		assert.Equal(t, testMessageText, message.Content)
+		require.Len(t, message.Parts, 1)
+		assert.Equal(t, testMessageText, message.Parts[0].Text)
+	})
+}
+
 func testTextPart(text string, data []byte) database.MessagePartEntity {
 	return database.MessagePartEntity{
 		Data: data, Text: text, MIMEType: "", Name: "",
@@ -307,7 +400,7 @@ func testImagePart(data []byte, text string, width, height int) database.Message
 	}
 }
 
-func TestSessionRepository_PartInsertFailureRollsBackEntryAndMessage(t *testing.T) {
+func TestSessionRepository_PartInsertFailureRollsBackEntryEnvelopePartsAndSessionTouch(t *testing.T) {
 	t.Parallel()
 
 	connection, err := sql.Open(sqliteDriver(), ":memory:")
@@ -318,10 +411,11 @@ func TestSessionRepository_PartInsertFailureRollsBackEntryAndMessage(t *testing.
 	ctx := context.Background()
 	require.NoError(t, database.Migrate(ctx, connection))
 	require.NoError(t, database.ConfigureSQLite(ctx, connection, database.SQLiteOptions{BusyTimeout: 0}))
-	_, err = connection.ExecContext(ctx, `CREATE TRIGGER reject_message_part
+	_, err = connection.ExecContext(ctx, `CREATE TRIGGER reject_second_message_part
 BEFORE INSERT ON session_message_parts
+WHEN NEW.sequence = 1
 BEGIN
-    SELECT RAISE(ABORT, 'reject message part');
+    SELECT RAISE(ABORT, 'reject second message part');
 END`)
 	require.NoError(t, err)
 
@@ -330,21 +424,30 @@ END`)
 	require.NoError(t, err)
 
 	_, err = repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
-		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: "", Provider: "", Model: "",
-		Parts: []database.MessagePartEntity{{
-			Data: []byte{1}, Text: "", MIMEType: testImageMIME, Name: "test.png",
-			Type: database.MessagePartImage, Width: 1, Height: 1,
-		}},
+		Timestamp: session.UpdatedAt.Add(time.Hour), Role: database.RoleUser, Content: "before failure",
+		Provider: "", Model: "", Parts: []database.MessagePartEntity{
+			{
+				Data: nil, Text: "before failure", MIMEType: "", Name: "",
+				Type: database.MessagePartText, Width: 0, Height: 0,
+			},
+			{
+				Data: []byte{1}, Text: "", MIMEType: testImageMIME, Name: "test.png",
+				Type: database.MessagePartImage, Width: 1, Height: 1,
+			},
+		},
 	})
-	require.ErrorContains(t, err, "reject message part")
+	require.ErrorContains(t, err, "reject second message part")
 
-	entries, err := repository.Entries(ctx, session.ID)
-	require.NoError(t, err)
-	assert.Empty(t, entries)
+	for _, table := range []string{"session_entries", "session_messages", "session_message_parts"} {
+		var count int
+		require.NoError(t, connection.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&count))
+		assert.Zero(t, count, table)
+	}
 
-	messages, err := repository.Messages(ctx, session.ID)
+	after, found, err := repository.GetSession(ctx, session.ID)
 	require.NoError(t, err)
-	assert.Empty(t, messages)
+	require.True(t, found)
+	assert.Equal(t, session.UpdatedAt, after.UpdatedAt)
 }
 
 func TestSessionRepository_MessagePartsCascadeWithEntryAndSession(t *testing.T) {
@@ -397,6 +500,7 @@ func assertEntryReadersHydrateMultipart(
 	repository *database.SessionRepository,
 	sessionID string,
 	entryID string,
+	expected *database.MessageEntity,
 ) {
 	t.Helper()
 
@@ -405,47 +509,136 @@ func assertEntryReadersHydrateMultipart(
 	branch, err := repository.Branch(ctx, sessionID, entryID)
 	require.NoError(t, err)
 	require.Len(t, branch, 1)
-	assertMultipartParts(t, branch[0].Message.Parts)
+	assert.Equal(t, *expected, branch[0].Message)
 
 	entries, err := repository.Entries(ctx, sessionID)
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-	assertMultipartParts(t, entries[0].Message.Parts)
+	assert.Equal(t, *expected, entries[0].Message)
 
 	loadedEntry, found, err := repository.Entry(ctx, sessionID, entryID)
 	require.NoError(t, err)
 	require.True(t, found)
-	assertMultipartParts(t, loadedEntry.Message.Parts)
+	assert.Equal(t, *expected, loadedEntry.Message)
 
 	leaf, found, err := repository.LeafEntry(ctx, sessionID)
 	require.NoError(t, err)
 	require.True(t, found)
-	assertMultipartParts(t, leaf.Message.Parts)
+	assert.Equal(t, *expected, leaf.Message)
 
 	children, err := repository.Children(ctx, sessionID, nil)
 	require.NoError(t, err)
 	require.Len(t, children, 1)
-	assertMultipartParts(t, children[0].Message.Parts)
+	assert.Equal(t, *expected, children[0].Message)
 
 	tree, err := repository.Tree(ctx, sessionID)
 	require.NoError(t, err)
 	require.Len(t, tree, 1)
-	assertMultipartParts(t, tree[0].Entry.Message.Parts)
+	assert.Equal(t, *expected, tree[0].Entry.Message)
 }
 
-func assertMultipartParts(t *testing.T, parts []database.MessagePartEntity) {
+func assertAllMessageReaders(
+	t *testing.T,
+	repository *database.SessionRepository,
+	sessionID string,
+	entryID string,
+	assertMessage func(*database.MessageEntity),
+) {
 	t.Helper()
-	require.Len(t, parts, 3)
-	assert.Equal(t, database.MessagePartEntity{
-		Data: nil, Text: testMultipartText, MIMEType: "", Name: "",
-		Type: database.MessagePartText, Width: 0, Height: 0,
-	}, parts[0])
-	assert.Equal(t, database.MessagePartEntity{
-		Data: []byte{1, 2, 3}, Text: "", MIMEType: testImageMIME, Name: "first.png",
-		Type: database.MessagePartImage, Width: 10, Height: 20,
-	}, parts[1])
-	assert.Equal(t, database.MessagePartEntity{
-		Data: []byte{4, 5}, Text: "", MIMEType: "image/jpeg", Name: "second.jpg",
-		Type: database.MessagePartImage, Width: 30, Height: 40,
-	}, parts[2])
+
+	ctx := context.Background()
+
+	branch, err := repository.Branch(ctx, sessionID, entryID)
+	require.NoError(t, err)
+	require.Len(t, branch, 1)
+	assertMessage(&branch[0].Message)
+
+	entries, err := repository.Entries(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assertMessage(&entries[0].Message)
+
+	entry, found, err := repository.Entry(ctx, sessionID, entryID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assertMessage(&entry.Message)
+
+	leaf, found, err := repository.LeafEntry(ctx, sessionID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assertMessage(&leaf.Message)
+
+	children, err := repository.Children(ctx, sessionID, nil)
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+	assertMessage(&children[0].Message)
+
+	tree, err := repository.Tree(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, tree, 1)
+	assertMessage(&tree[0].Entry.Message)
+
+	messages, err := repository.Messages(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+	assertMessage(messageEntityFromSessionMessage(&messages[0]))
+
+	transcript, err := repository.TranscriptMessages(ctx, sessionID)
+	require.NoError(t, err)
+	require.Len(t, transcript, 1)
+	assertMessage(messageEntityFromSessionMessage(&transcript[0]))
+
+	message, found, err := repository.MessageForEntry(ctx, sessionID, entryID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assertMessage(messageEntityFromSessionMessage(message))
+}
+
+func messageEntityFromSessionMessage(message *database.SessionMessageEntity) *database.MessageEntity {
+	return &database.MessageEntity{
+		Timestamp: message.CreatedAt, Role: message.Role, Content: message.Content,
+		Provider: message.Provider, Model: message.Model, Parts: message.Parts,
+	}
+}
+
+func assertSessionMessageHydrated(
+	t *testing.T,
+	message *database.SessionMessageEntity,
+	sessionID string,
+	entryID string,
+	sender string,
+	expected *database.MessageEntity,
+) {
+	t.Helper()
+
+	assert.Equal(t, sessionID, message.SessionID)
+	assert.Equal(t, entryID, message.EntryID)
+	assert.Equal(t, sender, message.Sender)
+	assert.Equal(t, expected.Timestamp, message.CreatedAt)
+	assert.Equal(t, expected.Role, message.Role)
+	assert.Equal(t, expected.Content, message.Content)
+	assert.Equal(t, expected.Provider, message.Provider)
+	assert.Equal(t, expected.Model, message.Model)
+	assert.Equal(t, expected.Parts, message.Parts)
+}
+
+func expectedMultipartParts() []database.MessagePartEntity {
+	return []database.MessagePartEntity{
+		{
+			Data: nil, Text: "compare ", MIMEType: "", Name: "",
+			Type: database.MessagePartText, Width: 0, Height: 0,
+		},
+		{
+			Data: []byte{1, 2, 3}, Text: "", MIMEType: testImageMIME, Name: "first.png",
+			Type: database.MessagePartImage, Width: 10, Height: 20,
+		},
+		{
+			Data: nil, Text: "these", MIMEType: "", Name: "",
+			Type: database.MessagePartText, Width: 0, Height: 0,
+		},
+		{
+			Data: []byte{4, 5}, Text: "", MIMEType: "image/jpeg", Name: "second.jpg",
+			Type: database.MessagePartImage, Width: 30, Height: 40,
+		},
+	}
 }

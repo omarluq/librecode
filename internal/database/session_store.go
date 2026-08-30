@@ -49,8 +49,8 @@ WITH RECURSIVE chain(id, depth) AS (
     WHERE parent.session_id = ?
 )
 SELECT
-    e.id, e.session_id, e.parent_id, e.entry_type, e.role, e.content,
-    e.provider, e.model, e.custom_type, e.data_json, e.summary, e.created_at,
+    e.id, e.session_id, e.parent_id, e.entry_type,
+    e.custom_type, e.data_json, e.summary, e.created_at,
     e.tool_name, e.tool_status, e.tool_args_json, e.token_estimate,
     e.model_facing, e.display,
     e.compaction_first_kept_entry_id, e.compaction_tokens_before, e.branch_from_entry_id
@@ -81,7 +81,7 @@ func (repository *SessionRepository) Branch(ctx context.Context, sessionID, entr
 				Errorf("entry %q not found in session %q", entryID, sessionID)
 		}
 
-		if err := repository.withProvider(provider).hydrateEntryMessages(ctx, sessionID, entries); err != nil {
+		if err := repository.withProvider(provider).hydrateEntryMessages(ctx, entries); err != nil {
 			return nil, err
 		}
 
@@ -551,10 +551,8 @@ func (repository *SessionRepository) AppendCompaction(
 	data := newEntryData()
 	data.Details = input.Details
 	data.FromHook = input.FromHook
-	data.FirstKeptEntryID = input.FirstKeptEntryID
 	data.CompactionFirstKeptEntryID = input.FirstKeptEntryID
 	data.CompactionTokensBefore = input.TokensBefore
-	data.TokensBefore = input.TokensBefore
 
 	dataJSON, err := dataJSONFromEntity(&data)
 	if err != nil {
@@ -582,7 +580,6 @@ func (repository *SessionRepository) AppendBranchSummary(
 	data := newEntryData()
 	data.Details = details
 	data.FromHook = fromHook
-	data.FromID = fromID
 	data.BranchFromEntryID = fromID
 
 	dataJSON, err := dataJSONFromEntity(&data)

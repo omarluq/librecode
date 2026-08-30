@@ -5,18 +5,17 @@ import (
 	"database/sql"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/omarluq/librecode/internal/database"
-	"github.com/omarluq/librecode/internal/testutil"
 )
 
 const (
 	schemaIndexType     = "index"
 	createdAtColumnName = "created_at"
+	sessionIDColumnName = "session_id"
 
 	deployedWorkflowMigrationV8 = `-- +goose Up
 CREATE TABLE workflow_runs (
@@ -45,6 +44,299 @@ DROP TABLE IF EXISTS workflow_agent_tasks;
 DROP TABLE IF EXISTS workflow_runs;
 `
 )
+
+func TestSessionPersistenceNormalizationMigration(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	connection := newMigratedThroughVersion(t, 22)
+	insertSessionPersistenceFixtures(ctx, t, connection)
+
+	// Real v22 databases may be missing the UUID lookup table even though the
+	// validation triggers that reference it remain in sqlite_schema.
+	_, err := connection.ExecContext(ctx, `
+DROP INDEX idx_tasks_kind_state_created;
+CREATE INDEX idx_tasks_deployed_drift ON tasks(owner_session_id, state);
+DROP TRIGGER validate_session_messages_entry_id_uuid_update;
+ALTER TABLE workflow_runs ADD COLUMN source_limit INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE workflow_runs ADD COLUMN output_limit INTEGER NOT NULL DEFAULT 0;
+UPDATE workflow_runs SET source_limit=123, output_limit=456;
+CREATE TABLE workflow_agent_tasks_deployed (
+    workflow_task_id TEXT NOT NULL,
+    agent_task_id TEXT NOT NULL UNIQUE,
+    sequence INTEGER NOT NULL,
+    node_key TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    invocation_index INTEGER NOT NULL DEFAULT 0 CHECK (invocation_index >= 0),
+    PRIMARY KEY (workflow_task_id, agent_task_id),
+    UNIQUE (workflow_task_id, sequence),
+    UNIQUE (workflow_task_id, node_key, invocation_index),
+    FOREIGN KEY (workflow_task_id) REFERENCES workflow_runs(task_id) ON DELETE CASCADE,
+    FOREIGN KEY (agent_task_id) REFERENCES agent_tasks(task_id) ON DELETE CASCADE,
+    CHECK (sequence > 0)
+);
+INSERT INTO workflow_agent_tasks_deployed (
+    workflow_task_id,agent_task_id,sequence,node_key,created_at,invocation_index
+)
+SELECT workflow_task_id,agent_task_id,sequence,node_key,created_at,7
+FROM workflow_agent_tasks;
+DROP TABLE workflow_agent_tasks;
+ALTER TABLE workflow_agent_tasks_deployed RENAME TO workflow_agent_tasks;
+DROP TABLE uuid_v7_pattern;
+`)
+	require.NoError(t, err)
+
+	var sessionsRootPage, tasksRootPage, workflowRootPage int
+	require.NoError(t, connection.QueryRowContext(ctx, `SELECT
+ (SELECT rootpage FROM sqlite_schema WHERE type='table' AND name='sessions'),
+ (SELECT rootpage FROM sqlite_schema WHERE type='table' AND name='tasks'),
+ (SELECT rootpage FROM sqlite_schema WHERE type='table' AND name='workflow_runs')`).
+		Scan(&sessionsRootPage, &tasksRootPage, &workflowRootPage))
+
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+	_, err = provider.UpTo(ctx, 23)
+	require.NoError(t, err)
+
+	assertSessionNormalizationSchema(ctx, t, connection, sessionsRootPage, tasksRootPage, workflowRootPage)
+	assertSessionNormalizationData(ctx, t, connection)
+	assertSessionNormalizationForeignKeys(ctx, t, connection)
+}
+
+func assertSessionNormalizationSchema(
+	ctx context.Context,
+	t *testing.T,
+	connection *sql.DB,
+	sessionsRootPage, tasksRootPage, workflowRootPage int,
+) {
+	t.Helper()
+
+	assertIndexColumns(ctx, t, connection, "idx_session_entries_transcript_cursor", []string{
+		sessionIDColumnName, createdAtColumnName, "id",
+	})
+	assertSchemaObjectMissing(ctx, t, connection,
+		`SELECT COUNT(*) FROM sqlite_schema WHERE type='index' AND name='idx_tasks_kind_state_created'`)
+	assertIndexColumns(ctx, t, connection, "idx_tasks_deployed_drift", []string{"owner_session_id", "state"})
+	assertSchemaObjectExists(ctx, t, connection,
+		`SELECT COUNT(*) FROM pragma_table_info('workflow_runs') WHERE name='source_limit'`)
+	assertSchemaObjectExists(ctx, t, connection,
+		`SELECT COUNT(*) FROM pragma_table_info('workflow_runs') WHERE name='output_limit'`)
+
+	var migratedSessionsRootPage, migratedTasksRootPage, migratedWorkflowRootPage int
+	require.NoError(t, connection.QueryRowContext(ctx, `SELECT
+ (SELECT rootpage FROM sqlite_schema WHERE type='table' AND name='sessions'),
+ (SELECT rootpage FROM sqlite_schema WHERE type='table' AND name='tasks'),
+ (SELECT rootpage FROM sqlite_schema WHERE type='table' AND name='workflow_runs')`).
+		Scan(&migratedSessionsRootPage, &migratedTasksRootPage, &migratedWorkflowRootPage))
+	assert.Equal(t, sessionsRootPage, migratedSessionsRootPage)
+	assert.Equal(t, tasksRootPage, migratedTasksRootPage)
+	assert.Equal(t, workflowRootPage, migratedWorkflowRootPage)
+
+	assertSchemaObjectMissing(ctx, t, connection,
+		`SELECT COUNT(*) FROM pragma_table_info('session_entries') WHERE name IN ('role','content','provider','model')`)
+
+	const removedMessageColumnsQuery = `SELECT COUNT(*) FROM pragma_table_info('session_messages')
+WHERE name IN ('id','session_id','sender','content','created_at')`
+	assertSchemaObjectMissing(ctx, t, connection, removedMessageColumnsQuery)
+	assertSchemaObjectMissing(ctx, t, connection,
+		`SELECT COUNT(*) FROM pragma_table_info('session_message_parts') WHERE name IN ('id','session_id')`)
+}
+
+func assertSessionNormalizationData(ctx context.Context, t *testing.T, connection *sql.DB) {
+	t.Helper()
+
+	var (
+		workflowName             string
+		sourceLimit, outputLimit int
+	)
+	require.NoError(t, connection.QueryRowContext(ctx,
+		`SELECT name,source_limit,output_limit FROM workflow_runs
+WHERE task_id='01900000-0000-7000-8000-000000000307'`).
+		Scan(&workflowName, &sourceLimit, &outputLimit))
+	assert.Equal(t, "workflow", workflowName)
+	assert.Equal(t, 123, sourceLimit)
+	assert.Equal(t, 456, outputLimit)
+
+	var (
+		invocationIndex   int
+		workflowCreatedAt string
+	)
+	require.NoError(t, connection.QueryRowContext(ctx, `SELECT invocation_index,created_at
+FROM workflow_agent_tasks WHERE agent_task_id='01900000-0000-7000-8000-000000000308'`).
+		Scan(&invocationIndex, &workflowCreatedAt))
+	assert.Equal(t, 7, invocationIndex)
+	assert.Equal(t, "2026-01-01", workflowCreatedAt)
+
+	var parent sql.NullString
+	require.NoError(t, connection.QueryRowContext(ctx,
+		`SELECT parent_session_id FROM sessions WHERE id='01900000-0000-7000-8000-000000000302'`).Scan(&parent))
+	assert.Equal(t, "01900000-0000-7000-8000-000000000301", parent.String)
+
+	var dataJSON string
+	require.NoError(t, connection.QueryRowContext(ctx,
+		`SELECT data_json FROM session_entries WHERE id='01900000-0000-7000-8000-000000000303'`).Scan(&dataJSON))
+	assert.JSONEq(t, `{"details":{"kept":null}}`, dataJSON)
+
+	var blob []byte
+
+	const imageDataQuery = `SELECT data FROM session_message_parts
+WHERE entry_id='01900000-0000-7000-8000-000000000303' AND sequence=1`
+	require.NoError(t, connection.QueryRowContext(ctx, imageDataQuery).Scan(&blob))
+	assert.Equal(t, []byte{1, 2, 3}, blob)
+	assertSchemaObjectExists(ctx, t, connection, `SELECT COUNT(*) FROM session_completion_entry_deliveries
+WHERE entry_id='01900000-0000-7000-8000-000000000303'
+  AND delivery_id='01900000-0000-7000-8000-000000000313'`)
+	assertSchemaObjectMissing(ctx, t, connection, `SELECT COUNT(*) FROM pragma_foreign_key_check`)
+}
+
+func assertSessionNormalizationForeignKeys(ctx context.Context, t *testing.T, connection *sql.DB) {
+	t.Helper()
+
+	assertSchemaObjectExists(ctx, t, connection, `SELECT COUNT(*) FROM pragma_foreign_key_list('tasks')
+WHERE "from"='owner_session_id' AND "table"='sessions' AND "to"='id'`)
+	assertSchemaObjectExists(ctx, t, connection, `SELECT COUNT(*) FROM pragma_foreign_key_list('agent_tasks')
+WHERE "from"='child_session_id' AND "table"='sessions' AND "to"='id'`)
+
+	_, err := connection.ExecContext(ctx, `INSERT INTO sessions
+(id,cwd,name,parent_session_id,created_at,updated_at) VALUES
+('01900000-0000-7000-8000-000000000314','/tmp','orphan',
+ '01900000-0000-7000-8000-000000000399','2026-01-01','2026-01-01')`)
+	require.ErrorContains(t, err, "FOREIGN KEY constraint failed")
+
+	_, err = connection.ExecContext(ctx, `INSERT INTO sessions
+(id,cwd,name,parent_session_id,created_at,updated_at) VALUES
+('01900000-0000-7000-8000-000000000314','/tmp','parent',NULL,'2026-01-01','2026-01-01'),
+('01900000-0000-7000-8000-000000000315','/tmp','child',
+ '01900000-0000-7000-8000-000000000314','2026-01-01','2026-01-01');
+DELETE FROM sessions WHERE id='01900000-0000-7000-8000-000000000314';`)
+	require.NoError(t, err)
+
+	var deletedParent sql.NullString
+	require.NoError(t, connection.QueryRowContext(ctx,
+		`SELECT parent_session_id FROM sessions WHERE id='01900000-0000-7000-8000-000000000315'`).
+		Scan(&deletedParent))
+	assert.False(t, deletedParent.Valid)
+}
+
+func insertSessionPersistenceFixtures(ctx context.Context, t *testing.T, connection *sql.DB) {
+	t.Helper()
+
+	_, err := connection.ExecContext(ctx, `
+INSERT INTO sessions (id, cwd, name, parent_session, created_at, updated_at) VALUES
+ ('01900000-0000-7000-8000-000000000301','/tmp','parent','','2026-01-01','2026-01-02'),
+ ('01900000-0000-7000-8000-000000000302','/tmp','child',
+  '01900000-0000-7000-8000-000000000301','2026-01-01','2026-01-02');
+INSERT INTO session_entries (
+ id,session_id,parent_id,entry_type,role,content,provider,model,custom_type,data_json,
+ summary,created_at,tool_name,tool_status,tool_args_json,token_estimate,model_facing,display
+) VALUES (
+ '01900000-0000-7000-8000-000000000303','01900000-0000-7000-8000-000000000301',NULL,
+ 'message','user','hello','provider','model','',
+ '{"tool_name":"read","token_estimate":5,"model_facing":true,"display":true,"details":{"kept":null}}',
+ 'summary','2026-01-01T00:00:00Z','read','','',5,1,1
+);
+INSERT INTO session_messages (id,session_id,entry_id,sender,role,content,provider,model,created_at)
+VALUES ('01900000-0000-7000-8000-000000000304','01900000-0000-7000-8000-000000000301',
+ '01900000-0000-7000-8000-000000000303','legacy-sender','user','hello','provider','model','2026-01-01T00:00:01Z');
+INSERT INTO session_message_parts (id,session_id,entry_id,sequence,type,text,mime_type,name,width,height,data) VALUES
+ ('01900000-0000-7000-8000-000000000305','01900000-0000-7000-8000-000000000301',
+  '01900000-0000-7000-8000-000000000303',0,'text','hello','','',0,0,NULL),
+ ('01900000-0000-7000-8000-000000000306','01900000-0000-7000-8000-000000000301',
+  '01900000-0000-7000-8000-000000000303',1,'image','','image/png','pixel',1,1,x'010203');
+INSERT INTO tasks (id,kind,state,owner_session_id,created_at,finished_at,updated_at) VALUES
+ ('01900000-0000-7000-8000-000000000307','workflow','succeeded',
+  '01900000-0000-7000-8000-000000000301','2026-01-01','2026-01-02','2026-01-02'),
+ ('01900000-0000-7000-8000-000000000308','agent','succeeded',
+  '01900000-0000-7000-8000-000000000301','2026-01-01','2026-01-02','2026-01-02'),
+ ('01900000-0000-7000-8000-000000000309','tool','succeeded',
+  '01900000-0000-7000-8000-000000000301','2026-01-01','2026-01-02','2026-01-02');
+INSERT INTO events (id,kind,payload_json,created_at)
+VALUES ('01900000-0000-7000-8000-000000000310','task.finished','{}','2026-01-02');
+INSERT INTO workflow_runs (task_id,source,source_hash,name)
+VALUES ('01900000-0000-7000-8000-000000000307','return {}','hash','workflow');
+INSERT INTO agent_tasks (task_id,child_session_id,agent_name,prompt,depth)
+VALUES ('01900000-0000-7000-8000-000000000308','01900000-0000-7000-8000-000000000302','reviewer','review',1);
+INSERT INTO workflow_agent_tasks (workflow_task_id,agent_task_id,sequence,node_key,created_at)
+VALUES ('01900000-0000-7000-8000-000000000307','01900000-0000-7000-8000-000000000308',1,'review','2026-01-01');
+INSERT INTO tool_tasks (
+ task_id,target_name,arguments_json,cwd,owner_session_id,invocation_id,
+ wrapper_call_id,timeout_seconds,policy_json,definition_json
+) VALUES (
+ '01900000-0000-7000-8000-000000000309','read','{}','/tmp',
+ '01900000-0000-7000-8000-000000000301','invocation','call',30,'{}','{}');
+INSERT INTO session_completion_sequences (owner_session_id,next_sequence)
+VALUES ('01900000-0000-7000-8000-000000000301',2);
+INSERT INTO session_completion_deliveries (
+ id,event_id,task_id,mapping_version,owner_session_id,delivery_sequence,
+ source_kind,terminal_state,outcome_ref,envelope_json,created_at
+) VALUES (
+ '01900000-0000-7000-8000-000000000313','01900000-0000-7000-8000-000000000310',
+ '01900000-0000-7000-8000-000000000308','v1','01900000-0000-7000-8000-000000000301',
+ 1,'agent_task','succeeded','result','{}','2026-01-02');
+INSERT INTO session_completion_entry_deliveries (entry_id,delivery_id)
+VALUES ('01900000-0000-7000-8000-000000000303','01900000-0000-7000-8000-000000000313');
+INSERT INTO completion_projection_diagnostics (owner_session_id,code,updated_at)
+VALUES ('01900000-0000-7000-8000-000000000301','sample','2026-01-02');`)
+	require.NoError(t, err)
+}
+
+func TestSessionPersistenceNormalizationMigrationRejectsInvalidV22WithoutChanges(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	connection := newMigratedThroughVersion(t, 22)
+	_, err := connection.ExecContext(ctx, `
+INSERT INTO sessions (id,cwd,name,parent_session,created_at,updated_at)
+VALUES ('01900000-0000-7000-8000-000000000311','/tmp','bad','','2026-01-01','2026-01-01');
+INSERT INTO session_entries (id,session_id,entry_type,role,content,data_json,created_at)
+VALUES ('01900000-0000-7000-8000-000000000312','01900000-0000-7000-8000-000000000311',
+'message','user','missing envelope','{}','2026-01-01');`)
+	require.NoError(t, err)
+
+	const schemaQuery = `SELECT group_concat(sql, char(10))
+FROM (SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY type,name)`
+
+	var schemaBefore string
+	require.NoError(t, connection.QueryRowContext(ctx, schemaQuery).Scan(&schemaBefore))
+
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+	_, err = provider.UpTo(ctx, 23)
+	require.ErrorContains(t, err, "migration 23 preflight or verification failed at assertion 5")
+	version, err := provider.GetDBVersion(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(22), version)
+
+	var schemaAfter string
+	require.NoError(t, connection.QueryRowContext(ctx, schemaQuery).Scan(&schemaAfter))
+	assert.Equal(t, schemaBefore, schemaAfter)
+	assertSchemaObjectExists(ctx, t, connection,
+		`SELECT COUNT(*) FROM session_entries WHERE content='missing envelope'`)
+	assertSchemaObjectMissing(ctx, t, connection,
+		`SELECT COUNT(*) FROM sqlite_schema WHERE name LIKE '%__v22_old'`)
+}
+
+func TestSessionPersistenceNormalizationMigrationRejectsRollback(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	connection := newMigratedThroughVersion(t, 23)
+	migrationRoot, err := database.MigrationFS()
+	require.NoError(t, err)
+	provider, err := database.NewMigrationProvider(connection, migrationRoot)
+	require.NoError(t, err)
+	_, err = provider.Down(ctx)
+	require.ErrorContains(t, err, "migration_23_is_irreversible")
+	version, err := provider.GetDBVersion(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(23), version)
+	assertSchemaObjectMissing(ctx, t, connection,
+		`SELECT COUNT(*) FROM sqlite_schema WHERE name='migration_23_is_irreversible'`)
+}
 
 func TestStartupQueryIndexMigration(t *testing.T) {
 	t.Parallel()
@@ -82,13 +374,13 @@ func TestTranscriptTailIndexMigrationUsesCursorColumns(t *testing.T) {
 	_, err = provider.UpTo(ctx, 21)
 	require.NoError(t, err)
 	assertIndexColumns(ctx, t, connection, "idx_session_messages_session_created", []string{
-		"session_id", createdAtColumnName, "entry_id",
+		sessionIDColumnName, createdAtColumnName, "entry_id",
 	})
 
 	_, err = provider.Down(ctx)
 	require.NoError(t, err)
 	assertIndexColumns(ctx, t, connection, "idx_session_messages_session_created", []string{
-		"session_id", createdAtColumnName,
+		sessionIDColumnName, createdAtColumnName,
 	})
 }
 
@@ -138,22 +430,26 @@ func TestMessagePartsMigrationUpDownAndOldSchemaUpgrade(t *testing.T) {
 			`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, indexName)
 	}
 
-	repository := testutil.SessionRepository(t, connection)
-	session, err := repository.CreateSession(ctx, "/work", "parts constraints", "")
-	require.NoError(t, err)
-	entry, err := repository.AppendMessage(ctx, session.ID, nil, &database.MessageEntity{
-		Timestamp: time.Now().UTC(), Role: database.RoleUser, Content: testMessageText,
-		Provider: "", Model: "", Parts: nil,
-	})
+	const (
+		sessionID = "01900000-0000-7000-8000-000000000401"
+		entryID   = "01900000-0000-7000-8000-000000000402"
+	)
+
+	_, err = connection.ExecContext(ctx, `
+INSERT INTO sessions (id, cwd, name, parent_session, created_at, updated_at)
+VALUES ('01900000-0000-7000-8000-000000000401', '/work', 'parts constraints', '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+INSERT INTO session_entries (id, session_id, entry_type, role, content, data_json, created_at)
+VALUES ('01900000-0000-7000-8000-000000000402', '01900000-0000-7000-8000-000000000401',
+        'message', 'user', 'hello', '{}', CURRENT_TIMESTAMP)`)
 	require.NoError(t, err)
 
 	_, err = connection.ExecContext(ctx, `
 INSERT INTO session_message_parts (id, session_id, entry_id, sequence, type, text)
-VALUES (NULL, ?, ?, 1, 'text', 'invalid')`, session.ID, entry.ID)
+VALUES (NULL, ?, ?, 1, 'text', 'invalid')`, sessionID, entryID)
 	require.ErrorContains(t, err, "NOT NULL constraint failed")
 	_, err = connection.ExecContext(ctx, `
 INSERT INTO session_message_parts (id, session_id, entry_id, sequence, type, text)
-VALUES ('fractional-sequence', ?, ?, 1.5, 'text', 'invalid')`, session.ID, entry.ID)
+VALUES ('fractional-sequence', ?, ?, 1.5, 'text', 'invalid')`, sessionID, entryID)
 	require.ErrorContains(t, err, "CHECK constraint failed")
 
 	_, err = provider.Down(ctx)

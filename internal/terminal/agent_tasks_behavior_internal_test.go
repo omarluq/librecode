@@ -1558,7 +1558,7 @@ func TestInspectAgentTaskLoadFailureDoesNotSwitchSession(t *testing.T) {
 
 			if testCase.name == "messages load" {
 				_, err := connection.ExecContext(t.Context(),
-					`UPDATE session_messages SET created_at = 'invalid' WHERE session_id = ?`, child.ID)
+					`UPDATE session_entries SET created_at = 'invalid' WHERE session_id = ?`, child.ID)
 				require.NoError(t, err)
 			}
 

@@ -101,7 +101,7 @@ func lazySessionMessage(
 	parts []database.MessagePartEntity,
 ) database.SessionMessageEntity {
 	return database.SessionMessageEntity{
-		CreatedAt: time.Time{}, ID: "", SessionID: "", EntryID: "", Sender: "",
+		CreatedAt: time.Time{}, SessionID: "", EntryID: "", Sender: "",
 		Role: role, Content: content, Provider: "", Model: "", Parts: parts,
 	}
 }
