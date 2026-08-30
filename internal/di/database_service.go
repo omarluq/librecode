@@ -43,7 +43,7 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 		return nil, err
 	}
 
-	_, loggerErr := do.Invoke[*LoggerService](injector)
+	loggerService, loggerErr := do.Invoke[*LoggerService](injector)
 	if loggerErr != nil {
 		return nil, loggerErr
 	}
@@ -68,7 +68,7 @@ func NewDatabaseService(injector do.Injector) (*DatabaseService, error) {
 	}
 
 	finishDatabase := startupprofile.FromContext(ctx).Span("database")
-	connection, err := openSQLiteDatabase(ctx, databasePath, cfg.Database)
+	connection, err := openSQLiteDatabase(ctx, databasePath, cfg.Database, loggerService.SlogLogger)
 
 	finishDatabase()
 
@@ -132,7 +132,12 @@ func (service *DatabaseService) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func openSQLiteDatabase(ctx context.Context, databasePath string, cfg config.DatabaseConfig) (*sql.DB, error) {
+func openSQLiteDatabase(
+	ctx context.Context,
+	databasePath string,
+	cfg config.DatabaseConfig,
+	logger *slog.Logger,
+) (*sql.DB, error) {
 	dsn := database.SQLiteDSN(databasePath, database.SQLiteOptions{BusyTimeout: cfg.BusyTimeout})
 
 	connection, err := sql.Open(sqliteDriverName, dsn)
@@ -144,7 +149,7 @@ func openSQLiteDatabase(ctx context.Context, databasePath string, cfg config.Dat
 	connection.SetMaxIdleConns(cfg.MaxIdleConns)
 	connection.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 
-	if err := setupSQLiteDatabase(ctx, connection, databasePath, cfg); err != nil {
+	if err := setupSQLiteDatabase(ctx, connection, databasePath, cfg, logger); err != nil {
 		return nil, err
 	}
 
@@ -156,6 +161,7 @@ func setupSQLiteDatabase(
 	connection *sql.DB,
 	databasePath string,
 	cfg config.DatabaseConfig,
+	logger *slog.Logger,
 ) error {
 	if err := connection.PingContext(ctx); err != nil {
 		return closeAfterSetupError(connection, "close_after_ping", "ping", databasePath, err)
@@ -167,7 +173,7 @@ func setupSQLiteDatabase(
 	}
 
 	if cfg.ApplyMigrations {
-		if err := database.MigrateWithLogger(ctx, connection, slog.Default()); err != nil {
+		if err := database.MigrateWithLogger(ctx, connection, logger); err != nil {
 			return closeAfterSetupError(connection, "close_after_migrate", "migrate", databasePath, err)
 		}
 	}
