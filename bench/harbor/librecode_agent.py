@@ -44,7 +44,7 @@ class LibrecodeAgent(BaseInstalledAgent):
         if not binary_path.exists():
             msg = (
                 "librecode binary not found. Build it first with "
-                "`mise exec -- task build`, or set LIBRECODE_BINARY=/path/to/librecode, "
+                "`vfox exec golang -- go tool task build`, or set LIBRECODE_BINARY=/path/to/librecode, "
                 "or set LIBRECODE_INSTALL_COMMAND to a command that installs librecode "
                 "inside the Harbor environment."
             )

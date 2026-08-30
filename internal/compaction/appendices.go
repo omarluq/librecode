@@ -150,10 +150,13 @@ func isValidationCommand(command string) bool {
 	command = strings.TrimSpace(command)
 	for _, prefix := range []string{
 		"go test ", "go vet ", "golangci-lint ", "staticcheck ",
+		"go tool task build", "go tool task ci", "go tool task test", "go tool task lint", "go tool task fmt-check",
 		"task build", "task ci", "task test", "task lint", "task fmt-check",
-		"mise exec -- go test ", "mise exec -- go vet ", "mise exec -- golangci-lint ",
-		"mise exec -- staticcheck ", "mise exec -- task build", "mise exec -- task ci",
-		"mise exec -- task test", "mise exec -- task lint", "mise exec -- task fmt-check",
+		"vfox exec golang -- go test ", "vfox exec golang -- go vet ",
+		"vfox exec golang -- go tool golangci-lint ", "vfox exec golang -- go tool staticcheck ",
+		"vfox exec golang -- go tool task build", "vfox exec golang -- go tool task ci",
+		"vfox exec golang -- go tool task test", "vfox exec golang -- go tool task lint",
+		"vfox exec golang -- go tool task fmt-check",
 	} {
 		if command == strings.TrimSpace(prefix) || strings.HasPrefix(command, prefix) {
 			return true

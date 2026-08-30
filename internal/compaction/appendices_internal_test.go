@@ -73,11 +73,11 @@ func TestCollectValidationRecordsExcludesNonValidationBash(t *testing.T) {
 
 	entries := []database.EntryEntity{
 		validationEntry("edit", "sed -i 's/a/b/' file.go", "completed"),
-		validationEntry("test", "mise exec -- go test ./...", "completed"),
+		validationEntry("test", "vfox exec golang -- go test ./...", "completed"),
 	}
 
 	assert.Equal(t, []ValidationRecord{{
-		EntryID: "test", Command: "mise exec -- go test ./...", Outcome: ValidationPassed,
+		EntryID: "test", Command: "vfox exec golang -- go test ./...", Outcome: ValidationPassed,
 	}}, CollectValidationRecords(entries))
 }
 

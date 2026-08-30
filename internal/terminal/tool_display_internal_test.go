@@ -25,8 +25,8 @@ func TestToolSummaryHumanizesKnownTools(t *testing.T) {
 		{
 			name: testToolBash,
 			tool: testToolBash,
-			args: `{"command":"mise exec -- go test ./...","timeout":30}`,
-			want: "$ mise exec -- go test ./... (timeout 30s)",
+			args: `{"command":"vfox exec golang -- go test ./...","timeout":30}`,
+			want: "$ vfox exec golang -- go test ./... (timeout 30s)",
 		},
 		{
 			name: "read range",
