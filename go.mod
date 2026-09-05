@@ -5,7 +5,7 @@ go 1.27
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/MicahParks/jwkset v0.11.3
-	github.com/MicahParks/keyfunc/v3 v3.8.1
+	github.com/MicahParks/keyfunc/v3 v3.8.2
 	github.com/Oudwins/zog v0.23.0
 	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/adrg/frontmatter v0.2.0
