@@ -45,6 +45,10 @@ func BenchmarkSessionRepositoryLargeTranscript(b *testing.B) {
 
 	for _, pageSize := range []int{256, 4096} {
 		b.Run(fmt.Sprintf("tail_%d", pageSize), func(b *testing.B) {
+			if fixtureRows < pageSize {
+				b.Skipf("fixture has %d rows; tail page requires %d", fixtureRows, pageSize)
+			}
+
 			benchmarkTranscriptPage(b, func(ctx context.Context) ([]database.SessionMessageEntity, error) {
 				return repositories.Sessions.TranscriptMessageTail(ctx, compactTimestampSessionID, pageSize)
 			}, pageSize)
@@ -56,6 +60,19 @@ func BenchmarkSessionRepositoryLargeTranscript(b *testing.B) {
 		cursorID := fmt.Sprintf("01910000-0000-7000-8000-%012x", cursorIndex+1)
 
 		b.Run(fmt.Sprintf("cursor_%d", pageSize), func(b *testing.B) {
+			// RFC3339Nano omits the fractional part for whole seconds, and
+			// SQLite orders TEXT lexically, so the whole-second row at the
+			// cursor's second sorts after a fractional cursor string. Count
+			// older rows with the same lexical semantics production uses.
+			availableRows := cursorIndex
+			if cursorIndex%10 != 0 {
+				availableRows--
+			}
+
+			if availableRows < pageSize {
+				b.Skipf("cursor has %d older rows; page requires %d", availableRows, pageSize)
+			}
+
 			benchmarkTranscriptPage(b, func(ctx context.Context) ([]database.SessionMessageEntity, error) {
 				return repositories.Sessions.TranscriptMessagesBefore(
 					ctx, compactTimestampSessionID, cursor, cursorID, pageSize,

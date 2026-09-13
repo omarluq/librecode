@@ -440,7 +440,7 @@ INSERT INTO session_entries (
  compaction_first_kept_entry_id,compaction_tokens_before,branch_from_entry_id,operation_id)
 SELECT printf('01910000-0000-7000-8000-%012x',n+1), ?, NULL, 'message', '', '{}', '',
  strftime('%Y-%m-%dT%H:%M:%S','2025-01-01T00:00:00Z',printf('+%.1f seconds',n/10.0)) ||
- '.'||printf('%09d',(n%10)*100000000)||'Z',
+ CASE WHEN n%10 = 0 THEN 'Z' ELSE '.'||printf('%d',n%10)||'Z' END,
  '', '', '', 32, 1, 1, '', 0, '', '' FROM seq WHERE n < ?`
 
 	_, err := transaction.ExecContext(
@@ -898,8 +898,8 @@ WHERE e.session_id = ? AND e.display = 1 AND (e.created_at < ? OR (e.created_at 
 ORDER BY e.created_at DESC, e.id DESC LIMIT ?) ORDER BY created_at ASC, entry_id ASC`,
 			Args: []any{
 				compactTimestampSessionID,
-				"2025-01-01T01:00:00.000Z",
-				"2025-01-01T01:00:00.000Z",
+				"2025-01-01T01:00:00Z",
+				"2025-01-01T01:00:00Z",
 				"01910000-0000-7000-8000-000000008ca0",
 				256,
 			},
