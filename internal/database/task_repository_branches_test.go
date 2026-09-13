@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,64 @@ func TestTaskRepositoryListFiltersAndLimits(t *testing.T) {
 	allQueued, err := tasks.ListQueuedExcluding(ctx, nil, 0)
 	require.NoError(t, err)
 	assert.Len(t, allQueued, 4)
+}
+
+func TestTaskRepositoryClaimsSameSecondQueuedTasksInStableIDOrder(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx, tasks := t.Context(), fixture.tasks
+	owner := fixture.createOwner(ctx)
+
+	created := make([]*database.TaskEntity, 0, 3)
+
+	for range 3 {
+		task, err := tasks.Create(ctx, newTask(owner.ID))
+		require.NoError(t, err)
+
+		created = append(created, task)
+	}
+
+	createdAt := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	_, err := fixture.connection.ExecContext(ctx, `UPDATE tasks SET created_at = ? WHERE owner_session_id = ?`,
+		createdAt, owner.ID)
+	require.NoError(t, err)
+
+	want := taskIDsFromPointers(created)
+	slices.Sort(want)
+
+	queued, err := tasks.ListQueuedExcluding(ctx, nil, len(want))
+	require.NoError(t, err)
+	assert.Equal(t, want, taskIDs(queued))
+
+	for index, wantID := range want {
+		candidates, listErr := tasks.ListByStates(
+			ctx, database.TaskKindAgent, []database.TaskState{database.TaskQueued}, 1,
+		)
+		require.NoError(t, listErr)
+		require.Len(t, candidates, 1)
+		assert.Equal(t, wantID, candidates[0].ID, "claim %d", index)
+
+		claimed, claimErr := tasks.ClaimQueued(ctx, &database.TaskClaim{
+			TaskID: candidates[0].ID, LeaseOwner: testWorker,
+			LeaseExpiresAt: time.Now().Add(time.Minute), EventKind: taskStartedEvent,
+		})
+		require.NoError(t, claimErr)
+		require.True(t, claimed)
+	}
+
+	remaining, err := tasks.ListByStates(ctx, database.TaskKindAgent, []database.TaskState{database.TaskQueued}, 1)
+	require.NoError(t, err)
+	assert.Empty(t, remaining)
+}
+
+func taskIDsFromPointers(tasks []*database.TaskEntity) []string {
+	ids := make([]string, len(tasks))
+	for index := range tasks {
+		ids[index] = tasks[index].ID
+	}
+
+	return ids
 }
 
 func TestTaskRepositoryClaimInterruptedAndRunningEvents(t *testing.T) {
