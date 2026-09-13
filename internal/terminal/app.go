@@ -480,10 +480,10 @@ func (app *App) loop(ctx context.Context) {
 	stopTimer(messageWarmTimer)
 	defer messageWarmTimer.Stop()
 
-	dirty := true
-	for {
-		dirty = app.drawDirtyFrame(ctx, dirty)
+	app.draw(ctx)
 
+	dirty := false
+	for {
 		shouldQuit, nextDirty := app.runLoopStep(ctx, workTicker, frameTicker, extensionTimer, messageWarmTimer, dirty)
 		if shouldQuit {
 			return
@@ -491,16 +491,6 @@ func (app *App) loop(ctx context.Context) {
 
 		dirty = nextDirty
 	}
-}
-
-func (app *App) drawDirtyFrame(ctx context.Context, dirty bool) bool {
-	if dirty && !app.throttleDraws() {
-		app.draw(ctx)
-
-		return false
-	}
-
-	return dirty
 }
 
 func (app *App) runLoopStep(
@@ -530,10 +520,7 @@ func (app *App) runLoopStep(
 
 		return false, true
 	case <-app.frameTick(frameTicker, dirty):
-		if dirty {
-			app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
-		}
-
+		app.emitExtensionRuntimeEventOrMessage(ctx, extensionEventTick, map[string]any{})
 		app.draw(ctx)
 
 		return false, false
@@ -649,7 +636,7 @@ func (app *App) workTick(ticker *time.Ticker) <-chan time.Time {
 }
 
 func (app *App) frameTick(ticker *time.Ticker, dirty bool) <-chan time.Time {
-	if app.throttleDraws() || dirty {
+	if dirty {
 		return ticker.C
 	}
 
@@ -724,10 +711,6 @@ func stopTimer(timer *time.Timer) {
 	case <-timer.C:
 	default:
 	}
-}
-
-func (app *App) throttleDraws() bool {
-	return app.busy()
 }
 
 func (app *App) busy() bool {
