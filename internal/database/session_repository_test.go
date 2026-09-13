@@ -420,6 +420,23 @@ func TestSessionRepository_OrdersEqualTimestampEntriesByID(t *testing.T) {
 			assert.Equal(t, sortedEntryIDs(children), treeEntryIDs(tree[index].Children))
 		}
 	}
+
+	leafIDs := sortedEntryIDs([]*database.EntryEntity{roots[1], roots[2], children[0], children[1]})
+	wantLeafID := leafIDs[len(leafIDs)-1]
+	branch, err := repository.Branch(ctx, session.ID, "")
+	require.NoError(t, err)
+	require.NotEmpty(t, branch)
+	assert.Equal(t, wantLeafID, branch[len(branch)-1].ID)
+
+	for run := range 20 {
+		repeatedEntries, entriesErr := repository.Entries(ctx, session.ID)
+		require.NoError(t, entriesErr)
+		assert.Equal(t, wantAll, sessionEntryIDs(repeatedEntries), "run %d", run)
+
+		repeatedRoots, rootsErr := repository.Children(ctx, session.ID, nil)
+		require.NoError(t, rootsErr)
+		assert.Equal(t, sortedEntryIDs(roots), sessionEntryIDs(repeatedRoots), "run %d", run)
+	}
 }
 
 func TestSessionRepository_OrdersEqualTimestampSessionsByID(t *testing.T) {

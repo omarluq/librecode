@@ -3,6 +3,7 @@ package database_test
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -148,6 +149,57 @@ func TestCompletionRepairFindsTerminalEventBeforeLaterDiagnostics(t *testing.T) 
 	repaired, err := repositories.Completions.Repair(ctx, 1)
 	require.NoError(t, err)
 	assert.Equal(t, 1, repaired)
+}
+
+func TestCompletionRepairOrdersSameSecondCandidatesByTaskID(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTaskTestFixture(t)
+	ctx := t.Context()
+	owner := fixture.createOwner(ctx)
+	repositories, err := database.NewRepositories(fixture.connection)
+	require.NoError(t, err)
+
+	taskIDs := make([]string, 0, 3)
+
+	for range 3 {
+		task, createErr := repositories.Tasks.Create(ctx, newTask(owner.ID))
+		require.NoError(t, createErr)
+
+		finish := newTaskFinish(task.ID, []database.TaskState{database.TaskQueued}, database.TaskSucceeded,
+			taskSucceededEvent)
+		finish.Result = task.ID
+		changed, finishErr := repositories.Tasks.Finish(ctx, &finish)
+		require.NoError(t, finishErr)
+		require.True(t, changed)
+
+		taskIDs = append(taskIDs, task.ID)
+	}
+
+	finishedAt := "2026-08-30T12:00:00Z"
+	_, err = fixture.connection.ExecContext(ctx,
+		`UPDATE tasks SET finished_at = ? WHERE owner_session_id = ?`, finishedAt, owner.ID)
+	require.NoError(t, err)
+	_, err = fixture.connection.ExecContext(ctx,
+		`DELETE FROM session_completion_deliveries WHERE owner_session_id = ?`, owner.ID)
+	require.NoError(t, err)
+
+	slices.Sort(taskIDs)
+
+	for index, wantTaskID := range taskIDs {
+		repaired, repairErr := repositories.Completions.Repair(ctx, 1)
+		require.NoError(t, repairErr)
+		require.Equal(t, 1, repaired)
+
+		pending, pendingErr := repositories.Completions.Pending(ctx, owner.ID, 16)
+		require.NoError(t, pendingErr)
+		require.Len(t, pending, index+1)
+		assert.Equal(t, wantTaskID, pending[index].TaskID, "repair %d", index)
+	}
+
+	repaired, err := repositories.Completions.Repair(ctx, 1)
+	require.NoError(t, err)
+	assert.Zero(t, repaired)
 }
 
 func TestCompletionEnvelopeTreatsOutputAsTypedPlainData(t *testing.T) {
