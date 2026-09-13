@@ -866,30 +866,17 @@ func runLoopStepWithContextAndDormantTimers(
 	)
 }
 
-func TestDrawDirtyFrame(t *testing.T) {
+func TestFrameTickOnlyRunsForDirtyState(t *testing.T) {
 	t.Parallel()
 
-	testCases := []struct {
-		name     string
-		dirty    bool
-		wantDraw bool
-	}{
-		{name: "clean frame skips draw", dirty: false, wantDraw: false},
-		{name: "dirty frame draws", dirty: true, wantDraw: true},
-	}
+	ticker := time.NewTicker(time.Hour)
+	t.Cleanup(ticker.Stop)
 
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
+	app := newScrollableRenderTestApp(t)
+	app.working = true
 
-			app := newScrollableRenderTestApp(t)
-			screen, ok := app.screen.(*clipboardScreen)
-			require.True(t, ok)
-
-			assert.False(t, app.drawDirtyFrame(context.Background(), testCase.dirty))
-			assert.Equal(t, testCase.wantDraw, len(screen.content) > 0)
-		})
-	}
+	assert.Nil(t, app.frameTick(ticker, false), "busy but unchanged UI must not redraw")
+	assert.Equal(t, ticker.C, app.frameTick(ticker, true), "dirty UI must wait for the frame tick")
 }
 
 func TestDrawLatestResize(t *testing.T) {
