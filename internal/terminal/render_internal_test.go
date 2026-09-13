@@ -879,6 +879,51 @@ func TestFrameTickOnlyRunsForDirtyState(t *testing.T) {
 	assert.Equal(t, ticker.C, app.frameTick(ticker, true), "dirty UI must wait for the frame tick")
 }
 
+func TestRunLoopStepDrawsDirtyFrameAndEmitsTick(t *testing.T) {
+	t.Parallel()
+
+	app := newExtensionRuntimeTestApp(t, `
+librecode.on("tick", function()
+  librecode.buf.set_text("tick_events", "tick")
+end)
+`)
+	screen := newClipboardScreen()
+	screen.SetSize(40, 8)
+	app.screen = screen
+	app.renderer = tui.NewRenderer(screen)
+	app.frame = nil
+
+	workTicker := time.NewTicker(time.Hour)
+	frameTicker := time.NewTicker(time.Millisecond)
+	extensionTimer := time.NewTimer(time.Hour)
+	messageWarmTimer := time.NewTimer(time.Hour)
+
+	t.Cleanup(func() {
+		workTicker.Stop()
+		frameTicker.Stop()
+		stopTimer(extensionTimer)
+		stopTimer(messageWarmTimer)
+	})
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+
+	shouldQuit, dirty := app.runLoopStep(
+		ctx,
+		workTicker,
+		frameTicker,
+		extensionTimer,
+		messageWarmTimer,
+		true,
+	)
+
+	assert.False(t, shouldQuit)
+	assert.False(t, dirty)
+	require.NotNil(t, app.frame, "dirty frame tick must draw")
+	require.Contains(t, app.extensionUI.Buffers, "tick_events", "dirty frame tick must emit tick")
+	assert.Equal(t, "tick", app.extensionUI.Buffers["tick_events"].Text)
+}
+
 func TestDrawLatestResize(t *testing.T) {
 	t.Parallel()
 
