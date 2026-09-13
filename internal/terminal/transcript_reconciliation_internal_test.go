@@ -94,27 +94,33 @@ func TestAppendMissingSessionMessagesOrdersEqualTimestampDurableEntriesByID(t *t
 func TestAppendMissingSessionMessagesPreservesEqualTimestampLocalInsertionOrder(t *testing.T) {
 	t.Parallel()
 
-	app := newRenderTestApp(t)
-	createdAt := time.Now().UTC()
-	first := newChatMessage(transcript.RoleUser, "first-local")
-	first.CreatedAt = createdAt
-	first.Identity = &chatMessageIdentity{EntryID: "", PromptID: 2}
-	second := newChatMessage(transcript.RoleUser, "second-local")
-	second.CreatedAt = createdAt
-	second.Identity = &chatMessageIdentity{EntryID: "", PromptID: 1}
+	for run := range 100 {
+		app := newRenderTestApp(t)
+		createdAt := time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC)
+		first := newChatMessage(transcript.RoleUser, "first-local")
+		first.CreatedAt = createdAt
+		first.Identity = &chatMessageIdentity{EntryID: "", PromptID: 2}
+		second := newChatMessage(transcript.RoleUser, "second-local")
+		second.CreatedAt = createdAt
+		second.Identity = &chatMessageIdentity{EntryID: "", PromptID: 1}
 
-	app.appendMessage(first)
-	app.appendMessage(second)
+		app.appendMessage(first)
+		app.appendMessage(second)
+		app.appendMissingSessionMessages([]database.SessionMessageEntity{
+			testSessionMessage(createdAt, reconciliationSecondEntry),
+			testSessionMessage(createdAt, reconciliationFirstEntry),
+		})
 
-	app.appendMissingSessionMessages([]database.SessionMessageEntity{
-		testSessionMessage(createdAt.Add(time.Second), reconciliationFirstEntry),
-	})
-
-	require.Len(t, app.transcript.History, 3)
-	assert.Equal(t, []string{"first-local", "second-local"}, []string{
-		app.transcript.History[0].Content,
-		app.transcript.History[1].Content,
-	})
+		require.Len(t, app.transcript.History, 4, "run %d", run)
+		assert.Equal(t, []string{"first-local", "second-local"}, []string{
+			app.transcript.History[0].Content,
+			app.transcript.History[1].Content,
+		}, "run %d", run)
+		assert.Equal(t, []string{reconciliationFirstEntry, reconciliationSecondEntry}, []string{
+			app.transcript.History[2].Identity.EntryID,
+			app.transcript.History[3].Identity.EntryID,
+		}, "run %d", run)
+	}
 }
 
 func TestAppendMissingSessionMessagesIsIdempotent(t *testing.T) {
