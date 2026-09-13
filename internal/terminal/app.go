@@ -480,8 +480,6 @@ func (app *App) loop(ctx context.Context) {
 	stopTimer(messageWarmTimer)
 	defer messageWarmTimer.Stop()
 
-	app.draw(ctx)
-
 	dirty := false
 	for {
 		shouldQuit, nextDirty := app.runLoopStep(ctx, workTicker, frameTicker, extensionTimer, messageWarmTimer, dirty)
