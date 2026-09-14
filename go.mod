@@ -34,7 +34,7 @@ require (
 	github.com/samber/hot v0.13.1
 	github.com/samber/lo v1.53.0
 	github.com/samber/mo v1.17.0
-	github.com/samber/oops v1.23.1
+	github.com/samber/oops v1.23.2
 	github.com/samber/slog-zerolog/v2 v2.9.2
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sethvargo/go-retry v0.4.0
